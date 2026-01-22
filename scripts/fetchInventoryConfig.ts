@@ -5,8 +5,18 @@ import { GoogleAuth } from "google-auth-library";
 
 const DEFAULT_OUTPUT_PATH = "inventoryConfig.json";
 const DEFAULT_ENVIRONMENT = "prod";
+const AUTH_TIMEOUT_MS = 30000; // 30 second timeout for auth
 
 type JsonValue = Record<string, unknown> | unknown[];
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, operationName: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`${operationName} timed out after ${timeoutMs}ms`)), timeoutMs)
+    ),
+  ]);
+}
 
 async function fetchWithRetry(
   url: string,
@@ -16,7 +26,7 @@ async function fetchWithRetry(
 ): Promise<string> {
   for (let i = 0; i < retries; i++) {
     try {
-      const response = await axios.get(url, { headers, responseType: "text" });
+      const response = await axios.get(url, { headers, responseType: "text", timeout: 30000 });
       return response.data as string;
     } catch (error) {
       if (i === retries - 1) {
@@ -46,13 +56,17 @@ function extractInventoryConfig(parsed: JsonValue): Record<string, unknown> {
 }
 
 async function getIdTokenHeaders(audience: string): Promise<Record<string, string>> {
+  console.log("🔐 Obtaining Google Auth credentials...");
   const auth = new GoogleAuth();
-  const client = await auth.getIdTokenClient(audience);
-  const headers = await client.getRequestHeaders();
+  const client = await withTimeout(auth.getIdTokenClient(audience), AUTH_TIMEOUT_MS, "Google Auth getIdTokenClient");
+  console.log("🔐 Getting request headers...");
+  const headers = await withTimeout(client.getRequestHeaders(), AUTH_TIMEOUT_MS, "Google Auth getRequestHeaders");
+  console.log("🔐 Authentication successful.");
   return headers as Record<string, string>;
 }
 
 async function run(): Promise<number> {
+  console.log("📦 Starting fetchInventoryConfig script...");
   config(); // Load .env file
 
   const configuramaBaseUrl = process.env.CONFIGURAMA_BASE_URL;
@@ -60,8 +74,10 @@ async function run(): Promise<number> {
   const configuramaFilePath = process.env.CONFIGURAMA_FILE_PATH;
   const outputPath = process.env.RELAYER_EXTERNAL_INVENTORY_CONFIG ?? DEFAULT_OUTPUT_PATH;
 
+  console.log(`📋 Config: baseUrl=${configuramaBaseUrl ? "set" : "not set"}, env=${configuramaEnv}, filePath=${configuramaFilePath ? "set" : "not set"}`);
+
   if (!configuramaBaseUrl && !configuramaFilePath) {
-    console.log("Skipping inventory config fetch: CONFIGURAMA_BASE_URL and CONFIGURAMA_FILE_PATH not set.");
+    console.log("⏭️  Skipping inventory config fetch: CONFIGURAMA_BASE_URL and CONFIGURAMA_FILE_PATH not set.");
     return 0;
   }
   if (!configuramaBaseUrl || !configuramaFilePath) {
@@ -103,10 +119,10 @@ async function run(): Promise<number> {
 if (require.main === module) {
   run()
     .then((result: number) => {
-      process.exitCode = result;
+      process.exit(result);
     })
     .catch((error) => {
       console.error("❌ Process exited with error:", error.message);
-      process.exitCode = 127;
+      process.exit(127);
     });
 }
