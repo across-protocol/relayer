@@ -1,8 +1,7 @@
 import { writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { config } from "dotenv";
 import axios from "axios";
-
-const OUTPUT_PATH = "inventoryConfig.json";
 
 interface GitHubFileResponse {
   content: string;
@@ -36,11 +35,13 @@ async function fetchWithRetry(
 async function fetchFileFromGitHub(
   owner: string,
   repo: string,
-  path: string,
+  folderName: string,
+  fileName: string,
   token: string,
   branch = "master"
 ): Promise<string> {
-  const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}?ref=${branch}`;
+  const filePath = `${folderName}/${fileName}`;
+  const url = `https://api.github.com/repos/${owner}/${repo}/contents/${filePath}?ref=${branch}`;
   const headers = {
     Authorization: `token ${token}`,
     Accept: "application/vnd.github.v3+json",
@@ -53,58 +54,122 @@ async function fetchFileFromGitHub(
   return content;
 }
 
+function getLocalFileName(botIdentifier: string): string {
+  return `inventory-${botIdentifier}.json`;
+}
+async function fetchAndWriteFile(
+  owner: string,
+  repo: string,
+  folderName: string,
+  fileName: string,
+  token: string,
+  branch: string
+): Promise<void> {
+  console.log(`📥 Fetching ${fileName}...`);
+
+  const fileContent = await fetchFileFromGitHub(owner, repo, folderName, fileName, token, branch);
+
+  // Parse JSON to validate it's valid JSON
+  const jsonData = JSON.parse(fileContent);
+
+  // Write to local file with same name
+  await writeFile(fileName, JSON.stringify(jsonData, null, 2));
+
+  console.log(`✅ Successfully saved ${fileName}`);
+}
+
+function parseFilePaths(filePaths: string): string[] {
+  return filePaths.split(",").map((f) => f.trim());
+}
+
 async function run(): Promise<number> {
   config(); // Load .env file
 
   // Get configuration from environment variables
-  const githubToken = process.env.GITHUB_TOKEN;
-  const githubOwner = process.env.GITHUB_REPO_OWNER;
-  const githubRepo = process.env.GITHUB_REPO_NAME;
-  const githubFilePath = process.env.GITHUB_FILE_PATH;
-  const githubBranch = process.env.GITHUB_BRANCH || "master";
+  const {
+    GITHUB_TOKEN: githubToken,
+    GITHUB_REPO_OWNER: githubOwner,
+    GITHUB_REPO_NAME: githubRepo,
+    GITHUB_FILE_PATHS: githubFilePaths,
+    GITHUB_FOLDER_NAME: githubFolderName = "serverless-bots",
+    GITHUB_BRANCH: githubBranch = "master",
+    BOT_IDENTIFIER: botIdentifier,
+  } = process.env;
+
+  // Helper to handle errors based on whether botIdentifier is set and local file exists
+  const handleError = (message: string): number => {
+    if (botIdentifier) {
+      const localFile = getLocalFileName(botIdentifier);
+      if (existsSync(localFile)) {
+        console.log(`⚠️  ${message}`);
+        console.log(`📄 Local file "${localFile}" exists, continuing with existing config...`);
+        return 0;
+      }
+      // Local file doesn't exist, must throw
+      throw new Error(`${message} (and no local file "${localFile}" found)`);
+    }
+    throw new Error(message);
+  };
 
   // Validate required environment variables
   if (!githubToken) {
-    throw new Error("GITHUB_TOKEN environment variable is required");
+    return handleError("GITHUB_TOKEN environment variable is required");
   }
   if (!githubOwner) {
-    throw new Error("GITHUB_REPO_OWNER environment variable is required");
+    return handleError("GITHUB_REPO_OWNER environment variable is required");
   }
   if (!githubRepo) {
-    throw new Error("GITHUB_REPO_NAME environment variable is required");
-  }
-  if (!githubFilePath) {
-    throw new Error("GITHUB_FILE_PATH environment variable is required");
+    return handleError("GITHUB_REPO_NAME environment variable is required");
   }
 
-  console.log(`Fetching ${githubFilePath} from ${githubOwner}/${githubRepo} (branch: ${githubBranch})...`);
+  // Determine which files to fetch based on BOT_IDENTIFIER or GITHUB_FILE_PATHS
+  let filesToFetch: string[];
+
+  if (botIdentifier) {
+    // If BOT_IDENTIFIER is set, fetch only that file (no need for GITHUB_FILE_PATHS)
+    const targetFile = getLocalFileName(botIdentifier);
+    filesToFetch = [targetFile];
+    console.log(`🤖 BOT_IDENTIFIER set to "${botIdentifier}", fetching ${targetFile}`);
+  } else {
+    // No BOT_IDENTIFIER, require GITHUB_FILE_PATHS
+    if (!githubFilePaths) {
+      throw new Error("Either BOT_IDENTIFIER or GITHUB_FILE_PATHS environment variable is required");
+    }
+    filesToFetch = parseFilePaths(githubFilePaths);
+    console.log(`📦 Fetching ${filesToFetch.length} file(s): ${filesToFetch.join(", ")}`);
+  }
+
+  console.log(`📂 Repository: ${githubOwner}/${githubRepo} (branch: ${githubBranch})`);
 
   try {
-    // Fetch the file content from GitHub
-    const fileContent = await fetchFileFromGitHub(githubOwner, githubRepo, githubFilePath, githubToken, githubBranch);
+    await Promise.all(
+      filesToFetch.map((fileName) =>
+        fetchAndWriteFile(githubOwner, githubRepo, githubFolderName, fileName, githubToken, githubBranch)
+      )
+    );
 
-    // Parse JSON to validate it's valid JSON
-    const jsonData = JSON.parse(fileContent);
-
-    // Write to output file
-    await writeFile(OUTPUT_PATH, JSON.stringify(jsonData, null, 2));
-
-    console.log(`✅ Successfully fetched and saved to ${OUTPUT_PATH}`);
+    console.log("\n✅ All files fetched successfully!");
     return 0;
   } catch (error) {
-    if (axios.isAxiosError(error)) {
-      if (error.response?.status === 404) {
-        throw new Error(`File not found: ${githubFilePath} in ${githubOwner}/${githubRepo}`);
-      } else if (error.response?.status === 401 || error.response?.status === 403) {
-        throw new Error(
-          `Authentication failed. Check your GITHUB_TOKEN and ensure it has access to ${githubOwner}/${githubRepo}`
-        );
-      } else {
-        throw new Error(`GitHub API error: ${error.response?.status} - ${error.message}`);
-      }
-    }
-    throw error;
+    const errorMessage = getErrorMessage(error);
+    return handleError(`Failed to fetch inventory config: ${errorMessage}`);
   }
+}
+
+function getErrorMessage(error: unknown): string {
+  if (axios.isAxiosError(error)) {
+    if (error.response?.status === 404) {
+      return "File not found in repository";
+    } else if (error.response?.status === 401 || error.response?.status === 403) {
+      return "Authentication failed. Check your GITHUB_TOKEN and repository access.";
+    } else {
+      return `GitHub API error: ${error.response?.status} - ${error.message}`;
+    }
+  }
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return String(error);
 }
 
 if (require.main === module) {
