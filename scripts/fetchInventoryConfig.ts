@@ -175,12 +175,10 @@ function getErrorMessage(error: unknown): string {
 if (require.main === module) {
   run()
     .then((result: number) => {
-      // eslint-disable-next-line no-process-exit
-      process.exit(result);
+      process.exitCode = result;
     })
     .catch((error) => {
       console.error("❌ Process exited with error:", error.message);
-      // eslint-disable-next-line no-process-exit
-      process.exit(127);
+      process.exitCode = 127;
     });
 }
