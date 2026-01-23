@@ -447,7 +447,6 @@ describe("Dataworker: Load bundle data", async function () {
       expect(data2.bundleDepositsV3).to.deep.equal({});
       expect(data2.expiredDepositsToRefundV3[originChainId][toBytes32(erc20_1.address)].length).to.equal(1);
     });
-
     it("Accounts for expired deposits at the bundle end block timestamp once", async function () {
       const chainIds = dataworkerInstance.chainIdListForBundleEvaluationBlockNumbers;
       const defaultBlockRange = getDefaultBlockRange(5);
