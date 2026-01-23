@@ -35,12 +35,12 @@ async function fetchWithRetry(
 async function fetchFileFromGitHub(
   owner: string,
   repo: string,
-  folderName: string | undefined,
+  folderName: string,
   fileName: string,
   token: string,
   branch = "master"
 ): Promise<string> {
-  const filePath = folderName ? `${folderName}/${fileName}` : fileName;
+  const filePath = `${folderName}/${fileName}`;
   const url = `https://api.github.com/repos/${owner}/${repo}/contents/${filePath}?ref=${branch}`;
   const headers = {
     Authorization: `token ${token}`,
@@ -60,7 +60,7 @@ function getLocalFileName(botIdentifier: string): string {
 async function fetchAndWriteFile(
   owner: string,
   repo: string,
-  folderName: string | undefined,
+  folderName: string,
   fileName: string,
   token: string,
   branch: string
@@ -79,10 +79,6 @@ async function fetchAndWriteFile(
 }
 
 function parseFilePaths(filePaths: string): string[] {
-  // Support comma-separated or JSON array format
-  if (filePaths.startsWith("[")) {
-    return JSON.parse(filePaths) as string[];
-  }
   return filePaths.split(",").map((f) => f.trim());
 }
 
@@ -90,13 +86,15 @@ async function run(): Promise<number> {
   config(); // Load .env file
 
   // Get configuration from environment variables
-  const githubToken = process.env.GITHUB_TOKEN;
-  const githubOwner = process.env.GITHUB_REPO_OWNER;
-  const githubRepo = process.env.GITHUB_REPO_NAME;
-  const githubFilePaths = process.env.GITHUB_FILE_PATHS;
-  const githubFolderName = process.env.GITHUB_FOLDER_NAME || "serverless-bots";
-  const githubBranch = process.env.GITHUB_BRANCH || "master";
-  const botIdentifier = process.env.BOT_IDENTIFIER;
+  const {
+    GITHUB_TOKEN: githubToken,
+    GITHUB_REPO_OWNER: githubOwner,
+    GITHUB_REPO_NAME: githubRepo,
+    GITHUB_FILE_PATHS: githubFilePaths,
+    GITHUB_FOLDER_NAME: githubFolderName = "serverless-bots",
+    GITHUB_BRANCH: githubBranch = "master",
+    BOT_IDENTIFIER: botIdentifier,
+  } = process.env;
 
   // Helper to handle errors based on whether botIdentifier is set and local file exists
   const handleError = (message: string): number => {
