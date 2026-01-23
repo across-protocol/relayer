@@ -150,7 +150,7 @@ async function run(): Promise<number> {
       )
     );
 
-    console.log(`\n✅ All files fetched successfully!`);
+    console.log("\n✅ All files fetched successfully!");
     return 0;
   } catch (error) {
     const errorMessage = getErrorMessage(error);
@@ -177,10 +177,12 @@ function getErrorMessage(error: unknown): string {
 if (require.main === module) {
   run()
     .then((result: number) => {
+      // eslint-disable-next-line no-process-exit
       process.exit(result);
     })
     .catch((error) => {
       console.error("❌ Process exited with error:", error.message);
+      // eslint-disable-next-line no-process-exit
       process.exit(127);
     });
 }
