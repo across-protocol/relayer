@@ -34,8 +34,8 @@ export class Disputer {
     // signer.connect() is unsupported in test.
     this.signer = signer.provider ? signer : signer.connect(hubPool.provider);
     this.bondMultiplier = {
-      min: 4,
-      target: 8,
+      min: process.env["DISPUTER_MIN_BOND_MULTIPLIER"] ?? 4,
+      target: process.env["DISPUTER_TARGET_BOND_MULTIPLIER"] ?? 8,
     };
     this.txnClient = new TransactionClient(this.logger);
 
