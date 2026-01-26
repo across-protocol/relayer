@@ -9,6 +9,8 @@ export type RefillBalanceData = {
   target: number;
   trigger: number;
   refillPeriod?: number;
+  // If true, check origin chain balance. If false, check destination chain balance (default).
+  checkOriginChainBalance: boolean;
 };
 
 export class RefillerConfig extends CommonConfig {
@@ -24,7 +26,7 @@ export class RefillerConfig extends CommonConfig {
     // Used to send tokens if available in wallet to balances under target balances.
     if (REFILL_BALANCES) {
       this.refillEnabledBalances = JSON.parse(REFILL_BALANCES).map(
-        ({ chainId, account, isHubPool, target, trigger, token }) => {
+        ({ chainId, account, isHubPool, target, trigger, token, checkOriginChainBalance }) => {
           if (Number.isNaN(target) || target <= 0) {
             throw new Error(`target for ${chainId} and ${account} must be > 0, got ${target}`);
           }
@@ -43,6 +45,7 @@ export class RefillerConfig extends CommonConfig {
             // Optional fields that will set to defaults:
             isHubPool: Boolean(isHubPool),
             token: isDefined(token) ? toAddressType(token, chainId) : getNativeTokenAddressForChain(chainId),
+            checkOriginChainBalance: isDefined(checkOriginChainBalance) ? Boolean(checkOriginChainBalance) : false,
           };
         }
       );
