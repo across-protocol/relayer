@@ -164,7 +164,9 @@ export async function getProvider(
   // This only disables standard TTL caching for blocks close to HEAD.
   // To disable all caching, this option should be combined with NODE_DISABLE_NO_TTL_PROVIDER_CACHING or
   // the user should refrain from providing a valid redis instance.
-  const disableProviderCache = NODE_DISABLE_PROVIDER_CACHING === "true";
+  // This can be overridden per-chain by setting NODE_DISABLE_PROVIDER_CACHING_<chainId>=false.
+  const disableProviderCache =
+    NODE_DISABLE_PROVIDER_CACHING === "true" && process.env[`NODE_DISABLE_PROVIDER_CACHING_${chainId}`] !== "false";
 
   const providerCacheNamespace = getCacheNamespace(chainId);
 
