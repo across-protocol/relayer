@@ -57,10 +57,10 @@
     "@openzeppelin/contracts" "4.1.0"
     "@uma/core" "^2.18.0"
 
-"@across-protocol/sdk@4.3.112":
-  version "4.3.112"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.3.112.tgz#6173f20d3dea1fc30c416c5384626935c6fa3a43"
-  integrity sha512-VZNOxOL7E3vWhwxNCZ8tmFl8qPjWAfM/damOQmue1TzPBYxPZNPjyya7wFEf+Z7vEKJMOzuqgnrzZFRg3N696A==
+"@across-protocol/sdk@4.3.115":
+  version "4.3.115"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.3.115.tgz#ce42caa29976833aa1b49165d9ca48ae86af3576"
+  integrity sha512-osG30CeHgnaMUgJXWz/1jVX6Jl6OkakayL+FN9wjXPnRqp+P6qypJwAdDfoxKQq9H3Nydhc7mNR7CsbPyCaJyg==
   dependencies:
     "@across-protocol/across-token" "^1.0.0"
     "@across-protocol/constants" "^3.1.97"
@@ -70,10 +70,10 @@
     "@ethersproject/bignumber" "^5.7.0"
     "@nktkas/hyperliquid" "^0.25.9"
     "@pinata/sdk" "^2.1.0"
+    "@solana-program/compute-budget" "^0.8.0"
     "@solana-program/system" "^0.7.0"
     "@solana-program/token-2022" "^0.4.0"
     "@solana/kit" "^2.3.0"
-    "@uma/contracts-node" "^0.4.26"
     arweave "^1.14.4"
     async "^3.2.5"
     axios "^0.27.2"
@@ -4264,11 +4264,6 @@
   version "0.4.18"
   resolved "https://registry.yarnpkg.com/@uma/contracts-node/-/contracts-node-0.4.18.tgz#3d3e0ad7dc70b81b3d0dbe722b4eba93bd29f9bf"
   integrity sha512-JiICiNPEfL18JrddxjSNQUs0/gRMAvdqejIu7UP8JTG4Cup8tDJ6TejZJxBVHlmtB6hSOBnbLoPXb/uLtfdQiw==
-
-"@uma/contracts-node@^0.4.26":
-  version "0.4.26"
-  resolved "https://registry.yarnpkg.com/@uma/contracts-node/-/contracts-node-0.4.26.tgz#2c967e10c41292eeaafeb6b458525138e06ea0d8"
-  integrity sha512-o+wzScJB9xVavQwQWkAA8ZXBT9tCqyrhJOBdcyxaKmTTZmPPjAW52V5IVKwcmEOykFOliDjvRtFZIfWjwzUwcA==
 
 "@uma/core@^2.18.0":
   version "2.56.0"

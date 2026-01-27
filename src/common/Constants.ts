@@ -154,7 +154,6 @@ const resolveRpcConfig = () => {
     [CHAIN_IDs.ALEPH_ZERO]: 0,
     [CHAIN_IDs.BOBA]: 0,
     [CHAIN_IDs.HYPEREVM]: 1_000, // QuickNode constraint.
-    [CHAIN_IDs.MEGAETH]: 20_000,
     [CHAIN_IDs.MONAD]: 1_000, // Alchemy constraint
     [CHAIN_IDs.SOLANA]: 1_000,
     [CHAIN_IDs.SOLANA_DEVNET]: 1000,
@@ -184,7 +183,7 @@ const resolveChainBundleBuffers = () => {
     [CHAIN_IDs.HYPEREVM]: 120, // 60s/big block
     [CHAIN_IDs.LINEA]: 40, // ~3s/block
     [CHAIN_IDs.MAINNET]: 5, // ~12s/block
-    [CHAIN_IDs.MEGAETH]: 6000, // ~10ms/block @TODO: What is finality for MegaETH?
+    [CHAIN_IDs.MEGAETH]: 300, // ~1s/block This can vary, so we want to be conservative.
     [CHAIN_IDs.MONAD]: 150, // ~400ms/block, 2 block finality
     [CHAIN_IDs.PLASMA]: 180, // ~1s/block variable. Finality guarantees are less certain, be a bit more conservative.
     [CHAIN_IDs.POLYGON]: 128, // ~2s/block. Polygon has historically re-orged often.
@@ -236,7 +235,7 @@ const resolveChainCacheDelay = () => {
     [CHAIN_IDs.HYPEREVM]: 120, // big blocks are 60s/block
     [CHAIN_IDs.LINEA]: 100, // Linea has a soft-finality of 1 block. This value is padded - but at 3s/block the padding is 5 minutes
     [CHAIN_IDs.MAINNET]: 128,
-    [CHAIN_IDs.MEGAETH]: 6000, // ~10ms/block @TODO: What is finality for MegaETH?
+    [CHAIN_IDs.MEGAETH]: 300, // ~1s/block
     [CHAIN_IDs.MONAD]: 150,
     [CHAIN_IDs.PLASMA]: 300,
     [CHAIN_IDs.POLYGON]: 256,
@@ -268,7 +267,7 @@ export const DEFAULT_NO_TTL_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.LINEA]: 57600,
   [CHAIN_IDs.LISK]: 86400,
   [CHAIN_IDs.MAINNET]: 14400,
-  [CHAIN_IDs.MEGAETH]: 17280000, // 10ms/block
+  [CHAIN_IDs.MEGAETH]: 172800,
   [CHAIN_IDs.MODE]: 86400,
   [CHAIN_IDs.MONAD]: 432000,
   [CHAIN_IDs.OPTIMISM]: 86400,
@@ -330,7 +329,7 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.LENS]: ["WETH", "WGHO", "USDC"],
   [CHAIN_IDs.LINEA]: ["USDC", "USDT", "WETH", "WBTC", "DAI", "ezETH"],
   [CHAIN_IDs.LISK]: ["WETH", "USDC", "USDT", "LSK", "WBTC"],
-  [CHAIN_IDs.MEGAETH]: ["WETH"], // @TODO: Add "USDT" after it is fully deployed to MegaETH.
+  [CHAIN_IDs.MEGAETH]: ["WETH", "USDT"],
   [CHAIN_IDs.MODE]: ["ETH", "WETH", "USDC", "USDT", "WBTC", "ezETH"],
   [CHAIN_IDs.MONAD]: ["USDC", "USDT"], // @TODO: Add WBTC after its added to the chain token list
   [CHAIN_IDs.OPTIMISM]: [
@@ -803,6 +802,15 @@ export const OPSTACK_CONTRACT_OVERRIDES = {
   },
   [CHAIN_IDs.MEGAETH]: {
     l1: {
+      AddressManager: "0x9754fD3D63B3EAC3fd62b6D54DE4f61b00D6E0Df",
+      L1CrossDomainMessenger: "0x6C7198250087B29A8040eC63903Bc130f4831Cc9",
+      L1StandardBridge: CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET].ovmStandardBridge_4326.address,
+      StateCommitmentChain: ZERO_ADDRESS,
+      CanonicalTransactionChain: ZERO_ADDRESS,
+      BondManager: ZERO_ADDRESS,
+      OptimismPortal: "0x7f82f57F0Dd546519324392e408b01fcC7D709e8",
+      L2OutputOracle: ZERO_ADDRESS,
+      OptimismPortal2: ZERO_ADDRESS,
       DisputeGameFactory: "0x8546840adF796875cD9AAcc5B3B048f6B2c9D563",
     },
     l2: DEFAULT_L2_CONTRACT_ADDRESSES,

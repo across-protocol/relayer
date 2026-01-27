@@ -1,5 +1,4 @@
 import assert from "assert";
-import axios, { isAxiosError } from "axios";
 import minimist from "minimist";
 import { groupBy } from "lodash";
 import { config } from "dotenv";
@@ -148,20 +147,23 @@ function printFill(destinationChainId: number, log: LogDescription, transactionH
   printRelayData(relayData, destinationChainId, transactionHash);
 }
 
-async function getSuggestedFees(params: RelayerFeeQuery, timeout: number) {
+async function getSuggestedFees(params: RelayerFeeQuery) {
   const hubChainId = sdkUtils.chainIsProd(params.originChainId) ? CHAIN_IDs.MAINNET : CHAIN_IDs.SEPOLIA;
   const path = "api/suggested-fees";
   const url = `https://${getAcrossHost(hubChainId)}/${path}`;
+  const args = Object.entries(params)
+    .map(([k, v]) => `${k}=${v}`)
+    .join("&");
+  const request = `${url}?${args}`;
 
-  try {
-    const quote = await axios.get(url, { timeout, params });
-    return quote.data;
-  } catch (err) {
-    if (isAxiosError(err) && err.response.status >= 400) {
-      throw new Error(`Failed to get quote for deposit (${err.response.data})`);
-    }
-    throw err;
+  const response = await fetch(request);
+  const quote = await response.json();
+  if (quote?.type === "AcrossApiError") {
+    const { status, code, message } = quote;
+    const cause = { request, status, code, message };
+    throw new Error("Quote request failed", { cause });
   }
+  return quote;
 }
 
 async function getRelayerQuote(
@@ -190,10 +192,9 @@ async function getRelayerQuote(
     recipientAddress: recipient.toNative(),
     message,
   };
-  const timeout = 5000;
 
   const suggestedFees = async () => {
-    const quoteData = await getSuggestedFees(params, timeout);
+    const quoteData = await getSuggestedFees(params);
     const {
       outputToken: { address: outputToken },
       outputAmount,
@@ -318,9 +319,8 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
     String(args.exclusiveRelayer ?? depositQuote.exclusiveRelayer.toNative()),
     toChainId
   );
-  const exclusivityParameter = args.exclusivityDeadline
-    ? Number(args.exclusivityDeadline)
-    : depositQuote.exclusivityDeadline;
+  const exclusivityParameter = Number(args.exclusivityDeadline ?? depositQuote.exclusivityDeadline);
+  const fillDeadline = Number(args.fillDeadline ?? depositQuote.fillDeadline);
 
   const abortController = new AbortController();
   const srcListener = new EventListener(fromChainId, logger, 1);
@@ -373,7 +373,7 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
     toChainId,
     exclusiveRelayer.toBytes32(),
     depositQuote.quoteTimestamp,
-    depositQuote.fillDeadline,
+    fillDeadline,
     exclusivityParameter,
     message
   );
