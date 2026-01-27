@@ -68,7 +68,7 @@ export async function binanceFinalizer(
 
   const [_binanceDeposits, accountCoins] = await Promise.all([
     getBinanceDeposits(binanceApi, fromTimestamp),
-    getAccountCoins(binanceApi),
+    getAccountCoins(binanceApi, logger),
   ]);
 
   const statusesGrouped = groupObjectCountsByProp(_binanceDeposits, (deposit: { status: number }) => {
