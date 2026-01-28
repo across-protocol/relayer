@@ -4,8 +4,6 @@ import { existsSync } from "node:fs";
 /**
  * Validates that inventory config JSON files exist and are valid JSON.
  * Files are expected to be fetched in a prior build step and passed as args.
- *
- * Usage: npx ts-node scripts/fetchInventoryConfig.ts <file1.json> [file2.json] ...
  */
 
 async function validateJsonFile(filePath: string): Promise<void> {
