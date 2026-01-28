@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 
 /**
  * Validates inventory config JSON files exist and are valid JSON.
- * Files are to be fetched in a prior build step and passed as args
+ * Files are to be fetched in a prior build step and passed as args.
  */
 
 async function validateJsonFile(filePath: string): Promise<void> {
