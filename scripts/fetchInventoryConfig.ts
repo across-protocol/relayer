@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 
 /**
- * Validates that inventory config JSON files exist and are valid JSON.
+ * Validates that inventory config JSON files exist and are valid JSON
  * Files are expected to be fetched in a prior build step and passed as args.
  */
 
