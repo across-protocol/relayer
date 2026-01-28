@@ -38,7 +38,6 @@ import {
   sampleRateModel,
 } from "../constants";
 import { SpokePoolDeploymentResult, SpyLoggerResult } from "../types";
-import { INFINITE_FILL_DEADLINE } from "../../src/common";
 
 // Replicated from @uma/common
 const TokenRolesEnum = { OWNER: "0", MINTER: "1", BURNER: "3" };

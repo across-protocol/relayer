@@ -48,7 +48,7 @@ import {
 } from "./mocks";
 import { interfaces, constants as sdkConstants, utils as sdkUtils, providers } from "@across-protocol/sdk";
 import { cloneDeep } from "lodash";
-// import { INFINITE_FILL_DEADLINE } from "../src/common";
+import { INFINITE_FILL_DEADLINE } from "../src/common";
 
 describe("Dataworker: Load bundle data", async function () {
   const { EMPTY_MESSAGE } = sdkConstants;
@@ -709,11 +709,11 @@ describe("Dataworker: Load bundle data", async function () {
       const fills = spokePoolClient_2.getFills();
       expect(fills.length).to.equal(1);
 
-      const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), {
-        ...spokePoolClients,
-        [originChainId]: spokePoolClient_1,
-        [destinationChainId]: spokePoolClient_2,
-      });
+      // const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), {
+      //  ...spokePoolClients,
+      //  [originChainId]: spokePoolClient_1,
+      //  [destinationChainId]: spokePoolClient_2,
+      // });
       // expect(spyLogIncludes(spy, -4, "Located deposit outside of SpokePoolClient's search range")).is.true; xxx todo
       // expect(data1.bundleFillsV3[repaymentChainId][toBytes32(l1Token_1.address)].fills.length).to.equal(1);
       // expect(data1.bundleDepositsV3).to.deep.equal({});
