@@ -35,10 +35,7 @@ export class MockSpokePoolClient extends clients.mocks.MockSpokePoolClient {
     const relayDataHash = deposit.depositId.toString();
     this.relayFillStatuses[relayDataHash] = fillStatus;
   }
-  public relayFillStatus(
-    relayData: interfaces.RelayData,
-    blockTag?: number,
-  ): Promise<interfaces.FillStatus> {
+  public relayFillStatus(relayData: interfaces.RelayData, blockTag?: number): Promise<interfaces.FillStatus> {
     const relayDataHash = relayData.depositId.toString();
     return this.relayFillStatuses[relayDataHash]
       ? Promise.resolve(this.relayFillStatuses[relayDataHash])

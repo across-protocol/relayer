@@ -301,22 +301,22 @@ export async function depositV3(
 
   const [originChainId, txnResponse] = await Promise.all([
     spokePool.chainId(),
-      spokePool
-          .connect(signer)
-          .deposit(
-            toBytes32(depositor),
-            toBytes32(recipient),
-            toBytes32(inputToken),
-            toBytes32(outputToken),
-            inputAmount,
-            outputAmount,
-            destinationChainId,
-            toBytes32(exclusiveRelayer),
-            quoteTimestamp,
-            fillDeadline,
-            exclusivityDeadline,
-            message
-          ),
+    spokePool
+      .connect(signer)
+      .deposit(
+        toBytes32(depositor),
+        toBytes32(recipient),
+        toBytes32(inputToken),
+        toBytes32(outputToken),
+        inputAmount,
+        outputAmount,
+        destinationChainId,
+        toBytes32(exclusiveRelayer),
+        quoteTimestamp,
+        fillDeadline,
+        exclusivityDeadline,
+        message
+      ),
   ]);
   const txnReceipt = await txnResponse.wait();
 

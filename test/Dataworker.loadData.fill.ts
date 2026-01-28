@@ -48,7 +48,7 @@ import {
 } from "./mocks";
 import { interfaces, constants as sdkConstants, utils as sdkUtils, providers } from "@across-protocol/sdk";
 import { cloneDeep } from "lodash";
-import { INFINITE_FILL_DEADLINE } from "../src/common";
+// import { INFINITE_FILL_DEADLINE } from "../src/common";
 
 describe("Dataworker: Load bundle data", async function () {
   const { EMPTY_MESSAGE } = sdkConstants;
@@ -221,7 +221,9 @@ describe("Dataworker: Load bundle data", async function () {
         exclusiveRelayer: deposit.exclusiveRelayer,
         relayer: toAddressType(_relayer, destinationChainId),
         relayExecutionInfo: {
-          updatedRecipient: fillObject.relayExecutionInfo.updatedRecipient ?? toAddressType(deposit.recipient.toNative(), destinationChainId),
+          updatedRecipient:
+            fillObject.relayExecutionInfo.updatedRecipient ??
+            toAddressType(deposit.recipient.toNative(), destinationChainId),
           updatedMessageHash: sdkUtils.getMessageHash(fillObject.relayExecutionInfo.updatedMessage ?? message),
           updatedOutputAmount: fillObject.relayExecutionInfo.updatedOutputAmount,
           fillType,
