@@ -1,5 +1,6 @@
 import { clients, interfaces } from "@across-protocol/sdk";
 import { Deposit, RootBundleRelayWithBlock } from "../../src/interfaces";
+
 export class MockSpokePoolClient extends clients.mocks.MockSpokePoolClient {
   public maxFillDeadlineOverride?: number;
   public blockTimestampOverride: Record<number, number> = {};
@@ -36,12 +37,11 @@ export class MockSpokePoolClient extends clients.mocks.MockSpokePoolClient {
   }
   public relayFillStatus(
     relayData: interfaces.RelayData,
-    blockTag?: number | "latest",
-    destinationChainId?: number
+    blockTag?: number,
   ): Promise<interfaces.FillStatus> {
     const relayDataHash = relayData.depositId.toString();
     return this.relayFillStatuses[relayDataHash]
       ? Promise.resolve(this.relayFillStatuses[relayDataHash])
-      : super.relayFillStatus(relayData, blockTag, destinationChainId);
+      : super.relayFillStatus(relayData, blockTag);
   }
 }

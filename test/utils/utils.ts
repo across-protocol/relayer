@@ -293,28 +293,15 @@ export async function depositV3(
 
   const quoteTimestamp = opts.quoteTimestamp ?? spokePoolTime;
   const message = opts.message ?? constants.EMPTY_MESSAGE;
-  const fillDeadline = opts.fillDeadline ?? spokePoolTime + fillDeadlineBuffer;
-  const isLegacyDeposit = INFINITE_FILL_DEADLINE.eq(fillDeadline);
+  const maxFillDeadline = spokePoolTime + fillDeadlineBuffer;
+  opts.fillDeadline ??= maxFillDeadline;
+  const fillDeadline = Math.min(opts.fillDeadline, maxFillDeadline);
   const exclusivityDeadline = opts.exclusivityDeadline ?? 0;
   const exclusiveRelayer = opts.exclusiveRelayer ?? ZERO_ADDRESS;
 
   const [originChainId, txnResponse] = await Promise.all([
     spokePool.chainId(),
-    isLegacyDeposit
-      ? spokePool
-          .connect(signer)
-          .depositFor(
-            depositor,
-            recipient,
-            inputToken,
-            inputAmount,
-            destinationChainId,
-            inputAmount.sub(outputAmount).mul(toWei(1)).div(inputAmount),
-            quoteTimestamp,
-            message,
-            0
-          )
-      : spokePool
+      spokePool
           .connect(signer)
           .deposit(
             toBytes32(depositor),
@@ -341,7 +328,7 @@ export async function depositV3(
   const { logIndex } = eventLog;
 
   const depositArgs = spreadEvent(args);
-  const depositObject: DepositWithBlock = {
+  const depositObject = {
     blockNumber,
     txnRef,
     txnIndex,
@@ -350,11 +337,7 @@ export async function depositV3(
     originChainId: Number(originChainId),
     quoteBlockNumber: 0,
     messageHash: args.messageHash ?? getMessageHash(args.message),
-  };
-
-  if (isLegacyDeposit) {
-    depositObject.outputToken = toAddressType(outputToken, originChainId);
-  }
+  } satisfies DepositWithBlock;
 
   return depositObject;
 }
