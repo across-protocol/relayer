@@ -1,15 +1,14 @@
 import {
-  CompilableTransactionMessage,
   getBase64EncodedWireTransaction,
   isSolanaError,
   KeyPairSigner,
   signTransactionMessageWithSigners,
-  TransactionMessageWithBlockhashLifetime,
 } from "@solana/kit";
 import {
   assert,
   getKitKeypairFromEvmSigner,
   Signer,
+  SolanaTransaction,
   SvmAddress,
   Address as SDKAddress,
   blockExplorerLink,
@@ -33,8 +32,8 @@ type ProtoFill = Omit<RelayData, "recipient" | "outputToken"> & {
   outputToken: SvmAddress;
 };
 
-type ReadyTransactionPromise = Promise<CompilableTransactionMessage & TransactionMessageWithBlockhashLifetime>;
-type ReadyTransactionsPromise = Promise<(CompilableTransactionMessage & TransactionMessageWithBlockhashLifetime)[]>;
+type ReadyTransactionPromise = Promise<SolanaTransaction>;
+type ReadyTransactionsPromise = Promise<SolanaTransaction[]>;
 
 type QueuedSvmFill = {
   txPromises: [ReadyTransactionPromise] | [ReadyTransactionsPromise, ReadyTransactionPromise];
@@ -288,10 +287,7 @@ export class SvmFillerClient {
   }
 }
 
-const signAndSimulateTransaction = async (
-  provider: arch.svm.SVMProvider,
-  unsignedTxn: CompilableTransactionMessage & TransactionMessageWithBlockhashLifetime
-) => {
+const signAndSimulateTransaction = async (provider: arch.svm.SVMProvider, unsignedTxn: arch.svm.SolanaTransaction) => {
   const signedTransaction = await signTransactionMessageWithSigners(unsignedTxn);
   const serializedTx = getBase64EncodedWireTransaction(signedTransaction);
   return provider
