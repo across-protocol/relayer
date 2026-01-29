@@ -5,6 +5,7 @@ import {
   chainIsOPStack,
   chainIsOrbit,
   chainIsProd,
+  chainIsSvm,
   CHAIN_IDs,
   TOKEN_SYMBOLS_MAP,
   Signer,
@@ -101,6 +102,7 @@ export const UNIVERSAL_CHAINS = [CHAIN_IDs.BSC, CHAIN_IDs.HYPEREVM, CHAIN_IDs.PL
 // anything under 7 days. OP stack chains are auto-populated based on chain family.
 const OP_STACK_MIN_DEPOSIT_CONFIRMATIONS = 1;
 const ORBIT_MIN_DEPOSIT_CONFIRMATIONS = 1;
+const SVM_MIN_DEPOSIT_CONFIRMATIONS = 4;
 const MDC_DEFAULT_THRESHOLD = 1000;
 
 export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chainId: number]: number } } = {
@@ -141,6 +143,8 @@ Object.values(CHAIN_IDs)
       MIN_DEPOSIT_CONFIRMATIONS[MDC_DEFAULT_THRESHOLD][chainId] ??= OP_STACK_MIN_DEPOSIT_CONFIRMATIONS;
     } else if (chainIsOrbit(chainId) || chainId === CHAIN_IDs.ARBITRUM) {
       MIN_DEPOSIT_CONFIRMATIONS[MDC_DEFAULT_THRESHOLD][chainId] ??= ORBIT_MIN_DEPOSIT_CONFIRMATIONS;
+    } else if (chainIsSvm(chainId)) {
+      MIN_DEPOSIT_CONFIRMATIONS[MDC_DEFAULT_THRESHOLD][chainId] ??= SVM_MIN_DEPOSIT_CONFIRMATIONS;
     }
   });
 
