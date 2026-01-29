@@ -694,30 +694,35 @@ describe("Dataworker: Load bundle data", async function () {
           fillDeadline: INFINITE_FILL_DEADLINE.toNumber(),
         }
       );
-      const depositBlock = await spokePool_1.provider.getBlockNumber();
-
-      // Construct a spoke pool client with a small search range that would not include the deposit.
-      spokePoolClient_1.firstHeightToSearch = depositBlock + 1;
-      spokePoolClient_1.eventSearchConfig.from = spokePoolClient_1.firstHeightToSearch;
-      await spokePoolClient_1.update();
-      const deposits = spokePoolClient_1.getDeposits();
-      expect(deposits.length).to.equal(0);
 
       // Send a fill now and force the bundle data client to query for the historical deposit.
       await fillV3Relay(spokePool_2, depositObject, relayer, repaymentChainId);
       await updateAllClients();
+
       const fills = spokePoolClient_2.getFills();
       expect(fills.length).to.equal(1);
 
-      // const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), {
-      //  ...spokePoolClients,
-      //  [originChainId]: spokePoolClient_1,
-      //  [destinationChainId]: spokePoolClient_2,
-      // });
-      // expect(spyLogIncludes(spy, -4, "Located deposit outside of SpokePoolClient's search range")).is.true; xxx todo
-      // expect(data1.bundleFillsV3[repaymentChainId][toBytes32(l1Token_1.address)].fills.length).to.equal(1);
-      // expect(data1.bundleDepositsV3).to.deep.equal({});
+      // Manually remove the deposit from the client's cache to force historical query
+      const depositKey = sdkUtils.getRelayEventKey({
+        ...depositObject,
+        destinationChainId: depositObject.destinationChainId,
+      });
+      delete (spokePoolClient_1 as any).depositHashes[depositKey];
+
+      const deposits = spokePoolClient_1.getDeposits();
+      expect(deposits.length).to.equal(0);
+
+      const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), {
+        ...spokePoolClients,
+        [originChainId]: spokePoolClient_1,
+        [destinationChainId]: spokePoolClient_2,
+      });
+
+      expect(spyLogIncludes(spy, -4, "Located deposit outside of SpokePoolClient's search range")).is.true;
+      expect(data1.bundleFillsV3[repaymentChainId][toBytes32(l1Token_1.address)].fills.length).to.equal(1);
+      expect(data1.bundleDepositsV3).to.deep.equal({});
     });
+
     it("Does not validate fill against deposit in future bundle if deposit is not in-memory", async function () {
       // For this test, we need to actually send a deposit on the spoke pool
       // because queryHistoricalDepositForFill eth_call's the contract.
