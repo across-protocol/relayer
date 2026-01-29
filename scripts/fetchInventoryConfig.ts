@@ -59,8 +59,9 @@ async function run(): Promise<number> {
   config(); // Load .env file
 
   const {
-    CONFIGURAMA_BASE_URL: configuramaBaseUrl,
-    CONFIGURAMA_ENV: configuramaEnv = DEFAULT_ENVIRONMENT,
+    CONFIGURAMA_FOLDER_BASE_URL: configuramaBaseUrl,
+    CONFIGURAMA_FOLDER_ENVIRONMENT: configuramaEnv = DEFAULT_ENVIRONMENT,
+    CONFIGURAMA_FOLDER_PATH: configuramaFolderPath = "",
     BOT_IDENTIFIER: botIdentifier,
   } = process.env;
 
@@ -82,19 +83,21 @@ async function run(): Promise<number> {
   };
 
   if (!configuramaBaseUrl) {
-    return handleError("CONFIGURAMA_BASE_URL environment variable is required");
+    return handleError("CONFIGURAMA_FOLDER_BASE_URL environment variable is required");
   }
 
   const baseUrl = normalizeBaseUrl(configuramaBaseUrl);
 
+  const configuramaFilePath = `${configuramaFolderPath}${localFile}`;
+
   console.log(`🤖 BOT_IDENTIFIER set to "${botIdentifier}", fetching ${localFile}`);
-  console.log(`📂 Configurama: ${baseUrl} (environment: ${configuramaEnv})`);
+  console.log(`📂 Configurama: ${baseUrl} (environment: ${configuramaEnv}, path: ${configuramaFilePath})`);
 
   try {
     const headers = await getIdTokenHeaders(baseUrl);
 
-    const url = `${baseUrl}/config?environment=${encodeURIComponent(configuramaEnv)}&filename=${encodeURIComponent(localFile)}`;
-    console.log(`📥 Fetching ${localFile} from Configurama...`);
+    const url = `${baseUrl}/config?environment=${encodeURIComponent(configuramaEnv)}&filename=${encodeURIComponent(configuramaFilePath)}`;
+    console.log(`📥 Fetching ${configuramaFilePath} from Configurama...`);
 
     const fileContent = await fetchWithRetry(url, headers);
     const jsonData = JSON.parse(fileContent);
