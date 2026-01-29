@@ -773,13 +773,12 @@ describe("Dataworker: Load bundle data", async function () {
         erc20_1.address,
         amountToDeposit,
         erc20_2.address,
-        amountToDeposit,
+        amountToDeposit
       );
 
       await spokePoolClient_1.update();
       const deposits = spokePoolClient_1.getDeposits();
       expect(deposits.length).to.equal(1);
-
 
       // Mock the config store client to include the lite chain index.
       mockConfigStore.updateGlobalConfig(
