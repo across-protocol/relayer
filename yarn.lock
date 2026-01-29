@@ -2,6 +2,7 @@
 # yarn lockfile v1
 
 
+
 "@across-protocol/across-token@^1.0.0":
   version "1.0.0"
   resolved "https://registry.yarnpkg.com/@across-protocol/across-token/-/across-token-1.0.0.tgz#98add11d9051f8cde770f3b1e5fd975cdf3262cf"
