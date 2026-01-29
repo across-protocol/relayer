@@ -687,7 +687,7 @@ describe("Dataworker: Load bundle data", async function () {
         erc20_1.address,
         amountToDeposit,
         erc20_2.address,
-        amountToDeposit,
+        amountToDeposit
       );
 
       // Send a fill now and then drop the deposit from the origin SpokePoolClient.

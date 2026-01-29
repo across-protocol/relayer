@@ -341,7 +341,7 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
       erc20_1.address,
       amountToDeposit,
       erc20_2.address,
-      amountToDeposit,
+      amountToDeposit
     );
 
     // Construct a spoke pool client with a small search range that would not include the deposit.
