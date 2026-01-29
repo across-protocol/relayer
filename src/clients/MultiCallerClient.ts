@@ -487,7 +487,7 @@ export class MultiCallerClient {
   }
 
   // Filter out transactions that revert for non-critical, expected reasons. For example, the "relay filled" error may
-  // will occur frequently if there are multiple relayers running at the same time. Similarly, the "already claimed"
+  // occur frequently if there are multiple relayers running at the same time. Similarly, the "already claimed"
   // error will occur if there are overlapping dataworker executor runs.
   // @todo: Figure out a less hacky way to reduce these errors rather than ignoring them.
   // @todo: Consider logging key txn information with the failures?
