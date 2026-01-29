@@ -9,7 +9,6 @@ import { amountToDeposit, destinationChainId, originChainId, repaymentChainId } 
 import { DataworkerConfig, setupDataworker } from "./fixtures/Dataworker.Fixture";
 import {
   Contract,
-  EvmAddress,
   FakeContract,
   SignerWithAddress,
   V3FillFromDeposit,
@@ -26,7 +25,7 @@ import {
 } from "./utils";
 
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
-import { getCurrentTime, toBNWei, ZERO_ADDRESS, bnZero, toAddressType, toBytes32 } from "../src/utils";
+import { EvmAddress, getCurrentTime, toBNWei, ZERO_ADDRESS, bnZero, toAddressType, toBytes32 } from "../src/utils";
 import { MockConfigStoreClient, MockHubPoolClient, MockSpokePoolClient } from "./mocks";
 import { interfaces, utils as sdkUtils, constants as sdkConstants, providers } from "@across-protocol/sdk";
 import { cloneDeep } from "lodash";
