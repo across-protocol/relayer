@@ -56,7 +56,7 @@ function getLocalFileName(botIdentifier: string): string {
 }
 
 async function run(): Promise<number> {
-  config(); // Load .env file
+  config();
 
   const {
     CONFIGURAMA_FOLDER_BASE_URL: configuramaBaseUrl,
