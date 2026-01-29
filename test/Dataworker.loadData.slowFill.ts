@@ -21,6 +21,7 @@ import {
   requestSlowFill,
   sinon,
   smock,
+  spyLogIncludes,
   deployMulticall3,
 } from "./utils";
 
@@ -330,6 +331,45 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
     );
   });
 
+  it("Validates slow fill request against old bundle deposit if deposit is not in-memory", async function () {
+    // For this test, we need to actually send a deposit on the spoke pool
+    // because queryHistoricalDepositForFill eth_call's the contract.
+    const deposit = await depositV3(
+      spokePool_1,
+      destinationChainId,
+      depositor,
+      erc20_1.address,
+      amountToDeposit,
+      erc20_2.address,
+      amountToDeposit,
+    );
+
+    // Construct a spoke pool client with a small search range that would not include the deposit.
+    await spokePoolClient_1.update();
+
+    // Send a slow fill request now and force the bundle data client to query for the historical deposit.
+    await requestSlowFill(spokePool_2, relayer, deposit);
+    await updateAllClients();
+    const requests = spokePoolClient_2.getSlowFillRequestsForOriginChain(originChainId);
+    expect(requests.length).to.equal(1);
+
+    // Manually remove the deposit from the client's cache to force historical query
+    const depositKey = sdkUtils.getRelayEventKey(deposit);
+    delete (spokePoolClient_1 as any).depositHashes[depositKey];
+
+    const deposits = spokePoolClient_1.getDeposits();
+    expect(deposits.length).to.equal(0);
+
+    const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), {
+      ...spokePoolClients,
+      [originChainId]: spokePoolClient_1,
+      [destinationChainId]: spokePoolClient_2,
+    });
+    expect(spyLogIncludes(spy, -4, "Located deposit outside of SpokePoolClient's search range")).is.true;
+    expect(data1.bundleSlowFillsV3[destinationChainId][toBytes32(erc20_2.address)].length).to.equal(1);
+    expect(data1.bundleDepositsV3).to.deep.equal({});
+  });
+
   it("Does not validate slow fill request against future bundle deposit if deposit is not in-memory", async function () {
     // For this test, we need to actually send a deposit on the spoke pool
     // because queryHistoricalDepositForFill eth_call's the contract.
@@ -477,6 +517,57 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
     expect(data1.bundleDepositsV3).to.deep.equal({});
   });
 
+  it("Searches for old deposit for slow fill request but deposit isn't eligible for slow fill", async function () {
+    // For this test, we need to actually send a deposit on the spoke pool
+    // because queryHistoricalDepositForFill eth_call's the contract.
+
+    // Send a legacy deposit. We'll set output token to a random token to invalidate the slow fill request (e.g.
+    // input and output are not "equivalent" tokens)
+    const invalidOutputToken = erc20_1;
+    const depositObject = await depositV3(
+      spokePool_1,
+      destinationChainId,
+      depositor,
+      erc20_1.address,
+      amountToDeposit,
+      invalidOutputToken.address,
+      amountToDeposit,
+      {
+        fillDeadline: INFINITE_FILL_DEADLINE.toNumber(),
+      }
+    );
+    const depositBlock = await spokePool_1.provider.getBlockNumber();
+
+    // Construct a spoke pool client with a small search range that would not include the deposit.
+    spokePoolClient_1.firstHeightToSearch = depositBlock + 1;
+    spokePoolClient_1.eventSearchConfig.from = spokePoolClient_1.firstHeightToSearch;
+    await spokePoolClient_1.update();
+    const deposits = spokePoolClient_1.getDeposits();
+    expect(deposits.length).to.equal(0);
+
+    // Send a slow fill request now and force the bundle data client to query for the historical deposit.
+    await requestSlowFill(spokePool_2, relayer, depositObject);
+    await updateAllClients();
+    const requests = spokePoolClient_2.getSlowFillRequestsForOriginChain(originChainId);
+    expect(requests.length).to.equal(1);
+
+    const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), {
+      ...spokePoolClients,
+      [originChainId]: spokePoolClient_1,
+      [destinationChainId]: spokePoolClient_2,
+    });
+    // Here we can see that the historical query for the deposit actually succeeds, but the deposit itself
+    // was not one eligible to be slow filled.
+    expect(
+      spy
+        .getCalls()
+        .find((e) => e.lastArg.message.includes("Located deposit outside of SpokePoolClient's search range"))
+    ).to.not.be.undefined;
+
+    expect(data1.bundleSlowFillsV3).to.deep.equal({});
+    expect(data1.bundleDepositsV3).to.deep.equal({});
+  });
+
   it("Slow fill request for deposit that isn't eligible for slow fill", async function () {
     const invalidOutputToken = erc20_1;
     const depositObject = await depositV3(
@@ -585,6 +676,102 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
 
     expect(data1.bundleSlowFillsV3).to.deep.equal({});
     expect(data1.bundleDepositsV3[originChainId][toBytes32(erc20_1.address)].length).to.equal(1);
+  });
+
+  it("Invalid slow fill request against old deposit with origin lite chain", async function () {
+    mockConfigStore.updateGlobalConfig(
+      GLOBAL_CONFIG_STORE_KEYS.LITE_CHAIN_ID_INDICES,
+      JSON.stringify([spokePoolClient_1.chainId])
+    );
+    await mockConfigStore.update();
+    (spokePoolClient_1 as any).configStoreClient = mockConfigStore;
+    (spokePoolClient_2 as any).configStoreClient = mockConfigStore;
+    // Send a legacy deposit.
+    const depositObject = await depositV3(
+      spokePool_1,
+      destinationChainId,
+      depositor,
+      erc20_1.address,
+      amountToDeposit,
+      erc20_2.address,
+      amountToDeposit,
+      {
+        fillDeadline: INFINITE_FILL_DEADLINE.toNumber(),
+      }
+    );
+    const depositBlock = await spokePool_1.provider.getBlockNumber();
+
+    // Construct a spoke pool client with a small search range that would not include the deposit.
+    spokePoolClient_1.firstHeightToSearch = depositBlock + 1;
+    spokePoolClient_1.eventSearchConfig.from = spokePoolClient_1.firstHeightToSearch;
+    await spokePoolClient_1.update();
+    expect(mockConfigStore.liteChainIndicesUpdates.length).to.equal(1);
+    expect(mockConfigStore.liteChainIndicesUpdates[0].timestamp).to.be.lt(depositObject.quoteTimestamp);
+    const deposits = spokePoolClient_1.getDeposits();
+    expect(deposits.length).to.equal(0);
+
+    // Send a slow fill request now and force the bundle data client to query for the historical deposit.
+    await requestSlowFill(spokePool_2, relayer, depositObject);
+    await updateAllClients();
+    const requests = spokePoolClient_2.getSlowFillRequestsForOriginChain(originChainId);
+    expect(requests.length).to.equal(1);
+
+    const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), {
+      ...spokePoolClients,
+      [originChainId]: spokePoolClient_1,
+      [destinationChainId]: spokePoolClient_2,
+    });
+    expect(spyLogIncludes(spy, -4, "Located deposit outside of SpokePoolClient's search range")).is.true;
+    expect(data1.bundleSlowFillsV3).to.deep.equal({});
+    expect(data1.bundleDepositsV3).to.deep.equal({});
+  });
+
+  it("Invalid slow fill request against old deposit with destination lite chain", async function () {
+    mockConfigStore.updateGlobalConfig(
+      GLOBAL_CONFIG_STORE_KEYS.LITE_CHAIN_ID_INDICES,
+      JSON.stringify([spokePoolClient_2.chainId])
+    );
+    await mockConfigStore.update();
+    (spokePoolClient_1 as any).configStoreClient = mockConfigStore;
+    (spokePoolClient_2 as any).configStoreClient = mockConfigStore;
+    // Send a legacy deposit.
+    const depositObject = await depositV3(
+      spokePool_1,
+      destinationChainId,
+      depositor,
+      erc20_1.address,
+      amountToDeposit,
+      erc20_2.address,
+      amountToDeposit,
+      {
+        fillDeadline: INFINITE_FILL_DEADLINE.toNumber(),
+      }
+    );
+    const depositBlock = await spokePool_1.provider.getBlockNumber();
+
+    // Construct a spoke pool client with a small search range that would not include the deposit.
+    spokePoolClient_1.firstHeightToSearch = depositBlock + 1;
+    spokePoolClient_1.eventSearchConfig.from = spokePoolClient_1.firstHeightToSearch;
+    await spokePoolClient_1.update();
+    expect(mockConfigStore.liteChainIndicesUpdates.length).to.equal(1);
+    expect(mockConfigStore.liteChainIndicesUpdates[0].timestamp).to.be.lt(depositObject.quoteTimestamp);
+    const deposits = spokePoolClient_1.getDeposits();
+    expect(deposits.length).to.equal(0);
+
+    // Send a slow fill request now and force the bundle data client to query for the historical deposit.
+    await requestSlowFill(spokePool_2, relayer, depositObject);
+    await updateAllClients();
+    const requests = spokePoolClient_2.getSlowFillRequestsForOriginChain(originChainId);
+    expect(requests.length).to.equal(1);
+
+    const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), {
+      ...spokePoolClients,
+      [originChainId]: spokePoolClient_1,
+      [destinationChainId]: spokePoolClient_2,
+    });
+    expect(spyLogIncludes(spy, -4, "Located deposit outside of SpokePoolClient's search range")).is.true;
+    expect(data1.bundleSlowFillsV3).to.deep.equal({});
+    expect(data1.bundleDepositsV3).to.deep.equal({});
   });
 
   it("Does not create slow fill for zero value deposit", async function () {

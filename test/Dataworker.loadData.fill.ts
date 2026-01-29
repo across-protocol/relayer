@@ -680,9 +680,7 @@ describe("Dataworker: Load bundle data", async function () {
     it("Validates fill against old deposit if deposit is not in-memory", async function () {
       // For this test, we need to actually send a deposit on the spoke pool
       // because queryHistoricalDepositForFill eth_call's the contract.
-
-      // Send a legacy deposit.
-      const depositObject = await depositV3(
+      const deposit = await depositV3(
         spokePool_1,
         destinationChainId,
         depositor,
@@ -690,23 +688,17 @@ describe("Dataworker: Load bundle data", async function () {
         amountToDeposit,
         erc20_2.address,
         amountToDeposit,
-        {
-          fillDeadline: INFINITE_FILL_DEADLINE.toNumber(),
-        }
       );
 
-      // Send a fill now and force the bundle data client to query for the historical deposit.
-      await fillV3Relay(spokePool_2, depositObject, relayer, repaymentChainId);
+      // Send a fill now and then drop the deposit from the origin SpokePoolClient.
+      await fillV3Relay(spokePool_2, deposit, relayer, repaymentChainId);
       await updateAllClients();
 
       const fills = spokePoolClient_2.getFills();
       expect(fills.length).to.equal(1);
 
       // Manually remove the deposit from the client's cache to force historical query
-      const depositKey = sdkUtils.getRelayEventKey({
-        ...depositObject,
-        destinationChainId: depositObject.destinationChainId,
-      });
+      const depositKey = sdkUtils.getRelayEventKey(deposit);
       delete (spokePoolClient_1 as any).depositHashes[depositKey];
 
       const deposits = spokePoolClient_1.getDeposits();
