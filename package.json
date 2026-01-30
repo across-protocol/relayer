@@ -79,6 +79,7 @@
     "run-hlExecutor": "node ./dist/index.js --hlExecutor",
     "run-hlFinalizer": "node ./dist/index.js --hlFinalizer",
     "run-inventoryManager": "node ./dist/index.js --inventoryManager",
+    "run-gaslessRelayer": "node ./dist/index.js --gaslessRelayer",
     "relay": "node ./dist/index.js --relayer",
     "refill-usdc": "node ./dist/scripts/refillUsdcToSpecificChain.js",
     "deposit": "yarn node ./dist/scripts/spokepool.js deposit",
