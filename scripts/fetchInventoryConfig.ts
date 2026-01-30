@@ -72,7 +72,7 @@ async function run(): Promise<number> {
 
   const localFile = getLocalFileName(botIdentifier);
 
-  // Helper to handle errors - fall back to local file if it exists
+  // Helper to handle errors - fall back to local file if it exists.
   const handleError = (message: string): number => {
     if (existsSync(localFile)) {
       console.log(`⚠️  ${message}`);
