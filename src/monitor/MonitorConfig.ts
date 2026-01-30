@@ -188,16 +188,17 @@ export class MonitorConfig extends CommonConfig {
       this.monitoredBalances = [];
       const config = JSON.parse(MONITORED_BALANCES_2);
       Object.entries(config).forEach(([account, chainConfig]) => {
-        Object.entries(chainConfig).forEach(([_chainId, tokenConfig]) => {
+        Object.entries(chainConfig).forEach(([_chainId, tokenConfigs]) => {
           const chainId = Number(_chainId);
-          const { warnThreshold, errorThreshold, token } = tokenConfig;
-          validate(chainId, account, warnThreshold, errorThreshold);
-          this.monitoredBalances.push({
-            chainId,
-            account: toAddressType(account, chainId),
-            warnThreshold,
-            errorThreshold,
-            token: isDefined(token) ? toAddressType(token, chainId) : getNativeTokenAddressForChain(chainId),
+          tokenConfigs.forEach(({ token, warnThreshold, errorThreshold }) => {
+            validate(chainId, account, warnThreshold, errorThreshold);
+            this.monitoredBalances.push({
+              chainId,
+              account: toAddressType(account, chainId),
+              warnThreshold,
+              errorThreshold,
+              token: isDefined(token) ? toAddressType(token, chainId) : getNativeTokenAddressForChain(chainId),
+            });
           });
         });
       });
