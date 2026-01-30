@@ -1,5 +1,5 @@
 import axios, { AxiosError } from "axios";
-import { BigNumber, EvmAddress, winston } from "../utils";
+import { BigNumber, EvmAddress, winston, isDefined } from "../utils";
 import { SWAP_ROUTES, SwapRoute } from "../common";
 
 interface SwapApiResponse {
