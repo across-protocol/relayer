@@ -15,18 +15,14 @@ import {
   getContractInfoFromAddress,
   getNetworkName,
   Signer,
+  SolanaTransaction,
   toBNWei,
   winston,
   CHAIN_IDs,
   SVMProvider,
   parseUnits,
 } from "../utils";
-import {
-  CompilableTransactionMessage,
-  getBase64EncodedWireTransaction,
-  signTransactionMessageWithSigners,
-  type MicroLamports,
-} from "@solana/kit";
+import { getBase64EncodedWireTransaction, signTransactionMessageWithSigners, type MicroLamports } from "@solana/kit";
 import { updateOrAppendSetComputeUnitPriceInstruction } from "@solana-program/compute-budget";
 
 dotenv.config();
@@ -39,8 +35,6 @@ export const LEGACY_TRANSACTION_CHAINS = [CHAIN_IDs.BSC];
 const MIN_GAS_RETRY_SCALER_DEFAULT = 1.1;
 const MAX_GAS_RETRY_SCALER_DEFAULT = 3;
 const TRANSACTION_SUBMISSION_RETRIES_DEFAULT = 3;
-
-export type SolanaTransaction = CompilableTransactionMessage;
 
 export type TransactionSimulationResult = {
   transaction: AugmentedTransaction;
@@ -268,10 +262,7 @@ export async function sendAndConfirmSolanaTransaction(
   return txSignature;
 }
 
-export async function simulateSolanaTransaction(
-  unsignedTransaction: CompilableTransactionMessage,
-  provider: SVMProvider
-) {
+export async function simulateSolanaTransaction(unsignedTransaction: SolanaTransaction, provider: SVMProvider) {
   const signedTx = await signTransactionMessageWithSigners(unsignedTransaction);
   const serializedTx = getBase64EncodedWireTransaction(signedTx);
   return provider.simulateTransaction(serializedTx, { sigVerify: false, encoding: "base64" }).send();
