@@ -1,5 +1,5 @@
 import axios, { AxiosError } from "axios";
-import { BigNumber, EvmAddress, winston } from "../utils";
+import { BigNumber, EvmAddress, winston, isDefined } from "../utils";
 import { SWAP_ROUTES, SwapRoute } from "../common";
 
 interface SwapApiResponse {
@@ -96,6 +96,13 @@ export class AcrossSwapApiClient {
     return swapData;
   }
 
+  /*
+   *
+   */
+  public async get<T>(urlEndpoint: string, params: Record<string, unknown>): Promise<T | undefined> {
+    return this._get<T>(urlEndpoint, params);
+  }
+
   private async getQuote(
     route: SwapRoute,
     amountOut: BigNumber,
@@ -118,9 +125,14 @@ export class AcrossSwapApiClient {
       depositor: swapper.toNative(),
       recipient: recipient.toNative(),
     };
+    const responseData = this._get<SwapApiResponse>("/swap/approval", params);
 
+    return isDefined(responseData) ? responseData : undefined;
+  }
+
+  private async _get<T>(endpoint: string, params: Record<string, unknown>): Promise<T | undefined> {
     try {
-      const response = await axios.get<SwapApiResponse>(`${this.urlBase}`, {
+      const response = await axios.get<T>(`${this.urlBase}/${endpoint}`, {
         timeout: this.apiResponseTimeout,
         params,
       });
@@ -129,18 +141,17 @@ export class AcrossSwapApiClient {
         this.logger.warn({
           at: "AcrossAPIClient",
           message: `Invalid response from ${this.urlBase}`,
-          url: this.urlBase,
+          endpoint,
           params,
         });
         return;
       }
-
       return response.data;
     } catch (err) {
       this.logger.warn({
         at: "AcrossSwapApiClient",
         message: `Failed to post to ${this.urlBase}`,
-        url: this.urlBase,
+        endpoint,
         params,
         error: (err as AxiosError).message,
       });

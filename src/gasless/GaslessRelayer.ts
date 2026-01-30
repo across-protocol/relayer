@@ -1,6 +1,7 @@
 import winston from "winston";
 import { GaslessRelayerConfig } from "./GaslessRelayerConfig";
-import { isDefined, getRedisCache, delay, Signer } from "../utils";
+import { isDefined, getRedisCache, delay, Signer, scheduleTask, forEachAsync } from "../utils";
+import { AcrossSwapApiClient } from "../clients";
 
 const abortController = new AbortController();
 
@@ -9,12 +10,16 @@ const abortController = new AbortController();
  */
 export class GaslessRelayer {
   private initialized = false;
+  private observedSignatures = new Set<string>();
+  private api: AcrossSwapApiClient;
 
   public constructor(
     readonly logger: winston.Logger,
     readonly config: GaslessRelayerConfig,
     readonly baseSigner: Signer
-  ) {}
+  ) {
+    this.api = new AcrossSwapApiClient(this.logger);
+  }
 
   /*
    * @notice Initializes a GaslessRelayer instance.
@@ -36,6 +41,13 @@ export class GaslessRelayer {
       abortController.abort();
     });
     this.initialized = true;
+  }
+
+  /*
+   * @notice Polls the Across gasless API and starts background deposit/fill tasks.
+   */
+  public pollAndExecute(): void {
+    scheduleTask(() => this.evaluateApiSignatures(), this.config.apiPollingInterval, abortController.signal);
   }
 
   /*
@@ -72,5 +84,22 @@ export class GaslessRelayer {
       // If we finish looping without receiving a handover signal, still exit so that we won't await the other promise forever.
       abortController.abort();
     }
+  }
+
+  private async evaluateApiSignatures(): Promise<void> {
+    const apiSignatures = await this.api.get<string[]>(this.config.apiEndpoint, {}); // Query the API.
+    await forEachAsync(
+      apiSignatures.filter((signature) => !this.observedSignatures.has(signature)),
+      async (signature) => {
+        // Mark the signature as observed.
+        this.observedSignatures.add(signature);
+
+        // Initiate the deposit.
+
+        // Take the logs from the transaction receipt.
+
+        // Fill the deposit.
+      }
+    );
   }
 }
