@@ -1,5 +1,5 @@
 import axios, { AxiosError } from "axios";
-import { BigNumber, EvmAddress, winston, isDefined } from "../utils";
+import { BigNumber, EvmAddress, winston } from "../utils";
 import { SWAP_ROUTES, SwapRoute } from "../common";
 
 interface SwapApiResponse {
@@ -33,7 +33,7 @@ interface SwapData {
  */
 export class AcrossSwapApiClient {
   private routesSupported: Set<SwapRoute> = new Set(Object.values(SWAP_ROUTES));
-  private readonly urlBase = "https://app.across.to/api/swap/approval";
+  private readonly urlBase = "https://app.across.to/api";
   private readonly apiResponseTimeout = 3000;
 
   constructor(readonly logger: winston.Logger) {}
@@ -125,9 +125,7 @@ export class AcrossSwapApiClient {
       depositor: swapper.toNative(),
       recipient: recipient.toNative(),
     };
-    const responseData = this._get<SwapApiResponse>("/swap/approval", params);
-
-    return isDefined(responseData) ? responseData : undefined;
+    return this._get<SwapApiResponse>("/swap/approval", params);
   }
 
   private async _get<T>(endpoint: string, params: Record<string, unknown>): Promise<T | undefined> {
