@@ -34,6 +34,8 @@ import { getDepositWithAuthorizationArgs } from "../utils/GaslessUtils";
 export class GaslessRelayer {
   private abortController = new AbortController();
   private initialized = false;
+  private observedSignatures = new Set<string>();
+  private api: AcrossSwapApiClient;
 
   private providersByChain: { [chainId: number]: Provider } = {};
   // The object is indexed by `chainId`. An `AuthorizationUsed` event is marked by adding `${token}:${authorizer}:${nonce}` to the respective chain's set.
