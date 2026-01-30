@@ -26,7 +26,7 @@ import {
 } from "./utils";
 
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
-import { getCurrentTime, toBNWei, ZERO_ADDRESS, bnZero, toAddressType, toBytes32 } from "../src/utils";
+import { EvmAddress, getCurrentTime, toBNWei, ZERO_ADDRESS, bnZero, toAddressType, toBytes32 } from "../src/utils";
 import { MockConfigStoreClient, MockHubPoolClient, MockSpokePoolClient } from "./mocks";
 import { interfaces, utils as sdkUtils, constants as sdkConstants, providers } from "@across-protocol/sdk";
 import { cloneDeep } from "lodash";
@@ -58,7 +58,7 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
     return mockOriginSpokePoolClient.deposit({
       inputToken: toAddressType(erc20_1.address, originChainId),
       inputAmount: eventOverride?.inputAmount ?? undefined,
-      outputToken: toAddressType(eventOverride?.outputToken ?? erc20_2.address, destinationChainId),
+      outputToken: eventOverride?.outputToken ?? EvmAddress.from(erc20_2.address),
       message: eventOverride?.message ?? "0x",
       quoteTimestamp: eventOverride?.quoteTimestamp ?? getCurrentTime() - 10,
       fillDeadline: eventOverride?.fillDeadline ?? getCurrentTime() + 14400,
@@ -88,10 +88,7 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
       exclusiveRelayer: deposit.exclusiveRelayer,
       relayer: toAddressType(_relayer, destinationChainId),
       relayExecutionInfo: {
-        updatedRecipient: toAddressType(
-          fillObject.relayExecutionInfo.updatedRecipient ?? deposit.recipient.toEvmAddress(),
-          destinationChainId
-        ),
+        updatedRecipient: fillObject.relayExecutionInfo.updatedRecipient ?? deposit.recipient,
         updatedMessageHash: sdkUtils.getMessageHash(fillObject.relayExecutionInfo.updatedMessage ?? message),
         updatedOutputAmount: fillObject.relayExecutionInfo.updatedOutputAmount,
         fillType,
@@ -210,8 +207,8 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
 
   it("Saves valid slow fill requests under destination chain and token", async function () {
     // Only one deposit is eligible to be slow filled because its input and output tokens are equivalent.
-    generateV3Deposit({ outputToken: randomAddress() });
-    const eligibleToSlowFill = generateV3Deposit({ outputToken: erc20_2.address });
+    generateV3Deposit({ outputToken: EvmAddress.from(randomAddress()) });
+    const eligibleToSlowFill = generateV3Deposit({ outputToken: EvmAddress.from(erc20_2.address) });
     await mockOriginSpokePoolClient.update(["FundsDeposited"]);
     const deposits = mockOriginSpokePoolClient.getDeposits();
 
@@ -227,17 +224,17 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
   });
 
   it("Allows slow fills for deposits where originChain == destinationChain", async function () {
-    generateV3Deposit({ outputToken: erc20_1.address, destinationChainId: originChainId });
+    generateV3Deposit({ outputToken: EvmAddress.from(erc20_1.address), destinationChainId: originChainId });
     await mockOriginSpokePoolClient.update(["FundsDeposited"]);
     const deposits = mockOriginSpokePoolClient.getDeposits();
 
     const fillObject = V3FillFromDeposit(deposits[0], ZERO_ADDRESS);
     const { relayer, repaymentChainId, relayExecutionInfo, ...relayData } = fillObject;
-    await mockOriginSpokePoolClient.requestSlowFill({
+    mockOriginSpokePoolClient.requestSlowFill({
       ...relayData,
       blockNumber: spokePoolClient_1.latestHeightSearched, // @dev use latest block searched from non-mocked client
       // so that mocked client's latestHeightSearched gets set to the same value.
-    } as interfaces.SlowFillRequestWithBlock);
+    });
     await mockOriginSpokePoolClient.update(["RequestedSlowFill"]);
     expect(mockOriginSpokePoolClient.getSlowFillRequestsForOriginChain(originChainId).length).to.equal(1);
     const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), spokePoolClients);
@@ -246,8 +243,8 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
 
   it("Ignores disabled chains for slow fill requests", async function () {
     // Only one deposit is eligible to be slow filled because its input and output tokens are equivalent.
-    generateV3Deposit({ outputToken: randomAddress() });
-    generateV3Deposit({ outputToken: erc20_2.address });
+    generateV3Deposit({ outputToken: EvmAddress.from(randomAddress()) });
+    generateV3Deposit({ outputToken: EvmAddress.from(erc20_2.address) });
     await mockOriginSpokePoolClient.update(["FundsDeposited"]);
     const deposits = mockOriginSpokePoolClient.getDeposits();
 
@@ -266,8 +263,8 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
   });
 
   it("Slow fill requests cannot coincide with fill in same bundle", async function () {
-    generateV3Deposit({ outputToken: erc20_2.address });
-    generateV3Deposit({ outputToken: erc20_2.address });
+    generateV3Deposit({ outputToken: EvmAddress.from(erc20_2.address) });
+    generateV3Deposit({ outputToken: EvmAddress.from(erc20_2.address) });
     await mockOriginSpokePoolClient.update(["FundsDeposited"]);
     const deposits = mockOriginSpokePoolClient.getDeposits();
 
@@ -290,15 +287,15 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
 
   it("Handles slow fill requests out of block range", async function () {
     generateV3Deposit({
-      outputToken: erc20_2.address,
+      outputToken: EvmAddress.from(erc20_2.address),
       blockNumber: mockOriginSpokePoolClient.eventManager.blockNumber + 1,
     });
     generateV3Deposit({
-      outputToken: erc20_2.address,
+      outputToken: EvmAddress.from(erc20_2.address),
       blockNumber: mockOriginSpokePoolClient.eventManager.blockNumber + 11,
     });
     generateV3Deposit({
-      outputToken: erc20_2.address,
+      outputToken: EvmAddress.from(erc20_2.address),
       blockNumber: mockOriginSpokePoolClient.eventManager.blockNumber + 21,
     });
     await mockOriginSpokePoolClient.update(["FundsDeposited"]);
@@ -337,34 +334,31 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
   it("Validates slow fill request against old bundle deposit if deposit is not in-memory", async function () {
     // For this test, we need to actually send a deposit on the spoke pool
     // because queryHistoricalDepositForFill eth_call's the contract.
-
-    // Send a legacy deposit.
-    const depositObject = await depositV3(
+    const deposit = await depositV3(
       spokePool_1,
       destinationChainId,
       depositor,
       erc20_1.address,
       amountToDeposit,
       erc20_2.address,
-      amountToDeposit,
-      {
-        fillDeadline: INFINITE_FILL_DEADLINE.toNumber(),
-      }
+      amountToDeposit
     );
-    const depositBlock = await spokePool_1.provider.getBlockNumber();
 
     // Construct a spoke pool client with a small search range that would not include the deposit.
-    spokePoolClient_1.firstHeightToSearch = depositBlock + 1;
-    spokePoolClient_1.eventSearchConfig.from = spokePoolClient_1.firstHeightToSearch;
     await spokePoolClient_1.update();
-    const deposits = spokePoolClient_1.getDeposits();
-    expect(deposits.length).to.equal(0);
 
     // Send a slow fill request now and force the bundle data client to query for the historical deposit.
-    await requestSlowFill(spokePool_2, relayer, depositObject);
+    await requestSlowFill(spokePool_2, relayer, deposit);
     await updateAllClients();
     const requests = spokePoolClient_2.getSlowFillRequestsForOriginChain(originChainId);
     expect(requests.length).to.equal(1);
+
+    // Manually remove the deposit from the client's cache to force historical query
+    const depositKey = sdkUtils.getRelayEventKey(deposit);
+    delete (spokePoolClient_1 as any).depositHashes[depositKey];
+
+    const deposits = spokePoolClient_1.getDeposits();
+    expect(deposits.length).to.equal(0);
 
     const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), {
       ...spokePoolClients,
@@ -804,7 +798,7 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
   });
 
   it("Does not create a slow fill leaf if fast fill follows slow fill request but repayment information is invalid", async function () {
-    generateV3Deposit({ outputToken: erc20_2.address });
+    generateV3Deposit({ outputToken: EvmAddress.from(erc20_2.address) });
     await mockOriginSpokePoolClient.update(["FundsDeposited"]);
     const deposits = mockOriginSpokePoolClient.getDeposits();
 
