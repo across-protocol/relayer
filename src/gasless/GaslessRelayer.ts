@@ -34,7 +34,11 @@ import { getDepositWithAuthorizationArgs } from "../utils/GaslessUtils";
 export class GaslessRelayer {
   private abortController = new AbortController();
   private initialized = false;
-  private observedSignatures = new Set<string>();
+
+  private providersByChain: { [chainId: number]: Provider } = {};
+  private observedNonces: { [chainId: number]: Set<string> } = {}; // Indexed by `${authorizer}:${nonce}`
+  private observedFills: { [chainId: number]: Set<string> } = {}; // Indexed by relayDataHash
+
   private api: AcrossSwapApiClient;
 
   private providersByChain: { [chainId: number]: Provider } = {};
