@@ -52,7 +52,7 @@ async function getIdTokenHeaders(audience: string): Promise<Record<string, strin
 }
 
 function getLocalFileName(botIdentifier: string, inventoryConfigFilename?: string): string {
-  // If the inventory config filename is set, use it. Otherwise, construct the default filename from the bot identifier.
+  // If the inventory config filename is set, use it. Otherwise, construct the default filename from the bot identifier
   return inventoryConfigFilename ? inventoryConfigFilename : `inventory-${botIdentifier}.json`;
 }
 
