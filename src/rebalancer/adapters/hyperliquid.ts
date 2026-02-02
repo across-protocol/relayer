@@ -25,6 +25,12 @@ import {
   truncate,
   getCurrentTime,
   getTokenInfoFromSymbol,
+  getUserNonFundingLedgerUpdates,
+  getOpenOrders,
+  getSpotClearinghouseState,
+  getUserFees,
+  getL2Book,
+  getUserFillsByTime,
 } from "../../utils";
 import { RebalanceRoute } from "../rebalancer";
 import * as hl from "@nktkas/hyperliquid";
@@ -305,7 +311,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         pendingSwaps,
       });
       const infoClient = new hl.InfoClient({ transport: new hl.HttpTransport() });
-      openOrders = await infoClient.openOrders({ user: this.baseSignerAddress.toNative() });
+      openOrders = await getOpenOrders(infoClient, { user: this.baseSignerAddress.toNative() });
       if (openOrders.length > 0) {
         this.logger.debug({
           at: "HyperliquidStablecoinSwapAdapter.updateRebalanceStatuses",
@@ -700,7 +706,9 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
 
   private async _getAvailableBalanceForToken(token: string): Promise<BigNumber> {
     const infoClient = new hl.InfoClient({ transport: new hl.HttpTransport() });
-    const spotClearingHouseState = await infoClient.spotClearinghouseState({ user: this.baseSignerAddress.toNative() });
+    const spotClearingHouseState = await getSpotClearinghouseState(infoClient, {
+      user: this.baseSignerAddress.toNative(),
+    });
 
     const balanceToken = spotClearingHouseState.balances.find(
       (balance) => balance.coin === this._remapTokenSymbolToHlSymbol(token)
@@ -727,7 +735,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       }
     }
     const infoClient = new hl.InfoClient({ transport: new hl.HttpTransport() });
-    const userFees = await infoClient.userFees({ user: this.baseSignerAddress.toNative() });
+    const userFees = await getUserFees(infoClient, { user: this.baseSignerAddress.toNative() });
     const takerBaseFee = Number(userFees.userSpotCrossRate);
     const takerFee = takerBaseFee * 0.2; // for stable pairs, fee is 20% of the taker base fee
     const takerFeePct = toBNWei(takerFee.toFixed(18), 18).mul(100);
@@ -775,7 +783,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
   ): Promise<{ px: string; slippagePct: number }> {
     const infoClient = new hl.InfoClient({ transport: new hl.HttpTransport() });
     const spotMarketMeta = this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
-    const l2Book = await infoClient.l2Book({ coin: spotMarketMeta.name });
+    const l2Book = await getL2Book(infoClient, { coin: spotMarketMeta.name });
     const bids = l2Book.levels[0];
     const asks = l2Book.levels[1];
 
@@ -831,7 +839,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     // Any fill that we are searching for in this client shouldn't be more than 24 hours old:
     const lookbackPeriodSeconds = 24 * 60 * 60;
     const fromTimestampSeconds = getCurrentTime() - lookbackPeriodSeconds;
-    const userFills = await infoClient.userFillsByTime({
+    const userFills = await getUserFillsByTime(infoClient, {
       user: this.baseSignerAddress.toNative(),
       startTime: fromTimestampSeconds * 1000, // @dev Time here is in milliseconds.
     });
@@ -1121,7 +1129,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     const tokenMeta = this._getTokenMeta(destinationToken);
     const infoClient = new hl.InfoClient({ transport: new hl.HttpTransport() });
     const initiatedWithdrawals = (
-      await infoClient.userNonFundingLedgerUpdates({
+      await getUserNonFundingLedgerUpdates(infoClient, {
         user: this.baseSignerAddress.toNative(),
         startTime: withdrawalInitiatedEarliestTimestampMilliseconds,
       })
