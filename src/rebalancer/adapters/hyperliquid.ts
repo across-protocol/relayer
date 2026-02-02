@@ -452,18 +452,13 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     // Bridge to HyperEVM Fee:
     let bridgeToHyperEvmFee = bnZero;
     if (rebalanceRoute.sourceChain !== HYPEREVM) {
-      bridgeToHyperEvmFee = await this._getBridgeFeePct(sourceChain, HYPEREVM, sourceToken, amountToTransfer);
+      bridgeToHyperEvmFee = await this._getBridgeFee(sourceChain, HYPEREVM, sourceToken, amountToTransfer);
     }
 
     // Bridge from HyperEVMFee:
     let bridgeFromHyperEvmFee = bnZero;
     if (rebalanceRoute.destinationChain !== HYPEREVM) {
-      bridgeFromHyperEvmFee = await this._getBridgeFeePct(
-        HYPEREVM,
-        destinationChain,
-        destinationToken,
-        amountToTransfer
-      );
+      bridgeFromHyperEvmFee = await this._getBridgeFee(HYPEREVM, destinationChain, destinationToken, amountToTransfer);
     }
 
     // The only time we add an opportunity cost of capital component is when we require rebalancing via OFT from HyperEVM

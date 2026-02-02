@@ -695,19 +695,14 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     let bridgeToBinanceFee = bnZero;
     const binanceDepositNetwork = await this._getEntrypointNetwork(sourceChain, sourceToken);
     if (binanceDepositNetwork !== sourceChain) {
-      bridgeToBinanceFee = await this._getBridgeFeePct(
-        sourceChain,
-        binanceDepositNetwork,
-        sourceToken,
-        amountToTransfer
-      );
+      bridgeToBinanceFee = await this._getBridgeFee(sourceChain, binanceDepositNetwork, sourceToken, amountToTransfer);
     }
 
     // Bridge from Binance withdrawal network fee:
     let bridgeFromBinanceFee = bnZero;
     const binanceWithdrawNetwork = await this._getEntrypointNetwork(destinationChain, destinationToken);
     if (binanceWithdrawNetwork !== destinationChain) {
-      bridgeFromBinanceFee = await this._getBridgeFeePct(
+      bridgeFromBinanceFee = await this._getBridgeFee(
         destinationChain,
         binanceWithdrawNetwork,
         destinationToken,

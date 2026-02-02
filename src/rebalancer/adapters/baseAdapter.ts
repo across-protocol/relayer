@@ -532,7 +532,7 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     return { from: fromBlock, to: toBlock.number, maxLookBack };
   }
 
-  protected async _getBridgeFeePct(
+  protected async _getBridgeFee(
     originChain: number,
     destinationChain: number,
     token: string,
