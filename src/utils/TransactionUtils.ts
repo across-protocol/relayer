@@ -1,7 +1,7 @@
 import { gasPriceOracle, providers as sdkProviders, typeguards, utils as sdkUtils } from "@across-protocol/sdk";
 import { FeeData } from "@ethersproject/abstract-provider";
 import dotenv from "dotenv";
-import { AugmentedTransaction } from "../clients";
+import { AugmentedTransaction, TransactionClient } from "../clients";
 import { DEFAULT_GAS_FEE_SCALERS } from "../common";
 import {
   BigNumber,
@@ -409,4 +409,28 @@ function scaleGasPrice(
     maxFeePerGas,
     maxPriorityFeePerGas,
   };
+}
+
+export async function submitTransaction(
+  transaction: AugmentedTransaction,
+  transactionClient: TransactionClient
+): Promise<TransactionResponse> {
+  const { reason, succeed, transaction: txnRequest } = (await transactionClient.simulate([transaction]))[0];
+  const { contract: targetContract, method, ...txnRequestData } = txnRequest;
+  if (!succeed) {
+    const message = `Failed to simulate ${targetContract.address}.${method}(${txnRequestData.args.join(", ")}) on ${
+      txnRequest.chainId
+    }`;
+    throw new Error(`${message} (${reason})`);
+  }
+
+  const response = await transactionClient.submit(transaction.chainId, [transaction]);
+  if (response.length === 0) {
+    throw new Error(
+      `Transaction succeeded simulation but failed to submit onchain to ${
+        targetContract.address
+      }.${method}(${txnRequestData.args.join(", ")}) on ${txnRequest.chainId}`
+    );
+  }
+  return response[0];
 }

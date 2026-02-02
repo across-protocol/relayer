@@ -52,6 +52,7 @@ import {
   roundAmountToSend,
   SendParamStruct,
   Signer,
+  submitTransaction,
   toBN,
   toBNWei,
   TOKEN_SYMBOLS_MAP,
@@ -699,23 +700,6 @@ export abstract class BaseAdapter implements RebalancerAdapter {
   // exit the core clients. In the Rebalancer use case we need to confirm transactions, but I've had trouble getting .wait()
   // to work, due to what seems like on-chain timeouts while waiting for txns to confirm.
   protected async _submitTransaction(transaction: AugmentedTransaction): Promise<string> {
-    const { reason, succeed, transaction: txnRequest } = (await this.transactionClient.simulate([transaction]))[0];
-    const { contract: targetContract, method, ...txnRequestData } = txnRequest;
-    if (!succeed) {
-      const message = `Failed to simulate ${targetContract.address}.${method}(${txnRequestData.args.join(", ")}) on ${
-        txnRequest.chainId
-      }`;
-      throw new Error(`${message} (${reason})`);
-    }
-
-    const response = await this.transactionClient.submit(transaction.chainId, [transaction]);
-    if (response.length === 0) {
-      throw new Error(
-        `Transaction succeeded simulation but failed to submit onchain to ${
-          targetContract.address
-        }.${method}(${txnRequestData.args.join(", ")}) on ${txnRequest.chainId}`
-      );
-    }
-    return response[0].hash;
+    return (await submitTransaction(transaction, this.transactionClient)).hash;
   }
 }
