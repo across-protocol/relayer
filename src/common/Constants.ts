@@ -5,6 +5,7 @@ import {
   chainIsOPStack,
   chainIsOrbit,
   chainIsProd,
+  chainIsSvm,
   CHAIN_IDs,
   TOKEN_SYMBOLS_MAP,
   Signer,
@@ -101,6 +102,7 @@ export const UNIVERSAL_CHAINS = [CHAIN_IDs.BSC, CHAIN_IDs.HYPEREVM, CHAIN_IDs.PL
 // anything under 7 days. OP stack chains are auto-populated based on chain family.
 const OP_STACK_MIN_DEPOSIT_CONFIRMATIONS = 1;
 const ORBIT_MIN_DEPOSIT_CONFIRMATIONS = 1;
+const SVM_MIN_DEPOSIT_CONFIRMATIONS = 4;
 const MDC_DEFAULT_THRESHOLD = 1000;
 
 export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chainId: number]: number } } = {
@@ -141,6 +143,8 @@ Object.values(CHAIN_IDs)
       MIN_DEPOSIT_CONFIRMATIONS[MDC_DEFAULT_THRESHOLD][chainId] ??= OP_STACK_MIN_DEPOSIT_CONFIRMATIONS;
     } else if (chainIsOrbit(chainId) || chainId === CHAIN_IDs.ARBITRUM) {
       MIN_DEPOSIT_CONFIRMATIONS[MDC_DEFAULT_THRESHOLD][chainId] ??= ORBIT_MIN_DEPOSIT_CONFIRMATIONS;
+    } else if (chainIsSvm(chainId)) {
+      MIN_DEPOSIT_CONFIRMATIONS[MDC_DEFAULT_THRESHOLD][chainId] ??= SVM_MIN_DEPOSIT_CONFIRMATIONS;
     }
   });
 
@@ -154,7 +158,6 @@ const resolveRpcConfig = () => {
     [CHAIN_IDs.ALEPH_ZERO]: 0,
     [CHAIN_IDs.BOBA]: 0,
     [CHAIN_IDs.HYPEREVM]: 1_000, // QuickNode constraint.
-    [CHAIN_IDs.MEGAETH]: 20_000,
     [CHAIN_IDs.MONAD]: 1_000, // Alchemy constraint
     [CHAIN_IDs.SOLANA]: 1_000,
     [CHAIN_IDs.SOLANA_DEVNET]: 1000,
@@ -184,7 +187,7 @@ const resolveChainBundleBuffers = () => {
     [CHAIN_IDs.HYPEREVM]: 120, // 60s/big block
     [CHAIN_IDs.LINEA]: 40, // ~3s/block
     [CHAIN_IDs.MAINNET]: 5, // ~12s/block
-    [CHAIN_IDs.MEGAETH]: 6000, // ~10ms/block @TODO: What is finality for MegaETH?
+    [CHAIN_IDs.MEGAETH]: 300, // ~1s/block This can vary, so we want to be conservative.
     [CHAIN_IDs.MONAD]: 150, // ~400ms/block, 2 block finality
     [CHAIN_IDs.PLASMA]: 180, // ~1s/block variable. Finality guarantees are less certain, be a bit more conservative.
     [CHAIN_IDs.POLYGON]: 128, // ~2s/block. Polygon has historically re-orged often.
@@ -236,7 +239,7 @@ const resolveChainCacheDelay = () => {
     [CHAIN_IDs.HYPEREVM]: 120, // big blocks are 60s/block
     [CHAIN_IDs.LINEA]: 100, // Linea has a soft-finality of 1 block. This value is padded - but at 3s/block the padding is 5 minutes
     [CHAIN_IDs.MAINNET]: 128,
-    [CHAIN_IDs.MEGAETH]: 6000, // ~10ms/block @TODO: What is finality for MegaETH?
+    [CHAIN_IDs.MEGAETH]: 300, // ~1s/block
     [CHAIN_IDs.MONAD]: 150,
     [CHAIN_IDs.PLASMA]: 300,
     [CHAIN_IDs.POLYGON]: 256,
@@ -268,7 +271,7 @@ export const DEFAULT_NO_TTL_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.LINEA]: 57600,
   [CHAIN_IDs.LISK]: 86400,
   [CHAIN_IDs.MAINNET]: 14400,
-  [CHAIN_IDs.MEGAETH]: 17280000, // 10ms/block
+  [CHAIN_IDs.MEGAETH]: 172800,
   [CHAIN_IDs.MODE]: 86400,
   [CHAIN_IDs.MONAD]: 432000,
   [CHAIN_IDs.OPTIMISM]: 86400,
@@ -330,7 +333,7 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.LENS]: ["WETH", "WGHO", "USDC"],
   [CHAIN_IDs.LINEA]: ["USDC", "USDT", "WETH", "WBTC", "DAI", "ezETH"],
   [CHAIN_IDs.LISK]: ["WETH", "USDC", "USDT", "LSK", "WBTC"],
-  [CHAIN_IDs.MEGAETH]: ["WETH"], // @TODO: Add "USDT" after it is fully deployed to MegaETH.
+  [CHAIN_IDs.MEGAETH]: ["WETH", "USDT"],
   [CHAIN_IDs.MODE]: ["ETH", "WETH", "USDC", "USDT", "WBTC", "ezETH"],
   [CHAIN_IDs.MONAD]: ["USDC", "USDT"], // @TODO: Add WBTC after its added to the chain token list
   [CHAIN_IDs.OPTIMISM]: [

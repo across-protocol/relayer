@@ -9,6 +9,7 @@ import {
   chainIsSvm,
   retrieveGckmsKeys,
   getGckmsConfig,
+  getSvmSignerFromPrivateKey,
 } from "../../utils";
 import { checkIfAlreadyProcessedEvm, processMintEvm, getEvmProvider } from "../utils/evmUtils";
 import { checkIfAlreadyProcessedSvm, processMintSvm, getSvmProvider } from "../utils/svmUtils";
@@ -50,7 +51,7 @@ export class CCTPService {
       } = message;
 
       this.evmPrivateKey = await this.getPrivateKey("evm");
-      this.svmPrivateKey = utils.bs58.decode(await this.getPrivateKey("svm"));
+      this.svmPrivateKey = getSvmSignerFromPrivateKey("0x" + this.evmPrivateKey).secretKey;
 
       const cctpMessage = cctpMessageUnion?.string;
       const cctpAttestation = cctpAttestationUnion?.string;

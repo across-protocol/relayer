@@ -18,6 +18,7 @@ import { version } from "./package.json";
 import { runRefiller } from "./src/refiller";
 import { runHyperliquidExecutor, runHyperliquidFinalizer } from "./src/hyperliquid";
 import { runRebalancer as runRebalancer2 } from "./src/rebalancer";
+import { runGaslessRelayer } from "./src/gasless";
 
 let logger: typeof Logger;
 let cmd: string;
@@ -35,6 +36,7 @@ const CMDS = {
   hlFinalizer: runHyperliquidFinalizer,
   inventoryManager: runInventoryManager,
   rebalancer2: runRebalancer2,
+  gaslessRelayer: runGaslessRelayer,
 };
 
 export async function run(args: { [k: string]: boolean | string }): Promise<void> {
