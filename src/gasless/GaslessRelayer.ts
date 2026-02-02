@@ -175,7 +175,6 @@ export class GaslessRelayer {
    */
   private async evaluateApiSignatures(): Promise<void> {
     const apiMessages = await this.api.get<GaslessDepositMessage[]>(this.config.apiEndpoint, {}); // Query the API.
-    console.log(apiMessages);
     await forEachAsync(
       // Filter if we do not recognize the chain ID.
       apiMessages.filter(({ chainId }) => isDefined(this.observedNonces[chainId])),
