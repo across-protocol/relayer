@@ -1,16 +1,40 @@
 import winston from "winston";
 import { GaslessRelayerConfig } from "./GaslessRelayerConfig";
-import { isDefined, getRedisCache, delay, Signer, scheduleTask, forEachAsync } from "../utils";
+import {
+  isDefined,
+  getRedisCache,
+  delay,
+  Signer,
+  scheduleTask,
+  forEachAsync,
+  Provider,
+  getSpokePool,
+  getProvider,
+  paginatedEventQuery,
+  getBlockForTimestamp,
+  EventSearchConfig,
+  Contract,
+  spreadEventWithBlockNumber,
+  unpackFillEvent,
+  mapAsync,
+  TOKEN_SYMBOLS_MAP,
+} from "../utils";
+import { CHAIN_MAX_BLOCK_LOOKBACK } from "../common";
+import { GaslessDepositMessage, FillWithBlock, AuthorizationUsed } from "../interfaces";
 import { AcrossSwapApiClient } from "../clients";
-
-const abortController = new AbortController();
+import EIP3009_ABI from "../common/abi/EIP3009.json";
 
 /**
  * Independent relayer bot which processes EIP-3009 signatures into deposits and corresponding fills.
  */
 export class GaslessRelayer {
+  private abortController = new AbortController();
   private initialized = false;
-  private observedSignatures = new Set<string>();
+
+  private providersByChain: { [chainId: number]: Provider } = {};
+  private observedNonces: { [chainId: number]: Set<string> } = {}; // Indexed by `${authorizer}:${nonce}`
+  private observedFills: { [chainId: number]: Set<string> } = {}; // Indexed by relayDataHash
+
   private api: AcrossSwapApiClient;
 
   public constructor(
@@ -25,12 +49,25 @@ export class GaslessRelayer {
    * @notice Initializes a GaslessRelayer instance.
    */
   public async initialize(): Promise<void> {
+    // Initialize the map with newly allocated sets.
+    await forEachAsync(this.config.relayerOriginChains, async (chainId) => {
+      this.providersByChain[chainId] = await getProvider(chainId);
+      this.observedNonces[chainId] = new Set<string>();
+    });
+    await forEachAsync(this.config.relayerDestinationChains, async (chainId) => {
+      this.providersByChain[chainId] ??= await getProvider(chainId);
+      this.observedFills[chainId] = new Set<string>();
+    });
+    // Update our observed signatures/fills up until `this.depositLookback`.
+    await this.updateObserved();
+
+    // Exit if OS instructs us to do so.
     process.on("SIGHUP", () => {
       this.logger.debug({
         at: "GaslessRelayer#initialize",
         message: "Received SIGHUP on gasless relayer. stopping...",
       });
-      abortController.abort();
+      this.abortController.abort();
     });
 
     process.on("disconnect", () => {
@@ -38,7 +75,7 @@ export class GaslessRelayer {
         at: "GaslessRelayer#initialize",
         message: "Gasless relayer disconnected, stopping...",
       });
-      abortController.abort();
+      this.abortController.abort();
     });
     this.initialized = true;
   }
@@ -47,7 +84,7 @@ export class GaslessRelayer {
    * @notice Polls the Across gasless API and starts background deposit/fill tasks.
    */
   public pollAndExecute(): void {
-    scheduleTask(() => this.evaluateApiSignatures(), this.config.apiPollingInterval, abortController.signal);
+    scheduleTask(() => this.evaluateApiSignatures(), this.config.apiPollingInterval, this.abortController.signal);
   }
 
   /*
@@ -76,23 +113,85 @@ export class GaslessRelayer {
             message: `Handing over ${runIdentifier} instance to ${currentBot} for ${botIdentifier}`,
             run,
           });
-          abortController.abort();
+          this.abortController.abort();
           return;
         }
         await delay(pollingDelay);
       }
       // If we finish looping without receiving a handover signal, still exit so that we won't await the other promise forever.
-      abortController.abort();
+      this.abortController.abort();
     }
   }
 
+  /*
+   * @notice Performs an initial lookback to determine which signatures have been observed/processed onchain.
+   */
+  private async updateObserved(): Promise<void> {
+    // If a signature is spent, then the deposit must also have been initiated since the `receiveWithAuthorization` signature
+    // can only be redeemed by the periphery contract.
+    await Promise.allSettled([
+      forEachAsync(this.config.relayerOriginChains, async (originChainId) => {
+        const provider = this.providersByChain[originChainId];
+        const observedNonces = this.observedNonces[originChainId];
+
+        const searchConfig = await this._getEventSearchConfig(originChainId);
+        const originAuthUsedEvents = await mapAsync(this.config.relayerTokenSymbols, async (symbol) => {
+          const token = TOKEN_SYMBOLS_MAP[symbol]?.addresses?.[originChainId];
+          if (!isDefined(token)) {
+            return;
+          }
+          const tokenContract = new Contract(token, EIP3009_ABI, provider);
+          const authorizationEvents = await paginatedEventQuery(
+            tokenContract,
+            tokenContract.filters.AuthorizationUsed(),
+            searchConfig
+          );
+          return authorizationEvents.map((event) => spreadEventWithBlockNumber(event) as AuthorizationUsed);
+        });
+        // @todo key on the token as well. Otherwise we can have collisions.
+        originAuthUsedEvents.flat().forEach((event) => observedNonces.add(this._getNonceKey(event)));
+      }),
+      forEachAsync(this.config.relayerDestinationChains, async (destinationChainId) => {
+        const provider = this.providersByChain[destinationChainId];
+        const observedFills = this.observedFills[destinationChainId];
+
+        const searchConfig = await this._getEventSearchConfig(destinationChainId);
+        const destinationSpokePool = getSpokePool(destinationChainId).connect(provider);
+        const destinationFilledRelayEvents = await paginatedEventQuery(
+          destinationSpokePool,
+          destinationSpokePool.filters.FilledRelay(),
+          searchConfig
+        );
+        const fillEvents = destinationFilledRelayEvents.map((filledRelay) =>
+          unpackFillEvent(spreadEventWithBlockNumber(filledRelay), destinationChainId)
+        );
+        fillEvents.forEach((fill) => observedFills.add(this._getFilledRelayKey(fill)));
+      }),
+    ]);
+  }
+
+  /*
+   * @notice Polls the API and creates deposits/fills for all messages which are missing deposits/fills.
+   */
   private async evaluateApiSignatures(): Promise<void> {
-    const apiSignatures = await this.api.get<string[]>(this.config.apiEndpoint, {}); // Query the API.
+    const apiMessages = await this.api.get<GaslessDepositMessage[]>(this.config.apiEndpoint, {}); // Query the API.
+    console.log(apiMessages);
     await forEachAsync(
-      apiSignatures.filter((signature) => !this.observedSignatures.has(signature)),
-      async (signature) => {
+      // Filter if we do not recognize the chain ID.
+      apiMessages.filter(({ chainId }) => isDefined(this.observedNonces[chainId])),
+      async (message) => {
+        const nonceSet = this.observedNonces[message.chainId];
+        const depositNonce = this._getNonceKey({
+          authorizer: message.data.permit.message.from!,
+          nonce: message.data.permit.message.nonce!,
+        }); // add ! to make sure deposit data is defined.
+        // If the deposit has been observed, then exit.
+        if (nonceSet.has(depositNonce)) {
+          return;
+        }
+
         // Mark the signature as observed.
-        this.observedSignatures.add(signature);
+        nonceSet.add(depositNonce);
 
         // Initiate the deposit.
 
@@ -101,5 +200,37 @@ export class GaslessRelayer {
         // Fill the deposit.
       }
     );
+  }
+
+  /*
+   * @notice Gets the event search config for the input network.
+   * @returns an EventSearchConfig type based on the relayer's lookback and current chain's height.
+   */
+  private async _getEventSearchConfig(chainId: number): Promise<EventSearchConfig> {
+    const provider = this.providersByChain[chainId];
+    const to = await provider.getBlock("latest");
+    const from = await getBlockForTimestamp(this.logger, chainId, to.timestamp - this.config.depositLookback);
+    return {
+      to: to.number,
+      from,
+      maxLookBack: CHAIN_MAX_BLOCK_LOOKBACK[chainId],
+    };
+  }
+
+  /*
+   * @notice Gets the key for `this.observedNonces` from a relevant 3009 authorization.
+   */
+  private _getNonceKey(authorization: { authorizer: string; nonce: string }): string {
+    return `${authorization.authorizer}:${authorization.nonce}`;
+  }
+
+  /*
+   * @notice Gets the key for `this.observedFills` from a relevant FilledRelay event.
+   * @dev We key on the origin chain and depositId only since this is what uniquely identifies a deposit on an origin chain for a specific user (the only way to have a collision here with
+   * a valid, unfilled deposit is by finding a collision in keccak).
+   */
+  private _getFilledRelayKey(filledRelay: Pick<FillWithBlock, "originChainId" | "depositId">): string {
+    const { originChainId, depositId } = filledRelay;
+    return `${originChainId}:${depositId}`;
   }
 }
