@@ -584,9 +584,11 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     const destinationMessenger = await this._getOftMessenger(destinationChain);
     // @dev We want to set the lookback such that we can capture all unfinalized OFT bridge transactions, but not too
     // long such that we are making unnecessary RPC requests. 24 hours should be more than enough, even for special
-    // case source chains like HyperEVM which takes 11 hours usually. The destination chain event search from timestamp
-    // should be set slightly longer than the origin chain one to make sure that each initiated event can be matched
-    // against its finalized event if that finalized event exists.
+    // case source chains like HyperEVM which takes 11 hours usually.
+    // @dev The destination chain event search from timestamp
+    // should be set slightly longer than the origin chain one to make sure that for each initiated event on the origin
+    // chain we see, we will find the corresponding finalized event on the destination chain if it exists. This accounts
+    // for any potential clock drift between the origin and destination chains.
     const lookbackPeriodSeconds = 24 * 60 * 60;
     const originChainFromTimestampSeconds = getCurrentTime() - lookbackPeriodSeconds;
     const destinationChainFromTimestampSeconds = getCurrentTime() - lookbackPeriodSeconds * 2;
@@ -642,6 +644,11 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     const originMessenger = await this._getCctpMessenger(originChain);
     const destinationMessenger = await this._getCctpMessenger(destinationChain);
     // @dev 12 hours should be a conservative lookback period to capture any unfinalized CCTP bridge transactions.
+    // @dev The destination chain event search from timestamp
+    // should be set slightly longer than the origin chain one to make sure that for each initiated event on the origin
+    // chain we see, we will find the corresponding finalized event on the destination chain if it exists. This accounts
+    // for any potential clock drift between the origin and destination chains.
+
     const lookbackPeriodSeconds = 12 * 60 * 60;
     const originChainFromTimestampSeconds = getCurrentTime() - lookbackPeriodSeconds;
     const destinationChainFromTimestampSeconds = getCurrentTime() - lookbackPeriodSeconds * 2;
