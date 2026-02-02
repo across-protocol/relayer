@@ -21,7 +21,6 @@ import {
   requestSlowFill,
   sinon,
   smock,
-  spyLogIncludes,
   deployMulticall3,
 } from "./utils";
 
