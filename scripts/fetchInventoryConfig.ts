@@ -51,8 +51,9 @@ async function getIdTokenHeaders(audience: string): Promise<Record<string, strin
   return headers as Record<string, string>;
 }
 
-function getLocalFileName(botIdentifier: string): string {
-  return `inventory-${botIdentifier}.json`;
+function getLocalFileName(botIdentifier: string, inventoryConfigFilename?: string): string {
+  // If the inventory config filename is set, use it. Otherwise, construct the default filename from the bot identifier.
+  return inventoryConfigFilename ? inventoryConfigFilename : `inventory-${botIdentifier}.json`;
 }
 
 async function run(): Promise<number> {
@@ -63,6 +64,7 @@ async function run(): Promise<number> {
     CONFIGURAMA_FOLDER_ENVIRONMENT: configuramaEnv = DEFAULT_ENVIRONMENT,
     CONFIGURAMA_FOLDER_PATH: configuramaFolderPath = "",
     BOT_IDENTIFIER: botIdentifier,
+    INVENTORY_CONFIG_FILENAME: inventoryConfigFilename,
   } = process.env;
 
   if (!botIdentifier) {
@@ -70,7 +72,7 @@ async function run(): Promise<number> {
     return 0;
   }
 
-  const localFile = getLocalFileName(botIdentifier);
+  const localFile = getLocalFileName(botIdentifier, inventoryConfigFilename);
 
   // Helper to handle errors - fall back to local file if it exists.
   const handleError = (message: string): number => {
@@ -96,7 +98,9 @@ async function run(): Promise<number> {
   try {
     const headers = await getIdTokenHeaders(baseUrl);
 
-    const url = `${baseUrl}/config?environment=${encodeURIComponent(configuramaEnv)}&filename=${encodeURIComponent(configuramaFilePath)}`;
+    const url = `${baseUrl}/config?environment=${encodeURIComponent(configuramaEnv)}&filename=${encodeURIComponent(
+      configuramaFilePath
+    )}`;
     console.log(`📥 Fetching ${configuramaFilePath} from Configurama...`);
 
     const fileContent = await fetchWithRetry(url, headers);
