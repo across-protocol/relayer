@@ -97,7 +97,7 @@ export class AcrossSwapApiClient {
   }
 
   /*
-   *
+   * @notice Exposes a non-cached query to the Across API at the specified endpoint.
    */
   public async get<T>(urlEndpoint: string, params: Record<string, unknown>): Promise<T | undefined> {
     return this._get<T>(urlEndpoint, params);
