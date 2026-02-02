@@ -17,6 +17,7 @@ import { runFinalizer } from "./src/finalizer";
 import { version } from "./package.json";
 import { runRefiller } from "./src/refiller";
 import { runHyperliquidExecutor, runHyperliquidFinalizer } from "./src/hyperliquid";
+import { runGaslessRelayer } from "./src/gasless";
 
 let logger: typeof Logger;
 let cmd: string;
@@ -33,6 +34,7 @@ const CMDS = {
   hlExecutor: runHyperliquidExecutor,
   hlFinalizer: runHyperliquidFinalizer,
   inventoryManager: runInventoryManager,
+  gaslessRelayer: runGaslessRelayer,
 };
 
 export async function run(args: { [k: string]: boolean | string }): Promise<void> {
