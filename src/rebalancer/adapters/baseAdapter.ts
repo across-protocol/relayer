@@ -180,6 +180,11 @@ export abstract class BaseAdapter implements RebalancerAdapter {
   // PROTECTED REDIS HELPER METHODS
   // ////////////////////////////////////////////////////////////
 
+  // @dev @todo: We track order statuses in Redis and therefore we cannot easily rotate the Redis cache without
+  // losing critical information about pending orders. Therefore we should try using a separate Redis cache from
+  // the remainder of the application so that we can continue to rotate the Redis cache (e.g. the part used to
+  // store RPC responses) without losing rebalance order information.
+
   protected abstract _redisGetOrderStatusKey(status: number): string;
 
   protected async _redisUpdateOrderStatus(cloid: string, oldStatus: number, status: number): Promise<void> {
