@@ -181,9 +181,6 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         });
         await this._depositToBinance(sourceToken, binanceDepositNetwork, requiredAmountOnDepositNetwork);
         await this._redisUpdateOrderStatus(cloid, STATUS.PENDING_BRIDGE_TO_BINANCE_NETWORK, STATUS.PENDING_DEPOSIT);
-        // Delay a bit after depositing to Binance so we can, in the best case, place a market order immediately
-        // after we allow the deposit to confirm and be reflected in the Binance balance.
-        await this._wait(10);
       }
     }
 
