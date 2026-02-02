@@ -330,8 +330,8 @@ export abstract class BaseAdapter implements RebalancerAdapter {
       );
     } else if (token === "USDC") {
       return (
-        PRODUCTION_NETWORKS[chainId].cctpDomain === CCTP_NO_DOMAIN ||
-        !getCctpV2TokenMessenger(chainId)?.address !== undefined
+        PRODUCTION_NETWORKS[chainId].cctpDomain !== CCTP_NO_DOMAIN &&
+        isDefined(getCctpV2TokenMessenger(chainId)?.address)
       );
     } else {
       return false;
