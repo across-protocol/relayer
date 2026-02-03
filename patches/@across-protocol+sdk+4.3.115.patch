@@ -1,0 +1,13 @@
+diff --git a/node_modules/@across-protocol/sdk/dist/cjs/utils/index.js b/node_modules/@across-protocol/sdk/dist/cjs/utils/index.js
+--- a/node_modules/@across-protocol/sdk/dist/cjs/utils/index.js
++++ b/node_modules/@across-protocol/sdk/dist/cjs/utils/index.js
+@@
+-tslib_1.__exportStar(require("./HyperLiquidUtils"), exports);
++try {
++    tslib_1.__exportStar(require("./HyperLiquidUtils"), exports);
++}
++catch (err) {
++    if (!(err && err.code === "ERR_REQUIRE_ESM")) {
++        throw err;
++    }
++}

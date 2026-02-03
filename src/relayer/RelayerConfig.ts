@@ -50,6 +50,12 @@ export class RelayerConfig extends CommonConfig {
   readonly acceptInvalidFills: boolean;
   readonly relayerUseInventoryManager: boolean;
   readonly inventoryTopic: string;
+  readonly polymarketEnabled: boolean;
+  readonly polymarketHandlerAddresses: { [chainId: number]: EvmAddress } = {};
+  readonly polymarketHost: string;
+  readonly polymarketDefaultTickSize: "0.1" | "0.01" | "0.001" | "0.0001";
+  readonly polymarketDefaultNegRisk: boolean;
+  readonly polymarketApiCreds?: { key: string; secret: string; passphrase: string };
   // List of depositors we only want to send slow fills for.
   readonly slowDepositors: Address[];
   // Following distances in blocks to guarantee finality on each chain.
@@ -99,6 +105,14 @@ export class RelayerConfig extends CommonConfig {
       INVENTORY_TOPIC = "across-relayer-inventory",
       RELAYER_USE_INVENTORY_MANAGER = "false",
       RELAYER_EVENT_LISTENER = "false",
+      POLYMARKET_ENABLED = "false",
+      POLYMARKET_HANDLER_ADDRESSES,
+      POLYMARKET_HOST,
+      POLYMARKET_DEFAULT_TICK_SIZE,
+      POLYMARKET_DEFAULT_NEG_RISK,
+      POLYMARKET_API_KEY,
+      POLYMARKET_API_SECRET,
+      POLYMARKET_API_PASSPHRASE,
     } = env;
     super(env);
 
@@ -138,6 +152,38 @@ export class RelayerConfig extends CommonConfig {
 
     this.inventoryTopic = INVENTORY_TOPIC;
     this.relayerUseInventoryManager = RELAYER_USE_INVENTORY_MANAGER === "true";
+
+    this.polymarketEnabled = POLYMARKET_ENABLED === "true";
+    this.polymarketHost = POLYMARKET_HOST ?? "https://clob.polymarket.com";
+    this.polymarketDefaultTickSize = (POLYMARKET_DEFAULT_TICK_SIZE ?? "0.01") as
+      | "0.1"
+      | "0.01"
+      | "0.001"
+      | "0.0001";
+    this.polymarketDefaultNegRisk = POLYMARKET_DEFAULT_NEG_RISK === "true";
+    assert(
+      ["0.1", "0.01", "0.001", "0.0001"].includes(this.polymarketDefaultTickSize),
+      "POLYMARKET_DEFAULT_TICK_SIZE must be one of: 0.1, 0.01, 0.001, 0.0001."
+    );
+    this.polymarketHandlerAddresses = Object.fromEntries(
+      Object.entries(JSON.parse(POLYMARKET_HANDLER_ADDRESSES ?? "{}")).map(([_chainId, addr]) => {
+        const chainId = Number(_chainId);
+        return [chainId, EvmAddress.from(addr as string)];
+      })
+    );
+    if (POLYMARKET_API_KEY && POLYMARKET_API_SECRET && POLYMARKET_API_PASSPHRASE) {
+      this.polymarketApiCreds = {
+        key: POLYMARKET_API_KEY,
+        secret: POLYMARKET_API_SECRET,
+        passphrase: POLYMARKET_API_PASSPHRASE,
+      };
+    }
+    if (this.polymarketEnabled) {
+      assert(
+        isDefined(this.polymarketHandlerAddresses[CHAIN_IDs.POLYGON]),
+        "POLYMARKET_HANDLER_ADDRESSES must include Polygon when POLYMARKET_ENABLED=true."
+      );
+    }
 
     assert(
       !isDefined(RELAYER_EXTERNAL_INVENTORY_CONFIG) || !isDefined(RELAYER_INVENTORY_CONFIG),

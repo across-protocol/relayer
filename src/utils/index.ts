@@ -81,4 +81,5 @@ export * from "./RetryUtils";
 export * from "./BinanceUtils";
 export * from "./OFTUtils";
 export * from "./HyperliquidUtils";
+export * from "./PolymarketUtils";
 export * from "./Tasks";

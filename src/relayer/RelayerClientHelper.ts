@@ -11,6 +11,7 @@ import {
   MultiCallerClient,
   TryMulticallClient,
   SvmFillerClient,
+  PolymarketClient,
 } from "../clients";
 import { SpokeListener, SpokePoolClient, IndexerOpts } from "../clients/SpokePoolClient";
 import {
@@ -23,6 +24,7 @@ import {
 import { SpokePoolClientsByChain } from "../interfaces";
 import {
   chainIsEvm,
+  CHAIN_IDs,
   getBlockForTimestamp,
   getCurrentTime,
   getProvider,
@@ -35,6 +37,7 @@ import {
   getSvmSignerFromEvmSigner,
   chainIsSvm,
 } from "../utils";
+import { SignatureType } from "@polymarket/order-utils";
 import { RelayerConfig } from "./RelayerConfig";
 import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
 
@@ -46,6 +49,7 @@ export interface RelayerClients extends Clients {
   acrossApiClient: AcrossApiClient;
   tryMulticallClient: MultiCallerClient;
   svmFillerClient: SvmFillerClient | undefined;
+  polymarketClient?: PolymarketClient;
 }
 
 async function indexedSpokePoolClient(
@@ -117,6 +121,18 @@ export async function constructRelayerClients(
   const { configStoreClient, hubPoolClient, multiCallerClient } = commonClients;
   await updateClients(commonClients, config, logger);
   await hubPoolClient.update();
+
+  const polymarketClient = config.polymarketEnabled
+    ? new PolymarketClient(logger, baseSigner, {
+        host: config.polymarketHost,
+        chainId: CHAIN_IDs.POLYGON,
+        signatureType: SignatureType.EOA,
+        funder: signerAddr,
+        apiCreds: config.polymarketApiCreds,
+        defaultTickSize: config.polymarketDefaultTickSize,
+        defaultNegRisk: config.polymarketDefaultNegRisk,
+      })
+    : undefined;
 
   // If both origin and destination chains are configured, then limit the SpokePoolClients instantiated to the
   // sum of them. Otherwise, do not specify the chains to be instantiated to inherit one SpokePoolClient per
@@ -234,5 +250,6 @@ export async function constructRelayerClients(
     acrossApiClient,
     tryMulticallClient,
     svmFillerClient,
+    polymarketClient,
   };
 }

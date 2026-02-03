@@ -10,20 +10,33 @@ import {
   bnZero,
   blockExplorerLink,
 } from "./";
-import * as hl from "@nktkas/hyperliquid";
+import type * as hl from "@nktkas/hyperliquid";
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import { ethers } from "ethers";
 import { CONTRACT_ADDRESSES } from "../common/ContractAddresses";
 
-export function getHlExchangeClient(
+type HyperliquidModule = typeof import("@nktkas/hyperliquid");
+let cachedHlModule: HyperliquidModule | undefined;
+
+async function loadHyperliquidModule(): Promise<HyperliquidModule> {
+  if (cachedHlModule) return cachedHlModule;
+  const dynamicImport = new Function("modulePath", "return import(modulePath)") as (
+    modulePath: string
+  ) => Promise<HyperliquidModule>;
+  cachedHlModule = await dynamicImport("@nktkas/hyperliquid");
+  return cachedHlModule;
+}
+
+export async function getHlExchangeClient(
   signer: Signer,
   transport: hl.HttpTransport | hl.WebSocketTransport = sdkUtils.getDefaultHlTransport()
-) {
+): Promise<hl.ExchangeClient> {
   assert(
     isSignerWallet(signer),
     "HyperliquidUtils#getHlExchangeClient: Cannot define an exchange client without a wallet."
   );
-  return new hl.ExchangeClient({ wallet: signer, transport });
+  const hlModule = await loadHyperliquidModule();
+  return new hlModule.ExchangeClient({ wallet: signer, transport });
 }
 
 export async function getL2Book(

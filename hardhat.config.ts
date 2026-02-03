@@ -22,6 +22,7 @@ import "@openzeppelin/hardhat-upgrades";
 dotenv.config();
 
 const solcVersion = "0.8.23";
+const solcVersionOz = "0.8.24";
 
 const LARGE_CONTRACT_COMPILER_SETTINGS = {
   version: solcVersion,
@@ -56,7 +57,10 @@ const mnemonic = getMnemonic();
 
 const config: HardhatUserConfig = {
   solidity: {
-    compilers: [{ version: solcVersion, settings: { optimizer: { enabled: true, runs: 1 }, viaIR: true } }],
+    compilers: [
+      { version: solcVersion, settings: { optimizer: { enabled: true, runs: 1 }, viaIR: true } },
+      { version: solcVersionOz, settings: { optimizer: { enabled: true, runs: 1 }, viaIR: true } },
+    ],
     overrides: {
       "contracts/AtomicWethDepositor.sol": LARGE_CONTRACT_COMPILER_SETTINGS,
     },

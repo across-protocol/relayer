@@ -27,6 +27,7 @@ import {
   CHAIN_IDs,
   convertRelayDataParamsToBytes32,
   chainIsSvm,
+  decodePolymarketIntent,
 } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
@@ -68,6 +69,7 @@ export class Relayer {
   protected fillLimits: { [originChainId: number]: { fromBlock: number; limit: BigNumber }[] };
   protected ignoredDeposits: { [depositHash: string]: boolean } = {};
   protected updated = 0;
+  protected polymarketOrders: { [depositHash: string]: { orderId: string; status: string } } = {};
 
   constructor(
     relayerEvmAddress: string,
@@ -742,11 +744,13 @@ export class Relayer {
 
     const l1Token = this.clients.inventoryClient.getL1TokenAddress(inputToken, originChainId);
 
-    const { repaymentChainId, repaymentChainProfitability } = await this.resolveRepaymentChain(
+    const intent = decodePolymarketIntent(resolveDepositMessage(deposit));
+    const { repaymentChainId: resolvedRepaymentChainId, repaymentChainProfitability } = await this.resolveRepaymentChain(
       deposit,
       l1Token,
       lpFees
     );
+    let repaymentChainId = resolvedRepaymentChainId;
     const {
       relayerFeePct,
       gasCost,
@@ -757,7 +761,23 @@ export class Relayer {
     } = repaymentChainProfitability;
 
     const hasBalance = tokenClient.hasBalanceForFill(deposit);
-    const isProfitable = isDefined(repaymentChainId);
+    let isProfitable = isDefined(repaymentChainId);
+
+    // For Polymarket intents, profitability simulation can fail before the order is executed.
+    // If ACCEPT_INVALID_FILLS is enabled, allow a forced fill on the preferred repayment chain.
+    if (!isProfitable && intent && this.config.acceptInvalidFills) {
+      const preferredChainIds = await this.clients.inventoryClient.determineRefundChainId(deposit, l1Token);
+      if (preferredChainIds.length > 0) {
+        repaymentChainId = preferredChainIds[0];
+        isProfitable = true;
+        this.logger.warn({
+          at: "Relayer::evaluateFill",
+          message: "Bypassing profitability for Polymarket intent (ACCEPT_INVALID_FILLS=true).",
+          deposit: { originChainId, destinationChainId, depositId: depositId.toString(), txnRef },
+          repaymentChainId,
+        });
+      }
+    }
 
     if (!hasBalance || !isProfitable) {
       if (isProfitable && !hasBalance) {
@@ -803,14 +823,97 @@ export class Relayer {
       return;
     }
 
+    const polymarketOk = await this.maybeExecutePolymarketIntent(deposit);
+    if (!polymarketOk) {
+      return;
+    }
+
     // Update the origin chain limits in anticipation of committing tokens to a fill.
     this.reduceOriginChainLimit(originChainId, fillAmountUsd, limitIdx);
 
     // Update local balance to account for the enqueued fill.
     tokenClient.decrementLocalBalance(destinationChainId, outputToken, outputAmount);
 
-    const gasLimit = isMessageEmpty(resolveDepositMessage(deposit)) ? undefined : _gasLimit;
+    let gasLimit = isMessageEmpty(resolveDepositMessage(deposit)) ? undefined : _gasLimit;
+    if (isDefined(gasLimit) && gasLimit.eq(bnUint256Max)) {
+      // Fall back to provider gas estimation when simulation failed.
+      gasLimit = undefined;
+    }
     this.fillRelay(deposit, repaymentChainId, realizedLpFeePct, totalUserFeePct, gasPrice, gasLimit);
+  }
+
+  private async maybeExecutePolymarketIntent(deposit: DepositWithBlock): Promise<boolean> {
+    const message = resolveDepositMessage(deposit);
+    const intent = decodePolymarketIntent(message);
+    if (!intent) {
+      return true;
+    }
+
+    if (!this.config.polymarketEnabled || !this.clients.polymarketClient) {
+      this.logger.warn({
+        at: "Relayer::maybeExecutePolymarketIntent",
+        message: "Polymarket intent detected but Polymarket support is disabled.",
+        deposit,
+      });
+      return false;
+    }
+
+    const handler = this.config.polymarketHandlerAddresses[deposit.destinationChainId];
+    if (!handler || !deposit.recipient.eq(handler)) {
+      this.logger.warn({
+        at: "Relayer::maybeExecutePolymarketIntent",
+        message: "Polymarket intent has unexpected recipient handler.",
+        depositRecipient: deposit.recipient.toNative(),
+        expectedHandler: handler?.toNative(),
+      });
+      return false;
+    }
+
+    if (!intent.solver.eq(this.relayerEvmAddress)) {
+      this.logger.warn({
+        at: "Relayer::maybeExecutePolymarketIntent",
+        message: "Polymarket intent solver mismatch; skipping.",
+        solver: intent.solver.toNative(),
+        relayer: this.relayerEvmAddress.toNative(),
+      });
+      return false;
+    }
+
+    const depositHash = this.clients.spokePoolClients[deposit.destinationChainId].getDepositHash(deposit);
+    if (this.polymarketOrders[depositHash]) {
+      return true;
+    }
+
+    const required = intent.limitPrice.mul(intent.outcomeAmount).div(BigNumber.from(1_000_000));
+    if (deposit.outputAmount.lt(required)) {
+      this.logger.warn({
+        at: "Relayer::maybeExecutePolymarketIntent",
+        message: "Deposit outputAmount below required limitPrice * outcomeAmount.",
+        outputAmount: deposit.outputAmount.toString(),
+        required: required.toString(),
+        clientOrderId: intent.clientOrderId,
+      });
+      return false;
+    }
+
+    const result = await this.clients.polymarketClient.placeFokOrder(intent);
+    if (!result) {
+      return false;
+    }
+
+    if (result.status && result.status !== "matched") {
+      this.logger.warn({
+        at: "Relayer::maybeExecutePolymarketIntent",
+        message: "Polymarket order not matched; skipping fill.",
+        status: result.status,
+        orderId: result.orderId,
+        clientOrderId: intent.clientOrderId,
+      });
+      return false;
+    }
+
+    this.polymarketOrders[depositHash] = result;
+    return true;
   }
 
   /**

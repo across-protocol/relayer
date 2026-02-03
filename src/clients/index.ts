@@ -24,3 +24,4 @@ export * from "./AcrossAPIClient";
 export * from "./SvmFillerClient";
 export * from "./BundleDataApproxClient";
 export * from "./AcrossSwapApiClient";
+export * from "./PolymarketClient";
