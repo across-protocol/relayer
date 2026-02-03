@@ -235,9 +235,7 @@ export class GaslessRelayer {
    * @notice Builds and sends depositWithAuthorization tx, then waits for execution.
    * @returns The transaction receipt, or null if skipped or failed.
    */
-  private async initiateGaslessDeposit(
-    message: GaslessDepositMessage
-  ): Promise<TransactionReceipt | null> {
+  private async initiateGaslessDeposit(message: GaslessDepositMessage): Promise<TransactionReceipt | null> {
     const { chainId } = message.swapTx;
     const provider = this.providersByChain[chainId];
 
