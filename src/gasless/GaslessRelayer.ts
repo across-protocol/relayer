@@ -188,13 +188,14 @@ export class GaslessRelayer {
     const apiMessages = await this.api.get<GaslessDepositMessage[]>(this.config.apiEndpoint, {}); // Query the API.
     await forEachAsync(
       // Filter if we do not recognize the chain ID.
-      apiMessages.filter(({ chainId }) => isDefined(this.observedNonces[chainId])),
-      async (message) => {
-        const nonceSet = this.observedNonces[message.chainId];
-        const depositData = this._extractDepositData(message);
+      apiMessages.filter(({ swapTx }) => isDefined(this.observedNonces[swapTx.chainId])),
+      async (depositMessage) => {
+        const { swapTx } = depositMessage;
+        const nonceSet = this.observedNonces[swapTx.chainId];
+        const depositData = this._extractDepositData(depositMessage);
         const depositNonce = this._getNonceKey(depositData.inputToken, {
-          authorizer: message.data.permit.message.from!,
-          nonce: message.data.permit.message.nonce!,
+          authorizer: swapTx.data.permit.message.from!,
+          nonce: swapTx.data.permit.message.nonce!,
         }); // add ! to make sure deposit data is defined.
         // If the deposit has been observed, then exit.
         if (nonceSet.has(depositNonce)) {
@@ -249,8 +250,6 @@ export class GaslessRelayer {
    * @notice Extracts the BaseDepositData from the deposit or swap witness.
    */
   private _extractDepositData(message: GaslessDepositMessage): BaseDepositData {
-    return isDefined(message.data.witness[0])
-      ? message.data.witness[0].baseDepositData
-      : message.data.witness[1].depositData;
+    return message.swapTx.data.witness.BridgeWitness.data.baseDepositData;
   }
 }
