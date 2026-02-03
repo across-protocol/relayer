@@ -32,8 +32,10 @@ export class GaslessRelayer {
   private initialized = false;
 
   private providersByChain: { [chainId: number]: Provider } = {};
-  private observedNonces: { [chainId: number]: Set<string> } = {}; // Indexed by `${token}:${authorizer}:${nonce}`
-  private observedFills: { [chainId: number]: Set<string> } = {}; // Indexed by `${originChainId}:${depositId}`
+  // The object is indexed by `chainId`. An `AuthorizationUsed` event is marked by adding `${token}:${authorizer}:${nonce}` to the respective chain's set.
+  private observedNonces: { [chainId: number]: Set<string> } = {};
+  // The object is indexed by `chainId`. A `FilledRelay` event is marked by adding `${originChainId}:${depositId}` to the respective chain's set.
+  private observedFills: { [chainId: number]: Set<string> } = {};
 
   private api: AcrossSwapApiClient;
 

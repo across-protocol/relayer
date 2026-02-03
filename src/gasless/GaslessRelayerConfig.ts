@@ -23,8 +23,11 @@ export class GaslessRelayerConfig extends CommonConfig {
     this.apiPollingInterval = Number(API_POLLING_INTERVAL ?? 1); // Default to 1s
     this.apiEndpoint = String(API_GASLESS_ENDPOINT);
 
-    this.relayerOriginChains = JSON.parse(RELAYER_ORIGIN_CHAINS ?? "[]");
-    this.relayerDestinationChains = JSON.parse(RELAYER_DESTINATION_CHAINS ?? "[]");
+    const relayerOriginChains = new Set<number>(JSON.parse(RELAYER_ORIGIN_CHAINS ?? "[]"));
+    this.relayerOriginChains = Array.from(relayerOriginChains);
+    const relayerDestinationChains = new Set<number>(JSON.parse(RELAYER_DESTINATION_CHAINS ?? "[]"));
+    this.relayerDestinationChains = Array.from(relayerDestinationChains);
+
     this.relayerTokenSymbols = JSON.parse(RELAYER_TOKEN_SYMBOLS); // Relayer token symbols must be defined.
     this.depositLookback = Number(MAX_RELAYER_DEPOSIT_LOOKBACK ?? 3600);
   }
