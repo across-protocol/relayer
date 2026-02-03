@@ -33,7 +33,7 @@ interface SwapData {
  */
 export class AcrossSwapApiClient {
   private routesSupported: Set<SwapRoute> = new Set(Object.values(SWAP_ROUTES));
-  private readonly urlBase = "https://app.across.to/api/swap/approval";
+  private readonly urlBase = "https://app.across.to/api";
   private readonly apiResponseTimeout = 3000;
 
   constructor(readonly logger: winston.Logger) {}
@@ -96,6 +96,13 @@ export class AcrossSwapApiClient {
     return swapData;
   }
 
+  /*
+   * @notice Exposes a non-cached query to the Across API at the specified endpoint.
+   */
+  public async get<T>(urlEndpoint: string, params: Record<string, unknown>): Promise<T | undefined> {
+    return this._get<T>(urlEndpoint, params);
+  }
+
   private async getQuote(
     route: SwapRoute,
     amountOut: BigNumber,
@@ -118,9 +125,12 @@ export class AcrossSwapApiClient {
       depositor: swapper.toNative(),
       recipient: recipient.toNative(),
     };
+    return this._get<SwapApiResponse>("/swap/approval", params);
+  }
 
+  private async _get<T>(endpoint: string, params: Record<string, unknown>): Promise<T | undefined> {
     try {
-      const response = await axios.get<SwapApiResponse>(`${this.urlBase}`, {
+      const response = await axios.get<T>(`${this.urlBase}/${endpoint}`, {
         timeout: this.apiResponseTimeout,
         params,
       });
@@ -129,18 +139,17 @@ export class AcrossSwapApiClient {
         this.logger.warn({
           at: "AcrossAPIClient",
           message: `Invalid response from ${this.urlBase}`,
-          url: this.urlBase,
+          endpoint,
           params,
         });
         return;
       }
-
       return response.data;
     } catch (err) {
       this.logger.warn({
         at: "AcrossSwapApiClient",
         message: `Failed to post to ${this.urlBase}`,
-        url: this.urlBase,
+        endpoint,
         params,
         error: (err as AxiosError).message,
       });

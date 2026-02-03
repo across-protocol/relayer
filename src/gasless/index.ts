@@ -19,8 +19,11 @@ export async function runGaslessRelayer(_logger: winston.Logger, baseSigner: Sig
     });
     const start = Date.now();
 
-    const waitForHandover = relayer.waitForDisconnect();
-    await Promise.allSettled([waitForHandover]);
+    // Start the API polling.
+    relayer.pollAndExecute();
+
+    // Wait for the handover to complete.
+    await relayer.waitForDisconnect();
 
     logger.debug({ at: "GaslessRelayer#index", message: `Time to run: ${(Date.now() - start) / 1000}s` });
   } finally {
