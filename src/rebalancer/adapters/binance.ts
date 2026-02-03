@@ -762,7 +762,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   // ////////////////////////////////////////////////////////////
 
   private async _getAccountCoins(symbol: string, skipCache = false): Promise<Coin> {
-    const cacheKey = `binance-account-coins:${symbol}`;
+    const cacheKey = "binance-account-coins";
 
     if (!skipCache) {
       const cachedAccountCoins = await this.redisCache.get<string>(cacheKey);
