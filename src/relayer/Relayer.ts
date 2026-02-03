@@ -1355,7 +1355,8 @@ export class Relayer {
     if (
       !isDefined(preferredChain) &&
       !preferredChainIds.includes(destinationChainId) &&
-      this.clients.inventoryClient.canTakeDestinationChainRepayment(deposit)
+      this.clients.inventoryClient.canTakeDestinationChainRepayment(deposit) &&
+      !this.clients.inventoryClient.shouldForceOriginRepayment(deposit)
     ) {
       this.logger.debug({
         at: "Relayer::resolveRepaymentChain",
