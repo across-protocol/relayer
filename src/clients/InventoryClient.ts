@@ -423,7 +423,7 @@ export class InventoryClient {
    * @param deposit The deposit to check
    * @returns true if origin chain repayment is forced
    */
-  private shouldForceOriginRepayment(deposit: Deposit): boolean {
+  shouldForceOriginRepayment(deposit: Deposit): boolean {
     const protocolForcesOriginRepayment = depositForcesOriginChainRepayment(deposit, this.hubPoolClient);
     const perChainForceOriginRepayment = this.inventoryConfig?.forceOriginRepaymentPerChain?.[deposit.originChainId];
     const globalForceOriginRepayment = this.inventoryConfig?.forceOriginRepayment ?? false;
