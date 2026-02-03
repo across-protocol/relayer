@@ -10,13 +10,13 @@ jobs:
       - restore_cache:
           name: Restore Yarn Package Cache
           keys:
-            - cache-node-v1-{{ checksum "yarn.lock" }}
+            - cache-node-v2-{{ checksum "yarn.lock" }}
       - run:
           name: Install Dependencies
           command: yarn install --immutable
       - save_cache:
           name: Save Yarn Package Cache
-          key: cache-node-v1-{{ checksum "yarn.lock" }}
+          key: cache-node-v2-{{ checksum "yarn.lock" }}
           paths:
             - node_modules
   test:
@@ -30,7 +30,7 @@ jobs:
       - restore_cache:
           name: Restore Yarn Package Cache
           keys:
-            - cache-node-v1-{{ checksum "yarn.lock" }}
+            - cache-node-v2-{{ checksum "yarn.lock" }}
 
       # Extract Solana version from across-protocol/contracts
       - run:
@@ -113,7 +113,7 @@ jobs:
       - restore_cache:
           name: Restore Yarn Package Cache
           keys:
-            - cache-node-v1-{{ checksum "yarn.lock" }}
+            - cache-node-v2-{{ checksum "yarn.lock" }}
       - run:
           name: Run lint
           command: yarn lint
