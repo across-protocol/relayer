@@ -39,6 +39,7 @@ import SCROLL_GATEWAY_ROUTER_L2_ABI from "./abi/ScrollGatewayRouterL2.json";
 import SCROLL_GAS_PRICE_ORACLE_ABI from "./abi/ScrollGasPriceOracle.json";
 import IOFT_ABI_FULL from "./abi/IOFT.json";
 import HYPERLIQUID_DEPOSIT_HANDLER_ABI from "./abi/HyperliquidDepositHandler.json";
+import SPOKE_POOL_PERIPHERY_ABI from "./abi/SpokePoolPeriphery.json";
 export { IOFT_ABI_FULL };
 import HUB_POOL_STORE_ABI from "./abi/HubPoolStore.json";
 
@@ -286,6 +287,11 @@ export const CONTRACT_ADDRESSES: {
       address: "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
     },
+    spokePoolPeriphery: {
+      // @TODO: We should remove this after contracts package is updated.
+      address: "0x3374C3693761D37e3CEf13471Ecf75Ce37844250",
+      abi: SPOKE_POOL_PERIPHERY_ABI,
+    },
   },
   [CHAIN_IDs.POLYGON]: {
     withdrawableErc20: {
@@ -460,6 +466,11 @@ export const CONTRACT_ADDRESSES: {
     cctpV2TokenMessenger: {
       address: "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
+    },
+    spokePoolPeriphery: {
+      // @TODO: We should remove this after contracts package is updated.
+      address: "0x3374C3693761D37e3CEf13471Ecf75Ce37844250",
+      abi: SPOKE_POOL_PERIPHERY_ABI,
     },
   },
   [CHAIN_IDs.MODE]: {

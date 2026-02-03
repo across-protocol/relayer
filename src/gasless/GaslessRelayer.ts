@@ -18,11 +18,13 @@ import {
   unpackFillEvent,
   mapAsync,
   TOKEN_SYMBOLS_MAP,
+  TransactionReceipt,
 } from "../utils";
-import { CHAIN_MAX_BLOCK_LOOKBACK } from "../common";
 import { GaslessDepositMessage, FillWithBlock, AuthorizationUsed, BaseDepositData } from "../interfaces";
+import { CHAIN_MAX_BLOCK_LOOKBACK, CONTRACT_ADDRESSES } from "../common";
 import { AcrossSwapApiClient } from "../clients";
 import EIP3009_ABI from "../common/abi/EIP3009.json";
+import { buildDepositWithAuthorizationTx } from "../utils/GaslessUtils";
 
 /**
  * Independent relayer bot which processes EIP-3009 signatures into deposits and corresponding fills.
@@ -211,13 +213,68 @@ export class GaslessRelayer {
         // Mark the signature as observed.
         nonceSet.add(depositNonce);
 
-        // Initiate the deposit.
-
-        // Take the logs from the transaction receipt.
+        // Initiate the deposit (depositWithAuthorization) and wait for tx to be executed.
+        const receipt = await this.initiateGaslessDeposit(message);
+        if (!receipt) {
+          return;
+        }
+        this.logger.info({
+          at: "GaslessRelayer#evaluateApiSignatures",
+          message: "Deposit with authorization executed",
+          requestId: message.requestId,
+          txHash: receipt.transactionHash,
+          blockNumber: receipt.blockNumber,
+        });
 
         // Fill the deposit.
       }
     );
+  }
+
+  /*
+   * @notice Builds and sends depositWithAuthorization tx, then waits for execution.
+   * @returns The transaction receipt, or null if skipped or failed.
+   */
+  private async initiateGaslessDeposit(
+    message: GaslessDepositMessage
+  ): Promise<TransactionReceipt | null> {
+    const { chainId } = message.swapTx;
+    const provider = this.providersByChain[chainId];
+
+    if (!isDefined(provider)) {
+      this.logger.warn({
+        at: "GaslessRelayer#initiateGaslessDeposit",
+        message: "No provider for chainId, skipping",
+        chainId,
+      });
+      return null;
+    }
+
+    // @TODO: Because we will use this for small amount of chains, we can consider to create contracts for all chains during initialization.
+    const spokePoolPeripheryContract = new Contract(
+      CONTRACT_ADDRESSES[chainId].spokePoolPeriphery.address,
+      CONTRACT_ADDRESSES[chainId].spokePoolPeriphery.abi,
+      provider
+    );
+
+    const signer = this.baseSigner.connect(provider);
+
+    try {
+      const tx = await buildDepositWithAuthorizationTx(message, spokePoolPeripheryContract);
+
+      const txResponse = await signer.sendTransaction(tx);
+
+      const receipt = await txResponse.wait();
+      return receipt;
+    } catch (err) {
+      this.logger.error({
+        at: "GaslessRelayer#initiateGaslessDeposit",
+        message: "Failed to execute depositWithAuthorization",
+        requestId: message.requestId,
+        err: err instanceof Error ? err.message : String(err),
+      });
+      return null;
+    }
   }
 
   /*
