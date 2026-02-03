@@ -32,8 +32,8 @@ export class GaslessRelayer {
   private initialized = false;
 
   private providersByChain: { [chainId: number]: Provider } = {};
-  private observedNonces: { [chainId: number]: Set<string> } = {}; // Indexed by `${authorizer}:${nonce}`
-  private observedFills: { [chainId: number]: Set<string> } = {}; // Indexed by relayDataHash
+  private observedNonces: { [chainId: number]: Set<string> } = {}; // Indexed by `${token}:${authorizer}:${nonce}`
+  private observedFills: { [chainId: number]: Set<string> } = {}; // Indexed by `${originChainId}:${depositId}`
 
   private api: AcrossSwapApiClient;
 
