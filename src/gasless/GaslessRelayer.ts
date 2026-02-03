@@ -260,10 +260,12 @@ export class GaslessRelayer {
     try {
       const tx = await buildDepositWithAuthorizationTx(message, spokePoolPeripheryContract);
 
-      const txResponse = await signer.sendTransaction(tx);
+      if (!this.config.sendingTransactionsEnabled) {
+        return null;
+      }
 
-      const receipt = await txResponse.wait();
-      return receipt;
+      const txResponse = await signer.sendTransaction(tx);
+      return txResponse.wait();
     } catch (err) {
       this.logger.error({
         at: "GaslessRelayer#initiateGaslessDeposit",
