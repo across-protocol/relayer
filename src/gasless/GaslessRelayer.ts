@@ -20,7 +20,7 @@ import {
   TOKEN_SYMBOLS_MAP,
 } from "../utils";
 import { CHAIN_MAX_BLOCK_LOOKBACK } from "../common";
-import { GaslessDepositMessage, FillWithBlock, AuthorizationUsed } from "../interfaces";
+import { GaslessDepositMessage, FillWithBlock, AuthorizationUsed, BaseDepositData } from "../interfaces";
 import { AcrossSwapApiClient } from "../clients";
 import EIP3009_ABI from "../common/abi/EIP3009.json";
 
@@ -32,8 +32,8 @@ export class GaslessRelayer {
   private initialized = false;
 
   private providersByChain: { [chainId: number]: Provider } = {};
-  private observedNonces: { [chainId: number]: Set<string> } = {}; // Indexed by `${authorizer}:${nonce}`
-  private observedFills: { [chainId: number]: Set<string> } = {}; // Indexed by relayDataHash
+  private observedNonces: { [chainId: number]: Set<string> } = {}; // Indexed by `${token}:${authorizer}:${nonce}`
+  private observedFills: { [chainId: number]: Set<string> } = {}; // Indexed by `${originChainId}:${depositId}`
 
   private api: AcrossSwapApiClient;
 
@@ -130,11 +130,14 @@ export class GaslessRelayer {
     // If a signature is spent, then the deposit must also have been initiated since the `receiveWithAuthorization` signature
     // can only be redeemed by the periphery contract.
     await Promise.allSettled([
+      // For each origin chain, we need to index all used 3009 nonces. If a nonce from a signature has been used, then there must have been an associated
+      // Across deposit.
       forEachAsync(this.config.relayerOriginChains, async (originChainId) => {
         const provider = this.providersByChain[originChainId];
         const observedNonces = this.observedNonces[originChainId];
 
         const searchConfig = await this._getEventSearchConfig(originChainId);
+        // For each relayer token (which we assume satisfies EIP-3009), collect all the `AuthorizationUsed` events.
         const originAuthUsedEvents = await mapAsync(this.config.relayerTokenSymbols, async (symbol) => {
           const token = TOKEN_SYMBOLS_MAP[symbol]?.addresses?.[originChainId];
           if (!isDefined(token)) {
@@ -146,17 +149,22 @@ export class GaslessRelayer {
             tokenContract.filters.AuthorizationUsed(),
             searchConfig
           );
-          return authorizationEvents.map((event) => spreadEventWithBlockNumber(event) as AuthorizationUsed);
+          return authorizationEvents.map((event) => {
+            return { token, auth: spreadEventWithBlockNumber(event) as AuthorizationUsed };
+          });
         });
-        // @todo key on the token as well. Otherwise we can have collisions.
-        originAuthUsedEvents.flat().forEach((event) => observedNonces.add(this._getNonceKey(event)));
+        // Update the observed nonces set.
+        originAuthUsedEvents.flat().forEach((event) => observedNonces.add(this._getNonceKey(event.token, event.auth)));
       }),
+      // For each destination chain, we need to index all `FilledRelay` events. This will let us know whether a deposit from the API has been filled by this relayer
+      // (or any other relayer).
       forEachAsync(this.config.relayerDestinationChains, async (destinationChainId) => {
         const provider = this.providersByChain[destinationChainId];
         const observedFills = this.observedFills[destinationChainId];
 
         const searchConfig = await this._getEventSearchConfig(destinationChainId);
         const destinationSpokePool = getSpokePool(destinationChainId).connect(provider);
+        // Query all filledRelay events in the lookback. The lookback should only be a function of the max TTL of an API-served 3009 deposit.
         const destinationFilledRelayEvents = await paginatedEventQuery(
           destinationSpokePool,
           destinationSpokePool.filters.FilledRelay(),
@@ -165,6 +173,7 @@ export class GaslessRelayer {
         const fillEvents = destinationFilledRelayEvents.map((filledRelay) =>
           unpackFillEvent(spreadEventWithBlockNumber(filledRelay), destinationChainId)
         );
+        // For each fill we observed, index it in our local set.
         fillEvents.forEach((fill) => observedFills.add(this._getFilledRelayKey(fill)));
       }),
     ]);
@@ -180,7 +189,8 @@ export class GaslessRelayer {
       apiMessages.filter(({ chainId }) => isDefined(this.observedNonces[chainId])),
       async (message) => {
         const nonceSet = this.observedNonces[message.chainId];
-        const depositNonce = this._getNonceKey({
+        const depositData = this._extractDepositData(message);
+        const depositNonce = this._getNonceKey(depositData.inputToken, {
           authorizer: message.data.permit.message.from!,
           nonce: message.data.permit.message.nonce!,
         }); // add ! to make sure deposit data is defined.
@@ -219,8 +229,8 @@ export class GaslessRelayer {
   /*
    * @notice Gets the key for `this.observedNonces` from a relevant 3009 authorization.
    */
-  private _getNonceKey(authorization: { authorizer: string; nonce: string }): string {
-    return `${authorization.authorizer}:${authorization.nonce}`;
+  private _getNonceKey(token: string, authorization: { authorizer: string; nonce: string }): string {
+    return `${token}:${authorization.authorizer}:${authorization.nonce}`;
   }
 
   /*
@@ -231,5 +241,14 @@ export class GaslessRelayer {
   private _getFilledRelayKey(filledRelay: Pick<FillWithBlock, "originChainId" | "depositId">): string {
     const { originChainId, depositId } = filledRelay;
     return `${originChainId}:${depositId}`;
+  }
+
+  /*
+   * @notice Extracts the BaseDepositData from the deposit or swap witness.
+   */
+  private _extractDepositData(message: GaslessDepositMessage): BaseDepositData {
+    return isDefined(message.data.witness[0])
+      ? message.data.witness[0].baseDepositData
+      : message.data.witness[1].depositData;
   }
 }

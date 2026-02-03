@@ -58,7 +58,7 @@ interface Fees {
   recipient: string;
 }
 
-interface BaseDepositData {
+export interface BaseDepositData {
   inputToken: string;
   outputToken: string;
   outputAmount: string;
