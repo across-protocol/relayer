@@ -42,6 +42,7 @@ export class GaslessRelayer {
   private observedFills: { [chainId: number]: Set<string> } = {};
 
   private api: AcrossSwapApiClient;
+  private signerAddress: EvmAddress;
 
   private providersByChain: { [chainId: number]: Provider } = {};
   // The object is indexed by `chainId`. An `AuthorizationUsed` event is marked by adding `${token}:${authorizer}:${nonce}` to the respective chain's set.
@@ -56,13 +57,15 @@ export class GaslessRelayer {
     readonly config: GaslessRelayerConfig,
     readonly baseSigner: Signer
   ) {
-    this.api = new AcrossSwapApiClient(this.logger);
+    this.api = new AcrossSwapApiClient(this.logger, this.config.apiTimeoutOverride);
   }
 
   /*
    * @notice Initializes a GaslessRelayer instance.
    */
   public async initialize(): Promise<void> {
+    // Set the signer address
+    this.signerAddress = EvmAddress.from(await this.baseSigner.getAddress());
     // Initialize the map with newly allocated sets.
     await forEachAsync(this.config.relayerOriginChains, async (chainId) => {
       this.providersByChain[chainId] = await getProvider(chainId);
@@ -91,6 +94,23 @@ export class GaslessRelayer {
       });
       this.abortController.abort();
     });
+
+    // For the first runthrough, we want to specifically check the API for nonces which have corresponding deposits but no corresponding fills, and then
+    // submit fills for those deposits. This is because this scenario may happen as an edge case when a prior relayer process is killed in the middle of
+    // a deposit/fill flow.
+    const initialMessages = await this._queryGaslessApi();
+    const unfilledDeposits = initialMessages.filter((depositMessage) => {
+      // Only take the API messages which are in `this.observedNonces` but not in `this.observedFills`.
+      const { permit, depositId } = depositMessage.swapTx.data;
+      const chainId = depositMessage.swapTx.chainId;
+      const nonceKey = this._getNonceKey(permit.domain.verifyingContract, {
+        authorizer: permit.message.from!,
+        nonce: permit.message.nonce!,
+      });
+      const fillKey = this._getFilledRelayKey({ originChainId: chainId, depositId: toBN(depositId) });
+      return this.observedNonces[chainId].has(nonceKey) && !this.observedFills[chainId].has(fillKey);
+    });
+    await mapAsync(unfilledDeposits, async (deposit) => this.initiateFill(deposit));
     this.initialized = true;
   }
 
@@ -197,7 +217,7 @@ export class GaslessRelayer {
    * @notice Polls the API and creates deposits/fills for all messages which are missing deposits/fills.
    */
   private async evaluateApiSignatures(): Promise<void> {
-    const apiMessages = await this.api.get<GaslessDepositMessage[]>(this.config.apiEndpoint, {}); // Query the API.
+    const apiMessages = await this._queryGaslessApi();
     await forEachAsync(
       // Filter if we do not recognize the chain ID.
       apiMessages.filter(({ swapTx }) => isDefined(this.observedNonces[swapTx.chainId])),
@@ -231,6 +251,16 @@ export class GaslessRelayer {
         });
 
         // Fill the deposit.
+        // TODO: Update the logs here.
+        assert(receipt.status, "Deposit transaction failed");
+        const fillTx = await this.initiateFill(depositMessage);
+
+        this.logger.info({
+          at: "GaslessRelayer#evaluateApiSignatures",
+          message: "Fill relay executed",
+          requestId: depositMessage.requestId,
+          fillTx,
+        });
       }
     );
   }
@@ -281,6 +311,41 @@ export class GaslessRelayer {
       });
       return null;
     }
+  }
+
+  /*
+   * @notice Builds and sends the associated `fillRelay` call from the input API message.
+   */
+  private async initiateFill(message: GaslessDepositMessage): Promise<TransactionResponse | null> {
+    const { chainId, data } = message.swapTx;
+    const provider = this.providersByChain[chainId];
+
+    const { data: witnessData } = data.witness.BridgeWitness;
+    const spokePool = getSpokePool(chainId).connect(this.baseSigner.connect(provider));
+    assert(
+      spokePool.address == witnessData.spokePool,
+      `Spoke pool mismatch in witness data. Expected ${spokePool.address}. Got ${witnessData.spokePool}`
+    );
+
+    const gaslessFill = buildGaslessFillRelayTx(message, spokePool, chainId, this.signerAddress);
+    return runTransaction(
+      this.logger, // logger
+      gaslessFill.contract, // contract
+      gaslessFill.method, // method
+      gaslessFill.args, // args
+      undefined, // value
+      undefined, // gasLimit
+      undefined, // nonce
+      this.config.nRetries // retries
+    );
+  }
+
+  /*
+   * @notice Queries the API for all pending gasless transactions.
+   */
+  private async _queryGaslessApi(): Promise<GaslessDepositMessage[]> {
+    const apiResponseData = await this.api.get<{ deposits: GaslessDepositMessage[] }>(this.config.apiEndpoint, {}); // Query the API via the swap API client.
+    return apiResponseData.deposits;
   }
 
   /*
