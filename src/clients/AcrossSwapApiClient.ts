@@ -35,7 +35,7 @@ interface SwapData {
 export class AcrossSwapApiClient {
   private routesSupported: Set<SwapRoute> = new Set(Object.values(SWAP_ROUTES));
   private readonly urlBase;
-  private readonly apiResponseTimeout;
+  public readonly apiResponseTimeout;
 
   constructor(readonly logger: winston.Logger, timeoutMs = 3000) {
     // Swap API is mainnet-only.

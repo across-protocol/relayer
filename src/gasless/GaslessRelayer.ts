@@ -21,6 +21,7 @@ import {
   TransactionReceipt,
   EvmAddress,
   toBN,
+  assert,
   TransactionResponse,
 } from "../utils";
 import { GaslessDepositMessage, FillWithBlock, AuthorizationUsed, BaseDepositData } from "../interfaces";
@@ -228,7 +229,18 @@ export class GaslessRelayer {
    * @notice Polls the API and creates deposits/fills for all messages which are missing deposits/fills.
    */
   private async evaluateApiSignatures(): Promise<void> {
-    const apiMessages = await this._queryGaslessApi();
+    let apiMessages: undefined | GaslessDepositMessage[] = undefined;
+    try {
+      apiMessages = await this._queryGaslessApi();
+    } catch (e) {
+      this.logger.warn({
+        at: "GaslessRelayer#evaluateApiSignatures",
+        message: "Failed to query API",
+        apiError: e,
+        configuredTimeout: this.api.apiResponseTimeout,
+      });
+    }
+    assert(isDefined(apiMessages), "API query should never succeed and return undefined.");
     await forEachAsync(
       // Filter if we do not recognize the chain ID.
       apiMessages.filter(({ swapTx }) => isDefined(this.observedNonces[swapTx.chainId])),
