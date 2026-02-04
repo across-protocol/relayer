@@ -268,7 +268,8 @@ export class GaslessRelayer {
           nonceSet.add(depositNonce);
 
           // Initiate the deposit (depositWithAuthorization) and wait for tx to be executed.
-          const receipt = await this.initiateGaslessDeposit(depositMessage);
+          let receipt: Pick<TransactionReceipt, "status" | "transactionHash" | "blockNumber"> =
+            await this.initiateGaslessDeposit(depositMessage);
           if (!receipt || !receipt.status) {
             const { depositId } = swapTx.data;
             // We want to warn when this happens since relayer collisions should be rare enough such that if this log is occurring frequently, it would indicate
@@ -285,15 +286,20 @@ export class GaslessRelayer {
               nonceSet.delete(depositNonce);
               return;
             }
-            // Otherwise, proceed with the fill transaction.
+            // Set logging information for the found deposit and proceed with the fill transaction.
+            receipt = {
+              transactionHash: associatedDeposit[0].txnRef,
+              blockNumber: associatedDeposit[0].blockNumber,
+              status: 1,
+            };
           }
 
           this.logger.debug({
             at: "GaslessRelayer#evaluateApiSignatures",
             message: "Deposit with authorization executed",
             depositId: depositMessage.swapTx.data.depositId,
-            txHash: receipt?.transactionHash ?? "Deposit collision",
-            blockNumber: receipt?.blockNumber ?? "Deposit collision",
+            txHash: receipt.transactionHash,
+            blockNumber: receipt.blockNumber,
           });
 
           const fillKey = this._getFilledRelayKey({
