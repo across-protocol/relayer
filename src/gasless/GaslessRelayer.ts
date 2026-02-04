@@ -342,7 +342,7 @@ export class GaslessRelayer {
       chainId,
       method: "depositWithAuthorization",
       args: getDepositWithAuthorizationArgs(message),
-      message: "Completed gasless deposit :sunglasses:",
+      message: "Completed gasless deposit 😎",
       mrkdwn: `Completed gasless deposit from ${getNetworkName(chainId)} to ${getNetworkName(
         destinationChainId
       )} with authorizer ${blockExplorerLink(from, chainId)} and deposit ID ${depositId}`,
@@ -393,7 +393,7 @@ export class GaslessRelayer {
     const { depositId } = data;
     const gaslessFill = {
       ..._gaslessFill,
-      message: "Completed gasless fill :crystal_ball:",
+      message: "Completed gasless fill 🔮",
       mrkdwn: `Completed gasless fill from ${getNetworkName(chainId)} to ${getNetworkName(
         destinationChainId
       )} and deposit ID ${depositId}`,
