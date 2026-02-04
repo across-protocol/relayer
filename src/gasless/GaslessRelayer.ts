@@ -47,6 +47,7 @@ export class GaslessRelayer {
   private signerAddress: EvmAddress;
 
   private transactionClient;
+  private redisCache;
 
   public constructor(
     readonly logger: winston.Logger,
@@ -68,6 +69,7 @@ export class GaslessRelayer {
 
     // Set the signer address.
     this.signerAddress = EvmAddress.from(await this.baseSigner.getAddress());
+    this.redisCache = await getRedisCache(this.logger);
     // Initialize the map with newly allocated sets.
     await forEachAsync(this.config.relayerOriginChains, async (chainId) => {
       this.providersByChain[chainId] = await getProvider(chainId);
@@ -145,13 +147,12 @@ export class GaslessRelayer {
     } = process.env;
     const maxCycles = Number(_maxCycles);
     const pollingDelay = Number(_pollingDelay);
-    const redis = await getRedisCache(this.logger);
     // Set the active instance immediately on arrival here. This function will poll until it reaches the max amount of
     // runs or it is interrupted by another process.
     if (isDefined(runIdentifier) && isDefined(botIdentifier)) {
-      await redis.set(botIdentifier, runIdentifier, maxCycles * pollingDelay);
+      await this.redisCache.set(botIdentifier, runIdentifier, maxCycles * pollingDelay);
       for (let run = 0; run < maxCycles; run++) {
-        const currentBot = await redis.get(botIdentifier);
+        const currentBot = await this.redisCache.get(botIdentifier);
         if (currentBot !== runIdentifier) {
           this.logger.debug({
             at: "GaslessRelayer#waitForDisconnect",
