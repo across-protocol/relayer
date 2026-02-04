@@ -61,7 +61,7 @@ export class GaslessRelayer {
    * @notice Initializes a GaslessRelayer instance.
    */
   public async initialize(): Promise<void> {
-    this.logger.info({
+    this.logger.debug({
       at: "GaslessRelayer#initialize",
       message: "Initializing GaslessRelayer",
     });
@@ -100,7 +100,7 @@ export class GaslessRelayer {
     // For the first runthrough, we want to specifically check the API for nonces which have corresponding deposits but no corresponding fills, and then
     // submit fills for those deposits. This is because this scenario may happen as an edge case when a prior relayer process is killed in the middle of
     // a deposit/fill flow.
-    this.logger.info({
+    this.logger.debug({
       at: "GaslessRelayer#initialize",
       message: "Querying gasless API for initial messages",
     });
@@ -116,7 +116,7 @@ export class GaslessRelayer {
       const fillKey = this._getFilledRelayKey({ originChainId: chainId, depositId: toBN(depositId) });
       return this.observedNonces[chainId].has(nonceKey) && !this.observedFills[chainId].has(fillKey);
     });
-    this.logger.info({
+    this.logger.debug({
       at: "GaslessRelayer#initialize",
       message: "Found unfilled deposits",
       unfilledDeposits: unfilledDeposits.length,
