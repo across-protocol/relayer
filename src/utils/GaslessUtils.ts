@@ -103,7 +103,7 @@ export function buildGaslessFillRelayTx(
   };
   return {
     contract: spokePool,
-    chainId,
+    chainId: destinationChainId,
     method: "fillRelay",
     args: [convertRelayDataParamsToBytes32(relayData), repaymentChainId, repaymentAddress.toBytes32()],
   };

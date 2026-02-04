@@ -377,7 +377,7 @@ export class GaslessRelayer {
     const spokePool = getSpokePool(destinationChainId).connect(this.baseSigner.connect(provider));
 
     // We do not need to wait for confirmation on the fill side.
-    const gaslessFill = buildGaslessFillRelayTx(message, spokePool, destinationChainId, this.signerAddress);
+    const gaslessFill = buildGaslessFillRelayTx(message, spokePool, message.swapTx.chainId, this.signerAddress);
 
     if (!this.config.sendingTransactionsEnabled) {
       this.logger.debug({
