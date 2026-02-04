@@ -1,5 +1,6 @@
 import axios, { AxiosError } from "axios";
-import { BigNumber, EvmAddress, winston } from "../utils";
+import { getAcrossHost } from "./";
+import { BigNumber, EvmAddress, winston, CHAIN_IDs } from "../utils";
 import { SWAP_ROUTES, SwapRoute } from "../common";
 
 interface SwapApiResponse {
@@ -33,10 +34,14 @@ interface SwapData {
  */
 export class AcrossSwapApiClient {
   private routesSupported: Set<SwapRoute> = new Set(Object.values(SWAP_ROUTES));
-  private readonly urlBase = "https://app.across.to/api";
-  private readonly apiResponseTimeout = 3000;
+  private readonly urlBase;
+  private readonly apiResponseTimeout;
 
-  constructor(readonly logger: winston.Logger) {}
+  constructor(readonly logger: winston.Logger, timeoutMs = 3000) {
+    // Swap API is mainnet-only.
+    this.urlBase = `https://${getAcrossHost(CHAIN_IDs.MAINNET)}/api`;
+    this.apiResponseTimeout = timeoutMs;
+  }
 
   /**
    * @notice Returns calldata necessary to swap exact output using the Across Swap API.

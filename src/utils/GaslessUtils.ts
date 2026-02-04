@@ -1,4 +1,7 @@
 import { BridgeWitnessData, DepositWithAuthorizationParams, GaslessDepositMessage } from "../interfaces";
+import { Address, toBN, toAddressType, convertRelayDataParamsToBytes32, toBytes32 } from "../utils";
+import { AugmentedTransaction } from "../clients";
+import { Contract } from "ethers";
 
 /**
  * Maps API BridgeWitness.data to the shape and types expected by the contract ABI.
@@ -27,14 +30,6 @@ function toContractDepositData(data: BridgeWitnessData) {
     spokePool: data.spokePool,
     nonce: data.nonce,
   };
-}
-
-function toBytes32(value: string): string {
-  const hex = value.startsWith("0x") ? value.slice(2) : value;
-  if (hex.length >= 64) {
-    return value.startsWith("0x") ? value : `0x${value}`;
-  }
-  return "0x" + hex.toLowerCase().padStart(64, "0");
 }
 
 function toBytes(value: string): string {
@@ -78,4 +73,38 @@ function normalizeSignature(signature: string): string {
     throw new Error("receiveWithAuthSignature must be 65 bytes (132 hex chars)");
   }
   return hex;
+}
+
+/*
+ * Returns a FillRelay transaction based on the input deposit message.
+ */
+export function buildGaslessFillRelayTx(
+  message: GaslessDepositMessage,
+  spokePool: Contract,
+  repaymentChainId: number,
+  repaymentAddress: Address
+): AugmentedTransaction {
+  const { chainId, data } = message.swapTx;
+  const { baseDepositData } = data.witness.BridgeWitness.data;
+  const { destinationChainId } = baseDepositData;
+  const relayData = {
+    depositor: toAddressType(baseDepositData.depositor, chainId),
+    recipient: toAddressType(baseDepositData.recipient, destinationChainId),
+    inputToken: toAddressType(baseDepositData.inputToken, chainId),
+    outputToken: toAddressType(baseDepositData.outputToken, destinationChainId),
+    inputAmount: toBN(baseDepositData.inputAmount),
+    outputAmount: toBN(baseDepositData.outputAmount),
+    exclusiveRelayer: toAddressType(baseDepositData.exclusiveRelayer, destinationChainId),
+    depositId: toBN(data.depositId),
+    originChainId: chainId,
+    fillDeadline: baseDepositData.fillDeadline,
+    exclusivityDeadline: baseDepositData.exclusivityDeadline,
+    message: baseDepositData.message,
+  };
+  return {
+    contract: spokePool,
+    chainId: destinationChainId,
+    method: "fillRelay",
+    args: [convertRelayDataParamsToBytes32(relayData), repaymentChainId, repaymentAddress.toBytes32()],
+  };
 }
