@@ -19,14 +19,17 @@ import {
   mapAsync,
   TOKEN_SYMBOLS_MAP,
   TransactionReceipt,
-  runTransaction,
-  bnZero,
+  EvmAddress,
+  toBN,
+  TransactionResponse,
+  blockExplorerLink,
+  getNetworkName,
 } from "../utils";
 import { GaslessDepositMessage, FillWithBlock, AuthorizationUsed, BaseDepositData } from "../interfaces";
 import { CHAIN_MAX_BLOCK_LOOKBACK, CONTRACT_ADDRESSES } from "../common";
-import { AcrossSwapApiClient } from "../clients";
+import { AcrossSwapApiClient, TransactionClient } from "../clients";
 import EIP3009_ABI from "../common/abi/EIP3009.json";
-import { getDepositWithAuthorizationArgs } from "../utils/GaslessUtils";
+import { buildGaslessFillRelayTx, getDepositWithAuthorizationArgs } from "../utils/GaslessUtils";
 
 /**
  * Independent relayer bot which processes EIP-3009 signatures into deposits and corresponding fills.
@@ -42,19 +45,32 @@ export class GaslessRelayer {
   private observedFills: { [chainId: number]: Set<string> } = {};
 
   private api: AcrossSwapApiClient;
+  private signerAddress: EvmAddress;
+
+  private transactionClient;
+  private redisCache;
 
   public constructor(
     readonly logger: winston.Logger,
     readonly config: GaslessRelayerConfig,
     readonly baseSigner: Signer
   ) {
-    this.api = new AcrossSwapApiClient(this.logger);
+    this.api = new AcrossSwapApiClient(this.logger, this.config.apiTimeoutOverride);
+    this.transactionClient = new TransactionClient(this.logger);
   }
 
   /*
    * @notice Initializes a GaslessRelayer instance.
    */
   public async initialize(): Promise<void> {
+    this.logger.debug({
+      at: "GaslessRelayer#initialize",
+      message: "Initializing GaslessRelayer",
+    });
+
+    // Set the signer address.
+    this.signerAddress = EvmAddress.from(await this.baseSigner.getAddress());
+    this.redisCache = await getRedisCache(this.logger);
     // Initialize the map with newly allocated sets.
     await forEachAsync(this.config.relayerOriginChains, async (chainId) => {
       this.providersByChain[chainId] = await getProvider(chainId);
@@ -83,6 +99,33 @@ export class GaslessRelayer {
       });
       this.abortController.abort();
     });
+
+    // For the first runthrough, we want to specifically check the API for nonces which have corresponding deposits but no corresponding fills, and then
+    // submit fills for those deposits. This is because this scenario may happen as an edge case when a prior relayer process is killed in the middle of
+    // a deposit/fill flow.
+    this.logger.debug({
+      at: "GaslessRelayer#initialize",
+      message: "Querying gasless API for initial messages",
+    });
+    const initialMessages = await this._queryGaslessApi(this.config.initializationRetryAttempts);
+    const unfilledDeposits = initialMessages.filter((depositMessage) => {
+      // Only take the API messages which are in `this.observedNonces` but not in `this.observedFills`.
+      const { permit, depositId, witness } = depositMessage.swapTx.data;
+      const originChainId = depositMessage.swapTx.chainId;
+      const { destinationChainId } = witness.BridgeWitness.data.baseDepositData;
+      const nonceKey = this._getNonceKey(permit.domain.verifyingContract, {
+        authorizer: permit.message.from!,
+        nonce: permit.message.nonce!,
+      });
+      const fillKey = this._getFilledRelayKey({ originChainId, depositId: toBN(depositId) });
+      return this.observedNonces[originChainId].has(nonceKey) && !this.observedFills[destinationChainId].has(fillKey);
+    });
+    this.logger.debug({
+      at: "GaslessRelayer#initialize",
+      message: "Found unfilled deposits",
+      unfilledDeposits: unfilledDeposits.length,
+    });
+    await mapAsync(unfilledDeposits, async (deposit) => this.initiateFill(deposit));
     this.initialized = true;
   }
 
@@ -106,13 +149,12 @@ export class GaslessRelayer {
     } = process.env;
     const maxCycles = Number(_maxCycles);
     const pollingDelay = Number(_pollingDelay);
-    const redis = await getRedisCache(this.logger);
     // Set the active instance immediately on arrival here. This function will poll until it reaches the max amount of
     // runs or it is interrupted by another process.
     if (isDefined(runIdentifier) && isDefined(botIdentifier)) {
-      await redis.set(botIdentifier, runIdentifier, maxCycles * pollingDelay);
+      await this.redisCache.set(botIdentifier, runIdentifier, maxCycles * pollingDelay);
       for (let run = 0; run < maxCycles; run++) {
-        const currentBot = await redis.get(botIdentifier);
+        const currentBot = await this.redisCache.get(botIdentifier);
         if (currentBot !== runIdentifier) {
           this.logger.debug({
             at: "GaslessRelayer#waitForDisconnect",
@@ -189,40 +231,81 @@ export class GaslessRelayer {
    * @notice Polls the API and creates deposits/fills for all messages which are missing deposits/fills.
    */
   private async evaluateApiSignatures(): Promise<void> {
-    const apiMessages = await this.api.get<GaslessDepositMessage[]>(this.config.apiEndpoint, {}); // Query the API.
+    const apiMessages = await this._queryGaslessApi();
     await forEachAsync(
       // Filter if we do not recognize the chain ID.
       apiMessages.filter(({ swapTx }) => isDefined(this.observedNonces[swapTx.chainId])),
       async (depositMessage) => {
         const { swapTx } = depositMessage;
         const nonceSet = this.observedNonces[swapTx.chainId];
+        const fillSet = this.observedFills[swapTx.data.witness.BridgeWitness.data.baseDepositData.destinationChainId];
         const depositData = this._extractDepositData(depositMessage);
         const depositNonce = this._getNonceKey(depositData.inputToken, {
           authorizer: swapTx.data.permit.message.from!,
           nonce: swapTx.data.permit.message.nonce!,
         }); // add ! to make sure deposit data is defined.
-        // If the deposit has been observed, then exit.
-        if (nonceSet.has(depositNonce)) {
-          return;
+        // If the deposit has been observed, go to the fill step.
+        if (!nonceSet.has(depositNonce)) {
+          this.logger.debug({
+            at: "GaslessRelayer#evaluateApiSignatures",
+            message: "Deposit not observed, initiating deposit",
+            depositId: depositMessage.swapTx.data.depositId,
+            depositNonce,
+          });
+
+          // Mark the signature as observed.
+          nonceSet.add(depositNonce);
+
+          // Initiate the deposit (depositWithAuthorization) and wait for tx to be executed.
+          const receipt = await this.initiateGaslessDeposit(depositMessage);
+          if (!receipt || !receipt.status) {
+            this.logger.warn({
+              at: "GaslessRelayer#evaluateApiSignatures",
+              message: "Failed to initiate deposit",
+              depositId: depositMessage.swapTx.data.depositId,
+              depositNonce,
+            });
+            // If the deposit fails, mark the signature as not observed so that we can retry.
+            nonceSet.delete(depositNonce);
+            return;
+          }
+
+          this.logger.debug({
+            at: "GaslessRelayer#evaluateApiSignatures",
+            message: "Deposit with authorization executed",
+            depositId: depositMessage.swapTx.data.depositId,
+            txHash: receipt.transactionHash,
+            blockNumber: receipt.blockNumber,
+          });
+
+          const fillKey = this._getFilledRelayKey({
+            originChainId: swapTx.chainId,
+            depositId: toBN(swapTx.data.depositId),
+          });
+
+          // If the fill has been observed, exit. All fill transactions initiated by this bot should generally never collide here, but it is possible for another party with knowledge of the
+          // witness to prefill any deposit, causing the fill to be known while the deposit is still yet to be executed.
+          if (fillSet.has(fillKey)) {
+            this.logger.warn({
+              at: "GaslessRelayer#evaluateApiSignatures",
+              message: "Out of order fill observed. Skipping",
+              depositId: depositMessage.swapTx.data.depositId,
+            });
+            return;
+          }
+
+          this.logger.debug({
+            at: "GaslessRelayer#evaluateApiSignatures",
+            message: "Fill not observed, initiating fill",
+            depositId: depositMessage.swapTx.data.depositId,
+          });
+
+          // We do not need to evaluate the response of `initiateFill` since the TransactionClient should handle the logging. A `null` response
+          // here means that we did not send a transaction because of config.
+          await this.initiateFill(depositMessage);
+          // There is no race on setting the fill in the fill set, so we can set it after the fill transaction is sent.
+          fillSet.add(fillKey);
         }
-
-        // Mark the signature as observed.
-        nonceSet.add(depositNonce);
-
-        // Initiate the deposit (depositWithAuthorization) and wait for tx to be executed.
-        const receipt = await this.initiateGaslessDeposit(depositMessage);
-        if (!receipt) {
-          return;
-        }
-        this.logger.info({
-          at: "GaslessRelayer#evaluateApiSignatures",
-          message: "Deposit with authorization executed",
-          requestId: depositMessage.requestId,
-          txHash: receipt.transactionHash,
-          blockNumber: receipt.blockNumber,
-        });
-
-        // Fill the deposit.
       }
     );
   }
@@ -232,19 +315,14 @@ export class GaslessRelayer {
    * @returns The transaction receipt, or null if skipped or failed.
    */
   private async initiateGaslessDeposit(message: GaslessDepositMessage): Promise<TransactionReceipt | null> {
-    const { chainId } = message.swapTx;
+    const { chainId, data } = message.swapTx;
     const provider = this.providersByChain[chainId];
 
-    if (!isDefined(provider)) {
-      this.logger.warn({
-        at: "GaslessRelayer#initiateGaslessDeposit",
-        message: "No provider for chainId, skipping",
-        chainId,
-      });
-      return null;
-    }
-
     if (!this.config.sendingTransactionsEnabled) {
+      this.logger.debug({
+        at: "GaslessRelayer#initiateGaslessDeposit",
+        message: "Sending transactions disabled, skipping",
+      });
       return null;
     }
 
@@ -255,17 +333,31 @@ export class GaslessRelayer {
       signer
     );
 
+    const { depositId, witness, permit } = data;
+    const { from } = permit.message;
+    const { destinationChainId } = witness.BridgeWitness.data.baseDepositData;
+    // Construct an AugmentedTransaction type for the deposit transaction.
+    const depositTransaction = {
+      contract: spokePoolPeripheryContract,
+      chainId,
+      method: "depositWithAuthorization",
+      args: getDepositWithAuthorizationArgs(message),
+      message: "Completed gasless deposit 😎",
+      mrkdwn: `Completed gasless deposit from ${getNetworkName(chainId)} to ${getNetworkName(
+        destinationChainId
+      )} with authorizer ${blockExplorerLink(from, chainId)} and deposit ID ${depositId}`,
+      // We must ensure confirmation on this transaction since the deposit transaction should precede the fill transaction.
+      ensureConfirmation: true,
+    };
+
     try {
-      const txResponse = await runTransaction(
-        this.logger,
-        spokePoolPeripheryContract,
-        "depositWithAuthorization",
-        getDepositWithAuthorizationArgs(message),
-        bnZero
-      );
-      return txResponse.wait();
+      const txResponses = await this.transactionClient.submit(chainId, [depositTransaction]);
+      // Since we called `ensureConfirmation` in the transaction client, the receipt should exist, so `.wait()` should have already resolved.
+      // We only sent one transaction, so only take the first element of `txResponses`.
+      return txResponses[0].wait();
     } catch (err) {
-      this.logger.error({
+      // We will reach this code block if, after polling for transaction confirmation, we still do not see the receipt onchain.
+      this.logger.warn({
         at: "GaslessRelayer#initiateGaslessDeposit",
         message: "Failed to execute depositWithAuthorization",
         requestId: message.requestId,
@@ -273,6 +365,58 @@ export class GaslessRelayer {
       });
       return null;
     }
+  }
+
+  /*
+   * @notice Builds and sends the associated `fillRelay` call from the input API message.
+   */
+  private async initiateFill(message: GaslessDepositMessage): Promise<TransactionResponse | null> {
+    const { data, chainId } = message.swapTx;
+
+    const { data: witnessData } = data.witness.BridgeWitness;
+    const destinationChainId = witnessData.baseDepositData.destinationChainId;
+    const provider = this.providersByChain[destinationChainId];
+    const spokePool = getSpokePool(destinationChainId).connect(this.baseSigner.connect(provider));
+
+    // We do not need to wait for confirmation on the fill side.
+    const _gaslessFill = buildGaslessFillRelayTx(message, spokePool, message.swapTx.chainId, this.signerAddress);
+
+    if (!this.config.sendingTransactionsEnabled) {
+      this.logger.debug({
+        at: "GaslessRelayer#initiateGaslessDeposit",
+        message: "Sending transactions disabled, skipping",
+      });
+      return null;
+    }
+
+    // Add in message/mrkdwn.
+    const { depositId } = data;
+    const gaslessFill = {
+      ..._gaslessFill,
+      message: "Completed gasless fill 🔮",
+      mrkdwn: `Completed gasless fill from ${getNetworkName(chainId)} to ${getNetworkName(
+        destinationChainId
+      )} and deposit ID ${depositId}`,
+    };
+
+    return this.transactionClient.submit(destinationChainId, [gaslessFill]);
+  }
+
+  /*
+   * @notice Queries the API for all pending gasless transactions. By default, do not retry since this endpoing is being polled.
+   */
+  private async _queryGaslessApi(retriesRemaining = 0): Promise<GaslessDepositMessage[]> {
+    let apiResponseData: { deposits: GaslessDepositMessage[] } | undefined = undefined;
+    try {
+      apiResponseData = await this.api.get<{ deposits: GaslessDepositMessage[] }>(this.config.apiEndpoint, {}); // Query the API via the swap API client.
+    } catch {
+      // A catch block is here so that we don't crash on no returned `apiResponseData`. An error log should have been emitted in the lower-level AcrossSwapApiClient.
+    }
+    if (!isDefined(apiResponseData)) {
+      // If we failed to query the API, then return conditionally return based on whether we wish to retry the query.
+      return retriesRemaining > 0 ? this._queryGaslessApi(--retriesRemaining) : [];
+    }
+    return apiResponseData.deposits;
   }
 
   /*
