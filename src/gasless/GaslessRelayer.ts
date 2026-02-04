@@ -298,8 +298,8 @@ export class GaslessRelayer {
             at: "GaslessRelayer#evaluateApiSignatures",
             message: "Deposit with authorization executed",
             depositId: depositMessage.swapTx.data.depositId,
-            txHash: receipt.transactionHash,
-            blockNumber: receipt.blockNumber,
+            txHash: receipt?.transactionHash ?? "Deposit collision",
+            blockNumber: receipt?.blockNumber ?? "Deposit collision",
           });
 
           const fillKey = this._getFilledRelayKey({
