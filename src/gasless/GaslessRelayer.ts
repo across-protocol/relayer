@@ -21,7 +21,6 @@ import {
   TransactionReceipt,
   EvmAddress,
   toBN,
-  assert,
   TransactionResponse,
 } from "../utils";
 import { GaslessDepositMessage, FillWithBlock, AuthorizationUsed, BaseDepositData } from "../interfaces";
@@ -256,7 +255,7 @@ export class GaslessRelayer {
 
           // Initiate the deposit (depositWithAuthorization) and wait for tx to be executed.
           const receipt = await this.initiateGaslessDeposit(depositMessage);
-          if (!receipt) {
+          if (!receipt || !receipt.status) {
             this.logger.warn({
               at: "GaslessRelayer#evaluateApiSignatures",
               message: "Failed to initiate deposit",
@@ -267,8 +266,6 @@ export class GaslessRelayer {
             nonceSet.delete(depositNonce);
             return;
           }
-
-          assert(receipt.status, "Deposit transaction failed");
 
           this.logger.debug({
             at: "GaslessRelayer#evaluateApiSignatures",
@@ -303,6 +300,7 @@ export class GaslessRelayer {
           // We do not need to evaluate the response of `initiateFill` since the TransactionClient should handle the logging. A `null` response
           // here means that we did not send a transaction because of config.
           await this.initiateFill(depositMessage);
+          // There is no race on setting the fill in the fill set, so we can set it after the fill transaction is sent.
           fillSet.add(fillKey);
         }
 
