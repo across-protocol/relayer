@@ -21,12 +21,16 @@ import {
   TransactionReceipt,
   runTransaction,
   bnZero,
+  EvmAddress,
+  toBN,
+  assert,
+  TransactionResponse,
 } from "../utils";
 import { GaslessDepositMessage, FillWithBlock, AuthorizationUsed, BaseDepositData } from "../interfaces";
 import { CHAIN_MAX_BLOCK_LOOKBACK, CONTRACT_ADDRESSES } from "../common";
 import { AcrossSwapApiClient } from "../clients";
 import EIP3009_ABI from "../common/abi/EIP3009.json";
-import { getDepositWithAuthorizationArgs } from "../utils/GaslessUtils";
+import { buildGaslessFillRelayTx, getDepositWithAuthorizationArgs } from "../utils/GaslessUtils";
 
 /**
  * Independent relayer bot which processes EIP-3009 signatures into deposits and corresponding fills.
@@ -43,14 +47,6 @@ export class GaslessRelayer {
 
   private api: AcrossSwapApiClient;
   private signerAddress: EvmAddress;
-
-  private providersByChain: { [chainId: number]: Provider } = {};
-  // The object is indexed by `chainId`. An `AuthorizationUsed` event is marked by adding `${token}:${authorizer}:${nonce}` to the respective chain's set.
-  private observedNonces: { [chainId: number]: Set<string> } = {};
-  // The object is indexed by `chainId`. A `FilledRelay` event is marked by adding `${originChainId}:${depositId}` to the respective chain's set.
-  private observedFills: { [chainId: number]: Set<string> } = {};
-
-  private api: AcrossSwapApiClient;
 
   public constructor(
     readonly logger: winston.Logger,
