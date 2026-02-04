@@ -19,8 +19,6 @@ import {
   mapAsync,
   TOKEN_SYMBOLS_MAP,
   TransactionReceipt,
-  runTransaction,
-  bnZero,
   EvmAddress,
   toBN,
   assert,
@@ -28,7 +26,7 @@ import {
 } from "../utils";
 import { GaslessDepositMessage, FillWithBlock, AuthorizationUsed, BaseDepositData } from "../interfaces";
 import { CHAIN_MAX_BLOCK_LOOKBACK, CONTRACT_ADDRESSES } from "../common";
-import { AcrossSwapApiClient } from "../clients";
+import { AcrossSwapApiClient, TransactionClient } from "../clients";
 import EIP3009_ABI from "../common/abi/EIP3009.json";
 import { buildGaslessFillRelayTx, getDepositWithAuthorizationArgs } from "../utils/GaslessUtils";
 
@@ -48,12 +46,15 @@ export class GaslessRelayer {
   private api: AcrossSwapApiClient;
   private signerAddress: EvmAddress;
 
+  private transactionClient;
+
   public constructor(
     readonly logger: winston.Logger,
     readonly config: GaslessRelayerConfig,
     readonly baseSigner: Signer
   ) {
     this.api = new AcrossSwapApiClient(this.logger, this.config.apiTimeoutOverride);
+    this.transactionClient = new TransactionClient(this.logger);
   }
 
   /*
@@ -340,18 +341,21 @@ export class GaslessRelayer {
       signer
     );
 
+    // Construct an AugmentedTransaction type for the deposit transaction.
+    const depositTransaction = {
+      contract: spokePoolPeripheryContract,
+      chainId,
+      method: "depositWithAuthorization",
+      args: getDepositWithAuthorizationArgs(message),
+      // We must ensure confirmation on this transaction since the deposit transaction should precede the fill transaction.
+      ensureConfirmation: true,
+    };
+
     try {
-      const txResponse = await runTransaction(
-        this.logger,
-        spokePoolPeripheryContract,
-        "depositWithAuthorization",
-        getDepositWithAuthorizationArgs(message),
-        bnZero,
-        undefined,
-        undefined,
-        this.config.nRetries
-      );
-      return txResponse.wait();
+      const txResponses = await this.transactionClient.submit(chainId, [depositTransaction]);
+      // Since we called `ensureConfirmation` in the transaction client, the receipt should exist, so `.wait()` should have already resolved.
+      // We only sent one transaction, so only take the first element of `txResponses`.
+      return txResponses[0].wait();
     } catch (err) {
       this.logger.error({
         at: "GaslessRelayer#initiateGaslessDeposit",
@@ -374,6 +378,7 @@ export class GaslessRelayer {
     const provider = this.providersByChain[destinationChainId];
     const spokePool = getSpokePool(destinationChainId).connect(this.baseSigner.connect(provider));
 
+    // We do not need to wait for confirmation on the fill side.
     const gaslessFill = buildGaslessFillRelayTx(message, spokePool, destinationChainId, this.signerAddress);
 
     if (!this.config.sendingTransactionsEnabled) {
@@ -384,16 +389,7 @@ export class GaslessRelayer {
       return null;
     }
 
-    return runTransaction(
-      this.logger, // logger
-      gaslessFill.contract, // contract
-      gaslessFill.method, // method
-      gaslessFill.args, // args
-      undefined, // value
-      undefined, // gasLimit
-      undefined, // nonce
-      this.config.nRetries // retries
-    );
+    return this.transactionClient.submit(destinationChainId, [gaslessFill]);
   }
 
   /*
