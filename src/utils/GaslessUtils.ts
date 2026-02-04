@@ -1,5 +1,5 @@
 import { BridgeWitnessData, DepositWithAuthorizationParams, GaslessDepositMessage } from "../interfaces";
-import { Address, toBN, toAddressType, convertRelayDataParamsToBytes32 } from "../utils";
+import { Address, toBN, toAddressType, convertRelayDataParamsToBytes32, toBytes32 } from "../utils";
 import { AugmentedTransaction } from "../clients";
 import { Contract } from "ethers";
 
@@ -30,14 +30,6 @@ function toContractDepositData(data: BridgeWitnessData) {
     spokePool: data.spokePool,
     nonce: data.nonce,
   };
-}
-
-function toBytes32(value: string): string {
-  const hex = value.startsWith("0x") ? value.slice(2) : value;
-  if (hex.length >= 64) {
-    return value.startsWith("0x") ? value : `0x${value}`;
-  }
-  return "0x" + hex.toLowerCase().padStart(64, "0");
 }
 
 function toBytes(value: string): string {

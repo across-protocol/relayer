@@ -248,12 +248,21 @@ export class GaslessRelayer {
             depositId: depositMessage.swapTx.data.depositId,
             depositNonce,
           });
+
           // Mark the signature as observed.
           nonceSet.add(depositNonce);
 
           // Initiate the deposit (depositWithAuthorization) and wait for tx to be executed.
           const receipt = await this.initiateGaslessDeposit(depositMessage);
           if (!receipt) {
+            this.logger.warn({
+              at: "GaslessRelayer#evaluateApiSignatures",
+              message: "Failed to initiate deposit",
+              depositId: depositMessage.swapTx.data.depositId,
+              depositNonce,
+            });
+            // If the deposit fails, mark the signature as not observed so that we can retry.
+            nonceSet.delete(depositNonce);
             return;
           }
 
@@ -316,15 +325,6 @@ export class GaslessRelayer {
     const { chainId } = message.swapTx;
     const provider = this.providersByChain[chainId];
 
-    if (!isDefined(provider)) {
-      this.logger.warn({
-        at: "GaslessRelayer#initiateGaslessDeposit",
-        message: "No provider for chainId, skipping",
-        chainId,
-      });
-      return null;
-    }
-
     if (!this.config.sendingTransactionsEnabled) {
       this.logger.info({
         at: "GaslessRelayer#initiateGaslessDeposit",
@@ -346,7 +346,10 @@ export class GaslessRelayer {
         spokePoolPeripheryContract,
         "depositWithAuthorization",
         getDepositWithAuthorizationArgs(message),
-        bnZero
+        bnZero,
+        undefined,
+        undefined,
+        this.config.nRetries
       );
       return txResponse.wait();
     } catch (err) {
