@@ -19,12 +19,14 @@ import {
   mapAsync,
   TOKEN_SYMBOLS_MAP,
   TransactionReceipt,
+  runTransaction,
+  bnZero,
 } from "../utils";
 import { GaslessDepositMessage, FillWithBlock, AuthorizationUsed, BaseDepositData } from "../interfaces";
 import { CHAIN_MAX_BLOCK_LOOKBACK, CONTRACT_ADDRESSES } from "../common";
 import { AcrossSwapApiClient } from "../clients";
 import EIP3009_ABI from "../common/abi/EIP3009.json";
-import { buildDepositWithAuthorizationTx } from "../utils/GaslessUtils";
+import { getDepositWithAuthorizationArgs } from "../utils/GaslessUtils";
 
 /**
  * Independent relayer bot which processes EIP-3009 signatures into deposits and corresponding fills.
@@ -248,23 +250,25 @@ export class GaslessRelayer {
       return null;
     }
 
-    // @TODO: Because we will use this for small amount of chains, we can consider to create contracts for all chains during initialization.
+    if (!this.config.sendingTransactionsEnabled) {
+      return null;
+    }
+
+    const signer = this.baseSigner.connect(provider);
     const spokePoolPeripheryContract = new Contract(
       CONTRACT_ADDRESSES[chainId].spokePoolPeriphery.address,
       CONTRACT_ADDRESSES[chainId].spokePoolPeriphery.abi,
-      provider
+      signer
     );
 
-    const signer = this.baseSigner.connect(provider);
-
     try {
-      const tx = await buildDepositWithAuthorizationTx(message, spokePoolPeripheryContract);
-
-      if (!this.config.sendingTransactionsEnabled) {
-        return null;
-      }
-
-      const txResponse = await signer.sendTransaction(tx);
+      const txResponse = await runTransaction(
+        this.logger,
+        spokePoolPeripheryContract,
+        "depositWithAuthorization",
+        getDepositWithAuthorizationArgs(message),
+        bnZero
+      );
       return txResponse.wait();
     } catch (err) {
       this.logger.error({
