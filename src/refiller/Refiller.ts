@@ -22,7 +22,8 @@ import {
   getTokenInfo,
   mapAsync,
   parseUnits,
-  runTransaction,
+  submitTransaction,
+  TransactionClient,
   sendRawTransaction,
   Signer,
   toAddressType,
@@ -63,6 +64,7 @@ export class Refiller {
   private baseSigner: Signer;
   private baseSignerAddress: EvmAddress;
   private initialized = false;
+  private transactionClient: TransactionClient;
 
   public constructor(
     readonly logger: winston.Logger,
@@ -71,6 +73,7 @@ export class Refiller {
   ) {
     this.acrossSwapApiClient = new AcrossSwapApiClient(this.logger);
     this.baseSigner = this.clients.hubPoolClient.hubPool.signer;
+    this.transactionClient = new TransactionClient(this.logger);
   }
 
   /**
@@ -342,7 +345,13 @@ export class Refiller {
     // Execute the l1 to l2 rebalance.
     let txn;
     try {
-      txn = await (await runTransaction(this.logger, contract, method, args, value)).wait();
+      txn = await (await submitTransaction({
+        contract: contract,
+        method: method,
+        args: args,
+        value: value,
+        chainId: chainId,
+      }, this.transactionClient)).wait();
     } catch (error) {
       // Log the error and do not retry.
       this.logger.warn({
@@ -377,7 +386,12 @@ export class Refiller {
       amount
     );
     if (hasSufficientWethBalance) {
-      return await (await runTransaction(this.logger, weth, "withdraw", [amount])).wait();
+      return await (await submitTransaction({
+        contract: weth,
+        method: "withdraw",
+        args: [amount],
+        chainId: chainId,
+      }, this.transactionClient)).wait();
     } else {
       this.logger.warn({
         at: "Refiller#refillNativeTokenBalances",

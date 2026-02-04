@@ -4,7 +4,7 @@ import {
   spreadEventWithBlockNumber,
   toBN,
   MAX_SAFE_ALLOWANCE,
-  runTransaction,
+  submitTransaction,
   bnZero,
   getNetworkName,
   blockExplorerLink,
@@ -15,6 +15,7 @@ import {
 import { BridgeEvent } from "./bridges/BaseBridgeAdapter";
 import { Log, SortableEvent } from "../interfaces";
 import { ExpandedERC20 } from "@across-protocol/contracts";
+import { TransactionClient } from "../clients/TransactionClient";
 
 export {
   matchL2EthDepositAndWrapEvents,
@@ -40,15 +41,26 @@ export async function approveTokens(
   hubChainId: number,
   logger: winston.Logger
 ): Promise<string> {
+  const transactionClient = new TransactionClient(logger);
   const bridges = tokens.flatMap(({ token, bridges }) => bridges.map((bridge) => ({ token, bridge })));
   const approvalMarkdwn = await mapAsync(bridges, async ({ token, bridge }) => {
     const txs = [];
     if (approvalChainId == hubChainId) {
       if (TOKEN_APPROVALS_TO_FIRST_ZERO[hubChainId]?.includes(token.address)) {
-        txs.push(await runTransaction(logger, token, "approve", [bridge.toNative(), bnZero]));
+        txs.push(await submitTransaction({
+          contract: token,
+          method: "approve",
+          args: [bridge.toNative(), bnZero],
+          chainId: approvalChainId,
+        }, transactionClient));
       }
     }
-    txs.push(await runTransaction(logger, token, "approve", [bridge.toNative(), MAX_SAFE_ALLOWANCE]));
+    txs.push(await submitTransaction({
+      contract: token,
+      method: "approve",
+      args: [bridge.toNative(), MAX_SAFE_ALLOWANCE],
+      chainId: approvalChainId,
+    }, transactionClient));
     const receipts = await Promise.all(txs.map((tx) => tx.wait()));
     const networkName = getNetworkName(approvalChainId);
 

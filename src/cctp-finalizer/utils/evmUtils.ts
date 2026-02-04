@@ -2,7 +2,8 @@ import { ethers } from "ethers";
 import { utils } from "@across-protocol/sdk";
 import {
   winston,
-  runTransaction,
+  submitTransaction,
+  TransactionClient,
   getCctpV2MessageTransmitter,
   CHAIN_IDs,
   depositToHypercore,
@@ -152,8 +153,14 @@ export async function processMintEvm(
     destinationType: destination.type,
     contractAddress: destination.address,
   });
+  const transactionClient = new TransactionClient(logger);
 
-  const mintTx = await runTransaction(logger, contract, "receiveMessage", receiveMessageArgs);
+  const mintTx = await submitTransaction({
+    contract: contract,
+    method: "receiveMessage",
+    args: receiveMessageArgs,
+    chainId,
+  }, transactionClient);
 
   const mintTxReceipt = await mintTx.wait();
 

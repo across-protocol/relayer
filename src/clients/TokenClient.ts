@@ -15,7 +15,8 @@ import {
   blockExplorerLink,
   getNetworkName,
   Profiler,
-  runTransaction,
+  submitTransaction,
+  TransactionClient,
   toBN,
   winston,
   getRedisCache,
@@ -51,6 +52,7 @@ export class TokenClient {
   tokenShortfall: TokenShortfallType = {};
   unfilledDepositAmounts: UnfilledDepositAmountsType = {};
   readonly spokePoolManager: SpokePoolManager;
+  private transactionClient: TransactionClient;
 
   constructor(
     readonly logger: winston.Logger,
@@ -64,6 +66,7 @@ export class TokenClient {
     this.spokePoolManager = new SpokePoolManager(logger, spokePoolClients);
     this.profiler = new Profiler({ at: "TokenClient", logger });
     this.erc20 = new Contract(ZERO_ADDRESS, ERC20.abi);
+    this.transactionClient = new TransactionClient(logger);
   }
 
   getAllTokenData(): TokenDataType {
@@ -188,7 +191,12 @@ export class TokenClient {
         const targetSpokePool = targetSpokePoolClient.spokePool;
         const token = toAddressType(_token, chainId).toEvmAddress();
         const contract = new Contract(token, ERC20.abi, targetSpokePool.signer);
-        const tx = await runTransaction(this.logger, contract, "approve", [targetSpokePool.address, MAX_UINT_VAL]);
+        const tx = await submitTransaction({
+          contract: contract,
+          method: "approve",
+          args: [targetSpokePool.address, MAX_UINT_VAL],
+          chainId,
+        }, this.transactionClient);
         mrkdwn +=
           ` - Approved SpokePool ${blockExplorerLink(targetSpokePool.address, chainId)} ` +
           `to spend ${await contract.symbol()} ${blockExplorerLink(token, chainId)} on ${getNetworkName(chainId)}. ` +
@@ -206,7 +214,12 @@ export class TokenClient {
 
     const currentCollateralAllowance: BigNumber = await bondToken.allowance(ownerAddress, hubPool.address);
     if (currentCollateralAllowance.lt(toBN(MAX_SAFE_ALLOWANCE))) {
-      const tx = await runTransaction(this.logger, bondToken, "approve", [hubPool.address, MAX_UINT_VAL]);
+      const tx = await submitTransaction({
+        contract: bondToken,
+        method: "approve",
+        args: [hubPool.address, MAX_UINT_VAL],
+        chainId: this.hubPoolClient.chainId,
+      }, this.transactionClient);
       const { chainId } = this.hubPoolClient;
       const mrkdwn =
         ` - Approved HubPool ${blockExplorerLink(hubPool.address, chainId)} ` +
