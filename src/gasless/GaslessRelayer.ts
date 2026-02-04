@@ -313,17 +313,14 @@ export class GaslessRelayer {
    * @notice Builds and sends the associated `fillRelay` call from the input API message.
    */
   private async initiateFill(message: GaslessDepositMessage): Promise<TransactionResponse | null> {
-    const { chainId, data } = message.swapTx;
-    const provider = this.providersByChain[chainId];
+    const { data } = message.swapTx;
 
     const { data: witnessData } = data.witness.BridgeWitness;
-    const spokePool = getSpokePool(chainId).connect(this.baseSigner.connect(provider));
-    assert(
-      spokePool.address == witnessData.spokePool,
-      `Spoke pool mismatch in witness data. Expected ${spokePool.address}. Got ${witnessData.spokePool}`
-    );
+    const destinationChainId = witnessData.baseDepositData.destinationChainId;
+    const provider = this.providersByChain[destinationChainId];
+    const spokePool = getSpokePool(destinationChainId).connect(this.baseSigner.connect(provider));
 
-    const gaslessFill = buildGaslessFillRelayTx(message, spokePool, chainId, this.signerAddress);
+    const gaslessFill = buildGaslessFillRelayTx(message, spokePool, destinationChainId, this.signerAddress);
     return runTransaction(
       this.logger, // logger
       gaslessFill.contract, // contract
