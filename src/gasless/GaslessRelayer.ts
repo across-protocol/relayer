@@ -21,8 +21,9 @@ import {
   TransactionReceipt,
   EvmAddress,
   toBN,
-  assert,
   TransactionResponse,
+  blockExplorerLink,
+  getNetworkName,
 } from "../utils";
 import { GaslessDepositMessage, FillWithBlock, AuthorizationUsed, BaseDepositData } from "../interfaces";
 import { CHAIN_MAX_BLOCK_LOOKBACK, CONTRACT_ADDRESSES } from "../common";
@@ -106,17 +107,18 @@ export class GaslessRelayer {
       at: "GaslessRelayer#initialize",
       message: "Querying gasless API for initial messages",
     });
-    const initialMessages = await this._queryGaslessApi();
+    const initialMessages = await this._queryGaslessApi(this.config.initializationRetryAttempts);
     const unfilledDeposits = initialMessages.filter((depositMessage) => {
       // Only take the API messages which are in `this.observedNonces` but not in `this.observedFills`.
-      const { permit, depositId } = depositMessage.swapTx.data;
-      const chainId = depositMessage.swapTx.chainId;
+      const { permit, depositId, witness } = depositMessage.swapTx.data;
+      const originChainId = depositMessage.swapTx.chainId;
+      const { destinationChainId } = witness.BridgeWitness.data.baseDepositData;
       const nonceKey = this._getNonceKey(permit.domain.verifyingContract, {
         authorizer: permit.message.from!,
         nonce: permit.message.nonce!,
       });
-      const fillKey = this._getFilledRelayKey({ originChainId: chainId, depositId: toBN(depositId) });
-      return this.observedNonces[chainId].has(nonceKey) && !this.observedFills[chainId].has(fillKey);
+      const fillKey = this._getFilledRelayKey({ originChainId, depositId: toBN(depositId) });
+      return this.observedNonces[originChainId].has(nonceKey) && !this.observedFills[destinationChainId].has(fillKey);
     });
     this.logger.debug({
       at: "GaslessRelayer#initialize",
@@ -313,7 +315,7 @@ export class GaslessRelayer {
    * @returns The transaction receipt, or null if skipped or failed.
    */
   private async initiateGaslessDeposit(message: GaslessDepositMessage): Promise<TransactionReceipt | null> {
-    const { chainId } = message.swapTx;
+    const { chainId, data } = message.swapTx;
     const provider = this.providersByChain[chainId];
 
     if (!this.config.sendingTransactionsEnabled) {
@@ -331,12 +333,19 @@ export class GaslessRelayer {
       signer
     );
 
+    const { depositId, witness, permit } = data;
+    const { from } = permit.message;
+    const { destinationChainId } = witness.BridgeWitness.data.baseDepositData;
     // Construct an AugmentedTransaction type for the deposit transaction.
     const depositTransaction = {
       contract: spokePoolPeripheryContract,
       chainId,
       method: "depositWithAuthorization",
       args: getDepositWithAuthorizationArgs(message),
+      message: "Completed gasless deposit :sunglasses:",
+      mrkdwn: `Completed gasless deposit from ${getNetworkName(chainId)} to ${getNetworkName(
+        destinationChainId
+      )} with authorizer ${blockExplorerLink(from, chainId)} and deposit ID ${depositId}`,
       // We must ensure confirmation on this transaction since the deposit transaction should precede the fill transaction.
       ensureConfirmation: true,
     };
@@ -362,7 +371,7 @@ export class GaslessRelayer {
    * @notice Builds and sends the associated `fillRelay` call from the input API message.
    */
   private async initiateFill(message: GaslessDepositMessage): Promise<TransactionResponse | null> {
-    const { data } = message.swapTx;
+    const { data, chainId } = message.swapTx;
 
     const { data: witnessData } = data.witness.BridgeWitness;
     const destinationChainId = witnessData.baseDepositData.destinationChainId;
@@ -370,7 +379,7 @@ export class GaslessRelayer {
     const spokePool = getSpokePool(destinationChainId).connect(this.baseSigner.connect(provider));
 
     // We do not need to wait for confirmation on the fill side.
-    const gaslessFill = buildGaslessFillRelayTx(message, spokePool, message.swapTx.chainId, this.signerAddress);
+    const _gaslessFill = buildGaslessFillRelayTx(message, spokePool, message.swapTx.chainId, this.signerAddress);
 
     if (!this.config.sendingTransactionsEnabled) {
       this.logger.debug({
@@ -380,25 +389,33 @@ export class GaslessRelayer {
       return null;
     }
 
+    // Add in message/mrkdwn.
+    const { depositId } = data;
+    const gaslessFill = {
+      ..._gaslessFill,
+      message: "Completed gasless fill :crystal_ball:",
+      mrkdwn: `Completed gasless fill from ${getNetworkName(chainId)} to ${getNetworkName(
+        destinationChainId
+      )} and deposit ID ${depositId}`,
+    };
+
     return this.transactionClient.submit(destinationChainId, [gaslessFill]);
   }
 
   /*
-   * @notice Queries the API for all pending gasless transactions.
+   * @notice Queries the API for all pending gasless transactions. By default, do not retry since this endpoing is being polled.
    */
-  private async _queryGaslessApi(): Promise<GaslessDepositMessage[]> {
+  private async _queryGaslessApi(retriesRemaining = 0): Promise<GaslessDepositMessage[]> {
     let apiResponseData: { deposits: GaslessDepositMessage[] } | undefined = undefined;
     try {
       apiResponseData = await this.api.get<{ deposits: GaslessDepositMessage[] }>(this.config.apiEndpoint, {}); // Query the API via the swap API client.
-    } catch (e) {
-      this.logger.warn({
-        at: "GaslessRelayer#_queryGaslessApi",
-        message: "Failed to query API",
-        apiError: e,
-        configuredTimeout: this.api.apiResponseTimeout,
-      });
+    } catch {
+      // A catch block is here so that we don't crash on no returned `apiResponseData`. An error log should have been emitted in the lower-level AcrossSwapApiClient.
     }
-    assert(isDefined(apiResponseData), "API query should never succeed and return undefined.");
+    if (!isDefined(apiResponseData)) {
+      // If we failed to query the API, then return conditionally return based on whether we wish to retry the query.
+      return retriesRemaining > 0 ? this._queryGaslessApi(--retriesRemaining) : [];
+    }
     return apiResponseData.deposits;
   }
 

@@ -1,5 +1,4 @@
 import { CommonConfig, ProcessEnv } from "../common";
-import { isDefined } from "../utils";
 
 export class GaslessRelayerConfig extends CommonConfig {
   apiPollingInterval: number;
@@ -9,8 +8,8 @@ export class GaslessRelayerConfig extends CommonConfig {
   relayerDestinationChains: number[];
   relayerTokenSymbols: string[];
   depositLookback: number;
-  apiTimeoutOverride: number | undefined;
-  nRetries: number;
+  apiTimeoutOverride: number;
+  initializationRetryAttempts: number;
 
   constructor(env: ProcessEnv) {
     super(env);
@@ -23,7 +22,7 @@ export class GaslessRelayerConfig extends CommonConfig {
       RELAYER_DESTINATION_CHAINS,
       RELAYER_TOKEN_SYMBOLS,
       API_TIMEOUT_OVERRIDE,
-      TRANSACTION_SUBMISSION_RETRIES,
+      INITIALIZATION_RETRY_ATTEMPTS,
     } = env;
     this.apiPollingInterval = Number(API_POLLING_INTERVAL ?? 1); // Default to 1s
     this.apiEndpoint = String(API_GASLESS_ENDPOINT);
@@ -36,7 +35,7 @@ export class GaslessRelayerConfig extends CommonConfig {
     this.relayerTokenSymbols = JSON.parse(RELAYER_TOKEN_SYMBOLS); // Relayer token symbols must be defined.
     this.depositLookback = Number(MAX_RELAYER_DEPOSIT_LOOKBACK ?? 3600);
 
-    this.apiTimeoutOverride = isDefined(API_TIMEOUT_OVERRIDE) ? Number(API_TIMEOUT_OVERRIDE) : undefined;
-    this.nRetries = Number(TRANSACTION_SUBMISSION_RETRIES ?? 5);
+    this.apiTimeoutOverride = Number(API_TIMEOUT_OVERRIDE ?? 3000); // In ms
+    this.initializationRetryAttempts = Number(INITIALIZATION_RETRY_ATTEMPTS ?? 3);
   }
 }
