@@ -283,8 +283,8 @@ export class GaslessRelayer {
             depositId: toBN(swapTx.data.depositId),
           });
 
-          // If the fill has been observed, exit. This should not happen under normal circumstances since the
-          // fill should always be after a deposit.
+          // If the fill has been observed, exit. All fill transactions initiated by this bot should generally never collide here, but it is possible for another party with knowledge of the
+          // witness to prefill any deposit, causing the fill to be known while the deposit is still yet to be executed.
           if (fillSet.has(fillKey)) {
             this.logger.warn({
               at: "GaslessRelayer#evaluateApiSignatures",
