@@ -243,7 +243,7 @@ export class GaslessRelayer {
         }); // add ! to make sure deposit data is defined.
         // If the deposit has been observed, go to the fill step.
         if (!nonceSet.has(depositNonce)) {
-          this.logger.info({
+          this.logger.debug({
             at: "GaslessRelayer#evaluateApiSignatures",
             message: "Deposit not observed, initiating deposit",
             depositId: depositMessage.swapTx.data.depositId,
@@ -269,48 +269,46 @@ export class GaslessRelayer {
 
           assert(receipt.status, "Deposit transaction failed");
 
-          this.logger.info({
+          this.logger.debug({
             at: "GaslessRelayer#evaluateApiSignatures",
             message: "Deposit with authorization executed",
             depositId: depositMessage.swapTx.data.depositId,
             txHash: receipt.transactionHash,
             blockNumber: receipt.blockNumber,
           });
-        }
 
-        const fillKey = this._getFilledRelayKey({
-          originChainId: swapTx.chainId,
-          depositId: toBN(swapTx.data.depositId),
-        });
+          const fillKey = this._getFilledRelayKey({
+            originChainId: swapTx.chainId,
+            depositId: toBN(swapTx.data.depositId),
+          });
 
-        // If the fill has been observed, exit.
-        if (fillSet.has(fillKey)) {
-          this.logger.info({
+          // If the fill has been observed, exit. This should not happen under normal circumstances since the
+          // fill should always be after a deposit.
+          if (fillSet.has(fillKey)) {
+            this.logger.warn({
+              at: "GaslessRelayer#evaluateApiSignatures",
+              message: "Out of order fill observed. Skipping",
+              depositId: depositMessage.swapTx.data.depositId,
+            });
+            return;
+          }
+
+          this.logger.debug({
             at: "GaslessRelayer#evaluateApiSignatures",
-            message: "Fill already observed, skipping",
+            message: "Fill not observed, initiating fill",
             depositId: depositMessage.swapTx.data.depositId,
           });
-          return;
+
+          // We do not need to evaluate the response of `initiateFill` since the TransactionClient should handle the logging. A `null` response
+          // here means that we did not send a transaction because of config.
+          await this.initiateFill(depositMessage);
+          fillSet.add(fillKey);
         }
 
-        this.logger.info({
-          at: "GaslessRelayer#evaluateApiSignatures",
-          message: "Fill not observed, initiating fill",
-          depositId: depositMessage.swapTx.data.depositId,
-        });
-
-        const fillTx = await this.initiateFill(depositMessage);
-        const fillReceipt = await fillTx.wait();
-        if (!fillReceipt) {
-          return;
-        }
-        fillSet.add(fillKey);
-
-        this.logger.info({
+        this.logger.debug({
           at: "GaslessRelayer#evaluateApiSignatures",
           message: "Fill relay executed",
           requestId: depositMessage.requestId,
-          fillTx,
         });
 
         return;
@@ -327,7 +325,7 @@ export class GaslessRelayer {
     const provider = this.providersByChain[chainId];
 
     if (!this.config.sendingTransactionsEnabled) {
-      this.logger.info({
+      this.logger.debug({
         at: "GaslessRelayer#initiateGaslessDeposit",
         message: "Sending transactions disabled, skipping",
       });
@@ -357,7 +355,8 @@ export class GaslessRelayer {
       // We only sent one transaction, so only take the first element of `txResponses`.
       return txResponses[0].wait();
     } catch (err) {
-      this.logger.error({
+      // We will reach this code block if, after polling for transaction confirmation, we still do not see the receipt onchain.
+      this.logger.warn({
         at: "GaslessRelayer#initiateGaslessDeposit",
         message: "Failed to execute depositWithAuthorization",
         requestId: message.requestId,
@@ -382,7 +381,7 @@ export class GaslessRelayer {
     const gaslessFill = buildGaslessFillRelayTx(message, spokePool, destinationChainId, this.signerAddress);
 
     if (!this.config.sendingTransactionsEnabled) {
-      this.logger.info({
+      this.logger.debug({
         at: "GaslessRelayer#initiateGaslessDeposit",
         message: "Sending transactions disabled, skipping",
       });
