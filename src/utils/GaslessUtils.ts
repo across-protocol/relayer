@@ -41,7 +41,6 @@ function toBytes(value: string): string {
 
 /**
  * Returns the arguments for depositWithAuthorization in the order and shape expected by the contract.
- * Use with runTransaction(logger, contract, "depositWithAuthorization", getDepositWithAuthorizationArgs(message), value).
  */
 export function getDepositWithAuthorizationArgs(message: GaslessDepositMessage): unknown[] {
   const params = buildDepositWithAuthorizationParams(message);
