@@ -303,14 +303,6 @@ export class GaslessRelayer {
           // There is no race on setting the fill in the fill set, so we can set it after the fill transaction is sent.
           fillSet.add(fillKey);
         }
-
-        this.logger.debug({
-          at: "GaslessRelayer#evaluateApiSignatures",
-          message: "Fill relay executed",
-          requestId: depositMessage.requestId,
-        });
-
-        return;
       }
     );
   }
