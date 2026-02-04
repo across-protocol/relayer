@@ -43,14 +43,6 @@ export class GaslessRelayer {
 
   private api: AcrossSwapApiClient;
 
-  private providersByChain: { [chainId: number]: Provider } = {};
-  // The object is indexed by `chainId`. An `AuthorizationUsed` event is marked by adding `${token}:${authorizer}:${nonce}` to the respective chain's set.
-  private observedNonces: { [chainId: number]: Set<string> } = {};
-  // The object is indexed by `chainId`. A `FilledRelay` event is marked by adding `${originChainId}:${depositId}` to the respective chain's set.
-  private observedFills: { [chainId: number]: Set<string> } = {};
-
-  private api: AcrossSwapApiClient;
-
   public constructor(
     readonly logger: winston.Logger,
     readonly config: GaslessRelayerConfig,
@@ -218,14 +210,14 @@ export class GaslessRelayer {
         nonceSet.add(depositNonce);
 
         // Initiate the deposit (depositWithAuthorization) and wait for tx to be executed.
-        const receipt = await this.initiateGaslessDeposit(message);
+        const receipt = await this.initiateGaslessDeposit(depositMessage);
         if (!receipt) {
           return;
         }
         this.logger.info({
           at: "GaslessRelayer#evaluateApiSignatures",
           message: "Deposit with authorization executed",
-          requestId: message.requestId,
+          requestId: depositMessage.requestId,
           txHash: receipt.transactionHash,
           blockNumber: receipt.blockNumber,
         });
