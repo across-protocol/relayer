@@ -229,18 +229,7 @@ export class GaslessRelayer {
    * @notice Polls the API and creates deposits/fills for all messages which are missing deposits/fills.
    */
   private async evaluateApiSignatures(): Promise<void> {
-    let apiMessages: undefined | GaslessDepositMessage[] = undefined;
-    try {
-      apiMessages = await this._queryGaslessApi();
-    } catch (e) {
-      this.logger.warn({
-        at: "GaslessRelayer#evaluateApiSignatures",
-        message: "Failed to query API",
-        apiError: e,
-        configuredTimeout: this.api.apiResponseTimeout,
-      });
-    }
-    assert(isDefined(apiMessages), "API query should never succeed and return undefined.");
+    const apiMessages = await this._queryGaslessApi();
     await forEachAsync(
       // Filter if we do not recognize the chain ID.
       apiMessages.filter(({ swapTx }) => isDefined(this.observedNonces[swapTx.chainId])),
@@ -398,7 +387,18 @@ export class GaslessRelayer {
    * @notice Queries the API for all pending gasless transactions.
    */
   private async _queryGaslessApi(): Promise<GaslessDepositMessage[]> {
-    const apiResponseData = await this.api.get<{ deposits: GaslessDepositMessage[] }>(this.config.apiEndpoint, {}); // Query the API via the swap API client.
+    let apiResponseData: { deposits: GaslessDepositMessage[] } | undefined = undefined;
+    try {
+      apiResponseData = await this.api.get<{ deposits: GaslessDepositMessage[] }>(this.config.apiEndpoint, {}); // Query the API via the swap API client.
+    } catch (e) {
+      this.logger.warn({
+        at: "GaslessRelayer#_queryGaslessApi",
+        message: "Failed to query API",
+        apiError: e,
+        configuredTimeout: this.api.apiResponseTimeout,
+      });
+    }
+    assert(isDefined(apiResponseData), "API query should never succeed and return undefined.");
     return apiResponseData.deposits;
   }
 
