@@ -191,12 +191,15 @@ export class TokenClient {
         const targetSpokePool = targetSpokePoolClient.spokePool;
         const token = toAddressType(_token, chainId).toEvmAddress();
         const contract = new Contract(token, ERC20.abi, targetSpokePool.signer);
-        const tx = await submitTransaction({
-          contract: contract,
-          method: "approve",
-          args: [targetSpokePool.address, MAX_UINT_VAL],
-          chainId,
-        }, this.transactionClient);
+        const tx = await submitTransaction(
+          {
+            contract: contract,
+            method: "approve",
+            args: [targetSpokePool.address, MAX_UINT_VAL],
+            chainId,
+          },
+          this.transactionClient
+        );
         mrkdwn +=
           ` - Approved SpokePool ${blockExplorerLink(targetSpokePool.address, chainId)} ` +
           `to spend ${await contract.symbol()} ${blockExplorerLink(token, chainId)} on ${getNetworkName(chainId)}. ` +
@@ -214,12 +217,15 @@ export class TokenClient {
 
     const currentCollateralAllowance: BigNumber = await bondToken.allowance(ownerAddress, hubPool.address);
     if (currentCollateralAllowance.lt(toBN(MAX_SAFE_ALLOWANCE))) {
-      const tx = await submitTransaction({
-        contract: bondToken,
-        method: "approve",
-        args: [hubPool.address, MAX_UINT_VAL],
-        chainId: this.hubPoolClient.chainId,
-      }, this.transactionClient);
+      const tx = await submitTransaction(
+        {
+          contract: bondToken,
+          method: "approve",
+          args: [hubPool.address, MAX_UINT_VAL],
+          chainId: this.hubPoolClient.chainId,
+        },
+        this.transactionClient
+      );
       const { chainId } = this.hubPoolClient;
       const mrkdwn =
         ` - Approved HubPool ${blockExplorerLink(hubPool.address, chainId)} ` +

@@ -19,7 +19,6 @@ import { updateOrAppendSetComputeUnitPriceInstruction } from "@solana-program/co
 
 dotenv.config();
 
-
 export type TransactionSimulationResult = {
   transaction: AugmentedTransaction;
   succeed: boolean;
@@ -169,7 +168,6 @@ export function getTarget(targetAddress: string):
     return { targetAddress };
   }
 }
-
 
 export async function submitTransaction(
   transaction: AugmentedTransaction,

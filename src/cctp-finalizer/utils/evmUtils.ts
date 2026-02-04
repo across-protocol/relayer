@@ -155,12 +155,15 @@ export async function processMintEvm(
   });
   const transactionClient = new TransactionClient(logger);
 
-  const mintTx = await submitTransaction({
-    contract: contract,
-    method: "receiveMessage",
-    args: receiveMessageArgs,
-    chainId,
-  }, transactionClient);
+  const mintTx = await submitTransaction(
+    {
+      contract: contract,
+      method: "receiveMessage",
+      args: receiveMessageArgs,
+      chainId,
+    },
+    transactionClient
+  );
 
   const mintTxReceipt = await mintTx.wait();
 

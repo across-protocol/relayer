@@ -47,20 +47,30 @@ export async function approveTokens(
     const txs = [];
     if (approvalChainId == hubChainId) {
       if (TOKEN_APPROVALS_TO_FIRST_ZERO[hubChainId]?.includes(token.address)) {
-        txs.push(await submitTransaction({
-          contract: token,
-          method: "approve",
-          args: [bridge.toNative(), bnZero],
-          chainId: approvalChainId,
-        }, transactionClient));
+        txs.push(
+          await submitTransaction(
+            {
+              contract: token,
+              method: "approve",
+              args: [bridge.toNative(), bnZero],
+              chainId: approvalChainId,
+            },
+            transactionClient
+          )
+        );
       }
     }
-    txs.push(await submitTransaction({
-      contract: token,
-      method: "approve",
-      args: [bridge.toNative(), MAX_SAFE_ALLOWANCE],
-      chainId: approvalChainId,
-    }, transactionClient));
+    txs.push(
+      await submitTransaction(
+        {
+          contract: token,
+          method: "approve",
+          args: [bridge.toNative(), MAX_SAFE_ALLOWANCE],
+          chainId: approvalChainId,
+        },
+        transactionClient
+      )
+    );
     const receipts = await Promise.all(txs.map((tx) => tx.wait()));
     const networkName = getNetworkName(approvalChainId);
 

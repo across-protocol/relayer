@@ -126,12 +126,15 @@ export async function depositToHypercore(account: string, signer: Signer, logger
     signer
   );
   const depositToHypercoreArgs = [TOKEN_SYMBOLS_MAP.USDH.addresses[chainId], bnZero, account];
-  const depositToHypercoreTx = await submitTransaction({
-    contract: contract,
-    method: "depositToHypercore",
-    args: depositToHypercoreArgs,
-    chainId: chainId,
-  }, transactionClient);
+  const depositToHypercoreTx = await submitTransaction(
+    {
+      contract: contract,
+      method: "depositToHypercore",
+      args: depositToHypercoreArgs,
+      chainId: chainId,
+    },
+    transactionClient
+  );
   await delay(1);
   const receipt = await depositToHypercoreTx.wait();
   logger.info({

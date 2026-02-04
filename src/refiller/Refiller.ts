@@ -345,13 +345,18 @@ export class Refiller {
     // Execute the l1 to l2 rebalance.
     let txn;
     try {
-      txn = await (await submitTransaction({
-        contract: contract,
-        method: method,
-        args: args,
-        value: value,
-        chainId: chainId,
-      }, this.transactionClient)).wait();
+      txn = await (
+        await submitTransaction(
+          {
+            contract: contract,
+            method: method,
+            args: args,
+            value: value,
+            chainId: chainId,
+          },
+          this.transactionClient
+        )
+      ).wait();
     } catch (error) {
       // Log the error and do not retry.
       this.logger.warn({
@@ -386,12 +391,17 @@ export class Refiller {
       amount
     );
     if (hasSufficientWethBalance) {
-      return await (await submitTransaction({
-        contract: weth,
-        method: "withdraw",
-        args: [amount],
-        chainId: chainId,
-      }, this.transactionClient)).wait();
+      return await (
+        await submitTransaction(
+          {
+            contract: weth,
+            method: "withdraw",
+            args: [amount],
+            chainId: chainId,
+          },
+          this.transactionClient
+        )
+      ).wait();
     } else {
       this.logger.warn({
         at: "Refiller#refillNativeTokenBalances",

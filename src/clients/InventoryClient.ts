@@ -1743,12 +1743,15 @@ export class InventoryClient {
     const l2Signer = spokePoolClient.spokePool.signer;
     const l2Weth = new Contract(_l2Weth, WETH_ABI, l2Signer);
     this.log("Unwrapping WETH", { amount: amount.toString() });
-    return submitTransaction({
-      contract: l2Weth,
-      method: "withdraw",
-      args: [amount],
-      chainId,
-    }, this.transactionClient);
+    return submitTransaction(
+      {
+        contract: l2Weth,
+        method: "withdraw",
+        args: [amount],
+        chainId,
+      },
+      this.transactionClient
+    );
   }
 
   async setTokenApprovals(): Promise<void> {
