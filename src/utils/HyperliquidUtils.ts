@@ -5,7 +5,6 @@ import {
   delay,
   CHAIN_IDs,
   submitTransaction,
-  TransactionClient,
   TOKEN_SYMBOLS_MAP,
   winston,
   bnZero,
@@ -15,6 +14,7 @@ import * as hl from "@nktkas/hyperliquid";
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import { ethers } from "ethers";
 import { CONTRACT_ADDRESSES } from "../common/ContractAddresses";
+import { TransactionClient } from "../clients";
 
 export function getHlExchangeClient(
   signer: Signer,

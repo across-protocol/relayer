@@ -3,7 +3,6 @@ import { utils } from "@across-protocol/sdk";
 import {
   winston,
   submitTransaction,
-  TransactionClient,
   getCctpV2MessageTransmitter,
   CHAIN_IDs,
   depositToHypercore,
@@ -13,6 +12,7 @@ import {
 } from "../../utils";
 import { CONTRACT_ADDRESSES } from "../../common/ContractAddresses";
 import { DestinationInfo } from "../types";
+import { TransactionClient } from "../../clients";
 
 /**
  * Gets EVM provider from RPC URL

@@ -23,8 +23,6 @@ import {
   mapAsync,
   parseUnits,
   submitTransaction,
-  TransactionClient,
-  sendRawTransaction,
   Signer,
   toAddressType,
   toBN,
@@ -41,7 +39,13 @@ import {
 import { SWAP_ROUTES, SwapRoute, CUSTOM_BRIDGE, CANONICAL_BRIDGE } from "../common";
 import ERC20_ABI from "../common/abi/MinimalERC20.json";
 import { arch } from "@across-protocol/sdk";
-import { AcrossSwapApiClient, BalanceAllocator, MultiCallerClient } from "../clients";
+import {
+  AcrossSwapApiClient,
+  BalanceAllocator,
+  MultiCallerClient,
+  sendRawTransaction,
+  TransactionClient,
+} from "../clients";
 import { RedisCache } from "../caching/RedisCache";
 
 export interface RefillerClients {

@@ -39,7 +39,7 @@ import {
   max,
 } from "../utils";
 import { BundleDataApproxClient, BundleDataState } from "./BundleDataApproxClient";
-import { HubPoolClient, TokenClient } from ".";
+import { HubPoolClient, TokenClient, TransactionClient } from ".";
 import { Deposit, ProposedRootBundle } from "../interfaces";
 import { InventoryConfig, isAliasConfig, TokenBalanceConfig } from "../interfaces/InventoryManagement";
 import lodash from "lodash";

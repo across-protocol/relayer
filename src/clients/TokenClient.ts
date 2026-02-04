@@ -1,5 +1,5 @@
 import { utils as sdkUtils } from "@across-protocol/sdk";
-import { HubPoolClient, SpokePoolClient, SpokePoolManager } from ".";
+import { HubPoolClient, SpokePoolClient, SpokePoolManager, TransactionClient } from ".";
 import { CachingMechanismInterface, L1Token, Deposit } from "../interfaces";
 import {
   BigNumber,
@@ -16,7 +16,6 @@ import {
   getNetworkName,
   Profiler,
   submitTransaction,
-  TransactionClient,
   toBN,
   winston,
   getRedisCache,
