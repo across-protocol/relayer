@@ -25,6 +25,7 @@ import {
   TransactionResponse,
   blockExplorerLink,
   getNetworkName,
+  submitTransaction,
   BigNumber,
   getTokenInfo,
   createFormatFunction,
@@ -385,10 +386,10 @@ export class GaslessRelayer {
     };
 
     try {
-      const txResponses = await this.transactionClient.submit(originChainId, [gaslessDeposit]);
+      const txResponse = await submitTransaction(gaslessDeposit, this.transactionClient);
       // Since we called `ensureConfirmation` in the transaction client, the receipt should exist, so `.wait()` should have already resolved.
       // We only sent one transaction, so only take the first element of `txResponses`.
-      return txResponses[0].wait();
+      return txResponse.wait();
     } catch (err) {
       // We will reach this code block if, after polling for transaction confirmation, we still do not see the receipt onchain.
       this.logger.warn({

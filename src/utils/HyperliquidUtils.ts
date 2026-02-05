@@ -4,7 +4,7 @@ import {
   assert,
   delay,
   CHAIN_IDs,
-  runTransaction,
+  submitTransaction,
   TOKEN_SYMBOLS_MAP,
   winston,
   bnZero,
@@ -14,6 +14,7 @@ import * as hl from "@nktkas/hyperliquid";
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import { ethers } from "ethers";
 import { CONTRACT_ADDRESSES } from "../common/ContractAddresses";
+import { TransactionClient } from "../clients";
 
 export function getHlExchangeClient(
   signer: Signer,
@@ -117,19 +118,29 @@ async function _callWithRetry<T, A extends any[]>(
 }
 
 export async function depositToHypercore(account: string, signer: Signer, logger: winston.Logger): Promise<string> {
+  const transactionClient = new TransactionClient(logger);
+  const chainId = CHAIN_IDs.HYPEREVM;
   const contract = new ethers.Contract(
-    CONTRACT_ADDRESSES[CHAIN_IDs.HYPEREVM].hyperliquidDepositHandler.address,
-    CONTRACT_ADDRESSES[CHAIN_IDs.HYPEREVM].hyperliquidDepositHandler.abi,
+    CONTRACT_ADDRESSES[chainId].hyperliquidDepositHandler.address,
+    CONTRACT_ADDRESSES[chainId].hyperliquidDepositHandler.abi,
     signer
   );
-  const depositToHypercoreArgs = [TOKEN_SYMBOLS_MAP.USDH.addresses[CHAIN_IDs.HYPEREVM], bnZero, account];
-  const depositToHypercoreTx = await runTransaction(logger, contract, "depositToHypercore", depositToHypercoreArgs);
+  const depositToHypercoreArgs = [TOKEN_SYMBOLS_MAP.USDH.addresses[chainId], bnZero, account];
+  const depositToHypercoreTx = await submitTransaction(
+    {
+      contract: contract,
+      method: "depositToHypercore",
+      args: depositToHypercoreArgs,
+      chainId: chainId,
+    },
+    transactionClient
+  );
   await delay(1);
   const receipt = await depositToHypercoreTx.wait();
   logger.info({
     at: "HyperliquidUtils#depositToHypercore",
     message: `HyperCore account ${account} created 🫡!`,
-    transactionHash: blockExplorerLink(receipt.transactionHash, CHAIN_IDs.HYPEREVM),
+    transactionHash: blockExplorerLink(receipt.transactionHash, chainId),
   });
   return receipt.transactionHash;
 }
