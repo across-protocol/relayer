@@ -343,13 +343,7 @@ export class GaslessRelayer {
             }
             depositEvent = associatedDeposit;
           } else {
-            const originSpokePool = this.spokePools[originChainId];
-            const fundsDepositedSignature = originSpokePool.interface.getEventTopic(DEPOSIT_EVENT);
-            const depositLogs = receipt.logs.filter(
-              ({ address, topics }) => address === originSpokePool.address && topics[0] === fundsDepositedSignature
-            );
-            assert(depositLogs.length === 1, "Deposit with auth should only contain a single deposit");
-            depositEvent = unpackDepositEvent(spreadEventWithBlockNumber(depositLogs[0] as Log), originChainId);
+            depositEvent = this._extractDepositFromTransactionReceipt(receipt, originChainId);
           }
           assert(
             isDefined(depositEvent),
