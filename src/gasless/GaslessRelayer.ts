@@ -29,6 +29,7 @@ import {
   getTokenInfo,
   createFormatFunction,
   toAddressType,
+  getSpokePoolPeriphery,
 } from "../utils";
 import {
   APIGaslessDepositResponse,
@@ -37,7 +38,7 @@ import {
   DepositWithBlock,
   GaslessDepositMessage,
 } from "../interfaces";
-import { CHAIN_MAX_BLOCK_LOOKBACK, CONTRACT_ADDRESSES } from "../common";
+import { CHAIN_MAX_BLOCK_LOOKBACK } from "../common";
 import { AcrossSwapApiClient, TransactionClient } from "../clients";
 import EIP3009_ABI from "../common/abi/EIP3009.json";
 import { buildGaslessDepositTx, buildGaslessFillRelayTx, restructureGaslessDeposits } from "../utils/GaslessUtils";
@@ -54,6 +55,8 @@ export class GaslessRelayer {
   private observedNonces: { [chainId: number]: Set<string> } = {};
   // The object is indexed by `chainId`. A `FilledRelay` event is marked by adding `${originChainId}:${depositId}` to the respective chain's set.
   private observedFills: { [chainId: number]: Set<string> } = {};
+  // The object is indexed by `chainId`. A SpokePoolPeriphery contract is indexed by the chain ID.
+  private spokePoolPeripheries: { [chainId: number]: Contract } = {};
 
   private api: AcrossSwapApiClient;
   private signerAddress: EvmAddress;
@@ -85,8 +88,10 @@ export class GaslessRelayer {
 
     // Initialize the map with newly allocated sets.
     await forEachAsync(this.config.relayerOriginChains, async (chainId) => {
-      this.providersByChain[chainId] = await getProvider(chainId);
+      const provider = await getProvider(chainId);
+      this.providersByChain[chainId] = provider;
       this.observedNonces[chainId] = new Set<string>();
+      this.spokePoolPeripheries[chainId] = getSpokePoolPeriphery(chainId).connect(this.baseSigner.connect(provider));
     });
     await forEachAsync(this.config.relayerDestinationChains, async (chainId) => {
       this.providersByChain[chainId] ??= await getProvider(chainId);
@@ -349,14 +354,7 @@ export class GaslessRelayer {
     const { originChainId, depositId, permit, requestId } = depositMessage;
     const { destinationChainId, inputAmount, inputToken } = depositMessage.baseDepositData;
 
-    const provider = this.providersByChain[originChainId];
-    const signer = this.baseSigner.connect(provider);
-
-    const spokePoolPeripheryContract = new Contract(
-      CONTRACT_ADDRESSES[originChainId].spokePoolPeriphery.address,
-      CONTRACT_ADDRESSES[originChainId].spokePoolPeriphery.abi,
-      signer
-    );
+    const spokePoolPeripheryContract = this.spokePoolPeripheries[originChainId];
 
     const _gaslessDeposit = buildGaslessDepositTx(depositMessage, spokePoolPeripheryContract);
 
