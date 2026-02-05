@@ -36,8 +36,8 @@ export interface BridgeWitnessData {
   nonce: string;
 }
 
-/** Full gasless API response: swapTx + signature + submittedAt + requestId */
-export interface GaslessDepositMessage {
+/** Raw gasless API response: swapTx + signature + submittedAt + requestId (nested structure from API). */
+export interface APIGaslessDepositResponse {
   swapTx: {
     ecosystem: string;
     chainId: number;
@@ -116,4 +116,22 @@ export interface DepositWithAuthorizationParams {
   validAfter: bigint;
   validBefore: bigint;
   receiveWithAuthSignature: string;
+}
+
+/**
+ * Gasless deposit message (flattened). Use after restructureGaslessDeposits(apiResponse.deposits).
+ * witnessData is destructured so its fields are at top level for easier use.
+ */
+export interface GaslessDepositMessage {
+  originChainId: number;
+  depositId: string;
+  requestId: string;
+  signature: string;
+  permit: ReceiveWithAuthorization;
+  /** Destructured from witnessData (BridgeWitnessData). */
+  inputAmount: string;
+  baseDepositData: BaseDepositData;
+  submissionFees: Fees;
+  spokePool: string;
+  nonce: string;
 }
