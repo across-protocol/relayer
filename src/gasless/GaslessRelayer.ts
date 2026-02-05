@@ -16,6 +16,7 @@ import {
   Contract,
   spreadEventWithBlockNumber,
   unpackFillEvent,
+  unpackDepositEvent,
   mapAsync,
   TOKEN_SYMBOLS_MAP,
   TransactionReceipt,
@@ -24,8 +25,18 @@ import {
   TransactionResponse,
   blockExplorerLink,
   getNetworkName,
+  BigNumber,
+  getTokenInfo,
+  createFormatFunction,
+  toAddressType,
 } from "../utils";
-import { GaslessDepositMessage, FillWithBlock, AuthorizationUsed, BaseDepositData } from "../interfaces";
+import {
+  GaslessDepositMessage,
+  FillWithBlock,
+  AuthorizationUsed,
+  BaseDepositData,
+  DepositWithBlock,
+} from "../interfaces";
 import { CHAIN_MAX_BLOCK_LOOKBACK, CONTRACT_ADDRESSES } from "../common";
 import { AcrossSwapApiClient, TransactionClient } from "../clients";
 import EIP3009_ABI from "../common/abi/EIP3009.json";
@@ -257,17 +268,30 @@ export class GaslessRelayer {
           nonceSet.add(depositNonce);
 
           // Initiate the deposit (depositWithAuthorization) and wait for tx to be executed.
-          const receipt = await this.initiateGaslessDeposit(depositMessage);
+          let receipt: Pick<TransactionReceipt, "status" | "transactionHash" | "blockNumber"> =
+            await this.initiateGaslessDeposit(depositMessage);
           if (!receipt || !receipt.status) {
+            const { depositId } = swapTx.data;
+            // We want to warn when this happens since relayer collisions should be rare enough such that if this log is occurring frequently, it would indicate
+            // that there may be an issue elsewhere.
             this.logger.warn({
               at: "GaslessRelayer#evaluateApiSignatures",
-              message: "Failed to initiate deposit",
-              depositId: depositMessage.swapTx.data.depositId,
+              message: "Failed to initiate deposit. Checking for relayer collision.",
+              depositId,
               depositNonce,
             });
-            // If the deposit fails, mark the signature as not observed so that we can retry.
-            nonceSet.delete(depositNonce);
-            return;
+            const associatedDeposit = await this._findDeposit(swapTx.chainId, toBN(depositId));
+            // If the deposit fails, and if we did not see the deposit mined, then mark the signature as not observed so that we can retry.
+            if (associatedDeposit.length === 0) {
+              nonceSet.delete(depositNonce);
+              return;
+            }
+            // Set logging information for the found deposit and proceed with the fill transaction.
+            receipt = {
+              transactionHash: associatedDeposit[0].txnRef,
+              blockNumber: associatedDeposit[0].blockNumber,
+              status: 1,
+            };
           }
 
           this.logger.debug({
@@ -335,7 +359,8 @@ export class GaslessRelayer {
 
     const { depositId, witness, permit } = data;
     const { from } = permit.message;
-    const { destinationChainId } = witness.BridgeWitness.data.baseDepositData;
+    const { destinationChainId, inputAmount, inputToken } = witness.BridgeWitness.data.baseDepositData;
+    const tokenInfo = getTokenInfo(toAddressType(inputToken, chainId), chainId);
     // Construct an AugmentedTransaction type for the deposit transaction.
     const depositTransaction = {
       contract: spokePoolPeripheryContract,
@@ -345,7 +370,12 @@ export class GaslessRelayer {
       message: "Completed gasless deposit 😎",
       mrkdwn: `Completed gasless deposit from ${getNetworkName(chainId)} to ${getNetworkName(
         destinationChainId
-      )} with authorizer ${blockExplorerLink(from, chainId)} and deposit ID ${depositId}`,
+      )} with authorizer ${blockExplorerLink(from, chainId)}, input amount ${createFormatFunction(
+        2,
+        4,
+        false,
+        tokenInfo.decimals
+      )(inputAmount)} ${tokenInfo.symbol}, and deposit ID ${depositId}`,
       // We must ensure confirmation on this transaction since the deposit transaction should precede the fill transaction.
       ensureConfirmation: true,
     };
@@ -374,7 +404,7 @@ export class GaslessRelayer {
     const { data, chainId } = message.swapTx;
 
     const { data: witnessData } = data.witness.BridgeWitness;
-    const destinationChainId = witnessData.baseDepositData.destinationChainId;
+    const { destinationChainId, outputToken, outputAmount } = witnessData.baseDepositData;
     const provider = this.providersByChain[destinationChainId];
     const spokePool = getSpokePool(destinationChainId).connect(this.baseSigner.connect(provider));
 
@@ -391,12 +421,15 @@ export class GaslessRelayer {
 
     // Add in message/mrkdwn.
     const { depositId } = data;
+    const tokenInfo = getTokenInfo(toAddressType(outputToken, destinationChainId), destinationChainId);
     const gaslessFill = {
       ..._gaslessFill,
       message: "Completed gasless fill 🔮",
       mrkdwn: `Completed gasless fill from ${getNetworkName(chainId)} to ${getNetworkName(
         destinationChainId
-      )} and deposit ID ${depositId}`,
+      )} with output amount ${createFormatFunction(2, 4, false, tokenInfo.decimals)(outputAmount)} ${
+        tokenInfo.symbol
+      } and deposit ID ${depositId}`,
     };
 
     return this.transactionClient.submit(destinationChainId, [gaslessFill]);
@@ -417,6 +450,26 @@ export class GaslessRelayer {
       return retriesRemaining > 0 ? this._queryGaslessApi(--retriesRemaining) : [];
     }
     return apiResponseData.deposits;
+  }
+
+  /*
+   * @notice Finds a deposit for an input deposit ID/origin chain ID. This should uniquely identify any origin chain deposit.
+   * @dev It is possible for there to be duplicate deposits when deposits are made with deterministic deposit IDs. This function will return all
+   * such deposits.
+   */
+  private async _findDeposit(
+    originChainId: number,
+    depositId: BigNumber
+  ): Promise<Omit<DepositWithBlock, "fromLiteChain" | "toLiteChain" | "quoteBlockNumber">[]> {
+    const provider = this.providersByChain[originChainId];
+    const spokePool = getSpokePool(originChainId).connect(provider);
+    const searchConfig = await this._getEventSearchConfig(originChainId);
+    const deposits = await paginatedEventQuery(
+      spokePool,
+      spokePool.filters.FundsDeposited(undefined, undefined, undefined, undefined, undefined, depositId), // 6th index is depositId.
+      searchConfig
+    );
+    return deposits.map((deposit) => unpackDepositEvent(spreadEventWithBlockNumber(deposit), originChainId));
   }
 
   /*
