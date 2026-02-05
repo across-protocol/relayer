@@ -82,6 +82,7 @@ export class GaslessRelayer {
     // Set the signer address.
     this.signerAddress = EvmAddress.from(await this.baseSigner.getAddress());
     this.redisCache = await getRedisCache(this.logger);
+
     // Initialize the map with newly allocated sets.
     await forEachAsync(this.config.relayerOriginChains, async (chainId) => {
       this.providersByChain[chainId] = await getProvider(chainId);
@@ -91,6 +92,7 @@ export class GaslessRelayer {
       this.providersByChain[chainId] ??= await getProvider(chainId);
       this.observedFills[chainId] = new Set<string>();
     });
+
     // Update our observed signatures/fills up until `this.depositLookback`.
     await this.updateObserved();
 
@@ -120,12 +122,8 @@ export class GaslessRelayer {
     });
     const initialMessages = await this._queryGaslessApi(this.config.initializationRetryAttempts);
     const unfilledDeposits = initialMessages.filter((depositMessage) => {
-      const {
-        originChainId,
-        depositId,
-        permit,
-        baseDepositData: { destinationChainId },
-      } = depositMessage;
+      const { originChainId, depositId, permit } = depositMessage;
+      const { destinationChainId } = depositMessage.baseDepositData;
 
       const nonceKey = this._getNonceKey(permit.domain.verifyingContract, {
         authorizer: permit.message.from!,
@@ -134,11 +132,13 @@ export class GaslessRelayer {
       const fillKey = this._getFilledRelayKey({ originChainId, depositId: toBN(depositId) });
       return this.observedNonces[originChainId].has(nonceKey) && !this.observedFills[destinationChainId].has(fillKey);
     });
+
     this.logger.debug({
       at: "GaslessRelayer#initialize",
       message: "Found unfilled deposits",
       unfilledDeposits: unfilledDeposits.length,
     });
+
     await mapAsync(unfilledDeposits, async (deposit) => this.initiateFill(deposit));
     this.initialized = true;
   }
@@ -163,6 +163,7 @@ export class GaslessRelayer {
     } = process.env;
     const maxCycles = Number(_maxCycles);
     const pollingDelay = Number(_pollingDelay);
+
     // Set the active instance immediately on arrival here. This function will poll until it reaches the max amount of
     // runs or it is interrupted by another process.
     if (isDefined(runIdentifier) && isDefined(botIdentifier)) {
@@ -200,6 +201,7 @@ export class GaslessRelayer {
 
         const searchConfig = await this._getEventSearchConfig(originChainId);
         // For each relayer token (which we assume satisfies EIP-3009), collect all the `AuthorizationUsed` events.
+
         const originAuthUsedEvents = await mapAsync(this.config.relayerTokenSymbols, async (symbol) => {
           const token = TOKEN_SYMBOLS_MAP[symbol]?.addresses?.[originChainId];
           if (!isDefined(token)) {
@@ -218,6 +220,7 @@ export class GaslessRelayer {
         // Update the observed nonces set.
         originAuthUsedEvents.flat().forEach((event) => observedNonces.add(this._getNonceKey(event.token, event.auth)));
       }),
+
       // For each destination chain, we need to index all `FilledRelay` events. This will let us know whether a deposit from the API has been filled by this relayer
       // (or any other relayer).
       forEachAsync(this.config.relayerDestinationChains, async (destinationChainId) => {
@@ -226,6 +229,7 @@ export class GaslessRelayer {
 
         const searchConfig = await this._getEventSearchConfig(destinationChainId);
         const destinationSpokePool = getSpokePool(destinationChainId).connect(provider);
+
         // Query all filledRelay events in the lookback. The lookback should only be a function of the max TTL of an API-served 3009 deposit.
         const destinationFilledRelayEvents = await paginatedEventQuery(
           destinationSpokePool,
@@ -235,6 +239,7 @@ export class GaslessRelayer {
         const fillEvents = destinationFilledRelayEvents.map((filledRelay) =>
           unpackFillEvent(spreadEventWithBlockNumber(filledRelay), destinationChainId)
         );
+
         // For each fill we observed, index it in our local set.
         fillEvents.forEach((fill) => observedFills.add(this._getFilledRelayKey(fill)));
       }),
@@ -250,18 +255,16 @@ export class GaslessRelayer {
       // Filter if we do not recognize the chain ID.
       apiMessages.filter(({ originChainId }) => isDefined(this.observedNonces[originChainId])),
       async (depositMessage) => {
-        const {
-          originChainId,
-          depositId,
-          permit,
-          baseDepositData: { destinationChainId, inputToken },
-        } = depositMessage;
+        const { originChainId, depositId, permit } = depositMessage;
+        const { destinationChainId, inputToken } = depositMessage.baseDepositData;
+
         const nonceSet = this.observedNonces[originChainId];
         const fillSet = this.observedFills[destinationChainId];
         const depositNonce = this._getNonceKey(inputToken, {
           authorizer: permit.message.from!,
           nonce: permit.message.nonce!,
         });
+
         if (!nonceSet.has(depositNonce)) {
           this.logger.debug({
             at: "GaslessRelayer#evaluateApiSignatures",
@@ -276,6 +279,7 @@ export class GaslessRelayer {
           // Initiate the deposit (depositWithAuthorization) and wait for tx to be executed.
           let receipt: Pick<TransactionReceipt, "status" | "transactionHash" | "blockNumber"> =
             await this.initiateGaslessDeposit(depositMessage);
+
           if (!receipt || !receipt.status) {
             this.logger.warn({
               at: "GaslessRelayer#evaluateApiSignatures",
@@ -283,12 +287,15 @@ export class GaslessRelayer {
               depositId,
               depositNonce,
             });
+
             const associatedDeposit = await this._findDeposit(originChainId, toBN(depositId));
+
             // If the deposit fails, and if we did not see the deposit mined, then mark the signature as not observed so that we can retry.
             if (associatedDeposit.length === 0) {
               nonceSet.delete(depositNonce);
               return;
             }
+
             // Set logging information for the found deposit and proceed with the fill transaction.
             receipt = {
               transactionHash: associatedDeposit[0].txnRef,
@@ -339,15 +346,19 @@ export class GaslessRelayer {
    * @returns The transaction receipt, or null if skipped or failed.
    */
   private async initiateGaslessDeposit(depositMessage: GaslessDepositMessage): Promise<TransactionReceipt | null> {
-    const {
-      originChainId,
-      depositId,
-      permit,
-      baseDepositData: { destinationChainId, inputAmount, inputToken },
-      requestId,
-    } = depositMessage;
+    const { originChainId, depositId, permit, requestId } = depositMessage;
+    const { destinationChainId, inputAmount, inputToken } = depositMessage.baseDepositData;
 
     const provider = this.providersByChain[originChainId];
+    const signer = this.baseSigner.connect(provider);
+
+    const spokePoolPeripheryContract = new Contract(
+      CONTRACT_ADDRESSES[originChainId].spokePoolPeriphery.address,
+      CONTRACT_ADDRESSES[originChainId].spokePoolPeriphery.abi,
+      signer
+    );
+
+    const _gaslessDeposit = buildGaslessDepositTx(depositMessage, spokePoolPeripheryContract);
 
     if (!this.config.sendingTransactionsEnabled) {
       this.logger.debug({
@@ -357,15 +368,8 @@ export class GaslessRelayer {
       return null;
     }
 
-    const signer = this.baseSigner.connect(provider);
-    const spokePoolPeripheryContract = new Contract(
-      CONTRACT_ADDRESSES[originChainId].spokePoolPeriphery.address,
-      CONTRACT_ADDRESSES[originChainId].spokePoolPeriphery.abi,
-      signer
-    );
-
     const tokenInfo = getTokenInfo(toAddressType(inputToken, originChainId), originChainId);
-    const _gaslessDeposit = buildGaslessDepositTx(depositMessage, spokePoolPeripheryContract);
+
     const gaslessDeposit = {
       ..._gaslessDeposit,
       message: "Completed gasless deposit 😎",
@@ -400,8 +404,8 @@ export class GaslessRelayer {
    * @notice Builds and sends the associated `fillRelay` call from the input API message.
    */
   private async initiateFill(depositMessage: GaslessDepositMessage): Promise<TransactionResponse | null> {
-    const { originChainId, depositId, baseDepositData } = depositMessage;
-    const { destinationChainId, outputToken, outputAmount } = baseDepositData;
+    const { originChainId, depositId } = depositMessage;
+    const { destinationChainId, outputToken, outputAmount } = depositMessage.baseDepositData;
     const provider = this.providersByChain[destinationChainId];
     const spokePool = getSpokePool(destinationChainId).connect(this.baseSigner.connect(provider));
 
@@ -414,6 +418,7 @@ export class GaslessRelayer {
       });
       return null;
     }
+
     const tokenInfo = getTokenInfo(toAddressType(outputToken, destinationChainId), destinationChainId);
     const gaslessFill = {
       ..._gaslessFill,
