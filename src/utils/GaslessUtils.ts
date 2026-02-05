@@ -1,9 +1,4 @@
-import {
-  APIGaslessDepositResponse,
-  BridgeWitnessData,
-  DepositWithAuthorizationParams,
-  GaslessDepositMessage,
-} from "../interfaces";
+import { APIGaslessDepositResponse, BridgeWitnessData, GaslessDepositMessage } from "../interfaces";
 import { Address, toBN, toAddressType, convertRelayDataParamsToBytes32, toBytes32 } from "../utils";
 import { AugmentedTransaction } from "../clients";
 import { Contract } from "ethers";
@@ -70,33 +65,6 @@ function toBytes(value: string): string {
   return "0x" + Buffer.from(value, "utf8").toString("hex");
 }
 
-/**
- * Returns the arguments for depositWithAuthorization in the order and shape expected by the contract.
- */
-export function getDepositWithAuthorizationArgs(depositMessage: GaslessDepositMessage): unknown[] {
-  const params = buildDepositWithAuthorizationParams(depositMessage);
-  const depositData = toContractDepositData(params.depositData);
-  return [params.signatureOwner, depositData, params.validAfter, params.validBefore, params.receiveWithAuthSignature];
-}
-
-/**
- * Builds the full parameters for depositWithAuthorization from a restructured deposit.
- */
-export function buildDepositWithAuthorizationParams(
-  depositMessage: GaslessDepositMessage
-): DepositWithAuthorizationParams {
-  const { permit, inputAmount, baseDepositData, submissionFees, spokePool, nonce, signature } = depositMessage;
-  const witnessData: BridgeWitnessData = { inputAmount, baseDepositData, submissionFees, spokePool, nonce };
-  return {
-    signatureOwner: permit.message.from,
-    depositData: witnessData,
-    validAfter: BigInt(permit.message.validAfter),
-    validBefore: BigInt(permit.message.validBefore),
-    receiveWithAuthSignature: normalizeSignature(signature),
-  };
-}
-
-// Checks if the signature is valid and returns it in the correct format.
 function normalizeSignature(signature: string): string {
   const hex = signature.startsWith("0x") ? signature : `0x${signature}`;
   if (hex.length !== 132) {
@@ -107,17 +75,23 @@ function normalizeSignature(signature: string): string {
 
 /**
  * Returns a depositWithAuthorization AugmentedTransaction for a restructured gasless deposit.
+ * All deposit-with-authorization wiring (params, contract-shaped deposit data, args) is done here.
  * Caller can add message/mrkdwn when submitting (e.g. for logging).
  */
 export function buildGaslessDepositTx(
   depositMessage: GaslessDepositMessage,
   spokePoolPeripheryContract: Contract
 ): AugmentedTransaction {
+  const { permit, inputAmount, baseDepositData, submissionFees, spokePool, nonce, signature } = depositMessage;
+  const { from: signatureOwner, validBefore, validAfter } = permit.message;
+  const witnessData: BridgeWitnessData = { inputAmount, baseDepositData, submissionFees, spokePool, nonce };
+  const depositData = toContractDepositData(witnessData);
+  const args = [signatureOwner, depositData, BigInt(validAfter), BigInt(validBefore), normalizeSignature(signature)];
   return {
     contract: spokePoolPeripheryContract,
     chainId: depositMessage.originChainId,
     method: "depositWithAuthorization",
-    args: getDepositWithAuthorizationArgs(depositMessage),
+    args,
     ensureConfirmation: true,
   };
 }
