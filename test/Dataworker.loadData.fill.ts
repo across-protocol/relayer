@@ -698,10 +698,7 @@ describe("Dataworker: Load bundle data", async function () {
       expect(fills.length).to.equal(1);
 
       // Manually remove the deposit from the client's cache to simulate deposit not in memory.
-      // Note: With non-infinite fill deadlines (which is all current contracts support),
-      // the SDK assumes the SpokePoolClient's lookback should be sufficient to find all valid deposits.
-      // If a deposit is not in memory and the fill doesn't have an infinite deadline,
-      // the fill is marked as invalid without performing a historical query.
+      // The SDK will perform a historical query to find the deposit and validate the fill.
       const depositKey = sdkUtils.getRelayEventKey(deposit);
       delete (spokePoolClient_1 as any).depositHashes[depositKey];
 
@@ -714,11 +711,11 @@ describe("Dataworker: Load bundle data", async function () {
         [destinationChainId]: spokePoolClient_2,
       });
 
-      // Fill is marked as invalid since deposit is not in memory and fill deadline is not infinite
-      // (historical queries are only performed for legacy deposits with infinite fill deadlines)
-      expect(data1.bundleFillsV3).to.deep.equal({});
-      expect(data1.bundleDepositsV3).to.deep.equal({});
-      expect(spy.getCalls().filter((e) => e.lastArg.message?.includes("invalid fills")).length).to.equal(1);
+      // Fill is validated via historical query which finds the deposit on-chain.
+      // The fill should be refunded on the repayment chain.
+      expect(data1.bundleFillsV3[repaymentChainId]).to.not.be.undefined;
+      expect(Object.keys(data1.bundleFillsV3[repaymentChainId]).length).to.equal(1);
+      expect(spy.getCalls().filter((e) => e.lastArg.message?.includes("invalid fills")).length).to.equal(0);
     });
 
     it("Does not validate fill against deposit in future bundle if deposit is not in-memory", async function () {
@@ -808,10 +805,7 @@ describe("Dataworker: Load bundle data", async function () {
       expect(fills.length).to.equal(1);
 
       // Manually remove the deposit from the client's cache to simulate deposit not in memory.
-      // Note: With non-infinite fill deadlines (which is all current contracts support),
-      // the SDK assumes the SpokePoolClient's lookback should be sufficient to find all valid deposits.
-      // If a deposit is not in memory and the fill doesn't have an infinite deadline,
-      // the fill is marked as invalid without performing a historical query.
+      // The SDK will perform a historical query to find the deposit and validate the fill.
       const depositKey = sdkUtils.getRelayEventKey(deposit);
       delete (spokePoolClient_1 as any).depositHashes[depositKey];
 
@@ -822,11 +816,11 @@ describe("Dataworker: Load bundle data", async function () {
         [destinationChainId]: spokePoolClient_2,
       });
 
-      // Fill is marked as invalid since deposit is not in memory and fill deadline is not infinite
-      // (historical queries are only performed for legacy deposits with infinite fill deadlines)
-      expect(data1.bundleFillsV3).to.deep.equal({});
-      expect(data1.bundleDepositsV3).to.deep.equal({});
-      expect(spy.getCalls().filter((e) => e.lastArg.message?.includes("invalid fills")).length).to.equal(1);
+      // Fill is validated via historical query which finds the deposit on-chain.
+      // For lite chain deposits, repayment is redirected to the origin chain.
+      expect(data1.bundleFillsV3[originChainId]).to.not.be.undefined;
+      expect(Object.keys(data1.bundleFillsV3[originChainId]).length).to.equal(1);
+      expect(spy.getCalls().filter((e) => e.lastArg.message?.includes("invalid fills")).length).to.equal(0);
     });
     it("Searches for old deposit for fill but cannot find matching one", async function () {
       // For this test, we need to actually send a deposit on the spoke pool
