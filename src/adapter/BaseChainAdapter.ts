@@ -37,6 +37,7 @@ import {
   chainIsEvm,
   sendAndConfirmSolanaTransaction,
   getSvmProvider,
+  submitTransaction,
 } from "../utils";
 import { AugmentedTransaction, TransactionClient } from "../clients/TransactionClient";
 import {
@@ -446,7 +447,7 @@ export class BaseChainAdapter {
       this.log("Simulation result", { succeed }, "debug", "sendTokenToTargetChain");
       return { hash: ZERO_BYTES } as TransactionResponse;
     }
-    return (await this.transactionClient.submit(this.hubChainId, [{ ...txnRequest }]))[0];
+    return await submitTransaction(txnRequest, this.transactionClient);
   }
 
   async wrapNativeTokenIfAboveThreshold(
