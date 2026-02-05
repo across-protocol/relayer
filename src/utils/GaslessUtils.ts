@@ -1,7 +1,38 @@
-import { BridgeWitnessData, DepositWithAuthorizationParams, GaslessDepositMessage } from "../interfaces";
+import {
+  APIGaslessDepositResponse,
+  BridgeWitnessData,
+  DepositWithAuthorizationParams,
+  GaslessDepositMessage,
+} from "../interfaces";
 import { Address, toBN, toAddressType, convertRelayDataParamsToBytes32, toBytes32 } from "../utils";
 import { AugmentedTransaction } from "../clients";
 import { Contract } from "ethers";
+
+/**
+ * Restructures raw API deposits into a flatter shape so callers don't deal with
+ * swapTx.data.witness.BridgeWitness.data etc. Call this once when you receive the API response.
+ */
+export function restructureGaslessDeposits(depositMessages: APIGaslessDepositResponse[]): GaslessDepositMessage[] {
+  return depositMessages.map((msg) => {
+    const { swapTx, requestId, signature } = msg;
+    const { chainId: originChainId, data } = swapTx;
+    const { depositId, permit, witness } = data;
+    const witnessData = witness.BridgeWitness.data;
+    const { inputAmount, baseDepositData, submissionFees, spokePool, nonce } = witnessData;
+    return {
+      originChainId,
+      depositId,
+      requestId,
+      signature,
+      permit,
+      inputAmount,
+      baseDepositData,
+      submissionFees,
+      spokePool,
+      nonce,
+    };
+  });
+}
 
 /**
  * Maps API BridgeWitness.data to the shape and types expected by the contract ABI.
@@ -41,28 +72,25 @@ function toBytes(value: string): string {
 
 /**
  * Returns the arguments for depositWithAuthorization in the order and shape expected by the contract.
- * Use with runTransaction(logger, contract, "depositWithAuthorization", getDepositWithAuthorizationArgs(message), value).
  */
-export function getDepositWithAuthorizationArgs(message: GaslessDepositMessage): unknown[] {
-  const params = buildDepositWithAuthorizationParams(message);
+export function getDepositWithAuthorizationArgs(depositMessage: GaslessDepositMessage): unknown[] {
+  const params = buildDepositWithAuthorizationParams(depositMessage);
   const depositData = toContractDepositData(params.depositData);
   return [params.signatureOwner, depositData, params.validAfter, params.validBefore, params.receiveWithAuthSignature];
 }
 
 /**
- * Builds the full parameters for depositWithAuthorization from a GaslessDepositMessage.
- * Uses message.signature as the EIP-3009 receiveWithAuth signature (65 bytes hex).
+ * Builds the full parameters for depositWithAuthorization from a restructured deposit.
  */
-export function buildDepositWithAuthorizationParams(message: GaslessDepositMessage): DepositWithAuthorizationParams {
-  const depositData = message.swapTx.data.witness.BridgeWitness.data;
-  const permit = message.swapTx.data.permit;
-
+export function buildDepositWithAuthorizationParams(depositMessage: GaslessDepositMessage): DepositWithAuthorizationParams {
+  const { permit, inputAmount, baseDepositData, submissionFees, spokePool, nonce, signature } = depositMessage;
+  const witnessData: BridgeWitnessData = { inputAmount, baseDepositData, submissionFees, spokePool, nonce };
   return {
     signatureOwner: permit.message.from,
-    depositData,
+    depositData: witnessData,
     validAfter: BigInt(permit.message.validAfter),
     validBefore: BigInt(permit.message.validBefore),
-    receiveWithAuthSignature: normalizeSignature(message.signature),
+    receiveWithAuthSignature: normalizeSignature(signature),
   };
 }
 
@@ -75,28 +103,44 @@ function normalizeSignature(signature: string): string {
   return hex;
 }
 
-/*
- * Returns a FillRelay transaction based on the input deposit message.
+/**
+ * Returns a depositWithAuthorization AugmentedTransaction for a restructured gasless deposit.
+ * Caller can add message/mrkdwn when submitting (e.g. for logging).
+ */
+export function buildGaslessDepositTx(
+  depositMessage: GaslessDepositMessage,
+  spokePoolPeripheryContract: Contract
+): AugmentedTransaction {
+  return {
+    contract: spokePoolPeripheryContract,
+    chainId: depositMessage.originChainId,
+    method: "depositWithAuthorization",
+    args: getDepositWithAuthorizationArgs(depositMessage),
+    ensureConfirmation: true,
+  };
+}
+
+/**
+ * Returns a FillRelay transaction based on a restructured gasless deposit.
  */
 export function buildGaslessFillRelayTx(
-  message: GaslessDepositMessage,
+  depositMessage: GaslessDepositMessage,
   spokePool: Contract,
   repaymentChainId: number,
   repaymentAddress: Address
 ): AugmentedTransaction {
-  const { chainId, data } = message.swapTx;
-  const { baseDepositData } = data.witness.BridgeWitness.data;
+  const { originChainId, depositId, baseDepositData } = depositMessage;
   const { destinationChainId } = baseDepositData;
   const relayData = {
-    depositor: toAddressType(baseDepositData.depositor, chainId),
+    depositor: toAddressType(baseDepositData.depositor, originChainId),
     recipient: toAddressType(baseDepositData.recipient, destinationChainId),
-    inputToken: toAddressType(baseDepositData.inputToken, chainId),
+    inputToken: toAddressType(baseDepositData.inputToken, originChainId),
     outputToken: toAddressType(baseDepositData.outputToken, destinationChainId),
     inputAmount: toBN(baseDepositData.inputAmount),
     outputAmount: toBN(baseDepositData.outputAmount),
     exclusiveRelayer: toAddressType(baseDepositData.exclusiveRelayer, destinationChainId),
-    depositId: toBN(data.depositId),
-    originChainId: chainId,
+    depositId: toBN(depositId),
+    originChainId,
     fillDeadline: baseDepositData.fillDeadline,
     exclusivityDeadline: baseDepositData.exclusivityDeadline,
     message: baseDepositData.message,

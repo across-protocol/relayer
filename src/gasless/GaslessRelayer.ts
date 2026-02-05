@@ -31,16 +31,16 @@ import {
   toAddressType,
 } from "../utils";
 import {
-  GaslessDepositMessage,
+  APIGaslessDepositResponse,
   FillWithBlock,
   AuthorizationUsed,
-  BaseDepositData,
   DepositWithBlock,
+  GaslessDepositMessage,
 } from "../interfaces";
 import { CHAIN_MAX_BLOCK_LOOKBACK, CONTRACT_ADDRESSES } from "../common";
 import { AcrossSwapApiClient, TransactionClient } from "../clients";
 import EIP3009_ABI from "../common/abi/EIP3009.json";
-import { buildGaslessFillRelayTx, getDepositWithAuthorizationArgs } from "../utils/GaslessUtils";
+import { buildGaslessDepositTx, buildGaslessFillRelayTx, restructureGaslessDeposits } from "../utils/GaslessUtils";
 
 /**
  * Independent relayer bot which processes EIP-3009 signatures into deposits and corresponding fills.
@@ -120,10 +120,13 @@ export class GaslessRelayer {
     });
     const initialMessages = await this._queryGaslessApi(this.config.initializationRetryAttempts);
     const unfilledDeposits = initialMessages.filter((depositMessage) => {
-      // Only take the API messages which are in `this.observedNonces` but not in `this.observedFills`.
-      const { permit, depositId, witness } = depositMessage.swapTx.data;
-      const originChainId = depositMessage.swapTx.chainId;
-      const { destinationChainId } = witness.BridgeWitness.data.baseDepositData;
+      const {
+        originChainId,
+        depositId,
+        permit,
+        baseDepositData: { destinationChainId },
+      } = depositMessage;
+      
       const nonceKey = this._getNonceKey(permit.domain.verifyingContract, {
         authorizer: permit.message.from!,
         nonce: permit.message.nonce!,
@@ -245,22 +248,25 @@ export class GaslessRelayer {
     const apiMessages = await this._queryGaslessApi();
     await forEachAsync(
       // Filter if we do not recognize the chain ID.
-      apiMessages.filter(({ swapTx }) => isDefined(this.observedNonces[swapTx.chainId])),
+      apiMessages.filter(({ originChainId }) => isDefined(this.observedNonces[originChainId])),
       async (depositMessage) => {
-        const { swapTx } = depositMessage;
-        const nonceSet = this.observedNonces[swapTx.chainId];
-        const fillSet = this.observedFills[swapTx.data.witness.BridgeWitness.data.baseDepositData.destinationChainId];
-        const depositData = this._extractDepositData(depositMessage);
-        const depositNonce = this._getNonceKey(depositData.inputToken, {
-          authorizer: swapTx.data.permit.message.from!,
-          nonce: swapTx.data.permit.message.nonce!,
-        }); // add ! to make sure deposit data is defined.
-        // If the deposit has been observed, go to the fill step.
+        const {
+          originChainId,
+          depositId,
+          permit,
+          baseDepositData: { destinationChainId, inputToken },
+        } = depositMessage;
+        const nonceSet = this.observedNonces[originChainId];
+        const fillSet = this.observedFills[destinationChainId];
+        const depositNonce = this._getNonceKey(inputToken, {
+          authorizer: permit.message.from!,
+          nonce: permit.message.nonce!,
+        });
         if (!nonceSet.has(depositNonce)) {
           this.logger.debug({
             at: "GaslessRelayer#evaluateApiSignatures",
             message: "Deposit not observed, initiating deposit",
-            depositId: depositMessage.swapTx.data.depositId,
+            depositId,
             depositNonce,
           });
 
@@ -271,16 +277,13 @@ export class GaslessRelayer {
           let receipt: Pick<TransactionReceipt, "status" | "transactionHash" | "blockNumber"> =
             await this.initiateGaslessDeposit(depositMessage);
           if (!receipt || !receipt.status) {
-            const { depositId } = swapTx.data;
-            // We want to warn when this happens since relayer collisions should be rare enough such that if this log is occurring frequently, it would indicate
-            // that there may be an issue elsewhere.
             this.logger.warn({
               at: "GaslessRelayer#evaluateApiSignatures",
               message: "Failed to initiate deposit. Checking for relayer collision.",
               depositId,
               depositNonce,
             });
-            const associatedDeposit = await this._findDeposit(swapTx.chainId, toBN(depositId));
+            const associatedDeposit = await this._findDeposit(originChainId, toBN(depositId));
             // If the deposit fails, and if we did not see the deposit mined, then mark the signature as not observed so that we can retry.
             if (associatedDeposit.length === 0) {
               nonceSet.delete(depositNonce);
@@ -297,15 +300,12 @@ export class GaslessRelayer {
           this.logger.debug({
             at: "GaslessRelayer#evaluateApiSignatures",
             message: "Deposit with authorization executed",
-            depositId: depositMessage.swapTx.data.depositId,
+            depositId,
             txHash: receipt.transactionHash,
             blockNumber: receipt.blockNumber,
           });
 
-          const fillKey = this._getFilledRelayKey({
-            originChainId: swapTx.chainId,
-            depositId: toBN(swapTx.data.depositId),
-          });
+          const fillKey = this._getFilledRelayKey({ originChainId, depositId: toBN(depositId) });
 
           // If the fill has been observed, exit. All fill transactions initiated by this bot should generally never collide here, but it is possible for another party with knowledge of the
           // witness to prefill any deposit, causing the fill to be known while the deposit is still yet to be executed.
@@ -313,7 +313,7 @@ export class GaslessRelayer {
             this.logger.warn({
               at: "GaslessRelayer#evaluateApiSignatures",
               message: "Out of order fill observed. Skipping",
-              depositId: depositMessage.swapTx.data.depositId,
+              depositId,
             });
             return;
           }
@@ -321,7 +321,7 @@ export class GaslessRelayer {
           this.logger.debug({
             at: "GaslessRelayer#evaluateApiSignatures",
             message: "Fill not observed, initiating fill",
-            depositId: depositMessage.swapTx.data.depositId,
+            depositId,
           });
 
           // We do not need to evaluate the response of `initiateFill` since the TransactionClient should handle the logging. A `null` response
@@ -338,9 +338,16 @@ export class GaslessRelayer {
    * @notice Builds and sends depositWithAuthorization tx, then waits for execution.
    * @returns The transaction receipt, or null if skipped or failed.
    */
-  private async initiateGaslessDeposit(message: GaslessDepositMessage): Promise<TransactionReceipt | null> {
-    const { chainId, data } = message.swapTx;
-    const provider = this.providersByChain[chainId];
+  private async initiateGaslessDeposit(depositMessage: GaslessDepositMessage): Promise<TransactionReceipt | null> {
+    const {
+      originChainId,
+      depositId,
+      permit,
+      baseDepositData: { destinationChainId, inputAmount, inputToken },
+      requestId,
+    } = depositMessage;
+
+    const provider = this.providersByChain[originChainId];
 
     if (!this.config.sendingTransactionsEnabled) {
       this.logger.debug({
@@ -352,36 +359,28 @@ export class GaslessRelayer {
 
     const signer = this.baseSigner.connect(provider);
     const spokePoolPeripheryContract = new Contract(
-      CONTRACT_ADDRESSES[chainId].spokePoolPeriphery.address,
-      CONTRACT_ADDRESSES[chainId].spokePoolPeriphery.abi,
+      CONTRACT_ADDRESSES[originChainId].spokePoolPeriphery.address,
+      CONTRACT_ADDRESSES[originChainId].spokePoolPeriphery.abi,
       signer
     );
 
-    const { depositId, witness, permit } = data;
-    const { from } = permit.message;
-    const { destinationChainId, inputAmount, inputToken } = witness.BridgeWitness.data.baseDepositData;
-    const tokenInfo = getTokenInfo(toAddressType(inputToken, chainId), chainId);
-    // Construct an AugmentedTransaction type for the deposit transaction.
-    const depositTransaction = {
-      contract: spokePoolPeripheryContract,
-      chainId,
-      method: "depositWithAuthorization",
-      args: getDepositWithAuthorizationArgs(message),
+    const tokenInfo = getTokenInfo(toAddressType(inputToken, originChainId), originChainId);
+    const _gaslessDeposit = buildGaslessDepositTx(depositMessage, spokePoolPeripheryContract);
+    const gaslessDeposit = {
+      ..._gaslessDeposit,
       message: "Completed gasless deposit 😎",
-      mrkdwn: `Completed gasless deposit from ${getNetworkName(chainId)} to ${getNetworkName(
+      mrkdwn: `Completed gasless deposit from ${getNetworkName(originChainId)} to ${getNetworkName(
         destinationChainId
-      )} with authorizer ${blockExplorerLink(from, chainId)}, input amount ${createFormatFunction(
+      )} with authorizer ${blockExplorerLink(permit.message.from, originChainId)}, input amount ${createFormatFunction(
         2,
         4,
         false,
         tokenInfo.decimals
       )(inputAmount)} ${tokenInfo.symbol}, and deposit ID ${depositId}`,
-      // We must ensure confirmation on this transaction since the deposit transaction should precede the fill transaction.
-      ensureConfirmation: true,
     };
 
     try {
-      const txResponses = await this.transactionClient.submit(chainId, [depositTransaction]);
+      const txResponses = await this.transactionClient.submit(originChainId, [gaslessDeposit]);
       // Since we called `ensureConfirmation` in the transaction client, the receipt should exist, so `.wait()` should have already resolved.
       // We only sent one transaction, so only take the first element of `txResponses`.
       return txResponses[0].wait();
@@ -390,7 +389,7 @@ export class GaslessRelayer {
       this.logger.warn({
         at: "GaslessRelayer#initiateGaslessDeposit",
         message: "Failed to execute depositWithAuthorization",
-        requestId: message.requestId,
+        requestId,
         err: err instanceof Error ? err.message : String(err),
       });
       return null;
@@ -400,32 +399,26 @@ export class GaslessRelayer {
   /*
    * @notice Builds and sends the associated `fillRelay` call from the input API message.
    */
-  private async initiateFill(message: GaslessDepositMessage): Promise<TransactionResponse | null> {
-    const { data, chainId } = message.swapTx;
-
-    const { data: witnessData } = data.witness.BridgeWitness;
-    const { destinationChainId, outputToken, outputAmount } = witnessData.baseDepositData;
+  private async initiateFill(depositMessage: GaslessDepositMessage): Promise<TransactionResponse | null> {
+    const { originChainId, depositId, baseDepositData } = depositMessage;
+    const { destinationChainId, outputToken, outputAmount } = baseDepositData;
     const provider = this.providersByChain[destinationChainId];
     const spokePool = getSpokePool(destinationChainId).connect(this.baseSigner.connect(provider));
 
-    // We do not need to wait for confirmation on the fill side.
-    const _gaslessFill = buildGaslessFillRelayTx(message, spokePool, message.swapTx.chainId, this.signerAddress);
+    const _gaslessFill = buildGaslessFillRelayTx(depositMessage, spokePool, originChainId, this.signerAddress);
 
     if (!this.config.sendingTransactionsEnabled) {
       this.logger.debug({
-        at: "GaslessRelayer#initiateGaslessDeposit",
+        at: "GaslessRelayer#initiateFill",
         message: "Sending transactions disabled, skipping",
       });
       return null;
     }
-
-    // Add in message/mrkdwn.
-    const { depositId } = data;
     const tokenInfo = getTokenInfo(toAddressType(outputToken, destinationChainId), destinationChainId);
     const gaslessFill = {
       ..._gaslessFill,
       message: "Completed gasless fill 🔮",
-      mrkdwn: `Completed gasless fill from ${getNetworkName(chainId)} to ${getNetworkName(
+      mrkdwn: `Completed gasless fill from ${getNetworkName(originChainId)} to ${getNetworkName(
         destinationChainId
       )} with output amount ${createFormatFunction(2, 4, false, tokenInfo.decimals)(outputAmount)} ${
         tokenInfo.symbol
@@ -439,17 +432,16 @@ export class GaslessRelayer {
    * @notice Queries the API for all pending gasless transactions. By default, do not retry since this endpoing is being polled.
    */
   private async _queryGaslessApi(retriesRemaining = 0): Promise<GaslessDepositMessage[]> {
-    let apiResponseData: { deposits: GaslessDepositMessage[] } | undefined = undefined;
+    let apiResponseData: { deposits: APIGaslessDepositResponse[] } | undefined = undefined;
     try {
-      apiResponseData = await this.api.get<{ deposits: GaslessDepositMessage[] }>(this.config.apiEndpoint, {}); // Query the API via the swap API client.
+      apiResponseData = await this.api.get<{ deposits: APIGaslessDepositResponse[] }>(this.config.apiEndpoint, {});
     } catch {
-      // A catch block is here so that we don't crash on no returned `apiResponseData`. An error log should have been emitted in the lower-level AcrossSwapApiClient.
+      // Error log should have been emitted in AcrossSwapApiClient.
     }
     if (!isDefined(apiResponseData)) {
-      // If we failed to query the API, then return conditionally return based on whether we wish to retry the query.
       return retriesRemaining > 0 ? this._queryGaslessApi(--retriesRemaining) : [];
     }
-    return apiResponseData.deposits;
+    return restructureGaslessDeposits(apiResponseData.deposits);
   }
 
   /*
@@ -502,12 +494,5 @@ export class GaslessRelayer {
   private _getFilledRelayKey(filledRelay: Pick<FillWithBlock, "originChainId" | "depositId">): string {
     const { originChainId, depositId } = filledRelay;
     return `${originChainId}:${depositId}`;
-  }
-
-  /*
-   * @notice Extracts the BaseDepositData from the deposit or swap witness.
-   */
-  private _extractDepositData(message: GaslessDepositMessage): BaseDepositData {
-    return message.swapTx.data.witness.BridgeWitness.data.baseDepositData;
   }
 }
