@@ -57,6 +57,8 @@ export class GaslessRelayer {
   private observedFills: { [chainId: number]: Set<string> } = {};
   // The object is indexed by `chainId`. A SpokePoolPeriphery contract is indexed by the chain ID.
   private spokePoolPeripheries: { [chainId: number]: Contract } = {};
+  // The object is indexed by `chainId`. A SpokePool contract is indexed by the chain ID.
+  private spokePools: { [chainId: number]: Contract } = {};
 
   private api: AcrossSwapApiClient;
   private signerAddress: EvmAddress;
@@ -96,6 +98,7 @@ export class GaslessRelayer {
     await forEachAsync(this.config.relayerDestinationChains, async (chainId) => {
       this.providersByChain[chainId] ??= await getProvider(chainId);
       this.observedFills[chainId] = new Set<string>();
+      this.spokePools[chainId] = getSpokePool(chainId).connect(this.baseSigner.connect(this.providersByChain[chainId]));
     });
 
     // Update our observed signatures/fills up until `this.depositLookback`.
@@ -404,8 +407,7 @@ export class GaslessRelayer {
   private async initiateFill(depositMessage: GaslessDepositMessage): Promise<TransactionResponse | null> {
     const { originChainId, depositId } = depositMessage;
     const { destinationChainId, outputToken, outputAmount } = depositMessage.baseDepositData;
-    const provider = this.providersByChain[destinationChainId];
-    const spokePool = getSpokePool(destinationChainId).connect(this.baseSigner.connect(provider));
+    const spokePool = this.spokePools[destinationChainId];
 
     const _gaslessFill = buildGaslessFillRelayTx(depositMessage, spokePool, originChainId, this.signerAddress);
 
