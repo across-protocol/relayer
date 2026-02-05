@@ -9,6 +9,7 @@ export * from "./Report";
 export * from "./Arweave";
 export * from "./BundleData";
 export * from "./Hyperliquid";
+export * from "./Gasless";
 
 // Bridge interfaces
 export interface OutstandingTransfers {

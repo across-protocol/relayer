@@ -1,5 +1,6 @@
 import axios, { AxiosError } from "axios";
-import { BigNumber, EvmAddress, winston } from "../utils";
+import { getAcrossHost } from "./";
+import { BigNumber, EvmAddress, winston, CHAIN_IDs } from "../utils";
 import { SWAP_ROUTES, SwapRoute } from "../common";
 
 interface SwapApiResponse {
@@ -33,10 +34,14 @@ interface SwapData {
  */
 export class AcrossSwapApiClient {
   private routesSupported: Set<SwapRoute> = new Set(Object.values(SWAP_ROUTES));
-  private readonly urlBase = "https://app.across.to/api/swap/approval";
-  private readonly apiResponseTimeout = 3000;
+  private readonly urlBase;
+  private readonly apiResponseTimeout;
 
-  constructor(readonly logger: winston.Logger) {}
+  constructor(readonly logger: winston.Logger, timeoutMs = 3000) {
+    // Swap API is mainnet-only.
+    this.urlBase = `https://${getAcrossHost(CHAIN_IDs.MAINNET)}/api`;
+    this.apiResponseTimeout = timeoutMs;
+  }
 
   /**
    * @notice Returns calldata necessary to swap exact output using the Across Swap API.
@@ -96,6 +101,13 @@ export class AcrossSwapApiClient {
     return swapData;
   }
 
+  /*
+   * @notice Exposes a non-cached query to the Across API at the specified endpoint.
+   */
+  public async get<T>(urlEndpoint: string, params: Record<string, unknown>): Promise<T | undefined> {
+    return this._get<T>(urlEndpoint, params);
+  }
+
   private async getQuote(
     route: SwapRoute,
     amountOut: BigNumber,
@@ -118,9 +130,12 @@ export class AcrossSwapApiClient {
       depositor: swapper.toNative(),
       recipient: recipient.toNative(),
     };
+    return this._get<SwapApiResponse>("/swap/approval", params);
+  }
 
+  private async _get<T>(endpoint: string, params: Record<string, unknown>): Promise<T | undefined> {
     try {
-      const response = await axios.get<SwapApiResponse>(`${this.urlBase}`, {
+      const response = await axios.get<T>(`${this.urlBase}/${endpoint}`, {
         timeout: this.apiResponseTimeout,
         params,
       });
@@ -129,18 +144,17 @@ export class AcrossSwapApiClient {
         this.logger.warn({
           at: "AcrossAPIClient",
           message: `Invalid response from ${this.urlBase}`,
-          url: this.urlBase,
+          endpoint,
           params,
         });
         return;
       }
-
       return response.data;
     } catch (err) {
       this.logger.warn({
         at: "AcrossSwapApiClient",
         message: `Failed to post to ${this.urlBase}`,
-        url: this.urlBase,
+        endpoint,
         params,
         error: (err as AxiosError).message,
       });
