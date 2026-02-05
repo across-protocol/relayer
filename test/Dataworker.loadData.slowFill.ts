@@ -353,10 +353,7 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
     expect(requests.length).to.equal(1);
 
     // Manually remove the deposit from the client's cache to simulate deposit not in memory.
-    // Note: With non-infinite fill deadlines (which is all current contracts support),
-    // the SDK assumes the SpokePoolClient's lookback should be sufficient to find all valid deposits.
-    // If a deposit is not in memory and the slow fill request doesn't have an infinite deadline,
-    // the request is marked as invalid without performing a historical query.
+    // The SDK will perform a historical query to find the deposit and validate the slow fill request.
     const depositKey = sdkUtils.getRelayEventKey(deposit);
     delete (spokePoolClient_1 as any).depositHashes[depositKey];
 
@@ -369,11 +366,10 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
       [destinationChainId]: spokePoolClient_2,
     });
 
-    // Slow fill request is marked as invalid since deposit is not in memory and fill deadline is not infinite
-    // (historical queries are only performed for legacy deposits with infinite fill deadlines)
-    expect(data1.bundleSlowFillsV3).to.deep.equal({});
-    expect(data1.bundleDepositsV3).to.deep.equal({});
-    expect(spy.getCalls().filter((e) => e.lastArg.message?.includes("invalid slow fill requests")).length).to.equal(1);
+    // Slow fill request is validated via historical query which finds the deposit on-chain.
+    expect(data1.bundleSlowFillsV3[destinationChainId]).to.not.be.undefined;
+    expect(Object.keys(data1.bundleSlowFillsV3[destinationChainId]).length).to.equal(1);
+    expect(spy.getCalls().filter((e) => e.lastArg.message?.includes("invalid slow fill requests")).length).to.equal(0);
   });
 
   it("Does not validate slow fill request against future bundle deposit if deposit is not in-memory", async function () {
@@ -563,11 +559,10 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
       [destinationChainId]: spokePoolClient_2,
     });
 
-    // Slow fill request is marked as invalid since deposit is not in memory and fill deadline is not infinite
-    // (historical queries are only performed for legacy deposits with infinite fill deadlines)
+    // Deposit is found via historical query, but slow fill is not eligible due to invalid output token.
+    // The slow fill is silently excluded (no "invalid slow fill requests" log since deposit was found).
     expect(data1.bundleSlowFillsV3).to.deep.equal({});
     expect(data1.bundleDepositsV3).to.deep.equal({});
-    expect(spy.getCalls().filter((e) => e.lastArg.message?.includes("invalid slow fill requests")).length).to.equal(1);
   });
 
   it("Slow fill request for deposit that isn't eligible for slow fill", async function () {
@@ -724,11 +719,10 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
       [destinationChainId]: spokePoolClient_2,
     });
 
-    // Slow fill request is marked as invalid since deposit is not in memory and fill deadline is not infinite
-    // (historical queries are only performed for legacy deposits with infinite fill deadlines)
+    // Deposit is found via historical query, but slow fill is not eligible because origin is a lite chain.
+    // The slow fill is silently excluded (no "invalid slow fill requests" log since deposit was found).
     expect(data1.bundleSlowFillsV3).to.deep.equal({});
     expect(data1.bundleDepositsV3).to.deep.equal({});
-    expect(spy.getCalls().filter((e) => e.lastArg.message?.includes("invalid slow fill requests")).length).to.equal(1);
   });
 
   it("Invalid slow fill request against old deposit with destination lite chain", async function () {
@@ -775,11 +769,10 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
       [destinationChainId]: spokePoolClient_2,
     });
 
-    // Slow fill request is marked as invalid since deposit is not in memory and fill deadline is not infinite
-    // (historical queries are only performed for legacy deposits with infinite fill deadlines)
+    // Deposit is found via historical query, but slow fill is not eligible because destination is a lite chain.
+    // The slow fill is silently excluded (no "invalid slow fill requests" log since deposit was found).
     expect(data1.bundleSlowFillsV3).to.deep.equal({});
     expect(data1.bundleDepositsV3).to.deep.equal({});
-    expect(spy.getCalls().filter((e) => e.lastArg.message?.includes("invalid slow fill requests")).length).to.equal(1);
   });
 
   it("Does not create slow fill for zero value deposit", async function () {
