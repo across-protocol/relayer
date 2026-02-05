@@ -82,7 +82,9 @@ export function getDepositWithAuthorizationArgs(depositMessage: GaslessDepositMe
 /**
  * Builds the full parameters for depositWithAuthorization from a restructured deposit.
  */
-export function buildDepositWithAuthorizationParams(depositMessage: GaslessDepositMessage): DepositWithAuthorizationParams {
+export function buildDepositWithAuthorizationParams(
+  depositMessage: GaslessDepositMessage
+): DepositWithAuthorizationParams {
   const { permit, inputAmount, baseDepositData, submissionFees, spokePool, nonce, signature } = depositMessage;
   const witnessData: BridgeWitnessData = { inputAmount, baseDepositData, submissionFees, spokePool, nonce };
   return {

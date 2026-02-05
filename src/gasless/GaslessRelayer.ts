@@ -126,7 +126,7 @@ export class GaslessRelayer {
         permit,
         baseDepositData: { destinationChainId },
       } = depositMessage;
-      
+
       const nonceKey = this._getNonceKey(permit.domain.verifyingContract, {
         authorizer: permit.message.from!,
         nonce: permit.message.nonce!,
