@@ -38,7 +38,6 @@ import {
   AuthorizationUsed,
   DepositWithBlock,
   GaslessDepositMessage,
-  Log,
 } from "../interfaces";
 import { CHAIN_MAX_BLOCK_LOOKBACK } from "../common";
 import { AcrossSwapApiClient, TransactionClient } from "../clients";
@@ -161,7 +160,7 @@ export class GaslessRelayer {
       const { from, nonce } = permit.message;
 
       const provider = this.providersByChain[originChainId];
-      const authUsedEvent = observedEvents[originChainId].observedAuthUsed.find(
+      const authUsedEvent = observedEvents.observedAuthUsed[originChainId].find(
         (authUsed) =>
           authUsed.token === inputToken && authUsed.auth.nonce === nonce && authUsed.auth.authorizer === from
       );
@@ -354,8 +353,8 @@ export class GaslessRelayer {
             at: "GaslessRelayer#evaluateApiSignatures",
             message: "Deposit with authorization executed",
             depositId,
-            txHash: receipt.transactionHash,
-            blockNumber: receipt.blockNumber,
+            txHash: depositEvent.txnRef,
+            blockNumber: depositEvent.blockNumber,
           });
 
           const fillKey = this._getFilledRelayKey({ originChainId, depositId: toBN(depositId) });
@@ -531,7 +530,13 @@ export class GaslessRelayer {
     );
 
     assert(depositLogs.length === 1, "Deposit with authorization should only contain a single FundsDeposited event.");
-    return unpackDepositEvent(spreadEventWithBlockNumber(depositLogs[0] as Log), originChainId);
+    // We must decode the log data manually and tell `spreadEventWithBlockNumber` that this log is a `FundsDeposited` event.
+    const depositLog = {
+      event: DEPOSIT_EVENT,
+      ...depositLogs[0],
+      ...originSpokePool.interface.parseLog(depositLogs[0]),
+    };
+    return unpackDepositEvent(spreadEventWithBlockNumber(depositLog), originChainId);
   }
 
   /*
