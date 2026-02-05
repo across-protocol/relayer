@@ -244,6 +244,10 @@ export const CONTRACT_ADDRESSES: {
       address: "0x5616194d65638086a3191b1fef436f503ff329ec",
       abi: SPONSORED_CCTP_DST_PERIPHERY_ABI,
     },
+    spokePoolPeriphery: {
+      address: "0x767e4c20F521a829dE4Ffc40C25176676878147f",
+      abi: SPOKE_POOL_PERIPHERY_ABI,
+    },
   },
   [CHAIN_IDs.MONAD]: {
     cctpV2MessageTransmitter: {
@@ -288,8 +292,7 @@ export const CONTRACT_ADDRESSES: {
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
     },
     spokePoolPeriphery: {
-      // @TODO: We should remove this after contracts package is updated.
-      address: "0x3374C3693761D37e3CEf13471Ecf75Ce37844250",
+      address: "0x767e4c20F521a829dE4Ffc40C25176676878147f",
       abi: SPOKE_POOL_PERIPHERY_ABI,
     },
   },
@@ -315,6 +318,10 @@ export const CONTRACT_ADDRESSES: {
     },
     nativeToken: {
       address: "0x0000000000000000000000000000000000001010",
+    },
+    spokePoolPeriphery: {
+      address: "0x767e4c20F521a829dE4Ffc40C25176676878147f",
+      abi: SPOKE_POOL_PERIPHERY_ABI,
     },
   },
   [CHAIN_IDs.HYPEREVM]: {
@@ -468,8 +475,7 @@ export const CONTRACT_ADDRESSES: {
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
     },
     spokePoolPeriphery: {
-      // @TODO: We should remove this after contracts package is updated.
-      address: "0x3374C3693761D37e3CEf13471Ecf75Ce37844250",
+      address: "0x767e4c20F521a829dE4Ffc40C25176676878147f",
       abi: SPOKE_POOL_PERIPHERY_ABI,
     },
   },
@@ -559,6 +565,10 @@ export const CONTRACT_ADDRESSES: {
     erc20GatewayRouter: {
       address: "0x5288c571Fd7aD117beA99bF60FE0846C4E84F933",
       abi: ARBITRUM_ERC20_GATEWAY_ROUTER_L2_ABI,
+    },
+    spokePoolPeriphery: {
+      address: "0x767e4c20F521a829dE4Ffc40C25176676878147f",
+      abi: SPOKE_POOL_PERIPHERY_ABI,
     },
   },
   [CHAIN_IDs.LENS]: {
