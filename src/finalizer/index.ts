@@ -1,4 +1,4 @@
-import { CCTP_NO_DOMAIN, ChainFamily, PRODUCTION_NETWORKS } from "@across-protocol/constants";
+import { CCTP_NO_DOMAIN, ChainFamily, OFT_NO_EID, PRODUCTION_NETWORKS } from "@across-protocol/constants";
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import assert from "assert";
 import { Contract } from "ethers";
@@ -106,7 +106,7 @@ function generateChainConfig(): void {
     [ChainFamily.ZK_STACK]: zkSyncFinalizer,
   };
 
-  Object.entries(PRODUCTION_NETWORKS).forEach(([_chainId, { cctpDomain, family }]) => {
+  Object.entries(PRODUCTION_NETWORKS).forEach(([_chainId, { cctpDomain, family, oftEid }]) => {
     const chainId = Number(_chainId);
     const config = (chainFinalizers[chainId] ??= {});
     config.finalizeOnL1 ??= [];
@@ -127,8 +127,7 @@ function generateChainConfig(): void {
       config.finalizeOnAny.push(cctpV2Finalizer);
     }
 
-    // @todo Once contracts are linked, change this to add all chains w/ OFT enabled.
-    if (chainId === CHAIN_IDs.ARBITRUM) {
+    if (oftEid !== OFT_NO_EID) {
       config.finalizeOnAny.push(oftRetryFinalizer);
     }
   });
