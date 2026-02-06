@@ -114,10 +114,41 @@ export class CCTPService {
           throw new AttestationNotReadyError(attestation.status!);
         }
 
-        // CCTP V2 API sometimes returns "0x" as the message, but the full reconstructed message is available in
+        // CCTP V2 API sometimes returns "0x" as the message, even though we can get the full reconstructed message from
         // the "decodedMessage.messageBody" field.
-        const decodedMessage = (attestation as unknown as { decodedMessage?: { messageBody: string } }).decodedMessage;
-        attestation.message = decodedMessage?.messageBody || attestation.message;
+        const decodedMessage = (
+          attestation as unknown as {
+            decodedMessage?: {
+              sourceDomain: string;
+              destinationDomain: string;
+              nonce: string;
+              sender: string;
+              recipient: string;
+              destinationCaller: string;
+              minFinalityThreshold: string;
+              finalityThresholdExecuted: string;
+              messageBody: string;
+            };
+          }
+        ).decodedMessage;
+
+        if (decodedMessage && (!attestation.message || attestation.message === "0x")) {
+          attestation.message = ethers.utils.solidityPack(
+            ["uint32", "uint32", "uint32", "bytes32", "bytes32", "bytes32", "bytes32", "uint32", "uint32", "bytes"],
+            [
+              1, // CCTP V2 message format version
+              decodedMessage.sourceDomain,
+              decodedMessage.destinationDomain,
+              decodedMessage.nonce,
+              ethers.utils.hexZeroPad(decodedMessage.sender, 32),
+              ethers.utils.hexZeroPad(decodedMessage.recipient, 32),
+              ethers.utils.hexZeroPad(decodedMessage.destinationCaller, 32),
+              decodedMessage.minFinalityThreshold,
+              decodedMessage.finalityThresholdExecuted,
+              decodedMessage.messageBody,
+            ]
+          );
+        }
 
         if (providedDestinationChainId) {
           destinationChainId = providedDestinationChainId;
