@@ -10,6 +10,7 @@ import {
   retrieveGckmsKeys,
   getGckmsConfig,
   getSvmSignerFromPrivateKey,
+  toAddressType,
 } from "../../utils";
 import { checkIfAlreadyProcessedEvm, processMintEvm, getEvmProvider } from "../utils/evmUtils";
 import { checkIfAlreadyProcessedSvm, processMintSvm, getSvmProvider } from "../utils/svmUtils";
@@ -133,6 +134,7 @@ export class CCTPService {
         ).decodedMessage;
 
         if (decodedMessage && (!attestation.message || attestation.message === "0x")) {
+          const destinationChainId = getCctpDestinationChainFromDomain(Number(decodedMessage.destinationDomain), true);
           attestation.message = ethers.utils.solidityPack(
             ["uint32", "uint32", "uint32", "bytes32", "bytes32", "bytes32", "bytes32", "uint32", "uint32", "bytes"],
             [
@@ -140,9 +142,9 @@ export class CCTPService {
               decodedMessage.sourceDomain,
               decodedMessage.destinationDomain,
               decodedMessage.nonce,
-              ethers.utils.hexZeroPad(decodedMessage.sender, 32),
-              ethers.utils.hexZeroPad(decodedMessage.recipient, 32),
-              ethers.utils.hexZeroPad(decodedMessage.destinationCaller, 32),
+              toAddressType(decodedMessage.sender, sourceChainId).toBytes32(),
+              toAddressType(decodedMessage.recipient, destinationChainId).toBytes32(),
+              toAddressType(decodedMessage.destinationCaller, destinationChainId).toBytes32(),
               decodedMessage.minFinalityThreshold,
               decodedMessage.finalityThresholdExecuted,
               decodedMessage.messageBody,
