@@ -2,25 +2,30 @@ import { writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { config } from "dotenv";
 import axios from "axios";
+import { GoogleAuth } from "google-auth-library";
 
-interface GitHubFileResponse {
-  content: string;
-  encoding: string;
-  sha: string;
-  size: number;
-  url: string;
+const DEFAULT_ENVIRONMENT = "prod";
+const AUTH_TIMEOUT_MS = 30000;
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, operationName: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`${operationName} timed out after ${timeoutMs}ms`)), timeoutMs)
+    ),
+  ]);
 }
 
 async function fetchWithRetry(
   url: string,
-  headers: { Authorization: string; Accept: string },
+  headers: Record<string, string>,
   retries = 3,
   delayMs = 1000
-): Promise<GitHubFileResponse> {
+): Promise<string> {
   for (let i = 0; i < retries; i++) {
     try {
-      const response = await axios.get<GitHubFileResponse>(url, { headers });
-      return response.data;
+      const response = await axios.get(url, { headers, responseType: "text", timeout: 30000 });
+      return response.data as string;
     } catch (error) {
       if (i === retries - 1) {
         throw error;
@@ -29,126 +34,81 @@ async function fetchWithRetry(
       await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
   }
-  throw new Error("Failed to fetch file from GitHub");
+  throw new Error("Failed to fetch file from Configurama");
 }
 
-async function fetchFileFromGitHub(
-  owner: string,
-  repo: string,
-  folderName: string,
-  fileName: string,
-  token: string,
-  branch = "master"
-): Promise<string> {
-  const filePath = `${folderName}/${fileName}`;
-  const url = `https://api.github.com/repos/${owner}/${repo}/contents/${filePath}?ref=${branch}`;
-  const headers = {
-    Authorization: `token ${token}`,
-    Accept: "application/vnd.github.v3+json",
-  };
-
-  const response = await fetchWithRetry(url, headers);
-
-  // GitHub API returns base64 encoded content
-  const content = Buffer.from(response.content, "base64").toString("utf-8");
-  return content;
+function normalizeBaseUrl(baseUrl: string): string {
+  return baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
 }
 
-function getLocalFileName(botIdentifier: string): string {
-  return `inventory-${botIdentifier}.json`;
-}
-async function fetchAndWriteFile(
-  owner: string,
-  repo: string,
-  folderName: string,
-  fileName: string,
-  token: string,
-  branch: string
-): Promise<void> {
-  console.log(`📥 Fetching ${fileName}...`);
-
-  const fileContent = await fetchFileFromGitHub(owner, repo, folderName, fileName, token, branch);
-
-  // Parse JSON to validate it's valid JSON
-  const jsonData = JSON.parse(fileContent);
-
-  // Write to local file with same name
-  await writeFile(fileName, JSON.stringify(jsonData, null, 2));
-
-  console.log(`✅ Successfully saved ${fileName}`);
+async function getIdTokenHeaders(audience: string): Promise<Record<string, string>> {
+  console.log("🔐 Obtaining Google Auth credentials...");
+  const auth = new GoogleAuth();
+  const client = await withTimeout(auth.getIdTokenClient(audience), AUTH_TIMEOUT_MS, "Google Auth getIdTokenClient");
+  console.log("🔐 Getting request headers...");
+  const headers = await withTimeout(client.getRequestHeaders(), AUTH_TIMEOUT_MS, "Google Auth getRequestHeaders");
+  console.log("🔐 Authentication successful.");
+  return headers as Record<string, string>;
 }
 
-function parseFilePaths(filePaths: string): string[] {
-  return filePaths.split(",").map((f) => f.trim());
+function getLocalFileName(botIdentifier: string, inventoryConfigFilename?: string): string {
+  // If the inventory config filename is set, use it. Otherwise, construct the default filename from the bot identifier.
+  return inventoryConfigFilename ? inventoryConfigFilename : `inventory-${botIdentifier}.json`;
 }
 
 async function run(): Promise<number> {
-  config(); // Load .env file
+  config();
 
-  // Get configuration from environment variables
   const {
-    GITHUB_TOKEN: githubToken,
-    GITHUB_REPO_OWNER: githubOwner,
-    GITHUB_REPO_NAME: githubRepo,
-    GITHUB_FILE_PATHS: githubFilePaths,
-    GITHUB_FOLDER_NAME: githubFolderName = "serverless-bots",
-    GITHUB_BRANCH: githubBranch = "master",
+    CONFIGURAMA_FOLDER_BASE_URL: configuramaBaseUrl,
+    CONFIGURAMA_FOLDER_ENVIRONMENT: configuramaEnv = DEFAULT_ENVIRONMENT,
+    CONFIGURAMA_FOLDER_PATH: configuramaFolderPath = "",
     BOT_IDENTIFIER: botIdentifier,
+    INVENTORY_CONFIG_FILENAME: inventoryConfigFilename,
   } = process.env;
 
-  // Helper to handle errors based on whether botIdentifier is set and local file exists
+  if (!botIdentifier) {
+    console.log("⏭️  BOT_IDENTIFIER not set, skipping inventory config fetch.");
+    return 0;
+  }
+
+  const localFile = getLocalFileName(botIdentifier, inventoryConfigFilename);
+
+  // Helper to handle errors - fall back to local file if it exists.
   const handleError = (message: string): number => {
-    if (botIdentifier) {
-      const localFile = getLocalFileName(botIdentifier);
-      if (existsSync(localFile)) {
-        console.log(`⚠️  ${message}`);
-        console.log(`📄 Local file "${localFile}" exists, continuing with existing config...`);
-        return 0;
-      }
-      // Local file doesn't exist, must throw
-      throw new Error(`${message} (and no local file "${localFile}" found)`);
+    if (existsSync(localFile)) {
+      console.log(`⚠️  ${message}`);
+      console.log(`📄 Local file "${localFile}" exists, continuing with existing config...`);
+      return 0;
     }
-    throw new Error(message);
+    throw new Error(`${message} (and no local file "${localFile}" found)`);
   };
 
-  // Validate required environment variables
-  if (!githubToken) {
-    return handleError("GITHUB_TOKEN environment variable is required");
-  }
-  if (!githubOwner) {
-    return handleError("GITHUB_REPO_OWNER environment variable is required");
-  }
-  if (!githubRepo) {
-    return handleError("GITHUB_REPO_NAME environment variable is required");
+  if (!configuramaBaseUrl) {
+    return handleError("CONFIGURAMA_FOLDER_BASE_URL environment variable is required");
   }
 
-  // Determine which files to fetch based on BOT_IDENTIFIER or GITHUB_FILE_PATHS
-  let filesToFetch: string[];
+  const baseUrl = normalizeBaseUrl(configuramaBaseUrl);
 
-  if (botIdentifier) {
-    // If BOT_IDENTIFIER is set, fetch only that file (no need for GITHUB_FILE_PATHS)
-    const targetFile = getLocalFileName(botIdentifier);
-    filesToFetch = [targetFile];
-    console.log(`🤖 BOT_IDENTIFIER set to "${botIdentifier}", fetching ${targetFile}`);
-  } else {
-    // No BOT_IDENTIFIER, require GITHUB_FILE_PATHS
-    if (!githubFilePaths) {
-      throw new Error("Either BOT_IDENTIFIER or GITHUB_FILE_PATHS environment variable is required");
-    }
-    filesToFetch = parseFilePaths(githubFilePaths);
-    console.log(`📦 Fetching ${filesToFetch.length} file(s): ${filesToFetch.join(", ")}`);
-  }
+  const configuramaFilePath = `${configuramaFolderPath}${localFile}`;
 
-  console.log(`📂 Repository: ${githubOwner}/${githubRepo} (branch: ${githubBranch})`);
+  console.log(`🤖 BOT_IDENTIFIER set to "${botIdentifier}", fetching ${localFile}`);
+  console.log(`📂 Configurama: ${baseUrl} (environment: ${configuramaEnv}, path: ${configuramaFilePath})`);
 
   try {
-    await Promise.all(
-      filesToFetch.map((fileName) =>
-        fetchAndWriteFile(githubOwner, githubRepo, githubFolderName, fileName, githubToken, githubBranch)
-      )
-    );
+    const headers = await getIdTokenHeaders(baseUrl);
 
-    console.log("\n✅ All files fetched successfully!");
+    const url = `${baseUrl}/config?environment=${encodeURIComponent(configuramaEnv)}&filename=${encodeURIComponent(
+      configuramaFilePath
+    )}`;
+    console.log(`📥 Fetching ${configuramaFilePath} from Configurama...`);
+
+    const fileContent = await fetchWithRetry(url, headers);
+    const jsonData = JSON.parse(fileContent);
+
+    await writeFile(localFile, JSON.stringify(jsonData, null, 2));
+
+    console.log(`✅ Successfully saved ${localFile}`);
     return 0;
   } catch (error) {
     const errorMessage = getErrorMessage(error);
@@ -159,11 +119,11 @@ async function run(): Promise<number> {
 function getErrorMessage(error: unknown): string {
   if (axios.isAxiosError(error)) {
     if (error.response?.status === 404) {
-      return "File not found in repository";
+      return "File not found in Configurama";
     } else if (error.response?.status === 401 || error.response?.status === 403) {
-      return "Authentication failed. Check your GITHUB_TOKEN and repository access.";
+      return "Authentication failed. Ensure ADC is configured to call the Configurama API.";
     } else {
-      return `GitHub API error: ${error.response?.status} - ${error.message}`;
+      return `Configurama API error: ${error.response?.status} - ${error.message}`;
     }
   }
   if (error instanceof Error) {

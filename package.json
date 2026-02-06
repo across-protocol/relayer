@@ -34,6 +34,7 @@
     "@solana-program/address-lookup-table": "^0.7.0",
     "@solana-program/compute-budget": "^0.8.0",
     "@solana/kit": "^5.4.0",
+    "google-auth-library": "^8.5.1",
     "axios": "^1.7.4",
     "binance-api-node": "0.12.7",
     "dotenv": "^16.3.1",
