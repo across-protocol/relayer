@@ -73,7 +73,7 @@ export class CCTPService {
       let destinationChainId: number;
 
       // If message and attestation are provided, use them directly
-      if (cctpMessage && cctpAttestation) {
+      if (cctpMessage && cctpMessage !== "0x" && cctpAttestation) {
         this.logger.info({
           at: "CCTPService#processBurnTransaction",
           message: "Using provided message and attestation, skipping attestation fetch",
