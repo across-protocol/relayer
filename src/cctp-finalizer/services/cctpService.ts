@@ -114,6 +114,11 @@ export class CCTPService {
           throw new AttestationNotReadyError(attestation.status!);
         }
 
+        // CCTP V2 API sometimes returns "0x" as the message, but the full reconstructed message is available in
+        // the "decodedMessage.messageBody" field.
+        const decodedMessage = (attestation as unknown as { decodedMessage?: { messageBody: string } }).decodedMessage;
+        attestation.message = decodedMessage?.messageBody || attestation.message;
+
         if (providedDestinationChainId) {
           destinationChainId = providedDestinationChainId;
         } else {
