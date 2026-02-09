@@ -11,7 +11,7 @@ import {
   blockExplorerLink,
   Contract,
   formatUnits,
-  runTransaction,
+  submitTransaction,
   isDefined,
   DefaultLogLevels,
   TransactionResponse,
@@ -39,7 +39,7 @@ import {
   max,
 } from "../utils";
 import { BundleDataApproxClient, BundleDataState } from "./BundleDataApproxClient";
-import { HubPoolClient, TokenClient } from ".";
+import { HubPoolClient, TokenClient, TransactionClient } from ".";
 import { Deposit, ProposedRootBundle } from "../interfaces";
 import { InventoryConfig, isAliasConfig, TokenBalanceConfig } from "../interfaces/InventoryManagement";
 import lodash from "lodash";
@@ -78,6 +78,7 @@ export class InventoryClient {
   private bundleDataApproxClient: BundleDataApproxClient;
   private inventoryConfig: InventoryConfig;
   private pendingL2Withdrawals: { [l1Token: string]: { [chainId: number]: BigNumber } } = {};
+  private transactionClient: TransactionClient;
 
   constructor(
     readonly relayer: EvmAddress,
@@ -91,6 +92,7 @@ export class InventoryClient {
     readonly simMode = false,
     readonly prioritizeLpUtilization = true
   ) {
+    this.transactionClient = new TransactionClient(logger);
     this.inventoryConfig = inventoryConfig;
     this.scalar = sdkUtils.fixedPointAdjustment;
     this.formatWei = createFormatFunction(2, 4, false, 18);
@@ -423,7 +425,7 @@ export class InventoryClient {
    * @param deposit The deposit to check
    * @returns true if origin chain repayment is forced
    */
-  private shouldForceOriginRepayment(deposit: Deposit): boolean {
+  shouldForceOriginRepayment(deposit: Deposit): boolean {
     const protocolForcesOriginRepayment = depositForcesOriginChainRepayment(deposit, this.hubPoolClient);
     const perChainForceOriginRepayment = this.inventoryConfig?.forceOriginRepaymentPerChain?.[deposit.originChainId];
     const globalForceOriginRepayment = this.inventoryConfig?.forceOriginRepayment ?? false;
@@ -1741,7 +1743,15 @@ export class InventoryClient {
     const l2Signer = spokePoolClient.spokePool.signer;
     const l2Weth = new Contract(_l2Weth, WETH_ABI, l2Signer);
     this.log("Unwrapping WETH", { amount: amount.toString() });
-    return runTransaction(this.logger, l2Weth, "withdraw", [amount]);
+    return submitTransaction(
+      {
+        contract: l2Weth,
+        method: "withdraw",
+        args: [amount],
+        chainId,
+      },
+      this.transactionClient
+    );
   }
 
   async setTokenApprovals(): Promise<void> {

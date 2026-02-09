@@ -30,6 +30,14 @@ export function getSpokePool(chainId: number, address?: string): Contract {
   return spokePool.connect(address ?? getDeployedAddress("SpokePool", chainId));
 }
 
+// For a chain ID and optional SpokePoolPeriphery address, return a Contract instance with the corresponding ABI.
+export function getSpokePoolPeriphery(chainId: number, address?: string): Contract {
+  return new Contract(
+    address ?? CONTRACT_ADDRESSES[chainId].spokePoolPeriphery.address,
+    CONTRACT_ADDRESSES[chainId].spokePoolPeriphery.abi
+  );
+}
+
 export function getSpokePoolAddress(chainId: number): Address {
   const evmChain = chainIsEvm(chainId);
   const addr = getDeployedAddress(evmChain ? "SpokePool" : "SvmSpoke", chainId, true);
