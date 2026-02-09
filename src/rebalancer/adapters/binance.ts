@@ -764,19 +764,23 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   private async _getAccountCoins(symbol: string, skipCache = false): Promise<Coin> {
     const cacheKey = "binance-account-coins";
 
+    type ParsedAccountCoins = Awaited<ReturnType<typeof getAccountCoins>>;
+    let accountCoins: ParsedAccountCoins | undefined;
     if (!skipCache) {
       const cachedAccountCoins = await this.redisCache.get<string>(cacheKey);
       if (cachedAccountCoins) {
-        return JSON.parse(cachedAccountCoins) as Coin;
+        accountCoins = JSON.parse(cachedAccountCoins) as ParsedAccountCoins;
       }
     }
-    const apiResponse = await getAccountCoins(this.binanceApiClient);
-    const coin = apiResponse.find((coin) => coin.symbol === symbol);
-    assert(coin, `Coin ${symbol} not found in account coins`);
+    if (!accountCoins) {
+      accountCoins = await getAccountCoins(this.binanceApiClient);
+      // Reset cache if we've fetched a new API response.
+      await this.redisCache.set(cacheKey, JSON.stringify(accountCoins)); // Use default TTL which is a long time as
+      // the entry for this coin is not expected to change frequently.
+    }
 
-    // Reset cache if we've fetched a new API response.
-    await this.redisCache.set(cacheKey, JSON.stringify(coin)); // Use default TTL which is a long time as
-    // the entry for this coin is not expected to change frequently.
+    const coin = accountCoins.find((coin) => coin.symbol === symbol);
+    assert(coin, `Coin ${symbol} not found in account coins`);
     return coin;
   }
 
