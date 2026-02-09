@@ -10,6 +10,7 @@ import {
   retrieveGckmsKeys,
   getGckmsConfig,
   getSvmSignerFromPrivateKey,
+  toAddressType,
 } from "../../utils";
 import { checkIfAlreadyProcessedEvm, processMintEvm, getEvmProvider } from "../utils/evmUtils";
 import { checkIfAlreadyProcessedSvm, processMintSvm, getSvmProvider } from "../utils/svmUtils";
@@ -72,7 +73,7 @@ export class CCTPService {
       let destinationChainId: number;
 
       // If message and attestation are provided, use them directly
-      if (cctpMessage && cctpAttestation) {
+      if (cctpMessage && cctpMessage !== "0x" && cctpAttestation) {
         this.logger.info({
           at: "CCTPService#processBurnTransaction",
           message: "Using provided message and attestation, skipping attestation fetch",
@@ -112,6 +113,43 @@ export class CCTPService {
 
         if (!this.isAttestationReady(attestation.status!)) {
           throw new AttestationNotReadyError(attestation.status!);
+        }
+
+        // CCTP V2 API sometimes returns "0x" as the message, even though we can get the full reconstructed message from
+        // the "decodedMessage.messageBody" field.
+        const decodedMessage = (
+          attestation as unknown as {
+            decodedMessage?: {
+              sourceDomain: string;
+              destinationDomain: string;
+              nonce: string;
+              sender: string;
+              recipient: string;
+              destinationCaller: string;
+              minFinalityThreshold: string;
+              finalityThresholdExecuted: string;
+              messageBody: string;
+            };
+          }
+        ).decodedMessage;
+
+        if (decodedMessage && (!attestation.message || attestation.message === "0x")) {
+          const destinationChainId = getCctpDestinationChainFromDomain(Number(decodedMessage.destinationDomain), true);
+          attestation.message = ethers.utils.solidityPack(
+            ["uint32", "uint32", "uint32", "bytes32", "bytes32", "bytes32", "bytes32", "uint32", "uint32", "bytes"],
+            [
+              1, // CCTP V2 message format version
+              decodedMessage.sourceDomain,
+              decodedMessage.destinationDomain,
+              decodedMessage.nonce,
+              toAddressType(decodedMessage.sender, sourceChainId).toBytes32(),
+              toAddressType(decodedMessage.recipient, destinationChainId).toBytes32(),
+              toAddressType(decodedMessage.destinationCaller, destinationChainId).toBytes32(),
+              decodedMessage.minFinalityThreshold,
+              decodedMessage.finalityThresholdExecuted,
+              decodedMessage.messageBody,
+            ]
+          );
         }
 
         if (providedDestinationChainId) {
