@@ -1,5 +1,5 @@
-import { APIGaslessDepositResponse, BridgeWitnessData, GaslessDepositMessage } from "../interfaces";
-import { Address, toBN, toAddressType, convertRelayDataParamsToBytes32, toBytes32 } from "../utils";
+import { APIGaslessDepositResponse, BridgeWitnessData, GaslessDepositMessage, DepositWithBlock } from "../interfaces";
+import { Address, convertRelayDataParamsToBytes32, toBytes32 } from "../utils";
 import { AugmentedTransaction } from "../clients";
 import { Contract } from "ethers";
 
@@ -100,31 +100,16 @@ export function buildGaslessDepositTx(
  * Returns a FillRelay transaction based on a restructured gasless deposit.
  */
 export function buildGaslessFillRelayTx(
-  depositMessage: GaslessDepositMessage,
+  deposit: Omit<DepositWithBlock, "fromLiteChain" | "toLiteChain" | "quoteBlockNumber">,
   spokePool: Contract,
   repaymentChainId: number,
   repaymentAddress: Address
 ): AugmentedTransaction {
-  const { originChainId, depositId, baseDepositData } = depositMessage;
-  const { destinationChainId } = baseDepositData;
-  const relayData = {
-    depositor: toAddressType(baseDepositData.depositor, originChainId),
-    recipient: toAddressType(baseDepositData.recipient, destinationChainId),
-    inputToken: toAddressType(baseDepositData.inputToken, originChainId),
-    outputToken: toAddressType(baseDepositData.outputToken, destinationChainId),
-    inputAmount: toBN(baseDepositData.inputAmount),
-    outputAmount: toBN(baseDepositData.outputAmount),
-    exclusiveRelayer: toAddressType(baseDepositData.exclusiveRelayer, destinationChainId),
-    depositId: toBN(depositId),
-    originChainId,
-    fillDeadline: baseDepositData.fillDeadline,
-    exclusivityDeadline: baseDepositData.exclusivityDeadline,
-    message: baseDepositData.message,
-  };
+  const { destinationChainId } = deposit;
   return {
     contract: spokePool,
     chainId: destinationChainId,
     method: "fillRelay",
-    args: [convertRelayDataParamsToBytes32(relayData), repaymentChainId, repaymentAddress.toBytes32()],
+    args: [convertRelayDataParamsToBytes32(deposit), repaymentChainId, repaymentAddress.toBytes32()],
   };
 }

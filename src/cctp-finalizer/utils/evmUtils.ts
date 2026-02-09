@@ -2,7 +2,7 @@ import { ethers } from "ethers";
 import { utils } from "@across-protocol/sdk";
 import {
   winston,
-  runTransaction,
+  submitTransaction,
   getCctpV2MessageTransmitter,
   CHAIN_IDs,
   depositToHypercore,
@@ -12,6 +12,7 @@ import {
 } from "../../utils";
 import { CONTRACT_ADDRESSES } from "../../common/ContractAddresses";
 import { DestinationInfo } from "../types";
+import { TransactionClient } from "../../clients";
 
 /**
  * Gets EVM provider from RPC URL
@@ -152,8 +153,17 @@ export async function processMintEvm(
     destinationType: destination.type,
     contractAddress: destination.address,
   });
+  const transactionClient = new TransactionClient(logger);
 
-  const mintTx = await runTransaction(logger, contract, "receiveMessage", receiveMessageArgs);
+  const mintTx = await submitTransaction(
+    {
+      contract: contract,
+      method: "receiveMessage",
+      args: receiveMessageArgs,
+      chainId,
+    },
+    transactionClient
+  );
 
   const mintTxReceipt = await mintTx.wait();
 
