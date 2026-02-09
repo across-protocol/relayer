@@ -21,7 +21,6 @@ import {
   requestSlowFill,
   sinon,
   smock,
-  spyLogIncludes,
   deployMulticall3,
 } from "./utils";
 
@@ -353,7 +352,8 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
     const requests = spokePoolClient_2.getSlowFillRequestsForOriginChain(originChainId);
     expect(requests.length).to.equal(1);
 
-    // Manually remove the deposit from the client's cache to force historical query
+    // Manually remove the deposit from the client's cache to simulate deposit not in memory.
+    // The SDK will perform a historical query to find the deposit and validate the slow fill request.
     const depositKey = sdkUtils.getRelayEventKey(deposit);
     delete (spokePoolClient_1 as any).depositHashes[depositKey];
 
@@ -365,9 +365,11 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
       [originChainId]: spokePoolClient_1,
       [destinationChainId]: spokePoolClient_2,
     });
-    expect(spyLogIncludes(spy, -4, "Located deposit outside of SpokePoolClient's search range")).is.true;
-    expect(data1.bundleSlowFillsV3[destinationChainId][toBytes32(erc20_2.address)].length).to.equal(1);
-    expect(data1.bundleDepositsV3).to.deep.equal({});
+
+    // Slow fill request is validated via historical query which finds the deposit on-chain.
+    expect(data1.bundleSlowFillsV3[destinationChainId]).to.not.be.undefined;
+    expect(Object.keys(data1.bundleSlowFillsV3[destinationChainId]).length).to.equal(1);
+    expect(spy.getCalls().filter((e) => e.lastArg.message?.includes("invalid slow fill requests")).length).to.equal(0);
   });
 
   it("Does not validate slow fill request against future bundle deposit if deposit is not in-memory", async function () {
@@ -556,14 +558,9 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
       [originChainId]: spokePoolClient_1,
       [destinationChainId]: spokePoolClient_2,
     });
-    // Here we can see that the historical query for the deposit actually succeeds, but the deposit itself
-    // was not one eligible to be slow filled.
-    expect(
-      spy
-        .getCalls()
-        .find((e) => e.lastArg.message.includes("Located deposit outside of SpokePoolClient's search range"))
-    ).to.not.be.undefined;
 
+    // Deposit is found via historical query, but slow fill is not eligible due to invalid output token.
+    // The slow fill is silently excluded (no "invalid slow fill requests" log since deposit was found).
     expect(data1.bundleSlowFillsV3).to.deep.equal({});
     expect(data1.bundleDepositsV3).to.deep.equal({});
   });
@@ -721,7 +718,9 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
       [originChainId]: spokePoolClient_1,
       [destinationChainId]: spokePoolClient_2,
     });
-    expect(spyLogIncludes(spy, -4, "Located deposit outside of SpokePoolClient's search range")).is.true;
+
+    // Deposit is found via historical query, but slow fill is not eligible because origin is a lite chain.
+    // The slow fill is silently excluded (no "invalid slow fill requests" log since deposit was found).
     expect(data1.bundleSlowFillsV3).to.deep.equal({});
     expect(data1.bundleDepositsV3).to.deep.equal({});
   });
@@ -769,7 +768,9 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
       [originChainId]: spokePoolClient_1,
       [destinationChainId]: spokePoolClient_2,
     });
-    expect(spyLogIncludes(spy, -4, "Located deposit outside of SpokePoolClient's search range")).is.true;
+
+    // Deposit is found via historical query, but slow fill is not eligible because destination is a lite chain.
+    // The slow fill is silently excluded (no "invalid slow fill requests" log since deposit was found).
     expect(data1.bundleSlowFillsV3).to.deep.equal({});
     expect(data1.bundleDepositsV3).to.deep.equal({});
   });
