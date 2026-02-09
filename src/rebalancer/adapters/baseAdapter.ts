@@ -61,6 +61,12 @@ import {
 import { RebalancerAdapter, RebalanceRoute } from "../rebalancer";
 import { RebalancerConfig } from "../RebalancerConfig";
 
+export enum STATUS {
+  PENDING_BRIDGE_PRE_DEPOSIT,
+  PENDING_DEPOSIT,
+  PENDING_SWAP,
+  PENDING_WITHDRAWAL,
+}
 export interface OrderDetails {
   sourceToken: string;
   destinationToken: string;
@@ -84,10 +90,6 @@ export abstract class BaseAdapter implements RebalancerAdapter {
   protected allSourceTokens: Set<string>;
 
   protected REDIS_PREFIX: string;
-  protected REDIS_KEY_PENDING_ORDER: string;
-  // Key used to query latest cloid that uniquely identifies orders. This same cloid can be set when placing orders
-  // on HL and Binance, thereby allowing us to track when an order gets filled and how much to withdraw subsequently.
-  protected REDIS_KEY_LATEST_NONCE: string;
 
   constructor(readonly logger: winston.Logger, readonly config: RebalancerConfig, readonly baseSigner: Signer) {
     this.transactionClient = new TransactionClient(logger);
@@ -185,8 +187,6 @@ export abstract class BaseAdapter implements RebalancerAdapter {
   // the remainder of the application so that we can continue to rotate the Redis cache (e.g. the part used to
   // store RPC responses) without losing rebalance order information.
 
-  protected abstract _redisGetOrderStatusKey(status: number): string;
-
   protected async _redisUpdateOrderStatus(cloid: string, oldStatus: number, status: number): Promise<void> {
     const oldOrderStatusKey = this._redisGetOrderStatusKey(oldStatus);
     const newOrderStatusKey = this._redisGetOrderStatusKey(status);
@@ -208,7 +208,7 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     amountToTransfer: BigNumber
   ): Promise<void> {
     const orderStatusKey = this._redisGetOrderStatusKey(status);
-    const orderDetailsKey = `${this.REDIS_KEY_PENDING_ORDER}:${cloid}`;
+    const orderDetailsKey = `${this._redisGetPendingOrderKey()}:${cloid}`;
 
     // Create a new order in Redis. We use infinite expiry because we will delete this order after its no longer
     // used.
@@ -248,13 +248,13 @@ export abstract class BaseAdapter implements RebalancerAdapter {
 
   protected async _redisGetNextCloid(): Promise<string> {
     // Increment and get the latest nonce from Redis:
-    const nonce = await this.redisCache.incr(`${this.REDIS_PREFIX}:${this.REDIS_KEY_LATEST_NONCE}`);
+    const nonce = await this.redisCache.incr(this._redisGetLatestNonceKey());
 
     return ethers.utils.hexZeroPad(ethers.utils.hexValue(nonce), 16);
   }
 
   protected async _redisGetOrderDetails(cloid: string): Promise<OrderDetails> {
-    const orderDetailsKey = `${this.REDIS_KEY_PENDING_ORDER}:${cloid}`;
+    const orderDetailsKey = `${this._redisGetPendingOrderKey()}:${cloid}`;
     const orderDetails = await this.redisCache.get<string>(orderDetailsKey);
     if (!orderDetails) {
       return undefined;
@@ -268,7 +268,7 @@ export abstract class BaseAdapter implements RebalancerAdapter {
 
   protected async _redisDeleteOrder(cloid: string, currentStatus: number): Promise<void> {
     const orderStatusKey = this._redisGetOrderStatusKey(currentStatus);
-    const orderDetailsKey = `${this.REDIS_KEY_PENDING_ORDER}:${cloid}`;
+    const orderDetailsKey = `${this._redisGetPendingOrderKey()}:${cloid}`;
     const result = await Promise.all([
       this.redisCache.sRem(orderStatusKey, cloid),
       this.redisCache.del(orderDetailsKey),
@@ -278,6 +278,65 @@ export abstract class BaseAdapter implements RebalancerAdapter {
       message: `Deleted order details for cloid ${cloid} under key ${orderDetailsKey} and from status set ${orderStatusKey}`,
       result,
     });
+  }
+
+  protected _redisGetOrderStatusKey(status: STATUS): string {
+    let orderStatusKey: string;
+    switch (status) {
+      case STATUS.PENDING_DEPOSIT:
+        orderStatusKey = this.REDIS_PREFIX + "pending-deposit";
+        break;
+      case STATUS.PENDING_SWAP:
+        orderStatusKey = this.REDIS_PREFIX + "pending-swap";
+        break;
+      case STATUS.PENDING_WITHDRAWAL:
+        orderStatusKey = this.REDIS_PREFIX + "pending-withdrawal";
+        break;
+      case STATUS.PENDING_BRIDGE_PRE_DEPOSIT:
+        orderStatusKey = this.REDIS_PREFIX + "pending-bridge-pre-deposit";
+        break;
+      default:
+        throw new Error(`Invalid status: ${status}`);
+    }
+    return orderStatusKey;
+  }
+
+  protected _redisGetLatestNonceKey(): string {
+    return this.REDIS_PREFIX + "latest-nonce";
+  }
+
+  protected _redisGetPendingOrderKey(): string {
+    return this.REDIS_PREFIX + "pending-order";
+  }
+
+  protected async _redisGetPendingBridgesPreDeposit(): Promise<string[]> {
+    const sMembers = await this.redisCache.sMembers(this._redisGetOrderStatusKey(STATUS.PENDING_BRIDGE_PRE_DEPOSIT));
+    return sMembers;
+  }
+
+  protected async _redisGetPendingDeposits(): Promise<string[]> {
+    const sMembers = await this.redisCache.sMembers(this._redisGetOrderStatusKey(STATUS.PENDING_DEPOSIT));
+    return sMembers;
+  }
+
+  protected async _redisGetPendingSwaps(): Promise<string[]> {
+    const sMembers = await this.redisCache.sMembers(this._redisGetOrderStatusKey(STATUS.PENDING_SWAP));
+    return sMembers;
+  }
+
+  protected async _redisGetPendingWithdrawals(): Promise<string[]> {
+    const sMembers = await this.redisCache.sMembers(this._redisGetOrderStatusKey(STATUS.PENDING_WITHDRAWAL));
+    return sMembers;
+  }
+
+  protected async _redisGetPendingOrders(): Promise<string[]> {
+    const [pendingDeposits, pendingSwaps, pendingWithdrawals, pendingBridgesPreDeposit] = await Promise.all([
+      this.redisCache.sMembers(this._redisGetOrderStatusKey(STATUS.PENDING_DEPOSIT)),
+      this.redisCache.sMembers(this._redisGetOrderStatusKey(STATUS.PENDING_SWAP)),
+      this.redisCache.sMembers(this._redisGetOrderStatusKey(STATUS.PENDING_WITHDRAWAL)),
+      this.redisCache.sMembers(this._redisGetOrderStatusKey(STATUS.PENDING_BRIDGE_PRE_DEPOSIT)),
+    ]);
+    return [...pendingDeposits, ...pendingSwaps, ...pendingWithdrawals, ...pendingBridgesPreDeposit];
   }
 
   // ////////////////////////////////////////////////////////////

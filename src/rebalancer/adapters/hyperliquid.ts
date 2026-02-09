@@ -74,17 +74,6 @@ const USDC_CORE_DEPOSIT_WALLET_ADDRESS = "0x6B9E773128f453f5c2C60935Ee2DE2CBc539
 // We should continually re-evaluate whether hyperliquid stablecoin swaps are indeed the cheapest option.
 export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
   REDIS_PREFIX = "hyperliquid-stablecoin-swap:";
-  // Key used to query latest cloid that uniquely identifies orders. Also used to set cloids when placing HL orders.
-  REDIS_KEY_LATEST_NONCE = this.REDIS_PREFIX + "latest-nonce";
-  // The following keys map to Sets of order nonces where the order has the relevant status.
-  REDIS_KEY_PENDING_BRIDGE_TO_HYPEREVM = this.REDIS_PREFIX + "pending-bridge-to-hyperevm";
-  REDIS_KEY_PENDING_DEPOSIT_TO_HYPERCORE = this.REDIS_PREFIX + "pending-deposit-to-hypercore";
-  REDIS_KEY_PENDING_SWAP = this.REDIS_PREFIX + "pending-swap";
-  REDIS_KEY_PENDING_WITHDRAWAL_FROM_HYPERCORE = this.REDIS_PREFIX + "pending-withdrawal-from-hypercore";
-
-  // This table associates HL cloid's with rebalance route information, so we can correctly progress the pending order
-  // through the EVM -> HL -> EVM lifecycle.
-  REDIS_KEY_PENDING_ORDER = this.REDIS_PREFIX + "pending-order";
 
   // @dev Every market is saved in here twice, where the base and quote asset are reversed in the dictionary key
   // and the isBuy is flipped.
@@ -235,7 +224,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
   async updateRebalanceStatuses(): Promise<void> {
     this._assertInitialized();
 
-    const pendingBridgeToHyperevm = await this._redisGetPendingBridgeToHyperevm();
+    const pendingBridgeToHyperevm = await this._redisGetPendingBridgesPreDeposit();
     if (pendingBridgeToHyperevm.length > 0) {
       this.logger.debug({
         at: "HyperliquidStablecoinSwapAdapter.updateRebalanceStatuses",
@@ -281,7 +270,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       }
     }
 
-    const pendingBridgeToHypercore = await this._redisGetPendingDepositsToHypercore();
+    const pendingBridgeToHypercore = await this._redisGetPendingDeposits();
     if (pendingBridgeToHypercore.length > 0) {
       this.logger.debug({
         at: "HyperliquidStablecoinSwapAdapter.updateRebalanceStatuses",
@@ -520,7 +509,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     // For each order that is in the state of being bridged to HyperEVM, check if its bridged amount has arrived
     // on HyperEVM yet, and if it has, then we should subtract its virtual balance from HyperEVM since that balance
     // will soon be deposited into Hypercore.
-    const pendingBridgeToHyperevm = await this._redisGetPendingBridgeToHyperevm();
+    const pendingBridgeToHyperevm = await this._redisGetPendingBridgesPreDeposit();
     if (pendingBridgeToHyperevm.length > 0) {
       this.logger.debug({
         at: "HyperliquidStablecoinSwapAdapter.getPendingRebalances",
@@ -655,7 +644,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     // For any pending orders at all, we should add a virtual balance to the destination chain. This includes
     // orders with statuses: { PENDING_BRIDGE_TO_HYPEREVM, PENDING_SWAP, PENDING_DEPOSIT_TO_HYPERCORE, PENDING_WITHDRAWAL_FROM_HYPERCORE },
     const pendingSwaps = await this._redisGetPendingSwaps();
-    const pendingDepositsToHypercore = await this._redisGetPendingDepositsToHypercore();
+    const pendingDepositsToHypercore = await this._redisGetPendingDeposits();
     if (pendingSwaps.length > 0) {
       this.logger.debug({
         at: "HyperliquidStablecoinSwapAdapter.getPendingRebalances",
@@ -1212,50 +1201,5 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       }
     }
     return unfinalizedWithdrawalAmount;
-  }
-
-  // ////////////////////////////////////////////////////////////
-  // PRIVATE REDIS HELPER FUNCTIONS
-  // ////////////////////////////////////////////////////////////
-
-  protected _redisGetOrderStatusKey(status: STATUS): string {
-    let orderStatusKey: string;
-    switch (status) {
-      case STATUS.PENDING_BRIDGE_TO_HYPEREVM:
-        orderStatusKey = this.REDIS_KEY_PENDING_BRIDGE_TO_HYPEREVM;
-        break;
-      case STATUS.PENDING_DEPOSIT_TO_HYPERCORE:
-        orderStatusKey = this.REDIS_KEY_PENDING_DEPOSIT_TO_HYPERCORE;
-        break;
-      case STATUS.PENDING_SWAP:
-        orderStatusKey = this.REDIS_KEY_PENDING_SWAP;
-        break;
-      case STATUS.PENDING_WITHDRAWAL_FROM_HYPERCORE:
-        orderStatusKey = this.REDIS_KEY_PENDING_WITHDRAWAL_FROM_HYPERCORE;
-        break;
-      default:
-        throw new Error(`Invalid status: ${status}`);
-    }
-    return orderStatusKey;
-  }
-
-  private async _redisGetPendingSwaps(): Promise<string[]> {
-    const sMembers = await this.redisCache.sMembers(this.REDIS_KEY_PENDING_SWAP);
-    return sMembers;
-  }
-
-  private async _redisGetPendingBridgeToHyperevm(): Promise<string[]> {
-    const sMembers = await this.redisCache.sMembers(this.REDIS_KEY_PENDING_BRIDGE_TO_HYPEREVM);
-    return sMembers;
-  }
-
-  private async _redisGetPendingDepositsToHypercore(): Promise<string[]> {
-    const sMembers = await this.redisCache.sMembers(this.REDIS_KEY_PENDING_DEPOSIT_TO_HYPERCORE);
-    return sMembers;
-  }
-
-  private async _redisGetPendingWithdrawals(): Promise<string[]> {
-    const sMembers = await this.redisCache.sMembers(this.REDIS_KEY_PENDING_WITHDRAWAL_FROM_HYPERCORE);
-    return sMembers;
   }
 }

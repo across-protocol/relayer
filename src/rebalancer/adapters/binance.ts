@@ -28,17 +28,9 @@ import {
   winston,
 } from "../../utils";
 import { RebalanceRoute } from "../rebalancer";
-import { BaseAdapter, OrderDetails } from "./baseAdapter";
+import { BaseAdapter, OrderDetails, STATUS } from "./baseAdapter";
 import { AugmentedTransaction } from "../../clients";
 import { RebalancerConfig } from "../RebalancerConfig";
-
-enum STATUS {
-  PENDING_BRIDGE_TO_BINANCE_NETWORK,
-  PENDING_DEPOSIT,
-  PENDING_SWAP,
-  PENDING_WITHDRAWAL,
-}
-
 interface SPOT_MARKET_META {
   symbol: string;
   baseAssetName: string;
@@ -54,17 +46,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
 
   REDIS_PREFIX = "binance-stablecoin-swap:";
 
-  REDIS_KEY_PENDING_ORDER = this.REDIS_PREFIX + "pending-order";
   REDIS_KEY_INITIATED_WITHDRAWALS = this.REDIS_PREFIX + "initiated-withdrawals";
-
-  // Key used to query latest cloid that uniquely identifies orders. Also used to set cloids when placing HL orders.
-  REDIS_KEY_LATEST_NONCE = this.REDIS_PREFIX + "latest-nonce";
-
-  REDIS_KEY_PENDING_BRIDGE_TO_BINANCE_NETWORK = this.REDIS_PREFIX + "pending-bridge-to-binance-network";
-  REDIS_KEY_PENDING_DEPOSIT = this.REDIS_PREFIX + "pending-deposit";
-  REDIS_KEY_PENDING_SWAP = this.REDIS_PREFIX + "pending-swap";
-  REDIS_KEY_PENDING_WITHDRAWAL = this.REDIS_PREFIX + "pending-withdrawal";
-
   private spotMarketMeta: { [name: string]: SPOT_MARKET_META } = {
     "USDT-USDC": {
       symbol: "USDCUSDT",
@@ -142,7 +124,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     this._assertInitialized();
 
     // Pending bridges to Binance network: we'll attempt to deposit the tokens to Binance if we have enough balance.
-    const pendingBridgeToBinanceDepositNetwork = await this._redisGetPendingBridgeToBinanceNetwork();
+    const pendingBridgeToBinanceDepositNetwork = await this._redisGetPendingBridgesPreDeposit();
     if (pendingBridgeToBinanceDepositNetwork.length > 0) {
       this.logger.debug({
         at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",
@@ -180,7 +162,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
           depositNetworkBalance: depositNetworkBalance.toString(),
         });
         await this._depositToBinance(sourceToken, binanceDepositNetwork, requiredAmountOnDepositNetwork);
-        await this._redisUpdateOrderStatus(cloid, STATUS.PENDING_BRIDGE_TO_BINANCE_NETWORK, STATUS.PENDING_DEPOSIT);
+        await this._redisUpdateOrderStatus(cloid, STATUS.PENDING_BRIDGE_PRE_DEPOSIT, STATUS.PENDING_DEPOSIT);
       }
     }
 
@@ -371,7 +353,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     // (to subsequently be deposited into Binance), then we should check if their bridged amounts have arrived at the
     // deposit network yet. If they have, then the network's balance will be higher than we want to show, so we should
     // subtract each order's expected deposit amount from that network's balance.
-    const pendingBridgeToBinanceNetwork = await this._redisGetPendingBridgeToBinanceNetwork();
+    const pendingBridgeToBinanceNetwork = await this._redisGetPendingBridgesPreDeposit();
     if (pendingBridgeToBinanceNetwork.length > 0) {
       this.logger.debug({
         at: "BinanceStablecoinSwapAdapter.getPendingRebalances",
@@ -620,12 +602,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         binanceDepositNetwork,
         amountToTransfer
       );
-      await this._redisCreateOrder(
-        cloid,
-        STATUS.PENDING_BRIDGE_TO_BINANCE_NETWORK,
-        rebalanceRoute,
-        amountReceivedFromBridge
-      );
+      await this._redisCreateOrder(cloid, STATUS.PENDING_BRIDGE_PRE_DEPOSIT, rebalanceRoute, amountReceivedFromBridge);
     } else {
       this.logger.debug({
         at: "BinanceStablecoinSwapAdapter.initializeRebalance",
@@ -1063,60 +1040,5 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       redisWithdrawalTypeKey: getBinanceTransactionTypeKey(destinationEntrypointNetwork, withdrawalId.id),
       finalDestinationChain: destinationChain,
     });
-  }
-
-  // ////////////////////////////////////////////////////////////
-  // PRIVATE REDIS HELPER FUNCTIONS
-  // ////////////////////////////////////////////////////////////
-
-  protected _redisGetOrderStatusKey(status: STATUS): string {
-    let orderStatusKey: string;
-    switch (status) {
-      case STATUS.PENDING_DEPOSIT:
-        orderStatusKey = this.REDIS_KEY_PENDING_DEPOSIT;
-        break;
-      case STATUS.PENDING_SWAP:
-        orderStatusKey = this.REDIS_KEY_PENDING_SWAP;
-        break;
-      case STATUS.PENDING_WITHDRAWAL:
-        orderStatusKey = this.REDIS_KEY_PENDING_WITHDRAWAL;
-        break;
-      case STATUS.PENDING_BRIDGE_TO_BINANCE_NETWORK:
-        orderStatusKey = this.REDIS_KEY_PENDING_BRIDGE_TO_BINANCE_NETWORK;
-        break;
-      default:
-        throw new Error(`Invalid status: ${status}`);
-    }
-    return orderStatusKey;
-  }
-
-  private async _redisGetPendingBridgeToBinanceNetwork(): Promise<string[]> {
-    const sMembers = await this.redisCache.sMembers(this.REDIS_KEY_PENDING_BRIDGE_TO_BINANCE_NETWORK);
-    return sMembers;
-  }
-
-  private async _redisGetPendingDeposits(): Promise<string[]> {
-    const sMembers = await this.redisCache.sMembers(this.REDIS_KEY_PENDING_DEPOSIT);
-    return sMembers;
-  }
-
-  private async _redisGetPendingSwaps(): Promise<string[]> {
-    const sMembers = await this.redisCache.sMembers(this.REDIS_KEY_PENDING_SWAP);
-    return sMembers;
-  }
-
-  private async _redisGetPendingWithdrawals(): Promise<string[]> {
-    const sMembers = await this.redisCache.sMembers(this.REDIS_KEY_PENDING_WITHDRAWAL);
-    return sMembers;
-  }
-
-  private async _redisGetPendingOrders(): Promise<string[]> {
-    const [pendingDeposits, pendingSwaps, pendingWithdrawals, pendingBridgeToBinanceNetwork] = await Promise.all([
-      this.redisCache.sMembers(this.REDIS_KEY_PENDING_DEPOSIT),
-      this.redisCache.sMembers(this.REDIS_KEY_PENDING_SWAP),
-      this.redisCache.sMembers(this.REDIS_KEY_PENDING_WITHDRAWAL),
-      this.redisCache.sMembers(this.REDIS_KEY_PENDING_BRIDGE_TO_BINANCE_NETWORK),
-    ]);
-    return [...pendingDeposits, ...pendingSwaps, ...pendingWithdrawals, ...pendingBridgeToBinanceNetwork];
   }
 }
