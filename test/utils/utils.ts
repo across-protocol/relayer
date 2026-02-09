@@ -1,5 +1,4 @@
 import * as utils from "@across-protocol/sdk/test-utils";
-import { seedWallet, amountToSeedWallets } from "@across-protocol/contracts/dist/test-utils";
 import { SpyTransport, bigNumberFormatter } from "@risk-labs/logger";
 import { AcrossConfigStore, FakeContract } from "@across-protocol/contracts";
 import { constants, utils as sdkUtils } from "@across-protocol/sdk";
@@ -54,12 +53,12 @@ export {
 } from "@risk-labs/logger";
 export { MAX_SAFE_ALLOWANCE, MAX_UINT_VAL } from "../../src/utils";
 export { ethers };
-export const createRandomBytes32 = (): string => ethers.utils.hexlify(ethers.utils.randomBytes(32));
 export const {
   buildPoolRebalanceLeafTree,
   buildPoolRebalanceLeaves,
   buildSlowRelayTree,
   buildV3SlowRelayTree,
+  createRandomBytes32,
   getContractFactory,
   getUpdatedV3DepositSignature,
   hubPoolFixture,
@@ -100,7 +99,7 @@ export async function setupTokensForWallet(
     await token.connect(wallet).approve(contractToApprove.address, balance);
   };
 
-  await seedWallet(wallet, tokens, weth, amountToSeedWallets.mul(seedMultiplier));
+  await utils.seedWallet(wallet, tokens, weth, utils.amountToSeedWallets.mul(seedMultiplier));
   await Promise.all(tokens.map(approveToken));
 
   if (weth) {
@@ -421,10 +420,10 @@ export async function addLiquidity(
   signer: SignerWithAddress,
   hubPool: Contract,
   l1Token: Contract,
-  amount: BigNumber
+  amount: utils.BigNumber
 ): Promise<void> {
   const weth = undefined;
-  await seedWallet(signer, [l1Token], weth, amount);
+  await utils.seedWallet(signer, [l1Token], weth, amount);
   await l1Token.connect(signer).approve(hubPool.address, amount);
   await hubPool.enableL1TokenForLiquidityProvision(l1Token.address);
   await hubPool.connect(signer).addLiquidity(l1Token.address, amount);
