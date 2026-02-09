@@ -37,7 +37,6 @@ import {
   chainIsEvm,
   sendAndConfirmSolanaTransaction,
   getSvmProvider,
-  submitTransaction,
 } from "../utils";
 import { AugmentedTransaction, TransactionClient } from "../clients/TransactionClient";
 import {

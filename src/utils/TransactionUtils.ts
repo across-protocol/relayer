@@ -192,27 +192,3 @@ export async function submitTransaction(
   }
   return response[0];
 }
-
-export async function submitTransaction(
-  transaction: AugmentedTransaction,
-  transactionClient: TransactionClient
-): Promise<TransactionResponse> {
-  const { reason, succeed, transaction: txnRequest } = (await transactionClient.simulate([transaction]))[0];
-  const { contract: targetContract, method, ...txnRequestData } = txnRequest;
-  if (!succeed) {
-    const message = `Failed to simulate ${targetContract.address}.${method}(${txnRequestData.args.join(", ")}) on ${
-      txnRequest.chainId
-    }`;
-    throw new Error(`${message} (${reason})`);
-  }
-
-  const response = await transactionClient.submit(transaction.chainId, [transaction]);
-  if (response.length === 0) {
-    throw new Error(
-      `Transaction succeeded simulation but failed to submit onchain to ${
-        targetContract.address
-      }.${method}(${txnRequestData.args.join(", ")}) on ${txnRequest.chainId}`
-    );
-  }
-  return response[0];
-}
