@@ -31,6 +31,7 @@ import {
   toAddressType,
   getSpokePoolPeriphery,
   getL1TokenAddress,
+  ConvertDecimals,
   assert,
 } from "../utils";
 import {
@@ -340,11 +341,17 @@ export class GaslessRelayer {
             });
             return;
           }
+          const inputTokenInfo = getTokenInfo(inputTokenAddress, originChainId);
+          const outputTokenInfo = getTokenInfo(outputTokenAddress, destinationChainId);
+          const inputAmountInOutputTokenDecimals = ConvertDecimals(
+            inputTokenInfo.decimals,
+            outputTokenInfo.decimals
+          )(inputAmount);
           // If the input amount is less than the output amount, then keep the deposit as observed and do not submit a deposit.
-          if (toBN(inputAmount).lt(toBN(outputAmount))) {
+          if (inputAmountInOutputTokenDecimals.lt(toBN(outputAmount))) {
             this.logger.debug({
               at: "GaslessRelayer#evaluateApiSignatures",
-              message: "Deposit inputAmount > ouputAmount. Skipping deposit.",
+              message: "Deposit inputAmount < ouputAmount. Skipping deposit.",
               depositId,
               depositNonce,
               inputAmount,
@@ -480,7 +487,10 @@ export class GaslessRelayer {
       deposit;
 
     // Do sanity checks. We should never fill a deposit with outputAmount > inputAmount.
-    assert(inputAmount.gte(outputAmount), "Cannot fill deposit with outputAmount > inputAmount");
+    const outputTokenInfo = getTokenInfo(outputToken, destinationChainId);
+    const inputTokenInfo = getTokenInfo(inputToken, originChainId);
+    const inputAmountInOutputDecimals = ConvertDecimals(inputTokenInfo.decimals, outputTokenInfo.decimals)(inputAmount);
+    assert(inputAmountInOutputDecimals.gte(outputAmount), "Cannot fill deposit with outputAmount > inputAmount");
     // We should also never fill a deposit with mismatching input/output tokens.
     const inputTokenL1Address = getL1TokenAddress(inputToken, originChainId);
     const outputTokenL1Address = getL1TokenAddress(outputToken, destinationChainId);
@@ -498,14 +508,13 @@ export class GaslessRelayer {
       return null;
     }
 
-    const tokenInfo = getTokenInfo(outputToken, destinationChainId);
     const gaslessFill = {
       ..._gaslessFill,
       message: "Completed gasless fill 🔮",
       mrkdwn: `Completed gasless fill from ${getNetworkName(originChainId)} to ${getNetworkName(
         destinationChainId
-      )} with output amount ${createFormatFunction(2, 4, false, tokenInfo.decimals)(outputAmount)} ${
-        tokenInfo.symbol
+      )} with output amount ${createFormatFunction(2, 4, false, outputTokenInfo.decimals)(outputAmount)} ${
+        outputTokenInfo.symbol
       } and deposit ID ${depositId}`,
     };
 
