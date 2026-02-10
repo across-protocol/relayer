@@ -728,6 +728,10 @@ export const CONTRACT_ADDRESSES: {
       address: "0x14224e63716afAcE30C9a417E0542281869f7d9e",
       abi: HUB_POOL_ABI,
     },
+    spokePoolPeriphery: {
+      address: "0x1cFC76f039e01970355Cf73a37B785A81847796C",
+      abi: SPOKE_POOL_PERIPHERY_ABI,
+    },
   },
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: {
     cctpMessageTransmitter: {
@@ -745,6 +749,10 @@ export const CONTRACT_ADDRESSES: {
     cctpV2TokenMessenger: {
       address: "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
+    },
+    spokePoolPeriphery: {
+      address: "0x1cFC76f039e01970355Cf73a37B785A81847796C",
+      abi: SPOKE_POOL_PERIPHERY_ABI,
     },
   },
   [CHAIN_IDs.BASE_SEPOLIA]: {
@@ -767,6 +775,10 @@ export const CONTRACT_ADDRESSES: {
     cctpV2TokenMessenger: {
       address: "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
+    },
+    spokePoolPeriphery: {
+      address: "0x1cFC76f039e01970355Cf73a37B785A81847796C",
+      abi: SPOKE_POOL_PERIPHERY_ABI,
     },
   },
   [CHAIN_IDs.BLAST_SEPOLIA]: {
@@ -825,6 +837,10 @@ export const CONTRACT_ADDRESSES: {
     cctpV2TokenMessenger: {
       address: "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
+    },
+    spokePoolPeriphery: {
+      address: "0x1cFC76f039e01970355Cf73a37B785A81847796C",
+      abi: SPOKE_POOL_PERIPHERY_ABI,
     },
   },
   [CHAIN_IDs.POLYGON_AMOY]: {
