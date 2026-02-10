@@ -101,7 +101,11 @@ export abstract class BaseAdapter implements RebalancerAdapter {
   }
 
   async initialize(availableRoutes: RebalanceRoute[]): Promise<void> {
-    this.redisCache = (await getRedisCache(this.logger)) as RedisCache;
+    // @dev We track order statuses in Redis and therefore we cannot easily rotate the Redis cache without
+    // losing critical information about pending orders. Therefore we suggest using a separate Redis cache from
+    // the remainder of the application so that we can continue to rotate the Redis cache (e.g. the part used to
+    // store RPC responses) without losing rebalance order information.
+    this.redisCache = (await getRedisCache(this.logger, process.env.REBALANCER_REDIS_URL)) as RedisCache;
 
     this.baseSignerAddress = EvmAddress.from(await this.baseSigner.getAddress());
 
@@ -181,11 +185,6 @@ export abstract class BaseAdapter implements RebalancerAdapter {
   // ////////////////////////////////////////////////////////////
   // PROTECTED REDIS HELPER METHODS
   // ////////////////////////////////////////////////////////////
-
-  // @dev @todo: We track order statuses in Redis and therefore we cannot easily rotate the Redis cache without
-  // losing critical information about pending orders. Therefore we should try using a separate Redis cache from
-  // the remainder of the application so that we can continue to rotate the Redis cache (e.g. the part used to
-  // store RPC responses) without losing rebalance order information.
 
   protected async _redisUpdateOrderStatus(cloid: string, oldStatus: number, status: number): Promise<void> {
     const oldOrderStatusKey = this._redisGetOrderStatusKey(oldStatus);
