@@ -30,6 +30,8 @@ import {
   createFormatFunction,
   toAddressType,
   getSpokePoolPeriphery,
+  getL1TokenAddress,
+  ConvertDecimals,
   assert,
 } from "../utils";
 import {
@@ -300,7 +302,8 @@ export class GaslessRelayer {
       apiMessages.filter(({ originChainId }) => isDefined(this.observedNonces[originChainId])),
       async (depositMessage) => {
         const { originChainId, depositId, permit } = depositMessage;
-        const { destinationChainId, inputToken } = depositMessage.baseDepositData;
+        const { destinationChainId, inputToken, outputToken, inputAmount, outputAmount } =
+          depositMessage.baseDepositData;
         const { from: authorizer, nonce } = permit.message;
 
         const nonceSet = this.observedNonces[originChainId];
@@ -320,6 +323,42 @@ export class GaslessRelayer {
 
           // Mark the signature as observed.
           nonceSet.add(depositNonce);
+
+          // Ensure that the input token is the same as the output token.
+          const inputTokenAddress = toAddressType(inputToken, originChainId);
+          const inputTokenL1Address = getL1TokenAddress(inputTokenAddress, this.config.hubPoolChainId);
+          const outputTokenAddress = toAddressType(outputToken, destinationChainId);
+          const outputTokenL1Address = getL1TokenAddress(outputTokenAddress, this.config.hubPoolChainId);
+          // If the input token is different from the output token, then keep the deposit as observed and do not submit a deposit.
+          if (!inputTokenL1Address.eq(outputTokenL1Address)) {
+            this.logger.debug({
+              at: "GaslessRelayer#evaluateApiSignatures",
+              message: "Deposit input token is different from deposit output token. Skipping deposit.",
+              depositId,
+              depositNonce,
+              inputToken,
+              outputToken,
+            });
+            return;
+          }
+          const inputTokenInfo = getTokenInfo(inputTokenAddress, originChainId);
+          const outputTokenInfo = getTokenInfo(outputTokenAddress, destinationChainId);
+          const inputAmountInOutputTokenDecimals = ConvertDecimals(
+            inputTokenInfo.decimals,
+            outputTokenInfo.decimals
+          )(inputAmount);
+          // If the input amount is less than the output amount, then keep the deposit as observed and do not submit a deposit.
+          if (inputAmountInOutputTokenDecimals.lt(toBN(outputAmount))) {
+            this.logger.debug({
+              at: "GaslessRelayer#evaluateApiSignatures",
+              message: "Deposit inputAmount < ouputAmount. Skipping deposit.",
+              depositId,
+              depositNonce,
+              inputAmount,
+              outputAmount,
+            });
+            return;
+          }
 
           // Initiate the deposit (depositWithAuthorization) and wait for tx to be executed.
           const receipt = await this.initiateGaslessDeposit(depositMessage);
@@ -444,7 +483,19 @@ export class GaslessRelayer {
   private async initiateFill(
     deposit: Omit<DepositWithBlock, "fromLiteChain" | "toLiteChain" | "quoteBlockNumber">
   ): Promise<TransactionResponse | null> {
-    const { originChainId, depositId, destinationChainId, outputToken, outputAmount } = deposit;
+    const { originChainId, depositId, destinationChainId, outputToken, outputAmount, inputToken, inputAmount } =
+      deposit;
+
+    // Do sanity checks. We should never fill a deposit with outputAmount > inputAmount.
+    const outputTokenInfo = getTokenInfo(outputToken, destinationChainId);
+    const inputTokenInfo = getTokenInfo(inputToken, originChainId);
+    const inputAmountInOutputDecimals = ConvertDecimals(inputTokenInfo.decimals, outputTokenInfo.decimals)(inputAmount);
+    assert(inputAmountInOutputDecimals.gte(outputAmount), "Cannot fill deposit with outputAmount > inputAmount");
+    // We should also never fill a deposit with mismatching input/output tokens.
+    const inputTokenL1Address = getL1TokenAddress(inputToken, originChainId);
+    const outputTokenL1Address = getL1TokenAddress(outputToken, destinationChainId);
+    assert(inputTokenL1Address.eq(outputTokenL1Address), "Cannot fill deposit with mismatching input/output tokens.");
+
     const spokePool = this.spokePools[destinationChainId];
 
     const _gaslessFill = buildGaslessFillRelayTx(deposit, spokePool, originChainId, this.signerAddress);
@@ -457,14 +508,13 @@ export class GaslessRelayer {
       return null;
     }
 
-    const tokenInfo = getTokenInfo(outputToken, destinationChainId);
     const gaslessFill = {
       ..._gaslessFill,
       message: "Completed gasless fill 🔮",
       mrkdwn: `Completed gasless fill from ${getNetworkName(originChainId)} to ${getNetworkName(
         destinationChainId
-      )} with output amount ${createFormatFunction(2, 4, false, tokenInfo.decimals)(outputAmount)} ${
-        tokenInfo.symbol
+      )} with output amount ${createFormatFunction(2, 4, false, outputTokenInfo.decimals)(outputAmount)} ${
+        outputTokenInfo.symbol
       } and deposit ID ${depositId}`,
     };
 
