@@ -41,6 +41,7 @@ import {
   acrossApi,
   coingecko,
   defiLlama,
+  getNativeTokenInfoForChain,
 } from "../utils";
 import { Deposit, DepositWithBlock, L1Token, SpokePoolClientsByChain } from "../interfaces";
 import { getAcrossHost } from "./AcrossAPIClient";
@@ -172,21 +173,16 @@ export class ProfitClient {
     return isMessageEmpty(resolveDepositMessage(deposit)) ? this.gasMultiplier : this.gasMessageMultiplier;
   }
 
-  resolveNativeToken(chainId: number): L1Token {
-    const symbol = getNativeTokenSymbol(chainId);
-    const token = TOKEN_SYMBOLS_MAP[symbol];
-    if (!isDefined(symbol) || !isDefined(token)) {
-      throw new Error(`Unable to resolve native token for chain ID ${chainId}`);
-    }
-
-    const { decimals, addresses } = token;
-
-    const address = addresses[this.hubPoolClient.chainId] ?? addresses[chainId]; // Mainnet tokens have priority for price lookups.
-
-    return { symbol, address, decimals };
+  resolveNativeToken(chainId: number): { symbol: string; decimals: number; address: string } {
+    const tokenInfo = getNativeTokenInfoForChain(chainId, this.hubPoolClient.chainId);
+    return {
+      symbol: tokenInfo.symbol,
+      decimals: tokenInfo.decimals,
+      address: tokenInfo.address,
+    };
   }
 
-  resolveGasToken(chainId: number): L1Token {
+  resolveGasToken(chainId: number): { symbol: string; decimals: number; address: string } {
     // Note for future: gas token and native token may not always be the same
     return this.resolveNativeToken(chainId);
   }
