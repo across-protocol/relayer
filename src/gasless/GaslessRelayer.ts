@@ -330,9 +330,9 @@ export class GaslessRelayer {
 
           // Ensure that the input token is the same as the output token.
           const inputTokenAddress = toAddressType(inputToken, originChainId);
-          const inputTokenL1Address = getL1TokenAddress(inputTokenAddress, this.config.hubPoolChainId);
+          const inputTokenL1Address = getL1TokenAddress(inputTokenAddress, originChainId);
           const outputTokenAddress = toAddressType(outputToken, destinationChainId);
-          const outputTokenL1Address = getL1TokenAddress(outputTokenAddress, this.config.hubPoolChainId);
+          const outputTokenL1Address = getL1TokenAddress(outputTokenAddress, destinationChainId);
           // If the input token is different from the output token, then keep the deposit as observed and do not submit a deposit.
           if (!inputTokenL1Address.eq(outputTokenL1Address)) {
             this.logger.debug({
@@ -340,8 +340,8 @@ export class GaslessRelayer {
               message: "Deposit input token is different from deposit output token. Skipping deposit.",
               depositId,
               depositNonce,
-              inputToken,
-              outputToken,
+              inputToken: inputTokenL1Address.toNative(),
+              outputToken: outputTokenL1Address.toNative(),
             });
             return;
           }

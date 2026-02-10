@@ -19,9 +19,15 @@ import {
   getAccountCoins,
   BINANCE_NETWORKS,
   isDefined,
+  filterAsync,
+  getRedisCache,
+  getBinanceDepositType,
+  BinanceTransactionType,
+  getBinanceWithdrawalType,
 } from "../../utils";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { FinalizerPromise, AddressesToFinalize } from "../types";
+import { RedisCache } from "../../caching/RedisCache";
 
 // Alias for a Binance deposit/withdrawal status.
 enum Status {
@@ -70,8 +76,16 @@ export async function binanceFinalizer(
     getBinanceDeposits(binanceApi, fromTimestamp),
     getAccountCoins(binanceApi),
   ]);
+  const redis = (await getRedisCache(logger)) as RedisCache;
+  // Remove any _binanceDeposits that are marked as related to a swap. The reason why we check "!== SWAP" instead of
+  // "=== BRIDGE" is because we want this code to be backwards compatible with the existing inventory client logic which
+  // does not yet tag deposits with this BRIDGE type.
+  const _binanceBridgeDeposits = await filterAsync(_binanceDeposits, async (deposit) => {
+    const depositType = await getBinanceDepositType(deposit, redis);
+    return depositType !== BinanceTransactionType.SWAP;
+  });
 
-  const statusesGrouped = groupObjectCountsByProp(_binanceDeposits, (deposit: { status: number }) => {
+  const statusesGrouped = groupObjectCountsByProp(_binanceBridgeDeposits, (deposit: { status: number }) => {
     switch (deposit.status) {
       case Status.Confirmed:
         return "ready-to-finalize";
@@ -85,12 +99,12 @@ export async function binanceFinalizer(
   });
   logger.debug({
     at: "BinanceFinalizer",
-    message: `Found ${_binanceDeposits.length} historical Binance deposits.`,
+    message: `Found ${_binanceBridgeDeposits.length} historical Binance deposits.`,
     statusesGrouped,
     fromTimestamp: fromTimestamp,
   });
-  const binanceDeposits = _binanceDeposits.filter((deposit) => deposit.status === Status.Confirmed);
-  const creditedDeposits = _binanceDeposits.filter((deposit) => deposit.status === Status.Credited);
+  const binanceDeposits = _binanceBridgeDeposits.filter((deposit) => deposit.status === Status.Confirmed);
+  const creditedDeposits = _binanceBridgeDeposits.filter((deposit) => deposit.status === Status.Credited);
 
   // We can run this in parallel since deposits for each tokens are independent of each other.
   await mapAsync(Object.entries(senderAddresses), async ([address, symbols]) => {
@@ -106,7 +120,14 @@ export async function binanceFinalizer(
       let coinBalance = Number(coin.balance);
       const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[hubChainId];
       const { decimals: l1Decimals } = getTokenInfo(EvmAddress.from(l1Token), hubChainId);
-      const withdrawals = await getBinanceWithdrawals(binanceApi, symbol, fromTimestamp);
+      const _withdrawals = await getBinanceWithdrawals(binanceApi, symbol, fromTimestamp);
+      // Similar to the reasoning for filtering deposits, we need to filter withdrawals by removing any
+      // that are explicitly marked as related to a swap. To make this backwards compatible, we check "!== SWAP" instead of "=== BRIDGE"
+      // as the existing inventory client logic does not yet tag withdrawals with this BRIDGE type.
+      const withdrawals = await filterAsync(_withdrawals, async (withdrawal) => {
+        const withdrawalType = await getBinanceWithdrawalType(withdrawal, redis);
+        return withdrawalType !== BinanceTransactionType.SWAP;
+      });
 
       // @dev Since we cannot determine the address of the binance depositor without querying the transaction receipt, we need to assume that all tokens
       // with symbol `symbol` should be withdrawn to `address`.
@@ -204,7 +225,10 @@ export async function binanceFinalizer(
         } else {
           logger.debug({
             at: "BinanceFinalizer",
-            message: `(X -> ${withdrawNetwork}) ${amountToFinalize} is less than minimum withdrawable amount ${networkLimits.withdrawMin} for token ${symbol}.`,
+            message: `(X -> ${withdrawNetwork}) ${amountToFinalize} is less than minimum withdrawable amount ${networkLimits.withdrawMin} for token ${symbol} or greater than available coin balance on Binance.`,
+            availableCoinBalance: coinBalance - creditedDepositAmount,
+            coinBalance,
+            creditedDepositAmount,
           });
         }
       }
