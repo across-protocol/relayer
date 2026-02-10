@@ -147,7 +147,11 @@ export class GaslessRelayer {
         nonce: permit.message.nonce!,
       });
       const fillKey = this._getFilledRelayKey({ originChainId, depositId: toBN(depositId) });
-      return this.observedNonces[originChainId].has(nonceKey) && !this.observedFills[destinationChainId].has(fillKey);
+      return (
+        this.observedNonces[originChainId]?.has(nonceKey) &&
+        isDefined(this.observedFills[destinationChainId]) &&
+        !this.observedFills[destinationChainId].has(fillKey)
+      );
     });
 
     this.logger.debug({
