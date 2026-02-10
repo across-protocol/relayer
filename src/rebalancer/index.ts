@@ -21,7 +21,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
       USDC: toBNWei("0", 6),
     },
     10: {
-      USDC: toBNWei("0", 6),
+      USDC: toBNWei("15", 6),
       USDT: toBNWei("0", 6),
     },
     42161: {
@@ -29,8 +29,8 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
       USDC: toBNWei("0", 6),
     },
     999: {
-      USDT: toBNWei("20", 6),
-      USDC: toBNWei("20", 6),
+      USDT: toBNWei("0", 6),
+      USDC: toBNWei("0", 6),
     },
     8453: {
       USDC: toBNWei("0", 6),
@@ -41,10 +41,10 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     },
     143: {
       USDC: toBNWei("0", 6),
-      USDT: toBNWei("0", 6),
+      USDT: toBNWei("7.5", 6),
     },
     56: {
-      USDT: toBNWei("0", 18),
+      USDT: toBNWei("11", 18),
       USDC: toBNWei("0", 18),
     },
   };
@@ -53,8 +53,8 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     USDT: {
       "1": { targetBalance: toBNWei("0", 6), priorityTier: 0 },
       "10": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
-      "143": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
-      "42161": { targetBalance: toBNWei("11.1", 6), priorityTier: 1 },
+      "143": { targetBalance: toBNWei("18", 6), priorityTier: 1 },
+      "42161": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "999": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "130": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "56": { targetBalance: toBNWei("0", 18), priorityTier: 1 },
@@ -65,9 +65,9 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
       "130": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "143": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "42161": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
-      "999": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
+      "999": { targetBalance: toBNWei("10.5", 6), priorityTier: 1 },
       "8453": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
-      "56": { targetBalance: toBNWei("11.1", 18), priorityTier: 1 },
+      "56": { targetBalance: toBNWei("0", 18), priorityTier: 1 },
     },
   };
 
