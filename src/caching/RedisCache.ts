@@ -67,6 +67,22 @@ export class RedisCache implements RedisCacheInterface {
     }
   }
 
+  sAdd(key: string, value: string): Promise<number> {
+    return this.client.sAdd(key, value);
+  }
+
+  sMembers(key: string): Promise<string[]> {
+    return this.client.sMembers(key);
+  }
+
+  sRem(key: string, value: string): Promise<number> {
+    return this.client.sRem(key, value);
+  }
+
+  del(key: string): Promise<number> {
+    return this.client.del(key);
+  }
+
   decr(key: string): Promise<number> {
     return this.decrBy(key, 1);
   }

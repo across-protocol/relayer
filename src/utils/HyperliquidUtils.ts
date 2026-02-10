@@ -89,6 +89,15 @@ export async function getHistoricalOrders(
   return _callWithRetry(infoClient.historicalOrders.bind(infoClient), [params], nRetries, maxRetries);
 }
 
+export async function getUserFillsByTime(
+  infoClient: hl.InfoClient,
+  params: hl.UserFillsByTimeParameters,
+  nRetries = 0,
+  maxRetries = 3
+): Promise<hl.UserFillsByTimeResponse> {
+  return _callWithRetry(infoClient.userFillsByTime.bind(infoClient), [params], nRetries, maxRetries);
+}
+
 export async function getOrderStatus(
   infoClient: hl.InfoClient,
   params: hl.OrderStatusParameters,

@@ -1,10 +1,11 @@
-import { TOKEN_EQUIVALENCE_REMAPPING, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
+import { CHAIN_IDs, TOKEN_EQUIVALENCE_REMAPPING, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { constants, utils, arch } from "@across-protocol/sdk";
 import { CONTRACT_ADDRESSES } from "../common";
 import { BigNumberish, BigNumber } from "./BNUtils";
-import { formatUnits } from "./SDKUtils";
+import { formatUnits, getTokenInfo } from "./SDKUtils";
 import { isDefined } from "./TypeGuards";
 import { Address, toAddressType, EvmAddress, SvmAddress, SVMProvider, toBN } from "./";
+import { TokenInfo } from "../interfaces";
 
 const { ZERO_ADDRESS } = constants;
 
@@ -31,6 +32,27 @@ export function getRemoteTokenForL1Token(
 
 export function getNativeTokenAddressForChain(chainId: number): Address {
   return toAddressType(CONTRACT_ADDRESSES[chainId]?.nativeToken?.address ?? ZERO_ADDRESS, chainId);
+}
+
+export function getNativeTokenInfoForChain(
+  chainId: number,
+  hubChainId = CHAIN_IDs.MAINNET
+): {
+  symbol: string;
+  address: string;
+  decimals: number;
+} {
+  const symbol = utils.getNativeTokenSymbol(chainId);
+  const token = TOKEN_SYMBOLS_MAP[symbol];
+  if (!isDefined(symbol) || !isDefined(token)) {
+    throw new Error(`Unable to resolve native token for chain ID ${chainId}`);
+  }
+
+  const { decimals, addresses } = token;
+
+  const address = addresses[hubChainId] ?? addresses[chainId]; // Mainnet tokens have priority for price lookups.
+
+  return { symbol, address, decimals };
 }
 
 export function getWrappedNativeTokenAddress(chainId: number): Address {
@@ -98,4 +120,28 @@ export async function getSolanaTokenBalance(
   }, toBN(0));
 
   return totalBalance;
+}
+
+/**
+ * @notice Returns token info using l1 token symbol for chain ID. If token symbol is not an L1 token
+ * symbol then this function will throw. This function will also throw if the token doesn't exist
+ * on the chain.
+ * @param l1TokenSymbol L1 token symbol to get the token info for.
+ * @param chainId Chain ID to get the token info for.
+ * @returns Token info for the given l1 token symbol and chain ID.
+ */
+export function getTokenInfoFromSymbol(l1TokenSymbol: string, chainId: number): TokenInfo {
+  const { MAINNET } = CHAIN_IDs;
+  const l1TokenAddress = EvmAddress.from(TOKEN_SYMBOLS_MAP[l1TokenSymbol]?.addresses[MAINNET]);
+  const l1TokenInfo = getTokenInfo(l1TokenAddress, MAINNET);
+
+  if (chainId === CHAIN_IDs.MAINNET) {
+    return l1TokenInfo;
+  } else {
+    const remoteTokenAddress = getRemoteTokenForL1Token(l1TokenAddress, chainId, MAINNET);
+    if (!remoteTokenAddress) {
+      throw new Error(`Unable to resolve remote token address for ${l1TokenSymbol} on chain ${chainId}`);
+    }
+    return getTokenInfo(remoteTokenAddress, chainId);
+  }
 }
