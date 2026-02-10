@@ -85,7 +85,7 @@ async function run(): Promise<number> {
   } = process.env;
 
   if (!botIdentifier) {
-    logger.debug({
+    logger.error({
       at: "fetchInventoryConfig#run",
       message: "BOT_IDENTIFIER not set, skipping inventory config fetch",
     });
@@ -97,12 +97,12 @@ async function run(): Promise<number> {
   // Helper to handle errors - fall back to local file if it exists.
   const handleError = (message: string): number => {
     if (existsSync(localFile)) {
-      logger.debug({
+      logger.warn({
         at: "fetchInventoryConfig#run",
         message,
         localFile,
       });
-      logger.debug({
+      logger.warn({
         at: "fetchInventoryConfig#run",
         message: "Local file exists, continuing with existing config",
         localFile,
