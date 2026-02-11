@@ -81,7 +81,7 @@ async function run(): Promise<number> {
     CONFIGURAMA_FOLDER_ENVIRONMENT: configuramaEnv = DEFAULT_ENVIRONMENT,
     CONFIGURAMA_FOLDER_PATH: configuramaFolderPath = "",
     BOT_IDENTIFIER: botIdentifier,
-    INVENTORY_CONFIG_FILENAME: inventoryConfigFilename,
+    RELAYER_EXTERNAL_INVENTORY_CONFIG: inventoryConfigFilename,
   } = process.env;
 
   if (!botIdentifier) {
