@@ -1,8 +1,9 @@
-import * as utils from "@across-protocol/contracts/dist/test-utils";
+import * as utils from "@across-protocol/sdk/test-utils";
 import { SpyTransport, bigNumberFormatter } from "@risk-labs/logger";
 import { AcrossConfigStore, FakeContract } from "@across-protocol/contracts";
 import { constants, utils as sdkUtils } from "@across-protocol/sdk";
 import { Contract, providers } from "ethers";
+import { ethers } from "hardhat";
 import chai, { assert, expect } from "chai";
 import chaiExclude from "chai-exclude";
 import sinon from "sinon";
@@ -51,8 +52,8 @@ export {
   spyLogLevel,
 } from "@risk-labs/logger";
 export { MAX_SAFE_ALLOWANCE, MAX_UINT_VAL } from "../../src/utils";
+export { ethers };
 export const {
-  ethers,
   buildPoolRebalanceLeafTree,
   buildPoolRebalanceLeaves,
   buildSlowRelayTree,
@@ -69,6 +70,8 @@ export type SignerWithAddress = utils.SignerWithAddress;
 export { assert, chai, expect, BigNumber, Contract, FakeContract, sinon, toBN, toBNWei, toWei, utf8ToHex, winston };
 
 chai.use(chaiExclude);
+
+const amountToSeedWallets = toWei("1500");
 
 export async function assertPromiseError<T>(promise: Promise<T>, errMessage?: string): Promise<void> {
   const SPECIAL_ERROR_MESSAGE = "Promise didn't fail";
@@ -98,7 +101,7 @@ export async function setupTokensForWallet(
     await token.connect(wallet).approve(contractToApprove.address, balance);
   };
 
-  await utils.seedWallet(wallet, tokens, weth, utils.amountToSeedWallets.mul(seedMultiplier));
+  await utils.seedWallet(wallet, tokens, weth, amountToSeedWallets.mul(seedMultiplier));
   await Promise.all(tokens.map(approveToken));
 
   if (weth) {
@@ -121,7 +124,7 @@ export function createSpyLogger(): SpyLoggerResult {
 }
 
 export async function deploySpokePoolWithToken(fromChainId = 0): Promise<SpokePoolDeploymentResult> {
-  const { weth, erc20, spokePool, unwhitelistedErc20, destErc20 } = await utils.deploySpokePool(utils.ethers);
+  const { weth, erc20, spokePool, unwhitelistedErc20, destErc20 } = await utils.deploySpokePool(ethers);
   const receipt = await spokePool.deployTransaction.wait();
 
   await spokePool.setChainId(fromChainId == 0 ? utils.originChainId : fromChainId);
