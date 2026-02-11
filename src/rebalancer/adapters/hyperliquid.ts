@@ -456,7 +456,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
 
       const destinationTokenInfo = getTokenInfoFromSymbol(token, HYPEREVM);
       if (availableBalance.gt(minimumSweepThreshold)) {
-        const amountToWithdraw = availableBalance.sub(minimumSweepThreshold);
+        const amountToWithdraw = availableBalance;
         // Precision for withdraw amount must be equal to HyperEVM/destination chain precision:
         const amountToSweep = toBNWei(
           truncate(Number(fromWei(amountToWithdraw, tokenMeta.coreDecimals)), destinationTokenInfo.decimals),
