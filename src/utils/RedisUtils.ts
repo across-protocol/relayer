@@ -20,7 +20,11 @@ export const REDIS_URL = process.env.REDIS_URL || REDIS_URL_DEFAULT;
 // Make the redis client for a particular url essentially a singleton.
 const redisClients: { [url: string]: RedisCache } = {};
 
-async function _getRedis(logger?: winston.Logger, url = REDIS_URL, customNamespace?: string): Promise<RedisCache | undefined> {
+async function _getRedis(
+  logger?: winston.Logger,
+  url = REDIS_URL,
+  customNamespace?: string
+): Promise<RedisCache | undefined> {
   if (!redisClients[url]) {
     let redisClient: RedisClient | undefined = undefined;
     const reconnectStrategy = (retries: number): number | Error => {
@@ -71,7 +75,11 @@ async function _getRedis(logger?: winston.Logger, url = REDIS_URL, customNamespa
   return redisClients[url];
 }
 
-export async function getRedisCache(logger?: winston.Logger, url?: string, customNamespace?: string): Promise<RedisCacheInterface | undefined> {
+export async function getRedisCache(
+  logger?: winston.Logger,
+  url?: string,
+  customNamespace?: string
+): Promise<RedisCacheInterface | undefined> {
   // Don't permit redis to be used in test.
   if (isDefined(process.env.RELAYER_TEST)) {
     return undefined;

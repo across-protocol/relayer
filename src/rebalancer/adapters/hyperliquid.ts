@@ -418,7 +418,63 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
   async sweepIntermediateBalances(): Promise<void> {
     this._assertInitialized();
 
-    // @todo where to sweep balances to? HyperEVM?
+    // Only sweep if there are no orders currently being swapped or withdrawn, to avoid
+    // accidentally withdrawing balances that are needed for in-flight orders.
+    const [pendingSwaps, pendingWithdrawals] = await Promise.all([
+      this._redisGetPendingSwaps(),
+      this._redisGetPendingWithdrawals(),
+    ]);
+    if (pendingSwaps.length > 0 || pendingWithdrawals.length > 0) {
+      this.logger.debug({
+        at: "HyperliquidStablecoinSwapAdapter.sweepIntermediateBalances",
+        message: "Skipping sweep because there are pending swaps or withdrawals",
+        pendingSwaps: pendingSwaps.length,
+        pendingWithdrawals: pendingWithdrawals.length,
+      });
+      return;
+    }
+
+    // Check each supported token's available balance on Hypercore and withdraw to HyperEVM
+    // if it exceeds a minimum threshold.
+    for (const token of Object.keys(this.tokenMeta)) {
+      const tokenMeta = this._getTokenMeta(token);
+      // Use a minimum threshold of 1 unit (in core decimals) to avoid sweeping dust.
+      const minimumSweepThreshold = toBNWei(
+        process.env.HYPERLIQUID_MINIMUM_SWEEP_THRESHOLD ?? 1,
+        tokenMeta.coreDecimals
+      );
+
+      let availableBalance: BigNumber;
+      try {
+        availableBalance = await this._getAvailableBalanceForToken(token);
+      } catch {
+        // No balance found for this token on Hypercore, skip.
+        continue;
+      }
+
+      if (availableBalance.gt(minimumSweepThreshold)) {
+        const balanceReadable = fromWei(availableBalance, tokenMeta.coreDecimals);
+        this.logger.info({
+          at: "HyperliquidStablecoinSwapAdapter.sweepIntermediateBalances",
+          message: `Sweeping ${balanceReadable} ${token} from Hypercore to HyperEVM`,
+          availableBalance: availableBalance.toString(),
+          minimumSweepThreshold: minimumSweepThreshold.toString(),
+        });
+        await this._withdrawToHyperevm(token, availableBalance.sub(minimumSweepThreshold));
+
+        // @TODO Should we track this virtual balance from the withdrawal somewhere? I'd argue no, because for this balance
+        // to be in this state and unassociated with any orders, then its already being counted as "untracked" balance,
+        // so we don't need to add complexity and track it here.
+      } else {
+        const balanceReadable = fromWei(availableBalance, tokenMeta.coreDecimals);
+        this.logger.debug({
+          at: "HyperliquidStablecoinSwapAdapter.sweepIntermediateBalances",
+          message: `${token} balance on Hypercore (${balanceReadable}) is below minimum sweep threshold, skipping`,
+          availableBalance: availableBalance.toString(),
+          minimumSweepThreshold: minimumSweepThreshold.toString(),
+        });
+      }
+    }
   }
 
   async getEstimatedCost(

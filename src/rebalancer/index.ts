@@ -153,6 +153,15 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
   const adaptersToUpdate: Set<RebalancerAdapter> = new Set(Object.values(adapters));
   for (const adapter of adaptersToUpdate) {
     timerStart = performance.now();
+    // @todo Decide when to sweep, for now do it before updating rebalance statuses. In theory, it shouldn't really
+    // matter when we sweep.
+    await adapter.sweepIntermediateBalances();
+    logger.debug({
+      at: "index.ts:runRebalancer",
+      message: `Completed sweeping intermediate balances for adapter ${adapter.constructor.name}`,
+      duration: performance.now() - timerStart,
+    });
+    timerStart = performance.now();
     await adapter.updateRebalanceStatuses();
     logger.debug({
       at: "index.ts:runRebalancer",

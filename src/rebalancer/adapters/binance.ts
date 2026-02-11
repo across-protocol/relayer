@@ -346,9 +346,11 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   }
 
   async sweepIntermediateBalances(): Promise<void> {
-    this._assertInitialized();
-    
-    // TODO? No-op?
+    // no-op for Binance, since we don't know if the funds on Binance are being used for the InventoryClient's Binance
+    // rebalancing logic.
+    // If a deposit to Binance has not been withdrawn after 30 minutes, it will get swept up by the Binance Sweeper
+    // Finalizer because we set the TTL to 30 minutes when we deposited the funds and called
+    // setBinanceDepositType().
   }
 
   async getPendingRebalances(): Promise<{ [chainId: number]: { [token: string]: BigNumber } }> {
