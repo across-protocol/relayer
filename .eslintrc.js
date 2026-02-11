@@ -68,6 +68,7 @@ module.exports = {
       files: ["test/**/*.ts", "hardhat.config.ts", "tasks/*.ts"],
       rules: {
         "no-restricted-imports": "off",
+        "node/no-missing-import": "off",
       },
     },
   ],
