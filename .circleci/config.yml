@@ -25,6 +25,8 @@ jobs:
     working_directory: ~/relayer-v2
     resource_class: medium+
     parallelism: 20
+    environment:
+      NODE_OPTIONS: --max-old-space-size=8192
     steps:
       - checkout
       - restore_cache:
@@ -96,7 +98,7 @@ jobs:
             solana --version
       - run:
           name: Run build
-          command: yarn build --max-old-space-size=8192
+          command: yarn build
       - run:
           name: Run tests
           command: |
