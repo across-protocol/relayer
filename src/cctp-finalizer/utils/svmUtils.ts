@@ -16,6 +16,7 @@ import {
   winston,
   SvmAddress,
   sendAndConfirmSolanaTransaction,
+  simulateSolanaTransaction,
   SVMProvider,
   TOKEN_SYMBOLS_MAP,
   getAssociatedTokenAddress,
@@ -244,6 +245,34 @@ async function sendAndConfirmCCTPV2ReceiveMessageTx(params: {
   const tx = pipe(await sdk.arch.svm.createDefaultTransaction(provider, signer), (tx) =>
     appendTransactionMessageInstruction(instructionWithRemainingAccounts, tx)
   );
+
+  // Simulate first and log full result on failure for easier debugging.
+  try {
+    const simResult = await simulateSolanaTransaction(tx, provider);
+    const value = (simResult as { value?: { err?: unknown; logs?: string[] } })?.value;
+    if (value?.err != null) {
+      logger.error({
+        at: "svmUtils#sendAndConfirmCCTPV2ReceiveMessageTx",
+        message: "Solana transaction simulation failed; program logs and err below",
+        destinationChainId,
+        originChainId,
+        simulationErr: value.err,
+        simulationLogs: value.logs,
+        simulationResultFull: simResult,
+      });
+    }
+  } catch (simErr) {
+    const err = simErr as Error & { value?: unknown };
+    logger.error({
+      at: "svmUtils#sendAndConfirmCCTPV2ReceiveMessageTx",
+      message: "Solana simulation threw; details for debugging",
+      destinationChainId,
+      originChainId,
+      simulationErrorMessage: err?.message,
+      simulationErrorStack: err?.stack,
+      simulationValue: err?.value,
+    });
+  }
 
   const signature = await sendAndConfirmSolanaTransaction(tx, provider);
   logger.info({

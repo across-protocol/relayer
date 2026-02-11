@@ -299,6 +299,21 @@ export class CCTPService {
       if (isCCTPError(error)) {
         throw error;
       }
+      // Log full error details for debugging (e.g. Solana simulation failures).
+      const err = error as Error & { cause?: unknown; logs?: string[]; data?: unknown };
+      this.logger.error({
+        at: "CCTPService#processMint",
+        message: "Mint failed; full error details for debugging",
+        destinationChainId,
+        originChainId,
+        errorMessage: err?.message,
+        errorName: err?.name,
+        errorStack: err?.stack,
+        causeMessage: err?.cause instanceof Error ? err.cause.message : undefined,
+        causeStack: err?.cause instanceof Error ? err.cause.stack : undefined,
+        logs: err?.logs,
+        data: err?.data,
+      });
       throw new MintTransactionFailedError(error);
     }
   }
