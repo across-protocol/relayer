@@ -96,7 +96,7 @@ jobs:
             solana --version
       - run:
           name: Run build
-          command: yarn build
+          command: yarn build --max-old-space-size=8192
       - run:
           name: Run tests
           command: |
