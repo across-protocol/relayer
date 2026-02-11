@@ -151,6 +151,7 @@ export class RebalancerClient {
       this.logger.debug({
         message: `Deficit balance for ${destinationToken} on ${getNetworkName(destinationChain)}`,
         targetBalance: targetBalance.toString(),
+        thresholdBalance: thresholdBalance.toString(),
         currentBalance: currentBalance.toString(),
         deficit: destinationChainsWithDeficitBalances[destinationChain][destinationToken].toString(),
       });

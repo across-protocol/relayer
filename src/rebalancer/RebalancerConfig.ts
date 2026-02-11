@@ -25,7 +25,6 @@ import { assert, BigNumber, isDefined, readFileSync, toBNWei, getTokenInfoFromSy
  * - chainIds are derived automatically as the union of all chain IDs present in targetBalances.
  */
 
-
 interface ChainConfig {
   // This should be possible to set to 0 (to indicate that a chain should hold zero funds) or
   // positive infinity (to indicate that a chain should be the universal sink for the given token).
@@ -85,11 +84,16 @@ export class RebalancerConfig extends CommonConfig {
     this.targetBalances = {};
     for (const [token, chains] of Object.entries(rebalancerConfig.targetBalances)) {
       this.targetBalances[token] = {};
-      for (const [chainId, chainConfig] of Object.entries(chains as Record<string, {
-        targetBalance: string;
-        thresholdBalance: string;
-        priorityTier: number;
-      }>)) {
+      for (const [chainId, chainConfig] of Object.entries(
+        chains as Record<
+          string,
+          {
+            targetBalance: string;
+            thresholdBalance: string;
+            priorityTier: number;
+          }
+        >
+      )) {
         const { targetBalance, thresholdBalance, priorityTier } = chainConfig;
         const { decimals } = getTokenInfoFromSymbol(token, Number(chainId));
         // Validate the ChainConfig:
