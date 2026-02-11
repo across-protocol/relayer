@@ -167,10 +167,11 @@ export async function setBinanceDepositType(
   depositChain: number,
   transactionHash: string,
   type: BinanceTransactionType,
-  redisCache: RedisCache
+  redisCache: RedisCache,
+  ttl?: number
 ): Promise<void> {
   const redisKey = getBinanceTransactionTypeKey(depositChain, transactionHash);
-  await redisCache.set(redisKey, type);
+  await redisCache.set(redisKey, type, ttl);
 }
 
 /**

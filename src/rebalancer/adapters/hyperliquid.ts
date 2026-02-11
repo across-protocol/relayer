@@ -415,6 +415,12 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     }
   }
 
+  async sweepIntermediateBalances(): Promise<void> {
+    this._assertInitialized();
+
+    // @todo where to sweep balances to? HyperEVM?
+  }
+
   async getEstimatedCost(
     rebalanceRoute: RebalanceRoute,
     amountToTransfer: BigNumber,

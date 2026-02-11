@@ -450,6 +450,7 @@ export interface RebalancerAdapter {
   initialize(availableRoutes: RebalanceRoute[]): Promise<void>;
   initializeRebalance(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber): Promise<void>;
   updateRebalanceStatuses(): Promise<void>;
+  sweepIntermediateBalances(): Promise<void>;
 
   // Get all currently unfinalized rebalance amounts. Should be used to add a virtual balance credit for the chain
   // + token in question.

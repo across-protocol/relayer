@@ -3,6 +3,8 @@
  * main `RebalancerClient` logic.
  */
 
+import { constructRelayerClients } from "../relayer/RelayerClientHelper";
+import { RelayerConfig } from "../relayer/RelayerConfig";
 import { BigNumber, bnZero, CHAIN_IDs, config, disconnectRedisClients, Signer, toBNWei, winston } from "../utils";
 import { BinanceStablecoinSwapAdapter } from "./adapters/binance";
 import { CctpAdapter } from "./adapters/cctpAdapter";
@@ -15,6 +17,9 @@ let logger: winston.Logger;
 
 export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
   logger = _logger;
+  const relayerConfig = new RelayerConfig(process.env);
+  const relayerClients = await constructRelayerClients(logger, relayerConfig, baseSigner);
+  const { inventoryClient } = relayerClients;
   const currentBalances: { [chainId: number]: { [token: string]: BigNumber } } = {
     1: {
       USDT: toBNWei("0", 6),
@@ -72,6 +77,12 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
   };
 
   const rebalancerConfig = new RebalancerConfig(process.env, targetBalances);
+  const inventoryManagement = inventoryClient.isInventoryManagementEnabled();
+  // One time initialization of functions that handle lots of events only after all spokePoolClients are updated.
+  if (inventoryManagement) {
+    inventoryClient.setBundleData();
+    await inventoryClient.update(rebalancerConfig.chainIds);
+  }
 
   // Construct adapters:
   const hyperliquidAdapter = new HyperliquidStablecoinSwapAdapter(logger, rebalancerConfig, baseSigner);

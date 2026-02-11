@@ -345,6 +345,12 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     }
   }
 
+  async sweepIntermediateBalances(): Promise<void> {
+    this._assertInitialized();
+    
+    // TODO? No-op?
+  }
+
   async getPendingRebalances(): Promise<{ [chainId: number]: { [token: string]: BigNumber } }> {
     this._assertInitialized();
     const pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
@@ -794,7 +800,9 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       mrkdwn: `Deposited ${amountReadable} ${sourceToken} to Binance on chain ${getNetworkName(sourceChain)}`,
     };
     const txnHash = await this._submitTransaction(txn);
-    await setBinanceDepositType(sourceChain, txnHash, BinanceTransactionType.SWAP, this.redisCache);
+    // Set the TTL to 30 minutes so that the Binance sweeper finalizer only attempts to pull back these deposited
+    // funds after 30 minutes. If the swap hasn't occurred in 30 mins then something has gone wrong.
+    await setBinanceDepositType(sourceChain, txnHash, BinanceTransactionType.SWAP, this.redisCache, 30 * 60);
     this.logger.debug({
       at: "BinanceStablecoinSwapAdapter._depositToBinance",
       message: `Deposited ${amountReadable} ${sourceToken} to Binance from chain ${getNetworkName(sourceChain)}`,
