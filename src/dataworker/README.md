@@ -59,7 +59,7 @@ Points 3 and 4 above are dependent on 1 and 2 because the amount of capital to m
 Across therefore keeps track of a "running balance" (for each token and for each chain) that takes into account:
 
 - The amount of token deposited on the SpokePool
-- minus the amount of refunds owed to relayer who wanted repayment out of that SpokePool
+- minus the amount of refunds owed to relayers who wanted repayment out of that SpokePool
 - minus the unfilled amount from deposits needed to be slow filled out of that SpokePool
 
 Generally, if this running balance is negative, then Across needs to send LP capital out of the HubPool to the SpokePool to meet all debt requirements.
@@ -209,7 +209,7 @@ This is where we'll incorporate the section on [SpokePool targets and thresholds
 
 If a `runningBalance` is below its target for a particular chain, the Dataworker might include a positive `netSendAmount` for that chain to instruct the HubPool to send tokens to the SpokePool.
 
-However, if a `runningBalance` is above its target, the Dataworker might want to send tokens from the SpokePool to the Hub. This is achieved by setting a negative `netSendAmount`. At the HubPool level, negative `netSendAmounts` do nothing. However, the `RelayerRefundLeaf` has a property called [`amountToReturn`](https://github.com/across-protocol/contracts/blob/master/contracts/interfaces/SpokePoolInterface.sol#L12) which is supposed to be set equal the negative of any negative `netSendAmounts`. Any positive `amountToReturn` values result in [tokens being sent from the SpokePool](https://github.com/across-protocol/contracts/blob/master/contracts/SpokePool.sol#L923) back to the Hub via the canonical bridge.
+However, if a `runningBalance` is above its target, the Dataworker might want to send tokens from the SpokePool to the Hub. This is achieved by setting a negative `netSendAmount`. At the HubPool level, negative `netSendAmounts` do nothing. However, the `RelayerRefundLeaf` has a property called [`amountToReturn`](https://github.com/across-protocol/contracts/blob/master/contracts/interfaces/SpokePoolInterface.sol#L12) which is supposed to be set equal to the negative of any negative `netSendAmounts`. Any positive `amountToReturn` values result in [tokens being sent from the SpokePool](https://github.com/across-protocol/contracts/blob/master/contracts/SpokePool.sol#L923) back to the Hub via the canonical bridge.
 
 ## Conclusion
 
