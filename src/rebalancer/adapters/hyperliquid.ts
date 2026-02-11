@@ -444,13 +444,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         tokenMeta.coreDecimals
       );
 
-      let availableBalance: BigNumber;
-      try {
-        availableBalance = await this._getAvailableBalanceForToken(token);
-      } catch {
-        // No balance found for this token on Hypercore, skip.
-        continue;
-      }
+      const availableBalance = await this._getAvailableBalanceForToken(token);
       const balanceReadable = fromWei(availableBalance, tokenMeta.coreDecimals);
       const minimumSweepThresholdReadable = fromWei(minimumSweepThreshold, tokenMeta.coreDecimals);
 

@@ -11,6 +11,7 @@ import {
   bnZero,
   CHAIN_IDs,
   config,
+  ConvertDecimals,
   disconnectRedisClients,
   EvmAddress,
   getTokenInfoFromSymbol,
@@ -46,40 +47,6 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     ]),
     tokenClient.update(),
   ]);
-
-  const currentBalances: { [chainId: number]: { [token: string]: BigNumber } } = {
-    1: {
-      USDT: toBNWei("0", 6),
-      USDC: toBNWei("0", 6),
-    },
-    10: {
-      USDC: toBNWei("0", 6),
-      USDT: toBNWei("0", 6),
-    },
-    42161: {
-      USDT: toBNWei("14", 6),
-      USDC: toBNWei("0", 6),
-    },
-    999: {
-      USDT: toBNWei("0", 6),
-      USDC: toBNWei("0", 6),
-    },
-    8453: {
-      USDC: toBNWei("0", 6),
-    },
-    130: {
-      USDC: toBNWei("0", 6),
-      USDT: toBNWei("0", 6),
-    },
-    143: {
-      USDC: toBNWei("0", 6),
-      USDT: toBNWei("0", 6),
-    },
-    56: {
-      USDT: toBNWei("0", 18),
-      USDC: toBNWei("0", 18),
-    },
-  };
 
   const inventoryManagement = inventoryClient.isInventoryManagementEnabled();
   // One time initialization of functions that handle lots of events only after all spokePoolClients are updated.
@@ -174,6 +141,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     });
   }
 
+  const currentBalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
   for (const adapter of adaptersToUpdate) {
     // Modify all current balances with the pending rebalances:
     timerStart = performance.now();
@@ -192,8 +160,8 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
         })),
       });
     }
-    for (const [chainId, tokens] of Object.entries(currentBalances)) {
-      for (const token of Object.keys(tokens)) {
+    for (const [token, chainConfig] of Object.entries(rebalancerConfig.targetBalances)) {
+      for (const chainId of Object.keys(chainConfig)) {
         const pendingRebalanceAmount = pendingRebalances[chainId]?.[token] ?? bnZero;
         const l1TokenInfo = getTokenInfoFromSymbol(token, CHAIN_IDs.MAINNET);
         const l2TokenInfo = getTokenInfoFromSymbol(token, Number(chainId));
@@ -202,7 +170,9 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
           EvmAddress.from(l1TokenInfo.address.toNative()),
           EvmAddress.from(l2TokenInfo.address.toNative())
         );
-        currentBalances[chainId][token] = currentBalance.add(pendingRebalanceAmount);
+        const convertDecimalsToSourceChain = ConvertDecimals(l1TokenInfo.decimals, l2TokenInfo.decimals);
+        currentBalances[chainId] ??= {};
+        currentBalances[chainId][token] = convertDecimalsToSourceChain(currentBalance).add(pendingRebalanceAmount);
         if (!pendingRebalanceAmount.eq(bnZero)) {
           logger.debug({
             at: "index.ts:runRebalancer",
@@ -216,14 +186,6 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
       }
     }
   }
-
-  logger.debug({
-    at: "index.ts:runRebalancer",
-    message: "Net current balances",
-    currentBalances: Object.entries(currentBalances).map(([chainId, tokens]) => ({
-      [chainId]: Object.fromEntries(Object.entries(tokens).map(([token, amount]) => [token, amount.toString()])),
-    })),
-  });
 
   // Finally, send out new rebalances:
   try {
