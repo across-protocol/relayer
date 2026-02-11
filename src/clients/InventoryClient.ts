@@ -103,10 +103,11 @@ export class InventoryClient {
     });
     // Load all L1 tokens from inventory config and hub pool into a Set to deduplicate.
     const allL1Tokens = new Set<string>(
-      this.l1TokensOverride.length > 0 ? this.l1TokensOverride : 
-      this.getL1TokensFromInventoryConfig()
-        .concat(this.getL1TokensEnabledInHubPool())
-        .map((l1Token) => l1Token.toNative())
+      this.l1TokensOverride.length > 0
+        ? this.l1TokensOverride
+        : this.getL1TokensFromInventoryConfig()
+            .concat(this.getL1TokensEnabledInHubPool())
+            .map((l1Token) => l1Token.toNative())
     );
     this.bundleDataApproxClient = new BundleDataApproxClient(
       this.tokenClient?.spokePoolManager.getSpokePoolClients() ?? {},
