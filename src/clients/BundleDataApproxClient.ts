@@ -191,6 +191,7 @@ export class BundleDataApproxClient {
     this.logger.debug({
       at: "BundleDataApproxClient#initialize",
       message: "Initialized BundleDataApproxClient",
+      l1Tokens: this.l1Tokens.map((l1Token) => l1Token.toNative()),
       upcomingRefunds: this.upcomingRefunds,
       upcomingDeposits: this.upcomingDeposits,
     });

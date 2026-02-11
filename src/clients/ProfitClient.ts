@@ -130,7 +130,8 @@ export class ProfitClient {
     protected gasPadding = toBNWei(constants.DEFAULT_RELAYER_GAS_PADDING),
     readonly additionalL1Tokens: EvmAddress[] = [],
     // Sets of token symbols that should be treated equivalently, for example [ "USDC": [USDT, USDH ].
-    readonly peggedTokens: { [pegTokenSymbol: string]: Set<string> } = {}
+    readonly peggedTokens: { [pegTokenSymbol: string]: Set<string> } = {},
+    readonly l1TokensOverride: string[] = []
   ) {
     // Require 0% <= gasPadding <= 200%
     assert(
@@ -806,6 +807,17 @@ export class ProfitClient {
   }
 
   private _getL1Tokens(): L1Token[] {
+    if (this.l1TokensOverride.length > 0) {
+      const l1Tokens = this.l1TokensOverride.map((l1Token) => {
+        const l1TokenInfo = getTokenInfo(EvmAddress.from(l1Token), this.hubPoolClient.chainId);
+        assert(l1TokenInfo.address.isEVM());
+        return {
+          ...l1TokenInfo,
+          address: l1TokenInfo.address,
+        };
+      });
+      return dedupArray(l1Tokens);
+    }
     // The L1 tokens should be the hub pool tokens plus any extra configured tokens in the inventory config.
     const hubPoolTokens = this.hubPoolClient.getL1Tokens();
     const additionalL1Tokens = this.additionalL1Tokens.map((l1Token) => {
