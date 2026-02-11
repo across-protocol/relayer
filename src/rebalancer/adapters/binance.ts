@@ -553,14 +553,20 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const minimumWithdrawalSize = toBNWei(Number(withdrawMin) + 1, sourceTokenInfo.decimals); // Add buffer to minimum to account
     // for price volatility. For stablecoin swaps, this should be totally fine since price isn't volatile.
     const maximumWithdrawalSize = toBNWei(withdrawMax, sourceTokenInfo.decimals);
-    assert(
-      expectedAmountToWithdraw.gte(minimumWithdrawalSize),
-      `Expected amount to withdraw ${expectedAmountToWithdraw.toString()} is less than minimum withdrawal size ${minimumWithdrawalSize.toString()} on Binance destination chain ${destinationEntrypointNetwork}`
-    );
-    assert(
-      expectedAmountToWithdraw.lte(maximumWithdrawalSize),
-      `Expected amount to withdraw ${expectedAmountToWithdraw.toString()} is greater than maximum withdrawal size ${maximumWithdrawalSize.toString()} on Binance destination chain ${destinationEntrypointNetwork}`
-    );
+    if (expectedAmountToWithdraw.lt(minimumWithdrawalSize)) {
+      this.logger.debug({
+        at: "BinanceStablecoinSwapAdapter.initializeRebalance",
+        message: `Expected amount to withdraw ${expectedAmountToWithdraw.toString()} is less than minimum withdrawal size ${minimumWithdrawalSize.toString()} on Binance destination chain ${destinationEntrypointNetwork}`,
+      });
+      return;
+    }
+    if (expectedAmountToWithdraw.gt(maximumWithdrawalSize)) {
+      this.logger.debug({
+        at: "BinanceStablecoinSwapAdapter.initializeRebalance",
+        message: `Expected amount to withdraw ${expectedAmountToWithdraw.toString()} is greater than maximum withdrawal size ${maximumWithdrawalSize.toString()} on Binance destination chain ${destinationEntrypointNetwork}`,
+      });
+      return;
+    }
 
     // TODO: The amount transferred here might produce dust due to the rounding required to meet the minimum order
     // tick size. We try not to precompute the size required to place an order here because the price might change
@@ -568,10 +574,13 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     // error.
     const spotMarketMeta = this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
     const minimumOrderSize = toBNWei(spotMarketMeta.minimumOrderSize, sourceTokenInfo.decimals);
-    assert(
-      amountToTransfer.gte(minimumOrderSize),
-      `Expected amount to withdraw ${expectedAmountToWithdraw.toString()} is less than minimum order size ${minimumOrderSize.toString()}`
-    );
+    if (amountToTransfer.lt(minimumOrderSize)) {
+      this.logger.debug({
+        at: "BinanceStablecoinSwapAdapter.initializeRebalance",
+        message: `Amount to transfer ${amountToTransfer.toString()} is less than minimum order size ${minimumOrderSize.toString()}`,
+      });
+      return;
+    }
 
     const cloid = await this._redisGetNextCloid();
 

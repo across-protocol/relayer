@@ -176,13 +176,16 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     const { sourceToken, sourceChain, destinationChain, destinationToken } = rebalanceRoute;
     const spotMarketMeta = this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
     const sourceTokenInfo = getTokenInfoFromSymbol(sourceToken, sourceChain);
-    assert(
-      amountToTransfer.gte(toBNWei(spotMarketMeta.minimumOrderSize, sourceTokenInfo.decimals)),
-      `Max amount to transfer ${amountToTransfer.toString()} is less than minimum order size ${toBNWei(
-        spotMarketMeta.minimumOrderSize,
-        sourceTokenInfo.decimals
-      ).toString()}`
-    );
+    if (amountToTransfer.lt(toBNWei(spotMarketMeta.minimumOrderSize, sourceTokenInfo.decimals))) {
+      this.logger.debug({
+        at: "HyperliquidStablecoinSwapAdapter.initializeRebalance",
+        message: `Max amount to transfer ${amountToTransfer.toString()} is less than minimum order size ${toBNWei(
+          spotMarketMeta.minimumOrderSize,
+          sourceTokenInfo.decimals
+        ).toString()}`,
+      });
+      return;
+    }
 
     // TODO: The amount we transfer in here might not be fully placed into an order dependning on the market's
     // minimum tick size (i.e. szDecimals and pxDecimals), so we might be left with some dust in the account.
