@@ -159,6 +159,7 @@ const resolveRpcConfig = () => {
     [CHAIN_IDs.BOBA]: 0,
     [CHAIN_IDs.HYPEREVM]: 1_000, // QuickNode constraint.
     [CHAIN_IDs.MONAD]: 1_000, // Alchemy constraint
+    [CHAIN_IDs.BASE_SEPOLIA]: 5_000, // Alchemy constraint
     [CHAIN_IDs.SOLANA]: 1_000,
     [CHAIN_IDs.SOLANA_DEVNET]: 1000,
   };
