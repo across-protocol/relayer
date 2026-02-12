@@ -1046,8 +1046,8 @@ export const EVM_OFT_MESSENGERS: Map<string, Map<number, EvmAddress>> = new Map(
   [
     TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET],
     new Map<number, EvmAddress>([
-      [CHAIN_IDs.MAINNET, EvmAddress.from("")],
-      [CHAIN_IDs.TEMPO, EvmAddress.from("")],
+      [CHAIN_IDs.MAINNET, EvmAddress.from("0xc026395860Db2d07ee33e05fE50ed7bD583189C7")],
+      [CHAIN_IDs.TEMPO, EvmAddress.from("0xa7d119b72f4ce3315b46c281b9da5bd0496d8543")],
     ]),
   ],
 ]);
