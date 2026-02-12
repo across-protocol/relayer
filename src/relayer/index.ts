@@ -135,7 +135,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
         if (inventoryState) {
           inventoryClient.import(inventoryState);
           inventoryInit = true;
-          logger.debug({ at: "Relayer#run", message: "Inventory state found in cache", key });
+          logger.debug({ at: "Relayer#run", message: "Inventory state found in cache", state: inventoryState });
         } else {
           logger.error({ at: "Relayer#run", message: "No inventory state found in cache", key });
         }
