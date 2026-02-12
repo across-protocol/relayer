@@ -129,11 +129,13 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
       }
 
       if (!inventoryInit && config.relayerUseInventoryManager) {
+        logger.debug({ at: "Relayer#run", message: "Checking for inventory state in cache" });
         const key = inventoryClient.getInventoryCacheKey(config.inventoryTopic);
         const inventoryState = await getInventoryState(redis, key);
         if (inventoryState) {
           inventoryClient.import(inventoryState);
           inventoryInit = true;
+          logger.debug({ at: "Relayer#run", message: "Inventory state found in cache", key });
         } else {
           logger.error({ at: "Relayer#run", message: "No inventory state found in cache", key });
         }
