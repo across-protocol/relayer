@@ -83,7 +83,7 @@ export const MAX_RELAYER_DEPOSIT_LOOK_BACK = 4 * 60 * 60;
 export const FINALIZER_TOKENBRIDGE_LOOKBACK = 14 * 24 * 60 * 60;
 
 // Chain IDs using the Succinct/Helios SP1 messaging bridge.
-export const UNIVERSAL_CHAINS = [CHAIN_IDs.BSC, CHAIN_IDs.HYPEREVM, CHAIN_IDs.PLASMA, CHAIN_IDs.MONAD];
+export const UNIVERSAL_CHAINS = [CHAIN_IDs.BSC, CHAIN_IDs.HYPEREVM, CHAIN_IDs.PLASMA, CHAIN_IDs.MONAD, CHAIN_IDs.TEMPO];
 
 // Reorgs are anticipated on Ethereum and Polygon. We use different following distances when processing deposit
 // events based on the USD amount of the deposit. This protects the relayer from the worst case situation where it fills
