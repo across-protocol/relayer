@@ -13,6 +13,7 @@ import {
   bnUint32Max,
   EvmAddress,
   toWei,
+  toGWei,
   BigNumber,
   winston,
   toBN,
@@ -129,6 +130,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     [CHAIN_IDs.PLASMA]: 1,
     [CHAIN_IDs.POLYGON]: 16,
     [CHAIN_IDs.SCROLL]: 2,
+    [CHAIN_IDs.TEMPO]: 2,
     [CHAIN_IDs.BSC]: 0,
     [CHAIN_IDs.ZK_SYNC]: 0,
   },
@@ -192,6 +194,7 @@ const resolveChainBundleBuffers = () => {
     [CHAIN_IDs.PLASMA]: 180, // ~1s/block variable. Finality guarantees are less certain, be a bit more conservative.
     [CHAIN_IDs.POLYGON]: 128, // ~2s/block. Polygon has historically re-orged often.
     [CHAIN_IDs.SCROLL]: 40, // ~3s/block.
+    [CHAIN_IDs.TEMPO]: 400, // ~500ms a block.
     [CHAIN_IDs.ZK_SYNC]: defaultBuffers[ChainFamily.ZK_STACK], // Inherit ZK_STACK default.
   };
 
@@ -244,6 +247,7 @@ const resolveChainCacheDelay = () => {
     [CHAIN_IDs.PLASMA]: 300,
     [CHAIN_IDs.POLYGON]: 256,
     [CHAIN_IDs.SCROLL]: 100,
+    [CHAIN_IDs.TEMPO]: 400,
     [CHAIN_IDs.ZK_SYNC]: cacheDelays[ChainFamily.ZK_STACK],
   };
 
@@ -280,6 +284,7 @@ export const DEFAULT_NO_TTL_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.SCROLL]: 57600,
   [CHAIN_IDs.SOLANA]: 432000,
   [CHAIN_IDs.SONEIUM]: 86400,
+  [CHAIN_IDs.TEMPO]: 345600,
   [CHAIN_IDs.UNICHAIN]: 86400,
   [CHAIN_IDs.WORLD_CHAIN]: 86400,
   [CHAIN_IDs.ZK_SYNC]: 172800,
@@ -356,6 +361,7 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.SCROLL]: ["WETH", "USDC", "USDT", "WBTC", "POOL"],
   [CHAIN_IDs.SOLANA]: ["USDC"],
   [CHAIN_IDs.SONEIUM]: ["WETH", "USDC"],
+  [CHAIN_IDs.TEMPO]: ["USDC"],
   [CHAIN_IDs.UNICHAIN]: ["ETH", "WETH", "USDC", "USDT", "ezETH"],
   [CHAIN_IDs.WORLD_CHAIN]: ["WETH", "WBTC", "USDC", "WLD", "POOL"],
   [CHAIN_IDs.ZK_SYNC]: ["USDC", "USDT", "WETH", "WBTC", "DAI"],
@@ -528,6 +534,9 @@ export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<Ba
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: OpStackUSDCBridge,
   },
+  [CHAIN_IDs.TEMPO]: {
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.TEMPO]]: OFTBridge,
+  },
   [CHAIN_IDs.UNICHAIN]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcCCTPBridge,
     [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTBridge,
@@ -642,6 +651,9 @@ export const CUSTOM_L2_BRIDGE: Record<number, Record<string, L2BridgeConstructor
     [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20BridgeL2,
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2UsdcCCTPBridge,
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: L2BinanceCEXNativeBridge,
+  },
+  [CHAIN_IDs.TEMPO]: {
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: OFTL2Bridge,
   },
   [CHAIN_IDs.UNICHAIN]: {
     [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20BridgeL2,
@@ -1031,6 +1043,13 @@ export const EVM_OFT_MESSENGERS: Map<string, Map<number, EvmAddress>> = new Map(
       [CHAIN_IDs.PLASMA, EvmAddress.from("0x0cEb237E109eE22374a567c6b09F373C73FA4cBb")],
     ]),
   ],
+  [
+    TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET],
+    new Map<number, EvmAddress>([
+      [CHAIN_IDs.MAINNET, EvmAddress.from("")],
+      [CHAIN_IDs.TEMPO, EvmAddress.from("")],
+    ]),
+  ],
 ]);
 
 // 0.1 ETH is a default cap for chains that use ETH as their gas token
@@ -1044,6 +1063,8 @@ export const OFT_FEE_CAP_OVERRIDES: { [chainId: number]: BigNumber } = {
   [CHAIN_IDs.PLASMA]: toWei("600"),
   // 1600 MATIC/POL cap on Polygon
   [CHAIN_IDs.POLYGON]: toWei("1600"),
+  // 4k pathUSD on Tempo.
+  [CHAIN_IDs.TEMPO]: toGWei("4"),
 };
 
 export type SwapRoute = {

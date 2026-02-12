@@ -720,7 +720,7 @@ export class ProfitClient {
 
     // Prefer USDC for fill simulation because it is consistent in terms of gas estimation (no unwrap conditional).
     // Otherwise walk down the `tokenSymbols` array until a known token is found for each chain.
-    const outputTokenSymbols = ["USDC", "WETH", "USDT", "WBTC"];
+    const outputTokenSymbols = ["USDC", "WETH", "USDT", "WBTC", "USDC.e"];
     const prodRelayer = process.env.RELAYER_FILL_SIMULATION_ADDRESS ?? PROD_RELAYER;
     const evmRelayer = this.hubPoolClient.chainId === CHAIN_IDs.MAINNET ? prodRelayer : TEST_RELAYER;
     const sampleDeposit = {
