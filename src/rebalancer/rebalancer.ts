@@ -14,24 +14,6 @@ import {
   bnUint32Max,
 } from "../utils";
 import { RebalancerConfig } from "./RebalancerConfig";
-
-interface ChainConfig {
-  // This should be possible to set to 0 (to indicate that a chain should hold zero funds) or
-  // positive infinity (to indicate that a chain should be the universal sink for the given token).
-  targetBalance: BigNumber;
-  // Set this higher to prioritize returning this balance (if below target) back to target or deprioritize
-  // sending this balance when above target.
-  priorityTier: number;
-}
-
-interface TokenConfig {
-  [chainId: number]: ChainConfig;
-}
-
-export interface TargetBalanceConfig {
-  [token: string]: TokenConfig;
-}
-
 export interface RebalanceRoute {
   sourceChain: number;
   destinationChain: number;
@@ -153,8 +135,9 @@ export class RebalancerClient {
       const { destinationChain, destinationToken } = rebalanceRoute;
       const currentBalance = currentBalances[destinationChain][destinationToken];
 
-      const targetBalance = targetBalances[destinationToken][destinationChain].targetBalance;
-      const hasDeficit = currentBalance.lt(targetBalance);
+      const { targetBalance, thresholdBalance } = targetBalances[destinationToken][destinationChain];
+      // Only count a balance as deficit if its below the threshold which should be <= targetBalance.
+      const hasDeficit = currentBalance.lt(thresholdBalance);
       if (!hasDeficit) {
         return;
       }
@@ -168,6 +151,7 @@ export class RebalancerClient {
       this.logger.debug({
         message: `Deficit balance for ${destinationToken} on ${getNetworkName(destinationChain)}`,
         targetBalance: targetBalance.toString(),
+        thresholdBalance: thresholdBalance.toString(),
         currentBalance: currentBalance.toString(),
         deficit: destinationChainsWithDeficitBalances[destinationChain][destinationToken].toString(),
       });
@@ -450,6 +434,7 @@ export interface RebalancerAdapter {
   initialize(availableRoutes: RebalanceRoute[]): Promise<void>;
   initializeRebalance(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber): Promise<void>;
   updateRebalanceStatuses(): Promise<void>;
+  sweepIntermediateBalances(): Promise<void>;
 
   // Get all currently unfinalized rebalance amounts. Should be used to add a virtual balance credit for the chain
   // + token in question.

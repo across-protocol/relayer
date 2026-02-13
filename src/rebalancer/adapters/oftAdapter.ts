@@ -21,6 +21,11 @@ export class OftAdapter extends BaseAdapter {
     return;
   }
 
+  async sweepIntermediateBalances(): Promise<void> {
+    // Does nothing.
+    return;
+  }
+
   async getPendingRebalances(): Promise<{ [chainId: number]: { [token: string]: BigNumber } }> {
     const pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
     const allChains = new Set<number>([...this.allSourceChains, ...this.allDestinationChains]);

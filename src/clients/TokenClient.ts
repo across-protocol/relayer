@@ -60,7 +60,8 @@ export class TokenClient {
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     readonly hubPoolClient: HubPoolClient,
     readonly additionalL1Tokens: EvmAddress[] = [],
-    readonly additionalL2Tokens: { [chainId: number]: Address[] } = {}
+    readonly additionalL2Tokens: { [chainId: number]: Address[] } = {},
+    readonly l1TokensOverride: string[] = []
   ) {
     this.spokePoolManager = new SpokePoolManager(logger, spokePoolClients);
     this.profiler = new Profiler({ at: "TokenClient", logger });
@@ -492,6 +493,17 @@ export class TokenClient {
   }
 
   private _getTokenClientTokens(): L1Token[] {
+    if (this.l1TokensOverride.length > 0) {
+      const l1Tokens = this.l1TokensOverride.map((l1Token) => {
+        const l1TokenInfo = getTokenInfo(EvmAddress.from(l1Token), this.hubPoolClient.chainId);
+        assert(l1TokenInfo.address.isEVM());
+        return {
+          ...l1TokenInfo,
+          address: l1TokenInfo.address,
+        };
+      });
+      return dedupArray(l1Tokens);
+    }
     // The token client's tokens should be the hub pool tokens plus any extra configured tokens in the inventory config.
     const hubPoolTokens = this.hubPoolClient.getL1Tokens();
     const additionalL1Tokens = this.additionalL1Tokens.map((l1Token) => {

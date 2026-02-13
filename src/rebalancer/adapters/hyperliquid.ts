@@ -176,13 +176,16 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     const { sourceToken, sourceChain, destinationChain, destinationToken } = rebalanceRoute;
     const spotMarketMeta = this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
     const sourceTokenInfo = getTokenInfoFromSymbol(sourceToken, sourceChain);
-    assert(
-      amountToTransfer.gte(toBNWei(spotMarketMeta.minimumOrderSize, sourceTokenInfo.decimals)),
-      `Max amount to transfer ${amountToTransfer.toString()} is less than minimum order size ${toBNWei(
-        spotMarketMeta.minimumOrderSize,
-        sourceTokenInfo.decimals
-      ).toString()}`
-    );
+    if (amountToTransfer.lt(toBNWei(spotMarketMeta.minimumOrderSize, sourceTokenInfo.decimals))) {
+      this.logger.debug({
+        at: "HyperliquidStablecoinSwapAdapter.initializeRebalance",
+        message: `Max amount to transfer ${amountToTransfer.toString()} is less than minimum order size ${toBNWei(
+          spotMarketMeta.minimumOrderSize,
+          sourceTokenInfo.decimals
+        ).toString()}`,
+      });
+      return;
+    }
 
     // TODO: The amount we transfer in here might not be fully placed into an order dependning on the market's
     // minimum tick size (i.e. szDecimals and pxDecimals), so we might be left with some dust in the account.
@@ -412,6 +415,71 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       }
       // We no longer need this order information, so we can delete it:
       await this._redisDeleteOrder(cloid, STATUS.PENDING_WITHDRAWAL_FROM_HYPERCORE);
+    }
+  }
+
+  async sweepIntermediateBalances(): Promise<void> {
+    this._assertInitialized();
+
+    // Only sweep if there are no orders currently being swapped or withdrawn, to avoid
+    // accidentally withdrawing balances that are needed for in-flight orders.
+    const [pendingSwaps, pendingWithdrawals] = await Promise.all([
+      this._redisGetPendingSwaps(),
+      this._redisGetPendingWithdrawals(),
+    ]);
+    if (pendingSwaps.length > 0 || pendingWithdrawals.length > 0) {
+      this.logger.debug({
+        at: "HyperliquidStablecoinSwapAdapter.sweepIntermediateBalances",
+        message: "Skipping sweep because there are pending swaps or withdrawals",
+        pendingSwaps: pendingSwaps.length,
+        pendingWithdrawals: pendingWithdrawals.length,
+      });
+      return;
+    }
+
+    // Check each supported token's available balance on Hypercore and withdraw to HyperEVM
+    // if it exceeds a minimum threshold.
+    for (const token of Object.keys(this.tokenMeta)) {
+      const tokenMeta = this._getTokenMeta(token);
+      // Use a minimum threshold (in core decimals) to avoid sweeping dust.
+      const minimumSweepThreshold = toBNWei(
+        process.env.HYPERLIQUID_MINIMUM_SWEEP_THRESHOLD ?? 10,
+        tokenMeta.coreDecimals
+      );
+
+      const availableBalance = await this._getAvailableBalanceForToken(token);
+      const balanceReadable = fromWei(availableBalance, tokenMeta.coreDecimals);
+      const minimumSweepThresholdReadable = fromWei(minimumSweepThreshold, tokenMeta.coreDecimals);
+
+      const destinationTokenInfo = getTokenInfoFromSymbol(token, HYPEREVM);
+      if (availableBalance.gt(minimumSweepThreshold)) {
+        const amountToWithdraw = availableBalance;
+        // Precision for withdraw amount must be equal to HyperEVM/destination chain precision:
+        const amountToSweep = toBNWei(
+          truncate(Number(fromWei(amountToWithdraw, tokenMeta.coreDecimals)), destinationTokenInfo.decimals),
+          tokenMeta.coreDecimals
+        );
+        const amountToSweepReadable = fromWei(amountToSweep, tokenMeta.coreDecimals);
+        this.logger.debug({
+          at: "HyperliquidStablecoinSwapAdapter.sweepIntermediateBalances",
+          message: `Sweeping ${amountToSweepReadable} ${token} from Hypercore to HyperEVM`,
+          availableBalance: balanceReadable,
+          minimumSweepThreshold: minimumSweepThresholdReadable,
+          amountToSweep: amountToSweepReadable,
+        });
+        await this._withdrawToHyperevm(token, amountToSweep);
+
+        // @TODO Should we track this virtual balance from the withdrawal somewhere? I'd argue no, because for this balance
+        // to be in this state and unassociated with any orders, then its already being counted as "untracked" balance,
+        // so we don't need to add complexity and track it here.
+      } else {
+        this.logger.debug({
+          at: "HyperliquidStablecoinSwapAdapter.sweepIntermediateBalances",
+          message: `${token} balance on Hypercore (${balanceReadable}) is below minimum sweep threshold, skipping`,
+          availableBalance: balanceReadable,
+          minimumSweepThreshold: minimumSweepThresholdReadable,
+        });
+      }
     }
   }
 
