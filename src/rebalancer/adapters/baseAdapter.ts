@@ -75,6 +75,13 @@ export interface OrderDetails {
   amountToTransfer: BigNumber;
 }
 
+// @dev We should track order statuses in Redis in a separate namespace from the remainder of the application's
+// Redis cache (e.g. the namespace we use for caching RPC responses) to avoid losing critical information about pending orders
+// even when we want to rotate rest of the Redis cache without losing critical information about pending orders
+const rebalancerStatusTrackingNameSpace: string | undefined = process.env.REBALANCER_STATUS_TRACKING_NAMESPACE
+  ? String(process.env.REBALANCER_STATUS_TRACKING_NAMESPACE)
+  : undefined;
+
 export abstract class BaseAdapter implements RebalancerAdapter {
   protected transactionClient: TransactionClient;
   protected redisCache: RedisCache;
@@ -101,11 +108,7 @@ export abstract class BaseAdapter implements RebalancerAdapter {
   }
 
   async initialize(availableRoutes: RebalanceRoute[]): Promise<void> {
-    // @dev We track order statuses in Redis and therefore we cannot easily rotate the Redis cache without
-    // losing critical information about pending orders. Therefore we suggest using a separate Redis cache from
-    // the remainder of the application so that we can continue to rotate the Redis cache (e.g. the part used to
-    // store RPC responses) without losing rebalance order information.
-    this.redisCache = (await getRedisCache(this.logger, process.env.REBALANCER_REDIS_URL)) as RedisCache;
+    this.redisCache = (await getRedisCache(this.logger, undefined, rebalancerStatusTrackingNameSpace)) as RedisCache;
 
     this.baseSignerAddress = EvmAddress.from(await this.baseSigner.getAddress());
 
@@ -175,6 +178,7 @@ export abstract class BaseAdapter implements RebalancerAdapter {
 
   abstract initializeRebalance(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber): Promise<void>;
   abstract updateRebalanceStatuses(): Promise<void>;
+  abstract sweepIntermediateBalances(): Promise<void>;
   abstract getPendingRebalances(): Promise<{ [chainId: number]: { [token: string]: BigNumber } }>;
   abstract getEstimatedCost(
     rebalanceRoute: RebalanceRoute,
@@ -225,6 +229,7 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     });
 
     const results = await Promise.all([
+      // @todo: Should we set a TTL here?
       this.redisCache.sAdd(orderStatusKey, cloid.toString()),
       this.redisCache.set(
         orderDetailsKey,
