@@ -46,6 +46,7 @@ import lodash from "lodash";
 import { SLOW_WITHDRAWAL_CHAINS } from "../common";
 import { AdapterManager, CrossChainTransferClient } from "./bridges";
 import { TransferTokenParams } from "../adapter/utils";
+import { RebalancerClient } from "../rebalancer/rebalancer";
 
 type TokenDistribution = { [l2Token: string]: BigNumber };
 type TokenDistributionPerL1Token = { [l1Token: string]: { [chainId: number]: TokenDistribution } };
@@ -78,6 +79,7 @@ export class InventoryClient {
   private bundleDataApproxClient: BundleDataApproxClient;
   private inventoryConfig: InventoryConfig;
   private pendingL2Withdrawals: { [l1Token: string]: { [chainId: number]: BigNumber } } = {};
+  private pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
   private transactionClient: TransactionClient;
 
   constructor(
@@ -89,6 +91,7 @@ export class InventoryClient {
     readonly hubPoolClient: HubPoolClient,
     readonly adapterManager: AdapterManager,
     readonly crossChainTransferClient: CrossChainTransferClient,
+    readonly rebalancerClient: RebalancerClient,
     readonly simMode = false,
     readonly prioritizeLpUtilization = true,
     readonly l1TokensOverride: string[] = []
@@ -241,6 +244,16 @@ export class InventoryClient {
           bnZero
         );
         balance = pendingWithdrawalVolume;
+      }
+    }
+
+    // Add in any pending swap rebalances.
+    const pendingRebalancesForChain = this.pendingRebalances[chainId];
+    if (isDefined(pendingRebalancesForChain)) {
+      const l1TokenInfo = getTokenInfo(l1Token, this.hubPoolClient.chainId);
+      const pendingRebalancesForToken = pendingRebalancesForChain[l1TokenInfo.symbol];
+      if (isDefined(pendingRebalancesForToken)) {
+        balance = balance.add(pendingRebalancesForToken);
       }
     }
 
@@ -1811,6 +1824,8 @@ export class InventoryClient {
       message: "Updated pending L2->L1 withdrawals",
       pendingL2Withdrawals: this.pendingL2Withdrawals,
     });
+
+    this.pendingRebalances = await this.rebalancerClient.getPendingRebalances();
   }
 
   isInventoryManagementEnabled(): boolean {

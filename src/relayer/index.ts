@@ -18,6 +18,7 @@ import { constructRelayerClients } from "./RelayerClientHelper";
 import { InventoryClientState, isSpokePoolClientWithListener } from "../clients";
 import { updateSpokePoolClients } from "../common";
 import { RedisCacheInterface } from "../caching/RedisCache";
+import { RebalancerConfig } from "../rebalancer/RebalancerConfig";
 config();
 let logger: winston.Logger;
 
@@ -63,7 +64,8 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
   const { addressFilter: _addressFilter, ...loggedConfig } = config;
   logger.debug({ at, message: "Relayer started 🏃‍♂️", loggedConfig });
   const mark = profiler.start("relayer");
-  const relayerClients = await constructRelayerClients(logger, config, baseSigner);
+  const rebalancerConfig = new RebalancerConfig(process.env);
+  const relayerClients = await constructRelayerClients(logger, config, rebalancerConfig, baseSigner);
   const relayer = new Relayer(await baseSigner.getAddress(), logger, relayerClients, config);
   await relayer.init();
 
