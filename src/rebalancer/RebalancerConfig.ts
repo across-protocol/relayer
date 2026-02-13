@@ -78,39 +78,38 @@ export class RebalancerConfig extends CommonConfig {
 
     // Parse target balances from config, converting human-readable amounts to BigNumber
     // using the token's native decimals on each chain.
-    if (!isDefined(rebalancerConfig.targetBalances)) {
-      throw new Error("rebalancerConfig.targetBalances is required");
-    }
     this.targetBalances = {};
-    for (const [token, chains] of Object.entries(rebalancerConfig.targetBalances)) {
-      this.targetBalances[token] = {};
-      for (const [chainId, chainConfig] of Object.entries(
-        chains as Record<
-          string,
-          {
-            targetBalance: string;
-            thresholdBalance: string;
-            priorityTier: number;
-          }
-        >
-      )) {
-        const { targetBalance, thresholdBalance, priorityTier } = chainConfig;
-        const { decimals } = getTokenInfoFromSymbol(token, Number(chainId));
-        // Validate the ChainConfig:
-        assert(
-          targetBalance !== undefined && thresholdBalance !== undefined && priorityTier !== undefined,
-          `Bad config. Must specify targetBalance, thresholdBalance, priorityTier for ${token} on ${chainId}`
-        );
-        assert(
-          toBN(thresholdBalance).lte(toBN(targetBalance)),
-          `Bad config. thresholdBalance<=targetBalance for ${token} on ${chainId}`
-        );
-        this.targetBalances[token][Number(chainId)] = {
-          targetBalance: toBNWei(targetBalance, decimals),
-          thresholdBalance: toBNWei(thresholdBalance, decimals),
-          priorityTier,
-        };
-        chainIdSet.add(Number(chainId));
+    if (isDefined(rebalancerConfig.targetBalances)) {
+      for (const [token, chains] of Object.entries(rebalancerConfig.targetBalances)) {
+        this.targetBalances[token] = {};
+        for (const [chainId, chainConfig] of Object.entries(
+          chains as Record<
+            string,
+            {
+              targetBalance: string;
+              thresholdBalance: string;
+              priorityTier: number;
+            }
+          >
+        )) {
+          const { targetBalance, thresholdBalance, priorityTier } = chainConfig;
+          const { decimals } = getTokenInfoFromSymbol(token, Number(chainId));
+          // Validate the ChainConfig:
+          assert(
+            targetBalance !== undefined && thresholdBalance !== undefined && priorityTier !== undefined,
+            `Bad config. Must specify targetBalance, thresholdBalance, priorityTier for ${token} on ${chainId}`
+          );
+          assert(
+            toBN(thresholdBalance).lte(toBN(targetBalance)),
+            `Bad config. thresholdBalance<=targetBalance for ${token} on ${chainId}`
+          );
+          this.targetBalances[token][Number(chainId)] = {
+            targetBalance: toBNWei(targetBalance, decimals),
+            thresholdBalance: toBNWei(thresholdBalance, decimals),
+            priorityTier,
+          };
+          chainIdSet.add(Number(chainId));
+        }
       }
     }
 

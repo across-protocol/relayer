@@ -19,11 +19,8 @@ import {
   toBNWei,
   winston,
 } from "../utils";
-import { BinanceStablecoinSwapAdapter } from "./adapters/binance";
-import { CctpAdapter } from "./adapters/cctpAdapter";
-import { HyperliquidStablecoinSwapAdapter } from "./adapters/hyperliquid";
-import { OftAdapter } from "./adapters/oftAdapter";
-import { RebalancerAdapter, RebalancerClient, RebalanceRoute } from "./rebalancer";
+import { RebalancerAdapter } from "./rebalancer";
+import { constructRebalancerClient } from "./RebalancerClientHelper";
 import { RebalancerConfig } from "./RebalancerConfig";
 config();
 let logger: winston.Logger;
@@ -54,74 +51,12 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     inventoryClient.setBundleData();
     await inventoryClient.update(rebalancerConfig.chainIds);
   }
+  const rebalancerClient = await constructRebalancerClient(logger, baseSigner);
 
-  // Construct adapters:
-  const hyperliquidAdapter = new HyperliquidStablecoinSwapAdapter(logger, rebalancerConfig, baseSigner);
-  const binanceAdapter = new BinanceStablecoinSwapAdapter(logger, rebalancerConfig, baseSigner);
-  const cctpAdapter = new CctpAdapter(logger, rebalancerConfig, baseSigner);
-  const oftAdapter = new OftAdapter(logger, rebalancerConfig, baseSigner);
-
-  const adapters = { oft: oftAdapter, cctp: cctpAdapter, hyperliquid: hyperliquidAdapter, binance: binanceAdapter };
-
-  // Following two variables are hardcoded to aid testing:
-  const usdtChains = [
-    CHAIN_IDs.HYPEREVM,
-    CHAIN_IDs.ARBITRUM,
-    CHAIN_IDs.OPTIMISM,
-    CHAIN_IDs.MAINNET,
-    CHAIN_IDs.UNICHAIN,
-    CHAIN_IDs.MONAD,
-    // CHAIN_IDs.BASE, // This shouldn't work and should fail on initialization
-    CHAIN_IDs.BSC,
-  ];
-  const usdcChains = [
-    CHAIN_IDs.HYPEREVM,
-    CHAIN_IDs.ARBITRUM,
-    CHAIN_IDs.OPTIMISM,
-    CHAIN_IDs.MAINNET,
-    CHAIN_IDs.BASE,
-    CHAIN_IDs.UNICHAIN,
-    CHAIN_IDs.MONAD,
-    CHAIN_IDs.BSC,
-  ];
-  const rebalanceRoutes: RebalanceRoute[] = [];
-  for (const usdtChain of usdtChains) {
-    for (const usdcChain of usdcChains) {
-      for (const adapter of ["binance", "hyperliquid"]) {
-        // Handle exceptions:
-        if (adapter !== "binance" && (usdtChain === CHAIN_IDs.BSC || usdcChain === CHAIN_IDs.BSC)) {
-          continue;
-        }
-
-        rebalanceRoutes.push({
-          sourceChain: usdtChain,
-          sourceToken: "USDT",
-          destinationChain: usdcChain,
-          destinationToken: "USDC",
-          adapter,
-        });
-        rebalanceRoutes.push({
-          sourceChain: usdcChain,
-          sourceToken: "USDC",
-          destinationChain: usdtChain,
-          destinationToken: "USDT",
-          adapter,
-        });
-      }
-    }
-  }
-
-  const rebalancerClient = new RebalancerClient(logger, rebalancerConfig, adapters, rebalanceRoutes, baseSigner);
   let timerStart = performance.now();
-  await rebalancerClient.initialize();
-  logger.debug({
-    at: "index.ts:runRebalancer",
-    message: "Completed RebalancerClient initialization",
-    duration: performance.now() - timerStart,
-  });
 
   // Update all adapter order statuses so we can get the most accurate latest balances, and then query their balances.
-  const adaptersToUpdate: Set<RebalancerAdapter> = new Set(Object.values(adapters));
+  const adaptersToUpdate: Set<RebalancerAdapter> = new Set(Object.values(rebalancerClient.adapters));
   for (const adapter of adaptersToUpdate) {
     timerStart = performance.now();
     // @todo Decide when to sweep, for now do it before updating rebalance statuses. In theory, it shouldn't really
