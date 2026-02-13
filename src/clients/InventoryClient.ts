@@ -90,7 +90,8 @@ export class InventoryClient {
     readonly adapterManager: AdapterManager,
     readonly crossChainTransferClient: CrossChainTransferClient,
     readonly simMode = false,
-    readonly prioritizeLpUtilization = true
+    readonly prioritizeLpUtilization = true,
+    readonly l1TokensOverride: string[] = []
   ) {
     this.transactionClient = new TransactionClient(logger);
     this.inventoryConfig = inventoryConfig;
@@ -102,9 +103,11 @@ export class InventoryClient {
     });
     // Load all L1 tokens from inventory config and hub pool into a Set to deduplicate.
     const allL1Tokens = new Set<string>(
-      this.getL1TokensFromInventoryConfig()
-        .concat(this.getL1TokensEnabledInHubPool())
-        .map((l1Token) => l1Token.toNative())
+      this.l1TokensOverride.length > 0
+        ? this.l1TokensOverride
+        : this.getL1TokensFromInventoryConfig()
+            .concat(this.getL1TokensEnabledInHubPool())
+            .map((l1Token) => l1Token.toNative())
     );
     this.bundleDataApproxClient = new BundleDataApproxClient(
       this.tokenClient?.spokePoolManager.getSpokePoolClients() ?? {},
@@ -195,6 +198,15 @@ export class InventoryClient {
     return this.getEnabledChains()
       .map((chainId) => this.getBalanceOnChain(chainId, l1Token))
       .reduce((acc, curr) => acc.add(curr), bnZero);
+  }
+
+  getChainBalance(
+    chainId: number,
+    l1Token: EvmAddress,
+    l2Token?: Address,
+    ignoreL1ToL2PendingAmount = false
+  ): BigNumber {
+    return this.getBalanceOnChain(chainId, l1Token, l2Token, ignoreL1ToL2PendingAmount);
   }
 
   /**

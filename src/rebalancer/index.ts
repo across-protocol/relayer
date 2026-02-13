@@ -3,144 +3,70 @@
  * main `RebalancerClient` logic.
  */
 
-import { BigNumber, bnZero, CHAIN_IDs, config, disconnectRedisClients, Signer, toBNWei, winston } from "../utils";
-import { BinanceStablecoinSwapAdapter } from "./adapters/binance";
-import { CctpAdapter } from "./adapters/cctpAdapter";
-import { HyperliquidStablecoinSwapAdapter } from "./adapters/hyperliquid";
-import { OftAdapter } from "./adapters/oftAdapter";
-import { RebalancerAdapter, RebalancerClient, RebalanceRoute, TargetBalanceConfig } from "./rebalancer";
+import { updateSpokePoolClients } from "../common";
+import { constructRelayerClients } from "../relayer/RelayerClientHelper";
+import { RelayerConfig } from "../relayer/RelayerConfig";
+import {
+  BigNumber,
+  bnZero,
+  CHAIN_IDs,
+  config,
+  ConvertDecimals,
+  disconnectRedisClients,
+  EvmAddress,
+  getTokenInfoFromSymbol,
+  Signer,
+  toBNWei,
+  winston,
+} from "../utils";
+import { RebalancerAdapter } from "./rebalancer";
+import { constructRebalancerClient } from "./RebalancerClientHelper";
 import { RebalancerConfig } from "./RebalancerConfig";
 config();
 let logger: winston.Logger;
 
 export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
   logger = _logger;
-  const currentBalances: { [chainId: number]: { [token: string]: BigNumber } } = {
-    1: {
-      USDT: toBNWei("0", 6),
-      USDC: toBNWei("0", 6),
-    },
-    10: {
-      USDC: toBNWei("15", 6),
-      USDT: toBNWei("0", 6),
-    },
-    42161: {
-      USDT: toBNWei("0", 6),
-      USDC: toBNWei("0", 6),
-    },
-    999: {
-      USDT: toBNWei("0", 6),
-      USDC: toBNWei("0", 6),
-    },
-    8453: {
-      USDC: toBNWei("0", 6),
-    },
-    130: {
-      USDC: toBNWei("0", 6),
-      USDT: toBNWei("0", 6),
-    },
-    143: {
-      USDC: toBNWei("0", 6),
-      USDT: toBNWei("7.5", 6),
-    },
-    56: {
-      USDT: toBNWei("11", 18),
-      USDC: toBNWei("0", 18),
-    },
-  };
+  const rebalancerConfig = new RebalancerConfig(process.env);
+  logger.debug({ at: "index.ts:runRebalancer", message: "Rebalancer Config loaded", rebalancerConfig });
+  const relayerConfig = new RelayerConfig(process.env);
+  const { addressFilter: _addressFilter, ...loggedConfig } = relayerConfig;
+  logger.debug({ at: "index.ts:runRebalancer", message: "Relayer Config loaded", loggedConfig });
+  const relayerClients = await constructRelayerClients(logger, relayerConfig, baseSigner);
+  const { spokePoolClients, inventoryClient, tokenClient } = relayerClients;
 
-  const targetBalances: TargetBalanceConfig = {
-    USDT: {
-      "1": { targetBalance: toBNWei("0", 6), priorityTier: 0 },
-      "10": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
-      "143": { targetBalance: toBNWei("18", 6), priorityTier: 1 },
-      "42161": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
-      "999": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
-      "130": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
-      "56": { targetBalance: toBNWei("0", 18), priorityTier: 1 },
-    },
-    USDC: {
-      "1": { targetBalance: toBNWei("0", 6), priorityTier: 0 },
-      "10": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
-      "130": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
-      "143": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
-      "42161": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
-      "999": { targetBalance: toBNWei("10.5", 6), priorityTier: 1 },
-      "8453": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
-      "56": { targetBalance: toBNWei("0", 18), priorityTier: 1 },
-    },
-  };
+  await Promise.all([
+    updateSpokePoolClients(spokePoolClients, [
+      "FundsDeposited",
+      "FilledRelay",
+      "RelayedRootBundle",
+      "ExecutedRelayerRefundRoot",
+    ]),
+    tokenClient.update(),
+  ]);
 
-  const rebalancerConfig = new RebalancerConfig(process.env, targetBalances);
-
-  // Construct adapters:
-  const hyperliquidAdapter = new HyperliquidStablecoinSwapAdapter(logger, rebalancerConfig, baseSigner);
-  const binanceAdapter = new BinanceStablecoinSwapAdapter(logger, rebalancerConfig, baseSigner);
-  const cctpAdapter = new CctpAdapter(logger, rebalancerConfig, baseSigner);
-  const oftAdapter = new OftAdapter(logger, rebalancerConfig, baseSigner);
-
-  const adapters = { oft: oftAdapter, cctp: cctpAdapter, hyperliquid: hyperliquidAdapter, binance: binanceAdapter };
-
-  // Following two variables are hardcoded to aid testing:
-  const usdtChains = [
-    CHAIN_IDs.HYPEREVM,
-    CHAIN_IDs.ARBITRUM,
-    CHAIN_IDs.OPTIMISM,
-    CHAIN_IDs.MAINNET,
-    CHAIN_IDs.UNICHAIN,
-    CHAIN_IDs.MONAD,
-    // CHAIN_IDs.BASE, // This shouldn't work and should fail on initialization
-    CHAIN_IDs.BSC,
-  ];
-  const usdcChains = [
-    CHAIN_IDs.HYPEREVM,
-    CHAIN_IDs.ARBITRUM,
-    CHAIN_IDs.OPTIMISM,
-    CHAIN_IDs.MAINNET,
-    CHAIN_IDs.BASE,
-    CHAIN_IDs.UNICHAIN,
-    CHAIN_IDs.MONAD,
-    CHAIN_IDs.BSC,
-  ];
-  const rebalanceRoutes: RebalanceRoute[] = [];
-  for (const usdtChain of usdtChains) {
-    for (const usdcChain of usdcChains) {
-      for (const adapter of ["binance", "hyperliquid"]) {
-        // Handle exceptions:
-        if (adapter !== "binance" && (usdtChain === CHAIN_IDs.BSC || usdcChain === CHAIN_IDs.BSC)) {
-          continue;
-        }
-
-        rebalanceRoutes.push({
-          sourceChain: usdtChain,
-          sourceToken: "USDT",
-          destinationChain: usdcChain,
-          destinationToken: "USDC",
-          adapter,
-        });
-        rebalanceRoutes.push({
-          sourceChain: usdcChain,
-          sourceToken: "USDC",
-          destinationChain: usdtChain,
-          destinationToken: "USDT",
-          adapter,
-        });
-      }
-    }
+  const inventoryManagement = inventoryClient.isInventoryManagementEnabled();
+  // One time initialization of functions that handle lots of events only after all spokePoolClients are updated.
+  if (inventoryManagement) {
+    inventoryClient.setBundleData();
+    await inventoryClient.update(rebalancerConfig.chainIds);
   }
+  const rebalancerClient = await constructRebalancerClient(logger, baseSigner);
 
-  const rebalancerClient = new RebalancerClient(logger, rebalancerConfig, adapters, rebalanceRoutes, baseSigner);
   let timerStart = performance.now();
-  await rebalancerClient.initialize();
-  logger.debug({
-    at: "index.ts:runRebalancer",
-    message: "Completed RebalancerClient initialization",
-    duration: performance.now() - timerStart,
-  });
 
   // Update all adapter order statuses so we can get the most accurate latest balances, and then query their balances.
-  const adaptersToUpdate: Set<RebalancerAdapter> = new Set(Object.values(adapters));
+  const adaptersToUpdate: Set<RebalancerAdapter> = new Set(Object.values(rebalancerClient.adapters));
   for (const adapter of adaptersToUpdate) {
+    timerStart = performance.now();
+    // @todo Decide when to sweep, for now do it before updating rebalance statuses. In theory, it shouldn't really
+    // matter when we sweep.
+    await adapter.sweepIntermediateBalances();
+    logger.debug({
+      at: "index.ts:runRebalancer",
+      message: `Completed sweeping intermediate balances for adapter ${adapter.constructor.name}`,
+      duration: performance.now() - timerStart,
+    });
     timerStart = performance.now();
     await adapter.updateRebalanceStatuses();
     logger.debug({
@@ -150,6 +76,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     });
   }
 
+  const currentBalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
   for (const adapter of adaptersToUpdate) {
     // Modify all current balances with the pending rebalances:
     timerStart = performance.now();
@@ -168,10 +95,19 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
         })),
       });
     }
-    for (const [chainId, tokens] of Object.entries(currentBalances)) {
-      for (const token of Object.keys(tokens)) {
+    for (const [token, chainConfig] of Object.entries(rebalancerConfig.targetBalances)) {
+      for (const chainId of Object.keys(chainConfig)) {
         const pendingRebalanceAmount = pendingRebalances[chainId]?.[token] ?? bnZero;
-        currentBalances[chainId][token] = currentBalances[chainId][token].add(pendingRebalanceAmount);
+        const l1TokenInfo = getTokenInfoFromSymbol(token, CHAIN_IDs.MAINNET);
+        const l2TokenInfo = getTokenInfoFromSymbol(token, Number(chainId));
+        const currentBalance = inventoryClient.getChainBalance(
+          Number(chainId),
+          EvmAddress.from(l1TokenInfo.address.toNative()),
+          EvmAddress.from(l2TokenInfo.address.toNative())
+        );
+        const convertDecimalsToSourceChain = ConvertDecimals(l1TokenInfo.decimals, l2TokenInfo.decimals);
+        currentBalances[chainId] ??= {};
+        currentBalances[chainId][token] = convertDecimalsToSourceChain(currentBalance).add(pendingRebalanceAmount);
         if (!pendingRebalanceAmount.eq(bnZero)) {
           logger.debug({
             at: "index.ts:runRebalancer",
@@ -185,14 +121,6 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
       }
     }
   }
-
-  logger.debug({
-    at: "index.ts:runRebalancer",
-    message: "Net current balances",
-    currentBalances: Object.entries(currentBalances).map(([chainId, tokens]) => ({
-      [chainId]: Object.fromEntries(Object.entries(tokens).map(([token, amount]) => [token, amount.toString()])),
-    })),
-  });
 
   // Finally, send out new rebalances:
   try {
