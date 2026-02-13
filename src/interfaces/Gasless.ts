@@ -1,10 +1,3 @@
-import { SortableEvent } from "./";
-
-export interface AuthorizationUsed extends SortableEvent {
-  authorizer: string;
-  nonce: string;
-}
-
 /** EIP-712 typed data for ReceiveWithAuthorization (used in swapTx.typedData) */
 export interface TypedDataReceiveWithAuthorizationEIP712 {
   types: {
