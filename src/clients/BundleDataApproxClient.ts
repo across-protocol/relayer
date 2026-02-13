@@ -5,7 +5,7 @@
 
 import { SpokePoolManager } from ".";
 import { SpokePoolClientsByChain } from "../interfaces";
-import { assert, BigNumber, isDefined, winston } from "../utils";
+import { assert, BigNumber, isDefined, winston, ConvertDecimals } from "../utils";
 import { Address, bnZero, getL1TokenAddress } from "../utils/SDKUtils";
 import { HubPoolClient } from "./HubPoolClient";
 
@@ -86,7 +86,8 @@ export class BundleDataApproxClient {
           return true;
         })
         .forEach((fill) => {
-          const { inputAmount: refundAmount, repaymentChainId, relayer } = fill;
+          const { inputAmount: _refundAmount, originChainId, repaymentChainId, relayer } = fill;
+          const refundAmount = ConvertDecimals(originChainId, repaymentChainId)(_refundAmount);
           refundsForChain[repaymentChainId] ??= {};
           refundsForChain[repaymentChainId][relayer.toNative()] ??= bnZero;
           refundsForChain[repaymentChainId][relayer.toNative()] =
