@@ -61,6 +61,7 @@ import {
   getKitKeypairFromEvmSigner,
   getRelayDataFromFill,
   sortEventsAscending,
+  chainHasNativeToken,
 } from "../utils";
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
 import { MonitorConfig, L2Token } from "./MonitorConfig";
@@ -1513,18 +1514,19 @@ export class Monitor {
         const spokePoolClient = this.clients.spokePoolClients[chainId];
         if (isEVMSpokePoolClient(spokePoolClient)) {
           const gasTokenAddressForChain = getNativeTokenAddressForChain(chainId);
-          const balance = token.eq(gasTokenAddressForChain)
-            ? await spokePoolClient.spokePool.provider.getBalance(account.toEvmAddress())
-            : // Use the latest block number the SpokePoolClient is aware of to query balances.
-              // This prevents double counting when there are very recent refund leaf executions that the SpokePoolClients
-              // missed (the provider node did not see those events yet) but when the balanceOf calls are made, the node
-              // is now aware of those executions.
-              await new Contract(token.toEvmAddress(), ERC20.abi, spokePoolClient.spokePool.provider).balanceOf(
-                account.toEvmAddress(),
-                {
-                  blockTag: spokePoolClient.latestHeightSearched,
-                }
-              );
+          const balance =
+            token.eq(gasTokenAddressForChain) && chainHasNativeToken(chainId)
+              ? await spokePoolClient.spokePool.provider.getBalance(account.toEvmAddress())
+              : // Use the latest block number the SpokePoolClient is aware of to query balances.
+                // This prevents double counting when there are very recent refund leaf executions that the SpokePoolClients
+                // missed (the provider node did not see those events yet) but when the balanceOf calls are made, the node
+                // is now aware of those executions.
+                await new Contract(token.toEvmAddress(), ERC20.abi, spokePoolClient.spokePool.provider).balanceOf(
+                  account.toEvmAddress(),
+                  {
+                    blockTag: spokePoolClient.latestHeightSearched,
+                  }
+                );
           this.balanceCache[chainId] ??= {};
           this.balanceCache[chainId][token.toBytes32()] ??= {};
           this.balanceCache[chainId][token.toBytes32()][account.toBytes32()] = balance;

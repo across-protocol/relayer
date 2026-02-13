@@ -35,6 +35,7 @@ import {
   bnZero,
   getL1TokenAddress,
   CHAIN_IDs,
+  chainHasNativeToken,
 } from "../utils";
 import { SWAP_ROUTES, SwapRoute, CUSTOM_BRIDGE, CANONICAL_BRIDGE } from "../common";
 import ERC20_ABI from "../common/abi/MinimalERC20.json";
@@ -612,9 +613,10 @@ export class Refiller {
         if (chainIsEvm(chainId)) {
           const gasTokenAddressForChain = getNativeTokenAddressForChain(chainId);
           const provider = this.clients.balanceAllocator.providers[chainId];
-          const balance = token.eq(gasTokenAddressForChain)
-            ? await provider.getBalance(account.toEvmAddress())
-            : await new Contract(token.toEvmAddress(), ERC20.abi, provider).balanceOf(account.toEvmAddress());
+          const balance =
+            token.eq(gasTokenAddressForChain) && chainHasNativeToken(chainId)
+              ? await provider.getBalance(account.toEvmAddress())
+              : await new Contract(token.toEvmAddress(), ERC20.abi, provider).balanceOf(account.toEvmAddress());
           this.balanceCache[chainId] ??= {};
           this.balanceCache[chainId][token.toBytes32()] ??= {};
           this.balanceCache[chainId][token.toBytes32()][account.toBytes32()] = balance;

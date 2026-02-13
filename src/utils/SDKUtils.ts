@@ -107,6 +107,7 @@ export const {
   chainIsL1,
   unpackDepositEvent,
   unpackFillEvent,
+  chainHasNativeToken,
 } = sdk.utils;
 
 export const {
