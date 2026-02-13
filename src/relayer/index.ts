@@ -64,8 +64,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
   const { addressFilter: _addressFilter, ...loggedConfig } = config;
   logger.debug({ at, message: "Relayer started 🏃‍♂️", loggedConfig });
   const mark = profiler.start("relayer");
-  const rebalancerConfig = new RebalancerConfig(process.env);
-  const relayerClients = await constructRelayerClients(logger, config, rebalancerConfig, baseSigner);
+  const relayerClients = await constructRelayerClients(logger, config, baseSigner);
   const relayer = new Relayer(await baseSigner.getAddress(), logger, relayerClients, config);
   await relayer.init();
 
