@@ -47,7 +47,7 @@
     "reflect-metadata": "^0.2.2",
     "superstruct": "^1.0.3",
     "ts-node": "^10.9.1",
-    "viem": "~2.37.0",
+    "viem": "~2.45.0",
     "winston": "^3.17.0",
     "zksync-ethers": "^5.11.1"
   },

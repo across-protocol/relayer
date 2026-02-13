@@ -59,6 +59,14 @@ interface CrossChainMessageWithStatus extends CrossChainMessageWithEvent {
   logIndex: number;
 }
 
+type ViemTargetChainParam = {
+  contracts: {
+    portal: { [sourceId: number]: { address: `0x${string}` } };
+    l2OutputOracle: { [sourceId: number]: { address: `0x${string}` } };
+    disputeGameFactory: { [sourceId: number]: { address: `0x${string}` } };
+  };
+};
+
 const { USDB, USDC, WETH } = TOKEN_SYMBOLS_MAP;
 const USDCe = TOKEN_SYMBOLS_MAP["USDC.e"];
 
@@ -82,6 +90,27 @@ const VIEM_OP_STACK_CHAINS: Record<number, viem.Chain> = {
   [CHAIN_IDs.LISK]: viemChains.lisk,
   [CHAIN_IDs.ZORA]: viemChains.zora,
   [CHAIN_IDs.MODE]: viemChains.mode,
+  // Megaeth uses OP Kailua. It is easier to modify viem, so use viem and manually define
+  // some constants/addresses.
+  [CHAIN_IDs.MEGAETH]: {
+    ...viemChains.megaeth,
+    sourceId: CHAIN_IDs.MAINNET,
+    contracts: {
+      ...viemChains.megaeth.contracts,
+      portal: {
+        [CHAIN_IDs.MAINNET]: {
+          address: OPSTACK_CONTRACT_OVERRIDES[CHAIN_IDs.MEGAETH].l1.OptimismPortal,
+          blockCreated: 23770457,
+        } as viem.ChainContract,
+      },
+      disputeGameFactory: {
+        [CHAIN_IDs.MAINNET]: {
+          address: OPSTACK_CONTRACT_OVERRIDES[CHAIN_IDs.MEGAETH].l1.DisputeGameFactory,
+          blockCreated: 23770457,
+        } as viem.ChainContract,
+      },
+    },
+  },
   [CHAIN_IDs.WORLD_CHAIN]: viemChains.worldchain,
   [CHAIN_IDs.SONEIUM]: viemChains.soneium,
   [CHAIN_IDs.UNICHAIN]: viemChains.unichain,
@@ -363,13 +392,7 @@ async function viem_multicallOptimismFinalizations(
   // The following viem SDK functions all require the Viem Chain object to either have a portal + disputeGameFactory
   // address defined, or for legacy OpStack chains, the l2OutputOracle address defined.
   const { contracts } = VIEM_OP_STACK_CHAINS[chainId];
-  const viemOpStackTargetChainParam: {
-    contracts: {
-      portal: { [sourceId: number]: { address: `0x${string}` } };
-      l2OutputOracle: { [sourceId: number]: { address: `0x${string}` } };
-      disputeGameFactory: { [sourceId: number]: { address: `0x${string}` } };
-    };
-  } = {
+  const viemOpStackTargetChainParam: ViemTargetChainParam = {
     contracts: {
       portal: {
         [sourceId]: {
@@ -405,7 +428,9 @@ async function viem_multicallOptimismFinalizations(
       hash: event.txnRef as `0x${string}`,
     });
     const withdrawal = getWithdrawals(receipt)[logIndexesForMessage[i]];
-    const withdrawalStatus = await getWithdrawalStatus(publicClientL1 as viem.Client, {
+    const isOPKailua = [CHAIN_IDs.MEGAETH].includes(chainId);
+    const _getWithdrawalStatus = isOPKailua ? getWithdrawalStatusKailua : getWithdrawalStatus;
+    const withdrawalStatus = await _getWithdrawalStatus(publicClientL1 as viem.Client, {
       receipt,
       chain: publicClientL1.chain as viem.Chain,
       targetChain: viemOpStackTargetChainParam,
@@ -497,6 +522,17 @@ async function viem_multicallOptimismFinalizations(
     statusesGrouped: countBy(withdrawalStatuses),
   });
   return viemTxns;
+}
+
+async function getWithdrawalStatusKailua(
+  l1Client: viem.Client,
+  params: {
+    receipt: viem.TransactionReceipt;
+    chain: viem.Chain;
+    targetChain: ViemTargetChainParam;
+    logIndex: number;
+  }
+): Promise<void> {
 }
 
 function getOptimismClient(chainId: OVM_CHAIN_ID, hubSigner: Signer): OVM_CROSS_CHAIN_MESSENGER {
