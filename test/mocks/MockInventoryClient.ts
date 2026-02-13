@@ -3,6 +3,7 @@ import { HubPoolClient, InventoryClient, Rebalance, TokenClient } from "../../sr
 import { AdapterManager, CrossChainTransferClient } from "../../src/clients/bridges";
 import { BigNumber, bnZero, EvmAddress, toAddressType } from "../../src/utils";
 import winston from "winston";
+import { RebalancerClient } from "../../src/rebalancer/rebalancer";
 
 type TokenMapping = { [l1Token: string]: { [chainId: number]: string } };
 export class MockInventoryClient extends InventoryClient {
@@ -22,6 +23,7 @@ export class MockInventoryClient extends InventoryClient {
     hubPoolClient: HubPoolClient | null = null,
     adapterManager: AdapterManager | null = null,
     crossChainTransferClient: CrossChainTransferClient | null = null,
+    rebalancerClient: RebalancerClient | null = null,
     simMode = false,
     prioritizeLpUtilization = false
   ) {
@@ -34,6 +36,7 @@ export class MockInventoryClient extends InventoryClient {
       hubPoolClient, // hubPoolClient
       adapterManager, // adapter manager
       crossChainTransferClient,
+      rebalancerClient, // rebalancer client
       simMode, // sim mode
       prioritizeLpUtilization // prioritize lp utilization
     );

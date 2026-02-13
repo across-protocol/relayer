@@ -33,6 +33,7 @@ import {
 } from "../src/utils";
 import { MockBaseChainAdapter } from "./mocks/MockBaseChainAdapter";
 import { utils as sdkUtils } from "@across-protocol/sdk";
+import { MockRebalancerClient } from "./mocks/MockRebalancerClient";
 
 const toMegaWei = (num: string | number | BigNumber) => parseUnits(num.toString(), 6);
 
@@ -117,6 +118,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     tokenClient = new MockTokenClient(null, null, null, null);
 
     crossChainTransferClient = new CrossChainTransferClient(spyLogger, enabledChainIds, adapterManager);
+    const mockRebalancerClient = new MockRebalancerClient(spyLogger);
 
     inventoryClient = new InventoryClient(
       EvmAddress.from(owner.address),
@@ -126,7 +128,8 @@ describe("InventoryClient: Rebalancing inventory", async function () {
       enabledChainIds,
       hubPoolClient,
       adapterManager,
-      crossChainTransferClient
+      crossChainTransferClient,
+      mockRebalancerClient
     );
 
     mainnetWethContract = await smock.fake(ERC20.abi, { address: mainnetWeth });
@@ -346,6 +349,10 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     expect(lastSpyLogIncludes(spy, "Rebalances sent to Polygon")).to.be.true;
     expect(lastSpyLogIncludes(spy, "1.00 WETH rebalanced to cover total chain shortfall of 18.00 WETH")).to.be.true;
     expect(lastSpyLogIncludes(spy, "8.00 WETH rebalanced to cover total chain shortfall of 18.00 WETH")).to.be.true;
+  });
+
+  it("Correctly decides when to rebalance: cross chain swap rebalances", async function () {
+    // @todo
   });
 
   it("Refuses to send rebalance when ERC20 balance changes", async function () {
