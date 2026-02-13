@@ -18,7 +18,6 @@ import { constructRelayerClients } from "./RelayerClientHelper";
 import { InventoryClientState, isSpokePoolClientWithListener } from "../clients";
 import { updateSpokePoolClients } from "../common";
 import { RedisCacheInterface } from "../caching/RedisCache";
-import { RebalancerConfig } from "../rebalancer/RebalancerConfig";
 config();
 let logger: winston.Logger;
 
