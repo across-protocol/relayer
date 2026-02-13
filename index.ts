@@ -20,6 +20,9 @@ import { runHyperliquidExecutor, runHyperliquidFinalizer } from "./src/hyperliqu
 import { runRebalancer as runRebalancer2 } from "./src/rebalancer";
 import { runGaslessRelayer } from "./src/gasless";
 
+// Logger flush delay in seconds to ensure all logs are written before exit
+const LOGGER_FLUSH_DELAY_SECONDS = 5;
+
 let logger: typeof Logger;
 let cmd: string;
 
@@ -94,7 +97,7 @@ if (require.main === module) {
     })
     .finally(async () => {
       await waitForLogger(logger);
-      await delay(5); // Wait 5s for logger to flush.
+      await delay(LOGGER_FLUSH_DELAY_SECONDS); // Wait for logger to flush.
       exit(exitCode);
     });
 }
