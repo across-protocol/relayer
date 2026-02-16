@@ -359,49 +359,6 @@ async function viem_multicallOptimismFinalizations(
     OPStackPortalL1,
     signer
   );
-  const sourceId = VIEM_OP_STACK_CHAINS[chainId].sourceId;
-
-  // The following viem SDK functions all require the Viem Chain object to either have a portal + disputeGameFactory
-  // address defined, or for legacy OpStack chains, the l2OutputOracle address defined.
-  const { contracts } = VIEM_OP_STACK_CHAINS[chainId];
-
-  // Build targetChain param for viem OP Stack functions.
-  // We index contracts by BOTH sourceId (L1 chain ID) AND chainId (L2 chain ID) because:
-  // - When we pass chain=L1 (mainnet), viem looks up contracts using sourceId (1)
-  // - When we pass chain=L2 (MegaETH), viem looks up contracts using chainId (4326)
-  // By providing both keys pointing to the same L1 contracts, viem can find them either way.
-  const portalAddress = contracts.portal?.[sourceId]?.address ?? viem.zeroAddress;
-  const l2OutputOracleAddress =
-    contracts.l2OutputOracle?.[sourceId]?.address ??
-    OPSTACK_CONTRACT_OVERRIDES[chainId]?.l1?.L2OutputOracle ??
-    viem.zeroAddress;
-  const disputeGameFactoryAddress =
-    contracts.disputeGameFactory?.[sourceId]?.address ??
-    OPSTACK_CONTRACT_OVERRIDES[chainId]?.l1?.DisputeGameFactory ??
-    viem.zeroAddress;
-
-  const viemOpStackTargetChainParam: {
-    contracts: {
-      portal: { [sourceId: number]: { address: `0x${string}` } };
-      l2OutputOracle: { [sourceId: number]: { address: `0x${string}` } };
-      disputeGameFactory: { [sourceId: number]: { address: `0x${string}` } };
-    };
-  } = {
-    contracts: {
-      portal: {
-        [sourceId]: { address: portalAddress },
-        [chainId]: { address: portalAddress }, // Also provide under L2 chain ID
-      },
-      l2OutputOracle: {
-        [sourceId]: { address: l2OutputOracleAddress },
-        [chainId]: { address: l2OutputOracleAddress }, // Also provide under L2 chain ID
-      },
-      disputeGameFactory: {
-        [sourceId]: { address: disputeGameFactoryAddress },
-        [chainId]: { address: disputeGameFactoryAddress }, // Also provide under L2 chain ID
-      },
-    },
-  };
 
   const withdrawalStatuses: string[] = [];
   await mapAsync(events, async (event, i) => {
@@ -413,19 +370,17 @@ async function viem_multicallOptimismFinalizations(
       hash: event.txnRef as `0x${string}`,
     });
     const withdrawal = getWithdrawals(receipt)[logIndexesForMessage[i]];
-    const withdrawalStatus = await getWithdrawalStatus(publicClientL1 as viem.Client, {
+    const withdrawalStatus = await getWithdrawalStatus(publicClientL1 as any, {
       receipt,
-      chain: VIEM_OP_STACK_CHAINS[chainId],
-      targetChain: viemOpStackTargetChainParam,
+      targetChain: VIEM_OP_STACK_CHAINS[chainId],
       logIndex: logIndexesForMessage[i],
-    });
+    } as any);
     withdrawalStatuses.push(withdrawalStatus);
     if (withdrawalStatus === "ready-to-prove") {
-      const l2Output = await getL2Output(publicClientL1 as viem.Client, {
-        chain: VIEM_OP_STACK_CHAINS[chainId],
+      const l2Output = await getL2Output(publicClientL1 as any, {
         l2BlockNumber: BigInt(event.blockNumber),
-        targetChain: viemOpStackTargetChainParam,
-      });
+        targetChain: VIEM_OP_STACK_CHAINS[chainId],
+      } as any);
       if (l2Output.outputRoot !== PENDING_PROOF_OUTPUT_ROOT) {
         const { l2OutputIndex, outputRootProof, withdrawalProof } = await buildProveWithdrawal(
           publicClientL2 as viem.Client,
@@ -451,11 +406,10 @@ async function viem_multicallOptimismFinalizations(
         });
       }
     } else if (withdrawalStatus === "waiting-to-finalize") {
-      const { seconds } = await getTimeToFinalize(publicClientL1 as viem.Client, {
-        chain: VIEM_OP_STACK_CHAINS[hubChainId],
+      const { seconds } = await getTimeToFinalize(publicClientL1 as any, {
         withdrawalHash: withdrawal.withdrawalHash,
-        targetChain: viemOpStackTargetChainParam,
-      });
+        targetChain: VIEM_OP_STACK_CHAINS[chainId],
+      } as any);
       logger.debug({
         at: `${getNetworkName(chainId)}Finalizer`,
         message: `Withdrawal ${event.txnRef} for ${amountFromWei} of ${symbol} is in challenge period for ${(

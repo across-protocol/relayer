@@ -106,7 +106,7 @@ index 8da3482..bd0add3 100644
              storageKeys: [slot],
              blockNumber: l2BlockNumber,
 diff --git a/node_modules/viem/_cjs/op-stack/actions/getGames.js b/node_modules/viem/_cjs/op-stack/actions/getGames.js
-index d8a07c5..eafff07 100644
+index d8a07c5..6146d65 100644
 --- a/node_modules/viem/_cjs/op-stack/actions/getGames.js
 +++ b/node_modules/viem/_cjs/op-stack/actions/getGames.js
 @@ -44,7 +44,10 @@ async function getGames(client, parameters) {
@@ -115,8 +115,8 @@ index d8a07c5..eafff07 100644
          .map((game) => {
 -        const [blockNumber] = (0, decodeAbiParameters_js_1.decodeAbiParameters)([{ type: 'uint256' }], game.extraData);
 +        // Use custom decoder if available (for chains like MegaETH with non-standard extraData)
-+        const blockNumber = chain?.custom?.decodeGameExtraData
-+            ? chain.custom.decodeGameExtraData(game.extraData)
++        const blockNumber = targetChain?.custom?.decodeGameExtraData
++            ? targetChain.custom.decodeGameExtraData(game.extraData)
 +            : (0, decodeAbiParameters_js_1.decodeAbiParameters)([{ type: 'uint256' }], game.extraData)[0];
          return !l2BlockNumber || blockNumber > l2BlockNumber
              ? { ...game, l2BlockNumber: blockNumber }
