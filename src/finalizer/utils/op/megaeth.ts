@@ -1,20 +1,51 @@
-import type { Chain, TransactionReceipt, Address } from "viem";
+import { Account, Address, Chain, defineChain, PublicClient, TransactionReceipt, Transport, zeroAddress } from "viem";
 import { readContract } from "viem/actions";
 import { decodeAbiParameters } from "viem/utils";
 import {
+  chainConfig,
   getL2Output as viemGetL2Output,
-  getWithdrawalStatus as viemGetWithdrawalStatus,
   getWithdrawals,
+  getWithdrawalStatus as viemGetWithdrawalStatus,
   buildProveWithdrawal as viemBuildProveWithdrawal,
 } from "viem/op-stack";
-import { isDefined } from "../../../utils";
+import { typeguards } from "@across-protocol/sdk";
+import { CHAIN_IDs, isDefined } from "../../../utils";
+
+export const megaeth = defineChain({
+  id: CHAIN_IDs.MEGAETH,
+  name: "MegaETH",
+  nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+  rpcUrls: {
+    default: { http: ["https://rpc.megaeth.io"] },
+  },
+  blockExplorers: {
+    default: { name: "MegaETH Explorer", url: "https://explorer.megaeth.io" },
+  },
+  contracts: {
+    ...chainConfig.contracts,
+    portal: {
+      [CHAIN_IDs.MAINNET]: {
+        address: "0x7f82f57F0Dd546519324392e408b01fcC7D709e8",
+      },
+    },
+    disputeGameFactory: {
+      [CHAIN_IDs.MAINNET]: {
+        address: "0x8546840adF796875cD9AAcc5B3B048f6B2c9D563",
+      },
+    },
+    l2OutputOracle: {
+      [CHAIN_IDs.MAINNET]: {
+        address: zeroAddress,
+      },
+    },
+  },
+  sourceId: 1,
+});
 
 /**
  * MegaETH-specific viem actions for withdrawal finalization.
  * MegaETH uses a custom 24-byte extraData format instead of the standard 32-byte uint256.
  */
-
-// ABI definitions
 const gameCountAbi = [
   {
     type: "function",
@@ -296,7 +327,7 @@ export async function getMegaETHGames(
  * Get withdrawal status for MegaETH with custom game handling.
  * This properly checks the OptimismPortal contract state instead of relying on dispute games.
  */
-export async function getMegaETHWithdrawalStatus(
+export async function getWithdrawalStatus(
   client: any,
   parameters: {
     receipt: TransactionReceipt;
@@ -321,10 +352,13 @@ export async function getMegaETHWithdrawalStatus(
       targetChain,
       logIndex,
     });
-  } catch (error: any) {
+  } catch (error) {
     // If we get an AbiDecodingDataSizeTooSmallError, it means getGames failed due to custom extraData
     // For MegaETH, we need to manually check the withdrawal status by querying the portal contract
-    if (error?.name === "AbiDecodingDataSizeTooSmallError" || error?.message?.includes("Data size")) {
+    if (
+      (typeguards.isError(error) && error.name === "AbiDecodingDataSizeTooSmallError") ||
+      (typeguards.isError(error) && error.message.includes("Data size"))
+    ) {
       // Get the portal address
       const portalAddress = (() => {
         if (chain) {
@@ -408,9 +442,9 @@ export async function getMegaETHWithdrawalStatus(
 
           // If checkWithdrawal doesn't revert, the withdrawal is ready to finalize
           return "ready-to-finalize";
-        } catch (checkError: any) {
+        } catch (checkError) {
           // If it reverts with specific errors, it means we're still waiting
-          const errorMessage = checkError?.message || "";
+          const errorMessage = typeguards.isError(checkError) ? checkError.message : "";
           if (
             errorMessage.includes("withdrawal has not matured yet") ||
             errorMessage.includes("output proposal has not been finalized yet") ||
@@ -435,7 +469,7 @@ export async function getMegaETHWithdrawalStatus(
  * Get L2 output for MegaETH with custom game handling.
  * This wraps viem's getL2Output but catches errors from custom extraData format.
  */
-export async function getMegaETHL2Output(
+export async function getL2Output(
   client: any,
   parameters: {
     l2BlockNumber: bigint;
@@ -463,10 +497,13 @@ export async function getMegaETHL2Output(
       chain,
       targetChain,
     });
-  } catch (error: any) {
+  } catch (error) {
     // If we get an AbiDecodingDataSizeTooSmallError, it means getGames failed due to custom extraData
     // For MegaETH, we use the custom game retrieval
-    if (error?.name === "AbiDecodingDataSizeTooSmallError" || error?.message?.includes("Data size")) {
+    if (
+      (typeguards.isError(error) && error.name === "AbiDecodingDataSizeTooSmallError") ||
+      (typeguards.isError(error) && error.message.includes("Data size"))
+    ) {
       // Get the games using our custom function
       const games = await getMegaETHGames(client, {
         chain,
@@ -522,7 +559,7 @@ export function createMegaETHTransport(baseTransport: any) {
  * Build prove withdrawal for MegaETH.
  * Creates a client with custom transport that redirects eth_getProof to mega_getWithdrawalProof.
  */
-export async function buildMegaETHProveWithdrawal(
+export async function buildProveWithdrawal(
   client: any,
   parameters: {
     chain: Chain;
@@ -563,3 +600,33 @@ export async function buildMegaETHProveWithdrawal(
   // Call viem's buildProveWithdrawal with the wrapped client
   return await viemBuildProveWithdrawal(wrappedClient, parameters);
 }
+
+/**
+ * Extend a viem client with MegaETH-specific withdrawal actions.
+ * This teaches viem how to handle MegaETH's custom extraData format and RPC methods.
+ *
+ * @example
+ * ```ts
+ * const client = createPublicClient({ chain: megaeth, transport: http() });
+ * const megaethClient = client.extend(megaethActions);
+ *
+ * // Now use standard viem op-stack functions - they work with MegaETH!
+ * const status = await getWithdrawalStatus(megaethClient, { receipt, targetChain });
+ * ```
+ */
+export const megaethActions = <
+  TTransport extends Transport = Transport,
+  TChain extends Chain | undefined = Chain | undefined,
+  TAccount extends Account | undefined = Account | undefined
+>(
+  client: PublicClient<TTransport, TChain, TAccount>
+) => ({
+  getWithdrawalStatus: (
+    parameters: Parameters<typeof getWithdrawalStatus>[1]
+  ): ReturnType<typeof getWithdrawalStatus> => getWithdrawalStatus(client, parameters),
+  getL2Output: (parameters: Parameters<typeof getL2Output>[1]): ReturnType<typeof getL2Output> =>
+    getL2Output(client, parameters),
+  buildProveWithdrawal: (
+    parameters: Parameters<typeof buildProveWithdrawal>[1]
+  ): ReturnType<typeof buildProveWithdrawal> => buildProveWithdrawal(client, parameters),
+});
