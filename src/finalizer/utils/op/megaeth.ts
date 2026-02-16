@@ -1,6 +1,12 @@
 import { Account, Address, Chain, defineChain, PublicClient, TransactionReceipt, Transport, zeroAddress } from "viem";
 import { readContract } from "viem/actions";
-import { chainConfig, getWithdrawals, buildProveWithdrawal as viemBuildProveWithdrawal } from "viem/op-stack";
+import {
+  chainConfig,
+  getWithdrawals,
+  buildProveWithdrawal as viemBuildProveWithdrawal,
+  getWithdrawalStatus as viemGetWithdrawalStatus,
+  getL2Output as viemGetL2Output,
+} from "viem/op-stack";
 import { CHAIN_IDs } from "../../../utils";
 
 /**
@@ -173,9 +179,9 @@ function decodeExtraData(extraData: `0x${string}`): {
  * This is a modified version of viem's getGames that handles MegaETH's 24-byte extraData.
  */
 export async function getMegaETHGames(
-  client: any,
+  client: PublicClient,
   parameters: {
-    chain?: Chain;
+    chain: Chain;
     limit?: number;
     targetChain: {
       contracts: {
@@ -183,31 +189,14 @@ export async function getMegaETHGames(
         disputeGameFactory: { [sourceId: number]: { address: Address } };
       };
     };
-    portalAddress?: Address;
-    disputeGameFactoryAddress?: Address;
   }
 ) {
-  const { chain = client.chain, limit = 100, targetChain } = parameters;
+  const { chain, limit = 100, targetChain } = parameters;
 
-  const portalAddress = (() => {
-    if (parameters.portalAddress) {
-      return parameters.portalAddress;
-    }
-    if (chain) {
-      return targetChain.contracts.portal[chain.id].address;
-    }
-    return Object.values(targetChain.contracts.portal)[0].address;
-  })();
-
-  const disputeGameFactoryAddress = (() => {
-    if (parameters.disputeGameFactoryAddress) {
-      return parameters.disputeGameFactoryAddress;
-    }
-    if (chain) {
-      return targetChain.contracts.disputeGameFactory[chain.id].address;
-    }
-    return Object.values(targetChain.contracts.disputeGameFactory)[0].address;
-  })();
+  // L1 contracts are indexed by sourceId (L1 chain ID), not the L2 chain ID
+  const sourceId = chain.sourceId ?? chain.id;
+  const portalAddress = targetChain.contracts.portal[sourceId].address;
+  const disputeGameFactoryAddress = targetChain.contracts.disputeGameFactory[sourceId].address;
 
   // Get game count and game type
   const [gameCount, gameType] = await Promise.all([
@@ -245,33 +234,18 @@ export async function getMegaETHGames(
 }
 
 /**
- * Get withdrawal status for MegaETH.
+ * Get withdrawal status for MegaETH (internal implementation).
  * Uses custom implementation to handle MegaETH's 24-byte extraData format.
  */
-export async function getWithdrawalStatus(
-  client: any,
-  parameters: {
-    receipt: TransactionReceipt;
-    chain: Chain;
-    targetChain: {
-      contracts: {
-        portal: { [sourceId: number]: { address: Address } };
-        l2OutputOracle: { [sourceId: number]: { address: Address } };
-        disputeGameFactory: { [sourceId: number]: { address: Address } };
-      };
-    };
-    logIndex?: number;
-  }
+async function getMegaETHWithdrawalStatus(
+  client: PublicClient,
+  parameters: GetWithdrawalStatusParams
 ): Promise<"ready-to-prove" | "ready-to-finalize" | "waiting-to-finalize" | "waiting-to-prove" | "finalized"> {
   const { receipt, chain, targetChain, logIndex = 0 } = parameters;
 
-  // Get the portal address
-  const portalAddress = (() => {
-    if (chain) {
-      return targetChain.contracts.portal[chain.id].address;
-    }
-    return Object.values(targetChain.contracts.portal)[0].address;
-  })();
+  // L1 contracts are indexed by sourceId (L1 chain ID), not the L2 chain ID
+  const sourceId = chain.sourceId ?? chain.id;
+  const portalAddress = targetChain.contracts.portal[sourceId].address;
 
   // Get the withdrawal from the receipt
   const withdrawals = getWithdrawals(receipt);
@@ -308,7 +282,12 @@ export async function getWithdrawalStatus(
   if (numProofSubmitters === 0n) {
     const games = await getMegaETHGames(client, {
       chain,
-      targetChain,
+      targetChain: {
+        contracts: {
+          portal: targetChain.contracts.portal,
+          disputeGameFactory: targetChain.contracts.disputeGameFactory,
+        },
+      },
     });
 
     return games.length > 0 ? "ready-to-prove" : "waiting-to-prove";
@@ -356,22 +335,12 @@ export async function getWithdrawalStatus(
 }
 
 /**
- * Get L2 output for MegaETH.
+ * Get L2 output for MegaETH (internal implementation).
  * Uses custom implementation to handle MegaETH's 24-byte extraData format.
  */
-export async function getL2Output(
-  client: any,
-  parameters: {
-    l2BlockNumber: bigint;
-    chain: Chain;
-    targetChain: {
-      contracts: {
-        portal: { [sourceId: number]: { address: Address } };
-        l2OutputOracle: { [sourceId: number]: { address: Address } };
-        disputeGameFactory: { [sourceId: number]: { address: Address } };
-      };
-    };
-  }
+async function getMegaETHL2Output(
+  client: PublicClient,
+  parameters: GetL2OutputParams
 ): Promise<{
   l2BlockNumber: bigint;
   outputIndex: bigint;
@@ -383,7 +352,12 @@ export async function getL2Output(
   // Use custom game retrieval for MegaETH's 24-byte extraData format
   const games = await getMegaETHGames(client, {
     chain,
-    targetChain,
+    targetChain: {
+      contracts: {
+        portal: targetChain.contracts.portal,
+        disputeGameFactory: targetChain.contracts.disputeGameFactory,
+      },
+    },
   });
 
   if (games.length === 0) {
@@ -406,46 +380,12 @@ export async function getL2Output(
 }
 
 /**
- * Create a custom transport for MegaETH that intercepts eth_getProof calls
- * and redirects them to mega_getWithdrawalProof.
+ * Build prove withdrawal for MegaETH (internal implementation).
+ * Wraps the client to intercept eth_getProof calls and redirect to mega_getWithdrawalProof.
  */
-export function createMegaETHTransport(baseTransport: any) {
-  return (config: any) => {
-    const transport = baseTransport(config);
-
-    return {
-      ...transport,
-      async request({ method, params }: { method: string; params?: any[] }) {
-        // Intercept eth_getProof calls and redirect to mega_getWithdrawalProof
-        if (method === "eth_getProof") {
-          return transport.request({
-            method: "mega_getWithdrawalProof",
-            params,
-          });
-        }
-        // Pass through all other methods
-        return transport.request({ method, params });
-      },
-    };
-  };
-}
-
-/**
- * Build prove withdrawal for MegaETH.
- * Creates a client with custom transport that redirects eth_getProof to mega_getWithdrawalProof.
- */
-export async function buildProveWithdrawal(
-  client: any,
-  parameters: {
-    chain: Chain;
-    withdrawal: any;
-    output: {
-      l2BlockNumber: bigint;
-      outputIndex: bigint;
-      outputRoot: `0x${string}`;
-      timestamp: bigint;
-    };
-  }
+async function buildMegaETHProveWithdrawal(
+  client: PublicClient,
+  parameters: BuildProveWithdrawalParams
 ): Promise<{
   l2OutputIndex: bigint;
   outputRootProof: {
@@ -473,35 +413,115 @@ export async function buildProveWithdrawal(
   };
 
   // Call viem's buildProveWithdrawal with the wrapped client
+  // @ts-expect-error - wrappedClient has all the properties viem needs, but TypeScript can't infer the complex intersection types
   return await viemBuildProveWithdrawal(wrappedClient, parameters);
 }
 
 /**
- * Extend a viem client with MegaETH-specific withdrawal actions.
- * This teaches viem how to handle MegaETH's custom extraData format and RPC methods.
+ * Parameter types for OP Stack withdrawal actions.
+ */
+
+type GetWithdrawalStatusParams = {
+  receipt: TransactionReceipt;
+  chain: Chain;
+  targetChain: {
+    contracts: {
+      portal: { [sourceId: number]: { address: Address } };
+      l2OutputOracle?: { [sourceId: number]: { address: Address } };
+      disputeGameFactory: { [sourceId: number]: { address: Address } };
+    };
+  };
+  logIndex?: number;
+};
+
+type GetL2OutputParams = {
+  l2BlockNumber: bigint;
+  chain: Chain;
+  targetChain: {
+    contracts: {
+      portal: { [sourceId: number]: { address: Address } };
+      l2OutputOracle?: { [sourceId: number]: { address: Address } };
+      disputeGameFactory: { [sourceId: number]: { address: Address } };
+    };
+  };
+  limit?: number;
+};
+
+type BuildProveWithdrawalParams = {
+  chain: Chain;
+  withdrawal: {
+    nonce: bigint;
+    sender: Address;
+    target: Address;
+    value: bigint;
+    gasLimit: bigint;
+    data: `0x${string}`;
+  };
+  output?: {
+    l2BlockNumber: bigint;
+    outputIndex: bigint;
+    outputRoot: `0x${string}`;
+    timestamp: bigint;
+  };
+  game?: {
+    index: bigint;
+    metadata: `0x${string}`;
+    timestamp: bigint;
+    rootClaim: `0x${string}`;
+    extraData: `0x${string}`;
+  };
+  account?: Account | Address;
+};
+
+/**
+ * Extend a viem client with OP Stack withdrawal actions that work for all chains including MegaETH.
+ * These actions internally route to MegaETH-specific implementations when needed.
  *
  * @example
  * ```ts
  * const client = createPublicClient({ chain: megaeth, transport: http() });
- * const megaethClient = client.extend(megaethActions);
+ * const extendedClient = client.extend(opStackActions);
  *
- * // Now use standard viem op-stack functions - they work with MegaETH!
- * const status = await getWithdrawalStatus(megaethClient, { receipt, targetChain });
+ * // Now call methods directly on the client - they work for all OP Stack chains!
+ * const status = await extendedClient.getWithdrawalStatus({ receipt, chain, targetChain });
  * ```
  */
-export const megaethActions = <
-  TTransport extends Transport = Transport,
-  TChain extends Chain | undefined = Chain | undefined,
-  TAccount extends Account | undefined = Account | undefined
->(
-  client: PublicClient<TTransport, TChain, TAccount>
-) => ({
-  getWithdrawalStatus: (
-    parameters: Parameters<typeof getWithdrawalStatus>[1]
-  ): ReturnType<typeof getWithdrawalStatus> => getWithdrawalStatus(client, parameters),
-  getL2Output: (parameters: Parameters<typeof getL2Output>[1]): ReturnType<typeof getL2Output> =>
-    getL2Output(client, parameters),
-  buildProveWithdrawal: (
-    parameters: Parameters<typeof buildProveWithdrawal>[1]
-  ): ReturnType<typeof buildProveWithdrawal> => buildProveWithdrawal(client, parameters),
+export const opStackActions = (client: PublicClient) => ({
+  getWithdrawalStatus: async (
+    parameters: GetWithdrawalStatusParams
+  ): Promise<"ready-to-prove" | "ready-to-finalize" | "waiting-to-finalize" | "waiting-to-prove" | "finalized"> => {
+    if (parameters.chain.id === CHAIN_IDs.MEGAETH) {
+      return getMegaETHWithdrawalStatus(client, parameters);
+    }
+    // @ts-expect-error - parameters satisfy viem's complex union type, but TypeScript can't infer it
+    return viemGetWithdrawalStatus(client, parameters);
+  },
+  getL2Output: async (parameters: GetL2OutputParams): Promise<{
+    l2BlockNumber: bigint;
+    outputIndex: bigint;
+    outputRoot: `0x${string}`;
+    timestamp: bigint;
+  }> => {
+    if (parameters.chain.id === CHAIN_IDs.MEGAETH) {
+      return getMegaETHL2Output(client, parameters);
+    }
+    // @ts-expect-error - parameters satisfy viem's complex union type, but TypeScript can't infer it
+    return viemGetL2Output(client, parameters);
+  },
+  buildProveWithdrawal: async (parameters: BuildProveWithdrawalParams): Promise<{
+    l2OutputIndex: bigint;
+    outputRootProof: {
+      version: `0x${string}`;
+      stateRoot: `0x${string}`;
+      messagePasserStorageRoot: `0x${string}`;
+      latestBlockhash: `0x${string}`;
+    };
+    withdrawalProof: readonly `0x${string}`[];
+  }> => {
+    if (parameters.chain.id === CHAIN_IDs.MEGAETH) {
+      return buildMegaETHProveWithdrawal(client, parameters);
+    }
+    // @ts-expect-error - parameters satisfy viem's complex union type, but TypeScript can't infer it
+    return viemBuildProveWithdrawal(client, parameters);
+  },
 });

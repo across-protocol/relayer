@@ -3,14 +3,8 @@ import { countBy, groupBy } from "lodash";
 import * as optimismSDK from "@eth-optimism/sdk";
 import * as viem from "viem";
 import * as viemChains from "viem/chains";
-import {
-  getWithdrawals,
-  buildProveWithdrawal,
-  getWithdrawalStatus,
-  getL2Output,
-  getTimeToFinalize,
-} from "viem/op-stack";
-import { megaeth, megaethActions } from "./op/megaeth";
+import { getWithdrawals, getTimeToFinalize } from "viem/op-stack";
+import { megaeth, opStackActions } from "./op/megaeth";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { Log, TokensBridged } from "../../interfaces";
 import {
@@ -332,25 +326,26 @@ async function viem_multicallOptimismFinalizations(
   };
   const hubChainId = hubPoolClient.chainId;
 
-  const publicClientL1 = viem.createPublicClient({
-    batch: { multicall: true },
-    chain: chainIsProd(chainId) ? viemChains.mainnet : viemChains.sepolia,
-    transport: createViemCustomTransportFromEthersProvider(hubChainId),
-  });
+  // Viem's complex client types with custom transport cause type incompatibilities with opStackActions
+  // @ts-expect-error - type instantiation excessively deep
+  const publicClientL1 = viem
+    .createPublicClient({
+      batch: { multicall: true },
+      chain: chainIsProd(chainId) ? viemChains.mainnet : viemChains.sepolia,
+      transport: createViemCustomTransportFromEthersProvider(hubChainId),
+    })
+    // @ts-expect-error - client type incompatible with opStackActions parameter due to custom transport
+    .extend(opStackActions);
 
-  const publicClientL2 = viem.createPublicClient({
-    batch: { multicall: true },
-    chain: VIEM_OP_STACK_CHAINS[chainId],
-    transport: createViemCustomTransportFromEthersProvider(chainId),
-  });
+  const publicClientL2 = viem
+    .createPublicClient({
+      batch: { multicall: true },
+      chain: VIEM_OP_STACK_CHAINS[chainId],
+      transport: createViemCustomTransportFromEthersProvider(chainId),
+    })
+    // @ts-expect-error - client type incompatible with opStackActions parameter due to custom transport
+    .extend(opStackActions);
 
-  // For MegaETH, extend clients to override viem op-stack functions with MegaETH-aware versions
-  // This teaches viem how to handle MegaETH's custom 24-byte extraData format and mega_getWithdrawalProof RPC
-  if (chainId === CHAIN_IDs.MEGAETH) {
-    // @ts-expect-error - viem 2.37 type instantiation depth limit with .extend(), but runtime works correctly
-    Object.assign(publicClientL1, publicClientL1.extend(megaethActions));
-    Object.assign(publicClientL2, publicClientL2.extend(megaethActions));
-  }
   const uniqueTokenhashes = {};
   const logIndexesForMessage = [];
   const events = [...olderTokensBridgedEvents, ...recentTokensBridgedEvents];
@@ -415,31 +410,27 @@ async function viem_multicallOptimismFinalizations(
     const withdrawal = getWithdrawals(receipt)[logIndexesForMessage[i]];
 
     // Check withdrawal status using viem (extended client handles MegaETH's custom extraData automatically)
-    // Note: Type assertions required due to viem 2.37's limitations with custom transports
-    const withdrawalStatus = await getWithdrawalStatus(publicClientL1 as viem.Client, {
+    const withdrawalStatus = await publicClientL1.getWithdrawalStatus({
       receipt,
-      chain: publicClientL1.chain as viem.Chain,
+      chain: VIEM_OP_STACK_CHAINS[chainId],
       targetChain: viemOpStackTargetChainParam,
       logIndex: logIndexesForMessage[i],
     });
     withdrawalStatuses.push(withdrawalStatus);
     if (withdrawalStatus === "ready-to-prove") {
       // Get L2 output (extended client handles MegaETH's custom extraData automatically)
-      const l2Output = await getL2Output(publicClientL1 as viem.Client, {
-        chain: publicClientL1.chain as viem.Chain,
+      const l2Output = await publicClientL1.getL2Output({
+        chain: VIEM_OP_STACK_CHAINS[chainId],
         l2BlockNumber: BigInt(event.blockNumber),
         targetChain: viemOpStackTargetChainParam,
       });
       if (l2Output.outputRoot !== PENDING_PROOF_OUTPUT_ROOT) {
         // Build proof (extended client handles MegaETH's mega_getWithdrawalProof RPC automatically)
-        const { l2OutputIndex, outputRootProof, withdrawalProof } = await buildProveWithdrawal(
-          publicClientL2 as viem.Client,
-          {
-            chain: VIEM_OP_STACK_CHAINS[chainId],
-            withdrawal,
-            output: l2Output,
-          }
-        );
+        const { l2OutputIndex, outputRootProof, withdrawalProof } = await publicClientL2.buildProveWithdrawal({
+          chain: VIEM_OP_STACK_CHAINS[chainId],
+          withdrawal,
+          output: l2Output,
+        });
         const proofArgs = [withdrawal, l2OutputIndex, outputRootProof, withdrawalProof];
         const callData = await crossChainMessenger.populateTransaction.proveWithdrawalTransaction(...proofArgs);
         viemTxns.callData.push({
