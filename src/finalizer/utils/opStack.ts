@@ -330,20 +330,20 @@ async function viem_multicallOptimismFinalizations(
     withdrawals: [],
   };
   const hubChainId = hubPoolClient.chainId;
-
-  // Create OP Stack clients with appropriate decorators.
   const publicClientL1 = viem.createPublicClient({
-    batch: { multicall: true },
+    batch: {
+      multicall: true,
+    },
     chain: chainIsProd(chainId) ? viemChains.mainnet : viemChains.sepolia,
     transport: createViemCustomTransportFromEthersProvider(hubChainId),
   });
-
   const publicClientL2 = viem.createPublicClient({
-    batch: { multicall: true },
+    batch: {
+      multicall: true,
+    },
     chain: VIEM_OP_STACK_CHAINS[chainId],
     transport: createViemCustomTransportFromEthersProvider(chainId),
   });
-
   const uniqueTokenhashes = {};
   const logIndexesForMessage = [];
   const events = [...olderTokensBridgedEvents, ...recentTokensBridgedEvents];
@@ -359,8 +359,7 @@ async function viem_multicallOptimismFinalizations(
     OPStackPortalL1,
     signer
   );
-  // Use sourceId (L1 chain ID) to look up L1 contracts. Fall back to hubChainId if not defined.
-  const sourceId = VIEM_OP_STACK_CHAINS[chainId].sourceId ?? hubChainId;
+  const sourceId = VIEM_OP_STACK_CHAINS[chainId].sourceId;
 
   // The following viem SDK functions all require the Viem Chain object to either have a portal + disputeGameFactory
   // address defined, or for legacy OpStack chains, the l2OutputOracle address defined.
@@ -383,9 +382,9 @@ async function viem_multicallOptimismFinalizations(
 
   const viemOpStackTargetChainParam: {
     contracts: {
-      portal: { [key: number]: { address: `0x${string}` } };
-      l2OutputOracle: { [key: number]: { address: `0x${string}` } };
-      disputeGameFactory: { [key: number]: { address: `0x${string}` } };
+      portal: { [sourceId: number]: { address: `0x${string}` } };
+      l2OutputOracle: { [sourceId: number]: { address: `0x${string}` } };
+      disputeGameFactory: { [sourceId: number]: { address: `0x${string}` } };
     };
   } = {
     contracts: {
@@ -414,7 +413,6 @@ async function viem_multicallOptimismFinalizations(
       hash: event.txnRef as `0x${string}`,
     });
     const withdrawal = getWithdrawals(receipt)[logIndexesForMessage[i]];
-    // Pass L2 chain so viem can use custom decoder for extraData, but targetChain provides L1 contracts under both keys
     const withdrawalStatus = await getWithdrawalStatus(publicClientL1 as viem.Client, {
       receipt,
       chain: VIEM_OP_STACK_CHAINS[chainId],
