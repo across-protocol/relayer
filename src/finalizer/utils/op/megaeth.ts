@@ -1,6 +1,5 @@
 import { Account, Address, Chain, defineChain, PublicClient, TransactionReceipt, Transport, zeroAddress } from "viem";
 import { readContract } from "viem/actions";
-import { decodeAbiParameters } from "viem/utils";
 import {
   chainConfig,
   getL2Output as viemGetL2Output,
@@ -157,41 +156,21 @@ function decodeExtraData(
 ): { l2BlockNumber: bigint; parentGameIndex: bigint; duplicationCounter: bigint } {
   const data = extraData.slice(2); // Remove 0x prefix
 
-  if (data.length === 0) {
-    return { l2BlockNumber: 0n, parentGameIndex: 0n, duplicationCounter: 0n };
+  // MegaETH uses 24-byte (48 hex char) extraData format
+  if (data.length !== 48) {
+    throw new Error(`Invalid MegaETH extraData length: expected 48 hex chars (24 bytes), got ${data.length}`);
   }
 
-  // For 24-byte format, extract all three uint64 fields
-  if (data.length === 48) {
-    // 24 bytes = 48 hex chars
-    // Format: [8 bytes l2BlockNumber][8 bytes parentGameIndex][8 bytes duplicationCounter]
-    const l2BlockNumberHex = data.slice(0, 16); // First 8 bytes = 16 hex chars
-    const parentGameIndexHex = data.slice(16, 32); // Next 8 bytes = 16 hex chars
-    const duplicationCounterHex = data.slice(32, 48); // Last 8 bytes = 16 hex chars
+  // Format: [8 bytes l2BlockNumber][8 bytes parentGameIndex][8 bytes duplicationCounter]
+  const l2BlockNumberHex = data.slice(0, 16); // First 8 bytes = 16 hex chars
+  const parentGameIndexHex = data.slice(16, 32); // Next 8 bytes = 16 hex chars
+  const duplicationCounterHex = data.slice(32, 48); // Last 8 bytes = 16 hex chars
 
-    const l2BlockNumber = BigInt("0x" + l2BlockNumberHex);
-    const parentGameIndex = BigInt("0x" + parentGameIndexHex);
-    const duplicationCounter = BigInt("0x" + duplicationCounterHex);
+  const l2BlockNumber = BigInt("0x" + l2BlockNumberHex);
+  const parentGameIndex = BigInt("0x" + parentGameIndexHex);
+  const duplicationCounter = BigInt("0x" + duplicationCounterHex);
 
-    return { l2BlockNumber, parentGameIndex, duplicationCounter };
-  }
-
-  // For standard 32-byte format, decode as uint256 (l2BlockNumber only, others are 0)
-  if (data.length === 64) {
-    const [blockNumber] = decodeAbiParameters([{ type: "uint256" }], extraData);
-    return { l2BlockNumber: blockNumber, parentGameIndex: 0n, duplicationCounter: 0n };
-  }
-
-  // Fallback: try to decode as uint256 anyway
-  try {
-    const [blockNumber] = decodeAbiParameters([{ type: "uint256" }], extraData);
-    return { l2BlockNumber: blockNumber, parentGameIndex: 0n, duplicationCounter: 0n };
-  } catch {
-    // If decoding fails, pad to 32 bytes and try again
-    const paddedData: `0x${string}` = `0x${data.padEnd(64, "0")}`;
-    const [blockNumber] = decodeAbiParameters([{ type: "uint256" }], paddedData);
-    return { l2BlockNumber: blockNumber, parentGameIndex: 0n, duplicationCounter: 0n };
-  }
+  return { l2BlockNumber, parentGameIndex, duplicationCounter };
 }
 
 /**
