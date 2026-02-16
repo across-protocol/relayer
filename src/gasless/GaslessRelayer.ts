@@ -41,7 +41,6 @@ import {
   DepositWithBlock,
   GaslessDepositMessage,
 } from "../interfaces";
-import { CHAIN_MAX_BLOCK_LOOKBACK } from "../common";
 import { AcrossSwapApiClient, TransactionClient } from "../clients";
 import EIP3009_ABI from "../common/abi/EIP3009.json";
 import { buildGaslessDepositTx, buildGaslessFillRelayTx, restructureGaslessDeposits } from "../utils/GaslessUtils";
@@ -147,7 +146,11 @@ export class GaslessRelayer {
         nonce: permit.message.nonce!,
       });
       const fillKey = this._getFilledRelayKey({ originChainId, depositId: toBN(depositId) });
-      return this.observedNonces[originChainId].has(nonceKey) && !this.observedFills[destinationChainId].has(fillKey);
+      return (
+        this.observedNonces[originChainId]?.has(nonceKey) &&
+        isDefined(this.observedFills[destinationChainId]) &&
+        !this.observedFills[destinationChainId].has(fillKey)
+      );
     });
 
     this.logger.debug({
@@ -600,7 +603,7 @@ export class GaslessRelayer {
     return {
       to: to.number,
       from,
-      maxLookBack: CHAIN_MAX_BLOCK_LOOKBACK[chainId],
+      maxLookBack: this.config.maxBlockLookBack[chainId],
     };
   }
 

@@ -345,6 +345,14 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     }
   }
 
+  async sweepIntermediateBalances(): Promise<void> {
+    // no-op for Binance, since we don't know if the funds on Binance are being used for the InventoryClient's Binance
+    // rebalancing logic.
+    // If a deposit to Binance has not been withdrawn after 30 minutes, it will get swept up by the Binance Sweeper
+    // Finalizer because we set the TTL to 30 minutes when we deposited the funds and called
+    // setBinanceDepositType().
+  }
+
   async getPendingRebalances(): Promise<{ [chainId: number]: { [token: string]: BigNumber } }> {
     this._assertInitialized();
     const pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
@@ -545,14 +553,20 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const minimumWithdrawalSize = toBNWei(Number(withdrawMin) + 1, sourceTokenInfo.decimals); // Add buffer to minimum to account
     // for price volatility. For stablecoin swaps, this should be totally fine since price isn't volatile.
     const maximumWithdrawalSize = toBNWei(withdrawMax, sourceTokenInfo.decimals);
-    assert(
-      expectedAmountToWithdraw.gte(minimumWithdrawalSize),
-      `Expected amount to withdraw ${expectedAmountToWithdraw.toString()} is less than minimum withdrawal size ${minimumWithdrawalSize.toString()} on Binance destination chain ${destinationEntrypointNetwork}`
-    );
-    assert(
-      expectedAmountToWithdraw.lte(maximumWithdrawalSize),
-      `Expected amount to withdraw ${expectedAmountToWithdraw.toString()} is greater than maximum withdrawal size ${maximumWithdrawalSize.toString()} on Binance destination chain ${destinationEntrypointNetwork}`
-    );
+    if (expectedAmountToWithdraw.lt(minimumWithdrawalSize)) {
+      this.logger.debug({
+        at: "BinanceStablecoinSwapAdapter.initializeRebalance",
+        message: `Expected amount to withdraw ${expectedAmountToWithdraw.toString()} is less than minimum withdrawal size ${minimumWithdrawalSize.toString()} on Binance destination chain ${destinationEntrypointNetwork}`,
+      });
+      return;
+    }
+    if (expectedAmountToWithdraw.gt(maximumWithdrawalSize)) {
+      this.logger.debug({
+        at: "BinanceStablecoinSwapAdapter.initializeRebalance",
+        message: `Expected amount to withdraw ${expectedAmountToWithdraw.toString()} is greater than maximum withdrawal size ${maximumWithdrawalSize.toString()} on Binance destination chain ${destinationEntrypointNetwork}`,
+      });
+      return;
+    }
 
     // TODO: The amount transferred here might produce dust due to the rounding required to meet the minimum order
     // tick size. We try not to precompute the size required to place an order here because the price might change
@@ -560,10 +574,13 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     // error.
     const spotMarketMeta = this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
     const minimumOrderSize = toBNWei(spotMarketMeta.minimumOrderSize, sourceTokenInfo.decimals);
-    assert(
-      amountToTransfer.gte(minimumOrderSize),
-      `Expected amount to withdraw ${expectedAmountToWithdraw.toString()} is less than minimum order size ${minimumOrderSize.toString()}`
-    );
+    if (amountToTransfer.lt(minimumOrderSize)) {
+      this.logger.debug({
+        at: "BinanceStablecoinSwapAdapter.initializeRebalance",
+        message: `Amount to transfer ${amountToTransfer.toString()} is less than minimum order size ${minimumOrderSize.toString()}`,
+      });
+      return;
+    }
 
     const cloid = await this._redisGetNextCloid();
 
@@ -794,7 +811,9 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       mrkdwn: `Deposited ${amountReadable} ${sourceToken} to Binance on chain ${getNetworkName(sourceChain)}`,
     };
     const txnHash = await this._submitTransaction(txn);
-    await setBinanceDepositType(sourceChain, txnHash, BinanceTransactionType.SWAP, this.redisCache);
+    // Set the TTL to 30 minutes so that the Binance sweeper finalizer only attempts to pull back these deposited
+    // funds after 30 minutes. If the swap hasn't occurred in 30 mins then something has gone wrong.
+    await setBinanceDepositType(sourceChain, txnHash, BinanceTransactionType.SWAP, this.redisCache, 30 * 60);
     this.logger.debug({
       at: "BinanceStablecoinSwapAdapter._depositToBinance",
       message: `Deposited ${amountReadable} ${sourceToken} to Binance from chain ${getNetworkName(sourceChain)}`,
