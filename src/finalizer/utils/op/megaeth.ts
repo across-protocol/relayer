@@ -2,8 +2,9 @@ import type { Chain, TransactionReceipt, Address } from "viem";
 import { readContract } from "viem/actions";
 import { decodeAbiParameters } from "viem/utils";
 import {
-  getWithdrawalStatus as viemGetWithdrawalStatus,
   getL2Output as viemGetL2Output,
+  getWithdrawalStatus as viemGetWithdrawalStatus,
+  getWithdrawals,
   buildProveWithdrawal as viemBuildProveWithdrawal,
 } from "viem/op-stack";
 import { isDefined } from "../../../utils";
@@ -129,9 +130,9 @@ function decodeMegaETHExtraData(extraData: `0x${string}`, debug = false): bigint
   const data = extraData.slice(2); // Remove 0x prefix
 
   if (debug) {
-    console.log("=== MegaETH ExtraData Format ===");
-    console.log(`Raw: ${extraData}`);
-    console.log(`Length: ${data.length / 2} bytes (${data.length} hex chars)`);
+    // console.log("=== MegaETH ExtraData Format ===");
+    // console.log(`Raw: ${extraData}`);
+    // console.log(`Length: ${data.length / 2} bytes (${data.length} hex chars)`);
   }
 
   if (data.length === 0) {
@@ -142,20 +143,22 @@ function decodeMegaETHExtraData(extraData: `0x${string}`, debug = false): bigint
   if (data.length === 48) {
     // 24 bytes = 48 hex chars
     // Format: [8 bytes l2BlockNumber][8 bytes parentGameIndex][8 bytes duplicationCounter]
+    // See extraData definition:
+    // https://github.com/boundless-xyz/kailua/blob/4b315c5b10d61f28aeb1fc5a30e58a3cefb8de02/crates/contracts/foundry/src/KailuaGame.sol#L83
     const l2BlockNumberHex = data.slice(0, 16); // First 8 bytes = 16 hex chars
-    const parentGameIndexHex = data.slice(16, 32); // Next 8 bytes = 16 hex chars
-    const duplicationCounterHex = data.slice(32, 48); // Last 8 bytes = 16 hex chars
+    // const parentGameIndexHex = data.slice(16, 32); // Next 8 bytes = 16 hex chars
+    // const duplicationCounterHex = data.slice(32, 48); // Last 8 bytes = 16 hex chars
 
     const l2BlockNumber = BigInt("0x" + l2BlockNumberHex);
 
     if (debug) {
-      console.log("Format: 24-byte (MegaETH custom)");
-      console.log(`  L2 Block Number (uint64):      0x${l2BlockNumberHex} = ${l2BlockNumber}`);
-      console.log(`  Parent Game Index (uint64):    0x${parentGameIndexHex} = ${BigInt("0x" + parentGameIndexHex)}`);
-      console.log(
-        `  Duplication Counter (uint64):  0x${duplicationCounterHex} = ${BigInt("0x" + duplicationCounterHex)}`
-      );
-      console.log("================================");
+      // console.log("Format: 24-byte (MegaETH custom)");
+      // console.log(`  L2 Block Number (uint64):      0x${l2BlockNumberHex} = ${l2BlockNumber}`);
+      // console.log(`  Parent Game Index (uint64):    0x${parentGameIndexHex} = ${BigInt("0x" + parentGameIndexHex)}`);
+      // console.log(
+      //   `  Duplication Counter (uint64):  0x${duplicationCounterHex} = ${BigInt("0x" + duplicationCounterHex)}`
+      // );
+      // console.log("================================");
     }
 
     return l2BlockNumber;
@@ -166,9 +169,9 @@ function decodeMegaETHExtraData(extraData: `0x${string}`, debug = false): bigint
     const [blockNumber] = decodeAbiParameters([{ type: "uint256" }], extraData);
 
     if (debug) {
-      console.log("Format: 32-byte (standard uint256)");
-      console.log(`  Block Number: ${blockNumber}`);
-      console.log("================================");
+      // console.log("Format: 32-byte (standard uint256)");
+      // console.log(`  Block Number: ${blockNumber}`);
+      // console.log("================================");
     }
 
     return blockNumber;
@@ -179,9 +182,9 @@ function decodeMegaETHExtraData(extraData: `0x${string}`, debug = false): bigint
     const [blockNumber] = decodeAbiParameters([{ type: "uint256" }], extraData);
 
     if (debug) {
-      console.log("Format: Non-standard, decoded as uint256");
-      console.log(`  Block Number: ${blockNumber}`);
-      console.log("================================");
+      // console.log("Format: Non-standard, decoded as uint256");
+      // console.log(`  Block Number: ${blockNumber}`);
+      // console.log("================================");
     }
 
     return blockNumber;
@@ -191,11 +194,11 @@ function decodeMegaETHExtraData(extraData: `0x${string}`, debug = false): bigint
     const [blockNumber] = decodeAbiParameters([{ type: "uint256" }], paddedData);
 
     if (debug) {
-      console.log("Format: Non-standard, padded to 32 bytes");
-      console.log(`  Original: ${extraData}`);
-      console.log(`  Padded:   ${paddedData}`);
-      console.log(`  Block Number: ${blockNumber}`);
-      console.log("================================");
+      // console.log("Format: Non-standard, padded to 32 bytes");
+      // console.log(`  Original: ${extraData}`);
+      // console.log(`  Padded:   ${paddedData}`);
+      // console.log(`  Block Number: ${blockNumber}`);
+      // console.log("================================");
     }
 
     return blockNumber;
@@ -331,7 +334,6 @@ export async function getMegaETHWithdrawalStatus(
       })();
 
       // Get the withdrawal from the receipt
-      const { getWithdrawals } = await import("viem/op-stack");
       const withdrawals = getWithdrawals(receipt);
       const withdrawal = withdrawals[logIndex];
 
