@@ -3,8 +3,7 @@ import { countBy, groupBy } from "lodash";
 import * as optimismSDK from "@eth-optimism/sdk";
 import * as viem from "viem";
 import * as viemChains from "viem/chains";
-import { getWithdrawals, getTimeToFinalize } from "viem/op-stack";
-import { megaeth, opStackActions } from "./op/megaeth";
+import { getWithdrawals, getTimeToFinalize, getWithdrawalStatus, getL2Output, buildProveWithdrawal } from "viem/op-stack";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { Log, TokensBridged } from "../../interfaces";
 import {
@@ -76,7 +75,7 @@ const VIEM_OP_STACK_CHAINS: Record<number, viem.Chain> = {
   [CHAIN_IDs.REDSTONE]: viemChains.redstone,
   [CHAIN_IDs.LISK]: viemChains.lisk,
   [CHAIN_IDs.ZORA]: viemChains.zora,
-  [CHAIN_IDs.MEGAETH]: megaeth,
+  [CHAIN_IDs.MEGAETH]: viemChains.megaeth, // From patched viem
   [CHAIN_IDs.MODE]: viemChains.mode,
   [CHAIN_IDs.WORLD_CHAIN]: viemChains.worldchain,
   [CHAIN_IDs.SONEIUM]: viemChains.soneium,
@@ -326,25 +325,18 @@ async function viem_multicallOptimismFinalizations(
   };
   const hubChainId = hubPoolClient.chainId;
 
-  // Viem's complex client types with custom transport cause type incompatibilities with opStackActions
-  // @ts-expect-error - type instantiation excessively deep
-  const publicClientL1 = viem
-    .createPublicClient({
-      batch: { multicall: true },
-      chain: chainIsProd(chainId) ? viemChains.mainnet : viemChains.sepolia,
-      transport: createViemCustomTransportFromEthersProvider(hubChainId),
-    })
-    // @ts-expect-error - client type incompatible with opStackActions parameter due to custom transport
-    .extend(opStackActions);
+  // Create OP Stack clients with appropriate decorators.
+  const publicClientL1 = viem.createPublicClient({
+    batch: { multicall: true },
+    chain: chainIsProd(chainId) ? viemChains.mainnet : viemChains.sepolia,
+    transport: createViemCustomTransportFromEthersProvider(hubChainId),
+  });
 
-  const publicClientL2 = viem
-    .createPublicClient({
-      batch: { multicall: true },
-      chain: VIEM_OP_STACK_CHAINS[chainId],
-      transport: createViemCustomTransportFromEthersProvider(chainId),
-    })
-    // @ts-expect-error - client type incompatible with opStackActions parameter due to custom transport
-    .extend(opStackActions);
+  const publicClientL2 = viem.createPublicClient({
+    batch: { multicall: true },
+    chain: VIEM_OP_STACK_CHAINS[chainId],
+    transport: createViemCustomTransportFromEthersProvider(chainId),
+  });
 
   const uniqueTokenhashes = {};
   const logIndexesForMessage = [];
@@ -361,39 +353,47 @@ async function viem_multicallOptimismFinalizations(
     OPStackPortalL1,
     signer
   );
-  const sourceId = VIEM_OP_STACK_CHAINS[chainId].sourceId;
+  // Use sourceId (L1 chain ID) to look up L1 contracts. Fall back to hubChainId if not defined.
+  const sourceId = VIEM_OP_STACK_CHAINS[chainId].sourceId ?? hubChainId;
 
   // The following viem SDK functions all require the Viem Chain object to either have a portal + disputeGameFactory
   // address defined, or for legacy OpStack chains, the l2OutputOracle address defined.
   const { contracts } = VIEM_OP_STACK_CHAINS[chainId];
+
+  // Build targetChain param for viem OP Stack functions.
+  // We index contracts by BOTH sourceId (L1 chain ID) AND chainId (L2 chain ID) because:
+  // - When we pass chain=L1 (mainnet), viem looks up contracts using sourceId (1)
+  // - When we pass chain=L2 (MegaETH), viem looks up contracts using chainId (4326)
+  // By providing both keys pointing to the same L1 contracts, viem can find them either way.
+  const portalAddress = contracts.portal?.[sourceId]?.address ?? viem.zeroAddress;
+  const l2OutputOracleAddress =
+    contracts.l2OutputOracle?.[sourceId]?.address ??
+    OPSTACK_CONTRACT_OVERRIDES[chainId]?.l1?.L2OutputOracle ??
+    viem.zeroAddress;
+  const disputeGameFactoryAddress =
+    contracts.disputeGameFactory?.[sourceId]?.address ??
+    OPSTACK_CONTRACT_OVERRIDES[chainId]?.l1?.DisputeGameFactory ??
+    viem.zeroAddress;
+
   const viemOpStackTargetChainParam: {
     contracts: {
-      portal: { [sourceId: number]: { address: `0x${string}` } };
-      l2OutputOracle: { [sourceId: number]: { address: `0x${string}` } };
-      disputeGameFactory: { [sourceId: number]: { address: `0x${string}` } };
+      portal: { [key: number]: { address: `0x${string}` } };
+      l2OutputOracle: { [key: number]: { address: `0x${string}` } };
+      disputeGameFactory: { [key: number]: { address: `0x${string}` } };
     };
   } = {
     contracts: {
       portal: {
-        [sourceId]: {
-          address: contracts.portal[sourceId].address,
-        },
+        [sourceId]: { address: portalAddress },
+        [chainId]: { address: portalAddress }, // Also provide under L2 chain ID
       },
       l2OutputOracle: {
-        [sourceId]: {
-          address:
-            contracts.l2OutputOracle?.[sourceId]?.address ??
-            OPSTACK_CONTRACT_OVERRIDES[chainId]?.l1?.L2OutputOracle ??
-            viem.zeroAddress,
-        },
+        [sourceId]: { address: l2OutputOracleAddress },
+        [chainId]: { address: l2OutputOracleAddress }, // Also provide under L2 chain ID
       },
       disputeGameFactory: {
-        [sourceId]: {
-          address:
-            contracts.disputeGameFactory?.[sourceId]?.address ??
-            OPSTACK_CONTRACT_OVERRIDES[chainId]?.l1?.DisputeGameFactory ??
-            viem.zeroAddress,
-        },
+        [sourceId]: { address: disputeGameFactoryAddress },
+        [chainId]: { address: disputeGameFactoryAddress }, // Also provide under L2 chain ID
       },
     },
   };
@@ -408,9 +408,8 @@ async function viem_multicallOptimismFinalizations(
       hash: event.txnRef as `0x${string}`,
     });
     const withdrawal = getWithdrawals(receipt)[logIndexesForMessage[i]];
-
-    // Check withdrawal status using viem (extended client handles MegaETH's custom extraData automatically)
-    const withdrawalStatus = await publicClientL1.getWithdrawalStatus({
+    // Pass L2 chain so viem can use custom decoder for extraData, but targetChain provides L1 contracts under both keys
+    const withdrawalStatus = await getWithdrawalStatus(publicClientL1 as viem.Client, {
       receipt,
       chain: VIEM_OP_STACK_CHAINS[chainId],
       targetChain: viemOpStackTargetChainParam,
@@ -418,19 +417,20 @@ async function viem_multicallOptimismFinalizations(
     });
     withdrawalStatuses.push(withdrawalStatus);
     if (withdrawalStatus === "ready-to-prove") {
-      // Get L2 output (extended client handles MegaETH's custom extraData automatically)
-      const l2Output = await publicClientL1.getL2Output({
+      const l2Output = await getL2Output(publicClientL1 as viem.Client, {
         chain: VIEM_OP_STACK_CHAINS[chainId],
         l2BlockNumber: BigInt(event.blockNumber),
         targetChain: viemOpStackTargetChainParam,
       });
       if (l2Output.outputRoot !== PENDING_PROOF_OUTPUT_ROOT) {
-        // Build proof (extended client handles MegaETH's mega_getWithdrawalProof RPC automatically)
-        const { l2OutputIndex, outputRootProof, withdrawalProof } = await publicClientL2.buildProveWithdrawal({
-          chain: VIEM_OP_STACK_CHAINS[chainId],
-          withdrawal,
-          output: l2Output,
-        });
+        const { l2OutputIndex, outputRootProof, withdrawalProof } = await buildProveWithdrawal(
+          publicClientL2 as viem.Client,
+          {
+            chain: VIEM_OP_STACK_CHAINS[chainId],
+            withdrawal,
+            output: l2Output,
+          }
+        );
         const proofArgs = [withdrawal, l2OutputIndex, outputRootProof, withdrawalProof];
         const callData = await crossChainMessenger.populateTransaction.proveWithdrawalTransaction(...proofArgs);
         viemTxns.callData.push({
