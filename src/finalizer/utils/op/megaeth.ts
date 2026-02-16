@@ -1,4 +1,4 @@
-import { Account, Address, Chain, defineChain, PublicClient, TransactionReceipt, Transport, zeroAddress } from "viem";
+import { Account, Address, Chain, defineChain, PublicClient, TransactionReceipt, zeroAddress } from "viem";
 import { readContract } from "viem/actions";
 import {
   chainConfig,
@@ -496,7 +496,9 @@ export const opStackActions = (client: PublicClient) => ({
     // @ts-expect-error - parameters satisfy viem's complex union type, but TypeScript can't infer it
     return viemGetWithdrawalStatus(client, parameters);
   },
-  getL2Output: async (parameters: GetL2OutputParams): Promise<{
+  getL2Output: async (
+    parameters: GetL2OutputParams
+  ): Promise<{
     l2BlockNumber: bigint;
     outputIndex: bigint;
     outputRoot: `0x${string}`;
@@ -508,7 +510,9 @@ export const opStackActions = (client: PublicClient) => ({
     // @ts-expect-error - parameters satisfy viem's complex union type, but TypeScript can't infer it
     return viemGetL2Output(client, parameters);
   },
-  buildProveWithdrawal: async (parameters: BuildProveWithdrawalParams): Promise<{
+  buildProveWithdrawal: async (
+    parameters: BuildProveWithdrawalParams
+  ): Promise<{
     l2OutputIndex: bigint;
     outputRootProof: {
       version: `0x${string}`;
