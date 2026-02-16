@@ -2,13 +2,11 @@ import { Account, Address, Chain, defineChain, PublicClient, TransactionReceipt,
 import { readContract } from "viem/actions";
 import {
   chainConfig,
-  getL2Output as viemGetL2Output,
   getWithdrawals,
-  getWithdrawalStatus as viemGetWithdrawalStatus,
   buildProveWithdrawal as viemBuildProveWithdrawal,
 } from "viem/op-stack";
 import { typeguards } from "@across-protocol/sdk";
-import { CHAIN_IDs, isDefined } from "../../../utils";
+import { CHAIN_IDs } from "../../../utils";
 
 /**
  * Minimal ABI definitions for the contract functions we need.
@@ -181,7 +179,6 @@ export async function getMegaETHGames(
   client: any,
   parameters: {
     chain?: Chain;
-    l2BlockNumber?: bigint;
     limit?: number;
     targetChain: {
       contracts: {
@@ -193,7 +190,7 @@ export async function getMegaETHGames(
     disputeGameFactoryAddress?: Address;
   }
 ) {
-  const { chain = client.chain, l2BlockNumber, limit = 100, targetChain } = parameters;
+  const { chain = client.chain, limit = 100, targetChain } = parameters;
 
   const portalAddress = (() => {
     if (parameters.portalAddress) {
@@ -242,24 +239,17 @@ export async function getMegaETHGames(
   });
 
   // Process games with custom extraData decoding
-  const games = gamesResult
-    .map((game) => {
-      try {
-        const { l2BlockNumber: blockNumber } = decodeExtraData(game.extraData);
-        return !l2BlockNumber || blockNumber > l2BlockNumber ? { ...game, l2BlockNumber: blockNumber } : null;
-      } catch (error) {
-        // Skip games we can't decode
-        return null;
-      }
-    })
-    .filter(isDefined);
+  const games = gamesResult.map((game) => {
+    const { l2BlockNumber: blockNumber } = decodeExtraData(game.extraData);
+    return { ...game, l2BlockNumber: blockNumber };
+  });
 
   return games;
 }
 
 /**
- * Get withdrawal status for MegaETH with custom game handling.
- * This properly checks the OptimismPortal contract state instead of relying on dispute games.
+ * Get withdrawal status for MegaETH.
+ * Uses custom implementation to handle MegaETH's 24-byte extraData format.
  */
 export async function getWithdrawalStatus(
   client: any,
@@ -278,130 +268,111 @@ export async function getWithdrawalStatus(
 ): Promise<"ready-to-prove" | "ready-to-finalize" | "waiting-to-finalize" | "waiting-to-prove" | "finalized"> {
   const { receipt, chain, targetChain, logIndex = 0 } = parameters;
 
-  // Use viem's built-in functions but catch errors from getGames
-  try {
-    return await viemGetWithdrawalStatus(client, {
-      receipt,
+  // Get the portal address
+  const portalAddress = (() => {
+    if (chain) {
+      return targetChain.contracts.portal[chain.id].address;
+    }
+    return Object.values(targetChain.contracts.portal)[0].address;
+  })();
+
+  // Get the withdrawal from the receipt
+  const withdrawals = getWithdrawals(receipt);
+  const withdrawal = withdrawals[logIndex];
+
+  if (!withdrawal) {
+    throw new Error(`No withdrawal found at log index ${logIndex}`);
+  }
+
+  // Check if the withdrawal has been finalized
+  // @ts-expect-error - viem 2.37 types require authorizationList but it's not actually needed for view functions
+  const isFinalized = await readContract(client, {
+    address: portalAddress,
+    abi: portal2Abi,
+    functionName: "finalizedWithdrawals",
+    args: [withdrawal.withdrawalHash],
+  });
+
+  if (isFinalized) {
+    return "finalized";
+  }
+
+  // For dispute game-based portals, we need to get the proof submitter address
+  // Get the number of proof submitters for this withdrawal
+  // @ts-expect-error - viem 2.37 types require authorizationList but it's not actually needed for view functions
+  const numProofSubmitters = await readContract(client, {
+    address: portalAddress,
+    abi: portal2Abi,
+    functionName: "numProofSubmitters",
+    args: [withdrawal.withdrawalHash],
+  });
+
+  // If no one has proven this withdrawal yet, check if a game exists
+  if (numProofSubmitters === 0n) {
+    const games = await getMegaETHGames(client, {
       chain,
       targetChain,
-      logIndex,
     });
-  } catch (error) {
-    // If we get an AbiDecodingDataSizeTooSmallError, it means getGames failed due to custom extraData
-    // For MegaETH, we need to manually check the withdrawal status by querying the portal contract
-    if (
-      (typeguards.isError(error) && error.name === "AbiDecodingDataSizeTooSmallError") ||
-      (typeguards.isError(error) && error.message.includes("Data size"))
-    ) {
-      // Get the portal address
-      const portalAddress = (() => {
-        if (chain) {
-          return targetChain.contracts.portal[chain.id].address;
-        }
-        return Object.values(targetChain.contracts.portal)[0].address;
-      })();
 
-      // Get the withdrawal from the receipt
-      const withdrawals = getWithdrawals(receipt);
-      const withdrawal = withdrawals[logIndex];
+    return games.length > 0 ? "ready-to-prove" : "waiting-to-prove";
+  }
 
-      if (!withdrawal) {
-        throw new Error(`No withdrawal found at log index ${logIndex}`);
-      }
+  // Get the most recent proof submitter
+  // @ts-expect-error - viem 2.37 types require authorizationList but it's not actually needed for view functions
+  const proofSubmitter = await readContract(client, {
+    address: portalAddress,
+    abi: portal2Abi,
+    functionName: "proofSubmitters",
+    args: [withdrawal.withdrawalHash, numProofSubmitters - 1n],
+  });
 
-      // Check if the withdrawal has been finalized
+  // Check if the withdrawal has been proven by this submitter
+  // @ts-expect-error - viem 2.37 types require authorizationList but it's not actually needed for view functions
+  const provenWithdrawal = await readContract(client, {
+    address: portalAddress,
+    abi: portal2Abi,
+    functionName: "provenWithdrawals",
+    args: [withdrawal.withdrawalHash, proofSubmitter],
+  });
+
+  // If the withdrawal has a non-zero timestamp, it has been proven
+  if (provenWithdrawal[1] > 0n) {
+    // Check if the challenge period has passed using checkWithdrawal
+    try {
+      // checkWithdrawal will revert if the withdrawal can't be finalized yet
       // @ts-expect-error - viem 2.37 types require authorizationList but it's not actually needed for view functions
-      const isFinalized = await readContract(client, {
+      await readContract(client, {
         address: portalAddress,
         abi: portal2Abi,
-        functionName: "finalizedWithdrawals",
-        args: [withdrawal.withdrawalHash],
-      });
-
-      if (isFinalized) {
-        return "finalized";
-      }
-
-      // For dispute game-based portals, we need to get the proof submitter address
-      // Get the number of proof submitters for this withdrawal
-      // @ts-expect-error - viem 2.37 types require authorizationList but it's not actually needed for view functions
-      const numProofSubmitters = await readContract(client, {
-        address: portalAddress,
-        abi: portal2Abi,
-        functionName: "numProofSubmitters",
-        args: [withdrawal.withdrawalHash],
-      });
-
-      // If no one has proven this withdrawal yet, check if a game exists
-      if (numProofSubmitters === 0n) {
-        const games = await getMegaETHGames(client, {
-          chain,
-          l2BlockNumber: receipt.blockNumber,
-          targetChain,
-        });
-
-        return games.length > 0 ? "ready-to-prove" : "waiting-to-prove";
-      }
-
-      // Get the most recent proof submitter
-      // @ts-expect-error - viem 2.37 types require authorizationList but it's not actually needed for view functions
-      const proofSubmitter = await readContract(client, {
-        address: portalAddress,
-        abi: portal2Abi,
-        functionName: "proofSubmitters",
-        args: [withdrawal.withdrawalHash, numProofSubmitters - 1n],
-      });
-
-      // Check if the withdrawal has been proven by this submitter
-      // @ts-expect-error - viem 2.37 types require authorizationList but it's not actually needed for view functions
-      const provenWithdrawal = await readContract(client, {
-        address: portalAddress,
-        abi: portal2Abi,
-        functionName: "provenWithdrawals",
+        functionName: "checkWithdrawal",
         args: [withdrawal.withdrawalHash, proofSubmitter],
       });
 
-      // If the withdrawal has a non-zero timestamp, it has been proven
-      if (provenWithdrawal[1] > 0n) {
-        // Check if the challenge period has passed using checkWithdrawal
-        try {
-          // checkWithdrawal will revert if the withdrawal can't be finalized yet
-          // @ts-expect-error - viem 2.37 types require authorizationList but it's not actually needed for view functions
-          await readContract(client, {
-            address: portalAddress,
-            abi: portal2Abi,
-            functionName: "checkWithdrawal",
-            args: [withdrawal.withdrawalHash, proofSubmitter],
-          });
-
-          // If checkWithdrawal doesn't revert, the withdrawal is ready to finalize
-          return "ready-to-finalize";
-        } catch (checkError) {
-          // If it reverts with specific errors, it means we're still waiting
-          const errorMessage = typeguards.isError(checkError) ? checkError.message : "";
-          if (
-            errorMessage.includes("withdrawal has not matured yet") ||
-            errorMessage.includes("output proposal has not been finalized yet") ||
-            errorMessage.includes("output proposal in air-gap")
-          ) {
-            return "waiting-to-finalize";
-          }
-          // For other errors, still return waiting-to-finalize since it was proven
-          return "waiting-to-finalize";
-        }
+      // If checkWithdrawal doesn't revert, the withdrawal is ready to finalize
+      return "ready-to-finalize";
+    } catch (checkError) {
+      // If it reverts with specific errors, it means we're still waiting
+      const errorMessage = typeguards.isError(checkError) ? checkError.message : "";
+      if (
+        errorMessage.includes("withdrawal has not matured yet") ||
+        errorMessage.includes("output proposal has not been finalized yet") ||
+        errorMessage.includes("output proposal in air-gap")
+      ) {
+        return "waiting-to-finalize";
       }
-
-      // Should not reach here - if we have proof submitters but no valid proof,
-      // something is wrong with the contract state
-      throw new Error(`Unexpected state: ${numProofSubmitters} proof submitters but no valid proof found`);
+      // For other errors, still return waiting-to-finalize since it was proven
+      return "waiting-to-finalize";
     }
-    throw error;
   }
+
+  // Should not reach here - if we have proof submitters but no valid proof,
+  // something is wrong with the contract state
+  throw new Error(`Unexpected state: ${numProofSubmitters} proof submitters but no valid proof found`);
 }
 
 /**
- * Get L2 output for MegaETH with custom game handling.
- * This wraps viem's getL2Output but catches errors from custom extraData format.
+ * Get L2 output for MegaETH.
+ * Uses custom implementation to handle MegaETH's 24-byte extraData format.
  */
 export async function getL2Output(
   client: any,
@@ -424,44 +395,29 @@ export async function getL2Output(
 }> {
   const { l2BlockNumber, chain, targetChain } = parameters;
 
-  // Use viem's built-in function but catch errors from getGames
-  try {
-    return await viemGetL2Output(client, {
-      l2BlockNumber,
-      chain,
-      targetChain,
-    });
-  } catch (error) {
-    // If we get an AbiDecodingDataSizeTooSmallError, it means getGames failed due to custom extraData
-    // For MegaETH, we use the custom game retrieval
-    if (
-      (typeguards.isError(error) && error.name === "AbiDecodingDataSizeTooSmallError") ||
-      (typeguards.isError(error) && error.message.includes("Data size"))
-    ) {
-      // Get the games using our custom function
-      const games = await getMegaETHGames(client, {
-        chain,
-        l2BlockNumber,
-        targetChain,
-      });
+  // Use custom game retrieval for MegaETH's 24-byte extraData format
+  const games = await getMegaETHGames(client, {
+    chain,
+    targetChain,
+  });
 
-      if (games.length === 0) {
-        throw new Error(`No games found for L2 block ${l2BlockNumber}`);
-      }
-
-      // Find the game that matches or is closest to our L2 block number
-      const matchingGame = games.find((game) => game.l2BlockNumber === l2BlockNumber) || games[0];
-
-      // Return the output in the expected format
-      return {
-        l2BlockNumber: matchingGame.l2BlockNumber,
-        outputIndex: matchingGame.index,
-        outputRoot: matchingGame.rootClaim,
-        timestamp: matchingGame.timestamp,
-      };
-    }
-    throw error;
+  if (games.length === 0) {
+    throw new Error(`No games found for L2 block ${l2BlockNumber}`);
   }
+
+  // Find the game that covers our L2 block number
+  const matchingGame = games.find((game) => game.l2BlockNumber >= l2BlockNumber);
+
+  if (!matchingGame) {
+    throw new Error(`No game found covering L2 block ${l2BlockNumber}`);
+  }
+
+  return {
+    l2BlockNumber: matchingGame.l2BlockNumber,
+    outputIndex: matchingGame.index,
+    outputRoot: matchingGame.rootClaim,
+    timestamp: matchingGame.timestamp,
+  };
 }
 
 /**
