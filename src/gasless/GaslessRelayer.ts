@@ -157,15 +157,10 @@ export class GaslessRelayer {
     });
 
     await mapAsync(unfilledDeposits, async (depositMessage) => {
-      const { originChainId, permit, baseDepositData, depositId } = depositMessage;
-      const { inputToken } = baseDepositData;
-      const { from } = permit.message;
+      const { originChainId, depositId } = depositMessage;
 
       const correspondingDeposit = observedEvents.observedFundsDeposited[originChainId].find(
-        (fundsDeposited) =>
-          fundsDeposited.inputToken.toNative() === inputToken &&
-          fundsDeposited.depositor.toNative() === from &&
-          fundsDeposited.depositId.toString() === depositId
+        (fundsDeposited) => fundsDeposited.depositId.toString() === depositId
       );
       assert(
         isDefined(correspondingDeposit),
