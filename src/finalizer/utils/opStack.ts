@@ -3,7 +3,13 @@ import { countBy, groupBy } from "lodash";
 import * as optimismSDK from "@eth-optimism/sdk";
 import * as viem from "viem";
 import * as viemChains from "viem/chains";
-import { getWithdrawals, getTimeToFinalize, getWithdrawalStatus, getL2Output, buildProveWithdrawal } from "viem/op-stack";
+import {
+  getWithdrawals,
+  getTimeToFinalize,
+  getWithdrawalStatus,
+  getL2Output,
+  buildProveWithdrawal,
+} from "viem/op-stack";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { Log, TokensBridged } from "../../interfaces";
 import {
