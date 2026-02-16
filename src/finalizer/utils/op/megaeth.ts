@@ -11,6 +11,103 @@ import {
 import { typeguards } from "@across-protocol/sdk";
 import { CHAIN_IDs, isDefined } from "../../../utils";
 
+/**
+ * Minimal ABI definitions for the contract functions we need.
+ * Viem doesn't export ABIs from its public API, and importing from JSON loses type safety,
+ * so we define minimal typed ABIs here. These match the function signatures from the OP Stack
+ * contracts but only include the functions we actually call.
+ */
+const disputeGameFactoryAbi = [
+  {
+    type: "function",
+    name: "gameCount",
+    inputs: [],
+    outputs: [{ name: "gameCount_", type: "uint256", internalType: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "findLatestGames",
+    inputs: [
+      { name: "_gameType", type: "uint32", internalType: "GameType" },
+      { name: "_start", type: "uint256", internalType: "uint256" },
+      { name: "_n", type: "uint256", internalType: "uint256" },
+    ],
+    outputs: [
+      {
+        name: "games_",
+        type: "tuple[]",
+        internalType: "struct IDisputeGameFactory.GameSearchResult[]",
+        components: [
+          { name: "index", type: "uint256", internalType: "uint256" },
+          { name: "metadata", type: "bytes32", internalType: "GameId" },
+          { name: "timestamp", type: "uint64", internalType: "Timestamp" },
+          { name: "rootClaim", type: "bytes32", internalType: "Claim" },
+          { name: "extraData", type: "bytes", internalType: "bytes" },
+        ],
+      },
+    ],
+    stateMutability: "view",
+  },
+] as const;
+
+const portal2Abi = [
+  {
+    type: "function",
+    name: "respectedGameType",
+    inputs: [],
+    outputs: [{ name: "", type: "uint32", internalType: "GameType" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "finalizedWithdrawals",
+    inputs: [{ name: "", type: "bytes32", internalType: "bytes32" }],
+    outputs: [{ name: "", type: "bool", internalType: "bool" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "numProofSubmitters",
+    inputs: [{ name: "_withdrawalHash", type: "bytes32", internalType: "bytes32" }],
+    outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "proofSubmitters",
+    inputs: [
+      { name: "", type: "bytes32", internalType: "bytes32" },
+      { name: "", type: "uint256", internalType: "uint256" },
+    ],
+    outputs: [{ name: "", type: "address", internalType: "address" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "provenWithdrawals",
+    inputs: [
+      { name: "", type: "bytes32", internalType: "bytes32" },
+      { name: "", type: "address", internalType: "address" },
+    ],
+    outputs: [
+      { name: "disputeGameProxy", type: "address", internalType: "contract IDisputeGame" },
+      { name: "timestamp", type: "uint64", internalType: "uint64" },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "checkWithdrawal",
+    inputs: [
+      { name: "_withdrawalHash", type: "bytes32", internalType: "bytes32" },
+      { name: "_proofSubmitter", type: "address", internalType: "address" },
+    ],
+    outputs: [],
+    stateMutability: "view",
+  },
+] as const;
+
 export const megaeth = defineChain({
   id: CHAIN_IDs.MEGAETH,
   name: "MegaETH",
@@ -45,194 +142,55 @@ export const megaeth = defineChain({
 /**
  * MegaETH-specific viem actions for withdrawal finalization.
  * MegaETH uses a custom 24-byte extraData format instead of the standard 32-byte uint256.
+ *
+ * Note: We reuse viem's standard OP Stack ABIs (disputeGameFactoryAbi, portal2Abi, portalAbi)
+ * since MegaETH follows the same contract interfaces, just with custom extraData encoding.
  */
-const gameCountAbi = [
-  {
-    type: "function",
-    name: "gameCount",
-    inputs: [],
-    outputs: [{ type: "uint256" }],
-    stateMutability: "view",
-  },
-] as const;
-
-const respectedGameTypeAbi = [
-  {
-    type: "function",
-    name: "respectedGameType",
-    inputs: [],
-    outputs: [{ type: "uint32" }],
-    stateMutability: "view",
-  },
-] as const;
-
-const findLatestGamesAbi = [
-  {
-    type: "function",
-    name: "findLatestGames",
-    inputs: [
-      { name: "_gameType", type: "uint32" },
-      { name: "_start", type: "uint256" },
-      { name: "_n", type: "uint256" },
-    ],
-    outputs: [
-      {
-        type: "tuple[]",
-        components: [
-          { name: "index", type: "uint256" },
-          { name: "metadata", type: "bytes32" },
-          { name: "timestamp", type: "uint64" },
-          { name: "rootClaim", type: "bytes32" },
-          { name: "extraData", type: "bytes" },
-        ],
-      },
-    ],
-    stateMutability: "view",
-  },
-] as const;
-
-const finalizedWithdrawalsAbi = [
-  {
-    type: "function",
-    name: "finalizedWithdrawals",
-    inputs: [{ name: "withdrawalHash", type: "bytes32" }],
-    outputs: [{ name: "", type: "bool" }],
-    stateMutability: "view",
-  },
-] as const;
-
-const numProofSubmittersAbi = [
-  {
-    type: "function",
-    name: "numProofSubmitters",
-    inputs: [{ name: "withdrawalHash", type: "bytes32" }],
-    outputs: [{ name: "", type: "uint256" }],
-    stateMutability: "view",
-  },
-] as const;
-
-const proofSubmittersAbi = [
-  {
-    type: "function",
-    name: "proofSubmitters",
-    inputs: [
-      { name: "withdrawalHash", type: "bytes32" },
-      { name: "index", type: "uint256" },
-    ],
-    outputs: [{ name: "", type: "address" }],
-    stateMutability: "view",
-  },
-] as const;
-
-const provenWithdrawalsAbi = [
-  {
-    type: "function",
-    name: "provenWithdrawals",
-    inputs: [
-      { name: "withdrawalHash", type: "bytes32" },
-      { name: "proofSubmitter", type: "address" },
-    ],
-    outputs: [
-      { name: "disputeGameProxy", type: "address" },
-      { name: "timestamp", type: "uint64" },
-    ],
-    stateMutability: "view",
-  },
-] as const;
-
-const checkWithdrawalAbi = [
-  {
-    type: "function",
-    name: "checkWithdrawal",
-    inputs: [
-      { name: "withdrawalHash", type: "bytes32" },
-      { name: "proofSubmitter", type: "address" },
-    ],
-    outputs: [],
-    stateMutability: "view",
-  },
-] as const;
 
 /**
  * Decode MegaETH's custom 24-byte extraData format.
  * Format: [uint64 l2BlockNumber, uint64 parentGameIndex, uint64 duplicationCounter]
+ * @see https://github.com/boundless-xyz/kailua/blob/4b315c5b10d61f28aeb1fc5a30e58a3cefb8de02/crates/contracts/foundry/src/KailuaGame.sol#L83
  */
-function decodeMegaETHExtraData(extraData: `0x${string}`, debug = false): bigint {
+function decodeExtraData(
+  extraData: `0x${string}`
+): { l2BlockNumber: bigint; parentGameIndex: bigint; duplicationCounter: bigint } {
   const data = extraData.slice(2); // Remove 0x prefix
 
-  if (debug) {
-    // console.log("=== MegaETH ExtraData Format ===");
-    // console.log(`Raw: ${extraData}`);
-    // console.log(`Length: ${data.length / 2} bytes (${data.length} hex chars)`);
-  }
-
   if (data.length === 0) {
-    return 0n;
+    return { l2BlockNumber: 0n, parentGameIndex: 0n, duplicationCounter: 0n };
   }
 
-  // For 24-byte format, extract first 8 bytes as uint64
+  // For 24-byte format, extract all three uint64 fields
   if (data.length === 48) {
     // 24 bytes = 48 hex chars
     // Format: [8 bytes l2BlockNumber][8 bytes parentGameIndex][8 bytes duplicationCounter]
-    // See extraData definition:
-    // https://github.com/boundless-xyz/kailua/blob/4b315c5b10d61f28aeb1fc5a30e58a3cefb8de02/crates/contracts/foundry/src/KailuaGame.sol#L83
     const l2BlockNumberHex = data.slice(0, 16); // First 8 bytes = 16 hex chars
-    // const parentGameIndexHex = data.slice(16, 32); // Next 8 bytes = 16 hex chars
-    // const duplicationCounterHex = data.slice(32, 48); // Last 8 bytes = 16 hex chars
+    const parentGameIndexHex = data.slice(16, 32); // Next 8 bytes = 16 hex chars
+    const duplicationCounterHex = data.slice(32, 48); // Last 8 bytes = 16 hex chars
 
     const l2BlockNumber = BigInt("0x" + l2BlockNumberHex);
+    const parentGameIndex = BigInt("0x" + parentGameIndexHex);
+    const duplicationCounter = BigInt("0x" + duplicationCounterHex);
 
-    if (debug) {
-      // console.log("Format: 24-byte (MegaETH custom)");
-      // console.log(`  L2 Block Number (uint64):      0x${l2BlockNumberHex} = ${l2BlockNumber}`);
-      // console.log(`  Parent Game Index (uint64):    0x${parentGameIndexHex} = ${BigInt("0x" + parentGameIndexHex)}`);
-      // console.log(
-      //   `  Duplication Counter (uint64):  0x${duplicationCounterHex} = ${BigInt("0x" + duplicationCounterHex)}`
-      // );
-      // console.log("================================");
-    }
-
-    return l2BlockNumber;
+    return { l2BlockNumber, parentGameIndex, duplicationCounter };
   }
 
-  // For standard 32-byte format, decode as uint256
+  // For standard 32-byte format, decode as uint256 (l2BlockNumber only, others are 0)
   if (data.length === 64) {
     const [blockNumber] = decodeAbiParameters([{ type: "uint256" }], extraData);
-
-    if (debug) {
-      // console.log("Format: 32-byte (standard uint256)");
-      // console.log(`  Block Number: ${blockNumber}`);
-      // console.log("================================");
-    }
-
-    return blockNumber;
+    return { l2BlockNumber: blockNumber, parentGameIndex: 0n, duplicationCounter: 0n };
   }
 
   // Fallback: try to decode as uint256 anyway
   try {
     const [blockNumber] = decodeAbiParameters([{ type: "uint256" }], extraData);
-
-    if (debug) {
-      // console.log("Format: Non-standard, decoded as uint256");
-      // console.log(`  Block Number: ${blockNumber}`);
-      // console.log("================================");
-    }
-
-    return blockNumber;
+    return { l2BlockNumber: blockNumber, parentGameIndex: 0n, duplicationCounter: 0n };
   } catch {
     // If decoding fails, pad to 32 bytes and try again
     const paddedData: `0x${string}` = `0x${data.padEnd(64, "0")}`;
     const [blockNumber] = decodeAbiParameters([{ type: "uint256" }], paddedData);
-
-    if (debug) {
-      // console.log("Format: Non-standard, padded to 32 bytes");
-      // console.log(`  Original: ${extraData}`);
-      // console.log(`  Padded:   ${paddedData}`);
-      // console.log(`  Block Number: ${blockNumber}`);
-      // console.log("================================");
-    }
-
-    return blockNumber;
+    return { l2BlockNumber: blockNumber, parentGameIndex: 0n, duplicationCounter: 0n };
   }
 }
 
@@ -282,14 +240,14 @@ export async function getMegaETHGames(
   const [gameCount, gameType] = await Promise.all([
     // @ts-expect-error - viem 2.37 types require authorizationList but it's not actually needed for view functions
     readContract(client, {
-      abi: gameCountAbi,
+      abi: disputeGameFactoryAbi,
       functionName: "gameCount",
       args: [],
       address: disputeGameFactoryAddress,
     }),
     // @ts-expect-error - viem 2.37 types require authorizationList but it's not actually needed for view functions
     readContract(client, {
-      abi: respectedGameTypeAbi,
+      abi: portal2Abi,
       functionName: "respectedGameType",
       address: portalAddress,
     }),
@@ -298,20 +256,17 @@ export async function getMegaETHGames(
   // Get latest games
   // @ts-expect-error - viem 2.37 types require authorizationList but it's not actually needed for view functions
   const gamesResult = await readContract(client, {
-    abi: findLatestGamesAbi,
+    abi: disputeGameFactoryAbi,
     functionName: "findLatestGames",
     address: disputeGameFactoryAddress,
     args: [gameType, BigInt(Math.max(0, Number(gameCount - 1n))), BigInt(Math.min(limit, Number(gameCount)))],
   });
 
   // Process games with custom extraData decoding
-  let firstGame = true;
   const games = gamesResult
     .map((game) => {
       try {
-        // Use MegaETH-specific decoding (log first game to show format)
-        const blockNumber = decodeMegaETHExtraData(game.extraData, firstGame);
-        firstGame = false;
+        const { l2BlockNumber: blockNumber } = decodeExtraData(game.extraData);
         return !l2BlockNumber || blockNumber > l2BlockNumber ? { ...game, l2BlockNumber: blockNumber } : null;
       } catch (error) {
         // Skip games we can't decode
@@ -379,7 +334,7 @@ export async function getWithdrawalStatus(
       // @ts-expect-error - viem 2.37 types require authorizationList but it's not actually needed for view functions
       const isFinalized = await readContract(client, {
         address: portalAddress,
-        abi: finalizedWithdrawalsAbi,
+        abi: portal2Abi,
         functionName: "finalizedWithdrawals",
         args: [withdrawal.withdrawalHash],
       });
@@ -393,7 +348,7 @@ export async function getWithdrawalStatus(
       // @ts-expect-error - viem 2.37 types require authorizationList but it's not actually needed for view functions
       const numProofSubmitters = await readContract(client, {
         address: portalAddress,
-        abi: numProofSubmittersAbi,
+        abi: portal2Abi,
         functionName: "numProofSubmitters",
         args: [withdrawal.withdrawalHash],
       });
@@ -413,7 +368,7 @@ export async function getWithdrawalStatus(
       // @ts-expect-error - viem 2.37 types require authorizationList but it's not actually needed for view functions
       const proofSubmitter = await readContract(client, {
         address: portalAddress,
-        abi: proofSubmittersAbi,
+        abi: portal2Abi,
         functionName: "proofSubmitters",
         args: [withdrawal.withdrawalHash, numProofSubmitters - 1n],
       });
@@ -422,7 +377,7 @@ export async function getWithdrawalStatus(
       // @ts-expect-error - viem 2.37 types require authorizationList but it's not actually needed for view functions
       const provenWithdrawal = await readContract(client, {
         address: portalAddress,
-        abi: provenWithdrawalsAbi,
+        abi: portal2Abi,
         functionName: "provenWithdrawals",
         args: [withdrawal.withdrawalHash, proofSubmitter],
       });
@@ -435,7 +390,7 @@ export async function getWithdrawalStatus(
           // @ts-expect-error - viem 2.37 types require authorizationList but it's not actually needed for view functions
           await readContract(client, {
             address: portalAddress,
-            abi: checkWithdrawalAbi,
+            abi: portal2Abi,
             functionName: "checkWithdrawal",
             args: [withdrawal.withdrawalHash, proofSubmitter],
           });
