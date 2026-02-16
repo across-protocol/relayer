@@ -1,11 +1,6 @@
 import { Account, Address, Chain, defineChain, PublicClient, TransactionReceipt, Transport, zeroAddress } from "viem";
 import { readContract } from "viem/actions";
-import {
-  chainConfig,
-  getWithdrawals,
-  buildProveWithdrawal as viemBuildProveWithdrawal,
-} from "viem/op-stack";
-import { typeguards } from "@across-protocol/sdk";
+import { chainConfig, getWithdrawals, buildProveWithdrawal as viemBuildProveWithdrawal } from "viem/op-stack";
 import { CHAIN_IDs } from "../../../utils";
 
 /**
@@ -149,9 +144,11 @@ export const megaeth = defineChain({
  * Format: [uint64 l2BlockNumber, uint64 parentGameIndex, uint64 duplicationCounter]
  * @see https://github.com/boundless-xyz/kailua/blob/4b315c5b10d61f28aeb1fc5a30e58a3cefb8de02/crates/contracts/foundry/src/KailuaGame.sol#L83
  */
-function decodeExtraData(
-  extraData: `0x${string}`
-): { l2BlockNumber: bigint; parentGameIndex: bigint; duplicationCounter: bigint } {
+function decodeExtraData(extraData: `0x${string}`): {
+  l2BlockNumber: bigint;
+  parentGameIndex: bigint;
+  duplicationCounter: bigint;
+} {
   const data = extraData.slice(2); // Remove 0x prefix
 
   // MegaETH uses 24-byte (48 hex char) extraData format
@@ -347,20 +344,8 @@ export async function getWithdrawalStatus(
         functionName: "checkWithdrawal",
         args: [withdrawal.withdrawalHash, proofSubmitter],
       });
-
-      // If checkWithdrawal doesn't revert, the withdrawal is ready to finalize
       return "ready-to-finalize";
-    } catch (checkError) {
-      // If it reverts with specific errors, it means we're still waiting
-      const errorMessage = typeguards.isError(checkError) ? checkError.message : "";
-      if (
-        errorMessage.includes("withdrawal has not matured yet") ||
-        errorMessage.includes("output proposal has not been finalized yet") ||
-        errorMessage.includes("output proposal in air-gap")
-      ) {
-        return "waiting-to-finalize";
-      }
-      // For other errors, still return waiting-to-finalize since it was proven
+    } catch {
       return "waiting-to-finalize";
     }
   }
