@@ -4,12 +4,14 @@ import * as optimismSDK from "@eth-optimism/sdk";
 import * as viem from "viem";
 import * as viemChains from "viem/chains";
 import {
+  chainConfig,
   getWithdrawals,
   buildProveWithdrawal,
   getWithdrawalStatus,
   getL2Output,
   getTimeToFinalize,
 } from "viem/op-stack";
+import { getMegaETHWithdrawalStatus, getMegaETHL2Output, buildMegaETHProveWithdrawal } from "./op/megaeth";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { Log, TokensBridged } from "../../interfaces";
 import {
@@ -73,6 +75,37 @@ const OP_STACK_CHAINS = Object.values(CHAIN_IDs).filter((chainId) => chainIsOPSt
 // this constant and skip the proof submission if they match.
 const PENDING_PROOF_OUTPUT_ROOT = "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
 
+const megaeth = viem.defineChain({
+  id: CHAIN_IDs.MEGAETH,
+  name: "MegaETH",
+  nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+  rpcUrls: {
+    default: { http: ["https://rpc.megaeth.io"] },
+  },
+  blockExplorers: {
+    default: { name: "MegaETH Explorer", url: "https://explorer.megaeth.io" },
+  },
+  contracts: {
+    ...chainConfig.contracts,
+    portal: {
+      [CHAIN_IDs.MAINNET]: {
+        address: "0x7f82f57F0Dd546519324392e408b01fcC7D709e8",
+      },
+    },
+    disputeGameFactory: {
+      [CHAIN_IDs.MAINNET]: {
+        address: "0x8546840adF796875cD9AAcc5B3B048f6B2c9D563",
+      },
+    },
+    l2OutputOracle: {
+      [CHAIN_IDs.MAINNET]: {
+        address: viem.zeroAddress,
+      },
+    },
+  },
+  sourceId: 1,
+});
+
 // We might want to export this mapping of chain ID to viem chain object out of a constant
 // file once we start using Viem elsewhere in the repo:
 const VIEM_OP_STACK_CHAINS: Record<number, viem.Chain> = {
@@ -81,6 +114,7 @@ const VIEM_OP_STACK_CHAINS: Record<number, viem.Chain> = {
   [CHAIN_IDs.REDSTONE]: viemChains.redstone,
   [CHAIN_IDs.LISK]: viemChains.lisk,
   [CHAIN_IDs.ZORA]: viemChains.zora,
+  [CHAIN_IDs.MEGAETH]: megaeth,
   [CHAIN_IDs.MODE]: viemChains.mode,
   [CHAIN_IDs.WORLD_CHAIN]: viemChains.worldchain,
   [CHAIN_IDs.SONEIUM]: viemChains.soneium,
@@ -98,6 +132,8 @@ const BLAST_CLAIM_NOT_READY = 0;
 const BLAST_YIELD_MANAGER_STARTING_REQUEST_ID = 1;
 export const chainIsBlast = (chainId: OVM_CHAIN_ID): boolean =>
   [CHAIN_IDs.BLAST, CHAIN_IDs.BLAST_SEPOLIA].includes(chainId);
+
+const chainIsMegaETH = (chainId: number): boolean => chainId === CHAIN_IDs.MEGAETH;
 
 export async function opStackFinalizer(
   logger: winston.Logger,
@@ -405,28 +441,48 @@ async function viem_multicallOptimismFinalizations(
       hash: event.txnRef as `0x${string}`,
     });
     const withdrawal = getWithdrawals(receipt)[logIndexesForMessage[i]];
-    const withdrawalStatus = await getWithdrawalStatus(publicClientL1 as viem.Client, {
-      receipt,
-      chain: publicClientL1.chain as viem.Chain,
-      targetChain: viemOpStackTargetChainParam,
-      logIndex: logIndexesForMessage[i],
-    });
+
+    // Use custom withdrawal status check for MegaETH due to custom 24-byte extraData format
+    const withdrawalStatus = chainIsMegaETH(chainId)
+      ? await getMegaETHWithdrawalStatus(publicClientL1 as viem.Client, {
+          receipt,
+          chain: publicClientL1.chain as viem.Chain,
+          targetChain: viemOpStackTargetChainParam,
+          logIndex: logIndexesForMessage[i],
+        })
+      : await getWithdrawalStatus(publicClientL1 as viem.Client, {
+          receipt,
+          chain: publicClientL1.chain as viem.Chain,
+          targetChain: viemOpStackTargetChainParam,
+          logIndex: logIndexesForMessage[i],
+        });
     withdrawalStatuses.push(withdrawalStatus);
     if (withdrawalStatus === "ready-to-prove") {
-      const l2Output = await getL2Output(publicClientL1 as viem.Client, {
-        chain: publicClientL1.chain as viem.Chain,
-        l2BlockNumber: BigInt(event.blockNumber),
-        targetChain: viemOpStackTargetChainParam,
-      });
+      // Use custom L2Output getter for MegaETH due to custom 24-byte extraData format
+      const l2Output = chainIsMegaETH(chainId)
+        ? await getMegaETHL2Output(publicClientL1 as viem.Client, {
+            chain: publicClientL1.chain as viem.Chain,
+            l2BlockNumber: BigInt(event.blockNumber),
+            targetChain: viemOpStackTargetChainParam,
+          })
+        : await getL2Output(publicClientL1 as viem.Client, {
+            chain: publicClientL1.chain as viem.Chain,
+            l2BlockNumber: BigInt(event.blockNumber),
+            targetChain: viemOpStackTargetChainParam,
+          });
       if (l2Output.outputRoot !== PENDING_PROOF_OUTPUT_ROOT) {
-        const { l2OutputIndex, outputRootProof, withdrawalProof } = await buildProveWithdrawal(
-          publicClientL2 as viem.Client,
-          {
-            chain: VIEM_OP_STACK_CHAINS[chainId],
-            withdrawal,
-            output: l2Output,
-          }
-        );
+        // Use custom proof builder for MegaETH due to mega_getWithdrawalProof RPC method
+        const { l2OutputIndex, outputRootProof, withdrawalProof } = chainIsMegaETH(chainId)
+          ? await buildMegaETHProveWithdrawal(publicClientL2 as viem.Client, {
+              chain: VIEM_OP_STACK_CHAINS[chainId],
+              withdrawal,
+              output: l2Output,
+            })
+          : await buildProveWithdrawal(publicClientL2 as viem.Client, {
+              chain: VIEM_OP_STACK_CHAINS[chainId],
+              withdrawal,
+              output: l2Output,
+            });
         const proofArgs = [withdrawal, l2OutputIndex, outputRootProof, withdrawalProof];
         const callData = await crossChainMessenger.populateTransaction.proveWithdrawalTransaction(...proofArgs);
         viemTxns.callData.push({
