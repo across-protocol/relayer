@@ -39,7 +39,7 @@ export const megaeth = defineChain({
       },
     },
   },
-  sourceId: 1,
+  sourceId: CHAIN_IDs.MAINNET,
 });
 
 /**
