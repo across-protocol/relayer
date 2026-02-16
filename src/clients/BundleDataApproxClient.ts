@@ -5,7 +5,15 @@
 
 import { SpokePoolManager } from ".";
 import { SpokePoolClientsByChain } from "../interfaces";
-import { assert, BigNumber, isDefined, winston, ConvertDecimals } from "../utils";
+import {
+  assert,
+  BigNumber,
+  isDefined,
+  winston,
+  ConvertDecimals,
+  getRemoteTokenForL1Token,
+  getTokenInfo,
+} from "../utils";
 import { Address, bnZero, getL1TokenAddress } from "../utils/SDKUtils";
 import { HubPoolClient } from "./HubPoolClient";
 
@@ -86,8 +94,25 @@ export class BundleDataApproxClient {
           return true;
         })
         .forEach((fill) => {
-          const { inputAmount: _refundAmount, originChainId, repaymentChainId, relayer } = fill;
-          const refundAmount = ConvertDecimals(originChainId, repaymentChainId)(_refundAmount);
+          const { inputAmount: _refundAmount, originChainId, repaymentChainId, relayer, inputToken } = fill;
+          // This call to `getTokenInfo` should not throw since we just filtered out all input tokens for
+          // which there is no output token.
+          const { decimals: inputTokenDecimals } = getTokenInfo(inputToken, originChainId);
+          const inputL1Token = this.getL1TokenAddress(inputToken, originChainId);
+
+          assert(inputL1Token.isEVM());
+          const inputTokenOnRepaymentChain = getRemoteTokenForL1Token(
+            inputL1Token,
+            repaymentChainId,
+            this.hubPoolClient.chainId
+          );
+          if (!isDefined(inputTokenOnRepaymentChain)) {
+            return;
+          }
+          // If the repayment token is defined, then that means an entry exists in our token symbols mapping,
+          // so this is also a "safe" call to `getTokenInfo.`
+          const { decimals: repaymentTokenDecimals } = getTokenInfo(inputTokenOnRepaymentChain, repaymentChainId);
+          const refundAmount = ConvertDecimals(inputTokenDecimals, repaymentTokenDecimals)(_refundAmount);
           refundsForChain[repaymentChainId] ??= {};
           refundsForChain[repaymentChainId][relayer.toNative()] ??= bnZero;
           refundsForChain[repaymentChainId][relayer.toNative()] =
