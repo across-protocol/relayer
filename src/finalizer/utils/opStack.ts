@@ -73,6 +73,28 @@ const OP_STACK_CHAINS = Object.values(CHAIN_IDs).filter((chainId) => chainIsOPSt
 // this constant and skip the proof submission if they match.
 const PENDING_PROOF_OUTPUT_ROOT = "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
 
+// OP-stack target chains used with viem OP-stack actions must declare portal, disputeGameFactory,
+// and l2OutputOracle contracts. At runtime, the specific contracts accessed depend on the portal
+// version, so not all chains need every contract. The type satisfies the most demanding function
+// signature (getTimeToFinalize), while the assertion validates the universally required portal
+// contract. This interface is necessary because viem's internal TargetChain type is not exported,
+// and viem's function signatures are stricter than their runtime behaviour (e.g. getTimeToFinalize
+// requires l2OutputOracle in the type even though it only reads it for portal v<3).
+interface OpStackTargetChain extends viem.Chain {
+  contracts: {
+    portal: { [sourceId: number]: viem.ChainContract };
+    disputeGameFactory: { [sourceId: number]: viem.ChainContract };
+    l2OutputOracle: { [sourceId: number]: viem.ChainContract };
+  };
+}
+
+function assertOpStackTargetChain(chain: viem.Chain): asserts chain is OpStackTargetChain {
+  assert(
+    chain.contracts !== undefined && "portal" in chain.contracts,
+    `Chain ${chain.id} missing required OP-stack 'portal' contract`
+  );
+}
+
 // We might want to export this mapping of chain ID to viem chain object out of a constant
 // file once we start using Viem elsewhere in the repo:
 const VIEM_OP_STACK_CHAINS: Record<number, viem.Chain> = {
@@ -330,18 +352,19 @@ async function viem_multicallOptimismFinalizations(
     withdrawals: [],
   };
   const hubChainId = hubPoolClient.chainId;
+  // Omit chain from the client to avoid viem 2.46 type issue where
+  // Client<Transport, Chain> collapses to 'never'. The L1 chain is passed
+  // as a chainOverride to each OP-stack function call instead.
   const publicClientL1 = viem.createPublicClient({
     batch: {
       multicall: true,
     },
-    chain: chainIsProd(chainId) ? viemChains.mainnet : viemChains.sepolia,
     transport: createViemCustomTransportFromEthersProvider(hubChainId),
   });
   const publicClientL2 = viem.createPublicClient({
     batch: {
       multicall: true,
     },
-    chain: VIEM_OP_STACK_CHAINS[chainId],
     transport: createViemCustomTransportFromEthersProvider(chainId),
   });
   const uniqueTokenhashes = {};
@@ -354,16 +377,21 @@ async function viem_multicallOptimismFinalizations(
     uniqueTokenhashes[event.txnRef] += 1;
   }
 
+  // Validate the target chain has the required OP-stack contracts.
+  const targetChainRaw = VIEM_OP_STACK_CHAINS[chainId];
+  assertOpStackTargetChain(targetChainRaw);
+
   const crossChainMessenger = new Contract(
-    VIEM_OP_STACK_CHAINS[chainId].contracts.portal[hubChainId].address,
+    targetChainRaw.contracts.portal[hubChainId].address,
     OPStackPortalL1,
     signer
   );
 
-  // Get L2 chain - will be passed as targetChain to viem functions.
-  // Viem looks up contracts using publicClientL1.chain.id (sourceId=1) and
-  // uses custom decoders from targetChain.custom for MegaETH.
-  const targetChain = VIEM_OP_STACK_CHAINS[chainId];
+  // Pass as targetChain to viem OP-stack functions. Viem looks up L2 contracts
+  // using l1Chain.id (sourceId) and uses custom decoders from targetChain.custom
+  // for MegaETH.
+  const targetChain = targetChainRaw;
+  const l1Chain: viem.Chain = chainIsProd(chainId) ? viemChains.mainnet : viemChains.sepolia;
 
   const withdrawalStatuses: string[] = [];
   await mapAsync(events, async (event, i) => {
@@ -375,28 +403,25 @@ async function viem_multicallOptimismFinalizations(
       hash: event.txnRef as `0x${string}`,
     });
     const withdrawal = getWithdrawals(receipt)[logIndexesForMessage[i]];
-    // @ts-expect-error - viem.Chain's flexible contracts type doesn't satisfy viem's strict targetChain parameter type
     const withdrawalStatus = await getWithdrawalStatus(publicClientL1, {
+      chain: l1Chain,
       receipt,
       targetChain,
       logIndex: logIndexesForMessage[i],
     });
     withdrawalStatuses.push(withdrawalStatus);
     if (withdrawalStatus === "ready-to-prove") {
-      // @ts-expect-error - viem.Chain's flexible contracts type doesn't satisfy viem's strict targetChain parameter type
       const l2Output = await getL2Output(publicClientL1, {
+        chain: l1Chain,
         l2BlockNumber: BigInt(event.blockNumber),
         targetChain,
       });
       if (l2Output.outputRoot !== PENDING_PROOF_OUTPUT_ROOT) {
-        const { l2OutputIndex, outputRootProof, withdrawalProof } = await buildProveWithdrawal(
-          publicClientL2 as viem.Client,
-          {
-            chain: targetChain,
-            withdrawal,
-            output: l2Output,
-          }
-        );
+        const { l2OutputIndex, outputRootProof, withdrawalProof } = await buildProveWithdrawal(publicClientL2, {
+          chain: targetChain,
+          withdrawal,
+          output: l2Output,
+        });
         const proofArgs = [withdrawal, l2OutputIndex, outputRootProof, withdrawalProof];
         const callData = await crossChainMessenger.populateTransaction.proveWithdrawalTransaction(...proofArgs);
         viemTxns.callData.push({
@@ -413,8 +438,8 @@ async function viem_multicallOptimismFinalizations(
         });
       }
     } else if (withdrawalStatus === "waiting-to-finalize") {
-      // @ts-expect-error - viem.Chain's flexible contracts type doesn't satisfy viem's strict targetChain parameter type
       const { seconds } = await getTimeToFinalize(publicClientL1, {
+        chain: l1Chain,
         withdrawalHash: withdrawal.withdrawalHash,
         targetChain,
       });
