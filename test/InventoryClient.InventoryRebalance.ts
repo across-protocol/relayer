@@ -41,6 +41,7 @@ let hubPoolClient: MockHubPoolClient, adapterManager: MockAdapterManager, tokenC
 let owner: SignerWithAddress, spy: sinon.SinonSpy, spyLogger: winston.Logger;
 let inventoryClient: InventoryClient; // tested
 let crossChainTransferClient: CrossChainTransferClient;
+let mockRebalancerClient: MockRebalancerClient;
 
 const { MAINNET, OPTIMISM, POLYGON, BASE, ARBITRUM } = CHAIN_IDs;
 const enabledChainIds = [MAINNET, OPTIMISM, POLYGON, BASE, ARBITRUM];
@@ -118,7 +119,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     tokenClient = new MockTokenClient(null, null, null, null);
 
     crossChainTransferClient = new CrossChainTransferClient(spyLogger, enabledChainIds, adapterManager);
-    const mockRebalancerClient = new MockRebalancerClient(spyLogger);
+    mockRebalancerClient = new MockRebalancerClient(spyLogger);
 
     inventoryClient = new InventoryClient(
       EvmAddress.from(owner.address),
@@ -352,7 +353,38 @@ describe("InventoryClient: Rebalancing inventory", async function () {
   });
 
   it("Correctly decides when to rebalance: cross chain swap rebalances", async function () {
-    // @todo
+    const pendingUsdcSwapRebalance = toMegaWei(123);
+    mockRebalancerClient.setPendingRebalance(ARBITRUM, "USDC", pendingUsdcSwapRebalance);
+    await inventoryClient.update();
+
+    const polygonUsdcL2Token = toAddressType(l2TokensForUsdc[POLYGON], POLYGON);
+    const arbitrumWethL2Token = toAddressType(l2TokensForWeth[ARBITRUM], ARBITRUM);
+    const arbitrumUsdcL2Token = toAddressType(l2TokensForUsdc[ARBITRUM], ARBITRUM);
+
+    // Case 1: this.pendingRebalances[chainId] is undefined.
+    const polygonUsdcBalance = inventoryClient.getBalanceOnChain(
+      POLYGON,
+      EvmAddress.from(mainnetUsdc),
+      polygonUsdcL2Token
+    );
+    expect(polygonUsdcBalance.eq(tokenClient.getBalance(POLYGON, polygonUsdcL2Token))).to.be.true;
+
+    // Case 2: this.pendingRebalances[chainId][symbol] is undefined.
+    const arbitrumWethBalance = inventoryClient.getBalanceOnChain(
+      ARBITRUM,
+      EvmAddress.from(mainnetWeth),
+      arbitrumWethL2Token
+    );
+    expect(arbitrumWethBalance.eq(tokenClient.getBalance(ARBITRUM, arbitrumWethL2Token))).to.be.true;
+
+    // Case 3: this.pendingRebalances[chainId][symbol] is defined and added to virtual balance.
+    const arbitrumUsdcBalance = inventoryClient.getBalanceOnChain(
+      ARBITRUM,
+      EvmAddress.from(mainnetUsdc),
+      arbitrumUsdcL2Token
+    );
+    expect(arbitrumUsdcBalance.eq(tokenClient.getBalance(ARBITRUM, arbitrumUsdcL2Token).add(pendingUsdcSwapRebalance)))
+      .to.be.true;
   });
 
   it("Refuses to send rebalance when ERC20 balance changes", async function () {
