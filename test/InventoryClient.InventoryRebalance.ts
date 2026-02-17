@@ -662,6 +662,24 @@ describe("InventoryClient: Rebalancing inventory", async function () {
       expect(currentAllocationPct).eq(expectedCurrentAllocationPct);
     });
 
+    it("Correct normalizes pending rebalances to L1 token decimals", async function () {
+      const testChain = CHAIN_IDs.OPTIMISM;
+      hubPoolClient.mapTokenInfo(toAddressType(bridgedUSDC[testChain], testChain), "USDC", 18);
+
+      // Pending rebalance should be in chain decimals:
+      const pendingRebalanceAmount = toWei("1");
+      mockRebalancerClient.setPendingRebalance(testChain, "USDC", pendingRebalanceAmount);
+      await inventoryClient.update();
+
+      // Expected balance should be in L1 token decimals:
+      const expectedBalance = toMegaWei("1");
+      expect(
+        inventoryClient
+          .getBalanceOnChain(testChain, EvmAddress.from(mainnetUsdc), toAddressType(bridgedUSDC[testChain], testChain))
+          .eq(expectedBalance)
+      ).to.be.true;
+    });
+
     it("Correctly sums 1:many token balances", async function () {
       enabledChainIds
         .filter((chainId) => chainId !== MAINNET)
