@@ -110,6 +110,7 @@ export function buildGaslessFillRelayTx(
     contract: spokePool,
     chainId: destinationChainId,
     method: "fillRelay",
+    ensureConfirmation: true,
     args: [convertRelayDataParamsToBytes32(deposit), repaymentChainId, repaymentAddress.toBytes32()],
   };
 }
