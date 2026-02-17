@@ -7,6 +7,9 @@
     "declaration": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
+    "paths": {
+      "ox/*": ["./node_modules/viem/node_modules/ox/_types/*"]
+    },
     "strict": true,
     "strictNullChecks": false,
     "noImplicitAny": false
