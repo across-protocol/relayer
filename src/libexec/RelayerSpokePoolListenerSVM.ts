@@ -122,7 +122,7 @@ async function listen(
 
   // Default keepalive interval is 5s but this can cause premature hangup.
   // See https://github.com/anza-xyz/agave/issues/7022
-  const intervalMs = 30_000;
+  const intervalMs = 10_000;
   const providers = urls.map((url) => createSolanaRpcSubscriptions(url, { intervalMs }));
 
   const readSlot = async (provider: WSProvider, providerName: string) => {
