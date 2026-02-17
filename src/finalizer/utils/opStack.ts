@@ -5,10 +5,10 @@ import * as viem from "viem";
 import * as viemChains from "viem/chains";
 import {
   getWithdrawals,
-  getTimeToFinalize,
+  buildProveWithdrawal,
   getWithdrawalStatus,
   getL2Output,
-  buildProveWithdrawal,
+  getTimeToFinalize,
 } from "viem/op-stack";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { Log, TokensBridged } from "../../interfaces";
