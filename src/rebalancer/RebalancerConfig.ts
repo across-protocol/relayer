@@ -130,8 +130,12 @@ export class RebalancerConfig extends CommonConfig {
       for (const [token, amount] of Object.entries(rebalancerConfig.maxAmountsToTransfer as Record<string, string>)) {
         this.maxAmountsToTransfer[token] ??= {};
         for (const chainId of chainIdSet) {
-          const { decimals } = getTokenInfoFromSymbol(token, chainId);
-          this.maxAmountsToTransfer[token][chainId] = toBNWei(amount, decimals);
+          try {
+            const { decimals } = getTokenInfoFromSymbol(token, chainId);
+            this.maxAmountsToTransfer[token][chainId] = toBNWei(amount, decimals);  
+          } catch (err) {
+            // ignore, token doesn't exist on chain probably
+          }
         }
       }
     }
