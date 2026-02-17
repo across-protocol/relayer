@@ -430,14 +430,17 @@ export class GaslessRelayer {
               message: "Failed to initiate fill. Adding it to list of retryable fills.",
               fillReceipt,
             });
-            this.retryableFills[originChainId][depositNonce] = depositEvent;
+            this.retryableFills[destinationChainId][depositNonce] = depositEvent;
           } else {
             fillSet.add(fillKey);
           }
         }
         // Check for fills which have failed and need to be retried during this bot run.
-        else if (isDefined(this.retryableFills[originChainId]?.[depositNonce])) {
-          const deposit = this.retryableFills[originChainId][depositNonce];
+        else if (isDefined(this.retryableFills[destinationChainId]?.[depositNonce])) {
+          // Take control of the retryableFill here by removing it from the retryableFills object.
+          const deposit = this.retryableFills[destinationChainId][depositNonce];
+          delete this.retryableFills[destinationChainId][depositNonce];
+
           const fillKey = this._getFilledRelayKey({ originChainId, depositId: deposit.depositId });
           if (fillSet.has(fillKey)) {
             this.logger.debug({
@@ -445,7 +448,6 @@ export class GaslessRelayer {
               message: "Stale retryable fill in this.retryableFills",
               deposit,
             });
-            delete this.retryableFills[originChainId][depositNonce];
           }
           const fillReceipt = await this.initiateFill(deposit);
           // If the fill succeeded, then add this to the fill set and continue. Otherwise, add this to the retryable fills.
@@ -456,14 +458,13 @@ export class GaslessRelayer {
               fillReceipt,
             });
             const fill = await this._findFill(deposit);
-            if (isDefined(fill)) {
-              fillSet.add(fillKey);
-              delete this.retryableFills[originChainId][depositNonce];
+            // The deposit still failed and no fill has been observed, so retry again.
+            if (!isDefined(fill)) {
+              this.retryableFills[destinationChainId][depositNonce] = deposit;
+              return;
             }
-          } else {
-            fillSet.add(fillKey);
-            delete this.retryableFills[originChainId][depositNonce];
           }
+          fillSet.add(fillKey);
         }
       }
     );
