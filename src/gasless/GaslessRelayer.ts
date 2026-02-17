@@ -433,9 +433,14 @@ export class GaslessRelayer {
             depositId,
           });
 
-          // We do not need to evaluate the response of `initiateFill` since the TransactionClient should handle the logging. A `null` response
-          // here means that we did not send a transaction because of config.
-          const fillReceipt = await this.initiateFill(depositEvent);
+          // Set the fill receipt in a try/catch block.
+          // If the fill fails for some reason, then we add it to the object of retryable fills.
+          let fillReceipt: TransactionReceipt | undefined = undefined;
+          try {
+            fillReceipt = await this.initiateFill(depositEvent);
+          } catch {
+            // fillReceipt is undefined, so we are going to retry it.
+          }
           // If the fill succeeded, then add this to the fill set and continue. Otherwise, add this to the retryable fills.
           if (!fillReceipt || !fillReceipt.status) {
             this.logger.warn({
@@ -462,7 +467,12 @@ export class GaslessRelayer {
               deposit,
             });
           }
-          const fillReceipt = await this.initiateFill(deposit);
+          let fillReceipt: TransactionReceipt | undefined = undefined;
+          try {
+            fillReceipt = await this.initiateFill(deposit);
+          } catch {
+            // fillReceipt is undefined, so we are going to retry if we can't find the fill.
+          }
           // If the fill succeeded, then add this to the fill set and continue. Otherwise, add this to the retryable fills.
           if (!fillReceipt || !fillReceipt.status) {
             this.logger.warn({
