@@ -107,6 +107,10 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     ]);
   }
 
+  // ////////////////////////////////////////////////////////////
+  // PUBLIC METHODS
+  // ////////////////////////////////////////////////////////////
+
   async initialize(availableRoutes: RebalanceRoute[]): Promise<void> {
     this.redisCache = (await getRedisCache(this.logger, undefined, rebalancerStatusTrackingNameSpace)) as RedisCache;
 
@@ -172,8 +176,12 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     return;
   }
 
+  getPendingOrders(): Promise<string[]> {
+    return this._redisGetPendingOrders();
+  }
+
   // ////////////////////////////////////////////////////////////
-  // PUBLIC METHODS
+  // ABSTRACT PUBLIC METHODS
   // ////////////////////////////////////////////////////////////
 
   abstract initializeRebalance(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber): Promise<void>;
@@ -335,10 +343,10 @@ export abstract class BaseAdapter implements RebalancerAdapter {
 
   protected async _redisGetPendingOrders(): Promise<string[]> {
     const [pendingDeposits, pendingSwaps, pendingWithdrawals, pendingBridgesPreDeposit] = await Promise.all([
-      this.redisCache.sMembers(this._redisGetOrderStatusKey(STATUS.PENDING_DEPOSIT)),
-      this.redisCache.sMembers(this._redisGetOrderStatusKey(STATUS.PENDING_SWAP)),
-      this.redisCache.sMembers(this._redisGetOrderStatusKey(STATUS.PENDING_WITHDRAWAL)),
-      this.redisCache.sMembers(this._redisGetOrderStatusKey(STATUS.PENDING_BRIDGE_PRE_DEPOSIT)),
+      this._redisGetPendingDeposits(),
+      this._redisGetPendingSwaps(),
+      this._redisGetPendingWithdrawals(),
+      this._redisGetPendingBridgesPreDeposit(),
     ]);
     return [...pendingDeposits, ...pendingSwaps, ...pendingWithdrawals, ...pendingBridgesPreDeposit];
   }

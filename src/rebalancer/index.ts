@@ -128,7 +128,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     // Execute rebalances
     if (process.env.SEND_REBALANCES === "true") {
       timerStart = performance.now();
-      await rebalancerClient.rebalanceInventory(currentBalances, toBNWei(process.env.MAX_FEE_PCT ?? "5", 18));
+      await rebalancerClient.rebalanceInventory(currentBalances, toBNWei(process.env.MAX_FEE_PCT ?? "1", 18));
       logger.debug({
         at: "index.ts:runRebalancer",
         message: "Completed rebalancing inventory",
