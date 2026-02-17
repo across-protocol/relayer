@@ -430,9 +430,10 @@ export class HyperliquidExecutor {
     // @dev We multiply by -1 if the pair "sells" the base token since unfavorable slippage will occur when the price we are selling is < 1.
     // We multiply by 1 when the pair "sells" the final token since unfavorable slippage will occur when the price we are buying is > 1.
     const bpsFromParity = priceXe8.sub(HL_FIXED_ADJUSTMENT).mul(pair.baseForFinal ? -1 : 1);
-    if (bpsFromParity.gt(this.config.maxSlippageBps)) {
+    const maxSlippage = this.config.maxSlippageByRoute[pair.name] ?? this.config.maxSlippageBps;
+    if (bpsFromParity.gt(maxSlippage)) {
       const usdFormatter = createFormatFunction(2, 4, false, 8); // USD is represented w/ 8 decimals.
-      const bpsFormatter = createFormatFunction(2, 4, false, 2); // Represent bps in %.
+      const bpsFormatter = createFormatFunction(2, 4, false, 4);
       this.logger.warn({
         at: "HyperliquidExecutor#updateOrderAmount",
         message: "Not submitting new limit order due to excessive slippage",

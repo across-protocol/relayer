@@ -41,6 +41,7 @@ import {
   acrossApi,
   coingecko,
   defiLlama,
+  getNativeTokenInfoForChain,
 } from "../utils";
 import { Deposit, DepositWithBlock, L1Token, SpokePoolClientsByChain } from "../interfaces";
 import { getAcrossHost } from "./AcrossAPIClient";
@@ -129,7 +130,8 @@ export class ProfitClient {
     protected gasPadding = toBNWei(constants.DEFAULT_RELAYER_GAS_PADDING),
     readonly additionalL1Tokens: EvmAddress[] = [],
     // Sets of token symbols that should be treated equivalently, for example [ "USDC": [USDT, USDH ].
-    readonly peggedTokens: { [pegTokenSymbol: string]: Set<string> } = {}
+    readonly peggedTokens: { [pegTokenSymbol: string]: Set<string> } = {},
+    readonly l1TokensOverride: string[] = []
   ) {
     // Require 0% <= gasPadding <= 200%
     assert(
@@ -172,21 +174,16 @@ export class ProfitClient {
     return isMessageEmpty(resolveDepositMessage(deposit)) ? this.gasMultiplier : this.gasMessageMultiplier;
   }
 
-  resolveNativeToken(chainId: number): L1Token {
-    const symbol = getNativeTokenSymbol(chainId);
-    const token = TOKEN_SYMBOLS_MAP[symbol];
-    if (!isDefined(symbol) || !isDefined(token)) {
-      throw new Error(`Unable to resolve native token for chain ID ${chainId}`);
-    }
-
-    const { decimals, addresses } = token;
-
-    const address = addresses[this.hubPoolClient.chainId] ?? addresses[chainId]; // Mainnet tokens have priority for price lookups.
-
-    return { symbol, address, decimals };
+  resolveNativeToken(chainId: number): { symbol: string; decimals: number; address: string } {
+    const tokenInfo = getNativeTokenInfoForChain(chainId, this.hubPoolClient.chainId);
+    return {
+      symbol: tokenInfo.symbol,
+      decimals: tokenInfo.decimals,
+      address: tokenInfo.address,
+    };
   }
 
-  resolveGasToken(chainId: number): L1Token {
+  resolveGasToken(chainId: number): { symbol: string; decimals: number; address: string } {
     // Note for future: gas token and native token may not always be the same
     return this.resolveNativeToken(chainId);
   }
@@ -724,7 +721,7 @@ export class ProfitClient {
 
     // Prefer USDC for fill simulation because it is consistent in terms of gas estimation (no unwrap conditional).
     // Otherwise walk down the `tokenSymbols` array until a known token is found for each chain.
-    const outputTokenSymbols = ["USDC", "WETH", "USDT", "WBTC"];
+    const outputTokenSymbols = ["USDC", "WETH", "USDT", "WBTC", "USDC.e"];
     const prodRelayer = process.env.RELAYER_FILL_SIMULATION_ADDRESS ?? PROD_RELAYER;
     const evmRelayer = this.hubPoolClient.chainId === CHAIN_IDs.MAINNET ? prodRelayer : TEST_RELAYER;
     const sampleDeposit = {
@@ -810,6 +807,17 @@ export class ProfitClient {
   }
 
   private _getL1Tokens(): L1Token[] {
+    if (this.l1TokensOverride.length > 0) {
+      const l1Tokens = this.l1TokensOverride.map((l1Token) => {
+        const l1TokenInfo = getTokenInfo(EvmAddress.from(l1Token), this.hubPoolClient.chainId);
+        assert(l1TokenInfo.address.isEVM());
+        return {
+          ...l1TokenInfo,
+          address: l1TokenInfo.address,
+        };
+      });
+      return dedupArray(l1Tokens);
+    }
     // The L1 tokens should be the hub pool tokens plus any extra configured tokens in the inventory config.
     const hubPoolTokens = this.hubPoolClient.getL1Tokens();
     const additionalL1Tokens = this.additionalL1Tokens.map((l1Token) => {

@@ -6,6 +6,7 @@ import Binance, {
 } from "binance-api-node";
 import minimist from "minimist";
 import { getGckmsConfig, retrieveGckmsKeys, isDefined, assert, delay, CHAIN_IDs } from "./";
+import { RedisCache } from "../caching/RedisCache";
 
 // Store global promises on Gckms key retrieval actions so that we don't retrieve the same key multiple times.
 let binanceSecretKeyPromise = undefined;
@@ -34,7 +35,7 @@ export const BINANCE_NETWORKS: { [chainId: number]: string } = {
 
 // A Coin contains balance data and network information (such as withdrawal limits, extra information about the network, etc.) for a specific
 // token.
-type Coin = {
+export type Coin = {
   symbol: string;
   balance: string;
   networkList: Network[];
@@ -47,6 +48,7 @@ type Network = {
   withdrawMin: string;
   withdrawMax: string;
   contractAddress: string;
+  withdrawFee: string;
 };
 
 // A BinanceDeposit is either a simplified element of the return type of the Binance API's `depositHistory`.
@@ -64,9 +66,15 @@ type BinanceDeposit = {
 };
 
 // A BinanceWithdrawal is a simplified element of the return type of the Binance API's `withdrawHistory`.
-type BinanceWithdrawal = BinanceDeposit & {
+export type BinanceWithdrawal = BinanceDeposit & {
   // The recipient of `coin` on the destination network.
   recipient: string;
+  // The unique withdrawal ID.
+  id: string;
+  // The transaction fee for the withdrawal.
+  transactionFee: number;
+  // The timestamp of the withdrawal.
+  applyTime: string;
 };
 
 // ParsedAccountCoins represents a simplified return type of the Binance `accountCoins` endpoint.
@@ -130,6 +138,100 @@ export async function getBinanceWithdrawalLimits(binanceApi: BinanceApi): Promis
   };
 }
 
+export enum BinanceTransactionType {
+  BRIDGE, // A deposit into Binance from one network designed to be withdrawn to another network.
+  SWAP, // A deposit into Binance from one network designed to be swapped and then withdrawn to another network.
+  UNKNOWN,
+}
+
+const BINANCE_TRANSACTION_TYPE_PREFIX = "binance-transaction-type";
+export function getBinanceTransactionTypeKey(chainId: number, uniqueIdentifier: string): string {
+  const binanceNetworkName = BINANCE_NETWORKS[chainId].toLowerCase();
+  return getBinanceTransactionTypeKeyFromNetworkName(binanceNetworkName, uniqueIdentifier);
+}
+
+function getBinanceTransactionTypeKeyFromNetworkName(networkName: string, uniqueIdentifier: string): string {
+  return `${BINANCE_TRANSACTION_TYPE_PREFIX}:${networkName.toLowerCase()}:${uniqueIdentifier}`;
+}
+
+/**
+ * @notice Tag a deposit to the Redis cache with a custom status so that all functions interacting with the
+ * same Binance account can distinguish between "types" of deposits.
+ * @param depositChain The chain ID of the network that the deposit was made from.
+ * @param transactionHash Hash of the transaction that initiated the deposit. We know this at the time of deposit so its convenient
+ * to use as part of the unique identifier.
+ * @param type The type of transaction to save to the Redis cache.
+ * @param redisCache The Redis cache to save the transaction type to.
+ */
+export async function setBinanceDepositType(
+  depositChain: number,
+  transactionHash: string,
+  type: BinanceTransactionType,
+  redisCache: RedisCache,
+  ttl?: number
+): Promise<void> {
+  const redisKey = getBinanceTransactionTypeKey(depositChain, transactionHash);
+  await redisCache.set(redisKey, type, ttl);
+}
+
+/**
+ * @notice Tag a withdrawal to the Redis cache with a custom status so that all functions interacting with the
+ * same Binance account can distinguish between "types" of withdrawals.
+ * @param withdrawalChain The chain ID of the network that the withdrawal was made from.
+ * @param withdrawalId The unique withdrawal ID returned to us by the Binance API at the time of initiating the withdrawal.
+ * @param type The type of transaction to save to the Redis cache.
+ * @param redisCache The Redis cache to save the transaction type to.
+ */
+export async function setBinanceWithdrawalType(
+  withdrawalChain: number,
+  withdrawalId: string,
+  type: BinanceTransactionType,
+  redisCache: RedisCache
+): Promise<void> {
+  const redisKey = getBinanceTransactionTypeKey(withdrawalChain, withdrawalId);
+  await redisCache.set(redisKey, type);
+}
+
+/**
+ * @notice Return the type of a deposit based on its network name and unique identifier.
+ * @param depositDetails API response object returned by getBinanceDeposits(). The unique identifier should be
+ * the transaction hash of the deposit transaction on the deposit network.
+ * @param redisCache The Redis cache to get the deposit type from.
+ * @returns The type of the deposit.
+ */
+export async function getBinanceDepositType(
+  depositDetails: Pick<BinanceDeposit, "network" | "txId">,
+  redisCache: RedisCache
+): Promise<BinanceTransactionType> {
+  const redisKey = getBinanceTransactionTypeKeyFromNetworkName(depositDetails.network, depositDetails.txId);
+  const depositType = await redisCache.get<string>(redisKey);
+  if (isDefined(depositType)) {
+    return Number(depositType);
+  } else {
+    return BinanceTransactionType.UNKNOWN;
+  }
+}
+
+/**
+ * @notice Return the type of a withdrawal based on its network name and unique identifier.
+ * @param withdrawalDetails API response object returned by getBinanceWithdrawals(). The unique identifier should be
+ * the withdrawal ID returned to us by the Binance API at the time of initiating the withdrawal.
+ * @param redisCache The Redis cache to get the withdrawal type from.
+ * @returns The type of the withdrawal.
+ */
+export async function getBinanceWithdrawalType(
+  withdrawalDetails: Pick<BinanceWithdrawal, "network" | "id">,
+  redisCache: RedisCache
+): Promise<BinanceTransactionType> {
+  const redisKey = getBinanceTransactionTypeKeyFromNetworkName(withdrawalDetails.network, withdrawalDetails.id);
+  const withdrawalType = await redisCache.get<string>(redisKey);
+  if (isDefined(withdrawalType)) {
+    return Number(withdrawalType);
+  } else {
+    return BinanceTransactionType.UNKNOWN;
+  }
+}
+
 /**
  * Gets all binance deposits for the Binance account starting from `startTime`-present.
  * @returns An array of parsed binance deposits.
@@ -189,11 +291,14 @@ export async function getBinanceWithdrawals(
   return Object.values(withdrawHistory).map((withdrawal) => {
     return {
       amount: Number(withdrawal.amount),
+      transactionFee: Number(withdrawal.transactionFee),
       recipient: withdrawal.address,
       coin,
+      id: withdrawal.id,
       txId: withdrawal.txId,
       network: withdrawal.network,
       status: withdrawal.status,
+      applyTime: withdrawal.applyTime,
     } satisfies BinanceWithdrawal;
   });
 }
@@ -212,6 +317,7 @@ export async function getAccountCoins(binanceApi: BinanceApi): Promise<ParsedAcc
         coin: network["coin"],
         withdrawMin: network["withdrawMin"],
         withdrawMax: network["withdrawMax"],
+        withdrawFee: network["withdrawFee"],
         contractAddress: network["contractAddress"],
       } as Network;
     });
