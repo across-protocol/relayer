@@ -1,24 +1,21 @@
 {
   "compilerOptions": {
     "target": "es2022",
-    "module": "ES2020",
-    "moduleResolution": "bundler",
+    "module": "commonjs",
     "esModuleInterop": true,
     "outDir": "./dist",
     "declaration": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
+    "paths": {
+      "ox/*": ["./node_modules/viem/node_modules/ox/_types/*"]
+    },
     "strict": true,
     "strictNullChecks": false,
     "noImplicitAny": false
   },
   "include": ["./src", "index.ts", "./scripts"],
   "files": ["./hardhat.config.ts"],
-  "ts-node": {
-    "compilerOptions": {
-      "module": "commonjs"
-    }
-  },
   "watchOptions": {
     "watchFile": "useFsEventsOnParentDirectory",
     "watchDirectory": "useFsEvents",
