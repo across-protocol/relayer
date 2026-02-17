@@ -18,7 +18,6 @@ import {
   unpackFillEvent,
   unpackDepositEvent,
   mapAsync,
-  TOKEN_SYMBOLS_MAP,
   TransactionReceipt,
   EvmAddress,
   toBN,
@@ -34,19 +33,15 @@ import {
   ConvertDecimals,
   assert,
 } from "../utils";
-import {
-  APIGaslessDepositResponse,
-  FillWithBlock,
-  AuthorizationUsed,
-  DepositWithBlock,
-  GaslessDepositMessage,
-} from "../interfaces";
+import { APIGaslessDepositResponse, FillWithBlock, DepositWithBlock, GaslessDepositMessage } from "../interfaces";
 import { AcrossSwapApiClient, TransactionClient } from "../clients";
 import EIP3009_ABI from "../common/abi/EIP3009.json";
 import { buildGaslessDepositTx, buildGaslessFillRelayTx, restructureGaslessDeposits } from "../utils/GaslessUtils";
 
 type GaslessRelayerUpdate = {
-  observedAuthUsed: { [chainId: number]: { token: string; auth: AuthorizationUsed }[] };
+  observedFundsDeposited: {
+    [chainId: number]: Omit<DepositWithBlock, "fromLiteChain" | "toLiteChain" | "quoteBlockNumber">[];
+  };
   observedFilledRelay: { [chainId: number]: FillWithBlock[] };
 };
 const DEPOSIT_EVENT = "FundsDeposited";
@@ -109,9 +104,6 @@ export class GaslessRelayer {
       this.spokePools[chainId] = getSpokePool(chainId).connect(this.baseSigner.connect(this.providersByChain[chainId]));
     });
 
-    // Update our observed signatures/fills up until `this.depositLookback`.
-    const observedEvents = await this.updateObserved();
-
     // Exit if OS instructs us to do so.
     process.on("SIGHUP", () => {
       this.logger.debug({
@@ -137,6 +129,11 @@ export class GaslessRelayer {
       message: "Querying gasless API for initial messages",
     });
     const initialMessages = await this._queryGaslessApi(this.config.initializationRetryAttempts);
+
+    // Update our observed signatures/fills up until `this.depositLookback`.
+    // Include the list of initial deposit messages so we can map FundsDeposited events back to EIP-3009 deposit nonces.
+    const observedEvents = await this.updateObserved(initialMessages);
+
     const unfilledDeposits = initialMessages.filter((depositMessage) => {
       const { originChainId, depositId, permit } = depositMessage;
       const { destinationChainId } = depositMessage.baseDepositData;
@@ -160,21 +157,15 @@ export class GaslessRelayer {
     });
 
     await mapAsync(unfilledDeposits, async (depositMessage) => {
-      const { originChainId, permit, baseDepositData } = depositMessage;
-      const { inputToken } = baseDepositData;
-      const { from, nonce } = permit.message;
+      const { originChainId, depositId } = depositMessage;
 
-      const provider = this.providersByChain[originChainId];
-      const authUsedEvent = observedEvents.observedAuthUsed[originChainId].find(
-        (authUsed) =>
-          authUsed.token === inputToken && authUsed.auth.nonce === nonce && authUsed.auth.authorizer === from
+      const correspondingDeposit = observedEvents.observedFundsDeposited[originChainId].find(
+        (fundsDeposited) => fundsDeposited.depositId.toString() === depositId
       );
       assert(
-        isDefined(authUsedEvent),
+        isDefined(correspondingDeposit),
         "Inconsistent data between this.observedNonces and return data from gaslessRelayer.updateObserved()"
       );
-      const transactionReceipt = await provider.getTransactionReceipt(authUsedEvent.auth.txnRef);
-      const correspondingDeposit = this._extractDepositFromTransactionReceipt(transactionReceipt, originChainId);
       await this.initiateFill(correspondingDeposit);
     });
     this.initialized = true;
@@ -226,40 +217,46 @@ export class GaslessRelayer {
   /*
    * @notice Performs an initial lookback to determine which signatures have been observed/processed onchain.
    */
-  private async updateObserved(): Promise<GaslessRelayerUpdate> {
+  // Update our observed signatures/fills up until `this.depositLookback`.
+  private async updateObserved(apiMessages: GaslessDepositMessage[]): Promise<GaslessRelayerUpdate> {
     // If a signature is spent, then the deposit must also have been initiated since the `receiveWithAuthorization` signature
     // can only be redeemed by the periphery contract.
-    const [observedAuthUsed, observedFilledRelay] = await Promise.all([
-      // For each origin chain, we need to index all used 3009 nonces. If a nonce from a signature has been used, then there must have been an associated
-      // Across deposit.
+    const [observedFundsDeposited, observedFilledRelay] = await Promise.all([
+      // For each origin chain, find all the funds deposited events in lookback and check if they have an associated match with an API message. If they do, then we consider the
+      // deposit "observed" and the API message in the middle of the gasless flow.
       Object.fromEntries(
         await mapAsync(this.config.relayerOriginChains, async (originChainId) => {
           const provider = this.providersByChain[originChainId];
           const observedNonces = this.observedNonces[originChainId];
 
           const searchConfig = await this._getEventSearchConfig(originChainId);
-          // For each relayer token (which we assume satisfies EIP-3009), collect all the `AuthorizationUsed` events.
 
-          const originAuthUsedEvents = await mapAsync(this.config.relayerTokenSymbols, async (symbol) => {
-            const token = TOKEN_SYMBOLS_MAP[symbol]?.addresses?.[originChainId];
-            if (!isDefined(token)) {
-              return;
-            }
-            const tokenContract = new Contract(token, EIP3009_ABI, provider);
-            const authorizationEvents = await paginatedEventQuery(
-              tokenContract,
-              tokenContract.filters.AuthorizationUsed(),
-              searchConfig
+          const originSpokePool = getSpokePool(originChainId).connect(provider);
+          const originFundsDepositedEvents = await paginatedEventQuery(
+            originSpokePool,
+            originSpokePool.filters.FundsDeposited(),
+            searchConfig
+          );
+          const originEventsWithApiMessages = originFundsDepositedEvents
+            .map((event) => {
+              const deposit = unpackDepositEvent(spreadEventWithBlockNumber(event), originChainId);
+              const apiMessage = apiMessages.find(({ depositId }) => deposit.depositId.toString() === depositId);
+              if (isDefined(apiMessage)) {
+                return { apiMessage, deposit };
+              }
+              return undefined;
+            })
+            .filter(isDefined);
+          originEventsWithApiMessages.forEach(({ apiMessage, deposit }) => {
+            const { from: authorizer, nonce } = apiMessage.permit.message;
+            observedNonces.add(
+              this._getNonceKey(deposit.inputToken.toNative(), {
+                authorizer,
+                nonce,
+              })
             );
-            return authorizationEvents.map((event) => {
-              return { token, auth: spreadEventWithBlockNumber(event) as AuthorizationUsed };
-            });
           });
-          // Update the observed nonces set.
-          originAuthUsedEvents
-            .flat()
-            .forEach((event) => observedNonces.add(this._getNonceKey(event.token, event.auth)));
-          return [originChainId, originAuthUsedEvents.flat()];
+          return [originChainId, originEventsWithApiMessages.map(({ deposit }) => deposit)];
         })
       ),
 
@@ -290,7 +287,7 @@ export class GaslessRelayer {
       ),
     ]);
     return {
-      observedAuthUsed,
+      observedFundsDeposited,
       observedFilledRelay,
     };
   }
