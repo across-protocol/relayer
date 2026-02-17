@@ -360,6 +360,11 @@ async function viem_multicallOptimismFinalizations(
     signer
   );
 
+  // Get L2 chain - will be passed as targetChain to viem functions.
+  // Viem looks up contracts using publicClientL1.chain.id (sourceId=1) and
+  // uses custom decoders from targetChain.custom for MegaETH.
+  const targetChain = VIEM_OP_STACK_CHAINS[chainId];
+
   const withdrawalStatuses: string[] = [];
   await mapAsync(events, async (event, i) => {
     // Useful information for event:
@@ -370,22 +375,24 @@ async function viem_multicallOptimismFinalizations(
       hash: event.txnRef as `0x${string}`,
     });
     const withdrawal = getWithdrawals(receipt)[logIndexesForMessage[i]];
-    const withdrawalStatus = await getWithdrawalStatus(publicClientL1 as any, {
+    // @ts-expect-error - viem.Chain's flexible contracts type doesn't satisfy viem's strict targetChain parameter type
+    const withdrawalStatus = await getWithdrawalStatus(publicClientL1, {
       receipt,
-      targetChain: VIEM_OP_STACK_CHAINS[chainId],
+      targetChain,
       logIndex: logIndexesForMessage[i],
-    } as any);
+    });
     withdrawalStatuses.push(withdrawalStatus);
     if (withdrawalStatus === "ready-to-prove") {
-      const l2Output = await getL2Output(publicClientL1 as any, {
+      // @ts-expect-error - viem.Chain's flexible contracts type doesn't satisfy viem's strict targetChain parameter type
+      const l2Output = await getL2Output(publicClientL1, {
         l2BlockNumber: BigInt(event.blockNumber),
-        targetChain: VIEM_OP_STACK_CHAINS[chainId],
-      } as any);
+        targetChain,
+      });
       if (l2Output.outputRoot !== PENDING_PROOF_OUTPUT_ROOT) {
         const { l2OutputIndex, outputRootProof, withdrawalProof } = await buildProveWithdrawal(
           publicClientL2 as viem.Client,
           {
-            chain: VIEM_OP_STACK_CHAINS[chainId],
+            chain: targetChain,
             withdrawal,
             output: l2Output,
           }
@@ -406,10 +413,11 @@ async function viem_multicallOptimismFinalizations(
         });
       }
     } else if (withdrawalStatus === "waiting-to-finalize") {
-      const { seconds } = await getTimeToFinalize(publicClientL1 as any, {
+      // @ts-expect-error - viem.Chain's flexible contracts type doesn't satisfy viem's strict targetChain parameter type
+      const { seconds } = await getTimeToFinalize(publicClientL1, {
         withdrawalHash: withdrawal.withdrawalHash,
-        targetChain: VIEM_OP_STACK_CHAINS[chainId],
-      } as any);
+        targetChain,
+      });
       logger.debug({
         at: `${getNetworkName(chainId)}Finalizer`,
         message: `Withdrawal ${event.txnRef} for ${amountFromWei} of ${symbol} is in challenge period for ${(
@@ -463,13 +471,13 @@ async function viem_multicallOptimismFinalizations(
 
 function getOptimismClient(chainId: OVM_CHAIN_ID, hubSigner: Signer): OVM_CROSS_CHAIN_MESSENGER {
   const hubChainId = chainIsProd(chainId) ? CHAIN_IDs.MAINNET : CHAIN_IDs.SEPOLIA;
-  const contractOverrides = OPSTACK_CONTRACT_OVERRIDES[chainId];
+  const contractOverrides = OPSTACK_CONTRACT_OVERRIDES[Number(chainId)];
   return new optimismSDK.CrossChainMessenger({
     bedrock: true,
     l1ChainId: hubChainId,
     l2ChainId: chainId,
     l1SignerOrProvider: hubSigner.connect(getCachedProvider(hubChainId, true)),
-    l2SignerOrProvider: hubSigner.connect(getCachedProvider(chainId, true)),
+    l2SignerOrProvider: hubSigner.connect(getCachedProvider(Number(chainId), true)),
     contracts: contractOverrides,
   });
 }
