@@ -361,7 +361,20 @@ export class GaslessRelayer {
           }
 
           // Initiate the deposit (depositWithAuthorization) and wait for tx to be executed.
-          const receipt = await this.initiateGaslessDeposit(depositMessage);
+          let receipt: TransactionReceipt | null;
+          try {
+            receipt = await this.initiateGaslessDeposit(depositMessage);
+          } catch (err) {
+            nonceSet.delete(depositNonce);
+            this.logger.warn({
+              at: "GaslessRelayer#evaluateApiSignatures",
+              message: "initiateGaslessDeposit threw; removed deposit from nonce set for retry",
+              depositId,
+              depositNonce,
+              error: err,
+            });
+            return;
+          }
 
           let depositEvent: Omit<DepositWithBlock, "fromLiteChain" | "toLiteChain" | "quoteBlockNumber"> | undefined =
             undefined;
