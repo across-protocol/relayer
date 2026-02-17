@@ -33,7 +33,7 @@ import {
   assert,
 } from "../utils";
 import { APIGaslessDepositResponse, FillWithBlock, DepositWithBlock, GaslessDepositMessage } from "../interfaces";
-import { AcrossSwapApiClient, TransactionClient } from "../clients";
+import { AcrossSwapApiClient, TransactionClient, AugmentedTransaction } from "../clients";
 import EIP3009_ABI from "../common/abi/EIP3009.json";
 import { buildGaslessDepositTx, buildGaslessFillRelayTx, restructureGaslessDeposits } from "../utils/GaslessUtils";
 
@@ -475,7 +475,7 @@ export class GaslessRelayer {
    * @returns The transaction receipt, or null if skipped or failed.
    */
   private async initiateGaslessDeposit(depositMessage: GaslessDepositMessage): Promise<TransactionReceipt | null> {
-    const { originChainId, depositId, permit, requestId } = depositMessage;
+    const { originChainId, depositId, permit } = depositMessage;
     const { destinationChainId, inputAmount, inputToken } = depositMessage.baseDepositData;
 
     const spokePoolPeripheryContract = this.spokePoolPeripheries[originChainId];
@@ -504,22 +504,7 @@ export class GaslessRelayer {
         tokenInfo.decimals
       )(inputAmount)} ${tokenInfo.symbol}, and deposit ID ${depositId}`,
     };
-
-    try {
-      const txResponse = await submitTransaction(gaslessDeposit, this.transactionClient);
-      // Since we called `ensureConfirmation` in the transaction client, the receipt should exist, so `.wait()` should have already resolved.
-      // We only sent one transaction, so only take the first element of `txResponses`.
-      return txResponse.wait();
-    } catch (err) {
-      // We will reach this code block if, after polling for transaction confirmation, we still do not see the receipt onchain.
-      this.logger.warn({
-        at: "GaslessRelayer#initiateGaslessDeposit",
-        message: "Failed to execute depositWithAuthorization",
-        requestId,
-        err: err instanceof Error ? err.message : String(err),
-      });
-      return null;
-    }
+    return this.submit(gaslessDeposit);
   }
 
   /*
@@ -563,7 +548,7 @@ export class GaslessRelayer {
       } and deposit ID ${depositId}`,
     };
 
-    return this.transactionClient.submit(destinationChainId, [gaslessFill]);
+    return this.submit(gaslessFill);
   }
 
   /*
@@ -671,6 +656,27 @@ export class GaslessRelayer {
       from,
       maxLookBack: this.config.maxBlockLookBack[chainId],
     };
+  }
+
+  /*
+   * @notice Submits a transaction and awaits its transaction receipt.
+   */
+  private async submit(tx: AugmentedTransaction): Promise<TransactionReceipt | undefined> {
+    try {
+      const txResponse = await submitTransaction(tx, this.transactionClient);
+      // Since we called `ensureConfirmation` in the transaction client, the receipt should exist, so `.wait()` should have already resolved.
+      // We only sent one transaction, so only take the first element of `txResponses`.
+      return txResponse.wait();
+    } catch (err) {
+      // We will reach this code block if, after polling for transaction confirmation, we still do not see the receipt onchain.
+      this.logger.warn({
+        at: "GaslessRelayer#submit",
+        message: "Failed to submit transaction",
+        tx,
+        err: err instanceof Error ? err.message : String(err),
+      });
+      return null;
+    }
   }
 
   /*
