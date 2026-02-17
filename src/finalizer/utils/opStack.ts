@@ -98,17 +98,16 @@ function assertOpStackTargetChain(chain: viem.Chain): asserts chain is OpStackTa
 // We might want to export this mapping of chain ID to viem chain object out of a constant
 // file once we start using Viem elsewhere in the repo:
 const VIEM_OP_STACK_CHAINS: Record<number, viem.Chain> = {
-  [CHAIN_IDs.OPTIMISM]: viemChains.optimism,
   [CHAIN_IDs.BASE]: viemChains.base,
-  [CHAIN_IDs.REDSTONE]: viemChains.redstone,
+  [CHAIN_IDs.INK]: viemChains.ink,
   [CHAIN_IDs.LISK]: viemChains.lisk,
-  [CHAIN_IDs.ZORA]: viemChains.zora,
   [CHAIN_IDs.MEGAETH]: viemChains.megaeth, // From patched viem
   [CHAIN_IDs.MODE]: viemChains.mode,
-  [CHAIN_IDs.WORLD_CHAIN]: viemChains.worldchain,
+  [CHAIN_IDs.OPTIMISM]: viemChains.optimism,
   [CHAIN_IDs.SONEIUM]: viemChains.soneium,
   [CHAIN_IDs.UNICHAIN]: viemChains.unichain,
-  [CHAIN_IDs.INK]: viemChains.ink,
+  [CHAIN_IDs.WORLD_CHAIN]: viemChains.worldchain,
+  [CHAIN_IDs.ZORA]: viemChains.zora,
   // // @dev The following chains have non-standard interfaces or processes for withdrawing from L2 to L1
   // [CHAIN_IDs.BLAST]: viemChains.blast,
 };
