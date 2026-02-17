@@ -361,7 +361,20 @@ export class GaslessRelayer {
           }
 
           // Initiate the deposit (depositWithAuthorization) and wait for tx to be executed.
-          const receipt = await this.initiateGaslessDeposit(depositMessage);
+          let receipt: TransactionReceipt | null;
+          try {
+            receipt = await this.initiateGaslessDeposit(depositMessage);
+          } catch (err) {
+            nonceSet.delete(depositNonce);
+            this.logger.warn({
+              at: "GaslessRelayer#evaluateApiSignatures",
+              message: "initiateGaslessDeposit threw; removed deposit from nonce set for retry",
+              depositId,
+              depositNonce,
+              error: err,
+            });
+            return;
+          }
 
           let depositEvent: Omit<DepositWithBlock, "fromLiteChain" | "toLiteChain" | "quoteBlockNumber"> | undefined =
             undefined;
@@ -417,7 +430,17 @@ export class GaslessRelayer {
 
           // We do not need to evaluate the response of `initiateFill` since the TransactionClient should handle the logging. A `null` response
           // here means that we did not send a transaction because of config.
-          await this.initiateFill(depositEvent);
+          try {
+            await this.initiateFill(depositEvent);
+          } catch (err) {
+            this.logger.warn({
+              at: "GaslessRelayer#evaluateApiSignatures",
+              message: "initiateFill threw; removed fill from fill set for retry",
+              depositId,
+              error: err,
+            });
+            return;
+          }
           // There is no race on setting the fill in the fill set, so we can set it after the fill transaction is sent.
           fillSet.add(fillKey);
         }
