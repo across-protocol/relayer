@@ -430,17 +430,7 @@ export class GaslessRelayer {
 
           // We do not need to evaluate the response of `initiateFill` since the TransactionClient should handle the logging. A `null` response
           // here means that we did not send a transaction because of config.
-          try {
-            await this.initiateFill(depositEvent);
-          } catch (err) {
-            this.logger.warn({
-              at: "GaslessRelayer#evaluateApiSignatures",
-              message: "initiateFill threw; removed fill from fill set for retry",
-              depositId,
-              error: err,
-            });
-            return;
-          }
+          await this.initiateFill(depositEvent);
           // There is no race on setting the fill in the fill set, so we can set it after the fill transaction is sent.
           fillSet.add(fillKey);
         }
