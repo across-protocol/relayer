@@ -1,33 +1,28 @@
 diff --git a/node_modules/viem/_cjs/chains/definitions/megaeth.js b/node_modules/viem/_cjs/chains/definitions/megaeth.js
-new file mode 100644
-index 0000000..d47c7c5
---- /dev/null
+index 6145c71..0aa9e5e 100644
+--- a/node_modules/viem/_cjs/chains/definitions/megaeth.js
 +++ b/node_modules/viem/_cjs/chains/definitions/megaeth.js
-@@ -0,0 +1,59 @@
-+"use strict";
-+Object.defineProperty(exports, "__esModule", { value: true });
-+exports.megaeth = void 0;
+@@ -1,8 +1,11 @@
+ "use strict";
+ Object.defineProperty(exports, "__esModule", { value: true });
+ exports.megaeth = void 0;
 +const chainConfig_js_1 = require("../../op-stack/chainConfig.js");
-+const defineChain_js_1 = require("../../utils/chain/defineChain.js");
+ const defineChain_js_1 = require("../../utils/chain/defineChain.js");
 +const sourceId = 1; // Ethereum mainnet
-+exports.megaeth = (0, defineChain_js_1.defineChain)({
+ exports.megaeth = (0, defineChain_js_1.defineChain)({
 +    ...chainConfig_js_1.chainConfig,
-+    id: 4326,
-+    name: 'MegaETH',
-+    nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-+    rpcUrls: {
-+        default: {
-+            http: ['https://rpc.megaeth.com'],
-+        },
-+    },
-+    blockExplorers: {
-+        default: {
-+            name: 'MegaETH Explorer',
-+            url: 'https://explorer.megaeth.com',
-+        },
-+    },
-+    contracts: {
+     id: 4326,
+     blockTime: 1_000,
+     name: 'MegaETH',
+@@ -30,10 +33,43 @@ exports.megaeth = (0, defineChain_js_1.defineChain)({
+         },
+     },
+     contracts: {
 +        ...chainConfig_js_1.chainConfig.contracts,
+         multicall3: {
+             address: '0xcA11bde05977b3631167028862bE2a173976CA11',
+             blockCreated: 0,
+         },
 +        disputeGameFactory: {
 +            [sourceId]: {
 +                address: '0x8546840adF796875cD9AAcc5B3B048f6B2c9D563',
@@ -59,32 +54,19 @@ index 0000000..d47c7c5
 +        },
 +        // MegaETH uses a custom RPC method for withdrawal proofs
 +        proofRpcMethod: 'mega_getWithdrawalProof',
-+    },
+     },
 +    sourceId,
-+});
-+//# sourceMappingURL=megaeth.js.map
-diff --git a/node_modules/viem/_cjs/chains/index.js b/node_modules/viem/_cjs/chains/index.js
-index bcb13ea..15b4bf2 100644
---- a/node_modules/viem/_cjs/chains/index.js
-+++ b/node_modules/viem/_cjs/chains/index.js
-@@ -703,6 +703,8 @@ var matchainTestnet_js_1 = require("./definitions/matchainTestnet.js");
- Object.defineProperty(exports, "matchainTestnet", { enumerable: true, get: function () { return matchainTestnet_js_1.matchainTestnet; } });
- var mchVerse_js_1 = require("./definitions/mchVerse.js");
- Object.defineProperty(exports, "mchVerse", { enumerable: true, get: function () { return mchVerse_js_1.mchVerse; } });
-+var megaeth_js_1 = require("./definitions/megaeth.js");
-+Object.defineProperty(exports, "megaeth", { enumerable: true, get: function () { return megaeth_js_1.megaeth; } });
- var megaethTestnet_js_1 = require("./definitions/megaethTestnet.js");
- Object.defineProperty(exports, "megaethTestnet", { enumerable: true, get: function () { return megaethTestnet_js_1.megaethTestnet; } });
- var mekong_js_1 = require("./definitions/mekong.js");
+ });
+ //# sourceMappingURL=megaeth.js.map
+\ No newline at end of file
 diff --git a/node_modules/viem/_cjs/op-stack/actions/buildProveWithdrawal.js b/node_modules/viem/_cjs/op-stack/actions/buildProveWithdrawal.js
-index 8da3482..bd0add3 100644
+index 8da3482..c2bd84b 100644
 --- a/node_modules/viem/_cjs/op-stack/actions/buildProveWithdrawal.js
 +++ b/node_modules/viem/_cjs/op-stack/actions/buildProveWithdrawal.js
-@@ -15,8 +15,23 @@ async function buildProveWithdrawal(client, args) {
+@@ -15,8 +15,21 @@ async function buildProveWithdrawal(client, args) {
      const { withdrawalHash } = withdrawal;
      const { l2BlockNumber } = game ?? output;
      const slot = (0, getWithdrawalHashStorageSlot_js_1.getWithdrawalHashStorageSlot)({ withdrawalHash });
-+
 +    // If the chain has a custom proof RPC method (like MegaETH's mega_getWithdrawalProof),
 +    // wrap the client to intercept eth_getProof calls
 +    const proofClient = chain?.custom?.proofRpcMethod
@@ -98,7 +80,6 @@ index 8da3482..bd0add3 100644
 +            },
 +        }
 +        : client;
-+
      const [proof, block] = await Promise.all([
 -        (0, getProof_js_1.getProof)(client, {
 +        (0, getProof_js_1.getProof)(proofClient, {
@@ -121,23 +102,3 @@ index d8a07c5..6146d65 100644
          return !l2BlockNumber || blockNumber > l2BlockNumber
              ? { ...game, l2BlockNumber: blockNumber }
              : null;
-diff --git a/node_modules/viem/_types/chains/definitions/megaeth.d.ts b/node_modules/viem/_types/chains/definitions/megaeth.d.ts
-new file mode 100644
-index 0000000..82da403
---- /dev/null
-+++ b/node_modules/viem/_types/chains/definitions/megaeth.d.ts
-@@ -0,0 +1,2 @@
-+import { type Chain } from '../../types/chain.js';
-+export declare const megaeth: Chain;
-diff --git a/node_modules/viem/_types/chains/index.d.ts b/node_modules/viem/_types/chains/index.d.ts
-index b954eb9..ac2978b 100644
---- a/node_modules/viem/_types/chains/index.d.ts
-+++ b/node_modules/viem/_types/chains/index.d.ts
-@@ -356,6 +356,7 @@ export { mapProtocol } from './definitions/mapProtocol.js';
- export { matchain } from './definitions/matchain.js';
- export { matchainTestnet } from './definitions/matchainTestnet.js';
- export { mchVerse } from './definitions/mchVerse.js';
-+export { megaeth } from './definitions/megaeth.js';
- export { megaethTestnet } from './definitions/megaethTestnet.js';
- export { mekong } from './definitions/mekong.js';
- export { meld } from './definitions/meld.js';
