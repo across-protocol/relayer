@@ -1,5 +1,5 @@
 import * as hl from "@nktkas/hyperliquid";
-import { SymbolConverter } from "@nktkas/hyperliquid/script/src/utils/mod";
+import { SymbolConverter } from "@nktkas/hyperliquid/utils";
 
 async function run() {
   const subsClient = new hl.SubscriptionClient({
