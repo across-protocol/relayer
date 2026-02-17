@@ -58,7 +58,7 @@
   "main": "dist/index.js",
   "scripts": {
     "build-bigint-buffer": "[ -d node_modules/bigint-buffer ] && command -v node-gyp > /dev/null && cd node_modules/bigint-buffer && node-gyp configure && node-gyp build || echo 'Skipping bigint-buffer build: folder or node-gyp not found'",
-    "postinstall": "patch-package; rm -f dist/tsconfig.tsbuildinfo; yarn build-bigint-buffer; yarn update-addresses",
+    "postinstall": "patch-package; yarn build-bigint-buffer; yarn update-addresses",
     "lint": "yarn eslint && yarn prettier --list-different",
     "lint-fix": "yarn eslint --fix && yarn prettier --write",
     "prettier": "prettier .",
@@ -68,7 +68,7 @@
     "build": "tsc --build",
     "watch": "tsc --build --incremental --watch",
     "build:test": "tsc --project tsconfig.test.json",
-    "clean": "dir=\"./node_modules\"; mv \"${dir}\" \"${dir}_\" 2>/dev/null && rm -r \"${dir}_\" &",
+    "clean": "dir=\"./node_modules\"; mv \"${dir}\" \"${dir}_\" 2>/dev/null && rm -r \"${dir}_\" & rm -f dist/tsconfig.tsbuildinfo",
     "reinstall": "yarn clean && yarn install && yarn build",
     "run-disputer": "DISPUTER_ENABLED=true node ./dist/index.js --dataworker",
     "run-executor": "EXECUTOR_ENABLED=true node ./dist/index.js --dataworker",

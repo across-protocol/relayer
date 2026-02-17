@@ -351,19 +351,19 @@ async function viem_multicallOptimismFinalizations(
     withdrawals: [],
   };
   const hubChainId = hubPoolClient.chainId;
-  // Omit chain from the client to avoid viem 2.46 type issue where
-  // Client<Transport, Chain> collapses to 'never'. The L1 chain is passed
-  // as a chainOverride to each OP-stack function call instead.
+  const l1Chain: viem.Chain = chainIsProd(chainId) ? viemChains.mainnet : viemChains.sepolia;
   const publicClientL1 = viem.createPublicClient({
     batch: {
       multicall: true,
     },
+    chain: l1Chain,
     transport: createViemCustomTransportFromEthersProvider(hubChainId),
   });
   const publicClientL2 = viem.createPublicClient({
     batch: {
       multicall: true,
     },
+    chain: VIEM_OP_STACK_CHAINS[chainId],
     transport: createViemCustomTransportFromEthersProvider(chainId),
   });
   const uniqueTokenhashes = {};
@@ -390,7 +390,7 @@ async function viem_multicallOptimismFinalizations(
   // using l1Chain.id (sourceId) and uses custom decoders from targetChain.custom
   // for MegaETH.
   const targetChain = targetChainRaw;
-  const l1Chain: viem.Chain = chainIsProd(chainId) ? viemChains.mainnet : viemChains.sepolia;
+  const chain = undefined; // Needed for viem OP type resolution.
 
   const withdrawalStatuses: string[] = [];
   await mapAsync(events, async (event, i) => {
@@ -403,7 +403,7 @@ async function viem_multicallOptimismFinalizations(
     });
     const withdrawal = getWithdrawals(receipt)[logIndexesForMessage[i]];
     const withdrawalStatus = await getWithdrawalStatus(publicClientL1, {
-      chain: l1Chain,
+      chain,
       receipt,
       targetChain,
       logIndex: logIndexesForMessage[i],
@@ -411,13 +411,13 @@ async function viem_multicallOptimismFinalizations(
     withdrawalStatuses.push(withdrawalStatus);
     if (withdrawalStatus === "ready-to-prove") {
       const l2Output = await getL2Output(publicClientL1, {
-        chain: l1Chain,
+        chain,
         l2BlockNumber: BigInt(event.blockNumber),
         targetChain,
       });
       if (l2Output.outputRoot !== PENDING_PROOF_OUTPUT_ROOT) {
         const { l2OutputIndex, outputRootProof, withdrawalProof } = await buildProveWithdrawal(publicClientL2, {
-          chain: targetChain,
+          chain,
           withdrawal,
           output: l2Output,
         });
@@ -438,7 +438,7 @@ async function viem_multicallOptimismFinalizations(
       }
     } else if (withdrawalStatus === "waiting-to-finalize") {
       const { seconds } = await getTimeToFinalize(publicClientL1, {
-        chain: l1Chain,
+        chain,
         withdrawalHash: withdrawal.withdrawalHash,
         targetChain,
       });
