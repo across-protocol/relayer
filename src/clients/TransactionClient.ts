@@ -75,8 +75,12 @@ export class TransactionClient {
     return Promise.all(txns.map((txn: AugmentedTransaction) => this._simulate(txn)));
   }
 
-  protected async _submit(txn: AugmentedTransaction, nonce: number | null = null): Promise<TransactionResponse> {
+  protected async _submit(
+    txn: AugmentedTransaction,
+    opts: { nonce: number | null; maxTries?: number }
+  ): Promise<TransactionResponse> {
     const { contract, method, args, value, gasLimit } = txn;
+    const { nonce = null, maxTries = 10 } = opts;
     const txnResponse = _runTransaction(this.logger, contract, method, args, value, gasLimit, nonce);
 
     if (txn.ensureConfirmation) {
@@ -84,7 +88,6 @@ export class TransactionClient {
       const chain = getNetworkName(txn.chainId);
       let txnReceipt: TransactionReceipt;
       let nTries = 0;
-      const maxTries = 10;
       do {
         try {
           // Must return a TransactionResponse, so await on the receipt, but discard it.
@@ -96,12 +99,9 @@ export class TransactionClient {
 
           const { code } = error;
           switch (code) {
-            case ethers.errors.SERVER_ERROR:
-              this.logger.warn({ at, message: `Pending transaction on ${chain} not found...`, code });
-              await delay(0.25);
-              continue;
             case ethers.errors.CALL_EXCEPTION:
-              this.logger.warn({ at, message: `Transaction on ${chain} reverted...`, code });
+              // Call failed
+              this.logger.warn({ at, message: `Transaction on ${chain} failed during execution...`, code });
               throw error;
             case ethers.errors.TRANSACTION_REPLACED:
               this.logger.warn({
@@ -109,20 +109,21 @@ export class TransactionClient {
                 message: `Transaction submission on ${chain} replaced at nonce ${nonce}, resubmitting...`,
                 code,
               });
-              return this._submit(txn);
+              return this._submit(txn, { ...opts, maxTries: maxTries - 1 });
             default:
               this.logger.warn({
                 at,
                 message: "Unhandled error while waiting for confirmation on transaction.",
                 code,
               });
+              await delay(0.25);
           }
         }
       } while (!txnReceipt && ++nTries < maxTries);
 
       if (!txnReceipt) {
         this.logger.warn({
-          at: "TransactionClient#_submit",
+          at,
           message: `Unable to confirm ${chain} transaction.`,
         });
       }
@@ -166,7 +167,7 @@ export class TransactionClient {
 
       let response: TransactionResponse;
       try {
-        response = await this._submit(txn, nonce);
+        response = await this._submit(txn, { nonce });
       } catch (error) {
         delete this.nonces[chainId];
         this.logger.info({
