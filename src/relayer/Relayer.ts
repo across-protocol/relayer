@@ -657,6 +657,21 @@ export class Relayer {
     return mdcPerChain;
   }
 
+  canSlowFill(deposit: DepositWithBlock): boolean {
+    return (
+      // Cannot slow fill when input and output tokens are not equivalent.
+      this.clients.hubPoolClient.areTokensEquivalent(
+        deposit.inputToken,
+        deposit.originChainId,
+        deposit.outputToken,
+        deposit.destinationChainId
+      ) &&
+      // Cannot slow fill from or to a lite chain.
+      !deposit.fromLiteChain &&
+      !deposit.toLiteChain
+    );
+  }
+
   // Iterate over all unfilled deposits. For each unfilled deposit, check that:
   // a) it exceeds the minimum number of required block confirmations,
   // b) the token balance client has enough tokens to fill it,
@@ -702,7 +717,7 @@ export class Relayer {
     }
 
     // If depositor is on the slow deposit list, then send a zero fill to initiate a slow relay and return early.
-    if (slowDepositors?.some((slowDepositor) => depositor.eq(slowDepositor))) {
+    if (slowDepositors?.some((slowDepositor) => depositor.eq(slowDepositor)) && this.canSlowFill(deposit)) {
       if (fillStatus === FillStatus.Unfilled && !this.fillIsExclusive(deposit)) {
         this.logger.debug({
           at: "Relayer::evaluateFill",
@@ -764,7 +779,7 @@ export class Relayer {
         tokenClient.captureTokenShortfallForFill(deposit);
       }
 
-      if (sendSlowRelays && fillStatus === FillStatus.Unfilled) {
+      if (sendSlowRelays && fillStatus === FillStatus.Unfilled && this.canSlowFill(deposit)) {
         this.requestSlowFill(deposit);
       }
 
@@ -1014,6 +1029,7 @@ export class Relayer {
   }
 
   requestSlowFill(deposit: DepositWithBlock): void {
+    assert(this.canSlowFill(deposit), "Cannot slow fill this deposit");
     // don't request slow fill if origin/destination chain is a lite chain
     if (depositForcesOriginChainRepayment(deposit, this.clients.hubPoolClient) || deposit.toLiteChain) {
       this.logger.debug({
