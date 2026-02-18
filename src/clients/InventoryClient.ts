@@ -545,12 +545,6 @@ export class InventoryClient {
   validateOutputToken(deposit: Deposit): boolean {
     const { inputToken, outputToken, originChainId, destinationChainId } = deposit;
 
-    // If swaps are supported, then only return true if the deposit represents an allowed in-protocol swap:
-    if (this.supportsSwaps()) {
-      // Return true if the input and output tokens are defined as equivalent according to a user-defined swap config.
-      return this.isSwapSupported(inputToken, outputToken, originChainId, destinationChainId);
-    }
-
     // Return true if input and output tokens are mapped to the same L1 token via PoolRebalanceRoutes
     const equivalentTokens = this.hubPoolClient.areTokensEquivalent(
       inputToken,
@@ -559,6 +553,11 @@ export class InventoryClient {
       destinationChainId
     );
     if (equivalentTokens) {
+      return true;
+    }
+
+    // Return true if the input and output tokens are defined as equivalent according to a user-defined swap config.
+    if (this.isSwapSupported(inputToken, outputToken, originChainId, destinationChainId)) {
       return true;
     }
 
