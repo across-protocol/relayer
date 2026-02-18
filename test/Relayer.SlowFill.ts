@@ -1,3 +1,4 @@
+import { RELAYER_SLOW_FILL_MIN_AGE } from "../src/relayer";
 import {
   AcrossApiClient,
   ConfigStoreClient,
@@ -233,7 +234,7 @@ describe("Relayer: Initiates slow fill requests", async function () {
     expect(deposit).to.exist;
 
     // Mine blocks so the deposit age exceeds the slow fill deferral threshold.
-    await mineRandomBlocks(10);
+    await mineRandomBlocks(RELAYER_SLOW_FILL_MIN_AGE);
     await updateAllClients();
     const _txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
     const txnHashes = await _txnReceipts[destinationChainId];
