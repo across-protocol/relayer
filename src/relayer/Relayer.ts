@@ -1025,11 +1025,14 @@ export class Relayer {
       return;
     }
 
+    const { hubPoolClient, spokePoolClients } = this.clients;
+    const { originChainId, destinationChainId, depositId, outputToken, txnRef } = deposit;
+    const spokePoolClient = spokePoolClients[destinationChainId];
+    const origin = getNetworkName(originChainId);
+
     // Verify that the _original_ message was empty, since that's what would be used in a slow fill. If a non-empty
     // message was nullified by an update, it can be full-filled but preferably not automatically zero-filled.
     if (!isMessageEmpty(deposit.message)) {
-      const { originChainId, depositId, txnRef } = deposit;
-      const origin = getNetworkName(originChainId);
       this.logger[this.config.sendingRelaysEnabled ? "warn" : "debug"]({
         at: "Relayer::requestSlowFill",
         message: `Suppressing slow fill request for ${origin} deposit with message.`,
@@ -1042,10 +1045,25 @@ export class Relayer {
       return;
     }
 
-    const { hubPoolClient, spokePoolClients } = this.clients;
-    const { originChainId, destinationChainId, depositId, outputToken } = deposit;
+
+    // Wait at least n origin blocks before submitting a slow fill request.
+    // This is helpful with nonce collisions.
+    if (spokePoolClient.latestHeightSearched - deposit.blockNumber < 10) {
+      const { originChainId, depositId, txnRef } = deposit;
+      const origin = getNetworkName(originChainId);
+      this.logger[this.config.sendingRelaysEnabled ? "warn" : "debug"]({
+        at: "Relayer::requestSlowFill",
+        message: `Deferring slow fill request for recent ${origin} deposit.`,
+        deposit: {
+          originChainId,
+          depositId,
+          txnRef: blockExplorerLink(txnRef, originChainId),
+        },
+      });
+      return;
+    }
+
     const multiCallerClient = this.getMulticaller(destinationChainId);
-    const spokePoolClient = spokePoolClients[destinationChainId];
     const slowFillRequest = spokePoolClient.getSlowFillRequest(deposit);
     if (isDefined(slowFillRequest)) {
       return; // Slow fill has already been requested; nothing to do.
