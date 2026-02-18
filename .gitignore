@@ -28,7 +28,7 @@ addresses.json
 inventoryConfig.json
 
 # AI context files
-CLAUDE.md
+CLAUDE.*
 
 # yalc
 .yalc
