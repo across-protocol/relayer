@@ -1,4 +1,4 @@
-import { RELAYER_SLOW_FILL_MIN_AGE } from "../src/relayer";
+import { RELAYER_SLOW_FILL_MIN_AGE } from "../src/relayer/Relayer.ts";
 import {
   AcrossApiClient,
   ConfigStoreClient,
