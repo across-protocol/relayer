@@ -453,6 +453,7 @@ export class GaslessRelayer {
               message: "Failed to initiate fill. Adding it to list of retryable fills.",
               fillReceipt,
             });
+            this.retryableFills[destinationChainId] ??= {};
             this.retryableFills[destinationChainId][depositNonce] = depositEvent;
           } else {
             fillSet.add(fillKey);
