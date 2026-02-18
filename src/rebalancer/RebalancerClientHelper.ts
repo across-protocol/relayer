@@ -39,6 +39,9 @@ export async function constructRebalancerClient(logger: winston.Logger, baseSign
   const rebalanceRoutes: RebalanceRoute[] = [];
   for (const usdtChain of usdtChains) {
     for (const usdcChain of usdcChains) {
+      if (!rebalancerConfig.chainIds.includes(usdtChain) || !rebalancerConfig.chainIds.includes(usdcChain)) {
+        continue;
+      }
       for (const adapter of ["binance", "hyperliquid"]) {
         // Handle exceptions:
         if (adapter !== "binance" && (usdtChain === CHAIN_IDs.BSC || usdcChain === CHAIN_IDs.BSC)) {
