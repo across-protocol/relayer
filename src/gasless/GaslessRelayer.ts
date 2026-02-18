@@ -488,6 +488,7 @@ export class GaslessRelayer {
             const fill = await this._findFill(deposit);
             // The deposit still failed and no fill has been observed, so retry again.
             if (!isDefined(fill)) {
+              this.retryableFills[destinationChainId] ??= {};
               this.retryableFills[destinationChainId][depositNonce] = deposit;
               return;
             }
@@ -700,7 +701,6 @@ export class GaslessRelayer {
       this.logger.warn({
         at: "GaslessRelayer#submit",
         message: "Failed to submit transaction",
-        tx,
         err: err instanceof Error ? err.message : String(err),
       });
       return null;
