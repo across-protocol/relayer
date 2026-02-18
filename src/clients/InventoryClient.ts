@@ -550,7 +550,7 @@ export class InventoryClient {
       // Return true if the input and output tokens are defined as equivalent according to a user-defined swap config.
       return this.isSwapSupported(inputToken, outputToken, originChainId, destinationChainId);
     }
-    
+
     // Return true if input and output tokens are mapped to the same L1 token via PoolRebalanceRoutes
     const equivalentTokens = this.hubPoolClient.areTokensEquivalent(
       inputToken,
