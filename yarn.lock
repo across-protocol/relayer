@@ -11,6 +11,11 @@
     "@uma/common" "^2.17.0"
     hardhat "^2.9.3"
 
+"@across-protocol/constants@^3.1.100":
+  version "3.1.100"
+  resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.100.tgz#ac7f7910340e62abb66dceea451e96f590742211"
+  integrity sha512-HWALdgQHY7Q0IQFMCThi/bcUp1CTgb/sdVmRvj5sLkjz2tFZfCcPA0nKzKK+5pXD3hdd2W44uqQA58Z19XhSSw==
+
 "@across-protocol/constants@^3.1.98":
   version "3.1.98"
   resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.98.tgz#58fef78e455799ee0bf83abe9bc7232058833c3a"
@@ -53,13 +58,13 @@
     "@openzeppelin/contracts" "4.1.0"
     "@uma/core" "^2.18.0"
 
-"@across-protocol/sdk@4.3.125":
-  version "4.3.125"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.3.125.tgz#b2d0c0b434303df42a9fdf3c8585dfa1a8c0e0e4"
-  integrity sha512-wm5qQdNnswdagD02qwE24OB0nt0lugnuUcQWrrR6KKlL9LMQx/+WpJO4Yg3cVo9yZK2fuDXvn86GBPrG88MLiw==
+"@across-protocol/sdk@4.3.126":
+  version "4.3.126"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.3.126.tgz#014c9704dce57b5f583d70254d489efa9c264dc2"
+  integrity sha512-VMAhCRowgxFvnq7yf/m/wa0baaNHLrGuLyVgF/M9GbLpqGlMfSvWTuipxUj1Kzg+7hUD53dzNEkr2LRWptxJBw==
   dependencies:
     "@across-protocol/across-token" "^1.0.0"
-    "@across-protocol/constants" "^3.1.98"
+    "@across-protocol/constants" "^3.1.100"
     "@across-protocol/contracts" "4.1.24"
     "@coral-xyz/anchor" "^0.30.1"
     "@eth-optimism/sdk" "^3.3.1"
