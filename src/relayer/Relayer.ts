@@ -1045,7 +1045,6 @@ export class Relayer {
       return;
     }
 
-
     // Wait at least n origin blocks before submitting a slow fill request.
     // This is helpful with nonce collisions.
     if (spokePoolClient.latestHeightSearched - deposit.blockNumber < 10) {
