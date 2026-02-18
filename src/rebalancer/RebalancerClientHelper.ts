@@ -69,7 +69,6 @@ export async function constructRebalancerClient(logger: winston.Logger, baseSign
   // Pass in adapters that are used in at least one rebalance route:
   const adapterNames = new Set<string>(rebalanceRoutes.map((route) => route.adapter));
   const adapters: { [name: string]: RebalancerAdapter } = {};
-  console.log("adapterNames", adapterNames)
   for (const adapterName of adapterNames) {
     adapters[adapterName] = adapterMap[adapterName];
   }
