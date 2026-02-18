@@ -129,8 +129,6 @@ export class ProfitClient {
     protected gasMessageMultiplier = toBNWei(constants.DEFAULT_RELAYER_GAS_MESSAGE_MULTIPLIER),
     protected gasPadding = toBNWei(constants.DEFAULT_RELAYER_GAS_PADDING),
     readonly additionalL1Tokens: EvmAddress[] = [],
-    // Sets of token symbols that should be treated equivalently, for example [ "USDC": [USDT, USDH ].
-    readonly peggedTokens: { [pegTokenSymbol: string]: Set<string> } = {},
     readonly l1TokensOverride: string[] = []
   ) {
     // Require 0% <= gasPadding <= 200%
@@ -371,19 +369,22 @@ export class ProfitClient {
 
   /**
    * Allow the minimum relayer fee to be overridden per token/route:
-   * 0.1bps on USDC from Optimism to Arbitrum:
+   * 0.1bps from USDC on any chain to USDC on any other chain:
    *   - MIN_RELAYER_FEE_PCT_USDC_42161_10=0.00001
-   * @param symbol Token symbol to query.
-   * @param symbol srcChainId Origin chain for deposit.
-   * @param symbol dstChainId Destination chain for deposit.
-   * @returns The minimum required fee multiplier for the specified token/route combination.
+   * 0.1bps from USDC on Optimism to USDT on Arbitrum:
+   *   - MIN_RELAYER_FEE_PCT_USDC_USDT_42161_10=0.00001
+   * @returns The minimum required fee multiplier for the deposit's token/route combination.
    */
-  minRelayerFeePct(symbol: string, srcChainId: number, dstChainId: number): BigNumber {
-    const effectiveSymbol = this._getRemappedTokenSymbol(symbol) ?? symbol;
+  minRelayerFeePct(deposit: Deposit): BigNumber {
+    const { inputToken, originChainId, outputToken, destinationChainId } = deposit;
+    const srcSymbol = this.getTokenSymbol(inputToken, originChainId);
+    const dstSymbol = this.getTokenSymbol(outputToken, destinationChainId);
+    const effectiveSourceSymbol = this._getRemappedTokenSymbol(srcSymbol) ?? srcSymbol;
+    const effectiveDestinationSymbol = (dstSymbol !== "UNKNOWN") ? (this._getRemappedTokenSymbol(dstSymbol) ?? dstSymbol) : undefined;
 
-    const tokenKey = `MIN_RELAYER_FEE_PCT_${effectiveSymbol}`;
-    const routeKey = `${tokenKey}_${srcChainId}_${dstChainId}`;
-    const destinationChainKey = `MIN_RELAYER_FEE_PCT_${dstChainId}`;
+    const tokenKey = effectiveDestinationSymbol ? `MIN_RELAYER_FEE_PCT_${effectiveSourceSymbol}_${effectiveDestinationSymbol}` : `MIN_RELAYER_FEE_PCT_${effectiveSourceSymbol}`;
+    const routeKey = `${tokenKey}_${originChainId}_${destinationChainId}`;
+    const destinationChainKey = `MIN_RELAYER_FEE_PCT_${destinationChainId}`;
     let minRelayerFeePct = this.minRelayerFees[routeKey] ?? this.minRelayerFees[tokenKey];
 
     if (!minRelayerFeePct) {
@@ -514,11 +515,10 @@ export class ProfitClient {
   async getFillProfitability(
     deposit: Deposit,
     lpFeePct: BigNumber,
-    l1Token: EvmAddress,
     repaymentChainId: number
   ): Promise<FillProfit> {
-    const symbol = this.getTokenSymbol(l1Token, this.hubPoolClient.chainId);
-    const minRelayerFeePct = this.minRelayerFeePct(symbol, deposit.originChainId, deposit.destinationChainId);
+    const symbol = this.getTokenSymbol(deposit.inputToken, deposit.originChainId);
+    const minRelayerFeePct = this.minRelayerFeePct(deposit);
 
     const fill = await this.calculateFillProfitability(deposit, lpFeePct, minRelayerFeePct);
     if (!fill.profitable || this.debugProfitability) {
@@ -560,7 +560,6 @@ export class ProfitClient {
   async isFillProfitable(
     deposit: Deposit,
     lpFeePct: BigNumber,
-    l1Token: EvmAddress,
     repaymentChainId: number
   ): Promise<
     Pick<FillProfit, "profitable" | "nativeGasCost" | "gasPrice" | "tokenGasCost" | "netRelayerFeePct" | "totalFeePct">
@@ -573,7 +572,7 @@ export class ProfitClient {
     let totalFeePct = bnZero;
     try {
       ({ profitable, netRelayerFeePct, nativeGasCost, tokenGasCost, gasPrice, totalFeePct } =
-        await this.getFillProfitability(deposit, lpFeePct, l1Token, repaymentChainId));
+        await this.getFillProfitability(deposit, lpFeePct, repaymentChainId));
     } catch (err) {
       this.logger.debug({
         at: "ProfitClient#isFillProfitable",
@@ -832,10 +831,6 @@ export class ProfitClient {
   }
 
   protected _getRemappedTokenSymbol(token: string): string {
-    // If token symbol exists in a set of pegged tokens, return the key of the set as the remapped symbol.
-    if (Object.values(this.peggedTokens).some((peggedTokens) => peggedTokens.has(token))) {
-      return Object.keys(this.peggedTokens).find((pegTokenSymbol) => this.peggedTokens[pegTokenSymbol].has(token));
-    }
     return TOKEN_EQUIVALENCE_REMAPPING[token];
   }
 

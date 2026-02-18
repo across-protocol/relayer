@@ -742,11 +742,8 @@ export class Relayer {
       }
     }
 
-    const l1Token = this.clients.inventoryClient.getL1TokenAddress(inputToken, originChainId);
-
     const { repaymentChainId, repaymentChainProfitability } = await this.resolveRepaymentChain(
       deposit,
-      l1Token,
       lpFees
     );
     const {
@@ -1223,7 +1220,6 @@ export class Relayer {
    * @notice Returns repayment chain choice for deposit given repayment fees and the hubPoolToken associated with the
    * deposit inputToken.
    * @param deposit
-   * @param hubPoolToken L1 token associated with the deposit inputToken.
    * @param repaymentFees
    * @returns repaymentChainId is defined if and only if a profitable repayment chain is found.
    * @returns repaymentChainProfitability contains the profitability data of the repaymentChainId if it is defined
@@ -1231,19 +1227,18 @@ export class Relayer {
    */
   protected async resolveRepaymentChain(
     deposit: DepositWithBlock,
-    hubPoolToken: EvmAddress,
     repaymentFees: RepaymentFee[]
   ): Promise<{
     repaymentChainId?: number;
     repaymentChainProfitability: RepaymentChainProfitability;
   }> {
     const { inventoryClient, profitClient } = this.clients;
-    const { depositId, originChainId, destinationChainId, inputAmount, outputAmount, txnRef } = deposit;
+    const { depositId, originChainId, destinationChainId, inputAmount, outputAmount, txnRef, inputToken } = deposit;
     const originChain = getNetworkName(originChainId);
     const destinationChain = getNetworkName(destinationChainId);
 
     const mark = this.profiler.start("resolveRepaymentChain");
-    const preferredChainIds = await inventoryClient.determineRefundChainId(deposit, hubPoolToken);
+    const preferredChainIds = await inventoryClient.determineRefundChainId(deposit);
     if (preferredChainIds.length === 0) {
       // @dev If the origin chain is a lite chain and there are no preferred repayment chains, then we can assume
       // that the origin chain, the only possible repayment chain, is over-allocated. We should log this case because
@@ -1305,7 +1300,7 @@ export class Relayer {
         gasPrice,
         netRelayerFeePct: relayerFeePct,
         totalFeePct: totalUserFeePct,
-      } = await profitClient.isFillProfitable(deposit, lpFeePct, hubPoolToken, preferredChainId);
+      } = await profitClient.isFillProfitable(deposit, lpFeePct, preferredChainId);
       return {
         profitable,
         gasLimit,
@@ -1392,7 +1387,6 @@ export class Relayer {
       const fallbackProfitability = await profitClient.isFillProfitable(
         deposit,
         destinationChainLpFeePct,
-        hubPoolToken,
         destinationChainId
       );
 
@@ -1415,7 +1409,7 @@ export class Relayer {
           deposit: {
             originChain,
             destinationChain,
-            token: hubPoolToken,
+            inputToken,
             txnRef: blockExplorerLink(txnRef, originChainId),
           },
           preferredChain: getNetworkName(preferredChain),
@@ -1440,7 +1434,7 @@ export class Relayer {
             originChain,
             destinationChain,
             txnRef,
-            token: hubPoolToken,
+            token: inputToken,
             inputAmount,
             outputAmount,
           },

@@ -22,7 +22,6 @@ export class CommonConfig {
   readonly blockRangeEndBlockBuffer: { [chainId: number]: number };
   readonly timeToCache: number;
   readonly arweaveGateway: ArweaveGatewayInterface;
-  readonly peggedTokenPrices: { [pegTokenSymbol: string]: Set<string> } = {};
 
   // State we'll load after we update the config store client and fetch all chains we want to support.
   public multiCallChunkSize: { [chainId: number]: number } = {};
@@ -44,7 +43,6 @@ export class CommonConfig {
       ACROSS_MAX_CONFIG_VERSION,
       HUB_POOL_TIME_TO_CACHE,
       ARWEAVE_GATEWAY,
-      PEGGED_TOKEN_PRICES,
     } = env;
 
     const mergeConfig = <T>(config: T, envVar: string): T => {
@@ -90,13 +88,6 @@ export class CommonConfig {
     const _arweaveGateway = isDefined(ARWEAVE_GATEWAY) ? JSON.parse(ARWEAVE_GATEWAY ?? "{}") : DEFAULT_ARWEAVE_GATEWAY;
     assert(ArweaveGatewayInterfaceSS.is(_arweaveGateway), "Invalid Arweave gateway");
     this.arweaveGateway = _arweaveGateway;
-
-    this.peggedTokenPrices = Object.fromEntries(
-      Object.entries(JSON.parse(PEGGED_TOKEN_PRICES ?? "{}")).map(([pegTokenSymbol, tokenSymbolsToPeg]) => [
-        pegTokenSymbol,
-        new Set(tokenSymbolsToPeg as string[]),
-      ])
-    );
   }
 
   /**
