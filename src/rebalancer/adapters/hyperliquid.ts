@@ -711,29 +711,15 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
 
     // For any pending orders at all, we should add a virtual balance to the destination chain. This includes
     // orders with statuses: { PENDING_BRIDGE_TO_HYPEREVM, PENDING_SWAP, PENDING_DEPOSIT_TO_HYPERCORE, PENDING_WITHDRAWAL_FROM_HYPERCORE },
-    const pendingSwaps = await this._redisGetPendingSwaps();
-    const pendingDepositsToHypercore = await this._redisGetPendingDeposits();
-    if (pendingSwaps.length > 0) {
+    const pendingOrders = await this._redisGetPendingOrders();
+    if (pendingOrders.length > 0) {
       this.logger.debug({
         at: "HyperliquidStablecoinSwapAdapter.getPendingRebalances",
-        message: `Pending swap cloids: ${pendingSwaps.join(", ")}`,
-        pendingSwaps: pendingSwaps.length,
+        message: `Found ${pendingOrders.length} pending orders`,
+        pendingOrders: pendingOrders,
       });
     }
-    if (pendingDepositsToHypercore.length > 0) {
-      this.logger.debug({
-        at: "HyperliquidStablecoinSwapAdapter.getPendingRebalances",
-        message: `Pending deposit to Hypercore cloids: ${pendingDepositsToHypercore.join(", ")}`,
-        pendingDepositsToHypercore: pendingDepositsToHypercore.length,
-      });
-    }
-    const pendingCloids = new Set<string>(
-      pendingSwaps
-        .concat(pendingWithdrawalsFromHypercore)
-        .concat(pendingDepositsToHypercore)
-        .concat(pendingBridgeToHyperevm)
-    ).values();
-    for (const cloid of pendingCloids) {
+    for (const cloid of pendingOrders) {
       // Filter this to match pending rebalance routes:
       const orderDetails = await this._redisGetOrderDetails(cloid);
       const { destinationChain, destinationToken, sourceChain, sourceToken, amountToTransfer } = orderDetails;
