@@ -3,7 +3,7 @@ import { BinanceStablecoinSwapAdapter } from "./adapters/binance";
 import { CctpAdapter } from "./adapters/cctpAdapter";
 import { HyperliquidStablecoinSwapAdapter } from "./adapters/hyperliquid";
 import { OftAdapter } from "./adapters/oftAdapter";
-import { RebalancerClient, RebalanceRoute } from "./rebalancer";
+import { RebalancerAdapter, RebalancerClient, RebalanceRoute } from "./rebalancer";
 import { RebalancerConfig } from "./RebalancerConfig";
 
 export async function constructRebalancerClient(logger: winston.Logger, baseSigner: Signer): Promise<RebalancerClient> {
@@ -14,8 +14,7 @@ export async function constructRebalancerClient(logger: winston.Logger, baseSign
   const binanceAdapter = new BinanceStablecoinSwapAdapter(logger, rebalancerConfig, baseSigner);
   const cctpAdapter = new CctpAdapter(logger, rebalancerConfig, baseSigner);
   const oftAdapter = new OftAdapter(logger, rebalancerConfig, baseSigner);
-
-  const adapters = { oft: oftAdapter, cctp: cctpAdapter, hyperliquid: hyperliquidAdapter, binance: binanceAdapter };
+  const adapterMap = { hyperliquid: hyperliquidAdapter, binance: binanceAdapter, cctp: cctpAdapter, oft: oftAdapter };
 
   // Following two variables are hardcoded to aid testing:
   const usdtChains = [
@@ -64,6 +63,13 @@ export async function constructRebalancerClient(logger: winston.Logger, baseSign
     }
   }
 
+  // Pass in adapters that are used in at least one rebalance route:
+  const adapterNames = new Set<string>(rebalanceRoutes.map((route) => route.adapter));
+  const adapters: { [name: string]: RebalancerAdapter } = {};
+  console.log("adapterNames", adapterNames)
+  for (const adapterName of adapterNames) {
+    adapters[adapterName] = adapterMap[adapterName];
+  }
   const rebalancerClient = new RebalancerClient(logger, rebalancerConfig, adapters, rebalanceRoutes, baseSigner);
   await rebalancerClient.initialize();
   return rebalancerClient;
