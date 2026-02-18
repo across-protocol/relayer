@@ -658,18 +658,18 @@ export class Relayer {
   }
 
   canSlowFill(deposit: DepositWithBlock): boolean {
-      return (
-        // Cannot slow fill when input and output tokens are not equivalent.
-        this.clients.hubPoolClient.areTokensEquivalent(
-          deposit.inputToken,
-          deposit.originChainId,
-          deposit.outputToken,
-          deposit.destinationChainId
-        ) &&
-        // Cannot slow fill from or to a lite chain.
-        !deposit.fromLiteChain &&
-        !deposit.toLiteChain
-      );
+    return (
+      // Cannot slow fill when input and output tokens are not equivalent.
+      this.clients.hubPoolClient.areTokensEquivalent(
+        deposit.inputToken,
+        deposit.originChainId,
+        deposit.outputToken,
+        deposit.destinationChainId
+      ) &&
+      // Cannot slow fill from or to a lite chain.
+      !deposit.fromLiteChain &&
+      !deposit.toLiteChain
+    );
   }
 
   // Iterate over all unfilled deposits. For each unfilled deposit, check that:
