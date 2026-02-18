@@ -327,8 +327,13 @@ describe("InventoryClient: Refund chain selection", async function () {
           OPTIMISM
         )
       ).to.be.true;
-      // Should not throw:
-      await _inventoryClient.determineRefundChainId(sampleDepositData);
+      // Should throw since its not a supported swap route:
+      await assertPromiseError(
+        _inventoryClient.determineRefundChainId(sampleDepositData),
+        `Unexpected ${getNetworkName(sampleDepositData.destinationChainId)} output token on ${getNetworkName(
+          sampleDepositData.originChainId
+        )} deposit`
+      );
     });
 
     it("allows swap routes to be defined for all chains", async function () {
@@ -366,7 +371,12 @@ describe("InventoryClient: Refund chain selection", async function () {
         )
       ).to.be.true;
       // Should not throw:
-      await _inventoryClient.determineRefundChainId(sampleDepositData);
+      await assertPromiseError(
+        _inventoryClient.determineRefundChainId(sampleDepositData),
+        `Unexpected ${getNetworkName(sampleDepositData.destinationChainId)} output token on ${getNetworkName(
+          sampleDepositData.originChainId
+        )} deposit`
+      );
     });
 
     it("token config is not defined", async function () {
