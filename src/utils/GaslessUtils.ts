@@ -86,7 +86,13 @@ export function buildGaslessDepositTx(
   const { from: signatureOwner, validBefore, validAfter } = permit.message;
   const witnessData: BridgeWitnessData = { inputAmount, baseDepositData, submissionFees, spokePool, nonce };
   const depositData = toContractDepositData(witnessData);
-  const args = [signatureOwner, depositData, BigNumber.from(validAfter), BigNumber.from(validBefore), normalizeSignature(signature)];
+  const args = [
+    signatureOwner,
+    depositData,
+    BigNumber.from(validAfter),
+    BigNumber.from(validBefore),
+    normalizeSignature(signature),
+  ];
   return {
     contract: spokePoolPeripheryContract,
     chainId: depositMessage.originChainId,

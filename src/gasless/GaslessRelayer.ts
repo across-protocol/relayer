@@ -86,6 +86,7 @@ export class GaslessRelayer {
   ) {
     this.api = new AcrossSwapApiClient(this.logger, this.config.apiTimeoutOverride);
     this.transactionClient = new TransactionClient(this.logger);
+    config.relayerDestinationChains.forEach((chainId) => (this.retryableFills[chainId] = {}));
   }
 
   /*
@@ -488,7 +489,6 @@ export class GaslessRelayer {
             const fill = await this._findFill(deposit);
             // The deposit still failed and no fill has been observed, so retry again.
             if (!isDefined(fill)) {
-              this.retryableFills[destinationChainId] ??= {};
               this.retryableFills[destinationChainId][depositNonce] = deposit;
               return;
             }
