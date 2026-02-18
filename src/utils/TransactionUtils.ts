@@ -127,28 +127,27 @@ export async function willSucceed(transaction: AugmentedTransaction): Promise<Tr
   const { contract, method } = transaction;
   const args = transaction.value ? [...transaction.args, { value: transaction.value }] : transaction.args;
 
-  // First callStatic, which will surface a custom error if the transaction would fail.
-  // This is useful for surfacing custom error revert reasons like RelayFilled in the SpokePool but
-  // it does incur an extra RPC call. We do this because estimateGas is a provider function that doesn't
-  // relay custom errors well: https://github.com/ethers-io/ethers.js/discussions/3291#discussion-4314795
-  let data;
+  // First try to estimate gas. If a gasLimit is produced the the transaction is currently expected to succeed.
+  // If the transaction fails on simulation, re-run it with `Contract.callStatic()`, which is better at producing
+  // a meaningful reason for the failure in case a custom revert is thrown by the contract.
+  // See also https://github.com/ethers-io/ethers.js/discussions/3291#discussion-4314795
   try {
-    data = await contract.callStatic[method](...args);
-  } catch (err: any) {
-    if (err.errorName) {
-      return {
-        transaction,
-        succeed: false,
-        reason: err.errorName,
-      };
+    const gasLimit = await contract.estimateGas[method](...args);
+    return { transaction: { ...transaction, gasLimit }, succeed: true };
+  } catch (error) {
+    if (typeguards.isEthersError(error)) {
+      return { transaction, succeed: false, reason: error.reason };
     }
   }
 
   try {
-    const gasLimit = await contract.estimateGas[method](...args);
-    return { transaction: { ...transaction, gasLimit }, succeed: true, data };
-  } catch (error) {
-    const reason = typeguards.isEthersError(error) ? error.reason : "unknown error";
+    await contract.callStatic[method](...args);
+    throw new Error("callStatic should always throw");
+  } catch (err) {
+    let reason = "unknown error";
+    if (typeof err === "object" && "errorName" in err) {
+      reason = String(err.errorName);
+    }
     return { transaction, succeed: false, reason };
   }
 }
