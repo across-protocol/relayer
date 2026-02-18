@@ -392,6 +392,19 @@ export class RebalancerClient {
       );
       const amountToTransfer = deficitAmountCapped.add(cheapestExpectedCost);
 
+      // Check if there are already too many pending orders for this adapter.
+      const pendingOrders = await this.adapters[adapter].getPendingOrders();
+      const pendingOrderCapForAdapter = this.config.maxPendingOrders[adapter] ?? 2; // @todo Default low for now,
+      // eventually change this to a very high default value.
+      if (pendingOrders.length >= pendingOrderCapForAdapter) {
+        this.logger.debug({
+          at: "RebalanceClient.rebalanceInventory",
+          message: `Too many pending orders (${pendingOrders.length}) for ${adapter} adapter, skipping rebalance`,
+          pendingOrderCapForAdapter,
+        });
+        continue;
+      }
+
       // Initiate a new rebalance
       this.logger.debug({
         at: "RebalanceClient.rebalanceInventory",
@@ -439,5 +452,6 @@ export interface RebalancerAdapter {
   // Get all currently unfinalized rebalance amounts. Should be used to add a virtual balance credit for the chain
   // + token in question.
   getPendingRebalances(): Promise<{ [chainId: number]: { [token: string]: BigNumber } }>;
+  getPendingOrders(): Promise<string[]>;
   getEstimatedCost(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber, debugLog: boolean): Promise<BigNumber>;
 }

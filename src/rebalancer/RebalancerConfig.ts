@@ -15,6 +15,10 @@ import { assert, BigNumber, isDefined, readFileSync, toBNWei, getTokenInfoFromSy
  *   "maxAmountsToTransfer": {
  *     "USDT": "1000",
  *     "USDC": "1000"
+ *   },
+ *   "maxPendingOrders": {
+ *     "hyperliquid": 3,
+ *     "binance": 3
  *   }
  * }
  *
@@ -22,7 +26,8 @@ import { assert, BigNumber, isDefined, readFileSync, toBNWei, getTokenInfoFromSy
  *   converted to the token's native decimals on the respective chain.
  * - maxAmountsToTransfer values follow the same convention and will be converted to the origin chain's
  *   native decimals.
- * - chainIds are derived automatically as the union of all chain IDs present in targetBalances.
+ * - maxPendingOrders is a map of adapter names to the maximum number of pending orders that should be allowed
+ *   simultaneously for that adapter.
  */
 
 interface ChainConfig {
@@ -52,9 +57,15 @@ export interface MaxAmountToTransferConfig {
   [token: string]: MaxAmountToTransferChainConfig;
 }
 
+export interface MaxPendingOrdersConfig {
+  [adapterName: string]: number;
+}
+
 export class RebalancerConfig extends CommonConfig {
   public targetBalances: TargetBalanceConfig;
   public maxAmountsToTransfer: MaxAmountToTransferConfig;
+  public maxPendingOrders: MaxPendingOrdersConfig;
+  // chainId's are derived automatically as the union of all chain IDs present in targetBalances.
   public chainIds: number[];
   constructor(env: ProcessEnv) {
     const { REBALANCER_CONFIG, REBALANCER_EXTERNAL_CONFIG } = env;
@@ -119,9 +130,22 @@ export class RebalancerConfig extends CommonConfig {
       for (const [token, amount] of Object.entries(rebalancerConfig.maxAmountsToTransfer as Record<string, string>)) {
         this.maxAmountsToTransfer[token] ??= {};
         for (const chainId of chainIdSet) {
-          const { decimals } = getTokenInfoFromSymbol(token, chainId);
-          this.maxAmountsToTransfer[token][chainId] = toBNWei(amount, decimals);
+          try {
+            const { decimals } = getTokenInfoFromSymbol(token, chainId);
+            this.maxAmountsToTransfer[token][chainId] = toBNWei(amount, decimals);
+          } catch (err) {
+            // ignore, token doesn't exist on chain probably
+          }
         }
+      }
+    }
+
+    this.maxPendingOrders = {};
+    if (isDefined(rebalancerConfig.maxPendingOrders)) {
+      for (const [adapterName, maxPendingOrders] of Object.entries(
+        rebalancerConfig.maxPendingOrders as Record<string, number>
+      )) {
+        this.maxPendingOrders[adapterName] = maxPendingOrders;
       }
     }
 
