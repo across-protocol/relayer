@@ -31,6 +31,7 @@ import {
   ethers,
   expect,
   getLastBlockTime,
+  mineRandomBlocks,
   lastSpyLogIncludes,
   setupTokensForWallet,
   sinon,
@@ -231,6 +232,8 @@ describe("Relayer: Initiates slow fill requests", async function () {
     );
     expect(deposit).to.exist;
 
+    // Mine blocks so the deposit age exceeds the slow fill deferral threshold.
+    await mineRandomBlocks(10);
     await updateAllClients();
     const _txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
     const txnHashes = await _txnReceipts[destinationChainId];
