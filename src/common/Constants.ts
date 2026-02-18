@@ -1047,7 +1047,7 @@ export const EVM_OFT_MESSENGERS: Map<string, Map<number, EvmAddress>> = new Map(
     TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET],
     new Map<number, EvmAddress>([
       [CHAIN_IDs.MAINNET, EvmAddress.from("0xc026395860Db2d07ee33e05fE50ed7bD583189C7")],
-      [CHAIN_IDs.TEMPO, EvmAddress.from("0x8c76e2F6C5ceDA9AA7772e7efF30280226c44392")], // StargateOFTUSDC (OFT wrapping USDC)
+      [CHAIN_IDs.TEMPO, EvmAddress.from("0x8c76e2F6C5ceDA9AA7772e7efF30280226c44392")],
     ]),
   ],
 ]);
