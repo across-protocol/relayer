@@ -701,7 +701,6 @@ export class GaslessRelayer {
       this.logger.warn({
         at: "GaslessRelayer#submit",
         message: "Failed to submit transaction",
-        tx,
         err: err instanceof Error ? err.message : String(err),
       });
       return null;
