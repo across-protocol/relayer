@@ -86,7 +86,7 @@ export class GaslessRelayer {
   ) {
     this.api = new AcrossSwapApiClient(this.logger, this.config.apiTimeoutOverride);
     this.transactionClient = new TransactionClient(this.logger);
-    config.relayerDestinationChains.forEach((chainId) => this.retryableFills[chainId] = {});
+    config.relayerDestinationChains.forEach((chainId) => (this.retryableFills[chainId] = {}));
   }
 
   /*
