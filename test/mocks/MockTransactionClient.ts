@@ -47,13 +47,13 @@ export class MockedTransactionClient extends TransactionClient {
 
   protected override async _submit(
     txn: AugmentedTransaction,
-    nonce: number | null = null
+    opts: { nonce: number | null; maxTries?: number }
   ): Promise<TransactionResponse> {
     if (this.txnFailure(txn)) {
       return Promise.reject(this.txnFailureReason(txn));
     }
 
-    const _nonce = nonce ?? 1;
+    const _nonce = opts.nonce ?? 1;
     const txnResponse = {
       chainId: txn.chainId,
       nonce: _nonce,
