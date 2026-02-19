@@ -688,7 +688,7 @@ function addUpdateAndExecuteTxns(
     method: "update",
     args: updateArgs,
     unpermissioned: false,
-    canFailInSimulation: false,
+    canFailInSimulation: true,
     nonMulticall: true,
     message: `Finalize Helios msg (HubPoolStore nonce ${l1Event.nonce.toString()}) - Step 1: Update SP1Helios`,
   };
@@ -755,7 +755,7 @@ function addUpdateOnlyTxn(
     method: "update",
     args: updateArgs,
     unpermissioned: false,
-    canFailInSimulation: false,
+    canFailInSimulation: true,
     nonMulticall: true,
     message: `KeepAlive msg for SP1Helios: updating to a newer head ${decodedOutputs.prevHead} -> ${decodedOutputs.newHead}`,
   };
