@@ -18,6 +18,7 @@ import {
   getBinanceWithdrawals,
   getNetworkName,
   getProvider,
+  getRedisCache,
   isDefined,
   paginatedEventQuery,
   setBinanceDepositType,
@@ -31,6 +32,7 @@ import { RebalanceRoute } from "../rebalancer";
 import { BaseAdapter, OrderDetails, STATUS } from "./baseAdapter";
 import { AugmentedTransaction } from "../../clients";
 import { RebalancerConfig } from "../RebalancerConfig";
+import { RedisCache } from "../../caching/RedisCache";
 interface SPOT_MARKET_META {
   symbol: string;
   baseAssetName: string;
@@ -813,7 +815,14 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const txnHash = await this._submitTransaction(txn);
     // Set the TTL to 30 minutes so that the Binance sweeper finalizer only attempts to pull back these deposited
     // funds after 30 minutes. If the swap hasn't occurred in 30 mins then something has gone wrong.
-    await setBinanceDepositType(sourceChain, txnHash, BinanceTransactionType.SWAP, this.redisCache, 30 * 60);
+    // @dev Use redis cache with default global name space here so that the sweeper finalizer can access the deposit type.
+    await setBinanceDepositType(
+      sourceChain,
+      txnHash,
+      BinanceTransactionType.SWAP,
+      (await getRedisCache(this.logger)) as RedisCache,
+      30 * 60
+    );
     this.logger.debug({
       at: "BinanceStablecoinSwapAdapter._depositToBinance",
       message: `Deposited ${amountReadable} ${sourceToken} to Binance from chain ${getNetworkName(sourceChain)}`,
@@ -1044,11 +1053,12 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     });
     const initiatedWithdrawalKey = this._redisGetInitiatedWithdrawalKey(cloid);
     await this.redisCache.set(initiatedWithdrawalKey, withdrawalId.id);
+    // @dev Use redis cache with default global name space here so that the sweeper finalizer can access the withdrawal type.
     await setBinanceWithdrawalType(
       destinationEntrypointNetwork,
       withdrawalId.id,
       BinanceTransactionType.SWAP,
-      this.redisCache
+      (await getRedisCache(this.logger)) as RedisCache,
     );
     this.logger.info({
       at: "BinanceStablecoinSwapAdapter._withdraw",
