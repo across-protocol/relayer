@@ -182,7 +182,7 @@ export async function setBinanceDepositType(
 export async function setBinanceWithdrawalType(
   withdrawalChain: number,
   withdrawalId: string,
-  type: BinanceTransactionType,
+  type: BinanceTransactionType
 ): Promise<void> {
   const redisCache = await getRedisCache();
   const redisKey = getBinanceTransactionTypeKey(withdrawalChain, withdrawalId);
@@ -215,7 +215,7 @@ export async function getBinanceDepositType(
  * @returns The type of the withdrawal.
  */
 export async function getBinanceWithdrawalType(
-  withdrawalDetails: Pick<BinanceWithdrawal, "network" | "id">,
+  withdrawalDetails: Pick<BinanceWithdrawal, "network" | "id">
 ): Promise<BinanceTransactionType> {
   const redisCache = await getRedisCache();
   const redisKey = getBinanceTransactionTypeKeyFromNetworkName(withdrawalDetails.network, withdrawalDetails.id);

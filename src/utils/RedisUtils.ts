@@ -25,7 +25,13 @@ async function _getRedis(
   url = REDIS_URL,
   customNamespace?: string
 ): Promise<RedisCache | undefined> {
-  if (!redisClients[url]) {
+  const namespace = customNamespace || globalNamespace;
+  const redisInstanceKey = namespace ? `${url}-${namespace}` : url;
+  if (!redisClients[redisInstanceKey]) {
+    logger?.debug({
+      at: "RedisUtils#_getRedis",
+      message: `Creating new redis client instance with key ${redisInstanceKey}`,
+    });
     let redisClient: RedisClient | undefined = undefined;
     const reconnectStrategy = (retries: number): number | Error => {
       // Set a maximum retry limit to prevent infinite reconnection attempts
@@ -59,9 +65,9 @@ async function _getRedis(
         message: `Connected to redis server at ${url} successfully!`,
         dbSize: await redisClient.dbSize(),
       });
-      redisClients[url] = new RedisCache(redisClient, customNamespace || globalNamespace);
+      redisClients[redisInstanceKey] = new RedisCache(redisClient, namespace);
     } catch (err) {
-      delete redisClients[url];
+      delete redisClients[redisInstanceKey];
       await disconnectRedisClient(redisClient, logger);
       logger?.debug({
         at: "RedisUtils#getRedis",
@@ -72,7 +78,7 @@ async function _getRedis(
     }
   }
 
-  return redisClients[url];
+  return redisClients[redisInstanceKey];
 }
 
 export async function getRedisCache(
