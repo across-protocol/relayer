@@ -830,7 +830,8 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
   ): Promise<{ px: string; slippagePct: number }> {
     const infoClient = new hl.InfoClient({ transport: new hl.HttpTransport() });
     const spotMarketMeta = this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
-    const l2Book = await getL2Book(infoClient, { coin: spotMarketMeta.name });
+    const l2Book = await getL2Book(infoClient, { coin: spotMarketMeta.name, nSigFigs: 4 }); // use 4 sig figts
+    // to be equivalent to how Binance API returns the orderbook
     const bids = l2Book.levels[0];
     const asks = l2Book.levels[1];
 
