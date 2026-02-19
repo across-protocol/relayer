@@ -180,8 +180,15 @@ export class InventoryClient {
     }
   }
 
+  supportsSwaps(): boolean {
+    return (this.inventoryConfig?.allowedSwapRoutes ?? []).length > 0;
+  }
+
   isSwapSupported(inputToken: Address, outputToken: Address, inputChainId: number, outputChainId: number): boolean {
-    return (this.inventoryConfig?.allowedSwapRoutes ?? []).some(
+    if (!this.supportsSwaps()) {
+      return false;
+    }
+    return this.inventoryConfig.allowedSwapRoutes.some(
       (swapRoute) =>
         (swapRoute.fromChain === "ALL" || swapRoute.fromChain === inputChainId) &&
         swapRoute.fromToken === inputToken.toNative() &&
