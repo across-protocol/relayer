@@ -392,7 +392,9 @@ export class ProfitClient {
    *   - MIN_RELAYER_FEE_PCT_USDC_USDT_42161_10=0.00001
    * @returns The minimum required fee multiplier for the deposit's token/route combination.
    */
-  minRelayerFeePct(deposit: Deposit): BigNumber {
+  minRelayerFeePct(
+    deposit: Pick<Deposit, "inputToken" | "originChainId" | "outputToken" | "destinationChainId">
+  ): BigNumber {
     const { inputToken, originChainId, outputToken, destinationChainId } = deposit;
     const srcSymbol = this.getTokenSymbol(inputToken, originChainId);
     const dstSymbol = this.getTokenSymbol(outputToken, destinationChainId);
