@@ -276,15 +276,15 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       }
     }
 
-    const pendingBridgeToHypercore = await this._redisGetPendingDeposits();
-    if (pendingBridgeToHypercore.length > 0) {
+    const pendingDeposits = await this._redisGetPendingDeposits();
+    if (pendingDeposits.length > 0) {
       this.logger.debug({
         at: "HyperliquidStablecoinSwapAdapter.updateRebalanceStatuses",
         message: "Orders pending deposit to Hypercore",
-        pendingBridgeToHypercore,
+        pendingDeposits,
       });
     }
-    for (const cloid of pendingBridgeToHypercore) {
+    for (const cloid of pendingDeposits) {
       const orderDetails = await this._redisGetOrderDetails(cloid);
       const orderResult = await this._createHlOrder(orderDetails, cloid);
       if (orderResult) {
