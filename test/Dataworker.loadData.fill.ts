@@ -48,7 +48,6 @@ import {
 } from "./mocks";
 import { interfaces, constants as sdkConstants, utils as sdkUtils, providers } from "@across-protocol/sdk";
 import { cloneDeep } from "lodash";
-import { INFINITE_FILL_DEADLINE } from "../src/common";
 
 describe("Dataworker: Load bundle data", async function () {
   const { EMPTY_MESSAGE } = sdkConstants;
@@ -728,9 +727,6 @@ describe("Dataworker: Load bundle data", async function () {
         amountToDeposit,
         erc20_2.address,
         amountToDeposit,
-        {
-          fillDeadline: INFINITE_FILL_DEADLINE.toNumber(),
-        }
       );
 
       // Modify the block ranges such that the deposit is in a future bundle block range. This should render
@@ -832,9 +828,6 @@ describe("Dataworker: Load bundle data", async function () {
         amountToDeposit,
         erc20_2.address,
         amountToDeposit,
-        {
-          fillDeadline: INFINITE_FILL_DEADLINE.toNumber(),
-        }
       );
       const depositBlock = await spokePool_1.provider.getBlockNumber();
 
