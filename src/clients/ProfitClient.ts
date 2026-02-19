@@ -129,6 +129,8 @@ export class ProfitClient {
     protected gasMessageMultiplier = toBNWei(constants.DEFAULT_RELAYER_GAS_MESSAGE_MULTIPLIER),
     protected gasPadding = toBNWei(constants.DEFAULT_RELAYER_GAS_PADDING),
     readonly additionalL1Tokens: EvmAddress[] = [],
+    // Sets of token symbols that should be treated equivalently, for example [ "USDC": [USDT, USDH ].
+    readonly peggedTokens: { [pegTokenSymbol: string]: Set<string> } = {},
     readonly l1TokensOverride: string[] = []
   ) {
     // Require 0% <= gasPadding <= 200%
@@ -831,6 +833,10 @@ export class ProfitClient {
   }
 
   protected _getRemappedTokenSymbol(token: string): string {
+    // If token symbol exists in a set of pegged tokens, return the key of the set as the remapped symbol.
+    if (Object.values(this.peggedTokens).some((peggedTokens) => peggedTokens.has(token))) {
+      return Object.keys(this.peggedTokens).find((pegTokenSymbol) => this.peggedTokens[pegTokenSymbol].has(token));
+    }
     return TOKEN_EQUIVALENCE_REMAPPING[token];
   }
 
