@@ -81,17 +81,19 @@ export class TransactionClient {
   ): Promise<TransactionResponse> {
     const { contract, method, args, value, gasLimit } = txn;
     const { nonce = null, maxTries = 10 } = opts;
-    const txnResponse = _runTransaction(this.logger, contract, method, args, value, gasLimit, nonce);
+    const txnPromise = _runTransaction(this.logger, contract, method, args, value, gasLimit, nonce);
 
     if (txn.ensureConfirmation) {
       const at = "TransactionClient#_submit";
       const chain = getNetworkName(txn.chainId);
+      const txnResponse = await txnPromise;
+
       let txnReceipt: TransactionReceipt;
       let nTries = 0;
       do {
         try {
           // Must return a TransactionResponse, so await on the receipt, but discard it.
-          txnReceipt = await (await txnResponse).wait();
+          txnReceipt = await txnResponse.wait();
         } catch (error) {
           if (!typeguards.isEthersError(error)) {
             throw error;
@@ -127,9 +129,11 @@ export class TransactionClient {
           message: `Unable to confirm ${chain} transaction.`,
         });
       }
+
+      return txnPromise;
     }
 
-    return txnResponse;
+    return txnPromise;
   }
 
   async submit(chainId: number, txns: AugmentedTransaction[]): Promise<TransactionResponse[]> {
