@@ -495,7 +495,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
   ): Promise<BigNumber> {
     const { sourceToken, destinationToken, sourceChain, destinationChain } = rebalanceRoute;
     const spotMarketMeta = this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
-    const { slippagePct, px } = await this._getLatestPrice(
+    const { px } = await this._getLatestPrice(
       sourceToken,
       destinationToken,
       destinationChain,
@@ -504,7 +504,6 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       // estimation of the execution cost possible.
     );
     const latestPrice = Number(px);
-    const slippage = toBNWei(slippagePct, 18).mul(amountToTransfer).div(toBNWei(100, 18));
 
     const isBuy = spotMarketMeta.isBuy;
     let spreadPct = 0;
@@ -545,7 +544,6 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       .div(toBNWei(100, 18));
 
     const totalFee = spreadFee
-      .add(slippage)
       .add(takerFeeFixed)
       .add(bridgeToHyperEvmFee)
       .add(bridgeFromHyperEvmFee)
@@ -559,8 +557,6 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         )} to ${destinationToken} on ${getNetworkName(
           destinationChain
         )} with amount to transfer ${amountToTransfer.toString()}`,
-        slippagePct,
-        slippage: slippage.toString(),
         estimatedTakerPrice: latestPrice,
         spreadPct: spreadPct * 100,
         spreadFee: spreadFee.toString(),
