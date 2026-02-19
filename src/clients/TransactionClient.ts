@@ -113,7 +113,7 @@ export class TransactionClient {
                 ...common,
                 message: `Transaction submission on ${chain} replaced at nonce ${nonce}, resubmitting...`,
               });
-              return this._submit(txn, { ...opts, maxTries: maxTries - 1 });
+              return this._submit(txn, { nonce: null, maxTries: maxTries - 1 });
             default:
               this.logger.warn({
                 ...common,
