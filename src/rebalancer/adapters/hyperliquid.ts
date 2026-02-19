@@ -499,7 +499,9 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       sourceToken,
       destinationToken,
       destinationChain,
-      amountToTransfer
+      amountToTransfer,
+      1.0 // When estimating cost, don't apply any buffer to the estimation, as we want the most accurate
+      // estimation of the execution cost possible.
     );
     const latestPrice = Number(px);
     const slippage = toBNWei(slippagePct, 18).mul(amountToTransfer).div(toBNWei(100, 18));
@@ -827,7 +829,8 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     sourceToken: string,
     destinationToken: string,
     destinationChain: number,
-    amountToTransfer: BigNumber
+    amountToTransfer: BigNumber,
+    pxBuffer: number
   ): Promise<{ px: string; slippagePct: number }> {
     const infoClient = new hl.InfoClient({ transport: new hl.HttpTransport() });
     const spotMarketMeta = this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
@@ -855,10 +858,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         `Cannot find price in order book that satisfies an order for size ${amountToTransfer.toString()} of ${destinationToken} on the market "${sourceToken}-${destinationToken}"`
       );
     }
-    // Add a buffer to the price to account for price volatility and to increase chance that our IOC order gets
-    // fully filled.
-    const buffer = Number(process.env.REBALANCER_HYPERLIQUID_LIMIT_ORDER_PRICE_BUFFER ?? "1.01");
-    const price = spotMarketMeta.isBuy ? Number(maxPxReached.px) * buffer : Number(maxPxReached.px) / buffer;
+    const price = spotMarketMeta.isBuy ? Number(maxPxReached.px) * pxBuffer : Number(maxPxReached.px) / pxBuffer;
     const slippagePct = Math.abs(((price - bestPx) / bestPx) * 100);
     return {
       px: truncate(price, spotMarketMeta.pxDecimals).toString(),
@@ -871,7 +871,16 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     cloid: string
   ): Promise<ReturnType<typeof this._placeLimitOrder> | undefined> {
     const { sourceToken, destinationToken, destinationChain, amountToTransfer } = orderDetails;
-    const { px } = await this._getLatestPrice(sourceToken, destinationToken, destinationChain, amountToTransfer);
+    // Add a buffer to increase chance that our IOC order gets fully filled. IOC orders can get partially filled,
+    // which means the unfilled portion will get swept back to the user after this order is completed.
+    const limitOrderPxBuffer = Number(process.env.REBALANCER_HYPERLIQUID_LIMIT_ORDER_PRICE_BUFFER ?? "1.01");
+    const { px } = await this._getLatestPrice(
+      sourceToken,
+      destinationToken,
+      destinationChain,
+      amountToTransfer,
+      limitOrderPxBuffer
+    );
     return await this._placeLimitOrder(orderDetails, cloid, px);
   }
 
