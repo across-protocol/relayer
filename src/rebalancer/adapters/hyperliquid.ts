@@ -423,16 +423,18 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
 
     // Only sweep if there are no orders currently being swapped or withdrawn, to avoid
     // accidentally withdrawing balances that are needed for in-flight orders.
-    const [pendingSwaps, pendingWithdrawals] = await Promise.all([
+    const [pendingSwaps, pendingWithdrawals, pendingDeposits] = await Promise.all([
       this._redisGetPendingSwaps(),
       this._redisGetPendingWithdrawals(),
+      this._redisGetPendingDeposits(),
     ]);
-    if (pendingSwaps.length > 0 || pendingWithdrawals.length > 0) {
+    if (pendingSwaps.length > 0 || pendingWithdrawals.length > 0 || pendingDeposits.length > 0) {
       this.logger.debug({
         at: "HyperliquidStablecoinSwapAdapter.sweepIntermediateBalances",
-        message: "Skipping sweep because there are pending swaps or withdrawals",
+        message: "Skipping sweep because there are pending swaps or withdrawals or deposits",
         pendingSwaps: pendingSwaps.length,
         pendingWithdrawals: pendingWithdrawals.length,
+        pendingDeposits: pendingDeposits.length,
       });
       return;
     }
