@@ -10,7 +10,6 @@ import {
   TOKEN_SYMBOLS_MAP,
   Signer,
   ZERO_ADDRESS,
-  bnUint32Max,
   EvmAddress,
   toWei,
   toGWei,
@@ -135,16 +134,15 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
 
 // Auto-populate all known OP stack chains. These are only applied as defaults; explicit config above is respected.
 MIN_DEPOSIT_CONFIRMATIONS[MDC_DEFAULT_THRESHOLD] ??= {};
-Object.values(CHAIN_IDs)
-  .forEach((chainId) => {
-    if (chainIsOPStack(chainId)) {
-      MIN_DEPOSIT_CONFIRMATIONS[MDC_DEFAULT_THRESHOLD][chainId] ??= OP_STACK_MIN_DEPOSIT_CONFIRMATIONS;
-    } else if (chainIsOrbit(chainId) || chainId === CHAIN_IDs.ARBITRUM) {
-      MIN_DEPOSIT_CONFIRMATIONS[MDC_DEFAULT_THRESHOLD][chainId] ??= ORBIT_MIN_DEPOSIT_CONFIRMATIONS;
-    } else if (chainIsSvm(chainId)) {
-      MIN_DEPOSIT_CONFIRMATIONS[MDC_DEFAULT_THRESHOLD][chainId] ??= SVM_MIN_DEPOSIT_CONFIRMATIONS;
-    }
-  });
+Object.values(CHAIN_IDs).forEach((chainId) => {
+  if (chainIsOPStack(chainId)) {
+    MIN_DEPOSIT_CONFIRMATIONS[MDC_DEFAULT_THRESHOLD][chainId] ??= OP_STACK_MIN_DEPOSIT_CONFIRMATIONS;
+  } else if (chainIsOrbit(chainId) || chainId === CHAIN_IDs.ARBITRUM) {
+    MIN_DEPOSIT_CONFIRMATIONS[MDC_DEFAULT_THRESHOLD][chainId] ??= ORBIT_MIN_DEPOSIT_CONFIRMATIONS;
+  } else if (chainIsSvm(chainId)) {
+    MIN_DEPOSIT_CONFIRMATIONS[MDC_DEFAULT_THRESHOLD][chainId] ??= SVM_MIN_DEPOSIT_CONFIRMATIONS;
+  }
+});
 
 export const REDIS_URL_DEFAULT = "redis://localhost:6379";
 
