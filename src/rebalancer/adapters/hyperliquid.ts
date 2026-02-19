@@ -857,10 +857,11 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     }
     // Add a buffer to the price to account for price volatility and to increase chance that our IOC order gets
     // fully filled.
-    const price = Number(maxPxReached.px);
+    const buffer = Number(process.env.REBALANCER_HYPERLIQUID_LIMIT_ORDER_PRICE_BUFFER ?? "1.01");
+    const price = spotMarketMeta.isBuy ? Number(maxPxReached.px) * buffer : Number(maxPxReached.px) / buffer;
     const slippagePct = Math.abs(((price - bestPx) / bestPx) * 100);
     return {
-      px: truncate(spotMarketMeta.isBuy ? price * 1.01 : price / 1.01, spotMarketMeta.pxDecimals).toString(),
+      px: truncate(price, spotMarketMeta.pxDecimals).toString(),
       slippagePct,
     };
   }
