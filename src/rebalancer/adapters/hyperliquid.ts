@@ -855,10 +855,10 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         `Cannot find price in order book that satisfies an order for size ${amountToTransfer.toString()} of ${destinationToken} on the market "${sourceToken}-${destinationToken}"`
       );
     }
-    const slippagePct = Math.abs(((Number(maxPxReached.px) - bestPx) / bestPx) * 100);
     // Add a buffer to the price to account for price volatility and to increase chance that our IOC order gets
     // fully filled.
     const price = Number(maxPxReached.px);
+    const slippagePct = Math.abs(((price - bestPx) / bestPx) * 100);
     return {
       px: truncate(spotMarketMeta.isBuy ? price * 1.01 : price / 1.01, spotMarketMeta.pxDecimals).toString(),
       slippagePct,
