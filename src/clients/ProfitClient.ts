@@ -176,12 +176,17 @@ export class ProfitClient {
   }
 
   protected getEmptyMessageGasMessageMultiplier(deposit: Deposit): BigNumber {
-    const destinationChainGasMessageMultiplier = process.env[`RELAYER_GAS_MESSAGE_MULTIPLIER_${deposit.destinationChainId}`];
-    return destinationChainGasMessageMultiplier ? toBNWei(destinationChainGasMessageMultiplier) : this.gasMessageMultiplier;
+    const destinationChainGasMessageMultiplier =
+      process.env[`RELAYER_GAS_MESSAGE_MULTIPLIER_${deposit.destinationChainId}`];
+    return destinationChainGasMessageMultiplier
+      ? toBNWei(destinationChainGasMessageMultiplier)
+      : this.gasMessageMultiplier;
   }
 
   resolveGasMultiplier(deposit: Deposit): BigNumber {
-    return isMessageEmpty(resolveDepositMessage(deposit)) ? this.getEmptyMessageGasMultiplier(deposit) : this.getEmptyMessageGasMessageMultiplier(deposit);
+    return isMessageEmpty(resolveDepositMessage(deposit))
+      ? this.getEmptyMessageGasMultiplier(deposit)
+      : this.getEmptyMessageGasMessageMultiplier(deposit);
   }
 
   resolveNativeToken(chainId: number): { symbol: string; decimals: number; address: string } {
@@ -392,9 +397,12 @@ export class ProfitClient {
     const srcSymbol = this.getTokenSymbol(inputToken, originChainId);
     const dstSymbol = this.getTokenSymbol(outputToken, destinationChainId);
     const effectiveSourceSymbol = this._getRemappedTokenSymbol(srcSymbol) ?? srcSymbol;
-    const effectiveDestinationSymbol = (dstSymbol !== "UNKNOWN") ? (this._getRemappedTokenSymbol(dstSymbol) ?? dstSymbol) : undefined;
+    const effectiveDestinationSymbol =
+      dstSymbol !== "UNKNOWN" ? this._getRemappedTokenSymbol(dstSymbol) ?? dstSymbol : undefined;
 
-    const tokenKey = effectiveDestinationSymbol ? `MIN_RELAYER_FEE_PCT_${effectiveSourceSymbol}_${effectiveDestinationSymbol}` : `MIN_RELAYER_FEE_PCT_${effectiveSourceSymbol}`;
+    const tokenKey = effectiveDestinationSymbol
+      ? `MIN_RELAYER_FEE_PCT_${effectiveSourceSymbol}_${effectiveDestinationSymbol}`
+      : `MIN_RELAYER_FEE_PCT_${effectiveSourceSymbol}`;
     const routeKey = `${tokenKey}_${originChainId}_${destinationChainId}`;
     const destinationChainKey = `MIN_RELAYER_FEE_PCT_${destinationChainId}`;
     let minRelayerFeePct = this.minRelayerFees[routeKey] ?? this.minRelayerFees[tokenKey];
@@ -524,12 +532,7 @@ export class ProfitClient {
     }
   }
 
-  async getFillProfitability(
-    deposit: Deposit,
-    lpFeePct: BigNumber,
-    repaymentChainId: number
-  ): Promise<FillProfit> {
-    const symbol = this.getTokenSymbol(deposit.inputToken, deposit.originChainId);
+  async getFillProfitability(deposit: Deposit, lpFeePct: BigNumber, repaymentChainId: number): Promise<FillProfit> {
     const minRelayerFeePct = this.minRelayerFeePct(deposit);
 
     const fill = await this.calculateFillProfitability(deposit, lpFeePct, minRelayerFeePct);
@@ -537,6 +540,7 @@ export class ProfitClient {
       const { depositId, destinationChainId } = deposit;
       const profitable = fill.profitable ? "profitable" : "unprofitable";
 
+      const symbol = this.getTokenSymbol(deposit.inputToken, deposit.originChainId);
       this.logger.debug({
         at: "ProfitClient#getFillProfitability",
         message: `${symbol} deposit to ${destinationChainId} #${depositId.toString()} with repayment on ${repaymentChainId} is ${profitable}`,

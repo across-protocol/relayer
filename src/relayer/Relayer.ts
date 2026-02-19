@@ -23,7 +23,6 @@ import {
   isSVMSpokePoolClient,
   Address,
   toAddressType,
-  EvmAddress,
   CHAIN_IDs,
   convertRelayDataParamsToBytes32,
   chainIsSvm,
@@ -685,7 +684,7 @@ export class Relayer {
     maxBlockNumber: number,
     sendSlowRelays: boolean
   ): Promise<void> {
-    const { depositId, depositor, destinationChainId, originChainId, inputToken, txnRef } = deposit;
+    const { depositId, depositor, destinationChainId, originChainId, txnRef } = deposit;
     const { profitClient, spokePoolClients, tokenClient } = this.clients;
     const { slowDepositors } = this.config;
     const [originChain, destChain] = [getNetworkName(originChainId), getNetworkName(destinationChainId)];
@@ -757,10 +756,7 @@ export class Relayer {
       }
     }
 
-    const { repaymentChainId, repaymentChainProfitability } = await this.resolveRepaymentChain(
-      deposit,
-      lpFees
-    );
+    const { repaymentChainId, repaymentChainProfitability } = await this.resolveRepaymentChain(deposit, lpFees);
     const {
       relayerFeePct,
       gasCost,
