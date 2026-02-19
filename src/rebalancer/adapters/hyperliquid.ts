@@ -31,6 +31,7 @@ import {
   getUserFees,
   getL2Book,
   getUserFillsByTime,
+  isSignerWallet,
 } from "../../utils";
 import { RebalanceRoute } from "../rebalancer";
 import * as hl from "@nktkas/hyperliquid";
@@ -120,6 +121,8 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
   };
 
   constructor(readonly logger: winston.Logger, readonly config: RebalancerConfig, readonly baseSigner: Signer) {
+    // Will need to be able use Signer as Wallet to submit HL order
+    assert(isSignerWallet(baseSigner), "Signer is not a Wallet");
     super(logger, config, baseSigner);
   }
 
@@ -982,9 +985,10 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     });
 
     // Place order:
+    assert(isSignerWallet(this.baseSigner), "Signer is not a Wallet");
     const exchangeClient = new hl.ExchangeClient({
       transport: new hl.HttpTransport(),
-      wallet: ethers.Wallet.fromMnemonic(process.env.MNEMONIC),
+      wallet: this.baseSigner,
     });
     const spotMarketMeta = this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
 
