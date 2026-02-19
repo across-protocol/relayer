@@ -1058,7 +1058,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       destinationEntrypointNetwork,
       withdrawalId.id,
       BinanceTransactionType.SWAP,
-      (await getRedisCache(this.logger)) as RedisCache,
+      (await getRedisCache(this.logger)) as RedisCache
     );
     this.logger.info({
       at: "BinanceStablecoinSwapAdapter._withdraw",
