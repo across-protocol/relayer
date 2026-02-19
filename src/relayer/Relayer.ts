@@ -777,12 +777,12 @@ export class Relayer {
 
     if (!hasBalance || !isProfitable) {
       if (isProfitable && !hasBalance) {
-        // For profitable deposits where the relayer has insufficient balance, log it for potential rebalancing.
+        // For profitable deposits where the relayer has insufficient balance,
+        // log it for potential rebalancing and request a slow fill.
         tokenClient.captureTokenShortfallForFill(deposit);
-      }
-
-      if (this.config.sendingSlowRelaysEnabled && fillStatus === FillStatus.Unfilled && this.canSlowFill(deposit)) {
-        this.requestSlowFill(deposit);
+        if (this.config.sendingSlowRelaysEnabled && fillStatus === FillStatus.Unfilled && this.canSlowFill(deposit)) {
+          this.requestSlowFill(deposit);
+        }
       }
 
       // Limit the ability of persistently-unprofitable deposits to congest the deposit/fill evaluation pipeline.
