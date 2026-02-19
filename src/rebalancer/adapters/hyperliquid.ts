@@ -1021,10 +1021,11 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         orders: [orderDetails],
         grouping: "na",
       });
-      this.logger.debug({
+      this.logger.info({
         at: "HyperliquidStablecoinSwapAdapter._placeLimitOrder",
-        message: `Order result for order ${cloid}`,
+        message: `Submitted new limit order for cloid ${cloid} with px ${px} and sz ${sz}`,
         result,
+        orderDetails,
       });
       return result;
     } catch (error: unknown) {
@@ -1119,7 +1120,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     // Note: I'd like this to work via the multicaller client or runTransaction but the .wait() seems to fail.
     // Note: If sending multicaller client txn, unpermissioned:false and nonMulticall:true must be set.
     const txn = await coreWriterContract.sendRawAction(bytes);
-    this.logger.debug({
+    this.logger.info({
       at: "HyperliquidStablecoinSwapAdapter._withdrawToHyperevm",
       message: `Withdrew ${amountToWithdraw} ${destinationToken} from Hypercore to HyperEVM`,
       txn: blockExplorerLink(txn.hash, HYPEREVM),

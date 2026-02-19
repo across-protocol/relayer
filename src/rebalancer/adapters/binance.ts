@@ -939,9 +939,10 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     });
     const response = await this.binanceApiClient.order(orderStruct as NewOrderSpot);
     assert(response.status == "FILLED", `Market order was not filled: ${JSON.stringify(response)}`);
-    this.logger.debug({
+    this.logger.info({
       at: "BinanceStablecoinSwapAdapter._placeMarketOrder",
-      message: "Market order response",
+      message: `Submitted new market order for cloid ${cloid} with size ${szForOrder}`,
+      orderStruct,
       response,
     });
   }
