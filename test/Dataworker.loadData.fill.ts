@@ -726,7 +726,7 @@ describe("Dataworker: Load bundle data", async function () {
         erc20_1.address,
         amountToDeposit,
         erc20_2.address,
-        amountToDeposit,
+        amountToDeposit
       );
 
       // Modify the block ranges such that the deposit is in a future bundle block range. This should render
@@ -827,7 +827,7 @@ describe("Dataworker: Load bundle data", async function () {
         erc20_1.address,
         amountToDeposit,
         erc20_2.address,
-        amountToDeposit,
+        amountToDeposit
       );
       const depositBlock = await spokePool_1.provider.getBlockNumber();
 
