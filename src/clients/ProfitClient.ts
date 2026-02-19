@@ -381,7 +381,7 @@ export class ProfitClient {
 
   /**
    * Allow the minimum relayer fee to be overridden per token/route:
-   * 0.1bps from USDC on any chain to USDC on any other chain:
+   * 0.1bps on USDC from Optimism to Arbitrum:
    *   - MIN_RELAYER_FEE_PCT_USDC_42161_10=0.00001
    * 0.1bps from USDC on Optimism to USDT on Arbitrum:
    *   - MIN_RELAYER_FEE_PCT_USDC_USDT_42161_10=0.00001
