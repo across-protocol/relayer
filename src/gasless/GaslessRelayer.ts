@@ -1,4 +1,5 @@
 import winston from "winston";
+import { typeguards } from "@across-protocol/sdk";
 import { GaslessRelayerConfig } from "./GaslessRelayerConfig";
 import {
   isDefined,
@@ -23,7 +24,6 @@ import {
   toBN,
   blockExplorerLink,
   getNetworkName,
-  submitTransaction,
   getTokenInfo,
   createFormatFunction,
   toAddressType,
@@ -692,17 +692,12 @@ export class GaslessRelayer {
    */
   private async submit(tx: AugmentedTransaction): Promise<TransactionReceipt | undefined> {
     try {
-      const txResponse = await submitTransaction(tx, this.transactionClient);
+      const [txResponse] = await this.transactionClient.submit(tx.chainId, [tx]);
       // Since we called `ensureConfirmation` in the transaction client, the receipt should exist, so `.wait()` should have already resolved.
       // We only sent one transaction, so only take the first element of `txResponses`.
       return txResponse.wait();
     } catch (err) {
-      // We will reach this code block if, after polling for transaction confirmation, we still do not see the receipt onchain.
-      this.logger.warn({
-        at: "GaslessRelayer#submit",
-        message: "Failed to submit transaction",
-        err: err instanceof Error ? err.message : String(err),
-      });
+      this.logger.warn({ at: "GaslessRelayer#submit", message: "Failed to submit transaction" });
       return null;
     }
   }
