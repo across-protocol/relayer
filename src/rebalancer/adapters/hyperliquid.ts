@@ -757,7 +757,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       (balance) => balance.coin === this._remapTokenSymbolToHlSymbol(token)
     );
     if (!balanceToken) {
-      throw new Error(`No balance found in spotClearingHouseState for token: ${token}`);
+      return bnZero;
     }
 
     const tokenMeta = this._getTokenMeta(token);
