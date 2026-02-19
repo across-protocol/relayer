@@ -1,22 +1,24 @@
-import { ethers, retrieveSignerFromCLIArgs, getProvider, CHAIN_IDs, Contract, delay } from "../src/utils";
+import { ethers, retrieveSignerFromCLIArgs, getProvider, CHAIN_IDs, Contract } from "../src/utils";
 import minimist from "minimist";
 const args = minimist(process.argv.slice(2), {
   string: ["token", "to", "amount", "chainId", "nonce", "maxFeePerGas", "maxPriorityFeePerGas"],
 });
 
 const FEE_MANAGER = "0xfeec000000000000000000000000000000000000";
-const FEE_MANAGER_ABI = [{
-  name: "setUserToken",
-  type: "function",
-  stateMutability: "nonpayable",
-  inputs: [
-    {
-      type: "address",
-      name: "token",
-    },
-  ],
-  outputs: [],
-}];
+const FEE_MANAGER_ABI = [
+  {
+    name: "setUserToken",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [
+      {
+        type: "address",
+        name: "token",
+      },
+    ],
+    outputs: [],
+  },
+];
 
 // Example run:
 // ts-node ./scripts/setTempoFeeToken.ts
