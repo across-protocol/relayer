@@ -129,8 +129,6 @@ export class TransactionClient {
           message: `Unable to confirm ${chain} transaction.`,
         });
       }
-
-      return txnPromise;
     }
 
     return txnPromise;
