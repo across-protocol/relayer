@@ -72,9 +72,6 @@ export const RELAYER_MIN_FEE_PCT = 0.0001;
 // The maximum amount of USDC permitted to be sent over CCTP in a single transaction.
 export const CCTP_MAX_SEND_AMOUNT = toBN(10_000_000_000_000); // 10MM USDC.
 
-// max(uint256) - 1
-export const INFINITE_FILL_DEADLINE = bnUint32Max;
-
 // Target ~4 hours
 export const MAX_RELAYER_DEPOSIT_LOOK_BACK = 4 * 60 * 60;
 
@@ -139,7 +136,6 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
 // Auto-populate all known OP stack chains. These are only applied as defaults; explicit config above is respected.
 MIN_DEPOSIT_CONFIRMATIONS[MDC_DEFAULT_THRESHOLD] ??= {};
 Object.values(CHAIN_IDs)
-  .filter((chainId) => chainIsOPStack(chainId) || chainIsOrbit(chainId) || chainId === CHAIN_IDs.ARBITRUM)
   .forEach((chainId) => {
     if (chainIsOPStack(chainId)) {
       MIN_DEPOSIT_CONFIRMATIONS[MDC_DEFAULT_THRESHOLD][chainId] ??= OP_STACK_MIN_DEPOSIT_CONFIRMATIONS;
@@ -254,7 +250,7 @@ const resolveChainCacheDelay = () => {
   return Object.fromEntries(
     Object.entries(PUBLIC_NETWORKS).map(([_chainId, { family }]) => {
       const chainId = Number(_chainId);
-      const buffer = chainIsProd(chainId) ? cacheDelays[chainId] ?? cacheDelay[family] ?? DEFAULT_CACHE_DELAY : 0;
+      const buffer = chainIsProd(chainId) ? cacheDelay[chainId] ?? cacheDelays[family] ?? DEFAULT_CACHE_DELAY : 0;
       return [chainId, buffer];
     })
   );
@@ -302,15 +298,8 @@ export const DEFAULT_GAS_FEE_SCALERS: {
 Object.values(CHAIN_IDs)
   .filter(chainIsOPStack)
   .forEach((chainId) => {
-    DEFAULT_GAS_FEE_SCALERS[chainId] = { maxFeePerGasScaler: 1.1, maxPriorityFeePerGasScaler: 1.1 };
+    DEFAULT_GAS_FEE_SCALERS[chainId] ??= { maxFeePerGasScaler: 1.1, maxPriorityFeePerGasScaler: 1.1 };
   });
-
-// This is how many seconds stale the block number can be for us to use it for evaluating the reorg distance in the cache provider.
-export const BLOCK_NUMBER_TTL = 60;
-
-// This is the TTL for the provider cache.
-export const PROVIDER_CACHE_TTL = 3600;
-export const PROVIDER_CACHE_TTL_MODIFIER = 0.15;
 
 // These are the spokes that can hold the native token for that network, so they should be added together when calculating whether
 // a bundle execution is possible with the funds in the pool.
