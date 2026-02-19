@@ -531,7 +531,7 @@ export class ProfitClient {
         deposit: this.formatDepositForLog(deposit),
         inputTokenPriceUsd: formatEther(fill.inputTokenPriceUsd),
         inputTokenAmountUsd: formatEther(fill.inputAmountUsd),
-        outputTokenPriceUsd: formatEther(fill.inputTokenPriceUsd),
+        outputTokenPriceUsd: formatEther(fill.outputTokenPriceUsd),
         outputTokenAmountUsd: formatEther(fill.outputAmountUsd),
         totalFeePct: `${formatFeePct(fill.totalFeePct)}%`,
         lpFeePct: `${formatFeePct(lpFeePct)}%`,
