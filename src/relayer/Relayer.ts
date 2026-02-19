@@ -682,8 +682,7 @@ export class Relayer {
     deposit: DepositWithBlock,
     fillStatus: number,
     lpFees: RepaymentFee[],
-    maxBlockNumber: number,
-    sendSlowRelays: boolean
+    maxBlockNumber: number
   ): Promise<void> {
     const { depositId, depositor, destinationChainId, originChainId, inputToken, txnRef } = deposit;
     const { profitClient, spokePoolClients, tokenClient } = this.clients;
@@ -782,7 +781,7 @@ export class Relayer {
         tokenClient.captureTokenShortfallForFill(deposit);
       }
 
-      if (sendSlowRelays && fillStatus === FillStatus.Unfilled && this.canSlowFill(deposit)) {
+      if (this.config.sendingSlowRelaysEnabled && fillStatus === FillStatus.Unfilled && this.canSlowFill(deposit)) {
         this.requestSlowFill(deposit);
       }
 
@@ -851,19 +850,12 @@ export class Relayer {
   async evaluateFills(
     deposits: (DepositWithBlock & { fillStatus: number })[],
     lpFees: BatchLPFees,
-    maxBlockNumbers: { [chainId: number]: number },
-    sendSlowRelays: boolean
+    maxBlockNumbers: { [chainId: number]: number }
   ): Promise<void> {
     for (let i = 0; i < deposits.length; ++i) {
       const { fillStatus, ...deposit } = deposits[i];
       const relayerLpFees = lpFees[this.getLPFeeKey(deposit)];
-      await this.evaluateFill(
-        deposit,
-        fillStatus,
-        relayerLpFees,
-        maxBlockNumbers[deposit.originChainId],
-        sendSlowRelays
-      );
+      await this.evaluateFill(deposit, fillStatus, relayerLpFees, maxBlockNumbers[deposit.originChainId]);
     }
   }
 
@@ -922,10 +914,7 @@ export class Relayer {
     return txnReceipts;
   }
 
-  async checkForUnfilledDepositsAndFill(
-    sendSlowRelays = true,
-    simulate = false
-  ): Promise<{ [chainId: number]: Promise<string[]> }> {
+  async checkForUnfilledDepositsAndFill(simulate = false): Promise<{ [chainId: number]: Promise<string[]> }> {
     const { hubPoolClient, profitClient, spokePoolClients, tokenClient, multiCallerClient, tryMulticallClient } =
       this.clients;
 
@@ -994,7 +983,7 @@ export class Relayer {
         ])
       );
 
-      await this.evaluateFills(unfilledDeposits, lpFees, maxBlockNumbers, sendSlowRelays);
+      await this.evaluateFills(unfilledDeposits, lpFees, maxBlockNumbers);
 
       const pendingTxnCount = chainIsSvm(destinationChainId)
         ? this.clients.svmFillerClient.getTxnQueueLen()
