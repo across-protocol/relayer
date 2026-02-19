@@ -17,8 +17,8 @@ export const REDIS_CACHEABLE_AGE = 15 * 60;
 
 export const REDIS_URL = process.env.REDIS_URL || REDIS_URL_DEFAULT;
 
-// Make the redis client for a particular url essentially a singleton.
-const redisClients: { [url: string]: RedisCache } = {};
+// Make the redis client for a particular url + namespace essentially a singleton.
+const redisClients: { [key: string]: RedisCache } = {};
 
 async function _getRedis(
   logger?: winston.Logger,
@@ -163,15 +163,15 @@ export async function waitForPubSub(
 export async function disconnectRedisClients(logger?: winston.Logger): Promise<void> {
   // todo understand why redisClients aren't GCed automagically.
   const clients = Object.entries(redisClients);
-  for (const [url, client] of clients) {
+  for (const [key, client] of clients) {
     const logParams = {
       at: "RedisUtils#disconnectRedisClient",
       message: "Disconnecting from redis server.",
-      url,
+      key,
     };
     // We should delete the client from our cache object before
     // we disconnect from redis.
-    delete redisClients[url];
+    delete redisClients[key];
     // We don't want to throw an error if we can't disconnect from redis.
     // We can log the error and continue.
     try {
