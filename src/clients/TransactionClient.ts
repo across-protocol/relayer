@@ -75,19 +75,24 @@ export class TransactionClient {
     return Promise.all(txns.map((txn: AugmentedTransaction) => this._simulate(txn)));
   }
 
+  protected _getTransactionPromise(txn: AugmentedTransaction, nonce: number | null): Promise<TransactionResponse> {
+    const { contract, method, args, value, gasLimit } = txn;
+    return _runTransaction(this.logger, contract, method, args, value, gasLimit, nonce);
+  }
+
   protected async _submit(
     txn: AugmentedTransaction,
     opts: { nonce: number | null; maxTries?: number }
   ): Promise<TransactionResponse> {
-    const { chainId, contract, method, args, value, gasLimit } = txn;
+    const { chainId } = txn;
     const { nonce = null, maxTries = 10 } = opts;
-    const txnPromise = _runTransaction(this.logger, contract, method, args, value, gasLimit, nonce);
+    const txnPromise = this._getTransactionPromise(txn, nonce);
 
     if (txn.ensureConfirmation) {
       const at = "TransactionClient#_submit";
       const chain = getNetworkName(txn.chainId);
       const txnResponse = await txnPromise;
-      const txnArgs = { chainId, contract: contract.address, method };
+      const txnArgs = { chainId, contract: txn.contract.address, method: txn.method };
       const txnRef = blockExplorerLink(txnResponse.hash, chainId);
 
       let txnReceipt: TransactionReceipt;
