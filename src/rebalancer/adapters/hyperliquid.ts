@@ -31,6 +31,7 @@ import {
   getUserFees,
   getL2Book,
   getUserFillsByTime,
+  isSignerWallet,
 } from "../../utils";
 import { RebalanceRoute } from "../rebalancer";
 import * as hl from "@nktkas/hyperliquid";
@@ -120,6 +121,8 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
   };
 
   constructor(readonly logger: winston.Logger, readonly config: RebalancerConfig, readonly baseSigner: Signer) {
+    // Will need to be able use Signer as Wallet to submit HL order
+    assert(isSignerWallet(baseSigner), "Signer is not a Wallet");
     super(logger, config, baseSigner);
   }
 
@@ -273,15 +276,15 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       }
     }
 
-    const pendingBridgeToHypercore = await this._redisGetPendingDeposits();
-    if (pendingBridgeToHypercore.length > 0) {
+    const pendingDeposits = await this._redisGetPendingDeposits();
+    if (pendingDeposits.length > 0) {
       this.logger.debug({
         at: "HyperliquidStablecoinSwapAdapter.updateRebalanceStatuses",
         message: "Orders pending deposit to Hypercore",
-        pendingBridgeToHypercore,
+        pendingDeposits,
       });
     }
-    for (const cloid of pendingBridgeToHypercore) {
+    for (const cloid of pendingDeposits) {
       const orderDetails = await this._redisGetOrderDetails(cloid);
       const orderResult = await this._createHlOrder(orderDetails, cloid);
       if (orderResult) {
@@ -423,16 +426,18 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
 
     // Only sweep if there are no orders currently being swapped or withdrawn, to avoid
     // accidentally withdrawing balances that are needed for in-flight orders.
-    const [pendingSwaps, pendingWithdrawals] = await Promise.all([
+    const [pendingSwaps, pendingWithdrawals, pendingDeposits] = await Promise.all([
       this._redisGetPendingSwaps(),
       this._redisGetPendingWithdrawals(),
+      this._redisGetPendingDeposits(),
     ]);
-    if (pendingSwaps.length > 0 || pendingWithdrawals.length > 0) {
+    if (pendingSwaps.length > 0 || pendingWithdrawals.length > 0 || pendingDeposits.length > 0) {
       this.logger.debug({
         at: "HyperliquidStablecoinSwapAdapter.sweepIntermediateBalances",
-        message: "Skipping sweep because there are pending swaps or withdrawals",
+        message: "Skipping sweep because there are pending swaps or withdrawals or deposits",
         pendingSwaps: pendingSwaps.length,
         pendingWithdrawals: pendingWithdrawals.length,
+        pendingDeposits: pendingDeposits.length,
       });
       return;
     }
@@ -980,9 +985,10 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     });
 
     // Place order:
+    assert(isSignerWallet(this.baseSigner), "Signer is not a Wallet");
     const exchangeClient = new hl.ExchangeClient({
       transport: new hl.HttpTransport(),
-      wallet: ethers.Wallet.fromMnemonic(process.env.MNEMONIC),
+      wallet: this.baseSigner,
     });
     const spotMarketMeta = this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
 

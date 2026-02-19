@@ -813,7 +813,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const txnHash = await this._submitTransaction(txn);
     // Set the TTL to 30 minutes so that the Binance sweeper finalizer only attempts to pull back these deposited
     // funds after 30 minutes. If the swap hasn't occurred in 30 mins then something has gone wrong.
-    await setBinanceDepositType(sourceChain, txnHash, BinanceTransactionType.SWAP, this.redisCache, 30 * 60);
+    await setBinanceDepositType(sourceChain, txnHash, BinanceTransactionType.SWAP, 30 * 60);
     this.logger.debug({
       at: "BinanceStablecoinSwapAdapter._depositToBinance",
       message: `Deposited ${amountReadable} ${sourceToken} to Binance from chain ${getNetworkName(sourceChain)}`,
@@ -1044,12 +1044,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     });
     const initiatedWithdrawalKey = this._redisGetInitiatedWithdrawalKey(cloid);
     await this.redisCache.set(initiatedWithdrawalKey, withdrawalId.id);
-    await setBinanceWithdrawalType(
-      destinationEntrypointNetwork,
-      withdrawalId.id,
-      BinanceTransactionType.SWAP,
-      this.redisCache
-    );
+    await setBinanceWithdrawalType(destinationEntrypointNetwork, withdrawalId.id, BinanceTransactionType.SWAP);
     this.logger.info({
       at: "BinanceStablecoinSwapAdapter._withdraw",
       message: `Withdrew ${quantity} ${destinationToken} from Binance to withdrawal network ${getNetworkName(
