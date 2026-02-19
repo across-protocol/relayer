@@ -79,7 +79,7 @@ export class TransactionClient {
     txn: AugmentedTransaction,
     opts: { nonce: number | null; maxTries?: number }
   ): Promise<TransactionResponse> {
-    const { contract, method, args, value, gasLimit } = txn;
+    const { chainId, contract, method, args, value, gasLimit } = txn;
     const { nonce = null, maxTries = 10 } = opts;
     const txnPromise = _runTransaction(this.logger, contract, method, args, value, gasLimit, nonce);
 
@@ -87,6 +87,8 @@ export class TransactionClient {
       const at = "TransactionClient#_submit";
       const chain = getNetworkName(txn.chainId);
       const txnResponse = await txnPromise;
+      const txnArgs = { chainId, contract: contract.address, method };
+      const txnRef = blockExplorerLink(txnResponse.hash, chainId);
 
       let txnReceipt: TransactionReceipt;
       let nTries = 0;
@@ -100,23 +102,22 @@ export class TransactionClient {
           }
 
           const { code } = error;
+          const common = { at, code, txn: txnArgs, txnRef };
           switch (code) {
             case ethers.errors.CALL_EXCEPTION:
               // Call failed
-              this.logger.warn({ at, message: `Transaction on ${chain} failed during execution...`, code });
+              this.logger.warn({ ...common, message: `Transaction on ${chain} failed during execution...` });
               throw error;
             case ethers.errors.TRANSACTION_REPLACED:
               this.logger.warn({
-                at,
+                ...common,
                 message: `Transaction submission on ${chain} replaced at nonce ${nonce}, resubmitting...`,
-                code,
               });
               return this._submit(txn, { ...opts, maxTries: maxTries - 1 });
             default:
               this.logger.warn({
-                at,
+                ...common,
                 message: "Unhandled error while waiting for confirmation on transaction.",
-                code,
               });
               await delay(0.25);
           }
@@ -124,10 +125,7 @@ export class TransactionClient {
       } while (!txnReceipt && ++nTries < maxTries);
 
       if (!txnReceipt) {
-        this.logger.warn({
-          at,
-          message: `Unable to confirm ${chain} transaction.`,
-        });
+        this.logger.warn({ at, message: `Unable to confirm ${chain} transaction.`, txnRef });
       }
     }
 
