@@ -200,7 +200,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
 
     if (sourceChain !== HYPEREVM) {
       // Bridge this token into HyperEVM first
-      this.logger.debug({
+      this.logger.info({
         at: "HyperliquidStablecoinSwapAdapter.initializeRebalance",
         message: `Creating new order ${cloid} by first bridging ${sourceToken} into HyperEVM from ${getNetworkName(
           sourceChain
@@ -214,7 +214,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
 
       await this._redisCreateOrder(cloid, STATUS.PENDING_BRIDGE_TO_HYPEREVM, rebalanceRoute, amountReceivedFromBridge);
     } else {
-      this.logger.debug({
+      this.logger.info({
         at: "HyperliquidStablecoinSwapAdapter.initializeRebalance",
         message: `Creating new order ${cloid} by depositing ${sourceToken} from HyperEVM to HyperCore`,
         destinationToken,
@@ -404,12 +404,12 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       }
 
       if (destinationChain === HYPEREVM) {
-        this.logger.debug({
+        this.logger.info({
           at: "HyperliquidStablecoinSwapAdapter.updateRebalanceStatuses",
           message: `Deleting order details from Redis with cloid ${cloid} because it has completed!`,
         });
       } else {
-        this.logger.debug({
+        this.logger.info({
           at: "HyperliquidStablecoinSwapAdapter.updateRebalanceStatuses",
           message: `Sending order with cloid ${cloid} from HyperEVM to final destination chain ${destinationChain}, and deleting order details from Redis!`,
           expectedAmountToReceive: expectedAmountToReceive.toString(),

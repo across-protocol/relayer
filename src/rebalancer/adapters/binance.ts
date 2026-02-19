@@ -325,7 +325,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
           });
           continue;
         }
-        this.logger.debug({
+        this.logger.info({
           at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",
           message: `Order ${cloid} has finalized withdrawing to ${binanceWithdrawalNetwork}; bridging ${destinationToken} from ${binanceWithdrawalNetwork} to final destination chain ${destinationChain} and deleting order details from Redis!`,
           requiredWithdrawAmount: withdrawAmountWei.toString(),
@@ -334,7 +334,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         });
         await this._bridgeToChain(destinationToken, binanceWithdrawalNetwork, destinationChain, withdrawAmountWei);
       } else {
-        this.logger.debug({
+        this.logger.info({
           at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",
           message: `Deleting order details from Redis with cloid ${cloid} because its withdrawal has finalized to the final destination chain ${destinationChain}!`,
           withdrawalDetails,
@@ -591,15 +591,6 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const binanceDepositNetwork = await this._getEntrypointNetwork(sourceChain, sourceToken);
     const requiresBridgeBeforeDeposit = binanceDepositNetwork !== sourceChain;
     if (requiresBridgeBeforeDeposit) {
-      this.logger.debug({
-        at: "BinanceStablecoinSwapAdapter.initializeRebalance",
-        message: `Creating new order ${cloid} by first bridging ${sourceToken} into ${getNetworkName(
-          binanceDepositNetwork
-        )} from ${getNetworkName(sourceChain)}`,
-        destinationToken,
-        destinationChain: getNetworkName(destinationChain),
-        amountToTransfer: amountToTransfer.toString(),
-      });
       const balance = await this._getERC20Balance(
         sourceChain,
         this._getTokenInfo(sourceToken, sourceChain).address.toNative()
@@ -613,6 +604,15 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         });
         return;
       }
+      this.logger.info({
+        at: "BinanceStablecoinSwapAdapter.initializeRebalance",
+        message: `Creating new order ${cloid} by first bridging ${sourceToken} into ${getNetworkName(
+          binanceDepositNetwork
+        )} from ${getNetworkName(sourceChain)}`,
+        destinationToken,
+        destinationChain: getNetworkName(destinationChain),
+        amountToTransfer: amountToTransfer.toString(),
+      });
       const amountReceivedFromBridge = await this._bridgeToChain(
         sourceToken,
         sourceChain,
@@ -621,7 +621,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       );
       await this._redisCreateOrder(cloid, STATUS.PENDING_BRIDGE_PRE_DEPOSIT, rebalanceRoute, amountReceivedFromBridge);
     } else {
-      this.logger.debug({
+      this.logger.info({
         at: "BinanceStablecoinSwapAdapter.initializeRebalance",
         message: `Creating new order ${cloid} by first transferring ${amountToTransfer.toString()} ${sourceToken} into Binance from ${getNetworkName(
           sourceChain
