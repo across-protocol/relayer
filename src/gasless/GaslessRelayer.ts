@@ -566,7 +566,7 @@ export class GaslessRelayer {
 
       const setState = (state: MessageState) => {
         const currentState = getState();
-        log("debug", `State transition ${stateToStr(currentState)} -> ${stateToStr(state)}.`, {
+        log("debug", `State transition: ${stateToStr(currentState)} -> ${stateToStr(state)}.`, {
           currentState,
           nextState: state,
         });
