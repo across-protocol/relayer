@@ -1,5 +1,4 @@
 import { writeFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
 import { config } from "dotenv";
 import axios from "axios";
 import { GoogleAuth } from "google-auth-library";
@@ -68,11 +67,21 @@ async function getIdTokenHeaders(audience: string): Promise<Record<string, strin
   return headers as Record<string, string>;
 }
 
-function getLocalFileName(botIdentifier: string, inventoryConfigFilename?: string): string {
-  // If the inventory config filename is set, use it. Otherwise, construct the default filename from the bot identifier.
-  return inventoryConfigFilename ? inventoryConfigFilename : `inventory-${botIdentifier}.json`;
-}
+type ConfigKind = "relayer" | "rebalancer";
 
+/** One config to optionally fetch: external filename (what to fetch) and internal env (fallback when fetch fails). */
+type ConfigSpec = {
+  kind: ConfigKind;
+  externalEnv: string | undefined;
+  internalEnv: string | undefined;
+  label: string;
+};
+
+/**
+ * Flow per config:
+ * - External not defined → skip.
+ * - External defined → try fetch; on success write file. On failure: if internal defined → ok (warn); else error.
+ */
 async function run(): Promise<number> {
   config();
 
@@ -80,83 +89,74 @@ async function run(): Promise<number> {
     CONFIGURAMA_FOLDER_BASE_URL: configuramaBaseUrl,
     CONFIGURAMA_FOLDER_ENVIRONMENT: configuramaEnv = DEFAULT_ENVIRONMENT,
     CONFIGURAMA_FOLDER_PATH: configuramaFolderPath = "",
-    BOT_IDENTIFIER: botIdentifier,
-    RELAYER_EXTERNAL_INVENTORY_CONFIG: inventoryConfigFilename,
+    RELAYER_EXTERNAL_INVENTORY_CONFIG: relayerExternal,
+    RELAYER_INVENTORY_CONFIG: relayerInternal,
+    REBALANCER_EXTERNAL_CONFIG: rebalancerExternal,
+    REBALANCER_CONFIG: rebalancerInternal,
   } = process.env;
 
-  if (!botIdentifier) {
-    logger.error({
+  const specs: ConfigSpec[] = [
+    { kind: "relayer", externalEnv: relayerExternal, internalEnv: relayerInternal, label: "relayer inventory" },
+    { kind: "rebalancer", externalEnv: rebalancerExternal, internalEnv: rebalancerInternal, label: "rebalancer" },
+  ];
+
+  const toFetch = specs.filter((s) => s.externalEnv);
+  if (toFetch.length === 0) {
+    logger.debug({
       at: "fetchInventoryConfig#run",
-      message: "BOT_IDENTIFIER not set, skipping inventory config fetch",
+      message: "No external config defined (RELAYER_EXTERNAL_INVENTORY_CONFIG, REBALANCER_EXTERNAL_CONFIG), skipping",
     });
     return 0;
   }
 
-  const localFile = getLocalFileName(botIdentifier, inventoryConfigFilename);
-
-  // Helper to handle errors - fall back to local file if it exists.
-  const handleError = (message: string): number => {
-    if (existsSync(localFile)) {
-      logger.warn({
-        at: "fetchInventoryConfig#run",
-        message,
-        localFile,
-      });
-      logger.warn({
-        at: "fetchInventoryConfig#run",
-        message: "Local file exists, continuing with existing config",
-        localFile,
-      });
-      return 0;
-    }
-    throw new Error(`${message} (and no local file "${localFile}" found)`);
-  };
-
   if (!configuramaBaseUrl) {
-    return handleError("CONFIGURAMA_FOLDER_BASE_URL environment variable is required");
+    throw new Error("CONFIGURAMA_FOLDER_BASE_URL is required when an external config is defined");
   }
 
   const baseUrl = normalizeBaseUrl(configuramaBaseUrl);
+  const headers = await getIdTokenHeaders(baseUrl);
 
-  const configuramaFilePath = `${configuramaFolderPath}${localFile}`;
-
-  logger.debug({
-    at: "fetchInventoryConfig#run",
-    message: "Fetching inventory config",
-    botIdentifier,
-    localFile,
-    baseUrl,
-    configuramaEnv,
-    configuramaFilePath,
-  });
-
-  try {
-    const headers = await getIdTokenHeaders(baseUrl);
-
+  for (const spec of toFetch) {
+    const localFilename = spec.externalEnv as string;
+    const configuramaFilePath = `${configuramaFolderPath}${localFilename}`;
     const url = `${baseUrl}/config?environment=${encodeURIComponent(configuramaEnv)}&filename=${encodeURIComponent(
       configuramaFilePath
     )}`;
-    logger.debug({
-      at: "fetchInventoryConfig#run",
-      message: "Fetching from Configurama",
-      configuramaFilePath,
-    });
 
-    const fileContent = await fetchWithRetry(url, headers);
-    const jsonData = JSON.parse(fileContent);
-
-    await writeFile(localFile, JSON.stringify(jsonData, null, 2));
-
-    logger.debug({
-      at: "fetchInventoryConfig#run",
-      message: "Successfully saved inventory config",
-      localFile,
-    });
-    return 0;
-  } catch (error) {
-    const errorMessage = getErrorMessage(error);
-    return handleError(`Failed to fetch inventory config: ${errorMessage}`);
+    try {
+      logger.debug({
+        at: "fetchInventoryConfig#run",
+        message: "Fetching from Configurama",
+        label: spec.label,
+        configuramaFilePath,
+      });
+      const fileContent = await fetchWithRetry(url, headers);
+      const jsonData = JSON.parse(fileContent);
+      await writeFile(localFilename, JSON.stringify(jsonData, null, 2));
+      logger.debug({
+        at: "fetchInventoryConfig#run",
+        message: "Successfully saved config",
+        label: spec.label,
+        localFile: localFilename,
+      });
+    } catch (error) {
+      const errorMessage = getErrorMessage(error);
+      if (spec.internalEnv) {
+        logger.warn({
+          at: "fetchInventoryConfig#run",
+          message: `Failed to fetch ${spec.label}, internal config is defined so continuing`,
+          localFile: localFilename,
+          error: errorMessage,
+        });
+      } else {
+        throw new Error(
+          `Failed to fetch ${spec.label}: ${errorMessage}. Set internal config (${spec.kind === "relayer" ? "RELAYER_INVENTORY_CONFIG" : "REBALANCER_CONFIG"}) to allow fallback when fetch fails.`
+        );
+      }
+    }
   }
+
+  return 0;
 }
 
 function getErrorMessage(error: unknown): string {
