@@ -170,23 +170,8 @@ export class ProfitClient {
     this.isTestnet = this.hubPoolClient.chainId !== CHAIN_IDs.MAINNET;
   }
 
-  protected getEmptyMessageGasMultiplier(deposit: Deposit): BigNumber {
-    const destinationChainGasMultiplier = process.env[`RELAYER_GAS_MULTIPLIER_${deposit.destinationChainId}`];
-    return destinationChainGasMultiplier ? toBNWei(destinationChainGasMultiplier) : this.gasMultiplier;
-  }
-
-  protected getEmptyMessageGasMessageMultiplier(deposit: Deposit): BigNumber {
-    const destinationChainGasMessageMultiplier =
-      process.env[`RELAYER_GAS_MESSAGE_MULTIPLIER_${deposit.destinationChainId}`];
-    return destinationChainGasMessageMultiplier
-      ? toBNWei(destinationChainGasMessageMultiplier)
-      : this.gasMessageMultiplier;
-  }
-
   resolveGasMultiplier(deposit: Deposit): BigNumber {
-    return isMessageEmpty(resolveDepositMessage(deposit))
-      ? this.getEmptyMessageGasMultiplier(deposit)
-      : this.getEmptyMessageGasMessageMultiplier(deposit);
+    return isMessageEmpty(resolveDepositMessage(deposit)) ? this.gasMultiplier : this.gasMessageMultiplier;
   }
 
   resolveNativeToken(chainId: number): { symbol: string; decimals: number; address: string } {
@@ -799,7 +784,7 @@ export class ProfitClient {
         const scaledTokenGasCost = gasCosts.tokenGasCost
           .mul(this.gasPadding)
           .div(fixedPointAdjustment)
-          .mul(this.resolveGasMultiplier(deposit))
+          .mul(this.gasMultiplier)
           .div(fixedPointAdjustment);
         this.totalGasCosts[destinationChainId] = gasCosts;
         return [
@@ -809,7 +794,7 @@ export class ProfitClient {
             scaledNativeGasCost,
             scaledTokenGasCost,
             gasPadding: formatEther(this.gasPadding),
-            gasMultiplier: formatEther(this.resolveGasMultiplier(deposit)),
+            gasMultiplier: formatEther(this.gasMultiplier),
           },
         ];
       })
