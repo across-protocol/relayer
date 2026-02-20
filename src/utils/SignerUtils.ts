@@ -186,11 +186,12 @@ export async function getDispatcherKeys(): Promise<Signer[]> {
     const keys = JSON.parse(process.env["DISPATCHER_KEYS"] ?? "[]");
     return keys.map((key) => new Wallet(key));
   }
-  if (!Array.isArray(args.dispatcherKeys)) {
+  const dispatcherKeyNames = args.dispatcherKeys.split(",");
+  if (!Array.isArray(dispatcherKeyNames)) {
     throw new Error("Dispatcher keys array is malformed");
   }
 
-  const dispatcherKeys = await mapAsync(args.dispatcherKeys, async (dispatcherKey) => getGckmsSigner([dispatcherKey]));
+  const dispatcherKeys = await mapAsync(dispatcherKeyNames, async (dispatcherKey) => getGckmsSigner([dispatcherKey]));
   if (dispatcherKeys.length === 0) {
     throw new Error("Failed to retrieve dispatcher keys from GCKMS");
   }
