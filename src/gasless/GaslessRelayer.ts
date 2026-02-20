@@ -664,8 +664,15 @@ export class GaslessRelayer {
 
     const apiMessages = await this._queryGaslessApi();
     await forEachAsync(
-      // Filter if we do not recognize the chain ID.
-      apiMessages.filter(({ originChainId }) => isDefined(this.observedNonces[originChainId])),
+      apiMessages.filter(({ originChainId, permit, nonce, baseDepositData: { inputToken }}) => {
+        const depositNonce = this._getNonceKey(inputToken, {
+          authorizer: permit.message.from,
+          nonce,
+        });
+
+        // Filter when the origin chain is unrecognised, and when there is already known state for the message.
+        return isDefined(this.observedNonces[originChainId]) && !isDefined(this.messageState[depositNonce]);
+      }),
       process.env.RELAYER_GASLESS_HANDLER === "experimental" ? experimentalHandler : defaultHandler
     );
   }
