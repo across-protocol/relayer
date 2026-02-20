@@ -588,6 +588,11 @@ export class GaslessRelayer {
 
       const tStart = performance.now();
       do {
+        if (expired()) {
+          log("warn", `Skipping expired deposit destined for ${origin}.`);
+          setState(MessageState.ERROR);
+        }
+
         const messageState = getState();
         switch (messageState) {
           case MessageState.INITIAL: {
@@ -608,12 +613,6 @@ export class GaslessRelayer {
           }
 
           case MessageState.DEPOSIT_PENDING: {
-            if (expired()) {
-              log("warn", `Skipping expired deposit destined for ${origin}.`);
-              setState(MessageState.ERROR);
-              break;
-            }
-
             const txnReceipt = await this.initiateGaslessDeposit(depositMessage);
             if (isDefined(txnReceipt)) {
               deposit = this._extractDepositFromTransactionReceipt(txnReceipt, originChainId);
@@ -664,7 +663,7 @@ export class GaslessRelayer {
 
     const apiMessages = await this._queryGaslessApi();
     await forEachAsync(
-      apiMessages.filter(({ originChainId, permit, nonce, baseDepositData: { inputToken }}) => {
+      apiMessages.filter(({ originChainId, permit, nonce, baseDepositData: { inputToken } }) => {
         const depositNonce = this._getNonceKey(inputToken, {
           authorizer: permit.message.from,
           nonce,
