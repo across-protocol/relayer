@@ -549,7 +549,7 @@ export class GaslessRelayer {
         nonce,
       });
 
-      const log = (level: "debug" | "info" | "warning", message: string, args: Record<string, unknown> = {}) =>
+      const log = (level: "debug" | "info" | "warn", message: string, args: Record<string, unknown> = {}) =>
         this.logger[level]({
           at,
           message,
@@ -600,7 +600,7 @@ export class GaslessRelayer {
               outputAmount
             );
             if (!valid) {
-              log("warning", `Rejected malformed deposit destined for ${origin}.`);
+              log("warn", `Rejected malformed deposit destined for ${origin}.`);
             }
             const nextState = valid ? MessageState.DEPOSIT_PENDING : MessageState.ERROR;
             setState(nextState);
@@ -609,7 +609,7 @@ export class GaslessRelayer {
 
           case MessageState.DEPOSIT_PENDING: {
             if (expired()) {
-              log("warning", `Skipping expired deposit destined for ${origin}.`);
+              log("warn", `Skipping expired deposit destined for ${origin}.`);
               setState(MessageState.ERROR);
               break;
             }
