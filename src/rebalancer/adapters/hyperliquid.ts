@@ -200,7 +200,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
 
     if (sourceChain !== HYPEREVM) {
       // Bridge this token into HyperEVM first
-      this.logger.debug({
+      this.logger.info({
         at: "HyperliquidStablecoinSwapAdapter.initializeRebalance",
         message: `Creating new order ${cloid} by first bridging ${sourceToken} into HyperEVM from ${getNetworkName(
           sourceChain
@@ -214,7 +214,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
 
       await this._redisCreateOrder(cloid, STATUS.PENDING_BRIDGE_TO_HYPEREVM, rebalanceRoute, amountReceivedFromBridge);
     } else {
-      this.logger.debug({
+      this.logger.info({
         at: "HyperliquidStablecoinSwapAdapter.initializeRebalance",
         message: `Creating new order ${cloid} by depositing ${sourceToken} from HyperEVM to HyperCore`,
         destinationToken,
@@ -404,12 +404,12 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       }
 
       if (destinationChain === HYPEREVM) {
-        this.logger.debug({
+        this.logger.info({
           at: "HyperliquidStablecoinSwapAdapter.updateRebalanceStatuses",
           message: `Deleting order details from Redis with cloid ${cloid} because it has completed!`,
         });
       } else {
-        this.logger.debug({
+        this.logger.info({
           at: "HyperliquidStablecoinSwapAdapter.updateRebalanceStatuses",
           message: `Sending order with cloid ${cloid} from HyperEVM to final destination chain ${destinationChain}, and deleting order details from Redis!`,
           expectedAmountToReceive: expectedAmountToReceive.toString(),
@@ -495,14 +495,15 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
   ): Promise<BigNumber> {
     const { sourceToken, destinationToken, sourceChain, destinationChain } = rebalanceRoute;
     const spotMarketMeta = this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
-    const { slippagePct, px } = await this._getLatestPrice(
+    const { px } = await this._getLatestPrice(
       sourceToken,
       destinationToken,
       destinationChain,
-      amountToTransfer
+      amountToTransfer,
+      1.0 // When estimating cost, don't apply any buffer to the estimation, as we want the most accurate
+      // estimation of the execution cost possible.
     );
     const latestPrice = Number(px);
-    const slippage = toBNWei(slippagePct, 18).mul(amountToTransfer).div(toBNWei(100, 18));
 
     const isBuy = spotMarketMeta.isBuy;
     let spreadPct = 0;
@@ -543,7 +544,6 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       .div(toBNWei(100, 18));
 
     const totalFee = spreadFee
-      .add(slippage)
       .add(takerFeeFixed)
       .add(bridgeToHyperEvmFee)
       .add(bridgeFromHyperEvmFee)
@@ -557,8 +557,6 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         )} to ${destinationToken} on ${getNetworkName(
           destinationChain
         )} with amount to transfer ${amountToTransfer.toString()}`,
-        slippagePct,
-        slippage: slippage.toString(),
         estimatedTakerPrice: latestPrice,
         spreadPct: spreadPct * 100,
         spreadFee: spreadFee.toString(),
@@ -827,11 +825,13 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     sourceToken: string,
     destinationToken: string,
     destinationChain: number,
-    amountToTransfer: BigNumber
+    amountToTransfer: BigNumber,
+    pxBuffer: number
   ): Promise<{ px: string; slippagePct: number }> {
     const infoClient = new hl.InfoClient({ transport: new hl.HttpTransport() });
     const spotMarketMeta = this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
-    const l2Book = await getL2Book(infoClient, { coin: spotMarketMeta.name });
+    const l2Book = await getL2Book(infoClient, { coin: spotMarketMeta.name, nSigFigs: 4 }); // use 4 sig figts
+    // to be equivalent to how Binance API returns the orderbook
     const bids = l2Book.levels[0];
     const asks = l2Book.levels[1];
 
@@ -855,9 +855,10 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         `Cannot find price in order book that satisfies an order for size ${amountToTransfer.toString()} of ${destinationToken} on the market "${sourceToken}-${destinationToken}"`
       );
     }
-    const slippagePct = Math.abs(((Number(maxPxReached.px) - bestPx) / bestPx) * 100);
+    const price = spotMarketMeta.isBuy ? Number(maxPxReached.px) * pxBuffer : Number(maxPxReached.px) / pxBuffer;
+    const slippagePct = Math.abs(((price - bestPx) / bestPx) * 100);
     return {
-      px: maxPxReached.px,
+      px: truncate(price, spotMarketMeta.pxDecimals).toString(),
       slippagePct,
     };
   }
@@ -867,7 +868,16 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     cloid: string
   ): Promise<ReturnType<typeof this._placeLimitOrder> | undefined> {
     const { sourceToken, destinationToken, destinationChain, amountToTransfer } = orderDetails;
-    const { px } = await this._getLatestPrice(sourceToken, destinationToken, destinationChain, amountToTransfer);
+    // Add a buffer to increase chance that our IOC order gets fully filled. IOC orders can get partially filled,
+    // which means the unfilled portion will get swept back to the user after this order is completed.
+    const limitOrderPxBuffer = Number(process.env.REBALANCER_HYPERLIQUID_LIMIT_ORDER_PRICE_BUFFER ?? "1.01");
+    const { px } = await this._getLatestPrice(
+      sourceToken,
+      destinationToken,
+      destinationChain,
+      amountToTransfer,
+      limitOrderPxBuffer
+    );
     return await this._placeLimitOrder(orderDetails, cloid, px);
   }
 
@@ -1021,10 +1031,11 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         orders: [orderDetails],
         grouping: "na",
       });
-      this.logger.debug({
+      this.logger.info({
         at: "HyperliquidStablecoinSwapAdapter._placeLimitOrder",
-        message: `Order result for order ${cloid}`,
+        message: `Submitted new limit order for cloid ${cloid} with px ${px} and sz ${sz}`,
         result,
+        orderDetails,
       });
       return result;
     } catch (error: unknown) {
@@ -1119,7 +1130,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     // Note: I'd like this to work via the multicaller client or runTransaction but the .wait() seems to fail.
     // Note: If sending multicaller client txn, unpermissioned:false and nonMulticall:true must be set.
     const txn = await coreWriterContract.sendRawAction(bytes);
-    this.logger.debug({
+    this.logger.info({
       at: "HyperliquidStablecoinSwapAdapter._withdrawToHyperevm",
       message: `Withdrew ${amountToWithdraw} ${destinationToken} from Hypercore to HyperEVM`,
       txn: blockExplorerLink(txn.hash, HYPEREVM),
