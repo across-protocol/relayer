@@ -32,8 +32,6 @@ import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
 import { MultiCallerClient } from "../clients";
 
-export const RELAYER_SLOW_FILL_MIN_AGE = 10; // blocks
-
 const { getAddress } = ethersUtils;
 const { isDepositSpedUp, isMessageEmpty, resolveDepositMessage } = sdkUtils;
 const UNPROFITABLE_DEPOSIT_NOTICE_PERIOD = 60 * 60; // 1 hour
@@ -1032,23 +1030,6 @@ export class Relayer {
       this.logger[this.config.sendingRelaysEnabled ? "warn" : "debug"]({
         at: "Relayer::requestSlowFill",
         message: `Suppressing slow fill request for ${origin} deposit with message.`,
-        deposit: {
-          originChainId,
-          depositId,
-          txnRef: blockExplorerLink(txnRef, originChainId),
-        },
-      });
-      return;
-    }
-
-    // Wait at least n origin blocks before submitting a slow fill request.
-    // This is helpful with nonce collisions.
-    if (spokePoolClient.latestHeightSearched - deposit.blockNumber < RELAYER_SLOW_FILL_MIN_AGE) {
-      const { originChainId, depositId, txnRef } = deposit;
-      const origin = getNetworkName(originChainId);
-      this.logger[this.config.sendingRelaysEnabled ? "warn" : "debug"]({
-        at: "Relayer::requestSlowFill",
-        message: `Deferring slow fill request for recent ${origin} deposit.`,
         deposit: {
           originChainId,
           depositId,
