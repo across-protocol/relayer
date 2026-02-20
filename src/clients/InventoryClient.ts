@@ -613,11 +613,10 @@ export class InventoryClient {
    * @dev If inventory management is disabled, then destinationChain is used as a default unless the
    * originChain is a lite chain, then originChain is the default used.
    * @param deposit Deposit to determine repayment chains for.
-   * @param l1Token L1Token linked with deposited inputToken and repayment chain refund token.
    * @returns list of chain IDs that are possible repayment chains for the deposit, sorted from highest
    * to lowest priority.
    */
-  async determineRefundChainId(deposit: Deposit, l1Token?: EvmAddress): Promise<number[]> {
+  async determineRefundChainId(deposit: Deposit): Promise<number[]> {
     const { originChainId, destinationChainId, inputToken, outputToken, inputAmount } = deposit;
     const hubChainId = this.hubPoolClient.chainId;
 
@@ -654,7 +653,7 @@ export class InventoryClient {
 
     // @dev This getL1TokenAddress() should never return undefined because we call `validateOutputToken()` first, which would return
     // false if the input token and origin chain weren't mapped to an L1 token.
-    l1Token ??= this.getL1TokenAddress(inputToken, originChainId);
+    const l1Token = this.getL1TokenAddress(inputToken, originChainId);
     if (!isDefined(l1Token)) {
       throw new Error(
         `InventoryClient#determineRefundChainId: No L1 token found for input token ${inputToken} on origin chain ${originChainId}`
