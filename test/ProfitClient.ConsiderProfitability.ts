@@ -495,7 +495,7 @@ describe("ProfitClient: Consider relay profit", () => {
 
             // Cleanup env as we go.
             if (routeEnvVar) {
-              delete process.env[routeEnvVar];
+              process.env[routeEnvVar] = undefined;
             }
 
             expect(computedMinRelayerFeePct.eq(routeMinRelayerFeePct)).to.be.true;
