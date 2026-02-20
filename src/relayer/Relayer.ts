@@ -682,7 +682,7 @@ export class Relayer {
     lpFees: RepaymentFee[],
     maxBlockNumber: number
   ): Promise<void> {
-    const at = "Relaer::evaluateFill";
+    const at = "Relayer::evaluateFill";
     const { depositId, depositor, destinationChainId, originChainId, inputToken, txnRef } = deposit;
     const { profitClient, spokePoolClients, tokenClient } = this.clients;
     const { slowDepositors } = this.config;
