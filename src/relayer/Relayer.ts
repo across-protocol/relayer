@@ -757,42 +757,37 @@ export class Relayer {
     }
 
     const l1Token = this.clients.inventoryClient.getL1TokenAddress(inputToken, originChainId);
-
-    const { repaymentChainId, repaymentChainProfitability } = await this.resolveRepaymentChain(
-      deposit,
-      l1Token,
-      lpFees
-    );
     const {
-      relayerFeePct,
-      gasCost,
-      gasLimit: _gasLimit,
-      lpFeePct: realizedLpFeePct,
-      totalUserFeePct,
-      gasPrice,
-    } = repaymentChainProfitability;
+      repaymentChainId,
+      repaymentChainProfitability: {
+        relayerFeePct,
+        gasCost,
+        gasLimit: _gasLimit,
+        lpFeePct: realizedLpFeePct,
+        totalUserFeePct,
+        gasPrice,
+      },
+    } = await this.resolveRepaymentChain(deposit, l1Token, lpFees);
+
+    const isProfitable = isDefined(repaymentChainId);
+    // Limit the ability of persistently-unprofitable deposits to congest the deposit/fill evaluation pipeline.
+    if (!isProfitable) {
+      profitClient.captureUnprofitableFill(deposit, realizedLpFeePct, relayerFeePct, gasCost);
+
+      if (destinationChainId !== CHAIN_IDs.SOLANA) {
+        const relayKey = sdkUtils.getRelayEventKey(deposit);
+        this.ignoredDeposits[relayKey] = true;
+      }
+      return;
+    }
 
     const hasBalance = tokenClient.hasBalanceForFill(deposit);
-    const isProfitable = isDefined(repaymentChainId);
-
-    if (!hasBalance || !isProfitable) {
-      if (isProfitable && !hasBalance) {
-        // For profitable deposits where the relayer has insufficient balance,
-        // log it for potential rebalancing and request a slow fill.
-        tokenClient.captureTokenShortfallForFill(deposit);
-        if (this.config.sendingSlowRelaysEnabled && fillStatus === FillStatus.Unfilled && this.canSlowFill(deposit)) {
-          this.requestSlowFill(deposit);
-        }
-      }
-
-      // Limit the ability of persistently-unprofitable deposits to congest the deposit/fill evaluation pipeline.
-      if (!isProfitable) {
-        profitClient.captureUnprofitableFill(deposit, realizedLpFeePct, relayerFeePct, gasCost);
-
-        if (destinationChainId !== CHAIN_IDs.SOLANA) {
-          const relayKey = sdkUtils.getRelayEventKey(deposit);
-          this.ignoredDeposits[relayKey] = true;
-        }
+    if (!hasBalance) {
+      // For profitable deposits where the relayer has insufficient balance,
+      // log it for potential rebalancing and request a slow fill.
+      tokenClient.captureTokenShortfallForFill(deposit);
+      if (this.config.sendingSlowRelaysEnabled && fillStatus === FillStatus.Unfilled && this.canSlowFill(deposit)) {
+        this.requestSlowFill(deposit);
       }
       return;
     }
