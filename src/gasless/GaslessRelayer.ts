@@ -318,12 +318,13 @@ export class GaslessRelayer {
       // Filter if we do not recognize the chain ID.
       apiMessages.filter(({ originChainId }) => isDefined(this.observedNonces[originChainId])),
       async (depositMessage) => {
-        const { originChainId, depositId, permit } = depositMessage;
+        const { originChainId, permit } = depositMessage;
         const {
           baseDepositData: { destinationChainId, ...baseDepositData },
         } = depositMessage;
         const { from: authorizer, nonce } = permit.message;
 
+        const depositId = toBN(depositMessage.depositId);
         const inputToken = toAddressType(baseDepositData.inputToken, originChainId);
         const outputToken = toAddressType(baseDepositData.outputToken, destinationChainId);
         const inputAmount = toBN(baseDepositData.inputAmount);
@@ -406,7 +407,7 @@ export class GaslessRelayer {
             blockNumber: depositEvent.blockNumber,
           });
 
-          const fillKey = this._getFilledRelayKey({ originChainId, depositId: toBN(depositId) });
+          const fillKey = this._getFilledRelayKey({ originChainId, depositId});
 
           // If the fill has been observed, exit. All fill transactions initiated by this bot should generally never collide here, but it is possible for another party with knowledge of the
           // witness to prefill any deposit, causing the fill to be known while the deposit is still yet to be executed.
