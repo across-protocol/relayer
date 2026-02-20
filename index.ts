@@ -71,7 +71,7 @@ if (require.main === module) {
 
   const opts = {
     boolean: Object.keys(CMDS),
-    string: ["wallet", "keys", "address", "binanceSecretKey"],
+    string: ["wallet", "keys", "address", "binanceSecretKey", "dispatcherKeys"],
     default: { wallet: "secret" },
     alias: { h: "help" },
     unknown: usage,

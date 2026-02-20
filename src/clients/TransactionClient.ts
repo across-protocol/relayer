@@ -57,10 +57,9 @@ export interface AugmentedTransaction {
 const { fixedPointAdjustment: fixedPoint } = sdkUtils;
 const { isError } = typeguards;
 
-const DEFAULT_GASLIMIT_MULTIPLIER = 1.0;
-
 export class TransactionClient {
   readonly nonces: { [chainId: number]: number } = {};
+  protected readonly DEFAULT_GAS_LIMIT_MULTIPLIER = 1.0;
 
   // eslint-disable-next-line no-useless-constructor
   constructor(readonly logger: winston.Logger) {}
@@ -159,8 +158,8 @@ export class TransactionClient {
       const nonce = this.nonces[chainId] ? this.nonces[chainId] + 1 : undefined;
 
       // @dev It's assumed that nobody ever wants to discount the gasLimit.
-      const gasLimitMultiplier = txn.gasLimitMultiplier ?? DEFAULT_GASLIMIT_MULTIPLIER;
-      if (gasLimitMultiplier > DEFAULT_GASLIMIT_MULTIPLIER) {
+      const gasLimitMultiplier = txn.gasLimitMultiplier ?? this.DEFAULT_GAS_LIMIT_MULTIPLIER;
+      if (gasLimitMultiplier > this.DEFAULT_GAS_LIMIT_MULTIPLIER) {
         this.logger.debug({
           at: "TransactionClient#_submit",
           message: `Padding gasLimit estimate on ${txn.method} transaction.`,
