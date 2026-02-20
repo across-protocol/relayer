@@ -345,7 +345,6 @@ export class GaslessRelayer {
         });
 
         let depositEvent: Omit<DepositWithBlock, "fromLiteChain" | "toLiteChain" | "quoteBlockNumber"> | undefined;
-
         if (!nonceSet.has(depositNonce)) {
           this.logger.debug({
             at: "GaslessRelayer#evaluateApiSignatures",
