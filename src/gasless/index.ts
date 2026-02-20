@@ -8,7 +8,7 @@ let logger: winston.Logger;
 export async function runGaslessRelayer(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
   logger = _logger;
   const config = new GaslessRelayerConfig(process.env);
-  const relayer = new GaslessRelayer(logger, config, baseSigner);
+  const relayer = new GaslessRelayer(logger, config, baseSigner, []);
   await relayer.initialize();
 
   try {

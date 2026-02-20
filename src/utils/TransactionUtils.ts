@@ -1,7 +1,7 @@
 import { gasPriceOracle, typeguards, utils as sdkUtils } from "@across-protocol/sdk";
 import { FeeData } from "@ethersproject/abstract-provider";
 import dotenv from "dotenv";
-import { AugmentedTransaction, TransactionClient } from "../clients";
+import { AugmentedTransaction, TransactionClient, Dispatcher } from "../clients";
 import {
   Contract,
   isDefined,
@@ -191,4 +191,20 @@ export async function submitTransaction(
     );
   }
   return response[0];
+}
+
+export async function dispatchTransaction(
+  transaction: AugmentedTransaction,
+  dispatcher: Dispatcher
+): Promise<TransactionResponse> {
+  const { reason, succeed, transaction: txnRequest } = (await dispatcher.simulate([transaction]))[0];
+  const { contract: targetContract, method, ...txnRequestData } = txnRequest;
+  if (!succeed) {
+    const message = `Failed to simulate ${targetContract.address}.${method}(${txnRequestData.args.join(", ")}) on ${
+      txnRequest.chainId
+    }`;
+    throw new Error(`${message} (${reason})`);
+  }
+
+  return dispatcher.dispatch(transaction, transaction.contract, transaction.contract.provider);
 }
