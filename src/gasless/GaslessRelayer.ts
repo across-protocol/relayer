@@ -24,6 +24,7 @@ import {
   toBN,
   blockExplorerLink,
   getNetworkName,
+  relayFillStatus,
   submitTransaction,
   getTokenInfo,
   createFormatFunction,
@@ -33,7 +34,13 @@ import {
   ConvertDecimals,
   assert,
 } from "../utils";
-import { APIGaslessDepositResponse, FillWithBlock, DepositWithBlock, GaslessDepositMessage } from "../interfaces";
+import {
+  APIGaslessDepositResponse,
+  FillStatus,
+  FillWithBlock,
+  DepositWithBlock,
+  GaslessDepositMessage,
+} from "../interfaces";
 import { AcrossSwapApiClient, TransactionClient, AugmentedTransaction } from "../clients";
 import EIP3009_ABI from "../common/abi/EIP3009.json";
 import {
@@ -407,7 +414,7 @@ export class GaslessRelayer {
             blockNumber: depositEvent.blockNumber,
           });
 
-          const fillKey = this._getFilledRelayKey({ originChainId, depositId});
+          const fillKey = this._getFilledRelayKey({ originChainId, depositId });
 
           // If the fill has been observed, exit. All fill transactions initiated by this bot should generally never collide here, but it is possible for another party with knowledge of the
           // witness to prefill any deposit, causing the fill to be known while the deposit is still yet to be executed.
@@ -429,21 +436,34 @@ export class GaslessRelayer {
           // Set the fill receipt in a try/catch block.
           // If the fill fails for some reason, then we add it to the object of retryable fills.
           let fillReceipt: TransactionReceipt | undefined = undefined;
+          let fillStatus = FillStatus.Unfilled;
           try {
             fillReceipt = await this.initiateFill(depositEvent);
+            fillStatus = FillStatus.Filled;
           } catch {
             // fillReceipt is undefined, so we are going to retry it.
           }
           // If the fill succeeded, then add this to the fill set and continue. Otherwise, add this to the retryable fills.
           if (!fillReceipt || !fillReceipt.status) {
+            // Check FillStatus directly to mitigate internal inconsistency.
+            // @todo: Infer FillStatus Filled from FilledRelay reverts on initiateFill().
+            fillStatus = await relayFillStatus(
+              this.spokePools[destinationChainId],
+              depositEvent,
+              "latest",
+              destinationChainId
+            );
+          }
+
+          if (fillStatus === FillStatus.Filled) {
+            fillSet.add(fillKey);
+          } else {
             this.logger.warn({
               at: "GaslessRelayer#evaluateApiSignatures",
               message: "Failed to initiate fill. Adding it to list of retryable fills.",
               fillReceipt,
             });
             this.retryableFills[destinationChainId][depositNonce] = depositEvent;
-          } else {
-            fillSet.add(fillKey);
           }
         }
         // Check for fills which have failed and need to be retried during this bot run.
