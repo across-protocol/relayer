@@ -549,8 +549,20 @@ export class GaslessRelayer {
         nonce,
       });
 
-      const log = (level: "debug" | "info" | "warning", message: string, args: Record<string, unknown>) =>
-        this.logger[level]({ at, message, state: getState(), originChainId, depositId, authorizer, nonce, ...args });
+      const log = (level: "debug" | "info" | "warning", message: string, args: Record<string, unknown> = {}) =>
+        this.logger[level]({
+          at,
+          message,
+          state: stateToStr(getState()),
+          originChainId,
+          depositId,
+          amount: baseDepositData.outputAmount,
+          token: baseDepositData.outputToken,
+          authorizer,
+          nonce,
+          requestId: depositMessage.requestId,
+          ...args,
+        });
 
       const setState = (state: MessageState) => {
         const currentState = getState();
@@ -589,7 +601,7 @@ export class GaslessRelayer {
               outputAmount
             );
             if (!valid) {
-              log("warning", `Rejected malformed deposit destined for ${origin}.`, { depositMessage });
+              log("warning", `Rejected malformed deposit destined for ${origin}.`);
             }
             const nextState = valid ? MessageState.DEPOSIT_PENDING : MessageState.ERROR;
             setState(nextState);
@@ -598,7 +610,7 @@ export class GaslessRelayer {
 
           case MessageState.DEPOSIT_PENDING: {
             if (expired()) {
-              log("warning", `Skipping expired deposit destined for ${origin}.`, { depositMessage });
+              log("warning", `Skipping expired deposit destined for ${origin}.`);
               setState(MessageState.ERROR);
               break;
             }
@@ -606,14 +618,14 @@ export class GaslessRelayer {
             const txnReceipt = await this.initiateGaslessDeposit(depositMessage);
             if (isDefined(txnReceipt)) {
               deposit = this._extractDepositFromTransactionReceipt(txnReceipt, originChainId);
-              log("info", `Completed deposit submission on ${origin}.`, { depositMessage });
+              log("info", `Completed deposit submission on ${origin}.`);
             }
 
             deposit ??= await this._findDeposit(originChainId, inputToken, authorizer, nonce);
             if (isDefined(deposit)) {
               setState(MessageState.FILL_PENDING);
             } else {
-              log("info", `Could not locate deposit on ${origin} .`, { depositMessage });
+              log("info", `Could not locate deposit on ${origin} .`);
               await delay(1);
             }
             break;
@@ -625,7 +637,7 @@ export class GaslessRelayer {
 
             const txnReceipt = await this.initiateFill(deposit);
             if (isDefined(txnReceipt)) {
-              log("info", `Completed fill on ${destination} for ${origin} deposit.`, { depositMessage });
+              log("info", `Completed fill on ${destination} for ${origin} deposit.`);
               fillStatus = FillStatus.Filled;
             }
 
@@ -637,7 +649,7 @@ export class GaslessRelayer {
             );
 
             if (fillStatus === FillStatus.Filled) {
-              log("info", `Recognised fill on ${destination}.`, { depositMessage });
+              log("info", `Recognised fill on ${destination}.`);
               setState(MessageState.FILLED);
             } else {
               await delay(1);
@@ -648,7 +660,7 @@ export class GaslessRelayer {
       } while (!terminalStates.includes(getState()));
       const tEnd = performance.now();
       const delta = (tEnd - tStart) / 1000;
-      log("info", `Processed ${origin} depositId ${depositId} in ${delta} seconds.`, { depositMessage });
+      log("info", `Processed ${origin} depositId ${depositId} in ${delta} seconds.`);
     };
 
     const apiMessages = await this._queryGaslessApi();
