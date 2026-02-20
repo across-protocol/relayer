@@ -781,6 +781,13 @@ export class Relayer {
       return;
     }
 
+    // Deposit is known to be profitable.
+    const { blockNumber, outputToken, outputAmount } = deposit;
+    const fillAmountUsd = profitClient.getFillAmountInUsd(deposit);
+    if (!isDefined(fillAmountUsd)) {
+      return;
+    }
+
     const hasBalance = tokenClient.hasBalanceForFill(deposit);
     if (!hasBalance) {
       // For profitable deposits where the relayer has insufficient balance,
@@ -792,15 +799,8 @@ export class Relayer {
       return;
     }
 
-    // Deposit is known to be profitable.
-    const { blockNumber, outputToken, outputAmount } = deposit;
-    const fillAmountUsd = profitClient.getFillAmountInUsd(deposit);
-    if (!isDefined(fillAmountUsd)) {
-      return;
-    }
-    const limitIdx = this.findOriginChainLimitIdx(originChainId, blockNumber);
-
     // Ensure that a limit was identified, and that no upper thresholds would be breached by filling this deposit.
+    const limitIdx = this.findOriginChainLimitIdx(originChainId, blockNumber);
     if (this.originChainOvercommitted(originChainId, fillAmountUsd, limitIdx)) {
       const limits = this.fillLimits[originChainId].slice(limitIdx);
       this.logger.debug({
