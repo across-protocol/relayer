@@ -261,7 +261,7 @@ export abstract class BaseAdapter implements RebalancerAdapter {
 
   protected async _redisGetNextCloid(): Promise<string> {
     // We want to make sure that cloids are unique even if we rotate the redis cache namespace, so we can use
-    // the current unix timestamp since we are assuming that we are never going to create multiple new orders 
+    // the current unix timestamp since we are assuming that we are never going to create multiple new orders
     // for the same exchange simultaneously.
     const unixTimestamp = getCurrentTime();
 
