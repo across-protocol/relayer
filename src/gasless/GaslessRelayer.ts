@@ -67,7 +67,6 @@ const DEPOSIT_EVENT = "FundsDeposited";
 enum MessageState {
   INITIAL = 0,
   IN_DEPOSIT,
-  DEPOSITED,
   IN_FILL,
   FILLED,
   ERROR,
