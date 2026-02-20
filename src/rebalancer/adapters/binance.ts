@@ -327,7 +327,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         }
         this.logger.info({
           at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",
-          message: `Order ${cloid} has finalized withdrawing to ${binanceWithdrawalNetwork}; bridging ${destinationToken} from ${binanceWithdrawalNetwork} to final destination chain ${destinationChain} and deleting order details from Redis!`,
+          message: `✨ Order ${cloid} has finalized withdrawing to ${binanceWithdrawalNetwork}; bridging ${destinationToken} from ${binanceWithdrawalNetwork} to final destination chain ${destinationChain} and deleting order details from Redis!`,
           requiredWithdrawAmount: withdrawAmountWei.toString(),
           destinationToken,
           withdrawalDetails,
@@ -336,7 +336,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       } else {
         this.logger.info({
           at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",
-          message: `Deleting order details from Redis with cloid ${cloid} because its withdrawal has finalized to the final destination chain ${destinationChain}!`,
+          message: `✨ Deleting order details from Redis with cloid ${cloid} because its withdrawal has finalized to the final destination chain ${destinationChain}!`,
           withdrawalDetails,
         });
       }
@@ -606,7 +606,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       }
       this.logger.info({
         at: "BinanceStablecoinSwapAdapter.initializeRebalance",
-        message: `Creating new order ${cloid} by first bridging ${sourceToken} into ${getNetworkName(
+        message: `🍻 Creating new order ${cloid} by first bridging ${sourceToken} into ${getNetworkName(
           binanceDepositNetwork
         )} from ${getNetworkName(sourceChain)}`,
         destinationToken,
@@ -623,7 +623,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     } else {
       this.logger.info({
         at: "BinanceStablecoinSwapAdapter.initializeRebalance",
-        message: `Creating new order ${cloid} by first transferring ${amountToTransfer.toString()} ${sourceToken} into Binance from ${getNetworkName(
+        message: `🍻 Creating new order ${cloid} by first transferring ${amountToTransfer.toString()} ${sourceToken} into Binance from ${getNetworkName(
           sourceChain
         )}`,
         destinationToken,
@@ -932,7 +932,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     assert(response.status == "FILLED", `Market order was not filled: ${JSON.stringify(response)}`);
     this.logger.info({
       at: "BinanceStablecoinSwapAdapter._placeMarketOrder",
-      message: `Submitted new market order for cloid ${cloid} with size ${szForOrder}`,
+      message: `🎰 Submitted new market order for cloid ${cloid} with size ${szForOrder}`,
       orderStruct,
       response,
     });
@@ -1039,7 +1039,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     await setBinanceWithdrawalType(destinationEntrypointNetwork, withdrawalId.id, BinanceTransactionType.SWAP);
     this.logger.info({
       at: "BinanceStablecoinSwapAdapter._withdraw",
-      message: `Withdrew ${quantity} ${destinationToken} from Binance to withdrawal network ${getNetworkName(
+      message: `🏧 Withdrew ${quantity} ${destinationToken} from Binance to withdrawal network ${getNetworkName(
         destinationEntrypointNetwork
       )} for order cloid ${cloid}`,
       redisWithdrawalIdKey: initiatedWithdrawalKey,

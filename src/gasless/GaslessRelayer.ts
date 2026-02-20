@@ -631,10 +631,10 @@ export class GaslessRelayer {
   private async _findFill(
     deposit: Omit<DepositWithBlock, "fromLiteChain" | "toLiteChain" | "quoteBlockNumber">
   ): Promise<FillWithBlock | undefined> {
-    const { originChainId, destinationChainId, depositId } = deposit;
-    const provider = this.providersByChain[originChainId];
+    const { destinationChainId, depositId } = deposit;
+    const dstProvider = this.providersByChain[destinationChainId];
     const searchConfig = await this._getEventSearchConfig(destinationChainId);
-    const spokePool = getSpokePool(destinationChainId).connect(provider);
+    const spokePool = getSpokePool(destinationChainId).connect(dstProvider);
     const filledRelay = await paginatedEventQuery(
       spokePool,
       spokePool.filters.FilledRelay(undefined, undefined, undefined, undefined, undefined, undefined, depositId),
