@@ -260,10 +260,13 @@ export abstract class BaseAdapter implements RebalancerAdapter {
   }
 
   protected async _redisGetNextCloid(): Promise<string> {
-    // Increment and get the latest nonce from Redis:
-    const nonce = await this.redisCache.incr(this._redisGetLatestNonceKey());
+    // We want to make sure that cloids are unique even if we rotate the redis cache namespace, so we can use
+    // the current unix timestamp since we are assuming that we are never going to create multiple new orders
+    // for the same exchange simultaneously.
+    const unixTimestamp = getCurrentTime();
 
-    return ethers.utils.hexZeroPad(ethers.utils.hexValue(nonce), 16);
+    // @dev Hyperliquid requires a 128 bit/16 byte string for a cloid, Binance doesn't seem to have any requirements.
+    return ethers.utils.hexZeroPad(ethers.utils.hexValue(unixTimestamp), 16);
   }
 
   protected async _redisGetOrderDetails(cloid: string): Promise<OrderDetails> {
