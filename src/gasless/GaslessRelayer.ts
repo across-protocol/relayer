@@ -344,6 +344,8 @@ export class GaslessRelayer {
           nonce,
         });
 
+        let depositEvent: Omit<DepositWithBlock, "fromLiteChain" | "toLiteChain" | "quoteBlockNumber"> | undefined;
+
         if (!nonceSet.has(depositNonce)) {
           this.logger.debug({
             at: "GaslessRelayer#evaluateApiSignatures",
@@ -366,140 +368,74 @@ export class GaslessRelayer {
           }
 
           // Initiate the deposit (depositWithAuthorization) and wait for tx to be executed.
-          let receipt: TransactionReceipt | null;
           try {
-            receipt = await this.initiateGaslessDeposit(depositMessage);
+            const receipt = await this.initiateGaslessDeposit(depositMessage);
+            depositEvent = this._extractDepositFromTransactionReceipt(receipt, originChainId);
+            this.logger.debug({
+              at: "GaslessRelayer#evaluateApiSignatures",
+              message: "Deposit with authorization executed",
+              depositId,
+              txHash: depositEvent.txnRef,
+              blockNumber: depositEvent.blockNumber,
+            });
           } catch (err) {
-            nonceSet.delete(depositNonce);
             this.logger.warn({
               at: "GaslessRelayer#evaluateApiSignatures",
-              message: "initiateGaslessDeposit threw; removed deposit from nonce set for retry",
+              message: "Failed to submit deposit.",
               depositId,
               depositNonce,
               error: err,
             });
-            return;
-          }
-
-          let depositEvent: Omit<DepositWithBlock, "fromLiteChain" | "toLiteChain" | "quoteBlockNumber"> | undefined =
-            undefined;
-          if (!receipt || !receipt.status) {
-            this.logger.warn({
-              at: "GaslessRelayer#evaluateApiSignatures",
-              message: "Failed to initiate deposit. Checking for relayer collision.",
-              depositId,
-              depositNonce,
-            });
-
-            const associatedDeposit = await this._findDeposit(originChainId, inputToken, authorizer, nonce);
-            // If the deposit fails, and if we did not see the deposit mined, then mark the signature as not observed so that we can retry.
-            if (!isDefined(associatedDeposit)) {
-              nonceSet.delete(depositNonce);
-              return;
-            }
-            depositEvent = associatedDeposit;
-          } else {
-            depositEvent = this._extractDepositFromTransactionReceipt(receipt, originChainId);
-          }
-          assert(
-            isDefined(depositEvent),
-            "We must have observed a matching deposit event in order to proceed with filling"
-          );
-
-          this.logger.debug({
-            at: "GaslessRelayer#evaluateApiSignatures",
-            message: "Deposit with authorization executed",
-            depositId,
-            txHash: depositEvent.txnRef,
-            blockNumber: depositEvent.blockNumber,
-          });
-
-          const fillKey = this._getFilledRelayKey({ originChainId, depositId });
-
-          // If the fill has been observed, exit. All fill transactions initiated by this bot should generally never collide here, but it is possible for another party with knowledge of the
-          // witness to prefill any deposit, causing the fill to be known while the deposit is still yet to be executed.
-          if (fillSet.has(fillKey)) {
-            this.logger.warn({
-              at: "GaslessRelayer#evaluateApiSignatures",
-              message: "Out of order fill observed. Skipping",
-              depositId,
-            });
-            return;
-          }
-
-          this.logger.debug({
-            at: "GaslessRelayer#evaluateApiSignatures",
-            message: "Fill not observed, initiating fill",
-            depositId,
-          });
-
-          // Set the fill receipt in a try/catch block.
-          // If the fill fails for some reason, then we add it to the object of retryable fills.
-          let fillReceipt: TransactionReceipt | undefined = undefined;
-          let fillStatus = FillStatus.Unfilled;
-          try {
-            fillReceipt = await this.initiateFill(depositEvent);
-            fillStatus = FillStatus.Filled;
-          } catch {
-            // fillReceipt is undefined, so we are going to retry it.
-          }
-          // If the fill succeeded, then add this to the fill set and continue. Otherwise, add this to the retryable fills.
-          if (!fillReceipt || !fillReceipt.status) {
-            // Check FillStatus directly to mitigate internal inconsistency.
-            // @todo: Infer FillStatus Filled from FilledRelay reverts on initiateFill().
-            fillStatus = await relayFillStatus(
-              this.spokePools[destinationChainId],
-              depositEvent,
-              "latest",
-              destinationChainId
-            );
-          }
-
-          if (fillStatus === FillStatus.Filled) {
-            fillSet.add(fillKey);
-          } else {
-            this.logger.warn({
-              at: "GaslessRelayer#evaluateApiSignatures",
-              message: "Failed to initiate fill. Adding it to list of retryable fills.",
-              fillReceipt,
-            });
-            this.retryableFills[destinationChainId][depositNonce] = depositEvent;
           }
         }
-        // Check for fills which have failed and need to be retried during this bot run.
-        else if (isDefined(this.retryableFills[destinationChainId]?.[depositNonce])) {
-          // Take control of the retryableFill here by removing it from the retryableFills object.
-          const deposit = this.retryableFills[destinationChainId][depositNonce];
-          delete this.retryableFills[destinationChainId][depositNonce];
 
-          const fillKey = this._getFilledRelayKey({ originChainId, depositId: deposit.depositId });
-          if (fillSet.has(fillKey)) {
-            this.logger.debug({
-              at: "GaslessRelayer#evaluateApiSignatures",
-              message: "Stale retryable fill in this.retryableFills",
-              deposit,
-            });
-          }
-          let fillReceipt: TransactionReceipt | undefined = undefined;
-          try {
-            fillReceipt = await this.initiateFill(deposit);
-          } catch {
-            // fillReceipt is undefined, so we are going to retry if we can't find the fill.
-          }
-          // If the fill succeeded, then add this to the fill set and continue. Otherwise, add this to the retryable fills.
-          if (!fillReceipt || !fillReceipt.status) {
-            this.logger.warn({
-              at: "GaslessRelayer#evaluateApiSignatures",
-              message: "Failed to initiate fill on retry. Checking for fill collision.",
-              fillReceipt,
-            });
-            const fill = await this._findFill(deposit);
-            // The deposit still failed and no fill has been observed, so retry again.
-            if (!isDefined(fill)) {
-              this.retryableFills[destinationChainId][depositNonce] = deposit;
-              return;
-            }
-          }
+        // nb. Deposit may have been submitted by another instance; look for it on origin.
+        depositEvent ??= await this._findDeposit(originChainId, inputToken, authorizer, nonce);
+
+        // If we don't have any deposit event after attempted submission and subsequent searching,
+        // then mark the signature as not observed so that we can retry.
+        if (!isDefined(depositEvent)) {
+          nonceSet.delete(depositNonce);
+          return;
+        }
+
+        const fillKey = this._getFilledRelayKey({ originChainId, depositId });
+
+        // If the fill has been observed, exit. All fill transactions initiated by this bot should generally never collide here, but it is possible for another party with knowledge of the
+        // witness to prefill any deposit, causing the fill to be known while the deposit is still yet to be executed.
+        if (fillSet.has(fillKey)) {
+          this.logger.warn({
+            at: "GaslessRelayer#evaluateApiSignatures",
+            message: "Out of order fill observed. Skipping",
+            depositId,
+          });
+          return;
+        }
+
+        this.logger.debug({
+          at: "GaslessRelayer#evaluateApiSignatures",
+          message: "Fill not observed, initiating fill",
+          depositId,
+        });
+
+        // Set the fill receipt in a try/catch block.
+        // If the fill fails for some reason, then we add it to the object of retryable fills.
+        let fillStatus = FillStatus.Unfilled;
+        try {
+          const receipt = await this.initiateFill(depositEvent);
+          fillStatus = isDefined(receipt) ? FillStatus.Filled : FillStatus.Unfilled;
+        } catch {
+          // Check FillStatus directly to mitigate internal inconsistency.
+          // @todo: Infer FillStatus Filled from FilledRelay reverts on initiateFill().
+          fillStatus = await relayFillStatus(
+            this.spokePools[destinationChainId],
+            depositEvent,
+            "latest",
+            destinationChainId
+          );
+        }
+
+        if (fillStatus === FillStatus.Filled) {
           fillSet.add(fillKey);
         }
       }
@@ -630,30 +566,6 @@ export class GaslessRelayer {
     // Otherwise, find the associated deposit event.
     const transactionReceipt = await provider.getTransactionReceipt(spentNonces[0].transactionHash);
     return this._extractDepositFromTransactionReceipt(transactionReceipt, originChainId);
-  }
-
-  /*
-   * @notice Finds if a deposit has been filled on the deposit's destination chain.
-   */
-  private async _findFill(
-    deposit: Omit<DepositWithBlock, "fromLiteChain" | "toLiteChain" | "quoteBlockNumber">
-  ): Promise<FillWithBlock | undefined> {
-    const { destinationChainId, depositId } = deposit;
-    const dstProvider = this.providersByChain[destinationChainId];
-    const searchConfig = await this._getEventSearchConfig(destinationChainId);
-    const spokePool = getSpokePool(destinationChainId).connect(dstProvider);
-    const filledRelay = await paginatedEventQuery(
-      spokePool,
-      spokePool.filters.FilledRelay(undefined, undefined, undefined, undefined, undefined, undefined, depositId),
-      searchConfig
-    );
-
-    if (filledRelay.length == 0) {
-      return undefined;
-    }
-    // If we assert here, then we have observed an invalid fill, so we should stop trying to fill this deposit.
-    assert(filledRelay.length === 1, "Observed multiple fills with matching deposit IDs");
-    return unpackFillEvent(spreadEventWithBlockNumber(filledRelay[0]), destinationChainId);
   }
 
   /*
