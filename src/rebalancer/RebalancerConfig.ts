@@ -71,18 +71,26 @@ export class RebalancerConfig extends CommonConfig {
     const { REBALANCER_CONFIG, REBALANCER_EXTERNAL_CONFIG } = env;
     super(env);
 
-    assert(
-      !isDefined(REBALANCER_EXTERNAL_CONFIG) || !isDefined(REBALANCER_CONFIG),
-      "Concurrent inventory management configurations detected."
-    );
     let rebalancerConfig;
     try {
-      rebalancerConfig = isDefined(REBALANCER_EXTERNAL_CONFIG)
-        ? JSON.parse(readFileSync(REBALANCER_EXTERNAL_CONFIG))
-        : JSON.parse(REBALANCER_CONFIG ?? "{}");
+      if (isDefined(REBALANCER_EXTERNAL_CONFIG)) {
+        try {
+          rebalancerConfig = JSON.parse(readFileSync(REBALANCER_EXTERNAL_CONFIG));
+        } catch {
+          if (isDefined(REBALANCER_CONFIG)) {
+            rebalancerConfig = JSON.parse(REBALANCER_CONFIG);
+          } else {
+            throw new Error(
+              "REBALANCER_EXTERNAL_CONFIG is set but file could not be read. Set REBALANCER_CONFIG to use internal config as fallback."
+            );
+          }
+        }
+      } else {
+        rebalancerConfig = JSON.parse(REBALANCER_CONFIG ?? "{}");
+      }
     } catch (err) {
       const msg = typeguards.isError(err) ? err.message : (err as Record<string, unknown>)?.code;
-      throw new Error(`Inventory config error (${msg ?? "unknown error"})`);
+      throw new Error(`Rebalancer config error (${msg ?? "unknown error"})`);
     }
 
     const chainIdSet = new Set<number>();

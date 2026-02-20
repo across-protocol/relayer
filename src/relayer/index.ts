@@ -167,7 +167,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
       }
 
       if (!abortController.signal.aborted) {
-        txnReceipts = await relayer.checkForUnfilledDepositsAndFill(config.sendingSlowRelaysEnabled, simulate);
+        txnReceipts = await relayer.checkForUnfilledDepositsAndFill(simulate);
         await relayer.runMaintenance();
       }
 
@@ -242,7 +242,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     await rebalancer.init();
     await rebalancer.update();
     await inventoryClient.update(rebalancer.inventoryChainIds);
-    await rebalancer.checkForUnfilledDepositsAndFill(false, true);
+    await rebalancer.checkForUnfilledDepositsAndFill(true);
 
     if (config.sendingTransactionsEnabled) {
       await inventoryClient.setTokenApprovals();
