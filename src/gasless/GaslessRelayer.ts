@@ -66,11 +66,21 @@ const DEPOSIT_EVENT = "FundsDeposited";
 
 enum MessageState {
   INITIAL = 0,
-  IN_DEPOSIT,
-  IN_FILL,
+  DEPOSIT_PENDING,
+  FILL_PENDING,
   FILLED,
   ERROR,
 }
+
+const MESSAGE_STATES = {
+  [MessageState.INITIAL]: "INITIAL",
+  [MessageState.DEPOSIT_PENDING]: "DEPOSIT_PENDING",
+  [MessageState.FILL_PENDING]: "FILL_PENDING",
+  [MessageState.FILLED]: "FILLED",
+  [MessageState.ERROR]: "ERROR",
+};
+
+const stateToStr = (state: MessageState) => MESSAGE_STATES[state] ?? "UNKNOWN";
 
 /**
  * Independent relayer bot which processes EIP-3009 signatures into deposits and corresponding fills.
@@ -544,7 +554,11 @@ export class GaslessRelayer {
 
       const setState = (state: MessageState) => {
         const currentState = getState();
-        log("debug", "State transition.", { currentState, nextState: state });
+        log(
+          "debug",
+          `State transition ${stateToStr(currentState)} -> ${stateToStr(state)}.`,
+          { currentState, nextState: state }
+        );
         this.messageState[depositNonce] = state;
       };
       const getState = () => {
@@ -577,12 +591,12 @@ export class GaslessRelayer {
             if (!valid) {
               log("warning", `Rejected malformed deposit destined for ${origin}.`, { depositMessage });
             }
-            const nextState = valid ? MessageState.IN_DEPOSIT : MessageState.ERROR;
+            const nextState = valid ? MessageState.DEPOSIT_PENDING : MessageState.ERROR;
             setState(nextState);
             break;
           }
 
-          case MessageState.IN_DEPOSIT: {
+          case MessageState.DEPOSIT_PENDING: {
             if (expired()) {
               log("warning", `Skipping expired deposit destined for ${origin}.`, { depositMessage });
               setState(MessageState.ERROR);
@@ -592,12 +606,12 @@ export class GaslessRelayer {
             const txnReceipt = await this.initiateGaslessDeposit(depositMessage);
             if (isDefined(txnReceipt)) {
               deposit = this._extractDepositFromTransactionReceipt(txnReceipt, originChainId);
-              log("info", `Completed deposit submission on ${origin} .`, { depositMessage });
+              log("info", `Completed deposit submission on ${origin}.`, { depositMessage });
             }
 
             deposit ??= await this._findDeposit(originChainId, inputToken, authorizer, nonce);
             if (isDefined(deposit)) {
-              setState(MessageState.IN_FILL);
+              setState(MessageState.FILL_PENDING);
             } else {
               log("info", `Could not locate deposit on ${origin} .`, { depositMessage });
               await delay(1);
@@ -605,7 +619,7 @@ export class GaslessRelayer {
             break;
           }
 
-          case MessageState.IN_FILL: {
+          case MessageState.FILL_PENDING: {
             assert(isDefined(deposit));
             let fillStatus: FillStatus;
 
