@@ -261,8 +261,7 @@ export abstract class BaseAdapter implements RebalancerAdapter {
 
   protected async _redisGetNextCloid(): Promise<string> {
     // Increment and get the latest nonce from Redis:
-    const startingNonce = process.env.REBALANCER_STARTING_NONCE ? parseInt(process.env.REBALANCER_STARTING_NONCE) : 0;
-    const nonce = (await this.redisCache.incr(this._redisGetLatestNonceKey())) + startingNonce;
+    const nonce = await this.redisCache.incr(this._redisGetLatestNonceKey());
 
     return ethers.utils.hexZeroPad(ethers.utils.hexValue(nonce), 16);
   }
