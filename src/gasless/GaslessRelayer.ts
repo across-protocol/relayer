@@ -66,11 +66,21 @@ const DEPOSIT_EVENT = "FundsDeposited";
 
 enum MessageState {
   INITIAL = 0,
-  IN_DEPOSIT,
-  IN_FILL,
+  DEPOSIT_PENDING,
+  FILL_PENDING,
   FILLED,
   ERROR,
 }
+
+const MESSAGE_STATES = {
+  [MessageState.INITIAL]: "INITIAL",
+  [MessageState.DEPOSIT_PENDING]: "DEPOSIT_PENDING",
+  [MessageState.FILL_PENDING]: "FILL_PENDING",
+  [MessageState.FILLED]: "FILLED",
+  [MessageState.ERROR]: "ERROR",
+};
+
+const stateToStr = (state: MessageState) => MESSAGE_STATES[state] ?? "UNKNOWN";
 
 /**
  * Independent relayer bot which processes EIP-3009 signatures into deposits and corresponding fills.
@@ -539,12 +549,27 @@ export class GaslessRelayer {
         nonce,
       });
 
-      const log = (level: "debug" | "info" | "warning", message: string, args: Record<string, unknown>) =>
-        this.logger[level]({ at, message, state: getState(), originChainId, depositId, authorizer, nonce, ...args });
+      const log = (level: "debug" | "info" | "warn", message: string, args: Record<string, unknown> = {}) =>
+        this.logger[level]({
+          at,
+          message,
+          state: stateToStr(getState()),
+          originChainId,
+          depositId,
+          amount: baseDepositData.outputAmount,
+          token: baseDepositData.outputToken,
+          authorizer,
+          nonce,
+          requestId: depositMessage.requestId,
+          ...args,
+        });
 
       const setState = (state: MessageState) => {
         const currentState = getState();
-        log("debug", "State transition.", { currentState, nextState: state });
+        log("debug", `State transition: ${stateToStr(currentState)} -> ${stateToStr(state)}.`, {
+          currentState,
+          nextState: state,
+        });
         this.messageState[depositNonce] = state;
       };
       const getState = () => {
@@ -563,6 +588,11 @@ export class GaslessRelayer {
 
       const tStart = performance.now();
       do {
+        if (expired()) {
+          log("warn", `Skipping expired deposit destined for ${origin}.`);
+          setState(MessageState.ERROR);
+        }
+
         const messageState = getState();
         switch (messageState) {
           case MessageState.INITIAL: {
@@ -575,43 +605,37 @@ export class GaslessRelayer {
               outputAmount
             );
             if (!valid) {
-              log("warning", `Rejected malformed deposit destined for ${origin}.`, { depositMessage });
+              log("warn", `Rejected malformed deposit destined for ${origin}.`);
             }
-            const nextState = valid ? MessageState.IN_DEPOSIT : MessageState.ERROR;
+            const nextState = valid ? MessageState.DEPOSIT_PENDING : MessageState.ERROR;
             setState(nextState);
             break;
           }
 
-          case MessageState.IN_DEPOSIT: {
-            if (expired()) {
-              log("warning", `Skipping expired deposit destined for ${origin}.`, { depositMessage });
-              setState(MessageState.ERROR);
-              break;
-            }
-
+          case MessageState.DEPOSIT_PENDING: {
             const txnReceipt = await this.initiateGaslessDeposit(depositMessage);
             if (isDefined(txnReceipt)) {
               deposit = this._extractDepositFromTransactionReceipt(txnReceipt, originChainId);
-              log("info", `Completed deposit submission on ${origin} .`, { depositMessage });
+              log("info", `Completed deposit submission on ${origin}.`);
             }
 
             deposit ??= await this._findDeposit(originChainId, inputToken, authorizer, nonce);
             if (isDefined(deposit)) {
-              setState(MessageState.IN_FILL);
+              setState(MessageState.FILL_PENDING);
             } else {
-              log("info", `Could not locate deposit on ${origin} .`, { depositMessage });
+              log("info", `Could not locate deposit on ${origin}.`);
               await delay(1);
             }
             break;
           }
 
-          case MessageState.IN_FILL: {
+          case MessageState.FILL_PENDING: {
             assert(isDefined(deposit));
             let fillStatus: FillStatus;
 
             const txnReceipt = await this.initiateFill(deposit);
             if (isDefined(txnReceipt)) {
-              log("info", `Completed fill on ${destination} for ${origin} deposit.`, { depositMessage });
+              log("info", `Completed fill on ${destination} for ${origin} deposit.`);
               fillStatus = FillStatus.Filled;
             }
 
@@ -623,7 +647,7 @@ export class GaslessRelayer {
             );
 
             if (fillStatus === FillStatus.Filled) {
-              log("info", `Recognised fill on ${destination}.`, { depositMessage });
+              log("info", `Recognised fill on ${destination}.`);
               setState(MessageState.FILLED);
             } else {
               await delay(1);
@@ -634,15 +658,34 @@ export class GaslessRelayer {
       } while (!terminalStates.includes(getState()));
       const tEnd = performance.now();
       const delta = (tEnd - tStart) / 1000;
-      log("info", `Processed ${origin} depositId ${depositId} in ${delta} seconds.`, { depositMessage });
+      log("info", `Processed ${origin} depositId ${depositId} in ${delta} seconds.`);
+    };
+
+    const handler = process.env.RELAYER_GASLESS_HANDLER === "experimental" ? experimentalHandler : defaultHandler;
+    const messageFilter = (deposit: GaslessDepositMessage): boolean => {
+      if (!isDefined(this.observedNonces[deposit.originChainId])) {
+        return false;
+      }
+
+      if (handler === defaultHandler) {
+        return true;
+      }
+
+      const {
+        baseDepositData: { inputToken },
+        permit,
+      } = deposit;
+      const depositNonce = this._getNonceKey(EvmAddress.from(inputToken).toNative(), {
+        authorizer: permit.message.from,
+        nonce: permit.message.nonce,
+      });
+
+      // If there's already known state for this deposit nonce, skip it.
+      return !isDefined(this.messageState[depositNonce]);
     };
 
     const apiMessages = await this._queryGaslessApi();
-    await forEachAsync(
-      // Filter if we do not recognize the chain ID.
-      apiMessages.filter(({ originChainId }) => isDefined(this.observedNonces[originChainId])),
-      process.env.RELAYER_GASLESS_HANDLER === "experimental" ? experimentalHandler : defaultHandler
-    );
+    await forEachAsync(apiMessages.filter(messageFilter), handler);
   }
 
   /*
