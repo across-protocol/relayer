@@ -1,6 +1,7 @@
 import winston from "winston";
 import { GaslessRelayerConfig } from "./GaslessRelayerConfig";
 import {
+  Address,
   isDefined,
   getRedisCache,
   delay,
@@ -35,7 +36,12 @@ import {
 import { APIGaslessDepositResponse, FillWithBlock, DepositWithBlock, GaslessDepositMessage } from "../interfaces";
 import { AcrossSwapApiClient, TransactionClient, AugmentedTransaction } from "../clients";
 import EIP3009_ABI from "../common/abi/EIP3009.json";
-import { buildGaslessDepositTx, buildGaslessFillRelayTx, restructureGaslessDeposits } from "../utils/GaslessUtils";
+import {
+  buildGaslessDepositTx,
+  buildGaslessFillRelayTx,
+  restructureGaslessDeposits,
+  validateDeposit,
+} from "../utils/GaslessUtils";
 
 type GaslessRelayerUpdate = {
   observedFundsDeposited: {
@@ -313,13 +319,19 @@ export class GaslessRelayer {
       apiMessages.filter(({ originChainId }) => isDefined(this.observedNonces[originChainId])),
       async (depositMessage) => {
         const { originChainId, depositId, permit } = depositMessage;
-        const { destinationChainId, inputToken, outputToken, inputAmount, outputAmount } =
-          depositMessage.baseDepositData;
+        const {
+          baseDepositData: { destinationChainId, ...baseDepositData },
+        } = depositMessage;
         const { from: authorizer, nonce } = permit.message;
+
+        const inputToken = toAddressType(baseDepositData.inputToken, originChainId);
+        const outputToken = toAddressType(baseDepositData.outputToken, destinationChainId);
+        const inputAmount = toBN(baseDepositData.inputAmount);
+        const outputAmount = toBN(baseDepositData.outputAmount);
 
         const nonceSet = this.observedNonces[originChainId];
         const fillSet = this.observedFills[destinationChainId];
-        const depositNonce = this._getNonceKey(inputToken, {
+        const depositNonce = this._getNonceKey(inputToken.toNative(), {
           authorizer,
           nonce,
         });
@@ -335,38 +347,12 @@ export class GaslessRelayer {
           // Mark the signature as observed.
           nonceSet.add(depositNonce);
 
-          // Ensure that the input token is the same as the output token.
-          const inputTokenAddress = toAddressType(inputToken, originChainId);
-          const inputTokenL1Address = getL1TokenAddress(inputTokenAddress, originChainId);
-          const outputTokenAddress = toAddressType(outputToken, destinationChainId);
-          const outputTokenL1Address = getL1TokenAddress(outputTokenAddress, destinationChainId);
-          // If the input token is different from the output token, then keep the deposit as observed and do not submit a deposit.
-          if (!inputTokenL1Address.eq(outputTokenL1Address)) {
+          if (!validateDeposit(originChainId, inputToken, inputAmount, destinationChainId, outputToken, outputAmount)) {
+            // @todo: Distinguish between error on tokens & amounts.
             this.logger.debug({
               at: "GaslessRelayer#evaluateApiSignatures",
-              message: "Deposit input token is different from deposit output token. Skipping deposit.",
-              depositId,
-              depositNonce,
-              inputToken: inputTokenL1Address.toNative(),
-              outputToken: outputTokenL1Address.toNative(),
-            });
-            return;
-          }
-          const inputTokenInfo = getTokenInfo(inputTokenAddress, originChainId);
-          const outputTokenInfo = getTokenInfo(outputTokenAddress, destinationChainId);
-          const inputAmountInOutputTokenDecimals = ConvertDecimals(
-            inputTokenInfo.decimals,
-            outputTokenInfo.decimals
-          )(inputAmount);
-          // If the input amount is less than the output amount, then keep the deposit as observed and do not submit a deposit.
-          if (inputAmountInOutputTokenDecimals.lt(toBN(outputAmount))) {
-            this.logger.debug({
-              at: "GaslessRelayer#evaluateApiSignatures",
-              message: "Deposit inputAmount < ouputAmount. Skipping deposit.",
-              depositId,
-              depositNonce,
-              inputAmount,
-              outputAmount,
+              message: "Received invalid deposit, skipping...",
+              deposit: depositMessage,
             });
             return;
           }
@@ -603,12 +589,12 @@ export class GaslessRelayer {
    */
   private async _findDeposit(
     originChainId: number,
-    inputToken: string,
+    inputToken: Address,
     authorizer: string,
     nonce: string
   ): Promise<Omit<DepositWithBlock, "fromLiteChain" | "toLiteChain" | "quoteBlockNumber"> | undefined> {
     const provider = this.providersByChain[originChainId];
-    const authToken = new Contract(inputToken, EIP3009_ABI, provider);
+    const authToken = new Contract(inputToken.toNative(), EIP3009_ABI, provider);
     const searchConfig = await this._getEventSearchConfig(originChainId);
     const spentNonces = await paginatedEventQuery(
       authToken,

@@ -1,5 +1,13 @@
 import { APIGaslessDepositResponse, BridgeWitnessData, GaslessDepositMessage, DepositWithBlock } from "../interfaces";
-import { Address, convertRelayDataParamsToBytes32, toBytes32 } from "../utils";
+import {
+  Address,
+  ConvertDecimals,
+  convertRelayDataParamsToBytes32,
+  getL1TokenAddress,
+  getTokenInfo,
+  toAddressType,
+  toBytes32,
+} from "../utils";
 import { AugmentedTransaction } from "../clients";
 import { Contract, BigNumber } from "ethers";
 
@@ -119,4 +127,37 @@ export function buildGaslessFillRelayTx(
     ensureConfirmation: true,
     args: [convertRelayDataParamsToBytes32(deposit), repaymentChainId, repaymentAddress.toBytes32()],
   };
+}
+
+/**
+ * Simple validation function for deposit tokens & amounts.
+ */
+export function validateDeposit(
+  originChainId: number,
+  inputToken: Address,
+  inputAmount: BigNumber,
+  destinationChainId: number,
+  outputToken: Address,
+  outputAmount: BigNumber
+): boolean {
+  // Ensure that the input token is the same as the output token.
+  const inputTokenL1Address = getL1TokenAddress(inputToken, originChainId);
+  const outputTokenL1Address = getL1TokenAddress(outputToken, destinationChainId);
+  // If the input token is different from the output token, then keep the deposit as observed and do not submit a deposit.
+  if (!inputTokenL1Address.eq(outputTokenL1Address)) {
+    return false;
+  }
+
+  const inputTokenInfo = getTokenInfo(inputToken, originChainId);
+  const outputTokenInfo = getTokenInfo(outputToken, destinationChainId);
+  const inputAmountInOutputTokenDecimals = ConvertDecimals(
+    inputTokenInfo.decimals,
+    outputTokenInfo.decimals
+  )(inputAmount);
+  // If the input amount is less than the output amount, then keep the deposit as observed and do not submit a deposit.
+  if (inputAmountInOutputTokenDecimals.lt(outputAmount)) {
+    return false;
+  }
+
+  return true;
 }
