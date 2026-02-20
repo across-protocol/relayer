@@ -909,10 +909,9 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       return undefined;
     }
     const existingOrder = await this._redisGetOrderDetails(cloid);
-    const { sourceToken, destinationToken, destinationChain } = existingOrder;
+    const { destinationToken, destinationChain } = existingOrder;
     const destinationTokenMeta = this._getTokenMeta(destinationToken);
     const destinationTokenInfo = getTokenInfoFromSymbol(destinationToken, destinationChain);
-    const spotMarketMeta = this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
 
     // If fill was a buy, then received amount is denominated in base asset, same as sz.
     // If fill was a sell, then received amount is denominated in quote asset, so receivedAmount = px * sz.
@@ -920,10 +919,15 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     if (matchingFill.dir === "Buy") {
       amountToWithdraw = toBNWei(matchingFill.sz, destinationTokenMeta.coreDecimals);
     } else {
+      // matchingFill.px might be an averagePx of all the partial fills so it can exceed pxDecimals so to be safe,
+      // we toWei it to 18 decimals.
       amountToWithdraw = toBNWei(matchingFill.sz, destinationTokenMeta.coreDecimals)
-        .mul(toBNWei(matchingFill.px, spotMarketMeta.pxDecimals))
-        .div(10 ** spotMarketMeta.pxDecimals);
+        .mul(toBNWei(matchingFill.px, 18))
+        .div(toBNWei(1));
     }
+
+    // Subtract the fee:
+    amountToWithdraw = amountToWithdraw.sub(toBNWei(matchingFill.fee, destinationTokenMeta.coreDecimals));
 
     // We need to make sure there are not more than evmDecimals decimals for the amount to withdraw or the HL
     // spotSend/sendAsset transaction will fail "Invalid number of decimals".
