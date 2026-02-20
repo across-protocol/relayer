@@ -1,3 +1,4 @@
+import { RELAYER_SLOW_FILL_MIN_AGE } from "../src/relayer/Relayer.ts";
 import {
   AcrossApiClient,
   ConfigStoreClient,
@@ -31,6 +32,7 @@ import {
   ethers,
   expect,
   getLastBlockTime,
+  mineRandomBlocks,
   lastSpyLogIncludes,
   setupTokensForWallet,
   sinon,
@@ -231,6 +233,8 @@ describe("Relayer: Initiates slow fill requests", async function () {
     );
     expect(deposit).to.exist;
 
+    // Mine blocks so the deposit age exceeds the slow fill deferral threshold.
+    await mineRandomBlocks(RELAYER_SLOW_FILL_MIN_AGE);
     await updateAllClients();
     const _txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
     const txnHashes = await _txnReceipts[destinationChainId];

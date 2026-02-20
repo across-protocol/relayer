@@ -325,7 +325,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
           });
           continue;
         }
-        this.logger.debug({
+        this.logger.info({
           at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",
           message: `Order ${cloid} has finalized withdrawing to ${binanceWithdrawalNetwork}; bridging ${destinationToken} from ${binanceWithdrawalNetwork} to final destination chain ${destinationChain} and deleting order details from Redis!`,
           requiredWithdrawAmount: withdrawAmountWei.toString(),
@@ -334,7 +334,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         });
         await this._bridgeToChain(destinationToken, binanceWithdrawalNetwork, destinationChain, withdrawAmountWei);
       } else {
-        this.logger.debug({
+        this.logger.info({
           at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",
           message: `Deleting order details from Redis with cloid ${cloid} because its withdrawal has finalized to the final destination chain ${destinationChain}!`,
           withdrawalDetails,
@@ -591,15 +591,6 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const binanceDepositNetwork = await this._getEntrypointNetwork(sourceChain, sourceToken);
     const requiresBridgeBeforeDeposit = binanceDepositNetwork !== sourceChain;
     if (requiresBridgeBeforeDeposit) {
-      this.logger.debug({
-        at: "BinanceStablecoinSwapAdapter.initializeRebalance",
-        message: `Creating new order ${cloid} by first bridging ${sourceToken} into ${getNetworkName(
-          binanceDepositNetwork
-        )} from ${getNetworkName(sourceChain)}`,
-        destinationToken,
-        destinationChain: getNetworkName(destinationChain),
-        amountToTransfer: amountToTransfer.toString(),
-      });
       const balance = await this._getERC20Balance(
         sourceChain,
         this._getTokenInfo(sourceToken, sourceChain).address.toNative()
@@ -613,6 +604,15 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         });
         return;
       }
+      this.logger.info({
+        at: "BinanceStablecoinSwapAdapter.initializeRebalance",
+        message: `Creating new order ${cloid} by first bridging ${sourceToken} into ${getNetworkName(
+          binanceDepositNetwork
+        )} from ${getNetworkName(sourceChain)}`,
+        destinationToken,
+        destinationChain: getNetworkName(destinationChain),
+        amountToTransfer: amountToTransfer.toString(),
+      });
       const amountReceivedFromBridge = await this._bridgeToChain(
         sourceToken,
         sourceChain,
@@ -621,7 +621,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       );
       await this._redisCreateOrder(cloid, STATUS.PENDING_BRIDGE_PRE_DEPOSIT, rebalanceRoute, amountReceivedFromBridge);
     } else {
-      this.logger.debug({
+      this.logger.info({
         at: "BinanceStablecoinSwapAdapter.initializeRebalance",
         message: `Creating new order ${cloid} by first transferring ${amountToTransfer.toString()} ${sourceToken} into Binance from ${getNetworkName(
           sourceChain
@@ -662,13 +662,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     );
     const withdrawFeeConvertedToSourceToken = amountConverter(withdrawFee);
 
-    const { slippagePct, latestPrice } = await this._getLatestPrice(
-      sourceToken,
-      destinationToken,
-      sourceChain,
-      amountToTransfer
-    );
-    const slippage = toBNWei(slippagePct, 18).mul(amountToTransfer).div(toBNWei(100, 18));
+    const { latestPrice } = await this._getLatestPrice(sourceToken, destinationToken, sourceChain, amountToTransfer);
 
     // Bridge fee
 
@@ -719,7 +713,6 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
 
     const totalFee = tradeFee
       .add(withdrawFeeConvertedToSourceToken)
-      .add(slippage)
       .add(spreadFee)
       .add(bridgeToBinanceFee)
       .add(bridgeFromBinanceFee)
@@ -736,8 +729,6 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         tradeFeePct,
         tradeFee: tradeFee.toString(),
         withdrawFeeConvertedToSourceToken: withdrawFeeConvertedToSourceToken.toString(),
-        slippagePct,
-        slippage: slippage.toString(),
         estimatedTakerPrice: latestPrice,
         spreadPct: spreadPct * 100,
         spreadFee: spreadFee.toString(),
@@ -813,7 +804,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const txnHash = await this._submitTransaction(txn);
     // Set the TTL to 30 minutes so that the Binance sweeper finalizer only attempts to pull back these deposited
     // funds after 30 minutes. If the swap hasn't occurred in 30 mins then something has gone wrong.
-    await setBinanceDepositType(sourceChain, txnHash, BinanceTransactionType.SWAP, this.redisCache, 30 * 60);
+    await setBinanceDepositType(sourceChain, txnHash, BinanceTransactionType.SWAP, 30 * 60);
     this.logger.debug({
       at: "BinanceStablecoinSwapAdapter._depositToBinance",
       message: `Deposited ${amountReadable} ${sourceToken} to Binance from chain ${getNetworkName(sourceChain)}`,
@@ -939,9 +930,10 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     });
     const response = await this.binanceApiClient.order(orderStruct as NewOrderSpot);
     assert(response.status == "FILLED", `Market order was not filled: ${JSON.stringify(response)}`);
-    this.logger.debug({
+    this.logger.info({
       at: "BinanceStablecoinSwapAdapter._placeMarketOrder",
-      message: "Market order response",
+      message: `Submitted new market order for cloid ${cloid} with size ${szForOrder}`,
+      orderStruct,
       response,
     });
   }
@@ -1044,12 +1036,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     });
     const initiatedWithdrawalKey = this._redisGetInitiatedWithdrawalKey(cloid);
     await this.redisCache.set(initiatedWithdrawalKey, withdrawalId.id);
-    await setBinanceWithdrawalType(
-      destinationEntrypointNetwork,
-      withdrawalId.id,
-      BinanceTransactionType.SWAP,
-      this.redisCache
-    );
+    await setBinanceWithdrawalType(destinationEntrypointNetwork, withdrawalId.id, BinanceTransactionType.SWAP);
     this.logger.info({
       at: "BinanceStablecoinSwapAdapter._withdraw",
       message: `Withdrew ${quantity} ${destinationToken} from Binance to withdrawal network ${getNetworkName(

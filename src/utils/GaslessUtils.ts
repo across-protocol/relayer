@@ -1,7 +1,7 @@
 import { APIGaslessDepositResponse, BridgeWitnessData, GaslessDepositMessage, DepositWithBlock } from "../interfaces";
 import { Address, convertRelayDataParamsToBytes32, toBytes32 } from "../utils";
 import { AugmentedTransaction } from "../clients";
-import { Contract } from "ethers";
+import { Contract, BigNumber } from "ethers";
 
 /**
  * Restructures raw API deposits into a flatter shape so callers don't deal with
@@ -86,7 +86,13 @@ export function buildGaslessDepositTx(
   const { from: signatureOwner, validBefore, validAfter } = permit.message;
   const witnessData: BridgeWitnessData = { inputAmount, baseDepositData, submissionFees, spokePool, nonce };
   const depositData = toContractDepositData(witnessData);
-  const args = [signatureOwner, depositData, BigInt(validAfter), BigInt(validBefore), normalizeSignature(signature)];
+  const args = [
+    signatureOwner,
+    depositData,
+    BigNumber.from(validAfter),
+    BigNumber.from(validBefore),
+    normalizeSignature(signature),
+  ];
   return {
     contract: spokePoolPeripheryContract,
     chainId: depositMessage.originChainId,

@@ -12,7 +12,7 @@
   "dependencies": {
     "@across-protocol/constants": "^3.1.98",
     "@across-protocol/contracts": "4.1.24",
-    "@across-protocol/sdk": "4.3.125",
+    "@across-protocol/sdk": "4.3.127",
     "@arbitrum/sdk": "^4.0.2",
     "@consensys/linea-sdk": "^0.3.0",
     "@coral-xyz/anchor": "^0.31.1",
@@ -80,6 +80,7 @@
     "run-hlExecutor": "node ./dist/index.js --hlExecutor",
     "run-hlFinalizer": "node ./dist/index.js --hlFinalizer",
     "run-inventoryManager": "node ./dist/index.js --inventoryManager",
+    "run-inventoryManager-swapper": "node ./dist/index.js --swapRebalancer",
     "run-gaslessRelayer": "node ./dist/index.js --gaslessRelayer",
     "relay": "node ./dist/index.js --relayer",
     "refill-usdc": "node ./dist/scripts/refillUsdcToSpecificChain.js",

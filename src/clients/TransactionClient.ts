@@ -7,6 +7,7 @@ import {
   BigNumber,
   blockExplorerLink,
   toBNWei,
+  TransactionReceipt,
   TransactionResponse,
   TransactionSimulationResult,
   willSucceed,
@@ -74,9 +75,66 @@ export class TransactionClient {
     return Promise.all(txns.map((txn: AugmentedTransaction) => this._simulate(txn)));
   }
 
-  protected _submit(txn: AugmentedTransaction, nonce: number | null = null): Promise<TransactionResponse> {
+  protected _getTransactionPromise(txn: AugmentedTransaction, nonce: number | null): Promise<TransactionResponse> {
     const { contract, method, args, value, gasLimit } = txn;
     return _runTransaction(this.logger, contract, method, args, value, gasLimit, nonce);
+  }
+
+  protected async _submit(
+    txn: AugmentedTransaction,
+    opts: { nonce: number | null; maxTries?: number }
+  ): Promise<TransactionResponse> {
+    const { chainId } = txn;
+    const { nonce = null, maxTries = 10 } = opts;
+    const txnPromise = this._getTransactionPromise(txn, nonce);
+
+    if (txn.ensureConfirmation) {
+      const at = "TransactionClient#_submit";
+      const chain = getNetworkName(txn.chainId);
+      const txnResponse = await txnPromise;
+      const txnArgs = { chainId, contract: txn.contract.address, method: txn.method };
+      const txnRef = blockExplorerLink(txnResponse.hash, chainId);
+
+      let txnReceipt: TransactionReceipt;
+      let nTries = 0;
+      do {
+        try {
+          // Must return a TransactionResponse, so await on the receipt, but discard it.
+          txnReceipt = await txnResponse.wait();
+        } catch (error) {
+          if (!typeguards.isEthersError(error)) {
+            throw error;
+          }
+
+          const { code } = error;
+          const common = { at, code, txn: txnArgs, txnRef };
+          switch (code) {
+            case ethers.errors.CALL_EXCEPTION:
+              // Call failed
+              this.logger.warn({ ...common, message: `Transaction on ${chain} failed during execution...` });
+              throw error;
+            case ethers.errors.TRANSACTION_REPLACED:
+              this.logger.warn({
+                ...common,
+                message: `Transaction submission on ${chain} replaced at nonce ${nonce}, resubmitting...`,
+              });
+              return this._submit(txn, { nonce: null, maxTries: maxTries - 1 });
+            default:
+              this.logger.warn({
+                ...common,
+                message: "Unhandled error while waiting for confirmation on transaction.",
+              });
+              await delay(0.25);
+          }
+        }
+      } while (!txnReceipt && ++nTries < maxTries);
+
+      if (!txnReceipt) {
+        this.logger.warn({ at, message: `Unable to confirm ${chain} transaction.`, txnRef });
+      }
+    }
+
+    return txnPromise;
   }
 
   async submit(chainId: number, txns: AugmentedTransaction[]): Promise<TransactionResponse[]> {
@@ -114,7 +172,7 @@ export class TransactionClient {
 
       let response: TransactionResponse;
       try {
-        response = await this._submit(txn, nonce);
+        response = await this._submit(txn, { nonce });
       } catch (error) {
         delete this.nonces[chainId];
         this.logger.info({
@@ -133,22 +191,6 @@ export class TransactionClient {
       const blockExplorer = blockExplorerLink(response.hash, txn.chainId);
       mrkdwn += `  ${idx + 1}. ${txn.message || "No message"} (${blockExplorer}): ${txn.mrkdwn || "No markdown"}\n`;
       txnResponses.push(response);
-
-      if (txn.ensureConfirmation) {
-        for (let checks = 0; checks < 5; ++checks) {
-          try {
-            await response.wait();
-            break;
-          } catch (error) {
-            this.logger.warn({
-              at: "TransactionClient#submit",
-              message: `Transaction ${idx + 1} submission on ${networkName} not found on attempt ${checks}`,
-              errorMessage: error,
-            });
-            await delay(1);
-          }
-        }
-      }
     }
 
     this.logger.info({
