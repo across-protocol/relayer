@@ -139,14 +139,22 @@ export class RelayerConfig extends CommonConfig {
     this.inventoryTopic = INVENTORY_TOPIC;
     this.relayerUseInventoryManager = RELAYER_USE_INVENTORY_MANAGER === "true";
 
-    assert(
-      !isDefined(RELAYER_EXTERNAL_INVENTORY_CONFIG) || !isDefined(RELAYER_INVENTORY_CONFIG),
-      "Concurrent inventory management configurations detected."
-    );
     try {
-      this.inventoryConfig = isDefined(RELAYER_EXTERNAL_INVENTORY_CONFIG)
-        ? JSON.parse(readFileSync(RELAYER_EXTERNAL_INVENTORY_CONFIG))
-        : JSON.parse(RELAYER_INVENTORY_CONFIG ?? "{}");
+      if (isDefined(RELAYER_EXTERNAL_INVENTORY_CONFIG)) {
+        try {
+          this.inventoryConfig = JSON.parse(readFileSync(RELAYER_EXTERNAL_INVENTORY_CONFIG));
+        } catch {
+          if (isDefined(RELAYER_INVENTORY_CONFIG)) {
+            this.inventoryConfig = JSON.parse(RELAYER_INVENTORY_CONFIG);
+          } else {
+            throw new Error(
+              "RELAYER_EXTERNAL_INVENTORY_CONFIG is set but file could not be read. Set RELAYER_INVENTORY_CONFIG to use internal config as fallback."
+            );
+          }
+        }
+      } else {
+        this.inventoryConfig = JSON.parse(RELAYER_INVENTORY_CONFIG ?? "{}");
+      }
     } catch (err) {
       const msg = typeguards.isError(err) ? err.message : (err as Record<string, unknown>)?.code;
       throw new Error(`Inventory config error (${msg ?? "unknown error"})`);
