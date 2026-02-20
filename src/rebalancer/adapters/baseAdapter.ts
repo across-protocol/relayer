@@ -229,6 +229,7 @@ export abstract class BaseAdapter implements RebalancerAdapter {
       message: `Saving new order details for cloid ${cloid}`,
       orderStatusKey,
       orderDetailsKey,
+      redisNamespace: rebalancerStatusTrackingNameSpace,
       sourceToken,
       destinationToken,
       sourceChain,

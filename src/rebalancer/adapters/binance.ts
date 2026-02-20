@@ -662,13 +662,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     );
     const withdrawFeeConvertedToSourceToken = amountConverter(withdrawFee);
 
-    const { slippagePct, latestPrice } = await this._getLatestPrice(
-      sourceToken,
-      destinationToken,
-      sourceChain,
-      amountToTransfer
-    );
-    const slippage = toBNWei(slippagePct, 18).mul(amountToTransfer).div(toBNWei(100, 18));
+    const { latestPrice } = await this._getLatestPrice(sourceToken, destinationToken, sourceChain, amountToTransfer);
 
     // Bridge fee
 
@@ -719,7 +713,6 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
 
     const totalFee = tradeFee
       .add(withdrawFeeConvertedToSourceToken)
-      .add(slippage)
       .add(spreadFee)
       .add(bridgeToBinanceFee)
       .add(bridgeFromBinanceFee)
@@ -736,8 +729,6 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         tradeFeePct,
         tradeFee: tradeFee.toString(),
         withdrawFeeConvertedToSourceToken: withdrawFeeConvertedToSourceToken.toString(),
-        slippagePct,
-        slippage: slippage.toString(),
         estimatedTakerPrice: latestPrice,
         spreadPct: spreadPct * 100,
         spreadFee: spreadFee.toString(),
