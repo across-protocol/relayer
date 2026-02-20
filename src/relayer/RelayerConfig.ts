@@ -148,7 +148,7 @@ export class RelayerConfig extends CommonConfig {
             this.inventoryConfig = JSON.parse(RELAYER_INVENTORY_CONFIG);
           } else {
             throw new Error(
-              `RELAYER_EXTERNAL_INVENTORY_CONFIG is set but file could not be read. Set RELAYER_INVENTORY_CONFIG to use internal config as fallback.`
+              "RELAYER_EXTERNAL_INVENTORY_CONFIG is set but file could not be read. Set RELAYER_INVENTORY_CONFIG to use internal config as fallback."
             );
           }
         }

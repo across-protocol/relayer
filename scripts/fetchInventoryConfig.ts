@@ -150,7 +150,9 @@ async function run(): Promise<number> {
         });
       } else {
         throw new Error(
-          `Failed to fetch ${spec.label}: ${errorMessage}. Set internal config (${spec.kind === "relayer" ? "RELAYER_INVENTORY_CONFIG" : "REBALANCER_CONFIG"}) to allow fallback when fetch fails.`
+          `Failed to fetch ${spec.label}: ${errorMessage}. Set internal config (${
+            spec.kind === "relayer" ? "RELAYER_INVENTORY_CONFIG" : "REBALANCER_CONFIG"
+          }) to allow fallback when fetch fails.`
         );
       }
     }

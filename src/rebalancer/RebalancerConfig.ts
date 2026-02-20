@@ -81,7 +81,7 @@ export class RebalancerConfig extends CommonConfig {
             rebalancerConfig = JSON.parse(REBALANCER_CONFIG);
           } else {
             throw new Error(
-              `REBALANCER_EXTERNAL_CONFIG is set but file could not be read. Set REBALANCER_CONFIG to use internal config as fallback.`
+              "REBALANCER_EXTERNAL_CONFIG is set but file could not be read. Set REBALANCER_CONFIG to use internal config as fallback."
             );
           }
         }
