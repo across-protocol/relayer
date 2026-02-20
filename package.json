@@ -68,7 +68,7 @@
     "build": "tsc --build",
     "watch": "tsc --build --incremental --watch",
     "build:test": "tsc --project tsconfig.test.json",
-    "clean": "dir=\"./node_modules\"; mv \"${dir}\" \"${dir}_\" 2>/dev/null && rm -r \"${dir}_\" &",
+    "clean": "dir=\"./node_modules\"; mv \"${dir}\" \"${dir}_\" 2>/dev/null && rm -r \"${dir}_\" & rm -f dist/tsconfig.tsbuildinfo",
     "reinstall": "yarn clean && yarn install && yarn build",
     "run-disputer": "DISPUTER_ENABLED=true node ./dist/index.js --dataworker",
     "run-executor": "EXECUTOR_ENABLED=true node ./dist/index.js --dataworker",
