@@ -49,7 +49,7 @@ export class Dispatcher extends TransactionClient {
     const txnResponses: TransactionResponse[] = [];
 
     this.logger.debug({
-      at: "TransactionClient#submit",
+      at: "Dispatcher#submit",
       message: `Processing ${txns.length} transactions.`,
     });
 
@@ -71,7 +71,7 @@ export class Dispatcher extends TransactionClient {
       const gasLimitMultiplier = txn.gasLimitMultiplier ?? this.DEFAULT_GAS_LIMIT_MULTIPLIER;
       if (gasLimitMultiplier > this.DEFAULT_GAS_LIMIT_MULTIPLIER) {
         this.logger.debug({
-          at: "TransactionClient#_submit",
+          at: "Dispatcher#_submit",
           message: `Padding gasLimit estimate on ${txn.method} transaction.`,
           estimate: txn.gasLimit,
           gasLimitMultiplier,
@@ -85,7 +85,7 @@ export class Dispatcher extends TransactionClient {
       } catch (error) {
         delete chainNonceMap[signerAddr];
         this.logger.info({
-          at: "TransactionClient#submit",
+          at: "Dispatcher#submit",
           message: `Transaction ${idx + 1} submission on ${networkName} failed or timed out.`,
           mrkdwn,
           // @dev `error` _sometimes_ doesn't decode correctly (especially on Polygon), so fish for the reason.
@@ -103,7 +103,7 @@ export class Dispatcher extends TransactionClient {
     }
 
     this.logger.info({
-      at: "TransactionClient#submit",
+      at: "Dispatcher#submit",
       message: `Completed ${networkName} transaction submission! 🧙`,
       mrkdwn,
     });
