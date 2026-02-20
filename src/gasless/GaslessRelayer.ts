@@ -661,19 +661,31 @@ export class GaslessRelayer {
       log("info", `Processed ${origin} depositId ${depositId} in ${delta} seconds.`);
     };
 
-    const apiMessages = await this._queryGaslessApi();
-    await forEachAsync(
-      apiMessages.filter(({ originChainId, permit, nonce, baseDepositData: { inputToken } }) => {
-        const depositNonce = this._getNonceKey(inputToken, {
-          authorizer: permit.message.from,
-          nonce,
-        });
+    const handler = process.env.RELAYER_GASLESS_HANDLER === "experimental" ? experimentalHandler : defaultHandler;
+    const messageFilter = (deposit: GaslessDepositMessage): boolean => {
+      if (!isDefined(this.observedNonces[deposit.originChainId])) {
+        return false;
+      }
 
-        // Filter when the origin chain is unrecognised, and when there is already known state for the message.
-        return isDefined(this.observedNonces[originChainId]) && !isDefined(this.messageState[depositNonce]);
-      }),
-      process.env.RELAYER_GASLESS_HANDLER === "experimental" ? experimentalHandler : defaultHandler
-    );
+      if (handler === defaultHandler) {
+        return true;
+      }
+
+      const {
+        baseDepositData: { inputToken },
+        permit,
+      } = deposit;
+      const depositNonce = this._getNonceKey(EvmAddress.from(inputToken).toNative(), {
+        authorizer: permit.message.from,
+        nonce: permit.message.nonce,
+      });
+
+      // If there's already known state for this deposit nonce, skip it.
+      return !isDefined(this.messageState[depositNonce]);
+    };
+
+    const apiMessages = await this._queryGaslessApi();
+    await forEachAsync(apiMessages.filter(messageFilter), handler);
   }
 
   /*
