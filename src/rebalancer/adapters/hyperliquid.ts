@@ -202,7 +202,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       // Bridge this token into HyperEVM first
       this.logger.info({
         at: "HyperliquidStablecoinSwapAdapter.initializeRebalance",
-        message: `Creating new order ${cloid} by first bridging ${sourceToken} into HyperEVM from ${getNetworkName(
+        message: `🍻 Creating new order ${cloid} by first bridging ${sourceToken} into HyperEVM from ${getNetworkName(
           sourceChain
         )}`,
         destinationToken,
@@ -216,7 +216,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     } else {
       this.logger.info({
         at: "HyperliquidStablecoinSwapAdapter.initializeRebalance",
-        message: `Creating new order ${cloid} by depositing ${sourceToken} from HyperEVM to HyperCore`,
+        message: `🍻 Creating new order ${cloid} by depositing ${sourceToken} from HyperEVM to HyperCore`,
         destinationToken,
         destinationChain: getNetworkName(destinationChain),
         amountToTransfer: amountToTransfer.toString(),
@@ -406,12 +406,12 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       if (destinationChain === HYPEREVM) {
         this.logger.info({
           at: "HyperliquidStablecoinSwapAdapter.updateRebalanceStatuses",
-          message: `Deleting order details from Redis with cloid ${cloid} because it has completed!`,
+          message: `✨ Deleting order details from Redis with cloid ${cloid} because it has completed!`,
         });
       } else {
         this.logger.info({
           at: "HyperliquidStablecoinSwapAdapter.updateRebalanceStatuses",
-          message: `Sending order with cloid ${cloid} from HyperEVM to final destination chain ${destinationChain}, and deleting order details from Redis!`,
+          message: `✨ Sending order with cloid ${cloid} from HyperEVM to final destination chain ${destinationChain}, and deleting order details from Redis!`,
           expectedAmountToReceive: expectedAmountToReceive.toString(),
         });
         await this._bridgeToChain(destinationToken, HYPEREVM, destinationChain, expectedAmountToReceive);
@@ -1035,7 +1035,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       });
       this.logger.info({
         at: "HyperliquidStablecoinSwapAdapter._placeLimitOrder",
-        message: `Submitted new limit order for cloid ${cloid} with px ${px} and sz ${sz}`,
+        message: `🎰 Submitted new limit order for cloid ${cloid} with px ${px} and sz ${sz}`,
         result,
         orderDetails,
       });
@@ -1134,7 +1134,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     const txn = await coreWriterContract.sendRawAction(bytes);
     this.logger.info({
       at: "HyperliquidStablecoinSwapAdapter._withdrawToHyperevm",
-      message: `Withdrew ${amountToWithdraw} ${destinationToken} from Hypercore to HyperEVM`,
+      message: `🏧 Withdrew ${amountToWithdraw} ${destinationToken} from Hypercore to HyperEVM`,
       txn: blockExplorerLink(txn.hash, HYPEREVM),
     });
     return true;
