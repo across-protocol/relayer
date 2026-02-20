@@ -623,7 +623,7 @@ export class GaslessRelayer {
             if (isDefined(deposit)) {
               setState(MessageState.FILL_PENDING);
             } else {
-              log("info", `Could not locate deposit on ${origin} .`);
+              log("info", `Could not locate deposit on ${origin}.`);
               await delay(1);
             }
             break;
