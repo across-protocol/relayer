@@ -900,6 +900,8 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     const userFills = await getUserFillsByTime(infoClient, {
       user: this.baseSignerAddress.toNative(),
       startTime: fromTimestampSeconds * 1000, // @dev Time here is in milliseconds.
+      aggregateByTime: true, // Consolidates partial fills filled at the exact same time into a single fill, which
+      // can happen if our order is large enough
     });
 
     const matchingFill = userFills.find((fill) => fill.cloid === cloid);
