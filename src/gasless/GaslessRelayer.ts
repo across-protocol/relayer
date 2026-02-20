@@ -564,7 +564,6 @@ export class GaslessRelayer {
       const tStart = performance.now();
       do {
         const messageState = getState();
-        log;
         switch (messageState) {
           case MessageState.INITIAL: {
             const valid = validateDeposit(
