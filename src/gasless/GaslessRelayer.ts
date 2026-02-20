@@ -407,7 +407,7 @@ export class GaslessRelayer {
             blockNumber: depositEvent.blockNumber,
           });
 
-          const fillKey = this._getFilledRelayKey({ originChainId, depositId});
+          const fillKey = this._getFilledRelayKey({ originChainId, depositId });
 
           // If the fill has been observed, exit. All fill transactions initiated by this bot should generally never collide here, but it is possible for another party with knowledge of the
           // witness to prefill any deposit, causing the fill to be known while the deposit is still yet to be executed.
