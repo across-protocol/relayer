@@ -5,7 +5,6 @@ import {
   convertRelayDataParamsToBytes32,
   getL1TokenAddress,
   getTokenInfo,
-  toAddressType,
   toBytes32,
 } from "../utils";
 import { AugmentedTransaction } from "../clients";
