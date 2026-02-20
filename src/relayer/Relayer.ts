@@ -684,6 +684,7 @@ export class Relayer {
     lpFees: RepaymentFee[],
     maxBlockNumber: number
   ): Promise<void> {
+    const at = "Relaer::evaluateFill";
     const { depositId, depositor, destinationChainId, originChainId, inputToken, txnRef } = deposit;
     const { profitClient, spokePoolClients, tokenClient } = this.clients;
     const { slowDepositors } = this.config;
@@ -691,7 +692,7 @@ export class Relayer {
 
     if (isDefined(this.pendingTxnHashes[destinationChainId])) {
       this.logger.info({
-        at: "Relayer::evaluateFill",
+        at,
         message: `${destChain} transaction queue has pending fills; skipping ${originChain} deposit ${depositId.toString()}...`,
         originChainId,
         txnRef,
@@ -702,7 +703,7 @@ export class Relayer {
     // If the deposit does not meet the minimum number of block confirmations, skip it.
     if (deposit.blockNumber > maxBlockNumber) {
       this.logger.debug({
-        at: "Relayer::evaluateFill",
+        at,
         message: `Skipping ${originChain} deposit ${depositId.toString()} due to insufficient deposit confirmations.`,
         blockNumber: deposit.blockNumber,
         maxBlockNumber,
@@ -718,11 +719,7 @@ export class Relayer {
     // If depositor is on the slow deposit list, then send a zero fill to initiate a slow relay and return early.
     if (slowDepositors?.some((slowDepositor) => depositor.eq(slowDepositor)) && this.canSlowFill(deposit)) {
       if (fillStatus === FillStatus.Unfilled && !this.fillIsExclusive(deposit)) {
-        this.logger.debug({
-          at: "Relayer::evaluateFill",
-          message: "Initiating slow fill for grey listed depositor",
-          depositor,
-        });
+        this.logger.debug({ at, message: "Initiating slow fill for grey listed depositor", depositor });
         this.requestSlowFill(deposit);
       }
       return;
@@ -734,19 +731,19 @@ export class Relayer {
     const minFillTime = this.config.minFillTime?.[destinationChainId] ?? 0;
     if (minFillTime > 0 && !deposit.exclusiveRelayer.eq(this.getRelayerAddrOn(deposit.destinationChainId))) {
       const originSpoke = spokePoolClients[originChainId];
-      let avgBlockTime;
+      let avgBlockTime: number;
       if (isEVMSpokePoolClient(originSpoke)) {
         const { average } = await arch.evm.averageBlockTime(originSpoke.spokePool.provider);
         avgBlockTime = average;
       } else if (isSVMSpokePoolClient(originSpoke)) {
-        const { average } = await arch.svm.averageBlockTime();
+        const { average } = arch.svm.averageBlockTime();
         avgBlockTime = average;
       }
       const depositAge = Math.floor(avgBlockTime * (originSpoke.latestHeightSearched - deposit.blockNumber));
 
       if (minFillTime > depositAge) {
         this.logger.debug({
-          at: "Relayer::evaluateFill",
+          at,
           message: `Skipping ${originChain} deposit due to insufficient fill time for ${destChain}.`,
           depositAge,
           minFillTime,
@@ -781,17 +778,9 @@ export class Relayer {
       return;
     }
 
-    // Deposit is known to be profitable.
-    const { blockNumber, outputToken, outputAmount } = deposit;
-    const fillAmountUsd = profitClient.getFillAmountInUsd(deposit);
-    if (!isDefined(fillAmountUsd)) {
-      return;
-    }
-
     const hasBalance = tokenClient.hasBalanceForFill(deposit);
     if (!hasBalance) {
-      // For profitable deposits where the relayer has insufficient balance,
-      // log it for potential rebalancing and request a slow fill.
+      // The relayer has insufficient balance for a profitable fill; log it for rebalancing and request a slow fill.
       tokenClient.captureTokenShortfallForFill(deposit);
       if (this.config.sendingSlowRelaysEnabled && fillStatus === FillStatus.Unfilled && this.canSlowFill(deposit)) {
         this.requestSlowFill(deposit);
@@ -799,7 +788,12 @@ export class Relayer {
       return;
     }
 
+    // Deposits with unknown fill amount USD should be filtered out in `Relayer.filterDeposit()`.
+    const fillAmountUsd = profitClient.getFillAmountInUsd(deposit);
+    assert(isDefined(fillAmountUsd), `Unknown fill amount (USD) for ${originChain} deposit ${depositId}`);
+
     // Ensure that a limit was identified, and that no upper thresholds would be breached by filling this deposit.
+    const { blockNumber, outputToken, outputAmount } = deposit;
     const limitIdx = this.findOriginChainLimitIdx(originChainId, blockNumber);
     if (this.originChainOvercommitted(originChainId, fillAmountUsd, limitIdx)) {
       const limits = this.fillLimits[originChainId].slice(limitIdx);
