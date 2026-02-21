@@ -71,8 +71,6 @@ export { assert, chai, expect, BigNumber, Contract, FakeContract, sinon, toBN, t
 
 chai.use(chaiExclude);
 
-const amountToSeedWallets = toWei("1500");
-
 export async function assertPromiseError<T>(promise: Promise<T>, errMessage?: string): Promise<void> {
   const SPECIAL_ERROR_MESSAGE = "Promise didn't fail";
   try {
@@ -101,7 +99,7 @@ export async function setupTokensForWallet(
     await token.connect(wallet).approve(contractToApprove.address, balance);
   };
 
-  await utils.seedWallet(wallet, tokens, weth, amountToSeedWallets.mul(seedMultiplier));
+  await utils.seedWallet(wallet, tokens, weth, utils.amountToSeedWallets.mul(seedMultiplier));
   await Promise.all(tokens.map(approveToken));
 
   if (weth) {
