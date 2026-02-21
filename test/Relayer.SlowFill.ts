@@ -1,3 +1,4 @@
+import { RELAYER_SLOW_FILL_MIN_AGE } from "../src/relayer/Relayer.ts";
 import {
   AcrossApiClient,
   ConfigStoreClient,
@@ -31,6 +32,7 @@ import {
   ethers,
   expect,
   getLastBlockTime,
+  mineRandomBlocks,
   lastSpyLogIncludes,
   setupTokensForWallet,
   sinon,
@@ -206,6 +208,8 @@ describe("Relayer: Initiates slow fill requests", async function () {
   });
 
   it("Correctly requests slow fill for v3 Deposits if insufficient token balance", async function () {
+    relayerInstance.config.sendingSlowRelaysEnabled = true;
+
     // Transfer away a lot of the relayers funds to simulate the relayer having insufficient funds.
     const balance = await erc20_1.balanceOf(relayer.address);
     await erc20_2.connect(relayer).transfer(depositor.address, balance.sub(amountToDeposit));
@@ -231,6 +235,8 @@ describe("Relayer: Initiates slow fill requests", async function () {
     );
     expect(deposit).to.exist;
 
+    // Mine blocks so the deposit age exceeds the slow fill deferral threshold.
+    await mineRandomBlocks(RELAYER_SLOW_FILL_MIN_AGE);
     await updateAllClients();
     const _txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
     const txnHashes = await _txnReceipts[destinationChainId];

@@ -1,7 +1,14 @@
 import { APIGaslessDepositResponse, BridgeWitnessData, GaslessDepositMessage, DepositWithBlock } from "../interfaces";
-import { Address, convertRelayDataParamsToBytes32, toBytes32 } from "../utils";
+import {
+  Address,
+  ConvertDecimals,
+  convertRelayDataParamsToBytes32,
+  getL1TokenAddress,
+  getTokenInfo,
+  toBytes32,
+} from "../utils";
 import { AugmentedTransaction } from "../clients";
-import { Contract } from "ethers";
+import { Contract, BigNumber } from "ethers";
 
 /**
  * Restructures raw API deposits into a flatter shape so callers don't deal with
@@ -86,7 +93,13 @@ export function buildGaslessDepositTx(
   const { from: signatureOwner, validBefore, validAfter } = permit.message;
   const witnessData: BridgeWitnessData = { inputAmount, baseDepositData, submissionFees, spokePool, nonce };
   const depositData = toContractDepositData(witnessData);
-  const args = [signatureOwner, depositData, BigInt(validAfter), BigInt(validBefore), normalizeSignature(signature)];
+  const args = [
+    signatureOwner,
+    depositData,
+    BigNumber.from(validAfter),
+    BigNumber.from(validBefore),
+    normalizeSignature(signature),
+  ];
   return {
     contract: spokePoolPeripheryContract,
     chainId: depositMessage.originChainId,
@@ -110,6 +123,40 @@ export function buildGaslessFillRelayTx(
     contract: spokePool,
     chainId: destinationChainId,
     method: "fillRelay",
+    ensureConfirmation: true,
     args: [convertRelayDataParamsToBytes32(deposit), repaymentChainId, repaymentAddress.toBytes32()],
   };
+}
+
+/**
+ * Simple validation function for deposit tokens & amounts.
+ */
+export function validateDeposit(
+  originChainId: number,
+  inputToken: Address,
+  inputAmount: BigNumber,
+  destinationChainId: number,
+  outputToken: Address,
+  outputAmount: BigNumber
+): boolean {
+  // Ensure that the input token is the same as the output token.
+  const inputTokenL1Address = getL1TokenAddress(inputToken, originChainId);
+  const outputTokenL1Address = getL1TokenAddress(outputToken, destinationChainId);
+  // If the input token is different from the output token, then keep the deposit as observed and do not submit a deposit.
+  if (!inputTokenL1Address.eq(outputTokenL1Address)) {
+    return false;
+  }
+
+  const inputTokenInfo = getTokenInfo(inputToken, originChainId);
+  const outputTokenInfo = getTokenInfo(outputToken, destinationChainId);
+  const inputAmountInOutputTokenDecimals = ConvertDecimals(
+    inputTokenInfo.decimals,
+    outputTokenInfo.decimals
+  )(inputAmount);
+  // If the input amount is less than the output amount, then keep the deposit as observed and do not submit a deposit.
+  if (inputAmountInOutputTokenDecimals.lt(outputAmount)) {
+    return false;
+  }
+
+  return true;
 }

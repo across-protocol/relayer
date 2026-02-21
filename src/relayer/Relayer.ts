@@ -32,6 +32,8 @@ import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
 import { MultiCallerClient } from "../clients";
 
+export const RELAYER_SLOW_FILL_MIN_AGE = 10; // blocks
+
 const { getAddress } = ethersUtils;
 const { isDepositSpedUp, isMessageEmpty, resolveDepositMessage } = sdkUtils;
 const UNPROFITABLE_DEPOSIT_NOTICE_PERIOD = 60 * 60; // 1 hour
@@ -655,6 +657,21 @@ export class Relayer {
     return mdcPerChain;
   }
 
+  canSlowFill(deposit: DepositWithBlock): boolean {
+    return (
+      // Cannot slow fill when input and output tokens are not equivalent.
+      this.clients.hubPoolClient.areTokensEquivalent(
+        deposit.inputToken,
+        deposit.originChainId,
+        deposit.outputToken,
+        deposit.destinationChainId
+      ) &&
+      // Cannot slow fill from or to a lite chain.
+      !deposit.fromLiteChain &&
+      !deposit.toLiteChain
+    );
+  }
+
   // Iterate over all unfilled deposits. For each unfilled deposit, check that:
   // a) it exceeds the minimum number of required block confirmations,
   // b) the token balance client has enough tokens to fill it,
@@ -665,8 +682,7 @@ export class Relayer {
     deposit: DepositWithBlock,
     fillStatus: number,
     lpFees: RepaymentFee[],
-    maxBlockNumber: number,
-    sendSlowRelays: boolean
+    maxBlockNumber: number
   ): Promise<void> {
     const { depositId, depositor, destinationChainId, originChainId, inputToken, txnRef } = deposit;
     const { profitClient, spokePoolClients, tokenClient } = this.clients;
@@ -700,7 +716,7 @@ export class Relayer {
     }
 
     // If depositor is on the slow deposit list, then send a zero fill to initiate a slow relay and return early.
-    if (slowDepositors?.some((slowDepositor) => depositor.eq(slowDepositor))) {
+    if (slowDepositors?.some((slowDepositor) => depositor.eq(slowDepositor)) && this.canSlowFill(deposit)) {
       if (fillStatus === FillStatus.Unfilled && !this.fillIsExclusive(deposit)) {
         this.logger.debug({
           at: "Relayer::evaluateFill",
@@ -765,7 +781,7 @@ export class Relayer {
         tokenClient.captureTokenShortfallForFill(deposit);
       }
 
-      if (sendSlowRelays && fillStatus === FillStatus.Unfilled) {
+      if (this.config.sendingSlowRelaysEnabled && fillStatus === FillStatus.Unfilled && this.canSlowFill(deposit)) {
         this.requestSlowFill(deposit);
       }
 
@@ -834,19 +850,12 @@ export class Relayer {
   async evaluateFills(
     deposits: (DepositWithBlock & { fillStatus: number })[],
     lpFees: BatchLPFees,
-    maxBlockNumbers: { [chainId: number]: number },
-    sendSlowRelays: boolean
+    maxBlockNumbers: { [chainId: number]: number }
   ): Promise<void> {
     for (let i = 0; i < deposits.length; ++i) {
       const { fillStatus, ...deposit } = deposits[i];
       const relayerLpFees = lpFees[this.getLPFeeKey(deposit)];
-      await this.evaluateFill(
-        deposit,
-        fillStatus,
-        relayerLpFees,
-        maxBlockNumbers[deposit.originChainId],
-        sendSlowRelays
-      );
+      await this.evaluateFill(deposit, fillStatus, relayerLpFees, maxBlockNumbers[deposit.originChainId]);
     }
   }
 
@@ -905,10 +914,7 @@ export class Relayer {
     return txnReceipts;
   }
 
-  async checkForUnfilledDepositsAndFill(
-    sendSlowRelays = true,
-    simulate = false
-  ): Promise<{ [chainId: number]: Promise<string[]> }> {
+  async checkForUnfilledDepositsAndFill(simulate = false): Promise<{ [chainId: number]: Promise<string[]> }> {
     const { hubPoolClient, profitClient, spokePoolClients, tokenClient, multiCallerClient, tryMulticallClient } =
       this.clients;
 
@@ -977,7 +983,7 @@ export class Relayer {
         ])
       );
 
-      await this.evaluateFills(unfilledDeposits, lpFees, maxBlockNumbers, sendSlowRelays);
+      await this.evaluateFills(unfilledDeposits, lpFees, maxBlockNumbers);
 
       const pendingTxnCount = chainIsSvm(destinationChainId)
         ? this.clients.svmFillerClient.getTxnQueueLen()
@@ -1015,6 +1021,7 @@ export class Relayer {
   }
 
   requestSlowFill(deposit: DepositWithBlock): void {
+    assert(this.canSlowFill(deposit), "Cannot slow fill this deposit");
     // don't request slow fill if origin/destination chain is a lite chain
     if (depositForcesOriginChainRepayment(deposit, this.clients.hubPoolClient) || deposit.toLiteChain) {
       this.logger.debug({
@@ -1025,11 +1032,14 @@ export class Relayer {
       return;
     }
 
+    const { hubPoolClient, spokePoolClients } = this.clients;
+    const { originChainId, destinationChainId, depositId, outputToken, txnRef } = deposit;
+    const spokePoolClient = spokePoolClients[destinationChainId];
+    const origin = getNetworkName(originChainId);
+
     // Verify that the _original_ message was empty, since that's what would be used in a slow fill. If a non-empty
     // message was nullified by an update, it can be full-filled but preferably not automatically zero-filled.
     if (!isMessageEmpty(deposit.message)) {
-      const { originChainId, depositId, txnRef } = deposit;
-      const origin = getNetworkName(originChainId);
       this.logger[this.config.sendingRelaysEnabled ? "warn" : "debug"]({
         at: "Relayer::requestSlowFill",
         message: `Suppressing slow fill request for ${origin} deposit with message.`,
@@ -1042,10 +1052,24 @@ export class Relayer {
       return;
     }
 
-    const { hubPoolClient, spokePoolClients } = this.clients;
-    const { originChainId, destinationChainId, depositId, outputToken } = deposit;
+    // Wait at least n origin blocks before submitting a slow fill request.
+    // This is helpful with nonce collisions.
+    if (spokePoolClient.latestHeightSearched - deposit.blockNumber < RELAYER_SLOW_FILL_MIN_AGE) {
+      const { originChainId, depositId, txnRef } = deposit;
+      const origin = getNetworkName(originChainId);
+      this.logger[this.config.sendingRelaysEnabled ? "warn" : "debug"]({
+        at: "Relayer::requestSlowFill",
+        message: `Deferring slow fill request for recent ${origin} deposit.`,
+        deposit: {
+          originChainId,
+          depositId,
+          txnRef: blockExplorerLink(txnRef, originChainId),
+        },
+      });
+      return;
+    }
+
     const multiCallerClient = this.getMulticaller(destinationChainId);
-    const spokePoolClient = spokePoolClients[destinationChainId];
     const slowFillRequest = spokePoolClient.getSlowFillRequest(deposit);
     if (isDefined(slowFillRequest)) {
       return; // Slow fill has already been requested; nothing to do.

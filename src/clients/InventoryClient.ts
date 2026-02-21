@@ -46,6 +46,7 @@ import lodash from "lodash";
 import { SLOW_WITHDRAWAL_CHAINS } from "../common";
 import { AdapterManager, CrossChainTransferClient } from "./bridges";
 import { TransferTokenParams } from "../adapter/utils";
+import { RebalancerClient } from "../rebalancer/rebalancer";
 
 type TokenDistribution = { [l2Token: string]: BigNumber };
 type TokenDistributionPerL1Token = { [l1Token: string]: { [chainId: number]: TokenDistribution } };
@@ -67,6 +68,7 @@ export type InventoryClientState = {
   bundleDataState: BundleDataState;
   pendingL2Withdrawals: { [l1Token: string]: { [chainId: number]: BigNumber } };
   inventoryConfig: InventoryConfig;
+  pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } };
 };
 
 export class InventoryClient {
@@ -78,6 +80,7 @@ export class InventoryClient {
   private bundleDataApproxClient: BundleDataApproxClient;
   private inventoryConfig: InventoryConfig;
   private pendingL2Withdrawals: { [l1Token: string]: { [chainId: number]: BigNumber } } = {};
+  private pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
   private transactionClient: TransactionClient;
 
   constructor(
@@ -89,8 +92,10 @@ export class InventoryClient {
     readonly hubPoolClient: HubPoolClient,
     readonly adapterManager: AdapterManager,
     readonly crossChainTransferClient: CrossChainTransferClient,
+    readonly rebalancerClient: RebalancerClient,
     readonly simMode = false,
-    readonly prioritizeLpUtilization = true
+    readonly prioritizeLpUtilization = true,
+    readonly l1TokensOverride: string[] = []
   ) {
     this.transactionClient = new TransactionClient(logger);
     this.inventoryConfig = inventoryConfig;
@@ -102,9 +107,11 @@ export class InventoryClient {
     });
     // Load all L1 tokens from inventory config and hub pool into a Set to deduplicate.
     const allL1Tokens = new Set<string>(
-      this.getL1TokensFromInventoryConfig()
-        .concat(this.getL1TokensEnabledInHubPool())
-        .map((l1Token) => l1Token.toNative())
+      this.l1TokensOverride.length > 0
+        ? this.l1TokensOverride
+        : this.getL1TokensFromInventoryConfig()
+            .concat(this.getL1TokensEnabledInHubPool())
+            .map((l1Token) => l1Token.toNative())
     );
     this.bundleDataApproxClient = new BundleDataApproxClient(
       this.tokenClient?.spokePoolManager.getSpokePoolClients() ?? {},
@@ -128,6 +135,7 @@ export class InventoryClient {
         upcomingRefunds,
       },
       pendingL2Withdrawals: this.pendingL2Withdrawals,
+      pendingRebalances: this.pendingRebalances,
     };
 
     this.logger.debug({ at: "InventoryClient::export", message: "Exported inventory client state." });
@@ -139,10 +147,11 @@ export class InventoryClient {
    * @returns void
    */
   import(state: InventoryClientState) {
-    const { bundleDataState, pendingL2Withdrawals } = state;
+    const { bundleDataState, pendingL2Withdrawals, pendingRebalances } = state;
     this.inventoryConfig = state.inventoryConfig;
     this.bundleDataApproxClient.import(bundleDataState);
     this.pendingL2Withdrawals = pendingL2Withdrawals;
+    this.pendingRebalances = pendingRebalances;
     this.logger.debug({ at: "InventoryClient::import", message: "Imported inventory client state." });
   }
 
@@ -174,8 +183,15 @@ export class InventoryClient {
     }
   }
 
+  supportsSwaps(): boolean {
+    return (this.inventoryConfig?.allowedSwapRoutes ?? []).length > 0;
+  }
+
   isSwapSupported(inputToken: Address, outputToken: Address, inputChainId: number, outputChainId: number): boolean {
-    return (this.inventoryConfig?.allowedSwapRoutes ?? []).some(
+    if (!this.supportsSwaps()) {
+      return false;
+    }
+    return this.inventoryConfig.allowedSwapRoutes.some(
       (swapRoute) =>
         (swapRoute.fromChain === "ALL" || swapRoute.fromChain === inputChainId) &&
         swapRoute.fromToken === inputToken.toNative() &&
@@ -195,6 +211,15 @@ export class InventoryClient {
     return this.getEnabledChains()
       .map((chainId) => this.getBalanceOnChain(chainId, l1Token))
       .reduce((acc, curr) => acc.add(curr), bnZero);
+  }
+
+  getChainBalance(
+    chainId: number,
+    l1Token: EvmAddress,
+    l2Token?: Address,
+    ignoreL1ToL2PendingAmount = false
+  ): BigNumber {
+    return this.getBalanceOnChain(chainId, l1Token, l2Token, ignoreL1ToL2PendingAmount);
   }
 
   /**
@@ -218,7 +243,7 @@ export class InventoryClient {
     const { crossChainTransferClient, relayer, tokenClient } = this;
     let balance = bnZero;
 
-    const { decimals: l1TokenDecimals } = getTokenInfo(l1Token, this.hubPoolClient.chainId);
+    const { decimals: l1TokenDecimals, symbol: l1TokenSymbol } = getTokenInfo(l1Token, this.hubPoolClient.chainId);
 
     // If chain is L1, add all pending L2->L1 withdrawals.
     if (chainId === this.hubPoolClient.chainId) {
@@ -229,6 +254,18 @@ export class InventoryClient {
           bnZero
         );
         balance = pendingWithdrawalVolume;
+      }
+    }
+
+    // Add in any pending swap rebalances. Pending Rebalances are currently only supported for the canonical L2 tokens
+    // mapped to each L1 token (i.e. the L2 token for an L1 token returned by getRemoteTokenForL1Token())
+    const pendingRebalancesForChain = this.pendingRebalances[chainId];
+    if (isDefined(pendingRebalancesForChain)) {
+      const _l2Token = l2Token ?? this.getRemoteTokenForL1Token(l1Token, chainId);
+      const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(_l2Token, chainId);
+      const pendingRebalancesForToken = pendingRebalancesForChain[l1TokenSymbol];
+      if (isDefined(pendingRebalancesForToken)) {
+        balance = balance.add(sdkUtils.ConvertDecimals(l2TokenDecimals, l1TokenDecimals)(pendingRebalancesForToken));
       }
     }
 
@@ -1799,6 +1836,8 @@ export class InventoryClient {
       message: "Updated pending L2->L1 withdrawals",
       pendingL2Withdrawals: this.pendingL2Withdrawals,
     });
+
+    this.pendingRebalances = await this.rebalancerClient.getPendingRebalances();
   }
 
   isInventoryManagementEnabled(): boolean {

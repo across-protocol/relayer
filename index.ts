@@ -17,6 +17,7 @@ import { runFinalizer } from "./src/finalizer";
 import { version } from "./package.json";
 import { runRefiller } from "./src/refiller";
 import { runHyperliquidExecutor, runHyperliquidFinalizer } from "./src/hyperliquid";
+import { runRebalancer as swapRebalancer } from "./src/rebalancer";
 import { runGaslessRelayer } from "./src/gasless";
 
 let logger: typeof Logger;
@@ -34,6 +35,7 @@ const CMDS = {
   hlExecutor: runHyperliquidExecutor,
   hlFinalizer: runHyperliquidFinalizer,
   inventoryManager: runInventoryManager,
+  swapRebalancer: swapRebalancer,
   gaslessRelayer: runGaslessRelayer,
 };
 
