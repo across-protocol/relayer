@@ -93,8 +93,10 @@ Returned order is intentional and consumed by relayer selection.
 ## Subtle behaviors
 
 - destination may still be considered under specific config/gating conditions even when not strongly favored.
+- if a chain has no token config, destination can still be admitted as a narrow fillability fallback path while non-destination chains without config are skipped.
 - forced-origin deposits can return `[]` when eligibility constraints reject origin.
-- `possible` and `eligible` are different sets by design.
+- `possible` and `eligible` are different sets by design: `possible` exists to guarantee LP-fee coverage, while `eligible` enforces policy/allocation admissibility.
+- post-relay virtual balance math is intentionally asymmetric for equivalence edge cases (for example USDC vs USDC.e-style mappings): destination output subtraction is only applied when tokens are considered equivalent by `areTokensEquivalent(...)`.
 
 ## Operator knobs
 
@@ -116,4 +118,3 @@ Next stage: `docs/repayment-selection.md`.
 - Keep `getPossibleRepaymentChainIds()` and `determineRefundChainId()` aligned when adding eligibility rules.
 - Preserve clear distinction between eligibility policy and profitability selection.
 - Add explicit logs for "ineligible" vs "eligible but unprofitable" to ease debugging.
-
