@@ -15,6 +15,9 @@ Read docs in this order:
 
 Keep all relevant `AGENTS.md` and `README.md` files updated in the same change whenever behavior, configuration, interfaces, or runtime flow changes.
 
+- Before writing implementation plans, surface material ambiguities first and resolve them with the user.
+- For each new task, propose 0-3 targeted updates to `CLAUDE.md` and/or module `AGENTS.md` files (or explicitly state why no updates are needed).
+
 ## Quick index
 
 - Relayer runtime and risk model: `src/relayer/README.md`

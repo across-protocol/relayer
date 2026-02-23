@@ -49,6 +49,12 @@ Stop and ask for clarification if any of the following are true:
 - The change modifies signing, transfer, fill, refund, or finalization behavior.
 - The right success criteria or test coverage is unclear.
 
+## Planning and Documentation Evolution
+
+- Before writing a plan, identify any meaningful ambiguities and ask for clarification first.
+- For every new task, explicitly propose 0-3 concrete updates to `CLAUDE.md` and/or relevant `AGENTS.md` files, or state "no updates needed" with a brief reason.
+- When creating deep-dive docs, include discoverability updates in the same change (relevant `README.md` links and, when useful, `AGENTS.md` quick index entries).
+
 ## Validation Expectations
 
 After code changes:
