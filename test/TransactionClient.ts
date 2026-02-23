@@ -9,16 +9,18 @@ import {
 } from "../src/utils";
 import { CHAIN_ID_TEST_LIST as chainIds } from "./constants";
 import { MockedTransactionClient, txnClientPassResult } from "./mocks/MockTransactionClient";
-import { createSpyLogger, Contract, expect, randomAddress, toBN, winston } from "./utils";
+import { createSpyLogger, Contract, expect, randomAddress, toBN, winston, ethers as testEthers } from "./utils";
 
 const { spyLogger }: { spyLogger: winston.Logger } = createSpyLogger();
 const address = randomAddress(); // Test contract address
 const method = "testMethod";
 let txnClient: MockedTransactionClient;
+let signer;
 
 describe("TransactionClient", async function () {
   beforeEach(async function () {
     txnClient = new MockedTransactionClient(spyLogger);
+    [signer] = await testEthers.getSigners();
   });
 
   it("Correctly excludes simulation failures", async function () {
@@ -53,7 +55,7 @@ describe("TransactionClient", async function () {
     for (const result of [txnClientPassResult, "Forced submission failure", txnClientPassResult]) {
       const txn: AugmentedTransaction = {
         chainId,
-        contract: { address } as Contract,
+        contract: { address, signer } as Contract,
         method,
         args: [{ result }],
         value: toBN(0),
@@ -88,7 +90,7 @@ describe("TransactionClient", async function () {
     for (let txn = 1; txn <= nTxns; ++txn) {
       const txnRequest: AugmentedTransaction = {
         chainId,
-        contract: { address } as Contract,
+        contract: { address, signer } as Contract,
         method,
         args: [],
         message: "",
@@ -110,7 +112,7 @@ describe("TransactionClient", async function () {
     for (let txn = 1; txn <= nTxns; ++txn) {
       const txnRequest: AugmentedTransaction = {
         chainId,
-        contract: { address } as Contract,
+        contract: { address, signer } as Contract,
         method,
         args: [],
         message: "",
@@ -133,7 +135,7 @@ describe("TransactionClient", async function () {
     for (let txn = 1; txn <= nTxns; ++txn) {
       const txnRequest: AugmentedTransaction = {
         chainId,
-        contract: { address } as Contract,
+        contract: { address, signer } as Contract,
         method,
         args: [],
         gasLimit,
@@ -158,7 +160,7 @@ describe("TransactionClient", async function () {
     function makeConfirmationTxn(chainId: number): AugmentedTransaction {
       return {
         chainId,
-        contract: { address } as Contract,
+        contract: { address, signer } as Contract,
         method,
         args: [],
         message: "",
