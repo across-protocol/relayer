@@ -1,4 +1,4 @@
-# AGENTS.md Refiller
+# Refiller
 
 The Refiller client allows the user to configure target balances of tokens and then provides methods to refill balances that have fallen below those targets.
 

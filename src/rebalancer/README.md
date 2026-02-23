@@ -1,4 +1,4 @@
-# AGENTS.md rebalancer
+# Rebalancer
 
 The Rebalancer is designed to be in charge of determining when the relayer's inventory of different tokens across different chains needs to be rebalanced and then executes these rebalances.
 

@@ -1,4 +1,4 @@
-# AGENTS.md - contracts
+# Across Helper Contracts
 
 This folder contains utility smart contracts that are designed to facilitate transactions for bots that exist in this repository.
 

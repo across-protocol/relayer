@@ -2,6 +2,16 @@
 
 This repository contains code that powers bots that execute critical roles within the Across Protocol ecosystem.
 
+## How to use documentation in this repo
+
+CLAUDE.md is a local file not currently published to GitHub that lets the user specify how they want their coding agent to approach the repo.
+
+This AGENTS.md file provides a table of contents for navigating to the specific subdirectory where you can find further documentation.
+
+Subdirectories will contain README.md files that explain how those modules work.
+
+/docs/ contain deeper dives on selected topics.
+
 ## Bot types
 
 The bot types are organized in /src/:

@@ -1,4 +1,4 @@
-# AGENTS.md clients
+# Helper clients
 
 ## Event fetching clients
 
