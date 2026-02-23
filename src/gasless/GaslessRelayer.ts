@@ -34,6 +34,7 @@ import {
   getL1TokenAddress,
   ConvertDecimals,
   assert,
+  dispatchTransaction,
 } from "../utils";
 import {
   APIGaslessDepositResponse,
@@ -116,10 +117,11 @@ export class GaslessRelayer {
   public constructor(
     readonly logger: winston.Logger,
     readonly config: GaslessRelayerConfig,
-    readonly baseSigner: Signer
+    readonly baseSigner: Signer,
+    readonly depositSigners: Signer[]
   ) {
     this.api = new AcrossSwapApiClient(this.logger, this.config.apiTimeoutOverride);
-    this.transactionClient = new TransactionClient(this.logger);
+    this.transactionClient = new TransactionClient(this.logger, depositSigners);
     config.relayerDestinationChains.forEach((chainId) => (this.retryableFills[chainId] = {}));
   }
 
@@ -141,7 +143,7 @@ export class GaslessRelayer {
       const provider = await getProvider(chainId);
       this.providersByChain[chainId] = provider;
       this.observedNonces[chainId] = new Set<string>();
-      this.spokePoolPeripheries[chainId] = getSpokePoolPeriphery(chainId).connect(this.baseSigner.connect(provider));
+      this.spokePoolPeripheries[chainId] = getSpokePoolPeriphery(chainId).connect(provider);
     });
     await forEachAsync(this.config.relayerDestinationChains, async (chainId) => {
       this.providersByChain[chainId] ??= await getProvider(chainId);
@@ -722,7 +724,7 @@ export class GaslessRelayer {
         tokenInfo.decimals
       )(inputAmount)} ${tokenInfo.symbol}, and deposit ID ${depositId}`,
     };
-    return this.submit(gaslessDeposit);
+    return this.submit(gaslessDeposit, this.depositSigners.length > 0);
   }
 
   /*
@@ -766,7 +768,7 @@ export class GaslessRelayer {
       } and deposit ID ${depositId}`,
     };
 
-    return this.submit(gaslessFill);
+    return this.submit(gaslessFill, false);
   }
 
   /*
@@ -879,9 +881,11 @@ export class GaslessRelayer {
   /*
    * @notice Submits a transaction and awaits its transaction receipt.
    */
-  private async submit(tx: AugmentedTransaction): Promise<TransactionReceipt | undefined> {
+  private async submit(tx: AugmentedTransaction, useDispatcher: boolean): Promise<TransactionReceipt | undefined> {
     try {
-      const txResponse = await submitTransaction(tx, this.transactionClient);
+      const txResponse = useDispatcher
+        ? await dispatchTransaction(tx, this.transactionClient)
+        : await submitTransaction(tx, this.transactionClient);
       // Since we called `ensureConfirmation` in the transaction client, the receipt should exist, so `.wait()` should have already resolved.
       // We only sent one transaction, so only take the first element of `txResponses`.
       return txResponse.wait();
