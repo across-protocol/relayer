@@ -24,6 +24,11 @@ For each fill, the Relayer must determine where it wants to be refunded for fill
 
 The runtime can be found in `index.ts`.
 
+## Quick index
+
+- Relayer profitability: `src/clients/README.md` search for "Profit Client"
+- Relayer inventory management: `src/clients/README.md` search for "Inventory Client"
+
 ## Challenges
 
 ### Filling deposits for equivalent tokens
