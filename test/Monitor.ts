@@ -47,7 +47,9 @@ class TestMonitor extends Monitor {
     const targetChain = Number(chainId);
     const tokenMapForChain = this.overriddenTokenMap[targetChain];
     if (tokenMapForChain) {
-      const matchedToken = Object.entries(tokenMapForChain).find(([, l1TokenObject]) => l1Token.eq(l1TokenObject.address));
+      const matchedToken = Object.entries(tokenMapForChain).find(([, l1TokenObject]) =>
+        l1Token.eq(l1TokenObject.address)
+      );
       if (matchedToken) {
         return toAddressType(matchedToken[0], targetChain);
       }
