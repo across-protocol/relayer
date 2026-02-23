@@ -192,7 +192,7 @@ export async function getDispatcherKeys(): Promise<Signer[]> {
   }
 
   const dispatcherKeys = await mapAsync(dispatcherKeyNames, async (dispatcherKey) => getGckmsSigner([dispatcherKey]));
-  if (dispatcherKeys.length === 0) {
+  if (dispatcherKeys.length !== dispatcherKeyNames.length) {
     throw new Error("Failed to retrieve dispatcher keys from GCKMS");
   }
   return dispatcherKeys;
