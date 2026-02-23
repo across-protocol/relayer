@@ -26,7 +26,7 @@ jobs:
     resource_class: medium+
     parallelism: 20
     environment:
-      NODE_OPTIONS: --max-old-space-size=6144
+      NODE_OPTIONS: --max-old-space-size=5120
     steps:
       - checkout
       - restore_cache:
@@ -111,7 +111,7 @@ jobs:
     working_directory: ~/relayer-v2
     resource_class: medium+
     environment:
-      NODE_OPTIONS: --max-old-space-size=6144
+      NODE_OPTIONS: --max-old-space-size=5120
     steps:
       - checkout
       - restore_cache:
