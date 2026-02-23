@@ -996,6 +996,12 @@ export const EVM_OFT_MESSENGERS: Map<string, Map<number, EvmAddress>> = new Map(
   ],
 ]);
 
+// In rare circumstances, we may need to pay the LZ bridge fee in a custom token, such as when
+// the network we are bridging on does not have a native token. Specify that here.
+export const LZ_FEE_TOKENS: { [chainId: number]: EvmAddress } = {
+  [CHAIN_IDs.TEMPO]: EvmAddress.from("0x0ceb237e109ee22374a567c6b09f373c73fa4cbb"), // LZD
+};
+
 // 0.1 ETH is a default cap for chains that use ETH as their gas token
 export const OFT_DEFAULT_FEE_CAP = toWei("0.1");
 export const OFT_FEE_CAP_OVERRIDES: { [chainId: number]: BigNumber } = {
