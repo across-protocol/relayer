@@ -105,6 +105,25 @@ When accepted, relayer enqueues `requestSlowFill` tx (EVM or SVM path) and marks
 
 This method is the final execution guard against upstream chain-selection mistakes.
 
+### In-protocol swaps (unequivalent tokens): repayment behavior
+
+Terms in this section:
+
+- **In-protocol swap**: deposit where input and output tokens are unequivalent.
+- **Equivalent-token deposit**: deposit where input and output tokens are equivalent.
+
+For in-protocol swaps, relayer first applies token-compatibility gating via `validateOutputToken()` in `filterDeposit()`.
+
+- If the swap is unsupported by current compatibility/swap configuration, the deposit is filtered out before any repayment-chain selection.
+- If the swap is a supported swap flow, repayment handling proceeds through the same downstream pipeline as equivalent-token deposits:
+  1) eligibility via `determineRefundChainId()`
+  2) selection via `resolveRepaymentChain()`
+  3) final submit-time guardrails in `fillRelay()`
+
+For deeper details on stages (2) and (3), see `docs/repayment-eligibility.md` and `docs/repayment-selection.md`.
+
+
+
 ## Edge outcomes and their meaning
 
 - skipped at filter: structurally unsupported or policy-disabled
@@ -127,4 +146,3 @@ This method is the final execution guard against upstream chain-selection mistak
 - If you add a new fill suppression rule, decide whether it should mark deposit as ignored or be retried later.
 - Preserve `fillRelay()` guardrails even if upstream logic appears exhaustive.
 - Add debug logs that explicitly classify outcome type (ignored, deferred, unprofitable, overcommitted, shortfall).
-

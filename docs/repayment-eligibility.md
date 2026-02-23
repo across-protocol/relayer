@@ -25,6 +25,14 @@ This doc covers the InventoryClient-owned stage:
 
 It does not fully cover relayer profitability/fallback selection. See `docs/repayment-selection.md` for that stage.
 
+This doc assumes deposits already passed relayer filter-stage token-compatibility checks. For pre-eligibility gating, including in-protocol swap support checks, see `docs/relayer-fill-decision-flow.md`.
+
+## Terms used in this doc set
+
+- **In-protocol swap**: deposit where input and output tokens are unequivalent.
+- **Equivalent-token deposit**: deposit where input and output tokens are equivalent.
+- Once an in-protocol swap is deemed a supported swap flow by filter-stage checks, repayment selection uses the same eligibility + selection pipeline as equivalent-token deposits.
+
 ## Key outputs and terms
 
 - `possible repayment chains`: broad set used to precompute LP fees.

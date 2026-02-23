@@ -25,6 +25,10 @@ This doc covers the Relayer-owned stage:
 
 It intentionally does not re-explain detailed eligibility heuristics from InventoryClient. See `docs/repayment-eligibility.md` for that.
 
+This doc assumes the deposit already passed filter-stage token-compatibility checks. For in-protocol swap gate behavior, see `docs/relayer-fill-decision-flow.md`.
+
+Terminology for in-protocol swaps and equivalent-token deposits is defined in `docs/repayment-eligibility.md` under “Terms used in this doc set”.
+
 ## Selection pipeline
 
 ```mermaid
