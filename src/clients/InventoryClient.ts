@@ -68,6 +68,7 @@ export type InventoryClientState = {
   bundleDataState: BundleDataState;
   pendingL2Withdrawals: { [l1Token: string]: { [chainId: number]: BigNumber } };
   inventoryConfig: InventoryConfig;
+  pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } };
 };
 
 export class InventoryClient {
@@ -134,6 +135,7 @@ export class InventoryClient {
         upcomingRefunds,
       },
       pendingL2Withdrawals: this.pendingL2Withdrawals,
+      pendingRebalances: this.pendingRebalances,
     };
 
     this.logger.debug({ at: "InventoryClient::export", message: "Exported inventory client state." });
@@ -145,10 +147,11 @@ export class InventoryClient {
    * @returns void
    */
   import(state: InventoryClientState) {
-    const { bundleDataState, pendingL2Withdrawals } = state;
+    const { bundleDataState, pendingL2Withdrawals, pendingRebalances } = state;
     this.inventoryConfig = state.inventoryConfig;
     this.bundleDataApproxClient.import(bundleDataState);
     this.pendingL2Withdrawals = pendingL2Withdrawals;
+    this.pendingRebalances = pendingRebalances;
     this.logger.debug({ at: "InventoryClient::import", message: "Imported inventory client state." });
   }
 
@@ -180,8 +183,15 @@ export class InventoryClient {
     }
   }
 
+  supportsSwaps(): boolean {
+    return (this.inventoryConfig?.allowedSwapRoutes ?? []).length > 0;
+  }
+
   isSwapSupported(inputToken: Address, outputToken: Address, inputChainId: number, outputChainId: number): boolean {
-    return (this.inventoryConfig?.allowedSwapRoutes ?? []).some(
+    if (!this.supportsSwaps()) {
+      return false;
+    }
+    return this.inventoryConfig.allowedSwapRoutes.some(
       (swapRoute) =>
         (swapRoute.fromChain === "ALL" || swapRoute.fromChain === inputChainId) &&
         swapRoute.fromToken === inputToken.toNative() &&

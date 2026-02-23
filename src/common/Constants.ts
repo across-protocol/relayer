@@ -10,7 +10,6 @@ import {
   TOKEN_SYMBOLS_MAP,
   Signer,
   ZERO_ADDRESS,
-  bnUint32Max,
   EvmAddress,
   toWei,
   toGWei,
@@ -71,9 +70,6 @@ export const RELAYER_MIN_FEE_PCT = 0.0001;
 
 // The maximum amount of USDC permitted to be sent over CCTP in a single transaction.
 export const CCTP_MAX_SEND_AMOUNT = toBN(10_000_000_000_000); // 10MM USDC.
-
-// max(uint256) - 1
-export const INFINITE_FILL_DEADLINE = bnUint32Max;
 
 // Target ~4 hours
 export const MAX_RELAYER_DEPOSIT_LOOK_BACK = 4 * 60 * 60;
@@ -138,17 +134,15 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
 
 // Auto-populate all known OP stack chains. These are only applied as defaults; explicit config above is respected.
 MIN_DEPOSIT_CONFIRMATIONS[MDC_DEFAULT_THRESHOLD] ??= {};
-Object.values(CHAIN_IDs)
-  .filter((chainId) => chainIsOPStack(chainId) || chainIsOrbit(chainId) || chainId === CHAIN_IDs.ARBITRUM)
-  .forEach((chainId) => {
-    if (chainIsOPStack(chainId)) {
-      MIN_DEPOSIT_CONFIRMATIONS[MDC_DEFAULT_THRESHOLD][chainId] ??= OP_STACK_MIN_DEPOSIT_CONFIRMATIONS;
-    } else if (chainIsOrbit(chainId) || chainId === CHAIN_IDs.ARBITRUM) {
-      MIN_DEPOSIT_CONFIRMATIONS[MDC_DEFAULT_THRESHOLD][chainId] ??= ORBIT_MIN_DEPOSIT_CONFIRMATIONS;
-    } else if (chainIsSvm(chainId)) {
-      MIN_DEPOSIT_CONFIRMATIONS[MDC_DEFAULT_THRESHOLD][chainId] ??= SVM_MIN_DEPOSIT_CONFIRMATIONS;
-    }
-  });
+Object.values(CHAIN_IDs).forEach((chainId) => {
+  if (chainIsOPStack(chainId)) {
+    MIN_DEPOSIT_CONFIRMATIONS[MDC_DEFAULT_THRESHOLD][chainId] ??= OP_STACK_MIN_DEPOSIT_CONFIRMATIONS;
+  } else if (chainIsOrbit(chainId) || chainId === CHAIN_IDs.ARBITRUM) {
+    MIN_DEPOSIT_CONFIRMATIONS[MDC_DEFAULT_THRESHOLD][chainId] ??= ORBIT_MIN_DEPOSIT_CONFIRMATIONS;
+  } else if (chainIsSvm(chainId)) {
+    MIN_DEPOSIT_CONFIRMATIONS[MDC_DEFAULT_THRESHOLD][chainId] ??= SVM_MIN_DEPOSIT_CONFIRMATIONS;
+  }
+});
 
 export const REDIS_URL_DEFAULT = "redis://localhost:6379";
 
@@ -254,7 +248,7 @@ const resolveChainCacheDelay = () => {
   return Object.fromEntries(
     Object.entries(PUBLIC_NETWORKS).map(([_chainId, { family }]) => {
       const chainId = Number(_chainId);
-      const buffer = chainIsProd(chainId) ? cacheDelays[chainId] ?? cacheDelay[family] ?? DEFAULT_CACHE_DELAY : 0;
+      const buffer = chainIsProd(chainId) ? cacheDelay[chainId] ?? cacheDelays[family] ?? DEFAULT_CACHE_DELAY : 0;
       return [chainId, buffer];
     })
   );
@@ -302,15 +296,8 @@ export const DEFAULT_GAS_FEE_SCALERS: {
 Object.values(CHAIN_IDs)
   .filter(chainIsOPStack)
   .forEach((chainId) => {
-    DEFAULT_GAS_FEE_SCALERS[chainId] = { maxFeePerGasScaler: 1.1, maxPriorityFeePerGasScaler: 1.1 };
+    DEFAULT_GAS_FEE_SCALERS[chainId] ??= { maxFeePerGasScaler: 1.1, maxPriorityFeePerGasScaler: 1.1 };
   });
-
-// This is how many seconds stale the block number can be for us to use it for evaluating the reorg distance in the cache provider.
-export const BLOCK_NUMBER_TTL = 60;
-
-// This is the TTL for the provider cache.
-export const PROVIDER_CACHE_TTL = 3600;
-export const PROVIDER_CACHE_TTL_MODIFIER = 0.15;
 
 // These are the spokes that can hold the native token for that network, so they should be added together when calculating whether
 // a bundle execution is possible with the funds in the pool.
@@ -784,13 +771,6 @@ const resolveBridgeDelay = () => {
 export const EXPECTED_L1_TO_L2_MESSAGE_TIME = resolveBridgeDelay();
 
 export const OPSTACK_CONTRACT_OVERRIDES = {
-  [CHAIN_IDs.BASE]: {
-    // https://github.com/ethereum-optimism/ecosystem/blob/8df6ab1afcf49312dc7e89ed079f910843d74427/packages/sdk/src/utils/chain-constants.ts#L252
-    l1: {
-      DisputeGameFactory: "0x43edB88C4B80fDD2AdFF2412A7BebF9dF42cB40e",
-    },
-    l2: DEFAULT_L2_CONTRACT_ADDRESSES,
-  },
   [CHAIN_IDs.BLAST]: {
     l1: {
       AddressManager: "0xE064B565Cf2A312a3e66Fe4118890583727380C0",
@@ -836,30 +816,6 @@ export const OPSTACK_CONTRACT_OVERRIDES = {
       DisputeGameFactory: "0x6f13EFadABD9269D6cEAd22b448d434A1f1B433E",
     },
   },
-  [CHAIN_IDs.SONEIUM]: {
-    l1: {
-      DisputeGameFactory: "0x512a3d2c7a43bd9261d2b8e8c9c70d4bd4d503c0",
-    },
-    l2: DEFAULT_L2_CONTRACT_ADDRESSES,
-  },
-  [CHAIN_IDs.WORLD_CHAIN]: {
-    l1: {
-      DisputeGameFactory: "0x069c4c579671f8c120b1327a73217D01Ea2EC5ea",
-    },
-    l2: DEFAULT_L2_CONTRACT_ADDRESSES,
-  },
-  [CHAIN_IDs.INK]: {
-    l1: {
-      DisputeGameFactory: "0x10d7b35078d3baabb96dd45a9143b94be65b12cd",
-    },
-    l2: DEFAULT_L2_CONTRACT_ADDRESSES,
-  },
-  [CHAIN_IDs.UNICHAIN]: {
-    l1: {
-      DisputeGameFactory: "0x2F12d621a16e2d3285929C9996f478508951dFe4",
-    },
-    l2: DEFAULT_L2_CONTRACT_ADDRESSES,
-  },
   [CHAIN_IDs.ZORA]: {
     l1: {
       DisputeGameFactory: "0xB0F15106fa1e473Ddb39790f197275BC979Aa37e",
@@ -868,12 +824,6 @@ export const OPSTACK_CONTRACT_OVERRIDES = {
   },
 
   // Testnets
-  [CHAIN_IDs.BASE_SEPOLIA]: {
-    l1: {
-      DisputeGameFactory: "0xd6E6dBf4F7EA0ac412fD8b65ED297e64BB7a06E1",
-    },
-    l2: DEFAULT_L2_CONTRACT_ADDRESSES,
-  },
   [CHAIN_IDs.LISK_SEPOLIA]: {
     l1: {
       AddressManager: "0x27Bb4A7cd8FB20cb816BF4Aac668BF841bb3D5d3",
@@ -919,12 +869,6 @@ export const OPSTACK_CONTRACT_OVERRIDES = {
       L2OutputOracle: "0x2634BD65ba27AB63811c74A63118ACb312701Bfa",
       OptimismPortal2: ZERO_ADDRESS,
       DisputeGameFactory: ZERO_ADDRESS,
-    },
-    l2: DEFAULT_L2_CONTRACT_ADDRESSES,
-  },
-  [CHAIN_IDs.UNICHAIN_SEPOLIA]: {
-    l1: {
-      DisputeGameFactory: "0xeff73e5aa3B9AEC32c659Aa3E00444d20a84394b",
     },
     l2: DEFAULT_L2_CONTRACT_ADDRESSES,
   },

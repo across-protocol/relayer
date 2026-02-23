@@ -30,7 +30,6 @@ import { EvmAddress, getCurrentTime, toBNWei, ZERO_ADDRESS, bnZero, toAddressTyp
 import { MockConfigStoreClient, MockHubPoolClient, MockSpokePoolClient } from "./mocks";
 import { interfaces, utils as sdkUtils, constants as sdkConstants, providers } from "@across-protocol/sdk";
 import { cloneDeep } from "lodash";
-import { INFINITE_FILL_DEADLINE } from "../src/common";
 
 describe("Dataworker: Load bundle data: Computing slow fills", async function () {
   const { EMPTY_MESSAGE } = sdkConstants;
@@ -382,10 +381,7 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
       erc20_1.address,
       amountToDeposit,
       erc20_2.address,
-      amountToDeposit,
-      {
-        fillDeadline: INFINITE_FILL_DEADLINE.toNumber(),
-      }
+      amountToDeposit
     );
 
     // Modify the block ranges such that the deposit is in a future bundle block range. This should render
@@ -488,10 +484,7 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
       erc20_1.address,
       amountToDeposit,
       erc20_2.address,
-      amountToDeposit,
-      {
-        fillDeadline: INFINITE_FILL_DEADLINE.toNumber(),
-      }
+      amountToDeposit
     );
     const depositBlock = await spokePool_1.provider.getBlockNumber();
 
@@ -531,10 +524,7 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
       erc20_1.address,
       amountToDeposit,
       invalidOutputToken.address,
-      amountToDeposit,
-      {
-        fillDeadline: INFINITE_FILL_DEADLINE.toNumber(),
-      }
+      amountToDeposit
     );
     const depositBlock = await spokePool_1.provider.getBlockNumber();
 
@@ -694,10 +684,7 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
       erc20_1.address,
       amountToDeposit,
       erc20_2.address,
-      amountToDeposit,
-      {
-        fillDeadline: INFINITE_FILL_DEADLINE.toNumber(),
-      }
+      amountToDeposit
     );
     const depositBlock = await spokePool_1.provider.getBlockNumber();
 
@@ -742,10 +729,7 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
       erc20_1.address,
       amountToDeposit,
       erc20_2.address,
-      amountToDeposit,
-      {
-        fillDeadline: INFINITE_FILL_DEADLINE.toNumber(),
-      }
+      amountToDeposit
     );
     const depositBlock = await spokePool_1.provider.getBlockNumber();
 
