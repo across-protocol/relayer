@@ -724,7 +724,7 @@ export class GaslessRelayer {
         tokenInfo.decimals
       )(inputAmount)} ${tokenInfo.symbol}, and deposit ID ${depositId}`,
     };
-    return this.submit(gaslessDeposit, true);
+    return this.submit(gaslessDeposit, this.depositSigners.length > 0);
   }
 
   /*
