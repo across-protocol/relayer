@@ -9,7 +9,17 @@ import {
 import { bnOne, BigNumber, TransactionSimulationResult } from "../src/utils";
 import { MockedTransactionClient, txnClientPassResult } from "./mocks/MockTransactionClient";
 import { CHAIN_ID_TEST_LIST as chainIds } from "./constants";
-import { createSpyLogger, Contract, expect, randomAddress, winston, toBN, smock, assertPromiseError, ethers } from "./utils";
+import {
+  createSpyLogger,
+  Contract,
+  expect,
+  randomAddress,
+  winston,
+  toBN,
+  smock,
+  assertPromiseError,
+  ethers,
+} from "./utils";
 import { MockedMultiCallerClient } from "./mocks/MockMultiCallerClient";
 
 class DummyMultiCallerClient extends MockedMultiCallerClient {
