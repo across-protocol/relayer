@@ -48,12 +48,15 @@ Stop and ask for clarification if any of the following are true:
 - A module appears to be in active refactor and interfaces are unstable.
 - The change modifies signing, transfer, fill, refund, or finalization behavior.
 - The right success criteria or test coverage is unclear.
+- A behavior-sensitive conclusion depends on assumptions that have not been verified in code paths or tests.
 
 ## Planning and Documentation Evolution
 
 - Before writing a plan, identify any meaningful ambiguities and ask for clarification first.
 - For every new task, explicitly propose 0-3 concrete updates to `CLAUDE.md` and/or relevant `AGENTS.md` files, or state "no updates needed" with a brief reason.
 - When creating deep-dive docs, include discoverability updates in the same change (relevant `README.md` links and, when useful, `AGENTS.md` quick index entries).
+- Default deep-dive docs to cross-module coverage when behavior spans module boundaries; avoid single-file explanations for multi-module flows.
+- Default deep-dive docs to a "current behavior first" structure with a concise contributor recommendations section at the end.
 
 ## Validation Expectations
 

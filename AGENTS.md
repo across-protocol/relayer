@@ -17,6 +17,8 @@ Keep all relevant `AGENTS.md` and `README.md` files updated in the same change w
 
 - Before writing implementation plans, surface material ambiguities first and resolve them with the user.
 - For each new task, propose 0-3 targeted updates to `CLAUDE.md` and/or module `AGENTS.md` files (or explicitly state why no updates are needed).
+- For deep-dive documentation tasks, prefer cross-module walkthroughs when behavior spans relayer, clients, dataworker, or shared utilities.
+- Write deep-dive docs as "current behavior" references first, then add a concise "contributor recommendations" section.
 
 ## Quick index
 
@@ -27,6 +29,8 @@ Keep all relevant `AGENTS.md` and `README.md` files updated in the same change w
 - Shared runtime clients: `src/clients/README.md`
 - Finalization-specific workflows: `src/finalizer/*` and `src/cctp-finalizer/*`
 - UMA and smart-contract context: `docs/uma.md` and `docs/smart-contracts.md`
+- Relayer fill and repayment deep dives: `docs/relayer-fill-decision-flow.md` and `docs/repayment-selection.md`
+- Inventory deep dives: `docs/repayment-eligibility.md` and `docs/inventory-virtual-balance-model.md`
 
 ## Bot types
 

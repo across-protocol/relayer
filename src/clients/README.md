@@ -24,6 +24,14 @@ The InventoryClient exposes functions that let other bots like the `Relayer` and
 
 Another important function of the InventoryClient is to choose where a relayer should get repaid for filling a particular deposit, which is purely a function of the user's configured "ideal" inventory across chains (i.e. defined in the `InventoryConfig`) and how the inventory state would look like post-filling the deposit.
 
+Deep dives:
+
+- `docs/repayment-eligibility.md`
+- `docs/repayment-selection.md`
+- `docs/inventory-virtual-balance-model.md`
+- `docs/slow-fill-lifecycle.md`
+- `docs/inventory-vs-rebalancer-responsibilities.md`
+
 ### Wrapping and Unwrapping Native Tokens
 
 The InventoryConfig also lets the user set minimum native token balances to hold on all chains in order to avoid running out of gas for submitting on-chain transactions. Because the relayer is filling so many user deposits, it has a big demand for spending native token balance.
