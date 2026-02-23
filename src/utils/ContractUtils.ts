@@ -1,4 +1,4 @@
-import * as typechain from "@across-protocol/sdk/src/utils/abi/typechain";
+import * as typechain from "@across-protocol/sdk/typechain";
 import {
   CHAIN_IDs,
   Contract,
