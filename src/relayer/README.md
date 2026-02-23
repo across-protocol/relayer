@@ -24,6 +24,15 @@ For each fill, the Relayer must determine where it wants to be refunded for fill
 
 The runtime can be found in `index.ts`.
 
+## Quick index
+
+- Relayer profitability: `src/clients/README.md` search for "Profit Client"
+- Relayer inventory management: `src/clients/README.md` search for "Inventory Client"
+- Fill decision pipeline: `docs/relayer-fill-decision-flow.md`
+- Repayment selection: `docs/repayment-selection.md`
+- Repayment eligibility: `docs/repayment-eligibility.md`
+- Slow fill lifecycle: `docs/slow-fill-lifecycle.md`
+
 ## Challenges
 
 ### Filling deposits for equivalent tokens
@@ -36,7 +45,7 @@ Therefore, the relayer faces an inventory re-allocation challenge where due to f
 
 Consider that filling a deposit where the `inputToken` and `outputToken` are different assets results in the relayer getting refunded the `inputToken` while sending the user the `outputToken`. Over time, the relayer would accumulate more `inputTokens` than its starting inventory and would run out of `outputTokens`. Therefore, the relayer must decide when to rebalance from `inputTokens` back into `outputTokens` in order to get back to its starting inventory position. If the relayer does not rebalance like this, then the relayer will eventually be unable to fulfill deposits for this `outputToken` anymore because it will have no more `outputToken` balance.
 
-Rebalancing amounts to swapping between input and output token. One difficulty with swapping is that the input token and output tokens exist on different chains, namely wherever the relayer chooses to (or is forced to by the protocol to) take repayment and wherever the depositor sets their destination chain. Therefore, swaps must be performed in such a manner that input tokens on the refund chain are transformed into output tokens on the desired destination chain. Another difficulty is that swapping involves trading spread fees. The final difficulty is perhaps the most complex and it is that the input and output tokens might have prices that are uncorrelated and could deviate permanently over time. 
+Rebalancing amounts to swapping between input and output token. One difficulty with swapping is that the input token and output tokens exist on different chains, namely wherever the relayer chooses to (or is forced to by the protocol to) take repayment and wherever the depositor sets their destination chain. Therefore, swaps must be performed in such a manner that input tokens on the refund chain are transformed into output tokens on the desired destination chain. Another difficulty is that swapping involves trading spread fees. The final difficulty is perhaps the most complex and it is that the input and output tokens might have prices that are uncorrelated and could deviate permanently over time.
 
 For example, imagine that the input token is ETH and the output token is a stablecoin and ETH obviously can deviate from a stablecoin's price quickly. Therefore, if the rebalance is not performed by the relayer quickly or strategically, then the relayer can realize a permanent loss in USD terms.
 
@@ -56,6 +65,6 @@ Therefore, supporting swaps between USDT as an `inputToken` and USDC as an `outp
 
 This relayer fulfills a similar role as the USDT->USDC relayer from the depositor's perspective, but its implemented very differently. Like the USDT->USDC relayer, this relayer holds USDH on the destination chain and fulfills deposits of USDC on supported origin chains.
 
-Unlike the USDT->USDC relayer, this USDC->USDH relayer has a bespoke way of rebalancing from USDC back into USDH on HyperEVM. USDH is a stablecoin issued and controlled by the Native Markets team and this team provides a REST API with a /POST route that we can call to convert USDC directly into minted USDH on a desired destination chain. The API essentially provides us a deposit address on the desired origin chain where we can `ERC.transfer()` USDC to receive USDH on HyperEVM. 
+Unlike the USDT->USDC relayer, this USDC->USDH relayer has a bespoke way of rebalancing from USDC back into USDH on HyperEVM. USDH is a stablecoin issued and controlled by the Native Markets team and this team provides a REST API with a /POST route that we can call to convert USDC directly into minted USDH on a desired destination chain. The API essentially provides us a deposit address on the desired origin chain where we can `ERC.transfer()` USDC to receive USDH on HyperEVM.
 
 Therefore, this USDC->USDH relayer is an even safer version of the USDT->USDC swaps relayer and it does not require an instance of the `RebalancerClient`, which uses Binance and Hyperliquid to execute cross chain inventory swap rebalances, in order to rebalance from USDC to USDH.

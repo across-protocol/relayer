@@ -1,84 +1,94 @@
 # AGENTS.md - relayer-v2
 
-This repository contains code that powers bots that execute critical roles within the Across Protocol ecosystem.
+This repository contains bots that execute critical Across protocol operations, including relaying, dataworker root bundle workflows, inventory rebalancing, and cross-chain finalization tasks.
 
-## How to use documentation in this repo
+## How to use docs in this repo
 
-CLAUDE.md is a local file not currently published to GitHub that lets the user specify how they want their coding agent to approach the repo.
+Read docs in this order:
 
-This AGENTS.md file provides a table of contents for navigating to the specific subdirectory where you can find further documentation.
+1. `CLAUDE.md` for repository-specific agent operating rules.
+2. This file (`AGENTS.md`) for top-level navigation and module map.
+3. Module docs (`src/*/README.md` or local `AGENTS.md`) for implementation and runtime details.
+4. `docs/*.md` for deeper architectural and protocol context.
 
-Subdirectories will contain README.md files that explain how those modules work.
+## Documentation maintenance
 
-/docs/ contain deeper dives on selected topics.
+Keep all relevant `AGENTS.md` and `README.md` files updated in the same change whenever behavior, configuration, interfaces, or runtime flow changes.
+
+- Before writing implementation plans, surface material ambiguities first and resolve them with the user.
+- For each new task, propose 0-3 targeted updates to `CLAUDE.md` and/or module `AGENTS.md` files (or explicitly state why no updates are needed).
+- For deep-dive documentation tasks, prefer cross-module walkthroughs when behavior spans relayer, clients, dataworker, or shared utilities.
+- Write deep-dive docs as "current behavior" references first, then add a concise "contributor recommendations" section.
+
+## Quick index
+
+- Relayer runtime and risk model: `src/relayer/README.md`
+- Rebalancer behavior and adapters: `src/rebalancer/README.md`
+- Refiller behavior: `src/refiller/README.md`
+- Dataworker root-bundle flow: `src/dataworker/README.md`
+- Shared runtime clients: `src/clients/README.md`
+- Finalization-specific workflows: `src/finalizer/*` and `src/cctp-finalizer/*`
+- UMA and smart-contract context: `docs/uma.md` and `docs/smart-contracts.md`
+- Relayer fill and repayment deep dives: `docs/relayer-fill-decision-flow.md` and `docs/repayment-selection.md`
+- Inventory deep dives: `docs/repayment-eligibility.md` and `docs/inventory-virtual-balance-model.md`
 
 ## Bot types
 
-The bot types are organized in /src/:
+The main bot types in `src/`:
 
-- dataworker: Responsible for proposing batches of relayer and depositor refunds for successfully filled and unfilled deposits respectively. Proposes these batches to the `HubPool` smart contract deployed on Ethereum and the batches are validated optimistically. Only one batch can be submitted at a time and any batch can be disputed, in which case the dispute is resolved by the UMA DVM system. For more about the UMA system, go to /docs/uma.md.
-- relayer: Responsible for filling user deposits. Will only fill profitable user deposits but is designed to be highly customizable depending on the business requirements.
-- refiller: Responsible for refilling inventory in tokens back to configurable target balances.
-- finalizer: Executes on-chain transactions or API requests required to process cross-chain transactions. For example, withdrawing ERC20's from an optimistic rollup's 7-day withdrawal bridge is initiated by calling a smart contract transaction on the rollup's network and finalized by calling a separate smart contract transaction (after the 7-days have passed) on the destination chain. The finalizer would be responsible for calling this second transaction in this example.
+- `dataworker`: Proposes, disputes, and executes root bundles for relayer and depositor refunds.
+- `relayer`: Fills profitable deposits subject to configured risk and route constraints.
+- `refiller`: Refills inventory back to configured target balances.
+- `rebalancer`: Rebalances inventory across chains and exchange venues.
+- `finalizer`: Completes delayed cross-chain flows and multi-step bridge finalization tasks.
+- `monitor`: Runs monitoring and reporting checks.
+- `gasless`: Handles gasless relay flows.
 
-## Directory Tree
+## Directory tree
 
 ```text
 relayer-v2/
-├── src/                          # Runtime bot implementations and shared TS modules.
-│   ├── adapter/                  # Chain/exchange abstractions used by InventoryClient to send tokens across chains.
-│   ├── caching/                  # Redis cache helpers.
-│   ├── dataworker/               # Proposes/disputes/executes refund root bundles.
-│   ├── finalizer/                # Finalization bot for executing multi-step cross-chain state transfer.
-│   │   └── utils/                         # Chain-specific finalization handlers and helper modules.
-│   ├── hyperliquid/              # A type of finalizer bot for executing multi-step fills of user deposits into and out of Hypercore
-│   ├── interfaces/               # Shared TypeScript interfaces and cross-module type contracts.
-│   ├── libexec/                  # Event clients designed to fetch events from WebSockets, unlike the event clients in src/clients which are designed to be fetch via HTTP.
-│   ├── monitor/                  # Broadly scoped monititor bot, ideally should be split into domain-specific bots.
-│   ├── relayer/                  # Fills profitable deposits.
-│   ├── refiller/                 # Refills inventory to configured targets.
-│   ├── rebalancer/               # Rebalances inventory across chains.
-│   ├── utils/                    # General utility helpers reused src/.
-│   ├── clients/                  # Helper clients used by bots.
-│   │   ├── AcrossAPIClient.ts            # Wrapper for Across API reads.
-│   │   ├── AcrossSwapApiClient.ts        # Client for swap-specific Across API quote/data fetching.
-│   │   ├── BalanceAllocator.ts           # Keeps track of balances across routes/chains for inventory actions. Prevents over-allocating balances when enqueuing multiple balance transfer actions.
-│   │   ├── BundleDataApproxClient.ts     # Approximates root bundle data in order to give relayer a fast way to approximate upcoming refunds.
-│   │   ├── ConfigStoreClient.ts          # Reads protocol configuration from on-chain ConfigStore.
-│   │   ├── EventListener.ts              # Event listener primitives shared by event-driven clients.
-│   │   ├── HubPoolClient.ts              # Client abstraction over HubPool contract operations/state.
-│   │   ├── InventoryClient.ts            # Inventory tracking, targets, and transfer planning client. The cross-chain inventory transfer logic is slated to be replaced by the RebalancerClient. Eventually this client will just be in charge of tracking virtual relayer balances across chains.
-│   │   ├── MultiCallerClient.ts          # Batched multicall/transaction execution helper client. Uses the TransactionClient to submit on-chain.
-│   │   ├── ProfitClient.ts               # Fill profitability computation. Constructs a PriceClient in order to determine a deposit's profitability.
-│   │   ├── SpokePoolClient.ts            # SpokePool event and state client.
-│   │   ├── SvmFillerClient.ts            # SVM fill-status and transaction interaction client.
-│   │   ├── TokenClient.ts                # Token metadata/balance/allowance convenience client.
-│   │   ├── TokenTransferClient.ts        # Tracks ERC20 transfer events.
-│   │   ├── TransactionClient.ts          # Transaction submission, tracking, and receipt handling client.
-│   │   └── bridges/                      # Bridge-focused transfer adapters and bridge helper modules.
-│   │       ├── AdapterManager.ts         # Selects bridge adapters and normalizes transfer execution.
-│   │       ├── CrossChainTransferClient.ts # Cross-chain transfer coordination client.
-│   │       └── utils.ts                  # Shared bridge utility helpers.
-│   ├── gasless/                  # Gasless relayer.
-│   └── common/                   # Cross-module constants and shared internal primitives.
-│       └── abi/                  # Contract ABI artifacts and ABI-loading helper utilities.
-├── contracts/                    # Utility contracts (plus mocks) that support bot transaction patterns.
-├── deploy/                       # Deployment scripts for /contracts files
-├── test/                         # Unit/integration behavior tests for bots and shared clients.
-├── docs/                         # Deeper architecture/protocol context for operators and contributors.
-├── scripts/                      # Operational scripts (for example, fetching inventory config).
+├── src/                          # Runtime bot implementations and shared TypeScript modules.
+│   ├── dataworker/               # Dataworker runtime and root-bundle proposal/dispute logic.
+│   ├── relayer/                  # Deposit fill runtime and relayer-specific config/logic.
+│   ├── refiller/                 # Refiller runtime for target-balance inventory replenishment.
+│   ├── rebalancer/               # Cross-chain and venue-based inventory rebalancing logic.
+│   ├── finalizer/                # Generic finalization runtime and chain-specific finalizer utilities.
+│   │   └── utils/                # Per-chain/per-bridge finalization helper implementations.
+│   ├── cctp-finalizer/           # CCTP-focused finalization runtime and utility modules.
+│   ├── monitor/                  # Monitoring and operational health checks.
+│   ├── gasless/                  # Gasless relay runtime.
+│   ├── hyperliquid/              # Hyperliquid-specific execution and integration flows.
+│   ├── clients/                  # Shared clients for events, txs, inventory, pricing, and bridges.
+│   │   ├── ProfitClient.ts       # Profitability evaluation for potential fills.
+│   │   ├── InventoryClient.ts    # Inventory state, targets, and transfer planning.
+│   │   ├── TransactionClient.ts  # Transaction submission, tracking, and receipt handling.
+│   │   ├── TokenClient.ts        # Token metadata, balances, and allowance helpers.
+│   │   ├── SpokePoolClient.ts    # SpokePool event/state client wrappers.
+│   │   └── bridges/              # Bridge adapter selection and cross-chain transfer helpers.
+│   ├── caching/                  # Redis-backed and in-memory cache helpers.
+│   ├── adapter/                  # Chain/exchange adapter abstractions.
+│   ├── interfaces/               # Shared interfaces and cross-module types.
+│   ├── libexec/                  # Websocket/event listener execution helpers.
+│   ├── common/                   # Shared constants and common primitives.
+│   │   └── abi/                  # Contract ABI artifacts and ABI-loading helpers.
+│   └── utils/                    # General shared utility helpers.
+├── contracts/                    # Utility contracts used by bots (plus mocks for tests).
+├── deploy/                       # Contract deployment scripts.
+├── scripts/                      # Operational scripts and one-off tooling.
+├── test/                         # Unit/integration tests for bots and shared clients.
+├── docs/                         # Deeper architecture and protocol documentation.
+└── Dockerfile                    # Container runtime definition for bot execution.
 ```
 
 ## Runtime execution flow
 
-The main entrypoint is `index.ts`. This file reads from the CLI arguments to determine which of the bots, contained in /src/, to run.
+- Main entrypoint: `index.ts`
+- CLI args choose bot type and runtime options.
+- `--wallet` controls wallet construction for on-chain operations.
+- Environment variables map into bot-specific configuration objects.
+- Bots are designed to run in Dockerized, often serverless, environments.
 
-Each bot is designed to be run with a `--wallet` argument that informs it how to construct a wallet tied to a private key that it can use to perform bot operations.
+## Memory/state model
 
-Configurable parameters are specified in environment variables which are converted into bot-specific configuration objects defined in each bot's specific module.
-
-Bots are designed to be executed within Docker containers described by `Dockerfile`.
-
-## Memory State
-
-Many of the bots are designed to be run serverlessly so that in between runs all state is thrown away. The bots use Redis to store state that should persist across runs.
+Most bots are designed for stateless execution between runs. Persistent runtime state is stored in Redis when continuity is required across invocations.
