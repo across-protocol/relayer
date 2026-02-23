@@ -192,3 +192,19 @@ export async function submitTransaction(
   }
   return response[0];
 }
+
+export async function dispatchTransaction(
+  transaction: AugmentedTransaction,
+  dispatcher: TransactionClient
+): Promise<TransactionResponse> {
+  const { reason, succeed, transaction: txnRequest } = (await dispatcher.simulate([transaction]))[0];
+  const { contract: targetContract, method, ...txnRequestData } = txnRequest;
+  if (!succeed) {
+    const message = `Failed to simulate ${targetContract.address}.${method}(${txnRequestData.args.join(", ")}) on ${
+      txnRequest.chainId
+    }`;
+    throw new Error(`${message} (${reason})`);
+  }
+
+  return dispatcher.dispatch(transaction, transaction.contract, transaction.contract.provider);
+}
