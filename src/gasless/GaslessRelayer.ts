@@ -43,7 +43,7 @@ import {
   DepositWithBlock,
   GaslessDepositMessage,
 } from "../interfaces";
-import { AcrossSwapApiClient, TransactionClient, AugmentedTransaction, Dispatcher } from "../clients";
+import { AcrossSwapApiClient, TransactionClient, AugmentedTransaction } from "../clients";
 import EIP3009_ABI from "../common/abi/EIP3009.json";
 import {
   buildGaslessDepositTx,
@@ -112,7 +112,6 @@ export class GaslessRelayer {
   private signerAddress: EvmAddress;
 
   private transactionClient;
-  private dispatcher;
   private redisCache;
 
   public constructor(
@@ -122,8 +121,7 @@ export class GaslessRelayer {
     readonly depositSigners: Signer[]
   ) {
     this.api = new AcrossSwapApiClient(this.logger, this.config.apiTimeoutOverride);
-    this.transactionClient = new TransactionClient(this.logger);
-    this.dispatcher = new Dispatcher(this.logger, depositSigners);
+    this.transactionClient = new TransactionClient(this.logger, depositSigners);
     config.relayerDestinationChains.forEach((chainId) => (this.retryableFills[chainId] = {}));
   }
 
@@ -886,7 +884,7 @@ export class GaslessRelayer {
   private async submit(tx: AugmentedTransaction, useDispatcher: boolean): Promise<TransactionReceipt | undefined> {
     try {
       const txResponse = useDispatcher
-        ? await dispatchTransaction(tx, this.dispatcher)
+        ? await dispatchTransaction(tx, this.transactionClient)
         : await submitTransaction(tx, this.transactionClient);
       // Since we called `ensureConfirmation` in the transaction client, the receipt should exist, so `.wait()` should have already resolved.
       // We only sent one transaction, so only take the first element of `txResponses`.

@@ -1,7 +1,7 @@
 import { gasPriceOracle, typeguards, utils as sdkUtils } from "@across-protocol/sdk";
 import { FeeData } from "@ethersproject/abstract-provider";
 import dotenv from "dotenv";
-import { AugmentedTransaction, TransactionClient, Dispatcher } from "../clients";
+import { AugmentedTransaction, TransactionClient } from "../clients";
 import {
   Contract,
   isDefined,
@@ -195,7 +195,7 @@ export async function submitTransaction(
 
 export async function dispatchTransaction(
   transaction: AugmentedTransaction,
-  dispatcher: Dispatcher
+  dispatcher: TransactionClient
 ): Promise<TransactionResponse> {
   const { reason, succeed, transaction: txnRequest } = (await dispatcher.simulate([transaction]))[0];
   const { contract: targetContract, method, ...txnRequestData } = txnRequest;
