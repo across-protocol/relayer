@@ -38,7 +38,7 @@ const CMDS = {
   inventoryManager: runInventoryManager,
   swapRebalancer: swapRebalancer,
   gaslessRelayer: runGaslessRelayer,
-  DepositAddressHandler: runDepositAddressHandler,
+  depositAddressHandler: runDepositAddressHandler,
 };
 
 export async function run(args: { [k: string]: boolean | string }): Promise<void> {
