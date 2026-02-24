@@ -115,10 +115,6 @@ export class PersistentAddressesRelayer {
   private async evaluatePersistentAddresses(): Promise<void> {
     // @TODO: Implement persistent addresses evaluation logic.
     // const persistentAddresses = await this._queryIndexerApi();
-    this.logger.info({
-      at: "PersistentAddressesRelayer#evaluatePersistentAddresses",
-      message: "Evaluating persistent addresses",
-    });
   }
 
   /*
