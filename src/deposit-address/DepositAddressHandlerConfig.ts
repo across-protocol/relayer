@@ -8,7 +8,6 @@ export class DepositAddressHandlerConfig extends CommonConfig {
 
   relayerOriginChains: number[];
   relayerDestinationChains: number[];
-  relayerTokenSymbols: string[];
   depositLookback: number;
   apiTimeoutOverride: number;
   initializationRetryAttempts: number;
