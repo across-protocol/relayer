@@ -237,16 +237,16 @@ export class GaslessRelayer {
       MAX_CYCLES: _maxCycles = 120,
       DISCONNECT_POLLING_DELAY: _pollingDelay = 3,
     } = process.env;
-    await waitForDisconnectUtil({
+    await waitForDisconnectUtil(
       runIdentifier,
       botIdentifier,
-      maxCycles: Number(_maxCycles),
-      pollingDelay: Number(_pollingDelay),
-      redis: this.redisCache,
-      onAbort: () => this.abortController.abort(),
-      logger: this.logger,
-      logAt: "GaslessRelayer#waitForDisconnect",
-    });
+      Number(_maxCycles),
+      Number(_pollingDelay),
+      this.redisCache,
+      this.abortController,
+      this.logger,
+      "GaslessRelayer#waitForDisconnect"
+    );
   }
 
   /*

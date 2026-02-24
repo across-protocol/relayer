@@ -1,36 +1,22 @@
 import { isDefined } from "./TypeGuards";
 import { delay } from "./SDKUtils";
 import winston from "winston";
-
-export interface WaitForDisconnectParams {
-  /** Current run instance id (e.g. from RUN_IDENTIFIER). */
-  runIdentifier: string | undefined;
-  /** Bot identifier key in Redis (e.g. from BOT_IDENTIFIER). */
-  botIdentifier: string | undefined;
-  /** Max number of polling cycles before forcing abort. */
-  maxCycles: number;
-  /** Delay in seconds between each poll. */
-  pollingDelay: number;
-  /** Redis-like client: set(key, value, expirySeconds), get(key). */
-  redis: {
-    set(key: string, value: string, expirySeconds: number): Promise<string | undefined>;
-    get(key: string): Promise<string | undefined>;
-  };
-  /** Called when handover is detected or max cycles reached. */
-  onAbort: () => void;
-  /** Logger for handover message. */
-  logger: winston.Logger;
-  /** Value for the `at` field in log (e.g. "GaslessRelayer#waitForDisconnect"). */
-  logAt: string;
-}
+import { RedisCacheInterface } from "../caching/RedisCache";
 
 /**
  * Polls Redis until another process overwrites the active instance (handover) or max cycles is reached.
- * Sets the current run as active, then polls; when a different instance is seen or cycles exhaust, calls onAbort().
+ * Sets the current run as active, then polls; when a different instance is seen or cycles exhaust, calls abortController.abort().
  */
-export async function waitForDisconnect(params: WaitForDisconnectParams): Promise<void> {
-  const { runIdentifier, botIdentifier, maxCycles, pollingDelay, redis, onAbort, logger, logAt } = params;
-
+export async function waitForDisconnect(
+  runIdentifier: string | undefined,
+  botIdentifier: string | undefined,
+  maxCycles: number,
+  pollingDelay: number,
+  redis: RedisCacheInterface,
+  abortController: AbortController,
+  logger: winston.Logger,
+  logAt: string
+): Promise<void> {
   // Set the active instance immediately on arrival here. This function will poll until it reaches the max amount of
   // runs or it is interrupted by another process.
   if (!isDefined(runIdentifier) || !isDefined(botIdentifier)) {
@@ -47,11 +33,11 @@ export async function waitForDisconnect(params: WaitForDisconnectParams): Promis
         message: `Handing over ${runIdentifier} instance to ${currentBot} for ${botIdentifier}`,
         run,
       });
-      onAbort();
+      abortController.abort();
       return;
     }
     await delay(pollingDelay);
   }
 
-  onAbort();
+  abortController.abort();
 }

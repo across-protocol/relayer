@@ -4,7 +4,7 @@ export class PersistentAddressesConfig extends CommonConfig {
   apiEndpoint: string;
 
   indexerApiEndpoint: string;
-  indexerPoolingInterval: number;
+  indexerPollingInterval: number;
 
   relayerOriginChains: number[];
   relayerDestinationChains: number[];
@@ -27,7 +27,7 @@ export class PersistentAddressesConfig extends CommonConfig {
       API_TIMEOUT_OVERRIDE,
       INITIALIZATION_RETRY_ATTEMPTS,
     } = env;
-    this.indexerPoolingInterval = Number(INDEXER_API_POLLING_INTERVAL ?? 1); // Default to 1s
+    this.indexerPollingInterval = Number(INDEXER_API_POLLING_INTERVAL ?? 1); // Default to 1s
     this.indexerApiEndpoint = String(INDEXER_API_ENDPOINT);
     this.apiEndpoint = String(API_ENDPOINT);
 

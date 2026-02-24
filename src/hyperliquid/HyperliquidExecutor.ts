@@ -365,16 +365,16 @@ export class HyperliquidExecutor {
       HL_MAX_CYCLES: _maxCycles = 120,
       HL_POLLING_DELAY: _pollingDelay = 3,
     } = process.env;
-    await waitForDisconnectUtil({
+    await waitForDisconnectUtil(
       runIdentifier,
       botIdentifier,
-      maxCycles: Number(_maxCycles),
-      pollingDelay: Number(_pollingDelay),
-      redis: this.redisClient,
-      onAbort: () => abortController.abort(),
-      logger: this.logger,
-      logAt: "HyperliquidExecutor#waitForDisconnect",
-    });
+      Number(_maxCycles),
+      Number(_pollingDelay),
+      this.redisClient,
+      abortController,
+      this.logger,
+      "HyperliquidExecutor#waitForDisconnect"
+    );
   }
 
   /*

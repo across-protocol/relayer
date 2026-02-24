@@ -26,7 +26,7 @@ export async function runPersistentAddressesRelayer(_logger: winston.Logger, bas
     // Wait for the handover to complete.
     await relayer.waitForDisconnect();
 
-    logger.debug({ at: "GaslessRelayer#index", message: `Time to run: ${(Date.now() - start) / 1000}s` });
+    logger.debug({ at: "PersistentAddressesRelayer#index", message: `Time to run: ${(Date.now() - start) / 1000}s` });
   } finally {
     await disconnectRedisClients(logger);
   }

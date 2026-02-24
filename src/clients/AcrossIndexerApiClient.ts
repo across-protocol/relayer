@@ -1,7 +1,12 @@
 import axios, { AxiosError } from "axios";
-import { getAcrossIndexerHost } from "./";
 import { winston, CHAIN_IDs } from "../utils";
 
+export function getAcrossIndexerHost(hubChainId: number): string {
+  return (
+    process.env.ACROSS_INDEXER_HOST ??
+    (hubChainId === CHAIN_IDs.MAINNET ? "indexer.api.across.to" : "dev.indexer.api.across.to")
+  );
+}
 export class AcrossIndexerApiClient {
   private readonly urlBase;
   private readonly apiResponseTimeout;
