@@ -10,6 +10,7 @@ import {
   groupObjectCountsByProp,
   isEVMSpokePoolClient,
   assert,
+  CHAIN_IDs,
 } from "../../utils";
 import { spreadEventWithBlockNumber } from "../../utils/EventUtils";
 import { FinalizerPromise, CrossChainMessage } from "../types";
@@ -55,7 +56,7 @@ export interface HeliosKeepAliveAction extends BaseHeliosAction {
 export type HeliosAction = HeliosProofAndExecuteAction | HeliosExecuteOnlyAction | HeliosKeepAliveAction;
 // ---------------------------------------
 
-const EXECUTE_MESSAGE_GAS_LIMITS: { [chainId]: BigNumber } = {
+const EXECUTE_MESSAGE_GAS_LIMITS: { [chainId: number]: BigNumber } = {
   [CHAIN_IDs.TEMPO]: BigNumber.from(1000000),
 };
 
