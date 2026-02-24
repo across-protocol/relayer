@@ -35,6 +35,7 @@ import {
   ConvertDecimals,
   assert,
   dispatchTransaction,
+  waitForDisconnect as waitForDisconnectUtil,
 } from "../utils";
 import {
   APIGaslessDepositResponse,
@@ -236,29 +237,16 @@ export class GaslessRelayer {
       MAX_CYCLES: _maxCycles = 120,
       DISCONNECT_POLLING_DELAY: _pollingDelay = 3,
     } = process.env;
-    const maxCycles = Number(_maxCycles);
-    const pollingDelay = Number(_pollingDelay);
-
-    // Set the active instance immediately on arrival here. This function will poll until it reaches the max amount of
-    // runs or it is interrupted by another process.
-    if (isDefined(runIdentifier) && isDefined(botIdentifier)) {
-      await this.redisCache.set(botIdentifier, runIdentifier, maxCycles * pollingDelay);
-      for (let run = 0; run < maxCycles; run++) {
-        const currentBot = await this.redisCache.get(botIdentifier);
-        if (currentBot !== runIdentifier) {
-          this.logger.debug({
-            at: "GaslessRelayer#waitForDisconnect",
-            message: `Handing over ${runIdentifier} instance to ${currentBot} for ${botIdentifier}`,
-            run,
-          });
-          this.abortController.abort();
-          return;
-        }
-        await delay(pollingDelay);
-      }
-      // If we finish looping without receiving a handover signal, still exit so that we won't await the other promise forever.
-      this.abortController.abort();
-    }
+    await waitForDisconnectUtil(
+      runIdentifier,
+      botIdentifier,
+      Number(_maxCycles),
+      Number(_pollingDelay),
+      this.redisCache,
+      this.abortController,
+      this.logger,
+      "GaslessRelayer#waitForDisconnect"
+    );
   }
 
   /*

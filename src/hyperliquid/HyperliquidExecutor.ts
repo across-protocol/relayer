@@ -26,9 +26,9 @@ import {
   getChainQuorum,
   toBN,
   getRedisCache,
-  delay,
   spreadEventWithBlockNumber,
   createFormatFunction,
+  waitForDisconnect as waitForDisconnectUtil,
 } from "../utils";
 import { Log, SwapFlowInitialized } from "../interfaces";
 import { CHAIN_MAX_BLOCK_LOOKBACK } from "../common";
@@ -365,28 +365,16 @@ export class HyperliquidExecutor {
       HL_MAX_CYCLES: _maxCycles = 120,
       HL_POLLING_DELAY: _pollingDelay = 3,
     } = process.env;
-    const maxCycles = Number(_maxCycles);
-    const pollingDelay = Number(_pollingDelay);
-    // Set the active instance immediately on arrival here. This function will poll until it reaches the max amount of
-    // runs or it is interrupted by another process.
-    if (isDefined(runIdentifier) && isDefined(botIdentifier)) {
-      await this.redisClient.set(botIdentifier, runIdentifier, maxCycles * pollingDelay);
-      for (let run = 0; run < maxCycles; run++) {
-        const currentBot = await this.redisClient.get(botIdentifier);
-        if (currentBot !== runIdentifier) {
-          this.logger.debug({
-            at: "HyperliquidExecutor#waitForDisconnect",
-            message: `Handing over ${runIdentifier} instance to ${currentBot} for ${botIdentifier}`,
-            run,
-          });
-          abortController.abort();
-          return;
-        }
-        await delay(pollingDelay);
-      }
-      // If we finish looping without receiving a handover signal, still exit so that we won't await the other promise forever.
-      abortController.abort();
-    }
+    await waitForDisconnectUtil(
+      runIdentifier,
+      botIdentifier,
+      Number(_maxCycles),
+      Number(_pollingDelay),
+      this.redisClient,
+      abortController,
+      this.logger,
+      "HyperliquidExecutor#waitForDisconnect"
+    );
   }
 
   /*
