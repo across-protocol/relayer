@@ -5,7 +5,7 @@ import winston from "winston";
  * Base client for Across HTTP APIs. Provides shared GET logic with timeout and error handling.
  * Subclasses set urlBase and logContext in the constructor.
  */
-export abstract class AcrossApiBaseClient {
+export abstract class BaseAcrossApiClient {
   protected readonly urlBase: string;
   protected readonly apiResponseTimeout: number;
   /** Used in log "at" field (e.g. "AcrossSwapApiClient"). */

@@ -1,7 +1,7 @@
 import { getAcrossHost } from "./";
 import { BigNumber, EvmAddress, winston, CHAIN_IDs } from "../utils";
 import { SWAP_ROUTES, SwapRoute } from "../common";
-import { AcrossApiBaseClient } from "./AcrossApiBaseClient";
+import { BaseAcrossApiClient } from "./AcrossApiBaseClient";
 
 interface SwapApiResponse {
   approvalTxns?: {
@@ -32,7 +32,7 @@ interface SwapData {
 /**
  * @notice This class interfaces with the Across Swap API to execute swaps between chains.
  */
-export class AcrossSwapApiClient extends AcrossApiBaseClient {
+export class AcrossSwapApiClient extends BaseAcrossApiClient {
   private routesSupported: Set<SwapRoute> = new Set(Object.values(SWAP_ROUTES));
 
   constructor(logger: winston.Logger, timeoutMs = 3000) {

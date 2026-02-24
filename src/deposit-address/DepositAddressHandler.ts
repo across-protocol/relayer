@@ -1,5 +1,5 @@
 import winston from "winston";
-import { PersistentAddressesConfig } from "./PersistentAddressesConfig";
+import { DepositAddressHandlerConfig } from "./DepositAddressHandlerConfig";
 import {
   getRedisCache,
   isDefined,
@@ -9,7 +9,7 @@ import {
   EvmAddress,
   waitForDisconnect as waitForDisconnectUtil,
 } from "../utils";
-import { PersistentAddressesMessage } from "../interfaces";
+import { DepositAddressMessage } from "../interfaces";
 import { AcrossSwapApiClient, TransactionClient } from "../clients";
 import { AcrossIndexerApiClient } from "../clients/AcrossIndexerApiClient";
 
@@ -21,7 +21,7 @@ import { AcrossIndexerApiClient } from "../clients/AcrossIndexerApiClient";
 /**
  * Independent relayer bot which processes EIP-3009 signatures into deposits and corresponding fills.
  */
-export class PersistentAddressesRelayer {
+export class DepositAddressHandler {
   private abortController = new AbortController();
   private initialized = false;
 
@@ -36,22 +36,22 @@ export class PersistentAddressesRelayer {
 
   public constructor(
     readonly logger: winston.Logger,
-    readonly config: PersistentAddressesConfig,
+    readonly config: DepositAddressHandlerConfig,
     readonly baseSigner: Signer,
-    readonly persistentAddressesSigners: Signer[]
+    readonly depositAddressSigners: Signer[]
   ) {
     this.api = new AcrossSwapApiClient(this.logger, this.config.apiTimeoutOverride);
     this.indexerApi = new AcrossIndexerApiClient(this.logger, this.config.apiTimeoutOverride);
-    this.transactionClient = new TransactionClient(this.logger, persistentAddressesSigners);
+    this.transactionClient = new TransactionClient(this.logger, depositAddressSigners);
   }
 
   /*
-   * @notice Initializes a PersistentAddressesRelayer instance.
+   * @notice Initializes a DepositAddressHandler instance.
    */
   public async initialize(): Promise<void> {
     this.logger.debug({
-      at: "PersistentAddressesRelayer#initialize",
-      message: "Initializing PersistentAddressesRelayer",
+      at: "DepositAddressHandler#initialize",
+      message: "Initializing DepositAddressHandler",
     });
 
     // Set the signer address.
@@ -61,16 +61,16 @@ export class PersistentAddressesRelayer {
     // Exit if OS instructs us to do so.
     process.on("SIGHUP", () => {
       this.logger.debug({
-        at: "PersistentAddressesRelayer#initialize",
-        message: "Received SIGHUP on persistent addresses relayer. stopping...",
+        at: "DepositAddressHandler#initialize",
+        message: "Received SIGHUP on deposit address handler. stopping...",
       });
       this.abortController.abort();
     });
 
     process.on("disconnect", () => {
       this.logger.debug({
-        at: "PersistentAddressesRelayer#initialize",
-        message: "Persistent addresses relayer disconnected, stopping...",
+        at: "DepositAddressHandler#initialize",
+        message: "Deposit address handler disconnected, stopping...",
       });
       this.abortController.abort();
     });
@@ -83,7 +83,7 @@ export class PersistentAddressesRelayer {
    */
   public pollAndExecute(): void {
     scheduleTask(
-      () => this.evaluatePersistentAddresses(),
+      () => this.evaluateDepositAddresses(),
       this.config.indexerPollingInterval,
       this.abortController.signal
     );
@@ -108,22 +108,22 @@ export class PersistentAddressesRelayer {
       this.redisCache,
       this.abortController,
       this.logger,
-      "PersistentAddressesRelayer#waitForDisconnect"
+      "DepositAddressHandler#waitForDisconnect"
     );
   }
 
-  private async evaluatePersistentAddresses(): Promise<void> {
-    // @TODO: Implement persistent addresses evaluation logic.
-    // const persistentAddresses = await this._queryIndexerApi();
+  private async evaluateDepositAddresses(): Promise<void> {
+    // @TODO: Implement deposit addresses evaluation logic.
+    // const depositAddresses = await this._queryIndexerApi();
   }
 
   /*
-   * @notice Queries the Indexer API for all pending persistent addresses transactions. By default, do not retry since this endpoing is being polled.
+   * @notice Queries the Indexer API for all pending deposit addresses transactions. By default, do not retry since this endpoing is being polled.
    */
-  private async _queryIndexerApi(retriesRemaining = 0): Promise<PersistentAddressesMessage[]> {
-    let apiResponseData: { persistentAddresses: PersistentAddressesMessage[] } | undefined = undefined;
+  private async _queryIndexerApi(retriesRemaining = 0): Promise<DepositAddressMessage[]> {
+    let apiResponseData: { depositAddresses: DepositAddressMessage[] } | undefined = undefined;
     try {
-      apiResponseData = await this.indexerApi.get<{ persistentAddresses: PersistentAddressesMessage[] }>(
+      apiResponseData = await this.indexerApi.get<{ depositAddresses: DepositAddressMessage[] }>(
         this.config.indexerApiEndpoint,
         {}
       );
@@ -133,6 +133,6 @@ export class PersistentAddressesRelayer {
     if (!isDefined(apiResponseData)) {
       return retriesRemaining > 0 ? this._queryIndexerApi(--retriesRemaining) : [];
     }
-    return apiResponseData.persistentAddresses;
+    return apiResponseData.depositAddresses;
   }
 }

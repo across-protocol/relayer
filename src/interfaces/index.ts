@@ -10,7 +10,7 @@ export * from "./Arweave";
 export * from "./BundleData";
 export * from "./Hyperliquid";
 export * from "./Gasless";
-export * from "./PersistentAddresses";
+export * from "./DepositAddress";
 
 // Bridge interfaces
 export interface OutstandingTransfers {
