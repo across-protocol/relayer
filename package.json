@@ -82,6 +82,7 @@
     "run-inventoryManager": "node ./dist/index.js --inventoryManager",
     "run-inventoryManager-swapper": "node ./dist/index.js --swapRebalancer",
     "run-gaslessRelayer": "node ./dist/index.js --gaslessRelayer",
+    "run-persistentAddressesRelayer": "node ./dist/index.js --persistentAddressesRelayer",
     "relay": "node ./dist/index.js --relayer",
     "refill-usdc": "node ./dist/scripts/refillUsdcToSpecificChain.js",
     "deposit": "yarn node ./dist/scripts/spokepool.js deposit",

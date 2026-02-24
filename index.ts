@@ -19,6 +19,7 @@ import { runRefiller } from "./src/refiller";
 import { runHyperliquidExecutor, runHyperliquidFinalizer } from "./src/hyperliquid";
 import { runRebalancer as swapRebalancer } from "./src/rebalancer";
 import { runGaslessRelayer } from "./src/gasless";
+import { runPersistentAddressesRelayer } from "./src/persistant-addresses";
 
 let logger: typeof Logger;
 let cmd: string;
@@ -37,6 +38,7 @@ const CMDS = {
   inventoryManager: runInventoryManager,
   swapRebalancer: swapRebalancer,
   gaslessRelayer: runGaslessRelayer,
+  persistentAddressesRelayer: runPersistentAddressesRelayer,
 };
 
 export async function run(args: { [k: string]: boolean | string }): Promise<void> {

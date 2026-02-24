@@ -25,6 +25,13 @@ export function getAcrossHost(hubChainId: number): string {
   return process.env.ACROSS_API_HOST ?? (hubChainId === CHAIN_IDs.MAINNET ? "app.across.to" : "testnet.across.to");
 }
 
+export function getAcrossIndexerHost(hubChainId: number): string {
+  return (
+    process.env.ACROSS_INDEXER_HOST ??
+    (hubChainId === CHAIN_IDs.MAINNET ? "indexer.api.across.to" : "dev.indexer.api.across.to")
+  );
+}
+
 export class AcrossApiClient {
   private endpoint: string;
   private chainIds: number[];
