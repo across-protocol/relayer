@@ -1,6 +1,14 @@
 import winston from "winston";
-import { PersistantAddressesConfig } from "./PersistantAddressesConfig";
-import { isDefined, getRedisCache, delay, Signer, scheduleTask, Provider, EvmAddress } from "../utils";
+import { PersistentAddressesConfig } from "./PersistentAddressesConfig";
+import {
+  getRedisCache,
+  isDefined,
+  Signer,
+  scheduleTask,
+  Provider,
+  EvmAddress,
+  waitForDisconnect as waitForDisconnectUtil,
+} from "../utils";
 import { PersistentAddressesMessage } from "../interfaces";
 import { AcrossSwapApiClient, TransactionClient } from "../clients";
 import { AcrossIndexerApiClient } from "../clients/AcrossIndexerApiClient";
@@ -13,7 +21,7 @@ import { AcrossIndexerApiClient } from "../clients/AcrossIndexerApiClient";
 /**
  * Independent relayer bot which processes EIP-3009 signatures into deposits and corresponding fills.
  */
-export class PersistantAddressesRelayer {
+export class PersistentAddressesRelayer {
   private abortController = new AbortController();
   private initialized = false;
 
@@ -28,7 +36,7 @@ export class PersistantAddressesRelayer {
 
   public constructor(
     readonly logger: winston.Logger,
-    readonly config: PersistantAddressesConfig,
+    readonly config: PersistentAddressesConfig,
     readonly baseSigner: Signer,
     readonly persistentAddressesSigners: Signer[]
   ) {
@@ -92,34 +100,25 @@ export class PersistantAddressesRelayer {
       MAX_CYCLES: _maxCycles = 120,
       DISCONNECT_POLLING_DELAY: _pollingDelay = 3,
     } = process.env;
-    const maxCycles = Number(_maxCycles);
-    const pollingDelay = Number(_pollingDelay);
-
-    // Set the active instance immediately on arrival here. This function will poll until it reaches the max amount of
-    // runs or it is interrupted by another process.
-    if (isDefined(runIdentifier) && isDefined(botIdentifier)) {
-      await this.redisCache.set(botIdentifier, runIdentifier, maxCycles * pollingDelay);
-      for (let run = 0; run < maxCycles; run++) {
-        const currentBot = await this.redisCache.get(botIdentifier);
-        if (currentBot !== runIdentifier) {
-          this.logger.debug({
-            at: "PersistentAddressesRelayer#waitForDisconnect",
-            message: `Handing over ${runIdentifier} instance to ${currentBot} for ${botIdentifier}`,
-            run,
-          });
-          this.abortController.abort();
-          return;
-        }
-        await delay(pollingDelay);
-      }
-      // If we finish looping without receiving a handover signal, still exit so that we won't await the other promise forever.
-      this.abortController.abort();
-    }
+    await waitForDisconnectUtil({
+      runIdentifier,
+      botIdentifier,
+      maxCycles: Number(_maxCycles),
+      pollingDelay: Number(_pollingDelay),
+      redis: this.redisCache,
+      onAbort: () => this.abortController.abort(),
+      logger: this.logger,
+      logAt: "PersistentAddressesRelayer#waitForDisconnect",
+    });
   }
 
   private async evaluatePersistentAddresses(): Promise<void> {
     // @TODO: Implement persistent addresses evaluation logic.
     // const persistentAddresses = await this._queryIndexerApi();
+    this.logger.info({
+      at: "PersistentAddressesRelayer#evaluatePersistentAddresses",
+      message: "Evaluating persistent addresses",
+    });
   }
 
   /*

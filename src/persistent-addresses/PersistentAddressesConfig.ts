@@ -1,6 +1,6 @@
 import { CommonConfig, ProcessEnv } from "../common";
 
-export class PersistantAddressesConfig extends CommonConfig {
+export class PersistentAddressesConfig extends CommonConfig {
   apiEndpoint: string;
 
   indexerApiEndpoint: string;

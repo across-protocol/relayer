@@ -19,7 +19,7 @@ import { runRefiller } from "./src/refiller";
 import { runHyperliquidExecutor, runHyperliquidFinalizer } from "./src/hyperliquid";
 import { runRebalancer as swapRebalancer } from "./src/rebalancer";
 import { runGaslessRelayer } from "./src/gasless";
-import { runPersistentAddressesRelayer } from "./src/persistant-addresses";
+import { runPersistentAddressesRelayer } from "./src/persistent-addresses";
 
 let logger: typeof Logger;
 let cmd: string;

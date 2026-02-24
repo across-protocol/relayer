@@ -1,21 +1,21 @@
 import { winston, config, startupLogLevel, Signer, disconnectRedisClients, getDispatcherKeys } from "../utils";
-import { PersistantAddressesRelayer } from "./PersistantAddressesRelayer";
-import { PersistantAddressesConfig } from "./PersistantAddressesConfig";
+import { PersistentAddressesRelayer } from "./PersistentAddressesRelayer";
+import { PersistentAddressesConfig } from "./PersistentAddressesConfig";
 
 config();
 let logger: winston.Logger;
 
 export async function runPersistentAddressesRelayer(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
   logger = _logger;
-  const config = new PersistantAddressesConfig(process.env);
+  const config = new PersistentAddressesConfig(process.env);
   const dispatcherKeys = await getDispatcherKeys();
-  const relayer = new PersistantAddressesRelayer(logger, config, baseSigner, dispatcherKeys);
+  const relayer = new PersistentAddressesRelayer(logger, config, baseSigner, dispatcherKeys);
   await relayer.initialize();
 
   try {
     logger[startupLogLevel(config)]({
       at: "PersistentAddressesRelayer#index",
-      message: "Persistent addressesx relayer started",
+      message: "Persistent addresses relayer started",
       config,
     });
     const start = Date.now();
