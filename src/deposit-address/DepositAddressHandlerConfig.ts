@@ -7,7 +7,7 @@ export class DepositAddressHandlerConfig extends CommonConfig {
   indexerPollingInterval: number;
 
   relayerOriginChains: number[];
-  relayerDestinationChains  depositLookback: number;
+  depositLookback: number;
   apiTimeoutOverride: number;
   initializationRetryAttempts: number;
 
