@@ -106,8 +106,6 @@ export class DepositAddressHandler {
   private async evaluateDepositAddresses(): Promise<void> {
     // @TODO: Implement deposit addresses evaluation logic.
     // const depositAddresses = await this._queryIndexerApi();
-    await this.instanceCoordinator.subscribe();
-    this.abortController.abort();
   }
 
   /*
