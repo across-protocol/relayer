@@ -14,6 +14,7 @@ import {
   toBNWei,
   SVMProvider,
   parseUnits,
+  ZERO_ADDRESS,
 } from "../utils";
 import { getBase64EncodedWireTransaction, signTransactionMessageWithSigners, type MicroLamports } from "@solana/kit";
 import { updateOrAppendSetComputeUnitPriceInstruction } from "@solana-program/compute-budget";
@@ -135,7 +136,8 @@ export async function willSucceed(transaction: AugmentedTransaction): Promise<Tr
   let data;
   try {
     if (rawTxn) {
-      data = await contract.provider.call({ ...transaction, to: contract.address, data: transaction.args[0] });
+      const from = (await contract.signer?.getAddress()) ?? ZERO_ADDRESS;
+      data = await contract.provider.call({ ...transaction, to: contract.address, data: transaction.args[0], from });
     } else {
       const args = transaction.value ? [...transaction.args, { value: transaction.value }] : transaction.args;
       data = await contract.callStatic[method](...args);
@@ -153,10 +155,12 @@ export async function willSucceed(transaction: AugmentedTransaction): Promise<Tr
   try {
     let gasLimit;
     if (rawTxn) {
+      const from = (await contract.signer?.getAddress()) ?? ZERO_ADDRESS;
       gasLimit = await contract.provider.estimateGas({
         ...transaction,
         to: contract.address,
         data: transaction.args[0],
+        from,
       });
     } else {
       const args = transaction.value ? [...transaction.args, { value: transaction.value }] : transaction.args;
