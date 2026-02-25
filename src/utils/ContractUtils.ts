@@ -24,6 +24,14 @@ export function getDeployedContract(contractName: string, networkId: number, sig
   }
 }
 
+// For a chain ID and optional CounterfactualDepositFactory address, return a Contract instance with the corresponding ABI.
+export function getCounterfactualDepositFactory(chainId: number, address?: string): Contract {
+  return new Contract(
+    address ?? CONTRACT_ADDRESSES[chainId].counterfactualDepositFactory.address,
+    CONTRACT_ADDRESSES[chainId].counterfactualDepositFactory.abi
+  );
+}
+
 // For a chain ID and optional SpokePool address, return a Contract instance with the corresponding ABI.
 export function getSpokePool(chainId: number, address?: string): Contract {
   const spokePool = getDeployedContract("SpokePool", chainId);

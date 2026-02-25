@@ -26,7 +26,7 @@ import {
   blockExplorerLink,
   getNetworkName,
   relayFillStatus,
-  submitTransaction,
+  sendAndConfirmTransaction,
   getTokenInfo,
   createFormatFunction,
   toAddressType,
@@ -34,7 +34,6 @@ import {
   getL1TokenAddress,
   ConvertDecimals,
   assert,
-  dispatchTransaction,
   InstanceCoordinator,
 } from "../utils";
 import {
@@ -44,7 +43,7 @@ import {
   DepositWithBlock,
   GaslessDepositMessage,
 } from "../interfaces";
-import { AcrossSwapApiClient, TransactionClient, AugmentedTransaction } from "../clients";
+import { AcrossSwapApiClient, TransactionClient } from "../clients";
 import EIP3009_ABI from "../common/abi/EIP3009.json";
 import {
   buildGaslessDepositTx,
@@ -717,7 +716,24 @@ export class GaslessRelayer {
         tokenInfo.decimals
       )(inputAmount)} ${tokenInfo.symbol}, and deposit ID ${depositId}`,
     };
-    return this.submit(gaslessDeposit, this.depositSigners.length > 0);
+
+    const txReceipt = await sendAndConfirmTransaction(
+      gaslessDeposit,
+      this.transactionClient,
+      this.depositSigners.length > 0
+    );
+    if (!isDefined(txReceipt)) {
+      this.logger.warn({
+        at: "GaslessRelayer#initiateGaslessDeposit",
+        message: "Failed to submit gasless deposit",
+        depositId,
+        originChainId,
+        destinationChainId,
+        inputToken,
+        inputAmount,
+      });
+    }
+    return txReceipt;
   }
 
   /*
@@ -761,7 +777,15 @@ export class GaslessRelayer {
       } and deposit ID ${depositId}`,
     };
 
-    return this.submit(gaslessFill, false);
+    const txReceipt = await sendAndConfirmTransaction(gaslessFill, this.transactionClient);
+    if (!isDefined(txReceipt)) {
+      this.logger.warn({
+        at: "GaslessRelayer#initiateFill",
+        message: "Failed to submit gasless fill",
+        depositId,
+      });
+    }
+    return txReceipt;
   }
 
   /*
@@ -869,28 +893,6 @@ export class GaslessRelayer {
       from,
       maxLookBack: this.config.maxBlockLookBack[chainId],
     };
-  }
-
-  /*
-   * @notice Submits a transaction and awaits its transaction receipt.
-   */
-  private async submit(tx: AugmentedTransaction, useDispatcher: boolean): Promise<TransactionReceipt | undefined> {
-    try {
-      const txResponse = useDispatcher
-        ? await dispatchTransaction(tx, this.transactionClient)
-        : await submitTransaction(tx, this.transactionClient);
-      // Since we called `ensureConfirmation` in the transaction client, the receipt should exist, so `.wait()` should have already resolved.
-      // We only sent one transaction, so only take the first element of `txResponses`.
-      return txResponse.wait();
-    } catch (err) {
-      // We will reach this code block if, after polling for transaction confirmation, we still do not see the receipt onchain.
-      this.logger.warn({
-        at: "GaslessRelayer#submit",
-        message: "Failed to submit transaction",
-        err: err instanceof Error ? err.message : String(err),
-      });
-      return null;
-    }
   }
 
   /*
