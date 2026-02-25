@@ -227,7 +227,7 @@ export class TransactionClient {
 
   private rotateSigners(chainId: number): Signer {
     // Get the first signer available for the input chain ID.
-    const signerIndexForChain = this.activeSignerIndex[chainId];
+    const signerIndexForChain = this.activeSignerIndex[chainId] ?? 0;
     const activeSigner = this.signers[signerIndexForChain];
 
     // Rotate the signer index for the input chain ID.
