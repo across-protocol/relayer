@@ -40,6 +40,7 @@ import SCROLL_GAS_PRICE_ORACLE_ABI from "./abi/ScrollGasPriceOracle.json";
 import IOFT_ABI_FULL from "./abi/IOFT.json";
 import HYPERLIQUID_DEPOSIT_HANDLER_ABI from "./abi/HyperliquidDepositHandler.json";
 import SPOKE_POOL_PERIPHERY_ABI from "./abi/SpokePoolPeriphery.json";
+import COUNTERFACTUAL_DEPOSIT_FACTORY_ABI from "./abi/CounterfactualDepositFactory.json";
 export { IOFT_ABI_FULL };
 import HUB_POOL_STORE_ABI from "./abi/HubPoolStore.json";
 
@@ -569,6 +570,10 @@ export const CONTRACT_ADDRESSES: {
     spokePoolPeriphery: {
       address: "0x767e4c20F521a829dE4Ffc40C25176676878147f",
       abi: SPOKE_POOL_PERIPHERY_ABI,
+    },
+    counterfactualDepositFactory: {
+      address: "0xA157CB19a8C3061D9bbce11Ad08129bEe70988FE",
+      abi: COUNTERFACTUAL_DEPOSIT_FACTORY_ABI,
     },
   },
   [CHAIN_IDs.LENS]: {
