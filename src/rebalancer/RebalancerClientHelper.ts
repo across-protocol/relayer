@@ -6,7 +6,11 @@ import { OftAdapter } from "./adapters/oftAdapter";
 import { RebalancerAdapter, RebalancerClient, RebalanceRoute } from "./rebalancer";
 import { RebalancerConfig } from "./RebalancerConfig";
 
-export async function constructRebalancerClient(logger: winston.Logger, baseSigner: Signer): Promise<RebalancerClient> {
+export async function constructRebalancerClient(
+  logger: winston.Logger,
+  baseSigner: Signer,
+  loadViewOnlyMode = false
+): Promise<RebalancerClient> {
   const rebalancerConfig = new RebalancerConfig(process.env);
 
   // Construct adapters:
@@ -66,13 +70,21 @@ export async function constructRebalancerClient(logger: winston.Logger, baseSign
     }
   }
 
-  // Pass in adapters that are used in at least one rebalance route:
-  const adapterNames = new Set<string>(rebalanceRoutes.map((route) => route.adapter));
-  const adapters: { [name: string]: RebalancerAdapter } = {};
-  for (const adapterName of adapterNames) {
-    adapters[adapterName] = adapterMap[adapterName];
+  let rebalancerClient: RebalancerClient;
+  if (loadViewOnlyMode) {
+    // View only mode is used to load the rebalancer client without any rebalance routes but all adapters
+    // so that getPendingRebalances() can get called. initializeRebalance() is not callable because
+    // there are no rebalance routes.
+    rebalancerClient = new RebalancerClient(logger, rebalancerConfig, adapterMap, [], baseSigner);
+  } else {
+    // Pass in adapters that are used in at least one rebalance route:
+    const adapterNames = new Set<string>(rebalanceRoutes.map((route) => route.adapter));
+    const adapters: { [name: string]: RebalancerAdapter } = {};
+    for (const adapterName of adapterNames) {
+      adapters[adapterName] = adapterMap[adapterName];
+    }
+    rebalancerClient = new RebalancerClient(logger, rebalancerConfig, adapters, rebalanceRoutes, baseSigner);
   }
-  const rebalancerClient = new RebalancerClient(logger, rebalancerConfig, adapters, rebalanceRoutes, baseSigner);
   await rebalancerClient.initialize();
   logger.debug({
     at: "RebalancerClientHelper.constructRebalancerClient",

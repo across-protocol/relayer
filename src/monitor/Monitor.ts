@@ -1238,6 +1238,7 @@ export class Monitor {
     await Promise.all(
       this.monitorConfig.monitoredRelayers.map(async (relayer) => {
         await this.updatePendingL2Withdrawals(relayer, relayerBalanceReport[relayer.toNative()]);
+        await this.updatePendingRebalances(relayer, relayerBalanceReport[relayer.toNative()]);
       })
     );
   }
@@ -1315,6 +1316,62 @@ export class Monitor {
         }
       })
     );
+  }
+
+  async updatePendingRebalances(relayer: Address, relayerBalanceTable: RelayerBalanceTable): Promise<void> {
+    // Rebalancer integration is optional in monitor; if absent, treat as no pending rebalances.
+    if (!isDefined(this.clients.rebalancerClient)) {
+      return;
+    }
+
+    let pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } };
+    try {
+      pendingRebalances = await this.clients.rebalancerClient.getPendingRebalances();
+    } catch (error) {
+      this.logger.warn({
+        at: "Monitor#updatePendingRebalances",
+        message: "Unable to fetch pending rebalances; defaulting to zero",
+        error,
+      });
+      return;
+    }
+
+    const l1TokenBySymbol = Object.fromEntries(
+      this.getL1TokensForRelayerBalancesReport().map((token) => [token.symbol, token])
+    );
+    for (const [_chainId, tokenBalances] of Object.entries(pendingRebalances)) {
+      const chainId = Number(_chainId);
+      if (!this.monitorChains.includes(chainId)) {
+        continue;
+      }
+      for (const [tokenSymbol, amount] of Object.entries(tokenBalances)) {
+        if (amount.eq(bnZero)) {
+          continue;
+        }
+        const l1Token = l1TokenBySymbol[tokenSymbol];
+        if (!isDefined(l1Token)) {
+          continue;
+        }
+        const l2TokenAddress = this.getRemoteTokenForL1Token(l1Token.address, chainId);
+        if (!isDefined(l2TokenAddress)) {
+          continue;
+        }
+        const l2ToL1DecimalConverter = this.l2TokenAmountToL1TokenAmountConverter(l2TokenAddress, chainId);
+        this.updateRelayerBalanceTable(
+          relayerBalanceTable,
+          l1Token.symbol,
+          getNetworkName(chainId),
+          BalanceType.PENDING_TRANSFERS,
+          l2ToL1DecimalConverter(amount)
+        );
+      }
+    }
+    this.logger.debug({
+      at: "Monitor#updatePendingRebalances",
+      message: "Updated pending rebalance credits",
+      relayer: relayer.toNative(),
+      pendingRebalances,
+    });
   }
 
   getTotalTransferAmount(transfers: TokenTransfer[]): BigNumber {
