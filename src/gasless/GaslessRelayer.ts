@@ -43,7 +43,7 @@ import {
   DepositWithBlock,
   GaslessDepositMessage,
 } from "../interfaces";
-import { AcrossSwapApiClient, TransactionClient, AugmentedTransaction } from "../clients";
+import { AcrossSwapApiClient, TransactionClient } from "../clients";
 import EIP3009_ABI from "../common/abi/EIP3009.json";
 import {
   buildGaslessDepositTx,
