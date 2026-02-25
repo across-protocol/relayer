@@ -145,6 +145,8 @@ export class DepositAddressHandler {
       return;
     }
 
+    this.observedExecutedDeposits[originChainId].add(depositKey);
+
     let factoryContract = this.counterfactualDepositFactories[originChainId];
     if (!factoryContract) {
       this.logger.debug({
@@ -164,8 +166,6 @@ export class DepositAddressHandler {
     if (!useDispatcher) {
       factoryContract = factoryContract.connect(this.baseSigner.connect(this.providersByChain[originChainId]));
     }
-
-    this.observedExecutedDeposits[originChainId].add(depositKey);
 
     if (depositMessage.salt) {
       const deployTx = buildDeployTx(
