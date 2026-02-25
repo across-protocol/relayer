@@ -212,18 +212,24 @@ export async function dispatchTransaction(
 
 /**
  * Submits a transaction (via submitTransaction or dispatchTransaction), awaits the receipt, and returns it.
- * On failure logs a warning and returns undefined. Use from GaslessRelayer, DepositAddressHandler, etc.
+ * Ensures ensureConfirmation is true on the tx. On failure catches errors and returns undefined; callers should
+ * check with isDefined(receipt) and log a warning.
  */
 export async function sendAndConfirmTransaction(
   tx: AugmentedTransaction,
   transactionClient: TransactionClient,
   useDispatcher = false
 ): Promise<TransactionReceipt | undefined> {
-  const txResponse = useDispatcher
-    ? await dispatchTransaction(tx, transactionClient)
-    : await submitTransaction(tx, transactionClient);
-  if (!txResponse) {
-    throw new Error(`Failed to submit transaction on ${tx.chainId}`);
+  const txWithConfirmation: AugmentedTransaction = { ...tx, ensureConfirmation: true };
+  try {
+    const txResponse = useDispatcher
+      ? await dispatchTransaction(txWithConfirmation, transactionClient)
+      : await submitTransaction(txWithConfirmation, transactionClient);
+    if (!txResponse) {
+      return undefined;
+    }
+    return txResponse.wait();
+  } catch {
+    return undefined;
   }
-  return txResponse.wait();
 }

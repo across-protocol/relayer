@@ -15,7 +15,6 @@ import {
   getCounterfactualDepositFactory,
   buildDeployTx,
   getDepositKey,
-  TransactionReceipt,
 } from "../utils";
 import { DepositAddressMessage } from "../interfaces";
 import { AcrossSwapApiClient, TransactionClient } from "../clients";
@@ -174,19 +173,8 @@ export class DepositAddressHandler {
         depositMessage.routeParams,
         depositMessage.salt
       );
-      let deployReceipt: TransactionReceipt | undefined = undefined;
-      try {
-        deployReceipt = await sendAndConfirmTransaction(deployTx, this.transactionClient, useDispatcher);
-      } catch (err) {
-        this.logger.warn({
-          at: "DepositAddressHandler#initiateDeposit",
-          message: "Failed to submit deploy tx",
-          depositKey,
-        });
-        return;
-      }
-
-      if (!deployReceipt) {
+      const deployReceipt = await sendAndConfirmTransaction(deployTx, this.transactionClient, useDispatcher);
+      if (!isDefined(deployReceipt)) {
         this.logger.warn({
           at: "DepositAddressHandler#initiateDeposit",
           message: "Failed to submit deploy tx",
