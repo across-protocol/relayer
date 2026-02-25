@@ -687,8 +687,12 @@ export class GaslessRelayer {
     const { originChainId, depositId, permit } = depositMessage;
     const { destinationChainId, inputAmount, inputToken } = depositMessage.baseDepositData;
 
-    const spokePoolPeripheryContract = this.spokePoolPeripheries[originChainId];
-
+    let spokePoolPeripheryContract = this.spokePoolPeripheries[originChainId];
+    if (this.depositSigners.length === 0) {
+      spokePoolPeripheryContract = spokePoolPeripheryContract.connect(
+        this.baseSigner.connect(this.providersByChain[originChainId])
+      );
+    }
     const _gaslessDeposit = buildGaslessDepositTx(depositMessage, spokePoolPeripheryContract);
 
     if (!this.config.sendingTransactionsEnabled) {
