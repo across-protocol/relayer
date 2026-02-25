@@ -1,7 +1,21 @@
 import winston from "winston";
 import { DepositAddressHandlerConfig } from "./DepositAddressHandlerConfig";
-import { getRedisCache, isDefined, Signer, scheduleTask, Provider, EvmAddress, InstanceCoordinator } from "../utils";
-import { DepositAddressMessage } from "../interfaces";
+import {
+  getRedisCache,
+  isDefined,
+  Signer,
+  scheduleTask,
+  Provider,
+  EvmAddress,
+  InstanceCoordinator,
+  forEachAsync,
+  getProvider,
+  Contract,
+  submitTransaction,
+  getCounterfactualDepositFactory,
+  buildDeployIfNeededAndExecuteTx,
+} from "../utils";
+import { DepositAddressMessage, DepositSignApiResponse } from "../interfaces";
 import { AcrossSwapApiClient, TransactionClient } from "../clients";
 import { AcrossIndexerApiClient } from "../clients/AcrossIndexerApiClient";
 
@@ -19,6 +33,8 @@ export class DepositAddressHandler {
   private initialized = false;
 
   private providersByChain: { [chainId: number]: Provider } = {};
+
+  private counterfactualDepositFactories: { [chainId: number]: Contract } = {};
 
   private api: AcrossSwapApiClient;
   private indexerApi: AcrossIndexerApiClient;
@@ -70,6 +86,12 @@ export class DepositAddressHandler {
       this.abortController.abort();
     });
 
+    await forEachAsync(this.config.relayerOriginChains, async (chainId) => {
+      const provider = await getProvider(chainId);
+      this.providersByChain[chainId] = provider;
+      this.counterfactualDepositFactories[chainId] = getCounterfactualDepositFactory(chainId).connect(provider);
+    });
+
     // Establish a new bot instance.
     this.instanceCoordinator = new InstanceCoordinator(
       this.logger,
@@ -104,10 +126,49 @@ export class DepositAddressHandler {
   }
 
   private async evaluateDepositAddresses(): Promise<void> {
-    // @TODO: Implement deposit addresses evaluation logic.
-    // const depositAddresses = await this._queryIndexerApi();
+    // @TODO: This is just initial implementation. We will need to add more logic to it when Indexer and Swap API Endpoints are implemented.
+    const depositMessages = await this._queryIndexerApi();
+    await forEachAsync(depositMessages, async (depositMessage) => {
+      await this.initiateDeposit(depositMessage);
+    });
   }
 
+  private async initiateDeposit(depositMessage: DepositAddressMessage): Promise<void> {
+    const signature = await this._signDepositSwapApi(depositMessage);
+    if (!isDefined(signature)) {
+      return;
+    }
+
+    const originChainId = Number(depositMessage.routeParams.originChainId);
+    const factoryContract = this.counterfactualDepositFactories[originChainId];
+    if (!factoryContract) {
+      this.logger.debug({
+        at: "DepositAddressHandler#initiateDeposit",
+        message: "No counterfactual deposit factory for chain; skipping",
+        originChainId,
+      });
+      return;
+    }
+
+    const tx = buildDeployIfNeededAndExecuteTx(factoryContract, originChainId, depositMessage);
+
+    try {
+      const response = await submitTransaction(tx, this.transactionClient);
+      this.logger.info({
+        at: "DepositAddressHandler#initiateDeposit",
+        message: "Submitted deployIfNeededAndExecute tx",
+        hash: response.hash,
+        depositAddress: depositMessage.depositAddress,
+      });
+    } catch (err) {
+      this.logger.warn({
+        at: "DepositAddressHandler#initiateDeposit",
+        message: "Failed to submit deployIfNeededAndExecute tx",
+        depositAddress: depositMessage.depositAddress,
+        err: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
   /*
    * @notice Queries the Indexer API for all pending deposit addresses transactions. By default, do not retry since this endpoing is being polled.
    */
@@ -119,11 +180,27 @@ export class DepositAddressHandler {
         {}
       );
     } catch {
-      // Error log should have been emitted in AcrossSwapApiClient.
+      // Error log should have been emitted in IndexerApiClient.
     }
     if (!isDefined(apiResponseData)) {
       return retriesRemaining > 0 ? this._queryIndexerApi(--retriesRemaining) : [];
     }
     return apiResponseData.depositAddresses;
+  }
+
+  private async _signDepositSwapApi(
+    depositMessage: DepositAddressMessage,
+    retriesRemaining = 0
+  ): Promise<string | undefined> {
+    let apiResponseData: DepositSignApiResponse = undefined;
+    try {
+      apiResponseData = await this.api.postDepositSignature(depositMessage);
+    } catch {
+      // Error log should have been emitted in AcrossSwapApiClient.
+    }
+    if (!isDefined(apiResponseData)) {
+      return retriesRemaining > 0 ? this._signDepositSwapApi(depositMessage, --retriesRemaining) : undefined;
+    }
+    return apiResponseData.signature;
   }
 }

@@ -1,6 +1,3 @@
-// @TODO: Check if this is the correct schema for deposit addresses message.
-// Add schema for SwapAPI response.
-
 export interface RouteParams {
   inputToken: string;
   outputToken: string;
@@ -21,4 +18,9 @@ export interface DepositAddressMessage {
   depositAddress: string;
   routeParams: RouteParams;
   erc20Transfer: Erc20Transfer;
+}
+
+// TODO: Add schema for SwapAPI response.
+export interface DepositSignApiResponse {
+  signature: string;
 }

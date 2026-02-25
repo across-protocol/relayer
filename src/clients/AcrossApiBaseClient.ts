@@ -24,6 +24,41 @@ export abstract class BaseAcrossApiClient {
     return this._get<T>(urlEndpoint, params);
   }
 
+  // This may be unnecessary if the EP is not "POST" method.
+  public async post<T>(urlEndpoint: string, body: Record<string, unknown>): Promise<T | undefined> {
+    return this._post<T>(urlEndpoint, body);
+  }
+
+  /**
+   * @notice Exposes a POST request to the API at the specified endpoint.
+   */
+  protected async _post<T>(endpoint: string, body: Record<string, unknown>): Promise<T | undefined> {
+    try {
+      const response = await axios.post<T>(`${this.urlBase}/${endpoint}`, body, {
+        timeout: this.apiResponseTimeout,
+        headers: { "Content-Type": "application/json" },
+      });
+
+      if (!response?.data) {
+        this.logger.warn({
+          at: this.logContext,
+          message: `Invalid response from ${this.urlBase}`,
+          endpoint,
+        });
+        return;
+      }
+      return response.data;
+    } catch (err) {
+      this.logger.warn({
+        at: this.logContext,
+        message: `Failed to post to ${this.urlBase}`,
+        endpoint,
+        error: (err as AxiosError).message,
+      });
+      return;
+    }
+  }
+
   protected async _get<T>(endpoint: string, params: Record<string, unknown>): Promise<T | undefined> {
     try {
       const response = await axios.get<T>(`${this.urlBase}/${endpoint}`, {
