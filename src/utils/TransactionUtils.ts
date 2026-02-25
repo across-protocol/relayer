@@ -126,7 +126,7 @@ export async function willSucceed(transaction: AugmentedTransaction): Promise<Tr
   }
 
   const { contract, method } = transaction;
-  const args = transaction.value ? [...transaction.args, { value: transaction.value }] : transaction.args;
+  const rawTxn = method === "";
 
   // First callStatic, which will surface a custom error if the transaction would fail.
   // This is useful for surfacing custom error revert reasons like RelayFilled in the SpokePool but
@@ -134,7 +134,12 @@ export async function willSucceed(transaction: AugmentedTransaction): Promise<Tr
   // relay custom errors well: https://github.com/ethers-io/ethers.js/discussions/3291#discussion-4314795
   let data;
   try {
-    data = await contract.callStatic[method](...args);
+    if (rawTxn) {
+      data = await contract.provider.call({ ...transaction, to: contract.address, data: transaction.args[0] });
+    } else {
+      const args = transaction.value ? [...transaction.args, { value: transaction.value }] : transaction.args;
+      data = await contract.callStatic[method](...args);
+    }
   } catch (err: any) {
     if (err.errorName) {
       return {
@@ -146,7 +151,17 @@ export async function willSucceed(transaction: AugmentedTransaction): Promise<Tr
   }
 
   try {
-    const gasLimit = await contract.estimateGas[method](...args);
+    let gasLimit;
+    if (rawTxn) {
+      gasLimit = await contract.provider.estimateGas({
+        ...transaction,
+        to: contract.address,
+        data: transaction.args[0],
+      });
+    } else {
+      const args = transaction.value ? [...transaction.args, { value: transaction.value }] : transaction.args;
+      gasLimit = await contract.estimateGas[method](...args);
+    }
     return { transaction: { ...transaction, gasLimit }, succeed: true, data };
   } catch (error) {
     const reason = typeguards.isEthersError(error) ? error.reason : "unknown error";
