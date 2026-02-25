@@ -133,7 +133,10 @@ export class DepositAddressHandler {
   private async evaluateDepositAddresses(): Promise<void> {
     // @TODO: This is just initial implementation. We will need to add more logic to it when Indexer and Swap API Endpoints are implemented.
     const depositMessages = await this._queryIndexerApi();
-    await forEachAsync(depositMessages, async (depositMessage) => {
+    const filtered = depositMessages.filter((m) =>
+      this.config.relayerOriginChains.includes(Number(m.routeParams.originChainId))
+    );
+    await forEachAsync(filtered, async (depositMessage) => {
       await this.initiateDeposit(depositMessage);
     });
   }
