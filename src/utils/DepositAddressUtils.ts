@@ -1,13 +1,12 @@
 import { Contract, BigNumber, utils } from "ethers";
 import { AugmentedTransaction } from "../clients";
-import { DepositAddressMessage, RouteParams, Erc20Transfer } from "../interfaces/DepositAddress";
+import { DepositAddressMessage, RouteParams } from "../interfaces/DepositAddress";
 
 /**
  * Computes paramsHash as keccak256(abi.encode(routeParams)).
  * Encoding order and types must match the contract's RouteParams struct.
  */
 export function computeParamsHash(routeParams: RouteParams): string {
-  // TODO: Is this good? Or should we use the same as the SwapAPI??
   const encoded = utils.defaultAbiCoder.encode(
     ["address", "address", "uint256", "uint256", "address", "address"],
     [
@@ -23,45 +22,78 @@ export function computeParamsHash(routeParams: RouteParams): string {
 }
 
 /**
- * Encodes Erc20Transfer as ABI-encoded bytes for use as executeCalldata.
- * Encoding order and types must match the contract's Erc20Transfer struct.
+ * Returns a unique key for a deposit so we can track if it was already executed (e.g. in observedExecutedDeposits).
  */
-export function encodeExecuteCalldata(erc20Transfer: Erc20Transfer): string {
-  return utils.defaultAbiCoder.encode(
-    ["uint256", "address", "address", "uint256", "address"],
-    [erc20Transfer.chainId, erc20Transfer.from, erc20Transfer.to, erc20Transfer.amount, erc20Transfer.contractAddress]
-  );
+export function getDepositKey(depositMessage: DepositAddressMessage): string {
+  const paramsHash = computeParamsHash(depositMessage.routeParams);
+  return `${depositMessage.depositAddress}:${paramsHash}:${depositMessage.salt}`;
+}
+
+/**
+ * Builds an AugmentedTransaction that calls CounterfactualDepositFactory.execute.
+ * Use when the deposit contract is already deployed and you only need to run executeCalldata.
+ *
+ * @param factoryContract Connected CounterfactualDepositFactory contract (signer must be connected for submission).
+ * @param chainId Chain id for the transaction.
+ * @param depositAddress The counterfactual deposit contract address.
+ * @param executeCalldata ABI-encoded bytes to execute on the deposit contract.
+ * @param value Optional value to send (method is payable).
+ * @returns AugmentedTransaction ready for submitTransaction().
+ */
+export function buildExecuteTx(
+  factoryContract: Contract,
+  chainId: number,
+  depositAddress: string,
+  executeCalldata: string,
+  value?: BigNumber
+): AugmentedTransaction {
+  return {
+    contract: factoryContract,
+    chainId,
+    method: "execute",
+    args: [depositAddress, executeCalldata],
+    value,
+    ensureConfirmation: true,
+  };
 }
 
 /**
  * Builds an AugmentedTransaction that calls CounterfactualDepositFactory.deployIfNeededAndExecute.
- * Constructs params from depositMessage: paramsHash from routeParams, and uses
- * counterfactualDepositImplementation, salt, executeCalldata from the message (optional fields).
+ * Constructs params from depositMessage: paramsHash from routeParams; salt and executeCalldata from the message (Indexer/SwapAPI).
  *
  * @param factoryContract Connected CounterfactualDepositFactory contract (signer must be connected for submission).
  * @param chainId Chain id for the transaction.
- * @param depositMessage Full message; must include counterfactualDepositImplementation, salt, executeCalldata for the deploy call.
+ * @param depositMessage Full message; must include salt and executeCalldata (from Indexer and SwapAPI responses).
  * @param value Optional value to send (method is payable).
  * @returns AugmentedTransaction ready for submitTransaction().
- * @throws If depositMessage is missing counterfactualDepositImplementation, salt, or executeCalldata.
+ * @throws If depositMessage is missing salt or executeCalldata.
  */
 export function buildDeployIfNeededAndExecuteTx(
   factoryContract: Contract,
   chainId: number,
   depositMessage: DepositAddressMessage,
+  executeCalldata: string,
   value?: BigNumber
 ): AugmentedTransaction {
   const paramsHash = computeParamsHash(depositMessage.routeParams);
   const counterfactualDepositImplementation = depositMessage.depositAddress;
-  const salt = ""; // TODO: Are we getting salt from SwapAPI/Indexer??
-  const executeCalldata = encodeExecuteCalldata(depositMessage.erc20Transfer); // Should we get these info from SwapAPI instead??
+  const { salt } = depositMessage;
+
+  if (!salt) {
+    throw new Error("buildDeployIfNeededAndExecuteTx: depositMessage.salt is required (from Indexer API)");
+  }
+  if (!executeCalldata) {
+    throw new Error(
+      "buildDeployIfNeededAndExecuteTx: depositMessage.executeCalldata is required (from SwapAPI response)"
+    );
+  }
 
   const args = [counterfactualDepositImplementation, paramsHash, salt, executeCalldata];
 
   return {
     contract: factoryContract,
     chainId,
-    method: "deployIfNeededAndExecute", // Should we always use this method or can we deduct if the address is already deployed so we can use `execute` directly??
+    method: "deployIfNeededAndExecute",
     args,
     value,
     ensureConfirmation: true,

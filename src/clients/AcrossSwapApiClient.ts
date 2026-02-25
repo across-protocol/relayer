@@ -2,7 +2,6 @@ import { getAcrossHost } from "./";
 import { BigNumber, EvmAddress, winston, CHAIN_IDs } from "../utils";
 import { SWAP_ROUTES, SwapRoute } from "../common";
 import { BaseAcrossApiClient } from "./AcrossApiBaseClient";
-import { DepositAddressMessage, DepositSignApiResponse } from "../interfaces";
 
 interface SwapApiResponse {
   approvalTxns?: {
@@ -132,12 +131,5 @@ export class AcrossSwapApiClient extends BaseAcrossApiClient {
         r.originChainId === route.originChainId &&
         r.destinationChainId === route.destinationChainId
     );
-  }
-
-  // @TODO: We should check with Backend if this is correct.
-  async postDepositSignature(depositMessage: DepositAddressMessage): Promise<DepositSignApiResponse | undefined> {
-    const body = { depositMessage };
-    const data = await this._post<DepositSignApiResponse>("deposit/sign", body);
-    return data;
   }
 }

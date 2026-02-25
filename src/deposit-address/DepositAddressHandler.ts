@@ -14,8 +14,10 @@ import {
   submitAndWaitForReceipt,
   getCounterfactualDepositFactory,
   buildDeployIfNeededAndExecuteTx,
+  getDepositKey,
+  buildExecuteTx,
 } from "../utils";
-import { DepositAddressMessage, DepositSignApiResponse } from "../interfaces";
+import { DepositAddressMessage } from "../interfaces";
 import { AcrossSwapApiClient, TransactionClient } from "../clients";
 import { AcrossIndexerApiClient } from "../clients/AcrossIndexerApiClient";
 
@@ -35,6 +37,9 @@ export class DepositAddressHandler {
   private providersByChain: { [chainId: number]: Provider } = {};
 
   private counterfactualDepositFactories: { [chainId: number]: Contract } = {};
+
+  /** Per chainId: set of deposit keys already executed (like gasless depositNonces). */
+  private observedExecutedDeposits: { [chainId: number]: Set<string> } = {};
 
   private api: AcrossSwapApiClient;
   private indexerApi: AcrossIndexerApiClient;
@@ -90,6 +95,7 @@ export class DepositAddressHandler {
       const provider = await getProvider(chainId);
       this.providersByChain[chainId] = provider;
       this.counterfactualDepositFactories[chainId] = getCounterfactualDepositFactory(chainId).connect(provider);
+      this.observedExecutedDeposits[chainId] = new Set<string>();
     });
 
     // Establish a new bot instance.
@@ -134,20 +140,34 @@ export class DepositAddressHandler {
   }
 
   private async initiateDeposit(depositMessage: DepositAddressMessage): Promise<void> {
-    const signature = await this._signDepositSwapApi(depositMessage);
-    if (!isDefined(signature)) {
+    const originChainId = Number(depositMessage.routeParams.originChainId);
+    const depositKey = getDepositKey(depositMessage);
+    if (this.observedExecutedDeposits[originChainId]?.has(depositKey)) {
       return;
     }
 
-    const originChainId = Number(depositMessage.routeParams.originChainId);
     let factoryContract = this.counterfactualDepositFactories[originChainId];
-    const useDispatcher = this.depositAddressSigners.length > 0;
+    if (!factoryContract) {
+      this.logger.debug({
+        at: "DepositAddressHandler#initiateDeposit",
+        message: "No counterfactual deposit factory for chain; skipping",
+        originChainId,
+      });
+      return;
+    }
 
+    const executeCalldata = await this._getSwapApiQuote(depositMessage);
+
+    const useDispatcher = this.depositAddressSigners.length > 0;
     if (!useDispatcher) {
       factoryContract = factoryContract.connect(this.baseSigner.connect(this.providersByChain[originChainId]));
     }
 
-    const tx = buildDeployIfNeededAndExecuteTx(factoryContract, originChainId, depositMessage);
+    // We should check if address is already deployed. If not, we need to deploy it.
+    // @TODO: We should probably check for on-chain data and not check if the solt exists
+    const tx = depositMessage.salt
+      ? buildDeployIfNeededAndExecuteTx(factoryContract, originChainId, depositMessage, executeCalldata)
+      : buildExecuteTx(factoryContract, originChainId, depositMessage.depositAddress, executeCalldata);
 
     const receipt = await submitAndWaitForReceipt(
       tx,
@@ -156,7 +176,9 @@ export class DepositAddressHandler {
       "DepositAddressHandler#initiateDeposit",
       useDispatcher
     );
+
     if (receipt) {
+      this.observedExecutedDeposits[originChainId].add(depositKey);
       this.logger.info({
         at: "DepositAddressHandler#initiateDeposit",
         message: "Submitted deployIfNeededAndExecute tx",
@@ -165,6 +187,7 @@ export class DepositAddressHandler {
       });
     }
   }
+
   /*
    * @notice Queries the Indexer API for all pending deposit addresses transactions. By default, do not retry since this endpoing is being polled.
    */
@@ -184,19 +207,9 @@ export class DepositAddressHandler {
     return apiResponseData.depositAddresses;
   }
 
-  private async _signDepositSwapApi(
-    depositMessage: DepositAddressMessage,
-    retriesRemaining = 0
-  ): Promise<string | undefined> {
-    let apiResponseData: DepositSignApiResponse = undefined;
-    try {
-      apiResponseData = await this.api.postDepositSignature(depositMessage);
-    } catch {
-      // Error log should have been emitted in AcrossSwapApiClient.
-    }
-    if (!isDefined(apiResponseData)) {
-      return retriesRemaining > 0 ? this._signDepositSwapApi(depositMessage, --retriesRemaining) : undefined;
-    }
-    return apiResponseData.signature;
+  private async _getSwapApiQuote(depositMessage: DepositAddressMessage): Promise<string> {
+    // TODO: Implement this.
+    void depositMessage;
+    return "";
   }
 }
