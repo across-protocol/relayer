@@ -35,7 +35,7 @@ import {
   ConvertDecimals,
   assert,
   dispatchTransaction,
-  waitForDisconnect as waitForDisconnectUtil,
+  InstanceCoordinator,
 } from "../utils";
 import {
   APIGaslessDepositResponse,
@@ -89,6 +89,7 @@ const stateToStr = (state: MessageState) => MESSAGE_STATES[state] ?? "UNKNOWN";
  */
 export class GaslessRelayer {
   private abortController = new AbortController();
+  private instanceCoordinator;
   private initialized = false;
 
   private messageState: { [nonce: string]: MessageState } = {};
@@ -134,6 +135,8 @@ export class GaslessRelayer {
       at: "GaslessRelayer#initialize",
       message: "Initializing GaslessRelayer",
     });
+
+    const { RUN_IDENTIFIER: runIdentifier, BOT_IDENTIFIER: botIdentifier } = process.env;
 
     // Set the signer address.
     this.signerAddress = EvmAddress.from(await this.baseSigner.getAddress());
@@ -216,6 +219,17 @@ export class GaslessRelayer {
       );
       await this.initiateFill(correspondingDeposit);
     });
+
+    // Establish a new bot instance.
+    this.instanceCoordinator = new InstanceCoordinator(
+      this.logger,
+      this.redisCache,
+      botIdentifier,
+      runIdentifier,
+      this.abortController
+    );
+    await this.instanceCoordinator.initiateHandover();
+
     this.initialized = true;
   }
 
@@ -227,26 +241,13 @@ export class GaslessRelayer {
   }
 
   /*
-   * @notice Utility function which tells the relayer when a handoff has occurred.
-   * Calls the abort controller and settles this function's promise once a handoff is observed.
+   * @notice Starts a promise which expires when the InstanceCoordinator's lifetime ends, or when a handover signal
+   * is observed.
    */
   public async waitForDisconnect(): Promise<void> {
-    const {
-      RUN_IDENTIFIER: runIdentifier,
-      BOT_IDENTIFIER: botIdentifier,
-      MAX_CYCLES: _maxCycles = 120,
-      DISCONNECT_POLLING_DELAY: _pollingDelay = 3,
-    } = process.env;
-    await waitForDisconnectUtil(
-      runIdentifier,
-      botIdentifier,
-      Number(_maxCycles),
-      Number(_pollingDelay),
-      this.redisCache,
-      this.abortController,
-      this.logger,
-      "GaslessRelayer#waitForDisconnect"
-    );
+    // Wait for the instance coordinator to receive a handover signal. Once one is received (or we expire), abort.
+    await this.instanceCoordinator.subscribe();
+    this.abortController.abort();
   }
 
   /*
@@ -686,8 +687,12 @@ export class GaslessRelayer {
     const { originChainId, depositId, permit } = depositMessage;
     const { destinationChainId, inputAmount, inputToken } = depositMessage.baseDepositData;
 
-    const spokePoolPeripheryContract = this.spokePoolPeripheries[originChainId];
-
+    let spokePoolPeripheryContract = this.spokePoolPeripheries[originChainId];
+    if (this.depositSigners.length === 0) {
+      spokePoolPeripheryContract = spokePoolPeripheryContract.connect(
+        this.baseSigner.connect(this.providersByChain[originChainId])
+      );
+    }
     const _gaslessDeposit = buildGaslessDepositTx(depositMessage, spokePoolPeripheryContract);
 
     if (!this.config.sendingTransactionsEnabled) {

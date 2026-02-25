@@ -1,14 +1,6 @@
 import winston from "winston";
 import { DepositAddressHandlerConfig } from "./DepositAddressHandlerConfig";
-import {
-  getRedisCache,
-  isDefined,
-  Signer,
-  scheduleTask,
-  Provider,
-  EvmAddress,
-  waitForDisconnect as waitForDisconnectUtil,
-} from "../utils";
+import { getRedisCache, isDefined, Signer, scheduleTask, Provider, EvmAddress, InstanceCoordinator } from "../utils";
 import { DepositAddressMessage } from "../interfaces";
 import { AcrossSwapApiClient, TransactionClient } from "../clients";
 import { AcrossIndexerApiClient } from "../clients/AcrossIndexerApiClient";
@@ -23,6 +15,7 @@ import { AcrossIndexerApiClient } from "../clients/AcrossIndexerApiClient";
  */
 export class DepositAddressHandler {
   private abortController = new AbortController();
+  private instanceCoordinator;
   private initialized = false;
 
   private providersByChain: { [chainId: number]: Provider } = {};
@@ -54,6 +47,8 @@ export class DepositAddressHandler {
       message: "Initializing DepositAddressHandler",
     });
 
+    const { RUN_IDENTIFIER: runIdentifier, BOT_IDENTIFIER: botIdentifier } = process.env;
+
     // Set the signer address.
     this.signerAddress = EvmAddress.from(await this.baseSigner.getAddress());
     this.redisCache = await getRedisCache(this.logger);
@@ -75,6 +70,16 @@ export class DepositAddressHandler {
       this.abortController.abort();
     });
 
+    // Establish a new bot instance.
+    this.instanceCoordinator = new InstanceCoordinator(
+      this.logger,
+      this.redisCache,
+      botIdentifier,
+      runIdentifier,
+      this.abortController
+    );
+    await this.instanceCoordinator.initiateHandover();
+
     this.initialized = true;
   }
 
@@ -94,22 +99,8 @@ export class DepositAddressHandler {
    * Calls the abort controller and settles this function's promise once a handoff is observed.
    */
   public async waitForDisconnect(): Promise<void> {
-    const {
-      RUN_IDENTIFIER: runIdentifier,
-      BOT_IDENTIFIER: botIdentifier,
-      MAX_CYCLES: _maxCycles = 120,
-      DISCONNECT_POLLING_DELAY: _pollingDelay = 3,
-    } = process.env;
-    await waitForDisconnectUtil(
-      runIdentifier,
-      botIdentifier,
-      Number(_maxCycles),
-      Number(_pollingDelay),
-      this.redisCache,
-      this.abortController,
-      this.logger,
-      "DepositAddressHandler#waitForDisconnect"
-    );
+    await this.instanceCoordinator.subscribe();
+    this.abortController.abort();
   }
 
   private async evaluateDepositAddresses(): Promise<void> {
