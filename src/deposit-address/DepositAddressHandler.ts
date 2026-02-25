@@ -11,11 +11,11 @@ import {
   forEachAsync,
   getProvider,
   Contract,
-  submitAndWaitForReceipt,
+  sendAndConfirmTransaction,
   getCounterfactualDepositFactory,
-  buildDeployIfNeededAndExecuteTx,
+  buildDeployTx,
   getDepositKey,
-  buildExecuteTx,
+  TransactionReceipt,
 } from "../utils";
 import { DepositAddressMessage } from "../interfaces";
 import { AcrossSwapApiClient, TransactionClient } from "../clients";
@@ -156,32 +156,62 @@ export class DepositAddressHandler {
       return;
     }
 
-    const executeCalldata = await this._getSwapApiQuote(depositMessage);
+    // Transaction input (calldata) directly from Swap API.
+    const executeTxInput = await this._getSwapApiQuote(depositMessage);
+    // This is here because of the lint error.
+    void executeTxInput;
 
     const useDispatcher = this.depositAddressSigners.length > 0;
     if (!useDispatcher) {
       factoryContract = factoryContract.connect(this.baseSigner.connect(this.providersByChain[originChainId]));
     }
 
-    // We should check if address is already deployed. If not, we need to deploy it.
-    // @TODO: We should probably check for on-chain data and not check if the solt exists
-    const tx = depositMessage.salt
-      ? buildDeployIfNeededAndExecuteTx(factoryContract, originChainId, depositMessage, executeCalldata)
-      : buildExecuteTx(factoryContract, originChainId, depositMessage.depositAddress, executeCalldata);
+    if (depositMessage.salt) {
+      const deployTx = buildDeployTx(
+        factoryContract,
+        originChainId,
+        depositMessage.depositAddress,
+        depositMessage.routeParams,
+        depositMessage.salt
+      );
+      let deployReceipt: TransactionReceipt | undefined = undefined;
+      try {
+        deployReceipt = await sendAndConfirmTransaction(deployTx, this.transactionClient, useDispatcher);
+      } catch (err) {
+        this.logger.warn({
+          at: "DepositAddressHandler#initiateDeposit",
+          message: "Failed to submit deploy tx",
+          depositKey,
+        });
+        return;
+      }
 
-    const receipt = await submitAndWaitForReceipt(
-      tx,
-      this.transactionClient,
-      this.logger,
-      "DepositAddressHandler#initiateDeposit",
-      useDispatcher
-    );
+      if (!deployReceipt) {
+        this.logger.warn({
+          at: "DepositAddressHandler#initiateDeposit",
+          message: "Failed to submit deploy tx",
+          depositKey,
+        });
+        return;
+      }
+    }
 
+    // @TODO: Implement sending the execute tx from the calldata we got from the Swap API.
+    // const receipt = await submitAndWaitForReceipt(
+    //   executeTx,
+    //   this.transactionClient,
+    //   this.logger,
+    //   "DepositAddressHandler#initiateDeposit",
+    //   useDispatcher
+    // );
+
+    // This is here because of the lint error.
+    let receipt;
     if (receipt) {
       this.observedExecutedDeposits[originChainId].add(depositKey);
       this.logger.info({
         at: "DepositAddressHandler#initiateDeposit",
-        message: "Submitted deployIfNeededAndExecute tx",
+        message: "Submitted deploy + execute tx",
         hash: receipt.transactionHash,
         depositAddress: depositMessage.depositAddress,
       });

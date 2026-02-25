@@ -1,4 +1,4 @@
-import { Contract, BigNumber, utils } from "ethers";
+import { Contract, utils } from "ethers";
 import { AugmentedTransaction } from "../clients";
 import { DepositAddressMessage, RouteParams } from "../interfaces/DepositAddress";
 
@@ -30,72 +30,30 @@ export function getDepositKey(depositMessage: DepositAddressMessage): string {
 }
 
 /**
- * Builds an AugmentedTransaction that calls CounterfactualDepositFactory.execute.
- * Use when the deposit contract is already deployed and you only need to run executeCalldata.
+ * Builds an AugmentedTransaction that calls CounterfactualDepositFactory.deploy.
+ * Deploys the counterfactual deposit contract at a deterministic address.
+ * paramsHash is computed inside as keccak256(abi.encode(routeParams)).
  *
  * @param factoryContract Connected CounterfactualDepositFactory contract (signer must be connected for submission).
  * @param chainId Chain id for the transaction.
- * @param depositAddress The counterfactual deposit contract address.
- * @param executeCalldata ABI-encoded bytes to execute on the deposit contract.
- * @param value Optional value to send (method is payable).
+ * @param counterfactualDepositImplementation Implementation contract address to clone.
+ * @param routeParams Route params; paramsHash is derived from this.
+ * @param salt bytes32 salt for CREATE2.
  * @returns AugmentedTransaction ready for submitTransaction().
  */
-export function buildExecuteTx(
+export function buildDeployTx(
   factoryContract: Contract,
   chainId: number,
-  depositAddress: string,
-  executeCalldata: string,
-  value?: BigNumber
+  counterfactualDepositImplementation: string,
+  routeParams: RouteParams,
+  salt: string
 ): AugmentedTransaction {
+  const paramsHash = computeParamsHash(routeParams);
   return {
     contract: factoryContract,
     chainId,
-    method: "execute",
-    args: [depositAddress, executeCalldata],
-    value,
-    ensureConfirmation: true,
-  };
-}
-
-/**
- * Builds an AugmentedTransaction that calls CounterfactualDepositFactory.deployIfNeededAndExecute.
- * Constructs params from depositMessage: paramsHash from routeParams; salt and executeCalldata from the message (Indexer/SwapAPI).
- *
- * @param factoryContract Connected CounterfactualDepositFactory contract (signer must be connected for submission).
- * @param chainId Chain id for the transaction.
- * @param depositMessage Full message; must include salt and executeCalldata (from Indexer and SwapAPI responses).
- * @param value Optional value to send (method is payable).
- * @returns AugmentedTransaction ready for submitTransaction().
- * @throws If depositMessage is missing salt or executeCalldata.
- */
-export function buildDeployIfNeededAndExecuteTx(
-  factoryContract: Contract,
-  chainId: number,
-  depositMessage: DepositAddressMessage,
-  executeCalldata: string,
-  value?: BigNumber
-): AugmentedTransaction {
-  const paramsHash = computeParamsHash(depositMessage.routeParams);
-  const counterfactualDepositImplementation = depositMessage.depositAddress;
-  const { salt } = depositMessage;
-
-  if (!salt) {
-    throw new Error("buildDeployIfNeededAndExecuteTx: depositMessage.salt is required (from Indexer API)");
-  }
-  if (!executeCalldata) {
-    throw new Error(
-      "buildDeployIfNeededAndExecuteTx: depositMessage.executeCalldata is required (from SwapAPI response)"
-    );
-  }
-
-  const args = [counterfactualDepositImplementation, paramsHash, salt, executeCalldata];
-
-  return {
-    contract: factoryContract,
-    chainId,
-    method: "deployIfNeededAndExecute",
-    args,
-    value,
+    method: "deploy",
+    args: [counterfactualDepositImplementation, paramsHash, salt],
     ensureConfirmation: true,
   };
 }

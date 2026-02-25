@@ -26,7 +26,7 @@ import {
   blockExplorerLink,
   getNetworkName,
   relayFillStatus,
-  submitAndWaitForReceipt,
+  sendAndConfirmTransaction,
   getTokenInfo,
   createFormatFunction,
   toAddressType,
@@ -716,13 +716,35 @@ export class GaslessRelayer {
         tokenInfo.decimals
       )(inputAmount)} ${tokenInfo.symbol}, and deposit ID ${depositId}`,
     };
-    return submitAndWaitForReceipt(
-      gaslessDeposit,
-      this.transactionClient,
-      this.logger,
-      "GaslessRelayer#submit",
-      this.depositSigners.length > 0
-    );
+    let txReceipt: TransactionReceipt | undefined = undefined;
+    try {
+      txReceipt = await sendAndConfirmTransaction(
+        gaslessDeposit,
+        this.transactionClient,
+        this.depositSigners.length > 0
+      );
+    } catch (err) {
+      this.logger.warn({
+        at: "GaslessRelayer#initiateGaslessDeposit",
+        message: "Failed to submit gasless deposit",
+        depositId,
+      });
+      return null;
+    }
+
+    if (!txReceipt) {
+      this.logger.warn({
+        at: "GaslessRelayer#initiateGaslessDeposit",
+        message: "Failed to submit gasless deposit",
+        depositId,
+        originChainId,
+        destinationChainId,
+        inputToken,
+        inputAmount,
+      });
+      return null;
+    }
+    return txReceipt;
   }
 
   /*
@@ -766,7 +788,25 @@ export class GaslessRelayer {
       } and deposit ID ${depositId}`,
     };
 
-    return submitAndWaitForReceipt(gaslessFill, this.transactionClient, this.logger, "GaslessRelayer#submit");
+    let txReceipt: TransactionReceipt | undefined = undefined;
+    try {
+      txReceipt = await sendAndConfirmTransaction(gaslessFill, this.transactionClient);
+    } catch (err) {
+      this.logger.warn({
+        at: "GaslessRelayer#initiateFill",
+        message: "Failed to submit gasless fill",
+        depositId,
+      });
+      if (!txReceipt) {
+        this.logger.warn({
+          at: "GaslessRelayer#initiateFill",
+          message: "Failed to submit gasless fill",
+          depositId,
+        });
+        return null;
+      }
+      return txReceipt;
+    }
   }
 
   /*
