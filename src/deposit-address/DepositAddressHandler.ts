@@ -17,7 +17,7 @@ import {
   getDepositKey,
 } from "../utils";
 import { DepositAddressMessage } from "../interfaces";
-import { AcrossSwapApiClient, TransactionClient } from "../clients";
+import { AcrossSwapApiClient, TransactionClient, sendRawTransaction, SwapApiResponse } from "../clients";
 import { AcrossIndexerApiClient } from "../clients/AcrossIndexerApiClient";
 
 // Teach BigInt how to be represented as JSON.
@@ -131,7 +131,6 @@ export class DepositAddressHandler {
   }
 
   private async evaluateDepositAddresses(): Promise<void> {
-    // @TODO: This is just initial implementation. We will need to add more logic to it when Indexer and Swap API Endpoints are implemented.
     const depositMessages = await this._queryIndexerApi();
     const filtered = depositMessages.filter((m) =>
       this.config.relayerOriginChains.includes(Number(m.routeParams.originChainId))
@@ -150,25 +149,12 @@ export class DepositAddressHandler {
 
     this.observedExecutedDeposits[originChainId].add(depositKey);
 
-    let factoryContract = this.counterfactualDepositFactories[originChainId];
-    if (!factoryContract) {
-      this.logger.debug({
-        at: "DepositAddressHandler#initiateDeposit",
-        message: "No counterfactual deposit factory for chain; skipping",
-        originChainId,
-      });
-      return;
-    }
-
-    // Transaction input (calldata) directly from Swap API.
-    const executeTxInput = await this._getSwapApiQuote(depositMessage);
-    // This is here because of the lint error.
-    void executeTxInput;
+    const baseFactoryContract = this.counterfactualDepositFactories[originChainId];
 
     const useDispatcher = this.depositAddressSigners.length > 0;
-    if (!useDispatcher) {
-      factoryContract = factoryContract.connect(this.baseSigner.connect(this.providersByChain[originChainId]));
-    }
+    const factoryContract = useDispatcher
+      ? baseFactoryContract.connect(this.providersByChain[originChainId])
+      : baseFactoryContract.connect(this.baseSigner.connect(this.providersByChain[originChainId]));
 
     if (depositMessage.salt) {
       const deployTx = buildDeployTx(
@@ -190,23 +176,30 @@ export class DepositAddressHandler {
       }
     }
 
-    // @TODO: Implement sending the execute tx from the calldata we got from the Swap API.
-    // const receipt = await submitAndWaitForReceipt(
-    //   executeTx,
-    //   this.transactionClient,
-    //   this.logger,
-    //   "DepositAddressHandler#initiateDeposit",
-    //   useDispatcher
-    // );
+    // At this point, the user's deposit contract is deployed on the origin network.
+    const swapTx = await this._getSwapApiQuote(depositMessage);
+    if (!isDefined(swapTx) || !swapTx.swapTx.simulationSuccess) {
+      this.logger.warn({
+        at: "DepositAddressHandler#initiateDeposit",
+        message: "Failed to fetch swap tx from swap API",
+        depositKey,
+      });
+      this.observedExecutedDeposits[originChainId].delete(depositKey);
+      return;
+    }
 
-    // This is here because of the lint error.
-    let receipt;
-    if (!receipt) {
+    const { data: executeTxInput } = swapTx.swapTx;
+    const depositReceipt = await (
+      await sendRawTransaction(this.logger, factoryContract, undefined, executeTxInput)
+    ).wait();
+
+    if (!depositReceipt) {
       this.logger.warn({
         at: "DepositAddressHandler#initiateDeposit",
         message: "Failed to submit execute tx",
         depositKey,
       });
+      this.observedExecutedDeposits[originChainId].delete(depositKey);
       return;
     }
   }
@@ -214,7 +207,7 @@ export class DepositAddressHandler {
   /*
    * @notice Queries the Indexer API for all pending deposit addresses transactions. By default, do not retry since this endpoing is being polled.
    */
-  private async _queryIndexerApi(retriesRemaining = 0): Promise<DepositAddressMessage[]> {
+  private async _queryIndexerApi(retriesRemaining = 3): Promise<DepositAddressMessage[]> {
     let apiResponseData: { depositAddresses: DepositAddressMessage[] } | undefined = undefined;
     try {
       apiResponseData = await this.indexerApi.get<{ depositAddresses: DepositAddressMessage[] }>(
@@ -230,9 +223,30 @@ export class DepositAddressHandler {
     return apiResponseData.depositAddresses;
   }
 
-  private async _getSwapApiQuote(depositMessage: DepositAddressMessage): Promise<string> {
-    // TODO: Implement this.
-    void depositMessage;
-    return "";
+  private async _getSwapApiQuote(
+    depositMessage: DepositAddressMessage,
+    retriesRemaining = 3
+  ): Promise<SwapApiResponse | undefined> {
+    const { depositAddress, routeParams, erc20Transfer } = depositMessage;
+    const { inputToken, outputToken, originChainId, destinationChainId, recipient } = routeParams;
+    const { amount } = erc20Transfer;
+    const params = {
+      originChainId,
+      destinationChainId,
+      inputToken,
+      outputToken,
+      tradeType: "exactInput", // Should be exactInput for counterfactual deposits.
+      amount,
+      depositor: depositAddress, // The depositor address should be the counterfactual deposit contract.
+      recipient,
+      depositAddress,
+      executionFeeRecipient: this.signerAddress.toNative(),
+    };
+    try {
+      return await this.api.get<SwapApiResponse>(this.config.apiEndpoint, params);
+    } catch {
+      // Logging should have been done in the swap api client, so we do not need to log here.
+      return retriesRemaining > 0 ? this._getSwapApiQuote(depositMessage, --retriesRemaining) : undefined;
+    }
   }
 }
