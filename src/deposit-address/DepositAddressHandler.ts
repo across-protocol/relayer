@@ -11,7 +11,7 @@ import {
   forEachAsync,
   getProvider,
   Contract,
-  submitTransaction,
+  submitAndWaitForReceipt,
   getCounterfactualDepositFactory,
   buildDeployIfNeededAndExecuteTx,
 } from "../utils";
@@ -140,32 +140,28 @@ export class DepositAddressHandler {
     }
 
     const originChainId = Number(depositMessage.routeParams.originChainId);
-    const factoryContract = this.counterfactualDepositFactories[originChainId];
-    if (!factoryContract) {
-      this.logger.debug({
-        at: "DepositAddressHandler#initiateDeposit",
-        message: "No counterfactual deposit factory for chain; skipping",
-        originChainId,
-      });
-      return;
+    let factoryContract = this.counterfactualDepositFactories[originChainId];
+    const useDispatcher = this.depositAddressSigners.length > 0;
+
+    if (!useDispatcher) {
+      factoryContract = factoryContract.connect(this.baseSigner.connect(this.providersByChain[originChainId]));
     }
 
     const tx = buildDeployIfNeededAndExecuteTx(factoryContract, originChainId, depositMessage);
 
-    try {
-      const response = await submitTransaction(tx, this.transactionClient);
+    const receipt = await submitAndWaitForReceipt(
+      tx,
+      this.transactionClient,
+      this.logger,
+      "DepositAddressHandler#initiateDeposit",
+      useDispatcher
+    );
+    if (receipt) {
       this.logger.info({
         at: "DepositAddressHandler#initiateDeposit",
         message: "Submitted deployIfNeededAndExecute tx",
-        hash: response.hash,
+        hash: receipt.transactionHash,
         depositAddress: depositMessage.depositAddress,
-      });
-    } catch (err) {
-      this.logger.warn({
-        at: "DepositAddressHandler#initiateDeposit",
-        message: "Failed to submit deployIfNeededAndExecute tx",
-        depositAddress: depositMessage.depositAddress,
-        err: err instanceof Error ? err.message : String(err),
       });
     }
   }

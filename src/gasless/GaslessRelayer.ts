@@ -26,7 +26,7 @@ import {
   blockExplorerLink,
   getNetworkName,
   relayFillStatus,
-  submitTransaction,
+  submitAndWaitForReceipt,
   getTokenInfo,
   createFormatFunction,
   toAddressType,
@@ -34,7 +34,6 @@ import {
   getL1TokenAddress,
   ConvertDecimals,
   assert,
-  dispatchTransaction,
   InstanceCoordinator,
 } from "../utils";
 import {
@@ -717,7 +716,13 @@ export class GaslessRelayer {
         tokenInfo.decimals
       )(inputAmount)} ${tokenInfo.symbol}, and deposit ID ${depositId}`,
     };
-    return this.submit(gaslessDeposit, this.depositSigners.length > 0);
+    return submitAndWaitForReceipt(
+      gaslessDeposit,
+      this.transactionClient,
+      this.logger,
+      "GaslessRelayer#submit",
+      this.depositSigners.length > 0
+    );
   }
 
   /*
@@ -761,7 +766,7 @@ export class GaslessRelayer {
       } and deposit ID ${depositId}`,
     };
 
-    return this.submit(gaslessFill, false);
+    return submitAndWaitForReceipt(gaslessFill, this.transactionClient, this.logger, "GaslessRelayer#submit");
   }
 
   /*
@@ -869,28 +874,6 @@ export class GaslessRelayer {
       from,
       maxLookBack: this.config.maxBlockLookBack[chainId],
     };
-  }
-
-  /*
-   * @notice Submits a transaction and awaits its transaction receipt.
-   */
-  private async submit(tx: AugmentedTransaction, useDispatcher: boolean): Promise<TransactionReceipt | undefined> {
-    try {
-      const txResponse = useDispatcher
-        ? await dispatchTransaction(tx, this.transactionClient)
-        : await submitTransaction(tx, this.transactionClient);
-      // Since we called `ensureConfirmation` in the transaction client, the receipt should exist, so `.wait()` should have already resolved.
-      // We only sent one transaction, so only take the first element of `txResponses`.
-      return txResponse.wait();
-    } catch (err) {
-      // We will reach this code block if, after polling for transaction confirmation, we still do not see the receipt onchain.
-      this.logger.warn({
-        at: "GaslessRelayer#submit",
-        message: "Failed to submit transaction",
-        err: err instanceof Error ? err.message : String(err),
-      });
-      return null;
-    }
   }
 
   /*

@@ -6,6 +6,7 @@ import {
   Contract,
   isDefined,
   TransactionResponse,
+  TransactionReceipt,
   ethers,
   getContractInfoFromAddress,
   Signer,
@@ -14,6 +15,7 @@ import {
   SVMProvider,
   parseUnits,
 } from "../utils";
+import winston from "winston";
 import { getBase64EncodedWireTransaction, signTransactionMessageWithSigners, type MicroLamports } from "@solana/kit";
 import { updateOrAppendSetComputeUnitPriceInstruction } from "@solana-program/compute-budget";
 
@@ -207,4 +209,30 @@ export async function dispatchTransaction(
   }
 
   return dispatcher.dispatch(transaction, transaction.contract, transaction.contract.provider);
+}
+
+/**
+ * Submits a transaction (via submitTransaction or dispatchTransaction), awaits the receipt, and returns it.
+ * On failure logs a warning and returns undefined. Use from GaslessRelayer, DepositAddressHandler, etc.
+ */
+export async function submitAndWaitForReceipt(
+  tx: AugmentedTransaction,
+  transactionClient: TransactionClient,
+  logger: winston.Logger,
+  logContext: string,
+  useDispatcher = false
+): Promise<TransactionReceipt | undefined> {
+  try {
+    const txResponse = useDispatcher
+      ? await dispatchTransaction(tx, transactionClient)
+      : await submitTransaction(tx, transactionClient);
+    return txResponse.wait();
+  } catch (err) {
+    logger.warn({
+      at: logContext,
+      message: "Failed to submit transaction",
+      err: err instanceof Error ? err.message : String(err),
+    });
+    return undefined;
+  }
 }
