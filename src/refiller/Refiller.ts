@@ -268,7 +268,7 @@ export class Refiller {
             {
               contract: sendRawTransactionContract,
               method: "",
-              args: ["0x"],
+              args: [],
               value: deficit,
               ensureConfirmation: true,
               chainId,
