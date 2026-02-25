@@ -63,7 +63,7 @@ const { isError } = typeguards;
 
 export class TransactionClient {
   readonly noncesBySigner: { [chainId: number]: { [signerAddress: string]: number } } = {};
-  private activeSignerIndex = 0;
+  private activeSignerIndex: { [chainId: number]: number } = {};
 
   protected readonly DEFAULT_GAS_LIMIT_MULTIPLIER = 1.0;
 
@@ -87,7 +87,7 @@ export class TransactionClient {
   ): Promise<TransactionResponse> {
     assert(this.signers.length > 0, "Cannot dispatch transaction without any signers defined.");
     // Overwrite the signer on the augmented transaction.
-    const signer = this.rotateSigners();
+    const signer = this.rotateSigners(txn.chainId);
     const contract = target.connect(signer.connect(provider));
     const dispatchTxn = {
       ...txn,
@@ -225,9 +225,14 @@ export class TransactionClient {
     return txnResponses;
   }
 
-  private rotateSigners(): Signer {
-    const activeSigner = this.signers[this.activeSignerIndex];
-    this.activeSignerIndex = (this.activeSignerIndex + 1) % this.signers.length;
+  private rotateSigners(chainId: number): Signer {
+    // Get the first signer available for the input chain ID.
+    const signerIndexForChain = this.activeSignerIndex[chainId] ?? 0;
+    const activeSigner = this.signers[signerIndexForChain];
+
+    // Rotate the signer index for the input chain ID.
+    const nSigners = this.signers.length;
+    this.activeSignerIndex[chainId] = (signerIndexForChain + 1) % nSigners;
     return activeSigner;
   }
 }
