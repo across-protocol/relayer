@@ -689,7 +689,9 @@ export class GaslessRelayer {
 
     let spokePoolPeripheryContract = this.spokePoolPeripheries[originChainId];
     if (this.depositSigners.length === 0) {
-      spokePoolPeripheryContract = spokePoolPeripheryContract.connect(this.baseSigner.connect(this.providersByChain[originChainId]));
+      spokePoolPeripheryContract = spokePoolPeripheryContract.connect(
+        this.baseSigner.connect(this.providersByChain[originChainId])
+      );
     }
     const _gaslessDeposit = buildGaslessDepositTx(depositMessage, spokePoolPeripheryContract);
 
