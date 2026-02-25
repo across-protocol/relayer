@@ -165,6 +165,8 @@ export class DepositAddressHandler {
       factoryContract = factoryContract.connect(this.baseSigner.connect(this.providersByChain[originChainId]));
     }
 
+    this.observedExecutedDeposits[originChainId].add(depositKey);
+
     if (depositMessage.salt) {
       const deployTx = buildDeployTx(
         factoryContract,
@@ -175,6 +177,7 @@ export class DepositAddressHandler {
       );
       const deployReceipt = await sendAndConfirmTransaction(deployTx, this.transactionClient, useDispatcher);
       if (!isDefined(deployReceipt)) {
+        this.observedExecutedDeposits[originChainId].delete(depositKey);
         this.logger.warn({
           at: "DepositAddressHandler#initiateDeposit",
           message: "Failed to submit deploy tx",
@@ -195,14 +198,13 @@ export class DepositAddressHandler {
 
     // This is here because of the lint error.
     let receipt;
-    if (receipt) {
-      this.observedExecutedDeposits[originChainId].add(depositKey);
-      this.logger.info({
+    if (!receipt) {
+      this.logger.warn({
         at: "DepositAddressHandler#initiateDeposit",
-        message: "Submitted deploy + execute tx",
-        hash: receipt.transactionHash,
-        depositAddress: depositMessage.depositAddress,
+        message: "Failed to submit execute tx",
+        depositKey,
       });
+      return;
     }
   }
 

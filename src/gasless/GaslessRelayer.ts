@@ -716,8 +716,12 @@ export class GaslessRelayer {
         tokenInfo.decimals
       )(inputAmount)} ${tokenInfo.symbol}, and deposit ID ${depositId}`,
     };
-    let txReceipt: TransactionReceipt | undefined = undefined;
-    txReceipt = await sendAndConfirmTransaction(gaslessDeposit, this.transactionClient, this.depositSigners.length > 0);
+
+    const txReceipt = await sendAndConfirmTransaction(
+      gaslessDeposit,
+      this.transactionClient,
+      this.depositSigners.length > 0
+    );
     if (!isDefined(txReceipt)) {
       this.logger.warn({
         at: "GaslessRelayer#initiateGaslessDeposit",
@@ -728,7 +732,6 @@ export class GaslessRelayer {
         inputToken,
         inputAmount,
       });
-      return null;
     }
     return txReceipt;
   }
@@ -774,15 +777,13 @@ export class GaslessRelayer {
       } and deposit ID ${depositId}`,
     };
 
-    let txReceipt: TransactionReceipt | undefined = undefined;
-    txReceipt = await sendAndConfirmTransaction(gaslessFill, this.transactionClient);
+    const txReceipt = await sendAndConfirmTransaction(gaslessFill, this.transactionClient);
     if (!isDefined(txReceipt)) {
       this.logger.warn({
         at: "GaslessRelayer#initiateFill",
         message: "Failed to submit gasless fill",
         depositId,
       });
-      return null;
     }
     return txReceipt;
   }
