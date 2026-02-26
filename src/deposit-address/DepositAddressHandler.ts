@@ -16,6 +16,7 @@ import {
   buildDeployTx,
   toBN,
   getDepositKey,
+  assert,
 } from "../utils";
 import { DepositAddressMessage } from "../interfaces";
 import { AcrossSwapApiClient, TransactionClient, SwapApiResponse } from "../clients";
@@ -154,6 +155,19 @@ export class DepositAddressHandler {
 
     this.observedExecutedDeposits[originChainId].add(depositKey);
 
+    let isDepositAddressDeployed = false;
+    try {
+      isDepositAddressDeployed = await this.isContractDeployed(originChainId, depositMessage.depositAddress);
+    } catch (err) {
+      this.observedExecutedDeposits[originChainId].delete(depositKey);
+      this.logger.warn({
+        at: "DepositAddressHandler#initiateDeposit",
+        message: "Failed to check if deposit address is deployed",
+        depositKey,
+      });
+      return;
+    }
+
     const baseFactoryContract = this.counterfactualDepositFactories[originChainId];
 
     const useDispatcher = this.depositAddressSigners.length > 0;
@@ -178,7 +192,7 @@ export class DepositAddressHandler {
       return;
     }
 
-    if (depositMessage.salt) {
+    if (!isDepositAddressDeployed) {
       const deployTx = buildDeployTx(
         factoryContract,
         originChainId,
@@ -228,6 +242,16 @@ export class DepositAddressHandler {
       this.observedExecutedDeposits[originChainId].delete(depositKey);
       return;
     }
+  }
+
+  /**
+   * @notice Returns whether a contract exists at the given address on the given chain (eth_getCode).
+   */
+  private async isContractDeployed(chainId: number, address: string, blockTag?: string | number): Promise<boolean> {
+    const provider = this.providersByChain[chainId];
+    assert(isDefined(provider), `Provider not found for chain ${chainId}`);
+    const code = await provider.getCode(address, blockTag ?? "latest");
+    return isDefined(code) && code !== "0x" && code !== "0x0";
   }
 
   /*
