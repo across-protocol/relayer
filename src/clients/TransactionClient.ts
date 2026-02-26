@@ -63,7 +63,7 @@ const { isError } = typeguards;
 
 export class TransactionClient {
   readonly noncesBySigner: { [chainId: number]: { [signerAddress: string]: number } } = {};
-  private activeSignerIndex = 0;
+  private activeSignerIndex: { [chainId: number]: number } = {};
 
   protected readonly DEFAULT_GAS_LIMIT_MULTIPLIER = 1.0;
 
@@ -87,7 +87,7 @@ export class TransactionClient {
   ): Promise<TransactionResponse> {
     assert(this.signers.length > 0, "Cannot dispatch transaction without any signers defined.");
     // Overwrite the signer on the augmented transaction.
-    const signer = this.rotateSigners();
+    const signer = this.rotateSigners(txn.chainId);
     const contract = target.connect(signer.connect(provider));
     const dispatchTxn = {
       ...txn,
@@ -225,25 +225,16 @@ export class TransactionClient {
     return txnResponses;
   }
 
-  private rotateSigners(): Signer {
-    const activeSigner = this.signers[this.activeSignerIndex];
-    this.activeSignerIndex = (this.activeSignerIndex + 1) % this.signers.length;
+  private rotateSigners(chainId: number): Signer {
+    // Get the first signer available for the input chain ID.
+    const signerIndexForChain = this.activeSignerIndex[chainId] ?? 0;
+    const activeSigner = this.signers[signerIndexForChain];
+
+    // Rotate the signer index for the input chain ID.
+    const nSigners = this.signers.length;
+    this.activeSignerIndex[chainId] = (signerIndexForChain + 1) % nSigners;
     return activeSigner;
   }
-}
-
-export async function sendRawTransaction(
-  logger: winston.Logger,
-  contract: Contract,
-  value = bnZero,
-  calldata: unknown | null = null,
-  gasLimit: BigNumber | null = null,
-  nonce: number | null = null,
-  retries = 1
-): Promise<TransactionResponse> {
-  // method is always an empty string when sending a raw transaction
-  // calldata should be undefined if not sending any calldata to a contract.
-  return await _runTransaction(logger, contract, "", calldata, value, gasLimit, nonce, retries);
 }
 
 // @dev: If the method value is an empty string (i.e. ""), then this function will submit a raw transaction.
@@ -310,7 +301,7 @@ async function _runTransaction(
 
   try {
     return sendRawTxn
-      ? await signer.sendTransaction({ to, value, data: args as ethers.utils.BytesLike, gasLimit, ...gas })
+      ? await signer.sendTransaction({ to, value, data: (args as ethers.utils.BytesLike[])[0], gasLimit, ...gas })
       : await contract[method](...(args as Array<unknown>), txConfig);
   } catch (error) {
     // Narrow type. All errors caught here should be Ethers errors.
