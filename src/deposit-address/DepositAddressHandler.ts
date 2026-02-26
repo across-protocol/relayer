@@ -17,7 +17,7 @@ import {
   getDepositKey,
 } from "../utils";
 import { DepositAddressMessage } from "../interfaces";
-import { AcrossSwapApiClient, TransactionClient, sendRawTransaction, SwapApiResponse } from "../clients";
+import { AcrossSwapApiClient, TransactionClient, SwapApiResponse } from "../clients";
 import { AcrossIndexerApiClient } from "../clients/AcrossIndexerApiClient";
 
 // Teach BigInt how to be represented as JSON.
@@ -153,7 +153,7 @@ export class DepositAddressHandler {
 
     const useDispatcher = this.depositAddressSigners.length > 0;
     const factoryContract = useDispatcher
-      ? baseFactoryContract.connect(this.providersByChain[originChainId])
+      ? baseFactoryContract
       : baseFactoryContract.connect(this.baseSigner.connect(this.providersByChain[originChainId]));
 
     if (depositMessage.salt) {
@@ -189,9 +189,13 @@ export class DepositAddressHandler {
     }
 
     const { data: executeTxInput } = swapTx.swapTx;
-    const depositReceipt = await (
-      await sendRawTransaction(this.logger, factoryContract, undefined, executeTxInput)
-    ).wait();
+    const executeTx = {
+      contract: factoryContract,
+      method: "",
+      args: [executeTxInput],
+      chainId: originChainId,
+    };
+    const depositReceipt = await sendAndConfirmTransaction(executeTx, this.transactionClient, useDispatcher);
 
     if (!depositReceipt) {
       this.logger.warn({
