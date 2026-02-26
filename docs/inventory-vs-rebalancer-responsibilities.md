@@ -28,7 +28,7 @@ Primary files:
 
 In short: move the same economic token across chains and track cross-chain execution state.
 
-### RebalancerClient owns
+### Rebalancer clients own
 
 - cross-asset, cross-chain inventory rebalances (swap source token into destination token)
 - route/adapters for exchanges and venues
@@ -42,15 +42,15 @@ In short: transform token composition, not just token location.
 Relayer operations need two dimensions of inventory control:
 
 1. chain location management (InventoryClient)
-2. asset composition management (RebalancerClient)
+2. asset composition management (rebalancer clients)
 
 For equivalent-token fills, location dominates.
-For in-protocol swap support, composition dominates and requires RebalancerClient.
+For in-protocol swap support, composition dominates and requires the rebalancer clients.
 
 ## Cross-coupling points
 
-- InventoryClient imports `pendingRebalances` from RebalancerClient and includes them in virtual balance calculations.
-- RebalancerClient consumes InventoryClient-derived balances in two forms:
+- InventoryClient imports `pendingRebalances` from `BaseRebalancerClient` and includes them in virtual balance calculations.
+- Rebalancer clients consume InventoryClient-derived balances in two forms:
   - chain-local balances (`currentBalances`) used to choose source chains and route amounts,
   - cumulative balances (`cumulativeBalances`) used to detect per-token aggregate deficits/excesses.
 - Both modules influence relayer fillability indirectly through available destination liquidity.
@@ -62,24 +62,24 @@ This coupling means changes in one module can affect behavior that appears to be
 If your change is mostly:
 
 - moving USDC on chain A to USDC on chain B -> InventoryClient
-- turning USDC on chain A into ETH on chain B -> RebalancerClient
+- turning USDC on chain A into ETH on chain B -> rebalancer clients
 - choosing where relayer takes repayment -> InventoryClient
-- choosing which asset mix to hold long-term (including cumulative token targets) -> RebalancerClient
+- choosing which asset mix to hold long-term (including cumulative token targets) -> rebalancer clients
 
 If both are involved, split logic by concern and keep interfaces narrow.
 
 ## Current legacy overlap and direction
 
-The repository docs already note that some token-transfer behavior in InventoryClient is older and expected to migrate over time toward cleaner separation. Today, InventoryClient still executes same-token bridge transfers while RebalancerClient handles cross-asset routes.
+The repository docs already note that some token-transfer behavior in InventoryClient is older and expected to migrate over time toward cleaner separation. Today, InventoryClient still executes same-token bridge transfers while rebalancer clients handle cross-asset routes.
 
 Treat this as "stable but transitional": do not introduce new overlap unless required.
 
-Current default runtime behavior in `src/rebalancer/index.ts` executes cumulative rebalancing (`rebalanceCumulativeInventory`) and keeps chain-targeted rebalancing (`rebalanceInventory`) as an alternate/testing path.
+Current default runtime behavior in `src/rebalancer/index.ts` executes cumulative rebalancing via `runCumulativeBalanceRebalancer` and keeps `runSingleBalanceRebalancer` as an alternate/testing path.
 
 ## Anti-patterns
 
 - adding cross-asset swap execution code to InventoryClient
-- adding repayment-chain policy logic to RebalancerClient
+- adding repayment-chain policy logic to rebalancer clients
 - duplicating pending-state accounting in both modules
 - mixing chain-allocation and token-composition objectives in one heuristic without explicit prioritization
 

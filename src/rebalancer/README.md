@@ -2,13 +2,17 @@
 
 The Rebalancer determines when the relayer's inventory should be reshaped across chains and tokens, then executes those cross-asset rebalances through configured venue adapters.
 
-## RebalancerClient
+## Rebalancer Clients
 
-The main implementation is `RebalancerClient` in `rebalancer.ts`.
+The main implementations are defined in `rebalancer.ts`:
+
+- `BaseRebalancerClient` as an abstract mode boundary with shared lifecycle/adapter helpers.
+- `CumulativeBalanceRebalancerClient` for production cumulative balancing.
+- `SingleBalanceRebalancerClient` for testing-oriented single-balance behavior.
 
 ### Rebalance Routes
 
-`RebalancerClient` is instantiated with `RebalanceRoute[]`. A route defines:
+Each rebalancer client is instantiated with `RebalanceRoute[]`. A route defines:
 
 - source chain and source token,
 - destination chain and destination token,
@@ -43,7 +47,7 @@ Implemented production swap adapters:
 
 The rebalancer has two independent layers:
 
-- **Mode layer** (`rebalanceInventory`, `rebalanceCumulativeInventory`) decides **what** inventory imbalance should be corrected and in what order.
+- **Mode layer** (`CumulativeBalanceRebalancerClient.rebalanceInventory` and `SingleBalanceRebalancerClient.rebalanceInventory`) decides **what** inventory imbalance should be corrected and in what order.
 - **Adapter layer** (`RebalancerAdapter` implementations in `src/rebalancer/adapters/`) decides **how** to execute a selected route on a venue.
 
 This separation is intentional:
@@ -96,14 +100,14 @@ The config now supports both per-chain targets and cumulative targets:
 Notes:
 
 - `targetBalance` and `thresholdBalance` values are human-readable and converted to token-native decimals.
-- `targetBalances` define chain-specific objectives for `rebalanceInventory()`.
-- `cumulativeTargetBalances` define per-token aggregate objectives plus allowed source/destination chain sets for `rebalanceCumulativeInventory()`.
+- `targetBalances` define chain-specific objectives for `SingleBalanceRebalancerClient.rebalanceInventory()`.
+- `cumulativeTargetBalances` define per-token aggregate objectives plus allowed source/destination chain sets for `CumulativeBalanceRebalancerClient.rebalanceInventory()`.
 - `cumulativeTargetBalances[token].chains[chainId]` is a chain priority tier used when selecting where to source excess inventory from (lower tier is preferred for sourcing).
-- `chainIds` and `targetTokens` are derived from the union of both `targetBalances` and `cumulativeTargetBalances`.
+- `chainIds` are derived from the union of chains found in `targetBalances` and `cumulativeTargetBalances`.
 
 ## Rebalancing Modes
 
-### Chain-specific mode: `rebalanceInventory()`
+### Chain-specific mode: `SingleBalanceRebalancerClient.rebalanceInventory()`
 
 This is the original path. It is useful for chain-targeted behavior and testing.
 
@@ -115,9 +119,9 @@ High-level flow:
 4. Sort excesses by `priorityTier` (lower first), then larger excesses first.
 5. For each deficit, choose the cheapest matching route among eligible excesses, enforce max fee pct, enforce adapter pending-order cap, and initialize rebalance.
 
-### Cumulative mode: `rebalanceCumulativeInventory()`
+### Cumulative mode: `CumulativeBalanceRebalancerClient.rebalanceInventory()`
 
-This is the new cumulative-balance path and the default runtime execution in `src/rebalancer/index.ts`.
+This is the cumulative-balance path and the default runtime execution via `runCumulativeBalanceRebalancer` in `src/rebalancer/index.ts`.
 
 Inputs:
 
@@ -141,9 +145,20 @@ Design tradeoff:
 
 - Destination-chain selection evaluates all eligible routes to minimize expected cost. This improves route quality at the expense of additional runtime cost when many routes are configured.
 
-## Creating a Rebalancer Instance
+## Creating Rebalancer Instances
 
-Use `constructRebalancerClient()` in `RebalancerClientHelper.ts`. It builds config, adapters, routes, initializes adapters, and returns a ready `RebalancerClient`.
+Use mode-specific constructors in `RebalancerClientHelper.ts`:
+
+- `constructCumulativeBalanceRebalancerClient()` for operational runs.
+- `constructSingleBalanceRebalancerClient()` for testing-oriented runs.
+
+Runtime entrypoints in `src/rebalancer/index.ts`:
+
+- `runCumulativeBalanceRebalancer` (supported operational path).
+- `runSingleBalanceRebalancer` (testing-only path).
+- Each runner materializes balances from its own config domain:
+  - cumulative runner loads from `cumulativeTargetBalances`,
+  - single-balance runner loads from `targetBalances`.
 
 ## Interactions with Other Bots and Clients
 

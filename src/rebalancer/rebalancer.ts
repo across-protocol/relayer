@@ -23,14 +23,17 @@ export interface RebalanceRoute {
   adapter: string; // Name of adapter to use for this rebalance.
 }
 
+export interface RebalancerClient {
+  getPendingRebalances(): Promise<{ [chainId: number]: { [token: string]: BigNumber } }>;
+}
+
 /**
  * @notice This class is a successor to the InventoryClient. It is in charge of rebalancing inventory of the user
  * across all chains given the current and configured target allocations.
- * @dev We might want to consider implementing different types of RebalancerClients so that its clear they can either
- * rebalance inventory or cumulative inventory, for example. This way we don't need to handle both types of 
- * RebalancerConfigs simultaneously.
+ * @dev Different concrete rebalancer clients can share this base while implementing different
+ * inventory-rebalancing modes.
  */
-export class RebalancerClient {
+export abstract class BaseRebalancerClient implements RebalancerClient {
   constructor(
     readonly logger: winston.Logger,
     readonly config: RebalancerConfig,
@@ -45,6 +48,30 @@ export class RebalancerClient {
     }
   }
 
+  abstract rebalanceInventory(...args: unknown[]): Promise<void>;
+
+  /**
+   * @notice Get all currently unfinalized rebalance amounts. Should be used to add virtual balance credits or
+   * debits for the token and chain combinations.
+   * @return Dictionary of chainId -> token -> amount where positive amounts present pending rebalance credits to that
+   * chain while negative amounts represent debits that should be subtracted from that chain's current balance.
+   */
+  async getPendingRebalances(): Promise<{ [chainId: number]: { [token: string]: BigNumber } }> {
+    const pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
+    await forEachAsync(Object.values(this.adapters), async (adapter) => {
+      const pending = await adapter.getPendingRebalances();
+      Object.entries(pending).forEach(([chainId, tokenBalance]) => {
+        Object.entries(tokenBalance).forEach(([token, amount]) => {
+          pending[chainId] ??= {};
+          pending[chainId][token] = (pending[chainId]?.[token] ?? bnZero).add(amount);
+        });
+      });
+    });
+    return pendingRebalances;
+  }
+}
+
+export class SingleBalanceRebalancerClient extends BaseRebalancerClient {
   /**
    * @notice Rebalances inventory of current balances from chains where tokens are above configured targets to
    * chains where token balances are below configured thresholds. Is unaware of cumulative balances.
@@ -55,7 +82,7 @@ export class RebalancerClient {
    * combination that has a rebalance route. A current balance entry must also be set for each target balance in the
    * client configuration.
    */
-  async rebalanceInventory(
+  override async rebalanceInventory(
     currentBalances: { [chainId: number]: { [token: string]: BigNumber } },
     maxFeePct: BigNumber
   ): Promise<void> {
@@ -82,7 +109,7 @@ export class RebalancerClient {
     });
 
     this.logger.debug({
-      at: "RebalancerClient.rebalanceInventory",
+      at: "SingleBalanceRebalancerClient.rebalanceInventory",
       message: "Available rebalance routes",
       currentBalances: Object.entries(currentBalances).map(([chainId, tokens]) => {
         return {
@@ -200,7 +227,7 @@ export class RebalancerClient {
     });
     if (sortedDeficits.length > 0) {
       this.logger.debug({
-        at: "RebalancerClient.rebalanceInventory",
+        at: "SingleBalanceRebalancerClient.rebalanceInventory",
         message: "Sorted deficits",
         deficits: sortedDeficits.map(
           (d) =>
@@ -248,7 +275,7 @@ export class RebalancerClient {
     });
     if (sortedExcesses.length > 0) {
       this.logger.debug({
-        at: "RebalancerClient.rebalanceInventory",
+        at: "SingleBalanceRebalancerClient.rebalanceInventory",
         message: "Sorted excesses",
         excesses: sortedExcesses.map(
           (e) =>
@@ -288,7 +315,7 @@ export class RebalancerClient {
       let cheapestExpectedCost = bnUint256Max;
       let matchingExcess: { chainId: number; token: string; excessAmount: BigNumber } | undefined;
       this.logger.debug({
-        at: "RebalancerClient.rebalanceInventory",
+        at: "SingleBalanceRebalancerClient.rebalanceInventory",
         message: `Filling deficit of ${deficitAmount.toString()} of ${destinationToken} on ${getNetworkName(
           destinationChainId
         )}`,
@@ -317,7 +344,7 @@ export class RebalancerClient {
             r.destinationToken === destinationToken
           ) {
             this.logger.debug({
-              at: "RebalancerClient.rebalanceInventory",
+              at: "SingleBalanceRebalancerClient.rebalanceInventory",
               message: `Evaluating excess of ${excessAmount.toString()} of ${sourceToken} on ${getNetworkName(
                 sourceChainId
               )}`,
@@ -346,7 +373,7 @@ export class RebalancerClient {
         const maxFee = deficitAmountCapped.mul(maxFeePct).div(toBNWei(100));
         if (cheapestExpectedCost.gt(maxFee)) {
           this.logger.debug({
-            at: "RebalancerClient.rebalanceInventory",
+            at: "SingleBalanceRebalancerClient.rebalanceInventory",
             message: `Cheapest expected cost ${cheapestExpectedCost.toString()} is greater than max fee ${maxFee.toString()}, exiting`,
           });
           continue;
@@ -354,7 +381,7 @@ export class RebalancerClient {
 
         // We have a matching excess now, we can exit this loop and move on to the next deficit.
         this.logger.debug({
-          at: "RebalancerClient.rebalanceInventory",
+          at: "SingleBalanceRebalancerClient.rebalanceInventory",
           message: `Using cheapest rebalance route for ${sourceToken} on ${getNetworkName(
             sourceChainId
           )} to fill the deficit of ${deficitAmount.toString()} of ${destinationToken} on ${getNetworkName(
@@ -375,7 +402,7 @@ export class RebalancerClient {
         // this deficit that also happen to have an excess on the rebalance route's source chain. In other words,
         // we can't fill this deficit so we need to move on.
         this.logger.debug({
-          at: "RebalancerClient.rebalanceInventory",
+          at: "SingleBalanceRebalancerClient.rebalanceInventory",
           message: `No excess balances with matching rebalance routes found to fill the deficit of ${deficitAmount.toString()} of ${destinationToken} on ${getNetworkName(
             destinationChainId
           )}, skipping this deficit`,
@@ -427,7 +454,9 @@ export class RebalancerClient {
       }
     }
   }
+}
 
+export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
   /**
    * @notice Rebalances cumulative balances of tokens across chains where cumulative token balances are above
    * configured targets to to tokens that have cumulative balances below configured thresholds. Tokens are sourced
@@ -436,7 +465,7 @@ export class RebalancerClient {
    * @param currentBalances Dictionary of chainId -> token -> current balance.
    * @param maxFeePct Maximum fee percentage to allow for rebalances.
    */
-  async rebalanceCumulativeInventory(
+  override async rebalanceInventory(
     cumulativeBalances: { [token: string]: BigNumber },
     currentBalances: { [chainId: number]: { [token: string]: BigNumber } },
     maxFeePct: BigNumber
@@ -464,7 +493,7 @@ export class RebalancerClient {
     });
 
     this.logger.debug({
-      at: "RebalancerClient.rebalanceCumulativeInventory",
+      at: "CumulativeBalanceRebalancerClient.rebalanceInventory",
       message: "Available rebalance routes",
       currentBalances: Object.entries(currentBalances).map(([chainId, tokens]) => {
         return {
@@ -527,7 +556,7 @@ export class RebalancerClient {
     );
     if (sortedDeficits.length > 0) {
       this.logger.debug({
-        at: "RebalancerClient.rebalanceCumulativeInventory",
+        at: "CumulativeBalanceRebalancerClient.rebalanceInventory",
         message: "Sorted deficits",
         deficits: sortedDeficits.map(
           (e) =>
@@ -553,7 +582,7 @@ export class RebalancerClient {
     );
     if (sortedExcesses.length > 0) {
       this.logger.debug({
-        at: "RebalancerClient.rebalanceCumulativeInventory",
+        at: "CumulativeBalanceRebalancerClient.rebalanceInventory",
         message: "Sorted excesses",
         excesses: sortedExcesses.map(
           (e) =>
@@ -597,7 +626,7 @@ export class RebalancerClient {
           }
         );
         this.logger.debug({
-          at: "RebalancerClient.rebalanceCumulativeInventory",
+          at: "CumulativeBalanceRebalancerClient.rebalanceInventory",
           message: `Sorted excess source chains for token ${excessToken}`,
           excessSourceChainsForToken: sortedExcessSourceChainsForToken.map(([chainId]) => {
             return {
@@ -666,7 +695,7 @@ export class RebalancerClient {
 
           if (rebalanceRoutesToEvaluate.length === 0) {
             this.logger.debug({
-              at: "RebalancerClient.rebalanceCumulativeInventory",
+              at: "CumulativeBalanceRebalancerClient.rebalanceInventory",
               message: `No rebalance routes found for ${excessToken} on ${getNetworkName(chainId)}`,
               originChain: chainId,
               allDestinationChains,
@@ -716,7 +745,7 @@ export class RebalancerClient {
           const maxFee = amountToTransferCapped.mul(maxFeePct).div(toBNWei(100));
           if (cheapestCostRoute.cost.gt(maxFee)) {
             this.logger.debug({
-              at: "RebalancerClient.rebalanceCumulativeInventory",
+              at: "CumulativeBalanceRebalancerClient.rebalanceInventory",
               message: `Cheapest expected cost ${cheapestCostRoute.cost.toString()} is greater than max fee ${maxFee.toString()}, exiting`,
             });
             continue;
@@ -747,26 +776,6 @@ export class RebalancerClient {
         }
       }
     }
-  }
-
-  /**
-   * @notice Get all currently unfinalized rebalance amounts. Should be used to add virtual balance credits or
-   * debits for the token and chain combinations.
-   * @return Dictionary of chainId -> token -> amount where positive amounts present pending rebalance credits to that
-   * chain while negative amounts represent debits that should be subtracted from that chain's current balance.
-   */
-  async getPendingRebalances(): Promise<{ [chainId: number]: { [token: string]: BigNumber } }> {
-    const pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
-    await forEachAsync(Object.values(this.adapters), async (adapter) => {
-      const pending = await adapter.getPendingRebalances();
-      Object.entries(pending).forEach(([chainId, tokenBalance]) => {
-        Object.entries(tokenBalance).forEach(([token, amount]) => {
-          pending[chainId] ??= {};
-          pending[chainId][token] = (pending[chainId]?.[token] ?? bnZero).add(amount);
-        });
-      });
-    });
-    return pendingRebalances;
   }
 }
 

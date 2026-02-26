@@ -78,10 +78,7 @@ export class RebalancerConfig extends CommonConfig {
   public maxAmountsToTransfer: MaxAmountToTransferConfig;
   public maxPendingOrders: MaxPendingOrdersConfig;
 
-  // target tokens are derived automatically as the union of all tokens present in targetBalances or
-  // cumulativeTargetBalances.
-  public targetTokens: string[];
-  // chainId's are derived automatically like targetTokens from targetBalances and cumulativeTargetBalances.
+  // chain IDs are derived automatically from targetBalances and cumulativeTargetBalances.
   public chainIds: number[];
   constructor(env: ProcessEnv) {
     const { REBALANCER_CONFIG, REBALANCER_EXTERNAL_CONFIG } = env;
@@ -110,8 +107,6 @@ export class RebalancerConfig extends CommonConfig {
     }
 
     const chainIdSet = new Set<number>();
-    const targetTokens = new Set<string>();
-
     // Parse target balances from config, converting human-readable amounts to BigNumber
     // using the token's native decimals on each chain.
     this.targetBalances = {};
@@ -145,7 +140,6 @@ export class RebalancerConfig extends CommonConfig {
             priorityTier,
           };
           chainIdSet.add(Number(chainId));
-          targetTokens.add(token);
         }
       }
     }
@@ -173,7 +167,6 @@ export class RebalancerConfig extends CommonConfig {
           toBN(thresholdBalance).lte(toBN(targetBalance)),
           `Bad config. thresholdBalance<=targetBalance for ${token} for cumulative target balance`
         );
-        targetTokens.add(token);
         Object.keys(chainConfig.chains).forEach((chainId) => {
           chainIdSet.add(Number(chainId));
         });
@@ -215,6 +208,5 @@ export class RebalancerConfig extends CommonConfig {
 
     // Derive chain IDs from the union of all chains in targetBalances.
     this.chainIds = Array.from(chainIdSet);
-    this.targetTokens = Array.from(targetTokens);
   }
 }

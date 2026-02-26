@@ -12,6 +12,7 @@ Related docs:
 Primary files:
 
 - `src/rebalancer/rebalancer.ts`
+- `src/rebalancer/index.ts`
 - `src/rebalancer/RebalancerClientHelper.ts`
 - `src/rebalancer/adapters/*`
 
@@ -24,6 +25,10 @@ The rebalancer is split into two modules with a strict interface boundary:
   - prioritize which deficits to fill first,
   - evaluate eligible routes and costs,
   - enforce global guardrails (max fee percentage, pending-order limits).
+- **Mode runner logic in `index.ts`** materializes mode-specific balance inputs:
+  - cumulative runner loads from `cumulativeTargetBalances`,
+  - single-balance runner loads from `targetBalances`,
+  - pending rebalance adjustments are applied within each runner's own balance domain.
 - **Adapter logic in `adapters/*`** chooses *how* to execute a chosen route:
   - venue-specific initiation steps,
   - lifecycle progression for in-flight swaps,
@@ -35,7 +40,7 @@ As long as adapters satisfy `RebalancerAdapter`, mode implementations can stay u
 
 ```mermaid
 flowchart TD
-  modeLogic["RebalancingModes\nrebalanceInventory + rebalanceCumulativeInventory"]
+  modeLogic["RebalancingModes\nsingle.rebalanceInventory + cumulative.rebalanceInventory"]
   routeSelection["RouteSelection\nselect source/destination + cost checks"]
   adapterInterface["RebalancerAdapterInterface\ninitializeRebalance/getEstimatedCost/etc"]
   adapterImpls["AdapterImplementations\nbinance.ts, hyperliquid.ts, ..."]
@@ -87,8 +92,13 @@ Typical contributor workflow:
 3. Add routes referencing the adapter.
 4. Ensure `getEstimatedCost`, `getPendingOrders`, and `getPendingRebalances` are production-ready.
 5. Validate that both mode entrypoints can call through interface methods without code changes:
-   - `rebalanceInventory`
-   - `rebalanceCumulativeInventory`
+   - `SingleBalanceRebalancerClient.rebalanceInventory`
+   - `CumulativeBalanceRebalancerClient.rebalanceInventory`
+
+Operational runner defaults:
+
+- `runCumulativeBalanceRebalancer` is the supported runtime entrypoint.
+- `runSingleBalanceRebalancer` is exported for testing-only workflows.
 
 ## When mode changes are actually required
 

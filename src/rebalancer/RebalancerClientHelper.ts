@@ -3,10 +3,22 @@ import { BinanceStablecoinSwapAdapter } from "./adapters/binance";
 import { CctpAdapter } from "./adapters/cctpAdapter";
 import { HyperliquidStablecoinSwapAdapter } from "./adapters/hyperliquid";
 import { OftAdapter } from "./adapters/oftAdapter";
-import { RebalancerAdapter, RebalancerClient, RebalanceRoute } from "./rebalancer";
+import {
+  CumulativeBalanceRebalancerClient,
+  RebalancerAdapter,
+  RebalanceRoute,
+  SingleBalanceRebalancerClient,
+} from "./rebalancer";
 import { RebalancerConfig } from "./RebalancerConfig";
 
-export async function constructRebalancerClient(logger: winston.Logger, baseSigner: Signer): Promise<RebalancerClient> {
+function constructRebalancerDependencies(
+  logger: winston.Logger,
+  baseSigner: Signer
+): {
+  rebalancerConfig: RebalancerConfig;
+  adapters: { [name: string]: RebalancerAdapter };
+  rebalanceRoutes: RebalanceRoute[];
+} {
   const rebalancerConfig = new RebalancerConfig(process.env);
 
   // Construct adapters:
@@ -72,11 +84,46 @@ export async function constructRebalancerClient(logger: winston.Logger, baseSign
   for (const adapterName of adapterNames) {
     adapters[adapterName] = adapterMap[adapterName];
   }
-  const rebalancerClient = new RebalancerClient(logger, rebalancerConfig, adapters, rebalanceRoutes, baseSigner);
+  return { rebalancerConfig, adapters, rebalanceRoutes };
+}
+
+export async function constructCumulativeBalanceRebalancerClient(
+  logger: winston.Logger,
+  baseSigner: Signer
+): Promise<CumulativeBalanceRebalancerClient> {
+  const { rebalancerConfig, adapters, rebalanceRoutes } = constructRebalancerDependencies(logger, baseSigner);
+  const rebalancerClient = new CumulativeBalanceRebalancerClient(
+    logger,
+    rebalancerConfig,
+    adapters,
+    rebalanceRoutes,
+    baseSigner
+  );
   await rebalancerClient.initialize();
   logger.debug({
-    at: "RebalancerClientHelper.constructRebalancerClient",
-    message: "RebalancerClient initialized",
+    at: "RebalancerClientHelper.constructCumulativeBalanceRebalancerClient",
+    message: "CumulativeBalanceRebalancerClient initialized",
+    rebalancerConfig,
+  });
+  return rebalancerClient;
+}
+
+export async function constructSingleBalanceRebalancerClient(
+  logger: winston.Logger,
+  baseSigner: Signer
+): Promise<SingleBalanceRebalancerClient> {
+  const { rebalancerConfig, adapters, rebalanceRoutes } = constructRebalancerDependencies(logger, baseSigner);
+  const rebalancerClient = new SingleBalanceRebalancerClient(
+    logger,
+    rebalancerConfig,
+    adapters,
+    rebalanceRoutes,
+    baseSigner
+  );
+  await rebalancerClient.initialize();
+  logger.debug({
+    at: "RebalancerClientHelper.constructSingleBalanceRebalancerClient",
+    message: "SingleBalanceRebalancerClient initialized",
     rebalancerConfig,
   });
   return rebalancerClient;
