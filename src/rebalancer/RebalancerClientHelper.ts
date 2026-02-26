@@ -79,13 +79,7 @@ function constructRebalancerDependencies(
     }
   }
 
-  // Pass in adapters that are used in at least one rebalance route:
-  const adapterNames = new Set<string>(rebalanceRoutes.map((route) => route.adapter));
-  const adapters: { [name: string]: RebalancerAdapter } = {};
-  for (const adapterName of adapterNames) {
-    adapters[adapterName] = adapterMap[adapterName];
-  }
-  return { rebalancerConfig, adapters, rebalanceRoutes };
+  return { rebalancerConfig, adapters: adapterMap, rebalanceRoutes };
 }
 
 export async function constructCumulativeBalanceRebalancerClient(
