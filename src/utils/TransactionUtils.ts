@@ -6,6 +6,7 @@ import {
   Contract,
   isDefined,
   TransactionResponse,
+  TransactionReceipt,
   ethers,
   getContractInfoFromAddress,
   Signer,
@@ -207,4 +208,28 @@ export async function dispatchTransaction(
   }
 
   return dispatcher.dispatch(transaction, transaction.contract, transaction.contract.provider);
+}
+
+/**
+ * Submits a transaction (via submitTransaction or dispatchTransaction), awaits the receipt, and returns it.
+ * Ensures ensureConfirmation is true on the tx. On failure catches errors and returns undefined; callers should
+ * check with isDefined(receipt) and log a warning.
+ */
+export async function sendAndConfirmTransaction(
+  tx: AugmentedTransaction,
+  transactionClient: TransactionClient,
+  useDispatcher = false
+): Promise<TransactionReceipt | undefined> {
+  const txWithConfirmation: AugmentedTransaction = { ...tx, ensureConfirmation: true };
+  try {
+    const txResponse = useDispatcher
+      ? await dispatchTransaction(txWithConfirmation, transactionClient)
+      : await submitTransaction(txWithConfirmation, transactionClient);
+    if (!txResponse) {
+      return undefined;
+    }
+    return txResponse.wait();
+  } catch {
+    return undefined;
+  }
 }

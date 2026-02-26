@@ -1,6 +1,21 @@
 import winston from "winston";
 import { DepositAddressHandlerConfig } from "./DepositAddressHandlerConfig";
-import { getRedisCache, isDefined, Signer, scheduleTask, Provider, EvmAddress, InstanceCoordinator } from "../utils";
+import {
+  getRedisCache,
+  isDefined,
+  Signer,
+  scheduleTask,
+  Provider,
+  EvmAddress,
+  InstanceCoordinator,
+  forEachAsync,
+  getProvider,
+  Contract,
+  sendAndConfirmTransaction,
+  getCounterfactualDepositFactory,
+  buildDeployTx,
+  getDepositKey,
+} from "../utils";
 import { DepositAddressMessage } from "../interfaces";
 import { AcrossSwapApiClient, TransactionClient } from "../clients";
 import { AcrossIndexerApiClient } from "../clients/AcrossIndexerApiClient";
@@ -19,6 +34,11 @@ export class DepositAddressHandler {
   private initialized = false;
 
   private providersByChain: { [chainId: number]: Provider } = {};
+
+  private counterfactualDepositFactories: { [chainId: number]: Contract } = {};
+
+  /** Per chainId: set of deposit keys already executed (like gasless depositNonces). */
+  private observedExecutedDeposits: { [chainId: number]: Set<string> } = {};
 
   private api: AcrossSwapApiClient;
   private indexerApi: AcrossIndexerApiClient;
@@ -70,6 +90,13 @@ export class DepositAddressHandler {
       this.abortController.abort();
     });
 
+    await forEachAsync(this.config.relayerOriginChains, async (chainId) => {
+      const provider = await getProvider(chainId);
+      this.providersByChain[chainId] = provider;
+      this.counterfactualDepositFactories[chainId] = getCounterfactualDepositFactory(chainId).connect(provider);
+      this.observedExecutedDeposits[chainId] = new Set<string>();
+    });
+
     // Establish a new bot instance.
     this.instanceCoordinator = new InstanceCoordinator(
       this.logger,
@@ -104,8 +131,84 @@ export class DepositAddressHandler {
   }
 
   private async evaluateDepositAddresses(): Promise<void> {
-    // @TODO: Implement deposit addresses evaluation logic.
-    // const depositAddresses = await this._queryIndexerApi();
+    // @TODO: This is just initial implementation. We will need to add more logic to it when Indexer and Swap API Endpoints are implemented.
+    const depositMessages = await this._queryIndexerApi();
+    const filtered = depositMessages.filter((m) =>
+      this.config.relayerOriginChains.includes(Number(m.routeParams.originChainId))
+    );
+    await forEachAsync(filtered, async (depositMessage) => {
+      await this.initiateDeposit(depositMessage);
+    });
+  }
+
+  private async initiateDeposit(depositMessage: DepositAddressMessage): Promise<void> {
+    const originChainId = Number(depositMessage.routeParams.originChainId);
+    const depositKey = getDepositKey(depositMessage);
+    if (this.observedExecutedDeposits[originChainId]?.has(depositKey)) {
+      return;
+    }
+
+    this.observedExecutedDeposits[originChainId].add(depositKey);
+
+    let factoryContract = this.counterfactualDepositFactories[originChainId];
+    if (!factoryContract) {
+      this.logger.debug({
+        at: "DepositAddressHandler#initiateDeposit",
+        message: "No counterfactual deposit factory for chain; skipping",
+        originChainId,
+      });
+      return;
+    }
+
+    // Transaction input (calldata) directly from Swap API.
+    const executeTxInput = await this._getSwapApiQuote(depositMessage);
+    // This is here because of the lint error.
+    void executeTxInput;
+
+    const useDispatcher = this.depositAddressSigners.length > 0;
+    if (!useDispatcher) {
+      factoryContract = factoryContract.connect(this.baseSigner.connect(this.providersByChain[originChainId]));
+    }
+
+    if (depositMessage.salt) {
+      const deployTx = buildDeployTx(
+        factoryContract,
+        originChainId,
+        depositMessage.depositAddress,
+        depositMessage.routeParams,
+        depositMessage.salt
+      );
+      const deployReceipt = await sendAndConfirmTransaction(deployTx, this.transactionClient, useDispatcher);
+      if (!isDefined(deployReceipt)) {
+        this.observedExecutedDeposits[originChainId].delete(depositKey);
+        this.logger.warn({
+          at: "DepositAddressHandler#initiateDeposit",
+          message: "Failed to submit deploy tx",
+          depositKey,
+        });
+        return;
+      }
+    }
+
+    // @TODO: Implement sending the execute tx from the calldata we got from the Swap API.
+    // const receipt = await submitAndWaitForReceipt(
+    //   executeTx,
+    //   this.transactionClient,
+    //   this.logger,
+    //   "DepositAddressHandler#initiateDeposit",
+    //   useDispatcher
+    // );
+
+    // This is here because of the lint error.
+    let receipt;
+    if (!receipt) {
+      this.logger.warn({
+        at: "DepositAddressHandler#initiateDeposit",
+        message: "Failed to submit execute tx",
+        depositKey,
+      });
+      return;
+    }
   }
 
   /*
@@ -119,11 +222,17 @@ export class DepositAddressHandler {
         {}
       );
     } catch {
-      // Error log should have been emitted in AcrossSwapApiClient.
+      // Error log should have been emitted in IndexerApiClient.
     }
     if (!isDefined(apiResponseData)) {
       return retriesRemaining > 0 ? this._queryIndexerApi(--retriesRemaining) : [];
     }
     return apiResponseData.depositAddresses;
+  }
+
+  private async _getSwapApiQuote(depositMessage: DepositAddressMessage): Promise<string> {
+    // TODO: Implement this.
+    void depositMessage;
+    return "";
   }
 }
