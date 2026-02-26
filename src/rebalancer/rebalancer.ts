@@ -438,26 +438,6 @@ export class RebalancerClient {
     currentBalances: { [chainId: number]: { [token: string]: BigNumber } },
     maxFeePct: BigNumber
   ): Promise<void> {
-    // Determine if cumulative balances are less than cumulative thresholds, if they are we aim to restore the cumulative
-    // balance by swapping tokens that have excess cumulative balances into the target token.
-    // We'll swap excess balances from lowest priority to highest priority and then from largest excess to smallest.
-
-    // First find tokens with cumulative balance deficit.
-
-    // Next find tokens with cumulative balance excess.
-
-    // Sort deficits by size and priority. Note this only works if L1 token decimals for all tokens are the same and they are valued
-    // roughly the same, so this works for stablecoins basically but would need to be changed if we want to handle WETH
-    // versus USDC/USDT rebalances in the same config. Deficits is ranked from highest to lowest.
-
-    // Sort excesses by size and by priority. Excesses are ranked from highest to lowest.
-
-    // For each deficit, find the first excess balance that can cover it.
-    // Now, go through the excess token's chains. Prefer chains with lower priority tiers and with higher
-    // current balances. Set amount to fill equal to maximum of maxAmountToTransfer and deficit. Stop once enough
-    // current balance has accumulated to fill the amount to fill. Figure out estimated costs for each transfer. Sum
-    // up estimated fees. Check if total estimated fee is below maxFeePct.
-
     // Assert invariants:
 
     // - Assert that each target balance has a corresponding cumulative balance.
@@ -469,7 +449,7 @@ export class RebalancerClient {
       );
     }
 
-    // - Assert that the list of available rebalance routes connects tokens that are configured in current balances
+    // - Pick the list of available rebalance routes as those that connect tokens that are configured in current balances
     // and the cumulative rebalance chain list.
     const availableRebalanceRoutes = this.rebalanceRoutes.filter((route) => {
       return (
@@ -512,6 +492,8 @@ export class RebalancerClient {
 
     // Identify all tokens with cumulative balance deficits and sort them by size, assuming that 1 unit of each token
     // is worth the same amount of USD. Deficits are ranked from most negative to least.
+    // @todo We would need to change this logic if we accept the user setting targets for tokens that are not all
+    // stablecoins.
     const sortedDeficits: { token: string; deficitAmount: BigNumber }[] = [];
     const sortedExcesses: { token: string; excessAmount: BigNumber }[] = [];
     for (const [token, cumulativeBalance] of Object.entries(cumulativeBalances)) {
@@ -649,25 +631,11 @@ export class RebalancerClient {
             ? excessRemainingConverted
             : amountToTransferCapped;
 
-          // @todo Decide which destination chain to use. For now, just swap in-place on the same chain.
-          // Maybe take the highest priority chain out of the configured rebalance chains for the deficit token?
-          // Order destination chains by priority from highest to lowest, and then chain balance highest to lowest.
-          const allDestinationChains = Object.entries(cumulativeTargetBalances[deficitToken].chains)
-            .sort(([chainIdA, priorityTierA], [chainIdB, priorityTierB]) => {
-              if (priorityTierA !== priorityTierB) {
-                return priorityTierB - priorityTierA;
-              }
-              const tokenDecimalsA = getTokenInfoFromSymbol(deficitToken, Number(chainIdA)).decimals;
-              const tokenDecimalsB = getTokenInfoFromSymbol(deficitToken, Number(chainIdB)).decimals;
-              const amountConverter = ConvertDecimals(tokenDecimalsA, tokenDecimalsB);
-              const currentBalanceA = amountConverter(currentBalances[chainIdA][deficitToken]);
-              const currentBalanceB = currentBalances[chainIdB][deficitToken];
-              if (currentBalanceA.eq(currentBalanceB)) {
-                return 0;
-              }
-              return currentBalanceA.gt(currentBalanceB) ? -1 : 1;
-            })
-            .map(([chainId]) => Number(chainId));
+          // To determine which destination chain to receive the deficit token on, we check the estimated cost
+          // for all possible destination chains and then select the chain with the lowest estimated cost.
+          const allDestinationChains = Object.entries(cumulativeTargetBalances[deficitToken].chains).map(([chainId]) =>
+            Number(chainId)
+          );
           const rebalanceRoutesToEvaluate: RebalanceRoute[] = [];
           await forEachAsync(availableRebalanceRoutes, async (route) => {
             const pendingOrders = await this.adapters[route.adapter].getPendingOrders();

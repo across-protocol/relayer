@@ -1,8 +1,3 @@
-/**
- * @notice This file is not designed to be run in production. I have been using it as an entrypoint to test out the
- * main `RebalancerClient` logic.
- */
-
 import { updateSpokePoolClients } from "../common";
 import { constructRelayerClients } from "../relayer/RelayerClientHelper";
 import { RelayerConfig } from "../relayer/RelayerConfig";
@@ -78,13 +73,15 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
 
   // Set current balances for all tokens and chains:
   const currentBalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
-  const allTokens = Object.keys(rebalancerConfig.targetBalances).concat(
-    Object.keys(rebalancerConfig.cumulativeTargetBalances)
+  const allTokens = new Set(
+    Object.keys(rebalancerConfig.targetBalances).concat(Object.keys(rebalancerConfig.cumulativeTargetBalances))
   );
   for (const token of allTokens) {
     const l1TokenInfo = getTokenInfoFromSymbol(token, CHAIN_IDs.MAINNET);
-    const allChains = Object.keys(rebalancerConfig.targetBalances?.[token] ?? {}).concat(
-      Object.keys(rebalancerConfig.cumulativeTargetBalances?.[token]?.chains ?? {})
+    const allChains = new Set(
+      Object.keys(rebalancerConfig.targetBalances?.[token] ?? {}).concat(
+        Object.keys(rebalancerConfig.cumulativeTargetBalances?.[token]?.chains ?? {})
+      )
     );
     for (const chainId of allChains) {
       const l2TokenInfo = getTokenInfoFromSymbol(token, Number(chainId));
@@ -131,8 +128,8 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
       for (const chainId of Object.keys(chainConfig)) {
         const pendingRebalanceAmount = pendingRebalances[chainId]?.[token] ?? bnZero;
         currentBalances[chainId] ??= {};
-        currentBalances[chainId][token] = currentBalances[chainId][token].add(pendingRebalanceAmount);
-        cumulativeBalances[token] = cumulativeBalances[token].add(pendingRebalanceAmount);
+        currentBalances[chainId][token] = (currentBalances[chainId][token] ?? bnZero).add(pendingRebalanceAmount);
+        cumulativeBalances[token] = (cumulativeBalances[token] ?? bnZero).add(pendingRebalanceAmount);
         if (!pendingRebalanceAmount.eq(bnZero)) {
           logger.debug({
             at: "index.ts:runRebalancer",

@@ -81,7 +81,7 @@ export class RebalancerConfig extends CommonConfig {
   // target tokens are derived automatically as the union of all tokens present in targetBalances or
   // cumulativeTargetBalances.
   public targetTokens: string[];
-  // chainId's are derived automatically like targetTokens.
+  // chainId's are derived automatically like targetTokens from targetBalances and cumulativeTargetBalances.
   public chainIds: number[];
   constructor(env: ProcessEnv) {
     const { REBALANCER_CONFIG, REBALANCER_EXTERNAL_CONFIG } = env;
