@@ -9,6 +9,7 @@ import {
   disconnectRedisClients,
   EvmAddress,
   getTokenInfoFromSymbol,
+  isDefined,
   Signer,
   toBNWei,
   winston,
@@ -179,12 +180,12 @@ async function applyPendingRebalanceAdjustments(
 
     for (const [chainId, tokens] of Object.entries(pendingRebalances)) {
       for (const [token, amount] of Object.entries(tokens)) {
-        if (!Object.prototype.hasOwnProperty.call(currentBalances[chainId] ?? {}, token)) {
+        if (!isDefined(currentBalances[chainId]?.[token])) {
           continue;
         }
         const pendingRebalanceAmount = amount ?? bnZero;
         currentBalances[chainId][token] = currentBalances[chainId][token].add(pendingRebalanceAmount);
-        if (cumulativeBalances && Object.prototype.hasOwnProperty.call(cumulativeBalances, token)) {
+        if (cumulativeBalances && isDefined(cumulativeBalances[token])) {
           // Convert pending rebalance amount to L1 token decimals
           const l1TokenInfo = getTokenInfoFromSymbol(token, rebalancerConfig.hubPoolChainId);
           const chainDecimals = getTokenInfoFromSymbol(token, Number(chainId)).decimals;
