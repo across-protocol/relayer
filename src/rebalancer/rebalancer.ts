@@ -69,6 +69,26 @@ export abstract class BaseRebalancerClient implements RebalancerClient {
     });
     return pendingRebalances;
   }
+
+  protected async getAvailableAdapters(): Promise<string[]> {
+    // Check if there are already too many pending orders for this adapter.
+    const availableAdapters: Set<string> = new Set();
+    for (const adapter of Object.keys(this.adapters)) {
+      const pendingOrders = await this.adapters[adapter].getPendingOrders();
+      const maxPendingOrdersForAdapter = this.config.maxPendingOrders[adapter] ?? 2; // @todo Default low for now,
+      // eventually change this to a very high default value.
+      if (pendingOrders.length < maxPendingOrdersForAdapter) {
+        availableAdapters.add(adapter);
+      } else {
+        this.logger.debug({
+          at: "RebalanceClient.rebalanceInventory",
+          message: `Too many pending orders (${pendingOrders.length}) for ${adapter} adapter, rejecting new rebalances`,
+          maxPendingOrdersForAdapter,
+        });
+      }
+    }
+    return Array.from(availableAdapters);
+  }
 }
 
 export class ReadOnlyRebalancerClient extends BaseRebalancerClient {
@@ -325,6 +345,18 @@ export class SingleBalanceRebalancerClient extends BaseRebalancerClient {
           destinationChainId
         )}`,
       });
+
+      const availableAdapters = await this.getAvailableAdapters();
+      if (availableAdapters.length === 0) {
+        // We break here rather than continue because we assume that pending orders cannot progress while we're
+        // in this function.
+        this.logger.debug({
+          at: "SingleBalanceRebalancerClient.rebalanceInventory",
+          message: "No available adapters to fill deficits",
+        });
+        break;
+      }
+
       for (let i = 0; i < sortedExcesses.length; i++) {
         const excess = sortedExcesses[i];
         const { chainId: sourceChainId, token: sourceToken, excessAmount } = excess;
@@ -343,6 +375,7 @@ export class SingleBalanceRebalancerClient extends BaseRebalancerClient {
 
         await forEachAsync(this.rebalanceRoutes, async (r) => {
           if (
+            availableAdapters.includes(r.adapter) &&
             r.sourceChain === sourceChainId &&
             r.sourceToken === sourceToken &&
             r.destinationChain === destinationChainId &&
@@ -429,20 +462,6 @@ export class SingleBalanceRebalancerClient extends BaseRebalancerClient {
         deficitAmount
       );
       const amountToTransfer = deficitAmountCapped.add(cheapestExpectedCost);
-
-      // Check if there are already too many pending orders for this adapter.
-      const pendingOrders = await this.adapters[adapter].getPendingOrders();
-      const pendingOrderCapForAdapter = this.config.maxPendingOrders[adapter] ?? 2; // @todo Default low for now,
-      // eventually change this to a very high default value.
-      if (pendingOrders.length >= pendingOrderCapForAdapter) {
-        this.logger.debug({
-          at: "RebalanceClient.rebalanceInventory",
-          message: `Too many pending orders (${pendingOrders.length}) for ${adapter} adapter, skipping rebalance`,
-          pendingOrderCapForAdapter,
-        });
-        continue;
-      }
-
       // Initiate a new rebalance
       this.logger.debug({
         at: "RebalanceClient.rebalanceInventory",
@@ -648,6 +667,17 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
             break;
           }
 
+          const availableAdapters = await this.getAvailableAdapters();
+          if (availableAdapters.length === 0) {
+            // We break here rather than continue because we assume that pending orders cannot progress while we're
+            // in this function.
+            this.logger.debug({
+              at: "CumulativeBalanceRebalancerClient.rebalanceInventory",
+              message: "No more available adapters to fill deficits",
+            });
+            break;
+          }
+
           const l1TokenDecimals = getTokenInfoFromSymbol(excessToken, this.config.hubPoolChainId).decimals;
           const chainDecimals = getTokenInfoFromSymbol(excessToken, Number(chainId)).decimals;
           const l1ToChainConverter = ConvertDecimals(l1TokenDecimals, chainDecimals);
@@ -674,15 +704,10 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
             Number(chainId)
           );
           const rebalanceRoutesToEvaluate: RebalanceRoute[] = [];
-          await forEachAsync(availableRebalanceRoutes, async (route) => {
-            const pendingOrders = await this.adapters[route.adapter].getPendingOrders();
-            const pendingOrderCapForAdapter = this.config.maxPendingOrders[route.adapter] ?? 2; // @todo Default low for now,
-            // eventually change this to a very high default value.
-            if (pendingOrders.length >= pendingOrderCapForAdapter) {
-              return;
-            }
+          for (const route of availableRebalanceRoutes) {
             allDestinationChains.forEach((destinationChain) => {
               if (
+                availableAdapters.includes(route.adapter) &&
                 route.sourceChain === Number(chainId) &&
                 route.sourceToken === excessToken &&
                 route.destinationChain === destinationChain &&
@@ -691,7 +716,7 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
                 rebalanceRoutesToEvaluate.push(route);
               }
             });
-          });
+          }
 
           if (rebalanceRoutesToEvaluate.length === 0) {
             this.logger.debug({
