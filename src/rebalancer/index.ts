@@ -2,6 +2,7 @@ import { updateSpokePoolClients } from "../common";
 import { constructRelayerClients } from "../relayer/RelayerClientHelper";
 import { RelayerConfig } from "../relayer/RelayerConfig";
 import {
+  assert,
   BigNumber,
   bnZero,
   config,
@@ -106,13 +107,11 @@ function loadSingleModeCurrentBalances(
   const currentBalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
   for (const [token, chainConfig] of Object.entries(rebalancerConfig.targetBalances)) {
     const l1TokenInfo = getTokenInfoFromSymbol(token, rebalancerConfig.hubPoolChainId);
+    assert(l1TokenInfo.address.isEVM());
     for (const chainId of Object.keys(chainConfig)) {
       const l2TokenInfo = getTokenInfoFromSymbol(token, Number(chainId));
-      const currentBalance = inventoryClient.getChainBalance(
-        Number(chainId),
-        EvmAddress.from(l1TokenInfo.address.toNative()),
-        EvmAddress.from(l2TokenInfo.address.toNative())
-      );
+      assert(l2TokenInfo.address.isEVM());
+      const currentBalance = inventoryClient.getChainBalance(Number(chainId), l1TokenInfo.address, l2TokenInfo.address);
       const convertDecimalsToSourceChain = ConvertDecimals(l1TokenInfo.decimals, l2TokenInfo.decimals);
       currentBalances[chainId] ??= {};
       currentBalances[chainId][token] = convertDecimalsToSourceChain(currentBalance);
@@ -132,13 +131,11 @@ function loadCumulativeModeBalances(
   const cumulativeBalances: { [token: string]: BigNumber } = {};
   for (const [token, chainConfig] of Object.entries(rebalancerConfig.cumulativeTargetBalances)) {
     const l1TokenInfo = getTokenInfoFromSymbol(token, rebalancerConfig.hubPoolChainId);
+    assert(l1TokenInfo.address.isEVM());
     for (const chainId of Object.keys(chainConfig.chains)) {
       const l2TokenInfo = getTokenInfoFromSymbol(token, Number(chainId));
-      const currentBalance = inventoryClient.getChainBalance(
-        Number(chainId),
-        EvmAddress.from(l1TokenInfo.address.toNative()),
-        EvmAddress.from(l2TokenInfo.address.toNative())
-      );
+      assert(l2TokenInfo.address.isEVM());
+      const currentBalance = inventoryClient.getChainBalance(Number(chainId), l1TokenInfo.address, l2TokenInfo.address);
       const convertDecimalsToSourceChain = ConvertDecimals(l1TokenInfo.decimals, l2TokenInfo.decimals);
       currentBalances[chainId] ??= {};
       currentBalances[chainId][token] = convertDecimalsToSourceChain(currentBalance);
