@@ -700,16 +700,21 @@ export interface RebalancerAdapter {
   getEstimatedCost(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber, debugLog: boolean): Promise<BigNumber>;
 }
 
-type ExcessOrDeficit = { token: string; chainId: number; amount: BigNumber; priorityTier: number };
+export type ExcessOrDeficit = { token: string; chainId: number; amount: BigNumber; priorityTier: number };
+type TokenInfoResolver = typeof getTokenInfoFromSymbol;
 // Excesses are always sorted in priority from lowest to highest and then by amount from largest to smallest.
-function sortExcessFunction(excessA: ExcessOrDeficit, excessB: ExcessOrDeficit): number {
+export function sortExcessFunction(
+  excessA: ExcessOrDeficit,
+  excessB: ExcessOrDeficit,
+  tokenInfoResolver: TokenInfoResolver = getTokenInfoFromSymbol
+): number {
   const { token: tokenA, amount: amountA, priorityTier: priorityTierA, chainId: chainIdA } = excessA;
   const { token: tokenB, amount: amountB, priorityTier: priorityTierB, chainId: chainIdB } = excessB;
   if (priorityTierA !== priorityTierB) {
     return priorityTierA - priorityTierB;
   }
-  const tokenADecimals = getTokenInfoFromSymbol(tokenA, Number(chainIdA)).decimals;
-  const tokenBDecimals = getTokenInfoFromSymbol(tokenB, Number(chainIdB)).decimals;
+  const tokenADecimals = tokenInfoResolver(tokenA, Number(chainIdA)).decimals;
+  const tokenBDecimals = tokenInfoResolver(tokenB, Number(chainIdB)).decimals;
   const converter = ConvertDecimals(tokenADecimals, tokenBDecimals);
   if (converter(amountA).eq(amountB)) {
     return 0;
@@ -717,14 +722,18 @@ function sortExcessFunction(excessA: ExcessOrDeficit, excessB: ExcessOrDeficit):
   return converter(amountA).gt(amountB) ? -1 : 1;
 }
 // Deficits are always sorted in priority from highest to lowest and then by amount from largest to smallest.
-function sortDeficitFunction(deficitA: ExcessOrDeficit, deficitB: ExcessOrDeficit): number {
+export function sortDeficitFunction(
+  deficitA: ExcessOrDeficit,
+  deficitB: ExcessOrDeficit,
+  tokenInfoResolver: TokenInfoResolver = getTokenInfoFromSymbol
+): number {
   const { token: tokenA, amount: amountA, priorityTier: priorityTierA, chainId: chainIdA } = deficitA;
   const { token: tokenB, amount: amountB, priorityTier: priorityTierB, chainId: chainIdB } = deficitB;
   if (priorityTierA !== priorityTierB) {
     return priorityTierB - priorityTierA;
   }
-  const tokenADecimals = getTokenInfoFromSymbol(tokenA, Number(chainIdA)).decimals;
-  const tokenBDecimals = getTokenInfoFromSymbol(tokenB, Number(chainIdB)).decimals;
+  const tokenADecimals = tokenInfoResolver(tokenA, Number(chainIdA)).decimals;
+  const tokenBDecimals = tokenInfoResolver(tokenB, Number(chainIdB)).decimals;
   const converter = ConvertDecimals(tokenADecimals, tokenBDecimals);
   if (converter(amountA).eq(amountB)) {
     return 0;
