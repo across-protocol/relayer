@@ -679,11 +679,6 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
             const pendingOrderCapForAdapter = this.config.maxPendingOrders[route.adapter] ?? 2; // @todo Default low for now,
             // eventually change this to a very high default value.
             if (pendingOrders.length >= pendingOrderCapForAdapter) {
-              this.logger.debug({
-                at: "RebalanceClient.rebalanceCumulativeInventory",
-                message: `Too many pending orders (${pendingOrders.length}) for ${route.adapter} adapter, skipping rebalance`,
-                pendingOrderCapForAdapter,
-              });
               return;
             }
             allDestinationChains.forEach((destinationChain) => {

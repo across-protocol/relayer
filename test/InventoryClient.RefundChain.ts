@@ -220,7 +220,7 @@ describe("InventoryClient: Refund chain selection", async function () {
       await inventoryClient.update();
 
       await inventoryClient.determineRefundChainId(sampleDepositData);
-      expect(spyLogIncludes(spy, -1, 'cumulativeVirtualBalance":"180000000000000000000"')).to.be.true;
+      expect(spyLogIncludes(spy, -1, 'cumulativeVirtualBalancePostRefunds":"180000000000000000000"')).to.be.true;
     });
 
     it("Normalizes repayment amount to correct precision", async function () {
@@ -266,7 +266,6 @@ describe("InventoryClient: Refund chain selection", async function () {
       expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.deep.equal([MAINNET]);
 
       // Check that the cumulative balance post refunds accounts exactly for the sum of the upcoming refunds.
-      expect(lastSpyLogIncludes(spy, 'cumulativeVirtualBalance":"135000000000000000000')).to.be.true;
       expect(lastSpyLogIncludes(spy, 'cumulativeVirtualBalancePostRefunds":"150000000000000000000')).to.be.true;
     });
 

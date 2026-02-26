@@ -152,6 +152,7 @@ function loadCumulativeModeBalances(
 }
 
 async function applyPendingRebalanceAdjustments(
+  rebalancerConfig: RebalancerConfig,
   adaptersToUpdate: Set<RebalancerAdapter>,
   currentBalances: { [chainId: number]: { [token: string]: BigNumber } },
   logLabel: string,
@@ -184,7 +185,12 @@ async function applyPendingRebalanceAdjustments(
         const pendingRebalanceAmount = amount ?? bnZero;
         currentBalances[chainId][token] = currentBalances[chainId][token].add(pendingRebalanceAmount);
         if (cumulativeBalances && Object.prototype.hasOwnProperty.call(cumulativeBalances, token)) {
-          cumulativeBalances[token] = cumulativeBalances[token].add(pendingRebalanceAmount);
+          // Convert pending rebalance amount to L1 token decimals
+          const l1TokenInfo = getTokenInfoFromSymbol(token, rebalancerConfig.hubPoolChainId);
+          const chainDecimals = getTokenInfoFromSymbol(token, Number(chainId)).decimals;
+          const chainToL1Converter = ConvertDecimals(chainDecimals, l1TokenInfo.decimals);
+          const pendingRebalanceAmountConverted = chainToL1Converter(pendingRebalanceAmount);
+          cumulativeBalances[token] = cumulativeBalances[token].add(pendingRebalanceAmountConverted);
         }
 
         if (!pendingRebalanceAmount.eq(bnZero)) {
@@ -211,7 +217,13 @@ export async function runCumulativeBalanceRebalancer(_logger: winston.Logger, ba
     "cumulative"
   );
   const { currentBalances, cumulativeBalances } = loadCumulativeModeBalances(rebalancerConfig, inventoryClient);
-  await applyPendingRebalanceAdjustments(adaptersToUpdate, currentBalances, logLabel, cumulativeBalances);
+  await applyPendingRebalanceAdjustments(
+    rebalancerConfig,
+    adaptersToUpdate,
+    currentBalances,
+    logLabel,
+    cumulativeBalances
+  );
 
   let timerStart = performance.now();
   // Finally, send out new rebalances:
@@ -255,7 +267,7 @@ export async function runSingleBalanceRebalancer(_logger: winston.Logger, baseSi
     "single"
   );
   const currentBalances = loadSingleModeCurrentBalances(rebalancerConfig, inventoryClient);
-  await applyPendingRebalanceAdjustments(adaptersToUpdate, currentBalances, logLabel);
+  await applyPendingRebalanceAdjustments(rebalancerConfig, adaptersToUpdate, currentBalances, logLabel);
 
   let timerStart = performance.now();
   try {
