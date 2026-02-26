@@ -35,8 +35,8 @@ export {
   TOKEN_EQUIVALENCE_REMAPPING,
 } from "@across-protocol/constants";
 
-// TypeChain exports used in the bot.
 export { getContractInfoFromAddress, getDeployedAddress, getDeployedBlockNumber } from "@across-protocol/contracts";
+// TypeChain exports used in the bot.
 export {
   ExpandedERC20__factory as ERC20,
   HubPool__factory as HubPool,
