@@ -473,7 +473,7 @@ export class SingleBalanceRebalancerClient extends BaseRebalancerClient {
         expectedFees: cheapestExpectedCost.toString(),
       });
 
-      if (process.env.SEND_TRANSACTIONS === "true") {
+      if (this.config.sendingTransactionsEnabled) {
         await this.adapters[adapter].initializeRebalance(rebalanceRouteToUse, amountToTransfer);
       }
     }
@@ -792,7 +792,7 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
             deficitRemaining: deficitRemaining.toString(),
           });
 
-          if (process.env.SEND_TRANSACTIONS === "true") {
+          if (this.config.sendingTransactionsEnabled) {
             await this.adapters[cheapestCostRoute.route.adapter].initializeRebalance(
               cheapestCostRoute.route,
               amountToTransferCapped

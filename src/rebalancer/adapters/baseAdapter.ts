@@ -171,7 +171,7 @@ export abstract class BaseAdapter implements RebalancerAdapter {
       }
     });
 
-    const simMode = process.env.SEND_TRANSACTIONS !== "true";
+    const simMode = !this.config.sendingTransactionsEnabled;
     await this.multicallerClient.executeTxnQueues(simMode);
     this.initialized = true;
     return;
