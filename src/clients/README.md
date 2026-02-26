@@ -20,6 +20,8 @@ The InventoryClient is designed to track inventory across chains, which are actu
 
 The InventoryClient exposes functions that let other bots like the `Relayer` and `RebalancerClient` know its latest calculation of virtual chain balances for a particular token.
 
+In addition to chain-level virtual balances, InventoryClient exposes cumulative token-level balance context via `getCumulativeBalanceWithApproximateUpcomingRefunds()`. The Rebalancer uses this to evaluate cumulative deficits and excesses when running cumulative inventory rebalancing.
+
 ### Determining Refund Chain for Deposit
 
 Another important function of the InventoryClient is to choose where a relayer should get repaid for filling a particular deposit, which is purely a function of the user's configured "ideal" inventory across chains (i.e. defined in the `InventoryConfig`) and how the inventory state would look like post-filling the deposit.
