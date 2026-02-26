@@ -163,100 +163,50 @@ export class SingleBalanceRebalancerClient extends BaseRebalancerClient {
     });
 
     // Identify list of source chains that have excess balances and track the excess amounts for each token.
-    const sourceChainsWithExcessBalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
-    availableRebalanceRoutes.forEach((rebalanceRoute) => {
-      const { sourceChain, sourceToken } = rebalanceRoute;
-      const currentBalance = currentBalances[sourceChain][sourceToken];
-      const targetBalance = targetBalances[sourceToken][sourceChain].targetBalance;
-      const hasExcess = currentBalance.gt(targetBalance);
-      if (!hasExcess) {
-        return;
-      }
-      sourceChainsWithExcessBalances[sourceChain] ??= {};
-      // If we've already seen this source chain + token, then the following calculation is repetitive and we can skip.
-      if (sourceChainsWithExcessBalances[sourceChain]?.[sourceToken]) {
-        return;
-      }
-
-      sourceChainsWithExcessBalances[sourceChain][sourceToken] = currentBalance.sub(targetBalance);
-      this.logger.debug({
-        message: `Excess balance for ${sourceToken} on ${getNetworkName(sourceChain)}`,
-        targetBalance: targetBalance.toString(),
-        currentBalance: currentBalance.toString(),
-        excess: sourceChainsWithExcessBalances[sourceChain][sourceToken].toString(),
+    const sourceChainsWithExcessBalances: ExcessOrDeficit[] = [];
+    Object.entries(currentBalances).forEach(([chainId, tokens]) => {
+      Object.entries(tokens).forEach(([token, balance]) => {
+        const { priorityTier, targetBalance } = targetBalances[token][chainId];
+        const hasExcess = balance.gt(targetBalance);
+        if (!hasExcess) {
+          return;
+        }
+        sourceChainsWithExcessBalances.push({
+          token,
+          chainId: Number(chainId),
+          amount: balance.sub(targetBalance),
+          priorityTier,
+        });
       });
     });
 
     // Identify list of destination chains that have deficit balances and track the deficit amounts for each token.
-    const destinationChainsWithDeficitBalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
-    availableRebalanceRoutes.forEach((rebalanceRoute) => {
-      const { destinationChain, destinationToken } = rebalanceRoute;
-      const currentBalance = currentBalances[destinationChain][destinationToken];
-
-      const { targetBalance, thresholdBalance } = targetBalances[destinationToken][destinationChain];
-      // Only count a balance as deficit if its below the threshold which should be <= targetBalance.
-      const hasDeficit = currentBalance.lt(thresholdBalance);
-      if (!hasDeficit) {
-        return;
-      }
-      destinationChainsWithDeficitBalances[destinationChain] ??= {};
-      // If we've already seen this destination chain + token, then the following calculation is repetitive and we can skip.
-      if (destinationChainsWithDeficitBalances[destinationChain]?.[destinationToken]) {
-        return;
-      }
-
-      destinationChainsWithDeficitBalances[destinationChain][destinationToken] = targetBalance.sub(currentBalance);
-      this.logger.debug({
-        message: `Deficit balance for ${destinationToken} on ${getNetworkName(destinationChain)}`,
-        targetBalance: targetBalance.toString(),
-        thresholdBalance: thresholdBalance.toString(),
-        currentBalance: currentBalance.toString(),
-        deficit: destinationChainsWithDeficitBalances[destinationChain][destinationToken].toString(),
+    const destinationChainsWithDeficitBalances: ExcessOrDeficit[] = [];
+    Object.entries(currentBalances).forEach(([chainId, tokens]) => {
+      Object.entries(tokens).forEach(([token, balance]) => {
+        const { priorityTier, targetBalance, thresholdBalance } = targetBalances[token][chainId];
+        const hasDeficit = balance.lt(thresholdBalance);
+        if (!hasDeficit) {
+          return;
+        }
+        destinationChainsWithDeficitBalances.push({
+          token,
+          chainId: Number(chainId),
+          amount: targetBalance.sub(balance),
+          priorityTier,
+        });
       });
     });
 
     // Sort deficits by priority tier and then by amount, where the resultant list is in descending order of priority tier.
-    const sortedDeficits: { chainId: number; token: string; deficitAmount: BigNumber }[] = [];
-    Object.entries(destinationChainsWithDeficitBalances).forEach(([chainId, tokens]) => {
-      Object.entries(tokens).forEach(([token, deficitAmount]) => {
-        const priorityTier = targetBalances[token][chainId].priorityTier;
-        // Insert deficit into sortedDeficits in the correct position using priority tier first and then amount to
-        // rank entries.
-        const index = sortedDeficits.findIndex((existing) => {
-          const { chainId: _chainId, token: _token, deficitAmount: _deficitAmount } = existing;
-          const _priorityTier = targetBalances[_token][_chainId].priorityTier;
-          // If existing entry has a higher priority tier, then the new entry should be inserted after it.
-          if (_priorityTier > priorityTier) {
-            return false;
-          }
-          // If existing entry has a lower priority tier, then the new entry should be inserted before it. Assuming
-          // that sortedDeficits is already sorted properly, then we can simply return here if we find an existing
-          // entry with a lower priority tier than the new entry.
-          if (_priorityTier < priorityTier) {
-            return true;
-          }
-
-          // Priority tiers are equal, compare amounts. We want higher deficits to be prioritized.
-          const tokenDecimals = getTokenInfoFromSymbol(token, Number(chainId)).decimals;
-          const _tokenDecimals = getTokenInfoFromSymbol(_token, Number(_chainId)).decimals;
-          const amountConverter = ConvertDecimals(_tokenDecimals, tokenDecimals);
-          return amountConverter(_deficitAmount).lt(deficitAmount);
-        });
-        // If index is -1, then the new entry should be the last entry in the list.
-        if (index === -1) {
-          sortedDeficits.push({ chainId: Number(chainId), token, deficitAmount });
-          return;
-        }
-        sortedDeficits.splice(index, 0, { chainId: Number(chainId), token, deficitAmount });
-      });
-    });
+    const sortedDeficits = destinationChainsWithDeficitBalances.sort(sortDeficitFunction);
     if (sortedDeficits.length > 0) {
       this.logger.debug({
         at: "SingleBalanceRebalancerClient.rebalanceInventory",
         message: "Sorted deficits",
         deficits: sortedDeficits.map(
           (d) =>
-            `${getNetworkName(d.chainId)}: ${d.token} - ${d.deficitAmount.toString()} (priority tier: ${
+            `${getNetworkName(d.chainId)}: ${d.token} - ${d.amount.toString()} (priority tier: ${
               targetBalances[d.token][d.chainId].priorityTier
             })`
         ),
@@ -264,47 +214,14 @@ export class SingleBalanceRebalancerClient extends BaseRebalancerClient {
     }
 
     // Sort excesses using opposite logic as deficits, where the resultant list is in ascending order of priority tier.
-    const sortedExcesses: { chainId: number; token: string; excessAmount: BigNumber }[] = [];
-    Object.entries(sourceChainsWithExcessBalances).forEach(([chainId, tokens]) => {
-      Object.entries(tokens).forEach(([token, excessAmount]) => {
-        const priorityTier = targetBalances[token][chainId].priorityTier;
-        // Insert excess into sortedExcesses in the correct position using priority tier first and then amount to
-        // rank entries.
-        const index = sortedExcesses.findIndex((existing) => {
-          const { chainId: _chainId, token: _token, excessAmount: _excessAmount } = existing;
-          const _priorityTier = targetBalances[_token][_chainId].priorityTier;
-          // If existing entry has a lower priority tier, then the new entry should be inserted after it.
-          if (_priorityTier < priorityTier) {
-            return false;
-          }
-          // If existing entry has a higher priority tier, then the new entry should be inserted before it. Assuming
-          // that sortedDeficits is already sorted properly, then we can simply return here if we find an existing
-          // entry with a higher priority tier than the new entry.
-          if (_priorityTier > priorityTier) {
-            return true;
-          }
-
-          // Priority tiers are equal, compare amounts. We want higher excesses to be prioritized.
-          const tokenDecimals = getTokenInfoFromSymbol(token, Number(chainId)).decimals;
-          const _tokenDecimals = getTokenInfoFromSymbol(_token, Number(_chainId)).decimals;
-          const amountConverter = ConvertDecimals(_tokenDecimals, tokenDecimals);
-          return amountConverter(_excessAmount).lt(excessAmount);
-        });
-        // If index is -1, then the new entry should be the last entry in the list.
-        if (index === -1) {
-          sortedExcesses.push({ chainId: Number(chainId), token, excessAmount });
-          return;
-        }
-        sortedExcesses.splice(index, 0, { chainId: Number(chainId), token, excessAmount });
-      });
-    });
+    const sortedExcesses = sourceChainsWithExcessBalances.sort(sortExcessFunction);
     if (sortedExcesses.length > 0) {
       this.logger.debug({
         at: "SingleBalanceRebalancerClient.rebalanceInventory",
         message: "Sorted excesses",
         excesses: sortedExcesses.map(
           (e) =>
-            `${getNetworkName(e.chainId)}: ${e.token} - ${e.excessAmount.toString()} (priority tier: ${
+            `${getNetworkName(e.chainId)}: ${e.token} - ${e.amount.toString()} (priority tier: ${
               targetBalances[e.token][e.chainId].priorityTier
             })`
         ),
@@ -332,13 +249,13 @@ export class SingleBalanceRebalancerClient extends BaseRebalancerClient {
 
     // Now, go through each deficit and attempt to fill it with an excess balance, using the lowest priority excesses first.
     for (const deficit of sortedDeficits) {
-      const { chainId: destinationChainId, token: destinationToken, deficitAmount } = deficit;
+      const { chainId: destinationChainId, token: destinationToken, amount: deficitAmount } = deficit;
 
       // Find the first excess that can be used to fill the deficit. We must make sure that the source chain and destination chain
       // are associated with a rebalance route.
       let rebalanceRouteToUse: RebalanceRoute | undefined;
       let cheapestExpectedCost = bnUint256Max;
-      let matchingExcess: { chainId: number; token: string; excessAmount: BigNumber } | undefined;
+      let matchingExcess: ExcessOrDeficit | undefined;
       this.logger.debug({
         at: "SingleBalanceRebalancerClient.rebalanceInventory",
         message: `Filling deficit of ${deficitAmount.toString()} of ${destinationToken} on ${getNetworkName(
@@ -359,7 +276,7 @@ export class SingleBalanceRebalancerClient extends BaseRebalancerClient {
 
       for (let i = 0; i < sortedExcesses.length; i++) {
         const excess = sortedExcesses[i];
-        const { chainId: sourceChainId, token: sourceToken, excessAmount } = excess;
+        const { chainId: sourceChainId, token: sourceToken, amount: excessAmount } = excess;
         // We assume here that the tokens are worth the same price,
         // as we'd need to normalize to USD terms to determine if an excess can fill a deficit otherwise.
         const deficitAmountCapped = getDeficitAmountCapped(
@@ -432,7 +349,7 @@ export class SingleBalanceRebalancerClient extends BaseRebalancerClient {
         });
 
         // We found a matching excess, let's now modify the existing excess amount list so we don't overdraw this excess.
-        sortedExcesses[i].excessAmount = excessAmount.sub(deficitAmountCapped);
+        sortedExcesses[i].amount = excessAmount.sub(deficitAmountCapped);
         break;
       }
       if (!isDefined(matchingExcess)) {
@@ -445,7 +362,7 @@ export class SingleBalanceRebalancerClient extends BaseRebalancerClient {
             destinationChainId
           )}, skipping this deficit`,
           sortedExcesses: sortedExcesses.map(
-            (e) => `${getNetworkName(e.chainId)}: ${e.token} - ${e.excessAmount.toString()}`
+            (e) => `${getNetworkName(e.chainId)}: ${e.token} - ${e.amount.toString()}`
           ),
         });
         continue;
@@ -550,69 +467,41 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
     // is worth the same amount of USD. Deficits are ranked from most negative to least.
     // @todo We would need to change this logic if we accept the user setting targets for tokens that are not all
     // stablecoins.
-    const sortedDeficits: { token: string; deficitAmount: BigNumber }[] = [];
-    const sortedExcesses: { token: string; excessAmount: BigNumber }[] = [];
+    const sortedDeficits: ExcessOrDeficit[] = [];
+    const sortedExcesses: ExcessOrDeficit[] = [];
     for (const [token, cumulativeBalance] of Object.entries(cumulativeBalances)) {
       // If current balance is below threshold, we want to refill back to target balance.
-      const { targetBalance, thresholdBalance } = cumulativeTargetBalances[token];
+      const { targetBalance, thresholdBalance, priorityTier } = cumulativeTargetBalances[token];
       const currentCumulativeBalance = cumulativeBalances[token];
       if (currentCumulativeBalance.lt(thresholdBalance)) {
         const deficitAmount = targetBalance.sub(cumulativeBalance);
-        sortedDeficits.push({ token, deficitAmount });
+        sortedDeficits.push({ token, amount: deficitAmount, chainId: this.config.hubPoolChainId, priorityTier });
       } else if (currentCumulativeBalance.gt(targetBalance)) {
         const excessAmount = currentCumulativeBalance.sub(targetBalance);
-        sortedExcesses.push({ token, excessAmount });
+        sortedExcesses.push({ token, amount: excessAmount, chainId: this.config.hubPoolChainId, priorityTier });
       }
     }
     // Sort deficits by priority from highest to lowest and then by size from largest to smallest.
-    sortedDeficits.sort(
-      ({ token: tokenA, deficitAmount: deficitAmountA }, { token: tokenB, deficitAmount: deficitAmountB }) => {
-        const priorityTierA = cumulativeTargetBalances[tokenA].priorityTier;
-        const priorityTierB = cumulativeTargetBalances[tokenB].priorityTier;
-        if (priorityTierA !== priorityTierB) {
-          return priorityTierB - priorityTierA;
-        }
-        if (deficitAmountA.eq(deficitAmountB)) {
-          return 0;
-        }
-        return deficitAmountA.gt(deficitAmountB) ? -1 : 1;
-      }
-    );
+    sortedDeficits.sort(sortDeficitFunction);
     if (sortedDeficits.length > 0) {
       this.logger.debug({
         at: "CumulativeBalanceRebalancerClient.rebalanceInventory",
         message: "Sorted deficits",
         deficits: sortedDeficits.map(
           (e) =>
-            `${e.token} - ${e.deficitAmount.toString()} (priority tier: ${
-              cumulativeTargetBalances[e.token].priorityTier
-            })`
+            `${e.token} - ${e.amount.toString()} (priority tier: ${cumulativeTargetBalances[e.token].priorityTier})`
         ),
       });
     }
     // Sort excesses by priority from lowest to highest and then by size from largest to smallest.
-    sortedExcesses.sort(
-      ({ token: tokenA, excessAmount: excessAmountA }, { token: tokenB, excessAmount: excessAmountB }) => {
-        const priorityTierA = cumulativeTargetBalances[tokenA].priorityTier;
-        const priorityTierB = cumulativeTargetBalances[tokenB].priorityTier;
-        if (priorityTierA !== priorityTierB) {
-          return priorityTierA - priorityTierB;
-        }
-        if (excessAmountA.eq(excessAmountB)) {
-          return 0;
-        }
-        return excessAmountA.gt(excessAmountB) ? -1 : 1;
-      }
-    );
+    sortedExcesses.sort(sortExcessFunction);
     if (sortedExcesses.length > 0) {
       this.logger.debug({
         at: "CumulativeBalanceRebalancerClient.rebalanceInventory",
         message: "Sorted excesses",
         excesses: sortedExcesses.map(
           (e) =>
-            `${e.token} - ${e.excessAmount.toString()} (priority tier: ${
-              cumulativeTargetBalances[e.token].priorityTier
-            })`
+            `${e.token} - ${e.amount.toString()} (priority tier: ${cumulativeTargetBalances[e.token].priorityTier})`
         ),
       });
     }
@@ -620,48 +509,43 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
     // Iterate through the sorted deficits and try to fill as much of it as possible from the configured
     // excess token chain list.
     for (const deficit of sortedDeficits) {
-      const { token: deficitToken, deficitAmount } = deficit;
+      const { token: deficitToken, amount: deficitAmount } = deficit;
       // Keep track of how much of the deficit we need to fill and also how much excess we have available to send.
       let deficitRemaining = deficitAmount;
       for (const excess of sortedExcesses) {
-        const { token: excessToken, excessAmount } = excess;
+        const { token: excessToken, amount: excessAmount } = excess;
         let excessRemaining = excessAmount;
 
         // Sort all the chains with excess tokens by priority from lowest to highest and then by current balance from highest to lowest.
-        const excessSourceChainsForToken = Object.entries(cumulativeTargetBalances[excessToken].chains).filter(
-          ([chainId]) => {
+        const excessSourceChainsForToken: ExcessOrDeficit[] = Object.entries(
+          cumulativeTargetBalances[excessToken].chains
+        )
+          .filter(([chainId]) => {
             return isDefined(currentBalances[chainId]?.[excessToken]);
-          }
-        );
-        const sortedExcessSourceChainsForToken = excessSourceChainsForToken.sort(
-          ([chainIdA, priorityTierA], [chainIdB, priorityTierB]) => {
-            if (priorityTierA !== priorityTierB) {
-              return priorityTierA - priorityTierB;
-            }
-            const tokenDecimalsA = getTokenInfoFromSymbol(excessToken, Number(chainIdA)).decimals;
-            const tokenDecimalsB = getTokenInfoFromSymbol(excessToken, Number(chainIdB)).decimals;
-            const amountConverter = ConvertDecimals(tokenDecimalsA, tokenDecimalsB);
-            const currentBalanceA = amountConverter(currentBalances[chainIdA][excessToken]);
-            const currentBalanceB = currentBalances[chainIdB][excessToken];
-            if (currentBalanceA.eq(currentBalanceB)) {
-              return 0;
-            }
-            return currentBalanceA.gt(currentBalanceB) ? -1 : 1;
-          }
-        );
+          })
+          .map(([chainId, priorityTier]) => {
+            return {
+              chainId: Number(chainId),
+              priorityTier,
+              amount: currentBalances[chainId][excessToken],
+              token: excessToken,
+            };
+          });
+        const sortedExcessSourceChainsForToken = excessSourceChainsForToken.sort(sortExcessFunction);
         this.logger.debug({
           at: "CumulativeBalanceRebalancerClient.rebalanceInventory",
           message: `Sorted excess source chains for token ${excessToken}`,
-          excessSourceChainsForToken: sortedExcessSourceChainsForToken.map(([chainId]) => {
+          excessSourceChainsForToken: sortedExcessSourceChainsForToken.map(({ chainId, amount }) => {
             return {
-              [chainId]: currentBalances[chainId][excessToken].toString(),
+              [chainId]: amount.toString(),
             };
           }),
         });
 
         // Iterate through potential excess source chains and remove any that don't have rebalance routes or have
         // fees that exceed the max fee percentage.
-        for (const [chainId] of sortedExcessSourceChainsForToken) {
+        for (const chainWithExcess of sortedExcessSourceChainsForToken) {
+          const { chainId, amount: currentBalance } = chainWithExcess;
           // Invariants: If excess or deficit is depleted, exit.
           if (deficitRemaining.lte(bnZero) || excessRemaining.lte(bnZero)) {
             break;
@@ -681,11 +565,9 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
           const l1TokenDecimals = getTokenInfoFromSymbol(excessToken, this.config.hubPoolChainId).decimals;
           const chainDecimals = getTokenInfoFromSymbol(excessToken, Number(chainId)).decimals;
           const l1ToChainConverter = ConvertDecimals(l1TokenDecimals, chainDecimals);
-          const chainToL1Converter = ConvertDecimals(chainDecimals, l1TokenDecimals);
           const excessRemainingConverted = l1ToChainConverter(excessRemaining);
           const deficitRemainingConverted = l1ToChainConverter(deficitRemaining);
           // The max we can transfer is the minimum of {the remaining deficit, the remaining excess, the max amount to transfer, the current balance}
-          const currentBalance = currentBalances[chainId][excessToken];
           const maxAmountToTransfer = this.config.maxAmountsToTransfer[excessToken]?.[chainId];
           let amountToTransferCapped =
             isDefined(maxAmountToTransfer) && currentBalance.gt(maxAmountToTransfer)
@@ -777,6 +659,7 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
           }
 
           // Initiate a new rebalance
+          const chainToL1Converter = ConvertDecimals(chainDecimals, l1TokenDecimals);
           deficitRemaining = deficitRemaining.sub(chainToL1Converter(amountToTransferCapped));
           excessRemaining = excessRemaining.sub(chainToL1Converter(amountToTransferCapped));
           this.logger.debug({
@@ -815,4 +698,36 @@ export interface RebalancerAdapter {
   getPendingRebalances(): Promise<{ [chainId: number]: { [token: string]: BigNumber } }>;
   getPendingOrders(): Promise<string[]>;
   getEstimatedCost(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber, debugLog: boolean): Promise<BigNumber>;
+}
+
+type ExcessOrDeficit = { token: string; chainId: number; amount: BigNumber; priorityTier: number };
+// Excesses are always sorted in priority from lowest to highest and then by amount from largest to smallest.
+function sortExcessFunction(excessA: ExcessOrDeficit, excessB): number {
+  const { token: tokenA, amount: amountA, priorityTier: priorityTierA, chainId: chainIdA } = excessA;
+  const { token: tokenB, amount: amountB, priorityTier: priorityTierB, chainId: chainIdB } = excessB;
+  if (priorityTierA !== priorityTierB) {
+    return priorityTierA - priorityTierB;
+  }
+  const tokenADecimals = getTokenInfoFromSymbol(tokenA, Number(chainIdA)).decimals;
+  const tokenBDecimals = getTokenInfoFromSymbol(tokenB, Number(chainIdB)).decimals;
+  const converter = ConvertDecimals(tokenADecimals, tokenBDecimals);
+  if (converter(amountA).eq(amountB)) {
+    return 0;
+  }
+  return converter(amountA).gt(amountB) ? -1 : 1;
+}
+// Deficits are always sorted in priority from highest to lowest and then by amount from largest to smallest.
+function sortDeficitFunction(deficitA: ExcessOrDeficit, deficitB: ExcessOrDeficit): number {
+  const { token: tokenA, amount: amountA, priorityTier: priorityTierA, chainId: chainIdA } = deficitA;
+  const { token: tokenB, amount: amountB, priorityTier: priorityTierB, chainId: chainIdB } = deficitB;
+  if (priorityTierA !== priorityTierB) {
+    return priorityTierB - priorityTierA;
+  }
+  const tokenADecimals = getTokenInfoFromSymbol(tokenA, Number(chainIdA)).decimals;
+  const tokenBDecimals = getTokenInfoFromSymbol(tokenB, Number(chainIdB)).decimals;
+  const converter = ConvertDecimals(tokenADecimals, tokenBDecimals);
+  if (converter(amountA).eq(amountB)) {
+    return 0;
+  }
+  return converter(amountA).gt(amountB) ? -1 : 1;
 }
