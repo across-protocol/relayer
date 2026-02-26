@@ -1,4 +1,4 @@
-import { CHAIN_IDs, getNetworkName, Signer, winston } from "../utils";
+import { CHAIN_IDs, Signer, winston } from "../utils";
 import { BinanceStablecoinSwapAdapter } from "./adapters/binance";
 import { CctpAdapter } from "./adapters/cctpAdapter";
 import { HyperliquidStablecoinSwapAdapter } from "./adapters/hyperliquid";
@@ -78,13 +78,6 @@ export async function constructRebalancerClient(logger: winston.Logger, baseSign
     at: "RebalancerClientHelper.constructRebalancerClient",
     message: "RebalancerClient initialized",
     rebalancerConfig,
-    rebalanceRoutes: rebalanceRoutes.map((route) => ({
-      sourceChain: getNetworkName(route.sourceChain),
-      sourceToken: route.sourceToken,
-      destinationChain: getNetworkName(route.destinationChain),
-      destinationToken: route.destinationToken,
-      adapter: route.adapter,
-    })),
   });
   return rebalancerClient;
 }

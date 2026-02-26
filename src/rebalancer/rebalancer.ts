@@ -12,6 +12,7 @@ import {
   winston,
   getTokenInfoFromSymbol,
   bnUint32Max,
+  mapAsync,
 } from "../utils";
 import { RebalancerConfig } from "./RebalancerConfig";
 export interface RebalanceRoute {
@@ -42,7 +43,8 @@ export class RebalancerClient {
   }
 
   /**
-   *
+   * @notice Rebalances inventory of current balances from chains where tokens are above configured targets to
+   * chains where token balances are below configured thresholds. Is unaware of cumulative balances.
    * @param currentBalances Allow caller to pass in current allocation of balances. This is designed so that this
    * rebalancer can be seamessly used by the existing inventory manager client which has its own way of determining
    * allocations.
@@ -54,8 +56,10 @@ export class RebalancerClient {
     currentBalances: { [chainId: number]: { [token: string]: BigNumber } },
     maxFeePct: BigNumber
   ): Promise<void> {
+    const targetBalances = this.config.targetBalances;
+
     // Assert that each target balance has a corresponding current balance.
-    for (const [sourceToken, tokenConfig] of Object.entries(this.config.targetBalances)) {
+    for (const [sourceToken, tokenConfig] of Object.entries(targetBalances)) {
       for (const [sourceChain] of Object.entries(tokenConfig)) {
         assert(
           isDefined(currentBalances[Number(sourceChain)]?.[sourceToken]),
@@ -65,7 +69,6 @@ export class RebalancerClient {
         );
       }
     }
-    const targetBalances = this.config.targetBalances;
     const availableRebalanceRoutes = this.rebalanceRoutes.filter((route) => {
       return (
         isDefined(currentBalances[route.sourceChain]?.[route.sourceToken]) &&
@@ -418,6 +421,328 @@ export class RebalancerClient {
 
       if (process.env.SEND_TRANSACTIONS === "true") {
         await this.adapters[adapter].initializeRebalance(rebalanceRouteToUse, amountToTransfer);
+      }
+    }
+  }
+
+  /**
+   * @notice Rebalances cumulative balances of tokens across chains where cumulative token balances are above
+   * configured targets to to tokens that have cumulative balances below configured thresholds. Tokens are sourced
+   * from chains sorted by configured priority tier and current balance level.
+   * @param cumulativeBalances Dictionary of token -> cumulative balance.
+   * @param currentBalances Dictionary of chainId -> token -> current balance.
+   * @param maxFeePct Maximum fee percentage to allow for rebalances.
+   */
+  async rebalanceCumulativeInventory(
+    cumulativeBalances: { [token: string]: BigNumber },
+    currentBalances: { [chainId: number]: { [token: string]: BigNumber } },
+    maxFeePct: BigNumber
+  ): Promise<void> {
+    // Determine if cumulative balances are less than cumulative thresholds, if they are we aim to restore the cumulative
+    // balance by swapping tokens that have excess cumulative balances into the target token.
+    // We'll swap excess balances from lowest priority to highest priority and then from largest excess to smallest.
+
+    // First find tokens with cumulative balance deficit.
+
+    // Next find tokens with cumulative balance excess.
+
+    // Sort deficits by size and priority. Note this only works if L1 token decimals for all tokens are the same and they are valued
+    // roughly the same, so this works for stablecoins basically but would need to be changed if we want to handle WETH
+    // versus USDC/USDT rebalances in the same config. Deficits is ranked from highest to lowest.
+
+    // Sort excesses by size and by priority. Excesses are ranked from highest to lowest.
+
+    // For each deficit, find the first excess balance that can cover it.
+    // Now, go through the excess token's chains. Prefer chains with lower priority tiers and with higher
+    // current balances. Set amount to fill equal to maximum of maxAmountToTransfer and deficit. Stop once enough
+    // current balance has accumulated to fill the amount to fill. Figure out estimated costs for each transfer. Sum
+    // up estimated fees. Check if total estimated fee is below maxFeePct.
+
+    // Assert invariants:
+
+    // - Assert that each target balance has a corresponding cumulative balance.
+    const cumulativeTargetBalances = this.config.cumulativeTargetBalances;
+    for (const [sourceToken] of Object.entries(cumulativeTargetBalances)) {
+      assert(
+        isDefined(cumulativeBalances[sourceToken]),
+        `RebalanceClient#rebalanceCumulativeInventory: Undefined cumulative balance for ${sourceToken} on which has a target balance`
+      );
+    }
+
+    // - Assert that the list of available rebalance routes connects tokens that are configured in current balances
+    // and the cumulative rebalance chain list.
+    const availableRebalanceRoutes = this.rebalanceRoutes.filter((route) => {
+      return (
+        isDefined(currentBalances[route.sourceChain]?.[route.sourceToken]) &&
+        isDefined(currentBalances[route.destinationChain]?.[route.destinationToken]) &&
+        isDefined(cumulativeTargetBalances[route.sourceToken]?.chains?.[route.sourceChain]) &&
+        isDefined(cumulativeTargetBalances[route.destinationToken]?.chains?.[route.destinationChain])
+      );
+    });
+
+    this.logger.debug({
+      at: "RebalancerClient.rebalanceCumulativeInventory",
+      message: "Available rebalance routes",
+      currentBalances: Object.entries(currentBalances).map(([chainId, tokens]) => {
+        return {
+          [chainId]: Object.fromEntries(
+            Object.entries(tokens).map(([token, balance]) => {
+              return [token, balance.toString()];
+            })
+          ),
+        };
+      }),
+      cumulativeBalances: Object.entries(cumulativeBalances).map(([token, balance]) => {
+        return {
+          [token]: balance.toString(),
+        };
+      }),
+      cumulativeTargetBalances: Object.entries(cumulativeTargetBalances).map(([token, tokenConfig]) => {
+        return {
+          [token]: tokenConfig.targetBalance.toString(),
+        };
+      }),
+      availableRebalanceRoutes: availableRebalanceRoutes.map(
+        (route) =>
+          `(${route.adapter}) [${getNetworkName(route.sourceChain)}] ${route.sourceToken} -> [${getNetworkName(
+            route.destinationChain
+          )}] ${route.destinationToken}`
+      ),
+    });
+
+    // Identify all tokens with cumulative balance deficits and sort them by size, assuming that 1 unit of each token
+    // is worth the same amount of USD. Deficits are ranked from most negative to least.
+    const sortedDeficits: { token: string; deficitAmount: BigNumber }[] = [];
+    const sortedExcesses: { token: string; excessAmount: BigNumber }[] = [];
+    for (const [token, cumulativeBalance] of Object.entries(cumulativeBalances)) {
+      // If current balance is below threshold, we want to refill back to target balance.
+      const { targetBalance, thresholdBalance } = cumulativeTargetBalances[token];
+      const currentCumulativeBalance = cumulativeBalances[token];
+      if (currentCumulativeBalance.lt(thresholdBalance)) {
+        const deficitAmount = targetBalance.sub(cumulativeBalance);
+        sortedDeficits.push({ token, deficitAmount });
+      } else if (currentCumulativeBalance.gt(targetBalance)) {
+        const excessAmount = currentCumulativeBalance.sub(targetBalance);
+        sortedExcesses.push({ token, excessAmount });
+      }
+    }
+    // Sort deficits by priority from highest to lowest and then by size from largest to smallest.
+    sortedDeficits.sort(
+      ({ token: tokenA, deficitAmount: deficitAmountA }, { token: tokenB, deficitAmount: deficitAmountB }) => {
+        const priorityTierA = cumulativeTargetBalances[tokenA].priorityTier;
+        const priorityTierB = cumulativeTargetBalances[tokenB].priorityTier;
+        if (priorityTierA !== priorityTierB) {
+          return priorityTierA - priorityTierB;
+        }
+        return deficitAmountA.gt(deficitAmountB) ? -1 : 1;
+      }
+    );
+    if (sortedDeficits.length > 0) {
+      this.logger.debug({
+        at: "RebalancerClient.rebalanceCumulativeInventory",
+        message: "Sorted deficits",
+        deficits: sortedDeficits.map(
+          (e) =>
+            `${e.token} - ${e.deficitAmount.toString()} (priority tier: ${
+              cumulativeTargetBalances[e.token].priorityTier
+            })`
+        ),
+      });
+    }
+    // Sort excesses by priority from lowest to highest and then by size from largest to smallest.
+    sortedExcesses.sort(
+      ({ token: tokenA, excessAmount: excessAmountA }, { token: tokenB, excessAmount: excessAmountB }) => {
+        const priorityTierA = cumulativeTargetBalances[tokenA].priorityTier;
+        const priorityTierB = cumulativeTargetBalances[tokenB].priorityTier;
+        if (priorityTierA !== priorityTierB) {
+          return priorityTierB - priorityTierA;
+        }
+        return excessAmountA.gt(excessAmountB) ? -1 : 1;
+      }
+    );
+    if (sortedExcesses.length > 0) {
+      this.logger.debug({
+        at: "RebalancerClient.rebalanceCumulativeInventory",
+        message: "Sorted excesses",
+        excesses: sortedExcesses.map(
+          (e) =>
+            `${e.token} - ${e.excessAmount.toString()} (priority tier: ${
+              cumulativeTargetBalances[e.token].priorityTier
+            })`
+        ),
+      });
+    }
+
+    // Iterate through the sorted deficits and try to fill as much of it as possible from the configured
+    // excess token chain list.
+    for (const deficit of sortedDeficits) {
+      const { token: deficitToken, deficitAmount } = deficit;
+      // Keep track of how much of the deficit we need to fill and also how much excess we have available to send.
+      let deficitRemaining = deficitAmount;
+      for (const excess of sortedExcesses) {
+        const { token: excessToken, excessAmount } = excess;
+        let excessRemaining = excessAmount;
+
+        // Sort all the chains with excess tokens by priority from lowest to highest and then by current balance from highest to lowest.
+        const excessSourceChainsForToken = Object.entries(cumulativeTargetBalances[excessToken].chains).filter(
+          ([chainId]) => {
+            return isDefined(currentBalances[chainId]?.[excessToken]);
+          }
+        );
+        const sortedExcessSourceChainsForToken = excessSourceChainsForToken.sort(
+          ([chainIdA, priorityTierA], [chainIdB, priorityTierB]) => {
+            if (priorityTierA !== priorityTierB) {
+              return priorityTierA - priorityTierB;
+            }
+            const tokenDecimalsA = getTokenInfoFromSymbol(excessToken, Number(chainIdA)).decimals;
+            const tokenDecimalsB = getTokenInfoFromSymbol(excessToken, Number(chainIdB)).decimals;
+            const amountConverter = ConvertDecimals(tokenDecimalsA, tokenDecimalsB);
+            return amountConverter(currentBalances[chainIdA][excessToken]).gt(currentBalances[chainIdB][excessToken])
+              ? -1
+              : 1;
+          }
+        );
+        this.logger.debug({
+          at: "RebalancerClient.rebalanceCumulativeInventory",
+          message: `Sorted excess source chains for token ${excessToken}`,
+          excessSourceChainsForToken: sortedExcessSourceChainsForToken.map(([chainId]) => {
+            return {
+              [chainId]: currentBalances[chainId][excessToken].toString(),
+            };
+          }),
+        });
+
+        // Iterate through potential excess source chains and remove any that don't have rebalance routes or have
+        // fees that exceed the max fee percentage.
+        for (const [chainId] of sortedExcessSourceChainsForToken) {
+          // Invariants: If excess or deficit is depleted, exit.
+          if (deficitRemaining.lte(bnZero) || excessRemaining.lte(bnZero)) {
+            break;
+          }
+
+          const l1TokenDecimals = getTokenInfoFromSymbol(excessToken, this.config.hubPoolChainId).decimals;
+          const chainDecimals = getTokenInfoFromSymbol(excessToken, Number(chainId)).decimals;
+          const l1ToChainConverter = ConvertDecimals(l1TokenDecimals, chainDecimals);
+          const chainToL1Converter = ConvertDecimals(chainDecimals, l1TokenDecimals);
+          const excessRemainingConverted = l1ToChainConverter(excessRemaining);
+          const deficitRemainingConverted = l1ToChainConverter(deficitRemaining);
+          // The max we can transfer is the minimum of {the remaining deficit, the remaining excess, the max amount to transfer, the current balance}
+          const currentBalance = currentBalances[chainId][excessToken];
+          const maxAmountToTransfer = this.config.maxAmountsToTransfer[excessToken]?.[chainId];
+          let amountToTransferCapped =
+            isDefined(maxAmountToTransfer) && currentBalance.gt(maxAmountToTransfer)
+              ? maxAmountToTransfer
+              : currentBalance;
+          amountToTransferCapped = amountToTransferCapped.gt(deficitRemainingConverted)
+            ? deficitRemainingConverted
+            : amountToTransferCapped;
+          amountToTransferCapped = amountToTransferCapped.gt(excessRemainingConverted)
+            ? excessRemainingConverted
+            : amountToTransferCapped;
+
+          // @todo Decide which destination chain to use. For now, just swap in-place on the same chain.
+          // Maybe take the highest priority chain out of the configured rebalance chains for the deficit token?
+          const allDestinationChains = Object.keys(cumulativeTargetBalances[deficitToken].chains).map(Number);
+          const rebalanceRoutesToEvaluate: RebalanceRoute[] = [];
+          await forEachAsync(availableRebalanceRoutes, async (route) => {
+            const pendingOrders = await this.adapters[route.adapter].getPendingOrders();
+            const pendingOrderCapForAdapter = this.config.maxPendingOrders[route.adapter] ?? 2; // @todo Default low for now,
+            // eventually change this to a very high default value.
+            if (pendingOrders.length >= pendingOrderCapForAdapter) {
+              this.logger.debug({
+                at: "RebalanceClient.rebalanceCumulativeInventory",
+                message: `Too many pending orders (${pendingOrders.length}) for ${route.adapter} adapter, skipping rebalance`,
+                pendingOrderCapForAdapter,
+              });
+              return;
+            }
+            allDestinationChains.forEach((destinationChain) => {
+              if (
+                route.sourceChain === Number(chainId) &&
+                route.sourceToken === excessToken &&
+                route.destinationChain === destinationChain &&
+                route.destinationToken === deficitToken
+              ) {
+                rebalanceRoutesToEvaluate.push(route);
+              }
+            });
+          });
+
+          if (rebalanceRoutesToEvaluate.length === 0) {
+            this.logger.debug({
+              at: "RebalancerClient.rebalanceCumulativeInventory",
+              message: `No rebalance routes found for ${excessToken} on ${getNetworkName(chainId)}`,
+              originChain: chainId,
+              allDestinationChains,
+              excessToken,
+              deficitToken,
+              amountToTransferCapped: amountToTransferCapped.toString(),
+            });
+            continue;
+          }
+          const rebalanceRouteCosts = await mapAsync(rebalanceRoutesToEvaluate, async (route) => {
+            return {
+              route,
+              cost: await this.adapters[route.adapter].getEstimatedCost(route, amountToTransferCapped, false),
+            };
+          });
+          rebalanceRouteCosts.sort((a, b) => a.cost.lt(b.cost) ? -1 : 1);
+          const cheapestCostRoute = rebalanceRouteCosts[0];
+          this.logger.debug({
+            at: "RebalanceClient.rebalanceCumulativeInventory",
+            message: `Evaluating sending of ${amountToTransferCapped.toString()} of ${excessToken} on ${getNetworkName(
+              chainId
+            )}`,
+            currentBalance: currentBalance.toString(),
+            deficitRemaining: deficitRemaining.toString(),
+            excessRemaining: excessRemaining.toString(),
+            maxAmountToTransfer: maxAmountToTransfer?.toString(),
+            cheapestCostRoute: `[${cheapestCostRoute.route.adapter}] ${getNetworkName(
+              cheapestCostRoute.route.sourceChain
+            )} ${cheapestCostRoute.route.sourceToken} -> ${getNetworkName(cheapestCostRoute.route.destinationChain)} ${
+              cheapestCostRoute.route.destinationToken
+            }: ${cheapestCostRoute.cost.toString()}`,
+            rebalanceRouteCosts: rebalanceRouteCosts.map(({ route, cost }) => {
+              return {
+                [route.adapter]: `${route.sourceToken} on ${getNetworkName(route.sourceChain)} -> ${
+                  route.destinationToken
+                } on ${getNetworkName(route.destinationChain)}: ${cost.toString()}`,
+              };
+            }),
+          });
+
+          const maxFee = amountToTransferCapped.mul(maxFeePct).div(toBNWei(100));
+          if (cheapestCostRoute.cost.gt(maxFee)) {
+            this.logger.debug({
+              at: "RebalancerClient.rebalanceCumulativeInventory",
+              message: `Cheapest expected cost ${cheapestCostRoute.cost.toString()} is greater than max fee ${maxFee.toString()}, exiting`,
+            });
+            continue;
+          }
+
+          // Initiate a new rebalance
+          deficitRemaining = deficitRemaining.sub(chainToL1Converter(amountToTransferCapped));
+          excessRemaining = excessRemaining.sub(chainToL1Converter(amountToTransferCapped));
+          this.logger.debug({
+            at: "RebalanceClient.rebalanceCumulativeInventory",
+            message: `Initializing new ${cheapestCostRoute.route.adapter} rebalance from ${
+              cheapestCostRoute.route.sourceToken
+            } on ${getNetworkName(cheapestCostRoute.route.sourceChain)} to ${
+              cheapestCostRoute.route.destinationToken
+            } on ${getNetworkName(cheapestCostRoute.route.destinationChain)}`,
+            adapter: cheapestCostRoute.route.adapter,
+            amountToTransfer: amountToTransferCapped.toString(),
+            expectedFees: cheapestCostRoute.cost.toString(),
+            deficitRemaining: deficitRemaining.toString(),
+          });
+
+          if (process.env.SEND_TRANSACTIONS === "true") {
+            await this.adapters[cheapestCostRoute.route.adapter].initializeRebalance(
+              cheapestCostRoute.route,
+              amountToTransferCapped
+            );
+          }
+        }
       }
     }
   }

@@ -76,9 +76,41 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     });
   }
 
+  // Set current balances for all tokens and chains:
   const currentBalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
+  const allTokens = Object.keys(rebalancerConfig.targetBalances).concat(
+    Object.keys(rebalancerConfig.cumulativeTargetBalances)
+  );
+  for (const token of allTokens) {
+    const l1TokenInfo = getTokenInfoFromSymbol(token, CHAIN_IDs.MAINNET);
+    const allChains = Object.keys(rebalancerConfig.targetBalances?.[token] ?? {}).concat(
+      Object.keys(rebalancerConfig.cumulativeTargetBalances?.[token]?.chains ?? {})
+    );
+    for (const chainId of allChains) {
+      const l2TokenInfo = getTokenInfoFromSymbol(token, Number(chainId));
+      const currentBalance = inventoryClient.getChainBalance(
+        Number(chainId),
+        EvmAddress.from(l1TokenInfo.address.toNative()),
+        EvmAddress.from(l2TokenInfo.address.toNative())
+      );
+      const convertDecimalsToSourceChain = ConvertDecimals(l1TokenInfo.decimals, l2TokenInfo.decimals);
+      currentBalances[chainId] ??= {};
+      currentBalances[chainId][token] = convertDecimalsToSourceChain(currentBalance);
+    }
+  }
+
+  // Set cumulative balances for all tokens:
+  const cumulativeBalances: { [token: string]: BigNumber } = {};
+  for (const token of Object.keys(rebalancerConfig.cumulativeTargetBalances)) {
+    const l1TokenInfo = getTokenInfoFromSymbol(token, CHAIN_IDs.MAINNET);
+    const cumulativeBalance = inventoryClient.getCumulativeBalanceWithApproximateUpcomingRefunds(
+      EvmAddress.from(l1TokenInfo.address.toNative())
+    );
+    cumulativeBalances[token] = cumulativeBalance;
+  }
+
+  // Modify all current and cumulative balances with the pending rebalances:
   for (const adapter of adaptersToUpdate) {
-    // Modify all current balances with the pending rebalances:
     timerStart = performance.now();
     const pendingRebalances = await adapter.getPendingRebalances();
     logger.debug({
@@ -98,16 +130,9 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     for (const [token, chainConfig] of Object.entries(rebalancerConfig.targetBalances)) {
       for (const chainId of Object.keys(chainConfig)) {
         const pendingRebalanceAmount = pendingRebalances[chainId]?.[token] ?? bnZero;
-        const l1TokenInfo = getTokenInfoFromSymbol(token, CHAIN_IDs.MAINNET);
-        const l2TokenInfo = getTokenInfoFromSymbol(token, Number(chainId));
-        const currentBalance = inventoryClient.getChainBalance(
-          Number(chainId),
-          EvmAddress.from(l1TokenInfo.address.toNative()),
-          EvmAddress.from(l2TokenInfo.address.toNative())
-        );
-        const convertDecimalsToSourceChain = ConvertDecimals(l1TokenInfo.decimals, l2TokenInfo.decimals);
         currentBalances[chainId] ??= {};
-        currentBalances[chainId][token] = convertDecimalsToSourceChain(currentBalance).add(pendingRebalanceAmount);
+        currentBalances[chainId][token] = currentBalances[chainId][token].add(pendingRebalanceAmount);
+        cumulativeBalances[token] = cumulativeBalances[token].add(pendingRebalanceAmount);
         if (!pendingRebalanceAmount.eq(bnZero)) {
           logger.debug({
             at: "index.ts:runRebalancer",
@@ -116,6 +141,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
             } of ${pendingRebalanceAmount.toString()} to current balance for ${token} on ${chainId}`,
             pendingRebalanceAmount: pendingRebalanceAmount.toString(),
             newCurrentBalance: currentBalances[chainId][token].toString(),
+            newCumulativeBalance: cumulativeBalances[token].toString(),
           });
         }
       }
@@ -128,7 +154,9 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     // Execute rebalances
     if (process.env.SEND_REBALANCES === "true") {
       timerStart = performance.now();
-      await rebalancerClient.rebalanceInventory(currentBalances, toBNWei(process.env.MAX_FEE_PCT ?? "5", 18));
+      const maxFeePct = toBNWei(process.env.MAX_FEE_PCT ?? "2.5", 18);
+      // await rebalancerClient.rebalanceInventory(currentBalances, maxFeePct); // Use this mostly for testing.
+      await rebalancerClient.rebalanceCumulativeInventory(cumulativeBalances, currentBalances, maxFeePct);
       logger.debug({
         at: "index.ts:runRebalancer",
         message: "Completed rebalancing inventory",

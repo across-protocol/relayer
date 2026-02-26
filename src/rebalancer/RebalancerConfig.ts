@@ -12,6 +12,10 @@ import { assert, BigNumber, isDefined, readFileSync, toBNWei, getTokenInfoFromSy
  *     },
  *     "USDC": { ... }
  *   },
+ *   "cumulativeBalances": {
+ *     "USDT": { "threshold": "1000000", "target": "1500000", "priorityTier": 0, "chains": { "1": 0 } },
+ *     "USDC": { "threshold": "3000000", "target": "3500000", "priorityTier": 0, "chains": { "1": 0 } }
+ *   },
  *   "maxAmountsToTransfer": {
  *     "USDT": "1000",
  *     "USDC": "1000"
@@ -22,8 +26,11 @@ import { assert, BigNumber, isDefined, readFileSync, toBNWei, getTokenInfoFromSy
  *   }
  * }
  *
- * - targetBalance values are human-readable amounts (e.g. "100" for 100 USDT) and will be
+ * - targetBalance and cumulativeTargetBalance values are human-readable amounts (e.g. "100" for 100 USDT) and will be
  *   converted to the token's native decimals on the respective chain.
+ * - priorityTiers are essentially numbers that you assign to a chain based on how important it is to hold
+ *   liquidity or meet the target balance on that chain. The higher priority deficits are filled first and the lowest
+ *   priority excesses are used first.
  * - maxAmountsToTransfer values follow the same convention and will be converted to the origin chain's
  *   native decimals.
  * - maxPendingOrders is a map of adapter names to the maximum number of pending orders that should be allowed
@@ -49,6 +56,10 @@ export interface TargetBalanceConfig {
   [token: string]: TokenConfig;
 }
 
+export interface CumulativeTargetBalanceConfig {
+  [token: string]: ChainConfig & { chains: { [chainId: number]: number } };
+}
+
 export interface MaxAmountToTransferChainConfig {
   [chainId: number]: BigNumber;
 }
@@ -63,9 +74,14 @@ export interface MaxPendingOrdersConfig {
 
 export class RebalancerConfig extends CommonConfig {
   public targetBalances: TargetBalanceConfig;
+  public cumulativeTargetBalances: CumulativeTargetBalanceConfig;
   public maxAmountsToTransfer: MaxAmountToTransferConfig;
   public maxPendingOrders: MaxPendingOrdersConfig;
-  // chainId's are derived automatically as the union of all chain IDs present in targetBalances.
+
+  // target tokens are derived automatically as the union of all tokens present in targetBalances or
+  // cumulativeTargetBalances.
+  public targetTokens: string[];
+  // chainId's are derived automatically like targetTokens.
   public chainIds: number[];
   constructor(env: ProcessEnv) {
     const { REBALANCER_CONFIG, REBALANCER_EXTERNAL_CONFIG } = env;
@@ -94,6 +110,7 @@ export class RebalancerConfig extends CommonConfig {
     }
 
     const chainIdSet = new Set<number>();
+    const targetTokens = new Set<string>();
 
     // Parse target balances from config, converting human-readable amounts to BigNumber
     // using the token's native decimals on each chain.
@@ -128,7 +145,46 @@ export class RebalancerConfig extends CommonConfig {
             priorityTier,
           };
           chainIdSet.add(Number(chainId));
+          targetTokens.add(token);
         }
+      }
+    }
+
+    this.cumulativeTargetBalances = {};
+    if (isDefined(rebalancerConfig.cumulativeTargetBalances)) {
+      for (const [token, chainConfig] of Object.entries(
+        rebalancerConfig.cumulativeTargetBalances as Record<
+          string,
+          {
+            targetBalance: string;
+            thresholdBalance: string;
+            priorityTier: number;
+            chains: { [chainId: number]: number };
+          }
+        >
+      )) {
+        const { decimals: l1TokenDecimals } = getTokenInfoFromSymbol(token, this.hubPoolChainId);
+        const { targetBalance, thresholdBalance, priorityTier } = chainConfig;
+        assert(
+          targetBalance !== undefined && thresholdBalance !== undefined && priorityTier !== undefined,
+          `Bad config. Must specify targetBalance, thresholdBalance, priorityTier for ${token} for cumulative target balance`
+        );
+        assert(
+          toBN(thresholdBalance).lte(toBN(targetBalance)),
+          `Bad config. thresholdBalance<=targetBalance for ${token} for cumulative target balance`
+        );
+        targetTokens.add(token);
+        Object.keys(chainConfig.chains).forEach((chainId) => {
+          chainIdSet.add(Number(chainId));
+        });
+        this.cumulativeTargetBalances[token] = {
+          targetBalance: toBNWei(targetBalance, l1TokenDecimals),
+          thresholdBalance: toBNWei(thresholdBalance, l1TokenDecimals),
+          priorityTier,
+          chains: Object.fromEntries(
+            Object.entries(chainConfig.chains).map(([chainId, priorityTier]) => [Number(chainId), priorityTier])
+          ),
+        };
       }
     }
 
@@ -159,5 +215,6 @@ export class RebalancerConfig extends CommonConfig {
 
     // Derive chain IDs from the union of all chains in targetBalances.
     this.chainIds = Array.from(chainIdSet);
+    this.targetTokens = Array.from(targetTokens);
   }
 }
