@@ -26,6 +26,9 @@ export interface RebalanceRoute {
 /**
  * @notice This class is a successor to the InventoryClient. It is in charge of rebalancing inventory of the user
  * across all chains given the current and configured target allocations.
+ * @dev We might want to consider implementing different types of RebalancerClients so that its clear they can either
+ * rebalance inventory or cumulative inventory, for example. This way we don't need to handle both types of 
+ * RebalancerConfigs simultaneously.
  */
 export class RebalancerClient {
   constructor(

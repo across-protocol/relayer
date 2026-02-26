@@ -39,6 +39,29 @@ Implemented production swap adapters:
 
 `BaseAdapter` persists pending state in Redis so in-flight multi-stage swaps can be resumed and tracked deterministically across runs.
 
+## Mode vs Adapter Architecture
+
+The rebalancer has two independent layers:
+
+- **Mode layer** (`rebalanceInventory`, `rebalanceCumulativeInventory`) decides **what** inventory imbalance should be corrected and in what order.
+- **Adapter layer** (`RebalancerAdapter` implementations in `src/rebalancer/adapters/`) decides **how** to execute a selected route on a venue.
+
+This separation is intentional:
+
+- Mode logic should stay focused on deficit/excess detection, prioritization, route evaluation, and guardrails.
+- Adapter logic should stay focused on venue-specific API calls, order lifecycle handling, and pending-state reporting.
+- The contract between both layers is the `RebalancerAdapter` interface plus `RebalanceRoute`.
+
+### Safe extension checklist for new adapters
+
+When adding a new file in `src/rebalancer/adapters/`, contributors should usually avoid touching mode functions in `rebalancer.ts`.
+
+1. Implement the full `RebalancerAdapter` interface in the new adapter file.
+2. Register the adapter in `RebalancerClientHelper.ts` (adapter map + route inclusion).
+3. Ensure at least one `RebalanceRoute` points to the adapter name.
+4. Keep mode logic unchanged unless requirements for deficit/excess selection actually changed.
+5. Verify pending-order and pending-rebalance reporting is implemented, since mode guardrails rely on it.
+
 ## Rebalancer Config
 
 `RebalancerConfig` is loaded from `REBALANCER_CONFIG` or `REBALANCER_EXTERNAL_CONFIG`.
