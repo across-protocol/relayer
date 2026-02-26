@@ -24,25 +24,12 @@ import { PublicKey } from "@solana/web3.js";
 import { MessageTransmitterV2Client, TokenMessengerMinterV2Client } from "@across-protocol/contracts";
 import * as sdk from "@across-protocol/sdk";
 import { DestinationUsdcNotConfiguredError, OriginUsdcNotConfiguredError } from "../errors";
-import {
-  MESSAGE_TRANSMITTER_V2_PROGRAM,
-  MINT_RECIPIENT_LENGTH,
-  MINT_RECIPIENT_OFFSET,
-  NONCE_LENGTH,
-  NONCE_OFFSET,
-  TOKEN_2022_PROGRAM,
-  TOKEN_MESSENGER_V2_PROGRAM,
-} from "./svmConstants";
+import { MESSAGE_TRANSMITTER_V2_PROGRAM, TOKEN_2022_PROGRAM, TOKEN_MESSENGER_V2_PROGRAM } from "./svmConstants";
+import { parseCctpV2Message } from "./commonUtils";
 
 const textEncoder = new TextEncoder();
 
 type SolanaAddress = KitAddress<string>;
-
-type ParsedCctpV2Message = {
-  buffer: Buffer;
-  mintRecipientBytes32: Uint8Array;
-  nonceSeed: Uint8Array;
-};
 
 type MessageTransmitterAccounts = {
   messageTransmitterAccount: SolanaAddress;
@@ -63,19 +50,6 @@ type TokenMessengerAccounts = {
   tokenMessengerEventAuthority: SolanaAddress;
   solanaUsdcAddr: SolanaAddress;
 };
-
-function parseCctpV2Message(message: string): ParsedCctpV2Message {
-  const normalized = message.startsWith("0x") ? message.slice(2) : message;
-  const buffer = Buffer.from(normalized, "hex");
-  const mintRecipientBytes32 = buffer.slice(MINT_RECIPIENT_OFFSET, MINT_RECIPIENT_OFFSET + MINT_RECIPIENT_LENGTH);
-  const nonceSeed = buffer.slice(NONCE_OFFSET, NONCE_OFFSET + NONCE_LENGTH);
-
-  return {
-    buffer,
-    mintRecipientBytes32: new Uint8Array(mintRecipientBytes32),
-    nonceSeed: new Uint8Array(nonceSeed),
-  };
-}
 
 function hexStringToBytes(value: string): Uint8Array {
   return new Uint8Array(Buffer.from(value.replace(/^0x/, ""), "hex"));
