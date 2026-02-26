@@ -532,7 +532,10 @@ export class RebalancerClient {
         const priorityTierA = cumulativeTargetBalances[tokenA].priorityTier;
         const priorityTierB = cumulativeTargetBalances[tokenB].priorityTier;
         if (priorityTierA !== priorityTierB) {
-          return priorityTierA - priorityTierB;
+          return priorityTierB - priorityTierA;
+        }
+        if (deficitAmountA.eq(deficitAmountB)) {
+          return 0;
         }
         return deficitAmountA.gt(deficitAmountB) ? -1 : 1;
       }
@@ -555,7 +558,10 @@ export class RebalancerClient {
         const priorityTierA = cumulativeTargetBalances[tokenA].priorityTier;
         const priorityTierB = cumulativeTargetBalances[tokenB].priorityTier;
         if (priorityTierA !== priorityTierB) {
-          return priorityTierB - priorityTierA;
+          return priorityTierA - priorityTierB;
+        }
+        if (excessAmountA.eq(excessAmountB)) {
+          return 0;
         }
         return excessAmountA.gt(excessAmountB) ? -1 : 1;
       }
@@ -597,9 +603,12 @@ export class RebalancerClient {
             const tokenDecimalsA = getTokenInfoFromSymbol(excessToken, Number(chainIdA)).decimals;
             const tokenDecimalsB = getTokenInfoFromSymbol(excessToken, Number(chainIdB)).decimals;
             const amountConverter = ConvertDecimals(tokenDecimalsA, tokenDecimalsB);
-            return amountConverter(currentBalances[chainIdA][excessToken]).gt(currentBalances[chainIdB][excessToken])
-              ? -1
-              : 1;
+            const currentBalanceA = amountConverter(currentBalances[chainIdA][excessToken]);
+            const currentBalanceB = currentBalances[chainIdB][excessToken];
+            if (currentBalanceA.eq(currentBalanceB)) {
+              return 0;
+            }
+            return currentBalanceA.gt(currentBalanceB) ? -1 : 1;
           }
         );
         this.logger.debug({
@@ -642,7 +651,23 @@ export class RebalancerClient {
 
           // @todo Decide which destination chain to use. For now, just swap in-place on the same chain.
           // Maybe take the highest priority chain out of the configured rebalance chains for the deficit token?
-          const allDestinationChains = Object.keys(cumulativeTargetBalances[deficitToken].chains).map(Number);
+          // Order destination chains by priority from highest to lowest, and then chain balance highest to lowest.
+          const allDestinationChains = Object.entries(cumulativeTargetBalances[deficitToken].chains)
+            .sort(([chainIdA, priorityTierA], [chainIdB, priorityTierB]) => {
+              if (priorityTierA !== priorityTierB) {
+                return priorityTierB - priorityTierA;
+              }
+              const tokenDecimalsA = getTokenInfoFromSymbol(deficitToken, Number(chainIdA)).decimals;
+              const tokenDecimalsB = getTokenInfoFromSymbol(deficitToken, Number(chainIdB)).decimals;
+              const amountConverter = ConvertDecimals(tokenDecimalsA, tokenDecimalsB);
+              const currentBalanceA = amountConverter(currentBalances[chainIdA][deficitToken]);
+              const currentBalanceB = currentBalances[chainIdB][deficitToken];
+              if (currentBalanceA.eq(currentBalanceB)) {
+                return 0;
+              }
+              return currentBalanceA.gt(currentBalanceB) ? -1 : 1;
+            })
+            .map(([chainId]) => Number(chainId));
           const rebalanceRoutesToEvaluate: RebalanceRoute[] = [];
           await forEachAsync(availableRebalanceRoutes, async (route) => {
             const pendingOrders = await this.adapters[route.adapter].getPendingOrders();
@@ -686,13 +711,19 @@ export class RebalancerClient {
               cost: await this.adapters[route.adapter].getEstimatedCost(route, amountToTransferCapped, false),
             };
           });
-          rebalanceRouteCosts.sort((a, b) => a.cost.lt(b.cost) ? -1 : 1);
+          rebalanceRouteCosts.sort((a, b) => {
+            if (a.cost.eq(b.cost)) {
+              return 0;
+            }
+            return a.cost.lt(b.cost) ? -1 : 1;
+          });
           const cheapestCostRoute = rebalanceRouteCosts[0];
           this.logger.debug({
             at: "RebalanceClient.rebalanceCumulativeInventory",
             message: `Evaluating sending of ${amountToTransferCapped.toString()} of ${excessToken} on ${getNetworkName(
               chainId
             )}`,
+            sortedDestinationChains: allDestinationChains,
             currentBalance: currentBalance.toString(),
             deficitRemaining: deficitRemaining.toString(),
             excessRemaining: excessRemaining.toString(),
