@@ -465,9 +465,9 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
           tokenMeta.coreDecimals
         );
         const amountToSweepReadable = fromWei(amountToSweep, tokenMeta.coreDecimals);
-        this.logger.debug({
+        this.logger.info({
           at: "HyperliquidStablecoinSwapAdapter.sweepIntermediateBalances",
-          message: `Sweeping ${amountToSweepReadable} ${token} from Hypercore to HyperEVM`,
+          message: `🧹 Sweeping ${amountToSweepReadable} ${token} from Hypercore to HyperEVM`,
           availableBalance: balanceReadable,
           minimumSweepThreshold: minimumSweepThresholdReadable,
           amountToSweep: amountToSweepReadable,
@@ -746,6 +746,10 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     return pendingRebalances;
   }
 
+  async getPendingOrders(): Promise<string[]> {
+    return this._redisGetPendingOrders();
+  }
+
   // ////////////////////////////////////////////////////////////
   // PRIVATE HELPER METHODS
   // ////////////////////////////////////////////////////////////
@@ -858,7 +862,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     const price = spotMarketMeta.isBuy ? Number(maxPxReached.px) * pxBuffer : Number(maxPxReached.px) / pxBuffer;
     const slippagePct = Math.abs(((price - bestPx) / bestPx) * 100);
     return {
-      px: truncate(price, spotMarketMeta.pxDecimals).toString(),
+      px: truncate(price, spotMarketMeta.pxDecimals - 1).toString(),
       slippagePct,
     };
   }

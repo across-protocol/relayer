@@ -535,6 +535,10 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     return pendingRebalances;
   }
 
+  async getPendingOrders(): Promise<string[]> {
+    return this._redisGetPendingOrders();
+  }
+
   async initializeRebalance(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber): Promise<void> {
     this._assertInitialized();
     const { sourceChain, sourceToken, destinationToken, destinationChain } = rebalanceRoute;

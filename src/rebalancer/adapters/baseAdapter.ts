@@ -177,9 +177,6 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     return;
   }
 
-  getPendingOrders(): Promise<string[]> {
-    return this._redisGetPendingOrders();
-  }
 
   // ////////////////////////////////////////////////////////////
   // ABSTRACT PUBLIC METHODS
@@ -194,6 +191,7 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     amountToTransfer: BigNumber,
     debugLog: boolean
   ): Promise<BigNumber>;
+  abstract getPendingOrders(): Promise<string[]>;
 
   // ////////////////////////////////////////////////////////////
   // PROTECTED REDIS HELPER METHODS

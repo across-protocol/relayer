@@ -54,6 +54,10 @@ export class CctpAdapter extends BaseAdapter {
     throw new Error("Not implemented");
   }
 
+  async getPendingOrders(): Promise<string[]> {
+    return [];
+  }
+
   protected _redisGetOrderStatusKey(): string {
     throw new Error("Not implemented");
   }
