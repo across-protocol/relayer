@@ -1,5 +1,5 @@
 import { Contract, Signer } from "ethers";
-import { WETH9__factory as WETH9 } from "@across-protocol/contracts";
+import { WETH9__factory as WETH9 } from "@across-protocol/sdk/typechain";
 import { AugmentedTransaction, TransactionClient } from "../clients";
 import {
   BigNumber,
