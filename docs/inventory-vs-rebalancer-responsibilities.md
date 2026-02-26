@@ -49,7 +49,7 @@ For in-protocol swap support, composition dominates and requires the rebalancer 
 
 ## Cross-coupling points
 
-- InventoryClient imports `pendingRebalances` from `BaseRebalancerClient` and includes them in virtual balance calculations.
+- InventoryClient imports `pendingRebalances` from `ReadOnlyRebalancerClient` and includes them in virtual balance calculations.
 - Rebalancer clients consume InventoryClient-derived balances in two forms:
   - chain-local balances (`currentBalances`) used to choose source chains and route amounts,
   - cumulative balances (`cumulativeBalances`) used to detect per-token aggregate deficits/excesses.

@@ -7,6 +7,7 @@ The Rebalancer determines when the relayer's inventory should be reshaped across
 The main implementations are defined in `rebalancer.ts`:
 
 - `BaseRebalancerClient` as an abstract mode boundary with shared lifecycle/adapter helpers.
+- `ReadOnlyRebalancerClient` for consumers that only need pending rebalance reads.
 - `CumulativeBalanceRebalancerClient` for production cumulative balancing.
 - `SingleBalanceRebalancerClient` for testing-oriented single-balance behavior.
 
@@ -169,6 +170,7 @@ InventoryClient provides the balance context that the rebalancer consumes:
 - chain-level virtual balances,
 - cumulative balances (including pending effects and approximate upcoming refunds),
 - pending rebalance adjustments from adapters.
+- it reads pending rebalance state through `ReadOnlyRebalancerClient` to avoid coupling to a specific rebalancing mode.
 
 ### Relayer
 

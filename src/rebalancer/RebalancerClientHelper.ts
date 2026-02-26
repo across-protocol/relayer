@@ -5,6 +5,7 @@ import { HyperliquidStablecoinSwapAdapter } from "./adapters/hyperliquid";
 import { OftAdapter } from "./adapters/oftAdapter";
 import {
   CumulativeBalanceRebalancerClient,
+  ReadOnlyRebalancerClient,
   RebalancerAdapter,
   RebalanceRoute,
   SingleBalanceRebalancerClient,
@@ -124,6 +125,27 @@ export async function constructSingleBalanceRebalancerClient(
   logger.debug({
     at: "RebalancerClientHelper.constructSingleBalanceRebalancerClient",
     message: "SingleBalanceRebalancerClient initialized",
+    rebalancerConfig,
+  });
+  return rebalancerClient;
+}
+
+export async function constructReadOnlyRebalancerClient(
+  logger: winston.Logger,
+  baseSigner: Signer
+): Promise<ReadOnlyRebalancerClient> {
+  const { rebalancerConfig, adapters, rebalanceRoutes } = constructRebalancerDependencies(logger, baseSigner);
+  const rebalancerClient = new ReadOnlyRebalancerClient(
+    logger,
+    rebalancerConfig,
+    adapters,
+    rebalanceRoutes,
+    baseSigner
+  );
+  await rebalancerClient.initialize();
+  logger.debug({
+    at: "RebalancerClientHelper.constructReadOnlyRebalancerClient",
+    message: "ReadOnlyRebalancerClient initialized",
     rebalancerConfig,
   });
   return rebalancerClient;

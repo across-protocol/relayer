@@ -10,7 +10,7 @@ import {
 } from "../common";
 import { SpokePoolClientsByChain } from "../interfaces";
 import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
-import { constructRebalancerClient } from "../rebalancer/RebalancerClientHelper";
+import { constructReadOnlyRebalancerClient } from "../rebalancer/RebalancerClientHelper";
 import { RebalancerClient } from "../rebalancer/rebalancer";
 
 export interface MonitorClients extends Clients {
@@ -89,7 +89,7 @@ export async function constructMonitorClients(
     adapterManager
   );
   // Load RebalancerClient in view only mode so that getPendingRebalances() can get called.
-  const rebalancerClient = await constructRebalancerClient(logger, baseSigner, true);
+  const rebalancerClient = await constructReadOnlyRebalancerClient(logger, baseSigner);
 
   return {
     ...commonClients,

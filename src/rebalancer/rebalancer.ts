@@ -71,6 +71,11 @@ export abstract class BaseRebalancerClient implements RebalancerClient {
   }
 }
 
+export class ReadOnlyRebalancerClient extends BaseRebalancerClient {
+  override async rebalanceInventory(): Promise<void> {
+    throw new Error("ReadOnlyRebalancerClient does not support rebalancing inventory");
+  }
+}
 export class SingleBalanceRebalancerClient extends BaseRebalancerClient {
   /**
    * @notice Rebalances inventory of current balances from chains where tokens are above configured targets to
