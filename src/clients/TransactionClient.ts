@@ -237,20 +237,6 @@ export class TransactionClient {
   }
 }
 
-export async function sendRawTransaction(
-  logger: winston.Logger,
-  contract: Contract,
-  value = bnZero,
-  calldata: unknown | null = null,
-  gasLimit: BigNumber | null = null,
-  nonce: number | null = null,
-  retries = 1
-): Promise<TransactionResponse> {
-  // method is always an empty string when sending a raw transaction
-  // calldata should be undefined if not sending any calldata to a contract.
-  return await _runTransaction(logger, contract, "", calldata, value, gasLimit, nonce, retries);
-}
-
 // @dev: If the method value is an empty string (i.e. ""), then this function will submit a raw transaction.
 async function _runTransaction(
   logger: winston.Logger,
@@ -315,7 +301,7 @@ async function _runTransaction(
 
   try {
     return sendRawTxn
-      ? await signer.sendTransaction({ to, value, data: args as ethers.utils.BytesLike, gasLimit, ...gas })
+      ? await signer.sendTransaction({ to, value, data: (args as ethers.utils.BytesLike[])[0], gasLimit, ...gas })
       : await contract[method](...(args as Array<unknown>), txConfig);
   } catch (error) {
     // Narrow type. All errors caught here should be Ethers errors.
