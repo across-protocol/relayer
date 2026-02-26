@@ -35,10 +35,6 @@ export class OftAdapter extends BaseAdapter {
         async (destinationChain) => {
           const pendingRebalanceAmount = await this._getUnfinalizedOftBridgeAmount(sourceChain, destinationChain);
           if (pendingRebalanceAmount.gt(bnZero)) {
-            this.logger.debug({
-              at: "OftAdapter.getPendingRebalances",
-              message: `Adding ${pendingRebalanceAmount.toString()} USDT for pending rebalances from ${sourceChain} to ${destinationChain}`,
-            });
             pendingRebalances[destinationChain] ??= {};
             pendingRebalances[destinationChain]["USDT"] = (pendingRebalances[destinationChain]?.["USDT"] ?? bnZero).add(
               pendingRebalanceAmount
