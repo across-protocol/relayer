@@ -13,6 +13,7 @@ import {
 import { CONTRACT_ADDRESSES } from "../../common/ContractAddresses";
 import { DestinationInfo } from "../types";
 import { TransactionClient } from "../../clients";
+import { extractMintRecipientAddress } from "./commonUtils";
 
 /**
  * Gets EVM provider from RPC URL
@@ -78,31 +79,35 @@ export async function createHyperCoreAccountIfNotExists(
  * - Lighter: chainId = 1 with signature
  * - Standard: All other cases without signature
  */
-function getDestination(chainId: number, signature?: string): DestinationInfo {
+function getDestination(chainId: number, messageBytes: string, signature?: string): DestinationInfo {
   if (signature) {
     const isHyperEVM = chainId === CHAIN_IDs.HYPEREVM || chainId === CHAIN_IDs.HYPEREVM_TESTNET;
     const isMainnet = chainId === CHAIN_IDs.MAINNET;
 
     if (isHyperEVM) {
-      const { address, abi } = CONTRACT_ADDRESSES[chainId]?.sponsoredCCTPDstPeriphery || {};
-      if (!address || !abi) {
-        throw new Error(`SponsoredCCTPDstPeriphery address or ABI not configured for chain ${chainId}`);
+      // Extract mint recipient from CCTP message - this is the SponsoredCCTPDstPeriphery contract
+      const mintRecipient = extractMintRecipientAddress(messageBytes);
+      const { abi } = CONTRACT_ADDRESSES[chainId]?.sponsoredCCTPDstPeriphery || {};
+      if (!abi) {
+        throw new Error(`SponsoredCCTPDstPeriphery ABI not configured for chain ${chainId}`);
       }
       return {
         type: "hypercore",
-        address,
+        address: mintRecipient,
         abi,
         requiresSignature: true,
         accountInitialization: createHyperCoreAccountIfNotExists,
       };
     } else if (isMainnet) {
-      const { address, abi } = CONTRACT_ADDRESSES[chainId]?.sponsoredCCTPDstPeriphery || {};
-      if (!address || !abi) {
-        throw new Error(`SponsoredCCTPDstPeriphery address or ABI not configured for chain ${chainId}`);
+      // Extract mint recipient from CCTP message - this is the SponsoredCCTPDstPeriphery contract
+      const mintRecipient = extractMintRecipientAddress(messageBytes);
+      const { abi } = CONTRACT_ADDRESSES[chainId]?.sponsoredCCTPDstPeriphery || {};
+      if (!abi) {
+        throw new Error(`SponsoredCCTPDstPeriphery ABI not configured for chain ${chainId}`);
       }
       return {
         type: "lighter",
-        address,
+        address: mintRecipient,
         abi,
         requiresSignature: true,
       };
@@ -134,7 +139,7 @@ export async function processMintEvm(
 ): Promise<{ txHash: string }> {
   const signer = new ethers.Wallet(privateKey, provider);
 
-  const destination = getDestination(chainId, signature);
+  const destination = getDestination(chainId, attestation.message, signature);
 
   if (destination.accountInitialization) {
     await destination.accountInitialization(attestation.message, signer, logger);
