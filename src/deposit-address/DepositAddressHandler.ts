@@ -229,7 +229,7 @@ export class DepositAddressHandler {
     const provider = this.providersByChain[chainId];
     assert(isDefined(provider), `Provider not found for chain ${chainId}`);
     const code = await provider.getCode(address, blockTag ?? "latest");
-    return isDefined(code) && code !== "0x" && code !== "0x0";
+    return (code?.length ?? 0) > 2; // "0x".length = 2;
   }
 
   /*
