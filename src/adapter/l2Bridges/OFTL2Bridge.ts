@@ -13,11 +13,14 @@ import {
   EventSearchConfig,
   getTokenInfo,
   fixedPointAdjustment,
+  chainHasNativeToken,
+  isDefined,
 } from "../../utils";
 import { interfaces as sdkInterfaces } from "@across-protocol/sdk";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
-import { IOFT_ABI_FULL, OFT_DEFAULT_FEE_CAP, OFT_FEE_CAP_OVERRIDES } from "../../common";
+import { IOFT_ABI_FULL, OFT_DEFAULT_FEE_CAP, OFT_FEE_CAP_OVERRIDES, LZ_FEE_TOKENS } from "../../common";
 import * as OFT from "../../utils/OFTUtils";
+import ERC20_ABI from "../../common/abi/MinimalERC20.json";
 
 export class OFTL2Bridge extends BaseL2BridgeAdapter {
   readonly l2Token: EvmAddress;
@@ -84,6 +87,8 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
       composeMsg: "0x",
       oftCmd: "0x",
     };
+    // Pay the bridge fee in the Lz token if the network does not have a native token (i.e. Tempo).
+    const payFeeInLzToken = !chainHasNativeToken(this.l2chainId);
 
     // Get the messaging fee for this transfer
     const feeStruct: OFT.MessagingFeeStruct = await this.l2Bridge.quoteSend(sendParamStruct, false);
@@ -92,6 +97,19 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
     }
 
     const formatter = createFormatFunction(2, 4, false, this.l2TokenInfo.decimals);
+    const approveTxn = payFeeInLzToken
+      ? {
+          contract: new Contract(LZ_FEE_TOKENS[this.l2chainId].toNative(), ERC20_ABI, this.l2Signer),
+          chainId: this.l2chainId,
+          method: "approve",
+          unpermissionsed: false,
+          nonMulticall: true,
+          args: [this.l2Bridge.address, feeStruct.nativeFee],
+          message: "🎰 Approved OftL2Bridge to spend LZ fee token.",
+          mrkdwn: `Approved ${formatter(feeStruct.nativeFee.toString())} to ${this.l2Bridge.address}`,
+        }
+      : undefined;
+
     // Set refund address to signer's address. This should technically never be required as all of our calcs
     // are precise, set it just in case
     const refundAddress = await this.l2Bridge.signer.getAddress();
@@ -101,15 +119,16 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
       method: "send",
       unpermissionsed: false,
       nonMulticall: true,
+      canFailInSimulation: payFeeInLzToken, // This can fail if the approval for the fee token is not set.
       args: [sendParamStruct, feeStruct, refundAddress],
-      value: BigNumber.from(feeStruct.nativeFee),
+      value: payFeeInLzToken ? bnZero : BigNumber.from(feeStruct.nativeFee),
       message: `🎰 Withdrew ${this.l2Token} via OftL2Bridge to L1`,
       mrkdwn: `Withdrew ${formatter(amount.toString())} ${this.l2TokenInfo.symbol} from ${getNetworkName(
         this.l2chainId
       )} to L1 via OftL2Bridge`,
     };
 
-    return [withdrawTxn];
+    return isDefined(approveTxn) ? [approveTxn, withdrawTxn] : [withdrawTxn];
   }
 
   async getL2PendingWithdrawalAmount(

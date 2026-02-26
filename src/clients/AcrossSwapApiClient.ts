@@ -1,7 +1,7 @@
-import axios, { AxiosError } from "axios";
 import { getAcrossHost } from "./";
 import { BigNumber, EvmAddress, winston, CHAIN_IDs } from "../utils";
 import { SWAP_ROUTES, SwapRoute } from "../common";
+import { BaseAcrossApiClient } from "./AcrossApiBaseClient";
 
 interface SwapApiResponse {
   approvalTxns?: {
@@ -32,15 +32,12 @@ interface SwapData {
 /**
  * @notice This class interfaces with the Across Swap API to execute swaps between chains.
  */
-export class AcrossSwapApiClient {
+export class AcrossSwapApiClient extends BaseAcrossApiClient {
   private routesSupported: Set<SwapRoute> = new Set(Object.values(SWAP_ROUTES));
-  private readonly urlBase;
-  private readonly apiResponseTimeout;
 
-  constructor(readonly logger: winston.Logger, timeoutMs = 3000) {
+  constructor(logger: winston.Logger, timeoutMs = 3000) {
     // Swap API is mainnet-only.
-    this.urlBase = `https://${getAcrossHost(CHAIN_IDs.MAINNET)}/api`;
-    this.apiResponseTimeout = timeoutMs;
+    super(logger, `https://${getAcrossHost(CHAIN_IDs.MAINNET)}/api`, "AcrossSwapApiClient", timeoutMs);
   }
 
   /**
@@ -101,13 +98,6 @@ export class AcrossSwapApiClient {
     return swapData;
   }
 
-  /*
-   * @notice Exposes a non-cached query to the Across API at the specified endpoint.
-   */
-  public async get<T>(urlEndpoint: string, params: Record<string, unknown>): Promise<T | undefined> {
-    return this._get<T>(urlEndpoint, params);
-  }
-
   private async getQuote(
     route: SwapRoute,
     amountOut: BigNumber,
@@ -131,35 +121,6 @@ export class AcrossSwapApiClient {
       recipient: recipient.toNative(),
     };
     return this._get<SwapApiResponse>("/swap/approval", params);
-  }
-
-  private async _get<T>(endpoint: string, params: Record<string, unknown>): Promise<T | undefined> {
-    try {
-      const response = await axios.get<T>(`${this.urlBase}/${endpoint}`, {
-        timeout: this.apiResponseTimeout,
-        params,
-      });
-
-      if (!response?.data) {
-        this.logger.warn({
-          at: "AcrossAPIClient",
-          message: `Invalid response from ${this.urlBase}`,
-          endpoint,
-          params,
-        });
-        return;
-      }
-      return response.data;
-    } catch (err) {
-      this.logger.warn({
-        at: "AcrossSwapApiClient",
-        message: `Failed to post to ${this.urlBase}`,
-        endpoint,
-        params,
-        error: (err as AxiosError).message,
-      });
-      return;
-    }
   }
 
   private _isRouteSupported(route: SwapRoute): boolean {

@@ -19,6 +19,10 @@ import {
   fixedPointAdjustment,
   parseUnits,
   CHAIN_IDs,
+  assert,
+  Provider,
+  Signer,
+  isDefined,
 } from "../utils";
 import { DEFAULT_GAS_FEE_SCALERS } from "../common";
 import { FeeData } from "@ethersproject/abstract-provider";
@@ -57,13 +61,14 @@ export interface AugmentedTransaction {
 const { fixedPointAdjustment: fixedPoint } = sdkUtils;
 const { isError } = typeguards;
 
-const DEFAULT_GASLIMIT_MULTIPLIER = 1.0;
-
 export class TransactionClient {
-  readonly nonces: { [chainId: number]: number } = {};
+  readonly noncesBySigner: { [chainId: number]: { [signerAddress: string]: number } } = {};
+  private activeSignerIndex: { [chainId: number]: number } = {};
+
+  protected readonly DEFAULT_GAS_LIMIT_MULTIPLIER = 1.0;
 
   // eslint-disable-next-line no-useless-constructor
-  constructor(readonly logger: winston.Logger) {}
+  constructor(readonly logger: winston.Logger, readonly signers: Signer[] = []) {}
 
   protected _simulate(txn: AugmentedTransaction): Promise<TransactionSimulationResult> {
     return willSucceed(txn);
@@ -73,6 +78,22 @@ export class TransactionClient {
   // results due to execution sequence or intermediate changes in on-chain state.
   simulate(txns: AugmentedTransaction[]): Promise<TransactionSimulationResult[]> {
     return Promise.all(txns.map((txn: AugmentedTransaction) => this._simulate(txn)));
+  }
+
+  async dispatch(
+    txn: Omit<AugmentedTransaction, "contract">,
+    target: Contract,
+    provider: Provider
+  ): Promise<TransactionResponse> {
+    assert(this.signers.length > 0, "Cannot dispatch transaction without any signers defined.");
+    // Overwrite the signer on the augmented transaction.
+    const signer = this.rotateSigners(txn.chainId);
+    const contract = target.connect(signer.connect(provider));
+    const dispatchTxn = {
+      ...txn,
+      contract,
+    };
+    return (await this.submit(txn.chainId, [dispatchTxn]))[0];
   }
 
   protected _getTransactionPromise(txn: AugmentedTransaction, nonce: number | null): Promise<TransactionResponse> {
@@ -156,11 +177,13 @@ export class TransactionClient {
         throw new Error(`chainId mismatch for method ${txn.method} (${txn.chainId} !== ${chainId})`);
       }
 
-      const nonce = this.nonces[chainId] ? this.nonces[chainId] + 1 : undefined;
+      const signerAddr = await txn.contract.signer.getAddress();
+      const chainNonceMap = (this.noncesBySigner[chainId] ??= {});
+      const nonce = isDefined(chainNonceMap[signerAddr]) ? chainNonceMap[signerAddr] + 1 : undefined;
 
       // @dev It's assumed that nobody ever wants to discount the gasLimit.
-      const gasLimitMultiplier = txn.gasLimitMultiplier ?? DEFAULT_GASLIMIT_MULTIPLIER;
-      if (gasLimitMultiplier > DEFAULT_GASLIMIT_MULTIPLIER) {
+      const gasLimitMultiplier = txn.gasLimitMultiplier ?? this.DEFAULT_GAS_LIMIT_MULTIPLIER;
+      if (gasLimitMultiplier > this.DEFAULT_GAS_LIMIT_MULTIPLIER) {
         this.logger.debug({
           at: "TransactionClient#_submit",
           message: `Padding gasLimit estimate on ${txn.method} transaction.`,
@@ -174,7 +197,7 @@ export class TransactionClient {
       try {
         response = await this._submit(txn, { nonce });
       } catch (error) {
-        delete this.nonces[chainId];
+        delete chainNonceMap[signerAddr];
         this.logger.info({
           at: "TransactionClient#submit",
           message: `Transaction ${idx + 1} submission on ${networkName} failed or timed out.`,
@@ -187,7 +210,7 @@ export class TransactionClient {
         return txnResponses;
       }
 
-      this.nonces[chainId] = response.nonce;
+      chainNonceMap[signerAddr] = response.nonce;
       const blockExplorer = blockExplorerLink(response.hash, txn.chainId);
       mrkdwn += `  ${idx + 1}. ${txn.message || "No message"} (${blockExplorer}): ${txn.mrkdwn || "No markdown"}\n`;
       txnResponses.push(response);
@@ -201,20 +224,17 @@ export class TransactionClient {
 
     return txnResponses;
   }
-}
 
-export async function sendRawTransaction(
-  logger: winston.Logger,
-  contract: Contract,
-  value = bnZero,
-  calldata: unknown | null = null,
-  gasLimit: BigNumber | null = null,
-  nonce: number | null = null,
-  retries = 1
-): Promise<TransactionResponse> {
-  // method is always an empty string when sending a raw transaction
-  // calldata should be undefined if not sending any calldata to a contract.
-  return await _runTransaction(logger, contract, "", calldata, value, gasLimit, nonce, retries);
+  private rotateSigners(chainId: number): Signer {
+    // Get the first signer available for the input chain ID.
+    const signerIndexForChain = this.activeSignerIndex[chainId] ?? 0;
+    const activeSigner = this.signers[signerIndexForChain];
+
+    // Rotate the signer index for the input chain ID.
+    const nSigners = this.signers.length;
+    this.activeSignerIndex[chainId] = (signerIndexForChain + 1) % nSigners;
+    return activeSigner;
+  }
 }
 
 // @dev: If the method value is an empty string (i.e. ""), then this function will submit a raw transaction.
@@ -281,7 +301,7 @@ async function _runTransaction(
 
   try {
     return sendRawTxn
-      ? await signer.sendTransaction({ to, value, data: args as ethers.utils.BytesLike, gasLimit, ...gas })
+      ? await signer.sendTransaction({ to, value, data: (args as ethers.utils.BytesLike[])[0], gasLimit, ...gas })
       : await contract[method](...(args as Array<unknown>), txConfig);
   } catch (error) {
     // Narrow type. All errors caught here should be Ethers errors.

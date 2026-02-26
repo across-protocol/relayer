@@ -26,9 +26,9 @@ import {
   getChainQuorum,
   toBN,
   getRedisCache,
-  delay,
   spreadEventWithBlockNumber,
   createFormatFunction,
+  InstanceCoordinator,
 } from "../utils";
 import { Log, SwapFlowInitialized } from "../interfaces";
 import { CHAIN_MAX_BLOCK_LOOKBACK } from "../common";
@@ -67,7 +67,6 @@ export type Pair = {
 
 const BASE_TOKENS = ["USDT0", "USDC"];
 const USD_DECIMALS = 8;
-const abortController = new AbortController();
 const HL_FIXED_ADJUSTMENT = 10 ** USD_DECIMALS;
 const STABLE_SWAP_DISCOUNT = 0.2;
 // There is a minimum order placement requirement of 10 USD.
@@ -83,6 +82,8 @@ const MIN_ORDER_AMOUNT = toBN(10 * HL_FIXED_ADJUSTMENT);
  * swap handler contracts to users on Hypercore.
  */
 export class HyperliquidExecutor {
+  private abortController = new AbortController();
+  private instanceCoordinator;
   private dstOftMessenger: Contract;
   private dstCctpMessenger: Contract;
   public pairs: { [pair: string]: Pair } = {};
@@ -177,7 +178,7 @@ export class HyperliquidExecutor {
         at: "HyperliquidExecutor#initialize",
         message: "Received SIGHUP on HyperliquidExecutor. stopping...",
       });
-      abortController.abort();
+      this.abortController.abort();
     });
 
     process.on("disconnect", () => {
@@ -185,8 +186,20 @@ export class HyperliquidExecutor {
         at: "HyperliquidExecutor#initialize",
         message: "HyperliquidExecutor disconnected, stopping...",
       });
-      abortController.abort();
+      this.abortController.abort();
     });
+    const { RUN_IDENTIFIER: runIdentifier, BOT_IDENTIFIER: botIdentifier } = process.env;
+
+    // Establish a new bot instance.
+    this.instanceCoordinator = new InstanceCoordinator(
+      this.logger,
+      this.redisClient,
+      botIdentifier,
+      runIdentifier,
+      this.abortController
+    );
+    await this.instanceCoordinator.initiateHandover();
+
     this.initialized = true;
   }
 
@@ -355,38 +368,13 @@ export class HyperliquidExecutor {
   }
 
   /*
-   * @notice Utility function which tells the HyperliquidExecutor when a handoff has occurred.
-   * Calls the abort controller and settles this function's promise once a handoff is observed.
+   * @notice Starts a promise which expires when the InstanceCoordinator's lifetime ends, or when a handover signal
+   * is observed.
    */
   public async waitForDisconnect(): Promise<void> {
-    const {
-      RUN_IDENTIFIER: runIdentifier,
-      BOT_IDENTIFIER: botIdentifier,
-      HL_MAX_CYCLES: _maxCycles = 120,
-      HL_POLLING_DELAY: _pollingDelay = 3,
-    } = process.env;
-    const maxCycles = Number(_maxCycles);
-    const pollingDelay = Number(_pollingDelay);
-    // Set the active instance immediately on arrival here. This function will poll until it reaches the max amount of
-    // runs or it is interrupted by another process.
-    if (isDefined(runIdentifier) && isDefined(botIdentifier)) {
-      await this.redisClient.set(botIdentifier, runIdentifier, maxCycles * pollingDelay);
-      for (let run = 0; run < maxCycles; run++) {
-        const currentBot = await this.redisClient.get(botIdentifier);
-        if (currentBot !== runIdentifier) {
-          this.logger.debug({
-            at: "HyperliquidExecutor#waitForDisconnect",
-            message: `Handing over ${runIdentifier} instance to ${currentBot} for ${botIdentifier}`,
-            run,
-          });
-          abortController.abort();
-          return;
-        }
-        await delay(pollingDelay);
-      }
-      // If we finish looping without receiving a handover signal, still exit so that we won't await the other promise forever.
-      abortController.abort();
-    }
+    // Wait for the instance coordinator to receive a handover signal. Once one is received (or we expire), abort.
+    await this.instanceCoordinator.subscribe();
+    this.abortController.abort();
   }
 
   /*
@@ -602,7 +590,7 @@ export class HyperliquidExecutor {
   // Async iterator which yields the top task in the task queue. If no task is present, then it waits for the task queue to receive
   // another task.
   private async *resolveNextTask() {
-    while (!abortController.signal.aborted) {
+    while (!this.abortController.signal.aborted) {
       await this.waitForNextTask();
 
       // Yield the first task in the task queue.

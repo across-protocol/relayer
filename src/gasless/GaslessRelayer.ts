@@ -26,7 +26,7 @@ import {
   blockExplorerLink,
   getNetworkName,
   relayFillStatus,
-  submitTransaction,
+  sendAndConfirmTransaction,
   getTokenInfo,
   createFormatFunction,
   toAddressType,
@@ -34,6 +34,7 @@ import {
   getL1TokenAddress,
   ConvertDecimals,
   assert,
+  InstanceCoordinator,
 } from "../utils";
 import {
   APIGaslessDepositResponse,
@@ -42,7 +43,7 @@ import {
   DepositWithBlock,
   GaslessDepositMessage,
 } from "../interfaces";
-import { AcrossSwapApiClient, TransactionClient, AugmentedTransaction } from "../clients";
+import { AcrossSwapApiClient, TransactionClient } from "../clients";
 import EIP3009_ABI from "../common/abi/EIP3009.json";
 import {
   buildGaslessDepositTx,
@@ -87,6 +88,7 @@ const stateToStr = (state: MessageState) => MESSAGE_STATES[state] ?? "UNKNOWN";
  */
 export class GaslessRelayer {
   private abortController = new AbortController();
+  private instanceCoordinator;
   private initialized = false;
 
   private messageState: { [nonce: string]: MessageState } = {};
@@ -116,10 +118,11 @@ export class GaslessRelayer {
   public constructor(
     readonly logger: winston.Logger,
     readonly config: GaslessRelayerConfig,
-    readonly baseSigner: Signer
+    readonly baseSigner: Signer,
+    readonly depositSigners: Signer[]
   ) {
     this.api = new AcrossSwapApiClient(this.logger, this.config.apiTimeoutOverride);
-    this.transactionClient = new TransactionClient(this.logger);
+    this.transactionClient = new TransactionClient(this.logger, depositSigners);
     config.relayerDestinationChains.forEach((chainId) => (this.retryableFills[chainId] = {}));
   }
 
@@ -132,6 +135,8 @@ export class GaslessRelayer {
       message: "Initializing GaslessRelayer",
     });
 
+    const { RUN_IDENTIFIER: runIdentifier, BOT_IDENTIFIER: botIdentifier } = process.env;
+
     // Set the signer address.
     this.signerAddress = EvmAddress.from(await this.baseSigner.getAddress());
     this.redisCache = await getRedisCache(this.logger);
@@ -141,7 +146,7 @@ export class GaslessRelayer {
       const provider = await getProvider(chainId);
       this.providersByChain[chainId] = provider;
       this.observedNonces[chainId] = new Set<string>();
-      this.spokePoolPeripheries[chainId] = getSpokePoolPeriphery(chainId).connect(this.baseSigner.connect(provider));
+      this.spokePoolPeripheries[chainId] = getSpokePoolPeriphery(chainId).connect(provider);
     });
     await forEachAsync(this.config.relayerDestinationChains, async (chainId) => {
       this.providersByChain[chainId] ??= await getProvider(chainId);
@@ -213,6 +218,17 @@ export class GaslessRelayer {
       );
       await this.initiateFill(correspondingDeposit);
     });
+
+    // Establish a new bot instance.
+    this.instanceCoordinator = new InstanceCoordinator(
+      this.logger,
+      this.redisCache,
+      botIdentifier,
+      runIdentifier,
+      this.abortController
+    );
+    await this.instanceCoordinator.initiateHandover();
+
     this.initialized = true;
   }
 
@@ -224,39 +240,13 @@ export class GaslessRelayer {
   }
 
   /*
-   * @notice Utility function which tells the relayer when a handoff has occurred.
-   * Calls the abort controller and settles this function's promise once a handoff is observed.
+   * @notice Starts a promise which expires when the InstanceCoordinator's lifetime ends, or when a handover signal
+   * is observed.
    */
   public async waitForDisconnect(): Promise<void> {
-    const {
-      RUN_IDENTIFIER: runIdentifier,
-      BOT_IDENTIFIER: botIdentifier,
-      MAX_CYCLES: _maxCycles = 120,
-      DISCONNECT_POLLING_DELAY: _pollingDelay = 3,
-    } = process.env;
-    const maxCycles = Number(_maxCycles);
-    const pollingDelay = Number(_pollingDelay);
-
-    // Set the active instance immediately on arrival here. This function will poll until it reaches the max amount of
-    // runs or it is interrupted by another process.
-    if (isDefined(runIdentifier) && isDefined(botIdentifier)) {
-      await this.redisCache.set(botIdentifier, runIdentifier, maxCycles * pollingDelay);
-      for (let run = 0; run < maxCycles; run++) {
-        const currentBot = await this.redisCache.get(botIdentifier);
-        if (currentBot !== runIdentifier) {
-          this.logger.debug({
-            at: "GaslessRelayer#waitForDisconnect",
-            message: `Handing over ${runIdentifier} instance to ${currentBot} for ${botIdentifier}`,
-            run,
-          });
-          this.abortController.abort();
-          return;
-        }
-        await delay(pollingDelay);
-      }
-      // If we finish looping without receiving a handover signal, still exit so that we won't await the other promise forever.
-      this.abortController.abort();
-    }
+    // Wait for the instance coordinator to receive a handover signal. Once one is received (or we expire), abort.
+    await this.instanceCoordinator.subscribe();
+    this.abortController.abort();
   }
 
   /*
@@ -696,8 +686,12 @@ export class GaslessRelayer {
     const { originChainId, depositId, permit } = depositMessage;
     const { destinationChainId, inputAmount, inputToken } = depositMessage.baseDepositData;
 
-    const spokePoolPeripheryContract = this.spokePoolPeripheries[originChainId];
-
+    let spokePoolPeripheryContract = this.spokePoolPeripheries[originChainId];
+    if (this.depositSigners.length === 0) {
+      spokePoolPeripheryContract = spokePoolPeripheryContract.connect(
+        this.baseSigner.connect(this.providersByChain[originChainId])
+      );
+    }
     const _gaslessDeposit = buildGaslessDepositTx(depositMessage, spokePoolPeripheryContract);
 
     if (!this.config.sendingTransactionsEnabled) {
@@ -722,7 +716,24 @@ export class GaslessRelayer {
         tokenInfo.decimals
       )(inputAmount)} ${tokenInfo.symbol}, and deposit ID ${depositId}`,
     };
-    return this.submit(gaslessDeposit);
+
+    const txReceipt = await sendAndConfirmTransaction(
+      gaslessDeposit,
+      this.transactionClient,
+      this.depositSigners.length > 0
+    );
+    if (!isDefined(txReceipt)) {
+      this.logger.warn({
+        at: "GaslessRelayer#initiateGaslessDeposit",
+        message: "Failed to submit gasless deposit",
+        depositId,
+        originChainId,
+        destinationChainId,
+        inputToken,
+        inputAmount,
+      });
+    }
+    return txReceipt;
   }
 
   /*
@@ -766,7 +777,15 @@ export class GaslessRelayer {
       } and deposit ID ${depositId}`,
     };
 
-    return this.submit(gaslessFill);
+    const txReceipt = await sendAndConfirmTransaction(gaslessFill, this.transactionClient);
+    if (!isDefined(txReceipt)) {
+      this.logger.warn({
+        at: "GaslessRelayer#initiateFill",
+        message: "Failed to submit gasless fill",
+        depositId,
+      });
+    }
+    return txReceipt;
   }
 
   /*
@@ -874,26 +893,6 @@ export class GaslessRelayer {
       from,
       maxLookBack: this.config.maxBlockLookBack[chainId],
     };
-  }
-
-  /*
-   * @notice Submits a transaction and awaits its transaction receipt.
-   */
-  private async submit(tx: AugmentedTransaction): Promise<TransactionReceipt | undefined> {
-    try {
-      const txResponse = await submitTransaction(tx, this.transactionClient);
-      // Since we called `ensureConfirmation` in the transaction client, the receipt should exist, so `.wait()` should have already resolved.
-      // We only sent one transaction, so only take the first element of `txResponses`.
-      return txResponse.wait();
-    } catch (err) {
-      // We will reach this code block if, after polling for transaction confirmation, we still do not see the receipt onchain.
-      this.logger.warn({
-        at: "GaslessRelayer#submit",
-        message: "Failed to submit transaction",
-        err: err instanceof Error ? err.message : String(err),
-      });
-      return null;
-    }
   }
 
   /*
