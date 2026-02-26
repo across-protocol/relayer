@@ -62,8 +62,8 @@ export abstract class BaseRebalancerClient implements RebalancerClient {
       const pending = await adapter.getPendingRebalances();
       Object.entries(pending).forEach(([chainId, tokenBalance]) => {
         Object.entries(tokenBalance).forEach(([token, amount]) => {
-          pending[chainId] ??= {};
-          pending[chainId][token] = (pending[chainId]?.[token] ?? bnZero).add(amount);
+          pendingRebalances[chainId] ??= {};
+          pendingRebalances[chainId][token] = (pendingRebalances[chainId]?.[token] ?? bnZero).add(amount);
         });
       });
     });
