@@ -702,7 +702,7 @@ export interface RebalancerAdapter {
 
 type ExcessOrDeficit = { token: string; chainId: number; amount: BigNumber; priorityTier: number };
 // Excesses are always sorted in priority from lowest to highest and then by amount from largest to smallest.
-function sortExcessFunction(excessA: ExcessOrDeficit, excessB): number {
+function sortExcessFunction(excessA: ExcessOrDeficit, excessB: ExcessOrDeficit): number {
   const { token: tokenA, amount: amountA, priorityTier: priorityTierA, chainId: chainIdA } = excessA;
   const { token: tokenB, amount: amountB, priorityTier: priorityTierB, chainId: chainIdB } = excessB;
   if (priorityTierA !== priorityTierB) {
