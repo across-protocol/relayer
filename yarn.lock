@@ -49,34 +49,6 @@
     yargs "^17.7.2"
     zksync-web3 "^0.14.3"
 
-"@across-protocol/contracts@5.0.0-alpha.2":
-  version "5.0.0-alpha.2"
-  resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-5.0.0-alpha.2.tgz#8a0d9b736d3cdfa81879dc86c2df100ed7a0bcd4"
-  integrity sha512-zhvPYS6zqV6BOUf0TYf0XNvrMjgfKq65859HlE+34hCFJTqyJ5jBlO8K94DhKexTwcAcnQ5hph//WBzpdB7wZg==
-  dependencies:
-    "@across-protocol/constants" "^3.1.98"
-    "@coral-xyz/anchor" "^0.31.1"
-    "@eth-optimism/contracts" "^0.5.40"
-    "@ethersproject/bignumber" "5.7.0"
-    "@openzeppelin/contracts" "5.5.0"
-    "@openzeppelin/contracts-upgradeable" "5.5.0"
-    "@openzeppelin/contracts-upgradeable-v4" "npm:@openzeppelin/contracts-upgradeable@4.9.6"
-    "@openzeppelin/contracts-v4" "npm:@openzeppelin/contracts@4.9.6"
-    "@openzeppelin/foundry-upgrades" "^0.4.0"
-    "@safe-global/protocol-kit" "^6.1.1"
-    "@scroll-tech/contracts" "^0.1.0"
-    "@solana-program/address-lookup-table" "0.10.0"
-    "@solana-program/token" "0.9.0"
-    "@solana/kit" "^5.4.0"
-    "@solana/spl-token" "0.4.14"
-    "@solana/web3.js" "1.98.2"
-    "@types/yargs" "^17.0.33"
-    "@uma/common" "^2.37.3"
-    "@uma/contracts-node" "^0.4.17"
-    bs58 "^6.0.0"
-    yargs "^17.7.2"
-    zksync-web3 "^0.14.3"
-
 "@across-protocol/contracts@^0.1.4":
   version "0.1.4"
   resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-0.1.4.tgz#64b3d91e639d2bb120ea94ddef3d160967047fa5"
