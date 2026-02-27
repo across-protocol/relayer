@@ -16,18 +16,13 @@ import {
   winston,
 } from "../utils";
 import { CumulativeBalanceRebalancerClient } from "./clients/CumulativeBalanceRebalancerClient";
-import { SingleBalanceRebalancerClient } from "./clients/SingleBalanceRebalancerClient";
 
-import {
-  constructCumulativeBalanceRebalancerClient,
-  constructSingleBalanceRebalancerClient,
-} from "./RebalancerClientHelper";
+import { constructCumulativeBalanceRebalancerClient } from "./RebalancerClientHelper";
 import { RebalancerConfig } from "./RebalancerConfig";
 import { RebalancerAdapter, RebalancerClient } from "./utils/interfaces";
 config();
 let logger: winston.Logger;
 
-type RunMode = "single" | "cumulative";
 
 type RebalancerRunContext = {
   rebalancerConfig: RebalancerConfig;
@@ -38,10 +33,9 @@ type RebalancerRunContext = {
 
 async function initializeRebalancerRun(
   _logger: winston.Logger,
-  baseSigner: Signer,
-  mode: RunMode
+  baseSigner: Signer
 ): Promise<RebalancerRunContext> {
-  const logLabel = mode === "single" ? "runSingleBalanceRebalancer" : "runCumulativeBalanceRebalancer";
+  const logLabel = "runCumulativeBalanceRebalancer";
   logger = _logger;
   const rebalancerConfig = new RebalancerConfig(process.env);
   logger.debug({ at: `index.ts:${logLabel}`, message: "Rebalancer Config loaded", rebalancerConfig });
@@ -67,10 +61,7 @@ async function initializeRebalancerRun(
     inventoryClient.setBundleData();
     await inventoryClient.update(rebalancerConfig.chainIds);
   }
-  const rebalancerClient =
-    mode === "single"
-      ? await constructSingleBalanceRebalancerClient(logger, baseSigner)
-      : await constructCumulativeBalanceRebalancerClient(logger, baseSigner);
+  const rebalancerClient = await constructCumulativeBalanceRebalancerClient(logger, baseSigner);
 
   let timerStart = performance.now();
 
@@ -103,26 +94,6 @@ async function initializeRebalancerRun(
   };
 }
 
-function loadSingleModeCurrentBalances(
-  rebalancerConfig: RebalancerConfig,
-  inventoryClient: RebalancerRunContext["inventoryClient"]
-): { [chainId: number]: { [token: string]: BigNumber } } {
-  const currentBalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
-  for (const [token, chainConfig] of Object.entries(rebalancerConfig.targetBalances)) {
-    const l1TokenInfo = getTokenInfoFromSymbol(token, rebalancerConfig.hubPoolChainId);
-    assert(l1TokenInfo.address.isEVM());
-    for (const chainId of Object.keys(chainConfig)) {
-      const l2TokenInfo = getTokenInfoFromSymbol(token, Number(chainId));
-      assert(l2TokenInfo.address.isEVM());
-      const currentBalance = inventoryClient.getChainBalance(Number(chainId), l1TokenInfo.address, l2TokenInfo.address);
-      const convertDecimalsToSourceChain = ConvertDecimals(l1TokenInfo.decimals, l2TokenInfo.decimals);
-      currentBalances[chainId] ??= {};
-      currentBalances[chainId][token] = convertDecimalsToSourceChain(currentBalance);
-    }
-  }
-  return currentBalances;
-}
-
 function loadCumulativeModeBalances(
   rebalancerConfig: RebalancerConfig,
   inventoryClient: RebalancerRunContext["inventoryClient"]
@@ -130,6 +101,9 @@ function loadCumulativeModeBalances(
   currentBalances: { [chainId: number]: { [token: string]: BigNumber } };
   cumulativeBalances: { [token: string]: BigNumber };
 } {
+  // Note: Current balances should be fetched from TokenClient, because we can only rebalance using amounts
+  // that we have on-chain. However, cumulative balances, which are compared against targets/thresholds
+  // should contain virtual balance modifications, because these comparisons are used to trigger actual rebalances.
   const currentBalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
   const cumulativeBalances: { [token: string]: BigNumber } = {};
   for (const [token, chainConfig] of Object.entries(rebalancerConfig.cumulativeTargetBalances)) {
@@ -138,10 +112,9 @@ function loadCumulativeModeBalances(
     for (const chainId of Object.keys(chainConfig.chains)) {
       const l2TokenInfo = getTokenInfoFromSymbol(token, Number(chainId));
       assert(l2TokenInfo.address.isEVM());
-      const currentBalance = inventoryClient.getChainBalance(Number(chainId), l1TokenInfo.address, l2TokenInfo.address);
-      const convertDecimalsToSourceChain = ConvertDecimals(l1TokenInfo.decimals, l2TokenInfo.decimals);
+      const currentBalance = inventoryClient.tokenClient.getBalance(Number(chainId), l2TokenInfo.address);
       currentBalances[chainId] ??= {};
-      currentBalances[chainId][token] = convertDecimalsToSourceChain(currentBalance);
+      currentBalances[chainId][token] = currentBalance;
     }
 
     const cumulativeBalance = inventoryClient.getCumulativeBalanceWithApproximateUpcomingRefunds(
@@ -247,42 +220,6 @@ export async function runCumulativeBalanceRebalancer(_logger: winston.Logger, ba
     // Maybe now enter a loop where we update rebalances continuously every X seconds until the next run where
     // we call rebalance inventory? The thinking is we should rebalance inventory once per "run" and then continually
     // update rebalance statuses/finalize pending rebalances.
-  } catch (error) {
-    // eslint-disable-next-line no-console
-    console.error("Error running rebalancer", error);
-    throw error;
-  } finally {
-    await disconnectRedisClients(logger);
-  }
-}
-
-/**
- * Testing-only single-balance runtime path.
- * This mode is useful for local validation and should not be used as a production default.
- */
-export async function runSingleBalanceRebalancer(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
-  const logLabel = "runSingleBalanceRebalancer";
-  const { adaptersToUpdate, inventoryClient, rebalancerClient, rebalancerConfig } = await initializeRebalancerRun(
-    _logger,
-    baseSigner,
-    "single"
-  );
-  const currentBalances = loadSingleModeCurrentBalances(rebalancerConfig, inventoryClient);
-  await applyPendingRebalanceAdjustments(rebalancerConfig, adaptersToUpdate, currentBalances, logLabel);
-
-  let timerStart = performance.now();
-  try {
-    if (process.env.SEND_REBALANCES === "true") {
-      timerStart = performance.now();
-      const maxFeePct = toBNWei(process.env.MAX_FEE_PCT ?? "2.5", 18);
-      await (rebalancerClient as SingleBalanceRebalancerClient).rebalanceInventory(currentBalances, maxFeePct);
-      logger.debug({
-        at: `index.ts:${logLabel}`,
-        message: "Completed rebalancing inventory",
-        duration: performance.now() - timerStart,
-      });
-      timerStart = performance.now();
-    }
   } catch (error) {
     // eslint-disable-next-line no-console
     console.error("Error running rebalancer", error);

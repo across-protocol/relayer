@@ -5,13 +5,6 @@ import { assert, BigNumber, isDefined, readFileSync, toBNWei, getTokenInfoFromSy
 /**
  * Expected JSON config format:
  * {
- *   "targetBalances": {
- *     "USDT": {
- *       "1": { "targetBalance": "0", "thresholdBalance": "0", "priorityTier": 0 },
- *       "42161": { "targetBalance": "100", "thresholdBalance": "50", "priorityTier": 1 }
- *     },
- *     "USDC": { ... }
- *   },
  *   "cumulativeBalances": {
  *     "USDT": { "threshold": "1000000", "target": "1500000", "priorityTier": 0, "chains": { "1": 0 } },
  *     "USDC": { "threshold": "3000000", "target": "3500000", "priorityTier": 0, "chains": { "1": 0 } }
@@ -26,7 +19,7 @@ import { assert, BigNumber, isDefined, readFileSync, toBNWei, getTokenInfoFromSy
  *   }
  * }
  *
- * - targetBalance and cumulativeTargetBalance values are human-readable amounts (e.g. "100" for 100 USDT) and will be
+ * - cumulativeTargetBalance values are human-readable amounts (e.g. "100" for 100 USDT) and will be
  *   converted to the token's native decimals on the respective chain.
  * - priorityTiers are essentially numbers that you assign to a chain based on how important it is to hold
  *   liquidity or meet the target balance on that chain. The higher priority deficits are filled first and the lowest
@@ -46,18 +39,12 @@ interface ChainConfig {
   // Set this higher to prioritize returning this balance (if below target) back to target or deprioritize
   // sending this balance when above target.
   priorityTier: number;
-}
-
-interface TokenConfig {
-  [chainId: number]: ChainConfig;
-}
-
-export interface TargetBalanceConfig {
-  [token: string]: TokenConfig;
+  // Chains that this token can be rebalanced to.
+  chains: { [chainId: number]: number };
 }
 
 export interface CumulativeTargetBalanceConfig {
-  [token: string]: ChainConfig & { chains: { [chainId: number]: number } };
+  [token: string]: ChainConfig;
 }
 
 export interface MaxAmountToTransferChainConfig {
@@ -73,7 +60,6 @@ export interface MaxPendingOrdersConfig {
 }
 
 export class RebalancerConfig extends CommonConfig {
-  public targetBalances: TargetBalanceConfig;
   public cumulativeTargetBalances: CumulativeTargetBalanceConfig;
   public maxAmountsToTransfer: MaxAmountToTransferConfig;
   public maxPendingOrders: MaxPendingOrdersConfig;
@@ -107,42 +93,6 @@ export class RebalancerConfig extends CommonConfig {
     }
 
     const chainIdSet = new Set<number>();
-    // Parse target balances from config, converting human-readable amounts to BigNumber
-    // using the token's native decimals on each chain.
-    this.targetBalances = {};
-    if (isDefined(rebalancerConfig.targetBalances)) {
-      for (const [token, chains] of Object.entries(rebalancerConfig.targetBalances)) {
-        this.targetBalances[token] = {};
-        for (const [chainId, chainConfig] of Object.entries(
-          chains as Record<
-            string,
-            {
-              targetBalance: string;
-              thresholdBalance: string;
-              priorityTier: number;
-            }
-          >
-        )) {
-          const { targetBalance, thresholdBalance, priorityTier } = chainConfig;
-          const { decimals } = getTokenInfoFromSymbol(token, Number(chainId));
-          // Validate the ChainConfig:
-          assert(
-            targetBalance !== undefined && thresholdBalance !== undefined && priorityTier !== undefined,
-            `Bad config. Must specify targetBalance, thresholdBalance, priorityTier for ${token} on ${chainId}`
-          );
-          assert(
-            toBN(thresholdBalance).lte(toBN(targetBalance)),
-            `Bad config. thresholdBalance<=targetBalance for ${token} on ${chainId}`
-          );
-          this.targetBalances[token][Number(chainId)] = {
-            targetBalance: toBNWei(targetBalance, decimals),
-            thresholdBalance: toBNWei(thresholdBalance, decimals),
-            priorityTier,
-          };
-          chainIdSet.add(Number(chainId));
-        }
-      }
-    }
 
     this.cumulativeTargetBalances = {};
     if (isDefined(rebalancerConfig.cumulativeTargetBalances)) {

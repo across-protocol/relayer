@@ -18,13 +18,13 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
    * @notice Rebalances cumulative balances of tokens across chains where cumulative token balances are above
    * configured targets to to tokens that have cumulative balances below configured thresholds. Tokens are sourced
    * from chains sorted by configured priority tier and current balance level.
-   * @param cumulativeBalances Dictionary of token -> cumulative balance.
-   * @param currentBalances Dictionary of chainId -> token -> current balance.
+   * @param cumulativeBalances Dictionary of token -> cumulative virtual balances.
+   * @param currentBalancesOnChain Dictionary of chainId -> token -> current on-chain balance.
    * @param maxFeePct Maximum fee percentage to allow for rebalances.
    */
   override async rebalanceInventory(
     cumulativeBalances: { [token: string]: BigNumber },
-    currentBalances: { [chainId: number]: { [token: string]: BigNumber } },
+    currentBalancesOnChain: { [chainId: number]: { [token: string]: BigNumber } },
     maxFeePct: BigNumber
   ): Promise<void> {
     // Assert invariants:
@@ -42,8 +42,8 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
     // and the cumulative rebalance chain list.
     const availableRebalanceRoutes = this.rebalanceRoutes.filter((route) => {
       return (
-        isDefined(currentBalances[route.sourceChain]?.[route.sourceToken]) &&
-        isDefined(currentBalances[route.destinationChain]?.[route.destinationToken]) &&
+        isDefined(currentBalancesOnChain[route.sourceChain]?.[route.sourceToken]) &&
+        isDefined(currentBalancesOnChain[route.destinationChain]?.[route.destinationToken]) &&
         isDefined(cumulativeTargetBalances[route.sourceToken]?.chains?.[route.sourceChain]) &&
         isDefined(cumulativeTargetBalances[route.destinationToken]?.chains?.[route.destinationChain])
       );
@@ -52,7 +52,7 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
     this.logger.debug({
       at: "CumulativeBalanceRebalancerClient.rebalanceInventory",
       message: "Available rebalance routes",
-      currentBalances: Object.entries(currentBalances).map(([chainId, tokens]) => {
+      currentBalancesOnChain: Object.entries(currentBalancesOnChain).map(([chainId, tokens]) => {
         return {
           [chainId]: Object.fromEntries(
             Object.entries(tokens).map(([token, balance]) => {
@@ -137,13 +137,13 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
           cumulativeTargetBalances[excessToken].chains
         )
           .filter(([chainId]) => {
-            return isDefined(currentBalances[chainId]?.[excessToken]);
+            return isDefined(currentBalancesOnChain[chainId]?.[excessToken]);
           })
           .map(([chainId, priorityTier]) => {
             return {
               chainId: Number(chainId),
               priorityTier,
-              amount: currentBalances[chainId][excessToken],
+              amount: currentBalancesOnChain[chainId][excessToken],
               token: excessToken,
             };
           });
