@@ -35,9 +35,9 @@ interface SwapData {
 export class AcrossSwapApiClient extends BaseAcrossApiClient {
   private routesSupported: Set<SwapRoute> = new Set(Object.values(SWAP_ROUTES));
 
-  constructor(logger: winston.Logger, timeoutMs = 3000, apiKey?: string) {
+  constructor(logger: winston.Logger, timeoutMs = 3000) {
     // Swap API is mainnet-only.
-    super(logger, `https://${getAcrossHost(CHAIN_IDs.MAINNET)}/api`, "AcrossSwapApiClient", timeoutMs, apiKey);
+    super(logger, `https://${getAcrossHost(CHAIN_IDs.MAINNET)}/api`, "AcrossSwapApiClient", timeoutMs);
   }
 
   /**
