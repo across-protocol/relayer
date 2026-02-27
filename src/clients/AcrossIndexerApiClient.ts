@@ -10,6 +10,6 @@ export function getAcrossIndexerHost(hubChainId: number): string {
 
 export class AcrossIndexerApiClient extends BaseAcrossApiClient {
   constructor(logger: winston.Logger, timeoutMs = 3000) {
-    super(logger, `https://${getAcrossIndexerHost(CHAIN_IDs.MAINNET)}/api`, "AcrossIndexerApiClient", timeoutMs);
+    super(logger, `https://${getAcrossIndexerHost(CHAIN_IDs.MAINNET)}`, "AcrossIndexerApiClient", timeoutMs);
   }
 }

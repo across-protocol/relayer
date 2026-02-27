@@ -4,20 +4,17 @@ import winston from "winston";
 /**
  * Base client for Across HTTP APIs. Provides shared GET logic with timeout and error handling.
  * Subclasses set urlBase and logContext in the constructor.
- * Optional apiKey is sent as Authorization: Bearer <apiKey> when set (e.g. same as gasless deposits).
  */
 export abstract class BaseAcrossApiClient {
   protected readonly urlBase: string;
   protected readonly apiResponseTimeout: number;
   /** Used in log "at" field (e.g. "AcrossSwapApiClient"). */
   protected readonly logContext: string;
-  protected readonly apiKey: string | undefined;
 
-  constructor(readonly logger: winston.Logger, urlBase: string, logContext: string, timeoutMs = 3000, apiKey?: string) {
+  constructor(readonly logger: winston.Logger, urlBase: string, logContext: string, timeoutMs = 3000) {
     this.urlBase = urlBase;
     this.logContext = logContext;
     this.apiResponseTimeout = timeoutMs;
-    this.apiKey = apiKey;
   }
 
   /**
@@ -29,14 +26,10 @@ export abstract class BaseAcrossApiClient {
 
   protected async _get<T>(endpoint: string, params: Record<string, unknown>): Promise<T | undefined> {
     try {
-      const config: { timeout: number; params: Record<string, unknown>; headers?: Record<string, string> } = {
+      const response = await axios.get<T>(`${this.urlBase}/${endpoint}`, {
         timeout: this.apiResponseTimeout,
         params,
-      };
-      if (this.apiKey) {
-        config.headers = { Authorization: `Bearer ${this.apiKey}` };
-      }
-      const response = await axios.get<T>(`${this.urlBase}/${endpoint}`, config);
+      });
 
       if (!response?.data) {
         this.logger.warn({
