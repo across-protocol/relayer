@@ -14,12 +14,14 @@ import {
   sendAndConfirmTransaction,
   getCounterfactualDepositFactory,
   buildDeployTx,
+  toBN,
   getDepositKey,
   assert,
 } from "../utils";
 import { DepositAddressMessage } from "../interfaces";
 import { AcrossSwapApiClient, TransactionClient, SwapApiResponse } from "../clients";
 import { AcrossIndexerApiClient } from "../clients/AcrossIndexerApiClient";
+import ERC20_ABI from "../common/abi/MinimalERC20.json";
 
 // Teach BigInt how to be represented as JSON.
 (BigInt.prototype as any).toJSON = function () {
@@ -142,7 +144,10 @@ export class DepositAddressHandler {
   }
 
   private async initiateDeposit(depositMessage: DepositAddressMessage): Promise<void> {
-    const originChainId = Number(depositMessage.routeParams.originChainId);
+    const { inputToken, originChainId: _originChainId } = depositMessage.routeParams;
+    const { amount: _inputAmount } = depositMessage.erc20Transfer;
+    const originChainId = Number(_originChainId);
+    const inputAmount = toBN(_inputAmount);
     const depositKey = getDepositKey(depositMessage);
     if (this.observedExecutedDeposits[originChainId]?.has(depositKey)) {
       return;
@@ -169,6 +174,23 @@ export class DepositAddressHandler {
     const factoryContract = useDispatcher
       ? baseFactoryContract
       : baseFactoryContract.connect(this.baseSigner.connect(this.providersByChain[originChainId]));
+
+    // Before initiating any transactions, check if the deposit address has been credited with the
+    // input token on the origin chain. If it has not, then we either (1) have already processed this
+    // deposit, or (2) received a transaction from the indexer which has been reorged and will be processed
+    // once the funds arrive to the deposit address.
+    const inputTokenContract = new Contract(inputToken, ERC20_ABI, factoryContract.provider);
+    const balanceOfContract = await inputTokenContract.balanceOf(depositMessage.depositAddress);
+    if (balanceOfContract.lt(inputAmount)) {
+      this.logger.debug({
+        at: "DepositAddressHandler#initiateDeposit",
+        message: "Contract does not have sufficient input token balance to initiate deposit.",
+        depositKey,
+        depositAddress: depositMessage.depositAddress,
+        inputToken,
+      });
+      return;
+    }
 
     if (!isDepositAddressDeployed) {
       const deployTx = buildDeployTx(
