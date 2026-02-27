@@ -54,7 +54,7 @@ export class DepositAddressHandler {
     readonly baseSigner: Signer,
     readonly depositAddressSigners: Signer[]
   ) {
-    this.api = new AcrossSwapApiClient(this.logger, this.config.apiTimeoutOverride);
+    this.api = new AcrossSwapApiClient(this.logger, this.config.apiTimeoutOverride, this.config.swapApiKey);
     this.indexerApi = new AcrossIndexerApiClient(this.logger, this.config.apiTimeoutOverride);
     this.transactionClient = new TransactionClient(this.logger, depositAddressSigners);
   }
