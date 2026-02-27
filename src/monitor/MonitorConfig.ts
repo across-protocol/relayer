@@ -77,6 +77,7 @@ export class MonitorConfig extends CommonConfig {
       KNOWN_V1_ADDRESSES,
       BALANCES_ENABLED,
       MONITORED_BALANCES,
+      MONITORED_BALANCES_2,
       STUCK_REBALANCES_ENABLED,
       REPORT_SPOKE_POOL_BALANCES,
       MONITORED_SPOKE_POOL_CHAINS,
@@ -165,7 +166,43 @@ export class MonitorConfig extends CommonConfig {
     this.hubPoolStartingBlock = STARTING_BLOCK_NUMBER ? Number(STARTING_BLOCK_NUMBER) : undefined;
     this.hubPoolEndingBlock = ENDING_BLOCK_NUMBER ? Number(ENDING_BLOCK_NUMBER) : undefined;
 
-    if (MONITORED_BALANCES) {
+    const validate = (chainId: number, account: string, warnThreshold: number, errorThreshold: number) => {
+      if (!isDefined(errorThreshold) && !isDefined(warnThreshold)) {
+        throw new Error("Must provide either an errorThreshold or a warnThreshold");
+      }
+
+      if (isDefined(errorThreshold)) {
+        if (Number.isNaN(Number(errorThreshold))) {
+          throw new Error(`account ${account} ${chainId} errorThreshold not a number (${errorThreshold})`);
+        }
+      }
+
+      if (isDefined(warnThreshold)) {
+        if (Number.isNaN(Number(errorThreshold))) {
+          throw new Error(`account ${account} ${chainId} warnThreshold not a number (${warnThreshold})`);
+        }
+      }
+    };
+
+    if (MONITORED_BALANCES_2) {
+      this.monitoredBalances = [];
+      const config = JSON.parse(MONITORED_BALANCES_2);
+      Object.entries(config).forEach(([account, chainConfig]) => {
+        Object.entries(chainConfig).forEach(([_chainId, tokenConfigs]) => {
+          const chainId = Number(_chainId);
+          tokenConfigs.forEach(({ token, warnThreshold, errorThreshold }) => {
+            validate(chainId, account, warnThreshold, errorThreshold);
+            this.monitoredBalances.push({
+              chainId,
+              account: toAddressType(account, chainId),
+              warnThreshold,
+              errorThreshold,
+              token: isDefined(token) ? toAddressType(token, chainId) : getNativeTokenAddressForChain(chainId),
+            });
+          });
+        });
+      });
+    } else if (MONITORED_BALANCES) {
       this.monitoredBalances = JSON.parse(MONITORED_BALANCES).map(
         ({ errorThreshold, warnThreshold, account, token, chainId }) => {
           if (!isDefined(errorThreshold) && !isDefined(warnThreshold)) {
