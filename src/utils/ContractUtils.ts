@@ -24,6 +24,10 @@ export function getDeployedContract(contractName: string, networkId: number, sig
   }
 }
 
+export function getCounterfactualDepositImplementationAddress(chainId: number): string {
+  return CONTRACT_ADDRESSES[chainId].counterfactualDeposit.address;
+}
+
 // For a chain ID and optional CounterfactualDepositFactory address, return a Contract instance with the corresponding ABI.
 export function getCounterfactualDepositFactory(chainId: number, address?: string): Contract {
   return new Contract(

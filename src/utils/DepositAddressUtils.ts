@@ -1,32 +1,12 @@
-import { Contract, utils } from "ethers";
+import { Contract } from "ethers";
 import { AugmentedTransaction } from "../clients";
-import { DepositAddressMessage, RouteParams } from "../interfaces/DepositAddress";
-
-/**
- * Computes paramsHash as keccak256(abi.encode(routeParams)).
- * Encoding order and types must match the contract's RouteParams struct.
- */
-export function computeParamsHash(routeParams: RouteParams): string {
-  const encoded = utils.defaultAbiCoder.encode(
-    ["address", "address", "uint256", "uint256", "address", "address"],
-    [
-      routeParams.inputToken,
-      routeParams.outputToken,
-      routeParams.originChainId,
-      routeParams.destinationChainId,
-      routeParams.recipient,
-      routeParams.refundAddress,
-    ]
-  );
-  return utils.keccak256(encoded);
-}
+import { DepositAddressMessage } from "../interfaces/DepositAddress";
 
 /**
  * Returns a unique key for a deposit so we can track if it was already executed (e.g. in observedExecutedDeposits).
  */
 export function getDepositKey(depositMessage: DepositAddressMessage): string {
-  const paramsHash = computeParamsHash(depositMessage.routeParams);
-  return `${depositMessage.depositAddress}:${paramsHash}:${depositMessage.salt}`;
+  return `${depositMessage.depositAddress}:${depositMessage.paramsHash}:${depositMessage.salt}`;
 }
 
 /**
@@ -45,10 +25,9 @@ export function buildDeployTx(
   factoryContract: Contract,
   chainId: number,
   counterfactualDepositImplementation: string,
-  routeParams: RouteParams,
+  paramsHash: string,
   salt: string
 ): AugmentedTransaction {
-  const paramsHash = computeParamsHash(routeParams);
   return {
     contract: factoryContract,
     chainId,
