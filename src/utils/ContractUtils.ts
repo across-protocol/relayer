@@ -1,4 +1,4 @@
-import * as typechain from "@across-protocol/contracts"; // TODO: refactor once we've fixed export from contract repo
+import * as typechain from "@across-protocol/sdk/typechain";
 import {
   CHAIN_IDs,
   Contract,
