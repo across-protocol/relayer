@@ -202,7 +202,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       // Bridge this token into HyperEVM first
       this.logger.info({
         at: "HyperliquidStablecoinSwapAdapter.initializeRebalance",
-        message: `Creating new order ${cloid} by first bridging ${sourceToken} into HyperEVM from ${getNetworkName(
+        message: `🍻 Creating new order ${cloid} by first bridging ${sourceToken} into HyperEVM from ${getNetworkName(
           sourceChain
         )}`,
         destinationToken,
@@ -216,7 +216,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     } else {
       this.logger.info({
         at: "HyperliquidStablecoinSwapAdapter.initializeRebalance",
-        message: `Creating new order ${cloid} by depositing ${sourceToken} from HyperEVM to HyperCore`,
+        message: `🍻 Creating new order ${cloid} by depositing ${sourceToken} from HyperEVM to HyperCore`,
         destinationToken,
         destinationChain: getNetworkName(destinationChain),
         amountToTransfer: amountToTransfer.toString(),
@@ -406,12 +406,12 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       if (destinationChain === HYPEREVM) {
         this.logger.info({
           at: "HyperliquidStablecoinSwapAdapter.updateRebalanceStatuses",
-          message: `Deleting order details from Redis with cloid ${cloid} because it has completed!`,
+          message: `✨ Deleting order details from Redis with cloid ${cloid} because it has completed!`,
         });
       } else {
         this.logger.info({
           at: "HyperliquidStablecoinSwapAdapter.updateRebalanceStatuses",
-          message: `Sending order with cloid ${cloid} from HyperEVM to final destination chain ${destinationChain}, and deleting order details from Redis!`,
+          message: `✨ Sending order with cloid ${cloid} from HyperEVM to final destination chain ${destinationChain}, and deleting order details from Redis!`,
           expectedAmountToReceive: expectedAmountToReceive.toString(),
         });
         await this._bridgeToChain(destinationToken, HYPEREVM, destinationChain, expectedAmountToReceive);
@@ -900,6 +900,8 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     const userFills = await getUserFillsByTime(infoClient, {
       user: this.baseSignerAddress.toNative(),
       startTime: fromTimestampSeconds * 1000, // @dev Time here is in milliseconds.
+      aggregateByTime: true, // Consolidates partial fills filled at the exact same time into a single fill, which
+      // can happen if our order is large enough
     });
 
     const matchingFill = userFills.find((fill) => fill.cloid === cloid);
@@ -907,10 +909,9 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       return undefined;
     }
     const existingOrder = await this._redisGetOrderDetails(cloid);
-    const { sourceToken, destinationToken, destinationChain } = existingOrder;
+    const { destinationToken, destinationChain } = existingOrder;
     const destinationTokenMeta = this._getTokenMeta(destinationToken);
     const destinationTokenInfo = getTokenInfoFromSymbol(destinationToken, destinationChain);
-    const spotMarketMeta = this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
 
     // If fill was a buy, then received amount is denominated in base asset, same as sz.
     // If fill was a sell, then received amount is denominated in quote asset, so receivedAmount = px * sz.
@@ -918,10 +919,15 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     if (matchingFill.dir === "Buy") {
       amountToWithdraw = toBNWei(matchingFill.sz, destinationTokenMeta.coreDecimals);
     } else {
+      // matchingFill.px might be an averagePx of all the partial fills so it can exceed pxDecimals so to be safe,
+      // we toWei it to 18 decimals.
       amountToWithdraw = toBNWei(matchingFill.sz, destinationTokenMeta.coreDecimals)
-        .mul(toBNWei(matchingFill.px, spotMarketMeta.pxDecimals))
-        .div(10 ** spotMarketMeta.pxDecimals);
+        .mul(toBNWei(matchingFill.px, 18))
+        .div(toBNWei(1));
     }
+
+    // Subtract the fee:
+    amountToWithdraw = amountToWithdraw.sub(toBNWei(matchingFill.fee, destinationTokenMeta.coreDecimals));
 
     // We need to make sure there are not more than evmDecimals decimals for the amount to withdraw or the HL
     // spotSend/sendAsset transaction will fail "Invalid number of decimals".
@@ -1033,7 +1039,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       });
       this.logger.info({
         at: "HyperliquidStablecoinSwapAdapter._placeLimitOrder",
-        message: `Submitted new limit order for cloid ${cloid} with px ${px} and sz ${sz}`,
+        message: `🎰 Submitted new limit order for cloid ${cloid} with px ${px} and sz ${sz}`,
         result,
         orderDetails,
       });
@@ -1132,7 +1138,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     const txn = await coreWriterContract.sendRawAction(bytes);
     this.logger.info({
       at: "HyperliquidStablecoinSwapAdapter._withdrawToHyperevm",
-      message: `Withdrew ${amountToWithdraw} ${destinationToken} from Hypercore to HyperEVM`,
+      message: `🏧 Withdrew ${amountToWithdraw} ${destinationToken} from Hypercore to HyperEVM`,
       txn: blockExplorerLink(txn.hash, HYPEREVM),
     });
     return true;

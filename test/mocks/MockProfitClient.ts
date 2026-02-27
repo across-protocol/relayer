@@ -2,7 +2,7 @@ import { Contract } from "ethers";
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import { ProfitClient } from "../../src/clients";
 import { SpokePoolClientsByChain } from "../../src/interfaces";
-import { bnOne, bnZero, isDefined, TOKEN_SYMBOLS_MAP, EvmAddress, SvmAddress } from "../../src/utils";
+import { bnOne, bnZero, isDefined, TOKEN_SYMBOLS_MAP, EvmAddress, SvmAddress, Address } from "../../src/utils";
 import { BigNumber, toBN, toBNWei, winston } from "../utils";
 import { MockHubPoolClient } from "./MockHubPoolClient";
 import { MockQuery } from "./MockQuery";
@@ -14,6 +14,7 @@ const defaultGasPrice = bnOne; // wei per gas
 
 export class MockProfitClient extends ProfitClient {
   private mockQueries: { [chainId: number]: MockQuery } = {};
+  private tokenSymbols: { [tokenAddress: string]: string } = {};
   constructor(
     logger: winston.Logger,
     hubPoolClient: HubPoolClient | MockHubPoolClient,
@@ -119,6 +120,14 @@ export class MockProfitClient extends ProfitClient {
 
   setGasMultiplier(gasMultiplier: BigNumber): void {
     this.gasMultiplier = gasMultiplier;
+  }
+
+  setTokenSymbol(address: string, symbol: string): void {
+    this.tokenSymbols[address] = symbol;
+  }
+
+  override getTokenSymbol(token: Address, chainId: number): string {
+    return this.tokenSymbols[token.toNative()] ?? super.getTokenSymbol(token, chainId);
   }
 
   // eslint-disable-next-line @typescript-eslint/no-empty-function

@@ -382,7 +382,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 
       // Run the relayer in simulation mode so it doesn't fill the relay.
       const simulate = true;
-      let txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill(false, simulate);
+      let txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill(simulate);
       for (const receipts of Object.values(txnReceipts)) {
         expect((await receipts).length).to.equal(0);
       }

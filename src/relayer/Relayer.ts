@@ -23,7 +23,6 @@ import {
   isSVMSpokePoolClient,
   Address,
   toAddressType,
-  EvmAddress,
   CHAIN_IDs,
   convertRelayDataParamsToBytes32,
   chainIsSvm,
@@ -682,10 +681,9 @@ export class Relayer {
     deposit: DepositWithBlock,
     fillStatus: number,
     lpFees: RepaymentFee[],
-    maxBlockNumber: number,
-    sendSlowRelays: boolean
+    maxBlockNumber: number
   ): Promise<void> {
-    const { depositId, depositor, destinationChainId, originChainId, inputToken, txnRef } = deposit;
+    const { depositId, depositor, destinationChainId, originChainId, txnRef } = deposit;
     const { profitClient, spokePoolClients, tokenClient } = this.clients;
     const { slowDepositors } = this.config;
     const [originChain, destChain] = [getNetworkName(originChainId), getNetworkName(destinationChainId)];
@@ -757,13 +755,7 @@ export class Relayer {
       }
     }
 
-    const l1Token = this.clients.inventoryClient.getL1TokenAddress(inputToken, originChainId);
-
-    const { repaymentChainId, repaymentChainProfitability } = await this.resolveRepaymentChain(
-      deposit,
-      l1Token,
-      lpFees
-    );
+    const { repaymentChainId, repaymentChainProfitability } = await this.resolveRepaymentChain(deposit, lpFees);
     const {
       relayerFeePct,
       gasCost,
@@ -782,7 +774,7 @@ export class Relayer {
         tokenClient.captureTokenShortfallForFill(deposit);
       }
 
-      if (sendSlowRelays && fillStatus === FillStatus.Unfilled && this.canSlowFill(deposit)) {
+      if (this.config.sendingSlowRelaysEnabled && fillStatus === FillStatus.Unfilled && this.canSlowFill(deposit)) {
         this.requestSlowFill(deposit);
       }
 
@@ -851,19 +843,12 @@ export class Relayer {
   async evaluateFills(
     deposits: (DepositWithBlock & { fillStatus: number })[],
     lpFees: BatchLPFees,
-    maxBlockNumbers: { [chainId: number]: number },
-    sendSlowRelays: boolean
+    maxBlockNumbers: { [chainId: number]: number }
   ): Promise<void> {
     for (let i = 0; i < deposits.length; ++i) {
       const { fillStatus, ...deposit } = deposits[i];
       const relayerLpFees = lpFees[this.getLPFeeKey(deposit)];
-      await this.evaluateFill(
-        deposit,
-        fillStatus,
-        relayerLpFees,
-        maxBlockNumbers[deposit.originChainId],
-        sendSlowRelays
-      );
+      await this.evaluateFill(deposit, fillStatus, relayerLpFees, maxBlockNumbers[deposit.originChainId]);
     }
   }
 
@@ -922,10 +907,7 @@ export class Relayer {
     return txnReceipts;
   }
 
-  async checkForUnfilledDepositsAndFill(
-    sendSlowRelays = true,
-    simulate = false
-  ): Promise<{ [chainId: number]: Promise<string[]> }> {
+  async checkForUnfilledDepositsAndFill(simulate = false): Promise<{ [chainId: number]: Promise<string[]> }> {
     const { hubPoolClient, profitClient, spokePoolClients, tokenClient, multiCallerClient, tryMulticallClient } =
       this.clients;
 
@@ -994,7 +976,7 @@ export class Relayer {
         ])
       );
 
-      await this.evaluateFills(unfilledDeposits, lpFees, maxBlockNumbers, sendSlowRelays);
+      await this.evaluateFills(unfilledDeposits, lpFees, maxBlockNumbers);
 
       const pendingTxnCount = chainIsSvm(destinationChainId)
         ? this.clients.svmFillerClient.getTxnQueueLen()
@@ -1239,7 +1221,6 @@ export class Relayer {
    * @notice Returns repayment chain choice for deposit given repayment fees and the hubPoolToken associated with the
    * deposit inputToken.
    * @param deposit
-   * @param hubPoolToken L1 token associated with the deposit inputToken.
    * @param repaymentFees
    * @returns repaymentChainId is defined if and only if a profitable repayment chain is found.
    * @returns repaymentChainProfitability contains the profitability data of the repaymentChainId if it is defined
@@ -1247,19 +1228,18 @@ export class Relayer {
    */
   protected async resolveRepaymentChain(
     deposit: DepositWithBlock,
-    hubPoolToken: EvmAddress,
     repaymentFees: RepaymentFee[]
   ): Promise<{
     repaymentChainId?: number;
     repaymentChainProfitability: RepaymentChainProfitability;
   }> {
     const { inventoryClient, profitClient } = this.clients;
-    const { depositId, originChainId, destinationChainId, inputAmount, outputAmount, txnRef } = deposit;
+    const { depositId, originChainId, destinationChainId, inputAmount, outputAmount, txnRef, inputToken } = deposit;
     const originChain = getNetworkName(originChainId);
     const destinationChain = getNetworkName(destinationChainId);
 
     const mark = this.profiler.start("resolveRepaymentChain");
-    const preferredChainIds = await inventoryClient.determineRefundChainId(deposit, hubPoolToken);
+    const preferredChainIds = await inventoryClient.determineRefundChainId(deposit);
     if (preferredChainIds.length === 0) {
       // @dev If the origin chain is a lite chain and there are no preferred repayment chains, then we can assume
       // that the origin chain, the only possible repayment chain, is over-allocated. We should log this case because
@@ -1321,7 +1301,7 @@ export class Relayer {
         gasPrice,
         netRelayerFeePct: relayerFeePct,
         totalFeePct: totalUserFeePct,
-      } = await profitClient.isFillProfitable(deposit, lpFeePct, hubPoolToken, preferredChainId);
+      } = await profitClient.isFillProfitable(deposit, lpFeePct, preferredChainId);
       return {
         profitable,
         gasLimit,
@@ -1408,7 +1388,6 @@ export class Relayer {
       const fallbackProfitability = await profitClient.isFillProfitable(
         deposit,
         destinationChainLpFeePct,
-        hubPoolToken,
         destinationChainId
       );
 
@@ -1431,7 +1410,7 @@ export class Relayer {
           deposit: {
             originChain,
             destinationChain,
-            token: hubPoolToken,
+            inputToken,
             txnRef: blockExplorerLink(txnRef, originChainId),
           },
           preferredChain: getNetworkName(preferredChain),
@@ -1456,7 +1435,7 @@ export class Relayer {
             originChain,
             destinationChain,
             txnRef,
-            token: hubPoolToken,
+            token: inputToken,
             inputAmount,
             outputAmount,
           },
