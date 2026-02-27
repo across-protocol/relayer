@@ -1,5 +1,5 @@
 import { LineaSDK, Message, OnChainMessageStatus } from "@consensys/linea-sdk";
-import { Linea_Adapter__factory } from "@across-protocol/contracts";
+import { Linea_Adapter__factory } from "@across-protocol/sdk/typechain";
 import {
   BigNumber,
   Contract,

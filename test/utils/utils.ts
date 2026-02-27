@@ -6,6 +6,7 @@ import { Contract, providers } from "ethers";
 import { ethers } from "hardhat";
 import chai, { assert, expect } from "chai";
 import chaiExclude from "chai-exclude";
+import { smock } from "@defi-wonderland/smock";
 import sinon from "sinon";
 import winston from "winston";
 import { GLOBAL_CONFIG_STORE_KEYS } from "../../src/clients";
@@ -70,6 +71,7 @@ export type SignerWithAddress = utils.SignerWithAddress;
 export { assert, chai, expect, BigNumber, Contract, FakeContract, sinon, toBN, toBNWei, toWei, utf8ToHex, winston };
 
 chai.use(chaiExclude);
+chai.use(smock.matchers);
 
 export async function assertPromiseError<T>(promise: Promise<T>, errMessage?: string): Promise<void> {
   const SPECIAL_ERROR_MESSAGE = "Promise didn't fail";
