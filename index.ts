@@ -84,7 +84,6 @@ if (require.main === module) {
   let exitCode = 0;
   run(args)
     .catch(async (error) => {
-      console.error(error)
       exitCode = 1;
       const stringifiedError = stringifyThrownValue(error);
       logger.error({
