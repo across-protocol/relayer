@@ -73,19 +73,41 @@ const OP_STACK_CHAINS = Object.values(CHAIN_IDs).filter((chainId) => chainIsOPSt
 // this constant and skip the proof submission if they match.
 const PENDING_PROOF_OUTPUT_ROOT = "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
 
+// OP-stack target chains used with viem OP-stack actions must declare portal, disputeGameFactory,
+// and l2OutputOracle contracts. At runtime, the specific contracts accessed depend on the portal
+// version, so not all chains need every contract. The type satisfies the most demanding function
+// signature (getTimeToFinalize), while the assertion validates the universally required portal
+// contract. This interface is necessary because viem's internal TargetChain type is not exported,
+// and viem's function signatures are stricter than their runtime behaviour (e.g. getTimeToFinalize
+// requires l2OutputOracle in the type even though it only reads it for portal v<3).
+interface OpStackTargetChain extends viem.Chain {
+  contracts: {
+    portal: { [sourceId: number]: viem.ChainContract };
+    disputeGameFactory: { [sourceId: number]: viem.ChainContract };
+    l2OutputOracle: { [sourceId: number]: viem.ChainContract };
+  };
+}
+
+function assertOpStackTargetChain(chain: viem.Chain): asserts chain is OpStackTargetChain {
+  assert(
+    chain.contracts !== undefined && "portal" in chain.contracts,
+    `Chain ${chain.id} missing required OP-stack 'portal' contract`
+  );
+}
+
 // We might want to export this mapping of chain ID to viem chain object out of a constant
 // file once we start using Viem elsewhere in the repo:
 const VIEM_OP_STACK_CHAINS: Record<number, viem.Chain> = {
-  [CHAIN_IDs.OPTIMISM]: viemChains.optimism,
   [CHAIN_IDs.BASE]: viemChains.base,
-  [CHAIN_IDs.REDSTONE]: viemChains.redstone,
+  [CHAIN_IDs.INK]: viemChains.ink,
   [CHAIN_IDs.LISK]: viemChains.lisk,
-  [CHAIN_IDs.ZORA]: viemChains.zora,
+  [CHAIN_IDs.MEGAETH]: viemChains.megaeth, // From patched viem
   [CHAIN_IDs.MODE]: viemChains.mode,
-  [CHAIN_IDs.WORLD_CHAIN]: viemChains.worldchain,
+  [CHAIN_IDs.OPTIMISM]: viemChains.optimism,
   [CHAIN_IDs.SONEIUM]: viemChains.soneium,
   [CHAIN_IDs.UNICHAIN]: viemChains.unichain,
-  [CHAIN_IDs.INK]: viemChains.ink,
+  [CHAIN_IDs.WORLD_CHAIN]: viemChains.worldchain,
+  [CHAIN_IDs.ZORA]: viemChains.zora,
   // // @dev The following chains have non-standard interfaces or processes for withdrawing from L2 to L1
   // [CHAIN_IDs.BLAST]: viemChains.blast,
 };
@@ -329,11 +351,12 @@ async function viem_multicallOptimismFinalizations(
     withdrawals: [],
   };
   const hubChainId = hubPoolClient.chainId;
+  const l1Chain: viem.Chain = chainIsProd(chainId) ? viemChains.mainnet : viemChains.sepolia;
   const publicClientL1 = viem.createPublicClient({
     batch: {
       multicall: true,
     },
-    chain: chainIsProd(chainId) ? viemChains.mainnet : viemChains.sepolia,
+    chain: l1Chain,
     transport: createViemCustomTransportFromEthersProvider(hubChainId),
   });
   const publicClientL2 = viem.createPublicClient({
@@ -353,47 +376,21 @@ async function viem_multicallOptimismFinalizations(
     uniqueTokenhashes[event.txnRef] += 1;
   }
 
+  // Validate the target chain has the required OP-stack contracts.
+  const targetChainRaw = VIEM_OP_STACK_CHAINS[chainId];
+  assertOpStackTargetChain(targetChainRaw);
+
   const crossChainMessenger = new Contract(
-    VIEM_OP_STACK_CHAINS[chainId].contracts.portal[hubChainId].address,
+    targetChainRaw.contracts.portal[hubChainId].address,
     OPStackPortalL1,
     signer
   );
-  const sourceId = VIEM_OP_STACK_CHAINS[chainId].sourceId;
 
-  // The following viem SDK functions all require the Viem Chain object to either have a portal + disputeGameFactory
-  // address defined, or for legacy OpStack chains, the l2OutputOracle address defined.
-  const { contracts } = VIEM_OP_STACK_CHAINS[chainId];
-  const viemOpStackTargetChainParam: {
-    contracts: {
-      portal: { [sourceId: number]: { address: `0x${string}` } };
-      l2OutputOracle: { [sourceId: number]: { address: `0x${string}` } };
-      disputeGameFactory: { [sourceId: number]: { address: `0x${string}` } };
-    };
-  } = {
-    contracts: {
-      portal: {
-        [sourceId]: {
-          address: contracts.portal[sourceId].address,
-        },
-      },
-      l2OutputOracle: {
-        [sourceId]: {
-          address:
-            contracts.l2OutputOracle?.[sourceId]?.address ??
-            OPSTACK_CONTRACT_OVERRIDES[chainId]?.l1?.L2OutputOracle ??
-            viem.zeroAddress,
-        },
-      },
-      disputeGameFactory: {
-        [sourceId]: {
-          address:
-            contracts.disputeGameFactory?.[sourceId]?.address ??
-            OPSTACK_CONTRACT_OVERRIDES[chainId]?.l1?.DisputeGameFactory ??
-            viem.zeroAddress,
-        },
-      },
-    },
-  };
+  // Pass as targetChain to viem OP-stack functions. Viem looks up L2 contracts
+  // using l1Chain.id (sourceId) and uses custom decoders from targetChain.custom
+  // for MegaETH.
+  const targetChain = targetChainRaw;
+  const chain = undefined; // Needed for viem OP type resolution.
 
   const withdrawalStatuses: string[] = [];
   await mapAsync(events, async (event, i) => {
@@ -405,28 +402,25 @@ async function viem_multicallOptimismFinalizations(
       hash: event.txnRef as `0x${string}`,
     });
     const withdrawal = getWithdrawals(receipt)[logIndexesForMessage[i]];
-    const withdrawalStatus = await getWithdrawalStatus(publicClientL1 as viem.Client, {
+    const withdrawalStatus = await getWithdrawalStatus(publicClientL1, {
+      chain,
       receipt,
-      chain: publicClientL1.chain as viem.Chain,
-      targetChain: viemOpStackTargetChainParam,
+      targetChain,
       logIndex: logIndexesForMessage[i],
     });
     withdrawalStatuses.push(withdrawalStatus);
     if (withdrawalStatus === "ready-to-prove") {
-      const l2Output = await getL2Output(publicClientL1 as viem.Client, {
-        chain: publicClientL1.chain as viem.Chain,
+      const l2Output = await getL2Output(publicClientL1, {
+        chain,
         l2BlockNumber: BigInt(event.blockNumber),
-        targetChain: viemOpStackTargetChainParam,
+        targetChain,
       });
       if (l2Output.outputRoot !== PENDING_PROOF_OUTPUT_ROOT) {
-        const { l2OutputIndex, outputRootProof, withdrawalProof } = await buildProveWithdrawal(
-          publicClientL2 as viem.Client,
-          {
-            chain: VIEM_OP_STACK_CHAINS[chainId],
-            withdrawal,
-            output: l2Output,
-          }
-        );
+        const { l2OutputIndex, outputRootProof, withdrawalProof } = await buildProveWithdrawal(publicClientL2, {
+          chain,
+          withdrawal,
+          output: l2Output,
+        });
         const proofArgs = [withdrawal, l2OutputIndex, outputRootProof, withdrawalProof];
         const callData = await crossChainMessenger.populateTransaction.proveWithdrawalTransaction(...proofArgs);
         viemTxns.callData.push({
@@ -443,10 +437,10 @@ async function viem_multicallOptimismFinalizations(
         });
       }
     } else if (withdrawalStatus === "waiting-to-finalize") {
-      const { seconds } = await getTimeToFinalize(publicClientL1 as viem.Client, {
-        chain: VIEM_OP_STACK_CHAINS[hubChainId],
+      const { seconds } = await getTimeToFinalize(publicClientL1, {
+        chain,
         withdrawalHash: withdrawal.withdrawalHash,
-        targetChain: viemOpStackTargetChainParam,
+        targetChain,
       });
       logger.debug({
         at: `${getNetworkName(chainId)}Finalizer`,
@@ -501,13 +495,13 @@ async function viem_multicallOptimismFinalizations(
 
 function getOptimismClient(chainId: OVM_CHAIN_ID, hubSigner: Signer): OVM_CROSS_CHAIN_MESSENGER {
   const hubChainId = chainIsProd(chainId) ? CHAIN_IDs.MAINNET : CHAIN_IDs.SEPOLIA;
-  const contractOverrides = OPSTACK_CONTRACT_OVERRIDES[chainId];
+  const contractOverrides = OPSTACK_CONTRACT_OVERRIDES[Number(chainId)];
   return new optimismSDK.CrossChainMessenger({
     bedrock: true,
     l1ChainId: hubChainId,
     l2ChainId: chainId,
     l1SignerOrProvider: hubSigner.connect(getCachedProvider(hubChainId, true)),
-    l2SignerOrProvider: hubSigner.connect(getCachedProvider(chainId, true)),
+    l2SignerOrProvider: hubSigner.connect(getCachedProvider(Number(chainId), true)),
     contracts: contractOverrides,
   });
 }
