@@ -75,7 +75,8 @@ The repository docs already note that some token-transfer behavior in InventoryC
 
 Treat this as "stable but transitional": do not introduce new overlap unless required.
 
-Current default runtime behavior in `src/rebalancer/` executes cumulative rebalancing via `runCumulativeBalanceRebalancer` and keeps `runSingleBalanceRebalancer` as an alternate/testing path.
+Current runtime behavior in `src/rebalancer/` executes cumulative rebalancing via `runCumulativeBalanceRebalancer`.
+Pending-state consumers should use `ReadOnlyRebalancerClient`, and additional `RebalancerClient` implementations can be added in the future without changing this responsibility boundary.
 
 ## Anti-patterns
 

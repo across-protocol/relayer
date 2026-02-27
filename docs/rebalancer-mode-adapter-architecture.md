@@ -26,7 +26,6 @@ The rebalancer is split into two modules with a strict interface boundary:
   - enforce global guardrails (max fee percentage, pending-order limits).
 - **Mode runner logic in `index.ts`** materializes mode-specific balance inputs:
   - cumulative runner loads from `cumulativeTargetBalances`,
-  - single-balance runner loads from `targetBalances`,
   - pending rebalance adjustments are applied within each runner's own balance domain.
 - **Adapter logic in `adapters/*`** chooses *how* to execute a chosen route:
   - venue-specific initiation steps,
@@ -50,7 +49,7 @@ Key invariant:
 
 ```mermaid
 flowchart TD
-  modeLogic["RebalancingModes\nsingle.rebalanceInventory + cumulative.rebalanceInventory"]
+  modeLogic["RebalancingModes\ncumulative.rebalanceInventory + readOnly.pendingState"]
   routeSelection["RouteSelection\nselect source/destination + cost checks"]
   adapterInterface["RebalancerAdapterInterface\ninitializeRebalance/getEstimatedCost/etc"]
   adapterImpls["AdapterImplementations\nbinance.ts, hyperliquid.ts, ..."]
@@ -106,14 +105,15 @@ Typical contributor workflow:
 2. Register it in the construction layer under `src/rebalancer/`.
 3. Add routes referencing the adapter.
 4. Ensure `getEstimatedCost`, `getPendingOrders`, and `getPendingRebalances` are production-ready.
-5. Validate that both mode entrypoints can call through interface methods without code changes:
-   - `SingleBalanceRebalancerClient.rebalanceInventory`
+5. Validate that current and future mode clients can call through interface methods without adapter-specific code changes:
    - `CumulativeBalanceRebalancerClient.rebalanceInventory`
+   - `ReadOnlyRebalancerClient` pending-state reads
 
 Operational runner defaults:
 
 - `runCumulativeBalanceRebalancer` is the supported runtime entrypoint.
-- `runSingleBalanceRebalancer` is exported for testing-only workflows.
+- `constructReadOnlyRebalancerClient` is the supported pending-state consumer path.
+- Additional `RebalancerClient` mode implementations can be introduced later while preserving the same adapter interface boundary.
 
 ## When mode changes are actually required
 

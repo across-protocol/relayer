@@ -71,15 +71,10 @@ When adding a new file in `src/rebalancer/adapters/`, contributors should usuall
 
 `RebalancerConfig` is loaded from `REBALANCER_CONFIG` or `REBALANCER_EXTERNAL_CONFIG`.
 
-The config now supports both per-chain targets and cumulative targets:
+The active config shape is cumulative-target based:
 
 ```json
 {
-  "targetBalances": {
-    "USDT": {
-      "1": { "targetBalance": "100", "thresholdBalance": "50", "priorityTier": 1 }
-    }
-  },
   "cumulativeTargetBalances": {
     "USDT": {
       "targetBalance": "1500000",
@@ -101,28 +96,15 @@ The config now supports both per-chain targets and cumulative targets:
 Notes:
 
 - `targetBalance` and `thresholdBalance` values are human-readable and converted to token-native decimals.
-- `targetBalances` define chain-specific objectives for `SingleBalanceRebalancerClient.rebalanceInventory()`.
 - `cumulativeTargetBalances` define per-token aggregate objectives plus allowed source/destination chain sets for `CumulativeBalanceRebalancerClient.rebalanceInventory()`.
 - `cumulativeTargetBalances[token].chains[chainId]` is a chain priority tier used when selecting where to source excess inventory from (lower tier is preferred for sourcing).
-- `chainIds` are derived from the union of chains found in `targetBalances` and `cumulativeTargetBalances`.
+- `chainIds` are derived from the union of chains found in `cumulativeTargetBalances`.
 
 ## Rebalancing Modes
 
-### Chain-specific mode: `SingleBalanceRebalancerClient.rebalanceInventory()`
-
-This is the original path. It is useful for chain-targeted behavior and testing.
-
-High-level flow:
-
-1. Find chain+token excess balances where `current > target`.
-2. Find chain+token deficits where `current < threshold`; deficit size is `target - current`.
-3. Sort deficits by `priorityTier` (higher first), then larger deficits first.
-4. Sort excesses by `priorityTier` (lower first), then larger excesses first.
-5. For each deficit, choose the cheapest matching route among eligible excesses, enforce max fee pct, enforce adapter pending-order cap, and initialize rebalance.
-
 ### Cumulative mode: `CumulativeBalanceRebalancerClient.rebalanceInventory()`
 
-This is the cumulative-balance path and the default runtime execution via `runCumulativeBalanceRebalancer` in the `src/rebalancer/` runtime layer.
+This is the current operational path and runtime execution via `runCumulativeBalanceRebalancer` in the `src/rebalancer/` runtime layer.
 
 Inputs:
 
@@ -146,12 +128,21 @@ Design tradeoff:
 
 - Destination-chain selection evaluates all eligible routes to minimize expected cost. This improves route quality at the expense of additional runtime cost when many routes are configured.
 
+### Read-only mode: `ReadOnlyRebalancerClient`
+
+`ReadOnlyRebalancerClient` is used by consumers that only need pending-state visibility (for example, inventory accounting) and should not initiate new rebalances.
+
+The read-only mode still initializes adapters (with an empty route set) so `getPendingRebalances()` and `getPendingOrders()` remain available without coupling callers to a specific operational rebalancing mode.
+
+### Future mode extensibility
+
+`src/rebalancer/clients/` is intentionally mode-oriented. Today the production mode is cumulative and there is a read-only consumer mode, but additional `RebalancerClient` implementations can be added later without changing adapter contracts.
+
 ## Creating Rebalancer Instances
 
 Use the rebalancer construction layer to instantiate mode-specific clients:
 
 - `constructCumulativeBalanceRebalancerClient()` for operational runs.
-- `constructSingleBalanceRebalancerClient()` for testing-oriented runs.
 - `constructReadOnlyRebalancerClient()` for pending-state consumers.
 
 Lifecycle note:
@@ -163,11 +154,7 @@ Lifecycle note:
 Runtime entrypoints in `src/rebalancer/`:
 
 - `runCumulativeBalanceRebalancer` (supported operational path).
-- `runSingleBalanceRebalancer` (testing-only path).
-- Each runner materializes balances from its own config domain:
-  - cumulative runner loads from `cumulativeTargetBalances`,
-  - single-balance runner loads from `targetBalances`.
-- Each runner updates adapter status/sweeps first, then applies adapter-reported pending rebalance adjustments before evaluating new rebalances.
+- The runtime updates adapter status/sweeps first, then applies adapter-reported pending rebalance adjustments before evaluating new rebalances.
 
 ## Interactions with Other Bots and Clients
 
