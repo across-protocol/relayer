@@ -10,8 +10,6 @@ export class DepositAddressHandlerConfig extends CommonConfig {
   depositLookback: number;
   apiTimeoutOverride: number;
   initializationRetryAttempts: number;
-  /** Optional; when set, sent as Authorization: Bearer for Swap API. */
-  swapApiKey: string | undefined;
 
   constructor(env: ProcessEnv) {
     super(env);
@@ -23,13 +21,11 @@ export class DepositAddressHandlerConfig extends CommonConfig {
       MAX_RELAYER_DEPOSIT_LOOKBACK,
       RELAYER_ORIGIN_CHAINS,
       API_TIMEOUT_OVERRIDE,
-      SWAP_API_KEY,
       INITIALIZATION_RETRY_ATTEMPTS,
     } = env;
     this.indexerPollingInterval = Number(INDEXER_API_POLLING_INTERVAL ?? 1); // Default to 1s
     this.indexerApiEndpoint = String(INDEXER_API_ENDPOINT);
     this.apiEndpoint = String(API_ENDPOINT);
-    this.swapApiKey = SWAP_API_KEY?.trim() || undefined;
 
     const relayerOriginChains = new Set<number>(JSON.parse(RELAYER_ORIGIN_CHAINS ?? "[]"));
     this.relayerOriginChains = Array.from(relayerOriginChains);
