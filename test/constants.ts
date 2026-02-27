@@ -9,7 +9,7 @@ import {
   repaymentChainId,
   refundProposalLiveness,
   randomAddress,
-} from "@across-protocol/contracts/dist/test-utils";
+} from "@across-protocol/sdk/test-utils";
 import { bnOne, bnUint256Max, toWei, ZERO_ADDRESS } from "../src/utils";
 
 export {

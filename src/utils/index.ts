@@ -35,18 +35,16 @@ export {
   TOKEN_EQUIVALENCE_REMAPPING,
 } from "@across-protocol/constants";
 
+export { getContractInfoFromAddress, getDeployedAddress, getDeployedBlockNumber } from "@across-protocol/contracts";
 // TypeChain exports used in the bot.
 export {
-  getContractInfoFromAddress,
-  getDeployedAddress,
-  getDeployedBlockNumber,
   ExpandedERC20__factory as ERC20,
   HubPool__factory as HubPool,
   SpokePool__factory as SpokePool,
   AcrossConfigStore__factory as AcrossConfigStore,
   PolygonTokenBridger__factory as PolygonTokenBridger,
   WETH9__factory as WETH9,
-} from "@across-protocol/contracts";
+} from "@across-protocol/sdk/typechain";
 
 // Utils specifically for this bot.
 export * from "./SDKUtils";

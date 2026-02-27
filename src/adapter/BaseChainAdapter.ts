@@ -53,7 +53,7 @@ import { BaseBridgeAdapter, BridgeTransactionDetails } from "./bridges/BaseBridg
 import { OutstandingTransfers } from "../interfaces";
 import WETH_ABI from "../common/abi/Weth.json";
 import { BaseL2BridgeAdapter } from "./l2Bridges/BaseL2BridgeAdapter";
-import { ExpandedERC20 } from "@across-protocol/contracts";
+import { ExpandedERC20 } from "@across-protocol/sdk/typechain";
 
 export type SupportedL1Token = EvmAddress;
 export type SupportedTokenSymbol = string;

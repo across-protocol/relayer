@@ -14,7 +14,7 @@ import {
 } from "../utils";
 import { BridgeEvent } from "./bridges/BaseBridgeAdapter";
 import { Log, SortableEvent } from "../interfaces";
-import { ExpandedERC20 } from "@across-protocol/contracts";
+import { ExpandedERC20 } from "@across-protocol/sdk/typechain";
 import { TransactionClient } from "../clients/TransactionClient";
 
 export {

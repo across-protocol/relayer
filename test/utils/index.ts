@@ -1,4 +1,4 @@
-export * as contracts from "@across-protocol/contracts/dist/test-utils";
+export * as sdkTestUtils from "@across-protocol/sdk/test-utils";
 export * as uma from "@risk-labs/logger";
 
 export * from "./utils";
