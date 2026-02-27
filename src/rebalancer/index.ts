@@ -23,7 +23,6 @@ import { RebalancerAdapter, RebalancerClient } from "./utils/interfaces";
 config();
 let logger: winston.Logger;
 
-
 type RebalancerRunContext = {
   rebalancerConfig: RebalancerConfig;
   adaptersToUpdate: Set<RebalancerAdapter>;
@@ -31,10 +30,7 @@ type RebalancerRunContext = {
   rebalancerClient: RebalancerClient;
 };
 
-async function initializeRebalancerRun(
-  _logger: winston.Logger,
-  baseSigner: Signer
-): Promise<RebalancerRunContext> {
+async function initializeRebalancerRun(_logger: winston.Logger, baseSigner: Signer): Promise<RebalancerRunContext> {
   const logLabel = "runCumulativeBalanceRebalancer";
   logger = _logger;
   const rebalancerConfig = new RebalancerConfig(process.env);
@@ -187,8 +183,7 @@ export async function runCumulativeBalanceRebalancer(_logger: winston.Logger, ba
   const logLabel = "runCumulativeBalanceRebalancer";
   const { rebalancerConfig, adaptersToUpdate, inventoryClient, rebalancerClient } = await initializeRebalancerRun(
     _logger,
-    baseSigner,
-    "cumulative"
+    baseSigner
   );
   const { currentBalances, cumulativeBalances } = loadCumulativeModeBalances(rebalancerConfig, inventoryClient);
   await applyPendingRebalanceAdjustments(
