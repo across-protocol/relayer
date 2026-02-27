@@ -41,7 +41,6 @@ import IOFT_ABI_FULL from "./abi/IOFT.json";
 import HYPERLIQUID_DEPOSIT_HANDLER_ABI from "./abi/HyperliquidDepositHandler.json";
 import SPOKE_POOL_PERIPHERY_ABI from "./abi/SpokePoolPeriphery.json";
 import COUNTERFACTUAL_DEPOSIT_FACTORY_ABI from "./abi/CounterfactualDepositFactory.json";
-import COUNTERFACTUAL_DEPOSIT_ABI from "./abi/CounterfactualDeposit.json";
 export { IOFT_ABI_FULL };
 import HUB_POOL_STORE_ABI from "./abi/HubPoolStore.json";
 
@@ -578,7 +577,6 @@ export const CONTRACT_ADDRESSES: {
     },
     counterfactualDeposit: {
       address: "0x654321F334b949A48c710E80b35334A4047d10B1",
-      abi: COUNTERFACTUAL_DEPOSIT_ABI,
     },
   },
   [CHAIN_IDs.LENS]: {
