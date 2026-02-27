@@ -8,134 +8,392 @@ import {
 import { bnZero, toBNWei } from "../src/utils";
 import { BigNumber, createSpyLogger, ethers, expect } from "./utils";
 
-// Note: We use real token symbols in this test in order to avoid throwing errors when getTokenInfoFromSymbol
-// is called. This is probably not a good idea in the long run but if we use symbols like USDC or WBTC
-// that are unlikely to get deleted from the token symbol map then we should be OK.
 describe("RebalancerClient.cumulativeRebalancing", () => {
-  const hubPoolChainId = 1;
+  const HUB_POOL_CHAIN_ID = 1;
+  const CHAIN_A = 1;
+  const CHAIN_B = 10;
+  const CHAIN_C = 137;
+  const MAX_FEE_PCT = toBNWei("100");
+
+  const USDC = "USDC";
+  const USDT = "USDT";
+  const DAI = "DAI";
+  const WETH = "WETH";
+
+  const TOKEN_DECIMALS: Record<string, number> = {
+    [USDC]: 6,
+    [USDT]: 6,
+    [DAI]: 18,
+    [WETH]: 18,
+  };
+
+  const amount = (token: string, humanAmount: string): BigNumber => toBNWei(humanAmount, TOKEN_DECIMALS[token]);
+
+  function buildTarget(
+    token: string,
+    targetBalance: string,
+    thresholdBalance: string,
+    priorityTier: number,
+    chains: { [chainId: number]: number }
+  ): CumulativeTargetBalanceConfig[string] {
+    return {
+      targetBalance: amount(token, targetBalance),
+      thresholdBalance: amount(token, thresholdBalance),
+      priorityTier,
+      chains,
+    };
+  }
+
+  function makeRoute(
+    sourceChain: number,
+    destinationChain: number,
+    sourceToken: string,
+    destinationToken: string,
+    adapter: string
+  ): RebalanceRoute {
+    return { sourceChain, destinationChain, sourceToken, destinationToken, adapter };
+  }
+
+  function createClient(
+    cumulativeTargetBalances: CumulativeTargetBalanceConfig,
+    adapters: { [name: string]: RebalancerAdapter },
+    rebalanceRoutes: RebalanceRoute[],
+    maxAmountsToTransfer: MaxAmountToTransferConfig = {},
+    maxPendingOrders: MaxPendingOrdersConfig = {}
+  ): CumulativeBalanceRebalancerClient {
+    const config = new MockRebalancerConfig(
+      cumulativeTargetBalances,
+      maxAmountsToTransfer,
+      maxPendingOrders,
+      HUB_POOL_CHAIN_ID
+    );
+    const baseSigner = ethers.Wallet.createRandom();
+    const { spyLogger } = createSpyLogger();
+    return new CumulativeBalanceRebalancerClient(spyLogger, config, adapters, rebalanceRoutes, baseSigner);
+  }
 
   it("Caps rebalance amount at lesser of deficit and excess remaining", async function () {
-    const deficitToken = "USDC";
-    const excessToken = "USDT";
-    const cumulativeDeficitAmount = toBNWei("100", 6);
-    const cumulativeExcessAmount = toBNWei("50", 6);
+    const deficitToken = USDC;
+    const excessToken = USDT;
+    const cumulativeExcessAmount = amount(excessToken, "50");
     const cumulativeBalances: { [token: string]: BigNumber } = {
       [deficitToken]: bnZero,
       [excessToken]: cumulativeExcessAmount,
     };
     const currentBalances: { [chainId: number]: { [token: string]: BigNumber } } = {
-      [hubPoolChainId]: {
+      [HUB_POOL_CHAIN_ID]: {
         [deficitToken]: bnZero,
-        [excessToken]: toBNWei("100", 6), // This is a nonsensical test but we set the
-        // current balance higher than the excess amount of 50 set above just in order to test
-        // that the limiting factor on the amount to rebalance is the excess amount, not the current
-        // balance, max amount to transfer, or deficit.
+        // Set current balance above cumulative excess so excessRemaining is the true limiter.
+        [excessToken]: amount(excessToken, "100"),
       },
     };
     const cumulativeTargetBalances: CumulativeTargetBalanceConfig = {
-      [deficitToken]: {
-        targetBalance: cumulativeDeficitAmount,
-        thresholdBalance: cumulativeDeficitAmount.sub(toBNWei("10", 6)),
-        priorityTier: 0,
-        chains: {
-          [hubPoolChainId]: 0,
-        },
-      },
-      [excessToken]: {
-        targetBalance: bnZero,
-        thresholdBalance: bnZero,
-        priorityTier: 0,
-        chains: {
-          [hubPoolChainId]: 0,
-        },
-      },
+      [deficitToken]: buildTarget(deficitToken, "100", "90", 0, { [HUB_POOL_CHAIN_ID]: 0 }),
+      [excessToken]: buildTarget(excessToken, "0", "0", 0, { [HUB_POOL_CHAIN_ID]: 0 }),
     };
-    const maxAmountsToTransfer: MaxAmountToTransferConfig = {
-      [deficitToken]: {
-        [hubPoolChainId]: toBNWei("1000000", 6),
-      },
-      [excessToken]: {
-        [hubPoolChainId]: toBNWei("1000000", 6),
-      },
-    };
-    const maxPendingOrders: MaxPendingOrdersConfig = {
-      adapter1: 1,
-    };
-    const config = new MockRebalancerConfig(
-      cumulativeTargetBalances,
-      maxAmountsToTransfer,
-      maxPendingOrders,
-      hubPoolChainId
-    );
     const adapter1 = new MockRebalancerAdapter();
-    const adapters: { [name: string]: RebalancerAdapter } = {
-      adapter1: adapter1,
-    };
-    const rebalanceRoutes: RebalanceRoute[] = [
+    const rebalancerClient = createClient(
+      cumulativeTargetBalances,
+      { adapter1 },
+      [makeRoute(HUB_POOL_CHAIN_ID, HUB_POOL_CHAIN_ID, excessToken, deficitToken, "adapter1")],
       {
-        sourceChain: hubPoolChainId,
-        destinationChain: hubPoolChainId,
-        sourceToken: excessToken,
-        destinationToken: deficitToken,
-        adapter: "adapter1",
+        [excessToken]: { [HUB_POOL_CHAIN_ID]: amount(excessToken, "1000000") },
+        [deficitToken]: { [HUB_POOL_CHAIN_ID]: amount(deficitToken, "1000000") },
       },
-    ];
-    const baseSigner = ethers.Wallet.createRandom();
-
-    const { spyLogger } = createSpyLogger();
-    const rebalancerClient = new CumulativeBalanceRebalancerClient(
-      spyLogger,
-      config,
-      adapters,
-      rebalanceRoutes,
-      baseSigner
+      { adapter1: 10 }
     );
-    const maxFeePct = toBNWei("1", 6);
-    await rebalancerClient.rebalanceInventory(cumulativeBalances, currentBalances, maxFeePct);
+    await rebalancerClient.rebalanceInventory(cumulativeBalances, currentBalances, MAX_FEE_PCT);
 
     const rebalances = adapter1.rebalances;
     expect(rebalances.length).to.equal(1);
     expect(rebalances[0].route.sourceToken).to.equal(excessToken);
     expect(rebalances[0].route.destinationToken).to.equal(deficitToken);
-    // The amount to rebalance should be capped at the lesser of deficit (100) and excess (50).
     expect(rebalances[0].amount).to.equal(cumulativeExcessAmount);
   });
-  // it("Depletes excess and deficit remaining with each rebalance", async function() {
 
-  // })
-  // it("Caps rebalance amount at configured max amount per rebalance", async function() {
+  it("Depletes excess and deficit remaining with each rebalance", async function () {
+    const deficitToken = USDC;
+    const excessToken = USDT;
+    const cumulativeBalances = {
+      [deficitToken]: bnZero,
+      [excessToken]: amount(excessToken, "120"),
+    };
+    const currentBalances = {
+      [CHAIN_A]: { [deficitToken]: bnZero, [excessToken]: amount(excessToken, "60") },
+      [CHAIN_B]: { [deficitToken]: bnZero, [excessToken]: amount(excessToken, "60") },
+    };
+    const cumulativeTargetBalances: CumulativeTargetBalanceConfig = {
+      [deficitToken]: buildTarget(deficitToken, "100", "90", 0, { [CHAIN_A]: 0 }),
+      [excessToken]: buildTarget(excessToken, "0", "0", 0, {
+        [CHAIN_A]: 0,
+        [CHAIN_B]: 1,
+      }),
+    };
+    const adapter1 = new MockRebalancerAdapter();
+    const rebalancerClient = createClient(
+      cumulativeTargetBalances,
+      { adapter1 },
+      [
+        makeRoute(CHAIN_A, CHAIN_A, excessToken, deficitToken, "adapter1"),
+        makeRoute(CHAIN_B, CHAIN_A, excessToken, deficitToken, "adapter1"),
+      ],
+      {},
+      { adapter1: 10 }
+    );
 
-  // })
-  // it("Iterates through deficits in sorted order", async function() {
+    await rebalancerClient.rebalanceInventory(cumulativeBalances, currentBalances, MAX_FEE_PCT);
 
-  // })
-  // it("Iterates through excesses in sorted order", async function() {
+    expect(adapter1.rebalances.length).to.equal(2);
+    expect(adapter1.rebalances[0].route.sourceChain).to.equal(CHAIN_A);
+    expect(adapter1.rebalances[1].route.sourceChain).to.equal(CHAIN_B);
+    expect(adapter1.rebalances[0].amount).to.equal(amount(excessToken, "60"));
+    expect(adapter1.rebalances[1].amount).to.equal(amount(excessToken, "40"));
+  });
 
-  // })
-  // it("For a given excess token, source chains are iterated through in sorted order", async function() {
+  it("Caps rebalance amount at configured max amount per rebalance", async function () {
+    const deficitToken = USDC;
+    const excessToken = USDT;
+    const cumulativeBalances = {
+      [deficitToken]: bnZero,
+      [excessToken]: amount(excessToken, "100"),
+    };
+    const currentBalances = {
+      [CHAIN_A]: { [deficitToken]: bnZero, [excessToken]: amount(excessToken, "100") },
+    };
+    const cumulativeTargetBalances: CumulativeTargetBalanceConfig = {
+      [deficitToken]: buildTarget(deficitToken, "100", "90", 0, { [CHAIN_A]: 0 }),
+      [excessToken]: buildTarget(excessToken, "0", "0", 0, { [CHAIN_A]: 0 }),
+    };
+    const adapter1 = new MockRebalancerAdapter();
+    const rebalancerClient = createClient(
+      cumulativeTargetBalances,
+      { adapter1 },
+      [makeRoute(CHAIN_A, CHAIN_A, excessToken, deficitToken, "adapter1")],
+      {
+        [excessToken]: { [CHAIN_A]: amount(excessToken, "30") },
+      },
+      { adapter1: 10 }
+    );
 
-  // })
-  // it("For a given excess token and source chain, rebalance route is chosen using cheapest expected cost", async function() {
+    await rebalancerClient.rebalanceInventory(cumulativeBalances, currentBalances, MAX_FEE_PCT);
 
-  // })
-  // it("Respects max pending orders per adapter limit", async function() {
+    expect(adapter1.rebalances.length).to.equal(1);
+    expect(adapter1.rebalances[0].amount).to.equal(amount(excessToken, "30"));
+  });
 
-  // })
+  it("Iterates through deficits in sorted order", async function () {
+    const cumulativeBalances = {
+      [USDC]: bnZero,
+      [DAI]: bnZero,
+      [USDT]: amount(USDT, "500"),
+    };
+    const currentBalances = {
+      [CHAIN_A]: {
+        [USDC]: bnZero,
+        [DAI]: bnZero,
+        [USDT]: amount(USDT, "500"),
+      },
+    };
+    const cumulativeTargetBalances: CumulativeTargetBalanceConfig = {
+      [USDC]: buildTarget(USDC, "40", "35", 2, { [CHAIN_A]: 0 }),
+      [DAI]: buildTarget(DAI, "1", "0.9", 1, { [CHAIN_A]: 0 }),
+      [USDT]: buildTarget(USDT, "0", "0", 0, { [CHAIN_A]: 0 }),
+    };
+    const adapter1 = new MockRebalancerAdapter();
+    const rebalancerClient = createClient(cumulativeTargetBalances, { adapter1 }, [
+      makeRoute(CHAIN_A, CHAIN_A, USDT, USDC, "adapter1"),
+      makeRoute(CHAIN_A, CHAIN_A, USDT, DAI, "adapter1"),
+    ]);
+
+    await rebalancerClient.rebalanceInventory(cumulativeBalances, currentBalances, MAX_FEE_PCT);
+
+    expect(adapter1.rebalances.length).to.equal(2);
+    expect(adapter1.rebalances[0].route.destinationToken).to.equal(USDC);
+    expect(adapter1.rebalances[1].route.destinationToken).to.equal(DAI);
+  });
+
+  it("Iterates through excesses in sorted order", async function () {
+    const cumulativeBalances = {
+      [USDC]: bnZero,
+      [USDT]: amount(USDT, "100"),
+      [DAI]: amount(DAI, "100"),
+    };
+    const currentBalances = {
+      [CHAIN_A]: {
+        [USDC]: bnZero,
+        [USDT]: amount(USDT, "100"),
+        [DAI]: amount(DAI, "100"),
+      },
+    };
+    const cumulativeTargetBalances: CumulativeTargetBalanceConfig = {
+      [USDC]: buildTarget(USDC, "150", "140", 0, { [CHAIN_A]: 0 }),
+      [USDT]: buildTarget(USDT, "0", "0", 0, { [CHAIN_A]: 0 }),
+      [DAI]: buildTarget(DAI, "0", "0", 1, { [CHAIN_A]: 0 }),
+    };
+    const adapter1 = new MockRebalancerAdapter();
+    const rebalancerClient = createClient(cumulativeTargetBalances, { adapter1 }, [
+      makeRoute(CHAIN_A, CHAIN_A, USDT, USDC, "adapter1"),
+      makeRoute(CHAIN_A, CHAIN_A, DAI, USDC, "adapter1"),
+    ]);
+
+    await rebalancerClient.rebalanceInventory(cumulativeBalances, currentBalances, MAX_FEE_PCT);
+
+    expect(adapter1.rebalances.length).to.equal(2);
+    expect(adapter1.rebalances[0].route.sourceToken).to.equal(USDT);
+    expect(adapter1.rebalances[1].route.sourceToken).to.equal(DAI);
+  });
+
+  it("For a given excess token, source chains are iterated through in sorted order", async function () {
+    const cumulativeBalances = {
+      [USDC]: bnZero,
+      [USDT]: amount(USDT, "200"),
+    };
+    const currentBalances = {
+      [CHAIN_A]: { [USDC]: bnZero, [USDT]: amount(USDT, "20") },
+      [CHAIN_B]: { [USDC]: bnZero, [USDT]: amount(USDT, "60") },
+      [CHAIN_C]: { [USDC]: bnZero, [USDT]: amount(USDT, "40") },
+    };
+    const cumulativeTargetBalances: CumulativeTargetBalanceConfig = {
+      [USDC]: buildTarget(USDC, "90", "80", 0, { [CHAIN_A]: 0 }),
+      [USDT]: buildTarget(USDT, "0", "0", 0, {
+        [CHAIN_A]: 1,
+        [CHAIN_B]: 0,
+        [CHAIN_C]: 0,
+      }),
+    };
+    const adapter1 = new MockRebalancerAdapter();
+    const rebalancerClient = createClient(cumulativeTargetBalances, { adapter1 }, [
+      makeRoute(CHAIN_A, CHAIN_A, USDT, USDC, "adapter1"),
+      makeRoute(CHAIN_B, CHAIN_A, USDT, USDC, "adapter1"),
+      makeRoute(CHAIN_C, CHAIN_A, USDT, USDC, "adapter1"),
+    ]);
+
+    await rebalancerClient.rebalanceInventory(cumulativeBalances, currentBalances, MAX_FEE_PCT);
+
+    expect(adapter1.rebalances.length).to.equal(2);
+    expect(adapter1.rebalances[0].route.sourceChain).to.equal(CHAIN_B);
+    expect(adapter1.rebalances[1].route.sourceChain).to.equal(CHAIN_C);
+  });
+
+  it("For a given excess token and source chain, rebalance route is chosen using cheapest expected cost", async function () {
+    const cumulativeBalances = {
+      [USDC]: bnZero,
+      [USDT]: amount(USDT, "100"),
+    };
+    const currentBalances = {
+      [CHAIN_A]: { [USDC]: bnZero, [USDT]: amount(USDT, "100") },
+      [CHAIN_B]: { [USDC]: bnZero },
+    };
+    const cumulativeTargetBalances: CumulativeTargetBalanceConfig = {
+      [USDC]: buildTarget(USDC, "50", "40", 0, { [CHAIN_A]: 0, [CHAIN_B]: 0 }),
+      [USDT]: buildTarget(USDT, "0", "0", 0, { [CHAIN_A]: 0 }),
+    };
+    const adapter1 = new MockRebalancerAdapter();
+    const adapter2 = new MockRebalancerAdapter();
+    const cheapRoute = makeRoute(CHAIN_A, CHAIN_A, USDT, USDC, "adapter2");
+    const expensiveRoute = makeRoute(CHAIN_A, CHAIN_A, USDT, USDC, "adapter1");
+    adapter1.setEstimatedCost(expensiveRoute, amount(USDT, "5"));
+    adapter2.setEstimatedCost(cheapRoute, amount(USDT, "1"));
+    const rebalancerClient = createClient(
+      cumulativeTargetBalances,
+      { adapter1, adapter2 },
+      [expensiveRoute, cheapRoute],
+      {},
+      { adapter1: 10, adapter2: 10 }
+    );
+
+    await rebalancerClient.rebalanceInventory(cumulativeBalances, currentBalances, MAX_FEE_PCT);
+
+    expect(adapter1.rebalances.length).to.equal(0);
+    expect(adapter2.rebalances.length).to.equal(1);
+    expect(adapter2.rebalances[0].route.destinationChain).to.equal(CHAIN_A);
+  });
+
+  it("Respects max pending orders per adapter limit", async function () {
+    const cumulativeBalances = {
+      [USDC]: bnZero,
+      [USDT]: amount(USDT, "100"),
+    };
+    const currentBalances = {
+      [CHAIN_A]: { [USDC]: bnZero, [USDT]: amount(USDT, "100") },
+    };
+    const cumulativeTargetBalances: CumulativeTargetBalanceConfig = {
+      [USDC]: buildTarget(USDC, "100", "90", 0, { [CHAIN_A]: 0 }),
+      [USDT]: buildTarget(USDT, "0", "0", 0, { [CHAIN_A]: 0 }),
+    };
+    const adapter1 = new MockRebalancerAdapter();
+    adapter1.setPendingOrders(["existing-order"]);
+    const rebalancerClient = createClient(
+      cumulativeTargetBalances,
+      { adapter1 },
+      [makeRoute(CHAIN_A, CHAIN_A, USDT, USDC, "adapter1")],
+      {},
+      { adapter1: 1 }
+    );
+
+    await rebalancerClient.rebalanceInventory(cumulativeBalances, currentBalances, MAX_FEE_PCT);
+
+    expect(adapter1.rebalances.length).to.equal(0);
+  });
+
+  it("Respects maxFeePct", async function () {
+    const cumulativeBalances = {
+      [USDC]: bnZero,
+      [USDT]: amount(USDT, "100"),
+    };
+    const currentBalances = {
+      [CHAIN_A]: { [USDC]: bnZero, [USDT]: amount(USDT, "100") },
+    };
+    const cumulativeTargetBalances: CumulativeTargetBalanceConfig = {
+      [USDC]: buildTarget(USDC, "50", "40", 0, { [CHAIN_A]: 0 }),
+      [USDT]: buildTarget(USDT, "0", "0", 0, { [CHAIN_A]: 0 }),
+    };
+    const route = makeRoute(CHAIN_A, CHAIN_A, USDT, USDC, "adapter1");
+
+    const expensiveAdapter = new MockRebalancerAdapter();
+    expensiveAdapter.setEstimatedCost(route, amount(USDT, "6")); // 6 / 50 > 10%
+    const expensiveClient = createClient(
+      cumulativeTargetBalances,
+      { adapter1: expensiveAdapter },
+      [route],
+      {},
+      { adapter1: 10 }
+    );
+    await expensiveClient.rebalanceInventory(cumulativeBalances, currentBalances, toBNWei("10"));
+    expect(expensiveAdapter.rebalances.length).to.equal(0);
+
+    const affordableAdapter = new MockRebalancerAdapter();
+    affordableAdapter.setEstimatedCost(route, amount(USDT, "5")); // 5 / 50 <= 10%
+    const affordableClient = createClient(
+      cumulativeTargetBalances,
+      { adapter1: affordableAdapter },
+      [route],
+      {},
+      { adapter1: 10 }
+    );
+    await affordableClient.rebalanceInventory(cumulativeBalances, currentBalances, toBNWei("10"));
+    expect(affordableAdapter.rebalances.length).to.equal(1);
+  });
 });
 
 class MockRebalancerAdapter implements RebalancerAdapter {
   public rebalances: { route: RebalanceRoute; amount: BigNumber }[] = [];
   public estimatedCostMapping: { [route: string]: BigNumber } = {};
+  private pendingOrders: string[] | undefined;
+
   initialize(): Promise<void> {
     return Promise.resolve();
   }
+
   initializeRebalance(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber): Promise<void> {
     this.rebalances.push({ route: rebalanceRoute, amount: amountToTransfer });
     return Promise.resolve();
   }
+
   updateRebalanceStatuses(): Promise<void> {
     return Promise.resolve();
   }
+
   sweepIntermediateBalances(): Promise<void> {
     return Promise.resolve();
   }
@@ -144,15 +402,22 @@ class MockRebalancerAdapter implements RebalancerAdapter {
     // This function is only used in external clients so its not really necessary to implement here.
     return Promise.resolve({});
   }
+
   getPendingOrders(): Promise<string[]> {
-    // This is important to align with this.rebalances so that we can test that maxPendingOrders
-    // is respected.
-    return Promise.resolve(this.rebalances.map((x, i) => i.toString()));
+    return Promise.resolve(this.pendingOrders ?? this.rebalances.map((x, i) => i.toString()));
   }
+
+  setPendingOrders(pendingOrders: string[]): void {
+    this.pendingOrders = pendingOrders;
+  }
+
   setEstimatedCost(route: RebalanceRoute, cost: BigNumber): void {
     this.estimatedCostMapping[JSON.stringify(route)] = cost;
   }
-  getEstimatedCost(rebalanceRoute: RebalanceRoute): Promise<BigNumber> {
+
+  getEstimatedCost(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber, debugLog: boolean): Promise<BigNumber> {
+    void amountToTransfer;
+    void debugLog;
     return Promise.resolve(this.estimatedCostMapping[JSON.stringify(rebalanceRoute)] ?? bnZero);
   }
 }
@@ -166,9 +431,9 @@ class MockRebalancerConfig extends RebalancerConfig {
 
   constructor(
     cumulativeBalanceTargets: CumulativeTargetBalanceConfig,
-    maxAmountsToTransfer: MaxAmountToTransferConfig,
-    maxPendingOrders: MaxPendingOrdersConfig,
-    hubPoolChainId: number
+    maxAmountsToTransfer: MaxAmountToTransferConfig = {},
+    maxPendingOrders: MaxPendingOrdersConfig = {},
+    hubPoolChainId = 1
   ) {
     super({});
     this.cumulativeTargetBalances = cumulativeBalanceTargets;
