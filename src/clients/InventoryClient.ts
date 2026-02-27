@@ -1858,6 +1858,15 @@ export class InventoryClient {
     });
 
     this.pendingRebalances = await this.rebalancerClient.getPendingRebalances();
+    if (Object.keys(this.pendingRebalances).length > 0) {
+      this.logger.debug({
+        at: "InventoryClient#update",
+        message: "Updated RebalancerClient pending rebalances",
+        pendingRebalances: Object.entries(this.pendingRebalances).map(([chainId, tokens]) => ({
+          [chainId]: Object.fromEntries(Object.entries(tokens).map(([token, amount]) => [token, amount.toString()])),
+        })),
+      });
+    }
   }
 
   isInventoryManagementEnabled(): boolean {

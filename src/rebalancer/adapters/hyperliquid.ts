@@ -710,6 +710,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         at: "HyperliquidStablecoinSwapAdapter.getPendingRebalances",
         message: `Withdrawal for order ${cloid} has finalized, subtracting its virtual balance of ${expectedAmountToReceive.toString()} from HyperEVM`,
       });
+      pendingRebalances[HYPEREVM] ??= {};
       pendingRebalances[HYPEREVM][destinationToken] = (pendingRebalances[HYPEREVM][destinationToken] ?? bnZero).sub(
         expectedAmountToReceive
       );
