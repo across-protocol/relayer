@@ -44,20 +44,21 @@ describe("RebalancerConfig", () => {
     expect(() => new RebalancerConfig(env)).to.throw("Rebalancer config error");
   });
 
-  it("derives chainIds from union of target and cumulative chain mappings", () => {
+  it("derives chainIds from union of cumulative chain mappings", () => {
     const env = makeEnv({
       REBALANCER_CONFIG: JSON.stringify({
-        targetBalances: {
-          USDC: {
-            10: { targetBalance: "100", thresholdBalance: "90", priorityTier: 0 },
-          },
-        },
         cumulativeTargetBalances: {
           DAI: {
             targetBalance: "50",
             thresholdBalance: "40",
             priorityTier: 1,
             chains: { 1: 0, 137: 2 },
+          },
+          USDC: {
+            targetBalance: "100",
+            thresholdBalance: "90",
+            priorityTier: 0,
+            chains: { 10: 1 },
           },
         },
       }),
@@ -71,10 +72,18 @@ describe("RebalancerConfig", () => {
   it("sets maxAmountsToTransfer converted by token decimals for each resolved chain", () => {
     const env = makeEnv({
       REBALANCER_CONFIG: JSON.stringify({
-        targetBalances: {
+        cumulativeTargetBalances: {
           USDC: {
-            1: { targetBalance: "100", thresholdBalance: "90", priorityTier: 0 },
-            10: { targetBalance: "100", thresholdBalance: "90", priorityTier: 0 },
+            targetBalance: "100",
+            thresholdBalance: "90",
+            priorityTier: 0,
+            chains: { 1: 0, 10: 1 },
+          },
+          DAI: {
+            targetBalance: "100",
+            thresholdBalance: "90",
+            priorityTier: 0,
+            chains: { 1: 0, 10: 1 },
           },
         },
         maxAmountsToTransfer: {
@@ -110,20 +119,6 @@ describe("RebalancerConfig", () => {
     });
   });
 
-  it("throws when thresholdBalance is greater than targetBalance in targetBalances", () => {
-    const env = makeEnv({
-      REBALANCER_CONFIG: JSON.stringify({
-        targetBalances: {
-          USDC: {
-            1: { targetBalance: "100", thresholdBalance: "101", priorityTier: 0 },
-          },
-        },
-      }),
-    });
-
-    expect(() => new RebalancerConfig(env)).to.throw("thresholdBalance<=targetBalance");
-  });
-
   it("throws when thresholdBalance is greater than targetBalance in cumulativeTargetBalances", () => {
     const env = makeEnv({
       REBALANCER_CONFIG: JSON.stringify({
@@ -139,20 +134,6 @@ describe("RebalancerConfig", () => {
     });
 
     expect(() => new RebalancerConfig(env)).to.throw("thresholdBalance<=targetBalance");
-  });
-
-  it("throws when required fields are missing from targetBalances", () => {
-    const env = makeEnv({
-      REBALANCER_CONFIG: JSON.stringify({
-        targetBalances: {
-          USDC: {
-            1: { targetBalance: "100", thresholdBalance: "90" },
-          },
-        },
-      }),
-    });
-
-    expect(() => new RebalancerConfig(env)).to.throw("Must specify targetBalance, thresholdBalance, priorityTier");
   });
 
   it("throws when required fields are missing from cumulativeTargetBalances", () => {
@@ -180,7 +161,6 @@ describe("RebalancerConfig", () => {
 
     const config = new RebalancerConfig(env);
 
-    expect(config.targetBalances).to.deep.equal({});
     expect(config.cumulativeTargetBalances).to.deep.equal({});
     expect(config.maxAmountsToTransfer).to.deep.equal({});
     expect(config.maxPendingOrders).to.deep.equal({});
@@ -227,9 +207,12 @@ describe("RebalancerConfig", () => {
   it("skips maxAmountsToTransfer token-chain pairs that cannot be resolved", () => {
     const env = makeEnv({
       REBALANCER_CONFIG: JSON.stringify({
-        targetBalances: {
+        cumulativeTargetBalances: {
           USDC: {
-            1: { targetBalance: "1", thresholdBalance: "0.5", priorityTier: 0 },
+            targetBalance: "1",
+            thresholdBalance: "0.5",
+            priorityTier: 0,
+            chains: { 1: 0 },
           },
         },
         maxAmountsToTransfer: {
