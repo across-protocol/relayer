@@ -174,7 +174,7 @@ export class DepositAddressHandler {
       const deployTx = buildDeployTx(
         factoryContract,
         originChainId,
-        depositMessage.depositAddress,
+        depositMessage.erc20Transfer.from,
         depositMessage.routeParams,
         depositMessage.salt
       );
