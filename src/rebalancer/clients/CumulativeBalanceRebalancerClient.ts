@@ -231,7 +231,11 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
           const rebalanceRouteCosts = await mapAsync(rebalanceRoutesToEvaluate, async (route) => {
             return {
               route,
-              cost: await this.adapters[route.adapter].getEstimatedCost(route, amountToTransferCapped, false),
+              cost: await this.adapters[route.adapter].getEstimatedCost(
+                route,
+                amountToTransferCapped,
+                false /* debugLog set to false because the logs would be really noisy, though detailed about how each estimated cost was computed */
+              ),
             };
           });
           rebalanceRouteCosts.sort((a, b) => {

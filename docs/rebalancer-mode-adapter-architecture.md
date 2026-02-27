@@ -9,18 +9,17 @@ Related docs:
 - `src/rebalancer/README.md`
 - `docs/inventory-vs-rebalancer-responsibilities.md`
 
-Primary files:
+Primary subdirectories/modules:
 
-- `src/rebalancer/rebalancer.ts`
-- `src/rebalancer/index.ts`
-- `src/rebalancer/RebalancerClientHelper.ts`
-- `src/rebalancer/adapters/*`
+- `src/rebalancer/clients/`
+- `src/rebalancer/adapters/`
+- `src/rebalancer/utils/`
 
 ## Core architectural boundary
 
 The rebalancer is split into two modules with a strict interface boundary:
 
-- **Mode logic in `rebalancer.ts`** chooses *what* should be rebalanced:
+- **Mode logic in `src/rebalancer/clients/*`** chooses *what* should be rebalanced:
   - identify deficits and excesses,
   - prioritize which deficits to fill first,
   - evaluate eligible routes and costs,
@@ -34,7 +33,18 @@ The rebalancer is split into two modules with a strict interface boundary:
   - lifecycle progression for in-flight swaps,
   - pending state tracking/reporting.
 
-As long as adapters satisfy `RebalancerAdapter`, mode implementations can stay unchanged.
+As long as adapters satisfy the shared `RebalancerAdapter` contract in `src/rebalancer/utils/`, mode implementations can stay unchanged.
+
+## Client lifecycle boundary
+
+The post-refactor lifecycle is explicitly two-stage:
+
+1. The construction layer under `src/rebalancer/` wires logger/config/adapters/signer.
+2. `BaseRebalancerClient.initialize(rebalanceRoutes)` sets active routes and initializes each adapter with that route view.
+
+Key invariant:
+
+- read-only clients call `initialize([])` and still support pending-state reads (`getPendingRebalances`), because pending-state aggregation does not depend on active routes.
 
 ## Data flow (current behavior)
 
@@ -69,15 +79,20 @@ If these are incomplete, mode behavior can degrade even if mode code is untouche
 
 ### Route registration invariants
 
-`RebalancerClientHelper.ts` binds adapter names to implementations and defines `RebalanceRoute` entries. A new adapter is not reachable unless:
+The construction layer in `src/rebalancer/` binds adapter names to implementations and defines `RebalanceRoute` entries. A new adapter is not reachable unless:
 
 1. it is added to the adapter map,
 2. its name appears in one or more routes,
 3. it survives route filtering at runtime.
 
+Important distinction:
+
+- Being present in the adapter map means the adapter is initialized and can report pending state.
+- Being present in active routes means the mode clients may select it for new rebalances.
+
 ### Mode-layer invariants
 
-Mode code in `rebalancer.ts` should remain venue-agnostic:
+Mode code in `src/rebalancer/clients/*` should remain venue-agnostic:
 
 - no adapter-specific branching in deficit/excess logic,
 - no venue-specific cost or state assumptions beyond interface methods,
@@ -88,7 +103,7 @@ Mode code in `rebalancer.ts` should remain venue-agnostic:
 Typical contributor workflow:
 
 1. Create a new adapter in `src/rebalancer/adapters/` implementing `RebalancerAdapter`.
-2. Register it in `src/rebalancer/RebalancerClientHelper.ts`.
+2. Register it in the construction layer under `src/rebalancer/`.
 3. Add routes referencing the adapter.
 4. Ensure `getEstimatedCost`, `getPendingOrders`, and `getPendingRebalances` are production-ready.
 5. Validate that both mode entrypoints can call through interface methods without code changes:

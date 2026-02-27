@@ -17,7 +17,8 @@ Supporting files:
 
 - `src/clients/TokenClient.ts`
 - `src/clients/bridges/CrossChainTransferClient.ts`
-- `src/rebalancer/rebalancer.ts`
+- `src/rebalancer/clients/`
+- `src/rebalancer/utils/`
 
 ## Mental model
 
@@ -98,12 +99,13 @@ The tracking step mutates local virtual state (`trackCrossChainTransfer`) before
 
 ## Interaction with ReadOnlyRebalancerClient
 
-InventoryClient also imports pending cross-asset rebalance state (`pendingRebalances`) from `ReadOnlyRebalancerClient` and treats it as virtual balance adjustments.
+InventoryClient imports pending cross-asset rebalance state (`pendingRebalances`) through the shared rebalancer interface layer in `src/rebalancer/utils/`, commonly provided by `ReadOnlyRebalancerClient`, and treats it as virtual balance adjustments.
 
 This is a key cross-module coupling:
 
 - Mode-specific rebalancer clients drive cross-asset state transitions.
 - InventoryClient consumes pending status to avoid double-counting deficits/excesses while swaps are in-flight.
+- Read-only mode can initialize with an empty route set and still report pending state because pending aggregation is adapter-backed, not route-dependent.
 
 ## Common pitfalls
 

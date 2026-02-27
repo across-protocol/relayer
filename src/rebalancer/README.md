@@ -4,22 +4,22 @@ The Rebalancer determines when the relayer's inventory should be reshaped across
 
 ## Rebalancer Clients
 
-The main implementations are defined in `rebalancer.ts`:
+Core rebalancer implementation is split by subdirectory responsibility:
 
-- `BaseRebalancerClient` as an abstract mode boundary with shared lifecycle/adapter helpers.
-- `ReadOnlyRebalancerClient` for consumers that only need pending rebalance reads.
-- `CumulativeBalanceRebalancerClient` for production cumulative balancing.
-- `SingleBalanceRebalancerClient` for testing-oriented single-balance behavior.
+- `src/rebalancer/clients/`: mode clients and shared mode lifecycle.
+- `src/rebalancer/adapters/`: venue execution implementations.
+- `src/rebalancer/utils/`: shared rebalancer contracts and helper utilities.
+- `src/rebalancer/`: runtime orchestration for runner setup and execution.
 
 ### Rebalance Routes
 
-Each rebalancer client is instantiated with `RebalanceRoute[]`. A route defines:
+A `RebalanceRoute` defines:
 
 - source chain and source token,
 - destination chain and destination token,
 - adapter name used to execute the swap flow.
 
-Routes are currently hardcoded in `RebalancerClientHelper.ts` and filtered at runtime to routes that are valid for the current config and balances.
+Routes are assembled by the rebalancer construction layer and passed at client initialization time (`initialize(rebalanceRoutes)`). The mode clients then filter to routes that are valid for current balances/config.
 
 ### Rebalancer Adapter
 
@@ -48,7 +48,7 @@ Implemented production swap adapters:
 
 The rebalancer has two independent layers:
 
-- **Mode layer** (`CumulativeBalanceRebalancerClient.rebalanceInventory` and `SingleBalanceRebalancerClient.rebalanceInventory`) decides **what** inventory imbalance should be corrected and in what order.
+- **Mode layer** (`src/rebalancer/clients/`) decides **what** inventory imbalance should be corrected and in what order.
 - **Adapter layer** (`RebalancerAdapter` implementations in `src/rebalancer/adapters/`) decides **how** to execute a selected route on a venue.
 
 This separation is intentional:
@@ -59,10 +59,10 @@ This separation is intentional:
 
 ### Safe extension checklist for new adapters
 
-When adding a new file in `src/rebalancer/adapters/`, contributors should usually avoid touching mode functions in `rebalancer.ts`.
+When adding a new file in `src/rebalancer/adapters/`, contributors should usually avoid touching mode logic in `src/rebalancer/clients/`.
 
 1. Implement the full `RebalancerAdapter` interface in the new adapter file.
-2. Register the adapter in `RebalancerClientHelper.ts` (adapter map + route inclusion).
+2. Register the adapter in the rebalancer construction layer (adapter map + route inclusion).
 3. Ensure at least one `RebalanceRoute` points to the adapter name.
 4. Keep mode logic unchanged unless requirements for deficit/excess selection actually changed.
 5. Verify pending-order and pending-rebalance reporting is implemented, since mode guardrails rely on it.
@@ -122,7 +122,7 @@ High-level flow:
 
 ### Cumulative mode: `CumulativeBalanceRebalancerClient.rebalanceInventory()`
 
-This is the cumulative-balance path and the default runtime execution via `runCumulativeBalanceRebalancer` in `src/rebalancer/index.ts`.
+This is the cumulative-balance path and the default runtime execution via `runCumulativeBalanceRebalancer` in the `src/rebalancer/` runtime layer.
 
 Inputs:
 
@@ -148,18 +148,26 @@ Design tradeoff:
 
 ## Creating Rebalancer Instances
 
-Use mode-specific constructors in `RebalancerClientHelper.ts`:
+Use the rebalancer construction layer to instantiate mode-specific clients:
 
 - `constructCumulativeBalanceRebalancerClient()` for operational runs.
 - `constructSingleBalanceRebalancerClient()` for testing-oriented runs.
+- `constructReadOnlyRebalancerClient()` for pending-state consumers.
 
-Runtime entrypoints in `src/rebalancer/index.ts`:
+Lifecycle note:
+
+- Constructors wire logger/config/adapters/signer.
+- `initialize(rebalanceRoutes)` sets route set and initializes adapters.
+- Read-only mode intentionally calls `initialize([])` and still supports `getPendingRebalances()` because pending-state reads do not depend on route selection.
+
+Runtime entrypoints in `src/rebalancer/`:
 
 - `runCumulativeBalanceRebalancer` (supported operational path).
 - `runSingleBalanceRebalancer` (testing-only path).
 - Each runner materializes balances from its own config domain:
   - cumulative runner loads from `cumulativeTargetBalances`,
   - single-balance runner loads from `targetBalances`.
+- Each runner updates adapter status/sweeps first, then applies adapter-reported pending rebalance adjustments before evaluating new rebalances.
 
 ## Interactions with Other Bots and Clients
 
@@ -179,3 +187,7 @@ Running the Rebalancer allows the relayer to support in-protocol swap flows whil
 ### Binance Finalizer
 
 The Binance finalizer sweeps exchange balances as a fallback path. The Binance adapter marks expected swap lifecycle transfers, and stale balances are eventually swept if swaps do not complete.
+
+## Venue-specific operational note
+
+Hyperliquid spot metadata is currently configured with `pxDecimals=4` for USDT/USDC and prices are truncated to `pxDecimals` when submitting orders. This is a pragmatic setting to avoid tick-size divisibility rejections observed with more granular precision.

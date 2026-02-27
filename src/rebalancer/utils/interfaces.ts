@@ -1,5 +1,6 @@
+import { BigNumber } from "../../utils";
+
 export type ExcessOrDeficit = { token: string; chainId: number; amount: BigNumber; priorityTier: number };
-// Excesses are always sorted in priority from lowest to highest and then by amount from largest to smallest.
 
 export interface RebalancerAdapter {
   initialize(availableRoutes: RebalanceRoute[]): Promise<void>;

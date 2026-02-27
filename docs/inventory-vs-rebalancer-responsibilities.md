@@ -14,7 +14,8 @@ Primary files:
 
 - `src/clients/InventoryClient.ts`
 - `src/rebalancer/README.md`
-- `src/rebalancer/rebalancer.ts`
+- `src/rebalancer/clients/`
+- `src/rebalancer/utils/`
 
 ## Responsibility split (current state)
 
@@ -49,7 +50,7 @@ For in-protocol swap support, composition dominates and requires the rebalancer 
 
 ## Cross-coupling points
 
-- InventoryClient imports `pendingRebalances` from `ReadOnlyRebalancerClient` and includes them in virtual balance calculations.
+- InventoryClient imports `pendingRebalances` through the shared `RebalancerClient` interface (commonly via `ReadOnlyRebalancerClient`) and includes them in virtual balance calculations.
 - Rebalancer clients consume InventoryClient-derived balances in two forms:
   - chain-local balances (`currentBalances`) used to choose source chains and route amounts,
   - cumulative balances (`cumulativeBalances`) used to detect per-token aggregate deficits/excesses.
@@ -74,7 +75,7 @@ The repository docs already note that some token-transfer behavior in InventoryC
 
 Treat this as "stable but transitional": do not introduce new overlap unless required.
 
-Current default runtime behavior in `src/rebalancer/index.ts` executes cumulative rebalancing via `runCumulativeBalanceRebalancer` and keeps `runSingleBalanceRebalancer` as an alternate/testing path.
+Current default runtime behavior in `src/rebalancer/` executes cumulative rebalancing via `runCumulativeBalanceRebalancer` and keeps `runSingleBalanceRebalancer` as an alternate/testing path.
 
 ## Anti-patterns
 

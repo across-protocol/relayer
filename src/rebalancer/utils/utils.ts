@@ -1,6 +1,7 @@
 import { ConvertDecimals, getTokenInfoFromSymbol } from "../../utils";
 import { ExcessOrDeficit } from "./interfaces";
 
+// Excesses are always sorted in priority from lowest to highest and then by amount from largest to smallest.
 export function sortExcessFunction(excessA: ExcessOrDeficit, excessB: ExcessOrDeficit): number {
   const { token: tokenA, amount: amountA, priorityTier: priorityTierA, chainId: chainIdA } = excessA;
   const { token: tokenB, amount: amountB, priorityTier: priorityTierB, chainId: chainIdB } = excessB;
