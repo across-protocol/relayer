@@ -1,5 +1,5 @@
-import * as contracts from "@across-protocol/contracts/dist/test-utils";
-import { ExpandedERC20__factory as ERC20 } from "@across-protocol/contracts";
+import * as sdkTestUtils from "@across-protocol/sdk/test-utils";
+import { ExpandedERC20__factory as ERC20 } from "@across-protocol/sdk/typechain";
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import {
   AcrossApiClient,
@@ -402,7 +402,7 @@ describe("Relayer: Unfilled Deposits", async function () {
     // Update the deposit before either is filled.
     const updatedOutputAmount = outputAmount.sub(bnOne);
     for (const deposit of [deposit1, deposit2]) {
-      const signature = await contracts.getUpdatedV3DepositSignature(
+      const signature = await sdkTestUtils.getUpdatedV3DepositSignature(
         depositor,
         deposit.depositId,
         originChainId,
@@ -461,7 +461,7 @@ describe("Relayer: Unfilled Deposits", async function () {
 
     // Speed up deposit, and check that unfilled amount is still the same.
     const updatedOutputAmount = deposit.outputAmount.sub(bnOne);
-    const signature = await contracts.getUpdatedV3DepositSignature(
+    const signature = await sdkTestUtils.getUpdatedV3DepositSignature(
       depositor,
       deposit.depositId,
       originChainId,
