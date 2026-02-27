@@ -16,6 +16,7 @@ export interface Erc20Transfer {
 }
 export interface DepositAddressMessage {
   depositAddress: string;
+  paramsHash: string;
   routeParams: RouteParams;
   erc20Transfer: Erc20Transfer;
   salt: string;

@@ -17,6 +17,7 @@ import {
   toBN,
   getDepositKey,
   assert,
+  getCounterfactualDepositImplementationAddress,
 } from "../utils";
 import { DepositAddressMessage } from "../interfaces";
 import { AcrossSwapApiClient, TransactionClient, SwapApiResponse } from "../clients";
@@ -196,8 +197,8 @@ export class DepositAddressHandler {
       const deployTx = buildDeployTx(
         factoryContract,
         originChainId,
-        depositMessage.erc20Transfer.from,
-        depositMessage.routeParams,
+        getCounterfactualDepositImplementationAddress(originChainId),
+        depositMessage.paramsHash,
         depositMessage.salt
       );
       const deployReceipt = await sendAndConfirmTransaction(deployTx, this.transactionClient, useDispatcher);

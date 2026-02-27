@@ -41,6 +41,10 @@ import IOFT_ABI_FULL from "./abi/IOFT.json";
 import HYPERLIQUID_DEPOSIT_HANDLER_ABI from "./abi/HyperliquidDepositHandler.json";
 import SPOKE_POOL_PERIPHERY_ABI from "./abi/SpokePoolPeriphery.json";
 import COUNTERFACTUAL_DEPOSIT_FACTORY_ABI from "./abi/CounterfactualDepositFactory.json";
+import COUNTERFACTUAL_DEPOSIT_ABI from "./abi/CounterfactualDeposit.json";
+import COUNTERFACTUAL_DEPOSIT_CCTP_ABI from "./abi/CounterfactualDepositCCTP.json";
+import COUNTERFACTUAL_DEPOSIT_OFT_ABI from "./abi/CounterfactualDepositOFT.json";
+import COUNTERFACTUAL_DEPOSIT_SPOKE_POOL_ABI from "./abi/CounterfactualDepositSpokePool.json";
 export { IOFT_ABI_FULL };
 import HUB_POOL_STORE_ABI from "./abi/HubPoolStore.json";
 
@@ -576,16 +580,20 @@ export const CONTRACT_ADDRESSES: {
       abi: COUNTERFACTUAL_DEPOSIT_FACTORY_ABI,
     },
     counterfactualDeposit: {
-      address: "0x9A8f92a830A5cB89a3816e3D267CB7791c16b04D",
+      address: "0x654321F334b949A48c710E80b35334A4047d10B1",
+      abi: COUNTERFACTUAL_DEPOSIT_ABI,
     },
     counterfactualDepositCCTP: {
       address: "0x36334d17b5a79a416b4070dd6f181ea368bd4be6",
+      abi: COUNTERFACTUAL_DEPOSIT_CCTP_ABI,
     },
     counterfactualDepositOFT: {
       address: "0x79506dFe04E822D237a692F260c6Be650aB5d26A",
+      abi: COUNTERFACTUAL_DEPOSIT_OFT_ABI,
     },
     counterfactualDepositSpokePool: {
       address: "0xB4dF3686Ae3133CD8Da52B575ff490E5e09Ba65d",
+      abi: COUNTERFACTUAL_DEPOSIT_SPOKE_POOL_ABI,
     },
   },
   [CHAIN_IDs.LENS]: {

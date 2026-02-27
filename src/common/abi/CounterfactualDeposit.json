@@ -1,0 +1,16 @@
+[
+  { "inputs": [], "name": "InvalidProof", "type": "error" },
+  {
+    "inputs": [
+      { "internalType": "address", "name": "implementation", "type": "address" },
+      { "internalType": "bytes", "name": "params", "type": "bytes" },
+      { "internalType": "bytes", "name": "submitterData", "type": "bytes" },
+      { "internalType": "bytes32[]", "name": "proof", "type": "bytes32[]" }
+    ],
+    "name": "execute",
+    "outputs": [],
+    "stateMutability": "payable",
+    "type": "function"
+  },
+  { "stateMutability": "payable", "type": "receive" }
+]
