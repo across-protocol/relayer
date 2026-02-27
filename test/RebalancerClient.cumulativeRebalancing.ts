@@ -377,12 +377,77 @@ describe("RebalancerClient.cumulativeRebalancing", () => {
     await affordableClient.rebalanceInventory(cumulativeBalances, currentBalances, toBNWei("10"));
     expect(affordableAdapter.rebalances.length).to.equal(1);
   });
+
+  it("Aggregates pending rebalances across adapters", async function () {
+    const cumulativeTargetBalances: CumulativeTargetBalanceConfig = {
+      [USDC]: buildTarget(USDC, "50", "40", 0, { [CHAIN_A]: 0, [CHAIN_B]: 0 }),
+      [USDT]: buildTarget(USDT, "50", "40", 0, { [CHAIN_A]: 0 }),
+    };
+    const adapter1 = new MockRebalancerAdapter();
+    const adapter2 = new MockRebalancerAdapter();
+    adapter1.setPendingRebalances({
+      [CHAIN_A]: {
+        [USDC]: amount(USDC, "5"),
+      },
+      [CHAIN_B]: {
+        [USDT]: amount(USDT, "-1"),
+      },
+    });
+    adapter2.setPendingRebalances({
+      [CHAIN_A]: {
+        [USDC]: amount(USDC, "2"),
+      },
+      [CHAIN_B]: {
+        [USDT]: amount(USDT, "3"),
+      },
+    });
+    const rebalancerClient = await createClient(cumulativeTargetBalances, { adapter1, adapter2 }, [
+      makeRoute(CHAIN_A, CHAIN_A, USDT, USDC, "adapter1"),
+    ]);
+
+    const pendingRebalances = await rebalancerClient.getPendingRebalances();
+
+    expect(pendingRebalances[CHAIN_A][USDC]).to.equal(amount(USDC, "7"));
+    expect(pendingRebalances[CHAIN_B][USDT]).to.equal(amount(USDT, "2"));
+  });
+
+  it("Returns pending rebalances without cross-token or cross-chain merging", async function () {
+    const cumulativeTargetBalances: CumulativeTargetBalanceConfig = {
+      [USDC]: buildTarget(USDC, "50", "40", 0, { [CHAIN_A]: 0 }),
+      [USDT]: buildTarget(USDT, "50", "40", 0, { [CHAIN_B]: 0 }),
+      [DAI]: buildTarget(DAI, "50", "40", 0, { [CHAIN_C]: 0 }),
+    };
+    const adapter1 = new MockRebalancerAdapter();
+    adapter1.setPendingRebalances({
+      [CHAIN_A]: {
+        [USDC]: amount(USDC, "4"),
+      },
+      [CHAIN_B]: {
+        [USDT]: amount(USDT, "6"),
+      },
+      [CHAIN_C]: {
+        [DAI]: amount(DAI, "8"),
+      },
+    });
+    const rebalancerClient = await createClient(cumulativeTargetBalances, { adapter1 }, [
+      makeRoute(CHAIN_A, CHAIN_B, USDC, USDT, "adapter1"),
+    ]);
+
+    const pendingRebalances = await rebalancerClient.getPendingRebalances();
+
+    expect(pendingRebalances[CHAIN_A][USDC]).to.equal(amount(USDC, "4"));
+    expect(pendingRebalances[CHAIN_B][USDT]).to.equal(amount(USDT, "6"));
+    expect(pendingRebalances[CHAIN_C][DAI]).to.equal(amount(DAI, "8"));
+    expect(pendingRebalances[CHAIN_A][USDT]).to.be.undefined;
+    expect(pendingRebalances[CHAIN_B][USDC]).to.be.undefined;
+  });
 });
 
 class MockRebalancerAdapter implements RebalancerAdapter {
   public rebalances: { route: RebalanceRoute; amount: BigNumber }[] = [];
   public estimatedCostMapping: { [route: string]: BigNumber } = {};
   private pendingOrders: string[] | undefined;
+  private pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
 
   initialize(): Promise<void> {
     return Promise.resolve();
@@ -402,8 +467,7 @@ class MockRebalancerAdapter implements RebalancerAdapter {
   }
 
   getPendingRebalances(): Promise<{ [chainId: number]: { [token: string]: BigNumber } }> {
-    // This function is only used in external clients so its not really necessary to implement here.
-    return Promise.resolve({});
+    return Promise.resolve(this.pendingRebalances);
   }
 
   getPendingOrders(): Promise<string[]> {
@@ -412,6 +476,10 @@ class MockRebalancerAdapter implements RebalancerAdapter {
 
   setPendingOrders(pendingOrders: string[]): void {
     this.pendingOrders = pendingOrders;
+  }
+
+  setPendingRebalances(pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } }): void {
+    this.pendingRebalances = pendingRebalances;
   }
 
   setEstimatedCost(route: RebalanceRoute, cost: BigNumber): void {
