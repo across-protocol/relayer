@@ -33,7 +33,7 @@ import {
   getUserFillsByTime,
   isSignerWallet,
 } from "../../utils";
-import { RebalanceRoute } from "../rebalancer";
+import { RebalanceRoute } from "../utils/interfaces";
 import * as hl from "@nktkas/hyperliquid";
 import { BaseAdapter, OrderDetails } from "./baseAdapter";
 import { RebalancerConfig } from "../RebalancerConfig";
@@ -89,7 +89,9 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       baseAssetName: "USDC",
       minimumOrderSize: 11, // Added buffer to minimum to account for price volatility.
       szDecimals: 2,
-      pxDecimals: 5, // Max(5, 8 - szDecimals): https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/tick-and-lot-size
+      pxDecimals: 4, // Max(5, 8 - szDecimals): https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/tick-and-lot-size
+      // I set this lower than 5 to 4 just to be conservative and match Binance, i've run into issues where
+      // the API says "price must be divisible by tick size" when using 5.
       isBuy: false,
     },
     "USDC-USDT": {
@@ -102,7 +104,8 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       baseAssetName: "USDC",
       minimumOrderSize: 11, // Added buffer to minimum to account for price volatility.
       szDecimals: 2,
-      pxDecimals: 5, // Max(5, 8 - szDecimals): https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/tick-and-lot-size
+      pxDecimals: 4, // Max(5, 8 - szDecimals): https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/tick-and-lot-size
+      // See explanation above for why I set this to 4 not 5.
       isBuy: true,
     },
   };
@@ -587,7 +590,6 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         message: `Pending bridge to Hyperevm cloids: ${pendingBridgeToHyperevm.join(", ")}`,
       });
     }
-    pendingRebalances[HYPEREVM] ??= {};
     const pendingBridgeFinalizations: { [sourceChain: number]: { [token: string]: BigNumber } } = {};
     await forEachAsync(Array.from(this.allSourceChains), async (sourceChain) => {
       if (sourceChain !== HYPEREVM) {
@@ -641,6 +643,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
             at: "HyperliquidStablecoinSwapAdapter.getPendingRebalances",
             message: `Subtracting ${convertedOrderAmount.toString()} ${sourceToken} for order cloid ${cloid} that has finalized bridging to HyperEVM`,
           });
+          pendingRebalances[HYPEREVM] ??= {};
           pendingRebalances[HYPEREVM][sourceToken] = (pendingRebalances[HYPEREVM][sourceToken] ?? bnZero).sub(
             convertedOrderAmount
           );
@@ -862,7 +865,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     const price = spotMarketMeta.isBuy ? Number(maxPxReached.px) * pxBuffer : Number(maxPxReached.px) / pxBuffer;
     const slippagePct = Math.abs(((price - bestPx) / bestPx) * 100);
     return {
-      px: truncate(price, spotMarketMeta.pxDecimals - 1).toString(),
+      px: truncate(price, spotMarketMeta.pxDecimals).toString(),
       slippagePct,
     };
   }

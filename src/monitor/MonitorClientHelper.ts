@@ -11,7 +11,7 @@ import {
 import { SpokePoolClientsByChain } from "../interfaces";
 import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
 import { constructReadOnlyRebalancerClient } from "../rebalancer/RebalancerClientHelper";
-import { RebalancerClient } from "../rebalancer/rebalancer";
+import { RebalancerClient } from "../rebalancer/utils/interfaces";
 
 export interface MonitorClients extends Clients {
   bundleDataClient: BundleDataClient;

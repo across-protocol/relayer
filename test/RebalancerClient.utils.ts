@@ -1,4 +1,5 @@
-import { ExcessOrDeficit, sortDeficitFunction, sortExcessFunction } from "../src/rebalancer/rebalancer";
+import { sortDeficitFunction, sortExcessFunction } from "../src/rebalancer/utils/utils";
+import { ExcessOrDeficit } from "../src/rebalancer/utils/interfaces";
 import { BigNumber, expect } from "./utils";
 
 describe("RebalancerClient.utils", () => {

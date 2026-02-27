@@ -58,7 +58,7 @@ import {
   TOKEN_SYMBOLS_MAP,
   winston,
 } from "../../utils";
-import { RebalancerAdapter, RebalanceRoute } from "../rebalancer";
+import { RebalancerAdapter, RebalanceRoute } from "../utils/interfaces";
 import { RebalancerConfig } from "../RebalancerConfig";
 
 export enum STATUS {

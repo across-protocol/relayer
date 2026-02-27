@@ -3,7 +3,7 @@
  * @dev In the future we will add support for sending new CCTP rebalances.
  */
 
-import { RebalanceRoute } from "../rebalancer";
+import { RebalanceRoute } from "../utils/interfaces";
 import { BaseAdapter } from "./baseAdapter";
 import { bnZero, forEachAsync, BigNumber } from "../../utils";
 

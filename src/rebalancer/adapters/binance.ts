@@ -27,7 +27,7 @@ import {
   truncate,
   winston,
 } from "../../utils";
-import { RebalanceRoute } from "../rebalancer";
+import { RebalanceRoute } from "../utils/interfaces";
 import { BaseAdapter, OrderDetails, STATUS } from "./baseAdapter";
 import { AugmentedTransaction } from "../../clients";
 import { RebalancerConfig } from "../RebalancerConfig";

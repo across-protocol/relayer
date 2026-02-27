@@ -1,4 +1,4 @@
-import { BaseRebalancerClient } from "../../src/rebalancer/rebalancer";
+import { BaseRebalancerClient } from "../../src/rebalancer/clients/BaseRebalancerClient";
 import { BigNumber } from "../../src/utils";
 import { winston } from "../utils";
 

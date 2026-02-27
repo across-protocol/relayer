@@ -1,4 +1,5 @@
-import { CumulativeBalanceRebalancerClient, RebalancerAdapter, RebalanceRoute } from "../src/rebalancer/rebalancer";
+import { RebalancerAdapter, RebalanceRoute } from "../src/rebalancer/utils/interfaces";
+import { CumulativeBalanceRebalancerClient } from "../src/rebalancer/clients/CumulativeBalanceRebalancerClient";
 import {
   CumulativeTargetBalanceConfig,
   MaxAmountToTransferConfig,
@@ -54,13 +55,13 @@ describe("RebalancerClient.cumulativeRebalancing", () => {
     return { sourceChain, destinationChain, sourceToken, destinationToken, adapter };
   }
 
-  function createClient(
+  async function createClient(
     cumulativeTargetBalances: CumulativeTargetBalanceConfig,
     adapters: { [name: string]: RebalancerAdapter },
     rebalanceRoutes: RebalanceRoute[],
     maxAmountsToTransfer: MaxAmountToTransferConfig = {},
     maxPendingOrders: MaxPendingOrdersConfig = {}
-  ): CumulativeBalanceRebalancerClient {
+  ): Promise<CumulativeBalanceRebalancerClient> {
     const config = new MockRebalancerConfig(
       cumulativeTargetBalances,
       maxAmountsToTransfer,
@@ -69,7 +70,9 @@ describe("RebalancerClient.cumulativeRebalancing", () => {
     );
     const baseSigner = ethers.Wallet.createRandom();
     const { spyLogger } = createSpyLogger();
-    return new CumulativeBalanceRebalancerClient(spyLogger, config, adapters, rebalanceRoutes, baseSigner);
+    const client = new CumulativeBalanceRebalancerClient(spyLogger, config, adapters, baseSigner);
+    await client.initialize(rebalanceRoutes);
+    return client;
   }
 
   it("Caps rebalance amount at lesser of deficit and excess remaining", async function () {
@@ -92,7 +95,7 @@ describe("RebalancerClient.cumulativeRebalancing", () => {
       [excessToken]: buildTarget(excessToken, "0", "0", 0, { [HUB_POOL_CHAIN_ID]: 0 }),
     };
     const adapter1 = new MockRebalancerAdapter();
-    const rebalancerClient = createClient(
+    const rebalancerClient = await createClient(
       cumulativeTargetBalances,
       { adapter1 },
       [makeRoute(HUB_POOL_CHAIN_ID, HUB_POOL_CHAIN_ID, excessToken, deficitToken, "adapter1")],
@@ -130,7 +133,7 @@ describe("RebalancerClient.cumulativeRebalancing", () => {
       }),
     };
     const adapter1 = new MockRebalancerAdapter();
-    const rebalancerClient = createClient(
+    const rebalancerClient = await createClient(
       cumulativeTargetBalances,
       { adapter1 },
       [
@@ -165,7 +168,7 @@ describe("RebalancerClient.cumulativeRebalancing", () => {
       [excessToken]: buildTarget(excessToken, "0", "0", 0, { [CHAIN_A]: 0 }),
     };
     const adapter1 = new MockRebalancerAdapter();
-    const rebalancerClient = createClient(
+    const rebalancerClient = await createClient(
       cumulativeTargetBalances,
       { adapter1 },
       [makeRoute(CHAIN_A, CHAIN_A, excessToken, deficitToken, "adapter1")],
@@ -200,7 +203,7 @@ describe("RebalancerClient.cumulativeRebalancing", () => {
       [USDT]: buildTarget(USDT, "0", "0", 0, { [CHAIN_A]: 0 }),
     };
     const adapter1 = new MockRebalancerAdapter();
-    const rebalancerClient = createClient(cumulativeTargetBalances, { adapter1 }, [
+    const rebalancerClient = await createClient(cumulativeTargetBalances, { adapter1 }, [
       makeRoute(CHAIN_A, CHAIN_A, USDT, USDC, "adapter1"),
       makeRoute(CHAIN_A, CHAIN_A, USDT, DAI, "adapter1"),
     ]);
@@ -231,7 +234,7 @@ describe("RebalancerClient.cumulativeRebalancing", () => {
       [DAI]: buildTarget(DAI, "0", "0", 1, { [CHAIN_A]: 0 }),
     };
     const adapter1 = new MockRebalancerAdapter();
-    const rebalancerClient = createClient(cumulativeTargetBalances, { adapter1 }, [
+    const rebalancerClient = await createClient(cumulativeTargetBalances, { adapter1 }, [
       makeRoute(CHAIN_A, CHAIN_A, USDT, USDC, "adapter1"),
       makeRoute(CHAIN_A, CHAIN_A, DAI, USDC, "adapter1"),
     ]);
@@ -262,7 +265,7 @@ describe("RebalancerClient.cumulativeRebalancing", () => {
       }),
     };
     const adapter1 = new MockRebalancerAdapter();
-    const rebalancerClient = createClient(cumulativeTargetBalances, { adapter1 }, [
+    const rebalancerClient = await createClient(cumulativeTargetBalances, { adapter1 }, [
       makeRoute(CHAIN_A, CHAIN_A, USDT, USDC, "adapter1"),
       makeRoute(CHAIN_B, CHAIN_A, USDT, USDC, "adapter1"),
       makeRoute(CHAIN_C, CHAIN_A, USDT, USDC, "adapter1"),
@@ -294,7 +297,7 @@ describe("RebalancerClient.cumulativeRebalancing", () => {
     const expensiveRoute = makeRoute(CHAIN_A, CHAIN_A, USDT, USDC, "adapter1");
     adapter1.setEstimatedCost(expensiveRoute, amount(USDT, "5"));
     adapter2.setEstimatedCost(cheapRoute, amount(USDT, "1"));
-    const rebalancerClient = createClient(
+    const rebalancerClient = await createClient(
       cumulativeTargetBalances,
       { adapter1, adapter2 },
       [expensiveRoute, cheapRoute],
@@ -323,7 +326,7 @@ describe("RebalancerClient.cumulativeRebalancing", () => {
     };
     const adapter1 = new MockRebalancerAdapter();
     adapter1.setPendingOrders(["existing-order"]);
-    const rebalancerClient = createClient(
+    const rebalancerClient = await createClient(
       cumulativeTargetBalances,
       { adapter1 },
       [makeRoute(CHAIN_A, CHAIN_A, USDT, USDC, "adapter1")],
@@ -352,7 +355,7 @@ describe("RebalancerClient.cumulativeRebalancing", () => {
 
     const expensiveAdapter = new MockRebalancerAdapter();
     expensiveAdapter.setEstimatedCost(route, amount(USDT, "6")); // 6 / 50 > 10%
-    const expensiveClient = createClient(
+    const expensiveClient = await createClient(
       cumulativeTargetBalances,
       { adapter1: expensiveAdapter },
       [route],
@@ -364,7 +367,7 @@ describe("RebalancerClient.cumulativeRebalancing", () => {
 
     const affordableAdapter = new MockRebalancerAdapter();
     affordableAdapter.setEstimatedCost(route, amount(USDT, "5")); // 5 / 50 <= 10%
-    const affordableClient = createClient(
+    const affordableClient = await createClient(
       cumulativeTargetBalances,
       { adapter1: affordableAdapter },
       [route],

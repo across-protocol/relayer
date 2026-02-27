@@ -46,7 +46,7 @@ import lodash from "lodash";
 import { SLOW_WITHDRAWAL_CHAINS } from "../common";
 import { AdapterManager, CrossChainTransferClient } from "./bridges";
 import { TransferTokenParams } from "../adapter/utils";
-import { RebalancerClient } from "../rebalancer/rebalancer";
+import { RebalancerClient } from "../rebalancer/utils/interfaces";
 
 type TokenDistribution = { [l2Token: string]: BigNumber };
 type TokenDistributionPerL1Token = { [l1Token: string]: { [chainId: number]: TokenDistribution } };

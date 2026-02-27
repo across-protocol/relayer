@@ -15,12 +15,15 @@ import {
   toBNWei,
   winston,
 } from "../utils";
-import { CumulativeBalanceRebalancerClient, RebalancerAdapter, SingleBalanceRebalancerClient } from "./rebalancer";
+import { CumulativeBalanceRebalancerClient } from "./clients/CumulativeBalanceRebalancerClient";
+import { SingleBalanceRebalancerClient } from "./clients/SingleBalanceRebalancerClient";
+
 import {
   constructCumulativeBalanceRebalancerClient,
   constructSingleBalanceRebalancerClient,
 } from "./RebalancerClientHelper";
 import { RebalancerConfig } from "./RebalancerConfig";
+import { RebalancerAdapter, RebalancerClient } from "./utils/interfaces";
 config();
 let logger: winston.Logger;
 
@@ -30,7 +33,7 @@ type RebalancerRunContext = {
   rebalancerConfig: RebalancerConfig;
   adaptersToUpdate: Set<RebalancerAdapter>;
   inventoryClient: Awaited<ReturnType<typeof constructRelayerClients>>["inventoryClient"];
-  rebalancerClient: SingleBalanceRebalancerClient | CumulativeBalanceRebalancerClient;
+  rebalancerClient: RebalancerClient;
 };
 
 async function initializeRebalancerRun(
