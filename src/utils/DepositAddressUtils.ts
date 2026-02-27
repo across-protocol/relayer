@@ -19,12 +19,7 @@ export function computeParamsHash(routeParams: RouteParams, implAddress: string)
     ]
   );
   const paramsHash = utils.keccak256(encoded);
-  return utils.keccak256(
-    utils.defaultAbiCoder.encode(
-      ["address", "bytes32"],
-      [implAddress, paramsHash]
-    )
-  );
+  return utils.keccak256(utils.defaultAbiCoder.encode(["address", "bytes32"], [implAddress, paramsHash]));
 }
 
 /**
