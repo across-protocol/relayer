@@ -259,19 +259,16 @@ export class DepositAddressHandler {
    * @notice Queries the Indexer API for all pending deposit addresses transactions. By default, do not retry since this endpoing is being polled.
    */
   private async _queryIndexerApi(retriesRemaining = 3): Promise<DepositAddressMessage[]> {
-    let apiResponseData: { depositAddresses: DepositAddressMessage[] } | undefined = undefined;
+    let apiResponseData: DepositAddressMessage[] | undefined = undefined;
     try {
-      apiResponseData = await this.indexerApi.get<{ depositAddresses: DepositAddressMessage[] }>(
-        this.config.indexerApiEndpoint,
-        {}
-      );
+      apiResponseData = await this.indexerApi.get<DepositAddressMessage[]>(this.config.indexerApiEndpoint, {});
     } catch {
       // Error log should have been emitted in IndexerApiClient.
     }
     if (!isDefined(apiResponseData)) {
       return retriesRemaining > 0 ? this._queryIndexerApi(--retriesRemaining) : [];
     }
-    return apiResponseData.depositAddresses;
+    return apiResponseData;
   }
 
   private async _getSwapApiQuote(
