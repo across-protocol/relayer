@@ -18,7 +18,7 @@ export interface DepositAddressMessage {
   depositAddress: string;
   routeParams: RouteParams;
   erc20Transfer: Erc20Transfer;
-  salt: string | undefined;
+  salt: string;
 }
 
 // TODO: Add schema for SwapAPI response.
