@@ -1,0 +1,50 @@
+[
+  {
+    "inputs": [
+      { "internalType": "address", "name": "_srcPeriphery", "type": "address" },
+      { "internalType": "uint32", "name": "_sourceDomain", "type": "uint32" }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "constructor"
+  },
+  {
+    "inputs": [{ "internalType": "address", "name": "token", "type": "address" }],
+    "name": "SafeERC20FailedOperation",
+    "type": "error"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      { "indexed": false, "internalType": "uint256", "name": "amount", "type": "uint256" },
+      { "indexed": false, "internalType": "address", "name": "executionFeeRecipient", "type": "address" },
+      { "indexed": false, "internalType": "bytes32", "name": "nonce", "type": "bytes32" },
+      { "indexed": false, "internalType": "uint256", "name": "cctpDeadline", "type": "uint256" }
+    ],
+    "name": "CCTPDepositExecuted",
+    "type": "event"
+  },
+  {
+    "inputs": [
+      { "internalType": "bytes", "name": "params", "type": "bytes" },
+      { "internalType": "bytes", "name": "submitterData", "type": "bytes" }
+    ],
+    "name": "execute",
+    "outputs": [],
+    "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "sourceDomain",
+    "outputs": [{ "internalType": "uint32", "name": "", "type": "uint32" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "srcPeriphery",
+    "outputs": [{ "internalType": "address", "name": "", "type": "address" }],
+    "stateMutability": "view",
+    "type": "function"
+  }
+]
