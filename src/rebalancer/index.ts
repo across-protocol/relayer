@@ -1,3 +1,4 @@
+import { InventoryClient } from "../clients";
 import { updateSpokePoolClients } from "../common";
 import { constructRelayerClients } from "../relayer/RelayerClientHelper";
 import { RelayerConfig } from "../relayer/RelayerConfig";
@@ -26,7 +27,7 @@ let logger: winston.Logger;
 type RebalancerRunContext = {
   rebalancerConfig: RebalancerConfig;
   adaptersToUpdate: Set<RebalancerAdapter>;
-  inventoryClient: Awaited<ReturnType<typeof constructRelayerClients>>["inventoryClient"];
+  inventoryClient: InventoryClient;
   rebalancerClient: RebalancerClient;
 };
 
