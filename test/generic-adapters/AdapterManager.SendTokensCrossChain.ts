@@ -105,7 +105,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     const chainId = CHAIN_IDs.OPTIMISM;
     const l2Gas = 200000; // This is hardcoded in all OVM Bridges
 
-    //  ERC20 tokens:
+    // ERC20 tokens:
     await adapterManager.sendTokenCrossChain(
       toAddressType(relayer.address, CHAIN_IDs.MAINNET),
       chainId,
@@ -187,7 +187,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
   it("Correctly sends tokens to chain: Polygon", async function () {
     const chainId = CHAIN_IDs.POLYGON;
 
-    //  ERC20 tokens:
+    // ERC20 tokens:
     await adapterManager.sendTokenCrossChain(
       toAddressType(relayer.address, CHAIN_IDs.MAINNET),
       chainId,
@@ -238,7 +238,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     const l2GasLimit = toBN(150000);
     const l2GasPrice = toBN(20e9);
 
-    //  ERC20 tokens:
+    // ERC20 tokens:
     await adapterManager.sendTokenCrossChain(
       toAddressType(relayer.address, CHAIN_IDs.MAINNET),
       chainId,
@@ -296,7 +296,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       secondBridgeAddress: CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET].zkStackSharedBridge.address, // Shared bridge address
       secondBridgeValue: bnZero,
     };
-    //  ERC20 tokens:
+    // ERC20 tokens:
     await adapterManager.sendTokenCrossChain(
       toAddressType(relayer.address, CHAIN_IDs.MAINNET),
       chainId,
@@ -361,7 +361,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     const chainId = CHAIN_IDs.BASE;
     const l2Gas = 200000; // This is hardcoded in all OVM Bridges
 
-    //  ERC20 tokens:
+    // ERC20 tokens:
     await adapterManager.sendTokenCrossChain(
       toAddressType(relayer.address, CHAIN_IDs.MAINNET),
       chainId,
