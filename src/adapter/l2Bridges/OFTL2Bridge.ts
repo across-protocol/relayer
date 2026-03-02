@@ -117,7 +117,7 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
       contract: this.l2Bridge,
       chainId: this.l2chainId,
       method: "send",
-      unpermissionsed: false,
+      unpermissioned: false,
       nonMulticall: true,
       canFailInSimulation: payFeeInLzToken, // This can fail if the approval for the fee token is not set.
       args: [sendParamStruct, feeStruct, refundAddress],
