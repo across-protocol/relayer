@@ -1,94 +1,196 @@
 # Rebalancer
 
-The Rebalancer is designed to be in charge of determining when the relayer's inventory of different tokens across different chains needs to be rebalanced and then executes these rebalances.
+The Rebalancer determines when the relayer's inventory should be reshaped across chains and tokens, then executes those cross-asset rebalances through configured venue adapters.
 
-## RebalancerClient
+## Rebalancer Clients
 
-The Rebalancer is a client defined in rebalancer.ts.
+Core rebalancer implementation is split by subdirectory responsibility:
+
+- `src/rebalancer/clients/`: mode clients and shared mode lifecycle.
+- `src/rebalancer/adapters/`: venue execution implementations.
+- `src/rebalancer/utils/`: shared rebalancer contracts and helper utilities.
+- `src/rebalancer/`: runtime orchestration for runner setup and execution.
 
 ### Rebalance Routes
 
-The Rebalancer client is instantiated with a list of `RebalanceRoutes` that show supported routes between a source token on a source chain and a destination token on a destination chain via some `RebalancerAdapter`.
+A `RebalanceRoute` defines:
 
-The `RebalanceRoutes` are currently hardcoded in `RebalancerClientHelper.ts` but are designed to be configured more dynamically in the future.
+- source chain and source token,
+- destination chain and destination token,
+- adapter name used to execute the swap flow.
+
+Routes are assembled by the rebalancer construction layer and passed at client initialization time (`initialize(rebalanceRoutes)`). The mode clients then filter to routes that are valid for current balances/config.
 
 ### Rebalancer Adapter
 
-These adapters are defined in `/adapters/` and each of them provide functions used to initiate cross chain rebalances via an exchange where source and destination tokens can be swapped for each other.
-
-A full adapter should implement a method to initiate a rebalance, a method to return all pending rebalances, and a method to progress multi-stage rebalances through their lifecycle. Today, the interface is:
+Adapters in `src/rebalancer/adapters/` initiate and progress multi-stage swap workflows. The interface currently is:
 
 ```ts
 export interface RebalancerAdapter {
-  // Called once to construct adapter.
   initialize(availableRoutes: RebalanceRoute[]): Promise<void>;
-  // Called to initiate a rebalance.
   initializeRebalance(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber): Promise<void>;
-  // Called to progress all pending rebalances through their lifecycle.
   updateRebalanceStatuses(): Promise<void>;
-  // Withdraws spare balance from Exchange back into account
   sweepIntermediateBalances(): Promise<void>;
-
-  // Get all currently unfinalized rebalance amounts. Should be used to add a virtual balance credit for the chain
-  // + token in question. Designed to be used by InventoryClient
-  // to get more accurate virtual balances
   getPendingRebalances(): Promise<{ [chainId: number]: { [token: string]: BigNumber } }>;
-  // Returns unique ID list of all pending rebalances.
   getPendingOrders(): Promise<string[]>;
-  // Returns approximate cost to rebalance via rebalance route.
   getEstimatedCost(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber, debugLog: boolean): Promise<BigNumber>;
 }
 ```
 
-The adapters currently are only for swapping between different input and output tokens, but there are partially written CCTP and OFT adapters that we plan to turn into full adapters capable of transferring same tokens across chains, in the same way that we use the `InventoryClient` and the `CrossChainTransferClient` today to send USDC via CCTP and USDT0 via OFT.
+Implemented production swap adapters:
 
-The full adapters implemented so far are:
+- Binance
+- Hyperliquid
 
-- Binance: Swaps tokens via Binance Exchange API
-- Hyperliquid: Swaps tokens via Hyperliquid Exchange API and on-chain helper smart contracts
+`BaseAdapter` persists pending state in Redis so in-flight multi-stage swaps can be resumed and tracked deterministically across runs.
 
-#### BaseAdapter
+### Pending-order cache lifecycle and recovery
 
-The BaseAdapter in /adapters/baseAdapter.ts is currently used as the parent client for all adapters in /adapters. It uses Redis to keep track of pending rebalance state, which is vital since rebalances are all multi-stage and without bespoke tracking of rebalances it would be very difficult to use the exchange API's to keep track of our balances and our intended cross-chain rebalances.
+When adapters create new orders, order detail keys are stored with `REBALANCER_PENDING_ORDER_TTL` (default: 1 hour).
+If this env var is unset, the rebalancer uses the 1-hour default.
 
-One way to think about why persisting rebalance status is so important is that the exchanges are unaware of our Rebalancer's original intention to send tokens into an exchange. For example, if we send USDC into an exchange, it is impossible for us to add a note to the USDC deposit that this deposit is "for swapping into USDT and for withdrawing on X network".
+If an order does not finalize before the TTL expires, order details and associated pending-order status tracking are
+eventually pruned from Redis cache state. At that point, operators should rely on adapter lifecycle reconciliation
+(including `sweepIntermediateBalances`) to recover stranded intermediate capital instead of assuming pending-order cache
+entries remain indefinitely.
 
-## Determining when to rebalance
+Operational warning:
 
-The Rebalancer is configured by environment variables used as input to construct a `RebalancerConfig`. The rebalancer config lets the user set `targetBalances` for each token and chain which define a target and a threshold balance as well as a `priority` level for that specific target balance.
+- Rotating `REBALANCER_STATUS_TRACKING_NAMESPACE` is another way to force-reset pending-order cache state.
+- This is risky and should only be performed when there are no recently pending orders that are still expected to finalize.
+- If used, recovery should proceed through the normal lifecycle reconciliation path (`sweepIntermediateBalances` and status updates).
 
-Deficit and excess balances are determined and then sorted according to the heuristic in `RebalancerClient.rebalanceInventory()`. The current heuristic sorts deficits first by `priority` in ascending order (smallest priority is ranked highest) and then ties are broken by largest deficits (i.e. balances most below their targets). Excesses are sorted in opposite order, by `priority` in descending order and then by largest excesses (i.e. balances most above their target).
+## Mode vs Adapter Architecture
 
-Once all deficits and excess balances are collected, deficits are iterated through in order and if there is an excess balance that has enough balance to fulfill the deficit, and if there is a supported `RebalanceRoute` that connects `excess` tokens on the excess chain to `deficit` tokens on the deficit chain, then a rebalance is initiated via the `RebalanceRoute.adapter.initiateRebalance()` function.
+The rebalancer has two independent layers:
 
-### Deficit Balances
+- **Mode layer** (`src/rebalancer/clients/`) decides **what** inventory imbalance should be corrected and in what order.
+- **Adapter layer** (`RebalancerAdapter` implementations in `src/rebalancer/adapters/`) decides **how** to execute a selected route on a venue.
 
-When the Rebalancer reads that its balances of a token on a specific chain have fallen below the theshold, then the rebalancer will attempt to use inventory of other tokens to replenish its balance back to its target. These balances that have fallen below their thresholds are called "deficit balances". Deficit values are equal to `target - balance`.
+This separation is intentional:
 
-### Excess Balances
+- Mode logic should stay focused on deficit/excess detection, prioritization, route evaluation, and guardrails.
+- Adapter logic should stay focused on venue-specific API calls, order lifecycle handling, and pending-state reporting.
+- The contract between both layers is the `RebalancerAdapter` interface plus `RebalanceRoute`.
 
-Opposite to deficit balances, excess balances are token balances that are greater than their targets. Excess values are equal to `balance - target`.
+### Safe extension checklist for new adapters
 
-## Creating a new Rebalancer instance
+When adding a new file in `src/rebalancer/adapters/`, contributors should usually avoid touching mode logic in `src/rebalancer/clients/`.
 
-Rebalancers are constructed most easily via the `constructRebalancerClient()` function in `RebalancerClientHelper.ts`. This helper method is similar to the `RelayerClientHelper` or other files containing the suffix `ClientHelper` because they first construct all helper clients for fetching important events and reading API state.
+1. Implement the full `RebalancerAdapter` interface in the new adapter file.
+2. Register the adapter in the rebalancer construction layer (adapter map + route inclusion).
+3. Ensure at least one `RebalanceRoute` points to the adapter name.
+4. Keep mode logic unchanged unless requirements for deficit/excess selection actually changed.
+5. Verify pending-order and pending-rebalance reporting is implemented, since mode guardrails rely on it.
 
-This function then constructs a new RebalancerClient instance and then runs prerequisite functions that are required before using the new client, like calling `initialize()` on the new client.
+## Rebalancer Config
 
-## Interactivity with other bots and clients
+`RebalancerConfig` is loaded from `REBALANCER_CONFIG` or `REBALANCER_EXTERNAL_CONFIG`.
 
-The RebalancerClient is designed to work side by side with the InventoryClient and the Relayer. It also benefits from the Binance finalizer defined in `/src/finalizer/utils/binance.ts`.
+The active config shape is cumulative-target based:
+
+```json
+{
+  "cumulativeTargetBalances": {
+    "USDT": {
+      "targetBalance": "1500000",
+      "thresholdBalance": "1000000",
+      "priorityTier": 1,
+      "chains": { "1": 1, "42161": 0 }
+    }
+  },
+  "maxAmountsToTransfer": {
+    "USDT": "1000"
+  },
+  "maxPendingOrders": {
+    "binance": 3,
+    "hyperliquid": 3
+  }
+}
+```
+
+Notes:
+
+- `targetBalance` and `thresholdBalance` values are human-readable and converted to token-native decimals.
+- `cumulativeTargetBalances` define per-token aggregate objectives plus allowed source/destination chain sets for `CumulativeBalanceRebalancerClient.rebalanceInventory()`.
+- `cumulativeTargetBalances[token].chains[chainId]` is a chain priority tier used when selecting where to source excess inventory from (lower tier is preferred for sourcing).
+- `chainIds` are derived from the union of chains found in `cumulativeTargetBalances`.
+
+## Rebalancing Modes
+
+### Cumulative mode: `CumulativeBalanceRebalancerClient.rebalanceInventory()`
+
+This is the current operational path and runtime execution via `runCumulativeBalanceRebalancer` in the `src/rebalancer/` runtime layer.
+
+Inputs:
+
+- `cumulativeBalances`: token -> aggregate balance (L1-decimal normalized),
+- `currentBalances`: chain -> token -> chain-local balance,
+- `maxFeePct`.
+
+High-level flow:
+
+1. Compute cumulative deficits (`current < threshold`, target refill amount `target - current`) and cumulative excesses (`current > target`, excess amount `current - target`).
+2. Sort cumulative deficits by token `priorityTier` (higher first), then larger deficits first.
+3. Sort cumulative excesses by token `priorityTier` (lower first), then larger excesses first.
+4. For each excess token used to fill a deficit token, sort source chains from `cumulativeTargetBalances[excessToken].chains` by:
+   - chain `priorityTier` ascending,
+   - then current chain balance descending.
+5. For each candidate source chain, evaluate all destination chains configured for the deficit token that have valid routes, then choose the route with the lowest `getEstimatedCost`.
+6. Cap transfer amount by remaining deficit, remaining excess, chain balance, and configured `maxAmountsToTransfer`.
+7. Enforce max fee pct and adapter pending-order caps before calling `initializeRebalance`.
+
+Design tradeoff:
+
+- Destination-chain selection evaluates all eligible routes to minimize expected cost. This improves route quality at the expense of additional runtime cost when many routes are configured.
+
+### Read-only mode: `ReadOnlyRebalancerClient`
+
+`ReadOnlyRebalancerClient` is used by consumers that only need pending-state visibility (for example, inventory accounting) and should not initiate new rebalances.
+
+The read-only mode still initializes adapters (with an empty route set) so `getPendingRebalances()` and `getPendingOrders()` remain available without coupling callers to a specific operational rebalancing mode.
+
+### Future mode extensibility
+
+`src/rebalancer/clients/` is intentionally mode-oriented. Today the production mode is cumulative and there is a read-only consumer mode, but additional `RebalancerClient` implementations can be added later without changing adapter contracts.
+
+## Creating Rebalancer Instances
+
+Use the rebalancer construction layer to instantiate mode-specific clients:
+
+- `constructCumulativeBalanceRebalancerClient()` for operational runs.
+- `constructReadOnlyRebalancerClient()` for pending-state consumers.
+
+Lifecycle note:
+
+- Constructors wire logger/config/adapters/signer.
+- `initialize(rebalanceRoutes)` sets route set and initializes adapters.
+- Read-only mode intentionally calls `initialize([])` and still supports `getPendingRebalances()` because pending-state reads do not depend on route selection.
+
+Runtime entrypoints in `src/rebalancer/`:
+
+- `runCumulativeBalanceRebalancer` (supported operational path).
+- The runtime updates adapter status/sweeps first, then applies adapter-reported pending rebalance adjustments before evaluating new rebalances.
+
+## Interactions with Other Bots and Clients
 
 ### InventoryClient
 
-The InventoryClient is designed to track inventory across chains, which are actual on-chain token balances plus any virtual balance modifications like those stemming from incomplete incomplete rebalances from this RebalancerClient.
+InventoryClient provides the balance context that the rebalancer consumes:
 
-The InventoryClient's methods that return a chain's virtual balances are also used by the RebalancerClient in order to determine whether a chain's virtual balances are in deficit or excess relative to the user-configured targets.
+- chain-level virtual balances,
+- cumulative balances (including pending effects and approximate upcoming refunds),
+- pending rebalance adjustments from adapters.
+- it reads pending rebalance state through `ReadOnlyRebalancerClient` to avoid coupling to a specific rebalancing mode.
 
 ### Relayer
 
-The relayer can better support in-protocol swaps when a Rebalancer instance is being run so that any cross-token inventory allocations can be unwound via the Rebalancer functions.
+Running the Rebalancer allows the relayer to support in-protocol swap flows while maintaining the configured long-run inventory mix.
 
 ### Binance Finalizer
 
-The Binance finalizer occasionally sweeps all binance balances back to a hardcoded account. The Rebalancer's Binance Adapter is smart enough to flag certain transfers into Binance as designated for swapping which lets the Binance finalizer know not to sweep these transfers back for some time. However, when that time expires (e.g. after 30 minutes), the binance finalizer is relied upon to sweep any balances. This effectively acts as a fallback in case the Binance Adapter fails to complete its rebalance.
+The Binance finalizer sweeps exchange balances as a fallback path. The Binance adapter marks expected swap lifecycle transfers, and stale balances are eventually swept if swaps do not complete.
+
+## Venue-specific operational note
+
+Hyperliquid spot metadata is currently configured with `pxDecimals=4` for USDT/USDC and prices are truncated to `pxDecimals` when submitting orders. This is a pragmatic setting to avoid tick-size divisibility rejections observed with more granular precision.

@@ -16,9 +16,11 @@ The full inventory config is defined in /src/interfaces/ and its read from the u
 
 ### Setting and Getting Virtual Balances
 
-The InventoryClient is designed to track inventory across chains, which are actual on-chain token balances plus any virtual balance modifications stemming from incomplete transfers from the `CrossChainTransferClient` and incomplete rebalances from this `RebalancerClient`. The InventoryClient can also add in virtual modifications for upcoming relayer refunds from the `BundleDataApproxClient`.
+The InventoryClient is designed to track inventory across chains, which are actual on-chain token balances plus any virtual balance modifications stemming from incomplete transfers from the `CrossChainTransferClient` and incomplete rebalances from rebalancer clients. The InventoryClient can also add in virtual modifications for upcoming relayer refunds from the `BundleDataApproxClient`.
 
-The InventoryClient exposes functions that let other bots like the `Relayer` and `RebalancerClient` know its latest calculation of virtual chain balances for a particular token.
+The InventoryClient exposes functions that let other bots like the `Relayer` and rebalancer clients know its latest calculation of virtual chain balances for a particular token. For pending rebalance adjustments specifically, it depends on the read-only `ReadOnlyRebalancerClient` interface so it does not need to choose a rebalancing mode.
+
+In addition to chain-level virtual balances, InventoryClient exposes cumulative token-level balance context via `getCumulativeBalanceWithApproximateUpcomingRefunds()`. The Rebalancer uses this to evaluate cumulative deficits and excesses when running cumulative inventory rebalancing.
 
 ### Determining Refund Chain for Deposit
 
@@ -46,7 +48,7 @@ The InventoryClient also provides functions that are used to transfer tokens acr
 
 ### Plan for Deprecation of Token Transfer Logic
 
-Note that the InventoryClient is an older module and its token transfer functions are slated to be migrated over to the RebalancerClient eventually. For now, the separation of concerns between the two is that the InventoryClient is in charge of sending **same** tokens across chains while the RebalancerClient swaps different tokens across chains.
+Note that the InventoryClient is an older module and its token transfer functions are slated to be migrated over to rebalancer clients eventually. For now, the separation of concerns between the two is that the InventoryClient is in charge of sending **same** tokens across chains while rebalancer clients swap different tokens across chains.
 
 ## Profit Client
 

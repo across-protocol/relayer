@@ -46,7 +46,7 @@ import lodash from "lodash";
 import { SLOW_WITHDRAWAL_CHAINS } from "../common";
 import { AdapterManager, CrossChainTransferClient } from "./bridges";
 import { TransferTokenParams } from "../adapter/utils";
-import { RebalancerClient } from "../rebalancer/rebalancer";
+import { RebalancerClient } from "../rebalancer/utils/interfaces";
 
 type TokenDistribution = { [l2Token: string]: BigNumber };
 type TokenDistributionPerL1Token = { [l1Token: string]: { [chainId: number]: TokenDistribution } };
@@ -211,6 +211,30 @@ export class InventoryClient {
     return this.getEnabledChains()
       .map((chainId) => this.getBalanceOnChain(chainId, l1Token))
       .reduce((acc, curr) => acc.add(curr), bnZero);
+  }
+
+  /**
+   * Returns cumulative balance along with approximate upcoming refunds. Refund balances are normalized to
+   * the L1 token decimals.
+   * @param l1Token
+   * @returns Cumulative balance plus approximate upcoming refunds.
+   */
+  getCumulativeBalanceWithApproximateUpcomingRefunds(l1Token: EvmAddress): BigNumber {
+    const totalRefundsPerChain: { [chainId: number]: BigNumber } = {};
+    const { decimals: l1TokenDecimals } = getTokenInfo(l1Token, this.hubPoolClient.chainId);
+    for (const chainId of this.chainIdList) {
+      const repaymentToken = this.getRemoteTokenForL1Token(l1Token, chainId);
+      if (!repaymentToken) {
+        continue;
+      }
+      const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(repaymentToken, chainId);
+      const refundAmount = this.getUpcomingRefunds(chainId, l1Token, this.relayer);
+      const convertedRefundAmount = sdkUtils.ConvertDecimals(l2TokenDecimals, l1TokenDecimals)(refundAmount);
+      totalRefundsPerChain[chainId] = convertedRefundAmount;
+    }
+    const cumulativeRefunds = Object.values(totalRefundsPerChain).reduce((acc, curr) => acc.add(curr), bnZero);
+    const cumulativeVirtualBalance = this.getCumulativeBalance(l1Token);
+    return cumulativeVirtualBalance.add(cumulativeRefunds);
   }
 
   getChainBalance(
@@ -686,8 +710,6 @@ export class InventoryClient {
       const convertedRefundAmount = sdkUtils.ConvertDecimals(l2TokenDecimals, l1TokenDecimals)(refundAmount);
       totalRefundsPerChain[chainId] = convertedRefundAmount;
     }
-    const cumulativeRefunds = Object.values(totalRefundsPerChain).reduce((acc, curr) => acc.add(curr), bnZero);
-    const cumulativeVirtualBalance = this.getCumulativeBalance(l1Token);
 
     // @dev: The following async call to `getExcessRunningBalancePcts` should be very fast compared to the above
     // getBundleRefunds async call. Therefore, we choose not to compute them in parallel.
@@ -789,7 +811,7 @@ export class InventoryClient {
       );
       // To correctly compute the allocation % for this destination chain, we need to add all upcoming refunds for the
       // equivalents of l1Token on all chains.
-      const cumulativeVirtualBalancePostRefunds = cumulativeVirtualBalance.add(cumulativeRefunds);
+      const cumulativeVirtualBalancePostRefunds = this.getCumulativeBalanceWithApproximateUpcomingRefunds(l1Token);
 
       // Compute what the balance will be on the target chain, considering this relay and the finalization of the
       // transfers that are currently flowing through the canonical bridge.
@@ -837,7 +859,6 @@ export class InventoryClient {
           chainVirtualBalance,
           chainVirtualBalanceWithShortfall,
           chainVirtualBalanceWithShortfallPostRelay,
-          cumulativeVirtualBalance,
           cumulativeVirtualBalancePostRefunds,
           targetPct: formatUnits(tokenConfig.targetPct, 18),
           targetOverage: formatUnits(targetOverageBuffer, 18),
@@ -1837,6 +1858,15 @@ export class InventoryClient {
     });
 
     this.pendingRebalances = await this.rebalancerClient.getPendingRebalances();
+    if (Object.keys(this.pendingRebalances).length > 0) {
+      this.logger.debug({
+        at: "InventoryClient#update",
+        message: "Updated RebalancerClient pending rebalances",
+        pendingRebalances: Object.entries(this.pendingRebalances).map(([chainId, tokens]) => ({
+          [chainId]: Object.fromEntries(Object.entries(tokens).map(([token, amount]) => [token, amount.toString()])),
+        })),
+      });
+    }
   }
 
   isInventoryManagementEnabled(): boolean {
