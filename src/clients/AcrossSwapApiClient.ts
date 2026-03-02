@@ -3,7 +3,7 @@ import { BigNumber, EvmAddress, winston, CHAIN_IDs } from "../utils";
 import { SWAP_ROUTES, SwapRoute } from "../common";
 import { BaseAcrossApiClient } from "./AcrossApiBaseClient";
 
-interface SwapApiResponse {
+export interface SwapApiResponse {
   approvalTxns?: {
     chainId: number;
     to: string;
