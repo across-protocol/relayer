@@ -44,6 +44,22 @@ Implemented production swap adapters:
 
 `BaseAdapter` persists pending state in Redis so in-flight multi-stage swaps can be resumed and tracked deterministically across runs.
 
+### Pending-order cache lifecycle and recovery
+
+When adapters create new orders, order detail keys are stored with `REBALANCER_PENDING_ORDER_TTL` (default: 1 hour).
+If this env var is unset, the rebalancer uses the 1-hour default.
+
+If an order does not finalize before the TTL expires, order details and associated pending-order status tracking are
+eventually pruned from Redis cache state. At that point, operators should rely on adapter lifecycle reconciliation
+(including `sweepIntermediateBalances`) to recover stranded intermediate capital instead of assuming pending-order cache
+entries remain indefinitely.
+
+Operational warning:
+
+- Rotating `REBALANCER_STATUS_TRACKING_NAMESPACE` is another way to force-reset pending-order cache state.
+- This is risky and should only be performed when there are no recently pending orders that are still expected to finalize.
+- If used, recovery should proceed through the normal lifecycle reconciliation path (`sweepIntermediateBalances` and status updates).
+
 ## Mode vs Adapter Architecture
 
 The rebalancer has two independent layers:
