@@ -1286,7 +1286,6 @@ export class Monitor {
       allL1Tokens.map(async (l1Token) => {
         const pendingWithdrawalBalances =
           await this.clients.crossChainTransferClient.adapterManager.getTotalPendingWithdrawalAmount(
-            7200,
             supportedChains,
             relayer,
             l1Token.address
