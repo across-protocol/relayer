@@ -76,7 +76,12 @@ function constructRebalancerDependencies(
     }
   }
 
-  return { rebalancerConfig, adapters: adapterMap, rebalanceRoutes };
+  // @todo: Add test-net support for this client. For now, we only support production and we do not construct
+  // any adapters or routes when running on test net.
+  const adaptersToUpdate: Record<string, RebalancerAdapter> =
+    rebalancerConfig.hubPoolChainId === CHAIN_IDs.MAINNET ? adapterMap : {};
+
+  return { rebalancerConfig, adapters: adaptersToUpdate, rebalanceRoutes };
 }
 
 export async function constructCumulativeBalanceRebalancerClient(
