@@ -93,7 +93,7 @@ async function initializeRebalancerRun(_logger: winston.Logger, baseSigner: Sign
 
 function loadCumulativeModeBalances(
   rebalancerConfig: RebalancerConfig,
-  inventoryClient: RebalancerRunContext["inventoryClient"]
+  inventoryClient: InventoryClient
 ): {
   currentBalances: { [chainId: number]: { [token: string]: BigNumber } };
   cumulativeBalances: { [token: string]: BigNumber };
