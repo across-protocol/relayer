@@ -12,4 +12,4 @@ The Refiller also has a function that lets it transfer USDC from Arbitrum and mi
 
 The reason why this function was originally located in this Refiller client is because initiating this USDH "refill" starts with an ERC20 transfer, much like some of the other refill functions in the Refiller. So, there is some code-reuse here.
 
-However, ideally this logic for refilling USDH is moved into a separate client. Perhaps it should be located in the RebalancerClient since its function is shift cross-chain token inventory like the RebalancerClient's other adapters.
+However, ideally this logic for refilling USDH is moved into a separate client. Perhaps it should be located in the rebalancer module since its function is to shift cross-chain token inventory like other rebalancer adapters.

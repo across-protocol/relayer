@@ -3,7 +3,7 @@
  * @dev In the future we will add support for sending new OFT rebalances.
  */
 
-import { RebalanceRoute } from "../rebalancer";
+import { RebalanceRoute } from "../utils/interfaces";
 import { BaseAdapter } from "./baseAdapter";
 import { bnZero, forEachAsync, BigNumber } from "../../utils";
 
@@ -33,12 +33,14 @@ export class OftAdapter extends BaseAdapter {
       await forEachAsync(
         Array.from(allChains).filter((otherChainId) => otherChainId !== sourceChain),
         async (destinationChain) => {
+          // @dev Temporarily filter out L1->L2 and L2->L1 rebalances because they will already be counted by the
+          // AdapterManager and this function is designed to be used in conjunction with the AdapterManager
+          // to pain a full picture of all pending rebalances.
+          if (sourceChain === this.config.hubPoolChainId || destinationChain === this.config.hubPoolChainId) {
+            return;
+          }
           const pendingRebalanceAmount = await this._getUnfinalizedOftBridgeAmount(sourceChain, destinationChain);
           if (pendingRebalanceAmount.gt(bnZero)) {
-            this.logger.debug({
-              at: "OftAdapter.getPendingRebalances",
-              message: `Adding ${pendingRebalanceAmount.toString()} USDT for pending rebalances from ${sourceChain} to ${destinationChain}`,
-            });
             pendingRebalances[destinationChain] ??= {};
             pendingRebalances[destinationChain]["USDT"] = (pendingRebalances[destinationChain]?.["USDT"] ?? bnZero).add(
               pendingRebalanceAmount
@@ -52,6 +54,10 @@ export class OftAdapter extends BaseAdapter {
 
   async getEstimatedCost(): Promise<BigNumber> {
     throw new Error("Not implemented");
+  }
+
+  async getPendingOrders(): Promise<string[]> {
+    return [];
   }
 
   protected _redisGetOrderStatusKey(): string {

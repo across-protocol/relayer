@@ -14,7 +14,8 @@ Primary files:
 
 - `src/clients/InventoryClient.ts`
 - `src/rebalancer/README.md`
-- `src/rebalancer/rebalancer.ts`
+- `src/rebalancer/clients/`
+- `src/rebalancer/utils/`
 
 ## Responsibility split (current state)
 
@@ -28,12 +29,12 @@ Primary files:
 
 In short: move the same economic token across chains and track cross-chain execution state.
 
-### RebalancerClient owns
+### Rebalancer clients own
 
 - cross-asset, cross-chain inventory rebalances (swap source token into destination token)
 - route/adapters for exchanges and venues
 - pending swap lifecycle and status progression
-- deficit/excess pairing logic for target inventories
+- deficit/excess pairing logic for target inventories, including cumulative per-token targets
 
 In short: transform token composition, not just token location.
 
@@ -42,15 +43,17 @@ In short: transform token composition, not just token location.
 Relayer operations need two dimensions of inventory control:
 
 1. chain location management (InventoryClient)
-2. asset composition management (RebalancerClient)
+2. asset composition management (rebalancer clients)
 
 For equivalent-token fills, location dominates.
-For in-protocol swap support, composition dominates and requires RebalancerClient.
+For in-protocol swap support, composition dominates and requires the rebalancer clients.
 
 ## Cross-coupling points
 
-- InventoryClient imports `pendingRebalances` from RebalancerClient and includes them in virtual balance calculations.
-- RebalancerClient consults InventoryClient-style virtual-balance signals to reason about deficits/excesses.
+- InventoryClient imports `pendingRebalances` through the shared `RebalancerClient` interface (commonly via `ReadOnlyRebalancerClient`) and includes them in virtual balance calculations.
+- Rebalancer clients consume InventoryClient-derived balances in two forms:
+  - chain-local balances (`currentBalances`) used to choose source chains and route amounts,
+  - cumulative balances (`cumulativeBalances`) used to detect per-token aggregate deficits/excesses.
 - Both modules influence relayer fillability indirectly through available destination liquidity.
 
 This coupling means changes in one module can affect behavior that appears to belong to the other.
@@ -60,22 +63,25 @@ This coupling means changes in one module can affect behavior that appears to be
 If your change is mostly:
 
 - moving USDC on chain A to USDC on chain B -> InventoryClient
-- turning USDC on chain A into ETH on chain B -> RebalancerClient
+- turning USDC on chain A into ETH on chain B -> rebalancer clients
 - choosing where relayer takes repayment -> InventoryClient
-- choosing which asset mix to hold long-term -> RebalancerClient
+- choosing which asset mix to hold long-term (including cumulative token targets) -> rebalancer clients
 
 If both are involved, split logic by concern and keep interfaces narrow.
 
 ## Current legacy overlap and direction
 
-The repository docs already note that some token-transfer behavior in InventoryClient is older and expected to migrate over time toward cleaner separation. Today, InventoryClient still executes same-token bridge transfers while RebalancerClient handles cross-asset routes.
+The repository docs already note that some token-transfer behavior in InventoryClient is older and expected to migrate over time toward cleaner separation. Today, InventoryClient still executes same-token bridge transfers while rebalancer clients handle cross-asset routes.
 
 Treat this as "stable but transitional": do not introduce new overlap unless required.
+
+Current runtime behavior in `src/rebalancer/` executes cumulative rebalancing via `runCumulativeBalanceRebalancer`.
+Pending-state consumers should use `ReadOnlyRebalancerClient`, and additional `RebalancerClient` implementations can be added in the future without changing this responsibility boundary.
 
 ## Anti-patterns
 
 - adding cross-asset swap execution code to InventoryClient
-- adding repayment-chain policy logic to RebalancerClient
+- adding repayment-chain policy logic to rebalancer clients
 - duplicating pending-state accounting in both modules
 - mixing chain-allocation and token-composition objectives in one heuristic without explicit prioritization
 
@@ -85,4 +91,3 @@ Treat this as "stable but transitional": do not introduce new overlap unless req
 - If a feature needs both modules, define a clear orchestration layer rather than embedding cross-calls deeply.
 - Update both module docs (`src/clients/README.md`, `src/rebalancer/README.md`) when boundaries shift.
 - Add tests that capture boundary behavior, not just isolated unit cases.
-

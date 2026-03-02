@@ -58,7 +58,7 @@ import {
   TOKEN_SYMBOLS_MAP,
   winston,
 } from "../../utils";
-import { RebalancerAdapter, RebalanceRoute } from "../rebalancer";
+import { RebalancerAdapter, RebalanceRoute } from "../utils/interfaces";
 import { RebalancerConfig } from "../RebalancerConfig";
 
 export enum STATUS {
@@ -171,13 +171,10 @@ export abstract class BaseAdapter implements RebalancerAdapter {
       }
     });
 
-    await this.multicallerClient.executeTxnQueues();
+    const simMode = !this.config.sendingTransactionsEnabled;
+    await this.multicallerClient.executeTxnQueues(simMode);
     this.initialized = true;
     return;
-  }
-
-  getPendingOrders(): Promise<string[]> {
-    return this._redisGetPendingOrders();
   }
 
   // ////////////////////////////////////////////////////////////
@@ -193,6 +190,7 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     amountToTransfer: BigNumber,
     debugLog: boolean
   ): Promise<BigNumber>;
+  abstract getPendingOrders(): Promise<string[]>;
 
   // ////////////////////////////////////////////////////////////
   // PROTECTED REDIS HELPER METHODS
@@ -221,8 +219,8 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     const orderStatusKey = this._redisGetOrderStatusKey(status);
     const orderDetailsKey = `${this._redisGetPendingOrderKey()}:${cloid}`;
 
-    // Create a new order in Redis. We use infinite expiry because we will delete this order after its no longer
-    // used.
+    // Create a new order in Redis. We use a TTL of 1 hour so that all orders that are finalized in 1 hour are
+    // deleted from Redis and a RebalancerClient can sweep any excess balances that are left over on exchanges.
     const { sourceToken, destinationToken, sourceChain, destinationChain } = rebalanceRoute;
     this.logger.debug({
       at: "BaseAdapter._redisCreateOrder",
@@ -249,7 +247,7 @@ export abstract class BaseAdapter implements RebalancerAdapter {
           destinationChain,
           amountToTransfer: amountToTransfer.toString(),
         }),
-        Number.POSITIVE_INFINITY
+        process.env.REBALANCER_PENDING_ORDER_TTL ? Number(process.env.REBALANCER_PENDING_ORDER_TTL) : 60 * 60 // default to 1 hour
       ),
     ]);
     this.logger.debug({
@@ -325,22 +323,46 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     return this.REDIS_PREFIX + "pending-order";
   }
 
+  // @dev Call this function before making any calls to sMembers to ensure that we are not returning any expired orders
+  // that no longer have an order details key in Redis.
+  protected async _redisCleanupPendingOrders(status: STATUS): Promise<void> {
+    // If sMembers don't expire and don't have a notion of TTL, so check if order detail keys have expired. If they have,
+    // then delete the member from the set.
+    const sMembers = await this.redisCache.sMembers(this._redisGetOrderStatusKey(status));
+    const orderDetails = await Promise.all(sMembers.map((cloid) => this._redisGetOrderDetails(cloid)));
+    await forEachAsync(sMembers, async (cloid, i) => {
+      if (!isDefined(orderDetails[i])) {
+        this.logger.debug({
+          at: "BaseAdapter._redisCleanupPendingOrders",
+          message: `Deleting expired order details for cloid ${cloid} from status set ${this._redisGetOrderStatusKey(
+            status
+          )}`,
+        });
+        await this._redisDeleteOrder(cloid, status);
+      }
+    });
+  }
+
   protected async _redisGetPendingBridgesPreDeposit(): Promise<string[]> {
+    await this._redisCleanupPendingOrders(STATUS.PENDING_BRIDGE_PRE_DEPOSIT);
     const sMembers = await this.redisCache.sMembers(this._redisGetOrderStatusKey(STATUS.PENDING_BRIDGE_PRE_DEPOSIT));
     return sMembers;
   }
 
   protected async _redisGetPendingDeposits(): Promise<string[]> {
+    await this._redisCleanupPendingOrders(STATUS.PENDING_DEPOSIT);
     const sMembers = await this.redisCache.sMembers(this._redisGetOrderStatusKey(STATUS.PENDING_DEPOSIT));
     return sMembers;
   }
 
   protected async _redisGetPendingSwaps(): Promise<string[]> {
+    await this._redisCleanupPendingOrders(STATUS.PENDING_SWAP);
     const sMembers = await this.redisCache.sMembers(this._redisGetOrderStatusKey(STATUS.PENDING_SWAP));
     return sMembers;
   }
 
   protected async _redisGetPendingWithdrawals(): Promise<string[]> {
+    await this._redisCleanupPendingOrders(STATUS.PENDING_WITHDRAWAL);
     const sMembers = await this.redisCache.sMembers(this._redisGetOrderStatusKey(STATUS.PENDING_WITHDRAWAL));
     return sMembers;
   }

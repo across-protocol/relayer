@@ -67,4 +67,4 @@ This relayer fulfills a similar role as the USDT->USDC relayer from the deposito
 
 Unlike the USDT->USDC relayer, this USDC->USDH relayer has a bespoke way of rebalancing from USDC back into USDH on HyperEVM. USDH is a stablecoin issued and controlled by the Native Markets team and this team provides a REST API with a /POST route that we can call to convert USDC directly into minted USDH on a desired destination chain. The API essentially provides us a deposit address on the desired origin chain where we can `ERC.transfer()` USDC to receive USDH on HyperEVM.
 
-Therefore, this USDC->USDH relayer is an even safer version of the USDT->USDC swaps relayer and it does not require an instance of the `RebalancerClient`, which uses Binance and Hyperliquid to execute cross chain inventory swap rebalances, in order to rebalance from USDC to USDH.
+Therefore, this USDC->USDH relayer is an even safer version of the USDT->USDC swaps relayer and it does not require the rebalancer module (which uses Binance and Hyperliquid to execute cross-chain inventory swap rebalances) in order to rebalance from USDC to USDH.
