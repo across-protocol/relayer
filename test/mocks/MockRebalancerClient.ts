@@ -1,15 +1,19 @@
-import { RebalancerClient } from "../../src/rebalancer/rebalancer";
+import { BaseRebalancerClient } from "../../src/rebalancer/clients/BaseRebalancerClient";
 import { BigNumber } from "../../src/utils";
 import { winston } from "../utils";
 
-export class MockRebalancerClient extends RebalancerClient {
+export class MockRebalancerClient extends BaseRebalancerClient {
   private mockedPendingRebalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
 
   constructor(logger: winston.Logger) {
-    super(logger, null, null, null, null);
+    super(logger, {} as never, {}, [], {} as never);
   }
 
   initialize(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  rebalanceInventory(): Promise<void> {
     return Promise.resolve();
   }
 
@@ -26,7 +30,7 @@ export class MockRebalancerClient extends RebalancerClient {
     this.mockedPendingRebalances = {};
   }
 
-  getPendingRebalances(): ReturnType<RebalancerClient["getPendingRebalances"]> {
+  getPendingRebalances(): ReturnType<BaseRebalancerClient["getPendingRebalances"]> {
     return Promise.resolve(this.mockedPendingRebalances);
   }
 }

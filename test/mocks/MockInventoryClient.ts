@@ -3,7 +3,7 @@ import { HubPoolClient, InventoryClient, Rebalance, TokenClient } from "../../sr
 import { AdapterManager, CrossChainTransferClient } from "../../src/clients/bridges";
 import { BigNumber, bnZero, EvmAddress, toAddressType } from "../../src/utils";
 import winston from "winston";
-import { RebalancerClient } from "../../src/rebalancer/rebalancer";
+import { RebalancerClient } from "../../src/rebalancer/utils/interfaces";
 
 type TokenMapping = { [l1Token: string]: { [chainId: number]: string } };
 export class MockInventoryClient extends InventoryClient {

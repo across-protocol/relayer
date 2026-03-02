@@ -17,7 +17,7 @@ import { runFinalizer } from "./src/finalizer";
 import { version } from "./package.json";
 import { runRefiller } from "./src/refiller";
 import { runHyperliquidExecutor, runHyperliquidFinalizer } from "./src/hyperliquid";
-import { runRebalancer as swapRebalancer } from "./src/rebalancer";
+import { runCumulativeBalanceRebalancer as swapRebalancer } from "./src/rebalancer";
 import { runGaslessRelayer } from "./src/gasless";
 import { runDepositAddressHandler } from "./src/deposit-address";
 

@@ -1,16 +1,22 @@
-import { CHAIN_IDs, getNetworkName, Signer, winston } from "../utils";
+import { CHAIN_IDs, Signer, winston } from "../utils";
 import { BinanceStablecoinSwapAdapter } from "./adapters/binance";
 import { CctpAdapter } from "./adapters/cctpAdapter";
 import { HyperliquidStablecoinSwapAdapter } from "./adapters/hyperliquid";
 import { OftAdapter } from "./adapters/oftAdapter";
-import { RebalancerAdapter, RebalancerClient, RebalanceRoute } from "./rebalancer";
-import { RebalancerConfig } from "./RebalancerConfig";
+import { CumulativeBalanceRebalancerClient } from "./clients/CumulativeBalanceRebalancerClient";
+import { ReadOnlyRebalancerClient } from "./clients/ReadOnlyRebalancerClient";
 
-export async function constructRebalancerClient(
+import { RebalancerConfig } from "./RebalancerConfig";
+import { RebalancerAdapter, RebalanceRoute } from "./utils/interfaces";
+
+function constructRebalancerDependencies(
   logger: winston.Logger,
-  baseSigner: Signer,
-  loadViewOnlyMode = false
-): Promise<RebalancerClient> {
+  baseSigner: Signer
+): {
+  rebalancerConfig: RebalancerConfig;
+  adapters: { [name: string]: RebalancerAdapter };
+  rebalanceRoutes: RebalanceRoute[];
+} {
   const rebalancerConfig = new RebalancerConfig(process.env);
 
   // Construct adapters:
@@ -70,33 +76,37 @@ export async function constructRebalancerClient(
     }
   }
 
-  let rebalancerClient: RebalancerClient;
-  if (loadViewOnlyMode) {
-    // View only mode is used to load the rebalancer client without any rebalance routes but all adapters
-    // so that getPendingRebalances() can get called. initializeRebalance() is not callable because
-    // there are no rebalance routes.
-    rebalancerClient = new RebalancerClient(logger, rebalancerConfig, adapterMap, [], baseSigner);
-  } else {
-    // Pass in adapters that are used in at least one rebalance route:
-    const adapterNames = new Set<string>(rebalanceRoutes.map((route) => route.adapter));
-    const adapters: { [name: string]: RebalancerAdapter } = {};
-    for (const adapterName of adapterNames) {
-      adapters[adapterName] = adapterMap[adapterName];
-    }
-    rebalancerClient = new RebalancerClient(logger, rebalancerConfig, adapters, rebalanceRoutes, baseSigner);
-  }
-  await rebalancerClient.initialize();
+  return { rebalancerConfig, adapters: adapterMap, rebalanceRoutes };
+}
+
+export async function constructCumulativeBalanceRebalancerClient(
+  logger: winston.Logger,
+  baseSigner: Signer
+): Promise<CumulativeBalanceRebalancerClient> {
+  const { rebalancerConfig, adapters, rebalanceRoutes } = constructRebalancerDependencies(logger, baseSigner);
+  const rebalancerClient = new CumulativeBalanceRebalancerClient(logger, rebalancerConfig, adapters, baseSigner);
+  await rebalancerClient.initialize(rebalanceRoutes);
   logger.debug({
-    at: "RebalancerClientHelper.constructRebalancerClient",
-    message: "RebalancerClient initialized",
+    at: "RebalancerClientHelper.constructCumulativeBalanceRebalancerClient",
+    message: "CumulativeBalanceRebalancerClient initialized",
     rebalancerConfig,
-    rebalanceRoutes: rebalanceRoutes.map((route) => ({
-      sourceChain: getNetworkName(route.sourceChain),
-      sourceToken: route.sourceToken,
-      destinationChain: getNetworkName(route.destinationChain),
-      destinationToken: route.destinationToken,
-      adapter: route.adapter,
-    })),
+    adapterNames: Object.keys(adapters),
+  });
+  return rebalancerClient;
+}
+
+export async function constructReadOnlyRebalancerClient(
+  logger: winston.Logger,
+  baseSigner: Signer
+): Promise<ReadOnlyRebalancerClient> {
+  const { rebalancerConfig, adapters } = constructRebalancerDependencies(logger, baseSigner);
+  const rebalancerClient = new ReadOnlyRebalancerClient(logger, rebalancerConfig, adapters, baseSigner);
+  await rebalancerClient.initialize([]);
+  logger.debug({
+    at: "RebalancerClientHelper.constructReadOnlyRebalancerClient",
+    message: "ReadOnlyRebalancerClient initialized",
+    rebalancerConfig,
+    adapterNames: Object.keys(adapters),
   });
   return rebalancerClient;
 }

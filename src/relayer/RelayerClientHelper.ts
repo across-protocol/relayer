@@ -37,7 +37,7 @@ import {
 } from "../utils";
 import { RelayerConfig } from "./RelayerConfig";
 import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
-import { constructRebalancerClient } from "../rebalancer/RebalancerClientHelper";
+import { constructReadOnlyRebalancerClient } from "../rebalancer/RebalancerClientHelper";
 
 export interface RelayerClients extends Clients {
   spokePoolClients: SpokePoolClientsByChain;
@@ -205,7 +205,7 @@ export async function constructRelayerClients(
     adapterManager
   );
 
-  const rebalancerClient = await constructRebalancerClient(logger, baseSigner);
+  const rebalancerClient = await constructReadOnlyRebalancerClient(logger, baseSigner);
 
   const inventoryClient = new InventoryClient(
     signerAddr,

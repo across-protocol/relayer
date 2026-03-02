@@ -17,7 +17,8 @@ Supporting files:
 
 - `src/clients/TokenClient.ts`
 - `src/clients/bridges/CrossChainTransferClient.ts`
-- `src/rebalancer/rebalancer.ts`
+- `src/rebalancer/clients/`
+- `src/rebalancer/utils/`
 
 ## Mental model
 
@@ -39,7 +40,7 @@ This is the base virtual-balance primitive. It:
 
 - normalizes values to L1 token decimals
 - includes pending L2->L1 withdrawals for hub chain
-- includes pending rebalance credits from RebalancerClient
+- includes pending rebalance credits from `ReadOnlyRebalancerClient`
 - includes outstanding L1->L2 transfer amounts via CrossChainTransferClient
 - returns either per-token (`l2Token`) or aggregate-per-chain balance
 
@@ -96,14 +97,15 @@ This means repayment-chain selection is driven by projected post-relay state, no
 
 The tracking step mutates local virtual state (`trackCrossChainTransfer`) before the chain tx confirms, preventing duplicate over-send behavior in the same run.
 
-## Interaction with RebalancerClient
+## Interaction with ReadOnlyRebalancerClient
 
-InventoryClient also imports pending cross-asset rebalance state (`pendingRebalances`) from RebalancerClient and treats it as virtual balance adjustments.
+InventoryClient imports pending cross-asset rebalance state (`pendingRebalances`) through the shared rebalancer interface layer in `src/rebalancer/utils/`, commonly provided by `ReadOnlyRebalancerClient`, and treats it as virtual balance adjustments.
 
 This is a key cross-module coupling:
 
-- RebalancerClient drives cross-asset state transitions.
+- Mode-specific rebalancer clients drive cross-asset state transitions.
 - InventoryClient consumes pending status to avoid double-counting deficits/excesses while swaps are in-flight.
+- Read-only mode can initialize with an empty route set and still report pending state because pending aggregation is adapter-backed, not route-dependent.
 
 ## Common pitfalls
 
@@ -128,4 +130,3 @@ This log is often the fastest way to diagnose unexpected repayment or rebalance 
 - Prefer adding new virtual-balance adjustments there rather than ad hoc callsite math.
 - Keep shortfall treatment explicit per callsite and document whether it is included/excluded.
 - Add regression tests when changing pending-transfer or pending-rebalance accounting semantics.
-
