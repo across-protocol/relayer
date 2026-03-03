@@ -50,7 +50,7 @@ export class BinanceCEXNativeBridge extends BinanceCEXBridge {
       method: "",
       args: [],
       nonMulticall: true,
-      gasLimit: toBN(21000), // gas limit is 21000 for a base transaction.
+      gasLimit: toBN(21000 * 3), // gas limit is 21000 for a base transaction. Add a buffer of 3x in case of Arbitrum gas limit spikes.
       canFailInSimulation: true, // This will fail in simulation since the relayer likely does not have enough ETH to perform the withdrawal before the unwrap step.
       value: amount,
       message: `🎰 Withdrew ${network} ${l2TokenInfo.symbol} to L1`,
