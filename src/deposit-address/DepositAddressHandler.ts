@@ -18,6 +18,8 @@ import {
   getDepositKey,
   assert,
   getCounterfactualDepositImplementationAddress,
+  getNetworkName,
+  blockExplorerLink,
 } from "../utils";
 import { DepositAddressMessage } from "../interfaces";
 import { AcrossSwapApiClient, TransactionClient, SwapApiResponse } from "../clients";
@@ -145,9 +147,14 @@ export class DepositAddressHandler {
   }
 
   private async initiateDeposit(depositMessage: DepositAddressMessage): Promise<void> {
-    const { inputToken, originChainId: _originChainId } = depositMessage.routeParams;
+    const {
+      inputToken,
+      originChainId: _originChainId,
+      destinationChainId: _destinationChainId,
+    } = depositMessage.routeParams;
     const { amount: _inputAmount } = depositMessage.erc20Transfer;
     const originChainId = Number(_originChainId);
+    const destinationChainId = Number(_destinationChainId);
     const inputAmount = toBN(_inputAmount);
     const depositKey = getDepositKey(depositMessage);
     if (this.observedExecutedDeposits[originChainId]?.has(depositKey)) {
@@ -194,13 +201,22 @@ export class DepositAddressHandler {
     }
 
     if (!isDepositAddressDeployed) {
-      const deployTx = buildDeployTx(
+      const _deployTx = buildDeployTx(
         factoryContract,
         originChainId,
         getCounterfactualDepositImplementationAddress(originChainId),
         depositMessage.paramsHash,
         depositMessage.salt
       );
+
+      const deployTx = {
+        ..._deployTx,
+        message: "Deposit Address Deployed Successfully 📦",
+        mrkdwn: `Completed deployemnt of DepositAddress ${depositMessage.depositAddress} on ${getNetworkName(
+          originChainId
+        )}`,
+      };
+
       const deployReceipt = await sendAndConfirmTransaction(deployTx, this.transactionClient, useDispatcher);
       if (!isDefined(deployReceipt)) {
         this.observedExecutedDeposits[originChainId].delete(depositKey);
@@ -231,6 +247,10 @@ export class DepositAddressHandler {
       method: "",
       args: [executeTxInput],
       chainId: originChainId,
+      message: "Completed Deposit Execution Successfully 🎯",
+      mrkdwn: `Completed execution of Deposit on ${getNetworkName(originChainId)} to ${getNetworkName(
+        destinationChainId
+      )}, using deposit address ${blockExplorerLink(depositMessage.depositAddress, originChainId)}`,
     };
 
     const depositReceipt = await sendAndConfirmTransaction(executeTx, this.transactionClient, useDispatcher);
