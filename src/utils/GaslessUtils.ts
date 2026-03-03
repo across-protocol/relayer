@@ -8,7 +8,22 @@ import {
   toBytes32,
 } from "../utils";
 import { AugmentedTransaction } from "../clients";
-import { Contract, BigNumber } from "ethers";
+import { Contract, BigNumber, ethers } from "ethers";
+
+const DOMAIN_CALLDATA_DELIMITER = "0x1dc0de";
+
+/**
+ * Appends `[delimiter][integratorId]` to encoded calldata.
+ * integratorId must be a hex string representing exactly 2 bytes (e.g. "0xABCD").
+ */
+export function tagIntegratorId(txData: string, integratorId: string): string {
+  const stripped = integratorId.startsWith("0x") ? integratorId.slice(2) : integratorId;
+  if (stripped.length !== 4 || !/^[0-9a-fA-F]{4}$/.test(stripped)) {
+    throw new Error(`integratorId must be exactly 2 bytes (4 hex chars), got "${integratorId}"`);
+  }
+  const normalized = "0x" + stripped;
+  return ethers.utils.hexConcat([txData, DOMAIN_CALLDATA_DELIMITER, normalized]);
+}
 
 /**
  * Restructures raw API deposits into a flatter shape so callers don't deal with
@@ -32,6 +47,7 @@ export function restructureGaslessDeposits(depositMessages: APIGaslessDepositRes
       submissionFees,
       spokePool,
       nonce,
+      integratorId: data.integratorId,
     };
   });
 }
@@ -89,7 +105,8 @@ export function buildGaslessDepositTx(
   depositMessage: GaslessDepositMessage,
   spokePoolPeripheryContract: Contract
 ): AugmentedTransaction {
-  const { permit, inputAmount, baseDepositData, submissionFees, spokePool, nonce, signature } = depositMessage;
+  const { permit, inputAmount, baseDepositData, submissionFees, spokePool, nonce, signature, integratorId } =
+    depositMessage;
   const { from: signatureOwner, validBefore, validAfter } = permit.message;
   const witnessData: BridgeWitnessData = { inputAmount, baseDepositData, submissionFees, spokePool, nonce };
   const depositData = toContractDepositData(witnessData);
@@ -100,6 +117,19 @@ export function buildGaslessDepositTx(
     BigNumber.from(validBefore),
     normalizeSignature(signature),
   ];
+
+  if (integratorId) {
+    const calldata = spokePoolPeripheryContract.interface.encodeFunctionData("depositWithAuthorization", args);
+    const taggedCalldata = tagIntegratorId(calldata, integratorId);
+    return {
+      contract: spokePoolPeripheryContract,
+      chainId: depositMessage.originChainId,
+      method: "",
+      args: [taggedCalldata],
+      ensureConfirmation: true,
+    };
+  }
+
   return {
     contract: spokePoolPeripheryContract,
     chainId: depositMessage.originChainId,
