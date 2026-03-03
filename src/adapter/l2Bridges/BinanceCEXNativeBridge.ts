@@ -48,7 +48,7 @@ export class BinanceCEXNativeBridge extends BinanceCEXBridge {
       contract: depositAddressContract,
       chainId: this.l2chainId,
       method: "",
-      args: undefined,
+      args: [],
       nonMulticall: true,
       gasLimit: toBN(21000), // gas limit is 21000 for a base transaction.
       canFailInSimulation: true, // This will fail in simulation since the relayer likely does not have enough ETH to perform the withdrawal before the unwrap step.
