@@ -27,23 +27,16 @@ export abstract class BaseAcrossApiClient {
   }
 
   protected async _get<T>(endpoint: string, params: Record<string, unknown>): Promise<T | undefined> {
-    this.logger.info({
-      at: this.logContext,
-      message: `Getting from ${this.urlBase}/${endpoint}`,
-      params,
-    });
     try {
       const config: { timeout: number; params: Record<string, unknown>; headers?: Record<string, string> } = {
         timeout: this.apiResponseTimeout,
         params,
       };
+      
       if (this.apiKey) {
         config.headers = { Authorization: `Bearer ${this.apiKey}` };
       }
-      this.logger.info({
-        at: this.logContext,
-        message: `Config: ${JSON.stringify(config)}`,
-      });
+      
       const response = await axios.get<T>(`${this.urlBase}/${endpoint}`, config);
 
       if (!response?.data) {

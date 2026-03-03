@@ -29,6 +29,9 @@ import ERC20_ABI from "../common/abi/MinimalERC20.json";
   return this.toString();
 };
 
+const COUNTERFACTUAL_DEPOSIT_IMPLEMENTATION_ABI = [
+  "function execute(address implementation, bytes params, bytes submitterData, bytes32[] proof)",
+];
 /**
  * Independent relayer bot which processes EIP-3009 signatures into deposits and corresponding fills.
  */
@@ -227,11 +230,12 @@ export class DepositAddressHandler {
 
     const { data: executeTxInput } = swapTx.swapTx;
     const executeTx = {
-      contract: factoryContract,
+      contract: this.getExecuteContract(depositMessage.depositAddress, originChainId, useDispatcher),
       method: "",
       args: [executeTxInput],
       chainId: originChainId,
     };
+    
     const depositReceipt = await sendAndConfirmTransaction(executeTx, this.transactionClient, useDispatcher);
 
     if (!depositReceipt) {
@@ -243,6 +247,11 @@ export class DepositAddressHandler {
       this.observedExecutedDeposits[originChainId].delete(depositKey);
       return;
     }
+  }
+
+  private getExecuteContract(address: string, originChainId: number, useDispatcher: boolean): Contract {
+    const contract = new Contract(address, COUNTERFACTUAL_DEPOSIT_IMPLEMENTATION_ABI);
+    return useDispatcher ? contract : contract.connect(this.baseSigner.connect(this.providersByChain[originChainId]));
   }
 
   /**
