@@ -33,7 +33,7 @@ export function restructureGaslessDeposits(depositMessages: APIGaslessDepositRes
   return depositMessages.map((msg) => {
     const { swapTx, requestId, signature } = msg;
     const { chainId: originChainId, data } = swapTx;
-    const { depositId, permit, witness } = data;
+    const { depositId, permit, witness, integratorId } = data;
     const witnessData = witness.BridgeWitness.data;
     const { inputAmount, baseDepositData, submissionFees, spokePool, nonce } = witnessData;
     return {
@@ -47,7 +47,7 @@ export function restructureGaslessDeposits(depositMessages: APIGaslessDepositRes
       submissionFees,
       spokePool,
       nonce,
-      integratorId: data.integratorId,
+      integratorId,
     };
   });
 }
