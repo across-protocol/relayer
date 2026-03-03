@@ -575,6 +575,9 @@ export const CONTRACT_ADDRESSES: {
       address: "0xA157CB19a8C3061D9bbce11Ad08129bEe70988FE",
       abi: COUNTERFACTUAL_DEPOSIT_FACTORY_ABI,
     },
+    counterfactualDeposit: {
+      address: "0x654321F334b949A48c710E80b35334A4047d10B1",
+    },
   },
   [CHAIN_IDs.LENS]: {
     nativeTokenVault: {
