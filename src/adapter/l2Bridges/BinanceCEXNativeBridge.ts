@@ -7,6 +7,7 @@ import {
   EvmAddress,
   getTokenInfo,
   toBN,
+  ZERO_ADDRESS,
 } from "../../utils";
 import { AugmentedTransaction } from "../../clients/TransactionClient";
 import WETH_ABI from "../../common/abi/Weth.json";
@@ -44,13 +45,17 @@ export class BinanceCEXNativeBridge extends BinanceCEXBridge {
     };
     // Convert the deposit address into an ethers contract.
     const depositAddressContract = new Contract(depositAddress.address, [], this.l2Signer);
+
+    // Get the cost of executing a transaction with no data. Here we just call the zero address.
+    const baseTransactionCost = await this.l2Signer.provider.estimateGas({ to: ZERO_ADDRESS });
+
     const transferValueTxn: AugmentedTransaction = {
       contract: depositAddressContract,
       chainId: this.l2chainId,
       method: "",
       args: [],
       nonMulticall: true,
-      gasLimit: toBN(21000 * 3), // gas limit is 21000 for a base transaction. Add a buffer of 3x in case of Arbitrum gas limit spikes.
+      gasLimit: toBN(baseTransactionCost.mul(2)), // Multiply the base transaction cost by 2 in case the base cost has drifted since the time of gas estimation.
       canFailInSimulation: true, // This will fail in simulation since the relayer likely does not have enough ETH to perform the withdrawal before the unwrap step.
       value: amount,
       message: `🎰 Withdrew ${network} ${l2TokenInfo.symbol} to L1`,
