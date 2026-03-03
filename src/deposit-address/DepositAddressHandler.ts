@@ -16,6 +16,8 @@ import {
   buildDeployTx,
   toBN,
   getDepositKey,
+  assert,
+  getCounterfactualDepositImplementationAddress,
 } from "../utils";
 import { DepositAddressMessage } from "../interfaces";
 import { AcrossSwapApiClient, TransactionClient, SwapApiResponse } from "../clients";
@@ -55,7 +57,7 @@ export class DepositAddressHandler {
     readonly baseSigner: Signer,
     readonly depositAddressSigners: Signer[]
   ) {
-    this.api = new AcrossSwapApiClient(this.logger, this.config.apiTimeoutOverride);
+    this.api = new AcrossSwapApiClient(this.logger, this.config.apiTimeoutOverride, this.config.swapApiKey);
     this.indexerApi = new AcrossIndexerApiClient(this.logger, this.config.apiTimeoutOverride);
     this.transactionClient = new TransactionClient(this.logger, depositAddressSigners);
   }
@@ -154,6 +156,19 @@ export class DepositAddressHandler {
 
     this.observedExecutedDeposits[originChainId].add(depositKey);
 
+    let isDepositAddressDeployed = false;
+    try {
+      isDepositAddressDeployed = await this.isContractDeployed(originChainId, depositMessage.depositAddress);
+    } catch (err) {
+      this.observedExecutedDeposits[originChainId].delete(depositKey);
+      this.logger.warn({
+        at: "DepositAddressHandler#initiateDeposit",
+        message: "Failed to check if deposit address is deployed",
+        depositKey,
+      });
+      return;
+    }
+
     const baseFactoryContract = this.counterfactualDepositFactories[originChainId];
 
     const useDispatcher = this.depositAddressSigners.length > 0;
@@ -178,12 +193,12 @@ export class DepositAddressHandler {
       return;
     }
 
-    if (depositMessage.salt) {
+    if (!isDepositAddressDeployed) {
       const deployTx = buildDeployTx(
         factoryContract,
         originChainId,
-        depositMessage.depositAddress,
-        depositMessage.routeParams,
+        getCounterfactualDepositImplementationAddress(originChainId),
+        depositMessage.paramsHash,
         depositMessage.salt
       );
       const deployReceipt = await sendAndConfirmTransaction(deployTx, this.transactionClient, useDispatcher);
@@ -212,11 +227,12 @@ export class DepositAddressHandler {
 
     const { data: executeTxInput } = swapTx.swapTx;
     const executeTx = {
-      contract: factoryContract,
+      contract: this.getExecuteContract(swapTx.swapTx.to, originChainId, useDispatcher),
       method: "",
       args: [executeTxInput],
       chainId: originChainId,
     };
+
     const depositReceipt = await sendAndConfirmTransaction(executeTx, this.transactionClient, useDispatcher);
 
     if (!depositReceipt) {
@@ -230,23 +246,35 @@ export class DepositAddressHandler {
     }
   }
 
+  private getExecuteContract(address: string, originChainId: number, useDispatcher: boolean): Contract {
+    const contract = new Contract(address, []);
+    return useDispatcher ? contract : contract.connect(this.baseSigner.connect(this.providersByChain[originChainId]));
+  }
+
+  /**
+   * @notice Returns whether a contract exists at the given address on the given chain (eth_getCode).
+   */
+  private async isContractDeployed(chainId: number, address: string, blockTag?: string | number): Promise<boolean> {
+    const provider = this.providersByChain[chainId];
+    assert(isDefined(provider), `Provider not found for chain ${chainId}`);
+    const code = await provider.getCode(address, blockTag ?? "latest");
+    return (code?.length ?? 0) > 2; // "0x".length = 2;
+  }
+
   /*
    * @notice Queries the Indexer API for all pending deposit addresses transactions. By default, do not retry since this endpoing is being polled.
    */
   private async _queryIndexerApi(retriesRemaining = 3): Promise<DepositAddressMessage[]> {
-    let apiResponseData: { depositAddresses: DepositAddressMessage[] } | undefined = undefined;
+    let apiResponseData: DepositAddressMessage[] | undefined = undefined;
     try {
-      apiResponseData = await this.indexerApi.get<{ depositAddresses: DepositAddressMessage[] }>(
-        this.config.indexerApiEndpoint,
-        {}
-      );
+      apiResponseData = await this.indexerApi.get<DepositAddressMessage[]>(this.config.indexerApiEndpoint, {});
     } catch {
       // Error log should have been emitted in IndexerApiClient.
     }
     if (!isDefined(apiResponseData)) {
       return retriesRemaining > 0 ? this._queryIndexerApi(--retriesRemaining) : [];
     }
-    return apiResponseData.depositAddresses;
+    return apiResponseData;
   }
 
   private async _getSwapApiQuote(
@@ -263,7 +291,7 @@ export class DepositAddressHandler {
       outputToken,
       tradeType: "exactInput", // Should be exactInput for counterfactual deposits.
       amount,
-      depositor: depositAddress, // The depositor address should be the counterfactual deposit contract.
+      depositor: depositAddress,
       recipient,
       depositAddress,
       executionFeeRecipient: this.signerAddress.toNative(),
