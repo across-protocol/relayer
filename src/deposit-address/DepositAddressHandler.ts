@@ -291,7 +291,7 @@ export class DepositAddressHandler {
       outputToken,
       tradeType: "exactInput", // Should be exactInput for counterfactual deposits.
       amount,
-      depositor: this.signerAddress.toNative(), // @TODO: How to handle dispatcher in this case?
+      depositor: depositAddress,
       recipient,
       depositAddress,
       executionFeeRecipient: this.signerAddress.toNative(),
