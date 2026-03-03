@@ -6,7 +6,7 @@ import { DepositAddressMessage } from "../interfaces/DepositAddress";
  * Returns a unique key for a deposit so we can track if it was already executed (e.g. in observedExecutedDeposits).
  */
 export function getDepositKey(depositMessage: DepositAddressMessage): string {
-  return `${depositMessage.depositAddress}:${depositMessage.paramsHash}:${depositMessage.salt}`;
+  return `${depositMessage.depositAddress}:${depositMessage.erc20Transfer.transactionHash}`;
 }
 
 /**

@@ -13,6 +13,7 @@ export interface Erc20Transfer {
   to: string;
   amount: string;
   contractAddress: string;
+  transactionHash: string;
 }
 export interface DepositAddressMessage {
   depositAddress: string;
