@@ -17,7 +17,7 @@ import {
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
 import { AugmentedTransaction } from "../../clients/TransactionClient";
 import ARBITRUM_ERC20_GATEWAY_L2_ABI from "../../common/abi/ArbitrumErc20GatewayL2.json";
-import { getArbitrumOrbitFinalizationTime } from "../../finalizer/utils";
+import { getArbitrumOrbitFinalizationTime } from "../../utils/ArbSdkUtils";
 
 export class ArbitrumOrbitBridge extends BaseL2BridgeAdapter {
   protected l2GatewayRouter: Contract;
