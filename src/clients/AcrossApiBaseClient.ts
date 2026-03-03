@@ -32,11 +32,11 @@ export abstract class BaseAcrossApiClient {
         timeout: this.apiResponseTimeout,
         params,
       };
-      
+
       if (this.apiKey) {
         config.headers = { Authorization: `Bearer ${this.apiKey}` };
       }
-      
+
       const response = await axios.get<T>(`${this.urlBase}/${endpoint}`, config);
 
       if (!response?.data) {

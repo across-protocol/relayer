@@ -235,7 +235,7 @@ export class DepositAddressHandler {
       args: [executeTxInput],
       chainId: originChainId,
     };
-    
+
     const depositReceipt = await sendAndConfirmTransaction(executeTx, this.transactionClient, useDispatcher);
 
     if (!depositReceipt) {
