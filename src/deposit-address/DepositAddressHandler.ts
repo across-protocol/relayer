@@ -19,6 +19,7 @@ import {
   assert,
   getCounterfactualDepositImplementationAddress,
   getNetworkName,
+  blockExplorerLink,
 } from "../utils";
 import { DepositAddressMessage } from "../interfaces";
 import { AcrossSwapApiClient, TransactionClient, SwapApiResponse } from "../clients";
@@ -211,7 +212,9 @@ export class DepositAddressHandler {
       const deployTx = {
         ..._deployTx,
         message: "Deposit Address Deployed Successfully 📦",
-        mrkdwn: `Completed deployemnt of DepositAddress on ${getNetworkName(originChainId)}`,
+        mrkdwn: `Completed deployemnt of DepositAddress ${depositMessage.depositAddress} on ${getNetworkName(
+          originChainId
+        )}`,
       };
 
       const deployReceipt = await sendAndConfirmTransaction(deployTx, this.transactionClient, useDispatcher);
@@ -247,7 +250,7 @@ export class DepositAddressHandler {
       message: "Completed Deposit Execution Successfully 🎯",
       mrkdwn: `Completed execution of Deposit on ${getNetworkName(originChainId)} to ${getNetworkName(
         destinationChainId
-      )}`,
+      )}, using deposit address ${blockExplorerLink(depositMessage.depositAddress, originChainId)}`,
     };
 
     const depositReceipt = await sendAndConfirmTransaction(executeTx, this.transactionClient, useDispatcher);
