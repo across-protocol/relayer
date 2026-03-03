@@ -29,9 +29,6 @@ import ERC20_ABI from "../common/abi/MinimalERC20.json";
   return this.toString();
 };
 
-const COUNTERFACTUAL_DEPOSIT_IMPLEMENTATION_ABI = [
-  "function execute(address implementation, bytes params, bytes submitterData, bytes32[] proof)",
-];
 /**
  * Independent relayer bot which processes EIP-3009 signatures into deposits and corresponding fills.
  */
@@ -230,7 +227,7 @@ export class DepositAddressHandler {
 
     const { data: executeTxInput } = swapTx.swapTx;
     const executeTx = {
-      contract: this.getExecuteContract(depositMessage.depositAddress, originChainId, useDispatcher),
+      contract: this.getExecuteContract(swapTx.swapTx.to, originChainId, useDispatcher),
       method: "",
       args: [executeTxInput],
       chainId: originChainId,
@@ -250,7 +247,7 @@ export class DepositAddressHandler {
   }
 
   private getExecuteContract(address: string, originChainId: number, useDispatcher: boolean): Contract {
-    const contract = new Contract(address, COUNTERFACTUAL_DEPOSIT_IMPLEMENTATION_ABI);
+    const contract = new Contract(address, []);
     return useDispatcher ? contract : contract.connect(this.baseSigner.connect(this.providersByChain[originChainId]));
   }
 
@@ -294,7 +291,7 @@ export class DepositAddressHandler {
       outputToken,
       tradeType: "exactInput", // Should be exactInput for counterfactual deposits.
       amount,
-      depositor: depositAddress, // The depositor address should be the counterfactual deposit contract.
+      depositor: this.signerAddress.toNative(), // @TODO: How to handle dispatcher in this case?
       recipient,
       depositAddress,
       executionFeeRecipient: this.signerAddress.toNative(),
