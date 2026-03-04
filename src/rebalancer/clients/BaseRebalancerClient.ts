@@ -14,7 +14,8 @@ export abstract class BaseRebalancerClient implements RebalancerClient {
     readonly logger: winston.Logger,
     readonly config: RebalancerConfig,
     readonly adapters: { [name: string]: RebalancerAdapter },
-    readonly baseSigner: Signer
+    readonly baseSigner: Signer,
+    readonly isReadonly: boolean
   ) {}
 
   /**
@@ -26,6 +27,9 @@ export abstract class BaseRebalancerClient implements RebalancerClient {
     this.rebalanceRoutes = rebalanceRoutes;
     for (const adapter of Object.values(this.adapters)) {
       await adapter.initialize(this.rebalanceRoutes);
+      if (!this.isReadonly) {
+        await adapter.setApprovals();
+      }
     }
   }
 
