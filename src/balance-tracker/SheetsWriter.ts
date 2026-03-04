@@ -103,7 +103,7 @@ export class SheetsWriter {
     const alignedRow = [time, ...header.slice(1).map((s) => symbolToValue.get(s) ?? "")];
 
     await this.sheetsRequest("post", `/values/${encodeTab(tabName)}!A1:append`, { values: [alignedRow] }, {
-      valueInputOption: "RAW",
+      valueInputOption: "USER_ENTERED",
       insertDataOption: "INSERT_ROWS",
     });
 
