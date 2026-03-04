@@ -111,6 +111,11 @@ export abstract class BaseAdapter implements RebalancerAdapter {
   // PUBLIC METHODS
   // ////////////////////////////////////////////////////////////
 
+  /**
+   * @notice This function should not submit any transactions, it should only set internal variables. Any initialization
+   * transactions should be handled by the setApprovals function.
+   * @param availableRoutes - The available routes to initialize the adapter for.
+   */
   async initialize(availableRoutes: RebalanceRoute[]): Promise<void> {
     this.redisCache = (await getRedisCache(this.logger, undefined, rebalancerStatusTrackingNameSpace)) as RedisCache;
 
