@@ -129,6 +129,11 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     this.allSourceChains = new Set<number>(this.availableRoutes.map((x) => x.sourceChain));
     this.allSourceTokens = new Set<string>(this.availableRoutes.map((x) => x.sourceToken));
 
+    this.initialized = true;
+  }
+
+  async setApprovals(): Promise<void> {
+    this._assertInitialized();
     this.multicallerClient = new MultiCallerClient(this.logger, this.config.multiCallChunkSize, this.baseSigner);
 
     // Set Bridge allowances:
@@ -173,8 +178,6 @@ export abstract class BaseAdapter implements RebalancerAdapter {
 
     const simMode = !this.config.sendingTransactionsEnabled;
     await this.multicallerClient.executeTxnQueues(simMode);
-    this.initialized = true;
-    return;
   }
 
   // ////////////////////////////////////////////////////////////

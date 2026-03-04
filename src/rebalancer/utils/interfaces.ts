@@ -4,6 +4,7 @@ export type ExcessOrDeficit = { token: string; chainId: number; amount: BigNumbe
 
 export interface RebalancerAdapter {
   initialize(availableRoutes: RebalanceRoute[]): Promise<void>;
+  setApprovals(): Promise<void>;
   initializeRebalance(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber): Promise<void>;
   updateRebalanceStatuses(): Promise<void>;
   sweepIntermediateBalances(): Promise<void>;
