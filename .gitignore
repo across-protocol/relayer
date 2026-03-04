@@ -32,3 +32,7 @@ CLAUDE.*
 
 # yalc
 .yalc
+
+# Balance tracker secrets
+balance-tracker-key.json
+balance-tracker.env

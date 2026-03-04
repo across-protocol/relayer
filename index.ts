@@ -20,6 +20,7 @@ import { runHyperliquidExecutor, runHyperliquidFinalizer } from "./src/hyperliqu
 import { runCumulativeBalanceRebalancer as swapRebalancer } from "./src/rebalancer";
 import { runGaslessRelayer } from "./src/gasless";
 import { runDepositAddressHandler } from "./src/deposit-address";
+import { runBalanceTracker } from "./src/balance-tracker";
 
 let logger: typeof Logger;
 let cmd: string;
@@ -39,6 +40,7 @@ const CMDS = {
   swapRebalancer: swapRebalancer,
   gaslessRelayer: runGaslessRelayer,
   depositAddressHandler: runDepositAddressHandler,
+  balanceTracker: runBalanceTracker,
 };
 
 export async function run(args: { [k: string]: boolean | string }): Promise<void> {

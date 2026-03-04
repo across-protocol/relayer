@@ -494,17 +494,26 @@ export class Monitor {
     return allL1Tokens;
   }
 
-  async reportRelayerBalances(): Promise<void> {
+  async computeRelayerBalances(): Promise<{
+    reports: RelayerBalanceReport;
+    allL1Tokens: L1Token[];
+    l2OnlyTokens: L2Token[];
+  }> {
     const relayers = this.monitorConfig.monitoredRelayers;
     const allL1Tokens = this.getL1TokensForRelayerBalancesReport();
     const l2OnlyTokens = this.l2OnlyTokens;
-
     const chainIds = this.monitorChains;
     const allChainNames = chainIds.map(getNetworkName).concat([ALL_CHAINS_NAME]);
     const reports = this.initializeBalanceReports(relayers, allL1Tokens, l2OnlyTokens, allChainNames);
-
     await this.updateCurrentRelayerBalances(reports);
     await this.updateLatestAndFutureRelayerRefunds(reports);
+    return { reports, allL1Tokens, l2OnlyTokens };
+  }
+
+  async reportRelayerBalances(): Promise<void> {
+    const { reports, allL1Tokens, l2OnlyTokens } = await this.computeRelayerBalances();
+    const relayers = this.monitorConfig.monitoredRelayers;
+    const allChainNames = this.monitorChains.map(getNetworkName).concat([ALL_CHAINS_NAME]);
 
     for (const relayer of relayers) {
       const report = reports[relayer.toNative()];
