@@ -6,6 +6,7 @@ import {
   getL1TokenAddress,
   getTokenInfo,
   toBytes32,
+  CHAIN_IDs,
 } from "../utils";
 import { AugmentedTransaction } from "../clients";
 import { Contract, BigNumber } from "ethers";
@@ -106,6 +107,7 @@ export function buildGaslessDepositTx(
     method: "depositWithAuthorization",
     args,
     ensureConfirmation: true,
+    spray: depositMessage.originChainId === CHAIN_IDs.MAINNET, // If mainnet, send to all available private RPCs.
   };
 }
 
