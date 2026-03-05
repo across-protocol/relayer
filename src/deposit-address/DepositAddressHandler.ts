@@ -116,22 +116,7 @@ export class DepositAddressHandler {
     );
     await this.instanceCoordinator.initiateHandover();
 
-    const redisKey = this.getExecutedDepositsRedisKey();
-    const raw = (await this.redisCache.get(redisKey)) as string | undefined;
-    let arr: string[] = [];
-    try {
-      if (raw) {
-        arr = JSON.parse(raw);
-      }
-    } catch {
-      // Ignore corrupted or legacy format.
-    }
-    this.executedDepositTxHashes = new Set(Array.isArray(arr) ? arr : []);
-    this.logger.debug({
-      at: "DepositAddressHandler#initialize",
-      message: "Loaded executed deposit tx hashes from Redis (first after handover)",
-      count: this.executedDepositTxHashes.size,
-    });
+    await this._loadExecutedDepositsFromRedis();
 
     this.initialized = true;
   }
@@ -139,6 +124,34 @@ export class DepositAddressHandler {
   private getExecutedDepositsRedisKey(): string {
     const botId = process.env.BOT_IDENTIFIER ?? "deposit-address-handler";
     return `deposit-address:executed:${botId}`;
+  }
+
+  /** Loads executed deposit tx hashes from Redis (e.g. after handover). */
+  private async _loadExecutedDepositsFromRedis(): Promise<void> {
+    const redisKey = this.getExecutedDepositsRedisKey();
+    const raw = (await this.redisCache.get(redisKey)) as string | undefined;
+    let arr: string[] = [];
+    try {
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        arr = Array.isArray(parsed) ? parsed : [];
+      }
+    } catch (err) {
+      this.logger.error({
+        at: "DepositAddressHandler#_loadExecutedDepositsFromRedis",
+        message: "Failed to parse executed deposits from Redis, using empty set",
+        redisKey,
+        err: err instanceof Error ? err.message : String(err),
+      });
+
+      throw err;
+    }
+    this.executedDepositTxHashes = new Set(arr);
+    this.logger.debug({
+      at: "DepositAddressHandler#_loadExecutedDepositsFromRedis",
+      message: "Loaded executed deposit tx hashes from Redis",
+      count: this.executedDepositTxHashes.size,
+    });
   }
 
   /*
@@ -163,15 +176,19 @@ export class DepositAddressHandler {
 
   private async evaluateDepositAddresses(): Promise<void> {
     const depositMessages = await this._queryIndexerApi();
-    const filtered = depositMessages.filter((m) =>
-      this.config.relayerOriginChains.includes(Number(m.routeParams.originChainId))
+    const filtered = depositMessages.filter(
+      (m) =>
+        this.config.relayerOriginChains.includes(Number(m.routeParams.originChainId)) &&
+        !this.executedDepositTxHashes.has(m.erc20Transfer.transactionHash)
     );
 
     // Filter executed set to only hashes the indexer still returns (in-memory only; Redis updated only on execute).
-    const refTxHashesFromIndexer = new Set(filtered.map((m) => m.erc20Transfer.transactionHash));
-    this.executedDepositTxHashes = new Set(
-      [...this.executedDepositTxHashes].filter((tx) => refTxHashesFromIndexer.has(tx))
-    );
+    const refTxHashesFromIndexer = new Set(depositMessages.map((m) => m.erc20Transfer.transactionHash));
+    for (const tx of [...this.executedDepositTxHashes]) {
+      if (!refTxHashesFromIndexer.has(tx)) {
+        this.executedDepositTxHashes.delete(tx);
+      }
+    }
 
     await forEachAsync(filtered, async (depositMessage) => {
       await this.initiateDeposit(depositMessage);
