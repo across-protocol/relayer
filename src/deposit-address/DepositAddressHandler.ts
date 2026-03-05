@@ -182,7 +182,9 @@ export class DepositAddressHandler {
         !this.executedDepositTxHashes.has(m.erc20Transfer.transactionHash)
     );
 
-    // Filter executed set to only hashes the indexer still returns (in-memory only; Redis updated only on execute).
+    // We want to remove all executed deposits from the in-memory set if they are not returned by the indexer.
+    // This is because the indexer will stop sending the deposit once it has been "expired" (internal TTL).
+    // So there is no point of keeping them in Redis after Indexer API stops returning them.
     const refTxHashesFromIndexer = new Set(depositMessages.map((m) => m.erc20Transfer.transactionHash));
     for (const tx of [...this.executedDepositTxHashes]) {
       if (!refTxHashesFromIndexer.has(tx)) {
