@@ -1600,7 +1600,7 @@ export class InventoryClient {
             .div(this.scalar);
           // Note: getL2PendingWithdrawalAmount() returns a value in L2 token decimals so we can compare it with
           // maxL2WithdrawalVolume.
-          const pendingWithdrawalAmount = await this.adapterManager.getL2PendingWithdrawalAmount(
+          const pendingWithdrawalAmount = await this.adapterManager.getL2PendingWithdrawalAmountWithLookbackPeriod(
             withdrawExcessPeriod,
             chainId,
             this.relayer,
@@ -1842,7 +1842,6 @@ export class InventoryClient {
       this.pendingL2Withdrawals[l1Token.toNative()] = {};
       const pendingWithdrawalBalances =
         await this.crossChainTransferClient.adapterManager.getTotalPendingWithdrawalAmount(
-          7200,
           this.getEnabledChains().filter((chainId) => chainId !== this.hubPoolClient.chainId),
           this.relayer,
           l1Token
