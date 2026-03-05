@@ -89,7 +89,14 @@ export async function constructCumulativeBalanceRebalancerClient(
   baseSigner: Signer
 ): Promise<CumulativeBalanceRebalancerClient> {
   const { rebalancerConfig, adapters, rebalanceRoutes } = constructRebalancerDependencies(logger, baseSigner);
-  const rebalancerClient = new CumulativeBalanceRebalancerClient(logger, rebalancerConfig, adapters, baseSigner);
+  const isReadonly = false;
+  const rebalancerClient = new CumulativeBalanceRebalancerClient(
+    logger,
+    rebalancerConfig,
+    adapters,
+    baseSigner,
+    isReadonly
+  );
   await rebalancerClient.initialize(rebalanceRoutes);
   logger.debug({
     at: "RebalancerClientHelper.constructCumulativeBalanceRebalancerClient",
@@ -105,7 +112,8 @@ export async function constructReadOnlyRebalancerClient(
   baseSigner: Signer
 ): Promise<ReadOnlyRebalancerClient> {
   const { rebalancerConfig, adapters } = constructRebalancerDependencies(logger, baseSigner);
-  const rebalancerClient = new ReadOnlyRebalancerClient(logger, rebalancerConfig, adapters, baseSigner);
+  const isReadonly = true;
+  const rebalancerClient = new ReadOnlyRebalancerClient(logger, rebalancerConfig, adapters, baseSigner, isReadonly);
   await rebalancerClient.initialize([]);
   logger.debug({
     at: "RebalancerClientHelper.constructReadOnlyRebalancerClient",

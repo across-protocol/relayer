@@ -13,12 +13,14 @@ export interface Erc20Transfer {
   to: string;
   amount: string;
   contractAddress: string;
+  transactionHash: string;
 }
 export interface DepositAddressMessage {
   depositAddress: string;
+  paramsHash: string;
   routeParams: RouteParams;
   erc20Transfer: Erc20Transfer;
-  salt: string | undefined;
+  salt: string;
 }
 
 // TODO: Add schema for SwapAPI response.

@@ -9,6 +9,7 @@ import {
   chainIsEvm,
   SvmAddress,
   Address,
+  isDefined,
 } from ".";
 import { CONTRACT_ADDRESSES } from "../common";
 
@@ -22,6 +23,10 @@ export function getDeployedContract(contractName: string, networkId: number, sig
   } catch (error) {
     throw new Error(`Could not find address for contract ${contractName} on ${networkId} (${error})`);
   }
+}
+
+export function getCounterfactualDepositImplementationAddress(chainId: number): string {
+  return CONTRACT_ADDRESSES[chainId].counterfactualDeposit.address;
 }
 
 // For a chain ID and optional CounterfactualDepositFactory address, return a Contract instance with the corresponding ABI.
@@ -83,9 +88,10 @@ export function getDstOftHandler(): Contract {
 export function getDstCctpHandler(): Contract {
   const factoryName = "SponsoredCCTPDstPeriphery";
   const artifact = typechain["HyperCoreFlowExecutor__factory"];
-  const address =
-    CONTRACT_ADDRESSES[CHAIN_IDs.HYPEREVM]?.dstCctpHandler?.address ??
-    getDeployedAddress(factoryName, CHAIN_IDs.HYPEREVM);
+  const address = isDefined(process.env.DST_CCTP_HANDLER)
+    ? process.env.DST_CCTP_HANDLER
+    : CONTRACT_ADDRESSES[CHAIN_IDs.HYPEREVM]?.dstCctpHandler?.address ??
+      getDeployedAddress(factoryName, CHAIN_IDs.HYPEREVM);
   return new Contract(address, artifact.abi);
 }
 
