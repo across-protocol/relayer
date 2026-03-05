@@ -155,7 +155,10 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         )} is not a valid source chain for token ${sourceToken} because it is either not a OFT or a CCTP bridge`
       );
     });
+  }
 
+  async setApprovals(): Promise<void> {
+    await super.setApprovals();
     // Check allowance for CoreDepositWallet required to deposit USDC to Hypercore.
     const provider_999 = await getProvider(HYPEREVM);
     const connectedSigner_999 = this.baseSigner.connect(provider_999);
