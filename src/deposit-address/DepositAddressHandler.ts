@@ -46,6 +46,9 @@ export class DepositAddressHandler {
   /** Per chainId: set of deposit keys already executed (like gasless depositNonces). */
   private observedExecutedDeposits: { [chainId: number]: Set<string> } = {};
 
+  /** Set of erc20Transfer.transactionHash for deposits successfully executed (persisted in Redis for handover). */
+  private executedDepositTxHashes: Set<string> = new Set();
+
   private api: AcrossSwapApiClient;
   private indexerApi: AcrossIndexerApiClient;
   private signerAddress: EvmAddress;
@@ -103,7 +106,7 @@ export class DepositAddressHandler {
       this.observedExecutedDeposits[chainId] = new Set<string>();
     });
 
-    // Establish a new bot instance.
+    // Establish bot instance and take over. First thing after handover: load persisted executed deposits from Redis.
     this.instanceCoordinator = new InstanceCoordinator(
       this.logger,
       this.redisCache,
@@ -113,7 +116,29 @@ export class DepositAddressHandler {
     );
     await this.instanceCoordinator.initiateHandover();
 
+    const redisKey = this.getExecutedDepositsRedisKey();
+    const raw = (await this.redisCache.get(redisKey)) as string | undefined;
+    let arr: string[] = [];
+    try {
+      if (raw) {
+        arr = JSON.parse(raw);
+      }
+    } catch {
+      // Ignore corrupted or legacy format.
+    }
+    this.executedDepositTxHashes = new Set(Array.isArray(arr) ? arr : []);
+    this.logger.debug({
+      at: "DepositAddressHandler#initialize",
+      message: "Loaded executed deposit tx hashes from Redis (first after handover)",
+      count: this.executedDepositTxHashes.size,
+    });
+
     this.initialized = true;
+  }
+
+  private getExecutedDepositsRedisKey(): string {
+    const botId = process.env.BOT_IDENTIFIER ?? "deposit-address-handler";
+    return `deposit-address:executed:${botId}`;
   }
 
   /*
@@ -141,9 +166,25 @@ export class DepositAddressHandler {
     const filtered = depositMessages.filter((m) =>
       this.config.relayerOriginChains.includes(Number(m.routeParams.originChainId))
     );
+
+    // Filter executed set to only hashes the indexer still returns (in-memory only; Redis updated only on execute).
+    const refTxHashesFromIndexer = new Set(filtered.map((m) => m.erc20Transfer.transactionHash));
+    this.executedDepositTxHashes = new Set(
+      [...this.executedDepositTxHashes].filter((tx) => refTxHashesFromIndexer.has(tx))
+    );
+
     await forEachAsync(filtered, async (depositMessage) => {
       await this.initiateDeposit(depositMessage);
     });
+  }
+
+  /**
+   * Overwrites Redis key with the full executedDepositTxHashes set (single SET; value is JSON array).
+   * Called at start of each poll (after filtering) and after each successful execute.
+   */
+  private async _persistExecutedDepositsRedis(): Promise<void> {
+    const redisKey = this.getExecutedDepositsRedisKey();
+    await this.redisCache.set(redisKey, JSON.stringify([...this.executedDepositTxHashes]));
   }
 
   private async initiateDeposit(depositMessage: DepositAddressMessage): Promise<void> {
@@ -152,11 +193,23 @@ export class DepositAddressHandler {
       originChainId: _originChainId,
       destinationChainId: _destinationChainId,
     } = depositMessage.routeParams;
-    const { amount: _inputAmount } = depositMessage.erc20Transfer;
+    const { amount: _inputAmount, transactionHash: refTxHash } = depositMessage.erc20Transfer;
     const originChainId = Number(_originChainId);
     const destinationChainId = Number(_destinationChainId);
     const inputAmount = toBN(_inputAmount);
     const depositKey = getDepositKey(depositMessage);
+
+    // Skip if a previous instance (or this one) already executed this deposit (persisted in Redis).
+    if (this.executedDepositTxHashes.has(refTxHash)) {
+      this.logger.debug({
+        at: "DepositAddressHandler#initiateDeposit",
+        message: "Skipping already executed deposit (found in Redis)",
+        refTxHash,
+        depositKey,
+      });
+      return;
+    }
+
     if (this.observedExecutedDeposits[originChainId]?.has(depositKey)) {
       return;
     }
@@ -264,6 +317,10 @@ export class DepositAddressHandler {
       this.observedExecutedDeposits[originChainId].delete(depositKey);
       return;
     }
+
+    // Persist full set to Redis immediately so handover cannot miss this execute.
+    this.executedDepositTxHashes.add(refTxHash);
+    await this._persistExecutedDepositsRedis();
   }
 
   private getExecuteContract(address: string, originChainId: number, useDispatcher: boolean): Contract {
