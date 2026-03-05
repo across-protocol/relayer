@@ -52,6 +52,15 @@ class TestBaseChainAdapter extends BaseChainAdapter {
   public setL2UsdcBridge(address: string, bridge: Contract) {
     this.bridges[address].cctpBridge.l2Bridge = bridge;
   }
+
+  protected async computeTimestampAlignedSearchConfigs(): Promise<{
+    l1SearchConfig: utils.EventSearchConfig;
+    l2SearchConfig: utils.EventSearchConfig;
+    windowStartTimestamp: number;
+  }> {
+    const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
+    return { l1SearchConfig, l2SearchConfig, windowStartTimestamp: 0 };
+  }
 }
 
 describe("Cross Chain Adapter: Polygon", async function () {

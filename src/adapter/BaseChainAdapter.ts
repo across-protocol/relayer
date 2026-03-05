@@ -25,6 +25,7 @@ import {
   mapAsync,
   getL1TokenAddress,
   getBlockForTimestamp,
+  getTimestampForBlock,
   getCurrentTime,
   bnZero,
   Address,
@@ -49,7 +50,8 @@ import {
   setL2TokenAllowanceInCache,
   TransferTokenParams,
 } from "./utils";
-import { BaseBridgeAdapter, BridgeTransactionDetails } from "./bridges/BaseBridgeAdapter";
+import { BaseBridgeAdapter, BridgeEvent, BridgeTransactionDetails } from "./bridges/BaseBridgeAdapter";
+import { FINALIZER_TOKENBRIDGE_LOOKBACK } from "../common/Constants";
 import { OutstandingTransfers } from "../interfaces";
 import WETH_ABI from "../common/abi/Weth.json";
 import { BaseL2BridgeAdapter } from "./l2Bridges/BaseL2BridgeAdapter";
@@ -511,41 +513,189 @@ export class BaseChainAdapter {
     }
   }
 
+  /**
+   * Resolve block-number-based timestamps for a set of bridge events across two chains.
+   * Deduplicates block numbers to minimize RPC calls.
+   */
+  private async resolveEventTimestamps(
+    l1Events: BridgeEvent[],
+    l2Events: BridgeEvent[]
+  ): Promise<Map<BridgeEvent, number>> {
+    const l1Client = this.spokePoolManager.getClient(this.hubChainId);
+    const l2Client = this.spokePoolManager.getClient(this.chainId);
+    assert(isDefined(l1Client) && isEVMSpokePoolClient(l1Client));
+    assert(isDefined(l2Client) && isEVMSpokePoolClient(l2Client));
+    const l1Provider = l1Client.spokePool.provider;
+    const l2Provider = l2Client.spokePool.provider;
+
+    // Collect unique block numbers per chain.
+    const l1Blocks = [...new Set(l1Events.map((e) => e.blockNumber))];
+    const l2Blocks = [...new Set(l2Events.map((e) => e.blockNumber))];
+
+    const [l1Timestamps, l2Timestamps] = await Promise.all([
+      Promise.all(l1Blocks.map((b) => getTimestampForBlock(l1Provider, b))),
+      Promise.all(l2Blocks.map((b) => getTimestampForBlock(l2Provider, b))),
+    ]);
+
+    const l1BlockToTs = new Map(l1Blocks.map((b, i) => [b, l1Timestamps[i]]));
+    const l2BlockToTs = new Map(l2Blocks.map((b, i) => [b, l2Timestamps[i]]));
+
+    const result = new Map<BridgeEvent, number>();
+    for (const e of l1Events) {
+      result.set(e, l1BlockToTs.get(e.blockNumber)!);
+    }
+    for (const e of l2Events) {
+      result.set(e, l2BlockToTs.get(e.blockNumber)!);
+    }
+    return result;
+  }
+
+  /**
+   * Compute timestamp-aligned search configs using a fixed wall-clock window (FINALIZER_TOKENBRIDGE_LOOKBACK).
+   * This ensures L1 and L2 event queries cover the same wall-clock period regardless of block times.
+   * Protected so test adapters can override to bypass timestamp-based block lookups.
+   */
+  protected async computeTimestampAlignedSearchConfigs(): Promise<{
+    l1SearchConfig: EventSearchConfig;
+    l2SearchConfig: EventSearchConfig;
+    windowStartTimestamp: number;
+  }> {
+    const { l1SearchConfig: baseL1, l2SearchConfig: baseL2 } = this.getUpdatedSearchConfigs();
+    const now = getCurrentTime();
+    const windowStart = now - FINALIZER_TOKENBRIDGE_LOOKBACK;
+    // Query one extra day to ensure we don't miss events near the boundary.
+    const queryFrom = now - FINALIZER_TOKENBRIDGE_LOOKBACK - 86400;
+
+    const hubChainBlockRange = this.spokePoolManager.getClient(this.hubChainId).eventSearchConfig.maxLookBack;
+    const spokeChainBlockRange = this.spokePoolManager.getClient(this.chainId).eventSearchConfig.maxLookBack;
+
+    const [l1FromBlock, l2FromBlock] = await Promise.all([
+      getBlockForTimestamp(this.logger, this.hubChainId, queryFrom),
+      getBlockForTimestamp(this.logger, this.chainId, queryFrom),
+    ]);
+
+    return {
+      l1SearchConfig: { from: l1FromBlock, to: baseL1.to, maxLookBack: hubChainBlockRange },
+      l2SearchConfig: { from: l2FromBlock, to: baseL2.to, maxLookBack: spokeChainBlockRange },
+      windowStartTimestamp: windowStart,
+    };
+  }
+
+  /**
+   * Match initiation events against finalization events by amount + temporal ordering.
+   * Returns unmatched initiations (= outstanding/in-flight transfers).
+   *
+   * For each finalization, finds the most recent unmatched same-amount initiation with
+   * timestamp <= finalization timestamp. Finalizations before warnAfterTimestamp that go
+   * unmatched are expected (their initiations preceded the window) and silently skipped.
+   */
+  private matchTransfers(
+    initiations: BridgeEvent[],
+    finalizations: BridgeEvent[],
+    timestamps: Map<BridgeEvent, number>,
+    warnAfterTimestamp: number
+  ): BridgeEvent[] {
+    // Group initiations by amount string, sorted by timestamp descending (newest first) within each group.
+    const initiationsByAmount = new Map<string, BridgeEvent[]>();
+    for (const event of initiations) {
+      const key = event.amount.toString();
+      const group = initiationsByAmount.get(key) ?? [];
+      group.push(event);
+      initiationsByAmount.set(key, group);
+    }
+    for (const group of initiationsByAmount.values()) {
+      group.sort((a, b) => timestamps.get(b)! - timestamps.get(a)!);
+    }
+
+    // Track which initiations have been matched.
+    const matched = new Set<BridgeEvent>();
+
+    // Sort finalizations by timestamp descending (newest first).
+    const sortedFinalizations = [...finalizations].sort((a, b) => timestamps.get(b)! - timestamps.get(a)!);
+
+    for (const fin of sortedFinalizations) {
+      const finTs = timestamps.get(fin)!;
+      const key = fin.amount.toString();
+      const candidates = initiationsByAmount.get(key);
+      if (!candidates) {
+        if (finTs >= warnAfterTimestamp) {
+          this.log(
+            "Unmatched finalization event in recent window",
+            { amount: key, blockNumber: fin.blockNumber, txnRef: fin.txnRef, timestamp: finTs },
+            "warn",
+            "matchTransfers"
+          );
+        }
+        continue;
+      }
+
+      // Find most recent unmatched initiation with timestamp <= finalization timestamp.
+      // Candidates are sorted newest-first, so the first qualifying match is the most recent.
+      let foundMatch = false;
+      for (const init of candidates) {
+        if (!matched.has(init) && timestamps.get(init)! <= finTs) {
+          matched.add(init);
+          foundMatch = true;
+          break;
+        }
+      }
+
+      if (!foundMatch && finTs >= warnAfterTimestamp) {
+        this.log(
+          "Unmatched finalization event in recent window",
+          { amount: key, blockNumber: fin.blockNumber, txnRef: fin.txnRef, timestamp: finTs },
+          "warn",
+          "matchTransfers"
+        );
+      }
+    }
+
+    // Return unmatched initiations (preserving original order).
+    return initiations.filter((e) => !matched.has(e));
+  }
+
   async getOutstandingCrossChainTransfers(l1Tokens: EvmAddress[]): Promise<OutstandingTransfers> {
-    const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
+    const { l1SearchConfig, l2SearchConfig, windowStartTimestamp } =
+      await this.computeTimestampAlignedSearchConfigs();
     const availableL1Tokens = this.filterSupportedTokens(l1Tokens);
+    const warnAfterTimestamp = windowStartTimestamp + FINALIZER_TOKENBRIDGE_LOOKBACK / 2;
 
     const outstandingTransfers: OutstandingTransfers = {};
 
-    await forEachAsync(this.monitoredAddresses, async (monitoredAddress) => {
-      await forEachAsync(availableL1Tokens, async (l1Token) => {
+    for (const monitoredAddress of this.monitoredAddresses) {
+      for (const l1Token of availableL1Tokens) {
         const bridge = this.bridges[l1Token.toNative()];
         const [depositInitiatedResults, depositFinalizedResults] = await Promise.all([
           bridge.queryL1BridgeInitiationEvents(l1Token, monitoredAddress, monitoredAddress, l1SearchConfig),
           bridge.queryL2BridgeFinalizationEvents(l1Token, monitoredAddress, monitoredAddress, l2SearchConfig),
         ]);
 
-        Object.entries(depositInitiatedResults).forEach(([l2Token, depositInitiatedEvents]) => {
-          const finalizedAmounts = depositFinalizedResults?.[l2Token]?.map((event) => event.amount.toString()) ?? [];
-          const outstandingInitiatedEvents = depositInitiatedEvents.filter((event) => {
-            // Remove the first match. This handles scenarios where are collisions by amount.
-            const index = finalizedAmounts.indexOf(event.amount.toString());
-            if (index > -1) {
-              finalizedAmounts.splice(index, 1);
-              return false;
-            }
-            return true;
-          });
-          const finalizedSum = finalizedAmounts.reduce((acc, amount) => acc.sub(BigNumber.from(amount)), bnZero);
-          // The total amount outstanding is the outstanding initiated amount subtracted by the leftover finalized amount.
-          const _totalAmount = outstandingInitiatedEvents.reduce((acc, event) => acc.add(event.amount), finalizedSum);
+        for (const [l2Token, initiationEvents] of Object.entries(depositInitiatedResults)) {
+          const finalizationEvents = depositFinalizedResults?.[l2Token] ?? [];
+
+          // Resolve timestamps for all events.
+          const timestamps = await this.resolveEventTimestamps(initiationEvents, finalizationEvents);
+
+          // Trim events to the window.
+          const windowedInitiations = initiationEvents.filter((e) => timestamps.get(e)! >= windowStartTimestamp);
+          const windowedFinalizations = finalizationEvents.filter((e) => timestamps.get(e)! >= windowStartTimestamp);
+
+          // Match transfers by amount + temporal ordering.
+          const unmatchedInitiations = this.matchTransfers(
+            windowedInitiations,
+            windowedFinalizations,
+            timestamps,
+            warnAfterTimestamp
+          );
+
+          const totalAmount = unmatchedInitiations.reduce((acc, event) => acc.add(event.amount), bnZero);
           assign(outstandingTransfers, [monitoredAddress.toNative(), l1Token.toNative(), l2Token], {
-            totalAmount: _totalAmount.gt(bnZero) ? _totalAmount : bnZero,
-            depositTxHashes: outstandingInitiatedEvents.map((event) => event.txnRef),
+            totalAmount,
+            depositTxHashes: unmatchedInitiations.map((event) => event.txnRef),
           });
-        });
-      });
-    });
+        }
+      }
+    }
 
     return outstandingTransfers;
   }

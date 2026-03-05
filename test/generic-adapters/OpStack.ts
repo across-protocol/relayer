@@ -63,6 +63,17 @@ class TestBaseChainAdapter extends BaseChainAdapter {
     this.bridges[address].cctpBridge.l1Bridge = cctpBridge;
     this.bridges[address].cctpBridge.l2Bridge = cctpBridge;
   }
+
+  // Override to bypass timestamp-based block lookups in test environment (no real block finder).
+  // Uses the original search configs with windowStartTimestamp=0 so all events pass the trim.
+  protected async computeTimestampAlignedSearchConfigs(): Promise<{
+    l1SearchConfig: utils.EventSearchConfig;
+    l2SearchConfig: utils.EventSearchConfig;
+    windowStartTimestamp: number;
+  }> {
+    const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
+    return { l1SearchConfig, l2SearchConfig, windowStartTimestamp: 0 };
+  }
 }
 
 describe("Cross Chain Adapter: OP Stack", async function () {

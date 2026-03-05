@@ -61,6 +61,15 @@ class TestBaseChainAdapter extends BaseChainAdapter {
   public setNativeTokenVault(address: string, bridge: Contract) {
     this.bridges[address].nativeTokenVault = bridge;
   }
+
+  protected async computeTimestampAlignedSearchConfigs(): Promise<{
+    l1SearchConfig: utils.EventSearchConfig;
+    l2SearchConfig: utils.EventSearchConfig;
+    windowStartTimestamp: number;
+  }> {
+    const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
+    return { l1SearchConfig, l2SearchConfig, windowStartTimestamp: 0 };
+  }
 }
 
 class TestZkSyncWethBridge extends ZKStackWethBridge {

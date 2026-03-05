@@ -1,4 +1,5 @@
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
+import { utils } from "@across-protocol/sdk";
 import { EVMSpokePoolClient } from "../../src/clients";
 import { BaseChainAdapter } from "../../src/adapter";
 import { ArbitrumOrbitBridge, UsdcTokenSplitterBridge } from "../../src/adapter/bridges";
@@ -38,6 +39,15 @@ class ArbitrumAdapter extends BaseChainAdapter {
 
   setCCTPL2Bridge(address: string, bridge: Contract) {
     this.bridges[address].cctpBridge.l2Bridge = bridge;
+  }
+
+  protected async computeTimestampAlignedSearchConfigs(): Promise<{
+    l1SearchConfig: utils.EventSearchConfig;
+    l2SearchConfig: utils.EventSearchConfig;
+    windowStartTimestamp: number;
+  }> {
+    const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
+    return { l1SearchConfig, l2SearchConfig, windowStartTimestamp: 0 };
   }
 }
 

@@ -252,4 +252,13 @@ class MockBaseChainAdapter extends BaseChainAdapter {
     this.spokePoolManager.getClient(this.hubChainId).latestHeightSearched = blockNumber;
     this.spokePoolManager.getClient(this.chainId).latestHeightSearched = blockNumber;
   }
+
+  protected async computeTimestampAlignedSearchConfigs(): Promise<{
+    l1SearchConfig: utils.EventSearchConfig;
+    l2SearchConfig: utils.EventSearchConfig;
+    windowStartTimestamp: number;
+  }> {
+    const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
+    return { l1SearchConfig, l2SearchConfig, windowStartTimestamp: 0 };
+  }
 }
