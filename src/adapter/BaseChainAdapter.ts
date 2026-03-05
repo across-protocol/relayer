@@ -34,6 +34,7 @@ import {
   stringifyThrownValue,
   ZERO_BYTES,
   isEVMSpokePoolClient,
+  isSVMSpokePoolClient,
   EvmAddress,
   chainIsEvm,
   sendAndConfirmSolanaTransaction,
@@ -515,7 +516,7 @@ export class BaseChainAdapter {
 
   /**
    * Resolve block-number-based timestamps for a set of bridge events across two chains.
-   * Deduplicates block numbers to minimize RPC calls.
+   * Deduplicates block numbers to minimize RPC calls. Handles both EVM and SVM chains.
    */
   private async resolveEventTimestamps(
     l1Events: BridgeEvent[],
@@ -524,18 +525,32 @@ export class BaseChainAdapter {
     const l1Client = this.spokePoolManager.getClient(this.hubChainId);
     const l2Client = this.spokePoolManager.getClient(this.chainId);
     assert(isDefined(l1Client) && isEVMSpokePoolClient(l1Client));
-    assert(isDefined(l2Client) && isEVMSpokePoolClient(l2Client));
+    assert(isDefined(l2Client));
     const l1Provider = l1Client.spokePool.provider;
-    const l2Provider = l2Client.spokePool.provider;
 
     // Collect unique block numbers per chain.
     const l1Blocks = [...new Set(l1Events.map((e) => e.blockNumber))];
     const l2Blocks = [...new Set(l2Events.map((e) => e.blockNumber))];
 
-    const [l1Timestamps, l2Timestamps] = await Promise.all([
-      Promise.all(l1Blocks.map((b) => getTimestampForBlock(l1Provider, b))),
-      Promise.all(l2Blocks.map((b) => getTimestampForBlock(l2Provider, b))),
-    ]);
+    // Resolve L1 timestamps (always EVM).
+    const l1Timestamps = await Promise.all(l1Blocks.map((b) => getTimestampForBlock(l1Provider, b)));
+
+    // Resolve L2 timestamps — handle EVM and SVM differently.
+    let l2Timestamps: number[];
+    if (isEVMSpokePoolClient(l2Client)) {
+      l2Timestamps = await Promise.all(l2Blocks.map((b) => getTimestampForBlock(l2Client.spokePool.provider, b)));
+    } else if (isSVMSpokePoolClient(l2Client)) {
+      const rpc = l2Client.svmEventsClient.getRpc();
+      l2Timestamps = await Promise.all(
+        l2Blocks.map(async (slot) => {
+          const blockTime = await rpc.getBlockTime(BigInt(slot) as Parameters<typeof rpc.getBlockTime>[0]).send();
+          assert(blockTime !== null, `No block time for Solana slot ${slot}`);
+          return Number(blockTime);
+        })
+      );
+    } else {
+      throw new Error(`Unsupported spoke pool client type for chain ${this.chainId}`);
+    }
 
     const l1BlockToTs = new Map(l1Blocks.map((b, i) => [b, l1Timestamps[i]]));
     const l2BlockToTs = new Map(l2Blocks.map((b, i) => [b, l2Timestamps[i]]));
