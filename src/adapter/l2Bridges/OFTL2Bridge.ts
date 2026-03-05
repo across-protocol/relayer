@@ -15,6 +15,7 @@ import {
   fixedPointAdjustment,
   chainHasNativeToken,
   isDefined,
+  CHAIN_IDs,
 } from "../../utils";
 import { interfaces as sdkInterfaces } from "@across-protocol/sdk";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
@@ -184,6 +185,12 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
     return outstandingWithdrawalAmount;
   }
 
+  public pendingWithdrawalLookbackPeriodSeconds(): number {
+    if (this.l2ChainEid === CHAIN_IDs.HYPEREVM) {
+      return 25 * 60 * 60; // USDT0 from HyperEVM is a special case taking ~24 hours to finalize.
+    }
+    return super.pendingWithdrawalLookbackPeriodSeconds();
+  }
   /**
    * Rounds send amount so that dust doesn't get subtracted from it in the OFT contract.
    * @param amount amount to round
