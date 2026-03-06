@@ -13,6 +13,8 @@ import {
 } from "../../utils";
 import { TransferTokenParams } from "../utils";
 
+const DEFAULT_PENDING_WITHDRAWAL_LOOKBACK_PERIOD_SECONDS = 7200;
+
 export abstract class BaseL2BridgeAdapter {
   protected l2Bridge: Contract;
   protected l1Bridge: Contract;
@@ -37,6 +39,10 @@ export abstract class BaseL2BridgeAdapter {
     } else {
       this.svmProvider = l2SignerOrSvmProvider satisfies SVMProvider;
     }
+  }
+
+  public pendingWithdrawalLookbackPeriodSeconds(): number {
+    return DEFAULT_PENDING_WITHDRAWAL_LOOKBACK_PERIOD_SECONDS;
   }
 
   abstract constructWithdrawToL1Txns(

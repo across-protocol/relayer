@@ -23,6 +23,7 @@ import {
   Provider,
   Signer,
   isDefined,
+  getSpeedProvider,
 } from "../utils";
 import { DEFAULT_GAS_FEE_SCALERS } from "../common";
 import { FeeData } from "@ethersproject/abstract-provider";
@@ -56,6 +57,9 @@ export interface AugmentedTransaction {
   nonMulticall?: boolean;
   // Flag indicating whether the client should await the transaction response for onchain confirmation.
   ensureConfirmation?: boolean;
+  // If true, the contract's provider will be replaced with the TransactionClient's SpeedProvider for
+  // this chain (if configured), enabling parallel multi-RPC dispatch for faster submission.
+  spray?: boolean;
 }
 
 const { fixedPointAdjustment: fixedPoint } = sdkUtils;
@@ -171,10 +175,17 @@ export class TransactionClient {
     // advanced nonce management may permit them to be submitted in parallel.
     let mrkdwn = "";
     for (let idx = 0; idx < txns.length; ++idx) {
-      const txn = txns[idx];
+      let txn = txns[idx];
 
       if (txn.chainId !== chainId) {
         throw new Error(`chainId mismatch for method ${txn.method} (${txn.chainId} !== ${chainId})`);
+      }
+
+      // If spray is set, transmute the contract's signer.provider to a SpeedProvider built from
+      // all env-configured RPC endpoints, then reconnect the contract through it.
+      if (txn.spray) {
+        const speedProvider = getSpeedProvider(chainId, this.logger);
+        txn = { ...txn, contract: txn.contract.connect(txn.contract.signer.connect(speedProvider)) };
       }
 
       const signerAddr = await txn.contract.signer.getAddress();

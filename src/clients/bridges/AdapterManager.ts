@@ -214,7 +214,14 @@ export class AdapterManager {
     return txnReceipts;
   }
 
-  async getL2PendingWithdrawalAmount(
+  /**
+   * @notice Call this function to get the total withdrawal amount for a given lookback period. If you want the
+   * to know the total pending withdrawal amount regardless of the lookback period, use the getTotalPendingWithdrawalAmount() function,
+   * which defaults to the L2 bridge's recommended lookback period seconds.
+   * @param withdrawExcessPeriod Lookback period in seconds.
+   * @returns Total pending withdrawal amount for the given lookback period.
+   */
+  async getL2PendingWithdrawalAmountWithLookbackPeriod(
     lookbackPeriodSeconds: number,
     chainId: number | string,
     fromAddress: Address,
@@ -224,8 +231,13 @@ export class AdapterManager {
     return await this.adapters[chainId].getL2PendingWithdrawalAmount(lookbackPeriodSeconds, fromAddress, l2Token);
   }
 
+  /**
+   * @notice Call this function to get the total pending withdrawal amount for a given L1 token and from address.
+   * @dev This function will lookback long enough to see all pending withdrawals.
+   * @param chainsToEvaluate List of chain IDs to evaluate.
+   * @returns Total pending withdrawal amount for all chains.
+   */
   async getTotalPendingWithdrawalAmount(
-    lookbackPeriodSeconds: number,
     l2ChainIds: number[],
     fromAddress: Address,
     l1Token: EvmAddress
@@ -247,6 +259,9 @@ export class AdapterManager {
         const l2Token = this.l2TokenForL1Token(l1Token, chainId);
         const l2TokenInfo = getTokenInfo(l2Token, chainId);
         const l2ToL1DecimalConverter = utils.ConvertDecimals(l2TokenInfo.decimals, l1TokenInfo.decimals);
+        // Use the adapter's recommended lookback period seconds to capture all pending withdrawals, even those that
+        // are several days old but sent on the ORU 7 day bridges.
+        const lookbackPeriodSeconds = await this.adapters[chainId].getL2PendingWithdrawalLookbackPeriodSeconds(l2Token);
         const pendingAmount = await this.adapters[chainId].getL2PendingWithdrawalAmount(
           lookbackPeriodSeconds,
           fromAddress,

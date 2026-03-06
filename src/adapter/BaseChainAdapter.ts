@@ -334,6 +334,16 @@ export class BaseChainAdapter {
     return txnSignatures;
   }
 
+  async getL2PendingWithdrawalLookbackPeriodSeconds(l2Token: Address): Promise<number> {
+    const l1Token = getL1TokenAddress(l2Token, this.chainId);
+    if (!this.isSupportedL2Bridge(l1Token)) {
+      return -1;
+    }
+    const l2Bridge = this.l2Bridges[l1Token.toNative()];
+    const lookbackPeriodSeconds = l2Bridge.pendingWithdrawalLookbackPeriodSeconds();
+    return lookbackPeriodSeconds;
+  }
+
   async getL2PendingWithdrawalAmount(
     lookbackPeriodSeconds: number,
     fromAddress: Address,
