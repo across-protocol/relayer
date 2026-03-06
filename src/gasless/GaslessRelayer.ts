@@ -606,7 +606,8 @@ export class GaslessRelayer {
             const txnReceipt = await this.initiateGaslessDeposit(depositMessage);
             if (isDefined(txnReceipt)) {
               deposit = this._extractDepositFromTransactionReceipt(txnReceipt, originChainId);
-              log("info", `Completed deposit submission on ${origin}.`);
+              const tDeposit = performance.now();
+              log("info", `Completed deposit submission on ${origin} in ${(tDeposit - tStart) / 1000}s.`);
             }
 
             deposit ??= await this._findDeposit(originChainId, inputToken, authorizer, nonce);
