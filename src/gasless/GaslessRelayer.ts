@@ -735,7 +735,7 @@ export class GaslessRelayer {
       });
       this.logger.debug({
         at: "GaslessRelayer#initiateGaslessDeposit",
-        message: "Failed to submit gasless deposit debug information",
+        message: "Failed to submit gasless deposit. Debug information:",
         depositMessage,
         depositTx: gaslessDeposit,
       });
