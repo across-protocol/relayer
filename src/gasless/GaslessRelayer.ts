@@ -733,6 +733,12 @@ export class GaslessRelayer {
         inputToken,
         inputAmount,
       });
+      this.logger.debug({
+        at: "GaslessRelayer#initiateGaslessDeposit",
+        message: "Failed to submit gasless deposit debug information",
+        depositMessage,
+        depositTx: gaslessDeposit,
+      });
     }
     return txReceipt;
   }
