@@ -127,4 +127,5 @@ export interface GaslessDepositMessage {
   submissionFees: Fees;
   spokePool: string;
   nonce: string;
+  integratorId?: string;
 }

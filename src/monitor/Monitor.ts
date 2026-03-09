@@ -1282,15 +1282,16 @@ export class Monitor {
       // getTotalPendingWithdrawalAmount() async call is getting rate limited by the Binance API.
       // We should add more rate limiting or retry logic to this call.
     );
+    const allPendingWithdrawalBalances: { [l1Token: string]: { [chainId: number]: BigNumber } } = {};
     await Promise.all(
       allL1Tokens.map(async (l1Token) => {
         const pendingWithdrawalBalances =
           await this.clients.crossChainTransferClient.adapterManager.getTotalPendingWithdrawalAmount(
-            7200,
             supportedChains,
             relayer,
             l1Token.address
           );
+        allPendingWithdrawalBalances[l1Token.symbol] = pendingWithdrawalBalances;
         for (const _chainId of Object.keys(pendingWithdrawalBalances)) {
           const chainId = Number(_chainId);
           if (pendingWithdrawalBalances[chainId].eq(bnZero)) {
@@ -1316,6 +1317,11 @@ export class Monitor {
         }
       })
     );
+    this.logger.debug({
+      at: "Monitor#updatePendingL2Withdrawals",
+      message: "Updated pending L2->L1 withdrawals",
+      allPendingWithdrawalBalances,
+    });
   }
 
   async updatePendingRebalances(relayer: Address, relayerBalanceTable: RelayerBalanceTable): Promise<void> {

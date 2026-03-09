@@ -3,7 +3,7 @@ import { BigNumber, EvmAddress, winston, CHAIN_IDs } from "../utils";
 import { SWAP_ROUTES, SwapRoute } from "../common";
 import { BaseAcrossApiClient } from "./AcrossApiBaseClient";
 
-interface SwapApiResponse {
+export interface SwapApiResponse {
   approvalTxns?: {
     chainId: number;
     to: string;
@@ -35,9 +35,8 @@ interface SwapData {
 export class AcrossSwapApiClient extends BaseAcrossApiClient {
   private routesSupported: Set<SwapRoute> = new Set(Object.values(SWAP_ROUTES));
 
-  constructor(logger: winston.Logger, timeoutMs = 3000) {
-    // Swap API is mainnet-only.
-    super(logger, `https://${getAcrossHost(CHAIN_IDs.MAINNET)}/api`, "AcrossSwapApiClient", timeoutMs);
+  constructor(logger: winston.Logger, timeoutMs = 3000, apiKey?: string) {
+    super(logger, `https://${getAcrossHost(CHAIN_IDs.MAINNET)}/api`, "AcrossSwapApiClient", timeoutMs, apiKey);
   }
 
   /**

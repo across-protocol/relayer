@@ -249,6 +249,13 @@ export const CONTRACT_ADDRESSES: {
       address: "0x767e4c20F521a829dE4Ffc40C25176676878147f",
       abi: SPOKE_POOL_PERIPHERY_ABI,
     },
+    counterfactualDepositFactory: {
+      address: "0x3C52FaB463B155F61C58Ac2a1057718377861b79",
+      abi: COUNTERFACTUAL_DEPOSIT_FACTORY_ABI,
+    },
+    counterfactualDeposit: {
+      address: "0x2ddc52436c1803eba27d2e7d76bea5512b91d3c0",
+    },
   },
   [CHAIN_IDs.MONAD]: {
     cctpV2MessageTransmitter: {
@@ -479,6 +486,13 @@ export const CONTRACT_ADDRESSES: {
       address: "0x767e4c20F521a829dE4Ffc40C25176676878147f",
       abi: SPOKE_POOL_PERIPHERY_ABI,
     },
+    counterfactualDepositFactory: {
+      address: "0x38814a7F5eFe2389859e46329478E7Ae968C1bE7",
+      abi: COUNTERFACTUAL_DEPOSIT_FACTORY_ABI,
+    },
+    counterfactualDeposit: {
+      address: "0xf4345e55bdb653E58Afec5Ee89E6b8489412C954",
+    },
   },
   [CHAIN_IDs.MODE]: {
     ovmStandardBridge: {
@@ -574,6 +588,9 @@ export const CONTRACT_ADDRESSES: {
     counterfactualDepositFactory: {
       address: "0xA157CB19a8C3061D9bbce11Ad08129bEe70988FE",
       abi: COUNTERFACTUAL_DEPOSIT_FACTORY_ABI,
+    },
+    counterfactualDeposit: {
+      address: "0x654321F334b949A48c710E80b35334A4047d10B1",
     },
   },
   [CHAIN_IDs.LENS]: {

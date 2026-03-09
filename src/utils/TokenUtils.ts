@@ -42,7 +42,10 @@ export function getNativeTokenInfoForChain(
   address: string;
   decimals: number;
 } {
-  const symbol = utils.getNativeTokenSymbol(chainId);
+  const remappings = {
+    [CHAIN_IDs.TEMPO]: "USDC.e",
+  };
+  const symbol = remappings[chainId] ?? utils.getNativeTokenSymbol(chainId);
   const token = TOKEN_SYMBOLS_MAP[symbol];
   if (!isDefined(symbol) || !isDefined(token)) {
     throw new Error(`Unable to resolve native token for chain ID ${chainId}`);
