@@ -35,6 +35,7 @@ import {
   ConvertDecimals,
   assert,
   InstanceCoordinator,
+  MAX_UINT_VAL,
 } from "../utils";
 import {
   APIGaslessDepositResponse,
@@ -592,7 +593,8 @@ export class GaslessRelayer {
               inputAmount,
               destinationChainId,
               outputToken,
-              outputAmount
+              outputAmount,
+              this.config.refundFlowTestEnabled
             );
             if (!valid) {
               log("warn", `Rejected malformed deposit destined for ${origin}.`);
@@ -625,7 +627,7 @@ export class GaslessRelayer {
             let fillStatus: FillStatus;
 
             const txnReceipt = await this.initiateFill(deposit);
-            if (isDefined(txnReceipt)) {
+            if (isDefined(txnReceipt) || (this.config.refundFlowTestEnabled && deposit.outputAmount.eq(MAX_UINT_VAL))) {
               log("info", `Completed fill on ${destination} for ${origin} deposit.`);
               fillStatus = FillStatus.Filled;
             }
@@ -755,6 +757,14 @@ export class GaslessRelayer {
     const outputTokenInfo = getTokenInfo(outputToken, destinationChainId);
     const inputTokenInfo = getTokenInfo(inputToken, originChainId);
     const inputAmountInOutputDecimals = ConvertDecimals(inputTokenInfo.decimals, outputTokenInfo.decimals)(inputAmount);
+    if (this.config.refundFlowTestEnabled && outputAmount.eq(MAX_UINT_VAL)) {
+      this.logger.info({
+        at: "GaslessRelayer#initiateFill",
+        message: "Refund flow test: skipping fill (deposit already made).",
+        depositId,
+      });
+      return null;
+    }
     assert(inputAmountInOutputDecimals.gte(outputAmount), "Cannot fill deposit with outputAmount > inputAmount");
     // We should also never fill a deposit with mismatching input/output tokens.
     const inputTokenL1Address = getL1TokenAddress(inputToken, originChainId);
