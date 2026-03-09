@@ -592,7 +592,8 @@ export class GaslessRelayer {
               inputAmount,
               destinationChainId,
               outputToken,
-              outputAmount
+              outputAmount,
+              this.config.refundFlowTestEnabled
             );
             if (!valid) {
               log("warn", `Rejected malformed deposit destined for ${origin}.`);

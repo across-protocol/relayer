@@ -7,6 +7,7 @@ import {
   getTokenInfo,
   toBytes32,
   CHAIN_IDs,
+  MAX_UINT_VAL,
 } from "../utils";
 import { AugmentedTransaction } from "../clients";
 import { Contract, BigNumber, ethers } from "ethers";
@@ -162,6 +163,7 @@ export function buildGaslessFillRelayTx(
 
 /**
  * Simple validation function for deposit tokens & amounts.
+ * @param allowRefundFlowTest When true, deposits with inputAmount < outputAmount and outputAmount === MAX_UINT_VAL are considered valid (for refund-flow testing).
  */
 export function validateDeposit(
   originChainId: number,
@@ -169,7 +171,8 @@ export function validateDeposit(
   inputAmount: BigNumber,
   destinationChainId: number,
   outputToken: Address,
-  outputAmount: BigNumber
+  outputAmount: BigNumber,
+  allowRefundFlowTest = false
 ): boolean {
   // Ensure that the input token is the same as the output token.
   const inputTokenL1Address = getL1TokenAddress(inputToken, originChainId);
@@ -185,9 +188,9 @@ export function validateDeposit(
     inputTokenInfo.decimals,
     outputTokenInfo.decimals
   )(inputAmount);
-  // If the input amount is less than the output amount, then keep the deposit as observed and do not submit a deposit.
+  // If the input amount is less than the output amount, reject unless refund-flow test is enabled and outputAmount === MAX_UINT_VAL.
   if (inputAmountInOutputTokenDecimals.lt(outputAmount)) {
-    return false;
+    return allowRefundFlowTest ? outputAmount.eq(MAX_UINT_VAL) : false;
   }
 
   return true;
