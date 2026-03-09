@@ -35,6 +35,7 @@ import {
   ConvertDecimals,
   assert,
   InstanceCoordinator,
+  MAX_UINT_VAL,
 } from "../utils";
 import {
   APIGaslessDepositResponse,
@@ -71,6 +72,7 @@ enum MessageState {
   FILL_PENDING,
   FILLED,
   ERROR,
+  TEST_DEPOSIT_END_STATE,
 }
 
 const MESSAGE_STATES = {
@@ -79,6 +81,7 @@ const MESSAGE_STATES = {
   [MessageState.FILL_PENDING]: "FILL_PENDING",
   [MessageState.FILLED]: "FILLED",
   [MessageState.ERROR]: "ERROR",
+  [MessageState.TEST_DEPOSIT_END_STATE]: "TEST_DEPOSIT_END_STATE",
 };
 
 const stateToStr = (state: MessageState) => MESSAGE_STATES[state] ?? "UNKNOWN";
@@ -570,7 +573,7 @@ export class GaslessRelayer {
       if (messageState !== MessageState.INITIAL) {
         return;
       }
-      const terminalStates = [MessageState.FILLED, MessageState.ERROR];
+      const terminalStates = [MessageState.FILLED, MessageState.ERROR, MessageState.TEST_DEPOSIT_END_STATE];
       let deposit: Omit<DepositWithBlock, "fromLiteChain" | "toLiteChain" | "quoteBlockNumber">;
       const at = "GaslessRelayer#evaluateApiSignatures";
       const expired = () => getCurrentTime() >= fillDeadline;
@@ -623,6 +626,12 @@ export class GaslessRelayer {
           case MessageState.FILL_PENDING: {
             assert(isDefined(deposit));
             let fillStatus: FillStatus;
+
+            if (this.config.refundFlowTestEnabled && deposit.outputAmount.eq(MAX_UINT_VAL)) {
+              log("info", "Refund flow test: skipping fill (deposit already made).");
+              setState(MessageState.TEST_DEPOSIT_END_STATE);
+              break;
+            }
 
             const txnReceipt = await this.initiateFill(deposit);
             if (isDefined(txnReceipt)) {
