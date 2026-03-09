@@ -72,6 +72,7 @@ enum MessageState {
   FILL_PENDING,
   FILLED,
   ERROR,
+  // When the refund-flow test is enabled, this state is used to indicate that the deposit has been made and the fill should be skipped.
   TEST_DEPOSIT_END_STATE,
 }
 
