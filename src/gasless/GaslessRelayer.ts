@@ -72,8 +72,6 @@ enum MessageState {
   FILL_PENDING,
   FILLED,
   ERROR,
-  // When the refund-flow test is enabled, this state is used to indicate that the deposit has been made and the fill should be skipped.
-  TEST_DEPOSIT_END_STATE,
 }
 
 const MESSAGE_STATES = {
@@ -82,7 +80,6 @@ const MESSAGE_STATES = {
   [MessageState.FILL_PENDING]: "FILL_PENDING",
   [MessageState.FILLED]: "FILLED",
   [MessageState.ERROR]: "ERROR",
-  [MessageState.TEST_DEPOSIT_END_STATE]: "TEST_DEPOSIT_END_STATE",
 };
 
 const stateToStr = (state: MessageState) => MESSAGE_STATES[state] ?? "UNKNOWN";
@@ -574,7 +571,7 @@ export class GaslessRelayer {
       if (messageState !== MessageState.INITIAL) {
         return;
       }
-      const terminalStates = [MessageState.FILLED, MessageState.ERROR, MessageState.TEST_DEPOSIT_END_STATE];
+      const terminalStates = [MessageState.FILLED, MessageState.ERROR];
       let deposit: Omit<DepositWithBlock, "fromLiteChain" | "toLiteChain" | "quoteBlockNumber">;
       const at = "GaslessRelayer#evaluateApiSignatures";
       const expired = () => getCurrentTime() >= fillDeadline;
@@ -628,14 +625,8 @@ export class GaslessRelayer {
             assert(isDefined(deposit));
             let fillStatus: FillStatus;
 
-            if (this.config.refundFlowTestEnabled && deposit.outputAmount.eq(MAX_UINT_VAL)) {
-              log("info", "Refund flow test: skipping fill (deposit already made).");
-              setState(MessageState.TEST_DEPOSIT_END_STATE);
-              break;
-            }
-
             const txnReceipt = await this.initiateFill(deposit);
-            if (isDefined(txnReceipt)) {
+            if (isDefined(txnReceipt) || (this.config.refundFlowTestEnabled && deposit.outputAmount.eq(MAX_UINT_VAL))) {
               log("info", `Completed fill on ${destination} for ${origin} deposit.`);
               fillStatus = FillStatus.Filled;
             }
@@ -760,6 +751,14 @@ export class GaslessRelayer {
     const outputTokenInfo = getTokenInfo(outputToken, destinationChainId);
     const inputTokenInfo = getTokenInfo(inputToken, originChainId);
     const inputAmountInOutputDecimals = ConvertDecimals(inputTokenInfo.decimals, outputTokenInfo.decimals)(inputAmount);
+    if (this.config.refundFlowTestEnabled && outputAmount.eq(MAX_UINT_VAL)) {
+      this.logger.info({
+        at: "GaslessRelayer#initiateFill",
+        message: "Refund flow test: skipping fill (deposit already made).",
+        depositId,
+      });
+      return null;
+    }
     assert(inputAmountInOutputDecimals.gte(outputAmount), "Cannot fill deposit with outputAmount > inputAmount");
     // We should also never fill a deposit with mismatching input/output tokens.
     const inputTokenL1Address = getL1TokenAddress(inputToken, originChainId);
