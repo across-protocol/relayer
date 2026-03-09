@@ -737,7 +737,6 @@ export class GaslessRelayer {
         at: "GaslessRelayer#initiateGaslessDeposit",
         message: "Failed to submit gasless deposit. Debug information:",
         depositMessage,
-        depositTx: gaslessDeposit,
       });
     }
     return txReceipt;
