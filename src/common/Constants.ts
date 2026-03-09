@@ -41,6 +41,7 @@ import {
   BinanceCEXNativeBridge,
   SolanaUsdcCCTPBridge,
   OFTWethBridge,
+  BridgeApi,
 } from "../adapter/bridges";
 import {
   BaseL2BridgeAdapter,
@@ -51,6 +52,7 @@ import {
   UsdcCCTPBridge as L2UsdcCCTPBridge,
   BinanceCEXNativeBridge as L2BinanceCEXNativeBridge,
   SolanaUsdcCCTPBridge as L2SolanaUsdcCCTPBridge,
+  BridgeApi as L2BridgeApi,
 } from "../adapter/l2Bridges";
 import { CONTRACT_ADDRESSES } from "./ContractAddresses";
 import { HyperlaneXERC20Bridge } from "../adapter/bridges/HyperlaneXERC20Bridge";
@@ -385,7 +387,7 @@ export const TOKEN_APPROVALS_TO_FIRST_ZERO: Record<number, string[]> = {
 };
 
 // Type alias for a function which takes in arbitrary arguments and outputs a BaseBridgeAdapter class.
-type L1BridgeConstructor<T extends BaseBridgeAdapter> = new (
+export type L1BridgeConstructor<T extends BaseBridgeAdapter> = new (
   l2chainId: number,
   hubChainId: number,
   l1Signer: Signer,
@@ -523,6 +525,7 @@ export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<Ba
   },
   [CHAIN_IDs.TEMPO]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: OFTBridge,
+    [TOKEN_SYMBOLS_MAP.pathUSD.addresses[CHAIN_IDs.TEMPO]]: BridgeApi,
   },
   [CHAIN_IDs.UNICHAIN]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcCCTPBridge,
@@ -641,6 +644,7 @@ export const CUSTOM_L2_BRIDGE: Record<number, Record<string, L2BridgeConstructor
   },
   [CHAIN_IDs.TEMPO]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: OFTL2Bridge,
+    [TOKEN_SYMBOLS_MAP.pathUSD.addresses[CHAIN_IDs.TEMPO]]: L2BridgeApi,
   },
   [CHAIN_IDs.UNICHAIN]: {
     [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20BridgeL2,
