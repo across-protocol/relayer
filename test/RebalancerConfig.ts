@@ -7,6 +7,26 @@ describe("RebalancerConfig", () => {
   const READABLE_EXTERNAL_CONFIG_PATH = join(__dirname, "..", "package.json");
   const MISSING_EXTERNAL_CONFIG_PATH = join(__dirname, "fixtures", "does-not-exist.rebalancer.json");
 
+  function buildCumulativeTargetBalanceConfig(
+    targetBalance: string,
+    thresholdBalanceLower: string,
+    deficitPriorityTier: number,
+    rebalanceRoutePreferencesConfig: { sortedExcessSinks: number[]; sortedDeficitSources: number[] },
+    excessPriorityTier = deficitPriorityTier,
+    thresholdBalanceUpper = targetBalance
+  ) {
+    return {
+      targetBalanceConfig: {
+        targetBalance,
+        thresholdBalanceLower,
+        thresholdBalanceUpper,
+        deficitPriorityTier,
+        excessPriorityTier,
+      },
+      rebalanceRoutePreferencesConfig,
+    };
+  }
+
   function makeEnv(overrides: Record<string, string | undefined> = {}): { [key: string]: string | undefined } {
     return {
       HUB_CHAIN_ID: "1",
@@ -18,22 +38,25 @@ describe("RebalancerConfig", () => {
     const env = makeEnv({
       REBALANCER_CONFIG: JSON.stringify({
         cumulativeTargetBalances: {
-          USDC: {
-            targetBalance: "100",
-            thresholdBalance: "90",
-            priorityTier: 2,
-            chains: { 1: 0, 10: 1 },
-          },
+          USDC: buildCumulativeTargetBalanceConfig("100", "90", 2, {
+            sortedExcessSinks: [1, 10],
+            sortedDeficitSources: [1, 10],
+          }),
         },
       }),
     });
 
     const config = new RebalancerConfig(env);
 
-    expect(config.cumulativeTargetBalances.USDC.targetBalance).to.equal(toBNWei("100", 6));
-    expect(config.cumulativeTargetBalances.USDC.thresholdBalance).to.equal(toBNWei("90", 6));
-    expect(config.cumulativeTargetBalances.USDC.priorityTier).to.equal(2);
-    expect(config.cumulativeTargetBalances.USDC.chains).to.deep.equal({ 1: 0, 10: 1 });
+    expect(config.cumulativeTargetBalances.USDC.targetBalanceConfig.targetBalance).to.equal(toBNWei("100", 6));
+    expect(config.cumulativeTargetBalances.USDC.targetBalanceConfig.thresholdBalanceLower).to.equal(toBNWei("90", 6));
+    expect(config.cumulativeTargetBalances.USDC.targetBalanceConfig.thresholdBalanceUpper).to.equal(toBNWei("100", 6));
+    expect(config.cumulativeTargetBalances.USDC.targetBalanceConfig.deficitPriorityTier).to.equal(2);
+    expect(config.cumulativeTargetBalances.USDC.targetBalanceConfig.excessPriorityTier).to.equal(2);
+    expect(config.cumulativeTargetBalances.USDC.rebalanceRoutePreferencesConfig).to.deep.equal({
+      sortedExcessSinks: [1, 10],
+      sortedDeficitSources: [1, 10],
+    });
   });
 
   it("throws on invalid config json string", () => {
@@ -48,18 +71,14 @@ describe("RebalancerConfig", () => {
     const env = makeEnv({
       REBALANCER_CONFIG: JSON.stringify({
         cumulativeTargetBalances: {
-          DAI: {
-            targetBalance: "50",
-            thresholdBalance: "40",
-            priorityTier: 1,
-            chains: { 1: 0, 137: 2 },
-          },
-          USDC: {
-            targetBalance: "100",
-            thresholdBalance: "90",
-            priorityTier: 0,
-            chains: { 10: 1 },
-          },
+          DAI: buildCumulativeTargetBalanceConfig("50", "40", 1, {
+            sortedExcessSinks: [1],
+            sortedDeficitSources: [137],
+          }),
+          USDC: buildCumulativeTargetBalanceConfig("100", "90", 0, {
+            sortedExcessSinks: [10],
+            sortedDeficitSources: [],
+          }),
         },
       }),
     });
@@ -73,18 +92,14 @@ describe("RebalancerConfig", () => {
     const env = makeEnv({
       REBALANCER_CONFIG: JSON.stringify({
         cumulativeTargetBalances: {
-          USDC: {
-            targetBalance: "100",
-            thresholdBalance: "90",
-            priorityTier: 0,
-            chains: { 1: 0, 10: 1 },
-          },
-          DAI: {
-            targetBalance: "100",
-            thresholdBalance: "90",
-            priorityTier: 0,
-            chains: { 1: 0, 10: 1 },
-          },
+          USDC: buildCumulativeTargetBalanceConfig("100", "90", 0, {
+            sortedExcessSinks: [1],
+            sortedDeficitSources: [10],
+          }),
+          DAI: buildCumulativeTargetBalanceConfig("100", "90", 0, {
+            sortedExcessSinks: [1],
+            sortedDeficitSources: [10],
+          }),
         },
         maxAmountsToTransfer: {
           USDC: "1000",
@@ -123,17 +138,15 @@ describe("RebalancerConfig", () => {
     const env = makeEnv({
       REBALANCER_CONFIG: JSON.stringify({
         cumulativeTargetBalances: {
-          USDC: {
-            targetBalance: "100",
-            thresholdBalance: "101",
-            priorityTier: 0,
-            chains: { 1: 0 },
-          },
+          USDC: buildCumulativeTargetBalanceConfig("100", "101", 0, {
+            sortedExcessSinks: [1],
+            sortedDeficitSources: [],
+          }),
         },
       }),
     });
 
-    expect(() => new RebalancerConfig(env)).to.throw("thresholdBalance<=targetBalance");
+    expect(() => new RebalancerConfig(env)).to.throw("thresholdBalanceLower<=targetBalance<=thresholdBalanceUpper");
   });
 
   it("throws when required fields are missing from cumulativeTargetBalances", () => {
@@ -141,16 +154,22 @@ describe("RebalancerConfig", () => {
       REBALANCER_CONFIG: JSON.stringify({
         cumulativeTargetBalances: {
           USDC: {
-            targetBalance: "100",
-            thresholdBalance: "90",
-            chains: { 1: 0 },
+            targetBalanceConfig: {
+              targetBalance: "100",
+              thresholdBalanceLower: "90",
+              thresholdBalanceUpper: "100",
+            },
+            rebalanceRoutePreferencesConfig: {
+              sortedExcessSinks: [1],
+              sortedDeficitSources: [1],
+            },
           },
         },
       }),
     });
 
     expect(() => new RebalancerConfig(env)).to.throw(
-      "Must specify targetBalance, thresholdBalance, priorityTier for USDC for cumulative target balance"
+      "Must specify targetBalance, thresholdBalanceLower, thresholdBalanceUpper, deficitPriorityTier, excessPriorityTier for USDC for cumulative target balance"
     );
   });
 
@@ -208,12 +227,10 @@ describe("RebalancerConfig", () => {
     const env = makeEnv({
       REBALANCER_CONFIG: JSON.stringify({
         cumulativeTargetBalances: {
-          USDC: {
-            targetBalance: "1",
-            thresholdBalance: "0.5",
-            priorityTier: 0,
-            chains: { 1: 0 },
-          },
+          USDC: buildCumulativeTargetBalanceConfig("1", "0.5", 0, {
+            sortedExcessSinks: [1],
+            sortedDeficitSources: [],
+          }),
         },
         maxAmountsToTransfer: {
           INVALID_TOKEN: "1000",

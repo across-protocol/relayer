@@ -44,7 +44,7 @@ import { assert, BigNumber, isDefined, readFileSync, toBNWei, getTokenInfoFromSy
  * - target balance values are human-readable amounts (e.g. "100" for 100 USDT) and will be
  *   converted to the token's native decimals on the respective chain.
  * - priority tiers are essentially numbers that you assign to a chain based on how important it is to hold
- *   liquidity or meet the target balance on that chain. 
+ *   liquidity or meet the target balance on that chain.
  */
 
 interface TargetBalanceConfig {
@@ -58,7 +58,7 @@ interface TargetBalanceConfig {
   // Set this higher to prioritize returning this balance (if below target) back to target. This value is only
   // useful when comparing relative to other deficit priority tiers.
   deficitPriorityTier: number;
-  // Set this higher to prioritize returning this balance (if above target) back to target. 
+  // Set this higher to prioritize returning this balance (if above target) back to target.
   // This value is only useful when comparing relative to other excess priority tiers and is not compared against
   // any deficit priority tiers
   excessPriorityTier: number;
@@ -69,7 +69,7 @@ interface RebalanceRoutePreferencesConfig {
   sortedExcessSinks: number[];
   // Ordering of chains that source deficits should be sent from to fill deficits.
   sortedDeficitSources: number[];
-  }
+}
 
 export interface CumulativeTargetBalanceConfig {
   [token: string]: {
@@ -83,7 +83,7 @@ export interface EquivalentTokenBalanceConfig {
   [token: string]: {
     [chainId: number]: {
       targetBalanceConfig: TargetBalanceConfig;
-    }
+    };
     // @todo: In the future, consider specifying rebalance route prefernces on a per-chain basis.
     rebalanceRoutePreferencesConfig: RebalanceRoutePreferencesConfig;
   };
@@ -159,7 +159,8 @@ export class RebalancerConfig extends CommonConfig {
       )) {
         const { decimals: l1TokenDecimals } = getTokenInfoFromSymbol(token, this.hubPoolChainId);
         const { targetBalanceConfig, rebalanceRoutePreferencesConfig } = chainConfig;
-        const { targetBalance, thresholdBalanceLower, thresholdBalanceUpper, deficitPriorityTier, excessPriorityTier } = targetBalanceConfig;
+        const { targetBalance, thresholdBalanceLower, thresholdBalanceUpper, deficitPriorityTier, excessPriorityTier } =
+          targetBalanceConfig;
         assert(
           targetBalance !== undefined &&
             thresholdBalanceLower !== undefined &&
@@ -172,6 +173,10 @@ export class RebalancerConfig extends CommonConfig {
           toBN(thresholdBalanceLower).lte(toBN(targetBalance)) && toBN(thresholdBalanceUpper).gte(toBN(targetBalance)),
           `Bad config. thresholdBalanceLower<=targetBalance<=thresholdBalanceUpper for ${token} for cumulative target balance`
         );
+        [
+          ...rebalanceRoutePreferencesConfig.sortedExcessSinks,
+          ...rebalanceRoutePreferencesConfig.sortedDeficitSources,
+        ].forEach((chainId) => chainIdSet.add(chainId));
         this.cumulativeTargetBalances[token] = {
           targetBalanceConfig: {
             targetBalance: toBNWei(targetBalance, l1TokenDecimals),
