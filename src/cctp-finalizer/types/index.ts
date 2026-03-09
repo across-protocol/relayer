@@ -23,6 +23,7 @@ export interface PubSubMessage {
   attestation?: StringUnion | null;
   destinationChainId?: LongUnion | null;
   signature?: StringUnion | null;
+  quoteDeadline?: LongUnion | null;
 }
 
 export interface ChainConfig {
