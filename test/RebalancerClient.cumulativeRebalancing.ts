@@ -37,11 +37,22 @@ describe("RebalancerClient.cumulativeRebalancing", () => {
     priorityTier: number,
     chains: { [chainId: number]: number }
   ): CumulativeTargetBalanceConfig[string] {
+    const sortedDeficitSources = Object.entries(chains)
+      .sort(([, priorityTierA], [, priorityTierB]) => priorityTierA - priorityTierB)
+      .map(([chainId]) => Number(chainId));
+    const sortedExcessSinks = Object.keys(chains).map(Number);
     return {
-      targetBalance: amount(token, targetBalance),
-      thresholdBalance: amount(token, thresholdBalance),
-      priorityTier,
-      chains,
+      targetBalanceConfig: {
+        targetBalance: amount(token, targetBalance),
+        thresholdBalanceLower: amount(token, thresholdBalance),
+        thresholdBalanceUpper: ethers.constants.MaxUint256,
+        deficitPriorityTier: priorityTier,
+        excessPriorityTier: priorityTier,
+      },
+      rebalanceRoutePreferencesConfig: {
+        sortedExcessSinks,
+        sortedDeficitSources,
+      },
     };
   }
 

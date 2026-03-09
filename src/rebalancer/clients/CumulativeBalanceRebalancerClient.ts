@@ -41,11 +41,15 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
     // - Pick the list of available rebalance routes as those that connect tokens that are configured in current balances
     // and the cumulative rebalance chain list.
     const availableRebalanceRoutes = this.rebalanceRoutes.filter((route) => {
+      const sourceRoutePreferences =
+        cumulativeTargetBalances[route.sourceToken]?.rebalanceRoutePreferencesConfig.sortedDeficitSources ?? [];
+      const destinationRoutePreferences =
+        cumulativeTargetBalances[route.destinationToken]?.rebalanceRoutePreferencesConfig.sortedExcessSinks ?? [];
       return (
         isDefined(currentBalancesOnChain[route.sourceChain]?.[route.sourceToken]) &&
         isDefined(currentBalancesOnChain[route.destinationChain]?.[route.destinationToken]) &&
-        isDefined(cumulativeTargetBalances[route.sourceToken]?.chains?.[route.sourceChain]) &&
-        isDefined(cumulativeTargetBalances[route.destinationToken]?.chains?.[route.destinationChain])
+        sourceRoutePreferences.includes(route.sourceChain) &&
+        destinationRoutePreferences.includes(route.destinationChain)
       );
     });
 
@@ -68,7 +72,7 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
       }),
       cumulativeTargetBalances: Object.entries(cumulativeTargetBalances).map(([token, tokenConfig]) => {
         return {
-          [token]: tokenConfig.targetBalance.toString(),
+          [token]: tokenConfig.targetBalanceConfig.targetBalance.toString(),
         };
       }),
       availableRebalanceRoutes: availableRebalanceRoutes.map(
@@ -87,14 +91,25 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
     const sortedExcesses: ExcessOrDeficit[] = [];
     for (const [token, cumulativeBalance] of Object.entries(cumulativeBalances)) {
       // If current balance is below threshold, we want to refill back to target balance.
-      const { targetBalance, thresholdBalance, priorityTier } = cumulativeTargetBalances[token];
+      const { targetBalance, thresholdBalanceLower, deficitPriorityTier, excessPriorityTier } =
+        cumulativeTargetBalances[token].targetBalanceConfig;
       const currentCumulativeBalance = cumulativeBalances[token];
-      if (currentCumulativeBalance.lt(thresholdBalance)) {
+      if (currentCumulativeBalance.lt(thresholdBalanceLower)) {
         const deficitAmount = targetBalance.sub(cumulativeBalance);
-        sortedDeficits.push({ token, amount: deficitAmount, chainId: this.config.hubPoolChainId, priorityTier });
+        sortedDeficits.push({
+          token,
+          amount: deficitAmount,
+          chainId: this.config.hubPoolChainId,
+          priorityTier: deficitPriorityTier,
+        });
       } else if (currentCumulativeBalance.gt(targetBalance)) {
         const excessAmount = currentCumulativeBalance.sub(targetBalance);
-        sortedExcesses.push({ token, amount: excessAmount, chainId: this.config.hubPoolChainId, priorityTier });
+        sortedExcesses.push({
+          token,
+          amount: excessAmount,
+          chainId: this.config.hubPoolChainId,
+          priorityTier: excessPriorityTier,
+        });
       }
     }
     // Sort deficits by priority from highest to lowest and then by size from largest to smallest.
@@ -105,7 +120,9 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
         message: "Sorted deficits",
         deficits: sortedDeficits.map(
           (e) =>
-            `${e.token} - ${e.amount.toString()} (priority tier: ${cumulativeTargetBalances[e.token].priorityTier})`
+            `${e.token} - ${e.amount.toString()} (priority tier: ${
+              cumulativeTargetBalances[e.token].targetBalanceConfig.deficitPriorityTier
+            })`
         ),
       });
     }
@@ -117,7 +134,9 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
         message: "Sorted excesses",
         excesses: sortedExcesses.map(
           (e) =>
-            `${e.token} - ${e.amount.toString()} (priority tier: ${cumulativeTargetBalances[e.token].priorityTier})`
+            `${e.token} - ${e.amount.toString()} (priority tier: ${
+              cumulativeTargetBalances[e.token].targetBalanceConfig.excessPriorityTier
+            })`
         ),
       });
     }
@@ -133,15 +152,15 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
         let excessRemaining = excessAmount;
 
         // Sort all the chains with excess tokens by priority from lowest to highest and then by current balance from highest to lowest.
-        const excessSourceChainsForToken: ExcessOrDeficit[] = Object.entries(
-          cumulativeTargetBalances[excessToken].chains
-        )
-          .filter(([chainId]) => {
+        const excessSourceChainsForToken: ExcessOrDeficit[] = cumulativeTargetBalances[
+          excessToken
+        ].rebalanceRoutePreferencesConfig.sortedDeficitSources
+          .filter((chainId) => {
             return isDefined(currentBalancesOnChain[chainId]?.[excessToken]);
           })
-          .map(([chainId, priorityTier]) => {
+          .map((chainId, priorityTier) => {
             return {
-              chainId: Number(chainId),
+              chainId,
               priorityTier,
               amount: currentBalancesOnChain[chainId][excessToken],
               token: excessToken,
@@ -198,9 +217,8 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
 
           // To determine which destination chain to receive the deficit token on, we check the estimated cost
           // for all possible destination chains and then select the chain with the lowest estimated cost.
-          const allDestinationChains = Object.entries(cumulativeTargetBalances[deficitToken].chains).map(([chainId]) =>
-            Number(chainId)
-          );
+          const allDestinationChains =
+            cumulativeTargetBalances[deficitToken].rebalanceRoutePreferencesConfig.sortedExcessSinks;
           const rebalanceRoutesToEvaluate: RebalanceRoute[] = [];
           for (const route of availableRebalanceRoutes) {
             allDestinationChains.forEach((destinationChain) => {

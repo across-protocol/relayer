@@ -31,6 +31,21 @@ type RebalancerRunContext = {
   rebalancerClient: RebalancerClient;
 };
 
+function getConfiguredCumulativeBalanceChains(rebalancerConfig: RebalancerConfig, token: string): number[] {
+  const routePreferences = rebalancerConfig.cumulativeTargetBalances[token].rebalanceRoutePreferencesConfig;
+  return Array.from(new Set([...routePreferences.sortedDeficitSources, ...routePreferences.sortedExcessSinks]));
+}
+
+function getCumulativeModeChainIds(rebalancerConfig: RebalancerConfig): number[] {
+  return Array.from(
+    new Set(
+      Object.keys(rebalancerConfig.cumulativeTargetBalances).flatMap((token) =>
+        getConfiguredCumulativeBalanceChains(rebalancerConfig, token)
+      )
+    )
+  );
+}
+
 async function initializeRebalancerRun(_logger: winston.Logger, baseSigner: Signer): Promise<RebalancerRunContext> {
   const logLabel = "runCumulativeBalanceRebalancer";
   logger = _logger;
@@ -56,7 +71,7 @@ async function initializeRebalancerRun(_logger: winston.Logger, baseSigner: Sign
   // One time initialization of functions that handle lots of events only after all spokePoolClients are updated.
   if (inventoryManagement) {
     inventoryClient.setBundleData();
-    await inventoryClient.update(rebalancerConfig.chainIds);
+    await inventoryClient.update(getCumulativeModeChainIds(rebalancerConfig));
   }
   const rebalancerClient = await constructCumulativeBalanceRebalancerClient(logger, baseSigner);
 
@@ -103,13 +118,13 @@ function loadCumulativeModeBalances(
   // should contain virtual balance modifications, because these comparisons are used to trigger actual rebalances.
   const currentBalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
   const cumulativeBalances: { [token: string]: BigNumber } = {};
-  for (const [token, chainConfig] of Object.entries(rebalancerConfig.cumulativeTargetBalances)) {
+  for (const [token] of Object.entries(rebalancerConfig.cumulativeTargetBalances)) {
     const l1TokenInfo = getTokenInfoFromSymbol(token, rebalancerConfig.hubPoolChainId);
     assert(l1TokenInfo.address.isEVM());
-    for (const chainId of Object.keys(chainConfig.chains)) {
-      const l2TokenInfo = getTokenInfoFromSymbol(token, Number(chainId));
+    for (const chainId of getConfiguredCumulativeBalanceChains(rebalancerConfig, token)) {
+      const l2TokenInfo = getTokenInfoFromSymbol(token, chainId);
       assert(l2TokenInfo.address.isEVM());
-      const currentBalance = inventoryClient.tokenClient.getBalance(Number(chainId), l2TokenInfo.address);
+      const currentBalance = inventoryClient.tokenClient.getBalance(chainId, l2TokenInfo.address);
       currentBalances[chainId] ??= {};
       currentBalances[chainId][token] = currentBalance;
     }

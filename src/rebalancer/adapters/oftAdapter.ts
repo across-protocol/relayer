@@ -5,15 +5,23 @@
 
 import { RebalanceRoute } from "../utils/interfaces";
 import { BaseAdapter } from "./baseAdapter";
-import { bnZero, forEachAsync, BigNumber } from "../../utils";
+import { bnZero, forEachAsync, BigNumber, assert } from "../../utils";
 
 export class OftAdapter extends BaseAdapter {
   async initialize(availableRoutes: RebalanceRoute[]): Promise<void> {
     await super.initialize(availableRoutes);
   }
 
-  async initializeRebalance(): Promise<void> {
-    throw new Error("Not implemented");
+  async initializeRebalance(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber): Promise<void> {
+    assert(rebalanceRoute.sourceToken === "USDT", "Source token must be USDT");
+    const amountBridged = this._bridgeToChain(
+      rebalanceRoute.sourceToken,
+      rebalanceRoute.sourceChain,
+      rebalanceRoute.destinationChain,
+      amountToTransfer
+    );
+    // @todo Figure out what to do with amountBridged
+    return;
   }
 
   async updateRebalanceStatuses(): Promise<void> {
