@@ -1,9 +1,16 @@
 import assert from "assert";
 import { EventEmitter } from "node:events";
-import * as chains from "viem/chains";
 import { AbiEvent, BaseError, Block, createPublicClient, http, Log as viemLog, parseAbiItem, webSocket } from "viem";
 import { Log } from "../interfaces";
-import { EventManager, getNetworkName, getNodeUrlList, getOriginFromURL, getProviderHeaders, winston } from "../utils";
+import {
+  EventManager,
+  getNetworkName,
+  getNodeUrlList,
+  getOriginFromURL,
+  getProviderHeaders,
+  getViemChain,
+  winston,
+} from "../utils";
 
 function resolveProviders(chainId: number, quorum = 1) {
   const protocol = process.env[`RPC_PROVIDERS_TRANSPORT_${chainId}`] ?? "wss";
@@ -14,7 +21,7 @@ function resolveProviders(chainId: number, quorum = 1) {
   const chain = getNetworkName(chainId);
   assert(nProviders >= quorum, `Insufficient providers for ${chain} (minimum ${quorum} required by quorum)`);
 
-  const viemChain = Object.values(chains).find(({ id }) => id === chainId);
+  const viemChain = getViemChain(chainId);
   const providers = Object.entries(urls).map(([provider, url]) => {
     const headers = getProviderHeaders(provider, chainId);
     const transport = protocol === "wss" ? webSocket(url) : http(url, { fetchOptions: { headers } });
