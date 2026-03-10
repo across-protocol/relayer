@@ -53,6 +53,8 @@ import {
   UsdcCCTPBridge as L2UsdcCCTPBridge,
   BinanceCEXNativeBridge as L2BinanceCEXNativeBridge,
   SolanaUsdcCCTPBridge as L2SolanaUsdcCCTPBridge,
+  BridgeApi as L2BridgeApi,
+  TokenSplitterBridge as L2TokenSplitterBridge,
 } from "../adapter/l2Bridges";
 import { CONTRACT_ADDRESSES } from "./ContractAddresses";
 import { HyperlaneXERC20Bridge } from "../adapter/bridges/HyperlaneXERC20Bridge";
@@ -593,15 +595,24 @@ export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<Ba
 };
 
 // Services as a utility for fetching a set of bridges to use when wanting to bridge from a single L1 token to two different types of L2 tokens.
-// @dev Ordering of the L1 bridges DOES matter. The first entry must be the "canonical" route, e.g. USDC via CCTP or the canonical USDC bridge if
+// @dev Ordering of the L1/L2 bridges DOES matter. The first entry must be the "canonical" route, e.g. USDC via CCTP or the canonical USDC bridge if
 // no CCTP exists. The second bridge must be the alternate route. This is so the TokenSplitterBridge can select which of the two configured bridges to
-// use based solely on the desired L2 token.
+// use based solely on the desired L1/L2 token.
 export const TOKEN_SPLITTER_BRIDGES: Record<
   number,
   Record<string, [L1BridgeConstructor<BaseBridgeAdapter>, L1BridgeConstructor<BaseBridgeAdapter>]>
 > = {
   [CHAIN_IDs.TEMPO]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: [OFTBridge, BridgeApi],
+  },
+};
+
+export const L2_TOKEN_SPLITTER_BRIDGES: Record<
+  number,
+  Record<string, [L2BridgeConstructor<BaseL2BridgeAdapter>, L2BridgeConstructor<BaseL2BridgeAdapter>]>
+> = {
+  [CHAIN_IDs.TEMPO]: {
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: [OFTL2Bridge, L2BridgeApi],
   },
 };
 
@@ -655,7 +666,7 @@ export const CUSTOM_L2_BRIDGE: Record<number, Record<string, L2BridgeConstructor
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: L2BinanceCEXNativeBridge,
   },
   [CHAIN_IDs.TEMPO]: {
-    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: OFTL2Bridge,
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2TokenSplitterBridge,
   },
   [CHAIN_IDs.UNICHAIN]: {
     [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20BridgeL2,

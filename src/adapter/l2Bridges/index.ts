@@ -8,3 +8,4 @@ export * from "./OpStackWethBridge";
 export * from "./UsdcCCTPBridge";
 export * from "./SolanaUsdcCCTPBridge";
 export * from "./BridgeApi";
+export * from "./TokenSplitterBridge";
