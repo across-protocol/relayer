@@ -790,12 +790,6 @@ export const OPSTACK_CONTRACT_OVERRIDES = {
       WETH: TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.BLAST],
     },
   },
-  [CHAIN_IDs.LISK]: {
-    l1: {
-      DisputeGameFactory: "0x0CF7D3706a27CCE2017aEB11E8a9c8b5388c282C",
-    },
-    l2: DEFAULT_L2_CONTRACT_ADDRESSES,
-  },
   [CHAIN_IDs.MEGAETH]: {
     l1: {
       AddressManager: "0x9754fD3D63B3EAC3fd62b6D54DE4f61b00D6E0Df",
@@ -808,17 +802,6 @@ export const OPSTACK_CONTRACT_OVERRIDES = {
       L2OutputOracle: ZERO_ADDRESS,
       OptimismPortal2: ZERO_ADDRESS,
       DisputeGameFactory: "0x8546840adF796875cD9AAcc5B3B048f6B2c9D563",
-    },
-    l2: DEFAULT_L2_CONTRACT_ADDRESSES,
-  },
-  [CHAIN_IDs.MODE]: {
-    l1: {
-      DisputeGameFactory: "0x6f13EFadABD9269D6cEAd22b448d434A1f1B433E",
-    },
-  },
-  [CHAIN_IDs.ZORA]: {
-    l1: {
-      DisputeGameFactory: "0xB0F15106fa1e473Ddb39790f197275BC979Aa37e",
     },
     l2: DEFAULT_L2_CONTRACT_ADDRESSES,
   },
