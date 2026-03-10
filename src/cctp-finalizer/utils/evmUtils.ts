@@ -153,12 +153,9 @@ export async function processMintEvm(
     : [attestation.message, attestation.attestation];
 
   // if the quote deadline has expired, we don't need to pass the signature
-  if (destination.requiresSignature && quoteDeadline < Date.now() / 1000) {
-    receiveMessageArgs = [attestation.message, attestation.attestation];
-  }
-
   let method = "receiveMessage";
   if (destination.requiresSignature && quoteDeadline < Date.now() / 1000) {
+    receiveMessageArgs = [attestation.message, attestation.attestation];
     method = "emergencyReceiveMessage";
   }
 
