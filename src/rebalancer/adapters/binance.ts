@@ -703,6 +703,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     amountToTransfer: BigNumber,
     debugLog: boolean
   ): Promise<BigNumber> {
+    this._assertRouteIsSupported(rebalanceRoute);
     const { sourceToken, destinationToken, sourceChain, destinationChain } = rebalanceRoute;
     const spotMarketMeta = this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
     // Commission is denominated in percentage points.

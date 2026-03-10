@@ -130,9 +130,8 @@ export class OftAdapter extends BaseAdapter {
   }
 
   async getEstimatedCost(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber): Promise<BigNumber> {
-    const { sourceChain, destinationChain, sourceToken, destinationToken } = rebalanceRoute;
-    assert(sourceToken === "USDT", "Source token must be USDT");
-    assert(destinationToken === "USDT", "Destination token must be USDT");
+    this._assertRouteIsSupported(rebalanceRoute);
+    const { sourceChain, destinationChain, sourceToken } = rebalanceRoute;
     const { feeStruct } = await this._getOftQuoteSend(sourceChain, destinationChain, amountToTransfer);
     // Convert native fee to USD and we assume that USD price is 1 and equivalent to the source/destination token.
     // This logic would need to change to support non stablecoin swaps.

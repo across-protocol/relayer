@@ -156,9 +156,8 @@ export class CctpAdapter extends BaseAdapter {
   }
 
   async getEstimatedCost(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber): Promise<BigNumber> {
-    const { sourceChain, destinationChain, sourceToken, destinationToken } = rebalanceRoute;
-    assert(sourceToken === "USDC", "Source token must be USDC");
-    assert(destinationToken === "USDC", "Destination token must be USDC");
+    this._assertRouteIsSupported(rebalanceRoute);
+    const { sourceChain, destinationChain } = rebalanceRoute;
     const { maxFee } = await this._getCctpV2MaxFee(sourceChain, destinationChain, amountToTransfer);
     return maxFee;
   }
