@@ -793,14 +793,8 @@ export class Relayer {
     const limitIdx = this.findOriginChainLimitIdx(originChainId, blockNumber);
     if (this.originChainOvercommitted(originChainId, fillAmountUsd, limitIdx)) {
       const limits = this.fillLimits[originChainId].slice(limitIdx);
-      this.logger.debug({
-        at: "Relayer::evaluateFill",
-        message: `Skipping ${originChain} deposit ${depositId} due to anticipated origin chain overcommitment.`,
-        blockNumber,
-        fillAmountUsd,
-        limits,
-        txnRef,
-      });
+      const message = `Skipping ${originChain} deposit ${depositId} due to anticipated origin chain overcommitment.`;
+      this.logger.debug({ at, message, blockNumber, fillAmountUsd, limits, txnRef: blockExplorerLink(txnRef, originChainId) });
       return;
     }
 
