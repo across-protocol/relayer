@@ -682,7 +682,7 @@ export class Relayer {
     maxBlockNumber: number
   ): Promise<void> {
     const at = "Relayer::evaluateFill";
-    const { depositId, depositor, destinationChainId, originChainId, inputToken, txnRef } = deposit;
+    const { depositId, depositor, destinationChainId, originChainId, txnRef } = deposit;
     const { profitClient, spokePoolClients, tokenClient } = this.clients;
     const { slowDepositors } = this.config;
     const [originChain, destChain] = [getNetworkName(originChainId), getNetworkName(destinationChainId)];
