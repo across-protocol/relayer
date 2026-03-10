@@ -464,7 +464,8 @@ describe("ProfitClient: Consider relay profit", () => {
     process.env[minUSDCKey] = minUSDC;
 
     const envPrefix = "MIN_RELAYER_FEE_PCT";
-    ["USDC", "DAI", "WETH", "WBTC"].forEach((symbol) => {
+    ["USDC", "WETH", "WBTC"].forEach((symbol) => {
+      profitClient.setTokenSymbol(tokens[symbol].address, symbol);
       chainIds.forEach((srcChainId) => {
         chainIds
           .filter((chainId) => chainId !== srcChainId)
@@ -477,7 +478,12 @@ describe("ProfitClient: Consider relay profit", () => {
               expect(routeMinRelayerFeePct.eq(toBNWei(minUSDC))).to.be.true;
             }
 
-            const computedMinRelayerFeePct = profitClient.minRelayerFeePct(symbol, srcChainId, dstChainId);
+            const computedMinRelayerFeePct = profitClient.minRelayerFeePct({
+              inputToken: EvmAddress.from(tokens[symbol].address),
+              originChainId: srcChainId,
+              outputToken: EvmAddress.from(ZERO_ADDRESS),
+              destinationChainId: dstChainId,
+            });
             spyLogger.debug({
               message: `Expect relayerFeePct === ${routeMinRelayerFeePct}`,
               routeFee,
@@ -497,6 +503,91 @@ describe("ProfitClient: Consider relay profit", () => {
       });
     });
     process.env[minUSDCKey] = initialMinUSDC;
+  });
+
+  it("Per-route and per-token configuration priority", () => {
+    // Verify minRelayerFeePct lookup precedence:
+    // routeKey -> destinationChainKey -> tokenKey.
+    // Also verify tokenKey with src+dst symbols is used ahead of src-only key.
+    profitClient.setTokenSymbol(tokens.USDC.address, "USDC");
+    profitClient.setTokenSymbol(tokens.WETH.address, "WETH");
+
+    const minRouteFee = "0.00041";
+    const minDestinationChainFee = "0.00031";
+    const minPairTokenFee = "0.00021";
+    const minSrcTokenFee = "0.00011";
+
+    const pairTokenKey = "MIN_RELAYER_FEE_PCT_USDC_WETH";
+    const srcTokenKey = "MIN_RELAYER_FEE_PCT_USDC";
+    const destinationChainKey = `MIN_RELAYER_FEE_PCT_${destinationChainId}`;
+    const routeKey = `${pairTokenKey}_${originChainId}_${destinationChainId}`;
+
+    const initialRouteFee = process.env[routeKey];
+    const initialDestinationChainFee = process.env[destinationChainKey];
+    const initialPairTokenFee = process.env[pairTokenKey];
+    const initialSrcTokenFee = process.env[srcTokenKey];
+    const restoreEnvKey = (key: string, value: string | undefined): void => {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    };
+
+    const deposit = {
+      inputToken: EvmAddress.from(tokens.USDC.address),
+      originChainId,
+      outputToken: EvmAddress.from(tokens.WETH.address),
+      destinationChainId,
+    };
+
+    try {
+      // 1) route key has highest precedence.
+      process.env[routeKey] = minRouteFee;
+      process.env[destinationChainKey] = minDestinationChainFee;
+      process.env[pairTokenKey] = minPairTokenFee;
+      process.env[srcTokenKey] = minSrcTokenFee;
+      const computedFromRoute = profitClient.minRelayerFeePct(deposit);
+      expect(computedFromRoute.eq(toBNWei(minRouteFee))).to.be.true;
+
+      // 2) destination-chain key has higher precedence than token key.
+      const uncachedOriginChain = originChainId + 999;
+      const uncachedRouteKey = `${pairTokenKey}_${uncachedOriginChain}_${destinationChainId}`;
+      delete process.env[uncachedRouteKey];
+      const computedFromDestinationChain = profitClient.minRelayerFeePct({
+        ...deposit,
+        originChainId: uncachedOriginChain,
+      });
+      expect(computedFromDestinationChain.eq(toBNWei(minDestinationChainFee))).to.be.true;
+
+      // 3) pair-token key takes precedence over src-only token key.
+      delete process.env[destinationChainKey];
+      const anotherUncachedOriginChain = originChainId + 1999;
+      const anotherUncachedRouteKey = `${pairTokenKey}_${anotherUncachedOriginChain}_${destinationChainId}`;
+      delete process.env[anotherUncachedRouteKey];
+      const computedFromPairToken = profitClient.minRelayerFeePct({
+        ...deposit,
+        originChainId: anotherUncachedOriginChain,
+      });
+      expect(computedFromPairToken.eq(toBNWei(minPairTokenFee))).to.be.true;
+
+      // 4) falls back to default min fee when no env key is set.
+      delete process.env[pairTokenKey];
+      delete process.env[srcTokenKey];
+      const defaultFallbackOriginChain = originChainId + 2999;
+      const defaultFallbackRouteKey = `${pairTokenKey}_${defaultFallbackOriginChain}_${destinationChainId}`;
+      delete process.env[defaultFallbackRouteKey];
+      const computedFromDefault = profitClient.minRelayerFeePct({
+        ...deposit,
+        originChainId: defaultFallbackOriginChain,
+      });
+      expect(computedFromDefault.eq(minRelayerFeePct)).to.be.true;
+    } finally {
+      restoreEnvKey(routeKey, initialRouteFee);
+      restoreEnvKey(destinationChainKey, initialDestinationChainFee);
+      restoreEnvKey(pairTokenKey, initialPairTokenFee);
+      restoreEnvKey(srcTokenKey, initialSrcTokenFee);
+    }
   });
 
   it("Considers updated deposits", async () => {

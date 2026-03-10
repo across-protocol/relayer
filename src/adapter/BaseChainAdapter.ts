@@ -53,7 +53,7 @@ import { BaseBridgeAdapter, BridgeTransactionDetails } from "./bridges/BaseBridg
 import { OutstandingTransfers } from "../interfaces";
 import WETH_ABI from "../common/abi/Weth.json";
 import { BaseL2BridgeAdapter } from "./l2Bridges/BaseL2BridgeAdapter";
-import { ExpandedERC20 } from "@across-protocol/contracts";
+import { ExpandedERC20 } from "@across-protocol/sdk/typechain";
 
 export type SupportedL1Token = EvmAddress;
 export type SupportedTokenSymbol = string;
@@ -332,6 +332,16 @@ export class BaseChainAdapter {
       txnSignatures.push(await sendAndConfirmSolanaTransaction(solanaTransaction, getSvmProvider()));
     }
     return txnSignatures;
+  }
+
+  async getL2PendingWithdrawalLookbackPeriodSeconds(l2Token: Address): Promise<number> {
+    const l1Token = getL1TokenAddress(l2Token, this.chainId);
+    if (!this.isSupportedL2Bridge(l1Token)) {
+      return -1;
+    }
+    const l2Bridge = this.l2Bridges[l1Token.toNative()];
+    const lookbackPeriodSeconds = l2Bridge.pendingWithdrawalLookbackPeriodSeconds();
+    return lookbackPeriodSeconds;
   }
 
   async getL2PendingWithdrawalAmount(

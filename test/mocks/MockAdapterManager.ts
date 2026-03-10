@@ -83,7 +83,7 @@ export class MockAdapterManager extends AdapterManager {
     this.pendingL2WithdrawalAmounts[timePeriod] = amount;
   }
 
-  getL2PendingWithdrawalAmount(withdrawExcessPeriod: number): Promise<BigNumber> {
+  getL2PendingWithdrawalAmountWithLookbackPeriod(withdrawExcessPeriod: number): Promise<BigNumber> {
     const pendingWithdrawalThresholds = Object.entries(this.pendingL2WithdrawalAmounts)
       .filter(([timePeriod]) => Number(timePeriod) >= withdrawExcessPeriod)
       .sort(([timePeriod]) => Number(timePeriod));
@@ -94,11 +94,8 @@ export class MockAdapterManager extends AdapterManager {
     }
   }
 
-  async getTotalPendingWithdrawalAmount(
-    lookbackPeriodSeconds: number,
-    chainsToEvaluate: number[]
-  ): Promise<{ [chainId: number]: BigNumber }> {
-    const pendingL2WithdrawalAmount = await this.getL2PendingWithdrawalAmount(lookbackPeriodSeconds);
+  async getTotalPendingWithdrawalAmount(chainsToEvaluate: number[]): Promise<{ [chainId: number]: BigNumber }> {
+    const pendingL2WithdrawalAmount = await this.getL2PendingWithdrawalAmountWithLookbackPeriod(7200);
     return Promise.resolve(
       Object.fromEntries(
         chainsToEvaluate.map((chainId) => {

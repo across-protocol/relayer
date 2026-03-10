@@ -242,6 +242,41 @@ export async function getProvider(
 }
 
 /**
+ * @notice Constructs a SpeedProvider for the given chain ID, racing all env-configured RPC endpoints
+ * in parallel and returning the first successful response.
+ */
+export function getSpeedProvider(chainId: number, logger?: winston.Logger): sdkProviders.SpeedProvider {
+  const { NODE_TIMEOUT, PROVIDER_CACHE_TTL } = process.env;
+  const timeout = Number(process.env[`NODE_TIMEOUT_${chainId}`] || NODE_TIMEOUT || defaultTimeout);
+  const providerCacheNamespace = getCacheNamespace(chainId);
+  const pctRpcCallsLogged = getPctRpcCallsLogged(chainId);
+  const nodeMaxConcurrency = getMaxConcurrency(chainId);
+  const providerCacheTtl = PROVIDER_CACHE_TTL ? Number(PROVIDER_CACHE_TTL) : undefined;
+
+  const nodeUrls = getNodeUrlList(chainId, 1);
+  const params = Object.entries(nodeUrls).map(
+    ([provider, url]): ConstructorParameters<typeof ethers.providers.StaticJsonRpcProvider> => [
+      { url, headers: getProviderHeaders(provider, chainId), timeout, allowGzip: true },
+      chainId,
+    ]
+  );
+
+  return new sdkProviders.SpeedProvider(
+    params,
+    chainId,
+    params.length, // maxConcurrencySpeed: race all available providers
+    nodeMaxConcurrency,
+    providerCacheNamespace,
+    pctRpcCallsLogged,
+    undefined, // redisClient
+    undefined, // standardTtlBlockDistance
+    undefined, // noTtlBlockDistance
+    providerCacheTtl,
+    logger
+  );
+}
+
+/**
  * @notice Returns a Viem custom transport that can be used to create a Viem client from our customized Ethers
  * provider. This allows us to send requests through our RetryProvider that need to be handled by Viem SDK's.
  */

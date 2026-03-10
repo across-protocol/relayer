@@ -3,7 +3,7 @@
  * @dev In the future we will add support for sending new CCTP rebalances.
  */
 
-import { RebalanceRoute } from "../rebalancer";
+import { RebalanceRoute } from "../utils/interfaces";
 import { BaseAdapter } from "./baseAdapter";
 import { bnZero, forEachAsync, BigNumber } from "../../utils";
 
@@ -33,12 +33,14 @@ export class CctpAdapter extends BaseAdapter {
       await forEachAsync(
         Array.from(allChains).filter((otherChainId) => otherChainId !== sourceChain),
         async (destinationChain) => {
+          // @dev Temporarily filter out L1->L2 and L2->L1 rebalances because they will already be counted by the
+          // AdapterManager and this function is designed to be used in conjunction with the AdapterManager
+          // to pain a full picture of all pending rebalances.
+          if (sourceChain === this.config.hubPoolChainId || destinationChain === this.config.hubPoolChainId) {
+            return;
+          }
           const pendingRebalanceAmount = await this._getUnfinalizedCctpBridgeAmount(sourceChain, destinationChain);
           if (pendingRebalanceAmount.gt(bnZero)) {
-            this.logger.debug({
-              at: "CctpAdapter.getPendingRebalances",
-              message: `Adding ${pendingRebalanceAmount.toString()} USDC for pending rebalances from ${sourceChain} to ${destinationChain}`,
-            });
             pendingRebalances[destinationChain] ??= {};
             pendingRebalances[destinationChain]["USDC"] = (pendingRebalances[destinationChain]?.["USDC"] ?? bnZero).add(
               pendingRebalanceAmount
@@ -52,6 +54,10 @@ export class CctpAdapter extends BaseAdapter {
 
   async getEstimatedCost(): Promise<BigNumber> {
     throw new Error("Not implemented");
+  }
+
+  async getPendingOrders(): Promise<string[]> {
+    return [];
   }
 
   protected _redisGetOrderStatusKey(): string {

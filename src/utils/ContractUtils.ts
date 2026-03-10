@@ -1,4 +1,4 @@
-import * as typechain from "@across-protocol/contracts"; // TODO: refactor once we've fixed export from contract repo
+import * as typechain from "@across-protocol/sdk/typechain";
 import {
   CHAIN_IDs,
   Contract,
@@ -9,6 +9,7 @@ import {
   chainIsEvm,
   SvmAddress,
   Address,
+  isDefined,
 } from ".";
 import { CONTRACT_ADDRESSES } from "../common";
 
@@ -22,6 +23,18 @@ export function getDeployedContract(contractName: string, networkId: number, sig
   } catch (error) {
     throw new Error(`Could not find address for contract ${contractName} on ${networkId} (${error})`);
   }
+}
+
+export function getCounterfactualDepositImplementationAddress(chainId: number): string {
+  return CONTRACT_ADDRESSES[chainId].counterfactualDeposit.address;
+}
+
+// For a chain ID and optional CounterfactualDepositFactory address, return a Contract instance with the corresponding ABI.
+export function getCounterfactualDepositFactory(chainId: number, address?: string): Contract {
+  return new Contract(
+    address ?? CONTRACT_ADDRESSES[chainId].counterfactualDepositFactory.address,
+    CONTRACT_ADDRESSES[chainId].counterfactualDepositFactory.abi
+  );
 }
 
 // For a chain ID and optional SpokePool address, return a Contract instance with the corresponding ABI.
@@ -66,18 +79,20 @@ export function getDeploymentBlockNumber(contractName: string, networkId: number
 export function getDstOftHandler(): Contract {
   const factoryName = "DstOFTHandler";
   const artifact = typechain["HyperCoreFlowExecutor__factory"];
-  const address =
-    CONTRACT_ADDRESSES[CHAIN_IDs.HYPEREVM]?.dstOftHandler?.address ??
-    getDeployedAddress(factoryName, CHAIN_IDs.HYPEREVM);
+  const address = isDefined(process.env.DST_OFT_HANDLER)
+    ? process.env.DST_OFT_HANDLER
+    : CONTRACT_ADDRESSES[CHAIN_IDs.HYPEREVM]?.dstOftHandler?.address ??
+      getDeployedAddress(factoryName, CHAIN_IDs.HYPEREVM);
   return new Contract(address, artifact.abi);
 }
 
 export function getDstCctpHandler(): Contract {
   const factoryName = "SponsoredCCTPDstPeriphery";
   const artifact = typechain["HyperCoreFlowExecutor__factory"];
-  const address =
-    CONTRACT_ADDRESSES[CHAIN_IDs.HYPEREVM]?.dstCctpHandler?.address ??
-    getDeployedAddress(factoryName, CHAIN_IDs.HYPEREVM);
+  const address = isDefined(process.env.DST_CCTP_HANDLER)
+    ? process.env.DST_CCTP_HANDLER
+    : CONTRACT_ADDRESSES[CHAIN_IDs.HYPEREVM]?.dstCctpHandler?.address ??
+      getDeployedAddress(factoryName, CHAIN_IDs.HYPEREVM);
   return new Contract(address, artifact.abi);
 }
 

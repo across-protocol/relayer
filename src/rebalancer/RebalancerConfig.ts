@@ -5,12 +5,9 @@ import { assert, BigNumber, isDefined, readFileSync, toBNWei, getTokenInfoFromSy
 /**
  * Expected JSON config format:
  * {
- *   "targetBalances": {
- *     "USDT": {
- *       "1": { "targetBalance": "0", "thresholdBalance": "0", "priorityTier": 0 },
- *       "42161": { "targetBalance": "100", "thresholdBalance": "50", "priorityTier": 1 }
- *     },
- *     "USDC": { ... }
+ *   "cumulativeBalances": {
+ *     "USDT": { "threshold": "1000000", "target": "1500000", "priorityTier": 0, "chains": { "1": 0 } },
+ *     "USDC": { "threshold": "3000000", "target": "3500000", "priorityTier": 0, "chains": { "1": 0 } }
  *   },
  *   "maxAmountsToTransfer": {
  *     "USDT": "1000",
@@ -22,8 +19,11 @@ import { assert, BigNumber, isDefined, readFileSync, toBNWei, getTokenInfoFromSy
  *   }
  * }
  *
- * - targetBalance values are human-readable amounts (e.g. "100" for 100 USDT) and will be
+ * - cumulativeTargetBalance values are human-readable amounts (e.g. "100" for 100 USDT) and will be
  *   converted to the token's native decimals on the respective chain.
+ * - priorityTiers are essentially numbers that you assign to a chain based on how important it is to hold
+ *   liquidity or meet the target balance on that chain. The higher priority deficits are filled first and the lowest
+ *   priority excesses are used first.
  * - maxAmountsToTransfer values follow the same convention and will be converted to the origin chain's
  *   native decimals.
  * - maxPendingOrders is a map of adapter names to the maximum number of pending orders that should be allowed
@@ -39,14 +39,12 @@ interface ChainConfig {
   // Set this higher to prioritize returning this balance (if below target) back to target or deprioritize
   // sending this balance when above target.
   priorityTier: number;
+  // Chains that this token can be rebalanced to.
+  chains: { [chainId: number]: number };
 }
 
-interface TokenConfig {
-  [chainId: number]: ChainConfig;
-}
-
-export interface TargetBalanceConfig {
-  [token: string]: TokenConfig;
+export interface CumulativeTargetBalanceConfig {
+  [token: string]: ChainConfig;
 }
 
 export interface MaxAmountToTransferChainConfig {
@@ -62,10 +60,11 @@ export interface MaxPendingOrdersConfig {
 }
 
 export class RebalancerConfig extends CommonConfig {
-  public targetBalances: TargetBalanceConfig;
+  public cumulativeTargetBalances: CumulativeTargetBalanceConfig;
   public maxAmountsToTransfer: MaxAmountToTransferConfig;
   public maxPendingOrders: MaxPendingOrdersConfig;
-  // chainId's are derived automatically as the union of all chain IDs present in targetBalances.
+
+  // chain IDs are derived automatically from targetBalances and cumulativeTargetBalances.
   public chainIds: number[];
   constructor(env: ProcessEnv) {
     const { REBALANCER_CONFIG, REBALANCER_EXTERNAL_CONFIG } = env;
@@ -95,40 +94,40 @@ export class RebalancerConfig extends CommonConfig {
 
     const chainIdSet = new Set<number>();
 
-    // Parse target balances from config, converting human-readable amounts to BigNumber
-    // using the token's native decimals on each chain.
-    this.targetBalances = {};
-    if (isDefined(rebalancerConfig.targetBalances)) {
-      for (const [token, chains] of Object.entries(rebalancerConfig.targetBalances)) {
-        this.targetBalances[token] = {};
-        for (const [chainId, chainConfig] of Object.entries(
-          chains as Record<
-            string,
-            {
-              targetBalance: string;
-              thresholdBalance: string;
-              priorityTier: number;
-            }
-          >
-        )) {
-          const { targetBalance, thresholdBalance, priorityTier } = chainConfig;
-          const { decimals } = getTokenInfoFromSymbol(token, Number(chainId));
-          // Validate the ChainConfig:
-          assert(
-            targetBalance !== undefined && thresholdBalance !== undefined && priorityTier !== undefined,
-            `Bad config. Must specify targetBalance, thresholdBalance, priorityTier for ${token} on ${chainId}`
-          );
-          assert(
-            toBN(thresholdBalance).lte(toBN(targetBalance)),
-            `Bad config. thresholdBalance<=targetBalance for ${token} on ${chainId}`
-          );
-          this.targetBalances[token][Number(chainId)] = {
-            targetBalance: toBNWei(targetBalance, decimals),
-            thresholdBalance: toBNWei(thresholdBalance, decimals),
-            priorityTier,
-          };
+    this.cumulativeTargetBalances = {};
+    if (isDefined(rebalancerConfig.cumulativeTargetBalances)) {
+      for (const [token, chainConfig] of Object.entries(
+        rebalancerConfig.cumulativeTargetBalances as Record<
+          string,
+          {
+            targetBalance: string;
+            thresholdBalance: string;
+            priorityTier: number;
+            chains: { [chainId: number]: number };
+          }
+        >
+      )) {
+        const { decimals: l1TokenDecimals } = getTokenInfoFromSymbol(token, this.hubPoolChainId);
+        const { targetBalance, thresholdBalance, priorityTier } = chainConfig;
+        assert(
+          targetBalance !== undefined && thresholdBalance !== undefined && priorityTier !== undefined,
+          `Bad config. Must specify targetBalance, thresholdBalance, priorityTier for ${token} for cumulative target balance`
+        );
+        assert(
+          toBN(thresholdBalance).lte(toBN(targetBalance)),
+          `Bad config. thresholdBalance<=targetBalance for ${token} for cumulative target balance`
+        );
+        Object.keys(chainConfig.chains).forEach((chainId) => {
           chainIdSet.add(Number(chainId));
-        }
+        });
+        this.cumulativeTargetBalances[token] = {
+          targetBalance: toBNWei(targetBalance, l1TokenDecimals),
+          thresholdBalance: toBNWei(thresholdBalance, l1TokenDecimals),
+          priorityTier,
+          chains: Object.fromEntries(
+            Object.entries(chainConfig.chains).map(([chainId, priorityTier]) => [Number(chainId), priorityTier])
+          ),
+        };
       }
     }
 

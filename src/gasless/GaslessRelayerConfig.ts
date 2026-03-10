@@ -10,6 +10,8 @@ export class GaslessRelayerConfig extends CommonConfig {
   depositLookback: number;
   apiTimeoutOverride: number;
   initializationRetryAttempts: number;
+  /** When true, allow deposits with inputAmount < outputAmount and outputAmount === MAX_UINT_VAL (refund-flow test); deposit is made but fill is skipped. */
+  refundFlowTestEnabled: boolean;
 
   constructor(env: ProcessEnv) {
     super(env);
@@ -23,6 +25,7 @@ export class GaslessRelayerConfig extends CommonConfig {
       RELAYER_TOKEN_SYMBOLS,
       API_TIMEOUT_OVERRIDE,
       INITIALIZATION_RETRY_ATTEMPTS,
+      RELAYER_GASLESS_REFUND_FLOW_TEST_ENABLED,
     } = env;
     this.apiPollingInterval = Number(API_POLLING_INTERVAL ?? 1); // Default to 1s
     this.apiEndpoint = String(API_GASLESS_ENDPOINT);
@@ -37,5 +40,6 @@ export class GaslessRelayerConfig extends CommonConfig {
 
     this.apiTimeoutOverride = Number(API_TIMEOUT_OVERRIDE ?? 3000); // In ms
     this.initializationRetryAttempts = Number(INITIALIZATION_RETRY_ATTEMPTS ?? 3);
+    this.refundFlowTestEnabled = String(RELAYER_GASLESS_REFUND_FLOW_TEST_ENABLED ?? "").toLowerCase() === "true";
   }
 }

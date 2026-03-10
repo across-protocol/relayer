@@ -89,7 +89,7 @@ export function getMessengerEvm(l1TokenAddress: EvmAddress, chainId: number): Ev
  * @returns If the input chain ID's OFT adapter requires payment in the input token.
  */
 export function isStargateBridge(chainId: number): boolean {
-  return [CHAIN_IDs.PLASMA].includes(chainId);
+  return [CHAIN_IDs.PLASMA, CHAIN_IDs.TEMPO].includes(chainId);
 }
 
 /**

@@ -40,6 +40,7 @@ import SCROLL_GAS_PRICE_ORACLE_ABI from "./abi/ScrollGasPriceOracle.json";
 import IOFT_ABI_FULL from "./abi/IOFT.json";
 import HYPERLIQUID_DEPOSIT_HANDLER_ABI from "./abi/HyperliquidDepositHandler.json";
 import SPOKE_POOL_PERIPHERY_ABI from "./abi/SpokePoolPeriphery.json";
+import COUNTERFACTUAL_DEPOSIT_FACTORY_ABI from "./abi/CounterfactualDepositFactory.json";
 export { IOFT_ABI_FULL };
 import HUB_POOL_STORE_ABI from "./abi/HubPoolStore.json";
 
@@ -247,6 +248,13 @@ export const CONTRACT_ADDRESSES: {
     spokePoolPeriphery: {
       address: "0x767e4c20F521a829dE4Ffc40C25176676878147f",
       abi: SPOKE_POOL_PERIPHERY_ABI,
+    },
+    counterfactualDepositFactory: {
+      address: "0x3C52FaB463B155F61C58Ac2a1057718377861b79",
+      abi: COUNTERFACTUAL_DEPOSIT_FACTORY_ABI,
+    },
+    counterfactualDeposit: {
+      address: "0x2ddc52436c1803eba27d2e7d76bea5512b91d3c0",
     },
   },
   [CHAIN_IDs.MONAD]: {
@@ -478,6 +486,13 @@ export const CONTRACT_ADDRESSES: {
       address: "0x767e4c20F521a829dE4Ffc40C25176676878147f",
       abi: SPOKE_POOL_PERIPHERY_ABI,
     },
+    counterfactualDepositFactory: {
+      address: "0x38814a7F5eFe2389859e46329478E7Ae968C1bE7",
+      abi: COUNTERFACTUAL_DEPOSIT_FACTORY_ABI,
+    },
+    counterfactualDeposit: {
+      address: "0xf4345e55bdb653E58Afec5Ee89E6b8489412C954",
+    },
   },
   [CHAIN_IDs.MODE]: {
     ovmStandardBridge: {
@@ -569,6 +584,13 @@ export const CONTRACT_ADDRESSES: {
     spokePoolPeriphery: {
       address: "0x767e4c20F521a829dE4Ffc40C25176676878147f",
       abi: SPOKE_POOL_PERIPHERY_ABI,
+    },
+    counterfactualDepositFactory: {
+      address: "0xA157CB19a8C3061D9bbce11Ad08129bEe70988FE",
+      abi: COUNTERFACTUAL_DEPOSIT_FACTORY_ABI,
+    },
+    counterfactualDeposit: {
+      address: "0x654321F334b949A48c710E80b35334A4047d10B1",
     },
   },
   [CHAIN_IDs.LENS]: {
@@ -862,6 +884,10 @@ export const CONTRACT_ADDRESSES: {
     cctpV2TokenMessenger: {
       address: "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
+    },
+    spokePoolPeriphery: {
+      address: "0x1cFC76f039e01970355Cf73a37B785A81847796C",
+      abi: SPOKE_POOL_PERIPHERY_ABI,
     },
   },
   [CHAIN_IDs.SCROLL_SEPOLIA]: {

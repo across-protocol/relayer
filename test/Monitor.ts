@@ -44,12 +44,24 @@ class TestMonitor extends Monitor {
   }
 
   getRemoteTokenForL1Token(l1Token: Address, chainId: number | string): Address | undefined {
-    Object.values(this.overriddenTokenMap).forEach((tokenMap: TokenMap) => {
+    const targetChain = Number(chainId);
+    const tokenMapForChain = this.overriddenTokenMap[targetChain];
+    if (tokenMapForChain) {
+      const matchedToken = Object.entries(tokenMapForChain).find(([, l1TokenObject]) =>
+        l1Token.eq(l1TokenObject.address)
+      );
+      if (matchedToken) {
+        return toAddressType(matchedToken[0], targetChain);
+      }
+    }
+
+    for (const [_chainId, tokenMap] of Object.entries(this.overriddenTokenMap)) {
       const matchedToken = Object.entries(tokenMap).find(([, l1TokenObject]) => l1Token.eq(l1TokenObject.address));
       if (matchedToken) {
-        return matchedToken[0];
+        return toAddressType(matchedToken[0], Number(_chainId));
       }
-    });
+    }
+
     return super.getRemoteTokenForL1Token(l1Token, chainId);
   }
 
@@ -301,10 +313,42 @@ describe("Monitor", async function () {
       toBN(5),
       destinationChainId
     );
-    await monitorInstance.updateLatestAndFutureRelayerRefunds(reports);
+
+    // Pending rebalance credits default to zero if no rebalancer client is configured.
+    monitorInstance.clients.rebalancerClient = undefined;
+    const reportsWithoutRebalanceCredits = monitorInstance.initializeBalanceReports(
+      monitorInstance.monitorConfig.monitoredRelayers,
+      monitorInstance.clients.hubPoolClient.getL1Tokens(),
+      [], // No L2-only tokens in test
+      TEST_NETWORK_NAMES
+    );
+    await monitorInstance.updateLatestAndFutureRelayerRefunds(reportsWithoutRebalanceCredits);
     expect(
-      reports[relayer.address]["L1Token1"][getNetworkName(destinationChainId)][BalanceType.PENDING_TRANSFERS]
+      reportsWithoutRebalanceCredits[relayer.address]["L1Token1"][getNetworkName(destinationChainId)][
+        BalanceType.PENDING_TRANSFERS
+      ]
     ).to.be.equal(toBN(5));
+
+    // Pending rebalance credits should be merged into "pending transfers".
+    monitorInstance.clients.rebalancerClient = {
+      getPendingRebalances: async () => ({
+        [destinationChainId]: {
+          L1Token1: toBN(7),
+        },
+      }),
+    } as any;
+    const reportsWithRebalanceCredits = monitorInstance.initializeBalanceReports(
+      monitorInstance.monitorConfig.monitoredRelayers,
+      monitorInstance.clients.hubPoolClient.getL1Tokens(),
+      [], // No L2-only tokens in test
+      TEST_NETWORK_NAMES
+    );
+    await monitorInstance.updateLatestAndFutureRelayerRefunds(reportsWithRebalanceCredits);
+    expect(
+      reportsWithRebalanceCredits[relayer.address]["L1Token1"][getNetworkName(destinationChainId)][
+        BalanceType.PENDING_TRANSFERS
+      ]
+    ).to.be.equal(toBN(12));
   });
 
   it("Monitor should report stuck rebalances", async function () {

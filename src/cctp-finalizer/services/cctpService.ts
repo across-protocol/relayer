@@ -14,6 +14,7 @@ import {
 } from "../../utils";
 import { checkIfAlreadyProcessedEvm, processMintEvm, getEvmProvider } from "../utils/evmUtils";
 import { checkIfAlreadyProcessedSvm, processMintSvm, getSvmProvider } from "../utils/svmUtils";
+import { address } from "@solana/kit";
 import {
   NoAttestationFoundError,
   AttestationNotReadyError,
@@ -265,13 +266,15 @@ export class CCTPService {
 
         const rpcUrl = this.getRpcUrlForChain(destinationChainId);
         const svmProvider = getSvmProvider(rpcUrl);
+        const altAddress = process.env.SOLANA_CCTP_V2_ALT ? address(process.env.SOLANA_CCTP_V2_ALT) : undefined;
         const result = await processMintSvm(
           attestation,
           this.svmPrivateKey,
           svmProvider,
           destinationChainId,
           originChainId,
-          this.logger
+          this.logger,
+          altAddress
         );
         return {
           success: true,

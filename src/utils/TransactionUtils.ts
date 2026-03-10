@@ -6,6 +6,7 @@ import {
   Contract,
   isDefined,
   TransactionResponse,
+  TransactionReceipt,
   ethers,
   getContractInfoFromAddress,
   Signer,
@@ -13,6 +14,7 @@ import {
   toBNWei,
   SVMProvider,
   parseUnits,
+  ZERO_ADDRESS,
 } from "../utils";
 import { getBase64EncodedWireTransaction, signTransactionMessageWithSigners, type MicroLamports } from "@solana/kit";
 import { updateOrAppendSetComputeUnitPriceInstruction } from "@solana-program/compute-budget";
@@ -125,7 +127,7 @@ export async function willSucceed(transaction: AugmentedTransaction): Promise<Tr
   }
 
   const { contract, method } = transaction;
-  const args = transaction.value ? [...transaction.args, { value: transaction.value }] : transaction.args;
+  const rawTxn = method === "";
 
   // First callStatic, which will surface a custom error if the transaction would fail.
   // This is useful for surfacing custom error revert reasons like RelayFilled in the SpokePool but
@@ -133,7 +135,13 @@ export async function willSucceed(transaction: AugmentedTransaction): Promise<Tr
   // relay custom errors well: https://github.com/ethers-io/ethers.js/discussions/3291#discussion-4314795
   let data;
   try {
-    data = await contract.callStatic[method](...args);
+    if (rawTxn) {
+      const from = (await contract.signer?.getAddress()) ?? ZERO_ADDRESS;
+      data = await contract.provider.call({ ...transaction, to: contract.address, data: transaction.args[0], from });
+    } else {
+      const args = transaction.value ? [...transaction.args, { value: transaction.value }] : transaction.args;
+      data = await contract.callStatic[method](...args);
+    }
   } catch (err: any) {
     if (err.errorName) {
       return {
@@ -145,7 +153,19 @@ export async function willSucceed(transaction: AugmentedTransaction): Promise<Tr
   }
 
   try {
-    const gasLimit = await contract.estimateGas[method](...args);
+    let gasLimit;
+    if (rawTxn) {
+      const from = (await contract.signer?.getAddress()) ?? ZERO_ADDRESS;
+      gasLimit = await contract.provider.estimateGas({
+        ...transaction,
+        to: contract.address,
+        data: transaction.args[0],
+        from,
+      });
+    } else {
+      const args = transaction.value ? [...transaction.args, { value: transaction.value }] : transaction.args;
+      gasLimit = await contract.estimateGas[method](...args);
+    }
     return { transaction: { ...transaction, gasLimit }, succeed: true, data };
   } catch (error) {
     const reason = typeguards.isEthersError(error) ? error.reason : "unknown error";
@@ -191,4 +211,44 @@ export async function submitTransaction(
     );
   }
   return response[0];
+}
+
+export async function dispatchTransaction(
+  transaction: AugmentedTransaction,
+  dispatcher: TransactionClient
+): Promise<TransactionResponse> {
+  const { reason, succeed, transaction: txnRequest } = (await dispatcher.simulate([transaction]))[0];
+  const { contract: targetContract, method, ...txnRequestData } = txnRequest;
+  if (!succeed) {
+    const message = `Failed to simulate ${targetContract.address}.${method}(${txnRequestData.args.join(", ")}) on ${
+      txnRequest.chainId
+    }`;
+    throw new Error(`${message} (${reason})`);
+  }
+
+  return dispatcher.dispatch(transaction, transaction.contract, transaction.contract.provider);
+}
+
+/**
+ * Submits a transaction (via submitTransaction or dispatchTransaction), awaits the receipt, and returns it.
+ * Ensures ensureConfirmation is true on the tx. On failure catches errors and returns undefined; callers should
+ * check with isDefined(receipt) and log a warning.
+ */
+export async function sendAndConfirmTransaction(
+  tx: AugmentedTransaction,
+  transactionClient: TransactionClient,
+  useDispatcher = false
+): Promise<TransactionReceipt | undefined> {
+  const txWithConfirmation: AugmentedTransaction = { ...tx, ensureConfirmation: true };
+  try {
+    const txResponse = useDispatcher
+      ? await dispatchTransaction(txWithConfirmation, transactionClient)
+      : await submitTransaction(txWithConfirmation, transactionClient);
+    if (!txResponse) {
+      return undefined;
+    }
+    return txResponse.wait();
+  } catch {
+    return undefined;
+  }
 }
