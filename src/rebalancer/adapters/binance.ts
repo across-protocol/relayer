@@ -84,6 +84,9 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   // ////////////////////////////////////////////////////////////
 
   async initialize(_availableRoutes: RebalanceRoute[]): Promise<void> {
+    if (this.initialized) {
+      return;
+    }
     await super.initialize(_availableRoutes.filter((route) => route.adapter === "binance"));
 
     this.binanceApiClient = await getBinanceApiClient(process.env.BINANCE_API_BASE);
@@ -100,42 +103,61 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         this._getEntrypointNetwork(sourceChain, sourceToken),
         this._getEntrypointNetwork(destinationChain, destinationToken),
       ]);
-      assert(
-        destinationEntrypointNetwork === destinationChain ||
-          this.oftAdapter.supportsRoute({
-            ...route,
-            sourceChain: destinationEntrypointNetwork,
-            sourceToken: "USDT",
-            adapter: "oft",
-          }) ||
-          this.cctpAdapter.supportsRoute({
-            ...route,
-            sourceChain: sourceChain,
-            sourceToken: "USDC",
-            adapter: "cctp",
-          }) ||
-          `Destination chain ${getNetworkName(
-            destinationChain
-          )} is not a valid final destination chain for token ${destinationToken} because it is either not a OFT or a CCTP bridge`
-      );
-      assert(
-        sourceEntrypointNetwork === sourceChain ||
-          this.oftAdapter.supportsRoute({
-            ...route,
-            destinationChain: sourceEntrypointNetwork,
-            destinationToken: "USDT",
-            adapter: "oft",
-          }) ||
-          this.cctpAdapter.supportsRoute({
-            ...route,
-            destinationChain: sourceEntrypointNetwork,
-            destinationToken: "USDC",
-            adapter: "cctp",
-          }) ||
-          `Source chain ${getNetworkName(
-            sourceChain
-          )} is not a valid source chain for token ${sourceToken} because it is either not a OFT or a CCTP bridge`
-      );
+      // Validate that route can be supported using intermediate bridges to get to/from Arbitrum to access Binance.
+      if (destinationEntrypointNetwork !== destinationChain) {
+        if (destinationToken === "USDT") {
+          assert(
+            this.oftAdapter.supportsRoute({
+              ...route,
+              sourceChain: destinationEntrypointNetwork,
+              sourceToken: "USDT",
+              adapter: "oft",
+            }),
+            `Destination chain ${getNetworkName(
+              destinationChain
+            )} is not a valid final destination chain for token ${destinationToken} because it has neither a OFT nor a CCTP bridge route from the entry point network ${destinationEntrypointNetwork}`
+          );
+        } else if (destinationToken === "USDC") {
+          assert(
+            this.cctpAdapter.supportsRoute({
+              ...route,
+              sourceChain: destinationEntrypointNetwork,
+              sourceToken: "USDC",
+              adapter: "cctp",
+            }),
+            `Destination chain ${getNetworkName(
+              destinationChain
+            )} is not a valid final destination chain for token ${destinationToken} because it has neither a OFT nor a CCTP bridge route from the entry point network ${destinationEntrypointNetwork}`
+          );
+        }
+      }
+      if (sourceEntrypointNetwork !== sourceChain) {
+        if (sourceToken === "USDT") {
+          assert(
+            this.oftAdapter.supportsRoute({
+              ...route,
+              destinationChain: sourceEntrypointNetwork,
+              destinationToken: "USDT",
+              adapter: "oft",
+            }),
+            `Source chain ${getNetworkName(
+              sourceChain
+            )} is not a valid source chain for token ${sourceToken} because it has neither a OFT nor a CCTP bridge route to HyperEVM`
+          );
+        } else if (sourceToken === "USDC") {
+          assert(
+            this.cctpAdapter.supportsRoute({
+              ...route,
+              destinationChain: sourceEntrypointNetwork,
+              destinationToken: "USDC",
+              adapter: "cctp",
+            }),
+            `Source chain ${getNetworkName(
+              sourceChain
+            )} is not a valid source chain for token ${sourceToken} because it has neither a OFT nor a CCTP bridge route to HyperEVM`
+          );
+        }
+      }
       assert(
         sourceCoin.networkList.find((network) => network.name === BINANCE_NETWORKS[sourceEntrypointNetwork]),
         `Source token ${sourceToken} network list does not contain Binance source entrypoint network "${

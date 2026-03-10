@@ -35,6 +35,9 @@ export class OftAdapter extends BaseAdapter {
   REDIS_PREFIX = "oft-bridge:";
 
   async initialize(availableRoutes: RebalanceRoute[]): Promise<void> {
+    if (this.initialized) {
+      return;
+    }
     await super.initialize(availableRoutes.filter((route) => route.adapter === "oft"));
 
     await forEachAsync(this.availableRoutes, async (route) => {
@@ -228,9 +231,5 @@ export class OftAdapter extends BaseAdapter {
     };
 
     return await this._submitTransaction(withdrawTxn);
-  }
-
-  protected _redisGetOrderStatusKey(): string {
-    throw new Error("Not implemented");
   }
 }

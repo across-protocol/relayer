@@ -1,4 +1,4 @@
-import { AugmentedTransaction } from "../../clients";
+import { AugmentedTransaction, MultiCallerClient } from "../../clients";
 import {
   assert,
   BigNumber,
@@ -129,8 +129,8 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     readonly logger: winston.Logger,
     readonly config: RebalancerConfig,
     readonly baseSigner: Signer,
-    readonly oftAdapter: OftAdapter,
-    readonly cctpAdapter: CctpAdapter
+    readonly cctpAdapter: CctpAdapter,
+    readonly oftAdapter: OftAdapter
   ) {
     // Will need to be able use Signer as Wallet to submit HL order
     assert(isSignerWallet(baseSigner), "Signer is not a Wallet");
@@ -142,6 +142,9 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
   // ////////////////////////////////////////////////////////////
 
   async initialize(_availableRoutes: RebalanceRoute[]): Promise<void> {
+    if (this.initialized) {
+      return;
+    }
     await super.initialize(_availableRoutes.filter((route) => route.adapter === "hyperliquid"));
 
     await forEachAsync(this.availableRoutes, async (route) => {
@@ -150,35 +153,58 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       if (!this.spotMarketMeta[expectedName]) {
         throw new Error(`Missing spotMarketMeta data for ${expectedName}`);
       }
-      assert(
-        this.oftAdapter.supportsRoute({ ...route, sourceChain: HYPEREVM, sourceToken: "USDT", adapter: "oft" }) ||
-          this.cctpAdapter.supportsRoute({ ...route, sourceChain: HYPEREVM, sourceToken: "USDC", adapter: "cctp" }),
-        `Destination chain ${getNetworkName(
-          destinationChain
-        )} is not a valid final destination chain for token ${destinationToken} because it is either not a OFT or a CCTP bridge`
-      );
-      assert(
-        this.oftAdapter.supportsRoute({
-          ...route,
-          destinationChain: HYPEREVM,
-          destinationToken: "USDT",
-          adapter: "oft",
-        }) ||
-          this.cctpAdapter.supportsRoute({
-            ...route,
-            destinationChain: HYPEREVM,
-            destinationToken: "USDC",
-            adapter: "cctp",
-          }),
-        `Source chain ${getNetworkName(
-          sourceChain
-        )} is not a valid source chain for token ${sourceToken} because it is either not a OFT or a CCTP bridge`
-      );
+
+      // Validate that route can be supported using intermediate bridges to get to/from HyperEVM to access Hyperliquid.
+      if (destinationChain !== HYPEREVM) {
+        if (destinationToken === "USDT") {
+          assert(
+            this.oftAdapter.supportsRoute({ ...route, sourceChain: HYPEREVM, sourceToken: "USDT", adapter: "oft" }),
+            `Destination chain ${getNetworkName(
+              destinationChain
+            )} is not a valid final destination chain for token ${destinationToken} because it has neither a OFT nor a CCTP bridge route from HyperEVM`
+          );
+        } else if (destinationToken === "USDC") {
+          assert(
+            this.cctpAdapter.supportsRoute({ ...route, sourceChain: HYPEREVM, sourceToken: "USDC", adapter: "cctp" }),
+            `Destination chain ${getNetworkName(
+              destinationChain
+            )} is not a valid final destination chain for token ${destinationToken} because it has neither a OFT nor a CCTP bridge route from HyperEVM`
+          );
+        }
+      }
+      if (sourceChain !== HYPEREVM) {
+        if (sourceToken === "USDT") {
+          assert(
+            this.oftAdapter.supportsRoute({
+              ...route,
+              destinationChain: HYPEREVM,
+              destinationToken: "USDT",
+              adapter: "oft",
+            }),
+            `Source chain ${getNetworkName(
+              sourceChain
+            )} is not a valid source chain for token ${sourceToken} because it has neither a OFT nor a CCTP bridge route to HyperEVM`
+          );
+        } else if (sourceToken === "USDC") {
+          assert(
+            this.cctpAdapter.supportsRoute({
+              ...route,
+              destinationChain: HYPEREVM,
+              destinationToken: "USDC",
+              adapter: "cctp",
+            }),
+            `Source chain ${getNetworkName(
+              sourceChain
+            )} is not a valid source chain for token ${sourceToken} because it has neither a OFT nor a CCTP bridge route to HyperEVM`
+          );
+        }
+      }
     });
   }
 
   async setApprovals(): Promise<void> {
     await super.setApprovals();
+    this.multicallerClient = new MultiCallerClient(this.logger, this.config.multiCallChunkSize, this.baseSigner);
     // Check allowance for CoreDepositWallet required to deposit USDC to Hypercore.
     const provider_999 = await getProvider(HYPEREVM);
     const connectedSigner_999 = this.baseSigner.connect(provider_999);

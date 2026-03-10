@@ -20,10 +20,22 @@ function constructRebalancerDependencies(
   const rebalancerConfig = new RebalancerConfig(process.env);
 
   // Construct adapters:
-  const hyperliquidAdapter = new HyperliquidStablecoinSwapAdapter(logger, rebalancerConfig, baseSigner);
-  const binanceAdapter = new BinanceStablecoinSwapAdapter(logger, rebalancerConfig, baseSigner);
   const cctpAdapter = new CctpAdapter(logger, rebalancerConfig, baseSigner);
   const oftAdapter = new OftAdapter(logger, rebalancerConfig, baseSigner);
+  const hyperliquidAdapter = new HyperliquidStablecoinSwapAdapter(
+    logger,
+    rebalancerConfig,
+    baseSigner,
+    cctpAdapter,
+    oftAdapter
+  );
+  const binanceAdapter = new BinanceStablecoinSwapAdapter(
+    logger,
+    rebalancerConfig,
+    baseSigner,
+    cctpAdapter,
+    oftAdapter
+  );
   const adapterMap = { hyperliquid: hyperliquidAdapter, binance: binanceAdapter, cctp: cctpAdapter, oft: oftAdapter };
 
   // Following two variables are hardcoded to aid testing:
@@ -76,6 +88,35 @@ function constructRebalancerDependencies(
     }
   }
 
+  for (const usdtChain of usdtChains.filter((chain) => chain !== CHAIN_IDs.BSC)) {
+    for (const otherUsdtChain of usdtChains.filter((chain) => chain !== CHAIN_IDs.BSC)) {
+      if (usdtChain === otherUsdtChain) {
+        continue;
+      }
+      rebalanceRoutes.push({
+        sourceChain: usdtChain,
+        sourceToken: "USDT",
+        destinationChain: otherUsdtChain,
+        destinationToken: "USDT",
+        adapter: "oft",
+      });
+    }
+  }
+  for (const usdcChain of usdcChains.filter((chain) => chain !== CHAIN_IDs.BSC)) {
+    for (const otherUsdcChain of usdcChains.filter((chain) => chain !== CHAIN_IDs.BSC)) {
+      if (usdcChain === otherUsdcChain) {
+        continue;
+      }
+      rebalanceRoutes.push({
+        sourceChain: usdcChain,
+        sourceToken: "USDC",
+        destinationChain: otherUsdcChain,
+        destinationToken: "USDC",
+        adapter: "cctp",
+      });
+    }
+  }
+
   // @todo: Add test-net support for this client. For now, we only support production and we do not construct
   // any adapters or routes when running on test net.
   const adaptersToUpdate: Record<string, RebalancerAdapter> =
@@ -88,7 +129,8 @@ export async function constructCumulativeBalanceRebalancerClient(
   logger: winston.Logger,
   baseSigner: Signer
 ): Promise<CumulativeBalanceRebalancerClient> {
-  const { rebalancerConfig, adapters, rebalanceRoutes } = constructRebalancerDependencies(logger, baseSigner);
+  const { rebalancerConfig, adapters, rebalanceRoutes } =
+    constructRebalancerDependencies(logger, baseSigner);
   const isReadonly = false;
   const rebalancerClient = new CumulativeBalanceRebalancerClient(
     logger,
@@ -97,6 +139,9 @@ export async function constructCumulativeBalanceRebalancerClient(
     baseSigner,
     isReadonly
   );
+  // Initialize the CCTP and OFT Adapters first before initializing the Binance and HL adapters which use the former
+  // adapters.
+  await Promise.all([adapters["cctp"].initialize(rebalanceRoutes), adapters["oft"].initialize(rebalanceRoutes)]);
   await rebalancerClient.initialize(rebalanceRoutes);
   logger.debug({
     at: "RebalancerClientHelper.constructCumulativeBalanceRebalancerClient",

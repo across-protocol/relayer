@@ -219,7 +219,7 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
           if (rebalanceRoutesToEvaluate.length === 0) {
             this.logger.debug({
               at: "CumulativeBalanceRebalancerClient.rebalanceInventory",
-              message: `No rebalance routes found for ${excessToken} on ${getNetworkName(chainId)}`,
+              message: `No rebalance routes found for ${excessToken} from ${getNetworkName(chainId)}`,
               originChain: chainId,
               allDestinationChains,
               excessToken,
@@ -247,7 +247,7 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
           const cheapestCostRoute = rebalanceRouteCosts[0];
           this.logger.debug({
             at: "RebalanceClient.rebalanceCumulativeInventory",
-            message: `Evaluating sending of ${amountToTransferCapped.toString()} of ${excessToken} on ${getNetworkName(
+            message: `Evaluating sending of ${amountToTransferCapped.toString()} of ${excessToken} from ${getNetworkName(
               chainId
             )}`,
             sortedDestinationChains: allDestinationChains,

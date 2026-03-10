@@ -30,6 +30,9 @@ export class CctpAdapter extends BaseAdapter {
   REDIS_PREFIX = "cctp-bridge:";
 
   async initialize(availableRoutes: RebalanceRoute[]): Promise<void> {
+    if (this.initialized) {
+      return;
+    }
     await super.initialize(availableRoutes.filter((route) => route.adapter === "cctp"));
 
     this.availableRoutes.forEach((route) => {

@@ -88,6 +88,9 @@ export abstract class BaseAdapter implements RebalancerAdapter {
    * @param availableRoutes - The available routes to initialize the adapter for.
    */
   async initialize(availableRoutes: RebalanceRoute[]): Promise<void> {
+    if (this.initialized) {
+      return;
+    }
     this.redisCache = (await getRedisCache(this.logger, undefined, rebalancerStatusTrackingNameSpace)) as RedisCache;
 
     this.baseSignerAddress = EvmAddress.from(await this.baseSigner.getAddress());
