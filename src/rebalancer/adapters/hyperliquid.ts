@@ -37,6 +37,8 @@ import { RebalanceRoute } from "../utils/interfaces";
 import * as hl from "@nktkas/hyperliquid";
 import { BaseAdapter, OrderDetails } from "./baseAdapter";
 import { RebalancerConfig } from "../RebalancerConfig";
+import { OftAdapter } from "./oftAdapter";
+import { CctpAdapter } from "./cctpAdapter";
 const { HYPEREVM } = CHAIN_IDs;
 
 enum STATUS {
@@ -123,7 +125,13 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     },
   };
 
-  constructor(readonly logger: winston.Logger, readonly config: RebalancerConfig, readonly baseSigner: Signer) {
+  constructor(
+    readonly logger: winston.Logger,
+    readonly config: RebalancerConfig,
+    readonly baseSigner: Signer,
+    readonly oftAdapter: OftAdapter,
+    readonly cctpAdapter: CctpAdapter
+  ) {
     // Will need to be able use Signer as Wallet to submit HL order
     assert(isSignerWallet(baseSigner), "Signer is not a Wallet");
     super(logger, config, baseSigner);
@@ -143,13 +151,25 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         throw new Error(`Missing spotMarketMeta data for ${expectedName}`);
       }
       assert(
-        this._chainIsBridgeable(destinationChain, destinationToken),
+        this.oftAdapter.supportsRoute({ ...route, sourceChain: HYPEREVM, sourceToken: "USDT", adapter: "oft" }) ||
+          this.cctpAdapter.supportsRoute({ ...route, sourceChain: HYPEREVM, sourceToken: "USDC", adapter: "cctp" }),
         `Destination chain ${getNetworkName(
           destinationChain
         )} is not a valid final destination chain for token ${destinationToken} because it is either not a OFT or a CCTP bridge`
       );
       assert(
-        this._chainIsBridgeable(sourceChain, sourceToken),
+        this.oftAdapter.supportsRoute({
+          ...route,
+          destinationChain: HYPEREVM,
+          destinationToken: "USDT",
+          adapter: "oft",
+        }) ||
+          this.cctpAdapter.supportsRoute({
+            ...route,
+            destinationChain: HYPEREVM,
+            destinationToken: "USDC",
+            adapter: "cctp",
+          }),
         `Source chain ${getNetworkName(
           sourceChain
         )} is not a valid source chain for token ${sourceToken} because it is either not a OFT or a CCTP bridge`
@@ -179,8 +199,9 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     await this.multicallerClient.executeTxnQueues();
   }
 
-  async initializeRebalance(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber): Promise<void> {
+  async initializeRebalance(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber): Promise<BigNumber> {
     this._assertInitialized();
+    this._assertRouteIsSupported(rebalanceRoute);
 
     const { sourceToken, sourceChain, destinationChain, destinationToken } = rebalanceRoute;
     const spotMarketMeta = this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
@@ -193,7 +214,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
           sourceTokenInfo.decimals
         ).toString()}`,
       });
-      return;
+      return bnZero;
     }
 
     // TODO: The amount we transfer in here might not be fully placed into an order dependning on the market's
@@ -527,13 +548,35 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     // Bridge to HyperEVM Fee:
     let bridgeToHyperEvmFee = bnZero;
     if (rebalanceRoute.sourceChain !== HYPEREVM) {
-      bridgeToHyperEvmFee = await this._getBridgeFee(sourceChain, HYPEREVM, sourceToken, amountToTransfer);
+      const _rebalanceRoute = { ...rebalanceRoute, destinationChain: HYPEREVM };
+      if (sourceToken === "USDT") {
+        bridgeToHyperEvmFee = await this.oftAdapter.getEstimatedCost(
+          { ..._rebalanceRoute, destinationToken: "USDT", adapter: "oft" },
+          amountToTransfer
+        );
+      } else if (sourceToken === "USDC") {
+        bridgeToHyperEvmFee = await this.cctpAdapter.getEstimatedCost(
+          { ..._rebalanceRoute, destinationToken: "USDC", adapter: "cctp" },
+          amountToTransfer
+        );
+      }
     }
 
     // Bridge from HyperEVMFee:
     let bridgeFromHyperEvmFee = bnZero;
     if (rebalanceRoute.destinationChain !== HYPEREVM) {
-      bridgeFromHyperEvmFee = await this._getBridgeFee(HYPEREVM, destinationChain, destinationToken, amountToTransfer);
+      const _rebalanceRoute = { ...rebalanceRoute, sourceChain: HYPEREVM };
+      if (sourceToken === "USDT") {
+        bridgeFromHyperEvmFee = await this.oftAdapter.getEstimatedCost(
+          { ..._rebalanceRoute, destinationToken: "USDT", adapter: "oft" },
+          amountToTransfer
+        );
+      } else if (sourceToken === "USDC") {
+        bridgeFromHyperEvmFee = await this.cctpAdapter.getEstimatedCost(
+          { ..._rebalanceRoute, destinationToken: "USDC", adapter: "cctp" },
+          amountToTransfer
+        );
+      }
     }
 
     // The only time we add an opportunity cost of capital component is when we require rebalancing via OFT from HyperEVM
@@ -1197,6 +1240,40 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       };
     }
     await this._submitTransaction(transaction);
+  }
+
+  protected async _bridgeToChain(
+    token: string,
+    originChain: number,
+    destinationChain: number,
+    expectedAmountToTransfer: BigNumber
+  ): Promise<BigNumber> {
+    switch (token) {
+      case "USDT":
+        return await this.oftAdapter.initializeRebalance(
+          {
+            sourceChain: originChain,
+            destinationChain,
+            sourceToken: "USDT",
+            destinationToken: "USDT",
+            adapter: "oft",
+          },
+          expectedAmountToTransfer
+        );
+      case "USDC":
+        return await this.cctpAdapter.initializeRebalance(
+          {
+            sourceChain: originChain,
+            destinationChain,
+            sourceToken: "USDC",
+            destinationToken: "USDC",
+            adapter: "cctp",
+          },
+          expectedAmountToTransfer
+        );
+      default:
+        throw new Error(`Should never happen: Unsupported bridge for token: ${token}`);
+    }
   }
 
   private async _getInitiatedWithdrawalsFromHypercore(

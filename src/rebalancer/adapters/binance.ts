@@ -31,6 +31,8 @@ import { RebalanceRoute } from "../utils/interfaces";
 import { BaseAdapter, OrderDetails, STATUS } from "./baseAdapter";
 import { AugmentedTransaction } from "../../clients";
 import { RebalancerConfig } from "../RebalancerConfig";
+import { CctpAdapter } from "./cctpAdapter";
+import { OftAdapter } from "./oftAdapter";
 interface SPOT_MARKET_META {
   symbol: string;
   baseAssetName: string;
@@ -67,7 +69,13 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       minimumOrderSize: 1,
     },
   };
-  constructor(readonly logger: winston.Logger, readonly config: RebalancerConfig, readonly baseSigner: Signer) {
+  constructor(
+    readonly logger: winston.Logger,
+    readonly config: RebalancerConfig,
+    readonly baseSigner: Signer,
+    readonly cctpAdapter: CctpAdapter,
+    readonly oftAdapter: OftAdapter
+  ) {
     super(logger, config, baseSigner);
   }
 
@@ -94,16 +102,39 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       ]);
       assert(
         destinationEntrypointNetwork === destinationChain ||
-          this._chainIsBridgeable(destinationChain, destinationToken),
-        `Destination chain ${getNetworkName(
-          destinationChain
-        )} is not a valid final destination chain for token ${destinationToken} because it is either not a OFT or a CCTP bridge`
+          this.oftAdapter.supportsRoute({
+            ...route,
+            sourceChain: destinationEntrypointNetwork,
+            sourceToken: "USDT",
+            adapter: "oft",
+          }) ||
+          this.cctpAdapter.supportsRoute({
+            ...route,
+            sourceChain: sourceChain,
+            sourceToken: "USDC",
+            adapter: "cctp",
+          }) ||
+          `Destination chain ${getNetworkName(
+            destinationChain
+          )} is not a valid final destination chain for token ${destinationToken} because it is either not a OFT or a CCTP bridge`
       );
       assert(
-        sourceEntrypointNetwork === sourceChain || this._chainIsBridgeable(sourceChain, sourceToken),
-        `Source chain ${getNetworkName(
-          sourceChain
-        )} is not a valid source chain for token ${sourceToken} because it is either not a OFT or a CCTP bridge`
+        sourceEntrypointNetwork === sourceChain ||
+          this.oftAdapter.supportsRoute({
+            ...route,
+            destinationChain: sourceEntrypointNetwork,
+            destinationToken: "USDT",
+            adapter: "oft",
+          }) ||
+          this.cctpAdapter.supportsRoute({
+            ...route,
+            destinationChain: sourceEntrypointNetwork,
+            destinationToken: "USDC",
+            adapter: "cctp",
+          }) ||
+          `Source chain ${getNetworkName(
+            sourceChain
+          )} is not a valid source chain for token ${sourceToken} because it is either not a OFT or a CCTP bridge`
       );
       assert(
         sourceCoin.networkList.find((network) => network.name === BINANCE_NETWORKS[sourceEntrypointNetwork]),
@@ -368,6 +399,10 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         message: `Pending bridge to Binance deposit network cloids: ${pendingBridgeToBinanceNetwork.join(", ")}`,
       });
     }
+    const [pendingCctpBridges, pendingOftBridges] = await Promise.all([
+      this.cctpAdapter.getPendingRebalances(),
+      this.oftAdapter.getPendingRebalances(),
+    ]);
     await forEachAsync(Array.from(this.allSourceTokens), async (sourceToken) => {
       await forEachAsync(Array.from(this.allSourceChains), async (sourceChain) => {
         const binanceDepositNetwork = await this._getEntrypointNetwork(sourceChain, sourceToken);
@@ -375,9 +410,9 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         if (requiresBridgeBeforeDeposit) {
           let pendingRebalanceAmount = bnZero;
           if (sourceToken === "USDT") {
-            pendingRebalanceAmount = await this._getUnfinalizedOftBridgeAmount(sourceChain, binanceDepositNetwork);
+            pendingRebalanceAmount = pendingOftBridges[binanceDepositNetwork]?.[sourceToken] ?? bnZero;
           } else {
-            pendingRebalanceAmount = await this._getUnfinalizedCctpBridgeAmount(sourceChain, binanceDepositNetwork);
+            pendingRebalanceAmount = pendingCctpBridges[binanceDepositNetwork]?.[sourceToken] ?? bnZero;
           }
           for (const cloid of pendingBridgeToBinanceNetwork) {
             const orderDetails = await this._redisGetOrderDetails(cloid);
@@ -539,8 +574,9 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     return this._redisGetPendingOrders();
   }
 
-  async initializeRebalance(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber): Promise<void> {
+  async initializeRebalance(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber): Promise<BigNumber> {
     this._assertInitialized();
+    this._assertRouteIsSupported(rebalanceRoute);
     const { sourceChain, sourceToken, destinationToken, destinationChain } = rebalanceRoute;
 
     const destinationCoin = await this._getAccountCoins(destinationToken);
@@ -562,14 +598,14 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         at: "BinanceStablecoinSwapAdapter.initializeRebalance",
         message: `Expected amount to withdraw ${expectedAmountToWithdraw.toString()} is less than minimum withdrawal size ${minimumWithdrawalSize.toString()} on Binance destination chain ${destinationEntrypointNetwork}`,
       });
-      return;
+      return bnZero;
     }
     if (expectedAmountToWithdraw.gt(maximumWithdrawalSize)) {
       this.logger.debug({
         at: "BinanceStablecoinSwapAdapter.initializeRebalance",
         message: `Expected amount to withdraw ${expectedAmountToWithdraw.toString()} is greater than maximum withdrawal size ${maximumWithdrawalSize.toString()} on Binance destination chain ${destinationEntrypointNetwork}`,
       });
-      return;
+      return bnZero;
     }
 
     // TODO: The amount transferred here might produce dust due to the rounding required to meet the minimum order
@@ -583,7 +619,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         at: "BinanceStablecoinSwapAdapter.initializeRebalance",
         message: `Amount to transfer ${amountToTransfer.toString()} is less than minimum order size ${minimumOrderSize.toString()}`,
       });
-      return;
+      return bnZero;
     }
 
     const cloid = await this._redisGetNextCloid();
@@ -606,7 +642,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
           balance: balance.toString(),
           amountToTransfer: amountToTransfer.toString(),
         });
-        return;
+        return bnZero;
       }
       this.logger.info({
         at: "BinanceStablecoinSwapAdapter.initializeRebalance",
@@ -624,6 +660,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         amountToTransfer
       );
       await this._redisCreateOrder(cloid, STATUS.PENDING_BRIDGE_PRE_DEPOSIT, rebalanceRoute, amountReceivedFromBridge);
+      return amountReceivedFromBridge;
     } else {
       this.logger.info({
         at: "BinanceStablecoinSwapAdapter.initializeRebalance",
@@ -635,6 +672,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       });
       await this._depositToBinance(sourceToken, sourceChain, amountToTransfer);
       await this._redisCreateOrder(cloid, STATUS.PENDING_DEPOSIT, rebalanceRoute, amountToTransfer);
+      return amountToTransfer;
     }
   }
 
@@ -684,19 +722,36 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     let bridgeToBinanceFee = bnZero;
     const binanceDepositNetwork = await this._getEntrypointNetwork(sourceChain, sourceToken);
     if (binanceDepositNetwork !== sourceChain) {
-      bridgeToBinanceFee = await this._getBridgeFee(sourceChain, binanceDepositNetwork, sourceToken, amountToTransfer);
+      const _rebalanceRoute = { ...rebalanceRoute, destinationChain: binanceDepositNetwork };
+      if (sourceToken === "USDT") {
+        bridgeToBinanceFee = await this.oftAdapter.getEstimatedCost(
+          { ..._rebalanceRoute, destinationToken: "USDT", adapter: "oft" },
+          amountToTransfer
+        );
+      } else if (sourceToken === "USDC") {
+        bridgeToBinanceFee = await this.cctpAdapter.getEstimatedCost(
+          { ..._rebalanceRoute, destinationToken: "USDC", adapter: "cctp" },
+          amountToTransfer
+        );
+      }
     }
 
     // Bridge from Binance withdrawal network fee:
     let bridgeFromBinanceFee = bnZero;
     const binanceWithdrawNetwork = await this._getEntrypointNetwork(destinationChain, destinationToken);
     if (binanceWithdrawNetwork !== destinationChain) {
-      bridgeFromBinanceFee = await this._getBridgeFee(
-        destinationChain,
-        binanceWithdrawNetwork,
-        destinationToken,
-        amountToTransfer
-      );
+      const _rebalanceRoute = { ...rebalanceRoute, sourceChain: binanceWithdrawNetwork };
+      if (sourceToken === "USDT") {
+        bridgeFromBinanceFee = await this.oftAdapter.getEstimatedCost(
+          { ..._rebalanceRoute, destinationToken: "USDT", adapter: "oft" },
+          amountToTransfer
+        );
+      } else if (sourceToken === "USDC") {
+        bridgeFromBinanceFee = await this.cctpAdapter.getEstimatedCost(
+          { ..._rebalanceRoute, destinationToken: "USDC", adapter: "cctp" },
+          amountToTransfer
+        );
+      }
     }
 
     // The only time we add an opportunity cost of capital component is when we require rebalancing via OFT from HyperEVM
@@ -1018,6 +1073,40 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const initiatedWithdrawalKey = this._redisGetInitiatedWithdrawalKey(cloid);
     const initiatedWithdrawal = await this.redisCache.get<string>(initiatedWithdrawalKey);
     return initiatedWithdrawal;
+  }
+
+  protected async _bridgeToChain(
+    token: string,
+    originChain: number,
+    destinationChain: number,
+    expectedAmountToTransfer: BigNumber
+  ): Promise<BigNumber> {
+    switch (token) {
+      case "USDT":
+        return await this.oftAdapter.initializeRebalance(
+          {
+            sourceChain: originChain,
+            destinationChain,
+            sourceToken: "USDT",
+            destinationToken: "USDT",
+            adapter: "oft",
+          },
+          expectedAmountToTransfer
+        );
+      case "USDC":
+        return await this.cctpAdapter.initializeRebalance(
+          {
+            sourceChain: originChain,
+            destinationChain,
+            sourceToken: "USDC",
+            destinationToken: "USDC",
+            adapter: "cctp",
+          },
+          expectedAmountToTransfer
+        );
+      default:
+        throw new Error(`Should never happen: Unsupported bridge for token: ${token}`);
+    }
   }
 
   private async _withdraw(
