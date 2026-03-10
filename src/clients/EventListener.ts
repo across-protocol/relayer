@@ -2,7 +2,15 @@ import assert from "assert";
 import { EventEmitter } from "node:events";
 import { AbiEvent, BaseError, Block, createPublicClient, http, Log as viemLog, parseAbiItem, webSocket } from "viem";
 import { Log } from "../interfaces";
-import { EventManager, getNetworkName, getNodeUrlList, getOriginFromURL, getProviderHeaders, getViemChain, winston } from "../utils";
+import {
+  EventManager,
+  getNetworkName,
+  getNodeUrlList,
+  getOriginFromURL,
+  getProviderHeaders,
+  getViemChain,
+  winston,
+} from "../utils";
 
 function resolveProviders(chainId: number, quorum = 1) {
   const protocol = process.env[`RPC_PROVIDERS_TRANSPORT_${chainId}`] ?? "wss";
