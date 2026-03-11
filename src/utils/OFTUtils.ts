@@ -140,7 +140,7 @@ export function buildSimpleSendParamEvm(to: EvmAddress, dstEid: number, roundedA
 /**
  * @notice Fetches destination chain transaction details for a outbound message.
  * @param txHash Transaction hash of the outbound message on the origin chain.
- * @returns Message data as outlined in these docs: https://docs.layerzero.network/v2/concepts/troubleshooting/debugging-messages#response-shape.
+ * @returns Array of message data objects as outlined in these docs: https://docs.layerzero.network/v2/concepts/troubleshooting/debugging-messages#response-shape.
  */
 export async function getLzTransactionDetails(txHash: string): Promise<LzTransactionDetails[]> {
   const httpResponse = await axios.get<{ data: LzTransactionDetails[] }>(
