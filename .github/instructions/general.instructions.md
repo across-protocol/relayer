@@ -28,7 +28,7 @@ Before opening a contribution:
 
 1. Read [CONTRIBUTING.md](https://github.com/UMAprotocol/protocol/blob/master/CONTRIBUTING.md).
 2. Follow `STYLE.md`.
-3. Follow Conventional Commits guidance from `CONTRIBUTING.md`.
+3. Follow Conventional Commits guidance from [CONTRIBUTING.md](https://github.com/UMAprotocol/protocol/blob/master/CONTRIBUTING.md).
 4. Read the Developers section in the root `README.md`.
 
 ## Non-Negotiable Rules
