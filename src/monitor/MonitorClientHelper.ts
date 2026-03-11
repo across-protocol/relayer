@@ -1,5 +1,5 @@
 import { MonitorConfig } from "./MonitorConfig";
-import { EvmAddress, Signer, winston, assert, isEVMSpokePoolClient, toAddressType } from "../utils";
+import { EvmAddress, Signer, winston, assert, isEVMSpokePoolClient } from "../utils";
 import { BundleDataClient, HubPoolClient, TokenTransferClient } from "../clients";
 import {
   Clients,
