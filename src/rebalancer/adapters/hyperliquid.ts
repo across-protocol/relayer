@@ -161,14 +161,14 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
             this.oftAdapter.supportsRoute({ ...route, sourceChain: HYPEREVM, sourceToken: "USDT", adapter: "oft" }),
             `Destination chain ${getNetworkName(
               destinationChain
-            )} is not a valid final destination chain for token ${destinationToken} because it has neither a OFT nor a CCTP bridge route from HyperEVM`
+            )} is not a valid final destination chain for token ${destinationToken} because it doesn't have an OFT route from HyperEVM`
           );
         } else if (destinationToken === "USDC") {
           assert(
             this.cctpAdapter.supportsRoute({ ...route, sourceChain: HYPEREVM, sourceToken: "USDC", adapter: "cctp" }),
             `Destination chain ${getNetworkName(
               destinationChain
-            )} is not a valid final destination chain for token ${destinationToken} because it has neither a OFT nor a CCTP bridge route from HyperEVM`
+            )} is not a valid final destination chain for token ${destinationToken} because it doesn't have a CCTP bridge route from HyperEVM`
           );
         }
       }
@@ -183,7 +183,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
             }),
             `Source chain ${getNetworkName(
               sourceChain
-            )} is not a valid source chain for token ${sourceToken} because it has neither a OFT nor a CCTP bridge route to HyperEVM`
+            )} is not a valid source chain for token ${sourceToken} because it doesn't have an OFT bridge route to HyperEVM`
           );
         } else if (sourceToken === "USDC") {
           assert(
@@ -195,7 +195,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
             }),
             `Source chain ${getNetworkName(
               sourceChain
-            )} is not a valid source chain for token ${sourceToken} because it has neither a OFT nor a CCTP bridge route to HyperEVM`
+            )} is not a valid source chain for token ${sourceToken} because it doesn't have a CCTP bridge route to HyperEVM`
           );
         }
       }

@@ -115,7 +115,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
             }),
             `Destination chain ${getNetworkName(
               destinationChain
-            )} is not a valid final destination chain for token ${destinationToken} because it has neither a OFT nor a CCTP bridge route from the entry point network ${destinationEntrypointNetwork}`
+            )} is not a valid final destination chain for token ${destinationToken} because it doesn't have an OFT bridge route from the Binance entry point network ${destinationEntrypointNetwork}`
           );
         } else if (destinationToken === "USDC") {
           assert(
@@ -127,7 +127,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
             }),
             `Destination chain ${getNetworkName(
               destinationChain
-            )} is not a valid final destination chain for token ${destinationToken} because it has neither a OFT nor a CCTP bridge route from the entry point network ${destinationEntrypointNetwork}`
+            )} is not a valid final destination chain for token ${destinationToken} because it doesn't have a CCTP bridge route from the Binance entry point network ${destinationEntrypointNetwork}`
           );
         }
       }
@@ -142,7 +142,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
             }),
             `Source chain ${getNetworkName(
               sourceChain
-            )} is not a valid source chain for token ${sourceToken} because it has neither a OFT nor a CCTP bridge route to the Binance entrypoint network ${sourceEntrypointNetwork}`
+            )} is not a valid source chain for token ${sourceToken} because it doesn't have an OFT bridge route to the Binance entrypoint network ${sourceEntrypointNetwork}`
           );
         } else if (sourceToken === "USDC") {
           assert(
@@ -154,7 +154,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
             }),
             `Source chain ${getNetworkName(
               sourceChain
-            )} is not a valid source chain for token ${sourceToken} because it has neither a OFT nor a CCTP bridge route to the Binance entrypoint network ${sourceEntrypointNetwork}`
+            )} is not a valid source chain for token ${sourceToken} because it doesn't have a CCTP bridge route to the Binance entrypoint network ${sourceEntrypointNetwork}`
           );
         }
       }
