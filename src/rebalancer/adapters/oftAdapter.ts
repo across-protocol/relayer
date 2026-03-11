@@ -124,9 +124,9 @@ export class OftAdapter extends BaseAdapter {
           message: `Order cloid ${txnHash} has been finalized`,
         });
         await this._redisDeleteOrder(txnHash, STATUS.PENDING_BRIDGE_PRE_DEPOSIT);
+        // delete cached pending rebalances now that we know state has changed:
+        this.pendingRebalances = undefined;
       }
-      // delete cached pending rebalances now that we know state has changed:
-      this.pendingRebalances = undefined;
     }
   }
 
