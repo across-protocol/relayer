@@ -31,19 +31,17 @@ export async function oftRetryFinalizer(
     maxLookBack: spokePoolClient.eventSearchConfig.maxLookBack,
   };
   const depositInitiatedMessages = await getSrcOftMessages(spokePoolClient.chainId, searchConfig, srcProvider);
-  const txnRefCount: Record<string, number> = {};
   const _outstandingMessages = [];
   // To avoid rate-limiting, chunk API queries.
   const chunkSize = Number(process.env["LZ_API_CHUNK_SIZE"] ?? 8);
   for (const depositInitiatedMessageChunk of chunk(depositInitiatedMessages, chunkSize)) {
     _outstandingMessages.push(
       ...(await mapAsync(depositInitiatedMessageChunk, async ({ txnRef }) => {
-        txnRefCount[txnRef] = (txnRefCount[txnRef] ?? 0) + 1;
-        return (await getLzTransactionDetails(txnRef))[txnRefCount[txnRef] - 1];
+        return (await getLzTransactionDetails(txnRef)).flat();
       }))
     );
   }
-  const outstandingMessages = _outstandingMessages.map(({ data }) => data.flat()).flat();
+  const outstandingMessages = _outstandingMessages.flat();
 
   // Lz messages are executed automatically and must be retried only if their execution reverts on chain.
   const unprocessedMessages = outstandingMessages.filter(({ destination }) => destination?.status !== "SUCCEEDED");
