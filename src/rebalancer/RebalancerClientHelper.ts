@@ -90,6 +90,9 @@ function constructRebalancerDependencies(
 
   for (const usdtChain of usdtChains.filter((chain) => chain !== CHAIN_IDs.BSC)) {
     for (const otherUsdtChain of usdtChains.filter((chain) => chain !== CHAIN_IDs.BSC)) {
+      if (!rebalancerConfig.chainIds.includes(usdtChain) || !rebalancerConfig.chainIds.includes(otherUsdtChain)) {
+        continue;
+      }
       if (usdtChain === otherUsdtChain) {
         continue;
       }
@@ -104,6 +107,9 @@ function constructRebalancerDependencies(
   }
   for (const usdcChain of usdcChains.filter((chain) => chain !== CHAIN_IDs.BSC)) {
     for (const otherUsdcChain of usdcChains.filter((chain) => chain !== CHAIN_IDs.BSC)) {
+      if (!rebalancerConfig.chainIds.includes(usdcChain) || !rebalancerConfig.chainIds.includes(otherUsdcChain)) {
+        continue;
+      }
       if (usdcChain === otherUsdcChain) {
         continue;
       }
