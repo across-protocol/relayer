@@ -107,6 +107,7 @@ export class OftAdapter extends BaseAdapter {
   }
 
   async updateRebalanceStatuses(): Promise<void> {
+    this._assertInitialized();
     const pendingBridges = await this._redisGetPendingBridgesPreDeposit();
     if (pendingBridges.length > 0) {
       this.logger.debug({
@@ -134,7 +135,13 @@ export class OftAdapter extends BaseAdapter {
   }
 
   async getPendingRebalances(): Promise<{ [chainId: number]: { [token: string]: BigNumber } }> {
-    if (this.pendingRebalances && Date.now() - this.lastUpdateTimestamp < 60 * 1000) {
+    this._assertInitialized();
+    const timeSinceLastUpdate = Date.now() - this.lastUpdateTimestamp;
+    if (this.pendingRebalances && timeSinceLastUpdate < 60 * 1000) {
+      this.logger.debug({
+        at: "OftAdapter.getPendingRebalances",
+        message: `Recently updated pending rebalances, returning cached pending rebalances (time since last update: ${timeSinceLastUpdate}ms)`,
+      });
       return this.pendingRebalances;
     }
     const pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
