@@ -62,9 +62,15 @@ async function initializeRebalancerRun(_logger: winston.Logger, baseSigner: Sign
 
   let timerStart = performance.now();
 
-  // Update all adapter order statuses so we can get the most accurate latest balances, and then query their balances.
-  const adaptersToUpdate: Set<RebalancerAdapter> = new Set(Object.values(rebalancerClient.adapters));
-  for (const adapter of adaptersToUpdate) {
+  // Make sure we update the upstream adapters first, so there is a small chance of progressing an intermediate
+  // CCTP/OFT bridge before progressing the order in Binance/HL.
+  const allAdapters = Object.keys(rebalancerClient.adapters);
+  const upstreamAdapterNames = ["cctp", "oft"];
+  const downstreamAdapterNames = allAdapters.filter((adapter) => !upstreamAdapterNames.includes(adapter));
+  const adapterNamesToUpdate = [...upstreamAdapterNames, ...downstreamAdapterNames];
+  const adaptersToUpdate = new Set(adapterNamesToUpdate.map((adapterName) => rebalancerClient.adapters[adapterName]));
+  for (const adapterName of adapterNamesToUpdate) {
+    const adapter = rebalancerClient.adapters[adapterName];
     timerStart = performance.now();
     // @todo Decide when to sweep, for now do it before updating rebalance statuses. In theory, it shouldn't really
     // matter when we sweep.

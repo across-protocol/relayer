@@ -127,6 +127,8 @@ export class CctpAdapter extends BaseAdapter {
         message: `Order cloid ${cloid} has been finalized`,
       });
       await this._redisDeleteOrder(cloid, STATUS.PENDING_BRIDGE_PRE_DEPOSIT);
+      // delete cached pending rebalances now that we know state has changed:
+      this.pendingRebalances = undefined;
     }
   }
 
