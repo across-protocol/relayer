@@ -33,7 +33,7 @@ export type MessagingFeeStruct = {
   lzTokenFee: BigNumberish;
 };
 
-export type LzTransactionDetails = { destination: LzDestinationTransactionDetails; pathway: Pathway };
+export type LzTransactionDetails = { status: string; destination: LzDestinationTransactionDetails; pathway: Pathway };
 
 export type LzDestinationTransactionDetails = { status: string; failedTx: TransactionOutcome[] };
 
@@ -142,9 +142,11 @@ export function buildSimpleSendParamEvm(to: EvmAddress, dstEid: number, roundedA
  * @param txHash Transaction hash of the outbound message on the origin chain.
  * @returns Message data as outlined in these docs: https://docs.layerzero.network/v2/concepts/troubleshooting/debugging-messages#response-shape.
  */
-export async function getLzTransactionDetails(txHash: string): Promise<LzTransactionDetails> {
-  const httpResponse = await axios.get<LzTransactionDetails>(`https://scan.layerzero-api.com/v1/messages/tx/${txHash}`);
-  const txDetails = httpResponse.data;
+export async function getLzTransactionDetails(txHash: string): Promise<LzTransactionDetails[]> {
+  const httpResponse = await axios.get<{ data: LzTransactionDetails[] }>(
+    `https://scan.layerzero-api.com/v1/messages/tx/${txHash}`
+  );
+  const txDetails = httpResponse.data.data;
   return txDetails;
 }
 

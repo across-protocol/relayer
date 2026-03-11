@@ -431,9 +431,9 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         const requiresBridgeBeforeDeposit = binanceDepositNetwork !== sourceChain;
         if (requiresBridgeBeforeDeposit) {
           let pendingRebalanceAmount = bnZero;
-          if (sourceToken === "USDT") {
+          if (sourceToken === "USDT" && pendingOftBridges[binanceDepositNetwork]?.[sourceToken]?.gt(bnZero)) {
             pendingRebalanceAmount = pendingOftBridges[binanceDepositNetwork]?.[sourceToken] ?? bnZero;
-          } else {
+          } else if (sourceToken === "USDC" && pendingCctpBridges[binanceDepositNetwork]?.[sourceToken]?.gt(bnZero)) {
             pendingRebalanceAmount = pendingCctpBridges[binanceDepositNetwork]?.[sourceToken] ?? bnZero;
           }
           for (const cloid of pendingBridgeToBinanceNetwork) {
@@ -746,12 +746,18 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const binanceDepositNetwork = await this._getEntrypointNetwork(sourceChain, sourceToken);
     if (binanceDepositNetwork !== sourceChain) {
       const _rebalanceRoute = { ...rebalanceRoute, destinationChain: binanceDepositNetwork };
-      if (sourceToken === "USDT") {
+      if (
+        sourceToken === "USDT" &&
+        this.oftAdapter.supportsRoute({ ..._rebalanceRoute, destinationToken: "USDT", adapter: "oft" })
+      ) {
         bridgeToBinanceFee = await this.oftAdapter.getEstimatedCost(
           { ..._rebalanceRoute, destinationToken: "USDT", adapter: "oft" },
           amountToTransfer
         );
-      } else if (sourceToken === "USDC") {
+      } else if (
+        sourceToken === "USDC" &&
+        this.cctpAdapter.supportsRoute({ ..._rebalanceRoute, destinationToken: "USDC", adapter: "cctp" })
+      ) {
         bridgeToBinanceFee = await this.cctpAdapter.getEstimatedCost(
           { ..._rebalanceRoute, destinationToken: "USDC", adapter: "cctp" },
           amountToTransfer
@@ -764,12 +770,18 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const binanceWithdrawNetwork = await this._getEntrypointNetwork(destinationChain, destinationToken);
     if (binanceWithdrawNetwork !== destinationChain) {
       const _rebalanceRoute = { ...rebalanceRoute, sourceChain: binanceWithdrawNetwork };
-      if (sourceToken === "USDT") {
+      if (
+        sourceToken === "USDT" &&
+        this.oftAdapter.supportsRoute({ ..._rebalanceRoute, destinationToken: "USDT", adapter: "oft" })
+      ) {
         bridgeFromBinanceFee = await this.oftAdapter.getEstimatedCost(
           { ..._rebalanceRoute, destinationToken: "USDT", adapter: "oft" },
           amountToTransfer
         );
-      } else if (sourceToken === "USDC") {
+      } else if (
+        sourceToken === "USDC" &&
+        this.cctpAdapter.supportsRoute({ ..._rebalanceRoute, destinationToken: "USDC", adapter: "cctp" })
+      ) {
         bridgeFromBinanceFee = await this.cctpAdapter.getEstimatedCost(
           { ..._rebalanceRoute, destinationToken: "USDC", adapter: "cctp" },
           amountToTransfer

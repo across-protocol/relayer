@@ -31,13 +31,15 @@ export async function oftRetryFinalizer(
     maxLookBack: spokePoolClient.eventSearchConfig.maxLookBack,
   };
   const depositInitiatedMessages = await getSrcOftMessages(spokePoolClient.chainId, searchConfig, srcProvider);
+  const txnRefCount: Record<string, number> = {};
   const _outstandingMessages = [];
   // To avoid rate-limiting, chunk API queries.
   const chunkSize = Number(process.env["LZ_API_CHUNK_SIZE"] ?? 8);
   for (const depositInitiatedMessageChunk of chunk(depositInitiatedMessages, chunkSize)) {
     _outstandingMessages.push(
       ...(await mapAsync(depositInitiatedMessageChunk, async ({ txnRef }) => {
-        return await getLzTransactionDetails(txnRef);
+        txnRefCount[txnRef] = (txnRefCount[txnRef] ?? 0) + 1;
+        return (await getLzTransactionDetails(txnRef))[txnRefCount[txnRef] - 1];
       }))
     );
   }

@@ -27,6 +27,7 @@ import {
   getNativeTokenInfoForChain,
   toBNWei,
   ConvertDecimals,
+  delay,
 } from "../../utils";
 import { MultiCallerClient } from "../../clients";
 import { EVM_OFT_MESSENGERS, IOFT_ABI_FULL, OFT_DEFAULT_FEE_CAP, OFT_FEE_CAP_OVERRIDES } from "../../common";
@@ -90,16 +91,38 @@ export class OftAdapter extends BaseAdapter {
       rebalanceRoute.destinationChain,
       amountToTransfer
     );
-    await this._redisCreateOrder(txnHash, STATUS.PENDING_BRIDGE_PRE_DEPOSIT, rebalanceRoute, amountToTransfer);
+    // USDT0 transfers from HyperEVM take ~12 hours to finalize.
+    const ttlOverride =
+      rebalanceRoute.sourceToken === "USDT" && rebalanceRoute.sourceChain === CHAIN_IDs.HYPEREVM
+        ? 12 * 60 * 60
+        : undefined;
+    await this._redisCreateOrder(
+      txnHash,
+      STATUS.PENDING_BRIDGE_PRE_DEPOSIT,
+      rebalanceRoute,
+      amountToTransfer,
+      ttlOverride
+    );
     return amountToTransfer;
   }
 
   async updateRebalanceStatuses(): Promise<void> {
     const pendingBridges = await this._redisGetPendingBridgesPreDeposit();
+    if (pendingBridges.length > 0) {
+      this.logger.debug({
+        at: "OftAdapter.updateRebalanceStatuses",
+        message: `Found ${pendingBridges.length} pending OFT bridges`,
+        pendingBridges,
+      });
+    }
     for (const txnHash of pendingBridges) {
-      const txnDetails = await getLzTransactionDetails(txnHash);
-      if (txnDetails.destination.status === "SUCCEEDED") {
+      const status = await this._getOftStatus(txnHash);
+      if (status === "SUCCEEDED") {
         // Order is no longer pending, so we can delete it.
+        this.logger.debug({
+          at: "OftAdapter.updateRebalanceStatuses",
+          message: `Order cloid ${txnHash} has been finalized`,
+        });
         await this._redisDeleteOrder(txnHash, STATUS.PENDING_BRIDGE_PRE_DEPOSIT);
       }
     }
@@ -111,21 +134,43 @@ export class OftAdapter extends BaseAdapter {
   }
 
   async getPendingRebalances(): Promise<{ [chainId: number]: { [token: string]: BigNumber } }> {
+    if (this.pendingRebalances && Date.now() - this.lastUpdateTimestamp < 60 * 1000) {
+      return this.pendingRebalances;
+    }
     const pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
 
     const pendingBridges = await this._redisGetPendingBridgesPreDeposit();
+    if (pendingBridges.length > 0) {
+      this.logger.debug({
+        at: "OftAdapter.getPendingRebalances",
+        message: `Found ${pendingBridges.length} pending OFT bridges`,
+        pendingBridges,
+      });
+    }
     for (const txnHash of pendingBridges) {
-      const txnDetails = await getLzTransactionDetails(txnHash);
-      if (txnDetails.destination.status !== "SUCCEEDED") {
+      const status = await this._getOftStatus(txnHash);
+      if (status === "SUCCEEDED") {
+        this.logger.debug({
+          at: "OftAdapter.getPendingRebalances",
+          message: `Order cloid ${txnHash} has already finalized, skipping incrementing pending rebalances`,
+        });
         continue;
       }
       const pendingOrderDetails = await this._redisGetOrderDetails(txnHash);
-      const { destinationChain, amountToTransfer } = pendingOrderDetails;
+      const { sourceChain, destinationChain, amountToTransfer } = pendingOrderDetails;
+      // @dev Temporarily filter out L1->L2 and L2->L1 rebalances because they will already be counted by the
+      // AdapterManager and this function is designed to be used in conjunction with the AdapterManager
+      // to pain a full picture of all pending rebalances.
+      if (sourceChain === this.config.hubPoolChainId || destinationChain === this.config.hubPoolChainId) {
+        return;
+      }
       pendingRebalances[destinationChain] ??= {};
       pendingRebalances[destinationChain]["USDT"] = (pendingRebalances[destinationChain]?.["USDT"] ?? bnZero).add(
         amountToTransfer
       );
     }
+    this.pendingRebalances = pendingRebalances;
+    this.lastUpdateTimestamp = Date.now();
     return pendingRebalances;
   }
 
@@ -230,5 +275,21 @@ export class OftAdapter extends BaseAdapter {
     };
 
     return await this._submitTransaction(withdrawTxn);
+  }
+
+  private async _getOftStatus(txnHash: string, retryNumber = 0): Promise<string> {
+    if (retryNumber > 2) {
+      throw new Error(`Failed to get OFT status for txnHash ${txnHash} after ${retryNumber} retries`);
+    }
+    try {
+      const txnDetails = await getLzTransactionDetails(txnHash);
+      assert(txnDetails.length === 1, "Expected 1 transaction details");
+      return txnDetails[0].destination?.status;
+    } catch (error) {
+      // This API usually fails with a 4xx error if the origination event was just created so we should retry
+      // after a short delay.
+      await delay(3);
+      return this._getOftStatus(txnHash, retryNumber + 1);
+    }
   }
 }

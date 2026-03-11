@@ -122,10 +122,9 @@ function loadCumulativeModeBalances(
   return { currentBalances, cumulativeBalances };
 }
 
-async function applyPendingRebalanceAdjustments(
+async function applyPendingCumulativeRebalanceAdjustments(
   rebalancerConfig: RebalancerConfig,
   adaptersToUpdate: Set<RebalancerAdapter>,
-  currentBalances: { [chainId: number]: { [token: string]: BigNumber } },
   logLabel: string,
   cumulativeBalances?: { [token: string]: BigNumber }
 ): Promise<void> {
@@ -150,11 +149,7 @@ async function applyPendingRebalanceAdjustments(
 
     for (const [chainId, tokens] of Object.entries(pendingRebalances)) {
       for (const [token, amount] of Object.entries(tokens)) {
-        if (!isDefined(currentBalances[chainId]?.[token])) {
-          continue;
-        }
         const pendingRebalanceAmount = amount ?? bnZero;
-        currentBalances[chainId][token] = currentBalances[chainId][token].add(pendingRebalanceAmount);
         if (cumulativeBalances && isDefined(cumulativeBalances[token])) {
           // Convert pending rebalance amount to L1 token decimals
           const l1TokenInfo = getTokenInfoFromSymbol(token, rebalancerConfig.hubPoolChainId);
@@ -171,7 +166,6 @@ async function applyPendingRebalanceAdjustments(
               adapter.constructor.name
             } of ${pendingRebalanceAmount.toString()} to current balance for ${token} on ${chainId}`,
             pendingRebalanceAmount: pendingRebalanceAmount.toString(),
-            newCurrentBalance: currentBalances[chainId][token].toString(),
             newCumulativeBalance: cumulativeBalances?.[token]?.toString(),
           });
         }
@@ -187,13 +181,7 @@ export async function runCumulativeBalanceRebalancer(_logger: winston.Logger, ba
     baseSigner
   );
   const { currentBalances, cumulativeBalances } = loadCumulativeModeBalances(rebalancerConfig, inventoryClient);
-  await applyPendingRebalanceAdjustments(
-    rebalancerConfig,
-    adaptersToUpdate,
-    currentBalances,
-    logLabel,
-    cumulativeBalances
-  );
+  await applyPendingCumulativeRebalanceAdjustments(rebalancerConfig, adaptersToUpdate, logLabel, cumulativeBalances);
 
   let timerStart = performance.now();
   // Finally, send out new rebalances:

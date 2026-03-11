@@ -576,12 +576,18 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     let bridgeToHyperEvmFee = bnZero;
     if (rebalanceRoute.sourceChain !== HYPEREVM) {
       const _rebalanceRoute = { ...rebalanceRoute, destinationChain: HYPEREVM };
-      if (sourceToken === "USDT") {
+      if (
+        sourceToken === "USDT" &&
+        this.oftAdapter.supportsRoute({ ..._rebalanceRoute, destinationToken: "USDT", adapter: "oft" })
+      ) {
         bridgeToHyperEvmFee = await this.oftAdapter.getEstimatedCost(
           { ..._rebalanceRoute, destinationToken: "USDT", adapter: "oft" },
           amountToTransfer
         );
-      } else if (sourceToken === "USDC") {
+      } else if (
+        sourceToken === "USDC" &&
+        this.cctpAdapter.supportsRoute({ ..._rebalanceRoute, destinationToken: "USDC", adapter: "cctp" })
+      ) {
         bridgeToHyperEvmFee = await this.cctpAdapter.getEstimatedCost(
           { ..._rebalanceRoute, destinationToken: "USDC", adapter: "cctp" },
           amountToTransfer
@@ -593,12 +599,18 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     let bridgeFromHyperEvmFee = bnZero;
     if (rebalanceRoute.destinationChain !== HYPEREVM) {
       const _rebalanceRoute = { ...rebalanceRoute, sourceChain: HYPEREVM };
-      if (sourceToken === "USDT") {
+      if (
+        sourceToken === "USDT" &&
+        this.oftAdapter.supportsRoute({ ..._rebalanceRoute, destinationToken: "USDT", adapter: "oft" })
+      ) {
         bridgeFromHyperEvmFee = await this.oftAdapter.getEstimatedCost(
           { ..._rebalanceRoute, destinationToken: "USDT", adapter: "oft" },
           amountToTransfer
         );
-      } else if (sourceToken === "USDC") {
+      } else if (
+        sourceToken === "USDC" &&
+        this.cctpAdapter.supportsRoute({ ..._rebalanceRoute, destinationToken: "USDC", adapter: "cctp" })
+      ) {
         bridgeFromHyperEvmFee = await this.cctpAdapter.getEstimatedCost(
           { ..._rebalanceRoute, destinationToken: "USDC", adapter: "cctp" },
           amountToTransfer
@@ -663,6 +675,10 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         message: `Pending bridge to Hyperevm cloids: ${pendingBridgeToHyperevm.join(", ")}`,
       });
     }
+    const [pendingCctpBridges, pendingOftBridges] = await Promise.all([
+      this.cctpAdapter.getPendingRebalances(),
+      this.oftAdapter.getPendingRebalances(),
+    ]);
     const pendingBridgeFinalizations: { [sourceChain: number]: { [token: string]: BigNumber } } = {};
     await forEachAsync(Array.from(this.allSourceChains), async (sourceChain) => {
       if (sourceChain !== HYPEREVM) {
@@ -673,13 +689,15 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
             continue;
           }
 
-          if (!pendingBridgeFinalizations[sourceChain]) {
-            pendingBridgeFinalizations[sourceChain] = {};
-          }
-          if (!pendingBridgeFinalizations[sourceChain][sourceToken]) {
-            pendingBridgeFinalizations[sourceChain][sourceToken] = await this[
-              sourceToken === "USDT" ? "_getUnfinalizedOftBridgeAmount" : "_getUnfinalizedCctpBridgeAmount"
-            ](sourceChain, HYPEREVM);
+          pendingBridgeFinalizations[sourceChain] ??= {};
+          pendingBridgeFinalizations[sourceChain][sourceToken] ??= bnZero;
+
+          if (sourceToken === "USDT" && pendingOftBridges[sourceChain]?.[sourceToken]?.gt(bnZero)) {
+            pendingBridgeFinalizations[sourceChain][sourceToken] = pendingOftBridges[sourceChain][sourceToken];
+          } else if (sourceToken === "USDC" && pendingCctpBridges[sourceChain]?.[sourceToken]?.gt(bnZero)) {
+            pendingBridgeFinalizations[sourceChain][sourceToken] = pendingCctpBridges[sourceChain][sourceToken];
+          } else {
+            continue;
           }
           const unfinalizedBridgeAmountToHyperevm = pendingBridgeFinalizations[sourceChain][sourceToken];
 

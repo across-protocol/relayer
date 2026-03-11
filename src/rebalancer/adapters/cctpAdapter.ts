@@ -20,6 +20,7 @@ import {
   toBN,
   ERC20,
   isDefined,
+  delay,
 } from "../../utils";
 import { CCTP_MAX_SEND_AMOUNT } from "../../common";
 import { PRODUCTION_NETWORKS, CCTP_NO_DOMAIN } from "@across-protocol/constants";
@@ -92,20 +93,21 @@ export class CctpAdapter extends BaseAdapter {
 
   async updateRebalanceStatuses(): Promise<void> {
     const pendingBridges = await this._redisGetPendingBridgesPreDeposit();
+    if (pendingBridges.length > 0) {
+      this.logger.debug({
+        at: "CctpAdapter.updateRebalanceStatuses",
+        message: `Found ${pendingBridges.length} pending CCTP bridges`,
+        pendingBridges,
+      });
+    }
     for (const cloid of pendingBridges) {
       const [sourceChainId, txnHash] = cloid.split("-");
-      const attestationResponses = await utils.fetchCctpV2Attestations([txnHash], Number(sourceChainId));
-      // We don't batch CCTP bridges so we should only get one attestation per transaction hash.
-      assert(
-        Object.keys(attestationResponses).length === 1 && attestationResponses[txnHash].messages.length === 1,
-        "Expected 1 attestation response"
-      );
-      const attestation = attestationResponses[txnHash].messages[0];
-      if (attestation.status === "pending") {
+      const attestation = await this._getCctpAttestation(txnHash, Number(sourceChainId));
+      if (utils.getPendingAttestationStatus(attestation) === "pending") {
         continue;
       }
 
-      // If API attestationstatus is "complete", then we need to check whether it has been already finalized:
+      // If API attestation is ready, then we need to check whether it has been already finalized:
       const destinationChainId = getCctpDestinationChainFromDomain(
         attestation.decodedMessage.destinationDomain,
         chainIsProd(Number(sourceChainId))
@@ -120,6 +122,10 @@ export class CctpAdapter extends BaseAdapter {
         continue;
       }
       // Order is no longer pending, so we can delete it.
+      this.logger.debug({
+        at: "CctpAdapter.updateRebalanceStatuses",
+        message: `Order cloid ${cloid} has been finalized`,
+      });
       await this._redisDeleteOrder(cloid, STATUS.PENDING_BRIDGE_PRE_DEPOSIT);
     }
   }
@@ -130,28 +136,58 @@ export class CctpAdapter extends BaseAdapter {
   }
 
   async getPendingRebalances(): Promise<{ [chainId: number]: { [token: string]: BigNumber } }> {
+    if (this.pendingRebalances && Date.now() - this.lastUpdateTimestamp < 60 * 1000) {
+      return this.pendingRebalances;
+    }
     const pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
 
     const pendingBridges = await this._redisGetPendingBridgesPreDeposit();
+    if (pendingBridges.length > 0) {
+      this.logger.debug({
+        at: "CctpAdapter.getPendingRebalances",
+        message: `Found ${pendingBridges.length} pending CCTP bridges`,
+        pendingBridges,
+      });
+    }
     for (const cloid of pendingBridges) {
       const [sourceChainId, txnHash] = cloid.split("-");
-      const attestationResponses = await utils.fetchCctpV2Attestations([txnHash], Number(sourceChainId));
-      // We don't batch CCTP bridges so we should only get one attestation per transaction hash.
-      assert(
-        Object.keys(attestationResponses).length === 1 && attestationResponses[txnHash].messages.length === 1,
-        "Expected 1 attestation response"
-      );
-      const attestation = attestationResponses[txnHash].messages[0];
-      if (attestation.status !== "pending") {
-        continue;
+      // Check if order has already been finalized if its no longer "pending"
+      const attestation = await this._getCctpAttestation(txnHash, Number(sourceChainId));
+      if (utils.getPendingAttestationStatus(attestation) !== "pending") {
+        const destinationChainId = getCctpDestinationChainFromDomain(
+          attestation.decodedMessage.destinationDomain,
+          chainIsProd(Number(sourceChainId))
+        );
+        const { address, abi } = getCctpV2MessageTransmitter(destinationChainId);
+        const destinationMessageTransmitter = new Contract(address, abi, await getProvider(destinationChainId));
+        const processed = await utils.hasCCTPMessageBeenProcessedEvm(
+          attestation.eventNonce,
+          destinationMessageTransmitter
+        );
+        if (processed) {
+          this.logger.debug({
+            at: "CctpAdapter.getPendingRebalances",
+            message: `Order cloid ${cloid} has already finalized, skipping incrementing pending rebalances`,
+          });
+          continue;
+        }
       }
       const pendingOrderDetails = await this._redisGetOrderDetails(cloid);
-      const { destinationChain, amountToTransfer } = pendingOrderDetails;
+      const { sourceChain, destinationChain, amountToTransfer } = pendingOrderDetails;
+      // @dev Temporarily filter out L1->L2 and L2->L1 rebalances because they will already be counted by the
+      // AdapterManager and this function is designed to be used in conjunction with the AdapterManager
+      // to pain a full picture of all pending rebalances.
+      if (sourceChain === this.config.hubPoolChainId || destinationChain === this.config.hubPoolChainId) {
+        return;
+      }
       pendingRebalances[destinationChain] ??= {};
       pendingRebalances[destinationChain]["USDC"] = (pendingRebalances[destinationChain]?.["USDC"] ?? bnZero).add(
         amountToTransfer
       );
     }
+
+    this.pendingRebalances = pendingRebalances;
+    this.lastUpdateTimestamp = Date.now();
     return pendingRebalances;
   }
 
@@ -249,5 +285,25 @@ export class CctpAdapter extends BaseAdapter {
       cctpMessengerAddress.abi,
       this.baseSigner.connect(originProvider)
     );
+  }
+
+  private async _getCctpAttestation(txnHash: string, sourceChainId: number, retryCount = 0) {
+    if (retryCount > 2) {
+      throw new Error(`Failed to get CCTP attestation for txnHash ${txnHash} after ${retryCount} retries`);
+    }
+    try {
+      const attestationResponses = await utils.fetchCctpV2Attestations([txnHash], Number(sourceChainId));
+      // We don't batch CCTP bridges so we should only get one attestation per transaction hash.
+      assert(
+        Object.keys(attestationResponses).length === 1 && attestationResponses[txnHash].messages.length === 1,
+        "Expected 1 attestation response"
+      );
+      return attestationResponses[txnHash].messages[0];
+    } catch (error) {
+      // This API usually fails with a 4xx error if the DepositForBurn event was just created so we should retry
+      // after a short delay.
+      await delay(3);
+      return this._getCctpAttestation(txnHash, sourceChainId, retryCount + 1);
+    }
   }
 }

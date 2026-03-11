@@ -67,6 +67,9 @@ export abstract class BaseAdapter implements RebalancerAdapter {
   protected allSourceChains: Set<number>;
   protected allSourceTokens: Set<string>;
 
+  protected lastUpdateTimestamp = 0;
+  protected pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } };
+
   protected REDIS_PREFIX: string;
 
   constructor(readonly logger: winston.Logger, readonly config: RebalancerConfig, readonly baseSigner: Signer) {
@@ -161,7 +164,8 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     cloid: string,
     status: number,
     rebalanceRoute: RebalanceRoute,
-    amountToTransfer: BigNumber
+    amountToTransfer: BigNumber,
+    ttlOverride?: number
   ): Promise<void> {
     const orderStatusKey = this._redisGetOrderStatusKey(status);
     const orderDetailsKey = `${this._redisGetPendingOrderKey()}:${cloid}`;
@@ -194,7 +198,9 @@ export abstract class BaseAdapter implements RebalancerAdapter {
           destinationChain,
           amountToTransfer: amountToTransfer.toString(),
         }),
-        process.env.REBALANCER_PENDING_ORDER_TTL ? Number(process.env.REBALANCER_PENDING_ORDER_TTL) : 60 * 60 // default to 1 hour
+        process.env.REBALANCER_PENDING_ORDER_TTL
+          ? Number(process.env.REBALANCER_PENDING_ORDER_TTL)
+          : ttlOverride ?? 60 * 60 // default to 1 hour
       ),
     ]);
     this.logger.debug({
@@ -334,7 +340,10 @@ export abstract class BaseAdapter implements RebalancerAdapter {
   }
 
   protected _assertRouteIsSupported(rebalanceRoute: RebalanceRoute): void {
-    assert(this.supportsRoute(rebalanceRoute), "Route is not supported");
+    assert(
+      this.supportsRoute(rebalanceRoute),
+      `Route is not supported: ${rebalanceRoute.sourceToken} ${rebalanceRoute.sourceChain} -> ${rebalanceRoute.destinationToken} ${rebalanceRoute.destinationChain}`
+    );
   }
 
   protected async _wait(seconds: number): Promise<void> {
