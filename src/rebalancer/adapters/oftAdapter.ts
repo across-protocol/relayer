@@ -91,10 +91,10 @@ export class OftAdapter extends BaseAdapter {
       rebalanceRoute.destinationChain,
       amountToTransfer
     );
-    // USDT0 transfers from HyperEVM take ~12 hours to finalize.
+    // USDT0 transfers from HyperEVM take ~12 hours to finalize, so set a TTL of 24 hours to be safe.
     const ttlOverride =
       rebalanceRoute.sourceToken === "USDT" && rebalanceRoute.sourceChain === CHAIN_IDs.HYPEREVM
-        ? 12 * 60 * 60
+        ? 24 * 60 * 60
         : undefined;
     await this._redisCreateOrder(
       txnHash,
