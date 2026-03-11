@@ -309,7 +309,7 @@ export class CctpAdapter extends BaseAdapter {
     } catch (error) {
       // This API usually fails with a 4xx error if the DepositForBurn event was just created so we should retry
       // after a short delay.
-      await delay(3);
+      await this._wait(10);
       return this._getCctpAttestation(txnHash, sourceChainId, retryCount + 1);
     }
   }

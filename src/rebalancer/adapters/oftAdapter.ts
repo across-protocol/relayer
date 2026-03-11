@@ -295,7 +295,7 @@ export class OftAdapter extends BaseAdapter {
     } catch (error) {
       // This API usually fails with a 4xx error if the origination event was just created so we should retry
       // after a short delay.
-      await delay(3);
+      await this._wait(10);
       return this._getOftStatus(txnHash, retryNumber + 1);
     }
   }
