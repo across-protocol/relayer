@@ -290,7 +290,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         await this._redisUpdateOrderStatus(cloid, STATUS.PENDING_SWAP, STATUS.PENDING_WITHDRAWAL);
         // Delay a bit before checking checking whether this withdrawal has finalized so we have a chance at immediately
         // marking it as finalized and delete it from Redis.
-        await this._wait(5);
+        await this._wait(10);
       } else {
         // We throw an error here because we shouldn't expect the market order to ever not be filled.
         throw new Error(`No matching fill found for cloid ${cloid}`);
