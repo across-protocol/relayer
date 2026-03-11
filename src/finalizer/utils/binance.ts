@@ -198,7 +198,10 @@ export async function binanceFinalizer(
         }
         // If the amount we can finalize is above the withdraw minimum for this network, and if the amount to finalize is within the amount of our balance which corresponds to _finalized_ not credited
         // deposits, then we can continue.
-        amountToFinalize = Math.min(coinBalance - creditedDepositAmount, amountToFinalize);
+        amountToFinalize = Math.min(
+          Number(formatUnits(coinBalance - creditedDepositAmount, l1Decimals)),
+          amountToFinalize
+        );
         if (amountToFinalize >= Number(networkLimits.withdrawMin)) {
           // Lastly, we need to truncate the amount to withdraw to 6 decimal places.
           amountToFinalize = Math.floor(amountToFinalize * DECIMAL_PRECISION) / DECIMAL_PRECISION;
