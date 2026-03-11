@@ -6,7 +6,7 @@ _How an agent should behave and operate in this repo._
 
 Use docs in this order:
 
-1. `AGENTS.md` (root): map of the repository and where to look next.
+1. `AGENTS.md` (root): map of the repository and where to look next. Substitute all references to `CLAUDE.md` with this file's name `general.instructions.md`
 2. Module docs (`README.md` or local `AGENTS.md`): module behavior and local constraints.
 3. `docs/*.md`: deeper architecture and protocol context.
 
