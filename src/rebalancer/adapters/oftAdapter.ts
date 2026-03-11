@@ -167,7 +167,7 @@ export class OftAdapter extends BaseAdapter {
       const { sourceChain, destinationChain, amountToTransfer } = pendingOrderDetails;
       // @dev Temporarily filter out L1->L2 and L2->L1 rebalances because they will already be counted by the
       // AdapterManager and this function is designed to be used in conjunction with the AdapterManager
-      // to pain a full picture of all pending rebalances.
+      // to paint a full picture of all pending rebalances.
       if (sourceChain === this.config.hubPoolChainId || destinationChain === this.config.hubPoolChainId) {
         continue;
       }
