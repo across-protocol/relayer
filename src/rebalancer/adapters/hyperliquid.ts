@@ -692,10 +692,10 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
           pendingBridgeFinalizations[sourceChain] ??= {};
           pendingBridgeFinalizations[sourceChain][sourceToken] ??= bnZero;
 
-          if (sourceToken === "USDT" && pendingOftBridges[sourceChain]?.[sourceToken]?.gt(bnZero)) {
-            pendingBridgeFinalizations[sourceChain][sourceToken] = pendingOftBridges[sourceChain][sourceToken];
-          } else if (sourceToken === "USDC" && pendingCctpBridges[sourceChain]?.[sourceToken]?.gt(bnZero)) {
-            pendingBridgeFinalizations[sourceChain][sourceToken] = pendingCctpBridges[sourceChain][sourceToken];
+          if (sourceToken === "USDT" && pendingOftBridges[HYPEREVM]?.[sourceToken]?.gt(bnZero)) {
+            pendingBridgeFinalizations[sourceChain][sourceToken] = pendingOftBridges[HYPEREVM][sourceToken];
+          } else if (sourceToken === "USDC" && pendingCctpBridges[sourceChain]?.[HYPEREVM]?.gt(bnZero)) {
+            pendingBridgeFinalizations[sourceChain][sourceToken] = pendingCctpBridges[HYPEREVM][sourceToken];
           } else {
             continue;
           }
