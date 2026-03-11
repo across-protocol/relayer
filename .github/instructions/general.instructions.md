@@ -1,18 +1,18 @@
-# GitHub instructions.md, copied from local CLAUDE.md
+# GitHub General Instructions
 
-_How an agent should behave and operate in this repo._
+_How a github coding agent like Copilot should behave and operate in this repo._
 
 ## Documentation System
 
 Use docs in this order:
 
-1. `AGENTS.md` (root): map of the repository and where to look next. Substitute all references to `CLAUDE.md` with this file's name `general.instructions.md`.
+1. `AGENTS.md` (root): map of the repository and where to look next.
 2. Module docs (`README.md` or local `AGENTS.md`): module behavior and local constraints.
 3. `docs/*.md`: deeper architecture and protocol context.
 
 Each layer has a separate purpose:
 
-- `general.instructions.md`: agent operating rules for this repository.
+- `AGENTS.md`: agent operating rules for this repository.
 - Module docs: what must be understood to make a safe change in that module.
 - `docs/`: background and deeper design context.
 
