@@ -90,8 +90,10 @@ describe("Monitor", async function () {
   let tokenTransferClient: TokenTransferClient;
   let monitorInstance: Monitor;
   let spokePoolClients: { [chainId: number]: SpokePoolClient };
-  let crossChainTransferClient: CrossChainTransferClient;
-  let adapterManager: MockAdapterManager;
+  let protocolTransferClient: CrossChainTransferClient;
+  let relayerTransferClient: CrossChainTransferClient;
+  let protocolAdapterManager: MockAdapterManager;
+  let relayerAdapterManager: MockAdapterManager;
   let defaultMonitorEnvVars: Record<string, string>;
   let updateAllClients: () => Promise<void>;
   let relayerAddress;
@@ -201,9 +203,14 @@ describe("Monitor", async function () {
     );
     tokenTransferClient = new TokenTransferClient(spyLogger, providers, [relayerAddress]);
 
-    adapterManager = new MockAdapterManager(null, null, null, null);
-    adapterManager.setSupportedChains(chainIds);
-    crossChainTransferClient = new CrossChainTransferClient(spyLogger, chainIds, adapterManager);
+    protocolAdapterManager = new MockAdapterManager(null, null, null, null);
+    protocolAdapterManager.setSupportedChains(chainIds);
+    protocolTransferClient = new CrossChainTransferClient(spyLogger, chainIds, protocolAdapterManager);
+
+    relayerAdapterManager = new MockAdapterManager(null, null, null, null);
+    relayerAdapterManager.setSupportedChains(chainIds);
+    relayerTransferClient = new CrossChainTransferClient(spyLogger, chainIds, relayerAdapterManager);
+
     monitorInstance = new TestMonitor(spyLogger, monitorConfig, {
       bundleDataClient,
       configStoreClient,
@@ -211,7 +218,8 @@ describe("Monitor", async function () {
       hubPoolClient,
       spokePoolClients,
       tokenTransferClient,
-      crossChainTransferClient,
+      protocolTransferClient,
+      relayerTransferClient,
     });
     (monitorInstance as TestMonitor).setL2ToL1TokenMap(originChainId, {
       [l2Token.address]: {
@@ -306,7 +314,7 @@ describe("Monitor", async function () {
     );
 
     // Simulate some pending cross chain transfers.
-    crossChainTransferClient.increaseOutstandingTransfer(
+    relayerTransferClient.increaseOutstandingTransfer(
       relayerAddress,
       toAddressType(l1Token.address, hubPoolClient.chainId),
       toAddressType(erc20_2.address, destinationChainId),
@@ -379,7 +387,7 @@ describe("Monitor", async function () {
     await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + REBALANCE_FINALIZE_GRACE_PERIOD + 1);
 
     // Simulate some pending cross chain transfers to SpokePools.
-    adapterManager.setMockedOutstandingCrossChainTransfers(
+    protocolAdapterManager.setMockedOutstandingCrossChainTransfers(
       originChainId,
       toAddressType(spokePool_1.address, originChainId),
       toAddressType(l1Token.address, hubPoolClient.chainId),
