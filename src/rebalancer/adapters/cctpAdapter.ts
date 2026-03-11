@@ -87,6 +87,8 @@ export class CctpAdapter extends BaseAdapter {
     );
     const cloid = this.getCloidForBridge(rebalanceRoute, txnHash);
     await this._redisCreateOrder(cloid, STATUS.PENDING_BRIDGE_PRE_DEPOSIT, rebalanceRoute, amountToReceive);
+    // delete cached pending rebalances now that we know state has changed:
+    this.pendingRebalances = undefined;
     return amountToReceive;
   }
 

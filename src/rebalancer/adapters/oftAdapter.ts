@@ -102,6 +102,8 @@ export class OftAdapter extends BaseAdapter {
       amountToTransfer,
       ttlOverride
     );
+    // delete cached pending rebalances now that we know state has changed:
+    this.pendingRebalances = undefined;
     return amountToTransfer;
   }
 
