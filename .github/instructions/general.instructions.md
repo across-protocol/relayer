@@ -6,13 +6,13 @@ _How an agent should behave and operate in this repo._
 
 Use docs in this order:
 
-1. `AGENTS.md` (root): map of the repository and where to look next. Substitute all references to `CLAUDE.md` with this file's name `general.instructions.md`
+1. `AGENTS.md` (root): map of the repository and where to look next. Substitute all references to `CLAUDE.md` with this file's name `general.instructions.md`.
 2. Module docs (`README.md` or local `AGENTS.md`): module behavior and local constraints.
 3. `docs/*.md`: deeper architecture and protocol context.
 
 Each layer has a separate purpose:
 
-- `CLAUDE.md`: agent operating rules for this repository.
+- `general.instructions.md`: agent operating rules for this repository.
 - Module docs: what must be understood to make a safe change in that module.
 - `docs/`: background and deeper design context.
 
@@ -49,20 +49,3 @@ Stop and ask for clarification if any of the following are true:
 - The change modifies signing, transfer, fill, refund, or finalization behavior.
 - The right success criteria or test coverage is unclear.
 - A behavior-sensitive conclusion depends on assumptions that have not been verified in code paths or tests.
-
-## Planning and Documentation Evolution
-
-- Before writing a plan, identify any meaningful ambiguities and ask for clarification first.
-- For every new task, explicitly propose 0-3 concrete updates to `CLAUDE.md` and/or relevant `AGENTS.md` files, or state "no updates needed" with a brief reason.
-- When creating deep-dive docs, include discoverability updates in the same change (relevant `README.md` links and, when useful, `AGENTS.md` quick index entries).
-- Default deep-dive docs to cross-module coverage when behavior spans module boundaries; avoid single-file explanations for multi-module flows.
-- Default deep-dive docs to a "current behavior first" structure with a concise contributor recommendations section at the end.
-
-## Validation Expectations
-
-After code changes:
-
-- Run targeted checks for edited modules first.
-- Run broader tests when shared clients, interfaces, or config parsing is changed: `yarn test`.
-- Lint via `yarn lint-fix`.
-- Report exactly what was run and anything intentionally not run.
