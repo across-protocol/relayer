@@ -600,19 +600,19 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     if (rebalanceRoute.destinationChain !== HYPEREVM) {
       const _rebalanceRoute = { ...rebalanceRoute, sourceChain: HYPEREVM };
       if (
-        sourceToken === "USDT" &&
-        this.oftAdapter.supportsRoute({ ..._rebalanceRoute, destinationToken: "USDT", adapter: "oft" })
+        destinationToken === "USDT" &&
+        this.oftAdapter.supportsRoute({ ..._rebalanceRoute, sourceToken: "USDT", adapter: "oft" })
       ) {
         bridgeFromHyperEvmFee = await this.oftAdapter.getEstimatedCost(
-          { ..._rebalanceRoute, destinationToken: "USDT", adapter: "oft" },
+          { ..._rebalanceRoute, sourceToken: "USDT", adapter: "oft" },
           amountToTransfer
         );
       } else if (
-        sourceToken === "USDC" &&
-        this.cctpAdapter.supportsRoute({ ..._rebalanceRoute, destinationToken: "USDC", adapter: "cctp" })
+        destinationToken === "USDC" &&
+        this.cctpAdapter.supportsRoute({ ..._rebalanceRoute, sourceToken: "USDC", adapter: "cctp" })
       ) {
         bridgeFromHyperEvmFee = await this.cctpAdapter.getEstimatedCost(
-          { ..._rebalanceRoute, destinationToken: "USDC", adapter: "cctp" },
+          { ..._rebalanceRoute, sourceToken: "USDC", adapter: "cctp" },
           amountToTransfer
         );
       }
