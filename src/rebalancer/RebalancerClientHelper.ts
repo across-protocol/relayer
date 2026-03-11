@@ -129,8 +129,7 @@ export async function constructCumulativeBalanceRebalancerClient(
   logger: winston.Logger,
   baseSigner: Signer
 ): Promise<CumulativeBalanceRebalancerClient> {
-  const { rebalancerConfig, adapters, rebalanceRoutes } =
-    constructRebalancerDependencies(logger, baseSigner);
+  const { rebalancerConfig, adapters, rebalanceRoutes } = constructRebalancerDependencies(logger, baseSigner);
   const isReadonly = false;
   const rebalancerClient = new CumulativeBalanceRebalancerClient(
     logger,
