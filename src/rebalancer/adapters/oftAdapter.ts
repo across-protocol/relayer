@@ -169,7 +169,7 @@ export class OftAdapter extends BaseAdapter {
       // AdapterManager and this function is designed to be used in conjunction with the AdapterManager
       // to pain a full picture of all pending rebalances.
       if (sourceChain === this.config.hubPoolChainId || destinationChain === this.config.hubPoolChainId) {
-        return;
+        continue;
       }
       pendingRebalances[destinationChain] ??= {};
       pendingRebalances[destinationChain]["USDT"] = (pendingRebalances[destinationChain]?.["USDT"] ?? bnZero).add(
