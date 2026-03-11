@@ -147,7 +147,10 @@ export class GaslessRelayer {
       const provider = await getProvider(chainId);
       this.providersByChain[chainId] = provider;
       this.observedNonces[chainId] = new Set<string>();
-      this.spokePoolPeripheries[chainId] = getSpokePoolPeriphery(chainId).connect(provider);
+      this.spokePoolPeripheries[chainId] = getSpokePoolPeriphery(
+        chainId,
+        this.config.spokePoolPeripheryOverrides[chainId]
+      ).connect(provider);
     });
     await forEachAsync(this.config.relayerDestinationChains, async (chainId) => {
       this.providersByChain[chainId] ??= await getProvider(chainId);
