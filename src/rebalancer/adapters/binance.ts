@@ -142,7 +142,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
             }),
             `Source chain ${getNetworkName(
               sourceChain
-            )} is not a valid source chain for token ${sourceToken} because it has neither a OFT nor a CCTP bridge route to HyperEVM`
+            )} is not a valid source chain for token ${sourceToken} because it has neither a OFT nor a CCTP bridge route to the Binance entrypoint network ${sourceEntrypointNetwork}`
           );
         } else if (sourceToken === "USDC") {
           assert(
@@ -154,7 +154,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
             }),
             `Source chain ${getNetworkName(
               sourceChain
-            )} is not a valid source chain for token ${sourceToken} because it has neither a OFT nor a CCTP bridge route to HyperEVM`
+            )} is not a valid source chain for token ${sourceToken} because it has neither a OFT nor a CCTP bridge route to the Binance entrypoint network ${sourceEntrypointNetwork}`
           );
         }
       }
