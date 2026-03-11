@@ -15,8 +15,9 @@ import { RebalancerClient } from "../rebalancer/utils/interfaces";
 
 export interface MonitorClients extends Clients {
   bundleDataClient: BundleDataClient;
-  crossChainTransferClient: CrossChainTransferClient;
   hubPoolClient: HubPoolClient;
+  protocolTransferClient: CrossChainTransferClient;
+  relayerTransferClient: CrossChainTransferClient;
   rebalancerClient?: RebalancerClient;
   spokePoolClients: SpokePoolClientsByChain;
   tokenTransferClient: TokenTransferClient;
@@ -59,13 +60,18 @@ export async function constructMonitorClients(
   // Need to update HubPoolClient to get latest tokens.
   const spokePoolAddresses = Object.values(spokePoolClients).map((client) => client.spokePoolAddress);
 
-  // Cross-chain transfers will originate from the HubPool's address and target SpokePool addresses, so
-  // track both.
-  const adapterManager = new AdapterManager(logger, spokePoolClients, hubPoolClient, [
-    toAddressType(signerAddr, hubPoolClient.chainId),
-    toAddressType(hubPoolClient.hubPool.address, hubPoolClient.chainId),
+  const hubPoolAddress = EvmAddress.from(hubPoolClient.hubPool.address);
+  const signerAddress = toAddressType(signerAddr, hubPoolClient.chainId);
+
+  // Protocol: tracks HubPool -> SpokePool rebalances.
+  const protocolAdapterManager = new AdapterManager(logger, spokePoolClients, hubPoolClient, [
+    hubPoolAddress,
     ...spokePoolAddresses,
   ]);
+
+  // Relayer: tracks EOA cross-chain transfers.
+  const relayerAdapterManager = new AdapterManager(logger, spokePoolClients, hubPoolClient, [signerAddress]);
+
   const spokePoolChains = Object.keys(spokePoolClients).map((chainId) => Number(chainId));
   const providerPerChain = Object.fromEntries(
     spokePoolChains
@@ -79,23 +85,21 @@ export async function constructMonitorClients(
   const tokenTransferClient = new TokenTransferClient(logger, providerPerChain, config.monitoredRelayers);
 
   // The CrossChainTransferClient is dependent on having adapters for all passed in chains
-  // so we need to filter out any chains that don't have adapters. This means limiting the chains we keep in
-  // `providerPerChain` when constructing the TokenTransferClient and limiting `spokePoolChains` when constructing
-  // the CrossChainTransferClient.
-  const crossChainAdapterSupportedChains = adapterManager.supportedChains();
-  const crossChainTransferClient = new CrossChainTransferClient(
-    logger,
-    spokePoolChains.filter((chainId) => crossChainAdapterSupportedChains.includes(chainId)),
-    adapterManager
+  // so we need to filter out any chains that don't have adapters.
+  const filteredChains = spokePoolChains.filter((chainId) =>
+    protocolAdapterManager.supportedChains().includes(chainId)
   );
+  const protocolTransferClient = new CrossChainTransferClient(logger, filteredChains, protocolAdapterManager);
+  const relayerTransferClient = new CrossChainTransferClient(logger, filteredChains, relayerAdapterManager);
   // Load RebalancerClient in view only mode so that getPendingRebalances() can get called.
   const rebalancerClient = await constructReadOnlyRebalancerClient(logger, baseSigner);
 
   return {
     ...commonClients,
     bundleDataClient,
-    crossChainTransferClient,
+    protocolTransferClient,
     rebalancerClient,
+    relayerTransferClient,
     spokePoolClients,
     tokenTransferClient,
   };
@@ -110,5 +114,8 @@ export async function updateMonitorClients(clients: MonitorClients): Promise<voi
     "FilledRelay",
   ]);
   const allL1Tokens = clients.hubPoolClient.getL1Tokens().map((l1Token) => l1Token.address);
-  await clients.crossChainTransferClient.update(allL1Tokens);
+  await Promise.all([
+    clients.protocolTransferClient.update(allL1Tokens),
+    clients.relayerTransferClient.update(allL1Tokens),
+  ]);
 }

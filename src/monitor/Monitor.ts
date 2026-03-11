@@ -109,7 +109,8 @@ export class Monitor {
     readonly monitorConfig: MonitorConfig,
     readonly clients: MonitorClients
   ) {
-    this.crossChainAdapterSupportedChains = clients.crossChainTransferClient.adapterManager.supportedChains();
+    // Both clients have the same supported chains. Use either.
+    this.crossChainAdapterSupportedChains = clients.protocolTransferClient.adapterManager.supportedChains();
     this.monitorChains = Object.values(clients.spokePoolClients).map(({ chainId }) => chainId);
     for (const chainId of this.monitorChains) {
       this.spokePoolsBlocks[chainId] = { startingBlock: undefined, endingBlock: undefined };
@@ -1009,7 +1010,7 @@ export class Monitor {
   // But this should be okay as we should address any stuck transactions immediately so realistically no transfers
   // should stay unstuck for longer than one bundle.
   async checkStuckRebalances(): Promise<void> {
-    const { crossChainTransferClient, hubPoolClient, spokePoolClients } = this.clients;
+    const { protocolTransferClient, hubPoolClient, spokePoolClients } = this.clients;
     const { currentTime, latestHeightSearched } = hubPoolClient;
     const lastFullyExecutedBundle = hubPoolClient.getLatestFullyExecutedRootBundle(latestHeightSearched);
     // This case shouldn't happen outside of tests as Across V2 has already launched.
@@ -1075,17 +1076,15 @@ export class Monitor {
         // Outstanding transfers are mapped to either the spoke pool or the hub pool, depending on which
         // chain events are queried. Some only allow us to index on the fromAddress, the L1 originator or the
         // HubPool, while others only allow us to index on the toAddress, the L2 recipient or the SpokePool.
-        const transferBalance = crossChainTransferClient
+        const transferBalance = protocolTransferClient
           .getOutstandingCrossChainTransferAmount(spokePoolAddress, chainId, l1Token.address)
-          .add(
-            crossChainTransferClient.getOutstandingCrossChainTransferAmount(hubPoolAddress, chainId, l1Token.address)
-          );
+          .add(protocolTransferClient.getOutstandingCrossChainTransferAmount(hubPoolAddress, chainId, l1Token.address));
         const outstandingDepositTxs = blockExplorerLinks(
-          crossChainTransferClient.getOutstandingCrossChainTransferTxs(spokePoolAddress, chainId, l1Token.address),
+          protocolTransferClient.getOutstandingCrossChainTransferTxs(spokePoolAddress, chainId, l1Token.address),
           hubPoolClient.chainId
         ).concat(
           blockExplorerLinks(
-            crossChainTransferClient.getOutstandingCrossChainTransferTxs(hubPoolAddress, chainId, l1Token.address),
+            protocolTransferClient.getOutstandingCrossChainTransferTxs(hubPoolAddress, chainId, l1Token.address),
             hubPoolClient.chainId
           )
         );
@@ -1238,7 +1237,7 @@ export class Monitor {
   }
 
   updateCrossChainTransfers(relayer: Address, relayerBalanceTable: RelayerBalanceTable): void {
-    const { crossChainTransferClient } = this.clients;
+    const { relayerTransferClient } = this.clients;
     const allL1Tokens = this.getL1TokensForRelayerBalancesReport();
     const supportedChains = this.crossChainAdapterSupportedChains.filter((chainId) =>
       this.monitorChains.includes(chainId)
@@ -1249,7 +1248,7 @@ export class Monitor {
 
       for (const l2Token of l2TokenAddresses) {
         const tokenInfo = l2ToL1Tokens[l2Token];
-        const bridgedTransferBalance = crossChainTransferClient.getOutstandingCrossChainTransferAmount(
+        const bridgedTransferBalance = relayerTransferClient.getOutstandingCrossChainTransferAmount(
           relayer,
           chainId,
           tokenInfo.address,
@@ -1267,7 +1266,7 @@ export class Monitor {
   }
 
   async updatePendingL2Withdrawals(relayer: Address, relayerBalanceTable: RelayerBalanceTable): Promise<void> {
-    const { adapterManager } = this.clients.crossChainTransferClient;
+    const { adapterManager } = this.clients.relayerTransferClient;
     const allL1Tokens = this.getL1TokensForRelayerBalancesReport();
     const supportedChains = this.crossChainAdapterSupportedChains.filter(
       (chainId) => this.monitorChains.includes(chainId) && chainId !== CHAIN_IDs.BSC // @todo temporarily skip BSC as the following
