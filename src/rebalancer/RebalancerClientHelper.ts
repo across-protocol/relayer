@@ -139,8 +139,15 @@ export async function constructCumulativeBalanceRebalancerClient(
     isReadonly
   );
   // Initialize the CCTP and OFT Adapters first before initializing the Binance and HL adapters which use the former
-  // adapters.
-  await Promise.all([adapters["cctp"].initialize(rebalanceRoutes), adapters["oft"].initialize(rebalanceRoutes)]);
+  // adapters. Only initialize them if they are present in the adapters map.
+  const adapterInitPromises: Promise<void>[] = [];
+  if (adapters["cctp"]) {
+    adapterInitPromises.push(adapters["cctp"].initialize(rebalanceRoutes));
+  }
+  if (adapters["oft"]) {
+    adapterInitPromises.push(adapters["oft"].initialize(rebalanceRoutes));
+  }
+  await Promise.all(adapterInitPromises);
   await rebalancerClient.initialize(rebalanceRoutes);
   logger.debug({
     at: "RebalancerClientHelper.constructCumulativeBalanceRebalancerClient",
