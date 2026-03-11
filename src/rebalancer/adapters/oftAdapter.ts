@@ -27,7 +27,6 @@ import {
   getNativeTokenInfoForChain,
   toBNWei,
   ConvertDecimals,
-  delay,
 } from "../../utils";
 import { MultiCallerClient } from "../../clients";
 import { EVM_OFT_MESSENGERS, IOFT_ABI_FULL, OFT_DEFAULT_FEE_CAP, OFT_FEE_CAP_OVERRIDES } from "../../common";
@@ -137,7 +136,8 @@ export class OftAdapter extends BaseAdapter {
   async getPendingRebalances(): Promise<{ [chainId: number]: { [token: string]: BigNumber } }> {
     this._assertInitialized();
     const timeSinceLastUpdate = Date.now() - this.lastUpdateTimestamp;
-    if (this.pendingRebalances && timeSinceLastUpdate < 60 * 1000) {
+    // Within the same serverless run, we don't want this client to update more than once every 5 minutes.
+    if (this.pendingRebalances && timeSinceLastUpdate < 5 * 60 * 1000) {
       this.logger.debug({
         at: "OftAdapter.getPendingRebalances",
         message: `Recently updated pending rebalances, returning cached pending rebalances (time since last update: ${timeSinceLastUpdate}ms)`,

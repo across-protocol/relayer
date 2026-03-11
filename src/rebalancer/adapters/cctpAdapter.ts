@@ -20,7 +20,6 @@ import {
   toBN,
   ERC20,
   isDefined,
-  delay,
 } from "../../utils";
 import { CCTP_MAX_SEND_AMOUNT } from "../../common";
 import { PRODUCTION_NETWORKS, CCTP_NO_DOMAIN } from "@across-protocol/constants";
@@ -138,8 +137,9 @@ export class CctpAdapter extends BaseAdapter {
 
   async getPendingRebalances(): Promise<{ [chainId: number]: { [token: string]: BigNumber } }> {
     this._assertInitialized();
+    // Within the same serverless run, we don't want this client to update more than once every 5 minutes.
     const timeSinceLastUpdate = Date.now() - this.lastUpdateTimestamp;
-    if (this.pendingRebalances && timeSinceLastUpdate < 60 * 1000) {
+    if (this.pendingRebalances && timeSinceLastUpdate < 5 * 60 * 1000) {
       this.logger.debug({
         at: "CctpAdapter.getPendingRebalances",
         message: `Recently updated pending rebalances, returning cached pending rebalances (time since last update: ${timeSinceLastUpdate}ms)`,
