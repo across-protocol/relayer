@@ -164,7 +164,7 @@ async function applyPendingCumulativeRebalanceAdjustments(
             at: `index.ts:${logLabel}`,
             message: `${pendingRebalanceAmount.gt(bnZero) ? "Added" : "Subtracted"} pending rebalance amount from ${
               adapter.constructor.name
-            } of ${pendingRebalanceAmount.toString()} to current balance for ${token} on ${chainId}`,
+            } of ${pendingRebalanceAmount.toString()} to cumulative (virtual) balance for ${token} on ${chainId}`,
             pendingRebalanceAmount: pendingRebalanceAmount.toString(),
             newCumulativeBalance: cumulativeBalances?.[token]?.toString(),
           });
