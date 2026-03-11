@@ -222,7 +222,8 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         mrkdwn: "Approved USDC for CoreDepositWallet",
       });
     }
-    await this.multicallerClient.executeTxnQueues();
+    const simMode = !this.config.sendingTransactionsEnabled;
+    await this.multicallerClient.executeTxnQueues(simMode);
   }
 
   async initializeRebalance(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber): Promise<BigNumber> {
