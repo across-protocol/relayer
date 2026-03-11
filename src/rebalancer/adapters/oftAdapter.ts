@@ -237,7 +237,7 @@ export class OftAdapter extends BaseAdapter {
       dstEid: destinationEid,
       to: formatToAddress(this.baseSignerAddress),
       amountLD: roundedAmount,
-      // @dev Setting `minAmountLD` equal to `amountLD` ensures we won't hit contract-side rounding
+      // @dev Setting `minAmountLD` equal to `expectedOutputAmount` ensures we won't hit contract-side rounding
       minAmountLD: expectedOutputAmount,
       extraOptions: "0x",
       composeMsg: "0x",

@@ -65,7 +65,7 @@ async function initializeRebalancerRun(_logger: winston.Logger, baseSigner: Sign
   // Make sure we update the upstream adapters first, so there is a small chance of progressing an intermediate
   // CCTP/OFT bridge before progressing the order in Binance/HL.
   const allAdapters = Object.keys(rebalancerClient.adapters);
-  const upstreamAdapterNames = ["cctp", "oft"];
+  const upstreamAdapterNames: string[] = allAdapters.filter((adapter) => adapter === "cctp" || adapter === "oft");
   const downstreamAdapterNames = allAdapters.filter((adapter) => !upstreamAdapterNames.includes(adapter));
   const adapterNamesToUpdate = [...upstreamAdapterNames, ...downstreamAdapterNames];
   const adaptersToUpdate = new Set(adapterNamesToUpdate.map((adapterName) => rebalancerClient.adapters[adapterName]));
