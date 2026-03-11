@@ -1,5 +1,5 @@
 import { MonitorConfig } from "./MonitorConfig";
-import { Signer, winston, assert, isEVMSpokePoolClient, toAddressType } from "../utils";
+import { EvmAddress, Signer, winston, assert, isEVMSpokePoolClient, toAddressType } from "../utils";
 import { BundleDataClient, HubPoolClient, TokenTransferClient } from "../clients";
 import {
   Clients,
@@ -61,7 +61,7 @@ export async function constructMonitorClients(
   const spokePoolAddresses = Object.values(spokePoolClients).map((client) => client.spokePoolAddress);
 
   const hubPoolAddress = EvmAddress.from(hubPoolClient.hubPool.address);
-  const signerAddress = toAddressType(signerAddr, hubPoolClient.chainId);
+  const signerAddress = EvmAddress.from(signerAddr);
 
   // Protocol: tracks HubPool -> SpokePool rebalances.
   const protocolAdapterManager = new AdapterManager(logger, spokePoolClients, hubPoolClient, [
