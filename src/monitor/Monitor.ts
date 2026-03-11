@@ -1298,8 +1298,9 @@ export class Monitor {
             continue;
           }
           if (!this.clients.crossChainTransferClient.adapterManager.l2TokenExistForL1Token(l1Token.address, chainId)) {
-            return;
+            continue;
           }
+
           const l2Token = this.clients.crossChainTransferClient.adapterManager.l2TokenForL1Token(
             l1Token.address,
             chainId
