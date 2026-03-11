@@ -135,7 +135,8 @@ export async function processMintEvm(
   provider: ethers.providers.JsonRpcProvider,
   privateKey: string,
   logger: winston.Logger,
-  signature?: string
+  signature?: string,
+  quoteDeadline?: number
 ): Promise<{ txHash: string }> {
   const signer = new ethers.Wallet(privateKey, provider);
 
@@ -147,9 +148,16 @@ export async function processMintEvm(
 
   const contract = new ethers.Contract(destination.address, destination.abi, signer);
 
-  const receiveMessageArgs = destination.requiresSignature
+  let receiveMessageArgs = destination.requiresSignature
     ? [attestation.message, attestation.attestation, signature]
     : [attestation.message, attestation.attestation];
+
+  // if the quote deadline has expired, we don't need to pass the signature
+  let method = "receiveMessage";
+  if (destination.requiresSignature && quoteDeadline < Date.now() / 1000) {
+    receiveMessageArgs = [attestation.message, attestation.attestation];
+    method = "emergencyReceiveMessage";
+  }
 
   logger.info({
     at: "evmUtils#processMintEvm",
@@ -163,7 +171,7 @@ export async function processMintEvm(
   const mintTx = await submitTransaction(
     {
       contract: contract,
-      method: "receiveMessage",
+      method,
       args: receiveMessageArgs,
       chainId,
     },
