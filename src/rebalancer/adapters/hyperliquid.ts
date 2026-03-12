@@ -279,6 +279,8 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       await this._depositToHypercore(sourceToken, amountToTransfer);
       await this._redisCreateOrder(cloid, STATUS.PENDING_DEPOSIT_TO_HYPERCORE, rebalanceRoute, amountToTransfer);
     }
+
+    return amountToTransfer;
   }
 
   async updateRebalanceStatuses(): Promise<void> {
