@@ -96,10 +96,7 @@ describe("Cross Chain Adapter: USDC CCTP L2 Bridge", async function () {
   });
   it("ignores rebalancer-owned pending withdrawals", async function () {
     const amountToWithdraw = toBNWei("100", 6);
-    adapter.setPendingBridgeRedisReader({
-      getPendingBridgeAmountsForRoute: async () => [amountToWithdraw],
-    } as unknown as PendingBridgeRedisReader);
-    await cctpBridgeContract.emitDepositForBurn(
+    const depositTxn = await cctpBridgeContract.emitDepositForBurn(
       l2USDCToken,
       amountToWithdraw,
       monitoredEoa,
@@ -108,6 +105,9 @@ describe("Cross Chain Adapter: USDC CCTP L2 Bridge", async function () {
       toAddress(cctpBridgeContract.address),
       ethers.constants.HashZero
     );
+    adapter.setPendingBridgeRedisReader({
+      getPendingBridgeTxnRefsForRoute: async () => new Set([depositTxn.hash]),
+    } as unknown as PendingBridgeRedisReader);
     const amount = await adapter.getL2PendingWithdrawalAmount(
       searchConfig,
       searchConfig,

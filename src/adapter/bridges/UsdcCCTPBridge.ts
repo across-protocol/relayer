@@ -153,8 +153,4 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
   override getRebalancerPendingBridgeAdapterName(): PendingBridgeAdapterName {
     return "cctp";
   }
-
-  override getRebalancerPendingBridgeTokenSymbol(): string {
-    return "USDC";
-  }
 }

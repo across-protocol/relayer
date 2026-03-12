@@ -10,8 +10,8 @@ import {
   getSpokePoolAddress,
   SVMProvider,
   SolanaTransaction,
+  isDefined,
 } from "../../utils";
-import { isDefined } from "../../utils";
 import { PendingBridgeAdapterName, PendingBridgeRedisReader } from "../../rebalancer/utils/PendingBridgeRedis";
 import { TransferTokenParams } from "../utils";
 
@@ -77,34 +77,24 @@ export abstract class BaseL2BridgeAdapter {
     return undefined;
   }
 
-  getRebalancerPendingBridgeTokenSymbol(): string | undefined {
-    return undefined;
-  }
-
   protected isPoolMonitoringAddress(address: Address): boolean {
     return this.hubPoolAddress.eq(address) || this.spokePoolAddress.eq(address);
   }
 
-  protected async getIgnoredPendingBridgeAmounts(
+  protected async getIgnoredPendingBridgeTxnRefs(
     sourceChain: number,
     destinationChain: number,
     address: Address
-  ): Promise<BigNumber[]> {
+  ): Promise<Set<string>> {
     if (!isDefined(this.pendingBridgeRedisReader) || this.isPoolMonitoringAddress(address)) {
-      return [];
+      return new Set();
     }
 
     const adapter = this.getRebalancerPendingBridgeAdapterName();
-    const tokenSymbol = this.getRebalancerPendingBridgeTokenSymbol();
-    if (!isDefined(adapter) || !isDefined(tokenSymbol)) {
-      return [];
+    if (!isDefined(adapter)) {
+      return new Set();
     }
 
-    return this.pendingBridgeRedisReader.getPendingBridgeAmountsForRoute(
-      adapter,
-      sourceChain,
-      destinationChain,
-      tokenSymbol
-    );
+    return this.pendingBridgeRedisReader.getPendingBridgeTxnRefsForRoute(adapter, sourceChain, destinationChain);
   }
 }

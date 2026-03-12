@@ -12,6 +12,7 @@ export type PendingBridgeAdapterName = "oft" | "cctp";
 export interface PendingBridgeRedisOrder {
   adapter: PendingBridgeAdapterName;
   cloid: string;
+  txnRef: string;
   sourceToken: string;
   destinationToken: string;
   sourceChain: number;
@@ -45,6 +46,15 @@ function getPendingBridgeOrderKey(adapter: PendingBridgeAdapterName, cloid: stri
   return `${getPendingBridgeRedisPrefix(adapter)}${PENDING_ORDER_REDIS_SUFFIX}:${cloid}`;
 }
 
+function getTxnRefFromCloid(adapter: PendingBridgeAdapterName, cloid: string): string {
+  if (adapter === "oft") {
+    return cloid;
+  }
+
+  const [, ...txnHashParts] = cloid.split("-");
+  return txnHashParts.join("-");
+}
+
 export class PendingBridgeRedisReader {
   private redisCachePromise?: Promise<RedisCache | undefined>;
 
@@ -68,6 +78,7 @@ export class PendingBridgeRedisReader {
         return {
           adapter,
           cloid,
+          txnRef: getTxnRefFromCloid(adapter, cloid),
           ...order,
           amountToTransfer: BigNumber.from(order.amountToTransfer),
         } satisfies PendingBridgeRedisOrder;
@@ -77,21 +88,17 @@ export class PendingBridgeRedisReader {
     return orders.filter(isDefined);
   }
 
-  async getPendingBridgeAmountsForRoute(
+  async getPendingBridgeTxnRefsForRoute(
     adapter: PendingBridgeAdapterName,
     sourceChain: number,
-    destinationChain: number,
-    tokenSymbol: string
-  ): Promise<BigNumber[]> {
+    destinationChain: number
+  ): Promise<Set<string>> {
     const orders = await this.getPendingBridgeOrders(adapter);
-    return orders
-      .filter(
-        (order) =>
-          order.sourceChain === sourceChain &&
-          order.destinationChain === destinationChain &&
-          (order.sourceToken === tokenSymbol || order.destinationToken === tokenSymbol)
-      )
-      .map((order) => order.amountToTransfer);
+    return new Set(
+      orders
+        .filter((order) => order.sourceChain === sourceChain && order.destinationChain === destinationChain)
+        .map((order) => order.txnRef)
+    );
   }
 
   private getRedisCache(): Promise<RedisCache | undefined> {

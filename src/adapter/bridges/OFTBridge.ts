@@ -226,8 +226,4 @@ export class OFTBridge extends BaseBridgeAdapter {
   override getRebalancerPendingBridgeAdapterName(): PendingBridgeAdapterName {
     return "oft";
   }
-
-  override getRebalancerPendingBridgeTokenSymbol(): string {
-    return "USDT";
-  }
 }

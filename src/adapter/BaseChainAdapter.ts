@@ -540,19 +540,16 @@ export class BaseChainAdapter {
           bridge.queryL1BridgeInitiationEvents(l1Token, monitoredAddress, monitoredAddress, l1SearchConfig),
           bridge.queryL2BridgeFinalizationEvents(l1Token, monitoredAddress, monitoredAddress, l2SearchConfig),
         ]);
-        const ignoredPendingBridgeAmounts = (
-          await bridge.getIgnoredPendingBridgeAmounts(this.hubChainId, this.chainId, monitoredAddress)
-        ).map((amount) => amount.toString());
+        const ignoredPendingBridgeTxnRefs = await bridge.getIgnoredPendingBridgeTxnRefs(
+          this.hubChainId,
+          this.chainId,
+          monitoredAddress
+        );
 
         Object.entries(depositInitiatedResults).forEach(([l2Token, depositInitiatedEvents]) => {
-          const trackedInitiatedEvents = depositInitiatedEvents.filter((event) => {
-            const index = ignoredPendingBridgeAmounts.indexOf(event.amount.toString());
-            if (index > -1) {
-              ignoredPendingBridgeAmounts.splice(index, 1);
-              return false;
-            }
-            return true;
-          });
+          const trackedInitiatedEvents = depositInitiatedEvents.filter(
+            (event) => !ignoredPendingBridgeTxnRefs.has(event.txnRef)
+          );
           const finalizedAmounts = depositFinalizedResults?.[l2Token]?.map((event) => event.amount.toString()) ?? [];
           const outstandingInitiatedEvents = trackedInitiatedEvents.filter((event) => {
             // Remove the first match. This handles scenarios where are collisions by amount.

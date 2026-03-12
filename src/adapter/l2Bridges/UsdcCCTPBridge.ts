@@ -111,14 +111,14 @@ export class UsdcCCTPBridge extends BaseL2BridgeAdapter {
       paginatedEventQuery(this.l2Bridge, this.l2Bridge.filters.DepositForBurn(...l2EventFilterArgs), l2EventConfig),
       paginatedEventQuery(this.l1Bridge, this.l1Bridge.filters.MintAndWithdraw(...l1EventFilterArgs), l1EventConfig),
     ]);
-    const ignoredPendingBridgeAmounts = (
-      await this.getIgnoredPendingBridgeAmounts(this.l2chainId, this.hubChainId, fromAddress)
-    ).map((amount) => amount.toString());
+    const ignoredPendingBridgeTxnRefs = await this.getIgnoredPendingBridgeTxnRefs(
+      this.l2chainId,
+      this.hubChainId,
+      fromAddress
+    );
     const counted = new Set<number>();
-    const withdrawalAmount = withdrawalInitiatedEvents.reduce((totalAmount, { args: l2Args }) => {
-      const ignoredAmountIdx = ignoredPendingBridgeAmounts.indexOf(toBN(l2Args.amount.toString()).toString());
-      if (ignoredAmountIdx > -1) {
-        ignoredPendingBridgeAmounts.splice(ignoredAmountIdx, 1);
+    const withdrawalAmount = withdrawalInitiatedEvents.reduce((totalAmount, { args: l2Args, transactionHash }) => {
+      if (ignoredPendingBridgeTxnRefs.has(transactionHash)) {
         return totalAmount;
       }
       const matchingFinalizedEvent = withdrawalFinalizedEvents.find(({ args: l1Args }, idx) => {
@@ -153,9 +153,5 @@ export class UsdcCCTPBridge extends BaseL2BridgeAdapter {
 
   override getRebalancerPendingBridgeAdapterName(): PendingBridgeAdapterName {
     return "cctp";
-  }
-
-  override getRebalancerPendingBridgeTokenSymbol(): string {
-    return "USDC";
   }
 }

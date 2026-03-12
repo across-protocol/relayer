@@ -4,11 +4,14 @@ import { BaseChainAdapter } from "../../src/adapter";
 import { BaseBridgeAdapter, BridgeEvents, BridgeTransactionDetails } from "../../src/adapter/bridges/BaseBridgeAdapter";
 import { BaseL2BridgeAdapter } from "../../src/adapter/l2Bridges/BaseL2BridgeAdapter";
 import { PendingBridgeAdapterName, PendingBridgeRedisReader } from "../../src/rebalancer/utils/PendingBridgeRedis";
-import { Address, BigNumber, EvmAddress, EventSearchConfig, Signer } from "../../src/utils";
+import { BigNumber, EvmAddress, Signer } from "../../src/utils";
 
 describe("BaseChainAdapter split bridge tracking", function () {
   it("ignores rebalancer-owned OFT bridge transfers when computing outstanding amounts", async function () {
-    const outstandingTransfers = await getOutstandingTransfersForTrackedBridge("oft", "USDT");
+    const outstandingTransfers = await getOutstandingTransfersForTrackedBridge("oft", "USDT", [
+      makeBridgeEvent(toBNWei("1", 6), "ignored"),
+      makeBridgeEvent(toBNWei("2", 6), "tracked"),
+    ]);
     const l1Token = TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET];
     const l2Token = TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.ARBITRUM];
     expect(outstandingTransfers[MONITORED_ADDRESS][l1Token][l2Token].totalAmount).to.equal(toBNWei("2", 6));
@@ -16,10 +19,25 @@ describe("BaseChainAdapter split bridge tracking", function () {
   });
 
   it("ignores rebalancer-owned CCTP bridge transfers when computing outstanding amounts", async function () {
-    const outstandingTransfers = await getOutstandingTransfersForTrackedBridge("cctp", "USDC");
+    const outstandingTransfers = await getOutstandingTransfersForTrackedBridge("cctp", "USDC", [
+      makeBridgeEvent(toBNWei("1", 6), "ignored"),
+      makeBridgeEvent(toBNWei("2", 6), "tracked"),
+    ]);
     const l1Token = TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET];
     const l2Token = TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.BASE];
     expect(outstandingTransfers[MONITORED_ADDRESS][l1Token][l2Token].totalAmount).to.equal(toBNWei("2", 6));
+    expect(outstandingTransfers[MONITORED_ADDRESS][l1Token][l2Token].depositTxHashes).to.deep.equal(["tracked"]);
+  });
+
+  it("ignores only the matching txnRef when two transfers share the same amount", async function () {
+    const sharedAmount = toBNWei("1", 6);
+    const outstandingTransfers = await getOutstandingTransfersForTrackedBridge("oft", "USDT", [
+      makeBridgeEvent(sharedAmount, "ignored"),
+      makeBridgeEvent(sharedAmount, "tracked"),
+    ]);
+    const l1Token = TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET];
+    const l2Token = TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.ARBITRUM];
+    expect(outstandingTransfers[MONITORED_ADDRESS][l1Token][l2Token].totalAmount).to.equal(sharedAmount);
     expect(outstandingTransfers[MONITORED_ADDRESS][l1Token][l2Token].depositTxHashes).to.deep.equal(["tracked"]);
   });
 });
@@ -28,17 +46,18 @@ const MONITORED_ADDRESS = "0x1000000000000000000000000000000000000001";
 
 async function getOutstandingTransfersForTrackedBridge(
   adapterName: PendingBridgeAdapterName,
-  tokenSymbol: "USDT" | "USDC"
+  tokenSymbol: "USDT" | "USDC",
+  initiationEvents: ReturnType<typeof makeBridgeEvent>[]
 ) {
   const [signer] = await ethers.getSigners();
   const l2ChainId = adapterName === "oft" ? CHAIN_IDs.ARBITRUM : CHAIN_IDs.BASE;
   const l1Token = EvmAddress.from(TOKEN_SYMBOLS_MAP[tokenSymbol].addresses[CHAIN_IDs.MAINNET]);
   const l2Token = TOKEN_SYMBOLS_MAP[tokenSymbol].addresses[l2ChainId];
-  const bridge = new MockTrackedBridge(l2ChainId, CHAIN_IDs.MAINNET, signer, l1Token, adapterName, tokenSymbol, {
-    [l2Token]: [makeBridgeEvent(toBNWei("1", 6), "ignored"), makeBridgeEvent(toBNWei("2", 6), "tracked")],
+  const bridge = new MockTrackedBridge(l2ChainId, CHAIN_IDs.MAINNET, signer, l1Token, adapterName, {
+    [l2Token]: initiationEvents,
   });
   const pendingBridgeRedisReader = {
-    getPendingBridgeAmountsForRoute: async () => [toBNWei("1", 6)],
+    getPendingBridgeTxnRefsForRoute: async () => new Set(["ignored"]),
   } as unknown as PendingBridgeRedisReader;
   const adapter = new BaseChainAdapter(
     {
@@ -83,7 +102,6 @@ class MockTrackedBridge extends BaseBridgeAdapter {
     signer: Signer,
     private readonly l1Token: EvmAddress,
     private readonly adapterName: PendingBridgeAdapterName,
-    private readonly tokenSymbol: string,
     private readonly initiationEvents: BridgeEvents
   ) {
     super(l2ChainId, l1ChainId, signer, []);
@@ -109,10 +127,6 @@ class MockTrackedBridge extends BaseBridgeAdapter {
   override getRebalancerPendingBridgeAdapterName(): PendingBridgeAdapterName {
     return this.adapterName;
   }
-
-  override getRebalancerPendingBridgeTokenSymbol(): string {
-    return this.tokenSymbol;
-  }
 }
 
 class NoopL2Bridge extends BaseL2BridgeAdapter {
@@ -124,12 +138,7 @@ class NoopL2Bridge extends BaseL2BridgeAdapter {
     return [];
   }
 
-  async getL2PendingWithdrawalAmount(
-    _l2EventSearchConfig: EventSearchConfig,
-    _l1EventSearchConfig: EventSearchConfig,
-    _fromAddress: Address,
-    _l2Token: Address
-  ): Promise<BigNumber> {
+  async getL2PendingWithdrawalAmount(): Promise<BigNumber> {
     return BigNumber.from(0);
   }
 }

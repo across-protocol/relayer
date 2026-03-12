@@ -17,13 +17,15 @@ describe("Cross Chain Adapter: OFT L2 Bridge", function () {
     const guid = "0x" + "12".repeat(32);
 
     adapter.setPendingBridgeRedisReader({
-      getPendingBridgeAmountsForRoute: async () => [amountToWithdraw],
+      getPendingBridgeTxnRefsForRoute: async () => new Set(["tracked-txn"]),
     } as unknown as PendingBridgeRedisReader);
 
     (adapter as any).l2Bridge.queryFilter = async () => [
       {
         event: "OFTSent",
         blockNumber: 1,
+        transactionHash: "tracked-txn",
+        txnRef: "tracked-txn",
         args: {
           dstEid: OFTUtils.getEndpointId(hubChainId),
           guid,

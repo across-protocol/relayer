@@ -169,17 +169,17 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
 
     const l2BridgeInitiationEvents = l2SentAll.filter((event) => event.args.dstEid === this.l1ChainEid);
     const l1BridgeFinalizationEvents = l1ReceivedAll.filter((event) => event.args.srcEid === this.l2ChainEid);
-    const ignoredPendingBridgeAmounts = (
-      await this.getIgnoredPendingBridgeAmounts(this.l2chainId, this.hubChainId, fromAddress)
-    ).map((amount) => amount.toString());
+    const ignoredPendingBridgeTxnRefs = await this.getIgnoredPendingBridgeTxnRefs(
+      this.l2chainId,
+      this.hubChainId,
+      fromAddress
+    );
 
     const finalizedGuids = new Set<string>(l1BridgeFinalizationEvents.map((event) => event.args.guid));
 
     let outstandingWithdrawalAmount = bnZero;
     for (const events of l2BridgeInitiationEvents) {
-      const ignoredAmountIdx = ignoredPendingBridgeAmounts.indexOf(events.args.amountReceivedLD.toString());
-      if (ignoredAmountIdx > -1) {
-        ignoredPendingBridgeAmounts.splice(ignoredAmountIdx, 1);
+      if (ignoredPendingBridgeTxnRefs.has(events.transactionHash)) {
         continue;
       }
       if (!finalizedGuids.has(events.args.guid)) {
@@ -233,9 +233,5 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
 
   override getRebalancerPendingBridgeAdapterName(): PendingBridgeAdapterName {
     return "oft";
-  }
-
-  override getRebalancerPendingBridgeTokenSymbol(): string {
-    return "USDT";
   }
 }
