@@ -445,10 +445,10 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     }
 
     // Finalized amount is the total amount sent to Binance deposit network minus the unfinalized amount.
-    for (const sourceToken of ["USDC", "USDT"]) {
+    for (const sourceToken of Object.keys(totalBridges)) {
       for (const sourceChain of Object.keys(totalBridges[sourceToken])) {
-        const totalBridgedAmount = totalBridges[sourceToken]?.[sourceChain] ?? bnZero;
-        const unfinalizedBridgedAmount = unfinalizedBridges[sourceToken]?.[sourceChain] ?? bnZero;
+        const totalBridgedAmount = totalBridges[sourceToken][sourceChain] ?? bnZero;
+        const unfinalizedBridgedAmount = unfinalizedBridges[sourceToken][sourceChain] ?? bnZero;
         const finalizedBridgedAmount = totalBridgedAmount.sub(unfinalizedBridgedAmount);
         if (finalizedBridgedAmount.gt(bnZero)) {
           this.logger.debug({
