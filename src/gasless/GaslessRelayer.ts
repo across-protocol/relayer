@@ -92,7 +92,7 @@ export class GaslessRelayer {
   private instanceCoordinator;
   private initialized = false;
 
-  private messageState: { [nonce: string]: MessageState } = {};
+  private messageState: { [key: string]: MessageState } = {};
 
   private providersByChain: { [chainId: number]: Provider } = {};
   // The object is indexed by `chainId`. An `AuthorizationUsed` event is marked by adding `${token}:${authorizer}:${nonce}` to the respective chain's set.
@@ -102,7 +102,7 @@ export class GaslessRelayer {
   // The object is indexed by `chainId`. Each element of the set is a deposit which should be retried in the bot's runtime.
   private retryableFills: {
     [chainId: number]: {
-      [depositNonce: string]: Omit<DepositWithBlock, "fromLiteChain" | "toLiteChain" | "quoteBlockNumber">;
+      [depositKey: string]: Omit<DepositWithBlock, "fromLiteChain" | "toLiteChain" | "quoteBlockNumber">;
     };
   } = {};
   // The object is indexed by `chainId`. A SpokePoolPeriphery contract is indexed by the chain ID.
@@ -215,7 +215,7 @@ export class GaslessRelayer {
       );
       assert(
         isDefined(correspondingDeposit),
-        "Inconsistent data between this.observedNonces and return data from gaslessRelayer.updateObserved()"
+        "Inconsistent data between this.observedDeposits and return data from gaslessRelayer.updateObserved()"
       );
       await this.initiateFill(correspondingDeposit);
     });
@@ -659,10 +659,10 @@ export class GaslessRelayer {
         depositId,
         originChainId,
       } = deposit;
-      const depositNonce = this._getDepositKey(EvmAddress.from(inputToken).toNative(), originChainId, depositId);
+      const depositKey = this._getDepositKey(EvmAddress.from(inputToken).toNative(), originChainId, depositId);
 
       // If there's already known state for this deposit nonce, skip it.
-      return !isDefined(this.messageState[depositNonce]);
+      return !isDefined(this.messageState[depositKey]);
     };
 
     const apiMessages = await this._queryGaslessApi();
