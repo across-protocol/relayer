@@ -446,23 +446,19 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
 
     // Finalized amount is the total amount sent to Binance deposit network minus the unfinalized amount.
     for (const sourceToken of ["USDC", "USDT"]) {
-      for (const sourceChain of this.allSourceChains) {
-        const binanceDepositNetwork = await this._getEntrypointNetwork(sourceChain, sourceToken);
-        const requiresBridgeBeforeDeposit = binanceDepositNetwork !== sourceChain;
-        if (requiresBridgeBeforeDeposit) {
-          const totalBridgedAmount = totalBridges[sourceToken]?.[binanceDepositNetwork] ?? bnZero;
-          const unfinalizedBridgedAmount = unfinalizedBridges[sourceToken]?.[binanceDepositNetwork] ?? bnZero;
-          const finalizedBridgedAmount = totalBridgedAmount.sub(unfinalizedBridgedAmount);
-          if (finalizedBridgedAmount.gt(bnZero)) {
-            this.logger.debug({
-              at: "BinanceStablecoinSwapAdapter.getPendingRebalances",
-              message: `Subtracting ${finalizedBridgedAmount.toString()} ${sourceToken} from Binance deposit network ${binanceDepositNetwork} for finalized bridges`,
-            });
-            pendingRebalances[binanceDepositNetwork] ??= {};
-            pendingRebalances[binanceDepositNetwork][sourceToken] = (
-              pendingRebalances[binanceDepositNetwork][sourceToken] ?? bnZero
-            ).sub(finalizedBridgedAmount);
-          }
+      for (const sourceChain of Object.keys(totalBridges[sourceToken])) {
+        const totalBridgedAmount = totalBridges[sourceToken]?.[sourceChain] ?? bnZero;
+        const unfinalizedBridgedAmount = unfinalizedBridges[sourceToken]?.[sourceChain] ?? bnZero;
+        const finalizedBridgedAmount = totalBridgedAmount.sub(unfinalizedBridgedAmount);
+        if (finalizedBridgedAmount.gt(bnZero)) {
+          this.logger.debug({
+            at: "BinanceStablecoinSwapAdapter.getPendingRebalances",
+            message: `Subtracting ${finalizedBridgedAmount.toString()} ${sourceToken} from Binance deposit network ${sourceChain} for finalized bridges`,
+          });
+          pendingRebalances[sourceChain] ??= {};
+          pendingRebalances[sourceChain][sourceToken] = (pendingRebalances[sourceChain][sourceToken] ?? bnZero).sub(
+            finalizedBridgedAmount
+          );
         }
       }
     }
