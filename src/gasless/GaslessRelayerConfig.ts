@@ -12,6 +12,7 @@ export class GaslessRelayerConfig extends CommonConfig {
   initializationRetryAttempts: number;
   /** When true, allow deposits with inputAmount < outputAmount and outputAmount === MAX_UINT_VAL (refund-flow test); deposit is made but fill is skipped. */
   refundFlowTestEnabled: boolean;
+  spokePoolPeripheryOverrides: { [chainId: number]: string };
 
   constructor(env: ProcessEnv) {
     super(env);
@@ -26,6 +27,7 @@ export class GaslessRelayerConfig extends CommonConfig {
       API_TIMEOUT_OVERRIDE,
       INITIALIZATION_RETRY_ATTEMPTS,
       RELAYER_GASLESS_REFUND_FLOW_TEST_ENABLED,
+      SPOKE_POOL_PERIPHERY_OVERRIDES,
     } = env;
     this.apiPollingInterval = Number(API_POLLING_INTERVAL ?? 1); // Default to 1s
     this.apiEndpoint = String(API_GASLESS_ENDPOINT);
@@ -41,5 +43,7 @@ export class GaslessRelayerConfig extends CommonConfig {
     this.apiTimeoutOverride = Number(API_TIMEOUT_OVERRIDE ?? 3000); // In ms
     this.initializationRetryAttempts = Number(INITIALIZATION_RETRY_ATTEMPTS ?? 3);
     this.refundFlowTestEnabled = String(RELAYER_GASLESS_REFUND_FLOW_TEST_ENABLED ?? "").toLowerCase() === "true";
+
+    this.spokePoolPeripheryOverrides = JSON.parse(SPOKE_POOL_PERIPHERY_OVERRIDES ?? "{}");
   }
 }

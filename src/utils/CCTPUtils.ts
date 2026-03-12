@@ -86,6 +86,8 @@ export type CCTPHookData = {
   maxUserSlippageBps: number;
   finalRecipient: string; // address (extracted from bytes32)
   finalToken: string; // address (extracted from bytes32)
+  destinationDex?: number; // uint32 (new contract version only)
+  accountCreationMode?: number; // uint8 (new contract version only)
   executionMode: number; // uint8
   actionData: string; // bytes
 };
@@ -134,7 +136,9 @@ export async function getCctpV2DepositForBurnTxnHashes(
   const eventFilterParams = [TOKEN_SYMBOLS_MAP.USDC.addresses[sourceChainId], undefined, senderAddresses];
   const eventFilter = srcTokenMessenger.filters.DepositForBurn(...eventFilterParams);
   const depositForBurnEvents = await paginatedEventQuery(srcTokenMessenger, eventFilter, sourceEventSearchConfig);
-  return depositForBurnEvents.map((e) => e.transactionHash);
+  return depositForBurnEvents
+    .filter((e) => chainIsEvm(getCctpDestinationChainFromDomain(e.args.destinationDomain, chainIsProd(sourceChainId))))
+    .map((e) => e.transactionHash);
 }
 
 /**
@@ -867,26 +871,47 @@ export function decodeCctpV2HookData(messageBytes: string): CCTPHookData | undef
 
   const hookDataBytes = messageBytesArray.slice(HOOK_DATA_START);
 
-  try {
-    // Decode hookData: abi.encode(nonce, deadline, maxBpsToSponsor, maxUserSlippageBps, finalRecipient, finalToken, executionMode, actionData)
-    const decoded = ethers.utils.defaultAbiCoder.decode(
-      ["bytes32", "uint256", "uint256", "uint256", "bytes32", "bytes32", "uint8", "bytes"],
-      hookDataBytes
-    );
+  // Try the new contract format first (including destinationDex and accountCreationMode)
+  // then fall back to the legacy format.
+  const newFormat = [
+    "bytes32",
+    "uint256",
+    "uint256",
+    "uint256",
+    "bytes32",
+    "bytes32",
+    "uint32",
+    "uint8",
+    "uint8",
+    "bytes",
+  ];
+  // NOTE: We can remove the legacy format once the API migrates to new contract version.
+  const legacyFormat = ["bytes32", "uint256", "uint256", "uint256", "bytes32", "bytes32", "uint8", "bytes"];
 
-    return {
-      nonce: decoded[0],
-      deadline: decoded[1].toString(),
-      maxBpsToSponsor: decoded[2].toNumber(),
-      maxUserSlippageBps: decoded[3].toNumber(),
-      finalRecipient: EvmAddress.from(decoded[4]).toNative(),
-      finalToken: EvmAddress.from(decoded[5]).toNative(),
-      executionMode: decoded[6],
-      actionData: decoded[7],
-    };
-  } catch {
-    // If decoding fails, hookData is malformed or not present
-    return undefined;
+  for (const format of [newFormat, legacyFormat]) {
+    try {
+      const decoded = ethers.utils.defaultAbiCoder.decode(format, hookDataBytes);
+      const isNewFormat = format.length === newFormat.length;
+
+      return {
+        nonce: decoded[0],
+        deadline: decoded[1].toString(),
+        maxBpsToSponsor: decoded[2].toNumber(),
+        maxUserSlippageBps: decoded[3].toNumber(),
+        finalRecipient: EvmAddress.from(decoded[4]).toNative(),
+        finalToken: EvmAddress.from(decoded[5]).toNative(),
+        ...(isNewFormat
+          ? {
+              destinationDex: decoded[6],
+              accountCreationMode: decoded[7],
+              executionMode: decoded[8],
+              actionData: decoded[9],
+            }
+          : { executionMode: decoded[6], actionData: decoded[7] }),
+      };
+    } catch {
+      continue;
+    }
   }
 }
 
