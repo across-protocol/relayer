@@ -84,7 +84,11 @@ export abstract class BaseBridgeAdapter {
     return this.hubPoolAddress.eq(address) || this.spokePoolAddress.eq(address);
   }
 
-  async getIgnoredPendingBridgeAmounts(sourceChain: number, destinationChain: number, address: Address): Promise<BigNumber[]> {
+  async getIgnoredPendingBridgeAmounts(
+    sourceChain: number,
+    destinationChain: number,
+    address: Address
+  ): Promise<BigNumber[]> {
     if (!isDefined(this.pendingBridgeRedisReader) || this.isPoolMonitoringAddress(address)) {
       return [];
     }

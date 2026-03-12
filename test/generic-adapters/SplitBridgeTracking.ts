@@ -26,25 +26,17 @@ describe("BaseChainAdapter split bridge tracking", function () {
 
 const MONITORED_ADDRESS = "0x1000000000000000000000000000000000000001";
 
-async function getOutstandingTransfersForTrackedBridge(adapterName: PendingBridgeAdapterName, tokenSymbol: "USDT" | "USDC") {
+async function getOutstandingTransfersForTrackedBridge(
+  adapterName: PendingBridgeAdapterName,
+  tokenSymbol: "USDT" | "USDC"
+) {
   const [signer] = await ethers.getSigners();
   const l2ChainId = adapterName === "oft" ? CHAIN_IDs.ARBITRUM : CHAIN_IDs.BASE;
   const l1Token = EvmAddress.from(TOKEN_SYMBOLS_MAP[tokenSymbol].addresses[CHAIN_IDs.MAINNET]);
   const l2Token = TOKEN_SYMBOLS_MAP[tokenSymbol].addresses[l2ChainId];
-  const bridge = new MockTrackedBridge(
-    l2ChainId,
-    CHAIN_IDs.MAINNET,
-    signer,
-    l1Token,
-    adapterName,
-    tokenSymbol,
-    {
-      [l2Token]: [
-        makeBridgeEvent(toBNWei("1", 6), "ignored"),
-        makeBridgeEvent(toBNWei("2", 6), "tracked"),
-      ],
-    }
-  );
+  const bridge = new MockTrackedBridge(l2ChainId, CHAIN_IDs.MAINNET, signer, l1Token, adapterName, tokenSymbol, {
+    [l2Token]: [makeBridgeEvent(toBNWei("1", 6), "ignored"), makeBridgeEvent(toBNWei("2", 6), "tracked")],
+  });
   const pendingBridgeRedisReader = {
     getPendingBridgeAmountsForRoute: async () => [toBNWei("1", 6)],
   } as unknown as PendingBridgeRedisReader;

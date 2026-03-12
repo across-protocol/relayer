@@ -1,4 +1,4 @@
-import { RedisCacheInterface } from "../../caching/RedisCache";
+import { RedisCache } from "../../caching/RedisCache";
 import { BigNumber, getRedisCache, isDefined, winston } from "../../utils";
 
 export const OFT_PENDING_BRIDGE_REDIS_PREFIX = "oft-bridge:";
@@ -46,7 +46,7 @@ function getPendingBridgeOrderKey(adapter: PendingBridgeAdapterName, cloid: stri
 }
 
 export class PendingBridgeRedisReader {
-  private redisCachePromise?: Promise<RedisCacheInterface | undefined>;
+  private redisCachePromise?: Promise<RedisCache | undefined>;
 
   constructor(private readonly logger?: winston.Logger) {}
 
@@ -94,9 +94,9 @@ export class PendingBridgeRedisReader {
       .map((order) => order.amountToTransfer);
   }
 
-  private getRedisCache(): Promise<RedisCacheInterface | undefined> {
+  private getRedisCache(): Promise<RedisCache | undefined> {
     this.redisCachePromise ??= getRedisCache(this.logger, undefined, getRebalancerStatusTrackingNamespace()) as Promise<
-      RedisCacheInterface | undefined
+      RedisCache | undefined
     >;
     return this.redisCachePromise;
   }

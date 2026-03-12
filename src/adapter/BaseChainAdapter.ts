@@ -82,7 +82,9 @@ export class BaseChainAdapter {
     this.baseL2SearchConfig = { ...this.getSearchConfig(this.chainId) };
     this.transactionClient = new TransactionClient(logger);
     Object.values(this.bridges).forEach((bridge) => bridge.setPendingBridgeRedisReader(this.pendingBridgeRedisReader));
-    Object.values(this.l2Bridges).forEach((bridge) => bridge.setPendingBridgeRedisReader(this.pendingBridgeRedisReader));
+    Object.values(this.l2Bridges).forEach((bridge) =>
+      bridge.setPendingBridgeRedisReader(this.pendingBridgeRedisReader)
+    );
   }
 
   public get adapterName(): string {

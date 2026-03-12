@@ -20,18 +20,17 @@ describe("Cross Chain Adapter: OFT L2 Bridge", function () {
       getPendingBridgeAmountsForRoute: async () => [amountToWithdraw],
     } as unknown as PendingBridgeRedisReader);
 
-    (adapter as any).l2Bridge.queryFilter = async () =>
-      [
-        {
-          event: "OFTSent",
-          blockNumber: 1,
-          args: {
-            dstEid: OFTUtils.getEndpointId(hubChainId),
-            guid,
-            amountReceivedLD: amountToWithdraw,
-          },
-        } as any,
-      ];
+    (adapter as any).l2Bridge.queryFilter = async () => [
+      {
+        event: "OFTSent",
+        blockNumber: 1,
+        args: {
+          dstEid: OFTUtils.getEndpointId(hubChainId),
+          guid,
+          amountReceivedLD: amountToWithdraw,
+        },
+      } as any,
+    ];
     (adapter as any).l1Bridge.queryFilter = async () => [];
 
     const amount = await adapter.getL2PendingWithdrawalAmount(
