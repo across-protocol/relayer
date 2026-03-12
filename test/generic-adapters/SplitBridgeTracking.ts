@@ -1,7 +1,14 @@
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
+import * as winston from "winston";
 import { ethers, expect, toBNWei, Contract } from "../utils";
+import { SpokePoolClient } from "../../src/clients";
 import { BaseChainAdapter } from "../../src/adapter";
-import { BaseBridgeAdapter, BridgeEvents, BridgeTransactionDetails } from "../../src/adapter/bridges/BaseBridgeAdapter";
+import {
+  BaseBridgeAdapter,
+  BridgeEvent,
+  BridgeEvents,
+  BridgeTransactionDetails,
+} from "../../src/adapter/bridges/BaseBridgeAdapter";
 import { BaseL2BridgeAdapter } from "../../src/adapter/l2Bridges/BaseL2BridgeAdapter";
 import { PendingBridgeAdapterName, PendingBridgeRedisReader } from "../../src/rebalancer/utils/PendingBridgeRedis";
 import { BigNumber, EvmAddress, Signer } from "../../src/utils";
@@ -40,6 +47,20 @@ describe("BaseChainAdapter split bridge tracking", function () {
     expect(outstandingTransfers[MONITORED_ADDRESS][l1Token][l2Token].totalAmount).to.equal(sharedAmount);
     expect(outstandingTransfers[MONITORED_ADDRESS][l1Token][l2Token].depositTxHashes).to.deep.equal(["tracked"]);
   });
+
+  it("does not let finalized events for ignored initiations reduce tracked outstanding amounts", async function () {
+    const trackedAmount = toBNWei("2", 6);
+    const outstandingTransfers = await getOutstandingTransfersForTrackedBridge(
+      "oft",
+      "USDT",
+      [makeBridgeEvent(toBNWei("1", 6), "ignored"), makeBridgeEvent(trackedAmount, "tracked")],
+      [makeBridgeEvent(toBNWei("1", 6), "ignored-finalized")]
+    );
+    const l1Token = TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET];
+    const l2Token = TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.ARBITRUM];
+    expect(outstandingTransfers[MONITORED_ADDRESS][l1Token][l2Token].totalAmount).to.equal(trackedAmount);
+    expect(outstandingTransfers[MONITORED_ADDRESS][l1Token][l2Token].depositTxHashes).to.deep.equal(["tracked"]);
+  });
 });
 
 const MONITORED_ADDRESS = "0x1000000000000000000000000000000000000001";
@@ -47,15 +68,22 @@ const MONITORED_ADDRESS = "0x1000000000000000000000000000000000000001";
 async function getOutstandingTransfersForTrackedBridge(
   adapterName: PendingBridgeAdapterName,
   tokenSymbol: "USDT" | "USDC",
-  initiationEvents: ReturnType<typeof makeBridgeEvent>[]
+  initiationEvents: ReturnType<typeof makeBridgeEvent>[],
+  finalizedEvents: ReturnType<typeof makeBridgeEvent>[] = []
 ) {
   const [signer] = await ethers.getSigners();
   const l2ChainId = adapterName === "oft" ? CHAIN_IDs.ARBITRUM : CHAIN_IDs.BASE;
   const l1Token = EvmAddress.from(TOKEN_SYMBOLS_MAP[tokenSymbol].addresses[CHAIN_IDs.MAINNET]);
   const l2Token = TOKEN_SYMBOLS_MAP[tokenSymbol].addresses[l2ChainId];
-  const bridge = new MockTrackedBridge(l2ChainId, CHAIN_IDs.MAINNET, signer, l1Token, adapterName, {
-    [l2Token]: initiationEvents,
-  });
+  const bridge = new MockTrackedBridge(
+    l2ChainId,
+    CHAIN_IDs.MAINNET,
+    signer,
+    l1Token,
+    adapterName,
+    { [l2Token]: initiationEvents },
+    { [l2Token]: finalizedEvents }
+  );
   const pendingBridgeRedisReader = {
     getPendingBridgeTxnRefsForRoute: async () => new Set(["ignored"]),
   } as unknown as PendingBridgeRedisReader;
@@ -63,7 +91,7 @@ async function getOutstandingTransfersForTrackedBridge(
     {
       [CHAIN_IDs.MAINNET]: makeSpokePoolClient(CHAIN_IDs.MAINNET),
       [l2ChainId]: makeSpokePoolClient(l2ChainId),
-    } as any,
+    } as unknown as { [chainId: number]: SpokePoolClient },
     l2ChainId,
     CHAIN_IDs.MAINNET,
     [EvmAddress.from(MONITORED_ADDRESS)],
@@ -86,10 +114,11 @@ function makeSpokePoolClient(chainId: number) {
 }
 
 function makeBridgeEvent(amount: BigNumber, txnRef: string) {
-  return {
+  return <BridgeEvent>{
     amount,
     txnRef,
     blockNumber: 1,
+    txnIndex: 0,
     transactionIndex: 0,
     logIndex: 0,
   };
@@ -102,7 +131,8 @@ class MockTrackedBridge extends BaseBridgeAdapter {
     signer: Signer,
     private readonly l1Token: EvmAddress,
     private readonly adapterName: PendingBridgeAdapterName,
-    private readonly initiationEvents: BridgeEvents
+    private readonly initiationEvents: BridgeEvents,
+    private readonly finalizedEvents: BridgeEvents
   ) {
     super(l2ChainId, l1ChainId, signer, []);
     this.l1Bridge = new Contract(EvmAddress.from(MONITORED_ADDRESS).toNative(), [], signer);
@@ -120,8 +150,11 @@ class MockTrackedBridge extends BaseBridgeAdapter {
     return this.initiationEvents;
   }
 
-  async queryL2BridgeFinalizationEvents(): Promise<BridgeEvents> {
-    return {};
+  async queryL2BridgeFinalizationEvents(l1Token: EvmAddress): Promise<BridgeEvents> {
+    if (!l1Token.eq(this.l1Token)) {
+      return {};
+    }
+    return this.finalizedEvents;
   }
 
   override getRebalancerPendingBridgeAdapterName(): PendingBridgeAdapterName {
@@ -148,4 +181,4 @@ const TEST_LOGGER = {
   info: () => undefined,
   warn: () => undefined,
   error: () => undefined,
-} as any;
+} as unknown as winston.Logger;

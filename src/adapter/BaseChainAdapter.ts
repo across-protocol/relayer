@@ -551,18 +551,17 @@ export class BaseChainAdapter {
             (event) => !ignoredPendingBridgeTxnRefs.has(event.txnRef)
           );
           const finalizedAmounts = depositFinalizedResults?.[l2Token]?.map((event) => event.amount.toString()) ?? [];
-          const outstandingInitiatedEvents = trackedInitiatedEvents.filter((event) => {
+          const outstandingInitiatedEvents: typeof trackedInitiatedEvents = [];
+          const _totalAmount = trackedInitiatedEvents.reduce((acc, event) => {
             // Remove the first match. This handles scenarios where are collisions by amount.
             const index = finalizedAmounts.indexOf(event.amount.toString());
             if (index > -1) {
               finalizedAmounts.splice(index, 1);
-              return false;
+              return acc;
             }
-            return true;
-          });
-          const finalizedSum = finalizedAmounts.reduce((acc, amount) => acc.sub(BigNumber.from(amount)), bnZero);
-          // The total amount outstanding is the outstanding initiated amount subtracted by the leftover finalized amount.
-          const _totalAmount = outstandingInitiatedEvents.reduce((acc, event) => acc.add(event.amount), finalizedSum);
+            outstandingInitiatedEvents.push(event);
+            return acc.add(event.amount);
+          }, bnZero);
           assign(outstandingTransfers, [monitoredAddress.toNative(), l1Token.toNative(), l2Token], {
             totalAmount: _totalAmount.gt(bnZero) ? _totalAmount : bnZero,
             depositTxHashes: outstandingInitiatedEvents.map((event) => event.txnRef),
