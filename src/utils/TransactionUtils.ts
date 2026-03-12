@@ -99,6 +99,9 @@ export async function getGasPrice(
     };
   }
 
+  const rawFeeHistoryConfig = process.env[`FEE_HISTORY_OPTIONS_${chainId}`] ?? process.env["FEE_HISTORY_OPTIONS"];
+  const feeHistoryOptions = isDefined(rawFeeHistoryConfig) ? JSON.parse(rawFeeHistoryConfig) : undefined;
+
   // Floor scalers at 1.0 as we'll rarely want to submit too low of a gas price. We mostly
   // just want to submit with as close to prevailing fees as possible.
   maxFeePerGasScaler = Math.max(1, maxFeePerGasScaler);
@@ -110,6 +113,7 @@ export async function getGasPrice(
     baseFeeMultiplier: toBNWei(maxFeePerGasScaler),
     priorityFeeMultiplier: toBNWei(priorityScaler),
     unsignedTx: transactionObject,
+    feeHistoryOptions,
   });
 
   // Default to EIP-1559 (type 2) pricing. If gasPriceOracle is using a legacy adapter for this chain then
