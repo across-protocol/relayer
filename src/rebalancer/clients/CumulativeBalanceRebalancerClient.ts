@@ -71,6 +71,11 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
           [token]: tokenConfig.targetBalance.toString(),
         };
       }),
+      cumulativeThresholdBalances: Object.entries(cumulativeTargetBalances).map(([token, tokenConfig]) => {
+        return {
+          [token]: tokenConfig.thresholdBalance.toString(),
+        };
+      }),
       availableRebalanceRoutes: availableRebalanceRoutes.map(
         (route) =>
           `(${route.adapter}) [${getNetworkName(route.sourceChain)}] ${route.sourceToken} -> [${getNetworkName(

@@ -144,10 +144,6 @@ export class CctpAdapter extends BaseAdapter {
     // Within the same serverless run, we don't want this client to update more than once every 5 minutes.
     const timeSinceLastUpdate = Date.now() - this.lastUpdateTimestamp;
     if (this.pendingRebalances && timeSinceLastUpdate < 5 * 60 * 1000) {
-      this.logger.debug({
-        at: "CctpAdapter.getPendingRebalances",
-        message: `Recently updated pending rebalances, returning cached pending rebalances (time since last update: ${timeSinceLastUpdate}ms)`,
-      });
       return this.pendingRebalances;
     }
     const pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
@@ -195,6 +191,10 @@ export class CctpAdapter extends BaseAdapter {
       pendingRebalances[destinationChain]["USDC"] = (pendingRebalances[destinationChain]?.["USDC"] ?? bnZero).add(
         amountToTransfer
       );
+      this.logger.debug({
+        at: "CctpAdapter.getPendingRebalances",
+        message: `Adding ${amountToTransfer.toString()} USDC for pending order cloid ${cloid} to destination chain ${destinationChain}`,
+      });
     }
 
     this.pendingRebalances = pendingRebalances;

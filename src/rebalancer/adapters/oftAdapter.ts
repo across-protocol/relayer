@@ -142,10 +142,6 @@ export class OftAdapter extends BaseAdapter {
     const timeSinceLastUpdate = Date.now() - this.lastUpdateTimestamp;
     // Within the same serverless run, we don't want this client to update more than once every 5 minutes.
     if (this.pendingRebalances && timeSinceLastUpdate < 5 * 60 * 1000) {
-      this.logger.debug({
-        at: "OftAdapter.getPendingRebalances",
-        message: `Recently updated pending rebalances, returning cached pending rebalances (time since last update: ${timeSinceLastUpdate}ms)`,
-      });
       return this.pendingRebalances;
     }
     const pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
@@ -179,6 +175,10 @@ export class OftAdapter extends BaseAdapter {
       pendingRebalances[destinationChain]["USDT"] = (pendingRebalances[destinationChain]?.["USDT"] ?? bnZero).add(
         amountToTransfer
       );
+      this.logger.debug({
+        at: "OftAdapter.getPendingRebalances",
+        message: `Adding ${amountToTransfer.toString()} USDT for pending order cloid ${txnHash} to destination chain ${destinationChain}`,
+      });
     }
     this.pendingRebalances = pendingRebalances;
     this.lastUpdateTimestamp = Date.now();
