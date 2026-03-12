@@ -31,6 +31,8 @@ type RebalancerRunContext = {
   rebalancerClient: RebalancerClient;
 };
 
+const sweepableAdapters: string[] = ["hyperliquid"];
+
 async function initializeRebalancerRun(_logger: winston.Logger, baseSigner: Signer): Promise<RebalancerRunContext> {
   const logLabel = "runCumulativeBalanceRebalancer";
   logger = _logger;
@@ -74,13 +76,15 @@ async function initializeRebalancerRun(_logger: winston.Logger, baseSigner: Sign
     timerStart = performance.now();
     // @todo Decide when to sweep, for now do it before updating rebalance statuses. In theory, it shouldn't really
     // matter when we sweep.
-    await adapter.sweepIntermediateBalances();
-    logger.debug({
-      at: `index.ts:${logLabel}`,
-      message: `Completed sweeping intermediate balances for adapter ${adapter.constructor.name}`,
-      duration: performance.now() - timerStart,
-    });
-    timerStart = performance.now();
+    if (sweepableAdapters.includes(adapterName)) {
+      await adapter.sweepIntermediateBalances();
+      logger.debug({
+        at: `index.ts:${logLabel}`,
+        message: `Completed sweeping intermediate balances for adapter ${adapter.constructor.name}`,
+        duration: performance.now() - timerStart,
+      });
+      timerStart = performance.now();  
+    }
     await adapter.updateRebalanceStatuses();
     logger.debug({
       at: `index.ts:${logLabel}`,
