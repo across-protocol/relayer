@@ -31,8 +31,9 @@ import {
 import { MultiCallerClient } from "../../clients";
 import { EVM_OFT_MESSENGERS, IOFT_ABI_FULL, OFT_DEFAULT_FEE_CAP, OFT_FEE_CAP_OVERRIDES } from "../../common";
 import { OFT_NO_EID, PRODUCTION_NETWORKS } from "@across-protocol/constants";
+import { OFT_PENDING_BRIDGE_REDIS_PREFIX } from "../utils/PendingBridgeRedis";
 export class OftAdapter extends BaseAdapter {
-  REDIS_PREFIX = "oft-bridge:";
+  REDIS_PREFIX = OFT_PENDING_BRIDGE_REDIS_PREFIX;
 
   async initialize(availableRoutes: RebalanceRoute[]): Promise<void> {
     if (this.initialized) {
@@ -164,13 +165,7 @@ export class OftAdapter extends BaseAdapter {
         continue;
       }
       const pendingOrderDetails = await this._redisGetOrderDetails(txnHash);
-      const { sourceChain, destinationChain, amountToTransfer } = pendingOrderDetails;
-      // @dev Temporarily filter out L1->L2 and L2->L1 rebalances because they will already be counted by the
-      // AdapterManager and this function is designed to be used in conjunction with the AdapterManager
-      // to paint a full picture of all pending rebalances.
-      if (sourceChain === this.config.hubPoolChainId || destinationChain === this.config.hubPoolChainId) {
-        continue;
-      }
+      const { destinationChain, amountToTransfer } = pendingOrderDetails;
       pendingRebalances[destinationChain] ??= {};
       pendingRebalances[destinationChain]["USDT"] = (pendingRebalances[destinationChain]?.["USDT"] ?? bnZero).add(
         amountToTransfer

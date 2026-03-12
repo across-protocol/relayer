@@ -11,6 +11,8 @@ import {
   SVMProvider,
   SolanaTransaction,
 } from "../../utils";
+import { isDefined } from "../../utils";
+import { PendingBridgeAdapterName, PendingBridgeRedisReader } from "../../rebalancer/utils/PendingBridgeRedis";
 import { TransferTokenParams } from "../utils";
 
 const DEFAULT_PENDING_WITHDRAWAL_LOOKBACK_PERIOD_SECONDS = 7200;
@@ -20,6 +22,7 @@ export abstract class BaseL2BridgeAdapter {
   protected l1Bridge: Contract;
   protected readonly hubPoolAddress: EvmAddress;
   protected readonly spokePoolAddress: Address;
+  protected pendingBridgeRedisReader?: PendingBridgeRedisReader;
   // Whether either of these two are defined is determined at construction.
   // The solana bridge defines `svmProvider` while the EVM bridges define `l2Signer`.
   protected readonly l2Signer: Signer | undefined;
@@ -64,5 +67,44 @@ export abstract class BaseL2BridgeAdapter {
   // Bridges that require specific approvals should override this method.
   public requiredTokenApprovals(): { token: EvmAddress; bridge: EvmAddress }[] {
     return [];
+  }
+
+  setPendingBridgeRedisReader(pendingBridgeRedisReader?: PendingBridgeRedisReader): void {
+    this.pendingBridgeRedisReader = pendingBridgeRedisReader;
+  }
+
+  getRebalancerPendingBridgeAdapterName(): PendingBridgeAdapterName | undefined {
+    return undefined;
+  }
+
+  getRebalancerPendingBridgeTokenSymbol(): string | undefined {
+    return undefined;
+  }
+
+  protected isPoolMonitoringAddress(address: Address): boolean {
+    return this.hubPoolAddress.eq(address) || this.spokePoolAddress.eq(address);
+  }
+
+  protected async getIgnoredPendingBridgeAmounts(
+    sourceChain: number,
+    destinationChain: number,
+    address: Address
+  ): Promise<BigNumber[]> {
+    if (!isDefined(this.pendingBridgeRedisReader) || this.isPoolMonitoringAddress(address)) {
+      return [];
+    }
+
+    const adapter = this.getRebalancerPendingBridgeAdapterName();
+    const tokenSymbol = this.getRebalancerPendingBridgeTokenSymbol();
+    if (!isDefined(adapter) || !isDefined(tokenSymbol)) {
+      return [];
+    }
+
+    return this.pendingBridgeRedisReader.getPendingBridgeAmountsForRoute(
+      adapter,
+      sourceChain,
+      destinationChain,
+      tokenSymbol
+    );
   }
 }

@@ -23,6 +23,7 @@ import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
 import { AugmentedTransaction } from "../../clients/TransactionClient";
 import { CCTP_MAX_SEND_AMOUNT } from "../../common";
 import { TransferTokenParams } from "../utils";
+import { PendingBridgeAdapterName } from "../../rebalancer/utils/PendingBridgeRedis";
 
 /**
  * This adapter uses CCTP V2 to bridge USDC between L2's.
@@ -110,8 +111,16 @@ export class UsdcCCTPBridge extends BaseL2BridgeAdapter {
       paginatedEventQuery(this.l2Bridge, this.l2Bridge.filters.DepositForBurn(...l2EventFilterArgs), l2EventConfig),
       paginatedEventQuery(this.l1Bridge, this.l1Bridge.filters.MintAndWithdraw(...l1EventFilterArgs), l1EventConfig),
     ]);
+    const ignoredPendingBridgeAmounts = (
+      await this.getIgnoredPendingBridgeAmounts(this.l2chainId, this.hubChainId, fromAddress)
+    ).map((amount) => amount.toString());
     const counted = new Set<number>();
     const withdrawalAmount = withdrawalInitiatedEvents.reduce((totalAmount, { args: l2Args }) => {
+      const ignoredAmountIdx = ignoredPendingBridgeAmounts.indexOf(toBN(l2Args.amount.toString()).toString());
+      if (ignoredAmountIdx > -1) {
+        ignoredPendingBridgeAmounts.splice(ignoredAmountIdx, 1);
+        return totalAmount;
+      }
       const matchingFinalizedEvent = withdrawalFinalizedEvents.find(({ args: l1Args }, idx) => {
         // Protect against double-counting the same l1 withdrawal events.
         // @dev: If we begin to send "fast-finalized" messages via CCTP V2 then the amounts will not exactly match
@@ -140,5 +149,13 @@ export class UsdcCCTPBridge extends BaseL2BridgeAdapter {
 
   async _getCctpV2DepositForBurnMaxFee(amount: BigNumber): Promise<{ maxFee: BigNumber; finalityThreshold: number }> {
     return getV2DepositForBurnMaxFee(this.l2UsdcTokenAddress, this.l2chainId, this.hubChainId, amount);
+  }
+
+  override getRebalancerPendingBridgeAdapterName(): PendingBridgeAdapterName {
+    return "cctp";
+  }
+
+  override getRebalancerPendingBridgeTokenSymbol(): string {
+    return "USDC";
   }
 }
