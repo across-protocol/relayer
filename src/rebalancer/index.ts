@@ -83,7 +83,7 @@ async function initializeRebalancerRun(_logger: winston.Logger, baseSigner: Sign
         message: `Completed sweeping intermediate balances for adapter ${adapter.constructor.name}`,
         duration: performance.now() - timerStart,
       });
-      timerStart = performance.now();  
+      timerStart = performance.now();
     }
     await adapter.updateRebalanceStatuses();
     logger.debug({
