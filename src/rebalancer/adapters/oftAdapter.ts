@@ -295,6 +295,8 @@ export class OftAdapter extends BaseAdapter {
     try {
       const txnDetails = await getLzTransactionDetails(txnHash);
       assert(txnDetails.length === 1, "Expected 1 transaction details");
+      // `status` can be undefined when the transaction was recently sent or not complete yet, so returning undefined
+      // here is fine assuming that status will be set eventually.
       return txnDetails[0].destination?.status;
     } catch (error) {
       // This API usually fails with a 4xx error if the origination event was just created so we should retry
