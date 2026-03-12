@@ -103,60 +103,40 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         this._getEntrypointNetwork(sourceChain, sourceToken),
         this._getEntrypointNetwork(destinationChain, destinationToken),
       ]);
+      const getIntermediateAdapter = (token: string) => (token === "USDT" ? this.oftAdapter : this.cctpAdapter);
+      const getIntermediateAdapterName = (token: string) => (token === "USDT" ? "oft" : "cctp");
       // Validate that route can be supported using intermediate bridges to get to/from Arbitrum to access Binance.
       if (destinationEntrypointNetwork !== destinationChain) {
-        if (destinationToken === "USDT") {
-          assert(
-            this.oftAdapter.supportsRoute({
-              ...route,
-              sourceChain: destinationEntrypointNetwork,
-              sourceToken: "USDT",
-              adapter: "oft",
-            }),
-            `Destination chain ${getNetworkName(
-              destinationChain
-            )} is not a valid final destination chain for token ${destinationToken} because it doesn't have an OFT bridge route from the Binance entry point network ${destinationEntrypointNetwork}`
-          );
-        } else if (destinationToken === "USDC") {
-          assert(
-            this.cctpAdapter.supportsRoute({
-              ...route,
-              sourceChain: destinationEntrypointNetwork,
-              sourceToken: "USDC",
-              adapter: "cctp",
-            }),
-            `Destination chain ${getNetworkName(
-              destinationChain
-            )} is not a valid final destination chain for token ${destinationToken} because it doesn't have a CCTP bridge route from the Binance entry point network ${destinationEntrypointNetwork}`
-          );
-        }
+        const intermediateRoute = {
+          ...route,
+          sourceChain: destinationEntrypointNetwork,
+          sourceToken: destinationToken,
+          adapter: getIntermediateAdapterName(destinationToken),
+        };
+        assert(
+          getIntermediateAdapter(destinationToken).supportsRoute(intermediateRoute),
+          `Destination chain ${getNetworkName(
+            destinationChain
+          )} is not a valid final destination chain for token ${destinationToken} because it doesn't have a ${getIntermediateAdapterName(
+            destinationToken
+          )} bridge route from the Binance entry point network ${destinationEntrypointNetwork}`
+        );
       }
       if (sourceEntrypointNetwork !== sourceChain) {
-        if (sourceToken === "USDT") {
-          assert(
-            this.oftAdapter.supportsRoute({
-              ...route,
-              destinationChain: sourceEntrypointNetwork,
-              destinationToken: "USDT",
-              adapter: "oft",
-            }),
-            `Source chain ${getNetworkName(
-              sourceChain
-            )} is not a valid source chain for token ${sourceToken} because it doesn't have an OFT bridge route to the Binance entrypoint network ${sourceEntrypointNetwork}`
-          );
-        } else if (sourceToken === "USDC") {
-          assert(
-            this.cctpAdapter.supportsRoute({
-              ...route,
-              destinationChain: sourceEntrypointNetwork,
-              destinationToken: "USDC",
-              adapter: "cctp",
-            }),
-            `Source chain ${getNetworkName(
-              sourceChain
-            )} is not a valid source chain for token ${sourceToken} because it doesn't have a CCTP bridge route to the Binance entrypoint network ${sourceEntrypointNetwork}`
-          );
-        }
+        const intermediateRoute = {
+          ...route,
+          destinationChain: sourceEntrypointNetwork,
+          destinationToken: sourceToken,
+          adapter: getIntermediateAdapterName(sourceToken),
+        };
+        assert(
+          getIntermediateAdapter(sourceToken).supportsRoute(intermediateRoute),
+          `Source chain ${getNetworkName(
+            sourceChain
+          )} is not a valid source chain for token ${sourceToken} because it doesn't have a ${getIntermediateAdapterName(
+            sourceToken
+          )} bridge route to the Binance entrypoint network ${sourceEntrypointNetwork}`
+        );
       }
       assert(
         sourceCoin.networkList.find((network) => network.name === BINANCE_NETWORKS[sourceEntrypointNetwork]),

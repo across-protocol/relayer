@@ -155,49 +155,39 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       }
 
       // Validate that route can be supported using intermediate bridges to get to/from HyperEVM to access Hyperliquid.
+      const getIntermediateAdapter = (token: string) => (token === "USDT" ? this.oftAdapter : this.cctpAdapter);
+      const getIntermediateAdapterName = (token: string) => (token === "USDT" ? "oft" : "cctp");
       if (destinationChain !== HYPEREVM) {
-        if (destinationToken === "USDT") {
-          assert(
-            this.oftAdapter.supportsRoute({ ...route, sourceChain: HYPEREVM, sourceToken: "USDT", adapter: "oft" }),
-            `Destination chain ${getNetworkName(
-              destinationChain
-            )} is not a valid final destination chain for token ${destinationToken} because it doesn't have an OFT route from HyperEVM`
-          );
-        } else if (destinationToken === "USDC") {
-          assert(
-            this.cctpAdapter.supportsRoute({ ...route, sourceChain: HYPEREVM, sourceToken: "USDC", adapter: "cctp" }),
-            `Destination chain ${getNetworkName(
-              destinationChain
-            )} is not a valid final destination chain for token ${destinationToken} because it doesn't have a CCTP bridge route from HyperEVM`
-          );
-        }
+        const intermediateRoute = {
+          ...route,
+          sourceChain: HYPEREVM,
+          sourceToken: destinationToken,
+          adapter: getIntermediateAdapterName(destinationToken),
+        };
+        assert(
+          getIntermediateAdapter(destinationToken).supportsRoute(intermediateRoute),
+          `Destination chain ${getNetworkName(
+            destinationChain
+          )} is not a valid final destination chain for token ${destinationToken} because it doesn't have a ${getIntermediateAdapterName(
+            destinationToken
+          )} bridge route from HyperEVM`
+        );
       }
       if (sourceChain !== HYPEREVM) {
-        if (sourceToken === "USDT") {
-          assert(
-            this.oftAdapter.supportsRoute({
-              ...route,
-              destinationChain: HYPEREVM,
-              destinationToken: "USDT",
-              adapter: "oft",
-            }),
-            `Source chain ${getNetworkName(
-              sourceChain
-            )} is not a valid source chain for token ${sourceToken} because it doesn't have an OFT bridge route to HyperEVM`
-          );
-        } else if (sourceToken === "USDC") {
-          assert(
-            this.cctpAdapter.supportsRoute({
-              ...route,
-              destinationChain: HYPEREVM,
-              destinationToken: "USDC",
-              adapter: "cctp",
-            }),
-            `Source chain ${getNetworkName(
-              sourceChain
-            )} is not a valid source chain for token ${sourceToken} because it doesn't have a CCTP bridge route to HyperEVM`
-          );
-        }
+        const intermediateRoute = {
+          ...route,
+          destinationChain: HYPEREVM,
+          destinationToken: sourceToken,
+          adapter: getIntermediateAdapterName(sourceToken),
+        };
+        assert(
+          getIntermediateAdapter(sourceToken).supportsRoute(intermediateRoute),
+          `Source chain ${getNetworkName(
+            sourceChain
+          )} is not a valid source chain for token ${sourceToken} because it doesn't have a ${getIntermediateAdapterName(
+            sourceToken
+          )} bridge route to HyperEVM`
+        );
       }
     });
   }
