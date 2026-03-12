@@ -257,6 +257,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       const amountReceivedFromBridge = await this._bridgeToChain(sourceToken, sourceChain, HYPEREVM, amountToTransfer);
 
       await this._redisCreateOrder(cloid, STATUS.PENDING_BRIDGE_TO_HYPEREVM, rebalanceRoute, amountReceivedFromBridge);
+      return amountReceivedFromBridge;
     } else {
       this.logger.info({
         at: "HyperliquidStablecoinSwapAdapter.initializeRebalance",
@@ -268,9 +269,8 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
 
       await this._depositToHypercore(sourceToken, amountToTransfer);
       await this._redisCreateOrder(cloid, STATUS.PENDING_DEPOSIT_TO_HYPERCORE, rebalanceRoute, amountToTransfer);
+      return amountToTransfer;
     }
-
-    return amountToTransfer;
   }
 
   async updateRebalanceStatuses(): Promise<void> {
@@ -660,7 +660,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
 
     // For each order that is in the state of being bridged to HyperEVM, check if its bridged amount has arrived
     // on HyperEVM yet, and if it has, then we should subtract its virtual balance from HyperEVM since that balance
-    // will soon be deposited into Hypercore.
+    // will soon be deposited into Hypercore and we don't want another client to withdraw it.
     const pendingBridgeToHyperevm = await this._redisGetPendingBridgesPreDeposit();
     if (pendingBridgeToHyperevm.length > 0) {
       this.logger.debug({
@@ -672,69 +672,44 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       this.cctpAdapter.getPendingRebalances(),
       this.oftAdapter.getPendingRebalances(),
     ]);
-    const pendingBridgeFinalizations: { [sourceChain: number]: { [token: string]: BigNumber } } = {};
-    await forEachAsync(Array.from(this.allSourceChains), async (sourceChain) => {
-      if (sourceChain !== HYPEREVM) {
-        for (const cloid of pendingBridgeToHyperevm) {
-          const orderDetails = await this._redisGetOrderDetails(cloid);
-          const { sourceToken, amountToTransfer } = orderDetails;
-          if (orderDetails.sourceChain !== sourceChain) {
-            continue;
-          }
 
-          pendingBridgeFinalizations[sourceChain] ??= {};
-          pendingBridgeFinalizations[sourceChain][sourceToken] ??= bnZero;
+    // Get outstanding bridges to HyperEVM:
+    const unfinalizedBridgesToHyperevm: { [token: string]: BigNumber } = {};
+    unfinalizedBridgesToHyperevm["USDC"] = pendingCctpBridges[HYPEREVM]?.["USDC"] ?? bnZero;
+    unfinalizedBridgesToHyperevm["USDT"] = pendingOftBridges[HYPEREVM]?.["USDT"] ?? bnZero;
 
-          if (sourceToken === "USDT" && pendingOftBridges[HYPEREVM]?.[sourceToken]?.gt(bnZero)) {
-            pendingBridgeFinalizations[sourceChain][sourceToken] = pendingOftBridges[HYPEREVM][sourceToken];
-          } else if (sourceToken === "USDC" && pendingCctpBridges[HYPEREVM]?.[sourceToken]?.gt(bnZero)) {
-            pendingBridgeFinalizations[sourceChain][sourceToken] = pendingCctpBridges[HYPEREVM][sourceToken];
-          } else {
-            continue;
-          }
-          const unfinalizedBridgeAmountToHyperevm = pendingBridgeFinalizations[sourceChain][sourceToken];
-
-          const amountConverter = this._getAmountConverter(
-            sourceChain,
-            this._getTokenInfo(sourceToken, sourceChain).address,
-            HYPEREVM,
-            this._getTokenInfo(sourceToken, HYPEREVM).address
-          );
-
-          // Check if this order is pending, if it is, then do nothing, but if it has finalized, then we need to subtract
-          // its balance from HyperEVM. We are assuming that the unfinalizedBridgeAmountToHyperevm is perfectly explained
-          // by orders with status PENDING_BRIDGE_TO_HYPEREVM.
-          const convertedOrderAmount = amountConverter(amountToTransfer);
-          // The algorithm here is a bit subtle. We can't easily associate pending OFT/CCTP rebalances with order cloids,
-          // unless we saved the transaction hash down at the time of creating the cloid and initiating the bridge to
-          // hyperevm. (If we did do that, then we'd need to keep track of pending rebalances and we'd have to
-          // update them in the event queries above). The alternative implementation we use is to track the total
-          // pending unfinalized amount, and subtract any order expected amounts from the pending amount. We can then
-          // back into how many of these pending bridges to HyperEVM have finalized.
-          if (unfinalizedBridgeAmountToHyperevm.gte(convertedOrderAmount)) {
-            this.logger.debug({
-              at: "HyperliquidStablecoinSwapAdapter.getPendingRebalances",
-              message: `Order cloid ${cloid} is possibly pending finalization to Hyperevm still (remaining pending amount: ${unfinalizedBridgeAmountToHyperevm.toString()} ${sourceToken}, order expected amount: ${convertedOrderAmount.toString()})`,
-            });
-
-            pendingBridgeFinalizations[sourceChain][sourceToken] =
-              pendingBridgeFinalizations[sourceChain][sourceToken].sub(convertedOrderAmount);
-            continue;
-          }
-
-          // Order has finalized, subtract virtual balance from HyperEVM:
-          this.logger.debug({
-            at: "HyperliquidStablecoinSwapAdapter.getPendingRebalances",
-            message: `Subtracting ${convertedOrderAmount.toString()} ${sourceToken} for order cloid ${cloid} that has finalized bridging to HyperEVM`,
-          });
-          pendingRebalances[HYPEREVM] ??= {};
-          pendingRebalances[HYPEREVM][sourceToken] = (pendingRebalances[HYPEREVM][sourceToken] ?? bnZero).sub(
-            convertedOrderAmount
-          );
-        }
+    // Get all bridges sent to HyperEVM by this adapter that have not been deposited into HL yet:
+    const totalBridgesToHyperevm: { [token: string]: BigNumber } = {};
+    totalBridgesToHyperevm["USDC"] = bnZero;
+    totalBridgesToHyperevm["USDT"] = bnZero;
+    for (const cloid of pendingBridgeToHyperevm) {
+      const orderDetails = await this._redisGetOrderDetails(cloid);
+      const { sourceToken, sourceChain, amountToTransfer } = orderDetails;
+      const amountConverter = this._getAmountConverter(
+        sourceChain,
+        this._getTokenInfo(sourceToken, sourceChain).address,
+        HYPEREVM,
+        this._getTokenInfo(sourceToken, HYPEREVM).address
+      );
+      if (sourceToken === "USDC") {
+        totalBridgesToHyperevm["USDC"] = totalBridgesToHyperevm["USDC"].add(amountConverter(amountToTransfer));
+      } else if (sourceToken === "USDT") {
+        totalBridgesToHyperevm["USDT"] = totalBridgesToHyperevm["USDT"].add(amountConverter(amountToTransfer));
       }
-    });
+    }
 
+    // Finalized amount is the total amount sent to HyperEVM minus the unfinalized amount.
+    for (const token of Object.keys(totalBridgesToHyperevm)) {
+      const finalizedBridgedAmount = totalBridgesToHyperevm[token].sub(unfinalizedBridgesToHyperevm[token]);
+      if (finalizedBridgedAmount.gt(bnZero)) {
+        this.logger.debug({
+          at: "HyperliquidStablecoinSwapAdapter.getPendingRebalances",
+          message: `Subtracting ${finalizedBridgedAmount.toString()} ${token} from HyperEVM virtual balance for finalized bridges`,
+        });
+        pendingRebalances[HYPEREVM] ??= {};
+        pendingRebalances[HYPEREVM][token] = (pendingRebalances[HYPEREVM][token] ?? bnZero).sub(finalizedBridgedAmount);
+      }
+    }
     // For each pending withdrawal from Hypercore, check if it has finalized, and if it has, subtract its virtual balance from HyperEVM.
     const pendingWithdrawalsFromHypercore = await this._redisGetPendingWithdrawals();
     if (pendingWithdrawalsFromHypercore.length > 0) {
