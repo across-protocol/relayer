@@ -457,9 +457,9 @@ class MockRebalancerAdapter implements RebalancerAdapter {
     return Promise.resolve();
   }
 
-  initializeRebalance(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber): Promise<void> {
+  initializeRebalance(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber): Promise<BigNumber> {
     this.rebalances.push({ route: rebalanceRoute, amount: amountToTransfer });
-    return Promise.resolve();
+    return Promise.resolve(amountToTransfer);
   }
 
   updateRebalanceStatuses(): Promise<void> {

@@ -136,7 +136,9 @@ export async function getCctpV2DepositForBurnTxnHashes(
   const eventFilterParams = [TOKEN_SYMBOLS_MAP.USDC.addresses[sourceChainId], undefined, senderAddresses];
   const eventFilter = srcTokenMessenger.filters.DepositForBurn(...eventFilterParams);
   const depositForBurnEvents = await paginatedEventQuery(srcTokenMessenger, eventFilter, sourceEventSearchConfig);
-  return depositForBurnEvents.map((e) => e.transactionHash);
+  return depositForBurnEvents
+    .filter((e) => chainIsEvm(getCctpDestinationChainFromDomain(e.args.destinationDomain, chainIsProd(sourceChainId))))
+    .map((e) => e.transactionHash);
 }
 
 /**
