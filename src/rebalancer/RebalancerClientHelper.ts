@@ -20,10 +20,22 @@ function constructRebalancerDependencies(
   const rebalancerConfig = new RebalancerConfig(process.env);
 
   // Construct adapters:
-  const hyperliquidAdapter = new HyperliquidStablecoinSwapAdapter(logger, rebalancerConfig, baseSigner);
-  const binanceAdapter = new BinanceStablecoinSwapAdapter(logger, rebalancerConfig, baseSigner);
   const cctpAdapter = new CctpAdapter(logger, rebalancerConfig, baseSigner);
   const oftAdapter = new OftAdapter(logger, rebalancerConfig, baseSigner);
+  const hyperliquidAdapter = new HyperliquidStablecoinSwapAdapter(
+    logger,
+    rebalancerConfig,
+    baseSigner,
+    cctpAdapter,
+    oftAdapter
+  );
+  const binanceAdapter = new BinanceStablecoinSwapAdapter(
+    logger,
+    rebalancerConfig,
+    baseSigner,
+    cctpAdapter,
+    oftAdapter
+  );
   const adapterMap = { hyperliquid: hyperliquidAdapter, binance: binanceAdapter, cctp: cctpAdapter, oft: oftAdapter };
 
   // Following two variables are hardcoded to aid testing:
@@ -76,6 +88,41 @@ function constructRebalancerDependencies(
     }
   }
 
+  for (const usdtChain of usdtChains.filter((chain) => chain !== CHAIN_IDs.BSC)) {
+    for (const otherUsdtChain of usdtChains.filter((chain) => chain !== CHAIN_IDs.BSC)) {
+      if (!rebalancerConfig.chainIds.includes(usdtChain) || !rebalancerConfig.chainIds.includes(otherUsdtChain)) {
+        continue;
+      }
+      if (usdtChain === otherUsdtChain) {
+        continue;
+      }
+      rebalanceRoutes.push({
+        sourceChain: usdtChain,
+        sourceToken: "USDT",
+        destinationChain: otherUsdtChain,
+        destinationToken: "USDT",
+        adapter: "oft",
+      });
+    }
+  }
+  for (const usdcChain of usdcChains.filter((chain) => chain !== CHAIN_IDs.BSC)) {
+    for (const otherUsdcChain of usdcChains.filter((chain) => chain !== CHAIN_IDs.BSC)) {
+      if (!rebalancerConfig.chainIds.includes(usdcChain) || !rebalancerConfig.chainIds.includes(otherUsdcChain)) {
+        continue;
+      }
+      if (usdcChain === otherUsdcChain) {
+        continue;
+      }
+      rebalanceRoutes.push({
+        sourceChain: usdcChain,
+        sourceToken: "USDC",
+        destinationChain: otherUsdcChain,
+        destinationToken: "USDC",
+        adapter: "cctp",
+      });
+    }
+  }
+
   // @todo: Add test-net support for this client. For now, we only support production and we do not construct
   // any adapters or routes when running on test net.
   const adaptersToUpdate: Record<string, RebalancerAdapter> =
@@ -97,7 +144,21 @@ export async function constructCumulativeBalanceRebalancerClient(
     baseSigner,
     isReadonly
   );
+  // Initialize the CCTP and OFT Adapters first before initializing the Binance and HL adapters which use the former
+  // adapters. Only initialize them if they are present in the adapters map.
+  const adapterInitPromises: Promise<void>[] = [];
+  const adaptersToPrecomputePendingRebalances: RebalancerAdapter[] = [];
+  if (adapters["cctp"]) {
+    adapterInitPromises.push(adapters["cctp"].initialize(rebalanceRoutes));
+    adaptersToPrecomputePendingRebalances.push(adapters["cctp"]);
+  }
+  if (adapters["oft"]) {
+    adapterInitPromises.push(adapters["oft"].initialize(rebalanceRoutes));
+    adaptersToPrecomputePendingRebalances.push(adapters["oft"]);
+  }
+  await Promise.all(adapterInitPromises);
   await rebalancerClient.initialize(rebalanceRoutes);
+  await setupCacheForAdapters(adaptersToPrecomputePendingRebalances);
   logger.debug({
     at: "RebalancerClientHelper.constructCumulativeBalanceRebalancerClient",
     message: "CumulativeBalanceRebalancerClient initialized",
@@ -114,7 +175,21 @@ export async function constructReadOnlyRebalancerClient(
   const { rebalancerConfig, adapters } = constructRebalancerDependencies(logger, baseSigner);
   const isReadonly = true;
   const rebalancerClient = new ReadOnlyRebalancerClient(logger, rebalancerConfig, adapters, baseSigner, isReadonly);
+  // Initialize the CCTP and OFT Adapters first before initializing the Binance and HL adapters which use the former
+  // adapters. Only initialize them if they are present in the adapters map.
+  const adapterInitPromises: Promise<void>[] = [];
+  const adaptersToPrecomputePendingRebalances: RebalancerAdapter[] = [];
+  if (adapters["cctp"]) {
+    adapterInitPromises.push(adapters["cctp"].initialize([]));
+    adaptersToPrecomputePendingRebalances.push(adapters["cctp"]);
+  }
+  if (adapters["oft"]) {
+    adapterInitPromises.push(adapters["oft"].initialize([]));
+    adaptersToPrecomputePendingRebalances.push(adapters["oft"]);
+  }
+  await Promise.all(adapterInitPromises);
   await rebalancerClient.initialize([]);
+  await setupCacheForAdapters(adaptersToPrecomputePendingRebalances);
   logger.debug({
     at: "RebalancerClientHelper.constructReadOnlyRebalancerClient",
     message: "ReadOnlyRebalancerClient initialized",
@@ -122,4 +197,11 @@ export async function constructReadOnlyRebalancerClient(
     adapterNames: Object.keys(adapters),
   });
   return rebalancerClient;
+}
+
+// Use this function to pre-load the cached pending rebalances for certain adapters that cache their balances.
+// For example, the CCTP and OFT adapters' pending rebalances are used in the Binance and HL adapters so its useful
+// to pre-compute them here and cache them for the downstream adapters.
+async function setupCacheForAdapters(adapters: RebalancerAdapter[]): Promise<void> {
+  await Promise.all(adapters.map((adapter) => adapter.getPendingRebalances()));
 }
