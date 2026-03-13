@@ -295,7 +295,13 @@ export class CctpAdapter extends BaseAdapter {
 
   private async _getCctpAttestation(txnHash: string, sourceChainId: number, retryCount = 0) {
     if (retryCount > 2) {
-      throw new Error(`Failed to get CCTP attestation for txnHash ${txnHash} after ${retryCount} retries`);
+      this.logger.warn({
+        at: "CctpAdapter._getCctpAttestation",
+        message: `Failed to get CCTP attestation for txnHash ${txnHash} after ${retryCount} retries`,
+        txnHash,
+        retryCount,
+      });
+      return undefined;
     }
     try {
       const attestationResponses = await utils.fetchCctpV2Attestations([txnHash], Number(sourceChainId));

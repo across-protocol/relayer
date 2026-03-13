@@ -285,7 +285,13 @@ export class OftAdapter extends BaseAdapter {
 
   private async _getOftStatus(txnHash: string, retryNumber = 0): Promise<string> {
     if (retryNumber > 2) {
-      throw new Error(`Failed to get OFT status for txnHash ${txnHash} after ${retryNumber} retries`);
+      this.logger.warn({
+        at: "OftAdapter._getOftStatus",
+        message: `Failed to get OFT status for txnHash ${txnHash} after ${retryNumber} retries`,
+        txnHash,
+        retryNumber,
+      });
+      return "FAILED";
     }
     try {
       const txnDetails = await getLzTransactionDetails(txnHash);
