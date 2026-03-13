@@ -38,6 +38,7 @@ import {
   MAX_UINT_VAL,
   toBNWei,
   willSucceed,
+  TOKEN_SYMBOLS_MAP,
 } from "../utils";
 import {
   APIGaslessDepositResponse,
@@ -337,6 +338,23 @@ export class GaslessRelayer {
     };
   }
 
+  /**
+   * Provide a simple yes/no on whether the deposit is eligible for an "instant fill".
+   * @param deposit Deposit object to evaluate.
+   * @todo Token prices are not considered here; this only works with USD stables.
+   * @todo This is mostly placeholder; the logic here should be more sophisticated than simple USD limits.
+   */
+  protected fillImmediate(
+    deposit: Pick<DepositWithBlock, "originChainId" | "destinationChainId" | "outputToken" | "outputAmount">
+  ): boolean {
+    const stableCoin = [TOKEN_SYMBOLS_MAP.USDC, TOKEN_SYMBOLS_MAP.USDT].some(({ addresses }) =>
+      deposit.outputToken.eq(toAddressType(addresses[deposit.destinationChainId], deposit.destinationChainId))
+    );
+    const threshold = process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${deposit.originChainId}`] ?? "10";
+    const { decimals } = getTokenInfo(deposit.outputToken, deposit.destinationChainId);
+    return stableCoin && toBNWei(threshold, decimals).gt(deposit.outputAmount);
+  }
+
   /*
    * @notice Polls the API and creates deposits/fills for all messages which are missing deposits/fills.
    */
@@ -584,7 +602,6 @@ export class GaslessRelayer {
       const at = "GaslessRelayer#evaluateApiSignatures";
       const expired = () => getCurrentTime() >= fillDeadline;
       const [origin, destination] = [originChainId, destinationChainId].map(getNetworkName);
-      const fillImmediateThreshold = toBNWei(1_000, 6);
       const tStart = performance.now();
 
       let deposit: RelayData & { destinationChainId: number };
@@ -613,7 +630,7 @@ export class GaslessRelayer {
             if (!valid) {
               log("warn", `Rejected malformed deposit destined for ${origin}.`);
             } else {
-              fillImmediate = inputAmount.eq(outputAmount) && outputAmount.lte(fillImmediateThreshold);
+              fillImmediate = this.fillImmediate({ originChainId, destinationChainId, outputToken, outputAmount });
               nextState = MessageState.DEPOSIT_SUBMIT;
             }
             setState(nextState);

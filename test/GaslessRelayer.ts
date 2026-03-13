@@ -68,6 +68,11 @@ class TestableGaslessRelayer extends GaslessRelayer {
   public getNonceKey(token: string, authorizer: string, nonce: string): string {
     return this._getNonceKey(token, { authorizer, nonce });
   }
+  public testFillImmediate(
+    deposit: Pick<DepositWithBlock, "originChainId" | "destinationChainId" | "outputToken" | "outputAmount">
+  ): boolean {
+    return this.fillImmediate(deposit);
+  }
 
   // Configurable function properties -- tests assign return values; overrides track call counts.
   public getPeripheryContractFn: (chainId: number) => Contract = (chainId) => this.spokePoolPeripheries[chainId];
@@ -277,9 +282,10 @@ describe("GaslessRelayer", function () {
   });
 
   it("Standard path: INITIAL -> DEPOSIT_SUBMIT -> DEPOSIT_CONFIRM -> FILL_PENDING -> FILLED", async function () {
-    const msg = makeDepositMessage({ inputAmount: "2000000", outputAmount: "1900000" });
+    // Use amounts above the default fillImmediate threshold (10 USDC) to ensure the standard path.
+    const msg = makeDepositMessage({ inputAmount: "20000000", outputAmount: "19000000" });
     const receipt = makeReceipt();
-    const depositEvent = makeFakeDepositEvent({ inputAmount: "2000000", outputAmount: "1900000" });
+    const depositEvent = makeFakeDepositEvent({ inputAmount: "20000000", outputAmount: "19000000" });
 
     relayer.queryGaslessApiFn = async () => [msg];
     relayer.initiateGaslessDepositFn = async () => receipt;
@@ -323,8 +329,9 @@ describe("GaslessRelayer", function () {
   });
 
   it("Deposit receipt null, recovered via _findDeposit", async function () {
-    const msg = makeDepositMessage({ inputAmount: "2000000", outputAmount: "1900000" });
-    const depositEvent = makeFakeDepositEvent({ inputAmount: "2000000", outputAmount: "1900000" });
+    // Use amounts above the default fillImmediate threshold (10 USDC) to ensure the standard path.
+    const msg = makeDepositMessage({ inputAmount: "20000000", outputAmount: "19000000" });
+    const depositEvent = makeFakeDepositEvent({ inputAmount: "20000000", outputAmount: "19000000" });
     const receipt = makeReceipt();
 
     relayer.queryGaslessApiFn = async () => [msg];
@@ -382,5 +389,72 @@ describe("GaslessRelayer", function () {
     // deposit was extracted from the receipt (not built synthetically).
     expect(relayer.extractDepositFromReceiptCalls).to.equal(1);
     expect(relayer.initiateFillCalls).to.equal(1);
+  });
+
+  describe("fillImmediate", function () {
+    afterEach(function () {
+      delete process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`];
+    });
+
+    it("Returns true when outputAmount is below default threshold", function () {
+      const result = relayer.testFillImmediate({
+        originChainId: ORIGIN_CHAIN_ID,
+        destinationChainId: DESTINATION_CHAIN_ID,
+        outputToken: EvmAddress.from(USDC_BASE),
+        outputAmount: toBN("1000000"), // 1 USDC < 10 USDC default
+      });
+      expect(result).to.be.true;
+    });
+
+    it("Returns false when outputAmount exceeds default threshold", function () {
+      const result = relayer.testFillImmediate({
+        originChainId: ORIGIN_CHAIN_ID,
+        destinationChainId: DESTINATION_CHAIN_ID,
+        outputToken: EvmAddress.from(USDC_BASE),
+        outputAmount: toBN("20000000"), // 20 USDC > 10 USDC default
+      });
+      expect(result).to.be.false;
+    });
+
+    it("Returns false when outputAmount equals threshold (exclusive boundary)", function () {
+      const result = relayer.testFillImmediate({
+        originChainId: ORIGIN_CHAIN_ID,
+        destinationChainId: DESTINATION_CHAIN_ID,
+        outputToken: EvmAddress.from(USDC_BASE),
+        outputAmount: toBN("10000000"), // 10 USDC == 10 USDC default
+      });
+      expect(result).to.be.false;
+    });
+
+    it("Respects per-chain env var override", function () {
+      process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`] = "5";
+      expect(
+        relayer.testFillImmediate({
+          originChainId: ORIGIN_CHAIN_ID,
+          destinationChainId: DESTINATION_CHAIN_ID,
+          outputToken: EvmAddress.from(USDC_BASE),
+          outputAmount: toBN("3000000"), // 3 USDC < 5 USDC override
+        })
+      ).to.be.true;
+      expect(
+        relayer.testFillImmediate({
+          originChainId: ORIGIN_CHAIN_ID,
+          destinationChainId: DESTINATION_CHAIN_ID,
+          outputToken: EvmAddress.from(USDC_BASE),
+          outputAmount: toBN("7000000"), // 7 USDC > 5 USDC override
+        })
+      ).to.be.false;
+    });
+
+    it("Returns false for non-stablecoin tokens regardless of amount", function () {
+      // WETH is not USDC/USDT, so fillImmediate is always false.
+      const result = relayer.testFillImmediate({
+        originChainId: ORIGIN_CHAIN_ID,
+        destinationChainId: DESTINATION_CHAIN_ID,
+        outputToken: EvmAddress.from(WETH_BASE),
+        outputAmount: toBN("1"), // Tiny amount, but not a stablecoin
+      });
+      expect(result).to.be.false;
+    });
   });
 });
