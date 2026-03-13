@@ -1009,7 +1009,7 @@ export class Monitor {
   // But this should be okay as we should address any stuck transactions immediately so realistically no transfers
   // should stay unstuck for longer than one bundle.
   async checkStuckRebalances(): Promise<void> {
-    const hubPoolClient = this.clients.hubPoolClient;
+    const { crossChainTransferClient, hubPoolClient, spokePoolClients } = this.clients;
     const { currentTime, latestHeightSearched } = hubPoolClient;
     const lastFullyExecutedBundle = hubPoolClient.getLatestFullyExecutedRootBundle(latestHeightSearched);
     // This case shouldn't happen outside of tests as Across V2 has already launched.
@@ -1019,7 +1019,7 @@ export class Monitor {
     const lastFullyExecutedBundleTime = lastFullyExecutedBundle.challengePeriodEndTimestamp;
 
     const allL1Tokens = this.l1Tokens;
-    const poolRebalanceLeaves = this.clients.hubPoolClient.getExecutedLeavesForRootBundle(
+    const poolRebalanceLeaves = hubPoolClient.getExecutedLeavesForRootBundle(
       lastFullyExecutedBundle,
       latestHeightSearched
     );
@@ -1048,13 +1048,13 @@ export class Monitor {
       }
 
       // If chain wasn't active in latest bundle, then skip it.
-      const chainIndex = this.clients.hubPoolClient.configStoreClient.getChainIdIndicesForBlock().indexOf(chainId);
+      const chainIndex = hubPoolClient.configStoreClient.getChainIdIndicesForBlock().indexOf(chainId);
       if (chainIndex >= lastFullyExecutedBundle.bundleEvaluationBlockNumbers.length) {
         continue;
       }
 
       // First, log if the root bundle never relayed to the spoke pool.
-      const rootBundleRelay = this.clients.spokePoolClients[chainId].getRootBundleRelays().find((relay) => {
+      const rootBundleRelay = spokePoolClients[chainId].getRootBundleRelays().find((relay) => {
         return (
           relay.relayerRefundRoot === lastFullyExecutedBundle.relayerRefundRoot &&
           relay.slowRelayRoot === lastFullyExecutedBundle.slowRelayRoot
@@ -1068,39 +1068,29 @@ export class Monitor {
         });
       }
 
-      const spokePoolAddress = this.clients.spokePoolClients[chainId].spokePoolAddress;
+      const hubPoolAddress = EvmAddress.from(hubPoolClient.hubPool.address);
+      const { spokePoolAddress } = spokePoolClients[chainId];
+
       for (const l1Token of allL1Tokens) {
         // Outstanding transfers are mapped to either the spoke pool or the hub pool, depending on which
         // chain events are queried. Some only allow us to index on the fromAddress, the L1 originator or the
         // HubPool, while others only allow us to index on the toAddress, the L2 recipient or the SpokePool.
-        const transferBalance = this.clients.crossChainTransferClient
+        const transferBalance = crossChainTransferClient
           .getOutstandingCrossChainTransferAmount(spokePoolAddress, chainId, l1Token.address)
           .add(
-            this.clients.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
-              toAddressType(this.clients.hubPoolClient.hubPool.address, this.clients.hubPoolClient.chainId),
-              chainId,
-              l1Token.address
-            )
+            crossChainTransferClient.getOutstandingCrossChainTransferAmount(hubPoolAddress, chainId, l1Token.address)
           );
         const outstandingDepositTxs = blockExplorerLinks(
-          this.clients.crossChainTransferClient.getOutstandingCrossChainTransferTxs(
-            spokePoolAddress,
-            chainId,
-            l1Token.address
-          ),
-          1
+          crossChainTransferClient.getOutstandingCrossChainTransferTxs(spokePoolAddress, chainId, l1Token.address),
+          hubPoolClient.chainId
         ).concat(
           blockExplorerLinks(
-            this.clients.crossChainTransferClient.getOutstandingCrossChainTransferTxs(
-              toAddressType(this.clients.hubPoolClient.hubPool.address, this.clients.hubPoolClient.chainId),
-              chainId,
-              l1Token.address
-            ),
-            1
+            crossChainTransferClient.getOutstandingCrossChainTransferTxs(hubPoolAddress, chainId, l1Token.address),
+            hubPoolClient.chainId
           )
         );
 
-        if (transferBalance.gt(0)) {
+        if (transferBalance.gt(bnZero)) {
           const mrkdwn = `Rebalances of ${l1Token.symbol} to ${getNetworkName(chainId)} is stuck`;
           this.logger.warn({
             at: "Monitor#checkStuckRebalances",
@@ -1248,6 +1238,7 @@ export class Monitor {
   }
 
   updateCrossChainTransfers(relayer: Address, relayerBalanceTable: RelayerBalanceTable): void {
+    const { crossChainTransferClient } = this.clients;
     const allL1Tokens = this.getL1TokensForRelayerBalancesReport();
     const supportedChains = this.crossChainAdapterSupportedChains.filter((chainId) =>
       this.monitorChains.includes(chainId)
@@ -1258,7 +1249,7 @@ export class Monitor {
 
       for (const l2Token of l2TokenAddresses) {
         const tokenInfo = l2ToL1Tokens[l2Token];
-        const bridgedTransferBalance = this.clients.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
+        const bridgedTransferBalance = crossChainTransferClient.getOutstandingCrossChainTransferAmount(
           relayer,
           chainId,
           tokenInfo.address,
@@ -1276,6 +1267,7 @@ export class Monitor {
   }
 
   async updatePendingL2Withdrawals(relayer: Address, relayerBalanceTable: RelayerBalanceTable): Promise<void> {
+    const { adapterManager } = this.clients.crossChainTransferClient;
     const allL1Tokens = this.getL1TokensForRelayerBalancesReport();
     const supportedChains = this.crossChainAdapterSupportedChains.filter(
       (chainId) => this.monitorChains.includes(chainId) && chainId !== CHAIN_IDs.BSC // @todo temporarily skip BSC as the following
@@ -1285,26 +1277,22 @@ export class Monitor {
     const allPendingWithdrawalBalances: { [l1Token: string]: { [chainId: number]: BigNumber } } = {};
     await Promise.all(
       allL1Tokens.map(async (l1Token) => {
-        const pendingWithdrawalBalances =
-          await this.clients.crossChainTransferClient.adapterManager.getTotalPendingWithdrawalAmount(
-            supportedChains,
-            relayer,
-            l1Token.address
-          );
+        const pendingWithdrawalBalances = await adapterManager.getTotalPendingWithdrawalAmount(
+          supportedChains,
+          relayer,
+          l1Token.address
+        );
         allPendingWithdrawalBalances[l1Token.symbol] = pendingWithdrawalBalances;
         for (const _chainId of Object.keys(pendingWithdrawalBalances)) {
           const chainId = Number(_chainId);
           if (pendingWithdrawalBalances[chainId].eq(bnZero)) {
             continue;
           }
-          if (!this.clients.crossChainTransferClient.adapterManager.l2TokenExistForL1Token(l1Token.address, chainId)) {
+          if (!adapterManager.l2TokenExistForL1Token(l1Token.address, chainId)) {
             continue;
           }
 
-          const l2Token = this.clients.crossChainTransferClient.adapterManager.l2TokenForL1Token(
-            l1Token.address,
-            chainId
-          );
+          const l2Token = adapterManager.l2TokenForL1Token(l1Token.address, chainId);
           const l2TokenInfo = getTokenInfo(l2Token, chainId);
           const l2ToL1DecimalConverter = sdkUtils.ConvertDecimals(l2TokenInfo.decimals, l1Token.decimals);
           // Add pending withdrawals as a "cross chain transfer" to the hub balance
@@ -1313,7 +1301,7 @@ export class Monitor {
             l1Token.symbol,
             getNetworkName(this.clients.hubPoolClient.chainId),
             BalanceType.PENDING_TRANSFERS,
-            l2ToL1DecimalConverter(pendingWithdrawalBalances[Number(chainId)])
+            l2ToL1DecimalConverter(pendingWithdrawalBalances[chainId])
           );
         }
       })
