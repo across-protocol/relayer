@@ -17,6 +17,7 @@ import {
 } from "../../utils";
 import { TransferTokenParams, processEvent } from "../utils";
 import ERC20_ABI from "../../common/abi/MinimalERC20.json";
+import axios from "axios";
 
 export const BRIDGE_API_MINIMUMS: { [l2ChainId: number]: BigNumber } = {
   [CHAIN_IDs.MAINNET]: toBN(1_000_000), // 1 USDC
@@ -32,6 +33,7 @@ const BRIDGE_API_DESTINATION_TOKENS: { [l2ChainId: number]: string } = {
 export class BridgeApi extends BaseBridgeAdapter {
   protected bridgeApiBase: string;
   protected bridgeApiKey: string;
+  protected customerId: string;
 
   constructor(
     l2chainId: number,
@@ -50,9 +52,10 @@ export class BridgeApi extends BaseBridgeAdapter {
     this.l2Bridge = new Contract(BRIDGE_API_DESTINATION_TOKENS[this.l2chainId], ERC20_ABI, l2SignerOrProvider);
 
     // We need to fetch some API configuration details from environment.
-    const { BRIDGE_API_BASE, BRIDGE_API_KEY } = process.env;
+    const { BRIDGE_API_BASE, BRIDGE_API_KEY, BRIDGE_CUSTOMER_ID } = process.env;
     this.bridgeApiBase = String(BRIDGE_API_BASE);
     this.bridgeApiKey = String(BRIDGE_API_KEY);
+    this.customerId = String(BRIDGE_CUSTOMER_ID);
   }
 
   async constructL1ToL2Txn(
@@ -71,7 +74,7 @@ export class BridgeApi extends BaseBridgeAdapter {
     if (amount.lt(BRIDGE_API_MINIMUMS[this.l2chainId])) {
       throw new Error(`Cannot bridge to ${getNetworkName(this.l2chainId)} due to invalid amount ${amount}`);
     }
-    const transferRouteAddress = await this.getTransferRouteEscrowAddress(toAddress, l1Token);
+    const transferRouteAddress = await this.getTransferRouteEscrowAddress(toAddress);
     return Promise.resolve({
       contract: this.getL1Bridge(),
       method: "transfer",
@@ -85,7 +88,7 @@ export class BridgeApi extends BaseBridgeAdapter {
     toAddress: Address,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
-    const expectedRecipientAddress = await this.getTransferRouteEscrowAddress(toAddress, l1Token);
+    const expectedRecipientAddress = await this.getTransferRouteEscrowAddress(toAddress);
     const l1TransferEvents = await paginatedEventQuery(
       this.getL1Bridge(),
       this.getL1Bridge().filters.Transfer(fromAddress.toNative(), expectedRecipientAddress),
@@ -113,9 +116,40 @@ export class BridgeApi extends BaseBridgeAdapter {
     };
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async getTransferRouteEscrowAddress(toAddress: Address, l1Token: EvmAddress): Promise<string> {
+  async getTransferRouteEscrowAddress(toAddress: Address): Promise<string> {
     // @todo based on the structure of data returned by the bridge API.
-    return this.l1Signer.getAddress();
+    // should we make a new address on each transfer or reuse the same address?
+    await this._createTransferRouteEscrowAddress(toAddress);
+    return toAddress.toNative();
+  }
+
+  async _createTransferRouteEscrowAddress(toAddress: Address) {
+    const idempotencyKey = String(Date.now()); // @todo
+    const headers = {
+      "Api-Key": `${this.bridgeApiKey}`,
+      "Idempotency-Key": idempotencyKey,
+      "Content-Type": "application/json",
+    };
+    const data = {
+      on_behalf_of: `${this.customerId}`,
+      source: {
+        payment_rail: "ethereum",
+        currency: "usdc",
+      },
+      destination: {
+        payment_rail: "tempo", // @todo
+        currency: "usdc", // @todo
+        to_address: toAddress.toNative(),
+      },
+      return_instructions: {
+        address: toAddress.toNative(),
+      },
+      features: {
+        allow_any_from_address: true,
+        flexible_amount: true,
+      },
+    };
+    const { data: transferRequest } = await axios.post(`${this.bridgeApiBase}/v0/transfers`, data, { headers });
+    // @todo Extract the source address.
   }
 }
