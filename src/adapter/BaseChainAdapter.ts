@@ -54,6 +54,7 @@ import { OutstandingTransfers } from "../interfaces";
 import WETH_ABI from "../common/abi/Weth.json";
 import { BaseL2BridgeAdapter } from "./l2Bridges/BaseL2BridgeAdapter";
 import { ExpandedERC20 } from "@across-protocol/sdk/typechain";
+import { PendingBridgeRedisReader } from "../rebalancer/utils/PendingBridgeRedis";
 
 export type SupportedL1Token = EvmAddress;
 export type SupportedTokenSymbol = string;
@@ -73,12 +74,17 @@ export class BaseChainAdapter {
     public readonly supportedTokens: SupportedTokenSymbol[],
     protected readonly bridges: { [l1Token: string]: BaseBridgeAdapter },
     protected readonly l2Bridges: { [l1Token: string]: BaseL2BridgeAdapter },
-    protected readonly gasMultiplier: number
+    protected readonly gasMultiplier: number,
+    protected readonly pendingBridgeRedisReader?: PendingBridgeRedisReader
   ) {
     this.spokePoolManager = new SpokePoolManager(logger, spokePoolClients);
     this.baseL1SearchConfig = { ...this.getSearchConfig(this.hubChainId) };
     this.baseL2SearchConfig = { ...this.getSearchConfig(this.chainId) };
     this.transactionClient = new TransactionClient(logger);
+    Object.values(this.bridges).forEach((bridge) => bridge.setPendingBridgeRedisReader(this.pendingBridgeRedisReader));
+    Object.values(this.l2Bridges).forEach((bridge) =>
+      bridge.setPendingBridgeRedisReader(this.pendingBridgeRedisReader)
+    );
   }
 
   public get adapterName(): string {
@@ -534,21 +540,28 @@ export class BaseChainAdapter {
           bridge.queryL1BridgeInitiationEvents(l1Token, monitoredAddress, monitoredAddress, l1SearchConfig),
           bridge.queryL2BridgeFinalizationEvents(l1Token, monitoredAddress, monitoredAddress, l2SearchConfig),
         ]);
+        const ignoredPendingBridgeTxnRefs = await bridge.getIgnoredPendingBridgeTxnRefs(
+          this.hubChainId,
+          this.chainId,
+          monitoredAddress
+        );
 
         Object.entries(depositInitiatedResults).forEach(([l2Token, depositInitiatedEvents]) => {
+          const trackedInitiatedEvents = depositInitiatedEvents.filter(
+            (event) => !ignoredPendingBridgeTxnRefs.has(event.txnRef)
+          );
           const finalizedAmounts = depositFinalizedResults?.[l2Token]?.map((event) => event.amount.toString()) ?? [];
-          const outstandingInitiatedEvents = depositInitiatedEvents.filter((event) => {
+          const outstandingInitiatedEvents: typeof trackedInitiatedEvents = [];
+          const _totalAmount = trackedInitiatedEvents.reduce((acc, event) => {
             // Remove the first match. This handles scenarios where are collisions by amount.
             const index = finalizedAmounts.indexOf(event.amount.toString());
             if (index > -1) {
               finalizedAmounts.splice(index, 1);
-              return false;
+              return acc;
             }
-            return true;
-          });
-          const finalizedSum = finalizedAmounts.reduce((acc, amount) => acc.sub(BigNumber.from(amount)), bnZero);
-          // The total amount outstanding is the outstanding initiated amount subtracted by the leftover finalized amount.
-          const _totalAmount = outstandingInitiatedEvents.reduce((acc, event) => acc.add(event.amount), finalizedSum);
+            outstandingInitiatedEvents.push(event);
+            return acc.add(event.amount);
+          }, bnZero);
           assign(outstandingTransfers, [monitoredAddress.toNative(), l1Token.toNative(), l2Token], {
             totalAmount: _totalAmount.gt(bnZero) ? _totalAmount : bnZero,
             depositTxHashes: outstandingInitiatedEvents.map((event) => event.txnRef),

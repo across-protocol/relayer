@@ -32,6 +32,7 @@ import {
 } from "../../utils";
 import { RebalancerAdapter, RebalanceRoute } from "../utils/interfaces";
 import { RebalancerConfig } from "../RebalancerConfig";
+import { getRebalancerStatusTrackingNamespace } from "../utils/PendingBridgeRedis";
 
 export enum STATUS {
   PENDING_BRIDGE_PRE_DEPOSIT,
@@ -50,9 +51,7 @@ export interface OrderDetails {
 // @dev We should track order statuses in Redis in a separate namespace from the remainder of the application's
 // Redis cache (e.g. the namespace we use for caching RPC responses) to avoid losing critical information about pending orders
 // even when we want to rotate rest of the Redis cache without losing critical information about pending orders
-const rebalancerStatusTrackingNameSpace: string | undefined = process.env.REBALANCER_STATUS_TRACKING_NAMESPACE
-  ? String(process.env.REBALANCER_STATUS_TRACKING_NAMESPACE)
-  : undefined;
+const rebalancerStatusTrackingNameSpace: string | undefined = getRebalancerStatusTrackingNamespace();
 
 export abstract class BaseAdapter implements RebalancerAdapter {
   protected transactionClient: TransactionClient;

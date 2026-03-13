@@ -22,6 +22,7 @@ import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
 import { IOFT_ABI_FULL, OFT_DEFAULT_FEE_CAP, OFT_FEE_CAP_OVERRIDES, LZ_FEE_TOKENS } from "../../common";
 import * as OFT from "../../utils/OFTUtils";
 import ERC20_ABI from "../../common/abi/MinimalERC20.json";
+import { PendingBridgeAdapterName } from "../../rebalancer/utils/PendingBridgeRedis";
 
 export class OFTL2Bridge extends BaseL2BridgeAdapter {
   readonly l2Token: EvmAddress;
@@ -168,11 +169,19 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
 
     const l2BridgeInitiationEvents = l2SentAll.filter((event) => event.args.dstEid === this.l1ChainEid);
     const l1BridgeFinalizationEvents = l1ReceivedAll.filter((event) => event.args.srcEid === this.l2ChainEid);
+    const ignoredPendingBridgeTxnRefs = await this.getIgnoredPendingBridgeTxnRefs(
+      this.l2chainId,
+      this.hubChainId,
+      fromAddress
+    );
 
     const finalizedGuids = new Set<string>(l1BridgeFinalizationEvents.map((event) => event.args.guid));
 
     let outstandingWithdrawalAmount = bnZero;
     for (const events of l2BridgeInitiationEvents) {
+      if (ignoredPendingBridgeTxnRefs.has(events.transactionHash)) {
+        continue;
+      }
       if (!finalizedGuids.has(events.args.guid)) {
         // Convert `amountReceivedLD` from event from LD (local decimals of the sending chain, which is the L2) into the
         // decimals of receiving chain (mainnet) to aggregate these amounts correctly upstream
@@ -186,7 +195,7 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
   }
 
   public pendingWithdrawalLookbackPeriodSeconds(): number {
-    if (this.l2ChainEid === CHAIN_IDs.HYPEREVM) {
+    if (this.l2chainId === CHAIN_IDs.HYPEREVM) {
       return 25 * 60 * 60; // USDT0 from HyperEVM is a special case taking ~24 hours to finalize.
     }
     return super.pendingWithdrawalLookbackPeriodSeconds();
@@ -220,5 +229,9 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
         bridge: EvmAddress.from(this.l2Bridge.address),
       },
     ];
+  }
+
+  override getRebalancerPendingBridgeAdapterName(): PendingBridgeAdapterName {
+    return "oft";
   }
 }
