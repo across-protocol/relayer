@@ -70,7 +70,8 @@ class TestableGaslessRelayer extends GaslessRelayer {
 
   // Configurable function properties -- tests assign return values; overrides track call counts.
   public queryGaslessApiFn: () => Promise<GaslessDepositMessage[]> = async () => [];
-  public initiateGaslessDepositFn: (msg: GaslessDepositMessage) => Promise<TransactionReceipt | null> = async () => null;
+  public initiateGaslessDepositFn: (msg: GaslessDepositMessage) => Promise<TransactionReceipt | null> = async () =>
+    null;
   public initiateFillFn: (deposit: StrippedDeposit) => Promise<TransactionReceipt | null> = async () => null;
   public extractDepositFromReceiptFn: (receipt: TransactionReceipt, chainId: number) => StrippedDeposit = () => {
     throw new Error("extractDepositFromReceiptFn not configured");
