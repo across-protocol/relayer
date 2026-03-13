@@ -92,17 +92,17 @@ export class GaslessRelayer {
   private instanceCoordinator;
   private initialized = false;
 
-  private messageState: { [nonce: string]: MessageState } = {};
+  private messageState: { [key: string]: MessageState } = {};
 
   private providersByChain: { [chainId: number]: Provider } = {};
   // The object is indexed by `chainId`. An `AuthorizationUsed` event is marked by adding `${token}:${authorizer}:${nonce}` to the respective chain's set.
-  private observedNonces: { [chainId: number]: Set<string> } = {};
+  private observedDeposits: { [chainId: number]: Set<string> } = {};
   // The object is indexed by `chainId`. A `FilledRelay` event is marked by adding `${originChainId}:${depositId}` to the respective chain's set.
   private observedFills: { [chainId: number]: Set<string> } = {};
   // The object is indexed by `chainId`. Each element of the set is a deposit which should be retried in the bot's runtime.
   private retryableFills: {
     [chainId: number]: {
-      [depositNonce: string]: Omit<DepositWithBlock, "fromLiteChain" | "toLiteChain" | "quoteBlockNumber">;
+      [depositKey: string]: Omit<DepositWithBlock, "fromLiteChain" | "toLiteChain" | "quoteBlockNumber">;
     };
   } = {};
   // The object is indexed by `chainId`. A SpokePoolPeriphery contract is indexed by the chain ID.
@@ -146,7 +146,7 @@ export class GaslessRelayer {
     await forEachAsync(this.config.relayerOriginChains, async (chainId) => {
       const provider = await getProvider(chainId);
       this.providersByChain[chainId] = provider;
-      this.observedNonces[chainId] = new Set<string>();
+      this.observedDeposits[chainId] = new Set<string>();
       this.spokePoolPeripheries[chainId] = getSpokePoolPeriphery(
         chainId,
         this.config.spokePoolPeripheryOverrides[chainId]
@@ -192,13 +192,10 @@ export class GaslessRelayer {
       const { originChainId, depositId, permit } = depositMessage;
       const { destinationChainId } = depositMessage.baseDepositData;
 
-      const nonceKey = this._getNonceKey(permit.domain.verifyingContract, {
-        authorizer: permit.message.from!,
-        nonce: permit.message.nonce!,
-      });
+      const depositKey = this._getDepositKey(permit.domain.verifyingContract, originChainId, depositId);
       const fillKey = this._getFilledRelayKey({ originChainId, depositId: toBN(depositId) });
       return (
-        this.observedNonces[originChainId]?.has(nonceKey) &&
+        this.observedDeposits[originChainId]?.has(depositKey) &&
         isDefined(this.observedFills[destinationChainId]) &&
         !this.observedFills[destinationChainId].has(fillKey)
       );
@@ -218,7 +215,7 @@ export class GaslessRelayer {
       );
       assert(
         isDefined(correspondingDeposit),
-        "Inconsistent data between this.observedNonces and return data from gaslessRelayer.updateObserved()"
+        "Inconsistent data between this.observedDeposits and return data from gaslessRelayer.updateObserved()"
       );
       await this.initiateFill(correspondingDeposit);
     });
@@ -266,7 +263,7 @@ export class GaslessRelayer {
       Object.fromEntries(
         await mapAsync(this.config.relayerOriginChains, async (originChainId) => {
           const provider = this.providersByChain[originChainId];
-          const observedNonces = this.observedNonces[originChainId];
+          const observedDeposits = this.observedDeposits[originChainId];
 
           const searchConfig = await this._getEventSearchConfig(originChainId);
 
@@ -286,13 +283,9 @@ export class GaslessRelayer {
               return undefined;
             })
             .filter(isDefined);
-          originEventsWithApiMessages.forEach(({ apiMessage, deposit }) => {
-            const { from: authorizer, nonce } = apiMessage.permit.message;
-            observedNonces.add(
-              this._getNonceKey(deposit.inputToken.toNative(), {
-                authorizer,
-                nonce,
-              })
+          originEventsWithApiMessages.forEach(({ deposit }) => {
+            observedDeposits.add(
+              this._getDepositKey(deposit.inputToken.toNative(), originChainId, deposit.depositId.toString())
             );
           });
           return [originChainId, originEventsWithApiMessages.map(({ deposit }) => deposit)];
@@ -340,23 +333,20 @@ export class GaslessRelayer {
       const { destinationChainId, inputToken, outputToken, inputAmount, outputAmount } = depositMessage.baseDepositData;
       const { from: authorizer, nonce } = permit.message;
 
-      const nonceSet = this.observedNonces[originChainId];
+      const depositSet = this.observedDeposits[originChainId];
       const fillSet = this.observedFills[destinationChainId];
-      const depositNonce = this._getNonceKey(inputToken, {
-        authorizer,
-        nonce,
-      });
+      const depositKey = this._getDepositKey(inputToken, originChainId, depositId);
 
-      if (!nonceSet.has(depositNonce)) {
+      if (!depositSet.has(depositKey)) {
         this.logger.debug({
           at: "GaslessRelayer#evaluateApiSignatures",
           message: "Deposit not observed, initiating deposit",
           depositId,
-          depositNonce,
+          depositKey,
         });
 
         // Mark the signature as observed.
-        nonceSet.add(depositNonce);
+        depositSet.add(depositKey);
 
         // Ensure that the input token is the same as the output token.
         const inputTokenAddress = toAddressType(inputToken, originChainId);
@@ -369,7 +359,7 @@ export class GaslessRelayer {
             at: "GaslessRelayer#evaluateApiSignatures",
             message: "Deposit input token is different from deposit output token. Skipping deposit.",
             depositId,
-            depositNonce,
+            depositKey,
             inputToken: inputTokenL1Address.toNative(),
             outputToken: outputTokenL1Address.toNative(),
           });
@@ -387,7 +377,7 @@ export class GaslessRelayer {
             at: "GaslessRelayer#evaluateApiSignatures",
             message: "Deposit inputAmount < ouputAmount. Skipping deposit.",
             depositId,
-            depositNonce,
+            depositKey,
             inputAmount,
             outputAmount,
           });
@@ -399,12 +389,12 @@ export class GaslessRelayer {
         try {
           receipt = await this.initiateGaslessDeposit(depositMessage);
         } catch (err) {
-          nonceSet.delete(depositNonce);
+          depositSet.delete(depositKey);
           this.logger.warn({
             at: "GaslessRelayer#evaluateApiSignatures",
             message: "initiateGaslessDeposit threw; removed deposit from nonce set for retry",
             depositId,
-            depositNonce,
+            depositKey,
             error: err,
           });
           return;
@@ -417,7 +407,7 @@ export class GaslessRelayer {
             at: "GaslessRelayer#evaluateApiSignatures",
             message: "Failed to initiate deposit. Checking for relayer collision.",
             depositId,
-            depositNonce,
+            depositKey,
           });
 
           const associatedDeposit = await this._findDeposit(
@@ -428,7 +418,7 @@ export class GaslessRelayer {
           );
           // If the deposit fails, and if we did not see the deposit mined, then mark the signature as not observed so that we can retry.
           if (!isDefined(associatedDeposit)) {
-            nonceSet.delete(depositNonce);
+            depositSet.delete(depositKey);
             return;
           }
           depositEvent = associatedDeposit;
@@ -482,16 +472,16 @@ export class GaslessRelayer {
             message: "Failed to initiate fill. Adding it to list of retryable fills.",
             fillReceipt,
           });
-          this.retryableFills[destinationChainId][depositNonce] = depositEvent;
+          this.retryableFills[destinationChainId][depositKey] = depositEvent;
         } else {
           fillSet.add(fillKey);
         }
       }
       // Check for fills which have failed and need to be retried during this bot run.
-      else if (isDefined(this.retryableFills[destinationChainId]?.[depositNonce])) {
+      else if (isDefined(this.retryableFills[destinationChainId]?.[depositKey])) {
         // Take control of the retryableFill here by removing it from the retryableFills object.
-        const deposit = this.retryableFills[destinationChainId][depositNonce];
-        delete this.retryableFills[destinationChainId][depositNonce];
+        const deposit = this.retryableFills[destinationChainId][depositKey];
+        delete this.retryableFills[destinationChainId][depositKey];
 
         const fillKey = this._getFilledRelayKey({ originChainId, depositId: deposit.depositId });
         if (fillSet.has(fillKey)) {
@@ -517,7 +507,7 @@ export class GaslessRelayer {
           const fill = await this._findFill(deposit);
           // The deposit still failed and no fill has been observed, so retry again.
           if (!isDefined(fill)) {
-            this.retryableFills[destinationChainId][depositNonce] = deposit;
+            this.retryableFills[destinationChainId][depositKey] = deposit;
             return;
           }
         }
@@ -538,10 +528,7 @@ export class GaslessRelayer {
       const inputAmount = toBN(baseDepositData.inputAmount);
       const outputAmount = toBN(baseDepositData.outputAmount);
 
-      const depositNonce = this._getNonceKey(inputToken.toNative(), {
-        authorizer,
-        nonce,
-      });
+      const depositKey = this._getDepositKey(inputToken.toNative(), originChainId, depositId.toString());
 
       const log = (level: "debug" | "info" | "warn", message: string, args: Record<string, unknown> = {}) =>
         this.logger[level]({
@@ -564,10 +551,10 @@ export class GaslessRelayer {
           currentState,
           nextState: state,
         });
-        this.messageState[depositNonce] = state;
+        this.messageState[depositKey] = state;
       };
       const getState = () => {
-        return (this.messageState[depositNonce] ??= MessageState.INITIAL);
+        return (this.messageState[depositKey] ??= MessageState.INITIAL);
       };
 
       const messageState = getState();
@@ -659,7 +646,7 @@ export class GaslessRelayer {
 
     const handler = process.env.RELAYER_GASLESS_HANDLER === "experimental" ? experimentalHandler : defaultHandler;
     const messageFilter = (deposit: GaslessDepositMessage): boolean => {
-      if (!isDefined(this.observedNonces[deposit.originChainId])) {
+      if (!isDefined(this.observedDeposits[deposit.originChainId])) {
         return false;
       }
 
@@ -669,15 +656,13 @@ export class GaslessRelayer {
 
       const {
         baseDepositData: { inputToken },
-        permit,
+        depositId,
+        originChainId,
       } = deposit;
-      const depositNonce = this._getNonceKey(EvmAddress.from(inputToken).toNative(), {
-        authorizer: permit.message.from,
-        nonce: permit.message.nonce,
-      });
+      const depositKey = this._getDepositKey(EvmAddress.from(inputToken).toNative(), originChainId, depositId);
 
       // If there's already known state for this deposit nonce, skip it.
-      return !isDefined(this.messageState[depositNonce]);
+      return !isDefined(this.messageState[depositKey]);
     };
 
     const apiMessages = await this._queryGaslessApi();
@@ -917,8 +902,8 @@ export class GaslessRelayer {
   /*
    * @notice Gets the key for `this.observedNonces` from a relevant 3009 authorization.
    */
-  private _getNonceKey(token: string, authorization: { authorizer: string; nonce: string }): string {
-    return `${token}:${authorization.authorizer}:${authorization.nonce}`;
+  private _getDepositKey(token: string, originChainId: number, depositId: string): string {
+    return `${token}:${originChainId}:${depositId}`;
   }
 
   /*
