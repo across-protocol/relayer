@@ -10,6 +10,7 @@ import {
   ethers,
   getBlockForTimestamp,
   getCurrentTime,
+  getNetworkName,
   SpokePool,
   isDefined,
   getRedisCache,
@@ -253,7 +254,6 @@ export async function constructSpokePoolClientsWithStartBlocks(
   const latestBlocksForChain: Record<number, number> = Object.fromEntries(
     await Promise.all(
       enabledChains.map(async (chainId) => {
-        // Allow caller to hardcode the spoke pool client end blocks.
         if (isDefined(config.toBlockOverride[chainId])) {
           return [chainId, config.toBlockOverride[chainId]];
         }
@@ -340,14 +340,31 @@ export async function updateSpokePoolClients(
   spokePoolClients: { [chainId: number]: SpokePoolClient },
   eventsToQuery?: string[]
 ): Promise<void> {
-  await Promise.all(
-    Object.values(spokePoolClients).map((client) =>
-      // SVM does not implement RequestedSpeedUpDeposit.
-      chainIsSvm(client.chainId)
-        ? client.update(eventsToQuery.filter((event) => event !== "RequestedSpeedUpDeposit"))
-        : client.update(eventsToQuery)
-    )
-  );
+  const updateSpokePoolClient = async (spokePoolClient: SpokePoolClient) => {
+    const { chainId, logger } = spokePoolClient;
+
+    // SVM does not implement RequestedSpeedUpDeposit.
+    const events = chainIsSvm(chainId)
+      ? eventsToQuery.filter((event) => event !== "RequestedSpeedUpDeposit")
+      : eventsToQuery;
+
+    const maxTries = 2;
+    let tries = 1;
+    do {
+      try {
+        await spokePoolClient.update(events);
+      } catch (err) {
+        const chain = getNetworkName(chainId);
+        logger.warn({
+          at: "updateSpokePoolClient",
+          message: `Failed to update ${chain} SpokePoolClient on try ${tries}.`,
+          maxTries,
+        });
+      }
+    } while (!spokePoolClient.isUpdated && ++tries <= maxTries);
+  };
+
+  await Promise.all(Object.values(spokePoolClients).map(updateSpokePoolClient));
 }
 
 export async function constructClients(
