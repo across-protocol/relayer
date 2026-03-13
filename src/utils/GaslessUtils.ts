@@ -1,10 +1,11 @@
-import { APIGaslessDepositResponse, BridgeWitnessData, GaslessDepositMessage, DepositWithBlock } from "../interfaces";
+import { APIGaslessDepositResponse, BridgeWitnessData, GaslessDepositMessage, RelayData } from "../interfaces";
 import {
   Address,
   ConvertDecimals,
   convertRelayDataParamsToBytes32,
   getL1TokenAddress,
   getTokenInfo,
+  toAddressType,
   toBytes32,
   CHAIN_IDs,
   MAX_UINT_VAL,
@@ -146,7 +147,7 @@ export function buildGaslessDepositTx(
  * Returns a FillRelay transaction based on a restructured gasless deposit.
  */
 export function buildGaslessFillRelayTx(
-  deposit: Omit<DepositWithBlock, "fromLiteChain" | "toLiteChain" | "quoteBlockNumber">,
+  deposit: RelayData & { destinationChainId: number },
   spokePool: Contract,
   repaymentChainId: number,
   repaymentAddress: Address
@@ -158,6 +159,31 @@ export function buildGaslessFillRelayTx(
     method: "fillRelay",
     ensureConfirmation: true,
     args: [convertRelayDataParamsToBytes32(deposit), repaymentChainId, repaymentAddress.toBytes32()],
+  };
+}
+
+/**
+ * Constructs a deposit-shaped object from a gasless API message, for use in the immediate fill path
+ * where the fill is submitted before the deposit is confirmed on-chain.
+ */
+export function buildSyntheticDeposit(msg: GaslessDepositMessage): RelayData & { destinationChainId: number } {
+  const { originChainId, baseDepositData: bdd } = msg;
+  const { destinationChainId } = bdd;
+
+  return {
+    originChainId,
+    depositor: toAddressType(bdd.depositor, originChainId),
+    recipient: toAddressType(bdd.recipient, destinationChainId),
+    depositId: BigNumber.from(msg.depositId),
+    inputToken: toAddressType(bdd.inputToken, originChainId),
+    inputAmount: BigNumber.from(bdd.inputAmount),
+    outputToken: toAddressType(bdd.outputToken, destinationChainId),
+    outputAmount: BigNumber.from(bdd.outputAmount),
+    message: bdd.message,
+    fillDeadline: bdd.fillDeadline,
+    exclusiveRelayer: toAddressType(bdd.exclusiveRelayer, destinationChainId),
+    exclusivityDeadline: bdd.exclusivityDeadline,
+    destinationChainId,
   };
 }
 
