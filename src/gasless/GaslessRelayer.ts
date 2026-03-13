@@ -640,17 +640,13 @@ export class GaslessRelayer {
             const depositReceipt = await depositReceiptPromise;
             if (depositReceipt) {
               deposit ??= this._extractDepositFromTransactionReceipt(depositReceipt, originChainId);
-            } else {
-              deposit = await this._findDeposit(originChainId, inputToken, authorizer, nonce);
-              if (!deposit) {
-                // Cannot find any record of the deposit; try to submit again.
-                setState(MessageState.DEPOSIT_SUBMIT);
-              }
             }
+            deposit ??= await this._findDeposit(originChainId, inputToken, authorizer, nonce);
 
             if (!isDefined(deposit)) {
               log("info", `Could not locate deposit on ${origin}.`);
               await delay(1);
+              setState(MessageState.DEPOSIT_SUBMIT); // Try to submit again.
               continue;
             }
 
