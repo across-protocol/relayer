@@ -1,5 +1,5 @@
 import { Contract } from "ethers";
-import { GaslessDepositMessage, DepositWithBlock } from "../src/interfaces";
+import { DepositWithBlock, GaslessDepositMessage, RelayData } from "../src/interfaces";
 import { GaslessRelayer, MessageState } from "../src/gasless/GaslessRelayer";
 import { GaslessRelayerConfig } from "../src/gasless/GaslessRelayerConfig";
 import SPOKE_POOL_PERIPHERY_ABI from "../src/common/abi/SpokePoolPeriphery.json";
@@ -12,7 +12,7 @@ import {
   getCurrentTime,
   TOKEN_SYMBOLS_MAP,
 } from "../src/utils";
-import { createSpyLogger, expect, smock, ethers, toBN } from "./utils";
+import { createSpyLogger, expect, FakeContract, smock, ethers, toBN } from "./utils";
 
 // Minimal 65-byte hex signature.
 const DUMMY_SIGNATURE = "0x" + "ab".repeat(65);
@@ -29,6 +29,7 @@ const WETH_BASE = TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.BASE];
 const DUMMY_ADDRESS = "0x" + "11".repeat(20);
 const DUMMY_EVM_ADDRESS = EvmAddress.from(DUMMY_ADDRESS);
 
+type GaslessDeposit = RelayData & { destinationChainId: number };
 type StrippedDeposit = Omit<DepositWithBlock, "fromLiteChain" | "toLiteChain" | "quoteBlockNumber">;
 
 /**
@@ -69,10 +70,11 @@ class TestableGaslessRelayer extends GaslessRelayer {
   }
 
   // Configurable function properties -- tests assign return values; overrides track call counts.
+  public getPeripheryContractFn: (chainId: number) => Contract = (chainId) => this.spokePoolPeripheries[chainId];
   public queryGaslessApiFn: () => Promise<GaslessDepositMessage[]> = async () => [];
   public initiateGaslessDepositFn: (msg: GaslessDepositMessage) => Promise<TransactionReceipt | null> = async () =>
     null;
-  public initiateFillFn: (deposit: StrippedDeposit) => Promise<TransactionReceipt | null> = async () => null;
+  public initiateFillFn: (deposit: GaslessDeposit) => Promise<TransactionReceipt | null> = async () => null;
   public extractDepositFromReceiptFn: (receipt: TransactionReceipt, chainId: number) => StrippedDeposit = () => {
     throw new Error("extractDepositFromReceiptFn not configured");
   };
@@ -85,9 +87,13 @@ class TestableGaslessRelayer extends GaslessRelayer {
 
   // Call counters -- incremented by the overrides below.
   public initiateGaslessDepositCalls = 0;
+  public extractDepositFromReceiptCalls = 0;
   public initiateFillCalls = 0;
   public findDepositCalls = 0;
 
+  protected override getPeripheryContract(originChainId: number): Contract {
+    return this.getPeripheryContractFn(originChainId);
+  }
   protected override async _queryGaslessApi(): Promise<GaslessDepositMessage[]> {
     return this.queryGaslessApiFn();
   }
@@ -95,7 +101,7 @@ class TestableGaslessRelayer extends GaslessRelayer {
     this.initiateGaslessDepositCalls++;
     return this.initiateGaslessDepositFn(msg);
   }
-  protected override async initiateFill(deposit: StrippedDeposit): Promise<TransactionReceipt | null> {
+  protected override async initiateFill(deposit: GaslessDeposit): Promise<TransactionReceipt | null> {
     this.initiateFillCalls++;
     return this.initiateFillFn(deposit);
   }
@@ -103,6 +109,7 @@ class TestableGaslessRelayer extends GaslessRelayer {
     receipt: TransactionReceipt,
     originChainId: number
   ): StrippedDeposit {
+    this.extractDepositFromReceiptCalls++;
     return this.extractDepositFromReceiptFn(receipt, originChainId);
   }
   protected override async _findDeposit(
@@ -223,6 +230,8 @@ function makeFakeDepositEvent(amounts: { inputAmount?: string; outputAmount?: st
 
 describe("GaslessRelayer", function () {
   let relayer: TestableGaslessRelayer;
+  let fakePeriphery: Contract;
+  let fakePeripherySmock: FakeContract<Contract>;
 
   beforeEach(async function () {
     const { spyLogger } = createSpyLogger();
@@ -241,8 +250,8 @@ describe("GaslessRelayer", function () {
 
     // smock.fake() returns FakeContract which isn't assignable to Contract under strict mode.
     // Extract a Contract reference via the address and interface the fake already provides.
-    const fakePeripherySmock = await smock.fake(SPOKE_POOL_PERIPHERY_ABI);
-    const fakePeriphery = new Contract(fakePeripherySmock.address, SPOKE_POOL_PERIPHERY_ABI, signer.provider);
+    fakePeripherySmock = await smock.fake(SPOKE_POOL_PERIPHERY_ABI);
+    fakePeriphery = new Contract(fakePeripherySmock.address, SPOKE_POOL_PERIPHERY_ABI, signer.provider);
     const fakeSpokePoolSmock = await smock.fake([]);
     const fakeSpokePool = new Contract(fakeSpokePoolSmock.address, [], signer.provider);
 
@@ -267,7 +276,7 @@ describe("GaslessRelayer", function () {
     delete process.env.RELAYER_GASLESS_HANDLER;
   });
 
-  it("Standard path: INITIAL -> DEPOSIT_PENDING -> FILL_PENDING -> FILLED", async function () {
+  it("Standard path: INITIAL -> DEPOSIT_SUBMIT -> DEPOSIT_CONFIRM -> FILL_PENDING -> FILLED", async function () {
     const msg = makeDepositMessage({ inputAmount: "2000000", outputAmount: "1900000" });
     const receipt = makeReceipt();
     const depositEvent = makeFakeDepositEvent({ inputAmount: "2000000", outputAmount: "1900000" });
@@ -329,6 +338,49 @@ describe("GaslessRelayer", function () {
 
     expect(relayer.getMessageState(depositNonceFor(relayer, msg))).to.equal(MessageState.FILLED);
     expect(relayer.findDepositCalls).to.equal(1);
+    expect(relayer.initiateFillCalls).to.equal(1);
+  });
+
+  it("Immediate fill: INITIAL -> DEPOSIT_SUBMIT -> FILL_PENDING -> DEPOSIT_CONFIRM -> FILLED", async function () {
+    // inputAmount == outputAmount == "1000000" (1 USDC, within 1000 USDC threshold) -> fillImmediate = true.
+    // Default smock fake behaviour (no revert) makes willSucceed return succeed: true.
+    const msg = makeDepositMessage();
+    const receipt = makeReceipt();
+
+    relayer.queryGaslessApiFn = async () => [msg];
+    relayer.initiateGaslessDepositFn = async () => receipt;
+    relayer.extractDepositFromReceiptFn = () => makeFakeDepositEvent();
+    relayer.initiateFillFn = async () => receipt;
+
+    await relayer.runEvaluateApiSignatures();
+
+    expect(relayer.getMessageState(depositNonceFor(relayer, msg))).to.equal(MessageState.FILLED);
+    // Immediate path: fill was submitted before deposit confirmed, so deposit was built
+    // synthetically rather than extracted from the receipt.
+    expect(relayer.extractDepositFromReceiptCalls).to.equal(0);
+    expect(relayer.initiateFillCalls).to.be.gte(1);
+  });
+
+  it("Immediate fill fallback: simulation failure falls back to standard path", async function () {
+    // Same amounts as test above (fillImmediate initially true).
+    // Configure the smock fake to revert so willSucceed returns succeed: false.
+    fakePeripherySmock.depositWithAuthorization.reverts("revert");
+
+    const msg = makeDepositMessage();
+    const receipt = makeReceipt();
+    const depositEvent = makeFakeDepositEvent();
+
+    relayer.queryGaslessApiFn = async () => [msg];
+    relayer.initiateGaslessDepositFn = async () => receipt;
+    relayer.extractDepositFromReceiptFn = () => depositEvent;
+    relayer.initiateFillFn = async () => receipt;
+
+    await relayer.runEvaluateApiSignatures();
+
+    expect(relayer.getMessageState(depositNonceFor(relayer, msg))).to.equal(MessageState.FILLED);
+    // Simulation failed, so the handler fell back to the standard path:
+    // deposit was extracted from the receipt (not built synthetically).
+    expect(relayer.extractDepositFromReceiptCalls).to.equal(1);
     expect(relayer.initiateFillCalls).to.equal(1);
   });
 });
