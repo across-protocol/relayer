@@ -37,11 +37,6 @@
   },
   {
     "inputs": [],
-    "name": "InvalidSignature",
-    "type": "error"
-  },
-  {
-    "inputs": [],
     "name": "MinimumExpectedInputAmount",
     "type": "error"
   },
