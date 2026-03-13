@@ -195,7 +195,7 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
   }
 
   public pendingWithdrawalLookbackPeriodSeconds(): number {
-    if (this.l2ChainEid === CHAIN_IDs.HYPEREVM) {
+    if (this.l2chainId === CHAIN_IDs.HYPEREVM) {
       return 25 * 60 * 60; // USDT0 from HyperEVM is a special case taking ~24 hours to finalize.
     }
     return super.pendingWithdrawalLookbackPeriodSeconds();
