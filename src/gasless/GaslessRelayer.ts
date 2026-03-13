@@ -36,6 +36,7 @@ import {
   assert,
   InstanceCoordinator,
   MAX_UINT_VAL,
+  compareAddressesSimple,
 } from "../utils";
 import {
   APIGaslessDepositResponse,
@@ -561,8 +562,10 @@ export class GaslessRelayer {
       if (messageState !== MessageState.INITIAL) {
         return;
       }
+      const isCctpDeposit = this._isCctpDeposit(depositMessage);
       const terminalStates = [MessageState.FILLED, MessageState.ERROR];
       let deposit: Omit<DepositWithBlock, "fromLiteChain" | "toLiteChain" | "quoteBlockNumber">;
+      let cctpDepositTx: string;
       const at = "GaslessRelayer#evaluateApiSignatures";
       const expired = () => getCurrentTime() >= fillDeadline;
       const [origin, destination] = [originChainId, destinationChainId].map(getNetworkName);
@@ -596,18 +599,34 @@ export class GaslessRelayer {
 
           case MessageState.DEPOSIT_PENDING: {
             const txnReceipt = await this.initiateGaslessDeposit(depositMessage);
+
             if (isDefined(txnReceipt)) {
-              deposit = this._extractDepositFromTransactionReceipt(txnReceipt, originChainId);
+              if (isCctpDeposit) {
+                cctpDepositTx = txnReceipt.transactionHash;
+              } else {
+                deposit = this._extractDepositFromTransactionReceipt(txnReceipt, originChainId);
+              }
               const tDeposit = performance.now();
               log("info", `Completed deposit submission on ${origin} in ${(tDeposit - tStart) / 1000}s.`);
             }
 
-            deposit ??= await this._findDeposit(originChainId, inputToken, authorizer, nonce);
-            if (isDefined(deposit)) {
-              setState(MessageState.FILL_PENDING);
+            if (!isCctpDeposit) {
+              deposit ??= await this._findDeposit(originChainId, inputToken, authorizer, nonce);
+
+              if (isDefined(deposit)) {
+                setState(MessageState.FILL_PENDING);
+              } else {
+                log("info", `Could not locate deposit on ${origin}.`);
+                await delay(1);
+              }
             } else {
-              log("info", `Could not locate deposit on ${origin}.`);
-              await delay(1);
+              cctpDepositTx ??= await this._findAuthorizationUsed(originChainId, inputToken, authorizer, nonce);
+              if (isDefined(cctpDepositTx)) {
+                setState(MessageState.FILLED);
+              } else {
+                log("info", `Could not locate deposit on ${origin}.`);
+                await delay(1);
+              }
             }
             break;
           }
@@ -820,21 +839,35 @@ export class GaslessRelayer {
     nonce: string
   ): Promise<Omit<DepositWithBlock, "fromLiteChain" | "toLiteChain" | "quoteBlockNumber"> | undefined> {
     const provider = this.providersByChain[originChainId];
+    const transactionHash = await this._findAuthorizationUsed(originChainId, inputToken, authorizer, nonce);
+    if (!transactionHash) {
+      return undefined;
+    }
+    // Otherwise, find the associated deposit event.
+    const transactionReceipt = await provider.getTransactionReceipt(transactionHash);
+    return this._extractDepositFromTransactionReceipt(transactionReceipt, originChainId);
+  }
+
+  private async _findAuthorizationUsed(
+    originChainId: number,
+    inputToken: Address,
+    authorizer: string,
+    nonce: string
+  ): Promise<string | undefined> {
+    const provider = this.providersByChain[originChainId];
     const authToken = new Contract(inputToken.toNative(), EIP3009_ABI, provider);
     const searchConfig = await this._getEventSearchConfig(originChainId);
     const spentNonces = await paginatedEventQuery(
       authToken,
       authToken.filters.AuthorizationUsed(authorizer, nonce),
       searchConfig
-    ); // 2nd index is `nonce`.
+    );
     if (spentNonces.length === 0) {
       // The nonce is not used, so exit.
       return undefined;
     }
     assert(spentNonces.length === 1, "Same user cannot spend same nonce");
-    // Otherwise, find the associated deposit event.
-    const transactionReceipt = await provider.getTransactionReceipt(spentNonces[0].transactionHash);
-    return this._extractDepositFromTransactionReceipt(transactionReceipt, originChainId);
+    return spentNonces[0].transactionHash;
   }
 
   /*
@@ -897,6 +930,19 @@ export class GaslessRelayer {
       from,
       maxLookBack: this.config.maxBlockLookBack[chainId],
     };
+  }
+
+  /*
+   * @notice Returns true if the deposit is a CCTP gasless deposit (API spokePool differs from our default SpokePool for the origin chain).
+   * For CCTP we still submit the deposit on SpokePoolPeriphery but never perform a fill.
+   */
+  private _isCctpDeposit(depositMessage: GaslessDepositMessage): boolean {
+    const { originChainId } = depositMessage;
+    const defaultSpokePool = this.spokePools[originChainId];
+    if (!defaultSpokePool) {
+      return false;
+    }
+    return !compareAddressesSimple(depositMessage.spokePool, defaultSpokePool.address);
   }
 
   /*
