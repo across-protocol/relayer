@@ -149,6 +149,8 @@ export class PendingBridgeRedisReader {
         const rawOrder = await redisCache.get<string>(getPendingBridgeOrderKey(adapter, cloid));
         if (!rawOrder) {
           // Tolerate races where the set member still exists but the payload has already been removed.
+          // This client is not responsible for cleaning up the cache, for simplicity reasons, and instead leaves
+          // the rebalancer adapters to remove these stale set members.
           return undefined;
         }
 
