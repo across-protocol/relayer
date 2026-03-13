@@ -17,7 +17,7 @@ const PENDING_BRIDGE_REDIS_READER_CACHE_TTL_MS = 5_000;
 export type PendingBridgeAdapterName = "oft" | "cctp";
 
 // Normalized shape returned by the reader after decoding Redis payloads.
-export interface PendingBridgeRedisOrder {
+interface PendingBridgeRedisOrder {
   adapter: PendingBridgeAdapterName;
   cloid: string;
   txnRef: string;
@@ -95,12 +95,6 @@ export class PendingBridgeRedisReader {
   private snapshotPromises: Partial<Record<PendingBridgeAdapterName, Promise<PendingBridgeSnapshot>>> = {};
 
   constructor(private readonly logger?: winston.Logger) {}
-
-  // Returns the fully decoded pending orders for an adapter. This is mostly useful for debugging,
-  // diagnostics, or callers that need more than the route-local txnRef index.
-  async getPendingBridgeOrders(adapter: PendingBridgeAdapterName): Promise<PendingBridgeRedisOrder[]> {
-    return (await this.getPendingBridgeSnapshot(adapter)).orders;
-  }
 
   // Returns only the transaction references relevant to a single route. This is the hot path used by
   // bridge adapters when they need a fast "ignore list" for source->destination transfer detection.
