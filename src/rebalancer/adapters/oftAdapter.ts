@@ -291,7 +291,7 @@ export class OftAdapter extends BaseAdapter {
         txnHash,
         retryNumber,
       });
-      return "FAILED";
+      return "API_FAILURE";
     }
     try {
       const txnDetails = await getLzTransactionDetails(txnHash);
