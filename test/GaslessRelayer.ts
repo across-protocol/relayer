@@ -12,7 +12,7 @@ import {
   getCurrentTime,
   TOKEN_SYMBOLS_MAP,
 } from "../src/utils";
-import { createSpyLogger, expect, sinon, smock, ethers, toBN } from "./utils";
+import { createSpyLogger, expect, smock, ethers, toBN } from "./utils";
 
 // Minimal 65-byte hex signature.
 const DUMMY_SIGNATURE = "0x" + "ab".repeat(65);
@@ -68,31 +68,50 @@ class TestableGaslessRelayer extends GaslessRelayer {
     return this._getNonceKey(token, { authorizer, nonce });
   }
 
-  // Widen protected -> public so sinon.stub() type-checks without `as any`.
-  public override async _queryGaslessApi(retries = 0): Promise<GaslessDepositMessage[]> {
-    return super._queryGaslessApi(retries);
+  // Configurable function properties -- tests assign return values; overrides track call counts.
+  public queryGaslessApiFn: () => Promise<GaslessDepositMessage[]> = async () => [];
+  public initiateGaslessDepositFn: (msg: GaslessDepositMessage) => Promise<TransactionReceipt | null> = async () => null;
+  public initiateFillFn: (deposit: StrippedDeposit) => Promise<TransactionReceipt | null> = async () => null;
+  public extractDepositFromReceiptFn: (receipt: TransactionReceipt, chainId: number) => StrippedDeposit = () => {
+    throw new Error("extractDepositFromReceiptFn not configured");
+  };
+  public findDepositFn: (
+    originChainId: number,
+    inputToken: Address,
+    authorizer: string,
+    nonce: string
+  ) => Promise<StrippedDeposit | undefined> = async () => undefined;
+
+  // Call counters -- incremented by the overrides below.
+  public initiateGaslessDepositCalls = 0;
+  public initiateFillCalls = 0;
+  public findDepositCalls = 0;
+
+  protected override async _queryGaslessApi(): Promise<GaslessDepositMessage[]> {
+    return this.queryGaslessApiFn();
   }
-  public override async initiateGaslessDeposit(msg: GaslessDepositMessage): Promise<TransactionReceipt | null> {
-    return super.initiateGaslessDeposit(msg);
+  protected override async initiateGaslessDeposit(msg: GaslessDepositMessage): Promise<TransactionReceipt | null> {
+    this.initiateGaslessDepositCalls++;
+    return this.initiateGaslessDepositFn(msg);
   }
-  public override async initiateFill(
-    deposit: StrippedDeposit
-  ): Promise<TransactionReceipt | null> {
-    return super.initiateFill(deposit);
+  protected override async initiateFill(deposit: StrippedDeposit): Promise<TransactionReceipt | null> {
+    this.initiateFillCalls++;
+    return this.initiateFillFn(deposit);
   }
-  public override _extractDepositFromTransactionReceipt(
+  protected override _extractDepositFromTransactionReceipt(
     receipt: TransactionReceipt,
     originChainId: number
   ): StrippedDeposit {
-    return super._extractDepositFromTransactionReceipt(receipt, originChainId);
+    return this.extractDepositFromReceiptFn(receipt, originChainId);
   }
-  public override async _findDeposit(
+  protected override async _findDeposit(
     originChainId: number,
     inputToken: Address,
     authorizer: string,
     nonce: string
   ): Promise<StrippedDeposit | undefined> {
-    return super._findDeposit(originChainId, inputToken, authorizer, nonce);
+    this.findDepositCalls++;
+    return this.findDepositFn(originChainId, inputToken, authorizer, nonce);
   }
 }
 
@@ -203,13 +222,6 @@ function makeFakeDepositEvent(amounts: { inputAmount?: string; outputAmount?: st
 
 describe("GaslessRelayer", function () {
   let relayer: TestableGaslessRelayer;
-  let fakePeriphery: Contract;
-
-  let queryApiStub: sinon.SinonStub;
-  let initiateDepositStub: sinon.SinonStub;
-  let initiateFillStub: sinon.SinonStub;
-  let extractDepositStub: sinon.SinonStub;
-  let findDepositStub: sinon.SinonStub;
 
   beforeEach(async function () {
     const { spyLogger } = createSpyLogger();
@@ -226,10 +238,12 @@ describe("GaslessRelayer", function () {
 
     relayer = new TestableGaslessRelayer(spyLogger, config, signer, []);
 
-    // Use smock fakes for periphery and spokePool contracts.
-    fakePeriphery = await smock.fake<Contract>(SPOKE_POOL_PERIPHERY_ABI);
-    // SpokePool fake uses a minimal ABI -- every method that touches it is stubbed.
-    const fakeSpokePool: Contract = await smock.fake<Contract>([]);
+    // smock.fake() returns FakeContract which isn't assignable to Contract under strict mode.
+    // Extract a Contract reference via the address and interface the fake already provides.
+    const fakePeripherySmock = await smock.fake(SPOKE_POOL_PERIPHERY_ABI);
+    const fakePeriphery = new Contract(fakePeripherySmock.address, SPOKE_POOL_PERIPHERY_ABI, signer.provider);
+    const fakeSpokePoolSmock = await smock.fake([]);
+    const fakeSpokePool = new Contract(fakeSpokePoolSmock.address, [], signer.provider);
 
     relayer.setProvidersByChain({
       [ORIGIN_CHAIN_ID]: signer.provider!,
@@ -246,17 +260,9 @@ describe("GaslessRelayer", function () {
 
     // Enable experimental handler.
     process.env.RELAYER_GASLESS_HANDLER = "experimental";
-
-    // Stub internal methods on the instance (public on TestableGaslessRelayer).
-    queryApiStub = sinon.stub(relayer, "_queryGaslessApi");
-    initiateDepositStub = sinon.stub(relayer, "initiateGaslessDeposit");
-    initiateFillStub = sinon.stub(relayer, "initiateFill");
-    extractDepositStub = sinon.stub(relayer, "_extractDepositFromTransactionReceipt");
-    findDepositStub = sinon.stub(relayer, "_findDeposit");
   });
 
   afterEach(function () {
-    sinon.restore();
     delete process.env.RELAYER_GASLESS_HANDLER;
   });
 
@@ -265,18 +271,18 @@ describe("GaslessRelayer", function () {
     const receipt = makeReceipt();
     const depositEvent = makeFakeDepositEvent({ inputAmount: "2000000", outputAmount: "1900000" });
 
-    queryApiStub.resolves([msg]);
-    initiateDepositStub.resolves(receipt);
-    extractDepositStub.returns(depositEvent);
-    initiateFillStub.resolves(receipt);
+    relayer.queryGaslessApiFn = async () => [msg];
+    relayer.initiateGaslessDepositFn = async () => receipt;
+    relayer.extractDepositFromReceiptFn = () => depositEvent;
+    relayer.initiateFillFn = async () => receipt;
 
     await relayer.runEvaluateApiSignatures();
 
     expect(relayer.getMessageState(depositNonceFor(relayer, msg))).to.equal(MessageState.FILLED);
-    expect(initiateDepositStub.calledOnce).to.be.true;
-    expect(initiateFillStub.calledOnce).to.be.true;
+    expect(relayer.initiateGaslessDepositCalls).to.equal(1);
+    expect(relayer.initiateFillCalls).to.equal(1);
     // Deposit was found via receipt, so _findDeposit should not have been needed.
-    expect(findDepositStub.called).to.be.false;
+    expect(relayer.findDepositCalls).to.equal(0);
   });
 
   it("Invalid deposit (mismatching L1 tokens) -> ERROR", async function () {
@@ -286,24 +292,24 @@ describe("GaslessRelayer", function () {
       outputToken: WETH_BASE,
     });
 
-    queryApiStub.resolves([msg]);
+    relayer.queryGaslessApiFn = async () => [msg];
 
     await relayer.runEvaluateApiSignatures();
 
     expect(relayer.getMessageState(depositNonceFor(relayer, msg))).to.equal(MessageState.ERROR);
-    expect(initiateDepositStub.called).to.be.false;
+    expect(relayer.initiateGaslessDepositCalls).to.equal(0);
   });
 
   it("Expired deposit -> ERROR", async function () {
     // Set fillDeadline in the past.
     const msg = makeDepositMessage({ fillDeadline: getCurrentTime() - 100 });
 
-    queryApiStub.resolves([msg]);
+    relayer.queryGaslessApiFn = async () => [msg];
 
     await relayer.runEvaluateApiSignatures();
 
     expect(relayer.getMessageState(depositNonceFor(relayer, msg))).to.equal(MessageState.ERROR);
-    expect(initiateDepositStub.called).to.be.false;
+    expect(relayer.initiateGaslessDepositCalls).to.equal(0);
   });
 
   it("Deposit receipt null, recovered via _findDeposit", async function () {
@@ -311,17 +317,17 @@ describe("GaslessRelayer", function () {
     const depositEvent = makeFakeDepositEvent({ inputAmount: "2000000", outputAmount: "1900000" });
     const receipt = makeReceipt();
 
-    queryApiStub.resolves([msg]);
+    relayer.queryGaslessApiFn = async () => [msg];
     // Deposit returns null (failed/skipped).
-    initiateDepositStub.resolves(null);
+    relayer.initiateGaslessDepositFn = async () => null;
     // _findDeposit locates the deposit on-chain.
-    findDepositStub.resolves(depositEvent);
-    initiateFillStub.resolves(receipt);
+    relayer.findDepositFn = async () => depositEvent;
+    relayer.initiateFillFn = async () => receipt;
 
     await relayer.runEvaluateApiSignatures();
 
     expect(relayer.getMessageState(depositNonceFor(relayer, msg))).to.equal(MessageState.FILLED);
-    expect(findDepositStub.calledOnce).to.be.true;
-    expect(initiateFillStub.calledOnce).to.be.true;
+    expect(relayer.findDepositCalls).to.equal(1);
+    expect(relayer.initiateFillCalls).to.equal(1);
   });
 });
