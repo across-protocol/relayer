@@ -25,9 +25,10 @@ import { CCTP_MAX_SEND_AMOUNT } from "../../common";
 import { PRODUCTION_NETWORKS, CCTP_NO_DOMAIN } from "@across-protocol/constants";
 import { utils } from "@across-protocol/sdk";
 import { MultiCallerClient } from "../../clients/MultiCallerClient";
+import { CCTP_PENDING_BRIDGE_REDIS_PREFIX } from "../utils/PendingBridgeRedis";
 
 export class CctpAdapter extends BaseAdapter {
-  REDIS_PREFIX = "cctp-bridge:";
+  REDIS_PREFIX = CCTP_PENDING_BRIDGE_REDIS_PREFIX;
 
   async initialize(availableRoutes: RebalanceRoute[]): Promise<void> {
     if (this.initialized) {
@@ -180,13 +181,7 @@ export class CctpAdapter extends BaseAdapter {
         }
       }
       const pendingOrderDetails = await this._redisGetOrderDetails(cloid);
-      const { sourceChain, destinationChain, amountToTransfer } = pendingOrderDetails;
-      // @dev Temporarily filter out L1->L2 and L2->L1 rebalances because they will already be counted by the
-      // AdapterManager and this function is designed to be used in conjunction with the AdapterManager
-      // to paint a full picture of all pending rebalances.
-      if (sourceChain === this.config.hubPoolChainId || destinationChain === this.config.hubPoolChainId) {
-        continue;
-      }
+      const { destinationChain, amountToTransfer } = pendingOrderDetails;
       pendingRebalances[destinationChain] ??= {};
       pendingRebalances[destinationChain]["USDC"] = (pendingRebalances[destinationChain]?.["USDC"] ?? bnZero).add(
         amountToTransfer
@@ -300,7 +295,13 @@ export class CctpAdapter extends BaseAdapter {
 
   private async _getCctpAttestation(txnHash: string, sourceChainId: number, retryCount = 0) {
     if (retryCount > 2) {
-      throw new Error(`Failed to get CCTP attestation for txnHash ${txnHash} after ${retryCount} retries`);
+      this.logger.warn({
+        at: "CctpAdapter._getCctpAttestation",
+        message: `Failed to get CCTP attestation for txnHash ${txnHash} after ${retryCount} retries`,
+        txnHash,
+        retryCount,
+      });
+      return undefined;
     }
     try {
       const attestationResponses = await utils.fetchCctpV2Attestations([txnHash], Number(sourceChainId));

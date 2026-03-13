@@ -29,9 +29,11 @@ import { SpokePoolClient, HubPoolClient, SpokePoolManager } from "../";
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { BaseChainAdapter } from "../../adapter";
 import { TransferTokenParams } from "../../adapter/utils";
+import { PendingBridgeRedisReader } from "../../rebalancer/utils/PendingBridgeRedis";
 
 export class AdapterManager {
   public adapters: { [chainId: number]: BaseChainAdapter } = {};
+  protected readonly pendingBridgeRedisReader?: PendingBridgeRedisReader;
 
   // Some L2's canonical bridges send ETH, not WETH, over the canonical bridges, resulting in recipient addresses
   // receiving ETH that needs to be wrapped on the L2. This array contains the chainIds of the chains that this
@@ -48,6 +50,7 @@ export class AdapterManager {
     if (!spokePoolClients) {
       return;
     }
+    this.pendingBridgeRedisReader = new PendingBridgeRedisReader(logger);
     this.spokePoolManager = new SpokePoolManager(logger, spokePoolClients);
     const spokePoolAddresses = Object.values(this.spokePoolManager.getSpokePoolClients()).map(
       (client) => client.spokePoolAddress
@@ -136,7 +139,8 @@ export class AdapterManager {
         SUPPORTED_TOKENS[chainId] ?? [],
         constructBridges(chainId),
         constructL2Bridges(chainId),
-        DEFAULT_GAS_MULTIPLIER[chainId] ?? 1
+        DEFAULT_GAS_MULTIPLIER[chainId] ?? 1,
+        this.pendingBridgeRedisReader
       );
     });
     logger.debug({
