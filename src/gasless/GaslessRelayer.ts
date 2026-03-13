@@ -191,7 +191,7 @@ export class GaslessRelayer {
     await this.updateObservedCctpDeposits(initialMessages);
 
     const unfilledDeposits = initialMessages.filter((depositMessage) => {
-      const { originChainId, depositId, permit } = depositMessage;
+      const { originChainId, depositId, permit, spokePool } = depositMessage;
       const { destinationChainId } = depositMessage.baseDepositData;
 
       const depositKey = this._getDepositKey(permit.domain.verifyingContract, originChainId, depositId);
@@ -200,7 +200,7 @@ export class GaslessRelayer {
         this.observedDeposits[originChainId]?.has(depositKey) &&
         isDefined(this.observedFills[destinationChainId]) &&
         !this.observedFills[destinationChainId].has(fillKey) &&
-        !this._isCctpDeposit(depositMessage)
+        !this._isCctpDeposit(originChainId, spokePool)
       );
     });
 
@@ -211,10 +211,10 @@ export class GaslessRelayer {
     });
 
     await mapAsync(unfilledDeposits, async (depositMessage) => {
-      const { originChainId, depositId } = depositMessage;
+      const { originChainId, depositId, spokePool } = depositMessage;
 
       // In theory, unfilledDeposits will not have CCTP deposits, but just in case.
-      if (this._isCctpDeposit(depositMessage)) {
+      if (this._isCctpDeposit(originChainId, spokePool)) {
         this.logger.debug({
           at: "GaslessRelayer#initialize",
           message: "Skipping fill for CCTP deposit (relayer does not fill CCTP).",
@@ -231,7 +231,7 @@ export class GaslessRelayer {
         isDefined(correspondingDeposit),
         "Inconsistent data between this.observedDeposits and return data from gaslessRelayer.updateObserved()"
       );
-      await this.initiateFill(correspondingDeposit);
+      await this.initiateFill(correspondingDeposit, spokePool);
     });
 
     // Establish a new bot instance.
@@ -342,7 +342,7 @@ export class GaslessRelayer {
    * @notice For each CCTP deposit in the API messages, tries to find AuthorizationUsed(authorizer, nonce) via _findAuthorizationUsed and adds the corresponding deposit to observedDeposits so we do not re-submit.
    */
   private async updateObservedCctpDeposits(apiMessages: GaslessDepositMessage[]): Promise<void> {
-    const cctpMessages = apiMessages.filter((msg) => this._isCctpDeposit(msg));
+    const cctpMessages = apiMessages.filter((msg) => this._isCctpDeposit(msg.originChainId, msg.spokePool));
     await mapAsync(cctpMessages, async (depositMessage) => {
       const { originChainId, depositId, permit } = depositMessage;
       const inputToken = toAddressType(depositMessage.baseDepositData.inputToken, originChainId);
@@ -362,7 +362,7 @@ export class GaslessRelayer {
    */
   private async evaluateApiSignatures(): Promise<void> {
     const defaultHandler = async (depositMessage: GaslessDepositMessage) => {
-      const { originChainId, depositId, permit } = depositMessage;
+      const { originChainId, depositId, permit, spokePool } = depositMessage;
       const { destinationChainId, inputToken, outputToken, inputAmount, outputAmount } = depositMessage.baseDepositData;
       const { from: authorizer, nonce } = permit.message;
 
@@ -494,7 +494,7 @@ export class GaslessRelayer {
         // If the fill fails for some reason, then we add it to the object of retryable fills.
         let fillReceipt: TransactionReceipt | undefined = undefined;
         try {
-          fillReceipt = await this.initiateFill(depositEvent);
+          fillReceipt = await this.initiateFill(depositEvent, spokePool);
         } catch {
           // fillReceipt is undefined, so we are going to retry it.
         }
@@ -526,7 +526,7 @@ export class GaslessRelayer {
         }
         let fillReceipt: TransactionReceipt | undefined = undefined;
         try {
-          fillReceipt = await this.initiateFill(deposit);
+          fillReceipt = await this.initiateFill(deposit, spokePool);
         } catch {
           // fillReceipt is undefined, so we are going to retry if we can't find the fill.
         }
@@ -549,7 +549,7 @@ export class GaslessRelayer {
     };
 
     const experimentalHandler = async (depositMessage: GaslessDepositMessage) => {
-      const { originChainId, permit } = depositMessage;
+      const { originChainId, permit, spokePool } = depositMessage;
       const {
         baseDepositData: { destinationChainId, fillDeadline, ...baseDepositData },
       } = depositMessage;
@@ -594,7 +594,7 @@ export class GaslessRelayer {
       if (messageState !== MessageState.INITIAL) {
         return;
       }
-      const isCctpDeposit = this._isCctpDeposit(depositMessage);
+      const isCctpDeposit = this._isCctpDeposit(originChainId, spokePool);
       const terminalStates = [MessageState.FILLED, MessageState.ERROR];
       let deposit: Omit<DepositWithBlock, "fromLiteChain" | "toLiteChain" | "quoteBlockNumber">;
       const at = "GaslessRelayer#evaluateApiSignatures";
@@ -664,7 +664,7 @@ export class GaslessRelayer {
             assert(isDefined(deposit));
             let fillStatus: FillStatus;
 
-            const txnReceipt = await this.initiateFill(deposit);
+            const txnReceipt = await this.initiateFill(deposit, spokePool);
             if (isDefined(txnReceipt) || (this.config.refundFlowTestEnabled && deposit.outputAmount.eq(MAX_UINT_VAL))) {
               log("info", `Completed fill on ${destination} for ${origin} deposit.`);
               fillStatus = FillStatus.Filled;
@@ -784,10 +784,13 @@ export class GaslessRelayer {
    * @notice Builds and sends the associated `fillRelay` call from the input API message.
    */
   private async initiateFill(
-    deposit: Omit<DepositWithBlock, "fromLiteChain" | "toLiteChain" | "quoteBlockNumber">
+    deposit: Omit<DepositWithBlock, "fromLiteChain" | "toLiteChain" | "quoteBlockNumber">,
+    originChainSpokePool: string
   ): Promise<TransactionReceipt | null> {
     const { originChainId, depositId, destinationChainId, outputToken, outputAmount, inputToken, inputAmount } =
       deposit;
+
+    assert(!this._isCctpDeposit(originChainId, originChainSpokePool), "Cannot fill CCTP deposit");
 
     // Do sanity checks. We should never fill a deposit with outputAmount > inputAmount.
     const outputTokenInfo = getTokenInfo(outputToken, destinationChainId);
@@ -965,13 +968,12 @@ export class GaslessRelayer {
    * @notice Returns true if the deposit is a CCTP gasless deposit (API spokePool differs from our default SpokePool for the origin chain).
    * For CCTP we still submit the deposit on SpokePoolPeriphery but never perform a fill.
    */
-  private _isCctpDeposit(depositMessage: GaslessDepositMessage): boolean {
-    const { originChainId } = depositMessage;
+  private _isCctpDeposit(originChainId: number, spokePool: string): boolean {
     const defaultSpokePool = this.spokePools[originChainId];
     if (!defaultSpokePool) {
       return false;
     }
-    return !compareAddressesSimple(depositMessage.spokePool, defaultSpokePool.address);
+    return !compareAddressesSimple(spokePool, defaultSpokePool.address);
   }
 
   /*
