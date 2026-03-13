@@ -644,9 +644,7 @@ export class GaslessRelayer {
 
               if (isDefined(deposit)) {
                 setState(MessageState.FILL_PENDING);
-              } else {
-                log("info", `Could not locate deposit on ${origin}.`);
-                await delay(1);
+                break;
               }
             } else {
               const cctpDepositTx = isDefined(txnReceipt)
@@ -654,11 +652,11 @@ export class GaslessRelayer {
                 : await this._findAuthorizationUsed(originChainId, inputToken, authorizer, nonce);
               if (isDefined(cctpDepositTx)) {
                 setState(MessageState.FILLED);
-              } else {
-                log("info", `Could not locate deposit on ${origin}.`);
-                await delay(1);
+                break;
               }
             }
+            log("info", `Could not locate deposit on ${origin}.`);
+            await delay(1);
             break;
           }
 
