@@ -597,7 +597,6 @@ export class GaslessRelayer {
       const isCctpDeposit = this._isCctpDeposit(depositMessage);
       const terminalStates = [MessageState.FILLED, MessageState.ERROR];
       let deposit: Omit<DepositWithBlock, "fromLiteChain" | "toLiteChain" | "quoteBlockNumber">;
-      let cctpDepositTx: string;
       const at = "GaslessRelayer#evaluateApiSignatures";
       const expired = () => getCurrentTime() >= fillDeadline;
       const [origin, destination] = [originChainId, destinationChainId].map(getNetworkName);
@@ -633,11 +632,9 @@ export class GaslessRelayer {
             const txnReceipt = await this.initiateGaslessDeposit(depositMessage);
 
             if (isDefined(txnReceipt)) {
-              if (isCctpDeposit) {
-                cctpDepositTx = txnReceipt.transactionHash;
-              } else {
-                deposit = this._extractDepositFromTransactionReceipt(txnReceipt, originChainId);
-              }
+              deposit = isCctpDeposit
+                ? undefined
+                : this._extractDepositFromTransactionReceipt(txnReceipt, originChainId);
               const tDeposit = performance.now();
               log("info", `Completed deposit submission on ${origin} in ${(tDeposit - tStart) / 1000}s.`);
             }
@@ -652,7 +649,9 @@ export class GaslessRelayer {
                 await delay(1);
               }
             } else {
-              cctpDepositTx ??= await this._findAuthorizationUsed(originChainId, inputToken, authorizer, nonce);
+              const cctpDepositTx = isDefined(txnReceipt)
+                ? txnReceipt.transactionHash
+                : await this._findAuthorizationUsed(originChainId, inputToken, authorizer, nonce);
               if (isDefined(cctpDepositTx)) {
                 setState(MessageState.FILLED);
               } else {
