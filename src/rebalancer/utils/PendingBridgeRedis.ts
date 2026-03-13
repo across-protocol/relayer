@@ -1,9 +1,14 @@
 import { RedisCache } from "../../caching/RedisCache";
 import { BigNumber, getRedisCache, isDefined, winston } from "../../utils";
 
+// Redis keys are grouped by adapter so OFT and CCTP orders can be tracked independently while
+// still sharing the same reader implementation.
 export const OFT_PENDING_BRIDGE_REDIS_PREFIX = "oft-bridge:";
 export const CCTP_PENDING_BRIDGE_REDIS_PREFIX = "cctp-bridge:";
 
+// For each adapter we maintain:
+// 1. A set containing all currently pending order ids (`cloid`s).
+// 2. One JSON payload per `cloid` containing the order details.
 const PENDING_ORDER_REDIS_SUFFIX = "pending-order";
 const PENDING_BRIDGE_PRE_DEPOSIT_REDIS_SUFFIX = "pending-bridge-pre-deposit";
 // Keep Redis reads cheap within a single accounting pass without masking cross-process updates for long.
@@ -11,6 +16,7 @@ const PENDING_BRIDGE_REDIS_READER_CACHE_TTL_MS = 5_000;
 
 export type PendingBridgeAdapterName = "oft" | "cctp";
 
+// Normalized shape returned by the reader after decoding Redis payloads.
 export interface PendingBridgeRedisOrder {
   adapter: PendingBridgeAdapterName;
   cloid: string;
@@ -32,10 +38,13 @@ interface PendingBridgeRedisOrderPayload {
 
 interface PendingBridgeSnapshot {
   orders: PendingBridgeRedisOrder[];
+  // Indexed by `sourceChain:destinationChain` so callers can cheaply ask for route-local ignore sets.
   txnRefsByRoute: Record<string, Set<string>>;
   loadedAtMs: number;
 }
 
+// Optional namespace that lets different rebalancer deployments keep their status-tracking data isolated
+// even if they share the same Redis instance.
 export function getRebalancerStatusTrackingNamespace(): string | undefined {
   return process.env.REBALANCER_STATUS_TRACKING_NAMESPACE
     ? String(process.env.REBALANCER_STATUS_TRACKING_NAMESPACE)
@@ -54,6 +63,10 @@ function getPendingBridgeOrderKey(adapter: PendingBridgeAdapterName, cloid: stri
   return `${getPendingBridgeRedisPrefix(adapter)}${PENDING_ORDER_REDIS_SUFFIX}:${cloid}`;
 }
 
+// Bridge adapters expose different identifiers to downstream consumers:
+// - OFT already uses the transfer id we want to ignore.
+// - CCTP stores a composite `cloid` whose suffix is the on-chain tx hash / reference used elsewhere.
+// The reader normalizes both into a single `txnRef` field.
 function getTxnRefFromCloid(adapter: PendingBridgeAdapterName, cloid: string): string {
   if (adapter === "oft") {
     return cloid;
@@ -63,10 +76,17 @@ function getTxnRefFromCloid(adapter: PendingBridgeAdapterName, cloid: string): s
   return txnHashParts.join("-");
 }
 
-// @dev This class is used to read pending bridge orders from Redis that were initiated
-// by the rebalancer. It's designed to be easy to construct and to be used by external clients, like
-// the AdapterManager who might want to filter for orders that would look like ordinary L1/L2->L2/L2 cross-chain
-// transfers but were initiated by the rebalancer and therefore should not be double counted.
+// Reads the rebalancer's pending bridge bookkeeping from Redis.
+//
+// Goal:
+// Bridge adapters and higher-level clients need to recognize transfers that were initiated by the
+// rebalancer itself so those transfers are not mistaken for "external" bridge activity and counted twice.
+//
+// Design notes:
+// - This reader is intentionally read-only and easy to construct from anywhere.
+// - It converts the raw Redis schema into both a flat order list and a route-local txnRef index.
+// - It uses a very short in-memory TTL because callers often ask several related questions during one
+//   accounting pass, but we still want cross-process Redis updates to become visible quickly.
 export class PendingBridgeRedisReader {
   private redisCachePromise?: Promise<RedisCache | undefined>;
   // Cache one parsed snapshot per adapter so repeated route lookups don't re-scan Redis immediately.
@@ -76,10 +96,14 @@ export class PendingBridgeRedisReader {
 
   constructor(private readonly logger?: winston.Logger) {}
 
+  // Returns the fully decoded pending orders for an adapter. This is mostly useful for debugging,
+  // diagnostics, or callers that need more than the route-local txnRef index.
   async getPendingBridgeOrders(adapter: PendingBridgeAdapterName): Promise<PendingBridgeRedisOrder[]> {
     return (await this.getPendingBridgeSnapshot(adapter)).orders;
   }
 
+  // Returns only the transaction references relevant to a single route. This is the hot path used by
+  // bridge adapters when they need a fast "ignore list" for source->destination transfer detection.
   async getPendingBridgeTxnRefsForRoute(
     adapter: PendingBridgeAdapterName,
     sourceChain: number,
@@ -112,14 +136,19 @@ export class PendingBridgeRedisReader {
   private async loadPendingBridgeSnapshot(adapter: PendingBridgeAdapterName): Promise<PendingBridgeSnapshot> {
     const redisCache = await this.getRedisCache();
     if (!isDefined(redisCache)) {
+      // Status tracking is optional. When Redis is unavailable or disabled, behave as though there are
+      // no pending bridge orders so callers can continue operating without special-case handling.
       return { orders: [], txnRefsByRoute: {}, loadedAtMs: Date.now() };
     }
 
+    // The set is the source of truth for "currently pending" orders. Each member points to a JSON blob
+    // stored under its own key.
     const cloids = await redisCache.sMembers(getPendingBridgeStatusSetKey(adapter));
     const orders = await Promise.all(
       cloids.map(async (cloid) => {
         const rawOrder = await redisCache.get<string>(getPendingBridgeOrderKey(adapter, cloid));
         if (!rawOrder) {
+          // Tolerate races where the set member still exists but the payload has already been removed.
           return undefined;
         }
 
@@ -147,6 +176,7 @@ export class PendingBridgeRedisReader {
   }
 
   private getRedisCache(): Promise<RedisCache | undefined> {
+    // Reuse the same Redis client promise across all reads from this reader instance.
     this.redisCachePromise ??= getRedisCache(this.logger, undefined, getRebalancerStatusTrackingNamespace()) as Promise<
       RedisCache | undefined
     >;
@@ -154,6 +184,7 @@ export class PendingBridgeRedisReader {
   }
 
   private getRouteKey(sourceChain: number, destinationChain: number): string {
+    // Route keys stay local to this module, so a simple stable string is enough.
     return `${sourceChain}:${destinationChain}`;
   }
 }
