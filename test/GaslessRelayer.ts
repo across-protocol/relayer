@@ -27,6 +27,7 @@ const USDC_BASE = TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.BASE];
 const WETH_BASE = TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.BASE];
 
 const DUMMY_ADDRESS = "0x" + "11".repeat(20);
+const DUMMY_EVM_ADDRESS = EvmAddress.from(DUMMY_ADDRESS);
 
 type StrippedDeposit = Omit<DepositWithBlock, "fromLiteChain" | "toLiteChain" | "quoteBlockNumber">;
 
@@ -180,15 +181,15 @@ function makeFakeDepositEvent(amounts: { inputAmount?: string; outputAmount?: st
   return {
     originChainId: ORIGIN_CHAIN_ID,
     depositId: toBN(42),
-    depositor: EvmAddress.from(DUMMY_ADDRESS),
-    recipient: EvmAddress.from(DUMMY_ADDRESS),
+    depositor: DUMMY_EVM_ADDRESS,
+    recipient: DUMMY_EVM_ADDRESS,
     inputToken: EvmAddress.from(USDC_MAINNET),
     inputAmount: toBN(amounts.inputAmount ?? "1000000"),
     outputToken: EvmAddress.from(USDC_BASE),
     outputAmount: toBN(amounts.outputAmount ?? "1000000"),
     message: "0x",
     fillDeadline: getCurrentTime() + 3600,
-    exclusiveRelayer: EvmAddress.from(DUMMY_ADDRESS),
+    exclusiveRelayer: DUMMY_EVM_ADDRESS,
     exclusivityDeadline: 0,
     destinationChainId: DESTINATION_CHAIN_ID,
     quoteTimestamp: getCurrentTime(),
