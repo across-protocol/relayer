@@ -188,6 +188,7 @@ export class GaslessRelayer {
     // Update our observed signatures/fills up until `this.depositLookback`.
     // Include the list of initial deposit messages so we can map FundsDeposited events back to EIP-3009 deposit nonces.
     const observedEvents = await this.updateObserved(initialMessages);
+    await this.updateObservedCctpDeposits(initialMessages);
 
     const unfilledDeposits = initialMessages.filter((depositMessage) => {
       const { originChainId, depositId, permit } = depositMessage;
@@ -198,7 +199,8 @@ export class GaslessRelayer {
       return (
         this.observedDeposits[originChainId]?.has(depositKey) &&
         isDefined(this.observedFills[destinationChainId]) &&
-        !this.observedFills[destinationChainId].has(fillKey)
+        !this.observedFills[destinationChainId].has(fillKey) &&
+        !this._isCctpDeposit(depositMessage)
       );
     });
 
@@ -210,6 +212,17 @@ export class GaslessRelayer {
 
     await mapAsync(unfilledDeposits, async (depositMessage) => {
       const { originChainId, depositId } = depositMessage;
+
+      // In theory, unfilledDeposits will not have CCTP deposits, but just in case.
+      if (this._isCctpDeposit(depositMessage)) {
+        this.logger.debug({
+          at: "GaslessRelayer#initialize",
+          message: "Skipping fill for CCTP deposit (relayer does not fill CCTP).",
+          depositId,
+          originChainId,
+        });
+        return;
+      }
 
       const correspondingDeposit = observedEvents.observedFundsDeposited[originChainId].find(
         (fundsDeposited) => fundsDeposited.depositId.toString() === depositId
@@ -323,6 +336,25 @@ export class GaslessRelayer {
       observedFundsDeposited,
       observedFilledRelay,
     };
+  }
+
+  /*
+   * @notice For each CCTP deposit in the API messages, tries to find AuthorizationUsed(authorizer, nonce) via _findAuthorizationUsed and adds the corresponding deposit to observedDeposits so we do not re-submit.
+   */
+  private async updateObservedCctpDeposits(apiMessages: GaslessDepositMessage[]): Promise<void> {
+    const cctpMessages = apiMessages.filter((msg) => this._isCctpDeposit(msg));
+    await mapAsync(cctpMessages, async (depositMessage) => {
+      const { originChainId, depositId, permit } = depositMessage;
+      const inputToken = toAddressType(depositMessage.baseDepositData.inputToken, originChainId);
+      const authorizer = permit.message.from;
+      const nonce = permit.message.nonce;
+      const transactionHash = await this._findAuthorizationUsed(originChainId, inputToken, authorizer, nonce);
+      if (!transactionHash) {
+        return;
+      }
+      const depositKey = this._getDepositKey(inputToken.toNative(), originChainId, depositId.toString());
+      this.observedDeposits[originChainId].add(depositKey);
+    });
   }
 
   /*
