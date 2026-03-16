@@ -5,7 +5,7 @@ import Binance, {
   type Binance as BinanceApi,
 } from "binance-api-node";
 import minimist from "minimist";
-import { getGckmsConfig, retrieveGckmsKeys, isDefined, assert, delay, CHAIN_IDs, getRedisCache } from "./";
+import { getGckmsConfig, retrieveGckmsKeys, isDefined, assert, delay, CHAIN_IDs, getRedisCache, winston } from "./";
 
 // Store global promises on Gckms key retrieval actions so that we don't retrieve the same key multiple times.
 let binanceSecretKeyPromise = undefined;
@@ -301,25 +301,43 @@ export async function getBinanceWithdrawals(
 /**
  * The call to accountCoins returns an opaque `unknown` object with extraneous information. This function
  * parses the unknown into a readable object to be used by the finalizers.
- * @returns A typed `AccountCoins` response.
+ * When the Binance API (or proxy) fails (e.g. 502), returns null so callers can treat as "no data"
+ * (e.g. default to zero balances) without confusing empty success [] with failure.
+ * @param binanceApi Binance API client.
+ * @param logger Optional logger; when provided, API failures are logged here instead of console.
+ * @returns A typed `AccountCoins` response, or null on any API error.
  */
-export async function getAccountCoins(binanceApi: BinanceApi): Promise<ParsedAccountCoins> {
-  const coins = Object.values(await binanceApi["accountCoins"]());
-  return coins.map((coin) => {
-    const networkList = coin["networkList"]?.map((network) => {
+export async function getAccountCoins(
+  binanceApi: BinanceApi,
+  logger: winston.Logger
+): Promise<ParsedAccountCoins | null> {
+  try {
+    const coins = Object.values(await binanceApi["accountCoins"]());
+    return coins.map((coin) => {
+      const networkList = coin["networkList"]?.map((network) => {
+        return {
+          name: network["network"],
+          coin: network["coin"],
+          withdrawMin: network["withdrawMin"],
+          withdrawMax: network["withdrawMax"],
+          withdrawFee: network["withdrawFee"],
+          contractAddress: network["contractAddress"],
+        } as Network;
+      });
       return {
-        name: network["network"],
-        coin: network["coin"],
-        withdrawMin: network["withdrawMin"],
-        withdrawMax: network["withdrawMax"],
-        withdrawFee: network["withdrawFee"],
-        contractAddress: network["contractAddress"],
-      } as Network;
+        symbol: coin["coin"],
+        balance: coin["free"],
+        networkList,
+      } as Coin;
     });
-    return {
-      symbol: coin["coin"],
-      balance: coin["free"],
-      networkList,
-    } as Coin;
-  });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const logMeta = {
+      at: "BinanceUtils#getAccountCoins",
+      message: "Binance accountCoins API failed; returning null (balances default to 0).",
+      error: message,
+    };
+    logger.error(logMeta);
+    return null;
+  }
 }

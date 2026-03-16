@@ -43,6 +43,7 @@ interface SPOT_MARKET_META {
   isBuy: boolean;
 }
 
+const HIGH_COST = toBNWei(1e6, 18);
 export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   private binanceApiClient: Binance;
 
@@ -91,21 +92,30 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
 
     this.binanceApiClient = await getBinanceApiClient(process.env.BINANCE_API_BASE);
 
+    const routesWithCoins: RebalanceRoute[] = [];
     await forEachAsync(this.availableRoutes, async (route) => {
       const { sourceToken, destinationToken, sourceChain, destinationChain } = route;
       const [sourceCoin, destinationCoin] = await Promise.all([
         this._getAccountCoins(sourceToken),
         this._getAccountCoins(destinationToken),
       ]);
-      assert(sourceCoin, `Source token ${sourceToken} not found in account coins`);
-      assert(destinationCoin, `Destination token ${destinationToken} not found in account coins`);
+      if (!sourceCoin || !destinationCoin) {
+        this.logger.warn({
+          at: "BinanceStablecoinSwapAdapter.initialize",
+          message: "Skipping Binance route (account coins unavailable; API may be down).",
+          sourceToken,
+          destinationToken,
+          sourceChain,
+          destinationChain,
+        });
+        return;
+      }
       const [sourceEntrypointNetwork, destinationEntrypointNetwork] = await Promise.all([
         this._getEntrypointNetwork(sourceChain, sourceToken),
         this._getEntrypointNetwork(destinationChain, destinationToken),
       ]);
       const getIntermediateAdapter = (token: string) => (token === "USDT" ? this.oftAdapter : this.cctpAdapter);
       const getIntermediateAdapterName = (token: string) => (token === "USDT" ? "oft" : "cctp");
-      // Validate that route can be supported using intermediate bridges to get to/from Arbitrum to access Binance.
       if (destinationEntrypointNetwork !== destinationChain) {
         const intermediateRoute = {
           ...route,
@@ -150,7 +160,16 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
           BINANCE_NETWORKS[destinationEntrypointNetwork]
         }", available networks: ${destinationCoin.networkList.map((network) => network.name).join(", ")}`
       );
+      routesWithCoins.push(route);
     });
+    this.availableRoutes = routesWithCoins;
+    if (this.availableRoutes.length === 0) {
+      this.logger.warn({
+        at: "BinanceStablecoinSwapAdapter.initialize",
+        message: "No Binance routes available (account coins empty; API/proxy may be down).",
+      });
+    }
+    this.initialized = true;
   }
 
   async updateRebalanceStatuses(): Promise<void> {
@@ -578,10 +597,27 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const { sourceChain, sourceToken, destinationToken, destinationChain } = rebalanceRoute;
 
     const destinationCoin = await this._getAccountCoins(destinationToken);
+    if (!destinationCoin) {
+      this.logger.warn({
+        at: "BinanceStablecoinSwapAdapter.initializeRebalance",
+        message: "Destination coin unavailable (Binance API may be down); skipping.",
+        destinationToken,
+      });
+      return bnZero;
+    }
     const destinationEntrypointNetwork = await this._getEntrypointNetwork(destinationChain, destinationToken);
     const destinationBinanceNetwork = destinationCoin.networkList.find(
       (network) => network.name === BINANCE_NETWORKS[destinationEntrypointNetwork]
     );
+    if (!destinationBinanceNetwork) {
+      this.logger.debug({
+        at: "BinanceStablecoinSwapAdapter.initializeRebalance",
+        message: "No Binance network for destination; skipping.",
+        destinationToken,
+        destinationEntrypointNetwork,
+      });
+      return bnZero;
+    }
     const { withdrawMin, withdrawMax } = destinationBinanceNetwork;
 
     // Make sure that the amount to transfer will be larger than the minimum withdrawal size after expected fees.
@@ -688,13 +724,24 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     ).takerCommission;
     const tradeFee = toBNWei(tradeFeePct, 18).mul(amountToTransfer).div(toBNWei(100, 18));
     const destinationCoin = await this._getAccountCoins(destinationToken);
+    if (!destinationCoin) {
+      this.logger.warn({
+        at: "BinanceStablecoinSwapAdapter.getEstimatedCost",
+        message: "Destination coin unavailable (Binance API may be down); returning high cost.",
+        destinationToken,
+      });
+      // API unavailable: return high cost so this route is not selected.
+      return HIGH_COST;
+    }
     const destinationEntrypointNetwork = await this._getEntrypointNetwork(destinationChain, destinationToken);
-    const destinationTokenInfo = this._getTokenInfo(destinationToken, destinationEntrypointNetwork);
-    const withdrawFee = toBNWei(
-      destinationCoin.networkList.find((network) => network.name === BINANCE_NETWORKS[destinationEntrypointNetwork])
-        .withdrawFee,
-      destinationTokenInfo.decimals
+    const destinationNetwork = destinationCoin.networkList.find(
+      (network) => network.name === BINANCE_NETWORKS[destinationEntrypointNetwork]
     );
+    if (!destinationNetwork) {
+      return HIGH_COST;
+    }
+    const destinationTokenInfo = this._getTokenInfo(destinationToken, destinationEntrypointNetwork);
+    const withdrawFee = toBNWei(destinationNetwork.withdrawFee, destinationTokenInfo.decimals);
     const amountConverter = this._getAmountConverter(
       destinationEntrypointNetwork,
       this._getTokenInfo(destinationToken, destinationEntrypointNetwork).address,
@@ -816,7 +863,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   // PRIVATE BINANCE HELPER METHODS
   // ////////////////////////////////////////////////////////////
 
-  private async _getAccountCoins(symbol: string, skipCache = false): Promise<Coin> {
+  private async _getAccountCoins(symbol: string, skipCache = false): Promise<Coin | undefined> {
     const cacheKey = "binance-account-coins";
 
     type ParsedAccountCoins = Awaited<ReturnType<typeof getAccountCoins>>;
@@ -828,10 +875,16 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       }
     }
     if (!accountCoins) {
-      accountCoins = await getAccountCoins(this.binanceApiClient);
-      // Reset cache if we've fetched a new API response.
-      await this.redisCache.set(cacheKey, JSON.stringify(accountCoins)); // Use default TTL which is a long time as
-      // the entry for this coin is not expected to change frequently.
+      accountCoins = await getAccountCoins(this.binanceApiClient, this.logger);
+      // Cache only on success and non-empty so we don't cache "API down" (null) or empty.
+      if (accountCoins?.length > 0) {
+        await this.redisCache.set(cacheKey, JSON.stringify(accountCoins)); // Use default TTL which is a long time as
+        // the entry for this coin is not expected to change frequently.
+      }
+    }
+    // API failed (null) or no matching coin: treat as unavailable.
+    if (!accountCoins) {
+      return undefined;
     }
 
     const coin = accountCoins.find((coin) => coin.symbol === symbol);
@@ -847,6 +900,9 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       return defaultBinanceNetwork;
     }
     const coin = await this._getAccountCoins(token);
+    if (!coin?.networkList?.length) {
+      return defaultBinanceNetwork;
+    }
     const coinHasNetwork = coin.networkList.find((network) => network.name === BINANCE_NETWORKS[chainId]);
     return coinHasNetwork ? chainId : defaultBinanceNetwork;
   }
@@ -884,7 +940,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
 
   private async _getBinanceBalance(token: string): Promise<number> {
     const coin = await this._getAccountCoins(token, true); // Skip cache so we load the balance fresh each time.
-    return Number(coin.balance);
+    return coin ? Number(coin.balance) : 0;
   }
 
   private async _getSymbol(sourceToken: string, destinationToken: string) {
