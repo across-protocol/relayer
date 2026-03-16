@@ -334,8 +334,8 @@ export async function getAccountCoins(
     const message = err instanceof Error ? err.message : String(err);
     const logMeta = {
       at: "BinanceUtils#getAccountCoins",
-      message: "Binance accountCoins API failed; returning null (balances default to 0).",
-      error: message,
+      message: "Binance accountCoins API failed; returning null.",
+      errorMessage: message,
     };
     logger.error(logMeta);
     return null;

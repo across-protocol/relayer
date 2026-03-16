@@ -146,7 +146,7 @@ export async function binanceFinalizer(
       // @dev There are only two possible withdraw networks for the finalizer, Ethereum L1 or Binance Smart Chain "L2." Withdrawals to Ethereum can originate from any L2 but
       // must be finalized on L1. Withdrawals to Binance Smart Chain must originate from Ethereum L1.
       for (const withdrawNetwork of [BINANCE_NETWORKS[l2ChainId], BINANCE_NETWORKS[hubChainId]]) {
-        const networkLimits = coin ? coin.networkList.find((network) => network.name === withdrawNetwork) : undefined;
+        const networkLimits = coin?.networkList.find((network) => network.name === withdrawNetwork);
         // Get both the amount deposited and ready to be finalized and the amount already withdrawn on L2.
         const finalizingOnL2 = withdrawNetwork === BINANCE_NETWORKS[l2ChainId];
         const depositAmounts = depositsInScope
