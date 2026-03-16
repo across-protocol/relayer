@@ -50,6 +50,8 @@ import EIP3009_ABI from "../common/abi/EIP3009.json";
 import {
   buildGaslessDepositTx,
   buildGaslessFillRelayTx,
+  getGaslessAuthorizerAddress,
+  getGaslessPermitNonce,
   restructureGaslessDeposits,
   validateDeposit,
 } from "../utils/GaslessUtils";
@@ -344,10 +346,10 @@ export class GaslessRelayer {
   private async updateObservedCctpDeposits(apiMessages: GaslessDepositMessage[]): Promise<void> {
     const cctpMessages = apiMessages.filter((msg) => this._isCctpDeposit(msg.originChainId, msg.spokePool));
     await mapAsync(cctpMessages, async (depositMessage) => {
-      const { originChainId, depositId, permit } = depositMessage;
+      const { originChainId, depositId } = depositMessage;
       const inputToken = toAddressType(depositMessage.baseDepositData.inputToken, originChainId);
-      const authorizer = permit.message.from;
-      const nonce = permit.message.nonce;
+      const authorizer = getGaslessAuthorizerAddress(depositMessage);
+      const nonce = getGaslessPermitNonce(depositMessage);
       const transactionHash = await this._findAuthorizationUsed(originChainId, inputToken, authorizer, nonce);
       if (!transactionHash) {
         return;
@@ -362,9 +364,20 @@ export class GaslessRelayer {
    */
   private async evaluateApiSignatures(): Promise<void> {
     const defaultHandler = async (depositMessage: GaslessDepositMessage) => {
-      const { originChainId, depositId, permit, spokePool } = depositMessage;
+      const { originChainId, depositId, spokePool } = depositMessage;
       const { destinationChainId, inputToken, outputToken, inputAmount, outputAmount } = depositMessage.baseDepositData;
-      const { from: authorizer, nonce } = permit.message;
+      const authorizer = getGaslessAuthorizerAddress(depositMessage);
+      const nonce = getGaslessPermitNonce(depositMessage);
+
+      if (depositMessage.permitType === "permit2") {
+        this.logger.debug({
+          at: "GaslessRelayer#evaluateApiSignatures",
+          message: "Permit2 deposit skipped (only ReceiveWithAuthorization is processed for now)",
+          depositId,
+          originChainId,
+        });
+        return;
+      }
 
       const depositSet = this.observedDeposits[originChainId];
       const fillSet = this.observedFills[destinationChainId];
@@ -549,11 +562,22 @@ export class GaslessRelayer {
     };
 
     const experimentalHandler = async (depositMessage: GaslessDepositMessage) => {
-      const { originChainId, permit, spokePool } = depositMessage;
+      const { originChainId, spokePool } = depositMessage;
       const {
         baseDepositData: { destinationChainId, fillDeadline, ...baseDepositData },
       } = depositMessage;
-      const { from: authorizer, nonce } = permit.message;
+      const authorizer = getGaslessAuthorizerAddress(depositMessage);
+      const nonce = getGaslessPermitNonce(depositMessage);
+
+      if (depositMessage.permitType === "permit2") {
+        this.logger.debug({
+          at: "GaslessRelayer#evaluateApiSignatures",
+          message: "Permit2 deposit skipped (experimental handler only supports ReceiveWithAuthorization)",
+          depositId: depositMessage.depositId,
+          originChainId,
+        });
+        return;
+      }
 
       const depositId = toBN(depositMessage.depositId);
       const inputToken = toAddressType(baseDepositData.inputToken, originChainId);
@@ -722,8 +746,9 @@ export class GaslessRelayer {
    * @returns The transaction receipt, or null if skipped or failed.
    */
   private async initiateGaslessDeposit(depositMessage: GaslessDepositMessage): Promise<TransactionReceipt | null> {
-    const { originChainId, depositId, permit } = depositMessage;
+    const { originChainId, depositId } = depositMessage;
     const { destinationChainId, inputAmount, inputToken } = depositMessage.baseDepositData;
+    const authorizer = getGaslessAuthorizerAddress(depositMessage);
 
     let spokePoolPeripheryContract = this.spokePoolPeripheries[originChainId];
     if (this.depositSigners.length === 0) {
@@ -748,7 +773,7 @@ export class GaslessRelayer {
       message: "Completed gasless deposit 😎",
       mrkdwn: `Completed gasless deposit from ${getNetworkName(originChainId)} to ${getNetworkName(
         destinationChainId
-      )} with authorizer ${blockExplorerLink(permit.message.from, originChainId)}, input amount ${createFormatFunction(
+      )} with authorizer ${blockExplorerLink(authorizer, originChainId)}, input amount ${createFormatFunction(
         2,
         4,
         false,

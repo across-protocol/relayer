@@ -1,4 +1,10 @@
-import { APIGaslessDepositResponse, BridgeWitnessData, GaslessDepositMessage, DepositWithBlock } from "../interfaces";
+import {
+  APIGaslessDepositResponse,
+  BridgeWitnessData,
+  GaslessDepositMessage,
+  DepositWithBlock,
+  ReceiveWithAuthorization,
+} from "../interfaces";
 import {
   Address,
   ConvertDecimals,
@@ -30,6 +36,7 @@ export function tagIntegratorId(txData: string, integratorId: string): string {
 /**
  * Restructures raw API deposits into a flatter shape so callers don't deal with
  * swapTx.data.witness.BridgeWitness.data etc. Call this once when you receive the API response.
+ * Supports both ReceiveWithAuthorization and Permit2; permitType indicates which flow to use.
  */
 export function restructureGaslessDeposits(depositMessages: APIGaslessDepositResponse[]): GaslessDepositMessage[] {
   return depositMessages.map((msg) => {
@@ -38,11 +45,13 @@ export function restructureGaslessDeposits(depositMessages: APIGaslessDepositRes
     const { depositId, permit, witness, integratorId } = data;
     const witnessData = witness.BridgeWitness.data;
     const { inputAmount, baseDepositData, submissionFees, spokePool, nonce } = witnessData;
+    const permitType = data.type === "permit2" ? "permit2" : "receiveWithAuthorization";
     return {
       originChainId,
       depositId,
       requestId,
       signature,
+      permitType,
       permit,
       inputAmount,
       baseDepositData,
@@ -99,17 +108,38 @@ function normalizeSignature(signature: string): string {
 }
 
 /**
+ * Authorizer/signer address for logging or lookup. ReceiveWithAuthorization: permit.message.from; Permit2: baseDepositData.depositor.
+ */
+export function getGaslessAuthorizerAddress(depositMessage: GaslessDepositMessage): string {
+  if (depositMessage.permitType === "permit2") {
+    return depositMessage.baseDepositData.depositor;
+  }
+  return (depositMessage.permit as ReceiveWithAuthorization).message.from;
+}
+
+/**
+ * Permit nonce for lookup/dedup. Both permit types have message.nonce.
+ */
+export function getGaslessPermitNonce(depositMessage: GaslessDepositMessage): string {
+  return depositMessage.permit.message.nonce;
+}
+
+/**
  * Returns a depositWithAuthorization AugmentedTransaction for a restructured gasless deposit.
- * All deposit-with-authorization wiring (params, contract-shaped deposit data, args) is done here.
- * Caller can add message/mrkdwn when submitting (e.g. for logging).
+ * Only supports ReceiveWithAuthorization; throws for Permit2 (use a Permit2-specific builder when needed).
  */
 export function buildGaslessDepositTx(
   depositMessage: GaslessDepositMessage,
   spokePoolPeripheryContract: Contract
 ): AugmentedTransaction {
+  if (depositMessage.permitType !== "receiveWithAuthorization") {
+    throw new Error(
+      "buildGaslessDepositTx only supports ReceiveWithAuthorization; use a Permit2 builder for permit2 type."
+    );
+  }
   const { permit, inputAmount, baseDepositData, submissionFees, spokePool, nonce, signature, integratorId } =
     depositMessage;
-  const { from: signatureOwner, validBefore, validAfter } = permit.message;
+  const { from: signatureOwner, validBefore, validAfter } = (permit as ReceiveWithAuthorization).message;
   const witnessData: BridgeWitnessData = { inputAmount, baseDepositData, submissionFees, spokePool, nonce };
   const depositData = toContractDepositData(witnessData);
   const args = [
