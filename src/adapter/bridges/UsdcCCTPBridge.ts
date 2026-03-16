@@ -26,6 +26,7 @@ import {
 import { CCTP_NO_DOMAIN } from "@across-protocol/constants";
 import { CCTP_MAX_SEND_AMOUNT } from "../../common";
 import { SortableEvent } from "../../interfaces";
+import { PendingBridgeAdapterName } from "../../rebalancer/utils/PendingBridgeRedis";
 
 export class UsdcCCTPBridge extends BaseBridgeAdapter {
   private IS_CCTP_V2 = false;
@@ -147,5 +148,9 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
 
   async _getCctpV2DepositForBurnMaxFee(amount: BigNumber): Promise<{ maxFee: BigNumber; finalityThreshold: number }> {
     return getV2DepositForBurnMaxFee(this.l1UsdcTokenAddress, this.hubChainId, this.l2chainId, amount);
+  }
+
+  override getRebalancerPendingBridgeAdapterName(): PendingBridgeAdapterName {
+    return "cctp";
   }
 }
