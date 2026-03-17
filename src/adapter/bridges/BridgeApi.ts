@@ -18,6 +18,7 @@ import {
   toAddressType,
   getTokenInfo,
   delay,
+  isDefined,
 } from "../../utils";
 import { TransferTokenParams } from "../utils";
 import ERC20_ABI from "../../common/abi/MinimalERC20.json";
@@ -70,7 +71,6 @@ export class BridgeApi extends BaseBridgeAdapter {
     l1Signer: Signer,
     l2SignerOrProvider: Signer | Provider,
     l1Token: EvmAddress,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     readonly logger: winston.Logger
   ) {
     // Bridge API is only valid on mainnet.
@@ -82,9 +82,14 @@ export class BridgeApi extends BaseBridgeAdapter {
 
     // We need to fetch some API configuration details from environment.
     const { BRIDGE_API_BASE, BRIDGE_API_KEY, BRIDGE_CUSTOMER_ID } = process.env;
-    this.bridgeApiBase = String(BRIDGE_API_BASE);
-    this.bridgeApiKey = String(BRIDGE_API_KEY);
-    this.customerId = String(BRIDGE_CUSTOMER_ID);
+
+    assert(isDefined(BRIDGE_API_BASE), "BRIDGE_API_BASE must be set in the environment");
+    assert(isDefined(BRIDGE_API_KEY), "BRIDGE_API_KEY must be set in the environment");
+    assert(isDefined(BRIDGE_CUSTOMER_ID), "BRIDGE_CUSTOMER_ID must be set in the environment");
+
+    this.bridgeApiBase = BRIDGE_API_BASE;
+    this.bridgeApiKey = BRIDGE_API_KEY;
+    this.customerId = BRIDGE_CUSTOMER_ID;
 
     this.l1TokenInfo = getTokenInfo(l1Token, this.hubChainId);
   }

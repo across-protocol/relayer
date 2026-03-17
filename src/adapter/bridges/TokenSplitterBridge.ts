@@ -25,7 +25,6 @@ export class TokenSplitterBridge extends BaseBridgeAdapter {
     l1Signer: Signer,
     l2SignerOrProvider: Signer | Provider,
     protected l1Token: EvmAddress,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     logger: winston.Logger
   ) {
     const [bridge1Constructor, bridge2Constructor] = TOKEN_SPLITTER_BRIDGES[l2chainId][l1Token.toNative()];
