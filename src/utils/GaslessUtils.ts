@@ -54,6 +54,23 @@ export function isAllowedGaslessPair(
 }
 
 /**
+ * Normalizes integratorId from API: accepts "0x0000" or { string: "0x0000" }. Returns string or undefined if absent/invalid.
+ */
+export function normalizeIntegratorId(integratorId: unknown): string | undefined {
+  if (integratorId === null || integratorId === undefined) {
+    return undefined;
+  }
+  if (typeof integratorId === "string") {
+    return integratorId;
+  }
+  if (typeof integratorId === "object" && integratorId !== null && "string" in integratorId) {
+    const value = (integratorId as { string: unknown }).string;
+    return typeof value === "string" ? value : undefined;
+  }
+  return undefined;
+}
+
+/**
  * Appends `[delimiter][integratorId]` to encoded calldata.
  * integratorId must be a hex string representing exactly 2 bytes (e.g. "0xABCD").
  */
@@ -75,10 +92,11 @@ export function restructureGaslessDeposits(depositMessages: APIGaslessDepositRes
   return depositMessages.map((msg) => {
     const { swapTx, requestId, signature } = msg;
     const { chainId: originChainId, data } = swapTx;
-    const { depositId, permit, witness, integratorId } = data;
+    const { depositId, permit, witness } = data;
     const witnessData = witness.BridgeWitness.data;
     const { inputAmount, baseDepositData, submissionFees, spokePool, nonce } = witnessData;
     const permitType = data.type === "permit2" ? "permit2" : "receiveWithAuthorization";
+    const integratorId = normalizeIntegratorId(data.integratorId);
     return {
       originChainId,
       depositId,
