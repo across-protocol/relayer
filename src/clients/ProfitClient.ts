@@ -176,7 +176,7 @@ export class ProfitClient {
     const dstSymbol = this.getTokenSymbol(outputToken, destinationChainId);
     const effectiveSrcSymbol = this._getRemappedTokenSymbol(srcSymbol) ?? srcSymbol;
     const effectiveDstSymbol =
-      dstSymbol !== "UNKNOWN" ? (this._getRemappedTokenSymbol(dstSymbol) ?? dstSymbol) : undefined;
+      dstSymbol !== "UNKNOWN" ? this._getRemappedTokenSymbol(dstSymbol) ?? dstSymbol : undefined;
 
     const routeKey = effectiveDstSymbol
       ? `RELAYER_GAS_MULTIPLIER_${effectiveSrcSymbol}_${effectiveDstSymbol}_${destinationChainId}`
@@ -187,10 +187,7 @@ export class ProfitClient {
     const envVal = process.env[routeKey] ?? process.env[tokenKey] ?? process.env[chainKey];
     if (isDefined(envVal)) {
       const override = toBNWei(envVal);
-      assert(
-        override.gte(bnZero) && override.lte(toBNWei(4)),
-        `Gas multiplier override out of range (${override})`
-      );
+      assert(override.gte(bnZero) && override.lte(toBNWei(4)), `Gas multiplier override out of range (${override})`);
       return override;
     }
 
