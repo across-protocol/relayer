@@ -292,7 +292,7 @@ export class Relayer {
     if (
       !isDefined(l1Token) ||
       (relayerTokens.length > 0 && !relayerTokens.some((token) => token.eq(l1Token))) ||
-      swapSupported
+      !swapSupported
     ) {
       this.logger.debug({
         at: "Relayer::filterDeposit",
