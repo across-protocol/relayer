@@ -14,14 +14,39 @@ import {
   TOKEN_SYMBOLS_MAP,
   paginatedEventQuery,
   ZERO_ADDRESS,
+  getTimestampForBlock,
+  groupObjectCountsByProp,
+  toAddressType,
 } from "../../utils";
 import { TransferTokenParams, processEvent } from "../utils";
 import ERC20_ABI from "../../common/abi/MinimalERC20.json";
-import axios from "axios";
+import axios, { AxiosHeaders } from "axios";
 
 export const BRIDGE_API_MINIMUMS: { [l2ChainId: number]: BigNumber } = {
   [CHAIN_IDs.MAINNET]: toBN(1_000_000), // 1 USDC
   [CHAIN_IDs.TEMPO]: toBN(1_000_000), // 1 USDC
+};
+
+export type BridgeResponse = {
+  state: string;
+  created_at: string;
+  updated_at: string;
+  destination: {
+    payment_rail: string;
+    currency: string;
+    to_address: string;    
+  };
+  source_deposit_instructions: {
+    payment_rail: string;
+    currency: string;
+    to_address: string;
+    from_address: string;  
+  };
+  receipt: {
+    initial_amount: string;
+    final_amount: string;
+    source_tx_hash: string;
+  } | undefined;
 };
 
 // We need to instruct this bridge what tokens we expect to receive on L2, since the bridge
@@ -42,7 +67,7 @@ export class BridgeApi extends BaseBridgeAdapter {
     l2SignerOrProvider: Signer | Provider,
     l1Token: EvmAddress,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    _logger: winston.Logger
+    readonly logger: winston.Logger
   ) {
     // Bridge API is only valid on mainnet.
     assert(hubChainId === CHAIN_IDs.MAINNET);
@@ -70,11 +95,12 @@ export class BridgeApi extends BaseBridgeAdapter {
       this.getL2Bridge().address === l2Token.toNative(),
       `Attempting to bridge unsupported l2 token ${l2Token.toNative()}`
     );
+    assert(false);
     // If amount is less than the network minimums, then throw.
     if (amount.lt(BRIDGE_API_MINIMUMS[this.l2chainId])) {
       throw new Error(`Cannot bridge to ${getNetworkName(this.l2chainId)} due to invalid amount ${amount}`);
     }
-    const transferRouteAddress = await this.getTransferRouteEscrowAddress(toAddress);
+    const transferRouteAddress = await this.createTransferRouteEscrowAddress(toAddress);
     return Promise.resolve({
       contract: this.getL1Bridge(),
       method: "transfer",
@@ -88,48 +114,46 @@ export class BridgeApi extends BaseBridgeAdapter {
     toAddress: Address,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
-    const expectedRecipientAddress = await this.getTransferRouteEscrowAddress(toAddress);
-    const l1TransferEvents = await paginatedEventQuery(
-      this.getL1Bridge(),
-      this.getL1Bridge().filters.Transfer(fromAddress.toNative(), expectedRecipientAddress),
-      eventConfig
-    );
+    const fromTimestamp = await getTimestampForBlock(this.l1Signer.provider, eventConfig.from);
+    const { data: pendingTransfers } = await this._getAllTransfersInRange(toAddress, fromTimestamp * 1000);
+    
+    const statusesGrouped = groupObjectCountsByProp(pendingTransfers, (pendingTransfer) => pendingTransfer.state);
+    this.logger.debug({
+      at: "BridgeApi#queryL1BridgeInitiationEvents",
+      message: "Pending transfer statuses",
+      statusesGrouped,
+    });
+
+    const pendingRebalances = pendingTransfers.filter((pendingTransfer) => {
+	    const destinationAddress = toAddressType(pendingTransfer.destination.to_address, this.l2chainId);
+	    return destinationAddress.eq(toAddress) && pendingTransfer.state !== "awaiting_funds" && pendingTransfer.state !== "payment_processed";}).map(({ receipt }) => {
+      return {
+	txnRef: receipt.source_tx_hash,
+	logIndex: 0, // logIndex and txnIndex are irrelevant since the bridge transaction is a `transfer`.
+	txnIndex: 0,
+	amount: toBN(receipt.final_amount),
+      };
+    });
     return {
-      [this.getL2Bridge().address]: l1TransferEvents.map((e) => processEvent(e, "value")),
+      [this.getL2Bridge().address]: pendingRebalances,
     };
   }
 
   async queryL2BridgeFinalizationEvents(
     _l1Token: EvmAddress,
     _fromAddress: EvmAddress,
-    toAddress: Address,
-    eventConfig: EventSearchConfig
+    _toAddress: Address,
+    _eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
-    // @todo: Is the destination token "minted?"
-    const l2TransferEvents = await paginatedEventQuery(
-      this.getL2Bridge(),
-      this.getL2Bridge().filters.Transfer(ZERO_ADDRESS, toAddress.toNative()),
-      eventConfig
-    );
-    return {
-      [this.getL2Bridge().address]: l2TransferEvents.map((e) => processEvent(e, "value")),
-    };
+    return Promise.resolve({});
   }
 
-  async getTransferRouteEscrowAddress(toAddress: Address): Promise<string> {
-    // @todo based on the structure of data returned by the bridge API.
-    // should we make a new address on each transfer or reuse the same address?
-    await this._createTransferRouteEscrowAddress(toAddress);
-    return toAddress.toNative();
+  private async _getAllTransfersInRange(toAddress: Address, fromTimestampMs: number) {
+    const headers = this._defaultHeaders();
+    return this._get<BridgeResponse>(`v0/transfers?updated_after_ms=${fromTimestampMs}`, headers);
   }
 
-  async _createTransferRouteEscrowAddress(toAddress: Address) {
-    const idempotencyKey = String(Date.now()); // @todo
-    const headers = {
-      "Api-Key": `${this.bridgeApiKey}`,
-      "Idempotency-Key": idempotencyKey,
-      "Content-Type": "application/json",
-    };
+  private async createTransferRouteEscrowAddress(toAddress: Address) {
     const data = {
       on_behalf_of: `${this.customerId}`,
       source: {
@@ -137,8 +161,8 @@ export class BridgeApi extends BaseBridgeAdapter {
         currency: "usdc",
       },
       destination: {
-        payment_rail: "tempo", // @todo
-        currency: "usdc", // @todo
+        payment_rail: "tempo",
+        currency: "path_usd",
         to_address: toAddress.toNative(),
       },
       return_instructions: {
@@ -149,7 +173,62 @@ export class BridgeApi extends BaseBridgeAdapter {
         flexible_amount: true,
       },
     };
-    const { data: transferRequest } = await axios.post(`${this.bridgeApiBase}/v0/transfers`, data, { headers });
-    // @todo Extract the source address.
+    const idempotencyKey = String(Date.now());
+    const headers = {
+      ...this._defaultHeaders(),
+      "Idempotency-Key": idempotencyKey,
+    };
+    const transferRequestData = await this._post<BridgeResponse>("v0/transfers", data, headers as unknown as AxiosHeaders);
+    return transferRequestData.source_deposit_instructions.to_address;
+  }
+
+  private _defaultHeaders() {
+    return {
+      "Api-Key": `${this.bridgeApiKey}`,
+      "Content-Type": "application/json",
+    } as unknown as AxiosHeaders;
+  }
+
+  private async _get<T>(endpoint: string, headers: AxiosHeaders, nRetries = 0) {
+    try {
+      const response = await axios.get<T>(`${this.bridgeApiBase}/${endpoint}`, { headers });
+      return response.data;
+    } catch (e) {
+      this.logger.debug({
+        at: "BridgeApi#_get",
+        message: "Failed to query bridge API",
+        endpoint,
+	e,
+      });
+      console.log(e);
+      if (nRetries > 0) {
+        return this._get<T>(endpoint, headers, --nRetries);
+      }
+      throw e;
+    }
+  }
+
+  private async _post<T>(
+    endpoint: string,
+    data: Record<string, unknown>,
+    headers: AxiosHeaders,
+    nRetries = 0
+  ) {
+    try {
+      const response = await axios.post<T>(`${this.bridgeApiBase}/${endpoint}`, data, { headers });
+      return response.data;
+    } catch (e) {
+      this.logger.debug({
+        at: "BridgeApi#_post",
+        message: "Failed to post to bridge API",
+        endpoint,
+        data,
+	e,
+      });
+      if (nRetries > 0) {
+        return this._post<T>(endpoint, data, headers, --nRetries);
+      }
+      throw e;
+    }
   }
 }
