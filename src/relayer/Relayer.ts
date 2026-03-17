@@ -283,7 +283,17 @@ export class Relayer {
     // Skip any L1 tokens that are not specified in the config.
     // If relayerTokens is an empty list, we'll assume that all tokens are supported.
     const l1Token = this.clients.inventoryClient.getL1TokenAddress(inputToken, originChainId);
-    if (!isDefined(l1Token) || (relayerTokens.length > 0 && !relayerTokens.some((token) => token.eq(l1Token)))) {
+    const swapSupported = this.clients.inventoryClient.isSwapSupported(
+      inputToken,
+      deposit.outputToken,
+      originChainId,
+      destinationChainId
+    );
+    if (
+      !isDefined(l1Token) ||
+      (relayerTokens.length > 0 && !relayerTokens.some((token) => token.eq(l1Token))) ||
+      swapSupported
+    ) {
       this.logger.debug({
         at: "Relayer::filterDeposit",
         message: "Skipping deposit for unsupported input token.",
