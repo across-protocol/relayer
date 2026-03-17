@@ -413,10 +413,10 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       pendingRebalances[binanceDepositNetwork] ??= {};
       pendingRebalances[binanceDepositNetwork][sourceToken] = (
         pendingRebalances[binanceDepositNetwork][sourceToken] ?? bnZero
-      ).add(convertedAmount);
+      ).sub(convertedAmount);
       this.logger.debug({
         at: "BinanceStablecoinSwapAdapter.getPendingRebalances",
-        message: `Subtracting ${convertedAmount.toString()} ${sourceToken} from Binance deposit network ${sourceChain} for intermediate bridge`,
+        message: `Subtracting ${convertedAmount.toString()} ${sourceToken} from Binance deposit network ${binanceDepositNetwork} for intermediate bridge`,
       });
     }
 
