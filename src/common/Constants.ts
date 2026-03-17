@@ -41,6 +41,8 @@ import {
   BinanceCEXNativeBridge,
   SolanaUsdcCCTPBridge,
   OFTWethBridge,
+  BridgeApi,
+  TokenSplitterBridge,
 } from "../adapter/bridges";
 import {
   BaseL2BridgeAdapter,
@@ -385,7 +387,7 @@ export const TOKEN_APPROVALS_TO_FIRST_ZERO: Record<number, string[]> = {
 };
 
 // Type alias for a function which takes in arbitrary arguments and outputs a BaseBridgeAdapter class.
-type L1BridgeConstructor<T extends BaseBridgeAdapter> = new (
+export type L1BridgeConstructor<T extends BaseBridgeAdapter> = new (
   l2chainId: number,
   hubChainId: number,
   l1Signer: Signer,
@@ -522,7 +524,7 @@ export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<Ba
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: OpStackUSDCBridge,
   },
   [CHAIN_IDs.TEMPO]: {
-    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: OFTBridge,
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: TokenSplitterBridge,
   },
   [CHAIN_IDs.UNICHAIN]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcCCTPBridge,
@@ -587,6 +589,19 @@ export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<Ba
   [CHAIN_IDs.UNICHAIN_SEPOLIA]: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.SEPOLIA]]: OpStackWethBridge,
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.SEPOLIA]]: UsdcCCTPBridge,
+  },
+};
+
+// Serves as a utility for fetching a set of bridges to use when wanting to bridge from a single L1 token to two different types of L2 tokens.
+// @dev Ordering of the L1/L2 bridges DOES matter. The first entry must be the "canonical" route, e.g. USDC via CCTP or the canonical USDC bridge if
+// no CCTP exists. The second bridge must be the alternate route. This is so the TokenSplitterBridge can select which of the two configured bridges to
+// use based solely on the desired L1/L2 token.
+export const TOKEN_SPLITTER_BRIDGES: Record<
+  number,
+  Record<string, [L1BridgeConstructor<BaseBridgeAdapter>, L1BridgeConstructor<BaseBridgeAdapter>]>
+> = {
+  [CHAIN_IDs.TEMPO]: {
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: [OFTBridge, BridgeApi],
   },
 };
 
