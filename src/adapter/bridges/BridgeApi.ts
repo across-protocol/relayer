@@ -221,7 +221,7 @@ export class BridgeApi extends BaseBridgeAdapter {
         e,
       });
       if (nRetries > 0) {
-	await delay(1);
+        await delay(1);
         return this._get<T>(endpoint, headers, --nRetries);
       }
       throw e;
@@ -241,7 +241,7 @@ export class BridgeApi extends BaseBridgeAdapter {
         e,
       });
       if (nRetries > 0) {
-	await delay(1);
+        await delay(1);
         return this._post<T>(endpoint, data, headers, --nRetries);
       }
       throw e;
