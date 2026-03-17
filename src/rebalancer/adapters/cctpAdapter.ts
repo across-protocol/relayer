@@ -88,8 +88,6 @@ export class CctpAdapter extends BaseAdapter {
     );
     const cloid = this.getCloidForBridge(rebalanceRoute, txnHash);
     await this._redisCreateOrder(cloid, STATUS.PENDING_BRIDGE_PRE_DEPOSIT, rebalanceRoute, amountToReceive);
-    // delete cached pending rebalances now that we know state has changed:
-    this.pendingRebalances = undefined;
     return amountToReceive;
   }
 
@@ -130,8 +128,6 @@ export class CctpAdapter extends BaseAdapter {
         message: `Order cloid ${cloid} has been finalized`,
       });
       await this._redisDeleteOrder(cloid, STATUS.PENDING_BRIDGE_PRE_DEPOSIT);
-      // delete cached pending rebalances now that we know state has changed:
-      this.pendingRebalances = undefined;
     }
   }
 
@@ -142,11 +138,6 @@ export class CctpAdapter extends BaseAdapter {
 
   async getPendingRebalances(): Promise<{ [chainId: number]: { [token: string]: BigNumber } }> {
     this._assertInitialized();
-    // Within the same serverless run, we don't want this client to update more than once every 5 minutes.
-    const timeSinceLastUpdate = Date.now() - this.lastUpdateTimestamp;
-    if (this.pendingRebalances && timeSinceLastUpdate < 5 * 60 * 1000) {
-      return this.pendingRebalances;
-    }
     const pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
 
     const pendingBridges = await this._redisGetPendingBridgesPreDeposit();
@@ -192,8 +183,6 @@ export class CctpAdapter extends BaseAdapter {
       });
     }
 
-    this.pendingRebalances = pendingRebalances;
-    this.lastUpdateTimestamp = Date.now();
     return pendingRebalances;
   }
 
