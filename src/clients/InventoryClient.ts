@@ -671,7 +671,7 @@ export class InventoryClient {
     // If the deposit forces origin chain repayment but the origin chain is one we can easily rebalance inventory from,
     // then don't ignore this deposit based on perceived over-allocation. For example, the hub chain and chains connected
     // to the user's Binance API are easy to move inventory from so we should never skip filling these deposits.
-    if (forceOriginRepayment && repaymentChainCanBeQuicklyRebalanced(originChainId, inputToken, this.hubPoolClient)) {
+    if (forceOriginRepayment || repaymentChainCanBeQuicklyRebalanced(originChainId, inputToken, this.hubPoolClient)) {
       return [originChainId];
     }
 
