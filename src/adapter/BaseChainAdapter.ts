@@ -39,7 +39,6 @@ import {
   getSvmProvider,
   submitTransaction,
   getTokenInfo,
-  TOKEN_SYMBOLS_MAP,
   ZERO_ADDRESS,
 } from "../utils";
 import { AugmentedTransaction, TransactionClient } from "../clients/TransactionClient";
@@ -580,7 +579,7 @@ export class BaseChainAdapter {
     const tokenInfo = getTokenInfo(l2Token, chainId);
     // @todo Fix w/ equivalence remapping?
     if (tokenInfo.symbol === "pathUSD") {
-      return EvmAddress.from(ZERO_ADDRESS/*TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]*/);
+      return EvmAddress.from(ZERO_ADDRESS /* TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]*/);
     }
     return getL1TokenAddress(l2Token, chainId);
   }
