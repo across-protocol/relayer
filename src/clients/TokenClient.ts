@@ -261,7 +261,7 @@ export class TokenClient {
 
         // If the HubPool token is USDC then it might map to multiple tokens on the destination chain.
         if (symbol === "USDC") {
-          ["USDC.e", "USDbC", "USDzC"]
+          ["USDC.e", "USDbC", "USDzC", "pathUSD"]
             .map((symbol) => TOKEN_SYMBOLS_MAP[symbol]?.addresses[chainId])
             .filter(isDefined)
             .forEach((address) => tokenAddrs.push(address));
