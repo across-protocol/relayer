@@ -17,6 +17,7 @@ import {
   groupObjectCountsByProp,
   toAddressType,
   getTokenInfo,
+  delay,
 } from "../../utils";
 import { TransferTokenParams } from "../utils";
 import ERC20_ABI from "../../common/abi/MinimalERC20.json";
@@ -208,7 +209,7 @@ export class BridgeApi extends BaseBridgeAdapter {
     } as unknown as AxiosHeaders;
   }
 
-  private async _get<T>(endpoint: string, headers: AxiosHeaders, nRetries = 0) {
+  private async _get<T>(endpoint: string, headers: AxiosHeaders, nRetries = 2) {
     try {
       const response = await axios.get<T>(`${this.bridgeApiBase}/${endpoint}`, { headers });
       return response.data;
@@ -220,13 +221,14 @@ export class BridgeApi extends BaseBridgeAdapter {
         e,
       });
       if (nRetries > 0) {
+	await delay(1);
         return this._get<T>(endpoint, headers, --nRetries);
       }
       throw e;
     }
   }
 
-  private async _post<T>(endpoint: string, data: Record<string, unknown>, headers: AxiosHeaders, nRetries = 0) {
+  private async _post<T>(endpoint: string, data: Record<string, unknown>, headers: AxiosHeaders, nRetries = 2) {
     try {
       const response = await axios.post<T>(`${this.bridgeApiBase}/${endpoint}`, data, { headers });
       return response.data;
@@ -239,6 +241,7 @@ export class BridgeApi extends BaseBridgeAdapter {
         e,
       });
       if (nRetries > 0) {
+	await delay(1);
         return this._post<T>(endpoint, data, headers, --nRetries);
       }
       throw e;
