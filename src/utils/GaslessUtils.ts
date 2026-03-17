@@ -4,7 +4,9 @@ import {
   GaslessDepositMessage,
   DepositWithBlock,
   ReceiveWithAuthorization,
+  Permit2Permit,
 } from "../interfaces";
+import type { AllowedPeggedPairs } from "../gasless/GaslessRelayerConfig";
 import {
   Address,
   ConvertDecimals,
@@ -12,6 +14,7 @@ import {
   getL1TokenAddress,
   getTokenInfo,
   toBytes32,
+  toAddressType,
   CHAIN_IDs,
   MAX_UINT_VAL,
 } from "../utils";
@@ -19,6 +22,36 @@ import { AugmentedTransaction } from "../clients";
 import { Contract, BigNumber, ethers } from "ethers";
 
 const DOMAIN_CALLDATA_DELIMITER = "0x1dc0de";
+
+/**
+ * Returns true if the input/output token pair is allowed for gasless: either same L1 token,
+ * or (inputSymbol, outputSymbol) is in allowedPeggedPairs (e.g. { "USDT": ["USDC"] }).
+ */
+export function isAllowedGaslessPair(
+  inputToken: Address | string,
+  outputToken: Address | string,
+  originChainId: number,
+  destinationChainId: number,
+  allowedPeggedPairs: AllowedPeggedPairs = {}
+): boolean {
+  const inputAddr = typeof inputToken === "string" ? toAddressType(inputToken, originChainId) : inputToken;
+  const outputAddr = typeof outputToken === "string" ? toAddressType(outputToken, destinationChainId) : outputToken;
+  const inputL1 = getL1TokenAddress(inputAddr, originChainId);
+  const outputL1 = getL1TokenAddress(outputAddr, destinationChainId);
+  if (inputL1.eq(outputL1)) {
+    return true;
+  }
+  if (Object.keys(allowedPeggedPairs).length === 0) {
+    return false;
+  }
+  try {
+    const inputSymbol = getTokenInfo(inputL1, CHAIN_IDs.MAINNET).symbol;
+    const outputSymbol = getTokenInfo(outputL1, CHAIN_IDs.MAINNET).symbol;
+    return allowedPeggedPairs[inputSymbol]?.has(outputSymbol) ?? false;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Appends `[delimiter][integratorId]` to encoded calldata.
@@ -107,6 +140,60 @@ function normalizeSignature(signature: string): string {
   return hex;
 }
 
+function normalizeSignatureBytes(signature: string): string {
+  return signature.startsWith("0x") ? signature : `0x${signature}`;
+}
+
+/**
+ * Builds calldata for SpokePoolPeriphery.depositWithPermit2(signatureOwner, depositData, permit, signature).
+ * Uses witness data (same as depositWithAuthorization) and Permit2 permit message fields.
+ */
+export function buildPermit2GaslessDepositTx(
+  depositMessage: GaslessDepositMessage,
+  spokePoolPeripheryContract: Contract
+): AugmentedTransaction {
+  if (depositMessage.permitType !== "permit2") {
+    throw new Error("buildPermit2GaslessDepositTx requires permitType === 'permit2'");
+  }
+  const { permit, inputAmount, baseDepositData, submissionFees, spokePool, nonce, signature, integratorId } =
+    depositMessage;
+  const permit2 = permit as Permit2Permit;
+  const signatureOwner = baseDepositData.depositor;
+  const witnessData: BridgeWitnessData = { inputAmount, baseDepositData, submissionFees, spokePool, nonce };
+  const depositData = toContractDepositData(witnessData);
+  const permitStruct = {
+    permitted: {
+      token: permit2.message.permitted.token,
+      amount: BigNumber.from(permit2.message.permitted.amount),
+    },
+    nonce: BigNumber.from(permit2.message.nonce),
+    deadline: BigNumber.from(permit2.message.deadline),
+  };
+  const signatureBytes = normalizeSignatureBytes(signature);
+  const args = [signatureOwner, depositData, permitStruct, signatureBytes];
+
+  if (integratorId) {
+    const calldata = spokePoolPeripheryContract.interface.encodeFunctionData("depositWithPermit2", args);
+    const taggedCalldata = tagIntegratorId(calldata, integratorId);
+    return {
+      contract: spokePoolPeripheryContract,
+      chainId: depositMessage.originChainId,
+      method: "",
+      args: [taggedCalldata],
+      ensureConfirmation: true,
+    };
+  }
+
+  return {
+    contract: spokePoolPeripheryContract,
+    chainId: depositMessage.originChainId,
+    method: "depositWithPermit2",
+    args,
+    ensureConfirmation: true,
+    spray: depositMessage.originChainId === CHAIN_IDs.MAINNET,
+  };
+}
+
 /**
  * Authorizer/signer address for logging or lookup. ReceiveWithAuthorization: permit.message.from; Permit2: baseDepositData.depositor.
  */
@@ -125,18 +212,12 @@ export function getGaslessPermitNonce(depositMessage: GaslessDepositMessage): st
 }
 
 /**
- * Returns a depositWithAuthorization AugmentedTransaction for a restructured gasless deposit.
- * Only supports ReceiveWithAuthorization; throws for Permit2 (use a Permit2-specific builder when needed).
+ * Builds calldata for SpokePoolPeriphery.depositWithAuthorization(signatureOwner, depositData, validAfter, validBefore, signature).
  */
-export function buildGaslessDepositTx(
+export function buildReceiveWithAuthorizationGaslessDepositTx(
   depositMessage: GaslessDepositMessage,
   spokePoolPeripheryContract: Contract
 ): AugmentedTransaction {
-  if (depositMessage.permitType !== "receiveWithAuthorization") {
-    throw new Error(
-      "buildGaslessDepositTx only supports ReceiveWithAuthorization; use a Permit2 builder for permit2 type."
-    );
-  }
   const { permit, inputAmount, baseDepositData, submissionFees, spokePool, nonce, signature, integratorId } =
     depositMessage;
   const { from: signatureOwner, validBefore, validAfter } = (permit as ReceiveWithAuthorization).message;
@@ -173,6 +254,18 @@ export function buildGaslessDepositTx(
 }
 
 /**
+ * Returns a depositWithAuthorization or depositWithPermit2 AugmentedTransaction based on permitType.
+ */
+export function buildGaslessDepositTx(
+  depositMessage: GaslessDepositMessage,
+  spokePoolPeripheryContract: Contract
+): AugmentedTransaction {
+  return depositMessage.permitType === "permit2"
+    ? buildPermit2GaslessDepositTx(depositMessage, spokePoolPeripheryContract)
+    : buildReceiveWithAuthorizationGaslessDepositTx(depositMessage, spokePoolPeripheryContract);
+}
+
+/**
  * Returns a FillRelay transaction based on a restructured gasless deposit.
  */
 export function buildGaslessFillRelayTx(
@@ -194,6 +287,7 @@ export function buildGaslessFillRelayTx(
 /**
  * Simple validation function for deposit tokens & amounts.
  * @param allowRefundFlowTest When true, deposits with inputAmount < outputAmount and outputAmount === MAX_UINT_VAL are considered valid (for refund-flow testing).
+ * @param allowedPeggedPairs When provided, input/output pairs in this map (e.g. { "USDC": ["USDH"] }) are allowed in addition to same-L1 pairs.
  */
 export function validateDeposit(
   originChainId: number,
@@ -202,13 +296,10 @@ export function validateDeposit(
   destinationChainId: number,
   outputToken: Address,
   outputAmount: BigNumber,
-  allowRefundFlowTest = false
+  allowRefundFlowTest = false,
+  allowedPeggedPairs: AllowedPeggedPairs = {}
 ): boolean {
-  // Ensure that the input token is the same as the output token.
-  const inputTokenL1Address = getL1TokenAddress(inputToken, originChainId);
-  const outputTokenL1Address = getL1TokenAddress(outputToken, destinationChainId);
-  // If the input token is different from the output token, then keep the deposit as observed and do not submit a deposit.
-  if (!inputTokenL1Address.eq(outputTokenL1Address)) {
+  if (!isAllowedGaslessPair(inputToken, outputToken, originChainId, destinationChainId, allowedPeggedPairs)) {
     return false;
   }
 

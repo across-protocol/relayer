@@ -52,6 +52,7 @@ import {
   buildGaslessFillRelayTx,
   getGaslessAuthorizerAddress,
   getGaslessPermitNonce,
+  isAllowedGaslessPair,
   restructureGaslessDeposits,
   validateDeposit,
 } from "../utils/GaslessUtils";
@@ -366,18 +367,6 @@ export class GaslessRelayer {
     const defaultHandler = async (depositMessage: GaslessDepositMessage) => {
       const { originChainId, depositId, spokePool } = depositMessage;
       const { destinationChainId, inputToken, outputToken, inputAmount, outputAmount } = depositMessage.baseDepositData;
-      const authorizer = getGaslessAuthorizerAddress(depositMessage);
-      const nonce = getGaslessPermitNonce(depositMessage);
-
-      if (depositMessage.permitType === "permit2") {
-        this.logger.debug({
-          at: "GaslessRelayer#evaluateApiSignatures",
-          message: "Permit2 deposit skipped (only ReceiveWithAuthorization is processed for now)",
-          depositId,
-          originChainId,
-        });
-        return;
-      }
 
       const depositSet = this.observedDeposits[originChainId];
       const fillSet = this.observedFills[destinationChainId];
@@ -394,16 +383,23 @@ export class GaslessRelayer {
         // Mark the signature as observed.
         depositSet.add(depositKey);
 
-        // Ensure that the input token is the same as the output token.
+        // Ensure that the input/output token pair is allowed: same L1 token or in config allowedPeggedPairs.
         const inputTokenAddress = toAddressType(inputToken, originChainId);
         const inputTokenL1Address = getL1TokenAddress(inputTokenAddress, originChainId);
         const outputTokenAddress = toAddressType(outputToken, destinationChainId);
         const outputTokenL1Address = getL1TokenAddress(outputTokenAddress, destinationChainId);
-        // If the input token is different from the output token, then keep the deposit as observed and do not submit a deposit.
-        if (!inputTokenL1Address.eq(outputTokenL1Address)) {
+        const tokenPairAllowed = isAllowedGaslessPair(
+          inputTokenAddress,
+          outputTokenAddress,
+          originChainId,
+          destinationChainId,
+          this.config.allowedPeggedPairs
+        );
+        if (!tokenPairAllowed) {
           this.logger.debug({
             at: "GaslessRelayer#evaluateApiSignatures",
-            message: "Deposit input token is different from deposit output token. Skipping deposit.",
+            message:
+              "Deposit input token is different from deposit output token and not in allowedPeggedPairs. Skipping deposit.",
             depositId,
             depositKey,
             inputToken: inputTokenL1Address.toNative(),
@@ -456,12 +452,7 @@ export class GaslessRelayer {
             depositKey,
           });
 
-          const associatedDeposit = await this._findDeposit(
-            originChainId,
-            EvmAddress.from(inputToken),
-            authorizer,
-            nonce
-          );
+          const associatedDeposit = await this._findDeposit(depositMessage);
           // If the deposit fails, and if we did not see the deposit mined, then mark the signature as not observed so that we can retry.
           if (!isDefined(associatedDeposit)) {
             depositSet.delete(depositKey);
@@ -569,16 +560,6 @@ export class GaslessRelayer {
       const authorizer = getGaslessAuthorizerAddress(depositMessage);
       const nonce = getGaslessPermitNonce(depositMessage);
 
-      if (depositMessage.permitType === "permit2") {
-        this.logger.debug({
-          at: "GaslessRelayer#evaluateApiSignatures",
-          message: "Permit2 deposit skipped (experimental handler only supports ReceiveWithAuthorization)",
-          depositId: depositMessage.depositId,
-          originChainId,
-        });
-        return;
-      }
-
       const depositId = toBN(depositMessage.depositId);
       const inputToken = toAddressType(baseDepositData.inputToken, originChainId);
       const outputToken = toAddressType(baseDepositData.outputToken, destinationChainId);
@@ -642,7 +623,8 @@ export class GaslessRelayer {
               destinationChainId,
               outputToken,
               outputAmount,
-              this.config.refundFlowTestEnabled
+              this.config.refundFlowTestEnabled,
+              this.config.allowedPeggedPairs
             );
             if (!valid) {
               log("warn", `Rejected malformed deposit destined for ${origin}.`);
@@ -664,8 +646,7 @@ export class GaslessRelayer {
             }
 
             if (!isCctpDeposit) {
-              deposit ??= await this._findDeposit(originChainId, inputToken, authorizer, nonce);
-
+              deposit ??= await this._findDeposit(depositMessage);
               if (isDefined(deposit)) {
                 setState(MessageState.FILL_PENDING);
                 break;
@@ -830,10 +811,17 @@ export class GaslessRelayer {
       return null;
     }
     assert(inputAmountInOutputDecimals.gte(outputAmount), "Cannot fill deposit with outputAmount > inputAmount");
-    // We should also never fill a deposit with mismatching input/output tokens.
-    const inputTokenL1Address = getL1TokenAddress(inputToken, originChainId);
-    const outputTokenL1Address = getL1TokenAddress(outputToken, destinationChainId);
-    assert(inputTokenL1Address.eq(outputTokenL1Address), "Cannot fill deposit with mismatching input/output tokens.");
+    const tokenPairAllowed = isAllowedGaslessPair(
+      inputToken,
+      outputToken,
+      originChainId,
+      destinationChainId,
+      this.config.allowedPeggedPairs
+    );
+    assert(
+      tokenPairAllowed,
+      "Cannot fill deposit with mismatching input/output tokens (not same L1 or in allowedPeggedPairs)."
+    );
 
     const spokePool = this.spokePools[destinationChainId];
 
@@ -885,11 +873,9 @@ export class GaslessRelayer {
   }
 
   /*
-   * @notice Finds a deposit for an input deposit ID/origin chain ID. This should uniquely identify any origin chain deposit.
-   * @dev It is possible for there to be duplicate deposits when deposits are made with deterministic deposit IDs. This function will return all
-   * such deposits.
+   * @notice Finds a deposit via EIP-3009 AuthorizationUsed on the token, then extracts the deposit from the tx receipt.
    */
-  private async _findDeposit(
+  private async _findDepositByAuthorization(
     originChainId: number,
     inputToken: Address,
     authorizer: string,
@@ -925,6 +911,51 @@ export class GaslessRelayer {
     }
     assert(spentNonces.length === 1, "Same user cannot spend same nonce");
     return spentNonces[0].transactionHash;
+  }
+
+  /*
+   * @notice Finds the whole deposit event for a non-CCTP message: Permit2 by depositId on SpokePool, EIP-3009 by AuthorizationUsed then tx receipt.
+   */
+  private async _findDeposit(
+    depositMessage: GaslessDepositMessage
+  ): Promise<Omit<DepositWithBlock, "fromLiteChain" | "toLiteChain" | "quoteBlockNumber"> | undefined> {
+    const { originChainId, depositId, spokePool } = depositMessage;
+    assert(
+      !this._isCctpDeposit(originChainId, spokePool),
+      "_findDeposit must not be used for CCTP deposits; use _findAuthorizationUsed"
+    );
+
+    if (depositMessage.permitType === "permit2") {
+      return this._findDepositByDepositId(originChainId, depositId);
+    }
+
+    const inputToken = toAddressType(depositMessage.baseDepositData.inputToken, originChainId);
+    const authorizer = getGaslessAuthorizerAddress(depositMessage);
+    const nonce = getGaslessPermitNonce(depositMessage);
+
+    return this._findDepositByAuthorization(originChainId, inputToken, authorizer, nonce);
+  }
+
+  /*
+   * @notice Finds a deposit by depositId (and optional depositor) by querying SpokePool FundsDeposited events.
+   * @dev Used for Permit2 flow where there is no AuthorizationUsed on the token; the SpokePool still emits FundsDeposited when depositWithPermit2 is used.
+   */
+  private async _findDepositByDepositId(
+    originChainId: number,
+    depositId: string
+  ): Promise<Omit<DepositWithBlock, "fromLiteChain" | "toLiteChain" | "quoteBlockNumber"> | undefined> {
+    const provider = this.providersByChain[originChainId];
+    const originSpokePool = this.spokePools[originChainId].connect(provider);
+    const searchConfig = await this._getEventSearchConfig(originChainId);
+    const events = await paginatedEventQuery(
+      originSpokePool,
+      originSpokePool.filters.FundsDeposited(null, null, null, null, null, toBN(depositId)),
+      searchConfig
+    );
+    if (events.length === 0) {
+      return undefined;
+    }
+    return unpackDepositEvent(spreadEventWithBlockNumber(events[0]), originChainId);
   }
 
   /*
