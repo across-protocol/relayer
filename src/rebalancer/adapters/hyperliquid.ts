@@ -658,58 +658,34 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     this._assertInitialized();
     const pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
 
-    // For each order that is in the state of being bridged to HyperEVM, check if its bridged amount has arrived
-    // on HyperEVM yet, and if it has, then we should subtract its virtual balance from HyperEVM since that balance
-    // will soon be deposited into Hypercore and we don't want another client to withdraw it.
+    // If there are any rebalances that are currently in the state of being bridged to HyperEVM
+    // (to subsequently be deposited into Hypercore), then the bridge adapter's getPendingRebalances() method will show
+    // a virtual balance credit for the source token on the bridge destination chain (i.e. HyperEVM in this case).
+    // This credit plus this adapter's final destination chain credit (given to all pending orders) means that the
+    // total virtual balance credit added for this one order will be too high (the order amount will be double counted).
+    // Therefore, to counteract this double counting, we subtract each order's amount from the bridge destination
+    // chain's virtual balance (i.e. HyperEVM in this case).
     const pendingBridgeToHyperevm = await this._redisGetPendingBridgesPreDeposit();
-    if (pendingBridgeToHyperevm.length > 0) {
-      this.logger.debug({
-        at: "HyperliquidStablecoinSwapAdapter.getPendingRebalances",
-        message: `Pending bridge to Hyperevm cloids: ${pendingBridgeToHyperevm.join(", ")}`,
-      });
-    }
-    const [pendingCctpBridges, pendingOftBridges] = await Promise.all([
-      this.cctpAdapter.getPendingRebalances(),
-      this.oftAdapter.getPendingRebalances(),
-    ]);
-
-    // Get outstanding bridges to HyperEVM:
-    const unfinalizedBridgesToHyperevm: { [token: string]: BigNumber } = {};
-    unfinalizedBridgesToHyperevm["USDC"] = pendingCctpBridges[HYPEREVM]?.["USDC"] ?? bnZero;
-    unfinalizedBridgesToHyperevm["USDT"] = pendingOftBridges[HYPEREVM]?.["USDT"] ?? bnZero;
-
-    // Get all bridges sent to HyperEVM by this adapter that have not been deposited into HL yet:
-    const totalBridgesToHyperevm: { [token: string]: BigNumber } = {};
-    totalBridgesToHyperevm["USDC"] = bnZero;
-    totalBridgesToHyperevm["USDT"] = bnZero;
     for (const cloid of pendingBridgeToHyperevm) {
       const orderDetails = await this._redisGetOrderDetails(cloid);
-      const { sourceToken, sourceChain, amountToTransfer } = orderDetails;
+      const { sourceChain, sourceToken, amountToTransfer } = orderDetails;
       const amountConverter = this._getAmountConverter(
         sourceChain,
         this._getTokenInfo(sourceToken, sourceChain).address,
         HYPEREVM,
         this._getTokenInfo(sourceToken, HYPEREVM).address
       );
-      if (sourceToken === "USDC") {
-        totalBridgesToHyperevm["USDC"] = totalBridgesToHyperevm["USDC"].add(amountConverter(amountToTransfer));
-      } else if (sourceToken === "USDT") {
-        totalBridgesToHyperevm["USDT"] = totalBridgesToHyperevm["USDT"].add(amountConverter(amountToTransfer));
-      }
+      const convertedAmount = amountConverter(amountToTransfer);
+      pendingRebalances[HYPEREVM] ??= {};
+      pendingRebalances[HYPEREVM][sourceToken] = (pendingRebalances[HYPEREVM][sourceToken] ?? bnZero).sub(
+        convertedAmount
+      );
+      this.logger.debug({
+        at: "HyperliquidStablecoinSwapAdapter.getPendingRebalances",
+        message: `Subtracting ${convertedAmount.toString()} ${sourceToken} from HyperEVM for intermediate bridge`,
+      });
     }
 
-    // Finalized amount is the total amount sent to HyperEVM minus the unfinalized amount.
-    for (const token of Object.keys(totalBridgesToHyperevm)) {
-      const finalizedBridgedAmount = totalBridgesToHyperevm[token].sub(unfinalizedBridgesToHyperevm[token]);
-      if (finalizedBridgedAmount.gt(bnZero)) {
-        this.logger.debug({
-          at: "HyperliquidStablecoinSwapAdapter.getPendingRebalances",
-          message: `Subtracting ${finalizedBridgedAmount.toString()} ${token} from HyperEVM virtual balance for finalized bridges`,
-        });
-        pendingRebalances[HYPEREVM] ??= {};
-        pendingRebalances[HYPEREVM][token] = (pendingRebalances[HYPEREVM][token] ?? bnZero).sub(finalizedBridgedAmount);
-      }
-    }
     // For each pending withdrawal from Hypercore, check if it has finalized, and if it has, subtract its virtual balance from HyperEVM.
     const pendingWithdrawalsFromHypercore = await this._redisGetPendingWithdrawals();
     if (pendingWithdrawalsFromHypercore.length > 0) {
