@@ -290,8 +290,8 @@ export class Relayer {
       destinationChainId
     );
     if (
-      (!swapSupported && !isDefined(l1Token)) ||
-      (relayerTokens.length > 0 && !relayerTokens.some((token) => token.eq(l1Token)))
+      !swapSupported &&
+      (!isDefined(l1Token) || (relayerTokens.length > 0 && !relayerTokens.some((token) => token.eq(l1Token))))
     ) {
       this.logger.debug({
         at: "Relayer::filterDeposit",

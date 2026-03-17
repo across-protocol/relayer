@@ -557,6 +557,12 @@ export class InventoryClient {
    */
   getL1TokenAddress(l2Token: Address, chainId: number): EvmAddress | undefined {
     try {
+      // Add exception for USDC-like tokens which only exist on L2.
+      // @todo Add support for equivalence mappings.
+      const l2TokenInfo = getTokenInfo(l2Token, chainId);
+      if (["pathUSD"].includes(l2TokenInfo.symbol)) {
+        return EvmAddress.from(TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubPoolClient.chainId]);
+      }
       return getL1TokenAddress(l2Token, chainId);
     } catch {
       return undefined;
@@ -671,7 +677,7 @@ export class InventoryClient {
     // If the deposit forces origin chain repayment but the origin chain is one we can easily rebalance inventory from,
     // then don't ignore this deposit based on perceived over-allocation. For example, the hub chain and chains connected
     // to the user's Binance API are easy to move inventory from so we should never skip filling these deposits.
-    if (forceOriginRepayment || repaymentChainCanBeQuicklyRebalanced(originChainId, inputToken, this.hubPoolClient)) {
+    if (forceOriginRepayment && repaymentChainCanBeQuicklyRebalanced(originChainId, inputToken, this.hubPoolClient)) {
       return [originChainId];
     }
 
