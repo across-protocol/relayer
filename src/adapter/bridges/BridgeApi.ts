@@ -1,5 +1,6 @@
 import { Contract, Signer } from "ethers";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
+import { TokenInfo } from "../../interfaces";
 import {
   BigNumber,
   EventSearchConfig,
@@ -15,6 +16,7 @@ import {
   getTimestampForBlock,
   groupObjectCountsByProp,
   toAddressType,
+  getTokenInfo,
 } from "../../utils";
 import { TransferTokenParams } from "../utils";
 import ERC20_ABI from "../../common/abi/MinimalERC20.json";
@@ -59,6 +61,7 @@ export class BridgeApi extends BaseBridgeAdapter {
   protected bridgeApiBase: string;
   protected bridgeApiKey: string;
   protected customerId: string;
+  protected l1TokenInfo: TokenInfo;
 
   constructor(
     l2chainId: number,
@@ -81,6 +84,8 @@ export class BridgeApi extends BaseBridgeAdapter {
     this.bridgeApiBase = String(BRIDGE_API_BASE);
     this.bridgeApiKey = String(BRIDGE_API_KEY);
     this.customerId = String(BRIDGE_CUSTOMER_ID);
+
+    this.l1TokenInfo = getTokenInfo(l1Token, this.hubChainId);
   }
 
   async constructL1ToL2Txn(
@@ -137,7 +142,7 @@ export class BridgeApi extends BaseBridgeAdapter {
           txnRef: receipt.source_tx_hash,
           logIndex: 0, // logIndex and txnIndex are irrelevant since the bridge transaction is a `transfer`.
           txnIndex: 0,
-          amount: toBN(receipt.final_amount),
+          amount: toBN(Math.floor(Number(receipt.final_amount) * 10 ** this.l1TokenInfo.decimals)),
         };
       });
     return {
