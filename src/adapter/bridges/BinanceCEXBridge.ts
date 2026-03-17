@@ -20,6 +20,10 @@ import {
   mapAsync,
   BINANCE_NETWORKS,
   ethers,
+  filterAsync,
+  getBinanceDepositType,
+  BinanceTransactionType,
+  getBinanceWithdrawalType,
 } from "../../utils";
 import { BaseBridgeAdapter, BridgeTransactionDetails, BridgeEvents, BridgeEvent } from "./BaseBridgeAdapter";
 import ERC20_ABI from "../../common/abi/MinimalERC20.json";
@@ -102,10 +106,11 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
     // Fetch the deposit address from the binance API.
     const _depositHistory = await getBinanceDeposits(binanceApiClient, fromTimestamp);
 
-    // Only consider deposits which happened on L1.
-    const depositHistory = _depositHistory.filter(
-      (deposit) => deposit.network === BINANCE_NETWORKS[CHAIN_IDs.MAINNET] && deposit.coin === this.tokenSymbol
-    );
+    // Remove any binance deposits that are marked as related to a swap, or were not sent on L1.
+    const depositHistory = await filterAsync(_depositHistory, async (deposit) => {
+            const depositType = await getBinanceDepositType(deposit);
+            return deposit.network === BINANCE_NETWORKS[CHAIN_IDs.MAINNET] && deposit.coin === this.tokenSymbol &&depositType !== BinanceTransactionType.SWAP;      
+    });
 
     // FilterMap to remove all deposits which originated from another EOA.
     const { decimals: l1Decimals } = getTokenInfo(l1Token, this.hubChainId);
@@ -141,12 +146,12 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
     const binanceApiClient = await this.getBinanceClient();
     // Fetch the deposit address from the binance API.
     const _withdrawalHistory = await getBinanceWithdrawals(binanceApiClient, this.tokenSymbol, fromTimestamp);
-    // Filter withdrawals based on whether their destination network was BSC.
-    const withdrawalHistory = _withdrawalHistory.filter(
-      (withdrawal) =>
-        withdrawal.network === BINANCE_NETWORKS[CHAIN_IDs.BSC] &&
-        compareAddressesSimple(withdrawal.recipient, toAddress.toNative())
-    );
+    // Filter withdrawals based on whether their destination network was BSC and those associated with a swap rebalance.
+      const withdrawalHistory = await filterAsync(_withdrawalHistory, async (withdrawal) => {
+        const withdrawalType = await getBinanceWithdrawalType(withdrawal);
+        return withdrawal.network === BINANCE_NETWORKS[CHAIN_IDs.BSC] &&
+        compareAddressesSimple(withdrawal.recipient, toAddress.toNative()) && withdrawalType !== BinanceTransactionType.SWAP;
+      });    
     const { decimals: l1Decimals } = getTokenInfo(l1Token, this.hubChainId);
 
     return {
