@@ -29,27 +29,51 @@ export interface BridgeWitnessData {
   nonce: string;
 }
 
-/** Raw gasless API response: swapTx + signature + submittedAt + requestId (nested structure from API). */
+/** Permit2 EIP-712 permit (PermitWitnessTransferFrom) in API response. */
+export interface Permit2Permit {
+  types: Record<string, Array<{ name: string; type: string }>>;
+  domain: { name: string; chainId: number; verifyingContract: string };
+  primaryType: string;
+  message: {
+    permitted: { token: string; amount: string };
+    spender: string;
+    nonce: string;
+    deadline: number;
+    witness: {
+      inputAmount: string;
+      baseDepositData: BaseDepositData;
+      submissionFees: Fees;
+      spokePool: string;
+      nonce: string;
+    };
+  };
+}
+
+/**
+ * Raw gasless API response. Covers both ReceiveWithAuthorization and Permit2.
+ * - typedData: set for EIP-3009, null or absent for Permit2.
+ * - data.type: "permit2" for Permit2, any other string for ReceiveWithAuthorization.
+ * - data.permit: shape depends on data.type (ReceiveWithAuthorization vs Permit2Permit).
+ */
 export interface APIGaslessDepositResponse {
   swapTx: {
     ecosystem: string;
     chainId: number;
     to: string;
+    /** Present for EIP-3009 ReceiveWithAuthorization; null or absent for Permit2. */
     typedData?: {
-      // @TODO: Check with backend team if this will be removed or not
       TypedDataReceiveWithAuthorizationEIP712: TypedDataReceiveWithAuthorizationEIP712;
     };
     data: {
       type: string;
       depositId: string;
       witness: {
-        // @TODO: witness object can have BridgeWitness or BridgeAndSwapWitness. Add support for BridgeAndSwapWitness when we get a schema.
         BridgeWitness: {
           type: string;
           data: BridgeWitnessData;
         };
       };
-      permit: ReceiveWithAuthorization;
+      permit: ReceiveWithAuthorization | Permit2Permit;
       domainSeparator: string;
       integratorId?: string;
     };
@@ -111,8 +135,12 @@ export interface DepositWithAuthorizationParams {
   receiveWithAuthSignature: string;
 }
 
+/** Discriminant for which permit flow a gasless message uses. */
+export type GaslessPermitType = "receiveWithAuthorization" | "permit2";
+
 /**
  * Gasless deposit message (flattened). Use after restructureGaslessDeposits(apiResponse.deposits).
+ * Works for both ReceiveWithAuthorization and Permit2; use permitType to branch when building the tx.
  * witnessData is destructured so its fields are at top level for easier use.
  */
 export interface GaslessDepositMessage {
@@ -120,7 +148,8 @@ export interface GaslessDepositMessage {
   depositId: string;
   requestId: string;
   signature: string;
-  permit: ReceiveWithAuthorization;
+  permitType: GaslessPermitType;
+  permit: ReceiveWithAuthorization | Permit2Permit;
   /** Destructured from witnessData (BridgeWitnessData). */
   inputAmount: string;
   baseDepositData: BaseDepositData;
