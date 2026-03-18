@@ -557,6 +557,12 @@ export class InventoryClient {
    */
   getL1TokenAddress(l2Token: Address, chainId: number): EvmAddress | undefined {
     try {
+      // Add exception for USDC-like tokens which only exist on L2.
+      // @todo Add support for equivalence mappings.
+      const l2TokenInfo = getTokenInfo(l2Token, chainId);
+      if (["pathUSD"].includes(l2TokenInfo.symbol)) {
+        return EvmAddress.from(TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubPoolClient.chainId]);
+      }
       return getL1TokenAddress(l2Token, chainId);
     } catch {
       return undefined;
@@ -701,7 +707,7 @@ export class InventoryClient {
     // Consider any upcoming refunds. Convert all refunds to same precision as L1 token.
     const totalRefundsPerChain: { [chainId: number]: BigNumber } = {};
     for (const chainId of this.chainIdList) {
-      const repaymentToken = this.getRemoteTokenForL1Token(l1Token, chainId);
+      const repaymentToken = chainId === originChainId ? inputToken : this.getRemoteTokenForL1Token(l1Token, chainId);
       if (!repaymentToken) {
         continue;
       }
@@ -782,12 +788,14 @@ export class InventoryClient {
       assert(this._l1TokenEnabledForChain(l1Token, chainId), `Token ${l1Token} not enabled for chain ${chainId}`);
 
       // Destination chain:
-      const repaymentToken = this.getRemoteTokenForL1Token(l1Token, chainId);
+      let repaymentToken = this.getRemoteTokenForL1Token(l1Token, chainId);
       if (chainId !== originChainId) {
         assert(
           this.hubPoolClient.l2TokenHasPoolRebalanceRoute(repaymentToken, chainId),
           `Token ${repaymentToken} not enabled as PoolRebalanceRoute for chain ${chainId} for l1 token ${l1Token}`
         );
+      } else {
+        repaymentToken = inputToken;
       }
       const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(repaymentToken, chainId);
       const chainShortfall = sdkUtils.ConvertDecimals(
