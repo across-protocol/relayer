@@ -493,6 +493,10 @@ export const CONTRACT_ADDRESSES: {
     counterfactualDeposit: {
       address: "0xfb090c119c838CeD214F962F931d5fa38b111E46",
     },
+    sponsoredCCTPDstPeriphery: {
+      address: "0xd9dc78b969e9efb1e54b625c33a21aaf2509e6a1",
+      abi: SPONSORED_CCTP_DST_PERIPHERY_ABI,
+    },
   },
   [CHAIN_IDs.MODE]: {
     ovmStandardBridge: {
