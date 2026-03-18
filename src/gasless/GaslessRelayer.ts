@@ -194,10 +194,10 @@ export class GaslessRelayer {
     await this.updateObservedCctpDeposits(initialMessages);
 
     const unfilledDeposits = initialMessages.filter((depositMessage) => {
-      const { originChainId, depositId, permit, spokePool } = depositMessage;
-      const { destinationChainId } = depositMessage.baseDepositData;
+      const { originChainId, depositId, spokePool } = depositMessage;
+      const { destinationChainId, inputToken } = depositMessage.baseDepositData;
 
-      const depositKey = this._getDepositKey(permit.domain.verifyingContract, originChainId, depositId);
+      const depositKey = this._getDepositKey(inputToken, originChainId, depositId);
       const fillKey = this._getFilledRelayKey({ originChainId, depositId: toBN(depositId) });
       return (
         this.observedDeposits[originChainId]?.has(depositKey) &&
