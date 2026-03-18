@@ -2338,7 +2338,7 @@ export class Dataworker {
           blockNumberRanges,
           spokePoolClients,
           matchingRootBundle.blockNumber,
-          true // load data from Arweave for speed purposes
+          true // Load data from arweave when executing leaves for speed.
         );
 
         if (tree.getHexRoot() !== rootBundleRelay.relayerRefundRoot) {

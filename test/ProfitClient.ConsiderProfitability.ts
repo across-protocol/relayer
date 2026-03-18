@@ -590,6 +590,65 @@ describe("ProfitClient: Consider relay profit", () => {
     }
   });
 
+  it("Per-route gas multiplier override priority", () => {
+    // Verify resolveGasMultiplier lookup precedence:
+    // routeKey -> tokenKey -> chainKey -> default (message-aware).
+    profitClient.setTokenSymbol(tokens.USDC.address, "USDC");
+    profitClient.setTokenSymbol(tokens.WETH.address, "WETH");
+
+    const routeMultiplier = "2.5";
+    const tokenMultiplier = "1.5";
+    const chainMultiplier = "0.5";
+
+    const routeKey = `RELAYER_GAS_MULTIPLIER_USDC_WETH_${destinationChainId}`;
+    const tokenKey = "RELAYER_GAS_MULTIPLIER_USDC";
+    const chainKey = `RELAYER_GAS_MULTIPLIER_${destinationChainId}`;
+
+    const initialRouteVal = process.env[routeKey];
+    const initialTokenVal = process.env[tokenKey];
+    const initialChainVal = process.env[chainKey];
+    const restoreEnvKey = (key: string, value: string | undefined): void => {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    };
+
+    const deposit: Deposit = {
+      ...v3DepositTemplate,
+      inputToken: EvmAddress.from(tokens.USDC.address),
+      outputToken: EvmAddress.from(tokens.WETH.address),
+      destinationChainId,
+    };
+
+    try {
+      // 1) route key has highest precedence.
+      process.env[routeKey] = routeMultiplier;
+      process.env[tokenKey] = tokenMultiplier;
+      process.env[chainKey] = chainMultiplier;
+      expect(profitClient.resolveGasMultiplier(deposit).eq(toBNWei(routeMultiplier))).to.be.true;
+
+      // 2) token key has higher precedence than chain key.
+      delete process.env[routeKey];
+      expect(profitClient.resolveGasMultiplier(deposit).eq(toBNWei(tokenMultiplier))).to.be.true;
+
+      // 3) chain key is used when no route or token key is set.
+      delete process.env[tokenKey];
+      expect(profitClient.resolveGasMultiplier(deposit).eq(toBNWei(chainMultiplier))).to.be.true;
+
+      // 4) falls back to default gasMultiplier when no env vars are set.
+      delete process.env[chainKey];
+      const defaultMultiplier = profitClient.resolveGasMultiplier(deposit);
+      // Default for empty-message deposits is this.gasMultiplier (set to 1.0 in mock).
+      expect(defaultMultiplier.eq(toBNWei("1"))).to.be.true;
+    } finally {
+      restoreEnvKey(routeKey, initialRouteVal);
+      restoreEnvKey(tokenKey, initialTokenVal);
+      restoreEnvKey(chainKey, initialChainVal);
+    }
+  });
+
   it("Considers updated deposits", async () => {
     const deposit = { ...v3DepositTemplate };
     const l1Token = tokens.WETH;

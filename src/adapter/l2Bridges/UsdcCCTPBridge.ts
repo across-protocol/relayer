@@ -118,6 +118,9 @@ export class UsdcCCTPBridge extends BaseL2BridgeAdapter {
     );
     const counted = new Set<number>();
     const withdrawalAmount = withdrawalInitiatedEvents.reduce((totalAmount, { args: l2Args, transactionHash }) => {
+      if (l2Args.destinationDomain !== this.l1DestinationDomain) {
+        return totalAmount;
+      }
       if (ignoredPendingBridgeTxnRefs.has(transactionHash)) {
         return totalAmount;
       }

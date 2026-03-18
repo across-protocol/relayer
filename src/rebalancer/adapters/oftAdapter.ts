@@ -103,8 +103,6 @@ export class OftAdapter extends BaseAdapter {
       amountToTransfer,
       ttlOverride
     );
-    // delete cached pending rebalances now that we know state has changed:
-    this.pendingRebalances = undefined;
     return amountToTransfer;
   }
 
@@ -127,8 +125,6 @@ export class OftAdapter extends BaseAdapter {
           message: `Order cloid ${txnHash} has been finalized`,
         });
         await this._redisDeleteOrder(txnHash, STATUS.PENDING_BRIDGE_PRE_DEPOSIT);
-        // delete cached pending rebalances now that we know state has changed:
-        this.pendingRebalances = undefined;
       }
     }
   }
@@ -140,11 +136,6 @@ export class OftAdapter extends BaseAdapter {
 
   async getPendingRebalances(): Promise<{ [chainId: number]: { [token: string]: BigNumber } }> {
     this._assertInitialized();
-    const timeSinceLastUpdate = Date.now() - this.lastUpdateTimestamp;
-    // Within the same serverless run, we don't want this client to update more than once every 5 minutes.
-    if (this.pendingRebalances && timeSinceLastUpdate < 5 * 60 * 1000) {
-      return this.pendingRebalances;
-    }
     const pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
 
     const pendingBridges = await this._redisGetPendingBridgesPreDeposit();
@@ -175,8 +166,6 @@ export class OftAdapter extends BaseAdapter {
         message: `Adding ${amountToTransfer.toString()} USDT for pending order cloid ${txnHash} to destination chain ${destinationChain}`,
       });
     }
-    this.pendingRebalances = pendingRebalances;
-    this.lastUpdateTimestamp = Date.now();
     return pendingRebalances;
   }
 
