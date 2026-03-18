@@ -1243,7 +1243,7 @@ export class Dataworker {
             blockNumberRanges,
             spokePoolClients,
             matchingRootBundle.blockNumber,
-            true // Load data from arweave when executing for speed.
+            false
           );
 
           const { slowFillLeaves: leaves, slowFillTree: tree } = rootBundleData;
@@ -1577,7 +1577,7 @@ export class Dataworker {
       pendingRootBundle,
       spokePoolClients,
       earliestBlocksInSpokePoolClients,
-      true // Load data from arweave when executing leaves for speed.
+      false
     );
 
     if (!valid) {
@@ -2338,7 +2338,7 @@ export class Dataworker {
           blockNumberRanges,
           spokePoolClients,
           matchingRootBundle.blockNumber,
-          true // load data from Arweave for speed purposes
+          false
         );
 
         if (tree.getHexRoot() !== rootBundleRelay.relayerRefundRoot) {
