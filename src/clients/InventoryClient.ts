@@ -701,7 +701,7 @@ export class InventoryClient {
     }
 
     const { decimals: l1TokenDecimals } = getTokenInfo(l1Token, this.hubPoolClient.chainId);
-    const { decimals: inputTokenDecimals } = getTokenInfo(inputToken, originChainId);
+    const { decimals: inputTokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(inputToken, originChainId);
     const inputAmountInL1TokenDecimals = sdkUtils.ConvertDecimals(inputTokenDecimals, l1TokenDecimals)(inputAmount);
 
     // Consider any upcoming refunds. Convert all refunds to same precision as L1 token.
@@ -711,7 +711,7 @@ export class InventoryClient {
       if (!repaymentToken) {
         continue;
       }
-      const { decimals: l2TokenDecimals } = getTokenInfo(repaymentToken, chainId);
+      const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(repaymentToken, chainId);
       const refundAmount = this.getUpcomingRefunds(chainId, l1Token, this.relayer);
       const convertedRefundAmount = sdkUtils.ConvertDecimals(l2TokenDecimals, l1TokenDecimals)(refundAmount);
       totalRefundsPerChain[chainId] = convertedRefundAmount;
@@ -797,7 +797,7 @@ export class InventoryClient {
       } else {
         repaymentToken = inputToken;
       }
-      const { decimals: l2TokenDecimals } = getTokenInfo(repaymentToken, chainId);
+      const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(repaymentToken, chainId);
       const chainShortfall = sdkUtils.ConvertDecimals(
         l2TokenDecimals,
         l1TokenDecimals
