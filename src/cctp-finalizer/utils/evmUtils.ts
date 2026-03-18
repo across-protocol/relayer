@@ -77,6 +77,7 @@ export async function createHyperCoreAccountIfNotExists(
  * All destination-based finalizer calls will pass signature.
  * - HyperCore: chainId = 999 or 998 with signature
  * - Lighter: chainId = 1 with signature
+ * - Direct EVM: Any other EVM chain with signature
  * - Standard: All other cases without signature
  */
 function getDestination(chainId: number, messageBytes: string, signature?: string): DestinationInfo {
@@ -84,34 +85,24 @@ function getDestination(chainId: number, messageBytes: string, signature?: strin
     const isHyperEVM = chainId === CHAIN_IDs.HYPEREVM || chainId === CHAIN_IDs.HYPEREVM_TESTNET;
     const isMainnet = chainId === CHAIN_IDs.MAINNET;
 
-    if (isHyperEVM) {
-      // Extract mint recipient from CCTP message - this is the SponsoredCCTPDstPeriphery contract
-      const mintRecipient = extractMintRecipientAddress(messageBytes);
-      const { abi } = CONTRACT_ADDRESSES[chainId]?.sponsoredCCTPDstPeriphery || {};
-      if (!abi) {
-        throw new Error(`SponsoredCCTPDstPeriphery ABI not configured for chain ${chainId}`);
-      }
-      return {
-        type: "hypercore",
-        address: mintRecipient,
-        abi,
-        requiresSignature: true,
-        accountInitialization: createHyperCoreAccountIfNotExists,
-      };
-    } else if (isMainnet) {
-      // Extract mint recipient from CCTP message - this is the SponsoredCCTPDstPeriphery contract
-      const mintRecipient = extractMintRecipientAddress(messageBytes);
-      const { abi } = CONTRACT_ADDRESSES[chainId]?.sponsoredCCTPDstPeriphery || {};
-      if (!abi) {
-        throw new Error(`SponsoredCCTPDstPeriphery ABI not configured for chain ${chainId}`);
-      }
-      return {
-        type: "lighter",
-        address: mintRecipient,
-        abi,
-        requiresSignature: true,
-      };
+    // Extract mint recipient from CCTP message - this is the SponsoredCCTPDstPeriphery contract
+    const mintRecipient = extractMintRecipientAddress(messageBytes);
+    const { abi } = CONTRACT_ADDRESSES[chainId]?.sponsoredCCTPDstPeriphery || {};
+
+    if (!abi) {
+      throw new Error(`SponsoredCCTPDstPeriphery ABI not configured for chain ${chainId}`);
     }
+
+    const type = isHyperEVM ? "hypercore" : isMainnet ? "lighter" : "direct-evm";
+    const accountInitialization = isHyperEVM ? createHyperCoreAccountIfNotExists : undefined;
+
+    return {
+      type,
+      address: mintRecipient,
+      abi,
+      requiresSignature: true,
+      accountInitialization,
+    };
   }
 
   const { address, abi } = getCctpV2MessageTransmitter(chainId);
