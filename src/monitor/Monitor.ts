@@ -842,8 +842,8 @@ export class Monitor {
     // from the last `n` bundles, pending refunds which have not been made official via a root bundle proposal, and the current balances of
     // all the spoke pools.
     const [poolRebalanceRoot, currentBundleData, currentSpokeBalances] = await Promise.all([
-      this.clients.bundleDataClient.loadData(lastProposedBundleBlockRanges, this.clients.spokePoolClients, true),
-      this.clients.bundleDataClient.loadData(slowFillBlockRange, this.clients.spokePoolClients, true),
+      this.clients.bundleDataClient.loadData(lastProposedBundleBlockRanges, this.clients.spokePoolClients, false),
+      this.clients.bundleDataClient.loadData(slowFillBlockRange, this.clients.spokePoolClients, false),
       Object.fromEntries(
         await mapAsync(chainIds, async (chainId) => {
           const spokePool = this.clients.spokePoolClients[chainId].spokePoolAddress;
