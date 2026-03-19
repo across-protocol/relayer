@@ -27,6 +27,12 @@ type StrippedDeposit = Omit<DepositWithBlock, "fromLiteChain" | "toLiteChain" | 
  * Testable subclass: overrides initialize to no-op and exposes internals via setters/getters.
  */
 class TestableGaslessRelayer extends GaslessRelayer {
+  constructor(logger: any, config: any, signer: any, depositSigners: any[]) {
+    super(logger, config, signer, depositSigners);
+    // Explicitly initialize state transition tracking
+    this.stateTransitions = {};
+  }
+
   public override async initialize(): Promise<void> {
     // No-op -- state is set directly by tests.
   }
@@ -44,8 +50,8 @@ class TestableGaslessRelayer extends GaslessRelayer {
   public setSpokePools(pools: { [chainId: number]: Contract }): void {
     this.spokePools = pools;
   }
-  public setObservedNonces(nonces: { [chainId: number]: Set<string> }): void {
-    this.observedNonces = nonces;
+  public setObservedDeposits(deposits: { [chainId: number]: Set<string> }): void {
+    this.observedDeposits = deposits;
   }
   public setObservedFills(fills: { [chainId: number]: Set<string> }): void {
     this.observedFills = fills;
@@ -59,6 +65,9 @@ class TestableGaslessRelayer extends GaslessRelayer {
   public getDepositKey(token: string, originChainId: number, depositId: string): string {
     return this._getDepositKey(token, originChainId, depositId);
   }
+
+  // Track state transitions, keyed by depositKey (e.g., nonce)
+  public stateTransitions: { [depositKey: string]: Array<{ from: MessageState; to: MessageState }> } = {};
 
   // Configurable function properties -- tests assign return values; overrides track call counts.
   public queryGaslessApiFn: () => Promise<GaslessDepositMessage[]> = async () => [];
@@ -101,6 +110,11 @@ class TestableGaslessRelayer extends GaslessRelayer {
     originChainId: number
   ): StrippedDeposit {
     return this.extractDepositFromReceiptFn(receipt, originChainId);
+  }
+
+  protected override onStateTransition(depositKey: string, fromState: MessageState, toState: MessageState): void {
+    this.stateTransitions[depositKey] ??= [];
+    this.stateTransitions[depositKey].push({ from: fromState, to: toState });
   }
 }
 
@@ -329,7 +343,7 @@ describe("GaslessRelayer", function () {
       [ORIGIN_CHAIN_ID]: fakeSpokePool,
       [DESTINATION_CHAIN_ID]: fakeSpokePool,
     });
-    relayer.setObservedNonces({ [ORIGIN_CHAIN_ID]: new Set() });
+    relayer.setObservedDeposits({ [ORIGIN_CHAIN_ID]: new Set() });
     relayer.setObservedFills({ [DESTINATION_CHAIN_ID]: new Set() });
     relayer.setSignerAddress(EvmAddress.from(signer.address));
 
@@ -353,9 +367,19 @@ describe("GaslessRelayer", function () {
 
     await relayer.runEvaluateApiSignatures();
 
-    expect(relayer.getMessageState(depositNonceFor(relayer, msg))).to.equal(MessageState.FILLED);
+    const nonce = depositNonceFor(relayer, msg);
+
+    // Validate final state
+    expect(relayer.getMessageState(nonce)).to.equal(MessageState.FILLED);
     expect(relayer.initiateGaslessDepositCalls).to.equal(1);
     expect(relayer.initiateFillCalls).to.equal(1);
+
+    // Validate state transitions occurred in correct sequence
+    const transitions = relayer.stateTransitions[nonce];
+    expect(transitions).to.have.lengthOf(3);
+    expect(transitions[0]).to.deep.equal({ from: MessageState.INITIAL, to: MessageState.DEPOSIT_PENDING });
+    expect(transitions[1]).to.deep.equal({ from: MessageState.DEPOSIT_PENDING, to: MessageState.FILL_PENDING });
+    expect(transitions[2]).to.deep.equal({ from: MessageState.FILL_PENDING, to: MessageState.FILLED });
   });
 
   it("Invalid deposit (mismatching L1 tokens) -> ERROR", async function () {
@@ -369,8 +393,16 @@ describe("GaslessRelayer", function () {
 
     await relayer.runEvaluateApiSignatures();
 
-    expect(relayer.getMessageState(depositNonceFor(relayer, msg))).to.equal(MessageState.ERROR);
+    const nonce = depositNonceFor(relayer, msg);
+
+    // Validate final state
+    expect(relayer.getMessageState(nonce)).to.equal(MessageState.ERROR);
     expect(relayer.initiateGaslessDepositCalls).to.equal(0);
+
+    // Validate state transition: INITIAL -> ERROR
+    const transitions = relayer.stateTransitions[nonce];
+    expect(transitions).to.have.lengthOf(1);
+    expect(transitions[0]).to.deep.equal({ from: MessageState.INITIAL, to: MessageState.ERROR });
   });
 
   it("Expired deposit -> ERROR", async function () {
@@ -381,8 +413,15 @@ describe("GaslessRelayer", function () {
 
     await relayer.runEvaluateApiSignatures();
 
-    expect(relayer.getMessageState(depositNonceFor(relayer, msg))).to.equal(MessageState.ERROR);
+    const nonce = depositNonceFor(relayer, msg);
+
+    expect(relayer.getMessageState(nonce)).to.equal(MessageState.ERROR);
     expect(relayer.initiateGaslessDepositCalls).to.equal(0);
+
+    // Validate state transition: INITIAL -> ERROR
+    const transitions = relayer.stateTransitions[nonce];
+    expect(transitions).to.have.lengthOf(1);
+    expect(transitions[0]).to.deep.equal({ from: MessageState.INITIAL, to: MessageState.ERROR });
   });
 
   describe("Permit2 flow", function () {
@@ -398,9 +437,18 @@ describe("GaslessRelayer", function () {
 
       await relayer.runEvaluateApiSignatures();
 
-      expect(relayer.getMessageState(depositNonceFor(relayer, msg))).to.equal(MessageState.FILLED);
+      const nonce = depositNonceFor(relayer, msg);
+
+      expect(relayer.getMessageState(nonce)).to.equal(MessageState.FILLED);
       expect(relayer.initiateGaslessDepositCalls).to.equal(1);
       expect(relayer.initiateFillCalls).to.equal(1);
+
+      // Validate state transitions occurred in correct sequence
+      const transitions = relayer.stateTransitions[nonce];
+      expect(transitions).to.have.lengthOf(3);
+      expect(transitions[0]).to.deep.equal({ from: MessageState.INITIAL, to: MessageState.DEPOSIT_PENDING });
+      expect(transitions[1]).to.deep.equal({ from: MessageState.DEPOSIT_PENDING, to: MessageState.FILL_PENDING });
+      expect(transitions[2]).to.deep.equal({ from: MessageState.FILL_PENDING, to: MessageState.FILLED });
     });
   });
 
@@ -414,10 +462,18 @@ describe("GaslessRelayer", function () {
 
       await relayer.runEvaluateApiSignatures();
 
-      expect(relayer.getMessageState(depositNonceFor(relayer, msg))).to.equal(MessageState.FILLED);
+      const nonce = depositNonceFor(relayer, msg);
+
+      expect(relayer.getMessageState(nonce)).to.equal(MessageState.FILLED);
       expect(relayer.initiateGaslessDepositCalls).to.equal(1);
       // Fill should NOT be called for CCTP deposits.
       expect(relayer.initiateFillCalls).to.equal(0);
+
+      // Validate state transitions: CCTP deposits skip FILL_PENDING
+      const transitions = relayer.stateTransitions[nonce];
+      expect(transitions).to.have.lengthOf(2);
+      expect(transitions[0]).to.deep.equal({ from: MessageState.INITIAL, to: MessageState.DEPOSIT_PENDING });
+      expect(transitions[1]).to.deep.equal({ from: MessageState.DEPOSIT_PENDING, to: MessageState.FILLED });
     });
   });
 
@@ -430,8 +486,15 @@ describe("GaslessRelayer", function () {
 
       await relayer.runEvaluateApiSignatures();
 
-      expect(relayer.getMessageState(depositNonceFor(relayer, msg))).to.equal(MessageState.ERROR);
+      const nonce = depositNonceFor(relayer, msg);
+
+      expect(relayer.getMessageState(nonce)).to.equal(MessageState.ERROR);
       expect(relayer.initiateGaslessDepositCalls).to.equal(0);
+
+      // Validate state transition: INITIAL -> ERROR
+      const transitions = relayer.stateTransitions[nonce];
+      expect(transitions).to.have.lengthOf(1);
+      expect(transitions[0]).to.deep.equal({ from: MessageState.INITIAL, to: MessageState.ERROR });
     });
 
     it("Multiple messages: processes each independently", async function () {
@@ -458,10 +521,20 @@ describe("GaslessRelayer", function () {
 
       await relayer.runEvaluateApiSignatures();
 
-      expect(relayer.getMessageState(depositNonceFor(relayer, msg1))).to.equal(MessageState.FILLED);
-      expect(relayer.getMessageState(depositNonceFor(relayer, msg2))).to.equal(MessageState.FILLED);
+      const nonce1 = depositNonceFor(relayer, msg1);
+      const nonce2 = depositNonceFor(relayer, msg2);
+
+      expect(relayer.getMessageState(nonce1)).to.equal(MessageState.FILLED);
+      expect(relayer.getMessageState(nonce2)).to.equal(MessageState.FILLED);
       expect(relayer.initiateGaslessDepositCalls).to.equal(2);
       expect(relayer.initiateFillCalls).to.equal(2);
+
+      // Validate state transitions for both messages
+      expect(relayer.stateTransitions[nonce1]).to.have.lengthOf(3);
+      expect(relayer.stateTransitions[nonce2]).to.have.lengthOf(3);
+      // Both should follow the same transition sequence
+      expect(relayer.stateTransitions[nonce1][0]).to.deep.equal({ from: MessageState.INITIAL, to: MessageState.DEPOSIT_PENDING });
+      expect(relayer.stateTransitions[nonce2][0]).to.deep.equal({ from: MessageState.INITIAL, to: MessageState.DEPOSIT_PENDING });
     });
 
     it("Message with existing state is skipped on subsequent polls", async function () {
@@ -476,13 +549,19 @@ describe("GaslessRelayer", function () {
 
       // First poll: process message.
       await relayer.runEvaluateApiSignatures();
-      expect(relayer.getMessageState(depositNonceFor(relayer, msg))).to.equal(MessageState.FILLED);
+      const nonce = depositNonceFor(relayer, msg);
+      expect(relayer.getMessageState(nonce)).to.equal(MessageState.FILLED);
       expect(relayer.initiateGaslessDepositCalls).to.equal(1);
+
+      // Validate state transitions from first poll
+      expect(relayer.stateTransitions[nonce]).to.have.lengthOf(3);
 
       // Second poll: message should be skipped (already has state).
       await relayer.runEvaluateApiSignatures();
       // Call count should not increase.
       expect(relayer.initiateGaslessDepositCalls).to.equal(1);
+      // No new state transitions should occur
+      expect(relayer.stateTransitions[nonce]).to.have.lengthOf(3);
     });
   });
 });

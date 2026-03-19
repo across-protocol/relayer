@@ -120,6 +120,17 @@ export class GaslessRelayer {
   private transactionClient;
   private redisCache;
 
+  /**
+   * Hook called when message state transitions occur.
+   * Subclasses can override to observe state changes (e.g., for testing).
+   * @param depositKey The unique key for the deposit message.
+   * @param fromState The previous state.
+   * @param toState The new state.
+   */
+  protected onStateTransition(depositKey: string, fromState: MessageState, toState: MessageState): void {
+    // No-op in base class - subclasses can override to observe transitions.
+  }
+
   public constructor(
     readonly logger: winston.Logger,
     readonly config: GaslessRelayerConfig,
@@ -590,6 +601,7 @@ export class GaslessRelayer {
           nextState: state,
         });
         this.messageState[depositKey] = state;
+        this.onStateTransition(depositKey, currentState, state);
       };
       const getState = () => {
         return (this.messageState[depositKey] ??= MessageState.INITIAL);
