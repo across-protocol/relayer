@@ -100,7 +100,7 @@ export class GaslessRelayer {
 
   protected providersByChain: { [chainId: number]: Provider } = {};
   // The object is indexed by `chainId`. An `AuthorizationUsed` event is marked by adding `${token}:${authorizer}:${nonce}` to the respective chain's set.
-  protected observedNonces: { [chainId: number]: Set<string> } = {};
+  protected observedDeposits: { [chainId: number]: Set<string> } = {};
   // The object is indexed by `chainId`. A `FilledRelay` event is marked by adding `${originChainId}:${depositId}` to the respective chain's set.
   protected observedFills: { [chainId: number]: Set<string> } = {};
   // The object is indexed by `chainId`. Each element of the set is a deposit which should be retried in the bot's runtime.
@@ -150,7 +150,7 @@ export class GaslessRelayer {
     await forEachAsync(this.config.relayerOriginChains, async (chainId) => {
       const provider = await getProvider(chainId);
       this.providersByChain[chainId] = provider;
-      this.observedNonces[chainId] = new Set<string>();
+      this.observedDeposits[chainId] = new Set<string>();
       this.spokePoolPeripheries[chainId] = getSpokePoolPeriphery(
         chainId,
         this.config.spokePoolPeripheryOverrides[chainId]
@@ -200,7 +200,7 @@ export class GaslessRelayer {
       const depositKey = this._getDepositKey(inputToken, originChainId, depositId);
       const fillKey = this._getFilledRelayKey({ originChainId, depositId: toBN(depositId) });
       return (
-        this.observedNonces[originChainId]?.has(depositKey) &&
+        this.observedDeposits[originChainId]?.has(depositKey) &&
         isDefined(this.observedFills[destinationChainId]) &&
         !this.observedFills[destinationChainId].has(fillKey) &&
         !this._isCctpDeposit(originChainId, spokePool)
@@ -232,7 +232,7 @@ export class GaslessRelayer {
       );
       assert(
         isDefined(correspondingDeposit),
-        "Inconsistent data between this.observedNonces and return data from gaslessRelayer.updateObserved()"
+        "Inconsistent data between this.observedDeposits and return data from gaslessRelayer.updateObserved()"
       );
       await this.initiateFill(correspondingDeposit, spokePool);
     });
@@ -280,7 +280,7 @@ export class GaslessRelayer {
       Object.fromEntries(
         await mapAsync(this.config.relayerOriginChains, async (originChainId) => {
           const provider = this.providersByChain[originChainId];
-          const observedNonces = this.observedNonces[originChainId];
+          const observedDeposits = this.observedDeposits[originChainId];
 
           const searchConfig = await this._getEventSearchConfig(originChainId);
 
@@ -301,7 +301,7 @@ export class GaslessRelayer {
             })
             .filter(isDefined);
           originEventsWithApiMessages.forEach(({ deposit }) => {
-            observedNonces.add(
+            observedDeposits.add(
               this._getDepositKey(deposit.inputToken.toNative(), originChainId, deposit.depositId.toString())
             );
           });
@@ -342,7 +342,7 @@ export class GaslessRelayer {
   }
 
   /*
-   * @notice For each CCTP deposit in the API messages, tries to find AuthorizationUsed(authorizer, nonce) via _findAuthorizationUsed and adds the corresponding deposit to observedNonces so we do not re-submit.
+   * @notice For each CCTP deposit in the API messages, tries to find AuthorizationUsed(authorizer, nonce) via _findAuthorizationUsed and adds the corresponding deposit to observedDeposits so we do not re-submit.
    */
   private async updateObservedCctpDeposits(apiMessages: GaslessDepositMessage[]): Promise<void> {
     const cctpMessages = apiMessages.filter((msg) => this._isCctpDeposit(msg.originChainId, msg.spokePool));
@@ -356,7 +356,7 @@ export class GaslessRelayer {
         return;
       }
       const depositKey = this._getDepositKey(inputToken.toNative(), originChainId, depositId.toString());
-      this.observedNonces[originChainId].add(depositKey);
+      this.observedDeposits[originChainId].add(depositKey);
     });
   }
 
@@ -368,7 +368,7 @@ export class GaslessRelayer {
       const { originChainId, depositId, spokePool } = depositMessage;
       const { destinationChainId, inputToken, outputToken, inputAmount, outputAmount } = depositMessage.baseDepositData;
 
-      const depositSet = this.observedNonces[originChainId];
+      const depositSet = this.observedDeposits[originChainId];
       const fillSet = this.observedFills[destinationChainId];
       const depositKey = this._getDepositKey(inputToken, originChainId, depositId);
 
@@ -699,7 +699,7 @@ export class GaslessRelayer {
 
     const handler = process.env.RELAYER_GASLESS_HANDLER === "experimental" ? experimentalHandler : defaultHandler;
     const messageFilter = (deposit: GaslessDepositMessage): boolean => {
-      if (!isDefined(this.observedNonces[deposit.originChainId])) {
+      if (!isDefined(this.observedDeposits[deposit.originChainId])) {
         return false;
       }
 
@@ -1033,7 +1033,7 @@ export class GaslessRelayer {
   }
 
   /*
-   * @notice Gets the key for `this.observedNonces` from a relevant 3009 authorization.
+   * @notice Gets the key for `this.observedDeposits` from a relevant 3009 authorization.
    */
   protected _getDepositKey(token: string, originChainId: number, depositId: string): string {
     return `${token}:${originChainId}:${depositId}`;
