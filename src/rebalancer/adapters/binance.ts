@@ -390,77 +390,34 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     this._assertInitialized();
     const pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
 
-    // If there are any rebalances that are currently in the state of being bridged to a Binance deposit network
-    // (to subsequently be deposited into Binance), then we should check if their bridged amounts have arrived at the
-    // deposit network yet. If they have, then the network's balance will be higher than we want to show, so we should
-    // subtract each order's expected deposit amount from that network's balance.
+    // If there are any rebalances that are currently in the state of being bridged to Binance
+    // (to subsequently be deposited into Binance), then the bridge adapter's getPendingRebalances() method will show
+    // a virtual balance credit for the source token on the bridge destination chain
+    // (i.e. Binance deposit entrypoint network in this case).
+    // This credit plus this adapter's final destination chain credit (given to all pending orders) means that the
+    // total virtual balance credit added for this one order will be too high (the order amount will be double counted).
+    // Therefore, to counteract this double counting, we subtract each order's amount from the bridge destination chain's
+    // virtual balance (i.e. Binance deposit entrypoint network in this case).
     const pendingBridgeToBinanceNetwork = await this._redisGetPendingBridgesPreDeposit();
-    if (pendingBridgeToBinanceNetwork.length > 0) {
-      this.logger.debug({
-        at: "BinanceStablecoinSwapAdapter.getPendingRebalances",
-        message: `Pending bridge to Binance deposit network cloids: ${pendingBridgeToBinanceNetwork.join(", ")}`,
-      });
-    }
-    const [pendingCctpBridges, pendingOftBridges] = await Promise.all([
-      this.cctpAdapter.getPendingRebalances(),
-      this.oftAdapter.getPendingRebalances(),
-    ]);
-
-    // Get outstanding bridges to Binance deposit network:
-    const unfinalizedBridges: { [token: string]: { [chainId: number]: BigNumber } } = {};
-    for (const sourceToken of ["USDC", "USDT"]) {
-      unfinalizedBridges[sourceToken] ??= {};
-      for (const sourceChain of this.allSourceChains) {
-        const binanceDepositNetwork = await this._getEntrypointNetwork(sourceChain, sourceToken);
-        const requiresBridgeBeforeDeposit = binanceDepositNetwork !== sourceChain;
-        if (requiresBridgeBeforeDeposit) {
-          const pendingBridgeAmount =
-            (sourceToken === "USDC"
-              ? pendingCctpBridges[binanceDepositNetwork]?.[sourceToken]
-              : pendingOftBridges[binanceDepositNetwork]?.[sourceToken]) ?? bnZero;
-          unfinalizedBridges[sourceToken][binanceDepositNetwork] = pendingBridgeAmount ?? bnZero;
-        }
-      }
-    }
-
-    // Get all bridges sent to Binance deposit network by this adapter that have not been deposited into Binance yet:
-    const totalBridges: { [token: string]: { [chainId: number]: BigNumber } } = {};
     for (const cloid of pendingBridgeToBinanceNetwork) {
       const orderDetails = await this._redisGetOrderDetails(cloid);
-      const { sourceToken, sourceChain, amountToTransfer } = orderDetails;
+      const { sourceChain, sourceToken, amountToTransfer } = orderDetails;
       const binanceDepositNetwork = await this._getEntrypointNetwork(sourceChain, sourceToken);
-      const requiresBridgeBeforeDeposit = binanceDepositNetwork !== sourceChain;
-      if (requiresBridgeBeforeDeposit) {
-        totalBridges[sourceToken] ??= {};
-        const amountConverter = this._getAmountConverter(
-          sourceChain,
-          this._getTokenInfo(sourceToken, sourceChain).address,
-          binanceDepositNetwork,
-          this._getTokenInfo(sourceToken, binanceDepositNetwork).address
-        );
-        totalBridges[sourceToken][binanceDepositNetwork] = (
-          totalBridges[sourceToken][binanceDepositNetwork] ?? bnZero
-        ).add(amountConverter(amountToTransfer));
-      }
-    }
-
-    // Finalized amount is the total amount sent to Binance deposit network minus the unfinalized amount.
-    for (const sourceToken of Object.keys(totalBridges)) {
-      for (const sourceChain of Object.keys(totalBridges[sourceToken])) {
-        const totalBridgedAmount = totalBridges[sourceToken][sourceChain] ?? bnZero;
-        const unfinalizedBridgedAmount = unfinalizedBridges[sourceToken][sourceChain] ?? bnZero;
-        const finalizedBridgedAmount = totalBridgedAmount.sub(unfinalizedBridgedAmount);
-        if (finalizedBridgedAmount.gt(bnZero)) {
-          this.logger.debug({
-            at: "BinanceStablecoinSwapAdapter.getPendingRebalances",
-            message: `Subtracting ${finalizedBridgedAmount.toString()} ${sourceToken} from Binance deposit network ${sourceChain} for finalized bridges`,
-          });
-          pendingRebalances[sourceChain] ??= {};
-          pendingRebalances[sourceChain][sourceToken] = (pendingRebalances[sourceChain][sourceToken] ?? bnZero).sub(
-            finalizedBridgedAmount
-          );
-        }
-      }
+      const amountConverter = this._getAmountConverter(
+        sourceChain,
+        this._getTokenInfo(sourceToken, sourceChain).address,
+        binanceDepositNetwork,
+        this._getTokenInfo(sourceToken, binanceDepositNetwork).address
+      );
+      const convertedAmount = amountConverter(amountToTransfer);
+      pendingRebalances[binanceDepositNetwork] ??= {};
+      pendingRebalances[binanceDepositNetwork][sourceToken] = (
+        pendingRebalances[binanceDepositNetwork][sourceToken] ?? bnZero
+      ).sub(convertedAmount);
+      this.logger.debug({
+        at: "BinanceStablecoinSwapAdapter.getPendingRebalances",
+        message: `Subtracting ${convertedAmount.toString()} ${sourceToken} from Binance deposit network ${binanceDepositNetwork} for intermediate bridge`,
+      });
     }
 
     // Add virtual destination chain credits for all pending orders, so that the user of this class is aware that
