@@ -161,6 +161,7 @@ describe("GaslessUtils", function () {
       const contract = makeSpokePoolPeripheryContract();
       const tx = buildGaslessDepositTx(msg as any, contract);
       const calldata = tx.args[0] as string;
+      // First 4 bytes = function selector for depositWithAuthorization
       const iface = new ethers.utils.Interface(SPOKE_POOL_PERIPHERY_ABI);
       const selector = iface.getSighash("depositWithAuthorization");
       expect(calldata.startsWith(selector)).to.be.true;
