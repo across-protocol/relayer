@@ -96,7 +96,7 @@ export class GaslessRelayer {
   private instanceCoordinator;
   private initialized = false;
 
-  protected messageState: { [nonce: string]: MessageState } = {};
+  protected messageState: { [key: string]: MessageState } = {};
 
   protected providersByChain: { [chainId: number]: Provider } = {};
   // The object is indexed by `chainId`. An `AuthorizationUsed` event is marked by adding `${token}:${authorizer}:${nonce}` to the respective chain's set.
