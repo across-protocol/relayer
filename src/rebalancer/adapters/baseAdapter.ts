@@ -66,9 +66,6 @@ export abstract class BaseAdapter implements RebalancerAdapter {
   protected allSourceChains: Set<number>;
   protected allSourceTokens: Set<string>;
 
-  protected lastUpdateTimestamp = 0;
-  protected pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } };
-
   protected REDIS_PREFIX: string;
 
   constructor(readonly logger: winston.Logger, readonly config: RebalancerConfig, readonly baseSigner: Signer) {

@@ -171,6 +171,26 @@ export class ProfitClient {
   }
 
   resolveGasMultiplier(deposit: Deposit): BigNumber {
+    const { inputToken, originChainId, outputToken, destinationChainId } = deposit;
+    const srcSymbol = this.getTokenSymbol(inputToken, originChainId);
+    const dstSymbol = this.getTokenSymbol(outputToken, destinationChainId);
+    const effectiveSrcSymbol = this._getRemappedTokenSymbol(srcSymbol) ?? srcSymbol;
+    const effectiveDstSymbol =
+      dstSymbol !== "UNKNOWN" ? this._getRemappedTokenSymbol(dstSymbol) ?? dstSymbol : undefined;
+
+    const routeKey = effectiveDstSymbol
+      ? `RELAYER_GAS_MULTIPLIER_${effectiveSrcSymbol}_${effectiveDstSymbol}_${destinationChainId}`
+      : `RELAYER_GAS_MULTIPLIER_${effectiveSrcSymbol}_${destinationChainId}`;
+    const tokenKey = `RELAYER_GAS_MULTIPLIER_${effectiveSrcSymbol}`;
+    const chainKey = `RELAYER_GAS_MULTIPLIER_${destinationChainId}`;
+
+    const envVal = process.env[routeKey] ?? process.env[tokenKey] ?? process.env[chainKey];
+    if (isDefined(envVal)) {
+      const override = toBNWei(envVal);
+      assert(override.gte(bnZero) && override.lte(toBNWei(4)), `Gas multiplier override out of range (${override})`);
+      return override;
+    }
+
     return isMessageEmpty(resolveDepositMessage(deposit)) ? this.gasMultiplier : this.gasMessageMultiplier;
   }
 
@@ -240,7 +260,12 @@ export class ProfitClient {
 
   private async _getTotalGasCost(deposit: Deposit, relayer: Address): Promise<TransactionCostEstimate> {
     try {
-      return await this.relayerFeeQueries[deposit.destinationChainId].getGasCosts(deposit, relayer);
+      const rawFeeHistoryConfig =
+        process.env[`FEE_HISTORY_OPTIONS_${deposit.destinationChainId}`] ?? process.env["FEE_HISTORY_OPTIONS"];
+      const feeHistoryOptions = isDefined(rawFeeHistoryConfig) ? JSON.parse(rawFeeHistoryConfig) : undefined;
+      return await this.relayerFeeQueries[deposit.destinationChainId].getGasCosts(deposit, relayer, {
+        feeHistoryOptions,
+      });
     } catch (err) {
       const reason = isEthersError(err) ? err.reason : isError(err) ? err.message : "unknown error";
       // Attempt to extract an underlying cause, if the error object exposes one. This is
