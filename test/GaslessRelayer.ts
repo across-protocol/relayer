@@ -300,6 +300,75 @@ function makeFakeDepositEvent(amounts: { inputAmount?: string; outputAmount?: st
   };
 }
 
+/**
+ * Helper to set up a test scenario with consistent message/receipt/event data.
+ * Automatically configures relayer stubs to return the created objects.
+ */
+interface TestScenario {
+  msg: GaslessDepositMessage;
+  nonce: string;
+  receipt: TransactionReceipt;
+  depositEvent: StrippedDeposit;
+}
+
+function setupScenario(
+  relayer: TestableGaslessRelayer,
+  amounts: { inputAmount: string; outputAmount: string },
+  messageFactory: (overrides: Partial<GaslessDepositMessage["baseDepositData"]>) => GaslessDepositMessage
+): TestScenario {
+  const msg = messageFactory(amounts);
+  const receipt = makeReceipt();
+  const depositEvent = makeFakeDepositEvent(amounts);
+  const nonce = depositNonceFor(relayer, msg);
+
+  // Configure stubs
+  relayer.queryGaslessApiFn = async () => [msg];
+  relayer.initiateGaslessDepositFn = async () => receipt;
+  relayer.extractDepositFromReceiptFn = () => depositEvent;
+  relayer.initiateFillFn = async () => receipt;
+
+  return { msg, nonce, receipt, depositEvent };
+}
+
+/**
+ * Validation helpers for common transition patterns.
+ */
+function expectStandardTransitions(transitions: Array<{ from: MessageState; to: MessageState }>) {
+  expect(transitions).to.have.lengthOf(3);
+  expect(transitions[0]).to.deep.equal({ from: MessageState.INITIAL, to: MessageState.DEPOSIT_PENDING });
+  expect(transitions[1]).to.deep.equal({ from: MessageState.DEPOSIT_PENDING, to: MessageState.FILL_PENDING });
+  expect(transitions[2]).to.deep.equal({ from: MessageState.FILL_PENDING, to: MessageState.FILLED });
+}
+
+function expectErrorTransition(transitions: Array<{ from: MessageState; to: MessageState }>) {
+  expect(transitions).to.have.lengthOf(1);
+  expect(transitions[0]).to.deep.equal({ from: MessageState.INITIAL, to: MessageState.ERROR });
+}
+
+function expectCctpTransitions(transitions: Array<{ from: MessageState; to: MessageState }>) {
+  expect(transitions).to.have.lengthOf(2);
+  expect(transitions[0]).to.deep.equal({ from: MessageState.INITIAL, to: MessageState.DEPOSIT_PENDING });
+  expect(transitions[1]).to.deep.equal({ from: MessageState.DEPOSIT_PENDING, to: MessageState.FILLED });
+}
+
+/**
+ * Helper for testing error scenarios - validates that a message is rejected with ERROR state.
+ */
+async function expectErrorScenario(
+  relayer: TestableGaslessRelayer,
+  msg: GaslessDepositMessage,
+  testDescription: string
+) {
+  relayer.queryGaslessApiFn = async () => [msg];
+
+  await relayer.runEvaluateApiSignatures();
+
+  const nonce = depositNonceFor(relayer, msg);
+  expect(relayer.getMessageState(nonce)).to.equal(MessageState.ERROR);
+  expect(relayer.initiateGaslessDepositCalls).to.equal(0);
+  expectErrorTransition(relayer.stateTransitions[nonce]);
+}
+
 describe("GaslessRelayer", function () {
   let relayer: TestableGaslessRelayer;
   let fakeSpokePoolAddress: string;
@@ -359,99 +428,36 @@ describe("GaslessRelayer", function () {
   });
 
   it("Standard path: INITIAL -> DEPOSIT_PENDING -> FILL_PENDING -> FILLED", async function () {
-    const msg = makeTestDepositMessage({ inputAmount: "2000000", outputAmount: "1900000" });
-    const receipt = makeReceipt();
-    const depositEvent = makeFakeDepositEvent({ inputAmount: "2000000", outputAmount: "1900000" });
-
-    relayer.queryGaslessApiFn = async () => [msg];
-    relayer.initiateGaslessDepositFn = async () => receipt;
-    relayer.extractDepositFromReceiptFn = () => depositEvent;
-    relayer.initiateFillFn = async () => receipt;
+    const { nonce } = setupScenario(relayer, { inputAmount: "2000000", outputAmount: "1900000" }, makeTestDepositMessage);
 
     await relayer.runEvaluateApiSignatures();
 
-    const nonce = depositNonceFor(relayer, msg);
-
-    // Validate final state
     expect(relayer.getMessageState(nonce)).to.equal(MessageState.FILLED);
     expect(relayer.initiateGaslessDepositCalls).to.equal(1);
     expect(relayer.initiateFillCalls).to.equal(1);
-
-    // Validate state transitions occurred in correct sequence
-    const transitions = relayer.stateTransitions[nonce];
-    expect(transitions).to.have.lengthOf(3);
-    expect(transitions[0]).to.deep.equal({ from: MessageState.INITIAL, to: MessageState.DEPOSIT_PENDING });
-    expect(transitions[1]).to.deep.equal({ from: MessageState.DEPOSIT_PENDING, to: MessageState.FILL_PENDING });
-    expect(transitions[2]).to.deep.equal({ from: MessageState.FILL_PENDING, to: MessageState.FILLED });
+    expectStandardTransitions(relayer.stateTransitions[nonce]);
   });
 
   it("Invalid deposit (mismatching L1 tokens) -> ERROR", async function () {
-    // Use WETH as output token (different L1 token from USDC input).
-    const msg = makeTestDepositMessage({
-      inputToken: USDC_MAINNET,
-      outputToken: WETH_BASE,
-    });
-
-    relayer.queryGaslessApiFn = async () => [msg];
-
-    await relayer.runEvaluateApiSignatures();
-
-    const nonce = depositNonceFor(relayer, msg);
-
-    // Validate final state
-    expect(relayer.getMessageState(nonce)).to.equal(MessageState.ERROR);
-    expect(relayer.initiateGaslessDepositCalls).to.equal(0);
-
-    // Validate state transition: INITIAL -> ERROR
-    const transitions = relayer.stateTransitions[nonce];
-    expect(transitions).to.have.lengthOf(1);
-    expect(transitions[0]).to.deep.equal({ from: MessageState.INITIAL, to: MessageState.ERROR });
+    const msg = makeTestDepositMessage({ inputToken: USDC_MAINNET, outputToken: WETH_BASE });
+    await expectErrorScenario(relayer, msg, "mismatching L1 tokens");
   });
 
   it("Expired deposit -> ERROR", async function () {
-    // Set fillDeadline in the past.
     const msg = makeTestDepositMessage({ fillDeadline: getCurrentTime() - 100 });
-
-    relayer.queryGaslessApiFn = async () => [msg];
-
-    await relayer.runEvaluateApiSignatures();
-
-    const nonce = depositNonceFor(relayer, msg);
-
-    expect(relayer.getMessageState(nonce)).to.equal(MessageState.ERROR);
-    expect(relayer.initiateGaslessDepositCalls).to.equal(0);
-
-    // Validate state transition: INITIAL -> ERROR
-    const transitions = relayer.stateTransitions[nonce];
-    expect(transitions).to.have.lengthOf(1);
-    expect(transitions[0]).to.deep.equal({ from: MessageState.INITIAL, to: MessageState.ERROR });
+    await expectErrorScenario(relayer, msg, "expired deposit");
   });
 
   describe("Permit2 flow", function () {
     it("Permit2 deposit: INITIAL -> DEPOSIT_PENDING -> FILL_PENDING -> FILLED", async function () {
-      const msg = makeTestPermit2Message({ inputAmount: "2000000", outputAmount: "1900000" });
-      const receipt = makeReceipt();
-      const depositEvent = makeFakeDepositEvent({ inputAmount: "2000000", outputAmount: "1900000" });
-
-      relayer.queryGaslessApiFn = async () => [msg];
-      relayer.initiateGaslessDepositFn = async () => receipt;
-      relayer.extractDepositFromReceiptFn = () => depositEvent;
-      relayer.initiateFillFn = async () => receipt;
+      const { nonce } = setupScenario(relayer, { inputAmount: "2000000", outputAmount: "1900000" }, makeTestPermit2Message);
 
       await relayer.runEvaluateApiSignatures();
-
-      const nonce = depositNonceFor(relayer, msg);
 
       expect(relayer.getMessageState(nonce)).to.equal(MessageState.FILLED);
       expect(relayer.initiateGaslessDepositCalls).to.equal(1);
       expect(relayer.initiateFillCalls).to.equal(1);
-
-      // Validate state transitions occurred in correct sequence
-      const transitions = relayer.stateTransitions[nonce];
-      expect(transitions).to.have.lengthOf(3);
-      expect(transitions[0]).to.deep.equal({ from: MessageState.INITIAL, to: MessageState.DEPOSIT_PENDING });
-      expect(transitions[1]).to.deep.equal({ from: MessageState.DEPOSIT_PENDING, to: MessageState.FILL_PENDING });
-      expect(transitions[2]).to.deep.equal({ from: MessageState.FILL_PENDING, to: MessageState.FILLED });
+      expectStandardTransitions(relayer.stateTransitions[nonce]);
     });
   });
 
@@ -459,45 +465,24 @@ describe("GaslessRelayer", function () {
     it("CCTP deposit: submits deposit, skips fill, goes to FILLED", async function () {
       const msg = makeTestCctpMessage({ inputAmount: "2000000", outputAmount: "1900000" });
       const receipt = makeReceipt();
+      const nonce = depositNonceFor(relayer, msg);
 
       relayer.queryGaslessApiFn = async () => [msg];
       relayer.initiateGaslessDepositFn = async () => receipt;
 
       await relayer.runEvaluateApiSignatures();
 
-      const nonce = depositNonceFor(relayer, msg);
-
       expect(relayer.getMessageState(nonce)).to.equal(MessageState.FILLED);
       expect(relayer.initiateGaslessDepositCalls).to.equal(1);
-      // Fill should NOT be called for CCTP deposits.
       expect(relayer.initiateFillCalls).to.equal(0);
-
-      // Validate state transitions: CCTP deposits skip FILL_PENDING
-      const transitions = relayer.stateTransitions[nonce];
-      expect(transitions).to.have.lengthOf(2);
-      expect(transitions[0]).to.deep.equal({ from: MessageState.INITIAL, to: MessageState.DEPOSIT_PENDING });
-      expect(transitions[1]).to.deep.equal({ from: MessageState.DEPOSIT_PENDING, to: MessageState.FILLED });
+      expectCctpTransitions(relayer.stateTransitions[nonce]);
     });
   });
 
   describe("Edge cases and multi-message handling", function () {
     it("Input amount less than output amount: goes to ERROR", async function () {
-      // inputAmount < outputAmount is invalid and should be rejected
       const msg = makeTestDepositMessage({ inputAmount: "900000", outputAmount: "1000000" });
-
-      relayer.queryGaslessApiFn = async () => [msg];
-
-      await relayer.runEvaluateApiSignatures();
-
-      const nonce = depositNonceFor(relayer, msg);
-
-      expect(relayer.getMessageState(nonce)).to.equal(MessageState.ERROR);
-      expect(relayer.initiateGaslessDepositCalls).to.equal(0);
-
-      // Validate state transition: INITIAL -> ERROR
-      const transitions = relayer.stateTransitions[nonce];
-      expect(transitions).to.have.lengthOf(1);
-      expect(transitions[0]).to.deep.equal({ from: MessageState.INITIAL, to: MessageState.ERROR });
+      await expectErrorScenario(relayer, msg, "inputAmount < outputAmount");
     });
 
     it("Multiple messages: processes each independently", async function () {
@@ -513,13 +498,11 @@ describe("GaslessRelayer", function () {
       depositEvent2.depositId = toBN(200);
 
       relayer.queryGaslessApiFn = async () => [msg1, msg2];
-      let callCount = 0;
       relayer.initiateGaslessDepositFn = async () => receipt;
-      relayer.extractDepositFromReceiptFn = (_, chainId) => {
-        // Return different deposits based on which call this is.
-        callCount++;
-        return callCount === 1 ? depositEvent1 : depositEvent2;
-      };
+      relayer.extractDepositFromReceiptFn = (() => {
+        let callCount = 0;
+        return () => (++callCount === 1 ? depositEvent1 : depositEvent2);
+      })();
       relayer.initiateFillFn = async () => receipt;
 
       await relayer.runEvaluateApiSignatures();
@@ -532,44 +515,22 @@ describe("GaslessRelayer", function () {
       expect(relayer.initiateGaslessDepositCalls).to.equal(2);
       expect(relayer.initiateFillCalls).to.equal(2);
 
-      // Validate state transitions for both messages
-      expect(relayer.stateTransitions[nonce1]).to.have.lengthOf(3);
-      expect(relayer.stateTransitions[nonce2]).to.have.lengthOf(3);
-      // Both should follow the same transition sequence
-      expect(relayer.stateTransitions[nonce1][0]).to.deep.equal({
-        from: MessageState.INITIAL,
-        to: MessageState.DEPOSIT_PENDING,
-      });
-      expect(relayer.stateTransitions[nonce2][0]).to.deep.equal({
-        from: MessageState.INITIAL,
-        to: MessageState.DEPOSIT_PENDING,
-      });
+      expectStandardTransitions(relayer.stateTransitions[nonce1]);
+      expectStandardTransitions(relayer.stateTransitions[nonce2]);
     });
 
     it("Message with existing state is skipped on subsequent polls", async function () {
-      const msg = makeTestDepositMessage({ inputAmount: "2000000", outputAmount: "1900000" });
-      const receipt = makeReceipt();
-      const depositEvent = makeFakeDepositEvent({ inputAmount: "2000000", outputAmount: "1900000" });
+      const { nonce } = setupScenario(relayer, { inputAmount: "2000000", outputAmount: "1900000" }, makeTestDepositMessage);
 
-      relayer.queryGaslessApiFn = async () => [msg];
-      relayer.initiateGaslessDepositFn = async () => receipt;
-      relayer.extractDepositFromReceiptFn = () => depositEvent;
-      relayer.initiateFillFn = async () => receipt;
-
-      // First poll: process message.
+      // First poll: process message
       await relayer.runEvaluateApiSignatures();
-      const nonce = depositNonceFor(relayer, msg);
       expect(relayer.getMessageState(nonce)).to.equal(MessageState.FILLED);
       expect(relayer.initiateGaslessDepositCalls).to.equal(1);
-
-      // Validate state transitions from first poll
       expect(relayer.stateTransitions[nonce]).to.have.lengthOf(3);
 
-      // Second poll: message should be skipped (already has state).
+      // Second poll: message should be skipped (already has state)
       await relayer.runEvaluateApiSignatures();
-      // Call count should not increase.
       expect(relayer.initiateGaslessDepositCalls).to.equal(1);
-      // No new state transitions should occur
       expect(relayer.stateTransitions[nonce]).to.have.lengthOf(3);
     });
   });
