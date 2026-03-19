@@ -113,9 +113,9 @@ class TestableGaslessRelayer extends GaslessRelayer {
   }
 
   protected override _setState(depositKey: string, state: MessageState): void {
+    const currentState = this._getState(depositKey);
     super._setState(depositKey, state);
 
-    const currentState = this._getState(depositKey);
     this.stateTransitions[depositKey] ??= [];
     this.stateTransitions[depositKey].push({ from: currentState, to: state });
   }
