@@ -304,7 +304,7 @@ describe("GaslessRelayer", function () {
       RELAYER_TOKEN_SYMBOLS: '["USDC"]',
       RELAYER_ORIGIN_CHAINS: `[${ORIGIN_CHAIN_ID}]`,
       RELAYER_DESTINATION_CHAINS: `[${DESTINATION_CHAIN_ID}]`,
-      API_GASLESS_ENDPOINT: "http://test",
+      API_GASLESS_ENDPOINT: "http://127.0.0.1",
       SEND_TRANSACTIONS: "true",
     });
 
