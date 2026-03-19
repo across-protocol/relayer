@@ -259,10 +259,10 @@ export class ProfitClient {
   }
 
   private async _getTotalGasCost(deposit: Deposit, relayer: Address): Promise<TransactionCostEstimate> {
+    const rawFeeHistoryConfig =
+      process.env[`FEE_HISTORY_OPTIONS_${deposit.destinationChainId}`] ?? process.env["FEE_HISTORY_OPTIONS"];
+    const feeHistoryOptions = isDefined(rawFeeHistoryConfig) ? JSON.parse(rawFeeHistoryConfig) : undefined;
     try {
-      const rawFeeHistoryConfig =
-        process.env[`FEE_HISTORY_OPTIONS_${deposit.destinationChainId}`] ?? process.env["FEE_HISTORY_OPTIONS"];
-      const feeHistoryOptions = isDefined(rawFeeHistoryConfig) ? JSON.parse(rawFeeHistoryConfig) : undefined;
       return await this.relayerFeeQueries[deposit.destinationChainId].getGasCosts(deposit, relayer, {
         feeHistoryOptions,
       });
