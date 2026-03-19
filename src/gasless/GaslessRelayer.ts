@@ -70,7 +70,7 @@ const DEPOSIT_EVENT = "FundsDeposited";
   return this.toString();
 };
 
-enum MessageState {
+export enum MessageState {
   INITIAL = 0,
   DEPOSIT_PENDING,
   FILL_PENDING,
@@ -96,13 +96,13 @@ export class GaslessRelayer {
   private instanceCoordinator;
   private initialized = false;
 
-  private messageState: { [key: string]: MessageState } = {};
+  protected messageState: { [key: string]: MessageState } = {};
 
-  private providersByChain: { [chainId: number]: Provider } = {};
+  protected providersByChain: { [chainId: number]: Provider } = {};
   // The object is indexed by `chainId`. An `AuthorizationUsed` event is marked by adding `${token}:${authorizer}:${nonce}` to the respective chain's set.
-  private observedDeposits: { [chainId: number]: Set<string> } = {};
+  protected observedDeposits: { [chainId: number]: Set<string> } = {};
   // The object is indexed by `chainId`. A `FilledRelay` event is marked by adding `${originChainId}:${depositId}` to the respective chain's set.
-  private observedFills: { [chainId: number]: Set<string> } = {};
+  protected observedFills: { [chainId: number]: Set<string> } = {};
   // The object is indexed by `chainId`. Each element of the set is a deposit which should be retried in the bot's runtime.
   private retryableFills: {
     [chainId: number]: {
@@ -110,12 +110,12 @@ export class GaslessRelayer {
     };
   } = {};
   // The object is indexed by `chainId`. A SpokePoolPeriphery contract is indexed by the chain ID.
-  private spokePoolPeripheries: { [chainId: number]: Contract } = {};
+  protected spokePoolPeripheries: { [chainId: number]: Contract } = {};
   // The object is indexed by `chainId`. A SpokePool contract is indexed by the chain ID.
-  private spokePools: { [chainId: number]: Contract } = {};
+  protected spokePools: { [chainId: number]: Contract } = {};
 
   private api: AcrossSwapApiClient;
-  private signerAddress: EvmAddress;
+  protected signerAddress: EvmAddress;
 
   private transactionClient;
   private redisCache;
@@ -363,7 +363,7 @@ export class GaslessRelayer {
   /*
    * @notice Polls the API and creates deposits/fills for all messages which are missing deposits/fills.
    */
-  private async evaluateApiSignatures(): Promise<void> {
+  protected async evaluateApiSignatures(): Promise<void> {
     const defaultHandler = async (depositMessage: GaslessDepositMessage) => {
       const { originChainId, depositId, spokePool } = depositMessage;
       const { destinationChainId, inputToken, outputToken, inputAmount, outputAmount } = depositMessage.baseDepositData;
@@ -589,10 +589,10 @@ export class GaslessRelayer {
           currentState,
           nextState: state,
         });
-        this.messageState[depositKey] = state;
+        this._setState(depositKey, state);
       };
       const getState = () => {
-        return (this.messageState[depositKey] ??= MessageState.INITIAL);
+        return this._getState(depositKey);
       };
 
       const messageState = getState();
@@ -726,7 +726,7 @@ export class GaslessRelayer {
    * @notice Builds and sends depositWithAuthorization tx, then waits for execution.
    * @returns The transaction receipt, or null if skipped or failed.
    */
-  private async initiateGaslessDeposit(depositMessage: GaslessDepositMessage): Promise<TransactionReceipt | null> {
+  protected async initiateGaslessDeposit(depositMessage: GaslessDepositMessage): Promise<TransactionReceipt | null> {
     const { originChainId, depositId } = depositMessage;
     const { destinationChainId, inputAmount, inputToken } = depositMessage.baseDepositData;
     const authorizer = getGaslessAuthorizerAddress(depositMessage);
@@ -789,7 +789,7 @@ export class GaslessRelayer {
   /*
    * @notice Builds and sends the associated `fillRelay` call from the input API message.
    */
-  private async initiateFill(
+  protected async initiateFill(
     deposit: Omit<DepositWithBlock, "fromLiteChain" | "toLiteChain" | "quoteBlockNumber">,
     originChainSpokePool: string
   ): Promise<TransactionReceipt | null> {
@@ -859,7 +859,7 @@ export class GaslessRelayer {
   /*
    * @notice Queries the API for all pending gasless transactions. By default, do not retry since this endpoing is being polled.
    */
-  private async _queryGaslessApi(retriesRemaining = 0): Promise<GaslessDepositMessage[]> {
+  protected async _queryGaslessApi(retriesRemaining = 0): Promise<GaslessDepositMessage[]> {
     let apiResponseData: { deposits: APIGaslessDepositResponse[] } | undefined = undefined;
     try {
       apiResponseData = await this.api.get<{ deposits: APIGaslessDepositResponse[] }>(this.config.apiEndpoint, {});
@@ -875,7 +875,7 @@ export class GaslessRelayer {
   /*
    * @notice Finds a deposit via EIP-3009 AuthorizationUsed on the token, then extracts the deposit from the tx receipt.
    */
-  private async _findDepositByAuthorization(
+  protected async _findDepositByAuthorization(
     originChainId: number,
     inputToken: Address,
     authorizer: string,
@@ -985,7 +985,7 @@ export class GaslessRelayer {
   /*
    * @notice Extracts the deposit event from an input transaction receipt. This function assumes the input transaction receipt does indeed contain a deposit in the logs.
    */
-  private _extractDepositFromTransactionReceipt(
+  protected _extractDepositFromTransactionReceipt(
     transactionReceipt: TransactionReceipt,
     originChainId: number
   ): Omit<DepositWithBlock, "fromLiteChain" | "toLiteChain" | "quoteBlockNumber"> {
@@ -1033,10 +1033,24 @@ export class GaslessRelayer {
   }
 
   /*
-   * @notice Gets the key for `this.observedNonces` from a relevant 3009 authorization.
+   * @notice Gets the key for `this.observedDeposits` from a relevant 3009 authorization.
    */
-  private _getDepositKey(token: string, originChainId: number, depositId: string): string {
+  protected _getDepositKey(token: string, originChainId: number, depositId: string): string {
     return `${token}:${originChainId}:${depositId}`;
+  }
+
+  /*
+   * @notice Sets the message state for a deposit. Can be overridden by subclasses to observe state changes.
+   */
+  protected _setState(depositKey: string, state: MessageState): void {
+    this.messageState[depositKey] = state;
+  }
+
+  /*
+   * @notice Gets the message state for a deposit, initializing to INITIAL if not set.
+   */
+  protected _getState(depositKey: string): MessageState {
+    return (this.messageState[depositKey] ??= MessageState.INITIAL);
   }
 
   /*
