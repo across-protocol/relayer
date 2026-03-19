@@ -354,11 +354,7 @@ function expectCctpTransitions(transitions: Array<{ from: MessageState; to: Mess
 /**
  * Helper for testing error scenarios - validates that a message is rejected with ERROR state.
  */
-async function expectErrorScenario(
-  relayer: TestableGaslessRelayer,
-  msg: GaslessDepositMessage,
-  testDescription: string
-) {
+async function expectErrorScenario(relayer: TestableGaslessRelayer, msg: GaslessDepositMessage) {
   relayer.queryGaslessApiFn = async () => [msg];
 
   await relayer.runEvaluateApiSignatures();
@@ -428,7 +424,11 @@ describe("GaslessRelayer", function () {
   });
 
   it("Standard path: INITIAL -> DEPOSIT_PENDING -> FILL_PENDING -> FILLED", async function () {
-    const { nonce } = setupScenario(relayer, { inputAmount: "2000000", outputAmount: "1900000" }, makeTestDepositMessage);
+    const { nonce } = setupScenario(
+      relayer,
+      { inputAmount: "2000000", outputAmount: "1900000" },
+      makeTestDepositMessage
+    );
 
     await relayer.runEvaluateApiSignatures();
 
@@ -440,17 +440,21 @@ describe("GaslessRelayer", function () {
 
   it("Invalid deposit (mismatching L1 tokens) -> ERROR", async function () {
     const msg = makeTestDepositMessage({ inputToken: USDC_MAINNET, outputToken: WETH_BASE });
-    await expectErrorScenario(relayer, msg, "mismatching L1 tokens");
+    await expectErrorScenario(relayer, msg);
   });
 
   it("Expired deposit -> ERROR", async function () {
     const msg = makeTestDepositMessage({ fillDeadline: getCurrentTime() - 100 });
-    await expectErrorScenario(relayer, msg, "expired deposit");
+    await expectErrorScenario(relayer, msg);
   });
 
   describe("Permit2 flow", function () {
     it("Permit2 deposit: INITIAL -> DEPOSIT_PENDING -> FILL_PENDING -> FILLED", async function () {
-      const { nonce } = setupScenario(relayer, { inputAmount: "2000000", outputAmount: "1900000" }, makeTestPermit2Message);
+      const { nonce } = setupScenario(
+        relayer,
+        { inputAmount: "2000000", outputAmount: "1900000" },
+        makeTestPermit2Message
+      );
 
       await relayer.runEvaluateApiSignatures();
 
@@ -482,7 +486,7 @@ describe("GaslessRelayer", function () {
   describe("Edge cases and multi-message handling", function () {
     it("Input amount less than output amount: goes to ERROR", async function () {
       const msg = makeTestDepositMessage({ inputAmount: "900000", outputAmount: "1000000" });
-      await expectErrorScenario(relayer, msg, "inputAmount < outputAmount");
+      await expectErrorScenario(relayer, msg);
     });
 
     it("Multiple messages: processes each independently", async function () {
@@ -520,7 +524,11 @@ describe("GaslessRelayer", function () {
     });
 
     it("Message with existing state is skipped on subsequent polls", async function () {
-      const { nonce } = setupScenario(relayer, { inputAmount: "2000000", outputAmount: "1900000" }, makeTestDepositMessage);
+      const { nonce } = setupScenario(
+        relayer,
+        { inputAmount: "2000000", outputAmount: "1900000" },
+        makeTestDepositMessage
+      );
 
       // First poll: process message
       await relayer.runEvaluateApiSignatures();
