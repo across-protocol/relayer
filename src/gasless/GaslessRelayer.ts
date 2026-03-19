@@ -120,17 +120,6 @@ export class GaslessRelayer {
   private transactionClient;
   private redisCache;
 
-  /**
-   * Hook called when message state transitions occur.
-   * Subclasses can override to observe state changes (e.g., for testing).
-   * @param depositKey The unique key for the deposit message.
-   * @param fromState The previous state.
-   * @param toState The new state.
-   */
-  protected onStateTransition(depositKey: string, fromState: MessageState, toState: MessageState): void {
-    // No-op in base class - subclasses can override to observe transitions.
-  }
-
   public constructor(
     readonly logger: winston.Logger,
     readonly config: GaslessRelayerConfig,
@@ -600,11 +589,10 @@ export class GaslessRelayer {
           currentState,
           nextState: state,
         });
-        this.messageState[depositKey] = state;
-        this.onStateTransition(depositKey, currentState, state);
+        this._setState(depositKey, state);
       };
       const getState = () => {
-        return (this.messageState[depositKey] ??= MessageState.INITIAL);
+        return this._getState(depositKey);
       };
 
       const messageState = getState();
@@ -1049,6 +1037,20 @@ export class GaslessRelayer {
    */
   protected _getDepositKey(token: string, originChainId: number, depositId: string): string {
     return `${token}:${originChainId}:${depositId}`;
+  }
+
+  /*
+   * @notice Sets the message state for a deposit. Can be overridden by subclasses to observe state changes.
+   */
+  protected _setState(depositKey: string, state: MessageState): void {
+    this.messageState[depositKey] = state;
+  }
+
+  /*
+   * @notice Gets the message state for a deposit, initializing to INITIAL if not set.
+   */
+  protected _getState(depositKey: string): MessageState {
+    return (this.messageState[depositKey] ??= MessageState.INITIAL);
   }
 
   /*

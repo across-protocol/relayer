@@ -112,9 +112,12 @@ class TestableGaslessRelayer extends GaslessRelayer {
     return this.extractDepositFromReceiptFn(receipt, originChainId);
   }
 
-  protected override onStateTransition(depositKey: string, fromState: MessageState, toState: MessageState): void {
+  protected override _setState(depositKey: string, state: MessageState): void {
+    super._setState(depositKey, state);
+
+    const currentState = this._getState(depositKey);
     this.stateTransitions[depositKey] ??= [];
-    this.stateTransitions[depositKey].push({ from: fromState, to: toState });
+    this.stateTransitions[depositKey].push({ from: currentState, to: state });
   }
 }
 
@@ -533,8 +536,14 @@ describe("GaslessRelayer", function () {
       expect(relayer.stateTransitions[nonce1]).to.have.lengthOf(3);
       expect(relayer.stateTransitions[nonce2]).to.have.lengthOf(3);
       // Both should follow the same transition sequence
-      expect(relayer.stateTransitions[nonce1][0]).to.deep.equal({ from: MessageState.INITIAL, to: MessageState.DEPOSIT_PENDING });
-      expect(relayer.stateTransitions[nonce2][0]).to.deep.equal({ from: MessageState.INITIAL, to: MessageState.DEPOSIT_PENDING });
+      expect(relayer.stateTransitions[nonce1][0]).to.deep.equal({
+        from: MessageState.INITIAL,
+        to: MessageState.DEPOSIT_PENDING,
+      });
+      expect(relayer.stateTransitions[nonce2][0]).to.deep.equal({
+        from: MessageState.INITIAL,
+        to: MessageState.DEPOSIT_PENDING,
+      });
     });
 
     it("Message with existing state is skipped on subsequent polls", async function () {
