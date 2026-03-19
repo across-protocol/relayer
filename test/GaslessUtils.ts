@@ -132,12 +132,15 @@ describe("GaslessUtils", function () {
   });
 
   describe("buildGaslessDepositTx", function () {
-    it("returns named method tx when no integratorId", function () {
+    it("returns raw tx with single calldata arg (no integratorId)", function () {
       const msg = makeDepositMessage();
       const contract = makeSpokePoolPeripheryContract();
       const tx = buildGaslessDepositTx(msg as any, contract);
-      expect(tx.method).to.equal("depositWithAuthorization");
-      expect(tx.args.length).to.equal(5);
+      expect(tx.method).to.equal("");
+      expect(tx.args.length).to.equal(1);
+      const calldata = tx.args[0] as string;
+      // Calldata ends with swap API marker
+      expect(calldata.toLowerCase()).to.match(/73c0de$/);
       expect(tx.ensureConfirmation).to.be.true;
     });
 
@@ -148,8 +151,8 @@ describe("GaslessUtils", function () {
       expect(tx.method).to.equal("");
       expect(tx.args.length).to.equal(1);
       const calldata = tx.args[0] as string;
-      // Calldata should end with delimiter + integratorId
-      expect(calldata.toLowerCase()).to.match(/1dc0deabcd$/);
+      // Calldata ends with delimiter + integratorId + swap marker
+      expect(calldata.toLowerCase()).to.match(/1dc0deabcd73c0de$/);
       expect(tx.ensureConfirmation).to.be.true;
     });
 
@@ -158,7 +161,6 @@ describe("GaslessUtils", function () {
       const contract = makeSpokePoolPeripheryContract();
       const tx = buildGaslessDepositTx(msg as any, contract);
       const calldata = tx.args[0] as string;
-      // First 4 bytes = function selector for depositWithAuthorization
       const iface = new ethers.utils.Interface(SPOKE_POOL_PERIPHERY_ABI);
       const selector = iface.getSighash("depositWithAuthorization");
       expect(calldata.startsWith(selector)).to.be.true;
