@@ -26,7 +26,6 @@ import {
   assert,
   Profiler,
   getNativeTokenSymbol,
-  getInventoryBalanceContributorTokens,
   getInventoryEquivalentL1TokenAddress,
   depositForcesOriginChainRepayment,
   getRemoteTokenForL1Token,
@@ -307,7 +306,7 @@ export class InventoryClient {
       );
     }
 
-    const l2Tokens = this.getBalanceContributorTokensForL1Token(l1Token, chainId);
+    const l2Tokens = this.getRemoteTokensForL1Token(l1Token, chainId);
     balance = balance.add(
       l2Tokens
         .map((l2Token) => {
@@ -332,7 +331,6 @@ export class InventoryClient {
   private getChainDistribution(l1Token: EvmAddress): { [chainId: number]: TokenDistribution } {
     const cumulativeBalance = this.getCumulativeBalance(l1Token);
     const distribution: { [chainId: number]: TokenDistribution } = {};
-    const useAggregateChainBalance = this.usesAggregateBalanceForChain(l1Token);
 
     this.getEnabledChains().forEach((chainId) => {
       // If token doesn't have entry on chain, skip creating an entry for it since we'll likely run into an error
@@ -344,18 +342,6 @@ export class InventoryClient {
 
         distribution[chainId] ??= {};
         const l2Tokens = this.getRemoteTokensForL1Token(l1Token, chainId);
-        if (useAggregateChainBalance) {
-          const aggregateDistributionToken =
-            l2Tokens[0] ?? this.getBalanceContributorTokensForL1Token(l1Token, chainId)[0];
-          if (!isDefined(aggregateDistributionToken)) {
-            return;
-          }
-          const effectiveBalance = this.getBalanceOnChain(chainId, l1Token);
-          distribution[chainId][aggregateDistributionToken.toNative()] = effectiveBalance
-            .mul(this.scalar)
-            .div(cumulativeBalance);
-          return;
-        }
         l2Tokens.forEach((l2Token) => {
           // The effective balance is the current balance + inbound bridge transfers.
           const effectiveBalance = this.getBalanceOnChain(chainId, l1Token, l2Token);
@@ -393,13 +379,15 @@ export class InventoryClient {
       return bnZero;
     }
 
-    const useAggregateChainBalance = this.usesAggregateBalanceForChain(l1Token);
-    const shortfall = this.getShortfallOnChain(l1Token, chainId, l2Token, useAggregateChainBalance);
-    const currentBalance = (
-      useAggregateChainBalance
-        ? this.getBalanceOnChain(chainId, l1Token, undefined, ignoreL1ToL2PendingAmount)
-        : this.getBalanceOnChain(chainId, l1Token, l2Token, ignoreL1ToL2PendingAmount)
-    ).sub(ignoreShortfall ? bnZero : shortfall);
+    const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(l2Token, chainId);
+    const { decimals: l1TokenDecimals } = getTokenInfo(l1Token, this.hubPoolClient.chainId);
+    const shortfall = sdkUtils.ConvertDecimals(
+      l2TokenDecimals,
+      l1TokenDecimals
+    )(this.tokenClient.getShortfallTotalRequirement(chainId, l2Token));
+    const currentBalance = this.getBalanceOnChain(chainId, l1Token, l2Token, ignoreL1ToL2PendingAmount).sub(
+      ignoreShortfall ? bnZero : shortfall
+    );
 
     // Multiply by scalar to avoid rounding errors.
     return currentBalance.mul(this.scalar).div(cumulativeBalance);
@@ -441,47 +429,6 @@ export class InventoryClient {
     }
 
     return [destinationToken];
-  }
-
-  protected getBalanceContributorTokensForL1Token(l1Token: EvmAddress, chainId: number): Address[] {
-    if (chainId === this.hubPoolClient.chainId) {
-      return [l1Token];
-    }
-
-    const tokenConfig = this.inventoryConfig?.tokenConfig?.[l1Token.toNative()];
-    if (!isDefined(tokenConfig)) {
-      return [];
-    }
-
-    return isAliasConfig(tokenConfig)
-      ? this.getRemoteTokensForL1Token(l1Token, chainId)
-      : getInventoryBalanceContributorTokens(l1Token, chainId, this.hubPoolClient.chainId);
-  }
-
-  protected usesAggregateBalanceForChain(l1Token: EvmAddress): boolean {
-    const tokenConfig = this.inventoryConfig?.tokenConfig?.[l1Token.toNative()];
-    return isDefined(tokenConfig) && !isAliasConfig(tokenConfig);
-  }
-
-  private getShortfallOnChain(
-    l1Token: EvmAddress,
-    chainId: number,
-    l2Token: Address,
-    useAggregateChainBalance = false
-  ): BigNumber {
-    const { decimals: l1TokenDecimals } = getTokenInfo(l1Token, this.hubPoolClient.chainId);
-    const shortfallTokens = useAggregateChainBalance
-      ? this.getBalanceContributorTokensForL1Token(l1Token, chainId)
-      : [l2Token];
-    return shortfallTokens
-      .map((shortfallToken) => {
-        const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(shortfallToken, chainId);
-        return sdkUtils.ConvertDecimals(
-          l2TokenDecimals,
-          l1TokenDecimals
-        )(this.tokenClient.getShortfallTotalRequirement(chainId, shortfallToken));
-      })
-      .reduce((acc, curr) => acc.add(curr), bnZero);
   }
 
   getEnabledChains(): number[] {
@@ -1623,13 +1570,7 @@ export class InventoryClient {
           const shouldWithdrawExcess = currentAllocPct.gte(excessWithdrawThresholdPct);
           const withdrawPct = currentAllocPct.sub(targetPct);
           const cumulativeBalanceInL2TokenDecimals = l2BalanceFromL1Decimals(cumulativeBalance);
-          // Cap withdrawal at the actual l2Token balance. In aggregate mode, the allocation pct reflects the
-          // combined balance across all contributor tokens, but we can only withdraw this specific l2Token.
-          const actualL2TokenBalance = this.tokenClient.getBalance(chainId, l2Token);
-          const rawWithdrawalAmount = cumulativeBalanceInL2TokenDecimals.mul(withdrawPct).div(this.scalar);
-          const desiredWithdrawalAmount = rawWithdrawalAmount.gt(actualL2TokenBalance)
-            ? actualL2TokenBalance
-            : rawWithdrawalAmount;
+          const desiredWithdrawalAmount = cumulativeBalanceInL2TokenDecimals.mul(withdrawPct).div(this.scalar);
 
           this.log(
             `Evaluated withdrawing excess balance on ${getNetworkName(chainId)} for token ${l1TokenInfo.symbol}: ${
@@ -1650,7 +1591,7 @@ export class InventoryClient {
                 : undefined,
             }
           );
-          if (!shouldWithdrawExcess || desiredWithdrawalAmount.eq(bnZero)) {
+          if (!shouldWithdrawExcess) {
             return;
           }
           // Check to make sure the total pending volume withdrawn over the last
