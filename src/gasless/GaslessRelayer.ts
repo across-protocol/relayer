@@ -38,7 +38,6 @@ import {
   MAX_UINT_VAL,
   toBNWei,
   willSucceed,
-  TOKEN_SYMBOLS_MAP,
 } from "../utils";
 import {
   APIGaslessDepositResponse,

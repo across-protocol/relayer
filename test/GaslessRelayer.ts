@@ -433,9 +433,7 @@ function setFillImmediateThreshold(msg: GaslessDepositMessage, multiplier = 2): 
 
   // Verify token is a stablecoin (USDC or USDT) using shared utility
   if (!isStablecoin(outputAddr, destinationChainId)) {
-    throw new Error(
-      `setFillImmediateThreshold: outputToken ${outputToken} is not a supported stablecoin (USDC/USDT)`
-    );
+    throw new Error(`setFillImmediateThreshold: outputToken ${outputToken} not supported`);
   }
 
   // Calculate threshold using the same decimals resolution as fillImmediate()
