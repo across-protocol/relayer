@@ -1,6 +1,5 @@
 import assert from "assert";
 import minimist from "minimist";
-import { groupBy } from "lodash";
 import { config } from "dotenv";
 import { Contract, ethers, Signer } from "ethers";
 import { LogDescription } from "@ethersproject/abi";
@@ -561,7 +560,7 @@ async function _fetchTxn(spokePool: Contract, txnHash: string): Promise<{ deposi
   const fundsDeposited = spokePool.interface.getEventTopic(DEPOSIT_EVENT);
   const filledRelay = spokePool.interface.getEventTopic(FILL_EVENT);
   const logs = txn.logs.filter(({ address }) => address === spokePool.address);
-  const { deposits = [], fills = [] } = groupBy(logs, ({ topics }) => {
+  const { deposits = [], fills = [] } = Object.groupBy(logs, ({ topics }) => {
     switch (topics[0]) {
       case fundsDeposited:
         return "deposits";

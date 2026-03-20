@@ -1355,8 +1355,7 @@ export class Dataworker {
       const messageHash = getMessageHash(relayData.message);
 
       // Start with the most recent fills and search backwards.
-      const fill = _.findLast(
-        sortedFills,
+      const fill = sortedFills.findLast(
         (fill) =>
           fill.depositId.eq(relayData.depositId) &&
           fill.originChainId === relayData.originChainId &&
