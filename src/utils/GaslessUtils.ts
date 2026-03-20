@@ -22,7 +22,7 @@ import { AugmentedTransaction } from "../clients";
 import { Contract, BigNumber, ethers } from "ethers";
 
 const DOMAIN_CALLDATA_DELIMITER = "0x1dc0de";
-
+const SWAP_CALLDATA_MARKER = "0x73c0de";
 /**
  * Returns true if the input/output token pair is allowed for gasless: either same L1 token,
  * or (inputSymbol, outputSymbol) is in allowedPeggedPairs (e.g. { "USDT": ["USDC"] }).
@@ -64,6 +64,10 @@ export function tagIntegratorId(txData: string, integratorId: string): string {
   }
   const normalized = "0x" + stripped;
   return ethers.utils.hexConcat([txData, DOMAIN_CALLDATA_DELIMITER, normalized]);
+}
+
+export function tagSwapApiMarker(txData: string) {
+  return ethers.utils.hexConcat([txData, SWAP_CALLDATA_MARKER]);
 }
 
 /**
@@ -171,24 +175,19 @@ export function buildPermit2GaslessDepositTx(
   };
   const signatureBytes = normalizeSignatureBytes(signature);
   const args = [signatureOwner, depositData, permitStruct, signatureBytes];
+  let calldata = spokePoolPeripheryContract.interface.encodeFunctionData("depositWithPermit2", args);
 
   if (integratorId) {
-    const calldata = spokePoolPeripheryContract.interface.encodeFunctionData("depositWithPermit2", args);
-    const taggedCalldata = tagIntegratorId(calldata, integratorId);
-    return {
-      contract: spokePoolPeripheryContract,
-      chainId: depositMessage.originChainId,
-      method: "",
-      args: [taggedCalldata],
-      ensureConfirmation: true,
-    };
+    calldata = tagIntegratorId(calldata, integratorId);
   }
+
+  calldata = tagSwapApiMarker(calldata);
 
   return {
     contract: spokePoolPeripheryContract,
     chainId: depositMessage.originChainId,
-    method: "depositWithPermit2",
-    args,
+    method: "",
+    args: [calldata],
     ensureConfirmation: true,
     spray: depositMessage.originChainId === CHAIN_IDs.MAINNET,
   };
@@ -231,23 +230,18 @@ export function buildReceiveWithAuthorizationGaslessDepositTx(
     normalizeSignature(signature),
   ];
 
+  let calldata = spokePoolPeripheryContract.interface.encodeFunctionData("depositWithAuthorization", args);
   if (integratorId) {
-    const calldata = spokePoolPeripheryContract.interface.encodeFunctionData("depositWithAuthorization", args);
-    const taggedCalldata = tagIntegratorId(calldata, integratorId);
-    return {
-      contract: spokePoolPeripheryContract,
-      chainId: depositMessage.originChainId,
-      method: "",
-      args: [taggedCalldata],
-      ensureConfirmation: true,
-    };
+    calldata = tagIntegratorId(calldata, integratorId);
   }
+
+  calldata = tagSwapApiMarker(calldata);
 
   return {
     contract: spokePoolPeripheryContract,
     chainId: depositMessage.originChainId,
-    method: "depositWithAuthorization",
-    args,
+    method: "",
+    args: [calldata],
     ensureConfirmation: true,
     spray: depositMessage.originChainId === CHAIN_IDs.MAINNET, // If mainnet, send to all available private RPCs.
   };
