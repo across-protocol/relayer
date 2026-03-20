@@ -124,7 +124,7 @@ export class BundleDataApproxClient {
         assert(isDefined(spokePoolClient), `SpokePoolClient not found for chainId ${chainId}`);
         // Step 1: Find the last RelayedRootBundle event that was relayed to this chain. Assume this contains refunds
         // from the last executed bundle for this chain and these refunds were executed.
-        const lastRelayedRootToChain = _.findLast(spokePoolClient.getRootBundleRelays(), (relay) => {
+        const lastRelayedRootToChain = spokePoolClient.getRootBundleRelays().findLast((relay) => {
           if (!isDefined(relay)) {
             return false;
           }
@@ -141,7 +141,7 @@ export class BundleDataApproxClient {
             return false;
           }
           return isDefined(
-            _.findLast(spokePoolClient.getRelayerRefundExecutions(), (execution) => {
+            spokePoolClient.getRelayerRefundExecutions().findLast((execution) => {
               if (!isDefined(execution)) {
                 return false;
               }
