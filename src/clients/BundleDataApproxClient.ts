@@ -12,7 +12,6 @@ import {
   winston,
   ConvertDecimals,
   getInventoryEquivalentL1TokenAddress,
-  getRemoteTokenForL1Token,
   getTokenInfo,
 } from "../utils";
 import { Address, bnZero } from "../utils/SDKUtils";
