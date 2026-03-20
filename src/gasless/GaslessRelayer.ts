@@ -374,7 +374,9 @@ export class GaslessRelayer {
     const stableCoin = [TOKEN_SYMBOLS_MAP.USDC, TOKEN_SYMBOLS_MAP.USDT].some(({ addresses }) =>
       deposit.outputToken.eq(toAddressType(addresses[deposit.destinationChainId], deposit.destinationChainId))
     );
-    const threshold = Number(process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${deposit.originChainId}`] ?? "0");
+    const threshold = Number(
+      process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${deposit.originChainId}`] ?? "0"
+    );
     if (isNaN(threshold) || threshold === 0) {
       return;
     }
@@ -721,15 +723,36 @@ export class GaslessRelayer {
             }
 
             let nextState: MessageState;
-            deposit ??= depositReceipt
-              ? this._extractDepositFromTransactionReceipt(depositReceipt, originChainId)
-              : await this._findDeposit(depositMessage);
-            if (isDefined(deposit)) {
-              nextState = fillImmediate ? MessageState.FILLED : MessageState.FILL_PENDING;
+            // In immediate fill path, deposit is synthetic (built from API message).
+            // We must verify the actual on-chain deposit exists before proceeding to FILLED.
+            // If verification fails, the fill is unreimbursable and we must retry deposit.
+            if (fillImmediate && isDefined(deposit)) {
+              // Force verification: extract from receipt or find on-chain
+              const verifiedDeposit = depositReceipt
+                ? this._extractDepositFromTransactionReceipt(depositReceipt, originChainId)
+                : await this._findDeposit(depositMessage);
+
+              if (isDefined(verifiedDeposit)) {
+                log("info", `Verified deposit on ${origin} after immediate fill.`);
+                deposit = verifiedDeposit; // Replace synthetic with real
+                nextState = MessageState.FILLED;
+              } else {
+                log("warn", `Deposit not found on ${origin} after immediate fill - unreimbursable fill risk!`);
+                await delay(1);
+                nextState = MessageState.DEPOSIT_SUBMIT;
+              }
             } else {
-              log("info", `Could not locate deposit on ${origin}.`);
-              await delay(1);
-              nextState = MessageState.DEPOSIT_SUBMIT;
+              // Standard path: deposit should be null, populate it
+              deposit ??= depositReceipt
+                ? this._extractDepositFromTransactionReceipt(depositReceipt, originChainId)
+                : await this._findDeposit(depositMessage);
+              if (isDefined(deposit)) {
+                nextState = MessageState.FILL_PENDING;
+              } else {
+                log("info", `Could not locate deposit on ${origin}.`);
+                await delay(1);
+                nextState = MessageState.DEPOSIT_SUBMIT;
+              }
             }
             setState(nextState);
             break;

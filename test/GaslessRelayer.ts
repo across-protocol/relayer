@@ -512,9 +512,9 @@ describe("GaslessRelayer", function () {
     await relayer.runEvaluateApiSignatures();
 
     expect(relayer.getMessageState(depositNonceFor(relayer, msg))).to.equal(MessageState.FILLED);
-    // Immediate path: fill was submitted before deposit confirmed, so deposit was built
-    // synthetically rather than extracted from the receipt.
-    expect(relayer.extractDepositFromReceiptCalls).to.equal(0);
+    // Immediate path: fill uses synthetic deposit, but we MUST verify the actual deposit
+    // succeeded by extracting from receipt to avoid unreimbursable fills.
+    expect(relayer.extractDepositFromReceiptCalls).to.equal(1);
     expect(relayer.initiateFillCalls).to.be.gte(1);
     expectImmediateTransitions(relayer.stateTransitions[depositNonceFor(relayer, msg)]);
     delete process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`];
@@ -544,6 +544,51 @@ describe("GaslessRelayer", function () {
     // deposit was extracted from the receipt (not built synthetically).
     expect(relayer.extractDepositFromReceiptCalls).to.equal(1);
     expect(relayer.initiateFillCalls).to.equal(1);
+  });
+
+  it("Immediate fill: retries when deposit fails after fill succeeds", async function () {
+    // Tests the critical safety check: if immediate fill succeeds but deposit fails/never mines,
+    // the relayer detects this in DEPOSIT_CONFIRM and retries instead of finalizing.
+    // Without this check, the relayer would have an unreimbursable fill.
+    process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`] = "10";
+    const msg = makeTestDepositMessage();
+    const nonce = depositNonceFor(relayer, msg);
+
+    let depositAttempts = 0;
+    relayer.queryGaslessApiFn = async () => [msg];
+    relayer.initiateGaslessDepositFn = async () => {
+      depositAttempts++;
+      // First attempt: return null (deposit failed)
+      // Second attempt: return receipt (deposit succeeds)
+      return depositAttempts === 1 ? null : makeReceipt();
+    };
+    relayer.extractDepositFromReceiptFn = () => makeFakeDepositEvent();
+    relayer.initiateFillFn = async () => makeReceipt();
+
+    await relayer.runEvaluateApiSignatures();
+
+    expect(relayer.getMessageState(nonce)).to.equal(MessageState.FILLED);
+    // Should have retried deposit after first attempt failed
+    expect(depositAttempts).to.equal(2);
+    expect(relayer.initiateGaslessDepositCalls).to.equal(2);
+    // Fill is attempted on both passes (deposit persists across retry).
+    // This is safe because fills are idempotent - second attempt is a no-op if first succeeded.
+    expect(relayer.initiateFillCalls).to.equal(2);
+    // Should verify deposit on second attempt
+    expect(relayer.extractDepositFromReceiptCalls).to.equal(1);
+
+    // Verify state transition sequence shows retry behavior
+    const transitions = relayer.stateTransitions[nonce];
+    expect(transitions).to.have.length.at.least(4);
+    expect(transitions[0]).to.deep.equal({ from: MessageState.INITIAL, to: MessageState.DEPOSIT_SUBMIT });
+    expect(transitions[1]).to.deep.equal({ from: MessageState.DEPOSIT_SUBMIT, to: MessageState.FILL_PENDING });
+    expect(transitions[2]).to.deep.equal({ from: MessageState.FILL_PENDING, to: MessageState.DEPOSIT_CONFIRM });
+    // Critical: should retry DEPOSIT_SUBMIT after verification fails
+    expect(transitions[3]).to.deep.equal({ from: MessageState.DEPOSIT_CONFIRM, to: MessageState.DEPOSIT_SUBMIT });
+    // Should eventually reach FILLED after retry succeeds
+    expect(transitions[transitions.length - 1].to).to.equal(MessageState.FILLED);
+
+    delete process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`];
   });
 
   it("Invalid deposit (mismatching L1 tokens) -> ERROR", async function () {
