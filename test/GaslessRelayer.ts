@@ -12,6 +12,7 @@ import {
   getCurrentTime,
   TOKEN_SYMBOLS_MAP,
 } from "../src/utils";
+import { MAX_EXCLUSIVITY_PERIOD_SECONDS } from "../src/utils/GaslessUtils";
 import { createSpyLogger, expect, FakeContract, smock, ethers, toBN } from "./utils";
 
 // Minimal 65-byte hex signature.
@@ -72,7 +73,10 @@ class TestableGaslessRelayer extends GaslessRelayer {
     return this.messageState[depositNonce];
   }
   public testFillImmediate(
-    deposit: Pick<DepositWithBlock, "originChainId" | "destinationChainId" | "outputToken" | "outputAmount">,
+    deposit: Pick<RelayData, "originChainId" | "outputToken" | "outputAmount"> & {
+      destinationChainId: number;
+      exclusivityParameter: number;
+    },
     spokePool: string
   ): boolean {
     return this.fillImmediate(deposit, spokePool);
@@ -179,8 +183,8 @@ function makeDepositMessage(
     exclusiveRelayer: DUMMY_ADDRESS,
     quoteTimestamp: getCurrentTime(),
     fillDeadline,
-    exclusivityDeadline: 0,
-    exclusivityParameter: 0,
+    exclusivityDeadline: 1700000000,
+    exclusivityParameter: 1700000000,
     message: "0x",
     ...baseOverrides,
   };
@@ -238,8 +242,8 @@ function makePermit2DepositMessage(
     exclusiveRelayer: DUMMY_ADDRESS,
     quoteTimestamp: getCurrentTime(),
     fillDeadline,
-    exclusivityDeadline: 0,
-    exclusivityParameter: 0,
+    exclusivityDeadline: 1700000000,
+    exclusivityParameter: 1700000000,
     message: "0x",
     ...baseOverrides,
   };
@@ -677,6 +681,7 @@ describe("GaslessRelayer", function () {
             destinationChainId: DESTINATION_CHAIN_ID,
             outputToken: EvmAddress.from(USDC_BASE),
             outputAmount: toBN("1000000"), // 1 USDC < 10 USDC default
+            exclusivityParameter: 1700000000,
           },
           fakeSpokePoolAddress
         );
@@ -690,6 +695,7 @@ describe("GaslessRelayer", function () {
             destinationChainId: DESTINATION_CHAIN_ID,
             outputToken: EvmAddress.from(USDC_BASE),
             outputAmount: toBN("20000000"), // 20 USDC > 10 USDC default
+            exclusivityParameter: 1700000000,
           },
           fakeSpokePoolAddress
         );
@@ -703,6 +709,7 @@ describe("GaslessRelayer", function () {
             destinationChainId: DESTINATION_CHAIN_ID,
             outputToken: EvmAddress.from(USDC_BASE),
             outputAmount: toBN("10000000"), // 10 USDC == 10 USDC default
+            exclusivityParameter: 1700000000,
           },
           fakeSpokePoolAddress
         );
@@ -718,6 +725,7 @@ describe("GaslessRelayer", function () {
               destinationChainId: DESTINATION_CHAIN_ID,
               outputToken: EvmAddress.from(USDC_BASE),
               outputAmount: toBN("3000000"), // 3 USDC < 5 USDC override
+              exclusivityParameter: 1700000000,
             },
             fakeSpokePoolAddress
           )
@@ -729,6 +737,7 @@ describe("GaslessRelayer", function () {
               destinationChainId: DESTINATION_CHAIN_ID,
               outputToken: EvmAddress.from(USDC_BASE),
               outputAmount: toBN("7000000"), // 7 USDC > 5 USDC override
+              exclusivityParameter: 1700000000,
             },
             fakeSpokePoolAddress
           )
@@ -743,10 +752,103 @@ describe("GaslessRelayer", function () {
             destinationChainId: DESTINATION_CHAIN_ID,
             outputToken: EvmAddress.from(WETH_BASE),
             outputAmount: toBN("1"), // Tiny amount, but not a stablecoin
+            exclusivityParameter: 1700000000,
           },
           fakeSpokePoolAddress
         );
         expect(result).to.be.false;
+      });
+
+      it("Returns false for relative exclusivityParameter (immediate fill unsafe)", function () {
+        // Relative parameter (300 seconds = 5 minutes) should reject immediate fill
+        // because we can't know the actual deadline until deposit mines.
+        const result = relayer.testFillImmediate(
+          {
+            originChainId: ORIGIN_CHAIN_ID,
+            destinationChainId: DESTINATION_CHAIN_ID,
+            outputToken: EvmAddress.from(USDC_BASE),
+            outputAmount: toBN("1000000"), // 1 USDC < 10 USDC (would pass amount check)
+            exclusivityParameter: 300,
+          },
+          fakeSpokePoolAddress
+        );
+        expect(result).to.be.false;
+      });
+
+      it("Returns true for absolute exclusivityParameter (immediate fill safe)", function () {
+        // Absolute timestamp (>= 1e9) allows immediate fill because deadline is known.
+        const result = relayer.testFillImmediate(
+          {
+            originChainId: ORIGIN_CHAIN_ID,
+            destinationChainId: DESTINATION_CHAIN_ID,
+            outputToken: EvmAddress.from(USDC_BASE),
+            outputAmount: toBN("1000000"), // 1 USDC < 10 USDC
+            exclusivityParameter: 1700000000,
+          },
+          fakeSpokePoolAddress
+        );
+        expect(result).to.be.true;
+      });
+
+      it("Returns true for exclusivityParameter = 0 (treated as absolute)", function () {
+        // exclusivityParameter = 0 means no exclusivity, treated as absolute (not relative).
+        const result = relayer.testFillImmediate(
+          {
+            originChainId: ORIGIN_CHAIN_ID,
+            destinationChainId: DESTINATION_CHAIN_ID,
+            outputToken: EvmAddress.from(USDC_BASE),
+            outputAmount: toBN("1000000"),
+            exclusivityParameter: 0,
+          },
+          fakeSpokePoolAddress
+        );
+        expect(result).to.be.true;
+      });
+
+      it("Returns false for exclusivityParameter just under threshold (relative)", function () {
+        // Just under MAX_EXCLUSIVITY_PERIOD_SECONDS should be treated as relative.
+        const result = relayer.testFillImmediate(
+          {
+            originChainId: ORIGIN_CHAIN_ID,
+            destinationChainId: DESTINATION_CHAIN_ID,
+            outputToken: EvmAddress.from(USDC_BASE),
+            outputAmount: toBN("1000000"),
+            exclusivityParameter: MAX_EXCLUSIVITY_PERIOD_SECONDS - 1,
+          },
+          fakeSpokePoolAddress
+        );
+        expect(result).to.be.false;
+      });
+
+      it("Returns false for exclusivityParameter at threshold (conservatively treated as relative)", function () {
+        // Exactly at MAX_EXCLUSIVITY_PERIOD_SECONDS is conservatively treated as relative.
+        // This is the safer choice: reject immediate fill rather than risk using wrong deadline.
+        const result = relayer.testFillImmediate(
+          {
+            originChainId: ORIGIN_CHAIN_ID,
+            destinationChainId: DESTINATION_CHAIN_ID,
+            outputToken: EvmAddress.from(USDC_BASE),
+            outputAmount: toBN("1000000"),
+            exclusivityParameter: MAX_EXCLUSIVITY_PERIOD_SECONDS,
+          },
+          fakeSpokePoolAddress
+        );
+        expect(result).to.be.false;
+      });
+
+      it("Returns true for exclusivityParameter just over threshold (absolute)", function () {
+        // Just over MAX_EXCLUSIVITY_PERIOD_SECONDS should be treated as absolute.
+        const result = relayer.testFillImmediate(
+          {
+            originChainId: ORIGIN_CHAIN_ID,
+            destinationChainId: DESTINATION_CHAIN_ID,
+            outputToken: EvmAddress.from(USDC_BASE),
+            outputAmount: toBN("1000000"),
+            exclusivityParameter: MAX_EXCLUSIVITY_PERIOD_SECONDS + 1,
+          },
+          fakeSpokePoolAddress
+        );
+        expect(result).to.be.true;
       });
     });
   });

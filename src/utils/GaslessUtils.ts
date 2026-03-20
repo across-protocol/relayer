@@ -23,6 +23,17 @@ import { Contract, BigNumber, ethers } from "ethers";
 
 const DOMAIN_CALLDATA_DELIMITER = "0x1dc0de";
 
+/*
+ * The exclusivityParameter argument is interpreted depending on its relationship to 1 year in seconds.
+ * Below 1 year, it represents a relative timestamp. Above 1 year, it represents an absolute timestamp.
+ * See SpokePool:
+ * https://github.com/across-protocol/contracts/blob/33e6fd20947c4bdf8682f45770e468577e9142ea/contracts/SpokePool.sol#L166
+ */
+export const MAX_EXCLUSIVITY_PERIOD_SECONDS = 31_536_000;
+export function isExclusivityRelative(exclusivityParameter: number): boolean {
+  return exclusivityParameter > 0 && exclusivityParameter <= MAX_EXCLUSIVITY_PERIOD_SECONDS;
+}
+
 /**
  * Returns true if the input/output token pair is allowed for gasless: either same L1 token,
  * or (inputSymbol, outputSymbol) is in allowedPeggedPairs (e.g. { "USDT": ["USDC"] }).

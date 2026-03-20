@@ -58,6 +58,7 @@ import {
   getGaslessAuthorizerAddress,
   getGaslessPermitNonce,
   isAllowedGaslessPair,
+  isExclusivityRelative,
   restructureGaslessDeposits,
   validateDeposit,
 } from "../utils/GaslessUtils";
@@ -354,13 +355,22 @@ export class GaslessRelayer {
    * @todo This is mostly placeholder; the logic here should be more sophisticated than simple USD limits.
    */
   protected fillImmediate(
-    deposit: Pick<DepositWithBlock, "originChainId" | "destinationChainId" | "outputToken" | "outputAmount">,
+    deposit: Pick<RelayData, "originChainId" | "outputToken" | "outputAmount"> & {
+      destinationChainId: number;
+      exclusivityParameter: number;
+    },
     spokePool: string
   ): boolean {
     if (this._isCctpDeposit(deposit.originChainId, spokePool)) {
       return false;
     }
-    // @todo: Validate fillDeadline. It must be absolute, not relative.
+
+    // Verify that deposit.exclusivityParameter will produce an absolute exclusivityDeadline,
+    // not relative to the deposit block timestamp.
+    if (isExclusivityRelative(deposit.exclusivityParameter)) {
+      return false;
+    }
+
     const stableCoin = [TOKEN_SYMBOLS_MAP.USDC, TOKEN_SYMBOLS_MAP.USDT].some(({ addresses }) =>
       deposit.outputToken.eq(toAddressType(addresses[deposit.destinationChainId], deposit.destinationChainId))
     );
@@ -593,6 +603,7 @@ export class GaslessRelayer {
       const outputToken = toAddressType(baseDepositData.outputToken, destinationChainId);
       const inputAmount = toBN(baseDepositData.inputAmount);
       const outputAmount = toBN(baseDepositData.outputAmount);
+      const { exclusivityParameter } = baseDepositData;
 
       const depositKey = this._getDepositKey(inputToken.toNative(), originChainId, depositId.toString());
 
@@ -662,7 +673,7 @@ export class GaslessRelayer {
               log("warn", `Rejected malformed deposit destined for ${origin}.`);
             } else {
               fillImmediate = this.fillImmediate(
-                { originChainId, destinationChainId, outputToken, outputAmount },
+                { originChainId, destinationChainId, outputToken, outputAmount, exclusivityParameter },
                 spokePool
               );
               nextState = MessageState.DEPOSIT_SUBMIT;
