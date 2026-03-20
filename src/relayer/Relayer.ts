@@ -489,7 +489,7 @@ export class Relayer {
     const limits = this.fillLimits[originChainId];
 
     // Find the uppermost USD threshold compatible with the age of the origin chain deposit.
-    const idx = limits.findIndex(({ fromBlock }) => fromBlock > blockNumber);
+    const idx = limits.findIndex(({ fromBlock }) => fromBlock <= blockNumber);
 
     // If no config applies to the blockNumber (i.e. because it's too old), just return the uppermost limit.
     return idx === -1 ? limits.length - 1 : idx;
