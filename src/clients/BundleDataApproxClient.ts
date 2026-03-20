@@ -14,8 +14,9 @@ import {
   getRemoteTokenForL1Token,
   getTokenInfo,
 } from "../utils";
-import { Address, bnZero, getL1TokenAddress } from "../utils/SDKUtils";
+import { Address, bnZero, EvmAddress, getL1TokenAddress } from "../utils/SDKUtils";
 import { HubPoolClient } from "./HubPoolClient";
+import _ from "lodash";
 
 export type BundleDataState = {
   upcomingDeposits: { [l1Token: string]: { [chainId: number]: BigNumber } };
@@ -124,14 +125,38 @@ export class BundleDataApproxClient {
 
   // Return the next starting block for each chain following the bundle end block of the last executed bundle that
   // was relayed to that chain.
-  protected getUnexecutedBundleStartBlocks(): { [chainId: number]: number } {
+  protected getUnexecutedBundleStartBlocks(l1Token: Address): { [chainId: number]: number } {
+    assert(l1Token.isEVM());
+    const evmL1Token = l1Token as EvmAddress;
     return Object.fromEntries(
       this.chainIdList.map((chainId) => {
         const spokePoolClient = this.spokePoolManager.getClient(chainId);
         assert(isDefined(spokePoolClient), `SpokePoolClient not found for chainId ${chainId}`);
         // Step 1: Find the last RelayedRootBundle event that was relayed to this chain. Assume this contains refunds
         // from the last executed bundle for this chain and these refunds were executed.
-        const lastRelayedRootToChain = spokePoolClient.getRootBundleRelays().at(-1);
+        const lastRelayedRootToChain = _.findLast(spokePoolClient.getRootBundleRelays(), (relay) => {
+          if (!isDefined(relay)) {
+            return false;
+          }
+
+          // Make sure the leaf for this specific L1 token on the chain from the root bundle relay has been executed.
+          const l2Token = getRemoteTokenForL1Token(evmL1Token, chainId, this.hubPoolClient.chainId);
+          if (!isDefined(l2Token)) {
+            return false;
+          }
+          const executedLeaf = _.findLast(spokePoolClient.getRelayerRefundExecutions(), (execution) => {
+            if (!isDefined(execution)) {
+              return false;
+            }
+            return execution.rootBundleId === relay.rootBundleId && execution.l2TokenAddress === l2Token;
+          });
+
+          if (!isDefined(executedLeaf)) {
+            return false;
+          }
+
+          return true;
+        });
         if (!isDefined(lastRelayedRootToChain)) {
           return [chainId, 0];
         }
@@ -159,7 +184,7 @@ export class BundleDataApproxClient {
   }
 
   private getApproximateUpcomingRefunds(l1Token: Address): ReturnType<typeof this.getApproximateRefundsForToken> {
-    const fromBlocks = this.getUnexecutedBundleStartBlocks();
+    const fromBlocks = this.getUnexecutedBundleStartBlocks(l1Token);
     const refundsForChain = this.getApproximateRefundsForToken(l1Token, fromBlocks);
     return refundsForChain;
   }
@@ -194,7 +219,7 @@ export class BundleDataApproxClient {
   private getApproximateUpcomingDepositsForToken(
     l1Token: Address
   ): ReturnType<typeof this.getApproximateDepositsForToken> {
-    const fromBlocks = this.getUnexecutedBundleStartBlocks();
+    const fromBlocks = this.getUnexecutedBundleStartBlocks(l1Token);
     const depositsForChain = this.getApproximateDepositsForToken(l1Token, fromBlocks);
     return depositsForChain;
   }
