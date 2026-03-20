@@ -1624,7 +1624,13 @@ export class InventoryClient {
           const shouldWithdrawExcess = currentAllocPct.gte(excessWithdrawThresholdPct);
           const withdrawPct = currentAllocPct.sub(targetPct);
           const cumulativeBalanceInL2TokenDecimals = l2BalanceFromL1Decimals(cumulativeBalance);
-          const desiredWithdrawalAmount = cumulativeBalanceInL2TokenDecimals.mul(withdrawPct).div(this.scalar);
+          // Cap withdrawal at the actual l2Token balance. In aggregate mode, the allocation pct reflects the
+          // combined balance across all contributor tokens, but we can only withdraw this specific l2Token.
+          const actualL2TokenBalance = this.tokenClient.getBalance(chainId, l2Token);
+          const rawWithdrawalAmount = cumulativeBalanceInL2TokenDecimals.mul(withdrawPct).div(this.scalar);
+          const desiredWithdrawalAmount = rawWithdrawalAmount.gt(actualL2TokenBalance)
+            ? actualL2TokenBalance
+            : rawWithdrawalAmount;
 
           this.log(
             `Evaluated withdrawing excess balance on ${getNetworkName(chainId)} for token ${l1TokenInfo.symbol}: ${
@@ -1645,7 +1651,7 @@ export class InventoryClient {
                 : undefined,
             }
           );
-          if (!shouldWithdrawExcess) {
+          if (!shouldWithdrawExcess || desiredWithdrawalAmount.eq(bnZero)) {
             return;
           }
           // Check to make sure the total pending volume withdrawn over the last
