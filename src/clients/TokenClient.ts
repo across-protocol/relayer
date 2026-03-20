@@ -250,7 +250,7 @@ export class TokenClient {
 
     const tokens = hubPoolTokens
       .map(({ address }) => {
-        let tokenAddrs: string[];
+        let tokenAddrs: string[] = [];
         try {
           tokenAddrs = dedupArray(
             getInventoryBalanceContributorTokens(address, chainId, this.hubPoolClient.chainId).map((token) =>
@@ -260,7 +260,6 @@ export class TokenClient {
         } catch {
           // No known deployment for this token on the SpokePool.
           // note: To be overhauled subject to https://github.com/across-protocol/sdk/pull/643
-          tokenAddrs = [];
         }
         return tokenAddrs.filter(isDefined).map((tokenAddress) => erc20.attach(tokenAddress));
       })
