@@ -250,11 +250,11 @@ export const CONTRACT_ADDRESSES: {
       abi: SPOKE_POOL_PERIPHERY_ABI,
     },
     counterfactualDepositFactory: {
-      address: "0x3C52FaB463B155F61C58Ac2a1057718377861b79",
+      address: "0x20e67fBE0150B498048709306cc7729d382F1fB1",
       abi: COUNTERFACTUAL_DEPOSIT_FACTORY_ABI,
     },
     counterfactualDeposit: {
-      address: "0x2ddc52436c1803eba27d2e7d76bea5512b91d3c0",
+      address: "0xfb090c119c838CeD214F962F931d5fa38b111E46",
     },
   },
   [CHAIN_IDs.MONAD]: {
@@ -487,11 +487,15 @@ export const CONTRACT_ADDRESSES: {
       abi: SPOKE_POOL_PERIPHERY_ABI,
     },
     counterfactualDepositFactory: {
-      address: "0x38814a7F5eFe2389859e46329478E7Ae968C1bE7",
+      address: "0x20e67fBE0150B498048709306cc7729d382F1fB1",
       abi: COUNTERFACTUAL_DEPOSIT_FACTORY_ABI,
     },
     counterfactualDeposit: {
-      address: "0xf4345e55bdb653E58Afec5Ee89E6b8489412C954",
+      address: "0xfb090c119c838CeD214F962F931d5fa38b111E46",
+    },
+    sponsoredCCTPDstPeriphery: {
+      address: "0xd9dc78b969e9efb1e54b625c33a21aaf2509e6a1",
+      abi: SPONSORED_CCTP_DST_PERIPHERY_ABI,
     },
   },
   [CHAIN_IDs.MODE]: {
@@ -586,11 +590,11 @@ export const CONTRACT_ADDRESSES: {
       abi: SPOKE_POOL_PERIPHERY_ABI,
     },
     counterfactualDepositFactory: {
-      address: "0xA157CB19a8C3061D9bbce11Ad08129bEe70988FE",
+      address: "0x20e67fBE0150B498048709306cc7729d382F1fB1",
       abi: COUNTERFACTUAL_DEPOSIT_FACTORY_ABI,
     },
     counterfactualDeposit: {
-      address: "0x654321F334b949A48c710E80b35334A4047d10B1",
+      address: "0xfb090c119c838CeD214F962F931d5fa38b111E46",
     },
   },
   [CHAIN_IDs.LENS]: {

@@ -1,5 +1,12 @@
 import { CommonConfig, ProcessEnv } from "../common";
 
+/**
+ * Allowed pegged token pairs for gasless deposits/fills. Same shape as PEGGED_TOKEN_PRICES:
+ * { "USDT": ["USDC"] } means input token USDT(0) may have output token USDC.
+ * Keys and values are L1 token symbols (from TOKEN_SYMBOLS_MAP / getTokenInfo on L1 address).
+ */
+export type AllowedPeggedPairs = { [inputSymbol: string]: Set<string> };
+
 export class GaslessRelayerConfig extends CommonConfig {
   apiPollingInterval: number;
   apiEndpoint: string;
@@ -13,6 +20,8 @@ export class GaslessRelayerConfig extends CommonConfig {
   /** When true, allow deposits with inputAmount < outputAmount and outputAmount === MAX_UINT_VAL (refund-flow test); deposit is made but fill is skipped. */
   refundFlowTestEnabled: boolean;
   spokePoolPeripheryOverrides: { [chainId: number]: string };
+  /** Gasless-only: allowed input→output token pairs (by L1 symbol). E.g. { "USDT": ["USDC"] }. */
+  allowedPeggedPairs: AllowedPeggedPairs;
 
   constructor(env: ProcessEnv) {
     super(env);
@@ -28,6 +37,7 @@ export class GaslessRelayerConfig extends CommonConfig {
       INITIALIZATION_RETRY_ATTEMPTS,
       RELAYER_GASLESS_REFUND_FLOW_TEST_ENABLED,
       SPOKE_POOL_PERIPHERY_OVERRIDES,
+      GASLESS_ALLOWED_PEGGED_PAIRS,
     } = env;
     this.apiPollingInterval = Number(API_POLLING_INTERVAL ?? 1); // Default to 1s
     this.apiEndpoint = String(API_GASLESS_ENDPOINT);
@@ -45,5 +55,12 @@ export class GaslessRelayerConfig extends CommonConfig {
     this.refundFlowTestEnabled = String(RELAYER_GASLESS_REFUND_FLOW_TEST_ENABLED ?? "").toLowerCase() === "true";
 
     this.spokePoolPeripheryOverrides = JSON.parse(SPOKE_POOL_PERIPHERY_OVERRIDES ?? "{}");
+
+    this.allowedPeggedPairs = Object.fromEntries(
+      Object.entries(JSON.parse(GASLESS_ALLOWED_PEGGED_PAIRS ?? "{}")).map(([inputSymbol, outputSymbols]) => [
+        inputSymbol,
+        new Set(outputSymbols as string[]),
+      ])
+    );
   }
 }

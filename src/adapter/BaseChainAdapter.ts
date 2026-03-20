@@ -38,6 +38,8 @@ import {
   sendAndConfirmSolanaTransaction,
   getSvmProvider,
   submitTransaction,
+  getTokenInfo,
+  ZERO_ADDRESS,
 } from "../utils";
 import { AugmentedTransaction, TransactionClient } from "../clients/TransactionClient";
 import {
@@ -297,7 +299,7 @@ export class BaseChainAdapter {
     simMode: boolean,
     optionalParams?: TransferTokenParams
   ): Promise<string[]> {
-    const l1Token = getL1TokenAddress(l2Token, this.chainId);
+    const l1Token = this.getL1TokenAddress(l2Token, this.chainId);
     if (!this.isSupportedL2Bridge(l1Token)) {
       return [];
     }
@@ -341,7 +343,7 @@ export class BaseChainAdapter {
   }
 
   async getL2PendingWithdrawalLookbackPeriodSeconds(l2Token: Address): Promise<number> {
-    const l1Token = getL1TokenAddress(l2Token, this.chainId);
+    const l1Token = this.getL1TokenAddress(l2Token, this.chainId);
     if (!this.isSupportedL2Bridge(l1Token)) {
       return -1;
     }
@@ -355,7 +357,7 @@ export class BaseChainAdapter {
     fromAddress: Address,
     l2Token: Address
   ): Promise<BigNumber> {
-    const l1Token = getL1TokenAddress(l2Token, this.chainId);
+    const l1Token = this.getL1TokenAddress(l2Token, this.chainId);
     if (!this.isSupportedL2Bridge(l1Token)) {
       return bnZero;
     }
@@ -571,5 +573,14 @@ export class BaseChainAdapter {
     });
 
     return outstandingTransfers;
+  }
+
+  private getL1TokenAddress(l2Token: Address, chainId: number): EvmAddress {
+    const tokenInfo = getTokenInfo(l2Token, chainId);
+    // @todo Fix w/ equivalence remapping?
+    if (tokenInfo.symbol === "pathUSD") {
+      return EvmAddress.from(ZERO_ADDRESS /* TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]*/);
+    }
+    return getL1TokenAddress(l2Token, chainId);
   }
 }
