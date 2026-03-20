@@ -125,7 +125,7 @@ export class BundleDataApproxClient {
 
   // Return the next starting block for each chain following the bundle end block of the last executed bundle that
   // was relayed to that chain.
-  protected getUnexecutedBundleStartBlocks(l1Token: Address): { [chainId: number]: number } {
+  protected getUnexecutedBundleStartBlocks(l1Token: Address, requireExecution: boolean): { [chainId: number]: number } {
     assert(l1Token.isEVM());
     const evmL1Token = l1Token as EvmAddress;
     return Object.fromEntries(
@@ -148,7 +148,12 @@ export class BundleDataApproxClient {
             if (!isDefined(execution)) {
               return false;
             }
-            return execution.rootBundleId === relay.rootBundleId && execution.l2TokenAddress === l2Token;
+            // If we don't require execution, then we can return true immediately and essentially return the last
+            // relayed root bundle.
+            if (!requireExecution) {
+              return true;
+            }
+            return execution.rootBundleId === relay.rootBundleId && execution.l2TokenAddress.eq(l2Token);
           });
 
           if (!isDefined(executedLeaf)) {
@@ -184,7 +189,7 @@ export class BundleDataApproxClient {
   }
 
   private getApproximateUpcomingRefunds(l1Token: Address): ReturnType<typeof this.getApproximateRefundsForToken> {
-    const fromBlocks = this.getUnexecutedBundleStartBlocks(l1Token);
+    const fromBlocks = this.getUnexecutedBundleStartBlocks(l1Token, true);
     const refundsForChain = this.getApproximateRefundsForToken(l1Token, fromBlocks);
     return refundsForChain;
   }
@@ -219,7 +224,8 @@ export class BundleDataApproxClient {
   private getApproximateUpcomingDepositsForToken(
     l1Token: Address
   ): ReturnType<typeof this.getApproximateDepositsForToken> {
-    const fromBlocks = this.getUnexecutedBundleStartBlocks(l1Token);
+    // Deposits don't need to be executed following a root bundle validation so we pass in `false` for `requireExecution`.
+    const fromBlocks = this.getUnexecutedBundleStartBlocks(l1Token, false);
     const depositsForChain = this.getApproximateDepositsForToken(l1Token, fromBlocks);
     return depositsForChain;
   }
