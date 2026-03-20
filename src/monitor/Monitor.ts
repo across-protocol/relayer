@@ -1240,11 +1240,11 @@ export class Monitor {
     for (const relayer of this.monitorConfig.monitoredRelayers) {
       for (const l1Token of allL1Tokens) {
         for (const chainId of this.monitorChains) {
-          if (l1Token.symbol === "USDC.e") {
-            // We don't want to double count USDC/USDC.e repayments. When this.getUpcomingRefunds() is queried for a
-            // specific L1 token address, it will return either USDC.e and USDC repayments--depending on the 'native' USDC
-            // for the L2 chain in question. USDC.e is a special token injected into
-            // this.getL1TokensForRelayerBalancesReport() so we can skip it here.
+          // Skip tokens that share an L1 address with their parent (USDC.e, pathUSD, USDH, etc.) to avoid
+          // double-counting refunds. getUpcomingRefunds() is keyed by L1 token address, so querying with the
+          // same address for both the parent and child rows would count the same refunds multiple times.
+          const remappedSymbol = TOKEN_EQUIVALENCE_REMAPPING[l1Token.symbol];
+          if (l1Token.symbol === "USDC.e" || isDefined(remappedSymbol)) {
             continue;
           }
           const upcomingRefunds = this.getUpcomingRefunds(chainId, l1Token.address, relayer);
@@ -1319,6 +1319,12 @@ export class Monitor {
     const allPendingWithdrawalBalances: { [l1Token: string]: { [chainId: number]: BigNumber } } = {};
     await Promise.all(
       allL1Tokens.map(async (l1Token) => {
+        // Skip L2-only equivalence-remapped tokens to avoid double-counting pending withdrawals
+        // (same L1 address as parent token).
+        const remappedSymbol = TOKEN_EQUIVALENCE_REMAPPING[l1Token.symbol];
+        if (l1Token.symbol === "USDC.e" || isDefined(remappedSymbol)) {
+          return;
+        }
         const pendingWithdrawalBalances =
           await this.clients.crossChainTransferClient.adapterManager.getTotalPendingWithdrawalAmount(
             supportedChains,
