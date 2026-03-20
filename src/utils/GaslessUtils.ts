@@ -10,6 +10,7 @@ import {
 import type { AllowedPeggedPairs } from "../gasless/GaslessRelayerConfig";
 import {
   Address,
+  assert,
   ConvertDecimals,
   convertRelayDataParamsToBytes32,
   getL1TokenAddress,
@@ -313,11 +314,20 @@ export function buildGaslessFillRelayTx(
  * Constructs a deposit-shaped object from a gasless API message, for use in the immediate fill path
  * where the fill is submitted before the deposit is confirmed on-chain.
  * IMPORTANT: Uses normalizeBaseDepositData to ensure fields match on-chain deposit encoding.
+ * CRITICAL: Only safe to call with absolute exclusivityParameter (not relative).
  */
 export function buildSyntheticDeposit(msg: GaslessDepositMessage): RelayData & { destinationChainId: number } {
   const { originChainId } = msg;
   const bdd = normalizeBaseDepositData(msg.baseDepositData);
   const { destinationChainId } = bdd;
+
+  // CRITICAL: Verify exclusivityParameter is absolute, not relative.
+  // Relative parameters cannot be used for immediate fill because we can't know
+  // the actual exclusivityDeadline until the deposit mines on-chain.
+  assert(
+    !isExclusivityRelative(bdd.exclusivityParameter),
+    `exclusivityParameter is not absolute (${bdd.exclusivityParameter})`
+  );
 
   return {
     originChainId,

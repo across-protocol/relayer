@@ -620,6 +620,16 @@ describe("GaslessRelayer", function () {
     delete process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`];
   });
 
+  it("Throws error if buildSyntheticDeposit called with relative exclusivityParameter", function () {
+    // This test verifies the defensive assertion in buildSyntheticDeposit.
+    // It should never be reached in practice (fillImmediate rejects relative parameters),
+    // but the assertion provides defense-in-depth if the check is bypassed.
+    const { buildSyntheticDeposit } = require("../src/utils/GaslessUtils");
+    const msgWithRelativeExclusivity = makeTestDepositMessage({ exclusivityParameter: 300 });
+
+    expect(() => buildSyntheticDeposit(msgWithRelativeExclusivity)).to.throw(/exclusivityParameter is not absolute/);
+  });
+
   it("Invalid deposit (mismatching L1 tokens) -> ERROR", async function () {
     const msg = makeTestDepositMessage({ inputToken: USDC_MAINNET, outputToken: WETH_BASE });
     await expectErrorScenario(relayer, msg);
