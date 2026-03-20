@@ -46,7 +46,7 @@ import {
   getRemoteTokenForL1Token,
   getTokenInfo,
   ConvertDecimals,
-  getL1TokenAddress,
+  getInventoryEquivalentL1TokenAddress,
   isEVMSpokePoolClient,
   isSVMSpokePoolClient,
   toAddressType,
@@ -467,7 +467,7 @@ export class Monitor {
 
   l2TokenAmountToL1TokenAmountConverter(l2Token: Address, chainId: number): (BigNumber) => BigNumber {
     // Step 1: Get l1 token address equivalent of L2 token
-    const l1Token = getL1TokenAddress(l2Token, chainId);
+    const l1Token = getInventoryEquivalentL1TokenAddress(l2Token, chainId, this.clients.hubPoolClient.chainId);
     const l1TokenDecimals = getTokenInfo(l1Token, this.clients.hubPoolClient.chainId).decimals;
     const l2TokenDecimals = getTokenInfo(l2Token, chainId).decimals;
     return ConvertDecimals(l2TokenDecimals, l1TokenDecimals);
@@ -645,14 +645,25 @@ export class Monitor {
     return Object.fromEntries(
       l1Tokens
         .map((l1Token) => {
-          // @dev l2TokenSymbols is a list of all keys in TOKEN_SYMBOLS_MAP where the hub chain address is equal to the
-          // l1 token address.
+          // @dev l2TokenSymbols is a list of all keys in TOKEN_SYMBOLS_MAP where the hub chain address is equal to
+          // the l1 token address, OR where the token's equivalence remapping resolves to a symbol whose hub chain
+          // address matches. This allows tokens like pathUSD (which has no hub chain address but remaps to USDC)
+          // to appear in the balance report under their equivalent L1 token.
           const l2TokenSymbols = Object.entries(TOKEN_SYMBOLS_MAP)
-            .filter(
-              ([, { addresses }]) =>
-                addresses[this.clients.hubPoolClient.chainId]?.toLowerCase() ===
-                l1Token.address.toEvmAddress().toLowerCase()
-            )
+            .filter(([symbol, { addresses }]) => {
+              const hubAddress = addresses[this.clients.hubPoolClient.chainId]?.toLowerCase();
+              const l1Address = l1Token.address.toEvmAddress().toLowerCase();
+              if (hubAddress === l1Address) {
+                return true;
+              }
+              // Check if this token remaps to a symbol whose hub chain address matches the L1 token.
+              const remappedSymbol = TOKEN_EQUIVALENCE_REMAPPING[symbol];
+              if (remappedSymbol) {
+                const remappedHubAddress = TOKEN_SYMBOLS_MAP[remappedSymbol]?.addresses[this.clients.hubPoolClient.chainId]?.toLowerCase();
+                return remappedHubAddress === l1Address;
+              }
+              return false;
+            })
             .map(([symbol]) => symbol);
 
           // Create an entry for all L2 tokens that share a symbol with the L1 token. This includes tokens
