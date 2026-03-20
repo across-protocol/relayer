@@ -122,6 +122,12 @@ describe("BundleDataApproxClient: Accounting for unexecuted, upcoming relayer re
         [BSC]: l2TokensForUsdc[BSC],
       },
     });
+
+    // Set up token mappings on the hub pool client so getL2TokenForL1TokenAtBlock works.
+    for (const chainId of enabledChainIds) {
+      hubPoolClient.setTokenMapping(mainnetWeth, chainId, l2TokensForWeth[chainId]);
+      hubPoolClient.setTokenMapping(mainnetUsdc, chainId, l2TokensForUsdc[chainId]);
+    }
   });
 
   async function generateFill(
