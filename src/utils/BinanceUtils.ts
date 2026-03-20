@@ -5,7 +5,7 @@ import Binance, {
   type Binance as BinanceApi,
 } from "binance-api-node";
 import minimist from "minimist";
-import { getGckmsConfig, retrieveGckmsKeys, isDefined, assert, delay, CHAIN_IDs, getRedisCache } from "./";
+import { getGckmsConfig, retrieveGckmsKeys, isDefined, assert, delay, CHAIN_IDs, getRedisCache, winston } from "./";
 
 // Store global promises on Gckms key retrieval actions so that we don't retrieve the same key multiple times.
 let binanceSecretKeyPromise = undefined;
@@ -16,6 +16,36 @@ const KNOWN_BINANCE_ERROR_REASONS = [
   "Too many requests; current request has limited",
   "TypeError: fetch failed",
 ];
+
+// Empty, non-JSON, or proxy/HTTP errors from API. After retries, treat as "no data" so the bot continues instead of crashing.
+const BINANCE_EMPTY_RESPONSE_ERROR_PATTERNS = [
+  "Unexpected ''",
+  "Unexpected end of JSON input",
+  "Unexpected token",
+  "502 Bad Gateway",
+  "503 Service Unavailable",
+  "504 Gateway Timeout",
+];
+
+/** Serialize errors so they log as readable text instead of "[object Object]". */
+export function stringifyBinanceError(err: unknown): string {
+  if (err instanceof Error) {
+    return err.message;
+  }
+  if (typeof err === "object" && err !== null) {
+    const o = err as Record<string, unknown>;
+    if (typeof o.msg === "string") {
+      return o.msg;
+    }
+    if (typeof o.message === "string") {
+      return o.message;
+    }
+    if (typeof o.code !== "undefined" || Object.keys(o).length > 0) {
+      return JSON.stringify(err);
+    }
+  }
+  return String(err);
+}
 
 type WithdrawalQuota = {
   wdQuota: number;
@@ -241,13 +271,20 @@ export async function getBinanceDeposits(
   try {
     depositHistory = await binanceApi.depositHistory({ startTime });
   } catch (_err) {
-    const err = _err.toString();
-    if (KNOWN_BINANCE_ERROR_REASONS.some((errorReason) => err.includes(errorReason)) && nRetries < maxRetries) {
+    const err = stringifyBinanceError(_err);
+    const stringError = _err.toString();
+
+    const isRetriable = KNOWN_BINANCE_ERROR_REASONS.some((r) => err.includes(r) || stringError.includes(r));
+    if (isRetriable && nRetries < maxRetries) {
       const delaySeconds = 2 ** nRetries + Math.random();
       await delay(delaySeconds);
       return getBinanceDeposits(binanceApi, startTime, ++nRetries, maxRetries);
     }
-    throw err;
+    // Empty/non-JSON response from API or proxy: treat as no deposits so relayer continues with zero pending.
+    if (BINANCE_EMPTY_RESPONSE_ERROR_PATTERNS.some((r) => err.includes(r) || stringError.includes(r))) {
+      return [];
+    }
+    throw new Error(err);
   }
   return Object.values(depositHistory).map((deposit) => {
     return {
@@ -275,13 +312,19 @@ export async function getBinanceWithdrawals(
   try {
     withdrawHistory = await binanceApi.withdrawHistory({ coin, startTime });
   } catch (_err) {
-    const err = _err.toString();
-    if (KNOWN_BINANCE_ERROR_REASONS.some((errorReason) => err.includes(errorReason)) && nRetries < maxRetries) {
+    const err = stringifyBinanceError(_err);
+    const stringError = _err.toString();
+    const isRetriable = KNOWN_BINANCE_ERROR_REASONS.some((r) => err.includes(r) || stringError.includes(r));
+    if (isRetriable && nRetries < maxRetries) {
       const delaySeconds = 2 ** nRetries + Math.random();
       await delay(delaySeconds);
       return getBinanceWithdrawals(binanceApi, coin, startTime, ++nRetries, maxRetries);
     }
-    throw err;
+    // Empty/non-JSON response from API or proxy: treat as no withdrawals so relayer continues with zero pending.
+    if (BINANCE_EMPTY_RESPONSE_ERROR_PATTERNS.some((r) => err.includes(r) || stringError.includes(r))) {
+      return [];
+    }
+    throw new Error(err);
   }
   return Object.values(withdrawHistory).map((withdrawal) => {
     return {
@@ -301,25 +344,47 @@ export async function getBinanceWithdrawals(
 /**
  * The call to accountCoins returns an opaque `unknown` object with extraneous information. This function
  * parses the unknown into a readable object to be used by the finalizers.
- * @returns A typed `AccountCoins` response.
+ * When the Binance API (or proxy) fails (e.g. 502), returns null so callers can treat as "no data"
+ * (e.g. default to zero balances) without confusing empty success [] with failure.
+ * @param binanceApi Binance API client.
+ * @param logger Optional logger; when provided, API failures are logged here instead of console.
+ * @returns A typed `AccountCoins` response, or null on any API error.
  */
-export async function getAccountCoins(binanceApi: BinanceApi): Promise<ParsedAccountCoins> {
-  const coins = Object.values(await binanceApi["accountCoins"]());
-  return coins.map((coin) => {
-    const networkList = coin["networkList"]?.map((network) => {
+export async function getAccountCoins(
+  binanceApi: BinanceApi,
+  logger: winston.Logger
+): Promise<ParsedAccountCoins | null> {
+  try {
+    const coins = Object.values(await binanceApi["accountCoins"]());
+    return coins.map((coin) => {
+      const networkList = coin["networkList"]?.map((network) => {
+        return {
+          name: network["network"],
+          coin: network["coin"],
+          withdrawMin: network["withdrawMin"],
+          withdrawMax: network["withdrawMax"],
+          withdrawFee: network["withdrawFee"],
+          contractAddress: network["contractAddress"],
+        } as Network;
+      });
       return {
-        name: network["network"],
-        coin: network["coin"],
-        withdrawMin: network["withdrawMin"],
-        withdrawMax: network["withdrawMax"],
-        withdrawFee: network["withdrawFee"],
-        contractAddress: network["contractAddress"],
-      } as Network;
+        symbol: coin["coin"],
+        balance: coin["free"],
+        networkList,
+      } as Coin;
     });
-    return {
-      symbol: coin["coin"],
-      balance: coin["free"],
-      networkList,
-    } as Coin;
-  });
+  } catch (_err) {
+    const err = stringifyBinanceError(_err);
+    const stringError = _err.toString();
+    const logMeta = {
+      at: "BinanceUtils#getAccountCoins",
+      message: "Binance accountCoins API failed; returning null.",
+      errorMessage: err,
+    };
+    logger.error(logMeta);
+    if (BINANCE_EMPTY_RESPONSE_ERROR_PATTERNS.some((r) => err.includes(r) || stringError.includes(r))) {
+      return null;
+    }
+    throw new Error(err);
+  }
 }
