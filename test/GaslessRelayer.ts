@@ -467,13 +467,6 @@ describe("GaslessRelayer", function () {
     relayer.setObservedDeposits({ [ORIGIN_CHAIN_ID]: new Set() });
     relayer.setObservedFills({ [DESTINATION_CHAIN_ID]: new Set() });
     relayer.setSignerAddress(EvmAddress.from(signer.address));
-
-    // Enable experimental handler.
-    process.env.RELAYER_GASLESS_HANDLER = "experimental";
-  });
-
-  afterEach(function () {
-    delete process.env.RELAYER_GASLESS_HANDLER;
   });
 
   it("Standard path: INITIAL -> DEPOSIT_SUBMIT -> DEPOSIT_CONFIRM -> FILL_PENDING -> FILLED", async function () {
