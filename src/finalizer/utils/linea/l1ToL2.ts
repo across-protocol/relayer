@@ -1,7 +1,6 @@
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import { OnChainMessageStatus } from "@consensys/linea-sdk";
 import { Contract } from "ethers";
-import { groupBy } from "lodash";
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
 import { CONTRACT_ADDRESSES } from "../../../common";
 import {
@@ -117,7 +116,7 @@ export async function lineaL1ToL2Finalizer(
     claimed = [],
     claimable = [],
     unknown = [],
-  } = groupBy(enrichedMessageSentEvents, (message) => {
+  } = Object.groupBy(enrichedMessageSentEvents, (message) => {
     switch (message.status) {
       case OnChainMessageStatus.CLAIMED:
         return "claimed";

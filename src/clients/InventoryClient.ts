@@ -1290,7 +1290,7 @@ export class InventoryClient {
     // Construct logs on the cross-chain actions executed.
     let mrkdwn = "";
 
-    const groupedRebalances = lodash.groupBy(executedTransactions, "chainId");
+    const groupedRebalances = Object.groupBy(executedTransactions, (txn) => txn.chainId);
     for (const [_chainId, rebalances] of Object.entries(groupedRebalances)) {
       const chainId = Number(_chainId);
       mrkdwn += `*Rebalances sent to ${getNetworkName(chainId)}:*\n`;
@@ -1323,7 +1323,7 @@ export class InventoryClient {
       }
     }
 
-    const groupedUnexecutedRebalances = lodash.groupBy(unexecutedRebalances, "chainId");
+    const groupedUnexecutedRebalances = Object.groupBy(unexecutedRebalances, (txn) => txn.chainId);
     for (const [_chainId, rebalances] of Object.entries(groupedUnexecutedRebalances)) {
       const chainId = Number(_chainId);
       mrkdwn += `*Insufficient amount to rebalance to ${getNetworkName(chainId)}:*\n`;
