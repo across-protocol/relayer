@@ -1394,4 +1394,80 @@ describe("InventoryClient: Refund chain selection", async function () {
       expect(refundChains).to.deep.equal([POLYGON]);
     });
   });
+
+  describe("Tempo inventory-equivalent contributors", function () {
+    const TEMPO = CHAIN_IDs.TEMPO;
+    const tempoUsdc = TOKEN_SYMBOLS_MAP["USDC.e"].addresses[TEMPO];
+    const tempoPathUsd = TOKEN_SYMBOLS_MAP.pathUSD.addresses[TEMPO];
+
+    it("includes pathUSD in aggregate Tempo USDC balances while keeping USDC.e as the canonical repayment token", async function () {
+      const tempoInventoryConfig: InventoryConfig = {
+        wrapEtherTargetPerChain: {},
+        wrapEtherTarget: toWei(1),
+        wrapEtherThresholdPerChain: {},
+        wrapEtherThreshold: toWei(1),
+        allowedSwapRoutes: [],
+        repaymentChainOverride: undefined,
+        repaymentChainOverridePerChain: {},
+        forceOriginRepayment: undefined,
+        forceOriginRepaymentPerChain: {},
+        tokenConfig: {
+          [mainnetUsdc]: {
+            [TEMPO]: { targetPct: toWei(0.2), thresholdPct: toWei(0.1), targetOverageBuffer },
+          },
+        },
+      };
+
+      const tempoTokenClient = new MockTokenClient(null, null, null, null);
+      const tempoAdapterManager = new MockAdapterManager(null, null, null, null);
+      const tempoCrossChainTransferClient = new CrossChainTransferClient(
+        spyLogger,
+        [MAINNET, TEMPO],
+        tempoAdapterManager
+      );
+      const tempoInventoryClient = new MockInventoryClient(
+        toAddressType(owner.address, MAINNET),
+        spyLogger,
+        tempoInventoryConfig,
+        tempoTokenClient,
+        [MAINNET, TEMPO],
+        hubPoolClient,
+        tempoAdapterManager,
+        tempoCrossChainTransferClient,
+        mockRebalancerClient,
+        false,
+        false
+      );
+
+      hubPoolClient.mapTokenInfo(EvmAddress.from(mainnetUsdc), "USDC", 6);
+      hubPoolClient.mapTokenInfo(toAddressType(tempoUsdc, TEMPO), "USDC.e", 6);
+      hubPoolClient.mapTokenInfo(toAddressType(tempoPathUsd, TEMPO), "pathUSD", 6);
+      hubPoolClient.setTokenMapping(mainnetUsdc, MAINNET, mainnetUsdc);
+      hubPoolClient.setTokenMapping(mainnetUsdc, TEMPO, tempoUsdc);
+
+      tempoTokenClient.setTokenData(MAINNET, EvmAddress.from(mainnetUsdc), toMegaWei(1000));
+      tempoTokenClient.setTokenData(TEMPO, toAddressType(tempoUsdc, TEMPO), toMegaWei(50));
+      tempoTokenClient.setTokenData(TEMPO, toAddressType(tempoPathUsd, TEMPO), toMegaWei(300));
+      tempoInventoryClient.setUpcomingRefunds(mainnetUsdc, {});
+
+      const tempoDeposit: Deposit = {
+        ...sampleDepositData,
+        originChainId: MAINNET,
+        destinationChainId: TEMPO,
+        inputToken: EvmAddress.from(mainnetUsdc),
+        outputToken: toAddressType(tempoUsdc, TEMPO),
+        inputAmount: toMegaWei(10),
+        outputAmount: toMegaWei(10),
+      };
+
+      expect(
+        tempoInventoryClient
+          .getRemoteTokensForL1Token(EvmAddress.from(mainnetUsdc), TEMPO)
+          .map((token) => token.toNative())
+      ).to.deep.equal([tempoUsdc]);
+      expect(tempoInventoryClient.getBalanceOnChain(TEMPO, EvmAddress.from(mainnetUsdc)).eq(toMegaWei(350))).to.be.true;
+      expect(tempoInventoryClient.getCumulativeBalance(EvmAddress.from(mainnetUsdc)).eq(toMegaWei(1350))).to.be.true;
+      expect(await tempoInventoryClient.determineRefundChainId(tempoDeposit)).to.deep.equal([TEMPO, MAINNET]);
+    });
+  });
 });

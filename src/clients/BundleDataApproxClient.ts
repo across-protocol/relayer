@@ -11,10 +11,11 @@ import {
   isDefined,
   winston,
   ConvertDecimals,
+  getInventoryEquivalentL1TokenAddress,
   getRemoteTokenForL1Token,
   getTokenInfo,
 } from "../utils";
-import { Address, bnZero, getL1TokenAddress } from "../utils/SDKUtils";
+import { Address, bnZero } from "../utils/SDKUtils";
 import { HubPoolClient } from "./HubPoolClient";
 
 export type BundleDataState = {
@@ -201,7 +202,7 @@ export class BundleDataApproxClient {
 
   protected getL1TokenAddress(l2Token: Address, chainId: number): Address | undefined {
     try {
-      return getL1TokenAddress(l2Token, chainId);
+      return getInventoryEquivalentL1TokenAddress(l2Token, chainId, this.hubPoolClient.chainId);
     } catch {
       return undefined;
     }

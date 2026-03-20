@@ -2,7 +2,7 @@ import { CHAIN_IDs, TOKEN_EQUIVALENCE_REMAPPING, TOKEN_SYMBOLS_MAP } from "@acro
 import { constants, utils, arch } from "@across-protocol/sdk";
 import { CONTRACT_ADDRESSES } from "../common";
 import { BigNumberish, BigNumber } from "./BNUtils";
-import { formatUnits, getTokenInfo } from "./SDKUtils";
+import { formatUnits, getL1TokenAddress as resolveL1TokenAddress, getTokenInfo } from "./SDKUtils";
 import { isDefined } from "./TypeGuards";
 import { Address, toAddressType, EvmAddress, SvmAddress, SVMProvider, toBN } from "./";
 import { TokenInfo } from "../interfaces";
@@ -27,6 +27,55 @@ export function getRemoteTokenForL1Token(
   return toAddressType(
     TOKEN_SYMBOLS_MAP[l1TokenSymbol]?.addresses[remoteChainId] ?? tokenMapping.addresses[remoteChainId],
     Number(remoteChainId)
+  );
+}
+
+export function getInventoryEquivalentL1TokenAddress(
+  l2Token: Address,
+  chainId: number,
+  hubChainId = CHAIN_IDs.MAINNET
+): EvmAddress {
+  try {
+    return resolveL1TokenAddress(l2Token, chainId);
+  } catch {
+    const { symbol } = getTokenInfo(l2Token, chainId);
+    const remappedSymbol = TOKEN_EQUIVALENCE_REMAPPING[symbol] ?? symbol;
+    const l1TokenAddress = TOKEN_SYMBOLS_MAP[remappedSymbol]?.addresses[hubChainId];
+    if (!isDefined(l1TokenAddress)) {
+      throw new Error(
+        `Unable to resolve inventory-equivalent L1 token for ${l2Token.toNative()} on chain ${chainId}`
+      );
+    }
+    return EvmAddress.from(l1TokenAddress);
+  }
+}
+
+export function getInventoryBalanceContributorTokens(
+  l1Token: EvmAddress,
+  chainId: number,
+  hubChainId = CHAIN_IDs.MAINNET
+): Address[] {
+  if (chainId === hubChainId) {
+    return [l1Token];
+  }
+
+  const hubTokenSymbol = getTokenInfo(l1Token, hubChainId).symbol;
+  const balanceContributorTokens: Address[] = [];
+  const canonicalToken = getRemoteTokenForL1Token(l1Token, chainId, hubChainId);
+  if (isDefined(canonicalToken)) {
+    balanceContributorTokens.push(canonicalToken);
+  }
+
+  Object.keys(TOKEN_SYMBOLS_MAP).forEach((tokenSymbol) => {
+    const token = TOKEN_SYMBOLS_MAP[tokenSymbol];
+    const remappedSymbol = TOKEN_EQUIVALENCE_REMAPPING[token.symbol] ?? token.symbol;
+    if (remappedSymbol === hubTokenSymbol && isDefined(token.addresses[chainId])) {
+      balanceContributorTokens.push(toAddressType(token.addresses[chainId], chainId));
+    }
+  });
+
+  return balanceContributorTokens.filter(
+    (token, index, allTokens) => allTokens.findIndex((candidate) => candidate.eq(token)) === index
   );
 }
 

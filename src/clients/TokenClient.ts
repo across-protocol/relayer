@@ -20,6 +20,7 @@ import {
   winston,
   getRedisCache,
   TOKEN_SYMBOLS_MAP,
+  getInventoryBalanceContributorTokens,
   getRemoteTokenForL1Token,
   getTokenInfo,
   isEVMSpokePoolClient,
@@ -249,26 +250,13 @@ export class TokenClient {
     }
 
     const tokens = hubPoolTokens
-      .map(({ symbol, address }) => {
-        let tokenAddrs: string[] = [];
-        try {
-          const spokePoolToken = getRemoteTokenForL1Token(address, chainId, this.hubPoolClient.chainId);
-          tokenAddrs.push(spokePoolToken.toEvmAddress());
-        } catch {
-          // No known deployment for this token on the SpokePool.
-          // note: To be overhauled subject to https://github.com/across-protocol/sdk/pull/643
-        }
-
-        // If the HubPool token is USDC then it might map to multiple tokens on the destination chain.
-        if (symbol === "USDC") {
-          ["USDC.e", "USDbC", "USDzC", "pathUSD"]
-            .map((symbol) => TOKEN_SYMBOLS_MAP[symbol]?.addresses[chainId])
-            .filter(isDefined)
-            .forEach((address) => tokenAddrs.push(address));
-          tokenAddrs = dedupArray(tokenAddrs);
-        }
-
-        return tokenAddrs.filter(isDefined).map((address) => erc20.attach(address));
+      .map(({ address }) => {
+        const tokenAddrs = dedupArray(
+          getInventoryBalanceContributorTokens(address, chainId, this.hubPoolClient.chainId).map((token) =>
+            token.toEvmAddress()
+          )
+        );
+        return tokenAddrs.filter(isDefined).map((tokenAddress) => erc20.attach(tokenAddress));
       })
       .flat();
 
