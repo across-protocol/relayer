@@ -431,7 +431,7 @@ export class GaslessRelayer {
           state: stateToStr(getState()),
           originChainId,
           depositId,
-          amount: baseDepositData.outputAmount,
+          amount: outputAmount,
           token: outputToken,
           authorizer,
           nonce,
