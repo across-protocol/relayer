@@ -1451,13 +1451,23 @@ describe("InventoryClient: Refund chain selection", async function () {
       tempoInventoryClient.setUpcomingRefunds(mainnetUsdc, {});
 
       const tempoDeposit: Deposit = {
-        ...sampleDepositData,
+        depositId: bnZero,
+        fromLiteChain: false,
+        toLiteChain: false,
         originChainId: MAINNET,
         destinationChainId: TEMPO,
+        depositor: toAddressType(owner.address, MAINNET),
+        recipient: toAddressType(owner.address, MAINNET),
         inputToken: EvmAddress.from(mainnetUsdc),
         outputToken: toAddressType(tempoUsdc, TEMPO),
         inputAmount: toMegaWei(10),
         outputAmount: toMegaWei(10),
+        message: "0x",
+        messageHash: "0x",
+        quoteTimestamp: hubPoolClient.currentTime!,
+        fillDeadline: 0,
+        exclusivityDeadline: 0,
+        exclusiveRelayer: toAddressType(ZERO_ADDRESS, MAINNET),
       };
 
       expect(

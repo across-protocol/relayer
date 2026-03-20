@@ -481,14 +481,31 @@ export class Monitor {
         symbol: TOKEN_EQUIVALENCE_REMAPPING[symbol] ?? symbol,
       };
     });
-    // @dev Handle special case for L1 USDC which is mapped to two L2 tokens on some chains, so we can more easily
-    // see L2 Bridged USDC balance versus Native USDC. Add USDC.e right after the USDC element.
+    // Add separate report rows for L2-only equivalence-remapped tokens (e.g. USDC.e, pathUSD, USDH) so they
+    // display as their own line items rather than being folded into the parent token row.
+    const hubChainId = this.clients.hubPoolClient.chainId;
     const indexOfUsdc = allL1Tokens.findIndex(({ symbol }) => symbol === "USDC");
-    if (indexOfUsdc > -1 && TOKEN_SYMBOLS_MAP["USDC.e"].addresses[this.clients.hubPoolClient.chainId]) {
+    if (indexOfUsdc > -1 && TOKEN_SYMBOLS_MAP["USDC.e"].addresses[hubChainId]) {
       allL1Tokens.splice(indexOfUsdc, 0, {
         symbol: "USDC.e",
-        address: EvmAddress.from(TOKEN_SYMBOLS_MAP["USDC.e"].addresses[this.clients.hubPoolClient.chainId]),
+        address: EvmAddress.from(TOKEN_SYMBOLS_MAP["USDC.e"].addresses[hubChainId]),
         decimals: 6,
+      });
+    }
+    // Discover L2-only tokens that remap to a parent L1 token and add them after the parent.
+    for (const [symbol, remappedSymbol] of Object.entries(TOKEN_EQUIVALENCE_REMAPPING)) {
+      const tokenInfo = TOKEN_SYMBOLS_MAP[symbol];
+      if (!isDefined(tokenInfo) || isDefined(tokenInfo.addresses[hubChainId])) {
+        continue; // Skip tokens that have a hub chain address (they're already covered above).
+      }
+      const parentIndex = allL1Tokens.findIndex((t) => t.symbol === remappedSymbol);
+      if (parentIndex === -1) {
+        continue;
+      }
+      allL1Tokens.splice(parentIndex + 1, 0, {
+        symbol,
+        address: allL1Tokens[parentIndex].address, // Use parent's L1 address for decimal conversion.
+        decimals: tokenInfo.decimals,
       });
     }
     return allL1Tokens;
@@ -674,10 +691,15 @@ export class Monitor {
             .map((symbol) => {
               if (chainId !== this.clients.hubPoolClient.chainId && sdkUtils.isBridgedUsdc(symbol)) {
                 return [TOKEN_SYMBOLS_MAP[symbol].addresses[chainId], { ...l1Token, symbol: "USDC.e" }];
-              } else {
-                const remappedSymbol = TOKEN_EQUIVALENCE_REMAPPING[symbol] ?? symbol;
-                return [TOKEN_SYMBOLS_MAP[symbol].addresses[chainId], { ...l1Token, symbol: remappedSymbol }];
               }
+              // L2-only equivalence-remapped tokens (e.g. pathUSD, USDH) get their own symbol in the report
+              // rather than being folded into the parent token row, similar to how USDC.e is displayed.
+              const hasHubAddress = isDefined(TOKEN_SYMBOLS_MAP[symbol].addresses[this.clients.hubPoolClient.chainId]);
+              if (!hasHubAddress && isDefined(TOKEN_EQUIVALENCE_REMAPPING[symbol])) {
+                return [TOKEN_SYMBOLS_MAP[symbol].addresses[chainId], { ...l1Token, symbol }];
+              }
+              const remappedSymbol = TOKEN_EQUIVALENCE_REMAPPING[symbol] ?? symbol;
+              return [TOKEN_SYMBOLS_MAP[symbol].addresses[chainId], { ...l1Token, symbol: remappedSymbol }];
             });
         })
         .flat()
