@@ -10,10 +10,12 @@ import {
   Provider,
   TransactionReceipt,
   getCurrentTime,
+  getTokenInfo,
   toAddressType,
+  toBNWei,
   TOKEN_SYMBOLS_MAP,
 } from "../src/utils";
-import { MAX_EXCLUSIVITY_PERIOD_SECONDS } from "../src/utils/GaslessUtils";
+import { isStablecoin, MAX_EXCLUSIVITY_PERIOD_SECONDS } from "../src/utils/GaslessUtils";
 import { createSpyLogger, expect, FakeContract, smock, ethers, toBN } from "./utils";
 
 // Minimal 65-byte hex signature.
@@ -420,12 +422,25 @@ async function expectErrorScenario(relayer: TestableGaslessRelayer, msg: Gasless
 
 /**
  * Helper to set fillImmediate threshold dynamically based on a message's outputAmount.
- * Sets threshold to outputAmount + 1 USD to ensure fillImmediate returns true.
+ * Validates that the output token is a stablecoin before setting threshold.
  * @param msg The deposit message to base the threshold on
  * @param multiplier Optional multiplier (default 2x outputAmount in USD)
+ * @throws Error if output token is not a stablecoin (USDC/USDT)
  */
 function setFillImmediateThreshold(msg: GaslessDepositMessage, multiplier = 2): void {
-  const outputAmountUSD = Number(msg.baseDepositData.outputAmount) / 1e6; // USDC has 6 decimals
+  const { outputToken, outputAmount, destinationChainId } = msg.baseDepositData;
+  const outputAddr = toAddressType(outputToken, destinationChainId);
+
+  // Verify token is a stablecoin (USDC or USDT) using shared utility
+  if (!isStablecoin(outputAddr, destinationChainId)) {
+    throw new Error(
+      `setFillImmediateThreshold: outputToken ${outputToken} is not a supported stablecoin (USDC/USDT)`
+    );
+  }
+
+  // Calculate threshold using the same decimals resolution as fillImmediate()
+  const { decimals } = getTokenInfo(outputAddr, destinationChainId);
+  const outputAmountUSD = toBN(outputAmount).div(toBNWei(1, decimals)).toNumber();
   const threshold = Math.ceil(outputAmountUSD * multiplier);
   process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${msg.originChainId}`] = threshold.toString();
 }
@@ -656,6 +671,12 @@ describe("GaslessRelayer", function () {
     const msgWithRelativeExclusivity = makeTestDepositMessage({ exclusivityParameter: 300 });
 
     expect(() => buildSyntheticDeposit(msgWithRelativeExclusivity)).to.throw(/exclusivityParameter is not absolute/);
+  });
+
+  it("setFillImmediateThreshold: throws for non-stablecoin tokens", function () {
+    // Helper should reject deposits with non-stablecoin output tokens
+    const msgWithWETH = makeTestDepositMessage({ outputToken: WETH_BASE });
+    expect(() => setFillImmediateThreshold(msgWithWETH)).to.throw(/is not a supported stablecoin/);
   });
 
   it("Invalid deposit (mismatching L1 tokens) -> ERROR", async function () {

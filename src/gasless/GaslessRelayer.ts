@@ -58,6 +58,7 @@ import {
   getGaslessPermitNonce,
   isAllowedGaslessPair,
   isExclusivityRelative,
+  isStablecoin,
   restructureGaslessDeposits,
   validateDeposit,
 } from "../utils/GaslessUtils";
@@ -377,11 +378,12 @@ export class GaslessRelayer {
       return;
     }
 
-    const stableCoin = [TOKEN_SYMBOLS_MAP.USDC, TOKEN_SYMBOLS_MAP.USDT].some(({ addresses }) =>
-      deposit.outputToken.eq(toAddressType(addresses[deposit.destinationChainId], deposit.destinationChainId))
-    );
+    if (!isStablecoin(deposit.outputToken, deposit.destinationChainId)) {
+      return false;
+    }
+
     const { decimals } = getTokenInfo(deposit.outputToken, deposit.destinationChainId);
-    return stableCoin && toBNWei(threshold, decimals).gt(deposit.outputAmount);
+    return toBNWei(threshold, decimals).gt(deposit.outputAmount);
   }
 
   /*
