@@ -528,9 +528,17 @@ export class Monitor {
       let summaryMrkdwn = "*[Summary]*\n";
       let mrkdwn = "Token amounts: current, pending execution, cross-chain transfers, total\n";
 
-      // Report L1 tokens (all chains)
+      // Report L1 tokens (all chains). L2-only equivalence-remapped tokens only show their relevant chains.
       for (const token of allL1Tokens) {
-        const { mrkdwn: tokenMrkdwn, summaryEntry } = this.generateTokenBalanceMarkdown(report, token, allChainNames);
+        const tokenInfo = TOKEN_SYMBOLS_MAP[token.symbol];
+        const isL2OnlyRemapped =
+          isDefined(TOKEN_EQUIVALENCE_REMAPPING[token.symbol]) &&
+          isDefined(tokenInfo) &&
+          !isDefined(tokenInfo.addresses[this.clients.hubPoolClient.chainId]);
+        const chainNames = isL2OnlyRemapped
+          ? Object.keys(tokenInfo.addresses).map((chainId) => getNetworkName(Number(chainId)))
+          : allChainNames;
+        const { mrkdwn: tokenMrkdwn, summaryEntry } = this.generateTokenBalanceMarkdown(report, token, chainNames);
         mrkdwn += tokenMrkdwn;
         summaryMrkdwn += summaryEntry;
       }
@@ -1435,10 +1443,21 @@ export class Monitor {
     for (const relayer of relayers) {
       reports[relayer.toNative()] = {};
 
-      // Initialize L1 tokens for all chains
+      // Initialize L1 tokens for all chains. L2-only equivalence-remapped tokens (e.g. pathUSD, USDH)
+      // are initialized only for chains where they exist, rather than all chains.
       for (const token of allL1Tokens) {
         reports[relayer.toNative()][token.symbol] = {};
-        for (const chainName of allChainNames) {
+        const tokenInfo = TOKEN_SYMBOLS_MAP[token.symbol];
+        const isL2OnlyRemapped =
+          isDefined(TOKEN_EQUIVALENCE_REMAPPING[token.symbol]) &&
+          isDefined(tokenInfo) &&
+          !isDefined(tokenInfo.addresses[this.clients.hubPoolClient.chainId]);
+        const chainNamesForToken = isL2OnlyRemapped
+          ? Object.keys(tokenInfo.addresses)
+              .map((chainId) => getNetworkName(Number(chainId)))
+              .concat([ALL_CHAINS_NAME])
+          : allChainNames;
+        for (const chainName of chainNamesForToken) {
           reports[relayer.toNative()][token.symbol][chainName] = {};
           for (const balanceType of ALL_BALANCE_TYPES) {
             reports[relayer.toNative()][token.symbol][chainName][balanceType] = bnZero;
