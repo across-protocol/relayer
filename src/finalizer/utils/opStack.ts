@@ -1,5 +1,5 @@
 import assert from "assert";
-import { countBy, groupBy } from "lodash";
+import { countBy } from "lodash";
 import * as optimismSDK from "@eth-optimism/sdk";
 import * as viem from "viem";
 import * as viemChains from "viem/chains";
@@ -160,7 +160,7 @@ export async function opStackFinalizer(
   // on Optimism, SNX on Optimism, USDC.e on Worldchain, etc) so the easiest way to query for these
   // events is to use the TokenBridged event emitted by the Across SpokePool on every withdrawal.
   const usdc = EvmAddress.from(USDC.addresses[chainId] ?? ZERO_ADDRESS);
-  const { recentTokensBridgedEvents = [], olderTokensBridgedEvents = [] } = groupBy(
+  const { recentTokensBridgedEvents = [], olderTokensBridgedEvents = [] } = Object.groupBy(
     spokePoolClient.getTokensBridged().filter(
       ({ l2TokenAddress }) =>
         // CCTP USDC withdrawals should be finalized via the CCTP Finalizer.

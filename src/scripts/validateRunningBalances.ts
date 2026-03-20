@@ -62,7 +62,7 @@ import { Log, ProposedRootBundle, SpokePoolClientsByChain, BundleData } from "..
 import { CONTRACT_ADDRESSES, constructSpokePoolClientsWithStartBlocks, updateSpokePoolClients } from "../common";
 import { createConsoleTransport } from "@risk-labs/logger";
 import { interfaces as sdkInterfaces } from "@across-protocol/sdk";
-import _ from "lodash";
+
 import { SpokePoolClient } from "../clients/SpokePoolClient";
 
 config();
@@ -650,10 +650,9 @@ export async function runScript(baseSigner: Signer): Promise<void> {
     // @dev Search from right to left since there can be multiple root bundles with the same relayer refund root.
     // The caller should take caution if they're trying to use this function to find matching refunds for older
     // root bundles as opposed to more recent ones.
-    const bundle = _.findLast(
-      spokePoolClient.getRootBundleRelays(),
-      (bundle) => bundle.relayerRefundRoot === relayerRefundRoot
-    );
+    const bundle = spokePoolClient
+      .getRootBundleRelays()
+      .findLast((bundle) => bundle.relayerRefundRoot === relayerRefundRoot);
     if (bundle === undefined) {
       return {};
     }
