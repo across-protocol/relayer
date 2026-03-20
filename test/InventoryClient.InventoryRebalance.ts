@@ -866,7 +866,11 @@ describe("InventoryClient: Rebalancing inventory", async function () {
 
       const tempoTokenClient = new MockTokenClient(null, null, null, null);
       const tempoAdapterManager = new MockAdapterManager(null, null, null, null);
-      const tempoCrossChainTransferClient = new CrossChainTransferClient(spyLogger, [MAINNET, TEMPO], tempoAdapterManager);
+      const tempoCrossChainTransferClient = new CrossChainTransferClient(
+        spyLogger,
+        [MAINNET, TEMPO],
+        tempoAdapterManager
+      );
       const tempoInventoryClient = new InventoryClient(
         EvmAddress.from(owner.address),
         spyLogger,

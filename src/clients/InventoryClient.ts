@@ -346,14 +346,15 @@ export class InventoryClient {
         distribution[chainId] ??= {};
         const l2Tokens = this.getRemoteTokensForL1Token(l1Token, chainId);
         if (useAggregateChainBalance) {
-          const aggregateDistributionToken = l2Tokens[0] ?? this.getBalanceContributorTokensForL1Token(l1Token, chainId)[0];
+          const aggregateDistributionToken =
+            l2Tokens[0] ?? this.getBalanceContributorTokensForL1Token(l1Token, chainId)[0];
           if (!isDefined(aggregateDistributionToken)) {
             return;
           }
           const effectiveBalance = this.getBalanceOnChain(chainId, l1Token);
-          distribution[chainId][aggregateDistributionToken.toNative()] = effectiveBalance.mul(this.scalar).div(
-            cumulativeBalance
-          );
+          distribution[chainId][aggregateDistributionToken.toNative()] = effectiveBalance
+            .mul(this.scalar)
+            .div(cumulativeBalance);
           return;
         }
         l2Tokens.forEach((l2Token) => {
@@ -470,13 +471,16 @@ export class InventoryClient {
     useAggregateChainBalance = false
   ): BigNumber {
     const { decimals: l1TokenDecimals } = getTokenInfo(l1Token, this.hubPoolClient.chainId);
-    const shortfallTokens = useAggregateChainBalance ? this.getBalanceContributorTokensForL1Token(l1Token, chainId) : [l2Token];
+    const shortfallTokens = useAggregateChainBalance
+      ? this.getBalanceContributorTokensForL1Token(l1Token, chainId)
+      : [l2Token];
     return shortfallTokens
       .map((shortfallToken) => {
         const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(shortfallToken, chainId);
-        return sdkUtils.ConvertDecimals(l2TokenDecimals, l1TokenDecimals)(
-          this.tokenClient.getShortfallTotalRequirement(chainId, shortfallToken)
-        );
+        return sdkUtils.ConvertDecimals(
+          l2TokenDecimals,
+          l1TokenDecimals
+        )(this.tokenClient.getShortfallTotalRequirement(chainId, shortfallToken));
       })
       .reduce((acc, curr) => acc.add(curr), bnZero);
   }
