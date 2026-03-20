@@ -250,11 +250,18 @@ export class TokenClient {
 
     const tokens = hubPoolTokens
       .map(({ address }) => {
-        const tokenAddrs = dedupArray(
-          getInventoryBalanceContributorTokens(address, chainId, this.hubPoolClient.chainId).map((token) =>
-            token.toEvmAddress()
-          )
-        );
+        let tokenAddrs: string[];
+        try {
+          tokenAddrs = dedupArray(
+            getInventoryBalanceContributorTokens(address, chainId, this.hubPoolClient.chainId).map((token) =>
+              token.toEvmAddress()
+            )
+          );
+        } catch {
+          // Token not in TOKEN_SYMBOLS_MAP (e.g. in tests with mock tokens). Fall back to canonical mapping.
+          const spokePoolToken = getRemoteTokenForL1Token(address, chainId, this.hubPoolClient.chainId);
+          tokenAddrs = isDefined(spokePoolToken) ? [spokePoolToken.toEvmAddress()] : [];
+        }
         return tokenAddrs.filter(isDefined).map((tokenAddress) => erc20.attach(tokenAddress));
       })
       .flat();
