@@ -139,28 +139,25 @@ export class BundleDataApproxClient {
             return false;
           }
 
+          // If we don't require execution verification, return the last relayed root bundle directly.
+          // This is used for deposit counting where the boundary is bundle validation/relay, not leaf execution.
+          if (!requireExecution) {
+            return true;
+          }
+
           // Make sure the leaf for this specific L1 token on the chain from the root bundle relay has been executed.
           const l2Token = getRemoteTokenForL1Token(evmL1Token, chainId, this.hubPoolClient.chainId);
           if (!isDefined(l2Token)) {
             return false;
           }
-          const executedLeaf = _.findLast(spokePoolClient.getRelayerRefundExecutions(), (execution) => {
-            if (!isDefined(execution)) {
-              return false;
-            }
-            // If we don't require execution, then we can return true immediately and essentially return the last
-            // relayed root bundle.
-            if (!requireExecution) {
-              return true;
-            }
-            return execution.rootBundleId === relay.rootBundleId && execution.l2TokenAddress.eq(l2Token);
-          });
-
-          if (!isDefined(executedLeaf)) {
-            return false;
-          }
-
-          return true;
+          return isDefined(
+            _.findLast(spokePoolClient.getRelayerRefundExecutions(), (execution) => {
+              if (!isDefined(execution)) {
+                return false;
+              }
+              return execution.rootBundleId === relay.rootBundleId && execution.l2TokenAddress.eq(l2Token);
+            })
+          );
         });
         if (!isDefined(lastRelayedRootToChain)) {
           return [chainId, 0];
