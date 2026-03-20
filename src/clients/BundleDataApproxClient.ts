@@ -5,16 +5,8 @@
 
 import { SpokePoolManager } from ".";
 import { SpokePoolClientsByChain } from "../interfaces";
-import {
-  assert,
-  BigNumber,
-  isDefined,
-  winston,
-  ConvertDecimals,
-  getRemoteTokenForL1Token,
-  getTokenInfo,
-} from "../utils";
-import { Address, bnZero, EvmAddress, getL1TokenAddress } from "../utils/SDKUtils";
+import { assert, BigNumber, isDefined, winston, ConvertDecimals, getTokenInfo } from "../utils";
+import { Address, bnZero, getL1TokenAddress } from "../utils/SDKUtils";
 import { HubPoolClient } from "./HubPoolClient";
 import _ from "lodash";
 
@@ -102,10 +94,9 @@ export class BundleDataApproxClient {
           const inputL1Token = this.getL1TokenAddress(inputToken, originChainId);
 
           assert(inputL1Token.isEVM());
-          const inputTokenOnRepaymentChain = getRemoteTokenForL1Token(
+          const inputTokenOnRepaymentChain = this.hubPoolClient.getL2TokenForL1TokenAtBlock(
             inputL1Token,
-            repaymentChainId,
-            this.hubPoolClient.chainId
+            repaymentChainId
           );
           if (!isDefined(inputTokenOnRepaymentChain)) {
             return;
@@ -127,7 +118,6 @@ export class BundleDataApproxClient {
   // was relayed to that chain.
   protected getUnexecutedBundleStartBlocks(l1Token: Address, requireExecution: boolean): { [chainId: number]: number } {
     assert(l1Token.isEVM());
-    const evmL1Token = l1Token as EvmAddress;
     return Object.fromEntries(
       this.chainIdList.map((chainId) => {
         const spokePoolClient = this.spokePoolManager.getClient(chainId);
@@ -146,7 +136,7 @@ export class BundleDataApproxClient {
           }
 
           // Make sure the leaf for this specific L1 token on the chain from the root bundle relay has been executed.
-          const l2Token = getRemoteTokenForL1Token(evmL1Token, chainId, this.hubPoolClient.chainId);
+          const l2Token = this.hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, chainId);
           if (!isDefined(l2Token)) {
             return false;
           }
@@ -155,6 +145,11 @@ export class BundleDataApproxClient {
               if (!isDefined(execution)) {
                 return false;
               }
+              // Its possible that there are multiple refund leaves for the same chain + L1 token combo in the same
+              // root bundle. In that case, we're going to return true if at least one leaf was executed. In all
+              // likelihood, all leaves were executed in the same transaction. If they were not, then this client
+              // will underestimate the upcoming refunds until that leaf is executed. Since this client is ultimately
+              // an approximation, this is acceptable.
               return execution.rootBundleId === relay.rootBundleId && execution.l2TokenAddress.eq(l2Token);
             })
           );
