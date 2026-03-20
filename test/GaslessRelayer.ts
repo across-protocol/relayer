@@ -591,6 +591,35 @@ describe("GaslessRelayer", function () {
     delete process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`];
   });
 
+  it("Immediate fill: normalizes plain-text message to match on-chain deposit", async function () {
+    // Tests that buildSyntheticDeposit normalizes message field to hex, matching the encoding
+    // used by toContractDepositData when building the origin deposit transaction.
+    // Without normalization, relay data hashes would mismatch and fillRelay would fail.
+    process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`] = "10";
+    const plainTextMessage = "Hello, Across!";
+    const expectedHexMessage = "0x48656c6c6f2c204163726f737321"; // hex encoding of plain text
+    const msg = makeTestDepositMessage({ message: plainTextMessage });
+    const receipt = makeReceipt();
+
+    let capturedFillDeposit: RelayData | undefined;
+    relayer.queryGaslessApiFn = async () => [msg];
+    relayer.initiateGaslessDepositFn = async () => receipt;
+    relayer.extractDepositFromReceiptFn = () => makeFakeDepositEvent({ message: expectedHexMessage });
+    relayer.initiateFillFn = async (deposit) => {
+      capturedFillDeposit = deposit;
+      return receipt;
+    };
+
+    await relayer.runEvaluateApiSignatures();
+
+    expect(relayer.getMessageState(depositNonceFor(relayer, msg))).to.equal(MessageState.FILLED);
+    // Verify that the fill was called with normalized (hex) message, not plain text
+    expect(capturedFillDeposit).to.not.be.undefined;
+    expect(capturedFillDeposit!.message).to.equal(expectedHexMessage);
+    expect(capturedFillDeposit!.message).to.not.equal(plainTextMessage);
+    delete process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`];
+  });
+
   it("Invalid deposit (mismatching L1 tokens) -> ERROR", async function () {
     const msg = makeTestDepositMessage({ inputToken: USDC_MAINNET, outputToken: WETH_BASE });
     await expectErrorScenario(relayer, msg);

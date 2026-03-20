@@ -1,5 +1,6 @@
 import {
   APIGaslessDepositResponse,
+  BaseDepositData,
   BridgeWitnessData,
   GaslessDepositMessage,
   ReceiveWithAuthorization,
@@ -107,6 +108,26 @@ export function restructureGaslessDeposits(depositMessages: APIGaslessDepositRes
   });
 }
 
+function toBytes(value: string): string {
+  if (value.startsWith("0x")) {
+    return value;
+  }
+  return "0x" + Buffer.from(value, "utf8").toString("hex");
+}
+
+/**
+ * Normalizes BaseDepositData fields to match on-chain encoding.
+ * This ensures consistent data representation between deposit submission and fill paths.
+ * CRITICAL: Both toContractDepositData and buildSyntheticDeposit must apply the same
+ * normalizations to prevent relay data hash mismatches.
+ */
+function normalizeBaseDepositData(bdd: BaseDepositData): BaseDepositData {
+  return {
+    ...bdd,
+    message: toBytes(bdd.message), // Convert plain text to hex bytes
+  };
+}
+
 /**
  * Maps API BridgeWitness.data to the shape and types expected by the contract ABI.
  * - Field names must match the contract (DepositData / BaseDepositData).
@@ -114,7 +135,7 @@ export function restructureGaslessDeposits(depositMessages: APIGaslessDepositRes
  * - Contract BaseDepositData has no exclusivityDeadline (only exclusivityParameter).
  */
 function toContractDepositData(data: BridgeWitnessData) {
-  const bdd = data.baseDepositData;
+  const bdd = normalizeBaseDepositData(data.baseDepositData);
   return {
     submissionFees: data.submissionFees,
     baseDepositData: {
@@ -128,19 +149,12 @@ function toContractDepositData(data: BridgeWitnessData) {
       quoteTimestamp: bdd.quoteTimestamp,
       fillDeadline: bdd.fillDeadline,
       exclusivityParameter: bdd.exclusivityParameter,
-      message: toBytes(bdd.message),
+      message: bdd.message, // Already normalized by normalizeBaseDepositData
     },
     inputAmount: data.inputAmount,
     spokePool: data.spokePool,
     nonce: data.nonce,
   };
-}
-
-function toBytes(value: string): string {
-  if (value.startsWith("0x")) {
-    return value;
-  }
-  return "0x" + Buffer.from(value, "utf8").toString("hex");
 }
 
 function normalizeSignature(signature: string): string {
@@ -298,9 +312,11 @@ export function buildGaslessFillRelayTx(
 /**
  * Constructs a deposit-shaped object from a gasless API message, for use in the immediate fill path
  * where the fill is submitted before the deposit is confirmed on-chain.
+ * IMPORTANT: Uses normalizeBaseDepositData to ensure fields match on-chain deposit encoding.
  */
 export function buildSyntheticDeposit(msg: GaslessDepositMessage): RelayData & { destinationChainId: number } {
-  const { originChainId, baseDepositData: bdd } = msg;
+  const { originChainId } = msg;
+  const bdd = normalizeBaseDepositData(msg.baseDepositData);
   const { destinationChainId } = bdd;
 
   return {
@@ -312,7 +328,7 @@ export function buildSyntheticDeposit(msg: GaslessDepositMessage): RelayData & {
     inputAmount: BigNumber.from(bdd.inputAmount),
     outputToken: toAddressType(bdd.outputToken, destinationChainId),
     outputAmount: BigNumber.from(bdd.outputAmount),
-    message: bdd.message,
+    message: bdd.message, // Already normalized by normalizeBaseDepositData
     fillDeadline: bdd.fillDeadline,
     exclusiveRelayer: toAddressType(bdd.exclusiveRelayer, destinationChainId),
     exclusivityDeadline: bdd.exclusivityDeadline,
