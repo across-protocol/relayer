@@ -11,6 +11,7 @@ const { ZERO_ADDRESS } = constants;
 
 export const { fetchTokenInfo, getL2TokenAddresses } = utils;
 
+// Returns the canonical token for the given L1 token on the given remote chain.
 export function getRemoteTokenForL1Token(
   _l1Token: EvmAddress,
   remoteChainId: number | string,
@@ -30,6 +31,8 @@ export function getRemoteTokenForL1Token(
   );
 }
 
+// Returns the L1 token that is equivalent to the `l2Token` within the context of the inventory.
+// This is used to link tokens that are not linked via pool rebalance routes, for example.
 export function getInventoryEquivalentL1TokenAddress(
   l2Token: Address,
   chainId: number,
@@ -48,6 +51,9 @@ export function getInventoryEquivalentL1TokenAddress(
   }
 }
 
+// Returns the L2 tokens that are equivalent for a given `l1Token` within the context of the inventory.
+// Equivalency is defined by tokens that share the same L1 token within TOKEN_SYMBOLS_MAP or are
+// mapped to each other in TOKEN_EQUIVALENCE_REMAPPING.
 export function getInventoryBalanceContributorTokens(
   l1Token: EvmAddress,
   chainId: number,
@@ -75,6 +81,18 @@ export function getInventoryBalanceContributorTokens(
   return balanceContributorTokens.filter(
     (token, index, allTokens) => allTokens.findIndex((candidate) => candidate.eq(token)) === index
   );
+}
+
+// Returns true if the token symbol is an L2-only token that maps to a parent L1 token via
+// TOKEN_EQUIVALENCE_REMAPPING (e.g. pathUSD -> USDC, USDH -> USDC). These tokens have no
+// hub chain address and exist only on specific L2 chains.
+export function isL2OnlyEquivalentToken(symbol: string, hubChainId = CHAIN_IDs.MAINNET): boolean {
+  const remappedSymbol = TOKEN_EQUIVALENCE_REMAPPING[symbol];
+  if (!isDefined(remappedSymbol)) {
+    return false;
+  }
+  const tokenInfo = TOKEN_SYMBOLS_MAP[symbol];
+  return isDefined(tokenInfo) && !isDefined(tokenInfo.addresses[hubChainId]);
 }
 
 export function getNativeTokenAddressForChain(chainId: number): Address {

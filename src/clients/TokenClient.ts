@@ -258,9 +258,9 @@ export class TokenClient {
             )
           );
         } catch {
-          // Token not in TOKEN_SYMBOLS_MAP (e.g. in tests with mock tokens). Fall back to canonical mapping.
-          const spokePoolToken = getRemoteTokenForL1Token(address, chainId, this.hubPoolClient.chainId);
-          tokenAddrs = isDefined(spokePoolToken) ? [spokePoolToken.toEvmAddress()] : [];
+          // No known deployment for this token on the SpokePool.
+          // note: To be overhauled subject to https://github.com/across-protocol/sdk/pull/643
+          tokenAddrs = [];
         }
         return tokenAddrs.filter(isDefined).map((tokenAddress) => erc20.attach(tokenAddress));
       })

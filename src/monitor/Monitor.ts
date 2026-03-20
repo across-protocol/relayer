@@ -46,7 +46,9 @@ import {
   getRemoteTokenForL1Token,
   getTokenInfo,
   ConvertDecimals,
+  getInventoryBalanceContributorTokens,
   getInventoryEquivalentL1TokenAddress,
+  isL2OnlyEquivalentToken,
   isEVMSpokePoolClient,
   isSVMSpokePoolClient,
   toAddressType,
@@ -493,11 +495,11 @@ export class Monitor {
       });
     }
     // Discover L2-only tokens that remap to a parent L1 token and add them after the parent.
-    for (const [symbol, remappedSymbol] of Object.entries(TOKEN_EQUIVALENCE_REMAPPING)) {
-      const tokenInfo = TOKEN_SYMBOLS_MAP[symbol];
-      if (!isDefined(tokenInfo) || isDefined(tokenInfo.addresses[hubChainId])) {
-        continue; // Skip tokens that have a hub chain address (they're already covered above).
+    for (const [symbol] of Object.entries(TOKEN_EQUIVALENCE_REMAPPING)) {
+      if (!isL2OnlyEquivalentToken(symbol, hubChainId)) {
+        continue;
       }
+      const remappedSymbol = TOKEN_EQUIVALENCE_REMAPPING[symbol];
       const parentIndex = allL1Tokens.findIndex((t) => t.symbol === remappedSymbol);
       if (parentIndex === -1) {
         continue;
@@ -662,45 +664,31 @@ export class Monitor {
     return Object.fromEntries(
       l1Tokens
         .map((l1Token) => {
-          // @dev l2TokenSymbols is a list of all keys in TOKEN_SYMBOLS_MAP where the hub chain address is equal to
-          // the l1 token address, OR where the token's equivalence remapping resolves to a symbol whose hub chain
-          // address matches. This allows tokens like pathUSD (which has no hub chain address but remaps to USDC)
-          // to appear in the balance report under their equivalent L1 token.
-          const l2TokenSymbols = Object.entries(TOKEN_SYMBOLS_MAP)
-            .filter(([symbol, { addresses }]) => {
-              const hubAddress = addresses[this.clients.hubPoolClient.chainId]?.toLowerCase();
-              const l1Address = l1Token.address.toEvmAddress().toLowerCase();
-              if (hubAddress === l1Address) {
-                return true;
-              }
-              // Check if this token remaps to a symbol whose hub chain address matches the L1 token.
-              const remappedSymbol = TOKEN_EQUIVALENCE_REMAPPING[symbol];
-              if (remappedSymbol) {
-                const remappedHubAddress =
-                  TOKEN_SYMBOLS_MAP[remappedSymbol]?.addresses[this.clients.hubPoolClient.chainId]?.toLowerCase();
-                return remappedHubAddress === l1Address;
-              }
-              return false;
-            })
-            .map(([symbol]) => symbol);
-
-          // Create an entry for all L2 tokens that share a symbol with the L1 token. This includes tokens
-          // like USDC which has multiple L2 tokens mapped to the same L1 token for a given chain ID.
-          return l2TokenSymbols
-            .filter((symbol) => TOKEN_SYMBOLS_MAP[symbol].addresses[chainId] !== undefined)
-            .map((symbol) => {
-              if (chainId !== this.clients.hubPoolClient.chainId && sdkUtils.isBridgedUsdc(symbol)) {
-                return [TOKEN_SYMBOLS_MAP[symbol].addresses[chainId], { ...l1Token, symbol: "USDC.e" }];
-              }
-              // L2-only equivalence-remapped tokens (e.g. pathUSD, USDH) get their own symbol in the report
-              // rather than being folded into the parent token row, similar to how USDC.e is displayed.
-              const hasHubAddress = isDefined(TOKEN_SYMBOLS_MAP[symbol].addresses[this.clients.hubPoolClient.chainId]);
-              if (!hasHubAddress && isDefined(TOKEN_EQUIVALENCE_REMAPPING[symbol])) {
-                return [TOKEN_SYMBOLS_MAP[symbol].addresses[chainId], { ...l1Token, symbol }];
-              }
-              const remappedSymbol = TOKEN_EQUIVALENCE_REMAPPING[symbol] ?? symbol;
-              return [TOKEN_SYMBOLS_MAP[symbol].addresses[chainId], { ...l1Token, symbol: remappedSymbol }];
-            });
+          // Discover all L2 tokens for this L1 token on this chain, including L2-only equivalence-remapped
+          // tokens (e.g. pathUSD, USDH) via getInventoryBalanceContributorTokens.
+          const hubChainId = this.clients.hubPoolClient.chainId;
+          let l2Tokens: Address[];
+          try {
+            l2Tokens = getInventoryBalanceContributorTokens(l1Token.address, chainId, hubChainId);
+          } catch {
+            // Token not in TOKEN_SYMBOLS_MAP (e.g. in tests with mock tokens).
+            const remoteToken = getRemoteTokenForL1Token(l1Token.address, chainId, hubChainId);
+            l2Tokens = isDefined(remoteToken) ? [remoteToken] : [];
+          }
+          return l2Tokens.map((l2Token) => {
+            const l2Address = l2Token.toNative();
+            const { symbol } = getTokenInfo(l2Token, chainId);
+            let reportSymbol: string;
+            if (chainId !== hubChainId && sdkUtils.isBridgedUsdc(symbol)) {
+              reportSymbol = "USDC.e";
+            } else if (isL2OnlyEquivalentToken(symbol, hubChainId)) {
+              // L2-only equivalence-remapped tokens get their own symbol in the report.
+              reportSymbol = symbol;
+            } else {
+              reportSymbol = TOKEN_EQUIVALENCE_REMAPPING[symbol] ?? symbol;
+            }
+            return [l2Address, { ...l1Token, symbol: reportSymbol }];
+          });
         })
         .flat()
     );
@@ -1243,8 +1231,7 @@ export class Monitor {
           // Skip tokens that share an L1 address with their parent (USDC.e, pathUSD, USDH, etc.) to avoid
           // double-counting refunds. getUpcomingRefunds() is keyed by L1 token address, so querying with the
           // same address for both the parent and child rows would count the same refunds multiple times.
-          const remappedSymbol = TOKEN_EQUIVALENCE_REMAPPING[l1Token.symbol];
-          if (l1Token.symbol === "USDC.e" || isDefined(remappedSymbol)) {
+          if (l1Token.symbol === "USDC.e" || isL2OnlyEquivalentToken(l1Token.symbol, this.clients.hubPoolClient.chainId)) {
             continue;
           }
           const upcomingRefunds = this.getUpcomingRefunds(chainId, l1Token.address, relayer);
@@ -1321,8 +1308,7 @@ export class Monitor {
       allL1Tokens.map(async (l1Token) => {
         // Skip L2-only equivalence-remapped tokens to avoid double-counting pending withdrawals
         // (same L1 address as parent token).
-        const remappedSymbol = TOKEN_EQUIVALENCE_REMAPPING[l1Token.symbol];
-        if (l1Token.symbol === "USDC.e" || isDefined(remappedSymbol)) {
+        if (l1Token.symbol === "USDC.e" || isL2OnlyEquivalentToken(l1Token.symbol, this.clients.hubPoolClient.chainId)) {
           return;
         }
         const pendingWithdrawalBalances =
