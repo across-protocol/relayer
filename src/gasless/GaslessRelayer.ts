@@ -374,7 +374,11 @@ export class GaslessRelayer {
     const stableCoin = [TOKEN_SYMBOLS_MAP.USDC, TOKEN_SYMBOLS_MAP.USDT].some(({ addresses }) =>
       deposit.outputToken.eq(toAddressType(addresses[deposit.destinationChainId], deposit.destinationChainId))
     );
-    const threshold = process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${deposit.originChainId}`] ?? "10";
+    const threshold = Number(process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${deposit.originChainId}`] ?? "0");
+    if (isNaN(threshold) || threshold === 0) {
+      return;
+    }
+
     const { decimals } = getTokenInfo(deposit.outputToken, deposit.destinationChainId);
     return stableCoin && toBNWei(threshold, decimals).gt(deposit.outputAmount);
   }

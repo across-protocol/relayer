@@ -498,8 +498,9 @@ describe("GaslessRelayer", function () {
   });
 
   it("Immediate fill: INITIAL -> DEPOSIT_SUBMIT -> FILL_PENDING -> DEPOSIT_CONFIRM -> FILLED", async function () {
-    // inputAmount == outputAmount == "1000000" (1 USDC, within 1000 USDC threshold) -> fillImmediate = true.
+    // inputAmount == outputAmount == "1000000" (1 USDC, below 10 USDC threshold) -> fillImmediate = true.
     // Default smock fake behaviour (no revert) makes willSucceed return succeed: true.
+    process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`] = "10";
     const msg = makeTestDepositMessage();
     const receipt = makeReceipt();
 
@@ -516,6 +517,7 @@ describe("GaslessRelayer", function () {
     expect(relayer.extractDepositFromReceiptCalls).to.equal(0);
     expect(relayer.initiateFillCalls).to.be.gte(1);
     expectImmediateTransitions(relayer.stateTransitions[depositNonceFor(relayer, msg)]);
+    delete process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`];
   });
 
   it("Immediate fill fallback: simulation failure falls back to standard path", async function () {
@@ -556,6 +558,7 @@ describe("GaslessRelayer", function () {
 
   describe("Permit2 flow", function () {
     it("Permit2 deposit: INITIAL -> DEPOSIT_PENDING -> FILL_PENDING -> FILLED", async function () {
+      process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`] = "10";
       const { nonce } = setupScenario(
         relayer,
         { inputAmount: "2000000", outputAmount: "1900000" },
@@ -568,6 +571,7 @@ describe("GaslessRelayer", function () {
       expect(relayer.initiateGaslessDepositCalls).to.equal(1);
       expect(relayer.initiateFillCalls).to.equal(1);
       expectImmediateTransitions(relayer.stateTransitions[nonce]);
+      delete process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`];
     });
   });
 
@@ -617,6 +621,7 @@ describe("GaslessRelayer", function () {
     });
 
     it("Multiple messages: processes each independently", async function () {
+      process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`] = "10";
       const msg1 = makeTestDepositMessage({ inputAmount: "1000000", outputAmount: "900000" });
       msg1.depositId = "100";
       const msg2 = makeTestDepositMessage({ inputAmount: "2000000", outputAmount: "1900000" });
@@ -648,9 +653,11 @@ describe("GaslessRelayer", function () {
 
       expectImmediateTransitions(relayer.stateTransitions[nonce1]);
       expectImmediateTransitions(relayer.stateTransitions[nonce2]);
+      delete process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`];
     });
 
     it("Message with existing state is skipped on subsequent polls", async function () {
+      process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`] = "10";
       const { nonce } = setupScenario(
         relayer,
         { inputAmount: "2000000", outputAmount: "1900000" },
@@ -667,6 +674,7 @@ describe("GaslessRelayer", function () {
       await relayer.runEvaluateApiSignatures();
       expect(relayer.initiateGaslessDepositCalls).to.equal(1);
       expectImmediateTransitions(relayer.stateTransitions[nonce]);
+      delete process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`];
     });
 
     describe("fillImmediate", function () {
@@ -674,13 +682,14 @@ describe("GaslessRelayer", function () {
         delete process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`];
       });
 
-      it("Returns true when outputAmount is below default threshold", function () {
+      it("Returns true when outputAmount is below threshold", function () {
+        process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`] = "10";
         const result = relayer.testFillImmediate(
           {
             originChainId: ORIGIN_CHAIN_ID,
             destinationChainId: DESTINATION_CHAIN_ID,
             outputToken: EvmAddress.from(USDC_BASE),
-            outputAmount: toBN("1000000"), // 1 USDC < 10 USDC default
+            outputAmount: toBN("1000000"), // 1 USDC < 10 USDC threshold
             exclusivityParameter: 1700000000,
           },
           fakeSpokePoolAddress
@@ -688,13 +697,14 @@ describe("GaslessRelayer", function () {
         expect(result).to.be.true;
       });
 
-      it("Returns false when outputAmount exceeds default threshold", function () {
+      it("Returns false when outputAmount exceeds threshold", function () {
+        process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`] = "10";
         const result = relayer.testFillImmediate(
           {
             originChainId: ORIGIN_CHAIN_ID,
             destinationChainId: DESTINATION_CHAIN_ID,
             outputToken: EvmAddress.from(USDC_BASE),
-            outputAmount: toBN("20000000"), // 20 USDC > 10 USDC default
+            outputAmount: toBN("20000000"), // 20 USDC > 10 USDC threshold
             exclusivityParameter: 1700000000,
           },
           fakeSpokePoolAddress
@@ -703,12 +713,13 @@ describe("GaslessRelayer", function () {
       });
 
       it("Returns false when outputAmount equals threshold (exclusive boundary)", function () {
+        process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`] = "10";
         const result = relayer.testFillImmediate(
           {
             originChainId: ORIGIN_CHAIN_ID,
             destinationChainId: DESTINATION_CHAIN_ID,
             outputToken: EvmAddress.from(USDC_BASE),
-            outputAmount: toBN("10000000"), // 10 USDC == 10 USDC default
+            outputAmount: toBN("10000000"), // 10 USDC == 10 USDC threshold
             exclusivityParameter: 1700000000,
           },
           fakeSpokePoolAddress
@@ -746,6 +757,7 @@ describe("GaslessRelayer", function () {
 
       it("Returns false for non-stablecoin tokens regardless of amount", function () {
         // WETH is not USDC/USDT, so fillImmediate is always false.
+        process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`] = "10";
         const result = relayer.testFillImmediate(
           {
             originChainId: ORIGIN_CHAIN_ID,
@@ -777,6 +789,7 @@ describe("GaslessRelayer", function () {
 
       it("Returns true for absolute exclusivityParameter (immediate fill safe)", function () {
         // Absolute timestamp (>= 1e9) allows immediate fill because deadline is known.
+        process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`] = "10";
         const result = relayer.testFillImmediate(
           {
             originChainId: ORIGIN_CHAIN_ID,
@@ -792,6 +805,7 @@ describe("GaslessRelayer", function () {
 
       it("Returns true for exclusivityParameter = 0 (treated as absolute)", function () {
         // exclusivityParameter = 0 means no exclusivity, treated as absolute (not relative).
+        process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`] = "10";
         const result = relayer.testFillImmediate(
           {
             originChainId: ORIGIN_CHAIN_ID,
@@ -838,6 +852,7 @@ describe("GaslessRelayer", function () {
 
       it("Returns true for exclusivityParameter just over threshold (absolute)", function () {
         // Just over MAX_EXCLUSIVITY_PERIOD_SECONDS should be treated as absolute.
+        process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`] = "10";
         const result = relayer.testFillImmediate(
           {
             originChainId: ORIGIN_CHAIN_ID,
