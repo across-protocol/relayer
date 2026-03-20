@@ -1,6 +1,5 @@
 import assert from "assert";
 import minimist from "minimist";
-
 import { config } from "dotenv";
 import { Contract, ethers, Signer } from "ethers";
 import { LogDescription } from "@ethersproject/abi";
