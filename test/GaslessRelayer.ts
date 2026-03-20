@@ -1,10 +1,19 @@
 import { Contract } from "ethers";
-import { GaslessDepositMessage, DepositWithBlock } from "../src/interfaces";
+import { DepositWithBlock, GaslessDepositMessage, RelayData } from "../src/interfaces";
 import { GaslessRelayer, MessageState } from "../src/gasless/GaslessRelayer";
 import { GaslessRelayerConfig } from "../src/gasless/GaslessRelayerConfig";
 import SPOKE_POOL_PERIPHERY_ABI from "../src/common/abi/SpokePoolPeriphery.json";
-import { CHAIN_IDs, EvmAddress, Provider, TransactionReceipt, getCurrentTime, TOKEN_SYMBOLS_MAP } from "../src/utils";
-import { createSpyLogger, expect, smock, ethers, toBN } from "./utils";
+import {
+  Address,
+  CHAIN_IDs,
+  EvmAddress,
+  Provider,
+  TransactionReceipt,
+  getCurrentTime,
+  TOKEN_SYMBOLS_MAP,
+} from "../src/utils";
+import { MAX_EXCLUSIVITY_PERIOD_SECONDS } from "../src/utils/GaslessUtils";
+import { createSpyLogger, expect, FakeContract, smock, ethers, toBN } from "./utils";
 
 // Minimal 65-byte hex signature.
 const DUMMY_SIGNATURE = "0x" + "ab".repeat(65);
@@ -21,6 +30,7 @@ const WETH_BASE = TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.BASE];
 const DUMMY_ADDRESS = "0x" + "11".repeat(20);
 const DUMMY_EVM_ADDRESS = EvmAddress.from(DUMMY_ADDRESS);
 
+type GaslessDeposit = RelayData & { destinationChainId: number };
 type StrippedDeposit = Omit<DepositWithBlock, "fromLiteChain" | "toLiteChain" | "quoteBlockNumber">;
 
 /**
@@ -62,24 +72,46 @@ class TestableGaslessRelayer extends GaslessRelayer {
   public getMessageState(depositNonce: string): MessageState {
     return this.messageState[depositNonce];
   }
+  public testFillImmediate(
+    deposit: Pick<RelayData, "originChainId" | "outputToken" | "outputAmount"> & {
+      destinationChainId: number;
+      exclusivityParameter: number;
+    },
+    spokePool: string
+  ): boolean {
+    return this.fillImmediate(deposit, spokePool);
+  }
   public getDepositKey(token: string, originChainId: number, depositId: string): string {
     return this._getDepositKey(token, originChainId, depositId);
   }
-
-  // Track state transitions, keyed by depositKey (e.g., nonce)
-  public stateTransitions: { [depositKey: string]: Array<{ from: MessageState; to: MessageState }> } = {};
+  protected override getPeripheryContract(originChainId: number): Contract {
+    return this.getPeripheryContractFn(originChainId);
+  }
 
   // Configurable function properties -- tests assign return values; overrides track call counts.
+  public getPeripheryContractFn: (chainId: number) => Contract = (chainId) => this.spokePoolPeripheries[chainId];
   public queryGaslessApiFn: () => Promise<GaslessDepositMessage[]> = async () => [];
   public initiateGaslessDepositFn: (msg: GaslessDepositMessage) => Promise<TransactionReceipt | null> = async () =>
     null;
-  public initiateFillFn: (deposit: StrippedDeposit) => Promise<TransactionReceipt | null> = async () => null;
+  public initiateFillFn: (deposit: GaslessDeposit) => Promise<TransactionReceipt | null> = async () => null;
   public extractDepositFromReceiptFn: (receipt: TransactionReceipt, chainId: number) => StrippedDeposit = () => {
     throw new Error("extractDepositFromReceiptFn not configured");
   };
+  public findDepositFn: (
+    originChainId: number,
+    inputToken: Address,
+    authorizer: string,
+    nonce: string
+  ) => Promise<StrippedDeposit | undefined> = async () => undefined;
+
   // Call counters -- incremented by the overrides below.
   public initiateGaslessDepositCalls = 0;
+  public extractDepositFromReceiptCalls = 0;
   public initiateFillCalls = 0;
+  public findDepositCalls = 0;
+
+  // Track state transitions, keyed by depositKey (e.g., nonce)
+  public stateTransitions: { [depositKey: string]: Array<{ from: MessageState; to: MessageState }> } = {};
 
   protected override async _queryGaslessApi(): Promise<GaslessDepositMessage[]> {
     return this.queryGaslessApiFn();
@@ -109,7 +141,17 @@ class TestableGaslessRelayer extends GaslessRelayer {
     receipt: TransactionReceipt,
     originChainId: number
   ): StrippedDeposit {
+    this.extractDepositFromReceiptCalls++;
     return this.extractDepositFromReceiptFn(receipt, originChainId);
+  }
+  protected override async _findDeposit(
+    originChainId: number,
+    inputToken: Address,
+    authorizer: string,
+    nonce: string
+  ): Promise<StrippedDeposit | undefined> {
+    this.findDepositCalls++;
+    return this.findDepositFn(originChainId, inputToken, authorizer, nonce);
   }
 
   protected override _setState(depositKey: string, state: MessageState): void {
@@ -141,8 +183,8 @@ function makeDepositMessage(
     exclusiveRelayer: DUMMY_ADDRESS,
     quoteTimestamp: getCurrentTime(),
     fillDeadline,
-    exclusivityDeadline: 0,
-    exclusivityParameter: 0,
+    exclusivityDeadline: 1700000000,
+    exclusivityParameter: 1700000000,
     message: "0x",
     ...baseOverrides,
   };
@@ -200,8 +242,8 @@ function makePermit2DepositMessage(
     exclusiveRelayer: DUMMY_ADDRESS,
     quoteTimestamp: getCurrentTime(),
     fillDeadline,
-    exclusivityDeadline: 0,
-    exclusivityParameter: 0,
+    exclusivityDeadline: 1700000000,
+    exclusivityParameter: 1700000000,
     message: "0x",
     ...baseOverrides,
   };
@@ -334,10 +376,19 @@ function setupScenario(
  * Validation helpers for common transition patterns.
  */
 function expectStandardTransitions(transitions: Array<{ from: MessageState; to: MessageState }>) {
-  expect(transitions).to.have.lengthOf(3);
-  expect(transitions[0]).to.deep.equal({ from: MessageState.INITIAL, to: MessageState.DEPOSIT_PENDING });
-  expect(transitions[1]).to.deep.equal({ from: MessageState.DEPOSIT_PENDING, to: MessageState.FILL_PENDING });
-  expect(transitions[2]).to.deep.equal({ from: MessageState.FILL_PENDING, to: MessageState.FILLED });
+  expect(transitions).to.have.lengthOf(4);
+  expect(transitions[0]).to.deep.equal({ from: MessageState.INITIAL, to: MessageState.DEPOSIT_SUBMIT });
+  expect(transitions[1]).to.deep.equal({ from: MessageState.DEPOSIT_SUBMIT, to: MessageState.DEPOSIT_CONFIRM });
+  expect(transitions[2]).to.deep.equal({ from: MessageState.DEPOSIT_CONFIRM, to: MessageState.FILL_PENDING });
+  expect(transitions[3]).to.deep.equal({ from: MessageState.FILL_PENDING, to: MessageState.FILLED });
+}
+
+function expectImmediateTransitions(transitions: Array<{ from: MessageState; to: MessageState }>) {
+  expect(transitions).to.have.lengthOf(4);
+  expect(transitions[0]).to.deep.equal({ from: MessageState.INITIAL, to: MessageState.DEPOSIT_SUBMIT });
+  expect(transitions[1]).to.deep.equal({ from: MessageState.DEPOSIT_SUBMIT, to: MessageState.FILL_PENDING });
+  expect(transitions[2]).to.deep.equal({ from: MessageState.FILL_PENDING, to: MessageState.DEPOSIT_CONFIRM });
+  expect(transitions[3]).to.deep.equal({ from: MessageState.DEPOSIT_CONFIRM, to: MessageState.FILLED });
 }
 
 function expectErrorTransition(transitions: Array<{ from: MessageState; to: MessageState }>) {
@@ -346,9 +397,10 @@ function expectErrorTransition(transitions: Array<{ from: MessageState; to: Mess
 }
 
 function expectCctpTransitions(transitions: Array<{ from: MessageState; to: MessageState }>) {
-  expect(transitions).to.have.lengthOf(2);
-  expect(transitions[0]).to.deep.equal({ from: MessageState.INITIAL, to: MessageState.DEPOSIT_PENDING });
-  expect(transitions[1]).to.deep.equal({ from: MessageState.DEPOSIT_PENDING, to: MessageState.FILLED });
+  expect(transitions).to.have.lengthOf(3);
+  expect(transitions[0]).to.deep.equal({ from: MessageState.INITIAL, to: MessageState.DEPOSIT_SUBMIT });
+  expect(transitions[1]).to.deep.equal({ from: MessageState.DEPOSIT_SUBMIT, to: MessageState.DEPOSIT_CONFIRM });
+  expect(transitions[2]).to.deep.equal({ from: MessageState.DEPOSIT_CONFIRM, to: MessageState.FILLED });
 }
 
 /**
@@ -368,6 +420,7 @@ async function expectErrorScenario(relayer: TestableGaslessRelayer, msg: Gasless
 describe("GaslessRelayer", function () {
   let relayer: TestableGaslessRelayer;
   let fakeSpokePoolAddress: string;
+  let fakePeripherySmock: FakeContract;
 
   // Test fixture helpers that automatically use the correct spokePool address
   const makeTestDepositMessage = (overrides?: Partial<GaslessDepositMessage["baseDepositData"]>) =>
@@ -394,7 +447,7 @@ describe("GaslessRelayer", function () {
 
     // smock.fake() returns FakeContract which isn't assignable to Contract under strict mode.
     // Extract a Contract reference via the address and interface the fake already provides.
-    const fakePeripherySmock = await smock.fake(SPOKE_POOL_PERIPHERY_ABI);
+    fakePeripherySmock = await smock.fake(SPOKE_POOL_PERIPHERY_ABI);
     const fakePeriphery = new Contract(fakePeripherySmock.address, SPOKE_POOL_PERIPHERY_ABI, signer.provider);
     const fakeSpokePoolSmock = await smock.fake([]);
     const fakeSpokePool = new Contract(fakeSpokePoolSmock.address, [], signer.provider);
@@ -414,28 +467,160 @@ describe("GaslessRelayer", function () {
     relayer.setObservedDeposits({ [ORIGIN_CHAIN_ID]: new Set() });
     relayer.setObservedFills({ [DESTINATION_CHAIN_ID]: new Set() });
     relayer.setSignerAddress(EvmAddress.from(signer.address));
-
-    // Enable experimental handler.
-    process.env.RELAYER_GASLESS_HANDLER = "experimental";
   });
 
-  afterEach(function () {
-    delete process.env.RELAYER_GASLESS_HANDLER;
+  it("Standard path: INITIAL -> DEPOSIT_SUBMIT -> DEPOSIT_CONFIRM -> FILL_PENDING -> FILLED", async function () {
+    // Use amounts above the default fillImmediate threshold (10 USDC) to ensure the standard path.
+    const msg = makeTestDepositMessage({ inputAmount: "20000000", outputAmount: "19000000" });
+    const receipt = makeReceipt();
+    const depositEvent = makeFakeDepositEvent({ inputAmount: "20000000", outputAmount: "19000000" });
+
+    relayer.queryGaslessApiFn = async () => [msg];
+    relayer.initiateGaslessDepositFn = async () => receipt;
+    relayer.extractDepositFromReceiptFn = () => depositEvent;
+    relayer.initiateFillFn = async () => receipt;
+
+    await relayer.runEvaluateApiSignatures();
+
+    expect(relayer.getMessageState(depositNonceFor(relayer, msg))).to.equal(MessageState.FILLED);
+    expect(relayer.initiateGaslessDepositCalls).to.equal(1);
+    expect(relayer.initiateFillCalls).to.equal(1);
+    // Deposit was found via receipt, so _findDeposit should not have been needed.
+    expect(relayer.findDepositCalls).to.equal(0);
+    expectStandardTransitions(relayer.stateTransitions[depositNonceFor(relayer, msg)]);
   });
 
-  it("Standard path: INITIAL -> DEPOSIT_PENDING -> FILL_PENDING -> FILLED", async function () {
-    const { nonce } = setupScenario(
-      relayer,
-      { inputAmount: "2000000", outputAmount: "1900000" },
-      makeTestDepositMessage
-    );
+  it("Immediate fill: INITIAL -> DEPOSIT_SUBMIT -> FILL_PENDING -> DEPOSIT_CONFIRM -> FILLED", async function () {
+    // inputAmount == outputAmount == "1000000" (1 USDC, below 10 USDC threshold) -> fillImmediate = true.
+    // Default smock fake behaviour (no revert) makes willSucceed return succeed: true.
+    process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`] = "10";
+    const msg = makeTestDepositMessage();
+    const receipt = makeReceipt();
+
+    relayer.queryGaslessApiFn = async () => [msg];
+    relayer.initiateGaslessDepositFn = async () => receipt;
+    relayer.extractDepositFromReceiptFn = () => makeFakeDepositEvent();
+    relayer.initiateFillFn = async () => receipt;
+
+    await relayer.runEvaluateApiSignatures();
+
+    expect(relayer.getMessageState(depositNonceFor(relayer, msg))).to.equal(MessageState.FILLED);
+    // Immediate path: fill uses synthetic deposit, but we MUST verify the actual deposit
+    // succeeded by extracting from receipt to avoid unreimbursable fills.
+    expect(relayer.extractDepositFromReceiptCalls).to.equal(1);
+    expect(relayer.initiateFillCalls).to.be.gte(1);
+    expectImmediateTransitions(relayer.stateTransitions[depositNonceFor(relayer, msg)]);
+    delete process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`];
+  });
+
+  it("Immediate fill fallback: simulation failure falls back to standard path", async function () {
+    // Same amounts as test above (fillImmediate initially true).
+    // Configure the smock fake to revert so willSucceed returns succeed: false.
+    fakePeripherySmock.depositWithAuthorization.reverts("revert");
+
+    const msg = makeTestDepositMessage();
+    const receipt = makeReceipt();
+    const depositEvent = makeFakeDepositEvent();
+    const nonce = depositNonceFor(relayer, msg);
+
+    relayer.queryGaslessApiFn = async () => [msg];
+    relayer.initiateGaslessDepositFn = async () => receipt;
+    relayer.extractDepositFromReceiptFn = () => depositEvent;
+    relayer.initiateFillFn = async () => receipt;
 
     await relayer.runEvaluateApiSignatures();
 
     expect(relayer.getMessageState(nonce)).to.equal(MessageState.FILLED);
-    expect(relayer.initiateGaslessDepositCalls).to.equal(1);
-    expect(relayer.initiateFillCalls).to.equal(1);
     expectStandardTransitions(relayer.stateTransitions[nonce]);
+
+    // Simulation failed, so the handler fell back to the standard path:
+    // deposit was extracted from the receipt (not built synthetically).
+    expect(relayer.extractDepositFromReceiptCalls).to.equal(1);
+    expect(relayer.initiateFillCalls).to.equal(1);
+  });
+
+  it("Immediate fill: retries when deposit fails after fill succeeds", async function () {
+    // Tests the critical safety check: if immediate fill succeeds but deposit fails/never mines,
+    // the relayer detects this in DEPOSIT_CONFIRM and retries instead of finalizing.
+    // Without this check, the relayer would have an unreimbursable fill.
+    process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`] = "10";
+    const msg = makeTestDepositMessage();
+    const nonce = depositNonceFor(relayer, msg);
+
+    let depositAttempts = 0;
+    relayer.queryGaslessApiFn = async () => [msg];
+    relayer.initiateGaslessDepositFn = async () => {
+      depositAttempts++;
+      // First attempt: return null (deposit failed)
+      // Second attempt: return receipt (deposit succeeds)
+      return depositAttempts === 1 ? null : makeReceipt();
+    };
+    relayer.extractDepositFromReceiptFn = () => makeFakeDepositEvent();
+    relayer.initiateFillFn = async () => makeReceipt();
+
+    await relayer.runEvaluateApiSignatures();
+
+    expect(relayer.getMessageState(nonce)).to.equal(MessageState.FILLED);
+    // Should have retried deposit after first attempt failed
+    expect(depositAttempts).to.equal(2);
+    expect(relayer.initiateGaslessDepositCalls).to.equal(2);
+    // Fill is attempted on both passes (deposit persists across retry).
+    // This is safe because fills are idempotent - second attempt is a no-op if first succeeded.
+    expect(relayer.initiateFillCalls).to.equal(2);
+    // Should verify deposit on second attempt
+    expect(relayer.extractDepositFromReceiptCalls).to.equal(1);
+
+    // Verify state transition sequence shows retry behavior
+    const transitions = relayer.stateTransitions[nonce];
+    expect(transitions).to.have.length.at.least(4);
+    expect(transitions[0]).to.deep.equal({ from: MessageState.INITIAL, to: MessageState.DEPOSIT_SUBMIT });
+    expect(transitions[1]).to.deep.equal({ from: MessageState.DEPOSIT_SUBMIT, to: MessageState.FILL_PENDING });
+    expect(transitions[2]).to.deep.equal({ from: MessageState.FILL_PENDING, to: MessageState.DEPOSIT_CONFIRM });
+    // Critical: should retry DEPOSIT_SUBMIT after verification fails
+    expect(transitions[3]).to.deep.equal({ from: MessageState.DEPOSIT_CONFIRM, to: MessageState.DEPOSIT_SUBMIT });
+    // Should eventually reach FILLED after retry succeeds
+    expect(transitions[transitions.length - 1].to).to.equal(MessageState.FILLED);
+
+    delete process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`];
+  });
+
+  it("Immediate fill: normalizes plain-text message to match on-chain deposit", async function () {
+    // Tests that buildSyntheticDeposit normalizes message field to hex, matching the encoding
+    // used by toContractDepositData when building the origin deposit transaction.
+    // Without normalization, relay data hashes would mismatch and fillRelay would fail.
+    process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`] = "10";
+    const plainTextMessage = "Hello, Across!";
+    const expectedHexMessage = "0x48656c6c6f2c204163726f737321"; // hex encoding of plain text
+    const msg = makeTestDepositMessage({ message: plainTextMessage });
+    const receipt = makeReceipt();
+
+    let capturedFillDeposit: RelayData | undefined;
+    relayer.queryGaslessApiFn = async () => [msg];
+    relayer.initiateGaslessDepositFn = async () => receipt;
+    relayer.extractDepositFromReceiptFn = () => makeFakeDepositEvent({ message: expectedHexMessage });
+    relayer.initiateFillFn = async (deposit) => {
+      capturedFillDeposit = deposit;
+      return receipt;
+    };
+
+    await relayer.runEvaluateApiSignatures();
+
+    expect(relayer.getMessageState(depositNonceFor(relayer, msg))).to.equal(MessageState.FILLED);
+    // Verify that the fill was called with normalized (hex) message, not plain text
+    expect(capturedFillDeposit).to.not.be.undefined;
+    expect(capturedFillDeposit!.message).to.equal(expectedHexMessage);
+    expect(capturedFillDeposit!.message).to.not.equal(plainTextMessage);
+    delete process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`];
+  });
+
+  it("Throws error if buildSyntheticDeposit called with relative exclusivityParameter", function () {
+    // This test verifies the defensive assertion in buildSyntheticDeposit.
+    // It should never be reached in practice (fillImmediate rejects relative parameters),
+    // but the assertion provides defense-in-depth if the check is bypassed.
+    const { buildSyntheticDeposit } = require("../src/utils/GaslessUtils");
+    const msgWithRelativeExclusivity = makeTestDepositMessage({ exclusivityParameter: 300 });
+
+    expect(() => buildSyntheticDeposit(msgWithRelativeExclusivity)).to.throw(/exclusivityParameter is not absolute/);
   });
 
   it("Invalid deposit (mismatching L1 tokens) -> ERROR", async function () {
@@ -450,6 +635,7 @@ describe("GaslessRelayer", function () {
 
   describe("Permit2 flow", function () {
     it("Permit2 deposit: INITIAL -> DEPOSIT_PENDING -> FILL_PENDING -> FILLED", async function () {
+      process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`] = "10";
       const { nonce } = setupScenario(
         relayer,
         { inputAmount: "2000000", outputAmount: "1900000" },
@@ -461,7 +647,8 @@ describe("GaslessRelayer", function () {
       expect(relayer.getMessageState(nonce)).to.equal(MessageState.FILLED);
       expect(relayer.initiateGaslessDepositCalls).to.equal(1);
       expect(relayer.initiateFillCalls).to.equal(1);
-      expectStandardTransitions(relayer.stateTransitions[nonce]);
+      expectImmediateTransitions(relayer.stateTransitions[nonce]);
+      delete process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`];
     });
   });
 
@@ -489,7 +676,29 @@ describe("GaslessRelayer", function () {
       await expectErrorScenario(relayer, msg);
     });
 
+    it("Deposit receipt null, recovered via _findDeposit", async function () {
+      // Use amounts above the default fillImmediate threshold (10 USDC) to ensure the standard path.
+      const msg = makeTestDepositMessage({ inputAmount: "20000000", outputAmount: "19000000" });
+      const depositEvent = makeFakeDepositEvent({ inputAmount: "20000000", outputAmount: "19000000" });
+      const receipt = makeReceipt();
+
+      relayer.queryGaslessApiFn = async () => [msg];
+      // Deposit returns null (failed/skipped).
+      relayer.initiateGaslessDepositFn = async () => null;
+      // _findDeposit locates the deposit on-chain.
+      relayer.findDepositFn = async () => depositEvent;
+      relayer.initiateFillFn = async () => receipt;
+
+      await relayer.runEvaluateApiSignatures();
+
+      expect(relayer.getMessageState(depositNonceFor(relayer, msg))).to.equal(MessageState.FILLED);
+      expect(relayer.findDepositCalls).to.equal(1);
+      expect(relayer.initiateFillCalls).to.equal(1);
+      expectStandardTransitions(relayer.stateTransitions[depositNonceFor(relayer, msg)]);
+    });
+
     it("Multiple messages: processes each independently", async function () {
+      process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`] = "10";
       const msg1 = makeTestDepositMessage({ inputAmount: "1000000", outputAmount: "900000" });
       msg1.depositId = "100";
       const msg2 = makeTestDepositMessage({ inputAmount: "2000000", outputAmount: "1900000" });
@@ -519,11 +728,13 @@ describe("GaslessRelayer", function () {
       expect(relayer.initiateGaslessDepositCalls).to.equal(2);
       expect(relayer.initiateFillCalls).to.equal(2);
 
-      expectStandardTransitions(relayer.stateTransitions[nonce1]);
-      expectStandardTransitions(relayer.stateTransitions[nonce2]);
+      expectImmediateTransitions(relayer.stateTransitions[nonce1]);
+      expectImmediateTransitions(relayer.stateTransitions[nonce2]);
+      delete process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`];
     });
 
     it("Message with existing state is skipped on subsequent polls", async function () {
+      process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`] = "10";
       const { nonce } = setupScenario(
         relayer,
         { inputAmount: "2000000", outputAmount: "1900000" },
@@ -534,12 +745,203 @@ describe("GaslessRelayer", function () {
       await relayer.runEvaluateApiSignatures();
       expect(relayer.getMessageState(nonce)).to.equal(MessageState.FILLED);
       expect(relayer.initiateGaslessDepositCalls).to.equal(1);
-      expect(relayer.stateTransitions[nonce]).to.have.lengthOf(3);
+      expectImmediateTransitions(relayer.stateTransitions[nonce]);
 
       // Second poll: message should be skipped (already has state)
       await relayer.runEvaluateApiSignatures();
       expect(relayer.initiateGaslessDepositCalls).to.equal(1);
-      expect(relayer.stateTransitions[nonce]).to.have.lengthOf(3);
+      expectImmediateTransitions(relayer.stateTransitions[nonce]);
+      delete process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`];
+    });
+
+    describe("fillImmediate", function () {
+      afterEach(function () {
+        delete process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`];
+      });
+
+      it("Returns true when outputAmount is below threshold", function () {
+        process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`] = "10";
+        const result = relayer.testFillImmediate(
+          {
+            originChainId: ORIGIN_CHAIN_ID,
+            destinationChainId: DESTINATION_CHAIN_ID,
+            outputToken: EvmAddress.from(USDC_BASE),
+            outputAmount: toBN("1000000"), // 1 USDC < 10 USDC threshold
+            exclusivityParameter: 1700000000,
+          },
+          fakeSpokePoolAddress
+        );
+        expect(result).to.be.true;
+      });
+
+      it("Returns false when outputAmount exceeds threshold", function () {
+        process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`] = "10";
+        const result = relayer.testFillImmediate(
+          {
+            originChainId: ORIGIN_CHAIN_ID,
+            destinationChainId: DESTINATION_CHAIN_ID,
+            outputToken: EvmAddress.from(USDC_BASE),
+            outputAmount: toBN("20000000"), // 20 USDC > 10 USDC threshold
+            exclusivityParameter: 1700000000,
+          },
+          fakeSpokePoolAddress
+        );
+        expect(result).to.be.false;
+      });
+
+      it("Returns false when outputAmount equals threshold (exclusive boundary)", function () {
+        process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`] = "10";
+        const result = relayer.testFillImmediate(
+          {
+            originChainId: ORIGIN_CHAIN_ID,
+            destinationChainId: DESTINATION_CHAIN_ID,
+            outputToken: EvmAddress.from(USDC_BASE),
+            outputAmount: toBN("10000000"), // 10 USDC == 10 USDC threshold
+            exclusivityParameter: 1700000000,
+          },
+          fakeSpokePoolAddress
+        );
+        expect(result).to.be.false;
+      });
+
+      it("Respects per-chain env var override", function () {
+        process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`] = "5";
+        expect(
+          relayer.testFillImmediate(
+            {
+              originChainId: ORIGIN_CHAIN_ID,
+              destinationChainId: DESTINATION_CHAIN_ID,
+              outputToken: EvmAddress.from(USDC_BASE),
+              outputAmount: toBN("3000000"), // 3 USDC < 5 USDC override
+              exclusivityParameter: 1700000000,
+            },
+            fakeSpokePoolAddress
+          )
+        ).to.be.true;
+        expect(
+          relayer.testFillImmediate(
+            {
+              originChainId: ORIGIN_CHAIN_ID,
+              destinationChainId: DESTINATION_CHAIN_ID,
+              outputToken: EvmAddress.from(USDC_BASE),
+              outputAmount: toBN("7000000"), // 7 USDC > 5 USDC override
+              exclusivityParameter: 1700000000,
+            },
+            fakeSpokePoolAddress
+          )
+        ).to.be.false;
+      });
+
+      it("Returns false for non-stablecoin tokens regardless of amount", function () {
+        // WETH is not USDC/USDT, so fillImmediate is always false.
+        process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`] = "10";
+        const result = relayer.testFillImmediate(
+          {
+            originChainId: ORIGIN_CHAIN_ID,
+            destinationChainId: DESTINATION_CHAIN_ID,
+            outputToken: EvmAddress.from(WETH_BASE),
+            outputAmount: toBN("1"), // Tiny amount, but not a stablecoin
+            exclusivityParameter: 1700000000,
+          },
+          fakeSpokePoolAddress
+        );
+        expect(result).to.be.false;
+      });
+
+      it("Returns false for relative exclusivityParameter (immediate fill unsafe)", function () {
+        // Relative parameter (300 seconds = 5 minutes) should reject immediate fill
+        // because we can't know the actual deadline until deposit mines.
+        const result = relayer.testFillImmediate(
+          {
+            originChainId: ORIGIN_CHAIN_ID,
+            destinationChainId: DESTINATION_CHAIN_ID,
+            outputToken: EvmAddress.from(USDC_BASE),
+            outputAmount: toBN("1000000"), // 1 USDC < 10 USDC (would pass amount check)
+            exclusivityParameter: 300,
+          },
+          fakeSpokePoolAddress
+        );
+        expect(result).to.be.false;
+      });
+
+      it("Returns true for absolute exclusivityParameter (immediate fill safe)", function () {
+        // Absolute timestamp (>= 1e9) allows immediate fill because deadline is known.
+        process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`] = "10";
+        const result = relayer.testFillImmediate(
+          {
+            originChainId: ORIGIN_CHAIN_ID,
+            destinationChainId: DESTINATION_CHAIN_ID,
+            outputToken: EvmAddress.from(USDC_BASE),
+            outputAmount: toBN("1000000"), // 1 USDC < 10 USDC
+            exclusivityParameter: 1700000000,
+          },
+          fakeSpokePoolAddress
+        );
+        expect(result).to.be.true;
+      });
+
+      it("Returns true for exclusivityParameter = 0 (treated as absolute)", function () {
+        // exclusivityParameter = 0 means no exclusivity, treated as absolute (not relative).
+        process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`] = "10";
+        const result = relayer.testFillImmediate(
+          {
+            originChainId: ORIGIN_CHAIN_ID,
+            destinationChainId: DESTINATION_CHAIN_ID,
+            outputToken: EvmAddress.from(USDC_BASE),
+            outputAmount: toBN("1000000"),
+            exclusivityParameter: 0,
+          },
+          fakeSpokePoolAddress
+        );
+        expect(result).to.be.true;
+      });
+
+      it("Returns false for exclusivityParameter just under threshold (relative)", function () {
+        // Just under MAX_EXCLUSIVITY_PERIOD_SECONDS should be treated as relative.
+        const result = relayer.testFillImmediate(
+          {
+            originChainId: ORIGIN_CHAIN_ID,
+            destinationChainId: DESTINATION_CHAIN_ID,
+            outputToken: EvmAddress.from(USDC_BASE),
+            outputAmount: toBN("1000000"),
+            exclusivityParameter: MAX_EXCLUSIVITY_PERIOD_SECONDS - 1,
+          },
+          fakeSpokePoolAddress
+        );
+        expect(result).to.be.false;
+      });
+
+      it("Returns false for exclusivityParameter at threshold (conservatively treated as relative)", function () {
+        // Exactly at MAX_EXCLUSIVITY_PERIOD_SECONDS is conservatively treated as relative.
+        // This is the safer choice: reject immediate fill rather than risk using wrong deadline.
+        const result = relayer.testFillImmediate(
+          {
+            originChainId: ORIGIN_CHAIN_ID,
+            destinationChainId: DESTINATION_CHAIN_ID,
+            outputToken: EvmAddress.from(USDC_BASE),
+            outputAmount: toBN("1000000"),
+            exclusivityParameter: MAX_EXCLUSIVITY_PERIOD_SECONDS,
+          },
+          fakeSpokePoolAddress
+        );
+        expect(result).to.be.false;
+      });
+
+      it("Returns true for exclusivityParameter just over threshold (absolute)", function () {
+        // Just over MAX_EXCLUSIVITY_PERIOD_SECONDS should be treated as absolute.
+        process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`] = "10";
+        const result = relayer.testFillImmediate(
+          {
+            originChainId: ORIGIN_CHAIN_ID,
+            destinationChainId: DESTINATION_CHAIN_ID,
+            outputToken: EvmAddress.from(USDC_BASE),
+            outputAmount: toBN("1000000"),
+            exclusivityParameter: MAX_EXCLUSIVITY_PERIOD_SECONDS + 1,
+          },
+          fakeSpokePoolAddress
+        );
+        expect(result).to.be.true;
+      });
     });
   });
 });
