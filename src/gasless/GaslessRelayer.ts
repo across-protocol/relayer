@@ -371,9 +371,6 @@ export class GaslessRelayer {
       return false;
     }
 
-    const stableCoin = [TOKEN_SYMBOLS_MAP.USDC, TOKEN_SYMBOLS_MAP.USDT].some(({ addresses }) =>
-      deposit.outputToken.eq(toAddressType(addresses[deposit.destinationChainId], deposit.destinationChainId))
-    );
     const threshold = Number(
       process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${deposit.originChainId}`] ?? "0"
     );
@@ -381,6 +378,9 @@ export class GaslessRelayer {
       return;
     }
 
+    const stableCoin = [TOKEN_SYMBOLS_MAP.USDC, TOKEN_SYMBOLS_MAP.USDT].some(({ addresses }) =>
+      deposit.outputToken.eq(toAddressType(addresses[deposit.destinationChainId], deposit.destinationChainId))
+    );
     const { decimals } = getTokenInfo(deposit.outputToken, deposit.destinationChainId);
     return stableCoin && toBNWei(threshold, decimals).gt(deposit.outputAmount);
   }
