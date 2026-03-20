@@ -8,7 +8,6 @@ import { SpokePoolClientsByChain } from "../interfaces";
 import { assert, BigNumber, isDefined, winston, ConvertDecimals, getTokenInfo } from "../utils";
 import { Address, bnZero, getL1TokenAddress } from "../utils/SDKUtils";
 import { HubPoolClient } from "./HubPoolClient";
-import _ from "lodash";
 
 export type BundleDataState = {
   upcomingDeposits: { [l1Token: string]: { [chainId: number]: BigNumber } };
