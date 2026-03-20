@@ -661,7 +661,10 @@ export class GaslessRelayer {
             if (!valid) {
               log("warn", `Rejected malformed deposit destined for ${origin}.`);
             } else {
-              fillImmediate = this.fillImmediate({ originChainId, destinationChainId, outputToken, outputAmount }, spokePool);
+              fillImmediate = this.fillImmediate(
+                { originChainId, destinationChainId, outputToken, outputAmount },
+                spokePool
+              );
               nextState = MessageState.DEPOSIT_SUBMIT;
             }
             setState(nextState);
@@ -687,8 +690,9 @@ export class GaslessRelayer {
           case MessageState.DEPOSIT_CONFIRM: {
             const depositReceipt = await depositReceiptPromise;
             if (isCctpDeposit) {
-              const cctpDepositTx = depositReceipt?.transactionHash
-                ?? await this._findAuthorizationUsed(originChainId, inputToken, authorizer, nonce);
+              const cctpDepositTx =
+                depositReceipt?.transactionHash ??
+                (await this._findAuthorizationUsed(originChainId, inputToken, authorizer, nonce));
 
               // CCTP deposits auto-finalise, so skip immediately to FILLED state.
               if (isDefined(cctpDepositTx)) {

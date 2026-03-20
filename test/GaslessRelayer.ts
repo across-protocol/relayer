@@ -671,63 +671,81 @@ describe("GaslessRelayer", function () {
       });
 
       it("Returns true when outputAmount is below default threshold", function () {
-        const result = relayer.testFillImmediate({
-          originChainId: ORIGIN_CHAIN_ID,
-          destinationChainId: DESTINATION_CHAIN_ID,
-          outputToken: EvmAddress.from(USDC_BASE),
-          outputAmount: toBN("1000000"), // 1 USDC < 10 USDC default
-        }, fakeSpokePoolAddress);
+        const result = relayer.testFillImmediate(
+          {
+            originChainId: ORIGIN_CHAIN_ID,
+            destinationChainId: DESTINATION_CHAIN_ID,
+            outputToken: EvmAddress.from(USDC_BASE),
+            outputAmount: toBN("1000000"), // 1 USDC < 10 USDC default
+          },
+          fakeSpokePoolAddress
+        );
         expect(result).to.be.true;
       });
 
       it("Returns false when outputAmount exceeds default threshold", function () {
-        const result = relayer.testFillImmediate({
-          originChainId: ORIGIN_CHAIN_ID,
-          destinationChainId: DESTINATION_CHAIN_ID,
-          outputToken: EvmAddress.from(USDC_BASE),
-          outputAmount: toBN("20000000"), // 20 USDC > 10 USDC default
-        }, fakeSpokePoolAddress);
+        const result = relayer.testFillImmediate(
+          {
+            originChainId: ORIGIN_CHAIN_ID,
+            destinationChainId: DESTINATION_CHAIN_ID,
+            outputToken: EvmAddress.from(USDC_BASE),
+            outputAmount: toBN("20000000"), // 20 USDC > 10 USDC default
+          },
+          fakeSpokePoolAddress
+        );
         expect(result).to.be.false;
       });
 
       it("Returns false when outputAmount equals threshold (exclusive boundary)", function () {
-        const result = relayer.testFillImmediate({
-          originChainId: ORIGIN_CHAIN_ID,
-          destinationChainId: DESTINATION_CHAIN_ID,
-          outputToken: EvmAddress.from(USDC_BASE),
-          outputAmount: toBN("10000000"), // 10 USDC == 10 USDC default
-        }, fakeSpokePoolAddress);
+        const result = relayer.testFillImmediate(
+          {
+            originChainId: ORIGIN_CHAIN_ID,
+            destinationChainId: DESTINATION_CHAIN_ID,
+            outputToken: EvmAddress.from(USDC_BASE),
+            outputAmount: toBN("10000000"), // 10 USDC == 10 USDC default
+          },
+          fakeSpokePoolAddress
+        );
         expect(result).to.be.false;
       });
 
       it("Respects per-chain env var override", function () {
         process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`] = "5";
         expect(
-          relayer.testFillImmediate({
-            originChainId: ORIGIN_CHAIN_ID,
-            destinationChainId: DESTINATION_CHAIN_ID,
-            outputToken: EvmAddress.from(USDC_BASE),
-            outputAmount: toBN("3000000"), // 3 USDC < 5 USDC override
-          }, fakeSpokePoolAddress)
+          relayer.testFillImmediate(
+            {
+              originChainId: ORIGIN_CHAIN_ID,
+              destinationChainId: DESTINATION_CHAIN_ID,
+              outputToken: EvmAddress.from(USDC_BASE),
+              outputAmount: toBN("3000000"), // 3 USDC < 5 USDC override
+            },
+            fakeSpokePoolAddress
+          )
         ).to.be.true;
         expect(
-          relayer.testFillImmediate({
-            originChainId: ORIGIN_CHAIN_ID,
-            destinationChainId: DESTINATION_CHAIN_ID,
-            outputToken: EvmAddress.from(USDC_BASE),
-            outputAmount: toBN("7000000"), // 7 USDC > 5 USDC override
-          }, fakeSpokePoolAddress)
+          relayer.testFillImmediate(
+            {
+              originChainId: ORIGIN_CHAIN_ID,
+              destinationChainId: DESTINATION_CHAIN_ID,
+              outputToken: EvmAddress.from(USDC_BASE),
+              outputAmount: toBN("7000000"), // 7 USDC > 5 USDC override
+            },
+            fakeSpokePoolAddress
+          )
         ).to.be.false;
       });
 
       it("Returns false for non-stablecoin tokens regardless of amount", function () {
         // WETH is not USDC/USDT, so fillImmediate is always false.
-        const result = relayer.testFillImmediate({
-          originChainId: ORIGIN_CHAIN_ID,
-          destinationChainId: DESTINATION_CHAIN_ID,
-          outputToken: EvmAddress.from(WETH_BASE),
-          outputAmount: toBN("1"), // Tiny amount, but not a stablecoin
-        }, fakeSpokePoolAddress);
+        const result = relayer.testFillImmediate(
+          {
+            originChainId: ORIGIN_CHAIN_ID,
+            destinationChainId: DESTINATION_CHAIN_ID,
+            outputToken: EvmAddress.from(WETH_BASE),
+            outputAmount: toBN("1"), // Tiny amount, but not a stablecoin
+          },
+          fakeSpokePoolAddress
+        );
         expect(result).to.be.false;
       });
     });
