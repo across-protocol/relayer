@@ -129,10 +129,20 @@ export class BundleDataApproxClient {
       this.chainIdList.map((chainId) => {
         const spokePoolClient = this.spokePoolManager.getClient(chainId);
         assert(isDefined(spokePoolClient), `SpokePoolClient not found for chainId ${chainId}`);
-        // Step 1: Find the last RelayedRootBundle event that was relayed to this chain. Assume this contains refunds
-        // from the last executed bundle for this chain and these refunds were executed.
-        const lastRelayedRootToChain = spokePoolClient.getRootBundleRelays().at(-1);
+        // Step 1: Find the last RelayedRootBundle whose refunds have actually been executed. A relay alone
+        // doesn't mean the relayer has been paid — that happens at ExecutedRelayerRefundRoot. Using relay
+        // as the boundary causes PENDING to drop prematurely (before funds appear in CURRENT).
+        const executedBundleIds = new Set(
+          spokePoolClient.getRelayerRefundExecutions().map((e) => e.rootBundleId)
+        );
+        const lastRelayedRootToChain = [...spokePoolClient.getRootBundleRelays()]
+          .reverse()
+          .find((relay) => executedBundleIds.has(relay.rootBundleId));
         if (!isDefined(lastRelayedRootToChain)) {
+          this.logger.debug({
+            at: "BundleDataApproxClient#getUnexecutedBundleStartBlocks",
+            message: `No executed RelayedRootBundle found for chain ${chainId}, using fromBlock=0 (all fills treated as pending)`,
+          });
           return [chainId, 0];
         }
 
@@ -144,6 +154,10 @@ export class BundleDataApproxClient {
           .getValidatedRootBundles()
           .find((bundle) => bundle.relayerRefundRoot === lastRelayedRootToChain.relayerRefundRoot);
         if (!isDefined(correspondingProposedRootBundle)) {
+          this.logger.debug({
+            at: "BundleDataApproxClient#getUnexecutedBundleStartBlocks",
+            message: `No matching proposed bundle for chain ${chainId}, using fromBlock=MAX_SAFE_INTEGER (no pending refunds)`,
+          });
           return [chainId, Number.MAX_SAFE_INTEGER];
         }
 
@@ -153,6 +167,10 @@ export class BundleDataApproxClient {
           chainId,
           this.chainIdList
         );
+        this.logger.debug({
+          at: "BundleDataApproxClient#getUnexecutedBundleStartBlocks",
+          message: `Chain ${chainId}: fromBlock=${bundleEndBlock > 0 ? bundleEndBlock + 1 : 0}`,
+        });
         return [chainId, bundleEndBlock > 0 ? bundleEndBlock + 1 : 0];
       })
     );

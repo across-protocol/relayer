@@ -25,7 +25,7 @@ import {
 } from "../src/utils";
 import { MockBundleDataApproxClient, MockConfigStoreClient, MockHubPoolClient, MockSpokePoolClient } from "./mocks";
 import { interfaces } from "@across-protocol/sdk";
-import { ProposedRootBundle, RootBundleRelayWithBlock } from "../src/interfaces";
+import { ProposedRootBundle, RelayerRefundExecutionWithBlock, RootBundleRelayWithBlock } from "../src/interfaces";
 
 describe("BundleDataApproxClient: Accounting for unexecuted, upcoming relayer refunds and deposits", async function () {
   const { MAINNET, OPTIMISM, BSC, POLYGON } = CHAIN_IDs;
@@ -287,17 +287,19 @@ describe("BundleDataApproxClient: Accounting for unexecuted, upcoming relayer re
   });
 
   describe("getUnexecutedBundleStartBlocks", function () {
-    it("Returns endBlocks+1 from last relayed bundle for chain", async function () {
+    it("Relay exists but no execution → fromBlock = 0", async function () {
       configStoreClient.setAvailableChains([MAINNET, OPTIMISM, BSC]);
 
-      // When there are no RootBundleRelay/ProposedRootBundle events, returns 0 for all chains.
+      // When there are no RootBundleRelay events at all, returns 0 for all chains.
       const defaultFromBlocks = bundleDataClient.getUnexecutedBundleStartBlocks();
       expect(defaultFromBlocks[MAINNET]).to.equal(0);
       expect(defaultFromBlocks[OPTIMISM]).to.equal(0);
       expect(defaultFromBlocks[BSC]).to.equal(0);
 
+      // Add a relay but no execution — fills should stay pending (fromBlock = 0).
       const rootBundleRelays = [
         {
+          rootBundleId: 1,
           relayerRefundRoot: "0x1234",
           bundleEvaluationBlockNumbers: [toBN(3), toBN(4), toBN(5)],
         },
@@ -308,11 +310,75 @@ describe("BundleDataApproxClient: Accounting for unexecuted, upcoming relayer re
       hubPoolClient.setValidatedRootBundles(rootBundleRelays as unknown as ProposedRootBundle[]);
 
       const fromBlocks1 = bundleDataClient.getUnexecutedBundleStartBlocks();
-
-      // Only the spoke pool clients that saw the RootBundleRelay events should have non-zero fromBlocks.
-      expect(fromBlocks1[MAINNET]).to.equal(4);
+      // No execution events → conservative fallback: all fills treated as pending.
+      expect(fromBlocks1[MAINNET]).to.equal(0);
       expect(fromBlocks1[OPTIMISM]).to.equal(0);
       expect(fromBlocks1[BSC]).to.equal(0);
+    });
+
+    it("Relay without execution is skipped, falls back to older executed relay", async function () {
+      configStoreClient.setAvailableChains([MAINNET, OPTIMISM, BSC]);
+
+      const rootBundleRelays = [
+        {
+          rootBundleId: 1,
+          relayerRefundRoot: "0xaaaa",
+          bundleEvaluationBlockNumbers: [toBN(10), toBN(20), toBN(30)],
+        },
+        {
+          rootBundleId: 2,
+          relayerRefundRoot: "0xbbbb",
+          bundleEvaluationBlockNumbers: [toBN(100), toBN(200), toBN(300)],
+        },
+      ];
+      (spokePoolClients[MAINNET] as unknown as MockSpokePoolClient).setRootBundleRelays(
+        rootBundleRelays as unknown as RootBundleRelayWithBlock[]
+      );
+      hubPoolClient.setValidatedRootBundles(rootBundleRelays as unknown as ProposedRootBundle[]);
+
+      // Only bundle 1 has been executed; bundle 2 is relayed but not yet executed.
+      (spokePoolClients[MAINNET] as unknown as MockSpokePoolClient).setRelayerRefundExecutions([
+        { rootBundleId: 1 } as unknown as RelayerRefundExecutionWithBlock,
+      ]);
+
+      const fromBlocks = bundleDataClient.getUnexecutedBundleStartBlocks();
+      // Should use bundle 1's boundary (endBlock 10 → fromBlock 11), NOT bundle 2's.
+      expect(fromBlocks[MAINNET]).to.equal(11);
+      expect(fromBlocks[OPTIMISM]).to.equal(0);
+      expect(fromBlocks[BSC]).to.equal(0);
+    });
+
+    it("Both relays executed → uses latest executed relay", async function () {
+      configStoreClient.setAvailableChains([MAINNET, OPTIMISM, BSC]);
+
+      const rootBundleRelays = [
+        {
+          rootBundleId: 1,
+          relayerRefundRoot: "0xaaaa",
+          bundleEvaluationBlockNumbers: [toBN(10), toBN(20), toBN(30)],
+        },
+        {
+          rootBundleId: 2,
+          relayerRefundRoot: "0xbbbb",
+          bundleEvaluationBlockNumbers: [toBN(100), toBN(200), toBN(300)],
+        },
+      ];
+      (spokePoolClients[MAINNET] as unknown as MockSpokePoolClient).setRootBundleRelays(
+        rootBundleRelays as unknown as RootBundleRelayWithBlock[]
+      );
+      hubPoolClient.setValidatedRootBundles(rootBundleRelays as unknown as ProposedRootBundle[]);
+
+      // Both bundles executed.
+      (spokePoolClients[MAINNET] as unknown as MockSpokePoolClient).setRelayerRefundExecutions([
+        { rootBundleId: 1 } as unknown as RelayerRefundExecutionWithBlock,
+        { rootBundleId: 2 } as unknown as RelayerRefundExecutionWithBlock,
+      ]);
+
+      const fromBlocks = bundleDataClient.getUnexecutedBundleStartBlocks();
+      // Should use bundle 2's boundary (endBlock 100 → fromBlock 101).
+      expect(fromBlocks[MAINNET]).to.equal(101);
+      expect(fromBlocks[OPTIMISM]).to.equal(0);
+      expect(fromBlocks[BSC]).to.equal(0);
     });
   });
 });
