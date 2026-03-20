@@ -26,7 +26,6 @@ import {
   assert,
   Profiler,
   getNativeTokenSymbol,
-  getL1TokenAddress,
   getInventoryBalanceContributorTokens,
   getInventoryEquivalentL1TokenAddress,
   depositForcesOriginChainRepayment,

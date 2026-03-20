@@ -659,7 +659,8 @@ export class Monitor {
               // Check if this token remaps to a symbol whose hub chain address matches the L1 token.
               const remappedSymbol = TOKEN_EQUIVALENCE_REMAPPING[symbol];
               if (remappedSymbol) {
-                const remappedHubAddress = TOKEN_SYMBOLS_MAP[remappedSymbol]?.addresses[this.clients.hubPoolClient.chainId]?.toLowerCase();
+                const remappedHubAddress =
+                  TOKEN_SYMBOLS_MAP[remappedSymbol]?.addresses[this.clients.hubPoolClient.chainId]?.toLowerCase();
                 return remappedHubAddress === l1Address;
               }
               return false;

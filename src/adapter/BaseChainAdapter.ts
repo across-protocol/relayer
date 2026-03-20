@@ -38,8 +38,6 @@ import {
   sendAndConfirmSolanaTransaction,
   getSvmProvider,
   submitTransaction,
-  getTokenInfo,
-  ZERO_ADDRESS,
 } from "../utils";
 import { AugmentedTransaction, TransactionClient } from "../clients/TransactionClient";
 import {

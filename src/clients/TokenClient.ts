@@ -19,7 +19,6 @@ import {
   toBN,
   winston,
   getRedisCache,
-  TOKEN_SYMBOLS_MAP,
   getInventoryBalanceContributorTokens,
   getRemoteTokenForL1Token,
   getTokenInfo,
