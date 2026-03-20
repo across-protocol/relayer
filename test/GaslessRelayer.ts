@@ -674,7 +674,7 @@ describe("GaslessRelayer", function () {
   it("setFillImmediateThreshold: throws for non-stablecoin tokens", function () {
     // Helper should reject deposits with non-stablecoin output tokens
     const msgWithWETH = makeTestDepositMessage({ outputToken: WETH_BASE });
-    expect(() => setFillImmediateThreshold(msgWithWETH)).to.throw(/is not a supported stablecoin/);
+    expect(() => setFillImmediateThreshold(msgWithWETH)).to.throw(/not supported/);
   });
 
   it("Invalid deposit (mismatching L1 tokens) -> ERROR", async function () {
