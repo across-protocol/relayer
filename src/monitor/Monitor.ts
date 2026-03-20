@@ -485,21 +485,31 @@ export class Monitor {
         decimals: 6,
       });
     }
-    // Discover L2-only tokens that remap to a parent L1 token and add them after the parent.
-    for (const [symbol] of Object.entries(TOKEN_EQUIVALENCE_REMAPPING)) {
-      if (!isL2OnlyEquivalentToken(symbol, hubChainId)) {
-        continue;
+    // Discover L2-only equivalence-remapped tokens for each L1 token and add report rows for them.
+    // Iterate in reverse so splice insertions don't shift indices of unprocessed entries.
+    for (let i = allL1Tokens.length - 1; i >= 0; i--) {
+      const l1Token = allL1Tokens[i];
+      // Collect all unique L2-only contributor symbols across all chains for this L1 token.
+      const l2OnlySymbols = new Set<string>();
+      for (const chainId of this.monitorChains) {
+        try {
+          for (const contributor of getInventoryBalanceContributorTokens(l1Token.address, chainId, hubChainId)) {
+            const { symbol } = getTokenInfo(contributor, chainId);
+            if (isL2OnlyEquivalentToken(symbol, hubChainId)) {
+              l2OnlySymbols.add(symbol);
+            }
+          }
+        } catch {
+          continue;
+        }
       }
-      const remappedSymbol = TOKEN_EQUIVALENCE_REMAPPING[symbol];
-      const parentIndex = allL1Tokens.findIndex((t) => t.symbol === remappedSymbol);
-      if (parentIndex === -1) {
-        continue;
+      for (const symbol of l2OnlySymbols) {
+        allL1Tokens.splice(i + 1, 0, {
+          symbol,
+          address: l1Token.address,
+          decimals: TOKEN_SYMBOLS_MAP[symbol].decimals,
+        });
       }
-      allL1Tokens.splice(parentIndex + 1, 0, {
-        symbol,
-        address: allL1Tokens[parentIndex].address, // Use parent's L1 address for decimal conversion.
-        decimals: tokenInfo.decimals,
-      });
     }
     return allL1Tokens;
   }
@@ -604,7 +614,6 @@ export class Monitor {
             decimalConverter(tokenBalances[i])
           );
         }
-
       }
     }
   }
@@ -623,9 +632,8 @@ export class Monitor {
           try {
             l2Tokens = getInventoryBalanceContributorTokens(l1Token.address, chainId, hubChainId);
           } catch {
-            // Token not in TOKEN_SYMBOLS_MAP (e.g. in tests with mock tokens).
-            const remoteToken = getRemoteTokenForL1Token(l1Token.address, chainId, hubChainId);
-            l2Tokens = isDefined(remoteToken) ? [remoteToken] : [];
+            // No known deployment for this token on the SpokePool.
+            l2Tokens = [];
           }
           return l2Tokens.map((l2Token) => {
             const l2Address = l2Token.toNative();
@@ -1183,7 +1191,10 @@ export class Monitor {
           // Skip tokens that share an L1 address with their parent (USDC.e, pathUSD, USDH, etc.) to avoid
           // double-counting refunds. getUpcomingRefunds() is keyed by L1 token address, so querying with the
           // same address for both the parent and child rows would count the same refunds multiple times.
-          if (l1Token.symbol === "USDC.e" || isL2OnlyEquivalentToken(l1Token.symbol, this.clients.hubPoolClient.chainId)) {
+          if (
+            l1Token.symbol === "USDC.e" ||
+            isL2OnlyEquivalentToken(l1Token.symbol, this.clients.hubPoolClient.chainId)
+          ) {
             continue;
           }
           const upcomingRefunds = this.getUpcomingRefunds(chainId, l1Token.address, relayer);
@@ -1260,7 +1271,10 @@ export class Monitor {
       allL1Tokens.map(async (l1Token) => {
         // Skip L2-only equivalence-remapped tokens to avoid double-counting pending withdrawals
         // (same L1 address as parent token).
-        if (l1Token.symbol === "USDC.e" || isL2OnlyEquivalentToken(l1Token.symbol, this.clients.hubPoolClient.chainId)) {
+        if (
+          l1Token.symbol === "USDC.e" ||
+          isL2OnlyEquivalentToken(l1Token.symbol, this.clients.hubPoolClient.chainId)
+        ) {
           return;
         }
         const pendingWithdrawalBalances =
@@ -1363,11 +1377,7 @@ export class Monitor {
     return transfers.map((transfer) => transfer.value).reduce((a, b) => a.add(b));
   }
 
-  initializeBalanceReports(
-    relayers: Address[],
-    allL1Tokens: L1Token[],
-    allChainNames: string[]
-  ): RelayerBalanceReport {
+  initializeBalanceReports(relayers: Address[], allL1Tokens: L1Token[], allChainNames: string[]): RelayerBalanceReport {
     const reports: RelayerBalanceReport = {};
     for (const relayer of relayers) {
       reports[relayer.toNative()] = {};
