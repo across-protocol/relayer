@@ -510,7 +510,7 @@ export class GaslessRelayer {
             }
 
             depositReceiptPromise = this.initiateGaslessDeposit(depositMessage);
-            const nextState = fillImmediate ? MessageState.FILL_PENDING : MessageState.DEPOSIT_CONFIRM;
+            const nextState = MessageState.DEPOSIT_CONFIRM;
             setState(nextState);
             break;
           }
