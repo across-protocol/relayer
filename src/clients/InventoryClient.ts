@@ -41,7 +41,7 @@ import {
 } from "../utils";
 import { BundleDataApproxClient, BundleDataState } from "./BundleDataApproxClient";
 import { HubPoolClient, TokenClient, TransactionClient } from ".";
-import { Deposit, ProposedRootBundle } from "../interfaces";
+import { Deposit } from "../interfaces";
 import { InventoryConfig, isAliasConfig, TokenBalanceConfig } from "../interfaces/InventoryManagement";
 import lodash from "lodash";
 import { SLOW_WITHDRAWAL_CHAINS } from "../common";
@@ -920,9 +920,7 @@ export class InventoryClient {
       chainsToEvaluate,
       runningBalances: results,
     });
-    return Object.fromEntries(
-      Object.entries(results).map(([k, v]) => [k, v.absLatestRunningBalance])
-    );
+    return Object.fromEntries(Object.entries(results).map(([k, v]) => [k, v.absLatestRunningBalance]));
   }
 
   /**

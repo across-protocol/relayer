@@ -76,65 +76,56 @@ export class BundleDataApproxClient {
       if (!isDefined(spokePoolClient)) {
         continue;
       }
-      spokePoolClient
-        .getFills()
-        .forEach((fill) => {
-          const {
-            inputAmount: _refundAmount,
-            originChainId,
-            repaymentChainId,
-            relayer,
-            inputToken,
-            blockNumber,
-          } = fill;
-          if (blockNumber < fromBlocks[chainId]) {
+      spokePoolClient.getFills().forEach((fill) => {
+        const { inputAmount: _refundAmount, originChainId, repaymentChainId, relayer, inputToken, blockNumber } = fill;
+        if (blockNumber < fromBlocks[chainId]) {
+          return;
+        }
+
+        // Fills get refunded in the input token currency so need to check that the input token
+        // and the input l1Token are the same. If the input token is equivalent from an inventory management
+        // perspective to the l1Token then we can count it here because in this case the refund for the fill
+        // will essentially be in an equivalent l1Token currency on the repayment chain (i.e. getting repaid
+        // in this currency is just as good as getting repaid in the l1Token currency).
+        const expectedL1Token = this.getL1TokenAddress(fill.inputToken, fill.originChainId);
+        if (!isDefined(expectedL1Token) || !expectedL1Token.eq(l1Token)) {
+          return;
+        }
+
+        // This call to `getTokenInfo` should not throw since we successfully called getL1TokenAddress with the
+        // same parameters above and filtered out undefined responses.
+        const { decimals: inputTokenDecimals } = getTokenInfo(inputToken, originChainId);
+
+        // We need to figure out the decimals of the input token on the repayment chain so we can normalize the
+        // refund amount on the repayment chain.
+        let repaymentTokenDecimals: number;
+        if (originChainId === repaymentChainId) {
+          repaymentTokenDecimals = inputTokenDecimals;
+        } else {
+          assert(expectedL1Token.isEVM());
+          const inputTokenOnRepaymentChain = this.hubPoolClient.getL2TokenForL1TokenAtBlock(
+            expectedL1Token,
+            repaymentChainId
+          );
+          // If there isn't an equivalent L2 token on the repayment chain and the repayment chain isn't the
+          // origin chain, then this fill is not valid and we should not count it. This logic doesn't assume that the
+          // repayment chain is valid, for example consider if the inputToken doesn't have a pool rebalance route
+          // to the hub chain but the inputToken is an inventory-equivalent token to the l1Token. In this case,
+          // a valid full must set repayment chain to the origin chain, but this logical branch would still be able
+          // to find a valid inputTokenOnRepaymentChain because expectedL1Token is equal to the l1Token. This is
+          // fine because as mentioned above, this client is ultimately an approximation and we are assuming
+          // that all fills sent by this honest relayer are valid.
+          if (!isDefined(inputTokenOnRepaymentChain)) {
             return;
           }
-
-          // Fills get refunded in the input token currency so need to check that the input token
-          // and the input l1Token are the same. If the input token is equivalent from an inventory management
-          // perspective to the l1Token then we can count it here because in this case the refund for the fill
-          // will essentially be in an equivalent l1Token currency on the repayment chain (i.e. getting repaid
-          // in this currency is just as good as getting repaid in the l1Token currency).
-          const expectedL1Token = this.getL1TokenAddress(fill.inputToken, fill.originChainId);
-          if (!isDefined(expectedL1Token) || !expectedL1Token.eq(l1Token)) {
-            return;
-          }
-
-          // This call to `getTokenInfo` should not throw since we successfully called getL1TokenAddress with the 
-          // same parameters above and filtered out undefined responses.
-          const { decimals: inputTokenDecimals } = getTokenInfo(inputToken, originChainId);
-
-          // We need to figure out the decimals of the input token on the repayment chain so we can normalize the
-          // refund amount on the repayment chain.
-          let repaymentTokenDecimals: number;
-          if (originChainId === repaymentChainId) {
-            repaymentTokenDecimals = inputTokenDecimals;
-          } else {
-            assert(expectedL1Token.isEVM());
-            const inputTokenOnRepaymentChain = this.hubPoolClient.getL2TokenForL1TokenAtBlock(
-              expectedL1Token,
-              repaymentChainId
-            );
-            // If there isn't an equivalent L2 token on the repayment chain and the repayment chain isn't the
-            // origin chain, then this fill is not valid and we should not count it. This logic doesn't assume that the
-            // repayment chain is valid, for example consider if the inputToken doesn't have a pool rebalance route
-            // to the hub chain but the inputToken is an inventory-equivalent token to the l1Token. In this case,
-            // a valid full must set repayment chain to the origin chain, but this logical branch would still be able
-            // to find a valid inputTokenOnRepaymentChain because expectedL1Token is equal to the l1Token. This is
-            // fine because as mentioned above, this client is ultimately an approximation and we are assuming
-            // that all fills sent by this honest relayer are valid.
-            if (!isDefined(inputTokenOnRepaymentChain)) {
-              return;
-            }
-            repaymentTokenDecimals = getTokenInfo(inputTokenOnRepaymentChain, repaymentChainId).decimals;
-          }
-          const refundAmount = ConvertDecimals(inputTokenDecimals, repaymentTokenDecimals)(_refundAmount);
-          refundsForChain[repaymentChainId] ??= {};
-          refundsForChain[repaymentChainId][relayer.toNative()] ??= bnZero;
-          refundsForChain[repaymentChainId][relayer.toNative()] =
-            refundsForChain[repaymentChainId][relayer.toNative()].add(refundAmount);
-        });
+          repaymentTokenDecimals = getTokenInfo(inputTokenOnRepaymentChain, repaymentChainId).decimals;
+        }
+        const refundAmount = ConvertDecimals(inputTokenDecimals, repaymentTokenDecimals)(_refundAmount);
+        refundsForChain[repaymentChainId] ??= {};
+        refundsForChain[repaymentChainId][relayer.toNative()] ??= bnZero;
+        refundsForChain[repaymentChainId][relayer.toNative()] =
+          refundsForChain[repaymentChainId][relayer.toNative()].add(refundAmount);
+      });
     }
     return refundsForChain;
   }

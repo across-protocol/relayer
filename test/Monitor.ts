@@ -1,17 +1,10 @@
-import {
-  BundleDataClient,
-  ConfigStoreClient,
-  HubPoolClient,
-  MultiCallerClient,
-  SpokePoolClient,
-  TokenTransferClient,
-} from "../src/clients";
+import { BundleDataClient, ConfigStoreClient, HubPoolClient, MultiCallerClient, SpokePoolClient } from "../src/clients";
 import { CrossChainTransferClient } from "../src/clients/bridges";
 import { Dataworker } from "../src/dataworker/Dataworker";
 import { L1Token } from "../src/interfaces";
 import { Monitor, REBALANCE_FINALIZE_GRACE_PERIOD } from "../src/monitor/Monitor";
 import { MonitorConfig } from "../src/monitor/MonitorConfig";
-import { MAX_UINT_VAL, getNetworkName, toBN, Address, toAddressType, bnZero, EvmAddress } from "../src/utils";
+import { MAX_UINT_VAL, toBN, Address, toAddressType, EvmAddress } from "../src/utils";
 import * as constants from "./constants";
 import { amountToDeposit, destinationChainId, mockTreeRoot, originChainId, repaymentChainId } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
@@ -73,7 +66,6 @@ describe("Monitor", async function () {
   let bundleDataClient: BundleDataClient;
   let configStoreClient: ConfigStoreClient;
   let hubPoolClient: HubPoolClient, multiCallerClient: MultiCallerClient;
-  let tokenTransferClient: TokenTransferClient;
   let monitorInstance: Monitor;
   let spokePoolClients: { [chainId: number]: SpokePoolClient };
   let crossChainTransferClient: CrossChainTransferClient;
@@ -185,7 +177,6 @@ describe("Monitor", async function () {
     const providers = Object.fromEntries(
       Object.entries(spokePoolClients).map(([chainId, client]) => [chainId, client.spokePool.provider])
     );
-    tokenTransferClient = new TokenTransferClient(spyLogger, providers, [relayerAddress]);
 
     adapterManager = new MockAdapterManager(null, null, null, null);
     adapterManager.setSupportedChains(chainIds);
@@ -196,7 +187,6 @@ describe("Monitor", async function () {
       multiCallerClient,
       hubPoolClient,
       spokePoolClients,
-      tokenTransferClient,
       crossChainTransferClient,
     });
     (monitorInstance as TestMonitor).setL2ToL1TokenMap(originChainId, {

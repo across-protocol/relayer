@@ -31,7 +31,6 @@ import {
   toBN,
   toBNWei,
   winston,
-  TOKEN_SYMBOLS_MAP,
   CHAIN_IDs,
   isDefined,
   getRemoteTokenForL1Token,
@@ -135,26 +134,6 @@ export class Monitor {
     // We should initialize the bundle data approx client here because it depends on the spoke pool clients, and we
     // should do it every time the spoke pool clients are updated.
     this.bundleDataApproxClient.initialize();
-
-    const searchConfigs = Object.fromEntries(
-      Object.entries(this.spokePoolsBlocks).map(([chainId, config]) => [
-        chainId,
-        {
-          from: config.startingBlock,
-          to: config.endingBlock,
-          maxLookBack: 0,
-        },
-      ])
-    );
-    const tokensPerChain = Object.fromEntries(
-      this.monitorChains.filter(chainIsEvm).map((chainId) => {
-        const l2Tokens = this.l1Tokens
-          .map((l1Token) => this.getRemoteTokenForL1Token(l1Token.address, chainId))
-          .filter(isDefined);
-        return [chainId, l2Tokens];
-      })
-    );
-    await this.clients.tokenTransferClient.update(searchConfigs, tokensPerChain);
   }
 
   async checkUtilization(): Promise<void> {
@@ -456,12 +435,15 @@ export class Monitor {
         })
       );
 
-      let mrkdwn = "Token amounts: current, pending, total\n";
+      let mrkdwn = "";
 
       for (const l1Token of allL1Tokens) {
         const l1TokenDecimals = l1Token.decimals;
         const formatWei = createFormatFunction(2, 4, false, l1TokenDecimals);
-        let tokenMrkdwn = `*[${l1Token.symbol}]*\n`;
+
+        // Collect all rows first so we can compute column widths for alignment.
+        type Row = { chain: string; token: string; current: string; pending: string; total: string };
+        const rows: Row[] = [];
         let tokenTotal = bnZero;
 
         for (const chainId of this.monitorChains) {
@@ -516,7 +498,16 @@ export class Monitor {
             const totalBalance = currentBalance.add(pending);
             tokenTotal = tokenTotal.add(totalBalance);
 
-            tokenMrkdwn += `${getNetworkName(chainId)} | ${l2Symbol} | ${formatWei(currentBalance.toString())} | ${formatWei(pending.toString())} | ${formatWei(totalBalance.toString())}\n`;
+            // Skip rows where all value columns are zero.
+            if (!currentBalance.isZero() || !pending.isZero()) {
+              rows.push({
+                chain: getNetworkName(chainId),
+                token: l2Symbol,
+                current: formatWei(currentBalance.toString()),
+                pending: formatWei(pending.toString()),
+                total: formatWei(totalBalance.toString()),
+              });
+            }
 
             // Machine-readable debug log.
             this.logger.debug({
@@ -542,11 +533,55 @@ export class Monitor {
               ? ConvertDecimals(getTokenInfo(remoteToken, chainId).decimals, l1TokenDecimals)(upcomingRefunds)
               : upcomingRefunds;
             tokenTotal = tokenTotal.add(refundInL1);
-            tokenMrkdwn += `${getNetworkName(chainId)} | refunds | - | - | ${formatWei(refundInL1.toString())}\n`;
+            rows.push({
+              chain: getNetworkName(chainId),
+              token: "refunds",
+              current: "-",
+              pending: "-",
+              total: formatWei(refundInL1.toString()),
+            });
           }
         }
 
-        tokenMrkdwn += `*Total* | | | | ${formatWei(tokenTotal.toString())}\n`;
+        // Skip entire token table if total balance is zero.
+        if (tokenTotal.isZero()) {
+          continue;
+        }
+
+        // Add summary row.
+        const totalRow: Row = {
+          chain: "TOTAL",
+          token: "",
+          current: "",
+          pending: "",
+          total: formatWei(tokenTotal.toString()),
+        };
+
+        // Build aligned table: header row included per token section.
+        const header: Row = { chain: "Chain", token: "Token", current: "Current", pending: "Pending", total: "Total" };
+        const allRows = [header, ...rows, totalRow];
+        const colW = {
+          chain: Math.max(...allRows.map((r) => r.chain.length)),
+          token: Math.max(...allRows.map((r) => r.token.length)),
+          current: Math.max(...allRows.map((r) => r.current.length)),
+          pending: Math.max(...allRows.map((r) => r.pending.length)),
+          total: Math.max(...allRows.map((r) => r.total.length)),
+        };
+        const fmtRow = (r: Row) =>
+          `${r.chain.padEnd(colW.chain)}  ${r.token.padEnd(colW.token)}  ${r.current.padStart(
+            colW.current
+          )}  ${r.pending.padStart(colW.pending)}  ${r.total.padStart(colW.total)}`;
+        const separator = "-".repeat(fmtRow(header).length);
+
+        let tokenMrkdwn = `*[${l1Token.symbol}]*\n\`\`\`\n`;
+        tokenMrkdwn += fmtRow(header) + "\n";
+        tokenMrkdwn += separator + "\n";
+        for (const row of rows) {
+          tokenMrkdwn += fmtRow(row) + "\n";
+        }
+        tokenMrkdwn += separator + "\n";
+        tokenMrkdwn += fmtRow(totalRow) + "\n";
+        tokenMrkdwn += "```\n";
         mrkdwn += tokenMrkdwn;
       }
 
@@ -657,13 +692,18 @@ export class Monitor {
         ? this.monitorChains.filter((chain) => this.monitorConfig.monitoredSpokePoolChains.includes(chain))
         : this.monitorChains;
 
-    let mrkdwn = "Running balance estimates: last validated, -deposits, +refunds, running balance, bundle end block\n";
+    let mrkdwn = "";
 
     for (const l1Token of this.l1Tokens) {
       const formatWei = createFormatFunction(1, 4, false, l1Token.decimals);
       let results: { [chainId: number]: RunningBalanceResult };
       try {
-        results = await getLatestRunningBalances(l1Token.address, chainIds, this.clients.hubPoolClient, this.bundleDataApproxClient);
+        results = await getLatestRunningBalances(
+          l1Token.address,
+          chainIds,
+          this.clients.hubPoolClient,
+          this.bundleDataApproxClient
+        );
       } catch (error) {
         this.logger.debug({
           at: "Monitor#reportSpokePoolRunningBalances",
@@ -673,20 +713,62 @@ export class Monitor {
         continue;
       }
 
-      mrkdwn += `*[${l1Token.symbol}]*\n`;
+      type Row = {
+        chain: string;
+        validated: string;
+        deposits: string;
+        refunds: string;
+        balance: string;
+        endBlock: string;
+      };
+      const rows: Row[] = [];
       for (const chainId of chainIds) {
         const r = results[chainId];
         if (!r) {
           continue;
         }
-        mrkdwn +=
-          `${getNetworkName(chainId)}: ` +
-          `${formatWei(r.lastValidatedRunningBalance.toString())}, ` +
-          `-${formatWei(r.upcomingDeposits.toString())}, ` +
-          `+${formatWei(r.upcomingRefunds.toString())}, ` +
-          `${formatWei(r.absLatestRunningBalance.toString())}, ` +
-          `${r.bundleEndBlock}\n`;
+        rows.push({
+          chain: getNetworkName(chainId),
+          validated: formatWei(r.lastValidatedRunningBalance.toString()),
+          deposits: `-${formatWei(r.upcomingDeposits.toString())}`,
+          refunds: `+${formatWei(r.upcomingRefunds.toString())}`,
+          balance: formatWei(r.absLatestRunningBalance.toString()),
+          endBlock: String(r.bundleEndBlock),
+        });
       }
+
+      const header: Row = {
+        chain: "Chain",
+        validated: "Validated",
+        deposits: "Deposits",
+        refunds: "Refunds",
+        balance: "Balance",
+        endBlock: "End Block",
+      };
+      const allRows = [header, ...rows];
+      const colW = {
+        chain: Math.max(...allRows.map((r) => r.chain.length)),
+        validated: Math.max(...allRows.map((r) => r.validated.length)),
+        deposits: Math.max(...allRows.map((r) => r.deposits.length)),
+        refunds: Math.max(...allRows.map((r) => r.refunds.length)),
+        balance: Math.max(...allRows.map((r) => r.balance.length)),
+        endBlock: Math.max(...allRows.map((r) => r.endBlock.length)),
+      };
+      const fmtRow = (r: Row) =>
+        `${r.chain.padEnd(colW.chain)}  ${r.validated.padStart(colW.validated)}  ${r.deposits.padStart(
+          colW.deposits
+        )}  ${r.refunds.padStart(colW.refunds)}  ${r.balance.padStart(colW.balance)}  ${r.endBlock.padStart(
+          colW.endBlock
+        )}`;
+      const separator = "-".repeat(fmtRow(header).length);
+
+      mrkdwn += `*[${l1Token.symbol}]*\n\`\`\`\n`;
+      mrkdwn += fmtRow(header) + "\n";
+      mrkdwn += separator + "\n";
+      for (const row of rows) {
+        mrkdwn += fmtRow(row) + "\n";
+      }
+      mrkdwn += "```\n";
     }
 
     this.logger.info({

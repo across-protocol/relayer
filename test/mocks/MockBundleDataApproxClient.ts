@@ -1,7 +1,7 @@
 import { BundleDataApproxClient } from "../../src/clients";
 import { Address, BigNumber, EvmAddress, toAddressType } from "../../src/utils";
 
-type TokenMapping = { [l1Token: string]: { [chainId: number]: string } };
+type TokenMapping = { [l1Token: string]: { [chainId: number]: string | string[] } };
 export class MockBundleDataApproxClient extends BundleDataApproxClient {
   tokenMappings: TokenMapping | undefined = undefined;
 
@@ -11,9 +11,13 @@ export class MockBundleDataApproxClient extends BundleDataApproxClient {
 
   override getL1TokenAddress(l2Token: Address, chainId: number): EvmAddress {
     if (this.tokenMappings) {
-      const tokenMapping = Object.entries(this.tokenMappings).find(
-        ([, mapping]) => mapping[chainId] === l2Token.toEvmAddress()
-      );
+      const tokenMapping = Object.entries(this.tokenMappings).find(([, mapping]) => {
+        const mapped = mapping[chainId];
+        if (Array.isArray(mapped)) {
+          return mapped.includes(l2Token.toEvmAddress());
+        }
+        return mapped === l2Token.toEvmAddress();
+      });
       if (tokenMapping) {
         return toAddressType(tokenMapping[0], chainId);
       }

@@ -1,5 +1,5 @@
 import { utils as sdkUtils } from "@across-protocol/sdk";
-import { BigNumber, bnZero, toBN, getTokenInfo, EvmAddress } from ".";
+import { BigNumber, toBN, getTokenInfo, EvmAddress } from ".";
 import { ProposedRootBundle } from "../interfaces";
 import { BundleDataApproxClient } from "../clients/BundleDataApproxClient";
 import { HubPoolClient } from "../clients";
