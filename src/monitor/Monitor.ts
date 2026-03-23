@@ -6,7 +6,6 @@ import {
   FillStatus,
   FillWithBlock,
   L1Token,
-  TokenTransfer,
   TokenInfo,
   SwapFlowInitialized,
 } from "../interfaces";
@@ -973,10 +972,6 @@ export class Monitor {
         message: `Number of PDAs that are not ready to be closed: ${noClosePdaTxs.length}`,
       });
     }
-  }
-
-  getTotalTransferAmount(transfers: TokenTransfer[]): BigNumber {
-    return transfers.map((transfer) => transfer.value).reduce((a, b) => a.add(b));
   }
 
   protected getRemoteTokenForL1Token(l1Token: EvmAddress, chainId: number | string): Address | undefined {

@@ -3,7 +3,6 @@ import { BigNumber } from "../utils";
 
 export * from "./InventoryManagement";
 export * from "./SpokePool";
-export * from "./Token";
 export * from "./Error";
 export * from "./Report";
 export * from "./Arweave";
