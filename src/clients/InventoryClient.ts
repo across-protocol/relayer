@@ -904,7 +904,7 @@ export class InventoryClient {
     chainsToEvaluate: number[]
   ): Promise<{ [chainId: number]: BigNumber }> {
     const mark = this.profiler.start("getLatestRunningBalances");
-    const results = await getLatestRunningBalances(
+    const runningBalances = await getLatestRunningBalances(
       l1Token,
       chainsToEvaluate,
       this.hubPoolClient,
