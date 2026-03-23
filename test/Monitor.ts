@@ -9,7 +9,6 @@ import { amountToDeposit, destinationChainId, mockTreeRoot, originChainId, repay
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 import { MockAdapterManager, SimpleMockHubPoolClient } from "./mocks";
 import {
-  BigNumber,
   Contract,
   SignerWithAddress,
   createSpyLogger,
