@@ -10,7 +10,6 @@ import {
   EvmAddress,
   winston,
   toBN,
-  bnZero,
   getNetworkName,
   CHAIN_IDs,
   getTimestampForBlock,
@@ -80,7 +79,7 @@ export class BridgeApi extends BaseBridgeAdapter {
       `Attempting to bridge unsupported l2 token ${l2Token.toNative()}`
     );
     // If amount is less than the network minimums, then throw.
-    if (amount.lt(BRIDGE_API_MINIMUMS[this.hubChainId]?.[this.l2chainId] ?? bnZero)) {
+    if (amount.lt(BRIDGE_API_MINIMUMS[this.hubChainId]?.[this.l2chainId] ?? toBN(Number.MAX_SAFE_INTEGER))) {
       throw new Error(`Cannot bridge to ${getNetworkName(this.l2chainId)} due to invalid amount ${amount}`);
     }
     const transferRouteAddress = await this.api.createTransferRouteEscrowAddress(
