@@ -168,12 +168,6 @@ export class AdapterManager {
         adapter.supportedTokens.includes(TOKEN_EQUIVALENCE_REMAPPING[tokenSymbol])
       );
     });
-    this.logger.debug({
-      at: "AdapterManager",
-      message: `Getting outstandingCrossChainTransfers for ${chainId}`,
-      adapterSupportedL1Tokens: adapterSupportedL1Tokens.map((l1Token) => l1Token.toNative()),
-      searchConfigs: adapter.getUpdatedSearchConfigs(),
-    });
     return this.adapters[chainId].getOutstandingCrossChainTransfers(adapterSupportedL1Tokens);
   }
 

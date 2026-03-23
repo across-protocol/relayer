@@ -437,7 +437,7 @@ export class Monitor {
               try {
                 withdrawals[l1Token.address.toNative()] =
                   await this.clients.crossChainTransferClient.adapterManager.getTotalPendingWithdrawalAmount(
-                    this.crossChainAdapterSupportedChains,
+                    this.crossChainAdapterSupportedChains.filter((chainId) => chainId !== hubChainId),
                     relayer,
                     l1Token.address
                   );
