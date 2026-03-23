@@ -458,7 +458,7 @@ export class Refiller {
       // In the event the address is not currently available, create a new one by posting to the native markets API.
       if (!isDefined(addressId)) {
         const newAddressIdData = {
-          address: this.baseSignerAddress,
+          address: this.baseSignerAddress.toNative(),
           chain: "hyper_evm",
           name: "across-refiller-test",
           token: "usdh",
