@@ -915,7 +915,7 @@ export class InventoryClient {
       chainsToEvaluate,
       runningBalances,
     });
-    return Object.fromEntries(Object.entries(results).map(([k, v]) => [k, v.absLatestRunningBalance]));
+    return Object.fromEntries(Object.entries(runningBalances).map(([k, v]) => [k, v.absLatestRunningBalance]));
   }
 
   /**
