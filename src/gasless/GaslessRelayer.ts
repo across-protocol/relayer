@@ -674,7 +674,7 @@ export class GaslessRelayer {
     };
 
     const apiMessages = await this._queryGaslessApi();
-    await forEachAsync(apiMessages.filter(messageFilter), (msg) => processDepositMessage(msg));
+    await forEachAsync(apiMessages.filter(messageFilter), processDepositMessage);
   }
 
   /*
@@ -688,9 +688,6 @@ export class GaslessRelayer {
       : contract;
   }
 
-  /**
-   * Builds (via {@link buildGaslessDepositTx}) and submits the origin-chain deposit for bridge or swap-and-bridge.
-   */
   protected async initiateDeposit(depositMessage: AnyGaslessDepositMessage): Promise<TransactionReceipt | null> {
     const { originChainId, depositId } = depositMessage;
     const authorizer = getGaslessAuthorizerAddress(depositMessage);
@@ -721,7 +718,7 @@ export class GaslessRelayer {
     with authorizer ${blockExplorerLink(authorizer, originChainId)}, 
     ${isSwap ? "swap amount" : "input amount"} ${formattedAmount} ${symbol}, and deposit ID ${depositId}`;
 
-    const gaslessDeposit: Parameters<typeof sendAndConfirmTransaction>[0] = {
+    const gaslessDeposit = {
       ..._depositTx,
       message,
       mrkdwn,
