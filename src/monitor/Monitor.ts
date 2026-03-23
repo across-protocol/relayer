@@ -434,8 +434,6 @@ export class Monitor {
         })
       );
 
-      let mrkdwn = "";
-
       for (const l1Token of allL1Tokens) {
         const l1TokenDecimals = l1Token.decimals;
         const formatWei = createFormatFunction(2, 4, false, l1TokenDecimals);
@@ -580,15 +578,14 @@ export class Monitor {
         }
         tokenMrkdwn += separator + "\n";
         tokenMrkdwn += fmtRow(totalRow) + "\n";
-        tokenMrkdwn += "```\n";
-        mrkdwn += tokenMrkdwn;
-      }
+        tokenMrkdwn += "```";
 
-      this.logger.info({
-        at: "Monitor#reportRelayerBalances",
-        message: `Balance report for ${relayer}`,
-        mrkdwn,
-      });
+        this.logger.info({
+          at: "Monitor#reportRelayerBalances",
+          message: `Balance report for ${relayer} [${l1Token.symbol}]`,
+          mrkdwn: tokenMrkdwn,
+        });
+      }
     }
   }
 
@@ -691,8 +688,6 @@ export class Monitor {
         ? this.monitorChains.filter((chain) => this.monitorConfig.monitoredSpokePoolChains.includes(chain))
         : this.monitorChains;
 
-    let mrkdwn = "";
-
     for (const l1Token of this.l1Tokens) {
       const formatWei = createFormatFunction(1, 4, false, l1Token.decimals);
       let results: { [chainId: number]: RunningBalanceResult };
@@ -761,20 +756,20 @@ export class Monitor {
         )}`;
       const separator = "-".repeat(fmtRow(header).length);
 
-      mrkdwn += `*[${l1Token.symbol}]*\n\`\`\`\n`;
-      mrkdwn += fmtRow(header) + "\n";
-      mrkdwn += separator + "\n";
+      let tokenMrkdwn = `*[${l1Token.symbol}]*\n\`\`\`\n`;
+      tokenMrkdwn += fmtRow(header) + "\n";
+      tokenMrkdwn += separator + "\n";
       for (const row of rows) {
-        mrkdwn += fmtRow(row) + "\n";
+        tokenMrkdwn += fmtRow(row) + "\n";
       }
-      mrkdwn += "```\n";
-    }
+      tokenMrkdwn += "```";
 
-    this.logger.info({
-      at: "Monitor#reportSpokePoolRunningBalances",
-      message: "Spoke pool running balance report",
-      mrkdwn,
-    });
+      this.logger.info({
+        at: "Monitor#reportSpokePoolRunningBalances",
+        message: `Spoke pool running balances [${l1Token.symbol}]`,
+        mrkdwn: tokenMrkdwn,
+      });
+    }
   }
 
   // We approximate stuck rebalances by checking if there are still any pending cross chain transfers to any SpokePools
