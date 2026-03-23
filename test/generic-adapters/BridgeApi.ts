@@ -11,10 +11,12 @@ class MockBridgeApiClient {
   public transfersToReturn: BridgeResponse[] = [];
   public escrowAddressToReturn = randomAddress();
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async getAllTransfersInRange(_toAddress: unknown, _fromTimestampMs: number) {
     return this.transfersToReturn;
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async createTransferRouteEscrowAddress(_toAddress: unknown, _l1Symbol: string, _l2Symbol: string) {
     return this.escrowAddressToReturn;
   }
@@ -126,12 +128,12 @@ describe("Cross Chain Adapter: BridgeApi", async function () {
   describe("queryL1BridgeInitiationEvents", function () {
     it("returns pending transfers keyed by l2 token address", async function () {
       mockApi.transfersToReturn = [
-          makeBridgeResponse({
-            state: "funds_received",
-            toAddress: monitoredEoa,
-            finalAmount: "100.5",
-            sourceTxHash: "0xabc123",
-          }),
+        makeBridgeResponse({
+          state: "funds_received",
+          toAddress: monitoredEoa,
+          finalAmount: "100.5",
+          sourceTxHash: "0xabc123",
+        }),
       ];
 
       const events = await adapter.queryL1BridgeInitiationEvents(
@@ -152,13 +154,13 @@ describe("Cross Chain Adapter: BridgeApi", async function () {
 
     it("filters out transfers with awaiting_funds state", async function () {
       mockApi.transfersToReturn = [
-          makeBridgeResponse({ state: "awaiting_funds", toAddress: monitoredEoa }),
-          makeBridgeResponse({
-            state: "funds_received",
-            toAddress: monitoredEoa,
-            finalAmount: "50",
-            sourceTxHash: "0x1",
-          }),
+        makeBridgeResponse({ state: "awaiting_funds", toAddress: monitoredEoa }),
+        makeBridgeResponse({
+          state: "funds_received",
+          toAddress: monitoredEoa,
+          finalAmount: "50",
+          sourceTxHash: "0x1",
+        }),
       ];
 
       const events = await adapter.queryL1BridgeInitiationEvents(
@@ -174,10 +176,10 @@ describe("Cross Chain Adapter: BridgeApi", async function () {
 
     it("filters out transfers with payment_processed state", async function () {
       mockApi.transfersToReturn = [
-          makeBridgeResponse({
-            state: "payment_processed",
-            toAddress: monitoredEoa,
-          }),
+        makeBridgeResponse({
+          state: "payment_processed",
+          toAddress: monitoredEoa,
+        }),
       ];
 
       const events = await adapter.queryL1BridgeInitiationEvents(
@@ -193,12 +195,12 @@ describe("Cross Chain Adapter: BridgeApi", async function () {
     it("filters out transfers with non-matching destination address", async function () {
       const differentAddress = randomAddress();
       mockApi.transfersToReturn = [
-          makeBridgeResponse({
-            state: "funds_received",
-            toAddress: differentAddress,
-            finalAmount: "100",
-            sourceTxHash: "0xdef",
-          }),
+        makeBridgeResponse({
+          state: "funds_received",
+          toAddress: differentAddress,
+          finalAmount: "100",
+          sourceTxHash: "0xdef",
+        }),
       ];
 
       const events = await adapter.queryL1BridgeInitiationEvents(
@@ -213,18 +215,18 @@ describe("Cross Chain Adapter: BridgeApi", async function () {
 
     it("handles multiple valid transfers", async function () {
       mockApi.transfersToReturn = [
-          makeBridgeResponse({
-            state: "funds_received",
-            toAddress: monitoredEoa,
-            finalAmount: "10",
-            sourceTxHash: "0xa",
-          }),
-          makeBridgeResponse({
-            state: "completed",
-            toAddress: monitoredEoa,
-            finalAmount: "20",
-            sourceTxHash: "0xb",
-          }),
+        makeBridgeResponse({
+          state: "funds_received",
+          toAddress: monitoredEoa,
+          finalAmount: "10",
+          sourceTxHash: "0xa",
+        }),
+        makeBridgeResponse({
+          state: "completed",
+          toAddress: monitoredEoa,
+          finalAmount: "20",
+          sourceTxHash: "0xb",
+        }),
       ];
 
       const events = await adapter.queryL1BridgeInitiationEvents(

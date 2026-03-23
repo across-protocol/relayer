@@ -126,8 +126,8 @@ export class BridgeApi extends BaseBridgeAdapter {
         return {
           txnRef: receipt.source_tx_hash,
           logIndex: 0, // logIndex is zero since the only call for initiation is a `Transfer`.
-          txnIndex: transaction.transactionIndex,
-          blockNumber: transaction.blockNumber,
+          txnIndex: transaction?.transactionIndex,
+          blockNumber: transaction?.blockNumber,
           amount: toBN(Math.floor(Number(receipt.final_amount) * 10 ** this.l1TokenInfo.decimals)),
         };
       }
