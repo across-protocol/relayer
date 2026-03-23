@@ -539,7 +539,8 @@ export class Monitor {
                 decimals: l1TokenDecimals,
                 currentBalanceInWei: currentBalance.toString(),
                 pendingInWei: pending.toString(),
-                totalBalanceInWei: totalBalance.toString(),
+                balanceInWei: totalBalance.toString(),
+                balance: Number(utils.formatUnits(totalBalance, l1TokenDecimals)),
                 datadog: true,
               });
             }
