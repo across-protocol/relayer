@@ -105,7 +105,7 @@ export class Monitor {
       crossChainAdapterSupportedChains: this.crossChainAdapterSupportedChains,
     });
     this.additionalL1Tokens = monitorConfig.additionalL1NonLpTokens.map((l1Token) => {
-      const l1TokenInfo = getTokenInfo(EvmAddress.from(l1Token), this.clients.hubPoolClient.chainId);
+      const l1TokenInfo = this.getTokenInfo(EvmAddress.from(l1Token), this.clients.hubPoolClient.chainId);
       assert(l1TokenInfo.address.isEVM());
       return {
         ...l1TokenInfo,
@@ -120,6 +120,10 @@ export class Monitor {
       [...this.l1Tokens, ...this.additionalL1Tokens].map(({ address }) => address),
       this.logger
     );
+  }
+
+  protected getTokenInfo(token: Address, chainId: number): TokenInfo {
+    return getTokenInfo(token, chainId);
   }
 
   public async update(): Promise<void> {
@@ -192,7 +196,7 @@ export class Monitor {
       let tokenInfo: TokenInfo;
 
       try {
-        tokenInfo = getTokenInfo(outputToken, destinationChainId);
+        tokenInfo = this.getTokenInfo(outputToken, destinationChainId);
       } catch {
         tokenInfo = { symbol: "UNKNOWN TOKEN", decimals: 18, address: outputToken };
       }
@@ -295,7 +299,7 @@ export class Monitor {
         let unfilledAmount: string;
         try {
           let decimals: number;
-          ({ symbol, decimals } = getTokenInfo(toAddressType(tokenAddress, chainId), chainId));
+          ({ symbol, decimals } = this.getTokenInfo(toAddressType(tokenAddress, chainId), chainId));
           unfilledAmount = convertFromWei(amountByToken[tokenAddress].toString(), decimals);
         } catch {
           symbol = tokenAddress; // Using the address helps investigation.
@@ -480,7 +484,7 @@ export class Monitor {
           }
 
           for (const l2Token of l2Tokens) {
-            const { symbol: l2Symbol, decimals: l2Decimals } = getTokenInfo(l2Token, chainId);
+            const { symbol: l2Symbol, decimals: l2Decimals } = this.getTokenInfo(l2Token, chainId);
             const toL1Decimals = ConvertDecimals(l2Decimals, l1TokenDecimals);
 
             // Current balance (converted to L1 decimals).
@@ -505,7 +509,7 @@ export class Monitor {
             if (isDefined(pendingRebalanceAmount) && !pendingRebalanceAmount.isZero()) {
               const remoteToken = getRemoteTokenForL1Token(l1Token.address, chainId, hubChainId);
               if (isDefined(remoteToken)) {
-                const remoteDecimals = getTokenInfo(remoteToken, chainId).decimals;
+                const remoteDecimals = this.getTokenInfo(remoteToken, chainId).decimals;
                 pending = pending.add(ConvertDecimals(remoteDecimals, l1TokenDecimals)(pendingRebalanceAmount));
               }
             }
@@ -654,7 +658,7 @@ export class Monitor {
                     spokePoolClient.spokePool.provider
                   ).symbol();
                 } else {
-                  symbol = getTokenInfo(token, chainId).symbol;
+                  symbol = this.getTokenInfo(token, chainId).symbol;
                 }
               }
               return {
@@ -1154,7 +1158,7 @@ export class Monitor {
         if (isEVMSpokePoolClient(spokePoolClient)) {
           decimals = await new Contract(token.toEvmAddress(), ERC20.abi, spokePoolClient.spokePool.provider).decimals();
         } else {
-          decimals = getTokenInfo(token, chainId).decimals;
+          decimals = this.getTokenInfo(token, chainId).decimals;
         }
         if (!this.decimals[chainId]) {
           this.decimals[chainId] = {};

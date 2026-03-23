@@ -18,7 +18,7 @@ import {
 import { ConfigStoreClient, InventoryClient } from "../src/clients"; // Tested
 import { CrossChainTransferClient } from "../src/clients/bridges";
 import { InventoryConfig } from "../src/interfaces";
-import { MockAdapterManager, MockHubPoolClient, MockTokenClient } from "./mocks/";
+import { MockAdapterManager, MockHubPoolClient, MockInventoryClient, MockTokenClient } from "./mocks/";
 import {
   bnZero,
   CHAIN_IDs,
@@ -76,10 +76,18 @@ const inventoryConfig: InventoryConfig = {
       [ARBITRUM]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
     },
     [mainnetUsdc]: {
-      [OPTIMISM]: { targetPct: toWei(0.12), thresholdPct: toWei(0.1), targetOverageBuffer },
-      [POLYGON]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
-      [BASE]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
-      [ARBITRUM]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
+      [l2TokensForUsdc[OPTIMISM]]: {
+        [OPTIMISM]: { targetPct: toWei(0.12), thresholdPct: toWei(0.1), targetOverageBuffer },
+      },
+      [l2TokensForUsdc[POLYGON]]: {
+        [POLYGON]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
+      },
+      [l2TokensForUsdc[BASE]]: {
+        [BASE]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
+      },
+      [l2TokensForUsdc[ARBITRUM]]: {
+        [ARBITRUM]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
+      },
     },
   },
 };
@@ -121,7 +129,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     crossChainTransferClient = new CrossChainTransferClient(spyLogger, enabledChainIds, adapterManager);
     mockRebalancerClient = new MockRebalancerClient(spyLogger);
 
-    inventoryClient = new InventoryClient(
+    inventoryClient = new MockInventoryClient(
       EvmAddress.from(owner.address),
       spyLogger,
       inventoryConfig,
@@ -433,8 +441,8 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     const testL2Token = toAddressType(l2TokensForUsdc[testChain], testChain);
     const targetOverageBuffer = toWei("2");
     beforeEach(function () {
-      inventoryConfig.tokenConfig[testL1Token][testChain].withdrawExcessPeriod = 7200;
-      inventoryConfig.tokenConfig[testL1Token][testChain].targetOverageBuffer = targetOverageBuffer;
+      inventoryConfig.tokenConfig[testL1Token][testL2Token.toNative()][testChain].withdrawExcessPeriod = 7200;
+      inventoryConfig.tokenConfig[testL1Token][testL2Token.toNative()][testChain].targetOverageBuffer = targetOverageBuffer;
       const mockAdapter = new MockBaseChainAdapter();
       adapterManager.setAdapters(testChain, mockAdapter);
     });
@@ -443,7 +451,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
       // The threshold to trigger an excess withdrawal is when the currentAllocPct is greater than the
       // targetPct multiplied by the "targetPctMultiplier"
       const targetPctMultiplier = targetOverageBuffer.mul(toWei("0.95")).div(toWei("1"));
-      const excessWithdrawThresholdPct = inventoryConfig.tokenConfig[testL1Token][testChain].targetPct
+      const excessWithdrawThresholdPct = inventoryConfig.tokenConfig[testL1Token][testL2Token.toNative()][testChain].targetPct
         .mul(targetPctMultiplier)
         .div(toWei("1"));
 
@@ -459,7 +467,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
 
       await inventoryClient.withdrawExcessBalances();
       const expectedWithdrawalPct = currentAllocationPct.sub(
-        inventoryConfig.tokenConfig[testL1Token][testChain].targetPct
+        inventoryConfig.tokenConfig[testL1Token][testL2Token.toNative()][testChain].targetPct
       );
       const expectedWithdrawalAmount = expectedWithdrawalPct.mul(currentCumulativeBalance).div(toWei(1));
       expect(adapterManager.withdrawalsRequired[0].amountToWithdraw).eq(expectedWithdrawalAmount);
@@ -487,7 +495,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
 
       await inventoryClient.withdrawExcessBalances();
       const expectedWithdrawalPct = currentAllocationPct.sub(
-        BigNumber.from(inventoryConfig.tokenConfig[testL1Token][testChain].targetPct)
+        BigNumber.from(inventoryConfig.tokenConfig[testL1Token][testL2Token.toNative()][testChain].targetPct)
       );
 
       // Expected withdrawal amount is in correct decimals:

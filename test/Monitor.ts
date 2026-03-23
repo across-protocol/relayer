@@ -3,7 +3,20 @@ import { CrossChainTransferClient } from "../src/clients/bridges";
 import { Dataworker } from "../src/dataworker/Dataworker";
 import { Monitor, REBALANCE_FINALIZE_GRACE_PERIOD } from "../src/monitor/Monitor";
 import { MonitorConfig } from "../src/monitor/MonitorConfig";
-import { MAX_UINT_VAL, toBN, toAddressType, EvmAddress } from "../src/utils";
+import { TokenInfo } from "../src/interfaces";
+import { MAX_UINT_VAL, toBN, toAddressType, EvmAddress, Address, getTokenInfo } from "../src/utils";
+
+// Mock Monitor that falls back to hubPoolClient.getTokenInfoForAddress for test tokens
+// not found in TOKEN_SYMBOLS_MAP.
+class MockMonitor extends Monitor {
+  protected getTokenInfo(token: Address, chainId: number): TokenInfo {
+    try {
+      return getTokenInfo(token, chainId);
+    } catch {
+      return this.clients.hubPoolClient.getTokenInfoForAddress(token, chainId);
+    }
+  }
+}
 import * as constants from "./constants";
 import { amountToDeposit, destinationChainId, mockTreeRoot, originChainId, repaymentChainId } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
@@ -137,7 +150,7 @@ describe("Monitor", async function () {
     adapterManager = new MockAdapterManager(null, null, null, null);
     adapterManager.setSupportedChains(chainIds);
     crossChainTransferClient = new CrossChainTransferClient(spyLogger, chainIds, adapterManager);
-    monitorInstance = new Monitor(spyLogger, monitorConfig, {
+    monitorInstance = new MockMonitor(spyLogger, monitorConfig, {
       bundleDataClient,
       configStoreClient,
       multiCallerClient,
