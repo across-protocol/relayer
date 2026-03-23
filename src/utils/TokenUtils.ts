@@ -11,7 +11,10 @@ const { ZERO_ADDRESS } = constants;
 
 export const { fetchTokenInfo, getL2TokenAddresses } = utils;
 
-// Returns the canonical token for the given L1 token on the given remote chain.
+// Returns the canonical token for the given L1 token on the given remote chain, assuming that the L1 token
+// exists in only a single mapping in TOKEN_SYMBOLS_MAP. This is the case currently for all tokens except for
+// USDC.e, but that's why we use the TOKEN_EQUIVALENCE_REMAPPING to remap the token back to its inventory
+// equivalent L1 token.
 export function getRemoteTokenForL1Token(
   _l1Token: EvmAddress,
   remoteChainId: number | string,
