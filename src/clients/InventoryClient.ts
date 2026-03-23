@@ -1571,8 +1571,8 @@ export class InventoryClient {
               shouldWithdrawExcess ? "HAS EXCESS ✅" : "NO EXCESS ❌"
             }`,
             {
-              l1Token: l1Token,
-              l2Token: l2Token,
+              l1Token,
+              l2Token,
               cumulativeBalance: formatter(cumulativeBalance),
               currentAllocPct: formatUnits(currentAllocPct, 18),
               excessWithdrawThresholdPct: formatUnits(excessWithdrawThresholdPct, 18),
