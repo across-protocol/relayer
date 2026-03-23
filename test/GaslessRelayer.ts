@@ -91,8 +91,7 @@ class TestableGaslessRelayer extends GaslessRelayer {
   // Configurable function properties -- tests assign return values; overrides track call counts.
   public getPeripheryContractFn: (chainId: number) => Contract = (chainId) => this.spokePoolPeripheries[chainId];
   public queryGaslessApiFn: () => Promise<AnyGaslessDepositMessage[]> = async () => [];
-  public initiateGaslessDepositFn: (msg: GaslessDepositMessage) => Promise<TransactionReceipt | null> = async () =>
-    null;
+  public initiateDepositFn: (msg: AnyGaslessDepositMessage) => Promise<TransactionReceipt | null> = async () => null;
   public initiateFillFn: (deposit: GaslessDeposit) => Promise<TransactionReceipt | null> = async () => null;
   public extractDepositFromReceiptFn: (receipt: TransactionReceipt, chainId: number) => StrippedDeposit = () => {
     throw new Error("extractDepositFromReceiptFn not configured");
@@ -105,7 +104,7 @@ class TestableGaslessRelayer extends GaslessRelayer {
   ) => Promise<StrippedDeposit | undefined> = async () => undefined;
 
   // Call counters -- incremented by the overrides below.
-  public initiateGaslessDepositCalls = 0;
+  public initiateDepositCalls = 0;
   public extractDepositFromReceiptCalls = 0;
   public initiateFillCalls = 0;
   public findDepositCalls = 0;
@@ -116,9 +115,9 @@ class TestableGaslessRelayer extends GaslessRelayer {
   protected override async _queryGaslessApi(): Promise<AnyGaslessDepositMessage[]> {
     return this.queryGaslessApiFn();
   }
-  protected override async initiateGaslessDeposit(msg: GaslessDepositMessage): Promise<TransactionReceipt | null> {
-    this.initiateGaslessDepositCalls++;
-    return this.initiateGaslessDepositFn(msg);
+  protected override async initiateDeposit(msg: AnyGaslessDepositMessage): Promise<TransactionReceipt | null> {
+    this.initiateDepositCalls++;
+    return this.initiateDepositFn(msg);
   }
   protected override async initiateFill(
     deposit: StrippedDeposit,
@@ -367,7 +366,7 @@ function setupScenario(
 
   // Configure stubs
   relayer.queryGaslessApiFn = async () => [msg];
-  relayer.initiateGaslessDepositFn = async () => receipt;
+  relayer.initiateDepositFn = async () => receipt;
   relayer.extractDepositFromReceiptFn = () => depositEvent;
   relayer.initiateFillFn = async () => receipt;
 
@@ -415,7 +414,7 @@ async function expectErrorScenario(relayer: TestableGaslessRelayer, msg: Gasless
 
   const nonce = depositNonceFor(relayer, msg);
   expect(relayer.getMessageState(nonce)).to.equal(MessageState.ERROR);
-  expect(relayer.initiateGaslessDepositCalls).to.equal(0);
+  expect(relayer.initiateDepositCalls).to.equal(0);
   expectErrorTransition(relayer.stateTransitions[nonce]);
 }
 
@@ -478,14 +477,14 @@ describe("GaslessRelayer", function () {
     const depositEvent = makeFakeDepositEvent({ inputAmount: "20000000", outputAmount: "19000000" });
 
     relayer.queryGaslessApiFn = async () => [msg];
-    relayer.initiateGaslessDepositFn = async () => receipt;
+    relayer.initiateDepositFn = async () => receipt;
     relayer.extractDepositFromReceiptFn = () => depositEvent;
     relayer.initiateFillFn = async () => receipt;
 
     await relayer.runEvaluateApiSignatures();
 
     expect(relayer.getMessageState(depositNonceFor(relayer, msg))).to.equal(MessageState.FILLED);
-    expect(relayer.initiateGaslessDepositCalls).to.equal(1);
+    expect(relayer.initiateDepositCalls).to.equal(1);
     expect(relayer.initiateFillCalls).to.equal(1);
     // Deposit was found via receipt, so _findDeposit should not have been needed.
     expect(relayer.findDepositCalls).to.equal(0);
@@ -500,7 +499,7 @@ describe("GaslessRelayer", function () {
     const receipt = makeReceipt();
 
     relayer.queryGaslessApiFn = async () => [msg];
-    relayer.initiateGaslessDepositFn = async () => receipt;
+    relayer.initiateDepositFn = async () => receipt;
     relayer.extractDepositFromReceiptFn = () => makeFakeDepositEvent();
     relayer.initiateFillFn = async () => receipt;
 
@@ -526,7 +525,7 @@ describe("GaslessRelayer", function () {
     const nonce = depositNonceFor(relayer, msg);
 
     relayer.queryGaslessApiFn = async () => [msg];
-    relayer.initiateGaslessDepositFn = async () => receipt;
+    relayer.initiateDepositFn = async () => receipt;
     relayer.extractDepositFromReceiptFn = () => depositEvent;
     relayer.initiateFillFn = async () => receipt;
 
@@ -551,7 +550,7 @@ describe("GaslessRelayer", function () {
 
     let depositAttempts = 0;
     relayer.queryGaslessApiFn = async () => [msg];
-    relayer.initiateGaslessDepositFn = async () => {
+    relayer.initiateDepositFn = async () => {
       depositAttempts++;
       // First attempt: return null (deposit failed)
       // Second attempt: return receipt (deposit succeeds)
@@ -565,7 +564,7 @@ describe("GaslessRelayer", function () {
     expect(relayer.getMessageState(nonce)).to.equal(MessageState.FILLED);
     // Should have retried deposit after first attempt failed
     expect(depositAttempts).to.equal(2);
-    expect(relayer.initiateGaslessDepositCalls).to.equal(2);
+    expect(relayer.initiateDepositCalls).to.equal(2);
     // Fill is attempted on both passes (deposit persists across retry).
     // This is safe because fills are idempotent - second attempt is a no-op if first succeeded.
     expect(relayer.initiateFillCalls).to.equal(2);
@@ -598,7 +597,7 @@ describe("GaslessRelayer", function () {
 
     let capturedFillDeposit: RelayData | undefined;
     relayer.queryGaslessApiFn = async () => [msg];
-    relayer.initiateGaslessDepositFn = async () => receipt;
+    relayer.initiateDepositFn = async () => receipt;
     relayer.extractDepositFromReceiptFn = () => makeFakeDepositEvent({ message: expectedHexMessage });
     relayer.initiateFillFn = async (deposit) => {
       capturedFillDeposit = deposit;
@@ -647,7 +646,7 @@ describe("GaslessRelayer", function () {
       await relayer.runEvaluateApiSignatures();
 
       expect(relayer.getMessageState(nonce)).to.equal(MessageState.FILLED);
-      expect(relayer.initiateGaslessDepositCalls).to.equal(1);
+      expect(relayer.initiateDepositCalls).to.equal(1);
       expect(relayer.initiateFillCalls).to.equal(1);
       expectImmediateTransitions(relayer.stateTransitions[nonce]);
       delete process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`];
@@ -661,12 +660,12 @@ describe("GaslessRelayer", function () {
       const nonce = depositNonceFor(relayer, msg);
 
       relayer.queryGaslessApiFn = async () => [msg];
-      relayer.initiateGaslessDepositFn = async () => receipt;
+      relayer.initiateDepositFn = async () => receipt;
 
       await relayer.runEvaluateApiSignatures();
 
       expect(relayer.getMessageState(nonce)).to.equal(MessageState.FILLED);
-      expect(relayer.initiateGaslessDepositCalls).to.equal(1);
+      expect(relayer.initiateDepositCalls).to.equal(1);
       expect(relayer.initiateFillCalls).to.equal(0);
       expectCctpTransitions(relayer.stateTransitions[nonce]);
     });
@@ -686,7 +685,7 @@ describe("GaslessRelayer", function () {
 
       relayer.queryGaslessApiFn = async () => [msg];
       // Deposit returns null (failed/skipped).
-      relayer.initiateGaslessDepositFn = async () => null;
+      relayer.initiateDepositFn = async () => null;
       // _findDeposit locates the deposit on-chain.
       relayer.findDepositFn = async () => depositEvent;
       relayer.initiateFillFn = async () => receipt;
@@ -713,7 +712,7 @@ describe("GaslessRelayer", function () {
       depositEvent2.depositId = toBN(200);
 
       relayer.queryGaslessApiFn = async () => [msg1, msg2];
-      relayer.initiateGaslessDepositFn = async () => receipt;
+      relayer.initiateDepositFn = async () => receipt;
       relayer.extractDepositFromReceiptFn = (() => {
         let callCount = 0;
         return () => (++callCount === 1 ? depositEvent1 : depositEvent2);
@@ -727,7 +726,7 @@ describe("GaslessRelayer", function () {
 
       expect(relayer.getMessageState(nonce1)).to.equal(MessageState.FILLED);
       expect(relayer.getMessageState(nonce2)).to.equal(MessageState.FILLED);
-      expect(relayer.initiateGaslessDepositCalls).to.equal(2);
+      expect(relayer.initiateDepositCalls).to.equal(2);
       expect(relayer.initiateFillCalls).to.equal(2);
 
       expectImmediateTransitions(relayer.stateTransitions[nonce1]);
@@ -746,12 +745,12 @@ describe("GaslessRelayer", function () {
       // First poll: process message
       await relayer.runEvaluateApiSignatures();
       expect(relayer.getMessageState(nonce)).to.equal(MessageState.FILLED);
-      expect(relayer.initiateGaslessDepositCalls).to.equal(1);
+      expect(relayer.initiateDepositCalls).to.equal(1);
       expectImmediateTransitions(relayer.stateTransitions[nonce]);
 
       // Second poll: message should be skipped (already has state)
       await relayer.runEvaluateApiSignatures();
-      expect(relayer.initiateGaslessDepositCalls).to.equal(1);
+      expect(relayer.initiateDepositCalls).to.equal(1);
       expectImmediateTransitions(relayer.stateTransitions[nonce]);
       delete process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`];
     });

@@ -18,6 +18,7 @@ import {
   convertRelayDataParamsToBytes32,
   getL1TokenAddress,
   getTokenInfo,
+  toBN,
   toBytes32,
   toAddressType,
   CHAIN_IDs,
@@ -25,6 +26,48 @@ import {
 } from "../utils";
 import { AugmentedTransaction } from "../clients";
 import { Contract, BigNumber, ethers } from "ethers";
+
+/**
+ * Pulls normalized token/amount/deadline fields from a bridge or swap-and-bridge gasless message.
+ */
+export function extractGaslessDepositFields(depositMessage: AnyGaslessDepositMessage): {
+  destinationChainId: number;
+  fillDeadline: number;
+  inputToken: Address;
+  outputToken: Address;
+  /** Bridge: signed input amount. Swap: min expected input token after swap. */
+  inputAmountForValidation: BigNumber;
+  outputAmount: BigNumber;
+  exclusivityParameter: number;
+  swapToken?: string;
+  swapTokenAmount?: string;
+} {
+  const { originChainId } = depositMessage;
+  const bd =
+    depositMessage.depositFlowType === "swapAndBridge" ? depositMessage.depositData : depositMessage.baseDepositData;
+  const { destinationChainId } = bd;
+
+  const inputAmountForValidation =
+    depositMessage.depositFlowType === "swapAndBridge"
+      ? toBN(depositMessage.minExpectedInputTokenAmount)
+      : toBN(depositMessage.baseDepositData.inputAmount);
+
+  const swapAndBridgeOnlyFields =
+    depositMessage.depositFlowType === "swapAndBridge"
+      ? { swapToken: depositMessage.swapToken, swapTokenAmount: depositMessage.swapTokenAmount }
+      : {};
+
+  return {
+    destinationChainId,
+    fillDeadline: bd.fillDeadline,
+    inputToken: toAddressType(bd.inputToken, originChainId),
+    outputToken: toAddressType(bd.outputToken, destinationChainId),
+    inputAmountForValidation,
+    outputAmount: toBN(bd.outputAmount),
+    exclusivityParameter: bd.exclusivityParameter,
+    ...swapAndBridgeOnlyFields,
+  };
+}
 
 const DOMAIN_CALLDATA_DELIMITER = "0x1dc0de";
 
@@ -327,12 +370,16 @@ export function buildReceiveWithAuthorizationGaslessDepositTx(
 }
 
 /**
- * Returns a depositWithAuthorization or depositWithPermit2 AugmentedTransaction based on permitType.
+ * Builds the origin-chain deposit tx for any gasless API message: bridge (depositWithAuthorization /
+ * depositWithPermit2) or swap-and-bridge (swapAndBridgeWithAuthorization / swapAndBridgeWithPermit2).
  */
 export function buildGaslessDepositTx(
-  depositMessage: GaslessDepositMessage,
+  depositMessage: AnyGaslessDepositMessage,
   spokePoolPeripheryContract: Contract
 ): AugmentedTransaction {
+  if (depositMessage.depositFlowType === "swapAndBridge") {
+    return buildSwapAndBridgeDepositTx(depositMessage, spokePoolPeripheryContract);
+  }
   return depositMessage.permitType === "permit2"
     ? buildPermit2GaslessDepositTx(depositMessage, spokePoolPeripheryContract)
     : buildReceiveWithAuthorizationGaslessDepositTx(depositMessage, spokePoolPeripheryContract);
@@ -375,101 +422,69 @@ function toContractSwapAndDepositData(msg: SwapAndBridgeGaslessDepositMessage) {
 }
 
 /**
- * Builds calldata for SpokePoolPeriphery.swapAndBridgeWithAuthorization(signatureOwner, swapAndDepositData, validAfter, validBefore, signature).
- */
-export function buildSwapAndBridgeWithAuthorizationTx(
-  depositMessage: SwapAndBridgeGaslessDepositMessage,
-  spokePoolPeripheryContract: Contract
-): AugmentedTransaction {
-  if (depositMessage.permitType !== "receiveWithAuthorization") {
-    throw new Error("buildSwapAndBridgeWithAuthorizationTx requires permitType === 'receiveWithAuthorization'");
-  }
-  const { from: signatureOwner, validAfter, validBefore } = (depositMessage.permit as ReceiveWithAuthorization).message;
-  const swapAndDepositData = toContractSwapAndDepositData(depositMessage);
-  const args = [
-    signatureOwner,
-    swapAndDepositData,
-    BigNumber.from(validAfter),
-    BigNumber.from(validBefore),
-    normalizeSignature(depositMessage.signature),
-  ];
-
-  if (depositMessage.integratorId) {
-    const calldata = spokePoolPeripheryContract.interface.encodeFunctionData("swapAndBridgeWithAuthorization", args);
-    const taggedCalldata = tagIntegratorId(calldata, depositMessage.integratorId);
-    return {
-      contract: spokePoolPeripheryContract,
-      chainId: depositMessage.originChainId,
-      method: "",
-      args: [taggedCalldata],
-      ensureConfirmation: true,
-    };
-  }
-
-  return {
-    contract: spokePoolPeripheryContract,
-    chainId: depositMessage.originChainId,
-    method: "swapAndBridgeWithAuthorization",
-    args,
-    ensureConfirmation: true,
-  };
-}
-
-/**
- * Builds calldata for SpokePoolPeriphery.swapAndBridgeWithPermit2(signatureOwner, swapAndDepositData, permit, signature).
- */
-export function buildSwapAndBridgeWithPermit2Tx(
-  depositMessage: SwapAndBridgeGaslessDepositMessage,
-  spokePoolPeripheryContract: Contract
-): AugmentedTransaction {
-  if (depositMessage.permitType !== "permit2") {
-    throw new Error("buildSwapAndBridgeWithPermit2Tx requires permitType === 'permit2'");
-  }
-  const permit2 = depositMessage.permit as Permit2SwapAndBridgePermit;
-  const signatureOwner = depositMessage.depositData.depositor;
-  const swapAndDepositData = toContractSwapAndDepositData(depositMessage);
-  const permitStruct = {
-    permitted: {
-      token: permit2.message.permitted.token,
-      amount: BigNumber.from(permit2.message.permitted.amount),
-    },
-    nonce: BigNumber.from(permit2.message.nonce),
-    deadline: BigNumber.from(permit2.message.deadline),
-  };
-  const signatureBytes = normalizeSignatureBytes(depositMessage.signature);
-  const args = [signatureOwner, swapAndDepositData, permitStruct, signatureBytes];
-
-  if (depositMessage.integratorId) {
-    const calldata = spokePoolPeripheryContract.interface.encodeFunctionData("swapAndBridgeWithPermit2", args);
-    const taggedCalldata = tagIntegratorId(calldata, depositMessage.integratorId);
-    return {
-      contract: spokePoolPeripheryContract,
-      chainId: depositMessage.originChainId,
-      method: "",
-      args: [taggedCalldata],
-      ensureConfirmation: true,
-    };
-  }
-
-  return {
-    contract: spokePoolPeripheryContract,
-    chainId: depositMessage.originChainId,
-    method: "swapAndBridgeWithPermit2",
-    args,
-    ensureConfirmation: true,
-  };
-}
-
-/**
- * Returns a swapAndBridgeWithAuthorization or swapAndBridgeWithPermit2 AugmentedTransaction based on permitType.
+ * Builds calldata for SpokePoolPeriphery.swapAndBridgeWithAuthorization or .swapAndBridgeWithPermit2
+ * depending on {@link SwapAndBridgeGaslessDepositMessage.permitType}.
  */
 export function buildSwapAndBridgeDepositTx(
   depositMessage: SwapAndBridgeGaslessDepositMessage,
   spokePoolPeripheryContract: Contract
 ): AugmentedTransaction {
-  return depositMessage.permitType === "permit2"
-    ? buildSwapAndBridgeWithPermit2Tx(depositMessage, spokePoolPeripheryContract)
-    : buildSwapAndBridgeWithAuthorizationTx(depositMessage, spokePoolPeripheryContract);
+  const swapAndDepositData = toContractSwapAndDepositData(depositMessage);
+
+  let method: "swapAndBridgeWithAuthorization" | "swapAndBridgeWithPermit2";
+  let args: unknown[];
+
+  if (depositMessage.permitType === "permit2") {
+    method = "swapAndBridgeWithPermit2";
+    const permit2 = depositMessage.permit as Permit2SwapAndBridgePermit;
+    args = [
+      depositMessage.depositData.depositor,
+      swapAndDepositData,
+      {
+        permitted: {
+          token: permit2.message.permitted.token,
+          amount: BigNumber.from(permit2.message.permitted.amount),
+        },
+        nonce: BigNumber.from(permit2.message.nonce),
+        deadline: BigNumber.from(permit2.message.deadline),
+      },
+      normalizeSignatureBytes(depositMessage.signature),
+    ];
+  } else {
+    method = "swapAndBridgeWithAuthorization";
+    const {
+      from: signatureOwner,
+      validAfter,
+      validBefore,
+    } = (depositMessage.permit as ReceiveWithAuthorization).message;
+    args = [
+      signatureOwner,
+      swapAndDepositData,
+      BigNumber.from(validAfter),
+      BigNumber.from(validBefore),
+      normalizeSignature(depositMessage.signature),
+    ];
+  }
+
+  if (depositMessage.integratorId) {
+    const calldata = spokePoolPeripheryContract.interface.encodeFunctionData(method, args);
+    const taggedCalldata = tagIntegratorId(calldata, depositMessage.integratorId);
+    return {
+      contract: spokePoolPeripheryContract,
+      chainId: depositMessage.originChainId,
+      method: "",
+      args: [taggedCalldata],
+      ensureConfirmation: true,
+    };
+  }
+
+  return {
+    contract: spokePoolPeripheryContract,
+    chainId: depositMessage.originChainId,
+    method,
+    args,
+    ensureConfirmation: true,
+  };
 }
 
 /**
