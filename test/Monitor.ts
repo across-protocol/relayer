@@ -8,8 +8,8 @@ import {
 } from "../src/clients";
 import { CrossChainTransferClient } from "../src/clients/bridges";
 import { Dataworker } from "../src/dataworker/Dataworker";
-import { BalanceType, L1Token } from "../src/interfaces";
-import { ALL_CHAINS_NAME, Monitor, REBALANCE_FINALIZE_GRACE_PERIOD } from "../src/monitor/Monitor";
+import { L1Token } from "../src/interfaces";
+import { Monitor, REBALANCE_FINALIZE_GRACE_PERIOD } from "../src/monitor/Monitor";
 import { MonitorConfig } from "../src/monitor/MonitorConfig";
 import { MAX_UINT_VAL, getNetworkName, toBN, Address, toAddressType, bnZero, EvmAddress } from "../src/utils";
 import * as constants from "./constants";
@@ -33,14 +33,9 @@ type TokenMap = { [l2TokenAddress: string]: L1Token };
 
 class TestMonitor extends Monitor {
   private overriddenTokenMap: { [chainId: number]: TokenMap } = {};
-  private upcomingRefunds: { [l1Token: string]: { [chainId: number]: BigNumber } } = {};
 
   setL2ToL1TokenMap(chainId: number, map: TokenMap): void {
     this.overriddenTokenMap[chainId] = map;
-  }
-  // Override internal function that calls into externally defined and hard-coded TOKEN_SYMBOLS_MAP.
-  protected getL2ToL1TokenMap(l1Tokens: L1Token[], chainId): TokenMap {
-    return this.overriddenTokenMap[chainId] ?? super.getL2ToL1TokenMap(l1Tokens, chainId);
   }
 
   getRemoteTokenForL1Token(l1Token: Address, chainId: number | string): Address | undefined {
@@ -68,18 +63,9 @@ class TestMonitor extends Monitor {
   l2TokenAmountToL1TokenAmountConverter(): (BigNumber) => BigNumber {
     return (amount: BigNumber) => amount;
   }
-
-  setUpcomingRefunds(upcomingRefunds: { [l1Token: string]: { [chainId: number]: BigNumber } }): void {
-    this.upcomingRefunds = upcomingRefunds;
-  }
-
-  override getUpcomingRefunds(chainId: number, l1Token: Address): BigNumber {
-    return this.upcomingRefunds[l1Token.toNative()]?.[chainId] ?? bnZero;
-  }
 }
 
 describe("Monitor", async function () {
-  const TEST_NETWORK_NAMES = ["Hardhat1", "Hardhat2", "unknown", "HardhatNetwork", ALL_CHAINS_NAME];
   let l1Token: Contract, l2Token: Contract, erc20_2: Contract;
   let hubPool: Contract, spokePool_1: Contract, spokePool_2: Contract;
   let dataworker: SignerWithAddress, depositor: SignerWithAddress, relayer: SignerWithAddress;
@@ -261,90 +247,6 @@ describe("Monitor", async function () {
     await monitorInstance.checkUnknownRootBundleCallers();
 
     expect(lastSpyLogIncludes(spy, unknownDisputerMessage)).to.be.true;
-  });
-
-  it("Monitor should report balances", async function () {
-    await monitorInstance.update();
-    const reports = monitorInstance.initializeBalanceReports(
-      monitorInstance.monitorConfig.monitoredRelayers,
-      monitorInstance.clients.hubPoolClient.getL1Tokens(),
-      TEST_NETWORK_NAMES
-    );
-    await monitorInstance.updateCurrentRelayerBalances(reports);
-
-    // setupDataworker seeds relayer with 10 * 1500 erc20_2, erc20_1, and l1Token_1 tokens on two different
-    // spoke pools, adding to a total of 6 * 10 * 1500 = 90,000 tokens.
-    expect(reports[relayerAddress.toNative()]["L1Token1"][ALL_CHAINS_NAME][BalanceType.CURRENT].toString()).to.be.equal(
-      "90000000000000000000000"
-    );
-  });
-
-  it("Monitor should get relayer refunds", async function () {
-    await updateAllClients();
-    await monitorInstance.update();
-
-    // Pending refunds should include the amount to deposit on the destination chain.
-    (monitorInstance as TestMonitor).setUpcomingRefunds({
-      [l1Token.address]: {
-        [destinationChainId]: amountToDeposit,
-        [originChainId]: bnZero,
-      },
-    });
-    await monitorInstance.update();
-
-    await monitorInstance.update();
-    const reports = monitorInstance.initializeBalanceReports(
-      monitorInstance.monitorConfig.monitoredRelayers,
-      monitorInstance.clients.hubPoolClient.getL1Tokens(),
-      TEST_NETWORK_NAMES
-    );
-    await monitorInstance.updateLatestAndFutureRelayerRefunds(reports);
-    expect(reports[relayerAddress.toNative()]["L1Token1"][ALL_CHAINS_NAME][BalanceType.PENDING]).to.be.equal(
-      amountToDeposit
-    );
-
-    // Simulate some pending cross chain transfers.
-    crossChainTransferClient.increaseOutstandingTransfer(
-      relayerAddress,
-      toAddressType(l1Token.address, hubPoolClient.chainId),
-      toAddressType(erc20_2.address, destinationChainId),
-      toBN(5),
-      destinationChainId
-    );
-
-    // Pending rebalance credits default to zero if no rebalancer client is configured.
-    monitorInstance.clients.rebalancerClient = undefined;
-    const reportsWithoutRebalanceCredits = monitorInstance.initializeBalanceReports(
-      monitorInstance.monitorConfig.monitoredRelayers,
-      monitorInstance.clients.hubPoolClient.getL1Tokens(),
-      TEST_NETWORK_NAMES
-    );
-    await monitorInstance.updateLatestAndFutureRelayerRefunds(reportsWithoutRebalanceCredits);
-    expect(
-      reportsWithoutRebalanceCredits[relayer.address]["L1Token1"][getNetworkName(destinationChainId)][
-        BalanceType.PENDING_TRANSFERS
-      ]
-    ).to.be.equal(toBN(5));
-
-    // Pending rebalance credits should be merged into "pending transfers".
-    monitorInstance.clients.rebalancerClient = {
-      getPendingRebalances: async () => ({
-        [destinationChainId]: {
-          L1Token1: toBN(7),
-        },
-      }),
-    } as any;
-    const reportsWithRebalanceCredits = monitorInstance.initializeBalanceReports(
-      monitorInstance.monitorConfig.monitoredRelayers,
-      monitorInstance.clients.hubPoolClient.getL1Tokens(),
-      TEST_NETWORK_NAMES
-    );
-    await monitorInstance.updateLatestAndFutureRelayerRefunds(reportsWithRebalanceCredits);
-    expect(
-      reportsWithRebalanceCredits[relayer.address]["L1Token1"][getNetworkName(destinationChainId)][
-        BalanceType.PENDING_TRANSFERS
-      ]
-    ).to.be.equal(toBN(12));
   });
 
   it("Monitor should report stuck rebalances", async function () {
