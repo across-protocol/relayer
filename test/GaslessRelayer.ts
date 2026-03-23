@@ -1,5 +1,5 @@
 import { Contract } from "ethers";
-import { DepositWithBlock, GaslessDepositMessage, RelayData } from "../src/interfaces";
+import { AnyGaslessDepositMessage, DepositWithBlock, GaslessDepositMessage, RelayData } from "../src/interfaces";
 import { GaslessRelayer, MessageState } from "../src/gasless/GaslessRelayer";
 import { GaslessRelayerConfig } from "../src/gasless/GaslessRelayerConfig";
 import SPOKE_POOL_PERIPHERY_ABI from "../src/common/abi/SpokePoolPeriphery.json";
@@ -90,7 +90,7 @@ class TestableGaslessRelayer extends GaslessRelayer {
 
   // Configurable function properties -- tests assign return values; overrides track call counts.
   public getPeripheryContractFn: (chainId: number) => Contract = (chainId) => this.spokePoolPeripheries[chainId];
-  public queryGaslessApiFn: () => Promise<GaslessDepositMessage[]> = async () => [];
+  public queryGaslessApiFn: () => Promise<AnyGaslessDepositMessage[]> = async () => [];
   public initiateGaslessDepositFn: (msg: GaslessDepositMessage) => Promise<TransactionReceipt | null> = async () =>
     null;
   public initiateFillFn: (deposit: GaslessDeposit) => Promise<TransactionReceipt | null> = async () => null;
@@ -113,7 +113,7 @@ class TestableGaslessRelayer extends GaslessRelayer {
   // Track state transitions, keyed by depositKey (e.g., nonce)
   public stateTransitions: { [depositKey: string]: Array<{ from: MessageState; to: MessageState }> } = {};
 
-  protected override async _queryGaslessApi(): Promise<GaslessDepositMessage[]> {
+  protected override async _queryGaslessApi(): Promise<AnyGaslessDepositMessage[]> {
     return this.queryGaslessApiFn();
   }
   protected override async initiateGaslessDeposit(msg: GaslessDepositMessage): Promise<TransactionReceipt | null> {
@@ -190,6 +190,7 @@ function makeDepositMessage(
   };
 
   return {
+    depositFlowType: "bridge" as const,
     originChainId: ORIGIN_CHAIN_ID,
     depositId: "42",
     requestId: "req-test",
@@ -249,6 +250,7 @@ function makePermit2DepositMessage(
   };
 
   return {
+    depositFlowType: "bridge" as const,
     originChainId: ORIGIN_CHAIN_ID,
     depositId: "42",
     requestId: "req-permit2-test",

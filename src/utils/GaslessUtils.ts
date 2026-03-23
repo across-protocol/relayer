@@ -1,4 +1,5 @@
 import {
+  AnyGaslessDepositMessage,
   APIGaslessDepositResponse,
   BaseDepositData,
   BridgeWitnessData,
@@ -6,6 +7,8 @@ import {
   ReceiveWithAuthorization,
   RelayData,
   Permit2Permit,
+  Permit2SwapAndBridgePermit,
+  SwapAndBridgeGaslessDepositMessage,
 } from "../interfaces";
 import type { AllowedPeggedPairs } from "../gasless/GaslessRelayerConfig";
 import {
@@ -82,29 +85,68 @@ export function tagIntegratorId(txData: string, integratorId: string): string {
 /**
  * Restructures raw API deposits into a flatter shape so callers don't deal with
  * swapTx.data.witness.BridgeWitness.data etc. Call this once when you receive the API response.
- * Supports both ReceiveWithAuthorization and Permit2; permitType indicates which flow to use.
+ * Supports bridge-only (BridgeWitness) and swap-and-bridge (BridgeAndSwapWitness) deposits.
+ * Use depositFlowType to branch: "bridge" | "swapAndBridge".
  */
-export function restructureGaslessDeposits(depositMessages: APIGaslessDepositResponse[]): GaslessDepositMessage[] {
-  return depositMessages.map((msg) => {
+export function restructureGaslessDeposits(depositMessages: APIGaslessDepositResponse[]): AnyGaslessDepositMessage[] {
+  return depositMessages.map((msg): AnyGaslessDepositMessage => {
     const { swapTx, requestId, signature } = msg;
     const { chainId: originChainId, data } = swapTx;
-    const { depositId, permit, witness, integratorId } = data;
-    const witnessData = witness.BridgeWitness.data;
-    const { inputAmount, baseDepositData, submissionFees, spokePool, nonce } = witnessData;
+    const { depositId, witness, integratorId, metadata } = data;
     const permitType = data.type === "permit2" ? "permit2" : "receiveWithAuthorization";
+
+    if ("BridgeAndSwapWitness" in witness) {
+      const raw = witness.BridgeAndSwapWitness.data;
+      // Unwrap protobuf-style objects to plain primitives.
+      const transferType = typeof raw.transferType === "number" ? raw.transferType : raw.transferType.long;
+      const enableProportionalAdjustment =
+        typeof raw.enableProportionalAdjustment === "boolean"
+          ? raw.enableProportionalAdjustment
+          : raw.enableProportionalAdjustment.boolean;
+      return {
+        depositFlowType: "swapAndBridge",
+        originChainId,
+        depositId,
+        requestId,
+        signature,
+        permitType,
+        // permit type for this branch is ReceiveWithAuthorization | Permit2SwapAndBridgePermit.
+        // Cast required because data is still the union type after narrowing witness.
+        permit: data.permit as SwapAndBridgeGaslessDepositMessage["permit"],
+        depositData: raw.depositData,
+        submissionFees: raw.submissionFees,
+        swapToken: raw.swapToken,
+        exchange: raw.exchange,
+        transferType,
+        swapTokenAmount: raw.swapTokenAmount,
+        minExpectedInputTokenAmount: raw.minExpectedInputTokenAmount,
+        routerCalldata: raw.routerCalldata,
+        enableProportionalAdjustment,
+        spokePool: raw.spokePool,
+        nonce: raw.nonce,
+        integratorId,
+        metadata,
+      };
+    }
+
+    const { inputAmount, baseDepositData, submissionFees, spokePool, nonce } = witness.BridgeWitness.data;
     return {
+      depositFlowType: "bridge",
       originChainId,
       depositId,
       requestId,
       signature,
       permitType,
-      permit,
+      // permit type for this branch is ReceiveWithAuthorization | Permit2Permit.
+      // Cast required because data is still the union type after narrowing witness.
+      permit: data.permit as GaslessDepositMessage["permit"],
       inputAmount,
       baseDepositData,
       submissionFees,
       spokePool,
       nonce,
       integratorId,
+      metadata,
     };
   });
 }
@@ -221,11 +263,16 @@ export function buildPermit2GaslessDepositTx(
 }
 
 /**
- * Authorizer/signer address for logging or lookup. ReceiveWithAuthorization: permit.message.from; Permit2: baseDepositData.depositor.
+ * Authorizer/signer address for logging or lookup.
+ * ReceiveWithAuthorization: permit.message.from.
+ * Permit2 bridge: baseDepositData.depositor.
+ * Permit2 swapAndBridge: depositData.depositor.
  */
-export function getGaslessAuthorizerAddress(depositMessage: GaslessDepositMessage): string {
+export function getGaslessAuthorizerAddress(depositMessage: AnyGaslessDepositMessage): string {
   if (depositMessage.permitType === "permit2") {
-    return depositMessage.baseDepositData.depositor;
+    return depositMessage.depositFlowType === "swapAndBridge"
+      ? depositMessage.depositData.depositor
+      : depositMessage.baseDepositData.depositor;
   }
   return (depositMessage.permit as ReceiveWithAuthorization).message.from;
 }
@@ -233,7 +280,7 @@ export function getGaslessAuthorizerAddress(depositMessage: GaslessDepositMessag
 /**
  * Permit nonce for lookup/dedup. Both permit types have message.nonce.
  */
-export function getGaslessPermitNonce(depositMessage: GaslessDepositMessage): string {
+export function getGaslessPermitNonce(depositMessage: AnyGaslessDepositMessage): string {
   return depositMessage.permit.message.nonce;
 }
 
@@ -289,6 +336,140 @@ export function buildGaslessDepositTx(
   return depositMessage.permitType === "permit2"
     ? buildPermit2GaslessDepositTx(depositMessage, spokePoolPeripheryContract)
     : buildReceiveWithAuthorizationGaslessDepositTx(depositMessage, spokePoolPeripheryContract);
+}
+
+/**
+ * Maps a SwapAndBridgeGaslessDepositMessage to the SwapAndDepositData struct expected by the contract ABI.
+ * Applies the same bytes32/bytes normalizations as toContractDepositData does for bridge-only deposits.
+ */
+function toContractSwapAndDepositData(msg: SwapAndBridgeGaslessDepositMessage) {
+  const dd = msg.depositData;
+  return {
+    submissionFees: {
+      amount: BigNumber.from(msg.submissionFees.amount),
+      recipient: msg.submissionFees.recipient,
+    },
+    depositData: {
+      inputToken: dd.inputToken,
+      outputToken: toBytes32(dd.outputToken),
+      outputAmount: BigNumber.from(dd.outputAmount),
+      depositor: dd.depositor,
+      recipient: toBytes32(dd.recipient),
+      destinationChainId: dd.destinationChainId,
+      exclusiveRelayer: toBytes32(dd.exclusiveRelayer),
+      quoteTimestamp: dd.quoteTimestamp,
+      fillDeadline: dd.fillDeadline,
+      exclusivityParameter: dd.exclusivityParameter,
+      message: toBytes(dd.message),
+    },
+    swapToken: msg.swapToken,
+    exchange: msg.exchange,
+    transferType: msg.transferType,
+    swapTokenAmount: BigNumber.from(msg.swapTokenAmount),
+    minExpectedInputTokenAmount: BigNumber.from(msg.minExpectedInputTokenAmount),
+    routerCalldata: toBytes(msg.routerCalldata),
+    enableProportionalAdjustment: msg.enableProportionalAdjustment,
+    spokePool: msg.spokePool,
+    nonce: BigNumber.from(msg.nonce),
+  };
+}
+
+/**
+ * Builds calldata for SpokePoolPeriphery.swapAndBridgeWithAuthorization(signatureOwner, swapAndDepositData, validAfter, validBefore, signature).
+ */
+export function buildSwapAndBridgeWithAuthorizationTx(
+  depositMessage: SwapAndBridgeGaslessDepositMessage,
+  spokePoolPeripheryContract: Contract
+): AugmentedTransaction {
+  if (depositMessage.permitType !== "receiveWithAuthorization") {
+    throw new Error("buildSwapAndBridgeWithAuthorizationTx requires permitType === 'receiveWithAuthorization'");
+  }
+  const { from: signatureOwner, validAfter, validBefore } = (depositMessage.permit as ReceiveWithAuthorization).message;
+  const swapAndDepositData = toContractSwapAndDepositData(depositMessage);
+  const args = [
+    signatureOwner,
+    swapAndDepositData,
+    BigNumber.from(validAfter),
+    BigNumber.from(validBefore),
+    normalizeSignature(depositMessage.signature),
+  ];
+
+  if (depositMessage.integratorId) {
+    const calldata = spokePoolPeripheryContract.interface.encodeFunctionData("swapAndBridgeWithAuthorization", args);
+    const taggedCalldata = tagIntegratorId(calldata, depositMessage.integratorId);
+    return {
+      contract: spokePoolPeripheryContract,
+      chainId: depositMessage.originChainId,
+      method: "",
+      args: [taggedCalldata],
+      ensureConfirmation: true,
+    };
+  }
+
+  return {
+    contract: spokePoolPeripheryContract,
+    chainId: depositMessage.originChainId,
+    method: "swapAndBridgeWithAuthorization",
+    args,
+    ensureConfirmation: true,
+  };
+}
+
+/**
+ * Builds calldata for SpokePoolPeriphery.swapAndBridgeWithPermit2(signatureOwner, swapAndDepositData, permit, signature).
+ */
+export function buildSwapAndBridgeWithPermit2Tx(
+  depositMessage: SwapAndBridgeGaslessDepositMessage,
+  spokePoolPeripheryContract: Contract
+): AugmentedTransaction {
+  if (depositMessage.permitType !== "permit2") {
+    throw new Error("buildSwapAndBridgeWithPermit2Tx requires permitType === 'permit2'");
+  }
+  const permit2 = depositMessage.permit as Permit2SwapAndBridgePermit;
+  const signatureOwner = depositMessage.depositData.depositor;
+  const swapAndDepositData = toContractSwapAndDepositData(depositMessage);
+  const permitStruct = {
+    permitted: {
+      token: permit2.message.permitted.token,
+      amount: BigNumber.from(permit2.message.permitted.amount),
+    },
+    nonce: BigNumber.from(permit2.message.nonce),
+    deadline: BigNumber.from(permit2.message.deadline),
+  };
+  const signatureBytes = normalizeSignatureBytes(depositMessage.signature);
+  const args = [signatureOwner, swapAndDepositData, permitStruct, signatureBytes];
+
+  if (depositMessage.integratorId) {
+    const calldata = spokePoolPeripheryContract.interface.encodeFunctionData("swapAndBridgeWithPermit2", args);
+    const taggedCalldata = tagIntegratorId(calldata, depositMessage.integratorId);
+    return {
+      contract: spokePoolPeripheryContract,
+      chainId: depositMessage.originChainId,
+      method: "",
+      args: [taggedCalldata],
+      ensureConfirmation: true,
+    };
+  }
+
+  return {
+    contract: spokePoolPeripheryContract,
+    chainId: depositMessage.originChainId,
+    method: "swapAndBridgeWithPermit2",
+    args,
+    ensureConfirmation: true,
+  };
+}
+
+/**
+ * Returns a swapAndBridgeWithAuthorization or swapAndBridgeWithPermit2 AugmentedTransaction based on permitType.
+ */
+export function buildSwapAndBridgeDepositTx(
+  depositMessage: SwapAndBridgeGaslessDepositMessage,
+  spokePoolPeripheryContract: Contract
+): AugmentedTransaction {
+  return depositMessage.permitType === "permit2"
+    ? buildSwapAndBridgeWithPermit2Tx(depositMessage, spokePoolPeripheryContract)
+    : buildSwapAndBridgeWithAuthorizationTx(depositMessage, spokePoolPeripheryContract);
 }
 
 /**
