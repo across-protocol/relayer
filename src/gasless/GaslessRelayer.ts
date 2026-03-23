@@ -197,8 +197,10 @@ export class GaslessRelayer {
     await this.updateObservedCctpDeposits(initialMessages);
 
     const unfilledDeposits = initialMessages.filter((depositMessage) => {
+      const { originChainId, depositId, spokePool } = depositMessage;
+
       // SwapAndBridge deposits go through a separate flow; exclude from the bridge unfilled check.
-      if (depositMessage.depositFlowType === "swapAndBridge") {
+      if (depositMessage.depositFlowType === "swapAndBridge" || this._isCctpDeposit(originChainId, spokePool)) {
         return false;
       }
       const { originChainId, depositId, spokePool } = depositMessage;
