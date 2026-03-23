@@ -1,8 +1,8 @@
 import { CHAIN_IDs } from "@across-protocol/constants";
 import { SpokePool__factory } from "@across-protocol/sdk/typechain";
-import { SvmSpokeClient } from "@across-protocol/contracts";
-import { RelayDataArgs } from "@across-protocol/contracts/dist/src/svm/clients/SvmSpoke";
-import { intToU8Array32 } from "@across-protocol/contracts/dist/src/svm/web3-v1";
+import { SvmSpokeClient } from "@across-protocol/sdk/svm";
+import { RelayDataArgs } from "@across-protocol/sdk/dist/cjs/src/svm/clients/SvmSpoke";
+import { intToU8Array32 } from "@across-protocol/sdk/dist/cjs/src/svm/web3-v1";
 import { SYSTEM_PROGRAM_ADDRESS, getCreateAccountInstruction } from "@solana-program/system";
 import {
   ASSOCIATED_TOKEN_PROGRAM_ADDRESS,

@@ -24,7 +24,7 @@ import {
   getAssociatedTokenAddress,
 } from "../../utils";
 import { PublicKey } from "@solana/web3.js";
-import { MessageTransmitterV2Client, TokenMessengerMinterV2Client } from "@across-protocol/contracts";
+import { MessageTransmitterV2Client, TokenMessengerMinterV2Client } from "@across-protocol/sdk/svm";
 import * as sdk from "@across-protocol/sdk";
 import { DestinationUsdcNotConfiguredError, OriginUsdcNotConfiguredError } from "../errors";
 import { MESSAGE_TRANSMITTER_V2_PROGRAM, TOKEN_2022_PROGRAM, TOKEN_MESSENGER_V2_PROGRAM } from "./svmConstants";

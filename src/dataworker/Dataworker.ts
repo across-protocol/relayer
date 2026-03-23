@@ -116,7 +116,7 @@ import {
   type Address as KitAddress,
   type KeyPairSigner,
 } from "@solana/kit";
-import { SvmSpokeClient } from "@across-protocol/contracts";
+import { SvmSpokeClient } from "@across-protocol/sdk/svm";
 import {
   findAddressLookupTablePda,
   getCreateLookupTableInstruction,
