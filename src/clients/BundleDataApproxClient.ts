@@ -90,7 +90,7 @@ export class BundleDataApproxClient {
         }
 
         // Fills get refunded in the input token currency so need to check that the input token
-        // and the input l1Token are the same. If the input token is equivalent from an inventory management
+        // and the l1Token parameter are the same. If the input token is equivalent from an inventory management
         // perspective to the l1Token then we can count it here because in this case the refund for the fill
         // will essentially be in an equivalent l1Token currency on the repayment chain (i.e. getting repaid
         // in this currency is just as good as getting repaid in the l1Token currency).
