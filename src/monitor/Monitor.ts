@@ -295,10 +295,7 @@ export class Monitor {
         let unfilledAmount: string;
         try {
           let decimals: number;
-          ({ symbol, decimals } = getTokenInfo(
-            toAddressType(tokenAddress, chainId),
-            chainId
-          ));
+          ({ symbol, decimals } = getTokenInfo(toAddressType(tokenAddress, chainId), chainId));
           unfilledAmount = convertFromWei(amountByToken[tokenAddress].toString(), decimals);
         } catch {
           symbol = tokenAddress; // Using the address helps investigation.
