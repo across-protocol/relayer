@@ -533,7 +533,7 @@ export class Monitor {
                 at: "Monitor#reportRelayerBalances",
                 message: "Machine-readable single balance report",
                 relayer,
-                l1TokenSymbol: l1Token.symbol,
+                tokenSymbol: l1Token.symbol,
                 l2TokenSymbol: l2Symbol,
                 chainId,
                 decimals: l1TokenDecimals,
