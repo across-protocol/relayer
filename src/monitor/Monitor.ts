@@ -532,7 +532,7 @@ export class Monitor {
               this.logger.debug({
                 at: "Monitor#reportRelayerBalances",
                 message: "Machine-readable single balance report",
-                relayer: relayer.toNative(),
+                relayer,
                 l1TokenSymbol: l1Token.symbol,
                 l2TokenSymbol: l2Symbol,
                 chainId,
