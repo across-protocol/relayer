@@ -653,7 +653,7 @@ export class GaslessRelayer {
           originChainId,
           depositId,
           amount: outputAmount,
-          token: outputToken,
+          token: outputToken.toNative(),
           authorizer,
           nonce,
           requestId: depositMessage.requestId,
