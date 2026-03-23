@@ -548,17 +548,13 @@ export class Monitor {
           // Upcoming refund row per chain (one per chain, not per L2 token).
           const upcomingRefunds = this.bundleDataApproxClient.getUpcomingRefunds(chainId, l1Token.address, relayer);
           if (upcomingRefunds.gt(0)) {
-            const remoteToken = getRemoteTokenForL1Token(l1Token.address, chainId, hubChainId);
-            const refundInL1 = isDefined(remoteToken)
-              ? ConvertDecimals(getTokenInfo(remoteToken, chainId).decimals, l1TokenDecimals)(upcomingRefunds)
-              : upcomingRefunds;
-            tokenTotal = tokenTotal.add(refundInL1);
+            tokenTotal = tokenTotal.add(upcomingRefunds);
             rows.push({
               chain: getNetworkName(chainId),
               token: "refunds",
               current: "-",
               pending: "-",
-              total: formatWei(refundInL1.toString()),
+              total: formatWei(upcomingRefunds.toString()),
             });
           }
         }

@@ -13,7 +13,6 @@ import {
   ConvertDecimals,
   getTokenInfo,
   getInventoryEquivalentL1TokenAddress,
-  TOKEN_SYMBOLS_MAP,
   getInventoryBalanceContributorTokens,
 } from "../utils";
 import { Address, bnZero } from "../utils/SDKUtils";
@@ -65,10 +64,14 @@ export class BundleDataApproxClient {
     this.upcomingRefunds = upcomingRefunds;
   }
 
-  // Return sum of refunds for all fills sent after the fromBlocks.
-  // Makes a simple assumption that all fills that were sent by this relayer after the last executed bundle
-  // are valid and will be refunded on the repayment chain selected. Assume additionally that the repayment chain
-  // set is a valid one for the deposit.
+  /**
+   * Return sum of refunds for all fills sent after the fromBlocks.
+   * Makes a simple assumption that all fills that were sent by this relayer after the last executed bundle
+   * are valid and will be refunded on the repayment chain selected.
+   * @param l1Token L1 token to get refunds for all inventory-equivalent L2 tokens on each chain.
+   * @param fromBlocks Blocks to start counting refunds from.
+   * @returns Refunds grouped by relayer for each chain. Refunds are denominated in L1 token decimals.
+   */
   protected getApproximateRefundsForToken(
     l1Token: Address,
     fromBlocks: { [chainId: number]: number }
@@ -96,14 +99,11 @@ export class BundleDataApproxClient {
           return;
         }
 
-        // This call to `getTokenInfo` should not throw since we successfully called getL1TokenAddress with the
-        // same parameters above and filtered out undefined responses.
-        const { decimals: inputTokenDecimals } = getTokenInfo(inputToken, originChainId);
-
         // We need to figure out the decimals of the input token on the repayment chain so we can normalize the
         // refund amount on the repayment chain.
         let repaymentTokenDecimals: number;
         if (originChainId === repaymentChainId) {
+          const { decimals: inputTokenDecimals } = getTokenInfo(inputToken, originChainId);
           repaymentTokenDecimals = inputTokenDecimals;
         } else {
           assert(expectedL1Token.isEVM());
@@ -124,7 +124,10 @@ export class BundleDataApproxClient {
           }
           repaymentTokenDecimals = getTokenInfo(inputTokenOnRepaymentChain, repaymentChainId).decimals;
         }
-        const refundAmount = ConvertDecimals(inputTokenDecimals, repaymentTokenDecimals)(_refundAmount);
+        const refundAmount = ConvertDecimals(
+          repaymentTokenDecimals,
+          getTokenInfo(l1Token, this.hubPoolClient.chainId).decimals
+        )(_refundAmount);
         refundsForChain[repaymentChainId] ??= {};
         refundsForChain[repaymentChainId][relayer.toNative()] ??= bnZero;
         refundsForChain[repaymentChainId][relayer.toNative()] =
@@ -199,6 +202,12 @@ export class BundleDataApproxClient {
     return refundsForChain;
   }
 
+  /**
+   * Return sum of deposits for all deposits sent after the fromBlocks.
+   * @param l1Token L1 token to get deposits for all inventory-equivalent L2 tokens on each chain.
+   * @param fromBlocks Blocks to start counting deposits from.
+   * @returns Deposits grouped by chain. Deposits are denominated in L1 token decimals.
+   */
   private getApproximateDepositsForToken(
     l1Token: Address,
     fromBlocks: { [chainId: number]: number }
@@ -223,7 +232,11 @@ export class BundleDataApproxClient {
           return l1Token.eq(expectedL1Token) && deposit.blockNumber >= fromBlocks[chainId];
         })
         .forEach((deposit) => {
-          depositsForChain[chainId] = depositsForChain[chainId].add(deposit.inputAmount);
+          const depositAmount = ConvertDecimals(
+            getTokenInfo(deposit.inputToken, deposit.originChainId).decimals,
+            getTokenInfo(l1Token, this.hubPoolClient.chainId).decimals
+          )(deposit.inputAmount);
+          depositsForChain[chainId] = depositsForChain[chainId].add(depositAmount);
         });
     }
     return depositsForChain;
@@ -262,6 +275,14 @@ export class BundleDataApproxClient {
     });
   }
 
+  /**
+   * Return refunds for a given L1 token on a given chain for all inventory-equivalent L2 tokens on that chain.
+   * Refunds are denominated in L1 token decimals.
+   * @param chainId Chain ID to get refunds for.
+   * @param l1Token L1 token to get refunds for.
+   * @param relayer Optional relayer to get refunds for. If not provided, returns the sum of refunds for all relayers.
+   * @returns Refunds for the given L1 token on the given chain for all inventory-equivalent L2 tokens on that chain. Refunds are denominated in L1 token decimals.
+   */
   getUpcomingRefunds(chainId: number, l1Token: Address, relayer?: Address): BigNumber {
     assert(
       isDefined(this.upcomingRefunds),
@@ -280,6 +301,13 @@ export class BundleDataApproxClient {
     );
   }
 
+  /**
+   * Return deposits for a given L1 token on a given chain for all inventory-equivalent L2 tokens on that chain.
+   * Deposits are denominated in L1 token decimals.
+   * @param chainId Chain ID to get deposits for.
+   * @param l1Token L1 token to get deposits for.
+   * @returns Deposits for the given L1 token on the given chain for all inventory-equivalent L2 tokens on that chain. Deposits are denominated in L1 token decimals.
+   */
   getUpcomingDeposits(chainId: number, l1Token: Address): BigNumber {
     assert(
       isDefined(this.upcomingDeposits),

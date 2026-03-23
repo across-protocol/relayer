@@ -1,5 +1,5 @@
 import { utils as sdkUtils } from "@across-protocol/sdk";
-import { BigNumber, isDefined, toBN, getTokenInfo, EvmAddress } from ".";
+import { BigNumber, isDefined, toBN, EvmAddress } from ".";
 import { ProposedRootBundle } from "../interfaces";
 import { BundleDataApproxClient } from "../clients/BundleDataApproxClient";
 import { HubPoolClient } from "../clients";
@@ -28,7 +28,6 @@ export async function getLatestRunningBalances(
   bundleDataApproxClient: BundleDataApproxClient
 ): Promise<{ [chainId: number]: RunningBalanceResult }> {
   const chainIds = hubPoolClient.configStoreClient.getChainIdIndicesForBlock();
-  const l1TokenDecimals = getTokenInfo(l1Token, hubPoolClient.chainId).decimals;
 
   const entries = await sdkUtils.mapAsync(chainsToEvaluate, async (chainId) => {
     const chainIdIndex = chainIds.indexOf(chainId);
@@ -52,8 +51,6 @@ export async function getLatestRunningBalances(
     if (!isDefined(l2Token)) {
       return undefined;
     }
-    const l2TokenDecimals = hubPoolClient.getTokenInfoForAddress(l2Token, chainId).decimals;
-    const l2AmountToL1Amount = sdkUtils.ConvertDecimals(l2TokenDecimals, l1TokenDecimals);
 
     // If there is no ExecutedRootBundle event in the hub pool client's lookback for the token and chain, then
     // default the bundle end block to 0. This will force getUpcomingDepositAmount to count any deposit
@@ -78,8 +75,8 @@ export async function getLatestRunningBalances(
       }
     }
 
-    const upcomingDeposits = l2AmountToL1Amount(bundleDataApproxClient.getUpcomingDeposits(chainId, l1Token));
-    const upcomingRefunds = l2AmountToL1Amount(bundleDataApproxClient.getUpcomingRefunds(chainId, l1Token));
+    const upcomingDeposits = bundleDataApproxClient.getUpcomingDeposits(chainId, l1Token);
+    const upcomingRefunds = bundleDataApproxClient.getUpcomingRefunds(chainId, l1Token);
 
     // Updated running balance is last known running balance minus deposits plus upcoming refunds.
     const latestRunningBalance = lastValidatedRunningBalance.sub(upcomingDeposits).add(upcomingRefunds);

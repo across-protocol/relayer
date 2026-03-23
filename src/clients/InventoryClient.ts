@@ -222,16 +222,13 @@ export class InventoryClient {
    */
   getCumulativeBalanceWithApproximateUpcomingRefunds(l1Token: EvmAddress): BigNumber {
     const totalRefundsPerChain: { [chainId: number]: BigNumber } = {};
-    const { decimals: l1TokenDecimals } = getTokenInfo(l1Token, this.hubPoolClient.chainId);
     for (const chainId of this.chainIdList) {
       const repaymentToken = this.getRemoteTokenForL1Token(l1Token, chainId);
       if (!repaymentToken) {
         continue;
       }
-      const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(repaymentToken, chainId);
       const refundAmount = this.getUpcomingRefunds(chainId, l1Token, this.relayer);
-      const convertedRefundAmount = sdkUtils.ConvertDecimals(l2TokenDecimals, l1TokenDecimals)(refundAmount);
-      totalRefundsPerChain[chainId] = convertedRefundAmount;
+      totalRefundsPerChain[chainId] = refundAmount;
     }
     const cumulativeRefunds = Object.values(totalRefundsPerChain).reduce((acc, curr) => acc.add(curr), bnZero);
     const cumulativeVirtualBalance = this.getCumulativeBalance(l1Token);
@@ -706,10 +703,8 @@ export class InventoryClient {
       if (!repaymentToken) {
         continue;
       }
-      const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(repaymentToken, chainId);
       const refundAmount = this.getUpcomingRefunds(chainId, l1Token, this.relayer);
-      const convertedRefundAmount = sdkUtils.ConvertDecimals(l2TokenDecimals, l1TokenDecimals)(refundAmount);
-      totalRefundsPerChain[chainId] = convertedRefundAmount;
+      totalRefundsPerChain[chainId] = refundAmount;
     }
 
     // @dev: The following async call to `getExcessRunningBalancePcts` should be very fast compared to the above
