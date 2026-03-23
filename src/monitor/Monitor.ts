@@ -535,7 +535,7 @@ export class Monitor {
                 relayer,
                 tokenSymbol: l1Token.symbol,
                 l2TokenSymbol: l2Symbol,
-                chainId,
+                chainName: getNetworkName(chainId),
                 decimals: l1TokenDecimals,
                 balanceInWei: totalBalance.toString(),
                 balance: Number(utils.formatUnits(totalBalance, l1TokenDecimals)),
