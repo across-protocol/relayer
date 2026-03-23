@@ -537,7 +537,6 @@ export class Monitor {
                 l2TokenSymbol: l2Symbol,
                 chainId,
                 decimals: l1TokenDecimals,
-                currentBalanceInWei: currentBalance.toString(),
                 pendingInWei: pending.toString(),
                 balanceInWei: totalBalance.toString(),
                 balance: Number(utils.formatUnits(totalBalance, l1TokenDecimals)),
