@@ -72,7 +72,6 @@ describe("Monitor", async function () {
   let adapterManager: MockAdapterManager;
   let defaultMonitorEnvVars: Record<string, string>;
   let updateAllClients: () => Promise<void>;
-  let relayerAddress;
   const { spy, spyLogger } = createSpyLogger();
 
   const executeBundle = async (hubPool: Contract) => {
@@ -164,7 +163,6 @@ describe("Monitor", async function () {
 
     // Set the config store version to 0 to match the default version in the ConfigStoreClient.
     process.env.CONFIG_STORE_VERSION = "0";
-    relayerAddress = toAddressType(relayer.address, hubPoolClient.chainId);
 
     const chainIds = [hubPoolClient.chainId, repaymentChainId, originChainId, destinationChainId];
     bundleDataClient = new BundleDataClient(
@@ -172,10 +170,6 @@ describe("Monitor", async function () {
       { configStoreClient, multiCallerClient, hubPoolClient },
       spokePoolClients,
       chainIds
-    );
-
-    const providers = Object.fromEntries(
-      Object.entries(spokePoolClients).map(([chainId, client]) => [chainId, client.spokePool.provider])
     );
 
     adapterManager = new MockAdapterManager(null, null, null, null);
