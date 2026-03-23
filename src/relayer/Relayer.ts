@@ -116,8 +116,8 @@ export class Relayer {
     this.logger.debug({
       at: "Relayer::init",
       message: "Completed one-time init.",
-      relayerEvmAddress: this.relayerEvmAddress.toNative(),
-      relayerSvmAddress: tokenClient.relayerSvmAddress.toNative(),
+      relayerEvmAddress: this.relayerEvmAddress,
+      relayerSvmAddress: tokenClient.relayerSvmAddress,
     });
   }
 
@@ -411,9 +411,9 @@ export class Relayer {
           at: "Relayer::filterDeposit",
           message: "😱 Skipping deposit with greater unfilled amount than API suggested limit",
           limit,
-          l1Token: l1Token?.toNative(),
+          l1Token,
           depositId,
-          inputToken: inputToken.toNative(),
+          inputToken,
           inputAmount,
           originChainId,
           txnRef: deposit.txnRef,

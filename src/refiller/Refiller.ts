@@ -97,8 +97,8 @@ export class Refiller {
       currentBalances: refillEnabledBalances.map(({ chainId, token, account, target }, i) => {
         return {
           chainId,
-          token: token.toNative(),
-          account: account.toNative(),
+          token,
+          account,
           currentBalance: currentBalances[i].toString(),
           target: parseUnits(target.toString(), decimalValues[i]),
         };
@@ -232,11 +232,11 @@ export class Refiller {
         at: "Monitor#refillBalances",
         message: "Balance below trigger and can refill to target",
         from: this.baseSignerAddress,
-        to: account.toEvmAddress(),
+        to: account,
         balanceTrigger,
         balanceTarget,
         deficit,
-        token: token.toEvmAddress(),
+        token,
         chainId,
         isHubPool,
       });
@@ -458,7 +458,7 @@ export class Refiller {
       // In the event the address is not currently available, create a new one by posting to the native markets API.
       if (!isDefined(addressId)) {
         const newAddressIdData = {
-          address: this.baseSignerAddress.toNative(),
+          address: this.baseSignerAddress,
           chain: "hyper_evm",
           name: "across-refiller-test",
           token: "usdh",
@@ -467,7 +467,7 @@ export class Refiller {
         this.logger.info({
           at: "Refiller#refillNativeTokenBalances",
           message: `Address ${this.baseSignerAddress.toNative()} is not registered in the native markets API. Creating new address ID.`,
-          address: this.baseSignerAddress.toNative(),
+          address: this.baseSignerAddress,
         });
         const { data: _addressId } = await axios.post(`${nativeMarketsApiUrl}/addresses`, newAddressIdData, {
           headers,
@@ -499,7 +499,7 @@ export class Refiller {
       this.logger.info({
         at: "Refiller#refillNativeTokenBalances",
         message: `Address ID ${addressId} does not have an Arbitrum USDC -> HyperEVM USDH transfer route configured. Creating a new route.`,
-        address: this.baseSignerAddress.toNative(),
+        address: this.baseSignerAddress,
         addressId,
       });
       const { data: _availableTransferRoute } = await axios.post(
@@ -569,7 +569,7 @@ export class Refiller {
         message: "Submitted approval transaction for swap route.",
         transaction: blockExplorerLink(txnReceipt.hash, swapRoute.originChainId),
         swapRoute,
-        swapper: this.baseSignerAddress.toNative(),
+        swapper: this.baseSignerAddress,
       });
       await delay(1);
       await txnReceipt.wait();
@@ -586,7 +586,7 @@ export class Refiller {
         swapRoute,
         amount,
         swapper: this.baseSignerAddress,
-        recipient: recipient.toEvmAddress(),
+        recipient,
       });
       return;
     }

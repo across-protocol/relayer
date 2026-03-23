@@ -617,10 +617,7 @@ export class Dataworker {
     this.logger.debug({
       at: "Dataworker#validate",
       message: "Found pending proposal",
-      pendingRootBundle: {
-        ...pendingRootBundle,
-        proposer: pendingRootBundle.proposer.toNative(),
-      },
+      pendingRootBundle,
     });
 
     // Exit early if challenge period timestamp has passed:
@@ -858,10 +855,7 @@ export class Dataworker {
       this.logger.debug({
         at: "Dataworker#validate",
         message: "Empty pool rebalance root, submitting dispute",
-        rootBundle: {
-          ...rootBundle,
-          proposer: rootBundle.proposer.toNative(),
-        },
+        rootBundle,
       });
       return {
         valid: false,
@@ -1072,7 +1066,6 @@ export class Dataworker {
         expectedRelayerRefundLeaves: expectedRelayerRefundRoot.leaves.map((leaf) => {
           return {
             ...leaf,
-            l2TokenAddress: leaf.l2TokenAddress.toNative(),
             refundAddresses: leaf.refundAddresses.map((refundAddress) => refundAddress.toNative()),
           };
         }),
@@ -1080,11 +1073,11 @@ export class Dataworker {
         expectedSlowRelayLeaves: expectedSlowRelayRoot.leaves.map((leaf) => {
           return {
             ...leaf,
-            depositor: leaf.relayData.depositor.toNative(),
-            recipient: leaf.relayData.recipient.toNative(),
-            inputToken: leaf.relayData.inputToken.toNative(),
-            outputToken: leaf.relayData.outputToken.toNative(),
-            exclusiveRelayer: leaf.relayData.exclusiveRelayer.toNative(),
+            depositor: leaf.relayData.depositor,
+            recipient: leaf.relayData.recipient,
+            inputToken: leaf.relayData.inputToken,
+            outputToken: leaf.relayData.outputToken,
+            exclusiveRelayer: leaf.relayData.exclusiveRelayer,
           };
         }),
         expectedSlowRelayRoot: expectedSlowRelayRoot.tree.getHexRoot(),
@@ -1415,7 +1408,7 @@ export class Dataworker {
               depositId: slowFill.relayData.depositId,
               fromChain: slowFill.relayData.originChainId,
               chainId: destinationChainId,
-              token: outputToken.toNative(),
+              token: outputToken,
               amount: outputAmount,
               spokeBalance: await this._getSpokeBalanceForL2Tokens(
                 balanceAllocator,
@@ -1557,10 +1550,7 @@ export class Dataworker {
       at: "Dataworker#executePoolRebalanceLeaves",
       message: "Found pending proposal",
       hubPoolCurrentTime: this.clients.hubPoolClient.currentTime,
-      pendingRootBundle: {
-        ...pendingRootBundle,
-        proposer: pendingRootBundle.proposer.toNative(),
-      },
+      pendingRootBundle,
     });
 
     const nextBundleMainnetStartBlock = this.getNextHubChainBundleStartBlock();
@@ -1860,7 +1850,7 @@ export class Dataworker {
             ...leaf,
             l1Tokens: leaf.l1Tokens.map((l1Token) => l1Token.toNative()),
           },
-          feeToken: feeToken.toNative(),
+          feeToken,
           requiredAmount,
         });
         if (submitExecution) {
@@ -1908,7 +1898,7 @@ export class Dataworker {
           message: `feePayer ${holder} has sufficient orbit gas token to pay for L1->L2 message submission fees to ${getNetworkName(
             leaf.chainId
           )}`,
-          feeToken: feeToken.toNative(),
+          feeToken,
           requiredAmount,
           feePayerBalance: await balanceAllocator.getBalanceSubUsed(hubPoolChainId, feeToken, holder),
         });
@@ -1989,7 +1979,7 @@ export class Dataworker {
           message: `Skipping exchange rate update for ${tokenSymbol} because current liquid reserves > netSendAmount for hubChain`,
           currentLiquidReserves,
           netSendAmount: netSendAmounts[idx],
-          l1Token: l1Token.toNative(),
+          l1Token,
         });
         updatedLiquidReserves[l1Token.toEvmAddress()] = currentLiquidReserves.sub(netSendAmounts[idx]);
         return;
@@ -2231,7 +2221,7 @@ export class Dataworker {
         lastUpdateTime: latestFeesCompoundedTime,
         currentLiquidReserves,
         updatedLiquidReserves,
-        l1Token: l1Token.toNative(),
+        l1Token,
       });
       if (submitExecution) {
         this.clients.multiCallerClient.enqueueTransaction({
@@ -2920,7 +2910,6 @@ export class Dataworker {
       message: "Relayer refund leaf accounts",
       leaf: {
         ...leaf,
-        l2TokenAddress: leaf.l2TokenAddress.toNative(),
         refundAddresses: leaf.refundAddresses.map((address) => address.toNative()),
       },
       rootBundleId,
