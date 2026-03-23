@@ -245,7 +245,6 @@ export class BundleDataApproxClient {
   private getApproximateUpcomingDepositsForToken(
     l1Token: Address
   ): ReturnType<typeof this.getApproximateDepositsForToken> {
-    // Deposits don't need to be executed following a root bundle validation so we pass in `false` for `requireExecution`.
     const fromBlocks = this.getUnexecutedBundleStartBlocks(l1Token);
     const depositsForChain = this.getApproximateDepositsForToken(l1Token, fromBlocks);
     return depositsForChain;
