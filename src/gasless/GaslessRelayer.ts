@@ -197,11 +197,13 @@ export class GaslessRelayer {
     await this.updateObservedCctpDeposits(initialMessages);
 
     const unfilledDeposits = initialMessages.filter((depositMessage) => {
+      const { originChainId, depositId, spokePool } = depositMessage;
+
       // SwapAndBridge deposits go through a separate flow; exclude from the bridge unfilled check.
-      if (depositMessage.depositFlowType === "swapAndBridge") {
+      if (depositMessage.depositFlowType === "swapAndBridge" || this._isCctpDeposit(originChainId, spokePool)) {
         return false;
       }
-      const { originChainId, depositId, spokePool } = depositMessage;
+
       const { destinationChainId, inputToken } = depositMessage.baseDepositData;
 
       const depositKey = this._getDepositKey(inputToken, originChainId, depositId);
@@ -209,8 +211,7 @@ export class GaslessRelayer {
       return (
         this.observedDeposits[originChainId]?.has(depositKey) &&
         isDefined(this.observedFills[destinationChainId]) &&
-        !this.observedFills[destinationChainId].has(fillKey) &&
-        !this._isCctpDeposit(originChainId, spokePool)
+        !this.observedFills[destinationChainId].has(fillKey)
       );
     });
 
@@ -418,20 +419,9 @@ export class GaslessRelayer {
         return;
       }
 
-      const bridgeMsg = depositMessage;
-      if (bridgeMsg.permitType === "permit2") {
-        const found = await this._findDepositByDepositId(originChainId, depositId);
-        if (!isDefined(found)) {
-          return;
-        }
-        const depositKey = this._getDepositKey(found.inputToken.toNative(), originChainId, depositId.toString());
-        this.observedDeposits[originChainId].add(depositKey);
-        return;
-      }
-
-      const inputToken = toAddressType(bridgeMsg.baseDepositData.inputToken, originChainId);
-      const authorizer = getGaslessAuthorizerAddress(bridgeMsg);
-      const nonce = getGaslessPermitNonce(bridgeMsg);
+      const inputToken = toAddressType(depositMessage.baseDepositData.inputToken, originChainId);
+      const authorizer = getGaslessAuthorizerAddress(depositMessage);
+      const nonce = getGaslessPermitNonce(depositMessage);
       const transactionHash = await this._findAuthorizationUsed(originChainId, inputToken, authorizer, nonce);
       if (!isDefined(transactionHash)) {
         return;
