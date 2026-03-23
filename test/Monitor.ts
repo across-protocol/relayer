@@ -1,10 +1,9 @@
 import { BundleDataClient, ConfigStoreClient, HubPoolClient, MultiCallerClient, SpokePoolClient } from "../src/clients";
 import { CrossChainTransferClient } from "../src/clients/bridges";
 import { Dataworker } from "../src/dataworker/Dataworker";
-import { L1Token } from "../src/interfaces";
 import { Monitor, REBALANCE_FINALIZE_GRACE_PERIOD } from "../src/monitor/Monitor";
 import { MonitorConfig } from "../src/monitor/MonitorConfig";
-import { MAX_UINT_VAL, toBN, Address, toAddressType, EvmAddress } from "../src/utils";
+import { MAX_UINT_VAL, toBN, toAddressType, EvmAddress } from "../src/utils";
 import * as constants from "./constants";
 import { amountToDeposit, destinationChainId, mockTreeRoot, originChainId, repaymentChainId } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
@@ -21,42 +20,6 @@ import {
   lastSpyLogIncludes,
   deployMulticall3,
 } from "./utils";
-
-type TokenMap = { [l2TokenAddress: string]: L1Token };
-
-class TestMonitor extends Monitor {
-  private overriddenTokenMap: { [chainId: number]: TokenMap } = {};
-
-  setL2ToL1TokenMap(chainId: number, map: TokenMap): void {
-    this.overriddenTokenMap[chainId] = map;
-  }
-
-  getRemoteTokenForL1Token(l1Token: Address, chainId: number | string): Address | undefined {
-    const targetChain = Number(chainId);
-    const tokenMapForChain = this.overriddenTokenMap[targetChain];
-    if (tokenMapForChain) {
-      const matchedToken = Object.entries(tokenMapForChain).find(([, l1TokenObject]) =>
-        l1Token.eq(l1TokenObject.address)
-      );
-      if (matchedToken) {
-        return toAddressType(matchedToken[0], targetChain);
-      }
-    }
-
-    for (const [_chainId, tokenMap] of Object.entries(this.overriddenTokenMap)) {
-      const matchedToken = Object.entries(tokenMap).find(([, l1TokenObject]) => l1Token.eq(l1TokenObject.address));
-      if (matchedToken) {
-        return toAddressType(matchedToken[0], Number(_chainId));
-      }
-    }
-
-    return super.getRemoteTokenForL1Token(l1Token, chainId);
-  }
-
-  l2TokenAmountToL1TokenAmountConverter(): (BigNumber) => BigNumber {
-    return (amount: BigNumber) => amount;
-  }
-}
 
 describe("Monitor", async function () {
   let l1Token: Contract, l2Token: Contract, erc20_2: Contract;
@@ -175,34 +138,13 @@ describe("Monitor", async function () {
     adapterManager = new MockAdapterManager(null, null, null, null);
     adapterManager.setSupportedChains(chainIds);
     crossChainTransferClient = new CrossChainTransferClient(spyLogger, chainIds, adapterManager);
-    monitorInstance = new TestMonitor(spyLogger, monitorConfig, {
+    monitorInstance = new Monitor(spyLogger, monitorConfig, {
       bundleDataClient,
       configStoreClient,
       multiCallerClient,
       hubPoolClient,
       spokePoolClients,
       crossChainTransferClient,
-    });
-    (monitorInstance as TestMonitor).setL2ToL1TokenMap(originChainId, {
-      [l2Token.address]: {
-        symbol: "L1Token1",
-        address: toAddressType(l1Token.address, hubPoolClient.chainId),
-        decimals: 18,
-      },
-    });
-    (monitorInstance as TestMonitor).setL2ToL1TokenMap(destinationChainId, {
-      [erc20_2.address]: {
-        symbol: "L1Token1",
-        address: toAddressType(l1Token.address, hubPoolClient.chainId),
-        decimals: 18,
-      },
-    });
-    (monitorInstance as TestMonitor).setL2ToL1TokenMap(hubPoolClient.chainId, {
-      [l1Token.address]: {
-        symbol: "L1Token1",
-        address: toAddressType(l1Token.address, hubPoolClient.chainId),
-        decimals: 18,
-      },
     });
     await updateAllClients();
   });

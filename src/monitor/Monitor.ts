@@ -36,7 +36,6 @@ import {
   getTokenInfo,
   ConvertDecimals,
   getInventoryBalanceContributorTokens,
-  getInventoryEquivalentL1TokenAddress,
   isEVMSpokePoolClient,
   isSVMSpokePoolClient,
   toAddressType,
@@ -387,14 +386,6 @@ export class Monitor {
         outstandingOrders: outstandingOrders.length,
       });
     }
-  }
-
-  l2TokenAmountToL1TokenAmountConverter(l2Token: Address, chainId: number): (BigNumber) => BigNumber {
-    // Step 1: Get l1 token address equivalent of L2 token
-    const l1Token = getInventoryEquivalentL1TokenAddress(l2Token, chainId, this.clients.hubPoolClient.chainId);
-    const l1TokenDecimals = getTokenInfo(l1Token, this.clients.hubPoolClient.chainId).decimals;
-    const l2TokenDecimals = getTokenInfo(l2Token, chainId).decimals;
-    return ConvertDecimals(l2TokenDecimals, l1TokenDecimals);
   }
 
   async reportRelayerBalances(): Promise<void> {
@@ -999,12 +990,6 @@ export class Monitor {
         message: `Number of PDAs that are not ready to be closed: ${noClosePdaTxs.length}`,
       });
     }
-  }
-
-  protected getRemoteTokenForL1Token(l1Token: EvmAddress, chainId: number | string): Address | undefined {
-    return chainId === this.clients.hubPoolClient.chainId
-      ? l1Token
-      : getRemoteTokenForL1Token(l1Token, chainId, this.clients.hubPoolClient.chainId);
   }
 
   private notifyIfUnknownCaller(caller: string, action: BundleAction, txnRef: string) {
