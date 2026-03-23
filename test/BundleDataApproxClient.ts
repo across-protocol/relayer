@@ -402,16 +402,14 @@ describe("BundleDataApproxClient: Accounting for unexecuted, upcoming relayer re
       configStoreClient.setAvailableChains([MAINNET, OPTIMISM, BSC]);
 
       // When there are no RootBundleRelay/ProposedRootBundle events, returns 0 for all chains.
-      const defaultFromBlocks = (bundleDataClient as MockBundleDataApproxClient).getUnexecutedBundleStartBlocks(
-        l1Weth,
-        false
-      );
+      const defaultFromBlocks = (bundleDataClient as MockBundleDataApproxClient).getUnexecutedBundleStartBlocks(l1Weth);
       expect(defaultFromBlocks[MAINNET]).to.equal(0);
       expect(defaultFromBlocks[OPTIMISM]).to.equal(0);
       expect(defaultFromBlocks[BSC]).to.equal(0);
 
       const rootBundleRelays = [
         {
+          rootBundleId: 0,
           relayerRefundRoot: "0x1234",
           bundleEvaluationBlockNumbers: [toBN(3), toBN(4), toBN(5)],
         },
@@ -421,10 +419,23 @@ describe("BundleDataApproxClient: Accounting for unexecuted, upcoming relayer re
       );
       hubPoolClient.setValidatedRootBundles(rootBundleRelays as unknown as ProposedRootBundle[]);
 
-      const fromBlocks1 = (bundleDataClient as MockBundleDataApproxClient).getUnexecutedBundleStartBlocks(
-        l1Weth,
-        false
-      );
+      // Add a matching execution so getUnexecutedBundleStartBlocks can verify the leaf was executed.
+      // Directly push to the internal array to avoid event parsing issues in the mock.
+      (spokePoolClients[MAINNET] as any).relayerRefundExecutions.push({
+        rootBundleId: 0,
+        leafId: 0,
+        chainId: MAINNET,
+        amountToReturn: bnZero,
+        l2TokenAddress: toAddressType(mainnetWeth, MAINNET),
+        refundAddresses: [],
+        refundAmounts: [],
+        blockNumber: 0,
+        txnIndex: 0,
+        logIndex: 0,
+        txnRef: "0x",
+      });
+
+      const fromBlocks1 = (bundleDataClient as MockBundleDataApproxClient).getUnexecutedBundleStartBlocks(l1Weth);
 
       // Only the spoke pool clients that saw the RootBundleRelay events should have non-zero fromBlocks.
       expect(fromBlocks1[MAINNET]).to.equal(4);
