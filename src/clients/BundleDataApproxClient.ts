@@ -5,8 +5,16 @@
 
 import { SpokePoolManager } from ".";
 import { SpokePoolClientsByChain } from "../interfaces";
-import { assert, BigNumber, isDefined, winston, ConvertDecimals, getTokenInfo } from "../utils";
-import { Address, bnZero, getL1TokenAddress } from "../utils/SDKUtils";
+import {
+  assert,
+  BigNumber,
+  isDefined,
+  winston,
+  ConvertDecimals,
+  getTokenInfo,
+  getInventoryEquivalentL1TokenAddress,
+} from "../utils";
+import { Address, bnZero } from "../utils/SDKUtils";
 import { HubPoolClient } from "./HubPoolClient";
 
 export type BundleDataState = {
@@ -14,6 +22,10 @@ export type BundleDataState = {
   upcomingRefunds: { [l1Token: string]: { [chainId: number]: { [relayer: string]: BigNumber } } };
 };
 
+// This client is used to approximate running balances and the refunds and deposits for a given L1 token. Running balances
+// can easily be estimated by taking the last validated running balance for a chain and subtracting the total deposit amount
+// on that chain since the last validated end block and adding the total refund amount on that chain since the last validated
+// end block.
 export class BundleDataApproxClient {
   private upcomingRefunds: { [l1Token: string]: { [chainId: number]: { [relayer: string]: BigNumber } } } = undefined;
   private upcomingDeposits: { [l1Token: string]: { [chainId: number]: BigNumber } } = undefined;
@@ -50,7 +62,7 @@ export class BundleDataApproxClient {
   }
 
   // Return sum of refunds for all fills sent after the fromBlocks.
-  // Makes a simple assumption that all fills that were sent after the last executed bundle
+  // Makes a simple assumption that all fills that were sent by this relayer after the last executed bundle
   // are valid and will be refunded on the repayment chain selected. Assume additionally that the repayment chain
   // set is a valid one for the deposit.
   protected getApproximateRefundsForToken(
@@ -64,51 +76,56 @@ export class BundleDataApproxClient {
       if (!isDefined(spokePoolClient)) {
         continue;
       }
-      spokePoolClient
-        .getFills()
-        .filter((fill) => {
-          if (fill.blockNumber < fromBlocks[chainId]) {
-            return false;
-          }
-          const expectedL1Token = this.getL1TokenAddress(fill.inputToken, fill.originChainId);
-          if (!isDefined(expectedL1Token) || !expectedL1Token.eq(l1Token)) {
-            return false;
-          }
-          // A simple check that this fill is *probably* valid is to check that the output and input token
-          // map to the same L1 token. This means that this method will ignore refunds for swaps, but these
-          // are currently very rare in practice. This prevents invalid fills with very large input amounts
-          // from skewing the numbers.
-          const outputMappedL1Token = this.getL1TokenAddress(fill.outputToken, fill.destinationChainId);
-          if (!isDefined(outputMappedL1Token) || !outputMappedL1Token.eq(expectedL1Token)) {
-            return false;
-          }
+      spokePoolClient.getFills().forEach((fill) => {
+        const { inputAmount: _refundAmount, originChainId, repaymentChainId, relayer, inputToken, blockNumber } = fill;
+        if (blockNumber < fromBlocks[chainId]) {
+          return;
+        }
 
-          return true;
-        })
-        .forEach((fill) => {
-          const { inputAmount: _refundAmount, originChainId, repaymentChainId, relayer, inputToken } = fill;
-          // This call to `getTokenInfo` should not throw since we just filtered out all input tokens for
-          // which there is no output token.
-          const { decimals: inputTokenDecimals } = getTokenInfo(inputToken, originChainId);
-          const inputL1Token = this.getL1TokenAddress(inputToken, originChainId);
+        // Fills get refunded in the input token currency so need to check that the input token
+        // and the input l1Token are the same. If the input token is equivalent from an inventory management
+        // perspective to the l1Token then we can count it here because in this case the refund for the fill
+        // will essentially be in an equivalent l1Token currency on the repayment chain (i.e. getting repaid
+        // in this currency is just as good as getting repaid in the l1Token currency).
+        const expectedL1Token = this.getL1TokenAddress(fill.inputToken, fill.originChainId);
+        if (!isDefined(expectedL1Token) || !expectedL1Token.eq(l1Token)) {
+          return;
+        }
 
-          assert(inputL1Token.isEVM());
+        // This call to `getTokenInfo` should not throw since we successfully called getL1TokenAddress with the
+        // same parameters above and filtered out undefined responses.
+        const { decimals: inputTokenDecimals } = getTokenInfo(inputToken, originChainId);
+
+        // We need to figure out the decimals of the input token on the repayment chain so we can normalize the
+        // refund amount on the repayment chain.
+        let repaymentTokenDecimals: number;
+        if (originChainId === repaymentChainId) {
+          repaymentTokenDecimals = inputTokenDecimals;
+        } else {
+          assert(expectedL1Token.isEVM());
           const inputTokenOnRepaymentChain = this.hubPoolClient.getL2TokenForL1TokenAtBlock(
-            inputL1Token,
+            expectedL1Token,
             repaymentChainId
           );
+          // If there isn't an equivalent L2 token on the repayment chain and the repayment chain isn't the
+          // origin chain, then this fill is not valid and we should not count it. This logic doesn't assume that the
+          // repayment chain is valid, for example consider if the inputToken doesn't have a pool rebalance route
+          // to the hub chain but the inputToken is an inventory-equivalent token to the l1Token. In this case,
+          // a valid full must set repayment chain to the origin chain, but this logical branch would still be able
+          // to find a valid inputTokenOnRepaymentChain because expectedL1Token is equal to the l1Token. This is
+          // fine because as mentioned above, this client is ultimately an approximation and we are assuming
+          // that all fills sent by this honest relayer are valid.
           if (!isDefined(inputTokenOnRepaymentChain)) {
             return;
           }
-          // If the repayment token is defined, then that means an entry exists in our token symbols mapping,
-          // so this is also a "safe" call to `getTokenInfo.`
-          const { decimals: repaymentTokenDecimals } = getTokenInfo(inputTokenOnRepaymentChain, repaymentChainId);
-          const refundAmount = ConvertDecimals(inputTokenDecimals, repaymentTokenDecimals)(_refundAmount);
-          refundsForChain[repaymentChainId] ??= {};
-          refundsForChain[repaymentChainId][relayer.toNative()] ??= bnZero;
-          refundsForChain[repaymentChainId][relayer.toNative()] =
-            refundsForChain[repaymentChainId][relayer.toNative()].add(refundAmount);
-        });
+          repaymentTokenDecimals = getTokenInfo(inputTokenOnRepaymentChain, repaymentChainId).decimals;
+        }
+        const refundAmount = ConvertDecimals(inputTokenDecimals, repaymentTokenDecimals)(_refundAmount);
+        refundsForChain[repaymentChainId] ??= {};
+        refundsForChain[repaymentChainId][relayer.toNative()] ??= bnZero;
+        refundsForChain[repaymentChainId][relayer.toNative()] =
+          refundsForChain[repaymentChainId][relayer.toNative()].add(refundAmount);
+      });
     }
     return refundsForChain;
   }
@@ -199,6 +216,9 @@ export class BundleDataApproxClient {
       spokePoolClient
         .getDeposits()
         .filter((deposit) => {
+          // We are ok to group together deposits for inventory-equivalent tokens because these approximate
+          // deposits and refunds are usually computed and summed together to approximate running balances. So we should
+          // use the same methodology for equating input and l1 tokens as we do in the getApproximateRefundsForToken method.
           const expectedL1Token = this.getL1TokenAddress(deposit.inputToken, deposit.originChainId);
           if (!isDefined(expectedL1Token)) {
             return false;
@@ -223,7 +243,7 @@ export class BundleDataApproxClient {
 
   protected getL1TokenAddress(l2Token: Address, chainId: number): Address | undefined {
     try {
-      return getL1TokenAddress(l2Token, chainId);
+      return getInventoryEquivalentL1TokenAddress(l2Token, chainId, this.hubPoolClient.chainId);
     } catch {
       return undefined;
     }

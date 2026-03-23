@@ -26,7 +26,7 @@ import {
   assert,
   Profiler,
   getNativeTokenSymbol,
-  getL1TokenAddress,
+  getInventoryEquivalentL1TokenAddress,
   depositForcesOriginChainRepayment,
   getRemoteTokenForL1Token,
   getTokenInfo,
@@ -37,10 +37,11 @@ import {
   repaymentChainCanBeQuicklyRebalanced,
   forEachAsync,
   max,
+  getLatestRunningBalances,
 } from "../utils";
 import { BundleDataApproxClient, BundleDataState } from "./BundleDataApproxClient";
 import { HubPoolClient, TokenClient, TransactionClient } from ".";
-import { Deposit, ProposedRootBundle } from "../interfaces";
+import { Deposit } from "../interfaces";
 import { InventoryConfig, isAliasConfig, TokenBalanceConfig } from "../interfaces/InventoryManagement";
 import lodash from "lodash";
 import { SLOW_WITHDRAWAL_CHAINS } from "../common";
@@ -557,13 +558,7 @@ export class InventoryClient {
    */
   getL1TokenAddress(l2Token: Address, chainId: number): EvmAddress | undefined {
     try {
-      // Add exception for USDC-like tokens which only exist on L2.
-      // @todo Add support for equivalence mappings.
-      const l2TokenInfo = getTokenInfo(l2Token, chainId);
-      if (["pathUSD"].includes(l2TokenInfo.symbol)) {
-        return EvmAddress.from(TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubPoolClient.chainId]);
-      }
-      return getL1TokenAddress(l2Token, chainId);
+      return getInventoryEquivalentL1TokenAddress(l2Token, chainId, this.hubPoolClient.chainId);
     } catch {
       return undefined;
     }
@@ -914,84 +909,18 @@ export class InventoryClient {
     chainsToEvaluate: number[]
   ): Promise<{ [chainId: number]: BigNumber }> {
     const mark = this.profiler.start("getLatestRunningBalances");
-    const chainIds = this.hubPoolClient.configStoreClient.getChainIdIndicesForBlock();
-    const l1TokenDecimals = getTokenInfo(l1Token, this.hubPoolClient.chainId).decimals;
-    const runningBalances = Object.fromEntries(
-      await sdkUtils.mapAsync(chainsToEvaluate, async (chainId) => {
-        const chainIdIndex = chainIds.indexOf(chainId);
-
-        // We need to find the latest validated running balance for this chain and token.
-        const lastValidatedRunningBalance = this.hubPoolClient.getRunningBalanceBeforeBlockForChain(
-          this.hubPoolClient.latestHeightSearched,
-          chainId,
-          l1Token
-        ).runningBalance;
-
-        // Approximate latest running balance for a chain as last known validated running balance...
-        // - minus total deposit amount on chain since the latest validated end block
-        // - plus total refund amount on chain since the latest validated end block
-        const latestValidatedBundle = this.hubPoolClient.getLatestExecutedRootBundleContainingL1Token(
-          this.hubPoolClient.latestHeightSearched,
-          chainId,
-          l1Token
-        );
-        const l2Token = this.hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, Number(chainId));
-        const l2TokenDecimals = this.hubPoolClient.getTokenInfoForAddress(l2Token, chainId).decimals;
-        const l2AmountToL1Amount = sdkUtils.ConvertDecimals(l2TokenDecimals, l1TokenDecimals);
-
-        // If there is no ExecutedRootBundle event in the hub pool client's lookback for the token and chain, then
-        // default the bundle end block to 0. This will force getUpcomingDepositAmount to count any deposit
-        // seen in the spoke pool client's lookback. It would be very odd however for there to be deposits or refunds
-        // for a token and chain without there being a validated root bundle containing the token, so really the
-        // following check will be hit if the chain's running balance is very stale. The best way to check
-        // its running balance at that point is to query the token balance directly but this is still potentially
-        // inaccurate if someone sent tokens directly to the contract, and it incurs an extra RPC call so we avoid
-        // it for now. The default running balance will be 0, and this function is primarily designed to choose
-        // which chains have too many running balances and therefore should be selected for repayment, so returning
-        // 0 here means this chain will never be selected for repayment as a "slow withdrawal" chain.
-        let lastValidatedBundleEndBlock = 0;
-        let proposedRootBundle: ProposedRootBundle | undefined;
-        if (latestValidatedBundle) {
-          proposedRootBundle = this.hubPoolClient.getLatestFullyExecutedRootBundle(
-            latestValidatedBundle.blockNumber // The ProposeRootBundle event must precede the ExecutedRootBundle
-            // event we grabbed above. However, it might not exist if the ExecutedRootBundle event is old enough
-            // that the preceding ProposeRootBundle is older than the lookback. In this case, leave the
-            // last validated bundle end block as 0, since it must be before the earliest lookback block since it was
-            // before the ProposeRootBundle event and we can't even find that.
-          );
-          if (proposedRootBundle) {
-            lastValidatedBundleEndBlock = proposedRootBundle.bundleEvaluationBlockNumbers[chainIdIndex].toNumber();
-          }
-        }
-        const upcomingDepositsAfterLastValidatedBundle = l2AmountToL1Amount(this.getUpcomingDeposits(chainId, l1Token));
-        const upcomingRefundsAfterLastValidatedBundle = l2AmountToL1Amount(this.getUpcomingRefunds(chainId, l1Token));
-
-        // Updated running balance is last known running balance minus deposits plus upcoming refunds.
-        const latestRunningBalance = lastValidatedRunningBalance
-          .sub(upcomingDepositsAfterLastValidatedBundle)
-          .add(upcomingRefundsAfterLastValidatedBundle);
-        // A negative running balance means that the spoke has a balance. If the running balance is positive, then the hub
-        // owes it funds and its below target so we don't want to take additional repayment.
-        const absLatestRunningBalance = latestRunningBalance.lt(0) ? latestRunningBalance.abs() : toBN(0);
-        return [
-          chainId,
-          {
-            absLatestRunningBalance,
-            lastValidatedRunningBalance,
-            upcomingDeposits: upcomingDepositsAfterLastValidatedBundle,
-            upcomingRefunds: upcomingRefundsAfterLastValidatedBundle,
-            bundleEndBlock: lastValidatedBundleEndBlock,
-            proposedRootBundle: proposedRootBundle?.txnRef,
-          },
-        ];
-      })
+    const results = await getLatestRunningBalances(
+      l1Token,
+      chainsToEvaluate,
+      this.hubPoolClient,
+      this.bundleDataApproxClient
     );
     mark.stop({
       message: `Time to get running balances for ${l1Token}`,
       chainsToEvaluate,
-      runningBalances,
+      runningBalances: results,
     });
-    return Object.fromEntries(Object.entries(runningBalances).map(([k, v]) => [k, v.absLatestRunningBalance]));
+    return Object.fromEntries(Object.entries(results).map(([k, v]) => [k, v.absLatestRunningBalance]));
   }
 
   /**

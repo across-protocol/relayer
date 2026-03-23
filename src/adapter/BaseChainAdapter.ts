@@ -23,7 +23,7 @@ import {
   forEachAsync,
   filterAsync,
   mapAsync,
-  getL1TokenAddress,
+  getInventoryEquivalentL1TokenAddress,
   getBlockForTimestamp,
   getCurrentTime,
   bnZero,
@@ -38,8 +38,6 @@ import {
   sendAndConfirmSolanaTransaction,
   getSvmProvider,
   submitTransaction,
-  getTokenInfo,
-  ZERO_ADDRESS,
 } from "../utils";
 import { AugmentedTransaction, TransactionClient } from "../clients/TransactionClient";
 import {
@@ -576,11 +574,6 @@ export class BaseChainAdapter {
   }
 
   private getL1TokenAddress(l2Token: Address, chainId: number): EvmAddress {
-    const tokenInfo = getTokenInfo(l2Token, chainId);
-    // @todo Fix w/ equivalence remapping?
-    if (tokenInfo.symbol === "pathUSD") {
-      return EvmAddress.from(ZERO_ADDRESS /* TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]*/);
-    }
-    return getL1TokenAddress(l2Token, chainId);
+    return getInventoryEquivalentL1TokenAddress(l2Token, chainId, this.hubChainId);
   }
 }
