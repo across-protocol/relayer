@@ -449,8 +449,13 @@ export class GaslessRelayer {
   protected async handleSwapAndBridgeDeposit(depositMessage: SwapAndBridgeGaslessDepositMessage): Promise<void> {
     const { originChainId, depositId, depositData, swapToken, swapTokenAmount, minExpectedInputTokenAmount } =
       depositMessage;
-    const { destinationChainId, inputToken: rawInputToken, outputToken: rawOutputToken, outputAmount, fillDeadline } =
-      depositData;
+    const {
+      destinationChainId,
+      inputToken: rawInputToken,
+      outputToken: rawOutputToken,
+      outputAmount,
+      fillDeadline,
+    } = depositData;
 
     const inputToken = toAddressType(rawInputToken, originChainId);
     const outputToken = toAddressType(rawOutputToken, destinationChainId);
@@ -498,7 +503,7 @@ export class GaslessRelayer {
 
     do {
       if (expired()) {
-        log("warn", `Skipping expired swapAndBridge deposit.`);
+        log("warn", "Skipping expired swapAndBridge deposit.");
         setState(MessageState.ERROR);
       }
 
@@ -516,7 +521,7 @@ export class GaslessRelayer {
             this.config.allowedPeggedPairs
           );
           if (!valid) {
-            log("warn", `Rejected malformed swapAndBridge deposit.`);
+            log("warn", "Rejected malformed swapAndBridge deposit.");
             setState(MessageState.ERROR);
           } else {
             setState(MessageState.DEPOSIT_SUBMIT);
