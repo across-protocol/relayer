@@ -913,7 +913,7 @@ export class InventoryClient {
     mark.stop({
       message: `Time to get running balances for ${l1Token}`,
       chainsToEvaluate,
-      runningBalances: results,
+      runningBalances,
     });
     return Object.fromEntries(Object.entries(results).map(([k, v]) => [k, v.absLatestRunningBalance]));
   }
