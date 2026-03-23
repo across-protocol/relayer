@@ -417,22 +417,60 @@ export class Monitor {
     }
 
     for (const relayer of relayers) {
-      // Fetch pending L2 withdrawals for this relayer across all L1 tokens in parallel.
-      const pendingL2Withdrawals: { [l1Token: string]: { [chainId: number]: BigNumber } } = {};
-      await Promise.all(
-        allL1Tokens.map(async (l1Token) => {
-          try {
-            pendingL2Withdrawals[l1Token.address.toNative()] =
-              await this.clients.crossChainTransferClient.adapterManager.getTotalPendingWithdrawalAmount(
-                this.crossChainAdapterSupportedChains,
-                relayer,
-                l1Token.address
-              );
-          } catch {
-            pendingL2Withdrawals[l1Token.address.toNative()] = {};
+      // Pre-compute L2 tokens per (l1Token, chainId) and build a single batch of all balance requests
+      // so we can fetch all balances in one parallel call instead of sequentially per chain.
+      type L2TokenEntry = { l1Token: L1Token; chainId: number; l2Tokens: Address[] };
+      const l2TokenEntries: L2TokenEntry[] = [];
+      const allBalanceRequests: BalanceRequest[] = [];
+
+      for (const l1Token of allL1Tokens) {
+        for (const chainId of this.monitorChains) {
+          if (!relayer.isValidOn(chainId)) {
+            continue;
           }
-        })
-      );
+          const l2Tokens = getInventoryBalanceContributorTokens(l1Token.address, chainId, hubChainId);
+          if (l2Tokens.length === 0) {
+            continue;
+          }
+          l2TokenEntries.push({ l1Token, chainId, l2Tokens });
+          for (const l2Token of l2Tokens) {
+            allBalanceRequests.push({ chainId, token: l2Token, account: relayer });
+          }
+        }
+      }
+
+      // Fetch all balances and pending L2 withdrawals in parallel.
+      const [allRawBalances, pendingL2Withdrawals] = await Promise.all([
+        this._getBalances(allBalanceRequests),
+        (async () => {
+          const withdrawals: { [l1Token: string]: { [chainId: number]: BigNumber } } = {};
+          await Promise.all(
+            allL1Tokens.map(async (l1Token) => {
+              try {
+                withdrawals[l1Token.address.toNative()] =
+                  await this.clients.crossChainTransferClient.adapterManager.getTotalPendingWithdrawalAmount(
+                    this.crossChainAdapterSupportedChains,
+                    relayer,
+                    l1Token.address
+                  );
+              } catch {
+                withdrawals[l1Token.address.toNative()] = {};
+              }
+            })
+          );
+          return withdrawals;
+        })(),
+      ]);
+
+      // Index raw balances by (chainId, l2Token) for O(1) lookup.
+      const balanceIndex: { [chainId: number]: { [l2Token: string]: BigNumber } } = {};
+      let balIdx = 0;
+      for (const { chainId, l2Tokens } of l2TokenEntries) {
+        balanceIndex[chainId] ??= {};
+        for (const l2Token of l2Tokens) {
+          balanceIndex[chainId][l2Token.toNative()] = allRawBalances[balIdx++];
+        }
+      }
 
       for (const l1Token of allL1Tokens) {
         const l1TokenDecimals = l1Token.decimals;
@@ -453,21 +491,13 @@ export class Monitor {
             continue;
           }
 
-          // Batch-fetch balances for all L2 tokens on this chain.
-          const balanceRequests: BalanceRequest[] = l2Tokens.map((l2Token) => ({
-            chainId,
-            token: l2Token,
-            account: relayer,
-          }));
-          const rawBalances = await this._getBalances(balanceRequests);
-
-          for (let i = 0; i < l2Tokens.length; i++) {
-            const l2Token = l2Tokens[i];
+          for (const l2Token of l2Tokens) {
             const { symbol: l2Symbol, decimals: l2Decimals } = getTokenInfo(l2Token, chainId);
             const toL1Decimals = ConvertDecimals(l2Decimals, l1TokenDecimals);
 
             // Current balance (converted to L1 decimals).
-            const currentBalance = toL1Decimals(rawBalances[i]);
+            const rawBalance = balanceIndex[chainId]?.[l2Token.toNative()] ?? bnZero;
+            const currentBalance = toL1Decimals(rawBalance);
 
             // Pending: cross-chain transfers + pending L2 withdrawals (hub chain only) + pending swap rebalances.
             let pending = this.clients.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
@@ -506,20 +536,22 @@ export class Monitor {
               });
             }
 
-            // Machine-readable debug log.
-            this.logger.debug({
-              at: "Monitor#reportRelayerBalances",
-              message: "Machine-readable single balance report",
-              relayer: relayer.toNative(),
-              l1TokenSymbol: l1Token.symbol,
-              l2TokenSymbol: l2Symbol,
-              chainId,
-              decimals: l1TokenDecimals,
-              currentBalanceInWei: currentBalance.toString(),
-              pendingInWei: pending.toString(),
-              totalBalanceInWei: totalBalance.toString(),
-              datadog: true,
-            });
+            // Machine-readable debug log — skip zero-balance entries.
+            if (!totalBalance.isZero()) {
+              this.logger.debug({
+                at: "Monitor#reportRelayerBalances",
+                message: "Machine-readable single balance report",
+                relayer: relayer.toNative(),
+                l1TokenSymbol: l1Token.symbol,
+                l2TokenSymbol: l2Symbol,
+                chainId,
+                decimals: l1TokenDecimals,
+                currentBalanceInWei: currentBalance.toString(),
+                pendingInWei: pending.toString(),
+                totalBalanceInWei: totalBalance.toString(),
+                datadog: true,
+              });
+            }
           }
 
           // Upcoming refund row per chain (one per chain, not per L2 token).
@@ -570,7 +602,7 @@ export class Monitor {
           )}  ${r.pending.padStart(colW.pending)}  ${r.total.padStart(colW.total)}`;
         const separator = "-".repeat(fmtRow(header).length);
 
-        let tokenMrkdwn = `*[${l1Token.symbol}]*\n\`\`\`\n`;
+        let tokenMrkdwn = "```\n";
         tokenMrkdwn += fmtRow(header) + "\n";
         tokenMrkdwn += separator + "\n";
         for (const row of rows) {
@@ -756,7 +788,7 @@ export class Monitor {
         )}`;
       const separator = "-".repeat(fmtRow(header).length);
 
-      let tokenMrkdwn = `*[${l1Token.symbol}]*\n\`\`\`\n`;
+      let tokenMrkdwn = "```\n";
       tokenMrkdwn += fmtRow(header) + "\n";
       tokenMrkdwn += separator + "\n";
       for (const row of rows) {
