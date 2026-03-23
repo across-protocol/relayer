@@ -1,3 +1,19 @@
+diff --git a/node_modules/viem/_cjs/chains/definitions/lisk.js b/node_modules/viem/_cjs/chains/definitions/lisk.js
+index b8f3aed..52449c6 100644
+--- a/node_modules/viem/_cjs/chains/definitions/lisk.js
++++ b/node_modules/viem/_cjs/chains/definitions/lisk.js
+@@ -28,6 +28,11 @@ exports.lisk = (0, defineChain_js_1.defineChain)({
+     },
+     contracts: {
+         ...chainConfig_js_1.chainConfig.contracts,
++        disputeGameFactory: {
++            [sourceId]: {
++                address: '0x0CF7D3706a27CCE2017aEB11E8a9c8b5388c282C',
++            },
++        },
+         multicall3: {
+             address: '0xA9d71E1dd7ca26F26e656E66d6AA81ed7f745bf0',
+         },
 diff --git a/node_modules/viem/_cjs/chains/definitions/megaeth.js b/node_modules/viem/_cjs/chains/definitions/megaeth.js
 index 6145c71..0aa9e5e 100644
 --- a/node_modules/viem/_cjs/chains/definitions/megaeth.js
@@ -59,6 +75,38 @@ index 6145c71..0aa9e5e 100644
  });
  //# sourceMappingURL=megaeth.js.map
 \ No newline at end of file
+diff --git a/node_modules/viem/_cjs/chains/definitions/mode.js b/node_modules/viem/_cjs/chains/definitions/mode.js
+index 385c664..e94aa5a 100644
+--- a/node_modules/viem/_cjs/chains/definitions/mode.js
++++ b/node_modules/viem/_cjs/chains/definitions/mode.js
+@@ -22,6 +22,11 @@ exports.mode = (0, defineChain_js_1.defineChain)({
+     },
+     contracts: {
+         ...chainConfig_js_1.chainConfig.contracts,
++        disputeGameFactory: {
++            [sourceId]: {
++                address: '0x6f13EFadABD9269D6cEAd22b448d434A1f1B433E',
++            },
++        },
+         multicall3: {
+             address: '0xca11bde05977b3631167028862be2a173976ca11',
+             blockCreated: 2465882,
+diff --git a/node_modules/viem/_cjs/chains/definitions/zora.js b/node_modules/viem/_cjs/chains/definitions/zora.js
+index 1bd8ab7..80abec3 100644
+--- a/node_modules/viem/_cjs/chains/definitions/zora.js
++++ b/node_modules/viem/_cjs/chains/definitions/zora.js
+@@ -28,6 +28,11 @@ exports.zora = (0, defineChain_js_1.defineChain)({
+     },
+     contracts: {
+         ...chainConfig_js_1.chainConfig.contracts,
++        disputeGameFactory: {
++            [sourceId]: {
++                address: '0xB0F15106fa1e473Ddb39790f197275BC979Aa37e',
++            },
++        },
+         l2OutputOracle: {
+             [sourceId]: {
+                 address: '0x9E6204F750cD866b299594e2aC9eA824E2e5f95c',
 diff --git a/node_modules/viem/_cjs/op-stack/actions/buildProveWithdrawal.js b/node_modules/viem/_cjs/op-stack/actions/buildProveWithdrawal.js
 index 8da3482..c2bd84b 100644
 --- a/node_modules/viem/_cjs/op-stack/actions/buildProveWithdrawal.js
@@ -102,6 +150,54 @@ index d8a07c5..6146d65 100644
          return !l2BlockNumber || blockNumber > l2BlockNumber
              ? { ...game, l2BlockNumber: blockNumber }
              : null;
+diff --git a/node_modules/viem/_esm/chains/definitions/lisk.js b/node_modules/viem/_esm/chains/definitions/lisk.js
+index b01288b..7f302f9 100644
+--- a/node_modules/viem/_esm/chains/definitions/lisk.js
++++ b/node_modules/viem/_esm/chains/definitions/lisk.js
+@@ -25,6 +25,11 @@ export const lisk = /*#__PURE__*/ defineChain({
+     },
+     contracts: {
+         ...chainConfig.contracts,
++        disputeGameFactory: {
++            [sourceId]: {
++                address: '0x0CF7D3706a27CCE2017aEB11E8a9c8b5388c282C',
++            },
++        },
+         multicall3: {
+             address: '0xA9d71E1dd7ca26F26e656E66d6AA81ed7f745bf0',
+         },
+diff --git a/node_modules/viem/_esm/chains/definitions/mode.js b/node_modules/viem/_esm/chains/definitions/mode.js
+index abb4aad..983a673 100644
+--- a/node_modules/viem/_esm/chains/definitions/mode.js
++++ b/node_modules/viem/_esm/chains/definitions/mode.js
+@@ -19,6 +19,11 @@ export const mode = /*#__PURE__*/ defineChain({
+     },
+     contracts: {
+         ...chainConfig.contracts,
++        disputeGameFactory: {
++            [sourceId]: {
++                address: '0x6f13EFadABD9269D6cEAd22b448d434A1f1B433E',
++            },
++        },
+         multicall3: {
+             address: '0xca11bde05977b3631167028862be2a173976ca11',
+             blockCreated: 2465882,
+diff --git a/node_modules/viem/_esm/chains/definitions/zora.js b/node_modules/viem/_esm/chains/definitions/zora.js
+index f7fcd35..d7f8101 100644
+--- a/node_modules/viem/_esm/chains/definitions/zora.js
++++ b/node_modules/viem/_esm/chains/definitions/zora.js
+@@ -25,6 +25,11 @@ export const zora = /*#__PURE__*/ defineChain({
+     },
+     contracts: {
+         ...chainConfig.contracts,
++        disputeGameFactory: {
++            [sourceId]: {
++                address: '0xB0F15106fa1e473Ddb39790f197275BC979Aa37e',
++            },
++        },
+         l2OutputOracle: {
+             [sourceId]: {
+                 address: '0x9E6204F750cD866b299594e2aC9eA824E2e5f95c',
 diff --git a/node_modules/viem/_types/chains/definitions/megaeth.d.ts b/node_modules/viem/_types/chains/definitions/megaeth.d.ts
 index dfe94a1..bf5e7bc 100644
 --- a/node_modules/viem/_types/chains/definitions/megaeth.d.ts
@@ -157,3 +253,51 @@ index 1697039..85e7e81 100644
  export type MulticallBatchOptions = {
      /** The maximum size (in bytes) for each calldata chunk. @default 1_024 */
      batchSize?: number | undefined;
+diff --git a/node_modules/viem/chains/definitions/lisk.ts b/node_modules/viem/chains/definitions/lisk.ts
+index 8422310..5e92d0c 100644
+--- a/node_modules/viem/chains/definitions/lisk.ts
++++ b/node_modules/viem/chains/definitions/lisk.ts
+@@ -27,6 +27,11 @@ export const lisk = /*#__PURE__*/ defineChain({
+   },
+   contracts: {
+     ...chainConfig.contracts,
++    disputeGameFactory: {
++      [sourceId]: {
++        address: '0x0CF7D3706a27CCE2017aEB11E8a9c8b5388c282C',
++      },
++    },
+     multicall3: {
+       address: '0xA9d71E1dd7ca26F26e656E66d6AA81ed7f745bf0',
+     },
+diff --git a/node_modules/viem/chains/definitions/mode.ts b/node_modules/viem/chains/definitions/mode.ts
+index 656a580..f80211a 100644
+--- a/node_modules/viem/chains/definitions/mode.ts
++++ b/node_modules/viem/chains/definitions/mode.ts
+@@ -21,6 +21,11 @@ export const mode = /*#__PURE__*/ defineChain({
+   },
+   contracts: {
+     ...chainConfig.contracts,
++    disputeGameFactory: {
++      [sourceId]: {
++        address: '0x6f13EFadABD9269D6cEAd22b448d434A1f1B433E',
++      },
++    },
+     multicall3: {
+       address: '0xca11bde05977b3631167028862be2a173976ca11',
+       blockCreated: 2465882,
+diff --git a/node_modules/viem/chains/definitions/zora.ts b/node_modules/viem/chains/definitions/zora.ts
+index 820f1c8..bc6c110 100644
+--- a/node_modules/viem/chains/definitions/zora.ts
++++ b/node_modules/viem/chains/definitions/zora.ts
+@@ -27,6 +27,11 @@ export const zora = /*#__PURE__*/ defineChain({
+   },
+   contracts: {
+     ...chainConfig.contracts,
++    disputeGameFactory: {
++      [sourceId]: {
++        address: '0xB0F15106fa1e473Ddb39790f197275BC979Aa37e',
++      },
++    },
+     l2OutputOracle: {
+       [sourceId]: {
+         address: '0x9E6204F750cD866b299594e2aC9eA824E2e5f95c',

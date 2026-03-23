@@ -150,6 +150,8 @@ Design tradeoff:
 
 The read-only mode still initializes adapters (with an empty route set) so `getPendingRebalances()` and `getPendingOrders()` remain available without coupling callers to a specific operational rebalancing mode.
 
+The OFT and CCTP adapters also expose their pending bridge-pre-deposit Redis schema through `src/rebalancer/utils/PendingBridgeRedis.ts`. Adapter-side bridge accounting uses that readonly reader to ignore rebalancer-owned OFT/CCTP transfers instead of instantiating rebalancer adapters inside `AdapterManager`.
+
 ### Future mode extensibility
 
 `src/rebalancer/clients/` is intentionally mode-oriented. Today the production mode is cumulative and there is a read-only consumer mode, but additional `RebalancerClient` implementations can be added later without changing adapter contracts.
