@@ -96,6 +96,8 @@ const MESSAGE_STATES = {
   [MessageState.ERROR]: "ERROR",
 };
 
+const terminalStates = [MessageState.FILLED, MessageState.ERROR];
+
 const stateToStr = (state: MessageState) => MESSAGE_STATES[state] ?? "UNKNOWN";
 
 /**
@@ -500,7 +502,6 @@ export class GaslessRelayer {
     };
     const getState = () => this._getState(depositKey);
 
-    const terminalStates = [MessageState.FILLED, MessageState.ERROR];
     let depositReceiptPromise: Promise<TransactionReceipt | null>;
 
     do {
@@ -677,7 +678,6 @@ export class GaslessRelayer {
         return;
       }
       const isCctpDeposit = this._isCctpDeposit(originChainId, spokePool);
-      const terminalStates = [MessageState.FILLED, MessageState.ERROR];
       const at = "GaslessRelayer#evaluateApiSignatures";
       const expired = () => getCurrentTime() >= fillDeadline;
       const [origin, destination] = [originChainId, destinationChainId].map(getNetworkName);
