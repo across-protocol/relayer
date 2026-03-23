@@ -192,7 +192,7 @@ export class Monitor {
       let tokenInfo: TokenInfo;
 
       try {
-        tokenInfo = this.clients.hubPoolClient.getTokenInfoForAddress(outputToken, destinationChainId);
+        tokenInfo = getTokenInfo(outputToken, destinationChainId);
       } catch {
         tokenInfo = { symbol: "UNKNOWN TOKEN", decimals: 18, address: outputToken };
       }
@@ -295,7 +295,7 @@ export class Monitor {
         let unfilledAmount: string;
         try {
           let decimals: number;
-          ({ symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForAddress(
+          ({ symbol, decimals } = getTokenInfo(
             toAddressType(tokenAddress, chainId),
             chainId
           ));
@@ -538,7 +538,7 @@ export class Monitor {
                 chainName: getNetworkName(chainId),
                 decimals: l1TokenDecimals,
                 balanceInWei: totalBalance.toString(),
-                balance: Number(utils.formatUnits(totalBalance, l1TokenDecimals)),
+                balance: Number(formatUnits(totalBalance, l1TokenDecimals)),
                 datadog: true,
               });
             }
