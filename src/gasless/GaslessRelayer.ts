@@ -498,7 +498,6 @@ export class GaslessRelayer {
     };
     const getState = () => this._getState(depositKey);
 
-    const terminalStates = [MessageState.FILLED, MessageState.ERROR];
     let depositReceiptPromise: Promise<TransactionReceipt | null>;
 
     do {
