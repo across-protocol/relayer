@@ -38,6 +38,7 @@ import {
   forEachAsync,
   max,
   getLatestRunningBalances,
+  getInventoryBalanceContributorTokens,
 } from "../utils";
 import { BundleDataApproxClient, BundleDataState } from "./BundleDataApproxClient";
 import { HubPoolClient, TokenClient, TransactionClient } from ".";
@@ -417,12 +418,12 @@ export class InventoryClient {
         .map((token) => toAddressType(token, chainId));
     }
 
-    const destinationToken = this.getRemoteTokenForL1Token(l1Token, chainId);
-    if (!isDefined(destinationToken)) {
+    const inventoryEquivalentTokens = getInventoryBalanceContributorTokens(l1Token, chainId, this.hubPoolClient.chainId);
+    if (inventoryEquivalentTokens.length === 0) {
       return [];
     }
 
-    return [destinationToken];
+    return inventoryEquivalentTokens;
   }
 
   getEnabledChains(): number[] {
