@@ -132,16 +132,39 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
       })
     ).filter(isDefined);
 
-    const totalDepositAmountForAddress = depositsInitiatedForAddress.reduce(
+    // Match deposits one on one withdrawals and remove those withdrawals from the list of withdrawals.
+    // This algorithm helps eliminate noise when multiple L2's use this bridge to withdraw to L1
+    // and their total deposited amount gets withdrawn in a single L1 transaction (e.g. imagine withdrawing 50k from
+    // Optimism and 200k from BSC in quick succession and then withdrawing 250k from Mainnet; we'd want this
+    // function to not think there is -200k net pending withdrawal amount from Optimism and -50k pending withdrawal
+    // amount from BSC).
+
+    // Sort withdrawals and deposits from smallest to largest:
+    const sortedWithdrawals = withdrawHistory.sort((a, b) => a.amount - b.amount).slice();
+    const sortedDeposits = depositsInitiatedForAddress.sort((a, b) => a.amount - b.amount).slice();
+
+    const unmatchedDeposits: typeof depositHistory = [];
+    for (const deposit of sortedDeposits) {
+      // Find the smallest withdrawal that is greater than or equal to the deposit amount within 1% of error (this
+      // error is to account for dust leftover in the Binance account that also gets withdrawn and also
+      // transaction fees getting taken out of the withdrawal amount):
+      const matchingWithdrawalIndex = sortedWithdrawals.findIndex(
+        (withdrawal) => Number(withdrawal.amount) + Number(withdrawal.transactionFee) >= Number(deposit.amount) * 0.99
+      );
+      if (matchingWithdrawalIndex === -1) {
+        unmatchedDeposits.push(deposit);
+        continue;
+      }
+
+      // We found a matching withdrawal, so remove it from the list of withdrawals:
+      sortedWithdrawals.splice(matchingWithdrawalIndex, 1);
+    }
+    const totalUnmatchedDepositVolume = unmatchedDeposits.reduce(
       (sum, deposit) => sum.add(floatToBN(deposit.amount, l2TokenInfo.decimals)),
       bnZero
     );
-    const totalWithdrawalAmountForAddress = withdrawHistory.reduce(
-      (sum, withdrawal) => sum.add(floatToBN(withdrawal.amount, l2TokenInfo.decimals)),
-      bnZero
-    );
-    const diff = totalDepositAmountForAddress.sub(totalWithdrawalAmountForAddress);
-    return diff.gt(bnZero) ? diff : bnZero;
+
+    return totalUnmatchedDepositVolume;
   }
 
   protected async getBinanceClient() {

@@ -265,7 +265,9 @@ export class AdapterManager {
           fromAddress,
           l2Token
         );
-        totalBalance[chainId] = l2ToL1DecimalConverter(pendingAmount);
+        if (pendingAmount.gt(bnZero)) {
+          totalBalance[chainId] = l2ToL1DecimalConverter(pendingAmount);
+        }
       })
     );
     return totalBalance;

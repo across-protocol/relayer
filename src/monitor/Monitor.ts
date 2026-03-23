@@ -450,6 +450,11 @@ export class Monitor {
               }
             })
           );
+          this.logger.debug({
+            at: "Monitor#reportRelayerBalances",
+            message: "Pending L2->L1 withdrawals",
+            withdrawals,
+          });
           return withdrawals;
         })(),
       ]);

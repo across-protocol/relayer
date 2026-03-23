@@ -442,7 +442,8 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     const targetOverageBuffer = toWei("2");
     beforeEach(function () {
       inventoryConfig.tokenConfig[testL1Token][testL2Token.toNative()][testChain].withdrawExcessPeriod = 7200;
-      inventoryConfig.tokenConfig[testL1Token][testL2Token.toNative()][testChain].targetOverageBuffer = targetOverageBuffer;
+      inventoryConfig.tokenConfig[testL1Token][testL2Token.toNative()][testChain].targetOverageBuffer =
+        targetOverageBuffer;
       const mockAdapter = new MockBaseChainAdapter();
       adapterManager.setAdapters(testChain, mockAdapter);
     });
@@ -451,7 +452,9 @@ describe("InventoryClient: Rebalancing inventory", async function () {
       // The threshold to trigger an excess withdrawal is when the currentAllocPct is greater than the
       // targetPct multiplied by the "targetPctMultiplier"
       const targetPctMultiplier = targetOverageBuffer.mul(toWei("0.95")).div(toWei("1"));
-      const excessWithdrawThresholdPct = inventoryConfig.tokenConfig[testL1Token][testL2Token.toNative()][testChain].targetPct
+      const excessWithdrawThresholdPct = inventoryConfig.tokenConfig[testL1Token][testL2Token.toNative()][
+        testChain
+      ].targetPct
         .mul(targetPctMultiplier)
         .div(toWei("1"));
 

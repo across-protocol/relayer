@@ -422,7 +422,11 @@ export class InventoryClient {
         .map((token) => toAddressType(token, chainId));
     }
 
-    const inventoryEquivalentTokens = getInventoryBalanceContributorTokens(l1Token, chainId, this.hubPoolClient.chainId);
+    const inventoryEquivalentTokens = getInventoryBalanceContributorTokens(
+      l1Token,
+      chainId,
+      this.hubPoolClient.chainId
+    );
     if (inventoryEquivalentTokens.length === 0) {
       return [];
     }
@@ -1772,7 +1776,9 @@ export class InventoryClient {
           l1Token
         );
       Object.keys(pendingWithdrawalBalances).forEach((chainId) => {
-        this.pendingL2Withdrawals[l1Token.toNative()][Number(chainId)] = pendingWithdrawalBalances[Number(chainId)];
+        if (pendingWithdrawalBalances[Number(chainId)].gt(bnZero)) {
+          this.pendingL2Withdrawals[l1Token.toNative()][Number(chainId)] = pendingWithdrawalBalances[Number(chainId)];
+        }
       });
     });
     this.logger.debug({
