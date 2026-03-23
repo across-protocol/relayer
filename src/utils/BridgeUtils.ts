@@ -66,12 +66,23 @@ export class BridgeApiClient {
     this.dstNetwork = NETWORK_NAMES[dstNetworkId];
   }
 
-  async getAllTransfersInRange(toAddress: Address, fromTimestampMs: number) {
+  async getAllTransfersInRange(toAddress: Address, fromTimestampMs: number): Promise<BridgeResponse[]> {
     const headers = this.defaultHeaders();
-    return this.getWithRetry<BridgeResponse>(`v0/transfers?updated_after_ms=${fromTimestampMs}`, headers);
+    const { data: pendingTransfers } = await this.getWithRetry<BridgeResponse>(
+      `v0/transfers?updated_after_ms=${fromTimestampMs}`,
+      headers
+    );
+    return pendingTransfers.filter(
+      ({ destination, source_deposit_instructions }) =>
+        destination.payment_rail === this.dstNetwork && source_deposit_instructions.payment_rail === this.srcNetwork
+    );
   }
 
-  async createTransferRouteEscrowAddress(toAddress: Address, _l1TokenSymbol: string, _l2TokenSymbol: string) {
+  async createTransferRouteEscrowAddress(
+    toAddress: Address,
+    _l1TokenSymbol: string,
+    _l2TokenSymbol: string
+  ): Promise<string> {
     const l1TokenSymbol = _l1TokenSymbol.toLowerCase();
     const l2TokenSymbol = _l2TokenSymbol.toLowerCase();
     const data = {

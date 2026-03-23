@@ -22,6 +22,8 @@ import {
   BRIDGE_API_MINIMUMS,
   BRIDGE_API_DESTINATION_TOKENS,
   BRIDGE_API_DESTINATION_TOKEN_SYMBOLS,
+  roundAmountToSend,
+  mapAsync,
 } from "../../utils";
 import { TransferTokenParams } from "../utils";
 import ERC20_ABI from "../../common/abi/MinimalERC20.json";
@@ -68,10 +70,11 @@ export class BridgeApi extends BaseBridgeAdapter {
     toAddress: Address,
     l1Token: EvmAddress,
     l2Token: Address,
-    amount: BigNumber,
+    _amount: BigNumber,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _optionalParams?: TransferTokenParams
   ): Promise<BridgeTransactionDetails> {
+    const amount = roundAmountToSend(_amount, this.l1TokenInfo.decimals, 2); // The bridge API only deals with values up to 2 decimals.
     assert(
       this.getL2Bridge().address === l2Token.toNative(),
       `Attempting to bridge unsupported l2 token ${l2Token.toNative()}`
@@ -99,7 +102,7 @@ export class BridgeApi extends BaseBridgeAdapter {
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     const fromTimestamp = await getTimestampForBlock(this.l1Signer.provider, eventConfig.from);
-    const { data: pendingTransfers } = await this.api.getAllTransfersInRange(toAddress, fromTimestamp * 1000);
+    const pendingTransfers = await this.api.getAllTransfersInRange(toAddress, fromTimestamp * 1000);
 
     const statusesGrouped = groupObjectCountsByProp(pendingTransfers, (pendingTransfer) => pendingTransfer.state);
     this.logger.debug({
@@ -108,23 +111,27 @@ export class BridgeApi extends BaseBridgeAdapter {
       statusesGrouped,
     });
 
-    const pendingRebalances = pendingTransfers
-      .filter((pendingTransfer) => {
+    const pendingRebalances = await mapAsync(
+      pendingTransfers.filter((pendingTransfer) => {
         const destinationAddress = toAddressType(pendingTransfer.destination.to_address, this.l2chainId);
         return (
           destinationAddress.eq(toAddress) &&
           pendingTransfer.state !== "awaiting_funds" &&
-          pendingTransfer.state !== "payment_processed"
+          pendingTransfer.state !== "payment_processed" &&
+          pendingTransfer.source_deposit_instructions.currency === this.l1TokenInfo.symbol.toLowerCase()
         );
-      })
-      .map(({ receipt }) => {
+      }),
+      async ({ receipt }) => {
+        const transaction = await this.l1Signer.provider.getTransactionReceipt(receipt.source_tx_hash);
         return {
           txnRef: receipt.source_tx_hash,
-          logIndex: 0, // logIndex and txnIndex are irrelevant since the bridge transaction is a `transfer`.
-          txnIndex: 0,
+          logIndex: 0, // logIndex is zero since the only call for initiation is a `Transfer`.
+          txnIndex: transaction.transactionIndex,
+          blockNumber: transaction.blockNumber,
           amount: toBN(Math.floor(Number(receipt.final_amount) * 10 ** this.l1TokenInfo.decimals)),
         };
-      });
+      }
+    );
     return {
       [this.getL2Bridge().address]: pendingRebalances,
     };
