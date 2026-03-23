@@ -711,7 +711,9 @@ export class Monitor {
         ? this.monitorChains.filter((chain) => this.monitorConfig.monitoredSpokePoolChains.includes(chain))
         : this.monitorChains;
 
-    for (const l1Token of this.l1Tokens) {
+    for (const l1Token of this.l1Tokens.filter((l1Token) =>
+      this.monitorConfig.monitoredTokenSymbols.includes(l1Token.symbol)
+    )) {
       const formatWei = createFormatFunction(1, 4, false, l1Token.decimals);
       let results: { [chainId: number]: RunningBalanceResult };
       try {
