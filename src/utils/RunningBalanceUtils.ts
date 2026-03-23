@@ -1,5 +1,5 @@
 import { utils as sdkUtils } from "@across-protocol/sdk";
-import { BigNumber, toBN, getTokenInfo, EvmAddress } from ".";
+import { BigNumber, isDefined, toBN, getTokenInfo, EvmAddress } from ".";
 import { ProposedRootBundle } from "../interfaces";
 import { BundleDataApproxClient } from "../clients/BundleDataApproxClient";
 import { HubPoolClient } from "../clients";
@@ -49,6 +49,9 @@ export async function getLatestRunningBalances(
       l1Token
     );
     const l2Token = hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, Number(chainId));
+    if (!isDefined(l2Token)) {
+      return undefined;
+    }
     const l2TokenDecimals = hubPoolClient.getTokenInfoForAddress(l2Token, chainId).decimals;
     const l2AmountToL1Amount = sdkUtils.ConvertDecimals(l2TokenDecimals, l1TokenDecimals);
 
@@ -97,5 +100,5 @@ export async function getLatestRunningBalances(
     ] as [number, RunningBalanceResult];
   });
 
-  return Object.fromEntries(entries);
+  return Object.fromEntries(entries.filter(isDefined));
 }
