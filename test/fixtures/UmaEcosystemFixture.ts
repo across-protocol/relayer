@@ -1,15 +1,21 @@
+import assert from "assert";
 import { Contract } from "ethers";
-import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
+import { ethers } from "hardhat";
 import { getContractFactory, utf8ToHex, identifier, refundProposalLiveness } from "@across-protocol/sdk/test-utils";
+import { isDefined } from "../../src/utils";
 
-export async function setupUmaEcosystem(owner: SignerWithAddress): Promise<{
+type UmaEcosystem = {
   timer: Contract;
   finder: Contract;
   collateralWhitelist: Contract;
   store: Contract;
-}> {
-  // Setup minimum UMA ecosystem contracts. Note that we don't use the umaEcosystemFixture because Hardhat Fixture's
-  // seem to produce non-deterministic behavior between tests.
+};
+
+// UMA ecosystem contracts are never mutated by tests. Deploy once via root-level before() hook.
+let fixture: UmaEcosystem;
+
+before(async function () {
+  const [owner] = await ethers.getSigners();
   const timer = await (await getContractFactory("Timer", owner)).deploy();
   const finder = await (await getContractFactory("Finder", owner)).deploy();
   const identifierWhitelist = await (await getContractFactory("IdentifierWhitelist", owner)).deploy();
@@ -29,10 +35,10 @@ export async function setupUmaEcosystem(owner: SignerWithAddress): Promise<{
   await finder.changeImplementationAddress(utf8ToHex("Store"), store.address);
   await finder.changeImplementationAddress(utf8ToHex("Oracle"), mockOracle.address);
   await identifierWhitelist.addSupportedIdentifier(identifier);
-  return {
-    timer,
-    finder,
-    collateralWhitelist,
-    store,
-  };
+  fixture = { timer, finder, collateralWhitelist, store };
+});
+
+export function getUmaFixture(): UmaEcosystem {
+  assert(isDefined(fixture), "UMA fixture not deployed");
+  return fixture;
 }
