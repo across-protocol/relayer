@@ -62,6 +62,9 @@ import {
   getRelayDataFromFill,
   sortEventsAscending,
   chainHasNativeToken,
+  ALT_DEACTIVATION_COOLDOWN,
+  simulateSolanaTransaction,
+  sendAndConfirmSolanaTransaction,
 } from "../utils";
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
 import { MonitorConfig, L2Token } from "./MonitorConfig";
@@ -78,8 +81,12 @@ import {
   fetchEncodedAccount,
   getBase64EncodedWireTransaction,
   signTransactionMessageWithSigners,
+  type Base58EncodedBytes,
 } from "@solana/kit";
-import { getCloseLookupTableInstruction } from "@solana-program/address-lookup-table";
+import {
+  getCloseLookupTableInstruction,
+  ADDRESS_LOOKUP_TABLE_PROGRAM_ADDRESS,
+} from "@solana-program/address-lookup-table";
 import { HyperliquidExecutor } from "../hyperliquid/HyperliquidExecutor";
 import { HyperliquidExecutorConfig } from "../hyperliquid/HyperliquidExecutorConfig";
 
@@ -1207,7 +1214,7 @@ export class Monitor {
   }
 
   async closeALTs(): Promise<void> {
-    const simulate = process.env["SEND_TRANSACTIONS"] !== "true";
+    // A SVM Spoke pool client must be instantiated for this function to work.
     const svmSpokePoolClient = this.clients.spokePoolClients[CHAIN_IDs.SOLANA];
     if (!isSVMSpokePoolClient(svmSpokePoolClient)) {
       return;
@@ -1217,10 +1224,6 @@ export class Monitor {
     const svmRpc = svmSpokePoolClient.svmEventsClient.getRpc();
     const currentSlot = await svmRpc.getSlot({ commitment: "finalized" }).send();
 
-    const ALT_PROGRAM = address("AddressLookupTab1e1111111111111111111111111");
-    const DEACTIVATION_COOLDOWN_SLOTS = 512n;
-    const U64_MAX = 0xFFFFFFFFFFFFFFFFn;
-
     let closedCount = 0;
     let skippedCount = 0;
 
@@ -1228,13 +1231,16 @@ export class Monitor {
       // Query all ALTs owned by this relayer address.
       const relayerAddress = address(relayer.toBase58());
       const accounts = await svmRpc
-        .getProgramAccounts(ALT_PROGRAM, {
+        .getProgramAccounts(ADDRESS_LOOKUP_TABLE_PROGRAM_ADDRESS, {
           encoding: "base64",
           filters: [
             {
+              // An address lookup table address is derived by using a recent slot and an
+              // authority. We need to compare the authority of the ALT to close to those of monitored
+              // relayers.
               memcmp: {
                 offset: 22n,
-                bytes: relayer.toBase58() as import("@solana/kit").Base58EncodedBytes,
+                bytes: relayer.toBase58() as Base58EncodedBytes,
                 encoding: "base58",
               },
             },
@@ -1247,14 +1253,8 @@ export class Monitor {
         const data = Buffer.from(account.data[0], "base64");
         const deactivationSlot = data.readBigUInt64LE(4);
 
-        // Skip active ALTs.
-        if (deactivationSlot === U64_MAX) {
-          skippedCount++;
-          continue;
-        }
-
         // Skip if cooldown hasn't elapsed.
-        if (BigInt(currentSlot) - deactivationSlot < DEACTIVATION_COOLDOWN_SLOTS) {
+        if (BigInt(currentSlot) - deactivationSlot < ALT_DEACTIVATION_COOLDOWN) {
           skippedCount++;
           continue;
         }
@@ -1283,36 +1283,31 @@ export class Monitor {
           (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash, tx),
           (tx) => appendTransactionMessageInstructions([closeIx], tx)
         );
-        const signedTransaction = await signTransactionMessageWithSigners(txMessage);
-        const encodedTransaction = getBase64EncodedWireTransaction(signedTransaction);
 
-        if (simulate) {
-          const result = await svmRpc
-            .simulateTransaction(encodedTransaction, { encoding: "base64" })
-            .send();
-          if (result.value.err) {
-            this.logger.warn({
-              at: "Monitor#closeALTs",
-              message: `Failed to simulate closing ALT ${pubkey}`,
-              error: result.value.err,
-            });
-          } else {
+        if (!this.monitorConfig.sendingTransactionsEnabled) {
+          try {
+            await simulateSolanaTransaction(txMessage, svmRpc);
             this.logger.info({
               at: "Monitor#closeALTs",
               message: `Simulated closing ALT ${pubkey} (deactivated at slot ${deactivationSlot})`,
+            });
+          } catch (error) {
+            this.logger.warn({
+              at: "Monitor#closeALTs",
+              message: `Failed to simulate closing ALT ${pubkey}`,
+              error,
             });
           }
           continue;
         }
 
         try {
-          await svmRpc
-            .sendTransaction(encodedTransaction, { preflightCommitment: "confirmed", encoding: "base64" })
-            .send();
+          const signature = await sendAndConfirmSolanaTransaction(txMessage, svmRpc);
           closedCount++;
           this.logger.info({
             at: "Monitor#closeALTs",
             message: `Closed ALT ${pubkey} (deactivated at slot ${deactivationSlot})`,
+            signature,
           });
         } catch (err) {
           this.logger.warn({
