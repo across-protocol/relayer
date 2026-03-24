@@ -129,11 +129,13 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
       }
 
       if (!inventoryInit && config.relayerUseInventoryManager) {
+        logger.debug({ at: "Relayer#run", message: "Checking for inventory state in cache" });
         const key = inventoryClient.getInventoryCacheKey(config.inventoryTopic);
         const inventoryState = await getInventoryState(redis, key);
         if (inventoryState) {
           inventoryClient.import(inventoryState);
           inventoryInit = true;
+          logger.debug({ at: "Relayer#run", message: "Inventory state found in cache", state: inventoryState });
         } else {
           logger.error({ at: "Relayer#run", message: "No inventory state found in cache", key });
         }
@@ -165,7 +167,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
       }
 
       if (!abortController.signal.aborted) {
-        txnReceipts = await relayer.checkForUnfilledDepositsAndFill(config.sendingSlowRelaysEnabled, simulate);
+        txnReceipts = await relayer.checkForUnfilledDepositsAndFill(simulate);
         await relayer.runMaintenance();
       }
 
@@ -240,7 +242,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     await rebalancer.init();
     await rebalancer.update();
     await inventoryClient.update(rebalancer.inventoryChainIds);
-    await rebalancer.checkForUnfilledDepositsAndFill(false, true);
+    await rebalancer.checkForUnfilledDepositsAndFill(true);
 
     if (config.sendingTransactionsEnabled) {
       await inventoryClient.setTokenApprovals();

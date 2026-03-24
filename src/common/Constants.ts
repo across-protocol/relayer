@@ -4,13 +4,15 @@ import { isDefined } from "../utils/TypeGuards";
 import {
   chainIsOPStack,
   chainIsOrbit,
+  chainIsProd,
+  chainIsSvm,
   CHAIN_IDs,
   TOKEN_SYMBOLS_MAP,
   Signer,
   ZERO_ADDRESS,
-  bnUint32Max,
   EvmAddress,
   toWei,
+  toGWei,
   BigNumber,
   winston,
   toBN,
@@ -39,6 +41,8 @@ import {
   BinanceCEXNativeBridge,
   SolanaUsdcCCTPBridge,
   OFTWethBridge,
+  BridgeApi,
+  TokenSplitterBridge,
 } from "../adapter/bridges";
 import {
   BaseL2BridgeAdapter,
@@ -69,9 +73,6 @@ export const RELAYER_MIN_FEE_PCT = 0.0001;
 // The maximum amount of USDC permitted to be sent over CCTP in a single transaction.
 export const CCTP_MAX_SEND_AMOUNT = toBN(10_000_000_000_000); // 10MM USDC.
 
-// max(uint256) - 1
-export const INFINITE_FILL_DEADLINE = bnUint32Max;
-
 // Target ~4 hours
 export const MAX_RELAYER_DEPOSIT_LOOK_BACK = 4 * 60 * 60;
 
@@ -80,7 +81,7 @@ export const MAX_RELAYER_DEPOSIT_LOOK_BACK = 4 * 60 * 60;
 export const FINALIZER_TOKENBRIDGE_LOOKBACK = 14 * 24 * 60 * 60;
 
 // Chain IDs using the Succinct/Helios SP1 messaging bridge.
-export const UNIVERSAL_CHAINS = [CHAIN_IDs.BSC, CHAIN_IDs.HYPEREVM, CHAIN_IDs.PLASMA, CHAIN_IDs.MONAD];
+export const UNIVERSAL_CHAINS = [CHAIN_IDs.BSC, CHAIN_IDs.HYPEREVM, CHAIN_IDs.PLASMA, CHAIN_IDs.MONAD, CHAIN_IDs.TEMPO];
 
 // Reorgs are anticipated on Ethereum and Polygon. We use different following distances when processing deposit
 // events based on the USD amount of the deposit. This protects the relayer from the worst case situation where it fills
@@ -100,6 +101,7 @@ export const UNIVERSAL_CHAINS = [CHAIN_IDs.BSC, CHAIN_IDs.HYPEREVM, CHAIN_IDs.PL
 // anything under 7 days. OP stack chains are auto-populated based on chain family.
 const OP_STACK_MIN_DEPOSIT_CONFIRMATIONS = 1;
 const ORBIT_MIN_DEPOSIT_CONFIRMATIONS = 1;
+const SVM_MIN_DEPOSIT_CONFIRMATIONS = 4;
 const MDC_DEFAULT_THRESHOLD = 1000;
 
 export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chainId: number]: number } } = {
@@ -126,6 +128,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     [CHAIN_IDs.PLASMA]: 1,
     [CHAIN_IDs.POLYGON]: 16,
     [CHAIN_IDs.SCROLL]: 2,
+    [CHAIN_IDs.TEMPO]: 2,
     [CHAIN_IDs.BSC]: 0,
     [CHAIN_IDs.ZK_SYNC]: 0,
   },
@@ -133,15 +136,15 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
 
 // Auto-populate all known OP stack chains. These are only applied as defaults; explicit config above is respected.
 MIN_DEPOSIT_CONFIRMATIONS[MDC_DEFAULT_THRESHOLD] ??= {};
-Object.values(CHAIN_IDs)
-  .filter((chainId) => chainIsOPStack(chainId) || chainIsOrbit(chainId) || chainId === CHAIN_IDs.ARBITRUM)
-  .forEach((chainId) => {
-    if (chainIsOPStack(chainId)) {
-      MIN_DEPOSIT_CONFIRMATIONS[MDC_DEFAULT_THRESHOLD][chainId] ??= OP_STACK_MIN_DEPOSIT_CONFIRMATIONS;
-    } else if (chainIsOrbit(chainId) || chainId === CHAIN_IDs.ARBITRUM) {
-      MIN_DEPOSIT_CONFIRMATIONS[MDC_DEFAULT_THRESHOLD][chainId] ??= ORBIT_MIN_DEPOSIT_CONFIRMATIONS;
-    }
-  });
+Object.values(CHAIN_IDs).forEach((chainId) => {
+  if (chainIsOPStack(chainId)) {
+    MIN_DEPOSIT_CONFIRMATIONS[MDC_DEFAULT_THRESHOLD][chainId] ??= OP_STACK_MIN_DEPOSIT_CONFIRMATIONS;
+  } else if (chainIsOrbit(chainId) || chainId === CHAIN_IDs.ARBITRUM) {
+    MIN_DEPOSIT_CONFIRMATIONS[MDC_DEFAULT_THRESHOLD][chainId] ??= ORBIT_MIN_DEPOSIT_CONFIRMATIONS;
+  } else if (chainIsSvm(chainId)) {
+    MIN_DEPOSIT_CONFIRMATIONS[MDC_DEFAULT_THRESHOLD][chainId] ??= SVM_MIN_DEPOSIT_CONFIRMATIONS;
+  }
+});
 
 export const REDIS_URL_DEFAULT = "redis://localhost:6379";
 
@@ -166,50 +169,40 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = resolveRpcConfig();
 // also give enough buffer time so that any reasonable fill on the chain
 // can be matched with a deposit on the origin chain, so something like
 // ~1-2 mins per chain.
-export const BUNDLE_END_BLOCK_BUFFERS = {
-  [CHAIN_IDs.ALEPH_ZERO]: 0, // Chain is disabled.
-  [CHAIN_IDs.ARBITRUM]: 240, // ~0.25s/block. Arbitrum is a centralized sequencer
-  [CHAIN_IDs.BASE]: 60, // 2s/block. Same finality profile as Optimism
-  [CHAIN_IDs.BLAST]: 60,
-  [CHAIN_IDs.BOBA]: 0, // **UPDATE** 288 is disabled so there should be no buffer.
-  [CHAIN_IDs.BSC]: 5, // 2x the average 2.5 finality block time https://www.bnbchain.org/en/blog/the-coming-fastfinality-on-bsc
-  [CHAIN_IDs.HYPEREVM]: 120, // big blocks are 60s/block
-  [CHAIN_IDs.LENS]: 120, // ~1s/block. Uses same sequencing logic as ZkSync.
-  [CHAIN_IDs.LINEA]: 40, // At 3s/block, 2 mins = 40 blocks.
-  [CHAIN_IDs.LISK]: 60, // 2s/block gives 2 mins buffer time.
-  [CHAIN_IDs.INK]: 120, // 1s/block gives 2 mins buffer time
-  [CHAIN_IDs.MAINNET]: 5, // 12s/block
-  [CHAIN_IDs.MODE]: 60, // 2s/block. Same finality profile as Optimism
-  [CHAIN_IDs.MONAD]: 150, // ~400ms/block. 0.8s finality
-  [CHAIN_IDs.OPTIMISM]: 60, // 2s/block
-  [CHAIN_IDs.PLASMA]: 180, // ~1s/block variable. Finality guarantees are less certain, be a bit more conservative.
-  [CHAIN_IDs.POLYGON]: 128, // 2s/block. Polygon reorgs often so this number is set larger than the largest observed reorg.
-  [CHAIN_IDs.REDSTONE]: 60, // 2s/block
-  [CHAIN_IDs.SCROLL]: 40, // ~3s/block
-  [CHAIN_IDs.SOLANA]: 150, // ~400ms/block
-  [CHAIN_IDs.SONEIUM]: 60, // 2s/block
-  [CHAIN_IDs.UNICHAIN]: 120, // 1s/block gives 2 mins buffer time
-  [CHAIN_IDs.WORLD_CHAIN]: 60, // 2s/block
-  [CHAIN_IDs.ZK_SYNC]: 120, // ~1s/block. ZkSync is a centralized sequencer but is relatively unstable so this is kept higher than 0
-  [CHAIN_IDs.ZORA]: 60, // 2s/block
-  // Testnets:
-  [CHAIN_IDs.ARBITRUM_SEPOLIA]: 0,
-  [CHAIN_IDs.BASE_SEPOLIA]: 0,
-  [CHAIN_IDs.BLAST_SEPOLIA]: 0,
-  [CHAIN_IDs.INK_SEPOLIA]: 0,
-  [CHAIN_IDs.HYPEREVM_TESTNET]: 0,
-  [CHAIN_IDs.LENS_SEPOLIA]: 0,
-  [CHAIN_IDs.LISK_SEPOLIA]: 0,
-  [CHAIN_IDs.MODE_SEPOLIA]: 0,
-  [CHAIN_IDs.MONAD_TESTNET]: 0,
-  [CHAIN_IDs.OPTIMISM_SEPOLIA]: 0,
-  [CHAIN_IDs.PLASMA_TESTNET]: 0,
-  [CHAIN_IDs.POLYGON_AMOY]: 0,
-  [CHAIN_IDs.TATARA]: 0,
-  [CHAIN_IDs.UNICHAIN_SEPOLIA]: 0,
-  [CHAIN_IDs.SEPOLIA]: 0,
-  [CHAIN_IDs.BOB_SEPOLIA]: 0,
+const resolveChainBundleBuffers = () => {
+  const DEFAULT_CHAIN_BUFFER = 1024;
+
+  const defaultBuffers = {
+    [ChainFamily.OP_STACK]: 60, // 2s/block
+    [ChainFamily.ORBIT]: 240, // ~250ms/block
+    [ChainFamily.SVM]: 150, // ~400ms/slot
+    [ChainFamily.ZK_STACK]: 120, // ~1s/block
+  };
+
+  const buffers = {
+    [CHAIN_IDs.ARBITRUM]: defaultBuffers[ChainFamily.ORBIT], // Inherit Orbit default.
+    [CHAIN_IDs.BSC]: 5, // 2x the average 2.5 block finality (https://www.bnbchain.org/en/blog/the-coming-fastfinality-on-bsc)
+    [CHAIN_IDs.HYPEREVM]: 120, // 60s/big block
+    [CHAIN_IDs.LINEA]: 40, // ~3s/block
+    [CHAIN_IDs.MAINNET]: 5, // ~12s/block
+    [CHAIN_IDs.MEGAETH]: 300, // ~1s/block This can vary, so we want to be conservative.
+    [CHAIN_IDs.MONAD]: 150, // ~400ms/block, 2 block finality
+    [CHAIN_IDs.PLASMA]: 180, // ~1s/block variable. Finality guarantees are less certain, be a bit more conservative.
+    [CHAIN_IDs.POLYGON]: 128, // ~2s/block. Polygon has historically re-orged often.
+    [CHAIN_IDs.SCROLL]: 40, // ~3s/block.
+    [CHAIN_IDs.TEMPO]: 400, // ~500ms a block.
+    [CHAIN_IDs.ZK_SYNC]: defaultBuffers[ChainFamily.ZK_STACK], // Inherit ZK_STACK default.
+  };
+
+  return Object.fromEntries(
+    Object.entries(PUBLIC_NETWORKS).map(([_chainId, { family }]) => {
+      const chainId = Number(_chainId);
+      const buffer = chainIsProd(chainId) ? buffers[chainId] ?? defaultBuffers[family] ?? DEFAULT_CHAIN_BUFFER : 0;
+      return [chainId, buffer];
+    })
+  );
 };
+export const BUNDLE_END_BLOCK_BUFFERS = resolveChainBundleBuffers();
 
 export const DEFAULT_RELAYER_GAS_PADDING = ".15"; // Padding on token- and message-based relayer fill gas estimates.
 export const DEFAULT_RELAYER_GAS_MULTIPLIER = "1.0"; // Multiplier on pre-profitability token-only gas estimates.
@@ -229,48 +222,40 @@ export const IGNORED_HUB_EXECUTED_BUNDLES: number[] = [];
 // This distance should consider re-orgs, but also the time needed for various RPC providers to agree on chain state.
 // Provider caching will not be allowed for queries whose responses depend on blocks closer than this many blocks.
 // This is intended to be conservative.
-export const CHAIN_CACHE_FOLLOW_DISTANCE: { [chainId: number]: number } = {
-  [CHAIN_IDs.ARBITRUM]: 32,
-  [CHAIN_IDs.BASE]: 120,
-  [CHAIN_IDs.BLAST]: 120,
-  [CHAIN_IDs.BOBA]: 0,
-  [CHAIN_IDs.BSC]: 5, // FastFinality on BSC makes finality time probabilistic but it takes an average of 2.5 blocks.
-  [CHAIN_IDs.HYPEREVM]: 120, // big blocks are 60s/block
-  [CHAIN_IDs.INK]: 120, // Follows Optimism
-  [CHAIN_IDs.LENS]: 512,
-  [CHAIN_IDs.LISK]: 120,
-  [CHAIN_IDs.LINEA]: 100, // Linea has a soft-finality of 1 block. This value is padded - but at 3s/block the padding is 5 minutes
-  [CHAIN_IDs.MAINNET]: 128,
-  [CHAIN_IDs.MODE]: 120,
-  [CHAIN_IDs.MONAD]: 150,
-  [CHAIN_IDs.OPTIMISM]: 120,
-  [CHAIN_IDs.PLASMA]: 300,
-  [CHAIN_IDs.POLYGON]: 256,
-  [CHAIN_IDs.REDSTONE]: 120,
-  [CHAIN_IDs.SCROLL]: 100,
-  [CHAIN_IDs.SOLANA]: 512,
-  [CHAIN_IDs.SONEIUM]: 120,
-  [CHAIN_IDs.UNICHAIN]: 120,
-  [CHAIN_IDs.WORLD_CHAIN]: 120,
-  [CHAIN_IDs.ZK_SYNC]: 512,
-  [CHAIN_IDs.ZORA]: 120,
-  // Testnets:
-  [CHAIN_IDs.ARBITRUM_SEPOLIA]: 0,
-  [CHAIN_IDs.BASE_SEPOLIA]: 0,
-  [CHAIN_IDs.BLAST_SEPOLIA]: 0,
-  [CHAIN_IDs.INK_SEPOLIA]: 0,
-  [CHAIN_IDs.HYPEREVM_TESTNET]: 0,
-  [CHAIN_IDs.LISK_SEPOLIA]: 0,
-  [CHAIN_IDs.LENS_SEPOLIA]: 0,
-  [CHAIN_IDs.MODE_SEPOLIA]: 0,
-  [CHAIN_IDs.OPTIMISM_SEPOLIA]: 0,
-  [CHAIN_IDs.PLASMA_TESTNET]: 0,
-  [CHAIN_IDs.POLYGON_AMOY]: 0,
-  [CHAIN_IDs.TATARA]: 0,
-  [CHAIN_IDs.UNICHAIN_SEPOLIA]: 0,
-  [CHAIN_IDs.SEPOLIA]: 0,
-  [CHAIN_IDs.BOB_SEPOLIA]: 0,
+const resolveChainCacheDelay = () => {
+  const DEFAULT_CACHE_DELAY = 512;
+
+  const cacheDelays = {
+    [ChainFamily.ORBIT]: 32,
+    [ChainFamily.OP_STACK]: 120,
+    [ChainFamily.SVM]: 512,
+    [ChainFamily.ZK_STACK]: 512,
+  };
+
+  const cacheDelay = {
+    [CHAIN_IDs.ARBITRUM]: cacheDelays[ChainFamily.ORBIT],
+    [CHAIN_IDs.BSC]: 5, // FastFinality on BSC makes finality time probabilistic but it takes an average of 2.5 blocks.
+    [CHAIN_IDs.HYPEREVM]: 120, // big blocks are 60s/block
+    [CHAIN_IDs.LINEA]: 100, // Linea has a soft-finality of 1 block. This value is padded - but at 3s/block the padding is 5 minutes
+    [CHAIN_IDs.MAINNET]: 128,
+    [CHAIN_IDs.MEGAETH]: 300, // ~1s/block
+    [CHAIN_IDs.MONAD]: 150,
+    [CHAIN_IDs.PLASMA]: 300,
+    [CHAIN_IDs.POLYGON]: 256,
+    [CHAIN_IDs.SCROLL]: 100,
+    [CHAIN_IDs.TEMPO]: 400,
+    [CHAIN_IDs.ZK_SYNC]: cacheDelays[ChainFamily.ZK_STACK],
+  };
+
+  return Object.fromEntries(
+    Object.entries(PUBLIC_NETWORKS).map(([_chainId, { family }]) => {
+      const chainId = Number(_chainId);
+      const buffer = chainIsProd(chainId) ? cacheDelay[chainId] ?? cacheDelays[family] ?? DEFAULT_CACHE_DELAY : 0;
+      return [chainId, buffer];
+    })
+  );
 };
+export const CHAIN_CACHE_FOLLOW_DISTANCE = resolveChainCacheDelay();
 
 // This is the block distance at which the bot, by default, stores in redis with no TTL.
 // These are all intended to be roughly 2 days of blocks for each chain.
@@ -286,15 +271,16 @@ export const DEFAULT_NO_TTL_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.LINEA]: 57600,
   [CHAIN_IDs.LISK]: 86400,
   [CHAIN_IDs.MAINNET]: 14400,
+  [CHAIN_IDs.MEGAETH]: 172800,
   [CHAIN_IDs.MODE]: 86400,
   [CHAIN_IDs.MONAD]: 432000,
   [CHAIN_IDs.OPTIMISM]: 86400,
   [CHAIN_IDs.PLASMA]: 172800,
   [CHAIN_IDs.POLYGON]: 86400,
-  [CHAIN_IDs.REDSTONE]: 86400,
   [CHAIN_IDs.SCROLL]: 57600,
   [CHAIN_IDs.SOLANA]: 432000,
   [CHAIN_IDs.SONEIUM]: 86400,
+  [CHAIN_IDs.TEMPO]: 345600,
   [CHAIN_IDs.UNICHAIN]: 86400,
   [CHAIN_IDs.WORLD_CHAIN]: 86400,
   [CHAIN_IDs.ZK_SYNC]: 172800,
@@ -312,15 +298,8 @@ export const DEFAULT_GAS_FEE_SCALERS: {
 Object.values(CHAIN_IDs)
   .filter(chainIsOPStack)
   .forEach((chainId) => {
-    DEFAULT_GAS_FEE_SCALERS[chainId] = { maxFeePerGasScaler: 1.1, maxPriorityFeePerGasScaler: 1.1 };
+    DEFAULT_GAS_FEE_SCALERS[chainId] ??= { maxFeePerGasScaler: 1.1, maxPriorityFeePerGasScaler: 1.1 };
   });
-
-// This is how many seconds stale the block number can be for us to use it for evaluating the reorg distance in the cache provider.
-export const BLOCK_NUMBER_TTL = 60;
-
-// This is the TTL for the provider cache.
-export const PROVIDER_CACHE_TTL = 3600;
-export const PROVIDER_CACHE_TTL_MODIFIER = 0.15;
 
 // These are the spokes that can hold the native token for that network, so they should be added together when calculating whether
 // a bundle execution is possible with the funds in the pool.
@@ -348,6 +327,7 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.LENS]: ["WETH", "WGHO", "USDC"],
   [CHAIN_IDs.LINEA]: ["USDC", "USDT", "WETH", "WBTC", "DAI", "ezETH"],
   [CHAIN_IDs.LISK]: ["WETH", "USDC", "USDT", "LSK", "WBTC"],
+  [CHAIN_IDs.MEGAETH]: ["WETH", "USDT"],
   [CHAIN_IDs.MODE]: ["ETH", "WETH", "USDC", "USDT", "WBTC", "ezETH"],
   [CHAIN_IDs.MONAD]: ["USDC", "USDT"], // @TODO: Add WBTC after its added to the chain token list
   [CHAIN_IDs.OPTIMISM]: [
@@ -367,10 +347,10 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   ],
   [CHAIN_IDs.PLASMA]: ["USDT", "WETH"],
   [CHAIN_IDs.POLYGON]: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "POOL"],
-  [CHAIN_IDs.REDSTONE]: ["WETH"],
   [CHAIN_IDs.SCROLL]: ["WETH", "USDC", "USDT", "WBTC", "POOL"],
   [CHAIN_IDs.SOLANA]: ["USDC"],
   [CHAIN_IDs.SONEIUM]: ["WETH", "USDC"],
+  [CHAIN_IDs.TEMPO]: ["USDC"],
   [CHAIN_IDs.UNICHAIN]: ["ETH", "WETH", "USDC", "USDT", "ezETH"],
   [CHAIN_IDs.WORLD_CHAIN]: ["WETH", "WBTC", "USDC", "WLD", "POOL"],
   [CHAIN_IDs.ZK_SYNC]: ["USDC", "USDT", "WETH", "WBTC", "DAI"],
@@ -383,7 +363,6 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.POLYGON_AMOY]: ["WETH", "USDC"],
   [CHAIN_IDs.LENS_SEPOLIA]: ["WETH", "GRASS"],
   [CHAIN_IDs.LISK_SEPOLIA]: ["WETH"],
-  [CHAIN_IDs.TATARA]: ["TATARA-USDC", "WETH"],
   [CHAIN_IDs.UNICHAIN_SEPOLIA]: ["WETH", "USDC"],
   [CHAIN_IDs.MODE_SEPOLIA]: ["WETH"],
   [CHAIN_IDs.MONAD_TESTNET]: ["USDC", "USDT", "WBTC"],
@@ -408,7 +387,7 @@ export const TOKEN_APPROVALS_TO_FIRST_ZERO: Record<number, string[]> = {
 };
 
 // Type alias for a function which takes in arbitrary arguments and outputs a BaseBridgeAdapter class.
-type L1BridgeConstructor<T extends BaseBridgeAdapter> = new (
+export type L1BridgeConstructor<T extends BaseBridgeAdapter> = new (
   l2chainId: number,
   hubChainId: number,
   l1Signer: Signer,
@@ -440,7 +419,6 @@ const resolveCanonicalBridges = (): Record<number, L1BridgeConstructor<BaseBridg
     [CHAIN_IDs.ARBITRUM_SEPOLIA]: ArbitrumOrbitBridge,
     [CHAIN_IDs.POLYGON_AMOY]: PolygonERC20Bridge,
     [CHAIN_IDs.SCROLL_SEPOLIA]: ScrollERC20Bridge,
-    [CHAIN_IDs.TATARA]: PolygonERC20Bridge, // No rebalancing is supported.
   };
 
   const defaultBridges = {
@@ -464,7 +442,6 @@ export const CANONICAL_BRIDGE = resolveCanonicalBridges();
 export const CANONICAL_L2_BRIDGE: Record<number, L2BridgeConstructor<BaseL2BridgeAdapter>> = {
   [CHAIN_IDs.BSC]: L2BinanceCEXBridge,
   [CHAIN_IDs.LISK]: L2OpStackBridge,
-  [CHAIN_IDs.REDSTONE]: L2OpStackBridge,
   [CHAIN_IDs.ZORA]: L2OpStackBridge,
 };
 
@@ -512,6 +489,10 @@ export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<Ba
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: OpStackUSDCBridge,
   },
+  [CHAIN_IDs.MEGAETH]: {
+    [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTBridge,
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
+  },
   [CHAIN_IDs.MODE]: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
     [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20Bridge,
@@ -538,12 +519,12 @@ export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<Ba
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcTokenSplitterBridge,
     [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTBridge,
   },
-  [CHAIN_IDs.REDSTONE]: {
-    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
-  },
   [CHAIN_IDs.SONEIUM]: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: OpStackUSDCBridge,
+  },
+  [CHAIN_IDs.TEMPO]: {
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: TokenSplitterBridge,
   },
   [CHAIN_IDs.UNICHAIN]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcCCTPBridge,
@@ -611,12 +592,22 @@ export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<Ba
   },
 };
 
+// Serves as a utility for fetching a set of bridges to use when wanting to bridge from a single L1 token to two different types of L2 tokens.
+// @dev Ordering of the L1/L2 bridges DOES matter. The first entry must be the "canonical" route, e.g. USDC via CCTP or the canonical USDC bridge if
+// no CCTP exists. The second bridge must be the alternate route. This is so the TokenSplitterBridge can select which of the two configured bridges to
+// use based solely on the desired L1/L2 token.
+export const TOKEN_SPLITTER_BRIDGES: Record<
+  number,
+  Record<string, [L1BridgeConstructor<BaseBridgeAdapter>, L1BridgeConstructor<BaseBridgeAdapter>]>
+> = {
+  [CHAIN_IDs.TEMPO]: {
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: [OFTBridge, BridgeApi],
+  },
+};
+
 export const CUSTOM_L2_BRIDGE: Record<number, Record<string, L2BridgeConstructor<BaseL2BridgeAdapter>>> = {
   [CHAIN_IDs.LISK]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2OpStackUSDCBridge,
-    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: L2OpStackWethBridge,
-  },
-  [CHAIN_IDs.REDSTONE]: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: L2OpStackWethBridge,
   },
   [CHAIN_IDs.ZORA]: {
@@ -639,6 +630,10 @@ export const CUSTOM_L2_BRIDGE: Record<number, Record<string, L2BridgeConstructor
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2UsdcCCTPBridge,
     [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTL2Bridge,
   },
+  [CHAIN_IDs.MEGAETH]: {
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: L2OpStackWethBridge,
+    [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTL2Bridge,
+  },
   [CHAIN_IDs.MODE]: {
     [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20BridgeL2,
   },
@@ -658,6 +653,9 @@ export const CUSTOM_L2_BRIDGE: Record<number, Record<string, L2BridgeConstructor
     [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20BridgeL2,
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2UsdcCCTPBridge,
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: L2BinanceCEXNativeBridge,
+  },
+  [CHAIN_IDs.TEMPO]: {
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: OFTL2Bridge,
   },
   [CHAIN_IDs.UNICHAIN]: {
     [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20BridgeL2,
@@ -788,13 +786,6 @@ const resolveBridgeDelay = () => {
 export const EXPECTED_L1_TO_L2_MESSAGE_TIME = resolveBridgeDelay();
 
 export const OPSTACK_CONTRACT_OVERRIDES = {
-  [CHAIN_IDs.BASE]: {
-    // https://github.com/ethereum-optimism/ecosystem/blob/8df6ab1afcf49312dc7e89ed079f910843d74427/packages/sdk/src/utils/chain-constants.ts#L252
-    l1: {
-      DisputeGameFactory: "0x43edB88C4B80fDD2AdFF2412A7BebF9dF42cB40e",
-    },
-    l2: DEFAULT_L2_CONTRACT_ADDRESSES,
-  },
   [CHAIN_IDs.BLAST]: {
     l1: {
       AddressManager: "0xE064B565Cf2A312a3e66Fe4118890583727380C0",
@@ -814,85 +805,22 @@ export const OPSTACK_CONTRACT_OVERRIDES = {
       WETH: TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.BLAST],
     },
   },
-  [CHAIN_IDs.LISK]: {
+  [CHAIN_IDs.MEGAETH]: {
     l1: {
-      DisputeGameFactory: "0x0CF7D3706a27CCE2017aEB11E8a9c8b5388c282C",
-    },
-    l2: DEFAULT_L2_CONTRACT_ADDRESSES,
-  },
-  [CHAIN_IDs.MODE]: {
-    l1: {
-      DisputeGameFactory: "0x6f13EFadABD9269D6cEAd22b448d434A1f1B433E",
-    },
-  },
-  [CHAIN_IDs.REDSTONE]: {
-    l1: {
-      AddressManager: "0xFe27f187A9E46104a932189dDF229871E06B22F8",
-      L1CrossDomainMessenger: "0x592C1299e0F8331D81A28C0FC7352Da24eDB444a",
-      L1StandardBridge: CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET].ovmStandardBridge_690.address,
+      AddressManager: "0x9754fD3D63B3EAC3fd62b6D54DE4f61b00D6E0Df",
+      L1CrossDomainMessenger: "0x6C7198250087B29A8040eC63903Bc130f4831Cc9",
+      L1StandardBridge: CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET].ovmStandardBridge_4326.address,
       StateCommitmentChain: ZERO_ADDRESS,
       CanonicalTransactionChain: ZERO_ADDRESS,
       BondManager: ZERO_ADDRESS,
-      OptimismPortal: "0xC7bCb0e8839a28A1cFadd1CF716de9016CdA51ae",
-      L2OutputOracle: "0xa426A052f657AEEefc298b3B5c35a470e4739d69",
+      OptimismPortal: "0x7f82f57F0Dd546519324392e408b01fcC7D709e8",
+      L2OutputOracle: ZERO_ADDRESS,
       OptimismPortal2: ZERO_ADDRESS,
-      DisputeGameFactory: ZERO_ADDRESS,
+      DisputeGameFactory: "0x8546840adF796875cD9AAcc5B3B048f6B2c9D563",
     },
     l2: DEFAULT_L2_CONTRACT_ADDRESSES,
   },
-  [CHAIN_IDs.SONEIUM]: {
-    l1: {
-      DisputeGameFactory: "0x512a3d2c7a43bd9261d2b8e8c9c70d4bd4d503c0",
-    },
-    l2: DEFAULT_L2_CONTRACT_ADDRESSES,
-  },
-  [CHAIN_IDs.WORLD_CHAIN]: {
-    l1: {
-      DisputeGameFactory: "0x069c4c579671f8c120b1327a73217D01Ea2EC5ea",
-    },
-    l2: DEFAULT_L2_CONTRACT_ADDRESSES,
-  },
-  [CHAIN_IDs.INK]: {
-    l1: {
-      DisputeGameFactory: "0x10d7b35078d3baabb96dd45a9143b94be65b12cd",
-    },
-    l2: DEFAULT_L2_CONTRACT_ADDRESSES,
-  },
-  [CHAIN_IDs.UNICHAIN]: {
-    l1: {
-      DisputeGameFactory: "0x2F12d621a16e2d3285929C9996f478508951dFe4",
-    },
-    l2: DEFAULT_L2_CONTRACT_ADDRESSES,
-  },
-  [CHAIN_IDs.ZORA]: {
-    l1: {
-      DisputeGameFactory: "0xB0F15106fa1e473Ddb39790f197275BC979Aa37e",
-    },
-    l2: DEFAULT_L2_CONTRACT_ADDRESSES,
-  },
-
   // Testnets
-  [CHAIN_IDs.BASE_SEPOLIA]: {
-    l1: {
-      DisputeGameFactory: "0xd6E6dBf4F7EA0ac412fD8b65ED297e64BB7a06E1",
-    },
-    l2: DEFAULT_L2_CONTRACT_ADDRESSES,
-  },
-  [CHAIN_IDs.LISK_SEPOLIA]: {
-    l1: {
-      AddressManager: "0x27Bb4A7cd8FB20cb816BF4Aac668BF841bb3D5d3",
-      L1CrossDomainMessenger: "0x857824E6234f7733ecA4e9A76804fd1afa1A3A2C",
-      L1StandardBridge: CONTRACT_ADDRESSES[CHAIN_IDs.SEPOLIA].ovmStandardBridge_4202.address,
-      StateCommitmentChain: ZERO_ADDRESS,
-      CanonicalTransactionChain: ZERO_ADDRESS,
-      BondManager: ZERO_ADDRESS,
-      OptimismPortal: "0xe3d90F21490686Ec7eF37BE788E02dfC12787264",
-      L2OutputOracle: "0xA0E35F56C318DE1bD5D9ca6A94Fe7e37C5663348",
-      OptimismPortal2: ZERO_ADDRESS,
-      DisputeGameFactory: ZERO_ADDRESS,
-    },
-    l2: DEFAULT_L2_CONTRACT_ADDRESSES,
-  },
   [CHAIN_IDs.BLAST_SEPOLIA]: {
     l1: {
       AddressManager: "0x092dD3E2272a372cdfbcCb8F689423F09ED6242a",
@@ -911,27 +839,6 @@ export const OPSTACK_CONTRACT_OVERRIDES = {
       WETH: TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.BLAST_SEPOLIA],
     },
   },
-  [CHAIN_IDs.MODE_SEPOLIA]: {
-    l1: {
-      AddressManager: "0x83D45725d6562d8CD717673D6bb4c67C07dC1905",
-      L1CrossDomainMessenger: "0xc19a60d9E8C27B9A43527c3283B4dd8eDC8bE15C",
-      L1StandardBridge: CONTRACT_ADDRESSES[CHAIN_IDs.SEPOLIA].ovmStandardBridge_919.address,
-      StateCommitmentChain: ZERO_ADDRESS,
-      CanonicalTransactionChain: ZERO_ADDRESS,
-      BondManager: ZERO_ADDRESS,
-      OptimismPortal: "0x320e1580effF37E008F1C92700d1eBa47c1B23fD",
-      L2OutputOracle: "0x2634BD65ba27AB63811c74A63118ACb312701Bfa",
-      OptimismPortal2: ZERO_ADDRESS,
-      DisputeGameFactory: ZERO_ADDRESS,
-    },
-    l2: DEFAULT_L2_CONTRACT_ADDRESSES,
-  },
-  [CHAIN_IDs.UNICHAIN_SEPOLIA]: {
-    l1: {
-      DisputeGameFactory: "0xeff73e5aa3B9AEC32c659Aa3E00444d20a84394b",
-    },
-    l2: DEFAULT_L2_CONTRACT_ADDRESSES,
-  },
 };
 
 export const DEFAULT_GAS_MULTIPLIER: { [chainId: number]: number } = {
@@ -941,10 +848,10 @@ export const DEFAULT_GAS_MULTIPLIER: { [chainId: number]: number } = {
   [CHAIN_IDs.HYPEREVM]: 1.5,
   [CHAIN_IDs.INK]: 1.5,
   [CHAIN_IDs.LISK]: 1.5,
+  [CHAIN_IDs.MEGAETH]: 1.1,
   [CHAIN_IDs.MODE]: 1.5,
   [CHAIN_IDs.MONAD]: 1.1,
   [CHAIN_IDs.PLASMA]: 1.5,
-  [CHAIN_IDs.REDSTONE]: 1.5,
   [CHAIN_IDs.SONEIUM]: 1.5,
   [CHAIN_IDs.UNICHAIN]: 1.5,
   [CHAIN_IDs.WORLD_CHAIN]: 1.5,
@@ -1029,6 +936,7 @@ export const EVM_OFT_MESSENGERS: Map<string, Map<number, EvmAddress>> = new Map(
     TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET],
     new Map<number, EvmAddress>([
       [CHAIN_IDs.MAINNET, EvmAddress.from("0x6C96dE32CEa08842dcc4058c14d3aaAD7Fa41dee")],
+      [CHAIN_IDs.MEGAETH, EvmAddress.from("0x9151434b16b9763660705744891fA906F660EcC5")],
       [CHAIN_IDs.MONAD, EvmAddress.from("0x9151434b16b9763660705744891fa906f660ecc5")],
       [CHAIN_IDs.ARBITRUM, EvmAddress.from("0x14E4A1B13bf7F943c8ff7C51fb60FA964A298D92")],
       [CHAIN_IDs.HYPEREVM, EvmAddress.from("0x904861a24F30EC96ea7CFC3bE9EA4B476d237e98")],
@@ -1046,7 +954,20 @@ export const EVM_OFT_MESSENGERS: Map<string, Map<number, EvmAddress>> = new Map(
       [CHAIN_IDs.PLASMA, EvmAddress.from("0x0cEb237E109eE22374a567c6b09F373C73FA4cBb")],
     ]),
   ],
+  [
+    TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET],
+    new Map<number, EvmAddress>([
+      [CHAIN_IDs.MAINNET, EvmAddress.from("0xc026395860Db2d07ee33e05fE50ed7bD583189C7")],
+      [CHAIN_IDs.TEMPO, EvmAddress.from("0x8c76e2F6C5ceDA9AA7772e7efF30280226c44392")],
+    ]),
+  ],
 ]);
+
+// In rare circumstances, we may need to pay the LZ bridge fee in a custom token, such as when
+// the network we are bridging on does not have a native token. Specify that here.
+export const LZ_FEE_TOKENS: { [chainId: number]: EvmAddress } = {
+  [CHAIN_IDs.TEMPO]: EvmAddress.from("0x0ceb237e109ee22374a567c6b09f373c73fa4cbb"), // LZD
+};
 
 // 0.1 ETH is a default cap for chains that use ETH as their gas token
 export const OFT_DEFAULT_FEE_CAP = toWei("0.1");
@@ -1059,6 +980,8 @@ export const OFT_FEE_CAP_OVERRIDES: { [chainId: number]: BigNumber } = {
   [CHAIN_IDs.PLASMA]: toWei("600"),
   // 1600 MATIC/POL cap on Polygon
   [CHAIN_IDs.POLYGON]: toWei("1600"),
+  // 4k pathUSD on Tempo.
+  [CHAIN_IDs.TEMPO]: toGWei("4"),
 };
 
 export type SwapRoute = {

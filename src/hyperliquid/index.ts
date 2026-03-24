@@ -1,21 +1,10 @@
 import { EventListener } from "../clients";
-import {
-  CHAIN_IDs,
-  InstanceCoordinator,
-  getRedisCache,
-  winston,
-  config,
-  startupLogLevel,
-  Signer,
-  disconnectRedisClients,
-} from "../utils";
+import { CHAIN_IDs, winston, config, startupLogLevel, Signer, disconnectRedisClients } from "../utils";
 import { HyperliquidExecutor } from "./HyperliquidExecutor";
 import { constructHyperliquidExecutorClients } from "./HyperliquidExecutorClientHelper";
 import { HyperliquidExecutorConfig } from "./HyperliquidExecutorConfig";
 config();
 let logger: winston.Logger;
-
-const { RUN_IDENTIFIER: runIdentifier } = process.env;
 
 export async function runHyperliquidExecutor(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
   logger = _logger;
@@ -44,19 +33,7 @@ export async function runHyperliquidExecutor(_logger: winston.Logger, baseSigner
 }
 
 export async function runHyperliquidFinalizer(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
-  const at = "runHyperLiquidFinalizer";
-  const { BOT_IDENTIFIER: botIdentifier = "across-hyperliquid-finalizer" } = process.env;
-
-  const abortController = new AbortController();
   logger = _logger;
-
-  process.on("SIGHUP", () => {
-    logger.debug({ at, message: "Received SIGHUP, stopping..." });
-    abortController.abort();
-  });
-
-  const redis = await getRedisCache();
-  const instanceCoordinator = new InstanceCoordinator(logger, redis, botIdentifier, runIdentifier, abortController);
 
   const config = new HyperliquidExecutorConfig(process.env);
   const clients = await constructHyperliquidExecutorClients(config, logger, baseSigner);
@@ -71,28 +48,18 @@ export async function runHyperliquidFinalizer(_logger: winston.Logger, baseSigne
   };
   listener.onBlock(onBlock);
 
-  logger[startupLogLevel(config)]({
-    at: "HyperliquidFinalizer#index",
-    message: "HyperliquidFinalizer started",
-    config,
-  });
-
-  await instanceCoordinator.initiateHandover();
-  setTimeout(async () => {
-    const activeInstance = await instanceCoordinator.subscribe();
-    if (activeInstance) {
-      logger.debug({ at, message: `Handing over to ${botIdentifier} instance ${activeInstance}.` });
-    }
-    abortController.abort();
-  });
-
   const start = performance.now();
-  return new Promise((resolve) =>
-    abortController.signal.addEventListener("abort", async () => {
-      await disconnectRedisClients(logger);
-      const runtime = Math.round((performance.now() - start) / 1000);
-      logger.debug({ at: "HyperliquidFinalizer#index", message: `Time to run: ${runtime} s` });
-      return resolve();
-    })
-  );
+  try {
+    logger[startupLogLevel(config)]({
+      at: "HyperliquidFinalizer#index",
+      message: "HyperliquidFinalizer started",
+      config,
+    });
+
+    await finalizer.waitForDisconnect();
+  } finally {
+    await disconnectRedisClients(logger);
+    const runtime = Math.round((performance.now() - start) / 1000);
+    logger.debug({ at: "HyperliquidFinalizer#index", message: `Time to run: ${runtime} s` });
+  }
 }

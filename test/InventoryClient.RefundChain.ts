@@ -32,6 +32,7 @@ import {
 } from "../src/utils";
 import { MockAdapterManager, MockHubPoolClient, MockInventoryClient, MockTokenClient } from "./mocks";
 import { utils as sdkUtils } from "@across-protocol/sdk";
+import { MockRebalancerClient } from "./mocks/MockRebalancerClient";
 
 describe("InventoryClient: Refund chain selection", async function () {
   const { MAINNET, OPTIMISM, POLYGON, ARBITRUM, BSC } = CHAIN_IDs;
@@ -40,6 +41,7 @@ describe("InventoryClient: Refund chain selection", async function () {
   const mainnetUsdc = TOKEN_SYMBOLS_MAP.USDC.addresses[MAINNET];
 
   let hubPoolClient: MockHubPoolClient, adapterManager: MockAdapterManager, tokenClient: MockTokenClient;
+  let mockRebalancerClient: MockRebalancerClient;
   let owner: SignerWithAddress, spy: sinon.SinonSpy, spyLogger: winston.Logger;
   let inventoryClient: InventoryClient; // tested
   let sampleDepositData: Deposit;
@@ -152,6 +154,7 @@ describe("InventoryClient: Refund chain selection", async function () {
     tokenClient = new MockTokenClient(null, null, null, null);
 
     crossChainTransferClient = new CrossChainTransferClient(spyLogger, enabledChainIds, adapterManager);
+    mockRebalancerClient = new MockRebalancerClient(spyLogger);
     inventoryClient = new MockInventoryClient(
       toAddressType(owner.address, MAINNET),
       spyLogger,
@@ -161,6 +164,7 @@ describe("InventoryClient: Refund chain selection", async function () {
       hubPoolClient,
       adapterManager,
       crossChainTransferClient,
+      mockRebalancerClient,
       false, // simMode
       false // prioritizeUtilization
     );
@@ -216,7 +220,7 @@ describe("InventoryClient: Refund chain selection", async function () {
       await inventoryClient.update();
 
       await inventoryClient.determineRefundChainId(sampleDepositData);
-      expect(spyLogIncludes(spy, -1, 'cumulativeVirtualBalance":"180000000000000000000"')).to.be.true;
+      expect(spyLogIncludes(spy, -1, 'cumulativeVirtualBalancePostRefunds":"180000000000000000000"')).to.be.true;
     });
 
     it("Normalizes repayment amount to correct precision", async function () {
@@ -262,7 +266,6 @@ describe("InventoryClient: Refund chain selection", async function () {
       expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.deep.equal([MAINNET]);
 
       // Check that the cumulative balance post refunds accounts exactly for the sum of the upcoming refunds.
-      expect(lastSpyLogIncludes(spy, 'cumulativeVirtualBalance":"135000000000000000000')).to.be.true;
       expect(lastSpyLogIncludes(spy, 'cumulativeVirtualBalancePostRefunds":"150000000000000000000')).to.be.true;
     });
 
@@ -310,6 +313,7 @@ describe("InventoryClient: Refund chain selection", async function () {
         hubPoolClient,
         adapterManager,
         crossChainTransferClient,
+        mockRebalancerClient,
         false, // simMode
         false // prioritizeUtilization
       );
@@ -348,6 +352,7 @@ describe("InventoryClient: Refund chain selection", async function () {
         hubPoolClient,
         adapterManager,
         crossChainTransferClient,
+        mockRebalancerClient,
         false, // simMode
         false // prioritizeUtilization
       );
@@ -377,6 +382,7 @@ describe("InventoryClient: Refund chain selection", async function () {
         hubPoolClient,
         adapterManager,
         crossChainTransferClient,
+        mockRebalancerClient,
         false, // simMode
         false // prioritizeUtilization
       );
@@ -792,6 +798,7 @@ describe("InventoryClient: Refund chain selection", async function () {
         hubPoolClient,
         adapterManager,
         crossChainTransferClient,
+        mockRebalancerClient,
         false,
         true // Need to set prioritizeUtilization to true to force client to consider slow withdrawal chains.
       );
@@ -955,7 +962,7 @@ describe("InventoryClient: Refund chain selection", async function () {
         enabledChainIds,
         hubPoolClient,
         adapterManager,
-        crossChainTransferClient,
+        mockRebalancerClient,
         false,
         false
       );
@@ -1001,6 +1008,7 @@ describe("InventoryClient: Refund chain selection", async function () {
         hubPoolClient,
         adapterManager,
         crossChainTransferClient,
+        mockRebalancerClient,
         false,
         false
       );
@@ -1059,6 +1067,7 @@ describe("InventoryClient: Refund chain selection", async function () {
         hubPoolClient,
         adapterManager,
         crossChainTransferClient,
+        mockRebalancerClient,
         false,
         false
       );
@@ -1111,6 +1120,7 @@ describe("InventoryClient: Refund chain selection", async function () {
         hubPoolClient,
         adapterManager,
         crossChainTransferClient,
+        mockRebalancerClient,
         false,
         false
       );
@@ -1152,6 +1162,7 @@ describe("InventoryClient: Refund chain selection", async function () {
         hubPoolClient,
         adapterManager,
         crossChainTransferClient,
+        mockRebalancerClient,
         false,
         false
       );
@@ -1220,6 +1231,7 @@ describe("InventoryClient: Refund chain selection", async function () {
         hubPoolClient,
         adapterManager,
         crossChainTransferClient,
+        mockRebalancerClient,
         false,
         false
       );
@@ -1261,6 +1273,7 @@ describe("InventoryClient: Refund chain selection", async function () {
         hubPoolClient,
         adapterManager,
         crossChainTransferClient,
+        mockRebalancerClient,
         false,
         false
       );
@@ -1307,6 +1320,7 @@ describe("InventoryClient: Refund chain selection", async function () {
         hubPoolClient,
         adapterManager,
         crossChainTransferClient,
+        mockRebalancerClient,
         false,
         false
       );
@@ -1353,6 +1367,7 @@ describe("InventoryClient: Refund chain selection", async function () {
         hubPoolClient,
         adapterManager,
         crossChainTransferClient,
+        mockRebalancerClient,
         false,
         false
       );

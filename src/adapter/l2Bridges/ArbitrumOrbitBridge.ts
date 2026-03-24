@@ -17,6 +17,7 @@ import {
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
 import { AugmentedTransaction } from "../../clients/TransactionClient";
 import ARBITRUM_ERC20_GATEWAY_L2_ABI from "../../common/abi/ArbitrumErc20GatewayL2.json";
+import { getArbitrumOrbitFinalizationTime } from "../../utils/ArbSdkUtils";
 
 export class ArbitrumOrbitBridge extends BaseL2BridgeAdapter {
   protected l2GatewayRouter: Contract;
@@ -108,5 +109,10 @@ export class ArbitrumOrbitBridge extends BaseL2BridgeAdapter {
     }, bnZero);
 
     return withdrawalAmount;
+  }
+
+  public pendingWithdrawalLookbackPeriodSeconds(): number {
+    return getArbitrumOrbitFinalizationTime(this.l2chainId) + 60 * 60; // Add 1 hour to account for the time needed to execute the withdrawal
+    // once it has passed the challenge period.
   }
 }

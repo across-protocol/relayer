@@ -67,22 +67,38 @@ export class RedisCache implements RedisCacheInterface {
     }
   }
 
+  sAdd(key: string, value: string): Promise<number> {
+    return this.client.sAdd(this.getNamespacedKey(key), value);
+  }
+
+  sMembers(key: string): Promise<string[]> {
+    return this.client.sMembers(this.getNamespacedKey(key));
+  }
+
+  sRem(key: string, value: string): Promise<number> {
+    return this.client.sRem(this.getNamespacedKey(key), value);
+  }
+
+  del(key: string): Promise<number> {
+    return this.client.del(this.getNamespacedKey(key));
+  }
+
   decr(key: string): Promise<number> {
-    return this.decrBy(key, 1);
+    return this.decrBy(this.getNamespacedKey(key), 1);
   }
 
   decrBy(key: string, amount: number): Promise<number> {
     assert(amount >= 0);
-    return this.client.decrBy(key, amount);
+    return this.client.decrBy(this.getNamespacedKey(key), amount);
   }
 
   incr(key: string): Promise<number> {
-    return this.incrBy(key, 1);
+    return this.incrBy(this.getNamespacedKey(key), 1);
   }
 
   incrBy(key: string, amount: number): Promise<number> {
     assert(amount >= 0);
-    return this.client.incrBy(key, amount);
+    return this.client.incrBy(this.getNamespacedKey(key), amount);
   }
 
   pub(channel: string, message: string): Promise<number> {

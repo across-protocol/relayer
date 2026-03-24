@@ -86,6 +86,8 @@ export type CCTPHookData = {
   maxUserSlippageBps: number;
   finalRecipient: string; // address (extracted from bytes32)
   finalToken: string; // address (extracted from bytes32)
+  destinationDex: number; // uint32
+  accountCreationMode: number; // uint8
   executionMode: number; // uint8
   actionData: string; // bytes
 };
@@ -134,7 +136,9 @@ export async function getCctpV2DepositForBurnTxnHashes(
   const eventFilterParams = [TOKEN_SYMBOLS_MAP.USDC.addresses[sourceChainId], undefined, senderAddresses];
   const eventFilter = srcTokenMessenger.filters.DepositForBurn(...eventFilterParams);
   const depositForBurnEvents = await paginatedEventQuery(srcTokenMessenger, eventFilter, sourceEventSearchConfig);
-  return depositForBurnEvents.map((e) => e.transactionHash);
+  return depositForBurnEvents
+    .filter((e) => chainIsEvm(getCctpDestinationChainFromDomain(e.args.destinationDomain, chainIsProd(sourceChainId))))
+    .map((e) => e.transactionHash);
 }
 
 /**
@@ -377,19 +381,19 @@ export function getV2MaxExpectedTransferFee(sourceChainId: number): BigNumber {
 }
 
 export function getCctpV1TokenMessenger(tokenMessengerChainId: number): { address?: string; abi?: unknown[] } {
-  return CONTRACT_ADDRESSES[tokenMessengerChainId]["cctpTokenMessenger"];
+  return CONTRACT_ADDRESSES[tokenMessengerChainId]?.["cctpTokenMessenger"];
 }
 
 export function getCctpV2TokenMessenger(chainId: number): { address?: string; abi?: unknown[] } {
-  return CONTRACT_ADDRESSES[chainId]["cctpV2TokenMessenger"];
+  return CONTRACT_ADDRESSES[chainId]?.["cctpV2TokenMessenger"];
 }
 
 export function getCctpV1MessageTransmitter(messageTransmitterChainId: number): { address?: string; abi?: unknown[] } {
-  return CONTRACT_ADDRESSES[messageTransmitterChainId]["cctpMessageTransmitter"];
+  return CONTRACT_ADDRESSES[messageTransmitterChainId]?.["cctpMessageTransmitter"];
 }
 
 export function getCctpV2MessageTransmitter(chainId: number): { address?: string; abi?: unknown[] } {
-  return CONTRACT_ADDRESSES[chainId]["cctpV2MessageTransmitter"];
+  return CONTRACT_ADDRESSES[chainId]?.["cctpV2MessageTransmitter"];
 }
 
 /** ********************************************************************************************************************
@@ -867,12 +871,20 @@ export function decodeCctpV2HookData(messageBytes: string): CCTPHookData | undef
 
   const hookDataBytes = messageBytesArray.slice(HOOK_DATA_START);
 
+  const format = [
+    "bytes32",
+    "uint256",
+    "uint256",
+    "uint256",
+    "bytes32",
+    "bytes32",
+    "uint32",
+    "uint8",
+    "uint8",
+    "bytes",
+  ];
   try {
-    // Decode hookData: abi.encode(nonce, deadline, maxBpsToSponsor, maxUserSlippageBps, finalRecipient, finalToken, executionMode, actionData)
-    const decoded = ethers.utils.defaultAbiCoder.decode(
-      ["bytes32", "uint256", "uint256", "uint256", "bytes32", "bytes32", "uint8", "bytes"],
-      hookDataBytes
-    );
+    const decoded = ethers.utils.defaultAbiCoder.decode(format, hookDataBytes);
 
     return {
       nonce: decoded[0],
@@ -881,11 +893,12 @@ export function decodeCctpV2HookData(messageBytes: string): CCTPHookData | undef
       maxUserSlippageBps: decoded[3].toNumber(),
       finalRecipient: EvmAddress.from(decoded[4]).toNative(),
       finalToken: EvmAddress.from(decoded[5]).toNative(),
-      executionMode: decoded[6],
-      actionData: decoded[7],
+      destinationDex: decoded[6],
+      accountCreationMode: decoded[7],
+      executionMode: decoded[8],
+      actionData: decoded[9],
     };
   } catch {
-    // If decoding fails, hookData is malformed or not present
     return undefined;
   }
 }
@@ -968,7 +981,7 @@ async function checkAndApproveCctpTokenMessenger(
       message: "Approving USDC for CCTP TokenMessenger",
       chainName: sourceChainName,
       chainId: sourceChainId,
-      tokenAddress: sourceUsdcTokenAddress.toNative(),
+      tokenAddress: sourceUsdcTokenAddress,
       tokenMessengerAddress,
     });
 

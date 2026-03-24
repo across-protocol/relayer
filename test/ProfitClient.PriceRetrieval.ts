@@ -1,6 +1,6 @@
 import { ConfigStoreClient, ProfitClient } from "../src/clients"; // Tested
 import { L1Token } from "../src/interfaces";
-import { bnZero, TOKEN_SYMBOLS_MAP, toAddressType, toAddressType, Address, bnOne } from "../src/utils";
+import { bnZero, TOKEN_SYMBOLS_MAP, toAddressType, Address, bnOne } from "../src/utils";
 import { expect, ethers, createSpyLogger, hubPoolFixture, deployConfigStore, randomAddress, toBNWei } from "./utils";
 import { MockHubPoolClient } from "./mocks";
 
