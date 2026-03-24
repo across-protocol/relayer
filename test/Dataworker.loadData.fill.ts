@@ -121,7 +121,6 @@ describe("Dataworker: Load bundle data", async function () {
   describe("Compute fills to refund", function () {
     let mockOriginSpokePoolClient: MockSpokePoolClient, mockDestinationSpokePoolClient: MockSpokePoolClient;
     let mockHubPoolClient: MockHubPoolClient;
-    let mockDestinationSpokePool: FakeContract;
     let mockConfigStore: MockConfigStoreClient;
     const lpFeePct = toBNWei("0.01");
 
@@ -135,7 +134,6 @@ describe("Dataworker: Load bundle data", async function () {
         mockHubPoolClient,
         mockOriginSpokePoolClient,
         mockDestinationSpokePoolClient,
-        mockDestinationSpokePool,
         spokePoolClients,
       } = await setupMockClients(
         hubPoolClient,
