@@ -1,16 +1,34 @@
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import { isDefined, sortEventsAscending } from "../../utils";
-import { Log, SpokePoolClientMessage } from "./../types";
+import { Log, ListenerMessage } from "./../types";
 
 /**
- * Given the inputs for a SpokePoolClient update, consolidate the inputs into a message and submit it to the parent
- * process (if defined).
+ * Post a block update to the parent process (if defined).
  * @param blockNumber Block number up to which the update applies.
  * @param currentTime The SpokePool timestamp at blockNumber.
- * @param events An array of Log objects to be submitted.
- * @returns void
+ * @returns True if message transmission succeeds, else false.
  */
-export function postEvents(blockNumber: number, currentTime: number, events: Log[]): boolean {
+export function postBlock(blockNumber: number, currentTime: number): boolean {
+  if (!isDefined(process.send)) {
+    // Process was probably started standalone.
+    // https://nodejs.org/api/process.html#processsendmessage-sendhandle-options-callback
+    return true;
+  }
+
+  const message: ListenerMessage = {
+    blockNumber,
+    currentTime,
+  };
+
+  return post(message);
+}
+
+/**
+ * Post an array of events to the parent process (if defined).
+ * @param events An array of Log objects to be submitted.
+ * @returns True if message transmission succeeds, else false.
+ */
+export function postEvents(events: Log[]): boolean {
   if (!isDefined(process.send)) {
     // Process was probably started standalone.
     // https://nodejs.org/api/process.html#processsendmessage-sendhandle-options-callback
@@ -18,21 +36,12 @@ export function postEvents(blockNumber: number, currentTime: number, events: Log
   }
 
   events = sortEventsAscending(events);
-  const message: SpokePoolClientMessage = {
-    blockNumber,
-    currentTime,
+  const message: ListenerMessage = {
     nEvents: events.length,
     data: JSON.stringify(events, sdkUtils.jsonReplacerWithBigNumbers),
   };
 
-  const msg = JSON.stringify(message);
-  try {
-    process.send(msg);
-  } catch {
-    return false;
-  }
-
-  return true;
+  return post(message);
 }
 
 /**
@@ -40,13 +49,24 @@ export function postEvents(blockNumber: number, currentTime: number, events: Log
  * @param event Log instance.
  * @returns void
  */
-export function removeEvent(event: Log): void {
+export function removeEvent(event: Log): boolean {
+  const message: ListenerMessage = {
+    event: JSON.stringify(event, sdkUtils.jsonReplacerWithBigNumbers),
+  };
+
+  return post(message);
+}
+
+function post(message: ListenerMessage): boolean {
   if (!isDefined(process.send)) {
     return;
   }
 
-  const message: SpokePoolClientMessage = {
-    event: JSON.stringify(event, sdkUtils.jsonReplacerWithBigNumbers),
-  };
-  process.send(JSON.stringify(message));
+  try {
+    process.send(JSON.stringify(message));
+  } catch {
+    return false;
+  }
+
+  return true;
 }

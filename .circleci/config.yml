@@ -2,7 +2,7 @@ version: 2.1
 jobs:
   install:
     docker:
-      - image: cimg/node:20.19.2
+      - image: cimg/node:22.18.0
     working_directory: ~/relayer-v2
     resource_class: medium+
     steps:
@@ -10,27 +10,29 @@ jobs:
       - restore_cache:
           name: Restore Yarn Package Cache
           keys:
-            - cache-node-v1-{{ checksum "yarn.lock" }}
+            - cache-node-v2-{{ checksum "yarn.lock" }}
       - run:
           name: Install Dependencies
           command: yarn install --immutable
       - save_cache:
           name: Save Yarn Package Cache
-          key: cache-node-v1-{{ checksum "yarn.lock" }}
+          key: cache-node-v2-{{ checksum "yarn.lock" }}
           paths:
             - node_modules
   test:
     docker:
-      - image: cimg/node:20.19.2
+      - image: cimg/node:22.18.0
     working_directory: ~/relayer-v2
     resource_class: medium+
     parallelism: 20
+    environment:
+      NODE_OPTIONS: --max-old-space-size=5120
     steps:
       - checkout
       - restore_cache:
           name: Restore Yarn Package Cache
           keys:
-            - cache-node-v1-{{ checksum "yarn.lock" }}
+            - cache-node-v2-{{ checksum "yarn.lock" }}
 
       # Extract Solana version from across-protocol/contracts
       - run:
@@ -105,15 +107,17 @@ jobs:
             yarn test --bail $(cat /tmp/test-files)
   lint:
     docker:
-      - image: cimg/node:20.19.2
+      - image: cimg/node:22.18.0
     working_directory: ~/relayer-v2
     resource_class: medium+
+    environment:
+      NODE_OPTIONS: --max-old-space-size=5120
     steps:
       - checkout
       - restore_cache:
           name: Restore Yarn Package Cache
           keys:
-            - cache-node-v1-{{ checksum "yarn.lock" }}
+            - cache-node-v2-{{ checksum "yarn.lock" }}
       - run:
           name: Run lint
           command: yarn lint

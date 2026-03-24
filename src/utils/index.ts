@@ -25,7 +25,7 @@ export type { Block, TransactionResponse, TransactionReceipt, Provider } from "@
 
 export { config } from "dotenv";
 
-export { Logger, waitForLogger } from "@uma/logger";
+export { Logger, waitForLogger } from "@risk-labs/logger";
 
 export {
   CHAIN_IDs,
@@ -35,18 +35,16 @@ export {
   TOKEN_EQUIVALENCE_REMAPPING,
 } from "@across-protocol/constants";
 
+export { getContractInfoFromAddress, getDeployedAddress, getDeployedBlockNumber } from "@across-protocol/contracts";
 // TypeChain exports used in the bot.
 export {
-  getContractInfoFromAddress,
-  getDeployedAddress,
-  getDeployedBlockNumber,
   ExpandedERC20__factory as ERC20,
   HubPool__factory as HubPool,
   SpokePool__factory as SpokePool,
   AcrossConfigStore__factory as AcrossConfigStore,
   PolygonTokenBridger__factory as PolygonTokenBridger,
   WETH9__factory as WETH9,
-} from "@across-protocol/contracts";
+} from "@across-protocol/sdk/typechain";
 
 // Utils specifically for this bot.
 export * from "./SDKUtils";
@@ -58,6 +56,7 @@ export * from "./SvmSignerUtils";
 export * from "./BlockUtils";
 export * from "./EventUtils";
 export * from "./FillUtils";
+export * from "./InstanceCoordinator";
 export * from "./ObjectUtils";
 export * from "./ContractUtils";
 export * from "./ExecutionUtils";
@@ -78,3 +77,9 @@ export * from "./BNUtils";
 export * from "./CCTPUtils";
 export * from "./RetryUtils";
 export * from "./BinanceUtils";
+export * from "./OFTUtils";
+export * from "./NumberUtils";
+export * from "./HyperliquidUtils";
+export * from "./Tasks";
+export * from "./TimeUtils";
+export * from "./DepositAddressUtils";

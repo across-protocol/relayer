@@ -43,4 +43,14 @@ export class MockConfigStoreClient extends clients.mocks.MockConfigStoreClient {
       },
     ];
   }
+
+  _updateDisabledChains(chainIds: number[], blockNumber = 0) {
+    this.cumulativeDisabledChainUpdates.push({
+      chainIds,
+      blockNumber,
+      txnIndex: Math.floor(Math.random() * 10),
+      logIndex: Math.floor(Math.random() * 10),
+      txnRef: "",
+    });
+  }
 }

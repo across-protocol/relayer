@@ -9,6 +9,7 @@ import {
 import { CONTRACT_ADDRESSES } from "../common/ContractAddresses";
 import {
   PoolRebalanceLeaf,
+  ProposedRootBundle,
   Refund,
   RelayerRefundLeaf,
   RelayerRefundLeafWithGroup,
@@ -189,7 +190,7 @@ export function _buildSlowRelayRoot(bundleSlowFillsV3: BundleSlowFills): {
 
   // Sort leaves deterministically so that the same root is always produced from the same loadData return value.
   // The { Deposit ID, origin chain ID } is guaranteed to be unique so we can sort on them.
-  const sortedLeaves = [...slowRelayLeaves].sort((relayA, relayB) => {
+  const sortedLeaves = slowRelayLeaves.toSorted((relayA, relayB) => {
     // Note: Smaller ID numbers will come first
     if (relayA.relayData.originChainId === relayB.relayData.originChainId) {
       return relayA.relayData.depositId.lt(relayB.relayData.depositId) ? -1 : 1;
@@ -392,6 +393,16 @@ export function _getRefundLeaves(
     relayerRefundLeaves.push(newLeaf);
   }
   return relayerRefundLeaves;
+}
+
+export function generateValidationKey(
+  proposal: Pick<
+    ProposedRootBundle,
+    "proposer" | "poolRebalanceRoot" | "relayerRefundRoot" | "slowRelayRoot" | "challengePeriodEndTimestamp"
+  >
+): string {
+  const fields = ["proposer", "poolRebalanceRoot", "relayerRefundRoot", "slowRelayRoot", "challengePeriodEndTimestamp"];
+  return "across-validations-" + fields.map((field) => proposal[field.toString()]).join("-");
 }
 
 /**

@@ -1,4 +1,4 @@
-import { CHAIN_IDs } from "../utils";
+import { CHAIN_IDs, getDeployedAddress } from "../utils";
 import CCTP_MESSAGE_TRANSMITTER_ABI from "./abi/CctpMessageTransmitter.json";
 import CCTP_TOKEN_MESSENGER_ABI from "./abi/CctpTokenMessenger.json";
 import CCTP_V2_TOKEN_MESSENGER_ABI from "./abi/CctpV2TokenMessenger.json";
@@ -8,6 +8,7 @@ import ATOMIC_DEPOSITOR_TRANSFER_PROXY_ABI from "./abi/AtomicDepositorTransferPr
 import HUB_POOL_ABI from "./abi/HubPool.json";
 import VOTING_V2_ABI from "./abi/VotingV2.json";
 import OP_USDC_BRIDGE_ABI from "./abi/OpStackUSDCBridge.json";
+import SPONSORED_CCTP_DST_PERIPHERY_ABI from "./abi/SponsoredCCTPDstPeriphery.json";
 import OVM_L1_STANDARD_BRIDGE_ABI from "./abi/OpStackStandardBridgeL1.json";
 import OVM_L2_STANDARD_BRIDGE_ABI from "./abi/OpStackStandardBridgeL2.json";
 import SNX_OPTIMISM_BRIDGE_L1_ABI from "./abi/SnxOptimismBridgeL1.json";
@@ -37,6 +38,9 @@ import SCROLL_GATEWAY_ROUTER_L1_ABI from "./abi/ScrollGatewayRouterL1.json";
 import SCROLL_GATEWAY_ROUTER_L2_ABI from "./abi/ScrollGatewayRouterL2.json";
 import SCROLL_GAS_PRICE_ORACLE_ABI from "./abi/ScrollGasPriceOracle.json";
 import IOFT_ABI_FULL from "./abi/IOFT.json";
+import HYPERLIQUID_DEPOSIT_HANDLER_ABI from "./abi/HyperliquidDepositHandler.json";
+import SPOKE_POOL_PERIPHERY_ABI from "./abi/SpokePoolPeriphery.json";
+import COUNTERFACTUAL_DEPOSIT_FACTORY_ABI from "./abi/CounterfactualDepositFactory.json";
 export { IOFT_ABI_FULL };
 import HUB_POOL_STORE_ABI from "./abi/HubPoolStore.json";
 
@@ -108,6 +112,10 @@ export const CONTRACT_ADDRESSES: {
     },
     ovmStandardBridge_480: {
       address: "0x470458C91978D2d929704489Ad730DC3E3001113",
+      abi: OVM_L1_STANDARD_BRIDGE_ABI,
+    },
+    ovmStandardBridge_4326: {
+      address: "0x0CA3A2FBC3D770b578223FBB6b062fa875a2eE75",
       abi: OVM_L1_STANDARD_BRIDGE_ABI,
     },
     ovmStandardBridge_690: {
@@ -233,6 +241,31 @@ export const CONTRACT_ADDRESSES: {
       address: "0xd8938466fE02dA664b806583edE9c77dCD968692",
       abi: ATOMIC_DEPOSITOR_TRANSFER_PROXY_ABI,
     },
+    sponsoredCCTPDstPeriphery: {
+      address: "0x5616194d65638086a3191b1fef436f503ff329ec",
+      abi: SPONSORED_CCTP_DST_PERIPHERY_ABI,
+    },
+    spokePoolPeriphery: {
+      address: "0x767e4c20F521a829dE4Ffc40C25176676878147f",
+      abi: SPOKE_POOL_PERIPHERY_ABI,
+    },
+    counterfactualDepositFactory: {
+      address: "0x20e67fBE0150B498048709306cc7729d382F1fB1",
+      abi: COUNTERFACTUAL_DEPOSIT_FACTORY_ABI,
+    },
+    counterfactualDeposit: {
+      address: "0xfb090c119c838CeD214F962F931d5fa38b111E46",
+    },
+  },
+  [CHAIN_IDs.MONAD]: {
+    cctpV2MessageTransmitter: {
+      address: "0x81D40F21F12A8F0E3252Bccb954D722d4c464B64",
+      abi: CCTP_MESSAGE_TRANSMITTER_ABI,
+    },
+    cctpV2TokenMessenger: {
+      address: "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
+      abi: CCTP_V2_TOKEN_MESSENGER_ABI,
+    },
   },
   [CHAIN_IDs.OPTIMISM]: {
     daiOptimismBridge: {
@@ -250,6 +283,14 @@ export const CONTRACT_ADDRESSES: {
     nativeToken: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
+    cctpMessageTransmitter: {
+      address: "0x4D41f22c5a0e5c74090899E5a8Fb597a8842b3e8",
+      abi: CCTP_MESSAGE_TRANSMITTER_ABI,
+    },
+    cctpTokenMessenger: {
+      address: "0x2B4069517957735bE00ceE0fadAE88a26365528f",
+      abi: CCTP_TOKEN_MESSENGER_ABI,
+    },
     cctpV2MessageTransmitter: {
       address: "0x81D40F21F12A8F0E3252Bccb954D722d4c464B64",
       abi: CCTP_MESSAGE_TRANSMITTER_ABI, // Same ABI as V1 as far as functions we care about, so overload for now.
@@ -258,10 +299,22 @@ export const CONTRACT_ADDRESSES: {
       address: "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
     },
+    spokePoolPeriphery: {
+      address: "0x767e4c20F521a829dE4Ffc40C25176676878147f",
+      abi: SPOKE_POOL_PERIPHERY_ABI,
+    },
   },
   [CHAIN_IDs.POLYGON]: {
     withdrawableErc20: {
       abi: POLYGON_WITHDRAWABLE_ERC20_ABI,
+    },
+    cctpMessageTransmitter: {
+      address: "0xF3be9355363857F3e001be68856A2f96b4C39Ba9",
+      abi: CCTP_MESSAGE_TRANSMITTER_ABI,
+    },
+    cctpTokenMessenger: {
+      address: "0x9daF8c91AEFAE50b9c0E69629D3F6Ca40cA3B3FE",
+      abi: CCTP_TOKEN_MESSENGER_ABI,
     },
     cctpV2MessageTransmitter: {
       address: "0x81D40F21F12A8F0E3252Bccb954D722d4c464B64",
@@ -274,6 +327,10 @@ export const CONTRACT_ADDRESSES: {
     nativeToken: {
       address: "0x0000000000000000000000000000000000001010",
     },
+    spokePoolPeriphery: {
+      address: "0x767e4c20F521a829dE4Ffc40C25176676878147f",
+      abi: SPOKE_POOL_PERIPHERY_ABI,
+    },
   },
   [CHAIN_IDs.HYPEREVM]: {
     cctpV2MessageTransmitter: {
@@ -283,6 +340,20 @@ export const CONTRACT_ADDRESSES: {
     cctpV2TokenMessenger: {
       address: "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
+    },
+    sponsoredCCTPDstPeriphery: {
+      address: getDeployedAddress("SponsoredCCTPDstPeriphery", CHAIN_IDs.HYPEREVM),
+      abi: SPONSORED_CCTP_DST_PERIPHERY_ABI,
+    },
+    dstCctpHandler: {
+      address: getDeployedAddress("SponsoredCCTPDstPeriphery", CHAIN_IDs.HYPEREVM),
+    },
+    dstOftHandler: {
+      address: getDeployedAddress("DstOFTHandler", CHAIN_IDs.HYPEREVM),
+    },
+    hyperliquidDepositHandler: {
+      address: getDeployedAddress("HyperliquidDepositHandler", CHAIN_IDs.HYPEREVM),
+      abi: HYPERLIQUID_DEPOSIT_HANDLER_ABI,
     },
   },
   [CHAIN_IDs.ZK_SYNC]: {
@@ -300,6 +371,14 @@ export const CONTRACT_ADDRESSES: {
     },
   },
   [CHAIN_IDs.UNICHAIN]: {
+    cctpMessageTransmitter: {
+      address: "0x353bE9E2E38AB1D19104534e4edC21c643Df86f4",
+      abi: CCTP_MESSAGE_TRANSMITTER_ABI,
+    },
+    cctpTokenMessenger: {
+      address: "0x4e744b28E787c3aD0e810eD65A24461D4ac5a762",
+      abi: CCTP_TOKEN_MESSENGER_ABI,
+    },
     cctpV2MessageTransmitter: {
       address: "0x81D40F21F12A8F0E3252Bccb954D722d4c464B64",
       abi: CCTP_MESSAGE_TRANSMITTER_ABI, // Same ABI as V1 as far as functions we care about, so overload for now.
@@ -387,6 +466,14 @@ export const CONTRACT_ADDRESSES: {
     nativeToken: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
+    cctpMessageTransmitter: {
+      address: "0xAD09780d193884d503182aD4588450C416D6F9D4",
+      abi: CCTP_MESSAGE_TRANSMITTER_ABI,
+    },
+    cctpTokenMessenger: {
+      address: "0x1682Ae6375C4E4A97e4B583BC394c861A46D8962",
+      abi: CCTP_TOKEN_MESSENGER_ABI,
+    },
     cctpV2MessageTransmitter: {
       address: "0x81D40F21F12A8F0E3252Bccb954D722d4c464B64",
       abi: CCTP_MESSAGE_TRANSMITTER_ABI, // Same ABI as V1 as far as functions we care about, so overload for now.
@@ -395,8 +482,32 @@ export const CONTRACT_ADDRESSES: {
       address: "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
     },
+    spokePoolPeriphery: {
+      address: "0x767e4c20F521a829dE4Ffc40C25176676878147f",
+      abi: SPOKE_POOL_PERIPHERY_ABI,
+    },
+    counterfactualDepositFactory: {
+      address: "0x20e67fBE0150B498048709306cc7729d382F1fB1",
+      abi: COUNTERFACTUAL_DEPOSIT_FACTORY_ABI,
+    },
+    counterfactualDeposit: {
+      address: "0xfb090c119c838CeD214F962F931d5fa38b111E46",
+    },
+    sponsoredCCTPDstPeriphery: {
+      address: "0xd9dc78b969e9efb1e54b625c33a21aaf2509e6a1",
+      abi: SPONSORED_CCTP_DST_PERIPHERY_ABI,
+    },
   },
   [CHAIN_IDs.MODE]: {
+    ovmStandardBridge: {
+      address: "0x4200000000000000000000000000000000000010",
+      abi: OVM_L2_STANDARD_BRIDGE_ABI,
+    },
+    nativeToken: {
+      address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
+    },
+  },
+  [CHAIN_IDs.MEGAETH]: {
     ovmStandardBridge: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
@@ -412,6 +523,14 @@ export const CONTRACT_ADDRESSES: {
     },
     nativeToken: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
+    },
+    cctpV2MessageTransmitter: {
+      address: "0x81D40F21F12A8F0E3252Bccb954D722d4c464B64",
+      abi: CCTP_MESSAGE_TRANSMITTER_ABI,
+    },
+    cctpV2TokenMessenger: {
+      address: "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
+      abi: CCTP_V2_TOKEN_MESSENGER_ABI,
     },
   },
   [CHAIN_IDs.BLAST]: {
@@ -436,8 +555,20 @@ export const CONTRACT_ADDRESSES: {
       address: "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
     },
+    sponsoredCCTPDstPeriphery: {
+      address: "0x06C61D54958a0772Ee8aF41789466d39FfeaeB13",
+      abi: SPONSORED_CCTP_DST_PERIPHERY_ABI,
+    },
   },
   [CHAIN_IDs.ARBITRUM]: {
+    cctpMessageTransmitter: {
+      address: "0xC30362313FBBA5cf9163F0bb16a0e01f01A896ca",
+      abi: CCTP_MESSAGE_TRANSMITTER_ABI,
+    },
+    cctpTokenMessenger: {
+      address: "0x19330d10D9Cc8751218eaf51E8885D058642E08A",
+      abi: CCTP_TOKEN_MESSENGER_ABI,
+    },
     cctpV2MessageTransmitter: {
       address: "0x81D40F21F12A8F0E3252Bccb954D722d4c464B64",
       abi: CCTP_MESSAGE_TRANSMITTER_ABI, // Same ABI as V1 as far as functions we care about, so overload for now.
@@ -453,6 +584,17 @@ export const CONTRACT_ADDRESSES: {
     erc20GatewayRouter: {
       address: "0x5288c571Fd7aD117beA99bF60FE0846C4E84F933",
       abi: ARBITRUM_ERC20_GATEWAY_ROUTER_L2_ABI,
+    },
+    spokePoolPeriphery: {
+      address: "0x767e4c20F521a829dE4Ffc40C25176676878147f",
+      abi: SPOKE_POOL_PERIPHERY_ABI,
+    },
+    counterfactualDepositFactory: {
+      address: "0x20e67fBE0150B498048709306cc7729d382F1fB1",
+      abi: COUNTERFACTUAL_DEPOSIT_FACTORY_ABI,
+    },
+    counterfactualDeposit: {
+      address: "0xfb090c119c838CeD214F962F931d5fa38b111E46",
     },
   },
   [CHAIN_IDs.LENS]: {
@@ -612,8 +754,20 @@ export const CONTRACT_ADDRESSES: {
       address: "0x14224e63716afAcE30C9a417E0542281869f7d9e",
       abi: HUB_POOL_ABI,
     },
+    spokePoolPeriphery: {
+      address: "0x1cFC76f039e01970355Cf73a37B785A81847796C",
+      abi: SPOKE_POOL_PERIPHERY_ABI,
+    },
   },
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: {
+    cctpMessageTransmitter: {
+      address: "0xaCF1ceeF35caAc005e15888dDb8A3515C41B4872",
+      abi: CCTP_MESSAGE_TRANSMITTER_ABI,
+    },
+    cctpTokenMessenger: {
+      address: "0x9f3B8679c73C2Fef8b59B4f3444d4e156fb70AA5",
+      abi: CCTP_TOKEN_MESSENGER_ABI,
+    },
     cctpV2MessageTransmitter: {
       address: "0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275",
       abi: CCTP_MESSAGE_TRANSMITTER_ABI, // Same ABI as V1 as far as functions we care about, so overload for now.
@@ -621,6 +775,10 @@ export const CONTRACT_ADDRESSES: {
     cctpV2TokenMessenger: {
       address: "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
+    },
+    spokePoolPeriphery: {
+      address: "0x1cFC76f039e01970355Cf73a37B785A81847796C",
+      abi: SPOKE_POOL_PERIPHERY_ABI,
     },
   },
   [CHAIN_IDs.BASE_SEPOLIA]: {
@@ -628,6 +786,14 @@ export const CONTRACT_ADDRESSES: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
     },
+    cctpMessageTransmitter: {
+      address: "0x7865fAfC2db2093669d92c0F33AeEF291086BEFD",
+      abi: CCTP_MESSAGE_TRANSMITTER_ABI,
+    },
+    cctpTokenMessenger: {
+      address: "0x9f3B8679c73C2Fef8b59B4f3444d4e156fb70AA5",
+      abi: CCTP_TOKEN_MESSENGER_ABI,
+    },
     cctpV2MessageTransmitter: {
       address: "0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275",
       abi: CCTP_MESSAGE_TRANSMITTER_ABI, // Same ABI as V1 as far as functions we care about, so overload for now.
@@ -635,6 +801,10 @@ export const CONTRACT_ADDRESSES: {
     cctpV2TokenMessenger: {
       address: "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
+    },
+    spokePoolPeriphery: {
+      address: "0x1cFC76f039e01970355Cf73a37B785A81847796C",
+      abi: SPOKE_POOL_PERIPHERY_ABI,
     },
   },
   [CHAIN_IDs.BLAST_SEPOLIA]: {
@@ -678,6 +848,14 @@ export const CONTRACT_ADDRESSES: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
     },
+    cctpMessageTransmitter: {
+      address: "0x7865fAfC2db2093669d92c0F33AeEF291086BEFD",
+      abi: CCTP_MESSAGE_TRANSMITTER_ABI,
+    },
+    cctpTokenMessenger: {
+      address: "0x9f3B8679c73C2Fef8b59B4f3444d4e156fb70AA5",
+      abi: CCTP_TOKEN_MESSENGER_ABI,
+    },
     cctpV2MessageTransmitter: {
       address: "0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275",
       abi: CCTP_MESSAGE_TRANSMITTER_ABI, // Same ABI as V1 as far as functions we care about, so overload for now.
@@ -685,12 +863,24 @@ export const CONTRACT_ADDRESSES: {
     cctpV2TokenMessenger: {
       address: "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
+    },
+    spokePoolPeriphery: {
+      address: "0x1cFC76f039e01970355Cf73a37B785A81847796C",
+      abi: SPOKE_POOL_PERIPHERY_ABI,
     },
   },
   [CHAIN_IDs.POLYGON_AMOY]: {
     withdrawableErc20: {
       abi: POLYGON_WITHDRAWABLE_ERC20_ABI,
     },
+    cctpMessageTransmitter: {
+      address: "0x7865fAfC2db2093669d92c0F33AeEF291086BEFD",
+      abi: CCTP_MESSAGE_TRANSMITTER_ABI,
+    },
+    cctpTokenMessenger: {
+      address: "0x9f3B8679c73C2Fef8b59B4f3444d4e156fb70AA5",
+      abi: CCTP_TOKEN_MESSENGER_ABI,
+    },
     cctpV2MessageTransmitter: {
       address: "0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275",
       abi: CCTP_MESSAGE_TRANSMITTER_ABI, // Same ABI as V1 as far as functions we care about, so overload for now.
@@ -698,6 +888,10 @@ export const CONTRACT_ADDRESSES: {
     cctpV2TokenMessenger: {
       address: "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
+    },
+    spokePoolPeriphery: {
+      address: "0x1cFC76f039e01970355Cf73a37B785A81847796C",
+      abi: SPOKE_POOL_PERIPHERY_ABI,
     },
   },
   [CHAIN_IDs.SCROLL_SEPOLIA]: {
@@ -706,12 +900,15 @@ export const CONTRACT_ADDRESSES: {
       abi: SCROLL_GATEWAY_ROUTER_L2_ABI,
     },
   },
-  [CHAIN_IDs.TATARA]: {
-    withdrawableErc20: {
-      abi: POLYGON_WITHDRAWABLE_ERC20_ABI,
-    },
-  },
   [CHAIN_IDs.UNICHAIN_SEPOLIA]: {
+    cctpMessageTransmitter: {
+      address: "0xbc498c326533d675cf571B90A2Ced265ACb7d086",
+      abi: CCTP_MESSAGE_TRANSMITTER_ABI,
+    },
+    cctpTokenMessenger: {
+      address: "0x8ed94B8dAd2Dc5453862ea5e316A8e71AAed9782",
+      abi: CCTP_TOKEN_MESSENGER_ABI,
+    },
     cctpV2MessageTransmitter: {
       address: "0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275",
       abi: CCTP_MESSAGE_TRANSMITTER_ABI, // Same ABI as V1 as far as functions we care about, so overload for now.

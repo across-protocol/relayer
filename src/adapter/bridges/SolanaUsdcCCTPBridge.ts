@@ -12,15 +12,14 @@ import {
   EvmAddress,
   SvmAddress,
   paginatedEventQuery,
-  ZERO_BYTES,
   SVMProvider,
   isDefined,
   getSvmSignerFromEvmSigner,
   getAssociatedTokenAddress,
   winston,
+  getCctpV1TokenMessenger,
 } from "../../utils";
 import { processEvent } from "../utils";
-import { getCctpTokenMessenger, isCctpV2L2ChainId } from "../../utils/CCTPUtils";
 import { CCTP_NO_DOMAIN } from "@across-protocol/constants";
 import { arch } from "@across-protocol/sdk";
 import { TokenMessengerMinterIdl } from "@across-protocol/contracts";
@@ -32,7 +31,6 @@ type MintAndWithdrawData = {
 };
 
 export class SolanaUsdcCCTPBridge extends BaseBridgeAdapter {
-  private IS_CCTP_V2 = false;
   private readonly l1UsdcTokenAddress: EvmAddress;
   private readonly l2UsdcTokenAddress: SvmAddress;
   private readonly solanaMessageTransmitter: SvmAddress;
@@ -52,17 +50,18 @@ export class SolanaUsdcCCTPBridge extends BaseBridgeAdapter {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _logger: winston.Logger
   ) {
-    super(l2chainId, hubChainId, l1Signer, [EvmAddress.from(getCctpTokenMessenger(l2chainId, hubChainId).address)]);
+    // This adapter currently only supports CCTP V1.
+    const { address: l1Address, abi: l1Abi } = getCctpV1TokenMessenger(hubChainId);
+
+    super(l2chainId, hubChainId, l1Signer, [EvmAddress.from(l1Address)]);
     assert(
       getCctpDomainForChainId(l2chainId) !== CCTP_NO_DOMAIN && getCctpDomainForChainId(hubChainId) !== CCTP_NO_DOMAIN,
       "Unknown CCTP domain ID"
     );
-    this.IS_CCTP_V2 = isCctpV2L2ChainId(l2chainId);
 
-    const { address: l1Address, abi: l1Abi } = getCctpTokenMessenger(l2chainId, hubChainId);
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
 
-    const { address: l2Address } = getCctpTokenMessenger(l2chainId, l2chainId);
+    const { address: l2Address } = getCctpV1TokenMessenger(l2chainId);
     this.solanaMessageTransmitter = SvmAddress.from(l2Address);
     this.solanaEventsClientPromise = arch.svm.SvmCpiEventsClient.createFor(
       l2Provider,
@@ -96,17 +95,7 @@ export class SolanaUsdcCCTPBridge extends BaseBridgeAdapter {
     return Promise.resolve({
       contract: this.getL1Bridge(),
       method: "depositForBurn",
-      args: this.IS_CCTP_V2
-        ? [
-            amount,
-            this.l2DestinationDomain,
-            associatedTokenAddress.toBytes32(),
-            this.l1UsdcTokenAddress.toNative(),
-            ZERO_BYTES, // Anyone can finalize the message on domain when this is set to bytes32(0)
-            0, // maxFee set to 0 so this will be a "standard" speed transfer
-            2000, // Hardcoded minFinalityThreshold value for standard transfer
-          ]
-        : [amount, this.l2DestinationDomain, associatedTokenAddress.toBytes32(), this.l1UsdcTokenAddress.toNative()],
+      args: [amount, this.l2DestinationDomain, associatedTokenAddress.toBytes32(), this.l1UsdcTokenAddress.toNative()],
     });
   }
 
@@ -124,9 +113,7 @@ export class SolanaUsdcCCTPBridge extends BaseBridgeAdapter {
     }
     const associatedTokenAddress = await this._getAssociatedTokenAddress();
     assert(compareAddressesSimple(l1Token.toNative(), TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]));
-    const eventFilterArgs = this.IS_CCTP_V2
-      ? [this.l1UsdcTokenAddress.toNative(), undefined, fromAddress.toNative()]
-      : [undefined, this.l1UsdcTokenAddress.toNative(), undefined, fromAddress.toNative()];
+    const eventFilterArgs = [undefined, this.l1UsdcTokenAddress.toNative(), undefined, fromAddress.toNative()];
     const eventFilter = this.getL1Bridge().filters.DepositForBurn(...eventFilterArgs);
     const events = (await paginatedEventQuery(this.getL1Bridge(), eventFilter, eventConfig)).filter((event) =>
       compareAddressesSimple(event.args.mintRecipient, associatedTokenAddress.toBytes32())

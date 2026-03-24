@@ -6,7 +6,6 @@ import {
   EventSearchConfig,
   getNetworkName,
   isDefined,
-  Provider,
   Signer,
   EvmAddress,
   getBinanceApiClient,
@@ -20,6 +19,10 @@ import {
   getBinanceWithdrawals,
   BINANCE_NETWORKS,
   mapAsync,
+  filterAsync,
+  getBinanceDepositType,
+  BinanceTransactionType,
+  getBinanceWithdrawalType,
 } from "../../utils";
 import { L1Token } from "../../interfaces";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
@@ -35,17 +38,11 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
   // The deposit network corresponding to the L2.
   protected depositNetwork: string;
 
-  constructor(
-    l2chainId: number,
-    hubChainId: number,
-    l2Signer: Signer,
-    l1Provider: Provider | Signer,
-    l1Token: EvmAddress
-  ) {
+  constructor(l2chainId: number, hubChainId: number, l2Signer: Signer, l1Signer: Signer, l1Token: EvmAddress) {
     if (hubChainId !== CHAIN_IDs.MAINNET) {
       throw new Error("Cannot define a Binance CEX bridge for a non-production network");
     }
-    super(l2chainId, hubChainId, l2Signer, l1Provider, l1Token);
+    super(l2chainId, hubChainId, l2Signer, l1Signer, l1Token);
 
     const l2Token = getTranslatedTokenAddress(l1Token, hubChainId, l2chainId);
     this.l2Bridge = new Contract(l2Token.toNative(), ERC20_ABI, l2Signer);
@@ -106,16 +103,23 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
       getBinanceDeposits(binanceApiClient, fromTimestamp),
       getBinanceWithdrawals(binanceApiClient, this.l1TokenInfo.symbol, fromTimestamp),
     ]);
-    const [depositHistory, withdrawHistory] = [
-      _depositHistory.filter(
-        (deposit) => deposit.network === this.depositNetwork && deposit.coin === this.l1TokenInfo.symbol
-      ),
-      _withdrawHistory.filter(
-        (withdrawal) =>
-          withdrawal.network === BINANCE_NETWORKS[CHAIN_IDs.MAINNET] &&
-          compareAddressesSimple(withdrawal.recipient, fromAddress.toNative())
-      ),
-    ];
+    // Remove any deposits and withdrawals that are marked as related to a swap.
+    const depositHistory = await filterAsync(_depositHistory, async (deposit) => {
+      const depositType = await getBinanceDepositType(deposit);
+      return (
+        deposit.network === this.depositNetwork &&
+        deposit.coin === this.l1TokenInfo.symbol &&
+        depositType !== BinanceTransactionType.SWAP
+      );
+    });
+    const withdrawHistory = await filterAsync(_withdrawHistory, async (withdrawal) => {
+      const withdrawalType = await getBinanceWithdrawalType(withdrawal);
+      return (
+        withdrawal.network === BINANCE_NETWORKS[CHAIN_IDs.MAINNET] &&
+        compareAddressesSimple(withdrawal.recipient, fromAddress.toNative()) &&
+        withdrawalType !== BinanceTransactionType.SWAP
+      );
+    });
 
     // FilterMap to remove all deposits originating from other EOAs.
     const depositsInitiatedForAddress = (

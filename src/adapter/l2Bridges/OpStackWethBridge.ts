@@ -8,7 +8,6 @@ import {
   getNetworkName,
   isDefined,
   paginatedEventQuery,
-  Provider,
   Signer,
   toBN,
   EvmAddress,
@@ -19,19 +18,13 @@ import WETH_ABI from "../../common/abi/Weth.json";
 import { AugmentedTransaction } from "../../clients/TransactionClient";
 
 export class OpStackWethBridge extends BaseL2BridgeAdapter {
-  constructor(
-    l2chainId: number,
-    hubChainId: number,
-    l2Signer: Signer,
-    l1Provider: Provider | Signer,
-    l1Token: EvmAddress
-  ) {
-    super(l2chainId, hubChainId, l2Signer, l1Provider, l1Token);
+  constructor(l2chainId: number, hubChainId: number, l2Signer: Signer, l1Signer: Signer, l1Token: EvmAddress) {
+    super(l2chainId, hubChainId, l2Signer, l1Signer, l1Token);
 
     const { address, abi } = CONTRACT_ADDRESSES[l2chainId].ovmStandardBridge;
     this.l2Bridge = new Contract(address, abi, l2Signer);
     const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId][`ovmStandardBridge_${l2chainId}`];
-    this.l1Bridge = new Contract(l1Address, l1Abi, l1Provider);
+    this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
   }
 
   constructWithdrawToL1Txns(
@@ -49,6 +42,7 @@ export class OpStackWethBridge extends BaseL2BridgeAdapter {
       method: "withdraw",
       args: [amount],
       nonMulticall: true,
+      ensureConfirmation: true,
       message: "🎰 Unwrapped WETH on OpStack before withdrawing to L1",
       mrkdwn: `Unwrapped ${formatter(amount.toString())} WETH before withdrawing from ${getNetworkName(
         this.l2chainId
@@ -113,5 +107,10 @@ export class OpStackWethBridge extends BaseL2BridgeAdapter {
       return isDefined(received) ? totalAmount : totalAmount.add(l2Args.amount);
     }, bnZero);
     return withdrawalAmount;
+  }
+
+  public pendingWithdrawalLookbackPeriodSeconds(): number {
+    return 7 * 24 * 60 * 60 + 60 * 60; // 7 days + 1 hour, to account for the time needed to execute the withdrawal
+    // once it has passed the challenge period.
   }
 }

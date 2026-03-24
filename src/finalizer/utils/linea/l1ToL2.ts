@@ -1,7 +1,6 @@
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import { OnChainMessageStatus } from "@consensys/linea-sdk";
 import { Contract } from "ethers";
-import { groupBy } from "lodash";
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
 import { CONTRACT_ADDRESSES } from "../../../common";
 import {
@@ -55,7 +54,9 @@ export async function lineaL1ToL2Finalizer(
   _senderAddresses: AddressesToFinalize
 ): Promise<FinalizerPromise> {
   assert(isEVMSpokePoolClient(l1SpokePoolClient) && isEVMSpokePoolClient(l2SpokePoolClient));
-  const senderAddresses = Array.from(_senderAddresses.keys()).map((address) => address.toEvmAddress());
+  const senderAddresses = Array.from(_senderAddresses.keys())
+    .filter((address) => address.isEVM())
+    .map((address) => address.toEvmAddress());
   const [l1ChainId] = [hubPoolClient.chainId, hubPoolClient.hubPool.address];
   if (l1ChainId !== CHAIN_IDs.MAINNET) {
     throw new Error("Finalizations for Linea testnet is not supported.");
@@ -115,7 +116,7 @@ export async function lineaL1ToL2Finalizer(
     claimed = [],
     claimable = [],
     unknown = [],
-  } = groupBy(enrichedMessageSentEvents, (message) => {
+  } = Object.groupBy(enrichedMessageSentEvents, (message) => {
     switch (message.status) {
       case OnChainMessageStatus.CLAIMED:
         return "claimed";

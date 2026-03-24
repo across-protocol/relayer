@@ -10,11 +10,14 @@ import {
 } from "../common";
 import { SpokePoolClientsByChain } from "../interfaces";
 import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
+import { constructReadOnlyRebalancerClient } from "../rebalancer/RebalancerClientHelper";
+import { RebalancerClient } from "../rebalancer/utils/interfaces";
 
 export interface MonitorClients extends Clients {
   bundleDataClient: BundleDataClient;
   crossChainTransferClient: CrossChainTransferClient;
   hubPoolClient: HubPoolClient;
+  rebalancerClient?: RebalancerClient;
   spokePoolClients: SpokePoolClientsByChain;
   tokenTransferClient: TokenTransferClient;
 }
@@ -26,7 +29,7 @@ export async function constructMonitorClients(
 ): Promise<MonitorClients> {
   const signerAddr = await baseSigner.getAddress();
   // Set hubPoolLookback conservatively to be equal to one month of blocks. If the config.maxRelayerLookBack
-  // exceeds half a month, then we'll just use the gensis block since in that case, this monitor is being used
+  // exceeds half a month, then we'll just use the genesis block since in that case, this monitor is being used
   // for non-production circumstances.
   const hubPoolLookback = config.maxRelayerLookBack > 3600 * 24 * 15 ? undefined : 3600 * 24 * 30;
   const commonClients = await constructClients(logger, config, baseSigner, hubPoolLookback);
@@ -85,8 +88,17 @@ export async function constructMonitorClients(
     spokePoolChains.filter((chainId) => crossChainAdapterSupportedChains.includes(chainId)),
     adapterManager
   );
+  // Load RebalancerClient in view only mode so that getPendingRebalances() can get called.
+  const rebalancerClient = await constructReadOnlyRebalancerClient(logger, baseSigner);
 
-  return { ...commonClients, bundleDataClient, crossChainTransferClient, spokePoolClients, tokenTransferClient };
+  return {
+    ...commonClients,
+    bundleDataClient,
+    crossChainTransferClient,
+    rebalancerClient,
+    spokePoolClients,
+    tokenTransferClient,
+  };
 }
 
 export async function updateMonitorClients(clients: MonitorClients): Promise<void> {

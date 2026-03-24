@@ -37,11 +37,11 @@ import {
   Address,
   SvmAddress,
   toAddressType,
-  convertRelayDataParamsToBytes32,
   PriceClient,
   acrossApi,
   coingecko,
   defiLlama,
+  getNativeTokenInfoForChain,
 } from "../utils";
 import { Deposit, DepositWithBlock, L1Token, SpokePoolClientsByChain } from "../interfaces";
 import { getAcrossHost } from "./AcrossAPIClient";
@@ -128,7 +128,10 @@ export class ProfitClient {
     protected gasMultiplier = toBNWei(constants.DEFAULT_RELAYER_GAS_MULTIPLIER),
     protected gasMessageMultiplier = toBNWei(constants.DEFAULT_RELAYER_GAS_MESSAGE_MULTIPLIER),
     protected gasPadding = toBNWei(constants.DEFAULT_RELAYER_GAS_PADDING),
-    readonly additionalL1Tokens: EvmAddress[] = []
+    readonly additionalL1Tokens: EvmAddress[] = [],
+    // Sets of token symbols that should be treated equivalently, for example [ "USDC": [USDT, USDH ].
+    readonly peggedTokens: { [pegTokenSymbol: string]: Set<string> } = {},
+    readonly l1TokensOverride: string[] = []
   ) {
     // Require 0% <= gasPadding <= 200%
     assert(
@@ -168,23 +171,39 @@ export class ProfitClient {
   }
 
   resolveGasMultiplier(deposit: Deposit): BigNumber {
+    const { inputToken, originChainId, outputToken, destinationChainId } = deposit;
+    const srcSymbol = this.getTokenSymbol(inputToken, originChainId);
+    const dstSymbol = this.getTokenSymbol(outputToken, destinationChainId);
+    const effectiveSrcSymbol = this._getRemappedTokenSymbol(srcSymbol) ?? srcSymbol;
+    const effectiveDstSymbol =
+      dstSymbol !== "UNKNOWN" ? this._getRemappedTokenSymbol(dstSymbol) ?? dstSymbol : undefined;
+
+    const routeKey = effectiveDstSymbol
+      ? `RELAYER_GAS_MULTIPLIER_${effectiveSrcSymbol}_${effectiveDstSymbol}_${destinationChainId}`
+      : `RELAYER_GAS_MULTIPLIER_${effectiveSrcSymbol}_${destinationChainId}`;
+    const tokenKey = `RELAYER_GAS_MULTIPLIER_${effectiveSrcSymbol}`;
+    const chainKey = `RELAYER_GAS_MULTIPLIER_${destinationChainId}`;
+
+    const envVal = process.env[routeKey] ?? process.env[tokenKey] ?? process.env[chainKey];
+    if (isDefined(envVal)) {
+      const override = toBNWei(envVal);
+      assert(override.gte(bnZero) && override.lte(toBNWei(4)), `Gas multiplier override out of range (${override})`);
+      return override;
+    }
+
     return isMessageEmpty(resolveDepositMessage(deposit)) ? this.gasMultiplier : this.gasMessageMultiplier;
   }
 
-  resolveNativeToken(chainId: number): L1Token {
-    const symbol = getNativeTokenSymbol(chainId);
-    const token = TOKEN_SYMBOLS_MAP[symbol];
-    if (!isDefined(symbol) || !isDefined(token)) {
-      throw new Error(`Unable to resolve native token for chain ID ${chainId}`);
-    }
-
-    const { decimals, addresses } = token;
-    const address = addresses[1]; // Mainnet tokens are always used for price lookups.
-
-    return { symbol, address, decimals };
+  resolveNativeToken(chainId: number): { symbol: string; decimals: number; address: string } {
+    const tokenInfo = getNativeTokenInfoForChain(chainId, this.hubPoolClient.chainId);
+    return {
+      symbol: tokenInfo.symbol,
+      decimals: tokenInfo.decimals,
+      address: tokenInfo.address,
+    };
   }
 
-  resolveGasToken(chainId: number): L1Token {
+  resolveGasToken(chainId: number): { symbol: string; decimals: number; address: string } {
     // Note for future: gas token and native token may not always be the same
     return this.resolveNativeToken(chainId);
   }
@@ -208,9 +227,9 @@ export class ProfitClient {
     } catch {
       // The token address is neither an SVM address nor an EVM address, so it must be a symbol.
     }
-    const remappedTokenSymbol = TOKEN_EQUIVALENCE_REMAPPING[token] ?? token;
-    // In case we have an entry in `TOKEN_EQUIVALENCE_REMAPPING` which maps the native token symbol to its wrapped variant (e.g. BNB -> WBNB),
-    // also check if the token symbols map has the non-remapped token symbol stored as a fallback.
+    const remappedTokenSymbol = this._getRemappedTokenSymbol(token) ?? token;
+    // In some cases, we've remapped a token symbol to its wrapped variant (e.g. BNB -> WBNB),
+    // so check if the token symbols map has the non-remapped token symbol stored as a fallback.
     const address = this.tokenSymbolMap[remappedTokenSymbol] ?? this.tokenSymbolMap[token];
     assert(
       isDefined(address),
@@ -239,12 +258,14 @@ export class ProfitClient {
     return price;
   }
 
-  private async _getTotalGasCost(
-    deposit: Omit<Deposit, "messageHash">,
-    relayer: Address
-  ): Promise<TransactionCostEstimate> {
+  private async _getTotalGasCost(deposit: Deposit, relayer: Address): Promise<TransactionCostEstimate> {
+    const rawFeeHistoryConfig =
+      process.env[`FEE_HISTORY_OPTIONS_${deposit.destinationChainId}`] ?? process.env["FEE_HISTORY_OPTIONS"];
+    const feeHistoryOptions = isDefined(rawFeeHistoryConfig) ? JSON.parse(rawFeeHistoryConfig) : undefined;
     try {
-      return await this.relayerFeeQueries[deposit.destinationChainId].getGasCosts(deposit, relayer);
+      return await this.relayerFeeQueries[deposit.destinationChainId].getGasCosts(deposit, relayer, {
+        feeHistoryOptions,
+      });
     } catch (err) {
       const reason = isEthersError(err) ? err.reason : isError(err) ? err.message : "unknown error";
       // Attempt to extract an underlying cause, if the error object exposes one. This is
@@ -266,7 +287,7 @@ export class ProfitClient {
         message: "Failed to simulate fill for deposit.",
         reason,
         cause,
-        deposit: convertRelayDataParamsToBytes32(deposit),
+        deposit: this.formatDepositForLog(deposit),
         notificationPath: "across-warn",
       });
       return { nativeGasCost: uint256Max, tokenGasCost: uint256Max, gasPrice: uint256Max };
@@ -343,7 +364,7 @@ export class ProfitClient {
     const gasMultiplier = this.resolveGasMultiplier(deposit);
     tokenGasCost = tokenGasCost.mul(gasMultiplier).div(fixedPoint);
 
-    const gasCostUsd = tokenGasCost.mul(gasTokenPriceUsd).div(bn10.pow(gasToken.decimals));
+    const gasCostUsd = tokenGasCost.mul(gasTokenPriceUsd).div(fixedPoint);
 
     const auxiliaryNativeTokenCost = this.getAuxiliaryNativeTokenCost(deposit);
     const nativeToken = this.resolveNativeToken(chainId);
@@ -377,17 +398,25 @@ export class ProfitClient {
    * Allow the minimum relayer fee to be overridden per token/route:
    * 0.1bps on USDC from Optimism to Arbitrum:
    *   - MIN_RELAYER_FEE_PCT_USDC_42161_10=0.00001
-   * @param symbol Token symbol to query.
-   * @param symbol srcChainId Origin chain for deposit.
-   * @param symbol dstChainId Destination chain for deposit.
-   * @returns The minimum required fee multiplier for the specified token/route combination.
+   * 0.1bps from USDC on Optimism to USDT on Arbitrum:
+   *   - MIN_RELAYER_FEE_PCT_USDC_USDT_42161_10=0.00001
+   * @returns The minimum required fee multiplier for the deposit's token/route combination.
    */
-  minRelayerFeePct(symbol: string, srcChainId: number, dstChainId: number): BigNumber {
-    const effectiveSymbol = TOKEN_EQUIVALENCE_REMAPPING[symbol] ?? symbol;
+  minRelayerFeePct(
+    deposit: Pick<Deposit, "inputToken" | "originChainId" | "outputToken" | "destinationChainId">
+  ): BigNumber {
+    const { inputToken, originChainId, outputToken, destinationChainId } = deposit;
+    const srcSymbol = this.getTokenSymbol(inputToken, originChainId);
+    const dstSymbol = this.getTokenSymbol(outputToken, destinationChainId);
+    const effectiveSourceSymbol = this._getRemappedTokenSymbol(srcSymbol) ?? srcSymbol;
+    const effectiveDestinationSymbol =
+      dstSymbol !== "UNKNOWN" ? this._getRemappedTokenSymbol(dstSymbol) ?? dstSymbol : undefined;
 
-    const tokenKey = `MIN_RELAYER_FEE_PCT_${effectiveSymbol}`;
-    const routeKey = `${tokenKey}_${srcChainId}_${dstChainId}`;
-    const destinationChainKey = `MIN_RELAYER_FEE_PCT_${dstChainId}`;
+    const tokenKey = effectiveDestinationSymbol
+      ? `MIN_RELAYER_FEE_PCT_${effectiveSourceSymbol}_${effectiveDestinationSymbol}`
+      : `MIN_RELAYER_FEE_PCT_${effectiveSourceSymbol}`;
+    const routeKey = `${tokenKey}_${originChainId}_${destinationChainId}`;
+    const destinationChainKey = `MIN_RELAYER_FEE_PCT_${destinationChainId}`;
     let minRelayerFeePct = this.minRelayerFees[routeKey] ?? this.minRelayerFees[tokenKey];
 
     if (!minRelayerFeePct) {
@@ -515,27 +544,22 @@ export class ProfitClient {
     }
   }
 
-  async getFillProfitability(
-    deposit: Deposit,
-    lpFeePct: BigNumber,
-    l1Token: EvmAddress,
-    repaymentChainId: number
-  ): Promise<FillProfit> {
-    const symbol = this.getTokenSymbol(l1Token, this.hubPoolClient.chainId);
-    const minRelayerFeePct = this.minRelayerFeePct(symbol, deposit.originChainId, deposit.destinationChainId);
+  async getFillProfitability(deposit: Deposit, lpFeePct: BigNumber, repaymentChainId: number): Promise<FillProfit> {
+    const minRelayerFeePct = this.minRelayerFeePct(deposit);
 
     const fill = await this.calculateFillProfitability(deposit, lpFeePct, minRelayerFeePct);
     if (!fill.profitable || this.debugProfitability) {
       const { depositId, destinationChainId } = deposit;
       const profitable = fill.profitable ? "profitable" : "unprofitable";
 
+      const symbol = this.getTokenSymbol(deposit.inputToken, deposit.originChainId);
       this.logger.debug({
         at: "ProfitClient#getFillProfitability",
         message: `${symbol} deposit to ${destinationChainId} #${depositId.toString()} with repayment on ${repaymentChainId} is ${profitable}`,
-        deposit: convertRelayDataParamsToBytes32(deposit),
+        deposit: this.formatDepositForLog(deposit),
         inputTokenPriceUsd: formatEther(fill.inputTokenPriceUsd),
         inputTokenAmountUsd: formatEther(fill.inputAmountUsd),
-        outputTokenPriceUsd: formatEther(fill.inputTokenPriceUsd),
+        outputTokenPriceUsd: formatEther(fill.outputTokenPriceUsd),
         outputTokenAmountUsd: formatEther(fill.outputAmountUsd),
         totalFeePct: `${formatFeePct(fill.totalFeePct)}%`,
         lpFeePct: `${formatFeePct(lpFeePct)}%`,
@@ -564,26 +588,24 @@ export class ProfitClient {
   async isFillProfitable(
     deposit: Deposit,
     lpFeePct: BigNumber,
-    l1Token: EvmAddress,
     repaymentChainId: number
-  ): Promise<Pick<FillProfit, "profitable" | "nativeGasCost" | "gasPrice" | "tokenGasCost" | "netRelayerFeePct">> {
+  ): Promise<
+    Pick<FillProfit, "profitable" | "nativeGasCost" | "gasPrice" | "tokenGasCost" | "netRelayerFeePct" | "totalFeePct">
+  > {
     let profitable = false;
     let netRelayerFeePct = bnZero;
     let nativeGasCost = uint256Max;
     let tokenGasCost = uint256Max;
     let gasPrice = uint256Max;
+    let totalFeePct = bnZero;
     try {
-      ({ profitable, netRelayerFeePct, nativeGasCost, tokenGasCost, gasPrice } = await this.getFillProfitability(
-        deposit,
-        lpFeePct,
-        l1Token,
-        repaymentChainId
-      ));
+      ({ profitable, netRelayerFeePct, nativeGasCost, tokenGasCost, gasPrice, totalFeePct } =
+        await this.getFillProfitability(deposit, lpFeePct, repaymentChainId));
     } catch (err) {
       this.logger.debug({
         at: "ProfitClient#isFillProfitable",
         message: `Unable to determine fill profitability (${err}).`,
-        deposit: convertRelayDataParamsToBytes32(deposit),
+        deposit: this.formatDepositForLog(deposit),
         lpFeePct,
       });
     }
@@ -594,6 +616,7 @@ export class ProfitClient {
       tokenGasCost,
       gasPrice,
       netRelayerFeePct,
+      totalFeePct,
     };
   }
 
@@ -606,7 +629,7 @@ export class ProfitClient {
     this.logger.debug({
       at: "ProfitClient",
       message: "Handling unprofitable fill",
-      deposit: convertRelayDataParamsToBytes32(deposit),
+      deposit: this.formatDepositForLog(deposit),
       lpFeePct,
       relayerFeePct,
       gasCost,
@@ -630,7 +653,7 @@ export class ProfitClient {
       l1Tokens
         .map(({ symbol: _symbol }) => {
           // If the L1 token is defined in token symbols map, then use the L1 token symbol. Otherwise, use the remapping in constants.
-          const symbol = isDefined(TOKEN_SYMBOLS_MAP[_symbol]) ? _symbol : TOKEN_EQUIVALENCE_REMAPPING[_symbol];
+          const symbol = isDefined(TOKEN_SYMBOLS_MAP[_symbol]) ? _symbol : this._getRemappedTokenSymbol(_symbol);
           if (!isDefined(symbol)) {
             // If the symbol is undefined, then there is missing configuration in the constants repository.
             // Throw an error if we are on mainnet, since this indicates that we are attempting to fetch prices for an unsupported token.
@@ -639,7 +662,9 @@ export class ProfitClient {
             if (this.isTestnet) {
               return [undefined, undefined];
             }
-            throw new Error(`${_symbol} has no definition in TOKEN_SYMBOLS_MAP or TOKEN_EQUIVALENCE_REMAPPING`);
+            throw new Error(
+              `${_symbol} has no definition in TOKEN_SYMBOLS_MAP, TOKEN_EQUIVALENCE_REMAPPING, or PEGGED_TOKEN_PRICES`
+            );
           }
 
           const { addresses } = TOKEN_SYMBOLS_MAP[symbol];
@@ -657,7 +682,7 @@ export class ProfitClient {
     // Log any tokens that are in the L1Tokens list but are not in the tokenSymbolsMap.
     // Note: we should batch these up and log them all at once to avoid spamming the logs.
     const unknownTokens = l1Tokens.filter(
-      ({ symbol }) => !isDefined(TOKEN_SYMBOLS_MAP[symbol]) && !isDefined(TOKEN_EQUIVALENCE_REMAPPING[symbol])
+      ({ symbol }) => !isDefined(TOKEN_SYMBOLS_MAP[symbol]) && !isDefined(this._getRemappedTokenSymbol(symbol))
     );
     if (unknownTokens.length > 0) {
       this.logger.debug({
@@ -694,8 +719,16 @@ export class ProfitClient {
 
     try {
       const tokenAddrs = Array.from(new Set(Object.values(tokens)));
-      const tokenPrices = await this.priceClient.getPricesByAddress(tokenAddrs, "usd");
-      tokenPrices.forEach(({ address, price }) => (this.tokenPrices[address] = toBNWei(price)));
+      // If user defined a fixed price for token, skip external price lookup.
+      const tokenAddrsToQuery = tokenAddrs.filter((address) => !process.env[`RELAYER_TOKEN_PRICE_FIXED_${address}`]);
+      const tokenPrices = await this.priceClient.getPricesByAddress(tokenAddrsToQuery, "usd");
+      tokenAddrs.forEach((address) => {
+        const hasExternalPrice = tokenAddrsToQuery.includes(address);
+        const price = hasExternalPrice
+          ? tokenPrices.find(({ address: _address }) => _address === address).price
+          : Number(process.env[`RELAYER_TOKEN_PRICE_DEFAULT_${address}`]) || 0;
+        this.tokenPrices[address] = toBNWei(price.toFixed(18));
+      });
       this.logger.debug({ at: "ProfitClient", message: "Updated token prices", tokenPrices: this.tokenPrices });
     } catch (err) {
       const errMsg = `Failed to update token prices (${err})`;
@@ -713,52 +746,43 @@ export class ProfitClient {
     const outputAmount = toBN(100); // Avoid rounding to zero but ensure the relayer has sufficient balance to estimate.
     const currentTime = getCurrentTime();
 
-    // Prefer USDC on mainnet because it is consistent in terms of gas estimation (no unwrap conditional).
-    // Prefer WETH on testnet because it is more likely to be configured for the destination SpokePool.
-    // The relayer _cannot_ be the recipient because the SpokePool skips the ERC20 transfer. Instead, use
-    // the main RL address because it has all supported tokens and approvals in place on all chains.
-    const testSymbols = {
-      [CHAIN_IDs.BLAST]: "USDB",
-      [CHAIN_IDs.INK]: "WETH", // USDC deferred on Ink.
-      [CHAIN_IDs.PLASMA]: "USDT",
-      [CHAIN_IDs.REDSTONE]: "WETH", // Redstone only supports WETH.
-      [CHAIN_IDs.SONEIUM]: "WETH", // USDC deferred on Soneium.
-    };
+    // Prefer USDC for fill simulation because it is consistent in terms of gas estimation (no unwrap conditional).
+    // Otherwise walk down the `tokenSymbols` array until a known token is found for each chain.
+    const outputTokenSymbols = ["USDC", "WETH", "USDT", "WBTC", "USDC.e"];
     const prodRelayer = process.env.RELAYER_FILL_SIMULATION_ADDRESS ?? PROD_RELAYER;
-    const [defaultTestSymbol, _relayer] =
-      this.hubPoolClient.chainId === CHAIN_IDs.MAINNET ? ["USDC", prodRelayer] : ["WETH", TEST_RELAYER];
+    const evmRelayer = this.hubPoolClient.chainId === CHAIN_IDs.MAINNET ? prodRelayer : TEST_RELAYER;
+    const sampleDeposit = {
+      depositId: bnZero,
+      depositor: toAddressType(TEST_RECIPIENT, CHAIN_IDs.MAINNET),
+      inputToken: toAddressType(ZERO_ADDRESS, CHAIN_IDs.MAINNET), // Not verified by the SpokePool.
+      inputAmount: outputAmount.add(bnOne),
+      outputToken: "", // SpokePool-specific, overwritten later.
+      outputAmount,
+      originChainId: 0, // Not verified by the SpokePool.
+      quoteTimestamp: currentTime - 60,
+      fillDeadline: currentTime + 60,
+      exclusivityDeadline: 0,
+      message: EMPTY_MESSAGE,
+      messageHash: ZERO_BYTES,
+      fromLiteChain: false,
+      toLiteChain: false,
+    };
 
     // Pre-fetch total gas costs for relays on enabled chains.
     const totalGasCostsToLog = Object.fromEntries(
-      await sdkUtils.mapAsync(enabledChainIds, async (destinationChainId) => {
-        // @dev We need set the recipient/relayer to a valid address on the destination network in order for the gas query to succeed.
-        const destinationAddress = toAddressType(
+      await sdkUtils.mapAsync(enabledChainIds.filter(chainIsEvm), async (destinationChainId) => {
+        // @dev Set recipient/relayer to a valid address on the destination network in order for the gas query to succeed.
+        const recipient = toAddressType(
           chainIsEvm(destinationChainId) ? TEST_RECIPIENT : SVM_RELAYER,
           destinationChainId
         );
-        const relayer = chainIsEvm(destinationChainId) ? _relayer : SVM_RELAYER;
-        const sampleDeposit = {
-          depositId: bnZero,
-          depositor: toAddressType(TEST_RECIPIENT, CHAIN_IDs.MAINNET),
-          recipient: destinationAddress,
-          inputToken: toAddressType(ZERO_ADDRESS, CHAIN_IDs.MAINNET), // Not verified by the SpokePool.
-          inputAmount: outputAmount.add(bnOne),
-          outputToken: "", // SpokePool-specific, overwritten later.
-          outputAmount,
-          originChainId: 0, // Not verified by the SpokePool.
-          destinationChainId: 0, // SpokePool-specific, overwritten later.
-          quoteTimestamp: currentTime - 60,
-          fillDeadline: currentTime + 60,
-          exclusivityDeadline: 0,
-          exclusiveRelayer: toAddressType(
-            chainIsEvm(destinationChainId) ? ZERO_ADDRESS : ZERO_BYTES,
-            destinationChainId
-          ),
-          message: EMPTY_MESSAGE,
-          fromLiteChain: false,
-          toLiteChain: false,
-        };
-        const symbol = testSymbols[destinationChainId] ?? defaultTestSymbol;
+        const relayer = chainIsEvm(destinationChainId) ? evmRelayer : SVM_RELAYER;
+        const exclusiveRelayer = toAddressType(
+          chainIsEvm(destinationChainId) ? ZERO_ADDRESS : ZERO_BYTES,
+          destinationChainId
+        );
+
+        const symbol = outputTokenSymbols.find((symbol) => TOKEN_SYMBOLS_MAP[symbol].addresses[destinationChainId]);
         const hubToken = EvmAddress.from(TOKEN_SYMBOLS_MAP[symbol].addresses[this.hubPoolClient.chainId]);
         const outputToken =
           destinationChainId === hubPoolClient.chainId
@@ -766,8 +790,15 @@ export class ProfitClient {
             : getRemoteTokenForL1Token(hubToken, destinationChainId, this.hubPoolClient.chainId);
         assert(isDefined(outputToken), `Chain ${destinationChainId} SpokePool is not configured for ${symbol}`);
 
-        const deposit = { ...sampleDeposit, destinationChainId, outputToken };
+        const deposit = {
+          ...sampleDeposit,
+          destinationChainId,
+          recipient,
+          outputToken,
+          exclusiveRelayer,
+        };
         const gasCosts = await this._getTotalGasCost(deposit, toAddressType(relayer, destinationChainId));
+
         // The scaledNativeGasCost is approximately what the relayer will set as the `gasLimit` when submitting
         // fills on the destination chain.
         const scaledNativeGasCost = gasCosts.nativeGasCost.mul(this.gasPadding).div(fixedPointAdjustment);
@@ -803,6 +834,17 @@ export class ProfitClient {
   }
 
   private _getL1Tokens(): L1Token[] {
+    if (this.l1TokensOverride.length > 0) {
+      const l1Tokens = this.l1TokensOverride.map((l1Token) => {
+        const l1TokenInfo = getTokenInfo(EvmAddress.from(l1Token), this.hubPoolClient.chainId);
+        assert(l1TokenInfo.address.isEVM());
+        return {
+          ...l1TokenInfo,
+          address: l1TokenInfo.address,
+        };
+      });
+      return dedupArray(l1Tokens);
+    }
     // The L1 tokens should be the hub pool tokens plus any extra configured tokens in the inventory config.
     const hubPoolTokens = this.hubPoolClient.getL1Tokens();
     const additionalL1Tokens = this.additionalL1Tokens.map((l1Token) => {
@@ -814,6 +856,14 @@ export class ProfitClient {
       };
     });
     return dedupArray([...hubPoolTokens, ...additionalL1Tokens]);
+  }
+
+  protected _getRemappedTokenSymbol(token: string): string {
+    // If token symbol exists in a set of pegged tokens, return the key of the set as the remapped symbol.
+    if (Object.values(this.peggedTokens).some((peggedTokens) => peggedTokens.has(token))) {
+      return Object.keys(this.peggedTokens).find((pegTokenSymbol) => this.peggedTokens[pegTokenSymbol].has(token));
+    }
+    return TOKEN_EQUIVALENCE_REMAPPING[token];
   }
 
   private constructRelayerFeeQuery(
@@ -833,5 +883,10 @@ export class ProfitClient {
       coingeckoProApiKey,
       this.logger
     );
+  }
+
+  private formatDepositForLog(deposit: Deposit): Omit<Deposit, "message" | "fromLiteChain" | "toLiteChain"> {
+    const { message, fromLiteChain, toLiteChain, ...strippedDeposit } = deposit;
+    return strippedDeposit;
   }
 }

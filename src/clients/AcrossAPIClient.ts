@@ -80,7 +80,6 @@ export class AcrossApiClient {
       tokens: tokens.map((token) => token.toEvmAddress()),
       endpoint: this.endpoint,
     });
-    this.updatedLimits = false;
 
     // /liquid-reserves
     // Store the max available HubPool liquidity (less API-imposed cushioning) for each L1 token.

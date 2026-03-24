@@ -11,7 +11,7 @@ import {
   blockExplorerLink,
   Contract,
   formatUnits,
-  runTransaction,
+  submitTransaction,
   isDefined,
   DefaultLogLevels,
   TransactionResponse,
@@ -38,13 +38,15 @@ import {
   forEachAsync,
   max,
 } from "../utils";
-import { BundleDataApproxClient, HubPoolClient, TokenClient } from ".";
+import { BundleDataApproxClient, BundleDataState } from "./BundleDataApproxClient";
+import { HubPoolClient, TokenClient, TransactionClient } from ".";
 import { Deposit, ProposedRootBundle } from "../interfaces";
 import { InventoryConfig, isAliasConfig, TokenBalanceConfig } from "../interfaces/InventoryManagement";
 import lodash from "lodash";
 import { SLOW_WITHDRAWAL_CHAINS } from "../common";
 import { AdapterManager, CrossChainTransferClient } from "./bridges";
 import { TransferTokenParams } from "../adapter/utils";
+import { RebalancerClient } from "../rebalancer/utils/interfaces";
 
 type TokenDistribution = { [l2Token: string]: BigNumber };
 type TokenDistributionPerL1Token = { [l1Token: string]: { [chainId: number]: TokenDistribution } };
@@ -62,6 +64,13 @@ export type Rebalance = {
 
 const DEFAULT_TOKEN_OVERAGE = toBNWei("1.5");
 
+export type InventoryClientState = {
+  bundleDataState: BundleDataState;
+  pendingL2Withdrawals: { [l1Token: string]: { [chainId: number]: BigNumber } };
+  inventoryConfig: InventoryConfig;
+  pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } };
+};
+
 export class InventoryClient {
   private logDisabledManagement = false;
   private readonly scalar: BigNumber;
@@ -69,20 +78,27 @@ export class InventoryClient {
   private excessRunningBalancePromises: { [l1Token: string]: Promise<{ [chainId: number]: BigNumber }> } = {};
   private profiler: InstanceType<typeof Profiler>;
   private bundleDataApproxClient: BundleDataApproxClient;
+  private inventoryConfig: InventoryConfig;
   private pendingL2Withdrawals: { [l1Token: string]: { [chainId: number]: BigNumber } } = {};
+  private pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
+  private transactionClient: TransactionClient;
 
   constructor(
     readonly relayer: EvmAddress,
     readonly logger: winston.Logger,
-    readonly inventoryConfig: InventoryConfig,
+    inventoryConfig: InventoryConfig,
     readonly tokenClient: TokenClient,
     readonly chainIdList: number[],
     readonly hubPoolClient: HubPoolClient,
     readonly adapterManager: AdapterManager,
     readonly crossChainTransferClient: CrossChainTransferClient,
+    readonly rebalancerClient: RebalancerClient,
     readonly simMode = false,
-    readonly prioritizeLpUtilization = true
+    readonly prioritizeLpUtilization = true,
+    readonly l1TokensOverride: string[] = []
   ) {
+    this.transactionClient = new TransactionClient(logger);
+    this.inventoryConfig = inventoryConfig;
     this.scalar = sdkUtils.fixedPointAdjustment;
     this.formatWei = createFormatFunction(2, 4, false, 18);
     this.profiler = new Profiler({
@@ -91,12 +107,14 @@ export class InventoryClient {
     });
     // Load all L1 tokens from inventory config and hub pool into a Set to deduplicate.
     const allL1Tokens = new Set<string>(
-      this.getL1TokensFromInventoryConfig()
-        .concat(this.getL1TokensEnabledInHubPool())
-        .map((l1Token) => l1Token.toNative())
+      this.l1TokensOverride.length > 0
+        ? this.l1TokensOverride
+        : this.getL1TokensFromInventoryConfig()
+            .concat(this.getL1TokensEnabledInHubPool())
+            .map((l1Token) => l1Token.toNative())
     );
     this.bundleDataApproxClient = new BundleDataApproxClient(
-      this.tokenClient?.spokePoolClients ?? {},
+      this.tokenClient?.spokePoolManager.getSpokePoolClients() ?? {},
       this.hubPoolClient,
       this.chainIdList,
       Array.from(allL1Tokens.values()).map((l1Token) => EvmAddress.from(l1Token)),
@@ -104,6 +122,46 @@ export class InventoryClient {
     );
   }
 
+  /**
+   * Export current InventoryClient state.
+   * @returns InventoryClient state. This can be subsequently ingested by InventoryClient.import().
+   */
+  export(): InventoryClientState {
+    const { upcomingDeposits, upcomingRefunds } = this.bundleDataApproxClient.export();
+    const state = {
+      inventoryConfig: this.inventoryConfig,
+      bundleDataState: {
+        upcomingDeposits,
+        upcomingRefunds,
+      },
+      pendingL2Withdrawals: this.pendingL2Withdrawals,
+      pendingRebalances: this.pendingRebalances,
+    };
+
+    this.logger.debug({ at: "InventoryClient::export", message: "Exported inventory client state." });
+    return state;
+  }
+
+  /**
+   * Import InventoryClient state.
+   * @returns void
+   */
+  import(state: InventoryClientState) {
+    const { bundleDataState, pendingL2Withdrawals, pendingRebalances } = state;
+    this.inventoryConfig = state.inventoryConfig;
+    this.bundleDataApproxClient.import(bundleDataState);
+    this.pendingL2Withdrawals = pendingL2Withdrawals;
+    this.pendingRebalances = pendingRebalances;
+    this.logger.debug({ at: "InventoryClient::import", message: "Imported inventory client state." });
+  }
+
+  /**
+   * Get the cache key for the InventoryClient state.
+   * @returns Cache key for the InventoryClient state
+   */
+  getInventoryCacheKey(inventoryTopic: string): string {
+    return `${inventoryTopic}-${this.relayer}`;
+  }
   /**
    * Resolve the token balance configuration for `l1Token` on `chainId`. If `l1Token` maps to multiple tokens on
    * `chainId` then `l2Token` must be supplied.
@@ -125,6 +183,23 @@ export class InventoryClient {
     }
   }
 
+  supportsSwaps(): boolean {
+    return (this.inventoryConfig?.allowedSwapRoutes ?? []).length > 0;
+  }
+
+  isSwapSupported(inputToken: Address, outputToken: Address, inputChainId: number, outputChainId: number): boolean {
+    if (!this.supportsSwaps()) {
+      return false;
+    }
+    return this.inventoryConfig.allowedSwapRoutes.some(
+      (swapRoute) =>
+        (swapRoute.fromChain === "ALL" || swapRoute.fromChain === inputChainId) &&
+        swapRoute.fromToken === inputToken.toNative() &&
+        (swapRoute.toChain === "ALL" || swapRoute.toChain === outputChainId) &&
+        swapRoute.toToken === outputToken.toNative()
+    );
+  }
+
   /*
    * Get the total balance for an L1 token across all chains, considering any outstanding cross chain transfers as a
    * virtual balance on that chain.
@@ -136,6 +211,39 @@ export class InventoryClient {
     return this.getEnabledChains()
       .map((chainId) => this.getBalanceOnChain(chainId, l1Token))
       .reduce((acc, curr) => acc.add(curr), bnZero);
+  }
+
+  /**
+   * Returns cumulative balance along with approximate upcoming refunds. Refund balances are normalized to
+   * the L1 token decimals.
+   * @param l1Token
+   * @returns Cumulative balance plus approximate upcoming refunds.
+   */
+  getCumulativeBalanceWithApproximateUpcomingRefunds(l1Token: EvmAddress): BigNumber {
+    const totalRefundsPerChain: { [chainId: number]: BigNumber } = {};
+    const { decimals: l1TokenDecimals } = getTokenInfo(l1Token, this.hubPoolClient.chainId);
+    for (const chainId of this.chainIdList) {
+      const repaymentToken = this.getRemoteTokenForL1Token(l1Token, chainId);
+      if (!repaymentToken) {
+        continue;
+      }
+      const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(repaymentToken, chainId);
+      const refundAmount = this.getUpcomingRefunds(chainId, l1Token, this.relayer);
+      const convertedRefundAmount = sdkUtils.ConvertDecimals(l2TokenDecimals, l1TokenDecimals)(refundAmount);
+      totalRefundsPerChain[chainId] = convertedRefundAmount;
+    }
+    const cumulativeRefunds = Object.values(totalRefundsPerChain).reduce((acc, curr) => acc.add(curr), bnZero);
+    const cumulativeVirtualBalance = this.getCumulativeBalance(l1Token);
+    return cumulativeVirtualBalance.add(cumulativeRefunds);
+  }
+
+  getChainBalance(
+    chainId: number,
+    l1Token: EvmAddress,
+    l2Token?: Address,
+    ignoreL1ToL2PendingAmount = false
+  ): BigNumber {
+    return this.getBalanceOnChain(chainId, l1Token, l2Token, ignoreL1ToL2PendingAmount);
   }
 
   /**
@@ -159,7 +267,7 @@ export class InventoryClient {
     const { crossChainTransferClient, relayer, tokenClient } = this;
     let balance = bnZero;
 
-    const { decimals: l1TokenDecimals } = getTokenInfo(l1Token, this.hubPoolClient.chainId);
+    const { decimals: l1TokenDecimals, symbol: l1TokenSymbol } = getTokenInfo(l1Token, this.hubPoolClient.chainId);
 
     // If chain is L1, add all pending L2->L1 withdrawals.
     if (chainId === this.hubPoolClient.chainId) {
@@ -170,6 +278,18 @@ export class InventoryClient {
           bnZero
         );
         balance = pendingWithdrawalVolume;
+      }
+    }
+
+    // Add in any pending swap rebalances. Pending Rebalances are currently only supported for the canonical L2 tokens
+    // mapped to each L1 token (i.e. the L2 token for an L1 token returned by getRemoteTokenForL1Token())
+    const pendingRebalancesForChain = this.pendingRebalances[chainId];
+    if (isDefined(pendingRebalancesForChain)) {
+      const _l2Token = l2Token ?? this.getRemoteTokenForL1Token(l1Token, chainId);
+      const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(_l2Token, chainId);
+      const pendingRebalancesForToken = pendingRebalancesForChain[l1TokenSymbol];
+      if (isDefined(pendingRebalancesForToken)) {
+        balance = balance.add(sdkUtils.ConvertDecimals(l2TokenDecimals, l1TokenDecimals)(pendingRebalancesForToken));
       }
     }
 
@@ -360,13 +480,44 @@ export class InventoryClient {
    * @param deposit Deposit
    * @returns list of chain IDs that are possible repayment chains for the deposit.
    */
+  /**
+   * Determines if origin chain repayment is forced for a deposit.
+   * Priority: forceOriginRepaymentPerChain[originChainId] > forceOriginRepayment > protocol rules
+   * @param deposit The deposit to check
+   * @returns true if origin chain repayment is forced
+   */
+  shouldForceOriginRepayment(deposit: Deposit): boolean {
+    const protocolForcesOriginRepayment = depositForcesOriginChainRepayment(deposit, this.hubPoolClient);
+    const perChainForceOriginRepayment = this.inventoryConfig?.forceOriginRepaymentPerChain?.[deposit.originChainId];
+    const globalForceOriginRepayment = this.inventoryConfig?.forceOriginRepayment ?? false;
+    // Per-chain config takes priority over global config
+    const configForcesOriginRepayment = perChainForceOriginRepayment ?? globalForceOriginRepayment;
+    return protocolForcesOriginRepayment || configForcesOriginRepayment;
+  }
+
+  /**
+   * Gets the repayment chain override for a given origin chain.
+   * Priority: repaymentChainOverridePerChain[originChainId] > repaymentChainOverride
+   * @param originChainId The origin chain ID
+   * @returns The repayment chain override chain ID, or undefined if not set
+   */
+  private getRepaymentChainOverride(originChainId: number): number | undefined {
+    const perChainRepaymentOverride = this.inventoryConfig?.repaymentChainOverridePerChain?.[originChainId];
+    const globalRepaymentOverride = this.inventoryConfig?.repaymentChainOverride;
+    return perChainRepaymentOverride ?? globalRepaymentOverride;
+  }
+
   getPossibleRepaymentChainIds(deposit: Deposit): number[] {
     // Origin chain is always included in the repayment chain list.
     const { originChainId, destinationChainId, inputToken } = deposit;
     const chainIds = new Set<number>();
     chainIds.add(originChainId);
-    if (depositForcesOriginChainRepayment(deposit, this.hubPoolClient)) {
-      return [...chainIds];
+
+    // Check if origin chain repayment is forced by protocol rules or config overrides
+    const forceOriginRepayment = this.shouldForceOriginRepayment(deposit);
+
+    if (forceOriginRepayment) {
+      return [originChainId];
     }
 
     if (this.canTakeDestinationChainRepayment(deposit)) {
@@ -387,6 +538,12 @@ export class InventoryClient {
         }
       });
     }
+    // Check per-chain override first, then global override
+    const chainOverride = this.getRepaymentChainOverride(originChainId);
+    if (isDefined(chainOverride)) {
+      chainIds.add(chainOverride);
+    }
+
     chainIds.add(this.hubPoolClient.chainId);
     return [...chainIds];
   }
@@ -400,6 +557,12 @@ export class InventoryClient {
    */
   getL1TokenAddress(l2Token: Address, chainId: number): EvmAddress | undefined {
     try {
+      // Add exception for USDC-like tokens which only exist on L2.
+      // @todo Add support for equivalence mappings.
+      const l2TokenInfo = getTokenInfo(l2Token, chainId);
+      if (["pathUSD"].includes(l2TokenInfo.symbol)) {
+        return EvmAddress.from(TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubPoolClient.chainId]);
+      }
       return getL1TokenAddress(l2Token, chainId);
     } catch {
       return undefined;
@@ -423,6 +586,11 @@ export class InventoryClient {
       destinationChainId
     );
     if (equivalentTokens) {
+      return true;
+    }
+
+    // Return true if the input and output tokens are defined as equivalent according to a user-defined swap config.
+    if (this.isSwapSupported(inputToken, outputToken, originChainId, destinationChainId)) {
       return true;
     }
 
@@ -475,11 +643,10 @@ export class InventoryClient {
    * @dev If inventory management is disabled, then destinationChain is used as a default unless the
    * originChain is a lite chain, then originChain is the default used.
    * @param deposit Deposit to determine repayment chains for.
-   * @param l1Token L1Token linked with deposited inputToken and repayment chain refund token.
    * @returns list of chain IDs that are possible repayment chains for the deposit, sorted from highest
    * to lowest priority.
    */
-  async determineRefundChainId(deposit: Deposit, l1Token?: EvmAddress): Promise<number[]> {
+  async determineRefundChainId(deposit: Deposit): Promise<number[]> {
     const { originChainId, destinationChainId, inputToken, outputToken, inputAmount } = deposit;
     const hubChainId = this.hubPoolClient.chainId;
 
@@ -504,22 +671,35 @@ export class InventoryClient {
       );
     }
 
+    // Check if origin chain repayment is forced by protocol rules or config overrides
+    const forceOriginRepayment = this.shouldForceOriginRepayment(deposit);
+
     // If the deposit forces origin chain repayment but the origin chain is one we can easily rebalance inventory from,
     // then don't ignore this deposit based on perceived over-allocation. For example, the hub chain and chains connected
     // to the user's Binance API are easy to move inventory from so we should never skip filling these deposits.
-    const forceOriginRepayment = depositForcesOriginChainRepayment(deposit, this.hubPoolClient);
     if (forceOriginRepayment && repaymentChainCanBeQuicklyRebalanced(originChainId, inputToken, this.hubPoolClient)) {
       return [originChainId];
     }
 
     // @dev This getL1TokenAddress() should never return undefined because we call `validateOutputToken()` first, which would return
     // false if the input token and origin chain weren't mapped to an L1 token.
-    l1Token ??= this.getL1TokenAddress(inputToken, originChainId);
+    const l1Token = this.getL1TokenAddress(inputToken, originChainId);
     if (!isDefined(l1Token)) {
       throw new Error(
         `InventoryClient#determineRefundChainId: No L1 token found for input token ${inputToken} on origin chain ${originChainId}`
       );
     }
+
+    // If we have defined an override repayment chain in inventory config and we do not need to take origin chain repayment,
+    // then short-circuit this check.
+    // Priority: repaymentChainOverridePerChain[originChainId] > repaymentChainOverride
+    if (!forceOriginRepayment) {
+      const chainOverride = this.getRepaymentChainOverride(originChainId);
+      if (isDefined(chainOverride)) {
+        return [chainOverride];
+      }
+    }
+
     const { decimals: l1TokenDecimals } = getTokenInfo(l1Token, this.hubPoolClient.chainId);
     const { decimals: inputTokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(inputToken, originChainId);
     const inputAmountInL1TokenDecimals = sdkUtils.ConvertDecimals(inputTokenDecimals, l1TokenDecimals)(inputAmount);
@@ -527,7 +707,7 @@ export class InventoryClient {
     // Consider any upcoming refunds. Convert all refunds to same precision as L1 token.
     const totalRefundsPerChain: { [chainId: number]: BigNumber } = {};
     for (const chainId of this.chainIdList) {
-      const repaymentToken = this.getRemoteTokenForL1Token(l1Token, chainId);
+      const repaymentToken = chainId === originChainId ? inputToken : this.getRemoteTokenForL1Token(l1Token, chainId);
       if (!repaymentToken) {
         continue;
       }
@@ -536,8 +716,6 @@ export class InventoryClient {
       const convertedRefundAmount = sdkUtils.ConvertDecimals(l2TokenDecimals, l1TokenDecimals)(refundAmount);
       totalRefundsPerChain[chainId] = convertedRefundAmount;
     }
-    const cumulativeRefunds = Object.values(totalRefundsPerChain).reduce((acc, curr) => acc.add(curr), bnZero);
-    const cumulativeVirtualBalance = this.getCumulativeBalance(l1Token);
 
     // @dev: The following async call to `getExcessRunningBalancePcts` should be very fast compared to the above
     // getBundleRefunds async call. Therefore, we choose not to compute them in parallel.
@@ -610,12 +788,14 @@ export class InventoryClient {
       assert(this._l1TokenEnabledForChain(l1Token, chainId), `Token ${l1Token} not enabled for chain ${chainId}`);
 
       // Destination chain:
-      const repaymentToken = this.getRemoteTokenForL1Token(l1Token, chainId);
+      let repaymentToken = this.getRemoteTokenForL1Token(l1Token, chainId);
       if (chainId !== originChainId) {
         assert(
           this.hubPoolClient.l2TokenHasPoolRebalanceRoute(repaymentToken, chainId),
           `Token ${repaymentToken} not enabled as PoolRebalanceRoute for chain ${chainId} for l1 token ${l1Token}`
         );
+      } else {
+        repaymentToken = inputToken;
       }
       const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(repaymentToken, chainId);
       const chainShortfall = sdkUtils.ConvertDecimals(
@@ -639,7 +819,7 @@ export class InventoryClient {
       );
       // To correctly compute the allocation % for this destination chain, we need to add all upcoming refunds for the
       // equivalents of l1Token on all chains.
-      const cumulativeVirtualBalancePostRefunds = cumulativeVirtualBalance.add(cumulativeRefunds);
+      const cumulativeVirtualBalancePostRefunds = this.getCumulativeBalanceWithApproximateUpcomingRefunds(l1Token);
 
       // Compute what the balance will be on the target chain, considering this relay and the finalization of the
       // transfers that are currently flowing through the canonical bridge.
@@ -687,7 +867,6 @@ export class InventoryClient {
           chainVirtualBalance,
           chainVirtualBalanceWithShortfall,
           chainVirtualBalanceWithShortfallPostRelay,
-          cumulativeVirtualBalance,
           cumulativeVirtualBalancePostRefunds,
           targetPct: formatUnits(tokenConfig.targetPct, 18),
           targetOverage: formatUnits(targetOverageBuffer, 18),
@@ -960,10 +1139,13 @@ export class InventoryClient {
   }
 
   _getPossibleShortfallRebalances(l1Token: EvmAddress, chainId: number, l2Token: Address): Rebalance[] {
+    const { decimals: l1TokenDecimals } = getTokenInfo(l1Token, this.hubPoolClient.chainId);
+    const { decimals: l2TokenDecimals } = getTokenInfo(l2Token, chainId);
     // Order unfilled amounts from largest to smallest to prioritize larger shortfalls.
     const unfilledDepositAmounts = this.tokenClient
       .getUnfilledDepositAmounts(chainId, l2Token)
-      .sort(bnComparatorDescending);
+      .sort(bnComparatorDescending)
+      .map((unfilledAmount) => sdkUtils.ConvertDecimals(l2TokenDecimals, l1TokenDecimals)(unfilledAmount));
     let outstandingCrossChainTransferAmount = this.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
       this.relayer,
       chainId,
@@ -996,95 +1178,85 @@ export class InventoryClient {
     // Note: these types are just used inside this method, so they are declared in-line.
     type ExecutedRebalance = Rebalance & { hash: string };
 
+    if (!this.isInventoryManagementEnabled()) {
+      return;
+    }
+
+    const tokenDistributionPerL1Token = this.getTokenDistributionPerL1Token();
+    this.constructConsideringRebalanceDebugLog(tokenDistributionPerL1Token);
+
+    const rebalancesRequired = this.getPossibleRebalances();
+    if (rebalancesRequired.length === 0) {
+      this.log("No rebalances required");
+      return;
+    }
+
     const possibleRebalances: Rebalance[] = [];
     const unexecutedRebalances: Rebalance[] = [];
     const executedTransactions: ExecutedRebalance[] = [];
-    try {
-      if (!this.isInventoryManagementEnabled()) {
-        return;
-      }
-      const tokenDistributionPerL1Token = this.getTokenDistributionPerL1Token();
-      this.constructConsideringRebalanceDebugLog(tokenDistributionPerL1Token);
 
-      const rebalancesRequired = this.getPossibleRebalances();
-      if (rebalancesRequired.length === 0) {
-        this.log("No rebalances required");
-        return;
-      }
+    // Next, evaluate if we have enough tokens on L1 to actually do these rebalances.
+    for (const rebalance of rebalancesRequired) {
+      const { balance, amount, l1Token, l2Token, chainId } = rebalance;
 
-      // Next, evaluate if we have enough tokens on L1 to actually do these rebalances.
-      for (const rebalance of rebalancesRequired) {
-        const { balance, amount, l1Token, l2Token, chainId } = rebalance;
+      // This is the balance left after any assumed rebalances from earlier loop iterations.
+      const unallocatedBalance = this.tokenClient.getBalance(this.hubPoolClient.chainId, l1Token);
 
-        // This is the balance left after any assumed rebalances from earlier loop iterations.
-        const unallocatedBalance = this.tokenClient.getBalance(this.hubPoolClient.chainId, l1Token);
+      // If the amount required in the rebalance is less than the total amount of this token on L1 then we can execute
+      // the rebalance to this particular chain. Note that if the sum of all rebalances required exceeds the l1
+      // balance then this logic ensures that we only fill the first n number of chains where we can.
+      if (toBN(amount).lte(unallocatedBalance)) {
+        // As a precautionary step before proceeding, check that the token balance for the token we're about to send
+        // hasn't changed on L1. It's possible its changed since we updated the inventory due to one or more of the
+        // RPC's returning slowly, leading to concurrent/overlapping instances of the bot running.
+        const tokenContract = new Contract(l1Token.toNative(), ERC20.abi, this.hubPoolClient.hubPool.signer);
+        const currentBalance = await tokenContract.balanceOf(this.relayer.toNative());
 
-        // If the amount required in the rebalance is less than the total amount of this token on L1 then we can execute
-        // the rebalance to this particular chain. Note that if the sum of all rebalances required exceeds the l1
-        // balance then this logic ensures that we only fill the first n number of chains where we can.
-        if (toBN(amount).lte(unallocatedBalance)) {
-          // As a precautionary step before proceeding, check that the token balance for the token we're about to send
-          // hasn't changed on L1. It's possible its changed since we updated the inventory due to one or more of the
-          // RPC's returning slowly, leading to concurrent/overlapping instances of the bot running.
-          const tokenContract = new Contract(l1Token.toNative(), ERC20.abi, this.hubPoolClient.hubPool.signer);
-          const currentBalance = await tokenContract.balanceOf(this.relayer.toNative());
+        const balanceChanged = !balance.eq(currentBalance);
+        const [message, log] = balanceChanged
+          ? ["🚧 Token balance on mainnet changed, skipping rebalance", this.logger.warn]
+          : ["Token balance in relayer on mainnet is as expected, sending cross chain transfer", this.logger.debug];
+        log({
+          at: "InventoryClient",
+          message,
+          l1Token,
+          l2Token,
+          l2ChainId: chainId,
+          balance,
+          currentBalance,
+        });
 
-          const balanceChanged = !balance.eq(currentBalance);
-          const [message, log] = balanceChanged
-            ? ["🚧 Token balance on mainnet changed, skipping rebalance", this.logger.warn]
-            : ["Token balance in relayer on mainnet is as expected, sending cross chain transfer", this.logger.debug];
-          log({
-            at: "InventoryClient",
-            message,
-            l1Token: l1Token.toNative(),
-            l2Token: l2Token.toNative(),
-            l2ChainId: chainId,
-            balance,
-            currentBalance,
-          });
-
-          if (!balanceChanged) {
-            possibleRebalances.push(rebalance);
-            // Decrement token balance in client for this chain and increment cross chain counter.
-            this.trackCrossChainTransfer(l1Token, l2Token, amount, chainId);
-          }
-        } else {
-          // Extract unexecutable rebalances for logging.
-          unexecutedRebalances.push(rebalance);
+        if (!balanceChanged) {
+          possibleRebalances.push(rebalance);
+          // Decrement token balance in client for this chain and increment cross chain counter.
+          this.trackCrossChainTransfer(l1Token, l2Token, amount, chainId);
         }
+      } else {
+        // Extract unexecutable rebalances for logging.
+        unexecutedRebalances.push(rebalance);
       }
+    }
 
-      // Extract unexecutable rebalances for logging.
+    // Extract unexecutable rebalances for logging.
+    this.log("Considered inventory rebalances", {
+      rebalancesRequired,
+      possibleRebalances,
+    });
 
-      this.log("Considered inventory rebalances", {
-        rebalancesRequired: rebalancesRequired.map((rebalance) => {
-          return {
-            ...rebalance,
-            l1Token: rebalance.l1Token.toNative(),
-            l2Token: rebalance.l2Token.toNative(),
-          };
-        }),
-        possibleRebalances: possibleRebalances.map((rebalance) => {
-          return {
-            ...rebalance,
-            l1Token: rebalance.l1Token.toNative(),
-            l2Token: rebalance.l2Token.toNative(),
-          };
-        }),
-      });
+    // Finally, execute the rebalances.
+    // TODO: The logic below is slow as it waits for each transaction to be included before sending the next one. This
+    // should be refactored to enable us to pass an array of transaction objects to the transaction util that then
+    // sends each transaction one after the other with incrementing nonce. this will be left for a follow on PR as this
+    // is already complex logic and most of the time we'll not be sending batches of rebalance transactions.
+    for (const rebalance of possibleRebalances) {
+      const { chainId, l1Token, l2Token, amount, isShortfallRebalance } = rebalance;
+      // Send a faster transfer if there is an active shortfall on the chain, otherwise use the slower, cheaper,
+      // default transfer.
+      const optionalParams: TransferTokenParams = {
+        fastMode: isShortfallRebalance,
+      };
 
-      // Finally, execute the rebalances.
-      // TODO: The logic below is slow as it waits for each transaction to be included before sending the next one. This
-      // should be refactored to enable us to pass an array of transaction objects to the transaction util that then
-      // sends each transaction one after the other with incrementing nonce. this will be left for a follow on PR as this
-      // is already complex logic and most of the time we'll not be sending batches of rebalance transactions.
-      for (const rebalance of possibleRebalances) {
-        const { chainId, l1Token, l2Token, amount, isShortfallRebalance } = rebalance;
-        // Send a faster transfer if there is an active shortfall on the chain, otherwise use the slower, cheaper,
-        // default transfer.
-        const optionalParams: TransferTokenParams = {
-          fastMode: isShortfallRebalance,
-        };
+      try {
         const { hash } = await this.sendTokenCrossChain(
           chainId,
           l1Token,
@@ -1094,94 +1266,94 @@ export class InventoryClient {
           optionalParams
         );
         executedTransactions.push({ ...rebalance, hash });
+      } catch (error) {
+        this.log(
+          "Something errored during inventory rebalance",
+          { error, chainId, l1Token, l2Token, amount, optionalParams }, // include all info to help debugging.
+          "error"
+        );
       }
+    }
 
-      // Construct logs on the cross-chain actions executed.
-      let mrkdwn = "";
+    // Construct logs on the cross-chain actions executed.
+    let mrkdwn = "";
 
-      const groupedRebalances = lodash.groupBy(executedTransactions, "chainId");
-      for (const [_chainId, rebalances] of Object.entries(groupedRebalances)) {
-        const chainId = Number(_chainId);
-        mrkdwn += `*Rebalances sent to ${getNetworkName(chainId)}:*\n`;
-        for (const { l1Token, l2Token, amount, hash, chainId, isShortfallRebalance } of rebalances) {
-          const tokenInfo = this.hubPoolClient.getTokenInfoForAddress(l2Token, chainId);
-          if (!tokenInfo) {
-            `InventoryClient::rebalanceInventoryIfNeeded no token info for L2 token ${l2Token} on chain ${chainId}`;
-          }
-          const { symbol, decimals } = tokenInfo;
-          const l2TokenFormatter = createFormatFunction(2, 4, false, decimals);
-          const l1TokenInfo = getTokenInfo(l1Token, this.hubPoolClient.chainId);
-          const l1Formatter = createFormatFunction(2, 4, false, l1TokenInfo.decimals);
-
-          const cumulativeBalance = this.getCumulativeBalance(l1Token);
-          const tokenConfig = this.getTokenConfig(l1Token, chainId, l2Token);
-          const { thresholdPct, targetPct } = tokenConfig;
-          if (isShortfallRebalance) {
-            const totalShortfall = this.tokenClient.getShortfallTotalRequirement(chainId, l2Token);
-            mrkdwn +=
-              `- ${l1Formatter(amount)} ${symbol} rebalanced to cover total chain shortfall of ` +
-              `${l2TokenFormatter(totalShortfall)} ${symbol} `;
-          } else {
-            mrkdwn +=
-              ` - ${l1Formatter(amount)} ${symbol} rebalanced. This meets target allocation of ` +
-              `${this.formatWei(targetPct.mul(100))}% (trigger of ` +
-              `${this.formatWei(thresholdPct.mul(100))}%) of the total ` +
-              `${l1Formatter(cumulativeBalance)} ${symbol} over all chains (ignoring hubpool repayments).`;
-          }
-          mrkdwn += ` tx: ${blockExplorerLink(hash, this.hubPoolClient.chainId)}\n`;
+    const groupedRebalances = Object.groupBy(executedTransactions, (txn) => txn.chainId);
+    for (const [_chainId, rebalances] of Object.entries(groupedRebalances)) {
+      const chainId = Number(_chainId);
+      mrkdwn += `*Rebalances sent to ${getNetworkName(chainId)}:*\n`;
+      for (const { l1Token, l2Token, amount, hash, chainId, isShortfallRebalance } of rebalances) {
+        const tokenInfo = this.hubPoolClient.getTokenInfoForAddress(l2Token, chainId);
+        if (!tokenInfo) {
+          `InventoryClient::rebalanceInventoryIfNeeded no token info for L2 token ${l2Token} on chain ${chainId}`;
         }
-      }
+        const { symbol, decimals } = tokenInfo;
+        const l2TokenFormatter = createFormatFunction(2, 4, false, decimals);
+        const l1TokenInfo = getTokenInfo(l1Token, this.hubPoolClient.chainId);
+        const l1Formatter = createFormatFunction(2, 4, false, l1TokenInfo.decimals);
 
-      const groupedUnexecutedRebalances = lodash.groupBy(unexecutedRebalances, "chainId");
-      for (const [_chainId, rebalances] of Object.entries(groupedUnexecutedRebalances)) {
-        const chainId = Number(_chainId);
-        mrkdwn += `*Insufficient amount to rebalance to ${getNetworkName(chainId)}:*\n`;
-        for (const { l1Token, l2Token, balance, amount } of rebalances) {
-          const tokenInfo = this.hubPoolClient.getTokenInfoForAddress(l2Token, chainId);
-          if (!tokenInfo) {
-            throw new Error(
-              `InventoryClient::rebalanceInventoryIfNeeded no token info for L2 token ${l2Token} on chain ${chainId}`
-            );
-          }
-          const l1TokenInfo = getTokenInfo(l1Token, this.hubPoolClient.chainId);
-          const l1Formatter = createFormatFunction(2, 4, false, l1TokenInfo.decimals);
-
-          const { symbol, decimals } = tokenInfo;
-          const l2TokenFormatter = createFormatFunction(2, 4, false, decimals);
-          const distributionPct = tokenDistributionPerL1Token[l1Token.toNative()][chainId][l2Token.toNative()].mul(100);
-          const cumulativeBalance = this.getCumulativeBalance(l1Token);
+        const cumulativeBalance = this.getCumulativeBalance(l1Token);
+        const tokenConfig = this.getTokenConfig(l1Token, chainId, l2Token);
+        const { thresholdPct, targetPct } = tokenConfig;
+        if (isShortfallRebalance) {
+          const totalShortfall = this.tokenClient.getShortfallTotalRequirement(chainId, l2Token);
           mrkdwn +=
-            `- ${symbol} transfer blocked. Required to send ` +
-            `${l1Formatter(amount)} but relayer has ` +
-            `${l1Formatter(balance)} on L1. There is currently ` +
-            `${l1Formatter(this.getBalanceOnChain(chainId, l1Token, l2Token))} ${symbol} on ` +
-            `${getNetworkName(chainId)} which is ` +
-            `${this.formatWei(distributionPct)}% of the total ` +
-            `${l1Formatter(cumulativeBalance)} ${symbol}.` +
-            " This chain's pending L1->L2 transfer amount is " +
-            `${l1Formatter(
-              this.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
-                this.relayer,
-                chainId,
-                l1Token,
-                l2Token
-              )
-            )}.` +
-            ` This chain has a shortfall of ${l2TokenFormatter(
-              this.tokenClient.getShortfallTotalRequirement(chainId, l2Token)
-            )} ${symbol}.\n`;
+            `- ${l1Formatter(amount)} ${symbol} rebalanced to cover total chain shortfall of ` +
+            `${l2TokenFormatter(totalShortfall)} ${symbol} `;
+        } else {
+          mrkdwn +=
+            ` - ${l1Formatter(amount)} ${symbol} rebalanced. This meets target allocation of ` +
+            `${this.formatWei(targetPct.mul(100))}% (trigger of ` +
+            `${this.formatWei(thresholdPct.mul(100))}%) of the total ` +
+            `${l1Formatter(cumulativeBalance)} ${symbol} over all chains (ignoring hubpool repayments).`;
         }
+        mrkdwn += ` tx: ${blockExplorerLink(hash, this.hubPoolClient.chainId)}\n`;
       }
+    }
 
-      if (mrkdwn) {
-        this.log("Executed Inventory rebalances 📒", { mrkdwn }, "info");
+    const groupedUnexecutedRebalances = Object.groupBy(unexecutedRebalances, (txn) => txn.chainId);
+    for (const [_chainId, rebalances] of Object.entries(groupedUnexecutedRebalances)) {
+      const chainId = Number(_chainId);
+      mrkdwn += `*Insufficient amount to rebalance to ${getNetworkName(chainId)}:*\n`;
+      for (const { l1Token, l2Token, balance, amount } of rebalances) {
+        const tokenInfo = this.hubPoolClient.getTokenInfoForAddress(l2Token, chainId);
+        if (!tokenInfo) {
+          throw new Error(
+            `InventoryClient::rebalanceInventoryIfNeeded no token info for L2 token ${l2Token} on chain ${chainId}`
+          );
+        }
+        const l1TokenInfo = getTokenInfo(l1Token, this.hubPoolClient.chainId);
+        const l1Formatter = createFormatFunction(2, 4, false, l1TokenInfo.decimals);
+
+        const { symbol, decimals } = tokenInfo;
+        const l2TokenFormatter = createFormatFunction(2, 4, false, decimals);
+        const distributionPct = tokenDistributionPerL1Token[l1Token.toNative()][chainId][l2Token.toNative()].mul(100);
+        const cumulativeBalance = this.getCumulativeBalance(l1Token);
+        mrkdwn +=
+          `- ${symbol} transfer blocked. Required to send ` +
+          `${l1Formatter(amount)} but relayer has ` +
+          `${l1Formatter(balance)} on L1. There is currently ` +
+          `${l1Formatter(this.getBalanceOnChain(chainId, l1Token, l2Token))} ${symbol} on ` +
+          `${getNetworkName(chainId)} which is ` +
+          `${this.formatWei(distributionPct)}% of the total ` +
+          `${l1Formatter(cumulativeBalance)} ${symbol}.` +
+          " This chain's pending L1->L2 transfer amount is " +
+          `${l1Formatter(
+            this.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
+              this.relayer,
+              chainId,
+              l1Token,
+              l2Token
+            )
+          )}.` +
+          ` This chain has a shortfall of ${l2TokenFormatter(
+            this.tokenClient.getShortfallTotalRequirement(chainId, l2Token)
+          )} ${symbol}.\n`;
       }
-    } catch (error) {
-      this.log(
-        "Something errored during inventory rebalance",
-        { error, possibleRebalances, unexecutedRebalances, executedTransactions }, // include all info to help debugging.
-        "error"
-      );
+    }
+
+    if (mrkdwn) {
+      this.log("Executed Inventory rebalances 📒", { mrkdwn }, "info");
     }
   }
 
@@ -1234,7 +1406,8 @@ export class InventoryClient {
           .filter(isDefined)
           // This map adds the ETH balance to the object.
           .map(async (chainInfo) => {
-            const spokePoolClient = this.tokenClient.spokePoolClients[chainInfo.chainId];
+            const spokePoolClient = this.tokenClient.spokePoolManager.getClient(chainInfo.chainId);
+            assert(isDefined(spokePoolClient), `SpokePoolClient not found for chainId ${chainInfo.chainId}`);
             assert(isEVMSpokePoolClient(spokePoolClient));
             return {
               ...chainInfo,
@@ -1398,8 +1571,8 @@ export class InventoryClient {
               shouldWithdrawExcess ? "HAS EXCESS ✅" : "NO EXCESS ❌"
             }`,
             {
-              l1Token: l1Token.toEvmAddress(),
-              l2Token: l2Token.toEvmAddress(),
+              l1Token,
+              l2Token,
               cumulativeBalance: formatter(cumulativeBalance),
               currentAllocPct: formatUnits(currentAllocPct, 18),
               excessWithdrawThresholdPct: formatUnits(excessWithdrawThresholdPct, 18),
@@ -1423,7 +1596,7 @@ export class InventoryClient {
             .div(this.scalar);
           // Note: getL2PendingWithdrawalAmount() returns a value in L2 token decimals so we can compare it with
           // maxL2WithdrawalVolume.
-          const pendingWithdrawalAmount = await this.adapterManager.getL2PendingWithdrawalAmount(
+          const pendingWithdrawalAmount = await this.adapterManager.getL2PendingWithdrawalAmountWithLookbackPeriod(
             withdrawExcessPeriod,
             chainId,
             this.relayer,
@@ -1484,17 +1657,7 @@ export class InventoryClient {
       return;
     } else {
       this.log("Excess balances to withdraw", {
-        withdrawalsRequired: Object.entries(withdrawalsRequired).map(([chainIds, withdrawals]) => {
-          return [
-            chainIds,
-            withdrawals.map((withdrawal) => {
-              return {
-                ...withdrawal,
-                l2Token: withdrawal.l2Token.toEvmAddress(),
-              };
-            }),
-          ];
-        }),
+        withdrawalsRequired,
       });
     }
 
@@ -1617,12 +1780,21 @@ export class InventoryClient {
   }
 
   _unwrapWeth(chainId: number, _l2Weth: string, amount: BigNumber): Promise<TransactionResponse> {
-    const spokePoolClient = this.tokenClient.spokePoolClients[chainId];
+    const spokePoolClient = this.tokenClient.spokePoolManager.getClient(chainId);
+    assert(isDefined(spokePoolClient), `SpokePoolClient not found for chainId ${chainId}`);
     assert(isEVMSpokePoolClient(spokePoolClient));
     const l2Signer = spokePoolClient.spokePool.signer;
     const l2Weth = new Contract(_l2Weth, WETH_ABI, l2Signer);
     this.log("Unwrapping WETH", { amount: amount.toString() });
-    return runTransaction(this.logger, l2Weth, "withdraw", [amount]);
+    return submitTransaction(
+      {
+        contract: l2Weth,
+        method: "withdraw",
+        args: [amount],
+        chainId,
+      },
+      this.transactionClient
+    );
   }
 
   async setTokenApprovals(): Promise<void> {
@@ -1656,7 +1828,6 @@ export class InventoryClient {
       this.pendingL2Withdrawals[l1Token.toNative()] = {};
       const pendingWithdrawalBalances =
         await this.crossChainTransferClient.adapterManager.getTotalPendingWithdrawalAmount(
-          7200,
           this.getEnabledChains().filter((chainId) => chainId !== this.hubPoolClient.chainId),
           this.relayer,
           l1Token
@@ -1670,6 +1841,17 @@ export class InventoryClient {
       message: "Updated pending L2->L1 withdrawals",
       pendingL2Withdrawals: this.pendingL2Withdrawals,
     });
+
+    this.pendingRebalances = await this.rebalancerClient.getPendingRebalances();
+    if (Object.keys(this.pendingRebalances).length > 0) {
+      this.logger.debug({
+        at: "InventoryClient#update",
+        message: "Updated RebalancerClient pending rebalances",
+        pendingRebalances: Object.entries(this.pendingRebalances).map(([chainId, tokens]) => ({
+          [chainId]: Object.fromEntries(Object.entries(tokens).map(([token, amount]) => [token, amount.toString()])),
+        })),
+      });
+    }
   }
 
   isInventoryManagementEnabled(): boolean {

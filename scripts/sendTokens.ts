@@ -8,10 +8,10 @@ import {
   getGasPrice,
   toGWei,
   getNativeTokenSymbol,
-  LEGACY_TRANSACTION_CHAINS,
 } from "../src/utils";
 import { askYesNoQuestion } from "./utils";
 import minimist from "minimist";
+import { LEGACY_TRANSACTION_CHAINS } from "../src/clients/TransactionClient";
 const args = minimist(process.argv.slice(2), {
   string: ["token", "to", "amount", "chainId", "nonce", "maxFeePerGas", "maxPriorityFeePerGas"],
 });

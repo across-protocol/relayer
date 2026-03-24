@@ -32,7 +32,7 @@ export class PolygonERC20Bridge extends BaseBridgeAdapter {
   ) {
     // @dev This method fetches the *SDK's* most up-to-date values of
     // TOKEN_SYMBOLS_MAP. This constructor will therefore break if
-    // either the SDK, or the constants dependency in the SDK, is not
+    // either the SDK or the constants dependency in the SDK is not
     // up-to-date.
     const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].polygonBridge;
     const { address: l1GatewayAddress, abi: l1GatewayAbi } = CONTRACT_ADDRESSES[hubChainId].polygonRootChainManager;

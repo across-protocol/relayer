@@ -46,6 +46,14 @@ export interface ChainFinalizer {
   ): Promise<FinalizerPromise>;
 }
 
+export interface Finalizer {
+  (
+    logger: winston.Logger,
+    sourceSpokePoolClient: SpokePoolClient,
+    addressesToFinalize: AddressesToFinalize
+  ): Promise<FinalizerPromise>;
+}
+
 /**
  * Type guard to check if a transaction object is an AugmentedTransaction.
  * @param txn The transaction object to check.

@@ -1,5 +1,5 @@
 import assert from "assert";
-import { countBy, groupBy } from "lodash";
+import { countBy } from "lodash";
 import * as optimismSDK from "@eth-optimism/sdk";
 import * as viem from "viem";
 import * as viemChains from "viem/chains";
@@ -23,6 +23,7 @@ import {
   getNetworkName,
   getRedisCache,
   getUniqueLogIndex,
+  getViemChain,
   groupObjectCountsByProp,
   isDefined,
   Provider,
@@ -44,7 +45,7 @@ import {
   EvmAddress,
   ZERO_ADDRESS,
 } from "../../utils";
-import { CONTRACT_ADDRESSES, OPSTACK_CONTRACT_OVERRIDES } from "../../common";
+import { CONTRACT_ADDRESSES, OPSTACK_CONTRACT_OVERRIDES, CHAIN_MAX_BLOCK_LOOKBACK } from "../../common";
 import OPStackPortalL1 from "../../common/abi/OpStackPortalL1.json";
 import { FinalizerPromise, CrossChainMessage, AddressesToFinalize } from "../types";
 const { utils } = ethers;
@@ -73,22 +74,55 @@ const OP_STACK_CHAINS = Object.values(CHAIN_IDs).filter((chainId) => chainIsOPSt
 // this constant and skip the proof submission if they match.
 const PENDING_PROOF_OUTPUT_ROOT = "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
 
-// We might want to export this mapping of chain ID to viem chain object out of a constant
-// file once we start using Viem elsewhere in the repo:
-const VIEM_OP_STACK_CHAINS: Record<number, viem.Chain> = {
-  [CHAIN_IDs.OPTIMISM]: viemChains.optimism,
-  [CHAIN_IDs.BASE]: viemChains.base,
-  [CHAIN_IDs.REDSTONE]: viemChains.redstone,
-  [CHAIN_IDs.LISK]: viemChains.lisk,
-  [CHAIN_IDs.ZORA]: viemChains.zora,
-  [CHAIN_IDs.MODE]: viemChains.mode,
-  [CHAIN_IDs.WORLD_CHAIN]: viemChains.worldchain,
-  [CHAIN_IDs.SONEIUM]: viemChains.soneium,
-  [CHAIN_IDs.UNICHAIN]: viemChains.unichain,
-  [CHAIN_IDs.INK]: viemChains.ink,
-  // // @dev The following chains have non-standard interfaces or processes for withdrawing from L2 to L1
-  // [CHAIN_IDs.BLAST]: viemChains.blast,
-};
+// OP-stack target chains used with viem OP-stack actions must declare portal, disputeGameFactory,
+// and l2OutputOracle contracts. At runtime, the specific contracts accessed depend on the portal
+// version, so not all chains need every contract. The type satisfies the most demanding function
+// signature (getTimeToFinalize), while the assertion validates the universally required portal
+// contract. This interface is necessary because viem's internal TargetChain type is not exported,
+// and viem's function signatures are stricter than their runtime behaviour (e.g. getTimeToFinalize
+// requires l2OutputOracle in the type even though it only reads it for portal v<3).
+interface OpStackTargetChain extends viem.Chain {
+  contracts: {
+    portal: { [sourceId: number]: viem.ChainContract };
+    disputeGameFactory: { [sourceId: number]: viem.ChainContract };
+    l2OutputOracle: { [sourceId: number]: viem.ChainContract };
+  };
+}
+
+function assertOpStackTargetChain(chain: viem.Chain): asserts chain is OpStackTargetChain {
+  assert(
+    chain.contracts !== undefined && "portal" in chain.contracts,
+    `Chain ${chain.id} missing required OP-stack 'portal' contract`
+  );
+}
+
+/**
+ * Augment a viem chain definition with disputeGameFactory from OPSTACK_CONTRACT_OVERRIDES
+ * when the viem chain doesn't already provide one. No-op for chains that already have
+ * disputeGameFactory in their viem definition.
+ *
+ * This is intended as a short-term fix when on-chain changes (e.g. a portal upgrade to
+ * fault proofs) have not yet been propagated to viem's chain definitions. The preferred
+ * approach is to upstream the changes to viem, or at least to update the existing viem
+ * patches in this repository. In the interim, adding a DisputeGameFactory override in
+ * OPSTACK_CONTRACT_OVERRIDES is acceptable.
+ */
+function withContractOverrides(chainId: number, chain: viem.Chain): viem.Chain {
+  const overrides = OPSTACK_CONTRACT_OVERRIDES[chainId]?.l1;
+  if (!overrides?.DisputeGameFactory || chain.contracts?.disputeGameFactory) {
+    return chain;
+  }
+  const sourceId = chainIsProd(chainId) ? CHAIN_IDs.MAINNET : CHAIN_IDs.SEPOLIA;
+  return {
+    ...chain,
+    contracts: {
+      ...chain.contracts,
+      disputeGameFactory: {
+        [sourceId]: { address: overrides.DisputeGameFactory as viem.Address },
+      },
+    },
+  };
+}
 
 type OVM_CHAIN_ID = (typeof OP_STACK_CHAINS)[number];
 type OVM_CROSS_CHAIN_MESSENGER = optimismSDK.CrossChainMessenger;
@@ -126,7 +160,7 @@ export async function opStackFinalizer(
   // on Optimism, SNX on Optimism, USDC.e on Worldchain, etc) so the easiest way to query for these
   // events is to use the TokenBridged event emitted by the Across SpokePool on every withdrawal.
   const usdc = EvmAddress.from(USDC.addresses[chainId] ?? ZERO_ADDRESS);
-  const { recentTokensBridgedEvents = [], olderTokensBridgedEvents = [] } = groupBy(
+  const { recentTokensBridgedEvents = [], olderTokensBridgedEvents = [] } = Object.groupBy(
     spokePoolClient.getTokensBridged().filter(
       ({ l2TokenAddress }) =>
         // CCTP USDC withdrawals should be finalized via the CCTP Finalizer.
@@ -145,6 +179,7 @@ export async function opStackFinalizer(
   // the lite chain to Ethereum via the canonical OVM standard bridge.
   // Filter out SpokePool as sender since we query for it previously using the TokensBridged event query.
   const ovmFromAddresses = Array.from(senderAddresses.keys())
+    .filter((address) => address.isEVM())
     .map((sender) => sender.toEvmAddress())
     .filter((sender) => sender !== spokePool.address);
   const searchConfig = { ...spokePoolClient.eventSearchConfig, to };
@@ -175,7 +210,7 @@ export async function opStackFinalizer(
   let callData: Multicall2Call[];
   let crossChainTransfers: CrossChainMessage[];
 
-  if (VIEM_OP_STACK_CHAINS[chainId]) {
+  if (!chainIsBlast(chainId)) {
     const viemTxns = await viem_multicallOptimismFinalizations(
       chainId,
       logger,
@@ -249,7 +284,7 @@ async function getOVMStdEvents(
   // that look exactly emit the same events as the standard bridge's ETH withdrawal process. This is used by the
   // https://blast.io/en/bridge UI, so the following query allows this finalizer to finalize withdrawals of WETH
   // from blast initiated through this hosted UI. ETH withdrawals sent in this manner through the Blast Bridge
-  // have the same ETHBridgeInitiated event signature so we only need to change the contract addres.
+  // have the same ETHBridgeInitiated event signature so we only need to change the contract address.
   if (chainIsBlast(chainId)) {
     const blastBridge = new Contract(CONTRACT_ADDRESSES[chainId].blastBridge.address, ovmStandardBridge.abi, provider);
     const blastEthEvents = (
@@ -328,18 +363,23 @@ async function viem_multicallOptimismFinalizations(
     withdrawals: [],
   };
   const hubChainId = hubPoolClient.chainId;
+  const l1Chain = chainIsProd(chainId) ? viemChains.mainnet : viemChains.sepolia;
   const publicClientL1 = viem.createPublicClient({
     batch: {
       multicall: true,
     },
-    chain: chainIsProd(chainId) ? viemChains.mainnet : viemChains.sepolia,
+    chain: l1Chain,
     transport: createViemCustomTransportFromEthersProvider(hubChainId),
   });
+  const targetChain = withContractOverrides(chainId, getViemChain(chainId));
+  // Validate the target chain has the required OP-stack contracts.
+  assertOpStackTargetChain(targetChain);
+
   const publicClientL2 = viem.createPublicClient({
     batch: {
       multicall: true,
     },
-    chain: VIEM_OP_STACK_CHAINS[chainId],
+    chain: targetChain,
     transport: createViemCustomTransportFromEthersProvider(chainId),
   });
   const uniqueTokenhashes = {};
@@ -352,49 +392,13 @@ async function viem_multicallOptimismFinalizations(
     uniqueTokenhashes[event.txnRef] += 1;
   }
 
-  const crossChainMessenger = new Contract(
-    VIEM_OP_STACK_CHAINS[chainId].contracts.portal[hubChainId].address,
-    OPStackPortalL1,
-    signer
-  );
-  const sourceId = VIEM_OP_STACK_CHAINS[chainId].sourceId;
-
-  // The following viem SDK functions all require the Viem Chain object to either have a portal + disputeGameFactory
-  // address defined, or for legacy OpStack chains, the l2OutputOracle address defined.
-  const { contracts } = VIEM_OP_STACK_CHAINS[chainId];
-  const viemOpStackTargetChainParam: {
-    contracts: {
-      portal: { [sourceId: number]: { address: `0x${string}` } };
-      l2OutputOracle: { [sourceId: number]: { address: `0x${string}` } };
-      disputeGameFactory: { [sourceId: number]: { address: `0x${string}` } };
-    };
-  } = {
-    contracts: {
-      portal: {
-        [sourceId]: {
-          address: contracts.portal[sourceId].address,
-        },
-      },
-      l2OutputOracle: {
-        [sourceId]: {
-          address:
-            contracts.l2OutputOracle?.[sourceId]?.address ??
-            OPSTACK_CONTRACT_OVERRIDES[chainId]?.l1?.L2OutputOracle ??
-            viem.zeroAddress,
-        },
-      },
-      disputeGameFactory: {
-        [sourceId]: {
-          address:
-            contracts.disputeGameFactory?.[sourceId]?.address ??
-            OPSTACK_CONTRACT_OVERRIDES[chainId]?.l1?.DisputeGameFactory ??
-            viem.zeroAddress,
-        },
-      },
-    },
-  };
-
+  const crossChainMessenger = new Contract(targetChain.contracts.portal[hubChainId].address, OPStackPortalL1, signer);
+  const chain = undefined; // Needed for viem OP type resolution.
   const withdrawalStatuses: string[] = [];
+
+  // Pass as targetChain to viem OP-stack functions. Viem looks up L2 contracts
+  // using l1Chain.id (sourceId) and uses custom decoders from targetChain.custom
+  // for MegaETH.
   await mapAsync(events, async (event, i) => {
     // Useful information for event:
     const { decimals, symbol } = getTokenInfo(event.l2TokenAddress, chainId);
@@ -404,28 +408,25 @@ async function viem_multicallOptimismFinalizations(
       hash: event.txnRef as `0x${string}`,
     });
     const withdrawal = getWithdrawals(receipt)[logIndexesForMessage[i]];
-    const withdrawalStatus = await getWithdrawalStatus(publicClientL1 as viem.Client, {
+    const withdrawalStatus = await getWithdrawalStatus(publicClientL1, {
+      chain,
       receipt,
-      chain: publicClientL1.chain as viem.Chain,
-      targetChain: viemOpStackTargetChainParam,
+      targetChain,
       logIndex: logIndexesForMessage[i],
     });
     withdrawalStatuses.push(withdrawalStatus);
     if (withdrawalStatus === "ready-to-prove") {
-      const l2Output = await getL2Output(publicClientL1 as viem.Client, {
-        chain: publicClientL1.chain as viem.Chain,
+      const l2Output = await getL2Output(publicClientL1, {
+        chain,
         l2BlockNumber: BigInt(event.blockNumber),
-        targetChain: viemOpStackTargetChainParam,
+        targetChain,
       });
       if (l2Output.outputRoot !== PENDING_PROOF_OUTPUT_ROOT) {
-        const { l2OutputIndex, outputRootProof, withdrawalProof } = await buildProveWithdrawal(
-          publicClientL2 as viem.Client,
-          {
-            chain: VIEM_OP_STACK_CHAINS[chainId],
-            withdrawal,
-            output: l2Output,
-          }
-        );
+        const { l2OutputIndex, outputRootProof, withdrawalProof } = await buildProveWithdrawal(publicClientL2, {
+          chain,
+          withdrawal,
+          output: l2Output,
+        });
         const proofArgs = [withdrawal, l2OutputIndex, outputRootProof, withdrawalProof];
         const callData = await crossChainMessenger.populateTransaction.proveWithdrawalTransaction(...proofArgs);
         viemTxns.callData.push({
@@ -442,10 +443,10 @@ async function viem_multicallOptimismFinalizations(
         });
       }
     } else if (withdrawalStatus === "waiting-to-finalize") {
-      const { seconds } = await getTimeToFinalize(publicClientL1 as viem.Client, {
-        chain: VIEM_OP_STACK_CHAINS[hubChainId],
+      const { seconds } = await getTimeToFinalize(publicClientL1, {
+        chain,
         withdrawalHash: withdrawal.withdrawalHash,
-        targetChain: viemOpStackTargetChainParam,
+        targetChain,
       });
       logger.debug({
         at: `${getNetworkName(chainId)}Finalizer`,
@@ -500,13 +501,13 @@ async function viem_multicallOptimismFinalizations(
 
 function getOptimismClient(chainId: OVM_CHAIN_ID, hubSigner: Signer): OVM_CROSS_CHAIN_MESSENGER {
   const hubChainId = chainIsProd(chainId) ? CHAIN_IDs.MAINNET : CHAIN_IDs.SEPOLIA;
-  const contractOverrides = OPSTACK_CONTRACT_OVERRIDES[chainId];
+  const contractOverrides = OPSTACK_CONTRACT_OVERRIDES[Number(chainId)];
   return new optimismSDK.CrossChainMessenger({
     bedrock: true,
     l1ChainId: hubChainId,
     l2ChainId: chainId,
     l1SignerOrProvider: hubSigner.connect(getCachedProvider(hubChainId, true)),
-    l2SignerOrProvider: hubSigner.connect(getCachedProvider(chainId, true)),
+    l2SignerOrProvider: hubSigner.connect(getCachedProvider(Number(chainId), true)),
     contracts: contractOverrides,
   });
 }
@@ -778,9 +779,23 @@ async function multicallOptimismFinalizations(
   );
   // Reduce the query by only querying events that were emitted after the earliest TokenBridged event we saw. This
   // is an easy optimization as we know that WithdrawalRequested events are only emitted after the TokenBridged event.
-  const fromBlock = tokensBridgedEvents[0].blockNumber;
+  const l2FromBlock = tokensBridgedEvents[0].blockNumber;
+  const l2Provider = Signer.isSigner(crossChainMessenger.l2SignerOrProvider)
+    ? crossChainMessenger.l2SignerOrProvider.provider
+    : crossChainMessenger.l2SignerOrProvider;
+  const [l2Block, latestL1Block] = await Promise.all([
+    l2Provider.getBlock(l2FromBlock),
+    usdYieldManager.provider.getBlockNumber(),
+  ]);
+  const l1FromBlock = await getBlockForTimestamp(logger, hubPoolClient.chainId, l2Block.timestamp);
+  const l1SearchConfig = {
+    from: l1FromBlock,
+    to: latestL1Block,
+    maxLookBack: CHAIN_MAX_BLOCK_LOOKBACK[chainId],
+  };
   const [_withdrawalRequests, lastCheckpointId, lastFinalizedRequestId] = await Promise.all([
-    usdYieldManager.queryFilter(
+    paginatedEventQuery(
+      usdYieldManager,
       usdYieldManager.filters.WithdrawalRequested(
         null,
         null,
@@ -793,7 +808,7 @@ async function multicallOptimismFinalizations(
         // stops querying TokensBridged/L2 Withdrawal events that have the HubPool as the recipient.
         [hubPoolClient.hubPool.address, blastDaiRetriever.address]
       ),
-      fromBlock
+      l1SearchConfig
     ),
     usdYieldManager.getLastCheckpointId(),
     // We fetch the lastFinalizedRequestId to filter out any withdrawal requests to give more
@@ -835,7 +850,7 @@ async function multicallOptimismFinalizations(
     ),
     Promise.all(
       claimableWithdrawalRequests.map(({ requestId }) =>
-        usdYieldManager.queryFilter(usdYieldManager.filters.WithdrawalClaimed(requestId), fromBlock)
+        paginatedEventQuery(usdYieldManager, usdYieldManager.filters.WithdrawalClaimed(requestId), l1SearchConfig)
       )
     ),
   ]);

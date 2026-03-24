@@ -10,6 +10,7 @@ import {
   groupObjectCountsByProp,
   isEVMSpokePoolClient,
   assert,
+  CHAIN_IDs,
 } from "../../utils";
 import { spreadEventWithBlockNumber } from "../../utils/EventUtils";
 import { FinalizerPromise, CrossChainMessage } from "../types";
@@ -55,6 +56,10 @@ export interface HeliosKeepAliveAction extends BaseHeliosAction {
 export type HeliosAction = HeliosProofAndExecuteAction | HeliosExecuteOnlyAction | HeliosKeepAliveAction;
 // ---------------------------------------
 
+const EXECUTE_MESSAGE_GAS_LIMITS: { [chainId: number]: BigNumber } = {
+  [CHAIN_IDs.TEMPO]: BigNumber.from(1000000),
+};
+
 export async function heliosL1toL2Finalizer(
   logger: winston.Logger,
   _signer: Signer,
@@ -70,6 +75,7 @@ export async function heliosL1toL2Finalizer(
   const l2ChainId = l2SpokePoolClient.chainId;
   const sp1HeliosL2 = await getSp1HeliosContractEVM(l2SpokePoolClient.spokePool, l2SpokePoolClient.spokePool.signer);
   const { sp1HeliosHead, sp1HeliosHeader } = await getSp1HeliosHeadData(sp1HeliosL2);
+  const sp1HeliosVkey: string = await sp1HeliosL2.heliosProgramVkey();
 
   // --- Step 1: Identify all actions needed (pending L1 -> L2 messages to finalize & keep-alive) ---
   const actions = await identifyRequiredActions(
@@ -99,7 +105,8 @@ export async function heliosL1toL2Finalizer(
     l2SpokePoolClient,
     l1SpokePoolClient,
     sp1HeliosHead,
-    sp1HeliosHeader
+    sp1HeliosHeader,
+    sp1HeliosVkey
   );
 
   if (readyActions.length === 0) {
@@ -271,7 +278,8 @@ async function enrichHeliosActions(
   l2SpokePoolClient: EVMSpokePoolClient,
   l1SpokePoolClient: EVMSpokePoolClient,
   currentL2HeliosHeadNumber: number,
-  currentL2HeliosHeader: string
+  currentL2HeliosHeader: string,
+  vkey: string
 ): Promise<HeliosAction[]> {
   const l2ChainId = l2SpokePoolClient.chainId;
   const apiBaseUrl = process.env.HELIOS_PROOF_API_URL;
@@ -306,6 +314,7 @@ async function enrichHeliosActions(
           src_chain_block_number: action.l1Event.blockNumber,
           dst_chain_contract_from_head: currentL2HeliosHeadNumber,
           dst_chain_contract_from_header: currentL2HeliosHeader,
+          vkey,
         };
         break;
       case "UpdateOnly":
@@ -319,6 +328,7 @@ async function enrichHeliosActions(
           src_chain_block_number: 0,
           dst_chain_contract_from_head: currentL2HeliosHeadNumber,
           dst_chain_contract_from_header: currentL2HeliosHeader,
+          vkey,
         };
         break;
       default: {
@@ -707,7 +717,7 @@ function addUpdateAndExecuteTxns(
     // @dev Simulation of `executeMessage` depends on prior state update via SP1Helios.update
     canFailInSimulation: true,
     // todo? this hardcoded gas limit of 500K could be improved if we were able to simulate this tx on top of blockchain state created by the tx above
-    gasLimit: BigNumber.from(500000),
+    gasLimit: EXECUTE_MESSAGE_GAS_LIMITS[l2ChainId] ?? BigNumber.from(500000),
     message: `Finalize Helios msg (HubPoolStore nonce ${l1Event.nonce.toString()}) - Step 2: Execute on SpokePool`,
   };
   transactions.push(executeTx);

@@ -64,8 +64,8 @@ export const unknownRevertReasonMethodsToIgnore = new Set([
 //      with OoG. Because we optimistically construct an aggregate() transaction without simulating each simulating
 //      each transaction, we do not know the gas cost of each bundled transaction. Therefore, pad the resulting
 //      gasLimit. This can admittedly pad the gasLimit by a lot more than is required.
-//      See also https://community.optimism.io/docs/developers/bedrock/differences/
-const MULTICALL3_AGGREGATE_GAS_MULTIPLIER = 1.5;
+//      See also https://docs.optimism.io/stack/differences
+const MULTICALL3_AGGREGATE_GAS_MULTIPLIER = 1.1;
 
 // The below interface is used by the TryMulticallClient to store information about successfully simulated transactions.
 // A tryMulticall call returns information about whether or not each individual transaction within the bundle succeeds.
@@ -314,7 +314,7 @@ export class MultiCallerClient {
 
   buildMultiCallBundle(transactions: AugmentedTransaction[]): AugmentedTransaction[] {
     // Split transactions by target contract if they are not all the same.
-    const txnsGroupedByTarget = lodash.groupBy(transactions, (txn) => txn.contract.address);
+    const txnsGroupedByTarget = Object.groupBy(transactions, (txn) => txn.contract.address);
     return Object.values(txnsGroupedByTarget).map((txns) => {
       return this._buildMultiCallBundle(txns);
     });
@@ -380,7 +380,7 @@ export class MultiCallerClient {
       multicallerTxns = [],
       multisenderTxns = [],
       unsendableTxns = [],
-    } = lodash.groupBy(txns, (txn) => {
+    } = Object.groupBy(txns, (txn) => {
       if (txn.unpermissioned) {
         return "multisenderTxns";
       } else if (txn.contract.multicall) {
@@ -406,7 +406,7 @@ export class MultiCallerClient {
     // to make Multicall work.
     const getTxnChunks = (_txns: AugmentedTransaction[]): AugmentedTransaction[][] => {
       const groupIdTxns = _txns.filter(({ groupId }) => isDefined(groupId));
-      const groupIdChunks = Object.values(lodash.groupBy(groupIdTxns, "groupId"))
+      const groupIdChunks = Object.values(Object.groupBy(groupIdTxns, (txn) => txn.groupId))
         .map((txns) => {
           return lodash.chunk(
             txns.sort((a, b) => a.contract.address.localeCompare(b.contract.address)),

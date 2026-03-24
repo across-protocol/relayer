@@ -34,7 +34,7 @@ export class PolygonWethBridge extends BaseBridgeAdapter {
   ) {
     // @dev This method fetches the *SDK's* most up-to-date values of
     // TOKEN_SYMBOLS_MAP. This constructor will therefore break if
-    // either the SDK, or the constants dependency in the SDK, is not
+    // either the SDK or the constants dependency in the SDK is not
     // up-to-date.
     const l2TokenAddresses = getL2TokenAddresses(l1Token.toNative(), hubChainId);
     const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].polygonWethBridge;
