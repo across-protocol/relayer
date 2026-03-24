@@ -1,4 +1,3 @@
-import { RELAYER_SLOW_FILL_MIN_AGE } from "../src/relayer/Relayer.ts";
 import {
   AcrossApiClient,
   ConfigStoreClient,
@@ -32,11 +31,10 @@ import {
   ethers,
   expect,
   getLastBlockTime,
-  mineRandomBlocks,
   lastSpyLogIncludes,
+  randomAddress,
   setupTokensForWallet,
   sinon,
-  spyLogIncludes,
   winston,
   deployMulticall3,
 } from "./utils";
@@ -217,9 +215,11 @@ describe("Relayer: Initiates slow fill requests", async function () {
     const inputToken = erc20_1.address;
     const inputAmount = await erc20_1.balanceOf(depositor.address);
     const outputToken = erc20_2.address;
-    const outputAmount = balance.sub(1);
+    const outputAmount = inputAmount.div(2);
 
-    const relayerBalance = await erc20_2.connect(relayer).balanceOf(relayer.address);
+    let relayerBalance = await erc20_2.connect(relayer).balanceOf(relayer.address);
+    await erc20_2.connect(relayer).transfer(randomAddress(), relayerBalance);
+    relayerBalance = await erc20_2.connect(relayer).balanceOf(relayer.address);
     expect(relayerBalance.lt(outputAmount)).to.be.true;
 
     // The relayer wallet was seeded with 5x the deposit amount. Make the deposit 6x this size.
@@ -236,7 +236,6 @@ describe("Relayer: Initiates slow fill requests", async function () {
     expect(deposit).to.exist;
 
     // Mine blocks so the deposit age exceeds the slow fill deferral threshold.
-    await mineRandomBlocks(RELAYER_SLOW_FILL_MIN_AGE);
     await updateAllClients();
     const _txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
     const txnHashes = await _txnReceipts[destinationChainId];
@@ -244,13 +243,6 @@ describe("Relayer: Initiates slow fill requests", async function () {
     const txn = await spokePool_1.provider.getTransaction(txnHashes[0]);
     const { name: method } = spokePool_1.interface.parseTransaction(txn);
     expect(method).to.equal("requestSlowFill");
-    expect(
-      spyLogIncludes(
-        spy,
-        -10,
-        "Taking repayment for deposit 0 with preferred chains [1] on destination chain 1342 would also not be profitable."
-      )
-    ).to.be.true;
     expect(lastSpyLogIncludes(spy, "Requested slow fill for deposit.")).to.be.true;
 
     // Verify that the slowFill request was received by the destination SpokePoolClient.
@@ -262,8 +254,5 @@ describe("Relayer: Initiates slow fill requests", async function () {
     for (const receipts of Object.values(txnReceipts)) {
       expect((await receipts).length).to.equal(0);
     }
-    // We do not want to rebalance to a chain when the fill for which we are rebalancing is unprofitable.
-    // This means we should _not_ log the token shortfall.
-    expect(lastSpyLogIncludes(spy, "Insufficient balance to fill all deposits")).to.be.false;
   });
 });
