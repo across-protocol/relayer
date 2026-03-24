@@ -1,10 +1,12 @@
-import * as utils from "@across-protocol/contracts/dist/test-utils";
+import * as utils from "@across-protocol/sdk/test-utils";
 import { SpyTransport, bigNumberFormatter } from "@risk-labs/logger";
 import { AcrossConfigStore, FakeContract } from "@across-protocol/contracts";
 import { constants, utils as sdkUtils } from "@across-protocol/sdk";
 import { Contract, providers } from "ethers";
+import { ethers } from "hardhat";
 import chai, { assert, expect } from "chai";
 import chaiExclude from "chai-exclude";
+import { smock } from "@defi-wonderland/smock";
 import sinon from "sinon";
 import winston from "winston";
 import { GLOBAL_CONFIG_STORE_KEYS } from "../../src/clients";
@@ -38,7 +40,6 @@ import {
   sampleRateModel,
 } from "../constants";
 import { SpokePoolDeploymentResult, SpyLoggerResult } from "../types";
-import { INFINITE_FILL_DEADLINE } from "../../src/common";
 
 // Replicated from @uma/common
 const TokenRolesEnum = { OWNER: "0", MINTER: "1", BURNER: "3" };
@@ -52,8 +53,8 @@ export {
   spyLogLevel,
 } from "@risk-labs/logger";
 export { MAX_SAFE_ALLOWANCE, MAX_UINT_VAL } from "../../src/utils";
+export { ethers };
 export const {
-  ethers,
   buildPoolRebalanceLeafTree,
   buildPoolRebalanceLeaves,
   buildSlowRelayTree,
@@ -70,6 +71,7 @@ export type SignerWithAddress = utils.SignerWithAddress;
 export { assert, chai, expect, BigNumber, Contract, FakeContract, sinon, toBN, toBNWei, toWei, utf8ToHex, winston };
 
 chai.use(chaiExclude);
+chai.use(smock.matchers);
 
 export async function assertPromiseError<T>(promise: Promise<T>, errMessage?: string): Promise<void> {
   const SPECIAL_ERROR_MESSAGE = "Promise didn't fail";
@@ -122,7 +124,7 @@ export function createSpyLogger(): SpyLoggerResult {
 }
 
 export async function deploySpokePoolWithToken(fromChainId = 0): Promise<SpokePoolDeploymentResult> {
-  const { weth, erc20, spokePool, unwhitelistedErc20, destErc20 } = await utils.deploySpokePool(utils.ethers);
+  const { weth, erc20, spokePool, unwhitelistedErc20, destErc20 } = await utils.deploySpokePool(ethers);
   const receipt = await spokePool.deployTransaction.wait();
 
   await spokePool.setChainId(fromChainId == 0 ? utils.originChainId : fromChainId);
@@ -293,43 +295,30 @@ export async function depositV3(
 
   const quoteTimestamp = opts.quoteTimestamp ?? spokePoolTime;
   const message = opts.message ?? constants.EMPTY_MESSAGE;
-  const fillDeadline = opts.fillDeadline ?? spokePoolTime + fillDeadlineBuffer;
-  const isLegacyDeposit = INFINITE_FILL_DEADLINE.eq(fillDeadline);
+  const maxFillDeadline = spokePoolTime + fillDeadlineBuffer;
+  opts.fillDeadline ??= maxFillDeadline;
+  const fillDeadline = Math.min(opts.fillDeadline, maxFillDeadline);
   const exclusivityDeadline = opts.exclusivityDeadline ?? 0;
   const exclusiveRelayer = opts.exclusiveRelayer ?? ZERO_ADDRESS;
 
   const [originChainId, txnResponse] = await Promise.all([
     spokePool.chainId(),
-    isLegacyDeposit
-      ? spokePool
-          .connect(signer)
-          .depositFor(
-            depositor,
-            recipient,
-            inputToken,
-            inputAmount,
-            destinationChainId,
-            inputAmount.sub(outputAmount).mul(toWei(1)).div(inputAmount),
-            quoteTimestamp,
-            message,
-            0
-          )
-      : spokePool
-          .connect(signer)
-          .deposit(
-            toBytes32(depositor),
-            toBytes32(recipient),
-            toBytes32(inputToken),
-            toBytes32(outputToken),
-            inputAmount,
-            outputAmount,
-            destinationChainId,
-            toBytes32(exclusiveRelayer),
-            quoteTimestamp,
-            fillDeadline,
-            exclusivityDeadline,
-            message
-          ),
+    spokePool
+      .connect(signer)
+      .deposit(
+        toBytes32(depositor),
+        toBytes32(recipient),
+        toBytes32(inputToken),
+        toBytes32(outputToken),
+        inputAmount,
+        outputAmount,
+        destinationChainId,
+        toBytes32(exclusiveRelayer),
+        quoteTimestamp,
+        fillDeadline,
+        exclusivityDeadline,
+        message
+      ),
   ]);
   const txnReceipt = await txnResponse.wait();
 
@@ -341,7 +330,7 @@ export async function depositV3(
   const { logIndex } = eventLog;
 
   const depositArgs = spreadEvent(args);
-  const depositObject: DepositWithBlock = {
+  const depositObject = {
     blockNumber,
     txnRef,
     txnIndex,
@@ -350,11 +339,7 @@ export async function depositV3(
     originChainId: Number(originChainId),
     quoteBlockNumber: 0,
     messageHash: args.messageHash ?? getMessageHash(args.message),
-  };
-
-  if (isLegacyDeposit) {
-    depositObject.outputToken = toAddressType(outputToken, originChainId);
-  }
+  } satisfies DepositWithBlock;
 
   return depositObject;
 }

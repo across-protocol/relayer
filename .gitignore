@@ -24,8 +24,9 @@ dist
 # Address lists
 addresses.json
 
-# AI context files
-CLAUDE.md
+# Inventory config
+inventoryConfig.json
+
 
 # yalc
 .yalc

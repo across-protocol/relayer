@@ -1,7 +1,8 @@
 import assert from "assert";
 import { Contract, utils as ethersUtils, Signer } from "ethers";
 import readline from "readline";
-import * as contracts from "@across-protocol/contracts";
+import * as sdkTypechain from "@across-protocol/sdk/typechain";
+import { TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import { getDeployedContract, getProvider, CHAIN_IDs } from "../src/utils";
 
@@ -48,9 +49,9 @@ export function resolveToken(token: string, chainId: number): ERC20 {
   // `token` may be an address or a symbol. Normalise it to a symbol for easy lookup.
   const symbol = !ethersUtils.isAddress(token)
     ? token.toUpperCase()
-    : Object.values(contracts.TOKEN_SYMBOLS_MAP).find(({ addresses }) => addresses[chainId] === token)?.symbol;
+    : Object.values(TOKEN_SYMBOLS_MAP).find(({ addresses }) => addresses[chainId] === token)?.symbol;
 
-  const _token = contracts.TOKEN_SYMBOLS_MAP[symbol];
+  const _token = TOKEN_SYMBOLS_MAP[symbol];
   if (_token === undefined) {
     throw new Error(`Token ${token} on chain ID ${chainId} unrecognised`);
   }
@@ -111,7 +112,7 @@ export async function getSpokePoolContract(chainId: number): Promise<Contract> {
   const hubPool = await getContract(hubChainId, "HubPool");
   const spokePoolAddr = (await hubPool.crossChainContracts(chainId))[1];
 
-  const contract = new Contract(spokePoolAddr, contracts.SpokePool__factory.abi);
+  const contract = new Contract(spokePoolAddr, sdkTypechain.SpokePool__factory.abi);
   return contract;
 }
 
@@ -125,6 +126,6 @@ export async function getOvmSpokePoolContract(chainId: number, signer?: Signer):
   const hubPool = await getContract(hubChainId, "HubPool");
   const spokePoolAddr = (await hubPool.crossChainContracts(chainId))[1];
 
-  const contract = new Contract(spokePoolAddr, contracts.Ovm_SpokePool__factory.abi, signer);
+  const contract = new Contract(spokePoolAddr, sdkTypechain.Ovm_SpokePool__factory.abi, signer);
   return contract;
 }

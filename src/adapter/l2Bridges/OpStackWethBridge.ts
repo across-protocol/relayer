@@ -42,6 +42,7 @@ export class OpStackWethBridge extends BaseL2BridgeAdapter {
       method: "withdraw",
       args: [amount],
       nonMulticall: true,
+      ensureConfirmation: true,
       message: "🎰 Unwrapped WETH on OpStack before withdrawing to L1",
       mrkdwn: `Unwrapped ${formatter(amount.toString())} WETH before withdrawing from ${getNetworkName(
         this.l2chainId
@@ -106,5 +107,10 @@ export class OpStackWethBridge extends BaseL2BridgeAdapter {
       return isDefined(received) ? totalAmount : totalAmount.add(l2Args.amount);
     }, bnZero);
     return withdrawalAmount;
+  }
+
+  public pendingWithdrawalLookbackPeriodSeconds(): number {
+    return 7 * 24 * 60 * 60 + 60 * 60; // 7 days + 1 hour, to account for the time needed to execute the withdrawal
+    // once it has passed the challenge period.
   }
 }

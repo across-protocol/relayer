@@ -1,23 +1,30 @@
-import { Signer, isSignerWallet, assert, delay } from "./";
+import {
+  Signer,
+  isSignerWallet,
+  assert,
+  delay,
+  CHAIN_IDs,
+  submitTransaction,
+  TOKEN_SYMBOLS_MAP,
+  winston,
+  bnZero,
+  blockExplorerLink,
+} from "./";
 import * as hl from "@nktkas/hyperliquid";
-
-export function getDefaultHlTransport(extraOptions: ConstructorParameters<typeof hl.HttpTransport> = []) {
-  return new hl.HttpTransport(...extraOptions);
-}
+import { utils as sdkUtils } from "@across-protocol/sdk";
+import { ethers } from "ethers";
+import { CONTRACT_ADDRESSES } from "../common/ContractAddresses";
+import { TransactionClient } from "../clients";
 
 export function getHlExchangeClient(
   signer: Signer,
-  transport: hl.HttpTransport | hl.WebSocketTransport = getDefaultHlTransport()
+  transport: hl.HttpTransport | hl.WebSocketTransport = sdkUtils.getDefaultHlTransport()
 ) {
   assert(
     isSignerWallet(signer),
     "HyperliquidUtils#getHlExchangeClient: Cannot define an exchange client without a wallet."
   );
   return new hl.ExchangeClient({ wallet: signer, transport });
-}
-
-export function getHlInfoClient(transport: hl.HttpTransport | hl.WebSocketTransport = getDefaultHlTransport()) {
-  return new hl.InfoClient({ transport });
 }
 
 export async function getL2Book(
@@ -37,6 +44,24 @@ export async function getSpotMeta(
   return await _callWithRetry(infoClient.spotMeta.bind(infoClient), [], nRetries, maxRetries);
 }
 
+export async function getSpotClearinghouseState(
+  infoClient: hl.InfoClient,
+  params: hl.SpotClearinghouseStateParameters,
+  nRetries = 0,
+  maxRetries = 3
+): Promise<hl.SpotClearinghouseStateResponse> {
+  return await _callWithRetry(infoClient.spotClearinghouseState.bind(infoClient), [params], nRetries, maxRetries);
+}
+
+export async function getUserNonFundingLedgerUpdates(
+  infoClient: hl.InfoClient,
+  params: hl.UserNonFundingLedgerUpdatesParameters,
+  nRetries = 0,
+  maxRetries = 3
+): Promise<hl.UserNonFundingLedgerUpdatesResponse> {
+  return await _callWithRetry(infoClient.userNonFundingLedgerUpdates.bind(infoClient), [params], nRetries, maxRetries);
+}
+
 export async function getOpenOrders(
   infoClient: hl.InfoClient,
   params: hl.OpenOrdersParameters,
@@ -46,6 +71,15 @@ export async function getOpenOrders(
   return _callWithRetry(infoClient.openOrders.bind(infoClient), [params], nRetries, maxRetries);
 }
 
+export async function getUserFees(
+  infoClient: hl.InfoClient,
+  params: hl.UserFeesParameters,
+  nRetries = 0,
+  maxRetries = 3
+): Promise<hl.UserFeesResponse> {
+  return _callWithRetry(infoClient.userFees.bind(infoClient), [params], nRetries, maxRetries);
+}
+
 export async function getHistoricalOrders(
   infoClient: hl.InfoClient,
   params: hl.HistoricalOrdersParameters,
@@ -53,6 +87,15 @@ export async function getHistoricalOrders(
   maxRetries = 3
 ): Promise<hl.HistoricalOrdersResponse> {
   return _callWithRetry(infoClient.historicalOrders.bind(infoClient), [params], nRetries, maxRetries);
+}
+
+export async function getUserFillsByTime(
+  infoClient: hl.InfoClient,
+  params: hl.UserFillsByTimeParameters,
+  nRetries = 0,
+  maxRetries = 3
+): Promise<hl.UserFillsByTimeResponse> {
+  return _callWithRetry(infoClient.userFillsByTime.bind(infoClient), [params], nRetries, maxRetries);
 }
 
 export async function getOrderStatus(
@@ -81,4 +124,32 @@ async function _callWithRetry<T, A extends any[]>(
     // @todo Once we have a better idea on the types of errors we can suppress/retry on, then choose appropriate action based on the error thrown.
     return await _callWithRetry(apiCall, args, ++nRetries, maxRetries);
   }
+}
+
+export async function depositToHypercore(account: string, signer: Signer, logger: winston.Logger): Promise<string> {
+  const transactionClient = new TransactionClient(logger);
+  const chainId = CHAIN_IDs.HYPEREVM;
+  const contract = new ethers.Contract(
+    CONTRACT_ADDRESSES[chainId].hyperliquidDepositHandler.address,
+    CONTRACT_ADDRESSES[chainId].hyperliquidDepositHandler.abi,
+    signer
+  );
+  const depositToHypercoreArgs = [TOKEN_SYMBOLS_MAP.USDH.addresses[chainId], bnZero, account];
+  const depositToHypercoreTx = await submitTransaction(
+    {
+      contract: contract,
+      method: "depositToHypercore",
+      args: depositToHypercoreArgs,
+      chainId: chainId,
+    },
+    transactionClient
+  );
+  await delay(1);
+  const receipt = await depositToHypercoreTx.wait();
+  logger.info({
+    at: "HyperliquidUtils#depositToHypercore",
+    message: `HyperCore account ${account} created 🫡!`,
+    transactionHash: blockExplorerLink(receipt.transactionHash, chainId),
+  });
+  return receipt.transactionHash;
 }

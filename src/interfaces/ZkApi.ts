@@ -7,6 +7,7 @@ export interface ApiProofRequest {
   src_chain_block_number: number; // u64 on Rust API side
   dst_chain_contract_from_head: number; // u64 on Rust API side
   dst_chain_contract_from_header: string;
+  vkey: string; // bytes32 from SP1Helios.heliosProgramVkey()
 }
 
 export type ProofStatus = "pending" | "success" | "errored";

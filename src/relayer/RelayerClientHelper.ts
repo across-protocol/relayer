@@ -37,6 +37,7 @@ import {
 } from "../utils";
 import { RelayerConfig } from "./RelayerConfig";
 import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
+import { constructReadOnlyRebalancerClient } from "../rebalancer/RebalancerClientHelper";
 
 export interface RelayerClients extends Clients {
   spokePoolClients: SpokePoolClientsByChain;
@@ -150,11 +151,12 @@ export async function constructRelayerClients(
     );
   }
 
+  const allChainIds = Object.values(spokePoolClients).map(({ chainId }) => chainId);
+  const resolveChainIds = (chainIds: number[], fallback: number[] = []) => (chainIds.length > 0 ? chainIds : fallback);
+
   // Determine which origin chains to query limits for.
-  const srcChainIds =
-    config.relayerOriginChains.length > 0
-      ? config.relayerOriginChains
-      : Object.values(spokePoolClients).map(({ chainId }) => chainId);
+  const srcChainIds = resolveChainIds(config.relayerOriginChains, allChainIds);
+  const dstChainIds = resolveChainIds(config.relayerDestinationChains, allChainIds);
   const acrossApiClient = new AcrossApiClient(logger, hubPoolClient, srcChainIds, config.relayerTokens);
 
   const relayerTokens = sdkUtils.dedupArray([
@@ -164,19 +166,22 @@ export async function constructRelayerClients(
 
   const svmSigner = getSvmSignerFromEvmSigner(baseSigner);
   const svmAddress = SvmAddress.from(svmSigner.publicKey.toBase58());
-  const tokenClient = new TokenClient(logger, signerAddr, svmAddress, spokePoolClients, hubPoolClient, relayerTokens);
+  const tokenClient = new TokenClient(
+    logger,
+    signerAddr,
+    svmAddress,
+    Object.fromEntries(dstChainIds.map((chainId) => [chainId, spokePoolClients[chainId]])),
+    hubPoolClient,
+    relayerTokens,
+    config.relayerDestinationTokens,
+    config.l1TokensOverride
+  );
 
-  // If `relayerDestinationChains` is a non-empty array, then copy its value, otherwise default to all chains.
-  const enabledChainIds = (
-    config.relayerDestinationChains.length > 0
-      ? config.relayerDestinationChains
-      : configStoreClient.getChainIdIndicesForBlock()
-  ).filter((chainId) => Object.keys(spokePoolClients).includes(chainId.toString()));
   const profitClient = new ProfitClient(
     logger,
     hubPoolClient,
     spokePoolClients,
-    enabledChainIds,
+    dstChainIds,
     signerAddr,
     svmAddress,
     config.minRelayerFeePct,
@@ -184,7 +189,9 @@ export async function constructRelayerClients(
     config.relayerGasMultiplier,
     config.relayerMessageGasMultiplier,
     config.relayerGasPadding,
-    relayerTokens
+    relayerTokens,
+    config.peggedTokenPrices,
+    config.l1TokensOverride
   );
   await profitClient.update();
 
@@ -194,25 +201,30 @@ export async function constructRelayerClients(
   const crossChainAdapterSupportedChains = adapterManager.supportedChains();
   const crossChainTransferClient = new CrossChainTransferClient(
     logger,
-    enabledChainIds.filter((chainId) => crossChainAdapterSupportedChains.includes(chainId)),
+    dstChainIds.filter((chainId) => crossChainAdapterSupportedChains.includes(chainId)),
     adapterManager
   );
+
+  const rebalancerClient = await constructReadOnlyRebalancerClient(logger, baseSigner);
 
   const inventoryClient = new InventoryClient(
     signerAddr,
     logger,
     config.inventoryConfig,
     tokenClient,
-    enabledChainIds,
+    dstChainIds,
     hubPoolClient,
     adapterManager,
     crossChainTransferClient,
-    !config.sendingTransactionsEnabled
+    rebalancerClient,
+    !config.sendingTransactionsEnabled,
+    undefined,
+    config.l1TokensOverride
   );
 
   const tryMulticallClient = new TryMulticallClient(logger, multiCallerClient.chunkSize, multiCallerClient.baseSigner);
 
-  const svmChainIds = enabledChainIds.filter(chainIsSvm);
+  const svmChainIds = dstChainIds.filter(chainIsSvm);
   if (svmChainIds.length > 1) {
     throw new Error(`Multiple SVM chains detected: ${svmChainIds.join(", ")}. Only one SVM chain is supported.`);
   }
