@@ -18,11 +18,14 @@ import {
   getBinanceDeposits,
   getBinanceWithdrawals,
   BINANCE_NETWORKS,
-  mapAsync,
   filterAsync,
   getBinanceDepositType,
   BinanceTransactionType,
   getBinanceWithdrawalType,
+  getOutstandingBinanceDeposits,
+  getRedisCache,
+  getProvider,
+  assert,
 } from "../../utils";
 import { L1Token } from "../../interfaces";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
@@ -106,11 +109,7 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
     // Remove any deposits and withdrawals that are marked as related to a swap.
     const depositHistory = await filterAsync(_depositHistory, async (deposit) => {
       const depositType = await getBinanceDepositType(deposit);
-      return (
-        deposit.network === this.depositNetwork &&
-        deposit.coin === this.l1TokenInfo.symbol &&
-        depositType !== BinanceTransactionType.SWAP
-      );
+      return deposit.coin === this.l1TokenInfo.symbol && depositType !== BinanceTransactionType.SWAP;
     });
     const withdrawHistory = await filterAsync(_withdrawHistory, async (withdrawal) => {
       const withdrawalType = await getBinanceWithdrawalType(withdrawal);
@@ -122,52 +121,46 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
     });
 
     // FilterMap to remove all deposits originating from other EOAs.
-    const depositsInitiatedForAddress = (
-      await mapAsync(depositHistory, async (deposit) => {
-        const txnReceipt = await this.l2Signer.provider.getTransactionReceipt(deposit.txId);
-        if (!compareAddressesSimple(txnReceipt.from, fromAddress.toNative())) {
-          return undefined;
-        }
-        return deposit;
-      })
-    ).filter(isDefined);
-
-    // Match deposits one on one withdrawals and remove those withdrawals from the list of withdrawals.
-    // This algorithm helps eliminate noise when multiple L2's use this bridge to withdraw to L1
-    // and their total deposited amount gets withdrawn in a single L1 transaction (e.g. imagine withdrawing 50k from
-    // Optimism and 200k from BSC in quick succession and then withdrawing 250k from Mainnet; we'd want this
-    // function to not think there is -200k net pending withdrawal amount from Optimism and -50k pending withdrawal
-    // amount from BSC).
-
-    // Sort withdrawals and deposits from smallest to largest:
-    const sortedWithdrawals = withdrawHistory.sort((a, b) => a.amount - b.amount).slice();
-    const sortedDeposits = depositsInitiatedForAddress.sort((a, b) => a.amount - b.amount).slice();
-
-    const unmatchedDeposits: typeof depositHistory = [];
-    for (const deposit of sortedDeposits) {
-      // Find the smallest withdrawal that is greater than or equal to the deposit amount within 1% of error (this
-      // error is to account for dust leftover in the Binance account that also gets withdrawn and also
-      // transaction fees getting taken out of the withdrawal amount):
-      const matchingWithdrawalIndex = sortedWithdrawals.findIndex(
-        (withdrawal) => Number(withdrawal.amount) + Number(withdrawal.transactionFee) >= Number(deposit.amount) * 0.99
-      );
-      if (matchingWithdrawalIndex === -1) {
-        unmatchedDeposits.push(deposit);
-        continue;
+    const redisCache = await getRedisCache();
+    const depositsInitiatedForAddress = await filterAsync(depositHistory, async (deposit) => {
+      // All withdrawals for the same coin should be withdrawn to the same address, so check the cache for the
+      // withdrawal address for this chain before making a fresh RPC call.
+      const binanceWithdrawalAddressKey = `binance-withdrawal-address:${deposit.coin}`;
+      const binanceWithdrawalAddress = await redisCache.get<string>(binanceWithdrawalAddressKey);
+      if (isDefined(binanceWithdrawalAddress)) {
+        return compareAddressesSimple(binanceWithdrawalAddress, fromAddress.toNative());
       }
 
-      // We found a matching withdrawal, so remove it from the list of withdrawals:
-      sortedWithdrawals.splice(matchingWithdrawalIndex, 1);
-    }
-    const totalUnmatchedDepositVolume = unmatchedDeposits.reduce(
-      (sum, deposit) => sum.add(floatToBN(deposit.amount, l2TokenInfo.decimals)),
-      bnZero
-    );
+      // If the withdrawal address is not in the cache, make a fresh RPC call to get the withdrawal address.
+      // @dev if deposit is for a different chain than this.l2Chain, then we need to use the provider for that chain to get the transaction receipt.
+      const l2ChainId = Object.entries(BINANCE_NETWORKS).find(([, network]) => network === deposit.network)?.[0];
+      assert(isDefined(l2ChainId), `Could not find chain ID for network ${deposit.network} in BINANCE_NETWORKS`);
+      const l2ProviderForDepositChain =
+        Number(l2ChainId) === this.l2chainId ? this.l2Signer.provider : await getProvider(Number(l2ChainId));
+      const txnReceipt = await l2ProviderForDepositChain.getTransactionReceipt(deposit.txId);
+      if (isDefined(txnReceipt)) {
+        // The default caching TTL is 2 weeks which should be plenty assuming we don't change the EOA
+        // address that we withdraw to frequently.
+        await redisCache.set(binanceWithdrawalAddressKey, txnReceipt.from);
+      }
+      return compareAddressesSimple(txnReceipt?.from, fromAddress.toNative());
+    });
 
-    return totalUnmatchedDepositVolume;
+    const unmatchedDeposits = getOutstandingBinanceDeposits(
+      depositsInitiatedForAddress,
+      withdrawHistory,
+      this.depositNetwork
+    );
+    return unmatchedDeposits.reduce((sum, deposit) => sum.add(floatToBN(deposit.amount, l2TokenInfo.decimals)), bnZero);
   }
 
   protected async getBinanceClient() {
     return (this.binanceApiClient ??= await this.binanceApiClientPromise);
+  }
+
+  public pendingWithdrawalLookbackPeriodSeconds(): number {
+    // Binance withdrawals are fast, we can shorten the lookback period to also reduce the number
+    // of provider.getTransactionReceipt we have to make for each deposit event.
+    return 12 * 60 * 60;
   }
 }

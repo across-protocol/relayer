@@ -19,7 +19,7 @@ function makeWithdrawal(amount: number, timestamp: number, transactionFee = 0): 
   };
 }
 
-describe("BinanceCEXBridge: getOutstandingBinanceDeposits", function () {
+describe("BinanceUtils: getOutstandingBinanceDeposits", function () {
   it("Multiple deposits, no withdrawals: all deposits are outstanding", function () {
     const deposits = [makeDeposit("BSC", 50_000, 1), makeDeposit("OPTIMISM", 40_000, 2), makeDeposit("BSC", 10_000, 3)];
 
