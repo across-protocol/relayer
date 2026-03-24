@@ -525,7 +525,7 @@ export class GaslessRelayer {
             );
             let nextState = MessageState.ERROR;
             if (!valid) {
-              log("warn", `Rejected malformed ${isSwap ? "swapAndBridge " : ""}deposit destined for ${origin}.`);
+              log("warn", `Rejected malformed deposit destined for ${origin}.`);
             } else {
               fillImmediate =
                 !isSwap &&
@@ -661,7 +661,7 @@ export class GaslessRelayer {
       } while (!terminalStates.includes(getState()));
       const tEnd = performance.now();
       const delta = (tEnd - tStart) / 1000;
-      log("info", `Processed ${isSwap ? "swapAndBridge " : ""}${origin} depositId ${depositId} in ${delta} seconds.`);
+      log("info", `Processed ${origin} depositId ${depositId} in ${delta} seconds.`);
     };
 
     const messageFilter = (deposit: AnyGaslessDepositMessage): boolean => {
