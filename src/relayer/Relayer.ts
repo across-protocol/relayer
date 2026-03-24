@@ -1548,7 +1548,7 @@ export class Relayer {
 
     if (mrkdwn) {
       this.logger[this.config.sendingRelaysEnabled ? "warn" : "debug"]({
-         at: "Relayer::handleUnfillableDeposit",
+        at: "Relayer::handleUnfillableDeposit",
         message: "Not relaying unprofitable deposits 🙅‍♂️!",
         mrkdwn,
         notificationPath: "across-unprofitable-fills",
