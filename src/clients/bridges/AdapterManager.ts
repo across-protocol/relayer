@@ -244,7 +244,6 @@ export class AdapterManager {
     const totalBalance: { [l2ChainId: number]: BigNumber } = {};
     await Promise.all(
       l2ChainIds.map(async (chainId) => {
-        totalBalance[chainId] = bnZero;
         if (!this.l2TokenExistForL1Token(l1Token, chainId)) {
           return;
         }

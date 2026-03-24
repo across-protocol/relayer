@@ -52,7 +52,6 @@ import {
   sortEventsAscending,
   chainHasNativeToken,
   getLatestRunningBalances,
-  RunningBalanceResult,
 } from "../utils";
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
 import { MonitorConfig } from "./MonitorConfig";
@@ -438,16 +437,12 @@ export class Monitor {
           const withdrawals: { [l1Token: string]: { [chainId: number]: BigNumber } } = {};
           await Promise.all(
             allL1Tokens.map(async (l1Token) => {
-              try {
-                withdrawals[l1Token.address.toNative()] =
-                  await this.clients.crossChainTransferClient.adapterManager.getTotalPendingWithdrawalAmount(
-                    this.crossChainAdapterSupportedChains.filter((chainId) => chainId !== hubChainId),
-                    relayer,
-                    l1Token.address
-                  );
-              } catch {
-                withdrawals[l1Token.address.toNative()] = {};
-              }
+              withdrawals[l1Token.address.toNative()] =
+                await this.clients.crossChainTransferClient.adapterManager.getTotalPendingWithdrawalAmount(
+                  this.crossChainAdapterSupportedChains.filter((chainId) => chainId !== hubChainId),
+                  relayer,
+                  l1Token.address
+                );
             })
           );
           this.logger.debug({
@@ -716,22 +711,12 @@ export class Monitor {
       this.monitorConfig.monitoredTokenSymbols.includes(l1Token.symbol)
     )) {
       const formatWei = createFormatFunction(1, 4, false, l1Token.decimals);
-      let results: { [chainId: number]: RunningBalanceResult };
-      try {
-        results = await getLatestRunningBalances(
-          l1Token.address,
-          chainIds,
-          this.clients.hubPoolClient,
-          this.bundleDataApproxClient
-        );
-      } catch (error) {
-        this.logger.debug({
-          at: "Monitor#reportSpokePoolRunningBalances",
-          message: `Skipping running balances for ${l1Token.symbol}`,
-          error,
-        });
-        continue;
-      }
+      const results = await getLatestRunningBalances(
+        l1Token.address,
+        chainIds,
+        this.clients.hubPoolClient,
+        this.bundleDataApproxClient
+      );
 
       type Row = {
         chain: string;

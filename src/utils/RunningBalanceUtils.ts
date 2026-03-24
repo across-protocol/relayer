@@ -4,7 +4,7 @@ import { ProposedRootBundle } from "../interfaces";
 import { BundleDataApproxClient } from "../clients/BundleDataApproxClient";
 import { HubPoolClient } from "../clients";
 
-export type RunningBalanceResult = {
+type RunningBalanceResult = {
   absLatestRunningBalance: BigNumber;
   lastValidatedRunningBalance: BigNumber;
   upcomingDeposits: BigNumber;
