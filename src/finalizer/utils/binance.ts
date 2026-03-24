@@ -19,6 +19,10 @@ import {
   getAccountCoins,
   BINANCE_NETWORKS,
   isDefined,
+  filterAsync,
+  getBinanceDepositType,
+  BinanceTransactionType,
+  getBinanceWithdrawalType,
 } from "../../utils";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { FinalizerPromise, AddressesToFinalize } from "../types";
@@ -70,8 +74,15 @@ export async function binanceFinalizer(
     getBinanceDeposits(binanceApi, fromTimestamp),
     getAccountCoins(binanceApi),
   ]);
+  // Remove any _binanceDeposits that are marked as related to a swap. The reason why we check "!== SWAP" instead of
+  // "=== BRIDGE" is because we want this code to be backwards compatible with the existing inventory client logic which
+  // does not yet tag deposits with this BRIDGE type.
+  const _binanceBridgeDeposits = await filterAsync(_binanceDeposits, async (deposit) => {
+    const depositType = await getBinanceDepositType(deposit);
+    return depositType !== BinanceTransactionType.SWAP;
+  });
 
-  const statusesGrouped = groupObjectCountsByProp(_binanceDeposits, (deposit: { status: number }) => {
+  const statusesGrouped = groupObjectCountsByProp(_binanceBridgeDeposits, (deposit: { status: number }) => {
     switch (deposit.status) {
       case Status.Confirmed:
         return "ready-to-finalize";
@@ -85,12 +96,12 @@ export async function binanceFinalizer(
   });
   logger.debug({
     at: "BinanceFinalizer",
-    message: `Found ${_binanceDeposits.length} historical Binance deposits.`,
+    message: `Found ${_binanceBridgeDeposits.length} historical Binance deposits.`,
     statusesGrouped,
     fromTimestamp: fromTimestamp,
   });
-  const binanceDeposits = _binanceDeposits.filter((deposit) => deposit.status === Status.Confirmed);
-  const creditedDeposits = _binanceDeposits.filter((deposit) => deposit.status === Status.Credited);
+  const binanceDeposits = _binanceBridgeDeposits.filter((deposit) => deposit.status === Status.Confirmed);
+  const creditedDeposits = _binanceBridgeDeposits.filter((deposit) => deposit.status === Status.Credited);
 
   // We can run this in parallel since deposits for each tokens are independent of each other.
   await mapAsync(Object.entries(senderAddresses), async ([address, symbols]) => {
@@ -106,7 +117,14 @@ export async function binanceFinalizer(
       let coinBalance = Number(coin.balance);
       const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[hubChainId];
       const { decimals: l1Decimals } = getTokenInfo(EvmAddress.from(l1Token), hubChainId);
-      const withdrawals = await getBinanceWithdrawals(binanceApi, symbol, fromTimestamp);
+      const _withdrawals = await getBinanceWithdrawals(binanceApi, symbol, fromTimestamp);
+      // Similar to the reasoning for filtering deposits, we need to filter withdrawals by removing any
+      // that are explicitly marked as related to a swap. To make this backwards compatible, we check "!== SWAP" instead of "=== BRIDGE"
+      // as the existing inventory client logic does not yet tag withdrawals with this BRIDGE type.
+      const withdrawals = await filterAsync(_withdrawals, async (withdrawal) => {
+        const withdrawalType = await getBinanceWithdrawalType(withdrawal);
+        return withdrawalType !== BinanceTransactionType.SWAP;
+      });
 
       // @dev Since we cannot determine the address of the binance depositor without querying the transaction receipt, we need to assume that all tokens
       // with symbol `symbol` should be withdrawn to `address`.
@@ -180,10 +198,11 @@ export async function binanceFinalizer(
         }
         // If the amount we can finalize is above the withdraw minimum for this network, and if the amount to finalize is within the amount of our balance which corresponds to _finalized_ not credited
         // deposits, then we can continue.
-        if (
-          amountToFinalize >= Number(networkLimits.withdrawMin) &&
-          amountToFinalize <= coinBalance - creditedDepositAmount
-        ) {
+        amountToFinalize = Math.min(
+          Number((coinBalance - creditedDepositAmount).toFixed(l1Decimals)),
+          amountToFinalize
+        );
+        if (amountToFinalize >= Number(networkLimits.withdrawMin)) {
           // Lastly, we need to truncate the amount to withdraw to 6 decimal places.
           amountToFinalize = Math.floor(amountToFinalize * DECIMAL_PRECISION) / DECIMAL_PRECISION;
           // Balance from Binance is in 8 decimal places, so we need to truncate to 8 decimal places.
@@ -205,6 +224,9 @@ export async function binanceFinalizer(
           logger.debug({
             at: "BinanceFinalizer",
             message: `(X -> ${withdrawNetwork}) ${amountToFinalize} is less than minimum withdrawable amount ${networkLimits.withdrawMin} for token ${symbol}.`,
+            availableCoinBalance: coinBalance - creditedDepositAmount,
+            coinBalance,
+            creditedDepositAmount,
           });
         }
       }

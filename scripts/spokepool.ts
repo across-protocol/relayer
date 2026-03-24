@@ -1,20 +1,22 @@
 import assert from "assert";
-import axios, { isAxiosError } from "axios";
 import minimist from "minimist";
-import { groupBy } from "lodash";
 import { config } from "dotenv";
 import { Contract, ethers, Signer } from "ethers";
 import { LogDescription } from "@ethersproject/abi";
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { constants as sdkConsts, utils as sdkUtils } from "@across-protocol/sdk";
-import { ExpandedERC20__factory as ERC20 } from "@across-protocol/contracts";
+import { ExpandedERC20__factory as ERC20 } from "@across-protocol/sdk/typechain";
 import { RelayData } from "../src/interfaces";
-import { getAcrossHost } from "../src/clients";
+import { CHAIN_MAX_BLOCK_LOOKBACK } from "../src/common";
+import { EventListener, getAcrossHost } from "../src/clients";
 import {
   BigNumber,
+  blockExplorerLink,
   Address,
   disconnectRedisClients,
   EvmAddress,
+  exit,
+  findDepositBlock,
   formatFeePct,
   getDeploymentBlockNumber,
   getMessageHash,
@@ -22,9 +24,15 @@ import {
   getProvider,
   getSigner,
   isDefined,
+  isUnsafeDepositId,
+  Logger as logger,
+  paginatedEventQuery,
   populateV3Relay,
+  spreadEventWithBlockNumber,
   toBN,
   toAddressType,
+  unpackDepositEvent,
+  unpackFillEvent,
   chainIsEvm,
 } from "../src/utils";
 import * as utils from "./utils";
@@ -40,6 +48,11 @@ type RelayerFeeQuery = {
   message?: string;
   skipAmountLimit?: string;
   timestamp?: number;
+};
+
+// Teach BigInt how to be represented as JSON.
+(BigInt.prototype as any).toJSON = function () {
+  return this.toString();
 };
 
 const { NODE_SUCCESS, NODE_INPUT_ERR, NODE_APP_ERR } = utils;
@@ -85,66 +98,75 @@ function decodeRelayData(originChainId: number, destinationChainId: number, log:
           return [key, log.args[key]];
       }
     })
-  ) as RelayData;
+  ) as Omit<RelayData, "originChainId">;
 
-  return relayData;
+  return {
+    ...relayData,
+    originChainId,
+  };
 }
 
-function printDeposit(originChainId: number, log: LogDescription): void {
-  const { destinationChainId, message } = log.args;
-  const relayData = decodeRelayData(originChainId, destinationChainId, log);
-  const relayDataHash = sdkUtils.getRelayDataHash({ ...relayData, originChainId }, destinationChainId);
+function printRelayData(
+  relayData: RelayData & { message?: string; messageHash?: string },
+  destinationChainId: number,
+  transactionHash?: string
+): void {
+  const relayDataHash = relayData.message ? sdkUtils.getRelayDataHash({ ...relayData }, destinationChainId) : undefined;
+
+  let { messageHash } = relayData;
+  messageHash ??= relayData.message ? getMessageHash(relayData.message) : undefined;
 
   const fields = {
-    tokenSymbol: resolveTokenSymbols([relayData.inputToken.toNative()], originChainId)[0],
+    tokenSymbol: resolveTokenSymbols([relayData.inputToken.toNative()], relayData.originChainId)[0],
     ...relayData,
-    messageHash: getMessageHash(message),
+    messageHash,
     relayDataHash,
+    transactionHash,
   };
   const padLeft = Object.keys(fields).reduce((acc, cur) => (cur.length > acc ? cur.length : acc), 0);
+  const [eventType, chainId] = relayData.message
+    ? ["Deposit", relayData.originChainId]
+    : [`Fill for ${getNetworkName(relayData.originChainId)} deposit`, destinationChainId];
 
   console.log(
-    `Deposit # ${log.args.depositId} on ${getNetworkName(originChainId)}:\n` +
+    `${eventType} # ${relayData.depositId} on ${getNetworkName(chainId)}:\n` +
       Object.entries(fields)
+        .filter(([, value]) => isDefined(value))
         .map(([k, v]) => `\t${k.padEnd(padLeft)} : ${v}`)
         .join("\n") +
       "\n"
   );
 }
 
-function printFill(destinationChainId: number, log: LogDescription): void {
+function printDeposit(originChainId: number, log: LogDescription, transactionHash?: string): void {
+  const { destinationChainId } = log.args;
+  const relayData = decodeRelayData(originChainId, destinationChainId, log);
+  printRelayData(relayData, destinationChainId, transactionHash);
+}
+
+function printFill(destinationChainId: number, log: LogDescription, transactionHash?: string): void {
   const { originChainId } = log.args;
   const relayData = decodeRelayData(originChainId, destinationChainId, log);
-
-  const fields = {
-    tokenSymbol: resolveTokenSymbols([relayData.outputToken.toNative()], destinationChainId)[0],
-    ...relayData,
-  };
-  const padLeft = Object.keys(fields).reduce((acc, cur) => (cur.length > acc ? cur.length : acc), 0);
-
-  console.log(
-    `Fill for ${getNetworkName(originChainId)} deposit # ${log.args.depositId}:\n` +
-      Object.entries(fields)
-        .map(([k, v]) => `\t${k.padEnd(padLeft)} : ${v}`)
-        .join("\n") +
-      "\n"
-  );
+  printRelayData(relayData, destinationChainId, transactionHash);
 }
 
-async function getSuggestedFees(params: RelayerFeeQuery, timeout: number) {
+async function getSuggestedFees(params: RelayerFeeQuery) {
   const hubChainId = sdkUtils.chainIsProd(params.originChainId) ? CHAIN_IDs.MAINNET : CHAIN_IDs.SEPOLIA;
   const path = "api/suggested-fees";
   const url = `https://${getAcrossHost(hubChainId)}/${path}`;
+  const args = Object.entries(params)
+    .map(([k, v]) => `${k}=${v}`)
+    .join("&");
+  const request = `${url}?${args}`;
 
-  try {
-    const quote = await axios.get(url, { timeout, params });
-    return quote.data;
-  } catch (err) {
-    if (isAxiosError(err) && err.response.status >= 400) {
-      throw new Error(`Failed to get quote for deposit (${err.response.data})`);
-    }
-    throw err;
+  const response = await fetch(request);
+  const quote = await response.json();
+  if (quote?.type === "AcrossApiError") {
+    const { status, code, message } = quote;
+    const cause = { request, status, code, message };
+    throw new Error("Quote request failed", { cause });
   }
+  return quote;
 }
 
 async function getRelayerQuote(
@@ -173,10 +195,9 @@ async function getRelayerQuote(
     recipientAddress: recipient.toNative(),
     message,
   };
-  const timeout = 5000;
 
   const suggestedFees = async () => {
-    const quoteData = await getSuggestedFees(params, timeout);
+    const quoteData = await getSuggestedFees(params);
     const {
       outputToken: { address: outputToken },
       outputAmount,
@@ -251,7 +272,6 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
     console.log(`Invalid set of chain IDs (${fromChainId}, ${toChainId}).`);
     return false;
   }
-  const network = getNetworkName(fromChainId);
 
   // todo: only EVM `fromChainId`s are supported now
   assert(chainIsEvm(fromChainId));
@@ -302,11 +322,51 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
     String(args.exclusiveRelayer ?? depositQuote.exclusiveRelayer.toNative()),
     toChainId
   );
-  const exclusivityParameter = args.exclusivityDeadline
-    ? Number(args.exclusivityDeadline)
-    : depositQuote.exclusivityDeadline;
+  const exclusivityParameter = Number(args.exclusivityDeadline ?? depositQuote.exclusivityDeadline);
+  const fillDeadline = Number(args.fillDeadline ?? depositQuote.fillDeadline);
 
-  const deposit = await spokePool.deposit(
+  const abortController = new AbortController();
+  const srcListener = new EventListener(fromChainId, logger, 1);
+  const dstListener = new EventListener(toChainId, logger, 1);
+
+  const [fundsDeposited, filledRelay] = ["FundsDeposited", "FilledRelay"].map((event) =>
+    spokePool.interface.getEvent(event).format(ethers.utils.FormatTypes.full)
+  );
+  const [srcSpokePool, dstSpokePool] = await Promise.all(
+    [fromChainId, toChainId].map((chainId) => utils.getSpokePoolContract(chainId))
+  );
+
+  const submitted = performance.now();
+  let confirmed: number, filled: number;
+
+  srcListener.onEvent(srcSpokePool.address, fundsDeposited, (log) => {
+    const _deposit = unpackDepositEvent(spreadEventWithBlockNumber(log), fromChainId);
+    const deposit = {
+      ..._deposit,
+      depositId: BigNumber.from(log.args.depositId.toString()), // todo
+      inputAmount: BigNumber.from(log.args.inputAmount.toString()), // todo
+      outputAmount: BigNumber.from(log.args.outputAmount.toString()), // todo
+      destinationChainId: Number(log.args.destinationChainId), // todo
+    };
+    if (deposit.depositor.eq(depositor)) {
+      confirmed = performance.now();
+      const depositTxn = blockExplorerLink(deposit.txnRef, fromChainId);
+      printRelayData(deposit, deposit.destinationChainId, deposit.txnRef);
+      console.log(`Deposit confirmed after ${(confirmed - submitted) / 1000} seconds: ${depositTxn}.`);
+    }
+  });
+
+  dstListener.onEvent(dstSpokePool.address, filledRelay, (log) => {
+    const fill = unpackFillEvent(spreadEventWithBlockNumber(log), toChainId);
+    if (fill.depositor.eq(depositor)) {
+      filled = performance.now();
+      const fillTxn = blockExplorerLink(fill.txnRef, toChainId);
+      console.log(`Fill confirmed after ${(filled - confirmed) / 1000} seconds: ${fillTxn}.`);
+      abortController.abort();
+    }
+  });
+
+  await spokePool.deposit(
     depositor.toBytes32(),
     recipient.toBytes32(),
     inputToken.toBytes32(),
@@ -316,19 +376,12 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
     toChainId,
     exclusiveRelayer.toBytes32(),
     depositQuote.quoteTimestamp,
-    depositQuote.fillDeadline,
+    fillDeadline,
     exclusivityParameter,
     message
   );
-  const { hash: transactionHash } = deposit;
-  console.log(`Submitting ${tokenSymbol} deposit on ${network}: ${transactionHash}.`);
-  const receipt = await deposit.wait();
 
-  receipt.logs
-    .filter((log) => log.address === spokePool.address)
-    .forEach((log) => printDeposit(fromChainId, spokePool.interface.parseLog(log)));
-
-  return true;
+  return new Promise((resolve) => abortController.signal.addEventListener("abort", async () => resolve(true)));
 }
 
 async function fillDeposit(args: Record<string, number | string | boolean>, signer: Signer): Promise<boolean> {
@@ -485,10 +538,7 @@ async function dumpConfig(args: Record<string, number | string>, _signer: Signer
 }
 
 async function _fetchDeposit(spokePool: Contract, _depositId: number | string): Promise<Log[]> {
-  const depositId = parseInt(_depositId.toString());
-  if (isNaN(depositId)) {
-    throw new Error("No depositId specified");
-  }
+  const depositId = BigNumber.from(_depositId);
 
   const { chainId } = await spokePool.provider.getNetwork();
   const deploymentBlockNumber = getDeploymentBlockNumber("SpokePool", chainId);
@@ -496,10 +546,20 @@ async function _fetchDeposit(spokePool: Contract, _depositId: number | string): 
   console.log(`Searching for depositId ${depositId} between ${deploymentBlockNumber} and ${latestBlockNumber}.`);
   const filter = spokePool.filters.FundsDeposited(null, null, null, null, null, depositId);
 
-  // @note: Querying over such a large block range typically only works on top-tier providers.
-  // @todo: Narrow the block range for the depositId, subject to this PR:
-  //        https://github.com/across-protocol/sdk/pull/476
-  return await spokePool.queryFilter(filter, deploymentBlockNumber, latestBlockNumber);
+  let from = deploymentBlockNumber;
+  let to = latestBlockNumber;
+  if (!isUnsafeDepositId(depositId)) {
+    const depositBlock = await findDepositBlock(
+      spokePool,
+      BigNumber.from(depositId),
+      deploymentBlockNumber,
+      latestBlockNumber
+    );
+    from = depositBlock - 1;
+    to = depositBlock + 1;
+  }
+  const maxLookBack = CHAIN_MAX_BLOCK_LOOKBACK[chainId] ?? 5_000;
+  return paginatedEventQuery(spokePool, filter, { from, to, maxLookBack });
 }
 
 async function _fetchTxn(spokePool: Contract, txnHash: string): Promise<{ deposits: Log[]; fills: Log[] }> {
@@ -511,7 +571,7 @@ async function _fetchTxn(spokePool: Contract, txnHash: string): Promise<{ deposi
   const fundsDeposited = spokePool.interface.getEventTopic(DEPOSIT_EVENT);
   const filledRelay = spokePool.interface.getEventTopic(FILL_EVENT);
   const logs = txn.logs.filter(({ address }) => address === spokePool.address);
-  const { deposits = [], fills = [] } = groupBy(logs, ({ topics }) => {
+  const { deposits = [], fills = [] } = Object.groupBy(logs, ({ topics }) => {
     switch (topics[0]) {
       case fundsDeposited:
         return "deposits";
@@ -544,12 +604,12 @@ async function fetchTxn(args: Record<string, number | string>, _signer: Signer):
     ({ deposits, fills } = await _fetchTxn(spokePool, txnHash as string));
   }
 
-  deposits.forEach((deposit) => {
-    printDeposit(chainId, spokePool.interface.parseLog(deposit));
+  deposits.forEach(({ transactionHash, ...deposit }) => {
+    printDeposit(chainId, spokePool.interface.parseLog(deposit), transactionHash);
   });
 
-  fills.forEach((fill) => {
-    printFill(chainId, spokePool.interface.parseLog(fill));
+  fills.forEach(({ transactionHash, ...fill }) => {
+    printFill(chainId, spokePool.interface.parseLog(fill), transactionHash);
   });
 
   return true;
@@ -637,7 +697,6 @@ async function run(argv: string[]): Promise<number> {
     default:
       return usage(cmd) ? NODE_SUCCESS : NODE_INPUT_ERR;
   }
-  await disconnectRedisClients();
 
   return result ? NODE_SUCCESS : NODE_APP_ERR;
 }
@@ -650,5 +709,9 @@ if (require.main === module) {
     .catch(async (error) => {
       console.error("Process exited with", error);
       process.exitCode = NODE_APP_ERR;
+    })
+    .finally(async () => {
+      await disconnectRedisClients();
+      exit(Number(process.exitCode));
     });
 }

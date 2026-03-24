@@ -33,6 +33,7 @@ export class DataworkerConfig extends CommonConfig {
   readonly dataworkerFastStartBundle: number | string;
 
   readonly bufferToPropose: number;
+  readonly disputeCooldown: number;
 
   // A list of chains to ignore slow fill/relayer refund execution. Primarily used for debugging purposes.
   readonly executorIgnoreChains: number[];
@@ -55,11 +56,13 @@ export class DataworkerConfig extends CommonConfig {
       EXECUTOR_IGNORE_CHAINS,
       MIN_CHALLENGE_LEAD_TIME = "600",
       AWAIT_CHALLENGE_PERIOD = "false",
+      DISPUTE_COOLDOWN,
     } = env;
     super(env);
 
     this.minChallengeLeadTime = Number(MIN_CHALLENGE_LEAD_TIME);
     this.awaitChallengePeriod = AWAIT_CHALLENGE_PERIOD === "true";
+    this.disputeCooldown = Number(DISPUTE_COOLDOWN ?? 120);
 
     this.bufferToPropose = BUFFER_TO_PROPOSE ? Number(BUFFER_TO_PROPOSE) : (20 * 60) / 15; // 20 mins of blocks;
     // Should we assert that the leaf count caps are > 0?

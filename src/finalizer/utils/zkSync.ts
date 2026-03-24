@@ -1,6 +1,5 @@
 import { interfaces, utils as sdkUtils } from "@across-protocol/sdk";
 import { Contract, Signer } from "ethers";
-import { groupBy } from "lodash";
 import { Provider as zksProvider, Wallet as zkWallet } from "zksync-ethers";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { CONTRACT_ADDRESSES } from "../../common";
@@ -130,7 +129,7 @@ async function sortWithdrawals(
   const txnStatus = await Promise.all(tokensBridged.map(({ txnRef }) => provider.getTransactionStatus(txnRef)));
 
   let idx = 0; // @dev Possible to infer the loop index in groupBy ??
-  const statuses = groupBy(tokensBridged, () => txnStatus[idx++]);
+  const statuses = Object.groupBy(tokensBridged, () => txnStatus[idx++]);
 
   return statuses;
 }

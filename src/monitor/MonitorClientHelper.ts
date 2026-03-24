@@ -10,11 +10,14 @@ import {
 } from "../common";
 import { SpokePoolClientsByChain } from "../interfaces";
 import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
+import { constructReadOnlyRebalancerClient } from "../rebalancer/RebalancerClientHelper";
+import { RebalancerClient } from "../rebalancer/utils/interfaces";
 
 export interface MonitorClients extends Clients {
   bundleDataClient: BundleDataClient;
   crossChainTransferClient: CrossChainTransferClient;
   hubPoolClient: HubPoolClient;
+  rebalancerClient?: RebalancerClient;
   spokePoolClients: SpokePoolClientsByChain;
   tokenTransferClient: TokenTransferClient;
 }
@@ -85,8 +88,17 @@ export async function constructMonitorClients(
     spokePoolChains.filter((chainId) => crossChainAdapterSupportedChains.includes(chainId)),
     adapterManager
   );
+  // Load RebalancerClient in view only mode so that getPendingRebalances() can get called.
+  const rebalancerClient = await constructReadOnlyRebalancerClient(logger, baseSigner);
 
-  return { ...commonClients, bundleDataClient, crossChainTransferClient, spokePoolClients, tokenTransferClient };
+  return {
+    ...commonClients,
+    bundleDataClient,
+    crossChainTransferClient,
+    rebalancerClient,
+    spokePoolClients,
+    tokenTransferClient,
+  };
 }
 
 export async function updateMonitorClients(clients: MonitorClients): Promise<void> {

@@ -38,7 +38,6 @@ REDIS_URL=redis://localhost:6379
 
 ```sh
 # install dependencies
-cd relayer
 yarn install
 
 # build relayer bot
@@ -92,7 +91,7 @@ yalc yalc:watch
 ```sh
 yalc add @across-protocol/sdk
 ```
-use `yalc link @across-protocol/sdk` if you dont want yalc to modify package.json file
+use `yalc link @across-protocol/sdk` if you don't want yalc to modify package.json file
 
 Any changes to the SDK will be automatically published to your local yalc server.
 

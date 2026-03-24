@@ -1,17 +1,26 @@
 import { AugmentedTransaction } from "../src/clients";
-import { BigNumber, isDefined, TransactionResponse, TransactionSimulationResult } from "../src/utils";
+import {
+  BigNumber,
+  ethers,
+  isDefined,
+  TransactionReceipt,
+  TransactionResponse,
+  TransactionSimulationResult,
+} from "../src/utils";
 import { CHAIN_ID_TEST_LIST as chainIds } from "./constants";
 import { MockedTransactionClient, txnClientPassResult } from "./mocks/MockTransactionClient";
-import { createSpyLogger, Contract, expect, randomAddress, winston, toBN } from "./utils";
+import { createSpyLogger, Contract, expect, randomAddress, toBN, winston, ethers as testEthers } from "./utils";
 
 const { spyLogger }: { spyLogger: winston.Logger } = createSpyLogger();
 const address = randomAddress(); // Test contract address
 const method = "testMethod";
 let txnClient: MockedTransactionClient;
+let signer;
 
 describe("TransactionClient", async function () {
   beforeEach(async function () {
     txnClient = new MockedTransactionClient(spyLogger);
+    [signer] = await testEthers.getSigners();
   });
 
   it("Correctly excludes simulation failures", async function () {
@@ -46,7 +55,7 @@ describe("TransactionClient", async function () {
     for (const result of [txnClientPassResult, "Forced submission failure", txnClientPassResult]) {
       const txn: AugmentedTransaction = {
         chainId,
-        contract: { address } as Contract,
+        contract: { address, signer } as Contract,
         method,
         args: [{ result }],
         value: toBN(0),
@@ -81,7 +90,7 @@ describe("TransactionClient", async function () {
     for (let txn = 1; txn <= nTxns; ++txn) {
       const txnRequest: AugmentedTransaction = {
         chainId,
-        contract: { address } as Contract,
+        contract: { address, signer } as Contract,
         method,
         args: [],
         message: "",
@@ -103,7 +112,7 @@ describe("TransactionClient", async function () {
     for (let txn = 1; txn <= nTxns; ++txn) {
       const txnRequest: AugmentedTransaction = {
         chainId,
-        contract: { address } as Contract,
+        contract: { address, signer } as Contract,
         method,
         args: [],
         message: "",
@@ -126,7 +135,7 @@ describe("TransactionClient", async function () {
     for (let txn = 1; txn <= nTxns; ++txn) {
       const txnRequest: AugmentedTransaction = {
         chainId,
-        contract: { address } as Contract,
+        contract: { address, signer } as Contract,
         method,
         args: [],
         gasLimit,
@@ -140,6 +149,93 @@ describe("TransactionClient", async function () {
     const txnResponses = await txnClient.submit(chainId, txns);
     txnResponses.forEach((txnResponse, idx) => {
       expect(txnResponse.gasLimit).to.equal(gasLimit.mul(idx + 1));
+    });
+  });
+
+  describe("ensureConfirmation", function () {
+    function makeEthersError(code: string, extra: Record<string, unknown> = {}): Error {
+      return Object.assign(new Error(code), { code, reason: code, ...extra });
+    }
+
+    function makeConfirmationTxn(chainId: number): AugmentedTransaction {
+      return {
+        chainId,
+        contract: { address, signer } as Contract,
+        method,
+        args: [],
+        message: "",
+        mrkdwn: "",
+        ensureConfirmation: true,
+      };
+    }
+
+    it("Confirms transaction receipt on success", async function () {
+      const chainId = chainIds[0];
+      let waitCalls = 0;
+      txnClient.waitOverride = () => {
+        ++waitCalls;
+        return Promise.resolve({} as TransactionReceipt);
+      };
+
+      const txnResponses = await txnClient.submit(chainId, [makeConfirmationTxn(chainId)]);
+      expect(txnResponses.length).to.equal(1);
+      expect(waitCalls).to.equal(1);
+    });
+
+    it("Throws on CALL_EXCEPTION", async function () {
+      const chainId = chainIds[0];
+      txnClient.waitOverride = () => {
+        return Promise.reject(makeEthersError(ethers.errors.CALL_EXCEPTION));
+      };
+
+      const txnResponses = await txnClient.submit(chainId, [makeConfirmationTxn(chainId)]);
+      expect(txnResponses.length).to.equal(0);
+    });
+
+    it("Resubmits on TRANSACTION_REPLACED", async function () {
+      const chainId = chainIds[0];
+      let waitCalls = 0;
+      txnClient.waitOverride = () => {
+        if (++waitCalls === 1) {
+          return Promise.reject(makeEthersError(ethers.errors.TRANSACTION_REPLACED));
+        }
+        return Promise.resolve({} as TransactionReceipt);
+      };
+
+      const txnResponses = await txnClient.submit(chainId, [makeConfirmationTxn(chainId)]);
+      expect(txnResponses.length).to.equal(1);
+      // First call rejected with TRANSACTION_REPLACED, _submit recursed, second call succeeded.
+      expect(waitCalls).to.equal(2);
+    });
+
+    it("Retries on transient error then succeeds", async function () {
+      const chainId = chainIds[0];
+      let waitCalls = 0;
+      txnClient.waitOverride = () => {
+        if (++waitCalls === 1) {
+          return Promise.reject(makeEthersError(ethers.errors.SERVER_ERROR));
+        }
+        return Promise.resolve({} as TransactionReceipt);
+      };
+
+      const txnResponses = await txnClient.submit(chainId, [makeConfirmationTxn(chainId)]);
+      expect(txnResponses.length).to.equal(1);
+      expect(waitCalls).to.equal(2);
+    });
+
+    it("Gives up after maxTries exhausted", async function () {
+      const chainId = chainIds[0];
+      let waitCalls = 0;
+      txnClient.waitOverride = () => {
+        ++waitCalls;
+        return Promise.reject(makeEthersError(ethers.errors.SERVER_ERROR));
+      };
+
+      const txnResponses = await txnClient.submit(chainId, [makeConfirmationTxn(chainId)]);
+      // The transaction still returns because _submit returns txnPromise even when confirmation fails.
+      expect(txnResponses.length).to.equal(1);
+      // wait() was called maxTries times (default is 10).
+      expect(waitCalls).to.equal(10);
     });
   });
 });
