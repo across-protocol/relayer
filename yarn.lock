@@ -58,10 +58,10 @@
     "@openzeppelin/contracts" "4.1.0"
     "@uma/core" "^2.18.0"
 
-"@across-protocol/sdk@4.3.130":
-  version "4.3.130"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.3.130.tgz#75fffce77aa6edf130c8589962fc3321a65f2639"
-  integrity sha512-X/dj3wEJpGfJ8O6vfyKQrzcn7/Cybz+STsSzrgw4teGExOcvGVLl6uLQ8WDwvvypmZ/dvS2+Tmas5napVNnniQ==
+"@across-protocol/sdk@4.3.134":
+  version "4.3.134"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.3.134.tgz#8c01fbbe210079093e412098f7ca17a92fefba0f"
+  integrity sha512-1UBAsui8bXLPq/1Rxsez5kOBMT2JwDyL8q4cr4esJv/Zcgd30nx8+5ekx3DyaD1gVq8frD0dpomBSMkAQXW+vw==
   dependencies:
     "@across-protocol/across-token" "^1.0.0"
     "@across-protocol/constants" "^3.1.100"
@@ -2540,6 +2540,24 @@
   version "1.0.5"
   resolved "https://registry.yarnpkg.com/@redis/time-series/-/time-series-1.0.5.tgz#a6d70ef7a0e71e083ea09b967df0a0ed742bc6ad"
   integrity sha512-IFjIgTusQym2B5IZJG3XKr5llka7ey84fw/NOYqESP5WUfQs9zz1ww/9+qoz4ka/S6KcGBodzlCeZ5UImKbscg==
+
+"@risk-labs/logger@^1.3.10":
+  version "1.3.10"
+  resolved "https://registry.yarnpkg.com/@risk-labs/logger/-/logger-1.3.10.tgz#19374f5de0f8fc97ff7e457893537913ceaada45"
+  integrity sha512-B/PQM3RaBeyx+a1WyYRPbqhdlA3FVt6kpFytgtynRlxxKHK+GCYosa6vc+oRM/KYe+dpPSBaBYEbtUTc3NTGPg==
+  dependencies:
+    "@google-cloud/logging-winston" "^4.1.1"
+    "@google-cloud/trace-agent" "^5.1.6"
+    "@pagerduty/pdjs" "^2.2.4"
+    axios "^1.12.2"
+    discord.js "^14.11.0"
+    dotenv "^9.0.0"
+    minimist "^1.2.0"
+    node-pagerduty "^1.2.0"
+    redis "^4.6.13"
+    superstruct "^2.0.2"
+    winston "^3.17.0"
+    winston-transport "^4.9.0"
 
 "@risk-labs/logger@^1.3.7":
   version "1.3.7"

@@ -284,8 +284,8 @@ export class Monitor {
       const deposit = invalidFill.deposit
         ? {
             txnRef: invalidFill.deposit.txnRef,
-            inputToken: invalidFill.deposit.inputToken.toNative(),
-            depositor: invalidFill.deposit.depositor.toNative(),
+            inputToken: invalidFill.deposit.inputToken,
+            depositor: invalidFill.deposit.depositor,
           }
         : undefined;
 
@@ -293,8 +293,8 @@ export class Monitor {
         at: "Monitor::reportInvalidFills",
         message,
         destinationChainId,
-        outputToken: invalidFill.fill.outputToken.toNative(),
-        relayer: invalidFill.fill.relayer.toNative(),
+        outputToken: invalidFill.fill.outputToken,
+        relayer: invalidFill.fill.relayer,
         blockExplorerLink: blockExplorerLink(invalidFill.fill.txnRef, destinationChainId),
         reason: invalidFill.reason,
         deposit,
@@ -1298,8 +1298,9 @@ export class Monitor {
             continue;
           }
           if (!this.clients.crossChainTransferClient.adapterManager.l2TokenExistForL1Token(l1Token.address, chainId)) {
-            return;
+            continue;
           }
+
           const l2Token = this.clients.crossChainTransferClient.adapterManager.l2TokenForL1Token(
             l1Token.address,
             chainId
@@ -1375,7 +1376,7 @@ export class Monitor {
     this.logger.debug({
       at: "Monitor#updatePendingRebalances",
       message: "Updated pending rebalance credits",
-      relayer: relayer.toNative(),
+      relayer,
       pendingRebalances,
     });
   }

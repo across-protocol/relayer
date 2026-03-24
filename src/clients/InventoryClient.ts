@@ -557,6 +557,12 @@ export class InventoryClient {
    */
   getL1TokenAddress(l2Token: Address, chainId: number): EvmAddress | undefined {
     try {
+      // Add exception for USDC-like tokens which only exist on L2.
+      // @todo Add support for equivalence mappings.
+      const l2TokenInfo = getTokenInfo(l2Token, chainId);
+      if (["pathUSD"].includes(l2TokenInfo.symbol)) {
+        return EvmAddress.from(TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubPoolClient.chainId]);
+      }
       return getL1TokenAddress(l2Token, chainId);
     } catch {
       return undefined;
@@ -701,7 +707,7 @@ export class InventoryClient {
     // Consider any upcoming refunds. Convert all refunds to same precision as L1 token.
     const totalRefundsPerChain: { [chainId: number]: BigNumber } = {};
     for (const chainId of this.chainIdList) {
-      const repaymentToken = this.getRemoteTokenForL1Token(l1Token, chainId);
+      const repaymentToken = chainId === originChainId ? inputToken : this.getRemoteTokenForL1Token(l1Token, chainId);
       if (!repaymentToken) {
         continue;
       }
@@ -782,12 +788,14 @@ export class InventoryClient {
       assert(this._l1TokenEnabledForChain(l1Token, chainId), `Token ${l1Token} not enabled for chain ${chainId}`);
 
       // Destination chain:
-      const repaymentToken = this.getRemoteTokenForL1Token(l1Token, chainId);
+      let repaymentToken = this.getRemoteTokenForL1Token(l1Token, chainId);
       if (chainId !== originChainId) {
         assert(
           this.hubPoolClient.l2TokenHasPoolRebalanceRoute(repaymentToken, chainId),
           `Token ${repaymentToken} not enabled as PoolRebalanceRoute for chain ${chainId} for l1 token ${l1Token}`
         );
+      } else {
+        repaymentToken = inputToken;
       }
       const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(repaymentToken, chainId);
       const chainShortfall = sdkUtils.ConvertDecimals(
@@ -1211,8 +1219,8 @@ export class InventoryClient {
         log({
           at: "InventoryClient",
           message,
-          l1Token: l1Token.toNative(),
-          l2Token: l2Token.toNative(),
+          l1Token,
+          l2Token,
           l2ChainId: chainId,
           balance,
           currentBalance,
@@ -1231,20 +1239,8 @@ export class InventoryClient {
 
     // Extract unexecutable rebalances for logging.
     this.log("Considered inventory rebalances", {
-      rebalancesRequired: rebalancesRequired.map((rebalance) => {
-        return {
-          ...rebalance,
-          l1Token: rebalance.l1Token.toNative(),
-          l2Token: rebalance.l2Token.toNative(),
-        };
-      }),
-      possibleRebalances: possibleRebalances.map((rebalance) => {
-        return {
-          ...rebalance,
-          l1Token: rebalance.l1Token.toNative(),
-          l2Token: rebalance.l2Token.toNative(),
-        };
-      }),
+      rebalancesRequired,
+      possibleRebalances,
     });
 
     // Finally, execute the rebalances.
@@ -1282,7 +1278,7 @@ export class InventoryClient {
     // Construct logs on the cross-chain actions executed.
     let mrkdwn = "";
 
-    const groupedRebalances = lodash.groupBy(executedTransactions, "chainId");
+    const groupedRebalances = Object.groupBy(executedTransactions, (txn) => txn.chainId);
     for (const [_chainId, rebalances] of Object.entries(groupedRebalances)) {
       const chainId = Number(_chainId);
       mrkdwn += `*Rebalances sent to ${getNetworkName(chainId)}:*\n`;
@@ -1315,7 +1311,7 @@ export class InventoryClient {
       }
     }
 
-    const groupedUnexecutedRebalances = lodash.groupBy(unexecutedRebalances, "chainId");
+    const groupedUnexecutedRebalances = Object.groupBy(unexecutedRebalances, (txn) => txn.chainId);
     for (const [_chainId, rebalances] of Object.entries(groupedUnexecutedRebalances)) {
       const chainId = Number(_chainId);
       mrkdwn += `*Insufficient amount to rebalance to ${getNetworkName(chainId)}:*\n`;
@@ -1575,8 +1571,8 @@ export class InventoryClient {
               shouldWithdrawExcess ? "HAS EXCESS ✅" : "NO EXCESS ❌"
             }`,
             {
-              l1Token: l1Token.toEvmAddress(),
-              l2Token: l2Token.toNative(),
+              l1Token,
+              l2Token,
               cumulativeBalance: formatter(cumulativeBalance),
               currentAllocPct: formatUnits(currentAllocPct, 18),
               excessWithdrawThresholdPct: formatUnits(excessWithdrawThresholdPct, 18),
@@ -1661,17 +1657,7 @@ export class InventoryClient {
       return;
     } else {
       this.log("Excess balances to withdraw", {
-        withdrawalsRequired: Object.entries(withdrawalsRequired).map(([chainIds, withdrawals]) => {
-          return [
-            chainIds,
-            withdrawals.map((withdrawal) => {
-              return {
-                ...withdrawal,
-                l2Token: withdrawal.l2Token.toNative(),
-              };
-            }),
-          ];
-        }),
+        withdrawalsRequired,
       });
     }
 

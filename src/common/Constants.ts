@@ -41,6 +41,8 @@ import {
   BinanceCEXNativeBridge,
   SolanaUsdcCCTPBridge,
   OFTWethBridge,
+  BridgeApi,
+  TokenSplitterBridge,
 } from "../adapter/bridges";
 import {
   BaseL2BridgeAdapter,
@@ -385,7 +387,7 @@ export const TOKEN_APPROVALS_TO_FIRST_ZERO: Record<number, string[]> = {
 };
 
 // Type alias for a function which takes in arbitrary arguments and outputs a BaseBridgeAdapter class.
-type L1BridgeConstructor<T extends BaseBridgeAdapter> = new (
+export type L1BridgeConstructor<T extends BaseBridgeAdapter> = new (
   l2chainId: number,
   hubChainId: number,
   l1Signer: Signer,
@@ -522,7 +524,7 @@ export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<Ba
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: OpStackUSDCBridge,
   },
   [CHAIN_IDs.TEMPO]: {
-    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: OFTBridge,
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: TokenSplitterBridge,
   },
   [CHAIN_IDs.UNICHAIN]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcCCTPBridge,
@@ -587,6 +589,19 @@ export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<Ba
   [CHAIN_IDs.UNICHAIN_SEPOLIA]: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.SEPOLIA]]: OpStackWethBridge,
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.SEPOLIA]]: UsdcCCTPBridge,
+  },
+};
+
+// Serves as a utility for fetching a set of bridges to use when wanting to bridge from a single L1 token to two different types of L2 tokens.
+// @dev Ordering of the L1/L2 bridges DOES matter. The first entry must be the "canonical" route, e.g. USDC via CCTP or the canonical USDC bridge if
+// no CCTP exists. The second bridge must be the alternate route. This is so the TokenSplitterBridge can select which of the two configured bridges to
+// use based solely on the desired L1/L2 token.
+export const TOKEN_SPLITTER_BRIDGES: Record<
+  number,
+  Record<string, [L1BridgeConstructor<BaseBridgeAdapter>, L1BridgeConstructor<BaseBridgeAdapter>]>
+> = {
+  [CHAIN_IDs.TEMPO]: {
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: [OFTBridge, BridgeApi],
   },
 };
 
@@ -790,12 +805,6 @@ export const OPSTACK_CONTRACT_OVERRIDES = {
       WETH: TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.BLAST],
     },
   },
-  [CHAIN_IDs.LISK]: {
-    l1: {
-      DisputeGameFactory: "0x0CF7D3706a27CCE2017aEB11E8a9c8b5388c282C",
-    },
-    l2: DEFAULT_L2_CONTRACT_ADDRESSES,
-  },
   [CHAIN_IDs.MEGAETH]: {
     l1: {
       AddressManager: "0x9754fD3D63B3EAC3fd62b6D54DE4f61b00D6E0Df",
@@ -811,34 +820,7 @@ export const OPSTACK_CONTRACT_OVERRIDES = {
     },
     l2: DEFAULT_L2_CONTRACT_ADDRESSES,
   },
-  [CHAIN_IDs.MODE]: {
-    l1: {
-      DisputeGameFactory: "0x6f13EFadABD9269D6cEAd22b448d434A1f1B433E",
-    },
-  },
-  [CHAIN_IDs.ZORA]: {
-    l1: {
-      DisputeGameFactory: "0xB0F15106fa1e473Ddb39790f197275BC979Aa37e",
-    },
-    l2: DEFAULT_L2_CONTRACT_ADDRESSES,
-  },
-
   // Testnets
-  [CHAIN_IDs.LISK_SEPOLIA]: {
-    l1: {
-      AddressManager: "0x27Bb4A7cd8FB20cb816BF4Aac668BF841bb3D5d3",
-      L1CrossDomainMessenger: "0x857824E6234f7733ecA4e9A76804fd1afa1A3A2C",
-      L1StandardBridge: CONTRACT_ADDRESSES[CHAIN_IDs.SEPOLIA].ovmStandardBridge_4202.address,
-      StateCommitmentChain: ZERO_ADDRESS,
-      CanonicalTransactionChain: ZERO_ADDRESS,
-      BondManager: ZERO_ADDRESS,
-      OptimismPortal: "0xe3d90F21490686Ec7eF37BE788E02dfC12787264",
-      L2OutputOracle: "0xA0E35F56C318DE1bD5D9ca6A94Fe7e37C5663348",
-      OptimismPortal2: ZERO_ADDRESS,
-      DisputeGameFactory: ZERO_ADDRESS,
-    },
-    l2: DEFAULT_L2_CONTRACT_ADDRESSES,
-  },
   [CHAIN_IDs.BLAST_SEPOLIA]: {
     l1: {
       AddressManager: "0x092dD3E2272a372cdfbcCb8F689423F09ED6242a",
@@ -856,21 +838,6 @@ export const OPSTACK_CONTRACT_OVERRIDES = {
       ...DEFAULT_L2_CONTRACT_ADDRESSES,
       WETH: TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.BLAST_SEPOLIA],
     },
-  },
-  [CHAIN_IDs.MODE_SEPOLIA]: {
-    l1: {
-      AddressManager: "0x83D45725d6562d8CD717673D6bb4c67C07dC1905",
-      L1CrossDomainMessenger: "0xc19a60d9E8C27B9A43527c3283B4dd8eDC8bE15C",
-      L1StandardBridge: CONTRACT_ADDRESSES[CHAIN_IDs.SEPOLIA].ovmStandardBridge_919.address,
-      StateCommitmentChain: ZERO_ADDRESS,
-      CanonicalTransactionChain: ZERO_ADDRESS,
-      BondManager: ZERO_ADDRESS,
-      OptimismPortal: "0x320e1580effF37E008F1C92700d1eBa47c1B23fD",
-      L2OutputOracle: "0x2634BD65ba27AB63811c74A63118ACb312701Bfa",
-      OptimismPortal2: ZERO_ADDRESS,
-      DisputeGameFactory: ZERO_ADDRESS,
-    },
-    l2: DEFAULT_L2_CONTRACT_ADDRESSES,
   },
 };
 

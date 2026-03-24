@@ -23,6 +23,7 @@ export interface PubSubMessage {
   attestation?: StringUnion | null;
   destinationChainId?: LongUnion | null;
   signature?: StringUnion | null;
+  quoteDeadline?: LongUnion | null;
 }
 
 export interface ChainConfig {
@@ -34,7 +35,7 @@ export interface ChainConfig {
   cctpDomain: number;
 }
 
-export type DestinationType = "hypercore" | "lighter" | "standard";
+export type DestinationType = "hypercore" | "lighter" | "direct-evm" | "standard";
 
 export interface DestinationInfo {
   type: DestinationType;
