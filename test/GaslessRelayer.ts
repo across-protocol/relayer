@@ -63,12 +63,6 @@ class TestableGaslessRelayer extends GaslessRelayer {
   public setSpokePools(pools: { [chainId: number]: Contract }): void {
     this.spokePools = pools;
   }
-  public setObservedDeposits(deposits: { [chainId: number]: Set<string> }): void {
-    this.observedDeposits = deposits;
-  }
-  public setObservedFills(fills: { [chainId: number]: Set<string> }): void {
-    this.observedFills = fills;
-  }
   public setSignerAddress(address: EvmAddress): void {
     this.signerAddress = address;
   }
@@ -498,8 +492,6 @@ describe("GaslessRelayer", function () {
       [ORIGIN_CHAIN_ID]: fakeSpokePool,
       [DESTINATION_CHAIN_ID]: fakeSpokePool,
     });
-    relayer.setObservedDeposits({ [ORIGIN_CHAIN_ID]: new Set() });
-    relayer.setObservedFills({ [DESTINATION_CHAIN_ID]: new Set() });
     relayer.setSignerAddress(EvmAddress.from(signer.address));
   });
 
