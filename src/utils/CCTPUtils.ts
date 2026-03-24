@@ -86,8 +86,8 @@ export type CCTPHookData = {
   maxUserSlippageBps: number;
   finalRecipient: string; // address (extracted from bytes32)
   finalToken: string; // address (extracted from bytes32)
-  destinationDex?: number; // uint32 (new contract version only)
-  accountCreationMode?: number; // uint8 (new contract version only)
+  destinationDex: number; // uint32
+  accountCreationMode: number; // uint8
   executionMode: number; // uint8
   actionData: string; // bytes
 };
@@ -871,9 +871,7 @@ export function decodeCctpV2HookData(messageBytes: string): CCTPHookData | undef
 
   const hookDataBytes = messageBytesArray.slice(HOOK_DATA_START);
 
-  // Try the new contract format first (including destinationDex and accountCreationMode)
-  // then fall back to the legacy format.
-  const newFormat = [
+  const format = [
     "bytes32",
     "uint256",
     "uint256",
@@ -885,33 +883,23 @@ export function decodeCctpV2HookData(messageBytes: string): CCTPHookData | undef
     "uint8",
     "bytes",
   ];
-  // NOTE: We can remove the legacy format once the API migrates to new contract version.
-  const legacyFormat = ["bytes32", "uint256", "uint256", "uint256", "bytes32", "bytes32", "uint8", "bytes"];
+  try {
+    const decoded = ethers.utils.defaultAbiCoder.decode(format, hookDataBytes);
 
-  for (const format of [newFormat, legacyFormat]) {
-    try {
-      const decoded = ethers.utils.defaultAbiCoder.decode(format, hookDataBytes);
-      const isNewFormat = format.length === newFormat.length;
-
-      return {
-        nonce: decoded[0],
-        deadline: decoded[1].toString(),
-        maxBpsToSponsor: decoded[2].toNumber(),
-        maxUserSlippageBps: decoded[3].toNumber(),
-        finalRecipient: EvmAddress.from(decoded[4]).toNative(),
-        finalToken: EvmAddress.from(decoded[5]).toNative(),
-        ...(isNewFormat
-          ? {
-              destinationDex: decoded[6],
-              accountCreationMode: decoded[7],
-              executionMode: decoded[8],
-              actionData: decoded[9],
-            }
-          : { executionMode: decoded[6], actionData: decoded[7] }),
-      };
-    } catch {
-      continue;
-    }
+    return {
+      nonce: decoded[0],
+      deadline: decoded[1].toString(),
+      maxBpsToSponsor: decoded[2].toNumber(),
+      maxUserSlippageBps: decoded[3].toNumber(),
+      finalRecipient: EvmAddress.from(decoded[4]).toNative(),
+      finalToken: EvmAddress.from(decoded[5]).toNative(),
+      destinationDex: decoded[6],
+      accountCreationMode: decoded[7],
+      executionMode: decoded[8],
+      actionData: decoded[9],
+    };
+  } catch {
+    return undefined;
   }
 }
 
@@ -993,7 +981,7 @@ async function checkAndApproveCctpTokenMessenger(
       message: "Approving USDC for CCTP TokenMessenger",
       chainName: sourceChainName,
       chainId: sourceChainId,
-      tokenAddress: sourceUsdcTokenAddress.toNative(),
+      tokenAddress: sourceUsdcTokenAddress,
       tokenMessengerAddress,
     });
 

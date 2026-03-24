@@ -1,27 +1,98 @@
 import {
+  AnyGaslessDepositMessage,
   APIGaslessDepositResponse,
+  BaseDepositData,
   BridgeWitnessData,
   GaslessDepositMessage,
-  DepositWithBlock,
   ReceiveWithAuthorization,
+  RelayData,
   Permit2Permit,
+  Permit2SwapAndBridgePermit,
+  SwapAndBridgeGaslessDepositMessage,
 } from "../interfaces";
 import type { AllowedPeggedPairs } from "../gasless/GaslessRelayerConfig";
 import {
   Address,
+  assert,
   ConvertDecimals,
   convertRelayDataParamsToBytes32,
   getL1TokenAddress,
   getTokenInfo,
+  toBN,
   toBytes32,
   toAddressType,
   CHAIN_IDs,
   MAX_UINT_VAL,
+  TOKEN_SYMBOLS_MAP,
 } from "../utils";
 import { AugmentedTransaction } from "../clients";
 import { Contract, BigNumber, ethers } from "ethers";
 
+/**
+ * Pulls normalized token/amount/deadline fields from a bridge or swap-and-bridge gasless message.
+ */
+export function extractGaslessDepositFields(depositMessage: AnyGaslessDepositMessage): {
+  destinationChainId: number;
+  fillDeadline: number;
+  inputToken: Address;
+  outputToken: Address;
+  /** Bridge: signed input amount. Swap: min expected input token after swap. */
+  inputAmountForValidation: BigNumber;
+  outputAmount: BigNumber;
+  exclusivityParameter: number;
+  swapToken?: string;
+  swapTokenAmount?: string;
+} {
+  const { originChainId } = depositMessage;
+  const bd =
+    depositMessage.depositFlowType === "swapAndBridge" ? depositMessage.depositData : depositMessage.baseDepositData;
+  const { destinationChainId } = bd;
+
+  const inputAmountForValidation =
+    depositMessage.depositFlowType === "swapAndBridge"
+      ? toBN(depositMessage.minExpectedInputTokenAmount)
+      : toBN(depositMessage.baseDepositData.inputAmount);
+
+  const swapAndBridgeOnlyFields =
+    depositMessage.depositFlowType === "swapAndBridge"
+      ? { swapToken: depositMessage.swapToken, swapTokenAmount: depositMessage.swapTokenAmount }
+      : {};
+
+  return {
+    destinationChainId,
+    fillDeadline: bd.fillDeadline,
+    inputToken: toAddressType(bd.inputToken, originChainId),
+    outputToken: toAddressType(bd.outputToken, destinationChainId),
+    inputAmountForValidation,
+    outputAmount: toBN(bd.outputAmount),
+    exclusivityParameter: bd.exclusivityParameter,
+    ...swapAndBridgeOnlyFields,
+  };
+}
+
 const DOMAIN_CALLDATA_DELIMITER = "0x1dc0de";
+
+/*
+ * The exclusivityParameter argument is interpreted depending on its relationship to 1 year in seconds.
+ * Below 1 year, it represents a relative timestamp. Above 1 year, it represents an absolute timestamp.
+ * See SpokePool:
+ * https://github.com/across-protocol/contracts/blob/33e6fd20947c4bdf8682f45770e468577e9142ea/contracts/SpokePool.sol#L166
+ */
+export const MAX_EXCLUSIVITY_PERIOD_SECONDS = 31_536_000;
+export function isExclusivityRelative(exclusivityParameter: number): boolean {
+  return exclusivityParameter > 0 && exclusivityParameter <= MAX_EXCLUSIVITY_PERIOD_SECONDS;
+}
+
+/**
+ * Returns true if the token is a supported stablecoin for gasless deposits (USDC or USDT).
+ * @param token The token address to check
+ * @param chainId The chain ID where the token resides
+ */
+export function isStablecoin(token: Address, chainId: number): boolean {
+  return [TOKEN_SYMBOLS_MAP.USDC, TOKEN_SYMBOLS_MAP.USDT].some(({ addresses }) =>
+    token.eq(toAddressType(addresses[chainId], chainId))
+  );
+}
 
 /**
  * Returns true if the input/output token pair is allowed for gasless: either same L1 token,
@@ -69,31 +140,90 @@ export function tagIntegratorId(txData: string, integratorId: string): string {
 /**
  * Restructures raw API deposits into a flatter shape so callers don't deal with
  * swapTx.data.witness.BridgeWitness.data etc. Call this once when you receive the API response.
- * Supports both ReceiveWithAuthorization and Permit2; permitType indicates which flow to use.
+ * Supports bridge-only (BridgeWitness) and swap-and-bridge (BridgeAndSwapWitness) deposits.
+ * Use depositFlowType to branch: "bridge" | "swapAndBridge".
  */
-export function restructureGaslessDeposits(depositMessages: APIGaslessDepositResponse[]): GaslessDepositMessage[] {
-  return depositMessages.map((msg) => {
+export function restructureGaslessDeposits(depositMessages: APIGaslessDepositResponse[]): AnyGaslessDepositMessage[] {
+  return depositMessages.map((msg): AnyGaslessDepositMessage => {
     const { swapTx, requestId, signature } = msg;
     const { chainId: originChainId, data } = swapTx;
-    const { depositId, permit, witness, integratorId } = data;
-    const witnessData = witness.BridgeWitness.data;
-    const { inputAmount, baseDepositData, submissionFees, spokePool, nonce } = witnessData;
+    const { depositId, witness, integratorId, metadata } = data;
     const permitType = data.type === "permit2" ? "permit2" : "receiveWithAuthorization";
+
+    if ("BridgeAndSwapWitness" in witness) {
+      const raw = witness.BridgeAndSwapWitness.data;
+      // Unwrap protobuf-style objects to plain primitives.
+      const transferType = typeof raw.transferType === "number" ? raw.transferType : raw.transferType.long;
+      const enableProportionalAdjustment =
+        typeof raw.enableProportionalAdjustment === "boolean"
+          ? raw.enableProportionalAdjustment
+          : raw.enableProportionalAdjustment.boolean;
+      return {
+        depositFlowType: "swapAndBridge",
+        originChainId,
+        depositId,
+        requestId,
+        signature,
+        permitType,
+        // permit type for this branch is ReceiveWithAuthorization | Permit2SwapAndBridgePermit.
+        // Cast required because data is still the union type after narrowing witness.
+        permit: data.permit as SwapAndBridgeGaslessDepositMessage["permit"],
+        depositData: raw.depositData,
+        submissionFees: raw.submissionFees,
+        swapToken: raw.swapToken,
+        exchange: raw.exchange,
+        transferType,
+        swapTokenAmount: raw.swapTokenAmount,
+        minExpectedInputTokenAmount: raw.minExpectedInputTokenAmount,
+        routerCalldata: raw.routerCalldata,
+        enableProportionalAdjustment,
+        spokePool: raw.spokePool,
+        nonce: raw.nonce,
+        integratorId,
+        metadata,
+      };
+    }
+
+    const { inputAmount, baseDepositData, submissionFees, spokePool, nonce } = witness.BridgeWitness.data;
     return {
+      depositFlowType: "bridge",
       originChainId,
       depositId,
       requestId,
       signature,
       permitType,
-      permit,
+      // permit type for this branch is ReceiveWithAuthorization | Permit2Permit.
+      // Cast required because data is still the union type after narrowing witness.
+      permit: data.permit as GaslessDepositMessage["permit"],
       inputAmount,
       baseDepositData,
       submissionFees,
       spokePool,
       nonce,
       integratorId,
+      metadata,
     };
   });
+}
+
+function toBytes(value: string): string {
+  if (value.startsWith("0x")) {
+    return value;
+  }
+  return "0x" + Buffer.from(value, "utf8").toString("hex");
+}
+
+/**
+ * Normalizes BaseDepositData fields to match on-chain encoding.
+ * This ensures consistent data representation between deposit submission and fill paths.
+ * CRITICAL: Both toContractDepositData and buildSyntheticDeposit must apply the same
+ * normalizations to prevent relay data hash mismatches.
+ */
+function normalizeBaseDepositData(bdd: BaseDepositData): BaseDepositData {
+  return {
+    ...bdd,
+    message: toBytes(bdd.message), // Convert plain text to hex bytes
+  };
 }
 
 /**
@@ -103,7 +233,7 @@ export function restructureGaslessDeposits(depositMessages: APIGaslessDepositRes
  * - Contract BaseDepositData has no exclusivityDeadline (only exclusivityParameter).
  */
 function toContractDepositData(data: BridgeWitnessData) {
-  const bdd = data.baseDepositData;
+  const bdd = normalizeBaseDepositData(data.baseDepositData);
   return {
     submissionFees: data.submissionFees,
     baseDepositData: {
@@ -117,19 +247,12 @@ function toContractDepositData(data: BridgeWitnessData) {
       quoteTimestamp: bdd.quoteTimestamp,
       fillDeadline: bdd.fillDeadline,
       exclusivityParameter: bdd.exclusivityParameter,
-      message: toBytes(bdd.message),
+      message: bdd.message, // Already normalized by normalizeBaseDepositData
     },
     inputAmount: data.inputAmount,
     spokePool: data.spokePool,
     nonce: data.nonce,
   };
-}
-
-function toBytes(value: string): string {
-  if (value.startsWith("0x")) {
-    return value;
-  }
-  return "0x" + Buffer.from(value, "utf8").toString("hex");
 }
 
 function normalizeSignature(signature: string): string {
@@ -195,11 +318,16 @@ export function buildPermit2GaslessDepositTx(
 }
 
 /**
- * Authorizer/signer address for logging or lookup. ReceiveWithAuthorization: permit.message.from; Permit2: baseDepositData.depositor.
+ * Authorizer/signer address for logging or lookup.
+ * ReceiveWithAuthorization: permit.message.from.
+ * Permit2 bridge: baseDepositData.depositor.
+ * Permit2 swapAndBridge: depositData.depositor.
  */
-export function getGaslessAuthorizerAddress(depositMessage: GaslessDepositMessage): string {
+export function getGaslessAuthorizerAddress(depositMessage: AnyGaslessDepositMessage): string {
   if (depositMessage.permitType === "permit2") {
-    return depositMessage.baseDepositData.depositor;
+    return depositMessage.depositFlowType === "swapAndBridge"
+      ? depositMessage.depositData.depositor
+      : depositMessage.baseDepositData.depositor;
   }
   return (depositMessage.permit as ReceiveWithAuthorization).message.from;
 }
@@ -207,7 +335,7 @@ export function getGaslessAuthorizerAddress(depositMessage: GaslessDepositMessag
 /**
  * Permit nonce for lookup/dedup. Both permit types have message.nonce.
  */
-export function getGaslessPermitNonce(depositMessage: GaslessDepositMessage): string {
+export function getGaslessPermitNonce(depositMessage: AnyGaslessDepositMessage): string {
   return depositMessage.permit.message.nonce;
 }
 
@@ -254,22 +382,128 @@ export function buildReceiveWithAuthorizationGaslessDepositTx(
 }
 
 /**
- * Returns a depositWithAuthorization or depositWithPermit2 AugmentedTransaction based on permitType.
+ * Builds the origin-chain deposit tx for any gasless API message: bridge (depositWithAuthorization /
+ * depositWithPermit2) or swap-and-bridge (swapAndBridgeWithAuthorization / swapAndBridgeWithPermit2).
  */
 export function buildGaslessDepositTx(
-  depositMessage: GaslessDepositMessage,
+  depositMessage: AnyGaslessDepositMessage,
   spokePoolPeripheryContract: Contract
 ): AugmentedTransaction {
+  if (depositMessage.depositFlowType === "swapAndBridge") {
+    return buildSwapAndBridgeDepositTx(depositMessage, spokePoolPeripheryContract);
+  }
   return depositMessage.permitType === "permit2"
     ? buildPermit2GaslessDepositTx(depositMessage, spokePoolPeripheryContract)
     : buildReceiveWithAuthorizationGaslessDepositTx(depositMessage, spokePoolPeripheryContract);
 }
 
 /**
+ * Maps a SwapAndBridgeGaslessDepositMessage to the SwapAndDepositData struct expected by the contract ABI.
+ * Applies the same bytes32/bytes normalizations as toContractDepositData does for bridge-only deposits.
+ */
+function toContractSwapAndDepositData(msg: SwapAndBridgeGaslessDepositMessage) {
+  const dd = msg.depositData;
+  return {
+    submissionFees: {
+      amount: BigNumber.from(msg.submissionFees.amount),
+      recipient: msg.submissionFees.recipient,
+    },
+    depositData: {
+      inputToken: dd.inputToken,
+      outputToken: toBytes32(dd.outputToken),
+      outputAmount: BigNumber.from(dd.outputAmount),
+      depositor: dd.depositor,
+      recipient: toBytes32(dd.recipient),
+      destinationChainId: dd.destinationChainId,
+      exclusiveRelayer: toBytes32(dd.exclusiveRelayer),
+      quoteTimestamp: dd.quoteTimestamp,
+      fillDeadline: dd.fillDeadline,
+      exclusivityParameter: dd.exclusivityParameter,
+      message: toBytes(dd.message),
+    },
+    swapToken: msg.swapToken,
+    exchange: msg.exchange,
+    transferType: msg.transferType,
+    swapTokenAmount: BigNumber.from(msg.swapTokenAmount),
+    minExpectedInputTokenAmount: BigNumber.from(msg.minExpectedInputTokenAmount),
+    routerCalldata: toBytes(msg.routerCalldata),
+    enableProportionalAdjustment: msg.enableProportionalAdjustment,
+    spokePool: msg.spokePool,
+    nonce: BigNumber.from(msg.nonce),
+  };
+}
+
+/**
+ * Builds calldata for SpokePoolPeriphery.swapAndBridgeWithAuthorization or .swapAndBridgeWithPermit2
+ * depending on {@link SwapAndBridgeGaslessDepositMessage.permitType}.
+ */
+export function buildSwapAndBridgeDepositTx(
+  depositMessage: SwapAndBridgeGaslessDepositMessage,
+  spokePoolPeripheryContract: Contract
+): AugmentedTransaction {
+  const swapAndDepositData = toContractSwapAndDepositData(depositMessage);
+
+  let method: "swapAndBridgeWithAuthorization" | "swapAndBridgeWithPermit2";
+  let args: unknown[];
+
+  if (depositMessage.permitType === "permit2") {
+    method = "swapAndBridgeWithPermit2";
+    const permit2 = depositMessage.permit as Permit2SwapAndBridgePermit;
+    args = [
+      depositMessage.depositData.depositor,
+      swapAndDepositData,
+      {
+        permitted: {
+          token: permit2.message.permitted.token,
+          amount: BigNumber.from(permit2.message.permitted.amount),
+        },
+        nonce: BigNumber.from(permit2.message.nonce),
+        deadline: BigNumber.from(permit2.message.deadline),
+      },
+      normalizeSignatureBytes(depositMessage.signature),
+    ];
+  } else {
+    method = "swapAndBridgeWithAuthorization";
+    const {
+      from: signatureOwner,
+      validAfter,
+      validBefore,
+    } = (depositMessage.permit as ReceiveWithAuthorization).message;
+    args = [
+      signatureOwner,
+      swapAndDepositData,
+      BigNumber.from(validAfter),
+      BigNumber.from(validBefore),
+      normalizeSignature(depositMessage.signature),
+    ];
+  }
+
+  if (depositMessage.integratorId) {
+    const calldata = spokePoolPeripheryContract.interface.encodeFunctionData(method, args);
+    const taggedCalldata = tagIntegratorId(calldata, depositMessage.integratorId);
+    return {
+      contract: spokePoolPeripheryContract,
+      chainId: depositMessage.originChainId,
+      method: "",
+      args: [taggedCalldata],
+      ensureConfirmation: true,
+    };
+  }
+
+  return {
+    contract: spokePoolPeripheryContract,
+    chainId: depositMessage.originChainId,
+    method,
+    args,
+    ensureConfirmation: true,
+  };
+}
+
+/**
  * Returns a FillRelay transaction based on a restructured gasless deposit.
  */
 export function buildGaslessFillRelayTx(
-  deposit: Omit<DepositWithBlock, "fromLiteChain" | "toLiteChain" | "quoteBlockNumber">,
+  deposit: RelayData & { destinationChainId: number },
   spokePool: Contract,
   repaymentChainId: number,
   repaymentAddress: Address
@@ -281,6 +515,42 @@ export function buildGaslessFillRelayTx(
     method: "fillRelay",
     ensureConfirmation: true,
     args: [convertRelayDataParamsToBytes32(deposit), repaymentChainId, repaymentAddress.toBytes32()],
+  };
+}
+
+/**
+ * Constructs a deposit-shaped object from a gasless API message, for use in the immediate fill path
+ * where the fill is submitted before the deposit is confirmed on-chain.
+ * IMPORTANT: Uses normalizeBaseDepositData to ensure fields match on-chain deposit encoding.
+ * CRITICAL: Only safe to call with absolute exclusivityParameter (not relative).
+ */
+export function buildSyntheticDeposit(msg: GaslessDepositMessage): RelayData & { destinationChainId: number } {
+  const { originChainId } = msg;
+  const bdd = normalizeBaseDepositData(msg.baseDepositData);
+  const { destinationChainId } = bdd;
+
+  // CRITICAL: Verify exclusivityParameter is absolute, not relative.
+  // Relative parameters cannot be used for immediate fill because we can't know
+  // the actual exclusivityDeadline until the deposit mines on-chain.
+  assert(
+    !isExclusivityRelative(bdd.exclusivityParameter),
+    `exclusivityParameter is not absolute (${bdd.exclusivityParameter})`
+  );
+
+  return {
+    originChainId,
+    depositor: toAddressType(bdd.depositor, originChainId),
+    recipient: toAddressType(bdd.recipient, destinationChainId),
+    depositId: BigNumber.from(msg.depositId),
+    inputToken: toAddressType(bdd.inputToken, originChainId),
+    inputAmount: BigNumber.from(bdd.inputAmount),
+    outputToken: toAddressType(bdd.outputToken, destinationChainId),
+    outputAmount: BigNumber.from(bdd.outputAmount),
+    message: bdd.message, // Already normalized by normalizeBaseDepositData
+    fillDeadline: bdd.fillDeadline,
+    exclusiveRelayer: toAddressType(bdd.exclusiveRelayer, destinationChainId),
+    exclusivityDeadline: bdd.exclusivityDeadline,
+    destinationChainId,
   };
 }
 
