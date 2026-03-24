@@ -71,9 +71,15 @@ describe("Dataworker: Load bundle data", async function () {
         mockDestinationSpokePool,
         spokePoolClients,
       } = await setupMockClients(
-        hubPoolClient, configStoreClient,
-        spokePoolClient_1, spokePoolClient_2, spokePoolClients,
-        l1Token_1, erc20_1, erc20_2, lpFeePct
+        hubPoolClient,
+        configStoreClient,
+        spokePoolClient_1,
+        spokePoolClient_2,
+        spokePoolClients,
+        l1Token_1,
+        erc20_1,
+        erc20_2,
+        lpFeePct
       ));
       const bundleDataClient = new BundleDataClient(
         dataworkerInstance.logger,

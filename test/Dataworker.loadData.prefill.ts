@@ -117,9 +117,15 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
         mockDestinationSpokePool,
         spokePoolClients,
       } = await setupMockClients(
-        hubPoolClient, configStoreClient,
-        spokePoolClient_1, spokePoolClient_2, spokePoolClients,
-        l1Token_1, erc20_1, erc20_2, lpFeePct
+        hubPoolClient,
+        configStoreClient,
+        spokePoolClient_1,
+        spokePoolClient_2,
+        spokePoolClients,
+        l1Token_1,
+        erc20_1,
+        erc20_2,
+        lpFeePct
       ));
       const bundleDataClient = new MockBundleDataClient(
         dataworkerInstance.logger,
