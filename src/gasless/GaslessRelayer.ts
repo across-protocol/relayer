@@ -413,7 +413,7 @@ export class GaslessRelayer {
         const depositKey = this._getDepositKey(
           toAddressType(depositMessage.depositData.inputToken, originChainId).toNative(),
           originChainId,
-          depositId.toString()
+          depositId
         );
         this.observedDeposits[originChainId].add(depositKey);
         return;
@@ -518,14 +518,14 @@ export class GaslessRelayer {
             );
             let nextState = MessageState.ERROR;
             if (!valid) {
-              log("warn", `Rejected malformed ${isSwap ? "swapAndBridge " : ""}deposit destined for ${origin}.`);
+              log("warn", `Rejected malformed deposit destined for ${origin}.`);
             } else {
-              if (!isSwap) {
-                fillImmediate = this.fillImmediate(
+              fillImmediate =
+                !isSwap &&
+                this.fillImmediate(
                   { originChainId, destinationChainId, outputToken, outputAmount, exclusivityParameter },
                   spokePool
                 );
-              }
               nextState = MessageState.DEPOSIT_SUBMIT;
             }
             setState(nextState);
@@ -654,7 +654,7 @@ export class GaslessRelayer {
       } while (!terminalStates.includes(getState()));
       const tEnd = performance.now();
       const delta = (tEnd - tStart) / 1000;
-      log("info", `Processed ${isSwap ? "swapAndBridge " : ""}${origin} depositId ${depositId} in ${delta} seconds.`);
+      log("info", `Processed ${origin} depositId ${depositId} in ${delta} seconds.`);
     };
 
     const messageFilter = (deposit: AnyGaslessDepositMessage): boolean => {
@@ -712,9 +712,10 @@ export class GaslessRelayer {
     const { decimals, symbol } = getTokenInfo(toAddressType(amountToken, originChainId), originChainId);
     const formattedAmount = createFormatFunction(2, 4, false, decimals)(rawAmount);
 
-    const message = `Completed gasless ${isSwap ? "swapAndBridge" : ""} deposit 😎`;
-    const mrkdwnLead = `Completed gasless ${isSwap ? "swapAndBridge" : ""} deposit`;
-    const mrkdwn = `${mrkdwnLead} from ${getNetworkName(originChainId)} to ${getNetworkName(destinationChainId)} 
+    const message = "Completed gasless deposit 😎";
+    const mrkdwn = `Completed gasless deposit from ${getNetworkName(originChainId)} to ${getNetworkName(
+      destinationChainId
+    )} 
     with authorizer ${blockExplorerLink(authorizer, originChainId)}, 
     ${isSwap ? "swap amount" : "input amount"} ${formattedAmount} ${symbol}, and deposit ID ${depositId}`;
 
