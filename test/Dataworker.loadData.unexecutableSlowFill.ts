@@ -243,7 +243,6 @@ describe("Dataworker: Load bundle data: Computing unexecutable slow fills", asyn
     expect(logs.length).to.equal(1);
   });
 
-
   it("Replacing a slow fill request with a fast fill in same bundle doesn't create unexecutable slow fill", async function () {
     generateV3Deposit({ outputToken: erc20_2.address });
     await mockOriginSpokePoolClient.update(["FundsDeposited"]);
@@ -506,7 +505,9 @@ describe("Dataworker: Load bundle data: Computing unexecutable slow fills", asyn
       await spokePoolClient_1.update();
       const deposits = spokePoolClient_1.getDeposits();
       expect(deposits.length).to.equal(3);
-      const eligibleSlowFills = depositsWithSlowFillRequests.filter((x) => erc20_2.address === x.outputToken.toNative());
+      const eligibleSlowFills = depositsWithSlowFillRequests.filter(
+        (x) => erc20_2.address === x.outputToken.toNative()
+      );
       const ineligibleSlowFills = depositsWithSlowFillRequests.filter(
         (x) => erc20_2.address !== x.outputToken.toNative()
       );
@@ -625,11 +626,15 @@ describe("Dataworker: Load bundle data: Computing unexecutable slow fills", asyn
       await spokePoolClient_1.update();
       await spokePoolClient_2.update();
       assert(
-        spokePoolClient_2.getFills().every((x) => x.relayExecutionInfo.fillType === interfaces.FillType.ReplacedSlowFill),
+        spokePoolClient_2
+          .getFills()
+          .every((x) => x.relayExecutionInfo.fillType === interfaces.FillType.ReplacedSlowFill),
         "All fills should be replaced slow fills"
       );
       assert(
-        spokePoolClient_1.getFills().every((x) => x.relayExecutionInfo.fillType === interfaces.FillType.ReplacedSlowFill),
+        spokePoolClient_1
+          .getFills()
+          .every((x) => x.relayExecutionInfo.fillType === interfaces.FillType.ReplacedSlowFill),
         "All fills should be replaced slow fills"
       );
 
