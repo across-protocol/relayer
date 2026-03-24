@@ -7,19 +7,31 @@ import {
   PUBLIC_NETWORKS,
   chainIsProd,
   chainIsSvm,
-  getCctpV2TokenMessenger,
+  retrieveGckmsKeys,
+  getGckmsConfig,
+  getSvmSignerFromPrivateKey,
+  toAddressType,
 } from "../../utils";
 import { checkIfAlreadyProcessedEvm, processMintEvm, getEvmProvider } from "../utils/evmUtils";
 import { checkIfAlreadyProcessedSvm, processMintSvm, getSvmProvider } from "../utils/svmUtils";
+import { address } from "@solana/kit";
+import {
+  NoAttestationFoundError,
+  AttestationNotReadyError,
+  AlreadyProcessedError,
+  SvmPrivateKeyNotConfiguredError,
+  RpcUrlNotConfiguredError,
+  MintTransactionFailedError,
+  PrivateKeyNotFoundError,
+  isCCTPError,
+} from "../errors";
 
 export class CCTPService {
-  private privateKey: string;
-  private svmPrivateKey?: Uint8Array;
+  private evmPrivateKey: string;
+  private svmPrivateKey: Uint8Array;
   private logger: winston.Logger;
 
   constructor(logger?: winston.Logger) {
-    this.privateKey = process.env.PRIVATE_KEY!;
-
     this.logger =
       logger ||
       winston.createLogger({
@@ -27,14 +39,6 @@ export class CCTPService {
         format: winston.format.combine(winston.format.timestamp(), winston.format.json()),
         transports: [new winston.transports.Console()],
       });
-
-    if (process.env.SVM_PRIVATE_KEY) {
-      try {
-        this.svmPrivateKey = Uint8Array.from(JSON.parse(process.env.SVM_PRIVATE_KEY));
-      } catch (error) {
-        this.logger.warn({ at: "CCTPService#constructor", message: "Failed to parse SVM private key", error });
-      }
-    }
   }
 
   async processBurnTransaction(message: PubSubMessage): Promise<ProcessBurnTransactionResponse> {
@@ -42,10 +46,21 @@ export class CCTPService {
       const {
         burnTransactionHash,
         sourceChainId,
-        message: cctpMessage,
-        attestation: cctpAttestation,
-        destinationChainId: providedDestinationChainId,
+        message: cctpMessageUnion,
+        attestation: cctpAttestationUnion,
+        destinationChainId: providedDestinationChainIdUnion,
+        signature: signatureUnion,
+        quoteDeadline: quoteDeadlineUnion,
       } = message;
+
+      this.evmPrivateKey = await this.getPrivateKey("evm");
+      this.svmPrivateKey = getSvmSignerFromPrivateKey("0x" + this.evmPrivateKey).secretKey;
+
+      const cctpMessage = cctpMessageUnion?.string;
+      const cctpAttestation = cctpAttestationUnion?.string;
+      const providedDestinationChainId = providedDestinationChainIdUnion?.long;
+      const signature = signatureUnion?.string;
+      const quoteDeadline = quoteDeadlineUnion?.long;
 
       this.logger.info({
         at: "CCTPService#processBurnTransaction",
@@ -61,7 +76,7 @@ export class CCTPService {
       let destinationChainId: number;
 
       // If message and attestation are provided, use them directly
-      if (cctpMessage && cctpAttestation) {
+      if (cctpMessage && cctpMessage !== "0x" && cctpAttestation) {
         this.logger.info({
           at: "CCTPService#processBurnTransaction",
           message: "Using provided message and attestation, skipping attestation fetch",
@@ -72,28 +87,15 @@ export class CCTPService {
           attestation: cctpAttestation,
         };
 
-        // If destination chain ID is also provided, use it
         if (providedDestinationChainId) {
           this.logger.info({
             at: "CCTPService#processBurnTransaction",
-            message: "Using provided destination chain ID, skipping burn transaction fetch",
+            message: "Using provided destination chain ID",
             destinationChainId: providedDestinationChainId,
           });
           destinationChainId = providedDestinationChainId;
         } else {
-          // Need to fetch burn transaction to decode destination chain ID
-          const rpcUrl = this.getRpcUrlForChain(sourceChainId);
-          const sourceProvider = getEvmProvider(rpcUrl);
-          const burnTx = await sourceProvider.getTransaction(burnTransactionHash);
-
-          if (!burnTx) {
-            return {
-              success: false,
-              error: "Could not fetch burn transaction details",
-            };
-          }
-
-          destinationChainId = this.getDestinationChainId(burnTx, sourceChainId);
+          destinationChainId = this.getDestinationChainIdFromMessage(cctpMessage, sourceChainId);
         }
       } else {
         this.logger.info({
@@ -107,74 +109,109 @@ export class CCTPService {
         const attestations = attestationResponse[burnTransactionHash];
 
         if (!attestations?.messages?.length) {
-          return {
-            success: false,
-            error: "No attestation found for the burn transaction",
-          };
+          throw new NoAttestationFoundError(burnTransactionHash);
         }
 
         attestation = attestations.messages[0];
 
         if (!this.isAttestationReady(attestation.status!)) {
-          return {
-            success: false,
-            error: `Attestation not ready. Status: ${attestation.status}`,
-          };
+          throw new AttestationNotReadyError(attestation.status!);
         }
 
-        // Get burn transaction details
-        const rpcUrl = this.getRpcUrlForChain(sourceChainId);
-        const sourceProvider = getEvmProvider(rpcUrl);
-        const burnTx = await sourceProvider.getTransaction(burnTransactionHash);
+        // CCTP V2 API sometimes returns "0x" as the message, even though we can get the full reconstructed message from
+        // the "decodedMessage.messageBody" field.
+        const decodedMessage = (
+          attestation as unknown as {
+            decodedMessage?: {
+              sourceDomain: string;
+              destinationDomain: string;
+              nonce: string;
+              sender: string;
+              recipient: string;
+              destinationCaller: string;
+              minFinalityThreshold: string;
+              finalityThresholdExecuted: string;
+              messageBody: string;
+            };
+          }
+        ).decodedMessage;
 
-        if (!burnTx) {
-          return {
-            success: false,
-            error: "Could not fetch burn transaction details",
-          };
+        if (decodedMessage && (!attestation.message || attestation.message === "0x")) {
+          const destinationChainId = getCctpDestinationChainFromDomain(Number(decodedMessage.destinationDomain), true);
+          attestation.message = ethers.utils.solidityPack(
+            ["uint32", "uint32", "uint32", "bytes32", "bytes32", "bytes32", "bytes32", "uint32", "uint32", "bytes"],
+            [
+              1, // CCTP V2 message format version
+              decodedMessage.sourceDomain,
+              decodedMessage.destinationDomain,
+              decodedMessage.nonce,
+              toAddressType(decodedMessage.sender, sourceChainId).toBytes32(),
+              toAddressType(decodedMessage.recipient, destinationChainId).toBytes32(),
+              toAddressType(decodedMessage.destinationCaller, destinationChainId).toBytes32(),
+              decodedMessage.minFinalityThreshold,
+              decodedMessage.finalityThresholdExecuted,
+              decodedMessage.messageBody,
+            ]
+          );
         }
 
-        // Decode transaction to get destination domain
-        destinationChainId = this.getDestinationChainId(burnTx, sourceChainId);
+        if (providedDestinationChainId) {
+          destinationChainId = providedDestinationChainId;
+        } else {
+          destinationChainId = this.getDestinationChainIdFromMessage(attestation.message, sourceChainId);
+        }
       }
 
       // Check if already processed
       const isAlreadyProcessed = await this.checkIfAlreadyProcessed(destinationChainId, attestation.message);
 
       if (isAlreadyProcessed) {
-        return {
-          success: true,
-          mintTxHash: "ALREADY_PROCESSED",
-          error: "Message has already been processed on-chain",
-        };
+        throw new AlreadyProcessedError();
       }
 
       // Process the mint
-      return await this.processMint(destinationChainId, attestation);
+      return await this.processMint(destinationChainId, sourceChainId, attestation, signature, quoteDeadline);
     } catch (error) {
+      if (isCCTPError(error)) {
+        if (error instanceof AlreadyProcessedError) {
+          return {
+            success: true,
+            mintTxHash: "ALREADY_PROCESSED",
+            error: error.message,
+            shouldRetry: error.shouldRetry,
+          };
+        }
+        return {
+          success: false,
+          error: error.message,
+          shouldRetry: error.shouldRetry,
+        };
+      }
+
       this.logger.error({
         at: "CCTPService#processBurnTransaction",
-        message: "Error processing burn transaction",
+        message: "Unexpected error processing burn transaction",
         error,
       });
       return {
         success: false,
         error: error instanceof Error ? error.message : "Unknown error occurred",
+        shouldRetry: true,
       };
     }
   }
 
-  private getDestinationChainId(burnTx: ethers.providers.TransactionResponse, sourceChainId: number): number {
-    // Get the ABI (we'll use mainnet for the ABI)
-    const { abi } = getCctpV2TokenMessenger(1);
-    const tokenMessengerInterface = new ethers.utils.Interface(abi!);
-    const decodedCall = tokenMessengerInterface.parseTransaction({ data: burnTx.data });
+  private getDestinationChainIdFromMessage(message: string, sourceChainId: number): number {
+    // Bytes 0-3: version, Bytes 4-7: source domain, Bytes 8-11: destination domain (uint32)
+    const messageBytes = ethers.utils.arrayify(message);
+    const destinationDomainBytes = messageBytes.slice(8, 12);
+    const destinationDomainId = ethers.BigNumber.from(destinationDomainBytes).toNumber();
 
-    if (!decodedCall || decodedCall.name !== "depositForBurn") {
-      throw new Error("Transaction is not a CCTP depositForBurn call");
-    }
-
-    const destinationDomainId = Number(decodedCall.args.destinationDomain);
+    this.logger.info({
+      at: "CCTPService#getDestinationChainIdFromMessage",
+      message: "Decoded destination domain from CCTP message",
+      destinationDomainId,
+    });
 
     // Map domain to chain ID
     const destinationChainId = getCctpDestinationChainFromDomain(destinationDomainId, chainIsProd(sourceChainId));
@@ -211,48 +248,65 @@ export class CCTPService {
     }
   }
 
-  private async processMint(chainId: number, attestation: any): Promise<ProcessBurnTransactionResponse> {
-    const chainName = PUBLIC_NETWORKS[chainId]?.name || `Chain ${chainId}`;
+  private async processMint(
+    destinationChainId: number,
+    originChainId: number,
+    attestation: any,
+    signature?: string,
+    quoteDeadline?: number
+  ): Promise<ProcessBurnTransactionResponse> {
+    const chainName = PUBLIC_NETWORKS[destinationChainId]?.name || `Chain ${destinationChainId}`;
     this.logger.info({
       at: "CCTPService#processMint",
-      message: `Calling receiveMessage on ${chainName} (${chainId})`,
+      message: `Calling receiveMessage on ${chainName} (${destinationChainId})`,
     });
 
     try {
-      if (chainIsSvm(chainId)) {
+      if (chainIsSvm(destinationChainId)) {
         if (!this.svmPrivateKey) {
-          return {
-            success: false,
-            error: "SVM private key not configured for Solana CCTP finalization",
-          };
+          throw new SvmPrivateKeyNotConfiguredError();
         }
 
-        const rpcUrl = this.getRpcUrlForChain(chainId);
+        const rpcUrl = this.getRpcUrlForChain(destinationChainId);
         const svmProvider = getSvmProvider(rpcUrl);
-        const result = await processMintSvm(attestation, this.svmPrivateKey, svmProvider, this.logger);
+        const altAddress = process.env.SOLANA_CCTP_V2_ALT ? address(process.env.SOLANA_CCTP_V2_ALT) : undefined;
+        const result = await processMintSvm(
+          attestation,
+          this.svmPrivateKey,
+          svmProvider,
+          destinationChainId,
+          originChainId,
+          this.logger,
+          altAddress
+        );
         return {
           success: true,
           mintTxHash: result.txHash,
+          shouldRetry: false,
         };
       } else {
-        const rpcUrl = this.getRpcUrlForChain(chainId);
+        const rpcUrl = this.getRpcUrlForChain(destinationChainId);
         const provider = getEvmProvider(rpcUrl);
-        const result = await processMintEvm(chainId, attestation, provider, this.privateKey, this.logger);
+        const result = await processMintEvm(
+          destinationChainId,
+          attestation,
+          provider,
+          this.evmPrivateKey,
+          this.logger,
+          signature,
+          quoteDeadline
+        );
         return {
           success: true,
           mintTxHash: result.txHash,
+          shouldRetry: false,
         };
       }
     } catch (error) {
-      this.logger.error({
-        at: "CCTPService#processMint",
-        message: "Mint transaction failed",
-        error,
-      });
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : "Mint transaction failed",
-      };
+      if (isCCTPError(error)) {
+        throw error;
+      }
+      throw new MintTransactionFailedError(error);
     }
   }
 
@@ -268,10 +322,12 @@ export class CCTPService {
       137: process.env.POLYGON_RPC_URL!,
       42161: process.env.ARBITRUM_RPC_URL!,
       8453: process.env.BASE_RPC_URL!,
-      130: process.env.ARBITRUM_NOVA_RPC_URL!,
+      130: process.env.UNICHAIN_RPC_URL!,
       59144: process.env.LINEA_RPC_URL!,
-      480: process.env.ZKSYNC_RPC_URL!,
-      999: process.env.POLYGON_ZKEVM_RPC_URL!,
+      480: process.env.WORLD_CHAIN_RPC_URL!,
+      999: process.env.HYPEREVM_RPC_URL!,
+      56: process.env.BSC_RPC_URL!,
+      143: process.env.MONAD_RPC_URL!,
       34268394551451: process.env.SOLANA_RPC_URL!,
       // Test networks
       11155111: process.env.SEPOLIA_RPC_URL!,
@@ -280,14 +336,24 @@ export class CCTPService {
       84532: process.env.BASE_SEPOLIA_RPC_URL!,
       80002: process.env.POLYGON_AMOY_RPC_URL!,
       1301: process.env.ARBITRUM_NOVA_SEPOLIA_RPC_URL!,
-      998: process.env.POLYGON_ZKEVM_SEPOLIA_RPC_URL!,
+      998: process.env.HYPEREVM_TESTNET_RPC_URL!,
       133268194659241: process.env.SOLANA_DEVNET_RPC_URL!,
     };
 
     const rpcUrl = rpcUrlMap[chainId];
     if (!rpcUrl) {
-      throw new Error(`No RPC URL configured for chain ID ${chainId}`);
+      throw new RpcUrlNotConfiguredError(chainId);
     }
     return rpcUrl;
+  }
+
+  private async getPrivateKey(type: "evm" | "svm"): Promise<string> {
+    const privateKeys = await retrieveGckmsKeys(
+      getGckmsConfig([type === "evm" ? process.env.GCKMS_KEY_EVM : process.env.GCKMS_KEY_SVM])
+    );
+    if (privateKeys.length === 0) {
+      throw new PrivateKeyNotFoundError(type);
+    }
+    return privateKeys[0].slice(2);
   }
 }

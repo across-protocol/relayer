@@ -122,6 +122,12 @@ describe("BundleDataApproxClient: Accounting for unexecuted, upcoming relayer re
         [BSC]: l2TokensForUsdc[BSC],
       },
     });
+
+    // Set up token mappings on the hub pool client so getL2TokenForL1TokenAtBlock works.
+    for (const chainId of enabledChainIds) {
+      hubPoolClient.setTokenMapping(mainnetWeth, chainId, l2TokensForWeth[chainId]);
+      hubPoolClient.setTokenMapping(mainnetUsdc, chainId, l2TokensForUsdc[chainId]);
+    }
   });
 
   async function generateFill(
@@ -291,7 +297,10 @@ describe("BundleDataApproxClient: Accounting for unexecuted, upcoming relayer re
       configStoreClient.setAvailableChains([MAINNET, OPTIMISM, BSC]);
 
       // When there are no RootBundleRelay/ProposedRootBundle events, returns 0 for all chains.
-      const defaultFromBlocks = bundleDataClient.getUnexecutedBundleStartBlocks();
+      const defaultFromBlocks = (bundleDataClient as MockBundleDataApproxClient).getUnexecutedBundleStartBlocks(
+        l1Weth,
+        false
+      );
       expect(defaultFromBlocks[MAINNET]).to.equal(0);
       expect(defaultFromBlocks[OPTIMISM]).to.equal(0);
       expect(defaultFromBlocks[BSC]).to.equal(0);
@@ -307,7 +316,10 @@ describe("BundleDataApproxClient: Accounting for unexecuted, upcoming relayer re
       );
       hubPoolClient.setValidatedRootBundles(rootBundleRelays as unknown as ProposedRootBundle[]);
 
-      const fromBlocks1 = bundleDataClient.getUnexecutedBundleStartBlocks();
+      const fromBlocks1 = (bundleDataClient as MockBundleDataApproxClient).getUnexecutedBundleStartBlocks(
+        l1Weth,
+        false
+      );
 
       // Only the spoke pool clients that saw the RootBundleRelay events should have non-zero fromBlocks.
       expect(fromBlocks1[MAINNET]).to.equal(4);

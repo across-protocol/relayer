@@ -1,13 +1,14 @@
 import { ethers } from "ethers";
 import { random } from "lodash";
 import { AugmentedTransaction, TransactionClient } from "../../src/clients";
-import { BigNumber, TransactionResponse, TransactionSimulationResult } from "../../src/utils";
+import { BigNumber, TransactionReceipt, TransactionResponse, TransactionSimulationResult } from "../../src/utils";
 import { toBNWei, winston } from "../utils";
 
 export const txnClientPassResult = "pass";
 
 export class MockedTransactionClient extends TransactionClient {
   public gasLimit: BigNumber | undefined = undefined;
+  public waitOverride?: () => Promise<TransactionReceipt>;
 
   constructor(logger: winston.Logger) {
     super(logger);
@@ -45,9 +46,9 @@ export class MockedTransactionClient extends TransactionClient {
     };
   }
 
-  protected override async _submit(
+  protected override _getTransactionPromise(
     txn: AugmentedTransaction,
-    nonce: number | null = null
+    nonce: number | null
   ): Promise<TransactionResponse> {
     if (this.txnFailure(txn)) {
       return Promise.reject(this.txnFailureReason(txn));
@@ -59,6 +60,7 @@ export class MockedTransactionClient extends TransactionClient {
       nonce: _nonce,
       hash: ethers.utils.id(`Across-v2-${txn.contract.address}-${txn.method}-${_nonce}`),
       gasLimit: txn.gasLimit ?? this.randomGasLimit(),
+      ...(this.waitOverride !== undefined && { wait: this.waitOverride }),
     } as TransactionResponse;
 
     this.logger.debug({
@@ -67,6 +69,6 @@ export class MockedTransactionClient extends TransactionClient {
       txn: txnResponse,
     });
 
-    return txnResponse;
+    return Promise.resolve(txnResponse);
   }
 }

@@ -5,6 +5,7 @@ import { utils } from "@across-protocol/sdk";
 import { EvmAddress, toBNWei } from "../../src/utils/SDKUtils";
 import { BigNumber, getCctpDomainForChainId } from "../../src/utils";
 import { CCTPV2_FINALITY_THRESHOLD_FAST } from "../../src/common/Constants";
+import { PendingBridgeRedisReader } from "../../src/rebalancer/utils/PendingBridgeRedis";
 
 describe("Cross Chain Adapter: USDC CCTP L2 Bridge", async function () {
   let adapter: MockBaseChainAdapter;
@@ -93,9 +94,34 @@ describe("Cross Chain Adapter: USDC CCTP L2 Bridge", async function () {
     );
     expect(amount).to.equal(0);
   });
+  it("ignores rebalancer-owned pending withdrawals", async function () {
+    const amountToWithdraw = toBNWei("100", 6);
+    const depositTxn = await cctpBridgeContract.emitDepositForBurn(
+      l2USDCToken,
+      amountToWithdraw,
+      monitoredEoa,
+      toAddress(monitoredEoa),
+      getCctpDomainForChainId(hubChainId),
+      toAddress(cctpBridgeContract.address),
+      ethers.constants.HashZero
+    );
+    adapter.setPendingBridgeRedisReader({
+      getPendingBridgeTxnRefsForRoute: async () => new Set([depositTxn.hash]),
+    } as unknown as PendingBridgeRedisReader);
+    const amount = await adapter.getL2PendingWithdrawalAmount(
+      searchConfig,
+      searchConfig,
+      toAddress(monitoredEoa),
+      toAddress(l2USDCToken)
+    );
+    expect(amount).to.equal(0);
+  });
   it("requiredTokenApprovals", async function () {
     const approvals = adapter.requiredTokenApprovals();
-    expect(approvals).to.deep.equal([{ token: toAddress(l2USDCToken), bridge: toAddress(cctpBridgeContract.address) }]);
+    approvals.forEach((approval) => {
+      expect(approval.token.eq(toAddress(l2USDCToken))).to.be.true;
+      expect(approval.bridge.eq(toAddress(cctpBridgeContract.address))).to.be.true;
+    });
   });
 });
 

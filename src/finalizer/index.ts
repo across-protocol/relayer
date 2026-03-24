@@ -2,7 +2,6 @@ import { CCTP_NO_DOMAIN, ChainFamily, PRODUCTION_NETWORKS } from "@across-protoc
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import assert from "assert";
 import { Contract } from "ethers";
-import { groupBy } from "lodash";
 import { AugmentedTransaction, HubPoolClient, MultiCallerClient } from "../clients";
 import {
   CONTRACT_ADDRESSES,
@@ -46,6 +45,7 @@ import {
   polygonFinalizer,
   scrollFinalizer,
   zkSyncFinalizer,
+  oftRetryFinalizer,
 } from "./utils";
 import { FinalizerConfig } from "./config";
 
@@ -124,6 +124,11 @@ function generateChainConfig(): void {
     // Autoconfigure CCTP finalisation. SVM is currently limited to v1.
     if (cctpDomain !== CCTP_NO_DOMAIN && family !== ChainFamily.SVM) {
       config.finalizeOnAny.push(cctpV2Finalizer);
+    }
+
+    // @todo Once contracts are linked, change this to add all chains w/ OFT enabled.
+    if (chainId === CHAIN_IDs.ARBITRUM) {
+      config.finalizeOnAny.push(oftRetryFinalizer);
     }
   });
 }
@@ -285,7 +290,7 @@ export async function finalize(
     const multicallerClient = new MultiCallerClient(logger);
     let txnRefLookup: Record<number, string[]> = {};
     try {
-      const finalizationsByChain = groupBy(
+      const finalizationsByChain = Object.groupBy(
         finalizations,
         ({ crossChainMessage }) => crossChainMessage.destinationChainId
       );
@@ -331,7 +336,7 @@ export async function finalize(
       return;
     }
 
-    const { transfers = [], misc = [] } = groupBy(
+    const { transfers = [], misc = [] } = Object.groupBy(
       finalizations.filter(({ crossChainMessage }) => isDefined(crossChainMessage)),
       ({ crossChainMessage: { type } }) => {
         return type === "misc" ? "misc" : "transfers";

@@ -447,6 +447,84 @@ describe("Dataworker: Load bundle data", async function () {
       expect(data2.bundleDepositsV3).to.deep.equal({});
       expect(data2.expiredDepositsToRefundV3[originChainId][toBytes32(erc20_1.address)].length).to.equal(1);
     });
+    it("Accounts for expired deposits at the bundle end block timestamp once", async function () {
+      const chainIds = dataworkerInstance.chainIdListForBundleEvaluationBlockNumbers;
+      const defaultBlockRange = getDefaultBlockRange(5);
+
+      // Send deposit that expires at the bundle end timestamp.
+      const bundleBlockTimestamps = await dataworkerInstance.clients.bundleDataClient.getBundleBlockTimestamps(
+        chainIds,
+        defaultBlockRange,
+        spokePoolClients
+      );
+
+      // Send deposit that expires in this bundle.
+      const expiredDeposit = generateV3Deposit({ fillDeadline: bundleBlockTimestamps[destinationChainId][1] });
+      await mockOriginSpokePoolClient.update(["FundsDeposited"]);
+
+      const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(defaultBlockRange, spokePoolClients);
+      expect(data1.bundleDepositsV3[originChainId][toBytes32(erc20_1.address)].length).to.equal(1);
+      expect(data1.expiredDepositsToRefundV3[originChainId][toBytes32(erc20_1.address)].length).to.equal(1);
+      expect(data1.expiredDepositsToRefundV3[originChainId][toBytes32(erc20_1.address)][0].txnRef).to.equal(
+        expiredDeposit.transactionHash
+      );
+
+      // Check 1: ensure that the next bundle with blockNumber > previousBundleEndBlockNumber _still_ contains the expired deposit.
+      // This is because the deposit itself occurred within the origin chain block range.
+      const destinationChainIndex = chainIds.indexOf(destinationChainId);
+      const oldDestinationChainToBlock = defaultBlockRange[destinationChainIndex][1];
+      const firstBundleBlockRanges = [...defaultBlockRange];
+      firstBundleBlockRanges[destinationChainIndex] = [
+        oldDestinationChainToBlock + 1,
+        oldDestinationChainToBlock + 10_000,
+      ];
+
+      const data2 = await dataworkerInstance.clients.bundleDataClient.loadData(
+        firstBundleBlockRanges,
+        spokePoolClients
+      );
+
+      expect(data2.bundleDepositsV3[originChainId][toBytes32(erc20_1.address)].length).to.equal(1);
+      expect(data2.expiredDepositsToRefundV3[originChainId][toBytes32(erc20_1.address)].length).to.equal(1);
+      expect(data1.expiredDepositsToRefundV3[originChainId][toBytes32(erc20_1.address)][0].txnRef).to.equal(
+        expiredDeposit.transactionHash
+      );
+
+      // Check 2: ensure that if the deposit's block.timestamp is now outside of the origin chain's block range but the fill deadline is exactly on  the destination chain's
+      // end timestamp, the deposit is refunded.
+      const secondBundleBlockRanges = [...defaultBlockRange];
+      const originChainIndex = chainIds.indexOf(originChainId);
+      const oldOriginChainToBlock = defaultBlockRange[originChainIndex][1];
+      secondBundleBlockRanges[originChainIndex] = [oldOriginChainToBlock + 1, oldOriginChainToBlock + 10_000];
+
+      const data3 = await dataworkerInstance.clients.bundleDataClient.loadData(
+        secondBundleBlockRanges,
+        spokePoolClients
+      );
+
+      expect(data3.bundleDepositsV3).to.deep.equal({});
+      expect(data3.expiredDepositsToRefundV3[originChainId][toBytes32(erc20_1.address)].length).to.equal(1);
+      expect(data1.expiredDepositsToRefundV3[originChainId][toBytes32(erc20_1.address)][0].txnRef).to.equal(
+        expiredDeposit.transactionHash
+      );
+
+      // Check 3: ensure that if the deposit's block.timestamp is outside of the origin chain's block range and the fill deadline is at the previous bundle's destination chain's
+      // end timestamp, the deposit is _not_ refunded.
+      const thirdBundleBlockRanges = [...defaultBlockRange];
+      thirdBundleBlockRanges[originChainIndex] = [oldOriginChainToBlock + 1, oldOriginChainToBlock + 10_000];
+      thirdBundleBlockRanges[destinationChainIndex] = [
+        oldDestinationChainToBlock + 1,
+        oldDestinationChainToBlock + 10_000,
+      ];
+
+      const data4 = await dataworkerInstance.clients.bundleDataClient.loadData(
+        thirdBundleBlockRanges,
+        spokePoolClients
+      );
+
+      expect(data4.bundleDepositsV3).to.deep.equal({});
+      expect(data4.expiredDepositsToRefundV3).to.deep.equal({});
+    });
     it("Includes duplicate prior bundle expired deposits", async function () {
       const bundleBlockTimestamps = await dataworkerInstance.clients.bundleDataClient.getBundleBlockTimestamps(
         [originChainId, destinationChainId],

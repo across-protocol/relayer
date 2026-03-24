@@ -2,7 +2,6 @@ import assert from "assert";
 import minimist from "minimist";
 import { Contract, utils as ethersUtils } from "ethers";
 import { BaseError, Block, createPublicClient, http, Log as viemLog, webSocket } from "viem";
-import * as chains from "viem/chains";
 import * as utils from "../../scripts/utils";
 import {
   disconnectRedisClients,
@@ -19,12 +18,13 @@ import {
   getProviderHeaders,
   getSpokePool,
   getRedisCache,
+  getViemChain,
   Logger,
   Provider,
   winston,
 } from "../utils";
 import { ScraperOpts } from "./types";
-import { postEvents, removeEvent } from "./util/ipc";
+import { postBlock, postEvents, removeEvent } from "./util/ipc";
 import { scrapeEvents as _scrapeEvents } from "./util/evm";
 
 const { NODE_SUCCESS, NODE_APP_ERR } = utils;
@@ -57,7 +57,7 @@ function resolveProviders(chainId: number, quorum = 1) {
   const nProviders = urls.length;
   assert(nProviders >= quorum, `Insufficient providers for ${chain} (minimum ${quorum} required by quorum)`);
 
-  const viemChain = Object.values(chains).find(({ id }) => id === chainId);
+  const viemChain = getViemChain(chainId);
   const providers = Object.entries(urls).map(([provider, url]) => {
     const headers = getProviderHeaders(provider, chainId);
     const transport = protocol === "wss" ? webSocket(url) : http(url, { fetchOptions: { headers } });
@@ -86,14 +86,31 @@ async function scrapeEvents(
   provider: Provider,
   opts: ScraperOpts
 ): Promise<void> {
+  const at = `${PROGRAM}::scrapeEvents`;
   const { number: toBlock, timestamp: currentTime } = await provider.getBlock("latest");
 
-  const events = await Promise.all(
-    eventSignatures.map((sig) => _scrapeEvents(provider, address, sig, { ...opts, toBlock }, logger))
-  );
+  const events = (
+    await Promise.all(
+      eventSignatures.map(async (sig) => {
+        try {
+          return await _scrapeEvents(provider, address, sig, { ...opts, toBlock }, logger);
+        } catch {
+          logger.warn({ at, message: `Failed to scrape ${chain} events.`, event: sig });
+          return Promise.resolve([]);
+        }
+      })
+    )
+  ).flat();
 
   if (!abortController.signal.aborted) {
-    postEvents(toBlock, currentTime, events.flat());
+    let stop = !postBlock(toBlock, currentTime);
+    if (events.length > 0) {
+      stop ||= !postEvents(events);
+    }
+
+    if (stop) {
+      abortController.abort();
+    }
   }
 }
 
@@ -102,7 +119,7 @@ async function scrapeEvents(
  * @param eventMgr Event Manager instance.
  * @returns void
  */
-function subNewHeads(eventMgr: EventManager): void {
+function subNewHeads(): void {
   const at = `${PROGRAM}::newHeads`;
 
   // On each new block, submit any "finalised" events.
@@ -113,8 +130,7 @@ function subNewHeads(eventMgr: EventManager): void {
       return;
     }
     const [blockNumber, currentTime] = [parseInt(block.number.toString()), parseInt(block.timestamp.toString())];
-    const events = eventMgr.tick();
-    if (!postEvents(blockNumber, currentTime, events)) {
+    if (!postBlock(blockNumber, currentTime)) {
       abortController.abort();
     }
   };
@@ -162,8 +178,14 @@ function subEvents(eventMgr: EventManager, spokePool: Contract, eventNames: stri
             if (log.removed) {
               eventMgr.remove(event, provider.name);
               removeEvent(event);
-            } else {
-              eventMgr.add(event, provider.name);
+              return;
+            }
+
+            const hasQuorum = eventMgr.add(event, provider.name);
+            if (hasQuorum) {
+              if (!postEvents([event])) {
+                abortController.abort();
+              }
             }
           }),
       });
@@ -269,7 +291,7 @@ async function run(argv: string[]): Promise<void> {
 
   logger.debug({ at, message: `Starting ${chain} listener.`, events, opts });
 
-  subNewHeads(eventMgr);
+  subNewHeads();
   subEvents(eventMgr, spokePool, events);
 
   return new Promise((resolve) => abortController.signal.addEventListener("abort", () => resolve()));

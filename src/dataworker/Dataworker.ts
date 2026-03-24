@@ -116,8 +116,6 @@ import {
   type Address as KitAddress,
   type KeyPairSigner,
 } from "@solana/kit";
-import { getCreateAssociatedTokenIdempotentInstruction } from "@solana-program/token";
-import { SYSTEM_PROGRAM_ADDRESS } from "@solana-program/system";
 import { SvmSpokeClient } from "@across-protocol/contracts";
 import {
   findAddressLookupTablePda,
@@ -381,7 +379,8 @@ export class Dataworker {
     const blockRangesForProposal = await this._getWidestPossibleBlockRangeForNextBundle(
       spokePoolClients,
       nextBundleMainnetStartBlock,
-      true
+      undefined, // inherit env-defined proposal end block buffers.
+      true // optimistic!
     );
 
     // Exit early if spoke pool clients don't have early enough event data to satisfy block ranges for the
@@ -618,10 +617,7 @@ export class Dataworker {
     this.logger.debug({
       at: "Dataworker#validate",
       message: "Found pending proposal",
-      pendingRootBundle: {
-        ...pendingRootBundle,
-        proposer: pendingRootBundle.proposer.toNative(),
-      },
+      pendingRootBundle,
     });
 
     // Exit early if challenge period timestamp has passed:
@@ -635,10 +631,12 @@ export class Dataworker {
     }
 
     const nextBundleMainnetStartBlock = this.getNextHubChainBundleStartBlock();
+    const chainIds = this.clients.configStoreClient.getChainIdIndicesForBlock(nextBundleMainnetStartBlock);
     const widestPossibleExpectedBlockRange = await this._getWidestPossibleBlockRangeForNextBundle(
       spokePoolClients,
       // Mainnet bundle start block for pending bundle is the first entry in the first entry.
-      nextBundleMainnetStartBlock
+      nextBundleMainnetStartBlock,
+      chainIds.map(() => 1) // Require at least 1 block confirmation on top of the proposal.
     );
     const { valid, reason, bundleData, expectedTrees } = await this.validateRootBundle(
       hubPoolChainId,
@@ -857,10 +855,7 @@ export class Dataworker {
       this.logger.debug({
         at: "Dataworker#validate",
         message: "Empty pool rebalance root, submitting dispute",
-        rootBundle: {
-          ...rootBundle,
-          proposer: rootBundle.proposer.toNative(),
-        },
+        rootBundle,
       });
       return {
         valid: false,
@@ -1071,7 +1066,6 @@ export class Dataworker {
         expectedRelayerRefundLeaves: expectedRelayerRefundRoot.leaves.map((leaf) => {
           return {
             ...leaf,
-            l2TokenAddress: leaf.l2TokenAddress.toNative(),
             refundAddresses: leaf.refundAddresses.map((refundAddress) => refundAddress.toNative()),
           };
         }),
@@ -1079,11 +1073,11 @@ export class Dataworker {
         expectedSlowRelayLeaves: expectedSlowRelayRoot.leaves.map((leaf) => {
           return {
             ...leaf,
-            depositor: leaf.relayData.depositor.toNative(),
-            recipient: leaf.relayData.recipient.toNative(),
-            inputToken: leaf.relayData.inputToken.toNative(),
-            outputToken: leaf.relayData.outputToken.toNative(),
-            exclusiveRelayer: leaf.relayData.exclusiveRelayer.toNative(),
+            depositor: leaf.relayData.depositor,
+            recipient: leaf.relayData.recipient,
+            inputToken: leaf.relayData.inputToken,
+            outputToken: leaf.relayData.outputToken,
+            exclusiveRelayer: leaf.relayData.exclusiveRelayer,
           };
         }),
         expectedSlowRelayRoot: expectedSlowRelayRoot.tree.getHexRoot(),
@@ -1354,8 +1348,7 @@ export class Dataworker {
       const messageHash = getMessageHash(relayData.message);
 
       // Start with the most recent fills and search backwards.
-      const fill = _.findLast(
-        sortedFills,
+      const fill = sortedFills.findLast(
         (fill) =>
           fill.depositId.eq(relayData.depositId) &&
           fill.originChainId === relayData.originChainId &&
@@ -1415,7 +1408,7 @@ export class Dataworker {
               depositId: slowFill.relayData.depositId,
               fromChain: slowFill.relayData.originChainId,
               chainId: destinationChainId,
-              token: outputToken.toNative(),
+              token: outputToken,
               amount: outputAmount,
               spokeBalance: await this._getSpokeBalanceForL2Tokens(
                 balanceAllocator,
@@ -1470,13 +1463,25 @@ export class Dataworker {
           });
         } else {
           assert(isSVMSpokePoolClient(client));
-          const signature = await this._executeSlowFillLeafSvm(
+          const executionResult = await this._executeSlowFillLeafSvm(
             client,
             leaf,
             rootBundleId,
             slowRelayTree.getHexProof(leaf)
           );
-          this.logger.info({ at: "Dataworker#executeSlowRelayLeaves", message: mrkdwn, signature });
+          if (executionResult.executable) {
+            this.logger.info({
+              at: "Dataworker#executeSlowRelayLeaves",
+              message: mrkdwn,
+              signature: executionResult.signature,
+            });
+          } else {
+            this.logger.debug({
+              at: "Dataworker#executeSlowRelayLeaves",
+              message: "Cannot execute slow fill leaf since recipient account does not have an ATA.",
+              slowFillMarkdown: mrkdwn,
+            });
+          }
         }
       } else {
         this.logger.debug({ at: "Dataworker#executeSlowRelayLeaves", message: mrkdwn });
@@ -1545,16 +1550,15 @@ export class Dataworker {
       at: "Dataworker#executePoolRebalanceLeaves",
       message: "Found pending proposal",
       hubPoolCurrentTime: this.clients.hubPoolClient.currentTime,
-      pendingRootBundle: {
-        ...pendingRootBundle,
-        proposer: pendingRootBundle.proposer.toNative(),
-      },
+      pendingRootBundle,
     });
 
     const nextBundleMainnetStartBlock = this.getNextHubChainBundleStartBlock();
+    const chainIds = this.clients.configStoreClient.getChainIdIndicesForBlock(nextBundleMainnetStartBlock);
     const widestPossibleExpectedBlockRange = await this._getWidestPossibleBlockRangeForNextBundle(
       spokePoolClients,
-      nextBundleMainnetStartBlock
+      nextBundleMainnetStartBlock,
+      chainIds.map(() => 1) // Require at least 1 block confirmation on top of the proposal.
     );
     const { valid, reason, expectedTrees } = await this.validateRootBundle(
       hubPoolChainId,
@@ -1846,7 +1850,7 @@ export class Dataworker {
             ...leaf,
             l1Tokens: leaf.l1Tokens.map((l1Token) => l1Token.toNative()),
           },
-          feeToken: feeToken.toNative(),
+          feeToken,
           requiredAmount,
         });
         if (submitExecution) {
@@ -1894,7 +1898,7 @@ export class Dataworker {
           message: `feePayer ${holder} has sufficient orbit gas token to pay for L1->L2 message submission fees to ${getNetworkName(
             leaf.chainId
           )}`,
-          feeToken: feeToken.toNative(),
+          feeToken,
           requiredAmount,
           feePayerBalance: await balanceAllocator.getBalanceSubUsed(hubPoolChainId, feeToken, holder),
         });
@@ -1975,7 +1979,7 @@ export class Dataworker {
           message: `Skipping exchange rate update for ${tokenSymbol} because current liquid reserves > netSendAmount for hubChain`,
           currentLiquidReserves,
           netSendAmount: netSendAmounts[idx],
-          l1Token: l1Token.toNative(),
+          l1Token,
         });
         updatedLiquidReserves[l1Token.toEvmAddress()] = currentLiquidReserves.sub(netSendAmounts[idx]);
         return;
@@ -2217,7 +2221,7 @@ export class Dataworker {
         lastUpdateTime: latestFeesCompoundedTime,
         currentLiquidReserves,
         updatedLiquidReserves,
-        l1Token: l1Token.toNative(),
+        l1Token,
       });
       if (submitExecution) {
         this.clients.multiCallerClient.enqueueTransaction({
@@ -2323,7 +2327,7 @@ export class Dataworker {
           blockNumberRanges,
           spokePoolClients,
           matchingRootBundle.blockNumber,
-          true // load data from Arweave for speed purposes
+          true // Load data from arweave when executing leaves for speed.
         );
 
         if (tree.getHexRoot() !== rootBundleRelay.relayerRefundRoot) {
@@ -2768,6 +2772,7 @@ export class Dataworker {
       CHAIN_IDs.ARBITRUM,
       CHAIN_IDs.BSC,
       CHAIN_IDs.HYPEREVM,
+      CHAIN_IDs.MONAD,
       CHAIN_IDs.PLASMA,
       CHAIN_IDs.POLYGON,
     ]);
@@ -2831,14 +2836,17 @@ export class Dataworker {
   _getWidestPossibleBlockRangeForNextBundle(
     spokePoolClients: SpokePoolClientsByChain,
     mainnetBundleStartBlock: number,
+    endBlockBuffers?: number[],
     optimistic = false
   ): Promise<number[][]> {
     const chainIds = this.clients.configStoreClient.getChainIdIndicesForBlock(mainnetBundleStartBlock);
+    endBlockBuffers ??= getEndBlockBuffers(chainIds, this.blockRangeEndBlockBuffer);
+
     return getWidestPossibleExpectedBlockRange(
       // We only want as many block ranges as there are chains enabled at the time of the bundle start block.
       chainIds,
       spokePoolClients,
-      getEndBlockBuffers(chainIds, this.blockRangeEndBlockBuffer),
+      endBlockBuffers,
       this.clients,
       this.clients.hubPoolClient.latestHeightSearched,
       // We only want to count enabled chains at the same time that we are loading chain ID indices.
@@ -2902,7 +2910,6 @@ export class Dataworker {
       message: "Relayer refund leaf accounts",
       leaf: {
         ...leaf,
-        l2TokenAddress: leaf.l2TokenAddress.toNative(),
         refundAddresses: leaf.refundAddresses.map((address) => address.toNative()),
       },
       rootBundleId,
@@ -3284,7 +3291,7 @@ export class Dataworker {
     leaf: SlowFillLeaf,
     rootBundleId: number,
     slowFillHexProof: string[]
-  ): Promise<string> {
+  ): Promise<{ executable: boolean; signature?: string }> {
     // Parse relevant info from the slow fill leaf/dataworker.
     const provider = spokePoolClient.svmEventsClient.getRpc();
     const spokePoolProgramId = toKitAddress(spokePoolClient.spokePoolAddress);
@@ -3339,21 +3346,10 @@ export class Dataworker {
       proof: some(proof),
     });
 
-    // Check whether the recipient on Solana has an ATA for the output token. If they do not, then create one and include that in the instruction set.
-    let recipientCreateTokenAccountInstruction;
+    // Do not execute a slow fill leaf if the recipient's ATA does not exist. The dataworker should not fund new token accounts for users.
     const associatedTokenAccountExists = (await fetchEncodedAccount(provider, recipientTokenAccount)).exists;
     if (!associatedTokenAccountExists) {
-      const mint = arch.svm.toAddress(leaf.relayData.outputToken);
-      const mintInfo = await arch.svm.getMintInfo(spokePoolClient.svmEventsClient.getRpc(), mint);
-      const programAddress = mintInfo.programAddress;
-      recipientCreateTokenAccountInstruction = getCreateAssociatedTokenIdempotentInstruction({
-        payer: kitKeypair,
-        owner: statePda,
-        mint: l2TokenAddress,
-        ata: recipientTokenAccount,
-        systemProgram: SYSTEM_PROGRAM_ADDRESS,
-        tokenProgram: programAddress,
-      });
+      return { executable: false };
     }
 
     // Build the slow fill transaction. If there are instructions to create a new token account, then add those instructions to the slow fill transaction. Otherwise,
@@ -3362,13 +3358,10 @@ export class Dataworker {
       createTransactionMessage({ version: 0 }),
       (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
       (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash.value, tx),
-      (tx) =>
-        isDefined(recipientCreateTokenAccountInstruction)
-          ? appendTransactionMessageInstructions([recipientCreateTokenAccountInstruction], tx)
-          : tx,
       (tx) => appendTransactionMessageInstructions([executeSlowFillIx], tx)
     );
-    return sendAndConfirmSolanaTransaction(executeSlowFillTx, provider);
+    const signature = await sendAndConfirmSolanaTransaction(executeSlowFillTx, provider);
+    return { executable: true, signature };
   }
 
   async _getKitKeypair(): Promise<KeyPairSigner> {

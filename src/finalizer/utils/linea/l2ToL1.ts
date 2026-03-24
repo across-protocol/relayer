@@ -1,5 +1,4 @@
 import { OnChainMessageStatus } from "@consensys/linea-sdk";
-import { groupBy } from "lodash";
 
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
 import {
@@ -285,7 +284,7 @@ export async function lineaL2ToL1Finalizer(
     claimed = [],
     claimable = [],
     unknown = [],
-  } = groupBy(mergedMessages, ({ message }) => {
+  } = Object.groupBy(mergedMessages, ({ message }) => {
     return message.status === OnChainMessageStatus.CLAIMED
       ? "claimed"
       : message.status === OnChainMessageStatus.CLAIMABLE
@@ -372,8 +371,8 @@ export async function lineaL2ToL1Finalizer(
 }
 
 function mergeMessagesWithTokensBridged(messages: MessageWithStatus[], allTokensBridgedEvents: TokensBridged[]) {
-  const messagesByTxHash = groupBy(messages, ({ txHash }) => txHash);
-  const tokensBridgedEventByTxHash = groupBy(allTokensBridgedEvents, ({ txnRef }) => txnRef);
+  const messagesByTxHash = Object.groupBy(messages, ({ txHash }) => txHash);
+  const tokensBridgedEventByTxHash = Object.groupBy(allTokensBridgedEvents, ({ txnRef }) => txnRef);
 
   const merged: {
     message: MessageWithStatus;

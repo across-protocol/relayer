@@ -9,7 +9,17 @@ import {
 import { bnOne, BigNumber, TransactionSimulationResult } from "../src/utils";
 import { MockedTransactionClient, txnClientPassResult } from "./mocks/MockTransactionClient";
 import { CHAIN_ID_TEST_LIST as chainIds } from "./constants";
-import { createSpyLogger, Contract, expect, randomAddress, winston, toBN, smock, assertPromiseError } from "./utils";
+import {
+  createSpyLogger,
+  Contract,
+  expect,
+  randomAddress,
+  winston,
+  toBN,
+  smock,
+  assertPromiseError,
+  ethers,
+} from "./utils";
 import { MockedMultiCallerClient } from "./mocks/MockMultiCallerClient";
 
 class DummyMultiCallerClient extends MockedMultiCallerClient {
@@ -59,11 +69,13 @@ describe("MultiCallerClient", async function () {
   const { spyLogger }: { spyLogger: winston.Logger } = createSpyLogger();
   const address = randomAddress(); // Test contract address
   let multiCaller: DummyMultiCallerClient;
+  let signer;
 
   beforeEach(async function () {
     multiCaller = new DummyMultiCallerClient(spyLogger);
     expect(multiCaller.transactionCount()).to.equal(0);
     expect(multiCaller.simulationFailureCount()).to.equal(0);
+    [signer] = await ethers.getSigners();
   });
 
   it("Correctly enqueues value transactions", async function () {
@@ -259,6 +271,7 @@ describe("MultiCallerClient", async function () {
                 address,
                 interface: { encodeFunctionData },
                 multicall: 1,
+                signer,
               } as unknown as Contract,
               method: "test",
               args: [{ result }],
@@ -290,6 +303,7 @@ describe("MultiCallerClient", async function () {
           address,
           interface: { encodeFunctionData },
           multicall: 1,
+          signer,
         } as unknown as Contract,
         method: "test",
         args: [{ result: txnClientPassResult }],
