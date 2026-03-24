@@ -9,7 +9,6 @@ import { amountToDeposit, destinationChainId, originChainId, repaymentChainId } 
 import { DataworkerConfig, setupDataworker } from "./fixtures/Dataworker.Fixture";
 import {
   Contract,
-  FakeContract,
   SignerWithAddress,
   V3FillFromDeposit,
   assertPromiseError,
@@ -130,22 +129,18 @@ describe("Dataworker: Load bundle data", async function () {
       // since configStoreClient is shared across tests (created once in before()).
       (configStoreClient as unknown as MockConfigStoreClient).cumulativeDisabledChainUpdates = [];
       (configStoreClient as unknown as MockConfigStoreClient).liteChainIndicesUpdates = [];
-      ({
-        mockHubPoolClient,
-        mockOriginSpokePoolClient,
-        mockDestinationSpokePoolClient,
-        spokePoolClients,
-      } = await setupMockClients(
-        hubPoolClient,
-        configStoreClient,
-        spokePoolClient_1,
-        spokePoolClient_2,
-        spokePoolClients,
-        l1Token_1,
-        erc20_1,
-        erc20_2,
-        lpFeePct
-      ));
+      ({ mockHubPoolClient, mockOriginSpokePoolClient, mockDestinationSpokePoolClient, spokePoolClients } =
+        await setupMockClients(
+          hubPoolClient,
+          configStoreClient,
+          spokePoolClient_1,
+          spokePoolClient_2,
+          spokePoolClients,
+          l1Token_1,
+          erc20_1,
+          erc20_2,
+          lpFeePct
+        ));
       mockConfigStore = new MockConfigStoreClient(
         configStoreClient.logger,
         configStoreClient.configStore,
