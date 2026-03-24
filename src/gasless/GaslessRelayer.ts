@@ -106,6 +106,10 @@ export class GaslessRelayer {
   protected spokePoolPeripheries: { [chainId: number]: Contract } = {};
   // The object is indexed by `chainId`. A SpokePool contract is indexed by the chain ID.
   protected spokePools: { [chainId: number]: Contract } = {};
+  // The object is indexed by `chainId`. An `AuthorizationUsed` event is marked by adding `${token}:${authorizer}:${nonce}` to the respective chain's set.
+  protected observedDeposits: { [chainId: number]: Set<string> } = {};
+  // The object is indexed by `chainId`. A `FilledRelay` event is marked by adding `${originChainId}:${depositId}` to the respective chain's set.
+  protected observedFills: { [chainId: number]: Set<string> } = {};
 
   private api: AcrossSwapApiClient;
   protected signerAddress: EvmAddress;
@@ -141,6 +145,7 @@ export class GaslessRelayer {
     await forEachAsync(this.config.relayerOriginChains, async (chainId) => {
       const provider = await getProvider(chainId);
       this.providersByChain[chainId] = provider;
+      this.observedDeposits[chainId] = new Set<string>();
       this.spokePoolPeripheries[chainId] = getSpokePoolPeriphery(
         chainId,
         this.config.spokePoolPeripheryOverrides[chainId]
@@ -148,6 +153,7 @@ export class GaslessRelayer {
     });
     await forEachAsync(this.config.relayerDestinationChains, async (chainId) => {
       this.providersByChain[chainId] ??= await getProvider(chainId);
+      this.observedFills[chainId] = new Set<string>();
       this.spokePools[chainId] = getSpokePool(chainId).connect(this.baseSigner.connect(this.providersByChain[chainId]));
     });
 
@@ -240,7 +246,6 @@ export class GaslessRelayer {
       Object.fromEntries(
         await mapAsync(this.config.relayerOriginChains, async (originChainId) => {
           const provider = this.providersByChain[originChainId];
-
           const searchConfig = await this._getEventSearchConfig(originChainId);
 
           const originSpokePool = getSpokePool(originChainId).connect(provider);
@@ -314,10 +319,15 @@ export class GaslessRelayer {
 
       if (hasDeposit && hasFill) {
         this._setState(depositKey, MessageState.FILLED);
-      } else if (hasDeposit && !hasFill) {
-        this._setState(depositKey, MessageState.FILL_PENDING);
-      } else if (!hasDeposit && hasFill) {
-        this._setState(depositKey, MessageState.DEPOSIT_SUBMIT);
+        continue;
+      }
+
+      if (hasDeposit) {
+        this.observedDeposits[originChainId].add(this._getDepositKey(inputToken.toNative(), originChainId, depositId));
+      }
+
+      if (hasFill) {
+        this.observedFills[destinationChainId].add(this._getFilledRelayKey(originChainId, depositId));
       }
     }
   }
@@ -478,9 +488,24 @@ export class GaslessRelayer {
       };
       const getState = () => this._getState(depositKey);
 
-      if (terminalStates.includes(getState())) {
+      // If the deposit is already in any state that is not INITIAL, we do not need to process it.
+      // because that means that the deposit is already being processed in another job.
+      if (getState() !== MessageState.INITIAL) {
         return;
       }
+
+      // If there is a deposit or fill observed for this deposit, we need to set the initial state to the appropriate state.
+      // If there are both fill and deposit, the depositMessage will be already in FILLED state
+      // so there is no need to check for both.
+      const hasDeposit = this.observedDeposits[originChainId]?.has(depositKey);
+      const hasFill = this.observedFills[destinationChainId]?.has(this._getFilledRelayKey(originChainId, depositId));
+      let initialState = MessageState.INITIAL;
+      if (hasDeposit) {
+        initialState = MessageState.FILL_PENDING;
+      } else if (hasFill) {
+        initialState = MessageState.DEPOSIT_SUBMIT;
+      }
+      setState(initialState);
 
       const isCctpDeposit = this._isCctpDeposit(originChainId, spokePool);
       const expired = () => getCurrentTime() >= fillDeadline;
@@ -973,5 +998,14 @@ export class GaslessRelayer {
    */
   protected _getState(depositKey: string): MessageState {
     return (this.messageState[depositKey] ??= MessageState.INITIAL);
+  }
+
+  /*
+   * @notice Gets the key for `this.observedFills`.
+   * @dev We key on the origin chain and depositId only since this is what uniquely identifies a deposit on an origin chain for a specific user (the only way to have a collision here with
+   * a valid, unfilled deposit is by finding a collision in keccak).
+   */
+  private _getFilledRelayKey(originChainId: number, depositId: string): string {
+    return `${originChainId}:${depositId}`;
   }
 }
