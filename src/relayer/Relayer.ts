@@ -116,8 +116,8 @@ export class Relayer {
     this.logger.debug({
       at: "Relayer::init",
       message: "Completed one-time init.",
-      relayerEvmAddress: this.relayerEvmAddress.toNative(),
-      relayerSvmAddress: tokenClient.relayerSvmAddress.toNative(),
+      relayerEvmAddress: this.relayerEvmAddress,
+      relayerSvmAddress: tokenClient.relayerSvmAddress,
     });
   }
 
@@ -411,9 +411,9 @@ export class Relayer {
           at: "Relayer::filterDeposit",
           message: "😱 Skipping deposit with greater unfilled amount than API suggested limit",
           limit,
-          l1Token: l1Token?.toNative(),
+          l1Token,
           depositId,
-          inputToken: inputToken.toNative(),
+          inputToken,
           inputAmount,
           originChainId,
           txnRef: deposit.txnRef,
@@ -489,14 +489,10 @@ export class Relayer {
     const limits = this.fillLimits[originChainId];
 
     // Find the uppermost USD threshold compatible with the age of the origin chain deposit.
-    // @todo: Swap out for Array.findLastIndex() when available.
-    let idx = 0;
-    while (idx < limits.length && limits[idx].fromBlock > blockNumber) {
-      ++idx;
-    }
+    const idx = limits.findIndex(({ fromBlock }) => fromBlock <= blockNumber);
 
     // If no config applies to the blockNumber (i.e. because it's too old), just return the uppermost limit.
-    return Math.min(idx, limits.length - 1);
+    return idx === -1 ? limits.length - 1 : idx;
   }
 
   /**
@@ -578,20 +574,18 @@ export class Relayer {
 
     // Warn on the highest overcommitment, if any.
     const chain = getNetworkName(chainId);
-    for (let i = limits.length - 1; i >= 0; --i) {
-      const { limit, fromBlock } = limits[i];
-      if (limit.lt(bnZero)) {
-        const log = this.config.sendingRelaysEnabled ? this.logger.warn : this.logger.debug;
-        log({
-          at: "Relayer::computeOriginChainlimits",
-          message: `Relayer has overcommitted funds to ${chain}.`,
-          overCommitment: limit.abs(),
-          usdThreshold: mdcs[i].usdThreshold,
-          fromBlock,
-          toBlock: originSpoke.latestHeightSearched,
-        });
-        break;
-      }
+    const overcommitIdx = limits.findLastIndex(({ limit }) => limit.lt(bnZero));
+    if (overcommitIdx !== -1) {
+      const { limit, fromBlock } = limits[overcommitIdx];
+      const log = this.config.sendingRelaysEnabled ? this.logger.warn : this.logger.debug;
+      log({
+        at: "Relayer::computeOriginChainlimits",
+        message: `Relayer has overcommitted funds to ${chain}.`,
+        overCommitment: limit.abs(),
+        usdThreshold: mdcs[overcommitIdx].usdThreshold,
+        fromBlock,
+        toBlock: originSpoke.latestHeightSearched,
+      });
     }
 
     // Safety belt: limits should descending by fromBlock (i.e. most recent block first).

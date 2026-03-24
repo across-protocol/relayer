@@ -23,6 +23,7 @@ import {
   toAddressType,
   CHAIN_IDs,
   MAX_UINT_VAL,
+  TOKEN_SYMBOLS_MAP,
 } from "../utils";
 import { AugmentedTransaction } from "../clients";
 import { Contract, BigNumber, ethers } from "ethers";
@@ -80,6 +81,17 @@ const DOMAIN_CALLDATA_DELIMITER = "0x1dc0de";
 export const MAX_EXCLUSIVITY_PERIOD_SECONDS = 31_536_000;
 export function isExclusivityRelative(exclusivityParameter: number): boolean {
   return exclusivityParameter > 0 && exclusivityParameter <= MAX_EXCLUSIVITY_PERIOD_SECONDS;
+}
+
+/**
+ * Returns true if the token is a supported stablecoin for gasless deposits (USDC or USDT).
+ * @param token The token address to check
+ * @param chainId The chain ID where the token resides
+ */
+export function isStablecoin(token: Address, chainId: number): boolean {
+  return [TOKEN_SYMBOLS_MAP.USDC, TOKEN_SYMBOLS_MAP.USDT].some(({ addresses }) =>
+    token.eq(toAddressType(addresses[chainId], chainId))
+  );
 }
 
 /**
