@@ -281,6 +281,9 @@ export class GaslessRelayer {
     ]);
     for (const msg of apiMessages) {
       const { originChainId, depositId, spokePool } = msg;
+      if (!this.config.relayerOriginChains.includes(originChainId)) {
+        continue;
+      }
 
       const isSwap = msg.depositFlowType === "swapAndBridge";
       const isCctp = this._isCctpDeposit(originChainId, spokePool);
@@ -336,6 +339,11 @@ export class GaslessRelayer {
       return false;
     }
 
+    // If the deposit is a refund test deposit, we do not want to fill it at all.
+    if (this.config.refundFlowTestEnabled && deposit.outputAmount.eq(MAX_UINT_VAL)) {
+      return false;
+    }
+
     // Verify that deposit.exclusivityParameter will produce an absolute exclusivityDeadline,
     // not relative to the deposit block timestamp.
     if (isExclusivityRelative(deposit.exclusivityParameter)) {
@@ -372,6 +380,9 @@ export class GaslessRelayer {
     );
     await mapAsync(cctpMessages, async (depositMessage) => {
       const { originChainId, depositId } = depositMessage;
+      if (!this.config.relayerOriginChains.includes(originChainId)) {
+        return;
+      }
       const { inputToken: apiInputTokenForKey } = extractGaslessDepositFields(depositMessage);
       const isSwap = depositMessage.depositFlowType === "swapAndBridge";
       const depositKey = this._getDepositKey(apiInputTokenForKey.toNative(), originChainId, depositId);
@@ -586,25 +597,25 @@ export class GaslessRelayer {
           case MessageState.FILL_PENDING: {
             let fillStatus: FillStatus;
 
-            if (deposit) {
-              if (this.config.refundFlowTestEnabled && deposit.outputAmount.eq(MAX_UINT_VAL)) {
-                log("info", `Skipped fill on ${destination} for ${origin} deposit (deposit refund test).`);
-                setState(MessageState.FILLED);
-                break;
-              }
-
-              const txnReceipt = await this.initiateFill(deposit, spokePool);
-              if (isDefined(txnReceipt)) {
-                log("info", `Completed fill on ${destination} for ${origin} deposit.`);
-                fillStatus = FillStatus.Filled;
-              }
-            } else {
+            if (!deposit) {
               deposit = buildSyntheticDeposit(bridgeMessage);
-              const txnReceipt = await this.initiateFill(deposit, spokePool);
-              if (isDefined(txnReceipt)) {
-                log("info", `Completed immediate fill on ${destination} for ${origin} deposit.`);
-                fillStatus = FillStatus.Filled;
-              }
+            }
+
+            if (this.config.refundFlowTestEnabled && deposit.outputAmount.eq(MAX_UINT_VAL)) {
+              log("info", `Skipped fill on ${destination} for ${origin} deposit (deposit refund test).`);
+              setState(MessageState.FILLED);
+              break;
+            }
+
+            const txnReceipt = await this.initiateFill(deposit, spokePool);
+            if (isDefined(txnReceipt)) {
+              log(
+                "info",
+                fillImmediate
+                  ? `Completed immediate fill on ${destination} for ${origin} deposit.`
+                  : `Completed fill on ${destination} for ${origin} deposit.`
+              );
+              fillStatus = FillStatus.Filled;
             }
 
             fillStatus ??= await relayFillStatus(
@@ -631,6 +642,9 @@ export class GaslessRelayer {
     };
 
     const messageFilter = (deposit: AnyGaslessDepositMessage): boolean => {
+      if (!this.config.relayerOriginChains.includes(deposit.originChainId)) {
+        return false;
+      }
       const rawInputToken =
         deposit.depositFlowType === "swapAndBridge"
           ? deposit.depositData.inputToken
