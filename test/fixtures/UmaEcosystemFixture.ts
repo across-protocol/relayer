@@ -38,6 +38,13 @@ before(async function () {
   fixture = { timer, finder, collateralWhitelist, store };
 });
 
+// Sync the singleton timer to the current block timestamp before each test,
+// preventing cross-test leakage when a prior test advanced time.
+beforeEach(async function () {
+  const { timestamp } = await ethers.provider.getBlock("latest");
+  await fixture.timer.setCurrentTime(timestamp);
+});
+
 export function getUmaFixture(): UmaEcosystem {
   assert(isDefined(fixture), "UMA fixture not deployed");
   return fixture;
