@@ -10,6 +10,7 @@ import {
   groupObjectCountsByProp,
   isEVMSpokePoolClient,
   assert,
+  CHAIN_IDs,
 } from "../../utils";
 import { spreadEventWithBlockNumber } from "../../utils/EventUtils";
 import { FinalizerPromise, CrossChainMessage } from "../types";
@@ -54,6 +55,10 @@ export interface HeliosKeepAliveAction extends BaseHeliosAction {
 
 export type HeliosAction = HeliosProofAndExecuteAction | HeliosExecuteOnlyAction | HeliosKeepAliveAction;
 // ---------------------------------------
+
+const EXECUTE_MESSAGE_GAS_LIMITS: { [chainId: number]: BigNumber } = {
+  [CHAIN_IDs.TEMPO]: BigNumber.from(1000000),
+};
 
 export async function heliosL1toL2Finalizer(
   logger: winston.Logger,
@@ -712,7 +717,7 @@ function addUpdateAndExecuteTxns(
     // @dev Simulation of `executeMessage` depends on prior state update via SP1Helios.update
     canFailInSimulation: true,
     // todo? this hardcoded gas limit of 500K could be improved if we were able to simulate this tx on top of blockchain state created by the tx above
-    gasLimit: BigNumber.from(500000),
+    gasLimit: EXECUTE_MESSAGE_GAS_LIMITS[l2ChainId] ?? BigNumber.from(500000),
     message: `Finalize Helios msg (HubPoolStore nonce ${l1Event.nonce.toString()}) - Step 2: Execute on SpokePool`,
   };
   transactions.push(executeTx);

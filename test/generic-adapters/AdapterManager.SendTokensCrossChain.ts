@@ -4,6 +4,7 @@ import { CONTRACT_ADDRESSES } from "../../src/common";
 import {
   bnToHex,
   getL2TokenAddresses,
+  isDefined,
   toBNWei,
   CHAIN_IDs,
   TOKEN_SYMBOLS_MAP,
@@ -104,7 +105,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     const chainId = CHAIN_IDs.OPTIMISM;
     const l2Gas = 200000; // This is hardcoded in all OVM Bridges
 
-    //  ERC20 tokens:
+    // ERC20 tokens:
     await adapterManager.sendTokenCrossChain(
       toAddressType(relayer.address, CHAIN_IDs.MAINNET),
       chainId,
@@ -186,7 +187,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
   it("Correctly sends tokens to chain: Polygon", async function () {
     const chainId = CHAIN_IDs.POLYGON;
 
-    //  ERC20 tokens:
+    // ERC20 tokens:
     await adapterManager.sendTokenCrossChain(
       toAddressType(relayer.address, CHAIN_IDs.MAINNET),
       chainId,
@@ -237,7 +238,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     const l2GasLimit = toBN(150000);
     const l2GasPrice = toBN(20e9);
 
-    //  ERC20 tokens:
+    // ERC20 tokens:
     await adapterManager.sendTokenCrossChain(
       toAddressType(relayer.address, CHAIN_IDs.MAINNET),
       chainId,
@@ -295,7 +296,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       secondBridgeAddress: CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET].zkStackSharedBridge.address, // Shared bridge address
       secondBridgeValue: bnZero,
     };
-    //  ERC20 tokens:
+    // ERC20 tokens:
     await adapterManager.sendTokenCrossChain(
       toAddressType(relayer.address, CHAIN_IDs.MAINNET),
       chainId,
@@ -360,7 +361,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     const chainId = CHAIN_IDs.BASE;
     const l2Gas = 200000; // This is hardcoded in all OVM Bridges
 
-    //  ERC20 tokens:
+    // ERC20 tokens:
     await adapterManager.sendTokenCrossChain(
       toAddressType(relayer.address, CHAIN_IDs.MAINNET),
       chainId,
@@ -429,12 +430,18 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
 });
 
 async function seedMocks() {
-  const allL1Tokens = Object.values(TOKEN_SYMBOLS_MAP).map((details) => details.addresses[CHAIN_IDs.MAINNET]);
-  allL1Tokens.forEach((address) =>
-    Object.entries(getL2TokenAddresses(address)).forEach(([chainId, l2Addr]) =>
+  const allL1Tokens = Object.values(TOKEN_SYMBOLS_MAP)
+    .map((details) => details.addresses[CHAIN_IDs.MAINNET])
+    .filter(isDefined);
+  allL1Tokens.forEach((address) => {
+    const l2Addresses = getL2TokenAddresses(address);
+    if (!l2Addresses) {
+      return;
+    }
+    Object.entries(l2Addresses).forEach(([chainId, l2Addr]) =>
       hubPoolClient.setTokenMapping(address, Number(chainId), l2Addr)
-    )
-  );
+    );
+  });
 
   // Construct fake spoke pool clients. All the adapters need is a signer and a provider on each chain.
   for (const chainId of enabledChainIds) {

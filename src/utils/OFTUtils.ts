@@ -33,7 +33,7 @@ export type MessagingFeeStruct = {
   lzTokenFee: BigNumberish;
 };
 
-export type LzTransactionDetails = { destination: LzDestinationTransactionDetails; pathway: Pathway };
+export type LzTransactionDetails = { status: string; destination: LzDestinationTransactionDetails; pathway: Pathway };
 
 export type LzDestinationTransactionDetails = { status: string; failedTx: TransactionOutcome[] };
 
@@ -89,7 +89,7 @@ export function getMessengerEvm(l1TokenAddress: EvmAddress, chainId: number): Ev
  * @returns If the input chain ID's OFT adapter requires payment in the input token.
  */
 export function isStargateBridge(chainId: number): boolean {
-  return [CHAIN_IDs.PLASMA].includes(chainId);
+  return [CHAIN_IDs.PLASMA, CHAIN_IDs.TEMPO].includes(chainId);
 }
 
 /**
@@ -140,11 +140,13 @@ export function buildSimpleSendParamEvm(to: EvmAddress, dstEid: number, roundedA
 /**
  * @notice Fetches destination chain transaction details for a outbound message.
  * @param txHash Transaction hash of the outbound message on the origin chain.
- * @returns Message data as outlined in these docs: https://docs.layerzero.network/v2/concepts/troubleshooting/debugging-messages#response-shape.
+ * @returns Array of message data objects as outlined in these docs: https://docs.layerzero.network/v2/concepts/troubleshooting/debugging-messages#response-shape.
  */
-export async function getLzTransactionDetails(txHash: string): Promise<LzTransactionDetails> {
-  const httpResponse = await axios.get<LzTransactionDetails>(`https://scan.layerzero-api.com/v1/messages/tx/${txHash}`);
-  const txDetails = httpResponse.data;
+export async function getLzTransactionDetails(txHash: string): Promise<LzTransactionDetails[]> {
+  const httpResponse = await axios.get<{ data: LzTransactionDetails[] }>(
+    `https://scan.layerzero-api.com/v1/messages/tx/${txHash}`
+  );
+  const txDetails = httpResponse.data.data;
   return txDetails;
 }
 

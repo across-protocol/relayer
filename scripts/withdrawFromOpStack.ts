@@ -1,8 +1,8 @@
 // Submits a bridge from OpStack L2 to L1.
 // For now, this script only supports ETH withdrawals.
-
 import {
   ethers,
+  EvmAddress,
   retrieveSignerFromCLIArgs,
   getProvider,
   ERC20,
@@ -44,7 +44,7 @@ export async function run(): Promise<void> {
   const signerAddr = await baseSigner.getAddress();
   const chainId = parseInt(args.chainId);
   const connectedSigner = baseSigner.connect(await getProvider(chainId));
-  const l2Token = TOKEN_SYMBOLS_MAP[args.token]?.addresses[chainId];
+  const l2Token = EvmAddress.from(TOKEN_SYMBOLS_MAP[args.token]?.addresses[chainId]);
   assert(l2Token, `${args.token} not found on chain ${chainId} in TOKEN_SYMBOLS_MAP`);
   const l1TokenAddress = getL1TokenAddress(l2Token, chainId);
   const { symbol, decimals } = getTokenInfo(l2Token, chainId);
@@ -52,7 +52,7 @@ export async function run(): Promise<void> {
   const amountFromWei = ethers.utils.formatUnits(amount, decimals);
   console.log(`Amount to bridge from chain ${chainId}: ${amountFromWei} ${l2Token}`);
 
-  const erc20 = new Contract(l2Token, ERC20.abi, connectedSigner);
+  const erc20 = new Contract(l2Token.toNative(), ERC20.abi, connectedSigner);
   const currentBalance = await erc20.balanceOf(signerAddr);
   const currentEthBalance = await connectedSigner.getBalance();
   console.log(`Current ${symbol} balance for account ${signerAddr}: ${fromWei(currentBalance, decimals)} ${l2Token}`);
@@ -60,7 +60,7 @@ export async function run(): Promise<void> {
 
   // First offer user option to unwrap WETH into ETH
   if (symbol === "ETH") {
-    const weth = new Contract(l2Token, WETH9.abi, connectedSigner);
+    const weth = new Contract(l2Token.toNative(), WETH9.abi, connectedSigner);
     if (await askYesNoQuestion(`\nUnwrap ${amount} of WETH @ ${weth.address}?`)) {
       const unwrap = await weth.withdraw(amount);
       console.log(`Submitted transaction: ${blockExplorerLink(unwrap.hash, chainId)}.`);
@@ -82,8 +82,8 @@ export async function run(): Promise<void> {
           { value: amount }, // msg.value
         ]
       : [
-          l2Token, // _localToken
-          l1TokenAddress, // Remote token to be received on L1 side. If the
+          l2Token.toNative(), // _localToken
+          l1TokenAddress.toNative(), // Remote token to be received on L1 side. If the
           // remoteL1Token on the other chain does not recognize the local token as the correct
           // pair token, the ERC20 bridge will fail and the tokens will be returned to sender on
           // this chain.
@@ -114,7 +114,7 @@ export async function run(): Promise<void> {
     l1StandardBridge === expectedL1StandardBridge,
     `Unexpected L1 standard bridge address in ovmStandardBridge contract, expected: ${expectedL1StandardBridge}, got: ${l1StandardBridge}`
   );
-  const customTokenBridge = await spokePool.tokenBridges(l2Token);
+  const customTokenBridge = await spokePool.tokenBridges(l2Token.toNative());
   assert(customTokenBridge === ZERO_ADDRESS, `Custom token bridge set for token ${l2Token} (${customTokenBridge})`);
   if (!(await askYesNoQuestion("\nDo you want to proceed?"))) {
     return;

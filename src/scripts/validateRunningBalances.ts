@@ -17,7 +17,7 @@
 //      indicating an amount of tokens that need to be taken out of the spoke pool to execute those slow fills
 //    - relayer_refund_t_c_i is the total amount of token t that needs to be refunded to relayers on chain c at block b
 //      which also indicates an amount of tokens that need to be taken out of the spoke pool to execute those refunds
-//  - excess_t_c_{i,i+1,i+2,...} should therefore be consistent unless tokens are dropped onto the spoke pool.
+// - excess_t_c_{i,i+1,i+2,...} should therefore be consistent unless tokens are dropped onto the spoke pool.
 
 // This script also can be used to identify any unexecuted leaves in the last N bundles, where N is configurable.
 // If there are any, this script will log the leaf + proof conveniently for manual execution.
@@ -62,7 +62,6 @@ import { Log, ProposedRootBundle, SpokePoolClientsByChain, BundleData } from "..
 import { CONTRACT_ADDRESSES, constructSpokePoolClientsWithStartBlocks, updateSpokePoolClients } from "../common";
 import { createConsoleTransport } from "@risk-labs/logger";
 import { interfaces as sdkInterfaces } from "@across-protocol/sdk";
-import _ from "lodash";
 import { SpokePoolClient } from "../clients/SpokePoolClient";
 
 config();
@@ -650,10 +649,9 @@ export async function runScript(baseSigner: Signer): Promise<void> {
     // @dev Search from right to left since there can be multiple root bundles with the same relayer refund root.
     // The caller should take caution if they're trying to use this function to find matching refunds for older
     // root bundles as opposed to more recent ones.
-    const bundle = _.findLast(
-      spokePoolClient.getRootBundleRelays(),
-      (bundle) => bundle.relayerRefundRoot === relayerRefundRoot
-    );
+    const bundle = spokePoolClient
+      .getRootBundleRelays()
+      .findLast((bundle) => bundle.relayerRefundRoot === relayerRefundRoot);
     if (bundle === undefined) {
       return {};
     }

@@ -61,9 +61,10 @@ import {
   getKitKeypairFromEvmSigner,
   getRelayDataFromFill,
   sortEventsAscending,
+  chainHasNativeToken,
 } from "../utils";
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
-import { MonitorConfig } from "./MonitorConfig";
+import { MonitorConfig, L2Token } from "./MonitorConfig";
 import { getImpliedBundleBlockRanges } from "../dataworker/DataworkerUtils";
 import { PUBLIC_NETWORKS, TOKEN_EQUIVALENCE_REMAPPING } from "@across-protocol/constants";
 import { utils as sdkUtils, arch } from "@across-protocol/sdk";
@@ -94,6 +95,7 @@ export class Monitor {
   private balanceCache: { [chainId: number]: { [token: string]: { [account: string]: BigNumber } } } = {};
   private decimals: { [chainId: number]: { [token: string]: number } } = {};
   private additionalL1Tokens: L1Token[] = [];
+  private l2OnlyTokens: L2Token[] = [];
   // Chains for each spoke pool client.
   public monitorChains: number[];
   // Chains that we care about inventory manager activity on, so doesn't include Ethereum which doesn't
@@ -126,6 +128,7 @@ export class Monitor {
         address: l1TokenInfo.address,
       };
     });
+    this.l2OnlyTokens = monitorConfig.l2OnlyTokens;
     this.l1Tokens = this.clients.hubPoolClient.getL1Tokens();
     this.bundleDataApproxClient = new BundleDataApproxClient(
       this.clients.spokePoolClients,
@@ -134,6 +137,46 @@ export class Monitor {
       [...this.l1Tokens, ...this.additionalL1Tokens].map(({ address }) => address),
       this.logger
     );
+  }
+
+  /**
+   * Returns L2-only tokens for a specific chain.
+   */
+  private getL2OnlyTokensForChain(chainId: number): L2Token[] {
+    return this.l2OnlyTokens.filter((token) => token.chainId === chainId);
+  }
+
+  /**
+   * Generates markdown report for a token's balances across the specified chains.
+   * Returns the token markdown section and summary entry.
+   */
+  private generateTokenBalanceMarkdown(
+    report: RelayerBalanceTable,
+    token: { symbol: string; decimals: number },
+    chainNames: string[],
+    labelSuffix = ""
+  ): { mrkdwn: string; summaryEntry: string } {
+    let tokenMrkdwn = "";
+    for (const chainName of chainNames) {
+      const balancesBN = Object.values(report[token.symbol]?.[chainName] ?? {});
+      if (balancesBN.find((b) => b.gt(bnZero))) {
+        const balances = balancesBN.map((balance) =>
+          balance.gt(bnZero) ? convertFromWei(balance.toString(), token.decimals) : "0"
+        );
+        tokenMrkdwn += `${chainName}: ${balances.join(", ")}\n`;
+      } else {
+        tokenMrkdwn += `${chainName}: 0\n`;
+      }
+    }
+
+    const totalBalance = report[token.symbol]?.[ALL_CHAINS_NAME]?.[BalanceType.TOTAL] ?? bnZero;
+    if (totalBalance.gt(bnZero)) {
+      return {
+        mrkdwn: `*[${token.symbol}${labelSuffix}]*\n` + tokenMrkdwn,
+        summaryEntry: `${token.symbol}: ${convertFromWei(totalBalance.toString(), token.decimals)}\n`,
+      };
+    }
+    return { mrkdwn: "", summaryEntry: `${token.symbol}: 0\n` };
   }
 
   public async update(): Promise<void> {
@@ -241,8 +284,8 @@ export class Monitor {
       const deposit = invalidFill.deposit
         ? {
             txnRef: invalidFill.deposit.txnRef,
-            inputToken: invalidFill.deposit.inputToken.toNative(),
-            depositor: invalidFill.deposit.depositor.toNative(),
+            inputToken: invalidFill.deposit.inputToken,
+            depositor: invalidFill.deposit.depositor,
           }
         : undefined;
 
@@ -250,8 +293,8 @@ export class Monitor {
         at: "Monitor::reportInvalidFills",
         message,
         destinationChainId,
-        outputToken: invalidFill.fill.outputToken.toNative(),
-        relayer: invalidFill.fill.relayer.toNative(),
+        outputToken: invalidFill.fill.outputToken,
+        relayer: invalidFill.fill.relayer,
         blockExplorerLink: blockExplorerLink(invalidFill.fill.txnRef, destinationChainId),
         reason: invalidFill.reason,
         deposit,
@@ -454,11 +497,11 @@ export class Monitor {
   async reportRelayerBalances(): Promise<void> {
     const relayers = this.monitorConfig.monitoredRelayers;
     const allL1Tokens = this.getL1TokensForRelayerBalancesReport();
+    const l2OnlyTokens = this.l2OnlyTokens;
 
-    // @dev TODO: Handle special case for tokens that do not have an L1 token mapped to them via PoolRebalanceRoutes
     const chainIds = this.monitorChains;
     const allChainNames = chainIds.map(getNetworkName).concat([ALL_CHAINS_NAME]);
-    const reports = this.initializeBalanceReports(relayers, allL1Tokens, allChainNames);
+    const reports = this.initializeBalanceReports(relayers, allL1Tokens, l2OnlyTokens, allChainNames);
 
     await this.updateCurrentRelayerBalances(reports);
     await this.updateLatestAndFutureRelayerRefunds(reports);
@@ -467,30 +510,24 @@ export class Monitor {
       const report = reports[relayer.toNative()];
       let summaryMrkdwn = "*[Summary]*\n";
       let mrkdwn = "Token amounts: current, pending execution, cross-chain transfers, total\n";
-      for (const token of allL1Tokens) {
-        let tokenMrkdwn = "";
-        for (const chainName of allChainNames) {
-          const balancesBN = Object.values(report[token.symbol][chainName]);
-          if (balancesBN.find((b) => b.gt(bnZero))) {
-            // Human-readable balances
-            const balances = balancesBN.map((balance) =>
-              balance.gt(bnZero) ? convertFromWei(balance.toString(), token.decimals) : "0"
-            );
-            tokenMrkdwn += `${chainName}: ${balances.join(", ")}\n`;
-          } else {
-            // Shorten balances in the report if everything is 0.
-            tokenMrkdwn += `${chainName}: 0\n`;
-          }
-        }
 
-        const totalBalance = report[token.symbol][ALL_CHAINS_NAME][BalanceType.TOTAL];
-        // Update corresponding summary section for current token.
-        if (totalBalance.gt(bnZero)) {
-          mrkdwn += `*[${token.symbol}]*\n` + tokenMrkdwn;
-          summaryMrkdwn += `${token.symbol}: ${convertFromWei(totalBalance.toString(), token.decimals)}\n`;
-        } else {
-          summaryMrkdwn += `${token.symbol}: 0\n`;
-        }
+      // Report L1 tokens (all chains)
+      for (const token of allL1Tokens) {
+        const { mrkdwn: tokenMrkdwn, summaryEntry } = this.generateTokenBalanceMarkdown(report, token, allChainNames);
+        mrkdwn += tokenMrkdwn;
+        summaryMrkdwn += summaryEntry;
+      }
+
+      // Report L2-only tokens (only their specific chain)
+      for (const token of l2OnlyTokens) {
+        const { mrkdwn: tokenMrkdwn, summaryEntry } = this.generateTokenBalanceMarkdown(
+          report,
+          token,
+          [getNetworkName(token.chainId)],
+          " (L2-only)"
+        );
+        mrkdwn += tokenMrkdwn;
+        summaryMrkdwn += summaryEntry;
       }
 
       mrkdwn += summaryMrkdwn;
@@ -500,9 +537,15 @@ export class Monitor {
         mrkdwn,
       });
     }
+
+    // Build a combined token list for decimal lookups in the debug logging
+    const allTokensWithDecimals = new Map<string, number>();
+    allL1Tokens.forEach((token) => allTokensWithDecimals.set(token.symbol, token.decimals));
+    l2OnlyTokens.forEach((token) => allTokensWithDecimals.set(token.symbol, token.decimals));
+
     Object.entries(reports).forEach(([relayer, balanceTable]) => {
       Object.entries(balanceTable).forEach(([tokenSymbol, columns]) => {
-        const decimals = allL1Tokens.find((token) => token.symbol === tokenSymbol)?.decimals;
+        const decimals = allTokensWithDecimals.get(tokenSymbol);
         if (!decimals) {
           throw new Error(`No decimals found for ${tokenSymbol}`);
         }
@@ -535,6 +578,7 @@ export class Monitor {
   // Update current balances of all tokens on each supported chain for each relayer.
   async updateCurrentRelayerBalances(relayerBalanceReport: RelayerBalanceReport): Promise<void> {
     const l1Tokens = this.getL1TokensForRelayerBalancesReport();
+
     for (const relayer of this.monitorConfig.monitoredRelayers) {
       for (const chainId of this.monitorChains) {
         // If the monitored relayer address is invalid on the monitored chain (e.g. the monitored relayer is a base58 address while the chain ID is mainnet),
@@ -565,6 +609,30 @@ export class Monitor {
             BalanceType.CURRENT,
             decimalConverter(tokenBalances[i])
           );
+        }
+
+        // Handle L2-only tokens for this chain
+        const l2OnlyTokensForChain = this.getL2OnlyTokensForChain(chainId);
+        if (l2OnlyTokensForChain.length > 0) {
+          const l2OnlyBalances = await this._getBalances(
+            l2OnlyTokensForChain.map((token) => ({
+              token: token.address,
+              chainId: chainId,
+              account: relayer,
+            }))
+          );
+
+          for (let i = 0; i < l2OnlyTokensForChain.length; i++) {
+            const token = l2OnlyTokensForChain[i];
+            // L2-only tokens don't need decimal conversion since they don't map to L1
+            this.updateRelayerBalanceTable(
+              relayerBalanceReport[relayer.toNative()],
+              token.symbol,
+              getNetworkName(chainId),
+              BalanceType.CURRENT,
+              l2OnlyBalances[i]
+            );
+          }
         }
       }
     }
@@ -1170,6 +1238,7 @@ export class Monitor {
     await Promise.all(
       this.monitorConfig.monitoredRelayers.map(async (relayer) => {
         await this.updatePendingL2Withdrawals(relayer, relayerBalanceReport[relayer.toNative()]);
+        await this.updatePendingRebalances(relayer, relayerBalanceReport[relayer.toNative()]);
       })
     );
   }
@@ -1213,23 +1282,25 @@ export class Monitor {
       // getTotalPendingWithdrawalAmount() async call is getting rate limited by the Binance API.
       // We should add more rate limiting or retry logic to this call.
     );
+    const allPendingWithdrawalBalances: { [l1Token: string]: { [chainId: number]: BigNumber } } = {};
     await Promise.all(
       allL1Tokens.map(async (l1Token) => {
         const pendingWithdrawalBalances =
           await this.clients.crossChainTransferClient.adapterManager.getTotalPendingWithdrawalAmount(
-            7200,
             supportedChains,
             relayer,
             l1Token.address
           );
+        allPendingWithdrawalBalances[l1Token.symbol] = pendingWithdrawalBalances;
         for (const _chainId of Object.keys(pendingWithdrawalBalances)) {
           const chainId = Number(_chainId);
           if (pendingWithdrawalBalances[chainId].eq(bnZero)) {
             continue;
           }
           if (!this.clients.crossChainTransferClient.adapterManager.l2TokenExistForL1Token(l1Token.address, chainId)) {
-            return;
+            continue;
           }
+
           const l2Token = this.clients.crossChainTransferClient.adapterManager.l2TokenForL1Token(
             l1Token.address,
             chainId
@@ -1247,16 +1318,84 @@ export class Monitor {
         }
       })
     );
+    this.logger.debug({
+      at: "Monitor#updatePendingL2Withdrawals",
+      message: "Updated pending L2->L1 withdrawals",
+      allPendingWithdrawalBalances,
+    });
+  }
+
+  async updatePendingRebalances(relayer: Address, relayerBalanceTable: RelayerBalanceTable): Promise<void> {
+    // Rebalancer integration is optional in monitor; if absent, treat as no pending rebalances.
+    if (!isDefined(this.clients.rebalancerClient)) {
+      return;
+    }
+
+    let pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } };
+    try {
+      pendingRebalances = await this.clients.rebalancerClient.getPendingRebalances();
+    } catch (error) {
+      this.logger.warn({
+        at: "Monitor#updatePendingRebalances",
+        message: "Unable to fetch pending rebalances; defaulting to zero",
+        error,
+      });
+      return;
+    }
+
+    const l1TokenBySymbol = Object.fromEntries(
+      this.getL1TokensForRelayerBalancesReport().map((token) => [token.symbol, token])
+    );
+    for (const [_chainId, tokenBalances] of Object.entries(pendingRebalances)) {
+      const chainId = Number(_chainId);
+      if (!this.monitorChains.includes(chainId)) {
+        continue;
+      }
+      for (const [tokenSymbol, amount] of Object.entries(tokenBalances)) {
+        if (amount.eq(bnZero)) {
+          continue;
+        }
+        const l1Token = l1TokenBySymbol[tokenSymbol];
+        if (!isDefined(l1Token)) {
+          continue;
+        }
+        const l2TokenAddress = this.getRemoteTokenForL1Token(l1Token.address, chainId);
+        if (!isDefined(l2TokenAddress)) {
+          continue;
+        }
+        const l2ToL1DecimalConverter = this.l2TokenAmountToL1TokenAmountConverter(l2TokenAddress, chainId);
+        this.updateRelayerBalanceTable(
+          relayerBalanceTable,
+          l1Token.symbol,
+          getNetworkName(chainId),
+          BalanceType.PENDING_TRANSFERS,
+          l2ToL1DecimalConverter(amount)
+        );
+      }
+    }
+    this.logger.debug({
+      at: "Monitor#updatePendingRebalances",
+      message: "Updated pending rebalance credits",
+      relayer,
+      pendingRebalances,
+    });
   }
 
   getTotalTransferAmount(transfers: TokenTransfer[]): BigNumber {
     return transfers.map((transfer) => transfer.value).reduce((a, b) => a.add(b));
   }
 
-  initializeBalanceReports(relayers: Address[], allL1Tokens: L1Token[], allChainNames: string[]): RelayerBalanceReport {
+  initializeBalanceReports(
+    relayers: Address[],
+    allL1Tokens: L1Token[],
+    l2OnlyTokens: L2Token[],
+    allChainNames: string[]
+  ): RelayerBalanceReport {
     const reports: RelayerBalanceReport = {};
     for (const relayer of relayers) {
       reports[relayer.toNative()] = {};
+
+      // Initialize L1 tokens for all chains
       for (const token of allL1Tokens) {
         reports[relayer.toNative()][token.symbol] = {};
         for (const chainName of allChainNames) {
@@ -1264,6 +1403,22 @@ export class Monitor {
           for (const balanceType of ALL_BALANCE_TYPES) {
             reports[relayer.toNative()][token.symbol][chainName][balanceType] = bnZero;
           }
+        }
+      }
+
+      // Initialize L2-only tokens for their specific chain and the "All chains" summary
+      for (const token of l2OnlyTokens) {
+        const tokenChainName = getNetworkName(token.chainId);
+        reports[relayer.toNative()][token.symbol] = {};
+        // Initialize for the specific chain the token exists on
+        reports[relayer.toNative()][token.symbol][tokenChainName] = {};
+        for (const balanceType of ALL_BALANCE_TYPES) {
+          reports[relayer.toNative()][token.symbol][tokenChainName][balanceType] = bnZero;
+        }
+        // Initialize for "All chains" summary
+        reports[relayer.toNative()][token.symbol][ALL_CHAINS_NAME] = {};
+        for (const balanceType of ALL_BALANCE_TYPES) {
+          reports[relayer.toNative()][token.symbol][ALL_CHAINS_NAME][balanceType] = bnZero;
         }
       }
     }
@@ -1423,18 +1578,19 @@ export class Monitor {
         const spokePoolClient = this.clients.spokePoolClients[chainId];
         if (isEVMSpokePoolClient(spokePoolClient)) {
           const gasTokenAddressForChain = getNativeTokenAddressForChain(chainId);
-          const balance = token.eq(gasTokenAddressForChain)
-            ? await spokePoolClient.spokePool.provider.getBalance(account.toEvmAddress())
-            : // Use the latest block number the SpokePoolClient is aware of to query balances.
-              // This prevents double counting when there are very recent refund leaf executions that the SpokePoolClients
-              // missed (the provider node did not see those events yet) but when the balanceOf calls are made, the node
-              // is now aware of those executions.
-              await new Contract(token.toEvmAddress(), ERC20.abi, spokePoolClient.spokePool.provider).balanceOf(
-                account.toEvmAddress(),
-                {
-                  blockTag: spokePoolClient.latestHeightSearched,
-                }
-              );
+          const balance =
+            token.eq(gasTokenAddressForChain) && chainHasNativeToken(chainId)
+              ? await spokePoolClient.spokePool.provider.getBalance(account.toEvmAddress())
+              : // Use the latest block number the SpokePoolClient is aware of to query balances.
+                // This prevents double counting when there are very recent refund leaf executions that the SpokePoolClients
+                // missed (the provider node did not see those events yet) but when the balanceOf calls are made, the node
+                // is now aware of those executions.
+                await new Contract(token.toEvmAddress(), ERC20.abi, spokePoolClient.spokePool.provider).balanceOf(
+                  account.toEvmAddress(),
+                  {
+                    blockTag: spokePoolClient.latestHeightSearched,
+                  }
+                );
           this.balanceCache[chainId] ??= {};
           this.balanceCache[chainId][token.toBytes32()] ??= {};
           this.balanceCache[chainId][token.toBytes32()][account.toBytes32()] = balance;

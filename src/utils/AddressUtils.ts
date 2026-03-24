@@ -14,14 +14,14 @@ import {
   type WritableAccount,
   type ReadonlyAccount,
   type AddressesByLookupTableAddress,
-  type IInstruction,
+  type Instruction,
   type TransactionSigner,
 } from "@solana/kit";
 import { getExtendLookupTableInstruction } from "@solana-program/address-lookup-table";
 
 // Solana ALT utility type.
 interface LookupTableDefinitions {
-  instructions: IInstruction[];
+  instructions: Instruction[];
   lookupTableMap: AddressesByLookupTableAddress;
 }
 

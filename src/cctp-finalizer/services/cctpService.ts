@@ -9,9 +9,12 @@ import {
   chainIsSvm,
   retrieveGckmsKeys,
   getGckmsConfig,
+  getSvmSignerFromPrivateKey,
+  toAddressType,
 } from "../../utils";
 import { checkIfAlreadyProcessedEvm, processMintEvm, getEvmProvider } from "../utils/evmUtils";
 import { checkIfAlreadyProcessedSvm, processMintSvm, getSvmProvider } from "../utils/svmUtils";
+import { address } from "@solana/kit";
 import {
   NoAttestationFoundError,
   AttestationNotReadyError,
@@ -47,15 +50,17 @@ export class CCTPService {
         attestation: cctpAttestationUnion,
         destinationChainId: providedDestinationChainIdUnion,
         signature: signatureUnion,
+        quoteDeadline: quoteDeadlineUnion,
       } = message;
 
       this.evmPrivateKey = await this.getPrivateKey("evm");
-      this.svmPrivateKey = utils.bs58.decode(await this.getPrivateKey("svm"));
+      this.svmPrivateKey = getSvmSignerFromPrivateKey("0x" + this.evmPrivateKey).secretKey;
 
       const cctpMessage = cctpMessageUnion?.string;
       const cctpAttestation = cctpAttestationUnion?.string;
       const providedDestinationChainId = providedDestinationChainIdUnion?.long;
       const signature = signatureUnion?.string;
+      const quoteDeadline = quoteDeadlineUnion?.long;
 
       this.logger.info({
         at: "CCTPService#processBurnTransaction",
@@ -71,7 +76,7 @@ export class CCTPService {
       let destinationChainId: number;
 
       // If message and attestation are provided, use them directly
-      if (cctpMessage && cctpAttestation) {
+      if (cctpMessage && cctpMessage !== "0x" && cctpAttestation) {
         this.logger.info({
           at: "CCTPService#processBurnTransaction",
           message: "Using provided message and attestation, skipping attestation fetch",
@@ -113,6 +118,43 @@ export class CCTPService {
           throw new AttestationNotReadyError(attestation.status!);
         }
 
+        // CCTP V2 API sometimes returns "0x" as the message, even though we can get the full reconstructed message from
+        // the "decodedMessage.messageBody" field.
+        const decodedMessage = (
+          attestation as unknown as {
+            decodedMessage?: {
+              sourceDomain: string;
+              destinationDomain: string;
+              nonce: string;
+              sender: string;
+              recipient: string;
+              destinationCaller: string;
+              minFinalityThreshold: string;
+              finalityThresholdExecuted: string;
+              messageBody: string;
+            };
+          }
+        ).decodedMessage;
+
+        if (decodedMessage && (!attestation.message || attestation.message === "0x")) {
+          const destinationChainId = getCctpDestinationChainFromDomain(Number(decodedMessage.destinationDomain), true);
+          attestation.message = ethers.utils.solidityPack(
+            ["uint32", "uint32", "uint32", "bytes32", "bytes32", "bytes32", "bytes32", "uint32", "uint32", "bytes"],
+            [
+              1, // CCTP V2 message format version
+              decodedMessage.sourceDomain,
+              decodedMessage.destinationDomain,
+              decodedMessage.nonce,
+              toAddressType(decodedMessage.sender, sourceChainId).toBytes32(),
+              toAddressType(decodedMessage.recipient, destinationChainId).toBytes32(),
+              toAddressType(decodedMessage.destinationCaller, destinationChainId).toBytes32(),
+              decodedMessage.minFinalityThreshold,
+              decodedMessage.finalityThresholdExecuted,
+              decodedMessage.messageBody,
+            ]
+          );
+        }
+
         if (providedDestinationChainId) {
           destinationChainId = providedDestinationChainId;
         } else {
@@ -128,7 +170,7 @@ export class CCTPService {
       }
 
       // Process the mint
-      return await this.processMint(destinationChainId, sourceChainId, attestation, signature);
+      return await this.processMint(destinationChainId, sourceChainId, attestation, signature, quoteDeadline);
     } catch (error) {
       if (isCCTPError(error)) {
         if (error instanceof AlreadyProcessedError) {
@@ -210,7 +252,8 @@ export class CCTPService {
     destinationChainId: number,
     originChainId: number,
     attestation: any,
-    signature?: string
+    signature?: string,
+    quoteDeadline?: number
   ): Promise<ProcessBurnTransactionResponse> {
     const chainName = PUBLIC_NETWORKS[destinationChainId]?.name || `Chain ${destinationChainId}`;
     this.logger.info({
@@ -226,13 +269,15 @@ export class CCTPService {
 
         const rpcUrl = this.getRpcUrlForChain(destinationChainId);
         const svmProvider = getSvmProvider(rpcUrl);
+        const altAddress = process.env.SOLANA_CCTP_V2_ALT ? address(process.env.SOLANA_CCTP_V2_ALT) : undefined;
         const result = await processMintSvm(
           attestation,
           this.svmPrivateKey,
           svmProvider,
           destinationChainId,
           originChainId,
-          this.logger
+          this.logger,
+          altAddress
         );
         return {
           success: true,
@@ -248,7 +293,8 @@ export class CCTPService {
           provider,
           this.evmPrivateKey,
           this.logger,
-          signature
+          signature,
+          quoteDeadline
         );
         return {
           success: true,
