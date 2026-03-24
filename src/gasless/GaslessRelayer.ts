@@ -281,6 +281,13 @@ export class GaslessRelayer {
     ]);
     for (const msg of apiMessages) {
       const { originChainId, depositId, spokePool } = msg;
+
+      const isSwap = msg.depositFlowType === "swapAndBridge";
+      const isCctp = this._isCctpDeposit(originChainId, spokePool);
+      if (isSwap || isCctp) {
+        continue;
+      }
+
       const { inputToken, destinationChainId } = extractGaslessDepositFields(msg);
       const depositKey = this._getDepositKey(inputToken.toNative(), originChainId, depositId);
 
@@ -292,12 +299,6 @@ export class GaslessRelayer {
           originChainId,
           depositId,
         });
-        continue;
-      }
-
-      const isSwap = msg.depositFlowType === "swapAndBridge";
-      const isCctp = this._isCctpDeposit(originChainId, spokePool);
-      if (isSwap || isCctp) {
         continue;
       }
 
@@ -372,6 +373,7 @@ export class GaslessRelayer {
     await mapAsync(cctpMessages, async (depositMessage) => {
       const { originChainId, depositId } = depositMessage;
       const { inputToken: apiInputTokenForKey } = extractGaslessDepositFields(depositMessage);
+      const isSwap = depositMessage.depositFlowType === "swapAndBridge";
       const depositKey = this._getDepositKey(apiInputTokenForKey.toNative(), originChainId, depositId);
 
       if (!this._isValidGaslessDepositMessage(depositMessage)) {
@@ -385,18 +387,19 @@ export class GaslessRelayer {
         return;
       }
 
-      let authToken: Address;
-      let inputToken: Address;
-      if (depositMessage.depositFlowType === "swapAndBridge") {
-        if (depositMessage.permitType === "permit2") {
-          return;
-        }
-        authToken = toAddressType(depositMessage.swapToken, originChainId);
-        inputToken = toAddressType(depositMessage.depositData.inputToken, originChainId);
-      } else {
-        authToken = toAddressType(depositMessage.baseDepositData.inputToken, originChainId);
-        inputToken = authToken;
+      // @TODO: Add logic for swapAndBridgeWithPermit2
+      if (depositMessage.permitType === "permit2") {
+        return;
       }
+
+      const authToken = toAddressType(
+        isSwap ? depositMessage.swapToken : depositMessage.baseDepositData.inputToken,
+        originChainId
+      );
+      const inputToken = toAddressType(
+        isSwap ? depositMessage.depositData.inputToken : depositMessage.baseDepositData.inputToken,
+        originChainId
+      );
 
       const authorizer = getGaslessAuthorizerAddress(depositMessage);
       const nonce = getGaslessPermitNonce(depositMessage);
