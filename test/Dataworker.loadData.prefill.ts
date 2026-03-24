@@ -13,7 +13,7 @@ import {
   fillV3Relay,
   getDefaultBlockRange,
   randomAddress,
-  smock,
+  setupMockClients,
 } from "./utils";
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
 import {
@@ -46,7 +46,7 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
 
   let updateAllClients: () => Promise<void>;
 
-  beforeEach(async function () {
+  before(async function () {
     ({
       erc20_1,
       erc20_2,
@@ -63,6 +63,10 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
       updateAllClients,
     } = await setupDataworker(ethers, 25, 25, 0));
     await updateAllClients();
+  });
+
+  beforeEach(function () {
+    spy.resetHistory();
   });
 
   describe("Tests with real events", function () {
@@ -106,39 +110,23 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
     const lpFeePct = toBNWei("0.01");
 
     beforeEach(async function () {
-      mockHubPoolClient = new MockHubPoolClient(
-        hubPoolClient.logger,
-        hubPoolClient.hubPool,
+      ({
+        mockHubPoolClient,
+        mockOriginSpokePoolClient,
+        mockDestinationSpokePoolClient,
+        mockDestinationSpokePool,
+        spokePoolClients,
+      } = await setupMockClients(
+        hubPoolClient,
         configStoreClient,
-        hubPoolClient.deploymentBlock,
-        hubPoolClient.chainId
-      );
-      // Mock a realized lp fee pct for each deposit so we can check refund amounts and bundle lp fees.
-      mockHubPoolClient.setDefaultRealizedLpFeePct(lpFeePct);
-      mockOriginSpokePoolClient = new MockSpokePoolClient(
-        spokePoolClient_1.logger,
-        spokePoolClient_1.spokePool,
-        spokePoolClient_1.chainId,
-        spokePoolClient_1.deploymentBlock
-      );
-      mockDestinationSpokePool = await smock.fake(spokePoolClient_2.spokePool.interface);
-      mockDestinationSpokePoolClient = new MockSpokePoolClient(
-        spokePoolClient_2.logger,
-        mockDestinationSpokePool as Contract,
-        spokePoolClient_2.chainId,
-        spokePoolClient_2.deploymentBlock
-      );
-      spokePoolClients = {
-        ...spokePoolClients,
-        [originChainId]: mockOriginSpokePoolClient,
-        [destinationChainId]: mockDestinationSpokePoolClient,
-      };
-      await mockHubPoolClient.update();
-      await mockOriginSpokePoolClient.update();
-      await mockDestinationSpokePoolClient.update();
-      mockHubPoolClient.setTokenMapping(l1Token_1.address, originChainId, erc20_1.address);
-      mockHubPoolClient.setTokenMapping(l1Token_1.address, destinationChainId, erc20_2.address);
-      mockHubPoolClient.setTokenMapping(l1Token_1.address, repaymentChainId, l1Token_1.address);
+        spokePoolClient_1,
+        spokePoolClient_2,
+        spokePoolClients,
+        l1Token_1,
+        erc20_1,
+        erc20_2,
+        lpFeePct
+      ));
       const bundleDataClient = new MockBundleDataClient(
         dataworkerInstance.logger,
         {

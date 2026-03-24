@@ -9,7 +9,6 @@ import { amountToDeposit, destinationChainId, originChainId, repaymentChainId } 
 import { DataworkerConfig, setupDataworker } from "./fixtures/Dataworker.Fixture";
 import {
   Contract,
-  FakeContract,
   SignerWithAddress,
   V3FillFromDeposit,
   assertPromiseError,
@@ -21,9 +20,9 @@ import {
   getDisabledBlockRanges,
   randomAddress,
   sinon,
-  smock,
   spyLogIncludes,
   deployMulticall3,
+  setupMockClients,
 } from "./utils";
 
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
@@ -65,7 +64,7 @@ describe("Dataworker: Load bundle data", async function () {
 
   let updateAllClients: () => Promise<void>;
 
-  beforeEach(async function () {
+  async function deploy() {
     ({
       spokePool_1,
       erc20_1,
@@ -88,6 +87,12 @@ describe("Dataworker: Load bundle data", async function () {
     for (const deployer of [depositor, relayer]) {
       await deployMulticall3(deployer);
     }
+  }
+
+  before(deploy);
+
+  beforeEach(function () {
+    spy.resetHistory();
   });
 
   it("Default conditions", async function () {
@@ -115,19 +120,27 @@ describe("Dataworker: Load bundle data", async function () {
   describe("Compute fills to refund", function () {
     let mockOriginSpokePoolClient: MockSpokePoolClient, mockDestinationSpokePoolClient: MockSpokePoolClient;
     let mockHubPoolClient: MockHubPoolClient;
-    let mockDestinationSpokePool: FakeContract;
     let mockConfigStore: MockConfigStoreClient;
     const lpFeePct = toBNWei("0.01");
 
     beforeEach(async function () {
       await updateAllClients();
-      mockHubPoolClient = new MockHubPoolClient(
-        hubPoolClient.logger,
-        hubPoolClient.hubPool,
-        configStoreClient,
-        hubPoolClient.deploymentBlock,
-        hubPoolClient.chainId
-      );
+      // Reset config store state that may have been modified by preceding tests,
+      // since configStoreClient is shared across tests (created once in before()).
+      (configStoreClient as unknown as MockConfigStoreClient).cumulativeDisabledChainUpdates = [];
+      (configStoreClient as unknown as MockConfigStoreClient).liteChainIndicesUpdates = [];
+      ({ mockHubPoolClient, mockOriginSpokePoolClient, mockDestinationSpokePoolClient, spokePoolClients } =
+        await setupMockClients(
+          hubPoolClient,
+          configStoreClient,
+          spokePoolClient_1,
+          spokePoolClient_2,
+          spokePoolClients,
+          l1Token_1,
+          erc20_1,
+          erc20_2,
+          lpFeePct
+        ));
       mockConfigStore = new MockConfigStoreClient(
         configStoreClient.logger,
         configStoreClient.configStore,
@@ -137,33 +150,6 @@ describe("Dataworker: Load bundle data", async function () {
         undefined,
         true
       );
-      // Mock a realized lp fee pct for each deposit so we can check refund amounts and bundle lp fees.
-      mockHubPoolClient.setDefaultRealizedLpFeePct(lpFeePct);
-      mockOriginSpokePoolClient = new MockSpokePoolClient(
-        spokePoolClient_1.logger,
-        spokePoolClient_1.spokePool,
-        spokePoolClient_1.chainId,
-        spokePoolClient_1.deploymentBlock
-      );
-
-      mockDestinationSpokePool = await smock.fake(spokePoolClient_2.spokePool.interface);
-      mockDestinationSpokePoolClient = new MockSpokePoolClient(
-        spokePoolClient_2.logger,
-        mockDestinationSpokePool as Contract,
-        spokePoolClient_2.chainId,
-        spokePoolClient_2.deploymentBlock
-      );
-      spokePoolClients = {
-        ...spokePoolClients,
-        [originChainId]: mockOriginSpokePoolClient,
-        [destinationChainId]: mockDestinationSpokePoolClient,
-      };
-      await mockHubPoolClient.update();
-      await mockOriginSpokePoolClient.update();
-      await mockDestinationSpokePoolClient.update();
-      mockHubPoolClient.setTokenMapping(l1Token_1.address, originChainId, erc20_1.address);
-      mockHubPoolClient.setTokenMapping(l1Token_1.address, destinationChainId, erc20_2.address);
-      mockHubPoolClient.setTokenMapping(l1Token_1.address, repaymentChainId, l1Token_1.address);
       const bundleDataClient = new MockBundleDataClient(
         dataworkerInstance.logger,
         {
@@ -1005,6 +991,11 @@ describe("Dataworker: Load bundle data", async function () {
     });
 
     describe("Tests against contract deployments", function () {
+      beforeEach(async function () {
+        await deploy();
+        await updateAllClients();
+      });
+
       it("Validates fill against old deposit if deposit is not in-memory", async function () {
         // For this test, we need to actually send a deposit on the spoke pool
         // because queryHistoricalDepositForFill eth_call's the contract.
