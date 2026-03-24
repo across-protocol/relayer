@@ -45,8 +45,8 @@ export function getSpokePool(chainId: number, address?: string): Contract {
 
 // For a chain ID and optional SpokePoolPeriphery address, return a Contract instance with the corresponding ABI.
 export function getSpokePoolPeriphery(chainId: number, address?: string): Contract {
-  const peripheryAddress = isDefined(address) ? address : getDeployedAddress("SpokePoolPeriphery", chainId);
-  return new Contract(peripheryAddress, CONTRACT_ADDRESSES[chainId].spokePoolPeriphery.abi);
+  address ??= getDeployedAddress("SpokePoolPeriphery", chainId);
+  return new Contract(address, CONTRACT_ADDRESSES[chainId].spokePoolPeriphery.abi);
 }
 
 export function getSpokePoolAddress(chainId: number): Address {
