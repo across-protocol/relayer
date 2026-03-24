@@ -31,8 +31,6 @@ import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
 import { MultiCallerClient } from "../clients";
 
-export const RELAYER_SLOW_FILL_MIN_AGE = 10; // blocks
-
 const { getAddress } = ethersUtils;
 const { isDepositSpedUp, isMessageEmpty, resolveDepositMessage } = sdkUtils;
 const UNPROFITABLE_DEPOSIT_NOTICE_PERIOD = 60 * 60; // 1 hour
@@ -116,8 +114,8 @@ export class Relayer {
     this.logger.debug({
       at: "Relayer::init",
       message: "Completed one-time init.",
-      relayerEvmAddress: this.relayerEvmAddress.toNative(),
-      relayerSvmAddress: tokenClient.relayerSvmAddress.toNative(),
+      relayerEvmAddress: this.relayerEvmAddress,
+      relayerSvmAddress: tokenClient.relayerSvmAddress,
     });
   }
 
@@ -411,9 +409,9 @@ export class Relayer {
           at: "Relayer::filterDeposit",
           message: "😱 Skipping deposit with greater unfilled amount than API suggested limit",
           limit,
-          l1Token: l1Token?.toNative(),
+          l1Token,
           depositId,
-          inputToken: inputToken.toNative(),
+          inputToken,
           inputAmount,
           originChainId,
           txnRef: deposit.txnRef,
@@ -489,14 +487,10 @@ export class Relayer {
     const limits = this.fillLimits[originChainId];
 
     // Find the uppermost USD threshold compatible with the age of the origin chain deposit.
-    // @todo: Swap out for Array.findLastIndex() when available.
-    let idx = 0;
-    while (idx < limits.length && limits[idx].fromBlock > blockNumber) {
-      ++idx;
-    }
+    const idx = limits.findIndex(({ fromBlock }) => fromBlock <= blockNumber);
 
     // If no config applies to the blockNumber (i.e. because it's too old), just return the uppermost limit.
-    return Math.min(idx, limits.length - 1);
+    return idx === -1 ? limits.length - 1 : idx;
   }
 
   /**
@@ -578,20 +572,18 @@ export class Relayer {
 
     // Warn on the highest overcommitment, if any.
     const chain = getNetworkName(chainId);
-    for (let i = limits.length - 1; i >= 0; --i) {
-      const { limit, fromBlock } = limits[i];
-      if (limit.lt(bnZero)) {
-        const log = this.config.sendingRelaysEnabled ? this.logger.warn : this.logger.debug;
-        log({
-          at: "Relayer::computeOriginChainlimits",
-          message: `Relayer has overcommitted funds to ${chain}.`,
-          overCommitment: limit.abs(),
-          usdThreshold: mdcs[i].usdThreshold,
-          fromBlock,
-          toBlock: originSpoke.latestHeightSearched,
-        });
-        break;
-      }
+    const overcommitIdx = limits.findLastIndex(({ limit }) => limit.lt(bnZero));
+    if (overcommitIdx !== -1) {
+      const { limit, fromBlock } = limits[overcommitIdx];
+      const log = this.config.sendingRelaysEnabled ? this.logger.warn : this.logger.debug;
+      log({
+        at: "Relayer::computeOriginChainlimits",
+        message: `Relayer has overcommitted funds to ${chain}.`,
+        overCommitment: limit.abs(),
+        usdThreshold: mdcs[overcommitIdx].usdThreshold,
+        fromBlock,
+        toBlock: originSpoke.latestHeightSearched,
+      });
     }
 
     // Safety belt: limits should descending by fromBlock (i.e. most recent block first).
@@ -692,6 +684,7 @@ export class Relayer {
     lpFees: RepaymentFee[],
     maxBlockNumber: number
   ): Promise<void> {
+    const at = "Relayer::evaluateFill";
     const { depositId, depositor, destinationChainId, originChainId, txnRef } = deposit;
     const { profitClient, spokePoolClients, tokenClient } = this.clients;
     const { slowDepositors } = this.config;
@@ -699,7 +692,7 @@ export class Relayer {
 
     if (isDefined(this.pendingTxnHashes[destinationChainId])) {
       this.logger.info({
-        at: "Relayer::evaluateFill",
+        at,
         message: `${destChain} transaction queue has pending fills; skipping ${originChain} deposit ${depositId.toString()}...`,
         originChainId,
         txnRef,
@@ -710,7 +703,7 @@ export class Relayer {
     // If the deposit does not meet the minimum number of block confirmations, skip it.
     if (deposit.blockNumber > maxBlockNumber) {
       this.logger.debug({
-        at: "Relayer::evaluateFill",
+        at,
         message: `Skipping ${originChain} deposit ${depositId.toString()} due to insufficient deposit confirmations.`,
         blockNumber: deposit.blockNumber,
         maxBlockNumber,
@@ -726,11 +719,7 @@ export class Relayer {
     // If depositor is on the slow deposit list, then send a zero fill to initiate a slow relay and return early.
     if (slowDepositors?.some((slowDepositor) => depositor.eq(slowDepositor)) && this.canSlowFill(deposit)) {
       if (fillStatus === FillStatus.Unfilled && !this.fillIsExclusive(deposit)) {
-        this.logger.debug({
-          at: "Relayer::evaluateFill",
-          message: "Initiating slow fill for grey listed depositor",
-          depositor,
-        });
+        this.logger.debug({ at, message: "Initiating slow fill for grey listed depositor", depositor });
         this.requestSlowFill(deposit);
       }
       return;
@@ -742,19 +731,19 @@ export class Relayer {
     const minFillTime = this.config.minFillTime?.[destinationChainId] ?? 0;
     if (minFillTime > 0 && !deposit.exclusiveRelayer.eq(this.getRelayerAddrOn(deposit.destinationChainId))) {
       const originSpoke = spokePoolClients[originChainId];
-      let avgBlockTime;
+      let avgBlockTime: number;
       if (isEVMSpokePoolClient(originSpoke)) {
         const { average } = await arch.evm.averageBlockTime(originSpoke.spokePool.provider);
         avgBlockTime = average;
       } else if (isSVMSpokePoolClient(originSpoke)) {
-        const { average } = await arch.svm.averageBlockTime();
+        const { average } = arch.svm.averageBlockTime();
         avgBlockTime = average;
       }
       const depositAge = Math.floor(avgBlockTime * (originSpoke.latestHeightSearched - deposit.blockNumber));
 
       if (minFillTime > depositAge) {
         this.logger.debug({
-          at: "Relayer::evaluateFill",
+          at,
           message: `Skipping ${originChain} deposit due to insufficient fill time for ${destChain}.`,
           depositAge,
           minFillTime,
@@ -764,60 +753,51 @@ export class Relayer {
       }
     }
 
-    const { repaymentChainId, repaymentChainProfitability } = await this.resolveRepaymentChain(deposit, lpFees);
     const {
-      relayerFeePct,
-      gasCost,
-      gasLimit: _gasLimit,
-      lpFeePct: realizedLpFeePct,
-      totalUserFeePct,
-      gasPrice,
-    } = repaymentChainProfitability;
+      repaymentChainId,
+      repaymentChainProfitability: {
+        relayerFeePct,
+        gasCost,
+        gasLimit: _gasLimit,
+        lpFeePct: realizedLpFeePct,
+        totalUserFeePct,
+        gasPrice,
+      },
+    } = await this.resolveRepaymentChain(deposit, lpFees);
+
+    const isProfitable = isDefined(repaymentChainId);
+    // Limit the ability of persistently-unprofitable deposits to congest the deposit/fill evaluation pipeline.
+    if (!isProfitable) {
+      profitClient.captureUnprofitableFill(deposit, realizedLpFeePct, relayerFeePct, gasCost);
+
+      if (destinationChainId !== CHAIN_IDs.SOLANA) {
+        const relayKey = sdkUtils.getRelayEventKey(deposit);
+        this.ignoredDeposits[relayKey] = true;
+      }
+      return;
+    }
 
     const hasBalance = tokenClient.hasBalanceForFill(deposit);
-    const isProfitable = isDefined(repaymentChainId);
-
-    if (!hasBalance || !isProfitable) {
-      if (isProfitable && !hasBalance) {
-        // For profitable deposits where the relayer has insufficient balance, log it for potential rebalancing.
-        tokenClient.captureTokenShortfallForFill(deposit);
-      }
-
+    if (!hasBalance) {
+      // The relayer has insufficient balance for a profitable fill; log it for rebalancing and request a slow fill.
+      tokenClient.captureTokenShortfallForFill(deposit);
       if (this.config.sendingSlowRelaysEnabled && fillStatus === FillStatus.Unfilled && this.canSlowFill(deposit)) {
         this.requestSlowFill(deposit);
       }
-
-      // Limit the ability of persistently-unprofitable deposits to congest the deposit/fill evaluation pipeline.
-      if (!isProfitable) {
-        profitClient.captureUnprofitableFill(deposit, realizedLpFeePct, relayerFeePct, gasCost);
-
-        if (destinationChainId !== CHAIN_IDs.SOLANA) {
-          const relayKey = sdkUtils.getRelayEventKey(deposit);
-          this.ignoredDeposits[relayKey] = true;
-        }
-      }
       return;
     }
 
-    // Deposit is known to be profitable.
-    const { blockNumber, outputToken, outputAmount } = deposit;
+    // Deposits with unknown fill amount USD should be filtered out in `Relayer.filterDeposit()`.
     const fillAmountUsd = profitClient.getFillAmountInUsd(deposit);
-    if (!isDefined(fillAmountUsd)) {
-      return;
-    }
-    const limitIdx = this.findOriginChainLimitIdx(originChainId, blockNumber);
+    assert(isDefined(fillAmountUsd), `Unknown fill amount (USD) for ${originChain} deposit ${depositId}`);
 
     // Ensure that a limit was identified, and that no upper thresholds would be breached by filling this deposit.
+    const { blockNumber, outputToken, outputAmount } = deposit;
+    const limitIdx = this.findOriginChainLimitIdx(originChainId, blockNumber);
     if (this.originChainOvercommitted(originChainId, fillAmountUsd, limitIdx)) {
       const limits = this.fillLimits[originChainId].slice(limitIdx);
-      this.logger.debug({
-        at: "Relayer::evaluateFill",
-        message: `Skipping ${originChain} deposit ${depositId} due to anticipated origin chain overcommitment.`,
-        blockNumber,
-        fillAmountUsd,
-        limits,
-        txnRef,
-      });
+      const message = `Skipping ${originChain} deposit ${depositId} due to anticipated origin chain overcommitment.`;
+      this.logger.debug({ at, message, blockNumber, fillAmountUsd, limits, txnRef });
       return;
     }
 
@@ -1045,23 +1025,6 @@ export class Relayer {
       this.logger[this.config.sendingRelaysEnabled ? "warn" : "debug"]({
         at: "Relayer::requestSlowFill",
         message: `Suppressing slow fill request for ${origin} deposit with message.`,
-        deposit: {
-          originChainId,
-          depositId,
-          txnRef: blockExplorerLink(txnRef, originChainId),
-        },
-      });
-      return;
-    }
-
-    // Wait at least n origin blocks before submitting a slow fill request.
-    // This is helpful with nonce collisions.
-    if (spokePoolClient.latestHeightSearched - deposit.blockNumber < RELAYER_SLOW_FILL_MIN_AGE) {
-      const { originChainId, depositId, txnRef } = deposit;
-      const origin = getNetworkName(originChainId);
-      this.logger[this.config.sendingRelaysEnabled ? "warn" : "debug"]({
-        at: "Relayer::requestSlowFill",
-        message: `Deferring slow fill request for recent ${origin} deposit.`,
         deposit: {
           originChainId,
           depositId,

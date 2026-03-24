@@ -20,8 +20,14 @@ export class SvmAddress extends sdk.utils.SvmAddress {}
 
 export type EvmGasPriceEstimate = sdk.gasPriceOracle.EvmGasPriceEstimate;
 
-export const { fillStatusArray, populateV3Relay, relayFillStatus, getTimestampForBlock, averageBlockTime } =
-  sdk.arch.evm;
+export const {
+  fillStatusArray,
+  findDepositBlock,
+  populateV3Relay,
+  relayFillStatus,
+  getTimestampForBlock,
+  averageBlockTime,
+} = sdk.arch.evm;
 export const {
   getAssociatedTokenAddress,
   toAddress: toKitAddress,
@@ -62,6 +68,7 @@ export const {
   forEachAsync,
   formatEther,
   formatUnits,
+  isUnsafeDepositId,
   mapAsync,
   parseUnits,
   filterAsync,
