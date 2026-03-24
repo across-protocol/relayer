@@ -20,7 +20,7 @@ import {
   getDisabledBlockRanges,
   mineRandomBlocks,
   requestSlowFill,
-  smock,
+  setupMockClients,
 } from "./utils";
 
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
@@ -116,7 +116,7 @@ describe("Dataworker: Load bundle data: Computing unexecutable slow fills", asyn
     } as interfaces.SlowFillRequestWithBlock);
   }
 
-  beforeEach(async function () {
+  async function deploy() {
     ({
       spokePool_1,
       erc20_1,
@@ -135,13 +135,23 @@ describe("Dataworker: Load bundle data: Computing unexecutable slow fills", asyn
       updateAllClients,
     } = await setupDataworker(ethers, 25, 25, 0));
     await updateAllClients();
-    mockHubPoolClient = new MockHubPoolClient(
-      hubPoolClient.logger,
-      hubPoolClient.hubPool,
-      configStoreClient,
-      hubPoolClient.deploymentBlock,
-      hubPoolClient.chainId
-    );
+  }
+
+  before(deploy);
+
+  beforeEach(async function () {
+    spy.resetHistory();
+    ({
+      mockHubPoolClient,
+      mockOriginSpokePoolClient,
+      mockDestinationSpokePoolClient,
+      mockDestinationSpokePool,
+      spokePoolClients,
+    } = await setupMockClients(
+      hubPoolClient, configStoreClient,
+      spokePoolClient_1, spokePoolClient_2, spokePoolClients,
+      l1Token_1, erc20_1, erc20_2, lpFeePct
+    ));
     mockConfigStore = new MockConfigStoreClient(
       configStoreClient.logger,
       configStoreClient.configStore,
@@ -151,32 +161,6 @@ describe("Dataworker: Load bundle data: Computing unexecutable slow fills", asyn
       undefined,
       true
     );
-    // Mock a realized lp fee pct for each deposit so we can check refund amounts and bundle lp fees.
-    mockHubPoolClient.setDefaultRealizedLpFeePct(lpFeePct);
-    mockOriginSpokePoolClient = new MockSpokePoolClient(
-      spokePoolClient_1.logger,
-      spokePoolClient_1.spokePool,
-      spokePoolClient_1.chainId,
-      spokePoolClient_1.deploymentBlock
-    );
-    mockDestinationSpokePool = await smock.fake(spokePoolClient_2.spokePool.interface);
-    mockDestinationSpokePoolClient = new MockSpokePoolClient(
-      spokePoolClient_2.logger,
-      mockDestinationSpokePool as Contract,
-      spokePoolClient_2.chainId,
-      spokePoolClient_2.deploymentBlock
-    );
-    spokePoolClients = {
-      ...spokePoolClients,
-      [originChainId]: mockOriginSpokePoolClient,
-      [destinationChainId]: mockDestinationSpokePoolClient,
-    };
-    await mockHubPoolClient.update();
-    await mockOriginSpokePoolClient.update();
-    await mockDestinationSpokePoolClient.update();
-    mockHubPoolClient.setTokenMapping(l1Token_1.address, originChainId, erc20_1.address);
-    mockHubPoolClient.setTokenMapping(l1Token_1.address, destinationChainId, erc20_2.address);
-    mockHubPoolClient.setTokenMapping(l1Token_1.address, repaymentChainId, l1Token_1.address);
     const bundleDataClient = new BundleDataClient(
       dataworkerInstance.logger,
       {
@@ -464,6 +448,8 @@ describe("Dataworker: Load bundle data: Computing unexecutable slow fills", asyn
   });
 
   describe("Tests against contract deployments", function () {
+    beforeEach(deploy);
+
     it("Filters for fast fills replacing slow fills from older bundles", async function () {
       // Generate a deposit that cannot be slow filled, to test that its ignored as a slow fill excess.
       // Generate a second deposit that can be slow filled but will be slow filled in an older bundle

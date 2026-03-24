@@ -9,7 +9,9 @@ import chaiExclude from "chai-exclude";
 import { smock } from "@defi-wonderland/smock";
 import sinon from "sinon";
 import winston from "winston";
-import { GLOBAL_CONFIG_STORE_KEYS } from "../../src/clients";
+import { ConfigStoreClient, GLOBAL_CONFIG_STORE_KEYS, HubPoolClient, SpokePoolClient } from "../../src/clients";
+import { MockHubPoolClient } from "../mocks/MockHubPoolClient";
+import { MockSpokePoolClient } from "../mocks/MockSpokePoolClient";
 import {
   Deposit,
   DepositWithBlock,
@@ -37,6 +39,9 @@ import {
   DEFAULT_BLOCK_RANGE_FOR_CHAIN,
   MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
   MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
+  destinationChainId,
+  originChainId,
+  repaymentChainId,
   sampleRateModel,
 } from "../constants";
 import { SpokePoolDeploymentResult, SpyLoggerResult } from "../types";
@@ -475,6 +480,90 @@ export function getDefaultBlockRange(toBlockOffset: number): number[][] {
 
 export function getDisabledBlockRanges(): number[][] {
   return DEFAULT_BLOCK_RANGE_FOR_CHAIN.map((range) => [range[0], range[0]]);
+}
+
+// Reset mock and real SpokePoolClients so that EventManager block counters and latestHeightSearched
+// stay in sync with the Hardhat chain. Required when the outer setupDataworker runs in a before() hook
+// rather than beforeEach(), since the EventManager is a module-level singleton that persists across tests.
+// Also mines empty blocks so that virtual block numbers used by mock events exist on-chain
+// (needed for getTimestampForBlock lookups in BundleDataClient.loadData).
+async function resetSpokePoolClients(
+  mockClients: { eventManager: { blockNumber: number } }[],
+  realClients: { latestHeightSearched: number }[]
+): Promise<void> {
+  const latestBlock = await ethers.provider.getBlockNumber();
+  for (const client of mockClients) {
+    client.eventManager.blockNumber = latestBlock;
+  }
+  for (const client of realClients) {
+    client.latestHeightSearched = latestBlock;
+  }
+  await ethers.provider.send("hardhat_mine", ["0x64"]);
+}
+
+// Create fresh mock clients for the loadData test suite. Encapsulates the repeated pattern of
+// building MockHubPoolClient, two MockSpokePoolClients (origin + destination via smock fake),
+// resetting EventManager singletons, updating mock clients, and setting token mappings.
+export async function setupMockClients(
+  hubPoolClient: HubPoolClient,
+  configStoreClient: ConfigStoreClient,
+  spokePoolClient_1: SpokePoolClient,
+  spokePoolClient_2: SpokePoolClient,
+  existingSpokePoolClients: { [chainId: number]: SpokePoolClient },
+  l1Token_1: Contract,
+  erc20_1: Contract,
+  erc20_2: Contract,
+  lpFeePct: BigNumber
+): Promise<{
+  mockHubPoolClient: MockHubPoolClient;
+  mockOriginSpokePoolClient: MockSpokePoolClient;
+  mockDestinationSpokePoolClient: MockSpokePoolClient;
+  mockDestinationSpokePool: FakeContract;
+  spokePoolClients: { [chainId: number]: SpokePoolClient };
+}> {
+  const mockHubPoolClient = new MockHubPoolClient(
+    hubPoolClient.logger,
+    hubPoolClient.hubPool,
+    configStoreClient,
+    hubPoolClient.deploymentBlock,
+    hubPoolClient.chainId
+  );
+  mockHubPoolClient.setDefaultRealizedLpFeePct(lpFeePct);
+  const mockOriginSpokePoolClient = new MockSpokePoolClient(
+    spokePoolClient_1.logger,
+    spokePoolClient_1.spokePool,
+    spokePoolClient_1.chainId,
+    spokePoolClient_1.deploymentBlock
+  );
+  const mockDestinationSpokePool = await smock.fake(spokePoolClient_2.spokePool.interface);
+  const mockDestinationSpokePoolClient = new MockSpokePoolClient(
+    spokePoolClient_2.logger,
+    mockDestinationSpokePool as Contract,
+    spokePoolClient_2.chainId,
+    spokePoolClient_2.deploymentBlock
+  );
+  const spokePoolClients = {
+    ...existingSpokePoolClients,
+    [originChainId]: mockOriginSpokePoolClient,
+    [destinationChainId]: mockDestinationSpokePoolClient,
+  };
+  await resetSpokePoolClients(
+    [mockOriginSpokePoolClient, mockDestinationSpokePoolClient],
+    [spokePoolClient_1, spokePoolClient_2]
+  );
+  await mockHubPoolClient.update();
+  await mockOriginSpokePoolClient.update();
+  await mockDestinationSpokePoolClient.update();
+  mockHubPoolClient.setTokenMapping(l1Token_1.address, originChainId, erc20_1.address);
+  mockHubPoolClient.setTokenMapping(l1Token_1.address, destinationChainId, erc20_2.address);
+  mockHubPoolClient.setTokenMapping(l1Token_1.address, repaymentChainId, l1Token_1.address);
+  return {
+    mockHubPoolClient,
+    mockOriginSpokePoolClient,
+    mockDestinationSpokePoolClient,
+    mockDestinationSpokePool,
+    spokePoolClients,
+  };
 }
 
 // A helper function to parse key - value map into a Fill object
