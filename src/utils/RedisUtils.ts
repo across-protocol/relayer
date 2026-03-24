@@ -17,11 +17,21 @@ export const REDIS_CACHEABLE_AGE = 15 * 60;
 
 export const REDIS_URL = process.env.REDIS_URL || REDIS_URL_DEFAULT;
 
-// Make the redis client for a particular url essentially a singleton.
-const redisClients: { [url: string]: RedisCache } = {};
+// Make the redis client for a particular url + namespace essentially a singleton.
+const redisClients: { [key: string]: RedisCache } = {};
 
-async function _getRedis(logger?: winston.Logger, url = REDIS_URL): Promise<RedisCache | undefined> {
-  if (!redisClients[url]) {
+async function _getRedis(
+  logger?: winston.Logger,
+  url = REDIS_URL,
+  customNamespace?: string
+): Promise<RedisCache | undefined> {
+  const namespace = customNamespace || globalNamespace;
+  const redisInstanceKey = namespace ? `${url}-${namespace}` : url;
+  if (!redisClients[redisInstanceKey]) {
+    logger?.debug({
+      at: "RedisUtils#_getRedis",
+      message: `Creating new redis client instance with key ${redisInstanceKey}`,
+    });
     let redisClient: RedisClient | undefined = undefined;
     const reconnectStrategy = (retries: number): number | Error => {
       // Set a maximum retry limit to prevent infinite reconnection attempts
@@ -55,9 +65,9 @@ async function _getRedis(logger?: winston.Logger, url = REDIS_URL): Promise<Redi
         message: `Connected to redis server at ${url} successfully!`,
         dbSize: await redisClient.dbSize(),
       });
-      redisClients[url] = new RedisCache(redisClient, globalNamespace);
+      redisClients[redisInstanceKey] = new RedisCache(redisClient, namespace);
     } catch (err) {
-      delete redisClients[url];
+      delete redisClients[redisInstanceKey];
       await disconnectRedisClient(redisClient, logger);
       logger?.debug({
         at: "RedisUtils#getRedis",
@@ -68,16 +78,20 @@ async function _getRedis(logger?: winston.Logger, url = REDIS_URL): Promise<Redi
     }
   }
 
-  return redisClients[url];
+  return redisClients[redisInstanceKey];
 }
 
-export async function getRedisCache(logger?: winston.Logger, url?: string): Promise<RedisCacheInterface | undefined> {
+export async function getRedisCache(
+  logger?: winston.Logger,
+  url?: string,
+  customNamespace?: string
+): Promise<RedisCacheInterface | undefined> {
   // Don't permit redis to be used in test.
   if (isDefined(process.env.RELAYER_TEST)) {
     return undefined;
   }
 
-  return await _getRedis(logger, url);
+  return await _getRedis(logger, url, customNamespace);
 }
 
 export async function getRedisPubSub(
@@ -149,15 +163,15 @@ export async function waitForPubSub(
 export async function disconnectRedisClients(logger?: winston.Logger): Promise<void> {
   // todo understand why redisClients aren't GCed automagically.
   const clients = Object.entries(redisClients);
-  for (const [url, client] of clients) {
+  for (const [key, client] of clients) {
     const logParams = {
       at: "RedisUtils#disconnectRedisClient",
       message: "Disconnecting from redis server.",
-      url,
+      key,
     };
     // We should delete the client from our cache object before
     // we disconnect from redis.
-    delete redisClients[url];
+    delete redisClients[key];
     // We don't want to throw an error if we can't disconnect from redis.
     // We can log the error and continue.
     try {

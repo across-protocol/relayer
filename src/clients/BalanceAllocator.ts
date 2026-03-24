@@ -11,6 +11,7 @@ import {
   getSvmProvider,
   getSolanaTokenBalance,
   getRedisCache,
+  chainHasNativeToken,
 } from "../utils";
 
 // This type is used to map used and current balances of different users.
@@ -173,7 +174,7 @@ export class BalanceAllocator {
   protected async _queryBalance(chainId: number, token: Address, holder: Address): Promise<BigNumber> {
     if (chainIsEvm(chainId)) {
       const holderAddr = holder.toNative();
-      return getNativeTokenAddressForChain(chainId).eq(token)
+      return getNativeTokenAddressForChain(chainId).eq(token) && chainHasNativeToken(chainId)
         ? await this.providers[chainId].getBalance(holderAddr)
         : await ERC20.connect(token.toNative(), this.providers[chainId]).balanceOf(holderAddr);
     } else {

@@ -2,7 +2,6 @@ import assert from "assert";
 import minimist from "minimist";
 import { Contract, utils as ethersUtils } from "ethers";
 import { BaseError, Block, createPublicClient, http, Log as viemLog, webSocket } from "viem";
-import * as chains from "viem/chains";
 import * as utils from "../../scripts/utils";
 import {
   disconnectRedisClients,
@@ -19,6 +18,7 @@ import {
   getProviderHeaders,
   getSpokePool,
   getRedisCache,
+  getViemChain,
   Logger,
   Provider,
   winston,
@@ -57,7 +57,7 @@ function resolveProviders(chainId: number, quorum = 1) {
   const nProviders = urls.length;
   assert(nProviders >= quorum, `Insufficient providers for ${chain} (minimum ${quorum} required by quorum)`);
 
-  const viemChain = Object.values(chains).find(({ id }) => id === chainId);
+  const viemChain = getViemChain(chainId);
   const providers = Object.entries(urls).map(([provider, url]) => {
     const headers = getProviderHeaders(provider, chainId);
     const transport = protocol === "wss" ? webSocket(url) : http(url, { fetchOptions: { headers } });

@@ -37,11 +37,11 @@ export async function oftRetryFinalizer(
   for (const depositInitiatedMessageChunk of chunk(depositInitiatedMessages, chunkSize)) {
     _outstandingMessages.push(
       ...(await mapAsync(depositInitiatedMessageChunk, async ({ txnRef }) => {
-        return await getLzTransactionDetails(txnRef);
+        return (await getLzTransactionDetails(txnRef)).flat();
       }))
     );
   }
-  const outstandingMessages = _outstandingMessages.map(({ data }) => data.flat()).flat();
+  const outstandingMessages = _outstandingMessages.flat();
 
   // Lz messages are executed automatically and must be retried only if their execution reverts on chain.
   const unprocessedMessages = outstandingMessages.filter(({ destination }) => destination?.status !== "SUCCEEDED");

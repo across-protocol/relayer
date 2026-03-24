@@ -164,7 +164,9 @@ export async function getProvider(
   // This only disables standard TTL caching for blocks close to HEAD.
   // To disable all caching, this option should be combined with NODE_DISABLE_NO_TTL_PROVIDER_CACHING or
   // the user should refrain from providing a valid redis instance.
-  const disableProviderCache = NODE_DISABLE_PROVIDER_CACHING === "true";
+  // This can be overridden per-chain by setting NODE_DISABLE_PROVIDER_CACHING_<chainId>=false.
+  const disableProviderCache =
+    NODE_DISABLE_PROVIDER_CACHING === "true" && process.env[`NODE_DISABLE_PROVIDER_CACHING_${chainId}`] !== "false";
 
   const providerCacheNamespace = getCacheNamespace(chainId);
 
@@ -237,6 +239,41 @@ export async function getProvider(
     providerCache[getProviderCacheKey(chainId, redisClient !== undefined)] = provider;
   }
   return provider;
+}
+
+/**
+ * @notice Constructs a SpeedProvider for the given chain ID, racing all env-configured RPC endpoints
+ * in parallel and returning the first successful response.
+ */
+export function getSpeedProvider(chainId: number, logger?: winston.Logger): sdkProviders.SpeedProvider {
+  const { NODE_TIMEOUT, PROVIDER_CACHE_TTL } = process.env;
+  const timeout = Number(process.env[`NODE_TIMEOUT_${chainId}`] || NODE_TIMEOUT || defaultTimeout);
+  const providerCacheNamespace = getCacheNamespace(chainId);
+  const pctRpcCallsLogged = getPctRpcCallsLogged(chainId);
+  const nodeMaxConcurrency = getMaxConcurrency(chainId);
+  const providerCacheTtl = PROVIDER_CACHE_TTL ? Number(PROVIDER_CACHE_TTL) : undefined;
+
+  const nodeUrls = getNodeUrlList(chainId, 1);
+  const params = Object.entries(nodeUrls).map(
+    ([provider, url]): ConstructorParameters<typeof ethers.providers.StaticJsonRpcProvider> => [
+      { url, headers: getProviderHeaders(provider, chainId), timeout, allowGzip: true },
+      chainId,
+    ]
+  );
+
+  return new sdkProviders.SpeedProvider(
+    params,
+    chainId,
+    params.length, // maxConcurrencySpeed: race all available providers
+    nodeMaxConcurrency,
+    providerCacheNamespace,
+    pctRpcCallsLogged,
+    undefined, // redisClient
+    undefined, // standardTtlBlockDistance
+    undefined, // noTtlBlockDistance
+    providerCacheTtl,
+    logger
+  );
 }
 
 /**

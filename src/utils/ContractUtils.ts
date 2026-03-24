@@ -1,5 +1,4 @@
-import * as typechain from "@across-protocol/contracts"; // TODO: refactor once we've fixed export from contract repo
-import * as beta from "@across-protocol/contracts-beta";
+import * as typechain from "@across-protocol/sdk/typechain";
 import {
   CHAIN_IDs,
   Contract,
@@ -10,6 +9,7 @@ import {
   chainIsEvm,
   SvmAddress,
   Address,
+  isDefined,
 } from ".";
 import { CONTRACT_ADDRESSES } from "../common";
 
@@ -25,10 +25,30 @@ export function getDeployedContract(contractName: string, networkId: number, sig
   }
 }
 
+export function getCounterfactualDepositImplementationAddress(chainId: number): string {
+  return CONTRACT_ADDRESSES[chainId].counterfactualDeposit.address;
+}
+
+// For a chain ID and optional CounterfactualDepositFactory address, return a Contract instance with the corresponding ABI.
+export function getCounterfactualDepositFactory(chainId: number, address?: string): Contract {
+  return new Contract(
+    address ?? CONTRACT_ADDRESSES[chainId].counterfactualDepositFactory.address,
+    CONTRACT_ADDRESSES[chainId].counterfactualDepositFactory.abi
+  );
+}
+
 // For a chain ID and optional SpokePool address, return a Contract instance with the corresponding ABI.
 export function getSpokePool(chainId: number, address?: string): Contract {
   const spokePool = getDeployedContract("SpokePool", chainId);
   return spokePool.connect(address ?? getDeployedAddress("SpokePool", chainId));
+}
+
+// For a chain ID and optional SpokePoolPeriphery address, return a Contract instance with the corresponding ABI.
+export function getSpokePoolPeriphery(chainId: number, address?: string): Contract {
+  return new Contract(
+    address ?? CONTRACT_ADDRESSES[chainId].spokePoolPeriphery.address,
+    CONTRACT_ADDRESSES[chainId].spokePoolPeriphery.abi
+  );
 }
 
 export function getSpokePoolAddress(chainId: number): Address {
@@ -58,24 +78,26 @@ export function getDeploymentBlockNumber(contractName: string, networkId: number
 // The DstOft/Cctp handler contracts only exist on HyperEVM.
 export function getDstOftHandler(): Contract {
   const factoryName = "DstOFTHandler";
-  const artifact = beta["HyperCoreFlowExecutor__factory"];
-  const address =
-    CONTRACT_ADDRESSES[CHAIN_IDs.HYPEREVM]?.dstOftHandler?.address ??
-    beta.getDeployedAddress(factoryName, CHAIN_IDs.HYPEREVM);
+  const artifact = typechain["HyperCoreFlowExecutor__factory"];
+  const address = isDefined(process.env.DST_OFT_HANDLER)
+    ? process.env.DST_OFT_HANDLER
+    : CONTRACT_ADDRESSES[CHAIN_IDs.HYPEREVM]?.dstOftHandler?.address ??
+      getDeployedAddress(factoryName, CHAIN_IDs.HYPEREVM);
   return new Contract(address, artifact.abi);
 }
 
 export function getDstCctpHandler(): Contract {
   const factoryName = "SponsoredCCTPDstPeriphery";
-  const artifact = beta["HyperCoreFlowExecutor__factory"];
-  const address =
-    CONTRACT_ADDRESSES[CHAIN_IDs.HYPEREVM]?.dstCctpHandler?.address ??
-    beta.getDeployedAddress(factoryName, CHAIN_IDs.HYPEREVM);
+  const artifact = typechain["HyperCoreFlowExecutor__factory"];
+  const address = isDefined(process.env.DST_CCTP_HANDLER)
+    ? process.env.DST_CCTP_HANDLER
+    : CONTRACT_ADDRESSES[CHAIN_IDs.HYPEREVM]?.dstCctpHandler?.address ??
+      getDeployedAddress(factoryName, CHAIN_IDs.HYPEREVM);
   return new Contract(address, artifact.abi);
 }
 
 export function getSrcOftPeriphery(chainId: number): Contract {
   const factoryName = "SponsoredOFTSrcPeriphery";
-  const artifact = beta[`${factoryName}__factory`];
-  return new Contract(beta.getDeployedAddress(factoryName, chainId), artifact.abi);
+  const artifact = typechain[`${factoryName}__factory`];
+  return new Contract(getDeployedAddress(factoryName, chainId), artifact.abi);
 }

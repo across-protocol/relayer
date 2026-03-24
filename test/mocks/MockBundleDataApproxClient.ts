@@ -30,7 +30,7 @@ export class MockBundleDataApproxClient extends BundleDataApproxClient {
 
   // Return the next starting block for each chain following the bundle end block of the last executed bundle that
   // was relayed to that chain.
-  protected getUnexecutedBundleStartBlocks(): { [chainId: number]: number } {
-    return super.getUnexecutedBundleStartBlocks();
+  override getUnexecutedBundleStartBlocks(l1Token: Address, requireExecution: boolean): { [chainId: number]: number } {
+    return super.getUnexecutedBundleStartBlocks(l1Token, requireExecution);
   }
 }

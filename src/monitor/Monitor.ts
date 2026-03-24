@@ -61,6 +61,7 @@ import {
   getKitKeypairFromEvmSigner,
   getRelayDataFromFill,
   sortEventsAscending,
+  chainHasNativeToken,
 } from "../utils";
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
 import { MonitorConfig, L2Token } from "./MonitorConfig";
@@ -283,8 +284,8 @@ export class Monitor {
       const deposit = invalidFill.deposit
         ? {
             txnRef: invalidFill.deposit.txnRef,
-            inputToken: invalidFill.deposit.inputToken.toNative(),
-            depositor: invalidFill.deposit.depositor.toNative(),
+            inputToken: invalidFill.deposit.inputToken,
+            depositor: invalidFill.deposit.depositor,
           }
         : undefined;
 
@@ -292,8 +293,8 @@ export class Monitor {
         at: "Monitor::reportInvalidFills",
         message,
         destinationChainId,
-        outputToken: invalidFill.fill.outputToken.toNative(),
-        relayer: invalidFill.fill.relayer.toNative(),
+        outputToken: invalidFill.fill.outputToken,
+        relayer: invalidFill.fill.relayer,
         blockExplorerLink: blockExplorerLink(invalidFill.fill.txnRef, destinationChainId),
         reason: invalidFill.reason,
         deposit,
@@ -1237,6 +1238,7 @@ export class Monitor {
     await Promise.all(
       this.monitorConfig.monitoredRelayers.map(async (relayer) => {
         await this.updatePendingL2Withdrawals(relayer, relayerBalanceReport[relayer.toNative()]);
+        await this.updatePendingRebalances(relayer, relayerBalanceReport[relayer.toNative()]);
       })
     );
   }
@@ -1280,23 +1282,25 @@ export class Monitor {
       // getTotalPendingWithdrawalAmount() async call is getting rate limited by the Binance API.
       // We should add more rate limiting or retry logic to this call.
     );
+    const allPendingWithdrawalBalances: { [l1Token: string]: { [chainId: number]: BigNumber } } = {};
     await Promise.all(
       allL1Tokens.map(async (l1Token) => {
         const pendingWithdrawalBalances =
           await this.clients.crossChainTransferClient.adapterManager.getTotalPendingWithdrawalAmount(
-            7200,
             supportedChains,
             relayer,
             l1Token.address
           );
+        allPendingWithdrawalBalances[l1Token.symbol] = pendingWithdrawalBalances;
         for (const _chainId of Object.keys(pendingWithdrawalBalances)) {
           const chainId = Number(_chainId);
           if (pendingWithdrawalBalances[chainId].eq(bnZero)) {
             continue;
           }
           if (!this.clients.crossChainTransferClient.adapterManager.l2TokenExistForL1Token(l1Token.address, chainId)) {
-            return;
+            continue;
           }
+
           const l2Token = this.clients.crossChainTransferClient.adapterManager.l2TokenForL1Token(
             l1Token.address,
             chainId
@@ -1314,6 +1318,67 @@ export class Monitor {
         }
       })
     );
+    this.logger.debug({
+      at: "Monitor#updatePendingL2Withdrawals",
+      message: "Updated pending L2->L1 withdrawals",
+      allPendingWithdrawalBalances,
+    });
+  }
+
+  async updatePendingRebalances(relayer: Address, relayerBalanceTable: RelayerBalanceTable): Promise<void> {
+    // Rebalancer integration is optional in monitor; if absent, treat as no pending rebalances.
+    if (!isDefined(this.clients.rebalancerClient)) {
+      return;
+    }
+
+    let pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } };
+    try {
+      pendingRebalances = await this.clients.rebalancerClient.getPendingRebalances();
+    } catch (error) {
+      this.logger.warn({
+        at: "Monitor#updatePendingRebalances",
+        message: "Unable to fetch pending rebalances; defaulting to zero",
+        error,
+      });
+      return;
+    }
+
+    const l1TokenBySymbol = Object.fromEntries(
+      this.getL1TokensForRelayerBalancesReport().map((token) => [token.symbol, token])
+    );
+    for (const [_chainId, tokenBalances] of Object.entries(pendingRebalances)) {
+      const chainId = Number(_chainId);
+      if (!this.monitorChains.includes(chainId)) {
+        continue;
+      }
+      for (const [tokenSymbol, amount] of Object.entries(tokenBalances)) {
+        if (amount.eq(bnZero)) {
+          continue;
+        }
+        const l1Token = l1TokenBySymbol[tokenSymbol];
+        if (!isDefined(l1Token)) {
+          continue;
+        }
+        const l2TokenAddress = this.getRemoteTokenForL1Token(l1Token.address, chainId);
+        if (!isDefined(l2TokenAddress)) {
+          continue;
+        }
+        const l2ToL1DecimalConverter = this.l2TokenAmountToL1TokenAmountConverter(l2TokenAddress, chainId);
+        this.updateRelayerBalanceTable(
+          relayerBalanceTable,
+          l1Token.symbol,
+          getNetworkName(chainId),
+          BalanceType.PENDING_TRANSFERS,
+          l2ToL1DecimalConverter(amount)
+        );
+      }
+    }
+    this.logger.debug({
+      at: "Monitor#updatePendingRebalances",
+      message: "Updated pending rebalance credits",
+      relayer,
+      pendingRebalances,
+    });
   }
 
   getTotalTransferAmount(transfers: TokenTransfer[]): BigNumber {
@@ -1513,18 +1578,19 @@ export class Monitor {
         const spokePoolClient = this.clients.spokePoolClients[chainId];
         if (isEVMSpokePoolClient(spokePoolClient)) {
           const gasTokenAddressForChain = getNativeTokenAddressForChain(chainId);
-          const balance = token.eq(gasTokenAddressForChain)
-            ? await spokePoolClient.spokePool.provider.getBalance(account.toEvmAddress())
-            : // Use the latest block number the SpokePoolClient is aware of to query balances.
-              // This prevents double counting when there are very recent refund leaf executions that the SpokePoolClients
-              // missed (the provider node did not see those events yet) but when the balanceOf calls are made, the node
-              // is now aware of those executions.
-              await new Contract(token.toEvmAddress(), ERC20.abi, spokePoolClient.spokePool.provider).balanceOf(
-                account.toEvmAddress(),
-                {
-                  blockTag: spokePoolClient.latestHeightSearched,
-                }
-              );
+          const balance =
+            token.eq(gasTokenAddressForChain) && chainHasNativeToken(chainId)
+              ? await spokePoolClient.spokePool.provider.getBalance(account.toEvmAddress())
+              : // Use the latest block number the SpokePoolClient is aware of to query balances.
+                // This prevents double counting when there are very recent refund leaf executions that the SpokePoolClients
+                // missed (the provider node did not see those events yet) but when the balanceOf calls are made, the node
+                // is now aware of those executions.
+                await new Contract(token.toEvmAddress(), ERC20.abi, spokePoolClient.spokePool.provider).balanceOf(
+                  account.toEvmAddress(),
+                  {
+                    blockTag: spokePoolClient.latestHeightSearched,
+                  }
+                );
           this.balanceCache[chainId] ??= {};
           this.balanceCache[chainId][token.toBytes32()] ??= {};
           this.balanceCache[chainId][token.toBytes32()][account.toBytes32()] = balance;

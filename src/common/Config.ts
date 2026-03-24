@@ -14,6 +14,7 @@ export class CommonConfig {
   readonly maxBlockLookBack: { [key: number]: number };
   readonly maxTxWait: number;
   readonly spokePoolChainsOverride: number[];
+  readonly l1TokensOverride: string[];
   readonly sendingTransactionsEnabled: boolean;
   readonly maxRelayerLookBack: number;
   readonly version: string;
@@ -38,6 +39,7 @@ export class CommonConfig {
       MAX_BLOCK_LOOK_BACK,
       SEND_TRANSACTIONS,
       SPOKE_POOL_CHAINS_OVERRIDE,
+      L1_TOKENS_OVERRIDE,
       ACROSS_BOT_VERSION,
       ACROSS_MAX_CONFIG_VERSION,
       HUB_POOL_TIME_TO_CACHE,
@@ -77,6 +79,7 @@ export class CommonConfig {
     this.maxRelayerLookBack = Number(MAX_RELAYER_DEPOSIT_LOOK_BACK ?? Constants.MAX_RELAYER_DEPOSIT_LOOK_BACK);
     this.pollingDelay = Number(POLLING_DELAY ?? 60);
     this.spokePoolChainsOverride = JSON.parse(SPOKE_POOL_CHAINS_OVERRIDE ?? "[]");
+    this.l1TokensOverride = JSON.parse(L1_TOKENS_OVERRIDE ?? "[]");
 
     // Inherit the default eth_getLogs block range config, then sub in any env-based overrides.
     this.maxBlockLookBack = mergeConfig(Constants.CHAIN_MAX_BLOCK_LOOKBACK, MAX_BLOCK_LOOK_BACK);
