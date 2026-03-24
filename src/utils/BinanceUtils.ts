@@ -381,7 +381,7 @@ export async function getAccountCoins(
       message: "Binance accountCoins API failed; returning null.",
       errorMessage: err,
     };
-    logger.error(logMeta);
+    logger.warn(logMeta);
     if (BINANCE_EMPTY_RESPONSE_ERROR_PATTERNS.some((r) => err.includes(r) || stringError.includes(r))) {
       return null;
     }
