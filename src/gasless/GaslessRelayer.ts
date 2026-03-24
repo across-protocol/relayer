@@ -703,6 +703,7 @@ export class GaslessRelayer {
     }
 
     const isSwap = depositMessage.depositFlowType === "swapAndBridge";
+    // Bridge and swapAndBridge have different path to the destinationChainId field.
     const destinationChainId = isSwap
       ? depositMessage.depositData.destinationChainId
       : depositMessage.baseDepositData.destinationChainId;
