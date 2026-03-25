@@ -52,6 +52,7 @@ import {
   toAddressType,
   Address,
   EvmAddress,
+  SvmAddress,
   assert,
   getBinanceApiClient,
   getBinanceWithdrawalLimits,
@@ -1229,7 +1230,6 @@ export class Monitor {
 
     for (const relayer of this.monitorConfig.monitoredRelayers) {
       // Query all ALTs owned by this relayer address.
-      const relayerAddress = address(relayer.toBase58());
       const accounts = await svmRpc
         .getProgramAccounts(ADDRESS_LOOKUP_TABLE_PROGRAM_ADDRESS, {
           encoding: "base64",
@@ -1260,10 +1260,10 @@ export class Monitor {
         }
 
         // We can only close ALTs where the authority matches our signer.
-        if (relayerAddress !== signer.address) {
+        if (!relayer.eq(SvmAddress.from(signer.address))) {
           this.logger.debug({
             at: "Monitor#closeALTs",
-            message: `Cannot close ALT ${pubkey} — authority ${relayerAddress} does not match signer ${signer.address}`,
+            message: `Cannot close ALT ${pubkey} — authority ${relayer} does not match signer ${signer.address}`,
           });
           skippedCount++;
           continue;
@@ -1291,11 +1291,11 @@ export class Monitor {
               at: "Monitor#closeALTs",
               message: `Simulated closing ALT ${pubkey} (deactivated at slot ${deactivationSlot})`,
             });
-          } catch (error) {
+          } catch (err) {
             this.logger.warn({
               at: "Monitor#closeALTs",
               message: `Failed to simulate closing ALT ${pubkey}`,
-              error,
+              e: err,
             });
           }
           continue;
@@ -1313,7 +1313,7 @@ export class Monitor {
           this.logger.warn({
             at: "Monitor#closeALTs",
             message: `Failed to close ALT ${pubkey}`,
-            error: err,
+            e: err,
           });
         }
       }
