@@ -197,7 +197,7 @@ const resolveChainBundleBuffers = () => {
   return Object.fromEntries(
     Object.entries(PUBLIC_NETWORKS).map(([_chainId, { family }]) => {
       const chainId = Number(_chainId);
-      const buffer = chainIsProd(chainId) ? buffers[chainId] ?? defaultBuffers[family] ?? DEFAULT_CHAIN_BUFFER : 0;
+      const buffer = chainIsProd(chainId) ? (buffers[chainId] ?? defaultBuffers[family] ?? DEFAULT_CHAIN_BUFFER) : 0;
       return [chainId, buffer];
     })
   );
@@ -250,7 +250,7 @@ const resolveChainCacheDelay = () => {
   return Object.fromEntries(
     Object.entries(PUBLIC_NETWORKS).map(([_chainId, { family }]) => {
       const chainId = Number(_chainId);
-      const buffer = chainIsProd(chainId) ? cacheDelay[chainId] ?? cacheDelays[family] ?? DEFAULT_CACHE_DELAY : 0;
+      const buffer = chainIsProd(chainId) ? (cacheDelay[chainId] ?? cacheDelays[family] ?? DEFAULT_CACHE_DELAY) : 0;
       return [chainId, buffer];
     })
   );

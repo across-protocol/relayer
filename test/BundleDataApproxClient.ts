@@ -64,12 +64,10 @@ describe("BundleDataApproxClient: Accounting for unexecuted, upcoming relayer re
 
     const { hubPool, dai: l1Token } = await hubPoolFixture();
     const { configStore } = await deployConfigStore(owner, [l1Token]);
-    const { spokePool: spokePool_MAINNET, deploymentBlock: deploymentBlock_MAINNET } = await deploySpokePoolWithToken(
-      MAINNET
-    );
-    const { spokePool: spokePool_OPTIMISM, deploymentBlock: deploymentBlock_OPTIMISM } = await deploySpokePoolWithToken(
-      OPTIMISM
-    );
+    const { spokePool: spokePool_MAINNET, deploymentBlock: deploymentBlock_MAINNET } =
+      await deploySpokePoolWithToken(MAINNET);
+    const { spokePool: spokePool_OPTIMISM, deploymentBlock: deploymentBlock_OPTIMISM } =
+      await deploySpokePoolWithToken(OPTIMISM);
     const { spokePool: spokePool_BSC, deploymentBlock: deploymentBlock_BSC } = await deploySpokePoolWithToken(BSC);
 
     configStoreClient = new MockConfigStoreClient(spyLogger, configStore);
