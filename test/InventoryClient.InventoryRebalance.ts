@@ -675,7 +675,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
 
     it("Correct normalizes pending rebalances to L1 token decimals", async function () {
       const testChain = CHAIN_IDs.OPTIMISM;
-      hubPoolClient.mapTokenInfo(toAddressType(bridgedUSDC[testChain], testChain), "USDC", 18);
+      hubPoolClient.mapTokenInfo(toAddressType(nativeUSDC[testChain], testChain), "USDC", 18);
 
       // Pending rebalance should be in chain decimals:
       const pendingRebalanceAmount = toWei("1");
@@ -686,9 +686,36 @@ describe("InventoryClient: Rebalancing inventory", async function () {
       const expectedBalance = toMegaWei("1");
       expect(
         inventoryClient
-          .getBalanceOnChain(testChain, EvmAddress.from(mainnetUsdc), toAddressType(bridgedUSDC[testChain], testChain))
+          .getBalanceOnChain(testChain, EvmAddress.from(mainnetUsdc), toAddressType(nativeUSDC[testChain], testChain))
           .eq(expectedBalance)
       ).to.be.true;
+    });
+
+    it("Includes pending rebalances once in aggregate chain balances", async function () {
+      const testChain = CHAIN_IDs.OPTIMISM;
+      const canonicalL2Token = toAddressType(nativeUSDC[testChain], testChain);
+      const nonCanonicalL2Token = toAddressType(bridgedUSDC[testChain], testChain);
+      hubPoolClient.mapTokenInfo(canonicalL2Token, "USDC", 18);
+      tokenClient.setTokenData(testChain, canonicalL2Token, toWei("2000"));
+
+      const bridgedBalance = toMegaWei("2");
+      tokenClient.setTokenData(testChain, nonCanonicalL2Token, bridgedBalance);
+
+      const pendingRebalanceAmount = toWei("1");
+      mockRebalancerClient.setPendingRebalance(testChain, "USDC", pendingRebalanceAmount);
+      await inventoryClient.update();
+
+      const aggregateBalance = inventoryClient.getBalanceOnChain(testChain, EvmAddress.from(mainnetUsdc));
+      const canonicalBalance = inventoryClient.getBalanceOnChain(testChain, EvmAddress.from(mainnetUsdc), canonicalL2Token);
+      const nonCanonicalBalance = inventoryClient.getBalanceOnChain(
+        testChain,
+        EvmAddress.from(mainnetUsdc),
+        nonCanonicalL2Token
+      );
+
+      expect(aggregateBalance).to.eq(toMegaWei("2003"));
+      expect(canonicalBalance).to.eq(toMegaWei("2001"));
+      expect(nonCanonicalBalance).to.eq(bridgedBalance);
     });
 
     it("Correctly sums 1:many token balances", async function () {

@@ -284,7 +284,11 @@ export class InventoryClient {
     // mapped to each L1 token (i.e. the L2 token for an L1 token returned by getRemoteTokenForL1Token())
     const pendingRebalancesForChain = this.pendingRebalances[chainId];
     const canonicalL2Token = getRemoteTokenForL1Token(l1Token, chainId, this.hubPoolClient.chainId);
-    if (isDefined(pendingRebalancesForChain) && isDefined(canonicalL2Token) && l2Token.eq(canonicalL2Token)) {
+    if (
+      isDefined(pendingRebalancesForChain) &&
+      isDefined(canonicalL2Token) &&
+      (!isDefined(l2Token) || l2Token.eq(canonicalL2Token))
+    ) {
       const { decimals: l2TokenDecimals } = this.getTokenInfo(canonicalL2Token, chainId);
       const pendingRebalancesForToken = pendingRebalancesForChain[l1TokenSymbol];
       if (isDefined(pendingRebalancesForToken)) {
