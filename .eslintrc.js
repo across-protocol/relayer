@@ -36,7 +36,10 @@ module.exports = {
     "n/no-unsupported-features/es-syntax": ["error", { ignores: ["modules"] }],
     "@typescript-eslint/no-explicit-any": "error",
     // Disable warnings for { a, b, ...rest } variables, since this is typically used to remove variables.
-    "@typescript-eslint/no-unused-vars": ["error", { ignoreRestSiblings: true, argsIgnorePattern: "^_", caughtErrorsIgnorePattern: "^_" }],
+    "@typescript-eslint/no-unused-vars": [
+      "error",
+      { ignoreRestSiblings: true, argsIgnorePattern: "^_", caughtErrorsIgnorePattern: "^_" },
+    ],
     "chai-expect/missing-assertion": 2,
     "no-duplicate-imports": "error",
     "@typescript-eslint/no-floating-promises": ["error"],
