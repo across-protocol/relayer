@@ -1140,8 +1140,8 @@ export class InventoryClient {
         log({
           at: "InventoryClient",
           message,
-          l1Token: l1Token.toNative(),
-          l2Token: l2Token.toNative(),
+          l1Token,
+          l2Token,
           l2ChainId: chainId,
           balance,
           currentBalance,
@@ -1160,20 +1160,8 @@ export class InventoryClient {
 
     // Extract unexecutable rebalances for logging.
     this.log("Considered inventory rebalances", {
-      rebalancesRequired: rebalancesRequired.map((rebalance) => {
-        return {
-          ...rebalance,
-          l1Token: rebalance.l1Token.toNative(),
-          l2Token: rebalance.l2Token.toNative(),
-        };
-      }),
-      possibleRebalances: possibleRebalances.map((rebalance) => {
-        return {
-          ...rebalance,
-          l1Token: rebalance.l1Token.toNative(),
-          l2Token: rebalance.l2Token.toNative(),
-        };
-      }),
+      rebalancesRequired,
+      possibleRebalances,
     });
 
     // Finally, execute the rebalances.
@@ -1504,8 +1492,8 @@ export class InventoryClient {
               shouldWithdrawExcess ? "HAS EXCESS ✅" : "NO EXCESS ❌"
             }`,
             {
-              l1Token: l1Token.toEvmAddress(),
-              l2Token: l2Token.toNative(),
+              l1Token,
+              l2Token,
               cumulativeBalance: formatter(cumulativeBalance),
               currentAllocPct: formatUnits(currentAllocPct, 18),
               excessWithdrawThresholdPct: formatUnits(excessWithdrawThresholdPct, 18),
@@ -1590,17 +1578,7 @@ export class InventoryClient {
       return;
     } else {
       this.log("Excess balances to withdraw", {
-        withdrawalsRequired: Object.entries(withdrawalsRequired).map(([chainIds, withdrawals]) => {
-          return [
-            chainIds,
-            withdrawals.map((withdrawal) => {
-              return {
-                ...withdrawal,
-                l2Token: withdrawal.l2Token.toNative(),
-              };
-            }),
-          ];
-        }),
+        withdrawalsRequired,
       });
     }
 
