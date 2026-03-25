@@ -48,7 +48,7 @@ export function getInventoryEquivalentL1TokenAddress(
     const remappedSymbol = TOKEN_EQUIVALENCE_REMAPPING[symbol] ?? symbol;
     const l1TokenAddress = TOKEN_SYMBOLS_MAP[remappedSymbol]?.addresses[hubChainId];
     if (!isDefined(l1TokenAddress)) {
-      throw new Error(`Unable to resolve inventory-equivalent L1 token for ${l2Token.toNative()} on chain ${chainId}`);
+      throw new Error(`Unable to resolve inventory-equivalent L1 token for ${l2Token} on chain ${chainId}`);
     }
     return EvmAddress.from(l1TokenAddress);
   }
