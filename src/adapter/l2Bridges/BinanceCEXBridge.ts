@@ -134,7 +134,10 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
       // If the deposited coin address is not in the cache, make a fresh RPC call to get the deposit address.
       // @dev if deposit is for a different chain than this.l2Chain, then we need to use the provider for that chain to get the transaction receipt.
       const l2ChainId = Object.entries(BINANCE_NETWORKS).find(([, network]) => network === deposit.network)?.[0];
-      assert(isDefined(l2ChainId), `Could not find chain ID for network ${deposit.network} in BINANCE_NETWORKS`);
+      if (!isDefined(l2ChainId)) {
+        // Deposit network needs to be added to BINANCE_NETWORKS.
+        return false;
+      }
       const l2ProviderForDepositChain =
         Number(l2ChainId) === this.l2chainId ? this.l2Signer.provider : await getProvider(Number(l2ChainId));
       const txnReceipt = await l2ProviderForDepositChain.getTransactionReceipt(deposit.txId);
