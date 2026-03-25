@@ -60,14 +60,14 @@ export type BinanceDeposit = {
   network: string;
   // The transaction hash of the deposit.
   txId: string;
-  // The timestamp of the event.
-  timestamp: number;
+  // The timestamp that Binance assigns the deposit.
+  insertTime: number;
   // The status of the deposit/withdrawal.
   status?: number;
 };
 
 // A BinanceWithdrawal is a simplified element of the return type of the Binance API's `withdrawHistory`.
-export type BinanceWithdrawal = BinanceDeposit & {
+export type BinanceWithdrawal = Omit<BinanceDeposit, "insertTime"> & {
   // The recipient of `coin` on the destination network.
   recipient: string;
   // The unique withdrawal ID.
@@ -258,7 +258,7 @@ export async function getBinanceDeposits(
       network: deposit.network,
       txId: deposit.txId,
       status: deposit.status,
-      timestamp: deposit.insertTime,
+      insertTime: deposit.insertTime,
     } satisfies BinanceDeposit;
   });
 }
@@ -297,7 +297,6 @@ export async function getBinanceWithdrawals(
       network: withdrawal.network,
       status: withdrawal.status,
       applyTime: withdrawal.applyTime,
-      timestamp: new Date(withdrawal.applyTime).getTime(),
     } satisfies BinanceWithdrawal;
   });
 }
@@ -371,7 +370,7 @@ export function getOutstandingBinanceDeposits(
   // There is outstanding deposited amount, so iterate through deposits from newest to oldest
   // (newest deposits are most likely to be the ones not yet finalized) until we've accounted for
   // all outstanding volume.
-  const sortedDepositsNewestFirst = deposits.slice().sort((a, b) => b.timestamp - a.timestamp);
+  const sortedDepositsNewestFirst = deposits.slice().sort((a, b) => b.insertTime - a.insertTime);
   const outstandingDeposits: BinanceDeposit[] = [];
   for (const deposit of sortedDepositsNewestFirst) {
     if (remainingOutstanding <= 0) {
