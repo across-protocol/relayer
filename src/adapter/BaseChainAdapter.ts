@@ -23,7 +23,7 @@ import {
   forEachAsync,
   filterAsync,
   mapAsync,
-  getL1TokenAddress,
+  getInventoryEquivalentL1TokenAddress,
   getBlockForTimestamp,
   getCurrentTime,
   bnZero,
@@ -38,8 +38,6 @@ import {
   sendAndConfirmSolanaTransaction,
   getSvmProvider,
   submitTransaction,
-  getTokenInfo,
-  ZERO_ADDRESS,
 } from "../utils";
 import { AugmentedTransaction, TransactionClient } from "../clients/TransactionClient";
 import {
@@ -554,7 +552,7 @@ export class BaseChainAdapter {
           );
           const finalizedAmounts = depositFinalizedResults?.[l2Token]?.map((event) => event.amount.toString()) ?? [];
           const outstandingInitiatedEvents: typeof trackedInitiatedEvents = [];
-          const _totalAmount = trackedInitiatedEvents.reduce((acc, event) => {
+          const totalAmount = trackedInitiatedEvents.reduce((acc, event) => {
             // Remove the first match. This handles scenarios where are collisions by amount.
             const index = finalizedAmounts.indexOf(event.amount.toString());
             if (index > -1) {
@@ -564,10 +562,12 @@ export class BaseChainAdapter {
             outstandingInitiatedEvents.push(event);
             return acc.add(event.amount);
           }, bnZero);
-          assign(outstandingTransfers, [monitoredAddress.toNative(), l1Token.toNative(), l2Token], {
-            totalAmount: _totalAmount.gt(bnZero) ? _totalAmount : bnZero,
-            depositTxHashes: outstandingInitiatedEvents.map((event) => event.txnRef),
-          });
+          if (totalAmount.gt(0) && outstandingInitiatedEvents.length > 0) {
+            assign(outstandingTransfers, [monitoredAddress.toNative(), l1Token.toNative(), l2Token], {
+              totalAmount,
+              depositTxHashes: outstandingInitiatedEvents.map((event) => event.txnRef),
+            });
+          }
         });
       });
     });
@@ -576,11 +576,6 @@ export class BaseChainAdapter {
   }
 
   private getL1TokenAddress(l2Token: Address, chainId: number): EvmAddress {
-    const tokenInfo = getTokenInfo(l2Token, chainId);
-    // @todo Fix w/ equivalence remapping?
-    if (tokenInfo.symbol === "pathUSD") {
-      return EvmAddress.from(ZERO_ADDRESS /* TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]*/);
-    }
-    return getL1TokenAddress(l2Token, chainId);
+    return getInventoryEquivalentL1TokenAddress(l2Token, chainId, this.hubChainId);
   }
 }
