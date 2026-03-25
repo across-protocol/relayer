@@ -33,7 +33,7 @@ export class MockBundleDataApproxClient extends BundleDataApproxClient {
   }
 
   // Expose for unit testing
-  override getUnexecutedBundleStartBlocks(l1Token: Address): { [chainId: number]: number } {
-    return super.getUnexecutedBundleStartBlocks(l1Token);
+  override getUnexecutedBundleStartBlocks(l1Token: Address, requireExecution: boolean): { [chainId: number]: number } {
+    return super.getUnexecutedBundleStartBlocks(l1Token, requireExecution);
   }
 }

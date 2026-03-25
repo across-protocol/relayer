@@ -402,7 +402,10 @@ describe("BundleDataApproxClient: Accounting for unexecuted, upcoming relayer re
       configStoreClient.setAvailableChains([MAINNET, OPTIMISM, BSC]);
 
       // When there are no RootBundleRelay/ProposedRootBundle events, returns 0 for all chains.
-      const defaultFromBlocks = (bundleDataClient as MockBundleDataApproxClient).getUnexecutedBundleStartBlocks(l1Weth);
+      const defaultFromBlocks = (bundleDataClient as MockBundleDataApproxClient).getUnexecutedBundleStartBlocks(
+        l1Weth,
+        true
+      );
       expect(defaultFromBlocks[MAINNET]).to.equal(0);
       expect(defaultFromBlocks[OPTIMISM]).to.equal(0);
       expect(defaultFromBlocks[BSC]).to.equal(0);
@@ -435,7 +438,7 @@ describe("BundleDataApproxClient: Accounting for unexecuted, upcoming relayer re
         txnRef: "0x",
       });
 
-      const fromBlocks1 = (bundleDataClient as MockBundleDataApproxClient).getUnexecutedBundleStartBlocks(l1Weth);
+      const fromBlocks1 = (bundleDataClient as MockBundleDataApproxClient).getUnexecutedBundleStartBlocks(l1Weth, true);
 
       // Only the spoke pool clients that saw the RootBundleRelay events should have non-zero fromBlocks.
       expect(fromBlocks1[MAINNET]).to.equal(4);
