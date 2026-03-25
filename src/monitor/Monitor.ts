@@ -514,7 +514,7 @@ export class Monitor {
             tokenTotal = tokenTotal.add(totalBalance);
 
             // Skip rows where all value columns are zero.
-            if (currentBalance.gt(0) || pending.gt(0)) {
+            if (!currentBalance.isZero() || !pending.isZero()) {
               rows.push({
                 chain: getNetworkName(chainId),
                 token: l2Symbol,
@@ -525,7 +525,7 @@ export class Monitor {
             }
 
             // Machine-readable debug log — skip zero-balance entries.
-            if (totalBalance.gt(0)) {
+            if (!totalBalance.isZero()) {
               this.logger.debug({
                 at: "Monitor#reportRelayerBalances",
                 message: "Machine-readable single balance report",
