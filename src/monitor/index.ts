@@ -68,6 +68,12 @@ export async function runMonitor(_logger: winston.Logger, baseSigner: Signer): P
         logger.debug({ at: "Monitor#index", message: "Close PDAs disabled" });
       }
 
+      if (config.botModes.closeALTsEnabled) {
+        await acrossMonitor.closeALTs();
+      } else {
+        logger.debug({ at: "Monitor#index", message: "Close ALTs disabled" });
+      }
+
       if (config.botModes.reportOpenHyperliquidOrders) {
         await acrossMonitor.reportOpenHyperliquidOrders();
       } else {
