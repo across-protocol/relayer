@@ -5,7 +5,6 @@ import {
   createFormatFunction,
   EventSearchConfig,
   getNetworkName,
-  isDefined,
   Signer,
   EvmAddress,
   getBinanceApiClient,
@@ -23,8 +22,6 @@ import {
   BinanceTransactionType,
   getBinanceWithdrawalType,
   getOutstandingBinanceDeposits,
-  getRedisCache,
-  getProvider,
 } from "../../utils";
 import { L1Token } from "../../interfaces";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
@@ -119,42 +116,7 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
       );
     });
 
-    // Filter deposits down to the single EOA we expect to use for this coin. On cache miss, resolve
-    // the sender once from the first deposit receipt we can read, then reuse it for the whole batch.
-    const redisCache = await getRedisCache();
-    const binanceWithdrawalAddressKey = `binance-withdrawal-address:${this.l1TokenInfo.symbol}`;
-    let binanceWithdrawalAddress = await redisCache.get<string>(binanceWithdrawalAddressKey);
-    if (!isDefined(binanceWithdrawalAddress)) {
-      for (const deposit of depositHistory) {
-        // @dev if deposit is for a different chain than this.l2Chain, then we need to use the provider for that chain to get the transaction receipt.
-        // Since all deposits for the same coin should use the same EOA, a single successful lookup is enough.
-        const l2ChainId = Object.entries(BINANCE_NETWORKS).find(([, network]) => network === deposit.network)?.[0];
-        if (!isDefined(l2ChainId)) {
-          continue;
-        }
-        const l2ProviderForDepositChain =
-          Number(l2ChainId) === this.l2chainId ? this.l2Signer.provider : await getProvider(Number(l2ChainId));
-        const txnReceipt = await l2ProviderForDepositChain.getTransactionReceipt(deposit.txId);
-        if (isDefined(txnReceipt?.from)) {
-          binanceWithdrawalAddress = txnReceipt.from;
-          // The default caching TTL is 2 weeks which should be plenty assuming we don't change the EOA
-          // address that we deposit this coin from frequently.
-          await redisCache.set(binanceWithdrawalAddressKey, txnReceipt.from);
-          break;
-        }
-      }
-    }
-
-    const depositsInitiatedForAddress =
-      isDefined(binanceWithdrawalAddress) && compareAddressesSimple(binanceWithdrawalAddress, fromAddress.toNative())
-        ? depositHistory
-        : [];
-
-    const unmatchedDeposits = getOutstandingBinanceDeposits(
-      depositsInitiatedForAddress,
-      withdrawHistory,
-      this.depositNetwork
-    );
+    const unmatchedDeposits = getOutstandingBinanceDeposits(depositHistory, withdrawHistory, this.depositNetwork);
     return unmatchedDeposits.reduce((sum, deposit) => sum.add(floatToBN(deposit.amount, l2TokenInfo.decimals)), bnZero);
   }
 
