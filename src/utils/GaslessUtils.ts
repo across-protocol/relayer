@@ -356,12 +356,12 @@ export async function isPermit2NonceUsed(
     CONTRACT_ADDRESSES[originChainId].permit2.abi,
     provider
   );
-  const nonce = BigInt(BigNumber.from(permitNonce.trim()).toString());
-  const wordPos = nonce >> 8n;
-  const bitPos = Number(nonce & 0xffn);
-  const bitmapBn = await permit2.nonceBitmap(owner, BigNumber.from(wordPos.toString()));
-  const bitmap = BigInt(bitmapBn.toString());
-  return (bitmap & (1n << BigInt(bitPos))) !== 0n;
+  const nonce = toBN(permitNonce);
+  const wordPos = nonce.div(256);
+  const bitPos = nonce.mod(256).toBigInt();
+  const bitmapBn = await permit2.nonceBitmap(owner, wordPos);
+  const bitmap = bitmapBn.toBigInt();
+  return (bitmap & (1n << bitPos)) !== 0n;
 }
 
 /**
