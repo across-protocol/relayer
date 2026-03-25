@@ -525,7 +525,7 @@ export class Monitor {
             }
 
             // Machine-readable debug log — skip zero-balance entries.
-            if (~totalBalance.isZero()) {
+            if (!totalBalance.isZero()) {
               this.logger.debug({
                 at: "Monitor#reportRelayerBalances",
                 message: "Machine-readable single balance report",
