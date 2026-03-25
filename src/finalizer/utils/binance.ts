@@ -70,10 +70,12 @@ export async function binanceFinalizer(
   ]);
   const fromTimestamp = _fromTimestamp * 1_000;
 
-  const [_binanceDeposits, accountCoins] = await Promise.all([
+  const [_binanceDeposits, _accountCoins] = await Promise.all([
     getBinanceDeposits(binanceApi, fromTimestamp),
-    getAccountCoins(binanceApi),
+    getAccountCoins(binanceApi, logger),
   ]);
+  // Normalize null (API failure) to [] so the rest of the code can safely iterate; no coin will match.
+  const accountCoins = _accountCoins ?? [];
   // Remove any _binanceDeposits that are marked as related to a swap. The reason why we check "!== SWAP" instead of
   // "=== BRIDGE" is because we want this code to be backwards compatible with the existing inventory client logic which
   // does not yet tag deposits with this BRIDGE type.
@@ -114,7 +116,7 @@ export async function binanceFinalizer(
         });
         continue;
       }
-      let coinBalance = Number(coin.balance);
+      let coinBalance = coin ? Number(coin.balance) : 0;
       const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[hubChainId];
       const { decimals: l1Decimals } = getTokenInfo(EvmAddress.from(l1Token), hubChainId);
       const _withdrawals = await getBinanceWithdrawals(binanceApi, symbol, fromTimestamp);
@@ -144,7 +146,7 @@ export async function binanceFinalizer(
       // @dev There are only two possible withdraw networks for the finalizer, Ethereum L1 or Binance Smart Chain "L2." Withdrawals to Ethereum can originate from any L2 but
       // must be finalized on L1. Withdrawals to Binance Smart Chain must originate from Ethereum L1.
       for (const withdrawNetwork of [BINANCE_NETWORKS[l2ChainId], BINANCE_NETWORKS[hubChainId]]) {
-        const networkLimits = coin.networkList.find((network) => network.name === withdrawNetwork);
+        const networkLimits = coin?.networkList.find((network) => network.name === withdrawNetwork);
         // Get both the amount deposited and ready to be finalized and the amount already withdrawn on L2.
         const finalizingOnL2 = withdrawNetwork === BINANCE_NETWORKS[l2ChainId];
         const depositAmounts = depositsInScope
@@ -178,7 +180,7 @@ export async function binanceFinalizer(
         });
         // Additionally, binance imposes a minimum amount to withdraw. If the amount we want to finalize is less than the minimum, then
         // do not attempt to withdraw anything. Likewise, if the amount we want to withdraw is greater than the maximum, then warn and withdraw the maximum amount.
-        if (amountToFinalize >= Number(networkLimits.withdrawMax)) {
+        if (networkLimits && amountToFinalize >= Number(networkLimits.withdrawMax)) {
           logger.warn({
             at: "BinanceFinalizer",
             message: `(X -> ${withdrawNetwork}) Cannot withdraw total amount ${amountToFinalize} ${symbol} since it is above the network limit ${networkLimits.withdrawMax}. Withdrawing the maximum amount instead.`,
@@ -202,7 +204,7 @@ export async function binanceFinalizer(
           Number((coinBalance - creditedDepositAmount).toFixed(l1Decimals)),
           amountToFinalize
         );
-        if (amountToFinalize >= Number(networkLimits.withdrawMin)) {
+        if (networkLimits && amountToFinalize >= Number(networkLimits.withdrawMin)) {
           // Lastly, we need to truncate the amount to withdraw to 6 decimal places.
           amountToFinalize = Math.floor(amountToFinalize * DECIMAL_PRECISION) / DECIMAL_PRECISION;
           // Balance from Binance is in 8 decimal places, so we need to truncate to 8 decimal places.
