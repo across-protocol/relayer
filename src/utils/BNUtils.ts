@@ -27,7 +27,9 @@ export function bnComparatorAscending(a: BigNumber, b: BigNumber): -1 | 0 | 1 {
 
 export function floatToBN(float: string | number, precision: number): BigNumber {
   // Convert to a fixed-point decimal string to avoid scientific notation (e.g. "1.234e-9")
-  // that JavaScript produces for very small or very large numbers.
+  // that JavaScript produces for very small or very large numbers. toFixed(20) is used because
+  // JavaScript's Number has ~15-17 significant digits of precision, so 20 decimal places captures
+  // everything the float can represent. Trailing zeros are stripped since they don't affect the value.
   const strFloat = typeof float === "string" ? float : float.toFixed(20).replace(/0+$/, "").replace(/\.$/, "");
   const dotIndex = strFloat.indexOf(".");
   if (dotIndex === -1) {
