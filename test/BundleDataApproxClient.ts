@@ -422,6 +422,7 @@ describe("BundleDataApproxClient: Accounting for unexecuted, upcoming relayer re
 
       // Add a matching execution so getUnexecutedBundleStartBlocks can verify the leaf was executed.
       // Directly push to the internal array to avoid event parsing issues in the mock.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (spokePoolClients[MAINNET] as any).relayerRefundExecutions.push({
         rootBundleId: 0,
         leafId: 0,
