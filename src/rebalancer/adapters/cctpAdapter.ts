@@ -300,7 +300,7 @@ export class CctpAdapter extends BaseAdapter {
         "Expected 1 attestation response"
       );
       return attestationResponses[txnHash].messages[0];
-    } catch (error) {
+    } catch {
       // This API usually fails with a 4xx error if the DepositForBurn event was just created so we should retry
       // after a short delay.
       await this._wait(10);

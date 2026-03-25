@@ -935,6 +935,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
 
   private async _getMatchingFillForCloid(
     cloid: string
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ): Promise<{ details: any; amountToWithdraw: BigNumber } | undefined> {
     const infoClient = new hl.InfoClient({ transport: new hl.HttpTransport() });
     // Any fill that we are searching for in this client shouldn't be more than 24 hours old:
@@ -1268,6 +1269,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
   private async _getInitiatedWithdrawalsFromHypercore(
     destinationToken: string,
     withdrawalInitiatedEarliestTimestampMilliseconds: number
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ): Promise<any[]> {
     const tokenMeta = this._getTokenMeta(destinationToken);
     const infoClient = new hl.InfoClient({ transport: new hl.HttpTransport() });
@@ -1277,6 +1279,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         startTime: withdrawalInitiatedEarliestTimestampMilliseconds,
       })
     ).filter((_update) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       if ((_update.delta.type as any) === "send") {
         const update = _update as { delta: { token: string; destination: string; user: string } };
         return (

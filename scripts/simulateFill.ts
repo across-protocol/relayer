@@ -234,7 +234,7 @@ async function getBlockNumberForTimestamp(destinationChainId: number, targetTime
     // Use the built-in block finder utility to find the block closest to the target timestamp
     const blockNumber = await getBlockForTimestamp(logger, destinationChainId, targetTimestamp);
     return blockNumber;
-  } catch (error) {
+  } catch {
     // Fallback: if block finder fails, use block time approximation
     const blockTime = AVERAGE_BLOCK_TIMES[destinationChainId];
     if (!blockTime) {

@@ -522,9 +522,8 @@ export class BaseChainAdapter {
         "wrapNativeTokenIfAboveThreshold"
       );
       return { hash: ZERO_BYTES } as TransactionResponse;
-    } else {
-      (await this.transactionClient.submit(this.chainId, [augmentedTxn]))[0];
     }
+    return (await this.transactionClient.submit(this.chainId, [augmentedTxn]))[0];
   }
 
   async getOutstandingCrossChainTransfers(l1Tokens: EvmAddress[]): Promise<OutstandingTransfers> {

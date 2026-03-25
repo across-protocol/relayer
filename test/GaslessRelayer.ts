@@ -40,6 +40,7 @@ type StrippedDeposit = Omit<DepositWithBlock, "fromLiteChain" | "toLiteChain" | 
  * Testable subclass: overrides initialize to no-op and exposes internals via setters/getters.
  */
 class TestableGaslessRelayer extends GaslessRelayer {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   constructor(logger: any, config: any, signer: any, depositSigners: any[]) {
     super(logger, config, signer, depositSigners);
     // Explicitly initialize state transition tracking

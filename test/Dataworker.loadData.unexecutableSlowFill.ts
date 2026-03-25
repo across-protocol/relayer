@@ -356,7 +356,9 @@ describe("Dataworker: Load bundle data: Computing unexecutable slow fills", asyn
       JSON.stringify([mockOriginSpokePoolClient.chainId])
     );
     await mockConfigStore.update();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (spokePoolClient_1 as any).configStoreClient = mockConfigStore;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (spokePoolClient_2 as any).configStoreClient = mockConfigStore;
 
     // Generate a deposit that cannot be slow filled, to test that its ignored as a slow fill excess.
@@ -552,7 +554,9 @@ describe("Dataworker: Load bundle data: Computing unexecutable slow fills", asyn
       JSON.stringify([mockOriginSpokePoolClient.chainId])
     );
     await mockConfigStore.update();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (mockOriginSpokePoolClient as any).configStoreClient = mockConfigStore;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (mockDestinationSpokePool as any).configStoreClient = mockConfigStore;
     const updateEventTimestamp = mockConfigStore.liteChainIndicesUpdates[0].timestamp;
 

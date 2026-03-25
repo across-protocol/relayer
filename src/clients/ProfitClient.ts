@@ -176,7 +176,7 @@ export class ProfitClient {
     const dstSymbol = this.getTokenSymbol(outputToken, destinationChainId);
     const effectiveSrcSymbol = this._getRemappedTokenSymbol(srcSymbol) ?? srcSymbol;
     const effectiveDstSymbol =
-      dstSymbol !== "UNKNOWN" ? this._getRemappedTokenSymbol(dstSymbol) ?? dstSymbol : undefined;
+      dstSymbol !== "UNKNOWN" ? (this._getRemappedTokenSymbol(dstSymbol) ?? dstSymbol) : undefined;
 
     const routeKey = effectiveDstSymbol
       ? `RELAYER_GAS_MULTIPLIER_${effectiveSrcSymbol}_${effectiveDstSymbol}_${destinationChainId}`
@@ -410,7 +410,7 @@ export class ProfitClient {
     const dstSymbol = this.getTokenSymbol(outputToken, destinationChainId);
     const effectiveSourceSymbol = this._getRemappedTokenSymbol(srcSymbol) ?? srcSymbol;
     const effectiveDestinationSymbol =
-      dstSymbol !== "UNKNOWN" ? this._getRemappedTokenSymbol(dstSymbol) ?? dstSymbol : undefined;
+      dstSymbol !== "UNKNOWN" ? (this._getRemappedTokenSymbol(dstSymbol) ?? dstSymbol) : undefined;
 
     const tokenKey = effectiveDestinationSymbol
       ? `MIN_RELAYER_FEE_PCT_${effectiveSourceSymbol}_${effectiveDestinationSymbol}`
@@ -539,7 +539,7 @@ export class ProfitClient {
     try {
       const { symbol } = getTokenInfo(token, chainId);
       return symbol;
-    } catch (e) {
+    } catch {
       return "UNKNOWN";
     }
   }

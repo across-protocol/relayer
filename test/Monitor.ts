@@ -336,6 +336,7 @@ describe("Monitor", async function () {
           L1Token1: toBN(7),
         },
       }),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any;
     const reportsWithRebalanceCredits = monitorInstance.initializeBalanceReports(
       monitorInstance.monitorConfig.monitoredRelayers,
