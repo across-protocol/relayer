@@ -82,10 +82,18 @@ describe("InventoryClient: Refund chain selection", async function () {
         [BSC]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
       },
       [mainnetUsdc]: {
-        [OPTIMISM]: { targetPct: toWei(0.12), thresholdPct: toWei(0.1), targetOverageBuffer },
-        [POLYGON]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
-        [ARBITRUM]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
-        [BSC]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
+        [l2TokensForUsdc[OPTIMISM]]: {
+          [OPTIMISM]: { targetPct: toWei(0.12), thresholdPct: toWei(0.1), targetOverageBuffer },
+        },
+        [l2TokensForUsdc[POLYGON]]: {
+          [POLYGON]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
+        },
+        [l2TokensForUsdc[ARBITRUM]]: {
+          [ARBITRUM]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
+        },
+        [l2TokensForUsdc[BSC]]: {
+          [BSC]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
+        },
       },
     },
   };
@@ -259,9 +267,10 @@ describe("InventoryClient: Refund chain selection", async function () {
 
       sampleDepositData.inputAmount = toWei(5);
       sampleDepositData.outputAmount = sdkUtils.ConvertDecimals(18, 6)(await computeOutputAmount(sampleDepositData));
+      // BundleDataApproxClient now returns upcoming refunds in L1 token decimals, so mock them in L1 decimals too.
       (inventoryClient as MockInventoryClient).setUpcomingRefunds(mainnetWeth, {
         [MAINNET]: toWei(5),
-        [OPTIMISM]: toMegaWei(10),
+        [OPTIMISM]: toWei(10),
       });
       expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.deep.equal([MAINNET]);
 
@@ -865,12 +874,22 @@ describe("InventoryClient: Refund chain selection", async function () {
       // Modify mocks to be aware of native USDC, which is a "fast" rebalance token for certain routes
       hubPoolClient.setTokenMapping(mainnetUsdc, POLYGON, TOKEN_SYMBOLS_MAP.USDC.addresses[POLYGON]);
       hubPoolClient.setTokenMapping(mainnetUsdc, ARBITRUM, TOKEN_SYMBOLS_MAP.USDC.addresses[ARBITRUM]);
+      hubPoolClient.mapTokenInfo(toAddressType(TOKEN_SYMBOLS_MAP.USDC.addresses[POLYGON], POLYGON), "USDC", 6);
+      hubPoolClient.mapTokenInfo(toAddressType(TOKEN_SYMBOLS_MAP.USDC.addresses[ARBITRUM], ARBITRUM), "USDC", 6);
       (inventoryClient as unknown as MockInventoryClient).setTokenMapping({
         [mainnetUsdc]: {
           [POLYGON]: TOKEN_SYMBOLS_MAP.USDC.addresses[POLYGON],
           [ARBITRUM]: TOKEN_SYMBOLS_MAP.USDC.addresses[ARBITRUM],
         },
       });
+      // Add native USDC entries to the alias config so that getTokenConfig finds them.
+      const usdcConfig = inventoryConfig.tokenConfig[mainnetUsdc];
+      usdcConfig[TOKEN_SYMBOLS_MAP.USDC.addresses[POLYGON]] = {
+        [POLYGON]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
+      };
+      usdcConfig[TOKEN_SYMBOLS_MAP.USDC.addresses[ARBITRUM]] = {
+        [ARBITRUM]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
+      };
       sampleDepositData = {
         depositId: bnZero,
         fromLiteChain: false,

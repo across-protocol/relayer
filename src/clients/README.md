@@ -18,7 +18,9 @@ The full inventory config is defined in /src/interfaces/ and its read from the u
 
 The InventoryClient is designed to track inventory across chains, which are actual on-chain token balances plus any virtual balance modifications stemming from incomplete transfers from the `CrossChainTransferClient` and incomplete rebalances from rebalancer clients. The InventoryClient can also add in virtual modifications for upcoming relayer refunds from the `BundleDataApproxClient`.
 
-The InventoryClient exposes functions that let other bots like the `Relayer` and rebalancer clients know its latest calculation of virtual chain balances for a particular token. For pending rebalance adjustments specifically, it depends on the read-only `ReadOnlyRebalancerClient` interface so it does not need to choose a rebalancing mode.
+The InventoryClient exposes functions that let other bots like the `Relayer` and rebalancer clients know its latest calculation of virtual chain balances for a particular token. Inventory accounting can aggregate multiple "inventory-equivalent" contributor tokens on the same chain, as defined by `TOKEN_SYMBOLS_MAP` and `TOKEN_EQUIVALENCE_REMAPPING`. This is how the client treats canonical and non-canonical token variants, as well as L2-only equivalents such as `pathUSD`, as contributors to the same inventory bucket.
+
+These virtual balance calculations normalize balances, approximate upcoming deposits, and approximate upcoming refunds into the L1 token decimals before comparing or summing them. For pending rebalance adjustments specifically, InventoryClient depends on the read-only `ReadOnlyRebalancerClient` interface so it does not need to choose a rebalancing mode. Pending rebalances are credited against the canonical remote token for that chain and should only be counted once in aggregate chain balance calculations, even when multiple contributor tokens exist on the same chain.
 
 In addition to chain-level virtual balances, InventoryClient exposes cumulative token-level balance context via `getCumulativeBalanceWithApproximateUpcomingRefunds()`. The Rebalancer uses this to evaluate cumulative deficits and excesses when running cumulative inventory rebalancing.
 
@@ -45,6 +47,8 @@ Ideally, this wrapping and unwrapping would occur in a separate, focused NativeT
 ### Transferring Tokens Across Chains
 
 The InventoryClient also provides functions that are used to transfer tokens across chains via adapters like CCTP, OFT, or canonical bridges. These adapters are defined in /src/adapter/bridges and /src/adapter/l2Bridges which send tokens from L1 to L2 and vice versa, respectively.
+
+Pending bridge-transfer accounting now flows through `AdapterManager` and `CrossChainTransferClient`. Adapter-specific pending withdrawal logic is responsible for approximating in-flight L2->L1 transfers, while outstanding L1->L2 transfers are exposed back to InventoryClient as virtual balances on the destination chain.
 
 ### Plan for Deprecation of Token Transfer Logic
 
