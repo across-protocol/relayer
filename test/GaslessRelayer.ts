@@ -1,5 +1,11 @@
 import { Contract } from "ethers";
-import { AnyGaslessDepositMessage, DepositWithBlock, GaslessDepositMessage, RelayData } from "../src/interfaces";
+import {
+  AnyGaslessDepositMessage,
+  DepositWithBlock,
+  GaslessDepositMessage,
+  GaslessDepositMetadata,
+  RelayData,
+} from "../src/interfaces";
 import { GaslessRelayer, MessageState } from "../src/gasless/GaslessRelayer";
 import { GaslessRelayerConfig } from "../src/gasless/GaslessRelayerConfig";
 import SPOKE_POOL_PERIPHERY_ABI from "../src/common/abi/SpokePoolPeriphery.json";
@@ -171,7 +177,8 @@ class TestableGaslessRelayer extends GaslessRelayer {
  */
 function makeDepositMessage(
   baseOverrides: Partial<GaslessDepositMessage["baseDepositData"]> = {},
-  spokePool = DUMMY_ADDRESS
+  spokePool = DUMMY_ADDRESS,
+  metadata: GaslessDepositMetadata = {}
 ): GaslessDepositMessage {
   const fillDeadline = baseOverrides.fillDeadline ?? getCurrentTime() + 3600;
   const baseDepositData = {
@@ -216,6 +223,7 @@ function makeDepositMessage(
     submissionFees: { amount: "100", recipient: DUMMY_ADDRESS },
     spokePool,
     nonce: "1",
+    metadata: { instantFill: false, ...metadata },
   };
 }
 
@@ -231,7 +239,8 @@ function depositNonceFor(relayer: TestableGaslessRelayer, msg: GaslessDepositMes
  */
 function makePermit2DepositMessage(
   baseOverrides: Partial<GaslessDepositMessage["baseDepositData"]> = {},
-  spokePool: string = DUMMY_ADDRESS
+  spokePool: string = DUMMY_ADDRESS,
+  metadata: GaslessDepositMetadata = {}
 ): GaslessDepositMessage {
   const fillDeadline = baseOverrides.fillDeadline ?? getCurrentTime() + 3600;
   const baseDepositData = {
@@ -281,6 +290,7 @@ function makePermit2DepositMessage(
     submissionFees: { amount: "100", recipient: DUMMY_ADDRESS },
     spokePool,
     nonce: "1",
+    metadata: { instantFill: false, ...metadata },
   };
 }
 
@@ -290,9 +300,10 @@ function makePermit2DepositMessage(
  */
 function makeCctpDepositMessage(
   baseOverrides: Partial<GaslessDepositMessage["baseDepositData"]> = {},
-  normalSpokePool: string = DUMMY_ADDRESS
+  normalSpokePool: string = DUMMY_ADDRESS,
+  metadata: GaslessDepositMetadata = {}
 ): GaslessDepositMessage {
-  const msg = makeDepositMessage(baseOverrides, normalSpokePool);
+  const msg = makeDepositMessage(baseOverrides, normalSpokePool, metadata);
   // CCTP deposits are identified by having a different spokePool address than the default.
   msg.spokePool = "0x" + "cc".repeat(20); // Different from normalSpokePool
   return msg;
@@ -322,7 +333,9 @@ function makeReceipt(overrides: Partial<TransactionReceipt> = {}): TransactionRe
 }
 
 /** Fake deposit event data returned by _extractDepositFromTransactionReceipt / _findDeposit. */
-function makeFakeDepositEvent(amounts: { inputAmount?: string; outputAmount?: string } = {}): StrippedDeposit {
+function makeFakeDepositEvent(
+  amounts: { inputAmount?: string; outputAmount?: string; message?: string } = {}
+): StrippedDeposit {
   return {
     originChainId: ORIGIN_CHAIN_ID,
     depositId: toBN(42),
@@ -332,7 +345,7 @@ function makeFakeDepositEvent(amounts: { inputAmount?: string; outputAmount?: st
     inputAmount: toBN(amounts.inputAmount ?? "1000000"),
     outputToken: EvmAddress.from(USDC_BASE),
     outputAmount: toBN(amounts.outputAmount ?? "1000000"),
-    message: "0x",
+    message: amounts.message ?? "0x",
     fillDeadline: getCurrentTime() + 3600,
     exclusiveRelayer: DUMMY_EVM_ADDRESS,
     exclusivityDeadline: 0,
@@ -457,10 +470,14 @@ describe("GaslessRelayer", function () {
   let fakePeripherySmock: FakeContract;
 
   // Test fixture helpers that automatically use the correct spokePool address
-  const makeTestDepositMessage = (overrides?: Partial<GaslessDepositMessage["baseDepositData"]>) =>
-    makeDepositMessage(overrides ?? {}, fakeSpokePoolAddress);
-  const makeTestPermit2Message = (overrides?: Partial<GaslessDepositMessage["baseDepositData"]>) =>
-    makePermit2DepositMessage(overrides ?? {}, fakeSpokePoolAddress);
+  const makeTestDepositMessage = (
+    overrides?: Partial<GaslessDepositMessage["baseDepositData"]>,
+    metadata?: GaslessDepositMetadata
+  ) => makeDepositMessage(overrides ?? {}, fakeSpokePoolAddress, metadata ?? {});
+  const makeTestPermit2Message = (
+    overrides?: Partial<GaslessDepositMessage["baseDepositData"]>,
+    metadata?: GaslessDepositMetadata
+  ) => makePermit2DepositMessage(overrides ?? {}, fakeSpokePoolAddress, metadata ?? {});
   const makeTestCctpMessage = (overrides?: Partial<GaslessDepositMessage["baseDepositData"]>) =>
     makeCctpDepositMessage(overrides ?? {}, fakeSpokePoolAddress);
 
@@ -531,7 +548,7 @@ describe("GaslessRelayer", function () {
   it("Immediate fill: INITIAL -> DEPOSIT_SUBMIT -> FILL_PENDING -> DEPOSIT_CONFIRM -> FILLED", async function () {
     // inputAmount == outputAmount == "1000000" (1 USDC) -> fillImmediate = true with threshold above.
     // Default smock fake behaviour (no revert) makes willSucceed return succeed: true.
-    const msg = makeTestDepositMessage();
+    const msg = makeTestDepositMessage({}, { instantFill: true });
     setFillImmediateThreshold(msg);
     const receipt = makeReceipt();
 
@@ -551,7 +568,7 @@ describe("GaslessRelayer", function () {
   });
 
   it("Immediate fill fallback: simulation failure falls back to standard path", async function () {
-    const msg = makeTestDepositMessage();
+    const msg = makeTestDepositMessage({}, { instantFill: true });
     setFillImmediateThreshold(msg);
 
     // Configure the smock fake to revert so willSucceed returns succeed: false.
@@ -595,7 +612,7 @@ describe("GaslessRelayer", function () {
     // Tests the critical safety check: if immediate fill succeeds but deposit fails/never mines,
     // the relayer detects this in DEPOSIT_CONFIRM and retries instead of finalizing.
     // Without this check, the relayer would have an unreimbursable fill.
-    const msg = makeTestDepositMessage();
+    const msg = makeTestDepositMessage({}, { instantFill: true });
     setFillImmediateThreshold(msg);
     const nonce = depositNonceFor(relayer, msg);
 
@@ -640,7 +657,7 @@ describe("GaslessRelayer", function () {
     // Without normalization, relay data hashes would mismatch and fillRelay would fail.
     const plainTextMessage = "Hello, Across!";
     const expectedHexMessage = "0x48656c6c6f2c204163726f737321"; // hex encoding of plain text
-    const msg = makeTestDepositMessage({ message: plainTextMessage });
+    const msg = makeTestDepositMessage({ message: plainTextMessage }, { instantFill: true });
     setFillImmediateThreshold(msg);
     const receipt = makeReceipt();
 
@@ -690,10 +707,8 @@ describe("GaslessRelayer", function () {
 
   describe("Permit2 flow", function () {
     it("Permit2 deposit: INITIAL -> DEPOSIT_PENDING -> FILL_PENDING -> FILLED", async function () {
-      const { msg, nonce } = setupScenario(
-        relayer,
-        { inputAmount: "2000000", outputAmount: "1900000" },
-        makeTestPermit2Message
+      const { msg, nonce } = setupScenario(relayer, { inputAmount: "2000000", outputAmount: "1900000" }, (overrides) =>
+        makeTestPermit2Message(overrides, { instantFill: true })
       );
       setFillImmediateThreshold(msg);
 
@@ -752,9 +767,9 @@ describe("GaslessRelayer", function () {
     });
 
     it("Multiple messages: processes each independently", async function () {
-      const msg1 = makeTestDepositMessage({ inputAmount: "1000000", outputAmount: "900000" });
+      const msg1 = makeTestDepositMessage({ inputAmount: "1000000", outputAmount: "900000" }, { instantFill: true });
       msg1.depositId = "100";
-      const msg2 = makeTestDepositMessage({ inputAmount: "2000000", outputAmount: "1900000" });
+      const msg2 = makeTestDepositMessage({ inputAmount: "2000000", outputAmount: "1900000" }, { instantFill: true });
       msg2.depositId = "200";
       // Set threshold based on larger of the two amounts
       setFillImmediateThreshold(msg2);
@@ -788,10 +803,8 @@ describe("GaslessRelayer", function () {
     });
 
     it("Message with existing state is skipped on subsequent polls", async function () {
-      const { msg, nonce } = setupScenario(
-        relayer,
-        { inputAmount: "2000000", outputAmount: "1900000" },
-        makeTestDepositMessage
+      const { msg, nonce } = setupScenario(relayer, { inputAmount: "2000000", outputAmount: "1900000" }, (overrides) =>
+        makeTestDepositMessage(overrides, { instantFill: true })
       );
       setFillImmediateThreshold(msg);
 
