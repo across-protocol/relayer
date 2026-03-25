@@ -99,33 +99,9 @@ export class BundleDataApproxClient {
           return;
         }
 
-        // We need to figure out the decimals of the input token on the repayment chain so we can normalize the
-        // refund amount on the repayment chain.
-        let repaymentTokenDecimals: number;
-        if (originChainId === repaymentChainId) {
-          const { decimals: inputTokenDecimals } = getTokenInfo(inputToken, originChainId);
-          repaymentTokenDecimals = inputTokenDecimals;
-        } else {
-          assert(expectedL1Token.isEVM());
-          const inputTokenOnRepaymentChain = this.hubPoolClient.getL2TokenForL1TokenAtBlock(
-            expectedL1Token,
-            repaymentChainId
-          );
-          // If there isn't an equivalent L2 token on the repayment chain and the repayment chain isn't the
-          // origin chain, then this fill is not valid and we should not count it. This logic doesn't assume that the
-          // repayment chain is valid, for example consider if the inputToken doesn't have a pool rebalance route
-          // to the hub chain but the inputToken is an inventory-equivalent token to the l1Token. In this case,
-          // a valid full must set repayment chain to the origin chain, but this logical branch would still be able
-          // to find a valid inputTokenOnRepaymentChain because expectedL1Token is equal to the l1Token. This is
-          // fine because as mentioned above, this client is ultimately an approximation and we are assuming
-          // that all fills sent by this honest relayer are valid.
-          if (!isDefined(inputTokenOnRepaymentChain)) {
-            return;
-          }
-          repaymentTokenDecimals = getTokenInfo(inputTokenOnRepaymentChain, repaymentChainId).decimals;
-        }
+        const { decimals: inputTokenDecimals } = getTokenInfo(inputToken, originChainId);
         const refundAmount = ConvertDecimals(
-          repaymentTokenDecimals,
+          inputTokenDecimals,
           getTokenInfo(l1Token, this.hubPoolClient.chainId).decimals
         )(_refundAmount);
         refundsForChain[repaymentChainId] ??= {};
