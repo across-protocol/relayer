@@ -161,6 +161,6 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
   public pendingWithdrawalLookbackPeriodSeconds(): number {
     // Binance withdrawals are fast, we can shorten the lookback period to also reduce the number
     // of provider.getTransactionReceipt we have to make for each deposit event.
-    return 12 * 60 * 60;
+    return 1 * 60 * 60;
   }
 }
