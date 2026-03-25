@@ -30,6 +30,7 @@ export interface BotModes {
   spokePoolBalanceReportEnabled: boolean;
   binanceWithdrawalLimitsEnabled: boolean;
   closePDAsEnabled: boolean;
+  closeALTsEnabled: boolean;
   reportOpenHyperliquidOrders: boolean;
 }
 
@@ -87,6 +88,7 @@ export class MonitorConfig extends CommonConfig {
       BINANCE_WITHDRAW_WARN_THRESHOLD,
       BINANCE_WITHDRAW_ALERT_THRESHOLD,
       CLOSE_PDAS_ENABLED,
+      CLOSE_ALTS_ENABLED,
       HYPERLIQUID_ORDER_MAXIMUM_LIFETIME,
       HYPERLIQUID_SUPPORTED_TOKENS,
       L2_ONLY_TOKENS,
@@ -100,6 +102,7 @@ export class MonitorConfig extends CommonConfig {
       stuckRebalancesEnabled: STUCK_REBALANCES_ENABLED === "true",
       spokePoolBalanceReportEnabled: REPORT_SPOKE_POOL_BALANCES === "true",
       closePDAsEnabled: CLOSE_PDAS_ENABLED === "true",
+      closeALTsEnabled: CLOSE_ALTS_ENABLED === "true",
       binanceWithdrawalLimitsEnabled:
         isDefined(BINANCE_WITHDRAW_WARN_THRESHOLD) || isDefined(BINANCE_WITHDRAW_ALERT_THRESHOLD),
       reportOpenHyperliquidOrders: isDefined(HYPERLIQUID_ORDER_MAXIMUM_LIFETIME),
