@@ -539,7 +539,7 @@ export class ProfitClient {
     try {
       const { symbol } = getTokenInfo(token, chainId);
       return symbol;
-    } catch (e) {
+    } catch {
       return "UNKNOWN";
     }
   }

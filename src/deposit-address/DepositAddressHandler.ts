@@ -238,7 +238,7 @@ export class DepositAddressHandler {
     let isDepositAddressDeployed = false;
     try {
       isDepositAddressDeployed = await this.isContractDeployed(originChainId, depositMessage.depositAddress);
-    } catch (err) {
+    } catch {
       this.observedExecutedDeposits[originChainId].delete(depositKey);
       this.logger.warn({
         at: "DepositAddressHandler#initiateDeposit",

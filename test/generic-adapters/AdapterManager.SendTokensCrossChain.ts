@@ -96,7 +96,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
         toAddressType(mainnetTokens.usdc, CHAIN_IDs.MAINNET),
         amountToSend
       );
-    } catch (error) {
+    } catch {
       thrown1 = true;
     }
     expect(thrown1).to.be.equal(true);

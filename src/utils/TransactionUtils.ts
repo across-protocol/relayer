@@ -188,7 +188,7 @@ export function getTarget(targetAddress: string):
     } {
   try {
     return { targetAddress, ...getContractInfoFromAddress(targetAddress) };
-  } catch (error) {
+  } catch {
     return { targetAddress };
   }
 }
