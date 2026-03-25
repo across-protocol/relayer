@@ -1,6 +1,6 @@
 import { MonitorConfig } from "./MonitorConfig";
-import { Signer, winston, assert, isEVMSpokePoolClient, toAddressType } from "../utils";
-import { BundleDataClient, HubPoolClient, TokenTransferClient } from "../clients";
+import { Signer, winston, toAddressType } from "../utils";
+import { BundleDataClient, HubPoolClient } from "../clients";
 import {
   Clients,
   updateClients,
@@ -19,7 +19,6 @@ export interface MonitorClients extends Clients {
   hubPoolClient: HubPoolClient;
   rebalancerClient?: RebalancerClient;
   spokePoolClients: SpokePoolClientsByChain;
-  tokenTransferClient: TokenTransferClient;
 }
 
 export async function constructMonitorClients(
@@ -67,20 +66,10 @@ export async function constructMonitorClients(
     ...spokePoolAddresses,
   ]);
   const spokePoolChains = Object.keys(spokePoolClients).map((chainId) => Number(chainId));
-  const providerPerChain = Object.fromEntries(
-    spokePoolChains
-      .filter((chainId) => isEVMSpokePoolClient(spokePoolClients[chainId]))
-      .map((chainId) => {
-        const spokePoolClient = spokePoolClients[chainId];
-        assert(isEVMSpokePoolClient(spokePoolClient));
-        return [chainId, spokePoolClient.spokePool.provider];
-      })
-  );
-  const tokenTransferClient = new TokenTransferClient(logger, providerPerChain, config.monitoredRelayers);
 
   // The CrossChainTransferClient is dependent on having adapters for all passed in chains
-  // so we need to filter out any chains that don't have adapters. This means limiting the chains we keep in
-  // `providerPerChain` when constructing the TokenTransferClient and limiting `spokePoolChains` when constructing
+  // so we need to filter out any chains that don't have adapters. This means
+  // limiting `spokePoolChains` when constructing
   // the CrossChainTransferClient.
   const crossChainAdapterSupportedChains = adapterManager.supportedChains();
   const crossChainTransferClient = new CrossChainTransferClient(
@@ -97,7 +86,6 @@ export async function constructMonitorClients(
     crossChainTransferClient,
     rebalancerClient,
     spokePoolClients,
-    tokenTransferClient,
   };
 }
 
