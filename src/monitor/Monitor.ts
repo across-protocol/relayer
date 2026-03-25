@@ -396,15 +396,7 @@ export class Monitor {
     // Fetch pending rebalances once for all relayers.
     let pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
     if (isDefined(this.clients.rebalancerClient)) {
-      try {
-        pendingRebalances = await this.clients.rebalancerClient.getPendingRebalances();
-      } catch (error) {
-        this.logger.warn({
-          at: "Monitor#reportRelayerBalances",
-          message: "Unable to fetch pending rebalances; defaulting to zero",
-          error,
-        });
-      }
+      pendingRebalances = await this.clients.rebalancerClient.getPendingRebalances();
     }
 
     for (const relayer of relayers) {
