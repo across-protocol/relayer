@@ -77,6 +77,7 @@ export async function createHyperCoreAccountIfNotExists(
  * All destination-based finalizer calls will pass signature.
  * - HyperCore: chainId = 999 or 998 with signature
  * - Lighter: chainId = 1 with signature
+ * - Direct EVM: Any other EVM chain with signature
  * - Standard: All other cases without signature
  */
 function getDestination(chainId: number, messageBytes: string, signature?: string): DestinationInfo {
@@ -84,34 +85,24 @@ function getDestination(chainId: number, messageBytes: string, signature?: strin
     const isHyperEVM = chainId === CHAIN_IDs.HYPEREVM || chainId === CHAIN_IDs.HYPEREVM_TESTNET;
     const isMainnet = chainId === CHAIN_IDs.MAINNET;
 
-    if (isHyperEVM) {
-      // Extract mint recipient from CCTP message - this is the SponsoredCCTPDstPeriphery contract
-      const mintRecipient = extractMintRecipientAddress(messageBytes);
-      const { abi } = CONTRACT_ADDRESSES[chainId]?.sponsoredCCTPDstPeriphery || {};
-      if (!abi) {
-        throw new Error(`SponsoredCCTPDstPeriphery ABI not configured for chain ${chainId}`);
-      }
-      return {
-        type: "hypercore",
-        address: mintRecipient,
-        abi,
-        requiresSignature: true,
-        accountInitialization: createHyperCoreAccountIfNotExists,
-      };
-    } else if (isMainnet) {
-      // Extract mint recipient from CCTP message - this is the SponsoredCCTPDstPeriphery contract
-      const mintRecipient = extractMintRecipientAddress(messageBytes);
-      const { abi } = CONTRACT_ADDRESSES[chainId]?.sponsoredCCTPDstPeriphery || {};
-      if (!abi) {
-        throw new Error(`SponsoredCCTPDstPeriphery ABI not configured for chain ${chainId}`);
-      }
-      return {
-        type: "lighter",
-        address: mintRecipient,
-        abi,
-        requiresSignature: true,
-      };
+    // Extract mint recipient from CCTP message - this is the SponsoredCCTPDstPeriphery contract
+    const mintRecipient = extractMintRecipientAddress(messageBytes);
+    const { abi } = CONTRACT_ADDRESSES[chainId]?.sponsoredCCTPDstPeriphery || {};
+
+    if (!abi) {
+      throw new Error(`SponsoredCCTPDstPeriphery ABI not configured for chain ${chainId}`);
     }
+
+    const type = isHyperEVM ? "hypercore" : isMainnet ? "lighter" : "direct-evm";
+    const accountInitialization = isHyperEVM ? createHyperCoreAccountIfNotExists : undefined;
+
+    return {
+      type,
+      address: mintRecipient,
+      abi,
+      requiresSignature: true,
+      accountInitialization,
+    };
   }
 
   const { address, abi } = getCctpV2MessageTransmitter(chainId);
@@ -135,7 +126,8 @@ export async function processMintEvm(
   provider: ethers.providers.JsonRpcProvider,
   privateKey: string,
   logger: winston.Logger,
-  signature?: string
+  signature?: string,
+  quoteDeadline?: number
 ): Promise<{ txHash: string }> {
   const signer = new ethers.Wallet(privateKey, provider);
 
@@ -147,9 +139,16 @@ export async function processMintEvm(
 
   const contract = new ethers.Contract(destination.address, destination.abi, signer);
 
-  const receiveMessageArgs = destination.requiresSignature
+  let receiveMessageArgs = destination.requiresSignature
     ? [attestation.message, attestation.attestation, signature]
     : [attestation.message, attestation.attestation];
+
+  // if the quote deadline has expired, we don't need to pass the signature
+  let method = "receiveMessage";
+  if (destination.requiresSignature && quoteDeadline < Date.now() / 1000) {
+    receiveMessageArgs = [attestation.message, attestation.attestation];
+    method = "emergencyReceiveMessage";
+  }
 
   logger.info({
     at: "evmUtils#processMintEvm",
@@ -163,7 +162,7 @@ export async function processMintEvm(
   const mintTx = await submitTransaction(
     {
       contract: contract,
-      method: "receiveMessage",
+      method,
       args: receiveMessageArgs,
       chainId,
     },

@@ -6,17 +6,16 @@ This repository contains bots that execute critical Across protocol operations, 
 
 Read docs in this order:
 
-1. `CLAUDE.md` for repository-specific agent operating rules.
-2. This file (`AGENTS.md`) for top-level navigation and module map.
-3. Module docs (`src/*/README.md` or local `AGENTS.md`) for implementation and runtime details.
-4. `docs/*.md` for deeper architectural and protocol context.
+1. This file (`AGENTS.md`) for top-level navigation and module map.
+2. Module docs (`src/*/README.md` or local `AGENTS.md`) for implementation and runtime details.
+3. `docs/*.md` for deeper architectural and protocol context.
 
 ## Documentation maintenance
 
 Keep all relevant `AGENTS.md` and `README.md` files updated in the same change whenever behavior, configuration, interfaces, or runtime flow changes.
 
 - Before writing implementation plans, surface material ambiguities first and resolve them with the user.
-- For each new task, propose 0-3 targeted updates to `CLAUDE.md` and/or module `AGENTS.md` files (or explicitly state why no updates are needed).
+- For each new task, propose 0-3 targeted updates to `README.md` and `AGENTS.md` files (or explicitly state why no updates are needed).
 - For deep-dive documentation tasks, prefer cross-module walkthroughs when behavior spans relayer, clients, dataworker, or shared utilities.
 - Write deep-dive docs as "current behavior" references first, then add a concise "contributor recommendations" section.
 

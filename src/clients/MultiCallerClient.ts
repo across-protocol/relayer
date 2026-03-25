@@ -314,7 +314,7 @@ export class MultiCallerClient {
 
   buildMultiCallBundle(transactions: AugmentedTransaction[]): AugmentedTransaction[] {
     // Split transactions by target contract if they are not all the same.
-    const txnsGroupedByTarget = lodash.groupBy(transactions, (txn) => txn.contract.address);
+    const txnsGroupedByTarget = Object.groupBy(transactions, (txn) => txn.contract.address);
     return Object.values(txnsGroupedByTarget).map((txns) => {
       return this._buildMultiCallBundle(txns);
     });
@@ -380,7 +380,7 @@ export class MultiCallerClient {
       multicallerTxns = [],
       multisenderTxns = [],
       unsendableTxns = [],
-    } = lodash.groupBy(txns, (txn) => {
+    } = Object.groupBy(txns, (txn) => {
       if (txn.unpermissioned) {
         return "multisenderTxns";
       } else if (txn.contract.multicall) {
@@ -406,7 +406,7 @@ export class MultiCallerClient {
     // to make Multicall work.
     const getTxnChunks = (_txns: AugmentedTransaction[]): AugmentedTransaction[][] => {
       const groupIdTxns = _txns.filter(({ groupId }) => isDefined(groupId));
-      const groupIdChunks = Object.values(lodash.groupBy(groupIdTxns, "groupId"))
+      const groupIdChunks = Object.values(Object.groupBy(groupIdTxns, (txn) => txn.groupId))
         .map((txns) => {
           return lodash.chunk(
             txns.sort((a, b) => a.contract.address.localeCompare(b.contract.address)),
@@ -487,7 +487,7 @@ export class MultiCallerClient {
   }
 
   // Filter out transactions that revert for non-critical, expected reasons. For example, the "relay filled" error may
-  // will occur frequently if there are multiple relayers running at the same time. Similarly, the "already claimed"
+  // occur frequently if there are multiple relayers running at the same time. Similarly, the "already claimed"
   // error will occur if there are overlapping dataworker executor runs.
   // @todo: Figure out a less hacky way to reduce these errors rather than ignoring them.
   // @todo: Consider logging key txn information with the failures?

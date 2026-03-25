@@ -16,6 +16,7 @@ function makeDepositMessage(overrides: Record<string, unknown> = {}) {
     depositId: "1",
     requestId: "req-1",
     signature: DUMMY_SIGNATURE,
+    permitType: "receiveWithAuthorization",
     permit: {
       types: { ReceiveWithAuthorization: [] },
       domain: { name: "USDC", version: "2", chainId: 1, verifyingContract: DUMMY_ADDRESS },
