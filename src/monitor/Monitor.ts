@@ -505,7 +505,7 @@ export class Monitor {
             const canonicalL2Token = getRemoteTokenForL1Token(l1Token.address, chainId, hubChainId);
             if (isDefined(canonicalL2Token) && l2Token.eq(canonicalL2Token)) {
               const pendingRebalanceAmount = pendingRebalances[chainId]?.[l1Token.symbol];
-              if (isDefined(pendingRebalanceAmount) && !pendingRebalanceAmount.isZero()) {
+              if (isDefined(pendingRebalanceAmount) && pendingRebalanceAmount.gt(0)) {
                 pending = pending.add(toL1Decimals(pendingRebalanceAmount));
               }
             }
@@ -514,7 +514,7 @@ export class Monitor {
             tokenTotal = tokenTotal.add(totalBalance);
 
             // Skip rows where all value columns are zero.
-            if (!currentBalance.isZero() || !pending.isZero()) {
+            if (currentBalance.gt(0) || pending.gt(0)) {
               rows.push({
                 chain: getNetworkName(chainId),
                 token: l2Symbol,
@@ -525,7 +525,7 @@ export class Monitor {
             }
 
             // Machine-readable debug log — skip zero-balance entries.
-            if (!totalBalance.isZero()) {
+            if (totalBalance.gt(0)) {
               this.logger.debug({
                 at: "Monitor#reportRelayerBalances",
                 message: "Machine-readable single balance report",
@@ -556,7 +556,7 @@ export class Monitor {
         }
 
         // Skip entire token table if total balance is zero.
-        if (tokenTotal.isZero()) {
+        if (tokenTotal.lte(0)) {
           continue;
         }
 

@@ -283,9 +283,9 @@ export class InventoryClient {
     // Add in any pending swap rebalances. Pending Rebalances are currently only supported for the canonical L2 tokens
     // mapped to each L1 token (i.e. the L2 token for an L1 token returned by getRemoteTokenForL1Token())
     const pendingRebalancesForChain = this.pendingRebalances[chainId];
-    if (isDefined(pendingRebalancesForChain)) {
-      const _l2Token = l2Token ?? this.getRemoteTokenForL1Token(l1Token, chainId);
-      const { decimals: l2TokenDecimals } = this.getTokenInfo(_l2Token, chainId);
+    const canonicalL2Token = getRemoteTokenForL1Token(l1Token, chainId, this.hubPoolClient.chainId);
+    if (isDefined(pendingRebalancesForChain) && isDefined(canonicalL2Token) && l2Token.eq(canonicalL2Token)) {
+      const { decimals: l2TokenDecimals } = this.getTokenInfo(canonicalL2Token, chainId);
       const pendingRebalancesForToken = pendingRebalancesForChain[l1TokenSymbol];
       if (isDefined(pendingRebalancesForToken)) {
         balance = balance.add(sdkUtils.ConvertDecimals(l2TokenDecimals, l1TokenDecimals)(pendingRebalancesForToken));
