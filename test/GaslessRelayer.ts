@@ -154,6 +154,10 @@ class TestableGaslessRelayer extends GaslessRelayer {
     const currentState = this._getState(depositKey);
     super._setState(depositKey, state);
 
+    // GaslessRelayer may call setState(INITIAL) when already INITIAL (chain preflight no-op).
+    if (currentState === state) {
+      return;
+    }
     this.stateTransitions[depositKey] ??= [];
     this.stateTransitions[depositKey].push({ from: currentState, to: state });
   }
