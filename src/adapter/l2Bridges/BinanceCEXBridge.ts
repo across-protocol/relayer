@@ -25,7 +25,6 @@ import {
   getOutstandingBinanceDeposits,
   getRedisCache,
   getProvider,
-  assert,
 } from "../../utils";
 import { L1Token } from "../../interfaces";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
