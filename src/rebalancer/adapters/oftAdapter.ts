@@ -288,7 +288,7 @@ export class OftAdapter extends BaseAdapter {
       // `status` can be undefined when the transaction was recently sent or not complete yet, so returning undefined
       // here is fine assuming that status will be set eventually.
       return txnDetails[0].destination?.status;
-    } catch (error) {
+    } catch {
       // This API usually fails with a 4xx error if the origination event was just created so we should retry
       // after a short delay.
       await this._wait(10);

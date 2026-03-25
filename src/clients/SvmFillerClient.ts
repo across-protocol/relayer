@@ -238,6 +238,7 @@ export class SvmFillerClient {
     );
 
     const successfulSims: { logs: string[]; message: string; mrkdwn: string }[] = [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const failedSims: { error: any; message: string; mrkdwn: string }[] = [];
 
     simulationResults.forEach((result, idx) => {

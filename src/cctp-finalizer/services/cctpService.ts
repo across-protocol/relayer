@@ -251,6 +251,7 @@ export class CCTPService {
   private async processMint(
     destinationChainId: number,
     originChainId: number,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     attestation: any,
     signature?: string,
     quoteDeadline?: number

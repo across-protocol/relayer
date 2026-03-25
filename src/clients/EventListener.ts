@@ -42,7 +42,11 @@ export class EventListener extends EventEmitter {
   private readonly providers: ReturnType<typeof resolveProviders>;
   // private readonly abortController: AbortController;
 
-  constructor(public readonly chainId: number, private readonly logger: winston.Logger, public readonly quorum = 1) {
+  constructor(
+    public readonly chainId: number,
+    private readonly logger: winston.Logger,
+    public readonly quorum = 1
+  ) {
     super();
     this.chain = getNetworkName(chainId);
     // this.abortController = new AbortController();

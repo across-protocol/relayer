@@ -140,7 +140,7 @@ export class RebalancerConfig extends CommonConfig {
           try {
             const { decimals } = getTokenInfoFromSymbol(token, chainId);
             this.maxAmountsToTransfer[token][chainId] = toBNWei(amount, decimals);
-          } catch (err) {
+          } catch {
             // ignore, token doesn't exist on chain probably
           }
         }

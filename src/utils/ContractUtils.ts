@@ -68,7 +68,7 @@ export function getParamType(contractName: string, functionName: string, paramNa
 export function getDeploymentBlockNumber(contractName: string, networkId: number): number {
   try {
     return Number(getDeployedBlockNumber(contractName, networkId));
-  } catch (error) {
+  } catch {
     throw new Error(`Could not find deployment block for contract ${contractName} on ${networkId}`);
   }
 }
@@ -79,8 +79,8 @@ export function getDstOftHandler(): Contract {
   const artifact = typechain["HyperCoreFlowExecutor__factory"];
   const address = isDefined(process.env.DST_OFT_HANDLER)
     ? process.env.DST_OFT_HANDLER
-    : CONTRACT_ADDRESSES[CHAIN_IDs.HYPEREVM]?.dstOftHandler?.address ??
-      getDeployedAddress(factoryName, CHAIN_IDs.HYPEREVM);
+    : (CONTRACT_ADDRESSES[CHAIN_IDs.HYPEREVM]?.dstOftHandler?.address ??
+      getDeployedAddress(factoryName, CHAIN_IDs.HYPEREVM));
   return new Contract(address, artifact.abi);
 }
 
@@ -89,8 +89,8 @@ export function getDstCctpHandler(): Contract {
   const artifact = typechain["HyperCoreFlowExecutor__factory"];
   const address = isDefined(process.env.DST_CCTP_HANDLER)
     ? process.env.DST_CCTP_HANDLER
-    : CONTRACT_ADDRESSES[CHAIN_IDs.HYPEREVM]?.dstCctpHandler?.address ??
-      getDeployedAddress(factoryName, CHAIN_IDs.HYPEREVM);
+    : (CONTRACT_ADDRESSES[CHAIN_IDs.HYPEREVM]?.dstCctpHandler?.address ??
+      getDeployedAddress(factoryName, CHAIN_IDs.HYPEREVM));
   return new Contract(address, artifact.abi);
 }
 

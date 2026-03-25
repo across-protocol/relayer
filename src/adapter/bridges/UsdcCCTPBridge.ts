@@ -61,8 +61,7 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
     return getCctpDomainForChainId(this.l2chainId);
   }
 
-  protected resolveL2TokenAddress(l1Token: EvmAddress): string {
-    l1Token;
+  protected resolveL2TokenAddress(_l1Token: EvmAddress): string {
     return TOKEN_SYMBOLS_MAP.USDC.addresses[this.l2chainId];
   }
 

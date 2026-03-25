@@ -72,7 +72,10 @@ export class TransactionClient {
   protected readonly DEFAULT_GAS_LIMIT_MULTIPLIER = 1.0;
 
   // eslint-disable-next-line no-useless-constructor
-  constructor(readonly logger: winston.Logger, readonly signers: Signer[] = []) {}
+  constructor(
+    readonly logger: winston.Logger,
+    readonly signers: Signer[] = []
+  ) {}
 
   protected _simulate(txn: AugmentedTransaction): Promise<TransactionSimulationResult> {
     return willSucceed(txn);

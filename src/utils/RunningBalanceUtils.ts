@@ -94,7 +94,7 @@ export async function getLatestRunningBalances(
         bundleEndBlock: lastValidatedBundleEndBlock,
         proposedRootBundle: proposedRootBundle?.txnRef,
       },
-    ] as [number, RunningBalanceResult];
+    ];
   });
 
   return Object.fromEntries(entries.filter(isDefined));

@@ -178,7 +178,7 @@ export async function arbStackFinalizer(
         txnIndex: transactionIndex,
       };
       withdrawalEvents.push(tokenBridgedEvent);
-    } catch (err) {
+    } catch {
       logger.debug({
         at: `Finalizer#${networkName}Finalizer`,
         message: `Skipping ERC20 withdrawal event for unknown token ${event.l2TokenAddress} on chain ${networkName}`,
@@ -367,7 +367,7 @@ async function getMessageOutboxStatusAndProof(
       message: l2Message,
       status: ChildToParentMessageStatus[outboxMessageExecutionStatus],
     };
-  } catch (error) {
+  } catch {
     // Likely L1 message hasn't been included in an arbitrum batch yet, so ignore it for now.
     return {
       message: undefined,

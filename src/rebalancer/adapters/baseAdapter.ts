@@ -68,7 +68,11 @@ export abstract class BaseAdapter implements RebalancerAdapter {
 
   protected REDIS_PREFIX: string;
 
-  constructor(readonly logger: winston.Logger, readonly config: RebalancerConfig, readonly baseSigner: Signer) {
+  constructor(
+    readonly logger: winston.Logger,
+    readonly config: RebalancerConfig,
+    readonly baseSigner: Signer
+  ) {
     this.transactionClient = new TransactionClient(logger);
     this.priceClient = new PriceClient(logger, [
       new acrossApi.PriceFeed({ host: getAcrossHost(CHAIN_IDs.MAINNET) }),
@@ -196,7 +200,7 @@ export abstract class BaseAdapter implements RebalancerAdapter {
         }),
         process.env.REBALANCER_PENDING_ORDER_TTL
           ? Number(process.env.REBALANCER_PENDING_ORDER_TTL)
-          : ttlOverride ?? 60 * 60 // default to 1 hour
+          : (ttlOverride ?? 60 * 60) // default to 1 hour
       ),
     ]);
     this.logger.debug({
