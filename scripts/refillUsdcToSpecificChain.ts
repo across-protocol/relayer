@@ -61,7 +61,7 @@ async function run(): Promise<void> {
     if (!Array.isArray(sourceChainIds) || sourceChainIds.length === 0) {
       throw new Error("SOURCE_CHAIN_IDS must be a non-empty array");
     }
-  } catch (error) {
+  } catch {
     throw new Error(`Invalid SOURCE_CHAIN_IDS format. Expected JSON array, got: ${chainIdsInput}`);
   }
 

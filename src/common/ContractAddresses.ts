@@ -246,7 +246,6 @@ export const CONTRACT_ADDRESSES: {
       abi: SPONSORED_CCTP_DST_PERIPHERY_ABI,
     },
     spokePoolPeriphery: {
-      address: "0x767e4c20F521a829dE4Ffc40C25176676878147f",
       abi: SPOKE_POOL_PERIPHERY_ABI,
     },
     counterfactualDepositFactory: {
@@ -300,7 +299,6 @@ export const CONTRACT_ADDRESSES: {
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
     },
     spokePoolPeriphery: {
-      address: "0x767e4c20F521a829dE4Ffc40C25176676878147f",
       abi: SPOKE_POOL_PERIPHERY_ABI,
     },
   },
@@ -328,7 +326,6 @@ export const CONTRACT_ADDRESSES: {
       address: "0x0000000000000000000000000000000000001010",
     },
     spokePoolPeriphery: {
-      address: "0x767e4c20F521a829dE4Ffc40C25176676878147f",
       abi: SPOKE_POOL_PERIPHERY_ABI,
     },
   },
@@ -483,7 +480,6 @@ export const CONTRACT_ADDRESSES: {
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
     },
     spokePoolPeriphery: {
-      address: "0x767e4c20F521a829dE4Ffc40C25176676878147f",
       abi: SPOKE_POOL_PERIPHERY_ABI,
     },
     counterfactualDepositFactory: {
@@ -586,7 +582,6 @@ export const CONTRACT_ADDRESSES: {
       abi: ARBITRUM_ERC20_GATEWAY_ROUTER_L2_ABI,
     },
     spokePoolPeriphery: {
-      address: "0x767e4c20F521a829dE4Ffc40C25176676878147f",
       abi: SPOKE_POOL_PERIPHERY_ABI,
     },
     counterfactualDepositFactory: {
@@ -755,7 +750,6 @@ export const CONTRACT_ADDRESSES: {
       abi: HUB_POOL_ABI,
     },
     spokePoolPeriphery: {
-      address: "0x1cFC76f039e01970355Cf73a37B785A81847796C",
       abi: SPOKE_POOL_PERIPHERY_ABI,
     },
   },
@@ -777,7 +771,6 @@ export const CONTRACT_ADDRESSES: {
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
     },
     spokePoolPeriphery: {
-      address: "0x1cFC76f039e01970355Cf73a37B785A81847796C",
       abi: SPOKE_POOL_PERIPHERY_ABI,
     },
   },
@@ -803,7 +796,6 @@ export const CONTRACT_ADDRESSES: {
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
     },
     spokePoolPeriphery: {
-      address: "0x1cFC76f039e01970355Cf73a37B785A81847796C",
       abi: SPOKE_POOL_PERIPHERY_ABI,
     },
   },
@@ -865,7 +857,6 @@ export const CONTRACT_ADDRESSES: {
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
     },
     spokePoolPeriphery: {
-      address: "0x1cFC76f039e01970355Cf73a37B785A81847796C",
       abi: SPOKE_POOL_PERIPHERY_ABI,
     },
   },
@@ -890,7 +881,6 @@ export const CONTRACT_ADDRESSES: {
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
     },
     spokePoolPeriphery: {
-      address: "0x1cFC76f039e01970355Cf73a37B785A81847796C",
       abi: SPOKE_POOL_PERIPHERY_ABI,
     },
   },
