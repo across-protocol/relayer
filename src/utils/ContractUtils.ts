@@ -68,7 +68,7 @@ export function getParamType(contractName: string, functionName: string, paramNa
 export function getDeploymentBlockNumber(contractName: string, networkId: number): number {
   try {
     return Number(getDeployedBlockNumber(contractName, networkId));
-  } catch (error) {
+  } catch {
     throw new Error(`Could not find deployment block for contract ${contractName} on ${networkId}`);
   }
 }
