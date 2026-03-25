@@ -161,6 +161,7 @@ export interface Permit2SwapAndBridgePermit {
 export interface GaslessDepositMetadata {
   bridgeType?: string;
   destinationChainId?: number;
+  instantFill?: boolean;
 }
 
 /** Raw API response for bridge-only deposits (BridgeWitness). */
