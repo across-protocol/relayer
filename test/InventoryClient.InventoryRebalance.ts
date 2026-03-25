@@ -706,7 +706,11 @@ describe("InventoryClient: Rebalancing inventory", async function () {
       await inventoryClient.update();
 
       const aggregateBalance = inventoryClient.getBalanceOnChain(testChain, EvmAddress.from(mainnetUsdc));
-      const canonicalBalance = inventoryClient.getBalanceOnChain(testChain, EvmAddress.from(mainnetUsdc), canonicalL2Token);
+      const canonicalBalance = inventoryClient.getBalanceOnChain(
+        testChain,
+        EvmAddress.from(mainnetUsdc),
+        canonicalL2Token
+      );
       const nonCanonicalBalance = inventoryClient.getBalanceOnChain(
         testChain,
         EvmAddress.from(mainnetUsdc),
