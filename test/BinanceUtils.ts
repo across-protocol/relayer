@@ -1,8 +1,8 @@
 import { expect } from "./utils";
 import { BinanceDeposit, BinanceWithdrawal, getOutstandingBinanceDeposits } from "../src/utils";
 
-function makeDeposit(network: string, amount: number, timestamp: number): BinanceDeposit {
-  return { network, amount, coin: "USDT", txId: `0x${timestamp}`, timestamp };
+function makeDeposit(network: string, amount: number, insertTime: number): BinanceDeposit {
+  return { network, amount, coin: "USDT", txId: `0x${insertTime}`, insertTime };
 }
 
 function makeWithdrawal(amount: number, timestamp: number, transactionFee = 0): BinanceWithdrawal {
@@ -11,7 +11,6 @@ function makeWithdrawal(amount: number, timestamp: number, transactionFee = 0): 
     amount,
     coin: "USDT",
     txId: `0x${timestamp}`,
-    timestamp,
     recipient: "0xRelayer",
     id: `w${timestamp}`,
     transactionFee,
@@ -58,9 +57,9 @@ describe("BinanceUtils: getOutstandingBinanceDeposits", function () {
     const outstanding = getOutstandingBinanceDeposits(deposits, withdrawals, "BSC");
     expect(outstanding.length).to.equal(2);
     expect(outstanding[0].amount).to.equal(20_000);
-    expect(outstanding[0].timestamp).to.equal(4);
+    expect(outstanding[0].insertTime).to.equal(4);
     expect(outstanding[1].amount).to.equal(15_000); // partial: 35k - 20k = 15k remaining
-    expect(outstanding[1].timestamp).to.equal(3);
+    expect(outstanding[1].insertTime).to.equal(3);
   });
 
   it("Only outstanding deposits on the requested network are returned", function () {
