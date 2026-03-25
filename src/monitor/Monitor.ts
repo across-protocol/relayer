@@ -505,7 +505,7 @@ export class Monitor {
             const canonicalL2Token = getRemoteTokenForL1Token(l1Token.address, chainId, hubChainId);
             if (isDefined(canonicalL2Token) && l2Token.eq(canonicalL2Token)) {
               const pendingRebalanceAmount = pendingRebalances[chainId]?.[l1Token.symbol];
-              if (isDefined(pendingRebalanceAmount) && pendingRebalanceAmount.gt(0)) {
+              if (isDefined(pendingRebalanceAmount) && !pendingRebalanceAmount.isZero()) {
                 pending = pending.add(toL1Decimals(pendingRebalanceAmount));
               }
             }
