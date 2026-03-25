@@ -158,7 +158,7 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
     return unmatchedDeposits.reduce((sum, deposit) => sum.add(floatToBN(deposit.amount, l2TokenInfo.decimals)), bnZero);
   }
 
-  protected async getBinanceClient(): Promise<BinanceApi> {
+  protected async getBinanceClient() {
     return (this.binanceApiClient ??= await this.binanceApiClientPromise);
   }
 
