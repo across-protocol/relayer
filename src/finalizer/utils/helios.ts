@@ -294,6 +294,7 @@ async function enrichHeliosActions(
   const readyActions: HeliosAction[] = [];
   for (const action of actions) {
     let apiRequest: ApiProofRequest;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let logContext: any;
     switch (action.type) {
       case "ExecuteOnly":
@@ -344,11 +345,13 @@ async function enrichHeliosActions(
     let proofState: ProofStateResponse | null = null;
 
     // @dev We need try - catch here because of how API responds to non-existing proofs: with NotFound status
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let getError: any = null;
     try {
       const response = await axios.get<ProofStateResponse>(getProofUrl);
       proofState = response.data;
       logger.debug({ ...logContext, message: "Proof state received", proofId, status: proofState.status });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
       getError = error;
     }

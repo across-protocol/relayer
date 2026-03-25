@@ -135,6 +135,7 @@ describe("GaslessUtils", function () {
     it("returns named method tx when no integratorId", function () {
       const msg = makeDepositMessage();
       const contract = makeSpokePoolPeripheryContract();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const tx = buildGaslessDepositTx(msg as any, contract);
       expect(tx.method).to.equal("depositWithAuthorization");
       expect(tx.args.length).to.equal(5);
@@ -144,6 +145,7 @@ describe("GaslessUtils", function () {
     it("returns raw tx with tagged calldata when integratorId is present", function () {
       const msg = makeDepositMessage({ integratorId: "0xABCD" });
       const contract = makeSpokePoolPeripheryContract();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const tx = buildGaslessDepositTx(msg as any, contract);
       expect(tx.method).to.equal("");
       expect(tx.args.length).to.equal(1);
@@ -156,6 +158,7 @@ describe("GaslessUtils", function () {
     it("raw tx calldata starts with the depositWithAuthorization selector", function () {
       const msg = makeDepositMessage({ integratorId: "0x0001" });
       const contract = makeSpokePoolPeripheryContract();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const tx = buildGaslessDepositTx(msg as any, contract);
       const calldata = tx.args[0] as string;
       // First 4 bytes = function selector for depositWithAuthorization

@@ -391,6 +391,7 @@ export type L1BridgeConstructor<T extends BaseBridgeAdapter> = new (
   l2chainId: number,
   hubChainId: number,
   l1Signer: Signer,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   l2SignerOrProvider: any,
   l1Token: EvmAddress,
   logger: winston.Logger
@@ -399,6 +400,7 @@ export type L1BridgeConstructor<T extends BaseBridgeAdapter> = new (
 type L2BridgeConstructor<T extends BaseL2BridgeAdapter> = new (
   l2chainId: number,
   hubChainId: number,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   l2SignerOrProvider: any,
   l1Signer: Signer,
   l1Token: EvmAddress
