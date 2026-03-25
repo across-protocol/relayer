@@ -492,7 +492,7 @@ export class Monitor {
             );
 
             // If chain is hub chain, there should only be one l2 token,so its safe to add the pendingL2Withdrawals
-            // amount here and assume it won't get re-added on the next l2 token iteration. 
+            // amount here and assume it won't get re-added on the next l2 token iteration.
             if (chainId === hubChainId) {
               assert(l2Tokens.length === 1, "Hub chain should only have one l2 token");
               const withdrawals = pendingL2Withdrawals[l1Token.address.toNative()] ?? {};
