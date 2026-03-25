@@ -2,7 +2,7 @@ import { CHAIN_IDs, TOKEN_EQUIVALENCE_REMAPPING, TOKEN_SYMBOLS_MAP } from "@acro
 import { constants, utils, arch } from "@across-protocol/sdk";
 import { CONTRACT_ADDRESSES } from "../common";
 import { BigNumberish, BigNumber } from "./BNUtils";
-import { formatUnits, getTokenInfo } from "./SDKUtils";
+import { formatUnits, getL1TokenAddress as resolveL1TokenAddress, getTokenInfo } from "./SDKUtils";
 import { isDefined } from "./TypeGuards";
 import { Address, toAddressType, EvmAddress, SvmAddress, SVMProvider, toBN } from "./";
 import { TokenInfo } from "../interfaces";
@@ -11,6 +11,10 @@ const { ZERO_ADDRESS } = constants;
 
 export const { fetchTokenInfo, getL2TokenAddresses } = utils;
 
+// Returns the canonical token for the given L1 token on the given remote chain, assuming that the L1 token
+// exists in only a single mapping in TOKEN_SYMBOLS_MAP. This is the case currently for all tokens except for
+// USDC.e, but that's why we use the TOKEN_EQUIVALENCE_REMAPPING to remap the token back to its inventory
+// equivalent L1 token.
 export function getRemoteTokenForL1Token(
   _l1Token: EvmAddress,
   remoteChainId: number | string,
@@ -28,6 +32,70 @@ export function getRemoteTokenForL1Token(
     TOKEN_SYMBOLS_MAP[l1TokenSymbol]?.addresses[remoteChainId] ?? tokenMapping.addresses[remoteChainId],
     Number(remoteChainId)
   );
+}
+
+// Returns the L1 token that is equivalent to the `l2Token` within the context of the inventory.
+// This is used to link tokens that are not linked via pool rebalance routes, for example.
+export function getInventoryEquivalentL1TokenAddress(
+  l2Token: Address,
+  chainId: number,
+  hubChainId = CHAIN_IDs.MAINNET
+): EvmAddress {
+  try {
+    return resolveL1TokenAddress(l2Token, chainId);
+  } catch {
+    const { symbol } = getTokenInfo(l2Token, chainId);
+    const remappedSymbol = TOKEN_EQUIVALENCE_REMAPPING[symbol] ?? symbol;
+    const l1TokenAddress = TOKEN_SYMBOLS_MAP[remappedSymbol]?.addresses[hubChainId];
+    if (!isDefined(l1TokenAddress)) {
+      throw new Error(`Unable to resolve inventory-equivalent L1 token for ${l2Token} on chain ${chainId}`);
+    }
+    return EvmAddress.from(l1TokenAddress);
+  }
+}
+
+// Returns the L2 tokens that are equivalent for a given `l1Token` within the context of the inventory.
+// Equivalency is defined by tokens that share the same L1 token within TOKEN_SYMBOLS_MAP or are
+// mapped to each other in TOKEN_EQUIVALENCE_REMAPPING.
+export function getInventoryBalanceContributorTokens(
+  l1Token: EvmAddress,
+  chainId: number,
+  hubChainId = CHAIN_IDs.MAINNET
+): Address[] {
+  if (chainId === hubChainId) {
+    return [l1Token];
+  }
+
+  const hubTokenSymbol = getTokenInfo(l1Token, hubChainId).symbol;
+  const balanceContributorTokens: Address[] = [];
+  const canonicalToken = getRemoteTokenForL1Token(l1Token, chainId, hubChainId);
+  if (isDefined(canonicalToken)) {
+    balanceContributorTokens.push(canonicalToken);
+  }
+
+  Object.keys(TOKEN_SYMBOLS_MAP).forEach((tokenSymbol) => {
+    const token = TOKEN_SYMBOLS_MAP[tokenSymbol];
+    const remappedSymbol = TOKEN_EQUIVALENCE_REMAPPING[token.symbol] ?? token.symbol;
+    if (remappedSymbol === hubTokenSymbol && isDefined(token.addresses[chainId])) {
+      balanceContributorTokens.push(toAddressType(token.addresses[chainId], chainId));
+    }
+  });
+
+  return balanceContributorTokens.filter(
+    (token, index, allTokens) => allTokens.findIndex((candidate) => candidate.eq(token)) === index
+  );
+}
+
+// Returns true if the token symbol is an L2-only token that maps to a parent L1 token via
+// TOKEN_EQUIVALENCE_REMAPPING (e.g. pathUSD -> USDC, USDH -> USDC). These tokens have no
+// hub chain address and exist only on specific L2 chains.
+export function isL2OnlyEquivalentToken(symbol: string, hubChainId = CHAIN_IDs.MAINNET): boolean {
+  const remappedSymbol = TOKEN_EQUIVALENCE_REMAPPING[symbol];
+  if (!isDefined(remappedSymbol)) {
+    return false;
+  }
+  const tokenInfo = TOKEN_SYMBOLS_MAP[symbol];
+  return isDefined(tokenInfo) && !isDefined(tokenInfo.addresses[hubChainId]);
 }
 
 export function getNativeTokenAddressForChain(chainId: number): Address {
