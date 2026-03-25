@@ -698,6 +698,7 @@ describe("Dataworker: Load bundle data", async function () {
 
       // Manually remove the deposit from the client's cache to force historical query
       const depositKey = sdkUtils.getRelayEventKey(deposit);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       delete (spokePoolClient_1 as any).depositHashes[depositKey];
 
       const deposits = spokePoolClient_1.getDeposits();
@@ -789,6 +790,7 @@ describe("Dataworker: Load bundle data", async function () {
       expect(repaymentChainId).to.not.eq(originChainId);
 
       // Mock the config store client being included on the spoke client
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (spokePoolClient_1 as any).configStoreClient = mockConfigStore;
 
       // Send a fill now and force the bundle data client to query for the historical deposit.
@@ -799,6 +801,7 @@ describe("Dataworker: Load bundle data", async function () {
 
       // Manually remove the deposit from the client's cache to force historical query
       const depositKey = sdkUtils.getRelayEventKey(deposit);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       delete (spokePoolClient_1 as any).depositHashes[depositKey];
 
       // Load information needed to build a bundle
