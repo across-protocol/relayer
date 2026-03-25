@@ -22,7 +22,7 @@ import {
 } from "../../utils";
 import { TransferTokenParams } from "../utils";
 import ERC20_ABI from "../../common/abi/MinimalERC20.json";
-import axios, { AxiosHeaders } from "axios";
+import axios, { type RawAxiosRequestHeaders } from "axios";
 
 export const BRIDGE_API_MINIMUMS: { [l2ChainId: number]: BigNumber } = {
   [CHAIN_IDs.MAINNET]: toBN(5_000_000), // 5 USDC
@@ -202,7 +202,7 @@ export class BridgeApi extends BaseBridgeAdapter {
     const transferRequestData = await this._post<BridgeResponse>(
       "v0/transfers",
       data,
-      headers as unknown as AxiosHeaders
+      headers as RawAxiosRequestHeaders
     );
     return transferRequestData.source_deposit_instructions.to_address;
   }
@@ -211,10 +211,10 @@ export class BridgeApi extends BaseBridgeAdapter {
     return {
       "Api-Key": `${this.bridgeApiKey}`,
       "Content-Type": "application/json",
-    } as unknown as AxiosHeaders;
+    } as RawAxiosRequestHeaders;
   }
 
-  private async _get<T>(endpoint: string, headers: AxiosHeaders, nRetries = 2) {
+  private async _get<T>(endpoint: string, headers: RawAxiosRequestHeaders, nRetries = 2) {
     try {
       const response = await axios.get<T>(`${this.bridgeApiBase}/${endpoint}`, { headers });
       return response.data;
@@ -233,7 +233,12 @@ export class BridgeApi extends BaseBridgeAdapter {
     }
   }
 
-  private async _post<T>(endpoint: string, data: Record<string, unknown>, headers: AxiosHeaders, nRetries = 2) {
+  private async _post<T>(
+    endpoint: string,
+    data: Record<string, unknown>,
+    headers: RawAxiosRequestHeaders,
+    nRetries = 2
+  ) {
     try {
       const response = await axios.post<T>(`${this.bridgeApiBase}/${endpoint}`, data, { headers });
       return response.data;
