@@ -491,18 +491,22 @@ export class Monitor {
               l2Token
             );
 
+            // If chain is hub chain, there should only be one l2 token,so its safe to add the pendingL2Withdrawals
+            // amount here and assume it won't get re-added on the next l2 token iteration. 
             if (chainId === hubChainId) {
+              assert(l2Tokens.length === 1, "Hub chain should only have one l2 token");
               const withdrawals = pendingL2Withdrawals[l1Token.address.toNative()] ?? {};
               const totalWithdrawals = Object.values(withdrawals).reduce((acc, amt) => acc.add(amt), bnZero);
               pending = pending.add(totalWithdrawals);
             }
 
-            const pendingRebalanceAmount = pendingRebalances[chainId]?.[l1Token.symbol];
-            if (isDefined(pendingRebalanceAmount) && !pendingRebalanceAmount.isZero()) {
-              const remoteToken = getRemoteTokenForL1Token(l1Token.address, chainId, hubChainId);
-              if (isDefined(remoteToken)) {
-                const remoteDecimals = this.getTokenInfo(remoteToken, chainId).decimals;
-                pending = pending.add(ConvertDecimals(remoteDecimals, l1TokenDecimals)(pendingRebalanceAmount));
+            // Only add pending rebalance amount for the canonical L2 token to avoid double-counting
+            // when multiple contributor tokens exist on the same chain.
+            const canonicalL2Token = getRemoteTokenForL1Token(l1Token.address, chainId, hubChainId);
+            if (isDefined(canonicalL2Token) && l2Token.eq(canonicalL2Token)) {
+              const pendingRebalanceAmount = pendingRebalances[chainId]?.[l1Token.symbol];
+              if (isDefined(pendingRebalanceAmount) && !pendingRebalanceAmount.isZero()) {
+                pending = pending.add(toL1Decimals(pendingRebalanceAmount));
               }
             }
 
