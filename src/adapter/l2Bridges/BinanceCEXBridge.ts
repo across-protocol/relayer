@@ -123,15 +123,15 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
     // FilterMap to remove all deposits originating from other EOAs.
     const redisCache = await getRedisCache();
     const depositsInitiatedForAddress = await filterAsync(depositHistory, async (deposit) => {
-      // All withdrawals for the same coin should be withdrawn to the same address, so check the cache for the
-      // withdrawal address for this chain before making a fresh RPC call.
+      // All deposits for the same coin should be sent from the same address, so check the cache for the
+      // expected address for this chain before making a fresh RPC call.
       const binanceWithdrawalAddressKey = `binance-withdrawal-address:${deposit.coin}`;
       const binanceWithdrawalAddress = await redisCache.get<string>(binanceWithdrawalAddressKey);
       if (isDefined(binanceWithdrawalAddress)) {
         return compareAddressesSimple(binanceWithdrawalAddress, fromAddress.toNative());
       }
 
-      // If the withdrawal address is not in the cache, make a fresh RPC call to get the withdrawal address.
+      // If the deposited coin address is not in the cache, make a fresh RPC call to get the deposit address.
       // @dev if deposit is for a different chain than this.l2Chain, then we need to use the provider for that chain to get the transaction receipt.
       const l2ChainId = Object.entries(BINANCE_NETWORKS).find(([, network]) => network === deposit.network)?.[0];
       assert(isDefined(l2ChainId), `Could not find chain ID for network ${deposit.network} in BINANCE_NETWORKS`);
@@ -140,7 +140,7 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
       const txnReceipt = await l2ProviderForDepositChain.getTransactionReceipt(deposit.txId);
       if (isDefined(txnReceipt)) {
         // The default caching TTL is 2 weeks which should be plenty assuming we don't change the EOA
-        // address that we withdraw to frequently.
+        // address that we deposit this coin from frequently.
         await redisCache.set(binanceWithdrawalAddressKey, txnReceipt.from);
       }
       return compareAddressesSimple(txnReceipt?.from, fromAddress.toNative());
