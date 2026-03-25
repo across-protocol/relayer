@@ -512,12 +512,7 @@ export class GaslessRelayer {
       const [origin, destination] = [originChainId, destinationChainId].map(getNetworkName);
       const tStart = performance.now();
 
-      let fillImmediate =
-        !isSwap &&
-        this.fillImmediate(
-          { originChainId, destinationChainId, outputToken, outputAmount, exclusivityParameter },
-          spokePool
-        );
+      let fillImmediate = false;
       let deposit: RelayData & { destinationChainId: number };
       let depositReceiptPromise: Promise<TransactionReceipt | null>;
 
@@ -537,6 +532,12 @@ export class GaslessRelayer {
               setState(MessageState.ERROR);
               break;
             }
+            fillImmediate =
+              !isSwap &&
+              this.fillImmediate(
+                { originChainId, destinationChainId, outputToken, outputAmount, exclusivityParameter },
+                spokePool
+              );
             setState(MessageState.DEPOSIT_SUBMIT);
             break;
           }
