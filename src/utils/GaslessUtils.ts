@@ -27,6 +27,7 @@ import {
 } from "../utils";
 import { AugmentedTransaction } from "../clients";
 import { Contract, BigNumber, ethers } from "ethers";
+import { CONTRACT_ADDRESSES } from "../common";
 
 /**
  * Pulls normalized token/amount/deadline fields from a bridge or swap-and-bridge gasless message.
@@ -337,6 +338,30 @@ export function getGaslessAuthorizerAddress(depositMessage: AnyGaslessDepositMes
  */
 export function getGaslessPermitNonce(depositMessage: AnyGaslessDepositMessage): string {
   return depositMessage.permit.message.nonce;
+}
+
+/**
+ * Returns true if Permit2 has marked this nonce used for the owner (permit already executed on-chain).
+ * Used to detect prior submission when there is no EIP-3009 AuthorizationUsed or SpokePool FundsDeposited signal.
+ * Uniswap documentation: https://docs.uniswap.org/contracts/permit2/reference/signature-transfer
+ */
+export async function isPermit2NonceUsed(
+  originChainId: number,
+  provider: ethers.providers.Provider,
+  owner: string,
+  permitNonce: string
+): Promise<boolean> {
+  const permit2 = new ethers.Contract(
+    CONTRACT_ADDRESSES[originChainId].permit2.address,
+    CONTRACT_ADDRESSES[originChainId].permit2.abi,
+    provider
+  );
+  const nonce = BigInt(BigNumber.from(permitNonce.trim()).toString());
+  const wordPos = nonce >> 8n;
+  const bitPos = Number(nonce & 0xffn);
+  const bitmapBn = await permit2.nonceBitmap(owner, BigNumber.from(wordPos.toString()));
+  const bitmap = BigInt(bitmapBn.toString());
+  return (bitmap & (1n << BigInt(bitPos))) !== 0n;
 }
 
 /**
