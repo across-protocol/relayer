@@ -572,9 +572,9 @@ describe("Dataworker: Utilities to execute pool rebalance leaves", async functio
   describe("_executePoolRebalanceLeaves", async function () {
     let token1: EvmAddress, token2: EvmAddress, balanceAllocator: BalanceAllocator;
     beforeEach(function () {
-      (token1 = EvmAddress.from(randomAddress())),
+      ((token1 = EvmAddress.from(randomAddress())),
         (token2 = EvmAddress.from(randomAddress())),
-        (balanceAllocator = getNewBalanceAllocator());
+        (balanceAllocator = getNewBalanceAllocator()));
       balanceAllocator.testSetBalance(hubPoolClient.chainId, token1, EvmAddress.from(hubPool.address), toBNWei("2"));
       balanceAllocator.testSetBalance(hubPoolClient.chainId, token2, EvmAddress.from(hubPool.address), toBNWei("2"));
     });
@@ -761,9 +761,9 @@ describe("Dataworker: Utilities to execute pool rebalance leaves", async functio
   describe("_getExecutablePoolRebalanceLeaves", function () {
     let token1: EvmAddress, token2: EvmAddress, balanceAllocator: BalanceAllocator;
     beforeEach(function () {
-      (token1 = EvmAddress.from(randomAddress())),
+      ((token1 = EvmAddress.from(randomAddress())),
         (token2 = EvmAddress.from(randomAddress())),
-        (balanceAllocator = getNewBalanceAllocator());
+        (balanceAllocator = getNewBalanceAllocator()));
     });
     it("All l1 tokens on single leaf are executable", async function () {
       balanceAllocator.testSetBalance(

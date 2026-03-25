@@ -12,7 +12,13 @@ export abstract class BaseAcrossApiClient {
   protected readonly logContext: string;
   protected readonly apiKey: string | undefined;
 
-  constructor(readonly logger: winston.Logger, urlBase: string, logContext: string, timeoutMs = 3000, apiKey?: string) {
+  constructor(
+    readonly logger: winston.Logger,
+    urlBase: string,
+    logContext: string,
+    timeoutMs = 3000,
+    apiKey?: string
+  ) {
     this.urlBase = urlBase;
     this.logContext = logContext;
     this.apiResponseTimeout = timeoutMs;

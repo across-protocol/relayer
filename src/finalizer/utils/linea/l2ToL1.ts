@@ -288,8 +288,8 @@ export async function lineaL2ToL1Finalizer(
     return message.status === OnChainMessageStatus.CLAIMED
       ? "claimed"
       : message.status === OnChainMessageStatus.CLAIMABLE
-      ? "claimable"
-      : "unknown";
+        ? "claimable"
+        : "unknown";
   });
 
   // Populate txns for claimable messages
