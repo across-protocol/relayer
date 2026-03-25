@@ -204,6 +204,9 @@ export class BundleDataApproxClient {
       spokePoolClient
         .getDeposits()
         .filter((deposit) => {
+          if (deposit.blockNumber < fromBlocks[chainId]) {
+            return false;
+          }
           // We are ok to group together deposits for inventory-equivalent tokens because these approximate
           // deposits and refunds are usually computed and summed together to approximate running balances. So we should
           // use the same methodology for equating input and l1 tokens as we do in the getApproximateRefundsForToken method.
@@ -211,7 +214,7 @@ export class BundleDataApproxClient {
           if (!isDefined(expectedL1Token)) {
             return false;
           }
-          return l1Token.eq(expectedL1Token) && deposit.blockNumber >= fromBlocks[chainId];
+          return l1Token.eq(expectedL1Token);
         })
         .forEach((deposit) => {
           const depositAmount = ConvertDecimals(
