@@ -287,6 +287,7 @@ export function createViemCustomTransportFromEthersProvider(providerChainId: num
         const provider = getCachedProvider(providerChainId, true);
         try {
           return await provider.send(method, params);
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (error: any) {
           // Ethers encodes RPC errors differently than Viem expects it so if the error is a JSON RPC error,
           // decode it in a way that Viem can gracefully handle.

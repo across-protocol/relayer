@@ -25,6 +25,7 @@ export type SpokePoolClientWithListener = InstanceType<ReturnType<typeof SpokeLi
  * @returns true if the client has the onBlock method (i.e., has the listener mixin)
  */
 export function isSpokePoolClientWithListener(client: SpokePoolClient): client is SpokePoolClientWithListener {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return "onBlock" in client && typeof (client as any).onBlock === "function";
 }
 
@@ -38,6 +39,7 @@ export function isSpokePoolClientWithListener(client: SpokePoolClient): client i
  * more invasive and out of scope for now.
  * Reference: https://www.typescriptlang.org/docs/handbook/mixins.html
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Constructor<T = Record<string, unknown>> = new (...args: any[]) => T;
 
 // Minimum common-ish interface supplied by the SpokePoolClient.

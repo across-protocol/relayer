@@ -5,13 +5,13 @@ module.exports = {
     mocha: true,
     node: true,
   },
-  plugins: ["node", "prettier", "@typescript-eslint", "mocha", "chai-expect"],
+  plugins: ["n", "prettier", "@typescript-eslint", "mocha", "chai-expect"],
   extends: [
     "plugin:prettier/recommended",
     "eslint:recommended",
     "plugin:@typescript-eslint/recommended",
     "plugin:@typescript-eslint/eslint-recommended",
-    "plugin:node/recommended",
+    "plugin:n/recommended",
   ],
   parser: "@typescript-eslint/parser",
   parserOptions: {
@@ -30,10 +30,13 @@ module.exports = {
     camelcase: "off",
     "@typescript-eslint/camelcase": "off",
     "mocha/no-exclusive-tests": "error",
-    "@typescript-eslint/no-var-requires": "off",
-    "node/no-unsupported-features/es-syntax": ["error", { ignores: ["modules"] }],
+    "@typescript-eslint/no-require-imports": "off",
+    "n/no-missing-import": "off", // TypeScript handles import resolution
+    "n/no-process-exit": "off",
+    "n/no-unsupported-features/es-syntax": ["error", { ignores: ["modules"] }],
+    "@typescript-eslint/no-explicit-any": "error",
     // Disable warnings for { a, b, ...rest } variables, since this is typically used to remove variables.
-    "@typescript-eslint/no-unused-vars": ["error", { ignoreRestSiblings: true }],
+    "@typescript-eslint/no-unused-vars": ["error", { ignoreRestSiblings: true, argsIgnorePattern: "^_", caughtErrorsIgnorePattern: "^_" }],
     "chai-expect/missing-assertion": 2,
     "no-duplicate-imports": "error",
     "@typescript-eslint/no-floating-promises": ["error"],
@@ -68,6 +71,12 @@ module.exports = {
       files: ["test/**/*.ts", "hardhat.config.ts", "tasks/*.ts"],
       rules: {
         "no-restricted-imports": "off",
+      },
+    },
+    {
+      files: ["test/**/*.ts"],
+      rules: {
+        "@typescript-eslint/no-unused-expressions": "off", // Chai assertions are "unused expressions"
       },
     },
   ],
