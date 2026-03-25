@@ -63,12 +63,6 @@ class TestableGaslessRelayer extends GaslessRelayer {
   public setSpokePools(pools: { [chainId: number]: Contract }): void {
     this.spokePools = pools;
   }
-  public setObservedDeposits(deposits: { [chainId: number]: Set<string> }): void {
-    this.observedDeposits = deposits;
-  }
-  public setObservedFills(fills: { [chainId: number]: Set<string> }): void {
-    this.observedFills = fills;
-  }
   public setSignerAddress(address: EvmAddress): void {
     this.signerAddress = address;
   }
@@ -160,6 +154,10 @@ class TestableGaslessRelayer extends GaslessRelayer {
     const currentState = this._getState(depositKey);
     super._setState(depositKey, state);
 
+    // GaslessRelayer may call setState(INITIAL) when already INITIAL (chain preflight no-op).
+    if (currentState === state) {
+      return;
+    }
     this.stateTransitions[depositKey] ??= [];
     this.stateTransitions[depositKey].push({ from: currentState, to: state });
   }
@@ -498,8 +496,6 @@ describe("GaslessRelayer", function () {
       [ORIGIN_CHAIN_ID]: fakeSpokePool,
       [DESTINATION_CHAIN_ID]: fakeSpokePool,
     });
-    relayer.setObservedDeposits({ [ORIGIN_CHAIN_ID]: new Set() });
-    relayer.setObservedFills({ [DESTINATION_CHAIN_ID]: new Set() });
     relayer.setSignerAddress(EvmAddress.from(signer.address));
   });
 
