@@ -119,34 +119,36 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
       );
     });
 
-    // FilterMap to remove all deposits originating from other EOAs.
+    // Filter deposits down to the single EOA we expect to use for this coin. On cache miss, resolve
+    // the sender once from the first deposit receipt we can read, then reuse it for the whole batch.
     const redisCache = await getRedisCache();
-    const depositsInitiatedForAddress = await filterAsync(depositHistory, async (deposit) => {
-      // All deposits for the same coin should be sent from the same address, so check the cache for the
-      // expected address for this chain before making a fresh RPC call.
-      const binanceWithdrawalAddressKey = `binance-withdrawal-address:${deposit.coin}`;
-      const binanceWithdrawalAddress = await redisCache.get<string>(binanceWithdrawalAddressKey);
-      if (isDefined(binanceWithdrawalAddress)) {
-        return compareAddressesSimple(binanceWithdrawalAddress, fromAddress.toNative());
+    const binanceWithdrawalAddressKey = `binance-withdrawal-address:${this.l1TokenInfo.symbol}`;
+    let binanceWithdrawalAddress = await redisCache.get<string>(binanceWithdrawalAddressKey);
+    if (!isDefined(binanceWithdrawalAddress)) {
+      for (const deposit of depositHistory) {
+        // @dev if deposit is for a different chain than this.l2Chain, then we need to use the provider for that chain to get the transaction receipt.
+        // Since all deposits for the same coin should use the same EOA, a single successful lookup is enough.
+        const l2ChainId = Object.entries(BINANCE_NETWORKS).find(([, network]) => network === deposit.network)?.[0];
+        if (!isDefined(l2ChainId)) {
+          continue;
+        }
+        const l2ProviderForDepositChain =
+          Number(l2ChainId) === this.l2chainId ? this.l2Signer.provider : await getProvider(Number(l2ChainId));
+        const txnReceipt = await l2ProviderForDepositChain.getTransactionReceipt(deposit.txId);
+        if (isDefined(txnReceipt?.from)) {
+          binanceWithdrawalAddress = txnReceipt.from;
+          // The default caching TTL is 2 weeks which should be plenty assuming we don't change the EOA
+          // address that we deposit this coin from frequently.
+          await redisCache.set(binanceWithdrawalAddressKey, txnReceipt.from);
+          break;
+        }
       }
+    }
 
-      // If the deposited coin address is not in the cache, make a fresh RPC call to get the deposit address.
-      // @dev if deposit is for a different chain than this.l2Chain, then we need to use the provider for that chain to get the transaction receipt.
-      const l2ChainId = Object.entries(BINANCE_NETWORKS).find(([, network]) => network === deposit.network)?.[0];
-      if (!isDefined(l2ChainId)) {
-        // Deposit network needs to be added to BINANCE_NETWORKS.
-        return false;
-      }
-      const l2ProviderForDepositChain =
-        Number(l2ChainId) === this.l2chainId ? this.l2Signer.provider : await getProvider(Number(l2ChainId));
-      const txnReceipt = await l2ProviderForDepositChain.getTransactionReceipt(deposit.txId);
-      if (isDefined(txnReceipt)) {
-        // The default caching TTL is 2 weeks which should be plenty assuming we don't change the EOA
-        // address that we deposit this coin from frequently.
-        await redisCache.set(binanceWithdrawalAddressKey, txnReceipt.from);
-      }
-      return compareAddressesSimple(txnReceipt?.from, fromAddress.toNative());
-    });
+    const depositsInitiatedForAddress =
+      isDefined(binanceWithdrawalAddress) && compareAddressesSimple(binanceWithdrawalAddress, fromAddress.toNative())
+        ? depositHistory
+        : [];
 
     const unmatchedDeposits = getOutstandingBinanceDeposits(
       depositsInitiatedForAddress,
@@ -156,7 +158,7 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
     return unmatchedDeposits.reduce((sum, deposit) => sum.add(floatToBN(deposit.amount, l2TokenInfo.decimals)), bnZero);
   }
 
-  protected async getBinanceClient() {
+  protected async getBinanceClient(): Promise<BinanceApi> {
     return (this.binanceApiClient ??= await this.binanceApiClientPromise);
   }
 
