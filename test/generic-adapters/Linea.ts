@@ -206,9 +206,9 @@ describe("Cross Chain Adapter: Linea", async function () {
   });
   describe("ERC20", function () {
     it("Get L1 initiated events", async function () {
-      await erc20BridgeContract.emitBridgingInitiated(randomAddress(), monitoredEoa, l1Token);
-      await erc20BridgeContract.emitBridgingInitiated(monitoredEoa, randomAddress(), l1Token);
-      await erc20BridgeContract.emitBridgingInitiated(randomAddress(), monitoredEoa, randomAddress());
+      await erc20BridgeContract.emitBridgingInitiated(randomAddress(), monitoredEoa, l1Token, 1);
+      await erc20BridgeContract.emitBridgingInitiated(monitoredEoa, randomAddress(), l1Token, 1);
+      await erc20BridgeContract.emitBridgingInitiated(randomAddress(), monitoredEoa, randomAddress(), 1);
 
       const erc20Bridge = adapter.bridges[l1Token];
       const result = await erc20Bridge.queryL1BridgeInitiationEvents(
@@ -222,9 +222,9 @@ describe("Cross Chain Adapter: Linea", async function () {
     });
     it("Get L2 finalized events", async function () {
       // Should return only event
-      await erc20BridgeContract.emitBridgingFinalized(l1Token, monitoredEoa);
-      await erc20BridgeContract.emitBridgingFinalized(randomAddress(), monitoredEoa);
-      await erc20BridgeContract.emitBridgingFinalized(l1Token, randomAddress());
+      await erc20BridgeContract.emitBridgingFinalized(l1Token, monitoredEoa, 1);
+      await erc20BridgeContract.emitBridgingFinalized(randomAddress(), monitoredEoa, 1);
+      await erc20BridgeContract.emitBridgingFinalized(l1Token, randomAddress(), 1);
 
       const erc20Bridge = adapter.bridges[l1Token];
       const result = await erc20Bridge.queryL2BridgeFinalizationEvents(
@@ -237,9 +237,9 @@ describe("Cross Chain Adapter: Linea", async function () {
       expect(Object.keys(result).length).to.equal(1);
     });
     it("Matches L1 and L2 events", async function () {
-      await erc20BridgeContract.emitBridgingInitiated(randomAddress(), monitoredEoa, l1Token);
-      const unfinalizedTx = await erc20BridgeContract.emitBridgingInitiated(randomAddress(), monitoredEoa, l1Token);
-      await erc20BridgeContract.emitBridgingFinalized(l1Token, monitoredEoa);
+      await erc20BridgeContract.emitBridgingInitiated(randomAddress(), monitoredEoa, l1Token, 1);
+      const unfinalizedTx = await erc20BridgeContract.emitBridgingInitiated(randomAddress(), monitoredEoa, l1Token, 1);
+      await erc20BridgeContract.emitBridgingFinalized(l1Token, monitoredEoa, 1);
 
       await adapter.updateSpokePoolClients();
       const result = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Token)]);

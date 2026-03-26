@@ -168,12 +168,6 @@ export class AdapterManager {
         adapter.supportedTokens.includes(TOKEN_EQUIVALENCE_REMAPPING[tokenSymbol])
       );
     });
-    this.logger.debug({
-      at: "AdapterManager",
-      message: `Getting outstandingCrossChainTransfers for ${chainId}`,
-      adapterSupportedL1Tokens: adapterSupportedL1Tokens.map((l1Token) => l1Token.toNative()),
-      searchConfigs: adapter.getUpdatedSearchConfigs(),
-    });
     return this.adapters[chainId].getOutstandingCrossChainTransfers(adapterSupportedL1Tokens);
   }
 
@@ -250,7 +244,6 @@ export class AdapterManager {
     const totalBalance: { [l2ChainId: number]: BigNumber } = {};
     await Promise.all(
       l2ChainIds.map(async (chainId) => {
-        totalBalance[chainId] = bnZero;
         if (!this.l2TokenExistForL1Token(l1Token, chainId)) {
           return;
         }
@@ -271,7 +264,9 @@ export class AdapterManager {
           fromAddress,
           l2Token
         );
-        totalBalance[chainId] = l2ToL1DecimalConverter(pendingAmount);
+        if (pendingAmount.gt(bnZero)) {
+          totalBalance[chainId] = l2ToL1DecimalConverter(pendingAmount);
+        }
       })
     );
     return totalBalance;
