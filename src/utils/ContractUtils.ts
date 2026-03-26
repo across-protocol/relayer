@@ -49,6 +49,12 @@ export function getSpokePoolPeriphery(chainId: number, address?: string): Contra
   return new Contract(address, CONTRACT_ADDRESSES[chainId].spokePoolPeriphery.abi);
 }
 
+// Uniswap Permit2 (same deployment address on supported EVM chains). Falls back to mainnet metadata when `chainId` has no entry.
+export function getPermit2(chainId: number, address?: string): Contract {
+  const permit2 = CONTRACT_ADDRESSES[chainId].permit2;
+  return new Contract(address ?? permit2.address, permit2.abi);
+}
+
 export function getSpokePoolAddress(chainId: number): Address {
   const evmChain = chainIsEvm(chainId);
   const addr = getDeployedAddress(evmChain ? "SpokePool" : "SvmSpoke", chainId, true);
