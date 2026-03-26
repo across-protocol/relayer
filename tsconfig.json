@@ -3,6 +3,7 @@
     "target": "es2024",
     "module": "commonjs",
     "esModuleInterop": true,
+    "rootDir": ".",
     "outDir": "./dist",
     "declaration": true,
     "skipLibCheck": true,
