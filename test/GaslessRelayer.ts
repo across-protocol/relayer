@@ -1,10 +1,16 @@
 import { Contract } from "ethers";
-import { AnyGaslessDepositMessage, DepositWithBlock, GaslessDepositMessage, RelayData } from "../src/interfaces";
+import {
+  AnyGaslessDepositMessage,
+  DepositWithBlock,
+  GaslessDepositMessage,
+  RelayData,
+  SwapAndBridgeGaslessDepositMessage,
+} from "../src/interfaces";
 import { GaslessRelayer, MessageState } from "../src/gasless/GaslessRelayer";
 import { GaslessRelayerConfig } from "../src/gasless/GaslessRelayerConfig";
 import SPOKE_POOL_PERIPHERY_ABI from "../src/common/abi/SpokePoolPeriphery.json";
+import PERMIT2_ABI from "../src/common/abi/Permit2.json";
 import {
-  Address,
   CHAIN_IDs,
   EvmAddress,
   Provider,
@@ -64,6 +70,15 @@ class TestableGaslessRelayer extends GaslessRelayer {
   public setSpokePools(pools: { [chainId: number]: Contract }): void {
     this.spokePools = pools;
   }
+  public setPermit2Contracts(contracts: { [chainId: number]: Contract }): void {
+    this.permit2Contracts = contracts;
+  }
+  public runUpdateObservedCctpDeposits(apiMessages: AnyGaslessDepositMessage[]): Promise<void> {
+    return this.updateObservedCctpDeposits(apiMessages);
+  }
+  public getObservedDepositsSet(chainId: number): Set<string> {
+    return this.observedDeposits[chainId];
+  }
   public setObservedDeposits(deposits: { [chainId: number]: Set<string> }): void {
     this.observedDeposits = deposits;
   }
@@ -100,12 +115,8 @@ class TestableGaslessRelayer extends GaslessRelayer {
   public extractDepositFromReceiptFn: (receipt: TransactionReceipt, chainId: number) => StrippedDeposit = () => {
     throw new Error("extractDepositFromReceiptFn not configured");
   };
-  public findDepositFn: (
-    originChainId: number,
-    inputToken: Address,
-    authorizer: string,
-    nonce: string
-  ) => Promise<StrippedDeposit | undefined> = async () => undefined;
+  public findDepositFn: (depositMessage: GaslessDepositMessage) => Promise<StrippedDeposit | undefined> = async () =>
+    undefined;
 
   // Call counters -- incremented by the overrides below.
   public initiateDepositCalls = 0;
@@ -147,14 +158,9 @@ class TestableGaslessRelayer extends GaslessRelayer {
     this.extractDepositFromReceiptCalls++;
     return this.extractDepositFromReceiptFn(receipt, originChainId);
   }
-  protected override async _findDeposit(
-    originChainId: number,
-    inputToken: Address,
-    authorizer: string,
-    nonce: string
-  ): Promise<StrippedDeposit | undefined> {
+  protected override async _findDeposit(depositMessage: GaslessDepositMessage): Promise<StrippedDeposit | undefined> {
     this.findDepositCalls++;
-    return this.findDepositFn(originChainId, inputToken, authorizer, nonce);
+    return this.findDepositFn(depositMessage);
   }
 
   protected override _setState(depositKey: string, state: MessageState): void {
@@ -299,6 +305,89 @@ function makeCctpDepositMessage(
   return msg;
 }
 
+/** CCTP spokePool marker (same as makeCctpDepositMessage). */
+const CCTP_SPOKE_POOL = "0x" + "cc".repeat(20);
+
+/**
+ * Swap-and-bridge + CCTP + Permit2 (used to exercise Permit2 nonceBitmap observation / confirmation).
+ */
+function makeSwapAndBridgePermit2CctpMessage(
+  overrides: Partial<{
+    depositId: string;
+    permitNonce: string;
+    depositData: Partial<SwapAndBridgeGaslessDepositMessage["depositData"]>;
+  }> = {}
+): SwapAndBridgeGaslessDepositMessage {
+  const fillDeadline = getCurrentTime() + 3600;
+  const depositData: SwapAndBridgeGaslessDepositMessage["depositData"] = {
+    inputToken: USDC_MAINNET,
+    outputToken: USDC_BASE,
+    outputAmount: "1000000",
+    depositor: DUMMY_ADDRESS,
+    recipient: DUMMY_ADDRESS,
+    destinationChainId: DESTINATION_CHAIN_ID,
+    exclusiveRelayer: DUMMY_ADDRESS,
+    quoteTimestamp: getCurrentTime(),
+    fillDeadline,
+    exclusivityDeadline: 1700000000,
+    exclusivityParameter: 1700000000,
+    message: "0x",
+    ...overrides.depositData,
+  };
+  const permitNonce = overrides.permitNonce ?? "0";
+  const depositId = overrides.depositId ?? "cctp-swap-p2-1";
+
+  return {
+    depositFlowType: "swapAndBridge",
+    originChainId: ORIGIN_CHAIN_ID,
+    depositId,
+    requestId: "req-swap-permit2-cctp",
+    signature: DUMMY_SIGNATURE,
+    permitType: "permit2",
+    permit: {
+      types: { PermitWitnessTransferFrom: [] },
+      domain: { name: "Permit2", chainId: ORIGIN_CHAIN_ID, verifyingContract: DUMMY_ADDRESS },
+      primaryType: "PermitWitnessTransferFrom",
+      message: {
+        permitted: { token: USDC_MAINNET, amount: "1000000" },
+        spender: DUMMY_ADDRESS,
+        nonce: permitNonce,
+        deadline: 999999999999,
+        witness: {
+          submissionFees: { amount: "100", recipient: DUMMY_ADDRESS },
+          depositData,
+          swapToken: USDC_MAINNET,
+          exchange: DUMMY_ADDRESS,
+          transferType: 0,
+          swapTokenAmount: "1000000",
+          minExpectedInputTokenAmount: "1000000",
+          routerCalldata: "0x",
+          enableProportionalAdjustment: false,
+          spokePool: CCTP_SPOKE_POOL,
+          nonce: "w-1",
+        },
+      },
+    },
+    depositData,
+    submissionFees: { amount: "100", recipient: DUMMY_ADDRESS },
+    swapToken: USDC_MAINNET,
+    exchange: DUMMY_ADDRESS,
+    transferType: 0,
+    swapTokenAmount: "1000000",
+    minExpectedInputTokenAmount: "1000000",
+    routerCalldata: "0x",
+    enableProportionalAdjustment: false,
+    spokePool: CCTP_SPOKE_POOL,
+    nonce: "1",
+  };
+}
+
+/** Deposit key for swap-and-bridge messages (matches `evaluateApiSignatures` / `messageFilter`). */
+function depositNonceForSwap(relayer: TestableGaslessRelayer, msg: SwapAndBridgeGaslessDepositMessage): string {
+  const token = EvmAddress.from(msg.depositData.inputToken).toNative();
+  return relayer.getDepositKey(token, msg.originChainId, msg.depositId);
+}
+
 /** Minimal transaction receipt that looks successful. */
 function makeReceipt(overrides: Partial<TransactionReceipt> = {}): TransactionReceipt {
   const defaults: TransactionReceipt = {
@@ -323,7 +412,9 @@ function makeReceipt(overrides: Partial<TransactionReceipt> = {}): TransactionRe
 }
 
 /** Fake deposit event data returned by _extractDepositFromTransactionReceipt / _findDeposit. */
-function makeFakeDepositEvent(amounts: { inputAmount?: string; outputAmount?: string } = {}): StrippedDeposit {
+function makeFakeDepositEvent(
+  amounts: { inputAmount?: string; outputAmount?: string; message?: string } = {}
+): StrippedDeposit {
   return {
     originChainId: ORIGIN_CHAIN_ID,
     depositId: toBN(42),
@@ -333,7 +424,7 @@ function makeFakeDepositEvent(amounts: { inputAmount?: string; outputAmount?: st
     inputAmount: toBN(amounts.inputAmount ?? "1000000"),
     outputToken: EvmAddress.from(USDC_BASE),
     outputAmount: toBN(amounts.outputAmount ?? "1000000"),
-    message: "0x",
+    message: amounts.message ?? "0x",
     fillDeadline: getCurrentTime() + 3600,
     exclusiveRelayer: DUMMY_EVM_ADDRESS,
     exclusivityDeadline: 0,
@@ -456,6 +547,7 @@ describe("GaslessRelayer", function () {
   let relayer: TestableGaslessRelayer;
   let fakeSpokePoolAddress: string;
   let fakePeripherySmock: FakeContract;
+  let fakePermit2Smock: FakeContract;
 
   // Test fixture helpers that automatically use the correct spokePool address
   const makeTestDepositMessage = (overrides?: Partial<GaslessDepositMessage["baseDepositData"]>) =>
@@ -502,6 +594,10 @@ describe("GaslessRelayer", function () {
     relayer.setObservedDeposits({ [ORIGIN_CHAIN_ID]: new Set() });
     relayer.setObservedFills({ [DESTINATION_CHAIN_ID]: new Set() });
     relayer.setSignerAddress(EvmAddress.from(signer.address));
+
+    fakePermit2Smock = await smock.fake(PERMIT2_ABI);
+    fakePermit2Smock.nonceBitmap.returns(ethers.BigNumber.from(0));
+    relayer.setPermit2Contracts({ [ORIGIN_CHAIN_ID]: fakePermit2Smock as unknown as Contract });
   });
 
   afterEach(function () {
@@ -715,6 +811,52 @@ describe("GaslessRelayer", function () {
 
       relayer.queryGaslessApiFn = async () => [msg];
       relayer.initiateDepositFn = async () => receipt;
+
+      await relayer.runEvaluateApiSignatures();
+
+      expect(relayer.getMessageState(nonce)).to.equal(MessageState.FILLED);
+      expect(relayer.initiateDepositCalls).to.equal(1);
+      expect(relayer.initiateFillCalls).to.equal(0);
+      expectCctpTransitions(relayer.stateTransitions[nonce]);
+    });
+  });
+
+  describe("Permit2 nonce bitmap (CCTP swap)", function () {
+    it("updateObservedCctpDeposits adds observed key when Permit2 nonce is consumed", async function () {
+      const msg = makeSwapAndBridgePermit2CctpMessage({ depositId: "obs-1", permitNonce: "0" });
+      const expectedKey = relayer.getDepositKey(
+        EvmAddress.from(msg.depositData.inputToken).toNative(),
+        ORIGIN_CHAIN_ID,
+        msg.depositId
+      );
+      fakePermit2Smock.nonceBitmap.returns(ethers.BigNumber.from(1));
+
+      await relayer.runUpdateObservedCctpDeposits([msg]);
+
+      expect(relayer.getObservedDepositsSet(ORIGIN_CHAIN_ID).has(expectedKey)).to.equal(true);
+    });
+
+    it("updateObservedCctpDeposits skips when Permit2 nonce is not consumed", async function () {
+      const msg = makeSwapAndBridgePermit2CctpMessage({ depositId: "obs-2", permitNonce: "0" });
+      const expectedKey = relayer.getDepositKey(
+        EvmAddress.from(msg.depositData.inputToken).toNative(),
+        ORIGIN_CHAIN_ID,
+        msg.depositId
+      );
+      fakePermit2Smock.nonceBitmap.returns(ethers.BigNumber.from(0));
+
+      await relayer.runUpdateObservedCctpDeposits([msg]);
+
+      expect(relayer.getObservedDepositsSet(ORIGIN_CHAIN_ID).has(expectedKey)).to.equal(false);
+    });
+
+    it("CCTP swap + Permit2: null deposit receipt but consumed nonce confirms to FILLED", async function () {
+      const msg = makeSwapAndBridgePermit2CctpMessage({ depositId: "obs-3", permitNonce: "0" });
+      const nonce = depositNonceForSwap(relayer, msg);
+      fakePermit2Smock.nonceBitmap.returns(ethers.BigNumber.from(1));
+
+      relayer.queryGaslessApiFn = async () => [msg];
+      relayer.initiateDepositFn = async () => null;
 
       await relayer.runEvaluateApiSignatures();
 

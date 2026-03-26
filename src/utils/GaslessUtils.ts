@@ -27,7 +27,6 @@ import {
 } from "../utils";
 import { AugmentedTransaction } from "../clients";
 import { Contract, BigNumber, ethers } from "ethers";
-import { CONTRACT_ADDRESSES } from "../common";
 
 /**
  * Pulls normalized token/amount/deadline fields from a bridge or swap-and-bridge gasless message.
@@ -345,17 +344,7 @@ export function getGaslessPermitNonce(depositMessage: AnyGaslessDepositMessage):
  * Used to detect prior submission when there is no EIP-3009 AuthorizationUsed or SpokePool FundsDeposited signal.
  * Uniswap documentation: https://docs.uniswap.org/contracts/permit2/reference/signature-transfer
  */
-export async function isPermit2NonceUsed(
-  originChainId: number,
-  provider: ethers.providers.Provider,
-  owner: string,
-  permitNonce: string
-): Promise<boolean> {
-  const permit2 = new ethers.Contract(
-    CONTRACT_ADDRESSES[originChainId].permit2.address,
-    CONTRACT_ADDRESSES[originChainId].permit2.abi,
-    provider
-  );
+export async function isPermit2NonceUsed(permit2: Contract, owner: string, permitNonce: string): Promise<boolean> {
   const nonce = toBN(permitNonce);
   const wordPos = nonce.div(256);
   const bitPos = nonce.mod(256).toBigInt();

@@ -31,6 +31,7 @@ import {
   createFormatFunction,
   toAddressType,
   getSpokePoolPeriphery,
+  getPermit2,
   compareAddressesSimple,
   ConvertDecimals,
   assert,
@@ -119,6 +120,8 @@ export class GaslessRelayer {
   protected spokePoolPeripheries: { [chainId: number]: Contract } = {};
   // The object is indexed by `chainId`. A SpokePool contract is indexed by the chain ID.
   protected spokePools: { [chainId: number]: Contract } = {};
+  /** Permit2 on each origin chain, connected to that chain's provider (nonce bitmap reads). */
+  protected permit2Contracts: { [chainId: number]: Contract } = {};
 
   private api: AcrossSwapApiClient;
   protected signerAddress: EvmAddress;
@@ -160,6 +163,7 @@ export class GaslessRelayer {
         chainId,
         this.config.spokePoolPeripheryOverrides[chainId]
       ).connect(provider);
+      this.permit2Contracts[chainId] = getPermit2(chainId).connect(provider);
     });
     await forEachAsync(this.config.relayerDestinationChains, async (chainId) => {
       this.providersByChain[chainId] ??= await getProvider(chainId);
@@ -397,17 +401,16 @@ export class GaslessRelayer {
    * - Permit2 (bridge only): FundsDeposited on SpokePool by depositId (no AuthorizationUsed on the transfer token).
    * - Permit2 (swap-and-bridge): Permit2 nonceBitmap on canonical Permit2 — if nonce used, treat deposit as already submitted.
    */
-  private async updateObservedCctpDeposits(apiMessages: AnyGaslessDepositMessage[]): Promise<void> {
+  protected async updateObservedCctpDeposits(apiMessages: AnyGaslessDepositMessage[]): Promise<void> {
     const cctpMessages = apiMessages.filter((msg) => this._isCctpDeposit(msg.originChainId, msg.spokePool));
     await mapAsync(cctpMessages, async (depositMessage) => {
       const { originChainId, depositId } = depositMessage;
 
       if (depositMessage.depositFlowType === "swapAndBridge") {
         if (depositMessage.permitType === "permit2") {
-          const provider = this.providersByChain[originChainId];
           const owner = getGaslessAuthorizerAddress(depositMessage);
           const permitNonce = getGaslessPermitNonce(depositMessage);
-          const nonceUsed = await isPermit2NonceUsed(originChainId, provider, owner, permitNonce);
+          const nonceUsed = await isPermit2NonceUsed(this.permit2Contracts[originChainId], owner, permitNonce);
           if (!nonceUsed) {
             return;
           }
@@ -577,12 +580,7 @@ export class GaslessRelayer {
                   const authToken = isSwap ? toAddressType(depositMessage.swapToken, originChainId) : inputToken;
                   found = await this._findAuthorizationUsed(originChainId, authToken, authorizer, nonce);
                 } else if (depositMessage.permitType === "permit2") {
-                  const nonceUsed = await isPermit2NonceUsed(
-                    originChainId,
-                    this.providersByChain[originChainId],
-                    authorizer,
-                    nonce
-                  );
+                  const nonceUsed = await isPermit2NonceUsed(this.permit2Contracts[originChainId], authorizer, nonce);
                   // Same outcome as AuthorizationUsed: confirm origin submission without a tx receipt (no EIP-3009 event).
                   if (nonceUsed) {
                     found = "permit2-nonce-consumed";
@@ -904,7 +902,7 @@ export class GaslessRelayer {
   /*
    * @notice Finds the whole deposit event for a non-CCTP message: Permit2 by depositId on SpokePool, EIP-3009 by AuthorizationUsed then tx receipt.
    */
-  private async _findDeposit(
+  protected async _findDeposit(
     depositMessage: GaslessDepositMessage
   ): Promise<Omit<DepositWithBlock, "fromLiteChain" | "toLiteChain" | "quoteBlockNumber"> | undefined> {
     const { originChainId, depositId, spokePool } = depositMessage;
