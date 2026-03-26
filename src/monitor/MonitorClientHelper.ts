@@ -35,6 +35,7 @@ export async function constructMonitorClients(
   const { hubPoolClient, configStoreClient } = commonClients;
 
   await updateClients(commonClients, config, logger);
+  // Need to update HubPoolClient to get latest tokens via hubPoolClient.getL1Tokens().
   await hubPoolClient.update();
 
   // Construct spoke pool clients for all chains that are not *currently* disabled. Caller can override
@@ -55,14 +56,23 @@ export async function constructMonitorClients(
     config.blockRangeEndBlockBuffer
   );
 
-  // Need to update HubPoolClient to get latest tokens.
-  const spokePoolAddresses = Object.values(spokePoolClients).map((client) => client.spokePoolAddress);
+  // Spoke pool addresses can be reused on different chains so we need to deduplicate them.
+  const uniqueSpokePoolAddresses: { [chainId: number]: string } = {};
+  Object.entries(spokePoolClients).forEach(([chainId, client]) => {
+    if (!Object.values(uniqueSpokePoolAddresses).includes(client.spokePoolAddress.toNative())) {
+      uniqueSpokePoolAddresses[chainId] = client.spokePoolAddress.toNative();
+    }
+  });
+  const spokePoolAddresses = Object.entries(uniqueSpokePoolAddresses).map(([chainId, address]) =>
+    toAddressType(address, Number(chainId))
+  );
 
   // Cross-chain transfers will originate from the HubPool's address and target SpokePool addresses, so
   // track both.
   const adapterManager = new AdapterManager(logger, spokePoolClients, hubPoolClient, [
     toAddressType(signerAddr, hubPoolClient.chainId),
     toAddressType(hubPoolClient.hubPool.address, hubPoolClient.chainId),
+    ...config.monitoredRelayers,
     ...spokePoolAddresses,
   ]);
   const spokePoolChains = Object.keys(spokePoolClients).map((chainId) => Number(chainId));

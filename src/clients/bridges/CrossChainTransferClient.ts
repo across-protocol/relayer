@@ -85,8 +85,6 @@ export class CrossChainTransferClient {
       return;
     }
 
-    this.log("Updating cross chain transfers", { chainIds });
-
     const outstandingTransfersPerChain = await Promise.all(
       chainIds.map(async (chainId) => [
         chainId,
