@@ -26,6 +26,7 @@ import {
   createFormatFunction,
   floatToBN,
   ZERO_BYTES,
+  filterAsync,
 } from "../../utils";
 import { TransferTokenParams } from "../utils";
 import ERC20_ABI from "../../common/abi/MinimalERC20.json";
@@ -73,7 +74,6 @@ export class BridgeApi extends BaseBridgeAdapter {
     _l1Token: EvmAddress,
     l2Token: Address,
     _amount: BigNumber,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _optionalParams?: TransferTokenParams
   ): Promise<BridgeTransactionDetails> {
     const amount = roundAmountToSend(_amount, this.l1TokenInfo.decimals, 2); // The bridge API only deals with values up to 2 decimals.
@@ -101,7 +101,7 @@ export class BridgeApi extends BaseBridgeAdapter {
 
   async queryL1BridgeInitiationEvents(
     _l1Token: EvmAddress,
-    _fromAddress: EvmAddress,
+    fromAddress: EvmAddress,
     toAddress: Address,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
@@ -115,13 +115,22 @@ export class BridgeApi extends BaseBridgeAdapter {
       statusesGrouped,
     });
 
-    // @dev The bridge API lags behind real transfers. We can only reliably know which transfer maps to a bridge API transfer
-    // by querying the bridge API, but since there is a gap between the transfer on L1 and the API updating, we sometimes cannot
-    // find the transaction receipt for a transfer, even though we know the transfer occurred. In these cases, in order not to
-    // double rebalance, we simply return default values for transaction info but still record the amount intended to be bridged.
     const pendingRebalances = await mapAsync(
-      pendingTransfers.filter((pendingTransfer) => {
+      await filterAsync(pendingTransfers, async (pendingTransfer) => {
         const destinationAddress = toAddressType(pendingTransfer.destination.to_address, this.l2chainId);
+        // If we are in the awaiting funds state, then we need to manually check if there was a transfer sent to the deposit address from the
+        // fromAddress in the given time window.
+        if (pendingTransfer.state === "awaiting_funds") {
+          const claimedAmount = pendingTransfer.receipt?.final_amount ?? pendingTransfer.amount;
+          const expectedAmount = floatToBN(claimedAmount, this.l1TokenInfo.decimals);
+          return await this.api.bridgeDepositInitiated(
+            pendingTransfer,
+            expectedAmount,
+            fromAddress,
+            eventConfig,
+            this.l1Signer.provider
+          );
+        }
         return (
           destinationAddress.eq(toAddress) &&
           pendingTransfer.state !== "payment_processed" &&
@@ -147,13 +156,9 @@ export class BridgeApi extends BaseBridgeAdapter {
   }
 
   async queryL2BridgeFinalizationEvents(
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _l1Token: EvmAddress,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _fromAddress: EvmAddress,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _toAddress: Address,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     return Promise.resolve({});

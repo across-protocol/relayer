@@ -1,5 +1,20 @@
-import { CHAIN_IDs, Address, delay, TOKEN_SYMBOLS_MAP, toBN, winston, BigNumber } from "./";
+import {
+  CHAIN_IDs,
+  Address,
+  delay,
+  TOKEN_SYMBOLS_MAP,
+  toBN,
+  winston,
+  BigNumber,
+  EventSearchConfig,
+  Provider,
+  assert,
+  isDefined,
+  paginatedEventQuery,
+  Contract,
+} from "./";
 import axios, { RawAxiosRequestHeaders } from "axios";
+import ERC20_ABI from "../common/abi/MinimalERC20.json";
 
 // We need to instruct this bridge what tokens we expect to receive on L2, since the bridge
 // API supports multiple destination tokens for a single L1 token.
@@ -9,6 +24,7 @@ export const BRIDGE_API_DESTINATION_TOKENS: { [l2ChainId: number]: string } = {
 
 export const BRIDGE_API_DESTINATION_TOKEN_SYMBOLS: { [address: string]: string } = {
   [TOKEN_SYMBOLS_MAP.pathUSD.addresses[CHAIN_IDs.TEMPO]]: "path_usd",
+  [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: "usdc",
 };
 
 const NETWORK_NAMES: { [chainId: number]: string } = {
@@ -60,7 +76,7 @@ export class BridgeApiClient {
     readonly customerId: string,
     srcNetworkId: number,
     dstNetworkId: number,
-    readonly logger: winston.Logger,
+    readonly logger?: winston.Logger,
     readonly nRetries: number = 2
   ) {
     this.srcNetwork = NETWORK_NAMES[srcNetworkId];
@@ -81,22 +97,23 @@ export class BridgeApiClient {
 
   async createTransferRouteEscrowAddress(
     toAddress: Address,
-    _l1TokenSymbol: string,
-    _l2TokenSymbol: string,
+    _srcTokenSymbol: string,
+    _dstTokenSymbol: string,
     normalizedAmount: string
   ): Promise<string> {
-    const l1TokenSymbol = _l1TokenSymbol.toLowerCase();
-    const l2TokenSymbol = _l2TokenSymbol.toLowerCase();
+    const srcTokenSymbol = _srcTokenSymbol.toLowerCase();
+    const dstTokenSymbol = _dstTokenSymbol.toLowerCase();
     const data = {
       on_behalf_of: `${this.customerId}`,
       source: {
         payment_rail: this.srcNetwork,
-        currency: l1TokenSymbol,
+        currency: srcTokenSymbol,
+        amount: normalizedAmount,
       },
       amount: normalizedAmount,
       destination: {
         payment_rail: this.dstNetwork,
-        currency: l2TokenSymbol,
+        currency: dstTokenSymbol,
         to_address: toAddress.toNative(),
       },
       return_instructions: {
@@ -115,6 +132,27 @@ export class BridgeApiClient {
     return transferRequestData.source_deposit_instructions.to_address;
   }
 
+  async bridgeDepositInitiated(
+    deposit: BridgeResponse,
+    expectedAmount: BigNumber,
+    fromAddress: Address,
+    eventConfig: EventSearchConfig,
+    originProvider: Provider
+  ): Promise<boolean> {
+    const originToken = Object.entries(BRIDGE_API_DESTINATION_TOKEN_SYMBOLS).find(
+      ([, bridgeSymbol]) => bridgeSymbol === deposit.source_deposit_instructions.currency
+    );
+    assert(isDefined(originToken));
+    const originTokenAddress = originToken[0];
+    const tokenContract = new Contract(originTokenAddress, ERC20_ABI, originProvider);
+    const transferEvents = await paginatedEventQuery(
+      tokenContract,
+      tokenContract.filters.Transfer(fromAddress.toNative(), deposit.source_deposit_instructions.to_address),
+      eventConfig
+    );
+    return transferEvents.some((event) => expectedAmount.eq(event.args.value));
+  }
+
   defaultHeaders(): RawAxiosRequestHeaders {
     return {
       "Api-Key": `${this.bridgeApiKey}`,
@@ -127,7 +165,7 @@ export class BridgeApiClient {
       const response = await axios.get<T>(`${this.bridgeApiBase}/${endpoint}`, { headers });
       return response.data;
     } catch (e) {
-      this.logger.debug({
+      this.logger?.debug({
         at: "BridgeApi#_get",
         message: "Failed to query bridge API",
         endpoint,
@@ -151,7 +189,7 @@ export class BridgeApiClient {
       const response = await axios.post<T>(`${this.bridgeApiBase}/${endpoint}`, data, { headers });
       return response.data;
     } catch (e) {
-      this.logger.debug({
+      this.logger?.debug({
         at: "BridgeApi#_post",
         message: "Failed to post to bridge API",
         endpoint,
