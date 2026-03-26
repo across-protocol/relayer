@@ -23,6 +23,9 @@ import {
   BRIDGE_API_DESTINATION_TOKEN_SYMBOLS,
   roundAmountToSend,
   mapAsync,
+  createFormatFunction,
+  floatToBN,
+  ZERO_BYTES,
 } from "../../utils";
 import { TransferTokenParams } from "../utils";
 import ERC20_ABI from "../../common/abi/MinimalERC20.json";
@@ -82,10 +85,12 @@ export class BridgeApi extends BaseBridgeAdapter {
     if (amount.lt(BRIDGE_API_MINIMUMS[this.hubChainId]?.[this.l2chainId] ?? toBN(Number.MAX_SAFE_INTEGER))) {
       throw new Error(`Cannot bridge to ${getNetworkName(this.l2chainId)} due to invalid amount ${amount}`);
     }
+    const formatter = createFormatFunction(2, 4, false, this.l1TokenInfo.decimals);
     const transferRouteAddress = await this.api.createTransferRouteEscrowAddress(
       toAddress,
       this.l1TokenInfo.symbol,
-      BRIDGE_API_DESTINATION_TOKEN_SYMBOLS[this.getL2Bridge().address]
+      BRIDGE_API_DESTINATION_TOKEN_SYMBOLS[this.getL2Bridge().address],
+      formatter(amount)
     );
     return Promise.resolve({
       contract: this.getL1Bridge(),
@@ -110,24 +115,29 @@ export class BridgeApi extends BaseBridgeAdapter {
       statusesGrouped,
     });
 
+    // @dev The bridge API lags behind real transfers. We can only reliably know which transfer maps to a bridge API transfer
+    // by querying the bridge API, but since there is a gap between the transfer on L1 and the API updating, we sometimes cannot
+    // find the transaction receipt for a transfer, even though we know the transfer occurred. In these cases, in order not to
+    // double rebalance, we simply return default values for transaction info but still record the amount intended to be bridged.
     const pendingRebalances = await mapAsync(
       pendingTransfers.filter((pendingTransfer) => {
         const destinationAddress = toAddressType(pendingTransfer.destination.to_address, this.l2chainId);
         return (
           destinationAddress.eq(toAddress) &&
-          pendingTransfer.state !== "awaiting_funds" &&
           pendingTransfer.state !== "payment_processed" &&
           pendingTransfer.source_deposit_instructions.currency === this.l1TokenInfo.symbol.toLowerCase()
         );
       }),
-      async ({ receipt }) => {
-        const transaction = await this.l1Signer.provider.getTransactionReceipt(receipt.source_tx_hash);
+      async (pendingTransfer) => {
+        const transaction = isDefined(pendingTransfer?.receipt?.source_tx_hash)
+          ? await this.l1Signer.provider.getTransactionReceipt(pendingTransfer.receipt.source_tx_hash)
+          : undefined;
         return {
-          txnRef: receipt.source_tx_hash,
+          txnRef: pendingTransfer.receipt?.source_tx_hash ?? ZERO_BYTES,
           logIndex: 0, // logIndex is zero since the only call for initiation is a `Transfer`.
-          txnIndex: transaction?.transactionIndex,
-          blockNumber: transaction?.blockNumber,
-          amount: toBN(Math.floor(Number(receipt.final_amount) * 10 ** this.l1TokenInfo.decimals)),
+          txnIndex: transaction?.transactionIndex ?? 0,
+          blockNumber: transaction?.blockNumber ?? 0,
+          amount: floatToBN(pendingTransfer.amount, this.l1TokenInfo.decimals),
         };
       }
     );

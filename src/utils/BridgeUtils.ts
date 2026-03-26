@@ -40,11 +40,12 @@ export type BridgeResponse = {
     to_address: string;
     from_address: string;
   };
+  amount: string;
   receipt:
     | {
         initial_amount: string;
         final_amount: string;
-        source_tx_hash: string;
+        source_tx_hash?: string;
       }
     | undefined;
 };
@@ -81,7 +82,8 @@ export class BridgeApiClient {
   async createTransferRouteEscrowAddress(
     toAddress: Address,
     _l1TokenSymbol: string,
-    _l2TokenSymbol: string
+    _l2TokenSymbol: string,
+    normalizedAmount: string
   ): Promise<string> {
     const l1TokenSymbol = _l1TokenSymbol.toLowerCase();
     const l2TokenSymbol = _l2TokenSymbol.toLowerCase();
@@ -91,6 +93,7 @@ export class BridgeApiClient {
         payment_rail: this.srcNetwork,
         currency: l1TokenSymbol,
       },
+      amount: normalizedAmount,
       destination: {
         payment_rail: this.dstNetwork,
         currency: l2TokenSymbol,
@@ -101,7 +104,6 @@ export class BridgeApiClient {
       },
       features: {
         allow_any_from_address: true,
-        flexible_amount: true,
       },
     };
     const idempotencyKey = String(Date.now());
