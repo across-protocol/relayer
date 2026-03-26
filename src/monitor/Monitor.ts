@@ -1100,7 +1100,7 @@ export class Monitor {
       message: `ALT cleanup complete. Closed: ${closedCount}, Skipped: ${skippedCount}`,
     });
   }
-  
+
   private notifyIfUnknownCaller(caller: string, action: BundleAction, txnRef: string) {
     if (
       this.monitorConfig.whitelistedDataworkers.some((dataworker) =>
