@@ -109,11 +109,7 @@ export class BridgeApiClient {
       ...this.defaultHeaders(),
       "Idempotency-Key": idempotencyKey,
     };
-    const transferRequestData = await this.postWithRetry<BridgeResponse>(
-      "v0/transfers",
-      data,
-      headers
-    );
+    const transferRequestData = await this.postWithRetry<BridgeResponse>("v0/transfers", data, headers);
     return transferRequestData.source_deposit_instructions.to_address;
   }
 
