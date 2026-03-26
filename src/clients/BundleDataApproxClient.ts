@@ -5,8 +5,17 @@
 
 import { SpokePoolManager } from ".";
 import { SpokePoolClientsByChain } from "../interfaces";
-import { assert, BigNumber, isDefined, winston, ConvertDecimals, getTokenInfo } from "../utils";
-import { Address, bnZero, getL1TokenAddress } from "../utils/SDKUtils";
+import {
+  assert,
+  BigNumber,
+  isDefined,
+  winston,
+  ConvertDecimals,
+  getTokenInfo,
+  getInventoryEquivalentL1TokenAddress,
+  getInventoryBalanceContributorTokens,
+} from "../utils";
+import { Address, bnZero } from "../utils/SDKUtils";
 import { HubPoolClient } from "./HubPoolClient";
 
 export type BundleDataState = {
@@ -14,11 +23,16 @@ export type BundleDataState = {
   upcomingRefunds: { [l1Token: string]: { [chainId: number]: { [relayer: string]: BigNumber } } };
 };
 
+// This client is used to approximate running balances and the refunds and deposits for a given L1 token. Running balances
+// can easily be estimated by taking the last validated running balance for a chain and subtracting the total deposit amount
+// on that chain since the last validated end block and adding the total refund amount on that chain since the last validated
+// end block.
 export class BundleDataApproxClient {
   private upcomingRefunds: { [l1Token: string]: { [chainId: number]: { [relayer: string]: BigNumber } } } = undefined;
   private upcomingDeposits: { [l1Token: string]: { [chainId: number]: BigNumber } } = undefined;
   private readonly spokePoolManager: SpokePoolManager;
 
+  private readonly protocolChainIdIndices: number[];
   constructor(
     spokePoolClients: SpokePoolClientsByChain,
     private readonly hubPoolClient: HubPoolClient,
@@ -27,6 +41,7 @@ export class BundleDataApproxClient {
     private readonly logger: winston.Logger
   ) {
     this.spokePoolManager = new SpokePoolManager(logger, spokePoolClients);
+    this.protocolChainIdIndices = this.hubPoolClient.configStoreClient.getChainIdIndicesForBlock();
   }
 
   /**
@@ -49,10 +64,14 @@ export class BundleDataApproxClient {
     this.upcomingRefunds = upcomingRefunds;
   }
 
-  // Return sum of refunds for all fills sent after the fromBlocks.
-  // Makes a simple assumption that all fills that were sent after the last executed bundle
-  // are valid and will be refunded on the repayment chain selected. Assume additionally that the repayment chain
-  // set is a valid one for the deposit.
+  /**
+   * Return sum of refunds for all fills sent after the fromBlocks.
+   * Makes a simple assumption that all fills that were sent by this relayer after the last executed bundle
+   * are valid and will be refunded on the repayment chain selected.
+   * @param l1Token L1 token to get refunds for all inventory-equivalent L2 tokens on each chain.
+   * @param fromBlocks Blocks to start counting refunds from.
+   * @returns Refunds grouped by relayer for each chain. Refunds are denominated in L1 token decimals.
+   */
   protected getApproximateRefundsForToken(
     l1Token: Address,
     fromBlocks: { [chainId: number]: number }
@@ -64,51 +83,32 @@ export class BundleDataApproxClient {
       if (!isDefined(spokePoolClient)) {
         continue;
       }
-      spokePoolClient
-        .getFills()
-        .filter((fill) => {
-          if (fill.blockNumber < fromBlocks[chainId]) {
-            return false;
-          }
-          const expectedL1Token = this.getL1TokenAddress(fill.inputToken, fill.originChainId);
-          if (!isDefined(expectedL1Token) || !expectedL1Token.eq(l1Token)) {
-            return false;
-          }
-          // A simple check that this fill is *probably* valid is to check that the output and input token
-          // map to the same L1 token. This means that this method will ignore refunds for swaps, but these
-          // are currently very rare in practice. This prevents invalid fills with very large input amounts
-          // from skewing the numbers.
-          const outputMappedL1Token = this.getL1TokenAddress(fill.outputToken, fill.destinationChainId);
-          if (!isDefined(outputMappedL1Token) || !outputMappedL1Token.eq(expectedL1Token)) {
-            return false;
-          }
+      spokePoolClient.getFills().forEach((fill) => {
+        const { inputAmount: _refundAmount, originChainId, repaymentChainId, relayer, inputToken, blockNumber } = fill;
+        if (blockNumber < fromBlocks[chainId]) {
+          return;
+        }
 
-          return true;
-        })
-        .forEach((fill) => {
-          const { inputAmount: _refundAmount, originChainId, repaymentChainId, relayer, inputToken } = fill;
-          // This call to `getTokenInfo` should not throw since we just filtered out all input tokens for
-          // which there is no output token.
-          const { decimals: inputTokenDecimals } = getTokenInfo(inputToken, originChainId);
-          const inputL1Token = this.getL1TokenAddress(inputToken, originChainId);
+        // Fills get refunded in the input token currency so need to check that the input token
+        // and the l1Token parameter are the same. If the input token is equivalent from an inventory management
+        // perspective to the l1Token then we can count it here because in this case the refund for the fill
+        // will essentially be in an equivalent l1Token currency on the repayment chain (i.e. getting repaid
+        // in this currency is just as good as getting repaid in the l1Token currency).
+        const expectedL1Token = this.getL1TokenAddress(fill.inputToken, fill.originChainId);
+        if (!isDefined(expectedL1Token) || !expectedL1Token.eq(l1Token)) {
+          return;
+        }
 
-          assert(inputL1Token.isEVM());
-          const inputTokenOnRepaymentChain = this.hubPoolClient.getL2TokenForL1TokenAtBlock(
-            inputL1Token,
-            repaymentChainId
-          );
-          if (!isDefined(inputTokenOnRepaymentChain)) {
-            return;
-          }
-          // If the repayment token is defined, then that means an entry exists in our token symbols mapping,
-          // so this is also a "safe" call to `getTokenInfo.`
-          const { decimals: repaymentTokenDecimals } = getTokenInfo(inputTokenOnRepaymentChain, repaymentChainId);
-          const refundAmount = ConvertDecimals(inputTokenDecimals, repaymentTokenDecimals)(_refundAmount);
-          refundsForChain[repaymentChainId] ??= {};
-          refundsForChain[repaymentChainId][relayer.toNative()] ??= bnZero;
-          refundsForChain[repaymentChainId][relayer.toNative()] =
-            refundsForChain[repaymentChainId][relayer.toNative()].add(refundAmount);
-        });
+        const { decimals: inputTokenDecimals } = getTokenInfo(inputToken, originChainId);
+        const refundAmount = ConvertDecimals(
+          inputTokenDecimals,
+          getTokenInfo(l1Token, this.hubPoolClient.chainId).decimals
+        )(_refundAmount);
+        refundsForChain[repaymentChainId] ??= {};
+        refundsForChain[repaymentChainId][relayer.toNative()] ??= bnZero;
+        refundsForChain[repaymentChainId][relayer.toNative()] =
+          refundsForChain[repaymentChainId][relayer.toNative()].add(refundAmount);
+      });
     }
     return refundsForChain;
   }
@@ -134,11 +134,7 @@ export class BundleDataApproxClient {
             return true;
           }
 
-          // Make sure the leaf for this specific L1 token on the chain from the root bundle relay has been executed.
-          const l2Token = this.hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, chainId);
-          if (!isDefined(l2Token)) {
-            return false;
-          }
+          const l2Tokens = getInventoryBalanceContributorTokens(l1Token, chainId, this.hubPoolClient.chainId);
           return isDefined(
             spokePoolClient.getRelayerRefundExecutions().findLast((execution) => {
               if (!isDefined(execution)) {
@@ -149,7 +145,10 @@ export class BundleDataApproxClient {
               // likelihood, all leaves were executed in the same transaction. If they were not, then this client
               // will underestimate the upcoming refunds until that leaf is executed. Since this client is ultimately
               // an approximation, this is acceptable.
-              return execution.rootBundleId === relay.rootBundleId && execution.l2TokenAddress.eq(l2Token);
+              return (
+                execution.rootBundleId === relay.rootBundleId &&
+                l2Tokens.some((l2Token) => l2Token.eq(execution.l2TokenAddress))
+              );
             })
           );
         });
@@ -172,7 +171,7 @@ export class BundleDataApproxClient {
         const bundleEndBlock = this.hubPoolClient.getBundleEndBlockForChain(
           correspondingProposedRootBundle,
           chainId,
-          this.chainIdList
+          this.protocolChainIdIndices
         );
         return [chainId, bundleEndBlock > 0 ? bundleEndBlock + 1 : 0];
       })
@@ -185,6 +184,12 @@ export class BundleDataApproxClient {
     return refundsForChain;
   }
 
+  /**
+   * Return sum of deposits for all deposits sent after the fromBlocks.
+   * @param l1Token L1 token to get deposits for all inventory-equivalent L2 tokens on each chain.
+   * @param fromBlocks Blocks to start counting deposits from.
+   * @returns Deposits grouped by chain. Deposits are denominated in L1 token decimals.
+   */
   private getApproximateDepositsForToken(
     l1Token: Address,
     fromBlocks: { [chainId: number]: number }
@@ -199,14 +204,24 @@ export class BundleDataApproxClient {
       spokePoolClient
         .getDeposits()
         .filter((deposit) => {
+          if (deposit.blockNumber < fromBlocks[chainId]) {
+            return false;
+          }
+          // We are ok to group together deposits for inventory-equivalent tokens because these approximate
+          // deposits and refunds are usually computed and summed together to approximate running balances. So we should
+          // use the same methodology for equating input and l1 tokens as we do in the getApproximateRefundsForToken method.
           const expectedL1Token = this.getL1TokenAddress(deposit.inputToken, deposit.originChainId);
           if (!isDefined(expectedL1Token)) {
             return false;
           }
-          return l1Token.eq(expectedL1Token) && deposit.blockNumber >= fromBlocks[chainId];
+          return l1Token.eq(expectedL1Token);
         })
         .forEach((deposit) => {
-          depositsForChain[chainId] = depositsForChain[chainId].add(deposit.inputAmount);
+          const depositAmount = ConvertDecimals(
+            getTokenInfo(deposit.inputToken, deposit.originChainId).decimals,
+            getTokenInfo(l1Token, this.hubPoolClient.chainId).decimals
+          )(deposit.inputAmount);
+          depositsForChain[chainId] = depositsForChain[chainId].add(depositAmount);
         });
     }
     return depositsForChain;
@@ -223,7 +238,7 @@ export class BundleDataApproxClient {
 
   protected getL1TokenAddress(l2Token: Address, chainId: number): Address | undefined {
     try {
-      return getL1TokenAddress(l2Token, chainId);
+      return getInventoryEquivalentL1TokenAddress(l2Token, chainId, this.hubPoolClient.chainId);
     } catch {
       return undefined;
     }
@@ -245,6 +260,14 @@ export class BundleDataApproxClient {
     });
   }
 
+  /**
+   * Return refunds for a given L1 token on a given chain for all inventory-equivalent L2 tokens on that chain.
+   * Refunds are denominated in L1 token decimals.
+   * @param chainId Chain ID to get refunds for.
+   * @param l1Token L1 token to get refunds for.
+   * @param relayer Optional relayer to get refunds for. If not provided, returns the sum of refunds for all relayers.
+   * @returns Refunds for the given L1 token on the given chain for all inventory-equivalent L2 tokens on that chain. Refunds are denominated in L1 token decimals.
+   */
   getUpcomingRefunds(chainId: number, l1Token: Address, relayer?: Address): BigNumber {
     assert(
       isDefined(this.upcomingRefunds),
@@ -263,6 +286,13 @@ export class BundleDataApproxClient {
     );
   }
 
+  /**
+   * Return deposits for a given L1 token on a given chain for all inventory-equivalent L2 tokens on that chain.
+   * Deposits are denominated in L1 token decimals.
+   * @param chainId Chain ID to get deposits for.
+   * @param l1Token L1 token to get deposits for.
+   * @returns Deposits for the given L1 token on the given chain for all inventory-equivalent L2 tokens on that chain. Deposits are denominated in L1 token decimals.
+   */
   getUpcomingDeposits(chainId: number, l1Token: Address): BigNumber {
     assert(
       isDefined(this.upcomingDeposits),
