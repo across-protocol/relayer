@@ -94,7 +94,7 @@ async function getOutstandingTransfersForTrackedBridge(
     } as unknown as { [chainId: number]: SpokePoolClient },
     l2ChainId,
     CHAIN_IDs.MAINNET,
-    [EvmAddress.from(MONITORED_ADDRESS)],
+    { [l1Token.toNative()]: [EvmAddress.from(MONITORED_ADDRESS)] },
     TEST_LOGGER,
     [tokenSymbol],
     { [l1Token.toNative()]: bridge },

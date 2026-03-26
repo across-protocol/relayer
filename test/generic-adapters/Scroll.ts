@@ -3,9 +3,11 @@ import { EVMSpokePoolClient } from "../../src/clients";
 import { ZERO_ADDRESS } from "../../src/utils";
 import { ScrollERC20Bridge } from "../../src/adapter/bridges";
 import { BaseChainAdapter } from "../../src/adapter";
-import { ethers, getContractFactory, Contract, randomAddress, expect } from "../utils";
+import { ethers, getContractFactory, Contract, randomAddress, expect, createSpyLogger } from "../utils";
 import { utils } from "@across-protocol/sdk";
 import { CONTRACT_ADDRESSES } from "../../src/common";
+
+const logger = createSpyLogger().spyLogger;
 
 describe("Cross Chain Adapter: Scroll", async function () {
   let adapter: BaseChainAdapter;
@@ -77,8 +79,8 @@ describe("Cross Chain Adapter: Scroll", async function () {
       }, // Don't need spoke pool clients for this test
       l2ChainId,
       hubChainId,
-      [toAddress(monitoredEoa), toAddress(l2SpokePoolClient.spokePool.address)],
-      null,
+      { [l1Weth]: [toAddress(monitoredEoa), toAddress(l2SpokePoolClient.spokePool.address)], [l1Usdc]: [toAddress(monitoredEoa), toAddress(l2SpokePoolClient.spokePool.address)] },
+      logger,
       ["WETH", "USDC"],
       bridges,
       1.5

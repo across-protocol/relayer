@@ -556,13 +556,13 @@ export class BaseChainAdapter {
           this.chainId,
           monitoredAddress
         );
-
         Object.entries(depositInitiatedResults).forEach(([l2Token, depositInitiatedEvents]) => {
-          const totalDepositedAmount = (depositInitiatedEvents ?? [])
-            .filter((event) => !ignoredPendingBridgeTxnRefs.has(event.txnRef))
-            .reduce((acc, event) => {
-              return acc.add(event.amount);
-            }, bnZero);
+          const filteredDepositEvents = (depositInitiatedEvents ?? []).filter(
+            (event) => !ignoredPendingBridgeTxnRefs.has(event.txnRef)
+          );
+          const totalDepositedAmount = filteredDepositEvents.reduce((acc, event) => {
+            return acc.add(event.amount);
+          }, bnZero);
           const l2TokenDecimals = getTokenInfo(toAddressType(l2Token, this.chainId), this.chainId).decimals;
           const l1TokenDecimals = getTokenInfo(l1Token, this.hubChainId).decimals;
           const totalFinalizedAmount = (depositFinalizedResults?.[l2Token] ?? []).reduce((acc, event) => {
@@ -575,7 +575,7 @@ export class BaseChainAdapter {
           const totalAmount = totalDepositedAmount.sub(totalFinalizedAmount);
           let remainingUnfinalizedAmount = totalAmount;
           if (remainingUnfinalizedAmount.gt(0)) {
-            for (const depositEvent of depositInitiatedEvents) {
+            for (const depositEvent of filteredDepositEvents) {
               if (remainingUnfinalizedAmount.lte(0)) {
                 break;
               }

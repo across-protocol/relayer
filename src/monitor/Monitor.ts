@@ -583,30 +583,22 @@ export class Monitor {
           total: formatWei(tokenTotal.toString()),
         };
 
-        // Build aligned table: header row included per token section.
-        const header: Row = { chain: "Chain", token: "Token", current: "Current", pending: "Pending", total: "Total" };
-        const allRows = [header, ...rows, totalRow];
-        const colW = {
-          chain: Math.max(...allRows.map((r) => r.chain.length)),
-          token: Math.max(...allRows.map((r) => r.token.length)),
-          current: Math.max(...allRows.map((r) => r.current.length)),
-          pending: Math.max(...allRows.map((r) => r.pending.length)),
-          total: Math.max(...allRows.map((r) => r.total.length)),
-        };
-        const fmtRow = (r: Row) =>
-          `${r.chain.padEnd(colW.chain)}  ${r.token.padEnd(colW.token)}  ${r.current.padStart(
-            colW.current
-          )}  ${r.pending.padStart(colW.pending)}  ${r.total.padStart(colW.total)}`;
-        const separator = "-".repeat(fmtRow(header).length);
-
+        // Build stacked key-value format for mobile readability.
+        const totalFormatted = formatWei(tokenTotal.toString());
+        const valueWidth = Math.max(
+          ...rows.flatMap((r) => [r.current, r.pending, r.total].map((v) => v.length)),
+          totalFormatted.length
+        );
         let tokenMrkdwn = "```\n";
-        tokenMrkdwn += fmtRow(header) + "\n";
-        tokenMrkdwn += separator + "\n";
         for (const row of rows) {
-          tokenMrkdwn += fmtRow(row) + "\n";
+          tokenMrkdwn += `${row.chain} — ${row.token}\n`;
+          if (row.current !== "-") {
+            tokenMrkdwn += `  Current: ${row.current.padStart(valueWidth)}\n`;
+            tokenMrkdwn += `  Pending: ${row.pending.padStart(valueWidth)}\n`;
+          }
+          tokenMrkdwn += `  Total:   ${row.total.padStart(valueWidth)}\n\n`;
         }
-        tokenMrkdwn += separator + "\n";
-        tokenMrkdwn += fmtRow(totalRow) + "\n";
+        tokenMrkdwn += `  TOTAL:   ${totalFormatted.padStart(valueWidth)}\n`;
         tokenMrkdwn += "```";
 
         this.logger.info({
@@ -728,14 +720,7 @@ export class Monitor {
         this.bundleDataApproxClient
       );
 
-      type Row = {
-        chain: string;
-        validated: string;
-        deposits: string;
-        refunds: string;
-        balance: string;
-        endBlock: string;
-      };
+      type Row = { chain: string; validated: string; deposits: string; refunds: string; total: string };
       const rows: Row[] = [];
       for (const chainId of chainIds) {
         const r = results[chainId];
@@ -747,41 +732,21 @@ export class Monitor {
           validated: formatWei(r.lastValidatedRunningBalance.toString()),
           deposits: `-${formatWei(r.upcomingDeposits.toString())}`,
           refunds: `+${formatWei(r.upcomingRefunds.toString())}`,
-          balance: formatWei(r.absLatestRunningBalance.toString()),
-          endBlock: String(r.bundleEndBlock),
+          total: formatWei(r.absLatestRunningBalance.toString()),
         });
       }
 
-      const header: Row = {
-        chain: "Chain",
-        validated: "Validated",
-        deposits: "Deposits",
-        refunds: "Refunds",
-        balance: "Balance",
-        endBlock: "End Block",
-      };
-      const allRows = [header, ...rows];
-      const colW = {
-        chain: Math.max(...allRows.map((r) => r.chain.length)),
-        validated: Math.max(...allRows.map((r) => r.validated.length)),
-        deposits: Math.max(...allRows.map((r) => r.deposits.length)),
-        refunds: Math.max(...allRows.map((r) => r.refunds.length)),
-        balance: Math.max(...allRows.map((r) => r.balance.length)),
-        endBlock: Math.max(...allRows.map((r) => r.endBlock.length)),
-      };
-      const fmtRow = (r: Row) =>
-        `${r.chain.padEnd(colW.chain)}  ${r.validated.padStart(colW.validated)}  ${r.deposits.padStart(
-          colW.deposits
-        )}  ${r.refunds.padStart(colW.refunds)}  ${r.balance.padStart(colW.balance)}  ${r.endBlock.padStart(
-          colW.endBlock
-        )}`;
-      const separator = "-".repeat(fmtRow(header).length);
-
+      // Build stacked key-value format for mobile readability.
+      const valueWidth = Math.max(
+        ...rows.flatMap((r) => [r.validated, r.deposits, r.refunds, r.total].map((v) => v.length))
+      );
       let tokenMrkdwn = "```\n";
-      tokenMrkdwn += fmtRow(header) + "\n";
-      tokenMrkdwn += separator + "\n";
       for (const row of rows) {
-        tokenMrkdwn += fmtRow(row) + "\n";
+        tokenMrkdwn += `${row.chain} — ${l1Token.symbol}\n`;
+        tokenMrkdwn += `  Last Validated: ${row.validated.padStart(valueWidth)}\n`;
+        tokenMrkdwn += `  Deposits:       ${row.deposits.padStart(valueWidth)}\n`;
+        tokenMrkdwn += `  Refunds:        ${row.refunds.padStart(valueWidth)}\n`;
+        tokenMrkdwn += `  Total:          ${row.total.padStart(valueWidth)}\n\n`;
       }
       tokenMrkdwn += "```";
 

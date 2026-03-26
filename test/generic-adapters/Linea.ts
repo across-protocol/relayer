@@ -2,11 +2,13 @@ import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { EVMSpokePoolClient } from "../../src/clients";
 import { LineaBridge, LineaWethBridge, UsdcCCTPBridge } from "../../src/adapter/bridges";
 import { BaseChainAdapter } from "../../src/adapter";
-import { ethers, getContractFactory, Contract, randomAddress, expect, createRandomBytes32 } from "../utils";
+import { ethers, getContractFactory, Contract, randomAddress, expect, createRandomBytes32, createSpyLogger } from "../utils";
 import { utils } from "@across-protocol/sdk";
 import { CONTRACT_ADDRESSES, SUPPORTED_TOKENS } from "../../src/common";
 import { EVMBlockFinder, toBN, EvmAddress } from "../../src/utils/SDKUtils";
 import { getCctpDomainForChainId, ZERO_ADDRESS } from "../../src/utils";
+
+const logger = createSpyLogger().spyLogger;
 
 describe("Cross Chain Adapter: Linea", async function () {
   let adapter: BaseChainAdapter;
@@ -84,8 +86,8 @@ describe("Cross Chain Adapter: Linea", async function () {
       }, // Don't need spoke pool clients for this test
       l2ChainId,
       hubChainId,
-      [toAddress(monitoredEoa)],
-      null,
+      { [l1WETHToken]: [toAddress(monitoredEoa)], [l1USDCToken]: [toAddress(monitoredEoa)], [l1Token]: [toAddress(monitoredEoa)] },
+      logger,
       SUPPORTED_TOKENS[l2ChainId],
       bridges,
       1.5
