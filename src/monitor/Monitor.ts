@@ -574,15 +574,6 @@ export class Monitor {
           continue;
         }
 
-        // Add summary row.
-        const totalRow: Row = {
-          chain: "TOTAL",
-          token: "",
-          current: "",
-          pending: "",
-          total: formatWei(tokenTotal.toString()),
-        };
-
         // Build stacked key-value format for mobile readability.
         const totalFormatted = formatWei(tokenTotal.toString());
         const valueWidth = Math.max(

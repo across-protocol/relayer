@@ -2,7 +2,15 @@ import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { EVMSpokePoolClient } from "../../src/clients";
 import { LineaBridge, LineaWethBridge, UsdcCCTPBridge } from "../../src/adapter/bridges";
 import { BaseChainAdapter } from "../../src/adapter";
-import { ethers, getContractFactory, Contract, randomAddress, expect, createRandomBytes32, createSpyLogger } from "../utils";
+import {
+  ethers,
+  getContractFactory,
+  Contract,
+  randomAddress,
+  expect,
+  createRandomBytes32,
+  createSpyLogger,
+} from "../utils";
 import { utils } from "@across-protocol/sdk";
 import { CONTRACT_ADDRESSES, SUPPORTED_TOKENS } from "../../src/common";
 import { EVMBlockFinder, toBN, EvmAddress } from "../../src/utils/SDKUtils";
@@ -86,7 +94,11 @@ describe("Cross Chain Adapter: Linea", async function () {
       }, // Don't need spoke pool clients for this test
       l2ChainId,
       hubChainId,
-      { [l1WETHToken]: [toAddress(monitoredEoa)], [l1USDCToken]: [toAddress(monitoredEoa)], [l1Token]: [toAddress(monitoredEoa)] },
+      {
+        [l1WETHToken]: [toAddress(monitoredEoa)],
+        [l1USDCToken]: [toAddress(monitoredEoa)],
+        [l1Token]: [toAddress(monitoredEoa)],
+      },
       logger,
       SUPPORTED_TOKENS[l2ChainId],
       bridges,
@@ -161,13 +173,13 @@ describe("Cross Chain Adapter: Linea", async function () {
     it("Matches L1 and L2 events", async function () {
       const messageHash = createRandomBytes32();
       const otherMessageHash = createRandomBytes32();
-      const firstTx = await wethBridgeContract.emitMessageSentWithMessageHash(randomAddress(), monitoredEoa, 1, messageHash);
-      await wethBridgeContract.emitMessageSentWithMessageHash(
+      const firstTx = await wethBridgeContract.emitMessageSentWithMessageHash(
         randomAddress(),
         monitoredEoa,
         1,
-        otherMessageHash
+        messageHash
       );
+      await wethBridgeContract.emitMessageSentWithMessageHash(randomAddress(), monitoredEoa, 1, otherMessageHash);
       await wethBridgeContract.emitMessageClaimed(messageHash);
       await adapter.updateSpokePoolClients();
       adapter.bridges[l1WETHToken].blockFinder = new EVMBlockFinder(wethBridgeContract.provider);

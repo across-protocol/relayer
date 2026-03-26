@@ -102,7 +102,11 @@ describe("Cross Chain Adapter: Polygon", async function () {
       },
       POLYGON,
       MAINNET,
-      { [l1Weth]: [toAddress(monitoredEoa), toAddress(hubPool.address), toAddress(spokePool.address)], [l1Usdc]: [toAddress(monitoredEoa), toAddress(hubPool.address), toAddress(spokePool.address)], [l1Token]: [toAddress(monitoredEoa), toAddress(hubPool.address), toAddress(spokePool.address)] },
+      {
+        [l1Weth]: [toAddress(monitoredEoa), toAddress(hubPool.address), toAddress(spokePool.address)],
+        [l1Usdc]: [toAddress(monitoredEoa), toAddress(hubPool.address), toAddress(spokePool.address)],
+        [l1Token]: [toAddress(monitoredEoa), toAddress(hubPool.address), toAddress(spokePool.address)],
+      },
       logger,
       ["WETH", "USDC", "WBTC"],
       bridges,

@@ -159,7 +159,10 @@ describe("Cross Chain Adapter: zkSync", async function () {
       },
       ZK_SYNC,
       MAINNET,
-      { [WETH.addresses[MAINNET]]: [toAddress(monitoredEoa), toAddress(hubPool.address), toAddress(spokePool.address)], [DAI.addresses[MAINNET]]: [toAddress(monitoredEoa), toAddress(hubPool.address), toAddress(spokePool.address)] },
+      {
+        [WETH.addresses[MAINNET]]: [toAddress(monitoredEoa), toAddress(hubPool.address), toAddress(spokePool.address)],
+        [DAI.addresses[MAINNET]]: [toAddress(monitoredEoa), toAddress(hubPool.address), toAddress(spokePool.address)],
+      },
       logger,
       ["DAI", "WETH"],
       bridges,
@@ -811,7 +814,13 @@ describe("Cross Chain Adapter: zkSync", async function () {
         },
         LENS,
         MAINNET,
-        { [USDC.addresses[MAINNET]]: [toAddress(monitoredEoa), toAddress(hubPool.address), toAddress(spokePool.address)] },
+        {
+          [USDC.addresses[MAINNET]]: [
+            toAddress(monitoredEoa),
+            toAddress(hubPool.address),
+            toAddress(spokePool.address),
+          ],
+        },
         logger,
         ["USDC"],
         { [USDC.addresses[MAINNET]]: new TestZkSyncUSDCBridge(LENS, MAINNET, l1Signer, l2Signer, undefined) },

@@ -79,7 +79,10 @@ describe("Cross Chain Adapter: Scroll", async function () {
       }, // Don't need spoke pool clients for this test
       l2ChainId,
       hubChainId,
-      { [l1Weth]: [toAddress(monitoredEoa), toAddress(l2SpokePoolClient.spokePool.address)], [l1Usdc]: [toAddress(monitoredEoa), toAddress(l2SpokePoolClient.spokePool.address)] },
+      {
+        [l1Weth]: [toAddress(monitoredEoa), toAddress(l2SpokePoolClient.spokePool.address)],
+        [l1Usdc]: [toAddress(monitoredEoa), toAddress(l2SpokePoolClient.spokePool.address)],
+      },
       logger,
       ["WETH", "USDC"],
       bridges,
