@@ -48,17 +48,20 @@ describe("BaseChainAdapter split bridge tracking", function () {
     expect(outstandingTransfers[MONITORED_ADDRESS][l1Token][l2Token].depositTxHashes).to.deep.equal(["tracked"]);
   });
 
-  it("does not let finalized events for ignored initiations reduce tracked outstanding amounts", async function () {
+  it("finalized events reduce tracked outstanding amounts via net-amount matching", async function () {
     const trackedAmount = toBNWei("2", 6);
+    const finalizedAmount = toBNWei("1", 6);
     const outstandingTransfers = await getOutstandingTransfersForTrackedBridge(
       "oft",
       "USDT",
-      [makeBridgeEvent(toBNWei("1", 6), "ignored"), makeBridgeEvent(trackedAmount, "tracked")],
-      [makeBridgeEvent(toBNWei("1", 6), "ignored-finalized")]
+      [makeBridgeEvent(finalizedAmount, "ignored"), makeBridgeEvent(trackedAmount, "tracked")],
+      [makeBridgeEvent(finalizedAmount, "ignored-finalized")]
     );
     const l1Token = TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET];
     const l2Token = TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.ARBITRUM];
-    expect(outstandingTransfers[MONITORED_ADDRESS][l1Token][l2Token].totalAmount).to.equal(trackedAmount);
+    // Net-amount matching: totalDeposited (only "tracked" = 2000000) - totalFinalized (1000000) = 1000000
+    const expectedOutstanding = trackedAmount.sub(finalizedAmount);
+    expect(outstandingTransfers[MONITORED_ADDRESS][l1Token][l2Token].totalAmount).to.equal(expectedOutstanding);
     expect(outstandingTransfers[MONITORED_ADDRESS][l1Token][l2Token].depositTxHashes).to.deep.equal(["tracked"]);
   });
 });

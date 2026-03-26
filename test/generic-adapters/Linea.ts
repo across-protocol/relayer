@@ -161,8 +161,8 @@ describe("Cross Chain Adapter: Linea", async function () {
     it("Matches L1 and L2 events", async function () {
       const messageHash = createRandomBytes32();
       const otherMessageHash = createRandomBytes32();
-      await wethBridgeContract.emitMessageSentWithMessageHash(randomAddress(), monitoredEoa, 1, messageHash);
-      const unfinalizedTx = await wethBridgeContract.emitMessageSentWithMessageHash(
+      const firstTx = await wethBridgeContract.emitMessageSentWithMessageHash(randomAddress(), monitoredEoa, 1, messageHash);
+      await wethBridgeContract.emitMessageSentWithMessageHash(
         randomAddress(),
         monitoredEoa,
         1,
@@ -174,11 +174,11 @@ describe("Cross Chain Adapter: Linea", async function () {
       const result = await adapter.getOutstandingCrossChainTransfers([toAddress(l1WETHToken)]);
 
       // There should be one outstanding transfer, since there are two deposit events and one
-      // finalization event
+      // finalization event. Net-amount matching picks the first deposit event's hash.
       expect(Object.keys(result).length).to.equal(1);
       expect(Object.keys(result[monitoredEoa]).length).to.equal(1);
       expect(Object.keys(result[monitoredEoa][l1WETHToken])[0]).to.equal(l2WETHToken);
-      expect(result[monitoredEoa][l1WETHToken][l2WETHToken].depositTxHashes[0]).to.equal(unfinalizedTx.hash);
+      expect(result[monitoredEoa][l1WETHToken][l2WETHToken].depositTxHashes[0]).to.equal(firstTx.hash);
     });
   });
   describe("CCTP", () => {
@@ -239,19 +239,19 @@ describe("Cross Chain Adapter: Linea", async function () {
       expect(Object.keys(result).length).to.equal(1);
     });
     it("Matches L1 and L2 events", async function () {
+      const firstTx = await erc20BridgeContract.emitBridgingInitiated(randomAddress(), monitoredEoa, l1Token, 1);
       await erc20BridgeContract.emitBridgingInitiated(randomAddress(), monitoredEoa, l1Token, 1);
-      const unfinalizedTx = await erc20BridgeContract.emitBridgingInitiated(randomAddress(), monitoredEoa, l1Token, 1);
       await erc20BridgeContract.emitBridgingFinalized(l1Token, monitoredEoa, 1);
 
       await adapter.updateSpokePoolClients();
       const result = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Token)]);
 
       // There should be one outstanding transfer, since there are two deposit events and one
-      // finalization event
+      // finalization event. Net-amount matching picks the first deposit event's hash.
       expect(Object.keys(result).length).to.equal(1);
       expect(Object.keys(result[monitoredEoa]).length).to.equal(1);
       expect(Object.keys(result[monitoredEoa][l1Token])[0]).to.equal(l2Token);
-      expect(result[monitoredEoa][l1Token][l2Token].depositTxHashes[0]).to.equal(unfinalizedTx.hash);
+      expect(result[monitoredEoa][l1Token][l2Token].depositTxHashes[0]).to.equal(firstTx.hash);
     });
   });
 

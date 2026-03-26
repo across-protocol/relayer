@@ -137,38 +137,36 @@ describe("Cross Chain Adapter: Scroll", async function () {
       expect(result[l2Weth][0].amount).to.equal(1);
     });
     it("Matches L1 and L2 events", async function () {
+      const firstTx = await scrollBridgeContract.deposit(l1Weth, l2Weth, monitoredEoa, monitoredEoa, 1);
       await scrollBridgeContract.deposit(l1Weth, l2Weth, monitoredEoa, monitoredEoa, 1);
-      const pendingTx = scrollBridgeContract.deposit(l1Weth, l2Weth, monitoredEoa, monitoredEoa, 1);
       // Only one of the deposits were finalized.
       await scrollBridgeContract.finalize(l1Weth, l2Weth, monitoredEoa, monitoredEoa, 1);
       await adapter.updateSpokePoolClients();
-      const unfinalizedTx = await pendingTx;
       const result = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Weth)]);
 
       // There should be one outstanding transfer, since there are two deposit events and one
-      // finalization event.
+      // finalization event. Net-amount matching picks the first deposit event's hash.
       // Only one key since the other monitored address has no outstanding transfers.
       expect(Object.keys(result).length).to.equal(1);
       expect(Object.keys(result[monitoredEoa]).length).to.equal(1);
       expect(Object.keys(result[monitoredEoa][l1Weth])[0]).to.equal(l2Weth);
-      expect(result[monitoredEoa][l1Weth][l2Weth].depositTxHashes[0]).to.equal(unfinalizedTx.hash);
+      expect(result[monitoredEoa][l1Weth][l2Weth].depositTxHashes[0]).to.equal(firstTx.hash);
     });
     it("Matches L1 and L2 events, Hub -> Spoke", async function () {
+      const firstTx = await scrollBridgeContract.deposit(l1Weth, l2Weth, hubPoolAddress, spokeAddress, 1);
       await scrollBridgeContract.deposit(l1Weth, l2Weth, hubPoolAddress, spokeAddress, 1);
-      const pendingTx = scrollBridgeContract.deposit(l1Weth, l2Weth, hubPoolAddress, spokeAddress, 1);
       // Only one of the deposits were finalized.
       await scrollBridgeContract.finalize(l1Weth, l2Weth, hubPoolAddress, spokeAddress, 1);
       await adapter.updateSpokePoolClients();
-      const unfinalizedTx = await pendingTx;
       const result = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Weth)]);
 
       // There should be one outstanding transfer, since there are two deposit events and one
-      // finalization event
+      // finalization event. Net-amount matching picks the first deposit event's hash.
       // Only one key since the other monitored address has no outstanding transfers.
       expect(Object.keys(result).length).to.equal(1);
       expect(Object.keys(result[spokeAddress]).length).to.equal(1);
       expect(Object.keys(result[spokeAddress][l1Weth])[0]).to.equal(l2Weth);
-      expect(result[spokeAddress][l1Weth][l2Weth].depositTxHashes[0]).to.equal(unfinalizedTx.hash);
+      expect(result[spokeAddress][l1Weth][l2Weth].depositTxHashes[0]).to.equal(firstTx.hash);
     });
   });
   describe("USDC", function () {
@@ -203,38 +201,36 @@ describe("Cross Chain Adapter: Scroll", async function () {
       expect(result[l2Usdc][0].amount).to.equal(bnOne);
     });
     it("Matches L1 and L2 events", async function () {
+      const firstTx = await scrollBridgeContract.deposit(l1Usdc, l2Usdc, monitoredEoa, monitoredEoa, 1);
       await scrollBridgeContract.deposit(l1Usdc, l2Usdc, monitoredEoa, monitoredEoa, 1);
-      const pendingTx = scrollBridgeContract.deposit(l1Usdc, l2Usdc, monitoredEoa, monitoredEoa, 1);
       await scrollBridgeContract.finalize(l1Usdc, l2Usdc, monitoredEoa, monitoredEoa, 1);
 
       await adapter.updateSpokePoolClients();
-      const unfinalizedTx = await pendingTx;
       const result = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Usdc)]);
 
       // There should be one outstanding transfer, since there are two deposit events and one
-      // finalization event
+      // finalization event. Net-amount matching picks the first deposit event's hash.
       // Only one key since the other monitored address has no outstanding transfers.
       expect(Object.keys(result).length).to.equal(1);
       expect(Object.keys(result[monitoredEoa]).length).to.equal(1);
       expect(Object.keys(result[monitoredEoa][l1Usdc])[0]).to.equal(l2Usdc);
-      expect(result[monitoredEoa][l1Usdc][l2Usdc].depositTxHashes[0]).to.equal(unfinalizedTx.hash);
+      expect(result[monitoredEoa][l1Usdc][l2Usdc].depositTxHashes[0]).to.equal(firstTx.hash);
     });
     it("Matches L1 and L2 events, Hub -> Spoke", async function () {
+      const firstTx = await scrollBridgeContract.deposit(l1Usdc, l2Usdc, hubPoolAddress, spokeAddress, 1);
       await scrollBridgeContract.deposit(l1Usdc, l2Usdc, hubPoolAddress, spokeAddress, 1);
-      const pendingTx = scrollBridgeContract.deposit(l1Usdc, l2Usdc, hubPoolAddress, spokeAddress, 1);
       // Only one of the deposits were finalized.
       await scrollBridgeContract.finalize(l1Usdc, l2Usdc, hubPoolAddress, spokeAddress, 1);
       await adapter.updateSpokePoolClients();
-      const unfinalizedTx = await pendingTx;
       const result = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Usdc)]);
 
       // There should be one outstanding transfer, since there are two deposit events and one
-      // finalization event
+      // finalization event. Net-amount matching picks the first deposit event's hash.
       // Only one key since the other monitored address has no outstanding transfers.
       expect(Object.keys(result).length).to.equal(1);
       expect(Object.keys(result[spokeAddress]).length).to.equal(1);
       expect(Object.keys(result[spokeAddress][l1Usdc])[0]).to.equal(l2Usdc);
-      expect(result[spokeAddress][l1Usdc][l2Usdc].depositTxHashes[0]).to.equal(unfinalizedTx.hash);
+      expect(result[spokeAddress][l1Usdc][l2Usdc].depositTxHashes[0]).to.equal(firstTx.hash);
     });
   });
 });
