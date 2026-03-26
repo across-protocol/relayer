@@ -1,5 +1,20 @@
-import { CHAIN_IDs, Address, delay, TOKEN_SYMBOLS_MAP, toBN, winston, BigNumber } from "./";
+import {
+  CHAIN_IDs,
+  Address,
+  delay,
+  TOKEN_SYMBOLS_MAP,
+  toBN,
+  winston,
+  BigNumber,
+  EventSearchConfig,
+  Provider,
+  assert,
+  isDefined,
+  paginatedEventQuery,
+  Contract,
+} from "./";
 import axios, { RawAxiosRequestHeaders } from "axios";
+import ERC20_ABI from "../common/abi/MinimalERC20.json";
 
 // We need to instruct this bridge what tokens we expect to receive on L2, since the bridge
 // API supports multiple destination tokens for a single L1 token.
@@ -9,6 +24,7 @@ export const BRIDGE_API_DESTINATION_TOKENS: { [l2ChainId: number]: string } = {
 
 export const BRIDGE_API_DESTINATION_TOKEN_SYMBOLS: { [address: string]: string } = {
   [TOKEN_SYMBOLS_MAP.pathUSD.addresses[CHAIN_IDs.TEMPO]]: "path_usd",
+  [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: "usdc",
 };
 
 const NETWORK_NAMES: { [chainId: number]: string } = {
@@ -114,6 +130,27 @@ export class BridgeApiClient {
     };
     const transferRequestData = await this.postWithRetry<BridgeResponse>("v0/transfers", data, headers);
     return transferRequestData.source_deposit_instructions.to_address;
+  }
+
+  async bridgeDepositInitiated(
+    deposit: BridgeResponse,
+    expectedAmount: BigNumber,
+    fromAddress: Address,
+    eventConfig: EventSearchConfig,
+    originProvider: Provider
+  ): Promise<boolean> {
+    const originToken = Object.entries(BRIDGE_API_DESTINATION_TOKEN_SYMBOLS).find(
+      ([, bridgeSymbol]) => bridgeSymbol === deposit.source_deposit_instructions.currency
+    );
+    assert(isDefined(originToken));
+    const originTokenAddress = originToken[0];
+    const tokenContract = new Contract(originTokenAddress, ERC20_ABI, originProvider);
+    const transferEvents = await paginatedEventQuery(
+      tokenContract,
+      tokenContract.filters.Transfer(fromAddress.toNative(), deposit.source_deposit_instructions.to_address),
+      eventConfig
+    );
+    return transferEvents.some((event) => expectedAmount.eq(event.args.value));
   }
 
   defaultHeaders(): RawAxiosRequestHeaders {

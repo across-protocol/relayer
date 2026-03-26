@@ -20,6 +20,7 @@ import {
   BRIDGE_API_DESTINATION_TOKENS,
   createFormatFunction,
   roundAmountToSend,
+  filterAsync,
 } from "../../utils";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
 import { AugmentedTransaction } from "../../clients/TransactionClient";
@@ -107,15 +108,23 @@ export class BridgeApi extends BaseL2BridgeAdapter {
     const fromTimestamp = await getTimestampForBlock(this.l1Signer.provider, l1EventConfig.from);
     const allTransfers = await this.api.getAllTransfersInRange(fromAddress, fromTimestamp * 1000);
 
-    return allTransfers
-      .filter(
-        (transfer) =>
-          transfer.state !== "payment_processed" &&
-          transfer.destination.currency === this.l1TokenInfo.symbol.toLowerCase()
-      )
-      .reduce((acc, transfer) => {
-        const { decimals: l2TokenDecimals } = getTokenInfo(l2Token, this.l2chainId);
-        return acc.add(floatToBN(transfer.receipt?.final_amount ?? transfer.amount, l2TokenDecimals));
-      }, bnZero);
+    const allInitiatedTransfers = await filterAsync(allTransfers, async (transfer) => {
+      if (transfer.state === "awaiting_funds") {
+        const claimedAmount = transfer.receipt?.final_amount ?? transfer.amount;
+        const expectedAmount = floatToBN(claimedAmount, this.l2TokenInfo.decimals);
+        return await this.api.bridgeDepositInitiated(
+          transfer,
+          expectedAmount,
+          fromAddress,
+          l2EventConfig,
+          this.l2Signer.provider
+        );
+      }
+      return transfer.state !== "payment_processed";
+    });
+    return allInitiatedTransfers.reduce((acc, transfer) => {
+      const { decimals: l2TokenDecimals } = getTokenInfo(l2Token, this.l2chainId);
+      return acc.add(floatToBN(transfer.receipt?.final_amount ?? transfer.amount, l2TokenDecimals));
+    }, bnZero);
   }
 }
