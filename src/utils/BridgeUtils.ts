@@ -59,7 +59,7 @@ export class BridgeApiClient {
     readonly customerId: string,
     srcNetworkId: number,
     dstNetworkId: number,
-    readonly logger: winston.Logger,
+    readonly logger?: winston.Logger,
     readonly nRetries: number = 2
   ) {
     this.srcNetwork = NETWORK_NAMES[srcNetworkId];
@@ -80,20 +80,20 @@ export class BridgeApiClient {
 
   async createTransferRouteEscrowAddress(
     toAddress: Address,
-    _l1TokenSymbol: string,
-    _l2TokenSymbol: string
+    _srcTokenSymbol: string,
+    _dstTokenSymbol: string
   ): Promise<string> {
-    const l1TokenSymbol = _l1TokenSymbol.toLowerCase();
-    const l2TokenSymbol = _l2TokenSymbol.toLowerCase();
+    const srcTokenSymbol = _srcTokenSymbol.toLowerCase();
+    const dstTokenSymbol = _dstTokenSymbol.toLowerCase();
     const data = {
       on_behalf_of: `${this.customerId}`,
       source: {
         payment_rail: this.srcNetwork,
-        currency: l1TokenSymbol,
+        currency: srcTokenSymbol,
       },
       destination: {
         payment_rail: this.dstNetwork,
-        currency: l2TokenSymbol,
+        currency: dstTokenSymbol,
         to_address: toAddress.toNative(),
       },
       return_instructions: {
@@ -125,7 +125,7 @@ export class BridgeApiClient {
       const response = await axios.get<T>(`${this.bridgeApiBase}/${endpoint}`, { headers });
       return response.data;
     } catch (e) {
-      this.logger.debug({
+      this.logger?.debug({
         at: "BridgeApi#_get",
         message: "Failed to query bridge API",
         endpoint,
@@ -149,7 +149,7 @@ export class BridgeApiClient {
       const response = await axios.post<T>(`${this.bridgeApiBase}/${endpoint}`, data, { headers });
       return response.data;
     } catch (e) {
-      this.logger.debug({
+      this.logger?.debug({
         at: "BridgeApi#_post",
         message: "Failed to post to bridge API",
         endpoint,

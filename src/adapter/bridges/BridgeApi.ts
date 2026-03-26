@@ -23,6 +23,7 @@ import {
   BRIDGE_API_DESTINATION_TOKEN_SYMBOLS,
   roundAmountToSend,
   mapAsync,
+  floatToBN,
 } from "../../utils";
 import { TransferTokenParams } from "../utils";
 import ERC20_ABI from "../../common/abi/MinimalERC20.json";
@@ -70,7 +71,6 @@ export class BridgeApi extends BaseBridgeAdapter {
     _l1Token: EvmAddress,
     l2Token: Address,
     _amount: BigNumber,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _optionalParams?: TransferTokenParams
   ): Promise<BridgeTransactionDetails> {
     const amount = roundAmountToSend(_amount, this.l1TokenInfo.decimals, 2); // The bridge API only deals with values up to 2 decimals.
@@ -127,7 +127,7 @@ export class BridgeApi extends BaseBridgeAdapter {
           logIndex: 0, // logIndex is zero since the only call for initiation is a `Transfer`.
           txnIndex: transaction?.transactionIndex,
           blockNumber: transaction?.blockNumber,
-          amount: toBN(Math.floor(Number(receipt.final_amount) * 10 ** this.l1TokenInfo.decimals)),
+          amount: floatToBN(receipt.final_amount, this.l1TokenInfo.decimals),
         };
       }
     );
@@ -137,13 +137,9 @@ export class BridgeApi extends BaseBridgeAdapter {
   }
 
   async queryL2BridgeFinalizationEvents(
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _l1Token: EvmAddress,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _fromAddress: EvmAddress,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _toAddress: Address,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     return Promise.resolve({});

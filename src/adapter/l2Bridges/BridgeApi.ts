@@ -7,19 +7,47 @@ import {
   Signer,
   EvmAddress,
   CHAIN_IDs,
-  paginatedEventQuery,
+  BRIDGE_API_MINIMUMS,
+  toBN,
+  BridgeApiClient,
+  getTokenInfo,
+  floatToBN,
+  isDefined,
+  assert,
+  BRIDGE_API_DESTINATION_TOKEN_SYMBOLS,
+  getTimestampForBlock,
 } from "../../utils";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
 import { AugmentedTransaction } from "../../clients/TransactionClient";
-import { BRIDGE_API_MINIMUMS } from "../../adapter/bridges";
+import { TokenInfo } from "../../interfaces";
 import ERC20_ABI from "../../common/abi/MinimalERC20.json";
 
 export class BridgeApi extends BaseL2BridgeAdapter {
+  protected api: BridgeApiClient;
+  protected l1TokenInfo: TokenInfo;
+
   constructor(l2chainId: number, hubChainId: number, l2Signer: Signer, l1Signer: Signer, l1Token: EvmAddress) {
     if (hubChainId !== CHAIN_IDs.MAINNET) {
       throw new Error("Cannot define a Bridge API bridge for a non-production network");
     }
     super(l2chainId, hubChainId, l2Signer, l1Signer, l1Token);
+
+    // We need to fetch some API configuration details from environment.
+    const { BRIDGE_API_BASE, BRIDGE_API_KEY, BRIDGE_CUSTOMER_ID } = process.env;
+
+    assert(isDefined(BRIDGE_API_BASE), "BRIDGE_API_BASE must be set in the environment");
+    assert(isDefined(BRIDGE_API_KEY), "BRIDGE_API_KEY must be set in the environment");
+    assert(isDefined(BRIDGE_CUSTOMER_ID), "BRIDGE_CUSTOMER_ID must be set in the environment");
+
+    this.api = new BridgeApiClient(
+      BRIDGE_API_BASE,
+      BRIDGE_API_KEY,
+      BRIDGE_CUSTOMER_ID,
+      this.l2chainId,
+      this.hubChainId
+    );
+
+    this.l1TokenInfo = getTokenInfo(l1Token, this.hubChainId);
   }
 
   async constructWithdrawToL1Txns(
@@ -29,11 +57,14 @@ export class BridgeApi extends BaseL2BridgeAdapter {
     amount: BigNumber
   ): Promise<AugmentedTransaction[]> {
     // If amount is less than the network minimums, then throw.
-    if (amount.lt(BRIDGE_API_MINIMUMS[this.hubChainId])) {
+    if (amount.lt(BRIDGE_API_MINIMUMS[this.l2chainId]?.[this.hubChainId] ?? toBN(Number.MAX_SAFE_INTEGER))) {
       throw new Error(`Cannot bridge to ${getNetworkName(this.hubChainId)} due to invalid amount ${amount}`);
     }
-    // Get the transfer route source address. @todo
-    const transferRouteSource = await this.getTransferRouteEscrowAddress(toAddress, l1Token, l2Token);
+    const transferRouteSource = await this.api.createTransferRouteEscrowAddress(
+      toAddress,
+      BRIDGE_API_DESTINATION_TOKEN_SYMBOLS[l1Token.toNative()],
+      this.l1TokenInfo.symbol
+    );
     const l2TokenContract = new Contract(l2Token.toNative(), ERC20_ABI, this.l2Signer);
     const transferTxn = {
       contract: l2TokenContract,
@@ -44,56 +75,28 @@ export class BridgeApi extends BaseL2BridgeAdapter {
     return [transferTxn];
   }
 
+  // @dev We do not filter on origin/destination tokens since there is only one bridge API destination token for any destination chain.
+  // e.g. For Tempo, we only use Bridge for pathUSD; other tokens are rebalanced via other methods, so
+  // if there is an outstanding transfer from Tempo to Ethereum, then this must be a pathUSD transfer.
   async getL2PendingWithdrawalAmount(
     l2EventConfig: EventSearchConfig,
     l1EventConfig: EventSearchConfig,
     fromAddress: EvmAddress,
     l2Token: EvmAddress
   ): Promise<BigNumber> {
-    const expectedL2Recipient = await this.getTransferRouteEscrowAddress(fromAddress, this.l1Token, l2Token);
-    const l2TokenContract = new Contract(l2Token.toNative(), ERC20_ABI, this.l2Signer);
-    const l1TokenContract = new Contract(this.l1Token.toNative(), ERC20_ABI, this.l1Signer);
+    const fromTimestamp = await getTimestampForBlock(this.l1Signer.provider, l1EventConfig.from);
+    const allTransfers = await this.api.getAllTransfersInRange(fromAddress, fromTimestamp * 1000);
 
-    const [l2TransferEvents, l1TransferEvents] = await Promise.all([
-      paginatedEventQuery(
-        l2TokenContract,
-        l2TokenContract.filters.Transfer(fromAddress.toNative(), expectedL2Recipient),
-        l2EventConfig
-      ),
-      paginatedEventQuery(
-        l1TokenContract,
-        l1TokenContract.filters.Transfer(expectedL2Recipient, fromAddress.toNative()),
-        l1EventConfig
-      ),
-    ]);
-    const l1TransferAmounts = l1TransferEvents.map(({ args }) => args.value.toString());
-
-    // Expect a 1:1 transfer. Match out events by amounts.
-    const outstandingAmount = l2TransferEvents.reduce((acc, event) => {
-      const l2Amount = event.args.value;
-      if (l1TransferAmounts.some((l1Amount) => l1Amount === l2Amount.toString())) {
-        // Finalization event found. Remove it from observed.
-        const amountIndex = l1TransferAmounts.indexOf(l2Amount.toString());
-        l1TransferEvents.splice(amountIndex, 1);
-      } else {
-        // Finalization event not found. Add it to pending amounts.
-        acc = acc.add(l2Amount);
-      }
-      return acc;
-    }, bnZero);
-
-    return outstandingAmount;
-  }
-
-  async getTransferRouteEscrowAddress(
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    fromAddress: EvmAddress,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    l1Token: EvmAddress,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    l2Token: EvmAddress
-  ): Promise<string> {
-    // @todo based on the structure of data returned by the bridge API.
-    return this.l2Signer.getAddress();
+    return allTransfers
+      .filter(
+        (transfer) =>
+          transfer.state !== "awaiting_funds" &&
+          transfer.state !== "payment_processed" &&
+          transfer.destination.currency === this.l1TokenInfo.symbol.toLowerCase()
+      )
+      .reduce((acc, transfer) => {
+        const { decimals: l2TokenDecimals } = getTokenInfo(l2Token, this.l2chainId);
+        return acc.add(floatToBN(transfer.receipt.final_amount, l2TokenDecimals));
+      }, bnZero);
   }
 }
