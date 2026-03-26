@@ -63,6 +63,7 @@ interface CrossChainMessageWithStatus extends CrossChainMessageWithEvent {
 const { USDB, USDC, WETH } = TOKEN_SYMBOLS_MAP;
 const USDCe = TOKEN_SYMBOLS_MAP["USDC.e"];
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- used only in typeof for OVM_CHAIN_ID type
 const OP_STACK_CHAINS = Object.values(CHAIN_IDs).filter((chainId) => chainIsOPStack(chainId));
 /* OP_STACK_CHAINS should contain all chains which satisfy chainIsOPStack().
  * (typeof OP_STACK_CHAINS)[number] then takes all elements in this array and "unions" their type (i.e. 10 | 8453 | 3443 | ... ).
@@ -284,7 +285,7 @@ async function getOVMStdEvents(
   // that look exactly emit the same events as the standard bridge's ETH withdrawal process. This is used by the
   // https://blast.io/en/bridge UI, so the following query allows this finalizer to finalize withdrawals of WETH
   // from blast initiated through this hosted UI. ETH withdrawals sent in this manner through the Blast Bridge
-  // have the same ETHBridgeInitiated event signature so we only need to change the contract addres.
+  // have the same ETHBridgeInitiated event signature so we only need to change the contract address.
   if (chainIsBlast(chainId)) {
     const blastBridge = new Contract(CONTRACT_ADDRESSES[chainId].blastBridge.address, ovmStandardBridge.abi, provider);
     const blastEthEvents = (

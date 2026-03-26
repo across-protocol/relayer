@@ -52,6 +52,7 @@ import {
   toAddressType,
   Address,
   EvmAddress,
+  SvmAddress,
   assert,
   getBinanceApiClient,
   getBinanceWithdrawalLimits,
@@ -62,6 +63,9 @@ import {
   getRelayDataFromFill,
   sortEventsAscending,
   chainHasNativeToken,
+  ALT_DEACTIVATION_COOLDOWN,
+  simulateSolanaTransaction,
+  sendAndConfirmSolanaTransaction,
 } from "../utils";
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
 import { MonitorConfig, L2Token } from "./MonitorConfig";
@@ -70,10 +74,20 @@ import { PUBLIC_NETWORKS, TOKEN_EQUIVALENCE_REMAPPING } from "@across-protocol/c
 import { utils as sdkUtils, arch } from "@across-protocol/sdk";
 import {
   address,
+  createTransactionMessage,
+  setTransactionMessageFeePayer,
+  setTransactionMessageLifetimeUsingBlockhash,
+  appendTransactionMessageInstructions,
+  pipe,
   fetchEncodedAccount,
   getBase64EncodedWireTransaction,
   signTransactionMessageWithSigners,
+  type Base58EncodedBytes,
 } from "@solana/kit";
+import {
+  getCloseLookupTableInstruction,
+  ADDRESS_LOOKUP_TABLE_PROGRAM_ADDRESS,
+} from "@solana-program/address-lookup-table";
 import { HyperliquidExecutor } from "../hyperliquid/HyperliquidExecutor";
 import { HyperliquidExecutorConfig } from "../hyperliquid/HyperliquidExecutorConfig";
 
@@ -284,8 +298,8 @@ export class Monitor {
       const deposit = invalidFill.deposit
         ? {
             txnRef: invalidFill.deposit.txnRef,
-            inputToken: invalidFill.deposit.inputToken.toNative(),
-            depositor: invalidFill.deposit.depositor.toNative(),
+            inputToken: invalidFill.deposit.inputToken,
+            depositor: invalidFill.deposit.depositor,
           }
         : undefined;
 
@@ -293,8 +307,8 @@ export class Monitor {
         at: "Monitor::reportInvalidFills",
         message,
         destinationChainId,
-        outputToken: invalidFill.fill.outputToken.toNative(),
-        relayer: invalidFill.fill.relayer.toNative(),
+        outputToken: invalidFill.fill.outputToken,
+        relayer: invalidFill.fill.relayer,
         blockExplorerLink: blockExplorerLink(invalidFill.fill.txnRef, destinationChainId),
         reason: invalidFill.reason,
         deposit,
@@ -1200,6 +1214,117 @@ export class Monitor {
     }
   }
 
+  async closeALTs(): Promise<void> {
+    // A SVM Spoke pool client must be instantiated for this function to work.
+    const svmSpokePoolClient = this.clients.spokePoolClients[CHAIN_IDs.SOLANA];
+    if (!isSVMSpokePoolClient(svmSpokePoolClient)) {
+      return;
+    }
+
+    const signer = await getKitKeypairFromEvmSigner(this.clients.hubPoolClient.hubPool.signer);
+    const svmRpc = svmSpokePoolClient.svmEventsClient.getRpc();
+    const currentSlot = await svmRpc.getSlot({ commitment: "finalized" }).send();
+
+    let closedCount = 0;
+    let skippedCount = 0;
+
+    for (const relayer of this.monitorConfig.monitoredRelayers) {
+      // Query all ALTs owned by this relayer address.
+      const accounts = await svmRpc
+        .getProgramAccounts(ADDRESS_LOOKUP_TABLE_PROGRAM_ADDRESS, {
+          encoding: "base64",
+          filters: [
+            {
+              // An address lookup table address is derived by using a recent slot and an
+              // authority. We need to compare the authority of the ALT to close to those of monitored
+              // relayers.
+              memcmp: {
+                offset: 22n,
+                bytes: relayer.toBase58() as Base58EncodedBytes,
+                encoding: "base58",
+              },
+            },
+          ],
+        })
+        .send();
+
+      for (const { pubkey, account } of accounts) {
+        // Decode deactivation slot from bytes 4-11 (little-endian u64).
+        const data = Buffer.from(account.data[0], "base64");
+        const deactivationSlot = data.readBigUInt64LE(4);
+
+        // Skip if cooldown hasn't elapsed.
+        if (BigInt(currentSlot) - deactivationSlot < ALT_DEACTIVATION_COOLDOWN) {
+          skippedCount++;
+          continue;
+        }
+
+        // We can only close ALTs where the authority matches our signer.
+        if (!relayer.eq(SvmAddress.from(signer.address))) {
+          this.logger.debug({
+            at: "Monitor#closeALTs",
+            message: `Cannot close ALT ${pubkey} — authority ${relayer} does not match signer ${signer.address}`,
+          });
+          skippedCount++;
+          continue;
+        }
+
+        // Build close instruction.
+        const closeIx = getCloseLookupTableInstruction({
+          address: pubkey,
+          authority: signer,
+          recipient: signer.address,
+        });
+
+        const { value: recentBlockhash } = await svmRpc.getLatestBlockhash().send();
+        const txMessage = pipe(
+          createTransactionMessage({ version: 0 }),
+          (tx) => setTransactionMessageFeePayer(signer.address, tx),
+          (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash, tx),
+          (tx) => appendTransactionMessageInstructions([closeIx], tx)
+        );
+
+        if (!this.monitorConfig.sendingTransactionsEnabled) {
+          try {
+            await simulateSolanaTransaction(txMessage, svmRpc);
+            this.logger.info({
+              at: "Monitor#closeALTs",
+              message: `Simulated closing ALT ${pubkey} (deactivated at slot ${deactivationSlot})`,
+            });
+          } catch (err) {
+            this.logger.warn({
+              at: "Monitor#closeALTs",
+              message: `Failed to simulate closing ALT ${pubkey}`,
+              e: err,
+            });
+          }
+          continue;
+        }
+
+        try {
+          const signature = await sendAndConfirmSolanaTransaction(txMessage, svmRpc);
+          closedCount++;
+          this.logger.info({
+            at: "Monitor#closeALTs",
+            message: `Closed ALT ${pubkey} (deactivated at slot ${deactivationSlot})`,
+            signature,
+          });
+        } catch (err) {
+          this.logger.warn({
+            at: "Monitor#closeALTs",
+            message: `Failed to close ALT ${pubkey}`,
+            e: err,
+          });
+        }
+      }
+    }
+
+    this.logger.debug({
+      at: "Monitor#closeALTs",
+      message: `ALT cleanup complete. Closed: ${closedCount}, Skipped: ${skippedCount}`,
+    });
+  }
+
   async updateLatestAndFutureRelayerRefunds(relayerBalanceReport: RelayerBalanceReport): Promise<void> {
     // Calculate which fills have not yet been refunded for each monitored relayer.
     const allL1Tokens = this.getL1TokensForRelayerBalancesReport();
@@ -1376,7 +1501,7 @@ export class Monitor {
     this.logger.debug({
       at: "Monitor#updatePendingRebalances",
       message: "Updated pending rebalance credits",
-      relayer: relayer.toNative(),
+      relayer,
       pendingRebalances,
     });
   }

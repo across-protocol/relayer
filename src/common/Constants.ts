@@ -199,7 +199,7 @@ const resolveChainBundleBuffers = () => {
   return Object.fromEntries(
     Object.entries(PUBLIC_NETWORKS).map(([_chainId, { family }]) => {
       const chainId = Number(_chainId);
-      const buffer = chainIsProd(chainId) ? buffers[chainId] ?? defaultBuffers[family] ?? DEFAULT_CHAIN_BUFFER : 0;
+      const buffer = chainIsProd(chainId) ? (buffers[chainId] ?? defaultBuffers[family] ?? DEFAULT_CHAIN_BUFFER) : 0;
       return [chainId, buffer];
     })
   );
@@ -252,7 +252,7 @@ const resolveChainCacheDelay = () => {
   return Object.fromEntries(
     Object.entries(PUBLIC_NETWORKS).map(([_chainId, { family }]) => {
       const chainId = Number(_chainId);
-      const buffer = chainIsProd(chainId) ? cacheDelay[chainId] ?? cacheDelays[family] ?? DEFAULT_CACHE_DELAY : 0;
+      const buffer = chainIsProd(chainId) ? (cacheDelay[chainId] ?? cacheDelays[family] ?? DEFAULT_CACHE_DELAY) : 0;
       return [chainId, buffer];
     })
   );
@@ -393,6 +393,7 @@ export type L1BridgeConstructor<T extends BaseBridgeAdapter> = new (
   l2chainId: number,
   hubChainId: number,
   l1Signer: Signer,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   l2SignerOrProvider: any,
   l1Token: EvmAddress,
   logger: winston.Logger
@@ -401,6 +402,7 @@ export type L1BridgeConstructor<T extends BaseBridgeAdapter> = new (
 type L2BridgeConstructor<T extends BaseL2BridgeAdapter> = new (
   l2chainId: number,
   hubChainId: number,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   l2SignerOrProvider: any,
   l1Signer: Signer,
   l1Token: EvmAddress

@@ -317,8 +317,8 @@ export class BaseChainAdapter {
         "Failed to constructWithdrawToL1Txns",
         {
           toAddress: address,
-          l2Token: l2Token.toNative(),
-          l1Token: l1Token.toNative(),
+          l2Token,
+          l1Token,
           amount: amount.toString(),
           srcChainId: this.chainId,
           dstChainId: this.hubChainId,
@@ -415,9 +415,9 @@ export class BaseChainAdapter {
       this.log(
         "Failed to construct L1 to L2 transaction",
         {
-          address: address.toNative(),
-          l1Token: l1Token.toNative(),
-          l2Token: l2Token.toNative(),
+          address,
+          l1Token,
+          l2Token,
           amount: amount.toString(),
           srcChainId: this.hubChainId,
           dstChainId: this.chainId,
@@ -452,8 +452,8 @@ export class BaseChainAdapter {
     this.log(
       message,
       {
-        l1Token: l1Token.toNative(),
-        l2Token: l2Token.toNative(),
+        l1Token,
+        l2Token,
         amount,
         contract: contract.address,
         txnRequestData,
@@ -524,9 +524,8 @@ export class BaseChainAdapter {
         "wrapNativeTokenIfAboveThreshold"
       );
       return { hash: ZERO_BYTES } as TransactionResponse;
-    } else {
-      (await this.transactionClient.submit(this.chainId, [augmentedTxn]))[0];
     }
+    return (await this.transactionClient.submit(this.chainId, [augmentedTxn]))[0];
   }
 
   async getOutstandingCrossChainTransfers(l1Tokens: EvmAddress[]): Promise<OutstandingTransfers> {

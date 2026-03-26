@@ -25,6 +25,8 @@ interface LookupTableDefinitions {
   lookupTableMap: AddressesByLookupTableAddress;
 }
 
+export const ALT_DEACTIVATION_COOLDOWN = 512n;
+
 export function includesAddressSimple(address: string | undefined, list: string[]): boolean {
   if (!isDefined(address)) {
     return false;
