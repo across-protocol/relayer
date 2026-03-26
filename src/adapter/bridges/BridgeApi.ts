@@ -137,7 +137,7 @@ export class BridgeApi extends BaseBridgeAdapter {
           logIndex: 0, // logIndex is zero since the only call for initiation is a `Transfer`.
           txnIndex: transaction?.transactionIndex ?? 0,
           blockNumber: transaction?.blockNumber ?? 0,
-          amount: floatToBN(pendingTransfer.amount, this.l1TokenInfo.decimals),
+          amount: floatToBN(pendingTransfer.receipt?.final_amount ?? pendingTransfer.amount, this.l1TokenInfo.decimals),
         };
       }
     );
