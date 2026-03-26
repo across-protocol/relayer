@@ -1,9 +1,14 @@
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { utils } from "@across-protocol/sdk";
 import { BridgeApi } from "../../src/adapter/bridges/BridgeApi";
-import { BridgeResponse, BRIDGE_API_DESTINATION_TOKENS, BRIDGE_API_MINIMUMS } from "../../src/utils/BridgeUtils";
 import { ethers, randomAddress, expect, createSpyLogger, sinon, toBN } from "../utils";
-import { EvmAddress, toBNWei } from "../../src/utils/SDKUtils";
+import {
+  EvmAddress,
+  toBNWei,
+  BridgeResponse,
+  BRIDGE_API_DESTINATION_TOKENS,
+  BRIDGE_API_MINIMUMS,
+} from "../../src/utils";
 import * as sdkUtils from "../../src/utils/SDKUtils";
 
 // Minimal mock for the BridgeApiClient used inside BridgeApi.
@@ -152,9 +157,14 @@ describe("Cross Chain Adapter: BridgeApi", async function () {
       expect(event.txnIndex).to.equal(0);
     });
 
-    it("filters out transfers with awaiting_funds state", async function () {
+    it("does not filter out transfers with awaiting_funds state", async function () {
       mockApi.transfersToReturn = [
-        makeBridgeResponse({ state: "awaiting_funds", toAddress: monitoredEoa }),
+        makeBridgeResponse({
+          state: "awaiting_funds",
+          toAddress: monitoredEoa,
+          finalAmount: "100",
+          sourceTxHash: undefined,
+        }),
         makeBridgeResponse({
           state: "funds_received",
           toAddress: monitoredEoa,
@@ -170,8 +180,9 @@ describe("Cross Chain Adapter: BridgeApi", async function () {
         searchConfig
       );
 
-      expect(events[l2TokenAddress]).to.have.lengthOf(1);
-      expect(events[l2TokenAddress][0].txnRef).to.equal("0x1");
+      expect(events[l2TokenAddress]).to.have.lengthOf(2);
+      expect(events[l2TokenAddress][0].txnRef).to.equal("0x0");
+      expect(events[l2TokenAddress][1].txnRef).to.equal("0x1");
     });
 
     it("filters out transfers with payment_processed state", async function () {
