@@ -54,7 +54,18 @@ type MinGenericSpokePoolClient = {
   logger: winston.Logger;
 };
 
-export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(SpokePoolClient: T) {
+interface SpokeListenerMethods {
+  init(opts: IndexerOpts): void;
+  onBlock(handler: (blockNumber: number, currentTime: number) => void): void;
+  _startWorker(): void;
+  stopWorker(): void;
+  _indexerUpdate(rawMessage: unknown): void;
+  _update(eventsToQuery: string[]): Promise<clients.SpokePoolUpdate>;
+}
+
+export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
+  SpokePoolClient: T
+): T & Constructor<SpokeListenerMethods> {
   return class extends SpokePoolClient {
     // Standard private/readonly constraints are not available to mixins; use ES2020 private properties instead.
     #chain: string;
