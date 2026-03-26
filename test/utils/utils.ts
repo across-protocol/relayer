@@ -478,6 +478,7 @@ export function getDisabledBlockRanges(): number[][] {
 }
 
 // A helper function to parse key - value map into a Fill object
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function fillFromArgs(fillArgs: { [key: string]: any }): Fill {
   const { message, ...relayData } = relayDataFromArgs(fillArgs);
   const { relayExecutionInfo: relayExecutionInfoArgs } = fillArgs;
@@ -517,6 +518,7 @@ export function fillIntoPrimitiveTypes(fill: Fill) {
   };
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function relayDataFromArgs(relayDataArgs: { [key: string]: any }): RelayData {
   return {
     originChainId: relayDataArgs.originChainId,
@@ -534,6 +536,7 @@ export function relayDataFromArgs(relayDataArgs: { [key: string]: any }): RelayD
   };
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function slowFillRequestFromArgs(slowFillRequestArgs: { [key: string]: any }): SlowFillRequest {
   const { message, ...relayData } = relayDataFromArgs(slowFillRequestArgs);
   return {
@@ -544,6 +547,7 @@ export function slowFillRequestFromArgs(slowFillRequestArgs: { [key: string]: an
 }
 
 // A helper function to parse key - value map into a Deposit object with correct types (e.g. Address)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function depositFromArgs(depositArgs: { [key: string]: any }): Deposit {
   const deposit: Deposit = {
     ...relayDataFromArgs(depositArgs),

@@ -31,6 +31,7 @@ import {
   createFormatFunction,
   toAddressType,
   getSpokePoolPeriphery,
+  getPermit2,
   compareAddressesSimple,
   ConvertDecimals,
   assert,
@@ -57,6 +58,7 @@ import {
   getGaslessAuthorizerAddress,
   extractGaslessDepositFields,
   getGaslessPermitNonce,
+  isPermit2NonceUsed,
   isAllowedGaslessPair,
   isExclusivityRelative,
   isStablecoin,
@@ -73,6 +75,7 @@ type GaslessRelayerUpdate = {
 const DEPOSIT_EVENT = "FundsDeposited";
 
 // Teach BigInt how to be represented as JSON.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 (BigInt.prototype as any).toJSON = function () {
   return this.toString();
 };
@@ -117,6 +120,8 @@ export class GaslessRelayer {
   protected spokePoolPeripheries: { [chainId: number]: Contract } = {};
   // The object is indexed by `chainId`. A SpokePool contract is indexed by the chain ID.
   protected spokePools: { [chainId: number]: Contract } = {};
+  /** Permit2 on each origin chain, connected to that chain's provider (nonce bitmap reads). */
+  protected permit2Contracts: { [chainId: number]: Contract } = {};
 
   private api: AcrossSwapApiClient;
   protected signerAddress: EvmAddress;
@@ -158,6 +163,7 @@ export class GaslessRelayer {
         chainId,
         this.config.spokePoolPeripheryOverrides[chainId]
       ).connect(provider);
+      this.permit2Contracts[chainId] = getPermit2(chainId).connect(provider);
     });
     await forEachAsync(this.config.relayerDestinationChains, async (chainId) => {
       this.providersByChain[chainId] ??= await getProvider(chainId);
@@ -393,15 +399,27 @@ export class GaslessRelayer {
    * - EIP-3009 (bridge): AuthorizationUsed on bridge inputToken.
    * - EIP-3009 (swap-and-bridge): AuthorizationUsed on swapToken (the signed token); observed key uses depositData.inputToken to match messageFilter / FundsDeposited.
    * - Permit2 (bridge only): FundsDeposited on SpokePool by depositId (no AuthorizationUsed on the transfer token).
-   * - Permit2 (swap-and-bridge): skip — this path does not emit FundsDeposited on SpokePool, so we cannot infer prior submission from chain events.
+   * - Permit2 (swap-and-bridge): Permit2 nonceBitmap on canonical Permit2 — if nonce used, treat deposit as already submitted.
    */
-  private async updateObservedCctpDeposits(apiMessages: AnyGaslessDepositMessage[]): Promise<void> {
+  protected async updateObservedCctpDeposits(apiMessages: AnyGaslessDepositMessage[]): Promise<void> {
     const cctpMessages = apiMessages.filter((msg) => this._isCctpDeposit(msg.originChainId, msg.spokePool));
     await mapAsync(cctpMessages, async (depositMessage) => {
       const { originChainId, depositId } = depositMessage;
 
       if (depositMessage.depositFlowType === "swapAndBridge") {
         if (depositMessage.permitType === "permit2") {
+          const owner = getGaslessAuthorizerAddress(depositMessage);
+          const permitNonce = getGaslessPermitNonce(depositMessage);
+          const nonceUsed = await isPermit2NonceUsed(this.permit2Contracts[originChainId], owner, permitNonce);
+          if (!nonceUsed) {
+            return;
+          }
+          const depositKey = this._getDepositKey(
+            toAddressType(depositMessage.depositData.inputToken, originChainId).toNative(),
+            originChainId,
+            depositId
+          );
+          this.observedDeposits[originChainId].add(depositKey);
           return;
         }
         const swapTokenAddr = toAddressType(depositMessage.swapToken, originChainId);
@@ -553,7 +571,7 @@ export class GaslessRelayer {
             const depositReceipt = await depositReceiptPromise;
 
             // Swap-and-bridge and CCTP bridge: no fill; confirm via receipt hash and/or EIP-3009 AuthorizationUsed.
-            // Swap + Permit2 without receipt: @TODO add confirmation path when there is no FundsDeposited.
+            // Swap-and-bridge with Permit2: confirm via Permit2 nonceBitmap.
             if (isSwap || isCctpDeposit) {
               let found: string | undefined = depositReceipt?.transactionHash;
 
@@ -561,8 +579,13 @@ export class GaslessRelayer {
                 if (depositMessage.permitType === "receiveWithAuthorization") {
                   const authToken = isSwap ? toAddressType(depositMessage.swapToken, originChainId) : inputToken;
                   found = await this._findAuthorizationUsed(originChainId, authToken, authorizer, nonce);
+                } else if (depositMessage.permitType === "permit2") {
+                  const nonceUsed = await isPermit2NonceUsed(this.permit2Contracts[originChainId], authorizer, nonce);
+                  // Same outcome as AuthorizationUsed: confirm origin submission without a tx receipt (no EIP-3009 event).
+                  if (nonceUsed) {
+                    found = "permit2-nonce-consumed";
+                  }
                 }
-                // @TODO: Add logic for swapAndBridgeWithPermit2
               }
 
               if (isDefined(found)) {
@@ -879,7 +902,7 @@ export class GaslessRelayer {
   /*
    * @notice Finds the whole deposit event for a non-CCTP message: Permit2 by depositId on SpokePool, EIP-3009 by AuthorizationUsed then tx receipt.
    */
-  private async _findDeposit(
+  protected async _findDeposit(
     depositMessage: GaslessDepositMessage
   ): Promise<Omit<DepositWithBlock, "fromLiteChain" | "toLiteChain" | "quoteBlockNumber"> | undefined> {
     const { originChainId, depositId, spokePool } = depositMessage;

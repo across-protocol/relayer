@@ -78,6 +78,7 @@ export class HubPoolClient extends clients.HubPoolClient {
     return super.getBundleEndBlockForChain(proposeRootBundleEvent, chainId, chainIdList);
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async update(eventsToQuery?: any): Promise<void> {
     if (isDefined(this.injectedChain)) {
       const dataToAdd: CrossChainContractsSet = {

@@ -84,3 +84,4 @@ export * from "./Tasks";
 export * from "./TimeUtils";
 export * from "./DepositAddressUtils";
 export * from "./BridgeUtils";
+export * from "./RunningBalanceUtils";

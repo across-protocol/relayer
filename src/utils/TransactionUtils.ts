@@ -25,6 +25,7 @@ export type TransactionSimulationResult = {
   transaction: AugmentedTransaction;
   succeed: boolean;
   reason?: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   data?: any;
 };
 
@@ -146,6 +147,7 @@ export async function willSucceed(transaction: AugmentedTransaction): Promise<Tr
       const args = transaction.value ? [...transaction.args, { value: transaction.value }] : transaction.args;
       data = await contract.callStatic[method](...args);
     }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (err: any) {
     if (err.errorName) {
       return {
