@@ -73,7 +73,6 @@ export class OpStackWethBridge extends BaseL2BridgeAdapter {
     fromAddress: EvmAddress,
     _l2Token: EvmAddress
   ): Promise<BigNumber> {
-    _l2Token; // unused
     const [withdrawalInitiatedEvents, withdrawalFinalizedEvents] = await Promise.all([
       paginatedEventQuery(
         this.l2Bridge,

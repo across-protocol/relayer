@@ -18,6 +18,7 @@ import {
 //           log, like: "Relayer refund leaf #44", and clicking "Copy > Copy as JSON":
 // - step 2: Enter in the `rootBundleId` associated with the merkle tree. We can improve this script in the future
 //           by auto detecting this rootBundleId from the associated relayerRefundRoot executed on Mainnet.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const gcpCopiedRefundLeaf: any = {
   jsonPayload: {
     proof: [
