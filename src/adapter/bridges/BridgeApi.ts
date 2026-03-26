@@ -111,7 +111,7 @@ export class BridgeApi extends BaseBridgeAdapter {
     const statusesGrouped = groupObjectCountsByProp(pendingTransfers, (pendingTransfer) => pendingTransfer.state);
     this.logger.debug({
       at: "BridgeApi#queryL1BridgeInitiationEvents",
-      message: "Pending transfer statuses",
+      message: `Pending transfer statuses for ${this.l1TokenInfo.symbol} and ${toAddress}`,
       statusesGrouped,
     });
 
