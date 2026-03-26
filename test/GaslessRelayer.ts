@@ -335,7 +335,7 @@ function makeSwapAndBridgePermit2CctpMessage(
     ...overrides.depositData,
   };
   const permitNonce = overrides.permitNonce ?? "0";
-  const depositId = overrides.depositId ?? "cctp-swap-p2-1";
+  const depositId = overrides.depositId ?? "1000000";
 
   return {
     depositFlowType: "swapAndBridge",
