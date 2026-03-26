@@ -71,7 +71,7 @@ export class BridgeApi extends BaseL2BridgeAdapter {
       throw new Error(`Cannot bridge to ${getNetworkName(this.hubChainId)} due to invalid amount ${amount}`);
     }
     const formatter = createFormatFunction(2, 4, false, this.l2TokenInfo.decimals);
-    const l2TokenSymbol = BRIDGE_API_DESTINATION_TOKEN_SYMBOLS[l1Token.toNative()];
+    const l2TokenSymbol = BRIDGE_API_DESTINATION_TOKEN_SYMBOLS[l2Token.toNative()];
     const transferRouteSource = await this.api.createTransferRouteEscrowAddress(
       toAddress,
       l2TokenSymbol,
@@ -110,13 +110,12 @@ export class BridgeApi extends BaseL2BridgeAdapter {
     return allTransfers
       .filter(
         (transfer) =>
-          transfer.state !== "awaiting_funds" &&
           transfer.state !== "payment_processed" &&
           transfer.destination.currency === this.l1TokenInfo.symbol.toLowerCase()
       )
       .reduce((acc, transfer) => {
         const { decimals: l2TokenDecimals } = getTokenInfo(l2Token, this.l2chainId);
-        return acc.add(floatToBN(transfer.receipt.final_amount, l2TokenDecimals));
+        return acc.add(floatToBN(transfer.receipt?.final_amount ?? transfer.amount, l2TokenDecimals));
       }, bnZero);
   }
 }
