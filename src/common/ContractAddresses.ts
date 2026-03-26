@@ -41,6 +41,7 @@ import IOFT_ABI_FULL from "./abi/IOFT.json";
 import HYPERLIQUID_DEPOSIT_HANDLER_ABI from "./abi/HyperliquidDepositHandler.json";
 import SPOKE_POOL_PERIPHERY_ABI from "./abi/SpokePoolPeriphery.json";
 import COUNTERFACTUAL_DEPOSIT_FACTORY_ABI from "./abi/CounterfactualDepositFactory.json";
+import PERMIT2_ABI from "./abi/Permit2.json";
 export { IOFT_ABI_FULL };
 import HUB_POOL_STORE_ABI from "./abi/HubPoolStore.json";
 
@@ -255,6 +256,10 @@ export const CONTRACT_ADDRESSES: {
     counterfactualDeposit: {
       address: "0xfb090c119c838CeD214F962F931d5fa38b111E46",
     },
+    permit2: {
+      address: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      abi: PERMIT2_ABI,
+    },
   },
   [CHAIN_IDs.MONAD]: {
     cctpV2MessageTransmitter: {
@@ -301,6 +306,10 @@ export const CONTRACT_ADDRESSES: {
     spokePoolPeriphery: {
       abi: SPOKE_POOL_PERIPHERY_ABI,
     },
+    permit2: {
+      address: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      abi: PERMIT2_ABI,
+    },
   },
   [CHAIN_IDs.POLYGON]: {
     withdrawableErc20: {
@@ -327,6 +336,10 @@ export const CONTRACT_ADDRESSES: {
     },
     spokePoolPeriphery: {
       abi: SPOKE_POOL_PERIPHERY_ABI,
+    },
+    permit2: {
+      address: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      abi: PERMIT2_ABI,
     },
   },
   [CHAIN_IDs.HYPEREVM]: {
@@ -493,6 +506,10 @@ export const CONTRACT_ADDRESSES: {
       address: "0xd9dc78b969e9efb1e54b625c33a21aaf2509e6a1",
       abi: SPONSORED_CCTP_DST_PERIPHERY_ABI,
     },
+    permit2: {
+      address: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      abi: PERMIT2_ABI,
+    },
   },
   [CHAIN_IDs.MODE]: {
     ovmStandardBridge: {
@@ -590,6 +607,10 @@ export const CONTRACT_ADDRESSES: {
     },
     counterfactualDeposit: {
       address: "0xfb090c119c838CeD214F962F931d5fa38b111E46",
+    },
+    permit2: {
+      address: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      abi: PERMIT2_ABI,
     },
   },
   [CHAIN_IDs.LENS]: {
@@ -752,6 +773,10 @@ export const CONTRACT_ADDRESSES: {
     spokePoolPeriphery: {
       abi: SPOKE_POOL_PERIPHERY_ABI,
     },
+    permit2: {
+      address: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      abi: PERMIT2_ABI,
+    },
   },
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: {
     cctpMessageTransmitter: {
@@ -772,6 +797,10 @@ export const CONTRACT_ADDRESSES: {
     },
     spokePoolPeriphery: {
       abi: SPOKE_POOL_PERIPHERY_ABI,
+    },
+    permit2: {
+      address: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      abi: PERMIT2_ABI,
     },
   },
   [CHAIN_IDs.BASE_SEPOLIA]: {
@@ -797,6 +826,10 @@ export const CONTRACT_ADDRESSES: {
     },
     spokePoolPeriphery: {
       abi: SPOKE_POOL_PERIPHERY_ABI,
+    },
+    permit2: {
+      address: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      abi: PERMIT2_ABI,
     },
   },
   [CHAIN_IDs.BLAST_SEPOLIA]: {
@@ -859,6 +892,10 @@ export const CONTRACT_ADDRESSES: {
     spokePoolPeriphery: {
       abi: SPOKE_POOL_PERIPHERY_ABI,
     },
+    permit2: {
+      address: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      abi: PERMIT2_ABI,
+    },
   },
   [CHAIN_IDs.POLYGON_AMOY]: {
     withdrawableErc20: {
@@ -882,6 +919,10 @@ export const CONTRACT_ADDRESSES: {
     },
     spokePoolPeriphery: {
       abi: SPOKE_POOL_PERIPHERY_ABI,
+    },
+    permit2: {
+      address: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      abi: PERMIT2_ABI,
     },
   },
   [CHAIN_IDs.SCROLL_SEPOLIA]: {

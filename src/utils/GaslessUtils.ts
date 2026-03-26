@@ -340,6 +340,20 @@ export function getGaslessPermitNonce(depositMessage: AnyGaslessDepositMessage):
 }
 
 /**
+ * Returns true if Permit2 has marked this nonce used for the owner (permit already executed on-chain).
+ * Used to detect prior submission when there is no EIP-3009 AuthorizationUsed or SpokePool FundsDeposited signal.
+ * Uniswap documentation: https://docs.uniswap.org/contracts/permit2/reference/signature-transfer
+ */
+export async function isPermit2NonceUsed(permit2: Contract, owner: string, permitNonce: string): Promise<boolean> {
+  const nonce = toBN(permitNonce);
+  const wordPos = nonce.div(256);
+  const bitPos = nonce.mod(256).toBigInt();
+  const bitmapBn = await permit2.nonceBitmap(owner, wordPos);
+  const bitmap = bitmapBn.toBigInt();
+  return (bitmap & (1n << bitPos)) !== 0n;
+}
+
+/**
  * Builds calldata for SpokePoolPeriphery.depositWithAuthorization(signatureOwner, depositData, validAfter, validBefore, signature).
  */
 export function buildReceiveWithAuthorizationGaslessDepositTx(
