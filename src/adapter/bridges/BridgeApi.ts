@@ -24,6 +24,7 @@ import {
   roundAmountToSend,
   mapAsync,
   floatToBN,
+  createFormatFunction,
 } from "../../utils";
 import { TransferTokenParams } from "../utils";
 import ERC20_ABI from "../../common/abi/MinimalERC20.json";
@@ -82,10 +83,12 @@ export class BridgeApi extends BaseBridgeAdapter {
     if (amount.lt(BRIDGE_API_MINIMUMS[this.hubChainId]?.[this.l2chainId] ?? toBN(Number.MAX_SAFE_INTEGER))) {
       throw new Error(`Cannot bridge to ${getNetworkName(this.l2chainId)} due to invalid amount ${amount}`);
     }
+    const normalizedAmountFormatter = createFormatFunction(2, 4, false, this.l1TokenInfo.decimals);
     const transferRouteAddress = await this.api.createTransferRouteEscrowAddress(
       toAddress,
       this.l1TokenInfo.symbol,
-      BRIDGE_API_DESTINATION_TOKEN_SYMBOLS[this.getL2Bridge().address]
+      BRIDGE_API_DESTINATION_TOKEN_SYMBOLS[this.getL2Bridge().address],
+      normalizedAmountFormatter(amount)
     );
     return Promise.resolve({
       contract: this.getL1Bridge(),

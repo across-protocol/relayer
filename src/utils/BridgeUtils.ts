@@ -81,7 +81,8 @@ export class BridgeApiClient {
   async createTransferRouteEscrowAddress(
     toAddress: Address,
     _srcTokenSymbol: string,
-    _dstTokenSymbol: string
+    _dstTokenSymbol: string,
+    normalizedAmount: string
   ): Promise<string> {
     const srcTokenSymbol = _srcTokenSymbol.toLowerCase();
     const dstTokenSymbol = _dstTokenSymbol.toLowerCase();
@@ -90,6 +91,7 @@ export class BridgeApiClient {
       source: {
         payment_rail: this.srcNetwork,
         currency: srcTokenSymbol,
+        amount: normalizedAmount,
       },
       destination: {
         payment_rail: this.dstNetwork,
@@ -101,7 +103,6 @@ export class BridgeApiClient {
       },
       features: {
         allow_any_from_address: true,
-        flexible_amount: true,
       },
     };
     const idempotencyKey = String(Date.now());
