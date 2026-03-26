@@ -40,11 +40,12 @@ export type BridgeResponse = {
     to_address: string;
     from_address: string;
   };
+  amount: string;
   receipt:
     | {
         initial_amount: string;
         final_amount: string;
-        source_tx_hash: string;
+        source_tx_hash?: string;
       }
     | undefined;
 };
@@ -93,6 +94,7 @@ export class BridgeApiClient {
         currency: srcTokenSymbol,
         amount: normalizedAmount,
       },
+      amount: normalizedAmount,
       destination: {
         payment_rail: this.dstNetwork,
         currency: dstTokenSymbol,
