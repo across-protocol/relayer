@@ -38,7 +38,7 @@ export function getViemChain(chainId: number): Chain {
 export function getOriginFromURL(url: string): string {
   try {
     return new URL(url).origin;
-  } catch (e) {
+  } catch {
     return "UNKNOWN";
   }
 }

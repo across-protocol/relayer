@@ -277,7 +277,7 @@ export class TokenClient {
           // Validate that the remote token is a valid Solana address
           assert(remoteToken.isSVM());
           return remoteToken;
-        } catch (error) {
+        } catch {
           // No known deployment for this token on the SpokePool.
           return undefined;
         }

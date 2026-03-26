@@ -10,10 +10,15 @@ describe("Rebalancer bridge adapters", function () {
 
   it("tracks OFT routes involving the hub chain", async function () {
     const [signer] = await ethers.getSigners();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const adapter = new OftAdapter(TEST_LOGGER, {} as any, signer);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (adapter as any).initialized = true;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (adapter as any)._redisGetPendingBridgesPreDeposit = async () => ["tx-hash"];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (adapter as any)._getOftStatus = async () => undefined;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (adapter as any)._redisGetOrderDetails = async () => ({
       sourceChain: CHAIN_IDs.MAINNET,
       destinationChain: CHAIN_IDs.ARBITRUM,
@@ -26,10 +31,15 @@ describe("Rebalancer bridge adapters", function () {
 
   it("tracks CCTP routes involving the hub chain", async function () {
     const [signer] = await ethers.getSigners();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const adapter = new CctpAdapter(TEST_LOGGER, {} as any, signer);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (adapter as any).initialized = true;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (adapter as any)._redisGetPendingBridgesPreDeposit = async () => ["1-tx-hash"];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (adapter as any)._getCctpAttestation = async () => ({ status: "pending", attestation: undefined });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (adapter as any)._redisGetOrderDetails = async () => ({
       sourceChain: CHAIN_IDs.MAINNET,
       destinationChain: CHAIN_IDs.BASE,
@@ -46,4 +56,5 @@ const TEST_LOGGER = {
   info: () => undefined,
   warn: () => undefined,
   error: () => undefined,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
 } as any;

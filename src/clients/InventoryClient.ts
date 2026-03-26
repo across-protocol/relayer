@@ -1209,9 +1209,10 @@ export class InventoryClient {
       mrkdwn += `*Rebalances sent to ${getNetworkName(chainId)}:*\n`;
       for (const { l1Token, l2Token, amount, hash, chainId, isShortfallRebalance } of rebalances) {
         const tokenInfo = this.getTokenInfo(l2Token, chainId);
-        if (!tokenInfo) {
-          `InventoryClient::rebalanceInventoryIfNeeded no token info for L2 token ${l2Token} on chain ${chainId}`;
-        }
+        assert(
+          isDefined(tokenInfo),
+          `InventoryClient::rebalanceInventoryIfNeeded no token info for L2 token ${l2Token} on chain ${chainId}`
+        );
         const { symbol, decimals } = tokenInfo;
         const l2TokenFormatter = createFormatFunction(2, 4, false, decimals);
         const l1TokenInfo = this.getTokenInfo(l1Token, this.hubPoolClient.chainId);

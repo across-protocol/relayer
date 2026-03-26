@@ -51,6 +51,7 @@ type RelayerFeeQuery = {
 };
 
 // Teach BigInt how to be represented as JSON.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 (BigInt.prototype as any).toJSON = function () {
   return this.toString();
 };
@@ -676,7 +677,7 @@ async function run(argv: string[]): Promise<number> {
   try {
     const keyType = ["deposit", "fill"].includes(cmd) ? args.wallet : "void";
     signer = await getSigner({ keyType, cleanEnv: true });
-  } catch (err) {
+  } catch {
     return usage(args.wallet) ? NODE_SUCCESS : NODE_INPUT_ERR;
   }
 

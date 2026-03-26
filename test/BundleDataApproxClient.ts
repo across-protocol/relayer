@@ -64,12 +64,10 @@ describe("BundleDataApproxClient: Accounting for unexecuted, upcoming relayer re
 
     const { hubPool, dai: l1Token } = await hubPoolFixture();
     const { configStore } = await deployConfigStore(owner, [l1Token]);
-    const { spokePool: spokePool_MAINNET, deploymentBlock: deploymentBlock_MAINNET } = await deploySpokePoolWithToken(
-      MAINNET
-    );
-    const { spokePool: spokePool_OPTIMISM, deploymentBlock: deploymentBlock_OPTIMISM } = await deploySpokePoolWithToken(
-      OPTIMISM
-    );
+    const { spokePool: spokePool_MAINNET, deploymentBlock: deploymentBlock_MAINNET } =
+      await deploySpokePoolWithToken(MAINNET);
+    const { spokePool: spokePool_OPTIMISM, deploymentBlock: deploymentBlock_OPTIMISM } =
+      await deploySpokePoolWithToken(OPTIMISM);
     const { spokePool: spokePool_BSC, deploymentBlock: deploymentBlock_BSC } = await deploySpokePoolWithToken(BSC);
 
     configStoreClient = new MockConfigStoreClient(spyLogger, configStore);
@@ -424,6 +422,7 @@ describe("BundleDataApproxClient: Accounting for unexecuted, upcoming relayer re
 
       // Add a matching execution so getUnexecutedBundleStartBlocks can verify the leaf was executed.
       // Directly push to the internal array to avoid event parsing issues in the mock.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (spokePoolClients[MAINNET] as any).relayerRefundExecutions.push({
         rootBundleId: 0,
         leafId: 0,
