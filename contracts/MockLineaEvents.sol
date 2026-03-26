@@ -50,11 +50,11 @@ contract LineaERC20Bridge {
         address indexed recipient
     );
 
-    function emitBridgingInitiated(address sender, address recipient, address token) external {
-        emit BridgingInitiatedV2(sender, recipient, token, 0);
+    function emitBridgingInitiated(address sender, address recipient, address token, uint256 amount) external {
+        emit BridgingInitiatedV2(sender, recipient, token, amount);
     }
 
-    function emitBridgingFinalized(address l1Token, address recipient) external {
-        emit BridgingFinalizedV2(l1Token, address(0), 0, recipient);
+    function emitBridgingFinalized(address l1Token, address recipient, uint256 amount) external {
+        emit BridgingFinalizedV2(l1Token, address(0), amount, recipient);
     }
 }
