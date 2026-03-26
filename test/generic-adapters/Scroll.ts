@@ -145,8 +145,8 @@ describe("Cross Chain Adapter: Scroll", async function () {
 
       // There should be one outstanding transfer, since there are two deposit events and one
       // finalization event.
-      // Two keys since two monitored addresses.
-      expect(Object.keys(result).length).to.equal(2);
+      // Only one key since the other monitored address has no outstanding transfers.
+      expect(Object.keys(result).length).to.equal(1);
       expect(Object.keys(result[monitoredEoa]).length).to.equal(1);
       expect(Object.keys(result[monitoredEoa][l1Weth])[0]).to.equal(l2Weth);
       expect(result[monitoredEoa][l1Weth][l2Weth].depositTxHashes[0]).to.equal(unfinalizedTx.hash);
@@ -162,8 +162,8 @@ describe("Cross Chain Adapter: Scroll", async function () {
 
       // There should be one outstanding transfer, since there are two deposit events and one
       // finalization event
-      // Two keys since two monitored addresses.
-      expect(Object.keys(result).length).to.equal(2);
+      // Only one key since the other monitored address has no outstanding transfers.
+      expect(Object.keys(result).length).to.equal(1);
       expect(Object.keys(result[spokeAddress]).length).to.equal(1);
       expect(Object.keys(result[spokeAddress][l1Weth])[0]).to.equal(l2Weth);
       expect(result[spokeAddress][l1Weth][l2Weth].depositTxHashes[0]).to.equal(unfinalizedTx.hash);
@@ -211,7 +211,8 @@ describe("Cross Chain Adapter: Scroll", async function () {
 
       // There should be one outstanding transfer, since there are two deposit events and one
       // finalization event
-      expect(Object.keys(result).length).to.equal(2);
+      // Only one key since the other monitored address has no outstanding transfers.
+      expect(Object.keys(result).length).to.equal(1);
       expect(Object.keys(result[monitoredEoa]).length).to.equal(1);
       expect(Object.keys(result[monitoredEoa][l1Usdc])[0]).to.equal(l2Usdc);
       expect(result[monitoredEoa][l1Usdc][l2Usdc].depositTxHashes[0]).to.equal(unfinalizedTx.hash);
@@ -227,8 +228,8 @@ describe("Cross Chain Adapter: Scroll", async function () {
 
       // There should be one outstanding transfer, since there are two deposit events and one
       // finalization event
-      // Two keys since two monitored addresses.
-      expect(Object.keys(result).length).to.equal(2);
+      // Only one key since the other monitored address has no outstanding transfers.
+      expect(Object.keys(result).length).to.equal(1);
       expect(Object.keys(result[spokeAddress]).length).to.equal(1);
       expect(Object.keys(result[spokeAddress][l1Usdc])[0]).to.equal(l2Usdc);
       expect(result[spokeAddress][l1Usdc][l2Usdc].depositTxHashes[0]).to.equal(unfinalizedTx.hash);
