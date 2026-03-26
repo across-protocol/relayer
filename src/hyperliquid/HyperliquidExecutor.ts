@@ -73,6 +73,7 @@ const STABLE_SWAP_DISCOUNT = 0.2;
 const MIN_ORDER_AMOUNT = toBN(10 * HL_FIXED_ADJUSTMENT);
 
 // Teach BigInt how to be represented as JSON.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 (BigInt.prototype as any).toJSON = function () {
   return this.toString();
 };

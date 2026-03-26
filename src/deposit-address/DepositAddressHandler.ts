@@ -27,6 +27,7 @@ import { AcrossIndexerApiClient } from "../clients/AcrossIndexerApiClient";
 import ERC20_ABI from "../common/abi/MinimalERC20.json";
 
 // Teach BigInt how to be represented as JSON.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 (BigInt.prototype as any).toJSON = function () {
   return this.toString();
 };
