@@ -51,7 +51,7 @@ export function getSpokePoolPeriphery(chainId: number, address?: string): Contra
 
 // Uniswap Permit2 (same deployment address on supported EVM chains). Falls back to mainnet metadata when `chainId` has no entry.
 export function getPermit2(chainId: number, address?: string): Contract {
-  const permit2 = CONTRACT_ADDRESSES[chainId]?.permit2 ?? CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET].permit2;
+  const permit2 = CONTRACT_ADDRESSES[chainId].permit2;
   return new Contract(address ?? permit2.address, permit2.abi);
 }
 

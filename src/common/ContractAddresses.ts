@@ -773,6 +773,10 @@ export const CONTRACT_ADDRESSES: {
     spokePoolPeriphery: {
       abi: SPOKE_POOL_PERIPHERY_ABI,
     },
+    permit2: {
+      address: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      abi: PERMIT2_ABI,
+    },
   },
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: {
     cctpMessageTransmitter: {
@@ -793,6 +797,10 @@ export const CONTRACT_ADDRESSES: {
     },
     spokePoolPeriphery: {
       abi: SPOKE_POOL_PERIPHERY_ABI,
+    },
+    permit2: {
+      address: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      abi: PERMIT2_ABI,
     },
   },
   [CHAIN_IDs.BASE_SEPOLIA]: {
@@ -818,6 +826,10 @@ export const CONTRACT_ADDRESSES: {
     },
     spokePoolPeriphery: {
       abi: SPOKE_POOL_PERIPHERY_ABI,
+    },
+    permit2: {
+      address: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      abi: PERMIT2_ABI,
     },
   },
   [CHAIN_IDs.BLAST_SEPOLIA]: {
@@ -880,6 +892,10 @@ export const CONTRACT_ADDRESSES: {
     spokePoolPeriphery: {
       abi: SPOKE_POOL_PERIPHERY_ABI,
     },
+    permit2: {
+      address: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      abi: PERMIT2_ABI,
+    },
   },
   [CHAIN_IDs.POLYGON_AMOY]: {
     withdrawableErc20: {
@@ -903,6 +919,10 @@ export const CONTRACT_ADDRESSES: {
     },
     spokePoolPeriphery: {
       abi: SPOKE_POOL_PERIPHERY_ABI,
+    },
+    permit2: {
+      address: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      abi: PERMIT2_ABI,
     },
   },
   [CHAIN_IDs.SCROLL_SEPOLIA]: {
