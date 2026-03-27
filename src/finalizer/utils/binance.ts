@@ -75,62 +75,17 @@ export async function binanceFinalizer(
     getAccountCoins(binanceApi),
   ]);
 
-  // Look to sweep any orphaned binance balances for coins with no activity since the fromTimestamp.
-  await mapAsync(Object.entries(senderAddresses), async ([address, symbols]) => {
-    for (const symbol of symbols) {
-      // Note that we filter on _binanceDeposits before filtering out the type of deposit so that we don't accidentally
-      // sweep RebalancerClient orders.
-      const depositsInScope = _binanceDeposits.filter((deposit) => deposit.coin === symbol);
-      if (depositsInScope.length > 0) {
-        continue;
-      }
-
-      const coin = accountCoins.find((coin) => coin.symbol === symbol);
-      if (!isDefined(coin)) {
-        logger.warn({
-          at: "BinanceFinalizer",
-          message: `Coin ${symbol} is not a Binance supported token.`,
-        });
-        continue;
-      }
-      const coinBalance = Number(coin.balance);
-      const withdrawNetwork = BINANCE_NETWORKS[hubChainId];
-      const networkLimits = coin.networkList.find((network) => network.name === withdrawNetwork);
-      if (coinBalance > Number(networkLimits.withdrawMin)) {
-        const withdrawMax = Number(networkLimits.withdrawMax);
-        const cappedWithdraw = coinBalance > withdrawMax ? withdrawMax : coinBalance;
-        logger.debug({
-          at: "BinanceFinalizer",
-          message: `Sweeping orphaned ${cappedWithdraw} ${symbol} balance for ${address}.`,
-        });
-        // Lastly, we need to truncate the amount to withdraw to L1 token precision
-        const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[hubChainId];
-        const { decimals: l1Decimals } = getTokenInfo(EvmAddress.from(l1Token), hubChainId);
-        const amountToSweep = truncate(cappedWithdraw, l1Decimals);
-        const withdrawalId = await binanceApi.withdraw({
-          coin: symbol,
-          address,
-          network: withdrawNetwork,
-          amount: amountToSweep,
-          transactionFeeFlag: false,
-        });
-        logger.info({
-          at: "BinanceFinalizer",
-          message: `Swept orphaned ${symbol} balance to ${address} on ${withdrawNetwork}.`,
-          amount: amountToSweep,
-          withdrawalId,
-        });
-      }
-    }
-  });
-
-  //
   // Remove any _binanceDeposits that are marked as related to a swap. The reason why we check "!== SWAP" instead of
   // "=== BRIDGE" is because we want this code to be backwards compatible with the existing inventory client logic which
   // does not yet tag deposits with this BRIDGE type.
+  let binanceSwapDepositAmount = 0;
   const _binanceBridgeDeposits = await filterAsync(_binanceDeposits, async (deposit) => {
     const depositType = await getBinanceDepositType(deposit);
-    return depositType !== BinanceTransactionType.SWAP;
+    if (depositType === BinanceTransactionType.SWAP) {
+      binanceSwapDepositAmount += deposit.amount;
+      return false;
+    }
+    return true;
   });
 
   const statusesGrouped = groupObjectCountsByProp(_binanceBridgeDeposits, (deposit: { status: number }) => {
@@ -183,14 +138,6 @@ export async function binanceFinalizer(
       const creditedDepositAmount = creditedDeposits
         .filter((deposit) => deposit.coin === symbol)
         .reduce((sum, deposit) => sum + deposit.amount, 0);
-      if (depositsInScope.length === 0) {
-        logger.debug({
-          at: "BinanceFinalizer",
-          message: `No finalizable deposits found for ${address} and token ${symbol}.`,
-        });
-        continue;
-      }
-
       // Start by finalizing L1 -> L2, then go to L2 -> L1.
       // @dev There are only two possible withdraw networks for the finalizer, Ethereum L1 or Binance Smart Chain "L2." Withdrawals to Ethereum can originate from any L2 but
       // must be finalized on L1. Withdrawals to Binance Smart Chain must originate from Ethereum L1.
@@ -279,6 +226,37 @@ export async function binanceFinalizer(
             coinBalance,
             creditedDepositAmount,
           });
+
+          // If the coin balance minus any pending swap balances is greater than the withdraw minimum, and there is
+          // nothing to withdraw in this lookback window, then we should try to sweep the balance to L1.
+          if (withdrawNetwork === BINANCE_NETWORKS[hubChainId]) {
+            const coinBalanceMinusSwapDeposits = coinBalance - binanceSwapDepositAmount;
+            if (coinBalanceMinusSwapDeposits >= Number(networkLimits.withdrawMin)) {
+              const withdrawMax = Number(networkLimits.withdrawMax);
+              const cappedWithdraw = Math.min(coinBalanceMinusSwapDeposits, withdrawMax);
+              logger.debug({
+                at: "BinanceFinalizer",
+                message: `Sweeping orphaned ${cappedWithdraw} ${symbol} balance for ${address}.`,
+              });
+              // Lastly, we need to truncate the amount to withdraw to L1 token precision
+              const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[hubChainId];
+              const { decimals: l1Decimals } = getTokenInfo(EvmAddress.from(l1Token), hubChainId);
+              const amountToSweep = truncate(cappedWithdraw, l1Decimals);
+              const withdrawalId = await binanceApi.withdraw({
+                coin: symbol,
+                address,
+                network: withdrawNetwork,
+                amount: amountToSweep,
+                transactionFeeFlag: false,
+              });
+              logger.info({
+                at: "BinanceFinalizer",
+                message: `🫃🏻 Swept orphaned ${symbol} balance to ${address} on ${withdrawNetwork}.`,
+                amount: amountToSweep,
+                withdrawalId,
+              });
+            }
+          }
         }
       }
     }
