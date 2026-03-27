@@ -93,27 +93,30 @@ export async function binanceFinalizer(
         });
         continue;
       }
-      const coinBalance = truncate(Number(coin.balance), 4); // If balance has fewer than 4 sig figs then we don't want
-      // to sweep it.
-      if (coinBalance > 0) {
+      const coinBalance = Number(coin.balance);
+      const withdrawNetwork = BINANCE_NETWORKS[hubChainId];
+      const networkLimits = coin.networkList.find((network) => network.name === withdrawNetwork);
+      if (coinBalance > Number(networkLimits.withdrawMin)) {
+        const withdrawMax = Number(networkLimits.withdrawMax);
+        const cappedWithdraw = coinBalance > withdrawMax ? withdrawMax : coinBalance;
         logger.debug({
           at: "BinanceFinalizer",
-          message: `Sweeping orphaned ${coinBalance} ${symbol} balance for ${address}.`,
+          message: `Sweeping orphaned ${cappedWithdraw} ${symbol} balance for ${address}.`,
         });
         // Lastly, we need to truncate the amount to withdraw to L1 token precision
         const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[hubChainId];
         const { decimals: l1Decimals } = getTokenInfo(EvmAddress.from(l1Token), hubChainId);
-        const amountToSweep = truncate(coinBalance, l1Decimals);
+        const amountToSweep = truncate(cappedWithdraw, l1Decimals);
         const withdrawalId = await binanceApi.withdraw({
           coin: symbol,
           address,
-          network: BINANCE_NETWORKS[hubChainId],
+          network: withdrawNetwork,
           amount: amountToSweep,
           transactionFeeFlag: false,
         });
         logger.info({
           at: "BinanceFinalizer",
-          message: `Swept orphaned ${symbol} balance to ${address} on ${BINANCE_NETWORKS[hubChainId]}.`,
+          message: `Swept orphaned ${symbol} balance to ${address} on ${withdrawNetwork}.`,
           amount: amountToSweep,
           withdrawalId,
         });
