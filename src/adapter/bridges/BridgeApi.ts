@@ -26,7 +26,6 @@ import {
   createFormatFunction,
   floatToBN,
   ZERO_BYTES,
-  filterAsync,
 } from "../../utils";
 import { TransferTokenParams } from "../utils";
 import ERC20_ABI from "../../common/abi/MinimalERC20.json";
@@ -51,7 +50,7 @@ export class BridgeApi extends BaseBridgeAdapter {
     this.l2Bridge = new Contract(BRIDGE_API_DESTINATION_TOKENS[this.l2chainId], ERC20_ABI, l2SignerOrProvider);
 
     // We need to fetch some API configuration details from environment.
-    const { BRIDGE_API_BASE, BRIDGE_API_KEY, BRIDGE_CUSTOMER_ID } = process.env;
+    const { BRIDGE_API_BASE = "https://api.bridge.xyz", BRIDGE_API_KEY, BRIDGE_CUSTOMER_ID } = process.env;
 
     assert(isDefined(BRIDGE_API_BASE), "BRIDGE_API_BASE must be set in the environment");
     assert(isDefined(BRIDGE_API_KEY), "BRIDGE_API_KEY must be set in the environment");
@@ -115,26 +114,19 @@ export class BridgeApi extends BaseBridgeAdapter {
       statusesGrouped,
     });
 
+    const initialPendingRebalances = await this.api.filterInitiatedTransfers(
+      pendingTransfers,
+      fromAddress,
+      eventConfig,
+      this.hubChainId,
+      this.l1Signer.provider
+    );
     const pendingRebalances = await mapAsync(
-      await filterAsync(pendingTransfers, async (pendingTransfer) => {
-        const destinationAddress = toAddressType(pendingTransfer.destination.to_address, this.l2chainId);
-        // If we are in the awaiting funds state, then we need to manually check if there was a transfer sent to the deposit address from the
-        // fromAddress in the given time window.
-        if (pendingTransfer.state === "awaiting_funds") {
-          const claimedAmount = pendingTransfer.receipt?.final_amount ?? pendingTransfer.amount;
-          const expectedAmount = floatToBN(claimedAmount, this.l1TokenInfo.decimals);
-          return await this.api.bridgeDepositInitiated(
-            pendingTransfer,
-            expectedAmount,
-            fromAddress,
-            eventConfig,
-            this.l1Signer.provider
-          );
-        }
+      initialPendingRebalances.filter(({ destination, source_deposit_instructions }) => {
+        const destinationAddress = toAddressType(destination.to_address, this.l2chainId);
         return (
           destinationAddress.eq(toAddress) &&
-          pendingTransfer.state !== "payment_processed" &&
-          pendingTransfer.source_deposit_instructions.currency === this.l1TokenInfo.symbol.toLowerCase()
+          source_deposit_instructions.currency === this.l1TokenInfo.symbol.toLowerCase()
         );
       }),
       async (pendingTransfer) => {

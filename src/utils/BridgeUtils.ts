@@ -12,6 +12,10 @@ import {
   isDefined,
   paginatedEventQuery,
   Contract,
+  floatToBN,
+  toAddressType,
+  getTokenInfo,
+  mapAsync,
 } from "./";
 import axios, { RawAxiosRequestHeaders } from "axios";
 import ERC20_ABI from "../common/abi/MinimalERC20.json";
@@ -132,25 +136,64 @@ export class BridgeApiClient {
     return transferRequestData.source_deposit_instructions.to_address;
   }
 
-  async bridgeDepositInitiated(
-    deposit: BridgeResponse,
-    expectedAmount: BigNumber,
+  async filterInitiatedTransfers(
+    deposits: BridgeResponse[],
     fromAddress: Address,
     eventConfig: EventSearchConfig,
+    originChainId: number,
     originProvider: Provider
-  ): Promise<boolean> {
-    const originToken = Object.entries(BRIDGE_API_DESTINATION_TOKEN_SYMBOLS).find(
-      ([, bridgeSymbol]) => bridgeSymbol === deposit.source_deposit_instructions.currency
-    );
-    assert(isDefined(originToken));
-    const originTokenAddress = originToken[0];
-    const tokenContract = new Contract(originTokenAddress, ERC20_ABI, originProvider);
-    const transferEvents = await paginatedEventQuery(
-      tokenContract,
-      tokenContract.filters.Transfer(fromAddress.toNative(), deposit.source_deposit_instructions.to_address),
-      eventConfig
-    );
-    return transferEvents.some((event) => expectedAmount.eq(event.args.value));
+  ): Promise<BridgeResponse[]> {
+    // Get the origin token info.
+    const originTokenInfo = (deposit: BridgeResponse) => {
+      const originToken = Object.entries(BRIDGE_API_DESTINATION_TOKEN_SYMBOLS).find(
+        ([, bridgeSymbol]) => bridgeSymbol === deposit.source_deposit_instructions.currency
+      );
+      assert(isDefined(originToken));
+      const originTokenAddress = originToken[0];
+
+      return getTokenInfo(toAddressType(originTokenAddress, originChainId), originChainId);
+    };
+    const cachedTransfers = {};
+    // We need to get all relevant ERC20 transfers from the depositor to the deposit address before applying the filter so
+    // that there is no race in the filtering process (i.e. while a paginated event query is fetching transfers, another, equivalent
+    // paginated event query is run to overwrite the same piece of memory).
+    await mapAsync(deposits, async (deposit) => {
+      const { address: originTokenAddress } = originTokenInfo(deposit);
+      const toAddress = deposit.source_deposit_instructions.to_address;
+      const tokenContract = new Contract(originTokenAddress.toNative(), ERC20_ABI, originProvider);
+      cachedTransfers[toAddress] ??= await paginatedEventQuery(
+        tokenContract,
+        tokenContract.filters.Transfer(fromAddress.toNative(), toAddress),
+        eventConfig
+      );
+    });
+
+    // We need to prioritize returning deposits with a status != `awaiting_funds`. This is because
+    // `awaiting_funds` transfers may or may not have an associated ERC20 transfer event, but all other
+    // statuses WILL have an associated transfer event.
+    const sortedDeposits = deposits.sort((deposit) => {
+      if (deposit.state === "awaiting_funds") {
+        return 1;
+      }
+      // It does not matter what the ordering of all other states are. All that matters is `awaiting_funds`
+      // state deposits are last.
+      return -1;
+    });
+    return sortedDeposits.filter((deposit) => {
+      const { decimals: originTokenDecimals } = originTokenInfo(deposit);
+      const normalizedAmount = deposit.receipt?.final_amount ?? deposit.amount;
+      const expectedAmount = floatToBN(normalizedAmount, originTokenDecimals);
+
+      const toAddress = deposit.source_deposit_instructions.to_address;
+      const cachedTransfer = cachedTransfers[toAddress];
+      return cachedTransfer.some((event, idx) => {
+        if (expectedAmount.eq(event.args.value)) {
+          cachedTransfer.splice(idx, 1);
+          return deposit.state !== "payment_processed";
+        }
+        return false;
+      });
+    });
   }
 
   defaultHeaders(): RawAxiosRequestHeaders {

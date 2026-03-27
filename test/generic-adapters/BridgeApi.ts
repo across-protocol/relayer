@@ -8,11 +8,12 @@ import {
   BridgeResponse,
   BRIDGE_API_DESTINATION_TOKENS,
   BRIDGE_API_MINIMUMS,
+  BridgeApiClient,
 } from "../../src/utils";
 import * as sdkUtils from "../../src/utils/SDKUtils";
 
 // Minimal mock for the BridgeApiClient used inside BridgeApi.
-class MockBridgeApiClient {
+class MockBridgeApiClient extends BridgeApiClient {
   public transfersToReturn: BridgeResponse[] = [];
   public escrowAddressToReturn = randomAddress();
 
@@ -24,6 +25,16 @@ class MockBridgeApiClient {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async createTransferRouteEscrowAddress(_toAddress: unknown, _l1Symbol: string, _l2Symbol: string) {
     return this.escrowAddressToReturn;
+  }
+
+  async filterInitiatedTransfers(
+    deposits: BridgeResponse[],
+    _fromAddress: Address,
+    _eventConfig: EventSearchConfig,
+    _originChainId: number,
+    _originProvider: Provider
+  ): Promise<BridgeResponse[]> {
+    return deposits.filter((deposit) => deposit.state !== "payment_processed");
   }
 }
 

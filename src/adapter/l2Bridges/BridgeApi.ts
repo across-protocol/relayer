@@ -21,7 +21,6 @@ import {
   BRIDGE_API_DESTINATION_TOKENS,
   createFormatFunction,
   roundAmountToSend,
-  filterAsync,
 } from "../../utils";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
 import { AugmentedTransaction } from "../../clients/TransactionClient";
@@ -40,7 +39,7 @@ export class BridgeApi extends BaseL2BridgeAdapter {
     super(l2chainId, hubChainId, l2Signer, l1Signer, l1Token);
 
     // We need to fetch some API configuration details from environment.
-    const { BRIDGE_API_BASE, BRIDGE_API_KEY, BRIDGE_CUSTOMER_ID } = process.env;
+    const { BRIDGE_API_BASE = "https://api.bridge.xyz", BRIDGE_API_KEY, BRIDGE_CUSTOMER_ID } = process.env;
 
     assert(isDefined(BRIDGE_API_BASE), "BRIDGE_API_BASE must be set in the environment");
     assert(isDefined(BRIDGE_API_KEY), "BRIDGE_API_KEY must be set in the environment");
@@ -113,20 +112,13 @@ export class BridgeApi extends BaseL2BridgeAdapter {
     const fromTimestamp = await getTimestampForBlock(this.l1Signer.provider, l1EventConfig.from);
     const allTransfers = await this.api.getAllTransfersInRange(fromAddress, fromTimestamp * 1000);
 
-    const allInitiatedTransfers = await filterAsync(allTransfers, async (transfer) => {
-      if (transfer.state === "awaiting_funds") {
-        const claimedAmount = transfer.receipt?.final_amount ?? transfer.amount;
-        const expectedAmount = floatToBN(claimedAmount, this.l2TokenInfo.decimals);
-        return await this.api.bridgeDepositInitiated(
-          transfer,
-          expectedAmount,
-          fromAddress,
-          l2EventConfig,
-          this.l2Signer.provider
-        );
-      }
-      return transfer.state !== "payment_processed";
-    });
+    const allInitiatedTransfers = await this.api.filterInitiatedTransfers(
+      allTransfers,
+      fromAddress,
+      l2EventConfig,
+      this.l2chainId,
+      this.l2Signer.provider
+    );
     return allInitiatedTransfers.reduce((acc, transfer) => {
       const { decimals: l2TokenDecimals } = getTokenInfo(l2Token, this.l2chainId);
       return acc.add(floatToBN(transfer.receipt?.final_amount ?? transfer.amount, l2TokenDecimals));
