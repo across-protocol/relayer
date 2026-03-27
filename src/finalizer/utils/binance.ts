@@ -1,6 +1,7 @@
 import {
   winston,
   Signer,
+  getTimestampForBlock,
   mapAsync,
   getBinanceApiClient,
   TOKEN_SYMBOLS_MAP,
@@ -22,7 +23,6 @@ import {
   getBinanceDepositType,
   BinanceTransactionType,
   getBinanceWithdrawalType,
-  truncate,
 } from "../../utils";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { FinalizerPromise, AddressesToFinalize } from "../types";
@@ -47,7 +47,7 @@ const DECIMAL_PRECISION = 1_000_000;
  */
 export async function binanceFinalizer(
   logger: winston.Logger,
-  _hubSigner: Signer,
+  hubSigner: Signer,
   _hubPoolClient: HubPoolClient,
   l2SpokePoolClient: SpokePoolClient,
   l1SpokePoolClient: SpokePoolClient,
@@ -62,13 +62,13 @@ export async function binanceFinalizer(
   );
   const hubChainId = l1SpokePoolClient.chainId;
   const l2ChainId = l2SpokePoolClient.chainId;
+  const l1EventSearchConfig = l1SpokePoolClient.eventSearchConfig;
 
-  // Regardless of what the finalizer lookback is configured to, we really don't need a lookback longer than 2 hours
-  // for Binance bridges because the oldest outstanding deposits should be < 2 hours old in the worst case. By
-  // shorterning this lookback, we can take advantage of the sweeping logic below that sweeps orphaned balances
-  // for coins with no account activity since the fromTimestamp.
-  const binanceApi = await getBinanceApiClient(process.env["BINANCE_API_BASE"]);
-  const fromTimestamp = Date.now() - 2 * 60 * 60 * 1_000;
+  const [binanceApi, _fromTimestamp] = await Promise.all([
+    getBinanceApiClient(process.env["BINANCE_API_BASE"]),
+    getTimestampForBlock(hubSigner.provider, l1EventSearchConfig.from),
+  ]);
+  const fromTimestamp = _fromTimestamp * 1_000;
 
   const [_binanceDeposits, accountCoins] = await Promise.all([
     getBinanceDeposits(binanceApi, fromTimestamp),
@@ -78,11 +78,12 @@ export async function binanceFinalizer(
   // Remove any _binanceDeposits that are marked as related to a swap. The reason why we check "!== SWAP" instead of
   // "=== BRIDGE" is because we want this code to be backwards compatible with the existing inventory client logic which
   // does not yet tag deposits with this BRIDGE type.
-  let binanceSwapDepositAmount = 0;
+  const binanceSwapDepositAmount: { [symbol: string]: number } = {};
   const _binanceBridgeDeposits = await filterAsync(_binanceDeposits, async (deposit) => {
     const depositType = await getBinanceDepositType(deposit);
     if (depositType === BinanceTransactionType.SWAP) {
-      binanceSwapDepositAmount += deposit.amount;
+      binanceSwapDepositAmount[deposit.coin] ??= 0;
+      binanceSwapDepositAmount[deposit.coin] += deposit.amount;
       return false;
     }
     return true;
@@ -230,7 +231,7 @@ export async function binanceFinalizer(
           // If the coin balance minus any pending swap balances is greater than the withdraw minimum, and there is
           // nothing to withdraw in this lookback window, then we should try to sweep the balance to L1.
           if (withdrawNetwork === BINANCE_NETWORKS[hubChainId]) {
-            const coinBalanceMinusSwapDeposits = coinBalance - binanceSwapDepositAmount;
+            const coinBalanceMinusSwapDeposits = coinBalance - (binanceSwapDepositAmount[symbol] ?? 0);
             if (coinBalanceMinusSwapDeposits >= Number(networkLimits.withdrawMin)) {
               const withdrawMax = Number(networkLimits.withdrawMax);
               const cappedWithdraw = Math.min(coinBalanceMinusSwapDeposits, withdrawMax);
@@ -238,10 +239,8 @@ export async function binanceFinalizer(
                 at: "BinanceFinalizer",
                 message: `Sweeping orphaned ${cappedWithdraw} ${symbol} balance for ${address}.`,
               });
-              // Lastly, we need to truncate the amount to withdraw to L1 token precision
-              const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[hubChainId];
-              const { decimals: l1Decimals } = getTokenInfo(EvmAddress.from(l1Token), hubChainId);
-              const amountToSweep = truncate(cappedWithdraw, l1Decimals);
+              // Lastly, we need to truncate the amount to withdraw to 6 decimal places
+              const amountToSweep = Number(cappedWithdraw.toFixed(6));
               const withdrawalId = await binanceApi.withdraw({
                 coin: symbol,
                 address,
