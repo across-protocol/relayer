@@ -23,6 +23,7 @@ import {
   getBinanceDepositType,
   BinanceTransactionType,
   getBinanceWithdrawalType,
+  truncate,
 } from "../../utils";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { FinalizerPromise, AddressesToFinalize } from "../types";
@@ -240,7 +241,7 @@ export async function binanceFinalizer(
                 message: `Sweeping orphaned ${cappedWithdraw} ${symbol} balance for ${address}.`,
               });
               // Lastly, we need to truncate the amount to withdraw to 6 decimal places
-              const amountToSweep = Number(cappedWithdraw.toFixed(6));
+              const amountToSweep = truncate(cappedWithdraw, 6);
               const withdrawalId = await binanceApi.withdraw({
                 coin: symbol,
                 address,
