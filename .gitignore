@@ -27,9 +27,6 @@ addresses.json
 # Inventory config
 inventoryConfig.json
 
-# Local agent state
-.claude
-
 # i.e. CLAUDE.local.md
 *.local.md
 
