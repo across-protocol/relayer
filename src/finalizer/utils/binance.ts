@@ -74,7 +74,6 @@ export async function binanceFinalizer(
     getBinanceDeposits(binanceApi, fromTimestamp),
     getAccountCoins(binanceApi),
   ]);
-
   // Remove any _binanceDeposits that are marked as related to a swap. The reason why we check "!== SWAP" instead of
   // "=== BRIDGE" is because we want this code to be backwards compatible with the existing inventory client logic which
   // does not yet tag deposits with this BRIDGE type.
