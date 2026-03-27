@@ -19,6 +19,8 @@ import {
   forEachAsync,
   getBlockForTimestamp,
   getCurrentTime,
+  getGasPrice,
+  getNativeTokenInfoForChain,
   getProvider,
   getRedisCache,
   getTokenInfo,
@@ -28,6 +30,7 @@ import {
   PriceClient,
   Signer,
   submitTransaction,
+  toBNWei,
   winston,
 } from "../../utils";
 import { RebalancerAdapter, RebalanceRoute } from "../utils/interfaces";
@@ -402,6 +405,34 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     } else {
       return weekendOpportunityCostOfCapitalPct;
     }
+  }
+
+  /**
+   * Estimates the gas cost of a transaction in source token units (assumes stablecoins ~$1).
+   * @param chainId - The chain where gas will be consumed.
+   * @param estimatedGasUnits - Estimated gas units for the transaction.
+   * @param sourceToken - The source token symbol (for decimal conversion).
+   * @param sourceChain - The chain of the source token (for decimal info).
+   */
+  protected async _estimateGasCostInSourceToken(
+    chainId: number,
+    estimatedGasUnits: number,
+    sourceToken: string,
+    sourceChain: number
+  ): Promise<BigNumber> {
+    const provider = await getProvider(chainId);
+    const { maxFeePerGas, maxPriorityFeePerGas } = await getGasPrice(provider);
+    const gasPrice = maxFeePerGas.add(maxPriorityFeePerGas);
+    const gasCostNative = gasPrice.mul(estimatedGasUnits);
+
+    // Convert native token cost to USD.
+    const nativeTokenInfo = getNativeTokenInfoForChain(chainId, CHAIN_IDs.MAINNET);
+    const price = (await this.priceClient.getPriceByAddress(nativeTokenInfo.address)).price;
+    const gasCostUsd = toBNWei(price).mul(gasCostNative).div(toBNWei(1, nativeTokenInfo.decimals));
+
+    // Convert USD to source token decimals (assumes stablecoins ~$1).
+    const sourceTokenInfo = this._getTokenInfo(sourceToken, sourceChain);
+    return ConvertDecimals(18, sourceTokenInfo.decimals)(gasCostUsd);
   }
 
   // @todo: Add retry logic here! Or replace with the multicaller client. However, we can't easily swap in the MulticallerClient

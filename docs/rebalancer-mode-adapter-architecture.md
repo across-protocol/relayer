@@ -52,7 +52,7 @@ flowchart TD
   modeLogic["RebalancingModes\ncumulative.rebalanceInventory + readOnly.pendingState"]
   routeSelection["RouteSelection\nselect source/destination + cost checks"]
   adapterInterface["RebalancerAdapterInterface\ninitializeRebalance/getEstimatedCost/etc"]
-  adapterImpls["AdapterImplementations\nbinance.ts, hyperliquid.ts, ..."]
+  adapterImpls["AdapterImplementations\nbinance.ts, hyperliquid.ts, matchaAdapter.ts, ..."]
   pendingState["PendingState\ngetPendingRebalances + getPendingOrders"]
 
   modeLogic --> routeSelection

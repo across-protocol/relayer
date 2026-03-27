@@ -180,7 +180,9 @@ export class OftAdapter extends BaseAdapter {
     const nativeFeeUsd = toBNWei(price.price).mul(feeStruct.nativeFee).div(toBNWei(1, nativeTokenInfo.decimals));
     const sourceTokenInfo = this._getTokenInfo(sourceToken, sourceChain);
     const nativeFeeSourceDecimals = ConvertDecimals(nativeTokenInfo.decimals, sourceTokenInfo.decimals)(nativeFeeUsd);
-    return nativeFeeSourceDecimals;
+    // Gas cost of send() on source chain (~120k gas).
+    const gasCost = await this._estimateGasCostInSourceToken(sourceChain, 120_000, sourceToken, sourceChain);
+    return nativeFeeSourceDecimals.add(gasCost);
   }
 
   async getPendingOrders(): Promise<string[]> {

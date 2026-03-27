@@ -188,9 +188,11 @@ export class CctpAdapter extends BaseAdapter {
 
   async getEstimatedCost(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber): Promise<BigNumber> {
     this._assertRouteIsSupported(rebalanceRoute);
-    const { sourceChain, destinationChain } = rebalanceRoute;
+    const { sourceChain, sourceToken, destinationChain } = rebalanceRoute;
     const { maxFee } = await this._getCctpV2MaxFee(sourceChain, destinationChain, amountToTransfer);
-    return maxFee;
+    // Gas cost of depositForBurn() on source chain (~65k gas).
+    const gasCost = await this._estimateGasCostInSourceToken(sourceChain, 65_000, sourceToken, sourceChain);
+    return maxFee.add(gasCost);
   }
 
   async getPendingOrders(): Promise<string[]> {
