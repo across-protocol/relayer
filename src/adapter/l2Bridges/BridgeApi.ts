@@ -1,4 +1,5 @@
 import {
+  Address,
   BigNumber,
   bnZero,
   Contract,
@@ -58,6 +59,10 @@ export class BridgeApi extends BaseL2BridgeAdapter {
       toAddressType(BRIDGE_API_DESTINATION_TOKENS[this.l2chainId], this.l2chainId),
       this.l2chainId
     );
+  }
+
+  override getL2Token(): Address {
+    return toAddressType(BRIDGE_API_DESTINATION_TOKENS[this.l2chainId], this.l2chainId);
   }
 
   async constructWithdrawToL1Txns(

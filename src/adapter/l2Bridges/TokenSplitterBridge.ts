@@ -1,6 +1,8 @@
 import {
   BigNumber,
+  ConvertDecimals,
   EventSearchConfig,
+  getTokenInfo,
   Signer,
   EvmAddress,
   getTranslatedTokenAddress,
@@ -47,6 +49,16 @@ export class TokenSplitterBridge extends BaseL2BridgeAdapter {
       this.bridge1.getL2PendingWithdrawalAmount(l2EventConfig, l1EventConfig, fromAddress, l2Token),
       this.bridge2.getL2PendingWithdrawalAmount(l2EventConfig, l1EventConfig, fromAddress, l2Token),
     ]);
-    return bridge1Pending.add(bridge2Pending);
+
+    // Each bridge may return amounts denominated in its own L2 token's decimals.
+    // Normalize both to the decimals of the requested l2Token before summing.
+    const targetDecimals = getTokenInfo(l2Token, this.l2chainId).decimals;
+    const bridge1Decimals = getTokenInfo(this.bridge1.getL2Token(), this.l2chainId).decimals;
+    const bridge2Decimals = getTokenInfo(this.bridge2.getL2Token(), this.l2chainId).decimals;
+
+    const normalizedBridge1 = ConvertDecimals(bridge1Decimals, targetDecimals)(bridge1Pending);
+    const normalizedBridge2 = ConvertDecimals(bridge2Decimals, targetDecimals)(bridge2Pending);
+
+    return normalizedBridge1.add(normalizedBridge2);
   }
 }
