@@ -93,7 +93,8 @@ export async function binanceFinalizer(
         });
         continue;
       }
-      const coinBalance = Number(coin.balance);
+      const coinBalance = truncate(Number(coin.balance), 4); // If balance has fewer than 4 sig figs then we don't want
+      // to sweep it.
       if (coinBalance > 0) {
         logger.debug({
           at: "BinanceFinalizer",
