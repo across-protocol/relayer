@@ -24,6 +24,7 @@ import {
   getBinanceDepositType,
   BinanceTransactionType,
   getBinanceWithdrawalType,
+  toAddressType,
 } from "../../utils";
 import { BaseBridgeAdapter, BridgeTransactionDetails, BridgeEvents, BridgeEvent } from "./BaseBridgeAdapter";
 import ERC20_ABI from "../../common/abi/MinimalERC20.json";
@@ -159,12 +160,13 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
         withdrawalType !== BinanceTransactionType.SWAP
       );
     });
-    const { decimals: l1Decimals } = getTokenInfo(l1Token, this.hubChainId);
+    const l2TokenAddress = this.resolveL2TokenAddress(l1Token);
+    const { decimals: l2Decimals } = getTokenInfo(toAddressType(l2TokenAddress, this.l2chainId), this.l2chainId);
 
     return {
-      [this.resolveL2TokenAddress(l1Token)]: await mapAsync(withdrawalHistory, async (withdrawal) => {
+      [l2TokenAddress]: await mapAsync(withdrawalHistory, async (withdrawal) => {
         const txnReceipt = await this.l2Provider.getTransactionReceipt(withdrawal.txId);
-        return this.toBridgeEvent(floatToBN(withdrawal.amount, l1Decimals), txnReceipt);
+        return this.toBridgeEvent(floatToBN(withdrawal.amount, l2Decimals), txnReceipt);
       }),
     };
   }

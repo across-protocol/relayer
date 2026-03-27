@@ -67,7 +67,7 @@ export class BridgeApi extends BaseBridgeAdapter {
 
   async constructL1ToL2Txn(
     toAddress: Address,
-    l1Token: EvmAddress,
+    _l1Token: EvmAddress,
     l2Token: Address,
     _amount: BigNumber,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -95,8 +95,8 @@ export class BridgeApi extends BaseBridgeAdapter {
   }
 
   async queryL1BridgeInitiationEvents(
-    l1Token: EvmAddress,
-    fromAddress: EvmAddress,
+    _l1Token: EvmAddress,
+    _fromAddress: EvmAddress,
     toAddress: Address,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
@@ -106,7 +106,7 @@ export class BridgeApi extends BaseBridgeAdapter {
     const statusesGrouped = groupObjectCountsByProp(pendingTransfers, (pendingTransfer) => pendingTransfer.state);
     this.logger.debug({
       at: "BridgeApi#queryL1BridgeInitiationEvents",
-      message: "Pending transfer statuses",
+      message: `Pending transfer statuses for ${this.l1TokenInfo.symbol} and ${toAddress}`,
       statusesGrouped,
     });
 

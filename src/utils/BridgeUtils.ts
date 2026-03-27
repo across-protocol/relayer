@@ -1,5 +1,5 @@
 import { CHAIN_IDs, Address, delay, TOKEN_SYMBOLS_MAP, toBN, winston, BigNumber } from "./";
-import axios, { AxiosHeaders } from "axios";
+import axios, { RawAxiosRequestHeaders } from "axios";
 
 // We need to instruct this bridge what tokens we expect to receive on L2, since the bridge
 // API supports multiple destination tokens for a single L1 token.
@@ -109,22 +109,18 @@ export class BridgeApiClient {
       ...this.defaultHeaders(),
       "Idempotency-Key": idempotencyKey,
     };
-    const transferRequestData = await this.postWithRetry<BridgeResponse>(
-      "v0/transfers",
-      data,
-      headers as unknown as AxiosHeaders
-    );
+    const transferRequestData = await this.postWithRetry<BridgeResponse>("v0/transfers", data, headers);
     return transferRequestData.source_deposit_instructions.to_address;
   }
 
-  defaultHeaders() {
+  defaultHeaders(): RawAxiosRequestHeaders {
     return {
       "Api-Key": `${this.bridgeApiKey}`,
       "Content-Type": "application/json",
-    } as unknown as AxiosHeaders;
+    };
   }
 
-  async getWithRetry<T>(endpoint: string, headers: AxiosHeaders, nRetries = this.nRetries) {
+  async getWithRetry<T>(endpoint: string, headers: RawAxiosRequestHeaders, nRetries = this.nRetries) {
     try {
       const response = await axios.get<T>(`${this.bridgeApiBase}/${endpoint}`, { headers });
       return response.data;
@@ -146,7 +142,7 @@ export class BridgeApiClient {
   async postWithRetry<T>(
     endpoint: string,
     data: Record<string, unknown>,
-    headers: AxiosHeaders,
+    headers: RawAxiosRequestHeaders,
     nRetries = this.nRetries
   ) {
     try {

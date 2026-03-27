@@ -56,13 +56,19 @@ export class AdapterManager {
       (client) => client.spokePoolAddress
     );
 
+    const isHubPoolOrSpokePoolAddress = (chainId: number, address: Address) => {
+      return (
+        EvmAddress.from(this.hubPoolClient.hubPool.address).eq(address) ||
+        this.spokePoolManager.getClient(chainId)?.spokePoolAddress.eq(address)
+      );
+    };
+
     // The adapters are only set up to monitor EOA's and the HubPool and SpokePool address, so remove
     // spoke pool addresses from other chains.
     const filterMonitoredAddresses = (chainId: number) => {
       return monitoredAddresses.filter(
         (address) =>
-          EvmAddress.from(this.hubPoolClient.hubPool.address).eq(address) ||
-          this.spokePoolManager.getClient(chainId)?.spokePoolAddress.eq(address) ||
+          isHubPoolOrSpokePoolAddress(chainId, address) ||
           !spokePoolAddresses.some((spokePoolAddress) => spokePoolAddress.eq(address))
       );
     };
@@ -129,12 +135,34 @@ export class AdapterManager {
       );
     };
     Object.values(this.spokePoolManager.getSpokePoolClients()).map(({ chainId }) => {
+      // Filter hub/spoke pool addresses from the monitored addresses for chains that don't have a pool rebalance
+      // route for the l1 token.
+      const monitoredAddresses = Object.fromEntries(
+        (SUPPORTED_TOKENS[chainId] ?? []).map((symbol) => {
+          const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[hubChainId];
+          return [
+            l1Token,
+            filterMonitoredAddresses(chainId).filter((address) => {
+              if (!l1Token) {
+                return false;
+              }
+              const hasPoolRebalanceRoute = hubPoolClient.l2TokenEnabledForL1Token(EvmAddress.from(l1Token), chainId);
+              if (!hasPoolRebalanceRoute) {
+                // Chain does not have a pool rebalance route, only allow EOA's.
+                return !isHubPoolOrSpokePoolAddress(chainId, address);
+              }
+              // Chain has pool rebalance route, all addresses from filterMonitoredAddresses are valid.
+              return true;
+            }),
+          ];
+        })
+      );
       // Instantiate a generic adapter and supply all network-specific configurations.
       this.adapters[chainId] = new BaseChainAdapter(
         this.spokePoolManager.getSpokePoolClients(),
         chainId,
         hubChainId,
-        filterMonitoredAddresses(chainId),
+        monitoredAddresses,
         logger,
         SUPPORTED_TOKENS[chainId] ?? [],
         constructBridges(chainId),
@@ -167,12 +195,6 @@ export class AdapterManager {
         adapter.supportedTokens.includes(tokenSymbol) ||
         adapter.supportedTokens.includes(TOKEN_EQUIVALENCE_REMAPPING[tokenSymbol])
       );
-    });
-    this.logger.debug({
-      at: "AdapterManager",
-      message: `Getting outstandingCrossChainTransfers for ${chainId}`,
-      adapterSupportedL1Tokens: adapterSupportedL1Tokens.map((l1Token) => l1Token.toNative()),
-      searchConfigs: adapter.getUpdatedSearchConfigs(),
     });
     return this.adapters[chainId].getOutstandingCrossChainTransfers(adapterSupportedL1Tokens);
   }
@@ -250,7 +272,6 @@ export class AdapterManager {
     const totalBalance: { [l2ChainId: number]: BigNumber } = {};
     await Promise.all(
       l2ChainIds.map(async (chainId) => {
-        totalBalance[chainId] = bnZero;
         if (!this.l2TokenExistForL1Token(l1Token, chainId)) {
           return;
         }
@@ -271,7 +292,9 @@ export class AdapterManager {
           fromAddress,
           l2Token
         );
-        totalBalance[chainId] = l2ToL1DecimalConverter(pendingAmount);
+        if (pendingAmount.gt(bnZero)) {
+          totalBalance[chainId] = l2ToL1DecimalConverter(pendingAmount);
+        }
       })
     );
     return totalBalance;

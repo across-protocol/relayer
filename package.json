@@ -128,7 +128,7 @@
     "solidity-coverage": "^0.8.3",
     "tar": "^7.5.11",
     "typechain": "^8.2.0",
-    "typescript": "^5.9"
+    "typescript": "^6"
   },
   "husky": {
     "hooks": {
