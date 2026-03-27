@@ -507,6 +507,10 @@ export class GaslessRelayer {
 
       const isCctpDeposit = this._isCctpDeposit(originChainId, spokePool);
       const instantFill = depositMessage.metadata?.instantFill ?? false;
+      this.logger.info({
+        at: "GaslessRelayer#evaluateApiSignatures",
+        message: `Instant fill: ${instantFill}`,
+      });
       const expired = () => getCurrentTime() >= fillDeadline;
       const [origin, destination] = [originChainId, destinationChainId].map(getNetworkName);
       const tStart = performance.now();
@@ -542,7 +546,6 @@ export class GaslessRelayer {
             } else {
               fillImmediate =
                 !isSwap &&
-                instantFill &&
                 this.fillImmediate(
                   { originChainId, destinationChainId, outputToken, outputAmount, exclusivityParameter },
                   spokePool
