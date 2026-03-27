@@ -227,7 +227,7 @@ export async function binanceFinalizer(
             creditedDepositAmount,
           });
 
-          // If the credited coin balance minus any pending swap balances is greater than the withdraw minimum, and there is
+          // If the confirmed coin balance minus any pending swap balances is greater than the withdraw minimum, and there is
           // nothing to withdraw in this lookback window, then we should try to sweep the balance to L1.
           if (withdrawNetwork === BINANCE_NETWORKS[hubChainId]) {
             const coinBalanceMinusSwapDeposits =
