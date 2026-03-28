@@ -551,10 +551,11 @@ export class HyperliquidStablecoinSwapAdapter extends SwapAdapterBase {
       .mul(amountToTransfer)
       .div(toBNWei(100, 18));
 
-    // Gas costs on HyperEVM: deposit to Hypercore (~65k gas) + CoreWriter withdrawal (~20k gas).
+    // Gas costs on HyperEVM: deposit to Hypercore (~65k gas) + CoreWriter withdrawal (~47k gas).
+    // CoreWriter.sendRawAction burns ~25k gas before emitting a log, with total call cost ~47k.
     const [depositGasCost, withdrawalGasCost] = await Promise.all([
       this._estimateGasCostInSourceToken(HYPEREVM, 65_000, sourceToken, sourceChain),
-      this._estimateGasCostInSourceToken(HYPEREVM, 20_000, sourceToken, sourceChain),
+      this._estimateGasCostInSourceToken(HYPEREVM, 47_000, sourceToken, sourceChain),
     ]);
 
     const totalFee = spreadFee

@@ -190,8 +190,9 @@ export class CctpAdapter extends BaseAdapter {
     this._assertRouteIsSupported(rebalanceRoute);
     const { sourceChain, sourceToken, destinationChain } = rebalanceRoute;
     const { maxFee } = await this._getCctpV2MaxFee(sourceChain, destinationChain, amountToTransfer);
-    // Gas cost of depositForBurn() on source chain (~65k gas).
-    const gasCost = await this._estimateGasCostInSourceToken(sourceChain, 65_000, sourceToken, sourceChain);
+    // Gas cost of depositForBurn() on source chain.
+    // Includes burn + message emission overhead and is intentionally conservative.
+    const gasCost = await this._estimateGasCostInSourceToken(sourceChain, 140_000, sourceToken, sourceChain);
     return maxFee.add(gasCost);
   }
 
