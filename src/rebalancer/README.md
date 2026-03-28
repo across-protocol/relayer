@@ -45,6 +45,12 @@ Implemented production swap adapters:
 
 All three swap adapters extend `SwapAdapterBase`, which provides shared bridge-routing logic (bridging to/from an intermediate "swap chain" via CCTP/OFT adapters).
 
+Swap adapters are conditionally registered based on environment variables:
+
+- Binance requires `BINANCE_API_KEY`
+- Matcha requires `ZERO_X_API_KEY`
+- Hyperliquid is always registered
+
 `BaseAdapter` persists pending state in Redis so in-flight multi-stage swaps can be resumed and tracked deterministically across runs.
 
 ### Pending-order cache lifecycle and recovery
