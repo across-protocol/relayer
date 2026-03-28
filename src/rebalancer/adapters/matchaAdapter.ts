@@ -6,6 +6,7 @@ import {
   CHAIN_IDs,
   Contract,
   ERC20,
+  ethers,
   fromWei,
   getMatchaPrice,
   getMatchaQuote,
@@ -28,8 +29,12 @@ import { OftAdapter } from "./oftAdapter";
 // Chains where Matcha/0x swaps can be executed directly on-chain.
 const MATCHA_NATIVE_CHAINS = new Set([CHAIN_IDs.MAINNET, CHAIN_IDs.BSC, CHAIN_IDs.ARBITRUM, CHAIN_IDs.BASE]);
 
-// Default slippage tolerance in basis points (0.5%).
+// Default slippage tolerance in basis points (0.5%) to set when submitting matcha txn. Rebalances sent through
+// this adapter must still obey any max fee allowed variables set by upstream client.
 const DEFAULT_SLIPPAGE_BPS = 50;
+
+// https://www.quicknode.com/docs/ethereum/eth_getTransactionReceipt status field is either 1 or 0:
+const ETH_GET_TRANSACTION_RESPONSE_REVERTED_TXN = 0;
 
 export class MatchaSwapAdapter extends SwapAdapterBase {
   REDIS_PREFIX = "matcha-swap:";
@@ -158,8 +163,8 @@ export class MatchaSwapAdapter extends SwapAdapterBase {
         destinationToken,
         amountToTransfer
       );
-      await this._redisCreateOrder(cloid, STATUS.PENDING_SWAP, rebalanceRoute, amountToTransfer);
       await this._redisSaveSwapTxHash(cloid, swapTxHash);
+      await this._redisCreateOrder(cloid, STATUS.PENDING_SWAP, rebalanceRoute, amountToTransfer);
       return amountToTransfer;
     }
   }
@@ -245,7 +250,8 @@ export class MatchaSwapAdapter extends SwapAdapterBase {
         continue;
       }
 
-      if (receipt.status === 0) {
+      if (receipt.status === ETH_GET_TRANSACTION_RESPONSE_REVERTED_TXN) {
+        // @todo: Maybe, re-submit the order here instead of deleting?
         this.logger.error({
           at: "MatchaSwapAdapter.updateRebalanceStatuses",
           message: `Swap tx ${swapTxHash} for order ${cloid} reverted on-chain. Deleting order; funds remain on ${getNetworkName(swapChain)} for future pickup.`,
@@ -263,21 +269,23 @@ export class MatchaSwapAdapter extends SwapAdapterBase {
         await this._redisDeleteOrder(cloid, STATUS.PENDING_SWAP);
       } else {
         // Need to bridge output tokens to the final destination chain.
+        // Parse Transfer events from the swap receipt to scope the bridge amount to this order's
+        // actual swap output, rather than the full wallet balance (which could include unrelated funds).
         const destTokenInfo = this._getTokenInfo(destinationToken, swapChain);
-        const outputBalance = await this._getERC20Balance(swapChain, destTokenInfo.address.toNative());
-        if (outputBalance.lte(bnZero)) {
+        const swapOutput = this._getSwapOutputFromReceipt(receipt, destTokenInfo.address.toNative());
+        if (swapOutput.lte(bnZero)) {
           this.logger.debug({
             at: "MatchaSwapAdapter.updateRebalanceStatuses",
-            message: `Swap completed for order ${cloid} but no ${destinationToken} balance on ${getNetworkName(swapChain)} to bridge, waiting`,
+            message: `Swap completed for order ${cloid} but no ${destinationToken} Transfer to wallet found in receipt, waiting`,
           });
           continue;
         }
         this.logger.info({
           at: "MatchaSwapAdapter.updateRebalanceStatuses",
           message: `✨ Swap completed for order ${cloid}; bridging ${destinationToken} from ${getNetworkName(swapChain)} to final destination ${getNetworkName(destinationChain)}`,
-          outputBalance: outputBalance.toString(),
+          swapOutput: swapOutput.toString(),
         });
-        await this._bridgeToChain(destinationToken, swapChain, destinationChain, outputBalance);
+        await this._bridgeToChain(destinationToken, swapChain, destinationChain, swapOutput);
         await this._redisDeleteOrder(cloid, STATUS.PENDING_SWAP);
       }
     }
@@ -299,6 +307,7 @@ export class MatchaSwapAdapter extends SwapAdapterBase {
     // Get indicative price from 0x API.
     const sourceTokenInfo = this._getTokenInfo(sourceToken, swapChain);
     const destinationTokenInfo = this._getTokenInfo(destinationToken, swapChain);
+    // @todo Why can't we just always use getMatchaQuote so that our estimated cost is closer aligned to the actual cost?
     const price = await getMatchaPrice(
       swapChain,
       sourceTokenInfo.address.toNative(),
@@ -424,6 +433,7 @@ export class MatchaSwapAdapter extends SwapAdapterBase {
     // Submit the swap transaction. We send the raw transaction directly since the 0x API
     // returns pre-built transaction data (to, data, value) rather than a contract method call.
     const amountReadable = fromWei(amount, sourceTokenInfo.decimals);
+    // @todo: Use this._submitTransaction here:
     const tx = await connectedSigner.sendTransaction({
       to: quote.transaction.to,
       data: quote.transaction.data,
@@ -437,6 +447,33 @@ export class MatchaSwapAdapter extends SwapAdapterBase {
       minBuyAmount: quote.minBuyAmount,
     });
     return tx.hash;
+  }
+
+  /**
+   * Parses ERC20 Transfer events from a swap receipt to determine the exact amount of
+   * destination token received by the wallet. This avoids bridging the full wallet balance
+   * which could include unrelated funds.
+   */
+  private _getSwapOutputFromReceipt(receipt: ethers.providers.TransactionReceipt, destTokenAddress: string): BigNumber {
+    const erc20Interface = new ethers.utils.Interface(ERC20.abi);
+    const transferTopic = erc20Interface.getEventTopic("Transfer");
+    const walletAddress = this.baseSignerAddress.toNative().toLowerCase();
+
+    let totalReceived = bnZero;
+    for (const log of receipt.logs) {
+      if (
+        log.address.toLowerCase() === destTokenAddress.toLowerCase() &&
+        log.topics[0] === transferTopic &&
+        log.topics.length >= 3
+      ) {
+        const toAddress = ethers.utils.defaultAbiCoder.decode(["address"], log.topics[2])[0] as string;
+        if (toAddress.toLowerCase() === walletAddress) {
+          const amount = BigNumber.from(log.data);
+          totalReceived = totalReceived.add(amount);
+        }
+      }
+    }
+    return totalReceived;
   }
 
   // Redis helpers for storing/retrieving the swap tx hash alongside order details.

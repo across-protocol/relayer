@@ -421,8 +421,10 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     sourceChain: number
   ): Promise<BigNumber> {
     const provider = await getProvider(chainId);
-    const { maxFeePerGas, maxPriorityFeePerGas } = await getGasPrice(provider);
-    const gasPrice = maxFeePerGas.add(maxPriorityFeePerGas);
+    const { maxFeePerGas } = await getGasPrice(provider);
+    // maxFeePerGas already includes the priority fee (scaledBaseFee + scaledPriorityFee),
+    // so use it directly to avoid double-counting.
+    const gasPrice = maxFeePerGas;
     const gasCostNative = gasPrice.mul(estimatedGasUnits);
 
     // Convert native token cost to USD.
