@@ -9,7 +9,7 @@ export const ZERO_X_ALLOWANCE_HOLDER = "0x0000000000001fF3684f28c67538d4D072C227
 // 0x free tier rate limit: 5 RPS in fixed 1-second windows.
 const ZERO_X_MAX_RPS = Number(process.env.ZERO_X_MAX_RPS ?? 5);
 
-export interface ZeroXTransactionData {
+interface ZeroXTransactionData {
   to: string;
   data: string;
   gas: string;
@@ -17,17 +17,17 @@ export interface ZeroXTransactionData {
   value: string;
 }
 
-export interface ZeroXAllowanceIssue {
+interface ZeroXAllowanceIssue {
   spender: string;
   // Additional fields may be present
 }
 
-export interface ZeroXIssues {
+interface ZeroXIssues {
   allowance: ZeroXAllowanceIssue | null;
   balance: unknown | null;
 }
 
-export interface ZeroXPriceResponse {
+interface ZeroXPriceResponse {
   buyAmount: string;
   sellAmount: string;
   allowanceTarget: string;
@@ -37,7 +37,7 @@ export interface ZeroXPriceResponse {
   issues: ZeroXIssues;
 }
 
-export interface ZeroXQuoteResponse extends ZeroXPriceResponse {
+interface ZeroXQuoteResponse extends ZeroXPriceResponse {
   transaction: ZeroXTransactionData;
   minBuyAmount: string;
 }
@@ -113,36 +113,6 @@ function getHeaders(): Record<string, string> {
     "0x-api-key": apiKey,
     "0x-version": ZERO_X_API_VERSION,
   };
-}
-
-/**
- * Get an indicative price from the 0x Swap API. This is a read-only call that does not commit liquidity.
- * Use this for cost estimation.
- */
-export async function getMatchaPrice(
-  chainId: number,
-  sellToken: string,
-  buyToken: string,
-  sellAmount: string,
-  takerAddress: string
-): Promise<ZeroXPriceResponse> {
-  await rateLimiter.waitForSlot();
-
-  const params = new URLSearchParams({
-    chainId: chainId.toString(),
-    sellToken,
-    buyToken,
-    sellAmount,
-    taker: takerAddress,
-  });
-
-  const url = `${ZERO_X_API_BASE_URL}/swap/allowance-holder/price?${params.toString()}`;
-  const response = await fetch(url, { headers: getHeaders() });
-  if (!response.ok) {
-    const errorBody = await response.text();
-    throw new Error(`0x price API error (${response.status}): ${errorBody}`);
-  }
-  return (await response.json()) as ZeroXPriceResponse;
 }
 
 /**

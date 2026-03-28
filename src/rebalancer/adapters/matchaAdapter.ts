@@ -8,7 +8,6 @@ import {
   ERC20,
   ethers,
   fromWei,
-  getMatchaPrice,
   getMatchaQuote,
   getNetworkName,
   getProvider,
@@ -29,9 +28,9 @@ import { OftAdapter } from "./oftAdapter";
 // Chains where Matcha/0x swaps can be executed directly on-chain.
 const MATCHA_NATIVE_CHAINS = new Set([CHAIN_IDs.MAINNET, CHAIN_IDs.BSC, CHAIN_IDs.ARBITRUM, CHAIN_IDs.BASE]);
 
-// Default slippage tolerance in basis points (0.5%) to set when submitting matcha txn. Rebalances sent through
+// Default slippage tolerance in basis points to set when submitting matcha txn. Rebalances sent through
 // this adapter must still obey any max fee allowed variables set by upstream client.
-const DEFAULT_SLIPPAGE_BPS = 50;
+const DEFAULT_SLIPPAGE_BPS = 10; // 10 is lowest allowed setting on Match UI before you get a "low slippage" warning.
 
 // https://www.quicknode.com/docs/ethereum/eth_getTransactionReceipt status field is either 1 or 0:
 const ETH_GET_TRANSACTION_RESPONSE_REVERTED_TXN = 0;
@@ -237,7 +236,7 @@ export class MatchaSwapAdapter extends SwapAdapterBase {
       }
 
       const orderDetails = await this._redisGetOrderDetails(cloid);
-      const { destinationToken, destinationChain, sourceChain, sourceToken } = orderDetails;
+      const { destinationToken, destinationChain, sourceChain, sourceToken, amountToTransfer } = orderDetails;
       const swapChain = this._getSwapChain(sourceChain, sourceToken);
       const provider = await getProvider(swapChain);
       const receipt = await provider.getTransactionReceipt(swapTxHash);
@@ -251,12 +250,27 @@ export class MatchaSwapAdapter extends SwapAdapterBase {
       }
 
       if (receipt.status === ETH_GET_TRANSACTION_RESPONSE_REVERTED_TXN) {
-        // @todo: Maybe, re-submit the order here instead of deleting?
-        this.logger.error({
+        // Re-submit the swap: the reverted tx didn't consume sell tokens so funds are still available.
+        // Order stays in PENDING_SWAP so the next cycle will check the new tx.
+        const sourceTokenInfoOnSource = this._getTokenInfo(sourceToken, sourceChain);
+        const sourceTokenInfoOnSwap = this._getTokenInfo(sourceToken, swapChain);
+        const swapAmount = this._getAmountConverter(
+          sourceChain,
+          sourceTokenInfoOnSource.address,
+          swapChain,
+          sourceTokenInfoOnSwap.address
+        )(amountToTransfer);
+        this.logger.warn({
           at: "MatchaSwapAdapter.updateRebalanceStatuses",
-          message: `Swap tx ${swapTxHash} for order ${cloid} reverted on-chain. Deleting order; funds remain on ${getNetworkName(swapChain)} for future pickup.`,
+          message: `Swap tx ${swapTxHash} for order ${cloid} reverted on-chain. Re-submitting swap for ${swapAmount.toString()} ${sourceToken} on ${getNetworkName(swapChain)}.`,
         });
-        await this._redisDeleteOrder(cloid, STATUS.PENDING_SWAP);
+        const newSwapTxHash = await this._submitSwapWithValidation(
+          swapChain,
+          sourceToken,
+          destinationToken,
+          swapAmount
+        );
+        await this._redisSaveSwapTxHash(cloid, newSwapTxHash);
         continue;
       }
 
@@ -304,16 +318,15 @@ export class MatchaSwapAdapter extends SwapAdapterBase {
     const { sourceToken, destinationToken, sourceChain, destinationChain } = rebalanceRoute;
     const swapChain = this._getSwapChain(sourceChain, sourceToken);
 
-    // Get indicative price from 0x API.
     const sourceTokenInfo = this._getTokenInfo(sourceToken, swapChain);
     const destinationTokenInfo = this._getTokenInfo(destinationToken, swapChain);
-    // @todo Why can't we just always use getMatchaQuote so that our estimated cost is closer aligned to the actual cost?
-    const price = await getMatchaPrice(
+    const quote = await getMatchaQuote(
       swapChain,
       sourceTokenInfo.address.toNative(),
       destinationTokenInfo.address.toNative(),
       amountToTransfer.toString(),
-      this.baseSignerAddress.toNative()
+      this.baseSignerAddress.toNative(),
+      this.slippageBps
     );
 
     // Swap cost = what we sell minus what we get back (adjusted for decimal differences).
@@ -322,7 +335,7 @@ export class MatchaSwapAdapter extends SwapAdapterBase {
       destinationTokenInfo.address,
       swapChain,
       sourceTokenInfo.address
-    )(BigNumber.from(price.buyAmount));
+    )(BigNumber.from(quote.buyAmount));
     const swapCost = amountToTransfer.sub(buyAmountInSourceDecimals);
 
     // Bridge fees for non-native chains.
@@ -331,7 +344,7 @@ export class MatchaSwapAdapter extends SwapAdapterBase {
     // Gas cost for the swap transaction on the swap chain (0x API provides estimated gas units).
     const swapGasCost = await this._estimateGasCostInSourceToken(
       swapChain,
-      Number(price.gas),
+      Number(quote.gas),
       sourceToken,
       sourceChain
     );
@@ -345,7 +358,7 @@ export class MatchaSwapAdapter extends SwapAdapterBase {
           sourceChain
         )} to ${destinationToken} on ${getNetworkName(destinationChain)} with amount to transfer ${amountToTransfer.toString()}`,
         swapChain: getNetworkName(swapChain),
-        buyAmount: price.buyAmount,
+        buyAmount: quote.buyAmount,
         swapCost: swapCost.toString(),
         swapGasCost: swapGasCost.toString(),
         bridgeToFee: bridgeToFee.toString(),
@@ -415,38 +428,32 @@ export class MatchaSwapAdapter extends SwapAdapterBase {
       `Insufficient ${sourceToken} balance on ${getNetworkName(swapChain)}: have ${balance.toString()}, need ${amount.toString()}`
     );
 
-    // Simulate the swap transaction via eth_call to verify it won't revert.
+    // Submit the swap transaction via _submitTransaction which handles simulation, gas estimation,
+    // and retry logic. Use method="" for raw transaction mode since the 0x API returns pre-built
+    // transaction data (to, data, value) rather than a contract method call.
     const provider = await getProvider(swapChain);
     const connectedSigner = this.baseSigner.connect(provider);
-    try {
-      await connectedSigner.call({
-        to: quote.transaction.to,
-        data: quote.transaction.data,
-        value: quote.transaction.value ? BigNumber.from(quote.transaction.value) : undefined,
-      });
-    } catch (error) {
-      throw new Error(
-        `Swap simulation failed on ${getNetworkName(swapChain)}: ${error instanceof Error ? error.message : String(error)}`
-      );
-    }
-
-    // Submit the swap transaction. We send the raw transaction directly since the 0x API
-    // returns pre-built transaction data (to, data, value) rather than a contract method call.
+    const targetContract = new Contract(quote.transaction.to, [], connectedSigner);
     const amountReadable = fromWei(amount, sourceTokenInfo.decimals);
-    // @todo: Use this._submitTransaction here:
-    const tx = await connectedSigner.sendTransaction({
-      to: quote.transaction.to,
-      data: quote.transaction.data,
+    const txHash = await this._submitTransaction({
+      contract: targetContract,
+      chainId: swapChain,
+      method: "",
+      args: [quote.transaction.data],
       value: quote.transaction.value ? BigNumber.from(quote.transaction.value) : undefined,
+      nonMulticall: true,
+      unpermissioned: false,
+      message: `Swap ${amountReadable} ${sourceToken} -> ${destinationToken} on ${getNetworkName(swapChain)}`,
+      mrkdwn: `Swap ${amountReadable} ${sourceToken} -> ${destinationToken} on ${getNetworkName(swapChain)}`,
     });
     this.logger.info({
       at: "MatchaSwapAdapter._submitSwapWithValidation",
-      message: `🎰 Submitted swap tx ${tx.hash} for ${amountReadable} ${sourceToken} -> ${destinationToken} on ${getNetworkName(swapChain)}`,
-      txHash: tx.hash,
+      message: `🎰 Submitted swap tx ${txHash} for ${amountReadable} ${sourceToken} -> ${destinationToken} on ${getNetworkName(swapChain)}`,
+      txHash,
       buyAmount: quote.buyAmount,
       minBuyAmount: quote.minBuyAmount,
     });
-    return tx.hash;
+    return txHash;
   }
 
   /**
