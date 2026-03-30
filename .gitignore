@@ -27,6 +27,8 @@ addresses.json
 # Inventory config
 inventoryConfig.json
 
+# i.e. CLAUDE.local.md
+*.local.md
 
 # yalc
 .yalc
