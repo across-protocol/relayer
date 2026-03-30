@@ -97,6 +97,7 @@ export class MatchaSwapAdapter extends SwapAdapterBase {
       for (const token of tokens) {
         const tokenInfo = this._getTokenInfo(token, chainId);
         const erc20 = new Contract(tokenInfo.address.toNative(), ERC20.abi, connectedSigner);
+        // @todo: Consider grabbing allowance target from 0x API at cost of additional API call.
         const allowance = await erc20.allowance(this.baseSignerAddress.toNative(), ZERO_X_ALLOWANCE_HOLDER);
         if (allowance.lt(toBN(MAX_SAFE_ALLOWANCE).div(2))) {
           this.multicallerClient.enqueueTransaction({
@@ -344,7 +345,7 @@ export class MatchaSwapAdapter extends SwapAdapterBase {
     // Gas cost for the swap transaction on the swap chain (0x API provides estimated gas units).
     const swapGasCost = await this._estimateGasCostInSourceToken(
       swapChain,
-      Number(quote.gas),
+      Number(quote.transaction.gas),
       sourceToken,
       sourceChain
     );

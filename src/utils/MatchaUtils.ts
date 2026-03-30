@@ -13,27 +13,15 @@ interface ZeroXTransactionData {
   to: string;
   data: string;
   gas: string;
-  gasPrice: string;
   value: string;
 }
-
-interface ZeroXAllowanceIssue {
-  spender: string;
-  // Additional fields may be present
-}
-
 interface ZeroXIssues {
-  allowance: ZeroXAllowanceIssue | null;
+  allowance: unknown | null;
   balance: unknown | null;
 }
 
 interface ZeroXPriceResponse {
   buyAmount: string;
-  sellAmount: string;
-  allowanceTarget: string;
-  gas: string;
-  gasPrice: string;
-  route: unknown;
   issues: ZeroXIssues;
 }
 
