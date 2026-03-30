@@ -33,6 +33,7 @@ import ERC20_ABI from "../../common/abi/MinimalERC20.json";
 export class BridgeApi extends BaseBridgeAdapter {
   protected api: BridgeApiClient;
   protected l1TokenInfo: TokenInfo;
+  protected dstCurrency: string;
 
   constructor(
     l2chainId: number,
@@ -66,6 +67,7 @@ export class BridgeApi extends BaseBridgeAdapter {
     );
 
     this.l1TokenInfo = getTokenInfo(l1Token, this.hubChainId);
+    this.dstCurrency = BRIDGE_API_DESTINATION_TOKEN_SYMBOLS[this.getL2Bridge().address];
   }
 
   async constructL1ToL2Txn(
@@ -115,7 +117,7 @@ export class BridgeApi extends BaseBridgeAdapter {
     });
 
     const initialPendingRebalances = await this.api.filterInitiatedTransfers(
-      pendingTransfers,
+      pendingTransfers.filter((pendingTransfer) => pendingTransfer.destination.currency === this.dstCurrency),
       fromAddress,
       eventConfig,
       this.hubChainId,
