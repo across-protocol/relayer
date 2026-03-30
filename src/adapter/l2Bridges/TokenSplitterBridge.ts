@@ -61,4 +61,8 @@ export class TokenSplitterBridge extends BaseL2BridgeAdapter {
 
     return normalizedBridge1.add(normalizedBridge2);
   }
+
+  public override requiredTokenApprovals(): { token: EvmAddress; bridge: EvmAddress }[] {
+    return [...this.bridge1.requiredTokenApprovals(), ...this.bridge2.requiredTokenApprovals()];
+  }
 }
