@@ -39,8 +39,17 @@ export interface RebalancerAdapter {
 
 Implemented production swap adapters:
 
-- Binance
-- Hyperliquid
+- Binance — centralized exchange swap (USDT↔USDC) via Binance API
+- Hyperliquid — centralized exchange swap (USDT↔USDC) via Hyperliquid spot market
+- Matcha — on-chain DEX-aggregated swap (USDT↔USDC) via 0x Swap API on Ethereum, BSC, Arbitrum, Base
+
+All three swap adapters extend `SwapAdapterBase`, which provides shared bridge-routing logic (bridging to/from an intermediate "swap chain" via CCTP/OFT adapters).
+
+Swap adapters are conditionally registered based on environment variables:
+
+- Binance requires `BINANCE_API_KEY`
+- Matcha requires `ZERO_X_API_KEY`
+- Hyperliquid is always registered
 
 `BaseAdapter` persists pending state in Redis so in-flight multi-stage swaps can be resumed and tracked deterministically across runs.
 
@@ -104,7 +113,8 @@ The active config shape is cumulative-target based:
   },
   "maxPendingOrders": {
     "binance": 3,
-    "hyperliquid": 3
+    "hyperliquid": 3,
+    "matcha": 3
   }
 }
 ```
