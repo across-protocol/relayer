@@ -467,10 +467,15 @@ export class GaslessRelayer {
         outputToken,
         inputAmountForValidation,
         outputAmount,
-        exclusivityParameter,
+        exclusivityParameter: _exclusivityParameter,
         swapToken,
         swapTokenAmount,
       } = extractGaslessDepositFields(depositMessage);
+
+      // Ensure that exclusivityParameter is always absolute.
+      const exclusivityParameter = isExclusivityRelative(_exclusivityParameter)
+        ? _exclusivityParameter + getCurrentTime()
+        : _exclusivityParameter;
 
       const depositKey = this._getDepositKey(inputToken.toNative(), originChainId, depositId);
 
