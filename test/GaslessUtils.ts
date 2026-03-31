@@ -1,7 +1,7 @@
 import { expect } from "./utils";
 import { Contract, ethers } from "ethers";
 import {
-  tagIntegratorId,
+  appendCalldataSegments,
   restructureGaslessDeposits,
   buildGaslessDepositTx,
   buildSwapAndBridgeDepositTx,
@@ -97,28 +97,31 @@ function makeSpokePoolPeripheryContract(): Contract {
 }
 
 describe("GaslessUtils", function () {
-  describe("tagIntegratorId", function () {
-    it("appends delimiter and integratorId to calldata", function () {
-      const txData = "0xdeadbeef";
-      const integratorId = "0xABCD";
-      const result = tagIntegratorId(txData, integratorId);
-      // Expected: [txData][0x1dc0de][0xABCD]
+  describe("appendCalldataSegments", function () {
+    it("concatenates base calldata with hex segments in order", function () {
+      const result = appendCalldataSegments("0xdeadbeef", ["0x1dc0de", "0xABCD"]);
       expect(result).to.equal("0xdeadbeef1dc0deabcd");
     });
 
-    it("handles integratorId without 0x prefix", function () {
-      const result = tagIntegratorId("0xaa", "FFEE");
+    it("accepts segments without 0x prefix", function () {
+      const result = appendCalldataSegments("0xaa", ["1dc0de", "FFEE"]);
       expect(result).to.equal("0xaa1dc0deffee");
     });
 
-    it("throws for integratorId that is not exactly 2 bytes", function () {
-      expect(() => tagIntegratorId("0xaa", "0xAB")).to.throw("2 bytes");
-      expect(() => tagIntegratorId("0xaa", "0xABCDEF")).to.throw("2 bytes");
-      expect(() => tagIntegratorId("0xaa", "")).to.throw("2 bytes");
+    it("throws for invalid hex segment", function () {
+      expect(() => appendCalldataSegments("0xaa", ["0xZZ"])).to.throw("invalid hex segment");
     });
 
-    it("throws for non-hex integratorId", function () {
-      expect(() => tagIntegratorId("0xaa", "0xGGHH")).to.throw("2 bytes");
+    it("throws for empty segment", function () {
+      expect(() => appendCalldataSegments("0xaa", ["0xabcd", ""])).to.throw("empty segment");
+    });
+  });
+
+  describe("integrator deposit calldata (invalid integratorId)", function () {
+    it("throws when integratorId is not exactly 2 bytes", function () {
+      const msg = makeDepositMessage({ integratorId: "0xAB" });
+      const contract = makeSpokePoolPeripheryContract();
+      expect(() => buildGaslessDepositTx(msg as any, contract)).to.throw("2 bytes");
     });
   });
 
