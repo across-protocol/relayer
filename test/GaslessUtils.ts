@@ -1,7 +1,12 @@
 import { expect } from "./utils";
 import { Contract, ethers } from "ethers";
-import { tagIntegratorId, restructureGaslessDeposits, buildGaslessDepositTx } from "../src/utils/GaslessUtils";
-import { APIGaslessDepositResponse } from "../src/interfaces";
+import {
+  tagIntegratorId,
+  restructureGaslessDeposits,
+  buildGaslessDepositTx,
+  buildSwapAndBridgeDepositTx,
+} from "../src/utils/GaslessUtils";
+import { APIGaslessDepositResponse, type SwapAndBridgeGaslessDepositMessage } from "../src/interfaces";
 import SPOKE_POOL_PERIPHERY_ABI from "../src/common/abi/SpokePoolPeriphery.json";
 
 // Minimal valid 65-byte signature (hex)
@@ -140,6 +145,7 @@ describe("GaslessUtils", function () {
       expect(tx.method).to.equal("depositWithAuthorization");
       expect(tx.args.length).to.equal(5);
       expect(tx.ensureConfirmation).to.be.true;
+      expect(tx.swapApiCalldataMarker).to.be.undefined;
     });
 
     it("returns raw tx with tagged calldata when integratorId is present", function () {
@@ -153,6 +159,72 @@ describe("GaslessUtils", function () {
       // Calldata should end with delimiter + integratorId
       expect(calldata.toLowerCase()).to.match(/1dc0deabcd$/);
       expect(tx.ensureConfirmation).to.be.true;
+      expect(tx.swapApiCalldataMarker).to.be.undefined;
+    });
+
+    it("swap-and-bridge + integratorId sets swapApiCalldataMarker on raw tx", function () {
+      const depositData = {
+        inputToken: DUMMY_ADDRESS,
+        outputToken: DUMMY_BYTES32,
+        outputAmount: "900000",
+        depositor: DUMMY_ADDRESS,
+        recipient: DUMMY_BYTES32,
+        destinationChainId: 10,
+        exclusiveRelayer: DUMMY_BYTES32,
+        quoteTimestamp: 1700000000,
+        fillDeadline: 1700003600,
+        exclusivityDeadline: 0,
+        exclusivityParameter: 0,
+        message: "0x",
+      };
+      const msg: SwapAndBridgeGaslessDepositMessage = {
+        depositFlowType: "swapAndBridge",
+        originChainId: 1,
+        depositId: "1",
+        requestId: "req-1",
+        signature: DUMMY_SIGNATURE,
+        permitType: "permit2",
+        permit: {
+          types: { PermitWitnessTransferFrom: [] },
+          domain: { name: "Permit2", chainId: 1, verifyingContract: DUMMY_ADDRESS },
+          primaryType: "PermitWitnessTransferFrom",
+          message: {
+            permitted: { token: DUMMY_ADDRESS, amount: "1000000" },
+            spender: DUMMY_ADDRESS,
+            nonce: "0",
+            deadline: "999999999999",
+            witness: {
+              submissionFees: { amount: "100", recipient: DUMMY_ADDRESS },
+              depositData,
+              swapToken: DUMMY_ADDRESS,
+              exchange: DUMMY_ADDRESS,
+              transferType: 0,
+              swapTokenAmount: "1000000",
+              minExpectedInputTokenAmount: "1000000",
+              routerCalldata: "0x",
+              enableProportionalAdjustment: false,
+              spokePool: DUMMY_ADDRESS,
+              nonce: "1",
+            },
+          },
+        },
+        depositData,
+        submissionFees: { amount: "100", recipient: DUMMY_ADDRESS },
+        swapToken: DUMMY_ADDRESS,
+        exchange: DUMMY_ADDRESS,
+        transferType: 0,
+        swapTokenAmount: "1000000",
+        minExpectedInputTokenAmount: "1000000",
+        routerCalldata: "0x",
+        enableProportionalAdjustment: false,
+        spokePool: DUMMY_ADDRESS,
+        nonce: "1",
+        integratorId: "0xABCD",
+      };
+      const contract = makeSpokePoolPeripheryContract();
+      const tx = buildSwapAndBridgeDepositTx(msg, contract);
+      expect(tx.method).to.equal("");
+      expect(tx.swapApiCalldataMarker).to.be.true;
     });
 
     it("raw tx calldata starts with the depositWithAuthorization selector", function () {

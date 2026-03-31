@@ -21,6 +21,41 @@ import { updateOrAppendSetComputeUnitPriceInstruction } from "@solana-program/co
 
 dotenv.config();
 
+/** Appended to raw calldata when {@link AugmentedTransaction.swapApiCalldataMarker} is set (swap API tagging). */
+export const SWAP_API_CALLDATA_MARKER = "0x73c0de";
+
+const SWAP_MARKER_SUFFIX = SWAP_API_CALLDATA_MARKER.replace(/^0x/i, "").toLowerCase();
+
+function appendSwapApiMarkerToCalldata(data: string): string {
+  if (data.toLowerCase().endsWith(SWAP_MARKER_SUFFIX)) {
+    return data;
+  }
+  return ethers.utils.hexConcat([data, SWAP_API_CALLDATA_MARKER]);
+}
+
+/**
+ * When `swapApiCalldataMarker` is true: structured txs (`method` non-empty) are encoded to calldata,
+ * the marker is appended, and the txn is rewritten to raw (`method ""`, `args[0]` = tagged data).
+ * Raw txs append the marker to `args[0]` idempotently. Mutates `transaction`.
+ */
+export function applySwapApiCalldataMarkerInPlace(transaction: AugmentedTransaction): void {
+  if (!transaction.swapApiCalldataMarker) {
+    return;
+  }
+  const { contract, method, args } = transaction;
+  if (method !== "") {
+    const data = contract.interface.encodeFunctionData(method, args);
+    transaction.method = "";
+    transaction.args = [appendSwapApiMarkerToCalldata(data)];
+    return;
+  }
+  const data = transaction.args?.[0];
+  if (typeof data !== "string" || !data.startsWith("0x")) {
+    return;
+  }
+  transaction.args[0] = appendSwapApiMarkerToCalldata(data);
+}
+
 export type TransactionSimulationResult = {
   transaction: AugmentedTransaction;
   succeed: boolean;
@@ -126,6 +161,7 @@ export async function getGasPrice(
 }
 
 export async function willSucceed(transaction: AugmentedTransaction): Promise<TransactionSimulationResult> {
+  applySwapApiCalldataMarkerInPlace(transaction);
   // If the transaction already has a gasLimit, it should have been simulated in advance.
   if (transaction.canFailInSimulation || isDefined(transaction.gasLimit)) {
     return { transaction, succeed: true };

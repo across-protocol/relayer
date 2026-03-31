@@ -304,6 +304,7 @@ export function buildPermit2GaslessDepositTx(
       method: "",
       args: [taggedCalldata],
       ensureConfirmation: true,
+      swapApiCalldataMarker: true,
     };
   }
 
@@ -382,6 +383,7 @@ export function buildReceiveWithAuthorizationGaslessDepositTx(
       method: "",
       args: [taggedCalldata],
       ensureConfirmation: true,
+      swapApiCalldataMarker: true,
     };
   }
 
@@ -501,6 +503,7 @@ export function buildSwapAndBridgeDepositTx(
       method: "",
       args: [taggedCalldata],
       ensureConfirmation: true,
+      swapApiCalldataMarker: true,
     };
   }
 
