@@ -161,8 +161,9 @@ export class AcrossApiClient {
       return l1Tokens.map(() => bnZero);
     }
 
-    if (redis) {
-      // Cache limit for 5 minutes.
+    if (redis && liquidReserves.some((r) => r.gt(bnZero))) {
+      // Cache limit for 5 minutes. Only cache if at least one reserve is non-zero to avoid
+      // persisting bad data from transient API issues.
       const baseTtl = 300;
       // Apply a random margin to spread expiry over a larger time window.
       const ttl = baseTtl + Math.ceil(_.random(-0.5, 0.5, true) * baseTtl);

@@ -20,7 +20,6 @@ import { ApiProofRequest, ProofOutputs, ProofStateResponse, SP1HeliosProofData }
 import { StorageSlotVerifiedEvent, HeadUpdateEvent } from "../../interfaces/Helios";
 import { calculateProofId, decodeProofOutputs } from "../../utils/ZkApiUtils";
 import { calculateHubPoolStoreStorageSlot, getHubPoolStoreContract } from "../../utils/UniversalUtils";
-import { stringifyThrownValue } from "../../utils/LogUtils";
 import { getSp1HeliosContractEVM } from "../../utils/HeliosUtils";
 import { getBlockFinder, getBlockForTimestamp } from "../../utils/BlockUtils";
 

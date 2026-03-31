@@ -453,8 +453,7 @@ export class Refiller {
       if (!addressesResponse.ok) {
         throw new Error(`Native markets addresses request failed: ${addressesResponse.status}`);
       }
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const registeredAddresses = (await addressesResponse.json()) as any;
+      const registeredAddresses = (await addressesResponse.json()) as { items: NativeMarketsAddress[] };
       addressId = registeredAddresses.items.find(
         ({ chain, token, address_hex }) =>
           chain === "hyper_evm" && token === "usdh" && address_hex === this.baseSignerAddress.toNative()
@@ -481,9 +480,8 @@ export class Refiller {
         if (!createAddrResponse.ok) {
           throw new Error(`Native markets create address failed: ${createAddrResponse.status}`);
         }
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const _addressId = (await createAddrResponse.json()) as any;
-        addressId = _addressId.id;
+        const createdAddress = (await createAddrResponse.json()) as NativeMarketsAddress;
+        addressId = createdAddress.id;
       }
       await this.redisCache.set(addressIdCacheKey, addressId, 7 * day);
     }
@@ -493,10 +491,11 @@ export class Refiller {
     if (!transferRoutesResponse.ok) {
       throw new Error(`Native markets transfer_routes request failed: ${transferRoutesResponse.status}`);
     }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const transferRoutes = (await transferRoutesResponse.json()) as any;
+    const transferRoutes = (await transferRoutesResponse.json()) as { items: NativeMarketsTransferRoute[] };
     let availableTransferRoute = transferRoutes.items
-      .filter((route) => isDefined(route.source_address))
+      .filter((route): route is NativeMarketsTransferRoute & { source_address: NonNullable<NativeMarketsTransferRoute["source_address"]> } =>
+        isDefined(route.source_address)
+      )
       .find(
         ({ source_address, destination_address }) =>
           source_address.chain === "arbitrum" &&
@@ -526,7 +525,9 @@ export class Refiller {
       if (!createRouteResponse.ok) {
         throw new Error(`Native markets create transfer_route failed: ${createRouteResponse.status}`);
       }
-      availableTransferRoute = await createRouteResponse.json();
+      availableTransferRoute = (await createRouteResponse.json()) as NativeMarketsTransferRoute & {
+        source_address: NonNullable<NativeMarketsTransferRoute["source_address"]>;
+      };
     }
 
     // Create the transfer transaction.
@@ -711,3 +712,10 @@ export class Refiller {
 }
 
 type BalanceRequest = { chainId: number; token: Address; account: Address };
+
+// Native Markets API response types
+type NativeMarketsAddress = { id: string; chain: string; token: string; address_hex: string };
+type NativeMarketsTransferRoute = {
+  source_address?: { chain: string; token: string; address_hex: string };
+  destination_address: { address_hex: string };
+};

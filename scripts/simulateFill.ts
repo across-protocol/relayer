@@ -185,8 +185,7 @@ async function createTenderlySimulation(
     throw new Error(`Tenderly simulation failed: ${response.status} - ${errorBody}`);
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const responseData = (await response.json()) as any;
+  const responseData = (await response.json()) as { simulation: { id: string } };
   const simulationId = responseData.simulation.id;
 
   console.log(`\nDebug: Simulation created with ID: ${simulationId}`);
