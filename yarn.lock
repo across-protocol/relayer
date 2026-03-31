@@ -12,15 +12,17 @@
   resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.103.tgz#cce4f1518b07f7f0006489fdf5d4bc26e4e9972a"
   integrity sha512-ghMBQLm1PpCAwMQ/VVR3hXc1eHnhvHecIAAM+JYxre/lfQnt9LriPTHRDHdnXt18GRfKsLPKnQdfoZUfNWXJ8A==
 
-"@across-protocol/contracts@5.0.4-alpha.0":
-  version "5.0.4-alpha.0"
-  resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-5.0.4-alpha.0.tgz#3e25d4fa0e9f160c09bdc8a9bdba21628e08fc7b"
-  integrity sha512-z1Sb+EErGORdI6623cW+msnfcJT0bxxa02Jl9+owPY0i845dYee0805KskUGsIA95kaK2QTr2MlImlCme3WFXw==
+"@across-protocol/contracts@5.0.4":
+  version "5.0.4"
+  resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-5.0.4.tgz#1cb63c81538a75f67f8df8421a088b96d51b7c06"
+  integrity sha512-6XADW4ntJZYAH0vYjTazL0lfakwp1uOWHtcrELSdSir4TRSMf9ieaXAHt/oDHkSFQaNSiyJ+xU63cNsdX05CgQ==
   dependencies:
     "@across-protocol/constants" "^3.1.100"
     "@coral-xyz/anchor" "^0.31.1"
     "@eth-optimism/contracts" "^0.5.40"
     "@ethersproject/bignumber" "5.7.0"
+    "@ethersproject/bytes" "5.7.0"
+    "@ethersproject/keccak256" "5.7.0"
     "@openzeppelin/contracts" "5.5.0"
     "@openzeppelin/contracts-upgradeable" "5.5.0"
     "@openzeppelin/contracts-upgradeable-v4" "npm:@openzeppelin/contracts-upgradeable@4.9.6"
@@ -38,13 +40,13 @@
     yargs "^17.7.2"
     zksync-web3 "^0.14.3"
 
-"@across-protocol/sdk@4.3.136-beta.1":
-  version "4.3.136-beta.1"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.3.136-beta.1.tgz#4cc60d3b52facb4650e3e7e42de2cc3e573012e6"
-  integrity sha512-Hcc7wz5Js/ONCuhEK3ST0MAtkBgflFwNTPHmMvJMUpVwtU7FHEyytuqYJQuVByRLkJu/DCUq75fmKkhVC33X0Q==
+"@across-protocol/sdk@4.3.136":
+  version "4.3.136"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.3.136.tgz#d85b681a088c31eab261dc66c15c4fa087c517cb"
+  integrity sha512-uo9Ran/+z/Vive+TJezzfc6j3Kvh59aoJJQ+udgpaR1Qix0lFZTB+VJJi/1097rk31ovHUTSoZfDlWJmsmt/FQ==
   dependencies:
     "@across-protocol/constants" "^3.1.100"
-    "@across-protocol/contracts" "5.0.4-alpha.0"
+    "@across-protocol/contracts" "5.0.4"
     "@coral-xyz/anchor" "^0.30.1"
     "@eth-optimism/sdk" "^3.3.1"
     "@ethersproject/bignumber" "^5.7.0"
