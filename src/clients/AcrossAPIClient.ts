@@ -151,7 +151,13 @@ export class AcrossApiClient {
       liquidReserves = l1Tokens.map((l1Token) => BigNumber.from(data[l1Token.toEvmAddress()] ?? bnZero));
     } catch (err) {
       const msg = (err as Error).message;
-      this.logger.warn({ at: "AcrossAPIClient", message: `Failed to get ${path},`, url, params: Object.fromEntries(params), msg });
+      this.logger.warn({
+        at: "AcrossAPIClient",
+        message: `Failed to get ${path},`,
+        url,
+        params: Object.fromEntries(params),
+        msg,
+      });
       return l1Tokens.map(() => bnZero);
     }
 

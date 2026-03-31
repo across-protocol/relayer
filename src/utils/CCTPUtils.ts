@@ -914,9 +914,7 @@ async function _fetchCctpV1Attestation(
   messageHash: string,
   isMainnet: boolean
 ): Promise<CCTPV1APIGetAttestationResponse> {
-  const response = await fetch(
-    `https://iris-api${isMainnet ? "" : "-sandbox"}.circle.com/attestations/${messageHash}`
-  );
+  const response = await fetch(`https://iris-api${isMainnet ? "" : "-sandbox"}.circle.com/attestations/${messageHash}`);
   if (!response.ok) {
     throw new Error(`CCTP attestation request failed: ${response.status} ${response.statusText}`);
   }

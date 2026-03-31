@@ -355,13 +355,17 @@ async function enrichHeliosActions(
           body: JSON.stringify(apiRequest),
         });
         if (!postResponse.ok) {
-          throw new Error(`Failed to request proof for proofId ${proofId}: ${postResponse.status} ${postResponse.statusText}`);
+          throw new Error(
+            `Failed to request proof for proofId ${proofId}: ${postResponse.status} ${postResponse.statusText}`
+          );
         }
         logger.debug({ ...logContext, message: "Proof requested successfully.", proofId });
         continue;
       } else {
         // If other error is returned -- throw and alert PD; this shouldn't happen
-        throw new Error(`Failed to get proof state for proofId ${proofId}: ${getResponse.status} ${getResponse.statusText}`);
+        throw new Error(
+          `Failed to get proof state for proofId ${proofId}: ${getResponse.status} ${getResponse.statusText}`
+        );
       }
     }
 
@@ -394,7 +398,9 @@ async function enrichHeliosActions(
           body: JSON.stringify(apiRequest),
         });
         if (!retryResponse.ok) {
-          throw new Error(`Failed to re-request errored proof for proofId ${proofId}: ${retryResponse.status} ${retryResponse.statusText}`);
+          throw new Error(
+            `Failed to re-request errored proof for proofId ${proofId}: ${retryResponse.status} ${retryResponse.statusText}`
+          );
         }
         logger.debug({ ...logContext, message: "Errored proof requested again successfully.", proofId });
         break;
