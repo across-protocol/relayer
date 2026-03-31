@@ -543,13 +543,12 @@ export class GaslessRelayer {
             } else {
               fillImmediate =
                 !isSwap &&
+                instantFill &&
                 this.fillImmediate(
                   { originChainId, destinationChainId, outputToken, outputAmount, exclusivityParameter },
                   spokePool
                 );
-              if (!instantFill && fillImmediate) {
-                log("warn", "Instant fill is not enabled by API message.");
-              }
+              log("debug", `Fill immediate: ${fillImmediate}`);
               nextState = MessageState.DEPOSIT_SUBMIT;
             }
             setState(nextState);
