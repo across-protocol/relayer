@@ -159,7 +159,7 @@ describe("GaslessUtils", function () {
       // Calldata should end with delimiter + integratorId
       expect(calldata.toLowerCase()).to.match(/1dc0deabcd$/);
       expect(tx.ensureConfirmation).to.be.true;
-      expect(tx.swapApiCalldataMarker).to.be.undefined;
+      expect(tx.swapApiCalldataMarker).to.be.true;
     });
 
     it("swap-and-bridge + integratorId sets swapApiCalldataMarker on raw tx", function () {
@@ -192,7 +192,7 @@ describe("GaslessUtils", function () {
             permitted: { token: DUMMY_ADDRESS, amount: "1000000" },
             spender: DUMMY_ADDRESS,
             nonce: "0",
-            deadline: "999999999999",
+            deadline: 999999999999,
             witness: {
               submissionFees: { amount: "100", recipient: DUMMY_ADDRESS },
               depositData,
