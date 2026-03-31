@@ -36,7 +36,7 @@ export abstract class BaseAcrossApiClient {
     try {
       const url = new URL(`${this.urlBase}/${endpoint}`);
       for (const [key, value] of Object.entries(params)) {
-        if (!isDefined(value)) {
+        if (isDefined(value)) {
           url.searchParams.set(key, String(value));
         }
       }

@@ -493,8 +493,12 @@ export class Refiller {
     }
     const transferRoutes = (await transferRoutesResponse.json()) as { items: NativeMarketsTransferRoute[] };
     let availableTransferRoute = transferRoutes.items
-      .filter((route): route is NativeMarketsTransferRoute & { source_address: NonNullable<NativeMarketsTransferRoute["source_address"]> } =>
-        isDefined(route.source_address)
+      .filter(
+        (
+          route
+        ): route is NativeMarketsTransferRoute & {
+          source_address: NonNullable<NativeMarketsTransferRoute["source_address"]>;
+        } => isDefined(route.source_address)
       )
       .find(
         ({ source_address, destination_address }) =>
