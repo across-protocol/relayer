@@ -71,6 +71,8 @@ export function extractGaslessDepositFields(depositMessage: AnyGaslessDepositMes
 }
 
 const DOMAIN_CALLDATA_DELIMITER = "0x1dc0de";
+/** Swap API analytics suffix appended after integrator-tagged gasless deposit calldata. */
+const SWAP_API_CALLDATA_MARKER = "0x73c0de";
 
 /*
  * The exclusivityParameter argument is interpreted depending on its relationship to 1 year in seconds.
@@ -125,16 +127,30 @@ export function isAllowedGaslessPair(
 }
 
 /**
- * Appends `[delimiter][integratorId]` to encoded calldata.
- * integratorId must be a hex string representing exactly 2 bytes (e.g. "0xABCD").
+ * Appends hex byte segments to `baseCalldata` in order via `ethers.utils.hexConcat`.
+ * Each segment may include or omit the `0x` prefix.
  */
-export function tagIntegratorId(txData: string, integratorId: string): string {
+export function appendCalldataSegments(baseCalldata: string, segments: string[]): string {
+  const normalized = segments.map((s, i) => {
+    const t = s.trim();
+    if (t === "") {
+      throw new Error(`appendCalldataSegments: empty segment at index ${i}`);
+    }
+    const norm = t.startsWith("0x") ? t : `0x${t}`;
+    if (!/^0x(?:[0-9a-fA-F]{2})+$/.test(norm)) {
+      throw new Error(`appendCalldataSegments: invalid hex segment "${s}"`);
+    }
+    return norm;
+  });
+  return ethers.utils.hexConcat([baseCalldata, ...normalized]);
+}
+
+function normalizeIntegratorIdHex(integratorId: string): string {
   const stripped = integratorId.startsWith("0x") ? integratorId.slice(2) : integratorId;
   if (stripped.length !== 4 || !/^[0-9a-fA-F]{4}$/.test(stripped)) {
     throw new Error(`integratorId must be exactly 2 bytes (4 hex chars), got "${integratorId}"`);
   }
-  const normalized = "0x" + stripped;
-  return ethers.utils.hexConcat([txData, DOMAIN_CALLDATA_DELIMITER, normalized]);
+  return `0x${stripped}`;
 }
 
 /**
@@ -297,14 +313,17 @@ export function buildPermit2GaslessDepositTx(
 
   if (integratorId) {
     const calldata = spokePoolPeripheryContract.interface.encodeFunctionData("depositWithPermit2", args);
-    const taggedCalldata = tagIntegratorId(calldata, integratorId);
+    const taggedCalldata = appendCalldataSegments(calldata, [
+      DOMAIN_CALLDATA_DELIMITER,
+      normalizeIntegratorIdHex(integratorId),
+      SWAP_API_CALLDATA_MARKER,
+    ]);
     return {
       contract: spokePoolPeripheryContract,
       chainId: depositMessage.originChainId,
       method: "",
       args: [taggedCalldata],
       ensureConfirmation: true,
-      swapApiCalldataMarker: true,
     };
   }
 
@@ -376,14 +395,17 @@ export function buildReceiveWithAuthorizationGaslessDepositTx(
 
   if (integratorId) {
     const calldata = spokePoolPeripheryContract.interface.encodeFunctionData("depositWithAuthorization", args);
-    const taggedCalldata = tagIntegratorId(calldata, integratorId);
+    const taggedCalldata = appendCalldataSegments(calldata, [
+      DOMAIN_CALLDATA_DELIMITER,
+      normalizeIntegratorIdHex(integratorId),
+      SWAP_API_CALLDATA_MARKER,
+    ]);
     return {
       contract: spokePoolPeripheryContract,
       chainId: depositMessage.originChainId,
       method: "",
       args: [taggedCalldata],
       ensureConfirmation: true,
-      swapApiCalldataMarker: true,
     };
   }
 
@@ -496,14 +518,17 @@ export function buildSwapAndBridgeDepositTx(
 
   if (depositMessage.integratorId) {
     const calldata = spokePoolPeripheryContract.interface.encodeFunctionData(method, args);
-    const taggedCalldata = tagIntegratorId(calldata, depositMessage.integratorId);
+    const taggedCalldata = appendCalldataSegments(calldata, [
+      DOMAIN_CALLDATA_DELIMITER,
+      normalizeIntegratorIdHex(depositMessage.integratorId),
+      SWAP_API_CALLDATA_MARKER,
+    ]);
     return {
       contract: spokePoolPeripheryContract,
       chainId: depositMessage.originChainId,
       method: "",
       args: [taggedCalldata],
       ensureConfirmation: true,
-      swapApiCalldataMarker: true,
     };
   }
 

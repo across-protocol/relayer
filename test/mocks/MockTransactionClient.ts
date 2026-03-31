@@ -1,13 +1,7 @@
 import { ethers } from "ethers";
 import { random } from "lodash";
 import { AugmentedTransaction, TransactionClient } from "../../src/clients";
-import {
-  applySwapApiCalldataMarkerInPlace,
-  BigNumber,
-  TransactionReceipt,
-  TransactionResponse,
-  TransactionSimulationResult,
-} from "../../src/utils";
+import { BigNumber, TransactionReceipt, TransactionResponse, TransactionSimulationResult } from "../../src/utils";
 import { toBNWei, winston } from "../utils";
 
 export const txnClientPassResult = "pass";
@@ -35,7 +29,6 @@ export class MockedTransactionClient extends TransactionClient {
   }
 
   protected override async _simulate(txn: AugmentedTransaction): Promise<TransactionSimulationResult> {
-    applySwapApiCalldataMarkerInPlace(txn);
     const fail = this.txnFailure(txn);
 
     this.logger.debug({
@@ -57,7 +50,6 @@ export class MockedTransactionClient extends TransactionClient {
     txn: AugmentedTransaction,
     nonce: number | null
   ): Promise<TransactionResponse> {
-    applySwapApiCalldataMarkerInPlace(txn);
     if (this.txnFailure(txn)) {
       return Promise.reject(this.txnFailureReason(txn));
     }

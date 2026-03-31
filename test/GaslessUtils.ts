@@ -145,7 +145,6 @@ describe("GaslessUtils", function () {
       expect(tx.method).to.equal("depositWithAuthorization");
       expect(tx.args.length).to.equal(5);
       expect(tx.ensureConfirmation).to.be.true;
-      expect(tx.swapApiCalldataMarker).to.be.undefined;
     });
 
     it("returns raw tx with tagged calldata when integratorId is present", function () {
@@ -156,13 +155,12 @@ describe("GaslessUtils", function () {
       expect(tx.method).to.equal("");
       expect(tx.args.length).to.equal(1);
       const calldata = tx.args[0] as string;
-      // Calldata should end with delimiter + integratorId
-      expect(calldata.toLowerCase()).to.match(/1dc0deabcd$/);
+      // Calldata should end with delimiter + integratorId + swap API marker
+      expect(calldata.toLowerCase()).to.match(/1dc0deabcd73c0de$/);
       expect(tx.ensureConfirmation).to.be.true;
-      expect(tx.swapApiCalldataMarker).to.be.true;
     });
 
-    it("swap-and-bridge + integratorId sets swapApiCalldataMarker on raw tx", function () {
+    it("swap-and-bridge + integratorId returns raw tx with integrator + swap API suffix", function () {
       const depositData = {
         inputToken: DUMMY_ADDRESS,
         outputToken: DUMMY_BYTES32,
@@ -224,7 +222,8 @@ describe("GaslessUtils", function () {
       const contract = makeSpokePoolPeripheryContract();
       const tx = buildSwapAndBridgeDepositTx(msg, contract);
       expect(tx.method).to.equal("");
-      expect(tx.swapApiCalldataMarker).to.be.true;
+      const calldata = tx.args[0] as string;
+      expect(calldata.toLowerCase()).to.match(/1dc0deabcd73c0de$/);
     });
 
     it("raw tx calldata starts with the depositWithAuthorization selector", function () {

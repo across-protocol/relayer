@@ -11,7 +11,6 @@ import {
   TransactionResponse,
   TransactionSimulationResult,
   willSucceed,
-  applySwapApiCalldataMarkerInPlace,
   stringifyThrownValue,
   delay,
   ethers,
@@ -61,12 +60,6 @@ export interface AugmentedTransaction {
   // If true, the contract's provider will be replaced with the TransactionClient's SpeedProvider for
   // this chain (if configured), enabling parallel multi-RPC dispatch for faster submission.
   spray?: boolean;
-  /**
-   * When true, appends the swap-API calldata marker so simulation and broadcast use identical `data`.
-   * Raw txs (`method` `""`): appends to `args[0]`. Structured txs: ABI-encodes `method`/`args`, appends
-   * the marker, then rewrites to a raw txn with that calldata.
-   */
-  swapApiCalldataMarker?: boolean;
 }
 
 const { fixedPointAdjustment: fixedPoint } = sdkUtils;
@@ -111,7 +104,6 @@ export class TransactionClient {
   }
 
   protected _getTransactionPromise(txn: AugmentedTransaction, nonce: number | null): Promise<TransactionResponse> {
-    applySwapApiCalldataMarkerInPlace(txn);
     const { contract, method, args, value, gasLimit } = txn;
     return _runTransaction(this.logger, contract, method, args, value, gasLimit, nonce);
   }
