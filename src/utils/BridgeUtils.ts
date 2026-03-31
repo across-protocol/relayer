@@ -1,5 +1,4 @@
 import { CHAIN_IDs, Address, delay, TOKEN_SYMBOLS_MAP, toBN, winston, BigNumber } from "./";
-import axios, { RawAxiosRequestHeaders } from "axios";
 
 // We need to instruct this bridge what tokens we expect to receive on L2, since the bridge
 // API supports multiple destination tokens for a single L1 token.
@@ -113,17 +112,20 @@ export class BridgeApiClient {
     return transferRequestData.source_deposit_instructions.to_address;
   }
 
-  defaultHeaders(): RawAxiosRequestHeaders {
+  defaultHeaders(): Record<string, string> {
     return {
       "Api-Key": `${this.bridgeApiKey}`,
       "Content-Type": "application/json",
     };
   }
 
-  async getWithRetry<T>(endpoint: string, headers: RawAxiosRequestHeaders, nRetries = this.nRetries) {
+  async getWithRetry<T>(endpoint: string, headers: Record<string, string>, nRetries = this.nRetries) {
     try {
-      const response = await axios.get<T>(`${this.bridgeApiBase}/${endpoint}`, { headers });
-      return response.data;
+      const response = await fetch(`${this.bridgeApiBase}/${endpoint}`, { headers });
+      if (!response.ok) {
+        throw new Error(`Bridge API GET failed: ${response.status} ${response.statusText}`);
+      }
+      return (await response.json()) as T;
     } catch (e) {
       this.logger.debug({
         at: "BridgeApi#_get",
@@ -142,12 +144,19 @@ export class BridgeApiClient {
   async postWithRetry<T>(
     endpoint: string,
     data: Record<string, unknown>,
-    headers: RawAxiosRequestHeaders,
+    headers: Record<string, string>,
     nRetries = this.nRetries
   ) {
     try {
-      const response = await axios.post<T>(`${this.bridgeApiBase}/${endpoint}`, data, { headers });
-      return response.data;
+      const response = await fetch(`${this.bridgeApiBase}/${endpoint}`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) {
+        throw new Error(`Bridge API POST failed: ${response.status} ${response.statusText}`);
+      }
+      return (await response.json()) as T;
     } catch (e) {
       this.logger.debug({
         at: "BridgeApi#_post",

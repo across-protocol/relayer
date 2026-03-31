@@ -14,7 +14,6 @@ import {
 } from "../../utils";
 import { spreadEventWithBlockNumber } from "../../utils/EventUtils";
 import { FinalizerPromise, CrossChainMessage } from "../types";
-import axios from "axios";
 import UNIVERSAL_SPOKE_ABI from "../../common/abi/Universal_SpokePool.json";
 import { RelayedCallDataEvent, StoredCallDataEvent } from "../../interfaces/Universal";
 import { ApiProofRequest, ProofOutputs, ProofStateResponse, SP1HeliosProofData } from "../../interfaces/ZkApi";
@@ -344,34 +343,32 @@ async function enrichHeliosActions(
 
     let proofState: ProofStateResponse | null = null;
 
-    // @dev We need try - catch here because of how API responds to non-existing proofs: with NotFound status
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let getError: any = null;
-    try {
-      const response = await axios.get<ProofStateResponse>(getProofUrl);
-      proofState = response.data;
-      logger.debug({ ...logContext, message: "Proof state received", proofId, status: proofState.status });
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } catch (error: any) {
-      getError = error;
-    }
-
-    // Axios error. Handle based on whether was a NOTFOUND or another error
-    if (getError) {
-      const isNotFoundError = axios.isAxiosError(getError) && getError.response?.status === 404;
-      if (isNotFoundError) {
-        // NOTFOUND error -> Request proof
+    // @dev The API responds to non-existing proofs with 404, so we handle that specially
+    const getResponse = await fetch(getProofUrl);
+    if (!getResponse.ok) {
+      if (getResponse.status === 404) {
+        // NOTFOUND -> Request proof
         logger.debug({ ...logContext, message: "Proof not found (404), requesting...", proofId });
-        await axios.post(`${apiBaseUrl}/v1/api/proofs`, apiRequest);
+        const postResponse = await fetch(`${apiBaseUrl}/v1/api/proofs`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(apiRequest),
+        });
+        if (!postResponse.ok) {
+          throw new Error(`Failed to request proof for proofId ${proofId}: ${postResponse.status} ${postResponse.statusText}`);
+        }
         logger.debug({ ...logContext, message: "Proof requested successfully.", proofId });
         continue;
       } else {
         // If other error is returned -- throw and alert PD; this shouldn't happen
-        throw new Error(`Failed to get proof state for proofId ${proofId}: ${stringifyThrownValue(getError)}`);
+        throw new Error(`Failed to get proof state for proofId ${proofId}: ${getResponse.status} ${getResponse.statusText}`);
       }
     }
 
-    // No axios error, process `proofState`
+    proofState = (await getResponse.json()) as ProofStateResponse;
+    logger.debug({ ...logContext, message: "Proof state received", proofId, status: proofState.status });
+
+    // Process `proofState`
     switch (proofState.status) {
       case "pending":
         // If proof generation is pending -- there's nothing for us to do yet. Will check this proof next run
@@ -391,7 +388,14 @@ async function enrichHeliosActions(
           errorMessage: proofState.error_message,
         });
 
-        await axios.post(`${apiBaseUrl}/v1/api/proofs`, apiRequest);
+        const retryResponse = await fetch(`${apiBaseUrl}/v1/api/proofs`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(apiRequest),
+        });
+        if (!retryResponse.ok) {
+          throw new Error(`Failed to re-request errored proof for proofId ${proofId}: ${retryResponse.status} ${retryResponse.statusText}`);
+        }
         logger.debug({ ...logContext, message: "Errored proof requested again successfully.", proofId });
         break;
       }

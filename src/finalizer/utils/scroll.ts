@@ -1,6 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { utils as sdkUtils } from "@across-protocol/sdk";
-import axios from "axios";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { CONTRACT_ADDRESSES } from "../../common";
 import {
@@ -95,24 +94,25 @@ async function findOutstandingClaims(targetAddress: string): Promise<ScrollClaim
   let currentPage = 1;
   let requestResponse = [];
   do {
-    requestResponse =
-      (
-        await axios.get<{
-          data: {
-            results: {
-              claim_info: ScrollClaimInfo;
-              l1_token_address: string;
-              token_amounts: string[];
-            }[];
-          };
-        }>(apiUrl, {
-          params: {
-            address: targetAddress,
-            page_size: MAX_PAGE_SIZE,
-            page: currentPage,
-          },
-        })
-      ).data.data?.results ?? [];
+    const params = new URLSearchParams({
+      address: targetAddress,
+      page_size: String(MAX_PAGE_SIZE),
+      page: String(currentPage),
+    });
+    const response = await fetch(`${apiUrl}?${params}`);
+    if (!response.ok) {
+      throw new Error(`Scroll API request failed: ${response.status} ${response.statusText}`);
+    }
+    const body = (await response.json()) as {
+      data: {
+        results: {
+          claim_info: ScrollClaimInfo;
+          l1_token_address: string;
+          token_amounts: string[];
+        }[];
+      };
+    };
+    requestResponse = body.data?.results ?? [];
     claimList.push(
       ...requestResponse
         .filter(({ claim_info }) => claim_info?.claimable)

@@ -1,4 +1,3 @@
-import axios, { AxiosError } from "axios";
 import winston from "winston";
 
 /**
@@ -34,18 +33,24 @@ export abstract class BaseAcrossApiClient {
 
   protected async _get<T>(endpoint: string, params: Record<string, unknown>): Promise<T | undefined> {
     try {
-      const config: { timeout: number; params: Record<string, unknown>; headers?: Record<string, string> } = {
-        timeout: this.apiResponseTimeout,
-        params,
-      };
-
-      if (this.apiKey) {
-        config.headers = { Authorization: `Bearer ${this.apiKey}` };
+      const url = new URL(`${this.urlBase}/${endpoint}`);
+      for (const [key, value] of Object.entries(params)) {
+        if (value !== undefined && value !== null) {
+          url.searchParams.set(key, String(value));
+        }
       }
 
-      const response = await axios.get<T>(`${this.urlBase}/${endpoint}`, config);
+      const headers: Record<string, string> = {};
+      if (this.apiKey) {
+        headers["Authorization"] = `Bearer ${this.apiKey}`;
+      }
 
-      if (!response?.data) {
+      const response = await fetch(url.toString(), {
+        headers,
+        signal: AbortSignal.timeout(this.apiResponseTimeout),
+      });
+
+      if (!response.ok) {
         this.logger.warn({
           at: this.logContext,
           message: `Invalid response from ${this.urlBase}`,
@@ -54,14 +59,25 @@ export abstract class BaseAcrossApiClient {
         });
         return;
       }
-      return response.data;
+
+      const data = (await response.json()) as T;
+      if (!data) {
+        this.logger.warn({
+          at: this.logContext,
+          message: `Invalid response from ${this.urlBase}`,
+          endpoint,
+          params,
+        });
+        return;
+      }
+      return data;
     } catch (err) {
       this.logger.warn({
         at: this.logContext,
         message: `Failed to get from ${this.urlBase}`,
         endpoint,
         params,
-        error: (err as AxiosError).message,
+        error: (err as Error).message,
       });
       return;
     }

@@ -14,7 +14,6 @@ import {
   getSrcOftPeriphery,
 } from ".";
 import { BytesLike } from "ethers";
-import axios from "axios";
 import { EVM_OFT_MESSENGERS } from "../common";
 import { SortableEvent } from "../interfaces";
 
@@ -143,11 +142,12 @@ export function buildSimpleSendParamEvm(to: EvmAddress, dstEid: number, roundedA
  * @returns Array of message data objects as outlined in these docs: https://docs.layerzero.network/v2/concepts/troubleshooting/debugging-messages#response-shape.
  */
 export async function getLzTransactionDetails(txHash: string): Promise<LzTransactionDetails[]> {
-  const httpResponse = await axios.get<{ data: LzTransactionDetails[] }>(
-    `https://scan.layerzero-api.com/v1/messages/tx/${txHash}`
-  );
-  const txDetails = httpResponse.data.data;
-  return txDetails;
+  const response = await fetch(`https://scan.layerzero-api.com/v1/messages/tx/${txHash}`);
+  if (!response.ok) {
+    throw new Error(`LayerZero API request failed: ${response.status} ${response.statusText}`);
+  }
+  const body = (await response.json()) as { data: LzTransactionDetails[] };
+  return body.data;
 }
 
 /**

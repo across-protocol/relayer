@@ -1,7 +1,6 @@
 import { arch, utils } from "@across-protocol/sdk";
 import { TokenMessengerMinterIdl } from "@across-protocol/contracts";
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
-import axios from "axios";
 import { Contract, ethers } from "ethers";
 import { CONTRACT_ADDRESSES, CCTP_MAX_SEND_AMOUNT } from "../common";
 import { BigNumber } from "./BNUtils";
@@ -915,19 +914,23 @@ async function _fetchCctpV1Attestation(
   messageHash: string,
   isMainnet: boolean
 ): Promise<CCTPV1APIGetAttestationResponse> {
-  const httpResponse = await axios.get<CCTPV1APIGetAttestationResponse>(
+  const response = await fetch(
     `https://iris-api${isMainnet ? "" : "-sandbox"}.circle.com/attestations/${messageHash}`
   );
-  const attestationResponse = httpResponse.data;
-  return attestationResponse;
+  if (!response.ok) {
+    throw new Error(`CCTP attestation request failed: ${response.status} ${response.statusText}`);
+  }
+  return (await response.json()) as CCTPV1APIGetAttestationResponse;
 }
 
 async function _fetchCCTPSvmAttestationProof(transactionHash: string): Promise<CCTPV1APIGetMessagesResponse> {
-  const httpResponse = await axios.get<CCTPV1APIGetMessagesResponse>(
+  const response = await fetch(
     `https://iris-api.circle.com/messages/${getCctpDomainForChainId(CHAIN_IDs.SOLANA)}/${transactionHash}`
   );
-  const attestationResponse = httpResponse.data;
-  return attestationResponse;
+  if (!response.ok) {
+    throw new Error(`CCTP SVM attestation request failed: ${response.status} ${response.statusText}`);
+  }
+  return (await response.json()) as CCTPV1APIGetMessagesResponse;
 }
 
 /**

@@ -1,5 +1,4 @@
 import winston from "winston";
-import axios from "axios";
 import { RefillerConfig, RefillBalanceData } from "./RefillerConfig";
 import {
   Address,
@@ -450,7 +449,12 @@ export class Refiller {
     if (isDefined(addressIdCache)) {
       addressId = addressIdCache;
     } else {
-      const { data: registeredAddresses } = await axios.get(`${nativeMarketsApiUrl}/addresses`, { headers });
+      const addressesResponse = await fetch(`${nativeMarketsApiUrl}/addresses`, { headers });
+      if (!addressesResponse.ok) {
+        throw new Error(`Native markets addresses request failed: ${addressesResponse.status}`);
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const registeredAddresses = (await addressesResponse.json()) as any;
       addressId = registeredAddresses.items.find(
         ({ chain, token, address_hex }) =>
           chain === "hyper_evm" && token === "usdh" && address_hex === this.baseSignerAddress.toNative()
@@ -469,16 +473,28 @@ export class Refiller {
           message: `Address ${this.baseSignerAddress.toNative()} is not registered in the native markets API. Creating new address ID.`,
           address: this.baseSignerAddress,
         });
-        const { data: _addressId } = await axios.post(`${nativeMarketsApiUrl}/addresses`, newAddressIdData, {
+        const createAddrResponse = await fetch(`${nativeMarketsApiUrl}/addresses`, {
+          method: "POST",
           headers,
+          body: JSON.stringify(newAddressIdData),
         });
+        if (!createAddrResponse.ok) {
+          throw new Error(`Native markets create address failed: ${createAddrResponse.status}`);
+        }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const _addressId = (await createAddrResponse.json()) as any;
         addressId = _addressId.id;
       }
       await this.redisCache.set(addressIdCacheKey, addressId, 7 * day);
     }
 
     // Next, get the transfer route deposit address on Arbitrum.
-    const { data: transferRoutes } = await axios.get(`${nativeMarketsApiUrl}/transfer_routes`, { headers });
+    const transferRoutesResponse = await fetch(`${nativeMarketsApiUrl}/transfer_routes`, { headers });
+    if (!transferRoutesResponse.ok) {
+      throw new Error(`Native markets transfer_routes request failed: ${transferRoutesResponse.status}`);
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const transferRoutes = (await transferRoutesResponse.json()) as any;
     let availableTransferRoute = transferRoutes.items
       .filter((route) => isDefined(route.source_address))
       .find(
@@ -502,14 +518,15 @@ export class Refiller {
         address: this.baseSignerAddress,
         addressId,
       });
-      const { data: _availableTransferRoute } = await axios.post(
-        `${nativeMarketsApiUrl}/transfer_routes`,
-        newTransferRouteData,
-        {
-          headers,
-        }
-      );
-      availableTransferRoute = _availableTransferRoute;
+      const createRouteResponse = await fetch(`${nativeMarketsApiUrl}/transfer_routes`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(newTransferRouteData),
+      });
+      if (!createRouteResponse.ok) {
+        throw new Error(`Native markets create transfer_route failed: ${createRouteResponse.status}`);
+      }
+      availableTransferRoute = await createRouteResponse.json();
     }
 
     // Create the transfer transaction.

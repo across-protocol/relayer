@@ -1,6 +1,5 @@
 import { writeFile } from "node:fs/promises";
 import { config } from "dotenv";
-import axios from "axios";
 import { GoogleAuth } from "google-auth-library";
 import { Logger, waitForLogger, delay } from "../src/utils";
 
@@ -26,8 +25,14 @@ async function fetchWithRetry(
 ): Promise<string> {
   for (let i = 0; i < retries; i++) {
     try {
-      const response = await axios.get(url, { headers, responseType: "text", timeout: 30000 });
-      return response.data as string;
+      const response = await fetch(url, {
+        headers,
+        signal: AbortSignal.timeout(30000),
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      return await response.text();
     } catch (error) {
       if (i === retries - 1) {
         throw error;
@@ -162,17 +167,14 @@ async function run(): Promise<number> {
 }
 
 function getErrorMessage(error: unknown): string {
-  if (axios.isAxiosError(error)) {
-    if (error.response?.status === 404) {
-      return "File not found in Configurama";
-    } else if (error.response?.status === 401 || error.response?.status === 403) {
-      return "Authentication failed. Ensure ADC is configured to call the Configurama API.";
-    } else {
-      return `Configurama API error: ${error.response?.status} - ${error.message}`;
-    }
-  }
   if (error instanceof Error) {
-    return error.message;
+    const msg = error.message;
+    if (msg.includes("HTTP 404")) {
+      return "File not found in Configurama";
+    } else if (msg.includes("HTTP 401") || msg.includes("HTTP 403")) {
+      return "Authentication failed. Ensure ADC is configured to call the Configurama API.";
+    }
+    return msg;
   }
   return String(error);
 }

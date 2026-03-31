@@ -1,4 +1,3 @@
-import axios from "axios";
 import minimist from "minimist";
 import { config } from "dotenv";
 import { LogDescription } from "@ethersproject/abi";
@@ -170,58 +169,53 @@ async function createTenderlySimulation(
     public: true, // Make simulation publicly accessible
   };
 
-  try {
-    const response = await axios.post(tenderlyUrl, simulationPayload, {
-      headers: {
-        "X-Access-Key": tenderlyAccessKey,
-        "Content-Type": "application/json",
-      },
-    });
+  const tenderlyHeaders = {
+    "X-Access-Key": tenderlyAccessKey,
+    "Content-Type": "application/json",
+  };
 
-    const simulationId = response.data.simulation.id;
+  const response = await fetch(tenderlyUrl, {
+    method: "POST",
+    headers: tenderlyHeaders,
+    body: JSON.stringify(simulationPayload),
+  });
 
-    console.log(`\nDebug: Simulation created with ID: ${simulationId}`);
-
-    // Enable sharing by calling the share endpoint
-    const shareUrl = `https://api.tenderly.co/api/v1/account/${tenderlyUser}/project/${tenderlyProject}/simulations/${simulationId}/share`;
-
-    try {
-      await axios.post(
-        shareUrl,
-        {}, // Empty body
-        {
-          headers: {
-            "X-Access-Key": tenderlyAccessKey,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-
-      console.log("Debug: Share enabled for simulation");
-
-      // Once sharing is enabled, construct the public share URL
-      const publicShareUrl = `https://www.tdly.co/shared/simulation/${simulationId}`;
-      console.log(`Debug: Using public share URL: ${publicShareUrl}`);
-
-      return publicShareUrl;
-    } catch (shareError) {
-      // If share endpoint fails, fall back to the regular dashboard URL
-      console.warn("Could not enable sharing, using dashboard URL instead");
-      if (axios.isAxiosError(shareError)) {
-        console.warn("Share endpoint error:", shareError.response?.status, shareError.response?.data);
-      }
-    }
-
-    // Fallback to dashboard URL
-    return `https://dashboard.tenderly.co/${tenderlyUser}/${tenderlyProject}/simulator/${simulationId}`;
-  } catch (error) {
-    if (axios.isAxiosError(error)) {
-      throw new Error(
-        `Tenderly simulation failed: ${error.response?.status} - ${JSON.stringify(error.response?.data)}`
-      );
-    }
-    throw error instanceof Error ? error : new Error(String(error));
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(`Tenderly simulation failed: ${response.status} - ${errorBody}`);
   }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const responseData = (await response.json()) as any;
+  const simulationId = responseData.simulation.id;
+
+  console.log(`\nDebug: Simulation created with ID: ${simulationId}`);
+
+  // Enable sharing by calling the share endpoint
+  const shareUrl = `https://api.tenderly.co/api/v1/account/${tenderlyUser}/project/${tenderlyProject}/simulations/${simulationId}/share`;
+
+  const shareResponse = await fetch(shareUrl, {
+    method: "POST",
+    headers: tenderlyHeaders,
+    body: JSON.stringify({}),
+  });
+
+  if (shareResponse.ok) {
+    console.log("Debug: Share enabled for simulation");
+
+    // Once sharing is enabled, construct the public share URL
+    const publicShareUrl = `https://www.tdly.co/shared/simulation/${simulationId}`;
+    console.log(`Debug: Using public share URL: ${publicShareUrl}`);
+
+    return publicShareUrl;
+  } else {
+    // If share endpoint fails, fall back to the regular dashboard URL
+    console.warn("Could not enable sharing, using dashboard URL instead");
+    console.warn("Share endpoint error:", shareResponse.status, await shareResponse.text());
+  }
+
+  // Fallback to dashboard URL
+  return `https://dashboard.tenderly.co/${tenderlyUser}/${tenderlyProject}/simulator/${simulationId}`;
 }
 
 async function getBlockNumberForTimestamp(destinationChainId: number, targetTimestamp: number): Promise<number> {

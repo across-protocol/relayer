@@ -1,5 +1,4 @@
 import _ from "lodash";
-import axios, { AxiosError } from "axios";
 import {
   bnZero,
   winston,
@@ -132,23 +131,26 @@ export class AcrossApiClient {
       }
     }
 
-    const params = { l1Tokens: l1Tokens.join(",") };
+    const params = new URLSearchParams({ l1Tokens: l1Tokens.join(",") });
     let liquidReserves: BigNumber[] = [];
     try {
-      const result = await axios(url, { timeout, params });
-      if (!result?.data) {
+      const response = await fetch(`${url}?${params}`, {
+        signal: AbortSignal.timeout(timeout),
+      });
+      if (!response.ok) {
         this.logger.error({
           at: "AcrossAPIClient",
           message: `Invalid response from /${path}, expected maxDeposit field.`,
           url,
-          params,
-          result,
+          params: Object.fromEntries(params),
+          status: response.status,
         });
       }
-      liquidReserves = l1Tokens.map((l1Token) => BigNumber.from(result.data[l1Token.toEvmAddress()] ?? bnZero));
+      const data = (await response.json()) as Record<string, string>;
+      liquidReserves = l1Tokens.map((l1Token) => BigNumber.from(data[l1Token.toEvmAddress()] ?? bnZero));
     } catch (err) {
-      const msg = _.get(err, "response.data", _.get(err, "response.statusText", (err as AxiosError).message));
-      this.logger.warn({ at: "AcrossAPIClient", message: `Failed to get ${path},`, url, params, msg });
+      const msg = (err as Error).message;
+      this.logger.warn({ at: "AcrossAPIClient", message: `Failed to get ${path},`, url, params: Object.fromEntries(params), msg });
       return l1Tokens.map(() => bnZero);
     }
 
