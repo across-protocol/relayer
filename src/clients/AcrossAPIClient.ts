@@ -145,6 +145,7 @@ export class AcrossApiClient {
           params: Object.fromEntries(params),
           status: response.status,
         });
+        return l1Tokens.map(() => bnZero);
       }
       const data = (await response.json()) as Record<string, string>;
       liquidReserves = l1Tokens.map((l1Token) => BigNumber.from(data[l1Token.toEvmAddress()] ?? bnZero));
