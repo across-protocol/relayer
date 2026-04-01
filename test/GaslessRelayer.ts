@@ -935,7 +935,8 @@ describe("GaslessRelayer", function () {
       expect(relayer.initiateFillCalls).to.equal(2);
 
       expectImmediateTransitions(relayer.stateTransitions[nonce1]);
-      expectImmediateTransitions(relayer.stateTransitions[nonce2]);
+      // Second message follows the standard path because only one outstanding immediate fill is permitted.
+      expectStandardTransitions(relayer.stateTransitions[nonce2]);
     });
 
     it("Message with existing state is skipped on subsequent polls", async function () {
