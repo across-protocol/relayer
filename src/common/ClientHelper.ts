@@ -2,6 +2,7 @@ import assert from "assert";
 import winston from "winston";
 import {
   chainIsSvm,
+  chainIsTvm,
   getProvider,
   getDeployedContract,
   getDeploymentBlockNumber,
@@ -17,6 +18,7 @@ import {
   chainIsEvm,
   forEachAsync,
   isEVMSpokePoolClient,
+  isTVMSpokePoolClient,
   getSvmProvider,
   getBlockFinder,
 } from "../utils";
@@ -26,6 +28,7 @@ import {
   ConfigStoreClient,
   EVMSpokePoolClient,
   SVMSpokePoolClient,
+  TVMSpokePoolClient,
   SpokePoolClient,
 } from "../clients";
 import { CommonConfig } from "./Config";
@@ -309,10 +312,19 @@ export async function getSpokePoolClientsForContract(
     }
     const spokePoolClientSearchSettings = {
       from: fromBlocks[chainId] ? Math.max(fromBlocks[chainId], registrationBlock) : registrationBlock,
-      to: toBlocks[chainId],
+      to: chainIsTvm(chainId) ? undefined : toBlocks[chainId],
       maxLookBack: config.maxBlockLookBack[chainId],
     };
-    if (chainIsEvm(chainId)) {
+    if (chainIsTvm(chainId)) {
+      spokePoolClients[chainId] = new TVMSpokePoolClient(
+        logger,
+        contract,
+        hubPoolClient,
+        chainId,
+        registrationBlock,
+        spokePoolClientSearchSettings
+      );
+    } else if (chainIsEvm(chainId)) {
       spokePoolClients[chainId] = new EVMSpokePoolClient(
         logger,
         contract,
@@ -423,7 +435,7 @@ export function spokePoolClientsToProviders(spokePoolClients: { [chainId: number
   return Object.fromEntries(
     Object.entries(spokePoolClients)
       .map(([chainId, client]): [number, ethers.providers.Provider] => {
-        if (isEVMSpokePoolClient(client)) {
+        if (isEVMSpokePoolClient(client) || isTVMSpokePoolClient(client)) {
           return [Number(chainId), client.spokePool.signer.provider];
         }
         return [Number(chainId), undefined];

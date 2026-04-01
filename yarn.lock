@@ -38,10 +38,10 @@
     tronweb "^6.2.0"
     yargs "^17.7.2"
 
-"@across-protocol/sdk@4.3.137-alpha.1":
-  version "4.3.137-alpha.1"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.3.137-alpha.1.tgz#9343f898e082c6bd61530b6ed8781d4a35abb2c3"
-  integrity sha512-pBCrEolcyRolDVGEvYwtDwTHkMaZ/paRC8+7l2MbpgQrMAvdhWnu5td138Ca3cjZXJuN1Lk3IOEAGOBDsHHing==
+"@across-protocol/sdk@4.3.137-alpha.3":
+  version "4.3.137-alpha.3"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.3.137-alpha.3.tgz#feb2ed03b2bd3974583d43039b9768e92204f891"
+  integrity sha512-d2IKDQrYxow8jZcIyzCRL/BUC2HeGkpeRGfz3G03fYIAoABML5AU7uaOZJR9lb1wvmwXF1GpXaPMQxcr0jYw1g==
   dependencies:
     "@across-protocol/constants" "^3.1.106"
     "@across-protocol/contracts" "5.0.5-alpha.0"
