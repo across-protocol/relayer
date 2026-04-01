@@ -1,10 +1,14 @@
+import path from "node:path";
 import { expect, toBNWei } from "./utils";
-import { CHAIN_IDs, EvmAddress, TOKEN_SYMBOLS_MAP } from "../src/utils";
+import { CHAIN_IDs, EvmAddress, TOKEN_SYMBOLS_MAP, readFileSync } from "../src/utils";
 import { RelayerConfig } from "../src/relayer/RelayerConfig";
 import {
   GraphEdgeCandidate,
+  JUSSI_GRAPH_VERSION,
+  JUSSI_LOGICAL_ASSETS,
   buildAllowedSwapEdgeCandidates,
   buildJussiGraphEnvelope,
+  buildJussiGraphJson,
   buildJussiGraphId,
   buildManagedNodeTemplates,
   canonicalNodeKey,
@@ -168,9 +172,9 @@ describe("Jussi graph builder helpers", async function () {
     expect(resolveExchangeLatencySeconds({ family: "binance", sourceBridgeLatencySeconds: cctpLatency })).to.equal(
       1500
     );
-    expect(
-      resolveExchangeLatencySeconds({ family: "hyperliquid", sourceBridgeLatencySeconds: oftLatency })
-    ).to.equal(1500);
+    expect(resolveExchangeLatencySeconds({ family: "hyperliquid", sourceBridgeLatencySeconds: oftLatency })).to.equal(
+      1500
+    );
     expect(
       resolveExchangeLatencySeconds({
         family: "binance",
@@ -195,21 +199,40 @@ describe("Jussi graph builder helpers", async function () {
 
   it("serializes graph envelopes and graph ids in the script output shape", async function () {
     const graphId = buildJussiGraphId(new Date("2026-04-01T09:10:11.000Z"));
-    const envelope = buildJussiGraphEnvelope({
+    const graph = {
       graphId,
       payload: {
+        pain_model: {
+          type: "threshold" as const,
+          surplus_annualized_cost_rate: "0.08",
+          surplus_expected_stale_time_secs: 86400,
+          deficit_annualized_cost_rate: "0.25",
+          deficit_expected_stale_time_secs: 259200,
+          out_of_band_severity_multiplier: "4.0",
+        },
         nodes: [],
         edges: [],
       },
-    });
+    };
+    const envelope = buildJussiGraphEnvelope(graph);
+    const graphJson = buildJussiGraphJson(graph);
 
     expect(graphId).to.equal("usdc-usdt-20260401T091011Z");
     expect(envelope).to.deep.equal({
       graph_id: graphId,
       payload: {
+        pain_model: graph.payload.pain_model,
         nodes: [],
         edges: [],
       },
+    });
+    expect(graphJson).to.deep.equal({
+      graph_id: graphId,
+      graph_version: JUSSI_GRAPH_VERSION,
+      pain_model: graph.payload.pain_model,
+      logical_assets: [...JUSSI_LOGICAL_ASSETS],
+      nodes: [],
+      edges: [],
     });
     expect(Object.keys(envelope)).to.deep.equal(["graph_id", "payload"]);
   });

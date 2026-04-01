@@ -176,7 +176,7 @@ export function buildJussiRebalanceRoutes(
     }
   }
 
-  return dedupeRoutes([...baseRoutes, ...extraStablecoinSwapRoutes, ...supportingRoutes]);
+  return dedupeRebalanceRoutes([...baseRoutes, ...extraStablecoinSwapRoutes, ...supportingRoutes]);
 }
 
 function resolveStablecoinSymbol(tokenAddress: string, chainId: number): "USDC" | "USDT" | undefined {
@@ -189,7 +189,7 @@ function resolveStablecoinSymbol(tokenAddress: string, chainId: number): "USDC" 
   return undefined;
 }
 
-function dedupeRoutes(routes: RebalanceRoute[]): RebalanceRoute[] {
+export function dedupeRebalanceRoutes(routes: RebalanceRoute[]): RebalanceRoute[] {
   const uniqueRoutes = new Map<string, RebalanceRoute>();
   for (const route of routes) {
     uniqueRoutes.set(

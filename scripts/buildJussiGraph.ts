@@ -1,19 +1,22 @@
-import winston from "winston";
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
 import util from "util";
+import winston from "winston";
 import { version } from "../package.json";
-import { constructRelayerClients } from "../src/relayer/RelayerClientHelper";
-import { RelayerConfig } from "../src/relayer/RelayerConfig";
-import { RebalancerConfig } from "../src/rebalancer/RebalancerConfig";
-import { buildRebalanceRoutes } from "../src/rebalancer/buildRebalanceRoutes";
-import { constructCumulativeBalanceRebalancerClient } from "../src/rebalancer/RebalancerClientHelper";
+import { updateSpokePoolClients } from "../src/common";
 import {
   buildBridgeAdapterRoutes,
   buildJussiGraphDefinition,
   buildJussiGraphEnvelope,
+  buildJussiGraphJson,
   buildManagedNodeTemplates,
   materializeNodeDefinitions,
 } from "../src/jussi/buildGraph";
-import { updateSpokePoolClients } from "../src/common";
+import { constructRelayerClients } from "../src/relayer/RelayerClientHelper";
+import { RelayerConfig } from "../src/relayer/RelayerConfig";
+import { constructCumulativeBalanceRebalancerClient } from "../src/rebalancer/RebalancerClientHelper";
+import { RebalancerConfig } from "../src/rebalancer/RebalancerConfig";
+import { buildRebalanceRoutes, dedupeRebalanceRoutes } from "../src/rebalancer/buildRebalanceRoutes";
 import {
   Signer,
   bnZero,
@@ -25,9 +28,11 @@ import {
   waitForLogger,
 } from "../src/utils";
 
+const GRAPH_JSON_OUT_ENV = "JUSSI_GRAPH_JSON_OUT";
+
 function createScriptLogger(): winston.Logger {
   return winston.createLogger({
-    level: process.env.LOG_LEVEL ?? "info",
+    level: process.env.LOG_LEVEL ?? "warn",
     format: winston.format.json(),
     transports: [
       new winston.transports.Console({
@@ -37,137 +42,128 @@ function createScriptLogger(): winston.Logger {
   });
 }
 
-async function run(baseSigner: Signer): Promise<void> {
-  if (!process.env.RELAYER_EXTERNAL_INVENTORY_CONFIG) {
-    throw new Error("RELAYER_EXTERNAL_INVENTORY_CONFIG must be set");
+function requireEnvironmentVariable(name: string): void {
+  if (!process.env[name]) {
+    throw new Error(`${name} must be set`);
   }
-  if (!process.env.REBALANCER_EXTERNAL_CONFIG) {
-    throw new Error("REBALANCER_EXTERNAL_CONFIG must be set");
-  }
+}
 
-  const logger = createScriptLogger();
-  logger.info({
-    at: "buildJussiGraph",
-    message: "Starting graph generation script",
-  });
-  const relayerConfig = new RelayerConfig(process.env);
-  const rebalancerConfig = new RebalancerConfig(process.env);
-  const activeChainIds = rebalancerConfig.chainIds.filter((chainId) => !chainIsSvm(chainId));
-  (relayerConfig.relayerOriginChains as number[]).splice(0, relayerConfig.relayerOriginChains.length, ...activeChainIds);
+function syncRelayerChains(relayerConfig: RelayerConfig, chainIds: number[]): void {
+  (relayerConfig.relayerOriginChains as number[]).splice(0, relayerConfig.relayerOriginChains.length, ...chainIds);
   (relayerConfig.relayerDestinationChains as number[]).splice(
     0,
     relayerConfig.relayerDestinationChains.length,
-    ...activeChainIds
+    ...chainIds
   );
-  const rebalanceRoutes = buildRebalanceRoutes(rebalancerConfig);
-  logger.info({
-    at: "buildJussiGraph",
-    message: "Constructing relayer clients",
-  });
-  const relayerClients = await constructRelayerClients(logger, relayerConfig, baseSigner);
-  const { inventoryClient, spokePoolClients, tokenClient } = relayerClients;
+}
 
-  logger.info({
-    at: "buildJussiGraph",
-    message: "Updating spoke pool clients and token client",
-  });
-  await Promise.all([
-    updateSpokePoolClients(spokePoolClients, [
-      "FundsDeposited",
-      "FilledRelay",
-      "RelayedRootBundle",
-      "ExecutedRelayerRefundRoot",
-    ]),
-    tokenClient.update(),
-  ]);
+async function writeJsonArtifact(filePath: string | undefined, value: unknown): Promise<void> {
+  if (!filePath) {
+    return;
+  }
 
-  logger.info({
-    at: "buildJussiGraph",
-    message: "Refreshing inventory state",
-    chainIds: rebalancerConfig.chainIds,
-  });
-  inventoryClient.setBundleData();
-  await inventoryClient.update(rebalancerConfig.chainIds);
+  const resolvedPath = resolve(filePath);
+  await mkdir(dirname(resolvedPath), { recursive: true });
+  await writeFile(resolvedPath, `${JSON.stringify(value, null, 2)}\n`);
+}
 
-  logger.info({
-    at: "buildJussiGraph",
-    message: "Constructing cumulative balance rebalancer client",
-  });
-  const bridgeAdapterRoutes = await buildBridgeAdapterRoutes({
-    logger,
-    baseSigner,
-    relayerConfig,
-    nodeContexts: materializeNodeDefinitions(
-      buildManagedNodeTemplates(relayerConfig.inventoryConfig).filter((template) => !chainIsSvm(template.chainId)),
-      {
-        USDC: bnZero,
-        USDT: bnZero,
-      }
+async function buildGraphRebalanceRoutes(
+  logger: winston.Logger,
+  baseSigner: Signer,
+  relayerConfig: RelayerConfig,
+  rebalancerConfig: RebalancerConfig
+) {
+  const nodeContexts = materializeNodeDefinitions(
+    buildManagedNodeTemplates(relayerConfig.inventoryConfig, relayerConfig.hubPoolChainId).filter(
+      (template) => !chainIsSvm(template.chainId)
     ),
-  });
-  const rebalancerClient = await constructCumulativeBalanceRebalancerClient(
-    logger,
-    baseSigner,
-    dedupeRebalanceRoutes([...rebalanceRoutes, ...bridgeAdapterRoutes])
+    { USDC: bnZero, USDT: bnZero }
   );
-  const graph = await buildJussiGraphDefinition({
-    logger,
-    baseSigner,
+  const bridgeAdapterRoutes = await buildBridgeAdapterRoutes({
+    nodeContexts,
+  });
+
+  return dedupeRebalanceRoutes([...buildRebalanceRoutes(rebalancerConfig), ...bridgeAdapterRoutes]);
+}
+
+async function run(baseSigner: Signer, logger: winston.Logger): Promise<void> {
+  requireEnvironmentVariable("RELAYER_EXTERNAL_INVENTORY_CONFIG");
+  requireEnvironmentVariable("REBALANCER_EXTERNAL_CONFIG");
+
+  const relayerConfig = new RelayerConfig(process.env);
+  const rebalancerConfig = new RebalancerConfig(process.env);
+  syncRelayerChains(
     relayerConfig,
-    rebalancerConfig,
-    inventoryClient,
-    rebalanceRoutes,
-    rebalancerAdapters: rebalancerClient.adapters,
-  });
+    rebalancerConfig.chainIds.filter((chainId) => !chainIsSvm(chainId))
+  );
 
-  logger.info({
-    at: "buildJussiGraph",
-    message: "Writing graph envelope to stdout",
-    graphId: graph.graphId,
-    nodeCount: graph.payload.nodes.length,
-    edgeCount: graph.payload.edges.length,
-  });
-  process.stdout.write(JSON.stringify(buildJussiGraphEnvelope(graph), null, 2));
-
-  await disconnectRedisClients(logger);
-}
-
-function dedupeRebalanceRoutes(rebalanceRoutes: ReturnType<typeof buildRebalanceRoutes>): ReturnType<typeof buildRebalanceRoutes> {
-  const uniqueRoutes = new Map<string, (typeof rebalanceRoutes)[number]>();
-  rebalanceRoutes.forEach((route) => {
-    uniqueRoutes.set(
-      [route.sourceChain, route.sourceToken, route.destinationChain, route.destinationToken, route.adapter].join("|"),
-      route
+  try {
+    logger.info({ at: "buildJussiGraph", message: "Constructing relayer clients" });
+    const { inventoryClient, spokePoolClients, tokenClient } = await constructRelayerClients(
+      logger,
+      relayerConfig,
+      baseSigner
     );
-  });
-  return Array.from(uniqueRoutes.values());
+
+    await Promise.all([
+      updateSpokePoolClients(spokePoolClients, [
+        "FundsDeposited",
+        "FilledRelay",
+        "RelayedRootBundle",
+        "ExecutedRelayerRefundRoot",
+      ]),
+      tokenClient.update(),
+    ]);
+
+    inventoryClient.setBundleData();
+    await inventoryClient.update(rebalancerConfig.chainIds);
+
+    const rebalanceRoutes = await buildGraphRebalanceRoutes(logger, baseSigner, relayerConfig, rebalancerConfig);
+    const rebalancerClient = await constructCumulativeBalanceRebalancerClient(logger, baseSigner, rebalanceRoutes);
+    const graph = await buildJussiGraphDefinition({
+      logger,
+      baseSigner,
+      relayerConfig,
+      rebalancerConfig,
+      inventoryClient,
+      rebalanceRoutes,
+      rebalancerAdapters: rebalancerClient.adapters,
+    });
+
+    await Promise.all([writeJsonArtifact(process.env[GRAPH_JSON_OUT_ENV], buildJussiGraphJson(graph))]);
+
+    process.stdout.write(`${JSON.stringify(buildJussiGraphEnvelope(graph), null, 2)}\n`);
+  } finally {
+    await disconnectRedisClients(logger);
+  }
 }
 
-if (require.main === module) {
+async function main(): Promise<void> {
   process.env.ACROSS_BOT_VERSION = version;
   config();
 
-  let logger: winston.Logger = createScriptLogger();
+  const logger = createScriptLogger();
   let exitCode = 0;
-  retrieveSignerFromCLIArgs()
-    .then((baseSigner) => {
-      logger = createScriptLogger();
-      return run(baseSigner);
-    })
-    .catch((error) => {
-      exitCode = 1;
-      const message = error instanceof Error ? error.message : util.inspect(error, { depth: null, breakLength: Infinity });
-      logger.error({
-        at: "buildJussiGraph",
-        message: "Process exited with error",
-        error: message,
-        stack: error instanceof Error ? error.stack : undefined,
-      });
-    })
-    .finally(async () => {
-      await waitForLogger(logger as any);
-      await delay(1);
-      // eslint-disable-next-line no-process-exit
-      process.exit(exitCode);
+  try {
+    await run(await retrieveSignerFromCLIArgs(), logger);
+  } catch (error) {
+    exitCode = 1;
+    const message =
+      error instanceof Error ? error.message : util.inspect(error, { depth: null, breakLength: Infinity });
+    logger.error({
+      at: "buildJussiGraph",
+      message: "Process exited with error",
+      error: message,
+      stack: error instanceof Error ? error.stack : undefined,
     });
+  } finally {
+    await waitForLogger(logger as Parameters<typeof waitForLogger>[0]);
+    await delay(1);
+    // eslint-disable-next-line no-process-exit
+    process.exit(exitCode);
+  }
+}
+
+if (require.main === module) {
+  void main();
 }
