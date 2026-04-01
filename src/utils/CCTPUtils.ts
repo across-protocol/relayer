@@ -1,5 +1,5 @@
 import { arch, utils } from "@across-protocol/sdk";
-import { TokenMessengerMinterIdl } from "@across-protocol/sdk/dist/cjs/src/svm";
+import { TokenMessengerMinterIdl } from "@across-protocol/sdk/svm";
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import axios from "axios";
 import { Contract, ethers } from "ethers";

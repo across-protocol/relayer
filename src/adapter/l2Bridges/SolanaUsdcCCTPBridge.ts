@@ -23,7 +23,7 @@ import {
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
 import { CCTP_MAX_SEND_AMOUNT } from "../../common";
 import { arch } from "@across-protocol/sdk";
-import { TokenMessengerMinterIdl, TokenMessengerMinterClient } from "@across-protocol/sdk/dist/cjs/src/svm";
+import { TokenMessengerMinterIdl, TokenMessengerMinterClient } from "@across-protocol/sdk/svm";
 import {
   Address,
   generateKeyPairSigner,
