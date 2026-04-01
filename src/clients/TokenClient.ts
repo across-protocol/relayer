@@ -23,6 +23,7 @@ import {
   getRemoteTokenForL1Token,
   getTokenInfo,
   isEVMSpokePoolClient,
+  isTVMSpokePoolClient,
   assert,
   Address,
   toAddressType,
@@ -240,7 +241,7 @@ export class TokenClient {
   resolveRemoteTokens(chainId: number, hubPoolTokens: L1Token[]): Contract[] {
     const spokePoolClient = this.spokePoolManager.getClient(chainId);
     assert(isDefined(spokePoolClient), `SpokePoolClient not found for chainId ${chainId}`);
-    assert(isEVMSpokePoolClient(spokePoolClient));
+    assert(isEVMSpokePoolClient(spokePoolClient) || isTVMSpokePoolClient(spokePoolClient));
     const { provider } = spokePoolClient.spokePool;
     const erc20 = this.erc20.connect(provider);
 
@@ -292,7 +293,7 @@ export class TokenClient {
     const spokePoolClient = this.spokePoolManager.getClient(chainId);
     assert(isDefined(spokePoolClient), `SpokePoolClient not found for chainId ${chainId}`);
 
-    if (isEVMSpokePoolClient(spokePoolClient)) {
+    if (isEVMSpokePoolClient(spokePoolClient) || isTVMSpokePoolClient(spokePoolClient)) {
       return this.updateEVM(chainId, hubPoolTokens);
     } else if (isSVMSpokePoolClient(spokePoolClient)) {
       return this.fetchSolanaTokenData(chainId, hubPoolTokens);
@@ -341,7 +342,7 @@ export class TokenClient {
   ): Promise<Record<string, { balance: BigNumber; allowance: BigNumber }>> {
     const spokePoolClient = this.spokePoolManager.getClient(chainId);
     assert(isDefined(spokePoolClient), `SpokePoolClient not found for chainId ${chainId}`);
-    assert(isEVMSpokePoolClient(spokePoolClient));
+    assert(isEVMSpokePoolClient(spokePoolClient) || isTVMSpokePoolClient(spokePoolClient));
 
     const tokenData = Object.fromEntries(
       await sdkUtils.mapAsync(this.resolveRemoteTokens(chainId, hubPoolTokens), async (token: Contract) => {
@@ -356,7 +357,7 @@ export class TokenClient {
 
   private async updateEVM(chainId: number, hubPoolTokens: L1Token[]) {
     const spokePoolClient = this.spokePoolManager.getClient(chainId);
-    assert(isEVMSpokePoolClient(spokePoolClient));
+    assert(isEVMSpokePoolClient(spokePoolClient) || isTVMSpokePoolClient(spokePoolClient));
     const {
       spokePool: { provider },
       spokePoolAddress,

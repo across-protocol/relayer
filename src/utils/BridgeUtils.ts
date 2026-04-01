@@ -5,20 +5,24 @@ import axios, { RawAxiosRequestHeaders } from "axios";
 // API supports multiple destination tokens for a single L1 token.
 export const BRIDGE_API_DESTINATION_TOKENS: { [l2ChainId: number]: string } = {
   [CHAIN_IDs.TEMPO]: TOKEN_SYMBOLS_MAP.pathUSD.addresses[CHAIN_IDs.TEMPO],
+  [CHAIN_IDs.TRON]: TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.TRON],
 };
 
 export const BRIDGE_API_DESTINATION_TOKEN_SYMBOLS: { [address: string]: string } = {
   [TOKEN_SYMBOLS_MAP.pathUSD.addresses[CHAIN_IDs.TEMPO]]: "path_usd",
+  [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.TRON]]: "usdt",
 };
 
 const NETWORK_NAMES: { [chainId: number]: string } = {
   [CHAIN_IDs.MAINNET]: "ethereum",
   [CHAIN_IDs.TEMPO]: "tempo",
+  [CHAIN_IDs.TRON]: "tron",
 };
 
 export const BRIDGE_API_MINIMUMS: { [sourceChainId: number]: { [dstChainId: number]: BigNumber } } = {
   [CHAIN_IDs.MAINNET]: {
     [CHAIN_IDs.TEMPO]: toBN(5_000_000), // 5 USD
+    [CHAIN_IDs.TRON]: toBN(5_000_000), // 5 USD
   },
   [CHAIN_IDs.TEMPO]: {
     [CHAIN_IDs.MAINNET]: toBN(5_000_000), // 5 USD
