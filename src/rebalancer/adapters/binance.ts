@@ -9,6 +9,7 @@ import {
   CHAIN_IDs,
   Coin,
   Contract,
+  delay,
   ERC20,
   forEachAsync,
   fromWei,
@@ -45,6 +46,9 @@ interface SPOT_MARKET_META {
 
 export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   private binanceApiClient: Binance;
+  private tradeFeesPromise?: ReturnType<Binance["tradeFee"]>;
+  private exchangeInfoPromise?: ReturnType<Binance["exchangeInfo"]>;
+  private orderBookPromiseBySymbol = new Map<string, Promise<Awaited<ReturnType<Binance["book"]>>>>();
 
   REDIS_PREFIX = "binance-stablecoin-swap:";
 
@@ -640,9 +644,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const { sourceToken, destinationToken, sourceChain, destinationChain } = rebalanceRoute;
     const spotMarketMeta = this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
     // Commission is denominated in percentage points.
-    const tradeFeePct = (await this.binanceApiClient.tradeFee()).find(
-      (fee) => fee.symbol === spotMarketMeta.symbol
-    ).takerCommission;
+    const tradeFeePct = (await this._getTradeFees()).find((fee) => fee.symbol === spotMarketMeta.symbol).takerCommission;
     const tradeFee = toBNWei(tradeFeePct, 18).mul(amountToTransfer).div(toBNWei(100, 18));
     const destinationCoin = await this._getAccountCoins(destinationToken);
     const destinationEntrypointNetwork = await this._getEntrypointNetwork(destinationChain, destinationToken);
@@ -845,7 +847,8 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   }
 
   private async _getSymbol(sourceToken: string, destinationToken: string) {
-    const symbol = (await this.binanceApiClient.exchangeInfo()).symbols.find((symbols) => {
+    this.exchangeInfoPromise ??= this.binanceApiClient.exchangeInfo();
+    const symbol = (await this.exchangeInfoPromise).symbols.find((symbols) => {
       return (
         symbols.symbol === `${sourceToken}${destinationToken}` || symbols.symbol === `${destinationToken}${sourceToken}`
       );
@@ -862,7 +865,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   ): Promise<{ latestPrice: number; slippagePct: number }> {
     const symbol = await this._getSymbol(sourceToken, destinationToken);
     const sourceTokenInfo = this._getTokenInfo(sourceToken, sourceChain);
-    const book = await this.binanceApiClient.book({ symbol: symbol.symbol });
+    const book = await this._getOrderBook(symbol.symbol);
     const spotMarketMeta = this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
     const sideOfBookToTraverse = spotMarketMeta.isBuy ? book.asks : book.bids;
     const bestPx = Number(sideOfBookToTraverse[0].price);
@@ -886,6 +889,40 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const latestPrice = Number(Number(maxPxReached.price).toFixed(spotMarketMeta.pxDecimals));
     const slippagePct = Math.abs((latestPrice - bestPx) / bestPx) * 100;
     return { latestPrice, slippagePct };
+  }
+
+  private async _getOrderBook(symbol: string): Promise<Awaited<ReturnType<Binance["book"]>>> {
+    const existingPromise = this.orderBookPromiseBySymbol.get(symbol);
+    if (existingPromise) {
+      return existingPromise;
+    }
+
+    const promise = this._fetchOrderBook(symbol);
+    this.orderBookPromiseBySymbol.set(symbol, promise);
+    promise.finally(() => {
+      if (this.orderBookPromiseBySymbol.get(symbol) === promise) {
+        this.orderBookPromiseBySymbol.delete(symbol);
+      }
+    });
+
+    return promise;
+  }
+
+  private async _fetchOrderBook(
+    symbol: string,
+    nRetries = 0,
+    maxRetries = 3
+  ): Promise<Awaited<ReturnType<Binance["book"]>>> {
+    try {
+      return await this.binanceApiClient.book({ symbol });
+    } catch (error) {
+      if (nRetries >= maxRetries) {
+        throw error;
+      }
+
+      await delay(2 ** nRetries + Math.random());
+      return this._fetchOrderBook(symbol, nRetries + 1, maxRetries);
+    }
   }
 
   private _getQuantityForOrder(
@@ -913,6 +950,11 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   private _getSpotMarketMetaForRoute(sourceToken: string, destinationToken: string): SPOT_MARKET_META {
     const name = `${sourceToken}-${destinationToken}`;
     return this.spotMarketMeta[name];
+  }
+
+  private async _getTradeFees(): ReturnType<Binance["tradeFee"]> {
+    this.tradeFeesPromise ??= this.binanceApiClient.tradeFee({ useServerTime: true });
+    return this.tradeFeesPromise;
   }
 
   private async _getMatchingFillForCloid(

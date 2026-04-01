@@ -88,6 +88,7 @@
     "update": "git pull && yarn reinstall && yarn version --non-interactive && git show --quiet",
     "update-addresses": "yarn ts-node ./scripts/fetch-addresses.ts",
     "update-inventory-config": "node ./dist/scripts/fetchInventoryConfig.js",
+    "build-jussi-graph": "node ./dist/scripts/buildJussiGraph.js",
     "validate-root-bundle": "yarn node ./dist/src/scripts/validateRootBundle.js | tee validateRootBundle-${REQUEST_TIME}.log"
   },
   "devDependencies": {
