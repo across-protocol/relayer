@@ -122,6 +122,9 @@ export class GaslessRelayer {
   protected spokePools: { [chainId: number]: Contract } = {};
   /** Permit2 on each origin chain, connected to that chain's provider (nonce bitmap reads). */
   protected permit2Contracts: { [chainId: number]: Contract } = {};
+  // Tracks whether an immediate fill is currently in progress for a given user/originChainId combo.
+  // Keyed by `${authorizer}:${originChainId}`.
+  protected pendingImmediateFills: { [key: string]: boolean } = {};
 
   private api: AcrossSwapApiClient;
   protected signerAddress: EvmAddress;
@@ -515,6 +518,7 @@ export class GaslessRelayer {
       let fillImmediate = false;
       let deposit: RelayData & { destinationChainId: number };
       let depositReceiptPromise: Promise<TransactionReceipt | null>;
+      const immediateFillKey = `${authorizer}:${originChainId}`;
 
       const bridgeMessage = depositMessage as GaslessDepositMessage;
 
@@ -544,10 +548,14 @@ export class GaslessRelayer {
               fillImmediate =
                 !isSwap &&
                 instantFill &&
+                !this.pendingImmediateFills[immediateFillKey] &&
                 this.fillImmediate(
                   { originChainId, destinationChainId, outputToken, outputAmount, exclusivityParameter },
                   spokePool
                 );
+              if (fillImmediate) {
+                this.pendingImmediateFills[immediateFillKey] = true;
+              }
               log("debug", `Fill immediate: ${fillImmediate}`);
               nextState = MessageState.DEPOSIT_SUBMIT;
             }
@@ -561,6 +569,7 @@ export class GaslessRelayer {
               const { succeed, reason } = await willSucceed(depositTx);
               if (!succeed) {
                 log("warn", "Deposit simulation failed, falling back to standard path.", { reason });
+                this.pendingImmediateFills[immediateFillKey] = false;
                 fillImmediate = false;
               }
             }
@@ -680,6 +689,9 @@ export class GaslessRelayer {
           }
         }
       } while (!terminalStates.includes(getState()));
+      if (fillImmediate) {
+        delete this.pendingImmediateFills[immediateFillKey];
+      }
       const tEnd = performance.now();
       const delta = (tEnd - tStart) / 1000;
       log("info", `Processed ${origin} depositId ${depositId} in ${delta} seconds.`);
