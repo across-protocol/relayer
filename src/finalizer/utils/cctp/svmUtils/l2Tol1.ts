@@ -19,7 +19,7 @@ import {
   getEventAuthority,
   createFormatFunction,
 } from "../../../../utils";
-import { SvmSpokeClient } from "@across-protocol/sdk/svm";
+import { SvmSpokeClient } from "@across-protocol/sdk/dist/cjs/src/svm";
 
 /**
  * Initiates a withdrawal from the Solana spoke pool.

@@ -2,7 +2,7 @@ import assert from "assert";
 import minimist from "minimist";
 import { address, createSolanaRpcSubscriptions, RpcSubscriptions, SolanaRpcSubscriptionsApi } from "@solana/kit";
 import { arch, typeguards } from "@across-protocol/sdk";
-import { SvmSpokeClient } from "@across-protocol/sdk/svm";
+import { SvmSpokeClient } from "@across-protocol/sdk/dist/cjs/src/svm";
 import { Log } from "../interfaces";
 import * as utils from "../../scripts/utils";
 import {

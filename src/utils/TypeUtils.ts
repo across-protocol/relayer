@@ -1,7 +1,7 @@
 import { SlowFillLeaf, RelayData, RelayerRefundLeaf } from "../interfaces";
 import { ethers } from "./";
 import { address } from "@solana/kit";
-import { SvmSpokeClient } from "@across-protocol/sdk/svm";
+import { SvmSpokeClient } from "@across-protocol/sdk/dist/cjs/src/svm";
 
 export type MakeOptional<Type, Key extends keyof Type> = Omit<Type, Key> & Partial<Pick<Type, Key>>;
 

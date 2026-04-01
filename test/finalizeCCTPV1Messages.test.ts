@@ -1,4 +1,4 @@
-import { SvmSpokeClient } from "@across-protocol/sdk/svm";
+import { SvmSpokeClient } from "@across-protocol/sdk/dist/cjs/src/svm";
 import { encodeMessageHeader } from "@across-protocol/sdk/dist/cjs/src/svm/web3-v1";
 import { signature } from "@solana/kit";
 import { PublicKey } from "@solana/web3.js";
