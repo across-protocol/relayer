@@ -40,10 +40,10 @@
     yargs "^17.7.2"
     zksync-web3 "^0.14.3"
 
-"@across-protocol/sdk@4.4.0-alpha.1":
-  version "4.4.0-alpha.1"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.4.0-alpha.1.tgz#3757ad58d2a14c2adff2c5b44c895f510fabe2f8"
-  integrity sha512-LfsGfLO2HswKe5ZftV91R0lBPMGLtnK5p9R4jxSv5kZupYhQYqEX0mj4Dz4YcawDm0klPvR+yqYNPTQiDWM40A==
+"@across-protocol/sdk@4.4.0-alpha.2":
+  version "4.4.0-alpha.2"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.4.0-alpha.2.tgz#c322fd2d6baceba5dc8ed1c6bd0592ef9785e2bf"
+  integrity sha512-0klp+JiTftCcXOjNFLZ9psOqCAduPopOBugNsdswgm+Z0uGtIl+BajJMPbl5fTZ99fTT7jFJ7aVQ64lNBgYUtg==
   dependencies:
     "@across-protocol/constants" "^3.1.100"
     "@across-protocol/contracts" "5.0.4"
