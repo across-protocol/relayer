@@ -34,9 +34,9 @@ import {
 } from "@solana/kit";
 
 type DepositForBurnEvent = {
-  nonce: BigInt;
+  nonce: bigint;
   burnToken: string;
-  amount: BigInt;
+  amount: bigint;
   depositor: string;
   mintRecipient: string;
   destinationDomain: number;

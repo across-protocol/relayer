@@ -354,6 +354,7 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
 
     // Manually remove the deposit from the client's cache to force historical query
     const depositKey = sdkUtils.getRelayEventKey(deposit);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     delete (spokePoolClient_1 as any).depositHashes[depositKey];
 
     const deposits = spokePoolClient_1.getDeposits();
@@ -596,7 +597,9 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
       JSON.stringify([spokePoolClient_1.chainId])
     );
     await mockConfigStore.update();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (spokePoolClient_1 as any).configStoreClient = mockConfigStore;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (spokePoolClient_2 as any).configStoreClient = mockConfigStore;
     const depositObject = await depositV3(
       spokePool_1,
@@ -635,7 +638,9 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
       JSON.stringify([spokePoolClient_2.chainId])
     );
     await mockConfigStore.update();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (spokePoolClient_1 as any).configStoreClient = mockConfigStore;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (spokePoolClient_2 as any).configStoreClient = mockConfigStore;
     const depositObject = await depositV3(
       spokePool_1,
@@ -674,7 +679,9 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
       JSON.stringify([spokePoolClient_1.chainId])
     );
     await mockConfigStore.update();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (spokePoolClient_1 as any).configStoreClient = mockConfigStore;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (spokePoolClient_2 as any).configStoreClient = mockConfigStore;
     // Send a legacy deposit.
     const depositObject = await depositV3(
@@ -719,7 +726,9 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
       JSON.stringify([spokePoolClient_2.chainId])
     );
     await mockConfigStore.update();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (spokePoolClient_1 as any).configStoreClient = mockConfigStore;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (spokePoolClient_2 as any).configStoreClient = mockConfigStore;
     // Send a legacy deposit.
     const depositObject = await depositV3(

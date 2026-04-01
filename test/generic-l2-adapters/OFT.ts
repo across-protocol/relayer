@@ -20,6 +20,7 @@ describe("Cross Chain Adapter: OFT L2 Bridge", function () {
       getPendingBridgeTxnRefsForRoute: async () => new Set(["tracked-txn"]),
     } as unknown as PendingBridgeRedisReader);
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (adapter as any).l2Bridge.queryFilter = async () => [
       {
         event: "OFTSent",
@@ -31,8 +32,10 @@ describe("Cross Chain Adapter: OFT L2 Bridge", function () {
           guid,
           amountReceivedLD: amountToWithdraw,
         },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any,
     ];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (adapter as any).l1Bridge.queryFilter = async () => [];
 
     const amount = await adapter.getL2PendingWithdrawalAmount(

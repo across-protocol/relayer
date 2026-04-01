@@ -1,18 +1,28 @@
 import { Contract } from "ethers";
-import { DepositWithBlock, GaslessDepositMessage, RelayData } from "../src/interfaces";
+import {
+  AnyGaslessDepositMessage,
+  DepositWithBlock,
+  GaslessDepositMessage,
+  GaslessDepositMetadata,
+  RelayData,
+  SwapAndBridgeGaslessDepositMessage,
+} from "../src/interfaces";
 import { GaslessRelayer, MessageState } from "../src/gasless/GaslessRelayer";
 import { GaslessRelayerConfig } from "../src/gasless/GaslessRelayerConfig";
 import SPOKE_POOL_PERIPHERY_ABI from "../src/common/abi/SpokePoolPeriphery.json";
+import PERMIT2_ABI from "../src/common/abi/Permit2.json";
 import {
-  Address,
   CHAIN_IDs,
   EvmAddress,
   Provider,
   TransactionReceipt,
   getCurrentTime,
+  getTokenInfo,
+  toAddressType,
+  toBNWei,
   TOKEN_SYMBOLS_MAP,
 } from "../src/utils";
-import { MAX_EXCLUSIVITY_PERIOD_SECONDS } from "../src/utils/GaslessUtils";
+import { isStablecoin, MAX_EXCLUSIVITY_PERIOD_SECONDS } from "../src/utils/GaslessUtils";
 import { createSpyLogger, expect, FakeContract, smock, ethers, toBN } from "./utils";
 
 // Minimal 65-byte hex signature.
@@ -37,6 +47,7 @@ type StrippedDeposit = Omit<DepositWithBlock, "fromLiteChain" | "toLiteChain" | 
  * Testable subclass: overrides initialize to no-op and exposes internals via setters/getters.
  */
 class TestableGaslessRelayer extends GaslessRelayer {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   constructor(logger: any, config: any, signer: any, depositSigners: any[]) {
     super(logger, config, signer, depositSigners);
     // Explicitly initialize state transition tracking
@@ -59,6 +70,15 @@ class TestableGaslessRelayer extends GaslessRelayer {
   }
   public setSpokePools(pools: { [chainId: number]: Contract }): void {
     this.spokePools = pools;
+  }
+  public setPermit2Contracts(contracts: { [chainId: number]: Contract }): void {
+    this.permit2Contracts = contracts;
+  }
+  public runUpdateObservedCctpDeposits(apiMessages: AnyGaslessDepositMessage[]): Promise<void> {
+    return this.updateObservedCctpDeposits(apiMessages);
+  }
+  public getObservedDepositsSet(chainId: number): Set<string> {
+    return this.observedDeposits[chainId];
   }
   public setObservedDeposits(deposits: { [chainId: number]: Set<string> }): void {
     this.observedDeposits = deposits;
@@ -90,22 +110,17 @@ class TestableGaslessRelayer extends GaslessRelayer {
 
   // Configurable function properties -- tests assign return values; overrides track call counts.
   public getPeripheryContractFn: (chainId: number) => Contract = (chainId) => this.spokePoolPeripheries[chainId];
-  public queryGaslessApiFn: () => Promise<GaslessDepositMessage[]> = async () => [];
-  public initiateGaslessDepositFn: (msg: GaslessDepositMessage) => Promise<TransactionReceipt | null> = async () =>
-    null;
+  public queryGaslessApiFn: () => Promise<AnyGaslessDepositMessage[]> = async () => [];
+  public initiateDepositFn: (msg: AnyGaslessDepositMessage) => Promise<TransactionReceipt | null> = async () => null;
   public initiateFillFn: (deposit: GaslessDeposit) => Promise<TransactionReceipt | null> = async () => null;
   public extractDepositFromReceiptFn: (receipt: TransactionReceipt, chainId: number) => StrippedDeposit = () => {
     throw new Error("extractDepositFromReceiptFn not configured");
   };
-  public findDepositFn: (
-    originChainId: number,
-    inputToken: Address,
-    authorizer: string,
-    nonce: string
-  ) => Promise<StrippedDeposit | undefined> = async () => undefined;
+  public findDepositFn: (depositMessage: GaslessDepositMessage) => Promise<StrippedDeposit | undefined> = async () =>
+    undefined;
 
   // Call counters -- incremented by the overrides below.
-  public initiateGaslessDepositCalls = 0;
+  public initiateDepositCalls = 0;
   public extractDepositFromReceiptCalls = 0;
   public initiateFillCalls = 0;
   public findDepositCalls = 0;
@@ -113,12 +128,12 @@ class TestableGaslessRelayer extends GaslessRelayer {
   // Track state transitions, keyed by depositKey (e.g., nonce)
   public stateTransitions: { [depositKey: string]: Array<{ from: MessageState; to: MessageState }> } = {};
 
-  protected override async _queryGaslessApi(): Promise<GaslessDepositMessage[]> {
+  protected override async _queryGaslessApi(): Promise<AnyGaslessDepositMessage[]> {
     return this.queryGaslessApiFn();
   }
-  protected override async initiateGaslessDeposit(msg: GaslessDepositMessage): Promise<TransactionReceipt | null> {
-    this.initiateGaslessDepositCalls++;
-    return this.initiateGaslessDepositFn(msg);
+  protected override async initiateDeposit(msg: AnyGaslessDepositMessage): Promise<TransactionReceipt | null> {
+    this.initiateDepositCalls++;
+    return this.initiateDepositFn(msg);
   }
   protected override async initiateFill(
     deposit: StrippedDeposit,
@@ -144,14 +159,9 @@ class TestableGaslessRelayer extends GaslessRelayer {
     this.extractDepositFromReceiptCalls++;
     return this.extractDepositFromReceiptFn(receipt, originChainId);
   }
-  protected override async _findDeposit(
-    originChainId: number,
-    inputToken: Address,
-    authorizer: string,
-    nonce: string
-  ): Promise<StrippedDeposit | undefined> {
+  protected override async _findDeposit(depositMessage: GaslessDepositMessage): Promise<StrippedDeposit | undefined> {
     this.findDepositCalls++;
-    return this.findDepositFn(originChainId, inputToken, authorizer, nonce);
+    return this.findDepositFn(depositMessage);
   }
 
   protected override _setState(depositKey: string, state: MessageState): void {
@@ -169,7 +179,8 @@ class TestableGaslessRelayer extends GaslessRelayer {
  */
 function makeDepositMessage(
   baseOverrides: Partial<GaslessDepositMessage["baseDepositData"]> = {},
-  spokePool = DUMMY_ADDRESS
+  spokePool = DUMMY_ADDRESS,
+  metadata: GaslessDepositMetadata = {}
 ): GaslessDepositMessage {
   const fillDeadline = baseOverrides.fillDeadline ?? getCurrentTime() + 3600;
   const baseDepositData = {
@@ -190,6 +201,7 @@ function makeDepositMessage(
   };
 
   return {
+    depositFlowType: "bridge" as const,
     originChainId: ORIGIN_CHAIN_ID,
     depositId: "42",
     requestId: "req-test",
@@ -213,6 +225,7 @@ function makeDepositMessage(
     submissionFees: { amount: "100", recipient: DUMMY_ADDRESS },
     spokePool,
     nonce: "1",
+    metadata: { instantFill: false, ...metadata },
   };
 }
 
@@ -228,7 +241,8 @@ function depositNonceFor(relayer: TestableGaslessRelayer, msg: GaslessDepositMes
  */
 function makePermit2DepositMessage(
   baseOverrides: Partial<GaslessDepositMessage["baseDepositData"]> = {},
-  spokePool: string = DUMMY_ADDRESS
+  spokePool: string = DUMMY_ADDRESS,
+  metadata: GaslessDepositMetadata = {}
 ): GaslessDepositMessage {
   const fillDeadline = baseOverrides.fillDeadline ?? getCurrentTime() + 3600;
   const baseDepositData = {
@@ -249,6 +263,7 @@ function makePermit2DepositMessage(
   };
 
   return {
+    depositFlowType: "bridge" as const,
     originChainId: ORIGIN_CHAIN_ID,
     depositId: "42",
     requestId: "req-permit2-test",
@@ -277,6 +292,7 @@ function makePermit2DepositMessage(
     submissionFees: { amount: "100", recipient: DUMMY_ADDRESS },
     spokePool,
     nonce: "1",
+    metadata: { instantFill: false, ...metadata },
   };
 }
 
@@ -286,12 +302,96 @@ function makePermit2DepositMessage(
  */
 function makeCctpDepositMessage(
   baseOverrides: Partial<GaslessDepositMessage["baseDepositData"]> = {},
-  normalSpokePool: string = DUMMY_ADDRESS
+  normalSpokePool: string = DUMMY_ADDRESS,
+  metadata: GaslessDepositMetadata = {}
 ): GaslessDepositMessage {
-  const msg = makeDepositMessage(baseOverrides, normalSpokePool);
+  const msg = makeDepositMessage(baseOverrides, normalSpokePool, metadata);
   // CCTP deposits are identified by having a different spokePool address than the default.
   msg.spokePool = "0x" + "cc".repeat(20); // Different from normalSpokePool
   return msg;
+}
+
+/** CCTP spokePool marker (same as makeCctpDepositMessage). */
+const CCTP_SPOKE_POOL = "0x" + "cc".repeat(20);
+
+/**
+ * Swap-and-bridge + CCTP + Permit2 (used to exercise Permit2 nonceBitmap observation / confirmation).
+ */
+function makeSwapAndBridgePermit2CctpMessage(
+  overrides: Partial<{
+    depositId: string;
+    permitNonce: string;
+    depositData: Partial<SwapAndBridgeGaslessDepositMessage["depositData"]>;
+  }> = {}
+): SwapAndBridgeGaslessDepositMessage {
+  const fillDeadline = getCurrentTime() + 3600;
+  const depositData: SwapAndBridgeGaslessDepositMessage["depositData"] = {
+    inputToken: USDC_MAINNET,
+    outputToken: USDC_BASE,
+    outputAmount: "1000000",
+    depositor: DUMMY_ADDRESS,
+    recipient: DUMMY_ADDRESS,
+    destinationChainId: DESTINATION_CHAIN_ID,
+    exclusiveRelayer: DUMMY_ADDRESS,
+    quoteTimestamp: getCurrentTime(),
+    fillDeadline,
+    exclusivityDeadline: 1700000000,
+    exclusivityParameter: 1700000000,
+    message: "0x",
+    ...overrides.depositData,
+  };
+  const permitNonce = overrides.permitNonce ?? "0";
+  const depositId = overrides.depositId ?? "1000000";
+
+  return {
+    depositFlowType: "swapAndBridge",
+    originChainId: ORIGIN_CHAIN_ID,
+    depositId,
+    requestId: "req-swap-permit2-cctp",
+    signature: DUMMY_SIGNATURE,
+    permitType: "permit2",
+    permit: {
+      types: { PermitWitnessTransferFrom: [] },
+      domain: { name: "Permit2", chainId: ORIGIN_CHAIN_ID, verifyingContract: DUMMY_ADDRESS },
+      primaryType: "PermitWitnessTransferFrom",
+      message: {
+        permitted: { token: USDC_MAINNET, amount: "1000000" },
+        spender: DUMMY_ADDRESS,
+        nonce: permitNonce,
+        deadline: 999999999999,
+        witness: {
+          submissionFees: { amount: "100", recipient: DUMMY_ADDRESS },
+          depositData,
+          swapToken: USDC_MAINNET,
+          exchange: DUMMY_ADDRESS,
+          transferType: 0,
+          swapTokenAmount: "1000000",
+          minExpectedInputTokenAmount: "1000000",
+          routerCalldata: "0x",
+          enableProportionalAdjustment: false,
+          spokePool: CCTP_SPOKE_POOL,
+          nonce: "w-1",
+        },
+      },
+    },
+    depositData,
+    submissionFees: { amount: "100", recipient: DUMMY_ADDRESS },
+    swapToken: USDC_MAINNET,
+    exchange: DUMMY_ADDRESS,
+    transferType: 0,
+    swapTokenAmount: "1000000",
+    minExpectedInputTokenAmount: "1000000",
+    routerCalldata: "0x",
+    enableProportionalAdjustment: false,
+    spokePool: CCTP_SPOKE_POOL,
+    nonce: "1",
+  };
+}
+
+/** Deposit key for swap-and-bridge messages (matches `evaluateApiSignatures` / `messageFilter`). */
+function depositNonceForSwap(relayer: TestableGaslessRelayer, msg: SwapAndBridgeGaslessDepositMessage): string {
+  const token = EvmAddress.from(msg.depositData.inputToken).toNative();
+  return relayer.getDepositKey(token, msg.originChainId, msg.depositId);
 }
 
 /** Minimal transaction receipt that looks successful. */
@@ -318,7 +418,9 @@ function makeReceipt(overrides: Partial<TransactionReceipt> = {}): TransactionRe
 }
 
 /** Fake deposit event data returned by _extractDepositFromTransactionReceipt / _findDeposit. */
-function makeFakeDepositEvent(amounts: { inputAmount?: string; outputAmount?: string } = {}): StrippedDeposit {
+function makeFakeDepositEvent(
+  amounts: { inputAmount?: string; outputAmount?: string; message?: string } = {}
+): StrippedDeposit {
   return {
     originChainId: ORIGIN_CHAIN_ID,
     depositId: toBN(42),
@@ -328,7 +430,7 @@ function makeFakeDepositEvent(amounts: { inputAmount?: string; outputAmount?: st
     inputAmount: toBN(amounts.inputAmount ?? "1000000"),
     outputToken: EvmAddress.from(USDC_BASE),
     outputAmount: toBN(amounts.outputAmount ?? "1000000"),
-    message: "0x",
+    message: amounts.message ?? "0x",
     fillDeadline: getCurrentTime() + 3600,
     exclusiveRelayer: DUMMY_EVM_ADDRESS,
     exclusivityDeadline: 0,
@@ -365,7 +467,7 @@ function setupScenario(
 
   // Configure stubs
   relayer.queryGaslessApiFn = async () => [msg];
-  relayer.initiateGaslessDepositFn = async () => receipt;
+  relayer.initiateDepositFn = async () => receipt;
   relayer.extractDepositFromReceiptFn = () => depositEvent;
   relayer.initiateFillFn = async () => receipt;
 
@@ -413,20 +515,55 @@ async function expectErrorScenario(relayer: TestableGaslessRelayer, msg: Gasless
 
   const nonce = depositNonceFor(relayer, msg);
   expect(relayer.getMessageState(nonce)).to.equal(MessageState.ERROR);
-  expect(relayer.initiateGaslessDepositCalls).to.equal(0);
+  expect(relayer.initiateDepositCalls).to.equal(0);
   expectErrorTransition(relayer.stateTransitions[nonce]);
+}
+
+/**
+ * Helper to set fillImmediate threshold dynamically based on a message's outputAmount.
+ * Validates that the output token is a stablecoin before setting threshold.
+ * @param msg The deposit message to base the threshold on
+ * @param multiplier Optional multiplier (default 2x outputAmount in USD)
+ * @throws Error if output token is not a stablecoin (USDC/USDT)
+ */
+function setFillImmediateThreshold(msg: GaslessDepositMessage, multiplier = 2): void {
+  const { outputToken, outputAmount, destinationChainId } = msg.baseDepositData;
+  const outputAddr = toAddressType(outputToken, destinationChainId);
+
+  // Verify token is a stablecoin (USDC or USDT) using shared utility
+  if (!isStablecoin(outputAddr, destinationChainId)) {
+    throw new Error(`setFillImmediateThreshold: outputToken ${outputToken} not supported`);
+  }
+
+  // Calculate threshold using the same decimals resolution as fillImmediate()
+  const { decimals } = getTokenInfo(outputAddr, destinationChainId);
+  const outputAmountUSD = toBN(outputAmount).div(toBNWei(1, decimals)).toNumber();
+  const threshold = Math.ceil(outputAmountUSD * multiplier);
+  process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${msg.originChainId}`] = threshold.toString();
+}
+
+/**
+ * Helper to clear the fillImmediate threshold for a given chain.
+ */
+function clearFillImmediateThreshold(chainId: number): void {
+  delete process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${chainId}`];
 }
 
 describe("GaslessRelayer", function () {
   let relayer: TestableGaslessRelayer;
   let fakeSpokePoolAddress: string;
   let fakePeripherySmock: FakeContract;
+  let fakePermit2Smock: FakeContract;
 
   // Test fixture helpers that automatically use the correct spokePool address
-  const makeTestDepositMessage = (overrides?: Partial<GaslessDepositMessage["baseDepositData"]>) =>
-    makeDepositMessage(overrides ?? {}, fakeSpokePoolAddress);
-  const makeTestPermit2Message = (overrides?: Partial<GaslessDepositMessage["baseDepositData"]>) =>
-    makePermit2DepositMessage(overrides ?? {}, fakeSpokePoolAddress);
+  const makeTestDepositMessage = (
+    overrides?: Partial<GaslessDepositMessage["baseDepositData"]>,
+    metadata?: GaslessDepositMetadata
+  ) => makeDepositMessage(overrides ?? {}, fakeSpokePoolAddress, metadata ?? {});
+  const makeTestPermit2Message = (
+    overrides?: Partial<GaslessDepositMessage["baseDepositData"]>,
+    metadata?: GaslessDepositMetadata
+  ) => makePermit2DepositMessage(overrides ?? {}, fakeSpokePoolAddress, metadata ?? {});
   const makeTestCctpMessage = (overrides?: Partial<GaslessDepositMessage["baseDepositData"]>) =>
     makeCctpDepositMessage(overrides ?? {}, fakeSpokePoolAddress);
 
@@ -467,6 +604,14 @@ describe("GaslessRelayer", function () {
     relayer.setObservedDeposits({ [ORIGIN_CHAIN_ID]: new Set() });
     relayer.setObservedFills({ [DESTINATION_CHAIN_ID]: new Set() });
     relayer.setSignerAddress(EvmAddress.from(signer.address));
+
+    fakePermit2Smock = await smock.fake(PERMIT2_ABI);
+    fakePermit2Smock.nonceBitmap.returns(ethers.BigNumber.from(0));
+    relayer.setPermit2Contracts({ [ORIGIN_CHAIN_ID]: fakePermit2Smock as unknown as Contract });
+  });
+
+  afterEach(function () {
+    clearFillImmediateThreshold(ORIGIN_CHAIN_ID);
   });
 
   it("Standard path: INITIAL -> DEPOSIT_SUBMIT -> DEPOSIT_CONFIRM -> FILL_PENDING -> FILLED", async function () {
@@ -476,14 +621,14 @@ describe("GaslessRelayer", function () {
     const depositEvent = makeFakeDepositEvent({ inputAmount: "20000000", outputAmount: "19000000" });
 
     relayer.queryGaslessApiFn = async () => [msg];
-    relayer.initiateGaslessDepositFn = async () => receipt;
+    relayer.initiateDepositFn = async () => receipt;
     relayer.extractDepositFromReceiptFn = () => depositEvent;
     relayer.initiateFillFn = async () => receipt;
 
     await relayer.runEvaluateApiSignatures();
 
     expect(relayer.getMessageState(depositNonceFor(relayer, msg))).to.equal(MessageState.FILLED);
-    expect(relayer.initiateGaslessDepositCalls).to.equal(1);
+    expect(relayer.initiateDepositCalls).to.equal(1);
     expect(relayer.initiateFillCalls).to.equal(1);
     // Deposit was found via receipt, so _findDeposit should not have been needed.
     expect(relayer.findDepositCalls).to.equal(0);
@@ -491,14 +636,14 @@ describe("GaslessRelayer", function () {
   });
 
   it("Immediate fill: INITIAL -> DEPOSIT_SUBMIT -> FILL_PENDING -> DEPOSIT_CONFIRM -> FILLED", async function () {
-    // inputAmount == outputAmount == "1000000" (1 USDC, below 10 USDC threshold) -> fillImmediate = true.
+    // inputAmount == outputAmount == "1000000" (1 USDC) -> fillImmediate = true with threshold above.
     // Default smock fake behaviour (no revert) makes willSucceed return succeed: true.
-    process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`] = "10";
-    const msg = makeTestDepositMessage();
+    const msg = makeTestDepositMessage({}, { instantFill: true });
+    setFillImmediateThreshold(msg);
     const receipt = makeReceipt();
 
     relayer.queryGaslessApiFn = async () => [msg];
-    relayer.initiateGaslessDepositFn = async () => receipt;
+    relayer.initiateDepositFn = async () => receipt;
     relayer.extractDepositFromReceiptFn = () => makeFakeDepositEvent();
     relayer.initiateFillFn = async () => receipt;
 
@@ -510,21 +655,34 @@ describe("GaslessRelayer", function () {
     expect(relayer.extractDepositFromReceiptCalls).to.equal(1);
     expect(relayer.initiateFillCalls).to.be.gte(1);
     expectImmediateTransitions(relayer.stateTransitions[depositNonceFor(relayer, msg)]);
-    delete process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`];
   });
 
   it("Immediate fill fallback: simulation failure falls back to standard path", async function () {
-    // Same amounts as test above (fillImmediate initially true).
+    const msg = makeTestDepositMessage({}, { instantFill: true });
+    setFillImmediateThreshold(msg);
+
     // Configure the smock fake to revert so willSucceed returns succeed: false.
     fakePeripherySmock.depositWithAuthorization.reverts("revert");
 
-    const msg = makeTestDepositMessage();
     const receipt = makeReceipt();
     const depositEvent = makeFakeDepositEvent();
     const nonce = depositNonceFor(relayer, msg);
 
+    // Verify that fillImmediate would initially return true for this deposit
+    const wouldFillImmediate = relayer.testFillImmediate(
+      {
+        originChainId: msg.originChainId,
+        destinationChainId: msg.baseDepositData.destinationChainId,
+        outputToken: toAddressType(msg.baseDepositData.outputToken, msg.baseDepositData.destinationChainId),
+        outputAmount: toBN(msg.baseDepositData.outputAmount),
+        exclusivityParameter: msg.baseDepositData.exclusivityParameter,
+      },
+      msg.spokePool
+    );
+    expect(wouldFillImmediate).to.be.true;
+
     relayer.queryGaslessApiFn = async () => [msg];
-    relayer.initiateGaslessDepositFn = async () => receipt;
+    relayer.initiateDepositFn = async () => receipt;
     relayer.extractDepositFromReceiptFn = () => depositEvent;
     relayer.initiateFillFn = async () => receipt;
 
@@ -533,8 +691,9 @@ describe("GaslessRelayer", function () {
     expect(relayer.getMessageState(nonce)).to.equal(MessageState.FILLED);
     expectStandardTransitions(relayer.stateTransitions[nonce]);
 
-    // Simulation failed, so the handler fell back to the standard path:
-    // deposit was extracted from the receipt (not built synthetically).
+    // Critical verification: Simulation failed, so the handler fell back to the standard path.
+    // In standard path, deposit is extracted from receipt (not built synthetically from API message).
+    // This means NO immediate fill was submitted before deposit confirmed.
     expect(relayer.extractDepositFromReceiptCalls).to.equal(1);
     expect(relayer.initiateFillCalls).to.equal(1);
   });
@@ -543,13 +702,13 @@ describe("GaslessRelayer", function () {
     // Tests the critical safety check: if immediate fill succeeds but deposit fails/never mines,
     // the relayer detects this in DEPOSIT_CONFIRM and retries instead of finalizing.
     // Without this check, the relayer would have an unreimbursable fill.
-    process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`] = "10";
-    const msg = makeTestDepositMessage();
+    const msg = makeTestDepositMessage({}, { instantFill: true });
+    setFillImmediateThreshold(msg);
     const nonce = depositNonceFor(relayer, msg);
 
     let depositAttempts = 0;
     relayer.queryGaslessApiFn = async () => [msg];
-    relayer.initiateGaslessDepositFn = async () => {
+    relayer.initiateDepositFn = async () => {
       depositAttempts++;
       // First attempt: return null (deposit failed)
       // Second attempt: return receipt (deposit succeeds)
@@ -563,7 +722,7 @@ describe("GaslessRelayer", function () {
     expect(relayer.getMessageState(nonce)).to.equal(MessageState.FILLED);
     // Should have retried deposit after first attempt failed
     expect(depositAttempts).to.equal(2);
-    expect(relayer.initiateGaslessDepositCalls).to.equal(2);
+    expect(relayer.initiateDepositCalls).to.equal(2);
     // Fill is attempted on both passes (deposit persists across retry).
     // This is safe because fills are idempotent - second attempt is a no-op if first succeeded.
     expect(relayer.initiateFillCalls).to.equal(2);
@@ -580,23 +739,21 @@ describe("GaslessRelayer", function () {
     expect(transitions[3]).to.deep.equal({ from: MessageState.DEPOSIT_CONFIRM, to: MessageState.DEPOSIT_SUBMIT });
     // Should eventually reach FILLED after retry succeeds
     expect(transitions[transitions.length - 1].to).to.equal(MessageState.FILLED);
-
-    delete process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`];
   });
 
   it("Immediate fill: normalizes plain-text message to match on-chain deposit", async function () {
     // Tests that buildSyntheticDeposit normalizes message field to hex, matching the encoding
     // used by toContractDepositData when building the origin deposit transaction.
     // Without normalization, relay data hashes would mismatch and fillRelay would fail.
-    process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`] = "10";
     const plainTextMessage = "Hello, Across!";
     const expectedHexMessage = "0x48656c6c6f2c204163726f737321"; // hex encoding of plain text
-    const msg = makeTestDepositMessage({ message: plainTextMessage });
+    const msg = makeTestDepositMessage({ message: plainTextMessage }, { instantFill: true });
+    setFillImmediateThreshold(msg);
     const receipt = makeReceipt();
 
     let capturedFillDeposit: RelayData | undefined;
     relayer.queryGaslessApiFn = async () => [msg];
-    relayer.initiateGaslessDepositFn = async () => receipt;
+    relayer.initiateDepositFn = async () => receipt;
     relayer.extractDepositFromReceiptFn = () => makeFakeDepositEvent({ message: expectedHexMessage });
     relayer.initiateFillFn = async (deposit) => {
       capturedFillDeposit = deposit;
@@ -610,7 +767,6 @@ describe("GaslessRelayer", function () {
     expect(capturedFillDeposit).to.not.be.undefined;
     expect(capturedFillDeposit!.message).to.equal(expectedHexMessage);
     expect(capturedFillDeposit!.message).to.not.equal(plainTextMessage);
-    delete process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`];
   });
 
   it("Throws error if buildSyntheticDeposit called with relative exclusivityParameter", function () {
@@ -621,6 +777,12 @@ describe("GaslessRelayer", function () {
     const msgWithRelativeExclusivity = makeTestDepositMessage({ exclusivityParameter: 300 });
 
     expect(() => buildSyntheticDeposit(msgWithRelativeExclusivity)).to.throw(/exclusivityParameter is not absolute/);
+  });
+
+  it("setFillImmediateThreshold: throws for non-stablecoin tokens", function () {
+    // Helper should reject deposits with non-stablecoin output tokens
+    const msgWithWETH = makeTestDepositMessage({ outputToken: WETH_BASE });
+    expect(() => setFillImmediateThreshold(msgWithWETH)).to.throw(/not supported/);
   });
 
   it("Invalid deposit (mismatching L1 tokens) -> ERROR", async function () {
@@ -635,20 +797,17 @@ describe("GaslessRelayer", function () {
 
   describe("Permit2 flow", function () {
     it("Permit2 deposit: INITIAL -> DEPOSIT_PENDING -> FILL_PENDING -> FILLED", async function () {
-      process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`] = "10";
-      const { nonce } = setupScenario(
-        relayer,
-        { inputAmount: "2000000", outputAmount: "1900000" },
-        makeTestPermit2Message
+      const { msg, nonce } = setupScenario(relayer, { inputAmount: "2000000", outputAmount: "1900000" }, (overrides) =>
+        makeTestPermit2Message(overrides, { instantFill: true })
       );
+      setFillImmediateThreshold(msg);
 
       await relayer.runEvaluateApiSignatures();
 
       expect(relayer.getMessageState(nonce)).to.equal(MessageState.FILLED);
-      expect(relayer.initiateGaslessDepositCalls).to.equal(1);
+      expect(relayer.initiateDepositCalls).to.equal(1);
       expect(relayer.initiateFillCalls).to.equal(1);
       expectImmediateTransitions(relayer.stateTransitions[nonce]);
-      delete process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`];
     });
   });
 
@@ -659,12 +818,58 @@ describe("GaslessRelayer", function () {
       const nonce = depositNonceFor(relayer, msg);
 
       relayer.queryGaslessApiFn = async () => [msg];
-      relayer.initiateGaslessDepositFn = async () => receipt;
+      relayer.initiateDepositFn = async () => receipt;
 
       await relayer.runEvaluateApiSignatures();
 
       expect(relayer.getMessageState(nonce)).to.equal(MessageState.FILLED);
-      expect(relayer.initiateGaslessDepositCalls).to.equal(1);
+      expect(relayer.initiateDepositCalls).to.equal(1);
+      expect(relayer.initiateFillCalls).to.equal(0);
+      expectCctpTransitions(relayer.stateTransitions[nonce]);
+    });
+  });
+
+  describe("Permit2 nonce bitmap (CCTP swap)", function () {
+    it("updateObservedCctpDeposits adds observed key when Permit2 nonce is consumed", async function () {
+      const msg = makeSwapAndBridgePermit2CctpMessage({ depositId: "obs-1", permitNonce: "0" });
+      const expectedKey = relayer.getDepositKey(
+        EvmAddress.from(msg.depositData.inputToken).toNative(),
+        ORIGIN_CHAIN_ID,
+        msg.depositId
+      );
+      fakePermit2Smock.nonceBitmap.returns(ethers.BigNumber.from(1));
+
+      await relayer.runUpdateObservedCctpDeposits([msg]);
+
+      expect(relayer.getObservedDepositsSet(ORIGIN_CHAIN_ID).has(expectedKey)).to.equal(true);
+    });
+
+    it("updateObservedCctpDeposits skips when Permit2 nonce is not consumed", async function () {
+      const msg = makeSwapAndBridgePermit2CctpMessage({ depositId: "obs-2", permitNonce: "0" });
+      const expectedKey = relayer.getDepositKey(
+        EvmAddress.from(msg.depositData.inputToken).toNative(),
+        ORIGIN_CHAIN_ID,
+        msg.depositId
+      );
+      fakePermit2Smock.nonceBitmap.returns(ethers.BigNumber.from(0));
+
+      await relayer.runUpdateObservedCctpDeposits([msg]);
+
+      expect(relayer.getObservedDepositsSet(ORIGIN_CHAIN_ID).has(expectedKey)).to.equal(false);
+    });
+
+    it("CCTP swap + Permit2: null deposit receipt but consumed nonce confirms to FILLED", async function () {
+      const msg = makeSwapAndBridgePermit2CctpMessage({ depositId: "obs-3", permitNonce: "0" });
+      const nonce = depositNonceForSwap(relayer, msg);
+      fakePermit2Smock.nonceBitmap.returns(ethers.BigNumber.from(1));
+
+      relayer.queryGaslessApiFn = async () => [msg];
+      relayer.initiateDepositFn = async () => null;
+
+      await relayer.runEvaluateApiSignatures();
+
+      expect(relayer.getMessageState(nonce)).to.equal(MessageState.FILLED);
+      expect(relayer.initiateDepositCalls).to.equal(1);
       expect(relayer.initiateFillCalls).to.equal(0);
       expectCctpTransitions(relayer.stateTransitions[nonce]);
     });
@@ -684,7 +889,7 @@ describe("GaslessRelayer", function () {
 
       relayer.queryGaslessApiFn = async () => [msg];
       // Deposit returns null (failed/skipped).
-      relayer.initiateGaslessDepositFn = async () => null;
+      relayer.initiateDepositFn = async () => null;
       // _findDeposit locates the deposit on-chain.
       relayer.findDepositFn = async () => depositEvent;
       relayer.initiateFillFn = async () => receipt;
@@ -698,11 +903,12 @@ describe("GaslessRelayer", function () {
     });
 
     it("Multiple messages: processes each independently", async function () {
-      process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`] = "10";
-      const msg1 = makeTestDepositMessage({ inputAmount: "1000000", outputAmount: "900000" });
+      const msg1 = makeTestDepositMessage({ inputAmount: "1000000", outputAmount: "900000" }, { instantFill: true });
       msg1.depositId = "100";
-      const msg2 = makeTestDepositMessage({ inputAmount: "2000000", outputAmount: "1900000" });
+      const msg2 = makeTestDepositMessage({ inputAmount: "2000000", outputAmount: "1900000" }, { instantFill: true });
       msg2.depositId = "200";
+      // Set threshold based on larger of the two amounts
+      setFillImmediateThreshold(msg2);
 
       const receipt = makeReceipt();
       const depositEvent1 = makeFakeDepositEvent({ inputAmount: "1000000", outputAmount: "900000" });
@@ -711,7 +917,7 @@ describe("GaslessRelayer", function () {
       depositEvent2.depositId = toBN(200);
 
       relayer.queryGaslessApiFn = async () => [msg1, msg2];
-      relayer.initiateGaslessDepositFn = async () => receipt;
+      relayer.initiateDepositFn = async () => receipt;
       relayer.extractDepositFromReceiptFn = (() => {
         let callCount = 0;
         return () => (++callCount === 1 ? depositEvent1 : depositEvent2);
@@ -725,40 +931,32 @@ describe("GaslessRelayer", function () {
 
       expect(relayer.getMessageState(nonce1)).to.equal(MessageState.FILLED);
       expect(relayer.getMessageState(nonce2)).to.equal(MessageState.FILLED);
-      expect(relayer.initiateGaslessDepositCalls).to.equal(2);
+      expect(relayer.initiateDepositCalls).to.equal(2);
       expect(relayer.initiateFillCalls).to.equal(2);
 
       expectImmediateTransitions(relayer.stateTransitions[nonce1]);
       expectImmediateTransitions(relayer.stateTransitions[nonce2]);
-      delete process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`];
     });
 
     it("Message with existing state is skipped on subsequent polls", async function () {
-      process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`] = "10";
-      const { nonce } = setupScenario(
-        relayer,
-        { inputAmount: "2000000", outputAmount: "1900000" },
-        makeTestDepositMessage
+      const { msg, nonce } = setupScenario(relayer, { inputAmount: "2000000", outputAmount: "1900000" }, (overrides) =>
+        makeTestDepositMessage(overrides, { instantFill: true })
       );
+      setFillImmediateThreshold(msg);
 
       // First poll: process message
       await relayer.runEvaluateApiSignatures();
       expect(relayer.getMessageState(nonce)).to.equal(MessageState.FILLED);
-      expect(relayer.initiateGaslessDepositCalls).to.equal(1);
+      expect(relayer.initiateDepositCalls).to.equal(1);
       expectImmediateTransitions(relayer.stateTransitions[nonce]);
 
       // Second poll: message should be skipped (already has state)
       await relayer.runEvaluateApiSignatures();
-      expect(relayer.initiateGaslessDepositCalls).to.equal(1);
+      expect(relayer.initiateDepositCalls).to.equal(1);
       expectImmediateTransitions(relayer.stateTransitions[nonce]);
-      delete process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`];
     });
 
     describe("fillImmediate", function () {
-      afterEach(function () {
-        delete process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`];
-      });
-
       it("Returns true when outputAmount is below threshold", function () {
         process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`] = "10";
         const result = relayer.testFillImmediate(

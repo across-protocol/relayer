@@ -45,10 +45,14 @@ export function getSpokePool(chainId: number, address?: string): Contract {
 
 // For a chain ID and optional SpokePoolPeriphery address, return a Contract instance with the corresponding ABI.
 export function getSpokePoolPeriphery(chainId: number, address?: string): Contract {
-  return new Contract(
-    address ?? CONTRACT_ADDRESSES[chainId].spokePoolPeriphery.address,
-    CONTRACT_ADDRESSES[chainId].spokePoolPeriphery.abi
-  );
+  address ??= getDeployedAddress("SpokePoolPeriphery", chainId);
+  return new Contract(address, CONTRACT_ADDRESSES[chainId].spokePoolPeriphery.abi);
+}
+
+// Uniswap Permit2 (same deployment address on supported EVM chains). Falls back to mainnet metadata when `chainId` has no entry.
+export function getPermit2(chainId: number, address?: string): Contract {
+  const permit2 = CONTRACT_ADDRESSES[chainId].permit2;
+  return new Contract(address ?? permit2.address, permit2.abi);
 }
 
 export function getSpokePoolAddress(chainId: number): Address {
@@ -70,7 +74,7 @@ export function getParamType(contractName: string, functionName: string, paramNa
 export function getDeploymentBlockNumber(contractName: string, networkId: number): number {
   try {
     return Number(getDeployedBlockNumber(contractName, networkId));
-  } catch (error) {
+  } catch {
     throw new Error(`Could not find deployment block for contract ${contractName} on ${networkId}`);
   }
 }
@@ -81,8 +85,8 @@ export function getDstOftHandler(): Contract {
   const artifact = typechain["HyperCoreFlowExecutor__factory"];
   const address = isDefined(process.env.DST_OFT_HANDLER)
     ? process.env.DST_OFT_HANDLER
-    : CONTRACT_ADDRESSES[CHAIN_IDs.HYPEREVM]?.dstOftHandler?.address ??
-      getDeployedAddress(factoryName, CHAIN_IDs.HYPEREVM);
+    : (CONTRACT_ADDRESSES[CHAIN_IDs.HYPEREVM]?.dstOftHandler?.address ??
+      getDeployedAddress(factoryName, CHAIN_IDs.HYPEREVM));
   return new Contract(address, artifact.abi);
 }
 
@@ -91,8 +95,8 @@ export function getDstCctpHandler(): Contract {
   const artifact = typechain["HyperCoreFlowExecutor__factory"];
   const address = isDefined(process.env.DST_CCTP_HANDLER)
     ? process.env.DST_CCTP_HANDLER
-    : CONTRACT_ADDRESSES[CHAIN_IDs.HYPEREVM]?.dstCctpHandler?.address ??
-      getDeployedAddress(factoryName, CHAIN_IDs.HYPEREVM);
+    : (CONTRACT_ADDRESSES[CHAIN_IDs.HYPEREVM]?.dstCctpHandler?.address ??
+      getDeployedAddress(factoryName, CHAIN_IDs.HYPEREVM));
   return new Contract(address, artifact.abi);
 }
 

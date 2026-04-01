@@ -981,7 +981,7 @@ async function checkAndApproveCctpTokenMessenger(
       message: "Approving USDC for CCTP TokenMessenger",
       chainName: sourceChainName,
       chainId: sourceChainId,
-      tokenAddress: sourceUsdcTokenAddress.toNative(),
+      tokenAddress: sourceUsdcTokenAddress,
       tokenMessengerAddress,
     });
 

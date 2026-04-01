@@ -82,8 +82,6 @@ export class OpStackUSDCBridge extends BaseL2BridgeAdapter {
     from: EvmAddress,
     _l2Token: EvmAddress
   ): Promise<BigNumber> {
-    _l2Token; // unused
-
     const sentFilter = this.l2Bridge.filters.MessageSent(from.toNative());
     const receiveFilter = this.l1Bridge.filters.MessageReceived(from.toNative());
 

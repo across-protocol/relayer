@@ -351,6 +351,7 @@ describe("finalizeCCTPV1Messages", () => {
       const result: FinalizerPromise = await cctpV1L1toSvmL2Finalizer(
         spyLogger,
         hubPoolClient.hubPool.signer,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         hubPoolClient as any, // Cast to local HubPoolClient type
         l2SpokePoolClient,
         evmSpokePoolClient,
@@ -416,6 +417,7 @@ describe("finalizeCCTPV1Messages", () => {
       const result: FinalizerPromise = await cctpV1L1toSvmL2Finalizer(
         spyLogger,
         hubPoolClient.hubPool.signer,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         hubPoolClient as any, // Cast to local HubPoolClient type
         l2SpokePoolClient,
         evmSpokePoolClient,
@@ -479,6 +481,7 @@ describe("finalizeCCTPV1Messages", () => {
       const result: FinalizerPromise = await cctpV1L1toSvmL2Finalizer(
         spyLogger,
         hubPoolClient.hubPool.signer, // Use a proper Wallet for testing
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         hubPoolClient as any, // Cast to local HubPoolClient type
         l2SpokePoolClient,
         evmSpokePoolClient,
@@ -505,7 +508,9 @@ describe("finalizeCCTPV1Messages", () => {
     const tokenlessMessage = await getAttestedMessage(encodePauseDepositsMessageBody(false), 202, 0, 5);
 
     // Mock deposit message to have amount property (casting to any to add properties)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (depositMessage[0] as any).amount = "1000000"; // 1 USDC in wei
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (depositMessage[0] as any).type = "transfer";
 
     const mixedMessages = [...depositMessage, ...tokenlessMessage];
@@ -548,6 +553,7 @@ describe("finalizeCCTPV1Messages", () => {
       const result: FinalizerPromise = await cctpV1L1toSvmL2Finalizer(
         spyLogger,
         hubPoolClient.hubPool.signer, // Use a proper Wallet for testing
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         hubPoolClient as any, // Cast to local HubPoolClient type
         l2SpokePoolClient,
         evmSpokePoolClient,

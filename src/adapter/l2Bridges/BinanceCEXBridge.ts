@@ -5,7 +5,6 @@ import {
   createFormatFunction,
   EventSearchConfig,
   getNetworkName,
-  isDefined,
   Signer,
   EvmAddress,
   getBinanceApiClient,
@@ -18,11 +17,11 @@ import {
   getBinanceDeposits,
   getBinanceWithdrawals,
   BINANCE_NETWORKS,
-  mapAsync,
   filterAsync,
   getBinanceDepositType,
   BinanceTransactionType,
   getBinanceWithdrawalType,
+  getOutstandingBinanceDeposits,
 } from "../../utils";
 import { L1Token } from "../../interfaces";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
@@ -106,11 +105,7 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
     // Remove any deposits and withdrawals that are marked as related to a swap.
     const depositHistory = await filterAsync(_depositHistory, async (deposit) => {
       const depositType = await getBinanceDepositType(deposit);
-      return (
-        deposit.network === this.depositNetwork &&
-        deposit.coin === this.l1TokenInfo.symbol &&
-        depositType !== BinanceTransactionType.SWAP
-      );
+      return deposit.coin === this.l1TokenInfo.symbol && depositType !== BinanceTransactionType.SWAP;
     });
     const withdrawHistory = await filterAsync(_withdrawHistory, async (withdrawal) => {
       const withdrawalType = await getBinanceWithdrawalType(withdrawal);
@@ -121,30 +116,17 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
       );
     });
 
-    // FilterMap to remove all deposits originating from other EOAs.
-    const depositsInitiatedForAddress = (
-      await mapAsync(depositHistory, async (deposit) => {
-        const txnReceipt = await this.l2Signer.provider.getTransactionReceipt(deposit.txId);
-        if (!compareAddressesSimple(txnReceipt.from, fromAddress.toNative())) {
-          return undefined;
-        }
-        return deposit;
-      })
-    ).filter(isDefined);
-
-    const totalDepositAmountForAddress = depositsInitiatedForAddress.reduce(
-      (sum, deposit) => sum.add(floatToBN(deposit.amount, l2TokenInfo.decimals)),
-      bnZero
-    );
-    const totalWithdrawalAmountForAddress = withdrawHistory.reduce(
-      (sum, withdrawal) => sum.add(floatToBN(withdrawal.amount, l2TokenInfo.decimals)),
-      bnZero
-    );
-    const diff = totalDepositAmountForAddress.sub(totalWithdrawalAmountForAddress);
-    return diff.gt(bnZero) ? diff : bnZero;
+    const unmatchedDeposits = getOutstandingBinanceDeposits(depositHistory, withdrawHistory, this.depositNetwork);
+    return unmatchedDeposits.reduce((sum, deposit) => sum.add(floatToBN(deposit.amount, l2TokenInfo.decimals)), bnZero);
   }
 
   protected async getBinanceClient() {
     return (this.binanceApiClient ??= await this.binanceApiClientPromise);
+  }
+
+  public pendingWithdrawalLookbackPeriodSeconds(): number {
+    // Binance withdrawals are fast, we can shorten the lookback period to also reduce the number
+    // of provider.getTransactionReceipt we have to make for each deposit event.
+    return 1 * 60 * 60;
   }
 }

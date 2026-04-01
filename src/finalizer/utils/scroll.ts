@@ -134,7 +134,7 @@ async function findOutstandingClaims(targetAddress: string): Promise<ScrollClaim
  * @returns A Scroll Relay contract, instantiated with the given signer
  */
 function getScrollRelayContract(l1ChainId: number, signer: Signer) {
-  const { abi: scrollRelayAbi, address: scrollRelayAddress } = CONTRACT_ADDRESSES[l1ChainId]?.scrollRelayMessenger;
+  const { abi: scrollRelayAbi, address: scrollRelayAddress } = CONTRACT_ADDRESSES[l1ChainId].scrollRelayMessenger;
   return new Contract(scrollRelayAddress, scrollRelayAbi, signer);
 }
 
