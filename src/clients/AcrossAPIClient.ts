@@ -1,10 +1,10 @@
 import _ from "lodash";
-import { fetchWithTimeout } from "../utils";
 import {
   bnZero,
   winston,
   BigNumber,
   dedupArray,
+  fetchWithTimeout,
   getCurrentTime,
   TOKEN_SYMBOLS_MAP,
   CHAIN_IDs,
