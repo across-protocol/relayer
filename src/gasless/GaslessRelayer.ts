@@ -529,7 +529,7 @@ export class GaslessRelayer {
           setState(MessageState.ERROR);
         }
 
-        // If we are currently processing an immediate fill for the user, then do not process another fill until the immediate fill is completed.
+        // If we are currently processing a fill for the user, then do not process another fill until the first fill is completed.
         if (isDefined(this.fillLock[fillKey]) && this.fillLock[fillKey] !== depositKey) {
           await delay(1);
           continue;
