@@ -123,6 +123,9 @@ export class GaslessRelayer {
   protected spokePools: { [chainId: number]: Contract } = {};
   /** Permit2 on each origin chain, connected to that chain's provider (nonce bitmap reads). */
   protected permit2Contracts: { [chainId: number]: Contract } = {};
+  // Tracks whether a fill is currently in progress for a given user/originChainId combo.
+  // Keyed by `${authorizer}:${originChainId}`.
+  protected fillLock: { [key: string]: string } = {};
 
   private api: AcrossSwapApiClient;
   protected signerAddress: EvmAddress;
@@ -474,6 +477,7 @@ export class GaslessRelayer {
       } = extractGaslessDepositFields(depositMessage);
 
       const depositKey = this._getDepositKey(inputToken.toNative(), originChainId, depositId);
+      const fillKey = `${authorizer}:${originChainId}`;
 
       const at = "GaslessRelayer#evaluateApiSignatures";
       const log = (level: "debug" | "info" | "warn", message: string, args: Record<string, unknown> = {}) =>
@@ -520,6 +524,14 @@ export class GaslessRelayer {
       const bridgeMessage = depositMessage as GaslessDepositMessage;
 
       do {
+        // If we are currently processing a fill for the user, then do not process another fill until the first fill is completed.
+        if (isDefined(this.fillLock[fillKey]) && this.fillLock[fillKey] !== depositKey) {
+          log("debug", `Skipping deposit due to held lock on key ${fillKey} (held by ${depositKey})`);
+          await delay(1);
+          continue;
+        }
+        this.fillLock[fillKey] ??= depositKey;
+
         if (expired()) {
           log("warn", `Skipping expired deposit destined for ${origin}.`);
           setState(MessageState.ERROR);
@@ -687,6 +699,7 @@ export class GaslessRelayer {
           }
         }
       } while (!terminalStates.includes(getState()));
+      delete this.fillLock[fillKey];
       const tEnd = performance.now();
       const delta = (tEnd - tStart) / 1000;
       log("info", `Processed ${origin} depositId ${depositId} in ${delta} seconds.`);
