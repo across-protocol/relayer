@@ -116,7 +116,6 @@ export class BridgeApi extends BaseL2BridgeAdapter {
       allTransfers,
       fromAddress,
       l2EventConfig,
-      this.l2chainId,
       this.l2Signer.provider
     );
     return allInitiatedTransfers.reduce((acc, transfer) => {

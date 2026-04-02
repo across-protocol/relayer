@@ -120,7 +120,6 @@ export class BridgeApi extends BaseBridgeAdapter {
       pendingTransfers.filter((pendingTransfer) => pendingTransfer.destination.currency === this.dstCurrency),
       fromAddress,
       eventConfig,
-      this.hubChainId,
       this.l1Signer.provider
     );
     const pendingRebalances = await mapAsync(
