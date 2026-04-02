@@ -1,4 +1,4 @@
-import { fetchWithTimeout } from "../utils";
+import { fetchWithTimeout } from "../utils/SDKUtils";
 import winston from "winston";
 
 /**
