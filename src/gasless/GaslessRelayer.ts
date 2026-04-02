@@ -526,6 +526,7 @@ export class GaslessRelayer {
       do {
         // If we are currently processing a fill for the user, then do not process another fill until the first fill is completed.
         if (isDefined(this.fillLock[fillKey]) && this.fillLock[fillKey] !== depositKey) {
+          log("debug", `Skipping deposit due to held lock on key ${fillKey} (held by ${depositKey})`);
           await delay(1);
           continue;
         }
