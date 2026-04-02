@@ -39,12 +39,7 @@ export abstract class BaseAcrossApiClient {
         headers.Authorization = `Bearer ${this.apiKey}`;
       }
 
-      const result = await fetchWithTimeout<T>(
-        `${this.urlBase}/${endpoint}`,
-        params,
-        headers,
-        this.apiResponseTimeout
-      );
+      const result = await fetchWithTimeout<T>(`${this.urlBase}/${endpoint}`, params, headers, this.apiResponseTimeout);
 
       if (!result) {
         this.logger.warn({

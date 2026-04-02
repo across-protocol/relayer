@@ -1,5 +1,15 @@
-import { CHAIN_IDs, Address, delay, TOKEN_SYMBOLS_MAP, toBN, winston, BigNumber, fetchWithTimeout, postWithTimeout } from "./";
-import type { FetchHeaders } from "./";
+import {
+  CHAIN_IDs,
+  Address,
+  delay,
+  TOKEN_SYMBOLS_MAP,
+  toBN,
+  winston,
+  BigNumber,
+  fetchWithTimeout,
+  postWithTimeout,
+  FetchHeaders,
+} from "./";
 
 // We need to instruct this bridge what tokens we expect to receive on L2, since the bridge
 // API supports multiple destination tokens for a single L1 token.
