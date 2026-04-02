@@ -5,8 +5,7 @@ import "@across-protocol/contracts/contracts/test/MockSpokePool.sol";
 
 /**
  * @title MockSpokePool
- * @dev For some reason, the @openzeppelin/hardhat-upgrades plugin fails to find the MockSpokePool ABI unless
- * this contract is explicitly defined here.
+ * @dev Hardhat fails to find the MockSpokePool ABI unless this contract is explicitly defined here.
  */
 contract _MockSpokePool is MockSpokePool {
     /// @custom:oz-upgrades-unsafe-allow constructor
