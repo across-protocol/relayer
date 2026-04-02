@@ -38,6 +38,7 @@ import {
   InstanceCoordinator,
   MAX_UINT_VAL,
   toBNWei,
+  utils,
   willSucceed,
 } from "../utils";
 import {
@@ -595,9 +596,11 @@ export class GaslessRelayer {
               }
 
               if (isDefined(found)) {
+                const hasTxHash = utils.isHexString(found);
                 log(
                   "info",
-                  `Gasless ${isSwap ? "swapAndBridge" : "cctp"} deposit confirmed on ${origin} with txHash ${blockExplorerLink(found, originChainId)}. Moving to FILLED.`
+                  `Gasless ${isSwap ? "swapAndBridge" : "cctp"} deposit confirmed on ${origin}. Moving to FILLED.`,
+                  { txHash: hasTxHash ? blockExplorerLink(found, originChainId) : found }
                 );
                 setState(MessageState.FILLED);
               } else {
@@ -615,10 +618,9 @@ export class GaslessRelayer {
                 : await this._findDeposit(bridgeMessage);
 
               if (isDefined(verifiedDeposit)) {
-                log(
-                  "info",
-                  `Verified deposit on ${origin} with txHash ${blockExplorerLink(verifiedDeposit.txnRef, originChainId)} after immediate fill.`
-                );
+                log("info", `Verified deposit on ${origin} after immediate fill.`, {
+                  txHash: blockExplorerLink(verifiedDeposit.txnRef, originChainId),
+                });
                 deposit = verifiedDeposit;
                 nextState = MessageState.FILLED;
               } else {
