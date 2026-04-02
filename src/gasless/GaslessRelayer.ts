@@ -38,6 +38,7 @@ import {
   InstanceCoordinator,
   MAX_UINT_VAL,
   toBNWei,
+  utils,
   willSucceed,
 } from "../utils";
 import {
@@ -543,13 +544,12 @@ export class GaslessRelayer {
             } else {
               fillImmediate =
                 !isSwap &&
+                instantFill &&
                 this.fillImmediate(
                   { originChainId, destinationChainId, outputToken, outputAmount, exclusivityParameter },
                   spokePool
                 );
-              if (!instantFill && fillImmediate) {
-                log("warn", "Instant fill is not enabled by API message.");
-              }
+              log("debug", `Fill immediate: ${fillImmediate}`);
               nextState = MessageState.DEPOSIT_SUBMIT;
             }
             setState(nextState);
@@ -563,6 +563,8 @@ export class GaslessRelayer {
               if (!succeed) {
                 log("warn", "Deposit simulation failed, falling back to standard path.", { reason });
                 fillImmediate = false;
+                // Drop synthetic (or any in-memory) deposit so DEPOSIT_CONFIRM's standard branch must re-resolve from receipt / chain.
+                deposit = undefined;
               }
             }
 
@@ -594,9 +596,11 @@ export class GaslessRelayer {
               }
 
               if (isDefined(found)) {
+                const hasTxHash = utils.isHexString(found);
                 log(
                   "info",
-                  `Gasless ${isSwap ? "swapAndBridge" : "cctp"} deposit confirmed on ${origin}. Moving to FILLED.`
+                  `Gasless ${isSwap ? "swapAndBridge" : "cctp"} deposit confirmed on ${origin}. Moving to FILLED.`,
+                  { txHash: hasTxHash ? blockExplorerLink(found, originChainId) : found }
                 );
                 setState(MessageState.FILLED);
               } else {
@@ -614,7 +618,9 @@ export class GaslessRelayer {
                 : await this._findDeposit(bridgeMessage);
 
               if (isDefined(verifiedDeposit)) {
-                log("info", `Verified deposit on ${origin} after immediate fill.`);
+                log("info", `Verified deposit on ${origin} after immediate fill.`, {
+                  txHash: blockExplorerLink(verifiedDeposit.txnRef, originChainId),
+                });
                 deposit = verifiedDeposit;
                 nextState = MessageState.FILLED;
               } else {
