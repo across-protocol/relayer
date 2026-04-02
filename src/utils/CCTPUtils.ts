@@ -1,7 +1,6 @@
 import { arch, utils } from "@across-protocol/sdk";
 import { TokenMessengerMinterIdl } from "@across-protocol/contracts";
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
-import axios from "axios";
 import { Contract, ethers } from "ethers";
 import { CONTRACT_ADDRESSES, CCTP_MAX_SEND_AMOUNT } from "../common";
 import { BigNumber } from "./BNUtils";
@@ -26,7 +25,7 @@ import { isDefined } from "./TypeGuards";
 import { getCachedProvider, getProvider, getSvmProvider } from "./ProviderUtils";
 import { EventSearchConfig, paginatedEventQuery, spreadEvent } from "./EventUtils";
 import { Log } from "../interfaces";
-import { assert, getRedisCache, Provider, Signer, ERC20, winston } from ".";
+import { assert, fetchWithTimeout, getRedisCache, Provider, Signer, ERC20, winston } from ".";
 import { KeyPairSigner } from "@solana/kit";
 import { TransactionRequest } from "@ethersproject/abstract-provider";
 import {
@@ -915,19 +914,15 @@ async function _fetchCctpV1Attestation(
   messageHash: string,
   isMainnet: boolean
 ): Promise<CCTPV1APIGetAttestationResponse> {
-  const httpResponse = await axios.get<CCTPV1APIGetAttestationResponse>(
+  return fetchWithTimeout<CCTPV1APIGetAttestationResponse>(
     `https://iris-api${isMainnet ? "" : "-sandbox"}.circle.com/attestations/${messageHash}`
   );
-  const attestationResponse = httpResponse.data;
-  return attestationResponse;
 }
 
 async function _fetchCCTPSvmAttestationProof(transactionHash: string): Promise<CCTPV1APIGetMessagesResponse> {
-  const httpResponse = await axios.get<CCTPV1APIGetMessagesResponse>(
+  return fetchWithTimeout<CCTPV1APIGetMessagesResponse>(
     `https://iris-api.circle.com/messages/${getCctpDomainForChainId(CHAIN_IDs.SOLANA)}/${transactionHash}`
   );
-  const attestationResponse = httpResponse.data;
-  return attestationResponse;
 }
 
 /**

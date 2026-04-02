@@ -1,5 +1,5 @@
 import _ from "lodash";
-import axios, { AxiosError } from "axios";
+import { fetchWithTimeout } from "../utils";
 import {
   bnZero,
   winston,
@@ -135,8 +135,8 @@ export class AcrossApiClient {
     const params = { l1Tokens: l1Tokens.join(",") };
     let liquidReserves: BigNumber[] = [];
     try {
-      const result = await axios(url, { timeout, params });
-      if (!result?.data) {
+      const result = await fetchWithTimeout<Record<string, string>>(url, params, {}, timeout);
+      if (!result) {
         this.logger.error({
           at: "AcrossAPIClient",
           message: `Invalid response from /${path}, expected maxDeposit field.`,
@@ -145,9 +145,9 @@ export class AcrossApiClient {
           result,
         });
       }
-      liquidReserves = l1Tokens.map((l1Token) => BigNumber.from(result.data[l1Token.toEvmAddress()] ?? bnZero));
+      liquidReserves = l1Tokens.map((l1Token) => BigNumber.from(result[l1Token.toEvmAddress()] ?? bnZero));
     } catch (err) {
-      const msg = _.get(err, "response.data", _.get(err, "response.statusText", (err as AxiosError).message));
+      const msg = (err as Error).message;
       this.logger.warn({ at: "AcrossAPIClient", message: `Failed to get ${path},`, url, params, msg });
       return l1Tokens.map(() => bnZero);
     }

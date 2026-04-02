@@ -40,10 +40,10 @@
     yargs "^17.7.2"
     zksync-web3 "^0.14.3"
 
-"@across-protocol/sdk@4.3.136":
-  version "4.3.136"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.3.136.tgz#d85b681a088c31eab261dc66c15c4fa087c517cb"
-  integrity sha512-uo9Ran/+z/Vive+TJezzfc6j3Kvh59aoJJQ+udgpaR1Qix0lFZTB+VJJi/1097rk31ovHUTSoZfDlWJmsmt/FQ==
+"@across-protocol/sdk@4.3.138":
+  version "4.3.138"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.3.138.tgz#6a352bc491d98046c8283c38fdc9ea3aa6e58a4d"
+  integrity sha512-rfLfuJGokEOXheoPwLb9/Rfov6Xj5zV5J8MVs0tWXiivOwWfZY4WEjTXbFvHTlf5xlMw3JE3M62nBW+tSEsoKQ==
   dependencies:
     "@across-protocol/constants" "^3.1.100"
     "@across-protocol/contracts" "5.0.4"
@@ -61,7 +61,6 @@
     "@uma/contracts-node" "^0.4.0"
     arweave "^1.14.4"
     async "^3.2.5"
-    axios "^0.27.2"
     bs58 "^6.0.0"
     decimal.js "^10.3.1"
     ethers "^5.7.2"
@@ -3799,14 +3798,6 @@ axios@^0.21.1, axios@^0.21.2:
   dependencies:
     follow-redirects "^1.14.0"
 
-axios@^0.27.2:
-  version "0.27.2"
-  resolved "https://registry.yarnpkg.com/axios/-/axios-0.27.2.tgz#207658cc8621606e586c85db4b41a750e756d972"
-  integrity sha512-t+yRIyySRTp/wua5xEr+z1q60QmLq8ABsS5O9Me1AsE5dfKqgnCFzwiCZZ/cGNd1lq4/7akDWMxdhVlucjmnOQ==
-  dependencies:
-    follow-redirects "^1.14.9"
-    form-data "^4.0.0"
-
 axios@^1.12.2:
   version "1.12.2"
   resolved "https://registry.yarnpkg.com/axios/-/axios-1.12.2.tgz#6c307390136cf7a2278d09cec63b136dfc6e6da7"
@@ -3814,15 +3805,6 @@ axios@^1.12.2:
   dependencies:
     follow-redirects "^1.15.6"
     form-data "^4.0.4"
-    proxy-from-env "^1.1.0"
-
-axios@^1.7.4:
-  version "1.7.4"
-  resolved "https://registry.yarnpkg.com/axios/-/axios-1.7.4.tgz#4c8ded1b43683c8dd362973c393f3ede24052aa2"
-  integrity sha512-DukmaFRnY6AzAALSH4J2M3k6PkaC+MfaAGdEERRWcC9q3/TWQwLpHR8ZRLKTdQ3aBDL64EdluRDjJqKw+BPZEw==
-  dependencies:
-    follow-redirects "^1.15.6"
-    form-data "^4.0.0"
     proxy-from-env "^1.1.0"
 
 balanced-match@^1.0.0:
@@ -5929,7 +5911,7 @@ fn.name@1.x.x:
   resolved "https://registry.yarnpkg.com/fn.name/-/fn.name-1.1.0.tgz#26cad8017967aea8731bc42961d04a3d5988accc"
   integrity sha512-GRnmB5gPyJpAhTQdSZTSp9uaPSvl09KoYcMQtsB9rQoOmzs9dH6ffeccH+Z+cv6P68Hu5bC6JjRh4Ah/mHSNRw==
 
-follow-redirects@^1.12.1, follow-redirects@^1.14.0, follow-redirects@^1.14.9, follow-redirects@^1.15.6:
+follow-redirects@^1.12.1, follow-redirects@^1.14.0, follow-redirects@^1.15.6:
   version "1.15.9"
   resolved "https://registry.yarnpkg.com/follow-redirects/-/follow-redirects-1.15.9.tgz#a604fa10e443bf98ca94228d9eebcc2e8a2c8ee1"
   integrity sha512-gew4GsXizNgdoRyqmyfMHyAmXsZDk6mHkSxZFCzW9gwlbtOW44CDtYavM+y+72qD/Vq2l550kMF52DT8fOLJqQ==
