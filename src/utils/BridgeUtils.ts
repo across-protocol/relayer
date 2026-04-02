@@ -154,19 +154,22 @@ export class BridgeApiClient {
     // Deduplicate queries by toAddress to avoid redundant event fetches.
     const seen = new Set<string>();
     const uniqueDeposits = deposits.filter((deposit) => {
-      const toAddress = deposit.source_deposit_instructions.to_address;
-      if (seen.has(toAddress)) {
+      const { to_address: toAddress, currency: originToken } = deposit.source_deposit_instructions;
+      const seenKey = `${toAddress}:${originToken}`;
+      if (seen.has(seenKey)) {
         return false;
       }
-      seen.add(toAddress);
+      seen.add(seenKey);
       return true;
     });
-    const cachedTransfers: Record<string, Log[]> = {};
+    // Map containing all origin chain transfers for a specific deposit address/token address combo.
+    const cachedTransfers: Record<string, Record<string, Log[]>> = {};
     await mapAsync(uniqueDeposits, async (deposit) => {
       const { address: originTokenAddress } = getOriginTokenInfo(deposit);
       const toAddress = deposit.source_deposit_instructions.to_address;
       const tokenContract = new Contract(originTokenAddress.toNative(), ERC20_ABI, originProvider);
-      cachedTransfers[toAddress] = await paginatedEventQuery(
+      cachedTransfers[toAddress] ??= {};
+      cachedTransfers[toAddress][originTokenAddress.toNative()] = await paginatedEventQuery(
         tokenContract,
         tokenContract.filters.Transfer(fromAddress.toNative(), toAddress),
         eventConfig
@@ -182,10 +185,10 @@ export class BridgeApiClient {
     });
 
     return sortedDeposits.filter((deposit) => {
-      const { decimals: originTokenDecimals } = getOriginTokenInfo(deposit);
+      const { decimals: originTokenDecimals, address: originTokenAddress } = getOriginTokenInfo(deposit);
       const expectedAmount = floatToBN(deposit.receipt?.final_amount ?? deposit.amount, originTokenDecimals);
       const toAddress = deposit.source_deposit_instructions.to_address;
-      const events = cachedTransfers[toAddress];
+      const events = cachedTransfers[toAddress][originTokenAddress.toNative()];
       const matchIdx = events.findIndex((log) => expectedAmount.eq(log.args.value));
       if (matchIdx === -1) {
         return false;
