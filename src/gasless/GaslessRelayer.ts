@@ -524,17 +524,17 @@ export class GaslessRelayer {
       const bridgeMessage = depositMessage as GaslessDepositMessage;
 
       do {
-        if (expired()) {
-          log("warn", `Skipping expired deposit destined for ${origin}.`);
-          setState(MessageState.ERROR);
-        }
-
         // If we are currently processing a fill for the user, then do not process another fill until the first fill is completed.
         if (isDefined(this.fillLock[fillKey]) && this.fillLock[fillKey] !== depositKey) {
           await delay(1);
           continue;
         }
         this.fillLock[fillKey] ??= depositKey;
+
+        if (expired()) {
+          log("warn", `Skipping expired deposit destined for ${origin}.`);
+          setState(MessageState.ERROR);
+        }
 
         const messageState = getState();
         switch (messageState) {
