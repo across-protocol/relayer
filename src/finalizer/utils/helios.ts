@@ -10,7 +10,6 @@ import {
   groupObjectCountsByProp,
   isEVMSpokePoolClient,
   assert,
-  CHAIN_IDs,
   fetchWithTimeout,
   postWithTimeout,
 } from "../../utils";
