@@ -38,6 +38,7 @@ import {
   InstanceCoordinator,
   MAX_UINT_VAL,
   toBNWei,
+  utils,
   willSucceed,
 } from "../utils";
 import {
@@ -122,6 +123,9 @@ export class GaslessRelayer {
   protected spokePools: { [chainId: number]: Contract } = {};
   /** Permit2 on each origin chain, connected to that chain's provider (nonce bitmap reads). */
   protected permit2Contracts: { [chainId: number]: Contract } = {};
+  // Tracks whether a fill is currently in progress for a given user/originChainId combo.
+  // Keyed by `${authorizer}:${originChainId}`.
+  protected fillLock: { [key: string]: string } = {};
 
   private api: AcrossSwapApiClient;
   protected signerAddress: EvmAddress;
@@ -473,6 +477,7 @@ export class GaslessRelayer {
       } = extractGaslessDepositFields(depositMessage);
 
       const depositKey = this._getDepositKey(inputToken.toNative(), originChainId, depositId);
+      const fillKey = `${authorizer}:${originChainId}`;
 
       const at = "GaslessRelayer#evaluateApiSignatures";
       const log = (level: "debug" | "info" | "warn", message: string, args: Record<string, unknown> = {}) =>
@@ -519,6 +524,14 @@ export class GaslessRelayer {
       const bridgeMessage = depositMessage as GaslessDepositMessage;
 
       do {
+        // If we are currently processing a fill for the user, then do not process another fill until the first fill is completed.
+        if (isDefined(this.fillLock[fillKey]) && this.fillLock[fillKey] !== depositKey) {
+          log("debug", `Skipping deposit due to held lock on key ${fillKey} (held by ${this.fillLock[fillKey]})`);
+          await delay(1);
+          continue;
+        }
+        this.fillLock[fillKey] ??= depositKey;
+
         if (expired()) {
           log("warn", `Skipping expired deposit destined for ${origin}.`);
           setState(MessageState.ERROR);
@@ -562,6 +575,8 @@ export class GaslessRelayer {
               if (!succeed) {
                 log("warn", "Deposit simulation failed, falling back to standard path.", { reason });
                 fillImmediate = false;
+                // Drop synthetic (or any in-memory) deposit so DEPOSIT_CONFIRM's standard branch must re-resolve from receipt / chain.
+                deposit = undefined;
               }
             }
 
@@ -593,9 +608,11 @@ export class GaslessRelayer {
               }
 
               if (isDefined(found)) {
+                const hasTxHash = utils.isHexString(found);
                 log(
                   "info",
-                  `Gasless ${isSwap ? "swapAndBridge" : "cctp"} deposit confirmed on ${origin}. Moving to FILLED.`
+                  `Gasless ${isSwap ? "swapAndBridge" : "cctp"} deposit confirmed on ${origin}. Moving to FILLED.`,
+                  { txHash: hasTxHash ? blockExplorerLink(found, originChainId) : found }
                 );
                 setState(MessageState.FILLED);
               } else {
@@ -613,7 +630,9 @@ export class GaslessRelayer {
                 : await this._findDeposit(bridgeMessage);
 
               if (isDefined(verifiedDeposit)) {
-                log("info", `Verified deposit on ${origin} after immediate fill.`);
+                log("info", `Verified deposit on ${origin} after immediate fill.`, {
+                  txHash: blockExplorerLink(verifiedDeposit.txnRef, originChainId),
+                });
                 deposit = verifiedDeposit;
                 nextState = MessageState.FILLED;
               } else {
@@ -680,6 +699,7 @@ export class GaslessRelayer {
           }
         }
       } while (!terminalStates.includes(getState()));
+      delete this.fillLock[fillKey];
       const tEnd = performance.now();
       const delta = (tEnd - tStart) / 1000;
       log("info", `Processed ${origin} depositId ${depositId} in ${delta} seconds.`);
