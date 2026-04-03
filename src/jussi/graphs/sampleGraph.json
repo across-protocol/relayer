@@ -1,6 +1,7 @@
 {
   "graph_id": "usdc-usdt-weth-20260403T102939Z",
   "graph_version": 2,
+  "latency_annualized_cost_rate": "0.05",
   "pain_model": {
     "type": "threshold",
     "surplus_annualized_cost_rate": "0.08",
