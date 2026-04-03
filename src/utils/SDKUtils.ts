@@ -17,6 +17,7 @@ export const { isEVMSpokePoolClient, isSVMSpokePoolClient, isTVMSpokePoolClient 
 export class Address extends sdk.utils.Address {}
 export class EvmAddress extends sdk.utils.EvmAddress {}
 export class SvmAddress extends sdk.utils.SvmAddress {}
+export class TvmAddress extends sdk.utils.TvmAddress {}
 
 export type EvmGasPriceEstimate = sdk.gasPriceOracle.EvmGasPriceEstimate;
 

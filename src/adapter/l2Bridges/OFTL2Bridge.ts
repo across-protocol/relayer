@@ -41,8 +41,8 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
     assert(translatedL2Token.isEVM());
     this.l2Token = translatedL2Token;
 
-    const l1OftMessenger = OFT.getMessengerEvm(l1Token, hubChainId);
-    const l2OftMessenger = OFT.getMessengerEvm(l1Token, l2chainId);
+    const l1OftMessenger = OFT.getMessengerEvm(l1Token, hubChainId, l2chainId);
+    const l2OftMessenger = OFT.getMessengerEvm(l1Token, l2chainId, l2chainId);
 
     this.nativeFeeCap = OFT_FEE_CAP_OVERRIDES[this.l2chainId] ?? OFT_DEFAULT_FEE_CAP;
 

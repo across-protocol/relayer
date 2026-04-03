@@ -21,6 +21,7 @@ import {
   getRemoteTokenForL1Token,
   getTokenInfo,
   isEVMSpokePoolClient,
+  isTVMSpokePoolClient,
   Address,
   isSVMSpokePoolClient,
   bnZero,
@@ -84,7 +85,7 @@ export class AdapterManager {
         SUPPORTED_TOKENS[chainId]?.map((symbol) => {
           const spokePoolClient = this.spokePoolManager.getClient(chainId);
           let l2SignerOrProvider;
-          if (isEVMSpokePoolClient(spokePoolClient)) {
+          if (isEVMSpokePoolClient(spokePoolClient) || isTVMSpokePoolClient(spokePoolClient)) {
             l2SignerOrProvider = spokePoolClient.spokePool.signer;
           } else if (isSVMSpokePoolClient(spokePoolClient)) {
             l2SignerOrProvider = spokePoolClient.svmEventsClient.getRpc();
@@ -109,7 +110,7 @@ export class AdapterManager {
       }
       const spokePoolClient = this.spokePoolManager.getClient(chainId);
       let l2SignerOrSvmProvider;
-      if (isEVMSpokePoolClient(spokePoolClient)) {
+      if (isEVMSpokePoolClient(spokePoolClient) || isTVMSpokePoolClient(spokePoolClient)) {
         l2SignerOrSvmProvider = spokePoolClient.spokePool.signer;
       } else if (isSVMSpokePoolClient(spokePoolClient)) {
         l2SignerOrSvmProvider = spokePoolClient.svmEventsClient.getRpc();
@@ -325,7 +326,7 @@ export class AdapterManager {
   getSigner(chainId: number): Signer {
     const spokePoolClient = this.spokePoolManager.getClient(chainId);
     assert(isDefined(spokePoolClient), `SpokePoolClient not found for chainId ${chainId}`);
-    assert(isEVMSpokePoolClient(spokePoolClient));
+    assert(isEVMSpokePoolClient(spokePoolClient) || isTVMSpokePoolClient(spokePoolClient));
     return spokePoolClient.spokePool.signer;
   }
 

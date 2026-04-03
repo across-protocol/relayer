@@ -33,6 +33,7 @@ import {
   stringifyThrownValue,
   ZERO_BYTES,
   isEVMSpokePoolClient,
+  isTVMSpokePoolClient,
   EvmAddress,
   chainIsEvm,
   sendAndConfirmSolanaTransaction,
@@ -111,7 +112,7 @@ export class BaseChainAdapter {
   protected getSigner(chainId: number): Signer {
     const spokePoolClient = this.spokePoolManager.getClient(chainId);
     assert(isDefined(spokePoolClient), `SpokePoolClient not found for chainId ${chainId}`);
-    assert(isEVMSpokePoolClient(spokePoolClient));
+    assert(isEVMSpokePoolClient(spokePoolClient) || isTVMSpokePoolClient(spokePoolClient));
     return spokePoolClient.spokePool.signer;
   }
 

@@ -52,8 +52,8 @@ export class OFTBridge extends BaseBridgeAdapter {
     );
 
     // Route discovery via configured IOFT messengers: if both L1 and L2 messengers exist, the route exists
-    const l1OftMessenger = OFT.getMessengerEvm(l1TokenAddress, l1ChainId);
-    const l2OftMessenger = OFT.getMessengerEvm(l1TokenAddress, l2ChainId);
+    const l1OftMessenger = OFT.getMessengerEvm(l1TokenAddress, l1ChainId, l2ChainId);
+    const l2OftMessenger = OFT.getMessengerEvm(l1TokenAddress, l2ChainId, l2ChainId);
 
     super(l2ChainId, l1ChainId, l1Signer, [l1OftMessenger]);
 
