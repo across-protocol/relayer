@@ -88,7 +88,8 @@ export type JussiPutGraphRequest = {
 };
 export type BuiltJussiGraph = { graphId: string; payload: JussiPutGraphRequest };
 
-type LogicalAsset = "USDC" | "USDT";
+type LogicalAsset = "USDC" | "USDT" | "WETH";
+type StableLogicalAsset = Exclude<LogicalAsset, "WETH">;
 export type JussiGraphEnvelope = { graph_id: string; payload: JussiPutGraphRequest };
 export type JussiGraphJson = JussiPutGraphRequest & {
   graph_id: string;
@@ -112,7 +113,12 @@ export type ManagedNodeContext = ManagedNodeTemplate & { nodeKey: string; defini
 export type GraphEdgeCandidate = { family: EdgeFamily; adapterOrBridgeName: string; effectiveBridgeName?: string; from: ManagedNodeContext; to: ManagedNodeContext; rebalanceRoute?: RebalanceRoute };
 // prettier-ignore
 type EdgeEconomics = { inputCapacityNative: BigNumber; expectedOutputNative: BigNumber; additiveCostUsd: number; latencySeconds: number };
-type CostBreakdown = { tokenLossSourceNative: BigNumber; additiveCostUsd: number; latencySeconds: number };
+type CostBreakdown = {
+  tokenLossSourceNative: BigNumber;
+  expectedOutputNative?: BigNumber;
+  additiveCostUsd: number;
+  latencySeconds: number;
+};
 type AllowedSwapPair = { from: ManagedNodeContext; to: ManagedNodeContext };
 // prettier-ignore
 type BridgeBreakdownParams = { baseSigner: Signer; pricingContext: RuntimePricingContext; rebalancerAdapters: Record<string, RebalancerAdapter> };
@@ -146,10 +152,16 @@ type OftInternalAdapter = OftAdapter & {
   ): Promise<{ sendParamStruct: { minAmountLD: { toString(): string } } }>;
 };
 
-type BinanceInternalAdapter = BinanceStablecoinSwapAdapter & {
-  _getSpotMarketMetaForRoute(sourceToken: string, destinationToken: string): { symbol: string; isBuy: boolean };
+type BinanceInternalAdapter = {
+  _getSpotMarketMetaForRoute(
+    sourceToken: string,
+    destinationToken: string
+  ): Promise<{ symbol: string; isBuy: boolean }>;
   _getTradeFees(): Promise<Array<{ symbol: string; takerCommission: string }>>;
-  _getAccountCoins(token: string): Promise<{ networkList: Array<{ name: string; withdrawFee: string }> }>;
+  _getAccountCoins(
+    token: string,
+    skipCache?: boolean
+  ): Promise<{ networkList: Array<{ name: string; withdrawFee: string }> }>;
   _getEntrypointNetwork(chainId: number, token: string): Promise<number>;
   _getAmountConverter(
     destinationChainId: number,
@@ -163,10 +175,26 @@ type BinanceInternalAdapter = BinanceStablecoinSwapAdapter & {
     chainId: number,
     amount: BigNumber
   ): Promise<{ latestPrice: number }>;
+  _estimateDestinationAmountForRoute(
+    sourceToken: string,
+    sourceChain: number,
+    destinationToken: string,
+    destinationChain: number,
+    amount: BigNumber,
+    price: number
+  ): Promise<BigNumber>;
+  _convertRouteAmountToSourceAmount(
+    sourceToken: string,
+    sourceChain: number,
+    destinationToken: string,
+    destinationChain: number,
+    amountInDestinationToken: BigNumber,
+    price: number
+  ): Promise<BigNumber>;
   _getOpportunityCostOfCapitalPctForRebalanceTime(ms: number): string | number;
 };
 
-type HyperliquidInternalAdapter = HyperliquidStablecoinSwapAdapter & {
+type HyperliquidInternalAdapter = {
   _getSpotMarketMetaForRoute(sourceToken: string, destinationToken: string): { isBuy: boolean };
   _getLatestPrice(
     sourceToken: string,
@@ -183,11 +211,12 @@ type HyperliquidInternalAdapter = HyperliquidStablecoinSwapAdapter & {
 type BuildGraphParams = { logger: winston.Logger; baseSigner: Signer; relayerConfig: RelayerConfig; rebalancerConfig: RebalancerConfig; inventoryClient: InventoryClient; rebalanceRoutes: RebalanceRoute[]; rebalancerAdapters: Record<string, RebalancerAdapter>; graphId?: string; now?: Date };
 
 const HUB_CHAIN_ID = CHAIN_IDs.MAINNET;
-export const JUSSI_GRAPH_VERSION = 1;
-export const JUSSI_LOGICAL_ASSETS: readonly LogicalAsset[] = ["USDC", "USDT"];
+const SLOW_OPSTACK_WITHDRAWAL_LATENCY_SECONDS = 7 * 24 * 60 * 60 + 60 * 60;
+export const JUSSI_GRAPH_VERSION = 2;
+export const JUSSI_LOGICAL_ASSETS: readonly LogicalAsset[] = ["USDC", "USDT", "WETH"];
 const TRANSIENT_EDGE_PRICING_ERROR_PATTERNS = ["fetch failed", "recvWindow", "Too many requests", "429"];
 const EDGE_BUILD_BATCH_SIZE = Math.max(1, Number(process.env.JUSSI_EDGE_BUILD_BATCH_SIZE ?? "8") || 8);
-const STABLECOIN_PRICE_USD: Record<LogicalAsset, number> = { USDC: 1, USDT: 1 };
+const STABLECOIN_PRICE_USD: Record<StableLogicalAsset, number> = { USDC: 1, USDT: 1 };
 const GAS_UNITS_BY_FAMILY: Record<EdgeFamily, number> = {
   cctp: 250_000,
   oft: 320_000,
@@ -219,7 +248,7 @@ const DEFAULT_PAIN_MODEL = {
 
 // Public JSON helpers keep the builder easy to consume from scripts, fixtures, and tests.
 export function buildJussiGraphId(now = new Date()): string {
-  return `usdc-usdt-${now
+  return `usdc-usdt-weth-${now
     .toISOString()
     .replace(/[-:]/g, "")
     .replace(/\.\d{3}Z$/, "Z")}`;
@@ -256,6 +285,25 @@ export function resolveBridgeLatencySeconds(
     return 11 * 60 * 60;
   }
   return LATENCY_BY_FAMILY[family];
+}
+
+export function resolveGraphBridgeLatencySeconds(
+  candidate: Pick<GraphEdgeCandidate, "family" | "adapterOrBridgeName" | "from" | "to">
+): number {
+  if (candidate.family === "cctp" || candidate.family === "oft") {
+    return resolveBridgeLatencySeconds(candidate.family, candidate.from.chainId, candidate.from.logicalAsset);
+  }
+
+  if (
+    candidate.from.logicalAsset === "WETH" &&
+    candidate.to.chainId === HUB_CHAIN_ID &&
+    candidate.family === "canonical" &&
+    candidate.adapterOrBridgeName === "OpStackWethBridge"
+  ) {
+    return SLOW_OPSTACK_WITHDRAWAL_LATENCY_SECONDS;
+  }
+
+  return LATENCY_BY_FAMILY[candidate.family];
 }
 
 export function resolveExchangeLatencySeconds(params: {
@@ -524,7 +572,7 @@ function buildNeutralNodeDefinition(template: ManagedNodeTemplate): JussiNodeDef
 
 // Candidate discovery is pure topology: once we know which edges can exist,
 // the later pricing pass can stay focused on economics.
-async function buildBridgeEdgeCandidates(nodeContexts: ManagedNodeContext[]): Promise<GraphEdgeCandidate[]> {
+export async function buildBridgeEdgeCandidates(nodeContexts: ManagedNodeContext[]): Promise<GraphEdgeCandidate[]> {
   const nodesByLogicalAssetChain = indexNodesByLogicalAssetAndChain(nodeContexts);
   const hubNodesByLogicalAsset = new Map<LogicalAsset, ManagedNodeContext>(
     JUSSI_LOGICAL_ASSETS.map((logicalAsset) => {
@@ -901,10 +949,12 @@ async function estimateEdgeEconomics(
                       candidate.family === "hyperlane" ? "hyperlane" : "canonical"
                     );
 
-    const outputInDestinationNative = ConvertDecimals(
-      candidate.from.decimals,
-      candidate.to.decimals
-    )(referenceInputNative.sub(minBigNumber(breakdown.tokenLossSourceNative, referenceInputNative)));
+    const outputInDestinationNative =
+      breakdown.expectedOutputNative ??
+      ConvertDecimals(
+        candidate.from.decimals,
+        candidate.to.decimals
+      )(referenceInputNative.sub(minBigNumber(breakdown.tokenLossSourceNative, referenceInputNative)));
 
     return {
       inputCapacityNative: referenceInputNative,
@@ -1004,9 +1054,13 @@ async function estimateBridgeRouteBreakdown(
   params: BridgeBreakdownParams
 ): Promise<CostBreakdown> {
   const syntheticCandidate = buildSyntheticBridgeCandidate(token, sourceChain, destinationChain);
-  return token === "USDC"
-    ? estimateCctpBreakdown(syntheticCandidate, amount, params)
-    : estimateOftBreakdown(syntheticCandidate, amount, params);
+  if (token === "USDC") {
+    return estimateCctpBreakdown(syntheticCandidate, amount, params);
+  }
+  if (token === "USDT") {
+    return estimateOftBreakdown(syntheticCandidate, amount, params);
+  }
+  throw new Error(`Unsupported intermediate bridge token for exchange route: ${token}`);
 }
 
 async function estimateBinanceSwapBreakdown(
@@ -1016,10 +1070,10 @@ async function estimateBinanceSwapBreakdown(
 ): Promise<CostBreakdown> {
   assert(isDefined(candidate.rebalanceRoute), "Binance swap edge is missing rebalance route");
   const adapter = params.rebalancerAdapters.binance as BinanceStablecoinSwapAdapter;
-  const adapterInternals = adapter as BinanceInternalAdapter;
+  const adapterInternals = adapter as unknown as BinanceInternalAdapter;
   const { sourceToken, destinationToken, sourceChain, destinationChain } = candidate.rebalanceRoute;
   const allInSourceNative = await adapter.getEstimatedCost(candidate.rebalanceRoute, amount, false);
-  const spotMarketMeta = adapterInternals._getSpotMarketMetaForRoute(sourceToken, destinationToken);
+  const spotMarketMeta = await adapterInternals._getSpotMarketMetaForRoute(sourceToken, destinationToken);
   const tradeFeePct = (await adapterInternals._getTradeFees()).find(
     (fee: { symbol: string }) => fee.symbol === spotMarketMeta.symbol
   ).takerCommission;
@@ -1032,16 +1086,28 @@ async function estimateBinanceSwapBreakdown(
     destinationCoin.networkList.find((network: { name: string }) => network.name === withdrawNetwork) ??
     destinationCoin.networkList[0];
   const withdrawFee = toBNWei(withdrawNetworkConfig.withdrawFee, destinationTokenInfo.decimals);
-  const amountConverter = adapterInternals._getAmountConverter(
-    destinationEntrypointNetwork,
-    destinationTokenInfo.address,
-    sourceChain,
-    getTokenInfoFromSymbol(sourceToken, sourceChain).address
-  );
-  const withdrawFeeConverted = amountConverter(withdrawFee);
   const { latestPrice } = await adapterInternals._getLatestPrice(sourceToken, destinationToken, sourceChain, amount);
-  const spreadPct = spotMarketMeta.isBuy ? latestPrice - 1 : 1 - latestPrice;
-  const spreadFee = toBNWei(spreadPct.toFixed(18), 18).mul(amount).div(toBNWei(1, 18));
+  const isCrossAssetWethRoute = sourceToken === "WETH" || destinationToken === "WETH";
+  const withdrawFeeConverted = isCrossAssetWethRoute
+    ? await adapterInternals._convertRouteAmountToSourceAmount(
+        sourceToken,
+        sourceChain,
+        destinationToken,
+        destinationEntrypointNetwork,
+        withdrawFee,
+        latestPrice
+      )
+    : adapterInternals._getAmountConverter(
+        destinationEntrypointNetwork,
+        destinationTokenInfo.address,
+        sourceChain,
+        getTokenInfoFromSymbol(sourceToken, sourceChain).address
+      )(withdrawFee);
+  const spreadFee = isCrossAssetWethRoute
+    ? bnZero
+    : toBNWei((spotMarketMeta.isBuy ? latestPrice - 1 : 1 - latestPrice).toFixed(18), 18)
+        .mul(amount)
+        .div(toBNWei(1, 18));
   const state = await initializeExchangeBreakdown(
     candidate,
     tradeFee.add(withdrawFeeConverted).add(spreadFee),
@@ -1086,7 +1152,24 @@ async function estimateBinanceSwapBreakdown(
     state,
     allInSourceNative
   );
-  return finalizeExchangeBreakdown(state, "binance");
+  return finalizeExchangeBreakdown(
+    state,
+    "binance",
+    isCrossAssetWethRoute
+      ? await adapterInternals
+          ._estimateDestinationAmountForRoute(
+            sourceToken,
+            sourceChain,
+            destinationToken,
+            destinationEntrypointNetwork,
+            amount.sub(tradeFee),
+            latestPrice
+          )
+          .then((grossDestinationAmount) =>
+            grossDestinationAmount.sub(minBigNumber(withdrawFee, grossDestinationAmount))
+          )
+      : undefined
+  );
 }
 
 async function estimateHyperliquidSwapBreakdown(
@@ -1096,7 +1179,7 @@ async function estimateHyperliquidSwapBreakdown(
 ): Promise<CostBreakdown> {
   assert(isDefined(candidate.rebalanceRoute), "Hyperliquid swap edge is missing rebalance route");
   const adapter = params.rebalancerAdapters.hyperliquid as HyperliquidStablecoinSwapAdapter;
-  const adapterInternals = adapter as HyperliquidInternalAdapter;
+  const adapterInternals = adapter as unknown as HyperliquidInternalAdapter;
   const { sourceToken, destinationToken, sourceChain, destinationChain } = candidate.rebalanceRoute;
   const allInSourceNative = await adapter.getEstimatedCost(candidate.rebalanceRoute, amount, false);
   const spotMarketMeta = adapterInternals._getSpotMarketMetaForRoute(sourceToken, destinationToken);
@@ -1152,7 +1235,7 @@ async function estimateBinanceCexBridgeBreakdown(
   params: Pick<BridgeBreakdownParams, "pricingContext" | "rebalancerAdapters">
 ): Promise<CostBreakdown> {
   const adapter = params.rebalancerAdapters.binance as BinanceStablecoinSwapAdapter;
-  const adapterInternals = adapter as BinanceInternalAdapter;
+  const adapterInternals = adapter as unknown as BinanceInternalAdapter;
   const tokenSymbol = candidate.from.logicalAsset;
   const network =
     BINANCE_NETWORKS[candidate.to.chainId] ??
@@ -1168,7 +1251,7 @@ async function estimateBinanceCexBridgeBreakdown(
   return {
     tokenLossSourceNative: toBNWei(withdrawFeeConfig.withdrawFee, candidate.from.decimals),
     additiveCostUsd: await params.pricingContext.deriveGasFloorUsd(candidate.family, candidate.from.chainId),
-    latencySeconds: LATENCY_BY_FAMILY.binance_cex_bridge,
+    latencySeconds: resolveGraphBridgeLatencySeconds(candidate),
   };
 }
 
@@ -1196,7 +1279,7 @@ async function estimateQuotedBridgeBreakdown(
       quotedFeeUsd,
       await params.pricingContext.deriveGasFloorUsd(family, candidate.from.chainId)
     ),
-    latencySeconds: LATENCY_BY_FAMILY[family],
+    latencySeconds: resolveGraphBridgeLatencySeconds(candidate),
   };
 }
 
@@ -1205,7 +1288,8 @@ function buildSyntheticBridgeCandidate(
   sourceChain: number,
   destinationChain: number
 ): GraphEdgeCandidate {
-  const family = logicalAsset === "USDC" ? "cctp" : "oft";
+  const family = logicalAsset === "USDC" ? "cctp" : logicalAsset === "USDT" ? "oft" : undefined;
+  assert(isDefined(family), `Synthetic bridge candidate not supported for ${logicalAsset}`);
   return {
     family,
     adapterOrBridgeName: family,
@@ -1302,10 +1386,12 @@ function warnOnExchangeBreakdownDrift(
 
 function finalizeExchangeBreakdown(
   state: ExchangeBreakdownState,
-  family: Extract<EdgeFamily, "binance" | "hyperliquid">
+  family: Extract<EdgeFamily, "binance" | "hyperliquid">,
+  expectedOutputNative?: BigNumber
 ): CostBreakdown {
   return {
     tokenLossSourceNative: state.tokenLossSourceNative,
+    expectedOutputNative,
     additiveCostUsd: state.additiveCostUsd,
     latencySeconds: resolveExchangeLatencySeconds({
       family,

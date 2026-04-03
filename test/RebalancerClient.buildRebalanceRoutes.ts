@@ -1,7 +1,7 @@
 import { expect } from "./utils";
-import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "../src/utils";
+import { CHAIN_IDs } from "../src/utils";
 import { RebalancerConfig } from "../src/rebalancer/RebalancerConfig";
-import { buildJussiRebalanceRoutes, buildRebalanceRoutes } from "../src/rebalancer/buildRebalanceRoutes";
+import { buildRebalanceRoutes } from "../src/rebalancer/buildRebalanceRoutes";
 
 function buildSyntheticRebalancerConfig(): RebalancerConfig {
   return new RebalancerConfig({
@@ -71,17 +71,10 @@ describe("buildRebalanceRoutes", async function () {
     expect(hasRoute(CHAIN_IDs.OPTIMISM, "USDT", CHAIN_IDs.HYPEREVM, "USDT", "oft")).to.equal(true);
   });
 
-  it("extends graph-only stablecoin routes from explicit allowed swap coverage", async function () {
+  it("builds WETH<->stablecoin routes via binance for direct Binance ETH networks", async function () {
     const config = buildSyntheticRebalancerConfig();
-    const routes = buildJussiRebalanceRoutes(config, [
-      {
-        fromChain: CHAIN_IDs.POLYGON,
-        fromToken: TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.POLYGON],
-        toChain: CHAIN_IDs.HYPEREVM,
-        toToken: TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.HYPEREVM],
-      },
-    ]);
 
+    const routes = buildRebalanceRoutes(config);
     const hasRoute = (
       sourceChain: number,
       sourceToken: string,
@@ -98,8 +91,16 @@ describe("buildRebalanceRoutes", async function () {
           route.adapter === adapter
       );
 
-    expect(hasRoute(CHAIN_IDs.POLYGON, "USDT", CHAIN_IDs.HYPEREVM, "USDC", "binance")).to.equal(true);
-    expect(hasRoute(CHAIN_IDs.POLYGON, "USDT", CHAIN_IDs.HYPEREVM, "USDC", "hyperliquid")).to.equal(true);
-    expect(hasRoute(CHAIN_IDs.POLYGON, "USDT", CHAIN_IDs.HYPEREVM, "USDT", "oft")).to.equal(true);
+    // WETH routes should exist for Binance-supported ETH chains paired with stablecoin chains.
+    expect(hasRoute(CHAIN_IDs.OPTIMISM, "WETH", CHAIN_IDs.HYPEREVM, "USDT", "binance")).to.equal(true);
+    expect(hasRoute(CHAIN_IDs.HYPEREVM, "USDT", CHAIN_IDs.OPTIMISM, "WETH", "binance")).to.equal(true);
+    expect(hasRoute(CHAIN_IDs.BSC, "WETH", CHAIN_IDs.BASE, "USDC", "binance")).to.equal(true);
+    expect(hasRoute(CHAIN_IDs.BASE, "USDC", CHAIN_IDs.BSC, "WETH", "binance")).to.equal(true);
+
+    // WETH routes should only use binance, not hyperliquid.
+    expect(hasRoute(CHAIN_IDs.OPTIMISM, "WETH", CHAIN_IDs.HYPEREVM, "USDT", "hyperliquid")).to.equal(false);
+
+    // HyperEVM is not a direct Binance ETH network, so no WETH routes sourced from it.
+    expect(hasRoute(CHAIN_IDs.HYPEREVM, "WETH", CHAIN_IDs.OPTIMISM, "USDT", "binance")).to.equal(false);
   });
 });

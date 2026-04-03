@@ -1,12 +1,12 @@
-import path from "node:path";
 import { expect, toBNWei } from "./utils";
-import { CHAIN_IDs, EvmAddress, TOKEN_SYMBOLS_MAP, readFileSync } from "../src/utils";
+import { CHAIN_IDs, EvmAddress, TOKEN_SYMBOLS_MAP } from "../src/utils";
 import { RelayerConfig } from "../src/relayer/RelayerConfig";
 import {
   GraphEdgeCandidate,
   JUSSI_GRAPH_VERSION,
   JUSSI_LOGICAL_ASSETS,
   buildAllowedSwapEdgeCandidates,
+  buildBridgeEdgeCandidates,
   buildJussiGraphEnvelope,
   buildJussiGraphJson,
   buildJussiGraphId,
@@ -16,6 +16,7 @@ import {
   materializeNodeDefinitions,
   resolveBridgeLatencySeconds,
   resolveExchangeLatencySeconds,
+  resolveGraphBridgeLatencySeconds,
   resolveOptionalTranslatedTokenAddress,
 } from "../src/jussi/buildGraph";
 
@@ -44,6 +45,11 @@ function buildRelayerConfig(): RelayerConfig {
           [CHAIN_IDs.OPTIMISM]: { targetPct: 4, thresholdPct: 2 },
           [CHAIN_IDs.HYPEREVM]: { targetPct: 3, thresholdPct: 1 },
         },
+        WETH: {
+          [CHAIN_IDs.BASE]: { targetPct: 5, thresholdPct: 2 },
+          [CHAIN_IDs.PLASMA]: { targetPct: 3, thresholdPct: 1 },
+          [CHAIN_IDs.ZORA]: { targetPct: 1, thresholdPct: 0.5 },
+        },
       },
       allowedSwapRoutes: [
         { fromChain: "ALL", fromToken: "USDC", toChain: CHAIN_IDs.TEMPO, toToken: "pathUSD" },
@@ -58,11 +64,13 @@ function buildRelayerConfig(): RelayerConfig {
 }
 
 describe("Jussi graph builder helpers", async function () {
-  it("extracts mainnet and aliased USDC/USDT node templates from synthetic inventory config", async function () {
+  it("extracts mainnet and aliased USDC/USDT/WETH node templates from synthetic inventory config", async function () {
     const relayerConfig = buildRelayerConfig();
     const templates = buildManagedNodeTemplates(relayerConfig.inventoryConfig, CHAIN_IDs.MAINNET);
     const hasNode = (chainId: number, symbol: string) =>
       templates.some((template) => template.chainId === chainId && template.symbol === symbol);
+    const hasLogicalAssetNode = (chainId: number, logicalAsset: string) =>
+      templates.some((template) => template.chainId === chainId && template.logicalAsset === logicalAsset);
 
     expect(hasNode(CHAIN_IDs.MAINNET, "USDC")).to.equal(true);
     expect(hasNode(CHAIN_IDs.MAINNET, "USDT")).to.equal(true);
@@ -73,6 +81,9 @@ describe("Jussi graph builder helpers", async function () {
     expect(hasNode(CHAIN_IDs.TEMPO, "USDC.e")).to.equal(true);
     expect(hasNode(CHAIN_IDs.TEMPO, "pathUSD")).to.equal(true);
     expect(hasNode(CHAIN_IDs.HYPEREVM, "USDT")).to.equal(true);
+    expect(hasLogicalAssetNode(CHAIN_IDs.BASE, "WETH")).to.equal(true);
+    expect(hasLogicalAssetNode(CHAIN_IDs.PLASMA, "WETH")).to.equal(true);
+    expect(hasLogicalAssetNode(CHAIN_IDs.ZORA, "WETH")).to.equal(true);
   });
 
   it("expands the configured pathUSD swap routes into direct graph edge requirements", async function () {
@@ -80,6 +91,7 @@ describe("Jussi graph builder helpers", async function () {
     const nodeContexts = materializeNodeDefinitions(buildManagedNodeTemplates(relayerConfig.inventoryConfig), {
       USDC: toBNWei("1000", 6),
       USDT: toBNWei("1000", 6),
+      WETH: toBNWei("100", 18),
     });
     const edgeCandidates = buildAllowedSwapEdgeCandidates(relayerConfig, nodeContexts);
 
@@ -105,6 +117,7 @@ describe("Jussi graph builder helpers", async function () {
     const nodeContexts = materializeNodeDefinitions(buildManagedNodeTemplates(relayerConfig.inventoryConfig), {
       USDC: toBNWei("1000", 6),
       USDT: toBNWei("1000", 6),
+      WETH: toBNWei("100", 18),
     });
     const mainnetUsdc = nodeContexts.find(
       (node) => node.chainId === CHAIN_IDs.MAINNET && node.symbol === "USDC" && node.logicalAsset === "USDC"
@@ -184,6 +197,61 @@ describe("Jussi graph builder helpers", async function () {
     ).to.equal(41100);
   });
 
+  it("discovers WETH bridge candidates from constants and applies WETH bridge latency overrides", async function () {
+    const relayerConfig = buildRelayerConfig();
+    const nodeContexts = materializeNodeDefinitions(buildManagedNodeTemplates(relayerConfig.inventoryConfig), {
+      USDC: toBNWei("1000", 6),
+      USDT: toBNWei("1000", 6),
+      WETH: toBNWei("100", 18),
+    });
+    const bridgeCandidates = await buildBridgeEdgeCandidates(nodeContexts);
+    const hasBridge = (
+      sourceChain: number,
+      sourceToken: string,
+      destinationChain: number,
+      destinationToken: string,
+      family: string
+    ) =>
+      bridgeCandidates.some(
+        (candidate) =>
+          candidate.from.chainId === sourceChain &&
+          candidate.from.logicalAsset === sourceToken &&
+          candidate.to.chainId === destinationChain &&
+          candidate.to.logicalAsset === destinationToken &&
+          candidate.family === family
+      );
+
+    expect(hasBridge(CHAIN_IDs.MAINNET, "WETH", CHAIN_IDs.BASE, "WETH", "canonical")).to.equal(true);
+    expect(hasBridge(CHAIN_IDs.BASE, "WETH", CHAIN_IDs.MAINNET, "WETH", "binance_cex_bridge")).to.equal(true);
+    expect(hasBridge(CHAIN_IDs.MAINNET, "WETH", CHAIN_IDs.PLASMA, "WETH", "oft")).to.equal(true);
+    expect(hasBridge(CHAIN_IDs.PLASMA, "WETH", CHAIN_IDs.MAINNET, "WETH", "oft")).to.equal(true);
+    expect(hasBridge(CHAIN_IDs.MAINNET, "WETH", CHAIN_IDs.ZORA, "WETH", "canonical")).to.equal(true);
+    expect(hasBridge(CHAIN_IDs.ZORA, "WETH", CHAIN_IDs.MAINNET, "WETH", "canonical")).to.equal(true);
+
+    const zoraToMainnet = bridgeCandidates.find(
+      (candidate) =>
+        candidate.from.chainId === CHAIN_IDs.ZORA &&
+        candidate.to.chainId === CHAIN_IDs.MAINNET &&
+        candidate.from.logicalAsset === "WETH"
+    )!;
+    const mainnetToZora = bridgeCandidates.find(
+      (candidate) =>
+        candidate.from.chainId === CHAIN_IDs.MAINNET &&
+        candidate.to.chainId === CHAIN_IDs.ZORA &&
+        candidate.from.logicalAsset === "WETH"
+    )!;
+    const plasmaToMainnet = bridgeCandidates.find(
+      (candidate) =>
+        candidate.from.chainId === CHAIN_IDs.PLASMA &&
+        candidate.to.chainId === CHAIN_IDs.MAINNET &&
+        candidate.from.logicalAsset === "WETH"
+    )!;
+
+    expect(resolveGraphBridgeLatencySeconds(zoraToMainnet)).to.equal(7 * 24 * 60 * 60 + 60 * 60);
+    expect(resolveGraphBridgeLatencySeconds(mainnetToZora)).to.equal(20 * 60);
+    expect(resolveGraphBridgeLatencySeconds(plasmaToMainnet)).to.equal(20 * 60);
+  });
+
   it("skips bridged USDC lookups on chains that only support native USDC", async function () {
     const mainnetUsdc = EvmAddress.from(TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]);
     const mainnetUsdt = EvmAddress.from(TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]);
@@ -217,7 +285,7 @@ describe("Jussi graph builder helpers", async function () {
     const envelope = buildJussiGraphEnvelope(graph);
     const graphJson = buildJussiGraphJson(graph);
 
-    expect(graphId).to.equal("usdc-usdt-20260401T091011Z");
+    expect(graphId).to.equal("usdc-usdt-weth-20260401T091011Z");
     expect(envelope).to.deep.equal({
       graph_id: graphId,
       payload: {

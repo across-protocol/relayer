@@ -10,15 +10,18 @@ import {
   buildJussiGraphEnvelope,
   buildJussiGraphJson,
   buildManagedNodeTemplates,
+  JUSSI_LOGICAL_ASSETS,
   materializeNodeDefinitions,
 } from "../src/jussi/buildGraph";
 import { constructRelayerClients } from "../src/relayer/RelayerClientHelper";
 import { RelayerConfig } from "../src/relayer/RelayerConfig";
 import { constructCumulativeBalanceRebalancerClient } from "../src/rebalancer/RebalancerClientHelper";
 import { RebalancerConfig } from "../src/rebalancer/RebalancerConfig";
-import { buildRebalanceRoutes, dedupeRebalanceRoutes } from "../src/rebalancer/buildRebalanceRoutes";
+import { buildRebalanceRoutes } from "../src/rebalancer/buildRebalanceRoutes";
 import {
+  CHAIN_IDs,
   Signer,
+  TOKEN_SYMBOLS_MAP,
   bnZero,
   chainIsSvm,
   config,
@@ -57,6 +60,30 @@ function syncRelayerChains(relayerConfig: RelayerConfig, chainIds: number[]): vo
   );
 }
 
+function ensureGraphLogicalAssetsAreIncludedInRelayerTokens(): void {
+  if (!process.env.RELAYER_TOKENS) {
+    return;
+  }
+
+  const parsed = JSON.parse(process.env.RELAYER_TOKENS) as string[];
+  if (!Array.isArray(parsed) || parsed.length === 0) {
+    return;
+  }
+
+  const requiredHubTokens = JUSSI_LOGICAL_ASSETS.map(
+    (logicalAsset) => TOKEN_SYMBOLS_MAP[logicalAsset].addresses[CHAIN_IDs.MAINNET]
+  );
+  const mergedTokens = Array.from(
+    new Map(
+      [...parsed, ...requiredHubTokens]
+        .filter((token): token is string => Boolean(token))
+        .map((token) => [token.toLowerCase(), token])
+    ).values()
+  );
+
+  process.env.RELAYER_TOKENS = JSON.stringify(mergedTokens);
+}
+
 async function writeJsonArtifact(filePath: string | undefined, value: unknown): Promise<void> {
   if (!filePath) {
     return;
@@ -68,8 +95,8 @@ async function writeJsonArtifact(filePath: string | undefined, value: unknown): 
 }
 
 async function buildGraphRebalanceRoutes(
-  logger: winston.Logger,
-  baseSigner: Signer,
+  _logger: winston.Logger,
+  _baseSigner: Signer,
   relayerConfig: RelayerConfig,
   rebalancerConfig: RebalancerConfig
 ) {
@@ -77,19 +104,20 @@ async function buildGraphRebalanceRoutes(
     buildManagedNodeTemplates(relayerConfig.inventoryConfig, relayerConfig.hubPoolChainId).filter(
       (template) => !chainIsSvm(template.chainId)
     ),
-    { USDC: bnZero, USDT: bnZero }
+    { USDC: bnZero, USDT: bnZero, WETH: bnZero }
   );
   const bridgeAdapterRoutes = await buildBridgeAdapterRoutes({
     nodeContexts,
   });
 
-  return dedupeRebalanceRoutes([...buildRebalanceRoutes(rebalancerConfig), ...bridgeAdapterRoutes]);
+  return [...buildRebalanceRoutes(rebalancerConfig), ...bridgeAdapterRoutes];
 }
 
 async function run(baseSigner: Signer, logger: winston.Logger): Promise<void> {
   requireEnvironmentVariable("RELAYER_EXTERNAL_INVENTORY_CONFIG");
   requireEnvironmentVariable("REBALANCER_EXTERNAL_CONFIG");
 
+  ensureGraphLogicalAssetsAreIncludedInRelayerTokens();
   const relayerConfig = new RelayerConfig(process.env);
   const rebalancerConfig = new RebalancerConfig(process.env);
   syncRelayerChains(
