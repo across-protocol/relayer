@@ -144,6 +144,24 @@ export function buildRebalanceRoutes(rebalancerConfig: RebalancerConfig): Rebala
     }
   }
 
+  for (const sourceWethChain of WETH_REBALANCE_CHAINS) {
+    if (!rebalancerConfig.chainIds.includes(sourceWethChain)) {
+      continue;
+    }
+    for (const destinationWethChain of WETH_REBALANCE_CHAINS) {
+      if (!rebalancerConfig.chainIds.includes(destinationWethChain) || sourceWethChain === destinationWethChain) {
+        continue;
+      }
+      rebalanceRoutes.push({
+        sourceChain: sourceWethChain,
+        sourceToken: "WETH",
+        destinationChain: destinationWethChain,
+        destinationToken: "WETH",
+        adapter: "binance",
+      });
+    }
+  }
+
   return rebalanceRoutes;
 }
 

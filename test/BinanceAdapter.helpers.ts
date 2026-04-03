@@ -3,13 +3,27 @@ import { expect, toBNWei } from "./utils";
 import {
   convertBinanceRouteAmount,
   deriveBinanceSpotMarketMeta,
+  isSameBinanceCoinRoute,
   resolveBinanceCoinSymbol,
+  supportsBinanceIntermediateBridgeToken,
 } from "../src/rebalancer/adapters/binance";
 
 describe("Binance adapter helpers", async function () {
   it("aliases on-chain WETH to Binance ETH", async function () {
     expect(resolveBinanceCoinSymbol("WETH")).to.equal("ETH");
     expect(resolveBinanceCoinSymbol("USDC")).to.equal("USDC");
+  });
+
+  it("detects same-coin Binance routes that should skip the swap leg", async function () {
+    expect(isSameBinanceCoinRoute("WETH", "WETH")).to.equal(true);
+    expect(isSameBinanceCoinRoute("USDC", "USDC")).to.equal(true);
+    expect(isSameBinanceCoinRoute("WETH", "USDC")).to.equal(false);
+  });
+
+  it("only permits intermediate Binance bridge legs for assets we can actually bridge onchain", async function () {
+    expect(supportsBinanceIntermediateBridgeToken("USDC")).to.equal(true);
+    expect(supportsBinanceIntermediateBridgeToken("USDT")).to.equal(true);
+    expect(supportsBinanceIntermediateBridgeToken("WETH")).to.equal(false);
   });
 
   it("derives Binance spot market metadata for WETH/stable routes in both directions", async function () {

@@ -9,7 +9,7 @@ import {
 import { InventoryClient } from "../clients";
 import { InventoryConfig, TokenBalanceConfig, isAliasConfig } from "../interfaces/InventoryManagement";
 import { RelayerConfig } from "../relayer/RelayerConfig";
-import { BinanceStablecoinSwapAdapter } from "../rebalancer/adapters/binance";
+import { BinanceStablecoinSwapAdapter, isSameBinanceCoinRoute } from "../rebalancer/adapters/binance";
 import { HyperliquidStablecoinSwapAdapter } from "../rebalancer/adapters/hyperliquid";
 import { OftAdapter } from "../rebalancer/adapters/oftAdapter";
 import { RebalancerConfig } from "../rebalancer/RebalancerConfig";
@@ -788,9 +788,17 @@ function buildRebalanceEdgeCandidates(
     if (!isDefined(from) || !isDefined(to)) {
       return [];
     }
+    const family =
+      route.adapter === "cctp"
+        ? "cctp"
+        : route.adapter === "oft"
+          ? "oft"
+          : route.adapter === "binance" && isSameBinanceCoinRoute(route.sourceToken, route.destinationToken)
+            ? "binance_cex_bridge"
+            : (route.adapter as EdgeFamily);
     return [
       {
-        family: route.adapter === "cctp" ? "cctp" : route.adapter === "oft" ? "oft" : (route.adapter as EdgeFamily),
+        family,
         adapterOrBridgeName: route.adapter,
         from,
         to,

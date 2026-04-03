@@ -24,6 +24,7 @@ function buildSyntheticRebalancerConfig(): RebalancerConfig {
           priorityTier: 0,
           chains: {
             [CHAIN_IDs.HYPEREVM]: 0,
+            [CHAIN_IDs.ARBITRUM]: 0,
             [CHAIN_IDs.OPTIMISM]: 0,
             [CHAIN_IDs.BSC]: 0,
             [CHAIN_IDs.BASE]: 0,
@@ -102,5 +103,30 @@ describe("buildRebalanceRoutes", async function () {
 
     // HyperEVM is not a direct Binance ETH network, so no WETH routes sourced from it.
     expect(hasRoute(CHAIN_IDs.HYPEREVM, "WETH", CHAIN_IDs.OPTIMISM, "USDT", "binance")).to.equal(false);
+  });
+
+  it("builds direct WETH->WETH Binance transfer routes between supported ETH networks", async function () {
+    const config = buildSyntheticRebalancerConfig();
+
+    const routes = buildRebalanceRoutes(config);
+    const hasRoute = (
+      sourceChain: number,
+      sourceToken: string,
+      destinationChain: number,
+      destinationToken: string,
+      adapter: string
+    ) =>
+      routes.some(
+        (route) =>
+          route.sourceChain === sourceChain &&
+          route.sourceToken === sourceToken &&
+          route.destinationChain === destinationChain &&
+          route.destinationToken === destinationToken &&
+          route.adapter === adapter
+      );
+
+    expect(hasRoute(CHAIN_IDs.OPTIMISM, "WETH", CHAIN_IDs.ARBITRUM, "WETH", "binance")).to.equal(true);
+    expect(hasRoute(CHAIN_IDs.ARBITRUM, "WETH", CHAIN_IDs.BASE, "WETH", "binance")).to.equal(true);
+    expect(hasRoute(CHAIN_IDs.HYPEREVM, "WETH", CHAIN_IDs.OPTIMISM, "WETH", "binance")).to.equal(false);
   });
 });
