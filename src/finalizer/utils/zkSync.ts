@@ -216,13 +216,14 @@ async function prepareFinalization(
     l2ChainId,
     withdrawal.l1BatchNumber,
     withdrawal.l2MessageIndex,
+    withdrawal.sender,
     withdrawal.l2TxNumberInBlock,
     withdrawal.message,
     withdrawal.proof,
   ];
 
   // @todo Support withdrawing directly as WETH here.
-  const [target, txn] = [l1SharedBridge.address, await l1SharedBridge.populateTransaction.finalizeWithdrawal(...args)];
+  const [target, txn] = [l1SharedBridge.address, await l1SharedBridge.populateTransaction.finalizeDeposit(args)];
 
   return { target, callData: txn.data };
 }
