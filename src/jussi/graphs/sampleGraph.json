@@ -1,13 +1,10 @@
 {
   "graph_id": "usdc-usdt-weth-20260403T102939Z",
-  "graph_version": 2,
   "latency_annualized_cost_rate": "0.05",
   "pain_model": {
     "type": "threshold",
-    "surplus_annualized_cost_rate": "0.08",
-    "surplus_expected_stale_time_secs": 86400,
-    "deficit_annualized_cost_rate": "0.25",
-    "deficit_expected_stale_time_secs": 259200,
+    "surplus_annualized_cost_rate": "0.000219",
+    "deficit_annualized_cost_rate": "0.002055",
     "out_of_band_severity_multiplier": "4.0"
   },
   "logical_assets": [
@@ -903,7 +900,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance_cex_bridge:BinanceCEXBridge:56:USDC-BNB:1:USDC",
@@ -930,7 +928,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "cctp:UsdcCCTPBridge:1:USDC:130:USDC",
@@ -1794,7 +1793,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance_cex_bridge:BinanceCEXBridge:1:USDT:56:USDT-BNB",
@@ -1821,7 +1821,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance_cex_bridge:BinanceCEXBridge:56:USDT-BNB:1:USDT",
@@ -1848,7 +1849,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "oft:OFTBridge:1:USDT:130:USDT",
@@ -2523,7 +2525,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance_cex_bridge:BinanceCEXNativeBridge:1:WETH:56:ETH",
@@ -2550,7 +2553,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance_cex_bridge:BinanceCEXBridge:56:ETH:1:WETH",
@@ -2577,7 +2581,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "canonical:OpStackWethBridge:1:WETH:130:ETH",
@@ -2901,7 +2906,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "oft:OFTWethBridge:1:WETH:9745:ETH",
@@ -3036,7 +3042,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "canonical:OpStackWethBridge:1:WETH:57073:ETH",
@@ -3225,7 +3232,8 @@
           }
         ]
       },
-      "latency_seconds": 41100
+      "latency_seconds": 41100,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:999:USDC:999:USDT",
@@ -3252,7 +3260,8 @@
           }
         ]
       },
-      "latency_seconds": 2700
+      "latency_seconds": 2700,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "hyperliquid:hyperliquid:999:USDT:999:USDC",
@@ -3333,7 +3342,8 @@
           }
         ]
       },
-      "latency_seconds": 39900
+      "latency_seconds": 39900,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:42161:USDC:999:USDT",
@@ -3360,7 +3370,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "hyperliquid:hyperliquid:999:USDT:42161:USDC",
@@ -3441,7 +3452,8 @@
           }
         ]
       },
-      "latency_seconds": 39900
+      "latency_seconds": 39900,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:10:USDC:999:USDT",
@@ -3468,7 +3480,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "hyperliquid:hyperliquid:999:USDT:10:USDC",
@@ -3549,7 +3562,8 @@
           }
         ]
       },
-      "latency_seconds": 39900
+      "latency_seconds": 39900,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:1:USDC:999:USDT",
@@ -3576,7 +3590,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "hyperliquid:hyperliquid:999:USDT:1:USDC",
@@ -3657,7 +3672,8 @@
           }
         ]
       },
-      "latency_seconds": 39900
+      "latency_seconds": 39900,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:8453:USDC:999:USDT",
@@ -3684,7 +3700,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "hyperliquid:hyperliquid:999:USDT:8453:USDC",
@@ -3765,7 +3782,8 @@
           }
         ]
       },
-      "latency_seconds": 41100
+      "latency_seconds": 41100,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:130:USDC:999:USDT",
@@ -3792,7 +3810,8 @@
           }
         ]
       },
-      "latency_seconds": 2700
+      "latency_seconds": 2700,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "hyperliquid:hyperliquid:999:USDT:130:USDC",
@@ -3873,7 +3892,8 @@
           }
         ]
       },
-      "latency_seconds": 41100
+      "latency_seconds": 41100,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:143:USDC:999:USDT",
@@ -3900,7 +3920,8 @@
           }
         ]
       },
-      "latency_seconds": 2700
+      "latency_seconds": 2700,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "hyperliquid:hyperliquid:999:USDT:143:USDC",
@@ -3981,7 +4002,8 @@
           }
         ]
       },
-      "latency_seconds": 39900
+      "latency_seconds": 39900,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:56:USDC-BNB:999:USDT",
@@ -4008,7 +4030,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:42161:USDT:999:USDC",
@@ -4035,7 +4058,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:999:USDC:42161:USDT",
@@ -4062,7 +4086,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "hyperliquid:hyperliquid:42161:USDT:999:USDC",
@@ -4143,7 +4168,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:42161:USDC:42161:USDT",
@@ -4170,7 +4196,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "hyperliquid:hyperliquid:42161:USDT:42161:USDC",
@@ -4251,7 +4278,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:10:USDC:42161:USDT",
@@ -4278,7 +4306,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "hyperliquid:hyperliquid:42161:USDT:10:USDC",
@@ -4359,7 +4388,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:1:USDC:42161:USDT",
@@ -4386,7 +4416,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "hyperliquid:hyperliquid:42161:USDT:1:USDC",
@@ -4467,7 +4498,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:8453:USDC:42161:USDT",
@@ -4494,7 +4526,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "hyperliquid:hyperliquid:42161:USDT:8453:USDC",
@@ -4575,7 +4608,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:130:USDC:42161:USDT",
@@ -4602,7 +4636,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "hyperliquid:hyperliquid:42161:USDT:130:USDC",
@@ -4683,7 +4718,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:143:USDC:42161:USDT",
@@ -4710,7 +4746,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "hyperliquid:hyperliquid:42161:USDT:143:USDC",
@@ -4791,7 +4828,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:56:USDC-BNB:42161:USDT",
@@ -4818,7 +4856,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:10:USDT:999:USDC",
@@ -4845,7 +4884,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:999:USDC:10:USDT",
@@ -4872,7 +4912,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "hyperliquid:hyperliquid:10:USDT:999:USDC",
@@ -4953,7 +4994,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:42161:USDC:10:USDT",
@@ -4980,7 +5022,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "hyperliquid:hyperliquid:10:USDT:42161:USDC",
@@ -5061,7 +5104,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:10:USDC:10:USDT",
@@ -5088,7 +5132,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "hyperliquid:hyperliquid:10:USDT:10:USDC",
@@ -5169,7 +5214,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:1:USDC:10:USDT",
@@ -5196,7 +5242,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "hyperliquid:hyperliquid:10:USDT:1:USDC",
@@ -5277,7 +5324,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:8453:USDC:10:USDT",
@@ -5304,7 +5352,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "hyperliquid:hyperliquid:10:USDT:8453:USDC",
@@ -5385,7 +5434,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:130:USDC:10:USDT",
@@ -5412,7 +5462,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "hyperliquid:hyperliquid:10:USDT:130:USDC",
@@ -5493,7 +5544,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:143:USDC:10:USDT",
@@ -5520,7 +5572,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "hyperliquid:hyperliquid:10:USDT:143:USDC",
@@ -5601,7 +5654,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:56:USDC-BNB:10:USDT",
@@ -5628,7 +5682,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:1:USDT:999:USDC",
@@ -5655,7 +5710,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:999:USDC:1:USDT",
@@ -5682,7 +5738,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "hyperliquid:hyperliquid:1:USDT:999:USDC",
@@ -5763,7 +5820,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:42161:USDC:1:USDT",
@@ -5790,7 +5848,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "hyperliquid:hyperliquid:1:USDT:42161:USDC",
@@ -5871,7 +5930,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:10:USDC:1:USDT",
@@ -5898,7 +5958,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "hyperliquid:hyperliquid:1:USDT:10:USDC",
@@ -5979,7 +6040,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:1:USDC:1:USDT",
@@ -6006,7 +6068,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "hyperliquid:hyperliquid:1:USDT:1:USDC",
@@ -6087,7 +6150,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:8453:USDC:1:USDT",
@@ -6114,7 +6178,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "hyperliquid:hyperliquid:1:USDT:8453:USDC",
@@ -6195,7 +6260,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:130:USDC:1:USDT",
@@ -6222,7 +6288,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "hyperliquid:hyperliquid:1:USDT:130:USDC",
@@ -6303,7 +6370,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:143:USDC:1:USDT",
@@ -6330,7 +6398,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "hyperliquid:hyperliquid:1:USDT:143:USDC",
@@ -6411,7 +6480,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:56:USDC-BNB:1:USDT",
@@ -6438,7 +6508,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:130:USDT:999:USDC",
@@ -6465,7 +6536,8 @@
           }
         ]
       },
-      "latency_seconds": 2700
+      "latency_seconds": 2700,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:999:USDC:130:USDT",
@@ -6492,7 +6564,8 @@
           }
         ]
       },
-      "latency_seconds": 2700
+      "latency_seconds": 2700,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "hyperliquid:hyperliquid:130:USDT:999:USDC",
@@ -6573,7 +6646,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:42161:USDC:130:USDT",
@@ -6600,7 +6674,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "hyperliquid:hyperliquid:130:USDT:42161:USDC",
@@ -6681,7 +6756,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:10:USDC:130:USDT",
@@ -6708,7 +6784,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "hyperliquid:hyperliquid:130:USDT:10:USDC",
@@ -6789,7 +6866,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:1:USDC:130:USDT",
@@ -6816,7 +6894,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "hyperliquid:hyperliquid:130:USDT:1:USDC",
@@ -6897,7 +6976,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:8453:USDC:130:USDT",
@@ -6924,7 +7004,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "hyperliquid:hyperliquid:130:USDT:8453:USDC",
@@ -7005,7 +7086,8 @@
           }
         ]
       },
-      "latency_seconds": 2700
+      "latency_seconds": 2700,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:130:USDC:130:USDT",
@@ -7032,7 +7114,8 @@
           }
         ]
       },
-      "latency_seconds": 2700
+      "latency_seconds": 2700,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "hyperliquid:hyperliquid:130:USDT:130:USDC",
@@ -7113,7 +7196,8 @@
           }
         ]
       },
-      "latency_seconds": 2700
+      "latency_seconds": 2700,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:143:USDC:130:USDT",
@@ -7140,7 +7224,8 @@
           }
         ]
       },
-      "latency_seconds": 2700
+      "latency_seconds": 2700,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "hyperliquid:hyperliquid:130:USDT:143:USDC",
@@ -7221,7 +7306,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:56:USDC-BNB:130:USDT",
@@ -7248,7 +7334,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:143:USDT:999:USDC",
@@ -7275,7 +7362,8 @@
           }
         ]
       },
-      "latency_seconds": 2700
+      "latency_seconds": 2700,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:999:USDC:143:USDT",
@@ -7302,7 +7390,8 @@
           }
         ]
       },
-      "latency_seconds": 2700
+      "latency_seconds": 2700,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "hyperliquid:hyperliquid:143:USDT:999:USDC",
@@ -7383,7 +7472,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:42161:USDC:143:USDT",
@@ -7410,7 +7500,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "hyperliquid:hyperliquid:143:USDT:42161:USDC",
@@ -7491,7 +7582,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:10:USDC:143:USDT",
@@ -7518,7 +7610,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "hyperliquid:hyperliquid:143:USDT:10:USDC",
@@ -7599,7 +7692,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:1:USDC:143:USDT",
@@ -7626,7 +7720,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "hyperliquid:hyperliquid:143:USDT:1:USDC",
@@ -7707,7 +7802,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:8453:USDC:143:USDT",
@@ -7734,7 +7830,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "hyperliquid:hyperliquid:143:USDT:8453:USDC",
@@ -7815,7 +7912,8 @@
           }
         ]
       },
-      "latency_seconds": 2700
+      "latency_seconds": 2700,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:130:USDC:143:USDT",
@@ -7842,7 +7940,8 @@
           }
         ]
       },
-      "latency_seconds": 2700
+      "latency_seconds": 2700,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "hyperliquid:hyperliquid:143:USDT:130:USDC",
@@ -7923,7 +8022,8 @@
           }
         ]
       },
-      "latency_seconds": 2700
+      "latency_seconds": 2700,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:143:USDC:143:USDT",
@@ -7950,7 +8050,8 @@
           }
         ]
       },
-      "latency_seconds": 2700
+      "latency_seconds": 2700,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "hyperliquid:hyperliquid:143:USDT:143:USDC",
@@ -8031,7 +8132,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:56:USDC-BNB:143:USDT",
@@ -8058,7 +8160,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:56:USDT-BNB:999:USDC",
@@ -8085,7 +8188,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:999:USDC:56:USDT-BNB",
@@ -8112,7 +8216,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:56:USDT-BNB:42161:USDC",
@@ -8139,7 +8244,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:42161:USDC:56:USDT-BNB",
@@ -8166,7 +8272,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:56:USDT-BNB:10:USDC",
@@ -8193,7 +8300,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:10:USDC:56:USDT-BNB",
@@ -8220,7 +8328,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:56:USDT-BNB:1:USDC",
@@ -8247,7 +8356,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:1:USDC:56:USDT-BNB",
@@ -8274,7 +8384,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:56:USDT-BNB:8453:USDC",
@@ -8301,7 +8412,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:8453:USDC:56:USDT-BNB",
@@ -8328,7 +8440,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:56:USDT-BNB:130:USDC",
@@ -8355,7 +8468,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:130:USDC:56:USDT-BNB",
@@ -8382,7 +8496,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:56:USDT-BNB:143:USDC",
@@ -8409,7 +8524,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:143:USDC:56:USDT-BNB",
@@ -8436,7 +8552,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:56:USDT-BNB:56:USDC-BNB",
@@ -8463,7 +8580,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:56:USDC-BNB:56:USDT-BNB",
@@ -8490,7 +8608,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "oft:oft:999:USDT:42161:USDT",
@@ -10453,7 +10572,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.038013040823",
+        "fixed_cost_usd": "0.032251426758",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -10461,7 +10580,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:999:USDT:42161:ETH",
@@ -10488,7 +10608,8 @@
           }
         ]
       },
-      "latency_seconds": 39900
+      "latency_seconds": 39900,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:42161:ETH:42161:USDT",
@@ -10507,7 +10628,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.016463040823",
+        "fixed_cost_usd": "0.010701426758",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -10515,7 +10636,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:42161:USDT:42161:ETH",
@@ -10542,7 +10664,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:42161:ETH:10:USDT",
@@ -10561,7 +10684,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.016463040823",
+        "fixed_cost_usd": "0.010701426758",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -10569,7 +10692,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:10:USDT:42161:ETH",
@@ -10596,7 +10720,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:42161:ETH:1:USDT",
@@ -10615,7 +10740,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.016463040823",
+        "fixed_cost_usd": "0.010701426758",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -10623,7 +10748,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:1:USDT:42161:ETH",
@@ -10650,7 +10776,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:42161:ETH:130:USDT",
@@ -10669,7 +10796,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.037917040823",
+        "fixed_cost_usd": "0.032155426758",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -10677,7 +10804,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:130:USDT:42161:ETH",
@@ -10704,7 +10832,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:42161:ETH:143:USDT",
@@ -10723,7 +10852,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.038047040823",
+        "fixed_cost_usd": "0.032285426758",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -10731,7 +10860,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:143:USDT:42161:ETH",
@@ -10758,7 +10888,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:42161:ETH:56:USDT-BNB",
@@ -10777,7 +10908,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.016463040823",
+        "fixed_cost_usd": "0.010701426758",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -10785,7 +10916,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:56:USDT-BNB:42161:ETH",
@@ -10812,7 +10944,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:42161:ETH:999:USDC",
@@ -10831,7 +10964,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.026752441338",
+        "fixed_cost_usd": "0.020990827273",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -10839,7 +10972,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:999:USDC:42161:ETH",
@@ -10866,7 +11000,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:42161:ETH:42161:USDC",
@@ -10885,7 +11020,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.016463040823",
+        "fixed_cost_usd": "0.010701426758",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -10893,7 +11028,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:42161:USDC:42161:ETH",
@@ -10920,7 +11056,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:42161:ETH:10:USDC",
@@ -10939,7 +11076,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.016463040823",
+        "fixed_cost_usd": "0.010701426758",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -10947,7 +11084,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:10:USDC:42161:ETH",
@@ -10974,7 +11112,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:42161:ETH:1:USDC",
@@ -10993,7 +11132,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.016463040823",
+        "fixed_cost_usd": "0.010701426758",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -11001,7 +11140,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:1:USDC:42161:ETH",
@@ -11028,7 +11168,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:42161:ETH:8453:USDC",
@@ -11047,7 +11188,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.016463040823",
+        "fixed_cost_usd": "0.010701426758",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -11055,7 +11196,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:8453:USDC:42161:ETH",
@@ -11082,7 +11224,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:42161:ETH:130:USDC",
@@ -11101,7 +11244,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.026752441338",
+        "fixed_cost_usd": "0.020990827273",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -11109,7 +11252,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:130:USDC:42161:ETH",
@@ -11136,7 +11280,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:42161:ETH:143:USDC",
@@ -11155,7 +11300,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.026752441338",
+        "fixed_cost_usd": "0.020990827273",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -11163,7 +11308,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:143:USDC:42161:ETH",
@@ -11190,7 +11336,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:42161:ETH:56:USDC-BNB",
@@ -11209,7 +11356,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.016463040823",
+        "fixed_cost_usd": "0.010701426758",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -11217,7 +11364,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:56:USDC-BNB:42161:ETH",
@@ -11244,7 +11392,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:8453:ETH:999:USDT",
@@ -11263,7 +11412,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.026488912",
+        "fixed_cost_usd": "0.025336949464",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -11271,7 +11420,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:999:USDT:8453:ETH",
@@ -11298,7 +11448,8 @@
           }
         ]
       },
-      "latency_seconds": 39900
+      "latency_seconds": 39900,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:8453:ETH:42161:USDT",
@@ -11317,7 +11468,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.004938912",
+        "fixed_cost_usd": "0.003786949464",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -11325,7 +11476,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:42161:USDT:8453:ETH",
@@ -11352,7 +11504,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:8453:ETH:10:USDT",
@@ -11371,7 +11524,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.004938912",
+        "fixed_cost_usd": "0.003786949464",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -11379,7 +11532,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:10:USDT:8453:ETH",
@@ -11406,7 +11560,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:8453:ETH:1:USDT",
@@ -11425,7 +11580,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.004938912",
+        "fixed_cost_usd": "0.003786949464",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -11433,7 +11588,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:1:USDT:8453:ETH",
@@ -11460,7 +11616,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:8453:ETH:130:USDT",
@@ -11479,7 +11636,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.026392912",
+        "fixed_cost_usd": "0.025240949464",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -11487,7 +11644,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:130:USDT:8453:ETH",
@@ -11514,7 +11672,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:8453:ETH:143:USDT",
@@ -11533,7 +11692,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.026522912",
+        "fixed_cost_usd": "0.025370949464",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -11541,7 +11700,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:143:USDT:8453:ETH",
@@ -11568,7 +11728,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:8453:ETH:56:USDT-BNB",
@@ -11587,7 +11748,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.004938912",
+        "fixed_cost_usd": "0.003786949464",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -11595,7 +11756,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:56:USDT-BNB:8453:ETH",
@@ -11622,7 +11784,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:8453:ETH:999:USDC",
@@ -11641,7 +11804,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.015228312514",
+        "fixed_cost_usd": "0.014076349979",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -11649,7 +11812,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:999:USDC:8453:ETH",
@@ -11676,7 +11840,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:8453:ETH:42161:USDC",
@@ -11695,7 +11860,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.004938912",
+        "fixed_cost_usd": "0.003786949464",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -11703,7 +11868,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:42161:USDC:8453:ETH",
@@ -11730,7 +11896,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:8453:ETH:10:USDC",
@@ -11749,7 +11916,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.004938912",
+        "fixed_cost_usd": "0.003786949464",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -11757,7 +11924,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:10:USDC:8453:ETH",
@@ -11784,7 +11952,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:8453:ETH:1:USDC",
@@ -11803,7 +11972,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.004938912",
+        "fixed_cost_usd": "0.003786949464",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -11811,7 +11980,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:1:USDC:8453:ETH",
@@ -11838,7 +12008,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:8453:ETH:8453:USDC",
@@ -11857,7 +12028,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.004938912",
+        "fixed_cost_usd": "0.003786949464",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -11865,7 +12036,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:8453:USDC:8453:ETH",
@@ -11892,7 +12064,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:8453:ETH:130:USDC",
@@ -11911,7 +12084,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.015228312514",
+        "fixed_cost_usd": "0.014076349979",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -11919,7 +12092,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:130:USDC:8453:ETH",
@@ -11946,7 +12120,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:8453:ETH:143:USDC",
@@ -11965,7 +12140,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.015228312514",
+        "fixed_cost_usd": "0.014076349979",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -11973,7 +12148,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:143:USDC:8453:ETH",
@@ -12000,7 +12176,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:8453:ETH:56:USDC-BNB",
@@ -12019,7 +12196,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.004938912",
+        "fixed_cost_usd": "0.003786949464",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -12027,7 +12204,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:56:USDC-BNB:8453:ETH",
@@ -12054,7 +12232,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:56:ETH:999:USDT",
@@ -12073,7 +12252,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.25563",
+        "fixed_cost_usd": "0.162821602264",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -12081,7 +12260,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:999:USDT:56:ETH",
@@ -12108,7 +12288,8 @@
           }
         ]
       },
-      "latency_seconds": 39900
+      "latency_seconds": 39900,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:56:ETH:42161:USDT",
@@ -12127,7 +12308,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.23408",
+        "fixed_cost_usd": "0.141271602264",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -12135,7 +12316,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:42161:USDT:56:ETH",
@@ -12162,7 +12344,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:56:ETH:10:USDT",
@@ -12181,7 +12364,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.23408",
+        "fixed_cost_usd": "0.141271602264",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -12189,7 +12372,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:10:USDT:56:ETH",
@@ -12216,7 +12400,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:56:ETH:1:USDT",
@@ -12235,7 +12420,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.23408",
+        "fixed_cost_usd": "0.141271602264",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -12243,7 +12428,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:1:USDT:56:ETH",
@@ -12270,7 +12456,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:56:ETH:130:USDT",
@@ -12289,7 +12476,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.255534",
+        "fixed_cost_usd": "0.162725602264",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -12297,7 +12484,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:130:USDT:56:ETH",
@@ -12324,7 +12512,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:56:ETH:143:USDT",
@@ -12343,7 +12532,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.255664",
+        "fixed_cost_usd": "0.162855602264",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -12351,7 +12540,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:143:USDT:56:ETH",
@@ -12378,7 +12568,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:56:ETH:56:USDT-BNB",
@@ -12397,7 +12588,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.23408",
+        "fixed_cost_usd": "0.141271602264",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -12405,7 +12596,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:56:USDT-BNB:56:ETH",
@@ -12432,7 +12624,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:56:ETH:999:USDC",
@@ -12451,7 +12644,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.244369400514",
+        "fixed_cost_usd": "0.151561002779",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -12459,7 +12652,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:999:USDC:56:ETH",
@@ -12486,7 +12680,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:56:ETH:42161:USDC",
@@ -12505,7 +12700,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.23408",
+        "fixed_cost_usd": "0.141271602264",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -12513,7 +12708,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:42161:USDC:56:ETH",
@@ -12540,7 +12736,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:56:ETH:10:USDC",
@@ -12559,7 +12756,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.23408",
+        "fixed_cost_usd": "0.141271602264",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -12567,7 +12764,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:10:USDC:56:ETH",
@@ -12594,7 +12792,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:56:ETH:1:USDC",
@@ -12613,7 +12812,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.23408",
+        "fixed_cost_usd": "0.141271602264",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -12621,7 +12820,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:1:USDC:56:ETH",
@@ -12648,7 +12848,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:56:ETH:8453:USDC",
@@ -12667,7 +12868,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.23408",
+        "fixed_cost_usd": "0.141271602264",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -12675,7 +12876,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:8453:USDC:56:ETH",
@@ -12702,7 +12904,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:56:ETH:130:USDC",
@@ -12721,7 +12924,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.244369400514",
+        "fixed_cost_usd": "0.151561002779",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -12729,7 +12932,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:130:USDC:56:ETH",
@@ -12756,7 +12960,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:56:ETH:143:USDC",
@@ -12775,7 +12980,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.244369400514",
+        "fixed_cost_usd": "0.151561002779",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -12783,7 +12988,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:143:USDC:56:ETH",
@@ -12810,7 +13016,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:56:ETH:56:USDC-BNB",
@@ -12829,7 +13036,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.23408",
+        "fixed_cost_usd": "0.141271602264",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -12837,7 +13044,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:56:USDC-BNB:56:ETH",
@@ -12864,7 +13072,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:1:WETH:999:USDT",
@@ -12883,7 +13092,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.12067390375",
+        "fixed_cost_usd": "0.081847944514",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -12891,7 +13100,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:999:USDT:1:WETH",
@@ -12918,7 +13128,8 @@
           }
         ]
       },
-      "latency_seconds": 39900
+      "latency_seconds": 39900,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:1:WETH:42161:USDT",
@@ -12937,7 +13148,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.09912390375",
+        "fixed_cost_usd": "0.060297944514",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -12945,7 +13156,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:42161:USDT:1:WETH",
@@ -12972,7 +13184,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:1:WETH:10:USDT",
@@ -12991,7 +13204,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.09912390375",
+        "fixed_cost_usd": "0.060297944514",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -12999,7 +13212,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:10:USDT:1:WETH",
@@ -13026,7 +13240,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:1:WETH:1:USDT",
@@ -13045,7 +13260,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.09912390375",
+        "fixed_cost_usd": "0.060297944514",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -13053,7 +13268,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:1:USDT:1:WETH",
@@ -13080,7 +13296,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:1:WETH:130:USDT",
@@ -13099,7 +13316,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.12057790375",
+        "fixed_cost_usd": "0.081751944514",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -13107,7 +13324,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:130:USDT:1:WETH",
@@ -13134,7 +13352,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:1:WETH:143:USDT",
@@ -13153,7 +13372,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.12070790375",
+        "fixed_cost_usd": "0.081881944514",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -13161,7 +13380,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:143:USDT:1:WETH",
@@ -13188,7 +13408,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:1:WETH:56:USDT-BNB",
@@ -13207,7 +13428,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.09912390375",
+        "fixed_cost_usd": "0.060297944514",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -13215,7 +13436,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:56:USDT-BNB:1:WETH",
@@ -13242,7 +13464,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:1:WETH:999:USDC",
@@ -13261,7 +13484,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.109413304264",
+        "fixed_cost_usd": "0.070587345029",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -13269,7 +13492,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:999:USDC:1:WETH",
@@ -13296,7 +13520,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:1:WETH:42161:USDC",
@@ -13315,7 +13540,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.09912390375",
+        "fixed_cost_usd": "0.060297944514",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -13323,7 +13548,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:42161:USDC:1:WETH",
@@ -13350,7 +13576,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:1:WETH:10:USDC",
@@ -13369,7 +13596,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.09912390375",
+        "fixed_cost_usd": "0.060297944514",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -13377,7 +13604,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:10:USDC:1:WETH",
@@ -13404,7 +13632,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:1:WETH:1:USDC",
@@ -13423,7 +13652,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.09912390375",
+        "fixed_cost_usd": "0.060297944514",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -13431,7 +13660,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:1:USDC:1:WETH",
@@ -13458,7 +13688,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:1:WETH:8453:USDC",
@@ -13477,7 +13708,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.09912390375",
+        "fixed_cost_usd": "0.060297944514",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -13485,7 +13716,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:8453:USDC:1:WETH",
@@ -13512,7 +13744,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:1:WETH:130:USDC",
@@ -13531,7 +13764,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.109413304264",
+        "fixed_cost_usd": "0.070587345029",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -13539,7 +13772,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:130:USDC:1:WETH",
@@ -13566,7 +13800,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:1:WETH:143:USDC",
@@ -13585,7 +13820,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.109413304264",
+        "fixed_cost_usd": "0.070587345029",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -13593,7 +13828,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:143:USDC:1:WETH",
@@ -13620,7 +13856,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:1:WETH:56:USDC-BNB",
@@ -13639,7 +13876,7 @@
         ]
       },
       "cost_usd": {
-        "fixed_cost_usd": "0.09912390375",
+        "fixed_cost_usd": "0.060297944514",
         "segments": [
           {
             "up_to_input_native": "2680249362156945023071",
@@ -13647,7 +13884,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:56:USDC-BNB:1:WETH",
@@ -13674,7 +13912,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:10:ETH:999:USDT",
@@ -13701,7 +13940,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:999:USDT:10:ETH",
@@ -13728,7 +13968,8 @@
           }
         ]
       },
-      "latency_seconds": 39900
+      "latency_seconds": 39900,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:10:ETH:42161:USDT",
@@ -13755,7 +13996,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:42161:USDT:10:ETH",
@@ -13782,7 +14024,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:10:ETH:10:USDT",
@@ -13809,7 +14052,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:10:USDT:10:ETH",
@@ -13836,7 +14080,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:10:ETH:1:USDT",
@@ -13863,7 +14108,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:1:USDT:10:ETH",
@@ -13890,7 +14136,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:10:ETH:130:USDT",
@@ -13917,7 +14164,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:130:USDT:10:ETH",
@@ -13944,7 +14192,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:10:ETH:143:USDT",
@@ -13971,7 +14220,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:143:USDT:10:ETH",
@@ -13998,7 +14248,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:10:ETH:56:USDT-BNB",
@@ -14025,7 +14276,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:56:USDT-BNB:10:ETH",
@@ -14052,7 +14304,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:10:ETH:999:USDC",
@@ -14079,7 +14332,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:999:USDC:10:ETH",
@@ -14106,7 +14360,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:10:ETH:42161:USDC",
@@ -14133,7 +14388,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:42161:USDC:10:ETH",
@@ -14160,7 +14416,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:10:ETH:10:USDC",
@@ -14187,7 +14444,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:10:USDC:10:ETH",
@@ -14214,7 +14472,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:10:ETH:1:USDC",
@@ -14241,7 +14500,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:1:USDC:10:ETH",
@@ -14268,7 +14528,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:10:ETH:8453:USDC",
@@ -14295,7 +14556,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:8453:USDC:10:ETH",
@@ -14322,7 +14584,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:10:ETH:130:USDC",
@@ -14349,7 +14612,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:130:USDC:10:ETH",
@@ -14376,7 +14640,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:10:ETH:143:USDC",
@@ -14403,7 +14668,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:143:USDC:10:ETH",
@@ -14430,7 +14696,8 @@
           }
         ]
       },
-      "latency_seconds": 1500
+      "latency_seconds": 1500,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:10:ETH:56:USDC-BNB",
@@ -14457,7 +14724,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance:binance:56:USDC-BNB:10:ETH",
@@ -14484,7 +14752,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance_cex_bridge:binance:42161:ETH:8453:ETH",
@@ -14511,7 +14780,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance_cex_bridge:binance:42161:ETH:56:ETH",
@@ -14538,7 +14808,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance_cex_bridge:binance:42161:ETH:1:WETH",
@@ -14565,7 +14836,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance_cex_bridge:binance:42161:ETH:10:ETH",
@@ -14592,7 +14864,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance_cex_bridge:binance:8453:ETH:42161:ETH",
@@ -14619,7 +14892,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance_cex_bridge:binance:8453:ETH:56:ETH",
@@ -14646,7 +14920,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance_cex_bridge:binance:8453:ETH:1:WETH",
@@ -14673,7 +14948,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance_cex_bridge:binance:8453:ETH:10:ETH",
@@ -14700,7 +14976,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance_cex_bridge:binance:56:ETH:42161:ETH",
@@ -14727,7 +15004,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance_cex_bridge:binance:56:ETH:8453:ETH",
@@ -14754,7 +15032,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance_cex_bridge:binance:56:ETH:1:WETH",
@@ -14781,7 +15060,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance_cex_bridge:binance:56:ETH:10:ETH",
@@ -14808,7 +15088,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance_cex_bridge:binance:1:WETH:42161:ETH",
@@ -14835,7 +15116,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance_cex_bridge:binance:1:WETH:8453:ETH",
@@ -14862,7 +15144,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance_cex_bridge:binance:1:WETH:56:ETH",
@@ -14889,7 +15172,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance_cex_bridge:binance:1:WETH:10:ETH",
@@ -14916,7 +15200,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance_cex_bridge:binance:10:ETH:42161:ETH",
@@ -14943,7 +15228,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance_cex_bridge:binance:10:ETH:8453:ETH",
@@ -14970,7 +15256,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance_cex_bridge:binance:10:ETH:56:ETH",
@@ -14997,7 +15284,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "binance_cex_bridge:binance:10:ETH:1:WETH",
@@ -15024,7 +15312,8 @@
           }
         ]
       },
-      "latency_seconds": 300
+      "latency_seconds": 300,
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd"
     },
     {
       "edge_id": "cctp:cctp:1:USDC:137:USDC",
@@ -16159,6 +16448,37 @@
         ]
       },
       "latency_seconds": 300
+    }
+  ],
+  "rate_limit_buckets": [
+    {
+      "bucket_id": "binance_withdrawals_24h_usd",
+      "capacity_usd": "21000000",
+      "window_seconds": 86400,
+      "cost_usd": {
+        "segments": [
+          {
+            "up_to_usage_usd": "12600000",
+            "marginal_cost_per_unit_usd": "0"
+          },
+          {
+            "up_to_usage_usd": "16800000",
+            "marginal_cost_per_unit_usd": "0.0005"
+          },
+          {
+            "up_to_usage_usd": "18900000",
+            "marginal_cost_per_unit_usd": "0.0025"
+          },
+          {
+            "up_to_usage_usd": "20370000",
+            "marginal_cost_per_unit_usd": "0.01"
+          },
+          {
+            "up_to_usage_usd": "21000000",
+            "marginal_cost_per_unit_usd": "0.05"
+          }
+        ]
+      }
     }
   ]
 }
