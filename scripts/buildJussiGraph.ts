@@ -152,7 +152,6 @@ async function run(baseSigner: Signer, logger: winston.Logger): Promise<void> {
       logger,
       baseSigner,
       relayerConfig,
-      rebalancerConfig,
       inventoryClient,
       rebalanceRoutes,
       rebalancerAdapters: rebalancerClient.adapters,

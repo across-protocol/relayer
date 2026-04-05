@@ -6,12 +6,12 @@ import {
   CUSTOM_L2_BRIDGE,
   TOKEN_SPLITTER_BRIDGES,
 } from "../common";
+import { EXPECTED_L1_TO_L2_MESSAGE_TIME, SLOW_WITHDRAWAL_CHAINS } from "../common/Constants";
 import { InventoryClient } from "../clients";
 import { InventoryConfig, TokenBalanceConfig, isAliasConfig } from "../interfaces/InventoryManagement";
 import { RelayerConfig } from "../relayer/RelayerConfig";
 import { BinanceStablecoinSwapAdapter, isSameBinanceCoinRoute } from "../rebalancer/adapters/binance";
 import { OftAdapter } from "../rebalancer/adapters/oftAdapter";
-import { RebalancerConfig } from "../rebalancer/RebalancerConfig";
 import { RebalanceRoute, RebalancerAdapter } from "../rebalancer/utils/interfaces";
 import {
   acrossApi,
@@ -43,6 +43,7 @@ import {
   toBN,
   toBNWei,
   toAddressType,
+  truncate,
   winston,
 } from "../utils";
 import { getAcrossHost } from "../clients/AcrossAPIClient";
@@ -153,7 +154,6 @@ type AllowedSwapPair = { from: ManagedNodeContext; to: ManagedNodeContext };
 type BridgeBreakdownParams = { baseSigner: Signer; pricingContext: RuntimePricingContext; rebalancerAdapters: Record<string, RebalancerAdapter> };
 type ExchangeBreakdownParams = BridgeBreakdownParams & { logger: winston.Logger };
 type EdgePricingParams = ExchangeBreakdownParams & {
-  rebalancerConfig: RebalancerConfig;
   cumulativeBalancesByLogicalAsset: Record<LogicalAsset, BigNumber>;
 };
 
@@ -180,21 +180,55 @@ type BinanceInternalAdapter = {
     skipCache?: boolean
   ): Promise<{ networkList: Array<{ name: string; withdrawFee: string }> }>;
   _getEntrypointNetwork(chainId: number, token: string): Promise<number>;
+  _getLatestPrice(
+    sourceToken: string,
+    destinationToken: string,
+    sourceChain: number,
+    amountToTransfer: BigNumber
+  ): Promise<{ latestPrice: number; slippagePct: number }>;
+  _getTradeFees(): Promise<Array<{ symbol: string; takerCommission: string }>>;
+  _getSpotMarketMetaForRoute(
+    sourceToken: string,
+    destinationToken: string
+  ): Promise<{ symbol: string; isBuy: boolean }>;
+  _estimateDestinationAmountForRoute(
+    sourceToken: string,
+    sourceChain: number,
+    destinationToken: string,
+    destinationChain: number,
+    amountToTransfer: BigNumber,
+    price: number
+  ): Promise<BigNumber>;
+};
+
+type HyperliquidInternalAdapter = {
+  _getLatestPrice(
+    sourceToken: string,
+    destinationToken: string,
+    destinationChain: number,
+    amountToTransfer: BigNumber,
+    pxBuffer: number
+  ): Promise<{ px: string; slippagePct: number }>;
+  _getUserTakerFeePct(skipCache?: boolean): Promise<BigNumber>;
+  _getSpotMarketMetaForRoute(sourceToken: string, destinationToken: string): { isBuy: boolean };
 };
 
 // prettier-ignore
-type BuildGraphParams = { logger: winston.Logger; baseSigner: Signer; relayerConfig: RelayerConfig; rebalancerConfig: RebalancerConfig; inventoryClient: InventoryClient; rebalanceRoutes: RebalanceRoute[]; rebalancerAdapters: Record<string, RebalancerAdapter>; graphId?: string; now?: Date };
+type BuildGraphParams = { logger: winston.Logger; baseSigner: Signer; relayerConfig: RelayerConfig; inventoryClient: InventoryClient; rebalanceRoutes: RebalanceRoute[]; rebalancerAdapters: Record<string, RebalancerAdapter>; graphId?: string; now?: Date };
 
 const HUB_CHAIN_ID = CHAIN_IDs.MAINNET;
-const SLOW_OPSTACK_WITHDRAWAL_LATENCY_SECONDS = 7 * 24 * 60 * 60 + 60 * 60;
 export const JUSSI_GRAPH_VERSION = 3;
 export const JUSSI_LOGICAL_ASSETS: readonly LogicalAsset[] = ["USDC", "USDT", "WETH"];
 const TRANSIENT_EDGE_PRICING_ERROR_PATTERNS = ["fetch failed", "recvWindow", "Too many requests", "429"];
 const EDGE_BUILD_BATCH_SIZE = Math.max(1, Number(process.env.JUSSI_EDGE_BUILD_BATCH_SIZE ?? "8") || 8);
 const STABLECOIN_PRICE_USD: Record<StableLogicalAsset, number> = { USDC: 1, USDT: 1 };
 const UNIVERSAL_INPUT_TIER_USD = "1000000000.000000";
+const EDGE_CLASS_REFERENCE_INPUT_USD = 10_000;
 const DEFAULT_LATENCY_ANNUALIZED_COST_RATE = "0.05";
 const BINANCE_RATE_LIMIT_BUCKET_ID = "binance_withdrawals_24h_usd";
+const SLOW_WITHDRAWAL_LATENCY_SECONDS = 7 * 24 * 60 * 60;
+const LINEA_SCROLL_WITHDRAWAL_LATENCY_SECONDS = 4 * 60 * 60;
+const ZKSTACK_WITHDRAWAL_LATENCY_SECONDS = 60 * 60;
 const GAS_UNITS_BY_FAMILY: Record<EdgeFamily, number> = {
   cctp: 250_000,
   oft: 320_000,
@@ -277,7 +311,7 @@ export function resolveBridgeLatencySeconds(
   logicalAsset: LogicalAsset
 ): number {
   if (family === "oft" && logicalAsset === "USDT" && sourceChain === CHAIN_IDs.HYPEREVM) {
-    return 11 * 60 * 60;
+    return 24 * 60 * 60;
   }
   return LATENCY_BY_FAMILY[family];
 }
@@ -289,13 +323,27 @@ export function resolveGraphBridgeLatencySeconds(
     return resolveBridgeLatencySeconds(candidate.family, candidate.from.chainId, candidate.from.logicalAsset);
   }
 
-  if (
-    candidate.from.logicalAsset === "WETH" &&
-    candidate.to.chainId === HUB_CHAIN_ID &&
-    candidate.family === "canonical" &&
-    candidate.adapterOrBridgeName === "OpStackWethBridge"
-  ) {
-    return SLOW_OPSTACK_WITHDRAWAL_LATENCY_SECONDS;
+  if (candidate.family === "binance_cex_bridge") {
+    return LATENCY_BY_FAMILY.binance_cex_bridge;
+  }
+
+  if (candidate.from.chainId === HUB_CHAIN_ID) {
+    return EXPECTED_L1_TO_L2_MESSAGE_TIME[candidate.to.chainId] ?? LATENCY_BY_FAMILY[candidate.family];
+  }
+
+  if (candidate.to.chainId === HUB_CHAIN_ID) {
+    if (candidate.adapterOrBridgeName.startsWith("ZKStack") || candidate.adapterOrBridgeName.startsWith("ZkStack")) {
+      return ZKSTACK_WITHDRAWAL_LATENCY_SECONDS;
+    }
+    if (candidate.adapterOrBridgeName.startsWith("Scroll") || candidate.adapterOrBridgeName.startsWith("Linea")) {
+      return LINEA_SCROLL_WITHDRAWAL_LATENCY_SECONDS;
+    }
+    if (
+      candidate.adapterOrBridgeName.startsWith("OpStack") ||
+      SLOW_WITHDRAWAL_CHAINS.includes(candidate.from.chainId)
+    ) {
+      return SLOW_WITHDRAWAL_LATENCY_SECONDS;
+    }
   }
 
   return LATENCY_BY_FAMILY[candidate.family];
@@ -416,16 +464,7 @@ export function materializeNodeDefinitions(
 }
 
 export async function buildJussiGraphDefinition(params: BuildGraphParams): Promise<BuiltJussiGraph> {
-  const {
-    logger,
-    baseSigner,
-    relayerConfig,
-    rebalancerConfig,
-    inventoryClient,
-    rebalanceRoutes,
-    rebalancerAdapters,
-    now,
-  } = params;
+  const { logger, baseSigner, relayerConfig, inventoryClient, rebalanceRoutes, rebalancerAdapters, now } = params;
 
   const graphId = params.graphId ?? buildJussiGraphId(now);
   const logBuild = (message: string, extra: Record<string, unknown> = {}) =>
@@ -486,12 +525,26 @@ export async function buildJussiGraphDefinition(params: BuildGraphParams): Promi
     logger,
     baseSigner,
     pricingContext,
-    rebalancerConfig,
     rebalancerAdapters,
     cumulativeBalancesByLogicalAsset,
   };
   const logicalAssets = buildLogicalAssetDefinitions(nodeContexts);
-  const edgeClassDefinitions = new Map<string, JussiEdgeClassDefinition>();
+  const edgeClassCandidates = new Map<string, GraphEdgeCandidate>();
+  edgeCandidates.forEach((candidate) => {
+    const edgeClassId = resolveEdgeClassId(candidate);
+    if (!edgeClassCandidates.has(edgeClassId)) {
+      edgeClassCandidates.set(edgeClassId, candidate);
+    }
+  });
+  logBuild("Building edge classes", { edgeClassCount: edgeClassCandidates.size });
+  const edgeClassDefinitions = new Map(
+    (
+      await mapAsync(Array.from(edgeClassCandidates.values()), async (candidate) => {
+        const edgeClass = await serializeEdgeClassDefinition(candidate, edgePricingParams);
+        return [edgeClass.edge_class_id, edgeClass] as const;
+      })
+    ).sort(([a], [b]) => a.localeCompare(b))
+  );
   const edges: JussiEdgeDefinition[] = [];
   const edgeCandidateBatches = chunk(edgeCandidates, EDGE_BUILD_BATCH_SIZE);
   for (let batchIndex = 0; batchIndex < edgeCandidateBatches.length; batchIndex += 1) {
@@ -513,16 +566,9 @@ export async function buildJussiGraphDefinition(params: BuildGraphParams): Promi
         toNodeKey: candidate.to.nodeKey,
       });
       const economics = await estimateEdgeEconomics(candidate, edgePricingParams);
-      const edgeClass = serializeEdgeClassDefinition(candidate);
-      const existingEdgeClass = edgeClassDefinitions.get(edgeClass.edge_class_id);
-      if (isDefined(existingEdgeClass)) {
-        assert(
-          JSON.stringify(existingEdgeClass) === JSON.stringify(edgeClass),
-          `Edge class ${edgeClass.edge_class_id} was derived with inconsistent definitions`
-        );
-      } else {
-        edgeClassDefinitions.set(edgeClass.edge_class_id, edgeClass);
-      }
+      const edgeClassId = resolveEdgeClassId(candidate);
+      const edgeClass = edgeClassDefinitions.get(edgeClassId);
+      assert(isDefined(edgeClass), `Missing derived edge class for ${edgeClassId}`);
       const edge = serializeEdgeDefinition(candidate, economics, edgeClass.edge_class_id);
       debugBuild("Constructed edge", {
         edgeIndex,
@@ -922,7 +968,10 @@ export function dedupeGraphEdgeCandidates(candidates: GraphEdgeCandidate[]): Gra
   return Array.from(deduped.values());
 }
 
-function serializeEdgeClassDefinition(candidate: GraphEdgeCandidate): JussiEdgeClassDefinition {
+async function serializeEdgeClassDefinition(
+  candidate: GraphEdgeCandidate,
+  params: Pick<EdgePricingParams, "pricingContext" | "rebalancerAdapters">
+): Promise<JussiEdgeClassDefinition> {
   const edge_class_id = resolveEdgeClassId(candidate);
   return {
     edge_class_id,
@@ -933,7 +982,7 @@ function serializeEdgeClassDefinition(candidate: GraphEdgeCandidate): JussiEdgeC
       segments: [
         {
           up_to_input_usd: UNIVERSAL_INPUT_TIER_USD,
-          marginal_output_rate: resolveMarginalOutputRate(candidate),
+          marginal_output_rate: await resolveMarginalOutputRate(candidate, params),
         },
       ],
     },
@@ -980,7 +1029,10 @@ function resolveRateLimitBucketId(family: EdgeFamily): string | undefined {
   return family === "binance" || family === "binance_cex_bridge" ? BINANCE_RATE_LIMIT_BUCKET_ID : undefined;
 }
 
-function resolveMarginalOutputRate(candidate: GraphEdgeCandidate): JussiRateDefinition {
+async function resolveMarginalOutputRate(
+  candidate: GraphEdgeCandidate,
+  params: Pick<EdgePricingParams, "pricingContext" | "rebalancerAdapters">
+): Promise<JussiRateDefinition> {
   if (
     candidate.family === "cctp" ||
     candidate.family === "oft" ||
@@ -993,15 +1045,162 @@ function resolveMarginalOutputRate(candidate: GraphEdgeCandidate): JussiRateDefi
   }
 
   if (candidate.family === "hyperliquid") {
-    return { numerator: "9999", denominator: "10000" };
+    return estimateHyperliquidMarginalOutputRate(candidate, params);
   }
 
   if (candidate.family === "binance") {
-    const involvesWeth = candidate.from.logicalAsset === "WETH" || candidate.to.logicalAsset === "WETH";
-    return involvesWeth ? { numerator: "9990", denominator: "10000" } : { numerator: "9999", denominator: "10000" };
+    return estimateBinanceMarginalOutputRate(candidate, params);
   }
 
   return { numerator: "1", denominator: "1" };
+}
+
+async function estimateBinanceMarginalOutputRate(
+  candidate: GraphEdgeCandidate,
+  params: Pick<EdgePricingParams, "pricingContext" | "rebalancerAdapters">
+): Promise<JussiRateDefinition> {
+  assert(isDefined(candidate.rebalanceRoute), "Binance edge class estimation requires rebalance route metadata");
+  const { sourceToken, destinationToken } = candidate.rebalanceRoute;
+  const [forwardRate, reverseRate] = await Promise.all([
+    estimateDirectionalBinanceMarginalOutputRate(sourceToken as LogicalAsset, destinationToken as LogicalAsset, params),
+    estimateDirectionalBinanceMarginalOutputRate(destinationToken as LogicalAsset, sourceToken as LogicalAsset, params),
+  ]);
+
+  return minRateDefinition(forwardRate, reverseRate);
+}
+
+async function estimateDirectionalBinanceMarginalOutputRate(
+  sourceToken: LogicalAsset,
+  destinationToken: LogicalAsset,
+  params: Pick<EdgePricingParams, "pricingContext" | "rebalancerAdapters">
+): Promise<JussiRateDefinition> {
+  if (sourceToken === destinationToken) {
+    return { numerator: "1", denominator: "1" };
+  }
+
+  const adapter = params.rebalancerAdapters.binance as BinanceStablecoinSwapAdapter;
+  const adapterInternals = adapter as unknown as BinanceInternalAdapter;
+  const sourceTokenInfo = getTokenInfoFromSymbol(sourceToken, HUB_CHAIN_ID);
+  const destinationTokenInfo = getTokenInfoFromSymbol(destinationToken, HUB_CHAIN_ID);
+  const referenceInputNative = await resolveEdgeClassReferenceInputNative(
+    sourceToken,
+    sourceTokenInfo.decimals,
+    params.pricingContext
+  );
+  const marketMeta = await adapterInternals._getSpotMarketMetaForRoute(sourceToken, destinationToken);
+  const { latestPrice } = await adapterInternals._getLatestPrice(
+    sourceToken,
+    destinationToken,
+    HUB_CHAIN_ID,
+    referenceInputNative
+  );
+  const estimatedOutputNative = await adapterInternals._estimateDestinationAmountForRoute(
+    sourceToken,
+    HUB_CHAIN_ID,
+    destinationToken,
+    HUB_CHAIN_ID,
+    referenceInputNative,
+    latestPrice
+  );
+  const takerCommissionPct =
+    Number((await adapterInternals._getTradeFees()).find((fee) => fee.symbol === marketMeta.symbol)?.takerCommission) ||
+    0;
+  const feeFactor = Math.max(0, 1 - takerCommissionPct / 100);
+  const netOutputReadable = parseFloat(formatUnits(estimatedOutputNative, destinationTokenInfo.decimals)) * feeFactor;
+  const referenceOutputReadable = await quoteReferenceOutputReadable(
+    sourceToken,
+    destinationToken,
+    referenceInputNative,
+    sourceTokenInfo.decimals,
+    params.pricingContext
+  );
+  return decimalToRate(netOutputReadable / Math.max(referenceOutputReadable, Number.EPSILON));
+}
+
+async function estimateHyperliquidMarginalOutputRate(
+  candidate: GraphEdgeCandidate,
+  params: Pick<EdgePricingParams, "pricingContext" | "rebalancerAdapters">
+): Promise<JussiRateDefinition> {
+  assert(isDefined(candidate.rebalanceRoute), "Hyperliquid edge class estimation requires rebalance route metadata");
+  const adapter = params.rebalancerAdapters.hyperliquid as RebalancerAdapter;
+  const adapterInternals = adapter as unknown as HyperliquidInternalAdapter;
+  const { sourceToken, destinationToken } = candidate.rebalanceRoute;
+  const sourceTokenInfo = getTokenInfoFromSymbol(sourceToken, HUB_CHAIN_ID);
+  const destinationTokenInfo = getTokenInfoFromSymbol(destinationToken, HUB_CHAIN_ID);
+  const referenceInputNative = await resolveEdgeClassReferenceInputNative(
+    candidate.from.logicalAsset,
+    sourceTokenInfo.decimals,
+    params.pricingContext
+  );
+  const { px } = await adapterInternals._getLatestPrice(
+    sourceToken,
+    destinationToken,
+    HUB_CHAIN_ID,
+    referenceInputNative,
+    1.0
+  );
+  const spotMarketMeta = adapterInternals._getSpotMarketMetaForRoute(sourceToken, destinationToken);
+  const sourceReadable = parseFloat(formatUnits(referenceInputNative, sourceTokenInfo.decimals));
+  const executionPrice = Number(px);
+  const grossOutputReadable = spotMarketMeta.isBuy ? sourceReadable / executionPrice : sourceReadable * executionPrice;
+  const takerFeePct = Number(formatUnits(await adapterInternals._getUserTakerFeePct(), 18));
+  const feeFactor = Math.max(0, 1 - takerFeePct / 100);
+  const netOutputReadable = parseFloat(
+    truncate(grossOutputReadable * feeFactor, destinationTokenInfo.decimals).toString()
+  );
+  const referenceOutputReadable = await quoteReferenceOutputReadable(
+    candidate.from.logicalAsset,
+    candidate.to.logicalAsset,
+    referenceInputNative,
+    sourceTokenInfo.decimals,
+    params.pricingContext
+  );
+  return decimalToRate(netOutputReadable / Math.max(referenceOutputReadable, Number.EPSILON));
+}
+
+async function resolveEdgeClassReferenceInputNative(
+  logicalAsset: LogicalAsset,
+  sourceDecimals: number,
+  pricingContext: RuntimePricingContext
+): Promise<BigNumber> {
+  const assetPriceUsd = await pricingContext.getLogicalAssetPriceUsd(logicalAsset);
+  const inputAmount = EDGE_CLASS_REFERENCE_INPUT_USD / Math.max(assetPriceUsd, Number.EPSILON);
+  return toBNWei(truncate(inputAmount, sourceDecimals).toString(), sourceDecimals);
+}
+
+async function quoteReferenceOutputReadable(
+  inputLogicalAsset: LogicalAsset,
+  outputLogicalAsset: LogicalAsset,
+  inputNative: BigNumber,
+  inputDecimals: number,
+  pricingContext: RuntimePricingContext
+): Promise<number> {
+  const inputReadable = parseFloat(formatUnits(inputNative, inputDecimals));
+  if (inputLogicalAsset === outputLogicalAsset) {
+    return inputReadable;
+  }
+  const [inputPriceUsd, outputPriceUsd] = await Promise.all([
+    pricingContext.getLogicalAssetPriceUsd(inputLogicalAsset),
+    pricingContext.getLogicalAssetPriceUsd(outputLogicalAsset),
+  ]);
+  return (inputReadable * inputPriceUsd) / Math.max(outputPriceUsd, Number.EPSILON);
+}
+
+function decimalToRate(value: number): JussiRateDefinition {
+  const denominator = 1_000_000;
+  const clamped = Math.max(0, Math.min(1, value));
+  return {
+    numerator: Math.round(clamped * denominator).toString(),
+    denominator: denominator.toString(),
+  };
+}
+
+function minRateDefinition(left: JussiRateDefinition, right: JussiRateDefinition): JussiRateDefinition {
+  return rateToDecimal(left) <= rateToDecimal(right) ? left : right;
+}
+
+function rateToDecimal(rate: JussiRateDefinition): number {
+  return Number(rate.numerator) / Math.max(Number(rate.denominator), Number.EPSILON);
 }
 
 async function estimateEdgeEconomics(
@@ -1010,11 +1209,7 @@ async function estimateEdgeEconomics(
   attempt = 0
 ): Promise<EdgeEconomics> {
   try {
-    const referenceInputNative = resolveReferenceInput(
-      candidate,
-      params.rebalancerConfig,
-      params.cumulativeBalancesByLogicalAsset
-    );
+    const referenceInputNative = await resolveInputCapacityNative(candidate, params);
     const breakdown =
       candidate.family === "binance"
         ? await estimateBinanceSwapBreakdown(candidate, referenceInputNative, params)
@@ -1062,29 +1257,40 @@ async function estimateEdgeEconomics(
   }
 }
 
-function resolveReferenceInput(
+async function resolveInputCapacityNative(
   candidate: GraphEdgeCandidate,
-  rebalancerConfig: RebalancerConfig,
-  cumulativeBalancesByLogicalAsset: Record<LogicalAsset, BigNumber>
-): BigNumber {
-  if (candidate.rebalanceRoute) {
-    const configured =
-      rebalancerConfig.maxAmountsToTransfer[candidate.rebalanceRoute.sourceToken]?.[
-        candidate.rebalanceRoute.sourceChain
-      ];
-    if (isDefined(configured)) {
-      return configured;
-    }
-  }
-
+  params: Pick<EdgePricingParams, "cumulativeBalancesByLogicalAsset">
+): Promise<BigNumber> {
   if (candidate.family === "cctp") {
     return CCTP_MAX_SEND_AMOUNT;
   }
 
   const hubDecimals = getTokenInfoFromSymbol(candidate.from.logicalAsset, HUB_CHAIN_ID).decimals;
   const converter = ConvertDecimals(hubDecimals, candidate.from.decimals);
-  const derived = converter(cumulativeBalancesByLogicalAsset[candidate.from.logicalAsset]);
-  return derived.gt(bnZero) ? derived : toBN(10).pow(candidate.from.decimals);
+  const derived = converter(params.cumulativeBalancesByLogicalAsset[candidate.from.logicalAsset]);
+  return derived.gt(bnZero)
+    ? roundNativeCapacityDown(derived, candidate.from.decimals)
+    : toBN(10).pow(candidate.from.decimals);
+}
+
+function readableAmountToRoundedNativeCapacity(readableAmount: number, decimals: number): BigNumber {
+  const roundedReadable = roundReadableAmountDown(readableAmount);
+  const truncated = truncate(Math.max(roundedReadable, 0), decimals).toString();
+  return toBNWei(truncated, decimals);
+}
+
+function roundNativeCapacityDown(amount: BigNumber, decimals: number): BigNumber {
+  const readable = Number(formatUnits(amount, decimals));
+  return readableAmountToRoundedNativeCapacity(readable, decimals);
+}
+
+function roundReadableAmountDown(amount: number): number {
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return 0;
+  }
+  const exponent = Math.floor(Math.log10(amount));
+  const scale = 10 ** exponent;
+  return Math.floor(amount / scale) * scale;
 }
 
 async function estimateCctpBreakdown(
@@ -1495,6 +1701,7 @@ class RuntimePricingContext {
   private readonly priceClient: PriceClient;
   private readonly gasPriceCache = new Map<number, Promise<BigNumber>>();
   private readonly nativePriceCache = new Map<number, Promise<number>>();
+  private readonly logicalAssetPriceCache = new Map<LogicalAsset, Promise<number>>();
 
   constructor(readonly logger: winston.Logger) {
     this.priceClient = new PriceClient(logger, [
@@ -1520,6 +1727,17 @@ class RuntimePricingContext {
     const nativeTokenInfo = getNativeTokenInfoForChain(chainId, HUB_CHAIN_ID);
     const nativePriceUsd = await this.getNativeTokenPriceUsd(chainId);
     return parseFloat(formatUnits(value, nativeTokenInfo.decimals)) * nativePriceUsd;
+  }
+
+  async getLogicalAssetPriceUsd(logicalAsset: LogicalAsset): Promise<number> {
+    if (logicalAsset === "USDC" || logicalAsset === "USDT") {
+      return STABLECOIN_PRICE_USD[logicalAsset];
+    }
+    return this.loadCachedValue(this.logicalAssetPriceCache, logicalAsset, async () => {
+      const tokenInfo = getTokenInfoFromSymbol(logicalAsset, HUB_CHAIN_ID);
+      const price = await this.priceClient.getPriceByAddress(tokenInfo.address.toNative());
+      return Number(price.price);
+    });
   }
 
   private getGasPrice(chainId: number): Promise<BigNumber> {
@@ -1563,7 +1781,7 @@ class RuntimePricingContext {
     });
   }
 
-  private loadCachedValue<T>(cache: Map<number, Promise<T>>, key: number, loader: () => Promise<T>): Promise<T> {
+  private loadCachedValue<K, T>(cache: Map<K, Promise<T>>, key: K, loader: () => Promise<T>): Promise<T> {
     const cached = cache.get(key);
     if (isDefined(cached)) {
       return cached;

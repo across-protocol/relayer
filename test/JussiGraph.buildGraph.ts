@@ -193,7 +193,7 @@ describe("Jussi graph builder helpers", async function () {
         sourceBridgeLatencySeconds: cctpLatency,
         destinationBridgeLatencySeconds: slowOftLatency,
       })
-    ).to.equal(41100);
+    ).to.equal(87900);
   });
 
   it("discovers WETH bridge candidates from constants and applies WETH bridge latency overrides", async function () {
@@ -246,9 +246,12 @@ describe("Jussi graph builder helpers", async function () {
         candidate.from.logicalAsset === "WETH"
     )!;
 
-    expect(resolveGraphBridgeLatencySeconds(zoraToMainnet)).to.equal(7 * 24 * 60 * 60 + 60 * 60);
+    expect(resolveGraphBridgeLatencySeconds(zoraToMainnet)).to.equal(7 * 24 * 60 * 60);
     expect(resolveGraphBridgeLatencySeconds(mainnetToZora)).to.equal(20 * 60);
     expect(resolveGraphBridgeLatencySeconds(plasmaToMainnet)).to.equal(20 * 60);
+    expect(
+      resolveGraphBridgeLatencySeconds(bridgeCandidates.find((candidate) => candidate.family === "binance_cex_bridge")!)
+    ).to.equal(5 * 60);
   });
 
   it("skips bridged USDC lookups on chains that only support native USDC", async function () {
