@@ -136,24 +136,6 @@ index d283a6c..56f6663 100644
          return !l2BlockNumber || blockNumber > l2BlockNumber
              ? { ...game, l2BlockNumber: blockNumber }
              : null;
-diff --git a/node_modules/viem/_types/clients/createClient.d.ts b/node_modules/viem/_types/clients/createClient.d.ts
-index 1697039..85e7e81 100644
---- a/node_modules/viem/_types/clients/createClient.d.ts
-+++ b/node_modules/viem/_types/clients/createClient.d.ts
-@@ -101,11 +101,9 @@ type Client_Base<transport extends Transport = Transport, chain extends Chain |
-     /** A unique ID for the client. */
-     uid: string;
- };
--type Extended = Prettify<{
--    [_ in keyof Client_Base]?: undefined;
--} & {
-+type Extended = {
-     [key: string]: unknown;
--}>;
-+};
- export type MulticallBatchOptions = {
-     /** The maximum size (in bytes) for each calldata chunk. @default 1_024 */
-     batchSize?: number | undefined;
 diff --git a/node_modules/viem/chains/definitions/megaeth.ts b/node_modules/viem/chains/definitions/megaeth.ts
 index 41b4d70..7527021 100644
 --- a/node_modules/viem/chains/definitions/megaeth.ts
