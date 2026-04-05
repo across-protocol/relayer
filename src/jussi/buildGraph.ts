@@ -10,7 +10,6 @@ import { InventoryClient } from "../clients";
 import { InventoryConfig, TokenBalanceConfig, isAliasConfig } from "../interfaces/InventoryManagement";
 import { RelayerConfig } from "../relayer/RelayerConfig";
 import { BinanceStablecoinSwapAdapter, isSameBinanceCoinRoute } from "../rebalancer/adapters/binance";
-import { HyperliquidStablecoinSwapAdapter } from "../rebalancer/adapters/hyperliquid";
 import { OftAdapter } from "../rebalancer/adapters/oftAdapter";
 import { RebalancerConfig } from "../rebalancer/RebalancerConfig";
 import { RebalanceRoute, RebalancerAdapter } from "../rebalancer/utils/interfaces";
@@ -49,8 +48,30 @@ import {
 import { getAcrossHost } from "../clients/AcrossAPIClient";
 
 export type JussiRateDefinition = { numerator: string; denominator: string };
-export type JussiOutputSegmentDefinition = { up_to_input_native: string; marginal_output_rate: JussiRateDefinition };
-export type JussiCostSegmentDefinition = { up_to_input_native: string; marginal_cost_per_unit_usd: string };
+export type JussiLogicalAssetDefinition = { decimals_by_chain: Record<string, number> };
+export type JussiEdgeClassOutputSegmentDefinition = {
+  up_to_input_usd: string;
+  marginal_output_rate: JussiRateDefinition;
+};
+export type JussiEdgeCostSegmentDefinition = { up_to_input_usd: string; marginal_cost_per_unit_usd: string };
+export type JussiRateLimitBucketCostSegmentDefinition = {
+  up_to_usage_usd: string;
+  marginal_cost_per_unit_usd: string;
+};
+export type JussiRateLimitBucketDefinition = {
+  bucket_id: string;
+  capacity_usd: string;
+  window_seconds: number;
+  cost_usd: { segments: JussiRateLimitBucketCostSegmentDefinition[] };
+};
+export type JussiEdgeClassDefinition = {
+  edge_class_id: string;
+  venue: string;
+  input_logical_asset: string;
+  output_logical_asset: string;
+  output: { segments: JussiEdgeClassOutputSegmentDefinition[] };
+  rate_limit_bucket_id?: string;
+};
 export type JussiNodeDefinition = {
   node_key: string;
   chain_id: number;
@@ -66,23 +87,26 @@ export type JussiNodeDefinition = {
 };
 export type JussiEdgeDefinition = {
   edge_id: string;
+  edge_class_id: string;
   from_node_key: string;
   to_node_key: string;
   input_capacity_native: string;
-  output: { segments: JussiOutputSegmentDefinition[] };
-  cost_usd: { fixed_cost_usd: string; segments: JussiCostSegmentDefinition[] };
+  output: { fixed_input_fee_native: string; fixed_output_fee_native: string };
+  cost_usd: { fixed_cost_usd: string; segments: JussiEdgeCostSegmentDefinition[] };
   latency_seconds?: number;
 };
 type JussiPainModel = {
   type: "threshold";
   surplus_annualized_cost_rate: string;
-  surplus_expected_stale_time_secs: number;
   deficit_annualized_cost_rate: string;
-  deficit_expected_stale_time_secs: number;
   out_of_band_severity_multiplier: string;
 };
 export type JussiPutGraphRequest = {
-  pain_model?: JussiPainModel;
+  latency_annualized_cost_rate: string;
+  pain_model: JussiPainModel;
+  logical_assets: Record<LogicalAsset, JussiLogicalAssetDefinition>;
+  rate_limit_buckets: JussiRateLimitBucketDefinition[];
+  edge_classes: JussiEdgeClassDefinition[];
   nodes: JussiNodeDefinition[];
   edges: JussiEdgeDefinition[];
 };
@@ -94,7 +118,6 @@ export type JussiGraphEnvelope = { graph_id: string; payload: JussiPutGraphReque
 export type JussiGraphJson = JussiPutGraphRequest & {
   graph_id: string;
   graph_version: number;
-  logical_assets: LogicalAsset[];
 };
 type EdgeFamily =
   | "binance"
@@ -112,11 +135,17 @@ export type ManagedNodeContext = ManagedNodeTemplate & { nodeKey: string; defini
 // prettier-ignore
 export type GraphEdgeCandidate = { family: EdgeFamily; adapterOrBridgeName: string; effectiveBridgeName?: string; from: ManagedNodeContext; to: ManagedNodeContext; rebalanceRoute?: RebalanceRoute };
 // prettier-ignore
-type EdgeEconomics = { inputCapacityNative: BigNumber; expectedOutputNative: BigNumber; additiveCostUsd: number; latencySeconds: number };
+type EdgeEconomics = {
+  inputCapacityNative: BigNumber;
+  fixedInputFeeNative: BigNumber;
+  fixedOutputFeeNative: BigNumber;
+  fixedCostUsd: number;
+  latencySeconds: number;
+};
 type CostBreakdown = {
-  tokenLossSourceNative: BigNumber;
-  expectedOutputNative?: BigNumber;
-  additiveCostUsd: number;
+  fixedInputFeeSourceNative: BigNumber;
+  fixedOutputFeeDestinationNative: BigNumber;
+  fixedCostUsd: number;
   latencySeconds: number;
 };
 type AllowedSwapPair = { from: ManagedNodeContext; to: ManagedNodeContext };
@@ -129,8 +158,9 @@ type EdgePricingParams = ExchangeBreakdownParams & {
 };
 
 type ExchangeBreakdownState = {
-  tokenLossSourceNative: BigNumber;
-  additiveCostUsd: number;
+  fixedInputFeeSourceNative: BigNumber;
+  fixedOutputFeeDestinationNative: BigNumber;
+  fixedCostUsd: number;
   sourceBridgeLatencySeconds: number;
   destinationBridgeLatencySeconds: number;
 };
@@ -144,67 +174,12 @@ type BridgeLookupContext = {
   splitterBridges?: { name: string }[];
 };
 
-type OftInternalAdapter = OftAdapter & {
-  _getOftQuoteSend(
-    sourceChain: number,
-    destinationChain: number,
-    amount: BigNumber
-  ): Promise<{ sendParamStruct: { minAmountLD: { toString(): string } } }>;
-};
-
 type BinanceInternalAdapter = {
-  _getSpotMarketMetaForRoute(
-    sourceToken: string,
-    destinationToken: string
-  ): Promise<{ symbol: string; isBuy: boolean }>;
-  _getTradeFees(): Promise<Array<{ symbol: string; takerCommission: string }>>;
   _getAccountCoins(
     token: string,
     skipCache?: boolean
   ): Promise<{ networkList: Array<{ name: string; withdrawFee: string }> }>;
   _getEntrypointNetwork(chainId: number, token: string): Promise<number>;
-  _getAmountConverter(
-    destinationChainId: number,
-    destinationToken: unknown,
-    sourceChainId: number,
-    sourceToken: unknown
-  ): (amount: BigNumber) => BigNumber;
-  _getLatestPrice(
-    sourceToken: string,
-    destinationToken: string,
-    chainId: number,
-    amount: BigNumber
-  ): Promise<{ latestPrice: number }>;
-  _estimateDestinationAmountForRoute(
-    sourceToken: string,
-    sourceChain: number,
-    destinationToken: string,
-    destinationChain: number,
-    amount: BigNumber,
-    price: number
-  ): Promise<BigNumber>;
-  _convertRouteAmountToSourceAmount(
-    sourceToken: string,
-    sourceChain: number,
-    destinationToken: string,
-    destinationChain: number,
-    amountInDestinationToken: BigNumber,
-    price: number
-  ): Promise<BigNumber>;
-  _getOpportunityCostOfCapitalPctForRebalanceTime(ms: number): string | number;
-};
-
-type HyperliquidInternalAdapter = {
-  _getSpotMarketMetaForRoute(sourceToken: string, destinationToken: string): { isBuy: boolean };
-  _getLatestPrice(
-    sourceToken: string,
-    destinationToken: string,
-    chainId: number,
-    amount: BigNumber,
-    slippage: number
-  ): Promise<{ px: string | number }>;
-  _getUserTakerFeePct(): Promise<BigNumber>;
-  _getOpportunityCostOfCapitalPctForRebalanceTime(ms: number): string | number;
 };
 
 // prettier-ignore
@@ -212,11 +187,14 @@ type BuildGraphParams = { logger: winston.Logger; baseSigner: Signer; relayerCon
 
 const HUB_CHAIN_ID = CHAIN_IDs.MAINNET;
 const SLOW_OPSTACK_WITHDRAWAL_LATENCY_SECONDS = 7 * 24 * 60 * 60 + 60 * 60;
-export const JUSSI_GRAPH_VERSION = 2;
+export const JUSSI_GRAPH_VERSION = 3;
 export const JUSSI_LOGICAL_ASSETS: readonly LogicalAsset[] = ["USDC", "USDT", "WETH"];
 const TRANSIENT_EDGE_PRICING_ERROR_PATTERNS = ["fetch failed", "recvWindow", "Too many requests", "429"];
 const EDGE_BUILD_BATCH_SIZE = Math.max(1, Number(process.env.JUSSI_EDGE_BUILD_BATCH_SIZE ?? "8") || 8);
 const STABLECOIN_PRICE_USD: Record<StableLogicalAsset, number> = { USDC: 1, USDT: 1 };
+const UNIVERSAL_INPUT_TIER_USD = "1000000000.000000";
+const DEFAULT_LATENCY_ANNUALIZED_COST_RATE = "0.05";
+const BINANCE_RATE_LIMIT_BUCKET_ID = "binance_withdrawals_24h_usd";
 const GAS_UNITS_BY_FAMILY: Record<EdgeFamily, number> = {
   cctp: 250_000,
   oft: 320_000,
@@ -239,12 +217,26 @@ const LATENCY_BY_FAMILY: Record<EdgeFamily, number> = {
 };
 const DEFAULT_PAIN_MODEL = {
   type: "threshold" as const,
-  surplus_annualized_cost_rate: "0.08",
-  surplus_expected_stale_time_secs: 86_400,
-  deficit_annualized_cost_rate: "0.25",
-  deficit_expected_stale_time_secs: 259_200,
+  surplus_annualized_cost_rate: "0.000219",
+  deficit_annualized_cost_rate: "0.002055",
   out_of_band_severity_multiplier: "4.0",
 };
+const DEFAULT_RATE_LIMIT_BUCKETS: JussiRateLimitBucketDefinition[] = [
+  {
+    bucket_id: BINANCE_RATE_LIMIT_BUCKET_ID,
+    capacity_usd: "21000000",
+    window_seconds: 86_400,
+    cost_usd: {
+      segments: [
+        { up_to_usage_usd: "12600000", marginal_cost_per_unit_usd: "0" },
+        { up_to_usage_usd: "16800000", marginal_cost_per_unit_usd: "0.0005" },
+        { up_to_usage_usd: "18900000", marginal_cost_per_unit_usd: "0.0025" },
+        { up_to_usage_usd: "20370000", marginal_cost_per_unit_usd: "0.01" },
+        { up_to_usage_usd: "21000000", marginal_cost_per_unit_usd: "0.05" },
+      ],
+    },
+  },
+];
 
 // Public JSON helpers keep the builder easy to consume from scripts, fixtures, and tests.
 export function buildJussiGraphId(now = new Date()): string {
@@ -265,8 +257,11 @@ export function buildJussiGraphJson(graph: BuiltJussiGraph): JussiGraphJson {
   return {
     graph_id: graph.graphId,
     graph_version: JUSSI_GRAPH_VERSION,
+    latency_annualized_cost_rate: graph.payload.latency_annualized_cost_rate,
     pain_model: graph.payload.pain_model,
-    logical_assets: [...JUSSI_LOGICAL_ASSETS],
+    logical_assets: graph.payload.logical_assets,
+    rate_limit_buckets: graph.payload.rate_limit_buckets,
+    edge_classes: graph.payload.edge_classes,
     nodes: graph.payload.nodes,
     edges: graph.payload.edges,
   };
@@ -316,6 +311,22 @@ export function resolveExchangeLatencySeconds(params: {
     (params.sourceBridgeLatencySeconds ?? 0) +
     (params.destinationBridgeLatencySeconds ?? 0)
   );
+}
+
+function buildLogicalAssetDefinitions(
+  nodeContexts: ManagedNodeContext[]
+): Record<LogicalAsset, JussiLogicalAssetDefinition> {
+  return Object.fromEntries(
+    JUSSI_LOGICAL_ASSETS.map((logicalAsset) => {
+      const decimals_by_chain = Object.fromEntries(
+        nodeContexts
+          .filter((node) => node.logicalAsset === logicalAsset)
+          .map((node) => [String(node.chainId), node.decimals])
+          .sort(([a], [b]) => Number(a) - Number(b))
+      );
+      return [logicalAsset, { decimals_by_chain }];
+    })
+  ) as Record<LogicalAsset, JussiLogicalAssetDefinition>;
 }
 
 // The graph is built in stages: discover all nodes first, then project current balances into thresholds.
@@ -479,6 +490,8 @@ export async function buildJussiGraphDefinition(params: BuildGraphParams): Promi
     rebalancerAdapters,
     cumulativeBalancesByLogicalAsset,
   };
+  const logicalAssets = buildLogicalAssetDefinitions(nodeContexts);
+  const edgeClassDefinitions = new Map<string, JussiEdgeClassDefinition>();
   const edges: JussiEdgeDefinition[] = [];
   const edgeCandidateBatches = chunk(edgeCandidates, EDGE_BUILD_BATCH_SIZE);
   for (let batchIndex = 0; batchIndex < edgeCandidateBatches.length; batchIndex += 1) {
@@ -500,11 +513,22 @@ export async function buildJussiGraphDefinition(params: BuildGraphParams): Promi
         toNodeKey: candidate.to.nodeKey,
       });
       const economics = await estimateEdgeEconomics(candidate, edgePricingParams);
-      const edge = serializeEdgeDefinition(candidate, economics);
+      const edgeClass = serializeEdgeClassDefinition(candidate);
+      const existingEdgeClass = edgeClassDefinitions.get(edgeClass.edge_class_id);
+      if (isDefined(existingEdgeClass)) {
+        assert(
+          JSON.stringify(existingEdgeClass) === JSON.stringify(edgeClass),
+          `Edge class ${edgeClass.edge_class_id} was derived with inconsistent definitions`
+        );
+      } else {
+        edgeClassDefinitions.set(edgeClass.edge_class_id, edgeClass);
+      }
+      const edge = serializeEdgeDefinition(candidate, economics, edgeClass.edge_class_id);
       debugBuild("Constructed edge", {
         edgeIndex,
         edgeCount: edgeCandidates.length,
         edgeId: edge.edge_id,
+        edgeClassId: edge.edge_class_id,
         fromNodeKey: edge.from_node_key,
         toNodeKey: edge.to_node_key,
         inputCapacityNative: edge.input_capacity_native,
@@ -520,7 +544,17 @@ export async function buildJussiGraphDefinition(params: BuildGraphParams): Promi
   return {
     graphId,
     payload: {
+      latency_annualized_cost_rate: DEFAULT_LATENCY_ANNUALIZED_COST_RATE,
       pain_model: DEFAULT_PAIN_MODEL,
+      logical_assets: logicalAssets,
+      rate_limit_buckets: Array.from(edgeClassDefinitions.values()).some((edgeClass) =>
+        isDefined(edgeClass.rate_limit_bucket_id)
+      )
+        ? DEFAULT_RATE_LIMIT_BUCKETS
+        : [],
+      edge_classes: Array.from(edgeClassDefinitions.values()).sort((a, b) =>
+        a.edge_class_id.localeCompare(b.edge_class_id)
+      ),
       nodes: nodeContexts.map((node) => node.definition),
       edges,
     },
@@ -888,42 +922,86 @@ export function dedupeGraphEdgeCandidates(candidates: GraphEdgeCandidate[]): Gra
   return Array.from(deduped.values());
 }
 
-function serializeEdgeDefinition(candidate: GraphEdgeCandidate, economics: EdgeEconomics): JussiEdgeDefinition {
-  const [numerator, denominator] = reduceRate(economics.expectedOutputNative, economics.inputCapacityNative);
+function serializeEdgeClassDefinition(candidate: GraphEdgeCandidate): JussiEdgeClassDefinition {
+  const edge_class_id = resolveEdgeClassId(candidate);
   return {
-    edge_id: [
-      candidate.family,
-      candidate.adapterOrBridgeName,
-      candidate.from.chainId,
-      candidate.from.symbol,
-      candidate.to.chainId,
-      candidate.to.symbol,
-    ].join(":"),
+    edge_class_id,
+    venue: candidate.family,
+    input_logical_asset: candidate.from.logicalAsset,
+    output_logical_asset: candidate.to.logicalAsset,
+    output: {
+      segments: [
+        {
+          up_to_input_usd: UNIVERSAL_INPUT_TIER_USD,
+          marginal_output_rate: resolveMarginalOutputRate(candidate),
+        },
+      ],
+    },
+    ...(resolveRateLimitBucketId(candidate.family)
+      ? { rate_limit_bucket_id: resolveRateLimitBucketId(candidate.family) }
+      : {}),
+  };
+}
+
+function serializeEdgeDefinition(
+  candidate: GraphEdgeCandidate,
+  economics: EdgeEconomics,
+  edgeClassId: string
+): JussiEdgeDefinition {
+  return {
+    edge_id: [edgeClassId, candidate.from.nodeKey, candidate.to.nodeKey].join(":"),
+    edge_class_id: edgeClassId,
     from_node_key: candidate.from.nodeKey,
     to_node_key: candidate.to.nodeKey,
     input_capacity_native: economics.inputCapacityNative.toString(),
     output: {
-      segments: [
-        {
-          up_to_input_native: economics.inputCapacityNative.toString(),
-          marginal_output_rate: {
-            numerator: numerator.toString(),
-            denominator: denominator.toString(),
-          },
-        },
-      ],
+      fixed_input_fee_native: economics.fixedInputFeeNative.toString(),
+      fixed_output_fee_native: economics.fixedOutputFeeNative.toString(),
     },
     cost_usd: {
-      fixed_cost_usd: formatDecimal(economics.additiveCostUsd),
+      fixed_cost_usd: formatDecimal(economics.fixedCostUsd),
       segments: [
         {
-          up_to_input_native: economics.inputCapacityNative.toString(),
+          up_to_input_usd: UNIVERSAL_INPUT_TIER_USD,
           marginal_cost_per_unit_usd: "0",
         },
       ],
     },
     latency_seconds: economics.latencySeconds,
   };
+}
+
+function resolveEdgeClassId(candidate: GraphEdgeCandidate): string {
+  const qualifier = candidate.family === "cctp" ? ":standard" : "";
+  return `${candidate.family}${qualifier}:${candidate.from.logicalAsset}:${candidate.to.logicalAsset}`;
+}
+
+function resolveRateLimitBucketId(family: EdgeFamily): string | undefined {
+  return family === "binance" || family === "binance_cex_bridge" ? BINANCE_RATE_LIMIT_BUCKET_ID : undefined;
+}
+
+function resolveMarginalOutputRate(candidate: GraphEdgeCandidate): JussiRateDefinition {
+  if (
+    candidate.family === "cctp" ||
+    candidate.family === "oft" ||
+    candidate.family === "canonical" ||
+    candidate.family === "bridgeapi" ||
+    candidate.family === "hyperlane" ||
+    candidate.family === "binance_cex_bridge"
+  ) {
+    return { numerator: "1", denominator: "1" };
+  }
+
+  if (candidate.family === "hyperliquid") {
+    return { numerator: "9999", denominator: "10000" };
+  }
+
+  if (candidate.family === "binance") {
+    const involvesWeth = candidate.from.logicalAsset === "WETH" || candidate.to.logicalAsset === "WETH";
+    return involvesWeth ? { numerator: "9990", denominator: "10000" } : { numerator: "9999", denominator: "10000" };
+  }
+
+  return { numerator: "1", denominator: "1" };
 }
 
 async function estimateEdgeEconomics(
@@ -957,17 +1035,11 @@ async function estimateEdgeEconomics(
                       candidate.family === "hyperlane" ? "hyperlane" : "canonical"
                     );
 
-    const outputInDestinationNative =
-      breakdown.expectedOutputNative ??
-      ConvertDecimals(
-        candidate.from.decimals,
-        candidate.to.decimals
-      )(referenceInputNative.sub(minBigNumber(breakdown.tokenLossSourceNative, referenceInputNative)));
-
     return {
       inputCapacityNative: referenceInputNative,
-      expectedOutputNative: outputInDestinationNative,
-      additiveCostUsd: breakdown.additiveCostUsd,
+      fixedInputFeeNative: minBigNumber(breakdown.fixedInputFeeSourceNative, referenceInputNative),
+      fixedOutputFeeNative: breakdown.fixedOutputFeeDestinationNative,
+      fixedCostUsd: breakdown.fixedCostUsd,
       latencySeconds: breakdown.latencySeconds,
     };
   } catch (error) {
@@ -1031,7 +1103,7 @@ async function estimateOftBreakdown(
   if (candidate.from.logicalAsset !== "USDT" || candidate.to.logicalAsset !== "USDT") {
     return estimateQuotedBridgeBreakdown(candidate, amount, params, "oft");
   }
-  const oftAdapter = params.rebalancerAdapters.oft as OftInternalAdapter;
+  const oftAdapter = params.rebalancerAdapters.oft as OftAdapter;
   const route: RebalanceRoute = {
     sourceChain: candidate.from.chainId,
     destinationChain: candidate.to.chainId,
@@ -1039,8 +1111,6 @@ async function estimateOftBreakdown(
     destinationToken: "USDT",
     adapter: "oft",
   };
-  const oftQuote = await oftAdapter._getOftQuoteSend(route.sourceChain, route.destinationChain, amount);
-  const tokenLossSourceNative = amount.sub(BigNumber.from(oftQuote.sendParamStruct.minAmountLD.toString()));
   const additiveSourceNative = await oftAdapter.getEstimatedCost(route, amount);
   const additiveCostUsd = Math.max(
     parseFloat(formatUnits(additiveSourceNative, candidate.from.decimals)) *
@@ -1048,8 +1118,9 @@ async function estimateOftBreakdown(
     await params.pricingContext.deriveGasFloorUsd(candidate.family, candidate.from.chainId)
   );
   return {
-    tokenLossSourceNative,
-    additiveCostUsd,
+    fixedInputFeeSourceNative: bnZero,
+    fixedOutputFeeDestinationNative: bnZero,
+    fixedCostUsd: additiveCostUsd,
     latencySeconds: resolveBridgeLatencySeconds("oft", candidate.from.chainId, candidate.from.logicalAsset),
   };
 }
@@ -1080,12 +1151,6 @@ async function estimateBinanceSwapBreakdown(
   const adapter = params.rebalancerAdapters.binance as BinanceStablecoinSwapAdapter;
   const adapterInternals = adapter as unknown as BinanceInternalAdapter;
   const { sourceToken, destinationToken, sourceChain, destinationChain } = candidate.rebalanceRoute;
-  const allInSourceNative = await adapter.getEstimatedCost(candidate.rebalanceRoute, amount, false);
-  const spotMarketMeta = await adapterInternals._getSpotMarketMetaForRoute(sourceToken, destinationToken);
-  const tradeFeePct = (await adapterInternals._getTradeFees()).find(
-    (fee: { symbol: string }) => fee.symbol === spotMarketMeta.symbol
-  ).takerCommission;
-  const tradeFee = toBNWei(tradeFeePct, 18).mul(amount).div(toBNWei(100, 18));
   const destinationCoin = await adapterInternals._getAccountCoins(destinationToken);
   const destinationEntrypointNetwork = await adapterInternals._getEntrypointNetwork(destinationChain, destinationToken);
   const destinationTokenInfo = getTokenInfoFromSymbol(destinationToken, destinationEntrypointNetwork);
@@ -1094,33 +1159,11 @@ async function estimateBinanceSwapBreakdown(
     destinationCoin.networkList.find((network: { name: string }) => network.name === withdrawNetwork) ??
     destinationCoin.networkList[0];
   const withdrawFee = toBNWei(withdrawNetworkConfig.withdrawFee, destinationTokenInfo.decimals);
-  const { latestPrice } = await adapterInternals._getLatestPrice(sourceToken, destinationToken, sourceChain, amount);
-  const isCrossAssetWethRoute = sourceToken === "WETH" || destinationToken === "WETH";
-  const withdrawFeeConverted = isCrossAssetWethRoute
-    ? await adapterInternals._convertRouteAmountToSourceAmount(
-        sourceToken,
-        sourceChain,
-        destinationToken,
-        destinationEntrypointNetwork,
-        withdrawFee,
-        latestPrice
-      )
-    : adapterInternals._getAmountConverter(
-        destinationEntrypointNetwork,
-        destinationTokenInfo.address,
-        sourceChain,
-        getTokenInfoFromSymbol(sourceToken, sourceChain).address
-      )(withdrawFee);
-  const spreadFee = isCrossAssetWethRoute
-    ? bnZero
-    : toBNWei((spotMarketMeta.isBuy ? latestPrice - 1 : 1 - latestPrice).toFixed(18), 18)
-        .mul(amount)
-        .div(toBNWei(1, 18));
-  const state = await initializeExchangeBreakdown(
-    candidate,
-    tradeFee.add(withdrawFeeConverted).add(spreadFee),
-    params.pricingContext
-  );
+  const state = await initializeExchangeBreakdown(candidate, params.pricingContext);
+  state.fixedOutputFeeDestinationNative = ConvertDecimals(
+    destinationTokenInfo.decimals,
+    candidate.to.decimals
+  )(withdrawFee);
 
   const sourceEntrypointNetwork = await adapterInternals._getEntrypointNetwork(sourceChain, sourceToken);
   if (sourceEntrypointNetwork !== sourceChain) {
@@ -1142,42 +1185,7 @@ async function estimateBinanceSwapBreakdown(
       sourceDecimals: getTokenInfoFromSymbol(destinationToken, destinationEntrypointNetwork).decimals,
     });
   }
-
-  const requiresSlowOftLeg =
-    sourceChain === CHAIN_IDs.HYPEREVM && sourceToken === "USDT" && sourceEntrypointNetwork !== CHAIN_IDs.HYPEREVM;
-  if (requiresSlowOftLeg) {
-    state.additiveCostUsd += estimateOpportunityCostUsd(
-      amount,
-      adapterInternals._getOpportunityCostOfCapitalPctForRebalanceTime(11 * 60 * 60 * 1000),
-      candidate.from.decimals
-    );
-  }
-
-  warnOnExchangeBreakdownDrift(
-    params.logger,
-    "buildGraph.estimateBinanceSwapBreakdown",
-    candidate,
-    state,
-    allInSourceNative
-  );
-  return finalizeExchangeBreakdown(
-    state,
-    "binance",
-    isCrossAssetWethRoute
-      ? await adapterInternals
-          ._estimateDestinationAmountForRoute(
-            sourceToken,
-            sourceChain,
-            destinationToken,
-            destinationEntrypointNetwork,
-            amount.sub(tradeFee),
-            latestPrice
-          )
-          .then((grossDestinationAmount) =>
-            grossDestinationAmount.sub(minBigNumber(withdrawFee, grossDestinationAmount))
-          )
-      : undefined
-  );
+  return finalizeExchangeBreakdown(state, "binance");
 }
 
 async function estimateHyperliquidSwapBreakdown(
@@ -1186,18 +1194,8 @@ async function estimateHyperliquidSwapBreakdown(
   params: ExchangeBreakdownParams
 ): Promise<CostBreakdown> {
   assert(isDefined(candidate.rebalanceRoute), "Hyperliquid swap edge is missing rebalance route");
-  const adapter = params.rebalancerAdapters.hyperliquid as HyperliquidStablecoinSwapAdapter;
-  const adapterInternals = adapter as unknown as HyperliquidInternalAdapter;
   const { sourceToken, destinationToken, sourceChain, destinationChain } = candidate.rebalanceRoute;
-  const allInSourceNative = await adapter.getEstimatedCost(candidate.rebalanceRoute, amount, false);
-  const spotMarketMeta = adapterInternals._getSpotMarketMetaForRoute(sourceToken, destinationToken);
-  const { px } = await adapterInternals._getLatestPrice(sourceToken, destinationToken, destinationChain, amount, 1.0);
-  const latestPrice = Number(px);
-  const spreadPct = spotMarketMeta.isBuy ? latestPrice - 1 : 1 - latestPrice;
-  const spreadFee = toBNWei(spreadPct.toFixed(18), 18).mul(amount).div(toBNWei(1, 18));
-  const takerFeePct = await adapterInternals._getUserTakerFeePct();
-  const takerFee = takerFeePct.mul(amount).div(toBNWei(100, 18));
-  const state = await initializeExchangeBreakdown(candidate, spreadFee.add(takerFee), params.pricingContext);
+  const state = await initializeExchangeBreakdown(candidate, params.pricingContext);
 
   if (sourceChain !== CHAIN_IDs.HYPEREVM) {
     await addBridgeLegToExchangeBreakdown(state, candidate, amount, params, {
@@ -1218,23 +1216,6 @@ async function estimateHyperliquidSwapBreakdown(
       sourceDecimals: getTokenInfoFromSymbol(destinationToken, CHAIN_IDs.HYPEREVM).decimals,
     });
   }
-
-  const requiresSlowOftLeg = destinationChain !== CHAIN_IDs.HYPEREVM && destinationToken === "USDT";
-  if (requiresSlowOftLeg) {
-    state.additiveCostUsd += estimateOpportunityCostUsd(
-      amount,
-      adapterInternals._getOpportunityCostOfCapitalPctForRebalanceTime(11 * 60 * 60 * 1000),
-      candidate.from.decimals
-    );
-  }
-
-  warnOnExchangeBreakdownDrift(
-    params.logger,
-    "buildGraph.estimateHyperliquidSwapBreakdown",
-    candidate,
-    state,
-    allInSourceNative
-  );
   return finalizeExchangeBreakdown(state, "hyperliquid");
 }
 
@@ -1257,8 +1238,9 @@ async function estimateBinanceCexBridgeBreakdown(
   );
 
   return {
-    tokenLossSourceNative: toBNWei(withdrawFeeConfig.withdrawFee, candidate.from.decimals),
-    additiveCostUsd: await params.pricingContext.deriveGasFloorUsd(candidate.family, candidate.from.chainId),
+    fixedInputFeeSourceNative: bnZero,
+    fixedOutputFeeDestinationNative: toBNWei(withdrawFeeConfig.withdrawFee, candidate.to.decimals),
+    fixedCostUsd: await params.pricingContext.deriveGasFloorUsd(candidate.family, candidate.from.chainId),
     latencySeconds: resolveGraphBridgeLatencySeconds(candidate),
   };
 }
@@ -1268,8 +1250,9 @@ async function estimateBridgeApiBreakdown(
   params: Pick<BridgeBreakdownParams, "pricingContext">
 ): Promise<CostBreakdown> {
   return {
-    tokenLossSourceNative: bnZero,
-    additiveCostUsd: await params.pricingContext.deriveGasFloorUsd(candidate.family, candidate.from.chainId),
+    fixedInputFeeSourceNative: bnZero,
+    fixedOutputFeeDestinationNative: bnZero,
+    fixedCostUsd: await params.pricingContext.deriveGasFloorUsd(candidate.family, candidate.from.chainId),
     latencySeconds: LATENCY_BY_FAMILY.bridgeapi,
   };
 }
@@ -1282,11 +1265,9 @@ async function estimateQuotedBridgeBreakdown(
 ): Promise<CostBreakdown> {
   const quotedFeeUsd = await quoteNativeBridgeFeeUsd(candidate, amount, params);
   return {
-    tokenLossSourceNative: bnZero,
-    additiveCostUsd: Math.max(
-      quotedFeeUsd,
-      await params.pricingContext.deriveGasFloorUsd(family, candidate.from.chainId)
-    ),
+    fixedInputFeeSourceNative: bnZero,
+    fixedOutputFeeDestinationNative: bnZero,
+    fixedCostUsd: Math.max(quotedFeeUsd, await params.pricingContext.deriveGasFloorUsd(family, candidate.from.chainId)),
     latencySeconds: resolveGraphBridgeLatencySeconds(candidate),
   };
 }
@@ -1320,12 +1301,12 @@ function buildSyntheticBridgeNode(logicalAsset: LogicalAsset, chainId: number): 
 
 async function initializeExchangeBreakdown(
   candidate: GraphEdgeCandidate,
-  tokenLossSourceNative: BigNumber,
   pricingContext: RuntimePricingContext
 ): Promise<ExchangeBreakdownState> {
   return {
-    tokenLossSourceNative,
-    additiveCostUsd: await pricingContext.deriveGasFloorUsd(candidate.family, candidate.from.chainId),
+    fixedInputFeeSourceNative: bnZero,
+    fixedOutputFeeDestinationNative: bnZero,
+    fixedCostUsd: await pricingContext.deriveGasFloorUsd(candidate.family, candidate.from.chainId),
     sourceBridgeLatencySeconds: 0,
     destinationBridgeLatencySeconds: 0,
   };
@@ -1351,12 +1332,14 @@ async function addBridgeLegToExchangeBreakdown(
     amount,
     params
   );
-  state.tokenLossSourceNative = state.tokenLossSourceNative.add(
-    leg.side === "source"
-      ? bridgeBreakdown.tokenLossSourceNative
-      : ConvertDecimals(leg.sourceDecimals, candidate.from.decimals)(bridgeBreakdown.tokenLossSourceNative)
-  );
-  state.additiveCostUsd += bridgeBreakdown.additiveCostUsd;
+  if (leg.side === "source") {
+    state.fixedInputFeeSourceNative = state.fixedInputFeeSourceNative.add(bridgeBreakdown.fixedInputFeeSourceNative);
+  } else {
+    state.fixedOutputFeeDestinationNative = state.fixedOutputFeeDestinationNative.add(
+      ConvertDecimals(leg.sourceDecimals, candidate.to.decimals)(bridgeBreakdown.fixedOutputFeeDestinationNative)
+    );
+  }
+  state.fixedCostUsd += bridgeBreakdown.fixedCostUsd;
   if (leg.side === "source") {
     state.sourceBridgeLatencySeconds = bridgeBreakdown.latencySeconds;
   } else {
@@ -1364,43 +1347,14 @@ async function addBridgeLegToExchangeBreakdown(
   }
 }
 
-function estimateOpportunityCostUsd(amount: BigNumber, opportunityPct: string | number, decimals: number): number {
-  return parseFloat(formatUnits(toBNWei(opportunityPct, 18).mul(amount).div(toBNWei(100, 18)), decimals));
-}
-
-function warnOnExchangeBreakdownDrift(
-  logger: winston.Logger,
-  at: string,
-  candidate: GraphEdgeCandidate,
-  state: ExchangeBreakdownState,
-  allInSourceNative: BigNumber
-): void {
-  const reconstructedSourceUsd =
-    parseFloat(formatUnits(state.tokenLossSourceNative, candidate.from.decimals)) + state.additiveCostUsd;
-  const allInSourceUsd = parseFloat(formatUnits(allInSourceNative, candidate.from.decimals));
-  if (Math.abs(reconstructedSourceUsd - allInSourceUsd) <= 0.25) {
-    return;
-  }
-
-  logger.warn({
-    at,
-    message: "Exchange edge decomposition differs materially from adapter all-in estimate",
-    from: candidate.from.nodeKey,
-    to: candidate.to.nodeKey,
-    reconstructedSourceUsd,
-    allInSourceUsd,
-  });
-}
-
 function finalizeExchangeBreakdown(
   state: ExchangeBreakdownState,
-  family: Extract<EdgeFamily, "binance" | "hyperliquid">,
-  expectedOutputNative?: BigNumber
+  family: Extract<EdgeFamily, "binance" | "hyperliquid">
 ): CostBreakdown {
   return {
-    tokenLossSourceNative: state.tokenLossSourceNative,
-    expectedOutputNative,
-    additiveCostUsd: state.additiveCostUsd,
+    fixedInputFeeSourceNative: state.fixedInputFeeSourceNative,
+    fixedOutputFeeDestinationNative: state.fixedOutputFeeDestinationNative,
+    fixedCostUsd: state.fixedCostUsd,
     latencySeconds: resolveExchangeLatencySeconds({
       family,
       sourceBridgeLatencySeconds: state.sourceBridgeLatencySeconds,
@@ -1526,27 +1480,6 @@ function familyForBridgeName(bridgeName: string): EdgeFamily {
     return "binance_cex_bridge";
   }
   return "canonical";
-}
-
-function reduceRate(numerator: BigNumber, denominator: BigNumber): [bigint, bigint] {
-  const initialNumerator = BigInt(numerator.toString());
-  const initialDenominator = BigInt(denominator.toString());
-  if (initialNumerator === 0n) {
-    return [0n, 1n];
-  }
-  const divisor = greatestCommonDivisor(initialNumerator, initialDenominator);
-  return [initialNumerator / divisor, initialDenominator / divisor];
-}
-
-function greatestCommonDivisor(a: bigint, b: bigint): bigint {
-  let x = a;
-  let y = b;
-  while (y !== 0n) {
-    const next = x % y;
-    x = y;
-    y = next;
-  }
-  return x;
 }
 
 function minBigNumber(a: BigNumber, b: BigNumber): BigNumber {

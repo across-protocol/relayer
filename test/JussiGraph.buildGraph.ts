@@ -4,7 +4,6 @@ import { RelayerConfig } from "../src/relayer/RelayerConfig";
 import {
   GraphEdgeCandidate,
   JUSSI_GRAPH_VERSION,
-  JUSSI_LOGICAL_ASSETS,
   buildAllowedSwapEdgeCandidates,
   buildBridgeEdgeCandidates,
   buildJussiGraphEnvelope,
@@ -270,14 +269,20 @@ describe("Jussi graph builder helpers", async function () {
     const graph = {
       graphId,
       payload: {
+        latency_annualized_cost_rate: "0.05",
         pain_model: {
           type: "threshold" as const,
-          surplus_annualized_cost_rate: "0.08",
-          surplus_expected_stale_time_secs: 86400,
-          deficit_annualized_cost_rate: "0.25",
-          deficit_expected_stale_time_secs: 259200,
+          surplus_annualized_cost_rate: "0.000219",
+          deficit_annualized_cost_rate: "0.002055",
           out_of_band_severity_multiplier: "4.0",
         },
+        logical_assets: {
+          USDC: { decimals_by_chain: { "1": 6, "10": 6 } },
+          USDT: { decimals_by_chain: { "1": 6 } },
+          WETH: { decimals_by_chain: { "1": 18 } },
+        },
+        rate_limit_buckets: [],
+        edge_classes: [],
         nodes: [],
         edges: [],
       },
@@ -289,7 +294,11 @@ describe("Jussi graph builder helpers", async function () {
     expect(envelope).to.deep.equal({
       graph_id: graphId,
       payload: {
+        latency_annualized_cost_rate: "0.05",
         pain_model: graph.payload.pain_model,
+        logical_assets: graph.payload.logical_assets,
+        rate_limit_buckets: [],
+        edge_classes: [],
         nodes: [],
         edges: [],
       },
@@ -297,8 +306,11 @@ describe("Jussi graph builder helpers", async function () {
     expect(graphJson).to.deep.equal({
       graph_id: graphId,
       graph_version: JUSSI_GRAPH_VERSION,
+      latency_annualized_cost_rate: "0.05",
       pain_model: graph.payload.pain_model,
-      logical_assets: [...JUSSI_LOGICAL_ASSETS],
+      logical_assets: graph.payload.logical_assets,
+      rate_limit_buckets: [],
+      edge_classes: [],
       nodes: [],
       edges: [],
     });

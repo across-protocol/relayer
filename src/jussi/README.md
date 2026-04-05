@@ -4,7 +4,7 @@
 
 ## File Types
 
-- `src/jussi/graphs/*.json`: flattened graph JSONs for inspection and diffing. These match the shape of `sampleGraph.json` with `graph_id`, `graph_version`, `pain_model`, `logical_assets`, `nodes`, and `edges`.
+- `src/jussi/graphs/*.json`: flattened graph JSONs for inspection and diffing. These match the canonical Jussi shape of `sampleGraph.json` with `graph_id`, `graph_version`, `latency_annualized_cost_rate`, `pain_model`, `logical_assets`, `rate_limit_buckets`, `edge_classes`, `nodes`, and `edges`.
 
 ## How To Generate Them
 
@@ -26,7 +26,7 @@ node ./dist/scripts/buildJussiGraph.js --wallet gckms --keys bot4 --binanceSecre
 
 ## How To Use The PUT Payload
 
-Extract the data you need to supply into the PUT endpoint from `@src/jussi/graphs/sampleGraphs.json`.
+Extract the data you need to supply into the PUT endpoint from `src/jussi/graphs/sampleGraph.json`.
 
 ```bash
 curl -sS -X PUT "http://127.0.0.1:8080/graphs/<graph_id>" \
