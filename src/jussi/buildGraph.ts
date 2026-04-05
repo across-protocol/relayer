@@ -40,7 +40,6 @@ import {
   getTokenInfoFromSymbol,
   isDefined,
   mapAsync,
-  toBN,
   toBNWei,
   toAddressType,
   truncate,
@@ -186,6 +185,21 @@ type BinanceInternalAdapter = {
     sourceChain: number,
     amountToTransfer: BigNumber
   ): Promise<{ latestPrice: number; slippagePct: number }>;
+  _getSymbol(
+    sourceToken: string,
+    destinationToken: string
+  ): Promise<{
+    symbol: string;
+    baseAsset: string;
+    quoteAsset: string;
+    filters: Array<{
+      filterType: string;
+      tickSize?: string;
+      stepSize?: string;
+      minQty?: string;
+      maxQty?: string;
+    }>;
+  }>;
   _getTradeFees(): Promise<Array<{ symbol: string; takerCommission: string }>>;
   _getSpotMarketMetaForRoute(
     sourceToken: string,
@@ -223,7 +237,8 @@ const TRANSIENT_EDGE_PRICING_ERROR_PATTERNS = ["fetch failed", "recvWindow", "To
 const EDGE_BUILD_BATCH_SIZE = Math.max(1, Number(process.env.JUSSI_EDGE_BUILD_BATCH_SIZE ?? "8") || 8);
 const STABLECOIN_PRICE_USD: Record<StableLogicalAsset, number> = { USDC: 1, USDT: 1 };
 const UNIVERSAL_INPUT_TIER_USD = "1000000000.000000";
-const EDGE_CLASS_REFERENCE_INPUT_USD = 10_000;
+const EDGE_CLASS_INPUT_USD_SAMPLES = [1_000, 10_000, 100_000] as const;
+const EDGE_CLASS_RATE_SEGMENT_THRESHOLD_BPS = 5;
 const DEFAULT_LATENCY_ANNUALIZED_COST_RATE = "0.05";
 const BINANCE_RATE_LIMIT_BUCKET_ID = "binance_withdrawals_24h_usd";
 const SLOW_WITHDRAWAL_LATENCY_SECONDS = 7 * 24 * 60 * 60;
@@ -960,9 +975,7 @@ function resolveAllowedSwapNode(
 export function dedupeGraphEdgeCandidates(candidates: GraphEdgeCandidate[]): GraphEdgeCandidate[] {
   const deduped = new Map<string, GraphEdgeCandidate>();
   for (const candidate of candidates) {
-    const key = [candidate.family, candidate.adapterOrBridgeName, candidate.from.nodeKey, candidate.to.nodeKey].join(
-      "|"
-    );
+    const key = resolveSerializedEdgeIdentity(candidate);
     deduped.set(key, candidate);
   }
   return Array.from(deduped.values());
@@ -979,12 +992,7 @@ async function serializeEdgeClassDefinition(
     input_logical_asset: candidate.from.logicalAsset,
     output_logical_asset: candidate.to.logicalAsset,
     output: {
-      segments: [
-        {
-          up_to_input_usd: UNIVERSAL_INPUT_TIER_USD,
-          marginal_output_rate: await resolveMarginalOutputRate(candidate, params),
-        },
-      ],
+      segments: await resolveOutputSegments(candidate, params),
     },
     ...(resolveRateLimitBucketId(candidate.family)
       ? { rate_limit_bucket_id: resolveRateLimitBucketId(candidate.family) }
@@ -998,7 +1006,7 @@ function serializeEdgeDefinition(
   edgeClassId: string
 ): JussiEdgeDefinition {
   return {
-    edge_id: [edgeClassId, candidate.from.nodeKey, candidate.to.nodeKey].join(":"),
+    edge_id: resolveSerializedEdgeId(candidate, edgeClassId),
     edge_class_id: edgeClassId,
     from_node_key: candidate.from.nodeKey,
     to_node_key: candidate.to.nodeKey,
@@ -1025,45 +1033,108 @@ function resolveEdgeClassId(candidate: GraphEdgeCandidate): string {
   return `${candidate.family}${qualifier}:${candidate.from.logicalAsset}:${candidate.to.logicalAsset}`;
 }
 
+function resolveSerializedEdgeId(candidate: GraphEdgeCandidate, edgeClassId = resolveEdgeClassId(candidate)): string {
+  return [edgeClassId, candidate.from.nodeKey, candidate.to.nodeKey].join(":");
+}
+
+function resolveSerializedEdgeIdentity(candidate: GraphEdgeCandidate): string {
+  return resolveSerializedEdgeId(candidate);
+}
+
 function resolveRateLimitBucketId(family: EdgeFamily): string | undefined {
   return family === "binance" || family === "binance_cex_bridge" ? BINANCE_RATE_LIMIT_BUCKET_ID : undefined;
 }
 
-async function resolveMarginalOutputRate(
+async function resolveOutputSegments(
   candidate: GraphEdgeCandidate,
   params: Pick<EdgePricingParams, "pricingContext" | "rebalancerAdapters">
-): Promise<JussiRateDefinition> {
+): Promise<JussiEdgeClassOutputSegmentDefinition[]> {
   if (
     candidate.family === "cctp" ||
     candidate.family === "oft" ||
     candidate.family === "canonical" ||
     candidate.family === "bridgeapi" ||
     candidate.family === "hyperlane" ||
-    candidate.family === "binance_cex_bridge"
+    candidate.family === "binance_cex_bridge" ||
+    candidate.from.logicalAsset === candidate.to.logicalAsset
   ) {
-    return { numerator: "1", denominator: "1" };
+    return [{ up_to_input_usd: UNIVERSAL_INPUT_TIER_USD, marginal_output_rate: { numerator: "1", denominator: "1" } }];
   }
 
   if (candidate.family === "hyperliquid") {
-    return estimateHyperliquidMarginalOutputRate(candidate, params);
+    return estimateSampledExchangeOutputSegments(candidate, params, estimateHyperliquidMarginalOutputRateAtUsd);
   }
 
   if (candidate.family === "binance") {
-    return estimateBinanceMarginalOutputRate(candidate, params);
+    return estimateSampledExchangeOutputSegments(candidate, params, estimateBinanceMarginalOutputRateAtUsd);
   }
 
-  return { numerator: "1", denominator: "1" };
+  return [{ up_to_input_usd: UNIVERSAL_INPUT_TIER_USD, marginal_output_rate: { numerator: "1", denominator: "1" } }];
 }
 
-async function estimateBinanceMarginalOutputRate(
+async function estimateSampledExchangeOutputSegments(
   candidate: GraphEdgeCandidate,
+  params: Pick<EdgePricingParams, "pricingContext" | "rebalancerAdapters">,
+  estimateRateAtUsd: (
+    candidate: GraphEdgeCandidate,
+    inputUsd: number,
+    params: Pick<EdgePricingParams, "pricingContext" | "rebalancerAdapters">
+  ) => Promise<JussiRateDefinition>
+): Promise<JussiEdgeClassOutputSegmentDefinition[]> {
+  const samples = await Promise.all(
+    EDGE_CLASS_INPUT_USD_SAMPLES.map(async (inputUsd) => ({
+      inputUsd,
+      rate: await estimateRateAtUsd(candidate, inputUsd, params),
+    }))
+  );
+
+  const significantSamples: typeof samples = [samples[0]];
+  for (const sample of samples.slice(1)) {
+    if (
+      rateDistanceBps(sample.rate, significantSamples[significantSamples.length - 1].rate) >=
+      EDGE_CLASS_RATE_SEGMENT_THRESHOLD_BPS
+    ) {
+      significantSamples.push(sample);
+    }
+  }
+
+  if (significantSamples.length === 1) {
+    const worstRate = samples.reduce(
+      (currentWorst, sample) => minRateDefinition(currentWorst, sample.rate),
+      samples[0].rate
+    );
+    return [{ up_to_input_usd: UNIVERSAL_INPUT_TIER_USD, marginal_output_rate: worstRate }];
+  }
+
+  return significantSamples.map((sample, index) => ({
+    up_to_input_usd:
+      index === significantSamples.length - 1
+        ? UNIVERSAL_INPUT_TIER_USD
+        : formatInputUsdTier(significantSamples[index + 1].inputUsd),
+    marginal_output_rate: sample.rate,
+  }));
+}
+
+async function estimateBinanceMarginalOutputRateAtUsd(
+  candidate: GraphEdgeCandidate,
+  inputUsd: number,
   params: Pick<EdgePricingParams, "pricingContext" | "rebalancerAdapters">
 ): Promise<JussiRateDefinition> {
   assert(isDefined(candidate.rebalanceRoute), "Binance edge class estimation requires rebalance route metadata");
   const { sourceToken, destinationToken } = candidate.rebalanceRoute;
   const [forwardRate, reverseRate] = await Promise.all([
-    estimateDirectionalBinanceMarginalOutputRate(sourceToken as LogicalAsset, destinationToken as LogicalAsset, params),
-    estimateDirectionalBinanceMarginalOutputRate(destinationToken as LogicalAsset, sourceToken as LogicalAsset, params),
+    estimateDirectionalBinanceMarginalOutputRate(
+      sourceToken as LogicalAsset,
+      destinationToken as LogicalAsset,
+      inputUsd,
+      params
+    ),
+    estimateDirectionalBinanceMarginalOutputRate(
+      destinationToken as LogicalAsset,
+      sourceToken as LogicalAsset,
+      inputUsd,
+      params
+    ),
   ]);
 
   return minRateDefinition(forwardRate, reverseRate);
@@ -1072,6 +1143,7 @@ async function estimateBinanceMarginalOutputRate(
 async function estimateDirectionalBinanceMarginalOutputRate(
   sourceToken: LogicalAsset,
   destinationToken: LogicalAsset,
+  inputUsd: number,
   params: Pick<EdgePricingParams, "pricingContext" | "rebalancerAdapters">
 ): Promise<JussiRateDefinition> {
   if (sourceToken === destinationToken) {
@@ -1082,9 +1154,10 @@ async function estimateDirectionalBinanceMarginalOutputRate(
   const adapterInternals = adapter as unknown as BinanceInternalAdapter;
   const sourceTokenInfo = getTokenInfoFromSymbol(sourceToken, HUB_CHAIN_ID);
   const destinationTokenInfo = getTokenInfoFromSymbol(destinationToken, HUB_CHAIN_ID);
-  const referenceInputNative = await resolveEdgeClassReferenceInputNative(
+  const referenceInputNative = await resolveUsdNotionalInputNative(
     sourceToken,
     sourceTokenInfo.decimals,
+    inputUsd,
     params.pricingContext
   );
   const marketMeta = await adapterInternals._getSpotMarketMetaForRoute(sourceToken, destinationToken);
@@ -1117,19 +1190,49 @@ async function estimateDirectionalBinanceMarginalOutputRate(
   return decimalToRate(netOutputReadable / Math.max(referenceOutputReadable, Number.EPSILON));
 }
 
-async function estimateHyperliquidMarginalOutputRate(
+async function estimateHyperliquidMarginalOutputRateAtUsd(
   candidate: GraphEdgeCandidate,
+  inputUsd: number,
   params: Pick<EdgePricingParams, "pricingContext" | "rebalancerAdapters">
 ): Promise<JussiRateDefinition> {
   assert(isDefined(candidate.rebalanceRoute), "Hyperliquid edge class estimation requires rebalance route metadata");
+  const { sourceToken, destinationToken } = candidate.rebalanceRoute;
+  const [forwardRate, reverseRate] = await Promise.all([
+    estimateDirectionalHyperliquidMarginalOutputRate(
+      sourceToken as LogicalAsset,
+      destinationToken as LogicalAsset,
+      inputUsd,
+      params
+    ),
+    estimateDirectionalHyperliquidMarginalOutputRate(
+      destinationToken as LogicalAsset,
+      sourceToken as LogicalAsset,
+      inputUsd,
+      params
+    ),
+  ]);
+
+  return minRateDefinition(forwardRate, reverseRate);
+}
+
+async function estimateDirectionalHyperliquidMarginalOutputRate(
+  sourceToken: LogicalAsset,
+  destinationToken: LogicalAsset,
+  inputUsd: number,
+  params: Pick<EdgePricingParams, "pricingContext" | "rebalancerAdapters">
+): Promise<JussiRateDefinition> {
+  if (sourceToken === destinationToken) {
+    return { numerator: "1", denominator: "1" };
+  }
+
   const adapter = params.rebalancerAdapters.hyperliquid as RebalancerAdapter;
   const adapterInternals = adapter as unknown as HyperliquidInternalAdapter;
-  const { sourceToken, destinationToken } = candidate.rebalanceRoute;
   const sourceTokenInfo = getTokenInfoFromSymbol(sourceToken, HUB_CHAIN_ID);
   const destinationTokenInfo = getTokenInfoFromSymbol(destinationToken, HUB_CHAIN_ID);
-  const referenceInputNative = await resolveEdgeClassReferenceInputNative(
-    candidate.from.logicalAsset,
+  const referenceInputNative = await resolveUsdNotionalInputNative(
+    sourceToken,
     sourceTokenInfo.decimals,
+    inputUsd,
     params.pricingContext
   );
   const { px } = await adapterInternals._getLatestPrice(
@@ -1149,8 +1252,8 @@ async function estimateHyperliquidMarginalOutputRate(
     truncate(grossOutputReadable * feeFactor, destinationTokenInfo.decimals).toString()
   );
   const referenceOutputReadable = await quoteReferenceOutputReadable(
-    candidate.from.logicalAsset,
-    candidate.to.logicalAsset,
+    sourceToken,
+    destinationToken,
     referenceInputNative,
     sourceTokenInfo.decimals,
     params.pricingContext
@@ -1158,13 +1261,14 @@ async function estimateHyperliquidMarginalOutputRate(
   return decimalToRate(netOutputReadable / Math.max(referenceOutputReadable, Number.EPSILON));
 }
 
-async function resolveEdgeClassReferenceInputNative(
+async function resolveUsdNotionalInputNative(
   logicalAsset: LogicalAsset,
   sourceDecimals: number,
+  inputUsd: number,
   pricingContext: RuntimePricingContext
 ): Promise<BigNumber> {
   const assetPriceUsd = await pricingContext.getLogicalAssetPriceUsd(logicalAsset);
-  const inputAmount = EDGE_CLASS_REFERENCE_INPUT_USD / Math.max(assetPriceUsd, Number.EPSILON);
+  const inputAmount = inputUsd / Math.max(assetPriceUsd, Number.EPSILON);
   return toBNWei(truncate(inputAmount, sourceDecimals).toString(), sourceDecimals);
 }
 
@@ -1201,6 +1305,14 @@ function minRateDefinition(left: JussiRateDefinition, right: JussiRateDefinition
 
 function rateToDecimal(rate: JussiRateDefinition): number {
   return Number(rate.numerator) / Math.max(Number(rate.denominator), Number.EPSILON);
+}
+
+function rateDistanceBps(left: JussiRateDefinition, right: JussiRateDefinition): number {
+  return Math.abs(rateToDecimal(left) - rateToDecimal(right)) * 10_000;
+}
+
+function formatInputUsdTier(value: number): string {
+  return value.toFixed(6);
 }
 
 async function estimateEdgeEconomics(
@@ -1259,38 +1371,25 @@ async function estimateEdgeEconomics(
 
 async function resolveInputCapacityNative(
   candidate: GraphEdgeCandidate,
-  params: Pick<EdgePricingParams, "cumulativeBalancesByLogicalAsset">
+  params: Pick<EdgePricingParams, "pricingContext" | "rebalancerAdapters" | "cumulativeBalancesByLogicalAsset">
 ): Promise<BigNumber> {
   if (candidate.family === "cctp") {
     return CCTP_MAX_SEND_AMOUNT;
   }
 
-  const hubDecimals = getTokenInfoFromSymbol(candidate.from.logicalAsset, HUB_CHAIN_ID).decimals;
-  const converter = ConvertDecimals(hubDecimals, candidate.from.decimals);
-  const derived = converter(params.cumulativeBalancesByLogicalAsset[candidate.from.logicalAsset]);
-  return derived.gt(bnZero)
-    ? roundNativeCapacityDown(derived, candidate.from.decimals)
-    : toBN(10).pow(candidate.from.decimals);
+  return resolveEffectivelyUnlimitedCapacityNative(
+    candidate.from.logicalAsset,
+    candidate.from.decimals,
+    params.pricingContext
+  );
 }
 
-function readableAmountToRoundedNativeCapacity(readableAmount: number, decimals: number): BigNumber {
-  const roundedReadable = roundReadableAmountDown(readableAmount);
-  const truncated = truncate(Math.max(roundedReadable, 0), decimals).toString();
-  return toBNWei(truncated, decimals);
-}
-
-function roundNativeCapacityDown(amount: BigNumber, decimals: number): BigNumber {
-  const readable = Number(formatUnits(amount, decimals));
-  return readableAmountToRoundedNativeCapacity(readable, decimals);
-}
-
-function roundReadableAmountDown(amount: number): number {
-  if (!Number.isFinite(amount) || amount <= 0) {
-    return 0;
-  }
-  const exponent = Math.floor(Math.log10(amount));
-  const scale = 10 ** exponent;
-  return Math.floor(amount / scale) * scale;
+async function resolveEffectivelyUnlimitedCapacityNative(
+  logicalAsset: LogicalAsset,
+  decimals: number,
+  pricingContext: RuntimePricingContext
+): Promise<BigNumber> {
+  return resolveUsdNotionalInputNative(logicalAsset, decimals, Number(UNIVERSAL_INPUT_TIER_USD), pricingContext);
 }
 
 async function estimateCctpBreakdown(

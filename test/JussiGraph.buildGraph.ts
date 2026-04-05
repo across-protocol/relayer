@@ -141,6 +141,26 @@ describe("Jussi graph builder helpers", async function () {
         to: pathUsd,
       },
       {
+        family: "cctp",
+        adapterOrBridgeName: "UsdcCCTPBridge",
+        effectiveBridgeName: "UsdcCCTPBridge",
+        from: mainnetUsdc,
+        to: optimismUsdc,
+      },
+      {
+        family: "cctp",
+        adapterOrBridgeName: "cctp",
+        from: mainnetUsdc,
+        to: optimismUsdc,
+        rebalanceRoute: {
+          sourceChain: CHAIN_IDs.MAINNET,
+          sourceToken: "USDC",
+          destinationChain: CHAIN_IDs.OPTIMISM,
+          destinationToken: "USDC",
+          adapter: "cctp",
+        },
+      },
+      {
         family: "binance",
         adapterOrBridgeName: "binance",
         from: hyperevmUsdt,
@@ -170,8 +190,16 @@ describe("Jussi graph builder helpers", async function () {
 
     const deduped = dedupeGraphEdgeCandidates(candidates);
 
-    expect(deduped).to.have.lengthOf(3);
+    expect(deduped).to.have.lengthOf(4);
     expect(deduped.filter((candidate) => candidate.from.nodeKey === hyperevmUsdt.nodeKey)).to.have.lengthOf(2);
+    expect(
+      deduped.filter(
+        (candidate) =>
+          candidate.family === "cctp" &&
+          candidate.from.nodeKey === mainnetUsdc.nodeKey &&
+          candidate.to.nodeKey === optimismUsdc.nodeKey
+      )
+    ).to.have.lengthOf(1);
   });
 
   it("computes exchange latencies with optional intermediate bridge legs", async function () {

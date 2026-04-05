@@ -7,8 +7,10 @@ The builder is schema-first: it emits the canonical Jussi graph shape and popula
 Today that means:
 
 - Binance and Hyperliquid class-level `marginal_output_rate` values are estimated from live venue pricing data
+- swap classes sample `$1k`, `$10k`, and `$100k` notionals and only emit multiple `output.segments` when the retained-rate estimates diverge materially
 - bridge / CCTP / OFT / CEX-bridge classes still emit `1:1` output rates and carry fees/latency on concrete edges
 - bridge latencies follow the chain-family timing rules already encoded in relayer constants
+- Binance family edge capacities use large round sanity caps instead of `maxAmountsToTransfer`; same-asset CEX bridge edges use the same floor, while swap edges are additionally bounded by live market metadata when Binance exposes one
 
 ## File Types
 
@@ -30,6 +32,7 @@ This build reads the repo-local `.env` via `dotenv`. In practice you usually nee
 - a valid Binance API key in `.env`
 - working GCP auth if `--binanceSecretKey` points at a GCKMS-stored secret
 - the inventory and rebalancer config JSON files referenced above
+- a real EVM wallet mode today; `--wallet void` does not work yet because the relayer client stack still derives an SVM signer from the EVM signer during startup
 
 If your local Google auth is expired, the build will fail before publishing the artifact. The repo comments reference the local `with-gcp-auth` wrapper for refreshing ADC before rerunning the command.
 
