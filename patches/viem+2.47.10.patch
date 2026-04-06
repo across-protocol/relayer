@@ -1,0 +1,162 @@
+diff --git a/node_modules/viem/_cjs/chains/definitions/megaeth.js b/node_modules/viem/_cjs/chains/definitions/megaeth.js
+index ec6a0f3..cea6c76 100644
+--- a/node_modules/viem/_cjs/chains/definitions/megaeth.js
++++ b/node_modules/viem/_cjs/chains/definitions/megaeth.js
+@@ -56,6 +56,20 @@ exports.megaeth = (0, defineChain_js_1.defineChain)({
+             },
+         },
+     },
++    custom: {
++        // MegaETH uses 24-byte PACKED extraData: [uint64 l2BlockNumber, uint64 parentGameIndex, uint64 duplicationCounter]
++        // This is NOT standard ABI encoding (which would be 32-byte aligned), so we decode manually
++        decodeGameExtraData: (extraData) => {
++            // Remove 0x prefix if present
++            const hex = extraData.startsWith('0x') ? extraData.slice(2) : extraData;
++            // Extract first 8 bytes (16 hex chars) as uint64 l2BlockNumber
++            const l2BlockNumberHex = hex.slice(0, 16);
++            const l2BlockNumber = BigInt('0x' + l2BlockNumberHex);
++            return l2BlockNumber;
++        },
++        // MegaETH uses a custom RPC method for withdrawal proofs
++        proofRpcMethod: 'mega_getWithdrawalProof',
++    },
+     sourceId,
+ });
+ //# sourceMappingURL=megaeth.js.map
+\ No newline at end of file
+diff --git a/node_modules/viem/_cjs/op-stack/actions/buildProveWithdrawal.js b/node_modules/viem/_cjs/op-stack/actions/buildProveWithdrawal.js
+index 8da3482..c2bd84b 100644
+--- a/node_modules/viem/_cjs/op-stack/actions/buildProveWithdrawal.js
++++ b/node_modules/viem/_cjs/op-stack/actions/buildProveWithdrawal.js
+@@ -15,8 +15,21 @@ async function buildProveWithdrawal(client, args) {
+     const { withdrawalHash } = withdrawal;
+     const { l2BlockNumber } = game ?? output;
+     const slot = (0, getWithdrawalHashStorageSlot_js_1.getWithdrawalHashStorageSlot)({ withdrawalHash });
++    // If the chain has a custom proof RPC method (like MegaETH's mega_getWithdrawalProof),
++    // wrap the client to intercept eth_getProof calls
++    const proofClient = chain?.custom?.proofRpcMethod
++        ? {
++            ...client,
++            request: async ({ method, params }) => {
++                if (method === 'eth_getProof') {
++                    return client.request({ method: chain.custom.proofRpcMethod, params });
++                }
++                return client.request({ method, params });
++            },
++        }
++        : client;
+     const [proof, block] = await Promise.all([
+-        (0, getProof_js_1.getProof)(client, {
++        (0, getProof_js_1.getProof)(proofClient, {
+             address: contracts_js_1.contracts.l2ToL1MessagePasser.address,
+             storageKeys: [slot],
+             blockNumber: l2BlockNumber,
+diff --git a/node_modules/viem/_cjs/op-stack/actions/getGames.js b/node_modules/viem/_cjs/op-stack/actions/getGames.js
+index d8a07c5..6146d65 100644
+--- a/node_modules/viem/_cjs/op-stack/actions/getGames.js
++++ b/node_modules/viem/_cjs/op-stack/actions/getGames.js
+@@ -44,7 +44,10 @@ async function getGames(client, parameters) {
+         ],
+     }))
+         .map((game) => {
+-        const [blockNumber] = (0, decodeAbiParameters_js_1.decodeAbiParameters)([{ type: 'uint256' }], game.extraData);
++        // Use custom decoder if available (for chains like MegaETH with non-standard extraData)
++        const blockNumber = targetChain?.custom?.decodeGameExtraData
++            ? targetChain.custom.decodeGameExtraData(game.extraData)
++            : (0, decodeAbiParameters_js_1.decodeAbiParameters)([{ type: 'uint256' }], game.extraData)[0];
+         return !l2BlockNumber || blockNumber > l2BlockNumber
+             ? { ...game, l2BlockNumber: blockNumber }
+             : null;
+diff --git a/node_modules/viem/_esm/chains/definitions/megaeth.js b/node_modules/viem/_esm/chains/definitions/megaeth.js
+index 3347805..8a1093c 100644
+--- a/node_modules/viem/_esm/chains/definitions/megaeth.js
++++ b/node_modules/viem/_esm/chains/definitions/megaeth.js
+@@ -53,6 +53,20 @@ export const megaeth = /*#__PURE__*/ defineChain({
+             },
+         },
+     },
++    custom: {
++        // MegaETH uses 24-byte PACKED extraData: [uint64 l2BlockNumber, uint64 parentGameIndex, uint64 duplicationCounter]
++        // This is NOT standard ABI encoding (which would be 32-byte aligned), so we decode manually
++        decodeGameExtraData: (extraData) => {
++            // Remove 0x prefix if present
++            const hex = extraData.startsWith('0x') ? extraData.slice(2) : extraData;
++            // Extract first 8 bytes (16 hex chars) as uint64 l2BlockNumber
++            const l2BlockNumberHex = hex.slice(0, 16);
++            const l2BlockNumber = BigInt('0x' + l2BlockNumberHex);
++            return l2BlockNumber;
++        },
++        // MegaETH uses a custom RPC method for withdrawal proofs
++        proofRpcMethod: 'mega_getWithdrawalProof',
++    },
+     sourceId,
+ });
+ //# sourceMappingURL=megaeth.js.map
+\ No newline at end of file
+diff --git a/node_modules/viem/_esm/op-stack/actions/buildProveWithdrawal.js b/node_modules/viem/_esm/op-stack/actions/buildProveWithdrawal.js
+index c865e5b..121378f 100644
+--- a/node_modules/viem/_esm/op-stack/actions/buildProveWithdrawal.js
++++ b/node_modules/viem/_esm/op-stack/actions/buildProveWithdrawal.js
+@@ -35,8 +35,21 @@ export async function buildProveWithdrawal(client, args) {
+     const { withdrawalHash } = withdrawal;
+     const { l2BlockNumber } = game ?? output;
+     const slot = getWithdrawalHashStorageSlot({ withdrawalHash });
++    // If the chain has a custom proof RPC method (like MegaETH's mega_getWithdrawalProof),
++    // wrap the client to intercept eth_getProof calls
++    const proofClient = chain?.custom?.proofRpcMethod
++        ? {
++            ...client,
++            request: async ({ method, params }) => {
++                if (method === 'eth_getProof') {
++                    return client.request({ method: chain.custom.proofRpcMethod, params });
++                }
++                return client.request({ method, params });
++            },
++        }
++        : client;
+     const [proof, block] = await Promise.all([
+-        getProof(client, {
++        getProof(proofClient, {
+             address: contracts.l2ToL1MessagePasser.address,
+             storageKeys: [slot],
+             blockNumber: l2BlockNumber,
+diff --git a/node_modules/viem/_esm/op-stack/actions/getGames.js b/node_modules/viem/_esm/op-stack/actions/getGames.js
+index d283a6c..56f6663 100644
+--- a/node_modules/viem/_esm/op-stack/actions/getGames.js
++++ b/node_modules/viem/_esm/op-stack/actions/getGames.js
+@@ -64,7 +64,10 @@ export async function getGames(client, parameters) {
+         ],
+     }))
+         .map((game) => {
+-        const [blockNumber] = decodeAbiParameters([{ type: 'uint256' }], game.extraData);
++        // Use custom decoder if available (for chains like MegaETH with non-standard extraData)
++        const blockNumber = targetChain?.custom?.decodeGameExtraData
++            ? targetChain.custom.decodeGameExtraData(game.extraData)
++            : decodeAbiParameters([{ type: 'uint256' }], game.extraData)[0];
+         return !l2BlockNumber || blockNumber > l2BlockNumber
+             ? { ...game, l2BlockNumber: blockNumber }
+             : null;
+diff --git a/node_modules/viem/chains/definitions/megaeth.ts b/node_modules/viem/chains/definitions/megaeth.ts
+index 41b4d70..7527021 100644
+--- a/node_modules/viem/chains/definitions/megaeth.ts
++++ b/node_modules/viem/chains/definitions/megaeth.ts
+@@ -55,5 +55,19 @@ export const megaeth = /*#__PURE__*/ defineChain({
+       },
+     },
+   },
++  custom: {
++    // MegaETH uses 24-byte PACKED extraData: [uint64 l2BlockNumber, uint64 parentGameIndex, uint64 duplicationCounter]
++    // This is NOT standard ABI encoding (which would be 32-byte aligned), so we decode manually
++    decodeGameExtraData: (extraData: string) => {
++      // Remove 0x prefix if present
++      const hex = extraData.startsWith('0x') ? extraData.slice(2) : extraData
++      // Extract first 8 bytes (16 hex chars) as uint64 l2BlockNumber
++      const l2BlockNumberHex = hex.slice(0, 16)
++      const l2BlockNumber = BigInt('0x' + l2BlockNumberHex)
++      return l2BlockNumber
++    },
++    // MegaETH uses a custom RPC method for withdrawal proofs
++    proofRpcMethod: 'mega_getWithdrawalProof',
++  },
+   sourceId,
+ })
