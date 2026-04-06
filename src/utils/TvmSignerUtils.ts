@@ -1,5 +1,5 @@
 import { TronWeb } from "tronweb";
-import { isSignerWallet, Signer, ethers } from "./";
+import { isSignerWallet, Signer, CHAIN_IDs, getNodeUrlList } from "./";
 import assert from "assert";
 
 export function getTronWebFromEvmSigner(evmSigner: Signer): TronWeb {
@@ -7,9 +7,10 @@ export function getTronWebFromEvmSigner(evmSigner: Signer): TronWeb {
 
   const evmPrivateKey = evmSigner._signingKey().privateKey;
 
-  const fullHost = (evmSigner.provider as ethers.providers.StaticJsonRpcProvider).connection.url;
+  // @Todo. There's likely a better way to do this.
+  const fullHost = getNodeUrlList(CHAIN_IDs.TRON, 1)[0];
   return new TronWeb({
     fullHost,
-    privateKey: evmPrivateKey,
+    privateKey: evmPrivateKey.slice(2),
   });
 }

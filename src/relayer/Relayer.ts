@@ -26,6 +26,7 @@ import {
   CHAIN_IDs,
   convertRelayDataParamsToBytes32,
   chainIsSvm,
+  TvmAddress,
 } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
@@ -116,6 +117,7 @@ export class Relayer {
       message: "Completed one-time init.",
       relayerEvmAddress: this.relayerEvmAddress,
       relayerSvmAddress: tokenClient.relayerSvmAddress,
+      relayerTvmAddress: TvmAddress.from(this.relayerEvmAddress.toNative()).toNative(),
     });
   }
 
