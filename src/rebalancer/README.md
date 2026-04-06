@@ -27,9 +27,15 @@ The built-in production route set is generated in `src/rebalancer/buildRebalance
 - same-asset routes for `USDC` via CCTP and on direct Binance-supported USDC networks via Binance, and for `USDT` via OFT and on direct Binance-supported USDT networks via Binance,
 - Binance-only `WETH <-> USDC`, `WETH <-> USDT`, and `WETH <-> WETH` routes on chains where Binance exposes direct ETH deposit and withdrawal networks.
 
+Route construction keeps two token-keyed chain maps:
+
+- `BINANCE_NETWORKS_BY_SYMBOL`: direct Binance deposit/withdraw networks known for each token.
+- `REBALANCE_CHAINS_BY_SYMBOL`: the narrower set of chains this repo currently enables for rebalancing that token.
+
 Operational note:
 
 - Same-asset `USDC <-> USDC` and `USDT <-> USDT` Binance routes are included deliberately so they can compete on estimated cost against CCTP/OFT paths, but they are only generated when both chains are direct Binance networks for that asset.
+- Updating Binance venue support for a token does not automatically widen rebalancer support. New chains should usually be added to both maps intentionally after inventory/config/runtime review.
 - Binance same-coin `WETH <-> WETH` routes skip the spot swap leg and treat on-chain `WETH` as Binance `ETH`.
 - Intermediate on-chain bridge legs into or out of Binance remain restricted to `USDC` and `USDT`; `WETH` routes must start and end on direct Binance ETH networks.
 
