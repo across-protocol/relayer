@@ -32,7 +32,7 @@ export const {
  * input events is preserved in the output array.
  */
 export function getUniqueLogIndex(events: { txnRef: string }[]): number[] {
-  const uniqueTokenhashes = {};
+  const uniqueTokenhashes: Record<string, number> = {};
   const logIndexesForMessage = [];
   for (const event of events) {
     const logIndex = uniqueTokenhashes[event.txnRef] ?? 0;

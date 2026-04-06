@@ -180,13 +180,15 @@ export class RelayerConfig extends CommonConfig {
       // Validate the per chain target and thresholds for wrapping ETH:
       const wrapThresholds = inventoryConfig.wrapEtherThresholdPerChain;
       const wrapTargets = inventoryConfig.wrapEtherTargetPerChain;
-      Object.keys(inventoryConfig.wrapEtherThresholdPerChain).forEach((chainId) => {
+      Object.keys(inventoryConfig.wrapEtherThresholdPerChain).forEach((_chainId) => {
+        const chainId = Number(_chainId);
         if (wrapThresholds[chainId] !== undefined) {
           wrapThresholds[chainId] = toBNWei(wrapThresholds[chainId]); // Promote to 18 decimals.
         }
       });
 
-      Object.keys(inventoryConfig.wrapEtherTargetPerChain).forEach((chainId) => {
+      Object.keys(inventoryConfig.wrapEtherTargetPerChain).forEach((_chainId) => {
+        const chainId = Number(_chainId);
         if (wrapTargets[chainId] !== undefined) {
           wrapTargets[chainId] = toBNWei(wrapTargets[chainId]); // Promote to 18 decimals.
 
@@ -365,7 +367,8 @@ export class RelayerConfig extends CommonConfig {
         .forEach((usdThreshold) => {
           const config = minDepositConfirmations[usdThreshold];
 
-          Object.entries(config).forEach(([chainId, _minConfirmations]) => {
+          Object.entries(config).forEach(([_chainId, _minConfirmations]) => {
+            const chainId = Number(_chainId);
             const minConfirmations = Number(_minConfirmations);
             assert(
               !isNaN(minConfirmations) && minConfirmations >= 0,

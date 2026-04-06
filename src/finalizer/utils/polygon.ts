@@ -294,7 +294,7 @@ async function retrieveTokenFromMainnetTokenBridger(l2Token: string, mainnetSign
 }
 
 function getL2TokensToFinalize(events: TokensBridged[]): string[] {
-  const l2TokenCountInBridgeEvents = events.reduce((l2TokenDictionary, event) => {
+  const l2TokenCountInBridgeEvents = events.reduce<Record<string, boolean>>((l2TokenDictionary, event) => {
     l2TokenDictionary[event.l2TokenAddress.toEvmAddress()] = true;
     return l2TokenDictionary;
   }, {});

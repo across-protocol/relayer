@@ -68,7 +68,7 @@ config();
 let logger: winston.Logger;
 let silentLogger: winston.Logger;
 
-const rootCache = {};
+const rootCache: Record<string, { bundleData: BundleData; bundleSpokePoolClients: SpokePoolClientsByChain }> = {};
 
 // Add accidental transfers from users into the SpokePool's here. These fat finger transfers can confound this
 // script and report "excesses" that are not actually excesses. These balances are not pulled into the runningBalances
@@ -504,7 +504,8 @@ export async function runScript(baseSigner: Signer): Promise<void> {
     expectedExcesses,
     excesses,
   });
-  const unexpectedExcess = Object.entries(excesses).filter(([chainId, tokenExcesses]) => {
+  const unexpectedExcess = Object.entries(excesses).filter(([_chainId, tokenExcesses]) => {
+    const chainId = Number(_chainId);
     return Object.entries(tokenExcesses).some(([l1Token, excesses]) => {
       // We only care about the latest excess, because sometimes excesses can appear in historical bundles
       // due to ordering of executing leaves. As long as the excess resets back to 0 eventually it is fine.
