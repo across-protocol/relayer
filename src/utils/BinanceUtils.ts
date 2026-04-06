@@ -97,15 +97,13 @@ export async function getBinanceApiClient(url = "https://api.binance.com") {
   const apiKey = process.env["BINANCE_API_KEY"];
   const secretKey = (await getBinanceSecretKey()) ?? process.env["BINANCE_HMAC_KEY"];
   assert(isDefined(apiKey) && isDefined(secretKey), "Binance client cannot be constructed due to missing keys.");
-  let client!: BinanceApi;
-  let serverTimeSynchronizer!: BinanceServerTimeSynchronizer;
-  client = Binance({
+  const client = Binance({
     apiKey,
     apiSecret: secretKey,
     httpBase: url,
     getTime: () => serverTimeSynchronizer.getTime(),
   });
-  serverTimeSynchronizer = createBinanceServerTimeSynchronizer(() => client.time());
+  const serverTimeSynchronizer = createBinanceServerTimeSynchronizer(() => client.time());
   return client;
 }
 
