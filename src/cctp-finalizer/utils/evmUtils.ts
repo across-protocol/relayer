@@ -7,7 +7,6 @@ import {
   CHAIN_IDs,
   depositToHypercore,
   decodeCctpV2HookData,
-  TOKEN_SYMBOLS_MAP,
   CCTPHookData,
 } from "../../utils";
 import { CONTRACT_ADDRESSES } from "../../common/ContractAddresses";
@@ -41,9 +40,7 @@ export async function checkIfAlreadyProcessedEvm(
 }
 
 export function shouldCreateHyperCoreAccount(hookData?: CCTPHookData): boolean {
-  const isDestinationUsdc = hookData?.finalToken === TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.HYPEREVM];
-  const isSponsoredFlow = hookData?.maxBpsToSponsor > 0;
-  return isSponsoredFlow || isDestinationUsdc;
+  return hookData?.accountCreationMode > 0;
 }
 
 export async function createHyperCoreAccountIfNotExists(
@@ -55,8 +52,8 @@ export async function createHyperCoreAccountIfNotExists(
   if (!shouldCreateHyperCoreAccount(hookData)) {
     logger.debug({
       at: "evmUtils#createHyperCoreAccountIfNotExists",
-      message: "Skipping deposit to Hypercore because its not sponsored flow",
-      maxBpsToSponsor: hookData?.maxBpsToSponsor,
+      message: "Skipping deposit to Hypercore because accountCreationMode is None",
+      accountCreationMode: hookData?.accountCreationMode,
       finalRecipient: hookData?.finalRecipient,
     });
     return;
@@ -67,8 +64,16 @@ export async function createHyperCoreAccountIfNotExists(
       at: "evmUtils#createHyperCoreAccountIfNotExists",
       message: "Recipient address does not exist, depositing to Hypercore",
       finalRecipient: hookData.finalRecipient,
+      accountCreationMode: hookData.accountCreationMode,
     });
-    await depositToHypercore(hookData.finalRecipient, signer, logger);
+    await depositToHypercore(
+      hookData.finalRecipient,
+      signer,
+      logger,
+      hookData.accountCreationMode,
+      hookData.destinationDex,
+      hookData.actionData
+    );
   }
 }
 

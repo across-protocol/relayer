@@ -127,7 +127,14 @@ async function _callWithRetry<T, A extends any[]>(
   }
 }
 
-export async function depositToHypercore(account: string, signer: Signer, logger: winston.Logger): Promise<string> {
+export async function depositToHypercore(
+  account: string,
+  signer: Signer,
+  logger: winston.Logger,
+  accountCreationMode: number,
+  destinationDex: number,
+  actionData?: string
+): Promise<string> {
   const transactionClient = new TransactionClient(logger);
   const chainId = CHAIN_IDs.HYPEREVM;
   const contract = new ethers.Contract(
@@ -135,7 +142,17 @@ export async function depositToHypercore(account: string, signer: Signer, logger
     CONTRACT_ADDRESSES[chainId].hyperliquidDepositHandler.abi,
     signer
   );
-  const depositToHypercoreArgs = [TOKEN_SYMBOLS_MAP.USDH.addresses[chainId], bnZero, account];
+
+  // Encode the message parameter: first byte is the AccountActivationMode,
+  // remainder is abi.encode(user, destinationDex[, signature]).
+  const modeByte = ethers.utils.hexlify([accountCreationMode]);
+  const encodedParams =
+    accountCreationMode === 2 // FromDonationBox: includes activation signature
+      ? ethers.utils.defaultAbiCoder.encode(["address", "uint32", "bytes"], [account, destinationDex, actionData])
+      : ethers.utils.defaultAbiCoder.encode(["address", "uint32"], [account, destinationDex]);
+  const message = ethers.utils.hexlify(ethers.utils.concat([modeByte, encodedParams]));
+
+  const depositToHypercoreArgs = [TOKEN_SYMBOLS_MAP.USDH.addresses[chainId], bnZero, message];
   const depositToHypercoreTx = await submitTransaction(
     {
       contract: contract,

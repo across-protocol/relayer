@@ -12,9 +12,9 @@
         "type": "uint256"
       },
       {
-        "internalType": "address",
-        "name": "user",
-        "type": "address"
+        "internalType": "bytes",
+        "name": "message",
+        "type": "bytes"
       }
     ],
     "name": "depositToHypercore",
