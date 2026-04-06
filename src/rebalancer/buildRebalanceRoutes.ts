@@ -26,6 +26,10 @@ const SAME_ASSET_BRIDGE_ADAPTER_BY_SYMBOL: Record<StableToken, "cctp" | "oft"> =
   USDT: "oft",
 };
 
+function hasSameAssetBridgeAdapter(token: SupportedToken): token is StableToken {
+  return token in SAME_ASSET_BRIDGE_ADAPTER_BY_SYMBOL;
+}
+
 function configuredChainsForToken(rebalancerConfig: RebalancerConfig, token: SupportedToken): number[] {
   return REBALANCE_CHAINS_BY_SYMBOL[token].filter((chainId) => rebalancerConfig.chainIds.includes(chainId));
 }
@@ -41,7 +45,7 @@ function buildSameAssetRoutes(rebalancerConfig: RebalancerConfig, token: Support
         continue;
       }
 
-      if (token !== "WETH" && sourceChain !== CHAIN_IDs.BSC && destinationChain !== CHAIN_IDs.BSC) {
+      if (hasSameAssetBridgeAdapter(token) && sourceChain !== CHAIN_IDs.BSC && destinationChain !== CHAIN_IDs.BSC) {
         routes.push({
           sourceChain,
           sourceToken: token,
@@ -66,8 +70,8 @@ function buildSameAssetRoutes(rebalancerConfig: RebalancerConfig, token: Support
   return routes;
 }
 
-export function buildRebalanceRoutes(rebalancerConfig: RebalancerConfig): RebalanceRoute[] {
-  const rebalanceRoutes: RebalanceRoute[] = [];
+function buildDifferentAssetRoutes(rebalancerConfig: RebalancerConfig): RebalanceRoute[] {
+  const routes: RebalanceRoute[] = [];
   const usdtChains = configuredChainsForToken(rebalancerConfig, "USDT");
   const usdcChains = configuredChainsForToken(rebalancerConfig, "USDC");
   const wethChains = configuredChainsForToken(rebalancerConfig, "WETH");
@@ -80,14 +84,14 @@ export function buildRebalanceRoutes(rebalancerConfig: RebalancerConfig): Rebala
           continue;
         }
 
-        rebalanceRoutes.push({
+        routes.push({
           sourceChain: usdtChain,
           sourceToken: "USDT",
           destinationChain: usdcChain,
           destinationToken: "USDC",
           adapter,
         });
-        rebalanceRoutes.push({
+        routes.push({
           sourceChain: usdcChain,
           sourceToken: "USDC",
           destinationChain: usdtChain,
@@ -98,21 +102,18 @@ export function buildRebalanceRoutes(rebalancerConfig: RebalancerConfig): Rebala
     }
   }
 
-  rebalanceRoutes.push(...buildSameAssetRoutes(rebalancerConfig, "USDT"));
-  rebalanceRoutes.push(...buildSameAssetRoutes(rebalancerConfig, "USDC"));
-
   // WETH<->stablecoin swap routes via Binance only. WETH chains are restricted to direct Binance deposit/withdrawal
   // networks for ETH.
   for (const wethChain of directBinanceWethChains) {
     for (const usdtChain of usdtChains) {
-      rebalanceRoutes.push({
+      routes.push({
         sourceChain: wethChain,
         sourceToken: "WETH",
         destinationChain: usdtChain,
         destinationToken: "USDT",
         adapter: "binance",
       });
-      rebalanceRoutes.push({
+      routes.push({
         sourceChain: usdtChain,
         sourceToken: "USDT",
         destinationChain: wethChain,
@@ -121,14 +122,14 @@ export function buildRebalanceRoutes(rebalancerConfig: RebalancerConfig): Rebala
       });
     }
     for (const usdcChain of usdcChains) {
-      rebalanceRoutes.push({
+      routes.push({
         sourceChain: wethChain,
         sourceToken: "WETH",
         destinationChain: usdcChain,
         destinationToken: "USDC",
         adapter: "binance",
       });
-      rebalanceRoutes.push({
+      routes.push({
         sourceChain: usdcChain,
         sourceToken: "USDC",
         destinationChain: wethChain,
@@ -138,9 +139,16 @@ export function buildRebalanceRoutes(rebalancerConfig: RebalancerConfig): Rebala
     }
   }
 
-  rebalanceRoutes.push(...buildSameAssetRoutes(rebalancerConfig, "WETH"));
+  return routes;
+}
 
-  return rebalanceRoutes;
+export function buildRebalanceRoutes(rebalancerConfig: RebalancerConfig): RebalanceRoute[] {
+  return [
+    ...buildDifferentAssetRoutes(rebalancerConfig),
+    ...buildSameAssetRoutes(rebalancerConfig, "USDT"),
+    ...buildSameAssetRoutes(rebalancerConfig, "USDC"),
+    ...buildSameAssetRoutes(rebalancerConfig, "WETH"),
+  ];
 }
 
 export function dedupeRebalanceRoutes(routes: RebalanceRoute[]): RebalanceRoute[] {
