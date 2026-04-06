@@ -1,8 +1,7 @@
 import { writeFile } from "node:fs/promises";
 import { config } from "dotenv";
-import axios from "axios";
 import { GoogleAuth } from "google-auth-library";
-import { Logger, waitForLogger, delay } from "../src/utils";
+import { Logger, waitForLogger, delay, fetchWithTimeout } from "../src/utils";
 
 const DEFAULT_ENVIRONMENT = "prod";
 const AUTH_TIMEOUT_MS = 30000;
@@ -18,7 +17,7 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, operationName: s
   ]);
 }
 
-async function fetchWithRetry(
+async function fetchConfigWithRetry(
   url: string,
   headers: Record<string, string>,
   retries = 3,
@@ -26,14 +25,13 @@ async function fetchWithRetry(
 ): Promise<string> {
   for (let i = 0; i < retries; i++) {
     try {
-      const response = await axios.get(url, { headers, responseType: "text", timeout: 30000 });
-      return response.data as string;
+      return await fetchWithTimeout<string>(url, {}, headers, 30000, "text");
     } catch (error) {
       if (i === retries - 1) {
         throw error;
       }
       logger.warn({
-        at: "fetchInventoryConfig#fetchWithRetry",
+        at: "fetchInventoryConfig#fetchConfigWithRetry",
         message: "Request failed, retrying",
         attempt: `${i + 1}/${retries}`,
         delayMs,
@@ -130,7 +128,7 @@ async function run(): Promise<number> {
         label: spec.label,
         configuramaFilePath,
       });
-      const fileContent = await fetchWithRetry(url, headers);
+      const fileContent = await fetchConfigWithRetry(url, headers);
       const jsonData = JSON.parse(fileContent);
       await writeFile(localFilename, JSON.stringify(jsonData, null, 2));
       logger.debug({
@@ -162,16 +160,12 @@ async function run(): Promise<number> {
 }
 
 function getErrorMessage(error: unknown): string {
-  if (axios.isAxiosError(error)) {
-    if (error.response?.status === 404) {
-      return "File not found in Configurama";
-    } else if (error.response?.status === 401 || error.response?.status === 403) {
-      return "Authentication failed. Ensure ADC is configured to call the Configurama API.";
-    } else {
-      return `Configurama API error: ${error.response?.status} - ${error.message}`;
-    }
-  }
   if (error instanceof Error) {
+    if (error.message.includes("HTTP 404")) {
+      return "File not found in Configurama";
+    } else if (error.message.includes("HTTP 401") || error.message.includes("HTTP 403")) {
+      return "Authentication failed. Ensure ADC is configured to call the Configurama API.";
+    }
     return error.message;
   }
   return String(error);
