@@ -478,9 +478,7 @@ export function buildManagedNodeTemplates(
 export function materializeNodeDefinitions(templates: ManagedNodeTemplate[]): ManagedNodeContext[] {
   return templates.map((template) => {
     const nodeKey = canonicalNodeKey(template.chainId, template.tokenAddress);
-    const definition = template.managed
-      ? buildManagedNodeDefinition(template)
-      : buildNeutralNodeDefinition(template);
+    const definition = template.managed ? buildManagedNodeDefinition(template) : buildNeutralNodeDefinition(template);
 
     return {
       ...template,

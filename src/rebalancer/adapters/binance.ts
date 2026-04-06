@@ -694,10 +694,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
               sourceChain,
               destinationToken,
               destinationChain,
-              toBNWei(
-                spotMarketMeta.minimumOrderSize,
-                this._getTokenInfo(destinationToken, destinationChain).decimals
-              ),
+              toBNWei(spotMarketMeta.minimumOrderSize, this._getTokenInfo(destinationToken, destinationChain).decimals),
               latestPriceForRoute
             )
           : toBNWei(spotMarketMeta.minimumOrderSize, sourceTokenInfo.decimals);
@@ -813,7 +810,8 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
           this._getTokenInfo(sourceToken, sourceChain).address
         )(withdrawFee);
 
-    const spreadPct = routeRequiresSwap && !usesRoutePriceConversion ? (spotMarketMeta.isBuy ? latestPrice - 1 : 1 - latestPrice) : 0;
+    const spreadPct =
+      routeRequiresSwap && !usesRoutePriceConversion ? (spotMarketMeta.isBuy ? latestPrice - 1 : 1 - latestPrice) : 0;
     const spreadFee =
       routeRequiresSwap && !usesRoutePriceConversion
         ? toBNWei(spreadPct.toFixed(18), 18).mul(amountToTransfer).div(toBNWei(1, 18))
