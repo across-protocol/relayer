@@ -22,6 +22,13 @@ type WithdrawalQuota = {
   usedWdQuota: number;
 };
 
+type BinanceServerTimeSynchronizer = {
+  getTime: () => Promise<number>;
+  invalidate: () => void;
+};
+
+const DEFAULT_BINANCE_SERVER_TIME_SYNC_INTERVAL_MS = 60_000;
+
 // Alias for Binance network symbols.
 export const BINANCE_NETWORKS: { [chainId: number]: string } = {
   [CHAIN_IDs.ARBITRUM]: "ARBITRUM",
@@ -90,13 +97,66 @@ export async function getBinanceApiClient(url = "https://api.binance.com") {
   const apiKey = process.env["BINANCE_API_KEY"];
   const secretKey = (await getBinanceSecretKey()) ?? process.env["BINANCE_HMAC_KEY"];
   assert(isDefined(apiKey) && isDefined(secretKey), "Binance client cannot be constructed due to missing keys.");
-  const client = Binance({
+  let client!: BinanceApi;
+  let serverTimeSynchronizer!: BinanceServerTimeSynchronizer;
+  client = Binance({
     apiKey,
     apiSecret: secretKey,
     httpBase: url,
-    getTime: () => client.time().then((time) => time),
+    getTime: () => serverTimeSynchronizer.getTime(),
   });
+  serverTimeSynchronizer = createBinanceServerTimeSynchronizer(() => client.time());
   return client;
+}
+
+export function createBinanceServerTimeSynchronizer(
+  fetchServerTime: () => Promise<number>,
+  options: {
+    now?: () => number;
+    syncIntervalMs?: number;
+  } = {}
+): BinanceServerTimeSynchronizer {
+  const now = options.now ?? (() => Date.now());
+  const syncIntervalMs = options.syncIntervalMs ?? DEFAULT_BINANCE_SERVER_TIME_SYNC_INTERVAL_MS;
+  let lastSyncFinishedAtMs = 0;
+  let serverTimeOffsetMs = 0;
+  let inFlightSync: Promise<void> | undefined;
+
+  async function sync(force = false): Promise<void> {
+    if (!force && lastSyncFinishedAtMs !== 0 && now() - lastSyncFinishedAtMs < syncIntervalMs) {
+      return;
+    }
+    if (inFlightSync !== undefined) {
+      return inFlightSync;
+    }
+
+    const requestStartedAtMs = now();
+    const syncPromise = fetchServerTime()
+      .then((serverTimeMs) => {
+        const requestFinishedAtMs = now();
+        const requestMidpointMs = Math.round((requestStartedAtMs + requestFinishedAtMs) / 2);
+        serverTimeOffsetMs = serverTimeMs - requestMidpointMs;
+        lastSyncFinishedAtMs = requestFinishedAtMs;
+      })
+      .finally(() => {
+        if (inFlightSync === syncPromise) {
+          inFlightSync = undefined;
+        }
+      });
+
+    inFlightSync = syncPromise;
+    return syncPromise;
+  }
+
+  return {
+    async getTime(): Promise<number> {
+      await sync();
+      return now() + serverTimeOffsetMs;
+    },
+    invalidate(): void {
+      lastSyncFinishedAtMs = 0;
+    },
+  };
 }
 
 /**
