@@ -21,6 +21,17 @@ A `RebalanceRoute` defines:
 
 Routes are assembled by the rebalancer construction layer and passed at client initialization time (`initialize(rebalanceRoutes)`). The mode clients then filter to routes that are valid for current balances/config.
 
+The built-in production route set is generated in `src/rebalancer/buildRebalanceRoutes.ts`. It covers:
+
+- stablecoin swap routes between `USDC` and `USDT` on Binance and Hyperliquid,
+- same-asset bridge routes for `USDC` via CCTP and `USDT` via OFT,
+- Binance-only `WETH <-> USDC`, `WETH <-> USDT`, and `WETH <-> WETH` routes on chains where Binance exposes direct ETH deposit and withdrawal networks.
+
+Operational note:
+
+- Binance same-coin `WETH <-> WETH` routes skip the spot swap leg and treat on-chain `WETH` as Binance `ETH`.
+- Intermediate on-chain bridge legs into or out of Binance remain restricted to `USDC` and `USDT`; `WETH` routes must start and end on direct Binance ETH networks.
+
 ### Rebalancer Adapter
 
 Adapters in `src/rebalancer/adapters/` initiate and progress multi-stage swap workflows. The interface currently is:
