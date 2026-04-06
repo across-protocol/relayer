@@ -31,6 +31,15 @@ const WETH_REBALANCE_CHAINS = [
   CHAIN_IDs.OPTIMISM,
 ];
 
+const DIRECT_BINANCE_USDT_CHAINS = [CHAIN_IDs.ARBITRUM, CHAIN_IDs.OPTIMISM, CHAIN_IDs.MAINNET, CHAIN_IDs.BSC];
+const DIRECT_BINANCE_USDC_CHAINS = [
+  CHAIN_IDs.ARBITRUM,
+  CHAIN_IDs.OPTIMISM,
+  CHAIN_IDs.MAINNET,
+  CHAIN_IDs.BASE,
+  CHAIN_IDs.BSC,
+];
+
 export function buildRebalanceRoutes(rebalancerConfig: RebalancerConfig): RebalanceRoute[] {
   const rebalanceRoutes: RebalanceRoute[] = [];
 
@@ -62,24 +71,6 @@ export function buildRebalanceRoutes(rebalancerConfig: RebalancerConfig): Rebala
     }
   }
 
-  for (const usdtChain of USDT_REBALANCE_CHAINS.filter((chain) => chain !== CHAIN_IDs.BSC)) {
-    for (const otherUsdtChain of USDT_REBALANCE_CHAINS.filter((chain) => chain !== CHAIN_IDs.BSC)) {
-      if (!rebalancerConfig.chainIds.includes(usdtChain) || !rebalancerConfig.chainIds.includes(otherUsdtChain)) {
-        continue;
-      }
-      if (usdtChain === otherUsdtChain) {
-        continue;
-      }
-      rebalanceRoutes.push({
-        sourceChain: usdtChain,
-        sourceToken: "USDT",
-        destinationChain: otherUsdtChain,
-        destinationToken: "USDT",
-        adapter: "oft",
-      });
-    }
-  }
-
   for (const usdtChain of USDT_REBALANCE_CHAINS) {
     for (const otherUsdtChain of USDT_REBALANCE_CHAINS) {
       if (!rebalancerConfig.chainIds.includes(usdtChain) || !rebalancerConfig.chainIds.includes(otherUsdtChain)) {
@@ -88,31 +79,27 @@ export function buildRebalanceRoutes(rebalancerConfig: RebalancerConfig): Rebala
       if (usdtChain === otherUsdtChain) {
         continue;
       }
-      rebalanceRoutes.push({
-        sourceChain: usdtChain,
-        sourceToken: "USDT",
-        destinationChain: otherUsdtChain,
-        destinationToken: "USDT",
-        adapter: "binance",
-      });
-    }
-  }
-
-  for (const usdcChain of USDC_REBALANCE_CHAINS.filter((chain) => chain !== CHAIN_IDs.BSC)) {
-    for (const otherUsdcChain of USDC_REBALANCE_CHAINS.filter((chain) => chain !== CHAIN_IDs.BSC)) {
-      if (!rebalancerConfig.chainIds.includes(usdcChain) || !rebalancerConfig.chainIds.includes(otherUsdcChain)) {
-        continue;
+      if (otherUsdtChain !== CHAIN_IDs.BSC) {
+        rebalanceRoutes.push({
+          sourceChain: usdtChain,
+          sourceToken: "USDT",
+          destinationChain: otherUsdtChain,
+          destinationToken: "USDT",
+          adapter: "oft",
+        });
       }
-      if (usdcChain === otherUsdcChain) {
-        continue;
+      if (
+        DIRECT_BINANCE_USDT_CHAINS.includes(usdtChain) &&
+        DIRECT_BINANCE_USDT_CHAINS.includes(otherUsdtChain)
+      ) {
+        rebalanceRoutes.push({
+          sourceChain: usdtChain,
+          sourceToken: "USDT",
+          destinationChain: otherUsdtChain,
+          destinationToken: "USDT",
+          adapter: "binance",
+        });
       }
-      rebalanceRoutes.push({
-        sourceChain: usdcChain,
-        sourceToken: "USDC",
-        destinationChain: otherUsdcChain,
-        destinationToken: "USDC",
-        adapter: "cctp",
-      });
     }
   }
 
@@ -124,13 +111,27 @@ export function buildRebalanceRoutes(rebalancerConfig: RebalancerConfig): Rebala
       if (usdcChain === otherUsdcChain) {
         continue;
       }
-      rebalanceRoutes.push({
-        sourceChain: usdcChain,
-        sourceToken: "USDC",
-        destinationChain: otherUsdcChain,
-        destinationToken: "USDC",
-        adapter: "binance",
-      });
+      if (otherUsdcChain !== CHAIN_IDs.BSC) {
+        rebalanceRoutes.push({
+          sourceChain: usdcChain,
+          sourceToken: "USDC",
+          destinationChain: otherUsdcChain,
+          destinationToken: "USDC",
+          adapter: "cctp",
+        });
+      }
+      if (
+        DIRECT_BINANCE_USDC_CHAINS.includes(usdcChain) &&
+        DIRECT_BINANCE_USDC_CHAINS.includes(otherUsdcChain)
+      ) {
+        rebalanceRoutes.push({
+          sourceChain: usdcChain,
+          sourceToken: "USDC",
+          destinationChain: otherUsdcChain,
+          destinationToken: "USDC",
+          adapter: "binance",
+        });
+      }
     }
   }
 
@@ -212,4 +213,4 @@ export function dedupeRebalanceRoutes(routes: RebalanceRoute[]): RebalanceRoute[
   return Array.from(uniqueRoutes.values());
 }
 
-export { USDC_REBALANCE_CHAINS, USDT_REBALANCE_CHAINS };
+export { DIRECT_BINANCE_USDC_CHAINS, DIRECT_BINANCE_USDT_CHAINS, USDC_REBALANCE_CHAINS, USDT_REBALANCE_CHAINS };
