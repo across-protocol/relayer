@@ -6,6 +6,8 @@ import {
   JUSSI_GRAPH_VERSION,
   buildAllowedSwapEdgeCandidates,
   buildBridgeEdgeCandidates,
+  buildCumulativeBalancePainDefinitions,
+  buildJussiGraphDefinition,
   buildJussiGraphEnvelope,
   buildJussiGraphJson,
   buildJussiGraphId,
@@ -85,13 +87,116 @@ describe("Jussi graph builder helpers", async function () {
     expect(hasLogicalAssetNode(CHAIN_IDs.ZORA, "WETH")).to.equal(true);
   });
 
+  it("emits allocation ratios from relayer fixed-point config and cumulative balance pain bands", async function () {
+    const relayerConfig = buildRelayerConfig();
+    const nodeContexts = materializeNodeDefinitions(buildManagedNodeTemplates(relayerConfig.inventoryConfig));
+    const optimismUsdc = nodeContexts.find(
+      (node) => node.chainId === CHAIN_IDs.OPTIMISM && node.symbol === "USDC" && node.logicalAsset === "USDC"
+    )!;
+    const mainnetUsdc = nodeContexts.find(
+      (node) => node.chainId === CHAIN_IDs.MAINNET && node.symbol === "USDC" && node.logicalAsset === "USDC"
+    )!;
+    const cumulativeBalancePain = buildCumulativeBalancePainDefinitions({
+      USDC: toBNWei("1000", 6),
+      USDT: toBNWei("500", 6),
+      WETH: toBNWei("10", 18),
+    });
+
+    expect(optimismUsdc.definition.target_allocation_ratio).to.equal("0.08");
+    expect(optimismUsdc.definition.min_allocation_ratio).to.equal("0.04");
+    expect(optimismUsdc.definition.max_allocation_ratio).to.equal("0.12");
+    expect(mainnetUsdc.definition.target_allocation_ratio).to.equal("0");
+    expect(mainnetUsdc.definition.min_allocation_ratio).to.equal("0");
+    expect(mainnetUsdc.definition.max_allocation_ratio).to.equal("0");
+
+    expect(cumulativeBalancePain.USDC).to.deep.equal({
+      target_balance_native: toBNWei("1000", 6).toString(),
+      min_threshold_native: toBNWei("900", 6).toString(),
+      max_threshold_native: toBNWei("1100", 6).toString(),
+      surplus_annualized_cost_rate: "0.000219",
+      deficit_annualized_cost_rate: "0.002055",
+      out_of_band_severity_multiplier: "4.0",
+    });
+    expect(cumulativeBalancePain.USDT).to.deep.equal({
+      target_balance_native: toBNWei("500", 6).toString(),
+      min_threshold_native: toBNWei("450", 6).toString(),
+      max_threshold_native: toBNWei("550", 6).toString(),
+      surplus_annualized_cost_rate: "0.000219",
+      deficit_annualized_cost_rate: "0.002055",
+      out_of_band_severity_multiplier: "4.0",
+    });
+    expect(cumulativeBalancePain.WETH).to.deep.equal({
+      target_balance_native: toBNWei("10", 18).toString(),
+      min_threshold_native: toBNWei("9.5", 18).toString(),
+      max_threshold_native: toBNWei("10.5", 18).toString(),
+      surplus_annualized_cost_rate: "0.000219",
+      deficit_annualized_cost_rate: "0.002055",
+      out_of_band_severity_multiplier: "8.0",
+    });
+  });
+
+  it("uses cumulative balances with approximate upcoming refunds as cumulative pain targets", async function () {
+    const relayerConfig = new RelayerConfig({
+      HUB_CHAIN_ID: String(CHAIN_IDs.MAINNET),
+      RELAYER_INVENTORY_CONFIG: JSON.stringify({
+        tokenConfig: {},
+        allowedSwapRoutes: [],
+        wrapEtherTarget: "0",
+        wrapEtherTargetPerChain: {},
+        wrapEtherThreshold: "0",
+        wrapEtherThresholdPerChain: {},
+      }),
+    });
+    const balances = {
+      USDC: toBNWei("1234", 6),
+      USDT: toBNWei("5678", 6),
+      WETH: toBNWei("9.75", 18),
+    };
+    const requestedTokens: string[] = [];
+    const inventoryClient = {
+      getCumulativeBalanceWithApproximateUpcomingRefunds(l1Token: EvmAddress) {
+        const tokenAddress = l1Token.toNative().toLowerCase();
+        requestedTokens.push(tokenAddress);
+
+        if (tokenAddress === TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET].toLowerCase()) {
+          return balances.USDC;
+        }
+        if (tokenAddress === TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET].toLowerCase()) {
+          return balances.USDT;
+        }
+        if (tokenAddress === TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET].toLowerCase()) {
+          return balances.WETH;
+        }
+
+        throw new Error(`unexpected token lookup: ${tokenAddress}`);
+      },
+    };
+
+    const graph = await buildJussiGraphDefinition({
+      logger: { info: () => undefined, debug: () => undefined } as never,
+      baseSigner: {} as never,
+      relayerConfig,
+      inventoryClient: inventoryClient as never,
+      rebalanceRoutes: [],
+      rebalancerAdapters: {},
+      graphId: "test-graph",
+    });
+
+    expect(requestedTokens).to.deep.equal([
+      TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET].toLowerCase(),
+      TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET].toLowerCase(),
+      TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET].toLowerCase(),
+    ]);
+    expect(graph.payload.nodes).to.have.lengthOf(3);
+    expect(graph.payload.edges).to.have.lengthOf(0);
+    expect(graph.payload.cumulative_balance_pain.USDC.target_balance_native).to.equal(balances.USDC.toString());
+    expect(graph.payload.cumulative_balance_pain.USDT.target_balance_native).to.equal(balances.USDT.toString());
+    expect(graph.payload.cumulative_balance_pain.WETH.target_balance_native).to.equal(balances.WETH.toString());
+  });
+
   it("expands the configured pathUSD swap routes into direct graph edge requirements", async function () {
     const relayerConfig = buildRelayerConfig();
-    const nodeContexts = materializeNodeDefinitions(buildManagedNodeTemplates(relayerConfig.inventoryConfig), {
-      USDC: toBNWei("1000", 6),
-      USDT: toBNWei("1000", 6),
-      WETH: toBNWei("100", 18),
-    });
+    const nodeContexts = materializeNodeDefinitions(buildManagedNodeTemplates(relayerConfig.inventoryConfig));
     const edgeCandidates = buildAllowedSwapEdgeCandidates(relayerConfig, nodeContexts);
 
     const mainnetUsdcNodeKey = canonicalNodeKey(
@@ -113,11 +218,7 @@ describe("Jussi graph builder helpers", async function () {
 
   it("dedupes identical edges while preserving parallel adapters", async function () {
     const relayerConfig = buildRelayerConfig();
-    const nodeContexts = materializeNodeDefinitions(buildManagedNodeTemplates(relayerConfig.inventoryConfig), {
-      USDC: toBNWei("1000", 6),
-      USDT: toBNWei("1000", 6),
-      WETH: toBNWei("100", 18),
-    });
+    const nodeContexts = materializeNodeDefinitions(buildManagedNodeTemplates(relayerConfig.inventoryConfig));
     const mainnetUsdc = nodeContexts.find(
       (node) => node.chainId === CHAIN_IDs.MAINNET && node.symbol === "USDC" && node.logicalAsset === "USDC"
     )!;
@@ -226,11 +327,7 @@ describe("Jussi graph builder helpers", async function () {
 
   it("discovers WETH bridge candidates from constants and applies WETH bridge latency overrides", async function () {
     const relayerConfig = buildRelayerConfig();
-    const nodeContexts = materializeNodeDefinitions(buildManagedNodeTemplates(relayerConfig.inventoryConfig), {
-      USDC: toBNWei("1000", 6),
-      USDT: toBNWei("1000", 6),
-      WETH: toBNWei("100", 18),
-    });
+    const nodeContexts = materializeNodeDefinitions(buildManagedNodeTemplates(relayerConfig.inventoryConfig));
     const bridgeCandidates = await buildBridgeEdgeCandidates(nodeContexts);
     const hasBridge = (
       sourceChain: number,
@@ -312,6 +409,32 @@ describe("Jussi graph builder helpers", async function () {
           USDT: { decimals_by_chain: { "1": 6 } },
           WETH: { decimals_by_chain: { "1": 18 } },
         },
+        cumulative_balance_pain: {
+          USDC: {
+            target_balance_native: "1000000",
+            min_threshold_native: "900000",
+            max_threshold_native: "1100000",
+            surplus_annualized_cost_rate: "0.000219",
+            deficit_annualized_cost_rate: "0.002055",
+            out_of_band_severity_multiplier: "4.0",
+          },
+          USDT: {
+            target_balance_native: "1000000",
+            min_threshold_native: "900000",
+            max_threshold_native: "1100000",
+            surplus_annualized_cost_rate: "0.000219",
+            deficit_annualized_cost_rate: "0.002055",
+            out_of_band_severity_multiplier: "4.0",
+          },
+          WETH: {
+            target_balance_native: "1000000000000000000",
+            min_threshold_native: "950000000000000000",
+            max_threshold_native: "1050000000000000000",
+            surplus_annualized_cost_rate: "0.000219",
+            deficit_annualized_cost_rate: "0.002055",
+            out_of_band_severity_multiplier: "8.0",
+          },
+        },
         rate_limit_buckets: [],
         edge_classes: [],
         nodes: [],
@@ -328,6 +451,7 @@ describe("Jussi graph builder helpers", async function () {
         latency_annualized_cost_rate: "0.05",
         pain_model: graph.payload.pain_model,
         logical_assets: graph.payload.logical_assets,
+        cumulative_balance_pain: graph.payload.cumulative_balance_pain,
         rate_limit_buckets: [],
         edge_classes: [],
         nodes: [],
@@ -340,6 +464,7 @@ describe("Jussi graph builder helpers", async function () {
       latency_annualized_cost_rate: "0.05",
       pain_model: graph.payload.pain_model,
       logical_assets: graph.payload.logical_assets,
+      cumulative_balance_pain: graph.payload.cumulative_balance_pain,
       rate_limit_buckets: [],
       edge_classes: [],
       nodes: [],

@@ -22,7 +22,6 @@ import {
   CHAIN_IDs,
   Signer,
   TOKEN_SYMBOLS_MAP,
-  bnZero,
   chainIsSvm,
   config,
   delay,
@@ -103,8 +102,7 @@ async function buildGraphRebalanceRoutes(
   const nodeContexts = materializeNodeDefinitions(
     buildManagedNodeTemplates(relayerConfig.inventoryConfig, relayerConfig.hubPoolChainId).filter(
       (template) => !chainIsSvm(template.chainId)
-    ),
-    { USDC: bnZero, USDT: bnZero, WETH: bnZero }
+    )
   );
   const bridgeAdapterRoutes = await buildBridgeAdapterRoutes({
     nodeContexts,

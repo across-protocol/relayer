@@ -79,11 +79,19 @@ export type JussiNodeDefinition = {
   symbol: string;
   logical_asset: string;
   decimals: number;
+  target_allocation_ratio: string;
+  min_allocation_ratio: string;
+  max_allocation_ratio: string;
+  shortage_cost_usd_per_unit_time?: string;
+  surplus_cost_usd_per_unit_time?: string;
+};
+export type JussiCumulativeBalancePainDefinition = {
   target_balance_native: string;
   min_threshold_native: string;
   max_threshold_native: string;
-  shortage_cost_usd_per_unit_time?: string;
-  surplus_cost_usd_per_unit_time?: string;
+  surplus_annualized_cost_rate: string;
+  deficit_annualized_cost_rate: string;
+  out_of_band_severity_multiplier: string;
 };
 export type JussiEdgeDefinition = {
   edge_id: string;
@@ -105,6 +113,7 @@ export type JussiPutGraphRequest = {
   latency_annualized_cost_rate: string;
   pain_model: JussiPainModel;
   logical_assets: Record<LogicalAsset, JussiLogicalAssetDefinition>;
+  cumulative_balance_pain: Record<LogicalAsset, JussiCumulativeBalancePainDefinition>;
   rate_limit_buckets: JussiRateLimitBucketDefinition[];
   edge_classes: JussiEdgeClassDefinition[];
   nodes: JussiNodeDefinition[];
@@ -231,7 +240,7 @@ type HyperliquidInternalAdapter = {
 type BuildGraphParams = { logger: winston.Logger; baseSigner: Signer; relayerConfig: RelayerConfig; inventoryClient: InventoryClient; rebalanceRoutes: RebalanceRoute[]; rebalancerAdapters: Record<string, RebalancerAdapter>; graphId?: string; now?: Date };
 
 const HUB_CHAIN_ID = CHAIN_IDs.MAINNET;
-export const JUSSI_GRAPH_VERSION = 3;
+export const JUSSI_GRAPH_VERSION = 4;
 export const JUSSI_LOGICAL_ASSETS: readonly LogicalAsset[] = ["USDC", "USDT", "WETH"];
 const TRANSIENT_EDGE_PRICING_ERROR_PATTERNS = ["fetch failed", "recvWindow", "Too many requests", "429"];
 const EDGE_BUILD_BATCH_SIZE = Math.max(1, Number(process.env.JUSSI_EDGE_BUILD_BATCH_SIZE ?? "8") || 8);
@@ -269,6 +278,14 @@ const DEFAULT_PAIN_MODEL = {
   surplus_annualized_cost_rate: "0.000219",
   deficit_annualized_cost_rate: "0.002055",
   out_of_band_severity_multiplier: "4.0",
+};
+const CUMULATIVE_BALANCE_BANDS: Record<
+  LogicalAsset,
+  { minBps: number; maxBps: number; outOfBandSeverityMultiplier: string }
+> = {
+  USDC: { minBps: 9_000, maxBps: 11_000, outOfBandSeverityMultiplier: "4.0" },
+  USDT: { minBps: 9_000, maxBps: 11_000, outOfBandSeverityMultiplier: "4.0" },
+  WETH: { minBps: 9_500, maxBps: 10_500, outOfBandSeverityMultiplier: "8.0" },
 };
 const DEFAULT_RATE_LIMIT_BUCKETS: JussiRateLimitBucketDefinition[] = [
   {
@@ -309,6 +326,7 @@ export function buildJussiGraphJson(graph: BuiltJussiGraph): JussiGraphJson {
     latency_annualized_cost_rate: graph.payload.latency_annualized_cost_rate,
     pain_model: graph.payload.pain_model,
     logical_assets: graph.payload.logical_assets,
+    cumulative_balance_pain: graph.payload.cumulative_balance_pain,
     rate_limit_buckets: graph.payload.rate_limit_buckets,
     edge_classes: graph.payload.edge_classes,
     nodes: graph.payload.nodes,
@@ -392,7 +410,7 @@ function buildLogicalAssetDefinitions(
   ) as Record<LogicalAsset, JussiLogicalAssetDefinition>;
 }
 
-// The graph is built in stages: discover all nodes first, then project current balances into thresholds.
+// The graph is built in stages: discover all nodes first, then project relayer allocation config into node ratios.
 export function buildManagedNodeTemplates(
   inventoryConfig: InventoryConfig,
   hubChainId = HUB_CHAIN_ID
@@ -457,14 +475,11 @@ export function buildManagedNodeTemplates(
   return Array.from(templates.values()).sort((a, b) => a.chainId - b.chainId || a.symbol.localeCompare(b.symbol));
 }
 
-export function materializeNodeDefinitions(
-  templates: ManagedNodeTemplate[],
-  cumulativeBalancesByLogicalAsset: Record<LogicalAsset, BigNumber>
-): ManagedNodeContext[] {
+export function materializeNodeDefinitions(templates: ManagedNodeTemplate[]): ManagedNodeContext[] {
   return templates.map((template) => {
     const nodeKey = canonicalNodeKey(template.chainId, template.tokenAddress);
     const definition = template.managed
-      ? buildManagedNodeDefinition(template, cumulativeBalancesByLogicalAsset[template.logicalAsset])
+      ? buildManagedNodeDefinition(template)
       : buildNeutralNodeDefinition(template);
 
     return {
@@ -512,7 +527,7 @@ export async function buildJussiGraphDefinition(params: BuildGraphParams): Promi
     (template) => !chainIsSvm(template.chainId)
   );
   logBuild("Built managed node templates", { nodeTemplateCount: nodeTemplates.length });
-  const nodeContexts = materializeNodeDefinitions(nodeTemplates, cumulativeBalancesByLogicalAsset);
+  const nodeContexts = materializeNodeDefinitions(nodeTemplates);
   logBuild("Materialized graph nodes", { nodeCount: nodeContexts.length });
   const nodesByKey = new Map(nodeContexts.map((node) => [node.nodeKey, node]));
   logBuild("Building bridge edge candidates", { nodeCount: nodeContexts.length });
@@ -608,6 +623,7 @@ export async function buildJussiGraphDefinition(params: BuildGraphParams): Promi
       latency_annualized_cost_rate: DEFAULT_LATENCY_ANNUALIZED_COST_RATE,
       pain_model: DEFAULT_PAIN_MODEL,
       logical_assets: logicalAssets,
+      cumulative_balance_pain: buildCumulativeBalancePainDefinitions(cumulativeBalancesByLogicalAsset),
       rate_limit_buckets: Array.from(edgeClassDefinitions.values()).some((edgeClass) =>
         isDefined(edgeClass.rate_limit_bucket_id)
       )
@@ -622,17 +638,12 @@ export async function buildJussiGraphDefinition(params: BuildGraphParams): Promi
   };
 }
 
-function buildManagedNodeDefinition(template: ManagedNodeTemplate, cumulativeBalance: BigNumber): JussiNodeDefinition {
+function buildManagedNodeDefinition(template: ManagedNodeTemplate): JussiNodeDefinition {
   assert(
     isDefined(template.tokenConfig),
     `Managed node ${template.symbol} on ${template.chainId} is missing token config`
   );
-
-  const hubDecimals = getTokenInfoFromSymbol(template.logicalAsset, HUB_CHAIN_ID).decimals;
-  const converter = ConvertDecimals(hubDecimals, template.decimals);
-  const targetBalanceHubDecimals = cumulativeBalance.mul(template.tokenConfig.targetPct).div(toBNWei(1));
-  const minThresholdHubDecimals = cumulativeBalance.mul(template.tokenConfig.thresholdPct).div(toBNWei(1));
-  const maxThresholdHubDecimals = targetBalanceHubDecimals
+  const maxAllocationRatio = template.tokenConfig.targetPct
     .mul(template.tokenConfig.targetOverageBuffer)
     .div(toBNWei(1));
 
@@ -643,9 +654,9 @@ function buildManagedNodeDefinition(template: ManagedNodeTemplate, cumulativeBal
     symbol: template.symbol,
     logical_asset: template.logicalAsset,
     decimals: template.decimals,
-    target_balance_native: converter(targetBalanceHubDecimals).toString(),
-    min_threshold_native: converter(minThresholdHubDecimals).toString(),
-    max_threshold_native: converter(maxThresholdHubDecimals).toString(),
+    target_allocation_ratio: formatUnits(template.tokenConfig.targetPct, 18),
+    min_allocation_ratio: formatUnits(template.tokenConfig.thresholdPct, 18),
+    max_allocation_ratio: formatUnits(maxAllocationRatio, 18),
   };
 }
 
@@ -657,12 +668,34 @@ function buildNeutralNodeDefinition(template: ManagedNodeTemplate): JussiNodeDef
     symbol: template.symbol,
     logical_asset: template.logicalAsset,
     decimals: template.decimals,
-    target_balance_native: "0",
-    min_threshold_native: "0",
-    max_threshold_native: "0",
+    target_allocation_ratio: "0",
+    min_allocation_ratio: "0",
+    max_allocation_ratio: "0",
     shortage_cost_usd_per_unit_time: "0",
     surplus_cost_usd_per_unit_time: "0",
   };
+}
+
+export function buildCumulativeBalancePainDefinitions(
+  cumulativeBalancesByLogicalAsset: Record<LogicalAsset, BigNumber>
+): Record<LogicalAsset, JussiCumulativeBalancePainDefinition> {
+  return Object.fromEntries(
+    JUSSI_LOGICAL_ASSETS.map((logicalAsset) => {
+      const targetBalanceNative = cumulativeBalancesByLogicalAsset[logicalAsset];
+      const band = CUMULATIVE_BALANCE_BANDS[logicalAsset];
+      return [
+        logicalAsset,
+        {
+          target_balance_native: targetBalanceNative.toString(),
+          min_threshold_native: targetBalanceNative.mul(band.minBps).div(10_000).toString(),
+          max_threshold_native: targetBalanceNative.mul(band.maxBps).div(10_000).toString(),
+          surplus_annualized_cost_rate: DEFAULT_PAIN_MODEL.surplus_annualized_cost_rate,
+          deficit_annualized_cost_rate: DEFAULT_PAIN_MODEL.deficit_annualized_cost_rate,
+          out_of_band_severity_multiplier: band.outOfBandSeverityMultiplier,
+        },
+      ];
+    })
+  ) as Record<LogicalAsset, JussiCumulativeBalancePainDefinition>;
 }
 
 // Candidate discovery is pure topology: once we know which edges can exist,
