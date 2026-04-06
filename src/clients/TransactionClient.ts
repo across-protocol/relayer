@@ -37,6 +37,10 @@ const MIN_GAS_RETRY_SCALER_DEFAULT = 1.1;
 const MAX_GAS_RETRY_SCALER_DEFAULT = 3;
 const TRANSACTION_SUBMISSION_RETRIES_DEFAULT = 3;
 
+// Default TVM fee limit in SUN (1 TRX = 1,000,000 SUN). 100 TRX is a reasonable default for
+// contract interactions on TRON. Can be overridden via TVM_FEE_LIMIT env var.
+const DEFAULT_TVM_FEE_LIMIT = 100_000_000;
+
 // Define chains that require legacy (type 0) transactions
 export const LEGACY_TRANSACTION_CHAINS = [CHAIN_IDs.BSC];
 
@@ -415,21 +419,73 @@ async function _runTransactionTvm(
   contract: Contract,
   method: string,
   args: unknown,
-  _value = bnZero,
+  value = bnZero,
   gasLimit: BigNumber | null = null,
   _nonce: number | null = null,
-  _retries?: number,
-  _retryScaler = 1.0
+  retries?: number
 ): Promise<TransactionResponse> {
+  const at = "TransactionClient#_runTransactionTvm";
+  const { chainId } = contract;
+  const chain = getNetworkName(chainId);
+
+  retries ??= Number(
+    process.env[`TRANSACTION_SUBMISSION_RETRIES_${chainId}`] ??
+      process.env.TRANSACTION_SUBMISSION_RETRIES ??
+      TRANSACTION_SUBMISSION_RETRIES_DEFAULT
+  );
+
+  const feeLimit = gasLimit?.toNumber() ?? Number(process.env.TVM_FEE_LIMIT ?? DEFAULT_TVM_FEE_LIMIT);
+
   const tronWeb = getTronWebFromEvmSigner(contract.signer);
-  const populatedTransaction = await contract.populateTransaction[method](args);
-  const tronTransactionResult = submitTransactionTvm(tronWeb, populatedTransaction, gasLimit.toNumber());
-  logger.debug({
-    at: "TransactionClient#_runTransactionTvm",
-    message: "TransactionResult",
-    tronTransactionResult,
-  });
-  throw new Error("unimplemented");
+  const populatedTransaction = await contract.populateTransaction[method](...(args as Array<unknown>), { value });
+
+  logger.debug({ at, message: "Submitting TVM transaction.", chain, method, feeLimit });
+  let result;
+  try {
+    result = await submitTransactionTvm(tronWeb, populatedTransaction, feeLimit);
+  } catch (error) {
+    if (--retries < 0) {
+      throw error;
+    }
+    logger.debug({
+      at,
+      message: `TVM transaction submission failed on ${chain}, retrying.`,
+      method,
+      error: stringifyThrownValue(error),
+    });
+    return _runTransactionTvm(logger, contract, method, args, value, gasLimit, _nonce, retries);
+  }
+
+  if (!result.result) {
+    const error = new Error(`TVM transaction broadcast failed on ${chain}: ${result.txid}`);
+    if (--retries < 0) {
+      throw error;
+    }
+    logger.debug({
+      at,
+      message: `TVM broadcast returned result=false on ${chain}, retrying.`,
+      method,
+      txid: result.txid,
+    });
+    return _runTransactionTvm(logger, contract, method, args, value, gasLimit, _nonce, retries);
+  }
+
+  logger.debug({ at, message: "TVM transaction submitted.", chain, method, txid: result.txid });
+
+  // Adapt TronTransactionResult to an ethers-compatible TransactionResponse. TVM doesn't use
+  // nonces in the EVM sense, so we set nonce to 0 to satisfy downstream nonce tracking without
+  // side effects (TVM nonce tracking in submit() is harmless — it just overwrites to 0 each time).
+  return {
+    hash: result.txid,
+    nonce: 0,
+    confirmations: 0,
+    from: tronWeb.defaultAddress?.base58 ?? "",
+    chainId,
+    gasLimit: BigNumber.from(feeLimit),
+    value,
+    data: populatedTransaction.data ?? "0x",
+    wait: () => Promise.resolve({} as TransactionReceipt),
+  } as unknown as TransactionResponse;
 }
 
 /**
