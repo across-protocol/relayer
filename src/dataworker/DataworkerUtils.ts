@@ -63,7 +63,7 @@ export async function blockRangesAreInvalidForSpokeClients(
   );
 
   // There should be a spoke pool client instantiated for every bundle timestamp.
-  assert(!Object.keys(startBlockTimestamps).some((chainId) => !isDefined(spokePoolClients[chainId])));
+  assert(Object.keys(startBlockTimestamps).map(Number).every((chainId) => isDefined(spokePoolClients[chainId])));
   earliestStartBlockTimestamp = Object.entries(startBlockTimestamps).reduce(
     (currMax, [chainId, timestamp]) => {
       if (timestamp < currMax.timestamp) {
@@ -401,8 +401,14 @@ export function generateValidationKey(
     "proposer" | "poolRebalanceRoot" | "relayerRefundRoot" | "slowRelayRoot" | "challengePeriodEndTimestamp"
   >
 ): string {
-  const fields = ["proposer", "poolRebalanceRoot", "relayerRefundRoot", "slowRelayRoot", "challengePeriodEndTimestamp"];
-  return "across-validations-" + fields.map((field) => proposal[field.toString()]).join("-");
+  const fields = [
+    "proposer",
+    "poolRebalanceRoot",
+    "relayerRefundRoot",
+    "slowRelayRoot",
+    "challengePeriodEndTimestamp",
+  ] as const;
+  return "across-validations-" + fields.map((field) => proposal[field]).join("-");
 }
 
 /**

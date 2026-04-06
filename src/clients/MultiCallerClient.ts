@@ -154,7 +154,8 @@ export class MultiCallerClient {
     // only log the results once, so we need to collate the results into a single object.
     const failedChains = Object.entries(txnRefs)
       .filter(([, { isError }]) => isError)
-      .map(([chainId]) => chainId);
+      .map(([chainId]) => Number(chainId));
+
     if (failedChains.length > 0) {
       // Log the results.
       this.logger.error({
