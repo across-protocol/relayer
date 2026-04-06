@@ -63,7 +63,11 @@ export async function blockRangesAreInvalidForSpokeClients(
   );
 
   // There should be a spoke pool client instantiated for every bundle timestamp.
-  assert(Object.keys(startBlockTimestamps).map(Number).every((chainId) => isDefined(spokePoolClients[chainId])));
+  assert(
+    Object.keys(startBlockTimestamps)
+      .map(Number)
+      .every((chainId) => isDefined(spokePoolClients[chainId]))
+  );
   earliestStartBlockTimestamp = Object.entries(startBlockTimestamps).reduce(
     (currMax, [chainId, timestamp]) => {
       if (timestamp < currMax.timestamp) {

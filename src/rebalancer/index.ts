@@ -9,7 +9,6 @@ import {
   config,
   ConvertDecimals,
   disconnectRedisClients,
-  EvmAddress,
   getTokenInfoFromSymbol,
   isDefined,
   Signer,
@@ -116,13 +115,15 @@ function loadCumulativeModeBalances(
   for (const [token, chainConfig] of Object.entries(rebalancerConfig.cumulativeTargetBalances)) {
     const l1TokenInfo = getTokenInfoFromSymbol(token, rebalancerConfig.hubPoolChainId);
     assert(l1TokenInfo.address.isEVM());
-    Object.keys(chainConfig.chains).map(Number).forEach((chainId) => {
-      const l2TokenInfo = getTokenInfoFromSymbol(token, chainId);
-      assert(l2TokenInfo.address.isEVM());
-      const currentBalance = inventoryClient.tokenClient.getBalance(chainId, l2TokenInfo.address);
-      currentBalances[chainId] ??= {};
-      currentBalances[chainId][token] = currentBalance;
-    });
+    Object.keys(chainConfig.chains)
+      .map(Number)
+      .forEach((chainId) => {
+        const l2TokenInfo = getTokenInfoFromSymbol(token, chainId);
+        assert(l2TokenInfo.address.isEVM());
+        const currentBalance = inventoryClient.tokenClient.getBalance(chainId, l2TokenInfo.address);
+        currentBalances[chainId] ??= {};
+        currentBalances[chainId][token] = currentBalance;
+      });
 
     cumulativeBalances[token] = inventoryClient.getCumulativeBalanceWithApproximateUpcomingRefunds(l1TokenInfo.address);
   }
