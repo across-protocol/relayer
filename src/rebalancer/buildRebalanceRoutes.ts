@@ -4,6 +4,8 @@ import { RebalanceRoute } from "./utils/interfaces";
 
 type SupportedToken = "USDC" | "USDT" | "WETH";
 type StableToken = Exclude<SupportedToken, "WETH">;
+type DifferentAssetAdapter = "binance" | "hyperliquid";
+type ChainSelector = (rebalancerConfig: RebalancerConfig) => number[];
 
 // Direct Binance deposit/withdraw networks for each token. This is intentionally separate from the rebalancer route
 // set so we can track venue support without automatically enabling every listed network operationally.
@@ -12,12 +14,37 @@ const BINANCE_NETWORKS_BY_SYMBOL: Record<SupportedToken, readonly number[]> = {
   USDT: [CHAIN_IDs.ARBITRUM, CHAIN_IDs.OPTIMISM, CHAIN_IDs.MAINNET, CHAIN_IDs.BSC],
   // Live Binance ETH networkList currently includes ARBITRUM, BASE, BSC, ETH, OPTIMISM, SCROLL, and ZKSYNCERA.
   // The rebalancer support list below stays narrower until we intentionally enable more of those networks.
-  WETH: [CHAIN_IDs.ARBITRUM, CHAIN_IDs.BASE, CHAIN_IDs.BSC, CHAIN_IDs.MAINNET, CHAIN_IDs.OPTIMISM, CHAIN_IDs.SCROLL, CHAIN_IDs.ZK_SYNC],
+  WETH: [
+    CHAIN_IDs.ARBITRUM,
+    CHAIN_IDs.BASE,
+    CHAIN_IDs.BSC,
+    CHAIN_IDs.MAINNET,
+    CHAIN_IDs.OPTIMISM,
+    CHAIN_IDs.SCROLL,
+    CHAIN_IDs.ZK_SYNC,
+  ],
 };
 
 const REBALANCE_CHAINS_BY_SYMBOL: Record<SupportedToken, readonly number[]> = {
-  USDT: [CHAIN_IDs.HYPEREVM, CHAIN_IDs.ARBITRUM, CHAIN_IDs.OPTIMISM, CHAIN_IDs.MAINNET, CHAIN_IDs.UNICHAIN, CHAIN_IDs.MONAD, CHAIN_IDs.BSC],
-  USDC: [CHAIN_IDs.HYPEREVM, CHAIN_IDs.ARBITRUM, CHAIN_IDs.OPTIMISM, CHAIN_IDs.MAINNET, CHAIN_IDs.BASE, CHAIN_IDs.UNICHAIN, CHAIN_IDs.MONAD, CHAIN_IDs.BSC],
+  USDT: [
+    CHAIN_IDs.HYPEREVM,
+    CHAIN_IDs.ARBITRUM,
+    CHAIN_IDs.OPTIMISM,
+    CHAIN_IDs.MAINNET,
+    CHAIN_IDs.UNICHAIN,
+    CHAIN_IDs.MONAD,
+    CHAIN_IDs.BSC,
+  ],
+  USDC: [
+    CHAIN_IDs.HYPEREVM,
+    CHAIN_IDs.ARBITRUM,
+    CHAIN_IDs.OPTIMISM,
+    CHAIN_IDs.MAINNET,
+    CHAIN_IDs.BASE,
+    CHAIN_IDs.UNICHAIN,
+    CHAIN_IDs.MONAD,
+    CHAIN_IDs.BSC,
+  ],
   WETH: [CHAIN_IDs.ARBITRUM, CHAIN_IDs.BASE, CHAIN_IDs.BSC, CHAIN_IDs.MAINNET, CHAIN_IDs.OPTIMISM],
 };
 
@@ -32,6 +59,30 @@ function hasSameAssetBridgeAdapter(token: SupportedToken): token is StableToken 
 
 function configuredChainsForToken(rebalancerConfig: RebalancerConfig, token: SupportedToken): number[] {
   return REBALANCE_CHAINS_BY_SYMBOL[token].filter((chainId) => rebalancerConfig.chainIds.includes(chainId));
+}
+
+function configuredDirectBinanceChainsForToken(rebalancerConfig: RebalancerConfig, token: SupportedToken): number[] {
+  return configuredChainsForToken(rebalancerConfig, token).filter((chainId) =>
+    BINANCE_NETWORKS_BY_SYMBOL[token].includes(chainId)
+  );
+}
+
+function configuredChains(token: SupportedToken): ChainSelector {
+  return (rebalancerConfig) => configuredChainsForToken(rebalancerConfig, token);
+}
+
+function configuredDirectBinanceChains(token: SupportedToken): ChainSelector {
+  return (rebalancerConfig) => configuredDirectBinanceChainsForToken(rebalancerConfig, token);
+}
+
+function canUseHyperliquidStablecoinRoute({
+  sourceChain,
+  destinationChain,
+}: {
+  sourceChain: number;
+  destinationChain: number;
+}): boolean {
+  return sourceChain !== CHAIN_IDs.BSC && destinationChain !== CHAIN_IDs.BSC;
 }
 
 function buildSameAssetRoutes(rebalancerConfig: RebalancerConfig, token: SupportedToken): RebalanceRoute[] {
@@ -70,73 +121,80 @@ function buildSameAssetRoutes(rebalancerConfig: RebalancerConfig, token: Support
   return routes;
 }
 
-function buildDifferentAssetRoutes(rebalancerConfig: RebalancerConfig): RebalanceRoute[] {
-  const routes: RebalanceRoute[] = [];
-  const usdtChains = configuredChainsForToken(rebalancerConfig, "USDT");
-  const usdcChains = configuredChainsForToken(rebalancerConfig, "USDC");
-  const wethChains = configuredChainsForToken(rebalancerConfig, "WETH");
-  const directBinanceWethChains = wethChains.filter((chainId) => BINANCE_NETWORKS_BY_SYMBOL.WETH.includes(chainId));
+type DifferentAssetPairRule = {
+  tokenA: SupportedToken;
+  tokenB: SupportedToken;
+  adapter: DifferentAssetAdapter;
+  chainsA: ChainSelector;
+  chainsB: ChainSelector;
+  allow?: (params: { sourceChain: number; destinationChain: number }) => boolean;
+};
 
-  for (const usdtChain of usdtChains) {
-    for (const usdcChain of usdcChains) {
-      for (const adapter of ["binance", "hyperliquid"]) {
-        if (adapter !== "binance" && (usdtChain === CHAIN_IDs.BSC || usdcChain === CHAIN_IDs.BSC)) {
-          continue;
-        }
+const DIFFERENT_ASSET_ROUTE_RULES: readonly DifferentAssetPairRule[] = [
+  {
+    tokenA: "USDT",
+    tokenB: "USDC",
+    adapter: "binance",
+    chainsA: configuredChains("USDT"),
+    chainsB: configuredChains("USDC"),
+  },
+  {
+    tokenA: "USDT",
+    tokenB: "USDC",
+    adapter: "hyperliquid",
+    chainsA: configuredChains("USDT"),
+    chainsB: configuredChains("USDC"),
+    allow: canUseHyperliquidStablecoinRoute,
+  },
+  {
+    tokenA: "WETH",
+    tokenB: "USDT",
+    adapter: "binance",
+    chainsA: configuredDirectBinanceChains("WETH"),
+    chainsB: configuredChains("USDT"),
+  },
+  {
+    tokenA: "WETH",
+    tokenB: "USDC",
+    adapter: "binance",
+    chainsA: configuredDirectBinanceChains("WETH"),
+    chainsB: configuredChains("USDC"),
+  },
+];
 
-        routes.push({
-          sourceChain: usdtChain,
-          sourceToken: "USDT",
-          destinationChain: usdcChain,
-          destinationToken: "USDC",
-          adapter,
-        });
-        routes.push({
-          sourceChain: usdcChain,
-          sourceToken: "USDC",
-          destinationChain: usdtChain,
-          destinationToken: "USDT",
-          adapter,
-        });
+function pushDirectedDifferentAssetRoutes(
+  routes: RebalanceRoute[],
+  rule: DifferentAssetPairRule,
+  sourceToken: SupportedToken,
+  sourceChains: readonly number[],
+  destinationToken: SupportedToken,
+  destinationChains: readonly number[]
+): void {
+  for (const sourceChain of sourceChains) {
+    for (const destinationChain of destinationChains) {
+      if (rule.allow && !rule.allow({ sourceChain, destinationChain })) {
+        continue;
       }
+
+      routes.push({
+        sourceChain,
+        sourceToken,
+        destinationChain,
+        destinationToken,
+        adapter: rule.adapter,
+      });
     }
   }
+}
 
-  // WETH<->stablecoin swap routes via Binance only. WETH chains are restricted to direct Binance deposit/withdrawal
-  // networks for ETH.
-  for (const wethChain of directBinanceWethChains) {
-    for (const usdtChain of usdtChains) {
-      routes.push({
-        sourceChain: wethChain,
-        sourceToken: "WETH",
-        destinationChain: usdtChain,
-        destinationToken: "USDT",
-        adapter: "binance",
-      });
-      routes.push({
-        sourceChain: usdtChain,
-        sourceToken: "USDT",
-        destinationChain: wethChain,
-        destinationToken: "WETH",
-        adapter: "binance",
-      });
-    }
-    for (const usdcChain of usdcChains) {
-      routes.push({
-        sourceChain: wethChain,
-        sourceToken: "WETH",
-        destinationChain: usdcChain,
-        destinationToken: "USDC",
-        adapter: "binance",
-      });
-      routes.push({
-        sourceChain: usdcChain,
-        sourceToken: "USDC",
-        destinationChain: wethChain,
-        destinationToken: "WETH",
-        adapter: "binance",
-      });
-    }
+function buildDifferentAssetRoutes(rebalancerConfig: RebalancerConfig): RebalanceRoute[] {
+  const routes: RebalanceRoute[] = [];
+  for (const rule of DIFFERENT_ASSET_ROUTE_RULES) {
+    const chainsA = rule.chainsA(rebalancerConfig);
+    const chainsB = rule.chainsB(rebalancerConfig);
+
+    pushDirectedDifferentAssetRoutes(routes, rule, rule.tokenA, chainsA, rule.tokenB, chainsB);
+    pushDirectedDifferentAssetRoutes(routes, rule, rule.tokenB, chainsB, rule.tokenA, chainsA);
   }
 
   return routes;
