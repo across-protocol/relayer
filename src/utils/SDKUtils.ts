@@ -43,6 +43,7 @@ export const {
   createDefaultTransaction,
   getCCTPDepositAccounts,
 } = sdk.arch.svm;
+export const { submitTransaction: submitTransactionTvm } = sdk.arch.tvm;
 export type SVMProvider = sdk.arch.svm.SVMProvider;
 export type LatestBlockhash = sdk.arch.svm.LatestBlockhash;
 export type SolanaTransaction = sdk.arch.svm.SolanaTransaction;

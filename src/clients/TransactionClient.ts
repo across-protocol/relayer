@@ -24,6 +24,9 @@ import {
   Signer,
   isDefined,
   getSpeedProvider,
+  chainIsTvm,
+  getTronWebFromEvmSigner,
+  submitTransactionTvm,
 } from "../utils";
 import { DEFAULT_GAS_FEE_SCALERS } from "../common";
 import { FeeData } from "@ethersproject/abstract-provider";
@@ -104,8 +107,9 @@ export class TransactionClient {
   }
 
   protected _getTransactionPromise(txn: AugmentedTransaction, nonce: number | null): Promise<TransactionResponse> {
-    const { contract, method, args, value, gasLimit } = txn;
-    return _runTransaction(this.logger, contract, method, args, value, gasLimit, nonce);
+    const { contract, method, args, value, gasLimit, chainId } = txn;
+    const transactionHandler = chainIsTvm(chainId) ? _runTransactionTvm : _runTransaction;
+    return transactionHandler(this.logger, contract, method, args, value, gasLimit, nonce);
   }
 
   protected async _submit(
@@ -404,6 +408,28 @@ async function _runTransaction(
 
     return await _runTransaction(logger, contract, method, args, value, gasLimit, nonce, retries, retryScaler);
   }
+}
+
+async function _runTransactionTvm(
+  logger: winston.Logger,
+  contract: Contract,
+  method: string,
+  args: unknown,
+  _value = bnZero,
+  gasLimit: BigNumber | null = null,
+  _nonce: number | null = null,
+  _retries?: number,
+  _retryScaler = 1.0
+): Promise<TransactionResponse> {
+  const tronWeb = getTronWebFromEvmSigner(contract.signer);
+  const populatedTransaction = await contract.populateTransaction[method](args);
+  const tronTransactionResult = submitTransactionTvm(tronWeb, populatedTransaction, gasLimit.toNumber());
+  logger.debug({
+    at: "TransactionClient#_runTransactionTvm",
+    message: "TransactionResult",
+    tronTransactionResult,
+  });
+  throw new Error("unimplemented");
 }
 
 /**

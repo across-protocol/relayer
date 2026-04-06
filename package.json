@@ -41,6 +41,7 @@
     "minimist": "^1.2.8",
     "redis4": "npm:redis@^4.1.0",
     "superstruct": "^1.0.3",
+    "tronweb": "^6.2.2",
     "ts-node": "^10.9.1",
     "viem": "~2.47.10",
     "winston": "^3.17.0",
