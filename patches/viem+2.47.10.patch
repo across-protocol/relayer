@@ -136,6 +136,19 @@ index d283a6c..56f6663 100644
          return !l2BlockNumber || blockNumber > l2BlockNumber
              ? { ...game, l2BlockNumber: blockNumber }
              : null;
+diff --git a/node_modules/viem/_types/clients/createClient.d.ts b/node_modules/viem/_types/clients/createClient.d.ts
+index 1697039..113bee3 100644
+--- a/node_modules/viem/_types/clients/createClient.d.ts
++++ b/node_modules/viem/_types/clients/createClient.d.ts
+@@ -68,7 +68,7 @@ export type ClientConfig<transport extends Transport = Transport, chain extends
+     type?: string | undefined;
+ };
+ type ExtendableProtectedActions<transport extends Transport = Transport, chain extends Chain | undefined = Chain | undefined, account extends Account | undefined = Account | undefined> = Pick<PublicActions<transport, chain, account>, 'call' | 'createContractEventFilter' | 'createEventFilter' | 'estimateContractGas' | 'estimateGas' | 'getBlock' | 'getBlockNumber' | 'getChainId' | 'getContractEvents' | 'getEnsText' | 'getFilterChanges' | 'getGasPrice' | 'getLogs' | 'getTransaction' | 'getTransactionCount' | 'getTransactionReceipt' | 'prepareTransactionRequest' | 'readContract' | 'sendRawTransaction' | 'simulateContract' | 'uninstallFilter' | 'watchBlockNumber' | 'watchContractEvent'> & Pick<WalletActions<chain, account>, 'sendTransaction' | 'writeContract'>;
+-export type Client<transport extends Transport = Transport, chain extends Chain | undefined = Chain | undefined, account extends Account | undefined = Account | undefined, rpcSchema extends RpcSchema | undefined = undefined, extended extends Extended | undefined = Extended | undefined> = Client_Base<transport, chain, account, rpcSchema> & (extended extends Extended ? extended : unknown) & {
++export type Client<transport extends Transport = Transport, chain extends Chain | undefined = Chain | undefined, account extends Account | undefined = Account | undefined, rpcSchema extends RpcSchema | undefined = undefined, extended extends Extended | undefined = undefined> = Client_Base<transport, chain, account, rpcSchema> & (extended extends Extended ? extended : unknown) & {
+     extend: <const client extends Extended & ExactPartial<ExtendableProtectedActions<transport, chain, account>>>(fn: (client: Client<transport, chain, account, rpcSchema, extended>) => client) => Client<transport, chain, account, rpcSchema, Prettify<client> & (extended extends Extended ? extended : unknown)>;
+ };
+ type Client_Base<transport extends Transport = Transport, chain extends Chain | undefined = Chain | undefined, account extends Account | undefined = Account | undefined, rpcSchema extends RpcSchema | undefined = undefined> = {
 diff --git a/node_modules/viem/chains/definitions/megaeth.ts b/node_modules/viem/chains/definitions/megaeth.ts
 index 41b4d70..7527021 100644
 --- a/node_modules/viem/chains/definitions/megaeth.ts
