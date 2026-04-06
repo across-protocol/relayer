@@ -630,7 +630,7 @@ export class Relayer {
     // Filter out deposits where the relayer doesn't have the balance to make the fill.
     const unfilledDepositAmountsPerChain: { [chainId: number]: BigNumber } = deposits
       .filter((deposit) => tokenClient.hasBalanceForFill(deposit))
-      .reduce((agg, deposit) => {
+      .reduce<Record<number, BigNumber>>((agg, deposit) => {
         const unfilledAmountUsd = profitClient.getFillAmountInUsd(deposit);
         agg[deposit.originChainId] = (agg[deposit.originChainId] ?? bnZero).add(unfilledAmountUsd ?? bnZero);
         return agg;
@@ -638,7 +638,8 @@ export class Relayer {
 
     // Set the MDC for each origin chain equal to lowest threshold greater than the unfilled USD deposit amount.
     const mdcPerChain = Object.fromEntries(
-      Object.entries(unfilledDepositAmountsPerChain).map(([chainId, unfilledAmount]) => {
+      Object.entries(unfilledDepositAmountsPerChain).map(([_chainId, unfilledAmount]) => {
+        const chainId = Number(_chainId);
         const { minConfirmations } = minDepositConfirmations[chainId].find(({ usdThreshold }) =>
           usdThreshold.gte(unfilledAmount)
         );
@@ -865,7 +866,7 @@ export class Relayer {
 
     const _lpFees = await hubPoolClient.batchComputeRealizedLpFeePct(lpFeeRequests);
 
-    const lpFees: BatchLPFees = _lpFees.reduce((acc, { realizedLpFeePct: lpFeePct }, idx) => {
+    const lpFees: BatchLPFees = _lpFees.reduce<BatchLPFees>((acc, { realizedLpFeePct: lpFeePct }, idx) => {
       const lpFeeRequest = lpFeeRequests[idx];
       const { paymentChainId } = lpFeeRequest;
       const key = this.getLPFeeKey(lpFeeRequest);

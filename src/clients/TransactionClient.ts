@@ -316,7 +316,7 @@ async function _runTransaction(
   // TX config has gas (from gasPrice function), value (how much eth to send) and an optional gasLimit. The reduce
   // operation below deletes any null/undefined elements from this object. If gasLimit or nonce are not specified,
   // ethers will determine the correct values to use.
-  const txConfig = Object.entries({ ...gas, value, nonce, gasLimit }).reduce(
+  const txConfig = Object.entries({ ...gas, value, nonce, gasLimit }).reduce<Record<string, unknown>>(
     (a, [k, v]) => (v ? ((a[k] = v), a) : a),
     {}
   );

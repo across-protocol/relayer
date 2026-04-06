@@ -39,7 +39,7 @@
     "ethers": "^5.7.2",
     "lodash": "^4.18.1",
     "minimist": "^1.2.8",
-    "redis4": "npm:redis@^4.1.0",
+    "redis": "^4.6.13",
     "superstruct": "^1.0.3",
     "tronweb": "^6.2.2",
     "ts-node": "^10.9.1",

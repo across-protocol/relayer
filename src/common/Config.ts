@@ -50,11 +50,12 @@ export class CommonConfig {
     const mergeConfig = <T>(config: T, envVar: string): T => {
       const shallowCopy = { ...config };
       Object.entries(JSON.parse(envVar ?? "{}")).forEach(([k, v]) => {
+        const _k = k as keyof T;
         assert(
-          typeof v === typeof shallowCopy[k] || !isDefined(shallowCopy[k]),
-          `Invalid ${envVar} configuration on key ${k} (${typeof v} != ${typeof shallowCopy[k]})`
+          typeof v === typeof shallowCopy[_k] || !isDefined(shallowCopy[_k]),
+          `Invalid ${envVar} configuration on key ${k} (${typeof v} != ${typeof shallowCopy[_k]})`
         );
-        shallowCopy[k] = v;
+        shallowCopy[_k] = v as T[keyof T];
       });
       return shallowCopy;
     };
