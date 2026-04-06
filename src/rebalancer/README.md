@@ -24,11 +24,12 @@ Routes are assembled by the rebalancer construction layer and passed at client i
 The built-in production route set is generated in `src/rebalancer/buildRebalanceRoutes.ts`. It covers:
 
 - stablecoin swap routes between `USDC` and `USDT` on Binance and Hyperliquid,
-- same-asset bridge routes for `USDC` via CCTP and `USDT` via OFT,
+- same-asset routes for `USDC` via CCTP and Binance, and for `USDT` via OFT and Binance,
 - Binance-only `WETH <-> USDC`, `WETH <-> USDT`, and `WETH <-> WETH` routes on chains where Binance exposes direct ETH deposit and withdrawal networks.
 
 Operational note:
 
+- Same-asset `USDC <-> USDC` and `USDT <-> USDT` Binance routes are included deliberately so they can compete on estimated cost against CCTP/OFT paths.
 - Binance same-coin `WETH <-> WETH` routes skip the spot swap leg and treat on-chain `WETH` as Binance `ETH`.
 - Intermediate on-chain bridge legs into or out of Binance remain restricted to `USDC` and `USDT`; `WETH` routes must start and end on direct Binance ETH networks.
 

@@ -69,7 +69,11 @@ describe("buildRebalanceRoutes", async function () {
     expect(hasRoute(CHAIN_IDs.BSC, "USDT", CHAIN_IDs.OPTIMISM, "USDC", "binance")).to.equal(true);
     expect(hasRoute(CHAIN_IDs.BSC, "USDT", CHAIN_IDs.OPTIMISM, "USDC", "hyperliquid")).to.equal(false);
     expect(hasRoute(CHAIN_IDs.OPTIMISM, "USDC", CHAIN_IDs.BASE, "USDC", "cctp")).to.equal(true);
+    expect(hasRoute(CHAIN_IDs.OPTIMISM, "USDC", CHAIN_IDs.BASE, "USDC", "binance")).to.equal(true);
     expect(hasRoute(CHAIN_IDs.OPTIMISM, "USDT", CHAIN_IDs.HYPEREVM, "USDT", "oft")).to.equal(true);
+    expect(hasRoute(CHAIN_IDs.OPTIMISM, "USDT", CHAIN_IDs.HYPEREVM, "USDT", "binance")).to.equal(true);
+    expect(hasRoute(CHAIN_IDs.BSC, "USDT", CHAIN_IDs.OPTIMISM, "USDT", "binance")).to.equal(true);
+    expect(hasRoute(CHAIN_IDs.BSC, "USDC", CHAIN_IDs.BASE, "USDC", "binance")).to.equal(true);
   });
 
   it("builds WETH<->stablecoin routes via binance for direct Binance ETH networks", async function () {

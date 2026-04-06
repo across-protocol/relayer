@@ -80,6 +80,24 @@ export function buildRebalanceRoutes(rebalancerConfig: RebalancerConfig): Rebala
     }
   }
 
+  for (const usdtChain of USDT_REBALANCE_CHAINS) {
+    for (const otherUsdtChain of USDT_REBALANCE_CHAINS) {
+      if (!rebalancerConfig.chainIds.includes(usdtChain) || !rebalancerConfig.chainIds.includes(otherUsdtChain)) {
+        continue;
+      }
+      if (usdtChain === otherUsdtChain) {
+        continue;
+      }
+      rebalanceRoutes.push({
+        sourceChain: usdtChain,
+        sourceToken: "USDT",
+        destinationChain: otherUsdtChain,
+        destinationToken: "USDT",
+        adapter: "binance",
+      });
+    }
+  }
+
   for (const usdcChain of USDC_REBALANCE_CHAINS.filter((chain) => chain !== CHAIN_IDs.BSC)) {
     for (const otherUsdcChain of USDC_REBALANCE_CHAINS.filter((chain) => chain !== CHAIN_IDs.BSC)) {
       if (!rebalancerConfig.chainIds.includes(usdcChain) || !rebalancerConfig.chainIds.includes(otherUsdcChain)) {
@@ -94,6 +112,24 @@ export function buildRebalanceRoutes(rebalancerConfig: RebalancerConfig): Rebala
         destinationChain: otherUsdcChain,
         destinationToken: "USDC",
         adapter: "cctp",
+      });
+    }
+  }
+
+  for (const usdcChain of USDC_REBALANCE_CHAINS) {
+    for (const otherUsdcChain of USDC_REBALANCE_CHAINS) {
+      if (!rebalancerConfig.chainIds.includes(usdcChain) || !rebalancerConfig.chainIds.includes(otherUsdcChain)) {
+        continue;
+      }
+      if (usdcChain === otherUsdcChain) {
+        continue;
+      }
+      rebalanceRoutes.push({
+        sourceChain: usdcChain,
+        sourceToken: "USDC",
+        destinationChain: otherUsdcChain,
+        destinationToken: "USDC",
+        adapter: "binance",
       });
     }
   }
