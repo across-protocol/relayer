@@ -8,7 +8,7 @@ export function getTronWebFromEvmSigner(evmSigner: Signer): TronWeb {
   const evmPrivateKey = evmSigner._signingKey().privateKey;
 
   // @Todo. There's likely a better way to do this.
-  const fullHost = getNodeUrlList(CHAIN_IDs.TRON, 1)[0];
+  const fullHost = Object.values(getNodeUrlList(CHAIN_IDs.TRON, 1))[0];
   return new TronWeb({
     fullHost,
     privateKey: evmPrivateKey.slice(2),
