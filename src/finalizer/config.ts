@@ -19,7 +19,7 @@ export class FinalizerConfig extends CommonConfig {
     const {
       FINALIZER_MAX_TOKENBRIDGE_LOOKBACK,
       FINALIZER_CHAINS = "[]",
-      FINALIZER_WITHDRAWAL_TO_ADDRESSES = "[]",
+      FINALIZER_WITHDRAWAL_TO_ADDRESSES = "{}",
       FINALIZATION_STRATEGY = "l1<->l2",
       FINALIZER_CHUNK_SIZE = 3,
     } = env;
