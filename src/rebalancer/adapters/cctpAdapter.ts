@@ -282,7 +282,11 @@ export class CctpAdapter extends BaseAdapter {
     );
   }
 
-  private async _getCctpAttestation(txnHash: string, sourceChainId: number, retryCount = 0) {
+  private async _getCctpAttestation(
+    txnHash: string,
+    sourceChainId: number,
+    retryCount = 0
+  ): Promise<Awaited<ReturnType<typeof utils.fetchCctpV2Attestations>>[string]["messages"][number] | undefined> {
     if (retryCount > 2) {
       this.logger.warn({
         at: "CctpAdapter._getCctpAttestation",

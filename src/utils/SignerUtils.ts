@@ -184,7 +184,7 @@ export async function getDispatcherKeys(): Promise<Signer[]> {
   if (!isDefined(args.dispatcherKeys)) {
     // If GCKMS keys are undefined. Assume keys are in environment.
     const keys = JSON.parse(process.env["DISPATCHER_KEYS"] ?? "[]");
-    return keys.map((key) => new Wallet(key));
+    return keys.map((key: string) => new Wallet(key));
   }
   const dispatcherKeyNames = args.dispatcherKeys.split(",");
   if (!Array.isArray(dispatcherKeyNames)) {

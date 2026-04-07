@@ -1,7 +1,6 @@
 import {
   ethers,
   retrieveSignerFromCLIArgs,
-  RelayerRefundLeaf,
   toBN,
   getProvider,
   blockExplorerLink,
@@ -51,9 +50,9 @@ export async function run(): Promise<void> {
   const baseSigner = await retrieveSignerFromCLIArgs();
 
   // Reformat leaf such that we can execute it on-chain:
-  const relayerRefundLeaf: RelayerRefundLeaf = {
+  const relayerRefundLeaf = {
     ...gcpCopiedRefundLeaf.jsonPayload.leaf,
-    refundAmounts: gcpCopiedRefundLeaf.jsonPayload.leaf.refundAmounts.map((x) => toBN(x)),
+    refundAmounts: gcpCopiedRefundLeaf.jsonPayload.leaf.refundAmounts.map(toBN),
   };
   const connectedSigner = baseSigner.connect(await getProvider(Number(relayerRefundLeaf.chainId)));
 

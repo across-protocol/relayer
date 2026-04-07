@@ -111,9 +111,7 @@ export class RelayerConfig extends CommonConfig {
     this.relayerDestinationChains = JSON.parse(RELAYER_DESTINATION_CHAINS ?? "[]");
 
     // Empty means all tokens.
-    this.relayerTokens = JSON.parse(RELAYER_TOKENS ?? "[]").map((token) =>
-      toAddressType(ethers.utils.getAddress(token), CHAIN_IDs.MAINNET)
-    );
+    this.relayerTokens = JSON.parse(RELAYER_TOKENS ?? "[]").map(EvmAddress.from);
     // An empty array for a defined destination chain means that all tokens are supported. To support no tokens
     // for a destination chain, map the chain to an empty array. For example, to fill only token A on chain C
     // and fill nothing on chain D, set relayerDestinationTokens: { C: [A], D: [] }
@@ -125,7 +123,7 @@ export class RelayerConfig extends CommonConfig {
     );
 
     // SLOW_DEPOSITORS can exist on any network, so their origin network must be inferred based on the structure of the address.
-    this.slowDepositors = JSON.parse(SLOW_DEPOSITORS ?? "[]").map((depositor) => {
+    this.slowDepositors = JSON.parse(SLOW_DEPOSITORS ?? "[]").map((depositor: string) => {
       const chainId = ethers.utils.isHexString(depositor) ? CHAIN_IDs.MAINNET : CHAIN_IDs.SOLANA;
       return toAddressType(depositor, chainId);
     });

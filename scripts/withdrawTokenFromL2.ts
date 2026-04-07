@@ -18,7 +18,7 @@ import {
 } from "../src/utils";
 import { CUSTOM_L2_BRIDGE, CANONICAL_L2_BRIDGE } from "../src/common/Constants";
 import { BaseL2BridgeAdapter } from "../src/adapter/l2Bridges/BaseL2BridgeAdapter";
-import { MultiCallerClient } from "../src/clients";
+import { MultiCallerClient, AugmentedTransaction } from "../src/clients";
 import { askYesNoQuestion } from "./utils";
 
 const args = minimist(process.argv.slice(2), {
@@ -173,11 +173,13 @@ async function run(): Promise<void> {
   // Only execute if --sendTx is explicitly set
   if (!sendTransactions) {
     console.log(`\n📋 Transaction Calldata (${txns.length} transaction(s)):`);
-    txns.forEach((txn, index) => {
-      const calldata = txn.contract.interface.encodeFunctionData(txn.method, txn.args);
-      console.log(`\n   Transaction ${index + 1}:`);
-      console.log(`   ${calldata}`);
-    });
+    txns
+      .filter((txn): txn is AugmentedTransaction => "contract" in txn)
+      .forEach((txn, index) => {
+        const calldata = txn.contract.interface.encodeFunctionData(txn.method, txn.args);
+        console.log(`\n   Transaction ${index + 1}:`);
+        console.log(`   ${calldata}`);
+      });
     console.log("\n💡 To execute transactions, run with --sendTx flag");
     console.log(
       `   Example: yarn ts-node ./scripts/withdrawTokenFromL2.ts --token ${tokenSymbol} --chainId ${l2ChainId} --amount ${withdrawAmount} --sendTx --wallet gckms --keys bot1`
@@ -194,7 +196,9 @@ async function run(): Promise<void> {
   // Execute withdrawal
   logger.info("Executing withdrawal...");
   const multicallerClient = new MultiCallerClient(logger);
-  txns.forEach((txn) => multicallerClient.enqueueTransaction(txn));
+  txns
+    .filter((txn): txn is AugmentedTransaction => "contract" in txn)
+    .forEach((txn) => multicallerClient.enqueueTransaction(txn));
   const txnReceipts = await multicallerClient.executeTxnQueues(false, [l2ChainId]);
   const transactionHashes = txnReceipts[l2ChainId] || [];
 

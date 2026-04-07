@@ -914,7 +914,7 @@ export class Relayer {
       this.clients.svmFillerClient.clearTransactionQueue();
     }
     const txnReceipts: { [chainId: number]: Promise<string[]> } = Object.fromEntries(
-      Object.values(spokePoolClients).map(({ chainId }) => [chainId, []])
+      Object.values(spokePoolClients).map(({ chainId }): [number, Promise<string[]>] => [chainId, Promise.resolve([])])
     );
 
     // Fetch unfilled deposits and filter out deposits upfront before we compute the minimum deposit confirmation

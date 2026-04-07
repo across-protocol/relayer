@@ -50,7 +50,7 @@ const UNUSED_FIELDS = {
   transactionIndex: 0,
   logIndex: 0,
   data: "",
-  topics: [],
+  topics: Array<string>(),
 };
 
 /**
@@ -214,7 +214,7 @@ async function run(argv: string[]): Promise<void> {
   chain = getNetworkName(chainId);
 
   const provider = getSvmProvider(await getRedisCache());
-  const blockFinder = undefined;
+  const blockFinder: undefined = undefined;
   const { slot: latestSlot, timestamp: now } = await arch.svm.getNearestSlotTime(
     provider,
     { commitment: "confirmed" },

@@ -8,7 +8,7 @@ import minimist from "minimist";
 import { getGckmsConfig, retrieveGckmsKeys, isDefined, assert, delay, CHAIN_IDs, getRedisCache, truncate } from "./";
 
 // Store global promises on Gckms key retrieval actions so that we don't retrieve the same key multiple times.
-let binanceSecretKeyPromise = undefined;
+let binanceSecretKeyPromise: Promise<string | undefined> | undefined = undefined;
 
 // Known transient errors the Binance API returns. If a response is one of these errors, then the API call should be retried.
 const KNOWN_BINANCE_ERROR_REASONS = [
@@ -309,7 +309,7 @@ export async function getBinanceWithdrawals(
 export async function getAccountCoins(binanceApi: BinanceApi): Promise<ParsedAccountCoins> {
   const coins = Object.values(await binanceApi["accountCoins"]());
   return coins.map((coin) => {
-    const networkList = coin["networkList"]?.map((network) => {
+    const networkList = coin["networkList"]?.map((network: Record<string, unknown>) => {
       return {
         name: network["network"],
         coin: network["coin"],

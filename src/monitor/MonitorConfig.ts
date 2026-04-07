@@ -107,7 +107,7 @@ export class MonitorConfig extends CommonConfig {
     this.monitoredSpokePoolChains = JSON.parse(MONITORED_SPOKE_POOL_CHAINS ?? "[]");
     this.monitoredTokenSymbols = JSON.parse(MONITORED_TOKEN_SYMBOLS ?? "[]");
     this.bundlesCount = Number(BUNDLES_COUNT ?? 4);
-    this.additionalL1NonLpTokens = JSON.parse(MONITOR_REPORT_NON_LP_TOKENS ?? "[]").map((token) => {
+    this.additionalL1NonLpTokens = JSON.parse(MONITOR_REPORT_NON_LP_TOKENS ?? "[]").map((token: string) => {
       if (TOKEN_SYMBOLS_MAP[token]?.addresses?.[CHAIN_IDs.MAINNET]) {
         return TOKEN_SYMBOLS_MAP[token]?.addresses?.[CHAIN_IDs.MAINNET];
       }
