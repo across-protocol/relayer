@@ -1,4 +1,5 @@
 import { CommonConfig, ProcessEnv } from "../common";
+import { parseJsonNumberArray, parseJsonStringArray, parseJsonStringArrayMap } from "../utils";
 
 /**
  * Allowed pegged token pairs for gasless deposits/fills. Same shape as PEGGED_TOKEN_PRICES:
@@ -42,12 +43,12 @@ export class GaslessRelayerConfig extends CommonConfig {
     this.apiPollingInterval = Number(API_POLLING_INTERVAL ?? 1); // Default to 1s
     this.apiEndpoint = String(API_GASLESS_ENDPOINT);
 
-    const relayerOriginChains = new Set<number>(JSON.parse(RELAYER_ORIGIN_CHAINS ?? "[]"));
+    const relayerOriginChains = new Set<number>(parseJsonNumberArray(RELAYER_ORIGIN_CHAINS));
     this.relayerOriginChains = Array.from(relayerOriginChains);
-    const relayerDestinationChains = new Set<number>(JSON.parse(RELAYER_DESTINATION_CHAINS ?? "[]"));
+    const relayerDestinationChains = new Set<number>(parseJsonNumberArray(RELAYER_DESTINATION_CHAINS));
     this.relayerDestinationChains = Array.from(relayerDestinationChains);
 
-    this.relayerTokenSymbols = JSON.parse(RELAYER_TOKEN_SYMBOLS); // Relayer token symbols must be defined.
+    this.relayerTokenSymbols = parseJsonStringArray(RELAYER_TOKEN_SYMBOLS); // Relayer token symbols must be defined.
     this.depositLookback = Number(MAX_RELAYER_DEPOSIT_LOOKBACK ?? 3600);
 
     this.apiTimeoutOverride = Number(API_TIMEOUT_OVERRIDE ?? 3000); // In ms
@@ -57,9 +58,9 @@ export class GaslessRelayerConfig extends CommonConfig {
     this.spokePoolPeripheryOverrides = JSON.parse(SPOKE_POOL_PERIPHERY_OVERRIDES ?? "{}");
 
     this.allowedPeggedPairs = Object.fromEntries(
-      Object.entries(JSON.parse(GASLESS_ALLOWED_PEGGED_PAIRS ?? "{}")).map(([inputSymbol, outputSymbols]) => [
+      Object.entries(parseJsonStringArrayMap(GASLESS_ALLOWED_PEGGED_PAIRS)).map(([inputSymbol, outputSymbols]) => [
         inputSymbol,
-        new Set(outputSymbols as string[]),
+        new Set(outputSymbols),
       ])
     );
   }
