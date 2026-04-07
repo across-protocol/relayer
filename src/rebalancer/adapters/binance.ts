@@ -344,7 +344,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
           initiatedWithdrawalId,
           failedWithdrawal,
         });
-        await this._redisDeleteInitiatedWithdrawalId(cloid, binanceWithdrawalNetwork, initiatedWithdrawalId);
+        await this._redisDeleteInitiatedWithdrawalId(cloid);
         await this._redisUpdateOrderStatus(cloid, STATUS.PENDING_WITHDRAWAL, STATUS.PENDING_SWAP);
         continue;
       }
@@ -1085,12 +1085,9 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     return initiatedWithdrawal;
   }
 
-  private async _redisDeleteInitiatedWithdrawalId(cloid: string, chainId: number, withdrawalId: string): Promise<void> {
+  private async _redisDeleteInitiatedWithdrawalId(cloid: string): Promise<void> {
     const initiatedWithdrawalKey = this._redisGetInitiatedWithdrawalKey(cloid);
-    await Promise.all([
-      this.redisCache.del(initiatedWithdrawalKey),
-      this.redisCache.del(getBinanceTransactionTypeKey(chainId, withdrawalId)),
-    ]);
+    await this.redisCache.del(initiatedWithdrawalKey);
   }
 
   protected async _bridgeToChain(
