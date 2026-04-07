@@ -63,16 +63,13 @@ export interface AugmentedTransaction {
 }
 
 export function isAugmentedTransaction(txn: unknown): txn is AugmentedTransaction {
-  return (
-    txn !== null &&
-    typeof txn === "object" &&
-    "contract" in txn &&
-    "chainId" in txn &&
-    "method" in txn &&
-    "args" in txn &&
-    typeof (txn as AugmentedTransaction).method === "string" &&
-    Array.isArray((txn as AugmentedTransaction).args)
-  );
+  if (txn === null || typeof txn !== "object") {
+    return false;
+  }
+  if (!("contract" in txn && "chainId" in txn && "method" in txn && "args" in txn)) {
+    return false;
+  }
+  return typeof txn.method === "string" && Array.isArray(txn.args);
 }
 
 const { fixedPointAdjustment: fixedPoint } = sdkUtils;
