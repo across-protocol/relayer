@@ -70,6 +70,28 @@ describe("parseJson", function () {
     });
   });
 
+  describe("numericMap", function () {
+    it("parses string values", function () {
+      expect(parseJson.numericMap('{"a": "5"}')).to.deep.equal({ a: "5" });
+    });
+
+    it("parses number values", function () {
+      expect(parseJson.numericMap('{"a": 5}')).to.deep.equal({ a: 5 });
+    });
+
+    it("parses mixed string and number values", function () {
+      expect(parseJson.numericMap('{"a": "5", "b": 10}')).to.deep.equal({ a: "5", b: 10 });
+    });
+
+    it("returns empty object for default input", function () {
+      expect(parseJson.numericMap()).to.deep.equal({});
+    });
+
+    it("throws on boolean values", function () {
+      expect(() => parseJson.numericMap('{"a": true}')).to.throw();
+    });
+  });
+
   describe("stringArrayMap", function () {
     it("parses a valid string array map", function () {
       expect(parseJson.stringArrayMap('{"a": ["x", "y"], "b": ["z"]}')).to.deep.equal({

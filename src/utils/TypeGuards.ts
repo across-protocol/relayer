@@ -1,4 +1,4 @@
-import { array, create, number, record, string } from "superstruct";
+import { array, create, number, record, string, union } from "superstruct";
 import { utils } from "@across-protocol/sdk";
 
 export const { isDefined, isPromiseFulfilled, isPromiseRejected } = utils;
@@ -13,6 +13,7 @@ export const { isDefined, isPromiseFulfilled, isPromiseRejected } = utils;
  *   parseJson.stringArrayMap(env.BAZ)
  *   parseJson.stringMap(env.QUX)
  *   parseJson.numberMap(env.QUUX)
+ *   parseJson.numericMap(env.CORGE)
  */
 export const parseJson = {
   /** Parse a JSON string expected to contain a string[]. */
@@ -30,6 +31,10 @@ export const parseJson = {
   /** Parse a JSON string expected to contain a Record<string, number>. */
   numberMap(json = "{}"): Record<string, number> {
     return create(JSON.parse(json), record(string(), number()));
+  },
+  /** Parse a JSON string expected to contain a Record<string, string | number>. */
+  numericMap(json = "{}"): Record<string, string | number> {
+    return create(JSON.parse(json), record(string(), union([string(), number()])));
   },
   /** Parse a JSON string expected to contain a Record<string, string[]>. */
   stringArrayMap(json = "{}"): Record<string, string[]> {
