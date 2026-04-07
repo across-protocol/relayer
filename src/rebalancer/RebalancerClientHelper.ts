@@ -2,6 +2,7 @@ import { CHAIN_IDs, Signer, winston } from "../utils";
 import { BinanceStablecoinSwapAdapter } from "./adapters/binance";
 import { CctpAdapter } from "./adapters/cctpAdapter";
 import { HyperliquidStablecoinSwapAdapter } from "./adapters/hyperliquid";
+import { MatchaSwapAdapter } from "./adapters/matchaAdapter";
 import { OftAdapter } from "./adapters/oftAdapter";
 import { CumulativeBalanceRebalancerClient } from "./clients/CumulativeBalanceRebalancerClient";
 import { ReadOnlyRebalancerClient } from "./clients/ReadOnlyRebalancerClient";
@@ -29,14 +30,23 @@ function constructRebalancerDependencies(
     cctpAdapter,
     oftAdapter
   );
-  const binanceAdapter = new BinanceStablecoinSwapAdapter(
-    logger,
-    rebalancerConfig,
-    baseSigner,
-    cctpAdapter,
-    oftAdapter
-  );
-  const adapterMap = { hyperliquid: hyperliquidAdapter, binance: binanceAdapter, cctp: cctpAdapter, oft: oftAdapter };
+  const adapterMap: { [name: string]: RebalancerAdapter } = {
+    hyperliquid: hyperliquidAdapter,
+    cctp: cctpAdapter,
+    oft: oftAdapter,
+  };
+  if (process.env.BINANCE_API_KEY) {
+    adapterMap.binance = new BinanceStablecoinSwapAdapter(
+      logger,
+      rebalancerConfig,
+      baseSigner,
+      cctpAdapter,
+      oftAdapter
+    );
+  }
+  if (process.env.ZERO_X_API_KEY) {
+    adapterMap.matcha = new MatchaSwapAdapter(logger, rebalancerConfig, baseSigner, cctpAdapter, oftAdapter);
+  }
 
   // Following two variables are hardcoded to aid testing:
   const usdtChains = [
@@ -64,9 +74,10 @@ function constructRebalancerDependencies(
       if (!rebalancerConfig.chainIds.includes(usdtChain) || !rebalancerConfig.chainIds.includes(usdcChain)) {
         continue;
       }
-      for (const adapter of ["binance", "hyperliquid"]) {
-        // Handle exceptions:
-        if (adapter !== "binance" && (usdtChain === CHAIN_IDs.BSC || usdcChain === CHAIN_IDs.BSC)) {
+      const swapAdapters = ["hyperliquid", "binance", "matcha"].filter((name) => adapterMap[name]);
+      for (const adapter of swapAdapters) {
+        // Handle exceptions: Only Hyperliquid cannot handle BSC routes.
+        if (adapter === "hyperliquid" && (usdtChain === CHAIN_IDs.BSC || usdcChain === CHAIN_IDs.BSC)) {
           continue;
         }
 
