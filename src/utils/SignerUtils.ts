@@ -2,7 +2,7 @@ import { readFile } from "fs/promises";
 import { constants as ethersConsts, VoidSigner } from "ethers";
 import minimist from "minimist";
 import { typeguards } from "@across-protocol/sdk";
-import { Signer, Wallet, retrieveGckmsKeys, getGckmsConfig, isDefined, assert, mapAsync } from "./";
+import { Signer, Wallet, retrieveGckmsKeys, getGckmsConfig, isDefined, assert, mapAsync, parseJsonStringArray } from "./";
 import { ArweaveWalletJWKInterface, ArweaveWalletJWKInterfaceSS } from "../interfaces";
 
 /**
@@ -183,7 +183,7 @@ export async function getDispatcherKeys(): Promise<Signer[]> {
   const args = minimist(process.argv.slice(2), opts);
   if (!isDefined(args.dispatcherKeys)) {
     // If GCKMS keys are undefined. Assume keys are in environment.
-    const keys = JSON.parse(process.env["DISPATCHER_KEYS"] ?? "[]");
+    const keys = parseJsonStringArray(process.env["DISPATCHER_KEYS"]);
     return keys.map((key) => new Wallet(key));
   }
   const dispatcherKeyNames = args.dispatcherKeys.split(",");

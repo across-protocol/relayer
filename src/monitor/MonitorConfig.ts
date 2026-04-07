@@ -7,6 +7,8 @@ import {
   TOKEN_SYMBOLS_MAP,
   Address,
   toAddressType,
+  parseJsonStringArray,
+  parseJsonNumberArray,
 } from "../utils";
 
 // Set modes to true that you want to enable in the AcrossMonitor bot.
@@ -104,19 +106,17 @@ export class MonitorConfig extends CommonConfig {
     this.whitelistedRelayers = parseAddressesOptional(WHITELISTED_RELAYERS);
     this.monitoredRelayers = parseAddressesOptional(MONITORED_RELAYERS);
     this.knownV1Addresses = parseAddressesOptional(KNOWN_V1_ADDRESSES);
-    this.monitoredSpokePoolChains = JSON.parse(MONITORED_SPOKE_POOL_CHAINS ?? "[]");
-    this.monitoredTokenSymbols = JSON.parse(MONITORED_TOKEN_SYMBOLS ?? "[]");
+    this.monitoredSpokePoolChains = parseJsonNumberArray(MONITORED_SPOKE_POOL_CHAINS);
+    this.monitoredTokenSymbols = parseJsonStringArray(MONITORED_TOKEN_SYMBOLS);
     this.bundlesCount = Number(BUNDLES_COUNT ?? 4);
-    this.additionalL1NonLpTokens = JSON.parse(MONITOR_REPORT_NON_LP_TOKENS ?? "[]").map((token) => {
-      if (TOKEN_SYMBOLS_MAP[token]?.addresses?.[CHAIN_IDs.MAINNET]) {
-        return TOKEN_SYMBOLS_MAP[token]?.addresses?.[CHAIN_IDs.MAINNET];
-      }
-    });
+    this.additionalL1NonLpTokens = parseJsonStringArray(MONITOR_REPORT_NON_LP_TOKENS)
+      .filter((token) => TOKEN_SYMBOLS_MAP[token]?.addresses[CHAIN_IDs.MAINNET])
+      .map((token) => TOKEN_SYMBOLS_MAP[token].addresses[CHAIN_IDs.MAINNET]);
 
     this.binanceWithdrawWarnThreshold = Number(BINANCE_WITHDRAW_WARN_THRESHOLD ?? 1);
     this.binanceWithdrawAlertThreshold = Number(BINANCE_WITHDRAW_ALERT_THRESHOLD ?? 1);
 
-    this.hyperliquidTokens = JSON.parse(HYPERLIQUID_SUPPORTED_TOKENS ?? '["USDC", "USDT0", "USDH"]');
+    this.hyperliquidTokens = parseJsonStringArray(HYPERLIQUID_SUPPORTED_TOKENS, '["USDC", "USDT0", "USDH"]');
     this.hyperliquidOrderMaximumLifetime = Number(HYPERLIQUID_ORDER_MAXIMUM_LIFETIME ?? -1);
 
     // Default pool utilization threshold at 90%.

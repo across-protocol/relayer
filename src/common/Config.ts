@@ -1,7 +1,7 @@
 import winston from "winston";
 import { DEFAULT_MULTICALL_CHUNK_SIZE, DEFAULT_ARWEAVE_GATEWAY } from "../common";
 import { ArweaveGatewayInterface, ArweaveGatewayInterfaceSS } from "../interfaces";
-import { addressAdapters, AddressAggregator, assert, CHAIN_IDs, isDefined } from "../utils";
+import { addressAdapters, AddressAggregator, assert, CHAIN_IDs, isDefined, parseJsonNumberArray, parseJsonStringArray } from "../utils";
 import * as Constants from "./Constants";
 
 export interface ProcessEnv {
@@ -79,8 +79,8 @@ export class CommonConfig {
     // `maxRelayerLookBack` is how far we fetch events from, modifying the search config's 'fromBlock'
     this.maxRelayerLookBack = Number(MAX_RELAYER_DEPOSIT_LOOK_BACK ?? Constants.MAX_RELAYER_DEPOSIT_LOOK_BACK);
     this.pollingDelay = Number(POLLING_DELAY ?? 60);
-    this.spokePoolChainsOverride = JSON.parse(SPOKE_POOL_CHAINS_OVERRIDE ?? "[]");
-    this.l1TokensOverride = JSON.parse(L1_TOKENS_OVERRIDE ?? "[]");
+    this.spokePoolChainsOverride = parseJsonNumberArray(SPOKE_POOL_CHAINS_OVERRIDE);
+    this.l1TokensOverride = parseJsonStringArray(L1_TOKENS_OVERRIDE);
 
     // Inherit the default eth_getLogs block range config, then sub in any env-based overrides.
     this.maxBlockLookBack = mergeConfig(Constants.CHAIN_MAX_BLOCK_LOOKBACK, MAX_BLOCK_LOOK_BACK);
