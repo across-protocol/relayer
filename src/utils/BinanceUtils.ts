@@ -24,7 +24,6 @@ type WithdrawalQuota = {
 
 type BinanceServerTimeSynchronizer = {
   getTime: () => Promise<number>;
-  invalidate: () => void;
 };
 
 const DEFAULT_BINANCE_SERVER_TIME_SYNC_INTERVAL_MS = 60_000;
@@ -120,20 +119,21 @@ export function createBinanceServerTimeSynchronizer(
   let serverTimeOffsetMs = 0;
   let inFlightSync: Promise<void> | undefined;
 
-  async function sync(force = false): Promise<void> {
-    if (!force && lastSyncFinishedAtMs !== 0 && now() - lastSyncFinishedAtMs < syncIntervalMs) {
-      return;
+  async function sync(): Promise<void> {
+    if (lastSyncFinishedAtMs !== 0) {
+      const elapsedSinceLastSyncMs = now() - lastSyncFinishedAtMs;
+      if (elapsedSinceLastSyncMs >= 0 && elapsedSinceLastSyncMs < syncIntervalMs) {
+        return;
+      }
     }
     if (inFlightSync !== undefined) {
       return inFlightSync;
     }
 
-    const requestStartedAtMs = now();
     const syncPromise = fetchServerTime()
       .then((serverTimeMs) => {
         const requestFinishedAtMs = now();
-        const requestMidpointMs = Math.round((requestStartedAtMs + requestFinishedAtMs) / 2);
-        serverTimeOffsetMs = serverTimeMs - requestMidpointMs;
+        serverTimeOffsetMs = serverTimeMs - requestFinishedAtMs;
         lastSyncFinishedAtMs = requestFinishedAtMs;
       })
       .finally(() => {
@@ -150,9 +150,6 @@ export function createBinanceServerTimeSynchronizer(
     async getTime(): Promise<number> {
       await sync();
       return now() + serverTimeOffsetMs;
-    },
-    invalidate(): void {
-      lastSyncFinishedAtMs = 0;
     },
   };
 }

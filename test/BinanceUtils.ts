@@ -136,7 +136,7 @@ describe("BinanceUtils: createBinanceServerTimeSynchronizer", function () {
     expect(fetchServerTime.callCount).to.equal(2);
   });
 
-  it("estimates offset from the request midpoint so elapsed local time advances the returned timestamp", async function () {
+  it("anchors the offset to response receipt time so asymmetric latency does not push timestamps ahead", async function () {
     let nowMs = 1_000;
     const fetchServerTime = sinon.stub().callsFake(async () => {
       nowMs = 1_040;
@@ -147,9 +147,25 @@ describe("BinanceUtils: createBinanceServerTimeSynchronizer", function () {
       syncIntervalMs: 100,
     });
 
-    expect(await synchronizer.getTime()).to.equal(5_040);
+    expect(await synchronizer.getTime()).to.equal(5_020);
     nowMs = 1_060;
-    expect(await synchronizer.getTime()).to.equal(5_060);
+    expect(await synchronizer.getTime()).to.equal(5_040);
     expect(fetchServerTime.callCount).to.equal(1);
+  });
+
+  it("resyncs if the local wall clock moves backward", async function () {
+    let nowMs = 1_000;
+    const fetchServerTime = sinon.stub();
+    fetchServerTime.onFirstCall().resolves(5_000);
+    fetchServerTime.onSecondCall().resolves(4_900);
+    const synchronizer = createBinanceServerTimeSynchronizer(fetchServerTime, {
+      now: () => nowMs,
+      syncIntervalMs: 100,
+    });
+
+    expect(await synchronizer.getTime()).to.equal(5_000);
+    nowMs = 900;
+    expect(await synchronizer.getTime()).to.equal(4_900);
+    expect(fetchServerTime.callCount).to.equal(2);
   });
 });
