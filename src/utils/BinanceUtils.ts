@@ -22,12 +22,6 @@ type WithdrawalQuota = {
   usedWdQuota: number;
 };
 
-type BinanceServerTimeSynchronizer = {
-  getTime: () => Promise<number>;
-};
-
-const DEFAULT_BINANCE_SERVER_TIME_SYNC_INTERVAL_MS = 60_000;
-
 // Alias for Binance network symbols.
 export const BINANCE_NETWORKS: { [chainId: number]: string } = {
   [CHAIN_IDs.ARBITRUM]: "ARBITRUM",
@@ -100,71 +94,9 @@ export async function getBinanceApiClient(url = "https://api.binance.com") {
     apiKey,
     apiSecret: secretKey,
     httpBase: url,
-    getTime: () => serverTimeSynchronizer.getTime(),
+    getTime: () => client.time(),
   });
-  const serverTimeSynchronizer = createBinanceServerTimeSynchronizer(() => client.time());
   return client;
-}
-
-export function createBinanceServerTimeSynchronizer(
-  fetchServerTime: () => Promise<number>,
-  options: {
-    now?: () => number;
-    syncIntervalMs?: number;
-  } = {}
-): BinanceServerTimeSynchronizer {
-  const now = options.now ?? (() => Date.now());
-  const syncIntervalMs = options.syncIntervalMs ?? DEFAULT_BINANCE_SERVER_TIME_SYNC_INTERVAL_MS;
-  let lastSyncFinishedAtMs = 0;
-  let lastObservedNowMs = 0;
-  let serverTimeOffsetMs = 0;
-  let inFlightSync: Promise<void> | undefined;
-
-  async function sync(currentNowMs: number): Promise<void> {
-    if (lastSyncFinishedAtMs !== 0) {
-      const clockMovedBackwardSinceLastRequest = lastObservedNowMs !== 0 && currentNowMs < lastObservedNowMs;
-      const elapsedSinceLastSyncMs = currentNowMs - lastSyncFinishedAtMs;
-      if (
-        !clockMovedBackwardSinceLastRequest &&
-        elapsedSinceLastSyncMs >= 0 &&
-        elapsedSinceLastSyncMs < syncIntervalMs
-      ) {
-        return;
-      }
-    }
-    if (inFlightSync !== undefined) {
-      return inFlightSync;
-    }
-
-    const syncPromise = fetchServerTime()
-      .then((serverTimeMs) => {
-        const requestFinishedAtMs = now();
-        serverTimeOffsetMs = serverTimeMs - requestFinishedAtMs;
-        lastSyncFinishedAtMs = requestFinishedAtMs;
-      })
-      .catch((error) => {
-        if (lastSyncFinishedAtMs === 0) {
-          throw error;
-        }
-      })
-      .finally(() => {
-        if (inFlightSync === syncPromise) {
-          inFlightSync = undefined;
-        }
-      });
-
-    inFlightSync = syncPromise;
-    return syncPromise;
-  }
-
-  return {
-    async getTime(): Promise<number> {
-      await sync(now());
-      const currentNowMs = now();
-      lastObservedNowMs = currentNowMs;
-      return currentNowMs + serverTimeOffsetMs;
-    },
-  };
 }
 
 /**

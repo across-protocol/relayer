@@ -1,10 +1,5 @@
-import { expect, sinon } from "./utils";
-import {
-  BinanceDeposit,
-  BinanceWithdrawal,
-  createBinanceServerTimeSynchronizer,
-  getOutstandingBinanceDeposits,
-} from "../src/utils";
+import { expect } from "./utils";
+import { BinanceDeposit, BinanceWithdrawal, getOutstandingBinanceDeposits } from "../src/utils";
 
 function makeDeposit(network: string, amount: number, insertTime: number): BinanceDeposit {
   return { network, amount, coin: "USDT", txId: `0x${insertTime}`, insertTime };
@@ -102,104 +97,5 @@ describe("BinanceUtils: getOutstandingBinanceDeposits", function () {
 
     expect(deposits[0].amount).to.equal(originalAmount);
     expect(deposits.length).to.equal(1);
-  });
-});
-
-describe("BinanceUtils: createBinanceServerTimeSynchronizer", function () {
-  it("reuses a cached server time offset between refreshes", async function () {
-    let nowMs = 1_000;
-    const fetchServerTime = sinon.stub().resolves(5_000);
-    const synchronizer = createBinanceServerTimeSynchronizer(fetchServerTime, {
-      now: () => nowMs,
-      syncIntervalMs: 100,
-    });
-
-    expect(await synchronizer.getTime()).to.equal(5_000);
-    nowMs = 1_050;
-    expect(await synchronizer.getTime()).to.equal(5_050);
-    expect(fetchServerTime.callCount).to.equal(1);
-  });
-
-  it("refreshes the cached offset after the sync interval elapses", async function () {
-    let nowMs = 1_000;
-    const fetchServerTime = sinon.stub();
-    fetchServerTime.onFirstCall().resolves(5_000);
-    fetchServerTime.onSecondCall().resolves(6_000);
-    const synchronizer = createBinanceServerTimeSynchronizer(fetchServerTime, {
-      now: () => nowMs,
-      syncIntervalMs: 100,
-    });
-
-    expect(await synchronizer.getTime()).to.equal(5_000);
-    nowMs = 1_250;
-    expect(await synchronizer.getTime()).to.equal(6_000);
-    expect(fetchServerTime.callCount).to.equal(2);
-  });
-
-  it("anchors the offset to response receipt time so asymmetric latency does not push timestamps ahead", async function () {
-    let nowMs = 1_000;
-    const fetchServerTime = sinon.stub().callsFake(async () => {
-      nowMs = 1_040;
-      return 5_020;
-    });
-    const synchronizer = createBinanceServerTimeSynchronizer(fetchServerTime, {
-      now: () => nowMs,
-      syncIntervalMs: 100,
-    });
-
-    expect(await synchronizer.getTime()).to.equal(5_020);
-    nowMs = 1_060;
-    expect(await synchronizer.getTime()).to.equal(5_040);
-    expect(fetchServerTime.callCount).to.equal(1);
-  });
-
-  it("resyncs if the local wall clock moves backward", async function () {
-    let nowMs = 1_000;
-    const fetchServerTime = sinon.stub();
-    fetchServerTime.onFirstCall().resolves(5_000);
-    fetchServerTime.onSecondCall().resolves(4_900);
-    const synchronizer = createBinanceServerTimeSynchronizer(fetchServerTime, {
-      now: () => nowMs,
-      syncIntervalMs: 100,
-    });
-
-    expect(await synchronizer.getTime()).to.equal(5_000);
-    nowMs = 900;
-    expect(await synchronizer.getTime()).to.equal(4_900);
-    expect(fetchServerTime.callCount).to.equal(2);
-  });
-
-  it("resyncs if the local wall clock rolls back between requests but stays after the last sync timestamp", async function () {
-    let nowMs = 1;
-    const fetchServerTime = sinon.stub();
-    fetchServerTime.onFirstCall().resolves(101);
-    fetchServerTime.onSecondCall().resolves(210);
-    const synchronizer = createBinanceServerTimeSynchronizer(fetchServerTime, {
-      now: () => nowMs,
-      syncIntervalMs: 100,
-    });
-
-    expect(await synchronizer.getTime()).to.equal(101);
-    nowMs = 59;
-    expect(await synchronizer.getTime()).to.equal(159);
-    nowMs = 10;
-    expect(await synchronizer.getTime()).to.equal(210);
-    expect(fetchServerTime.callCount).to.equal(2);
-  });
-
-  it("keeps using the cached offset if a refresh fails after an initial successful sync", async function () {
-    let nowMs = 1_000;
-    const fetchServerTime = sinon.stub();
-    fetchServerTime.onFirstCall().resolves(5_000);
-    fetchServerTime.onSecondCall().rejects(new Error("time sync failed"));
-    const synchronizer = createBinanceServerTimeSynchronizer(fetchServerTime, {
-      now: () => nowMs,
-      syncIntervalMs: 100,
-    });
-
-    expect(await synchronizer.getTime()).to.equal(5_000);
-    nowMs = 1_250;
-    expect(await synchronizer.getTime()).to.equal(5_250);
-    expect(fetchServerTime.callCount).to.equal(2);
   });
 });
