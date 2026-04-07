@@ -118,7 +118,12 @@ export const {
   unpackFillEvent,
   chainHasNativeToken,
   chainIsTvm,
+  fetchWithTimeout,
+  postWithTimeout,
 } = sdk.utils;
+
+export type FetchHeaders = sdk.utils.FetchHeaders;
+export type FetchQueryParams = sdk.utils.FetchQueryParams;
 
 export const {
   getRefundsFromBundle,

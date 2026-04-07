@@ -1,6 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { utils as sdkUtils } from "@across-protocol/sdk";
-import axios from "axios";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { CONTRACT_ADDRESSES } from "../../common";
 import {
@@ -9,6 +8,7 @@ import {
   Multicall2Call,
   winston,
   convertFromWei,
+  fetchWithTimeout,
   getTokenInfo,
   assert,
   isEVMSpokePoolClient,
@@ -97,7 +97,7 @@ async function findOutstandingClaims(targetAddress: string): Promise<ScrollClaim
   do {
     requestResponse =
       (
-        await axios.get<{
+        await fetchWithTimeout<{
           data: {
             results: {
               claim_info: ScrollClaimInfo;
@@ -106,13 +106,11 @@ async function findOutstandingClaims(targetAddress: string): Promise<ScrollClaim
             }[];
           };
         }>(apiUrl, {
-          params: {
-            address: targetAddress,
-            page_size: MAX_PAGE_SIZE,
-            page: currentPage,
-          },
+          address: targetAddress,
+          page_size: MAX_PAGE_SIZE,
+          page: currentPage,
         })
-      ).data.data?.results ?? [];
+      ).data?.results ?? [];
     claimList.push(
       ...requestResponse
         .filter(({ claim_info }) => claim_info?.claimable)
