@@ -425,8 +425,10 @@ async function _runTransactionTvm(
   retries?: number
 ): Promise<TransactionResponse> {
   const at = "TransactionClient#_runTransactionTvm";
-  const { chainId } = contract;
+  const { provider } = contract;
+  const { chainId } = await provider.getNetwork();
   const chain = getNetworkName(chainId);
+  const sendRawTxn = contract.method === "";
 
   retries ??= Number(
     process.env[`TRANSACTION_SUBMISSION_RETRIES_${chainId}`] ??
@@ -434,7 +436,24 @@ async function _runTransactionTvm(
       TRANSACTION_SUBMISSION_RETRIES_DEFAULT
   );
 
-  const feeLimit = gasLimit?.toNumber() ?? Number(process.env.TVM_FEE_LIMIT ?? DEFAULT_TVM_FEE_LIMIT);
+  const priorityFeeScaler =
+    Number(process.env[`PRIORITY_FEE_SCALER_${chainId}`] || process.env.PRIORITY_FEE_SCALER) ||
+    DEFAULT_GAS_FEE_SCALERS[chainId]?.maxPriorityFeePerGasScaler;
+  const maxFeePerGasScaler =
+    Number(process.env[`MAX_FEE_PER_GAS_SCALER_${chainId}`] || process.env.MAX_FEE_PER_GAS_SCALER) ||
+    DEFAULT_GAS_FEE_SCALERS[chainId]?.maxFeePerGasScaler;
+
+  // The fee limit is a function of both the gas price and gas limit. We specify the number of TRX we are willing to spend
+  // on the transaction, not the number of unit gas to spend nor the max price for each unit gas.
+  // Essentially, the fee limit is just maxFeePerGas * gasLimit.
+  const { maxFeePerGas } = await getGasPrice(
+    provider,
+    priorityFeeScaler,
+    maxFeePerGasScaler,
+    sendRawTxn ? undefined : await contract.populateTransaction[method](...(args as Array<unknown>), { value })
+  );
+  const gasLimitNumber = gasLimit?.toNumber() ?? process.env.TVM_FEE_LIMIT;
+  const feeLimit = isDefined(gasLimitNumber) ? Number(gasLimitNumber) * maxFeePerGas.toNumber() : DEFAULT_TVM_FEE_LIMIT;
 
   const tronWeb = getTronWebFromEvmSigner(contract.signer);
   const populatedTransaction = await contract.populateTransaction[method](...(args as Array<unknown>), { value });
@@ -442,7 +461,7 @@ async function _runTransactionTvm(
   logger.debug({ at, message: "Submitting TVM transaction.", chain, method, feeLimit });
   let result;
   try {
-    result = await submitTransactionTvm(tronWeb, populatedTransaction, feeLimit);
+    result = await submitTransactionTvm(tronWeb, populatedTransaction, feeLimit, value.toNumber());
   } catch (error) {
     if (--retries < 0) {
       throw error;

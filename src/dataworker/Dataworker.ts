@@ -23,6 +23,7 @@ import {
   getTokenInfo,
   isEVMSpokePoolClient,
   isSVMSpokePoolClient,
+  isTVMSpokePoolClient,
   Address,
   EvmAddress,
   toAddressType,
@@ -1441,7 +1442,7 @@ export class Dataworker {
         `amount: ${outputAmount.toString()}`;
 
       if (submitExecution) {
-        if (isEVMSpokePoolClient(client)) {
+        if (isEVMSpokePoolClient(client) || isTVMSpokePoolClient(client)) {
           const { method, args } = this.encodeSlowFillLeaf(slowRelayTree, rootBundleId, leaf);
 
           this.clients.multiCallerClient.enqueueTransaction({
@@ -2404,7 +2405,7 @@ export class Dataworker {
           const symbol = this.getTokenInfo(leaf.l2TokenAddress, chainId);
 
           // Exit on duplicate leaf executions if the target network is EVM.
-          if (isEVMSpokePoolClient(client)) {
+          if (isEVMSpokePoolClient(client) || isTVMSpokePoolClient(client)) {
             // @dev check if there's been a duplicate leaf execution and if so, then exit early.
             // Since this function is happening near the end of the dataworker run and leaf executions are
             // relatively infrequent, the additional RPC latency and cost is acceptable.
@@ -2450,6 +2451,7 @@ export class Dataworker {
           // to ensure that it has enough ETH to send.
           // NOTE: this is ETH required separately from the amount required to send the tokens. Since Solana does not require payments in native tokens for leaf
           // executions, we can also skip this if the spoke pool client is SVM.
+          // For this same reason, we can skip native token leaf executions for TVM spoke pool clients.
           if (isDefined(valueToPassViaPayable) && isEVMSpokePoolClient(client)) {
             const signer = await client.spokePool.signer.getAddress();
             balanceRequestsToQuery.push({
@@ -2503,7 +2505,7 @@ export class Dataworker {
         leaf.leafId
       }\nchainId: ${chainId}\ntoken: ${symbol}\namount: ${leaf.amountToReturn.toString()}`;
       if (submitExecution) {
-        if (isEVMSpokePoolClient(client)) {
+        if (isEVMSpokePoolClient(client) || isTVMSpokePoolClient(client)) {
           const valueToPassViaPayable = msgValuesByLeafId.get(leaf.leafId);
           const ethersLeaf = {
             ...leaf,

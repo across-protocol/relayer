@@ -30,6 +30,7 @@ import {
   dedupArray,
   SVMProvider,
   isEVMSpokePoolClient,
+  isTVMSpokePoolClient,
   isSVMSpokePoolClient,
   getDeployedAddress,
   chainIsEvm,
@@ -159,7 +160,7 @@ export class ProfitClient {
     for (const chainId of this.enabledChainIds) {
       const spokePoolClient = spokePoolClients[chainId];
       let provider;
-      if (isEVMSpokePoolClient(spokePoolClient)) {
+      if (isEVMSpokePoolClient(spokePoolClient) || isTVMSpokePoolClient(spokePoolClient)) {
         provider = spokePoolClient.spokePool.provider;
       } else if (isSVMSpokePoolClient(spokePoolClient)) {
         provider = spokePoolClient.svmEventsClient.getRpc();

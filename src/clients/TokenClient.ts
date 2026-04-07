@@ -188,7 +188,7 @@ export class TokenClient {
     let mrkdwn = "*Approval transactions:* \n";
     for (const { token: _token, chainId } of tokensToApprove) {
       const targetSpokePoolClient = this.spokePoolManager.getClient(chainId);
-      if (isEVMSpokePoolClient(targetSpokePoolClient)) {
+      if (isEVMSpokePoolClient(targetSpokePoolClient) || isTVMSpokePoolClient(targetSpokePoolClient)) {
         const targetSpokePool = targetSpokePoolClient.spokePool;
         const token = toAddressType(_token, chainId).toEvmAddress();
         const contract = new Contract(token, ERC20.abi, targetSpokePool.signer);
