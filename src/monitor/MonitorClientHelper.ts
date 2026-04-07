@@ -1,5 +1,5 @@
 import { MonitorConfig } from "./MonitorConfig";
-import { Address, Signer, winston, toAddressType } from "../utils";
+import { Signer, winston, toAddressType } from "../utils";
 import { BundleDataClient, HubPoolClient } from "../clients";
 import {
   Clients,
@@ -56,14 +56,14 @@ export async function constructMonitorClients(
     config.blockRangeEndBlockBuffer
   );
 
-  // Spoke pool addresses can be reused on different chains so we need to deduplicate them.
-  // spokePoolAddress is already a correctly-typed Address (EvmAddress/SvmAddress), so deduplicate
-  // by native string representation and use the existing objects directly.
-  const spokePoolAddressMap = new Map<string, Address>();
-  for (const { spokePoolAddress } of Object.values(spokePoolClients)) {
-    spokePoolAddressMap.set(spokePoolAddress.toNative(), spokePoolAddress);
-  }
-  const spokePoolAddresses = [...spokePoolAddressMap.values()];
+  // Deduplicate spoke pool addresses that are reused across chains. spokePoolAddress is already a
+  // correctly-typed Address object (EvmAddress/SvmAddress), so use a Map keyed by native string
+  // to deduplicate by value while preserving the original Address instances and their chain types.
+  const spokePoolAddresses = [
+    ...new Map(
+      Object.values(spokePoolClients).map(({ spokePoolAddress }) => [spokePoolAddress.toNative(), spokePoolAddress])
+    ).values(),
+  ];
 
   // Cross-chain transfers will originate from the HubPool's address and target SpokePool addresses, so
   // track both.
