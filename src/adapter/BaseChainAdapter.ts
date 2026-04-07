@@ -43,7 +43,7 @@ import {
   ConvertDecimals,
   toAddressType,
 } from "../utils";
-import { AugmentedTransaction, TransactionClient } from "../clients/TransactionClient";
+import { AugmentedTransaction, isAugmentedTransaction, TransactionClient } from "../clients/TransactionClient";
 import {
   approveTokens,
   getTokenAllowanceFromCache,
@@ -334,7 +334,7 @@ export class BaseChainAdapter {
     if (chainIsEvm(this.chainId)) {
       const multicallerClient = new MultiCallerClient(this.logger);
       txnsToSend
-        .filter((txn): txn is AugmentedTransaction => "contract" in txn)
+        .filter(isAugmentedTransaction)
         .forEach((txn) => multicallerClient.enqueueTransaction(txn));
       const txnReceipts = await multicallerClient.executeTxnQueues(simMode, [this.chainId]);
       return txnReceipts[this.chainId];

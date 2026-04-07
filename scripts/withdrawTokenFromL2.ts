@@ -18,7 +18,7 @@ import {
 } from "../src/utils";
 import { CUSTOM_L2_BRIDGE, CANONICAL_L2_BRIDGE } from "../src/common/Constants";
 import { BaseL2BridgeAdapter } from "../src/adapter/l2Bridges/BaseL2BridgeAdapter";
-import { MultiCallerClient, AugmentedTransaction } from "../src/clients";
+import { MultiCallerClient, isAugmentedTransaction } from "../src/clients";
 import { askYesNoQuestion } from "./utils";
 
 const args = minimist(process.argv.slice(2), {
@@ -174,7 +174,7 @@ async function run(): Promise<void> {
   if (!sendTransactions) {
     console.log(`\n📋 Transaction Calldata (${txns.length} transaction(s)):`);
     txns
-      .filter((txn): txn is AugmentedTransaction => "contract" in txn)
+      .filter(isAugmentedTransaction)
       .forEach((txn, index) => {
         const calldata = txn.contract.interface.encodeFunctionData(txn.method, txn.args);
         console.log(`\n   Transaction ${index + 1}:`);
@@ -197,7 +197,7 @@ async function run(): Promise<void> {
   logger.info("Executing withdrawal...");
   const multicallerClient = new MultiCallerClient(logger);
   txns
-    .filter((txn): txn is AugmentedTransaction => "contract" in txn)
+    .filter(isAugmentedTransaction)
     .forEach((txn) => multicallerClient.enqueueTransaction(txn));
   const txnReceipts = await multicallerClient.executeTxnQueues(false, [l2ChainId]);
   const transactionHashes = txnReceipts[l2ChainId] || [];
