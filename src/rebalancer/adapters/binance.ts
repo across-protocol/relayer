@@ -65,6 +65,18 @@ export function isFailedBinanceWithdrawal(status?: number): boolean {
   }
 }
 
+export function isTerminalBinanceWithdrawal(status?: number): boolean {
+  switch (status) {
+    case BINANCE_WITHDRAWAL_STATUS.CANCELLED:
+    case BINANCE_WITHDRAWAL_STATUS.REJECTED:
+    case BINANCE_WITHDRAWAL_STATUS.FAILURE:
+    case BINANCE_WITHDRAWAL_STATUS.COMPLETED:
+      return true;
+    default:
+      return false;
+  }
+}
+
 export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   private binanceApiClient: Binance;
 
@@ -1010,7 +1022,8 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       (withdrawal) =>
         withdrawal.coin === token &&
         withdrawal.network === BINANCE_NETWORKS[chain] &&
-        withdrawal.recipient === this.baseSignerAddress.toNative()
+        withdrawal.recipient === this.baseSignerAddress.toNative() &&
+        isTerminalBinanceWithdrawal(withdrawal.status)
     );
   }
 
