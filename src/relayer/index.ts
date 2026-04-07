@@ -8,6 +8,7 @@ import {
   getRedisCache,
   isDefined,
   Profiler,
+  scheduleSequentialTask,
   scheduleTask,
   Signer,
   winston,
@@ -76,21 +77,13 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
   const apiUpdateInterval = 30; // seconds
   scheduleTask(() => acrossApiClient.update(config.ignoreLimits), apiUpdateInterval, abortController.signal);
 
-  const scheduleProfitUpdate = () => {
-    if (abortController.signal.aborted) {
-      return;
-    }
-    setTimeout(async () => {
-      try {
-        await profitClient.update();
-      } catch (err) {
-        const reason = err instanceof Error ? err.message : String(err);
-        logger.warn({ at, message: "ProfitClient update failed.", reason });
-      }
-      scheduleProfitUpdate();
-    }, config.maintenanceInterval * 1000);
-  };
-  scheduleProfitUpdate();
+  scheduleSequentialTask(
+    "profitClient.update()",
+    logger,
+    () => profitClient.update(),
+    config.maintenanceInterval,
+    abortController.signal
+  );
 
   if (eventListener) {
     const hubChainSpoke = spokePoolClients[config.hubPoolChainId];
