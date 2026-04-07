@@ -7,12 +7,8 @@ describe("parseJson", function () {
       expect(parseJson.stringArray('["a", "b", "c"]')).to.deep.equal(["a", "b", "c"]);
     });
 
-    it("returns empty array for undefined input", function () {
-      expect(parseJson.stringArray(undefined)).to.deep.equal([]);
-    });
-
-    it("uses custom fallback", function () {
-      expect(parseJson.stringArray(undefined, '["x"]')).to.deep.equal(["x"]);
+    it("returns empty array for default input", function () {
+      expect(parseJson.stringArray()).to.deep.equal([]);
     });
 
     it("throws on number array", function () {
@@ -33,8 +29,8 @@ describe("parseJson", function () {
       expect(parseJson.numberArray("[1, 2, 3]")).to.deep.equal([1, 2, 3]);
     });
 
-    it("returns empty array for undefined input", function () {
-      expect(parseJson.numberArray(undefined)).to.deep.equal([]);
+    it("returns empty array for default input", function () {
+      expect(parseJson.numberArray()).to.deep.equal([]);
     });
 
     it("throws on string array", function () {
@@ -47,8 +43,8 @@ describe("parseJson", function () {
       expect(parseJson.stringMap('{"a": "1", "b": "2"}')).to.deep.equal({ a: "1", b: "2" });
     });
 
-    it("returns empty object for undefined input", function () {
-      expect(parseJson.stringMap(undefined)).to.deep.equal({});
+    it("returns empty object for default input", function () {
+      expect(parseJson.stringMap()).to.deep.equal({});
     });
 
     it("throws on numeric values", function () {
@@ -65,8 +61,8 @@ describe("parseJson", function () {
       expect(parseJson.numberMap('{"a": 1, "b": 2}')).to.deep.equal({ a: 1, b: 2 });
     });
 
-    it("returns empty object for undefined input", function () {
-      expect(parseJson.numberMap(undefined)).to.deep.equal({});
+    it("returns empty object for default input", function () {
+      expect(parseJson.numberMap()).to.deep.equal({});
     });
 
     it("throws on string values", function () {
@@ -82,8 +78,8 @@ describe("parseJson", function () {
       });
     });
 
-    it("returns empty object for undefined input", function () {
-      expect(parseJson.stringArrayMap(undefined)).to.deep.equal({});
+    it("returns empty object for default input", function () {
+      expect(parseJson.stringArrayMap()).to.deep.equal({});
     });
 
     it("throws on non-array values", function () {

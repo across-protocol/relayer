@@ -16,24 +16,24 @@ export const { isDefined, isPromiseFulfilled, isPromiseRejected } = utils;
  */
 export const parseJson = {
   /** Parse a JSON string expected to contain a string[]. */
-  stringArray(json: string | undefined, fallback = "[]"): string[] {
-    return create(JSON.parse(json ?? fallback), array(string()));
+  stringArray(json = "[]"): string[] {
+    return create(JSON.parse(json), array(string()));
   },
   /** Parse a JSON string expected to contain a number[]. */
-  numberArray(json: string | undefined, fallback = "[]"): number[] {
-    return create(JSON.parse(json ?? fallback), array(number()));
+  numberArray(json = "[]"): number[] {
+    return create(JSON.parse(json), array(number()));
   },
   /** Parse a JSON string expected to contain a Record<string, string>. */
-  stringMap(json: string | undefined, fallback = "{}"): Record<string, string> {
-    return create(JSON.parse(json ?? fallback), record(string(), string()));
+  stringMap(json = "{}"): Record<string, string> {
+    return create(JSON.parse(json), record(string(), string()));
   },
   /** Parse a JSON string expected to contain a Record<string, number>. */
-  numberMap(json: string | undefined, fallback = "{}"): Record<string, number> {
-    return create(JSON.parse(json ?? fallback), record(string(), number()));
+  numberMap(json = "{}"): Record<string, number> {
+    return create(JSON.parse(json), record(string(), number()));
   },
   /** Parse a JSON string expected to contain a Record<string, string[]>. */
-  stringArrayMap(json: string | undefined, fallback = "{}"): Record<string, string[]> {
-    return create(JSON.parse(json ?? fallback), record(string(), array(string())));
+  stringArrayMap(json = "{}"): Record<string, string[]> {
+    return create(JSON.parse(json), record(string(), array(string())));
   },
 };
 

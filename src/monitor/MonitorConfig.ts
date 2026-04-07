@@ -116,7 +116,7 @@ export class MonitorConfig extends CommonConfig {
     this.binanceWithdrawWarnThreshold = Number(BINANCE_WITHDRAW_WARN_THRESHOLD ?? 1);
     this.binanceWithdrawAlertThreshold = Number(BINANCE_WITHDRAW_ALERT_THRESHOLD ?? 1);
 
-    this.hyperliquidTokens = parseJson.stringArray(HYPERLIQUID_SUPPORTED_TOKENS, '["USDC", "USDT0", "USDH"]');
+    this.hyperliquidTokens = parseJson.stringArray(HYPERLIQUID_SUPPORTED_TOKENS ?? '["USDC", "USDT0", "USDH"]');
     this.hyperliquidOrderMaximumLifetime = Number(HYPERLIQUID_ORDER_MAXIMUM_LIFETIME ?? -1);
 
     // Default pool utilization threshold at 90%.
@@ -183,8 +183,10 @@ export class MonitorConfig extends CommonConfig {
 }
 
 const parseAddressesOptional = (addressJson?: string): Address[] => {
-  const rawAddresses = parseJson.stringArray(addressJson);
-  return rawAddresses.map((address) => {
+  if (!addressJson) {
+    return [];
+  }
+  return parseJson.stringArray(addressJson).map((address) => {
     const chainId = address.startsWith("0x") ? CHAIN_IDs.MAINNET : CHAIN_IDs.SOLANA;
     return toAddressType(address, chainId);
   });
