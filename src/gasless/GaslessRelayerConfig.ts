@@ -1,5 +1,6 @@
+import assert from "assert";
 import { CommonConfig, ProcessEnv } from "../common";
-import { parseJson } from "../utils";
+import { isDefined, parseJson } from "../utils";
 
 /**
  * Allowed pegged token pairs for gasless deposits/fills. Same shape as PEGGED_TOKEN_PRICES:
@@ -48,7 +49,8 @@ export class GaslessRelayerConfig extends CommonConfig {
     const relayerDestinationChains = new Set(parseJson.numberArray(RELAYER_DESTINATION_CHAINS));
     this.relayerDestinationChains = Array.from(relayerDestinationChains);
 
-    this.relayerTokenSymbols = parseJson.stringArray(RELAYER_TOKEN_SYMBOLS); // Relayer token symbols must be defined.
+    assert(isDefined(RELAYER_TOKEN_SYMBOLS), "RELAYER_TOKEN_SYMBOLS must be defined");
+    this.relayerTokenSymbols = parseJson.stringArray(RELAYER_TOKEN_SYMBOLS);
     this.depositLookback = Number(MAX_RELAYER_DEPOSIT_LOOKBACK ?? 3600);
 
     this.apiTimeoutOverride = Number(API_TIMEOUT_OVERRIDE ?? 3000); // In ms
