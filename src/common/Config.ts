@@ -1,14 +1,7 @@
 import winston from "winston";
 import { DEFAULT_MULTICALL_CHUNK_SIZE, DEFAULT_ARWEAVE_GATEWAY } from "../common";
 import { ArweaveGatewayInterface, ArweaveGatewayInterfaceSS } from "../interfaces";
-import {
-  addressAdapters,
-  AddressAggregator,
-  assert,
-  CHAIN_IDs,
-  isDefined,
-  parseJson,
-} from "../utils";
+import { addressAdapters, AddressAggregator, assert, CHAIN_IDs, isDefined, parseJson } from "../utils";
 import * as Constants from "./Constants";
 
 export interface ProcessEnv {

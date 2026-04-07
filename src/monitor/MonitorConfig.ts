@@ -108,7 +108,8 @@ export class MonitorConfig extends CommonConfig {
     this.monitoredSpokePoolChains = parseJson.numberArray(MONITORED_SPOKE_POOL_CHAINS);
     this.monitoredTokenSymbols = parseJson.stringArray(MONITORED_TOKEN_SYMBOLS);
     this.bundlesCount = Number(BUNDLES_COUNT ?? 4);
-    this.additionalL1NonLpTokens = parseJson.stringArray(MONITOR_REPORT_NON_LP_TOKENS)
+    this.additionalL1NonLpTokens = parseJson
+      .stringArray(MONITOR_REPORT_NON_LP_TOKENS)
       .filter((token) => TOKEN_SYMBOLS_MAP[token]?.addresses[CHAIN_IDs.MAINNET])
       .map((token) => TOKEN_SYMBOLS_MAP[token].addresses[CHAIN_IDs.MAINNET]);
 
