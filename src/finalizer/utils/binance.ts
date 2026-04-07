@@ -23,6 +23,7 @@ import {
   getBinanceDepositType,
   BinanceTransactionType,
   getBinanceWithdrawalType,
+  isCompletedBinanceWithdrawal,
   truncate,
 } from "../../utils";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
@@ -130,7 +131,7 @@ export async function binanceFinalizer(
       // as the existing inventory client logic does not yet tag withdrawals with this BRIDGE type.
       const withdrawals = await filterAsync(_withdrawals, async (withdrawal) => {
         const withdrawalType = await getBinanceWithdrawalType(withdrawal);
-        return withdrawalType !== BinanceTransactionType.SWAP;
+        return isCompletedBinanceWithdrawal(withdrawal.status) && withdrawalType !== BinanceTransactionType.SWAP;
       });
 
       // @dev Since we cannot determine the address of the binance depositor without querying the transaction receipt, we need to assume that all tokens
