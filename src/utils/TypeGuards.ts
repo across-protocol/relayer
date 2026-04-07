@@ -4,26 +4,38 @@ import { utils } from "@across-protocol/sdk";
 export const { isDefined, isPromiseFulfilled, isPromiseRejected } = utils;
 
 /**
- * Parse a JSON string expected to contain a string array. Throws if the result is not a string[].
+ * Typed JSON.parse helpers. Validates the parsed result against a superstruct schema
+ * and returns the correctly-typed value. Throws on validation failure.
+ *
+ * Usage:
+ *   parseJson.stringArray(env.FOO)
+ *   parseJson.numberArray(env.BAR)
+ *   parseJson.stringArrayMap(env.BAZ)
+ *   parseJson.stringMap(env.QUX)
+ *   parseJson.numberMap(env.QUUX)
  */
-export function parseJsonStringArray(json: string | undefined, fallback = "[]"): string[] {
-  return create(JSON.parse(json ?? fallback), array(string()));
-}
-
-/**
- * Parse a JSON string expected to contain an object mapping string keys to string arrays.
- * Throws if the result is not a Record<string, string[]>.
- */
-export function parseJsonStringArrayMap(json: string | undefined, fallback = "{}"): Record<string, string[]> {
-  return create(JSON.parse(json ?? fallback), record(string(), array(string())));
-}
-
-/**
- * Parse a JSON string expected to contain a number array. Throws if the result is not a number[].
- */
-export function parseJsonNumberArray(json: string | undefined, fallback = "[]"): number[] {
-  return create(JSON.parse(json ?? fallback), array(number()));
-}
+export const parseJson = {
+  /** Parse a JSON string expected to contain a string[]. */
+  stringArray(json: string | undefined, fallback = "[]"): string[] {
+    return create(JSON.parse(json ?? fallback), array(string()));
+  },
+  /** Parse a JSON string expected to contain a number[]. */
+  numberArray(json: string | undefined, fallback = "[]"): number[] {
+    return create(JSON.parse(json ?? fallback), array(number()));
+  },
+  /** Parse a JSON string expected to contain a Record<string, string>. */
+  stringMap(json: string | undefined, fallback = "{}"): Record<string, string> {
+    return create(JSON.parse(json ?? fallback), record(string(), string()));
+  },
+  /** Parse a JSON string expected to contain a Record<string, number>. */
+  numberMap(json: string | undefined, fallback = "{}"): Record<string, number> {
+    return create(JSON.parse(json ?? fallback), record(string(), number()));
+  },
+  /** Parse a JSON string expected to contain a Record<string, string[]>. */
+  stringArrayMap(json: string | undefined, fallback = "{}"): Record<string, string[]> {
+    return create(JSON.parse(json ?? fallback), record(string(), array(string())));
+  },
+};
 
 // This function allows you to test for the key type in an object literal.
 // For instance, this would compile in typescript strict:

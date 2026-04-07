@@ -10,7 +10,7 @@ import {
   isDefined,
   assert,
   mapAsync,
-  parseJsonStringArray,
+  parseJson,
 } from "./";
 import { ArweaveWalletJWKInterface, ArweaveWalletJWKInterfaceSS } from "../interfaces";
 
@@ -192,7 +192,7 @@ export async function getDispatcherKeys(): Promise<Signer[]> {
   const args = minimist(process.argv.slice(2), opts);
   if (!isDefined(args.dispatcherKeys)) {
     // If GCKMS keys are undefined. Assume keys are in environment.
-    const keys = parseJsonStringArray(process.env["DISPATCHER_KEYS"]);
+    const keys = parseJson.stringArray(process.env.DISPATCHER_KEYS);
     return keys.map((key) => new Wallet(key));
   }
   const dispatcherKeyNames = args.dispatcherKeys.split(",");

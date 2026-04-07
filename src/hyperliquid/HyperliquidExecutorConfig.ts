@@ -1,4 +1,4 @@
-import { toBNWei, BigNumber, parseJsonStringArray } from "../utils";
+import { toBNWei, BigNumber, parseJson } from "../utils";
 import { CommonConfig, ProcessEnv } from "../common";
 
 export class HyperliquidExecutorConfig extends CommonConfig {
@@ -20,13 +20,13 @@ export class HyperliquidExecutorConfig extends CommonConfig {
       HYPERLIQUID_SETTLEMENT_INTERVAL = 5, // blocks
       MAX_SLIPPAGE_BY_ROUTE_BPS,
     } = env;
-    this.supportedTokens = parseJsonStringArray(HYPERLIQUID_SUPPORTED_TOKENS);
+    this.supportedTokens = parseJson.stringArray(HYPERLIQUID_SUPPORTED_TOKENS);
     this.lookback = Number(HL_DEPOSIT_LOOKBACK ?? 3600);
     this.reviewInterval = Number(HYPERLIQUID_REPLACE_ORDER_BLOCK_TIMEOUT ?? 20);
     this.maxSlippageBps = toBNWei(Number(MAX_SLIPPAGE_BPS ?? 5), 4); // With 8 decimal precision, a basis point is 10000. Default to 5bps.
     this.settlementInterval = Number(HYPERLIQUID_SETTLEMENT_INTERVAL);
 
-    const maxSlippageByRoute = JSON.parse(MAX_SLIPPAGE_BY_ROUTE_BPS ?? "{}");
+    const maxSlippageByRoute = parseJson.numberMap(MAX_SLIPPAGE_BY_ROUTE_BPS);
     Object.entries(maxSlippageByRoute).forEach(([pairName, value]) => {
       this.maxSlippageByRoute[pairName] = toBNWei(Number(value), 4);
     });

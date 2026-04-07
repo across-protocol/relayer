@@ -7,8 +7,7 @@ import {
   TOKEN_SYMBOLS_MAP,
   Address,
   toAddressType,
-  parseJsonStringArray,
-  parseJsonNumberArray,
+  parseJson,
 } from "../utils";
 
 // Set modes to true that you want to enable in the AcrossMonitor bot.
@@ -106,17 +105,17 @@ export class MonitorConfig extends CommonConfig {
     this.whitelistedRelayers = parseAddressesOptional(WHITELISTED_RELAYERS);
     this.monitoredRelayers = parseAddressesOptional(MONITORED_RELAYERS);
     this.knownV1Addresses = parseAddressesOptional(KNOWN_V1_ADDRESSES);
-    this.monitoredSpokePoolChains = parseJsonNumberArray(MONITORED_SPOKE_POOL_CHAINS);
-    this.monitoredTokenSymbols = parseJsonStringArray(MONITORED_TOKEN_SYMBOLS);
+    this.monitoredSpokePoolChains = parseJson.numberArray(MONITORED_SPOKE_POOL_CHAINS);
+    this.monitoredTokenSymbols = parseJson.stringArray(MONITORED_TOKEN_SYMBOLS);
     this.bundlesCount = Number(BUNDLES_COUNT ?? 4);
-    this.additionalL1NonLpTokens = parseJsonStringArray(MONITOR_REPORT_NON_LP_TOKENS)
+    this.additionalL1NonLpTokens = parseJson.stringArray(MONITOR_REPORT_NON_LP_TOKENS)
       .filter((token) => TOKEN_SYMBOLS_MAP[token]?.addresses[CHAIN_IDs.MAINNET])
       .map((token) => TOKEN_SYMBOLS_MAP[token].addresses[CHAIN_IDs.MAINNET]);
 
     this.binanceWithdrawWarnThreshold = Number(BINANCE_WITHDRAW_WARN_THRESHOLD ?? 1);
     this.binanceWithdrawAlertThreshold = Number(BINANCE_WITHDRAW_ALERT_THRESHOLD ?? 1);
 
-    this.hyperliquidTokens = parseJsonStringArray(HYPERLIQUID_SUPPORTED_TOKENS, '["USDC", "USDT0", "USDH"]');
+    this.hyperliquidTokens = parseJson.stringArray(HYPERLIQUID_SUPPORTED_TOKENS, '["USDC", "USDT0", "USDH"]');
     this.hyperliquidOrderMaximumLifetime = Number(HYPERLIQUID_ORDER_MAXIMUM_LIFETIME ?? -1);
 
     // Default pool utilization threshold at 90%.
@@ -183,7 +182,7 @@ export class MonitorConfig extends CommonConfig {
 }
 
 const parseAddressesOptional = (addressJson?: string): Address[] => {
-  const rawAddresses = parseJsonStringArray(addressJson);
+  const rawAddresses = parseJson.stringArray(addressJson);
   return rawAddresses.map((address) => {
     const chainId = address.startsWith("0x") ? CHAIN_IDs.MAINNET : CHAIN_IDs.SOLANA;
     return toAddressType(address, chainId);

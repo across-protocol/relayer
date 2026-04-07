@@ -7,9 +7,7 @@ import {
   assert,
   CHAIN_IDs,
   isDefined,
-  parseJsonNumberArray,
-  parseJsonStringArray,
-  parseJsonStringArrayMap,
+  parseJson,
 } from "../utils";
 import * as Constants from "./Constants";
 
@@ -88,8 +86,8 @@ export class CommonConfig {
     // `maxRelayerLookBack` is how far we fetch events from, modifying the search config's 'fromBlock'
     this.maxRelayerLookBack = Number(MAX_RELAYER_DEPOSIT_LOOK_BACK ?? Constants.MAX_RELAYER_DEPOSIT_LOOK_BACK);
     this.pollingDelay = Number(POLLING_DELAY ?? 60);
-    this.spokePoolChainsOverride = parseJsonNumberArray(SPOKE_POOL_CHAINS_OVERRIDE);
-    this.l1TokensOverride = parseJsonStringArray(L1_TOKENS_OVERRIDE);
+    this.spokePoolChainsOverride = parseJson.numberArray(SPOKE_POOL_CHAINS_OVERRIDE);
+    this.l1TokensOverride = parseJson.stringArray(L1_TOKENS_OVERRIDE);
 
     // Inherit the default eth_getLogs block range config, then sub in any env-based overrides.
     this.maxBlockLookBack = mergeConfig(Constants.CHAIN_MAX_BLOCK_LOOKBACK, MAX_BLOCK_LOOK_BACK);
@@ -102,7 +100,7 @@ export class CommonConfig {
     this.arweaveGateway = _arweaveGateway;
 
     this.peggedTokenPrices = Object.fromEntries(
-      Object.entries(parseJsonStringArrayMap(PEGGED_TOKEN_PRICES)).map(([pegTokenSymbol, tokenSymbolsToPeg]) => [
+      Object.entries(parseJson.stringArrayMap(PEGGED_TOKEN_PRICES)).map(([pegTokenSymbol, tokenSymbolsToPeg]) => [
         pegTokenSymbol,
         new Set(tokenSymbolsToPeg),
       ])

@@ -1,5 +1,5 @@
 import { CommonConfig, ProcessEnv } from "../common";
-import { assert, getArweaveJWKSigner, parseJsonNumberArray } from "../utils";
+import { assert, getArweaveJWKSigner, parseJson } from "../utils";
 
 export class DataworkerConfig extends CommonConfig {
   readonly minChallengeLeadTime: number;
@@ -83,7 +83,7 @@ export class DataworkerConfig extends CommonConfig {
     this.proposerEnabled = PROPOSER_ENABLED === "true";
     this.l2ExecutorEnabled = L2_EXECUTOR_ENABLED === "true";
     this.l1ExecutorEnabled = L1_EXECUTOR_ENABLED === "true";
-    this.executorIgnoreChains = parseJsonNumberArray(EXECUTOR_IGNORE_CHAINS);
+    this.executorIgnoreChains = parseJson.numberArray(EXECUTOR_IGNORE_CHAINS);
     if (this.l2ExecutorEnabled) {
       assert(this.spokeRootsLookbackCount > 0, "must set spokeRootsLookbackCount > 0 if L2 executor enabled");
     } else if (this.disputerEnabled || this.proposerEnabled) {

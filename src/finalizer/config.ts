@@ -1,7 +1,7 @@
 import assert from "assert";
 import { assert as ssAssert, enums } from "superstruct";
 import { CommonConfig, FINALIZER_TOKENBRIDGE_LOOKBACK, ProcessEnv } from "../common";
-import { Address, EvmAddress, SvmAddress, ethers, parseJsonNumberArray } from "../utils";
+import { Address, EvmAddress, SvmAddress, ethers, parseJson } from "../utils";
 
 /**
  * The finalization type is used to determine the direction of the finalization.
@@ -25,7 +25,7 @@ export class FinalizerConfig extends CommonConfig {
     } = env;
     super(env);
 
-    const userAddresses: { [address: string]: string[] } = JSON.parse(FINALIZER_WITHDRAWAL_TO_ADDRESSES);
+    const userAddresses = parseJson.stringArrayMap(FINALIZER_WITHDRAWAL_TO_ADDRESSES);
     this.userAddresses = new Map();
     Object.entries(userAddresses).forEach(([address, tokensToFinalize]) => {
       if (ethers.utils.isHexString(address)) {
@@ -35,7 +35,7 @@ export class FinalizerConfig extends CommonConfig {
       }
     });
 
-    this.chainsToFinalize = parseJsonNumberArray(FINALIZER_CHAINS);
+    this.chainsToFinalize = parseJson.numberArray(FINALIZER_CHAINS);
 
     // `maxFinalizerLookback` is how far we fetch events from, modifying the search config's 'fromBlock'
     this.maxFinalizerLookback = Number(FINALIZER_MAX_TOKENBRIDGE_LOOKBACK ?? FINALIZER_TOKENBRIDGE_LOOKBACK);

@@ -3,7 +3,7 @@ import { DepositAddressHandlerConfig } from "./DepositAddressHandlerConfig";
 import {
   getRedisCache,
   isDefined,
-  parseJsonStringArray,
+  parseJson,
   Signer,
   scheduleTask,
   Provider,
@@ -135,7 +135,7 @@ export class DepositAddressHandler {
     let arr: string[] = [];
     try {
       if (raw) {
-        arr = parseJsonStringArray(raw);
+        arr = parseJson.stringArray(raw);
       }
     } catch (err) {
       this.logger.error({

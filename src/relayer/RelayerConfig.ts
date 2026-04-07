@@ -19,9 +19,7 @@ import {
   Address,
   toAddressType,
   EvmAddress,
-  parseJsonStringArray,
-  parseJsonStringArrayMap,
-  parseJsonNumberArray,
+  parseJson,
 } from "../utils";
 import { CommonConfig, ProcessEnv } from "../common";
 import * as Constants from "../common/Constants";
@@ -110,30 +108,30 @@ export class RelayerConfig extends CommonConfig {
     this.eventListener = this.externalListener && RELAYER_EVENT_LISTENER === "true";
 
     // Empty means all chains.
-    this.relayerOriginChains = parseJsonNumberArray(RELAYER_ORIGIN_CHAINS);
-    this.relayerDestinationChains = parseJsonNumberArray(RELAYER_DESTINATION_CHAINS);
+    this.relayerOriginChains = parseJson.numberArray(RELAYER_ORIGIN_CHAINS);
+    this.relayerDestinationChains = parseJson.numberArray(RELAYER_DESTINATION_CHAINS);
 
     // Empty means all tokens.
-    this.relayerTokens = parseJsonStringArray(RELAYER_TOKENS).map((token) => EvmAddress.from(token));
+    this.relayerTokens = parseJson.stringArray(RELAYER_TOKENS).map((token) => EvmAddress.from(token));
     // An empty array for a defined destination chain means that all tokens are supported. To support no tokens
     // for a destination chain, map the chain to an empty array. For example, to fill only token A on chain C
     // and fill nothing on chain D, set relayerDestinationTokens: { C: [A], D: [] }
     this.relayerDestinationTokens = Object.fromEntries(
-      Object.entries(parseJsonStringArrayMap(RELAYER_DESTINATION_TOKENS)).map(([_chainId, tokens]) => {
+      Object.entries(parseJson.stringArrayMap(RELAYER_DESTINATION_TOKENS)).map(([_chainId, tokens]) => {
         const chainId = Number(_chainId);
         return [chainId, tokens.map((token) => toAddressType(token, chainId))];
       })
     );
 
     // SLOW_DEPOSITORS can exist on any network, so their origin network must be inferred based on the structure of the address.
-    this.slowDepositors = parseJsonStringArray(SLOW_DEPOSITORS).map((depositor) => {
+    this.slowDepositors = parseJson.stringArray(SLOW_DEPOSITORS).map((depositor) => {
       const chainId = ethers.utils.isHexString(depositor) ? CHAIN_IDs.MAINNET : CHAIN_IDs.SOLANA;
       return toAddressType(depositor, chainId);
     });
 
     this.minRelayerFeePct = toBNWei(MIN_RELAYER_FEE_PCT || Constants.RELAYER_MIN_FEE_PCT);
 
-    this.tryMulticallChains = parseJsonNumberArray(RELAYER_TRY_MULTICALL_CHAINS);
+    this.tryMulticallChains = parseJson.numberArray(RELAYER_TRY_MULTICALL_CHAINS);
     this.loggingInterval = Number(RELAYER_LOGGING_INTERVAL);
     this.maintenanceInterval = Number(RELAYER_MAINTENANCE_INTERVAL);
 
