@@ -1,5 +1,5 @@
 import { clients, interfaces } from "@across-protocol/sdk";
-import { Deposit, RootBundleRelayWithBlock } from "../../src/interfaces";
+import { Deposit, RelayerRefundExecutionWithBlock, RootBundleRelayWithBlock } from "../../src/interfaces";
 
 export class MockSpokePoolClient extends clients.mocks.MockSpokePoolClient {
   public maxFillDeadlineOverride?: number;
@@ -25,6 +25,10 @@ export class MockSpokePoolClient extends clients.mocks.MockSpokePoolClient {
 
   setRootBundleRelays(rootBundleRelays: RootBundleRelayWithBlock[]): void {
     this.rootBundleRelays = rootBundleRelays;
+  }
+
+  addRelayerRefundExecution(execution: RelayerRefundExecutionWithBlock): void {
+    this.relayerRefundExecutions.push(execution);
   }
 
   getRootBundleRelays(): RootBundleRelayWithBlock[] {
