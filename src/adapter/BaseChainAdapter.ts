@@ -333,9 +333,7 @@ export class BaseChainAdapter {
     }
     if (chainIsEvm(this.chainId)) {
       const multicallerClient = new MultiCallerClient(this.logger);
-      txnsToSend
-        .filter(isAugmentedTransaction)
-        .forEach((txn) => multicallerClient.enqueueTransaction(txn));
+      txnsToSend.filter(isAugmentedTransaction).forEach((txn) => multicallerClient.enqueueTransaction(txn));
       const txnReceipts = await multicallerClient.executeTxnQueues(simMode, [this.chainId]);
       return txnReceipts[this.chainId];
     }

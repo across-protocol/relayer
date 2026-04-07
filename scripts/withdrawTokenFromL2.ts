@@ -173,13 +173,11 @@ async function run(): Promise<void> {
   // Only execute if --sendTx is explicitly set
   if (!sendTransactions) {
     console.log(`\n📋 Transaction Calldata (${txns.length} transaction(s)):`);
-    txns
-      .filter(isAugmentedTransaction)
-      .forEach((txn, index) => {
-        const calldata = txn.contract.interface.encodeFunctionData(txn.method, txn.args);
-        console.log(`\n   Transaction ${index + 1}:`);
-        console.log(`   ${calldata}`);
-      });
+    txns.filter(isAugmentedTransaction).forEach((txn, index) => {
+      const calldata = txn.contract.interface.encodeFunctionData(txn.method, txn.args);
+      console.log(`\n   Transaction ${index + 1}:`);
+      console.log(`   ${calldata}`);
+    });
     console.log("\n💡 To execute transactions, run with --sendTx flag");
     console.log(
       `   Example: yarn ts-node ./scripts/withdrawTokenFromL2.ts --token ${tokenSymbol} --chainId ${l2ChainId} --amount ${withdrawAmount} --sendTx --wallet gckms --keys bot1`
@@ -196,9 +194,7 @@ async function run(): Promise<void> {
   // Execute withdrawal
   logger.info("Executing withdrawal...");
   const multicallerClient = new MultiCallerClient(logger);
-  txns
-    .filter(isAugmentedTransaction)
-    .forEach((txn) => multicallerClient.enqueueTransaction(txn));
+  txns.filter(isAugmentedTransaction).forEach((txn) => multicallerClient.enqueueTransaction(txn));
   const txnReceipts = await multicallerClient.executeTxnQueues(false, [l2ChainId]);
   const transactionHashes = txnReceipts[l2ChainId] || [];
 
