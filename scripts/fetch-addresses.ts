@@ -12,9 +12,10 @@ async function run(): Promise<number> {
     [new addressAdapters.risklabs.AddressList({ path, throwOnError: false })],
     logger
   );
-  const addresses = await addressList.update();
+  const addressSet = await addressList.update();
+  const addresses = Array.from(addressSet);
   await writeFile(OUTPUT_PATH, JSON.stringify(addresses, null, 4));
-  console.log(`Stored ${addresses.size} addresses at ${OUTPUT_PATH}.`);
+  console.log(`Stored ${addressSet.size} addresses at ${OUTPUT_PATH}.`);
 
   return 0;
 }
