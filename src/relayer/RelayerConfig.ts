@@ -111,7 +111,7 @@ export class RelayerConfig extends CommonConfig {
     this.relayerDestinationChains = JSON.parse(RELAYER_DESTINATION_CHAINS ?? "[]");
 
     // Empty means all tokens.
-    this.relayerTokens = JSON.parse(RELAYER_TOKENS ?? "[]").map(EvmAddress.from);
+    this.relayerTokens = JSON.parse(RELAYER_TOKENS ?? "[]").map((token: string) => EvmAddress.from(token));
     // An empty array for a defined destination chain means that all tokens are supported. To support no tokens
     // for a destination chain, map the chain to an empty array. For example, to fill only token A on chain C
     // and fill nothing on chain D, set relayerDestinationTokens: { C: [A], D: [] }
