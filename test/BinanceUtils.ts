@@ -168,4 +168,38 @@ describe("BinanceUtils: createBinanceServerTimeSynchronizer", function () {
     expect(await synchronizer.getTime()).to.equal(4_900);
     expect(fetchServerTime.callCount).to.equal(2);
   });
+
+  it("resyncs if the local wall clock rolls back between requests but stays after the last sync timestamp", async function () {
+    let nowMs = 1;
+    const fetchServerTime = sinon.stub();
+    fetchServerTime.onFirstCall().resolves(101);
+    fetchServerTime.onSecondCall().resolves(210);
+    const synchronizer = createBinanceServerTimeSynchronizer(fetchServerTime, {
+      now: () => nowMs,
+      syncIntervalMs: 100,
+    });
+
+    expect(await synchronizer.getTime()).to.equal(101);
+    nowMs = 59;
+    expect(await synchronizer.getTime()).to.equal(159);
+    nowMs = 10;
+    expect(await synchronizer.getTime()).to.equal(210);
+    expect(fetchServerTime.callCount).to.equal(2);
+  });
+
+  it("keeps using the cached offset if a refresh fails after an initial successful sync", async function () {
+    let nowMs = 1_000;
+    const fetchServerTime = sinon.stub();
+    fetchServerTime.onFirstCall().resolves(5_000);
+    fetchServerTime.onSecondCall().rejects(new Error("time sync failed"));
+    const synchronizer = createBinanceServerTimeSynchronizer(fetchServerTime, {
+      now: () => nowMs,
+      syncIntervalMs: 100,
+    });
+
+    expect(await synchronizer.getTime()).to.equal(5_000);
+    nowMs = 1_250;
+    expect(await synchronizer.getTime()).to.equal(5_250);
+    expect(fetchServerTime.callCount).to.equal(2);
+  });
 });

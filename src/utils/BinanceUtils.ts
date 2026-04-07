@@ -116,13 +116,19 @@ export function createBinanceServerTimeSynchronizer(
   const now = options.now ?? (() => Date.now());
   const syncIntervalMs = options.syncIntervalMs ?? DEFAULT_BINANCE_SERVER_TIME_SYNC_INTERVAL_MS;
   let lastSyncFinishedAtMs = 0;
+  let lastObservedNowMs = 0;
   let serverTimeOffsetMs = 0;
   let inFlightSync: Promise<void> | undefined;
 
-  async function sync(): Promise<void> {
+  async function sync(currentNowMs: number): Promise<void> {
     if (lastSyncFinishedAtMs !== 0) {
-      const elapsedSinceLastSyncMs = now() - lastSyncFinishedAtMs;
-      if (elapsedSinceLastSyncMs >= 0 && elapsedSinceLastSyncMs < syncIntervalMs) {
+      const clockMovedBackwardSinceLastRequest = lastObservedNowMs !== 0 && currentNowMs < lastObservedNowMs;
+      const elapsedSinceLastSyncMs = currentNowMs - lastSyncFinishedAtMs;
+      if (
+        !clockMovedBackwardSinceLastRequest &&
+        elapsedSinceLastSyncMs >= 0 &&
+        elapsedSinceLastSyncMs < syncIntervalMs
+      ) {
         return;
       }
     }
@@ -136,6 +142,11 @@ export function createBinanceServerTimeSynchronizer(
         serverTimeOffsetMs = serverTimeMs - requestFinishedAtMs;
         lastSyncFinishedAtMs = requestFinishedAtMs;
       })
+      .catch((error) => {
+        if (lastSyncFinishedAtMs === 0) {
+          throw error;
+        }
+      })
       .finally(() => {
         if (inFlightSync === syncPromise) {
           inFlightSync = undefined;
@@ -148,8 +159,10 @@ export function createBinanceServerTimeSynchronizer(
 
   return {
     async getTime(): Promise<number> {
-      await sync();
-      return now() + serverTimeOffsetMs;
+      await sync(now());
+      const currentNowMs = now();
+      lastObservedNowMs = currentNowMs;
+      return currentNowMs + serverTimeOffsetMs;
     },
   };
 }
