@@ -3,6 +3,7 @@ import {
   assert,
   BigNumber,
   BINANCE_NETWORKS,
+  BINANCE_WITHDRAWAL_STATUS,
   BinanceTransactionType,
   BinanceWithdrawal,
   bnZero,
@@ -42,16 +43,6 @@ interface SPOT_MARKET_META {
   szDecimals: number;
   minimumOrderSize: number;
   isBuy: boolean;
-}
-
-enum BINANCE_WITHDRAWAL_STATUS {
-  EMAIL_SENT = 0,
-  CANCELLED = 1,
-  AWAITING_APPROVAL = 2,
-  REJECTED = 3,
-  PROCESSING = 4,
-  FAILURE = 5,
-  COMPLETED = 6,
 }
 
 export function isFailedBinanceWithdrawal(status?: number): boolean {
