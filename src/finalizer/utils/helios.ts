@@ -351,9 +351,11 @@ async function enrichHeliosActions(
       getError = error;
     }
 
-    // Handle fetch error based on whether it was a NOTFOUND or another error
+    // Handle fetch error based on whether it was a NOTFOUND or another error.
+    // @dev fetchWithTimeout uses the JSON body's `error` field as the error message when present,
+    // so a 404 from the ZK API surfaces as e.g. "Proof request <id> not found" rather than "HTTP 404".
     if (getError) {
-      const isNotFoundError = getError instanceof Error && getError.message.includes("HTTP 404");
+      const isNotFoundError = getError instanceof Error && getError.message.includes("not found");
       if (isNotFoundError) {
         // NOTFOUND error -> Request proof
         logger.debug({ ...logContext, message: "Proof not found (404), requesting...", proofId });
