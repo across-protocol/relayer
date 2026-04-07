@@ -17,6 +17,9 @@ const KNOWN_BINANCE_ERROR_REASONS = [
   "TypeError: fetch failed",
 ];
 
+// Binance only accepts a signed request while its timestamp remains within recvWindow.
+// We keep write-state calls tight so delayed accepted requests cannot submit orders/withdrawals much later than intended.
+// Signed reads can tolerate a much larger window because a delayed accepted request still returns current server data.
 export const BINANCE_WRITE_RECV_WINDOW_MS = 5_000;
 export const BINANCE_READ_RECV_WINDOW_MS = 60_000;
 
