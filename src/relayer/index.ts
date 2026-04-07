@@ -67,7 +67,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
   const relayer = new Relayer(await baseSigner.getAddress(), logger, relayerClients, config);
   await relayer.init();
 
-  const { acrossApiClient, inventoryClient, spokePoolClients, tokenClient } = relayerClients;
+  const { acrossApiClient, inventoryClient, profitClient, spokePoolClients, tokenClient } = relayerClients;
   const simulate = !config.sendingTransactionsEnabled || !config.sendingRelaysEnabled;
   let txnReceipts: { [chainId: number]: Promise<string[]> } = {};
   const inventoryManagement = inventoryClient.isInventoryManagementEnabled();
@@ -75,6 +75,22 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
 
   const apiUpdateInterval = 30; // seconds
   scheduleTask(() => acrossApiClient.update(config.ignoreLimits), apiUpdateInterval, abortController.signal);
+
+  const scheduleProfitUpdate = () => {
+    if (abortController.signal.aborted) {
+      return;
+    }
+    setTimeout(async () => {
+      try {
+        await profitClient.update();
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        logger.warn({ at, message: "ProfitClient update failed.", reason });
+      }
+      scheduleProfitUpdate();
+    }, config.maintenanceInterval * 1000);
+  };
+  scheduleProfitUpdate();
 
   if (eventListener) {
     const hubChainSpoke = spokePoolClients[config.hubPoolChainId];
