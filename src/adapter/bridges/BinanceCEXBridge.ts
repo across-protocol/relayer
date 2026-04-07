@@ -10,6 +10,7 @@ import {
   isDefined,
   getTimestampForBlock,
   getBinanceApiClient,
+  getBinanceDepositAddress,
   floatToBN,
   CHAIN_IDs,
   compareAddressesSimple,
@@ -76,7 +77,7 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
 
     const binanceApiClient = await this.getBinanceClient();
 
-    const depositAddress = await binanceApiClient.depositAddress({
+    const depositAddress = await getBinanceDepositAddress(binanceApiClient, {
       coin: this.tokenSymbol,
       network: "ETH",
     });

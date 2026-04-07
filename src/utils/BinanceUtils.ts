@@ -17,9 +17,28 @@ const KNOWN_BINANCE_ERROR_REASONS = [
   "TypeError: fetch failed",
 ];
 
+export const BINANCE_WRITE_RECV_WINDOW_MS = 5_000;
+export const BINANCE_READ_RECV_WINDOW_MS = 60_000;
+
 type WithdrawalQuota = {
   wdQuota: number;
   usedWdQuota: number;
+};
+
+type BinanceApiWithRecvWindow = BinanceApi & {
+  tradeFee(options?: { recvWindow?: number; useServerTime?: boolean }): ReturnType<BinanceApi["tradeFee"]>;
+  withdraw(
+    options: Parameters<BinanceApi["withdraw"]>[0] & {
+      recvWindow?: number;
+      withdrawOrderId?: string;
+    }
+  ): ReturnType<BinanceApi["withdraw"]>;
+  withdrawHistory(
+    options: Parameters<BinanceApi["withdrawHistory"]>[0] & {
+      recvWindow?: number;
+    }
+  ): ReturnType<BinanceApi["withdrawHistory"]>;
+  accountCoins(options?: { recvWindow?: number }): Promise<unknown>;
 };
 
 // Alias for Binance network symbols.
@@ -90,13 +109,11 @@ export async function getBinanceApiClient(url = "https://api.binance.com") {
   const apiKey = process.env["BINANCE_API_KEY"];
   const secretKey = (await getBinanceSecretKey()) ?? process.env["BINANCE_HMAC_KEY"];
   assert(isDefined(apiKey) && isDefined(secretKey), "Binance client cannot be constructed due to missing keys.");
-  const client = Binance({
+  return Binance({
     apiKey,
     apiSecret: secretKey,
     httpBase: url,
-    getTime: () => client.time(),
   });
-  return client;
 }
 
 /**
@@ -134,11 +151,45 @@ async function retrieveBinanceSecretKeyFromCLIArgs(): Promise<string | undefined
  * available to rebalance per day and the amount already used.
  */
 export async function getBinanceWithdrawalLimits(binanceApi: BinanceApi): Promise<WithdrawalQuota> {
-  const unparsedQuota = await binanceApi.privateRequest("GET" as HttpMethod, "/sapi/v1/capital/withdraw/quota", {});
+  const unparsedQuota = await binanceApi.privateRequest("GET" as HttpMethod, "/sapi/v1/capital/withdraw/quota", {
+    recvWindow: BINANCE_READ_RECV_WINDOW_MS,
+  });
   return {
     wdQuota: unparsedQuota["wdQuota"],
     usedWdQuota: unparsedQuota["usedWdQuota"],
   };
+}
+
+export async function getBinanceTradeFees(binanceApi: BinanceApi): ReturnType<BinanceApi["tradeFee"]> {
+  return (binanceApi as BinanceApiWithRecvWindow).tradeFee({ recvWindow: BINANCE_READ_RECV_WINDOW_MS });
+}
+
+export async function getBinanceDepositAddress(
+  binanceApi: BinanceApi,
+  options: Parameters<BinanceApi["depositAddress"]>[0]
+): ReturnType<BinanceApi["depositAddress"]> {
+  return binanceApi.depositAddress({ ...options, recvWindow: BINANCE_READ_RECV_WINDOW_MS });
+}
+
+export async function getBinanceAllOrders(
+  binanceApi: BinanceApi,
+  options: Parameters<BinanceApi["allOrders"]>[0]
+): ReturnType<BinanceApi["allOrders"]> {
+  return binanceApi.allOrders({ ...options, recvWindow: BINANCE_READ_RECV_WINDOW_MS });
+}
+
+export async function submitBinanceOrder(
+  binanceApi: BinanceApi,
+  options: Parameters<BinanceApi["order"]>[0]
+): ReturnType<BinanceApi["order"]> {
+  return binanceApi.order({ ...options, recvWindow: BINANCE_WRITE_RECV_WINDOW_MS });
+}
+
+export async function submitBinanceWithdrawal(
+  binanceApi: BinanceApi,
+  options: Parameters<BinanceApi["withdraw"]>[0]
+): ReturnType<BinanceApi["withdraw"]> {
+  return (binanceApi as BinanceApiWithRecvWindow).withdraw({ ...options, recvWindow: BINANCE_WRITE_RECV_WINDOW_MS });
 }
 
 export enum BinanceTransactionType {
@@ -243,7 +294,7 @@ export async function getBinanceDeposits(
 ): Promise<BinanceDeposit[]> {
   let depositHistory: DepositHistoryResponse;
   try {
-    depositHistory = await binanceApi.depositHistory({ startTime });
+    depositHistory = await binanceApi.depositHistory({ startTime, recvWindow: BINANCE_READ_RECV_WINDOW_MS });
   } catch (_err) {
     const err = _err.toString();
     if (KNOWN_BINANCE_ERROR_REASONS.some((errorReason) => err.includes(errorReason)) && nRetries < maxRetries) {
@@ -278,7 +329,11 @@ export async function getBinanceWithdrawals(
 ): Promise<BinanceWithdrawal[]> {
   let withdrawHistory: WithdrawHistoryResponse;
   try {
-    withdrawHistory = await binanceApi.withdrawHistory({ coin, startTime });
+    withdrawHistory = await (binanceApi as BinanceApiWithRecvWindow).withdrawHistory({
+      coin,
+      startTime,
+      recvWindow: BINANCE_READ_RECV_WINDOW_MS,
+    });
   } catch (_err) {
     const err = _err.toString();
     if (KNOWN_BINANCE_ERROR_REASONS.some((errorReason) => err.includes(errorReason)) && nRetries < maxRetries) {
@@ -309,7 +364,11 @@ export async function getBinanceWithdrawals(
  * @returns A typed `AccountCoins` response.
  */
 export async function getAccountCoins(binanceApi: BinanceApi): Promise<ParsedAccountCoins> {
-  const coins = Object.values(await binanceApi["accountCoins"]());
+  const coins = Object.values(
+    await (binanceApi as BinanceApiWithRecvWindow).accountCoins({
+      recvWindow: BINANCE_READ_RECV_WINDOW_MS,
+    })
+  );
   return coins.map((coin) => {
     const networkList = coin["networkList"]?.map((network) => {
       return {
