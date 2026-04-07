@@ -75,12 +75,6 @@ type GaslessRelayerUpdate = {
 };
 const DEPOSIT_EVENT = "FundsDeposited";
 
-// Teach BigInt how to be represented as JSON.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-(BigInt.prototype as any).toJSON = function () {
-  return this.toString();
-};
-
 export enum MessageState {
   INITIAL = 0,
   DEPOSIT_SUBMIT,
