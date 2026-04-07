@@ -117,6 +117,7 @@ export const {
   chainHasNativeToken,
   fetchWithTimeout,
   postWithTimeout,
+  isHttpError,
 } = sdk.utils;
 
 export type FetchHeaders = sdk.utils.FetchHeaders;
