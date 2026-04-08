@@ -1,5 +1,6 @@
 import { assert, toBN, BigNumberish, isDefined } from "./";
 import { REDIS_URL_DEFAULT } from "../common/Constants";
+import { constants } from "@across-protocol/sdk";
 import { createClient } from "redis4";
 import winston from "winston";
 import { Deposit, Fill } from "../interfaces";
@@ -133,7 +134,7 @@ export async function setDeposit(
   deposit: Deposit,
   currentChainTime: number,
   redisClient: RedisCache,
-  expirySeconds = 0
+  expirySeconds = constants.DEFAULT_CACHING_TTL
 ): Promise<void> {
   if (shouldCache(deposit.quoteTimestamp, currentChainTime)) {
     await redisClient.set(getRedisDepositKey(deposit), JSON.stringify(deposit), expirySeconds);
