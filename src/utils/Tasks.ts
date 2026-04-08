@@ -7,3 +7,41 @@ export function scheduleTask(task: () => Promise<unknown>, interval: number, sig
   const timer = setInterval(async () => await task(), interval * 1000);
   signal.addEventListener("abort", () => clearInterval(timer));
 }
+
+/**
+ * Schedule a recurring task using recursive setTimeout, ensuring calls never overlap.
+ * The next invocation is scheduled only after the current one completes (or fails).
+ * Failures are logged as warnings and never prevent rescheduling.
+ * @param name Human-readable task identifier for log messages.
+ * @param logger Winston logger instance.
+ * @param task Function that returns a Promise to be awaited.
+ * @param interval Minimum delay between completions, in seconds.
+ * @param signal AbortSignal for cancellation; pending timers are cleared on abort.
+ */
+export function scheduleSequentialTask(
+  name: string,
+  logger: { warn: (info: Record<string, unknown>) => unknown },
+  task: () => Promise<unknown>,
+  interval: number,
+  signal: AbortSignal
+): void {
+  let timer: ReturnType<typeof setTimeout>;
+  const schedule = () => {
+    timer = setTimeout(async () => {
+      try {
+        await task();
+      } catch (err) {
+        logger.warn({
+          at: "scheduleSequentialTask",
+          message: `${name} update failed.`,
+          reason: err instanceof Error ? err.message : String(err),
+        });
+      }
+      if (!signal.aborted) {
+        schedule();
+      }
+    }, interval * 1000);
+  };
+  signal.addEventListener("abort", () => clearTimeout(timer));
+  schedule();
+}
