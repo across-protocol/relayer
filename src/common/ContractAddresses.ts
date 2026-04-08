@@ -250,11 +250,11 @@ export const CONTRACT_ADDRESSES: {
       abi: SPOKE_POOL_PERIPHERY_ABI,
     },
     counterfactualDepositFactory: {
-      address: "0x20e67fBE0150B498048709306cc7729d382F1fB1",
+      address: "0x9cd343b1ce2798bfdc09debc83f9cbfad4a22772",
       abi: COUNTERFACTUAL_DEPOSIT_FACTORY_ABI,
     },
     counterfactualDeposit: {
-      address: "0xfb090c119c838CeD214F962F931d5fa38b111E46",
+      address: "0x116e1f29138b0a6417189ffdf4a17de223ae27c7",
     },
     permit2: {
       address: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
@@ -496,11 +496,11 @@ export const CONTRACT_ADDRESSES: {
       abi: SPOKE_POOL_PERIPHERY_ABI,
     },
     counterfactualDepositFactory: {
-      address: "0x20e67fBE0150B498048709306cc7729d382F1fB1",
+      address: "0x9cd343b1ce2798bfdc09debc83f9cbfad4a22772",
       abi: COUNTERFACTUAL_DEPOSIT_FACTORY_ABI,
     },
     counterfactualDeposit: {
-      address: "0xfb090c119c838CeD214F962F931d5fa38b111E46",
+      address: "0x116e1f29138b0a6417189ffdf4a17de223ae27c7",
     },
     sponsoredCCTPDstPeriphery: {
       address: "0xd9dc78b969e9efb1e54b625c33a21aaf2509e6a1",
@@ -602,11 +602,11 @@ export const CONTRACT_ADDRESSES: {
       abi: SPOKE_POOL_PERIPHERY_ABI,
     },
     counterfactualDepositFactory: {
-      address: "0x20e67fBE0150B498048709306cc7729d382F1fB1",
+      address: "0x9cd343b1ce2798bfdc09debc83f9cbfad4a22772",
       abi: COUNTERFACTUAL_DEPOSIT_FACTORY_ABI,
     },
     counterfactualDeposit: {
-      address: "0xfb090c119c838CeD214F962F931d5fa38b111E46",
+      address: "0x116e1f29138b0a6417189ffdf4a17de223ae27c7",
     },
     permit2: {
       address: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
