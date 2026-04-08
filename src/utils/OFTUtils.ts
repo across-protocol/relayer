@@ -15,7 +15,7 @@ import {
   fetchWithTimeout,
 } from ".";
 import { BytesLike } from "ethers";
-import { EVM_OFT_MESSENGERS } from "../common";
+import { EVM_OFT_MESSENGERS, LEGACY_MESH_NETWORKS, EVM_LEGACY_MESH_MESSENGERS } from "../common";
 import { SortableEvent } from "../interfaces";
 
 export type SendParamStruct = {
@@ -78,8 +78,9 @@ export function getChainIdFromEndpointId(eid: number): number {
  * @returns IOFT messenger for a given chain. Only supports EVM chains for now
  * @throws If EVM_OFT_MESSENGERS mapping doesn't have an entry for the l1Token - chainId combination
  */
-export function getMessengerEvm(l1TokenAddress: EvmAddress, chainId: number): EvmAddress {
-  const messenger = EVM_OFT_MESSENGERS.get(l1TokenAddress.toNative())?.get(chainId);
+export function getMessengerEvm(l1TokenAddress: EvmAddress, chainId: number, l2ChainId): EvmAddress {
+  const messengerMap = LEGACY_MESH_NETWORKS.includes(l2ChainId) ? EVM_LEGACY_MESH_MESSENGERS : EVM_OFT_MESSENGERS;
+  const messenger = messengerMap.get(l1TokenAddress.toNative())?.get(chainId);
   assert(isDefined(messenger), `No OFT messenger configured for ${l1TokenAddress.toNative()} on chain ${chainId}`);
   return messenger;
 }
@@ -89,7 +90,7 @@ export function getMessengerEvm(l1TokenAddress: EvmAddress, chainId: number): Ev
  * @returns If the input chain ID's OFT adapter requires payment in the input token.
  */
 export function isStargateBridge(chainId: number): boolean {
-  return [CHAIN_IDs.PLASMA, CHAIN_IDs.TEMPO].includes(chainId);
+  return [CHAIN_IDs.PLASMA, CHAIN_IDs.TRON, CHAIN_IDs.TEMPO].includes(chainId);
 }
 
 /**
