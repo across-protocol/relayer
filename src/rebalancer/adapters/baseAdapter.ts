@@ -13,7 +13,6 @@ import {
   defiLlama,
   delay,
   ERC20,
-  ethers,
   EventSearchConfig,
   EvmAddress,
   forEachAsync,
