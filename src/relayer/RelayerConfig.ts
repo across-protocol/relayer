@@ -24,7 +24,6 @@ import {
 import { CommonConfig, ProcessEnv } from "../common";
 import * as Constants from "../common/Constants";
 import {
-  ChainTokenConfig,
   ChainTokenInventory,
   InventoryConfig,
   TokenBalanceConfig,
