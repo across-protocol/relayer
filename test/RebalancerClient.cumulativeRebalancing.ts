@@ -6,7 +6,7 @@ import {
   MaxPendingOrdersConfig,
   RebalancerConfig,
 } from "../src/rebalancer/RebalancerConfig";
-import { bnZero, toBNWei } from "../src/utils";
+import { bnZero, EvmAddress, toBNWei } from "../src/utils";
 import { BigNumber, createSpyLogger, ethers, expect } from "./utils";
 
 describe("RebalancerClient.cumulativeRebalancing", () => {
@@ -405,7 +405,9 @@ describe("RebalancerClient.cumulativeRebalancing", () => {
       makeRoute(CHAIN_A, CHAIN_A, USDT, USDC, "adapter1"),
     ]);
 
-    const pendingRebalances = await rebalancerClient.getPendingRebalances();
+    const pendingRebalances = await rebalancerClient.getPendingRebalances(
+      EvmAddress.from(await rebalancerClient.baseSigner.getAddress())
+    );
 
     expect(pendingRebalances[CHAIN_A][USDC]).to.equal(amount(USDC, "7"));
     expect(pendingRebalances[CHAIN_B][USDT]).to.equal(amount(USDT, "2"));
@@ -433,7 +435,9 @@ describe("RebalancerClient.cumulativeRebalancing", () => {
       makeRoute(CHAIN_A, CHAIN_B, USDC, USDT, "adapter1"),
     ]);
 
-    const pendingRebalances = await rebalancerClient.getPendingRebalances();
+    const pendingRebalances = await rebalancerClient.getPendingRebalances(
+      EvmAddress.from(await rebalancerClient.baseSigner.getAddress())
+    );
 
     expect(pendingRebalances[CHAIN_A][USDC]).to.equal(amount(USDC, "4"));
     expect(pendingRebalances[CHAIN_B][USDT]).to.equal(amount(USDT, "6"));

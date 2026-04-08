@@ -1771,7 +1771,7 @@ export class InventoryClient {
       pendingL2Withdrawals: this.pendingL2Withdrawals,
     });
 
-    this.pendingRebalances = await this.rebalancerClient.getPendingRebalances();
+    this.pendingRebalances = await this.rebalancerClient.getPendingRebalances(this.relayer);
     if (Object.keys(this.pendingRebalances).length > 0) {
       this.logger.debug({
         at: "InventoryClient#update",

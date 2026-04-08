@@ -20,6 +20,7 @@ import {
   toBN,
   ERC20,
   isDefined,
+  EvmAddress,
 } from "../../utils";
 import { CCTP_MAX_SEND_AMOUNT } from "../../common";
 import { PRODUCTION_NETWORKS, CCTP_NO_DOMAIN } from "@across-protocol/constants";
@@ -93,7 +94,7 @@ export class CctpAdapter extends BaseAdapter {
 
   async updateRebalanceStatuses(): Promise<void> {
     this._assertInitialized();
-    const pendingBridges = await this._redisGetPendingBridgesPreDeposit();
+    const pendingBridges = await this._redisGetPendingBridgesPreDeposit(this.baseSignerAddress);
     if (pendingBridges.length > 0) {
       this.logger.debug({
         at: "CctpAdapter.updateRebalanceStatuses",
@@ -136,11 +137,11 @@ export class CctpAdapter extends BaseAdapter {
     return;
   }
 
-  async getPendingRebalances(): Promise<{ [chainId: number]: { [token: string]: BigNumber } }> {
+  async getPendingRebalances(account: EvmAddress): Promise<{ [chainId: number]: { [token: string]: BigNumber } }> {
     this._assertInitialized();
     const pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
 
-    const pendingBridges = await this._redisGetPendingBridgesPreDeposit();
+    const pendingBridges = await this._redisGetPendingBridgesPreDeposit(account);
     if (pendingBridges.length > 0) {
       this.logger.debug({
         at: "CctpAdapter.getPendingRebalances",
@@ -194,7 +195,7 @@ export class CctpAdapter extends BaseAdapter {
   }
 
   async getPendingOrders(): Promise<string[]> {
-    return this._redisGetPendingBridgesPreDeposit();
+    return this._redisGetPendingBridgesPreDeposit(this.baseSignerAddress);
   }
 
   private getCloidForBridge(rebalanceRoute: RebalanceRoute, txnHash: string): string {

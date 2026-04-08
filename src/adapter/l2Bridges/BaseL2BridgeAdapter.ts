@@ -95,6 +95,6 @@ export abstract class BaseL2BridgeAdapter {
       return new Set();
     }
 
-    return this.pendingBridgeRedisReader.getPendingBridgeTxnRefsForRoute(adapter, sourceChain, destinationChain);
+    return this.pendingBridgeRedisReader.getPendingBridgeTxnRefsForRoute(adapter, sourceChain, destinationChain, EvmAddress.from(address.toNative()));
   }
 }

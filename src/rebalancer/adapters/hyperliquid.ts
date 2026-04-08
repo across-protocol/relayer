@@ -276,7 +276,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
   async updateRebalanceStatuses(): Promise<void> {
     this._assertInitialized();
 
-    const pendingBridgeToHyperevm = await this._redisGetPendingBridgesPreDeposit();
+    const pendingBridgeToHyperevm = await this._redisGetPendingBridgesPreDeposit(this.baseSignerAddress);
     if (pendingBridgeToHyperevm.length > 0) {
       this.logger.debug({
         at: "HyperliquidStablecoinSwapAdapter.updateRebalanceStatuses",
@@ -290,7 +290,8 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       // Check if we have enough balance on HyperEVM to progress the order status:
       const hyperevmBalance = await this._getERC20Balance(
         HYPEREVM,
-        this._getTokenInfo(sourceToken, HYPEREVM).address.toNative()
+        this._getTokenInfo(sourceToken, HYPEREVM).address.toNative(),
+        this.baseSignerAddress
       );
       const amountConverter = this._getAmountConverter(
         orderDetails.sourceChain,
@@ -322,7 +323,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       }
     }
 
-    const pendingDeposits = await this._redisGetPendingDeposits();
+    const pendingDeposits = await this._redisGetPendingDeposits(this.baseSignerAddress);
     if (pendingDeposits.length > 0) {
       this.logger.debug({
         at: "HyperliquidStablecoinSwapAdapter.updateRebalanceStatuses",
@@ -344,7 +345,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     let openOrders: hl.OpenOrdersResponse = [];
     // Check pending swap statuses before checking pending deposits to hypercore otherwise we might place an order,
     // and attempt to replace it because it wasn't immediately executed.
-    const pendingSwaps = await this._redisGetPendingSwaps();
+    const pendingSwaps = await this._redisGetPendingSwaps(this.baseSignerAddress);
     if (pendingSwaps.length > 0) {
       this.logger.debug({
         at: "HyperliquidStablecoinSwapAdapter.updateRebalanceStatuses",
@@ -362,7 +363,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       }
     }
     for (const cloid of pendingSwaps) {
-      const matchingFill = await this._getMatchingFillForCloid(cloid);
+      const matchingFill = await this._getMatchingFillForCloid(this.baseSignerAddress.toNative(), cloid);
       const matchingOpenOrder = openOrders.find((order) => order.cloid === cloid);
       if (matchingFill) {
         this.logger.debug({
@@ -398,7 +399,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       }
     }
 
-    const pendingWithdrawals = await this._redisGetPendingWithdrawals();
+    const pendingWithdrawals = await this._redisGetPendingWithdrawals(this.baseSignerAddress);
     if (pendingWithdrawals.length > 0) {
       this.logger.debug({
         at: "HyperliquidStablecoinSwapAdapter.updateRebalanceStatuses",
@@ -412,13 +413,14 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       // a bridge to the final destination chain if necessary.
       const orderDetails = await this._redisGetOrderDetails(cloid);
       const { destinationToken, destinationChain } = orderDetails;
-      const matchingFill = await this._getMatchingFillForCloid(cloid);
+      const matchingFill = await this._getMatchingFillForCloid(this.baseSignerAddress.toNative(), cloid);
       if (!matchingFill) {
         throw new Error(`No matching fill found for cloid ${cloid} that has status PENDING_WITHDRAWAL_FROM_HYPERCORE`);
       }
 
       // Only proceed to update the order status if it has finalized:
       const initiatedWithdrawals = await this._getInitiatedWithdrawalsFromHypercore(
+        this.baseSignerAddress.toNative(),
         destinationToken,
         matchingFill.details.time
       );
@@ -437,7 +439,11 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       )(matchingFill.amountToWithdraw);
       const unfinalizedWithdrawalAmount =
         unfinalizedWithdrawalAmounts[destinationToken] ??
-        (await this._getUnfinalizedWithdrawalAmountFromHypercore(destinationToken, matchingFill.details.time));
+        (await this._getUnfinalizedWithdrawalAmountFromHypercore(
+          this.baseSignerAddress.toNative(),
+          destinationToken,
+          matchingFill.details.time
+        ));
       // If HL were to impose a withdraw fee then we'd need to subtract the estimated fee from the expectedAmountToReceive
       // here otherwise we might have received less than the expected amount on HyperEVM.
       if (unfinalizedWithdrawalAmount.gte(expectedAmountToReceive)) {
@@ -473,9 +479,9 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     // Only sweep if there are no orders currently being swapped or withdrawn, to avoid
     // accidentally withdrawing balances that are needed for in-flight orders.
     const [pendingSwaps, pendingWithdrawals, pendingDeposits] = await Promise.all([
-      this._redisGetPendingSwaps(),
-      this._redisGetPendingWithdrawals(),
-      this._redisGetPendingDeposits(),
+      this._redisGetPendingSwaps(this.baseSignerAddress),
+      this._redisGetPendingWithdrawals(this.baseSignerAddress),
+      this._redisGetPendingDeposits(this.baseSignerAddress),
     ]);
     if (pendingSwaps.length > 0 || pendingWithdrawals.length > 0 || pendingDeposits.length > 0) {
       this.logger.debug({
@@ -654,7 +660,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     return totalFee;
   }
 
-  async getPendingRebalances(): Promise<{ [chainId: number]: { [token: string]: BigNumber } }> {
+  async getPendingRebalances(account: EvmAddress): Promise<{ [chainId: number]: { [token: string]: BigNumber } }> {
     this._assertInitialized();
     const pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
 
@@ -665,7 +671,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     // total virtual balance credit added for this one order will be too high (the order amount will be double counted).
     // Therefore, to counteract this double counting, we subtract each order's amount from the bridge destination
     // chain's virtual balance (i.e. HyperEVM in this case).
-    const pendingBridgeToHyperevm = await this._redisGetPendingBridgesPreDeposit();
+    const pendingBridgeToHyperevm = await this._redisGetPendingBridgesPreDeposit(account);
     for (const cloid of pendingBridgeToHyperevm) {
       const orderDetails = await this._redisGetOrderDetails(cloid);
       const { sourceChain, sourceToken, amountToTransfer } = orderDetails;
@@ -687,7 +693,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     }
 
     // For each pending withdrawal from Hypercore, check if it has finalized, and if it has, subtract its virtual balance from HyperEVM.
-    const pendingWithdrawalsFromHypercore = await this._redisGetPendingWithdrawals();
+    const pendingWithdrawalsFromHypercore = await this._redisGetPendingWithdrawals(account);
     if (pendingWithdrawalsFromHypercore.length > 0) {
       this.logger.debug({
         at: "HyperliquidStablecoinSwapAdapter.getPendingRebalances",
@@ -698,18 +704,27 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     const withdrawalInitiatedLookbackPeriod = 6 * 60 * 60;
     const withdrawalInitiatedFromTimestamp = getCurrentTime() - withdrawalInitiatedLookbackPeriod;
     let [unfinalizedUsdtWithdrawalAmount, unfinalizedUsdcWithdrawalAmount] = await Promise.all([
-      this._getUnfinalizedWithdrawalAmountFromHypercore("USDT", withdrawalInitiatedFromTimestamp * 1000),
-      this._getUnfinalizedWithdrawalAmountFromHypercore("USDC", withdrawalInitiatedFromTimestamp * 1000),
+      this._getUnfinalizedWithdrawalAmountFromHypercore(
+        account.toNative(),
+        "USDT",
+        withdrawalInitiatedFromTimestamp * 1000
+      ),
+      this._getUnfinalizedWithdrawalAmountFromHypercore(
+        account.toNative(),
+        "USDC",
+        withdrawalInitiatedFromTimestamp * 1000
+      ),
     ]);
     for (const cloid of pendingWithdrawalsFromHypercore) {
       const orderDetails = await this._redisGetOrderDetails(cloid);
       const { destinationToken, destinationChain } = orderDetails;
-      const matchingFill = await this._getMatchingFillForCloid(cloid);
+      const matchingFill = await this._getMatchingFillForCloid(account.toNative(), cloid);
       if (!matchingFill) {
         throw new Error(`No matching fill found for cloid ${cloid} that has status PENDING_WITHDRAWAL_FROM_HYPERCORE`);
       }
       // Check if order finalized and if so, subtract its virtual balance from HyperEVM.
       const initiatedWithdrawals = await this._getInitiatedWithdrawalsFromHypercore(
+        account.toNative(),
         destinationToken,
         matchingFill.details.time
       );
@@ -753,7 +768,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
 
     // For any pending orders at all, we should add a virtual balance to the destination chain. This includes
     // orders with statuses: { PENDING_BRIDGE_TO_HYPEREVM, PENDING_SWAP, PENDING_DEPOSIT_TO_HYPERCORE, PENDING_WITHDRAWAL_FROM_HYPERCORE },
-    const pendingOrders = await this._redisGetPendingOrders();
+    const pendingOrders = await this._redisGetPendingOrders(account);
     if (pendingOrders.length > 0) {
       this.logger.debug({
         at: "HyperliquidStablecoinSwapAdapter.getPendingRebalances",
@@ -786,7 +801,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
   }
 
   async getPendingOrders(): Promise<string[]> {
-    return this._redisGetPendingOrders();
+    return this._redisGetPendingOrders(this.baseSignerAddress);
   }
 
   // ////////////////////////////////////////////////////////////
@@ -934,15 +949,19 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
   }
 
   private async _getMatchingFillForCloid(
+    account: string,
     cloid: string
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ): Promise<{ details: any; amountToWithdraw: BigNumber } | undefined> {
+    const existingOrder = await this._redisGetOrderDetails(cloid);
+    const { destinationToken, destinationChain } = existingOrder;
+
     const infoClient = new hl.InfoClient({ transport: new hl.HttpTransport() });
     // Any fill that we are searching for in this client shouldn't be more than 24 hours old:
     const lookbackPeriodSeconds = 24 * 60 * 60;
     const fromTimestampSeconds = getCurrentTime() - lookbackPeriodSeconds;
     const userFills = await getUserFillsByTime(infoClient, {
-      user: this.baseSignerAddress.toNative(),
+      user: account,
       startTime: fromTimestampSeconds * 1000, // @dev Time here is in milliseconds.
       aggregateByTime: true, // Consolidates partial fills filled at the exact same time into a single fill, which
       // can happen if our order is large enough
@@ -952,8 +971,6 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     if (!matchingFill) {
       return undefined;
     }
-    const existingOrder = await this._redisGetOrderDetails(cloid);
-    const { destinationToken, destinationChain } = existingOrder;
     const destinationTokenMeta = this._getTokenMeta(destinationToken);
     const destinationTokenInfo = getTokenInfoFromSymbol(destinationToken, destinationChain);
 
@@ -1267,6 +1284,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
   }
 
   private async _getInitiatedWithdrawalsFromHypercore(
+    account: string,
     destinationToken: string,
     withdrawalInitiatedEarliestTimestampMilliseconds: number
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1275,7 +1293,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     const infoClient = new hl.InfoClient({ transport: new hl.HttpTransport() });
     const initiatedWithdrawals = (
       await getUserNonFundingLedgerUpdates(infoClient, {
-        user: this.baseSignerAddress.toNative(),
+        user: account,
         startTime: withdrawalInitiatedEarliestTimestampMilliseconds,
       })
     ).filter((_update) => {
@@ -1285,7 +1303,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         return (
           update.delta.token === this._remapTokenSymbolToHlSymbol(destinationToken) &&
           update.delta.destination.toLowerCase() === tokenMeta.evmSystemAddress.toNative().toLowerCase() &&
-          update.delta.user.toLowerCase() === this.baseSignerAddress.toNative().toLowerCase()
+          update.delta.user.toLowerCase() === account.toLowerCase()
         );
       } else {
         const update = _update;
@@ -1293,7 +1311,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
           update.delta.type === "spotTransfer" &&
           update.delta.token === this._remapTokenSymbolToHlSymbol(destinationToken) &&
           update.delta.destination.toLowerCase() === tokenMeta.evmSystemAddress.toNative().toLowerCase() &&
-          update.delta.user.toLowerCase() === this.baseSignerAddress.toNative().toLowerCase()
+          update.delta.user.toLowerCase() === account.toLowerCase()
         );
       }
       // @dev send type isn't correctly included in the SDK
@@ -1302,6 +1320,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
   }
 
   private async _getUnfinalizedWithdrawalAmountFromHypercore(
+    account: string,
     destinationToken: string,
     withdrawalInitiatedEarliestTimestampMilliseconds: number
   ): Promise<BigNumber> {
@@ -1320,7 +1339,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     const hyperevmToken = new Contract(
       this._getTokenInfo(destinationToken, HYPEREVM).address.toNative(),
       ERC20.abi,
-      this.baseSigner.connect(provider)
+      provider
     );
     const destinationTokenMeta = this._getTokenMeta(destinationToken);
     const destinationTokenInfo = getTokenInfoFromSymbol(destinationToken, HYPEREVM);
@@ -1331,11 +1350,15 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
           destinationToken === "USDC"
             ? USDC_CORE_DEPOSIT_WALLET_ADDRESS
             : destinationTokenMeta.evmSystemAddress.toNative(),
-          this.baseSignerAddress.toNative()
+          account
         ),
         finalizedWithdrawalEventSearchConfig
       ),
-      this._getInitiatedWithdrawalsFromHypercore(destinationToken, withdrawalInitiatedEarliestTimestampMilliseconds),
+      this._getInitiatedWithdrawalsFromHypercore(
+        account,
+        destinationToken,
+        withdrawalInitiatedEarliestTimestampMilliseconds
+      ),
     ]);
 
     let unfinalizedWithdrawalAmount = bnZero;

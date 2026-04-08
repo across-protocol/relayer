@@ -108,7 +108,7 @@ export class OftAdapter extends BaseAdapter {
 
   async updateRebalanceStatuses(): Promise<void> {
     this._assertInitialized();
-    const pendingBridges = await this._redisGetPendingBridgesPreDeposit();
+    const pendingBridges = await this._redisGetPendingBridgesPreDeposit(this.baseSignerAddress);
     if (pendingBridges.length > 0) {
       this.logger.debug({
         at: "OftAdapter.updateRebalanceStatuses",
@@ -134,11 +134,11 @@ export class OftAdapter extends BaseAdapter {
     return;
   }
 
-  async getPendingRebalances(): Promise<{ [chainId: number]: { [token: string]: BigNumber } }> {
+  async getPendingRebalances(account: EvmAddress): Promise<{ [chainId: number]: { [token: string]: BigNumber } }> {
     this._assertInitialized();
     const pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
 
-    const pendingBridges = await this._redisGetPendingBridgesPreDeposit();
+    const pendingBridges = await this._redisGetPendingBridgesPreDeposit(account);
     if (pendingBridges.length > 0) {
       this.logger.debug({
         at: "OftAdapter.getPendingRebalances",
@@ -184,7 +184,7 @@ export class OftAdapter extends BaseAdapter {
   }
 
   async getPendingOrders(): Promise<string[]> {
-    return this._redisGetPendingBridgesPreDeposit();
+    return this._redisGetPendingBridgesPreDeposit(this.baseSignerAddress);
   }
 
   protected async _getOftMessenger(chainId: number): Promise<Contract> {

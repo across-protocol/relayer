@@ -1,5 +1,5 @@
 import { RedisCache } from "../../caching/RedisCache";
-import { BigNumber, getRedisCache, isDefined, winston } from "../../utils";
+import { BigNumber, EvmAddress, getRedisCache, isDefined, winston } from "../../utils";
 
 // Redis keys are grouped by adapter so OFT and CCTP orders can be tracked independently while
 // still sharing the same reader implementation.
@@ -55,8 +55,8 @@ function getPendingBridgeRedisPrefix(adapter: PendingBridgeAdapterName): string 
   return adapter === "oft" ? OFT_PENDING_BRIDGE_REDIS_PREFIX : CCTP_PENDING_BRIDGE_REDIS_PREFIX;
 }
 
-function getPendingBridgeStatusSetKey(adapter: PendingBridgeAdapterName): string {
-  return `${getPendingBridgeRedisPrefix(adapter)}${PENDING_BRIDGE_PRE_DEPOSIT_REDIS_SUFFIX}`;
+function getPendingBridgeStatusSetKey(adapter: PendingBridgeAdapterName, account: EvmAddress): string {
+  return `${getPendingBridgeRedisPrefix(adapter)}${PENDING_BRIDGE_PRE_DEPOSIT_REDIS_SUFFIX}:${account.toNative().toLowerCase()}`;
 }
 
 function getPendingBridgeOrderKey(adapter: PendingBridgeAdapterName, cloid: string): string {
@@ -101,14 +101,16 @@ export class PendingBridgeRedisReader {
   async getPendingBridgeTxnRefsForRoute(
     adapter: PendingBridgeAdapterName,
     sourceChain: number,
-    destinationChain: number
+    destinationChain: number,
+    account: EvmAddress
   ): Promise<Set<string>> {
-    const { txnRefsByRoute } = await this.getPendingBridgeSnapshot(adapter);
+    const { txnRefsByRoute } = await this.getPendingBridgeSnapshot(adapter, account);
     return new Set(txnRefsByRoute[this.getRouteKey(sourceChain, destinationChain)] ?? []);
   }
 
-  private async getPendingBridgeSnapshot(adapter: PendingBridgeAdapterName): Promise<PendingBridgeSnapshot> {
-    const cachedSnapshot = this.snapshots[adapter];
+  private async getPendingBridgeSnapshot(adapter: PendingBridgeAdapterName, account: EvmAddress): Promise<PendingBridgeSnapshot> {
+    const cacheSnapshotKey = `${adapter}:${account.toNative()}`;
+    const cachedSnapshot = this.snapshots[cacheSnapshotKey];
     if (
       isDefined(cachedSnapshot) &&
       Date.now() - cachedSnapshot.loadedAtMs < PENDING_BRIDGE_REDIS_READER_CACHE_TTL_MS
@@ -117,17 +119,17 @@ export class PendingBridgeRedisReader {
     }
 
     // Avoid duplicate SMEMBERS + GET fanout while a refresh is already in flight for this adapter.
-    this.snapshotPromises[adapter] ??= this.loadPendingBridgeSnapshot(adapter);
+    this.snapshotPromises[cacheSnapshotKey] ??= this.loadPendingBridgeSnapshot(adapter, account);
     try {
-      const snapshot = await this.snapshotPromises[adapter];
-      this.snapshots[adapter] = snapshot;
+      const snapshot = await this.snapshotPromises[cacheSnapshotKey];
+      this.snapshots[cacheSnapshotKey] = snapshot;
       return snapshot;
     } finally {
-      this.snapshotPromises[adapter] = undefined;
+      this.snapshotPromises[cacheSnapshotKey] = undefined;
     }
   }
 
-  private async loadPendingBridgeSnapshot(adapter: PendingBridgeAdapterName): Promise<PendingBridgeSnapshot> {
+  private async loadPendingBridgeSnapshot(adapter: PendingBridgeAdapterName, account: EvmAddress): Promise<PendingBridgeSnapshot> {
     const redisCache = await this.getRedisCache();
     if (!isDefined(redisCache)) {
       // Status tracking is optional. When Redis is unavailable or disabled, behave as though there are
@@ -137,7 +139,7 @@ export class PendingBridgeRedisReader {
 
     // The set is the source of truth for "currently pending" orders. Each member points to a JSON blob
     // stored under its own key.
-    const cloids = await redisCache.sMembers(getPendingBridgeStatusSetKey(adapter));
+    const cloids = await redisCache.sMembers(getPendingBridgeStatusSetKey(adapter, account));
     const orders = await Promise.all(
       cloids.map(async (cloid) => {
         const rawOrder = await redisCache.get<string>(getPendingBridgeOrderKey(adapter, cloid));
