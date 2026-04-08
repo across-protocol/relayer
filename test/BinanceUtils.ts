@@ -195,6 +195,9 @@ describe("BinanceUtils recvWindow helpers", function () {
       transactionFeeFlag: false,
       recvWindow: BINANCE_WRITE_RECV_WINDOW_MS,
     });
+  });
+});
+
 describe("BinanceUtils withdrawal helpers", function () {
   it("only treats completed Binance withdrawals as completed", function () {
     expect(isCompletedBinanceWithdrawal(6)).to.equal(true);
