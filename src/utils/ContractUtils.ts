@@ -1,4 +1,5 @@
 import * as typechain from "@across-protocol/sdk/typechain";
+import { JsonFragment, ParamType } from "@ethersproject/abi";
 import {
   CHAIN_IDs,
   Contract,
@@ -9,17 +10,29 @@ import {
   chainIsEvm,
   SvmAddress,
   Address,
+  assert,
   isDefined,
 } from ".";
 import { CONTRACT_ADDRESSES } from "../common";
+import { isKeyOf } from "./TypeGuards";
+
+function getTypechainAbi(contractName: string): readonly JsonFragment[] {
+  const factoryName = `${contractName}__factory`;
+  if (!isKeyOf(factoryName, typechain)) {
+    throw new Error(`No typechain factory found for ${contractName}`);
+  }
+  const factory = typechain[factoryName];
+  assert("abi" in factory, `Typechain export ${factoryName} has no abi`);
+  return factory.abi as readonly JsonFragment[];
+}
 
 // Return an ethers contract instance for a deployed contract, imported from the Across-protocol contracts repo.
 export function getDeployedContract(contractName: string, networkId: number, signer?: Signer): Contract {
   try {
     const address = getDeployedAddress(contractName, networkId);
     // If the contractName is SpokePool then we need to modify it to find the correct contract factory artifact.
-    const artifact = typechain[`${contractName}__factory`];
-    return new Contract(address, artifact.abi, signer);
+    const abi = getTypechainAbi(contractName);
+    return new Contract(address, abi, signer);
   } catch (error) {
     throw new Error(`Could not find address for contract ${contractName} on ${networkId} (${error})`);
   }
@@ -65,10 +78,13 @@ export function getHubPoolAddress(chainId: number): EvmAddress {
   return EvmAddress.from(getDeployedAddress("HubPool", chainId, true));
 }
 
-export function getParamType(contractName: string, functionName: string, paramName: string): string {
-  const artifact = typechain[`${[contractName]}__factory`];
-  const fragment = artifact.abi.find((fragment: { name: string }) => fragment.name === functionName);
-  return fragment.inputs.find((input: { name: string }) => input.name === paramName) || "";
+export function getParamType(contractName: string, functionName: string, paramName: string): ParamType {
+  const abi = getTypechainAbi(contractName);
+  const fragment = abi.find((fragment) => fragment.name === functionName);
+  assert(isDefined(fragment?.inputs), `No inputs found for ${contractName}.${functionName}`);
+  const param = fragment.inputs.find((input) => input.name === paramName);
+  assert(isDefined(param), `No param ${paramName} found in ${contractName}.${functionName}`);
+  return ParamType.from(param);
 }
 
 export function getDeploymentBlockNumber(contractName: string, networkId: number): number {

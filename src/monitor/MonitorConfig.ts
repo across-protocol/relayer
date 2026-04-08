@@ -135,7 +135,19 @@ export class MonitorConfig extends CommonConfig {
 
     if (MONITORED_BALANCES) {
       this.monitoredBalances = JSON.parse(MONITORED_BALANCES).map(
-        ({ errorThreshold, warnThreshold, account, token, chainId: _chainId }: { errorThreshold?: string; warnThreshold?: string; account: string; token?: string; chainId: string }) => {
+        ({
+          errorThreshold,
+          warnThreshold,
+          account,
+          token,
+          chainId: _chainId,
+        }: {
+          errorThreshold?: string;
+          warnThreshold?: string;
+          account: string;
+          token?: string;
+          chainId: string;
+        }) => {
           const chainId = parseInt(_chainId);
           if (!isDefined(errorThreshold) && !isDefined(warnThreshold)) {
             throw new Error("Must provide either an errorThreshold or a warnThreshold");

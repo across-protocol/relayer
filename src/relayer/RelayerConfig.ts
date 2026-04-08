@@ -293,11 +293,7 @@ export class RelayerConfig extends CommonConfig {
               const effectiveSpokeToken = TOKEN_SYMBOLS_MAP[symbol].addresses[chainId];
 
               inventoryEntry[effectiveSpokeToken] ??= {};
-              inventoryEntry[effectiveSpokeToken][chainId] = parseTokenConfig(
-                l1Token,
-                chainId,
-                rawTokenConfig
-              );
+              inventoryEntry[effectiveSpokeToken][chainId] = parseTokenConfig(l1Token, chainId, rawTokenConfig);
             });
           });
           tokenConfigs[effectiveL1Token] = inventoryEntry;
