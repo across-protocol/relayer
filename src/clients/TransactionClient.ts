@@ -24,6 +24,9 @@ import {
   Signer,
   isDefined,
   getSpeedProvider,
+  chainIsTvm,
+  getTronWebFromEvmSigner,
+  submitTransactionTvm,
 } from "../utils";
 import { DEFAULT_GAS_FEE_SCALERS } from "../common";
 import { FeeData } from "@ethersproject/abstract-provider";
@@ -33,6 +36,10 @@ import { FeeData } from "@ethersproject/abstract-provider";
 const MIN_GAS_RETRY_SCALER_DEFAULT = 1.1;
 const MAX_GAS_RETRY_SCALER_DEFAULT = 3;
 const TRANSACTION_SUBMISSION_RETRIES_DEFAULT = 3;
+
+// Default TVM fee limit in SUN (1 TRX = 1,000,000 SUN). 100 TRX is a reasonable default for
+// contract interactions on TRON.
+const DEFAULT_TVM_FEE_LIMIT = 100_000_000;
 
 // Define chains that require legacy (type 0) transactions
 export const LEGACY_TRANSACTION_CHAINS = [CHAIN_IDs.BSC];
@@ -104,8 +111,9 @@ export class TransactionClient {
   }
 
   protected _getTransactionPromise(txn: AugmentedTransaction, nonce: number | null): Promise<TransactionResponse> {
-    const { contract, method, args, value, gasLimit } = txn;
-    return _runTransaction(this.logger, contract, method, args, value, gasLimit, nonce);
+    const { contract, method, args, value, gasLimit, chainId } = txn;
+    const transactionHandler = chainIsTvm(chainId) ? _runTransactionTvm : _runTransaction;
+    return transactionHandler(this.logger, contract, method, args, value, gasLimit, nonce);
   }
 
   protected async _submit(
@@ -269,18 +277,8 @@ async function _runTransaction(
   const chain = getNetworkName(chainId);
   const sendRawTxn = method === "";
 
-  retries ??= Number(
-    process.env[`TRANSACTION_SUBMISSION_RETRIES_${chainId}`] ??
-      process.env.TRANSACTION_SUBMISSION_RETRIES ??
-      TRANSACTION_SUBMISSION_RETRIES_DEFAULT
-  );
-
-  const priorityFeeScaler =
-    Number(process.env[`PRIORITY_FEE_SCALER_${chainId}`] || process.env.PRIORITY_FEE_SCALER) ||
-    DEFAULT_GAS_FEE_SCALERS[chainId]?.maxPriorityFeePerGasScaler;
-  const maxFeePerGasScaler =
-    Number(process.env[`MAX_FEE_PER_GAS_SCALER_${chainId}`] || process.env.MAX_FEE_PER_GAS_SCALER) ||
-    DEFAULT_GAS_FEE_SCALERS[chainId]?.maxFeePerGasScaler;
+  const { maxFeePerGasScaler, priorityFeeScaler, retries: _retries } = _readTransactionConfig(chainId);
+  retries ??= _retries;
 
   let gas: Partial<FeeData>;
   try {
@@ -406,6 +404,91 @@ async function _runTransaction(
   }
 }
 
+async function _runTransactionTvm(
+  logger: winston.Logger,
+  contract: Contract,
+  method: string,
+  args: unknown,
+  value = bnZero,
+  gasLimit: BigNumber | null = null,
+  _nonce: number | null = null,
+  retries?: number
+): Promise<TransactionResponse> {
+  const at = "TransactionClient#_runTransactionTvm";
+  const { provider } = contract;
+  const { chainId } = await provider.getNetwork();
+  const chain = getNetworkName(chainId);
+  const sendRawTxn = method === "";
+
+  const { maxFeePerGasScaler, priorityFeeScaler, retries: _retries } = _readTransactionConfig(chainId);
+  retries ??= _retries;
+
+  // The fee limit is a function of both the gas price and gas limit. We specify the number of TRX we are willing to spend
+  // on the transaction, not the number of unit gas to spend nor the max price for each unit gas.
+  // Essentially, the fee limit is just maxFeePerGas * gasLimit.
+  const { maxFeePerGas } = await getGasPrice(
+    provider,
+    priorityFeeScaler, // No priority fee scalar for TRON.
+    maxFeePerGasScaler,
+    sendRawTxn ? undefined : await contract.populateTransaction[method](...(args as Array<unknown>), { value })
+  );
+  const gasLimitNumber = gasLimit?.toNumber() ?? process.env.TVM_GAS_LIMIT;
+  const feeLimit = isDefined(gasLimitNumber) ? Number(gasLimitNumber) * maxFeePerGas.toNumber() : DEFAULT_TVM_FEE_LIMIT;
+
+  const tronWeb = getTronWebFromEvmSigner(contract.signer);
+  const populatedTransaction = sendRawTxn
+    ? { from: await contract.signer.getAddress(), to: contract.address, data: (args as Array<string>)[0] }
+    : await contract.populateTransaction[method](...(args as Array<unknown>), { value });
+
+  logger.debug({ at, message: "Submitting TVM transaction.", chain, method, feeLimit });
+  let result;
+  try {
+    result = await submitTransactionTvm(tronWeb, populatedTransaction, feeLimit, value.toNumber());
+  } catch (error) {
+    if (--retries < 0) {
+      throw error;
+    }
+    logger.debug({
+      at,
+      message: `TVM transaction submission failed on ${chain}, retrying.`,
+      method,
+      error: stringifyThrownValue(error),
+    });
+    return _runTransactionTvm(logger, contract, method, args, value, gasLimit, _nonce, retries);
+  }
+
+  if (!result.result) {
+    const error = new Error(`TVM transaction broadcast failed on ${chain}: ${result.txid}`);
+    if (--retries < 0) {
+      throw error;
+    }
+    logger.debug({
+      at,
+      message: `TVM broadcast returned result=false on ${chain}, retrying.`,
+      method,
+      txid: result.txid,
+    });
+    return _runTransactionTvm(logger, contract, method, args, value, gasLimit, _nonce, retries);
+  }
+
+  logger.debug({ at, message: "TVM transaction submitted.", chain, method, txid: result.txid });
+
+  // Adapt TronTransactionResult to an ethers-compatible TransactionResponse. TVM doesn't use
+  // nonces in the EVM sense, so we set nonce to 0 to satisfy downstream nonce tracking without
+  // side effects (TVM nonce tracking in submit() is harmless — it just overwrites to 0 each time).
+  return {
+    hash: result.txid,
+    nonce: 0,
+    confirmations: 0,
+    from: tronWeb.defaultAddress?.base58 ?? "",
+    chainId,
+    gasLimit: BigNumber.from(feeLimit),
+    value,
+    data: populatedTransaction.data ?? "0x",
+    wait: () => Promise.resolve({} as TransactionReceipt),
+  } as unknown as TransactionResponse;
+}
+
 /**
  * Apply local scaling to a gas price. The gas price can be scaled up in case it falls beneath an env-defined
  * price floor, or in case of a retry (i.e. due to replacement underpriced RPC rejection).
@@ -448,5 +531,30 @@ function _scaleGasPrice(
   return {
     maxFeePerGas,
     maxPriorityFeePerGas,
+  };
+}
+
+function _readTransactionConfig(chainId: number): {
+  maxFeePerGasScaler: number;
+  priorityFeeScaler: number;
+  retries: number;
+} {
+  const retries = Number(
+    process.env[`TRANSACTION_SUBMISSION_RETRIES_${chainId}`] ??
+      process.env.TRANSACTION_SUBMISSION_RETRIES ??
+      TRANSACTION_SUBMISSION_RETRIES_DEFAULT
+  );
+
+  const priorityFeeScaler =
+    Number(process.env[`PRIORITY_FEE_SCALER_${chainId}`] || process.env.PRIORITY_FEE_SCALER) ||
+    DEFAULT_GAS_FEE_SCALERS[chainId]?.maxPriorityFeePerGasScaler;
+  const maxFeePerGasScaler =
+    Number(process.env[`MAX_FEE_PER_GAS_SCALER_${chainId}`] || process.env.MAX_FEE_PER_GAS_SCALER) ||
+    DEFAULT_GAS_FEE_SCALERS[chainId]?.maxFeePerGasScaler;
+
+  return {
+    priorityFeeScaler,
+    maxFeePerGasScaler,
+    retries,
   };
 }
