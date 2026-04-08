@@ -277,18 +277,8 @@ async function _runTransaction(
   const chain = getNetworkName(chainId);
   const sendRawTxn = method === "";
 
-  retries ??= Number(
-    process.env[`TRANSACTION_SUBMISSION_RETRIES_${chainId}`] ??
-      process.env.TRANSACTION_SUBMISSION_RETRIES ??
-      TRANSACTION_SUBMISSION_RETRIES_DEFAULT
-  );
-
-  const priorityFeeScaler =
-    Number(process.env[`PRIORITY_FEE_SCALER_${chainId}`] || process.env.PRIORITY_FEE_SCALER) ||
-    DEFAULT_GAS_FEE_SCALERS[chainId]?.maxPriorityFeePerGasScaler;
-  const maxFeePerGasScaler =
-    Number(process.env[`MAX_FEE_PER_GAS_SCALER_${chainId}`] || process.env.MAX_FEE_PER_GAS_SCALER) ||
-    DEFAULT_GAS_FEE_SCALERS[chainId]?.maxFeePerGasScaler;
+  const { maxFeePerGasScaler, priorityFeeScaler, retries: _retries } = _readTransactionConfig(chainId);
+  retries ??= _retries;
 
   let gas: Partial<FeeData>;
   try {
@@ -430,22 +420,15 @@ async function _runTransactionTvm(
   const chain = getNetworkName(chainId);
   const sendRawTxn = contract.method === "";
 
-  retries ??= Number(
-    process.env[`TRANSACTION_SUBMISSION_RETRIES_${chainId}`] ??
-      process.env.TRANSACTION_SUBMISSION_RETRIES ??
-      TRANSACTION_SUBMISSION_RETRIES_DEFAULT
-  );
-
-  const maxFeePerGasScaler =
-    Number(process.env[`MAX_FEE_PER_GAS_SCALER_${chainId}`] || process.env.MAX_FEE_PER_GAS_SCALER) ||
-    DEFAULT_GAS_FEE_SCALERS[chainId]?.maxFeePerGasScaler;
+  const { maxFeePerGasScaler, priorityFeeScaler, retries: _retries } = _readTransactionConfig(chainId);
+  retries ??= _retries;
 
   // The fee limit is a function of both the gas price and gas limit. We specify the number of TRX we are willing to spend
   // on the transaction, not the number of unit gas to spend nor the max price for each unit gas.
   // Essentially, the fee limit is just maxFeePerGas * gasLimit.
   const { maxFeePerGas } = await getGasPrice(
     provider,
-    1, // No priority fee scalar for TRON.
+    priorityFeeScaler, // No priority fee scalar for TRON.
     maxFeePerGasScaler,
     sendRawTxn ? undefined : await contract.populateTransaction[method](...(args as Array<unknown>), { value })
   );
@@ -546,5 +529,30 @@ function _scaleGasPrice(
   return {
     maxFeePerGas,
     maxPriorityFeePerGas,
+  };
+}
+
+function _readTransactionConfig(chainId: number): {
+  maxFeePerGasScaler: number;
+  priorityFeeScaler: number;
+  retries: number;
+} {
+  const retries = Number(
+    process.env[`TRANSACTION_SUBMISSION_RETRIES_${chainId}`] ??
+      process.env.TRANSACTION_SUBMISSION_RETRIES ??
+      TRANSACTION_SUBMISSION_RETRIES_DEFAULT
+  );
+
+  const priorityFeeScaler =
+    Number(process.env[`PRIORITY_FEE_SCALER_${chainId}`] || process.env.PRIORITY_FEE_SCALER) ||
+    DEFAULT_GAS_FEE_SCALERS[chainId]?.maxPriorityFeePerGasScaler;
+  const maxFeePerGasScaler =
+    Number(process.env[`MAX_FEE_PER_GAS_SCALER_${chainId}`] || process.env.MAX_FEE_PER_GAS_SCALER) ||
+    DEFAULT_GAS_FEE_SCALERS[chainId]?.maxFeePerGasScaler;
+
+  return {
+    priorityFeeScaler,
+    maxFeePerGasScaler,
+    retries,
   };
 }
