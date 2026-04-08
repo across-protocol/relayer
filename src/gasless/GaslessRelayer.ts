@@ -1,5 +1,6 @@
 import winston from "winston";
 import { GaslessRelayerConfig } from "./GaslessRelayerConfig";
+import { RedisCacheInterface } from "../caching/RedisCache";
 import {
   Address,
   isDefined,
@@ -102,7 +103,7 @@ const stateToStr = (state: MessageState) => MESSAGE_STATES[state] ?? "UNKNOWN";
  */
 export class GaslessRelayer {
   private abortController = new AbortController();
-  private instanceCoordinator;
+  private instanceCoordinator: InstanceCoordinator;
   private initialized = false;
 
   protected messageState: { [key: string]: MessageState } = {};
@@ -125,7 +126,7 @@ export class GaslessRelayer {
   protected signerAddress: EvmAddress;
 
   private transactionClient;
-  private redisCache;
+  private redisCache: RedisCacheInterface | undefined;
 
   public constructor(
     readonly logger: winston.Logger,

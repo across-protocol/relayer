@@ -32,7 +32,7 @@ import ERC20_ABI from "../../common/abi/MinimalERC20.json";
 export class BinanceCEXBridge extends BaseBridgeAdapter {
   // Only store the promise in the constructor and evaluate the promise in async blocks.
   protected readonly binanceApiClientPromise;
-  protected binanceApiClient;
+  protected binanceApiClient: Awaited<ReturnType<typeof getBinanceApiClient>> | undefined;
   protected tokenSymbol: string;
   protected l2Provider: Provider;
 

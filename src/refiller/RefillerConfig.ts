@@ -42,7 +42,7 @@ export class RefillerConfig extends CommonConfig {
     // Used to send tokens if available in wallet to balances under target balances.
     if (REFILL_BALANCES) {
       this.refillEnabledBalances = JSON.parse(REFILL_BALANCES).map(
-        ({ chainId, account, isHubPool, target, trigger, token }) => {
+        ({ chainId, account, isHubPool, target, trigger, token }: { chainId: number; account: string; isHubPool?: boolean; target: number; trigger: number; token?: string }) => {
           validate(chainId, account, target, trigger);
           return {
             // Required fields:

@@ -99,7 +99,7 @@ const chainFinalizers: {
  * @returns void
  */
 function generateChainConfig(): void {
-  const erc20Defaults = {
+  const erc20Defaults: Partial<Record<ChainFamily, typeof opStackFinalizer>> = {
     [ChainFamily.OP_STACK]: opStackFinalizer,
     [ChainFamily.ORBIT]: arbStackFinalizer,
     [ChainFamily.ZK_STACK]: zkSyncFinalizer,

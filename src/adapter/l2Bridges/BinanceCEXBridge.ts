@@ -31,7 +31,7 @@ import { AugmentedTransaction } from "../../clients/TransactionClient";
 export class BinanceCEXBridge extends BaseL2BridgeAdapter {
   // Store the promise to be evaluated when needed so that we can construct the bridge synchronously.
   protected readonly binanceApiClientPromise;
-  protected binanceApiClient;
+  protected binanceApiClient: Awaited<ReturnType<typeof getBinanceApiClient>> | undefined;
   // Store the token info for the bridge so we can reference the L1 decimals and L1 token symbol.
   protected l1TokenInfo: L1Token;
   // The deposit network corresponding to the L2.

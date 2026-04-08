@@ -162,12 +162,13 @@ function subEvents(eventMgr: EventManager, spokePool: Contract, eventNames: stri
         abi,
         eventName,
         onLogs: (logs: viemLog[]) =>
-          logs.forEach((log) => {
+          logs.forEach((_log) => {
+            const log = _log as viemLog & { args: unknown; eventName: string };
             const event = {
               ...log,
-              args: log["args"],
+              args: log.args,
               blockNumber: Number(log.blockNumber),
-              event: log["eventName"],
+              event: log.eventName,
               topics: Array<string>(), // Not supplied by viem, but not actually used by the relayer.
             };
             if (log.removed) {

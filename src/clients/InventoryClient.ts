@@ -1807,7 +1807,7 @@ export class InventoryClient {
     }
 
     // If any of the mapped symbols reference chainId, token is enabled.
-    return Object.keys(tokenConfig).some((symbol) => isDefined(tokenConfig[symbol][chainId]));
+    return isAliasConfig(tokenConfig) && Object.keys(tokenConfig).some((symbol) => isDefined(tokenConfig[symbol][chainId]));
   }
 
   /**
