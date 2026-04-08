@@ -22,6 +22,7 @@ import {
   getBinanceDepositType,
   BinanceTransactionType,
   getBinanceWithdrawalType,
+  isCompletedBinanceWithdrawal,
   getOutstandingBinanceDeposits,
 } from "../../utils";
 import { L1Token } from "../../interfaces";
@@ -111,6 +112,7 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
     const withdrawHistory = await filterAsync(_withdrawHistory, async (withdrawal) => {
       const withdrawalType = await getBinanceWithdrawalType(withdrawal);
       return (
+        isCompletedBinanceWithdrawal(withdrawal.status) &&
         withdrawal.network === BINANCE_NETWORKS[CHAIN_IDs.MAINNET] &&
         compareAddressesSimple(withdrawal.recipient, fromAddress.toNative()) &&
         withdrawalType !== BinanceTransactionType.SWAP

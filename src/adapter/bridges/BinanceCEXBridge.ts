@@ -25,6 +25,7 @@ import {
   getBinanceDepositType,
   BinanceTransactionType,
   getBinanceWithdrawalType,
+  isCompletedBinanceWithdrawal,
   toAddressType,
 } from "../../utils";
 import { BaseBridgeAdapter, BridgeTransactionDetails, BridgeEvents, BridgeEvent } from "./BaseBridgeAdapter";
@@ -156,6 +157,7 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
     const withdrawalHistory = await filterAsync(_withdrawalHistory, async (withdrawal) => {
       const withdrawalType = await getBinanceWithdrawalType(withdrawal);
       return (
+        isCompletedBinanceWithdrawal(withdrawal.status) &&
         withdrawal.network === BINANCE_NETWORKS[CHAIN_IDs.BSC] &&
         compareAddressesSimple(withdrawal.recipient, toAddress.toNative()) &&
         withdrawalType !== BinanceTransactionType.SWAP

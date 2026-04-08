@@ -11,6 +11,7 @@ import {
   getOutstandingBinanceDeposits,
   submitBinanceOrder,
   submitBinanceWithdrawal,
+  isCompletedBinanceWithdrawal,
 } from "../src/utils";
 
 function makeDeposit(network: string, amount: number, insertTime: number): BinanceDeposit {
@@ -194,5 +195,13 @@ describe("BinanceUtils recvWindow helpers", function () {
       transactionFeeFlag: false,
       recvWindow: BINANCE_WRITE_RECV_WINDOW_MS,
     });
+describe("BinanceUtils withdrawal helpers", function () {
+  it("only treats completed Binance withdrawals as completed", function () {
+    expect(isCompletedBinanceWithdrawal(6)).to.equal(true);
+    expect(isCompletedBinanceWithdrawal(0)).to.equal(false);
+    expect(isCompletedBinanceWithdrawal(2)).to.equal(false);
+    expect(isCompletedBinanceWithdrawal(4)).to.equal(false);
+    expect(isCompletedBinanceWithdrawal(5)).to.equal(false);
+    expect(isCompletedBinanceWithdrawal(undefined)).to.equal(false);
   });
 });
