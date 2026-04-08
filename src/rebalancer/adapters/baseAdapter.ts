@@ -248,7 +248,11 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     });
   }
 
-  private async _redisDeleteOrderForAccount(cloid: string, currentStatus: number, account: EvmAddress): Promise<[number, number]> {
+  private async _redisDeleteOrderForAccount(
+    cloid: string,
+    currentStatus: number,
+    account: EvmAddress
+  ): Promise<[number, number]> {
     const orderStatusKey = this._redisGetOrderStatusKey(currentStatus, account.toNative());
     const orderDetailsKey = `${this._redisGetPendingOrderKey()}:${cloid}`;
     return await Promise.all([this.redisCache.sRem(orderStatusKey, cloid), this.redisCache.del(orderDetailsKey)]);

@@ -108,7 +108,10 @@ export class PendingBridgeRedisReader {
     return new Set(txnRefsByRoute[this.getRouteKey(sourceChain, destinationChain)] ?? []);
   }
 
-  private async getPendingBridgeSnapshot(adapter: PendingBridgeAdapterName, account: EvmAddress): Promise<PendingBridgeSnapshot> {
+  private async getPendingBridgeSnapshot(
+    adapter: PendingBridgeAdapterName,
+    account: EvmAddress
+  ): Promise<PendingBridgeSnapshot> {
     const cacheSnapshotKey = `${adapter}:${account.toNative()}`;
     const cachedSnapshot = this.snapshots[cacheSnapshotKey];
     if (
@@ -129,7 +132,10 @@ export class PendingBridgeRedisReader {
     }
   }
 
-  private async loadPendingBridgeSnapshot(adapter: PendingBridgeAdapterName, account: EvmAddress): Promise<PendingBridgeSnapshot> {
+  private async loadPendingBridgeSnapshot(
+    adapter: PendingBridgeAdapterName,
+    account: EvmAddress
+  ): Promise<PendingBridgeSnapshot> {
     const redisCache = await this.getRedisCache();
     if (!isDefined(redisCache)) {
       // Status tracking is optional. When Redis is unavailable or disabled, behave as though there are
