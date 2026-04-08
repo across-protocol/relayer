@@ -10,7 +10,9 @@ import {
   Address,
   winston,
   CHAIN_IDs,
+  chainIsTvm,
   getTokenInfo,
+  fixedPointAdjustment,
 } from "../../utils";
 import { interfaces as sdkInterfaces } from "@across-protocol/sdk";
 import { processEvent } from "../utils";
@@ -35,6 +37,7 @@ export class OFTBridge extends BaseBridgeAdapter {
   private l1TokenInfo: sdkInterfaces.TokenInfo;
   private sharedDecimals?: number;
   private readonly nativeFeeCap: BigNumber;
+  private readonly feePct: BigNumber = BigNumber.from(5 * 10 ** 15); // Default fee percent of 0.5%
 
   constructor(
     l2ChainId: number,
@@ -52,8 +55,8 @@ export class OFTBridge extends BaseBridgeAdapter {
     );
 
     // Route discovery via configured IOFT messengers: if both L1 and L2 messengers exist, the route exists
-    const l1OftMessenger = OFT.getMessengerEvm(l1TokenAddress, l1ChainId);
-    const l2OftMessenger = OFT.getMessengerEvm(l1TokenAddress, l2ChainId);
+    const l1OftMessenger = OFT.getMessengerEvm(l1TokenAddress, l1ChainId, l2ChainId);
+    const l2OftMessenger = OFT.getMessengerEvm(l1TokenAddress, l2ChainId, l2ChainId);
 
     super(l2ChainId, l1ChainId, l1Signer, [l1OftMessenger]);
 
@@ -116,16 +119,20 @@ export class OFTBridge extends BaseBridgeAdapter {
     // We round `amount` to a specific precision to prevent rounding on the contract side. This way, we
     // receive the exact amount we sent in the transaction
     const roundedAmount = await this.roundAmountToSend(amount);
+    let minAmountLD = roundedAmount;
     let extraOptions: BytesLike = "0x";
     if (this.l2chainId === CHAIN_IDs.MONAD) {
       extraOptions = Options.newOptions().addExecutorLzReceiveOption(MONAD_EXECUTOR_LZ_RECEIVE_GAS_LIMIT).toBytes();
+    }
+    if (chainIsTvm(this.l2chainId)) {
+      minAmountLD = minAmountLD.sub(minAmountLD.mul(this.feePct).div(fixedPointAdjustment));
     }
     const sendParamStruct: OFT.SendParamStruct = {
       dstEid: this.l2ChainEid,
       to: OFT.formatToAddress(toAddress),
       amountLD: roundedAmount,
       // @dev Setting `minAmountLD` equal to `amountLD` ensures we won't hit contract-side rounding
-      minAmountLD: roundedAmount,
+      minAmountLD,
       extraOptions,
       composeMsg: "0x",
       oftCmd: "0x",

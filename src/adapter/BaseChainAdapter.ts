@@ -366,17 +366,22 @@ export class BaseChainAdapter {
       getBlockForTimestamp(this.logger, this.hubChainId, getCurrentTime() - lookbackPeriodSeconds),
       getBlockForTimestamp(this.logger, this.chainId, getCurrentTime() - lookbackPeriodSeconds),
     ]);
-    const hubChainBlockRange = this.spokePoolManager.getClient(this.hubChainId).eventSearchConfig.maxLookBack;
+
+    const l1SpokePoolClient = this.spokePoolManager.getClient(this.hubChainId);
+    const hubChainBlockRange = l1SpokePoolClient.eventSearchConfig.maxLookBack;
+    const l1LatestBlock = l1SpokePoolClient.latestHeightSearched;
     const l1EventSearchConfig = {
       from: l1SearchFromBlock,
-      to: this.baseL1SearchConfig.to,
+      to: this.baseL1SearchConfig?.to ?? l1LatestBlock,
       maxLookBack: hubChainBlockRange,
     };
 
-    const spokeChainBlockRange = this.spokePoolManager.getClient(this.chainId).eventSearchConfig.maxLookBack;
+    const l2SpokePoolClient = this.spokePoolManager.getClient(this.chainId);
+    const spokeChainBlockRange = l2SpokePoolClient.eventSearchConfig.maxLookBack;
+    const l2LatestBlock = l2SpokePoolClient.latestHeightSearched;
     const l2EventSearchConfig = {
       from: l2SearchFromBlock,
-      to: this.baseL2SearchConfig.to,
+      to: this.baseL2SearchConfig?.to ?? l2LatestBlock,
       maxLookBack: spokeChainBlockRange,
     };
 
