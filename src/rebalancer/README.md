@@ -47,6 +47,17 @@ Implemented production swap adapters:
 Pending-status Redis sets are keyed by adapter status and signer address, so callers can request pending rebalance
 accounting for a specific EVM account while keeping independently operated accounts isolated from one another.
 
+Binance account assumption:
+
+- `relayer-v2` currently assumes all bots and clients that interact with the Binance rebalancer adapter share the same
+  Binance account and API credentials.
+- The `account` passed into `getPendingRebalances(account)` selects which EVM address owns the on-chain leg and Redis
+  status entries being inspected; it does not select a different Binance exchange account.
+- This is why Binance fill/order lookups remain scoped to the adapter's configured Binance API client even when
+  Monitor or `ReadOnlyRebalancerClient` asks for pending rebalance accounting for multiple relayer EVM accounts.
+- If the system ever needs one deployment to inspect or operate multiple Binance accounts simultaneously, the adapter
+  and its documentation should be revisited because the current model intentionally does not support that.
+
 ### Pending-order cache lifecycle and recovery
 
 When adapters create new orders, order detail keys are stored with `REBALANCER_PENDING_ORDER_TTL` (default: 1 hour).
@@ -56,6 +67,16 @@ If an order does not finalize before the TTL expires, order details and associat
 eventually pruned from Redis cache state. At that point, operators should rely on adapter lifecycle reconciliation
 (including `sweepIntermediateBalances`) to recover stranded intermediate capital instead of assuming pending-order cache
 entries remain indefinitely.
+
+Contributor guidance:
+
+- Pending rebalance orders are intentionally short lived. In practice, a legacy Redis order-schema change is usually
+  low risk because stale payloads age out quickly under the default 1-hour TTL.
+- Prefer waiting out the TTL or rotating `REBALANCER_STATUS_TRACKING_NAMESPACE` over writing complex migration logic for
+  old pending-order payloads, unless you know there are still recent orders that must continue to reconcile in place.
+- Namespace rotation is operationally straightforward because the status-tracking cache is already isolated from the
+  rest of the application's Redis usage, and stale intermediate balances can be recovered through the normal adapter
+  reconciliation path.
 
 Operational warning:
 
