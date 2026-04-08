@@ -64,7 +64,10 @@ function getTxnRefFromCloid(adapter: PendingBridgeAdapterName, cloid: string): s
   return txnHashParts.join("-");
 }
 
-// Reads the rebalancer's pending bridge bookkeeping from Redis.
+// Reads the rebalancer's pending bridge bookkeeping from Redis. The point of this class is to be even more lightweight
+// than the ReadOnlyRebalancerClient class so it can be used more easily in the src/adapters' code to help
+// filter out CCTP/OFT bridges that were sent from the Rebalancer and can be ignored from the InventoryClient's
+// accounting.
 //
 // Goal:
 // Bridge adapters and higher-level clients need to recognize transfers that were initiated by the

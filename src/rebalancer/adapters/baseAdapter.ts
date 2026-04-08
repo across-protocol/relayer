@@ -141,11 +141,14 @@ export abstract class BaseAdapter implements RebalancerAdapter {
   // PROTECTED REDIS HELPER METHODS
   // ////////////////////////////////////////////////////////////
 
-  // @dev Can only be used to update the status owned by this.baseSignerAddress, for safety.
-  protected async _redisUpdateOrderStatus(cloid: string, oldStatus: number, status: number): Promise<void> {
-    const account = this.baseSignerAddress.toNative();
-    const oldOrderStatusKey = getPendingBridgeStatusSetKey(this.REDIS_PREFIX, oldStatus, account);
-    const newOrderStatusKey = getPendingBridgeStatusSetKey(this.REDIS_PREFIX, status, account);
+  protected async _redisUpdateOrderStatus(
+    cloid: string,
+    oldStatus: number,
+    status: number,
+    account: EvmAddress
+  ): Promise<void> {
+    const oldOrderStatusKey = getPendingBridgeStatusSetKey(this.REDIS_PREFIX, oldStatus, account.toNative());
+    const newOrderStatusKey = getPendingBridgeStatusSetKey(this.REDIS_PREFIX, status, account.toNative());
     const result = await Promise.all([
       this.redisCache.sRem(oldOrderStatusKey, cloid),
       this.redisCache.sAdd(newOrderStatusKey, cloid),
@@ -162,11 +165,11 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     status: number,
     rebalanceRoute: RebalanceRoute,
     amountToTransfer: BigNumber,
+    account: EvmAddress,
     ttlOverride?: number
   ): Promise<void> {
-    const account = this.baseSignerAddress.toNative();
-    const orderStatusKey = getPendingBridgeStatusSetKey(this.REDIS_PREFIX, status, account);
-    const orderDetailsKey = getPendingBridgeOrderKey(this.REDIS_PREFIX, cloid, account);
+    const orderStatusKey = getPendingBridgeStatusSetKey(this.REDIS_PREFIX, status, account.toNative());
+    const orderDetailsKey = getPendingBridgeOrderKey(this.REDIS_PREFIX, cloid, account.toNative());
 
     // Create a new order in Redis. We use a TTL of 1 hour so that all orders that are finalized in 1 hour are
     // deleted from Redis and a RebalancerClient can sweep any excess balances that are left over on exchanges.
@@ -230,24 +233,18 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     };
   }
 
-  // @dev Can only be used to delete the order owned by this.baseSignerAddress, for safety.
-  protected async _redisDeleteOrder(cloid: string, currentStatus: number): Promise<void> {
-    const result = await this._redisDeleteOrderForAccount(cloid, currentStatus, this.baseSignerAddress);
+  protected async _redisDeleteOrder(cloid: string, currentStatus: number, account: EvmAddress): Promise<void> {
+    const orderStatusKey = getPendingBridgeStatusSetKey(this.REDIS_PREFIX, currentStatus, account.toNative());
+    const orderDetailsKey = getPendingBridgeOrderKey(this.REDIS_PREFIX, cloid, account.toNative());
+    const result = await Promise.all([
+      this.redisCache.sRem(orderStatusKey, cloid),
+      this.redisCache.del(orderDetailsKey),
+    ]);
     this.logger.debug({
       at: "BaseAdapter._redisDeleteOrder",
       message: `Deleted order details for cloid ${cloid}`,
       result,
     });
-  }
-
-  private async _redisDeleteOrderForAccount(
-    cloid: string,
-    currentStatus: number,
-    account: EvmAddress
-  ): Promise<[number, number]> {
-    const orderStatusKey = getPendingBridgeStatusSetKey(this.REDIS_PREFIX, currentStatus, account.toNative());
-    const orderDetailsKey = getPendingBridgeOrderKey(this.REDIS_PREFIX, cloid, account.toNative());
-    return await Promise.all([this.redisCache.sRem(orderStatusKey, cloid), this.redisCache.del(orderDetailsKey)]);
   }
 
   protected _redisGetLatestNonceKey(): string {
@@ -269,7 +266,7 @@ export abstract class BaseAdapter implements RebalancerAdapter {
           at: "BaseAdapter._redisCleanupPendingOrders",
           message: `Deleting expired order details for cloid ${cloid} from status set ${getPendingBridgeStatusSetKey(this.REDIS_PREFIX, status, account.toNative())}`,
         });
-        await this._redisDeleteOrderForAccount(cloid, status, account);
+        await this._redisDeleteOrder(cloid, status, account);
       }
     });
   }

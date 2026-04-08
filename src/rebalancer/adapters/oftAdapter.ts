@@ -102,6 +102,7 @@ export class OftAdapter extends BaseAdapter {
       STATUS.PENDING_BRIDGE_PRE_DEPOSIT,
       rebalanceRoute,
       amountToTransfer,
+      this.baseSignerAddress,
       ttlOverride
     );
     return amountToTransfer;
@@ -125,7 +126,7 @@ export class OftAdapter extends BaseAdapter {
           at: "OftAdapter.updateRebalanceStatuses",
           message: `Order cloid ${txnHash} has been finalized`,
         });
-        await this._redisDeleteOrder(txnHash, STATUS.PENDING_BRIDGE_PRE_DEPOSIT);
+        await this._redisDeleteOrder(txnHash, STATUS.PENDING_BRIDGE_PRE_DEPOSIT, this.baseSignerAddress);
       }
     }
   }

@@ -256,7 +256,13 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
 
       const amountReceivedFromBridge = await this._bridgeToChain(sourceToken, sourceChain, HYPEREVM, amountToTransfer);
 
-      await this._redisCreateOrder(cloid, STATUS.PENDING_BRIDGE_TO_HYPEREVM, rebalanceRoute, amountReceivedFromBridge);
+      await this._redisCreateOrder(
+        cloid,
+        STATUS.PENDING_BRIDGE_TO_HYPEREVM,
+        rebalanceRoute,
+        amountReceivedFromBridge,
+        this.baseSignerAddress
+      );
       return amountReceivedFromBridge;
     } else {
       this.logger.info({
@@ -268,7 +274,13 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       });
 
       await this._depositToHypercore(sourceToken, amountToTransfer);
-      await this._redisCreateOrder(cloid, STATUS.PENDING_DEPOSIT_TO_HYPERCORE, rebalanceRoute, amountToTransfer);
+      await this._redisCreateOrder(
+        cloid,
+        STATUS.PENDING_DEPOSIT_TO_HYPERCORE,
+        rebalanceRoute,
+        amountToTransfer,
+        this.baseSignerAddress
+      );
       return amountToTransfer;
     }
   }
@@ -318,7 +330,8 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         await this._redisUpdateOrderStatus(
           cloid,
           STATUS.PENDING_BRIDGE_TO_HYPEREVM,
-          STATUS.PENDING_DEPOSIT_TO_HYPERCORE
+          STATUS.PENDING_DEPOSIT_TO_HYPERCORE,
+          this.baseSignerAddress
         );
       }
     }
@@ -335,7 +348,12 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       const orderDetails = await this._redisGetOrderDetails(cloid, this.baseSignerAddress);
       const orderResult = await this._createHlOrder(orderDetails, cloid);
       if (orderResult) {
-        await this._redisUpdateOrderStatus(cloid, STATUS.PENDING_DEPOSIT_TO_HYPERCORE, STATUS.PENDING_SWAP);
+        await this._redisUpdateOrderStatus(
+          cloid,
+          STATUS.PENDING_DEPOSIT_TO_HYPERCORE,
+          STATUS.PENDING_SWAP,
+          this.baseSignerAddress
+        );
         // Wait some time after placing a new order to allow for it to execute and hopefully be immediately filled
         // and reflected in our HL balance. Then in the next step we can withdraw it from Hypercore.
         await this._wait(10);
@@ -381,7 +399,12 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         });
         const success = await this._withdrawToHyperevm(existingOrder.destinationToken, matchingFill.amountToWithdraw);
         if (success) {
-          await this._redisUpdateOrderStatus(cloid, STATUS.PENDING_SWAP, STATUS.PENDING_WITHDRAWAL_FROM_HYPERCORE);
+          await this._redisUpdateOrderStatus(
+            cloid,
+            STATUS.PENDING_SWAP,
+            STATUS.PENDING_WITHDRAWAL_FROM_HYPERCORE,
+            this.baseSignerAddress
+          );
         }
       } else if (!matchingOpenOrder) {
         this.logger.debug({
@@ -469,7 +492,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         await this._bridgeToChain(destinationToken, HYPEREVM, destinationChain, expectedAmountToReceive);
       }
       // We no longer need this order information, so we can delete it:
-      await this._redisDeleteOrder(cloid, STATUS.PENDING_WITHDRAWAL_FROM_HYPERCORE);
+      await this._redisDeleteOrder(cloid, STATUS.PENDING_WITHDRAWAL_FROM_HYPERCORE, this.baseSignerAddress);
     }
   }
 

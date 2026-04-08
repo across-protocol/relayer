@@ -89,7 +89,13 @@ export class CctpAdapter extends BaseAdapter {
       amountToTransfer
     );
     const cloid = this.getCloidForBridge(rebalanceRoute, txnHash);
-    await this._redisCreateOrder(cloid, STATUS.PENDING_BRIDGE_PRE_DEPOSIT, rebalanceRoute, amountToReceive);
+    await this._redisCreateOrder(
+      cloid,
+      STATUS.PENDING_BRIDGE_PRE_DEPOSIT,
+      rebalanceRoute,
+      amountToReceive,
+      this.baseSignerAddress
+    );
     return amountToReceive;
   }
 
@@ -129,7 +135,7 @@ export class CctpAdapter extends BaseAdapter {
         at: "CctpAdapter.updateRebalanceStatuses",
         message: `Order cloid ${cloid} has been finalized`,
       });
-      await this._redisDeleteOrder(cloid, STATUS.PENDING_BRIDGE_PRE_DEPOSIT);
+      await this._redisDeleteOrder(cloid, STATUS.PENDING_BRIDGE_PRE_DEPOSIT, this.baseSignerAddress);
     }
   }
 

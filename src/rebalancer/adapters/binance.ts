@@ -223,7 +223,12 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
           depositNetworkBalance: depositNetworkBalance.toString(),
         });
         await this._depositToBinance(sourceToken, binanceDepositNetwork, requiredAmountOnDepositNetwork);
-        await this._redisUpdateOrderStatus(cloid, STATUS.PENDING_BRIDGE_PRE_DEPOSIT, STATUS.PENDING_DEPOSIT);
+        await this._redisUpdateOrderStatus(
+          cloid,
+          STATUS.PENDING_BRIDGE_PRE_DEPOSIT,
+          STATUS.PENDING_DEPOSIT,
+          this.baseSignerAddress
+        );
       }
     }
 
@@ -257,7 +262,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         requiredBalance: amountToTransfer.toString(),
       });
       await this._placeMarketOrder(cloid, orderDetails);
-      await this._redisUpdateOrderStatus(cloid, STATUS.PENDING_DEPOSIT, STATUS.PENDING_SWAP);
+      await this._redisUpdateOrderStatus(cloid, STATUS.PENDING_DEPOSIT, STATUS.PENDING_SWAP, this.baseSignerAddress);
       // Delay a bit before checking balances to withdraw so we can give this function a chance to successively place
       // a market order successfully and subsequently withdraw the filled order. It takes a short time for the just filled
       // order to be reflected in the balance.
@@ -295,7 +300,12 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
           balanceBeforeWithdraw: balance,
         });
         await this._withdraw(cloid, withdrawAmount, destinationToken, destinationChain);
-        await this._redisUpdateOrderStatus(cloid, STATUS.PENDING_SWAP, STATUS.PENDING_WITHDRAWAL);
+        await this._redisUpdateOrderStatus(
+          cloid,
+          STATUS.PENDING_SWAP,
+          STATUS.PENDING_WITHDRAWAL,
+          this.baseSignerAddress
+        );
         // Delay a bit before checking checking whether this withdrawal has finalized so we have a chance at immediately
         // marking it as finalized and delete it from Redis.
         await this._wait(10);
@@ -352,7 +362,12 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
           failedWithdrawal,
         });
         await this._redisDeleteInitiatedWithdrawalId(cloid);
-        await this._redisUpdateOrderStatus(cloid, STATUS.PENDING_WITHDRAWAL, STATUS.PENDING_SWAP);
+        await this._redisUpdateOrderStatus(
+          cloid,
+          STATUS.PENDING_WITHDRAWAL,
+          STATUS.PENDING_SWAP,
+          this.baseSignerAddress
+        );
         continue;
       }
       const initiatedWithdrawalIsUnfinalized = unfinalizedWithdrawals.find(
@@ -417,7 +432,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         });
       }
       // We no longer need this order information, so we can delete it.
-      await this._redisDeleteOrder(cloid, STATUS.PENDING_WITHDRAWAL);
+      await this._redisDeleteOrder(cloid, STATUS.PENDING_WITHDRAWAL, this.baseSignerAddress);
     }
   }
 
@@ -659,7 +674,13 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         binanceDepositNetwork,
         amountToTransfer
       );
-      await this._redisCreateOrder(cloid, STATUS.PENDING_BRIDGE_PRE_DEPOSIT, rebalanceRoute, amountReceivedFromBridge);
+      await this._redisCreateOrder(
+        cloid,
+        STATUS.PENDING_BRIDGE_PRE_DEPOSIT,
+        rebalanceRoute,
+        amountReceivedFromBridge,
+        this.baseSignerAddress
+      );
       return amountReceivedFromBridge;
     } else {
       this.logger.info({
@@ -671,7 +692,13 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         destinationChain: getNetworkName(destinationChain),
       });
       await this._depositToBinance(sourceToken, sourceChain, amountToTransfer);
-      await this._redisCreateOrder(cloid, STATUS.PENDING_DEPOSIT, rebalanceRoute, amountToTransfer);
+      await this._redisCreateOrder(
+        cloid,
+        STATUS.PENDING_DEPOSIT,
+        rebalanceRoute,
+        amountToTransfer,
+        this.baseSignerAddress
+      );
       return amountToTransfer;
     }
   }
