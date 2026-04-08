@@ -8,9 +8,9 @@ import {
   getDeployedBlockNumber,
   EvmAddress,
   chainIsEvm,
-  SvmAddress,
   Address,
   assert,
+  toAddressType,
   isDefined,
 } from ".";
 import { CONTRACT_ADDRESSES } from "../common";
@@ -71,7 +71,7 @@ export function getPermit2(chainId: number, address?: string): Contract {
 export function getSpokePoolAddress(chainId: number): Address {
   const evmChain = chainIsEvm(chainId);
   const addr = getDeployedAddress(evmChain ? "SpokePool" : "SvmSpoke", chainId, true);
-  return evmChain ? EvmAddress.from(addr) : SvmAddress.from(addr);
+  return toAddressType(addr, chainId);
 }
 
 export function getHubPoolAddress(chainId: number): EvmAddress {
