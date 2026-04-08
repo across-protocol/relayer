@@ -38,7 +38,7 @@ const MAX_GAS_RETRY_SCALER_DEFAULT = 3;
 const TRANSACTION_SUBMISSION_RETRIES_DEFAULT = 3;
 
 // Default TVM fee limit in SUN (1 TRX = 1,000,000 SUN). 100 TRX is a reasonable default for
-// contract interactions on TRON. Can be overridden via TVM_FEE_LIMIT env var.
+// contract interactions on TRON.
 const DEFAULT_TVM_FEE_LIMIT = 100_000_000;
 
 // Define chains that require legacy (type 0) transactions
@@ -432,7 +432,7 @@ async function _runTransactionTvm(
     maxFeePerGasScaler,
     sendRawTxn ? undefined : await contract.populateTransaction[method](...(args as Array<unknown>), { value })
   );
-  const gasLimitNumber = gasLimit?.toNumber() ?? process.env.TVM_FEE_LIMIT;
+  const gasLimitNumber = gasLimit?.toNumber() ?? process.env.TVM_GAS_LIMIT;
   const feeLimit = isDefined(gasLimitNumber) ? Number(gasLimitNumber) * maxFeePerGas.toNumber() : DEFAULT_TVM_FEE_LIMIT;
 
   const tronWeb = getTronWebFromEvmSigner(contract.signer);
