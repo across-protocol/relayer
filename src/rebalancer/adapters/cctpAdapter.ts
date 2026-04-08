@@ -173,7 +173,7 @@ export class CctpAdapter extends BaseAdapter {
           continue;
         }
       }
-      const pendingOrderDetails = await this._redisGetOrderDetails(cloid);
+      const pendingOrderDetails = await this._redisGetOrderDetails(cloid, account);
       const { destinationChain, amountToTransfer } = pendingOrderDetails;
       pendingRebalances[destinationChain] ??= {};
       pendingRebalances[destinationChain]["USDC"] = (pendingRebalances[destinationChain]?.["USDC"] ?? bnZero).add(

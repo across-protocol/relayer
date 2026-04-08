@@ -143,7 +143,7 @@ export class PendingBridgeRedisReader {
     const orders = await Promise.all(
       cloids.map(async (cloid) => {
         const rawOrder = await redisCache.get<string>(
-          getPendingBridgeOrderKey(getPendingBridgeRedisPrefix(adapter), cloid)
+          getPendingBridgeOrderKey(getPendingBridgeRedisPrefix(adapter), cloid, account.toNative())
         );
         if (!rawOrder) {
           // Tolerate races where the set member still exists but the payload has already been removed.

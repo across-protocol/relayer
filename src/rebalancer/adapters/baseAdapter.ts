@@ -166,7 +166,7 @@ export abstract class BaseAdapter implements RebalancerAdapter {
   ): Promise<void> {
     const account = this.baseSignerAddress.toNative();
     const orderStatusKey = getPendingBridgeStatusSetKey(this.REDIS_PREFIX, status, account);
-    const orderDetailsKey = getPendingBridgeOrderKey(this.REDIS_PREFIX, cloid);
+    const orderDetailsKey = getPendingBridgeOrderKey(this.REDIS_PREFIX, cloid, account);
 
     // Create a new order in Redis. We use a TTL of 1 hour so that all orders that are finalized in 1 hour are
     // deleted from Redis and a RebalancerClient can sweep any excess balances that are left over on exchanges.
@@ -219,8 +219,8 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     return ethers.utils.hexZeroPad(ethers.utils.hexValue(unixTimestamp), 16);
   }
 
-  protected async _redisGetOrderDetails(cloid: string): Promise<OrderDetails> {
-    const orderDetailsKey = getPendingBridgeOrderKey(this.REDIS_PREFIX, cloid);
+  protected async _redisGetOrderDetails(cloid: string, account: EvmAddress): Promise<OrderDetails> {
+    const orderDetailsKey = getPendingBridgeOrderKey(this.REDIS_PREFIX, cloid, account.toNative());
     const orderDetails = await this.redisCache.get<string>(orderDetailsKey);
     if (!orderDetails) {
       return undefined;
@@ -248,7 +248,7 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     account: EvmAddress
   ): Promise<[number, number]> {
     const orderStatusKey = getPendingBridgeStatusSetKey(this.REDIS_PREFIX, currentStatus, account.toNative());
-    const orderDetailsKey = getPendingBridgeOrderKey(this.REDIS_PREFIX, cloid);
+    const orderDetailsKey = getPendingBridgeOrderKey(this.REDIS_PREFIX, cloid, account.toNative());
     return await Promise.all([this.redisCache.sRem(orderStatusKey, cloid), this.redisCache.del(orderDetailsKey)]);
   }
 
@@ -264,7 +264,7 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     const sMembers = await this.redisCache.sMembers(
       getPendingBridgeStatusSetKey(this.REDIS_PREFIX, status, account.toNative())
     );
-    const orderDetails = await Promise.all(sMembers.map((cloid) => this._redisGetOrderDetails(cloid)));
+    const orderDetails = await Promise.all(sMembers.map((cloid) => this._redisGetOrderDetails(cloid, account)));
     await forEachAsync(sMembers, async (cloid, i) => {
       if (!isDefined(orderDetails[i])) {
         this.logger.debug({

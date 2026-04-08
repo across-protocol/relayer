@@ -60,6 +60,6 @@ export function getPendingBridgeStatusSetKey(redisPrefix: string, status: STATUS
   return `${orderStatusKey}:${account.toLowerCase()}`;
 }
 
-export function getPendingBridgeOrderKey(redisPrefix: string, cloid: string): string {
-  return `${redisPrefix}pending-order:${cloid}`;
+export function getPendingBridgeOrderKey(redisPrefix: string, cloid: string, account: string): string {
+  return `${redisPrefix}pending-order:${cloid}:${account.toLowerCase()}`;
 }
