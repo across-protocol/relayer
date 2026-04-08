@@ -2,6 +2,7 @@ import assert from "assert";
 import winston from "winston";
 import {
   chainIsSvm,
+  chainIsTvm,
   getProvider,
   getDeployedContract,
   getDeploymentBlockNumber,
@@ -309,7 +310,7 @@ export async function getSpokePoolClientsForContract(
     }
     const spokePoolClientSearchSettings = {
       from: fromBlocks[chainId] ? Math.max(fromBlocks[chainId], registrationBlock) : registrationBlock,
-      to: toBlocks[chainId],
+      to: chainIsTvm(chainId) ? undefined : toBlocks[chainId],
       maxLookBack: config.maxBlockLookBack[chainId],
     };
     if (chainIsEvm(chainId)) {
