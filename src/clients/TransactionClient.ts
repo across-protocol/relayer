@@ -418,7 +418,7 @@ async function _runTransactionTvm(
   const { provider } = contract;
   const { chainId } = await provider.getNetwork();
   const chain = getNetworkName(chainId);
-  const sendRawTxn = contract.method === "";
+  const sendRawTxn = method === "";
 
   const { maxFeePerGasScaler, priorityFeeScaler, retries: _retries } = _readTransactionConfig(chainId);
   retries ??= _retries;
