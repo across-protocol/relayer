@@ -30,7 +30,8 @@ import {
   winston,
 } from "../../utils";
 import { RebalanceRoute } from "../utils/interfaces";
-import { BaseAdapter, OrderDetails, STATUS } from "./baseAdapter";
+import { STATUS } from "../utils/utils";
+import { BaseAdapter, OrderDetails } from "./baseAdapter";
 import { AugmentedTransaction } from "../../clients";
 import { RebalancerConfig } from "../RebalancerConfig";
 import { CctpAdapter } from "./cctpAdapter";
@@ -242,10 +243,10 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       const binanceBalance = await this._getBinanceBalance(sourceToken);
       const sourceTokenInfo = this._getTokenInfo(sourceToken, sourceChain);
       const binanceBalanceWei = toBNWei(truncate(binanceBalance, sourceTokenInfo.decimals), sourceTokenInfo.decimals);
-      if (Number(fromWei(amountToTransfer, sourceTokenInfo.decimals)) > binanceBalance) {
+      if (binanceBalanceWei.lt(amountToTransfer)) {
         this.logger.debug({
           at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",
-          message: `Available balance for input token: ${sourceToken} (${binanceBalance.toString()}) is less than amount to transfer: ${fromWei(amountToTransfer, sourceTokenInfo.decimals)}`,
+          message: `Available balance for input token: ${sourceToken} (${binanceBalanceWei.toString()}) is less than amount to transfer: ${amountToTransfer.toString()}`,
         });
         continue;
       }

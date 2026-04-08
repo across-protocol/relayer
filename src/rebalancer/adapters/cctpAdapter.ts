@@ -1,5 +1,6 @@
 import { RebalanceRoute } from "../utils/interfaces";
-import { BaseAdapter, STATUS } from "./baseAdapter";
+import { BaseAdapter } from "./baseAdapter";
+import { STATUS } from "../utils/utils";
 import {
   bnZero,
   BigNumber,

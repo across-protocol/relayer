@@ -31,3 +31,35 @@ export function sortDeficitFunction(deficitA: ExcessOrDeficit, deficitB: ExcessO
   }
   return converter(amountA).gt(amountB) ? -1 : 1;
 }
+
+export enum STATUS {
+  PENDING_BRIDGE_PRE_DEPOSIT,
+  PENDING_DEPOSIT,
+  PENDING_SWAP,
+  PENDING_WITHDRAWAL,
+}
+
+export function getPendingBridgeStatusSetKey(redisPrefix: string, status: STATUS, account: string): string {
+  let orderStatusKey: string;
+  switch (status) {
+    case STATUS.PENDING_DEPOSIT:
+      orderStatusKey = redisPrefix + "pending-deposit";
+      break;
+    case STATUS.PENDING_SWAP:
+      orderStatusKey = redisPrefix + "pending-swap";
+      break;
+    case STATUS.PENDING_WITHDRAWAL:
+      orderStatusKey = redisPrefix + "pending-withdrawal";
+      break;
+    case STATUS.PENDING_BRIDGE_PRE_DEPOSIT:
+      orderStatusKey = redisPrefix + "pending-bridge-pre-deposit";
+      break;
+    default:
+      throw new Error(`Invalid status: ${status}`);
+  }
+  return `${orderStatusKey}:${account.toLowerCase()}`;
+}
+
+export function getPendingBridgeOrderKey(redisPrefix: string, cloid: string): string {
+  return `${redisPrefix}pending-order:${cloid}`;
+}

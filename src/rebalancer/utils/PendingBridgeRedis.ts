@@ -1,16 +1,12 @@
 import { RedisCache } from "../../caching/RedisCache";
 import { BigNumber, EvmAddress, getRedisCache, isDefined, winston } from "../../utils";
+import { getPendingBridgeOrderKey, getPendingBridgeStatusSetKey, STATUS } from "./utils";
 
 // Redis keys are grouped by adapter so OFT and CCTP orders can be tracked independently while
 // still sharing the same reader implementation.
 export const OFT_PENDING_BRIDGE_REDIS_PREFIX = "oft-bridge:";
 export const CCTP_PENDING_BRIDGE_REDIS_PREFIX = "cctp-bridge:";
 
-// For each adapter we maintain:
-// 1. A set containing all currently pending order ids (`cloid`s).
-// 2. One JSON payload per `cloid` containing the order details.
-const PENDING_ORDER_REDIS_SUFFIX = "pending-order";
-const PENDING_BRIDGE_PRE_DEPOSIT_REDIS_SUFFIX = "pending-bridge-pre-deposit";
 // Keep Redis reads cheap within a single accounting pass without masking cross-process updates for long.
 const PENDING_BRIDGE_REDIS_READER_CACHE_TTL_MS = 5_000;
 
@@ -53,14 +49,6 @@ export function getRebalancerStatusTrackingNamespace(): string | undefined {
 
 function getPendingBridgeRedisPrefix(adapter: PendingBridgeAdapterName): string {
   return adapter === "oft" ? OFT_PENDING_BRIDGE_REDIS_PREFIX : CCTP_PENDING_BRIDGE_REDIS_PREFIX;
-}
-
-function getPendingBridgeStatusSetKey(adapter: PendingBridgeAdapterName, account: EvmAddress): string {
-  return `${getPendingBridgeRedisPrefix(adapter)}${PENDING_BRIDGE_PRE_DEPOSIT_REDIS_SUFFIX}:${account.toNative().toLowerCase()}`;
-}
-
-function getPendingBridgeOrderKey(adapter: PendingBridgeAdapterName, cloid: string): string {
-  return `${getPendingBridgeRedisPrefix(adapter)}${PENDING_ORDER_REDIS_SUFFIX}:${cloid}`;
 }
 
 // Bridge adapters expose different identifiers to downstream consumers:
@@ -145,10 +133,18 @@ export class PendingBridgeRedisReader {
 
     // The set is the source of truth for "currently pending" orders. Each member points to a JSON blob
     // stored under its own key.
-    const cloids = await redisCache.sMembers(getPendingBridgeStatusSetKey(adapter, account));
+    const cloids = await redisCache.sMembers(
+      getPendingBridgeStatusSetKey(
+        getPendingBridgeRedisPrefix(adapter),
+        STATUS.PENDING_BRIDGE_PRE_DEPOSIT,
+        account.toNative()
+      )
+    );
     const orders = await Promise.all(
       cloids.map(async (cloid) => {
-        const rawOrder = await redisCache.get<string>(getPendingBridgeOrderKey(adapter, cloid));
+        const rawOrder = await redisCache.get<string>(
+          getPendingBridgeOrderKey(getPendingBridgeRedisPrefix(adapter), cloid)
+        );
         if (!rawOrder) {
           // Tolerate races where the set member still exists but the payload has already been removed.
           // This client is not responsible for cleaning up the cache, for simplicity reasons, and instead leaves

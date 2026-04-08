@@ -33,13 +33,7 @@ import {
 import { RebalancerAdapter, RebalanceRoute } from "../utils/interfaces";
 import { RebalancerConfig } from "../RebalancerConfig";
 import { getRebalancerStatusTrackingNamespace } from "../utils/PendingBridgeRedis";
-
-export enum STATUS {
-  PENDING_BRIDGE_PRE_DEPOSIT,
-  PENDING_DEPOSIT,
-  PENDING_SWAP,
-  PENDING_WITHDRAWAL,
-}
+import { STATUS, getPendingBridgeOrderKey, getPendingBridgeStatusSetKey } from "../utils/utils";
 export interface OrderDetails {
   sourceToken: string;
   destinationToken: string;
@@ -150,8 +144,8 @@ export abstract class BaseAdapter implements RebalancerAdapter {
   // @dev Can only be used to update the status owned by this.baseSignerAddress, for safety.
   protected async _redisUpdateOrderStatus(cloid: string, oldStatus: number, status: number): Promise<void> {
     const account = this.baseSignerAddress.toNative();
-    const oldOrderStatusKey = this._redisGetOrderStatusKey(oldStatus, account);
-    const newOrderStatusKey = this._redisGetOrderStatusKey(status, account);
+    const oldOrderStatusKey = getPendingBridgeStatusSetKey(this.REDIS_PREFIX, oldStatus, account);
+    const newOrderStatusKey = getPendingBridgeStatusSetKey(this.REDIS_PREFIX, status, account);
     const result = await Promise.all([
       this.redisCache.sRem(oldOrderStatusKey, cloid),
       this.redisCache.sAdd(newOrderStatusKey, cloid),
@@ -171,8 +165,8 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     ttlOverride?: number
   ): Promise<void> {
     const account = this.baseSignerAddress.toNative();
-    const orderStatusKey = this._redisGetOrderStatusKey(status, account);
-    const orderDetailsKey = `${this._redisGetPendingOrderKey()}:${cloid}`;
+    const orderStatusKey = getPendingBridgeStatusSetKey(this.REDIS_PREFIX, status, account);
+    const orderDetailsKey = getPendingBridgeOrderKey(this.REDIS_PREFIX, cloid);
 
     // Create a new order in Redis. We use a TTL of 1 hour so that all orders that are finalized in 1 hour are
     // deleted from Redis and a RebalancerClient can sweep any excess balances that are left over on exchanges.
@@ -226,7 +220,7 @@ export abstract class BaseAdapter implements RebalancerAdapter {
   }
 
   protected async _redisGetOrderDetails(cloid: string): Promise<OrderDetails> {
-    const orderDetailsKey = `${this._redisGetPendingOrderKey()}:${cloid}`;
+    const orderDetailsKey = getPendingBridgeOrderKey(this.REDIS_PREFIX, cloid);
     const orderDetails = await this.redisCache.get<string>(orderDetailsKey);
     if (!orderDetails) {
       return undefined;
@@ -253,38 +247,13 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     currentStatus: number,
     account: EvmAddress
   ): Promise<[number, number]> {
-    const orderStatusKey = this._redisGetOrderStatusKey(currentStatus, account.toNative());
-    const orderDetailsKey = `${this._redisGetPendingOrderKey()}:${cloid}`;
+    const orderStatusKey = getPendingBridgeStatusSetKey(this.REDIS_PREFIX, currentStatus, account.toNative());
+    const orderDetailsKey = getPendingBridgeOrderKey(this.REDIS_PREFIX, cloid);
     return await Promise.all([this.redisCache.sRem(orderStatusKey, cloid), this.redisCache.del(orderDetailsKey)]);
-  }
-
-  protected _redisGetOrderStatusKey(status: STATUS, account: string): string {
-    let orderStatusKey: string;
-    switch (status) {
-      case STATUS.PENDING_DEPOSIT:
-        orderStatusKey = this.REDIS_PREFIX + "pending-deposit";
-        break;
-      case STATUS.PENDING_SWAP:
-        orderStatusKey = this.REDIS_PREFIX + "pending-swap";
-        break;
-      case STATUS.PENDING_WITHDRAWAL:
-        orderStatusKey = this.REDIS_PREFIX + "pending-withdrawal";
-        break;
-      case STATUS.PENDING_BRIDGE_PRE_DEPOSIT:
-        orderStatusKey = this.REDIS_PREFIX + "pending-bridge-pre-deposit";
-        break;
-      default:
-        throw new Error(`Invalid status: ${status}`);
-    }
-    return `${orderStatusKey}:${account.toLowerCase()}`;
   }
 
   protected _redisGetLatestNonceKey(): string {
     return this.REDIS_PREFIX + "latest-nonce";
-  }
-
-  protected _redisGetPendingOrderKey(): string {
-    return this.REDIS_PREFIX + "pending-order";
   }
 
   // @dev Call this function before making any calls to sMembers to ensure that we are not returning any expired orders
@@ -292,16 +261,15 @@ export abstract class BaseAdapter implements RebalancerAdapter {
   private async _redisCleanupPendingOrders(status: STATUS, account: EvmAddress): Promise<void> {
     // If sMembers don't expire and don't have a notion of TTL, so check if order detail keys have expired. If they have,
     // then delete the member from the set.
-    const sMembers = await this.redisCache.sMembers(this._redisGetOrderStatusKey(status, account.toNative()));
+    const sMembers = await this.redisCache.sMembers(
+      getPendingBridgeStatusSetKey(this.REDIS_PREFIX, status, account.toNative())
+    );
     const orderDetails = await Promise.all(sMembers.map((cloid) => this._redisGetOrderDetails(cloid)));
     await forEachAsync(sMembers, async (cloid, i) => {
       if (!isDefined(orderDetails[i])) {
         this.logger.debug({
           at: "BaseAdapter._redisCleanupPendingOrders",
-          message: `Deleting expired order details for cloid ${cloid} from status set ${this._redisGetOrderStatusKey(
-            status,
-            account.toNative()
-          )}`,
+          message: `Deleting expired order details for cloid ${cloid} from status set ${getPendingBridgeStatusSetKey(this.REDIS_PREFIX, status, account.toNative())}`,
         });
         await this._redisDeleteOrderForAccount(cloid, status, account);
       }
@@ -311,7 +279,7 @@ export abstract class BaseAdapter implements RebalancerAdapter {
   protected async _redisGetPendingBridgesPreDeposit(account: EvmAddress): Promise<string[]> {
     await this._redisCleanupPendingOrders(STATUS.PENDING_BRIDGE_PRE_DEPOSIT, account);
     const sMembers = await this.redisCache.sMembers(
-      this._redisGetOrderStatusKey(STATUS.PENDING_BRIDGE_PRE_DEPOSIT, account.toNative())
+      getPendingBridgeStatusSetKey(this.REDIS_PREFIX, STATUS.PENDING_BRIDGE_PRE_DEPOSIT, account.toNative())
     );
     return sMembers;
   }
@@ -319,7 +287,7 @@ export abstract class BaseAdapter implements RebalancerAdapter {
   protected async _redisGetPendingDeposits(account: EvmAddress): Promise<string[]> {
     await this._redisCleanupPendingOrders(STATUS.PENDING_DEPOSIT, account);
     const sMembers = await this.redisCache.sMembers(
-      this._redisGetOrderStatusKey(STATUS.PENDING_DEPOSIT, account.toNative())
+      getPendingBridgeStatusSetKey(this.REDIS_PREFIX, STATUS.PENDING_DEPOSIT, account.toNative())
     );
     return sMembers;
   }
@@ -327,7 +295,7 @@ export abstract class BaseAdapter implements RebalancerAdapter {
   protected async _redisGetPendingSwaps(account: EvmAddress): Promise<string[]> {
     await this._redisCleanupPendingOrders(STATUS.PENDING_SWAP, account);
     const sMembers = await this.redisCache.sMembers(
-      this._redisGetOrderStatusKey(STATUS.PENDING_SWAP, account.toNative())
+      getPendingBridgeStatusSetKey(this.REDIS_PREFIX, STATUS.PENDING_SWAP, account.toNative())
     );
     return sMembers;
   }
@@ -335,7 +303,7 @@ export abstract class BaseAdapter implements RebalancerAdapter {
   protected async _redisGetPendingWithdrawals(account: EvmAddress): Promise<string[]> {
     await this._redisCleanupPendingOrders(STATUS.PENDING_WITHDRAWAL, account);
     const sMembers = await this.redisCache.sMembers(
-      this._redisGetOrderStatusKey(STATUS.PENDING_WITHDRAWAL, account.toNative())
+      getPendingBridgeStatusSetKey(this.REDIS_PREFIX, STATUS.PENDING_WITHDRAWAL, account.toNative())
     );
     return sMembers;
   }
