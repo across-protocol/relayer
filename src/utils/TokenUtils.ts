@@ -3,13 +3,35 @@ import { constants, utils, arch } from "@across-protocol/sdk";
 import { CONTRACT_ADDRESSES } from "../common";
 import { BigNumberish, BigNumber } from "./BNUtils";
 import { formatUnits, getL1TokenAddress as resolveL1TokenAddress, getTokenInfo } from "./SDKUtils";
-import { isDefined } from "./TypeGuards";
-import { Address, toAddressType, EvmAddress, SvmAddress, SVMProvider, toBN } from "./";
+import { isDefined, isKeyOf } from "./TypeGuards";
+import { assert, Address, toAddressType, EvmAddress, SvmAddress, SVMProvider, toBN } from "./";
 import { TokenInfo } from "../interfaces";
 
 const { ZERO_ADDRESS } = constants;
 
 export const { fetchTokenInfo, getL2TokenAddresses } = utils;
+
+type TokenSymbolInfo = (typeof TOKEN_SYMBOLS_MAP)[keyof typeof TOKEN_SYMBOLS_MAP];
+
+// Safely index TOKEN_SYMBOLS_MAP with a string key, returning undefined for unknown symbols.
+// When chainId is supplied, returns the token address on that chain (or undefined).
+// When assertExists is true, throws if the token (or address) is not found.
+export function resolveTokenBySymbol(symbol: string): TokenSymbolInfo | undefined;
+export function resolveTokenBySymbol(symbol: string, chainId: number): string | undefined;
+export function resolveTokenBySymbol(symbol: string, chainId: number, assertExists: true): string;
+export function resolveTokenBySymbol(
+  symbol: string,
+  chainId?: number,
+  assertExists?: boolean
+): TokenSymbolInfo | string | undefined {
+  const token = isKeyOf(symbol, TOKEN_SYMBOLS_MAP) ? TOKEN_SYMBOLS_MAP[symbol] : undefined;
+  if (chainId !== undefined) {
+    const address = token?.addresses[chainId];
+    assert(!assertExists || isDefined(address), `Token ${symbol} not found on chain ${chainId}`);
+    return address;
+  }
+  return token;
+}
 
 // Returns the canonical token for the given L1 token on the given remote chain, assuming that the L1 token
 // exists in only a single mapping in TOKEN_SYMBOLS_MAP. This is the case currently for all tokens except for
@@ -29,7 +51,7 @@ export function getRemoteTokenForL1Token(
   }
   const l1TokenSymbol = TOKEN_EQUIVALENCE_REMAPPING[tokenMapping.symbol] ?? tokenMapping.symbol;
   return toAddressType(
-    TOKEN_SYMBOLS_MAP[l1TokenSymbol]?.addresses[remoteChainId] ?? tokenMapping.addresses[remoteChainId],
+    resolveTokenBySymbol(l1TokenSymbol, remoteChainId) ?? tokenMapping.addresses[remoteChainId],
     remoteChainId
   );
 }
@@ -46,11 +68,7 @@ export function getInventoryEquivalentL1TokenAddress(
   } catch {
     const { symbol } = getTokenInfo(l2Token, chainId);
     const remappedSymbol = TOKEN_EQUIVALENCE_REMAPPING[symbol] ?? symbol;
-    const l1TokenAddress = TOKEN_SYMBOLS_MAP[remappedSymbol]?.addresses[hubChainId];
-    if (!isDefined(l1TokenAddress)) {
-      throw new Error(`Unable to resolve inventory-equivalent L1 token for ${l2Token} on chain ${chainId}`);
-    }
-    return EvmAddress.from(l1TokenAddress);
+    return EvmAddress.from(resolveTokenBySymbol(remappedSymbol, hubChainId, true));
   }
 }
 
@@ -93,7 +111,7 @@ export function isL2OnlyEquivalentToken(symbol: string, hubChainId = CHAIN_IDs.M
   if (!isDefined(remappedSymbol)) {
     return false;
   }
-  const tokenInfo = TOKEN_SYMBOLS_MAP[symbol];
+  const tokenInfo = resolveTokenBySymbol(symbol);
   return isDefined(tokenInfo) && !isDefined(tokenInfo.addresses[hubChainId]);
 }
 
@@ -113,7 +131,7 @@ export function getNativeTokenInfoForChain(
     [CHAIN_IDs.TEMPO]: "USDC.e",
   };
   const symbol = remappings[chainId] ?? utils.getNativeTokenSymbol(chainId);
-  const token = TOKEN_SYMBOLS_MAP[symbol];
+  const token = resolveTokenBySymbol(symbol);
   if (!isDefined(symbol) || !isDefined(token)) {
     throw new Error(`Unable to resolve native token for chain ID ${chainId}`);
   }
@@ -133,7 +151,7 @@ export function getWrappedNativeTokenAddress(chainId: number): Address {
   const wrappedTokenSymbol = tokenSymbol === "ETH" ? "WETH" : tokenSymbol;
 
   // Undefined returns should be caught and handled by consumers of this function.
-  return toAddressType(TOKEN_SYMBOLS_MAP[wrappedTokenSymbol]?.addresses[chainId], chainId);
+  return toAddressType(resolveTokenBySymbol(wrappedTokenSymbol, chainId), chainId);
 }
 
 /**
@@ -143,7 +161,7 @@ export function getWrappedNativeTokenAddress(chainId: number): Address {
  * @returns The formatted amount as a decimal-inclusive string.
  */
 export function formatUnitsForToken(symbol: string, amount: BigNumberish): string {
-  const decimals = (TOKEN_SYMBOLS_MAP[symbol]?.decimals as number) ?? 18;
+  const decimals = resolveTokenBySymbol(symbol)?.decimals ?? 18;
   return formatUnits(amount, decimals);
 }
 
@@ -202,7 +220,7 @@ export async function getSolanaTokenBalance(
  */
 export function getTokenInfoFromSymbol(l1TokenSymbol: string, chainId: number): TokenInfo {
   const { MAINNET } = CHAIN_IDs;
-  const l1TokenAddress = EvmAddress.from(TOKEN_SYMBOLS_MAP[l1TokenSymbol]?.addresses[MAINNET]);
+  const l1TokenAddress = EvmAddress.from(resolveTokenBySymbol(l1TokenSymbol, MAINNET, true));
   const l1TokenInfo = getTokenInfo(l1TokenAddress, MAINNET);
 
   if (chainId === CHAIN_IDs.MAINNET) {

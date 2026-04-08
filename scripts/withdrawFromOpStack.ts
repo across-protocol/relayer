@@ -7,7 +7,7 @@ import {
   getProvider,
   ERC20,
   WETH9,
-  TOKEN_SYMBOLS_MAP,
+  resolveTokenBySymbol,
   assert,
   getL1TokenAddress,
   Contract,
@@ -44,7 +44,7 @@ export async function run(): Promise<void> {
   const signerAddr = await baseSigner.getAddress();
   const chainId = parseInt(args.chainId);
   const connectedSigner = baseSigner.connect(await getProvider(chainId));
-  const l2Token = EvmAddress.from(TOKEN_SYMBOLS_MAP[args.token]?.addresses[chainId]);
+  const l2Token = EvmAddress.from(resolveTokenBySymbol(String(args.token), chainId));
   assert(l2Token, `${args.token} not found on chain ${chainId} in TOKEN_SYMBOLS_MAP`);
   const l1TokenAddress = getL1TokenAddress(l2Token, chainId);
   const { symbol, decimals } = getTokenInfo(l2Token, chainId);

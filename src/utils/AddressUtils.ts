@@ -4,6 +4,7 @@ import {
   ethers,
   getRemoteTokenForL1Token,
   isDefined,
+  resolveTokenBySymbol,
   Address,
   EvmAddress,
   toAddressType,
@@ -54,7 +55,7 @@ export function matchTokenSymbol(tokenAddress: string, chainId: number): string[
  * @returns The number of ERC20 decimals configured for the requested token.
  */
 export function resolveTokenDecimals(tokenSymbol: string): number {
-  const decimals = TOKEN_SYMBOLS_MAP[tokenSymbol]?.decimals;
+  const decimals = resolveTokenBySymbol(tokenSymbol)?.decimals;
   if (decimals === undefined) {
     throw new Error(`Unrecognized token symbol: ${tokenSymbol}`);
   }
