@@ -4,10 +4,8 @@ export type SpokePoolManager = clients.SpokePoolManager;
 export type SpokePoolClient = clients.SpokePoolClient;
 export type EVMSpokePoolClient = clients.EVMSpokePoolClient;
 export type SVMSpokePoolClient = clients.SVMSpokePoolClient;
-export type TVMSpokePoolClient = clients.TVMSpokePoolClient;
 export type SpokePoolUpdate = clients.SpokePoolUpdate;
-export const { EVMSpokePoolClient, SpokePoolClient, SVMSpokePoolClient, SpokePoolManager, TVMSpokePoolClient } =
-  clients;
+export const { EVMSpokePoolClient, SpokePoolClient, SVMSpokePoolClient, SpokePoolManager } = clients;
 
 export { SpokeListener, SpokePoolClientWithListener, isSpokePoolClientWithListener } from "./SpokePoolClient";
 export class BundleDataClient extends clients.BundleDataClient.BundleDataClient {}

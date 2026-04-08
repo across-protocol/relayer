@@ -23,7 +23,6 @@ import {
   getRemoteTokenForL1Token,
   getTokenInfo,
   isEVMSpokePoolClient,
-  isTVMSpokePoolClient,
   assert,
   Address,
   toAddressType,
@@ -188,7 +187,7 @@ export class TokenClient {
     let mrkdwn = "*Approval transactions:* \n";
     for (const { token: _token, chainId } of tokensToApprove) {
       const targetSpokePoolClient = this.spokePoolManager.getClient(chainId);
-      if (isEVMSpokePoolClient(targetSpokePoolClient) || isTVMSpokePoolClient(targetSpokePoolClient)) {
+      if (isEVMSpokePoolClient(targetSpokePoolClient)) {
         const targetSpokePool = targetSpokePoolClient.spokePool;
         const token = toAddressType(_token, chainId).toEvmAddress();
         const contract = new Contract(token, ERC20.abi, targetSpokePool.signer);
@@ -241,7 +240,7 @@ export class TokenClient {
   resolveRemoteTokens(chainId: number, hubPoolTokens: L1Token[]): Contract[] {
     const spokePoolClient = this.spokePoolManager.getClient(chainId);
     assert(isDefined(spokePoolClient), `SpokePoolClient not found for chainId ${chainId}`);
-    assert(isEVMSpokePoolClient(spokePoolClient) || isTVMSpokePoolClient(spokePoolClient));
+    assert(isEVMSpokePoolClient(spokePoolClient));
     const { provider } = spokePoolClient.spokePool;
     const erc20 = this.erc20.connect(provider);
 
@@ -293,7 +292,7 @@ export class TokenClient {
     const spokePoolClient = this.spokePoolManager.getClient(chainId);
     assert(isDefined(spokePoolClient), `SpokePoolClient not found for chainId ${chainId}`);
 
-    if (isEVMSpokePoolClient(spokePoolClient) || isTVMSpokePoolClient(spokePoolClient)) {
+    if (isEVMSpokePoolClient(spokePoolClient)) {
       return this.updateEVM(chainId, hubPoolTokens);
     } else if (isSVMSpokePoolClient(spokePoolClient)) {
       return this.fetchSolanaTokenData(chainId, hubPoolTokens);
@@ -342,7 +341,7 @@ export class TokenClient {
   ): Promise<Record<string, { balance: BigNumber; allowance: BigNumber }>> {
     const spokePoolClient = this.spokePoolManager.getClient(chainId);
     assert(isDefined(spokePoolClient), `SpokePoolClient not found for chainId ${chainId}`);
-    assert(isEVMSpokePoolClient(spokePoolClient) || isTVMSpokePoolClient(spokePoolClient));
+    assert(isEVMSpokePoolClient(spokePoolClient));
 
     const tokenData = Object.fromEntries(
       await sdkUtils.mapAsync(this.resolveRemoteTokens(chainId, hubPoolTokens), async (token: Contract) => {
@@ -357,7 +356,7 @@ export class TokenClient {
 
   private async updateEVM(chainId: number, hubPoolTokens: L1Token[]) {
     const spokePoolClient = this.spokePoolManager.getClient(chainId);
-    assert(isEVMSpokePoolClient(spokePoolClient) || isTVMSpokePoolClient(spokePoolClient));
+    assert(isEVMSpokePoolClient(spokePoolClient));
     const {
       spokePool: { provider },
       spokePoolAddress,
@@ -382,7 +381,7 @@ export class TokenClient {
     // Add additional L2 tokens to the balances and allowances.
     const erc20 = this.erc20.connect(provider);
     this.additionalL2Tokens[chainId]?.forEach((token) => {
-      const contract = erc20.attach(token.toNative());
+      const contract = erc20.attach(token.toEvmAddress());
       balances.push({ contract, method: "balanceOf", args: [this.relayerEvmAddress.toEvmAddress()] });
       allowances.push({
         contract,
@@ -397,7 +396,7 @@ export class TokenClient {
     const allowanceOffset = balances.length;
     const balanceInfo = Object.fromEntries(
       balances.map(({ contract: { address } }, idx) => [
-        EvmAddress.from(address).toNative(),
+        toAddressType(address, chainId).toNative(),
         { balance: results[idx][0], allowance: results[allowanceOffset + idx][0] },
       ])
     );

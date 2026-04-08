@@ -1,10 +1,4 @@
-import {
-  HubPoolClient,
-  SpokePoolClient,
-  AugmentedTransaction,
-  TVMSpokePoolClient,
-  EVMSpokePoolClient,
-} from "../../clients";
+import { HubPoolClient, SpokePoolClient, AugmentedTransaction, EVMSpokePoolClient } from "../../clients";
 import {
   EventSearchConfig,
   Signer,
@@ -15,7 +9,6 @@ import {
   toBN,
   groupObjectCountsByProp,
   isEVMSpokePoolClient,
-  isTVMSpokePoolClient,
   assert,
   fetchWithTimeout,
   postWithTimeout,
@@ -72,8 +65,7 @@ export async function heliosL1toL2Finalizer(
   l1SpokePoolClient: SpokePoolClient
 ): Promise<FinalizerPromise> {
   assert(
-    (isEVMSpokePoolClient(l2SpokePoolClient) || isTVMSpokePoolClient(l2SpokePoolClient)) &&
-      isEVMSpokePoolClient(l1SpokePoolClient),
+    isEVMSpokePoolClient(l2SpokePoolClient) && isEVMSpokePoolClient(l1SpokePoolClient),
     "Cannot use helios finalizer on non-evm/tvm chains"
   );
   const l1ChainId = hubPoolClient.chainId;
@@ -153,7 +145,7 @@ async function identifyRequiredActions(
   logger: winston.Logger,
   hubPoolClient: HubPoolClient,
   l1SpokePoolClient: EVMSpokePoolClient,
-  l2SpokePoolClient: EVMSpokePoolClient | TVMSpokePoolClient,
+  l2SpokePoolClient: EVMSpokePoolClient,
   sp1HeliosL2: ethers.Contract,
   l1ChainId: number,
   l2ChainId: number
@@ -232,7 +224,7 @@ async function identifyRequiredActions(
 
 async function shouldGenerateKeepAliveAction(
   logger: winston.Logger,
-  l2SpokePoolClient: EVMSpokePoolClient | TVMSpokePoolClient,
+  l2SpokePoolClient: EVMSpokePoolClient,
   sp1HeliosL2: ethers.Contract,
   l2ChainId: number
 ): Promise<boolean> {
@@ -280,7 +272,7 @@ async function shouldGenerateKeepAliveAction(
 async function enrichHeliosActions(
   logger: winston.Logger,
   actions: HeliosAction[],
-  l2SpokePoolClient: EVMSpokePoolClient | TVMSpokePoolClient,
+  l2SpokePoolClient: EVMSpokePoolClient,
   l1SpokePoolClient: EVMSpokePoolClient,
   currentL2HeliosHeadNumber: number,
   currentL2HeliosHeader: string,
@@ -422,7 +414,7 @@ async function getRelevantL1Events(
   _logger: winston.Logger,
   hubPoolClient: HubPoolClient,
   l1SpokePoolClient: EVMSpokePoolClient,
-  l2SpokePoolClient: EVMSpokePoolClient | TVMSpokePoolClient,
+  l2SpokePoolClient: EVMSpokePoolClient,
   l1ChainId: number,
   l2ChainId: number
 ): Promise<StoredCallDataEvent[]> {
@@ -466,7 +458,7 @@ async function getRelevantL1Events(
 
 /** Query L2 Verification Events and return verified slots map */
 async function getL2VerifiedSlotsMap(
-  l2SpokePoolClient: EVMSpokePoolClient | TVMSpokePoolClient,
+  l2SpokePoolClient: EVMSpokePoolClient,
   sp1HeliosL2: ethers.Contract
 ): Promise<Map<string, StorageSlotVerifiedEvent>> {
   const l2SearchConfig: EventSearchConfig = {
@@ -499,7 +491,7 @@ async function getL2VerifiedSlotsMap(
 }
 
 /** --- Query L2 Execution Events (RelayedCallData) */
-async function getL2RelayedNonces(l2SpokePoolClient: EVMSpokePoolClient | TVMSpokePoolClient): Promise<Set<string>> {
+async function getL2RelayedNonces(l2SpokePoolClient: EVMSpokePoolClient): Promise<Set<string>> {
   const l2Provider = l2SpokePoolClient.spokePool.provider;
   const l2SpokePoolAddress = l2SpokePoolClient.spokePool.address;
   const universalSpokePoolContract = new ethers.Contract(l2SpokePoolAddress, UNIVERSAL_SPOKE_ABI, l2Provider);
@@ -571,7 +563,7 @@ async function generateTxnsForHeliosActions(
   readyActions: HeliosAction[],
   l1ChainId: number,
   l2ChainId: number,
-  l2SpokePoolClient: EVMSpokePoolClient | TVMSpokePoolClient,
+  l2SpokePoolClient: EVMSpokePoolClient,
   sp1HeliosL2: ethers.Contract
 ): Promise<FinalizerPromise> {
   const transactions: AugmentedTransaction[] = [];

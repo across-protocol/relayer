@@ -23,7 +23,6 @@ import {
   getTokenInfo,
   isEVMSpokePoolClient,
   isSVMSpokePoolClient,
-  isTVMSpokePoolClient,
   Address,
   EvmAddress,
   toAddressType,
@@ -1442,7 +1441,7 @@ export class Dataworker {
         `amount: ${outputAmount.toString()}`;
 
       if (submitExecution) {
-        if (isEVMSpokePoolClient(client) || isTVMSpokePoolClient(client)) {
+        if (isEVMSpokePoolClient(client)) {
           const { method, args } = this.encodeSlowFillLeaf(slowRelayTree, rootBundleId, leaf);
 
           this.clients.multiCallerClient.enqueueTransaction({
@@ -2405,7 +2404,7 @@ export class Dataworker {
           const symbol = this.getTokenInfo(leaf.l2TokenAddress, chainId);
 
           // Exit on duplicate leaf executions if the target network is EVM.
-          if (isEVMSpokePoolClient(client) || isTVMSpokePoolClient(client)) {
+          if (isEVMSpokePoolClient(client)) {
             // @dev check if there's been a duplicate leaf execution and if so, then exit early.
             // Since this function is happening near the end of the dataworker run and leaf executions are
             // relatively infrequent, the additional RPC latency and cost is acceptable.
@@ -2505,7 +2504,7 @@ export class Dataworker {
         leaf.leafId
       }\nchainId: ${chainId}\ntoken: ${symbol}\namount: ${leaf.amountToReturn.toString()}`;
       if (submitExecution) {
-        if (isEVMSpokePoolClient(client) || isTVMSpokePoolClient(client)) {
+        if (isEVMSpokePoolClient(client)) {
           const valueToPassViaPayable = msgValuesByLeafId.get(leaf.leafId);
           const ethersLeaf = {
             ...leaf,

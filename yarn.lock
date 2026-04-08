@@ -2,10 +2,15 @@
 # yarn lockfile v1
 
 
-"@across-protocol/constants@^3.1.107", "@across-protocol/constants@^3.1.108":
+"@across-protocol/constants@^3.1.107":
   version "3.1.108"
   resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.108.tgz#982e230c0193f3b4124e3cb880eb6cb481f76a7e"
   integrity sha512-uYcIw6VjWhSRal9+xv5aTgk3cK1qVH/8SkpSCpa6KMQUXmCKZ3eGGaVMl7Nogl6S0Cj/D76LnMgM3jUP6NK9ag==
+
+"@across-protocol/constants@^3.1.109":
+  version "3.1.109"
+  resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.109.tgz#3a7e9f7581405cd09dbbdc480800d4a775051c46"
+  integrity sha512-Mt0wYTzMPbfNSEWZFuGdMTn8N4z9+yNWJ0HDFaZwVlaiW8m9F1uK5SWHsc6TAZURTvrC2T98nIDGm+ibPgwEYA==
 
 "@across-protocol/contracts@5.0.5":
   version "5.0.5"
@@ -33,12 +38,12 @@
     tronweb "^6.2.0"
     yargs "^17.7.2"
 
-"@across-protocol/sdk@4.3.140-alpha.1":
-  version "4.3.140-alpha.1"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.3.140-alpha.1.tgz#40ada70e88fa83ce9c1e8a9da3c3f845749ce522"
-  integrity sha512-JdP3WIAuIRy7ie4txETB2krUr6Zv60FMt4Dk0IRvYykw+mof9YuixxxFoyCtN4iIXlVTVJzHg2qCKbp3Qw/96A==
+"@across-protocol/sdk@4.3.140-alpha.3":
+  version "4.3.140-alpha.3"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.3.140-alpha.3.tgz#555cbad88ce479382325cb51df74a99d9d3e8313"
+  integrity sha512-gjEooyLjsdMJZW4kxEnQ8EteAXk/jk8dmytnHs/OyGFw1ysGhUK57MjTRfU80iuf6RQkxiEwOxtWYH9Auyt2ww==
   dependencies:
-    "@across-protocol/constants" "^3.1.108"
+    "@across-protocol/constants" "^3.1.109"
     "@across-protocol/contracts" "5.0.5"
     "@coral-xyz/anchor" "^0.30.1"
     "@eth-optimism/sdk" "^3.3.1"
