@@ -78,6 +78,16 @@ export type BinanceWithdrawal = Omit<BinanceDeposit, "insertTime"> & {
   applyTime: string;
 };
 
+export enum BINANCE_WITHDRAWAL_STATUS {
+  EMAIL_SENT = 0,
+  CANCELLED = 1,
+  AWAITING_APPROVAL = 2,
+  REJECTED = 3,
+  PROCESSING = 4,
+  FAILURE = 5,
+  COMPLETED = 6,
+}
+
 // ParsedAccountCoins represents a simplified return type of the Binance `accountCoins` endpoint.
 type ParsedAccountCoins = Coin[];
 
@@ -231,6 +241,10 @@ export async function getBinanceWithdrawalType(
   } else {
     return BinanceTransactionType.UNKNOWN;
   }
+}
+
+export function isCompletedBinanceWithdrawal(status?: number): boolean {
+  return status === BINANCE_WITHDRAWAL_STATUS.COMPLETED;
 }
 
 /**
