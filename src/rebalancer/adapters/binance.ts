@@ -3,6 +3,7 @@ import {
   assert,
   BigNumber,
   BINANCE_NETWORKS,
+  BINANCE_WITHDRAWAL_STATUS,
   BinanceTransactionType,
   BinanceWithdrawal,
   bnZero,
@@ -33,6 +34,7 @@ import { AugmentedTransaction } from "../../clients";
 import { RebalancerConfig } from "../RebalancerConfig";
 import { CctpAdapter } from "./cctpAdapter";
 import { OftAdapter } from "./oftAdapter";
+
 interface SPOT_MARKET_META {
   symbol: string;
   baseAssetName: string;
@@ -41,6 +43,29 @@ interface SPOT_MARKET_META {
   szDecimals: number;
   minimumOrderSize: number;
   isBuy: boolean;
+}
+
+export function isFailedBinanceWithdrawal(status?: number): boolean {
+  switch (status) {
+    case BINANCE_WITHDRAWAL_STATUS.CANCELLED:
+    case BINANCE_WITHDRAWAL_STATUS.REJECTED:
+    case BINANCE_WITHDRAWAL_STATUS.FAILURE:
+      return true;
+    default:
+      return false;
+  }
+}
+
+export function isTerminalBinanceWithdrawal(status?: number): boolean {
+  switch (status) {
+    case BINANCE_WITHDRAWAL_STATUS.CANCELLED:
+    case BINANCE_WITHDRAWAL_STATUS.REJECTED:
+    case BINANCE_WITHDRAWAL_STATUS.FAILURE:
+    case BINANCE_WITHDRAWAL_STATUS.COMPLETED:
+      return true;
+    default:
+      return false;
+  }
 }
 
 export class BinanceStablecoinSwapAdapter extends BaseAdapter {
@@ -307,12 +332,25 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         continue;
       } // Only proceed to update the order status if it has finalized:
       // @todo: Can we cache this result to avoid making the same query for orders with the same destination token and withdrawal network?
-      const { unfinalizedWithdrawals, finalizedWithdrawals } = await this._getBinanceWithdrawals(
+      const { unfinalizedWithdrawals, finalizedWithdrawals, failedWithdrawals } = await this._getBinanceWithdrawals(
         orderDetails.destinationToken,
         binanceWithdrawalNetwork,
         Math.floor(matchingFill.time / 1000) - 5 * 60 // Floor this so we can grab the initiated withdrawal data whose
         // ID we've already saved into Redis
       );
+      const failedWithdrawal = failedWithdrawals.find((withdrawal) => withdrawal.id === initiatedWithdrawalId);
+      if (failedWithdrawal) {
+        this.logger.warn({
+          at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",
+          message: `Withdrawal for order ${cloid} failed on Binance, resetting it to retry withdrawal`,
+          cloid,
+          initiatedWithdrawalId,
+          failedWithdrawal,
+        });
+        await this._redisDeleteInitiatedWithdrawalId(cloid);
+        await this._redisUpdateOrderStatus(cloid, STATUS.PENDING_WITHDRAWAL, STATUS.PENDING_SWAP);
+        continue;
+      }
       const initiatedWithdrawalIsUnfinalized = unfinalizedWithdrawals.find(
         (withdrawal) => withdrawal.id === initiatedWithdrawalId
       );
@@ -976,8 +1014,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         withdrawal.coin === token &&
         withdrawal.network === BINANCE_NETWORKS[chain] &&
         withdrawal.recipient === this.baseSignerAddress.toNative() &&
-        withdrawal.status > 4
-      // @dev (0: Email Sent, 1: Cancelled 2: Awaiting Approval, 3: Rejected, 4: Processing, 5: Failure, 6: Completed)
+        isTerminalBinanceWithdrawal(withdrawal.status)
     );
   }
 
@@ -985,7 +1022,11 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     destinationToken: string,
     destinationChain: number,
     startTimeSeconds: number
-  ): Promise<{ unfinalizedWithdrawals: BinanceWithdrawal[]; finalizedWithdrawals: BinanceWithdrawal[] }> {
+  ): Promise<{
+    unfinalizedWithdrawals: BinanceWithdrawal[];
+    finalizedWithdrawals: BinanceWithdrawal[];
+    failedWithdrawals: BinanceWithdrawal[];
+  }> {
     assert(isDefined(BINANCE_NETWORKS[destinationChain]), "Destination chain should be a Binance network");
     const provider = await getProvider(destinationChain);
     // @dev Binance withdrawals are fast, so setting a lookback of 6 hours should capture any unfinalized withdrawals.
@@ -1013,7 +1054,12 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
 
     const finalizedWithdrawals: BinanceWithdrawal[] = [];
     const unfinalizedWithdrawals: BinanceWithdrawal[] = [];
+    const failedWithdrawals: BinanceWithdrawal[] = [];
     for (const initiated of initiatedWithdrawals) {
+      if (isFailedBinanceWithdrawal(initiated.status)) {
+        failedWithdrawals.push(initiated);
+        continue;
+      }
       const withdrawalAmount = toBNWei(
         initiated.amount, // @dev This should be the post-withdrawal fee amount so it should match perfectly
         // with the finalized amount.
@@ -1030,7 +1076,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         unfinalizedWithdrawals.push(initiated);
       }
     }
-    return { unfinalizedWithdrawals, finalizedWithdrawals };
+    return { unfinalizedWithdrawals, finalizedWithdrawals, failedWithdrawals };
   }
 
   private _redisGetInitiatedWithdrawalKey(cloid: string): string {
@@ -1041,6 +1087,11 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const initiatedWithdrawalKey = this._redisGetInitiatedWithdrawalKey(cloid);
     const initiatedWithdrawal = await this.redisCache.get<string>(initiatedWithdrawalKey);
     return initiatedWithdrawal;
+  }
+
+  private async _redisDeleteInitiatedWithdrawalId(cloid: string): Promise<void> {
+    const initiatedWithdrawalKey = this._redisGetInitiatedWithdrawalKey(cloid);
+    await this.redisCache.del(initiatedWithdrawalKey);
   }
 
   protected async _bridgeToChain(

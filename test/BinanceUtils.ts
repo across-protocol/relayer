@@ -1,5 +1,10 @@
 import { expect } from "./utils";
-import { BinanceDeposit, BinanceWithdrawal, getOutstandingBinanceDeposits } from "../src/utils";
+import {
+  BinanceDeposit,
+  BinanceWithdrawal,
+  getOutstandingBinanceDeposits,
+  isCompletedBinanceWithdrawal,
+} from "../src/utils";
 
 function makeDeposit(network: string, amount: number, insertTime: number): BinanceDeposit {
   return { network, amount, coin: "USDT", txId: `0x${insertTime}`, insertTime };
@@ -97,5 +102,15 @@ describe("BinanceUtils: getOutstandingBinanceDeposits", function () {
 
     expect(deposits[0].amount).to.equal(originalAmount);
     expect(deposits.length).to.equal(1);
+  });
+});
+describe("BinanceUtils withdrawal helpers", function () {
+  it("only treats completed Binance withdrawals as completed", function () {
+    expect(isCompletedBinanceWithdrawal(6)).to.equal(true);
+    expect(isCompletedBinanceWithdrawal(0)).to.equal(false);
+    expect(isCompletedBinanceWithdrawal(2)).to.equal(false);
+    expect(isCompletedBinanceWithdrawal(4)).to.equal(false);
+    expect(isCompletedBinanceWithdrawal(5)).to.equal(false);
+    expect(isCompletedBinanceWithdrawal(undefined)).to.equal(false);
   });
 });
