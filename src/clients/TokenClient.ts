@@ -381,7 +381,7 @@ export class TokenClient {
     // Add additional L2 tokens to the balances and allowances.
     const erc20 = this.erc20.connect(provider);
     this.additionalL2Tokens[chainId]?.forEach((token) => {
-      const contract = erc20.attach(token.toNative());
+      const contract = erc20.attach(token.toEvmAddress());
       balances.push({ contract, method: "balanceOf", args: [this.relayerEvmAddress.toEvmAddress()] });
       allowances.push({
         contract,
@@ -396,7 +396,7 @@ export class TokenClient {
     const allowanceOffset = balances.length;
     const balanceInfo = Object.fromEntries(
       balances.map(({ contract: { address } }, idx) => [
-        EvmAddress.from(address).toNative(),
+        toAddressType(address, chainId).toNative(),
         { balance: results[idx][0], allowance: results[allowanceOffset + idx][0] },
       ])
     );
