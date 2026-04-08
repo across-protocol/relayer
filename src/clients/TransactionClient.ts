@@ -436,7 +436,9 @@ async function _runTransactionTvm(
   const feeLimit = isDefined(gasLimitNumber) ? Number(gasLimitNumber) * maxFeePerGas.toNumber() : DEFAULT_TVM_FEE_LIMIT;
 
   const tronWeb = getTronWebFromEvmSigner(contract.signer);
-  const populatedTransaction = await contract.populateTransaction[method](...(args as Array<unknown>), { value });
+  const populatedTransaction = sendRawTxn
+    ? { from: await contract.signer.getAddress(), to: contract.address, data: (args as Array<string>)[0] }
+    : await contract.populateTransaction[method](...(args as Array<unknown>), { value });
 
   logger.debug({ at, message: "Submitting TVM transaction.", chain, method, feeLimit });
   let result;

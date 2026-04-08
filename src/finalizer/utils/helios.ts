@@ -66,7 +66,7 @@ export async function heliosL1toL2Finalizer(
 ): Promise<FinalizerPromise> {
   assert(
     isEVMSpokePoolClient(l2SpokePoolClient) && isEVMSpokePoolClient(l1SpokePoolClient),
-    "Cannot use helios finalizer on non-evm/tvm chains"
+    "Cannot use helios finalizer on non-evm chains"
   );
   const l1ChainId = hubPoolClient.chainId;
   const l2ChainId = l2SpokePoolClient.chainId;

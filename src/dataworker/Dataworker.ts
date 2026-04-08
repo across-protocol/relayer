@@ -2450,7 +2450,6 @@ export class Dataworker {
           // to ensure that it has enough ETH to send.
           // NOTE: this is ETH required separately from the amount required to send the tokens. Since Solana does not require payments in native tokens for leaf
           // executions, we can also skip this if the spoke pool client is SVM.
-          // For this same reason, we can skip native token leaf executions for TVM spoke pool clients.
           if (isDefined(valueToPassViaPayable) && isEVMSpokePoolClient(client)) {
             const signer = await client.spokePool.signer.getAddress();
             balanceRequestsToQuery.push({
