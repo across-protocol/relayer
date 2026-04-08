@@ -57,13 +57,12 @@ export class RedisCache implements RedisCacheInterface {
     } else if (expirySeconds > 0) {
       // EX: Expire key after expirySeconds.
       return await this.client.set(key, String(val), { EX: expirySeconds });
-    } else {
-      this.logger?.warn({
-        at: "RedisCache#set",
-        message: `Rejecting set for key ${key} with non-positive expirySeconds (${expirySeconds}).`,
-      });
-      return undefined;
     }
+
+    this.logger?.warn({
+      at: "RedisCache#set",
+      message: `Rejecting set for key ${key} with non-positive expirySeconds (${expirySeconds}).`,
+    });
   }
 
   sAdd(key: string, value: string): Promise<number> {
