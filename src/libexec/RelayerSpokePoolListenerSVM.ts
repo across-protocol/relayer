@@ -37,12 +37,6 @@ let logger: winston.Logger;
 let chainId: number;
 let chain: string;
 
-// Teach BigInt how to be represented as JSON.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-(BigInt.prototype as any).toJSON = function () {
-  return this.toString();
-};
-
 // These are Log fields that are irrelevant for SVM and are only needed for the messaging interface.
 // These will ultimately be dropped from the messaging interface.
 const UNUSED_FIELDS = {
