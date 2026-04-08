@@ -27,11 +27,12 @@ Adapters in `src/rebalancer/adapters/` initiate and progress multi-stage swap wo
 
 ```ts
 export interface RebalancerAdapter {
+  baseSignerAddress: EvmAddress;
   initialize(availableRoutes: RebalanceRoute[]): Promise<void>;
-  initializeRebalance(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber): Promise<void>;
+  initializeRebalance(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber): Promise<BigNumber>;
   updateRebalanceStatuses(): Promise<void>;
   sweepIntermediateBalances(): Promise<void>;
-  getPendingRebalances(): Promise<{ [chainId: number]: { [token: string]: BigNumber } }>;
+  getPendingRebalances(account: EvmAddress): Promise<{ [chainId: number]: { [token: string]: BigNumber } }>;
   getPendingOrders(): Promise<string[]>;
   getEstimatedCost(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber, debugLog: boolean): Promise<BigNumber>;
 }
@@ -43,6 +44,8 @@ Implemented production swap adapters:
 - Hyperliquid
 
 `BaseAdapter` persists pending state in Redis so in-flight multi-stage swaps can be resumed and tracked deterministically across runs.
+Pending-status Redis sets are keyed by adapter status and signer address, so callers can request pending rebalance
+accounting for a specific EVM account while keeping independently operated accounts isolated from one another.
 
 ### Pending-order cache lifecycle and recovery
 
@@ -72,6 +75,13 @@ This separation is intentional:
 - Mode logic should stay focused on deficit/excess detection, prioritization, route evaluation, and guardrails.
 - Adapter logic should stay focused on venue-specific API calls, order lifecycle handling, and pending-state reporting.
 - The contract between both layers is the `RebalancerAdapter` interface plus `RebalanceRoute`.
+
+Signer invariant:
+
+- `BaseRebalancerClient.initialize()` asserts that every configured adapter resolved the same `baseSignerAddress` as the
+  rebalancer client itself.
+- This keeps rebalance initiation, pending-order caps, and pending-rebalance accounting aligned to a single owning
+  account for that client instance.
 
 ### Safe extension checklist for new adapters
 
@@ -146,9 +156,11 @@ Design tradeoff:
 
 ### Read-only mode: `ReadOnlyRebalancerClient`
 
-`ReadOnlyRebalancerClient` is used by consumers that only need pending-state visibility (for example, inventory accounting) and should not initiate new rebalances.
+`ReadOnlyRebalancerClient` is used by consumers that only need pending-state visibility (for example, inventory
+accounting) and should not initiate new rebalances.
 
-The read-only mode still initializes adapters (with an empty route set) so `getPendingRebalances()` and `getPendingOrders()` remain available without coupling callers to a specific operational rebalancing mode.
+The read-only mode still initializes adapters (with an empty route set) so `getPendingRebalances(account)` and
+`getPendingOrders()` remain available without coupling callers to a specific operational rebalancing mode.
 
 The OFT and CCTP adapters also expose their pending bridge-pre-deposit Redis schema through `src/rebalancer/utils/PendingBridgeRedis.ts`. Adapter-side bridge accounting uses that readonly reader to ignore rebalancer-owned OFT/CCTP transfers instead of instantiating rebalancer adapters inside `AdapterManager`.
 
@@ -167,7 +179,10 @@ Lifecycle note:
 
 - Constructors wire logger/config/adapters/signer.
 - `initialize(rebalanceRoutes)` sets route set and initializes adapters.
-- Read-only mode intentionally calls `initialize([])` and still supports `getPendingRebalances()` because pending-state reads do not depend on route selection.
+- Read-only mode intentionally calls `initialize([])` and still supports `getPendingRebalances(account)` because
+  pending-state reads do not depend on route selection.
+- Consumers pass the relayer/account they want to inspect into `getPendingRebalances(account)`; the client aggregates
+  only the pending state owned by that EVM address.
 
 Runtime entrypoints in `src/rebalancer/`:
 
