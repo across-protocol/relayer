@@ -37,7 +37,7 @@ export class InstanceCoordinator {
   async subscribe(): Promise<string | undefined> {
     const maxConsecutiveErrors = 10;
     let consecutiveErrors = 0;
-    let activeInstance: string | undefined;
+    let activeInstance: string | undefined = this.instance;
     do {
       await delay(1);
       if (this.abortController.signal.aborted) {
