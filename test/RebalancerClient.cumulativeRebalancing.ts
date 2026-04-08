@@ -210,10 +210,14 @@ describe("RebalancerClient.cumulativeRebalancing", () => {
     };
     const baseSigner = ethers.Wallet.createRandom();
     const adapter1 = new MockRebalancerAdapter(baseSigner);
-    const rebalancerClient = await createClient(cumulativeTargetBalances, { adapter1 }, [
-      makeRoute(CHAIN_A, CHAIN_A, USDT, USDC, "adapter1"),
-      makeRoute(CHAIN_A, CHAIN_A, USDT, DAI, "adapter1"),
-    ], {}, {}, baseSigner);
+    const rebalancerClient = await createClient(
+      cumulativeTargetBalances,
+      { adapter1 },
+      [makeRoute(CHAIN_A, CHAIN_A, USDT, USDC, "adapter1"), makeRoute(CHAIN_A, CHAIN_A, USDT, DAI, "adapter1")],
+      {},
+      {},
+      baseSigner
+    );
 
     await rebalancerClient.rebalanceInventory(cumulativeBalances, currentBalances, MAX_FEE_PCT);
 
@@ -242,10 +246,14 @@ describe("RebalancerClient.cumulativeRebalancing", () => {
     };
     const baseSigner = ethers.Wallet.createRandom();
     const adapter1 = new MockRebalancerAdapter(baseSigner);
-    const rebalancerClient = await createClient(cumulativeTargetBalances, { adapter1 }, [
-      makeRoute(CHAIN_A, CHAIN_A, USDT, USDC, "adapter1"),
-      makeRoute(CHAIN_A, CHAIN_A, DAI, USDC, "adapter1"),
-    ], {}, {}, baseSigner);
+    const rebalancerClient = await createClient(
+      cumulativeTargetBalances,
+      { adapter1 },
+      [makeRoute(CHAIN_A, CHAIN_A, USDT, USDC, "adapter1"), makeRoute(CHAIN_A, CHAIN_A, DAI, USDC, "adapter1")],
+      {},
+      {},
+      baseSigner
+    );
 
     await rebalancerClient.rebalanceInventory(cumulativeBalances, currentBalances, MAX_FEE_PCT);
 
@@ -274,11 +282,18 @@ describe("RebalancerClient.cumulativeRebalancing", () => {
     };
     const baseSigner = ethers.Wallet.createRandom();
     const adapter1 = new MockRebalancerAdapter(baseSigner);
-    const rebalancerClient = await createClient(cumulativeTargetBalances, { adapter1 }, [
-      makeRoute(CHAIN_A, CHAIN_A, USDT, USDC, "adapter1"),
-      makeRoute(CHAIN_B, CHAIN_A, USDT, USDC, "adapter1"),
-      makeRoute(CHAIN_C, CHAIN_A, USDT, USDC, "adapter1"),
-    ], {}, {}, baseSigner);
+    const rebalancerClient = await createClient(
+      cumulativeTargetBalances,
+      { adapter1 },
+      [
+        makeRoute(CHAIN_A, CHAIN_A, USDT, USDC, "adapter1"),
+        makeRoute(CHAIN_B, CHAIN_A, USDT, USDC, "adapter1"),
+        makeRoute(CHAIN_C, CHAIN_A, USDT, USDC, "adapter1"),
+      ],
+      {},
+      {},
+      baseSigner
+    );
 
     await rebalancerClient.rebalanceInventory(cumulativeBalances, currentBalances, MAX_FEE_PCT);
 
@@ -419,9 +434,14 @@ describe("RebalancerClient.cumulativeRebalancing", () => {
         [USDT]: amount(USDT, "3"),
       },
     });
-    const rebalancerClient = await createClient(cumulativeTargetBalances, { adapter1, adapter2 }, [
-      makeRoute(CHAIN_A, CHAIN_A, USDT, USDC, "adapter1"),
-    ], {}, {}, baseSigner);
+    const rebalancerClient = await createClient(
+      cumulativeTargetBalances,
+      { adapter1, adapter2 },
+      [makeRoute(CHAIN_A, CHAIN_A, USDT, USDC, "adapter1")],
+      {},
+      {},
+      baseSigner
+    );
 
     const pendingRebalances = await rebalancerClient.getPendingRebalances(
       EvmAddress.from(await rebalancerClient.baseSigner.getAddress())
@@ -450,9 +470,14 @@ describe("RebalancerClient.cumulativeRebalancing", () => {
         [DAI]: amount(DAI, "8"),
       },
     });
-    const rebalancerClient = await createClient(cumulativeTargetBalances, { adapter1 }, [
-      makeRoute(CHAIN_A, CHAIN_B, USDC, USDT, "adapter1"),
-    ], {}, {}, baseSigner);
+    const rebalancerClient = await createClient(
+      cumulativeTargetBalances,
+      { adapter1 },
+      [makeRoute(CHAIN_A, CHAIN_B, USDC, USDT, "adapter1")],
+      {},
+      {},
+      baseSigner
+    );
 
     const pendingRebalances = await rebalancerClient.getPendingRebalances(
       EvmAddress.from(await rebalancerClient.baseSigner.getAddress())
