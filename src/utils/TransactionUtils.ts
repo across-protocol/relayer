@@ -159,19 +159,14 @@ export async function willSucceed(transaction: AugmentedTransaction): Promise<Tr
   }
 
   try {
-    let gasLimit;
-    if (rawTxn) {
-      const from = (await contract.signer?.getAddress()) ?? ZERO_ADDRESS;
-      gasLimit = await contract.provider.estimateGas({
-        ...transaction,
-        to: contract.address,
-        data: transaction.args[0],
-        from,
-      });
-    } else {
-      const args = transaction.value ? [...transaction.args, { value: transaction.value }] : transaction.args;
-      gasLimit = await contract.estimateGas[method](...args);
-    }
+    const from = (await contract.signer?.getAddress()) ?? ZERO_ADDRESS;
+    const input = rawTxn ? transaction.args[0] : (await contract.populateTransaction[method](...transaction.args)).data;
+    const gasLimit = await contract.provider.estimateGas({
+      ...transaction,
+      to: contract.address,
+      data: input,
+      from,
+    });
     return { transaction: { ...transaction, gasLimit }, succeed: true, data };
   } catch (error) {
     const reason = typeguards.isEthersError(error) ? error.reason : "unknown error";

@@ -62,7 +62,7 @@ export class OftAdapter extends BaseAdapter {
       const connectedSigner = this.baseSigner.connect(await getProvider(chainId));
       if (EVM_OFT_MESSENGERS.get(TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET])?.has(chainId)) {
         const usdt = new Contract(this._getTokenInfo("USDT", chainId).address.toNative(), ERC20.abi, connectedSigner);
-        const oftMessenger = await this._getOftMessenger(chainId);
+        const oftMessenger = await this._getOftMessenger(chainId, chainId);
         const oftAllowance = await usdt.allowance(this.baseSignerAddress.toNative(), oftMessenger.address);
         if (oftAllowance.lt(toBN(MAX_SAFE_ALLOWANCE).div(2))) {
           this.multicallerClient.enqueueTransaction({
@@ -187,10 +187,11 @@ export class OftAdapter extends BaseAdapter {
     return this._redisGetPendingBridgesPreDeposit();
   }
 
-  protected async _getOftMessenger(chainId: number): Promise<Contract> {
+  protected async _getOftMessenger(chainId: number, destinationChainId: number): Promise<Contract> {
     const oftMessengerAddress = getMessengerEvm(
       EvmAddress.from(this._getTokenInfo("USDT", CHAIN_IDs.MAINNET).address.toNative()),
-      chainId
+      chainId,
+      destinationChainId
     );
     const originProvider = await getProvider(chainId);
     return new Contract(oftMessengerAddress.toNative(), IOFT_ABI_FULL, this.baseSigner.connect(originProvider));
@@ -205,7 +206,7 @@ export class OftAdapter extends BaseAdapter {
     sendParamStruct: SendParamStruct;
     oftMessenger: Contract;
   }> {
-    const oftMessenger = await this._getOftMessenger(originChain);
+    const oftMessenger = await this._getOftMessenger(originChain, destinationChain);
     const sharedDecimals = await oftMessenger.sharedDecimals();
 
     const roundedAmount = roundAmountToSend(
