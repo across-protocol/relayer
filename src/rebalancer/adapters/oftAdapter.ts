@@ -156,7 +156,7 @@ export class OftAdapter extends BaseAdapter {
         });
         continue;
       }
-      const pendingOrderDetails = await this._redisGetOrderDetails(txnHash, this.baseSignerAddress);
+      const pendingOrderDetails = await this._redisGetOrderDetails(txnHash, account);
       const { destinationChain, amountToTransfer } = pendingOrderDetails;
       pendingRebalances[destinationChain] ??= {};
       pendingRebalances[destinationChain]["USDT"] = (pendingRebalances[destinationChain]?.["USDT"] ?? bnZero).add(
