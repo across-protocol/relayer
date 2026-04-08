@@ -149,7 +149,7 @@ export class Relayer {
    * @description Perform inventory management as needed. This is capped to 1/minute in looping mode.
    */
   async runMaintenance(): Promise<void> {
-    const { inventoryClient, profitClient, tokenClient } = this.clients;
+    const { inventoryClient, tokenClient } = this.clients;
 
     const currentTime = getCurrentTime();
     if (currentTime < this.lastMaintenance + this.config.maintenanceInterval) {
@@ -157,7 +157,7 @@ export class Relayer {
     }
 
     tokenClient.clearTokenData();
-    await Promise.all([tokenClient.update(), profitClient.update()]);
+    await tokenClient.update();
     await inventoryClient.update(this.inventoryChainIds);
     await inventoryClient.wrapL2EthIfAboveThreshold();
 
