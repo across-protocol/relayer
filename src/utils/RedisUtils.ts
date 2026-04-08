@@ -154,26 +154,25 @@ export async function waitForPubSub(
   maxWaitMs = 60000
 ): Promise<boolean> {
   return new Promise((resolve) => {
+    const abortController = new AbortController();
+    const signal = abortController.signal;
     const listener = (msg: string, chl: string) => {
       if (chl === channel && msg !== message) {
-        cleanup(true);
+        abortController.abort();
       }
     };
+    void redisClient.sub(channel, listener);
 
-    const timer = setTimeout(() => cleanup(false), maxWaitMs);
+    const timer = setTimeout(() => {
+      void redisClient.unsub(channel, listener);
+      resolve(false);
+    }, maxWaitMs);
 
-    let settled = false;
-    const cleanup = (result: boolean) => {
-      if (settled) {
-        return;
-      }
-      settled = true;
+    signal.addEventListener("abort", () => {
       clearTimeout(timer);
       void redisClient.unsub(channel, listener);
-      resolve(result);
-    };
-
-    void redisClient.sub(channel, listener);
+      resolve(true);
+    });
   });
 }
 
