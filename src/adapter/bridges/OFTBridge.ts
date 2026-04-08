@@ -10,6 +10,7 @@ import {
   Address,
   winston,
   CHAIN_IDs,
+  chainIsTvm,
   getTokenInfo,
   fixedPointAdjustment,
 } from "../../utils";
@@ -123,7 +124,7 @@ export class OFTBridge extends BaseBridgeAdapter {
     if (this.l2chainId === CHAIN_IDs.MONAD) {
       extraOptions = Options.newOptions().addExecutorLzReceiveOption(MONAD_EXECUTOR_LZ_RECEIVE_GAS_LIMIT).toBytes();
     }
-    if (this.l2chainId === CHAIN_IDs.TRON) {
+    if (chainIsTvm(this.l2chainId)) {
       minAmountLD = minAmountLD.sub(minAmountLD.mul(this.feePct).div(fixedPointAdjustment));
     }
     const sendParamStruct: OFT.SendParamStruct = {

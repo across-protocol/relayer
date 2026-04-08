@@ -436,9 +436,6 @@ async function _runTransactionTvm(
       TRANSACTION_SUBMISSION_RETRIES_DEFAULT
   );
 
-  const priorityFeeScaler =
-    Number(process.env[`PRIORITY_FEE_SCALER_${chainId}`] || process.env.PRIORITY_FEE_SCALER) ||
-    DEFAULT_GAS_FEE_SCALERS[chainId]?.maxPriorityFeePerGasScaler;
   const maxFeePerGasScaler =
     Number(process.env[`MAX_FEE_PER_GAS_SCALER_${chainId}`] || process.env.MAX_FEE_PER_GAS_SCALER) ||
     DEFAULT_GAS_FEE_SCALERS[chainId]?.maxFeePerGasScaler;
@@ -448,7 +445,7 @@ async function _runTransactionTvm(
   // Essentially, the fee limit is just maxFeePerGas * gasLimit.
   const { maxFeePerGas } = await getGasPrice(
     provider,
-    priorityFeeScaler,
+    1, // No priority fee scalar for TRON.
     maxFeePerGasScaler,
     sendRawTxn ? undefined : await contract.populateTransaction[method](...(args as Array<unknown>), { value })
   );
