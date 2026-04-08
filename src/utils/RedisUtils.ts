@@ -2,7 +2,7 @@ import { assert, toBN, BigNumberish, isDefined } from "./";
 import { REDIS_URL_DEFAULT } from "../common/Constants";
 import { createClient } from "redis4";
 import winston from "winston";
-import { Deposit, Fill, PubSubMechanismInterface } from "../interfaces";
+import { Deposit, Fill } from "../interfaces";
 import dotenv from "dotenv";
 import { disconnectRedisClient, RedisCache, RedisCacheInterface, RedisClient } from "../caching/RedisCache";
 dotenv.config();
@@ -18,7 +18,8 @@ export const REDIS_CACHEABLE_AGE = 15 * 60;
 export const REDIS_URL = process.env.REDIS_URL || REDIS_URL_DEFAULT;
 
 // Make the redis client for a particular url + namespace essentially a singleton.
-const redisClients: { [key: string]: RedisCache } = {};
+// Stores promises to avoid TOCTOU races when multiple callers request the same client concurrently.
+const redisClients: { [key: string]: Promise<RedisCache> } = {};
 
 async function _getRedis(
   logger?: winston.Logger,
@@ -27,58 +28,74 @@ async function _getRedis(
 ): Promise<RedisCache | undefined> {
   const namespace = customNamespace || globalNamespace;
   const redisInstanceKey = namespace ? `${url}-${namespace}` : url;
-  if (!redisClients[redisInstanceKey]) {
-    logger?.debug({
-      at: "RedisUtils#_getRedis",
-      message: `Creating new redis client instance with key ${redisInstanceKey}`,
-    });
-    let redisClient: RedisClient | undefined = undefined;
-    const reconnectStrategy = (retries: number): number | Error => {
-      // Set a maximum retry limit to prevent infinite reconnection attempts
-      const MAX_RETRIES = 10;
-
-      if (retries >= MAX_RETRIES) {
-        logger?.error({
-          at: "RedisUtils",
-          message: `Redis connection failed after ${MAX_RETRIES} retries. Giving up.`,
-        });
-        return new Error(`Redis connection failed after ${MAX_RETRIES} retries`);
-      }
-
-      // Generate a random jitter between 0 – 200 ms:
-      const jitter = Math.floor(Math.random() * 200);
-      // Delay is an exponential back off, (times^2) * 50 ms, with a maximum value of 2000 ms:
-      const delay = Math.min(Math.pow(2, retries) * 50, 2000);
-      logger?.debug({
-        at: "RedisUtils",
-        message: `Lost redis connection, retrying in ${delay} ms (attempt ${retries + 1}/${MAX_RETRIES}).`,
-      });
-      return delay + jitter;
-    };
-
-    try {
-      redisClient = createClient({ url, socket: { reconnectStrategy } });
-      redisClient.on("error", (err) => logger?.debug({ at: "RedisUtils", message: "Redis error", error: String(err) }));
-      await redisClient.connect();
-      logger?.debug({
-        at: "RedisUtils#getRedis",
-        message: `Connected to redis server at ${url} successfully!`,
-        dbSize: await redisClient.dbSize(),
-      });
-      redisClients[redisInstanceKey] = new RedisCache(redisClient, namespace);
-    } catch (err) {
-      delete redisClients[redisInstanceKey];
-      await disconnectRedisClient(redisClient, logger);
-      logger?.debug({
-        at: "RedisUtils#getRedis",
-        message: `Failed to connect to redis server at ${url}.`,
-        error: String(err),
-      });
-      throw err;
-    }
+  if (!isDefined(redisClients[redisInstanceKey])) {
+    // Store the promise immediately so concurrent callers share the same connection attempt.
+    redisClients[redisInstanceKey] = _createRedisClient(logger, url, namespace);
   }
 
-  return redisClients[redisInstanceKey];
+  try {
+    return await redisClients[redisInstanceKey];
+  } catch (err) {
+    // On failure, remove the cached promise so the next caller can retry.
+    delete redisClients[redisInstanceKey];
+    throw err;
+  }
+}
+
+async function _createRedisClient(
+  logger: winston.Logger | undefined,
+  url: string,
+  namespace?: string
+): Promise<RedisCache> {
+  const redisInstanceKey = namespace ? `${url}-${namespace}` : url;
+  logger?.debug({
+    at: "RedisUtils#_getRedis",
+    message: `Creating new redis client instance with key ${redisInstanceKey}`,
+  });
+
+  let redisClient: RedisClient | undefined = undefined;
+  const reconnectStrategy = (retries: number): number | Error => {
+    // Set a maximum retry limit to prevent infinite reconnection attempts
+    const MAX_RETRIES = 10;
+
+    if (retries >= MAX_RETRIES) {
+      logger?.error({
+        at: "RedisUtils",
+        message: `Redis connection failed after ${MAX_RETRIES} retries. Giving up.`,
+      });
+      return new Error(`Redis connection failed after ${MAX_RETRIES} retries`);
+    }
+
+    // Generate a random jitter between 0 – 200 ms:
+    const jitter = Math.floor(Math.random() * 200);
+    // Delay is an exponential back off, (times^2) * 50 ms, with a maximum value of 2000 ms:
+    const delay = Math.min(Math.pow(2, retries) * 50, 2000);
+    logger?.debug({
+      at: "RedisUtils",
+      message: `Lost redis connection, retrying in ${delay} ms (attempt ${retries + 1}/${MAX_RETRIES}).`,
+    });
+    return delay + jitter;
+  };
+
+  try {
+    redisClient = createClient({ url, socket: { reconnectStrategy } });
+    redisClient.on("error", (err) => logger?.warn({ at: "RedisUtils", message: "Redis error", error: String(err) }));
+    await redisClient.connect();
+    logger?.debug({
+      at: "RedisUtils#getRedis",
+      message: `Connected to redis server at ${url} successfully!`,
+      dbSize: await redisClient.dbSize(),
+    });
+    return new RedisCache(redisClient, namespace);
+  } catch (err) {
+    await disconnectRedisClient(redisClient, logger);
+    logger?.debug({
+      at: "RedisUtils#getRedis",
+      message: `Failed to connect to redis server at ${url}.`,
+      error: String(err),
+    });
+    throw err;
+  }
 }
 
 export async function getRedisCache(
@@ -94,10 +111,7 @@ export async function getRedisCache(
   return await _getRedis(logger, url, customNamespace);
 }
 
-export async function getRedisPubSub(
-  logger?: winston.Logger,
-  url?: string
-): Promise<PubSubMechanismInterface | undefined> {
+export async function getRedisPubSub(logger?: winston.Logger, url?: string): Promise<RedisCacheInterface | undefined> {
   // Don't permit redis to be used in test.
   if (isDefined(process.env.RELAYER_TEST)) {
     return undefined;
@@ -134,37 +148,39 @@ export async function getDeposit(key: string, redisClient: RedisCache): Promise<
 }
 
 export async function waitForPubSub(
-  redisClient: PubSubMechanismInterface,
+  redisClient: RedisCacheInterface,
   channel: string,
   message: string,
   maxWaitMs = 60000
 ): Promise<boolean> {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  return new Promise((resolve, _reject) => {
-    const abortController = new AbortController();
-    const signal = abortController.signal;
+  return new Promise((resolve) => {
     const listener = (msg: string, chl: string) => {
       if (chl === channel && msg !== message) {
-        abortController.abort();
+        cleanup(true);
       }
     };
+
+    const timer = setTimeout(() => cleanup(false), maxWaitMs);
+
+    let settled = false;
+    const cleanup = (result: boolean) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timer);
+      void redisClient.unsub(channel, listener);
+      resolve(result);
+    };
+
     void redisClient.sub(channel, listener);
-
-    signal.addEventListener("abort", () => {
-      resolve(true);
-    });
-
-    setTimeout(() => {
-      resolve(false);
-    }, maxWaitMs);
   });
 }
 
 export async function disconnectRedisClients(logger?: winston.Logger): Promise<void> {
-  // todo understand why redisClients aren't GCed automagically.
   const clients = Object.entries(redisClients);
-  for (const [key, client] of clients) {
-    const logParams = {
+  for (const [key, clientPromise] of clients) {
+    const logParams: Record<string, unknown> = {
       at: "RedisUtils#disconnectRedisClient",
       message: "Disconnecting from redis server.",
       key,
@@ -175,6 +191,7 @@ export async function disconnectRedisClients(logger?: winston.Logger): Promise<v
     // We don't want to throw an error if we can't disconnect from redis.
     // We can log the error and continue.
     try {
+      const client = await clientPromise;
       await client.disconnect();
       logParams["success"] = true;
     } catch (e) {

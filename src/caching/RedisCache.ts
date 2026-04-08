@@ -11,6 +11,7 @@ export interface RedisCacheInterface extends interfaces.CachingMechanismInterfac
   decrBy(key: string, amount: number): Promise<number>;
   incr(key: string): Promise<number>;
   incrBy(key: string, amount: number): Promise<number>;
+  unsub(channel: string, listener: (message: string, channel: string) => void): Promise<void>;
 }
 
 /**
@@ -57,13 +58,11 @@ export class RedisCache implements RedisCacheInterface {
       // EX: Expire key after expirySeconds.
       return await this.client.set(key, String(val), { EX: expirySeconds });
     } else {
-      if (expirySeconds <= 0) {
-        this.logger?.warn({
-          at: "RedisCache#set",
-          message: `Tried to set key ${key} with expirySeconds = ${expirySeconds}. This shouldn't be allowed.`,
-        });
-      }
-      return await this.client.set(key, String(val));
+      this.logger?.warn({
+        at: "RedisCache#set",
+        message: `Rejecting set for key ${key} with non-positive expirySeconds (${expirySeconds}).`,
+      });
+      return undefined;
     }
   }
 
@@ -84,7 +83,7 @@ export class RedisCache implements RedisCacheInterface {
   }
 
   decr(key: string): Promise<number> {
-    return this.decrBy(this.getNamespacedKey(key), 1);
+    return this.decrBy(key, 1);
   }
 
   decrBy(key: string, amount: number): Promise<number> {
@@ -93,7 +92,7 @@ export class RedisCache implements RedisCacheInterface {
   }
 
   incr(key: string): Promise<number> {
-    return this.incrBy(this.getNamespacedKey(key), 1);
+    return this.incrBy(key, 1);
   }
 
   incrBy(key: string, amount: number): Promise<number> {
@@ -107,6 +106,10 @@ export class RedisCache implements RedisCacheInterface {
 
   async sub(channel: string, listener: (message: string, channel: string) => void): Promise<void> {
     await this.client.subscribe(channel, listener);
+  }
+
+  async unsub(channel: string, listener: (message: string, channel: string) => void): Promise<void> {
+    await this.client.unsubscribe(channel, listener);
   }
 
   async duplicate(): Promise<RedisCache> {
