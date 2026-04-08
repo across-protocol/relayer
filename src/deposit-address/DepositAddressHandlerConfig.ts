@@ -1,4 +1,5 @@
 import { CommonConfig, ProcessEnv } from "../common";
+import { parseJson } from "../utils";
 
 export class DepositAddressHandlerConfig extends CommonConfig {
   apiEndpoint: string;
@@ -33,7 +34,7 @@ export class DepositAddressHandlerConfig extends CommonConfig {
       throw new Error("SWAP_API_KEY is required (set SWAP_API_KEY in env)");
     }
 
-    const relayerOriginChains = new Set<number>(JSON.parse(RELAYER_ORIGIN_CHAINS ?? "[]"));
+    const relayerOriginChains = new Set(parseJson.numberArray(RELAYER_ORIGIN_CHAINS));
     this.relayerOriginChains = Array.from(relayerOriginChains);
 
     this.depositLookback = Number(MAX_RELAYER_DEPOSIT_LOOKBACK ?? 3600);

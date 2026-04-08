@@ -1,3 +1,5 @@
+import "./extensions";
+
 // Utils from other packages.
 import { constants as sdkConstants } from "@across-protocol/sdk";
 import { constants as ethersConstants } from "ethers";

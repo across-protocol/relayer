@@ -120,6 +120,7 @@ export const {
   chainIsTvm,
   fetchWithTimeout,
   postWithTimeout,
+  isHttpError,
 } = sdk.utils;
 
 export type FetchHeaders = sdk.utils.FetchHeaders;

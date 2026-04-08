@@ -72,12 +72,6 @@ const STABLE_SWAP_DISCOUNT = 0.2;
 // There is a minimum order placement requirement of 10 USD.
 const MIN_ORDER_AMOUNT = toBN(10 * HL_FIXED_ADJUSTMENT);
 
-// Teach BigInt how to be represented as JSON.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-(BigInt.prototype as any).toJSON = function () {
-  return this.toString();
-};
-
 /**
  * Class which operates on HyperEVM handler contracts. This supports placing orders on Hypercore and transferring tokens from
  * swap handler contracts to users on Hypercore.
