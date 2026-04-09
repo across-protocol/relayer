@@ -17,7 +17,6 @@ import {
   EvmAddress,
   forEachAsync,
   getBlockForTimestamp,
-  getCurrentTime,
   getProvider,
   getRedisCache,
   getTokenInfo,
