@@ -26,7 +26,7 @@ import {
 import { CCTP_NO_DOMAIN } from "@across-protocol/constants";
 import { CCTP_MAX_SEND_AMOUNT } from "../../common";
 import { SortableEvent } from "../../interfaces";
-import { PendingBridgeAdapterName } from "../../rebalancer/utils/PendingBridgeRedis";
+import { PendingBridgeAdapterName } from "../../rebalancer/clients/CctpOftReadOnlyClient";
 
 export class UsdcCCTPBridge extends BaseBridgeAdapter {
   private IS_CCTP_V2 = false;
