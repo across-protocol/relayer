@@ -206,14 +206,17 @@ describe("BundleDataApproxClient: Accounting for unexecuted, upcoming relayer re
   }
 
   describe("getApproximateRefundsForToken", function () {
+    // Helper to create 2D fromBlocks where every [repaymentChain][fillChain] has the same value.
+    function uniformFromBlocks(
+      chains: number[],
+      value: number
+    ): { [repaymentChainId: number]: { [fillChainId: number]: number } } {
+      return Object.fromEntries(chains.map((r) => [r, Object.fromEntries(chains.map((f) => [f, value]))]));
+    }
+
     it("Accumulates fills sent after the fromBlocks", async function () {
       // Returns object of refunds grouped by repayment chain:
-      const fromBlocks = {
-        [MAINNET]: 1,
-        [OPTIMISM]: 1,
-        [BSC]: 1,
-        [POLYGON]: 1, // Add a chain we don't have a spoke pool client for to make sure no errors are thrown.
-      };
+      const fromBlocks = uniformFromBlocks([MAINNET, OPTIMISM, BSC, POLYGON], 1);
       // Send two fills that should be counted:
       const fill1 = await generateFill("WETH", MAINNET, MAINNET, owner.address);
       const fill2 = await generateFill("WETH", MAINNET, OPTIMISM, owner.address);
@@ -225,11 +228,7 @@ describe("BundleDataApproxClient: Accounting for unexecuted, upcoming relayer re
       expect(wethRefunds[OPTIMISM][owner.address]).to.equal(fill2.args.inputAmount);
 
       // Ignores fills if block number is less than fromBlocks:
-      const highFromBlocks = {
-        [MAINNET]: 1000000000000000000,
-        [OPTIMISM]: 1000000000000000000,
-        [BSC]: 1000000000000000000,
-      };
+      const highFromBlocks = uniformFromBlocks([MAINNET, OPTIMISM, BSC], 1000000000000000000);
       const wethRefunds3 = bundleDataClient.getApproximateRefundsForToken(
         toAddressType(mainnetWeth, MAINNET),
         highFromBlocks
@@ -395,6 +394,108 @@ describe("BundleDataApproxClient: Accounting for unexecuted, upcoming relayer re
     });
   });
 
+  describe("Cross-chain refund counting with relay delay", function () {
+    // Regression test for a bug where fills on chain X with repaymentChainId = chain Y were incorrectly
+    // excluded from upcoming refunds when chain X had processed a bundle but chain Y had not yet received
+    // the relay (due to cross-chain propagation delay). For example, 16 fills of 100K USDT each on Ethereum
+    // with repayment on BSC were dropped (~1.6M USDT) because Ethereum's bundle execution advanced
+    // fromBlocks[MAINNET] past those fills, even though BSC hadn't received the refund leaf yet.
+    it("Counts fills toward repayment chain when fill chain has executed the bundle but repayment chain has not", async function () {
+      configStoreClient.setAvailableChains([MAINNET, OPTIMISM, BSC]);
+
+      // Recreate bundleDataClient so protocolChainIdIndices picks up the new chain list.
+      bundleDataClient = new MockBundleDataApproxClient(
+        spokePoolClients,
+        hubPoolClient,
+        enabledChainIds,
+        [toAddressType(mainnetWeth, MAINNET)],
+        spyLogger
+      );
+      (bundleDataClient as MockBundleDataApproxClient).setTokenMapping({
+        [mainnetWeth]: {
+          [MAINNET]: mainnetWeth,
+          [OPTIMISM]: l2TokensForWeth[OPTIMISM],
+          [BSC]: l2TokensForWeth[BSC],
+        },
+      });
+
+      // Set up Bundle A with known end blocks for each chain.
+      const bundleEndBlocks = [toBN(1000), toBN(2000), toBN(3000)];
+      const rootBundleRelays = [
+        {
+          rootBundleId: 0,
+          relayerRefundRoot: "0xabc",
+          bundleEvaluationBlockNumbers: bundleEndBlocks,
+        },
+      ];
+      hubPoolClient.setValidatedRootBundles(rootBundleRelays as unknown as ProposedRootBundle[]);
+
+      // Bundle A is relayed and executed on MAINNET (simulates same-chain instant execution).
+      (spokePoolClients[MAINNET] as unknown as MockSpokePoolClient).setRootBundleRelays(
+        rootBundleRelays as unknown as RootBundleRelayWithBlock[]
+      );
+      (spokePoolClients[MAINNET] as unknown as MockSpokePoolClient).addRelayerRefundExecution({
+        rootBundleId: 0,
+        leafId: 0,
+        chainId: MAINNET,
+        amountToReturn: bnZero,
+        l2TokenAddress: toAddressType(mainnetWeth, MAINNET),
+        refundAddresses: [],
+        refundAmounts: [],
+        blockNumber: 0,
+        txnIndex: 0,
+        logIndex: 0,
+        txnRef: "0x",
+      });
+
+      // Bundle A is NOT relayed to BSC — simulates the ~17 minute cross-chain relay delay.
+      // (no setRootBundleRelays on BSC spoke pool client)
+
+      // Create a fill on MAINNET at block 500 (within Bundle A's MAINNET range) with repayment on BSC.
+      // This simulates a fill like the 100K USDT deposits from BSC→Ethereum with BSC repayment.
+      const fillAmount = toWei(1);
+      const mainnetSpokePoolClient = spokePoolClients[MAINNET] as unknown as MockSpokePoolClient;
+      mainnetSpokePoolClient.fillRelay({
+        message: "0x",
+        messageHash: ZERO_BYTES,
+        inputToken: toAddressType(l2TokensForWeth[BSC], BSC),
+        outputToken: toAddressType(mainnetWeth, MAINNET),
+        destinationChainId: MAINNET,
+        depositor: toAddressType(owner.address, BSC),
+        recipient: toAddressType(owner.address, MAINNET),
+        exclusivityDeadline: getCurrentTime() + 14400,
+        depositId: bnZero,
+        exclusiveRelayer: toAddressType(owner.address, BSC),
+        inputAmount: fillAmount,
+        outputAmount: fillAmount,
+        fillDeadline: getCurrentTime() + 14400,
+        blockNumber: 500, // Within Bundle A's MAINNET end block of 1000
+        txnIndex: 0,
+        logIndex: 0,
+        txnRef: "0x",
+        relayer: toAddressType(owner.address, MAINNET),
+        originChainId: BSC,
+        repaymentChainId: BSC, // Relayer chose BSC for repayment
+        relayExecutionInfo: {
+          updatedRecipient: toAddressType(owner.address, MAINNET),
+          updatedMessage: "0x",
+          updatedMessageHash: ZERO_BYTES,
+          updatedOutputAmount: fillAmount,
+          fillType: interfaces.FillType.FastFill,
+        },
+      } as interfaces.FillWithBlock);
+      await spokePoolClients[MAINNET].update(["FilledRelay"]);
+
+      bundleDataClient.initialize();
+
+      // The fill's refund on BSC should be counted as upcoming because BSC hasn't executed Bundle A yet.
+      // Before this fix, fromBlocks[MAINNET] (= 1001) would have been used to filter the fill at block 500,
+      // incorrectly excluding it. Now fromBlocks[BSC][MAINNET] (= 0, since BSC has no executed bundle) is
+      // used, so the fill is correctly included.
+      expect(bundleDataClient.getUpcomingRefunds(BSC, toAddressType(mainnetWeth, MAINNET))).to.equal(fillAmount);
+    });
+  });
+
   describe("getUnexecutedBundleStartBlocks", function () {
     it("Returns endBlocks+1 from last relayed bundle for chain", async function () {
       configStoreClient.setAvailableChains([MAINNET, OPTIMISM, BSC]);
@@ -404,9 +505,9 @@ describe("BundleDataApproxClient: Accounting for unexecuted, upcoming relayer re
         l1Weth,
         true
       );
-      expect(defaultFromBlocks[MAINNET]).to.equal(0);
-      expect(defaultFromBlocks[OPTIMISM]).to.equal(0);
-      expect(defaultFromBlocks[BSC]).to.equal(0);
+      expect(defaultFromBlocks[MAINNET][MAINNET]).to.equal(0);
+      expect(defaultFromBlocks[OPTIMISM][OPTIMISM]).to.equal(0);
+      expect(defaultFromBlocks[BSC][BSC]).to.equal(0);
 
       const rootBundleRelays = [
         {
@@ -422,8 +523,7 @@ describe("BundleDataApproxClient: Accounting for unexecuted, upcoming relayer re
 
       // Add a matching execution so getUnexecutedBundleStartBlocks can verify the leaf was executed.
       // Directly push to the internal array to avoid event parsing issues in the mock.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (spokePoolClients[MAINNET] as any).relayerRefundExecutions.push({
+      (spokePoolClients[MAINNET] as unknown as MockSpokePoolClient).addRelayerRefundExecution({
         rootBundleId: 0,
         leafId: 0,
         chainId: MAINNET,
@@ -440,9 +540,11 @@ describe("BundleDataApproxClient: Accounting for unexecuted, upcoming relayer re
       const fromBlocks1 = (bundleDataClient as MockBundleDataApproxClient).getUnexecutedBundleStartBlocks(l1Weth, true);
 
       // Only the spoke pool clients that saw the RootBundleRelay events should have non-zero fromBlocks.
-      expect(fromBlocks1[MAINNET]).to.equal(4);
-      expect(fromBlocks1[OPTIMISM]).to.equal(0);
-      expect(fromBlocks1[BSC]).to.equal(0);
+      // The MAINNET entry returns end blocks for all chains from the matched bundle.
+      expect(fromBlocks1[MAINNET][MAINNET]).to.equal(4); // bundleEvaluationBlockNumbers[0] + 1
+      // Chains without relays still return 0 for all fill chains.
+      expect(fromBlocks1[OPTIMISM][OPTIMISM]).to.equal(0);
+      expect(fromBlocks1[BSC][BSC]).to.equal(0);
     });
   });
 });
