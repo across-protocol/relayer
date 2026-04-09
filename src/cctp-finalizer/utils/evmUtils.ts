@@ -70,7 +70,7 @@ export async function createHyperCoreAccountIfNotExists(
     });
     const transactionClient = new TransactionClient(logger);
     const fundingToken = TOKEN_SYMBOLS_MAP.USDC.addresses[chainId];
-    const activationReceipt = await submitTransaction(
+    const activationTx = await submitTransaction(
       {
         contract,
         method: "activateUserAccount",
@@ -84,7 +84,7 @@ export async function createHyperCoreAccountIfNotExists(
       at: "evmUtils#createHyperCoreAccountIfNotExists",
       message: "Account activation confirmed",
       finalRecipient: hookData.finalRecipient,
-      txHash: activationReceipt.hash,
+      txHash: activationTx.hash,
     });
   }
 }
