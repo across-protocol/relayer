@@ -13,7 +13,6 @@ import {
   defiLlama,
   delay,
   ERC20,
-  ethers,
   EventSearchConfig,
   EvmAddress,
   forEachAsync,
@@ -33,7 +32,7 @@ import {
 import { RebalancerAdapter, RebalanceRoute } from "../utils/interfaces";
 import { RebalancerConfig } from "../RebalancerConfig";
 import { getRebalancerStatusTrackingNamespace } from "../utils/PendingBridgeRedis";
-import { getCloidForTimestampAndAccount } from "../utils/cloid";
+import { getCloidForAccount } from "../utils/utils";
 
 export enum STATUS {
   PENDING_BRIDGE_PRE_DEPOSIT,
@@ -213,11 +212,7 @@ export abstract class BaseAdapter implements RebalancerAdapter {
 
   // Used to generate unique cloids for orders for adapters where we can inject our own cloid.
   protected async _redisGetNextCloid(): Promise<string> {
-    // We want cloids to stay unique even if we rotate the Redis namespace. Combine the current unix timestamp
-    // with the relayer account so different relayer instances cannot collide even when they create orders in
-    // the same second. This still assumes one relayer instance won't create multiple orders in the same second.
-    const unixTimestamp = getCurrentTime();
-    return getCloidForTimestampAndAccount(unixTimestamp, this.baseSignerAddress.toNative());
+    return getCloidForAccount(this.baseSignerAddress.toNative());
   }
 
   protected async _redisGetOrderDetails(cloid: string): Promise<OrderDetails> {

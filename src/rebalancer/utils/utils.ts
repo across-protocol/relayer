@@ -1,4 +1,4 @@
-import { ConvertDecimals, getTokenInfoFromSymbol } from "../../utils";
+import { ConvertDecimals, getTokenInfoFromSymbol, ethers } from "../../utils";
 import { ExcessOrDeficit } from "./interfaces";
 
 // Excesses are always sorted in priority from lowest to highest and then by amount from largest to smallest.
@@ -30,4 +30,13 @@ export function sortDeficitFunction(deficitA: ExcessOrDeficit, deficitB: ExcessO
     return 0;
   }
   return converter(amountA).gt(amountB) ? -1 : 1;
+}
+
+export function getCloidForAccount(account: string): string {
+  // We want cloids to stay unique even if we rotate the Redis namespace. Combine the current unix timestamp
+  // with the relayer account so different relayer instances cannot collide even when they create orders in
+  // the same second. This still assumes one relayer instance won't create multiple orders in the same second.
+  const unixTimestamp = Date.now();
+  const cloidSeed = ethers.utils.solidityPack(["uint256", "address"], [unixTimestamp, account]);
+  return ethers.utils.hexDataSlice(ethers.utils.keccak256(cloidSeed), 0, 16);
 }
