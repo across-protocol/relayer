@@ -23,7 +23,13 @@ import {
 } from "../utils";
 import { CommonConfig, ProcessEnv } from "../common";
 import * as Constants from "../common/Constants";
-import { InventoryConfig, TokenBalanceConfig, isAliasConfig, SwapRoute } from "../interfaces/InventoryManagement";
+import {
+  ChainTokenInventory,
+  InventoryConfig,
+  TokenBalanceConfig,
+  isAliasConfig,
+  SwapRoute,
+} from "../interfaces/InventoryManagement";
 
 type DepositConfirmationConfig = {
   usdThreshold: BigNumber;
@@ -258,7 +264,8 @@ export class RelayerConfig extends CommonConfig {
       };
 
       const rawTokenConfigs = inventoryConfig?.tokenConfig ?? {};
-      const tokenConfigs = (inventoryConfig.tokenConfig = {});
+      inventoryConfig.tokenConfig = {};
+      const tokenConfigs = inventoryConfig.tokenConfig;
       Object.keys(rawTokenConfigs).forEach((l1Token) => {
         // If the l1Token is a symbol, resolve the correct address.
         const effectiveL1Token = ethersUtils.isAddress(l1Token)
@@ -275,24 +282,24 @@ export class RelayerConfig extends CommonConfig {
           return;
         }
 
-        tokenConfigs[effectiveL1Token] ??= {};
         const hubTokenConfig = rawTokenConfigs[l1Token];
 
         if (isAliasConfig(hubTokenConfig)) {
+          const existing = tokenConfigs[effectiveL1Token];
+          const inventoryEntry: ChainTokenInventory =
+            isDefined(existing) && isAliasConfig(existing) ? { ...existing } : {};
           Object.keys(hubTokenConfig).forEach((symbol) => {
             Object.keys(hubTokenConfig[symbol]).forEach((chainId) => {
               const rawTokenConfig = hubTokenConfig[symbol][chainId];
               const effectiveSpokeToken = TOKEN_SYMBOLS_MAP[symbol].addresses[chainId];
 
-              tokenConfigs[effectiveL1Token][effectiveSpokeToken] ??= {};
-              tokenConfigs[effectiveL1Token][effectiveSpokeToken][chainId] = parseTokenConfig(
-                l1Token,
-                chainId,
-                rawTokenConfig
-              );
+              inventoryEntry[effectiveSpokeToken] ??= {};
+              inventoryEntry[effectiveSpokeToken][chainId] = parseTokenConfig(l1Token, chainId, rawTokenConfig);
             });
           });
+          tokenConfigs[effectiveL1Token] = inventoryEntry;
         } else {
+          tokenConfigs[effectiveL1Token] ??= {};
           Object.keys(hubTokenConfig).forEach((chainId) => {
             const rawTokenConfig = hubTokenConfig[chainId];
             tokenConfigs[effectiveL1Token][chainId] = parseTokenConfig(l1Token, chainId, rawTokenConfig);

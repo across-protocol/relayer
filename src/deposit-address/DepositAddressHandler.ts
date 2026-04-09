@@ -1,5 +1,6 @@
 import winston from "winston";
 import { DepositAddressHandlerConfig } from "./DepositAddressHandlerConfig";
+import { RedisCacheInterface } from "../caching/RedisCache";
 import {
   getRedisCache,
   isDefined,
@@ -32,7 +33,7 @@ import ERC20_ABI from "../common/abi/MinimalERC20.json";
  */
 export class DepositAddressHandler {
   private abortController = new AbortController();
-  private instanceCoordinator;
+  private instanceCoordinator: InstanceCoordinator;
   private initialized = false;
 
   private providersByChain: { [chainId: number]: Provider } = {};
@@ -50,7 +51,7 @@ export class DepositAddressHandler {
   private signerAddress: EvmAddress;
 
   private transactionClient;
-  private redisCache;
+  private redisCache: RedisCacheInterface | undefined;
 
   public constructor(
     readonly logger: winston.Logger,

@@ -181,7 +181,7 @@ export async function getProvider(
   let rateLimitLogCounter = 0;
   const chain = getNetworkName(chainId);
   const rpcRateLimited =
-    ({ nodeMaxConcurrency, logger }) =>
+    ({ nodeMaxConcurrency, logger }: { nodeMaxConcurrency: number; logger?: winston.Logger }) =>
     async (attempt: number, url: string): Promise<boolean> => {
       // Implement a slightly aggressive exponential backoff to account for fierce parallelism.
       // @todo: Start w/ maxConcurrency low and increase until 429 responses start arriving.

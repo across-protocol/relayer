@@ -5,6 +5,7 @@ import {
   exit,
   retrieveSignerFromCLIArgs,
   help,
+  isKeyOf,
   Logger,
   usage,
   waitForLogger,
@@ -58,7 +59,7 @@ export async function run(args: { [k: string]: boolean | string }): Promise<void
   else if (typeof args["wallet"] !== "string" || args["wallet"].length === 0) {
     // todo: Update usage() to provide a hint that wallet is missing/malformed.
     usage(""); // no return
-  } else {
+  } else if (isKeyOf(cmd, CMDS)) {
     // One global signer for use with a specific per-chain provider.
     // todo: Support a void signer for monitor mode (only) if no wallet was supplied.
     const signer = await retrieveSignerFromCLIArgs();
