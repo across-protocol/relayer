@@ -115,13 +115,23 @@ describe("BinanceUtils: getOutstandingBinanceDeposits", function () {
 });
 
 describe("BinanceUtils recvWindow helpers", function () {
-  it("applies the read recvWindow to signed read helpers", async function () {
+  it("keeps the withdraw quota helper parameterless", async function () {
     const calls: Record<string, unknown> = {};
     const binanceApi = {
       privateRequest: async (_method: string, _url: string, payload: object) => {
         calls.privateRequest = payload;
         return { wdQuota: 10, usedWdQuota: 1 };
       },
+    } as unknown as Parameters<typeof getBinanceWithdrawalLimits>[0];
+
+    await getBinanceWithdrawalLimits(binanceApi);
+
+    expect(calls.privateRequest).to.deep.equal({});
+  });
+
+  it("applies the read recvWindow to signed read helpers that accept it", async function () {
+    const calls: Record<string, unknown> = {};
+    const binanceApi = {
       tradeFee: async (payload: object) => {
         calls.tradeFee = payload;
         return [];
@@ -134,14 +144,12 @@ describe("BinanceUtils recvWindow helpers", function () {
         calls.allOrders = payload;
         return [];
       },
-    } as unknown as Parameters<typeof getBinanceWithdrawalLimits>[0];
+    } as unknown as Parameters<typeof getBinanceTradeFees>[0];
 
-    await getBinanceWithdrawalLimits(binanceApi);
     await getBinanceTradeFees(binanceApi);
     await getBinanceDepositAddress(binanceApi, { coin: "USDT", network: "ETH" });
     await getBinanceAllOrders(binanceApi, { symbol: "USDCUSDT" });
 
-    expect(calls.privateRequest).to.deep.equal({ recvWindow: BINANCE_READ_RECV_WINDOW_MS });
     expect(calls.tradeFee).to.deep.equal({ recvWindow: BINANCE_READ_RECV_WINDOW_MS });
     expect(calls.depositAddress).to.deep.equal({
       coin: "USDT",

@@ -167,9 +167,11 @@ async function retrieveBinanceSecretKeyFromCLIArgs(): Promise<string | undefined
  * available to rebalance per day and the amount already used.
  */
 export async function getBinanceWithdrawalLimits(binanceApi: BinanceApi): Promise<WithdrawalQuota> {
-  const unparsedQuota = (await binanceApi.privateRequest("GET" as HttpMethod, "/sapi/v1/capital/withdraw/quota", {
-    recvWindow: BINANCE_READ_RECV_WINDOW_MS,
-  })) as {
+  const unparsedQuota = (await binanceApi.privateRequest(
+    "GET" as HttpMethod,
+    "/sapi/v1/capital/withdraw/quota",
+    {}
+  )) as {
     wdQuota: number;
     usedWdQuota: number;
   };
