@@ -41,6 +41,7 @@ import {
   toAddressType,
   Address,
   EvmAddress,
+  chainIsTvm,
   SvmAddress,
   assert,
   getBinanceApiClient,
