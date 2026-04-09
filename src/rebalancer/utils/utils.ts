@@ -1,5 +1,20 @@
-import { ConvertDecimals, getTokenInfoFromSymbol } from "../../utils";
-import { ExcessOrDeficit } from "./interfaces";
+import { RedisCache } from "../../caching/RedisCache";
+import { BigNumber, ConvertDecimals, EvmAddress, getTokenInfoFromSymbol, winston, getRedisCache } from "../../utils";
+import { ExcessOrDeficit, OrderDetails, RedisOrderDetailsPayload } from "./interfaces";
+
+// Optional namespace that lets different rebalancer deployments keep their status-tracking data isolated
+// even if they share the same Redis instance.
+function getRebalancerStatusTrackingNamespace(): string | undefined {
+  return process.env.REBALANCER_STATUS_TRACKING_NAMESPACE
+    ? String(process.env.REBALANCER_STATUS_TRACKING_NAMESPACE)
+    : undefined;
+}
+
+export async function getRedisCacheForRebalancerStatusTracking(
+  logger: winston.Logger
+): Promise<RedisCache | undefined> {
+  return (await getRedisCache(logger, undefined, getRebalancerStatusTrackingNamespace())) as RedisCache;
+}
 
 // Excesses are always sorted in priority from lowest to highest and then by amount from largest to smallest.
 export function sortExcessFunction(excessA: ExcessOrDeficit, excessB: ExcessOrDeficit): number {
@@ -63,3 +78,24 @@ export function getPendingBridgeStatusSetKey(redisPrefix: string, status: STATUS
 export function getPendingBridgeOrderKey(redisPrefix: string, cloid: string, account: string): string {
   return `${redisPrefix}pending-order:${cloid}:${account.toLowerCase()}`;
 }
+
+export async function redisGetOrderDetailsForAdapter(
+  redisCache: RedisCache,
+  adapterRedisPrefix: string,
+  cloid: string,
+  account: EvmAddress
+): Promise<OrderDetails> {
+  const orderDetailsKey = getPendingBridgeOrderKey(adapterRedisPrefix, cloid, account.toNative());
+  const orderDetails = await redisCache.get<string>(orderDetailsKey);
+  if (!orderDetails) {
+    return undefined;
+  }
+  const rebalanceRoute = JSON.parse(orderDetails) as RedisOrderDetailsPayload;
+  return {
+    ...rebalanceRoute,
+    amountToTransfer: BigNumber.from(rebalanceRoute.amountToTransfer),
+  };
+}
+
+export const CCTP_PENDING_BRIDGE_REDIS_PREFIX = "cctp-bridge:";
+export const OFT_PENDING_BRIDGE_REDIS_PREFIX = "oft-bridge:";

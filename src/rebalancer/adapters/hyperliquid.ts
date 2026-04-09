@@ -33,9 +33,9 @@ import {
   getUserFillsByTime,
   isSignerWallet,
 } from "../../utils";
-import { RebalanceRoute } from "../utils/interfaces";
+import { RebalanceRoute, OrderDetails } from "../utils/interfaces";
 import * as hl from "@nktkas/hyperliquid";
-import { BaseAdapter, OrderDetails } from "./baseAdapter";
+import { BaseAdapter } from "./baseAdapter";
 import { RebalancerConfig } from "../RebalancerConfig";
 import { OftAdapter } from "./oftAdapter";
 import { CctpAdapter } from "./cctpAdapter";

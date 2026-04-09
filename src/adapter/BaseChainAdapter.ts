@@ -57,7 +57,7 @@ import { OutstandingTransfers } from "../interfaces";
 import WETH_ABI from "../common/abi/Weth.json";
 import { BaseL2BridgeAdapter } from "./l2Bridges/BaseL2BridgeAdapter";
 import { ExpandedERC20 } from "@across-protocol/sdk/typechain";
-import { PendingBridgeRedisReader } from "../rebalancer/utils/PendingBridgeRedis";
+import { CctpOftReadOnlyClient } from "../rebalancer/clients/CctpOftReadOnlyClient";
 
 export type SupportedL1Token = EvmAddress;
 export type SupportedTokenSymbol = string;
@@ -78,7 +78,7 @@ export class BaseChainAdapter {
     protected readonly bridges: { [l1Token: string]: BaseBridgeAdapter },
     protected readonly l2Bridges: { [l1Token: string]: BaseL2BridgeAdapter },
     protected readonly gasMultiplier: number,
-    protected readonly pendingBridgeRedisReader?: PendingBridgeRedisReader
+    protected readonly pendingBridgeRedisReader?: CctpOftReadOnlyClient
   ) {
     this.spokePoolManager = new SpokePoolManager(logger, spokePoolClients);
     this.baseL1SearchConfig = { ...this.getSearchConfig(this.hubChainId) };

@@ -28,3 +28,19 @@ export interface RebalanceRoute {
 export interface RebalancerClient {
   getPendingRebalances(account: EvmAddress): Promise<{ [chainId: number]: { [token: string]: BigNumber } }>;
 }
+
+export interface OrderDetails {
+  sourceToken: string;
+  destinationToken: string;
+  sourceChain: number;
+  destinationChain: number;
+  amountToTransfer: BigNumber;
+}
+
+export interface RedisOrderDetailsPayload {
+  sourceToken: string;
+  destinationToken: string;
+  sourceChain: number;
+  destinationChain: number;
+  amountToTransfer: string;
+}

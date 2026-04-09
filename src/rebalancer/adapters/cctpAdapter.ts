@@ -1,6 +1,6 @@
 import { RebalanceRoute } from "../utils/interfaces";
 import { BaseAdapter } from "./baseAdapter";
-import { STATUS } from "../utils/utils";
+import { STATUS, CCTP_PENDING_BRIDGE_REDIS_PREFIX } from "../utils/utils";
 import {
   bnZero,
   BigNumber,
@@ -27,7 +27,6 @@ import { CCTP_MAX_SEND_AMOUNT } from "../../common";
 import { PRODUCTION_NETWORKS, CCTP_NO_DOMAIN } from "@across-protocol/constants";
 import { utils } from "@across-protocol/sdk";
 import { MultiCallerClient } from "../../clients/MultiCallerClient";
-import { CCTP_PENDING_BRIDGE_REDIS_PREFIX } from "../utils/PendingBridgeRedis";
 
 export class CctpAdapter extends BaseAdapter {
   REDIS_PREFIX = CCTP_PENDING_BRIDGE_REDIS_PREFIX;

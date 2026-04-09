@@ -1,5 +1,5 @@
 import { RebalanceRoute } from "../utils/interfaces";
-import { STATUS } from "../utils/utils";
+import { STATUS, OFT_PENDING_BRIDGE_REDIS_PREFIX } from "../utils/utils";
 import { BaseAdapter } from "./baseAdapter";
 import {
   bnZero,
@@ -32,7 +32,7 @@ import {
 import { MultiCallerClient } from "../../clients";
 import { EVM_OFT_MESSENGERS, IOFT_ABI_FULL, OFT_DEFAULT_FEE_CAP, OFT_FEE_CAP_OVERRIDES } from "../../common";
 import { OFT_NO_EID, PRODUCTION_NETWORKS } from "@across-protocol/constants";
-import { OFT_PENDING_BRIDGE_REDIS_PREFIX } from "../utils/PendingBridgeRedis";
+
 export class OftAdapter extends BaseAdapter {
   REDIS_PREFIX = OFT_PENDING_BRIDGE_REDIS_PREFIX;
 

@@ -19,7 +19,6 @@ import {
   getBlockForTimestamp,
   getCurrentTime,
   getProvider,
-  getRedisCache,
   getTokenInfo,
   getTokenInfoFromSymbol,
   isDefined,
@@ -29,23 +28,16 @@ import {
   submitTransaction,
   winston,
 } from "../../utils";
-import { RebalancerAdapter, RebalanceRoute } from "../utils/interfaces";
+import { OrderDetails, RebalancerAdapter, RebalanceRoute } from "../utils/interfaces";
 import { RebalancerConfig } from "../RebalancerConfig";
-import { getRebalancerStatusTrackingNamespace } from "../utils/PendingBridgeRedis";
 import { getCloidForTimestampAndAccount } from "../utils/cloid";
-import { STATUS, getPendingBridgeOrderKey, getPendingBridgeStatusSetKey } from "../utils/utils";
-export interface OrderDetails {
-  sourceToken: string;
-  destinationToken: string;
-  sourceChain: number;
-  destinationChain: number;
-  amountToTransfer: BigNumber;
-}
-
-// @dev We should track order statuses in Redis in a separate namespace from the remainder of the application's
-// Redis cache (e.g. the namespace we use for caching RPC responses) to avoid losing critical information about pending orders
-// even when we want to rotate rest of the Redis cache without losing critical information about pending orders
-const rebalancerStatusTrackingNameSpace: string | undefined = getRebalancerStatusTrackingNamespace();
+import {
+  STATUS,
+  getPendingBridgeOrderKey,
+  getPendingBridgeStatusSetKey,
+  getRedisCacheForRebalancerStatusTracking,
+  redisGetOrderDetailsForAdapter,
+} from "../utils/utils";
 
 export abstract class BaseAdapter implements RebalancerAdapter {
   public baseSignerAddress: EvmAddress;
@@ -89,7 +81,7 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     if (this.initialized) {
       return;
     }
-    this.redisCache = (await getRedisCache(this.logger, undefined, rebalancerStatusTrackingNameSpace)) as RedisCache;
+    this.redisCache = await getRedisCacheForRebalancerStatusTracking(this.logger);
 
     this.baseSignerAddress = EvmAddress.from(await this.baseSigner.getAddress());
 
@@ -179,7 +171,6 @@ export abstract class BaseAdapter implements RebalancerAdapter {
       message: `Saving new order details for cloid ${cloid}`,
       orderStatusKey,
       orderDetailsKey,
-      redisNamespace: rebalancerStatusTrackingNameSpace,
       sourceToken,
       destinationToken,
       sourceChain,
@@ -220,17 +211,8 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     return getCloidForTimestampAndAccount(unixTimestamp, this.baseSignerAddress.toNative());
   }
 
-  protected async _redisGetOrderDetails(cloid: string, account: EvmAddress): Promise<OrderDetails> {
-    const orderDetailsKey = getPendingBridgeOrderKey(this.REDIS_PREFIX, cloid, account.toNative());
-    const orderDetails = await this.redisCache.get<string>(orderDetailsKey);
-    if (!orderDetails) {
-      return undefined;
-    }
-    const rebalanceRoute = JSON.parse(orderDetails);
-    return {
-      ...rebalanceRoute,
-      amountToTransfer: BigNumber.from(rebalanceRoute.amountToTransfer),
-    };
+  protected _redisGetOrderDetails(cloid: string, account: EvmAddress): Promise<OrderDetails> {
+    return redisGetOrderDetailsForAdapter(this.redisCache, this.REDIS_PREFIX, cloid, account);
   }
 
   protected async _redisDeleteOrder(cloid: string, currentStatus: number, account: EvmAddress): Promise<void> {
