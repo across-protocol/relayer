@@ -5,7 +5,6 @@ import {
   submitTransaction,
   getCctpV2MessageTransmitter,
   CHAIN_IDs,
-  depositToHypercore,
   decodeCctpV2HookData,
   TOKEN_SYMBOLS_MAP,
   CCTPHookData,
@@ -48,14 +47,15 @@ export function shouldCreateHyperCoreAccount(hookData?: CCTPHookData): boolean {
 
 export async function createHyperCoreAccountIfNotExists(
   message: string,
-  signer: ethers.Wallet,
+  contract: ethers.Contract,
+  chainId: number,
   logger: winston.Logger
 ): Promise<void> {
   const hookData = decodeCctpV2HookData(message);
   if (!shouldCreateHyperCoreAccount(hookData)) {
     logger.debug({
       at: "evmUtils#createHyperCoreAccountIfNotExists",
-      message: "Skipping deposit to Hypercore because its not sponsored flow",
+      message: "Skipping account activation because its not sponsored flow",
       maxBpsToSponsor: hookData?.maxBpsToSponsor,
       finalRecipient: hookData?.finalRecipient,
     });
@@ -65,10 +65,20 @@ export async function createHyperCoreAccountIfNotExists(
   if (!isHypercoreAccountActive) {
     logger.debug({
       at: "evmUtils#createHyperCoreAccountIfNotExists",
-      message: "Recipient address does not exist, depositing to Hypercore",
+      message: "Recipient account not activated, calling activateUserAccount",
       finalRecipient: hookData.finalRecipient,
     });
-    await depositToHypercore(hookData.finalRecipient, signer, logger);
+    const transactionClient = new TransactionClient(logger);
+    const fundingToken = TOKEN_SYMBOLS_MAP.USDC.addresses[chainId];
+    await submitTransaction(
+      {
+        contract,
+        method: "activateUserAccount",
+        args: [hookData.nonce, hookData.finalRecipient, fundingToken],
+        chainId,
+      },
+      transactionClient
+    );
   }
 }
 
@@ -132,12 +142,11 @@ export async function processMintEvm(
   const signer = new ethers.Wallet(privateKey, provider);
 
   const destination = getDestination(chainId, attestation.message, signature);
+  const contract = new ethers.Contract(destination.address, destination.abi, signer);
 
   if (destination.accountInitialization) {
-    await destination.accountInitialization(attestation.message, signer, logger);
+    await destination.accountInitialization(attestation.message, contract, chainId, logger);
   }
-
-  const contract = new ethers.Contract(destination.address, destination.abi, signer);
 
   let receiveMessageArgs = destination.requiresSignature
     ? [attestation.message, attestation.attestation, signature]
