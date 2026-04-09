@@ -70,21 +70,21 @@ export async function createHyperCoreAccountIfNotExists(
     });
     const transactionClient = new TransactionClient(logger);
     const fundingToken = TOKEN_SYMBOLS_MAP.USDC.addresses[chainId];
-    const activationTx = await submitTransaction(
+    const activationReceipt = await submitTransaction(
       {
         contract,
         method: "activateUserAccount",
         args: [hookData.nonce, hookData.finalRecipient, fundingToken],
         chainId,
+        ensureConfirmation: true,
       },
       transactionClient
     );
-    const activationReceipt = await activationTx.wait();
     logger.info({
       at: "evmUtils#createHyperCoreAccountIfNotExists",
       message: "Account activation confirmed",
       finalRecipient: hookData.finalRecipient,
-      txHash: activationReceipt.transactionHash,
+      txHash: activationReceipt.hash,
     });
   }
 }
@@ -181,17 +181,16 @@ export async function processMintEvm(
       method,
       args: receiveMessageArgs,
       chainId,
+      ensureConfirmation: true,
     },
     transactionClient
   );
 
-  const mintTxReceipt = await mintTx.wait();
-
   logger.info({
     at: "evmUtils#processMintEvm",
     message: "Mint transaction confirmed",
-    txHash: mintTxReceipt.transactionHash,
+    txHash: mintTx.hash,
   });
 
-  return { txHash: mintTxReceipt.transactionHash };
+  return { txHash: mintTx.hash };
 }
