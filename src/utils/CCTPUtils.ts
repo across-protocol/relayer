@@ -19,6 +19,7 @@ import {
   forEachAsync,
   chainIsEvm,
   createFormatFunction,
+  SVMProvider,
 } from "./SDKUtils";
 import { getNetworkName } from "./NetworkUtils";
 import { isDefined } from "./TypeGuards";
@@ -622,9 +623,9 @@ function _getCCTPV1EventsFromReceipt(
   */
 
   // Indices of individual `MessageSent` events in `receipt.logs`
-  const messageSentIndices = [];
+  const messageSentIndices: number[] = [];
   // Pairs of indices representing a single CCTP token transfer
-  const depositIndexPairs = [];
+  const depositIndexPairs: [number, number][] = [];
   receipt.logs.forEach((log, i) => {
     // Attempt to parse as `MessageSent`
     const messageSentVersion = utils.getMessageSentVersion(log);
@@ -697,7 +698,7 @@ async function _getCCTPV1MessagesWithStatus(
   const messageTransmitterContract = chainIsSvm(destinationChainId)
     ? undefined
     : new Contract(address, abi, dstProvider);
-  let svmProvider, latestBlockhash;
+  let svmProvider: SVMProvider | undefined, latestBlockhash;
   if (chainIsSvm(destinationChainId)) {
     svmProvider = getSvmProvider(await getRedisCache());
     latestBlockhash = await svmProvider.getLatestBlockhash().send();
@@ -788,13 +789,14 @@ async function _getCCTPV1DepositEventsSvm(
         decodedMessage.nonceHash,
         destinationMessageTransmitter
       );
+      const log: Log = undefined!; // No EVM log exists for SVM-originated CCTP deposits.
       return {
         ...decodedMessage,
         attestation: data.attestation,
         status: alreadyProcessed
           ? ("finalized" as utils.CCTPMessageStatus)
           : utils.getPendingAttestationStatus(attestationStatusObject),
-        log: undefined,
+        log,
       };
     });
   });

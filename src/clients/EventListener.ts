@@ -103,7 +103,7 @@ export class EventListener extends EventEmitter {
               args: log["args"],
               blockNumber: Number(log.blockNumber),
               event: log["eventName"],
-              topics: [], // Not supplied by viem, but not actually used by the relayer.
+              topics: Array<string>(), // Not supplied by viem, but not actually used by the relayer.
             };
 
             if (log.removed) {

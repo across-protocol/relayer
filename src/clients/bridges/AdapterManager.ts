@@ -14,6 +14,7 @@ import {
   isDefined,
   winston,
   Signer,
+  SVMProvider,
   TransactionResponse,
   assert,
   EvmAddress,
@@ -83,7 +84,7 @@ export class AdapterManager {
       return Object.fromEntries(
         SUPPORTED_TOKENS[chainId]?.map((symbol) => {
           const spokePoolClient = this.spokePoolManager.getClient(chainId);
-          let l2SignerOrProvider;
+          let l2SignerOrProvider: Signer | SVMProvider | undefined;
           if (isEVMSpokePoolClient(spokePoolClient)) {
             l2SignerOrProvider = spokePoolClient.spokePool.signer;
           } else if (isSVMSpokePoolClient(spokePoolClient)) {
@@ -108,7 +109,7 @@ export class AdapterManager {
         return {};
       }
       const spokePoolClient = this.spokePoolManager.getClient(chainId);
-      let l2SignerOrSvmProvider;
+      let l2SignerOrSvmProvider: Signer | SVMProvider | undefined;
       if (isEVMSpokePoolClient(spokePoolClient)) {
         l2SignerOrSvmProvider = spokePoolClient.spokePool.signer;
       } else if (isSVMSpokePoolClient(spokePoolClient)) {
