@@ -141,7 +141,9 @@ export function generateMarkdownForRootBundle(
     );
     leaf.l2Token = convertTokenAddressToSymbol(leaf.chainId, leaf.l2TokenAddress);
     delete leaf.l2TokenAddress;
-    leaf.refundAddresses = shortenHexStrings(leaf.refundAddresses.map((refundAddress) => refundAddress.toBytes32()));
+    leaf.refundAddresses = shortenHexStrings(
+      leaf.refundAddresses.map((refundAddress: Address) => refundAddress.toBytes32())
+    );
     relayerRefundLeavesPretty += `\n\t\t\t${index}: ${JSON.stringify(leaf)}`;
   });
 
@@ -199,10 +201,10 @@ export function generateMarkdownForRootBundle(
   );
 }
 
-export function prettyPrintLeaves(
+export function prettyPrintLeaves<T extends PoolRebalanceLeaf | RelayerRefundLeaf | SlowFillLeaf>(
   logger: winston.Logger,
-  tree: MerkleTree<PoolRebalanceLeaf> | MerkleTree<RelayerRefundLeaf> | MerkleTree<SlowFillLeaf>,
-  leaves: PoolRebalanceLeaf[] | RelayerRefundLeaf[] | SlowFillLeaf[],
+  tree: MerkleTree<T>,
+  leaves: T[],
   logType = "Pool rebalance"
 ): void {
   leaves.forEach((leaf, index) => {

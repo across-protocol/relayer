@@ -33,7 +33,12 @@ export type MessagingFeeStruct = {
   lzTokenFee: BigNumberish;
 };
 
-export type LzTransactionDetails = { status: string; destination: LzDestinationTransactionDetails; pathway: Pathway };
+export type LzTransactionDetails = {
+  status: string;
+  source: { tx: string };
+  destination: LzDestinationTransactionDetails;
+  pathway: Pathway;
+};
 
 export type LzDestinationTransactionDetails = { status: string; failedTx: TransactionOutcome[] };
 

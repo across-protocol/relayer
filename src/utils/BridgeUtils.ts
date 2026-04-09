@@ -82,7 +82,7 @@ export class BridgeApiClient {
 
   async getAllTransfersInRange(toAddress: Address, fromTimestampMs: number): Promise<BridgeResponse[]> {
     const headers = this.defaultHeaders();
-    const { data: pendingTransfers } = await this.getWithRetry<BridgeResponse>(
+    const { data: pendingTransfers } = await this.getWithRetry<{ data: BridgeResponse[] }>(
       `v0/transfers?updated_after_ms=${fromTimestampMs}`,
       headers
     );
@@ -134,7 +134,7 @@ export class BridgeApiClient {
     };
   }
 
-  async getWithRetry<T>(endpoint: string, headers: FetchHeaders, nRetries = this.nRetries) {
+  async getWithRetry<T>(endpoint: string, headers: FetchHeaders, nRetries = this.nRetries): Promise<T> {
     try {
       return await fetchWithTimeout<T>(`${this.bridgeApiBase}/${endpoint}`, {}, headers);
     } catch (e) {
@@ -157,7 +157,7 @@ export class BridgeApiClient {
     data: Record<string, unknown>,
     headers: FetchHeaders,
     nRetries = this.nRetries
-  ) {
+  ): Promise<T> {
     try {
       return await postWithTimeout<T>(`${this.bridgeApiBase}/${endpoint}`, data, {}, headers);
     } catch (e) {

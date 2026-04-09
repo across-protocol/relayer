@@ -872,7 +872,7 @@ export class ProfitClient {
   ): relayFeeCalculator.QueryInterface {
     // Fallback to Coingecko's free API for now.
     // TODO: Add support for Coingecko Pro.
-    const coingeckoProApiKey = undefined;
+    const coingeckoProApiKey: undefined = undefined;
     const spokePoolAddress = chainIsEvm(chainId)
       ? toAddressType(getDeployedAddress("SpokePool", chainId), chainId).toEvmAddress()
       : getDeployedAddress("SvmSpoke", chainId);
