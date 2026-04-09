@@ -184,13 +184,11 @@ export async function processMintEvm(
     transactionClient
   );
 
-  const mintTxReceipt = await mintTx.wait();
-
   logger.info({
     at: "evmUtils#processMintEvm",
     message: "Mint transaction confirmed",
-    txHash: mintTxReceipt.transactionHash,
+    txHash: mintTx.hash,
   });
 
-  return { txHash: mintTxReceipt.transactionHash };
+  return { txHash: mintTx.hash };
 }
