@@ -1216,7 +1216,16 @@ export class Monitor {
       decimalrequests.map(async ({ chainId, token }) => {
         const gasTokenAddressForChain = getNativeTokenAddressForChain(chainId);
         if (token.eq(gasTokenAddressForChain)) {
-          return chainIsEvm(chainId) ? 18 : 9;
+          let decimals: number;
+          if (chainIsTvm(chainId)) {
+            decimals = 6;
+          } else if (chainIsEvm(chainId)) {
+            decimals = 18;
+          } else {
+            decimals = 9;
+          }
+          
+          return decimals;
         } // Assume all EVM chains have 18 decimal native tokens.
         if (this.decimals[chainId]?.[token.toBytes32()]) {
           return this.decimals[chainId][token.toBytes32()];

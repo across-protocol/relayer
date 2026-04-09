@@ -37,6 +37,7 @@ import {
   getL1TokenAddress,
   CHAIN_IDs,
   chainHasNativeToken,
+  chainIsTvm,
 } from "../utils";
 import { SWAP_ROUTES, SwapRoute, CUSTOM_BRIDGE, CANONICAL_BRIDGE } from "../common";
 import ERC20_ABI from "../common/abi/MinimalERC20.json";
@@ -672,7 +673,16 @@ export class Refiller {
       decimalrequests.map(async ({ chainId, token }) => {
         const gasTokenAddressForChain = getNativeTokenAddressForChain(chainId);
         if (token.eq(gasTokenAddressForChain)) {
-          return chainIsEvm(chainId) ? 18 : 9;
+          let decimals: number;
+          if (chainIsTvm(chainId)) {
+            decimals = 6;
+          } else if (chainIsEvm(chainId)) {
+            decimals = 18;
+          } else {
+            decimals = 9;
+          }
+          
+          return decimals;
         } // Assume all EVM chains have 18 decimal native tokens.
         if (this.decimals[chainId]?.[token.toBytes32()]) {
           return this.decimals[chainId][token.toBytes32()];
