@@ -330,11 +330,7 @@ export async function getAccountCoins(binanceApi: BinanceApi): Promise<ParsedAcc
   const apiWithCoins = binanceApi as BinanceApi & { accountCoins(): Promise<Record<string, RawCoin>> };
   const coins = Object.values(await apiWithCoins.accountCoins());
   return coins.map((coin) => {
-<<<<<<< HEAD
     const networkList = coin.networkList?.map((network) => {
-=======
-    const networkList = coin["networkList"]?.map((network: Record<string, unknown>) => {
->>>>>>> origin/master
       return {
         name: network["network"],
         coin: network["coin"],
