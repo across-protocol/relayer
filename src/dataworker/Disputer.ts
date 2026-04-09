@@ -8,6 +8,7 @@ import {
   formatEther,
   getNetworkName,
   TransactionResponse,
+  submitTransaction,
   Provider,
   winston,
 } from "../utils";
@@ -151,21 +152,13 @@ export class Disputer {
   }
 
   protected async submit(txn: AugmentedTransaction): Promise<TransactionResponse | undefined> {
-    const { chainId, logger, txnClient } = this;
+    const { logger } = this;
 
     if (this.simulate) {
       logger.warn({ at: "Disputer::submit", message: `Suppressing ${txn.method} transaction.` });
       return Promise.resolve(undefined);
     }
 
-    let cause: unknown;
-
-    try {
-      return (await txnClient.submit(chainId, [txn]))[0];
-    } catch (err: unknown) {
-      cause = err;
-    }
-
-    throw new Error(`Unable to submit transaction on ${this.chain}`, { cause });
+    return submitTransaction(txn, this.txnClient);
   }
 }
