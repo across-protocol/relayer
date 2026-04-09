@@ -183,6 +183,9 @@ export class TransactionClient {
     return txnPromise;
   }
 
+  // This function should essentially never be used except by the MulticallerClient or indirectly via
+  // submitTransaction. This is because this transaction can return an empty list of transction responses
+  // if they fail, rather than throwing an error, which is often against the user's expectations.
   async submit(chainId: number, txns: AugmentedTransaction[]): Promise<TransactionResponse[]> {
     const networkName = getNetworkName(chainId);
     const txnResponses: TransactionResponse[] = [];

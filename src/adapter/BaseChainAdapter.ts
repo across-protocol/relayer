@@ -533,7 +533,7 @@ export class BaseChainAdapter {
       );
       return { hash: ZERO_BYTES } as TransactionResponse;
     }
-    return (await this.transactionClient.submit(this.chainId, [augmentedTxn]))[0];
+    return submitTransaction(augmentedTxn, this.transactionClient);
   }
 
   async getOutstandingCrossChainTransfers(l1Tokens: EvmAddress[]): Promise<OutstandingTransfers> {
