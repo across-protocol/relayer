@@ -13,12 +13,10 @@ import {
   defiLlama,
   delay,
   ERC20,
-  ethers,
   EventSearchConfig,
   EvmAddress,
   forEachAsync,
   getBlockForTimestamp,
-  getCurrentTime,
   getProvider,
   getRedisCache,
   getTokenInfo,
@@ -33,6 +31,7 @@ import {
 import { RebalancerAdapter, RebalanceRoute } from "../utils/interfaces";
 import { RebalancerConfig } from "../RebalancerConfig";
 import { getRebalancerStatusTrackingNamespace } from "../utils/PendingBridgeRedis";
+import { getCloidForAccount } from "../utils/utils";
 
 export enum STATUS {
   PENDING_BRIDGE_PRE_DEPOSIT,
@@ -212,13 +211,7 @@ export abstract class BaseAdapter implements RebalancerAdapter {
 
   // Used to generate unique cloids for orders for adapters where we can inject our own cloid.
   protected async _redisGetNextCloid(): Promise<string> {
-    // We want to make sure that cloids are unique even if we rotate the redis cache namespace, so we can use
-    // the current unix timestamp since we are assuming that we are never going to create multiple new orders
-    // for the same exchange simultaneously.
-    const unixTimestamp = getCurrentTime();
-
-    // @dev Hyperliquid requires a 128 bit/16 byte string for a cloid, Binance doesn't seem to have any requirements.
-    return ethers.utils.hexZeroPad(ethers.utils.hexValue(unixTimestamp), 16);
+    return getCloidForAccount(this.baseSignerAddress.toNative());
   }
 
   protected async _redisGetOrderDetails(cloid: string): Promise<OrderDetails> {
