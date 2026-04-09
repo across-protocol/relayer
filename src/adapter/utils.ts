@@ -5,6 +5,7 @@ import {
   toBN,
   MAX_SAFE_ALLOWANCE,
   submitTransaction,
+  TransactionResponse,
   bnZero,
   getNetworkName,
   blockExplorerLink,
@@ -44,7 +45,7 @@ export async function approveTokens(
   const transactionClient = new TransactionClient(logger);
   const bridges = tokens.flatMap(({ token, bridges }) => bridges.map((bridge) => ({ token, bridge })));
   const approvalMarkdwn = await mapAsync(bridges, async ({ token, bridge }) => {
-    const txs = [];
+    const txs: TransactionResponse[] = [];
     if (approvalChainId == hubChainId) {
       if (TOKEN_APPROVALS_TO_FIRST_ZERO[hubChainId]?.includes(token.address)) {
         txs.push(
@@ -54,6 +55,7 @@ export async function approveTokens(
               method: "approve",
               args: [bridge.toNative(), bnZero],
               chainId: approvalChainId,
+              ensureConfirmation: true,
             },
             transactionClient
           )
@@ -67,20 +69,20 @@ export async function approveTokens(
           method: "approve",
           args: [bridge.toNative(), MAX_SAFE_ALLOWANCE],
           chainId: approvalChainId,
+          ensureConfirmation: true,
         },
         transactionClient
       )
     );
-    const receipts = await Promise.all(txs.map((tx) => tx.wait()));
     const networkName = getNetworkName(approvalChainId);
 
     let internalMrkdwn =
       ` - Approved token bridge ${blockExplorerLink(bridge.toNative(), approvalChainId)} ` +
       `to spend ${await token.symbol()} ${blockExplorerLink(token.address, approvalChainId)} on ${networkName}.` +
-      `tx: ${blockExplorerLink(receipts.at(-1).transactionHash, approvalChainId)}`;
+      `tx: ${blockExplorerLink(txs.at(-1).hash, approvalChainId)}`;
 
-    if (receipts.length > 1) {
-      internalMrkdwn += ` tx (to zero approval first): ${blockExplorerLink(receipts[0].transactionHash, hubChainId)}`;
+    if (txs.length > 1) {
+      internalMrkdwn += ` tx (to zero approval first): ${blockExplorerLink(txs[0].hash, hubChainId)}`;
     }
     return internalMrkdwn;
   });
