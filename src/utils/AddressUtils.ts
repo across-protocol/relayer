@@ -4,7 +4,7 @@ import {
   ethers,
   getRemoteTokenForL1Token,
   isDefined,
-  resolveTokenBySymbol,
+
   Address,
   EvmAddress,
   toAddressType,
@@ -49,18 +49,7 @@ export function matchTokenSymbol(tokenAddress: string, chainId: number): string[
     .map(({ symbol }) => symbol);
 }
 
-/**
- * Match the token decimals for a given token symbol.
- * @param tokenSymbol Symbol of the token to query.
- * @returns The number of ERC20 decimals configured for the requested token.
- */
-export function resolveTokenDecimals(tokenSymbol: string): number {
-  const decimals = resolveTokenBySymbol(tokenSymbol)?.decimals;
-  if (decimals === undefined) {
-    throw new Error(`Unrecognized token symbol: ${tokenSymbol}`);
-  }
-  return decimals;
-}
+
 
 /**
  * @notice Returns the token address for a given token address on a given chain ID and lets caller specify
