@@ -264,6 +264,7 @@ export class OftAdapter extends BaseAdapter {
       method: "send",
       unpermissioned: false,
       nonMulticall: true,
+      ensureConfirmation: true,
       args: [sendParamStruct, feeStruct, refundAddress],
       value: BigNumber.from(feeStruct.nativeFee),
       message: `🎰 Withdrew USDT0 from ${getNetworkName(originChain)} to ${getNetworkName(destinationChain)} via OFT`,
