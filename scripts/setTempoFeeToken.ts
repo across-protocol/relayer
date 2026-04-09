@@ -16,7 +16,7 @@ const FEE_MANAGER_ABI = [
         name: "token",
       },
     ],
-    outputs: [],
+    outputs: Array<never>(),
   },
 ];
 

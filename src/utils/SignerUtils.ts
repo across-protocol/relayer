@@ -173,7 +173,7 @@ function cleanKeysFromEnvironment(
 }
 
 export function isSignerWallet(signer: Signer): signer is Wallet {
-  return signer["_signingKey"]?.() !== undefined;
+  return "_signingKey" in signer && typeof signer._signingKey === "function" && signer._signingKey() !== undefined;
 }
 
 export async function getDispatcherKeys(): Promise<Signer[]> {
