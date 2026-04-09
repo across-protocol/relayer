@@ -41,6 +41,7 @@ import {
   toAddressType,
   Address,
   EvmAddress,
+  chainIsTvm,
   SvmAddress,
   assert,
   getBinanceApiClient,
@@ -1187,7 +1188,7 @@ export class Monitor {
                 await new Contract(token.toEvmAddress(), ERC20.abi, spokePoolClient.spokePool.provider).balanceOf(
                   account.toEvmAddress(),
                   {
-                    blockTag: spokePoolClient.latestHeightSearched,
+                    blockTag: chainIsTvm(chainId) ? "latest" : spokePoolClient.latestHeightSearched,
                   }
                 );
           this.balanceCache[chainId] ??= {};
