@@ -10,7 +10,7 @@ import {
   BridgeTransactionDetails,
 } from "../../src/adapter/bridges/BaseBridgeAdapter";
 import { BaseL2BridgeAdapter } from "../../src/adapter/l2Bridges/BaseL2BridgeAdapter";
-import { PendingBridgeAdapterName, PendingBridgeRedisReader } from "../../src/rebalancer/utils/PendingBridgeRedis";
+import { PendingBridgeAdapterName, CctpOftReadOnlyClient } from "../../src/rebalancer/clients/CctpOftReadOnlyClient";
 import { BigNumber, EvmAddress, Signer } from "../../src/utils";
 
 describe("BaseChainAdapter split bridge tracking", function () {
@@ -89,7 +89,7 @@ async function getOutstandingTransfersForTrackedBridge(
   );
   const pendingBridgeRedisReader = {
     getPendingBridgeTxnRefsForRoute: async () => new Set(["ignored"]),
-  } as unknown as PendingBridgeRedisReader;
+  } as unknown as CctpOftReadOnlyClient;
   const adapter = new BaseChainAdapter(
     {
       [CHAIN_IDs.MAINNET]: makeSpokePoolClient(CHAIN_IDs.MAINNET),
