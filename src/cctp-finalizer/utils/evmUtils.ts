@@ -53,7 +53,7 @@ export async function createHyperCoreAccountIfNotExists(
 ): Promise<void> {
   const hookData = decodeCctpV2HookData(message);
   if (!shouldCreateHyperCoreAccount(hookData)) {
-    logger.debug({
+    logger.info({
       at: "evmUtils#createHyperCoreAccountIfNotExists",
       message: "Skipping account activation because its not sponsored flow",
       maxBpsToSponsor: hookData?.maxBpsToSponsor,
@@ -63,7 +63,7 @@ export async function createHyperCoreAccountIfNotExists(
   }
   const isHypercoreAccountActive = await utils.isHlAccountActive(hookData.finalRecipient);
   if (!isHypercoreAccountActive) {
-    logger.debug({
+    logger.info({
       at: "evmUtils#createHyperCoreAccountIfNotExists",
       message: "Recipient account not activated, calling activateUserAccount",
       finalRecipient: hookData.finalRecipient,
