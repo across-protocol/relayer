@@ -34,7 +34,7 @@ export abstract class BaseRebalancerClient implements RebalancerClient {
       // uses the rebalancer client's base signer. Ultimately, the rebalancer client is the client exposed to
       // external users and that user would expect to initiate rebalances through this client's base signer.
       assert(
-        adapter.baseSignerAddress.toNative() === this.baseSignerAddress.toNative(),
+        adapter.baseSignerAddress.eq(this.baseSignerAddress),
         "Adapter base signer address does not match client base signer address"
       );
       if (!this.isReadonly) {
