@@ -4,6 +4,7 @@ import Binance, {
   WithdrawHistoryResponse,
   type Binance as BinanceApi,
 } from "binance-api-node";
+export type { BinanceApi };
 import minimist from "minimist";
 import { getGckmsConfig, retrieveGckmsKeys, isDefined, assert, delay, CHAIN_IDs, getRedisCache, truncate } from "./";
 
@@ -142,10 +143,13 @@ async function retrieveBinanceSecretKeyFromCLIArgs(): Promise<string | undefined
  * available to rebalance per day and the amount already used.
  */
 export async function getBinanceWithdrawalLimits(binanceApi: BinanceApi): Promise<WithdrawalQuota> {
-  const unparsedQuota = await binanceApi.privateRequest("GET" as HttpMethod, "/sapi/v1/capital/withdraw/quota", {});
+  const unparsedQuota = (await binanceApi.privateRequest(HttpMethod.GET, "/sapi/v1/capital/withdraw/quota", {})) as {
+    wdQuota: number;
+    usedWdQuota: number;
+  };
   return {
-    wdQuota: unparsedQuota["wdQuota"],
-    usedWdQuota: unparsedQuota["usedWdQuota"],
+    wdQuota: unparsedQuota.wdQuota,
+    usedWdQuota: unparsedQuota.usedWdQuota,
   };
 }
 
@@ -321,9 +325,12 @@ export async function getBinanceWithdrawals(
  * @returns A typed `AccountCoins` response.
  */
 export async function getAccountCoins(binanceApi: BinanceApi): Promise<ParsedAccountCoins> {
-  const coins = Object.values(await binanceApi["accountCoins"]());
+  // accountCoins is an undocumented Binance API method not present in binance-api-node type defs.
+  type RawCoin = { coin: string; free: string; networkList?: Record<string, unknown>[] };
+  const apiWithCoins = binanceApi as BinanceApi & { accountCoins(): Promise<Record<string, RawCoin>> };
+  const coins = Object.values(await apiWithCoins.accountCoins());
   return coins.map((coin) => {
-    const networkList = coin["networkList"]?.map((network: Record<string, unknown>) => {
+    const networkList = coin.networkList?.map((network) => {
       return {
         name: network["network"],
         coin: network["coin"],
@@ -334,8 +341,8 @@ export async function getAccountCoins(binanceApi: BinanceApi): Promise<ParsedAcc
       } as Network;
     });
     return {
-      symbol: coin["coin"],
-      balance: coin["free"],
+      symbol: coin.coin,
+      balance: coin.free,
       networkList,
     } as Coin;
   });

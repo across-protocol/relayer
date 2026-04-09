@@ -73,8 +73,7 @@ export function getInventoryBalanceContributorTokens(
     balanceContributorTokens.push(canonicalToken);
   }
 
-  Object.keys(TOKEN_SYMBOLS_MAP).forEach((tokenSymbol) => {
-    const token = TOKEN_SYMBOLS_MAP[tokenSymbol];
+  Object.values(TOKEN_SYMBOLS_MAP).forEach((token) => {
     const remappedSymbol = TOKEN_EQUIVALENCE_REMAPPING[token.symbol] ?? token.symbol;
     if (remappedSymbol === hubTokenSymbol && isDefined(token.addresses[chainId])) {
       balanceContributorTokens.push(toAddressType(token.addresses[chainId], chainId));
