@@ -290,7 +290,7 @@ export class BaseChainAdapter {
       this.log("No token bridge approvals needed", { l1Tokens: l1Tokens.map((token) => token.toNative()) });
       return;
     }
-    const mrkdwn = await approveTokens(tokensToApprove, this.chainId, this.hubChainId, this.logger);
+    const mrkdwn = await approveTokens(tokensToApprove, this.hubChainId, this.hubChainId, this.logger);
     this.log("Approved whitelisted tokens! 💰", { mrkdwn }, "info");
   }
 

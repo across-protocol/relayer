@@ -19,7 +19,6 @@ import {
   toBN,
   getDepositKey,
   assert,
-  getCounterfactualDepositImplementationAddress,
   getNetworkName,
   blockExplorerLink,
 } from "../utils";
@@ -37,8 +36,6 @@ export class DepositAddressHandler {
   private initialized = false;
 
   private providersByChain: { [chainId: number]: Provider } = {};
-
-  private counterfactualDepositFactories: { [chainId: number]: Contract } = {};
 
   /** Per chainId: set of deposit keys already executed (like gasless depositNonces). */
   private observedExecutedDeposits: { [chainId: number]: Set<string> } = {};
@@ -99,7 +96,6 @@ export class DepositAddressHandler {
     await forEachAsync(this.config.relayerOriginChains, async (chainId) => {
       const provider = await getProvider(chainId);
       this.providersByChain[chainId] = provider;
-      this.counterfactualDepositFactories[chainId] = getCounterfactualDepositFactory(chainId).connect(provider);
       this.observedExecutedDeposits[chainId] = new Set<string>();
     });
 
@@ -244,7 +240,9 @@ export class DepositAddressHandler {
       return;
     }
 
-    const baseFactoryContract = this.counterfactualDepositFactories[originChainId];
+    const baseFactoryContract = getCounterfactualDepositFactory(
+      depositMessage.counterfactualFactoryContractAddress
+    ).connect(this.providersByChain[originChainId]);
 
     const useDispatcher = this.depositAddressSigners.length > 0;
     const factoryContract = useDispatcher
@@ -272,7 +270,7 @@ export class DepositAddressHandler {
       const _deployTx = buildDeployTx(
         factoryContract,
         originChainId,
-        getCounterfactualDepositImplementationAddress(originChainId),
+        depositMessage.counterfactualDepositContractAddress,
         depositMessage.paramsHash,
         depositMessage.salt
       );
