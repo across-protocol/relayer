@@ -8,7 +8,6 @@ import {
   decodeCctpV2HookData,
   TOKEN_SYMBOLS_MAP,
   CCTPHookData,
-  delay,
 } from "../../utils";
 import { CONTRACT_ADDRESSES } from "../../common/ContractAddresses";
 import { DestinationInfo } from "../types";
@@ -80,13 +79,11 @@ export async function createHyperCoreAccountIfNotExists(
       },
       transactionClient
     );
-    await delay(1);
-    const activationReceipt = await activationTx.wait();
     logger.info({
       at: "evmUtils#createHyperCoreAccountIfNotExists",
-      message: "Account activation confirmed",
+      message: "Account activation submitted",
       finalRecipient: hookData.finalRecipient,
-      txHash: activationReceipt.transactionHash,
+      txHash: activationTx.hash,
     });
   }
 }
