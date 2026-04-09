@@ -8,6 +8,7 @@ import {
   decodeCctpV2HookData,
   TOKEN_SYMBOLS_MAP,
   CCTPHookData,
+  delay,
 } from "../../utils";
 import { CONTRACT_ADDRESSES } from "../../common/ContractAddresses";
 import { DestinationInfo } from "../types";
@@ -70,7 +71,7 @@ export async function createHyperCoreAccountIfNotExists(
     });
     const transactionClient = new TransactionClient(logger);
     const fundingToken = TOKEN_SYMBOLS_MAP.USDC.addresses[chainId];
-    await submitTransaction(
+    const activationTx = await submitTransaction(
       {
         contract,
         method: "activateUserAccount",
@@ -79,6 +80,14 @@ export async function createHyperCoreAccountIfNotExists(
       },
       transactionClient
     );
+    await delay(1);
+    const activationReceipt = await activationTx.wait();
+    logger.info({
+      at: "evmUtils#createHyperCoreAccountIfNotExists",
+      message: "Account activation confirmed",
+      finalRecipient: hookData.finalRecipient,
+      txHash: activationReceipt.transactionHash,
+    });
   }
 }
 
