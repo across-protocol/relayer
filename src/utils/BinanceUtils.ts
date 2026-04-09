@@ -19,10 +19,12 @@ const KNOWN_BINANCE_ERROR_REASONS = [
 ];
 
 // Binance only accepts a signed request while its timestamp remains within recvWindow.
-// We keep write-state calls tight so delayed accepted requests cannot submit orders/withdrawals much later than intended.
 // Signed reads can tolerate a much larger window because a delayed accepted request still returns current server data.
-export const BINANCE_WRITE_RECV_WINDOW_MS = 5_000;
 export const BINANCE_READ_RECV_WINDOW_MS = 60_000;
+// Market orders are latency-sensitive but still need to tolerate the clock skew and request delay that motivated this change.
+export const BINANCE_ORDER_RECV_WINDOW_MS = 60_000;
+// Withdrawals remain tight so delayed accepted requests cannot submit funds transfers much later than intended.
+export const BINANCE_WITHDRAW_RECV_WINDOW_MS = 5_000;
 
 type WithdrawalQuota = {
   wdQuota: number;
@@ -168,7 +170,7 @@ export async function getBinanceWithdrawalLimits(binanceApi: BinanceApi): Promis
   const unparsedQuota = (await binanceApi.privateRequest("GET" as HttpMethod, "/sapi/v1/capital/withdraw/quota", {
     recvWindow: BINANCE_READ_RECV_WINDOW_MS,
   })) as {
-     wdQuota: number;
+    wdQuota: number;
     usedWdQuota: number;
   };
   return {
@@ -199,14 +201,14 @@ export async function submitBinanceOrder(
   binanceApi: BinanceApi,
   options: Parameters<BinanceApi["order"]>[0]
 ): ReturnType<BinanceApi["order"]> {
-  return binanceApi.order({ ...options, recvWindow: BINANCE_WRITE_RECV_WINDOW_MS });
+  return binanceApi.order({ ...options, recvWindow: BINANCE_ORDER_RECV_WINDOW_MS });
 }
 
 export async function submitBinanceWithdrawal(
   binanceApi: BinanceApi,
   options: Parameters<BinanceApi["withdraw"]>[0]
 ): ReturnType<BinanceApi["withdraw"]> {
-  return (binanceApi as BinanceApiWithRecvWindow).withdraw({ ...options, recvWindow: BINANCE_WRITE_RECV_WINDOW_MS });
+  return (binanceApi as BinanceApiWithRecvWindow).withdraw({ ...options, recvWindow: BINANCE_WITHDRAW_RECV_WINDOW_MS });
 }
 
 export enum BinanceTransactionType {

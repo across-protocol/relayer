@@ -1,7 +1,8 @@
 import { expect } from "./utils";
 import {
+  BINANCE_ORDER_RECV_WINDOW_MS,
   BINANCE_READ_RECV_WINDOW_MS,
-  BINANCE_WRITE_RECV_WINDOW_MS,
+  BINANCE_WITHDRAW_RECV_WINDOW_MS,
   BinanceDeposit,
   BinanceWithdrawal,
   getBinanceAllOrders,
@@ -153,16 +154,12 @@ describe("BinanceUtils recvWindow helpers", function () {
     });
   });
 
-  it("applies the write recvWindow to signed write helpers", async function () {
+  it("applies the market-order recvWindow to signed order helpers", async function () {
     const calls: Record<string, unknown> = {};
     const binanceApi = {
       order: async (payload: object) => {
         calls.order = payload;
         return { status: "FILLED" };
-      },
-      withdraw: async (payload: object) => {
-        calls.withdraw = payload;
-        return { id: "withdrawal-id" };
       },
     } as unknown as Parameters<typeof submitBinanceOrder>[0];
 
@@ -172,6 +169,25 @@ describe("BinanceUtils recvWindow helpers", function () {
       type: "MARKET",
       quantity: "1",
     } as Parameters<typeof submitBinanceOrder>[1]);
+
+    expect(calls.order).to.deep.equal({
+      symbol: "USDCUSDT",
+      side: "BUY",
+      type: "MARKET",
+      quantity: "1",
+      recvWindow: BINANCE_ORDER_RECV_WINDOW_MS,
+    });
+  });
+
+  it("applies the withdrawal recvWindow to signed withdrawal helpers", async function () {
+    const calls: Record<string, unknown> = {};
+    const binanceApi = {
+      withdraw: async (payload: object) => {
+        calls.withdraw = payload;
+        return { id: "withdrawal-id" };
+      },
+    } as unknown as Parameters<typeof submitBinanceWithdrawal>[0];
+
     await submitBinanceWithdrawal(binanceApi, {
       coin: "USDT",
       address: "0x1",
@@ -180,20 +196,13 @@ describe("BinanceUtils recvWindow helpers", function () {
       transactionFeeFlag: false,
     });
 
-    expect(calls.order).to.deep.equal({
-      symbol: "USDCUSDT",
-      side: "BUY",
-      type: "MARKET",
-      quantity: "1",
-      recvWindow: BINANCE_WRITE_RECV_WINDOW_MS,
-    });
     expect(calls.withdraw).to.deep.equal({
       coin: "USDT",
       address: "0x1",
       network: "ETH",
       amount: 1,
       transactionFeeFlag: false,
-      recvWindow: BINANCE_WRITE_RECV_WINDOW_MS,
+      recvWindow: BINANCE_WITHDRAW_RECV_WINDOW_MS,
     });
   });
 });
