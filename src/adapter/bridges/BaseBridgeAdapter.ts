@@ -94,7 +94,12 @@ export abstract class BaseBridgeAdapter {
       return new Set();
     }
 
-    return this.pendingBridgeRedisReader.getPendingBridgeTxnRefsForRoute(adapter, sourceChain, destinationChain);
+    return this.pendingBridgeRedisReader.getPendingBridgeTxnRefsForRoute(
+      adapter,
+      sourceChain,
+      destinationChain,
+      EvmAddress.from(address.toNative())
+    );
   }
 
   protected resolveL2TokenAddress(l1Token: EvmAddress): string {

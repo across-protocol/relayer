@@ -88,7 +88,7 @@ export async function approveTokens(
 }
 
 export function processEvent(event: Log, amountField: string): BridgeEvent {
-  const eventSpread = spreadEventWithBlockNumber(event) as SortableEvent;
+  const eventSpread = spreadEventWithBlockNumber(event) as SortableEvent & { [key: string]: BigNumber };
   return {
     ...eventSpread,
     amount: eventSpread[amountField],

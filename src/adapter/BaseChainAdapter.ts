@@ -522,7 +522,7 @@ export class BaseChainAdapter {
     const message = `${formatFunc(toBN(value).toString())} ${nativeTokenSymbol} wrapped on target chain ${
       this.chainId
     }🎁`;
-    const augmentedTxn = { contract, chainId: this.chainId, method, args: [], value, mrkdwn, message };
+    const augmentedTxn = { contract, chainId: this.chainId, method, args: Array<unknown>(), value, mrkdwn, message };
     if (simMode) {
       const { succeed, reason } = (await this.transactionClient.simulate([augmentedTxn]))[0];
       this.log(

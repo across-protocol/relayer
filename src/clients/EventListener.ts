@@ -96,13 +96,13 @@ export class EventListener extends EventEmitter {
       this.on(event.name, handler);
 
       providers.forEach((provider) => {
-        const onLogs = (logs: viemLog[]) => {
+        const onLogs = (logs: (viemLog & { args: unknown; eventName: string })[]) => {
           logs.forEach((log) => {
             const event = {
               ...log,
-              args: log["args"],
+              args: log.args,
               blockNumber: Number(log.blockNumber),
-              event: log["eventName"],
+              event: log.eventName,
               topics: Array<string>(), // Not supplied by viem, but not actually used by the relayer.
             };
 

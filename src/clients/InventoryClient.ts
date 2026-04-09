@@ -1771,7 +1771,7 @@ export class InventoryClient {
       pendingL2Withdrawals: this.pendingL2Withdrawals,
     });
 
-    this.pendingRebalances = await this.rebalancerClient.getPendingRebalances();
+    this.pendingRebalances = await this.rebalancerClient.getPendingRebalances(this.relayer);
     if (Object.keys(this.pendingRebalances).length > 0) {
       this.logger.debug({
         at: "InventoryClient#update",
@@ -1807,7 +1807,9 @@ export class InventoryClient {
     }
 
     // If any of the mapped symbols reference chainId, token is enabled.
-    return Object.keys(tokenConfig).some((symbol) => isDefined(tokenConfig[symbol][chainId]));
+    return (
+      isAliasConfig(tokenConfig) && Object.keys(tokenConfig).some((symbol) => isDefined(tokenConfig[symbol][chainId]))
+    );
   }
 
   /**

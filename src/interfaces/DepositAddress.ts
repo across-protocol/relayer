@@ -21,6 +21,8 @@ export interface DepositAddressMessage {
   routeParams: RouteParams;
   erc20Transfer: Erc20Transfer;
   salt: string;
+  counterfactualDepositContractAddress: string;
+  counterfactualFactoryContractAddress: string;
 }
 
 // TODO: Add schema for SwapAPI response.
