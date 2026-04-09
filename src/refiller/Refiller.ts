@@ -681,7 +681,7 @@ export class Refiller {
           } else {
             decimals = 9;
           }
-          
+
           return decimals;
         } // Assume all EVM chains have 18 decimal native tokens.
         if (this.decimals[chainId]?.[token.toBytes32()]) {
