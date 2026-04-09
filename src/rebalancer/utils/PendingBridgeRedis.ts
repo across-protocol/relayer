@@ -119,7 +119,7 @@ export class PendingBridgeRedisReader {
       this.snapshots[cacheSnapshotKey] = snapshot;
       return snapshot;
     } finally {
-      this.snapshotPromises[cacheSnapshotKey] = undefined;
+      del this.snapshotPromises[cacheSnapshotKey];
     }
   }
 
