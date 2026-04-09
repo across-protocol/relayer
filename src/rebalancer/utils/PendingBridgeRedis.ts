@@ -103,7 +103,7 @@ export class PendingBridgeRedisReader {
     adapter: PendingBridgeAdapterName,
     account: EvmAddress
   ): Promise<PendingBridgeSnapshot> {
-    const cacheSnapshotKey = `${adapter}:${account.toNative()}`;
+    const cacheSnapshotKey = `${adapter}:${account}`;
     const cachedSnapshot = this.snapshots[cacheSnapshotKey];
     if (
       isDefined(cachedSnapshot) &&
