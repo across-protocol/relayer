@@ -79,11 +79,12 @@ export async function createHyperCoreAccountIfNotExists(
       },
       transactionClient
     );
+    const activationReceipt = await activationTx.wait();
     logger.info({
       at: "evmUtils#createHyperCoreAccountIfNotExists",
-      message: "Account activation submitted",
+      message: "Account activation confirmed",
       finalRecipient: hookData.finalRecipient,
-      txHash: activationTx.hash,
+      txHash: activationReceipt.transactionHash,
     });
   }
 }
@@ -184,11 +185,13 @@ export async function processMintEvm(
     transactionClient
   );
 
+  const mintTxReceipt = await mintTx.wait();
+
   logger.info({
     at: "evmUtils#processMintEvm",
     message: "Mint transaction confirmed",
-    txHash: mintTx.hash,
+    txHash: mintTxReceipt.transactionHash,
   });
 
-  return { txHash: mintTx.hash };
+  return { txHash: mintTxReceipt.transactionHash };
 }
