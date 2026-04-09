@@ -69,6 +69,16 @@ export interface AugmentedTransaction {
   spray?: boolean;
 }
 
+export function isAugmentedTransaction(txn: unknown): txn is AugmentedTransaction {
+  if (txn === null || typeof txn !== "object") {
+    return false;
+  }
+  if (!("contract" in txn && "chainId" in txn && "method" in txn && "args" in txn)) {
+    return false;
+  }
+  return typeof txn.method === "string" && Array.isArray(txn.args);
+}
+
 const { fixedPointAdjustment: fixedPoint } = sdkUtils;
 const { isError } = typeguards;
 

@@ -383,8 +383,8 @@ async function viem_multicallOptimismFinalizations(
     chain: targetChain,
     transport: createViemCustomTransportFromEthersProvider(chainId),
   });
-  const uniqueTokenhashes = {};
-  const logIndexesForMessage = [];
+  const uniqueTokenhashes: { [hash: string]: number } = {};
+  const logIndexesForMessage: number[] = [];
   const events = [...olderTokensBridgedEvents, ...recentTokensBridgedEvents];
   for (const event of events) {
     uniqueTokenhashes[event.txnRef] ??= 0;
@@ -394,7 +394,7 @@ async function viem_multicallOptimismFinalizations(
   }
 
   const crossChainMessenger = new Contract(targetChain.contracts.portal[hubChainId].address, OPStackPortalL1, signer);
-  const chain = undefined; // Needed for viem OP type resolution.
+  const chain: undefined = undefined; // Needed for viem OP type resolution.
   const withdrawalStatuses: string[] = [];
 
   // Pass as targetChain to viem OP-stack functions. Viem looks up L2 contracts
@@ -548,8 +548,8 @@ async function getMessageStatuses(
 ): Promise<CrossChainMessageWithStatus[]> {
   // For each token bridge event, store a unique log index for the event within the arbitrum transaction hash.
   // This is important for bridge transactions containing multiple events.
-  const uniqueTokenhashes = {};
-  const logIndexesForMessage = [];
+  const uniqueTokenhashes: { [hash: string]: number } = {};
+  const logIndexesForMessage: number[] = [];
   for (const event of crossChainMessages.map((m) => m.event)) {
     uniqueTokenhashes[event.txnRef] = uniqueTokenhashes[event.txnRef] ?? 0;
     const logIndex = uniqueTokenhashes[event.txnRef];

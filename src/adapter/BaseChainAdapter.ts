@@ -36,13 +36,14 @@ import {
   EvmAddress,
   chainIsEvm,
   sendAndConfirmSolanaTransaction,
+  SolanaTransaction,
   getSvmProvider,
   submitTransaction,
   getTokenInfo,
   ConvertDecimals,
   toAddressType,
 } from "../utils";
-import { AugmentedTransaction, TransactionClient } from "../clients/TransactionClient";
+import { AugmentedTransaction, isAugmentedTransaction, TransactionClient } from "../clients/TransactionClient";
 import {
   approveTokens,
   getTokenAllowanceFromCache,
@@ -332,13 +333,14 @@ export class BaseChainAdapter {
     }
     if (chainIsEvm(this.chainId)) {
       const multicallerClient = new MultiCallerClient(this.logger);
-      txnsToSend.forEach((txn) => multicallerClient.enqueueTransaction(txn));
+      txnsToSend.filter(isAugmentedTransaction).forEach((txn) => multicallerClient.enqueueTransaction(txn));
       const txnReceipts = await multicallerClient.executeTxnQueues(simMode, [this.chainId]);
       return txnReceipts[this.chainId];
     }
-    const txnSignatures = [];
-    for (const solanaTransaction of txnsToSend) {
-      txnSignatures.push(await sendAndConfirmSolanaTransaction(solanaTransaction, getSvmProvider()));
+    const txnSignatures: string[] = [];
+    const svmProvider = getSvmProvider();
+    for (const solanaTransaction of txnsToSend.filter((txn): txn is SolanaTransaction => !("contract" in txn))) {
+      txnSignatures.push(await sendAndConfirmSolanaTransaction(solanaTransaction, svmProvider));
     }
     return txnSignatures;
   }
