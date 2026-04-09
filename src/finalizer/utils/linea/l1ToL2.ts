@@ -4,6 +4,7 @@ import { Contract } from "ethers";
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
 import { CONTRACT_ADDRESSES } from "../../../common";
 import {
+  BigNumber,
   EventSearchConfig,
   Signer,
   convertFromWei,
@@ -41,8 +42,8 @@ async function getL1ToL2MessageStatusUsingCustomProvider(
   const iface = new ethers.utils.Interface(messageService.contract.interface.fragments);
   const l2Contract = new Contract(messageService.contractAddress, iface, l2Provider);
 
-  const status: bigint = await l2Contract.inboxL1L2MessageStatus(messageHash);
-  return L1L2MessageStatuses[Number(status)];
+  const status: BigNumber = await l2Contract.inboxL1L2MessageStatus(messageHash);
+  return L1L2MessageStatuses[status.toNumber()];
 }
 
 export async function lineaL1ToL2Finalizer(
