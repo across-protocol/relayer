@@ -21,6 +21,7 @@ import {
   blockExplorerLinks,
   formatUnits,
   getNativeTokenAddressForChain,
+  getNativeTokenInfoForChain,
   getNativeTokenSymbol,
   getNetworkName,
   getUnfilledDeposits,
@@ -41,11 +42,11 @@ import {
   toAddressType,
   Address,
   EvmAddress,
+  chainIsTvm,
   SvmAddress,
   assert,
   getBinanceApiClient,
   getBinanceWithdrawalLimits,
-  chainIsEvm,
   getSolanaTokenBalance,
   getFillStatusPda,
   getKitKeypairFromEvmSigner,
@@ -1187,7 +1188,7 @@ export class Monitor {
                 await new Contract(token.toEvmAddress(), ERC20.abi, spokePoolClient.spokePool.provider).balanceOf(
                   account.toEvmAddress(),
                   {
-                    blockTag: spokePoolClient.latestHeightSearched,
+                    blockTag: chainIsTvm(chainId) ? "latest" : spokePoolClient.latestHeightSearched,
                   }
                 );
           this.balanceCache[chainId] ??= {};
@@ -1215,8 +1216,8 @@ export class Monitor {
       decimalrequests.map(async ({ chainId, token }) => {
         const gasTokenAddressForChain = getNativeTokenAddressForChain(chainId);
         if (token.eq(gasTokenAddressForChain)) {
-          return chainIsEvm(chainId) ? 18 : 9;
-        } // Assume all EVM chains have 18 decimal native tokens.
+          return getNativeTokenInfoForChain(chainId).decimals;
+        }
         if (this.decimals[chainId]?.[token.toBytes32()]) {
           return this.decimals[chainId][token.toBytes32()];
         }
