@@ -409,12 +409,12 @@ export class Monitor {
     const allL1Tokens = [...this.l1Tokens, ...this.additionalL1Tokens];
 
     // Fetch pending rebalances once for all relayers.
-    let pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
-    if (isDefined(this.clients.rebalancerClient)) {
-      pendingRebalances = await this.clients.rebalancerClient.getPendingRebalances();
-    }
 
     for (const relayer of relayers) {
+      let pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
+      if (isDefined(this.clients.rebalancerClient) && relayer.isEVM()) {
+        pendingRebalances = await this.clients.rebalancerClient.getPendingRebalances(relayer);
+      }
       // Pre-compute L2 tokens per (l1Token, chainId) and build a single batch of all balance requests
       // so we can fetch all balances in one parallel call instead of sequentially per chain.
       type L2TokenEntry = { l1Token: L1Token; chainId: number; l2Tokens: Address[] };

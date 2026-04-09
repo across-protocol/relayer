@@ -9,6 +9,7 @@ import {
   config,
   ConvertDecimals,
   disconnectRedisClients,
+  EvmAddress,
   getTokenInfoFromSymbol,
   isDefined,
   Signer,
@@ -131,6 +132,7 @@ function loadCumulativeModeBalances(
 }
 
 async function applyPendingCumulativeRebalanceAdjustments(
+  baseSigner: Signer,
   rebalancerConfig: RebalancerConfig,
   adaptersToUpdate: Set<RebalancerAdapter>,
   logLabel: string,
@@ -139,7 +141,7 @@ async function applyPendingCumulativeRebalanceAdjustments(
   let timerStart = performance.now();
   for (const adapter of adaptersToUpdate) {
     timerStart = performance.now();
-    const pendingRebalances = await adapter.getPendingRebalances();
+    const pendingRebalances = await adapter.getPendingRebalances(EvmAddress.from(await baseSigner.getAddress()));
     logger.debug({
       at: `index.ts:${logLabel}`,
       message: `Completed getting pending rebalances for adapter ${adapter.constructor.name}`,
@@ -189,7 +191,13 @@ export async function runCumulativeBalanceRebalancer(_logger: winston.Logger, ba
     baseSigner
   );
   const { currentBalances, cumulativeBalances } = loadCumulativeModeBalances(rebalancerConfig, inventoryClient);
-  await applyPendingCumulativeRebalanceAdjustments(rebalancerConfig, adaptersToUpdate, logLabel, cumulativeBalances);
+  await applyPendingCumulativeRebalanceAdjustments(
+    baseSigner,
+    rebalancerConfig,
+    adaptersToUpdate,
+    logLabel,
+    cumulativeBalances
+  );
 
   let timerStart = performance.now();
   // Finally, send out new rebalances:
