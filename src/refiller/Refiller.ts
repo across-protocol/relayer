@@ -8,7 +8,6 @@ import {
   chainIsEvm,
   chainIsSvm,
   Contract,
-  delay,
   ERC20,
   EvmAddress,
   fetchWithTimeout,
@@ -24,11 +23,11 @@ import {
   parseUnits,
   postWithTimeout,
   submitTransaction,
+  TransactionResponse,
   Signer,
   toAddressType,
   toBN,
   TOKEN_SYMBOLS_MAP,
-  TransactionReceipt,
   WETH9,
   isDefined,
   chainIsL1,
@@ -184,7 +183,7 @@ export class Refiller {
             ethBalance: currentBalance.toString(),
             trigger: balanceTrigger.toString(),
             balanceTarget: balanceTarget.toString(),
-            transactionHash: blockExplorerLink(txn.transactionHash, chainId),
+            transactionHash: blockExplorerLink(txn.hash, chainId),
           });
           // Don't return early and flip canRefill to true because we now have enough ETH to transfer to the account
           canRefill = true;
@@ -215,7 +214,7 @@ export class Refiller {
             message: `Swapped ${swapRoute.inputToken} on ${getNetworkName(
               swapRoute.originChainId
             )} to ${nativeTokenSymbol} on ${getNetworkName(chainId)} for ${account} 🎁!`,
-            transactionHash: blockExplorerLink(txn.transactionHash, swapRoute.originChainId),
+            transactionHash: blockExplorerLink(txn.hash, swapRoute.originChainId),
             currentBalance: currentBalance.toString(),
             trigger: balanceTrigger.toString(),
             balanceTarget: balanceTarget.toString(),
@@ -265,25 +264,23 @@ export class Refiller {
           [],
           this.baseSigner.connect(l2Provider)
         );
-        const txn = await (
-          await submitTransaction(
-            {
-              contract: sendRawTransactionContract,
-              method: "",
-              args: [],
-              value: deficit,
-              ensureConfirmation: true,
-              chainId,
-            },
-            this.transactionClient
-          )
-        ).wait();
+        const txn = await submitTransaction(
+          {
+            contract: sendRawTransactionContract,
+            method: "",
+            args: [],
+            value: deficit,
+            ensureConfirmation: true,
+            chainId,
+          },
+          this.transactionClient
+        );
         this.logger.info({
           at: "Refiller#refillBalances",
           message: `Reloaded ${formatUnits(deficit, decimals)} ${nativeSymbolForChain} for ${account} from ${
             this.baseSignerAddress
           } 🫡!`,
-          transactionHash: blockExplorerLink(txn.transactionHash, chainId),
+          transactionHash: blockExplorerLink(txn.hash, chainId),
         });
       }
     } else {
@@ -358,18 +355,17 @@ export class Refiller {
     // Execute the l1 to l2 rebalance.
     let txn;
     try {
-      txn = await (
-        await submitTransaction(
-          {
-            contract: contract,
-            method: method,
-            args: args,
-            value: value,
-            chainId: chainId,
-          },
-          this.transactionClient
-        )
-      ).wait();
+      txn = await submitTransaction(
+        {
+          contract: contract,
+          method: method,
+          args: args,
+          value: value,
+          chainId: chainId,
+          ensureConfirmation: true,
+        },
+        this.transactionClient
+      );
     } catch (error) {
       // Log the error and do not retry.
       this.logger.warn({
@@ -391,7 +387,7 @@ export class Refiller {
     await this.redisCache.set(redisKey, "true", refillPeriod);
   }
 
-  private async _unwrapWethToRefill(chainId: number, amount: BigNumber): Promise<TransactionReceipt | undefined> {
+  private async _unwrapWethToRefill(chainId: number, amount: BigNumber): Promise<TransactionResponse | undefined> {
     const weth = new Contract(
       TOKEN_SYMBOLS_MAP.WETH.addresses[chainId],
       WETH9.abi,
@@ -404,17 +400,16 @@ export class Refiller {
       amount
     );
     if (hasSufficientWethBalance) {
-      return await (
-        await submitTransaction(
-          {
-            contract: weth,
-            method: "withdraw",
-            args: [amount],
-            chainId: chainId,
-          },
-          this.transactionClient
-        )
-      ).wait();
+      return await submitTransaction(
+        {
+          contract: weth,
+          method: "withdraw",
+          args: [amount],
+          chainId: chainId,
+          ensureConfirmation: true,
+        },
+        this.transactionClient
+      );
     } else {
       this.logger.warn({
         at: "Refiller#refillNativeTokenBalances",
@@ -557,7 +552,7 @@ export class Refiller {
     swapRoute: SwapRoute,
     amount: BigNumber,
     recipient: EvmAddress
-  ): Promise<TransactionReceipt | undefined> {
+  ): Promise<TransactionResponse | undefined> {
     const redisKey = `acrossSwap:${swapRoute.originChainId}-${swapRoute.inputToken.toNative()}->${
       swapRoute.destinationChainId
     }-${swapRoute.outputToken.toNative()}`;
@@ -579,6 +574,7 @@ export class Refiller {
           method: "",
           args: [swapData.approval.calldata],
           chainId: swapRoute.originChainId,
+          ensureConfirmation: true,
         },
         this.transactionClient
       );
@@ -589,8 +585,6 @@ export class Refiller {
         swapRoute,
         swapper: this.baseSignerAddress,
       });
-      await delay(1);
-      await txnReceipt.wait();
     }
 
     const { swap } = swapData;
@@ -615,12 +609,11 @@ export class Refiller {
         value: swap.value,
         args: [swap.calldata],
         chainId: swapRoute.originChainId,
+        ensureConfirmation: true,
         method: "",
       },
       this.transactionClient
     );
-    await delay(1);
-    const txnReceipt = await txnResponse.wait();
 
     // Cache the swap for 10 minutes
     // @todo Consider caching for some time relative to the estimated fill time returned by API, but
@@ -632,7 +625,7 @@ export class Refiller {
       message: `Cached swap for ${redisKey}`,
       ttl,
     });
-    return txnReceipt;
+    return txnResponse;
   }
 
   private async _getBalances(balanceRequests: BalanceRequest[]): Promise<BigNumber[]> {
