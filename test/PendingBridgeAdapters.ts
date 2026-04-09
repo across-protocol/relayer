@@ -2,6 +2,7 @@ import { CHAIN_IDs } from "@across-protocol/constants";
 import { CctpAdapter } from "../src/rebalancer/adapters/cctpAdapter";
 import { OftAdapter } from "../src/rebalancer/adapters/oftAdapter";
 import { ethers, expect, sinon, toBNWei } from "./utils";
+import { EvmAddress } from "../src/utils";
 
 describe("Rebalancer bridge adapters", function () {
   afterEach(function () {
@@ -25,7 +26,7 @@ describe("Rebalancer bridge adapters", function () {
       amountToTransfer: toBNWei("1", 6),
     });
 
-    const pendingRebalances = await adapter.getPendingRebalances();
+    const pendingRebalances = await adapter.getPendingRebalances(EvmAddress.from(await signer.getAddress()));
     expect(pendingRebalances[CHAIN_IDs.ARBITRUM].USDT).to.equal(toBNWei("1", 6));
   });
 
@@ -46,7 +47,7 @@ describe("Rebalancer bridge adapters", function () {
       amountToTransfer: toBNWei("2", 6),
     });
 
-    const pendingRebalances = await adapter.getPendingRebalances();
+    const pendingRebalances = await adapter.getPendingRebalances(EvmAddress.from(await signer.getAddress()));
     expect(pendingRebalances[CHAIN_IDs.BASE].USDC).to.equal(toBNWei("2", 6));
   });
 });
