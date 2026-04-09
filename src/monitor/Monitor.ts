@@ -21,6 +21,7 @@ import {
   blockExplorerLinks,
   formatUnits,
   getNativeTokenAddressForChain,
+  getNativeTokenInfoForChain,
   getNativeTokenSymbol,
   getNetworkName,
   getUnfilledDeposits,
@@ -46,7 +47,6 @@ import {
   assert,
   getBinanceApiClient,
   getBinanceWithdrawalLimits,
-  chainIsEvm,
   getSolanaTokenBalance,
   getFillStatusPda,
   getKitKeypairFromEvmSigner,
@@ -1216,8 +1216,8 @@ export class Monitor {
       decimalrequests.map(async ({ chainId, token }) => {
         const gasTokenAddressForChain = getNativeTokenAddressForChain(chainId);
         if (token.eq(gasTokenAddressForChain)) {
-          return chainIsEvm(chainId) ? 18 : 9;
-        } // Assume all EVM chains have 18 decimal native tokens.
+          return getNativeTokenInfoForChain(chainId).decimals;
+        }
         if (this.decimals[chainId]?.[token.toBytes32()]) {
           return this.decimals[chainId][token.toBytes32()];
         }
