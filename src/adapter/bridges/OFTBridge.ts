@@ -20,7 +20,7 @@ import * as OFT from "../../utils/OFTUtils";
 import { OFT_DEFAULT_FEE_CAP, OFT_FEE_CAP_OVERRIDES } from "../../common/Constants";
 import { IOFT_ABI_FULL } from "../../common/ContractAddresses";
 import { Options } from "@layerzerolabs/lz-v2-utilities";
-import { PendingBridgeAdapterName } from "../../rebalancer/utils/PendingBridgeRedis";
+import { PendingBridgeAdapterName } from "../../rebalancer/clients/CctpOftReadOnlyClient";
 
 type OFTBridgeArguments = {
   sendParamStruct: OFT.SendParamStruct;
