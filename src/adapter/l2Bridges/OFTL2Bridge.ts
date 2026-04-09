@@ -22,7 +22,7 @@ import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
 import { IOFT_ABI_FULL, OFT_DEFAULT_FEE_CAP, OFT_FEE_CAP_OVERRIDES, LZ_FEE_TOKENS } from "../../common";
 import * as OFT from "../../utils/OFTUtils";
 import ERC20_ABI from "../../common/abi/MinimalERC20.json";
-import { PendingBridgeAdapterName } from "../../rebalancer/utils/PendingBridgeRedis";
+import { PendingBridgeAdapterName } from "../../rebalancer/clients/CctpOftReadOnlyClient";
 
 export class OFTL2Bridge extends BaseL2BridgeAdapter {
   readonly l2Token: Address;
