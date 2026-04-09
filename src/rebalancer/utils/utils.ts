@@ -1,5 +1,13 @@
 import { RedisCache } from "../../caching/RedisCache";
-import { BigNumber, ConvertDecimals, EvmAddress, ethers, getRedisCache, getTokenInfoFromSymbol, winston } from "../../utils";
+import {
+  BigNumber,
+  ConvertDecimals,
+  EvmAddress,
+  ethers,
+  getRedisCache,
+  getTokenInfoFromSymbol,
+  winston,
+} from "../../utils";
 import { ExcessOrDeficit, OrderDetails, RedisOrderDetailsPayload } from "./interfaces";
 
 // Optional namespace that lets different rebalancer deployments keep their status-tracking data isolated
