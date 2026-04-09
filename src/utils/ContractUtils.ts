@@ -25,6 +25,7 @@ function getTypechainAbi(contractName: string): readonly JsonFragment[] {
   assert("abi" in factory, `Typechain export ${factoryName} has no abi`);
   return factory.abi as readonly JsonFragment[];
 }
+import COUNTERFACTUAL_DEPOSIT_FACTORY_ABI from "../common/abi/CounterfactualDepositFactory.json";
 
 // Return an ethers contract instance for a deployed contract, imported from the Across-protocol contracts repo.
 export function getDeployedContract(contractName: string, networkId: number, signer?: Signer): Contract {
@@ -38,16 +39,9 @@ export function getDeployedContract(contractName: string, networkId: number, sig
   }
 }
 
-export function getCounterfactualDepositImplementationAddress(chainId: number): string {
-  return CONTRACT_ADDRESSES[chainId].counterfactualDeposit.address;
-}
-
-// For a chain ID and optional CounterfactualDepositFactory address, return a Contract instance with the corresponding ABI.
-export function getCounterfactualDepositFactory(chainId: number, address?: string): Contract {
-  return new Contract(
-    address ?? CONTRACT_ADDRESSES[chainId].counterfactualDepositFactory.address,
-    CONTRACT_ADDRESSES[chainId].counterfactualDepositFactory.abi
-  );
+// For a CounterfactualDepositFactory address, return a Contract instance with the corresponding ABI.
+export function getCounterfactualDepositFactory(address: string): Contract {
+  return new Contract(address, COUNTERFACTUAL_DEPOSIT_FACTORY_ABI);
 }
 
 // For a chain ID and optional SpokePool address, return a Contract instance with the corresponding ABI.

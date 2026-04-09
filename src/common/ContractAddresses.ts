@@ -40,7 +40,6 @@ import SCROLL_GAS_PRICE_ORACLE_ABI from "./abi/ScrollGasPriceOracle.json";
 import IOFT_ABI_FULL from "./abi/IOFT.json";
 import HYPERLIQUID_DEPOSIT_HANDLER_ABI from "./abi/HyperliquidDepositHandler.json";
 import SPOKE_POOL_PERIPHERY_ABI from "./abi/SpokePoolPeriphery.json";
-import COUNTERFACTUAL_DEPOSIT_FACTORY_ABI from "./abi/CounterfactualDepositFactory.json";
 import PERMIT2_ABI from "./abi/Permit2.json";
 export { IOFT_ABI_FULL };
 import HUB_POOL_STORE_ABI from "./abi/HubPoolStore.json";
@@ -248,13 +247,6 @@ export const CONTRACT_ADDRESSES: {
     },
     spokePoolPeriphery: {
       abi: SPOKE_POOL_PERIPHERY_ABI,
-    },
-    counterfactualDepositFactory: {
-      address: "0x9cd343b1ce2798bfdc09debc83f9cbfad4a22772",
-      abi: COUNTERFACTUAL_DEPOSIT_FACTORY_ABI,
-    },
-    counterfactualDeposit: {
-      address: "0x116e1f29138b0a6417189ffdf4a17de223ae27c7",
     },
     permit2: {
       address: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
@@ -495,13 +487,6 @@ export const CONTRACT_ADDRESSES: {
     spokePoolPeriphery: {
       abi: SPOKE_POOL_PERIPHERY_ABI,
     },
-    counterfactualDepositFactory: {
-      address: "0x9cd343b1ce2798bfdc09debc83f9cbfad4a22772",
-      abi: COUNTERFACTUAL_DEPOSIT_FACTORY_ABI,
-    },
-    counterfactualDeposit: {
-      address: "0x116e1f29138b0a6417189ffdf4a17de223ae27c7",
-    },
     sponsoredCCTPDstPeriphery: {
       address: "0xd9dc78b969e9efb1e54b625c33a21aaf2509e6a1",
       abi: SPONSORED_CCTP_DST_PERIPHERY_ABI,
@@ -600,13 +585,6 @@ export const CONTRACT_ADDRESSES: {
     },
     spokePoolPeriphery: {
       abi: SPOKE_POOL_PERIPHERY_ABI,
-    },
-    counterfactualDepositFactory: {
-      address: "0x9cd343b1ce2798bfdc09debc83f9cbfad4a22772",
-      abi: COUNTERFACTUAL_DEPOSIT_FACTORY_ABI,
-    },
-    counterfactualDeposit: {
-      address: "0x116e1f29138b0a6417189ffdf4a17de223ae27c7",
     },
     permit2: {
       address: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
