@@ -4,7 +4,6 @@ import {
   ethers,
   getRemoteTokenForL1Token,
   isDefined,
-
   Address,
   EvmAddress,
   toAddressType,
@@ -48,8 +47,6 @@ export function matchTokenSymbol(tokenAddress: string, chainId: number): string[
     .filter(({ addresses }) => addresses[chainId]?.toLowerCase() === tokenAddress.toLowerCase())
     .map(({ symbol }) => symbol);
 }
-
-
 
 /**
  * @notice Returns the token address for a given token address on a given chain ID and lets caller specify
