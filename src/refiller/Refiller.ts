@@ -353,7 +353,7 @@ export class Refiller {
     } = await tokenBridge.constructL1ToL2Txn(account, l1Token, token, amount);
 
     // Execute the l1 to l2 rebalance.
-    let txn;
+    let txn: TransactionResponse;
     try {
       txn = await submitTransaction(
         {
@@ -382,7 +382,7 @@ export class Refiller {
       message: `Reloaded ${formatUnits(amount, decimals)} ${l2TokenInfo.symbol} for ${account} from ${
         this.baseSignerAddress
       } 🫡!`,
-      transactionHash: blockExplorerLink(txn.transactionHash, chainId),
+      transactionHash: blockExplorerLink(txn.hash, chainId),
     });
     await this.redisCache.set(redisKey, "true", refillPeriod);
   }
