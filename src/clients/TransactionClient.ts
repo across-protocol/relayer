@@ -274,7 +274,7 @@ async function _runTransaction(
   logger: winston.Logger,
   contract: Contract,
   method: string,
-  args: unknown,
+  args: unknown[],
   value = bnZero,
   gasLimit: BigNumber | null = null,
   nonce: number | null = null,
@@ -297,7 +297,7 @@ async function _runTransaction(
       provider,
       priorityFeeScaler,
       maxFeePerGasScaler,
-      sendRawTxn ? undefined : await contract.populateTransaction[method](...(args as Array<unknown>), { value })
+      sendRawTxn ? undefined : await contract.populateTransaction[method](...args, { value })
     );
     gas = _scaleGasPrice(chainId, preGas, retryScaler);
   } catch (error) {
@@ -324,7 +324,7 @@ async function _runTransaction(
   try {
     return sendRawTxn
       ? await signer.sendTransaction({ to, value, data: (args as ethers.utils.BytesLike[])[0], gasLimit, ...gas })
-      : await contract[method](...(args as Array<unknown>), txConfig);
+      : await contract[method](...args, txConfig);
   } catch (error) {
     // Narrow type. All errors caught here should be Ethers errors.
     if (!typeguards.isEthersError(error)) {
@@ -418,7 +418,7 @@ async function _runTransactionTvm(
   logger: winston.Logger,
   contract: Contract,
   method: string,
-  args: unknown,
+  args: unknown[],
   value = bnZero,
   gasLimit: BigNumber | null = null,
   _nonce: number | null = null,
@@ -440,7 +440,7 @@ async function _runTransactionTvm(
     provider,
     priorityFeeScaler, // No priority fee scalar for TRON.
     maxFeePerGasScaler,
-    sendRawTxn ? undefined : await contract.populateTransaction[method](...(args as Array<unknown>), { value })
+    sendRawTxn ? undefined : await contract.populateTransaction[method](...args, { value })
   );
   const gasLimitNumber = gasLimit?.toNumber() ?? process.env.TVM_GAS_LIMIT;
   const feeLimit = isDefined(gasLimitNumber) ? Number(gasLimitNumber) * maxFeePerGas.toNumber() : DEFAULT_TVM_FEE_LIMIT;
@@ -448,7 +448,7 @@ async function _runTransactionTvm(
   const tronWeb = getTronWebFromEvmSigner(contract.signer);
   const populatedTransaction = sendRawTxn
     ? { from: await contract.signer.getAddress(), to: contract.address, data: (args as Array<string>)[0] }
-    : await contract.populateTransaction[method](...(args as Array<unknown>), { value });
+    : await contract.populateTransaction[method](...args, { value });
 
   logger.debug({ at, message: "Submitting TVM transaction.", chain, method, feeLimit });
   let result;
