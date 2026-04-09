@@ -285,7 +285,9 @@ export class RelayerConfig extends CommonConfig {
         const hubTokenConfig = rawTokenConfigs[l1Token];
 
         if (isAliasConfig(hubTokenConfig)) {
-          const inventoryEntry: ChainTokenInventory = {};
+          const existing = tokenConfigs[effectiveL1Token];
+          const inventoryEntry: ChainTokenInventory =
+            isDefined(existing) && isAliasConfig(existing) ? { ...existing } : {};
           Object.keys(hubTokenConfig).forEach((symbol) => {
             Object.keys(hubTokenConfig[symbol]).forEach((chainId) => {
               const rawTokenConfig = hubTokenConfig[symbol][chainId];
