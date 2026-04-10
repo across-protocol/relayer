@@ -23,6 +23,9 @@ import {
   BRIDGE_API_DESTINATION_TOKEN_SYMBOLS,
   roundAmountToSend,
   mapAsync,
+  createFormatFunction,
+  floatToBN,
+  ZERO_BYTES,
 } from "../../utils";
 import { TransferTokenParams } from "../utils";
 import ERC20_ABI from "../../common/abi/MinimalERC20.json";
@@ -30,6 +33,7 @@ import ERC20_ABI from "../../common/abi/MinimalERC20.json";
 export class BridgeApi extends BaseBridgeAdapter {
   protected api: BridgeApiClient;
   protected l1TokenInfo: TokenInfo;
+  protected dstCurrency: string;
 
   constructor(
     l2chainId: number,
@@ -47,7 +51,7 @@ export class BridgeApi extends BaseBridgeAdapter {
     this.l2Bridge = new Contract(BRIDGE_API_DESTINATION_TOKENS[this.l2chainId], ERC20_ABI, l2SignerOrProvider);
 
     // We need to fetch some API configuration details from environment.
-    const { BRIDGE_API_BASE, BRIDGE_API_KEY, BRIDGE_CUSTOMER_ID } = process.env;
+    const { BRIDGE_API_BASE = "https://api.bridge.xyz", BRIDGE_API_KEY, BRIDGE_CUSTOMER_ID } = process.env;
 
     assert(isDefined(BRIDGE_API_BASE), "BRIDGE_API_BASE must be set in the environment");
     assert(isDefined(BRIDGE_API_KEY), "BRIDGE_API_KEY must be set in the environment");
@@ -63,6 +67,7 @@ export class BridgeApi extends BaseBridgeAdapter {
     );
 
     this.l1TokenInfo = getTokenInfo(l1Token, this.hubChainId);
+    this.dstCurrency = BRIDGE_API_DESTINATION_TOKEN_SYMBOLS[this.getL2Bridge().address];
   }
 
   async constructL1ToL2Txn(
@@ -70,7 +75,6 @@ export class BridgeApi extends BaseBridgeAdapter {
     _l1Token: EvmAddress,
     l2Token: Address,
     _amount: BigNumber,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _optionalParams?: TransferTokenParams
   ): Promise<BridgeTransactionDetails> {
     const amount = roundAmountToSend(_amount, this.l1TokenInfo.decimals, 2); // The bridge API only deals with values up to 2 decimals.
@@ -82,10 +86,12 @@ export class BridgeApi extends BaseBridgeAdapter {
     if (amount.lt(BRIDGE_API_MINIMUMS[this.hubChainId]?.[this.l2chainId] ?? toBN(Number.MAX_SAFE_INTEGER))) {
       throw new Error(`Cannot bridge to ${getNetworkName(this.l2chainId)} due to invalid amount ${amount}`);
     }
+    const formatter = createFormatFunction(2, 4, false, this.l1TokenInfo.decimals);
     const transferRouteAddress = await this.api.createTransferRouteEscrowAddress(
       toAddress,
       this.l1TokenInfo.symbol,
-      BRIDGE_API_DESTINATION_TOKEN_SYMBOLS[this.getL2Bridge().address]
+      BRIDGE_API_DESTINATION_TOKEN_SYMBOLS[this.getL2Bridge().address],
+      formatter(amount)
     );
     return Promise.resolve({
       contract: this.getL1Bridge(),
@@ -96,7 +102,7 @@ export class BridgeApi extends BaseBridgeAdapter {
 
   async queryL1BridgeInitiationEvents(
     _l1Token: EvmAddress,
-    _fromAddress: EvmAddress,
+    fromAddress: EvmAddress,
     toAddress: Address,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
@@ -110,24 +116,30 @@ export class BridgeApi extends BaseBridgeAdapter {
       statusesGrouped,
     });
 
+    const initialPendingRebalances = await this.api.filterInitiatedTransfers(
+      pendingTransfers.filter((pendingTransfer) => pendingTransfer.destination.currency === this.dstCurrency),
+      fromAddress,
+      eventConfig,
+      this.l1Signer.provider
+    );
     const pendingRebalances = await mapAsync(
-      pendingTransfers.filter((pendingTransfer) => {
-        const destinationAddress = toAddressType(pendingTransfer.destination.to_address, this.l2chainId);
+      initialPendingRebalances.filter(({ destination, source_deposit_instructions }) => {
+        const destinationAddress = toAddressType(destination.to_address, this.l2chainId);
         return (
           destinationAddress.eq(toAddress) &&
-          pendingTransfer.state !== "awaiting_funds" &&
-          pendingTransfer.state !== "payment_processed" &&
-          pendingTransfer.source_deposit_instructions.currency === this.l1TokenInfo.symbol.toLowerCase()
+          source_deposit_instructions.currency === this.l1TokenInfo.symbol.toLowerCase()
         );
       }),
-      async ({ receipt }) => {
-        const transaction = await this.l1Signer.provider.getTransactionReceipt(receipt.source_tx_hash);
+      async (pendingTransfer) => {
+        const transaction = isDefined(pendingTransfer?.receipt?.source_tx_hash)
+          ? await this.l1Signer.provider.getTransactionReceipt(pendingTransfer.receipt.source_tx_hash)
+          : undefined;
         return {
-          txnRef: receipt.source_tx_hash,
+          txnRef: pendingTransfer.receipt?.source_tx_hash ?? ZERO_BYTES,
           logIndex: 0, // logIndex is zero since the only call for initiation is a `Transfer`.
-          txnIndex: transaction?.transactionIndex,
-          blockNumber: transaction?.blockNumber,
-          amount: toBN(Math.floor(Number(receipt.final_amount) * 10 ** this.l1TokenInfo.decimals)),
+          txnIndex: transaction?.transactionIndex ?? 0,
+          blockNumber: transaction?.blockNumber ?? 0,
+          amount: floatToBN(pendingTransfer.receipt?.final_amount ?? pendingTransfer.amount, this.l1TokenInfo.decimals),
         };
       }
     );
@@ -137,13 +149,9 @@ export class BridgeApi extends BaseBridgeAdapter {
   }
 
   async queryL2BridgeFinalizationEvents(
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _l1Token: EvmAddress,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _fromAddress: EvmAddress,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _toAddress: Address,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     return Promise.resolve({});

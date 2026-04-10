@@ -8,6 +8,7 @@ import {
   Address,
   getHubPoolAddress,
   getSpokePoolAddress,
+  getTranslatedTokenAddress,
   SVMProvider,
   SolanaTransaction,
   isDefined,
@@ -46,6 +47,14 @@ export abstract class BaseL2BridgeAdapter {
 
   public pendingWithdrawalLookbackPeriodSeconds(): number {
     return DEFAULT_PENDING_WITHDRAWAL_LOOKBACK_PERIOD_SECONDS;
+  }
+
+  /**
+   * Returns the L2 token address this bridge operates on.
+   * Override in subclasses that use a non-canonical L2 token (e.g. BridgeApi using pathUSD).
+   */
+  getL2Token(): Address {
+    return getTranslatedTokenAddress(this.l1Token, this.hubChainId, this.l2chainId);
   }
 
   abstract constructWithdrawToL1Txns(
