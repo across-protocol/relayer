@@ -385,6 +385,7 @@ export class DepositAddressHandler {
       recipient,
       depositAddress,
       executionFeeRecipient: this.signerAddress.toNative(),
+      shouldSponsorAccountCreation: String(depositMessage.shouldSponsorAccountCreation),
     };
     try {
       return await this.api.get<SwapApiResponse>(this.config.apiEndpoint, params);
