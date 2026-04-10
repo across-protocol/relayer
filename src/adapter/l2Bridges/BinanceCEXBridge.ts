@@ -7,6 +7,7 @@ import {
   getNetworkName,
   Signer,
   EvmAddress,
+  BinanceApi,
   getBinanceApiClient,
   getTranslatedTokenAddress,
   floatToBN,
@@ -21,6 +22,7 @@ import {
   getBinanceDepositType,
   BinanceTransactionType,
   getBinanceWithdrawalType,
+  isCompletedBinanceWithdrawal,
   getOutstandingBinanceDeposits,
 } from "../../utils";
 import { L1Token } from "../../interfaces";
@@ -31,7 +33,7 @@ import { AugmentedTransaction } from "../../clients/TransactionClient";
 export class BinanceCEXBridge extends BaseL2BridgeAdapter {
   // Store the promise to be evaluated when needed so that we can construct the bridge synchronously.
   protected readonly binanceApiClientPromise;
-  protected binanceApiClient;
+  protected binanceApiClient: BinanceApi | undefined;
   // Store the token info for the bridge so we can reference the L1 decimals and L1 token symbol.
   protected l1TokenInfo: L1Token;
   // The deposit network corresponding to the L2.
@@ -110,6 +112,7 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
     const withdrawHistory = await filterAsync(_withdrawHistory, async (withdrawal) => {
       const withdrawalType = await getBinanceWithdrawalType(withdrawal);
       return (
+        isCompletedBinanceWithdrawal(withdrawal.status) &&
         withdrawal.network === BINANCE_NETWORKS[CHAIN_IDs.MAINNET] &&
         compareAddressesSimple(withdrawal.recipient, fromAddress.toNative()) &&
         withdrawalType !== BinanceTransactionType.SWAP

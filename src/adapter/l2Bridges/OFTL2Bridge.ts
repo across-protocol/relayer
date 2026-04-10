@@ -22,10 +22,10 @@ import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
 import { IOFT_ABI_FULL, OFT_DEFAULT_FEE_CAP, OFT_FEE_CAP_OVERRIDES, LZ_FEE_TOKENS } from "../../common";
 import * as OFT from "../../utils/OFTUtils";
 import ERC20_ABI from "../../common/abi/MinimalERC20.json";
-import { PendingBridgeAdapterName } from "../../rebalancer/utils/PendingBridgeRedis";
+import { PendingBridgeAdapterName } from "../../rebalancer/clients/CctpOftReadOnlyClient";
 
 export class OFTL2Bridge extends BaseL2BridgeAdapter {
-  readonly l2Token: EvmAddress;
+  readonly l2Token: Address;
   private readonly l2ChainEid: number;
   private readonly l1ChainEid: number;
   private l2TokenInfo: sdkInterfaces.TokenInfo;
@@ -38,11 +38,10 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
     super(l2chainId, hubChainId, l2Signer, l1Signer, l1Token);
 
     const translatedL2Token = getTranslatedTokenAddress(l1Token, hubChainId, l2chainId);
-    assert(translatedL2Token.isEVM());
     this.l2Token = translatedL2Token;
 
-    const l1OftMessenger = OFT.getMessengerEvm(l1Token, hubChainId);
-    const l2OftMessenger = OFT.getMessengerEvm(l1Token, l2chainId);
+    const l1OftMessenger = OFT.getMessengerEvm(l1Token, hubChainId, l2chainId);
+    const l2OftMessenger = OFT.getMessengerEvm(l1Token, l2chainId, l2chainId);
 
     this.nativeFeeCap = OFT_FEE_CAP_OVERRIDES[this.l2chainId] ?? OFT_DEFAULT_FEE_CAP;
 
@@ -139,8 +138,6 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
     fromAddress: Address,
     l2Token: Address
   ): Promise<BigNumber> {
-    assert(l2Token.isEVM(), `Non-evm l2Token not supported: ${l2Token.toNative()}`);
-
     if (!this.l2Token.eq(l2Token)) {
       // Return 0 for tokens not associated with this OFTBridge
       // https://github.com/across-protocol/relayer/pull/2509#discussion_r2305205369
@@ -225,7 +222,7 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
   public override requiredTokenApprovals(): { token: EvmAddress; bridge: EvmAddress }[] {
     return [
       {
-        token: this.l2Token,
+        token: EvmAddress.from(this.l2Token.toEvmAddress()),
         bridge: EvmAddress.from(this.l2Bridge.address),
       },
     ];

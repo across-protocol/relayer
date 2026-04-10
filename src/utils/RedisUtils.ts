@@ -164,7 +164,7 @@ export async function disconnectRedisClients(logger?: winston.Logger): Promise<v
   // todo understand why redisClients aren't GCed automagically.
   const clients = Object.entries(redisClients);
   for (const [key, client] of clients) {
-    const logParams = {
+    const logParams: { at: string; message: string; key: string; success?: boolean; error?: unknown } = {
       at: "RedisUtils#disconnectRedisClient",
       message: "Disconnecting from redis server.",
       key,
@@ -176,10 +176,10 @@ export async function disconnectRedisClients(logger?: winston.Logger): Promise<v
     // We can log the error and continue.
     try {
       await client.disconnect();
-      logParams["success"] = true;
+      logParams.success = true;
     } catch (e) {
-      logParams["success"] = false;
-      logParams["error"] = e;
+      logParams.success = false;
+      logParams.error = e;
     }
     logger?.debug(logParams);
   }

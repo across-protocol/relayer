@@ -23,7 +23,7 @@ import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
 import { AugmentedTransaction } from "../../clients/TransactionClient";
 import { CCTP_MAX_SEND_AMOUNT } from "../../common";
 import { TransferTokenParams } from "../utils";
-import { PendingBridgeAdapterName } from "../../rebalancer/utils/PendingBridgeRedis";
+import { PendingBridgeAdapterName } from "../../rebalancer/clients/CctpOftReadOnlyClient";
 
 /**
  * This adapter uses CCTP V2 to bridge USDC between L2's.

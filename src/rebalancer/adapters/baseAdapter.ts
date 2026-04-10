@@ -13,14 +13,11 @@ import {
   defiLlama,
   delay,
   ERC20,
-  ethers,
   EventSearchConfig,
   EvmAddress,
   forEachAsync,
   getBlockForTimestamp,
-  getCurrentTime,
   getProvider,
-  getRedisCache,
   getTokenInfo,
   getTokenInfoFromSymbol,
   isDefined,
@@ -30,33 +27,22 @@ import {
   submitTransaction,
   winston,
 } from "../../utils";
-import { RebalancerAdapter, RebalanceRoute } from "../utils/interfaces";
+import { OrderDetails, RebalancerAdapter, RebalanceRoute } from "../utils/interfaces";
 import { RebalancerConfig } from "../RebalancerConfig";
-import { getRebalancerStatusTrackingNamespace } from "../utils/PendingBridgeRedis";
-
-export enum STATUS {
-  PENDING_BRIDGE_PRE_DEPOSIT,
-  PENDING_DEPOSIT,
-  PENDING_SWAP,
-  PENDING_WITHDRAWAL,
-}
-export interface OrderDetails {
-  sourceToken: string;
-  destinationToken: string;
-  sourceChain: number;
-  destinationChain: number;
-  amountToTransfer: BigNumber;
-}
-
-// @dev We should track order statuses in Redis in a separate namespace from the remainder of the application's
-// Redis cache (e.g. the namespace we use for caching RPC responses) to avoid losing critical information about pending orders
-// even when we want to rotate rest of the Redis cache without losing critical information about pending orders
-const rebalancerStatusTrackingNameSpace: string | undefined = getRebalancerStatusTrackingNamespace();
+import {
+  getCloidForAccount,
+  STATUS,
+  getPendingBridgeOrderKey,
+  getPendingBridgeStatusSetKey,
+  getRedisCacheForRebalancerStatusTracking,
+  redisGetOrderDetailsForAdapter,
+} from "../utils/utils";
 
 export abstract class BaseAdapter implements RebalancerAdapter {
+  public baseSignerAddress: EvmAddress;
+
   protected transactionClient: TransactionClient;
   protected redisCache: RedisCache;
-  protected baseSignerAddress: EvmAddress;
   protected initialized = false;
   protected priceClient: PriceClient;
   protected multicallerClient: MultiCallerClient;
@@ -94,7 +80,7 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     if (this.initialized) {
       return;
     }
-    this.redisCache = (await getRedisCache(this.logger, undefined, rebalancerStatusTrackingNameSpace)) as RedisCache;
+    this.redisCache = await getRedisCacheForRebalancerStatusTracking(this.logger);
 
     this.baseSignerAddress = EvmAddress.from(await this.baseSigner.getAddress());
 
@@ -134,7 +120,7 @@ export abstract class BaseAdapter implements RebalancerAdapter {
   abstract initializeRebalance(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber): Promise<BigNumber>;
   abstract updateRebalanceStatuses(): Promise<void>;
   abstract sweepIntermediateBalances(): Promise<void>;
-  abstract getPendingRebalances(): Promise<{ [chainId: number]: { [token: string]: BigNumber } }>;
+  abstract getPendingRebalances(account: EvmAddress): Promise<{ [chainId: number]: { [token: string]: BigNumber } }>;
   abstract getEstimatedCost(
     rebalanceRoute: RebalanceRoute,
     amountToTransfer: BigNumber,
@@ -146,9 +132,14 @@ export abstract class BaseAdapter implements RebalancerAdapter {
   // PROTECTED REDIS HELPER METHODS
   // ////////////////////////////////////////////////////////////
 
-  protected async _redisUpdateOrderStatus(cloid: string, oldStatus: number, status: number): Promise<void> {
-    const oldOrderStatusKey = this._redisGetOrderStatusKey(oldStatus);
-    const newOrderStatusKey = this._redisGetOrderStatusKey(status);
+  protected async _redisUpdateOrderStatus(
+    cloid: string,
+    oldStatus: number,
+    status: number,
+    account: EvmAddress
+  ): Promise<void> {
+    const oldOrderStatusKey = getPendingBridgeStatusSetKey(this.REDIS_PREFIX, oldStatus, account.toNative());
+    const newOrderStatusKey = getPendingBridgeStatusSetKey(this.REDIS_PREFIX, status, account.toNative());
     const result = await Promise.all([
       this.redisCache.sRem(oldOrderStatusKey, cloid),
       this.redisCache.sAdd(newOrderStatusKey, cloid),
@@ -165,10 +156,11 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     status: number,
     rebalanceRoute: RebalanceRoute,
     amountToTransfer: BigNumber,
+    account: EvmAddress,
     ttlOverride?: number
   ): Promise<void> {
-    const orderStatusKey = this._redisGetOrderStatusKey(status);
-    const orderDetailsKey = `${this._redisGetPendingOrderKey()}:${cloid}`;
+    const orderStatusKey = getPendingBridgeStatusSetKey(this.REDIS_PREFIX, status, account.toNative());
+    const orderDetailsKey = getPendingBridgeOrderKey(this.REDIS_PREFIX, cloid, account.toNative());
 
     // Create a new order in Redis. We use a TTL of 1 hour so that all orders that are finalized in 1 hour are
     // deleted from Redis and a RebalancerClient can sweep any excess balances that are left over on exchanges.
@@ -178,7 +170,6 @@ export abstract class BaseAdapter implements RebalancerAdapter {
       message: `Saving new order details for cloid ${cloid}`,
       orderStatusKey,
       orderDetailsKey,
-      redisNamespace: rebalancerStatusTrackingNameSpace,
       sourceToken,
       destinationToken,
       sourceChain,
@@ -212,121 +203,89 @@ export abstract class BaseAdapter implements RebalancerAdapter {
 
   // Used to generate unique cloids for orders for adapters where we can inject our own cloid.
   protected async _redisGetNextCloid(): Promise<string> {
-    // We want to make sure that cloids are unique even if we rotate the redis cache namespace, so we can use
-    // the current unix timestamp since we are assuming that we are never going to create multiple new orders
-    // for the same exchange simultaneously.
-    const unixTimestamp = getCurrentTime();
-
-    // @dev Hyperliquid requires a 128 bit/16 byte string for a cloid, Binance doesn't seem to have any requirements.
-    return ethers.utils.hexZeroPad(ethers.utils.hexValue(unixTimestamp), 16);
+    return getCloidForAccount(this.baseSignerAddress.toNative());
   }
 
-  protected async _redisGetOrderDetails(cloid: string): Promise<OrderDetails> {
-    const orderDetailsKey = `${this._redisGetPendingOrderKey()}:${cloid}`;
-    const orderDetails = await this.redisCache.get<string>(orderDetailsKey);
-    if (!orderDetails) {
-      return undefined;
-    }
-    const rebalanceRoute = JSON.parse(orderDetails);
-    return {
-      ...rebalanceRoute,
-      amountToTransfer: BigNumber.from(rebalanceRoute.amountToTransfer),
-    };
+  protected _redisGetOrderDetails(cloid: string, account: EvmAddress): Promise<OrderDetails> {
+    return redisGetOrderDetailsForAdapter(this.redisCache, this.REDIS_PREFIX, cloid, account);
   }
 
-  protected async _redisDeleteOrder(cloid: string, currentStatus: number): Promise<void> {
-    const orderStatusKey = this._redisGetOrderStatusKey(currentStatus);
-    const orderDetailsKey = `${this._redisGetPendingOrderKey()}:${cloid}`;
+  protected async _redisDeleteOrder(cloid: string, currentStatus: number, account: EvmAddress): Promise<void> {
+    const orderStatusKey = getPendingBridgeStatusSetKey(this.REDIS_PREFIX, currentStatus, account.toNative());
+    const orderDetailsKey = getPendingBridgeOrderKey(this.REDIS_PREFIX, cloid, account.toNative());
     const result = await Promise.all([
       this.redisCache.sRem(orderStatusKey, cloid),
       this.redisCache.del(orderDetailsKey),
     ]);
     this.logger.debug({
       at: "BaseAdapter._redisDeleteOrder",
-      message: `Deleted order details for cloid ${cloid} under key ${orderDetailsKey} and from status set ${orderStatusKey}`,
+      message: `Deleted order details for cloid ${cloid}`,
       result,
     });
-  }
-
-  protected _redisGetOrderStatusKey(status: STATUS): string {
-    let orderStatusKey: string;
-    switch (status) {
-      case STATUS.PENDING_DEPOSIT:
-        orderStatusKey = this.REDIS_PREFIX + "pending-deposit";
-        break;
-      case STATUS.PENDING_SWAP:
-        orderStatusKey = this.REDIS_PREFIX + "pending-swap";
-        break;
-      case STATUS.PENDING_WITHDRAWAL:
-        orderStatusKey = this.REDIS_PREFIX + "pending-withdrawal";
-        break;
-      case STATUS.PENDING_BRIDGE_PRE_DEPOSIT:
-        orderStatusKey = this.REDIS_PREFIX + "pending-bridge-pre-deposit";
-        break;
-      default:
-        throw new Error(`Invalid status: ${status}`);
-    }
-    return orderStatusKey;
   }
 
   protected _redisGetLatestNonceKey(): string {
     return this.REDIS_PREFIX + "latest-nonce";
   }
 
-  protected _redisGetPendingOrderKey(): string {
-    return this.REDIS_PREFIX + "pending-order";
-  }
-
   // @dev Call this function before making any calls to sMembers to ensure that we are not returning any expired orders
-  // that no longer have an order details key in Redis.
-  protected async _redisCleanupPendingOrders(status: STATUS): Promise<void> {
+  // that no longer have an order details key in Redis. Will only be used to cleanup orders owned by this.baseSignerAddress, for safety.
+  private async _redisCleanupPendingOrders(status: STATUS, account: EvmAddress): Promise<void> {
     // If sMembers don't expire and don't have a notion of TTL, so check if order detail keys have expired. If they have,
     // then delete the member from the set.
-    const sMembers = await this.redisCache.sMembers(this._redisGetOrderStatusKey(status));
-    const orderDetails = await Promise.all(sMembers.map((cloid) => this._redisGetOrderDetails(cloid)));
+    const sMembers = await this.redisCache.sMembers(
+      getPendingBridgeStatusSetKey(this.REDIS_PREFIX, status, account.toNative())
+    );
+    const orderDetails = await Promise.all(sMembers.map((cloid) => this._redisGetOrderDetails(cloid, account)));
     await forEachAsync(sMembers, async (cloid, i) => {
       if (!isDefined(orderDetails[i])) {
         this.logger.debug({
           at: "BaseAdapter._redisCleanupPendingOrders",
-          message: `Deleting expired order details for cloid ${cloid} from status set ${this._redisGetOrderStatusKey(
-            status
-          )}`,
+          message: `Deleting expired order details for cloid ${cloid} from status set ${getPendingBridgeStatusSetKey(this.REDIS_PREFIX, status, account.toNative())}`,
         });
-        await this._redisDeleteOrder(cloid, status);
+        await this._redisDeleteOrder(cloid, status, account);
       }
     });
   }
 
-  protected async _redisGetPendingBridgesPreDeposit(): Promise<string[]> {
-    await this._redisCleanupPendingOrders(STATUS.PENDING_BRIDGE_PRE_DEPOSIT);
-    const sMembers = await this.redisCache.sMembers(this._redisGetOrderStatusKey(STATUS.PENDING_BRIDGE_PRE_DEPOSIT));
+  protected async _redisGetPendingBridgesPreDeposit(account: EvmAddress): Promise<string[]> {
+    await this._redisCleanupPendingOrders(STATUS.PENDING_BRIDGE_PRE_DEPOSIT, account);
+    const sMembers = await this.redisCache.sMembers(
+      getPendingBridgeStatusSetKey(this.REDIS_PREFIX, STATUS.PENDING_BRIDGE_PRE_DEPOSIT, account.toNative())
+    );
     return sMembers;
   }
 
-  protected async _redisGetPendingDeposits(): Promise<string[]> {
-    await this._redisCleanupPendingOrders(STATUS.PENDING_DEPOSIT);
-    const sMembers = await this.redisCache.sMembers(this._redisGetOrderStatusKey(STATUS.PENDING_DEPOSIT));
+  protected async _redisGetPendingDeposits(account: EvmAddress): Promise<string[]> {
+    await this._redisCleanupPendingOrders(STATUS.PENDING_DEPOSIT, account);
+    const sMembers = await this.redisCache.sMembers(
+      getPendingBridgeStatusSetKey(this.REDIS_PREFIX, STATUS.PENDING_DEPOSIT, account.toNative())
+    );
     return sMembers;
   }
 
-  protected async _redisGetPendingSwaps(): Promise<string[]> {
-    await this._redisCleanupPendingOrders(STATUS.PENDING_SWAP);
-    const sMembers = await this.redisCache.sMembers(this._redisGetOrderStatusKey(STATUS.PENDING_SWAP));
+  protected async _redisGetPendingSwaps(account: EvmAddress): Promise<string[]> {
+    await this._redisCleanupPendingOrders(STATUS.PENDING_SWAP, account);
+    const sMembers = await this.redisCache.sMembers(
+      getPendingBridgeStatusSetKey(this.REDIS_PREFIX, STATUS.PENDING_SWAP, account.toNative())
+    );
     return sMembers;
   }
 
-  protected async _redisGetPendingWithdrawals(): Promise<string[]> {
-    await this._redisCleanupPendingOrders(STATUS.PENDING_WITHDRAWAL);
-    const sMembers = await this.redisCache.sMembers(this._redisGetOrderStatusKey(STATUS.PENDING_WITHDRAWAL));
+  protected async _redisGetPendingWithdrawals(account: EvmAddress): Promise<string[]> {
+    await this._redisCleanupPendingOrders(STATUS.PENDING_WITHDRAWAL, account);
+    const sMembers = await this.redisCache.sMembers(
+      getPendingBridgeStatusSetKey(this.REDIS_PREFIX, STATUS.PENDING_WITHDRAWAL, account.toNative())
+    );
     return sMembers;
   }
 
-  protected async _redisGetPendingOrders(): Promise<string[]> {
+  protected async _redisGetPendingOrders(account: EvmAddress): Promise<string[]> {
     const [pendingDeposits, pendingSwaps, pendingWithdrawals, pendingBridgesPreDeposit] = await Promise.all([
-      this._redisGetPendingDeposits(),
-      this._redisGetPendingSwaps(),
-      this._redisGetPendingWithdrawals(),
-      this._redisGetPendingBridgesPreDeposit(),
+      this._redisGetPendingDeposits(account),
+      this._redisGetPendingSwaps(account),
+      this._redisGetPendingWithdrawals(account),
+      this._redisGetPendingBridgesPreDeposit(account),
     ]);
     return [...pendingDeposits, ...pendingSwaps, ...pendingWithdrawals, ...pendingBridgesPreDeposit];
   }
@@ -371,11 +330,10 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     return getTokenInfoFromSymbol(symbol, chainId);
   }
 
-  protected async _getERC20Balance(chainId: number, tokenAddress: string): Promise<BigNumber> {
+  protected async _getERC20Balance(chainId: number, tokenAddress: string, account: EvmAddress): Promise<BigNumber> {
     const provider = await getProvider(chainId);
-    const connectedSigner = this.baseSigner.connect(provider);
-    const erc20 = new Contract(tokenAddress, ERC20.abi, connectedSigner);
-    const balance = await erc20.balanceOf(this.baseSignerAddress.toNative());
+    const erc20 = new Contract(tokenAddress, ERC20.abi, provider);
+    const balance = await erc20.balanceOf(account.toNative());
     return BigNumber.from(balance.toString());
   }
 
@@ -404,12 +362,6 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     }
   }
 
-  // @todo: Add retry logic here! Or replace with the multicaller client. However, we can't easily swap in the MulticallerClient
-  // because of the interplay between tracking order statuses in the RedisCache and confirming on chain transactions. Often times
-  // we can only update an order status once its corresponding transaction has confirmed, which is different from how we use
-  // the multicaller client normally where we enqueue txns in the core logic and execute all transactions optimistically once we
-  // exit the core clients. In the Rebalancer use case we need to confirm transactions, but I've had trouble getting .wait()
-  // to work, due to what seems like on-chain timeouts while waiting for txns to confirm.
   protected async _submitTransaction(transaction: AugmentedTransaction): Promise<string> {
     return (await submitTransaction(transaction, this.transactionClient)).hash;
   }

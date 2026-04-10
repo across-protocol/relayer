@@ -17,7 +17,7 @@ export const { fetchTokenInfo, getL2TokenAddresses } = utils;
 // equivalent L1 token.
 export function getRemoteTokenForL1Token(
   _l1Token: EvmAddress,
-  remoteChainId: number | string,
+  remoteChainId: number,
   hubChainId: number
 ): Address | undefined {
   const l1Token = _l1Token.toEvmAddress();
@@ -30,7 +30,7 @@ export function getRemoteTokenForL1Token(
   const l1TokenSymbol = TOKEN_EQUIVALENCE_REMAPPING[tokenMapping.symbol] ?? tokenMapping.symbol;
   return toAddressType(
     TOKEN_SYMBOLS_MAP[l1TokenSymbol]?.addresses[remoteChainId] ?? tokenMapping.addresses[remoteChainId],
-    Number(remoteChainId)
+    remoteChainId
   );
 }
 
@@ -73,8 +73,7 @@ export function getInventoryBalanceContributorTokens(
     balanceContributorTokens.push(canonicalToken);
   }
 
-  Object.keys(TOKEN_SYMBOLS_MAP).forEach((tokenSymbol) => {
-    const token = TOKEN_SYMBOLS_MAP[tokenSymbol];
+  Object.values(TOKEN_SYMBOLS_MAP).forEach((token) => {
     const remappedSymbol = TOKEN_EQUIVALENCE_REMAPPING[token.symbol] ?? token.symbol;
     if (remappedSymbol === hubTokenSymbol && isDefined(token.addresses[chainId])) {
       balanceContributorTokens.push(toAddressType(token.addresses[chainId], chainId));

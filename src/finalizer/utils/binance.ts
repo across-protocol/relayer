@@ -23,6 +23,8 @@ import {
   getBinanceDepositType,
   BinanceTransactionType,
   getBinanceWithdrawalType,
+  isCompletedBinanceWithdrawal,
+  truncate,
 } from "../../utils";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { FinalizerPromise, AddressesToFinalize } from "../types";
@@ -77,9 +79,15 @@ export async function binanceFinalizer(
   // Remove any _binanceDeposits that are marked as related to a swap. The reason why we check "!== SWAP" instead of
   // "=== BRIDGE" is because we want this code to be backwards compatible with the existing inventory client logic which
   // does not yet tag deposits with this BRIDGE type.
+  const binanceSwapDepositAmount: { [symbol: string]: number } = {};
   const _binanceBridgeDeposits = await filterAsync(_binanceDeposits, async (deposit) => {
     const depositType = await getBinanceDepositType(deposit);
-    return depositType !== BinanceTransactionType.SWAP;
+    if (depositType === BinanceTransactionType.SWAP) {
+      binanceSwapDepositAmount[deposit.coin] ??= 0;
+      binanceSwapDepositAmount[deposit.coin] += deposit.amount;
+      return false;
+    }
+    return true;
   });
 
   const statusesGrouped = groupObjectCountsByProp(_binanceBridgeDeposits, (deposit: { status: number }) => {
@@ -123,7 +131,7 @@ export async function binanceFinalizer(
       // as the existing inventory client logic does not yet tag withdrawals with this BRIDGE type.
       const withdrawals = await filterAsync(_withdrawals, async (withdrawal) => {
         const withdrawalType = await getBinanceWithdrawalType(withdrawal);
-        return withdrawalType !== BinanceTransactionType.SWAP;
+        return isCompletedBinanceWithdrawal(withdrawal.status) && withdrawalType !== BinanceTransactionType.SWAP;
       });
 
       // @dev Since we cannot determine the address of the binance depositor without querying the transaction receipt, we need to assume that all tokens
@@ -132,14 +140,6 @@ export async function binanceFinalizer(
       const creditedDepositAmount = creditedDeposits
         .filter((deposit) => deposit.coin === symbol)
         .reduce((sum, deposit) => sum + deposit.amount, 0);
-      if (depositsInScope.length === 0) {
-        logger.debug({
-          at: "BinanceFinalizer",
-          message: `No finalizable deposits found for ${address} and token ${symbol}.`,
-        });
-        continue;
-      }
-
       // Start by finalizing L1 -> L2, then go to L2 -> L1.
       // @dev There are only two possible withdraw networks for the finalizer, Ethereum L1 or Binance Smart Chain "L2." Withdrawals to Ethereum can originate from any L2 but
       // must be finalized on L1. Withdrawals to Binance Smart Chain must originate from Ethereum L1.
@@ -228,6 +228,36 @@ export async function binanceFinalizer(
             coinBalance,
             creditedDepositAmount,
           });
+
+          // If the confirmed coin balance minus any pending swap balances is greater than the withdraw minimum, and there is
+          // nothing to withdraw in this lookback window, then we should try to sweep the balance to L1.
+          if (withdrawNetwork === BINANCE_NETWORKS[hubChainId]) {
+            const coinBalanceMinusSwapDeposits =
+              coinBalance - creditedDepositAmount - (binanceSwapDepositAmount[symbol] ?? 0);
+            if (coinBalanceMinusSwapDeposits >= Number(networkLimits.withdrawMin)) {
+              const withdrawMax = Number(networkLimits.withdrawMax);
+              const cappedWithdraw = Math.min(coinBalanceMinusSwapDeposits, withdrawMax);
+              logger.debug({
+                at: "BinanceFinalizer",
+                message: `Sweeping orphaned ${cappedWithdraw} ${symbol} balance for ${address}.`,
+              });
+              // Lastly, we need to truncate the amount to withdraw to 6 decimal places
+              const amountToSweep = truncate(cappedWithdraw, 6);
+              const withdrawalId = await binanceApi.withdraw({
+                coin: symbol,
+                address,
+                network: withdrawNetwork,
+                amount: amountToSweep,
+                transactionFeeFlag: false,
+              });
+              logger.info({
+                at: "BinanceFinalizer",
+                message: `🫃🏻 Swept orphaned ${symbol} balance to ${address} on ${withdrawNetwork}.`,
+                amount: amountToSweep,
+                withdrawalId,
+              });
+            }
+          }
         }
       }
     }

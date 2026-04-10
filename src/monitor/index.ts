@@ -51,7 +51,7 @@ export async function runMonitor(_logger: winston.Logger, baseSigner: Signer): P
       }
 
       if (config.botModes.spokePoolBalanceReportEnabled) {
-        await acrossMonitor.checkSpokePoolRunningBalances();
+        await acrossMonitor.reportSpokePoolRunningBalances();
       } else {
         logger.debug({ at: "Monitor#index", message: "Check spoke pool balances monitor disabled" });
       }

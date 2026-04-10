@@ -10,7 +10,7 @@ import {
   BridgeTransactionDetails,
 } from "../../src/adapter/bridges/BaseBridgeAdapter";
 import { BaseL2BridgeAdapter } from "../../src/adapter/l2Bridges/BaseL2BridgeAdapter";
-import { PendingBridgeAdapterName, PendingBridgeRedisReader } from "../../src/rebalancer/utils/PendingBridgeRedis";
+import { PendingBridgeAdapterName, CctpOftReadOnlyClient } from "../../src/rebalancer/clients/CctpOftReadOnlyClient";
 import { BigNumber, EvmAddress, Signer } from "../../src/utils";
 
 describe("BaseChainAdapter split bridge tracking", function () {
@@ -48,17 +48,20 @@ describe("BaseChainAdapter split bridge tracking", function () {
     expect(outstandingTransfers[MONITORED_ADDRESS][l1Token][l2Token].depositTxHashes).to.deep.equal(["tracked"]);
   });
 
-  it("does not let finalized events for ignored initiations reduce tracked outstanding amounts", async function () {
+  it("finalized events reduce tracked outstanding amounts via net-amount matching", async function () {
     const trackedAmount = toBNWei("2", 6);
+    const finalizedAmount = toBNWei("1", 6);
     const outstandingTransfers = await getOutstandingTransfersForTrackedBridge(
       "oft",
       "USDT",
-      [makeBridgeEvent(toBNWei("1", 6), "ignored"), makeBridgeEvent(trackedAmount, "tracked")],
-      [makeBridgeEvent(toBNWei("1", 6), "ignored-finalized")]
+      [makeBridgeEvent(finalizedAmount, "ignored"), makeBridgeEvent(trackedAmount, "tracked")],
+      [makeBridgeEvent(finalizedAmount, "ignored-finalized")]
     );
     const l1Token = TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET];
     const l2Token = TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.ARBITRUM];
-    expect(outstandingTransfers[MONITORED_ADDRESS][l1Token][l2Token].totalAmount).to.equal(trackedAmount);
+    // Net-amount matching: totalDeposited (only "tracked" = 2000000) - totalFinalized (1000000) = 1000000
+    const expectedOutstanding = trackedAmount.sub(finalizedAmount);
+    expect(outstandingTransfers[MONITORED_ADDRESS][l1Token][l2Token].totalAmount).to.equal(expectedOutstanding);
     expect(outstandingTransfers[MONITORED_ADDRESS][l1Token][l2Token].depositTxHashes).to.deep.equal(["tracked"]);
   });
 });
@@ -86,7 +89,7 @@ async function getOutstandingTransfersForTrackedBridge(
   );
   const pendingBridgeRedisReader = {
     getPendingBridgeTxnRefsForRoute: async () => new Set(["ignored"]),
-  } as unknown as PendingBridgeRedisReader;
+  } as unknown as CctpOftReadOnlyClient;
   const adapter = new BaseChainAdapter(
     {
       [CHAIN_IDs.MAINNET]: makeSpokePoolClient(CHAIN_IDs.MAINNET),
@@ -94,7 +97,7 @@ async function getOutstandingTransfersForTrackedBridge(
     } as unknown as { [chainId: number]: SpokePoolClient },
     l2ChainId,
     CHAIN_IDs.MAINNET,
-    [EvmAddress.from(MONITORED_ADDRESS)],
+    { [l1Token.toNative()]: [EvmAddress.from(MONITORED_ADDRESS)] },
     TEST_LOGGER,
     [tokenSymbol],
     { [l1Token.toNative()]: bridge },

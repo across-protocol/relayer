@@ -28,7 +28,7 @@ import { FinalizerPromise, CrossChainMessage } from "../types";
 // Note!!: This client will only work for PoS tokens. Matic also has Plasma tokens which have a different finalization
 // process entirely.
 
-let CHAIN_ID;
+let CHAIN_ID: number;
 enum POLYGON_MESSAGE_STATUS {
   NOT_CHECKPOINTED = "NOT_CHECKPOINTED",
   CAN_EXIT = "CAN_EXIT",
@@ -294,7 +294,7 @@ async function retrieveTokenFromMainnetTokenBridger(l2Token: string, mainnetSign
 }
 
 function getL2TokensToFinalize(events: TokensBridged[]): string[] {
-  const l2TokenCountInBridgeEvents = events.reduce((l2TokenDictionary, event) => {
+  const l2TokenCountInBridgeEvents = events.reduce<Record<string, boolean>>((l2TokenDictionary, event) => {
     l2TokenDictionary[event.l2TokenAddress.toEvmAddress()] = true;
     return l2TokenDictionary;
   }, {});

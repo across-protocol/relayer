@@ -19,10 +19,17 @@ import {
   Address,
   toAddressType,
   EvmAddress,
+  parseJson,
 } from "../utils";
 import { CommonConfig, ProcessEnv } from "../common";
 import * as Constants from "../common/Constants";
-import { InventoryConfig, TokenBalanceConfig, isAliasConfig, SwapRoute } from "../interfaces/InventoryManagement";
+import {
+  ChainTokenInventory,
+  InventoryConfig,
+  TokenBalanceConfig,
+  isAliasConfig,
+  SwapRoute,
+} from "../interfaces/InventoryManagement";
 
 type DepositConfirmationConfig = {
   usdThreshold: BigNumber;
@@ -107,32 +114,30 @@ export class RelayerConfig extends CommonConfig {
     this.eventListener = this.externalListener && RELAYER_EVENT_LISTENER === "true";
 
     // Empty means all chains.
-    this.relayerOriginChains = JSON.parse(RELAYER_ORIGIN_CHAINS ?? "[]");
-    this.relayerDestinationChains = JSON.parse(RELAYER_DESTINATION_CHAINS ?? "[]");
+    this.relayerOriginChains = parseJson.numberArray(RELAYER_ORIGIN_CHAINS);
+    this.relayerDestinationChains = parseJson.numberArray(RELAYER_DESTINATION_CHAINS);
 
     // Empty means all tokens.
-    this.relayerTokens = JSON.parse(RELAYER_TOKENS ?? "[]").map((token) =>
-      toAddressType(ethers.utils.getAddress(token), CHAIN_IDs.MAINNET)
-    );
+    this.relayerTokens = parseJson.stringArray(RELAYER_TOKENS).map((token) => EvmAddress.from(token));
     // An empty array for a defined destination chain means that all tokens are supported. To support no tokens
     // for a destination chain, map the chain to an empty array. For example, to fill only token A on chain C
     // and fill nothing on chain D, set relayerDestinationTokens: { C: [A], D: [] }
     this.relayerDestinationTokens = Object.fromEntries(
-      Object.entries(JSON.parse(RELAYER_DESTINATION_TOKENS ?? "{}")).map(([_chainId, tokens]) => {
+      Object.entries(parseJson.stringArrayMap(RELAYER_DESTINATION_TOKENS)).map(([_chainId, tokens]) => {
         const chainId = Number(_chainId);
-        return [chainId, ((tokens as string[]) ?? []).map((token) => toAddressType(token, Number(chainId)))];
+        return [chainId, tokens.map((token) => toAddressType(token, chainId))];
       })
     );
 
     // SLOW_DEPOSITORS can exist on any network, so their origin network must be inferred based on the structure of the address.
-    this.slowDepositors = JSON.parse(SLOW_DEPOSITORS ?? "[]").map((depositor) => {
+    this.slowDepositors = parseJson.stringArray(SLOW_DEPOSITORS).map((depositor) => {
       const chainId = ethers.utils.isHexString(depositor) ? CHAIN_IDs.MAINNET : CHAIN_IDs.SOLANA;
       return toAddressType(depositor, chainId);
     });
 
     this.minRelayerFeePct = toBNWei(MIN_RELAYER_FEE_PCT || Constants.RELAYER_MIN_FEE_PCT);
 
-    this.tryMulticallChains = JSON.parse(RELAYER_TRY_MULTICALL_CHAINS ?? "[]");
+    this.tryMulticallChains = parseJson.numberArray(RELAYER_TRY_MULTICALL_CHAINS);
     this.loggingInterval = Number(RELAYER_LOGGING_INTERVAL);
     this.maintenanceInterval = Number(RELAYER_MAINTENANCE_INTERVAL);
 
@@ -180,13 +185,15 @@ export class RelayerConfig extends CommonConfig {
       // Validate the per chain target and thresholds for wrapping ETH:
       const wrapThresholds = inventoryConfig.wrapEtherThresholdPerChain;
       const wrapTargets = inventoryConfig.wrapEtherTargetPerChain;
-      Object.keys(inventoryConfig.wrapEtherThresholdPerChain).forEach((chainId) => {
+      Object.keys(inventoryConfig.wrapEtherThresholdPerChain).forEach((_chainId) => {
+        const chainId = Number(_chainId);
         if (wrapThresholds[chainId] !== undefined) {
           wrapThresholds[chainId] = toBNWei(wrapThresholds[chainId]); // Promote to 18 decimals.
         }
       });
 
-      Object.keys(inventoryConfig.wrapEtherTargetPerChain).forEach((chainId) => {
+      Object.keys(inventoryConfig.wrapEtherTargetPerChain).forEach((_chainId) => {
+        const chainId = Number(_chainId);
         if (wrapTargets[chainId] !== undefined) {
           wrapTargets[chainId] = toBNWei(wrapTargets[chainId]); // Promote to 18 decimals.
 
@@ -257,7 +264,8 @@ export class RelayerConfig extends CommonConfig {
       };
 
       const rawTokenConfigs = inventoryConfig?.tokenConfig ?? {};
-      const tokenConfigs = (inventoryConfig.tokenConfig = {});
+      inventoryConfig.tokenConfig = {};
+      const tokenConfigs = inventoryConfig.tokenConfig;
       Object.keys(rawTokenConfigs).forEach((l1Token) => {
         // If the l1Token is a symbol, resolve the correct address.
         const effectiveL1Token = ethersUtils.isAddress(l1Token)
@@ -274,24 +282,24 @@ export class RelayerConfig extends CommonConfig {
           return;
         }
 
-        tokenConfigs[effectiveL1Token] ??= {};
         const hubTokenConfig = rawTokenConfigs[l1Token];
 
         if (isAliasConfig(hubTokenConfig)) {
+          const existing = tokenConfigs[effectiveL1Token];
+          const inventoryEntry: ChainTokenInventory =
+            isDefined(existing) && isAliasConfig(existing) ? { ...existing } : {};
           Object.keys(hubTokenConfig).forEach((symbol) => {
             Object.keys(hubTokenConfig[symbol]).forEach((chainId) => {
               const rawTokenConfig = hubTokenConfig[symbol][chainId];
               const effectiveSpokeToken = TOKEN_SYMBOLS_MAP[symbol].addresses[chainId];
 
-              tokenConfigs[effectiveL1Token][effectiveSpokeToken] ??= {};
-              tokenConfigs[effectiveL1Token][effectiveSpokeToken][chainId] = parseTokenConfig(
-                l1Token,
-                chainId,
-                rawTokenConfig
-              );
+              inventoryEntry[effectiveSpokeToken] ??= {};
+              inventoryEntry[effectiveSpokeToken][chainId] = parseTokenConfig(l1Token, chainId, rawTokenConfig);
             });
           });
+          tokenConfigs[effectiveL1Token] = inventoryEntry;
         } else {
+          tokenConfigs[effectiveL1Token] ??= {};
           Object.keys(hubTokenConfig).forEach((chainId) => {
             const rawTokenConfig = hubTokenConfig[chainId];
             tokenConfigs[effectiveL1Token][chainId] = parseTokenConfig(l1Token, chainId, rawTokenConfig);
@@ -365,7 +373,8 @@ export class RelayerConfig extends CommonConfig {
         .forEach((usdThreshold) => {
           const config = minDepositConfirmations[usdThreshold];
 
-          Object.entries(config).forEach(([chainId, _minConfirmations]) => {
+          Object.entries(config).forEach(([_chainId, _minConfirmations]) => {
+            const chainId = Number(_chainId);
             const minConfirmations = Number(_minConfirmations);
             assert(
               !isNaN(minConfirmations) && minConfirmations >= 0,

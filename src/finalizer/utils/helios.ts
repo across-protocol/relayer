@@ -6,15 +6,16 @@ import {
   paginatedEventQuery,
   compareAddressesSimple,
   ethers,
-  BigNumber,
+  toBN,
   groupObjectCountsByProp,
   isEVMSpokePoolClient,
   assert,
-  CHAIN_IDs,
+  fetchWithTimeout,
+  postWithTimeout,
+  isHttpError,
 } from "../../utils";
 import { spreadEventWithBlockNumber } from "../../utils/EventUtils";
 import { FinalizerPromise, CrossChainMessage } from "../types";
-import axios from "axios";
 import UNIVERSAL_SPOKE_ABI from "../../common/abi/Universal_SpokePool.json";
 import { RelayedCallDataEvent, StoredCallDataEvent } from "../../interfaces/Universal";
 import { ApiProofRequest, ProofOutputs, ProofStateResponse, SP1HeliosProofData } from "../../interfaces/ZkApi";
@@ -55,10 +56,6 @@ export interface HeliosKeepAliveAction extends BaseHeliosAction {
 
 export type HeliosAction = HeliosProofAndExecuteAction | HeliosExecuteOnlyAction | HeliosKeepAliveAction;
 // ---------------------------------------
-
-const EXECUTE_MESSAGE_GAS_LIMITS: { [chainId: number]: BigNumber } = {
-  [CHAIN_IDs.TEMPO]: BigNumber.from(1000000),
-};
 
 export async function heliosL1toL2Finalizer(
   logger: winston.Logger,
@@ -348,21 +345,20 @@ async function enrichHeliosActions(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let getError: any = null;
     try {
-      const response = await axios.get<ProofStateResponse>(getProofUrl);
-      proofState = response.data;
+      proofState = await fetchWithTimeout<ProofStateResponse>(getProofUrl);
       logger.debug({ ...logContext, message: "Proof state received", proofId, status: proofState.status });
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
       getError = error;
     }
 
-    // Axios error. Handle based on whether was a NOTFOUND or another error
+    // Handle fetch error based on whether it was a NOTFOUND or another error.
     if (getError) {
-      const isNotFoundError = axios.isAxiosError(getError) && getError.response?.status === 404;
+      const isNotFoundError = isHttpError(getError) && getError.status === 404;
       if (isNotFoundError) {
         // NOTFOUND error -> Request proof
         logger.debug({ ...logContext, message: "Proof not found (404), requesting...", proofId });
-        await axios.post(`${apiBaseUrl}/v1/api/proofs`, apiRequest);
+        await postWithTimeout(`${apiBaseUrl}/v1/api/proofs`, apiRequest);
         logger.debug({ ...logContext, message: "Proof requested successfully.", proofId });
         continue;
       } else {
@@ -391,7 +387,7 @@ async function enrichHeliosActions(
           errorMessage: proofState.error_message,
         });
 
-        await axios.post(`${apiBaseUrl}/v1/api/proofs`, apiRequest);
+        await postWithTimeout(`${apiBaseUrl}/v1/api/proofs`, apiRequest);
         logger.debug({ ...logContext, message: "Errored proof requested again successfully.", proofId });
         break;
       }
@@ -711,6 +707,7 @@ function addUpdateAndExecuteTxns(
   // 2. SpokePool.executeMessage transaction
   const encodedMessage = ethers.utils.defaultAbiCoder.encode(["address", "bytes"], [l1Event.target, l1Event.data]);
   const executeArgs = [l1Event.nonce, encodedMessage, decodedOutputs.newHead];
+  const gasLimit = toBN(process.env[`HELIOS_EXECUTE_MESSAGE_GAS_LIMIT_${l2ChainId}`] ?? 500_000);
   const executeTx: AugmentedTransaction = {
     contract: universalSpokePoolContract,
     chainId: l2ChainId,
@@ -720,7 +717,7 @@ function addUpdateAndExecuteTxns(
     // @dev Simulation of `executeMessage` depends on prior state update via SP1Helios.update
     canFailInSimulation: true,
     // todo? this hardcoded gas limit of 500K could be improved if we were able to simulate this tx on top of blockchain state created by the tx above
-    gasLimit: EXECUTE_MESSAGE_GAS_LIMITS[l2ChainId] ?? BigNumber.from(500000),
+    gasLimit,
     message: `Finalize Helios msg (HubPoolStore nonce ${l1Event.nonce.toString()}) - Step 2: Execute on SpokePool`,
   };
   transactions.push(executeTx);

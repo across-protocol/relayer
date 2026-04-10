@@ -396,7 +396,7 @@ export class InventoryClient {
     return currentBalance.mul(this.scalar).div(cumulativeBalance);
   }
 
-  protected getRemoteTokenForL1Token(l1Token: EvmAddress, chainId: number | string): Address | undefined {
+  protected getRemoteTokenForL1Token(l1Token: EvmAddress, chainId: number): Address | undefined {
     return chainId === this.hubPoolClient.chainId
       ? l1Token
       : getRemoteTokenForL1Token(l1Token, chainId, this.hubPoolClient.chainId);
@@ -1604,13 +1604,14 @@ export class InventoryClient {
         txnReceipts[chainId].push(...txnRef);
       });
     });
-    Object.keys(txnReceipts).forEach((chainId) => {
+    Object.keys(txnReceipts).forEach((_chainId) => {
+      const chainId = Number(_chainId);
       this.logger.debug({
         at: "InventoryClient",
         message: `L2->L1 withdrawals on ${getNetworkName(chainId)} submitted`,
         chainId,
         withdrawalsRequired: withdrawalsRequired[chainId].map((withdrawal: L2Withdrawal) => {
-          const l2TokenInfo = this.getTokenInfo(withdrawal.l2Token, Number(chainId));
+          const l2TokenInfo = this.getTokenInfo(withdrawal.l2Token, chainId);
 
           const formatter = createFormatFunction(2, 4, false, l2TokenInfo.decimals);
           return {
@@ -1770,7 +1771,7 @@ export class InventoryClient {
       pendingL2Withdrawals: this.pendingL2Withdrawals,
     });
 
-    this.pendingRebalances = await this.rebalancerClient.getPendingRebalances();
+    this.pendingRebalances = await this.rebalancerClient.getPendingRebalances(this.relayer);
     if (Object.keys(this.pendingRebalances).length > 0) {
       this.logger.debug({
         at: "InventoryClient#update",
@@ -1806,7 +1807,9 @@ export class InventoryClient {
     }
 
     // If any of the mapped symbols reference chainId, token is enabled.
-    return Object.keys(tokenConfig).some((symbol) => isDefined(tokenConfig[symbol][chainId]));
+    return (
+      isAliasConfig(tokenConfig) && Object.keys(tokenConfig).some((symbol) => isDefined(tokenConfig[symbol][chainId]))
+    );
   }
 
   /**

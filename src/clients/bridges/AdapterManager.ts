@@ -29,11 +29,11 @@ import { SpokePoolClient, HubPoolClient, SpokePoolManager } from "../";
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { BaseChainAdapter } from "../../adapter";
 import { TransferTokenParams } from "../../adapter/utils";
-import { PendingBridgeRedisReader } from "../../rebalancer/utils/PendingBridgeRedis";
+import { CctpOftReadOnlyClient } from "../../rebalancer/clients/CctpOftReadOnlyClient";
 
 export class AdapterManager {
   public adapters: { [chainId: number]: BaseChainAdapter } = {};
-  protected readonly pendingBridgeRedisReader?: PendingBridgeRedisReader;
+  protected readonly pendingBridgeRedisReader?: CctpOftReadOnlyClient;
 
   // Some L2's canonical bridges send ETH, not WETH, over the canonical bridges, resulting in recipient addresses
   // receiving ETH that needs to be wrapped on the L2. This array contains the chainIds of the chains that this
@@ -50,19 +50,25 @@ export class AdapterManager {
     if (!spokePoolClients) {
       return;
     }
-    this.pendingBridgeRedisReader = new PendingBridgeRedisReader(logger);
+    this.pendingBridgeRedisReader = new CctpOftReadOnlyClient(logger);
     this.spokePoolManager = new SpokePoolManager(logger, spokePoolClients);
     const spokePoolAddresses = Object.values(this.spokePoolManager.getSpokePoolClients()).map(
       (client) => client.spokePoolAddress
     );
+
+    const isHubPoolOrSpokePoolAddress = (chainId: number, address: Address) => {
+      return (
+        EvmAddress.from(this.hubPoolClient.hubPool.address).eq(address) ||
+        this.spokePoolManager.getClient(chainId)?.spokePoolAddress.eq(address)
+      );
+    };
 
     // The adapters are only set up to monitor EOA's and the HubPool and SpokePool address, so remove
     // spoke pool addresses from other chains.
     const filterMonitoredAddresses = (chainId: number) => {
       return monitoredAddresses.filter(
         (address) =>
-          EvmAddress.from(this.hubPoolClient.hubPool.address).eq(address) ||
-          this.spokePoolManager.getClient(chainId)?.spokePoolAddress.eq(address) ||
+          isHubPoolOrSpokePoolAddress(chainId, address) ||
           !spokePoolAddresses.some((spokePoolAddress) => spokePoolAddress.eq(address))
       );
     };
@@ -129,12 +135,34 @@ export class AdapterManager {
       );
     };
     Object.values(this.spokePoolManager.getSpokePoolClients()).map(({ chainId }) => {
+      // Filter hub/spoke pool addresses from the monitored addresses for chains that don't have a pool rebalance
+      // route for the l1 token.
+      const monitoredAddresses = Object.fromEntries(
+        (SUPPORTED_TOKENS[chainId] ?? []).map((symbol) => {
+          const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[hubChainId];
+          return [
+            l1Token,
+            filterMonitoredAddresses(chainId).filter((address) => {
+              if (!l1Token) {
+                return false;
+              }
+              const hasPoolRebalanceRoute = hubPoolClient.l2TokenEnabledForL1Token(EvmAddress.from(l1Token), chainId);
+              if (!hasPoolRebalanceRoute) {
+                // Chain does not have a pool rebalance route, only allow EOA's.
+                return !isHubPoolOrSpokePoolAddress(chainId, address);
+              }
+              // Chain has pool rebalance route, all addresses from filterMonitoredAddresses are valid.
+              return true;
+            }),
+          ];
+        })
+      );
       // Instantiate a generic adapter and supply all network-specific configurations.
       this.adapters[chainId] = new BaseChainAdapter(
         this.spokePoolManager.getSpokePoolClients(),
         chainId,
         hubChainId,
-        filterMonitoredAddresses(chainId),
+        monitoredAddresses,
         logger,
         SUPPORTED_TOKENS[chainId] ?? [],
         constructBridges(chainId),
