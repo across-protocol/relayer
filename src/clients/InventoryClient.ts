@@ -717,32 +717,26 @@ export class InventoryClient {
         ? await this.getExcessRunningBalancePcts(l1Token, inputAmountInL1TokenDecimals, slowWithdrawalRepaymentChains)
         : {};
 
-    const candidateChains = possibleChains.filter((chainId) => {
-      if (chainId === originChainId) {
-        return this._l1TokenEnabledForChain(l1Token, chainId) && (prioritizeOrigin || chainId !== hubChainId);
-      }
-      if (chainId === destinationChainId) {
-        return !forceOriginRepayment && this._l1TokenEnabledForChain(l1Token, chainId);
-      }
-      return slowWithdrawalRepaymentChainSet.has(chainId) && (excessRunningBalancePcts[chainId] ?? bnZero).gt(0);
-    });
-
-    const rankedSlowWithdrawalChains = candidateChains
+    const slowWithdrawalCandidateChains = possibleChains
       .filter(
         (chainId) => slowWithdrawalRepaymentChainSet.has(chainId) && (excessRunningBalancePcts[chainId] ?? bnZero).gt(0)
       )
       .sort((chainIdx, chainIdy) =>
         bnComparatorDescending(excessRunningBalancePcts[chainIdx], excessRunningBalancePcts[chainIdy])
       );
-    const rankedSlowWithdrawalChainSet = new Set(rankedSlowWithdrawalChains);
-    const rankedChains = rankedSlowWithdrawalChains.concat(
-      (prioritizeOrigin ? [originChainId, destinationChainId] : [destinationChainId, originChainId]).filter(
-        (chainId, index, standardChainOrder) =>
-          candidateChains.includes(chainId) &&
-          !rankedSlowWithdrawalChainSet.has(chainId) &&
-          standardChainOrder.indexOf(chainId) === index
-      )
+    const possibleChainSet = new Set(possibleChains);
+    const standardChainOrder = prioritizeOrigin
+      ? [originChainId, destinationChainId]
+      : [destinationChainId, originChainId];
+    const canEvaluateOrigin =
+      this._l1TokenEnabledForChain(l1Token, originChainId) && (prioritizeOrigin || originChainId !== hubChainId);
+    const canEvaluateDestination =
+      possibleChainSet.has(destinationChainId) && this._l1TokenEnabledForChain(l1Token, destinationChainId);
+    const standardCandidateChains = [...new Set(standardChainOrder)].filter((chainId) =>
+      chainId === originChainId ? canEvaluateOrigin : canEvaluateDestination
     );
+    const candidateChains = [...new Set([...slowWithdrawalCandidateChains, ...standardCandidateChains])];
+    const rankedChains = candidateChains;
 
     const eligibleChains: number[] = [];
     // At this point, all ranked chains have defined token configs or are destination chains that can be accepted
@@ -750,14 +744,12 @@ export class InventoryClient {
     for (const chainId of rankedChains) {
       assert(this._l1TokenEnabledForChain(l1Token, chainId), `Token ${l1Token} not enabled for chain ${chainId}`);
 
-      let repaymentToken = this.getRemoteTokenForL1Token(l1Token, chainId);
+      const repaymentToken = chainId === originChainId ? inputToken : this.getRemoteTokenForL1Token(l1Token, chainId);
       if (chainId !== originChainId) {
         assert(
           this.hubPoolClient.l2TokenHasPoolRebalanceRoute(repaymentToken, chainId),
           `Token ${repaymentToken} not enabled as PoolRebalanceRoute for chain ${chainId} for l1 token ${l1Token}`
         );
-      } else {
-        repaymentToken = inputToken;
       }
       const { decimals: l2TokenDecimals } = this.getTokenInfo(repaymentToken, chainId);
       const chainShortfall = sdkUtils.ConvertDecimals(
