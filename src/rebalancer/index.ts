@@ -116,23 +116,23 @@ function loadCumulativeModeBalances(
   for (const [token, chainConfig] of Object.entries(rebalancerConfig.cumulativeTargetBalances)) {
     const l1TokenInfo = getTokenInfoFromSymbol(token, rebalancerConfig.hubPoolChainId);
     assert(l1TokenInfo.address.isEVM());
-    for (const chainId of Object.keys(chainConfig.chains)) {
-      const l2TokenInfo = getTokenInfoFromSymbol(token, Number(chainId));
-      assert(l2TokenInfo.address.isEVM());
-      const currentBalance = inventoryClient.tokenClient.getBalance(Number(chainId), l2TokenInfo.address);
-      currentBalances[chainId] ??= {};
-      currentBalances[chainId][token] = currentBalance;
-    }
+    Object.keys(chainConfig.chains)
+      .map(Number)
+      .forEach((chainId) => {
+        const l2TokenInfo = getTokenInfoFromSymbol(token, chainId);
+        assert(l2TokenInfo.address.isEVM());
+        const currentBalance = inventoryClient.tokenClient.getBalance(chainId, l2TokenInfo.address);
+        currentBalances[chainId] ??= {};
+        currentBalances[chainId][token] = currentBalance;
+      });
 
-    const cumulativeBalance = inventoryClient.getCumulativeBalanceWithApproximateUpcomingRefunds(
-      EvmAddress.from(l1TokenInfo.address.toNative())
-    );
-    cumulativeBalances[token] = cumulativeBalance;
+    cumulativeBalances[token] = inventoryClient.getCumulativeBalanceWithApproximateUpcomingRefunds(l1TokenInfo.address);
   }
   return { currentBalances, cumulativeBalances };
 }
 
 async function applyPendingCumulativeRebalanceAdjustments(
+  baseSigner: Signer,
   rebalancerConfig: RebalancerConfig,
   adaptersToUpdate: Set<RebalancerAdapter>,
   logLabel: string,
@@ -141,7 +141,7 @@ async function applyPendingCumulativeRebalanceAdjustments(
   let timerStart = performance.now();
   for (const adapter of adaptersToUpdate) {
     timerStart = performance.now();
-    const pendingRebalances = await adapter.getPendingRebalances();
+    const pendingRebalances = await adapter.getPendingRebalances(EvmAddress.from(await baseSigner.getAddress()));
     logger.debug({
       at: `index.ts:${logLabel}`,
       message: `Completed getting pending rebalances for adapter ${adapter.constructor.name}`,
@@ -191,7 +191,13 @@ export async function runCumulativeBalanceRebalancer(_logger: winston.Logger, ba
     baseSigner
   );
   const { currentBalances, cumulativeBalances } = loadCumulativeModeBalances(rebalancerConfig, inventoryClient);
-  await applyPendingCumulativeRebalanceAdjustments(rebalancerConfig, adaptersToUpdate, logLabel, cumulativeBalances);
+  await applyPendingCumulativeRebalanceAdjustments(
+    baseSigner,
+    rebalancerConfig,
+    adaptersToUpdate,
+    logLabel,
+    cumulativeBalances
+  );
 
   let timerStart = performance.now();
   // Finally, send out new rebalances:

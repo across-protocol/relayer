@@ -10,10 +10,12 @@ import {
   groupObjectCountsByProp,
   isEVMSpokePoolClient,
   assert,
+  fetchWithTimeout,
+  postWithTimeout,
+  isHttpError,
 } from "../../utils";
 import { spreadEventWithBlockNumber } from "../../utils/EventUtils";
 import { FinalizerPromise, CrossChainMessage } from "../types";
-import axios from "axios";
 import UNIVERSAL_SPOKE_ABI from "../../common/abi/Universal_SpokePool.json";
 import { RelayedCallDataEvent, StoredCallDataEvent } from "../../interfaces/Universal";
 import { ApiProofRequest, ProofOutputs, ProofStateResponse, SP1HeliosProofData } from "../../interfaces/ZkApi";
@@ -343,21 +345,20 @@ async function enrichHeliosActions(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let getError: any = null;
     try {
-      const response = await axios.get<ProofStateResponse>(getProofUrl);
-      proofState = response.data;
+      proofState = await fetchWithTimeout<ProofStateResponse>(getProofUrl);
       logger.debug({ ...logContext, message: "Proof state received", proofId, status: proofState.status });
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
       getError = error;
     }
 
-    // Axios error. Handle based on whether was a NOTFOUND or another error
+    // Handle fetch error based on whether it was a NOTFOUND or another error.
     if (getError) {
-      const isNotFoundError = axios.isAxiosError(getError) && getError.response?.status === 404;
+      const isNotFoundError = isHttpError(getError) && getError.status === 404;
       if (isNotFoundError) {
         // NOTFOUND error -> Request proof
         logger.debug({ ...logContext, message: "Proof not found (404), requesting...", proofId });
-        await axios.post(`${apiBaseUrl}/v1/api/proofs`, apiRequest);
+        await postWithTimeout(`${apiBaseUrl}/v1/api/proofs`, apiRequest);
         logger.debug({ ...logContext, message: "Proof requested successfully.", proofId });
         continue;
       } else {
@@ -386,7 +387,7 @@ async function enrichHeliosActions(
           errorMessage: proofState.error_message,
         });
 
-        await axios.post(`${apiBaseUrl}/v1/api/proofs`, apiRequest);
+        await postWithTimeout(`${apiBaseUrl}/v1/api/proofs`, apiRequest);
         logger.debug({ ...logContext, message: "Errored proof requested again successfully.", proofId });
         break;
       }

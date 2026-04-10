@@ -15,31 +15,37 @@ import {
   floatToBN,
   toAddressType,
   getTokenInfo,
+  fetchWithTimeout,
+  postWithTimeout,
+  FetchHeaders,
   mapAsync,
 } from "./";
 import { Log } from "../interfaces";
-import axios, { RawAxiosRequestHeaders } from "axios";
 import ERC20_ABI from "../common/abi/MinimalERC20.json";
 
 // We need to instruct this bridge what tokens we expect to receive on L2, since the bridge
 // API supports multiple destination tokens for a single L1 token.
 export const BRIDGE_API_DESTINATION_TOKENS: { [l2ChainId: number]: string } = {
   [CHAIN_IDs.TEMPO]: TOKEN_SYMBOLS_MAP.pathUSD.addresses[CHAIN_IDs.TEMPO],
+  [CHAIN_IDs.TRON]: TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.TRON],
 };
 
 export const BRIDGE_API_DESTINATION_TOKEN_SYMBOLS: { [address: string]: string } = {
   [TOKEN_SYMBOLS_MAP.pathUSD.addresses[CHAIN_IDs.TEMPO]]: "path_usd",
   [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: "usdc",
+  [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.TRON]]: "usdt",
 };
 
 const NETWORK_NAMES: { [chainId: number]: string } = {
   [CHAIN_IDs.MAINNET]: "ethereum",
   [CHAIN_IDs.TEMPO]: "tempo",
+  [CHAIN_IDs.TRON]: "tron",
 };
 
 export const BRIDGE_API_MINIMUMS: { [sourceChainId: number]: { [dstChainId: number]: BigNumber } } = {
   [CHAIN_IDs.MAINNET]: {
     [CHAIN_IDs.TEMPO]: toBN(5_000_000), // 5 USD
+    [CHAIN_IDs.TRON]: toBN(5_000_000), // 5 USD
   },
   [CHAIN_IDs.TEMPO]: {
     [CHAIN_IDs.MAINNET]: toBN(5_000_000), // 5 USD
@@ -90,7 +96,7 @@ export class BridgeApiClient {
 
   async getAllTransfersInRange(toAddress: Address, fromTimestampMs: number): Promise<BridgeResponse[]> {
     const headers = this.defaultHeaders();
-    const { data: pendingTransfers } = await this.getWithRetry<BridgeResponse>(
+    const { data: pendingTransfers } = await this.getWithRetry<{ data: BridgeResponse[] }>(
       `v0/transfers?updated_after_ms=${fromTimestampMs}`,
       headers
     );
@@ -201,17 +207,16 @@ export class BridgeApiClient {
     });
   }
 
-  defaultHeaders(): RawAxiosRequestHeaders {
+  defaultHeaders(): FetchHeaders {
     return {
       "Api-Key": `${this.bridgeApiKey}`,
       "Content-Type": "application/json",
     };
   }
 
-  async getWithRetry<T>(endpoint: string, headers: RawAxiosRequestHeaders, nRetries = this.nRetries) {
+  async getWithRetry<T>(endpoint: string, headers: FetchHeaders, nRetries = this.nRetries): Promise<T> {
     try {
-      const response = await axios.get<T>(`${this.bridgeApiBase}/${endpoint}`, { headers });
-      return response.data;
+      return await fetchWithTimeout<T>(`${this.bridgeApiBase}/${endpoint}`, {}, headers);
     } catch (e) {
       this.logger?.debug({
         at: "BridgeApi#_get",
@@ -230,12 +235,11 @@ export class BridgeApiClient {
   async postWithRetry<T>(
     endpoint: string,
     data: Record<string, unknown>,
-    headers: RawAxiosRequestHeaders,
+    headers: FetchHeaders,
     nRetries = this.nRetries
-  ) {
+  ): Promise<T> {
     try {
-      const response = await axios.post<T>(`${this.bridgeApiBase}/${endpoint}`, data, { headers });
-      return response.data;
+      return await postWithTimeout<T>(`${this.bridgeApiBase}/${endpoint}`, data, {}, headers);
     } catch (e) {
       this.logger?.debug({
         at: "BridgeApi#_post",

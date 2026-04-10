@@ -1,4 +1,3 @@
-import axios from "axios";
 import minimist from "minimist";
 import { config } from "dotenv";
 import { LogDescription } from "@ethersproject/abi";
@@ -11,6 +10,7 @@ import {
   getProvider,
   isDefined,
   populateV3Relay,
+  postWithTimeout,
   toAddressType,
   chainIsEvm,
   getBlockForTimestamp,
@@ -170,15 +170,14 @@ async function createTenderlySimulation(
     public: true, // Make simulation publicly accessible
   };
 
-  try {
-    const response = await axios.post(tenderlyUrl, simulationPayload, {
-      headers: {
-        "X-Access-Key": tenderlyAccessKey,
-        "Content-Type": "application/json",
-      },
-    });
+  const headers = {
+    "X-Access-Key": tenderlyAccessKey,
+  };
 
-    const simulationId = response.data.simulation.id;
+  try {
+    const response = await postWithTimeout<{ simulation: { id: string } }>(tenderlyUrl, simulationPayload, {}, headers);
+
+    const simulationId = response.simulation.id;
 
     console.log(`\nDebug: Simulation created with ID: ${simulationId}`);
 
@@ -186,16 +185,7 @@ async function createTenderlySimulation(
     const shareUrl = `https://api.tenderly.co/api/v1/account/${tenderlyUser}/project/${tenderlyProject}/simulations/${simulationId}/share`;
 
     try {
-      await axios.post(
-        shareUrl,
-        {}, // Empty body
-        {
-          headers: {
-            "X-Access-Key": tenderlyAccessKey,
-            "Content-Type": "application/json",
-          },
-        }
-      );
+      await postWithTimeout(shareUrl, {}, {}, headers);
 
       console.log("Debug: Share enabled for simulation");
 
@@ -207,19 +197,12 @@ async function createTenderlySimulation(
     } catch (shareError) {
       // If share endpoint fails, fall back to the regular dashboard URL
       console.warn("Could not enable sharing, using dashboard URL instead");
-      if (axios.isAxiosError(shareError)) {
-        console.warn("Share endpoint error:", shareError.response?.status, shareError.response?.data);
-      }
+      console.warn("Share endpoint error:", (shareError as Error).message);
     }
 
     // Fallback to dashboard URL
     return `https://dashboard.tenderly.co/${tenderlyUser}/${tenderlyProject}/simulator/${simulationId}`;
   } catch (error) {
-    if (axios.isAxiosError(error)) {
-      throw new Error(
-        `Tenderly simulation failed: ${error.response?.status} - ${JSON.stringify(error.response?.data)}`
-      );
-    }
     throw error instanceof Error ? error : new Error(String(error));
   }
 }

@@ -1,5 +1,5 @@
 import { RebalancerConfig } from "../RebalancerConfig";
-import { BigNumber, bnZero, forEachAsync, Signer, winston } from "../../utils";
+import { assert, BigNumber, bnZero, EvmAddress, forEachAsync, Signer, winston } from "../../utils";
 import { RebalancerAdapter, RebalancerClient, RebalanceRoute } from "../utils/interfaces";
 
 /**
@@ -10,6 +10,7 @@ import { RebalancerAdapter, RebalancerClient, RebalanceRoute } from "../utils/in
  */
 export abstract class BaseRebalancerClient implements RebalancerClient {
   public rebalanceRoutes: RebalanceRoute[];
+  protected baseSignerAddress: EvmAddress;
   constructor(
     readonly logger: winston.Logger,
     readonly config: RebalancerConfig,
@@ -24,9 +25,18 @@ export abstract class BaseRebalancerClient implements RebalancerClient {
    * @param rebalanceRoutes
    */
   async initialize(rebalanceRoutes: RebalanceRoute[]): Promise<void> {
+    this.baseSignerAddress = EvmAddress.from(await this.baseSigner.getAddress());
     this.rebalanceRoutes = rebalanceRoutes;
     for (const adapter of Object.values(this.adapters)) {
       await adapter.initialize(this.rebalanceRoutes);
+      // Adapters are considered to be a part of this rebalancer client so we should enforce that their baseSigners
+      // are 1:1 aligned. This lets us assume that any rebalance initiated by this client and delegated to an adapter
+      // uses the rebalancer client's base signer. Ultimately, the rebalancer client is the client exposed to
+      // external users and that user would expect to initiate rebalances through this client's base signer.
+      assert(
+        adapter.baseSignerAddress.eq(this.baseSignerAddress),
+        "Adapter base signer address does not match client base signer address"
+      );
       if (!this.isReadonly) {
         await adapter.setApprovals();
       }
@@ -37,16 +47,17 @@ export abstract class BaseRebalancerClient implements RebalancerClient {
 
   /**
    * @notice Get all currently unfinalized rebalance amounts. Should be used to add virtual balance credits or
-   * debits for the token and chain combinations.
+   * debits for the token and chain combinations. Will filter rebalances by the passed in account.
    * @dev Does not depend on this.rebalanceRoutes, only calls getPendingRebalances() for each configured adapter.
    * @return Dictionary of chainId -> token -> amount where positive amounts present pending rebalance credits to that
    * chain while negative amounts represent debits that should be subtracted from that chain's current balance.
    */
-  async getPendingRebalances(): Promise<{ [chainId: number]: { [token: string]: BigNumber } }> {
+  async getPendingRebalances(account: EvmAddress): Promise<{ [chainId: number]: { [token: string]: BigNumber } }> {
     const pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
     await forEachAsync(Object.values(this.adapters), async (adapter) => {
-      const pending = await adapter.getPendingRebalances();
-      Object.entries(pending).forEach(([chainId, tokenBalance]) => {
+      const pending = await adapter.getPendingRebalances(account);
+      Object.entries(pending).forEach(([_chainId, tokenBalance]) => {
+        const chainId = Number(_chainId);
         Object.entries(tokenBalance).forEach(([token, amount]) => {
           pendingRebalances[chainId] ??= {};
           pendingRebalances[chainId][token] = (pendingRebalances[chainId]?.[token] ?? bnZero).add(amount);

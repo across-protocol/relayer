@@ -26,6 +26,7 @@ import {
   CHAIN_IDs,
   convertRelayDataParamsToBytes32,
   chainIsSvm,
+  TvmAddress,
 } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
@@ -116,6 +117,7 @@ export class Relayer {
       message: "Completed one-time init.",
       relayerEvmAddress: this.relayerEvmAddress,
       relayerSvmAddress: tokenClient.relayerSvmAddress,
+      relayerTvmAddress: TvmAddress.from(this.relayerEvmAddress.toNative()).toNative(),
     });
   }
 
@@ -149,7 +151,7 @@ export class Relayer {
    * @description Perform inventory management as needed. This is capped to 1/minute in looping mode.
    */
   async runMaintenance(): Promise<void> {
-    const { inventoryClient, profitClient, tokenClient } = this.clients;
+    const { inventoryClient, tokenClient } = this.clients;
 
     const currentTime = getCurrentTime();
     if (currentTime < this.lastMaintenance + this.config.maintenanceInterval) {
@@ -157,7 +159,7 @@ export class Relayer {
     }
 
     tokenClient.clearTokenData();
-    await Promise.all([tokenClient.update(), profitClient.update()]);
+    await tokenClient.update();
     await inventoryClient.update(this.inventoryChainIds);
     await inventoryClient.wrapL2EthIfAboveThreshold();
 
@@ -628,7 +630,7 @@ export class Relayer {
     // Filter out deposits where the relayer doesn't have the balance to make the fill.
     const unfilledDepositAmountsPerChain: { [chainId: number]: BigNumber } = deposits
       .filter((deposit) => tokenClient.hasBalanceForFill(deposit))
-      .reduce((agg, deposit) => {
+      .reduce<Record<number, BigNumber>>((agg, deposit) => {
         const unfilledAmountUsd = profitClient.getFillAmountInUsd(deposit);
         agg[deposit.originChainId] = (agg[deposit.originChainId] ?? bnZero).add(unfilledAmountUsd ?? bnZero);
         return agg;
@@ -636,7 +638,8 @@ export class Relayer {
 
     // Set the MDC for each origin chain equal to lowest threshold greater than the unfilled USD deposit amount.
     const mdcPerChain = Object.fromEntries(
-      Object.entries(unfilledDepositAmountsPerChain).map(([chainId, unfilledAmount]) => {
+      Object.entries(unfilledDepositAmountsPerChain).map(([_chainId, unfilledAmount]) => {
+        const chainId = Number(_chainId);
         const { minConfirmations } = minDepositConfirmations[chainId].find(({ usdThreshold }) =>
           usdThreshold.gte(unfilledAmount)
         );
@@ -863,7 +866,7 @@ export class Relayer {
 
     const _lpFees = await hubPoolClient.batchComputeRealizedLpFeePct(lpFeeRequests);
 
-    const lpFees: BatchLPFees = _lpFees.reduce((acc, { realizedLpFeePct: lpFeePct }, idx) => {
+    const lpFees: BatchLPFees = _lpFees.reduce<BatchLPFees>((acc, { realizedLpFeePct: lpFeePct }, idx) => {
       const lpFeeRequest = lpFeeRequests[idx];
       const { paymentChainId } = lpFeeRequest;
       const key = this.getLPFeeKey(lpFeeRequest);
@@ -913,7 +916,7 @@ export class Relayer {
       this.clients.svmFillerClient.clearTransactionQueue();
     }
     const txnReceipts: { [chainId: number]: Promise<string[]> } = Object.fromEntries(
-      Object.values(spokePoolClients).map(({ chainId }) => [chainId, []])
+      Object.values(spokePoolClients).map(({ chainId }): [number, Promise<string[]>] => [chainId, Promise.resolve([])])
     );
 
     // Fetch unfilled deposits and filter out deposits upfront before we compute the minimum deposit confirmation

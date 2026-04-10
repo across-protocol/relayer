@@ -141,12 +141,11 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
         const excessSourceChainsForToken: ExcessOrDeficit[] = Object.entries(
           cumulativeTargetBalances[excessToken].chains
         )
-          .filter(([chainId]) => {
-            return isDefined(currentBalancesOnChain[chainId]?.[excessToken]);
-          })
+          .map(([chainId, x]) => [Number(chainId), x])
+          .filter(([chainId]) => isDefined(currentBalancesOnChain[chainId]?.[excessToken]))
           .map(([chainId, priorityTier]) => {
             return {
-              chainId: Number(chainId),
+              chainId,
               priorityTier,
               amount: currentBalancesOnChain[chainId][excessToken],
               token: excessToken,
