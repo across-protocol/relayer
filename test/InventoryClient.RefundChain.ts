@@ -780,6 +780,15 @@ describe("InventoryClient: Refund chain selection", async function () {
       expect(possibleRepaymentChains).to.include(sampleDepositData.originChainId);
       expect(possibleRepaymentChains).to.include(hubPoolClient.chainId);
     });
+    it("does not evaluate destination as a standard candidate when it is only present via slow-withdrawal support", async function () {
+      hubPoolClient.setEnableAllL2Tokens(true);
+
+      const possibleRepaymentChains = inventoryClient.getPossibleRepaymentChainIds(sampleDepositData);
+      expect(possibleRepaymentChains).to.include(sampleDepositData.destinationChainId);
+
+      const refundChains = await inventoryClient.determineRefundChainId(sampleDepositData);
+      expect(refundChains).to.deep.equal([POLYGON, MAINNET]);
+    });
   });
 
   describe("evaluates slow withdrawal chains with excess running balances", function () {

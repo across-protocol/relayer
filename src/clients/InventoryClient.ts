@@ -724,14 +724,13 @@ export class InventoryClient {
       .sort((chainIdx, chainIdy) =>
         bnComparatorDescending(excessRunningBalancePcts[chainIdx], excessRunningBalancePcts[chainIdy])
       );
-    const possibleChainSet = new Set(possibleChains);
     const standardChainOrder = prioritizeOrigin
       ? [originChainId, destinationChainId]
       : [destinationChainId, originChainId];
     const canEvaluateOrigin =
       this._l1TokenEnabledForChain(l1Token, originChainId) && (prioritizeOrigin || originChainId !== hubChainId);
     const canEvaluateDestination =
-      possibleChainSet.has(destinationChainId) && this._l1TokenEnabledForChain(l1Token, destinationChainId);
+      this.canTakeDestinationChainRepayment(deposit) && this._l1TokenEnabledForChain(l1Token, destinationChainId);
     const standardCandidateChains = [...new Set(standardChainOrder)].filter((chainId) =>
       chainId === originChainId ? canEvaluateOrigin : canEvaluateDestination
     );
