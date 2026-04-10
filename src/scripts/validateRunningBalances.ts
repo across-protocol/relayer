@@ -24,12 +24,12 @@
 
 // Example usage:
 // Look back the most recent 32 bundles:
-// $ BUNDLES_COUNT=32 ts-node ./src/scripts/validateRunningBalances.ts
+// $ BUNDLES_COUNT=32 tsx ./src/scripts/validateRunningBalances.ts
 // Validate single chain and/or token:
-// $ SINGLE_CHAIN=42161 ts-node ./src/scripts/validateRunningBalances.ts
-// $ SINGLE_TOKEN_USDC ts-node ./src/scripts/validateRunningBalances.ts
+// $ SINGLE_CHAIN=42161 tsx ./src/scripts/validateRunningBalances.ts
+// $ SINGLE_TOKEN_USDC tsx ./src/scripts/validateRunningBalances.ts
 // Look at bundles #50-100 and query events up to 150 bundles ago:
-// $ BUNDLES_COUNT=150 PAGE_SIZE=50 PAGE=1 ts-node ./src/scripts/validateRunningBalances.ts
+// $ BUNDLES_COUNT=150 PAGE_SIZE=50 PAGE=1 tsx ./src/scripts/validateRunningBalances.ts
 
 import {
   bnZero,

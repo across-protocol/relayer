@@ -16,7 +16,7 @@ const atomicDepositor = new Contract(
 );
 
 // Example run:
-// ts-node ./scripts/updateAtomicDepositor.ts \
+// tsx ./scripts/updateAtomicDepositor.ts \
 //   --chainId 480
 //   --function "depositETHTo(address,uint32,bytes)"
 //   --bridge 0x470458C91978D2d929704489Ad730DC3E3001113

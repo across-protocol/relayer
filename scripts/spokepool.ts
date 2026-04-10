@@ -626,10 +626,10 @@ function usage(badInput?: string): boolean {
   const pad = "deposit".length;
   usageStr += `
     Usage:
-    \tyarn ts-node ./scripts/spokepool --wallet <${walletOpts}> ${"deposit".padEnd(pad)} ${depositArgs}
-    \tyarn ts-node ./scripts/spokepool --wallet <${walletOpts}> ${"dump".padEnd(pad)} ${dumpConfigArgs}
-    \tyarn ts-node ./scripts/spokepool --wallet <${walletOpts}> ${"fetch".padEnd(pad)} ${fetchArgs}
-    \tyarn ts-node ./scripts/spokepool --wallet <${walletOpts}> ${"fetch".padEnd(pad)} ${fillArgs}
+    \tyarn tsx ./scripts/spokepool --wallet <${walletOpts}> ${"deposit".padEnd(pad)} ${depositArgs}
+    \tyarn tsx ./scripts/spokepool --wallet <${walletOpts}> ${"dump".padEnd(pad)} ${dumpConfigArgs}
+    \tyarn tsx ./scripts/spokepool --wallet <${walletOpts}> ${"fetch".padEnd(pad)} ${fetchArgs}
+    \tyarn tsx ./scripts/spokepool --wallet <${walletOpts}> ${"fetch".padEnd(pad)} ${fillArgs}
   `.slice(1); // Skip leading newline
   console.log(usageStr);
 
