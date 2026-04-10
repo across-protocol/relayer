@@ -153,7 +153,10 @@ export class BridgeApiClient {
       const originToken = Object.entries(BRIDGE_API_DESTINATION_TOKEN_SYMBOLS).find(
         ([, bridgeSymbol]) => bridgeSymbol === deposit.source_deposit_instructions.currency
       );
-      assert(isDefined(originToken));
+      assert(
+        isDefined(originToken),
+        `Cannot find origin token for deposit symbol ${deposit.source_deposit_instructions.currency}`
+      );
       return getTokenInfo(toAddressType(originToken[0], this.srcNetworkId), this.srcNetworkId);
     };
 
@@ -170,10 +173,16 @@ export class BridgeApiClient {
     });
     // Map containing all origin chain transfers for a specific deposit address/token address combo.
     const cachedTransfers: Record<string, Record<string, Log[]>> = {};
+    let tokenContract: Contract | undefined = undefined;
     await mapAsync(uniqueDeposits, async (deposit) => {
       const { address: originTokenAddress } = getOriginTokenInfo(deposit);
       const toAddress = deposit.source_deposit_instructions.to_address;
-      const tokenContract = new Contract(originTokenAddress.toNative(), ERC20_ABI, originProvider);
+
+      // Set the token contract.
+      tokenContract ??= new Contract(originTokenAddress.toNative(), ERC20_ABI, originProvider);
+      tokenContract.attach(originTokenAddress.toNative());
+      tokenContract.connect(originProvider);
+
       cachedTransfers[toAddress] ??= {};
       cachedTransfers[toAddress][originTokenAddress.toNative()] = await paginatedEventQuery(
         tokenContract,
