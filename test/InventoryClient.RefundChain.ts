@@ -857,6 +857,14 @@ describe("InventoryClient: Refund chain selection", async function () {
         MAINNET,
       ]);
     });
+    it("drops zero-excess slow withdrawal chains before falling back to hub", async function () {
+      excessRunningBalances[ARBITRUM] = toWei("0");
+      excessRunningBalances[OPTIMISM] = toWei("0");
+      (inventoryClient as MockInventoryClient).setExcessRunningBalances(mainnetWeth, excessRunningBalances);
+      tokenClient.setTokenData(POLYGON, toAddressType(l2TokensForWeth[POLYGON], POLYGON), toWei(0));
+
+      expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.deep.equal([POLYGON, MAINNET]);
+    });
     it("includes slow withdrawal chains in possible repayment chain list", async function () {
       const possibleRepaymentChains = inventoryClient.getPossibleRepaymentChainIds(sampleDepositData);
       inventoryClient.getSlowWithdrawalRepaymentChains(toAddressType(mainnetWeth, MAINNET)).forEach((chainId) => {
