@@ -157,7 +157,6 @@ type CostBreakdown = {
   fixedCostUsd: number;
   latencySeconds: number;
 };
-type AllowedSwapPair = { from: ManagedNodeContext; to: ManagedNodeContext };
 // prettier-ignore
 type BridgeBreakdownParams = { baseSigner: Signer; pricingContext: RuntimePricingContext; rebalancerAdapters: Record<string, RebalancerAdapter> };
 type ExchangeBreakdownParams = BridgeBreakdownParams & { logger: winston.Logger };
@@ -179,7 +178,7 @@ type BridgeLookupContext = {
   canonicalRemoteToken?: string;
   bridgedRemoteToken?: string;
   nativeUsdc?: string;
-  splitterBridges?: { name: string }[];
+  l1SplitterBridges?: { name: string }[];
 };
 
 type BinanceInternalAdapter = {
@@ -533,20 +532,11 @@ export async function buildJussiGraphDefinition(params: BuildGraphParams): Promi
   logBuild("Built bridge edge candidates", { bridgeCandidateCount: bridgeCandidates.length });
   const rebalanceCandidates = buildRebalanceEdgeCandidates(rebalanceRoutes, nodesByKey);
   logBuild("Built rebalancer edge candidates", { rebalanceCandidateCount: rebalanceCandidates.length });
-  const allowedSwapCandidates = buildAllowedSwapEdgeCandidates(relayerConfig, nodeContexts);
-  logBuild("Built allowed swap edge candidates", { allowedSwapCandidateCount: allowedSwapCandidates.length });
-  const edgeCandidates = dedupeGraphEdgeCandidates([
-    ...bridgeCandidates,
-    ...rebalanceCandidates,
-    ...allowedSwapCandidates,
-  ]);
+  const edgeCandidates = dedupeGraphEdgeCandidates([...bridgeCandidates, ...rebalanceCandidates]);
   logBuild("Deduped graph edge candidates", {
-    rawCandidateCount: bridgeCandidates.length + rebalanceCandidates.length + allowedSwapCandidates.length,
+    rawCandidateCount: bridgeCandidates.length + rebalanceCandidates.length,
     dedupedEdgeCandidateCount: edgeCandidates.length,
   });
-
-  validateAllowedSwapCoverage(relayerConfig, nodeContexts, edgeCandidates);
-  logBuild("Validated allowed swap route coverage");
 
   const pricingContext = new RuntimePricingContext(logger);
   const edgePricingParams = {
@@ -696,8 +686,9 @@ export function buildCumulativeBalancePainDefinitions(
   ) as Record<LogicalAsset, JussiCumulativeBalancePainDefinition>;
 }
 
-// Candidate discovery is pure topology: once we know which edges can exist,
-// the later pricing pass can stay focused on economics.
+// Candidate discovery is pure topology: the graph should only contain direct
+// inventory bridge actions and direct rebalancer routes. Multi-hop reachability
+// should emerge from pathfinding rather than synthetic shortcut edges.
 export async function buildBridgeEdgeCandidates(nodeContexts: ManagedNodeContext[]): Promise<GraphEdgeCandidate[]> {
   const nodesByLogicalAssetChain = indexNodesByLogicalAssetAndChain(nodeContexts);
   const hubNodesByLogicalAsset = new Map<LogicalAsset, ManagedNodeContext>(
@@ -789,7 +780,7 @@ function buildBridgeLookupContext(
     canonicalRemoteToken: getRemoteTokenForL1Token(l1Token, chainId, HUB_CHAIN_ID)?.toNative().toLowerCase(),
     bridgedRemoteToken: resolveOptionalTranslatedTokenAddress(l1Token, chainId),
     nativeUsdc: TOKEN_SYMBOLS_MAP.USDC.addresses[chainId]?.toLowerCase(),
-    splitterBridges: TOKEN_SPLITTER_BRIDGES[chainId]?.[l1Token.toNative()],
+    l1SplitterBridges: TOKEN_SPLITTER_BRIDGES[chainId]?.[l1Token.toNative()],
   };
 }
 
@@ -802,6 +793,25 @@ function buildBridgeCandidate(
   return isDefined(match)
     ? [{ family: match.family, adapterOrBridgeName, effectiveBridgeName: match.effectiveBridgeName, from, to }]
     : [];
+}
+
+function resolveSplitterBridgeMatch(
+  node: ManagedNodeContext,
+  context: BridgeLookupContext,
+  splitterBridges: { name: string }[] | undefined,
+  resolveBridgeMatch: (node: ManagedNodeContext, context: BridgeLookupContext) => BridgeMatch | undefined
+): BridgeMatch | undefined {
+  for (const splitterBridge of splitterBridges ?? []) {
+    const match = resolveBridgeMatch(node, {
+      ...context,
+      adapterOrBridgeName: splitterBridge.name,
+      l1SplitterBridges: undefined,
+    });
+    if (isDefined(match)) {
+      return match;
+    }
+  }
+  return undefined;
 }
 
 function resolveInboundBridgeMatch(node: ManagedNodeContext, context: BridgeLookupContext): BridgeMatch | undefined {
@@ -820,19 +830,7 @@ function resolveInboundBridgeMatch(node: ManagedNodeContext, context: BridgeLook
       }
       return;
     case "TokenSplitterBridge":
-      if (context.splitterBridges?.[0] && nodeAddress === context.canonicalRemoteToken) {
-        return {
-          family: familyForBridgeName(context.splitterBridges[0].name),
-          effectiveBridgeName: context.splitterBridges[0].name,
-        };
-      }
-      if (context.splitterBridges?.[1]) {
-        return {
-          family: familyForBridgeName(context.splitterBridges[1].name),
-          effectiveBridgeName: context.splitterBridges[1].name,
-        };
-      }
-      return;
+      return resolveSplitterBridgeMatch(node, context, context.l1SplitterBridges, resolveInboundBridgeMatch);
     case "UsdcCCTPBridge":
       return nodeAddress === context.nativeUsdc ? { family: "cctp", effectiveBridgeName: "UsdcCCTPBridge" } : undefined;
     case "OFTBridge":
@@ -947,60 +945,6 @@ function toSupportedBridgeAdapterRoute(candidate: GraphEdgeCandidate): Rebalance
         adapter: candidate.family,
       }
     : undefined;
-}
-
-export function buildAllowedSwapEdgeCandidates(
-  relayerConfig: RelayerConfig,
-  nodeContexts: ManagedNodeContext[]
-): GraphEdgeCandidate[] {
-  return resolveAllowedSwapPairs(relayerConfig, nodeContexts).map(({ from, to }) => ({
-    family: "bridgeapi",
-    adapterOrBridgeName: "BridgeApi",
-    effectiveBridgeName: "BridgeApi",
-    from,
-    to,
-  }));
-}
-
-function validateAllowedSwapCoverage(
-  relayerConfig: RelayerConfig,
-  nodeContexts: ManagedNodeContext[],
-  edgeCandidates: GraphEdgeCandidate[]
-): void {
-  const edgeSet = new Set(edgeCandidates.map((edge) => `${edge.from.nodeKey}->${edge.to.nodeKey}`));
-
-  for (const { from, to } of resolveAllowedSwapPairs(relayerConfig, nodeContexts)) {
-    assert(
-      edgeSet.has(`${from.nodeKey}->${to.nodeKey}`),
-      `Missing graph edge for allowed swap route ${from.nodeKey} -> ${to.nodeKey}`
-    );
-  }
-}
-
-function resolveAllowedSwapPairs(relayerConfig: RelayerConfig, nodeContexts: ManagedNodeContext[]): AllowedSwapPair[] {
-  const nodesByIdentity = indexNodesByIdentity(nodeContexts);
-
-  return (relayerConfig.inventoryConfig.allowedSwapRoutes ?? []).flatMap((swapRoute) => {
-    const fromTokenAddress = resolveSwapRouteTokenAddress(swapRoute.fromToken);
-    const toTokenAddress = resolveSwapRouteTokenAddress(swapRoute.toToken);
-    if (!isDefined(fromTokenAddress) || !isDefined(toTokenAddress)) {
-      return [];
-    }
-
-    const from = resolveAllowedSwapNode(swapRoute.fromChain, fromTokenAddress, nodeContexts, nodesByIdentity);
-    const to = resolveAllowedSwapNode(swapRoute.toChain, toTokenAddress, nodeContexts, nodesByIdentity);
-    return isDefined(from) && isDefined(to) && isBridgeApiSwapCandidate(from, to) ? [{ from, to }] : [];
-  });
-}
-
-function resolveAllowedSwapNode(
-  chainField: number | "ALL",
-  tokenAddress: string,
-  nodeContexts: ManagedNodeContext[],
-  nodesByIdentity: Map<string, ManagedNodeContext>
-): ManagedNodeContext | undefined {
-  const chainId = resolveSwapRouteChainId(chainField, tokenAddress, nodeContexts);
-  return isDefined(chainId) ? nodesByIdentity.get(nodeIdentity(chainId, tokenAddress)) : undefined;
 }
 
 export function dedupeGraphEdgeCandidates(candidates: GraphEdgeCandidate[]): GraphEdgeCandidate[] {
@@ -1755,28 +1699,6 @@ async function quoteNativeBridgeFeeUsd(
   return params.pricingContext.nativeValueToUsd(txn.value ?? bnZero, HUB_CHAIN_ID);
 }
 
-function resolveSwapRouteChainId(
-  chainField: number | "ALL",
-  tokenAddress: string,
-  nodeContexts: ManagedNodeContext[]
-): number | undefined {
-  if (chainField !== "ALL") {
-    return chainField;
-  }
-  return nodeContexts.find((node) => node.tokenAddress.toLowerCase() === tokenAddress.toLowerCase())?.chainId;
-}
-
-function resolveSwapRouteTokenAddress(token: string | { toNative: () => string }): string | undefined {
-  return typeof token === "string" ? token : token?.toNative?.();
-}
-
-function isBridgeApiSwapCandidate(from: ManagedNodeContext, to: ManagedNodeContext): boolean {
-  return (
-    (from.logicalAsset === "USDC" && to.symbol === "pathUSD") ||
-    (from.symbol === "pathUSD" && to.logicalAsset === "USDC")
-  );
-}
-
 function indexNodesByLogicalAssetAndChain(
   nodeContexts: ManagedNodeContext[]
 ): Map<LogicalAsset, Map<number, ManagedNodeContext[]>> {
@@ -1789,14 +1711,6 @@ function indexNodesByLogicalAssetAndChain(
     index.set(node.logicalAsset, logicalAssetIndex);
   }
   return index;
-}
-
-function indexNodesByIdentity(nodeContexts: ManagedNodeContext[]): Map<string, ManagedNodeContext> {
-  return new Map(nodeContexts.map((node) => [nodeIdentity(node.chainId, node.tokenAddress), node]));
-}
-
-function nodeIdentity(chainId: number, tokenAddress: string): string {
-  return `${chainId}:${tokenAddress.toLowerCase()}`;
 }
 
 function familyForBridgeName(bridgeName: string): EdgeFamily {

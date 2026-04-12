@@ -4,7 +4,6 @@ import { RelayerConfig } from "../src/relayer/RelayerConfig";
 import {
   GraphEdgeCandidate,
   JUSSI_GRAPH_VERSION,
-  buildAllowedSwapEdgeCandidates,
   buildBridgeEdgeCandidates,
   buildCumulativeBalancePainDefinitions,
   buildJussiGraphDefinition,
@@ -12,7 +11,6 @@ import {
   buildJussiGraphJson,
   buildJussiGraphId,
   buildManagedNodeTemplates,
-  canonicalNodeKey,
   dedupeGraphEdgeCandidates,
   materializeNodeDefinitions,
   resolveBridgeLatencySeconds,
@@ -194,26 +192,50 @@ describe("Jussi graph builder helpers", async function () {
     expect(graph.payload.cumulative_balance_pain.WETH.target_balance_native).to.equal(balances.WETH.toString());
   });
 
-  it("expands the configured pathUSD swap routes into direct graph edge requirements", async function () {
+  it("discovers only direct token-splitter bridge candidates for pathUSD", async function () {
     const relayerConfig = buildRelayerConfig();
     const nodeContexts = materializeNodeDefinitions(buildManagedNodeTemplates(relayerConfig.inventoryConfig));
-    const edgeCandidates = buildAllowedSwapEdgeCandidates(relayerConfig, nodeContexts);
+    const edgeCandidates = await buildBridgeEdgeCandidates(nodeContexts);
 
-    const mainnetUsdcNodeKey = canonicalNodeKey(
-      CHAIN_IDs.MAINNET,
-      nodeContexts.find((node) => node.chainId === CHAIN_IDs.MAINNET && node.logicalAsset === "USDC")!.tokenAddress
-    );
-    const pathUsdNodeKey = canonicalNodeKey(
-      CHAIN_IDs.TEMPO,
-      nodeContexts.find((node) => node.chainId === CHAIN_IDs.TEMPO && node.symbol === "pathUSD")!.tokenAddress
-    );
+    const mainnetUsdc = nodeContexts.find(
+      (node) => node.chainId === CHAIN_IDs.MAINNET && node.symbol === "USDC" && node.logicalAsset === "USDC"
+    )!;
+    const optimismUsdc = nodeContexts.find(
+      (node) => node.chainId === CHAIN_IDs.OPTIMISM && node.symbol === "USDC" && node.logicalAsset === "USDC"
+    )!;
+    const tempoUsdc = nodeContexts.find((node) => node.chainId === CHAIN_IDs.TEMPO && node.symbol === "USDC.e")!;
+    const pathUsd = nodeContexts.find((node) => node.chainId === CHAIN_IDs.TEMPO && node.symbol === "pathUSD")!;
 
     expect(
-      edgeCandidates.some((edge) => edge.from.nodeKey === mainnetUsdcNodeKey && edge.to.nodeKey === pathUsdNodeKey)
+      edgeCandidates.some(
+        (edge) =>
+          edge.family === "bridgeapi" && edge.from.nodeKey === mainnetUsdc.nodeKey && edge.to.nodeKey === pathUsd.nodeKey
+      )
     ).to.equal(true);
     expect(
-      edgeCandidates.some((edge) => edge.from.nodeKey === pathUsdNodeKey && edge.to.nodeKey === mainnetUsdcNodeKey)
+      edgeCandidates.some(
+        (edge) =>
+          edge.family === "bridgeapi" && edge.from.nodeKey === pathUsd.nodeKey && edge.to.nodeKey === mainnetUsdc.nodeKey
+      )
+    ).to.equal(false);
+    expect(
+      edgeCandidates.some(
+        (edge) =>
+          edge.family === "oft" && edge.from.nodeKey === mainnetUsdc.nodeKey && edge.to.nodeKey === tempoUsdc.nodeKey
+      )
     ).to.equal(true);
+    expect(
+      edgeCandidates.some(
+        (edge) =>
+          edge.family === "oft" && edge.from.nodeKey === tempoUsdc.nodeKey && edge.to.nodeKey === mainnetUsdc.nodeKey
+      )
+    ).to.equal(true);
+    expect(
+      edgeCandidates.some((edge) => edge.from.nodeKey === optimismUsdc.nodeKey && edge.to.nodeKey === pathUsd.nodeKey)
+    ).to.equal(false);
+    expect(
+      edgeCandidates.some((edge) => edge.from.nodeKey === pathUsd.nodeKey && edge.to.nodeKey === optimismUsdc.nodeKey)
+    ).to.equal(false);
   });
 
   it("dedupes identical edges while preserving parallel adapters", async function () {
