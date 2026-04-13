@@ -1,5 +1,5 @@
 import { expect, toBNWei } from "./utils";
-import { CHAIN_IDs, EvmAddress, TOKEN_SYMBOLS_MAP, getNativeTokenInfoForChain } from "../src/utils";
+import { CHAIN_IDs, EvmAddress, TOKEN_SYMBOLS_MAP } from "../src/utils";
 import { RelayerConfig } from "../src/relayer/RelayerConfig";
 import {
   GraphEdgeCandidate,
@@ -451,9 +451,8 @@ describe("Jussi graph builder helpers", async function () {
     expect(quotedSendParams[0].minAmountLD.toString()).to.equal(amount.toString());
     expect(quotedSendParams[1].minAmountLD.toString()).to.equal(amountReceived.toString());
     expect(quote.sendParamStruct.minAmountLD.toString()).to.equal(amountReceived.toString());
-    expect(quote.messageFeeAssetAddress).to.equal(
-      getNativeTokenInfoForChain(CHAIN_IDs.MAINNET, CHAIN_IDs.MAINNET).address
-    );
+    expect(quote.messageFeeIsNative).to.equal(true);
+    expect(quote.messageFeeAssetAddress).to.equal(undefined);
   });
 
   it("uses MONAD receive options and fee-token pricing inputs for OFT routes on chains without native gas", async function () {
@@ -480,6 +479,7 @@ describe("Jussi graph builder helpers", async function () {
     expect(Array.from(quote.sendParamStruct.extraOptions as Uint8Array)).to.deep.equal(
       Array.from(resolveOftQuoteExtraOptions(CHAIN_IDs.MONAD) as Uint8Array)
     );
+    expect(quote.messageFeeIsNative).to.equal(false);
     expect(quote.messageFeeAssetAddress.toLowerCase()).to.equal(
       resolveOftQuoteSendFeeAsset(CHAIN_IDs.TEMPO).toLowerCase()
     );

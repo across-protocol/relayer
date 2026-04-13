@@ -178,8 +178,9 @@ type OftQuoteReader = {
 export type OftRouteTransferQuote = {
   roundedInputSourceNative: BigNumber;
   amountReceivedDestinationNative: BigNumber;
-  messageFeeAssetAddress: string;
+  messageFeeAssetAddress?: string;
   messageFeeAmount: BigNumber;
+  messageFeeIsNative: boolean;
   sendParamStruct: SendParamStruct;
 };
 // prettier-ignore
@@ -1269,10 +1270,7 @@ async function estimateDirectionalHyperliquidMarginalOutputRate(
 }
 
 export function resolveOftQuoteSendFeeAsset(chainId: number): string {
-  if (chainHasNativeToken(chainId)) {
-    return getNativeTokenInfoForChain(chainId, HUB_CHAIN_ID).address;
-  }
-
+  assert(!chainHasNativeToken(chainId), `OFT fee asset override is only required for non-native fee chains: ${chainId}`);
   const lzFeeToken = LZ_FEE_TOKENS[chainId];
   assert(isDefined(lzFeeToken), `Missing LZ fee token mapping for OFT chain ${chainId}`);
   return lzFeeToken.toNative();
@@ -1315,12 +1313,14 @@ export async function quoteOftRouteTransfer(params: {
     minAmountLD: amountReceivedDestinationNative,
   };
   const feeStruct = await reader.quoteSend(finalSendParamStruct, false);
+  const messageFeeIsNative = chainHasNativeToken(originChain);
 
   return {
     roundedInputSourceNative: roundedAmount,
     amountReceivedDestinationNative,
-    messageFeeAssetAddress: resolveOftQuoteSendFeeAsset(originChain),
+    ...(messageFeeIsNative ? {} : { messageFeeAssetAddress: resolveOftQuoteSendFeeAsset(originChain) }),
     messageFeeAmount: BigNumber.from(feeStruct.nativeFee),
+    messageFeeIsNative,
     sendParamStruct: finalSendParamStruct,
   };
 }
@@ -1521,11 +1521,17 @@ async function estimateOftBreakdown(
     params.pricingContext.deriveGasFloorUsd(candidate.family, candidate.from.chainId),
     quoteLiveOftRouteTransfer(candidate, amount, params.baseSigner),
   ]);
-  const quotedMessageFeeUsd = await params.pricingContext.tokenValueToUsd(
-    oftRouteQuote.messageFeeAmount,
-    candidate.from.chainId,
-    oftRouteQuote.messageFeeAssetAddress
+  assert(
+    oftRouteQuote.messageFeeIsNative || isDefined(oftRouteQuote.messageFeeAssetAddress),
+    `Missing OFT fee asset metadata for ${candidate.from.chainId} -> ${candidate.to.chainId}`
   );
+  const quotedMessageFeeUsd = oftRouteQuote.messageFeeIsNative
+    ? await params.pricingContext.nativeValueToUsd(oftRouteQuote.messageFeeAmount, candidate.from.chainId)
+    : await params.pricingContext.tokenValueToUsd(
+        oftRouteQuote.messageFeeAmount,
+        candidate.from.chainId,
+        oftRouteQuote.messageFeeAssetAddress
+      );
 
   return {
     fixedInputFeeSourceNative: bnZero,
