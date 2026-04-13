@@ -23,6 +23,7 @@ export interface DepositAddressMessage {
   salt: string;
   counterfactualDepositContractAddress: string;
   counterfactualFactoryContractAddress: string;
+  shouldSponsorAccountCreation: boolean;
 }
 
 // TODO: Add schema for SwapAPI response.
