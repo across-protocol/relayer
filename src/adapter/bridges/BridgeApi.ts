@@ -91,7 +91,7 @@ export class BridgeApi extends BaseBridgeAdapter {
       toAddress,
       this.l1TokenInfo.symbol,
       BRIDGE_API_DESTINATION_TOKEN_SYMBOLS[this.getL2Bridge().address],
-      formatter(amount)
+      formatter(amount).replace(/,/g, "")
     );
     return Promise.resolve({
       contract: this.getL1Bridge(),
