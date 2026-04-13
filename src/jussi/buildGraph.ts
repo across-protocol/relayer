@@ -278,6 +278,9 @@ const SLOW_WITHDRAWAL_LATENCY_SECONDS = 7 * 24 * 60 * 60;
 const LINEA_SCROLL_WITHDRAWAL_LATENCY_SECONDS = 4 * 60 * 60;
 const ZKSTACK_WITHDRAWAL_LATENCY_SECONDS = 60 * 60;
 const MONAD_EXECUTOR_LZ_RECEIVE_GAS_LIMIT = 120_000;
+const TOKEN_METADATA_OVERRIDES: Record<string, { decimals: number; priceUsd: number }> = {
+  [`${CHAIN_IDs.TEMPO}:${LZ_FEE_TOKENS[CHAIN_IDs.TEMPO].toNative().toLowerCase()}`]: { decimals: 9, priceUsd: 1 },
+};
 const GAS_UNITS_BY_FAMILY: Record<EdgeFamily, number> = {
   cctp: 250_000,
   oft: 320_000,
@@ -1969,6 +1972,10 @@ class RuntimePricingContext {
   private getTokenDecimals(chainId: number, tokenAddress: string): Promise<number> {
     const cacheKey = `${chainId}:${tokenAddress.toLowerCase()}`;
     return this.loadCachedValue(this.tokenDecimalsCache, cacheKey, async () => {
+      const metadataOverride = TOKEN_METADATA_OVERRIDES[cacheKey];
+      if (isDefined(metadataOverride)) {
+        return metadataOverride.decimals;
+      }
       try {
         return getTokenInfo(EvmAddress.from(tokenAddress), chainId).decimals;
       } catch {
@@ -1982,6 +1989,10 @@ class RuntimePricingContext {
   private getTokenPriceUsd(chainId: number, tokenAddress: string): Promise<number> {
     const cacheKey = `${chainId}:${tokenAddress.toLowerCase()}`;
     return this.loadCachedValue(this.tokenPriceCache, cacheKey, async () => {
+      const metadataOverride = TOKEN_METADATA_OVERRIDES[cacheKey];
+      if (isDefined(metadataOverride)) {
+        return metadataOverride.priceUsd;
+      }
       try {
         const price = await this.priceClient.getPriceByAddress(tokenAddress);
         return Number(price.price);
