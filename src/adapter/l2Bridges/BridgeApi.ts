@@ -81,7 +81,7 @@ export class BridgeApi extends BaseL2BridgeAdapter {
       toAddress,
       l2TokenSymbol,
       this.l1TokenInfo.symbol,
-      formatter(amount)
+      formatter(amount).replace(/,/g, "")
     );
     const l2TokenContract = new Contract(l2Token.toNative(), ERC20_ABI, this.l2Signer);
     const transferTxn = {
