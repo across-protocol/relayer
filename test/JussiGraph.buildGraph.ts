@@ -3,13 +3,15 @@ import { CHAIN_IDs, EvmAddress, TOKEN_SYMBOLS_MAP } from "../src/utils";
 import { RelayerConfig } from "../src/relayer/RelayerConfig";
 import {
   GraphEdgeCandidate,
-  JUSSI_GRAPH_VERSION,
+  buildJussiGraphBundleJson,
   buildBridgeEdgeCandidates,
   buildCumulativeBalancePainDefinitions,
   buildJussiGraphDefinition,
+  buildLogicalAssetDefinitions,
   buildJussiGraphEnvelope,
   buildJussiGraphJson,
   buildJussiGraphId,
+  buildJussiRateLimitBucketsJson,
   buildManagedNodeTemplates,
   dedupeGraphEdgeCandidates,
   materializeNodeDefinitions,
@@ -20,6 +22,7 @@ import {
   resolveOftQuoteExtraOptions,
   resolveOftQuoteSendFeeAsset,
   resolveOptionalTranslatedTokenAddress,
+  resolveRequiredNativePriceChains,
 } from "../src/jussi/buildGraph";
 
 function buildRelayerConfig(): RelayerConfig {
@@ -88,7 +91,7 @@ describe("Jussi graph builder helpers", async function () {
     expect(hasLogicalAssetNode(CHAIN_IDs.ZORA, "WETH")).to.equal(true);
   });
 
-  it("emits allocation ratios from relayer fixed-point config and cumulative balance pain bands", async function () {
+  it("normalizes allocation ratios per logical asset and emits cumulative balance pain bands", async function () {
     const relayerConfig = buildRelayerConfig();
     const nodeContexts = materializeNodeDefinitions(buildManagedNodeTemplates(relayerConfig.inventoryConfig));
     const optimismUsdc = nodeContexts.find(
@@ -102,13 +105,20 @@ describe("Jussi graph builder helpers", async function () {
       USDT: toBNWei("500", 6),
       WETH: toBNWei("10", 18),
     });
+    const targetSums = nodeContexts.reduce<Record<string, number>>((sums, node) => {
+      sums[node.logicalAsset] = (sums[node.logicalAsset] ?? 0) + Number(node.definition.target_allocation_ratio);
+      return sums;
+    }, {});
 
-    expect(optimismUsdc.definition.target_allocation_ratio).to.equal("0.08");
-    expect(optimismUsdc.definition.min_allocation_ratio).to.equal("0.04");
-    expect(optimismUsdc.definition.max_allocation_ratio).to.equal("0.12");
+    expect(Number(optimismUsdc.definition.target_allocation_ratio)).to.be.closeTo(8 / 22, 1e-12);
+    expect(Number(optimismUsdc.definition.min_allocation_ratio)).to.be.closeTo(4 / 22, 1e-12);
+    expect(Number(optimismUsdc.definition.max_allocation_ratio)).to.be.closeTo(12 / 22, 1e-12);
     expect(mainnetUsdc.definition.target_allocation_ratio).to.equal("0");
     expect(mainnetUsdc.definition.min_allocation_ratio).to.equal("0");
     expect(mainnetUsdc.definition.max_allocation_ratio).to.equal("0");
+    expect(targetSums.USDC).to.be.closeTo(1, 1e-12);
+    expect(targetSums.USDT).to.be.closeTo(1, 1e-12);
+    expect(targetSums.WETH).to.be.closeTo(1, 1e-12);
 
     expect(cumulativeBalancePain.USDC).to.deep.equal({
       target_balance_native: toBNWei("1000", 6).toString(),
@@ -193,6 +203,30 @@ describe("Jussi graph builder helpers", async function () {
     expect(graph.payload.cumulative_balance_pain.USDC.target_balance_native).to.equal(balances.USDC.toString());
     expect(graph.payload.cumulative_balance_pain.USDT.target_balance_native).to.equal(balances.USDT.toString());
     expect(graph.payload.cumulative_balance_pain.WETH.target_balance_native).to.equal(balances.WETH.toString());
+    expect(graph.payload.logical_assets.WETH.native_price_alias_chain_ids).to.deep.equal(["1"]);
+    expect(graph.payload.logical_assets.USDC.native_price_alias_chain_ids).to.equal(undefined);
+  });
+
+  it("splits graph native price coverage between aliases and explicit native request prices", async function () {
+    const nodeContexts = materializeNodeDefinitions(buildManagedNodeTemplates(buildRelayerConfig().inventoryConfig));
+    const logicalAssets = buildLogicalAssetDefinitions(nodeContexts);
+    const aliasedChainIds = new Set(
+      Object.values(logicalAssets).flatMap((definition) => (definition.native_price_alias_chain_ids ?? []).map(Number))
+    );
+    const requiredNativePriceChains = resolveRequiredNativePriceChains(logicalAssets, nodeContexts);
+    const graphChainIds = [...new Set(nodeContexts.map((node) => node.chainId))].sort((a, b) => a - b);
+
+    expect(logicalAssets.HYPE).to.equal(undefined);
+    expect([...aliasedChainIds].sort((a, b) => a - b)).to.deep.equal([
+      CHAIN_IDs.MAINNET,
+      CHAIN_IDs.TEMPO,
+      CHAIN_IDs.BASE,
+      CHAIN_IDs.ZORA,
+    ]);
+    expect(requiredNativePriceChains).to.deep.equal([CHAIN_IDs.OPTIMISM, CHAIN_IDs.HYPEREVM, CHAIN_IDs.PLASMA]);
+    expect([...new Set([...aliasedChainIds, ...requiredNativePriceChains])].sort((a, b) => a - b)).to.deep.equal(
+      graphChainIds
+    );
   });
 
   it("discovers only direct token-splitter bridge candidates for pathUSD", async function () {
@@ -489,10 +523,10 @@ describe("Jussi graph builder helpers", async function () {
     const graphId = buildJussiGraphId(new Date("2026-04-01T09:10:11.000Z"));
     const graph = {
       graphId,
+      rate_limit_buckets: [],
       payload: {
         latency_annualized_cost_rate: "0.05",
         pain_model: {
-          type: "threshold" as const,
           surplus_annualized_cost_rate: "0.000219",
           deficit_annualized_cost_rate: "0.002055",
           out_of_band_severity_multiplier: "4.0",
@@ -528,7 +562,6 @@ describe("Jussi graph builder helpers", async function () {
             out_of_band_severity_multiplier: "8.0",
           },
         },
-        rate_limit_buckets: [],
         edge_classes: [],
         nodes: [],
         edges: [],
@@ -536,32 +569,40 @@ describe("Jussi graph builder helpers", async function () {
     };
     const envelope = buildJussiGraphEnvelope(graph);
     const graphJson = buildJussiGraphJson(graph);
+    const bundleJson = buildJussiGraphBundleJson(graph);
+    const rateLimitBucketsJson = buildJussiRateLimitBucketsJson(graph);
 
     expect(graphId).to.equal("usdc-usdt-weth-20260401T091011Z");
     expect(envelope).to.deep.equal({
       graph_id: graphId,
       payload: {
-        latency_annualized_cost_rate: "0.05",
-        pain_model: graph.payload.pain_model,
-        logical_assets: graph.payload.logical_assets,
-        cumulative_balance_pain: graph.payload.cumulative_balance_pain,
+        graph: {
+          latency_annualized_cost_rate: "0.05",
+          pain_model: graph.payload.pain_model,
+          logical_assets: graph.payload.logical_assets,
+          cumulative_balance_pain: graph.payload.cumulative_balance_pain,
+          edge_classes: [],
+          nodes: [],
+          edges: [],
+        },
         rate_limit_buckets: [],
-        edge_classes: [],
-        nodes: [],
-        edges: [],
       },
     });
     expect(graphJson).to.deep.equal({
-      graph_id: graphId,
-      graph_version: JUSSI_GRAPH_VERSION,
       latency_annualized_cost_rate: "0.05",
       pain_model: graph.payload.pain_model,
       logical_assets: graph.payload.logical_assets,
       cumulative_balance_pain: graph.payload.cumulative_balance_pain,
-      rate_limit_buckets: [],
       edge_classes: [],
       nodes: [],
       edges: [],
+    });
+    expect(bundleJson).to.deep.equal({
+      graph: graphJson,
+      rate_limit_buckets: [],
+    });
+    expect(rateLimitBucketsJson).to.deep.equal({
+      rate_limit_buckets: [],
     });
     expect(Object.keys(envelope)).to.deep.equal(["graph_id", "payload"]);
   });

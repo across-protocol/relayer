@@ -1,5 +1,5 @@
 import { mkdir, writeFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { dirname, join, parse, resolve } from "node:path";
 import util from "util";
 import winston from "winston";
 import { version } from "../package.json";
@@ -9,10 +9,13 @@ import {
   buildJussiGraphDefinition,
   buildJussiGraphEnvelope,
   buildJussiGraphJson,
+  JussiGraphJson,
+  buildJussiRateLimitBucketsJson,
   buildManagedNodeTemplates,
   JUSSI_LOGICAL_ASSETS,
   materializeNodeDefinitions,
 } from "../src/jussi/buildGraph";
+import { getAcrossHost } from "../src/clients/AcrossAPIClient";
 import { constructRelayerClients } from "../src/relayer/RelayerClientHelper";
 import { RelayerConfig } from "../src/relayer/RelayerConfig";
 import { constructCumulativeBalanceRebalancerClient } from "../src/rebalancer/RebalancerClientHelper";
@@ -20,17 +23,24 @@ import { RebalancerConfig } from "../src/rebalancer/RebalancerConfig";
 import { buildRebalanceRoutes } from "../src/rebalancer/buildRebalanceRoutes";
 import {
   CHAIN_IDs,
+  PriceClient,
   Signer,
   TOKEN_SYMBOLS_MAP,
+  acrossApi,
   chainIsSvm,
+  coingecko,
   config,
   delay,
+  defiLlama,
   disconnectRedisClients,
+  getNativeTokenInfoForChain,
   retrieveSignerFromCLIArgs,
   waitForLogger,
 } from "../src/utils";
 
 const GRAPH_JSON_OUT_ENV = "JUSSI_GRAPH_JSON_OUT";
+const RATE_LIMIT_BUCKETS_JSON_OUT_ENV = "JUSSI_RATE_LIMIT_BUCKETS_JSON_OUT";
+const PRICES_BY_ASSET_JSON_OUT_ENV = "JUSSI_PRICES_BY_ASSET_JSON_OUT";
 
 function createScriptLogger(): winston.Logger {
   return winston.createLogger({
@@ -91,6 +101,79 @@ async function writeJsonArtifact(filePath: string | undefined, value: unknown): 
   const resolvedPath = resolve(filePath);
   await mkdir(dirname(resolvedPath), { recursive: true });
   await writeFile(resolvedPath, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+function defaultRateLimitBucketsArtifactPath(graphJsonPath: string | undefined): string | undefined {
+  if (!graphJsonPath) {
+    return undefined;
+  }
+
+  const resolvedGraphPath = resolve(graphJsonPath);
+  const parsedPath = parse(resolvedGraphPath);
+  const derivedFileName = parsedPath.name.endsWith("Graph")
+    ? `${parsedPath.name.slice(0, -"Graph".length)}RateLimitBuckets${parsedPath.ext}`
+    : `${parsedPath.name}.rateLimitBuckets${parsedPath.ext}`;
+  return join(parsedPath.dir, derivedFileName);
+}
+
+function defaultPricesByAssetArtifactPath(graphJsonPath: string | undefined): string | undefined {
+  if (!graphJsonPath) {
+    return undefined;
+  }
+
+  const resolvedGraphPath = resolve(graphJsonPath);
+  const parsedPath = parse(resolvedGraphPath);
+  const derivedFileName = parsedPath.name.endsWith("Graph")
+    ? `${parsedPath.name.slice(0, -"Graph".length)}Prices${parsedPath.ext}`
+    : `${parsedPath.name}.prices${parsedPath.ext}`;
+  return join(parsedPath.dir, derivedFileName);
+}
+
+function formatExampleUsdPrice(value: number): string {
+  return value.toFixed(8).replace(/\.?0+$/, "");
+}
+
+async function buildExamplePricesByAsset(
+  graphJson: JussiGraphJson,
+  logger: winston.Logger
+): Promise<Record<string, string>> {
+  const priceClient = new PriceClient(logger, [
+    new acrossApi.PriceFeed({ host: getAcrossHost(CHAIN_IDs.MAINNET) }),
+    new coingecko.PriceFeed({ apiKey: process.env.COINGECKO_PRO_API_KEY }),
+    new defiLlama.PriceFeed(),
+  ]);
+  const pricesByAsset: Record<string, string> = {};
+
+  for (const logicalAsset of Object.keys(graphJson.logical_assets).sort()) {
+    const address = TOKEN_SYMBOLS_MAP[logicalAsset].addresses[CHAIN_IDs.MAINNET];
+    const price = await priceClient.getPriceByAddress(address);
+    pricesByAsset[`logical:${logicalAsset}`] = formatExampleUsdPrice(Number(price.price));
+  }
+
+  const chainIds = Array.from(new Set(graphJson.nodes.map((node) => node.chain_id))).sort((a, b) => a - b);
+  for (const chainId of chainIds) {
+    const nativeTokenInfo = getNativeTokenInfoForChain(chainId, CHAIN_IDs.MAINNET);
+    const price = await priceClient.getPriceByAddress(nativeTokenInfo.address);
+    pricesByAsset[`native:${chainId}`] = formatExampleUsdPrice(Number(price.price));
+  }
+
+  return pricesByAsset;
+}
+
+function printGasPriceDiagnostics(
+  diagnostics: { chainId: number; gasPriceGwei: string; source: string }[] | undefined
+): void {
+  if (!diagnostics || diagnostics.length === 0) {
+    return;
+  }
+
+  const lines = [
+    "Resolved graph gas prices (gwei):",
+    ...diagnostics.map(
+      ({ chainId, gasPriceGwei, source }) => `  chain ${chainId}: ${gasPriceGwei} gwei (${source.replace(/_/g, " ")})`
+    ),
+  ];
+  process.stderr.write(`${lines.join("\n")}\n`);
 }
 
 async function buildGraphRebalanceRoutes(
@@ -154,8 +237,20 @@ async function run(baseSigner: Signer, logger: winston.Logger): Promise<void> {
       rebalanceRoutes,
       rebalancerAdapters: rebalancerClient.adapters,
     });
+    printGasPriceDiagnostics(graph.gasPriceDiagnostics);
 
-    await Promise.all([writeJsonArtifact(process.env[GRAPH_JSON_OUT_ENV], buildJussiGraphJson(graph))]);
+    const graphJsonOutPath = process.env[GRAPH_JSON_OUT_ENV];
+    const rateLimitBucketsJsonOutPath =
+      process.env[RATE_LIMIT_BUCKETS_JSON_OUT_ENV] ?? defaultRateLimitBucketsArtifactPath(graphJsonOutPath);
+    const pricesByAssetJsonOutPath =
+      process.env[PRICES_BY_ASSET_JSON_OUT_ENV] ?? defaultPricesByAssetArtifactPath(graphJsonOutPath);
+    const graphJson = buildJussiGraphJson(graph);
+    const examplePricesByAsset = await buildExamplePricesByAsset(graphJson, logger);
+    await Promise.all([
+      writeJsonArtifact(graphJsonOutPath, graphJson),
+      writeJsonArtifact(rateLimitBucketsJsonOutPath, buildJussiRateLimitBucketsJson(graph)),
+      writeJsonArtifact(pricesByAssetJsonOutPath, examplePricesByAsset),
+    ]);
 
     process.stdout.write(`${JSON.stringify(buildJussiGraphEnvelope(graph), null, 2)}\n`);
   } finally {

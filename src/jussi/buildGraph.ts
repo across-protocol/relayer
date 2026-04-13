@@ -23,8 +23,10 @@ import {
   Contract,
   EvmAddress,
   ERC20,
+  ethers,
   MessagingFeeStruct,
   PriceClient,
+  Provider,
   SendParamStruct,
   Signer,
   TOKEN_SYMBOLS_MAP,
@@ -59,12 +61,14 @@ import { getAcrossHost } from "../clients/AcrossAPIClient";
 import { Options } from "@layerzerolabs/lz-v2-utilities";
 
 export type JussiRateDefinition = { numerator: string; denominator: string };
-export type JussiLogicalAssetDefinition = { decimals_by_chain: Record<string, number> };
+export type JussiLogicalAssetDefinition = {
+  decimals_by_chain: Record<string, number>;
+  native_price_alias_chain_ids?: string[];
+};
 export type JussiEdgeClassOutputSegmentDefinition = {
   up_to_input_usd: string;
   marginal_output_rate: JussiRateDefinition;
 };
-export type JussiEdgeCostSegmentDefinition = { up_to_input_usd: string; marginal_cost_per_unit_usd: string };
 export type JussiRateLimitBucketCostSegmentDefinition = {
   up_to_usage_usd: string;
   marginal_cost_per_unit_usd: string;
@@ -110,12 +114,10 @@ export type JussiEdgeDefinition = {
   from_node_key: string;
   to_node_key: string;
   input_capacity_native: string;
-  output: { fixed_input_fee_native: string; fixed_output_fee_native: string };
-  cost_usd: { fixed_cost_usd: string; segments: JussiEdgeCostSegmentDefinition[] };
+  cost: { fixed_input_fee_native: string; fixed_output_fee_native: string; fixed_cost_native: string };
   latency_seconds?: number;
 };
 type JussiPainModel = {
-  type: "threshold";
   surplus_annualized_cost_rate: string;
   deficit_annualized_cost_rate: string;
   out_of_band_severity_multiplier: string;
@@ -123,22 +125,38 @@ type JussiPainModel = {
 export type JussiPutGraphRequest = {
   latency_annualized_cost_rate: string;
   pain_model: JussiPainModel;
-  logical_assets: Record<LogicalAsset, JussiLogicalAssetDefinition>;
-  cumulative_balance_pain: Record<LogicalAsset, JussiCumulativeBalancePainDefinition>;
-  rate_limit_buckets: JussiRateLimitBucketDefinition[];
+  logical_assets: Record<string, JussiLogicalAssetDefinition>;
+  cumulative_balance_pain: Record<string, JussiCumulativeBalancePainDefinition>;
   edge_classes: JussiEdgeClassDefinition[];
   nodes: JussiNodeDefinition[];
   edges: JussiEdgeDefinition[];
 };
-export type BuiltJussiGraph = { graphId: string; payload: JussiPutGraphRequest };
+export type JussiPutGraphBundleRequest = {
+  graph: JussiPutGraphRequest;
+  rate_limit_buckets: JussiRateLimitBucketDefinition[];
+};
+export type JussiRateLimitBucketsJson = {
+  rate_limit_buckets: JussiRateLimitBucketDefinition[];
+};
+export type BuiltJussiGraph = {
+  graphId: string;
+  payload: JussiPutGraphRequest;
+  rate_limit_buckets: JussiRateLimitBucketDefinition[];
+  gasPriceDiagnostics?: JussiGasPriceDiagnostic[];
+};
+export type JussiGasPriceDiagnostic = {
+  chainId: number;
+  gasPriceWei: string;
+  gasPriceGwei: string;
+  source: "72h_avg" | "fallback_current_oracle";
+};
 
 type LogicalAsset = "USDC" | "USDT" | "WETH";
 type StableLogicalAsset = Exclude<LogicalAsset, "WETH">;
-export type JussiGraphEnvelope = { graph_id: string; payload: JussiPutGraphRequest };
-export type JussiGraphJson = JussiPutGraphRequest & {
-  graph_id: string;
-  graph_version: number;
-};
+export type JussiGraphEnvelope = { graph_id: string; payload: JussiPutGraphBundleRequest };
+export type JussiGraphJson = JussiPutGraphRequest;
+export type JussiGraphBundleJson = JussiPutGraphBundleRequest;
+export type JussiGraphRateLimitBucketsJson = JussiRateLimitBucketsJson;
 type EdgeFamily =
   | "binance"
   | "binance_cex_bridge"
@@ -152,6 +170,11 @@ type EdgeFamily =
 // prettier-ignore
 export type ManagedNodeTemplate = { chainId: number; tokenAddress: string; symbol: string; logicalAsset: LogicalAsset; decimals: number; tokenConfig?: TokenBalanceConfig; managed: boolean };
 export type ManagedNodeContext = ManagedNodeTemplate & { nodeKey: string; definition: JussiNodeDefinition };
+type ManagedNodeRatios = {
+  targetAllocationRatio: BigNumber;
+  minAllocationRatio: BigNumber;
+  maxAllocationRatio: BigNumber;
+};
 // prettier-ignore
 export type GraphEdgeCandidate = { family: EdgeFamily; adapterOrBridgeName: string; effectiveBridgeName?: string; from: ManagedNodeContext; to: ManagedNodeContext; rebalanceRoute?: RebalanceRoute };
 // prettier-ignore
@@ -159,7 +182,7 @@ type EdgeEconomics = {
   inputCapacityNative: BigNumber;
   fixedInputFeeNative: BigNumber;
   fixedOutputFeeNative: BigNumber;
-  fixedCostUsd: number;
+  fixedCostNative: BigNumber;
   latencySeconds: number;
 };
 type CostBreakdown = {
@@ -167,6 +190,10 @@ type CostBreakdown = {
   fixedOutputFeeDestinationNative: BigNumber;
   fixedCostUsd: number;
   latencySeconds: number;
+};
+type ResolvedGasPrice = {
+  gasPriceWei: BigNumber;
+  source: "72h_avg" | "fallback_current_oracle";
 };
 type OftQuoteReader = {
   sharedDecimals(): Promise<number>;
@@ -265,7 +292,6 @@ type HyperliquidInternalAdapter = {
 type BuildGraphParams = { logger: winston.Logger; baseSigner: Signer; relayerConfig: RelayerConfig; inventoryClient: InventoryClient; rebalanceRoutes: RebalanceRoute[]; rebalancerAdapters: Record<string, RebalancerAdapter>; graphId?: string; now?: Date };
 
 const HUB_CHAIN_ID = CHAIN_IDs.MAINNET;
-export const JUSSI_GRAPH_VERSION = 4;
 export const JUSSI_LOGICAL_ASSETS: readonly LogicalAsset[] = ["USDC", "USDT", "WETH"];
 const TRANSIENT_EDGE_PRICING_ERROR_PATTERNS = ["fetch failed", "recvWindow", "Too many requests", "429"];
 const EDGE_BUILD_BATCH_SIZE = Math.max(1, Number(process.env.JUSSI_EDGE_BUILD_BATCH_SIZE ?? "8") || 8);
@@ -274,6 +300,12 @@ const UNIVERSAL_INPUT_TIER_USD = "1000000000.000000";
 const EDGE_CLASS_INPUT_USD_SAMPLES = [1_000, 10_000, 100_000] as const;
 const EDGE_CLASS_RATE_SEGMENT_THRESHOLD_BPS = 5;
 const DEFAULT_LATENCY_ANNUALIZED_COST_RATE = "0.05";
+const GAS_COST_AVERAGE_LOOKBACK_SECONDS = 24 * 60 * 60;
+const GAS_COST_AVERAGE_SAMPLE_WINDOWS = 12;
+const GAS_COST_AVERAGE_WINDOW_BLOCKS = 8;
+const GAS_COST_PRIORITY_FEE_PERCENTILE = 50;
+const GAS_COST_BLOCK_TIME_SAMPLE_BLOCKS = 1024;
+const MIN_GAS_COST_BLOCK_TIME_SECONDS = 0.1;
 const BINANCE_RATE_LIMIT_BUCKET_ID = "binance_withdrawals_24h_usd";
 const SLOW_WITHDRAWAL_LATENCY_SECONDS = 7 * 24 * 60 * 60;
 const LINEA_SCROLL_WITHDRAWAL_LATENCY_SECONDS = 4 * 60 * 60;
@@ -303,7 +335,6 @@ const LATENCY_BY_FAMILY: Record<EdgeFamily, number> = {
   hyperlane: 20 * 60,
 };
 const DEFAULT_PAIN_MODEL = {
-  type: "threshold" as const,
   surplus_annualized_cost_rate: "0.000219",
   deficit_annualized_cost_rate: "0.002055",
   out_of_band_severity_multiplier: "4.0",
@@ -344,22 +375,24 @@ export function buildJussiGraphId(now = new Date()): string {
 export function buildJussiGraphEnvelope(graph: BuiltJussiGraph): JussiGraphEnvelope {
   return {
     graph_id: graph.graphId,
-    payload: graph.payload,
+    payload: buildJussiGraphBundleJson(graph),
   };
 }
 
 export function buildJussiGraphJson(graph: BuiltJussiGraph): JussiGraphJson {
+  return graph.payload;
+}
+
+export function buildJussiGraphBundleJson(graph: BuiltJussiGraph): JussiGraphBundleJson {
   return {
-    graph_id: graph.graphId,
-    graph_version: JUSSI_GRAPH_VERSION,
-    latency_annualized_cost_rate: graph.payload.latency_annualized_cost_rate,
-    pain_model: graph.payload.pain_model,
-    logical_assets: graph.payload.logical_assets,
-    cumulative_balance_pain: graph.payload.cumulative_balance_pain,
-    rate_limit_buckets: graph.payload.rate_limit_buckets,
-    edge_classes: graph.payload.edge_classes,
-    nodes: graph.payload.nodes,
-    edges: graph.payload.edges,
+    graph: buildJussiGraphJson(graph),
+    rate_limit_buckets: graph.rate_limit_buckets,
+  };
+}
+
+export function buildJussiRateLimitBucketsJson(graph: BuiltJussiGraph): JussiGraphRateLimitBucketsJson {
+  return {
+    rate_limit_buckets: graph.rate_limit_buckets,
   };
 }
 
@@ -423,9 +456,9 @@ export function resolveExchangeLatencySeconds(params: {
   );
 }
 
-function buildLogicalAssetDefinitions(
+export function buildLogicalAssetDefinitions(
   nodeContexts: ManagedNodeContext[]
-): Record<LogicalAsset, JussiLogicalAssetDefinition> {
+): Record<string, JussiLogicalAssetDefinition> {
   return Object.fromEntries(
     JUSSI_LOGICAL_ASSETS.map((logicalAsset) => {
       const decimals_by_chain = Object.fromEntries(
@@ -434,9 +467,46 @@ function buildLogicalAssetDefinitions(
           .map((node) => [String(node.chainId), node.decimals])
           .sort(([a], [b]) => Number(a) - Number(b))
       );
-      return [logicalAsset, { decimals_by_chain }];
+      const native_price_alias_chain_ids = Object.keys(decimals_by_chain)
+        .filter((chainId) => resolveNativePriceAliasLogicalAsset(Number(chainId)) === logicalAsset)
+        .sort((a, b) => Number(a) - Number(b));
+      return [
+        logicalAsset,
+        {
+          decimals_by_chain,
+          ...(native_price_alias_chain_ids.length > 0 ? { native_price_alias_chain_ids } : {}),
+        },
+      ];
     })
-  ) as Record<LogicalAsset, JussiLogicalAssetDefinition>;
+  );
+}
+
+function resolveNativePriceAliasLogicalAsset(chainId: number): LogicalAsset | undefined {
+  const nativeTokenSymbol = getNativeTokenInfoForChain(chainId, HUB_CHAIN_ID).symbol;
+  if (nativeTokenSymbol === "ETH" || nativeTokenSymbol === "WETH") {
+    return "WETH";
+  }
+  if (nativeTokenSymbol === "USDC" || nativeTokenSymbol === "USDC.e") {
+    return "USDC";
+  }
+  if (nativeTokenSymbol === "USDT") {
+    return "USDT";
+  }
+  return undefined;
+}
+
+export function resolveRequiredNativePriceChains(
+  logicalAssets: Record<string, JussiLogicalAssetDefinition>,
+  nodeContexts: ManagedNodeContext[]
+): number[] {
+  const coveredChainIds = new Set(
+    Object.values(logicalAssets)
+      .flatMap((definition) => definition.native_price_alias_chain_ids ?? [])
+      .map(Number)
+  );
+  return Array.from(new Set(nodeContexts.map((node) => node.chainId)))
+    .sort((a, b) => a - b)
+    .filter((chainId) => !coveredChainIds.has(chainId));
 }
 
 // The graph is built in stages: discover all nodes first, then project relayer allocation config into node ratios.
@@ -505,9 +575,12 @@ export function buildManagedNodeTemplates(
 }
 
 export function materializeNodeDefinitions(templates: ManagedNodeTemplate[]): ManagedNodeContext[] {
+  const managedNodeRatios = resolveManagedNodeRatios(templates);
   return templates.map((template) => {
     const nodeKey = canonicalNodeKey(template.chainId, template.tokenAddress);
-    const definition = template.managed ? buildManagedNodeDefinition(template) : buildNeutralNodeDefinition(template);
+    const definition = template.managed
+      ? buildManagedNodeDefinition(template, managedNodeRatios.get(nodeKey))
+      : buildNeutralNodeDefinition(template);
 
     return {
       ...template,
@@ -577,6 +650,22 @@ export async function buildJussiGraphDefinition(params: BuildGraphParams): Promi
     cumulativeBalancesByLogicalAsset,
   };
   const logicalAssets = buildLogicalAssetDefinitions(nodeContexts);
+  const requiredNativePriceChains = resolveRequiredNativePriceChains(logicalAssets, nodeContexts);
+  logBuild("Resolved native asset price requirements", {
+    nativePriceAliasChainIds: Object.values(logicalAssets)
+      .flatMap((definition) => definition.native_price_alias_chain_ids ?? [])
+      .map(Number)
+      .sort((a, b) => a - b),
+    requiredNativePriceChains,
+  });
+  const gasPriceDiagnostics = await pricingContext.describeGasPrices(nodeContexts.map((node) => node.chainId));
+  logBuild("Resolved gas prices for graph chains", {
+    gasPrices: gasPriceDiagnostics.map(({ chainId, gasPriceGwei, source }) => ({
+      chainId,
+      gasPriceGwei,
+      source,
+    })),
+  });
   const edgeClassCandidates = new Map<string, GraphEdgeCandidate>();
   edgeCandidates.forEach((candidate) => {
     const edgeClassId = resolveEdgeClassId(candidate);
@@ -626,7 +715,7 @@ export async function buildJussiGraphDefinition(params: BuildGraphParams): Promi
         fromNodeKey: edge.from_node_key,
         toNodeKey: edge.to_node_key,
         inputCapacityNative: edge.input_capacity_native,
-        fixedCostUsd: edge.cost_usd.fixed_cost_usd,
+        fixedCostNative: edge.cost.fixed_cost_native,
         latencySeconds: edge.latency_seconds,
       });
       return edge;
@@ -637,16 +726,17 @@ export async function buildJussiGraphDefinition(params: BuildGraphParams): Promi
 
   return {
     graphId,
+    gasPriceDiagnostics,
+    rate_limit_buckets: Array.from(edgeClassDefinitions.values()).some((edgeClass) =>
+      isDefined(edgeClass.rate_limit_bucket_id)
+    )
+      ? DEFAULT_RATE_LIMIT_BUCKETS
+      : [],
     payload: {
       latency_annualized_cost_rate: DEFAULT_LATENCY_ANNUALIZED_COST_RATE,
       pain_model: DEFAULT_PAIN_MODEL,
       logical_assets: logicalAssets,
       cumulative_balance_pain: buildCumulativeBalancePainDefinitions(cumulativeBalancesByLogicalAsset),
-      rate_limit_buckets: Array.from(edgeClassDefinitions.values()).some((edgeClass) =>
-        isDefined(edgeClass.rate_limit_bucket_id)
-      )
-        ? DEFAULT_RATE_LIMIT_BUCKETS
-        : [],
       edge_classes: Array.from(edgeClassDefinitions.values()).sort((a, b) =>
         a.edge_class_id.localeCompare(b.edge_class_id)
       ),
@@ -656,14 +746,80 @@ export async function buildJussiGraphDefinition(params: BuildGraphParams): Promi
   };
 }
 
-function buildManagedNodeDefinition(template: ManagedNodeTemplate): JussiNodeDefinition {
+function resolveManagedNodeRatios(templates: ManagedNodeTemplate[]): Map<string, ManagedNodeRatios> {
+  const managedTemplatesByLogicalAsset = new Map<LogicalAsset, ManagedNodeTemplate[]>();
+  templates
+    .filter((template) => template.managed && isDefined(template.tokenConfig))
+    .forEach((template) => {
+      const existing = managedTemplatesByLogicalAsset.get(template.logicalAsset) ?? [];
+      existing.push(template);
+      managedTemplatesByLogicalAsset.set(template.logicalAsset, existing);
+    });
+  const normalizedRatios = new Map<string, ManagedNodeRatios>();
+  const unitRatio = toBNWei(1);
+
+  Array.from(managedTemplatesByLogicalAsset.values()).forEach((logicalAssetTemplates) => {
+    const totalTargetAllocation = logicalAssetTemplates.reduce(
+      (sum, template) => sum.add(template.tokenConfig!.targetPct),
+      bnZero
+    );
+
+    if (totalTargetAllocation.eq(0)) {
+      logicalAssetTemplates.forEach((template) => {
+        normalizedRatios.set(canonicalNodeKey(template.chainId, template.tokenAddress), {
+          targetAllocationRatio: bnZero,
+          minAllocationRatio: bnZero,
+          maxAllocationRatio: bnZero,
+        });
+      });
+      return;
+    }
+
+    const positiveTargetTemplates = logicalAssetTemplates.filter((template) => template.tokenConfig!.targetPct.gt(0));
+    let assignedTargetAllocation = bnZero;
+
+    positiveTargetTemplates.forEach((template, index) => {
+      const tokenConfig = template.tokenConfig!;
+      const rawMaxAllocation = tokenConfig.targetPct.mul(tokenConfig.targetOverageBuffer).div(unitRatio);
+      const isLastPositiveTarget = index === positiveTargetTemplates.length - 1;
+      const targetAllocationRatio = isLastPositiveTarget
+        ? unitRatio.sub(assignedTargetAllocation)
+        : tokenConfig.targetPct.mul(unitRatio).div(totalTargetAllocation);
+      const minAllocationRatio = tokenConfig.thresholdPct.mul(unitRatio).div(totalTargetAllocation);
+      const maxAllocationRatio = rawMaxAllocation.mul(unitRatio).div(totalTargetAllocation);
+
+      assignedTargetAllocation = assignedTargetAllocation.add(targetAllocationRatio);
+      normalizedRatios.set(canonicalNodeKey(template.chainId, template.tokenAddress), {
+        targetAllocationRatio,
+        minAllocationRatio: minAllocationRatio.gt(targetAllocationRatio) ? targetAllocationRatio : minAllocationRatio,
+        maxAllocationRatio: maxAllocationRatio.lt(targetAllocationRatio) ? targetAllocationRatio : maxAllocationRatio,
+      });
+    });
+
+    logicalAssetTemplates
+      .filter((template) => template.tokenConfig!.targetPct.eq(0))
+      .forEach((template) => {
+        normalizedRatios.set(canonicalNodeKey(template.chainId, template.tokenAddress), {
+          targetAllocationRatio: bnZero,
+          minAllocationRatio: bnZero,
+          maxAllocationRatio: bnZero,
+        });
+      });
+  });
+
+  return normalizedRatios;
+}
+
+function buildManagedNodeDefinition(template: ManagedNodeTemplate, ratios?: ManagedNodeRatios): JussiNodeDefinition {
   assert(
     isDefined(template.tokenConfig),
     `Managed node ${template.symbol} on ${template.chainId} is missing token config`
   );
-  const maxAllocationRatio = template.tokenConfig.targetPct
-    .mul(template.tokenConfig.targetOverageBuffer)
-    .div(toBNWei(1));
+  const normalizedRatios = ratios ?? {
+    targetAllocationRatio: template.tokenConfig.targetPct,
+    minAllocationRatio: template.tokenConfig.thresholdPct,
+    maxAllocationRatio: template.tokenConfig.targetPct.mul(template.tokenConfig.targetOverageBuffer).div(toBNWei(1)),
+  };
 
   return {
     node_key: "",
@@ -672,9 +828,9 @@ function buildManagedNodeDefinition(template: ManagedNodeTemplate): JussiNodeDef
     symbol: template.symbol,
     logical_asset: template.logicalAsset,
     decimals: template.decimals,
-    target_allocation_ratio: formatUnits(template.tokenConfig.targetPct, 18),
-    min_allocation_ratio: formatUnits(template.tokenConfig.thresholdPct, 18),
-    max_allocation_ratio: formatUnits(maxAllocationRatio, 18),
+    target_allocation_ratio: formatUnits(normalizedRatios.targetAllocationRatio, 18),
+    min_allocation_ratio: formatUnits(normalizedRatios.minAllocationRatio, 18),
+    max_allocation_ratio: formatUnits(normalizedRatios.maxAllocationRatio, 18),
   };
 }
 
@@ -696,7 +852,7 @@ function buildNeutralNodeDefinition(template: ManagedNodeTemplate): JussiNodeDef
 
 export function buildCumulativeBalancePainDefinitions(
   cumulativeBalancesByLogicalAsset: Record<LogicalAsset, BigNumber>
-): Record<LogicalAsset, JussiCumulativeBalancePainDefinition> {
+): Record<string, JussiCumulativeBalancePainDefinition> {
   return Object.fromEntries(
     JUSSI_LOGICAL_ASSETS.map((logicalAsset) => {
       const targetBalanceNative = cumulativeBalancesByLogicalAsset[logicalAsset];
@@ -713,7 +869,7 @@ export function buildCumulativeBalancePainDefinitions(
         },
       ];
     })
-  ) as Record<LogicalAsset, JussiCumulativeBalancePainDefinition>;
+  );
 }
 
 // Candidate discovery is pure topology: the graph should only contain direct
@@ -1016,18 +1172,10 @@ function serializeEdgeDefinition(
     from_node_key: candidate.from.nodeKey,
     to_node_key: candidate.to.nodeKey,
     input_capacity_native: economics.inputCapacityNative.toString(),
-    output: {
+    cost: {
       fixed_input_fee_native: economics.fixedInputFeeNative.toString(),
       fixed_output_fee_native: economics.fixedOutputFeeNative.toString(),
-    },
-    cost_usd: {
-      fixed_cost_usd: formatDecimal(economics.fixedCostUsd),
-      segments: [
-        {
-          up_to_input_usd: UNIVERSAL_INPUT_TIER_USD,
-          marginal_cost_per_unit_usd: "0",
-        },
-      ],
+      fixed_cost_native: economics.fixedCostNative.toString(),
     },
     latency_seconds: economics.latencySeconds,
   };
@@ -1270,7 +1418,10 @@ async function estimateDirectionalHyperliquidMarginalOutputRate(
 }
 
 export function resolveOftQuoteSendFeeAsset(chainId: number): string {
-  assert(!chainHasNativeToken(chainId), `OFT fee asset override is only required for non-native fee chains: ${chainId}`);
+  assert(
+    !chainHasNativeToken(chainId),
+    `OFT fee asset override is only required for non-native fee chains: ${chainId}`
+  );
   const lzFeeToken = LZ_FEE_TOKENS[chainId];
   assert(isDefined(lzFeeToken), `Missing LZ fee token mapping for OFT chain ${chainId}`);
   return lzFeeToken.toNative();
@@ -1453,7 +1604,7 @@ async function estimateEdgeEconomics(
       inputCapacityNative: referenceInputNative,
       fixedInputFeeNative: minBigNumber(breakdown.fixedInputFeeSourceNative, referenceInputNative),
       fixedOutputFeeNative: breakdown.fixedOutputFeeDestinationNative,
-      fixedCostUsd: breakdown.fixedCostUsd,
+      fixedCostNative: await params.pricingContext.usdToNativeValue(breakdown.fixedCostUsd, candidate.from.chainId),
       latencySeconds: breakdown.latencySeconds,
     };
   } catch (error) {
@@ -1507,7 +1658,7 @@ async function estimateCctpBreakdown(
   return {
     fixedInputFeeSourceNative: bnZero,
     fixedOutputFeeDestinationNative: bnZero,
-    fixedCostUsd: await params.pricingContext.deriveGasFloorUsd(candidate.family, candidate.from.chainId),
+    fixedCostUsd: await params.pricingContext.deriveGasCostUsd(candidate.family, candidate.from.chainId),
     latencySeconds: resolveGraphBridgeLatencySeconds(candidate),
   };
 }
@@ -1517,8 +1668,8 @@ async function estimateOftBreakdown(
   amount: BigNumber,
   params: BridgeBreakdownParams
 ): Promise<CostBreakdown> {
-  const [gasFloorUsd, oftRouteQuote] = await Promise.all([
-    params.pricingContext.deriveGasFloorUsd(candidate.family, candidate.from.chainId),
+  const [gasCostUsd, oftRouteQuote] = await Promise.all([
+    params.pricingContext.deriveGasCostUsd(candidate.family, candidate.from.chainId),
     quoteLiveOftRouteTransfer(candidate, amount, params.baseSigner),
   ]);
   assert(
@@ -1536,7 +1687,7 @@ async function estimateOftBreakdown(
   return {
     fixedInputFeeSourceNative: bnZero,
     fixedOutputFeeDestinationNative: bnZero,
-    fixedCostUsd: gasFloorUsd + quotedMessageFeeUsd,
+    fixedCostUsd: gasCostUsd + quotedMessageFeeUsd,
     latencySeconds: resolveBridgeLatencySeconds("oft", candidate.from.chainId, candidate.from.logicalAsset),
   };
 }
@@ -1656,7 +1807,7 @@ async function estimateBinanceCexBridgeBreakdown(
   return {
     fixedInputFeeSourceNative: bnZero,
     fixedOutputFeeDestinationNative: toBNWei(withdrawFeeConfig.withdrawFee, candidate.to.decimals),
-    fixedCostUsd: await params.pricingContext.deriveGasFloorUsd(candidate.family, candidate.from.chainId),
+    fixedCostUsd: await params.pricingContext.deriveGasCostUsd(candidate.family, candidate.from.chainId),
     latencySeconds: resolveGraphBridgeLatencySeconds(candidate),
   };
 }
@@ -1668,7 +1819,7 @@ async function estimateBridgeApiBreakdown(
   return {
     fixedInputFeeSourceNative: bnZero,
     fixedOutputFeeDestinationNative: bnZero,
-    fixedCostUsd: await params.pricingContext.deriveGasFloorUsd(candidate.family, candidate.from.chainId),
+    fixedCostUsd: await params.pricingContext.deriveGasCostUsd(candidate.family, candidate.from.chainId),
     latencySeconds: LATENCY_BY_FAMILY.bridgeapi,
   };
 }
@@ -1683,7 +1834,7 @@ async function estimateQuotedBridgeBreakdown(
   return {
     fixedInputFeeSourceNative: bnZero,
     fixedOutputFeeDestinationNative: bnZero,
-    fixedCostUsd: Math.max(quotedFeeUsd, await params.pricingContext.deriveGasFloorUsd(family, candidate.from.chainId)),
+    fixedCostUsd: Math.max(quotedFeeUsd, await params.pricingContext.deriveGasCostUsd(family, candidate.from.chainId)),
     latencySeconds: resolveGraphBridgeLatencySeconds(candidate),
   };
 }
@@ -1722,7 +1873,7 @@ async function initializeExchangeBreakdown(
   return {
     fixedInputFeeSourceNative: bnZero,
     fixedOutputFeeDestinationNative: bnZero,
-    fixedCostUsd: await pricingContext.deriveGasFloorUsd(candidate.family, candidate.from.chainId),
+    fixedCostUsd: await pricingContext.deriveGasCostUsd(candidate.family, candidate.from.chainId),
     sourceBridgeLatencySeconds: 0,
     destinationBridgeLatencySeconds: 0,
   };
@@ -1872,14 +2023,9 @@ function minBigNumber(a: BigNumber, b: BigNumber): BigNumber {
   return a.lte(b) ? a : b;
 }
 
-function formatDecimal(value: number): string {
-  const normalized = Number.isFinite(value) ? value : 0;
-  return normalized.toFixed(12).replace(/\.?0+$/, "") || "0";
-}
-
 class RuntimePricingContext {
   private readonly priceClient: PriceClient;
-  private readonly gasPriceCache = new Map<number, Promise<BigNumber>>();
+  private readonly gasPriceCache = new Map<number, Promise<ResolvedGasPrice>>();
   private readonly nativePriceCache = new Map<number, Promise<number>>();
   private readonly logicalAssetPriceCache = new Map<LogicalAsset, Promise<number>>();
   private readonly tokenPriceCache = new Map<string, Promise<number>>();
@@ -1893,13 +2039,26 @@ class RuntimePricingContext {
     ]);
   }
 
-  async deriveGasFloorUsd(family: EdgeFamily, chainId: number): Promise<number> {
+  async deriveGasCostUsd(family: EdgeFamily, chainId: number): Promise<number> {
     const gasUnits = GAS_UNITS_BY_FAMILY[family];
     const gasPrice = await this.getGasPrice(chainId);
     const nativePriceUsd = await this.getNativeTokenPriceUsd(chainId);
     const nativeTokenInfo = getNativeTokenInfoForChain(chainId, HUB_CHAIN_ID);
     const gasCostNative = gasPrice.mul(gasUnits);
     return parseFloat(formatUnits(gasCostNative, nativeTokenInfo.decimals)) * nativePriceUsd;
+  }
+
+  async describeGasPrices(chainIds: number[]): Promise<JussiGasPriceDiagnostic[]> {
+    const uniqueChainIds = Array.from(new Set(chainIds)).sort((a, b) => a - b);
+    return mapAsync(uniqueChainIds, async (chainId) => {
+      const resolvedGasPrice = await this.getResolvedGasPrice(chainId);
+      return {
+        chainId,
+        gasPriceWei: resolvedGasPrice.gasPriceWei.toString(),
+        gasPriceGwei: formatUnits(resolvedGasPrice.gasPriceWei, "gwei"),
+        source: resolvedGasPrice.source,
+      };
+    });
   }
 
   async nativeValueToUsd(value: BigNumber, chainId: number): Promise<number> {
@@ -1923,6 +2082,17 @@ class RuntimePricingContext {
     return parseFloat(formatUnits(value, decimals)) * tokenPriceUsd;
   }
 
+  async usdToNativeValue(usdValue: number, chainId: number): Promise<BigNumber> {
+    if (!(usdValue > 0)) {
+      return bnZero;
+    }
+    const nativeTokenInfo = getNativeTokenInfoForChain(chainId, HUB_CHAIN_ID);
+    const nativePriceUsd = await this.getNativeTokenPriceUsd(chainId);
+    assert(nativePriceUsd > 0, `Resolved non-positive native token price for ${chainId}`);
+    const nativeAmount = usdValue / nativePriceUsd;
+    return toBNWei(truncate(nativeAmount, nativeTokenInfo.decimals).toString(), nativeTokenInfo.decimals);
+  }
+
   async getLogicalAssetPriceUsd(logicalAsset: LogicalAsset): Promise<number> {
     if (logicalAsset === "USDC" || logicalAsset === "USDT") {
       return STABLECOIN_PRICE_USD[logicalAsset];
@@ -1935,26 +2105,125 @@ class RuntimePricingContext {
   }
 
   private getGasPrice(chainId: number): Promise<BigNumber> {
+    return this.getResolvedGasPrice(chainId).then(({ gasPriceWei }) => gasPriceWei);
+  }
+
+  private getResolvedGasPrice(chainId: number): Promise<ResolvedGasPrice> {
     return this.loadCachedValue(this.gasPriceCache, chainId, async () => {
+      const provider = await getProvider(chainId);
       try {
-        const provider = await getProvider(chainId);
+        const averageGasPrice = await this.deriveAverageGasPrice(provider);
+        assert(
+          isDefined(averageGasPrice) && averageGasPrice.gt(bnZero),
+          `Resolved non-positive gas price for ${chainId}`
+        );
+        return { gasPriceWei: averageGasPrice, source: "72h_avg" };
+      } catch (error) {
+        this.logger.warn({
+          at: "buildGraph.RuntimePricingContext.getGasPrice",
+          message: "Failed to query 72h average gas price, falling back to current gasPriceOracle estimate",
+          chainId,
+          error: error instanceof Error ? error.message : String(error),
+        });
         const feeData = await getOracleGasPrice(provider, 1, 1);
         const resolved = feeData.maxFeePerGas ?? feeData.maxPriorityFeePerGas;
         assert(
           isDefined(resolved) && resolved.gt(bnZero),
           `Gas price oracle returned no usable gas price for ${chainId}`
         );
-        return resolved;
-      } catch (error) {
-        this.logger.error({
-          at: "buildGraph.RuntimePricingContext.getGasPrice",
-          message: "Failed to query gas price from gasPriceOracle",
-          chainId,
-          error: error instanceof Error ? error.message : String(error),
-        });
-        throw error;
+        return { gasPriceWei: resolved, source: "fallback_current_oracle" };
       }
     });
+  }
+
+  private async deriveAverageGasPrice(provider: Provider): Promise<BigNumber> {
+    const latestBlock = await provider.getBlock("latest");
+    assert(
+      isDefined(latestBlock) && isDefined(latestBlock.number) && isDefined(latestBlock.timestamp),
+      "Provider returned no latest block when deriving average gas price"
+    );
+    const oldestBlockNumber = await this.estimateLookbackStartBlockNumber(
+      provider,
+      latestBlock.number,
+      latestBlock.timestamp
+    );
+    const sampleBlocks = this.buildGasPriceSampleBlocks(oldestBlockNumber, latestBlock.number);
+    const samplePrices = await mapAsync(sampleBlocks, async (blockNumber) =>
+      this.deriveWindowAverageGasPrice(provider, blockNumber)
+    );
+    const populatedSamplePrices = samplePrices.filter((price) => price.gt(bnZero));
+    assert(populatedSamplePrices.length > 0, "No positive gas price samples returned from fee history");
+    return populatedSamplePrices.reduce((sum, price) => sum.add(price), bnZero).div(populatedSamplePrices.length);
+  }
+
+  private async estimateLookbackStartBlockNumber(
+    provider: Provider,
+    latestBlockNumber: number,
+    latestBlockTimestamp: number
+  ): Promise<number> {
+    if (latestBlockNumber <= 0) {
+      return 0;
+    }
+
+    const sampledBlockDistance = Math.max(1, Math.min(GAS_COST_BLOCK_TIME_SAMPLE_BLOCKS, latestBlockNumber));
+    const sampledBlockNumber = latestBlockNumber - sampledBlockDistance;
+    const sampledBlock = await provider.getBlock(sampledBlockNumber);
+    assert(
+      isDefined(sampledBlock) && isDefined(sampledBlock.timestamp),
+      `Provider returned no block data for block ${sampledBlockNumber}`
+    );
+    const elapsedSeconds = Math.max(1, latestBlockTimestamp - sampledBlock.timestamp);
+    const estimatedSecondsPerBlock = Math.max(MIN_GAS_COST_BLOCK_TIME_SECONDS, elapsedSeconds / sampledBlockDistance);
+    const estimatedLookbackBlocks = Math.ceil(GAS_COST_AVERAGE_LOOKBACK_SECONDS / estimatedSecondsPerBlock);
+    return Math.max(0, latestBlockNumber - estimatedLookbackBlocks);
+  }
+
+  private buildGasPriceSampleBlocks(oldestBlockNumber: number, latestBlockNumber: number): number[] {
+    if (latestBlockNumber <= oldestBlockNumber) {
+      return [latestBlockNumber];
+    }
+
+    const sampleCount = Math.min(GAS_COST_AVERAGE_SAMPLE_WINDOWS, latestBlockNumber - oldestBlockNumber + 1);
+    const sampleBlocks = new Set<number>();
+    for (let index = 0; index < sampleCount; index += 1) {
+      const fraction = sampleCount === 1 ? 1 : index / (sampleCount - 1);
+      sampleBlocks.add(Math.round(oldestBlockNumber + (latestBlockNumber - oldestBlockNumber) * fraction));
+    }
+    return Array.from(sampleBlocks).sort((a, b) => a - b);
+  }
+
+  private async deriveWindowAverageGasPrice(provider: Provider, blockNumber: number): Promise<BigNumber> {
+    const blockCount = Math.max(1, Math.min(GAS_COST_AVERAGE_WINDOW_BLOCKS, blockNumber + 1));
+    const feeHistory = (await provider.send("eth_feeHistory", [
+      ethers.utils.hexValue(blockCount),
+      ethers.utils.hexValue(blockNumber),
+      [GAS_COST_PRIORITY_FEE_PERCENTILE],
+    ])) as {
+      baseFeePerGas?: string[];
+      reward?: string[][];
+    };
+    const sampleCount = Math.min(blockCount, Math.max((feeHistory.baseFeePerGas?.length ?? 0) - 1, 0));
+    let totalGasPrice = bnZero;
+    let countedSamples = 0;
+
+    for (let index = 0; index < sampleCount; index += 1) {
+      const baseFeePerGas = BigNumber.from(feeHistory.baseFeePerGas?.[index] ?? "0");
+      const priorityFeePerGas = BigNumber.from(feeHistory.reward?.[index]?.[0] ?? "0");
+      const gasPrice = baseFeePerGas.add(priorityFeePerGas);
+      if (!gasPrice.gt(bnZero)) {
+        continue;
+      }
+      totalGasPrice = totalGasPrice.add(gasPrice);
+      countedSamples += 1;
+    }
+
+    if (countedSamples > 0) {
+      return totalGasPrice.div(countedSamples);
+    }
+
+    const fallbackGasPrice = await provider.getGasPrice();
+    assert(fallbackGasPrice.gt(bnZero), `Provider returned no usable legacy gas price for block ${blockNumber}`);
+    return fallbackGasPrice;
   }
 
   private getNativeTokenPriceUsd(chainId: number): Promise<number> {
