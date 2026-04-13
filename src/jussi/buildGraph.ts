@@ -4,6 +4,8 @@ import {
   CCTP_MAX_SEND_AMOUNT,
   CUSTOM_BRIDGE,
   CUSTOM_L2_BRIDGE,
+  IOFT_ABI_FULL,
+  LZ_FEE_TOKENS,
   TOKEN_SPLITTER_BRIDGES,
 } from "../common";
 import { EXPECTED_L1_TO_L2_MESSAGE_TIME, SLOW_WITHDRAWAL_CHAINS } from "../common/Constants";
@@ -11,7 +13,6 @@ import { InventoryClient } from "../clients";
 import { InventoryConfig, TokenBalanceConfig, isAliasConfig } from "../interfaces/InventoryManagement";
 import { RelayerConfig } from "../relayer/RelayerConfig";
 import { BinanceStablecoinSwapAdapter, isSameBinanceCoinRoute } from "../rebalancer/adapters/binance";
-import { OftAdapter } from "../rebalancer/adapters/oftAdapter";
 import { RebalanceRoute, RebalancerAdapter } from "../rebalancer/utils/interfaces";
 import {
   acrossApi,
@@ -19,12 +20,17 @@ import {
   BINANCE_NETWORKS,
   CHAIN_IDs,
   ConvertDecimals,
+  Contract,
   EvmAddress,
+  ERC20,
+  MessagingFeeStruct,
   PriceClient,
+  SendParamStruct,
   Signer,
   TOKEN_SYMBOLS_MAP,
   assert,
   bnZero,
+  chainHasNativeToken,
   chainIsSvm,
   chunk,
   coingecko,
@@ -33,19 +39,24 @@ import {
   defiLlama,
   formatUnits,
   getGasPrice as getOracleGasPrice,
+  getEndpointId,
+  getMessengerEvm,
   getNativeTokenInfoForChain,
   getProvider,
   getRemoteTokenForL1Token,
   getTokenInfo,
   getTokenInfoFromSymbol,
   isDefined,
+  formatToAddress,
   mapAsync,
+  roundAmountToSend,
   toBNWei,
   toAddressType,
   truncate,
   winston,
 } from "../utils";
 import { getAcrossHost } from "../clients/AcrossAPIClient";
+import { Options } from "@layerzerolabs/lz-v2-utilities";
 
 export type JussiRateDefinition = { numerator: string; denominator: string };
 export type JussiLogicalAssetDefinition = { decimals_by_chain: Record<string, number> };
@@ -157,6 +168,20 @@ type CostBreakdown = {
   fixedCostUsd: number;
   latencySeconds: number;
 };
+type OftQuoteReader = {
+  sharedDecimals(): Promise<number>;
+  quoteOFT(
+    sendParamStruct: SendParamStruct
+  ): Promise<[unknown, Array<{ feeAmountLD: BigNumber | string; description: string }>, { amountReceivedLD: string }]>;
+  quoteSend(sendParamStruct: SendParamStruct, payInLzToken: boolean): Promise<MessagingFeeStruct>;
+};
+export type OftRouteTransferQuote = {
+  roundedInputSourceNative: BigNumber;
+  amountReceivedDestinationNative: BigNumber;
+  messageFeeAssetAddress: string;
+  messageFeeAmount: BigNumber;
+  sendParamStruct: SendParamStruct;
+};
 // prettier-ignore
 type BridgeBreakdownParams = { baseSigner: Signer; pricingContext: RuntimePricingContext; rebalancerAdapters: Record<string, RebalancerAdapter> };
 type ExchangeBreakdownParams = BridgeBreakdownParams & { logger: winston.Logger };
@@ -252,6 +277,7 @@ const BINANCE_RATE_LIMIT_BUCKET_ID = "binance_withdrawals_24h_usd";
 const SLOW_WITHDRAWAL_LATENCY_SECONDS = 7 * 24 * 60 * 60;
 const LINEA_SCROLL_WITHDRAWAL_LATENCY_SECONDS = 4 * 60 * 60;
 const ZKSTACK_WITHDRAWAL_LATENCY_SECONDS = 60 * 60;
+const MONAD_EXECUTOR_LZ_RECEIVE_GAS_LIMIT = 120_000;
 const GAS_UNITS_BY_FAMILY: Record<EdgeFamily, number> = {
   cctp: 250_000,
   oft: 320_000,
@@ -958,7 +984,7 @@ export function dedupeGraphEdgeCandidates(candidates: GraphEdgeCandidate[]): Gra
 
 async function serializeEdgeClassDefinition(
   candidate: GraphEdgeCandidate,
-  params: Pick<EdgePricingParams, "pricingContext" | "rebalancerAdapters">
+  params: Pick<EdgePricingParams, "baseSigner" | "pricingContext" | "rebalancerAdapters">
 ): Promise<JussiEdgeClassDefinition> {
   const edge_class_id = resolveEdgeClassId(candidate);
   return {
@@ -1022,11 +1048,14 @@ function resolveRateLimitBucketId(family: EdgeFamily): string | undefined {
 
 async function resolveOutputSegments(
   candidate: GraphEdgeCandidate,
-  params: Pick<EdgePricingParams, "pricingContext" | "rebalancerAdapters">
+  params: Pick<EdgePricingParams, "baseSigner" | "pricingContext" | "rebalancerAdapters">
 ): Promise<JussiEdgeClassOutputSegmentDefinition[]> {
+  if (candidate.family === "oft") {
+    return estimateSampledOutputSegments(candidate, params, estimateOftMarginalOutputRateAtUsd);
+  }
+
   if (
     candidate.family === "cctp" ||
-    candidate.family === "oft" ||
     candidate.family === "canonical" ||
     candidate.family === "bridgeapi" ||
     candidate.family === "hyperlane" ||
@@ -1037,23 +1066,23 @@ async function resolveOutputSegments(
   }
 
   if (candidate.family === "hyperliquid") {
-    return estimateSampledExchangeOutputSegments(candidate, params, estimateHyperliquidMarginalOutputRateAtUsd);
+    return estimateSampledOutputSegments(candidate, params, estimateHyperliquidMarginalOutputRateAtUsd);
   }
 
   if (candidate.family === "binance") {
-    return estimateSampledExchangeOutputSegments(candidate, params, estimateBinanceMarginalOutputRateAtUsd);
+    return estimateSampledOutputSegments(candidate, params, estimateBinanceMarginalOutputRateAtUsd);
   }
 
   return [{ up_to_input_usd: UNIVERSAL_INPUT_TIER_USD, marginal_output_rate: { numerator: "1", denominator: "1" } }];
 }
 
-async function estimateSampledExchangeOutputSegments(
+async function estimateSampledOutputSegments(
   candidate: GraphEdgeCandidate,
-  params: Pick<EdgePricingParams, "pricingContext" | "rebalancerAdapters">,
+  params: Pick<EdgePricingParams, "baseSigner" | "pricingContext" | "rebalancerAdapters">,
   estimateRateAtUsd: (
     candidate: GraphEdgeCandidate,
     inputUsd: number,
-    params: Pick<EdgePricingParams, "pricingContext" | "rebalancerAdapters">
+    params: Pick<EdgePricingParams, "baseSigner" | "pricingContext" | "rebalancerAdapters">
   ) => Promise<JussiRateDefinition>
 ): Promise<JussiEdgeClassOutputSegmentDefinition[]> {
   const samples = await Promise.all(
@@ -1236,6 +1265,106 @@ async function estimateDirectionalHyperliquidMarginalOutputRate(
   return decimalToRate(netOutputReadable / Math.max(referenceOutputReadable, Number.EPSILON));
 }
 
+export function resolveOftQuoteSendFeeAsset(chainId: number): string {
+  if (chainHasNativeToken(chainId)) {
+    return getNativeTokenInfoForChain(chainId, HUB_CHAIN_ID).address;
+  }
+
+  const lzFeeToken = LZ_FEE_TOKENS[chainId];
+  assert(isDefined(lzFeeToken), `Missing LZ fee token mapping for OFT chain ${chainId}`);
+  return lzFeeToken.toNative();
+}
+
+export function resolveOftQuoteExtraOptions(destinationChain: number): SendParamStruct["extraOptions"] {
+  return destinationChain === CHAIN_IDs.MONAD
+    ? Options.newOptions().addExecutorLzReceiveOption(MONAD_EXECUTOR_LZ_RECEIVE_GAS_LIMIT).toBytes()
+    : "0x";
+}
+
+export async function quoteOftRouteTransfer(params: {
+  reader: OftQuoteReader;
+  originChain: number;
+  destinationChain: number;
+  sourceDecimals: number;
+  recipient: EvmAddress;
+  amount: BigNumber;
+}): Promise<OftRouteTransferQuote> {
+  const { reader, originChain, destinationChain, sourceDecimals, recipient, amount } = params;
+  const sharedDecimals = await reader.sharedDecimals();
+  const roundedAmount = roundAmountToSend(amount, sourceDecimals, sharedDecimals);
+  const sendParamStruct: SendParamStruct = {
+    dstEid: getEndpointId(destinationChain),
+    to: formatToAddress(recipient),
+    amountLD: roundedAmount,
+    minAmountLD: roundedAmount,
+    extraOptions: resolveOftQuoteExtraOptions(destinationChain),
+    composeMsg: "0x",
+    oftCmd: "0x",
+  };
+  const quoteOftResult = (await reader.quoteOFT(sendParamStruct)) as unknown as [
+    unknown,
+    Array<{ feeAmountLD: BigNumber | string; description: string }>,
+    { amountReceivedLD: BigNumber | string },
+  ];
+  const amountReceivedDestinationNative = BigNumber.from(quoteOftResult[2].amountReceivedLD);
+  const finalSendParamStruct: SendParamStruct = {
+    ...sendParamStruct,
+    minAmountLD: amountReceivedDestinationNative,
+  };
+  const feeStruct = await reader.quoteSend(finalSendParamStruct, false);
+
+  return {
+    roundedInputSourceNative: roundedAmount,
+    amountReceivedDestinationNative,
+    messageFeeAssetAddress: resolveOftQuoteSendFeeAsset(originChain),
+    messageFeeAmount: BigNumber.from(feeStruct.nativeFee),
+    sendParamStruct: finalSendParamStruct,
+  };
+}
+
+async function quoteLiveOftRouteTransfer(
+  candidate: GraphEdgeCandidate,
+  amount: BigNumber,
+  baseSigner: Signer
+): Promise<OftRouteTransferQuote> {
+  const l1Token = EvmAddress.from(TOKEN_SYMBOLS_MAP[candidate.from.logicalAsset].addresses[HUB_CHAIN_ID]);
+  const originProvider = await getProvider(candidate.from.chainId);
+  const messengerAddress = getMessengerEvm(l1Token, candidate.from.chainId);
+  const reader = new Contract(messengerAddress.toNative(), IOFT_ABI_FULL, originProvider) as unknown as OftQuoteReader;
+
+  return quoteOftRouteTransfer({
+    reader,
+    originChain: candidate.from.chainId,
+    destinationChain: candidate.to.chainId,
+    sourceDecimals: candidate.from.decimals,
+    recipient: EvmAddress.from(await baseSigner.getAddress()),
+    amount,
+  });
+}
+
+async function estimateOftMarginalOutputRateAtUsd(
+  candidate: GraphEdgeCandidate,
+  inputUsd: number,
+  params: Pick<EdgePricingParams, "baseSigner" | "pricingContext">
+): Promise<JussiRateDefinition> {
+  const referenceInputNative = await resolveUsdNotionalInputNative(
+    candidate.from.logicalAsset,
+    candidate.from.decimals,
+    inputUsd,
+    params.pricingContext
+  );
+  const quote = await quoteLiveOftRouteTransfer(candidate, referenceInputNative, params.baseSigner);
+  const outputReadable = parseFloat(formatUnits(quote.amountReceivedDestinationNative, candidate.to.decimals));
+  const referenceOutputReadable = await quoteReferenceOutputReadable(
+    candidate.from.logicalAsset,
+    candidate.to.logicalAsset,
+    quote.roundedInputSourceNative,
+    candidate.from.decimals,
+    params.pricingContext
+  );
+  return decimalToRate(outputReadable / Math.max(referenceOutputReadable, Number.EPSILON));
+}
+
 async function resolveUsdNotionalInputNative(
   logicalAsset: LogicalAsset,
   sourceDecimals: number,
@@ -1369,10 +1498,15 @@ async function resolveEffectivelyUnlimitedCapacityNative(
 
 async function estimateCctpBreakdown(
   candidate: GraphEdgeCandidate,
-  amount: BigNumber,
+  _amount: BigNumber,
   params: BridgeBreakdownParams
 ): Promise<CostBreakdown> {
-  return estimateQuotedBridgeBreakdown(candidate, amount, params, "cctp");
+  return {
+    fixedInputFeeSourceNative: bnZero,
+    fixedOutputFeeDestinationNative: bnZero,
+    fixedCostUsd: await params.pricingContext.deriveGasFloorUsd(candidate.family, candidate.from.chainId),
+    latencySeconds: resolveGraphBridgeLatencySeconds(candidate),
+  };
 }
 
 async function estimateOftBreakdown(
@@ -1380,27 +1514,20 @@ async function estimateOftBreakdown(
   amount: BigNumber,
   params: BridgeBreakdownParams
 ): Promise<CostBreakdown> {
-  if (candidate.from.logicalAsset !== "USDT" || candidate.to.logicalAsset !== "USDT") {
-    return estimateQuotedBridgeBreakdown(candidate, amount, params, "oft");
-  }
-  const oftAdapter = params.rebalancerAdapters.oft as OftAdapter;
-  const route: RebalanceRoute = {
-    sourceChain: candidate.from.chainId,
-    destinationChain: candidate.to.chainId,
-    sourceToken: "USDT",
-    destinationToken: "USDT",
-    adapter: "oft",
-  };
-  const additiveSourceNative = await oftAdapter.getEstimatedCost(route, amount);
-  const additiveCostUsd = Math.max(
-    parseFloat(formatUnits(additiveSourceNative, candidate.from.decimals)) *
-      STABLECOIN_PRICE_USD[candidate.from.logicalAsset],
-    await params.pricingContext.deriveGasFloorUsd(candidate.family, candidate.from.chainId)
+  const [gasFloorUsd, oftRouteQuote] = await Promise.all([
+    params.pricingContext.deriveGasFloorUsd(candidate.family, candidate.from.chainId),
+    quoteLiveOftRouteTransfer(candidate, amount, params.baseSigner),
+  ]);
+  const quotedMessageFeeUsd = await params.pricingContext.tokenValueToUsd(
+    oftRouteQuote.messageFeeAmount,
+    candidate.from.chainId,
+    oftRouteQuote.messageFeeAssetAddress
   );
+
   return {
     fixedInputFeeSourceNative: bnZero,
     fixedOutputFeeDestinationNative: bnZero,
-    fixedCostUsd: additiveCostUsd,
+    fixedCostUsd: gasFloorUsd + quotedMessageFeeUsd,
     latencySeconds: resolveBridgeLatencySeconds("oft", candidate.from.chainId, candidate.from.logicalAsset),
   };
 }
@@ -1746,6 +1873,8 @@ class RuntimePricingContext {
   private readonly gasPriceCache = new Map<number, Promise<BigNumber>>();
   private readonly nativePriceCache = new Map<number, Promise<number>>();
   private readonly logicalAssetPriceCache = new Map<LogicalAsset, Promise<number>>();
+  private readonly tokenPriceCache = new Map<string, Promise<number>>();
+  private readonly tokenDecimalsCache = new Map<string, Promise<number>>();
 
   constructor(readonly logger: winston.Logger) {
     this.priceClient = new PriceClient(logger, [
@@ -1771,6 +1900,18 @@ class RuntimePricingContext {
     const nativeTokenInfo = getNativeTokenInfoForChain(chainId, HUB_CHAIN_ID);
     const nativePriceUsd = await this.getNativeTokenPriceUsd(chainId);
     return parseFloat(formatUnits(value, nativeTokenInfo.decimals)) * nativePriceUsd;
+  }
+
+  async tokenValueToUsd(value: BigNumber, chainId: number, tokenAddress: string): Promise<number> {
+    if (!value.gt(bnZero)) {
+      return 0;
+    }
+
+    const [decimals, tokenPriceUsd] = await Promise.all([
+      this.getTokenDecimals(chainId, tokenAddress),
+      this.getTokenPriceUsd(chainId, tokenAddress),
+    ]);
+    return parseFloat(formatUnits(value, decimals)) * tokenPriceUsd;
   }
 
   async getLogicalAssetPriceUsd(logicalAsset: LogicalAsset): Promise<number> {
@@ -1818,6 +1959,38 @@ class RuntimePricingContext {
           at: "buildGraph.RuntimePricingContext.getNativeTokenPriceUsd",
           message: "Failed to query native token USD price, using $1 fallback",
           chainId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return 1;
+      }
+    });
+  }
+
+  private getTokenDecimals(chainId: number, tokenAddress: string): Promise<number> {
+    const cacheKey = `${chainId}:${tokenAddress.toLowerCase()}`;
+    return this.loadCachedValue(this.tokenDecimalsCache, cacheKey, async () => {
+      try {
+        return getTokenInfo(EvmAddress.from(tokenAddress), chainId).decimals;
+      } catch {
+        const provider = await getProvider(chainId);
+        const token = new Contract(tokenAddress, ERC20.abi, provider);
+        return Number(await token.decimals());
+      }
+    });
+  }
+
+  private getTokenPriceUsd(chainId: number, tokenAddress: string): Promise<number> {
+    const cacheKey = `${chainId}:${tokenAddress.toLowerCase()}`;
+    return this.loadCachedValue(this.tokenPriceCache, cacheKey, async () => {
+      try {
+        const price = await this.priceClient.getPriceByAddress(tokenAddress);
+        return Number(price.price);
+      } catch (error) {
+        this.logger.warn({
+          at: "buildGraph.RuntimePricingContext.getTokenPriceUsd",
+          message: "Failed to query token USD price, using $1 fallback",
+          chainId,
+          tokenAddress,
           error: error instanceof Error ? error.message : String(error),
         });
         return 1;

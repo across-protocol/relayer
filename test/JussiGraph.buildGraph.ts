@@ -1,5 +1,5 @@
 import { expect, toBNWei } from "./utils";
-import { CHAIN_IDs, EvmAddress, TOKEN_SYMBOLS_MAP } from "../src/utils";
+import { CHAIN_IDs, EvmAddress, TOKEN_SYMBOLS_MAP, getNativeTokenInfoForChain } from "../src/utils";
 import { RelayerConfig } from "../src/relayer/RelayerConfig";
 import {
   GraphEdgeCandidate,
@@ -13,9 +13,12 @@ import {
   buildManagedNodeTemplates,
   dedupeGraphEdgeCandidates,
   materializeNodeDefinitions,
+  quoteOftRouteTransfer,
   resolveBridgeLatencySeconds,
   resolveExchangeLatencySeconds,
   resolveGraphBridgeLatencySeconds,
+  resolveOftQuoteExtraOptions,
+  resolveOftQuoteSendFeeAsset,
   resolveOptionalTranslatedTokenAddress,
 } from "../src/jussi/buildGraph";
 
@@ -209,13 +212,17 @@ describe("Jussi graph builder helpers", async function () {
     expect(
       edgeCandidates.some(
         (edge) =>
-          edge.family === "bridgeapi" && edge.from.nodeKey === mainnetUsdc.nodeKey && edge.to.nodeKey === pathUsd.nodeKey
+          edge.family === "bridgeapi" &&
+          edge.from.nodeKey === mainnetUsdc.nodeKey &&
+          edge.to.nodeKey === pathUsd.nodeKey
       )
     ).to.equal(true);
     expect(
       edgeCandidates.some(
         (edge) =>
-          edge.family === "bridgeapi" && edge.from.nodeKey === pathUsd.nodeKey && edge.to.nodeKey === mainnetUsdc.nodeKey
+          edge.family === "bridgeapi" &&
+          edge.from.nodeKey === pathUsd.nodeKey &&
+          edge.to.nodeKey === mainnetUsdc.nodeKey
       )
     ).to.equal(false);
     expect(
@@ -411,6 +418,70 @@ describe("Jussi graph builder helpers", async function () {
     );
     expect(resolveOptionalTranslatedTokenAddress(mainnetUsdt, CHAIN_IDs.HYPEREVM)).to.equal(
       TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.HYPEREVM].toLowerCase()
+    );
+  });
+
+  it("uses quoteOFT output to finalize OFT quoteSend params before pricing the route", async function () {
+    const quotedSendParams: Array<{ minAmountLD: { toString(): string } }> = [];
+    const amount = toBNWei("1000", 6);
+    const amountReceived = toBNWei("995", 6);
+    const recipient = EvmAddress.from(TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]);
+    const quote = await quoteOftRouteTransfer({
+      reader: {
+        async sharedDecimals() {
+          return 6;
+        },
+        async quoteOFT(sendParamStruct) {
+          quotedSendParams.push(sendParamStruct);
+          return [{}, [], { amountReceivedLD: amountReceived }] as never;
+        },
+        async quoteSend(sendParamStruct) {
+          quotedSendParams.push(sendParamStruct);
+          return { nativeFee: toBNWei("0.01"), lzTokenFee: "0" } as never;
+        },
+      },
+      originChain: CHAIN_IDs.MAINNET,
+      destinationChain: CHAIN_IDs.PLASMA,
+      sourceDecimals: 6,
+      recipient,
+      amount,
+    });
+
+    expect(quotedSendParams).to.have.lengthOf(2);
+    expect(quotedSendParams[0].minAmountLD.toString()).to.equal(amount.toString());
+    expect(quotedSendParams[1].minAmountLD.toString()).to.equal(amountReceived.toString());
+    expect(quote.sendParamStruct.minAmountLD.toString()).to.equal(amountReceived.toString());
+    expect(quote.messageFeeAssetAddress).to.equal(
+      getNativeTokenInfoForChain(CHAIN_IDs.MAINNET, CHAIN_IDs.MAINNET).address
+    );
+  });
+
+  it("uses MONAD receive options and fee-token pricing inputs for OFT routes on chains without native gas", async function () {
+    const recipient = EvmAddress.from(TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]);
+    const quote = await quoteOftRouteTransfer({
+      reader: {
+        async sharedDecimals() {
+          return 6;
+        },
+        async quoteOFT() {
+          return [{}, [], { amountReceivedLD: toBNWei("100", 6) }] as never;
+        },
+        async quoteSend() {
+          return { nativeFee: toBNWei("4", 9), lzTokenFee: "0" } as never;
+        },
+      },
+      originChain: CHAIN_IDs.TEMPO,
+      destinationChain: CHAIN_IDs.MONAD,
+      sourceDecimals: 6,
+      recipient,
+      amount: toBNWei("100", 6),
+    });
+
+    expect(Array.from(quote.sendParamStruct.extraOptions as Uint8Array)).to.deep.equal(
+      Array.from(resolveOftQuoteExtraOptions(CHAIN_IDs.MONAD) as Uint8Array)
+    );
+    expect(quote.messageFeeAssetAddress.toLowerCase()).to.equal(
+      resolveOftQuoteSendFeeAsset(CHAIN_IDs.TEMPO).toLowerCase()
     );
   });
 
