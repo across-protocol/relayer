@@ -41,7 +41,8 @@
     "redis4": "npm:redis@^4.1.0",
     "superstruct": "^1.0.3",
     "tronweb": "^6.2.2",
-    "ts-node": "^10.9.1",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.21.0",
     "viem": "~2.47.10",
     "winston": "^3.17.0",
     "zksync-ethers": "^5.11.1"
@@ -80,9 +81,9 @@
     "relay": "node ./dist/index.js --relayer",
     "refill-usdc": "node ./dist/scripts/refillUsdcToSpecificChain.js",
     "deposit": "yarn node ./dist/scripts/spokepool.js deposit",
-    "dispute": "yarn ts-node ./scripts/hubpool.ts dispute",
+    "dispute": "tsx ./scripts/hubpool.ts dispute",
     "update": "git pull && yarn reinstall && yarn version --non-interactive && git show --quiet",
-    "update-addresses": "yarn ts-node ./scripts/fetch-addresses.ts",
+    "update-addresses": "tsx ./scripts/fetch-addresses.ts",
     "update-inventory-config": "node ./dist/scripts/fetchInventoryConfig.js",
     "validate-root-bundle": "yarn node ./dist/src/scripts/validateRootBundle.js | tee validateRootBundle-${REQUEST_TIME}.log"
   },

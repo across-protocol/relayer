@@ -26,7 +26,7 @@ const args = minimist(process.argv.slice(2), {
 });
 
 // Example run:
-// ts-node ./scripts/withdrawFromArbitrumOrbit.ts
+// tsx ./scripts/withdrawFromArbitrumOrbit.ts
 // \ --amount 3000000000000000000
 // \ --chainId 41455
 // \ --token WETH

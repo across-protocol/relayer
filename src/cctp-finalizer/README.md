@@ -103,7 +103,7 @@ All RPC URLs should include authentication if the upstream provider requires it.
 2. **Export required environment variables.**
 3. **Run the service**:
    ```bash
-   PORT=8081 ts-node src/cctp-finalizer/index.ts
+   PORT=8081 tsx src/cctp-finalizer/index.ts
    ```
 4. **Simulate a Pub/Sub push**:
    ```bash

@@ -27,9 +27,9 @@ const args = minimist(process.argv.slice(2), {
 });
 
 // Example run:
-// ts-node ./scripts/withdrawTokenFromL2.ts --token USDC --chainId 143 --amount 3  # Shows calldata, doesn't execute
-// ts-node ./scripts/withdrawTokenFromL2.ts --token USDT --chainId 8453 --amount 5 --sendTx  # Actually sends transaction
-// ts-node ./scripts/withdrawTokenFromL2.ts --token USDC --chainId 137 --amount 2
+// tsx ./scripts/withdrawTokenFromL2.ts --token USDC --chainId 143 --amount 3  # Shows calldata, doesn't execute
+// tsx ./scripts/withdrawTokenFromL2.ts --token USDT --chainId 8453 --amount 5 --sendTx  # Actually sends transaction
+// tsx ./scripts/withdrawTokenFromL2.ts --token USDC --chainId 137 --amount 2
 
 const MAINNET_CHAIN_ID = CHAIN_IDs.MAINNET;
 
@@ -180,7 +180,7 @@ async function run(): Promise<void> {
     });
     console.log("\n💡 To execute transactions, run with --sendTx flag");
     console.log(
-      `   Example: yarn ts-node ./scripts/withdrawTokenFromL2.ts --token ${tokenSymbol} --chainId ${l2ChainId} --amount ${withdrawAmount} --sendTx --wallet gckms --keys bot1`
+      `   Example: yarn tsx ./scripts/withdrawTokenFromL2.ts --token ${tokenSymbol} --chainId ${l2ChainId} --amount ${withdrawAmount} --sendTx --wallet gckms --keys bot1`
     );
     return;
   }
