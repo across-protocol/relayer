@@ -246,9 +246,37 @@ async function prepareFinalizations(
   );
 
   return await sdkUtils.mapAsync(withdrawalParams, async (withdrawal, idx) => {
-    const sharedBridge = getSharedBridge(l1ChainId, tokensBridged[idx].chainId, tokensBridged[idx].l2TokenAddress);
-    return prepareFinalization(withdrawal, l2ChainId, sharedBridge);
+    const finalizationContract = getFinalizationContract(
+      l1ChainId,
+      tokensBridged[idx].chainId,
+      tokensBridged[idx].l2TokenAddress
+    );
+    return prepareFinalization(withdrawal, l2ChainId, finalizationContract);
   });
+}
+
+/**
+ * Returns the L1 contract that finalizes a withdrawal. For USDC withdrawals from chains that use
+ * the custom ZkStack USDC bridge, that is the standalone USDC bridge. For all other withdrawals
+ * (notably ETH), it is the L1Nullifier -- the L1AssetRouter (zkStackSharedBridge) has a
+ * finalizeDeposit with a different signature and cannot be called here.
+ */
+function getFinalizationContract(
+  l1ChainId: number,
+  l2ChainId: number,
+  l2TokenAddress: Address,
+  l1Provider?: Provider
+): Contract {
+  const contract =
+    CONTRACT_ADDRESSES[l1ChainId]?.[
+      withdrawalRequiresCustomUsdcBridge(l1ChainId, l2ChainId, l2TokenAddress)
+        ? `zkStackUSDCBridge_${l2ChainId}`
+        : "zkStackL1Nullifier"
+    ];
+  if (!contract) {
+    throw new Error(`zkStack finalization contract data not found for chain ${l1ChainId}`);
+  }
+  return new Contract(contract.address, contract.abi, l1Provider);
 }
 
 function getSharedBridge(
