@@ -66,6 +66,14 @@ export const CONTRACT_ADDRESSES: {
       address: "0x8829AD80E425C646DAB305381ff105169FeEcE56",
       abi: ZKSTACK_SHARED_BRIDGE_ABI,
     },
+    // The L1Nullifier is the contract that actually verifies withdrawal proofs and processes
+    // finalizeDeposit calls. The L1AssetRouter (aka zkStackSharedBridge) forwards to it, but
+    // its own finalizeDeposit has a different signature, so withdrawal finalizations must be
+    // sent directly to the L1Nullifier.
+    zkStackL1Nullifier: {
+      address: "0xD7f9f54194C633F36CCD5F3da84ad4a1c38cB2cB",
+      abi: ZKSTACK_SHARED_BRIDGE_ABI,
+    },
     zkStackBridgeHub: {
       address: "0x303a465B659cBB0ab36eE643eA362c509EEb5213",
       abi: ZKSTACK_BRIDGE_HUB_ABI,
@@ -738,6 +746,12 @@ export const CONTRACT_ADDRESSES: {
     // need its contract address so that we may approve it.
     zkStackSharedBridge: {
       address: "0xfD3130Ea0e8B7Dd61Ac3663328a66d97eb02f84b",
+      abi: ZKSTACK_SHARED_BRIDGE_ABI,
+    },
+    // The L1Nullifier is where withdrawal finalizations (finalizeDeposit) must be sent; see
+    // mainnet note above.
+    zkStackL1Nullifier: {
+      address: "0x6f03861D12E6401623854E494BeAcD66BC46e6F0",
       abi: ZKSTACK_SHARED_BRIDGE_ABI,
     },
     zkStackNativeTokenVault: {

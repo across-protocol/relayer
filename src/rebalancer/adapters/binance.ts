@@ -902,6 +902,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       chainId: sourceChain,
       nonMulticall: true,
       unpermissioned: false,
+      ensureConfirmation: true,
       message: `Deposited ${amountReadable} ${sourceToken} to Binance on chain ${getNetworkName(sourceChain)}`,
       mrkdwn: `Deposited ${amountReadable} ${sourceToken} to Binance on chain ${getNetworkName(sourceChain)}`,
     };

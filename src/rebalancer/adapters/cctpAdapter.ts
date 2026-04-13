@@ -258,6 +258,7 @@ export class CctpAdapter extends BaseAdapter {
       method: "depositForBurn",
       unpermissioned: false,
       nonMulticall: true,
+      ensureConfirmation: true,
       args: [
         amountToBridge,
         getCctpDomainForChainId(destinationChain),

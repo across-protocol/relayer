@@ -76,12 +76,13 @@ export async function createHyperCoreAccountIfNotExists(
         method: "activateUserAccount",
         args: [hookData.nonce, hookData.finalRecipient, fundingToken],
         chainId,
+        ensureConfirmation: true,
       },
       transactionClient
     );
     logger.info({
       at: "evmUtils#createHyperCoreAccountIfNotExists",
-      message: "Account activation submitted",
+      message: "Account activation confirmed",
       finalRecipient: hookData.finalRecipient,
       txHash: activationTx.hash,
     });
@@ -180,6 +181,7 @@ export async function processMintEvm(
       method,
       args: receiveMessageArgs,
       chainId,
+      ensureConfirmation: true,
     },
     transactionClient
   );

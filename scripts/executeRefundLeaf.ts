@@ -12,7 +12,7 @@ import {
 // copying a leaf's contents from the GCP console and executing it.
 
 // INSTRUCTIONS:
-// - run command: ts-node ./scripts/executeRefundLeaf.ts --wallet mnemonic
+// - run command: tsx ./scripts/executeRefundLeaf.ts --wallet mnemonic
 // - step 1: Copy GCP leaf into the following structure. You can do so by locating the relevant "Relayer refund leaf #"
 //           log, like: "Relayer refund leaf #44", and clicking "Copy > Copy as JSON":
 // - step 2: Enter in the `rootBundleId` associated with the merkle tree. We can improve this script in the future
