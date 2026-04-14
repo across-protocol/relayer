@@ -187,7 +187,7 @@ export class SolanaUsdcCCTPBridge extends BaseL2BridgeAdapter {
   }
 
   private _getOrCreateSolanaEventsClientPromise(): Promise<arch.svm.SvmCpiEventsClient> {
-    if (this.solanaEventsClientPromise) {
+    if (this.solanaEventsClientPromise !== undefined) {
       return this.solanaEventsClientPromise;
     }
     assert(isDefined(this.svmProvider), "SVM provider should be defined for SolanaUsdcCCTPBridge");
@@ -206,7 +206,7 @@ export class SolanaUsdcCCTPBridge extends BaseL2BridgeAdapter {
   }
 
   private _getOrCreateSvmSignerPromise(): Promise<KeyPairSigner> {
-    if (this.svmSignerPromise) {
+    if (this.svmSignerPromise !== undefined) {
       return this.svmSignerPromise;
     }
     const promise = getKitKeypairFromEvmSigner(this.l1Signer).catch((error) => {

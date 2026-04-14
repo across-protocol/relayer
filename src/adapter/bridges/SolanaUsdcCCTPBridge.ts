@@ -173,7 +173,7 @@ export class SolanaUsdcCCTPBridge extends BaseBridgeAdapter {
   }
 
   private _getOrCreateSolanaEventsClientPromise(): Promise<arch.svm.SvmCpiEventsClient> {
-    if (this.solanaEventsClientPromise) {
+    if (this.solanaEventsClientPromise !== undefined) {
       return this.solanaEventsClientPromise;
     }
     const promise = arch.svm.SvmCpiEventsClient.createFor(
