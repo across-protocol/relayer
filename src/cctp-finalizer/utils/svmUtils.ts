@@ -1,6 +1,5 @@
 import { ethers } from "ethers";
 import {
-  createKeyPairSignerFromBytes,
   createDefaultRpcTransport,
   createSolanaRpcFromTransport,
   KeyPairSigner,
@@ -251,11 +250,10 @@ async function sendAndConfirmCCTPV2ReceiveMessageTx(params: {
  */
 export async function checkIfAlreadyProcessedSvm(
   message: string,
-  svmPrivateKey: Uint8Array,
+  svmSigner: KeyPairSigner,
   svmProvider: SVMProvider,
   logger: winston.Logger
 ): Promise<boolean> {
-  const svmSigner = await createKeyPairSignerFromBytes(svmPrivateKey);
   const latestBlockhash = await svmProvider.getLatestBlockhash().send();
 
   const messageBytes = ethers.utils.arrayify(message);
@@ -293,14 +291,13 @@ export async function checkIfAlreadyProcessedSvm(
  */
 export async function processMintSvm(
   attestation: { message: string; attestation: string },
-  svmPrivateKey: Uint8Array,
+  svmSigner: KeyPairSigner,
   svmProvider: SVMProvider,
   destinationChainId: number,
   originChainId: number,
   logger: winston.Logger,
   addressLookupTable?: SolanaAddress
 ): Promise<{ txHash: string }> {
-  const svmSigner = await createKeyPairSignerFromBytes(svmPrivateKey);
 
   const messageBytes = ethers.utils.arrayify(attestation.message);
   const messageBytesArray = ethers.utils.arrayify(messageBytes);

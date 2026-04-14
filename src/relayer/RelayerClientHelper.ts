@@ -32,7 +32,7 @@ import {
   SpokePool,
   SvmAddress,
   EvmAddress,
-  getSvmSignerFromEvmSigner,
+  getKitKeypairFromEvmSigner,
   chainIsSvm,
 } from "../utils";
 import { RelayerConfig } from "./RelayerConfig";
@@ -164,8 +164,8 @@ export async function constructRelayerClients(
     ...Object.keys(config?.inventoryConfig?.tokenConfig ?? {}).map((token) => EvmAddress.from(token)),
   ]);
 
-  const svmSigner = getSvmSignerFromEvmSigner(baseSigner);
-  const svmAddress = SvmAddress.from(svmSigner.publicKey.toBase58());
+  const svmSigner = await getKitKeypairFromEvmSigner(baseSigner);
+  const svmAddress = SvmAddress.from(svmSigner.address);
   const tokenClient = new TokenClient(
     logger,
     signerAddr,

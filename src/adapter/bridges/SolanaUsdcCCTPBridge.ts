@@ -14,7 +14,7 @@ import {
   paginatedEventQuery,
   SVMProvider,
   isDefined,
-  getSvmSignerFromEvmSigner,
+  getKitKeypairFromEvmSigner,
   getAssociatedTokenAddress,
   winston,
   getCctpV1TokenMessenger,
@@ -166,9 +166,9 @@ export class SolanaUsdcCCTPBridge extends BaseBridgeAdapter {
   }
 
   async _getAssociatedTokenAddress(): Promise<Address> {
-    const svmSigner = getSvmSignerFromEvmSigner(this.l1Signer);
+    const svmSigner = await getKitKeypairFromEvmSigner(this.l1Signer);
     const associatedTokenAddress = await getAssociatedTokenAddress(
-      SvmAddress.from(svmSigner.publicKey.toBase58()),
+      SvmAddress.from(svmSigner.address),
       this.l2UsdcTokenAddress
     );
     return SvmAddress.from(associatedTokenAddress as string);
