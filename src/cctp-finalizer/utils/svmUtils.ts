@@ -298,7 +298,6 @@ export async function processMintSvm(
   logger: winston.Logger,
   addressLookupTable?: SolanaAddress
 ): Promise<{ txHash: string }> {
-
   const messageBytes = ethers.utils.arrayify(attestation.message);
   const messageBytesArray = ethers.utils.arrayify(messageBytes);
 
