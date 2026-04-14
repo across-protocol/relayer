@@ -132,7 +132,6 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
     // excess token chain list.
     for (const deficit of sortedDeficits) {
       const { token: deficitToken, amount: deficitAmount } = deficit;
-
       // Keep track of how much of the deficit we need to fill and also how much excess we have available to send.
       let deficitRemaining = deficitAmount;
       for (const excess of sortedExcesses) {
