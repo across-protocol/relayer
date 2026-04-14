@@ -34,9 +34,10 @@ export class SolanaUsdcCCTPBridge extends BaseBridgeAdapter {
   private readonly l1UsdcTokenAddress: EvmAddress;
   private readonly l2UsdcTokenAddress: SvmAddress;
   private readonly solanaMessageTransmitter: SvmAddress;
+  private readonly l2Provider: SVMProvider;
   // We need the constructor to operate in a synchronous context, but the call to construct an event client is asynchronous, so
   // this bridge holds onto the client promise and lazily evaluates it for when it needs to use it (in `queryL2BridgeFinalizationEvents`).
-  private readonly solanaEventsClientPromise: Promise<arch.svm.SvmCpiEventsClient>;
+  private solanaEventsClientPromise: Promise<arch.svm.SvmCpiEventsClient> | undefined;
   private solanaEventsClient: arch.svm.SvmCpiEventsClient;
   private svmAddress: string;
 
@@ -62,12 +63,9 @@ export class SolanaUsdcCCTPBridge extends BaseBridgeAdapter {
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
 
     const { address: l2Address } = getCctpV1TokenMessenger(l2chainId);
+    this.l2Provider = l2Provider;
     this.solanaMessageTransmitter = SvmAddress.from(l2Address);
-    this.solanaEventsClientPromise = arch.svm.SvmCpiEventsClient.createFor(
-      l2Provider,
-      l2Address,
-      TokenMessengerMinterIdl
-    );
+    this.solanaEventsClientPromise = this._getOrCreateSolanaEventsClientPromise();
     this.l1UsdcTokenAddress = EvmAddress.from(TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]);
     this.l2UsdcTokenAddress = SvmAddress.from(TOKEN_SYMBOLS_MAP.USDC.addresses[this.l2chainId]);
   }
@@ -137,7 +135,7 @@ export class SolanaUsdcCCTPBridge extends BaseBridgeAdapter {
     const associatedTokenAddress = await this._getAssociatedTokenAddress();
 
     // Lazily evaluate the events client.
-    this.solanaEventsClient ??= await this.solanaEventsClientPromise;
+    this.solanaEventsClient ??= await this._getOrCreateSolanaEventsClientPromise();
     assert(compareAddressesSimple(l1Token.toNative(), TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]));
     const l2FinalizationEvents = await this.solanaEventsClient.queryDerivedAddressEvents(
       "MintAndWithdraw",
@@ -172,5 +170,23 @@ export class SolanaUsdcCCTPBridge extends BaseBridgeAdapter {
       this.l2UsdcTokenAddress
     );
     return SvmAddress.from(associatedTokenAddress as string);
+  }
+
+  private _getOrCreateSolanaEventsClientPromise(): Promise<arch.svm.SvmCpiEventsClient> {
+    if (this.solanaEventsClientPromise) {
+      return this.solanaEventsClientPromise;
+    }
+    const promise = arch.svm.SvmCpiEventsClient.createFor(
+      this.l2Provider,
+      this.solanaMessageTransmitter.toNative(),
+      TokenMessengerMinterIdl
+    ).catch((error) => {
+      if (this.solanaEventsClientPromise === promise) {
+        this.solanaEventsClientPromise = undefined;
+      }
+      throw error;
+    });
+    this.solanaEventsClientPromise = promise;
+    return promise;
   }
 }

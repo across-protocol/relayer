@@ -48,10 +48,10 @@ export class SolanaUsdcCCTPBridge extends BaseL2BridgeAdapter {
   private IS_CCTP_V2 = false;
   private readonly l1UsdcTokenAddress: EvmAddress;
   private readonly l2UsdcTokenAddress: SvmAddress;
-  private readonly solanaEventsClientPromise: Promise<arch.svm.SvmCpiEventsClient>;
+  private solanaEventsClientPromise: Promise<arch.svm.SvmCpiEventsClient> | undefined;
   private readonly tokenMessengerMinter: Address;
   private readonly messageTransmitter: Address;
-  private readonly svmSignerPromise: Promise<KeyPairSigner>;
+  private svmSignerPromise: Promise<KeyPairSigner> | undefined;
   private svmSigner: KeyPairSigner;
   private solanaEventsClient: arch.svm.SvmCpiEventsClient;
 
@@ -70,13 +70,8 @@ export class SolanaUsdcCCTPBridge extends BaseL2BridgeAdapter {
     this.tokenMessengerMinter = address(l2TokenMessengerAddress);
     this.messageTransmitter = address(l2MessageTransmitterAddress);
 
-    this.solanaEventsClientPromise = arch.svm.SvmCpiEventsClient.createFor(
-      l2Provider,
-      this.tokenMessengerMinter,
-      TokenMessengerMinterIdl
-    );
-
-    this.svmSignerPromise = getKitKeypairFromEvmSigner(this.l1Signer);
+    this.solanaEventsClientPromise = this._getOrCreateSolanaEventsClientPromise();
+    this.svmSignerPromise = this._getOrCreateSvmSignerPromise();
   }
 
   private get l1DestinationDomain(): number {
@@ -91,7 +86,7 @@ export class SolanaUsdcCCTPBridge extends BaseL2BridgeAdapter {
   ): Promise<SolanaTransaction[]> {
     assert(l1Token.eq(this.l1UsdcTokenAddress));
     assert(l2Token.eq(this.l2UsdcTokenAddress));
-    this.svmSigner ??= await this.svmSignerPromise;
+    this.svmSigner ??= await this._getOrCreateSvmSignerPromise();
 
     amount = amount.gt(CCTP_MAX_SEND_AMOUNT) ? CCTP_MAX_SEND_AMOUNT : amount;
     const [cctpDepositAccounts, burnTokenAccount, messageSentEventData] = await Promise.all([
@@ -148,8 +143,8 @@ export class SolanaUsdcCCTPBridge extends BaseL2BridgeAdapter {
     if (!l2Token.eq(this.l2UsdcTokenAddress)) {
       return bnZero;
     }
-    this.svmSigner ??= await this.svmSignerPromise;
-    this.solanaEventsClient ??= await this.solanaEventsClientPromise;
+    this.svmSigner ??= await this._getOrCreateSvmSignerPromise();
+    this.solanaEventsClient ??= await this._getOrCreateSolanaEventsClientPromise();
 
     // @dev: First parameter in MintAndWithdraw is mintRecipient, this should be the same as the fromAddress
     // for all use cases of this adapter.
@@ -189,5 +184,38 @@ export class SolanaUsdcCCTPBridge extends BaseL2BridgeAdapter {
 
   async _getAssociatedTokenAddress(address: Address): Promise<Address> {
     return await getAssociatedTokenAddress(SvmAddress.from(address as string), this.l2UsdcTokenAddress);
+  }
+
+  private _getOrCreateSolanaEventsClientPromise(): Promise<arch.svm.SvmCpiEventsClient> {
+    if (this.solanaEventsClientPromise) {
+      return this.solanaEventsClientPromise;
+    }
+    assert(isDefined(this.svmProvider), "SVM provider should be defined for SolanaUsdcCCTPBridge");
+    const promise = arch.svm.SvmCpiEventsClient.createFor(
+      this.svmProvider,
+      this.tokenMessengerMinter,
+      TokenMessengerMinterIdl
+    ).catch((error) => {
+      if (this.solanaEventsClientPromise === promise) {
+        this.solanaEventsClientPromise = undefined;
+      }
+      throw error;
+    });
+    this.solanaEventsClientPromise = promise;
+    return promise;
+  }
+
+  private _getOrCreateSvmSignerPromise(): Promise<KeyPairSigner> {
+    if (this.svmSignerPromise) {
+      return this.svmSignerPromise;
+    }
+    const promise = getKitKeypairFromEvmSigner(this.l1Signer).catch((error) => {
+      if (this.svmSignerPromise === promise) {
+        this.svmSignerPromise = undefined;
+      }
+      throw error;
+    });
+    this.svmSignerPromise = promise;
+    return promise;
   }
 }
