@@ -164,7 +164,7 @@ export class Disputer {
   }
 
   private _getOrCreateInitPromise(): Promise<void> {
-    if (this.initPromise) {
+    if (this.initPromise !== undefined) {
       return this.initPromise;
     }
     const promise = (async () => {
