@@ -12,32 +12,6 @@
   resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.108.tgz#982e230c0193f3b4124e3cb880eb6cb481f76a7e"
   integrity sha512-uYcIw6VjWhSRal9+xv5aTgk3cK1qVH/8SkpSCpa6KMQUXmCKZ3eGGaVMl7Nogl6S0Cj/D76LnMgM3jUP6NK9ag==
 
-"@across-protocol/contracts@5.0.5":
-  version "5.0.5"
-  resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-5.0.5.tgz#fc99bdbb589217e50123e65954e0727e4b964f2c"
-  integrity sha512-2gccirRrHvxhAYsXWKzoHSKjLBXoTK0GY/50sDfL/uGsLJ6T/6UN2ndw3uND5rwoyqUktI/QFa3ZlQyDKrX9mg==
-  dependencies:
-    "@across-protocol/constants" "^3.1.107"
-    "@coral-xyz/anchor" "^0.31.1"
-    "@eth-optimism/contracts" "^0.5.40"
-    "@ethersproject/bignumber" "5.7.0"
-    "@ethersproject/bytes" "5.7.0"
-    "@ethersproject/keccak256" "5.7.0"
-    "@openzeppelin/contracts" "5.5.0"
-    "@openzeppelin/contracts-upgradeable" "5.5.0"
-    "@openzeppelin/contracts-upgradeable-v4" "npm:@openzeppelin/contracts-upgradeable@4.9.6"
-    "@openzeppelin/contracts-v4" "npm:@openzeppelin/contracts@4.9.6"
-    "@openzeppelin/foundry-upgrades" "^0.4.0"
-    "@scroll-tech/contracts" "^0.1.0"
-    "@solana-program/address-lookup-table" "0.10.0"
-    "@solana-program/token" "0.9.0"
-    "@solana/kit" "^5.4.0"
-    "@solana/spl-token" "0.4.14"
-    "@solana/web3.js" "1.98.2"
-    bs58 "^6.0.0"
-    tronweb "^6.2.0"
-    yargs "^17.7.2"
-
 "@across-protocol/contracts@5.0.6":
   version "5.0.6"
   resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-5.0.6.tgz#5aa1101201ac581bbf96ce29712c2da42cf96675"
@@ -60,13 +34,13 @@
     bs58 "^6.0.0"
     ethers "5.7.2"
 
-"@across-protocol/sdk@4.4.0-alpha.7":
-  version "4.4.0-alpha.7"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.4.0-alpha.7.tgz#2ca60a829e3d70dcc95b10ff4f754b33220ed9c2"
-  integrity sha512-ohwHK0LFmN6Gn4SQtsFmPlYpu+FKAGJx1mATVwAUrfIEWFy0JyvKO6dZFNL+2jMe30keeczLPORldrGuihU2mA==
+"@across-protocol/sdk@4.4.0-alpha.8":
+  version "4.4.0-alpha.8"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.4.0-alpha.8.tgz#c0f0a6ae479bac874bd532ab703e27f535acf976"
+  integrity sha512-9WoWRPyNMioyWDDgWLoz5GWpvdzwW0/rkxqkbfXqMNHdoVzm6kHureegOUx5PQEP+1zSLuLkS0B3RVGqdAjXJw==
   dependencies:
     "@across-protocol/constants" "^3.1.100"
-    "@across-protocol/contracts" "5.0.5"
+    "@across-protocol/contracts" "5.0.6"
     "@coral-xyz/anchor" "^0.31.1"
     "@coral-xyz/borsh" "^0.31.1"
     "@eth-optimism/sdk" "^3.3.1"
@@ -1929,11 +1903,6 @@
     lodash "^4.17.19"
     node-fetch "^2.6.0"
 
-"@openzeppelin/foundry-upgrades@^0.4.0":
-  version "0.4.0"
-  resolved "https://registry.yarnpkg.com/@openzeppelin/foundry-upgrades/-/foundry-upgrades-0.4.0.tgz#dfab3741e94971429789a37a9633be4f6a79344c"
-  integrity sha512-x9wxogNteR5rdDzh5d/XnINR+ncUdPsCLWud99ULCa1pNNqRVPYMadr6iEVmjdTEy/4keIgbHwLB0rw2zXiRyQ==
-
 "@openzeppelin/hardhat-upgrades@^1.28.0":
   version "1.28.0"
   resolved "https://registry.yarnpkg.com/@openzeppelin/hardhat-upgrades/-/hardhat-upgrades-1.28.0.tgz#6361f313a8a879d8a08a5e395acf0933bc190950"
@@ -2383,15 +2352,15 @@
   resolved "https://registry.yarnpkg.com/@solana-program/token-2022/-/token-2022-0.6.1.tgz#dcc44d56228e34c3b90099d9d3cab97d84c12367"
   integrity sha512-Ex02cruDMGfBMvZZCrggVR45vdQQSI/unHVpt/7HPt/IwFYB4eTlXtO8otYZyqV/ce5GqZ8S6uwyRf0zy6fdbA==
 
-"@solana-program/token@0.9.0", "@solana-program/token@^0.9.0":
-  version "0.9.0"
-  resolved "https://registry.yarnpkg.com/@solana-program/token/-/token-0.9.0.tgz#9582068c6053b1600472eedb3fe084b262cbc1c7"
-  integrity sha512-vnZxndd4ED4Fc56sw93cWZ2djEeeOFxtaPS8SPf5+a+JZjKA/EnKqzbE1y04FuMhIVrLERQ8uR8H2h72eZzlsA==
-
 "@solana-program/token@^0.5.0":
   version "0.5.1"
   resolved "https://registry.yarnpkg.com/@solana-program/token/-/token-0.5.1.tgz#10e327df23f05a7f892fd33a9b6418f17dd62296"
   integrity sha512-bJvynW5q9SFuVOZ5vqGVkmaPGA0MCC+m9jgJj1nk5m20I389/ms69ASnhWGoOPNcie7S9OwBX0gTj2fiyWpfag==
+
+"@solana-program/token@^0.9.0":
+  version "0.9.0"
+  resolved "https://registry.yarnpkg.com/@solana-program/token/-/token-0.9.0.tgz#9582068c6053b1600472eedb3fe084b262cbc1c7"
+  integrity sha512-vnZxndd4ED4Fc56sw93cWZ2djEeeOFxtaPS8SPf5+a+JZjKA/EnKqzbE1y04FuMhIVrLERQ8uR8H2h72eZzlsA==
 
 "@solana/accounts@5.4.0":
   version "5.4.0"
@@ -2858,7 +2827,7 @@
   dependencies:
     "@solana/codecs" "2.0.0-rc.1"
 
-"@solana/spl-token@0.4.14", "@solana/spl-token@^0.4.14":
+"@solana/spl-token@^0.4.14":
   version "0.4.14"
   resolved "https://registry.yarnpkg.com/@solana/spl-token/-/spl-token-0.4.14.tgz#b86bc8a17f50e9680137b585eca5f5eb9d55c025"
   integrity sha512-u09zr96UBpX4U685MnvQsNzlvw9TiY005hk1vJmJr7gMJldoPG1eYU5/wNEyOA5lkMLiR/gOi9SFD4MefOYEsA==
@@ -10170,7 +10139,7 @@ triple-beam@^1.3.0:
   resolved "https://registry.yarnpkg.com/triple-beam/-/triple-beam-1.3.0.tgz#a595214c7298db8339eeeee083e4d10bd8cb8dd9"
   integrity sha512-XrHUvV5HpdLmIj4uVMxHggLbFSZYIn7HEWsqePZcI50pco+MPqJ50wMGY794X7AOOhxOBAjbkqfAbEe/QMp2Lw==
 
-tronweb@^6.2.0, tronweb@^6.2.2:
+tronweb@^6.2.2:
   version "6.2.2"
   resolved "https://registry.yarnpkg.com/tronweb/-/tronweb-6.2.2.tgz#84e3e89b903d76b5becfdbd0c451f7169abaf1c1"
   integrity sha512-jRBf4+7fJ0HUVzveBi0tE21r3EygCNtbYE92T38Sxlwr/x320W2vz+dvGLOIpp4kW/CvJ4HLvtnb6U30A0V2eA==
