@@ -96,6 +96,28 @@ export function deriveBinanceSpotMarketMeta(
   };
 }
 
+export function convertBinanceRouteAmount(params: {
+  amount: BigNumber;
+  sourceTokenDecimals: number;
+  destinationTokenDecimals: number;
+  isBuy: boolean;
+  price: number;
+  direction: "source-to-destination" | "destination-to-source";
+}): BigNumber {
+  const isSourceToDestination = params.direction === "source-to-destination";
+  const inputDecimals = isSourceToDestination ? params.sourceTokenDecimals : params.destinationTokenDecimals;
+  const outputDecimals = isSourceToDestination ? params.destinationTokenDecimals : params.sourceTokenDecimals;
+  const readableAmount = Number(fromWei(params.amount, inputDecimals));
+  const convertedAmount = isSourceToDestination
+    ? params.isBuy
+      ? readableAmount / params.price
+      : readableAmount * params.price
+    : params.isBuy
+      ? readableAmount * params.price
+      : readableAmount / params.price;
+
+  return toBNWei(truncate(convertedAmount, outputDecimals), outputDecimals);
+}
 function resolveStepPrecision(stepSize: string): number {
   const normalized = stepSize.replace(/0+$/, "").replace(/\.$/, "");
   const decimalPart = normalized.split(".")[1];
@@ -110,6 +132,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     string,
     { fetchedAtMs: number; book: Awaited<ReturnType<Binance["book"]>> }
   >();
+  private tradeFeesPromise?: ReturnType<Binance["tradeFee"]>;
 
   REDIS_PREFIX = "binance-stablecoin-swap:";
   private static readonly ORDER_BOOK_CACHE_TTL_MS = 30_000;
@@ -480,13 +503,13 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       const orderDetails = await this._redisGetOrderDetails(cloid, account);
       const { sourceChain, sourceToken, amountToTransfer } = orderDetails;
       const binanceDepositNetwork = await this._getEntrypointNetwork(sourceChain, sourceToken);
-      const amountConverter = this._getAmountConverter(
+      const convertedAmount = await this._convertSourceToDestination(
+        sourceToken,
         sourceChain,
-        this._getTokenInfo(sourceToken, sourceChain).address,
+        sourceToken,
         binanceDepositNetwork,
-        this._getTokenInfo(sourceToken, binanceDepositNetwork).address
+        amountToTransfer
       );
-      const convertedAmount = amountConverter(amountToTransfer);
       pendingRebalances[binanceDepositNetwork] ??= {};
       pendingRebalances[binanceDepositNetwork][sourceToken] = (
         pendingRebalances[binanceDepositNetwork][sourceToken] ?? bnZero
@@ -511,13 +534,13 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       const orderDetails = await this._redisGetOrderDetails(cloid, account);
       const { destinationChain, destinationToken, sourceChain, sourceToken, amountToTransfer } = orderDetails;
       // Convert amountToTransfer to destination chain precision:
-      const amountConverter = this._getAmountConverter(
+      const convertedAmount = await this._convertSourceToDestination(
+        sourceToken,
         sourceChain,
-        this._getTokenInfo(sourceToken, sourceChain).address,
+        destinationToken,
         destinationChain,
-        this._getTokenInfo(destinationToken, destinationChain).address
+        amountToTransfer
       );
-      const convertedAmount = amountConverter(amountToTransfer);
       this.logger.debug({
         at: "BinanceStablecoinSwapAdapter.getPendingRebalances",
         message: `Adding ${convertedAmount.toString()} for pending order cloid ${cloid} to destination chain ${destinationChain}`,
@@ -580,13 +603,13 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         });
         continue;
       }
-      const amountConverter = this._getAmountConverter(
+      const convertedAmount = await this._convertSourceToDestination(
+        sourceToken,
         sourceChain,
-        this._getTokenInfo(sourceToken, sourceChain).address,
+        destinationToken,
         destinationChain,
-        this._getTokenInfo(destinationToken, destinationChain).address
+        amountToTransfer
       );
-      const convertedAmount = amountConverter(amountToTransfer);
       this.logger.debug({
         at: "BinanceStablecoinSwapAdapter.getPendingRebalances",
         message: `Withdrawal for order ${cloid} has finalized, subtracting the order's virtual balance of ${convertedAmount.toString()} from binance withdrawal network ${binanceWithdrawalNetwork}`,
@@ -623,9 +646,21 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const expectedCost = await this.getEstimatedCost(rebalanceRoute, amountToTransfer, false);
     const expectedAmountToWithdraw = amountToTransfer.sub(expectedCost);
     const sourceTokenInfo = this._getTokenInfo(sourceToken, sourceChain);
-    const minimumWithdrawalSize = toBNWei(Number(withdrawMin) + 1, sourceTokenInfo.decimals); // Add buffer to minimum to account
-    // for price volatility. For stablecoin swaps, this should be totally fine since price isn't volatile.
-    const maximumWithdrawalSize = toBNWei(withdrawMax, sourceTokenInfo.decimals);
+    const destinationTokenInfo = this._getTokenInfo(destinationToken, destinationEntrypointNetwork);
+    const minimumWithdrawalSize = await this._convertDestinationToSource(
+      destinationToken,
+      destinationEntrypointNetwork,
+      sourceToken,
+      sourceChain,
+      toBNWei(Number(withdrawMin) + 1, destinationTokenInfo.decimals)
+    );
+    const maximumWithdrawalSize = await this._convertDestinationToSource(
+      destinationToken,
+      destinationEntrypointNetwork,
+      sourceToken,
+      sourceChain,
+      toBNWei(withdrawMax, destinationTokenInfo.decimals)
+    );
     if (expectedAmountToWithdraw.lt(minimumWithdrawalSize)) {
       this.logger.debug({
         at: "BinanceStablecoinSwapAdapter.initializeRebalance",
@@ -646,7 +681,15 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     // and the amount transferred in might be insufficient to place the order later on, producing more dust or an
     // error.
     const spotMarketMeta = await this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
-    const minimumOrderSize = toBNWei(spotMarketMeta.minimumOrderSize, sourceTokenInfo.decimals);
+    const minimumOrderSize = spotMarketMeta.isBuy
+      ? await this._convertDestinationToSource(
+          destinationToken,
+          destinationChain,
+          sourceToken,
+          sourceChain,
+          toBNWei(spotMarketMeta.minimumOrderSize, this._getTokenInfo(destinationToken, destinationChain).decimals)
+        )
+      : toBNWei(spotMarketMeta.minimumOrderSize, sourceTokenInfo.decimals);
     if (amountToTransfer.lt(minimumOrderSize)) {
       this.logger.debug({
         at: "BinanceStablecoinSwapAdapter.initializeRebalance",
@@ -731,9 +774,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const { sourceToken, destinationToken, sourceChain, destinationChain } = rebalanceRoute;
     const spotMarketMeta = await this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
     // Commission is denominated in percentage points.
-    const tradeFeePct = (await this.binanceApiClient.tradeFee()).find(
-      (fee) => fee.symbol === spotMarketMeta.symbol
-    ).takerCommission;
+    const tradeFeePct = (await this._getTradeFees()).find((fee) => fee.symbol === spotMarketMeta.symbol).takerCommission;
     const tradeFee = toBNWei(tradeFeePct, 18).mul(amountToTransfer).div(toBNWei(100, 18));
     const destinationCoin = await this._getAccountCoins(destinationToken);
     const destinationEntrypointNetwork = await this._getEntrypointNetwork(destinationChain, destinationToken);
@@ -743,13 +784,13 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         .withdrawFee,
       destinationTokenInfo.decimals
     );
-    const amountConverter = this._getAmountConverter(
+    const withdrawFeeConvertedToSourceToken = await this._convertDestinationToSource(
+      destinationToken,
       destinationEntrypointNetwork,
-      this._getTokenInfo(destinationToken, destinationEntrypointNetwork).address,
+      sourceToken,
       sourceChain,
-      this._getTokenInfo(sourceToken, sourceChain).address
+      withdrawFee
     );
-    const withdrawFeeConvertedToSourceToken = amountConverter(withdrawFee);
 
     const { latestPrice } = await this._getLatestPrice(sourceToken, destinationToken, sourceChain, amountToTransfer);
 
@@ -794,13 +835,20 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const binanceWithdrawNetwork = await this._getEntrypointNetwork(destinationChain, destinationToken);
     if (binanceWithdrawNetwork !== destinationChain) {
       const _rebalanceRoute = { ...rebalanceRoute, sourceChain: binanceWithdrawNetwork };
+      const bridgeAmountConverted = await this._convertSourceToDestination(
+        sourceToken,
+        sourceChain,
+        destinationToken,
+        binanceWithdrawNetwork,
+        amountToTransfer
+      );
       if (
         destinationToken === "USDT" &&
         this.oftAdapter.supportsRoute({ ..._rebalanceRoute, sourceToken: "USDT", adapter: "oft" })
       ) {
         bridgeFromBinanceFee = await this.oftAdapter.getEstimatedCost(
           { ..._rebalanceRoute, sourceToken: "USDT", adapter: "oft" },
-          amountToTransfer
+          bridgeAmountConverted
         );
       } else if (
         destinationToken === "USDC" &&
@@ -808,7 +856,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       ) {
         bridgeFromBinanceFee = await this.cctpAdapter.getEstimatedCost(
           { ..._rebalanceRoute, sourceToken: "USDC", adapter: "cctp" },
-          amountToTransfer
+          bridgeAmountConverted
         );
       }
     }
@@ -1039,16 +1087,25 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     sourceToken: string,
     sourceChain: number,
     destinationToken: string,
+    destinationChain: number,
     amountToTransfer: BigNumber,
     price: number
   ): Promise<number> {
-    return this._getSpotMarketMetaForRoute(sourceToken, destinationToken).then((spotMarketMeta) => {
-      const sz = spotMarketMeta.isBuy
-        ? amountToTransfer.mul(10 ** spotMarketMeta.pxDecimals).div(toBNWei(price, spotMarketMeta.pxDecimals))
-        : amountToTransfer;
+    return this._getSpotMarketMetaForRoute(sourceToken, destinationToken).then(async (spotMarketMeta) => {
       const sourceTokenInfo = this._getTokenInfo(sourceToken, sourceChain);
-      // Floor this number so we can guarantee that we have enough balance to place the order:
-      const szNumber = Number(fromWei(sz, sourceTokenInfo.decimals));
+      const amountToOrder = spotMarketMeta.isBuy
+        ? await this._convertSourceToDestination(
+            sourceToken,
+            sourceChain,
+            destinationToken,
+            destinationChain,
+            amountToTransfer
+          )
+        : amountToTransfer;
+      const decimals = spotMarketMeta.isBuy
+        ? this._getTokenInfo(destinationToken, destinationChain).decimals
+        : sourceTokenInfo.decimals;
+      const szNumber = Number(fromWei(amountToOrder, decimals));
       const szFormatted = truncate(szNumber, spotMarketMeta.szDecimals);
       assert(
         szFormatted >= spotMarketMeta.minimumOrderSize,
@@ -1059,11 +1116,70 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   }
 
   private async _getSpotMarketMetaForRoute(sourceToken: string, destinationToken: string): Promise<SPOT_MARKET_META> {
-    return deriveBinanceSpotMarketMeta(
-      sourceToken,
-      destinationToken,
-      await this._getSymbol(sourceToken, destinationToken)
-    );
+    return deriveBinanceSpotMarketMeta(sourceToken, destinationToken, await this._getSymbol(sourceToken, destinationToken));
+  }
+
+  private async _convertSourceToDestination(
+    sourceToken: string,
+    sourceChain: number,
+    destinationToken: string,
+    destinationChain: number,
+    sourceAmount: BigNumber
+  ): Promise<BigNumber> {
+    const sourceTokenInfo = this._getTokenInfo(sourceToken, sourceChain);
+    const destinationTokenInfo = this._getTokenInfo(destinationToken, destinationChain);
+    if (sourceToken === destinationToken) {
+      return this._getAmountConverter(
+        sourceChain,
+        sourceTokenInfo.address,
+        destinationChain,
+        destinationTokenInfo.address
+      )(sourceAmount);
+    }
+    const spotMarketMeta = await this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
+    const priceData = await this._getLatestPrice(sourceToken, destinationToken, sourceChain, sourceAmount);
+    return convertBinanceRouteAmount({
+      amount: sourceAmount,
+      sourceTokenDecimals: sourceTokenInfo.decimals,
+      destinationTokenDecimals: destinationTokenInfo.decimals,
+      isBuy: spotMarketMeta.isBuy,
+      price: priceData.latestPrice,
+      direction: "source-to-destination",
+    });
+  }
+
+  private async _convertDestinationToSource(
+    destinationToken: string,
+    destinationChain: number,
+    sourceToken: string,
+    sourceChain: number,
+    destinationAmount: BigNumber
+  ): Promise<BigNumber> {
+    const sourceTokenInfo = this._getTokenInfo(sourceToken, sourceChain);
+    const destinationTokenInfo = this._getTokenInfo(destinationToken, destinationChain);
+    if (sourceToken === destinationToken) {
+      return this._getAmountConverter(
+        destinationChain,
+        destinationTokenInfo.address,
+        sourceChain,
+        sourceTokenInfo.address
+      )(destinationAmount);
+    }
+    const priceData = await this._getLatestPrice(destinationToken, sourceToken, destinationChain, destinationAmount);
+    const spotMarketMeta = await this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
+    return convertBinanceRouteAmount({
+      amount: destinationAmount,
+      sourceTokenDecimals: sourceTokenInfo.decimals,
+      destinationTokenDecimals: destinationTokenInfo.decimals,
+      isBuy: spotMarketMeta.isBuy,
+      price: priceData.latestPrice,
+      direction: "destination-to-source",
+    });
+  }
+
+  private async _getTradeFees(): ReturnType<Binance["tradeFee"]> {
+    this.tradeFeesPromise ??= this.binanceApiClient.tradeFee({ useServerTime: true });
+    return this.tradeFeesPromise;
   }
 
   private async _getMatchingFillForCloid(
@@ -1084,13 +1200,14 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   }
 
   private async _placeMarketOrder(cloid: string, orderDetails: OrderDetails): Promise<void> {
-    const { sourceToken, sourceChain, destinationToken, amountToTransfer } = orderDetails;
+    const { sourceToken, sourceChain, destinationToken, destinationChain, amountToTransfer } = orderDetails;
     const latestPx = (await this._getLatestPrice(sourceToken, destinationToken, sourceChain, amountToTransfer))
       .latestPrice;
     const szForOrder = await this._getQuantityForOrder(
       sourceToken,
       sourceChain,
       destinationToken,
+      destinationChain,
       amountToTransfer,
       latestPx
     );
