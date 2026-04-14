@@ -193,7 +193,7 @@ function buildDifferentAssetRoutes(rebalancerConfig: RebalancerConfig): Rebalanc
       !rebalancerConfig.cumulativeTargetBalances[rule.tokenA]?.targetBalance ||
       !rebalancerConfig.cumulativeTargetBalances[rule.tokenB]?.targetBalance
     ) {
-      return [];
+      continue;
     }
     pushDirectedDifferentAssetRoutes(routes, rule, rule.tokenA, chainsA, rule.tokenB, chainsB);
     pushDirectedDifferentAssetRoutes(routes, rule, rule.tokenB, chainsB, rule.tokenA, chainsA);
