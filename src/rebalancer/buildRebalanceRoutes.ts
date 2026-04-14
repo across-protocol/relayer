@@ -13,15 +13,10 @@ const BINANCE_NETWORKS_BY_SYMBOL: Record<SupportedToken, readonly number[]> = {
   USDC: [CHAIN_IDs.ARBITRUM, CHAIN_IDs.OPTIMISM, CHAIN_IDs.MAINNET, CHAIN_IDs.BASE, CHAIN_IDs.BSC],
   USDT: [CHAIN_IDs.ARBITRUM, CHAIN_IDs.OPTIMISM, CHAIN_IDs.MAINNET, CHAIN_IDs.BSC],
   // Live Binance ETH networkList currently includes ARBITRUM, BASE, BSC, ETH, OPTIMISM, SCROLL, and ZKSYNCERA.
-  // The rebalancer support list below stays narrower until we intentionally enable more of those networks.
+  // The rebalancer support list below stays narrower until we intentionally enable more of those networks. We filter
+  // this further by limiting to chains where we have an Atomic Depositor contract.
   WETH: [
-    CHAIN_IDs.ARBITRUM,
-    CHAIN_IDs.BASE,
-    CHAIN_IDs.BSC,
-    CHAIN_IDs.MAINNET,
-    CHAIN_IDs.OPTIMISM,
-    CHAIN_IDs.SCROLL,
-    CHAIN_IDs.ZK_SYNC,
+    CHAIN_IDs.MAINNET
   ],
 };
 

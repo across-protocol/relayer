@@ -25,7 +25,7 @@ The built-in production route set is generated in `src/rebalancer/buildRebalance
 
 - stablecoin swap routes between `USDC` and `USDT` on Binance and Hyperliquid,
 - same-asset routes for `USDC` via CCTP and on direct Binance-supported USDC networks via Binance, and for `USDT` via OFT and on direct Binance-supported USDT networks via Binance,
-- Binance-only `WETH <-> USDC`, `WETH <-> USDT`, and `WETH <-> WETH` routes on chains where Binance exposes direct ETH deposit and withdrawal networks.
+- Binance-only `WETH <-> USDC` and `WETH <-> USDT` routes sourced or settled through mainnet. `WETH <-> WETH` route handling exists in the adapter, but no cross-chain `WETH <-> WETH` routes are generated while WETH Binance support is limited to mainnet.
 
 Route construction keeps two token-keyed chain maps:
 
@@ -36,8 +36,9 @@ Operational note:
 
 - Same-asset `USDC <-> USDC` and `USDT <-> USDT` Binance routes are included deliberately so they can compete on estimated cost against CCTP/OFT paths, but they are only generated when both chains are direct Binance networks for that asset.
 - Updating Binance venue support for a token does not automatically widen rebalancer support. New chains should usually be added to both maps intentionally after inventory/config/runtime review.
-- Binance same-coin `WETH <-> WETH` routes skip the spot swap leg and treat on-chain `WETH` as Binance `ETH`.
-- Intermediate on-chain bridge legs into or out of Binance remain restricted to `USDC` and `USDT`; `WETH` routes must start and end on direct Binance ETH networks.
+- Current route construction limits Binance `WETH` support to mainnet because the rebalancer's native-ETH deposit path relies on the mainnet Atomic Depositor and transfer proxy wiring.
+- If additional direct Binance ETH networks are enabled later, same-coin `WETH <-> WETH` routes skip the spot swap leg and treat on-chain `WETH` as Binance `ETH`.
+- Intermediate on-chain bridge legs into or out of Binance remain restricted to `USDC` and `USDT`; current `WETH` routes therefore source or settle through mainnet rather than bridging WETH into another Binance ETH network.
 
 ### Rebalancer Adapter
 
