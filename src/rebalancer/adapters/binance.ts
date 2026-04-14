@@ -173,13 +173,13 @@ function resolveStepPrecision(stepSize: string): number {
 
 export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   private binanceApiClient: Binance;
-  private tradeFeesPromise?: ReturnType<Binance["tradeFee"]>;
   private exchangeInfoPromise?: ReturnType<Binance["exchangeInfo"]>;
   private orderBookPromiseBySymbol = new Map<string, Promise<Awaited<ReturnType<Binance["book"]>>>>();
   private orderBookSnapshotBySymbol = new Map<
     string,
     { fetchedAtMs: number; book: Awaited<ReturnType<Binance["book"]>> }
   >();
+  private tradeFeesPromise?: ReturnType<Binance["tradeFee"]>;
   private spotMarketMetaPromiseByRoute = new Map<string, Promise<SPOT_MARKET_META>>();
 
   REDIS_PREFIX = "binance-stablecoin-swap:";
