@@ -182,7 +182,7 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
         for (const chainWithExcess of sortedExcessSourceChainsForToken) {
           const { chainId, amount: currentBalance } = chainWithExcess;
           // Invariants: If excess or deficit is depleted, exit.
-          if (deficitRemaining.lte(bnZero) || excessRemaining.lte(bnZero)) {
+          if (deficitRemaining.lte(1) || excessRemaining.lte(1)) {
             break;
           }
 
