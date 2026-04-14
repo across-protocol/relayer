@@ -3,6 +3,7 @@ import {
   BigNumber,
   bnZero,
   ConvertDecimals,
+  fromWei,
   getNetworkName,
   getTokenInfoFromSymbol,
   isDefined,
@@ -131,6 +132,7 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
     // excess token chain list.
     for (const deficit of sortedDeficits) {
       const { token: deficitToken, amount: deficitAmount } = deficit;
+
       // Keep track of how much of the deficit we need to fill and also how much excess we have available to send.
       let deficitRemaining = deficitAmount;
       for (const excess of sortedExcesses) {
@@ -286,7 +288,12 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
           const chainToL1Converter = ConvertDecimals(chainDecimals, l1TokenDecimals);
           deficitRemaining = deficitRemaining.sub(chainToL1Converter(amountToTransferCapped));
           excessRemaining = excessRemaining.sub(chainToL1Converter(amountToTransferCapped));
-          this.logger.debug({
+          const deficitTokenChainDecimals = getTokenInfoFromSymbol(
+            deficitToken,
+            cheapestCostRoute.route.destinationChain
+          ).decimals;
+          const deficitTokenL1Decimals = getTokenInfoFromSymbol(deficitToken, this.config.hubPoolChainId).decimals;
+          this.logger[this.config.sendingTransactionsEnabled ? "info" : "debug"]({
             at: "RebalanceClient.rebalanceCumulativeInventory",
             message: `Initializing new ${cheapestCostRoute.route.adapter} rebalance from ${
               cheapestCostRoute.route.sourceToken
@@ -294,9 +301,19 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
               cheapestCostRoute.route.destinationToken
             } on ${getNetworkName(cheapestCostRoute.route.destinationChain)}`,
             adapter: cheapestCostRoute.route.adapter,
-            amountToTransfer: amountToTransferCapped.toString(),
-            expectedFees: cheapestCostRoute.cost.toString(),
-            deficitRemaining: deficitRemaining.toString(),
+            amountToTransfer: fromWei(amountToTransferCapped, chainDecimals),
+            expectedFees: fromWei(cheapestCostRoute.cost, chainDecimals),
+            excessTokenCumulativeBalance: fromWei(cumulativeBalances[excessToken], l1TokenDecimals),
+            deficitTokenCumulativeBalance: fromWei(cumulativeBalances[deficitToken], deficitTokenL1Decimals),
+            excessTokenCurrentBalance: fromWei(
+              currentBalancesOnChain[cheapestCostRoute.route.sourceChain][excessToken],
+              chainDecimals
+            ),
+            destinationChainCurrentBalance: fromWei(
+              currentBalancesOnChain[cheapestCostRoute.route.destinationChain][deficitToken],
+              deficitTokenChainDecimals
+            ),
+            deficitRemaining: fromWei(deficitRemaining, deficitTokenL1Decimals),
           });
 
           if (this.config.sendingTransactionsEnabled) {
