@@ -967,7 +967,6 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         .withdrawFee,
       destinationTokenInfo.decimals
     );
-
     const latestPrice = await this._getLatestPrice(sourceToken, destinationToken, sourceChain, amountToTransfer);
     const withdrawFeeConvertedToSourceToken = await this._convertDestinationToSource(
       destinationToken,
