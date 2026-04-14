@@ -15,9 +15,7 @@ const BINANCE_NETWORKS_BY_SYMBOL: Record<SupportedToken, readonly number[]> = {
   // Live Binance ETH networkList currently includes ARBITRUM, BASE, BSC, ETH, OPTIMISM, SCROLL, and ZKSYNCERA.
   // The rebalancer support list below stays narrower until we intentionally enable more of those networks. We filter
   // this further by limiting to chains where we have an Atomic Depositor contract.
-  WETH: [
-    CHAIN_IDs.MAINNET
-  ],
+  WETH: [CHAIN_IDs.MAINNET],
 };
 
 const REBALANCE_CHAINS_BY_SYMBOL: Record<SupportedToken, readonly number[]> = {

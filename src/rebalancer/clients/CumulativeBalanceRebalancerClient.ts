@@ -374,6 +374,8 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
   }
 
   private async _getTokenPriceUsd(token: string): Promise<BigNumber> {
+    // Assume that this client is never run in long lasting operations so we are safe to cache this price once
+    // per run.
     const cachedPrice = this.tokenPriceCache.get(token);
     if (cachedPrice) {
       return cachedPrice;
