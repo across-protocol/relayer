@@ -32,7 +32,7 @@ import { AugmentedTransaction } from "../../clients/TransactionClient";
 
 export class BinanceCEXBridge extends BaseL2BridgeAdapter {
   // Store the promise to be evaluated when needed so that we can construct the bridge synchronously.
-  protected readonly binanceApiClientPromise;
+  protected binanceApiClientPromise: Promise<BinanceApi> | undefined;
   protected binanceApiClient: BinanceApi | undefined;
   // Store the token info for the bridge so we can reference the L1 decimals and L1 token symbol.
   protected l1TokenInfo: L1Token;
@@ -56,7 +56,7 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
 
     this.depositNetwork = BINANCE_NETWORKS[l2chainId];
 
-    this.binanceApiClientPromise = getBinanceApiClient(process.env["BINANCE_API_BASE"]);
+    this.binanceApiClientPromise = this._getOrCreateBinanceClientPromise();
   }
 
   async constructWithdrawToL1Txns(
@@ -124,7 +124,21 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
   }
 
   protected async getBinanceClient() {
-    return (this.binanceApiClient ??= await this.binanceApiClientPromise);
+    return (this.binanceApiClient ??= await this._getOrCreateBinanceClientPromise());
+  }
+
+  private _getOrCreateBinanceClientPromise(): Promise<BinanceApi> {
+    if (this.binanceApiClientPromise) {
+      return this.binanceApiClientPromise;
+    }
+    const promise = getBinanceApiClient(process.env["BINANCE_API_BASE"]).catch((error) => {
+      if (this.binanceApiClientPromise === promise) {
+        this.binanceApiClientPromise = undefined;
+      }
+      throw error;
+    });
+    this.binanceApiClientPromise = promise;
+    return promise;
   }
 
   public pendingWithdrawalLookbackPeriodSeconds(): number {

@@ -113,7 +113,10 @@ export async function getBinanceApiClient(url = "https://api.binance.com") {
  * @returns A base64 encoded secret key, or undefined if the key is not present in GCKMS.
  */
 async function getBinanceSecretKey(): Promise<string | undefined> {
-  binanceSecretKeyPromise ??= retrieveBinanceSecretKeyFromCLIArgs();
+  binanceSecretKeyPromise ??= retrieveBinanceSecretKeyFromCLIArgs().catch((error) => {
+    binanceSecretKeyPromise = undefined;
+    throw error;
+  });
   return binanceSecretKeyPromise;
 }
 
