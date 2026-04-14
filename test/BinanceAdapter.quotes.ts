@@ -33,11 +33,13 @@ describe("Binance adapter quotes", function () {
     });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (adapter as any).binanceApiClient = { book: bookStub };
+    const quoteAdapter = adapter as unknown as {
+      _getOrderBook(symbol: string): Promise<ReturnType<typeof makeOrderBook>>;
+    };
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [first, second] = await Promise.all([
-      (adapter as any)._getOrderBook("USDCUSDT"),
-      (adapter as any)._getOrderBook("USDCUSDT"),
+      quoteAdapter._getOrderBook("USDCUSDT"),
+      quoteAdapter._getOrderBook("USDCUSDT"),
     ]);
 
     expect(first).to.equal(book);
