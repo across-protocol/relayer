@@ -79,6 +79,9 @@ function canUseHyperliquidStablecoinRoute({
 }
 
 function buildSameAssetRoutes(rebalancerConfig: RebalancerConfig, token: SupportedToken): RebalanceRoute[] {
+  if (!rebalancerConfig.cumulativeTargetBalances[token]?.targetBalance) {
+    return [];
+  }
   const routes: RebalanceRoute[] = [];
   const configuredChains = configuredChainsForToken(rebalancerConfig, token);
   const directBinanceNetworks = new Set(BINANCE_NETWORKS_BY_SYMBOL[token]);
@@ -186,6 +189,12 @@ function buildDifferentAssetRoutes(rebalancerConfig: RebalancerConfig): Rebalanc
     const chainsA = rule.chainsA(rebalancerConfig);
     const chainsB = rule.chainsB(rebalancerConfig);
 
+    if (
+      !rebalancerConfig.cumulativeTargetBalances[rule.tokenA]?.targetBalance ||
+      !rebalancerConfig.cumulativeTargetBalances[rule.tokenB]?.targetBalance
+    ) {
+      return [];
+    }
     pushDirectedDifferentAssetRoutes(routes, rule, rule.tokenA, chainsA, rule.tokenB, chainsB);
     pushDirectedDifferentAssetRoutes(routes, rule, rule.tokenB, chainsB, rule.tokenA, chainsA);
   }

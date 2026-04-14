@@ -72,10 +72,19 @@ function buildSyntheticRebalancerConfigWithMainnet(): RebalancerConfig {
             [CHAIN_IDs.MAINNET]: 0,
           },
         },
+        WETH: {
+          targetBalance: "1",
+          thresholdBalance: "0.5",
+          priorityTier: 0,
+          chains: {
+            [CHAIN_IDs.MAINNET]: 0,
+          },
+        },
       },
       maxAmountsToTransfer: {
         USDT: "100",
         USDC: "100",
+        WETH: "1",
       },
       maxPendingOrders: {
         hyperliquid: 3,
