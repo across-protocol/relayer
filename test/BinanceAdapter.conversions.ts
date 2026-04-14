@@ -107,13 +107,7 @@ describe("Binance adapter conversion sizing", function () {
     sinon.stub(adapter as any, "_getLatestPrice").callsFake(latestPriceStub);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (adapter as any)._convertDestinationToSource(
-      "WETH",
-      CHAIN_IDs.MAINNET,
-      "USDC",
-      CHAIN_IDs.MAINNET,
-      toBNWei("1", 18)
-    );
+    await (adapter as any)._convertNumberToSource("WETH", CHAIN_IDs.MAINNET, "USDC", CHAIN_IDs.MAINNET, 1);
 
     expect(latestPriceStub.calledOnce).to.equal(true);
     expect(latestPriceStub.getCall(0).args[0]).to.equal("USDC");
