@@ -816,6 +816,10 @@ export const CONTRACT_ADDRESSES: {
       address: "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
     },
+    sponsoredCCTPDstPeriphery: {
+      address: "0xA2cBA9cFcD2427C1201df51c19422E043c5bDe7a",
+      abi: SPONSORED_CCTP_DST_PERIPHERY_ABI,
+    },
     spokePoolPeriphery: {
       abi: SPOKE_POOL_PERIPHERY_ABI,
     },
