@@ -10,6 +10,7 @@ import {
   CHAIN_IDs,
   Coin,
   Contract,
+  delay,
   ERC20,
   EvmAddress,
   forEachAsync,
@@ -72,8 +73,14 @@ export function isTerminalBinanceWithdrawal(status?: number): boolean {
 
 export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   private binanceApiClient: Binance;
+  private orderBookPromiseBySymbol = new Map<string, Promise<Awaited<ReturnType<Binance["book"]>>>>();
+  private orderBookSnapshotBySymbol = new Map<
+    string,
+    { fetchedAtMs: number; book: Awaited<ReturnType<Binance["book"]>> }
+  >();
 
   REDIS_PREFIX = "binance-stablecoin-swap:";
+  private static readonly ORDER_BOOK_CACHE_TTL_MS = 30_000;
 
   REDIS_KEY_INITIATED_WITHDRAWALS = this.REDIS_PREFIX + "initiated-withdrawals";
   private spotMarketMeta: { [name: string]: SPOT_MARKET_META } = {
@@ -935,9 +942,10 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   ): Promise<{ latestPrice: number; slippagePct: number }> {
     const symbol = await this._getSymbol(sourceToken, destinationToken);
     const sourceTokenInfo = this._getTokenInfo(sourceToken, sourceChain);
-    const book = await this.binanceApiClient.book({ symbol: symbol.symbol });
+    const book = await this._getOrderBook(symbol.symbol);
     const spotMarketMeta = this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
     const sideOfBookToTraverse = spotMarketMeta.isBuy ? book.asks : book.bids;
+    assert(sideOfBookToTraverse.length > 0, `Order book is empty for ${symbol.symbol}`);
     const bestPx = Number(sideOfBookToTraverse[0].price);
     let szFilledSoFar = bnZero;
     const maxPxReached = sideOfBookToTraverse.find((level) => {
@@ -951,14 +959,60 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       }
       szFilledSoFar = szFilledSoFar.add(szWei);
     });
+    const terminalLevel = maxPxReached ?? sideOfBookToTraverse[sideOfBookToTraverse.length - 1];
     if (!maxPxReached) {
       throw new Error(
-        `Cannot find price in order book that satisfies an order for size ${amountToTransfer.toString()} of ${destinationToken} on the market "${sourceToken}-${destinationToken}"`
+        `Order size ${amountToTransfer.toString()} exceeds visible Binance order book depth ${szFilledSoFar.toString()}, reduce amountToTransfer`
       );
     }
-    const latestPrice = Number(Number(maxPxReached.price).toFixed(spotMarketMeta.pxDecimals));
+    const latestPrice = Number(Number(terminalLevel.price).toFixed(spotMarketMeta.pxDecimals));
     const slippagePct = Math.abs((latestPrice - bestPx) / bestPx) * 100;
     return { latestPrice, slippagePct };
+  }
+
+  private async _getOrderBook(symbol: string): Promise<Awaited<ReturnType<Binance["book"]>>> {
+    const cachedBook = this.orderBookSnapshotBySymbol.get(symbol);
+    if (cachedBook && Date.now() - cachedBook.fetchedAtMs <= BinanceStablecoinSwapAdapter.ORDER_BOOK_CACHE_TTL_MS) {
+      return cachedBook.book;
+    }
+
+    const existingPromise = this.orderBookPromiseBySymbol.get(symbol);
+    if (existingPromise !== undefined) {
+      return existingPromise;
+    }
+
+    const promise = this._fetchOrderBook(symbol).then((book) => {
+      this.orderBookSnapshotBySymbol.set(symbol, {
+        fetchedAtMs: Date.now(),
+        book,
+      });
+      return book;
+    });
+    this.orderBookPromiseBySymbol.set(symbol, promise);
+    void promise.finally(() => {
+      if (this.orderBookPromiseBySymbol.get(symbol) === promise) {
+        this.orderBookPromiseBySymbol.delete(symbol);
+      }
+    });
+
+    return promise;
+  }
+
+  private async _fetchOrderBook(
+    symbol: string,
+    nRetries = 0,
+    maxRetries = 3
+  ): Promise<Awaited<ReturnType<Binance["book"]>>> {
+    try {
+      return await this.binanceApiClient.book({ symbol, limit: 5000 });
+    } catch (error) {
+      if (nRetries >= maxRetries) {
+        throw error;
+      }
+
+      await delay(2 ** nRetries + Math.random());
+      return this._fetchOrderBook(symbol, nRetries + 1, maxRetries);
+    }
   }
 
   private _getQuantityForOrder(
