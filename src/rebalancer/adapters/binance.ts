@@ -1162,20 +1162,15 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   ): Promise<BigNumber> {
     const sourceTokenInfo = this._getTokenInfo(sourceToken, sourceChain);
     const destinationTokenInfo = this._getTokenInfo(destinationToken, destinationChain);
-    if (sourceToken === destinationToken) {
-      return this._getAmountConverter(
-        destinationChain,
-        destinationTokenInfo.address,
-        sourceChain,
-        sourceTokenInfo.address
-      )(destinationAmount);
-    }
     const destinationAmountInSourcePrecision = this._getAmountConverter(
       destinationChain,
       destinationTokenInfo.address,
       sourceChain,
       sourceTokenInfo.address
     )(destinationAmount);
+    if (sourceToken === destinationToken) {
+      return destinationAmountInSourcePrecision;
+    }
     const priceData = await this._getLatestPrice(
       sourceToken,
       destinationToken,
