@@ -1420,8 +1420,9 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     }
     const priceData = await this._getLatestPrice(sourceToken, destinationToken, sourceChain, sourceAmount);
     const spotMarketMeta = await this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
+    const destinationAmount = toBNWei(truncate(value, destinationTokenInfo.decimals), destinationTokenInfo.decimals);
     return convertBinanceRouteAmount({
-      amount: sourceAmount,
+      amount: destinationAmount,
       sourceTokenDecimals: sourceTokenInfo.decimals,
       destinationTokenDecimals: destinationTokenInfo.decimals,
       isBuy: spotMarketMeta.isBuy,
