@@ -931,7 +931,14 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
 
   private async _getSymbol(sourceToken: string, destinationToken: string) {
     this.exchangeInfoPromise ??= this.binanceApiClient.exchangeInfo();
-    const symbol = (await this.exchangeInfoPromise).symbols.find((symbols) => {
+    let exchangeInfo;
+    try {
+      exchangeInfo = await this.exchangeInfoPromise;
+    } catch (error) {
+      this.exchangeInfoPromise = undefined;
+      throw error;
+    }
+    const symbol = exchangeInfo.symbols.find((symbols) => {
       return (
         symbols.symbol === `${sourceToken}${destinationToken}` || symbols.symbol === `${destinationToken}${sourceToken}`
       );
