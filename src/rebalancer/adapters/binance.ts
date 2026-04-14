@@ -998,7 +998,11 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   }
 
   private async _getSpotMarketMetaForRoute(sourceToken: string, destinationToken: string): Promise<SPOT_MARKET_META> {
-    return deriveBinanceSpotMarketMeta(sourceToken, destinationToken, await this._getSymbol(sourceToken, destinationToken));
+    return deriveBinanceSpotMarketMeta(
+      sourceToken,
+      destinationToken,
+      await this._getSymbol(sourceToken, destinationToken)
+    );
   }
 
   private async _getMatchingFillForCloid(
