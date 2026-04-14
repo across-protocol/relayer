@@ -1215,16 +1215,20 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     return Number(coin.balance);
   }
 
-  private async _getSymbol(sourceToken: string, destinationToken: string) {
-    const sourceAsset = resolveBinanceCoinSymbol(sourceToken);
-    const destinationAsset = resolveBinanceCoinSymbol(destinationToken);
-    let exchangeInfo;
+  private async _getExchangeInfo(): ReturnType<Binance["exchangeInfo"]> {
+    this.exchangeInfoPromise ??= this.binanceApiClient.exchangeInfo();
     try {
-      exchangeInfo = await this.exchangeInfoPromise;
+      return await this.exchangeInfoPromise;
     } catch (error) {
       this.exchangeInfoPromise = undefined;
       throw error;
     }
+  }
+
+  private async _getSymbol(sourceToken: string, destinationToken: string) {
+    const sourceAsset = resolveBinanceCoinSymbol(sourceToken);
+    const destinationAsset = resolveBinanceCoinSymbol(destinationToken);
+    const exchangeInfo = await this._getExchangeInfo();
     const symbol = exchangeInfo.symbols.find((symbols) => {
       return (
         symbols.symbol === `${sourceAsset}${destinationAsset}` || symbols.symbol === `${destinationAsset}${sourceAsset}`

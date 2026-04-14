@@ -89,6 +89,34 @@ describe("Binance adapter helpers", async function () {
     expect(sourceEquivalent.eq(oneWeth)).to.equal(true);
   });
 
+  it("retries exchangeInfo lookups after transient failures", async function () {
+    const adapter = await makeAdapter();
+    const exchangeInfoStub = sinon.stub();
+    exchangeInfoStub.onCall(0).rejects(new Error("temporary outage"));
+    exchangeInfoStub.onCall(1).resolves({
+      symbols: [{ ...makeStablecoinSymbol() }],
+    });
+    const symbolAdapter = adapter as unknown as {
+      _getSymbol(sourceToken: string, destinationToken: string): Promise<{ symbol: string }>;
+      binanceApiClient: { exchangeInfo: typeof exchangeInfoStub };
+      exchangeInfoPromise?: Promise<unknown>;
+    };
+    symbolAdapter.binanceApiClient = { exchangeInfo: exchangeInfoStub };
+    symbolAdapter.exchangeInfoPromise = undefined;
+
+    try {
+      await symbolAdapter._getSymbol("USDT", "USDC");
+      expect.fail("expected the first _getSymbol call to propagate the exchangeInfo failure");
+    } catch (error) {
+      expect(String(error)).to.contain("temporary outage");
+    }
+
+    const symbol = await symbolAdapter._getSymbol("USDT", "USDC");
+
+    expect(symbol.symbol).to.equal("USDCUSDT");
+    expect(exchangeInfoStub.callCount).to.equal(2);
+  });
+
   it("retries tradeFee lookups after transient failures", async function () {
     const adapter = await makeAdapter();
     const tradeFeeStub = sinon.stub();
