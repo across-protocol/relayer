@@ -509,7 +509,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       if (!initiatedWithdrawalId) {
         this.logger.debug({
           at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",
-          message: `Cannot find initiated withdrawal for cloid ${cloid} which filled at ${matchingFill.time}, waiting`,
+          message: `Cannot find initiated withdrawal for cloid ${cloid}, waiting`,
           cloid: cloid,
           matchingFill: matchingFill,
         });
