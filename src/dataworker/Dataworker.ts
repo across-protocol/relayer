@@ -2923,7 +2923,7 @@ export class Dataworker {
 
     // Optionally close the existing instruction params account and add an instruction which loads new data into the instruction params PDA.
     const instructionParamsAccount = await fetchEncodedAccount(provider, instructionParamsPda);
-    let closeInstructionParamsIx;
+    let closeInstructionParamsIx: SvmSpokeClient.CloseInstructionParamsInstruction | undefined;
     // If the account exists, define the instruction needed to close the instruction account.
     if (instructionParamsAccount.exists) {
       this.logger.debug({

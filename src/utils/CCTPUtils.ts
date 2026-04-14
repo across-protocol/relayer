@@ -1,7 +1,6 @@
 import { arch, utils } from "@across-protocol/sdk";
 import { TokenMessengerMinterIdl } from "@across-protocol/sdk/svm";
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
-import axios from "axios";
 import { Contract, ethers } from "ethers";
 import { CONTRACT_ADDRESSES, CCTP_MAX_SEND_AMOUNT } from "../common";
 import { BigNumber } from "./BNUtils";
@@ -20,13 +19,14 @@ import {
   forEachAsync,
   chainIsEvm,
   createFormatFunction,
+  SVMProvider,
 } from "./SDKUtils";
 import { getNetworkName } from "./NetworkUtils";
 import { isDefined } from "./TypeGuards";
 import { getCachedProvider, getProvider, getSvmProvider } from "./ProviderUtils";
 import { EventSearchConfig, paginatedEventQuery, spreadEvent } from "./EventUtils";
 import { Log } from "../interfaces";
-import { assert, getRedisCache, Provider, Signer, ERC20, winston } from ".";
+import { assert, fetchWithTimeout, getRedisCache, Provider, Signer, ERC20, winston } from ".";
 import { KeyPairSigner } from "@solana/kit";
 import { TransactionRequest } from "@ethersproject/abstract-provider";
 import {
@@ -623,9 +623,9 @@ function _getCCTPV1EventsFromReceipt(
   */
 
   // Indices of individual `MessageSent` events in `receipt.logs`
-  const messageSentIndices = [];
+  const messageSentIndices: number[] = [];
   // Pairs of indices representing a single CCTP token transfer
-  const depositIndexPairs = [];
+  const depositIndexPairs: [number, number][] = [];
   receipt.logs.forEach((log, i) => {
     // Attempt to parse as `MessageSent`
     const messageSentVersion = utils.getMessageSentVersion(log);
@@ -698,7 +698,7 @@ async function _getCCTPV1MessagesWithStatus(
   const messageTransmitterContract = chainIsSvm(destinationChainId)
     ? undefined
     : new Contract(address, abi, dstProvider);
-  let svmProvider, latestBlockhash;
+  let svmProvider: SVMProvider | undefined, latestBlockhash;
   if (chainIsSvm(destinationChainId)) {
     svmProvider = getSvmProvider(await getRedisCache());
     latestBlockhash = await svmProvider.getLatestBlockhash().send();
@@ -789,13 +789,14 @@ async function _getCCTPV1DepositEventsSvm(
         decodedMessage.nonceHash,
         destinationMessageTransmitter
       );
+      const log: Log = undefined!; // No EVM log exists for SVM-originated CCTP deposits.
       return {
         ...decodedMessage,
         attestation: data.attestation,
         status: alreadyProcessed
           ? ("finalized" as utils.CCTPMessageStatus)
           : utils.getPendingAttestationStatus(attestationStatusObject),
-        log: undefined,
+        log,
       };
     });
   });
@@ -915,19 +916,15 @@ async function _fetchCctpV1Attestation(
   messageHash: string,
   isMainnet: boolean
 ): Promise<CCTPV1APIGetAttestationResponse> {
-  const httpResponse = await axios.get<CCTPV1APIGetAttestationResponse>(
+  return fetchWithTimeout<CCTPV1APIGetAttestationResponse>(
     `https://iris-api${isMainnet ? "" : "-sandbox"}.circle.com/attestations/${messageHash}`
   );
-  const attestationResponse = httpResponse.data;
-  return attestationResponse;
 }
 
 async function _fetchCCTPSvmAttestationProof(transactionHash: string): Promise<CCTPV1APIGetMessagesResponse> {
-  const httpResponse = await axios.get<CCTPV1APIGetMessagesResponse>(
+  return fetchWithTimeout<CCTPV1APIGetMessagesResponse>(
     `https://iris-api.circle.com/messages/${getCctpDomainForChainId(CHAIN_IDs.SOLANA)}/${transactionHash}`
   );
-  const attestationResponse = httpResponse.data;
-  return attestationResponse;
 }
 
 /**

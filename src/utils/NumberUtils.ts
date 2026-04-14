@@ -6,6 +6,11 @@
  * @returns The truncated number (i.e. 1.23)
  */
 export function truncate(number: number, decimals: number): number {
-  const re = new RegExp("^-?\\d+(?:.\\d{0," + (decimals || -1) + "})?");
-  return Number(number.toString().match(re)[0]);
+  if (!Number.isFinite(number)) {
+    return number;
+  }
+  const [integer, fractional = ""] = number
+    .toLocaleString("en-US", { useGrouping: false, maximumSignificantDigits: 21 })
+    .split(".");
+  return Number(`${integer}.${fractional.slice(0, Math.max(0, Math.trunc(decimals)))}`) || 0;
 }

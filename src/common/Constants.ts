@@ -1,7 +1,8 @@
 import { DEFAULT_L2_CONTRACT_ADDRESSES } from "@eth-optimism/sdk";
 import { ChainFamily, PUBLIC_NETWORKS } from "@across-protocol/constants";
-import { isDefined } from "../utils/TypeGuards";
+import { isDefined, isKeyOf } from "../utils/TypeGuards";
 import {
+  assert,
   chainIsOPStack,
   chainIsOrbit,
   chainIsProd,
@@ -53,6 +54,8 @@ import {
   UsdcCCTPBridge as L2UsdcCCTPBridge,
   BinanceCEXNativeBridge as L2BinanceCEXNativeBridge,
   SolanaUsdcCCTPBridge as L2SolanaUsdcCCTPBridge,
+  BridgeApi as L2BridgeApi,
+  TokenSplitterBridge as L2TokenSplitterBridge,
 } from "../adapter/l2Bridges";
 import { CONTRACT_ADDRESSES } from "./ContractAddresses";
 import { HyperlaneXERC20Bridge } from "../adapter/bridges/HyperlaneXERC20Bridge";
@@ -81,7 +84,14 @@ export const MAX_RELAYER_DEPOSIT_LOOK_BACK = 4 * 60 * 60;
 export const FINALIZER_TOKENBRIDGE_LOOKBACK = 14 * 24 * 60 * 60;
 
 // Chain IDs using the Succinct/Helios SP1 messaging bridge.
-export const UNIVERSAL_CHAINS = [CHAIN_IDs.BSC, CHAIN_IDs.HYPEREVM, CHAIN_IDs.PLASMA, CHAIN_IDs.MONAD, CHAIN_IDs.TEMPO];
+export const UNIVERSAL_CHAINS = [
+  CHAIN_IDs.BSC,
+  CHAIN_IDs.HYPEREVM,
+  CHAIN_IDs.PLASMA,
+  CHAIN_IDs.MONAD,
+  CHAIN_IDs.TEMPO,
+  CHAIN_IDs.TRON,
+];
 
 // Reorgs are anticipated on Ethereum and Polygon. We use different following distances when processing deposit
 // events based on the USD amount of the deposit. This protects the relayer from the worst case situation where it fills
@@ -118,6 +128,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     [CHAIN_IDs.POLYGON]: 64, // Probabilistically safe level based on historic Polygon reorgs
     [CHAIN_IDs.BSC]: 2, // Average takes 2.5 blocks to finalize but reorgs rarely happen
     [CHAIN_IDs.SCROLL]: 8,
+    [CHAIN_IDs.TRON]: 19, // 19 Blocks to finalize.
   },
   100: {
     [CHAIN_IDs.HYPEREVM]: 1,
@@ -129,6 +140,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     [CHAIN_IDs.POLYGON]: 16,
     [CHAIN_IDs.SCROLL]: 2,
     [CHAIN_IDs.TEMPO]: 2,
+    [CHAIN_IDs.TRON]: 0,
     [CHAIN_IDs.BSC]: 0,
     [CHAIN_IDs.ZK_SYNC]: 0,
   },
@@ -172,7 +184,7 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = resolveRpcConfig();
 const resolveChainBundleBuffers = () => {
   const DEFAULT_CHAIN_BUFFER = 1024;
 
-  const defaultBuffers = {
+  const defaultBuffers: Partial<Record<ChainFamily, number>> = {
     [ChainFamily.OP_STACK]: 60, // 2s/block
     [ChainFamily.ORBIT]: 240, // ~250ms/block
     [ChainFamily.SVM]: 150, // ~400ms/slot
@@ -191,6 +203,7 @@ const resolveChainBundleBuffers = () => {
     [CHAIN_IDs.POLYGON]: 128, // ~2s/block. Polygon has historically re-orged often.
     [CHAIN_IDs.SCROLL]: 40, // ~3s/block.
     [CHAIN_IDs.TEMPO]: 400, // ~500ms a block.
+    [CHAIN_IDs.TRON]: 40, // 3s/block.
     [CHAIN_IDs.ZK_SYNC]: defaultBuffers[ChainFamily.ZK_STACK], // Inherit ZK_STACK default.
   };
 
@@ -225,7 +238,7 @@ export const IGNORED_HUB_EXECUTED_BUNDLES: number[] = [];
 const resolveChainCacheDelay = () => {
   const DEFAULT_CACHE_DELAY = 512;
 
-  const cacheDelays = {
+  const cacheDelays: Partial<Record<ChainFamily, number>> = {
     [ChainFamily.ORBIT]: 32,
     [ChainFamily.OP_STACK]: 120,
     [ChainFamily.SVM]: 512,
@@ -244,6 +257,7 @@ const resolveChainCacheDelay = () => {
     [CHAIN_IDs.POLYGON]: 256,
     [CHAIN_IDs.SCROLL]: 100,
     [CHAIN_IDs.TEMPO]: 400,
+    [CHAIN_IDs.TRON]: 20, // 19 blocks for finalization.
     [CHAIN_IDs.ZK_SYNC]: cacheDelays[ChainFamily.ZK_STACK],
   };
 
@@ -281,6 +295,7 @@ export const DEFAULT_NO_TTL_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.SOLANA]: 432000,
   [CHAIN_IDs.SONEIUM]: 86400,
   [CHAIN_IDs.TEMPO]: 345600,
+  [CHAIN_IDs.TRON]: 57600,
   [CHAIN_IDs.UNICHAIN]: 86400,
   [CHAIN_IDs.WORLD_CHAIN]: 86400,
   [CHAIN_IDs.ZK_SYNC]: 172800,
@@ -351,6 +366,7 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.SOLANA]: ["USDC"],
   [CHAIN_IDs.SONEIUM]: ["WETH", "USDC"],
   [CHAIN_IDs.TEMPO]: ["USDC"],
+  [CHAIN_IDs.TRON]: ["USDT"],
   [CHAIN_IDs.UNICHAIN]: ["ETH", "WETH", "USDC", "USDT", "ezETH"],
   [CHAIN_IDs.WORLD_CHAIN]: ["WETH", "WBTC", "USDC", "WLD", "POOL"],
   [CHAIN_IDs.ZK_SYNC]: ["USDC", "USDT", "WETH", "WBTC", "DAI"],
@@ -423,7 +439,7 @@ const resolveCanonicalBridges = (): Record<number, L1BridgeConstructor<BaseBridg
     [CHAIN_IDs.SCROLL_SEPOLIA]: ScrollERC20Bridge,
   };
 
-  const defaultBridges = {
+  const defaultBridges: Partial<Record<ChainFamily, L1BridgeConstructor<BaseBridgeAdapter>>> = {
     [ChainFamily.OP_STACK]: OpStackDefaultERC20Bridge,
     [ChainFamily.ORBIT]: ArbitrumOrbitBridge,
     [ChainFamily.ZK_STACK]: ZKStackBridge,
@@ -528,6 +544,9 @@ export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<Ba
   [CHAIN_IDs.TEMPO]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: TokenSplitterBridge,
   },
+  [CHAIN_IDs.TRON]: {
+    [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTBridge,
+  },
   [CHAIN_IDs.UNICHAIN]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcCCTPBridge,
     [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTBridge,
@@ -607,6 +626,15 @@ export const TOKEN_SPLITTER_BRIDGES: Record<
   },
 };
 
+export const L2_TOKEN_SPLITTER_BRIDGES: Record<
+  number,
+  Record<string, [L2BridgeConstructor<BaseL2BridgeAdapter>, L2BridgeConstructor<BaseL2BridgeAdapter>]>
+> = {
+  [CHAIN_IDs.TEMPO]: {
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: [OFTL2Bridge, L2BridgeApi],
+  },
+};
+
 export const CUSTOM_L2_BRIDGE: Record<number, Record<string, L2BridgeConstructor<BaseL2BridgeAdapter>>> = {
   [CHAIN_IDs.LISK]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2OpStackUSDCBridge,
@@ -657,7 +685,10 @@ export const CUSTOM_L2_BRIDGE: Record<number, Record<string, L2BridgeConstructor
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: L2BinanceCEXNativeBridge,
   },
   [CHAIN_IDs.TEMPO]: {
-    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: OFTL2Bridge,
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2TokenSplitterBridge,
+  },
+  [CHAIN_IDs.TRON]: {
+    [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTL2Bridge,
   },
   [CHAIN_IDs.UNICHAIN]: {
     [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20BridgeL2,
@@ -751,7 +782,7 @@ export const DEFAULT_ARBITRUM_GATEWAY: { [chainId: number]: { l1: string; l2: st
 // We currently support WBTC, USDT, USDC, and WETH as routes on scroll. WBTC, USDT, and USDC transfer events can all be queried from the standard ERC20
 // gateway, WETH has its own custom gateways, and other ERC20s may also have their own gateway, so it is very important to define unique gateways (ones
 // which are NOT the standard ERC20 gateway) if/when we add new deposit routes.
-export const SCROLL_CUSTOM_GATEWAY: { [chainId: number]: { l1: string; l2: string } } = {
+export const SCROLL_CUSTOM_GATEWAY: { [hubToken: string]: { l1: string; l2: string } } = {
   [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: {
     l1: "0x7AC440cAe8EB6328de4fA621163a792c1EA9D4fE",
     l2: "0x7003E7B7186f0E6601203b99F7B8DECBfA391cf9",
@@ -766,7 +797,7 @@ export const SCROLL_CUSTOM_GATEWAY: { [chainId: number]: { l1: string; l2: strin
 const resolveBridgeDelay = () => {
   const defaultBridgeDelay = 60 * 60;
 
-  const bridgeFamilies = {
+  const bridgeFamilies: Partial<Record<ChainFamily, number>> = {
     [ChainFamily.OP_STACK]: 20 * 60,
     [ChainFamily.ORBIT]: 40 * 60,
     [ChainFamily.ZK_STACK]: 60 * 60,
@@ -965,6 +996,18 @@ export const EVM_OFT_MESSENGERS: Map<string, Map<number, EvmAddress>> = new Map(
   ],
 ]);
 
+export const LEGACY_MESH_NETWORKS: number[] = [CHAIN_IDs.TRON];
+
+export const EVM_LEGACY_MESH_MESSENGERS: Map<string, Map<number, EvmAddress>> = new Map([
+  [
+    TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET],
+    new Map<number, EvmAddress>([
+      [CHAIN_IDs.MAINNET, EvmAddress.from("0x1F748c76dE468e9D11bd340fA9D5CBADf315dFB0")],
+      [CHAIN_IDs.TRON, EvmAddress.from("0x3a08f76772e200653bb55c2a92998daca62e0e97")], // Cast this address to an EvmAddress
+    ]),
+  ],
+]);
+
 // In rare circumstances, we may need to pay the LZ bridge fee in a custom token, such as when
 // the network we are bridging on does not have a native token. Specify that here.
 export const LZ_FEE_TOKENS: { [chainId: number]: EvmAddress } = {
@@ -997,7 +1040,16 @@ export type SwapRoute = {
 // Hardcoded swap routes the refiller can take to swap into the native token on the input destination chain ID.
 // @dev When calling the Swap API, the ZERO_ADDRESS is associated with the native gas token, even if
 // the native token address is not actually ZERO_ADDRESS.
-const generateSwapRoutes = () => {
+interface SwapRouteConfig {
+  originChainId: number;
+  inputTokenSymbol: string;
+  outputToken: EvmAddress;
+  tradeType: string;
+  inputToken: EvmAddress;
+  destinationChainId: number;
+}
+
+const generateSwapRoutes = (): { [chainId: string]: SwapRouteConfig } => {
   const swapChains = [CHAIN_IDs.BSC, CHAIN_IDs.HYPEREVM, CHAIN_IDs.MONAD, CHAIN_IDs.POLYGON, CHAIN_IDs.PLASMA];
 
   // Stable defaults that are a good fit for most chains.
@@ -1010,7 +1062,7 @@ const generateSwapRoutes = () => {
   };
 
   // Can override one or more defaults for a given chain here.
-  const overrides: Partial<typeof defaults> = {
+  const overrides: { [chainId: number]: Partial<typeof defaults> } = {
     [CHAIN_IDs.HYPEREVM]: { inputTokenSymbol: "USDC" },
     [CHAIN_IDs.PLASMA]: { inputTokenSymbol: "USDT" },
   };
@@ -1019,6 +1071,7 @@ const generateSwapRoutes = () => {
     swapChains.map((destinationChainId) => {
       const swapRoute = { ...defaults, ...(overrides[destinationChainId] ?? {}) };
       const { originChainId, inputTokenSymbol } = swapRoute;
+      assert(isKeyOf(inputTokenSymbol, TOKEN_SYMBOLS_MAP), `Unknown swap token: ${inputTokenSymbol}`);
       const inputToken = EvmAddress.from(TOKEN_SYMBOLS_MAP[inputTokenSymbol].addresses[originChainId]);
 
       return [destinationChainId, { ...swapRoute, inputToken, destinationChainId }];
