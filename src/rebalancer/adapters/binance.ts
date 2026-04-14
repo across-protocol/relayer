@@ -165,7 +165,6 @@ export function convertBinanceRouteAmount(params: {
 
   return toBNWei(truncate(convertedAmount, outputDecimals), outputDecimals);
 }
-
 function resolveStepPrecision(stepSize: string): number {
   const normalized = stepSize.replace(/0+$/, "").replace(/\.$/, "");
   const decimalPart = normalized.split(".")[1];
@@ -1224,8 +1223,14 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   private async _getSymbol(sourceToken: string, destinationToken: string) {
     const sourceAsset = resolveBinanceCoinSymbol(sourceToken);
     const destinationAsset = resolveBinanceCoinSymbol(destinationToken);
-    this.exchangeInfoPromise ??= this.binanceApiClient.exchangeInfo();
-    const symbol = (await this.exchangeInfoPromise).symbols.find((symbols) => {
+    let exchangeInfo;
+    try {
+      exchangeInfo = await this.exchangeInfoPromise;
+    } catch (error) {
+      this.exchangeInfoPromise = undefined;
+      throw error;
+    }
+    const symbol = exchangeInfo.symbols.find((symbols) => {
       return (
         symbols.symbol === `${sourceAsset}${destinationAsset}` || symbols.symbol === `${destinationAsset}${sourceAsset}`
       );
@@ -1410,15 +1415,21 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   ): Promise<BigNumber> {
     const sourceTokenInfo = this._getTokenInfo(sourceToken, sourceChain);
     const destinationTokenInfo = this._getTokenInfo(destinationToken, destinationChain);
+    const destinationAmountInSourcePrecision = this._getAmountConverter(
+      destinationChain,
+      destinationTokenInfo.address,
+      sourceChain,
+      sourceTokenInfo.address
+    )(destinationAmount);
     if (!this._routeRequiresSwap(sourceToken, destinationToken)) {
-      return this._getAmountConverter(
-        destinationChain,
-        destinationTokenInfo.address,
-        sourceChain,
-        sourceTokenInfo.address
-      )(destinationAmount);
+      return destinationAmountInSourcePrecision;
     }
-    const priceData = await this._getLatestPrice(destinationToken, sourceToken, destinationChain, destinationAmount);
+    const priceData = await this._getLatestPrice(
+      sourceToken,
+      destinationToken,
+      sourceChain,
+      destinationAmountInSourcePrecision
+    );
     const spotMarketMeta = await this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
     return convertBinanceRouteAmount({
       amount: destinationAmount,
@@ -1431,11 +1442,13 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   }
 
   private async _getTradeFees(): ReturnType<Binance["tradeFee"]> {
-    this.tradeFeesPromise ??= this.binanceApiClient.tradeFee({ useServerTime: true }).catch((error) => {
+    this.tradeFeesPromise ??= this.binanceApiClient.tradeFee();
+    try {
+      return await this.tradeFeesPromise;
+    } catch (error) {
       this.tradeFeesPromise = undefined;
       throw error;
-    });
-    return this.tradeFeesPromise;
+    }
   }
 
   private async _getMatchingFillForCloid(
