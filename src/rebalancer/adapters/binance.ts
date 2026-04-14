@@ -510,7 +510,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       if (!initiatedWithdrawalId) {
         this.logger.debug({
           at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",
-          message: `Cannot find initiated withdrawal for cloid ${cloid}, waiting`,
+          message: `Cannot find initiated withdrawal for cloid ${cloid} which filled at ${matchingFill.time}, waiting`,
           cloid: cloid,
           matchingFill: matchingFill,
         });
@@ -747,7 +747,6 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       const { unfinalizedWithdrawals, finalizedWithdrawals } = await this._getBinanceWithdrawals(
         destinationToken,
         binanceWithdrawalNetwork,
-
         isDefined(matchingFill) ? Math.floor(matchingFill.time / 1000) - 5 * 60 : getCurrentTime() - 6 * 60 * 60,
         // If there is a matching fill, then look up withdrawals after the fill time. If there is no fill because
         // its not a swap route, then use a conservative lookback period. If the withdrawal is older than this lookback
