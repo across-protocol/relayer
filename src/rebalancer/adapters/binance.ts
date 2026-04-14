@@ -1,4 +1,4 @@
-import { Binance, NewOrderSpot, OrderType, QueryOrderResult } from "binance-api-node";
+import { Binance, NewOrderSpot, OrderType, OrderType_LT, QueryOrderResult, Symbol } from "binance-api-node";
 import {
   assert,
   BigNumber,
@@ -70,32 +70,44 @@ export function isTerminalBinanceWithdrawal(status?: number): boolean {
   }
 }
 
+export function deriveBinanceSpotMarketMeta(
+  sourceToken: string,
+  destinationToken: string,
+  symbol: Symbol<OrderType_LT>
+): SPOT_MARKET_META {
+  const isBuy = symbol.baseAsset === destinationToken && symbol.quoteAsset === sourceToken;
+  const isSell = symbol.baseAsset === sourceToken && symbol.quoteAsset === destinationToken;
+  assert(isBuy || isSell, `No spot market meta found for route: ${sourceToken}-${destinationToken}`);
+
+  const priceFilter = symbol.filters.find((filter) => filter.filterType === "PRICE_FILTER");
+  const sizeFilter = symbol.filters.find((filter) => filter.filterType === "LOT_SIZE");
+  assert(isDefined(priceFilter?.tickSize), `PRICE_FILTER missing tickSize for ${symbol.symbol}`);
+  assert(isDefined(sizeFilter?.stepSize) && isDefined(sizeFilter?.minQty), `LOT_SIZE missing for ${symbol.symbol}`);
+
+  return {
+    symbol: symbol.symbol,
+    baseAssetName: symbol.baseAsset,
+    quoteAssetName: symbol.quoteAsset,
+    pxDecimals: resolveStepPrecision(priceFilter.tickSize),
+    szDecimals: resolveStepPrecision(sizeFilter.stepSize),
+    minimumOrderSize: Number(sizeFilter.minQty),
+    isBuy,
+  };
+}
+
+function resolveStepPrecision(stepSize: string): number {
+  const normalized = stepSize.replace(/0+$/, "").replace(/\.$/, "");
+  const decimalPart = normalized.split(".")[1];
+  return decimalPart?.length ?? 0;
+}
+
 export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   private binanceApiClient: Binance;
+  private exchangeInfoPromise?: ReturnType<Binance["exchangeInfo"]>;
 
   REDIS_PREFIX = "binance-stablecoin-swap:";
 
   REDIS_KEY_INITIATED_WITHDRAWALS = this.REDIS_PREFIX + "initiated-withdrawals";
-  private spotMarketMeta: { [name: string]: SPOT_MARKET_META } = {
-    "USDT-USDC": {
-      symbol: "USDCUSDT",
-      baseAssetName: "USDC",
-      quoteAssetName: "USDT",
-      pxDecimals: 4, // PRICE_FILTER.tickSize: '0.00010000'
-      szDecimals: 0, // SIZE_FILTER.stepSize: '1.00000000'
-      isBuy: true,
-      minimumOrderSize: 1,
-    },
-    "USDC-USDT": {
-      symbol: "USDCUSDT",
-      baseAssetName: "USDC",
-      quoteAssetName: "USDT",
-      pxDecimals: 4, // PRICE_FILTER.tickSize: '0.00010000'
-      szDecimals: 0, // SIZE_FILTER.stepSize: '1.00000000'
-      isBuy: false,
-      minimumOrderSize: 1,
-    },
-  };
   constructor(
     readonly logger: winston.Logger,
     readonly config: RebalancerConfig,
@@ -626,7 +638,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     // tick size. We try not to precompute the size required to place an order here because the price might change
     // and the amount transferred in might be insufficient to place the order later on, producing more dust or an
     // error.
-    const spotMarketMeta = this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
+    const spotMarketMeta = await this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
     const minimumOrderSize = toBNWei(spotMarketMeta.minimumOrderSize, sourceTokenInfo.decimals);
     if (amountToTransfer.lt(minimumOrderSize)) {
       this.logger.debug({
@@ -710,7 +722,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   ): Promise<BigNumber> {
     this._assertRouteIsSupported(rebalanceRoute);
     const { sourceToken, destinationToken, sourceChain, destinationChain } = rebalanceRoute;
-    const spotMarketMeta = this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
+    const spotMarketMeta = await this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
     // Commission is denominated in percentage points.
     const tradeFeePct = (await this.binanceApiClient.tradeFee()).find(
       (fee) => fee.symbol === spotMarketMeta.symbol
@@ -918,7 +930,8 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   }
 
   private async _getSymbol(sourceToken: string, destinationToken: string) {
-    const symbol = (await this.binanceApiClient.exchangeInfo()).symbols.find((symbols) => {
+    this.exchangeInfoPromise ??= this.binanceApiClient.exchangeInfo();
+    const symbol = (await this.exchangeInfoPromise).symbols.find((symbols) => {
       return (
         symbols.symbol === `${sourceToken}${destinationToken}` || symbols.symbol === `${destinationToken}${sourceToken}`
       );
@@ -936,7 +949,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const symbol = await this._getSymbol(sourceToken, destinationToken);
     const sourceTokenInfo = this._getTokenInfo(sourceToken, sourceChain);
     const book = await this.binanceApiClient.book({ symbol: symbol.symbol });
-    const spotMarketMeta = this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
+    const spotMarketMeta = await this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
     const sideOfBookToTraverse = spotMarketMeta.isBuy ? book.asks : book.bids;
     const bestPx = Number(sideOfBookToTraverse[0].price);
     let szFilledSoFar = bnZero;
@@ -967,25 +980,25 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     destinationToken: string,
     amountToTransfer: BigNumber,
     price: number
-  ): number {
-    const spotMarketMeta = this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
-    const sz = spotMarketMeta.isBuy
-      ? amountToTransfer.mul(10 ** spotMarketMeta.pxDecimals).div(toBNWei(price, spotMarketMeta.pxDecimals))
-      : amountToTransfer;
-    const sourceTokenInfo = this._getTokenInfo(sourceToken, sourceChain);
-    // Floor this number so we can guarantee that we have enough balance to place the order:
-    const szNumber = Number(fromWei(sz, sourceTokenInfo.decimals));
-    const szFormatted = truncate(szNumber, spotMarketMeta.szDecimals);
-    assert(
-      szFormatted >= spotMarketMeta.minimumOrderSize,
-      `size of order ${szFormatted} is less than minimum order size ${spotMarketMeta.minimumOrderSize}`
-    );
-    return szFormatted;
+  ): Promise<number> {
+    return this._getSpotMarketMetaForRoute(sourceToken, destinationToken).then((spotMarketMeta) => {
+      const sz = spotMarketMeta.isBuy
+        ? amountToTransfer.mul(10 ** spotMarketMeta.pxDecimals).div(toBNWei(price, spotMarketMeta.pxDecimals))
+        : amountToTransfer;
+      const sourceTokenInfo = this._getTokenInfo(sourceToken, sourceChain);
+      // Floor this number so we can guarantee that we have enough balance to place the order:
+      const szNumber = Number(fromWei(sz, sourceTokenInfo.decimals));
+      const szFormatted = truncate(szNumber, spotMarketMeta.szDecimals);
+      assert(
+        szFormatted >= spotMarketMeta.minimumOrderSize,
+        `size of order ${szFormatted} is less than minimum order size ${spotMarketMeta.minimumOrderSize}`
+      );
+      return szFormatted;
+    });
   }
 
-  private _getSpotMarketMetaForRoute(sourceToken: string, destinationToken: string): SPOT_MARKET_META {
-    const name = `${sourceToken}-${destinationToken}`;
-    return this.spotMarketMeta[name];
+  private async _getSpotMarketMetaForRoute(sourceToken: string, destinationToken: string): Promise<SPOT_MARKET_META> {
+    return deriveBinanceSpotMarketMeta(sourceToken, destinationToken, await this._getSymbol(sourceToken, destinationToken));
   }
 
   private async _getMatchingFillForCloid(
@@ -993,7 +1006,10 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     account: EvmAddress
   ): Promise<{ matchingFill: QueryOrderResult; expectedAmountToReceive: string } | undefined> {
     const orderDetails = await this._redisGetOrderDetails(cloid, account);
-    const spotMarketMeta = this._getSpotMarketMetaForRoute(orderDetails.sourceToken, orderDetails.destinationToken);
+    const spotMarketMeta = await this._getSpotMarketMetaForRoute(
+      orderDetails.sourceToken,
+      orderDetails.destinationToken
+    );
     const allOrders = await this.binanceApiClient.allOrders({
       symbol: spotMarketMeta.symbol,
     });
@@ -1006,14 +1022,14 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const { sourceToken, sourceChain, destinationToken, amountToTransfer } = orderDetails;
     const latestPx = (await this._getLatestPrice(sourceToken, destinationToken, sourceChain, amountToTransfer))
       .latestPrice;
-    const szForOrder = this._getQuantityForOrder(
+    const szForOrder = await this._getQuantityForOrder(
       sourceToken,
       sourceChain,
       destinationToken,
       amountToTransfer,
       latestPx
     );
-    const spotMarketMeta = this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
+    const spotMarketMeta = await this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
     const orderStruct = {
       symbol: spotMarketMeta.symbol,
       newClientOrderId: cloid,
