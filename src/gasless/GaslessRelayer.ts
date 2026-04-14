@@ -134,7 +134,7 @@ export class GaslessRelayer {
     readonly baseSigner: Signer,
     readonly depositSigners: Signer[]
   ) {
-    this.api = new AcrossSwapApiClient(this.logger, this.config.apiTimeoutOverride);
+    this.api = new AcrossSwapApiClient(this.logger, this.config.apiTimeoutOverride, this.config.swapApiKey);
     this.transactionClient = new TransactionClient(this.logger, depositSigners);
   }
 
