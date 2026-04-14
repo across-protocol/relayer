@@ -30,10 +30,10 @@ import COUNTERFACTUAL_DEPOSIT_FACTORY_ABI from "../common/abi/CounterfactualDepo
 // Return an ethers contract instance for a deployed contract, imported from the Across-protocol contracts repo.
 export function getDeployedContract(contractName: string, networkId: number, signer?: Signer): Contract {
   try {
-    const address = getDeployedAddress(contractName, networkId);
+    const address = toAddressType(getDeployedAddress(contractName, networkId), networkId);
     // If the contractName is SpokePool then we need to modify it to find the correct contract factory artifact.
     const abi = getTypechainAbi(contractName);
-    return new Contract(address, abi, signer);
+    return new Contract(address.toEvmAddress(), abi, signer);
   } catch (error) {
     throw new Error(`Could not find address for contract ${contractName} on ${networkId} (${error})`);
   }
@@ -53,13 +53,15 @@ export function getSpokePool(chainId: number, address?: string): Contract {
 // For a chain ID and optional SpokePoolPeriphery address, return a Contract instance with the corresponding ABI.
 export function getSpokePoolPeriphery(chainId: number, address?: string): Contract {
   address ??= getDeployedAddress("SpokePoolPeriphery", chainId);
-  return new Contract(address, CONTRACT_ADDRESSES[chainId].spokePoolPeriphery.abi);
+  const addressType = toAddressType(address, chainId);
+  return new Contract(addressType.toEvmAddress(), CONTRACT_ADDRESSES[chainId].spokePoolPeriphery.abi);
 }
 
 // Uniswap Permit2 (same deployment address on supported EVM chains). Falls back to mainnet metadata when `chainId` has no entry.
 export function getPermit2(chainId: number, address?: string): Contract {
   const permit2 = CONTRACT_ADDRESSES[chainId].permit2;
-  return new Contract(address ?? permit2.address, permit2.abi);
+  const permit2Address = toAddressType(address ?? permit2.address, chainId);
+  return new Contract(permit2Address.toEvmAddress(), permit2.abi);
 }
 
 export function getSpokePoolAddress(chainId: number): Address {

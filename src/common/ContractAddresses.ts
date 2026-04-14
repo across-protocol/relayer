@@ -625,6 +625,15 @@ export const CONTRACT_ADDRESSES: {
       abi: ZKSTACK_USDC_BRIDGE_ABI,
     },
   },
+  [CHAIN_IDs.TRON]: {
+    permit2: {
+      address: "TTJxU3P8rHycAyFY4kVtGNfmnMH4ezcuM9",
+      abi: PERMIT2_ABI,
+    },
+    spokePoolPeriphery: {
+      abi: SPOKE_POOL_PERIPHERY_ABI,
+    },
+  },
   [CHAIN_IDs.LINEA]: {
     cctpV2MessageTransmitter: {
       address: "0x81D40F21F12A8F0E3252Bccb954D722d4c464B64",
