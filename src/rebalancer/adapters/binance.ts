@@ -774,7 +774,9 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const { sourceToken, destinationToken, sourceChain, destinationChain } = rebalanceRoute;
     const spotMarketMeta = await this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
     // Commission is denominated in percentage points.
-    const tradeFeePct = (await this._getTradeFees()).find((fee) => fee.symbol === spotMarketMeta.symbol).takerCommission;
+    const tradeFeePct = (await this._getTradeFees()).find(
+      (fee) => fee.symbol === spotMarketMeta.symbol
+    ).takerCommission;
     const tradeFee = toBNWei(tradeFeePct, 18).mul(amountToTransfer).div(toBNWei(100, 18));
     const destinationCoin = await this._getAccountCoins(destinationToken);
     const destinationEntrypointNetwork = await this._getEntrypointNetwork(destinationChain, destinationToken);
@@ -1088,8 +1090,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     sourceChain: number,
     destinationToken: string,
     destinationChain: number,
-    amountToTransfer: BigNumber,
-    price: number
+    amountToTransfer: BigNumber
   ): Promise<number> {
     return this._getSpotMarketMetaForRoute(sourceToken, destinationToken).then(async (spotMarketMeta) => {
       const sourceTokenInfo = this._getTokenInfo(sourceToken, sourceChain);
@@ -1116,7 +1117,11 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   }
 
   private async _getSpotMarketMetaForRoute(sourceToken: string, destinationToken: string): Promise<SPOT_MARKET_META> {
-    return deriveBinanceSpotMarketMeta(sourceToken, destinationToken, await this._getSymbol(sourceToken, destinationToken));
+    return deriveBinanceSpotMarketMeta(
+      sourceToken,
+      destinationToken,
+      await this._getSymbol(sourceToken, destinationToken)
+    );
   }
 
   private async _convertSourceToDestination(
@@ -1201,15 +1206,12 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
 
   private async _placeMarketOrder(cloid: string, orderDetails: OrderDetails): Promise<void> {
     const { sourceToken, sourceChain, destinationToken, destinationChain, amountToTransfer } = orderDetails;
-    const latestPx = (await this._getLatestPrice(sourceToken, destinationToken, sourceChain, amountToTransfer))
-      .latestPrice;
     const szForOrder = await this._getQuantityForOrder(
       sourceToken,
       sourceChain,
       destinationToken,
       destinationChain,
-      amountToTransfer,
-      latestPx
+      amountToTransfer
     );
     const spotMarketMeta = await this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
     const orderStruct = {

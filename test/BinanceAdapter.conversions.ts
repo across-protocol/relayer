@@ -86,12 +86,10 @@ describe("Binance adapter conversion sizing", function () {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     sinon.stub(adapter as any, "_getTradeFees").resolves([{ symbol: "USDCUSDT", takerCommission: "0" }]);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    sinon
-      .stub(adapter as any, "_getEntrypointNetwork")
-      .callsFake(async (...args: unknown[]) => {
-        const [chainId, token] = args as [number, string];
-        return token === "USDC" && chainId === CHAIN_IDs.BASE ? CHAIN_IDs.MAINNET : chainId;
-      });
+    sinon.stub(adapter as any, "_getEntrypointNetwork").callsFake(async (...args: [number, string]) => {
+      const [chainId, token] = args;
+      return token === "USDC" && chainId === CHAIN_IDs.BASE ? CHAIN_IDs.MAINNET : chainId;
+    });
 
     await adapter.getEstimatedCost(route, toBNWei("100", 6), false);
 
