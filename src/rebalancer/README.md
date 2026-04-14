@@ -180,13 +180,13 @@ Inputs:
 High-level flow:
 
 1. Compute cumulative deficits (`current < threshold`, target refill amount `target - current`) and cumulative excesses (`current > target`, excess amount `current - target`).
-2. Sort cumulative deficits by token `priorityTier` (higher first), then larger deficits first.
-3. Sort cumulative excesses by token `priorityTier` (lower first), then larger excesses first.
+2. Sort cumulative deficits by token `priorityTier` (higher first), then larger USD-normalized deficits first.
+3. Sort cumulative excesses by token `priorityTier` (lower first), then larger USD-normalized excesses first.
 4. For each excess token used to fill a deficit token, sort source chains from `cumulativeTargetBalances[excessToken].chains` by:
    - chain `priorityTier` ascending,
    - then current chain balance descending.
 5. For each candidate source chain, evaluate all destination chains configured for the deficit token that have valid routes, then choose the route with the lowest `getEstimatedCost`.
-6. Cap transfer amount by remaining deficit, remaining excess, chain balance, and configured `maxAmountsToTransfer`.
+6. Cap transfer amount by remaining deficit, remaining excess, chain balance, and configured `maxAmountsToTransfer`. For mixed-asset routes such as `WETH <-> stablecoin`, the client converts between source and destination token amounts through hub-chain USD prices before capping and decrementing the remaining deficit.
 7. Enforce max fee pct and adapter pending-order caps before calling `initializeRebalance`.
 
 Design tradeoff:

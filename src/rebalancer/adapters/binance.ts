@@ -42,6 +42,7 @@ import { CctpAdapter } from "./cctpAdapter";
 import { OftAdapter } from "./oftAdapter";
 import { CONTRACT_ADDRESSES } from "../../common";
 import WETH_ABI from "../../common/abi/Weth.json";
+
 interface SPOT_MARKET_META {
   symbol: string;
   baseAssetName: string;
@@ -746,6 +747,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       const { unfinalizedWithdrawals, finalizedWithdrawals } = await this._getBinanceWithdrawals(
         destinationToken,
         binanceWithdrawalNetwork,
+
         isDefined(matchingFill) ? Math.floor(matchingFill.time / 1000) - 5 * 60 : getCurrentTime() - 6 * 60 * 60,
         // If there is a matching fill, then look up withdrawals after the fill time. If there is no fill because
         // its not a swap route, then use a conservative lookback period. If the withdrawal is older than this lookback
@@ -967,6 +969,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         .withdrawFee,
       destinationTokenInfo.decimals
     );
+
     const latestPrice = await this._getLatestPrice(sourceToken, destinationToken, sourceChain, amountToTransfer);
     const withdrawFeeConvertedToSourceToken = await this._convertDestinationToSource(
       destinationToken,

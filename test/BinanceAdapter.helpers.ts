@@ -3,7 +3,7 @@ import { expect, toBNWei } from "./utils";
 import {
   convertBinanceRouteAmount,
   deriveBinanceSpotMarketMeta,
-  isSameBinanceCoinRoute,
+  isSameBinanceCoin,
   resolveBinanceCoinSymbol,
   supportsBinanceIntermediateBridgeToken,
 } from "../src/rebalancer/adapters/binance";
@@ -15,9 +15,9 @@ describe("Binance adapter helpers", async function () {
   });
 
   it("detects same-coin Binance routes that should skip the swap leg", async function () {
-    expect(isSameBinanceCoinRoute("WETH", "WETH")).to.equal(true);
-    expect(isSameBinanceCoinRoute("USDC", "USDC")).to.equal(true);
-    expect(isSameBinanceCoinRoute("WETH", "USDC")).to.equal(false);
+    expect(isSameBinanceCoin("WETH", "WETH")).to.equal(true);
+    expect(isSameBinanceCoin("USDC", "USDC")).to.equal(true);
+    expect(isSameBinanceCoin("WETH", "USDC")).to.equal(false);
   });
 
   it("only permits intermediate Binance bridge legs for assets we can actually bridge onchain", async function () {

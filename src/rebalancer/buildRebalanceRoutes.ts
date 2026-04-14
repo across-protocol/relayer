@@ -45,7 +45,7 @@ const REBALANCE_CHAINS_BY_SYMBOL: Record<SupportedToken, readonly number[]> = {
     CHAIN_IDs.MONAD,
     CHAIN_IDs.BSC,
   ],
-  WETH: [CHAIN_IDs.ARBITRUM, CHAIN_IDs.BASE, CHAIN_IDs.BSC, CHAIN_IDs.MAINNET, CHAIN_IDs.OPTIMISM],
+  WETH: [CHAIN_IDs.MAINNET],
 };
 
 const SAME_ASSET_BRIDGE_ADAPTER_BY_SYMBOL: Record<StableToken, "cctp" | "oft"> = {

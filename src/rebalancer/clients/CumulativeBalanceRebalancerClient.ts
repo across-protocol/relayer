@@ -1,20 +1,37 @@
 import {
   assert,
+  acrossApi,
   BigNumber,
   bnZero,
+  coingecko,
   ConvertDecimals,
+  defiLlama,
   fromWei,
   getNetworkName,
   getTokenInfoFromSymbol,
   isDefined,
   mapAsync,
+  PriceClient,
   toBNWei,
 } from "../../utils";
 import { ExcessOrDeficit, RebalanceRoute } from "../utils/interfaces";
 import { sortDeficitFunction, sortExcessFunction } from "../utils/utils";
 import { BaseRebalancerClient } from "./BaseRebalancerClient";
+import { getAcrossHost } from "../../clients/AcrossAPIClient";
 
 export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
+  private readonly priceClient: PriceClient;
+  private readonly tokenPriceCache = new Map<string, BigNumber>();
+
+  constructor(...args: ConstructorParameters<typeof BaseRebalancerClient>) {
+    super(...args);
+    this.priceClient = new PriceClient(this.logger, [
+      new acrossApi.PriceFeed({ host: getAcrossHost(this.config.hubPoolChainId) }),
+      new coingecko.PriceFeed({ apiKey: process.env.COINGECKO_PRO_API_KEY }),
+      new defiLlama.PriceFeed(),
+    ]);
+  }
+
   /**
    * @notice Rebalances cumulative balances of tokens across chains where cumulative token balances are above
    * configured targets to to tokens that have cumulative balances below configured thresholds. Tokens are sourced
@@ -85,12 +102,9 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
       ),
     });
 
-    // Identify all tokens with cumulative balance deficits and sort them by size, assuming that 1 unit of each token
-    // is worth the same amount of USD. Deficits are ranked from most negative to least.
-    // @todo We would need to change this logic if we accept the user setting targets for tokens that are not all
-    // stablecoins.
     const sortedDeficits: ExcessOrDeficit[] = [];
     const sortedExcesses: ExcessOrDeficit[] = [];
+    const tokenPricesUsd = new Map<string, BigNumber>();
     for (const [token, cumulativeBalance] of Object.entries(cumulativeBalances)) {
       // If current balance is below threshold, we want to refill back to target balance.
       const { targetBalance, thresholdBalance, priorityTier } = cumulativeTargetBalances[token];
@@ -102,9 +116,9 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
         const excessAmount = currentCumulativeBalance.sub(targetBalance);
         sortedExcesses.push({ token, amount: excessAmount, chainId: this.config.hubPoolChainId, priorityTier });
       }
+      tokenPricesUsd.set(token, await this._getTokenPriceUsd(token));
     }
-    // Sort deficits by priority from highest to lowest and then by size from largest to smallest.
-    sortedDeficits.sort(sortDeficitFunction);
+    sortedDeficits.sort((deficitA, deficitB) => sortDeficitFunction(deficitA, deficitB, tokenPricesUsd));
     if (sortedDeficits.length > 0) {
       this.logger.debug({
         at: "CumulativeBalanceRebalancerClient.rebalanceInventory",
@@ -116,7 +130,7 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
       });
     }
     // Sort excesses by priority from lowest to highest and then by size from largest to smallest.
-    sortedExcesses.sort(sortExcessFunction);
+    sortedExcesses.sort((excessA, excessB) => sortExcessFunction(excessA, excessB, tokenPricesUsd));
     if (sortedExcesses.length > 0) {
       this.logger.debug({
         at: "CumulativeBalanceRebalancerClient.rebalanceInventory",
@@ -187,7 +201,12 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
           const chainDecimals = getTokenInfoFromSymbol(excessToken, Number(chainId)).decimals;
           const l1ToChainConverter = ConvertDecimals(l1TokenDecimals, chainDecimals);
           const excessRemainingConverted = l1ToChainConverter(excessRemaining);
-          const deficitRemainingConverted = l1ToChainConverter(deficitRemaining);
+          const deficitRemainingInExcessToken = await this._convertL1TokenAmountForComparison(
+            deficitRemaining,
+            deficitToken,
+            excessToken
+          );
+          const deficitRemainingConverted = l1ToChainConverter(deficitRemainingInExcessToken);
           // The max we can transfer is the minimum of {the remaining deficit, the remaining excess, the max amount to transfer, the current balance}
           const maxAmountToTransfer = this.config.maxAmountsToTransfer[excessToken]?.[chainId];
           let amountToTransferCapped =
@@ -285,8 +304,14 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
 
           // Initiate a new rebalance
           const chainToL1Converter = ConvertDecimals(chainDecimals, l1TokenDecimals);
-          deficitRemaining = deficitRemaining.sub(chainToL1Converter(amountToTransferCapped));
-          excessRemaining = excessRemaining.sub(chainToL1Converter(amountToTransferCapped));
+          const amountTransferredL1 = chainToL1Converter(amountToTransferCapped);
+          const deficitReduction = await this._convertL1TokenAmountForComparison(
+            amountTransferredL1,
+            excessToken,
+            deficitToken
+          );
+          deficitRemaining = deficitReduction.gte(deficitRemaining) ? bnZero : deficitRemaining.sub(deficitReduction);
+          excessRemaining = excessRemaining.sub(amountTransferredL1);
           const deficitTokenChainDecimals = getTokenInfoFromSymbol(
             deficitToken,
             cheapestCostRoute.route.destinationChain
@@ -324,5 +349,43 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
         }
       }
     }
+  }
+
+  private async _convertL1TokenAmountForComparison(
+    amount: BigNumber,
+    fromToken: string,
+    toToken: string
+  ): Promise<BigNumber> {
+    if (fromToken === toToken) {
+      return amount;
+    }
+
+    const fromTokenDecimals = getTokenInfoFromSymbol(fromToken, this.config.hubPoolChainId).decimals;
+    const toTokenDecimals = getTokenInfoFromSymbol(toToken, this.config.hubPoolChainId).decimals;
+
+    const [fromPriceUsd, toPriceUsd] = await Promise.all([
+      this._getTokenPriceUsd(fromToken),
+      this._getTokenPriceUsd(toToken),
+    ]);
+    const fromTokenUnit = toBNWei("1", fromTokenDecimals);
+    const toTokenUnit = toBNWei("1", toTokenDecimals);
+    const usdValue = amount.mul(fromPriceUsd).div(fromTokenUnit);
+    return usdValue.mul(toTokenUnit).div(toPriceUsd);
+  }
+
+  private async _getTokenPriceUsd(token: string): Promise<BigNumber> {
+    const cachedPrice = this.tokenPriceCache.get(token);
+    if (cachedPrice) {
+      return cachedPrice;
+    }
+
+    const hubTokenAddress = getTokenInfoFromSymbol(token, this.config.hubPoolChainId).address.toNative();
+    const fixedPriceEnv = process.env[`RELAYER_TOKEN_PRICE_FIXED_${hubTokenAddress}`];
+    const priceUsd = isDefined(fixedPriceEnv)
+      ? toBNWei(fixedPriceEnv)
+      : toBNWei((await this.priceClient.getPriceByAddress(hubTokenAddress)).price);
+    assert(priceUsd.gt(bnZero), `Unable to resolve positive USD price for ${token}`);
+    this.tokenPriceCache.set(token, priceUsd);
+    return priceUsd;
   }
 }

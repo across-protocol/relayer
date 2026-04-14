@@ -6,7 +6,7 @@ import {
   MaxPendingOrdersConfig,
   RebalancerConfig,
 } from "../src/rebalancer/RebalancerConfig";
-import { bnZero, EvmAddress, Signer, toBNWei } from "../src/utils";
+import { bnZero, EvmAddress, getTokenInfoFromSymbol, Signer, toBNWei } from "../src/utils";
 import { BigNumber, createSpyLogger, ethers, expect } from "./utils";
 
 describe("RebalancerClient.cumulativeRebalancing", () => {
@@ -27,6 +27,13 @@ describe("RebalancerClient.cumulativeRebalancing", () => {
     [DAI]: 18,
     [WETH]: 18,
   };
+  const DEFAULT_FIXED_PRICES = {
+    [USDC]: "1",
+    [USDT]: "0.98",
+    [DAI]: "1",
+    [WETH]: "2000",
+  } as const;
+  let restoreDefaultPrices: (() => void) | undefined;
 
   const amount = (token: string, humanAmount: string): BigNumber => toBNWei(humanAmount, TOKEN_DECIMALS[token]);
 
@@ -74,6 +81,34 @@ describe("RebalancerClient.cumulativeRebalancing", () => {
     await client.initialize(rebalanceRoutes);
     return client;
   }
+
+  function withFixedTokenPrices(prices: Record<string, string>): () => void {
+    const previousValues = new Map<string, string | undefined>();
+    for (const [token, price] of Object.entries(prices)) {
+      const address = getTokenInfoFromSymbol(token, HUB_POOL_CHAIN_ID).address.toNative();
+      const envKey = `RELAYER_TOKEN_PRICE_FIXED_${address}`;
+      previousValues.set(envKey, process.env[envKey]);
+      process.env[envKey] = price;
+    }
+    return () => {
+      previousValues.forEach((value, envKey) => {
+        if (value === undefined) {
+          delete process.env[envKey];
+        } else {
+          process.env[envKey] = value;
+        }
+      });
+    };
+  }
+
+  beforeEach(() => {
+    restoreDefaultPrices = withFixedTokenPrices(DEFAULT_FIXED_PRICES);
+  });
+
+  afterEach(() => {
+    restoreDefaultPrices?.();
+    restoreDefaultPrices = undefined;
+  });
 
   it("Caps rebalance amount at lesser of deficit and excess remaining", async function () {
     const deficitToken = USDC;
@@ -154,7 +189,12 @@ describe("RebalancerClient.cumulativeRebalancing", () => {
     expect(adapter1.rebalances[0].route.sourceChain).to.equal(CHAIN_A);
     expect(adapter1.rebalances[1].route.sourceChain).to.equal(CHAIN_B);
     expect(adapter1.rebalances[0].amount).to.equal(amount(excessToken, "60"));
-    expect(adapter1.rebalances[1].amount).to.equal(amount(excessToken, "40"));
+    const usdcPrice = toBNWei(DEFAULT_FIXED_PRICES[USDC]);
+    const usdtPrice = toBNWei(DEFAULT_FIXED_PRICES[USDT]);
+    const firstDeficitReduction = amount(excessToken, "60").mul(usdtPrice).div(usdcPrice);
+    const remainingDeficit = amount(deficitToken, "100").sub(firstDeficitReduction);
+    const expectedSecondAmount = remainingDeficit.mul(usdcPrice).div(usdtPrice);
+    expect(adapter1.rebalances[1].amount).to.equal(expectedSecondAmount);
   });
 
   it("Caps rebalance amount at configured max amount per rebalance", async function () {
@@ -224,6 +264,51 @@ describe("RebalancerClient.cumulativeRebalancing", () => {
     expect(adapter1.rebalances.length).to.equal(2);
     expect(adapter1.rebalances[0].route.destinationToken).to.equal(USDC);
     expect(adapter1.rebalances[1].route.destinationToken).to.equal(DAI);
+  });
+
+  it("Sorts mixed-asset deficits by USD-normalized size", async function () {
+    const restorePrices = withFixedTokenPrices({
+      [USDC]: "1",
+      [USDT]: "1",
+      [WETH]: "2000",
+    });
+    try {
+      const cumulativeBalances = {
+        [USDC]: amount(USDC, "500"),
+        [WETH]: amount(WETH, "0.5"),
+        [USDT]: amount(USDT, "10000"),
+      };
+      const currentBalances = {
+        [CHAIN_A]: {
+          [USDC]: amount(USDC, "500"),
+          [WETH]: amount(WETH, "0.5"),
+          [USDT]: amount(USDT, "10000"),
+        },
+      };
+      const cumulativeTargetBalances: CumulativeTargetBalanceConfig = {
+        [USDC]: buildTarget(USDC, "1000", "900", 0, { [CHAIN_A]: 0 }),
+        [WETH]: buildTarget(WETH, "1", "0.9", 0, { [CHAIN_A]: 0 }),
+        [USDT]: buildTarget(USDT, "0", "0", 0, { [CHAIN_A]: 0 }),
+      };
+      const baseSigner = ethers.Wallet.createRandom();
+      const adapter1 = new MockRebalancerAdapter(baseSigner);
+      const rebalancerClient = await createClient(
+        cumulativeTargetBalances,
+        { adapter1 },
+        [makeRoute(CHAIN_A, CHAIN_A, USDT, USDC, "adapter1"), makeRoute(CHAIN_A, CHAIN_A, USDT, WETH, "adapter1")],
+        {},
+        {},
+        baseSigner
+      );
+
+      await rebalancerClient.rebalanceInventory(cumulativeBalances, currentBalances, MAX_FEE_PCT);
+
+      expect(adapter1.rebalances.length).to.equal(2);
+      expect(adapter1.rebalances[0].route.destinationToken).to.equal(WETH);
+      expect(adapter1.rebalances[1].route.destinationToken).to.equal(USDC);
+    } finally {
+      restorePrices();
+    }
   });
 
   it("Iterates through excesses in sorted order", async function () {
@@ -336,6 +421,45 @@ describe("RebalancerClient.cumulativeRebalancing", () => {
     expect(adapter1.rebalances.length).to.equal(0);
     expect(adapter2.rebalances.length).to.equal(1);
     expect(adapter2.rebalances[0].route.destinationChain).to.equal(CHAIN_A);
+  });
+
+  it("Sizes WETH deficits using excess-token USD value instead of raw decimals", async function () {
+    const restorePrices = withFixedTokenPrices({
+      [USDC]: "1",
+      [WETH]: "2000",
+    });
+    try {
+      const cumulativeBalances = {
+        [USDC]: amount(USDC, "5000"),
+        [WETH]: bnZero,
+      };
+      const currentBalances = {
+        [CHAIN_A]: { [USDC]: amount(USDC, "5000"), [WETH]: bnZero },
+      };
+      const cumulativeTargetBalances: CumulativeTargetBalanceConfig = {
+        [USDC]: buildTarget(USDC, "0", "0", 0, { [CHAIN_A]: 0 }),
+        [WETH]: buildTarget(WETH, "2", "1.5", 0, { [CHAIN_A]: 0 }),
+      };
+      const baseSigner = ethers.Wallet.createRandom();
+      const adapter1 = new MockRebalancerAdapter(baseSigner);
+      const rebalancerClient = await createClient(
+        cumulativeTargetBalances,
+        { adapter1 },
+        [makeRoute(CHAIN_A, CHAIN_A, USDC, WETH, "adapter1")],
+        {},
+        {},
+        baseSigner
+      );
+
+      await rebalancerClient.rebalanceInventory(cumulativeBalances, currentBalances, MAX_FEE_PCT);
+
+      expect(adapter1.rebalances.length).to.equal(1);
+      expect(adapter1.rebalances[0].route.sourceToken).to.equal(USDC);
+      expect(adapter1.rebalances[0].route.destinationToken).to.equal(WETH);
+      expect(adapter1.rebalances[0].amount).to.equal(amount(USDC, "4000"));
+    } finally {
+      restorePrices();
+    }
   });
 
   it("Respects max pending orders per adapter limit", async function () {
