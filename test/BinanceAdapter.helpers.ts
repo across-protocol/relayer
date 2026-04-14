@@ -81,6 +81,30 @@ describe("Binance adapter helpers", async function () {
     expect(symbol.symbol).to.equal("USDCUSDT");
     expect(exchangeInfoStub.callCount).to.equal(2);
   });
+
+  it("retries tradeFee lookups after transient failures", async function () {
+    const adapter = await makeAdapter();
+    const tradeFeeStub = sinon.stub();
+    tradeFeeStub.onCall(0).rejects(new Error("temporary outage"));
+    tradeFeeStub.onCall(1).resolves([{ symbol: "USDCUSDT", takerCommission: "0.1" }]);
+    const feeAdapter = adapter as unknown as {
+      _getTradeFees(): Promise<Array<{ symbol: string; takerCommission: string }>>;
+      binanceApiClient: { tradeFee: typeof tradeFeeStub };
+    };
+    feeAdapter.binanceApiClient = { tradeFee: tradeFeeStub };
+
+    try {
+      await feeAdapter._getTradeFees();
+      expect.fail("expected the first _getTradeFees call to propagate the tradeFee failure");
+    } catch (error) {
+      expect(String(error)).to.contain("temporary outage");
+    }
+
+    const fees = await feeAdapter._getTradeFees();
+
+    expect(fees[0].symbol).to.equal("USDCUSDT");
+    expect(tradeFeeStub.callCount).to.equal(2);
+  });
 });
 
 async function makeAdapter(): Promise<BinanceStablecoinSwapAdapter> {

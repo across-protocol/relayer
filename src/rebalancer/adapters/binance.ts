@@ -1184,7 +1184,12 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
 
   private async _getTradeFees(): ReturnType<Binance["tradeFee"]> {
     this.tradeFeesPromise ??= this.binanceApiClient.tradeFee({ useServerTime: true });
-    return this.tradeFeesPromise;
+    try {
+      return await this.tradeFeesPromise;
+    } catch (error) {
+      this.tradeFeesPromise = undefined;
+      throw error;
+    }
   }
 
   private async _getMatchingFillForCloid(
