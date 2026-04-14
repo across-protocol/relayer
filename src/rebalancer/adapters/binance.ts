@@ -1410,7 +1410,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   ): Promise<BigNumber> {
     const sourceTokenInfo = this._getTokenInfo(sourceToken, sourceChain);
     const destinationTokenInfo = this._getTokenInfo(destinationToken, destinationChain);
-    const sourceAmount = toBNWei(value, sourceTokenInfo.decimals);
+    const sourceAmount = toBNWei(truncate(value, sourceTokenInfo.decimals), sourceTokenInfo.decimals);
     if (!this._routeRequiresSwap(sourceToken, destinationToken)) {
       return sourceAmount;
     }
