@@ -42,7 +42,6 @@ import { CctpAdapter } from "./cctpAdapter";
 import { OftAdapter } from "./oftAdapter";
 import { CONTRACT_ADDRESSES } from "../../common";
 import WETH_ABI from "../../common/abi/Weth.json";
-
 interface SPOT_MARKET_META {
   symbol: string;
   baseAssetName: string;
