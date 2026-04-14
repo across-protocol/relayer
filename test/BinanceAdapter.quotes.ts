@@ -65,7 +65,7 @@ describe("Binance adapter quotes", function () {
 
   it("throws a visible-depth error when the order book cannot satisfy the order size", async function () {
     const adapter = await makeAdapter();
-    const exchangeInfoStub = sinon.stub().resolves({
+    const exchangeInfo = {
       symbols: [
         {
           symbol: "USDCUSDT",
@@ -84,7 +84,7 @@ describe("Binance adapter quotes", function () {
           ],
         },
       ],
-    });
+    };
     const bookStub = sinon.stub().resolves(
       makeOrderBook({
         asks: [{ price: "1.0010", quantity: "10" }],
@@ -92,7 +92,9 @@ describe("Binance adapter quotes", function () {
       })
     );
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (adapter as any).binanceApiClient = { exchangeInfo: exchangeInfoStub, book: bookStub };
+    (adapter as any).exchangeInfoPromise = Promise.resolve(exchangeInfo);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (adapter as any).binanceApiClient = { book: bookStub };
 
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
