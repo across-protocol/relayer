@@ -199,7 +199,7 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
   }
 
   private _getOrCreateBinanceClientPromise(): Promise<BinanceApi> {
-    if (this.binanceApiClientPromise) {
+    if (this.binanceApiClientPromise !== undefined) {
       return this.binanceApiClientPromise;
     }
     const promise = getBinanceApiClient(process.env["BINANCE_API_BASE"]).catch((error) => {
