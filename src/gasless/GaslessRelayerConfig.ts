@@ -12,6 +12,7 @@ export type AllowedPeggedPairs = { [inputSymbol: string]: Set<string> };
 export class GaslessRelayerConfig extends CommonConfig {
   apiPollingInterval: number;
   apiEndpoint: string;
+  swapApiKey: string;
 
   relayerOriginChains: number[];
   relayerDestinationChains: number[];
@@ -40,9 +41,12 @@ export class GaslessRelayerConfig extends CommonConfig {
       RELAYER_GASLESS_REFUND_FLOW_TEST_ENABLED,
       SPOKE_POOL_PERIPHERY_OVERRIDES,
       GASLESS_ALLOWED_PEGGED_PAIRS,
+      SWAP_API_KEY,
     } = env;
     this.apiPollingInterval = Number(API_POLLING_INTERVAL ?? 1); // Default to 1s
     this.apiEndpoint = String(API_GASLESS_ENDPOINT);
+
+    this.swapApiKey = SWAP_API_KEY?.trim() ?? "";
 
     const relayerOriginChains = new Set(parseJson.numberArray(RELAYER_ORIGIN_CHAINS));
     this.relayerOriginChains = Array.from(relayerOriginChains);
