@@ -963,7 +963,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const symbol = await this._getSymbol(sourceToken, destinationToken);
     const sourceTokenInfo = this._getTokenInfo(sourceToken, sourceChain);
     const book = await this._getOrderBook(symbol.symbol);
-    const spotMarketMeta = this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
+    const spotMarketMeta = await this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
     const sideOfBookToTraverse = spotMarketMeta.isBuy ? book.asks : book.bids;
     assert(sideOfBookToTraverse.length > 0, `Order book is empty for ${symbol.symbol}`);
     const bestPx = Number(sideOfBookToTraverse[0].price);
