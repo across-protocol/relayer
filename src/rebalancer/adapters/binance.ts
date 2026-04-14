@@ -1170,7 +1170,18 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         sourceTokenInfo.address
       )(destinationAmount);
     }
-    const priceData = await this._getLatestPrice(sourceToken, destinationToken, sourceChain, destinationAmount);
+    const destinationAmountInSourcePrecision = this._getAmountConverter(
+      destinationChain,
+      destinationTokenInfo.address,
+      sourceChain,
+      sourceTokenInfo.address
+    )(destinationAmount);
+    const priceData = await this._getLatestPrice(
+      sourceToken,
+      destinationToken,
+      sourceChain,
+      destinationAmountInSourcePrecision
+    );
     const spotMarketMeta = await this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
     return convertBinanceRouteAmount({
       amount: destinationAmount,

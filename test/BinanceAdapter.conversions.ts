@@ -96,6 +96,31 @@ describe("Binance adapter conversion sizing", function () {
     expect(cctpGetEstimatedCost.calledOnce).to.equal(true);
     expect(cctpGetEstimatedCost.getCall(0).args[1].eq(toBNWei("102.040816", 6))).to.equal(true);
   });
+
+  it("prices destination-to-source conversions using source-token precision", async function () {
+    const route = makeStablecoinRoute();
+    const adapter = await makeInitializedAdapter(route);
+    const latestPriceStub = sinon.stub().resolves({ latestPrice: 2500, slippagePct: 0 });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    sinon.stub(adapter as any, "_getSpotMarketMetaForRoute").resolves(makeSpotMeta(true, 1));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    sinon.stub(adapter as any, "_getLatestPrice").callsFake(latestPriceStub);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (adapter as any)._convertDestinationToSource(
+      "WETH",
+      CHAIN_IDs.MAINNET,
+      "USDC",
+      CHAIN_IDs.MAINNET,
+      toBNWei("1", 18)
+    );
+
+    expect(latestPriceStub.calledOnce).to.equal(true);
+    expect(latestPriceStub.getCall(0).args[0]).to.equal("USDC");
+    expect(latestPriceStub.getCall(0).args[1]).to.equal("WETH");
+    expect(latestPriceStub.getCall(0).args[2]).to.equal(CHAIN_IDs.MAINNET);
+    expect(latestPriceStub.getCall(0).args[3].eq(toBNWei("1", 6))).to.equal(true);
+  });
 });
 
 async function makeInitializedAdapter(
