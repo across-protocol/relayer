@@ -18,9 +18,33 @@ const KNOWN_BINANCE_ERROR_REASONS = [
   "TypeError: fetch failed",
 ];
 
+// Binance only accepts a signed request while its timestamp remains within recvWindow.
+// Signed reads can tolerate a much larger window because a delayed accepted request still returns current server data.
+export const BINANCE_READ_RECV_WINDOW_MS = 60_000;
+// Market orders are latency-sensitive but still need to tolerate the clock skew and request delay that motivated this change.
+export const BINANCE_ORDER_RECV_WINDOW_MS = 60_000;
+// Withdrawals remain tight so delayed accepted requests cannot submit funds transfers much later than intended.
+export const BINANCE_WITHDRAW_RECV_WINDOW_MS = 5_000;
+
 type WithdrawalQuota = {
   wdQuota: number;
   usedWdQuota: number;
+};
+
+type BinanceApiWithRecvWindow = BinanceApi & {
+  tradeFee(options?: { recvWindow?: number; useServerTime?: boolean }): ReturnType<BinanceApi["tradeFee"]>;
+  withdraw(
+    options: Parameters<BinanceApi["withdraw"]>[0] & {
+      recvWindow?: number;
+      withdrawOrderId?: string;
+    }
+  ): ReturnType<BinanceApi["withdraw"]>;
+  withdrawHistory(
+    options: Parameters<BinanceApi["withdrawHistory"]>[0] & {
+      recvWindow?: number;
+    }
+  ): ReturnType<BinanceApi["withdrawHistory"]>;
+  accountCoins(options?: { recvWindow?: number }): Promise<unknown>;
 };
 
 // Alias for Binance network symbols.
@@ -157,6 +181,38 @@ export async function getBinanceWithdrawalLimits(binanceApi: BinanceApi): Promis
   };
 }
 
+export async function getBinanceTradeFees(binanceApi: BinanceApi): ReturnType<BinanceApi["tradeFee"]> {
+  return (binanceApi as BinanceApiWithRecvWindow).tradeFee({ recvWindow: BINANCE_READ_RECV_WINDOW_MS });
+}
+
+export async function getBinanceDepositAddress(
+  binanceApi: BinanceApi,
+  options: Parameters<BinanceApi["depositAddress"]>[0]
+): ReturnType<BinanceApi["depositAddress"]> {
+  return binanceApi.depositAddress({ ...options, recvWindow: BINANCE_READ_RECV_WINDOW_MS });
+}
+
+export async function getBinanceAllOrders(
+  binanceApi: BinanceApi,
+  options: Parameters<BinanceApi["allOrders"]>[0]
+): ReturnType<BinanceApi["allOrders"]> {
+  return binanceApi.allOrders({ ...options, recvWindow: BINANCE_READ_RECV_WINDOW_MS });
+}
+
+export async function submitBinanceOrder(
+  binanceApi: BinanceApi,
+  options: Parameters<BinanceApi["order"]>[0]
+): ReturnType<BinanceApi["order"]> {
+  return binanceApi.order({ ...options, recvWindow: BINANCE_ORDER_RECV_WINDOW_MS });
+}
+
+export async function submitBinanceWithdrawal(
+  binanceApi: BinanceApi,
+  options: Parameters<BinanceApi["withdraw"]>[0]
+): ReturnType<BinanceApi["withdraw"]> {
+  return (binanceApi as BinanceApiWithRecvWindow).withdraw({ ...options, recvWindow: BINANCE_WITHDRAW_RECV_WINDOW_MS });
+}
+
 export enum BinanceTransactionType {
   BRIDGE, // A deposit into Binance from one network designed to be withdrawn to another network.
   SWAP, // A deposit into Binance from one network designed to be swapped and then withdrawn to another network.
@@ -263,7 +319,7 @@ export async function getBinanceDeposits(
 ): Promise<BinanceDeposit[]> {
   let depositHistory: DepositHistoryResponse;
   try {
-    depositHistory = await binanceApi.depositHistory({ startTime });
+    depositHistory = await binanceApi.depositHistory({ startTime, recvWindow: BINANCE_READ_RECV_WINDOW_MS });
   } catch (_err) {
     const err = _err.toString();
     if (KNOWN_BINANCE_ERROR_REASONS.some((errorReason) => err.includes(errorReason)) && nRetries < maxRetries) {
@@ -298,7 +354,11 @@ export async function getBinanceWithdrawals(
 ): Promise<BinanceWithdrawal[]> {
   let withdrawHistory: WithdrawHistoryResponse;
   try {
-    withdrawHistory = await binanceApi.withdrawHistory({ coin, startTime });
+    withdrawHistory = await (binanceApi as BinanceApiWithRecvWindow).withdrawHistory({
+      coin,
+      startTime,
+      recvWindow: BINANCE_READ_RECV_WINDOW_MS,
+    });
   } catch (_err) {
     const err = _err.toString();
     if (KNOWN_BINANCE_ERROR_REASONS.some((errorReason) => err.includes(errorReason)) && nRetries < maxRetries) {
@@ -331,8 +391,8 @@ export async function getBinanceWithdrawals(
 export async function getAccountCoins(binanceApi: BinanceApi): Promise<ParsedAccountCoins> {
   // accountCoins is an undocumented Binance API method not present in binance-api-node type defs.
   type RawCoin = { coin: string; free: string; networkList?: Record<string, unknown>[] };
-  const apiWithCoins = binanceApi as BinanceApi & { accountCoins(): Promise<Record<string, RawCoin>> };
-  const coins = Object.values(await apiWithCoins.accountCoins());
+  const apiWithCoins = binanceApi as BinanceApiWithRecvWindow & { accountCoins(): Promise<Record<string, RawCoin>> };
+  const coins = Object.values(await apiWithCoins.accountCoins({ recvWindow: BINANCE_READ_RECV_WINDOW_MS }));
   return coins.map((coin) => {
     const networkList = coin.networkList?.map((network) => {
       return {

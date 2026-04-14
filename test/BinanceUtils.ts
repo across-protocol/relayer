@@ -1,8 +1,17 @@
 import { expect } from "./utils";
 import {
+  BINANCE_ORDER_RECV_WINDOW_MS,
+  BINANCE_READ_RECV_WINDOW_MS,
+  BINANCE_WITHDRAW_RECV_WINDOW_MS,
   BinanceDeposit,
   BinanceWithdrawal,
+  getBinanceAllOrders,
+  getBinanceDepositAddress,
+  getBinanceTradeFees,
+  getBinanceWithdrawalLimits,
   getOutstandingBinanceDeposits,
+  submitBinanceOrder,
+  submitBinanceWithdrawal,
   isCompletedBinanceWithdrawal,
 } from "../src/utils";
 
@@ -104,6 +113,108 @@ describe("BinanceUtils: getOutstandingBinanceDeposits", function () {
     expect(deposits.length).to.equal(1);
   });
 });
+
+describe("BinanceUtils recvWindow helpers", function () {
+  it("keeps the withdraw quota helper parameterless", async function () {
+    const calls: Record<string, unknown> = {};
+    const binanceApi = {
+      privateRequest: async (_method: string, _url: string, payload: object) => {
+        calls.privateRequest = payload;
+        return { wdQuota: 10, usedWdQuota: 1 };
+      },
+    } as unknown as Parameters<typeof getBinanceWithdrawalLimits>[0];
+
+    await getBinanceWithdrawalLimits(binanceApi);
+
+    expect(calls.privateRequest).to.deep.equal({});
+  });
+
+  it("applies the read recvWindow to signed read helpers that accept it", async function () {
+    const calls: Record<string, unknown> = {};
+    const binanceApi = {
+      tradeFee: async (payload: object) => {
+        calls.tradeFee = payload;
+        return [];
+      },
+      depositAddress: async (payload: object) => {
+        calls.depositAddress = payload;
+        return { address: "0x1", tag: "", coin: "USDT", url: "" };
+      },
+      allOrders: async (payload: object) => {
+        calls.allOrders = payload;
+        return [];
+      },
+    } as unknown as Parameters<typeof getBinanceTradeFees>[0];
+
+    await getBinanceTradeFees(binanceApi);
+    await getBinanceDepositAddress(binanceApi, { coin: "USDT", network: "ETH" });
+    await getBinanceAllOrders(binanceApi, { symbol: "USDCUSDT" });
+
+    expect(calls.tradeFee).to.deep.equal({ recvWindow: BINANCE_READ_RECV_WINDOW_MS });
+    expect(calls.depositAddress).to.deep.equal({
+      coin: "USDT",
+      network: "ETH",
+      recvWindow: BINANCE_READ_RECV_WINDOW_MS,
+    });
+    expect(calls.allOrders).to.deep.equal({
+      symbol: "USDCUSDT",
+      recvWindow: BINANCE_READ_RECV_WINDOW_MS,
+    });
+  });
+
+  it("applies the market-order recvWindow to signed order helpers", async function () {
+    const calls: Record<string, unknown> = {};
+    const binanceApi = {
+      order: async (payload: object) => {
+        calls.order = payload;
+        return { status: "FILLED" };
+      },
+    } as unknown as Parameters<typeof submitBinanceOrder>[0];
+
+    await submitBinanceOrder(binanceApi, {
+      symbol: "USDCUSDT",
+      side: "BUY",
+      type: "MARKET",
+      quantity: "1",
+    } as Parameters<typeof submitBinanceOrder>[1]);
+
+    expect(calls.order).to.deep.equal({
+      symbol: "USDCUSDT",
+      side: "BUY",
+      type: "MARKET",
+      quantity: "1",
+      recvWindow: BINANCE_ORDER_RECV_WINDOW_MS,
+    });
+  });
+
+  it("applies the withdrawal recvWindow to signed withdrawal helpers", async function () {
+    const calls: Record<string, unknown> = {};
+    const binanceApi = {
+      withdraw: async (payload: object) => {
+        calls.withdraw = payload;
+        return { id: "withdrawal-id" };
+      },
+    } as unknown as Parameters<typeof submitBinanceWithdrawal>[0];
+
+    await submitBinanceWithdrawal(binanceApi, {
+      coin: "USDT",
+      address: "0x1",
+      network: "ETH",
+      amount: 1,
+      transactionFeeFlag: false,
+    });
+
+    expect(calls.withdraw).to.deep.equal({
+      coin: "USDT",
+      address: "0x1",
+      network: "ETH",
+      amount: 1,
+      transactionFeeFlag: false,
+      recvWindow: BINANCE_WITHDRAW_RECV_WINDOW_MS,
+    });
+  });
+});
+
 describe("BinanceUtils withdrawal helpers", function () {
   it("only treats completed Binance withdrawals as completed", function () {
     expect(isCompletedBinanceWithdrawal(6)).to.equal(true);
