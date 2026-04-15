@@ -699,8 +699,8 @@ export class GaslessRelayer {
       delete this.fillLock[fillKey];
       const tEnd = performance.now();
       const delta = (tEnd - tStart) / 1000;
-      const processingTime = tEnd - new Date(depositMessage.submittedAt).getTime();
-      log("info", `Processed ${origin} depositId ${depositId} in ${delta} seconds.`, { processingTime });
+      const submitToProcessedTime = (tEnd - new Date(depositMessage.submittedAt).getTime()) / 1000;
+      log("info", `Processed ${origin} depositId ${depositId} in ${delta} seconds.`, { submitToProcessedTime });
     };
 
     const messageFilter = (deposit: AnyGaslessDepositMessage): boolean => {
