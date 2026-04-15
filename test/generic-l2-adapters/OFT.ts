@@ -5,6 +5,18 @@ import { EvmAddress } from "../../src/utils/SDKUtils";
 import { CctpOftReadOnlyClient } from "../../src/rebalancer/clients/CctpOftReadOnlyClient";
 import * as OFTUtils from "../../src/utils/OFTUtils";
 
+type OftSentEvent = {
+  event: "OFTSent";
+  blockNumber: number;
+  transactionHash: string;
+  txnRef: string;
+  args: {
+    dstEid: number;
+    guid: string;
+    amountReceivedLD: ReturnType<typeof toBNWei>;
+  };
+};
+
 describe("Cross Chain Adapter: OFT L2 Bridge", function () {
   it("ignores rebalancer-owned pending withdrawals", async function () {
     const [signer] = await ethers.getSigners();
@@ -20,8 +32,10 @@ describe("Cross Chain Adapter: OFT L2 Bridge", function () {
       getPendingBridgeTxnRefsForRoute: async () => new Set(["tracked-txn"]),
     } as unknown as CctpOftReadOnlyClient);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (adapter as any).l2Bridge.queryFilter = async () => [
+    const l2Bridge = adapter.l2Bridge as typeof adapter.l2Bridge & {
+      queryFilter: () => Promise<OftSentEvent[]>;
+    };
+    l2Bridge.queryFilter = async () => [
       {
         event: "OFTSent",
         blockNumber: 1,
@@ -32,11 +46,12 @@ describe("Cross Chain Adapter: OFT L2 Bridge", function () {
           guid,
           amountReceivedLD: amountToWithdraw,
         },
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      } as any,
+      },
     ];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (adapter as any).l1Bridge.queryFilter = async () => [];
+    const l1Bridge = adapter.l1Bridge as typeof adapter.l1Bridge & {
+      queryFilter: () => Promise<OftSentEvent[]>;
+    };
+    l1Bridge.queryFilter = async () => [];
 
     const amount = await adapter.getL2PendingWithdrawalAmount(
       { from: 0, to: 1000 },

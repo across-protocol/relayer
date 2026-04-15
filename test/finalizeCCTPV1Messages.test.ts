@@ -10,6 +10,7 @@ import { finalizeCCTPV1MessagesSVM } from "../src/finalizer/utils/cctp/svmUtils"
 import { cctpV1L1toSvmL2Finalizer } from "../src/finalizer/utils/cctp/l1ToSvmL2";
 import { AttestedCCTPMessage, ZERO_ADDRESS, EvmAddress } from "../src/utils";
 import { FinalizerPromise } from "../src/finalizer/types";
+import { HubPoolClient as LocalHubPoolClient } from "../src/clients";
 import { createSpyLogger, ethers, getContractFactory } from "./utils";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 import sinon from "sinon";
@@ -20,6 +21,11 @@ import * as svmSignerUtils from "../src/utils/SvmSignerUtils";
 interface ExtendedSolanaClient extends ReturnType<typeof createDefaultSolanaClient> {
   chainId: number;
 }
+
+type MutableAttestedCCTPMessage = AttestedCCTPMessage & {
+  amount?: string;
+  type?: string;
+};
 
 const addressesToFinalize = new Map<Address, string[]>();
 addressesToFinalize.set(EvmAddress.from("0x1234567890123456789012345678901234567890"), []);
@@ -351,8 +357,7 @@ describe("finalizeCCTPV1Messages", () => {
       const result: FinalizerPromise = await cctpV1L1toSvmL2Finalizer(
         spyLogger,
         hubPoolClient.hubPool.signer,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        hubPoolClient as any, // Cast to local HubPoolClient type
+        hubPoolClient as unknown as LocalHubPoolClient,
         l2SpokePoolClient,
         evmSpokePoolClient,
         addressesToFinalize
@@ -417,8 +422,7 @@ describe("finalizeCCTPV1Messages", () => {
       const result: FinalizerPromise = await cctpV1L1toSvmL2Finalizer(
         spyLogger,
         hubPoolClient.hubPool.signer,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        hubPoolClient as any, // Cast to local HubPoolClient type
+        hubPoolClient as unknown as LocalHubPoolClient,
         l2SpokePoolClient,
         evmSpokePoolClient,
         addressesToFinalize
@@ -481,8 +485,7 @@ describe("finalizeCCTPV1Messages", () => {
       const result: FinalizerPromise = await cctpV1L1toSvmL2Finalizer(
         spyLogger,
         hubPoolClient.hubPool.signer, // Use a proper Wallet for testing
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        hubPoolClient as any, // Cast to local HubPoolClient type
+        hubPoolClient as unknown as LocalHubPoolClient,
         l2SpokePoolClient,
         evmSpokePoolClient,
         addressesToFinalize
@@ -507,11 +510,9 @@ describe("finalizeCCTPV1Messages", () => {
     const depositMessage = await getAttestedMessage(encodePauseDepositsMessageBody(true), 201, 0, 5);
     const tokenlessMessage = await getAttestedMessage(encodePauseDepositsMessageBody(false), 202, 0, 5);
 
-    // Mock deposit message to have amount property (casting to any to add properties)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (depositMessage[0] as any).amount = "1000000"; // 1 USDC in wei
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (depositMessage[0] as any).type = "transfer";
+    const depositForBurnMessage = depositMessage[0] as MutableAttestedCCTPMessage;
+    depositForBurnMessage.amount = "1000000"; // 1 USDC in wei
+    depositForBurnMessage.type = "transfer";
 
     const mixedMessages = [...depositMessage, ...tokenlessMessage];
 
@@ -553,8 +554,7 @@ describe("finalizeCCTPV1Messages", () => {
       const result: FinalizerPromise = await cctpV1L1toSvmL2Finalizer(
         spyLogger,
         hubPoolClient.hubPool.signer, // Use a proper Wallet for testing
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        hubPoolClient as any, // Cast to local HubPoolClient type
+        hubPoolClient as unknown as LocalHubPoolClient,
         l2SpokePoolClient,
         evmSpokePoolClient,
         addressesToFinalize

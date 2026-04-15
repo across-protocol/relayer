@@ -1,7 +1,7 @@
 import { expect } from "./utils";
 import { Contract, ethers } from "ethers";
 import { tagIntegratorId, restructureGaslessDeposits, buildGaslessDepositTx } from "../src/utils/GaslessUtils";
-import { APIGaslessDepositResponse } from "../src/interfaces";
+import { APIGaslessDepositResponse, GaslessDepositMessage } from "../src/interfaces";
 import SPOKE_POOL_PERIPHERY_ABI from "../src/common/abi/SpokePoolPeriphery.json";
 
 // Minimal valid 65-byte signature (hex)
@@ -10,8 +10,9 @@ const DUMMY_SIGNATURE = "0x" + "ab".repeat(65);
 const DUMMY_ADDRESS = "0x" + "11".repeat(20);
 const DUMMY_BYTES32 = "0x" + "22".repeat(32);
 
-function makeDepositMessage(overrides: Record<string, unknown> = {}) {
+function makeDepositMessage(overrides: Partial<GaslessDepositMessage> = {}): GaslessDepositMessage {
   return {
+    depositFlowType: "bridge",
     originChainId: 1,
     depositId: "1",
     requestId: "req-1",
@@ -135,8 +136,7 @@ describe("GaslessUtils", function () {
     it("returns named method tx when no integratorId", function () {
       const msg = makeDepositMessage();
       const contract = makeSpokePoolPeripheryContract();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const tx = buildGaslessDepositTx(msg as any, contract);
+      const tx = buildGaslessDepositTx(msg, contract);
       expect(tx.method).to.equal("depositWithAuthorization");
       expect(tx.args.length).to.equal(5);
       expect(tx.ensureConfirmation).to.be.true;
@@ -145,8 +145,7 @@ describe("GaslessUtils", function () {
     it("returns raw tx with tagged calldata when integratorId is present", function () {
       const msg = makeDepositMessage({ integratorId: "0xABCD" });
       const contract = makeSpokePoolPeripheryContract();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const tx = buildGaslessDepositTx(msg as any, contract);
+      const tx = buildGaslessDepositTx(msg, contract);
       expect(tx.method).to.equal("");
       expect(tx.args.length).to.equal(1);
       const calldata = tx.args[0] as string;
@@ -158,8 +157,7 @@ describe("GaslessUtils", function () {
     it("raw tx calldata starts with the depositWithAuthorization selector", function () {
       const msg = makeDepositMessage({ integratorId: "0x0001" });
       const contract = makeSpokePoolPeripheryContract();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const tx = buildGaslessDepositTx(msg as any, contract);
+      const tx = buildGaslessDepositTx(msg, contract);
       const calldata = tx.args[0] as string;
       // First 4 bytes = function selector for depositWithAuthorization
       const iface = new ethers.utils.Interface(SPOKE_POOL_PERIPHERY_ABI);
