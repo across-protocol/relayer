@@ -118,24 +118,20 @@ export class EventListener extends EventEmitter {
           });
         };
 
-        provider.watchEvent({
-          address: address as `0x${string}`,
-          event,
-          onLogs,
-          onError: (error: Error) => {
-            const at = "EventListener::onEvents";
-            const { message: errorMessage, details, shortMessage, metaMessages } = error as BaseError;
-            this.logger.warn({
-              at,
-              message: `Caught ${this.chain} ${event.name} provider error.`,
-              errorMessage,
-              shortMessage,
-              provider: provider.name,
-              details,
-              metaMessages,
-            });
-          },
-        });
+        const onError = (error: Error) => {
+          const { message: errorMessage, details, shortMessage, metaMessages } = error as BaseError;
+          this.logger.warn({
+            at: "EventListener::onEvents",
+            message: `Caught ${this.chain} ${event.name} provider error.`,
+            errorMessage,
+            shortMessage,
+            provider: provider.name,
+            details,
+            metaMessages,
+          });
+        };
+
+        provider.watchEvent({ address: address as `0x${string}`, event, onLogs, onError });
       });
     });
   }
