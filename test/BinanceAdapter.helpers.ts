@@ -11,6 +11,7 @@ import {
 import { CctpAdapter } from "../src/rebalancer/adapters/cctpAdapter";
 import { OftAdapter } from "../src/rebalancer/adapters/oftAdapter";
 import { RebalancerConfig } from "../src/rebalancer/RebalancerConfig";
+import { CHAIN_IDs, EvmAddress } from "../src/utils";
 
 describe("Binance adapter helpers", async function () {
   afterEach(function () {
@@ -143,6 +144,68 @@ describe("Binance adapter helpers", async function () {
 
     expect(fees[0].symbol).to.equal("USDCUSDT");
     expect(tradeFeeStub.callCount).to.equal(2);
+  });
+
+  it("keeps pending WETH credit until a finalized Binance withdrawal is wrapped", async function () {
+    const adapter = await makeAdapter();
+    const [signer] = await ethers.getSigners();
+    const adapterWithInternals = adapter as unknown as {
+      initialized: boolean;
+      _redisGetPendingBridgesPreDeposit(account: EvmAddress): Promise<string[]>;
+      _redisGetPendingOrders(account: EvmAddress): Promise<string[]>;
+      _redisGetPendingWithdrawals(account: EvmAddress): Promise<string[]>;
+      _redisGetOrderDetails(cloid: string, account: EvmAddress): Promise<{
+        sourceChain: number;
+        sourceToken: string;
+        destinationChain: number;
+        destinationToken: string;
+        amountToTransfer: ReturnType<typeof toBNWei>;
+      }>;
+      _getEntrypointNetwork(chainId: number, token: string): Promise<number>;
+      _convertSourceToDestination(
+        sourceToken: string,
+        sourceChain: number,
+        destinationToken: string,
+        destinationChain: number,
+        amount: ReturnType<typeof toBNWei>
+      ): Promise<ReturnType<typeof toBNWei>>;
+      _redisGetInitiatedWithdrawalId(cloid: string): Promise<string>;
+      _getBinanceWithdrawals(
+        token: string,
+        network: number,
+        since: number,
+        account: string
+      ): Promise<{
+        unfinalizedWithdrawals: Array<{ id: string }>;
+        finalizedWithdrawals: Array<{ id: string; amount: string }>;
+      }>;
+      _getTokenInfo(token: string, chainId: number): { decimals: number };
+    };
+    adapterWithInternals.initialized = true;
+
+    const amount = toBNWei("1", 18);
+    sinon.stub(adapterWithInternals, "_redisGetPendingBridgesPreDeposit").resolves([]);
+    sinon.stub(adapterWithInternals, "_redisGetPendingOrders").resolves(["cloid"]);
+    sinon.stub(adapterWithInternals, "_redisGetPendingWithdrawals").resolves(["cloid"]);
+    sinon.stub(adapterWithInternals, "_redisGetOrderDetails").resolves({
+      sourceChain: CHAIN_IDs.MAINNET,
+      sourceToken: "WETH",
+      destinationChain: CHAIN_IDs.MAINNET,
+      destinationToken: "WETH",
+      amountToTransfer: amount,
+    });
+    sinon.stub(adapterWithInternals, "_getEntrypointNetwork").resolves(CHAIN_IDs.MAINNET);
+    sinon.stub(adapterWithInternals, "_convertSourceToDestination").resolves(amount);
+    sinon.stub(adapterWithInternals, "_redisGetInitiatedWithdrawalId").resolves("withdrawal-id");
+    sinon.stub(adapterWithInternals, "_getBinanceWithdrawals").resolves({
+      unfinalizedWithdrawals: [],
+      finalizedWithdrawals: [{ id: "withdrawal-id", amount: "1" }],
+    });
+    sinon.stub(adapterWithInternals, "_getTokenInfo").returns({ decimals: 18 });
+
+    const pendingRebalances = await adapter.getPendingRebalances(EvmAddress.from(await signer.getAddress()));
+
+    expect(pendingRebalances[CHAIN_IDs.MAINNET].WETH.eq(amount)).to.equal(true);
   });
 });
 

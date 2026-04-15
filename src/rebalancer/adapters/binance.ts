@@ -779,6 +779,17 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         truncate(withdrawalDetails.amount, binanceWithdrawalNetworkTokenInfo.decimals),
         binanceWithdrawalNetworkTokenInfo.decimals
       );
+      if (destinationToken === "WETH") {
+        this.logger.debug({
+          at: "BinanceStablecoinSwapAdapter.getPendingRebalances",
+          message:
+            `Withdrawal for order ${cloid} has finalized to ETH on ${binanceWithdrawalNetwork}, but the order remains pending until the ETH is wrapped into WETH. Keeping the destination-chain WETH credit until then`,
+          cloid: cloid,
+          orderDetails: orderDetails,
+          withdrawalDetails,
+        });
+        continue;
+      }
       this.logger.debug({
         at: "BinanceStablecoinSwapAdapter.getPendingRebalances",
         message: `Withdrawal for order ${cloid} has finalized, subtracting the order's virtual balance of ${withdrawAmountWei.toString()} from binance withdrawal network ${binanceWithdrawalNetwork}`,
@@ -1200,11 +1211,12 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       atomicDepositorContracts.transferProxyAbi
     );
     const bridgeCalldata = transferProxy.interface.encodeFunctionData("transfer", [depositAddress]);
-    const binanceDepositNetwork = await this._getEntrypointNetwork(sourceChain, "WETH");
+    // @dev The AtomicWethDepositor today is only deployed to Ethereum and the only way to use it to deposit ETH
+    // into Binance is to use the bridgeCalldata as the whitelisted function selector mapped to chain ID 56.
     return this._submitTransaction({
       contract: atomicDepositor,
       method: "bridgeWeth",
-      args: [binanceDepositNetwork, amountToDeposit, amountToDeposit, bnZero, bridgeCalldata],
+      args: [CHAIN_IDs.BSC, amountToDeposit, amountToDeposit, bnZero, bridgeCalldata],
       chainId: sourceChain,
       nonMulticall: true,
       unpermissioned: false,
