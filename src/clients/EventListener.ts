@@ -3,6 +3,7 @@ import { EventEmitter } from "node:events";
 import { AbiEvent, BaseError, Block, createPublicClient, http, Log as viemLog, parseAbiItem, webSocket } from "viem";
 import { Log } from "../interfaces";
 import {
+  chainIsTvm,
   EventManager,
   getNetworkName,
   getNodeUrlList,
@@ -11,6 +12,13 @@ import {
   getViemChain,
   winston,
 } from "../utils";
+
+// Tron's JSON-RPC compat layer exposes eth_newFilter / eth_getFilterChanges, but filter state is
+// only retained on the backend node that handled eth_newFilter. Subsequent polls load-balance to
+// other nodes that have no record of the filter, silently returning empty arrays — so viem's
+// `watchEvent` never surfaces logs. On TVM chains we instead drive getLogs off each new block
+// emitted by `watchBlocks`. Each registered poller tracks its own previous block and fetches logs
+// over (prev, current].
 
 function resolveProviders(chainId: number, quorum = 1) {
   const protocol = process.env[`RPC_PROVIDERS_TRANSPORT_${chainId}`] ?? "wss";
@@ -22,6 +30,15 @@ function resolveProviders(chainId: number, quorum = 1) {
   assert(nProviders >= quorum, `Insufficient providers for ${chain} (minimum ${quorum} required by quorum)`);
 
   const viemChain = getViemChain(chainId);
+  const pollingInterval =
+    protocol === "https"
+      ? (() => {
+          const blockTime = viemChain.blockTime ?? (chainIsTvm(chainId) ? 3_000 : undefined);
+          const pollUpdateRate = Number(process.env[`RPC_PROVIDERS_POLL_UPDATE_RATE_${chainId}`]) || 1;
+          return blockTime !== undefined ? Math.ceil(blockTime * pollUpdateRate) : undefined;
+        })()
+      : undefined;
+
   const providers = Object.entries(urls).map(([provider, url]) => {
     const headers = getProviderHeaders(provider, chainId);
     const transport = protocol === "wss" ? webSocket(url) : http(url, { fetchOptions: { headers } });
@@ -30,6 +47,7 @@ function resolveProviders(chainId: number, quorum = 1) {
       chain: viemChain,
       transport,
       name: getOriginFromURL(url),
+      pollingInterval,
     });
   });
 
@@ -41,6 +59,8 @@ export class EventListener extends EventEmitter {
   private readonly eventMgr: EventManager;
   private readonly providers: ReturnType<typeof resolveProviders>;
   // private readonly abortController: AbortController;
+  private readonly tvmBlocks: { [provider: string]: { [event: string]: bigint } } = {};
+  private watchBlocksStarted = false;
 
   constructor(
     public readonly chainId: number,
@@ -55,7 +75,17 @@ export class EventListener extends EventEmitter {
   }
 
   onBlock(handler: (blockNumber: number, timestamp: number) => void) {
-    const at = "EventListener::onBlock";
+    this.on("block", handler);
+    this.startWatchBlocks();
+  }
+
+  private startWatchBlocks(): void {
+    if (this.watchBlocksStarted) {
+      return;
+    }
+    this.watchBlocksStarted = true;
+
+    const at = "EventListener::startWatchBlocks";
     const { chain, logger } = this;
 
     const newBlock = (block: Block, provider: string) => {
@@ -74,7 +104,6 @@ export class EventListener extends EventEmitter {
       logger.warn({ at, message, errorMessage, shortMessage, provider, details, metaMessages });
     };
 
-    this.on("block", handler);
     const [provider] = this.providers;
     provider.watchBlocks({
       emitOnBegin: true,
@@ -88,7 +117,10 @@ export class EventListener extends EventEmitter {
   }
 
   onEvents(address: string, events: string[], handler: (log: Log) => void): void {
-    const { eventMgr, providers } = this;
+    const { chainId, eventMgr, logger, providers } = this;
+    const at = "EventListener::onEvents";
+    const tvm = chainIsTvm(chainId);
+
     events.forEach((eventDescriptor) => {
       // Viem is unhappy with "tuple" in the event descriptor; sub it out.
       // Viem also complains about the return type of parseAbiItem() (@todo: why), so coerce it.
@@ -118,10 +150,10 @@ export class EventListener extends EventEmitter {
           });
         };
 
-        const onError = (error: Error) => {
+        const onError = (error: unknown) => {
           const { message: errorMessage, details, shortMessage, metaMessages } = error as BaseError;
-          this.logger.warn({
-            at: "EventListener::onEvents",
+          logger.warn({
+            at,
             message: `Caught ${this.chain} ${event.name} provider error.`,
             errorMessage,
             shortMessage,
@@ -131,8 +163,38 @@ export class EventListener extends EventEmitter {
           });
         };
 
+        if (tvm) {
+          this.tvmBlocks[provider.name] ??= {};
+          this.on("block", async (blockNumber: number) => {
+            const toBlock = BigInt(blockNumber);
+            const previousBlockNumber = (this.tvmBlocks[provider.name][eventDescriptor] ??= toBlock);
+            if (previousBlockNumber >= toBlock) {
+              return; // xxx consider re-orgs.
+            }
+
+            const fromBlock = previousBlockNumber + 1n;
+            try {
+              const logs = await provider.getLogs({ address: address as `0x${string}`, event, fromBlock, toBlock });
+              if ((this.tvmBlocks[provider.name][eventDescriptor] ?? 0n) < toBlock) {
+                this.tvmBlocks[provider.name][eventDescriptor] = toBlock;
+              }
+              if (logs.length > 0) {
+                onLogs(logs);
+              }
+            } catch (err) {
+              onError(err);
+            }
+          });
+          return;
+        }
+
         provider.watchEvent({ address: address as `0x${string}`, event, onLogs, onError });
       });
     });
+
+    // Ensure watchBlocks is running so registered TVM pollers actually tick.
+    if (tvm) {
+      this.startWatchBlocks();
+    }
   }
 }
