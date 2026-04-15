@@ -21,6 +21,24 @@ A `RebalanceRoute` defines:
 
 Routes are assembled by the rebalancer construction layer and passed at client initialization time (`initialize(rebalanceRoutes)`). The mode clients then filter to routes that are valid for current balances/config.
 
+The built-in production route set is generated in `src/rebalancer/buildRebalanceRoutes.ts`. It covers:
+
+- stablecoin swap routes between `USDC` and `USDT` on Binance and Hyperliquid,
+- same-asset routes for `USDC` via CCTP and for `USDT` via OFT,
+- Binance-only `WETH <-> USDC` and `WETH <-> USDT` routes sourced or settled through mainnet. `WETH <-> WETH` route handling exists in the adapter, but no cross-chain `WETH <-> WETH` routes are generated while WETH Binance support is limited to mainnet.
+
+Route construction keeps two token-keyed chain maps:
+
+- `BINANCE_NETWORKS_BY_SYMBOL`: direct Binance deposit/withdraw networks known for each token.
+- `REBALANCE_CHAINS_BY_SYMBOL`: the narrower set of chains this repo currently enables for rebalancing that token.
+
+Operational note:
+
+- Updating Binance venue support for a token does not automatically widen rebalancer support. New chains should usually be added to both maps intentionally after inventory/config/runtime review.
+- Current route construction limits Binance `WETH` support to mainnet because the rebalancer's native-ETH deposit path relies on the mainnet Atomic Depositor and transfer proxy wiring.
+- If additional direct Binance ETH networks are enabled later, same-coin `WETH <-> WETH` routes skip the spot swap leg and treat on-chain `WETH` as Binance `ETH`.
+- Intermediate on-chain bridge legs into or out of Binance remain restricted to `USDC` and `USDT`; current `WETH` routes therefore source or settle through mainnet rather than bridging WETH into another Binance ETH network.
+
 ### Rebalancer Adapter
 
 Adapters in `src/rebalancer/adapters/` initiate and progress multi-stage swap workflows. The interface currently is:
@@ -162,13 +180,13 @@ Inputs:
 High-level flow:
 
 1. Compute cumulative deficits (`current < threshold`, target refill amount `target - current`) and cumulative excesses (`current > target`, excess amount `current - target`).
-2. Sort cumulative deficits by token `priorityTier` (higher first), then larger deficits first.
-3. Sort cumulative excesses by token `priorityTier` (lower first), then larger excesses first.
+2. Sort cumulative deficits by token `priorityTier` (higher first), then larger USD-normalized deficits first.
+3. Sort cumulative excesses by token `priorityTier` (lower first), then larger USD-normalized excesses first.
 4. For each excess token used to fill a deficit token, sort source chains from `cumulativeTargetBalances[excessToken].chains` by:
    - chain `priorityTier` ascending,
    - then current chain balance descending.
 5. For each candidate source chain, evaluate all destination chains configured for the deficit token that have valid routes, then choose the route with the lowest `getEstimatedCost`.
-6. Cap transfer amount by remaining deficit, remaining excess, chain balance, and configured `maxAmountsToTransfer`.
+6. Cap transfer amount by remaining deficit, remaining excess, chain balance, and configured `maxAmountsToTransfer`. For mixed-asset routes such as `WETH <-> stablecoin`, the client converts between source and destination token amounts through hub-chain USD prices before capping and decrementing the remaining deficit.
 7. Enforce max fee pct and adapter pending-order caps before calling `initializeRebalance`.
 
 Design tradeoff:
