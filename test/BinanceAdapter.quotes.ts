@@ -71,6 +71,17 @@ describe("Binance adapter quotes", function () {
           symbol: "USDCUSDT",
           baseAsset: "USDC",
           quoteAsset: "USDT",
+          filters: [
+            {
+              filterType: "PRICE_FILTER",
+              tickSize: "0.0001",
+            },
+            {
+              filterType: "LOT_SIZE",
+              stepSize: "0.01",
+              minQty: "0.01",
+            },
+          ],
         },
       ],
     });
