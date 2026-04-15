@@ -1,5 +1,5 @@
-import { MockConfigStoreClient, MockHubPoolClient } from "./mocks";
-import { _buildSlowRelayRoot, _getRefundLeaves } from "../src/dataworker/DataworkerUtils";
+import { MockArweaveClient, MockConfigStoreClient, MockHubPoolClient } from "./mocks";
+import { _buildSlowRelayRoot, _getRefundLeaves, persistDataToArweave } from "../src/dataworker/DataworkerUtils";
 import { BundleDepositsV3, BundleFillsV3, BundleSlowFills, DepositWithBlock } from "../src/interfaces";
 import {
   _buildPoolRebalanceRoot,
@@ -162,6 +162,34 @@ describe("SlowFill utils", function () {
     expect(leaves.length).to.equal(1);
     // updatedOutputAmount should be equal to inputAmount * (1 - lpFee) so 4 * (1 - 0.25) = 3
     expect(leaves[0].updatedOutputAmount).to.equal(toBNWei("3"));
+  });
+});
+
+describe("Arweave persistence utils", function () {
+  const tag = "bundles-test-tag";
+  const data = { test: "payload" };
+
+  it("retries an empty lookup before skipping a duplicate persist", async function () {
+    const { spyLogger } = createSpyLogger();
+    const client = new MockArweaveClient("", spyLogger);
+    client._queueGetByTopicResponses(tag, [[], [{ data, hash: "existing-arweave-hash" }]]);
+
+    await persistDataToArweave(client, data, spyLogger, tag);
+
+    expect(client.getByTopicCalls[tag]).to.equal(2);
+    expect(client.setCalls.length).to.equal(0);
+  });
+
+  it("persists after two empty lookups", async function () {
+    const { spyLogger } = createSpyLogger();
+    const client = new MockArweaveClient("", spyLogger);
+    client._queueGetByTopicResponses(tag, [[], []]);
+
+    await persistDataToArweave(client, data, spyLogger, tag);
+
+    expect(client.getByTopicCalls[tag]).to.equal(2);
+    expect(client.setCalls.length).to.equal(1);
+    expect(client.setCalls[0].tag).to.equal(tag);
   });
 });
 

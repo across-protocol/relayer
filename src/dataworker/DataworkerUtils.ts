@@ -21,6 +21,7 @@ import {
   bnZero,
   buildRelayerRefundTree,
   buildSlowRelayTree,
+  delay,
   fixedPointAdjustment,
   getRefundsFromBundle,
   getTimestampsForBundleStartBlocks,
@@ -454,6 +455,37 @@ export function l2TokensToCountTowardsSpokePoolLeafExecutionCapital(
   return nativeTokens.some((token) => token.eq(l2TokenAddress)) ? nativeTokens : [l2TokenAddress];
 }
 
+// Retry an empty lookup once before writing, to avoid turning transient read failures into duplicate persists.
+async function getArweaveTransactionsByTag<T>(
+  client: caching.ArweaveClient,
+  tag: string,
+  logger: winston.Logger
+): Promise<{ data: T; hash: string }[]> {
+  const matchingTxns = await client.getByTopic(tag, any());
+  if (matchingTxns.length > 0) {
+    return matchingTxns;
+  }
+
+  logger.debug({
+    at: "DataworkerUtils#persistDataToArweave",
+    message: "No Arweave data found on first lookup, retrying before persist",
+    tag,
+  });
+  await delay(0);
+
+  const retriedMatchingTxns = await client.getByTopic(tag, any());
+  if (retriedMatchingTxns.length > 0) {
+    logger.warn({
+      at: "DataworkerUtils#persistDataToArweave",
+      message: "Arweave data appeared on retry, skipping duplicate persist",
+      tag,
+      hash: retriedMatchingTxns.map((txn) => txn.hash),
+    });
+  }
+
+  return retriedMatchingTxns;
+}
+
 /**
  * Persists data to Arweave with a given tag, given that the data doesn't
  * already exist on Arweave with the tag.
@@ -466,7 +498,7 @@ export async function persistDataToArweave(
   client: caching.ArweaveClient,
   data: Record<string, unknown>,
   logger: winston.Logger,
-  tag?: string
+  tag: string
 ): Promise<void> {
   assert(
     Buffer.from(tag).length <= ARWEAVE_TAG_BYTE_LIMIT,
@@ -482,7 +514,7 @@ export async function persistDataToArweave(
   // Check if data already exists on Arweave with the given tag.
   // If so, we don't need to persist it again.
   const [matchingTxns, address, balance] = await Promise.all([
-    client.getByTopic(tag, any()),
+    getArweaveTransactionsByTag(client, tag, logger),
     client.getAddress(),
     client.getBalance(),
   ]);
