@@ -475,7 +475,6 @@ export class GaslessRelayer {
       const fillKey = `${authorizer}:${originChainId}`;
 
       const at = "GaslessRelayer#evaluateApiSignatures";
-
       const log = (level: "debug" | "info" | "warn", message: string, args: Record<string, unknown> = {}) =>
         this.logger[level]({
           at,
@@ -699,8 +698,8 @@ export class GaslessRelayer {
       delete this.fillLock[fillKey];
       const tEnd = performance.now();
       const delta = (tEnd - tStart) / 1000;
-      const submitToProcessedTime = (tEnd - new Date(depositMessage.submittedAt).getTime()) / 1000;
-      log("info", `Processed ${origin} depositId ${depositId} in ${delta} seconds.`, { submitToProcessedTime });
+      const tSubmitDelta = (tEnd - new Date(depositMessage.submittedAt).getTime()) / 1000;
+      log("info", `Processed ${origin} depositId ${depositId} in ${delta} seconds.`, { tSubmitDelta });
     };
 
     const messageFilter = (deposit: AnyGaslessDepositMessage): boolean => {
