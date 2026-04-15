@@ -811,11 +811,11 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       (network) => network.name === BINANCE_NETWORKS[destinationEntrypointNetwork]
     );
     const { withdrawMin, withdrawMax } = destinationBinanceNetwork;
-    const sourceTokenInfo = this._getTokenInfo(sourceToken, sourceChain);
-    const destinationTokenInfo = this._getTokenInfo(destinationToken, destinationEntrypointNetwork);
 
     // Make sure that the amount to transfer will be larger than the minimum withdrawal size after expected fees.
     const expectedCost = await this.getEstimatedCost(rebalanceRoute, amountToTransfer, false);
+    const sourceTokenInfo = this._getTokenInfo(sourceToken, sourceChain);
+    const destinationTokenInfo = this._getTokenInfo(destinationToken, destinationEntrypointNetwork);
     const expectedAmountToWithdraw = amountToTransfer.sub(expectedCost);
     const minimumWithdrawalSize = await this._convertDestinationToSource(
       destinationToken,
