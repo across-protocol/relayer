@@ -476,7 +476,7 @@ export class GaslessRelayer {
 
       const at = "GaslessRelayer#evaluateApiSignatures";
 
-      const log = (level: "debug" | "info" | "warn", message: string, args: Record<string, unknown> = {}) => {
+      const log = (level: "debug" | "info" | "warn", message: string, args: Record<string, unknown> = {}) =>
         this.logger[level]({
           at,
           message,
@@ -492,7 +492,6 @@ export class GaslessRelayer {
           ...(isSwap ? { swapToken, swapTokenAmount } : {}),
           ...args,
         });
-      };
 
       const setState = (state: MessageState) => {
         const currentState = getState();
@@ -700,7 +699,8 @@ export class GaslessRelayer {
       delete this.fillLock[fillKey];
       const tEnd = performance.now();
       const delta = (tEnd - tStart) / 1000;
-      log("info", `Processed ${origin} depositId ${depositId} in ${delta} seconds.`);
+      const processingTime = tEnd - new Date(depositMessage.submittedAt).getTime();
+      log("info", `Processed ${origin} depositId ${depositId} in ${delta} seconds.`, { processingTime });
     };
 
     const messageFilter = (deposit: AnyGaslessDepositMessage): boolean => {
