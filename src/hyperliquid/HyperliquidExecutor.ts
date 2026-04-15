@@ -1,6 +1,7 @@
 import winston from "winston";
 import { utils as ethersUtils } from "ethers";
 import { HyperliquidExecutorConfig } from "./HyperliquidExecutorConfig";
+import { RedisCacheInterface } from "../caching/RedisCache";
 import {
   Contract,
   Provider,
@@ -72,31 +73,25 @@ const STABLE_SWAP_DISCOUNT = 0.2;
 // There is a minimum order placement requirement of 10 USD.
 const MIN_ORDER_AMOUNT = toBN(10 * HL_FIXED_ADJUSTMENT);
 
-// Teach BigInt how to be represented as JSON.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-(BigInt.prototype as any).toJSON = function () {
-  return this.toString();
-};
-
 /**
  * Class which operates on HyperEVM handler contracts. This supports placing orders on Hypercore and transferring tokens from
  * swap handler contracts to users on Hypercore.
  */
 export class HyperliquidExecutor {
   private abortController = new AbortController();
-  private instanceCoordinator;
+  private instanceCoordinator: InstanceCoordinator;
   private dstOftMessenger: Contract;
   private dstCctpMessenger: Contract;
   public pairs: { [pair: string]: Pair } = {};
   private pairUpdates: { [pairName: string]: number } = {};
   private eventListener: EventListener;
   private infoClient;
-  private redisClient;
+  private redisClient: RedisCacheInterface | undefined;
   private handledEvents: Set<string> = new Set<string>();
   private dstSearchConfig: EventSearchConfig;
 
   private tasks: Promise<TaskResult>[] = [];
-  private taskResolver;
+  private taskResolver: ((value: void | PromiseLike<void>) => void) | undefined;
 
   public initialized = false;
   private chainId = CHAIN_IDs.HYPEREVM;

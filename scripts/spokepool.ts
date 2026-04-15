@@ -50,12 +50,6 @@ type RelayerFeeQuery = {
   timestamp?: number;
 };
 
-// Teach BigInt how to be represented as JSON.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-(BigInt.prototype as any).toJSON = function () {
-  return this.toString();
-};
-
 const { NODE_SUCCESS, NODE_INPUT_ERR, NODE_APP_ERR } = utils;
 const { fixedPointAdjustment: fixedPoint } = sdkUtils;
 const { AddressZero } = ethers.constants;
@@ -632,10 +626,10 @@ function usage(badInput?: string): boolean {
   const pad = "deposit".length;
   usageStr += `
     Usage:
-    \tyarn ts-node ./scripts/spokepool --wallet <${walletOpts}> ${"deposit".padEnd(pad)} ${depositArgs}
-    \tyarn ts-node ./scripts/spokepool --wallet <${walletOpts}> ${"dump".padEnd(pad)} ${dumpConfigArgs}
-    \tyarn ts-node ./scripts/spokepool --wallet <${walletOpts}> ${"fetch".padEnd(pad)} ${fetchArgs}
-    \tyarn ts-node ./scripts/spokepool --wallet <${walletOpts}> ${"fetch".padEnd(pad)} ${fillArgs}
+    \tyarn tsx ./scripts/spokepool --wallet <${walletOpts}> ${"deposit".padEnd(pad)} ${depositArgs}
+    \tyarn tsx ./scripts/spokepool --wallet <${walletOpts}> ${"dump".padEnd(pad)} ${dumpConfigArgs}
+    \tyarn tsx ./scripts/spokepool --wallet <${walletOpts}> ${"fetch".padEnd(pad)} ${fetchArgs}
+    \tyarn tsx ./scripts/spokepool --wallet <${walletOpts}> ${"fetch".padEnd(pad)} ${fillArgs}
   `.slice(1); // Skip leading newline
   console.log(usageStr);
 

@@ -1,4 +1,4 @@
-import { utils as sdkUtils } from "@across-protocol/sdk";
+import { Multicall3__factory } from "@across-protocol/sdk/src/utils/abi/typechain";
 import {
   AugmentedTransaction,
   knownRevertReasons,
@@ -119,7 +119,7 @@ describe("MultiCallerClient", async function () {
   });
 
   it("Propagates input transaction gasLimits: internal multicall", async function () {
-    const fakeMultisender = await smock.fake(await sdkUtils.getABI("Multicall3"), { address: randomAddress() });
+    const fakeMultisender = await smock.fake(Multicall3__factory.abi, { address: randomAddress() });
     multiCaller = new DummyMultiCallerClient(spyLogger, {}, fakeMultisender as unknown as Contract);
 
     const nTxns = 10;
@@ -149,7 +149,7 @@ describe("MultiCallerClient", async function () {
   });
 
   it("Can revert to undefined gasLimit: internal multicall", async function () {
-    const fakeMultisender = await smock.fake(await sdkUtils.getABI("Multicall3"), { address: randomAddress() });
+    const fakeMultisender = await smock.fake(Multicall3__factory.abi, { address: randomAddress() });
     multiCaller = new DummyMultiCallerClient(spyLogger, {}, fakeMultisender as unknown as Contract);
 
     const nTxns = 10;
@@ -177,7 +177,7 @@ describe("MultiCallerClient", async function () {
   });
 
   it("Propagates input transaction gasLimits: external multicall", async function () {
-    const fakeMultisender = await smock.fake(await sdkUtils.getABI("Multicall3"), { address: randomAddress() });
+    const fakeMultisender = await smock.fake(Multicall3__factory.abi, { address: randomAddress() });
     multiCaller = new DummyMultiCallerClient(spyLogger, {}, fakeMultisender as unknown as Contract);
 
     const nTxns = 10;
@@ -207,7 +207,7 @@ describe("MultiCallerClient", async function () {
   });
 
   it("Can revert to undefined gasLimit: external multicall", async function () {
-    const fakeMultisender = await smock.fake(await sdkUtils.getABI("Multicall3"), { address: randomAddress() });
+    const fakeMultisender = await smock.fake(Multicall3__factory.abi, { address: randomAddress() });
     multiCaller = new DummyMultiCallerClient(spyLogger, {}, fakeMultisender as unknown as Contract);
 
     const nTxns = 10;
@@ -536,7 +536,7 @@ describe("MultiCallerClient", async function () {
   });
 
   it("Correctly handles unpermissioned transactions", async function () {
-    const fakeMultisender = await smock.fake(await sdkUtils.getABI("Multicall3"), { address: randomAddress() });
+    const fakeMultisender = await smock.fake(Multicall3__factory.abi, { address: randomAddress() });
     const multicallerWithMultisend = new DummyMultiCallerClient(spyLogger, {}, fakeMultisender as unknown as Contract);
 
     // Can't pass any transactions to multisender bundler that are permissioned or different chains:

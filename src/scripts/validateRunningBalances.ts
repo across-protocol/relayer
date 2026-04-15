@@ -24,12 +24,12 @@
 
 // Example usage:
 // Look back the most recent 32 bundles:
-// $ BUNDLES_COUNT=32 ts-node ./src/scripts/validateRunningBalances.ts
+// $ BUNDLES_COUNT=32 tsx ./src/scripts/validateRunningBalances.ts
 // Validate single chain and/or token:
-// $ SINGLE_CHAIN=42161 ts-node ./src/scripts/validateRunningBalances.ts
-// $ SINGLE_TOKEN_USDC ts-node ./src/scripts/validateRunningBalances.ts
+// $ SINGLE_CHAIN=42161 tsx ./src/scripts/validateRunningBalances.ts
+// $ SINGLE_TOKEN_USDC tsx ./src/scripts/validateRunningBalances.ts
 // Look at bundles #50-100 and query events up to 150 bundles ago:
-// $ BUNDLES_COUNT=150 PAGE_SIZE=50 PAGE=1 ts-node ./src/scripts/validateRunningBalances.ts
+// $ BUNDLES_COUNT=150 PAGE_SIZE=50 PAGE=1 tsx ./src/scripts/validateRunningBalances.ts
 
 import {
   bnZero,
@@ -68,7 +68,7 @@ config();
 let logger: winston.Logger;
 let silentLogger: winston.Logger;
 
-const rootCache = {};
+const rootCache: Record<string, { bundleData: BundleData; bundleSpokePoolClients: SpokePoolClientsByChain }> = {};
 
 // Add accidental transfers from users into the SpokePool's here. These fat finger transfers can confound this
 // script and report "excesses" that are not actually excesses. These balances are not pulled into the runningBalances
@@ -504,7 +504,8 @@ export async function runScript(baseSigner: Signer): Promise<void> {
     expectedExcesses,
     excesses,
   });
-  const unexpectedExcess = Object.entries(excesses).filter(([chainId, tokenExcesses]) => {
+  const unexpectedExcess = Object.entries(excesses).filter(([_chainId, tokenExcesses]) => {
+    const chainId = Number(_chainId);
     return Object.entries(tokenExcesses).some(([l1Token, excesses]) => {
       // We only care about the latest excess, because sometimes excesses can appear in historical bundles
       // due to ordering of executing leaves. As long as the excess resets back to 0 eventually it is fine.

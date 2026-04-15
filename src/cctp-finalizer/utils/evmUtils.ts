@@ -5,7 +5,6 @@ import {
   submitTransaction,
   getCctpV2MessageTransmitter,
   CHAIN_IDs,
-  depositToHypercore,
   decodeCctpV2HookData,
   TOKEN_SYMBOLS_MAP,
   CCTPHookData,
@@ -48,14 +47,15 @@ export function shouldCreateHyperCoreAccount(hookData?: CCTPHookData): boolean {
 
 export async function createHyperCoreAccountIfNotExists(
   message: string,
-  signer: ethers.Wallet,
+  contract: ethers.Contract,
+  chainId: number,
   logger: winston.Logger
 ): Promise<void> {
   const hookData = decodeCctpV2HookData(message);
   if (!shouldCreateHyperCoreAccount(hookData)) {
-    logger.debug({
+    logger.info({
       at: "evmUtils#createHyperCoreAccountIfNotExists",
-      message: "Skipping deposit to Hypercore because its not sponsored flow",
+      message: "Skipping account activation because its not sponsored flow",
       maxBpsToSponsor: hookData?.maxBpsToSponsor,
       finalRecipient: hookData?.finalRecipient,
     });
@@ -63,12 +63,29 @@ export async function createHyperCoreAccountIfNotExists(
   }
   const isHypercoreAccountActive = await utils.isHlAccountActive(hookData.finalRecipient);
   if (!isHypercoreAccountActive) {
-    logger.debug({
+    logger.info({
       at: "evmUtils#createHyperCoreAccountIfNotExists",
-      message: "Recipient address does not exist, depositing to Hypercore",
+      message: "Recipient account not activated, calling activateUserAccount",
       finalRecipient: hookData.finalRecipient,
     });
-    await depositToHypercore(hookData.finalRecipient, signer, logger);
+    const transactionClient = new TransactionClient(logger);
+    const fundingToken = TOKEN_SYMBOLS_MAP.USDC.addresses[chainId];
+    const activationTx = await submitTransaction(
+      {
+        contract,
+        method: "activateUserAccount",
+        args: [hookData.nonce, hookData.finalRecipient, fundingToken],
+        chainId,
+        ensureConfirmation: true,
+      },
+      transactionClient
+    );
+    logger.info({
+      at: "evmUtils#createHyperCoreAccountIfNotExists",
+      message: "Account activation confirmed",
+      finalRecipient: hookData.finalRecipient,
+      txHash: activationTx.hash,
+    });
   }
 }
 
@@ -132,12 +149,11 @@ export async function processMintEvm(
   const signer = new ethers.Wallet(privateKey, provider);
 
   const destination = getDestination(chainId, attestation.message, signature);
+  const contract = new ethers.Contract(destination.address, destination.abi, signer);
 
   if (destination.accountInitialization) {
-    await destination.accountInitialization(attestation.message, signer, logger);
+    await destination.accountInitialization(attestation.message, contract, chainId, logger);
   }
-
-  const contract = new ethers.Contract(destination.address, destination.abi, signer);
 
   let receiveMessageArgs = destination.requiresSignature
     ? [attestation.message, attestation.attestation, signature]
@@ -165,17 +181,16 @@ export async function processMintEvm(
       method,
       args: receiveMessageArgs,
       chainId,
+      ensureConfirmation: true,
     },
     transactionClient
   );
 
-  const mintTxReceipt = await mintTx.wait();
-
   logger.info({
     at: "evmUtils#processMintEvm",
     message: "Mint transaction confirmed",
-    txHash: mintTxReceipt.transactionHash,
+    txHash: mintTx.hash,
   });
 
-  return { txHash: mintTxReceipt.transactionHash };
+  return { txHash: mintTx.hash };
 }

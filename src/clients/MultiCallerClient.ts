@@ -154,7 +154,8 @@ export class MultiCallerClient {
     // only log the results once, so we need to collate the results into a single object.
     const failedChains = Object.entries(txnRefs)
       .filter(([, { isError }]) => isError)
-      .map(([chainId]) => chainId);
+      .map(([chainId]) => Number(chainId));
+
     if (failedChains.length > 0) {
       // Log the results.
       this.logger.error({
@@ -586,7 +587,7 @@ export class TryMulticallClient extends MultiCallerClient {
       assert(transaction.args[0].length === data.length);
 
       // Filter the calldata array by whether it succeeded in tryMulticall().
-      const succeededTxnCalldata = transaction.args[0].filter((_, idx) => data[idx].success);
+      const succeededTxnCalldata = transaction.args[0].filter((_: unknown, idx: number) => data[idx].success);
 
       // If |succeededTxnRequests| != # of transactions in the multicall bundle, then
       // some txns in the bundle must have failed. We take note only of the ones which succeeded.

@@ -88,7 +88,7 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
 
       this.#pendingBlockNumber = this.deploymentBlock;
       this.#pendingCurrentTime = 0;
-      this.#pendingEvents = this._queryableEventNames().map(() => []);
+      this.#pendingEvents = this._queryableEventNames().map((): Log[] => []);
       this.#pendingEventsRemoved = [];
 
       this.#eventEmitter = new EventEmitter();

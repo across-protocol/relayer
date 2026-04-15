@@ -5,6 +5,7 @@ import {
   CUSTOM_BRIDGE,
   CUSTOM_L2_BRIDGE,
   IOFT_ABI_FULL,
+  L2_TOKEN_SPLITTER_BRIDGES,
   LZ_FEE_TOKENS,
   TOKEN_SPLITTER_BRIDGES,
 } from "../common";
@@ -12,7 +13,7 @@ import { EXPECTED_L1_TO_L2_MESSAGE_TIME, SLOW_WITHDRAWAL_CHAINS } from "../commo
 import { InventoryClient } from "../clients";
 import { InventoryConfig, TokenBalanceConfig, isAliasConfig } from "../interfaces/InventoryManagement";
 import { RelayerConfig } from "../relayer/RelayerConfig";
-import { BinanceStablecoinSwapAdapter, isSameBinanceCoinRoute } from "../rebalancer/adapters/binance";
+import { BinanceStablecoinSwapAdapter, isSameBinanceCoin } from "../rebalancer/adapters/binance";
 import { RebalanceRoute, RebalancerAdapter } from "../rebalancer/utils/interfaces";
 import {
   acrossApi,
@@ -232,6 +233,7 @@ type BridgeLookupContext = {
   bridgedRemoteToken?: string;
   nativeUsdc?: string;
   l1SplitterBridges?: { name: string }[];
+  l2SplitterBridges?: { name: string }[];
 };
 
 type BinanceInternalAdapter = {
@@ -266,13 +268,12 @@ type BinanceInternalAdapter = {
     sourceToken: string,
     destinationToken: string
   ): Promise<{ symbol: string; isBuy: boolean }>;
-  _estimateDestinationAmountForRoute(
+  _convertSourceToDestination(
     sourceToken: string,
     sourceChain: number,
     destinationToken: string,
     destinationChain: number,
-    amountToTransfer: BigNumber,
-    price: number
+    sourceAmount: BigNumber
   ): Promise<BigNumber>;
 };
 
@@ -967,6 +968,7 @@ function buildBridgeLookupContext(
     bridgedRemoteToken: resolveOptionalTranslatedTokenAddress(l1Token, chainId),
     nativeUsdc: TOKEN_SYMBOLS_MAP.USDC.addresses[chainId]?.toLowerCase(),
     l1SplitterBridges: TOKEN_SPLITTER_BRIDGES[chainId]?.[l1Token.toNative()],
+    l2SplitterBridges: L2_TOKEN_SPLITTER_BRIDGES[chainId]?.[l1Token.toNative()],
   };
 }
 
@@ -1042,6 +1044,8 @@ function resolveOutboundBridgeMatch(node: ManagedNodeContext, context: BridgeLoo
       return nodeAddress === context.bridgedRemoteToken
         ? { family: "oft", effectiveBridgeName: "OFTL2Bridge" }
         : undefined;
+    case "TokenSplitterBridge":
+      return resolveSplitterBridgeMatch(node, context, context.l2SplitterBridges, resolveOutboundBridgeMatch);
     case "BinanceCEXBridge":
     case "BinanceCEXNativeBridge":
       return nodeAddress === context.bridgedRemoteToken
@@ -1103,7 +1107,7 @@ function buildRebalanceEdgeCandidates(
         ? "cctp"
         : route.adapter === "oft"
           ? "oft"
-          : route.adapter === "binance" && isSameBinanceCoinRoute(route.sourceToken, route.destinationToken)
+          : route.adapter === "binance" && isSameBinanceCoin(route.sourceToken, route.destinationToken)
             ? "binance_cex_bridge"
             : (route.adapter as EdgeFamily);
     return [
@@ -1317,19 +1321,12 @@ async function estimateDirectionalBinanceMarginalOutputRate(
     params.pricingContext
   );
   const marketMeta = await adapterInternals._getSpotMarketMetaForRoute(sourceToken, destinationToken);
-  const { latestPrice } = await adapterInternals._getLatestPrice(
+  const estimatedOutputNative = await adapterInternals._convertSourceToDestination(
     sourceToken,
+    HUB_CHAIN_ID,
     destinationToken,
     HUB_CHAIN_ID,
     referenceInputNative
-  );
-  const estimatedOutputNative = await adapterInternals._estimateDestinationAmountForRoute(
-    sourceToken,
-    HUB_CHAIN_ID,
-    destinationToken,
-    HUB_CHAIN_ID,
-    referenceInputNative,
-    latestPrice
   );
   const takerCommissionPct =
     Number((await adapterInternals._getTradeFees()).find((fee) => fee.symbol === marketMeta.symbol)?.takerCommission) ||
@@ -1483,7 +1480,7 @@ async function quoteLiveOftRouteTransfer(
 ): Promise<OftRouteTransferQuote> {
   const l1Token = EvmAddress.from(TOKEN_SYMBOLS_MAP[candidate.from.logicalAsset].addresses[HUB_CHAIN_ID]);
   const originProvider = await getProvider(candidate.from.chainId);
-  const messengerAddress = getMessengerEvm(l1Token, candidate.from.chainId);
+  const messengerAddress = getMessengerEvm(l1Token, candidate.from.chainId, candidate.to.chainId);
   const reader = new Contract(messengerAddress.toNative(), IOFT_ABI_FULL, originProvider) as unknown as OftQuoteReader;
 
   return quoteOftRouteTransfer({
@@ -2194,14 +2191,17 @@ class RuntimePricingContext {
 
   private async deriveWindowAverageGasPrice(provider: Provider, blockNumber: number): Promise<BigNumber> {
     const blockCount = Math.max(1, Math.min(GAS_COST_AVERAGE_WINDOW_BLOCKS, blockNumber + 1));
-    const feeHistory = (await provider.send("eth_feeHistory", [
+    const rpcProvider = provider as Provider & {
+      send(method: string, params: unknown[]): Promise<{
+        baseFeePerGas?: string[];
+        reward?: string[][];
+      }>;
+    };
+    const feeHistory = await rpcProvider.send("eth_feeHistory", [
       ethers.utils.hexValue(blockCount),
       ethers.utils.hexValue(blockNumber),
       [GAS_COST_PRIORITY_FEE_PERCENTILE],
-    ])) as {
-      baseFeePerGas?: string[];
-      reward?: string[][];
-    };
+    ]);
     const sampleCount = Math.min(blockCount, Math.max((feeHistory.baseFeePerGas?.length ?? 0) - 1, 0));
     let totalGasPrice = bnZero;
     let countedSamples = 0;

@@ -1,5 +1,6 @@
 import { RebalanceRoute } from "../utils/interfaces";
-import { BaseAdapter, STATUS } from "./baseAdapter";
+import { BaseAdapter } from "./baseAdapter";
+import { STATUS, CCTP_PENDING_BRIDGE_REDIS_PREFIX } from "../utils/utils";
 import {
   bnZero,
   BigNumber,
@@ -20,12 +21,12 @@ import {
   toBN,
   ERC20,
   isDefined,
+  EvmAddress,
 } from "../../utils";
 import { CCTP_MAX_SEND_AMOUNT } from "../../common";
 import { PRODUCTION_NETWORKS, CCTP_NO_DOMAIN } from "@across-protocol/constants";
 import { utils } from "@across-protocol/sdk";
 import { MultiCallerClient } from "../../clients/MultiCallerClient";
-import { CCTP_PENDING_BRIDGE_REDIS_PREFIX } from "../utils/PendingBridgeRedis";
 
 export class CctpAdapter extends BaseAdapter {
   REDIS_PREFIX = CCTP_PENDING_BRIDGE_REDIS_PREFIX;
@@ -87,13 +88,19 @@ export class CctpAdapter extends BaseAdapter {
       amountToTransfer
     );
     const cloid = this.getCloidForBridge(rebalanceRoute, txnHash);
-    await this._redisCreateOrder(cloid, STATUS.PENDING_BRIDGE_PRE_DEPOSIT, rebalanceRoute, amountToReceive);
+    await this._redisCreateOrder(
+      cloid,
+      STATUS.PENDING_BRIDGE_PRE_DEPOSIT,
+      rebalanceRoute,
+      amountToReceive,
+      this.baseSignerAddress
+    );
     return amountToReceive;
   }
 
   async updateRebalanceStatuses(): Promise<void> {
     this._assertInitialized();
-    const pendingBridges = await this._redisGetPendingBridgesPreDeposit();
+    const pendingBridges = await this._redisGetPendingBridgesPreDeposit(this.baseSignerAddress);
     if (pendingBridges.length > 0) {
       this.logger.debug({
         at: "CctpAdapter.updateRebalanceStatuses",
@@ -127,7 +134,7 @@ export class CctpAdapter extends BaseAdapter {
         at: "CctpAdapter.updateRebalanceStatuses",
         message: `Order cloid ${cloid} has been finalized`,
       });
-      await this._redisDeleteOrder(cloid, STATUS.PENDING_BRIDGE_PRE_DEPOSIT);
+      await this._redisDeleteOrder(cloid, STATUS.PENDING_BRIDGE_PRE_DEPOSIT, this.baseSignerAddress);
     }
   }
 
@@ -136,11 +143,11 @@ export class CctpAdapter extends BaseAdapter {
     return;
   }
 
-  async getPendingRebalances(): Promise<{ [chainId: number]: { [token: string]: BigNumber } }> {
+  async getPendingRebalances(account: EvmAddress): Promise<{ [chainId: number]: { [token: string]: BigNumber } }> {
     this._assertInitialized();
     const pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
 
-    const pendingBridges = await this._redisGetPendingBridgesPreDeposit();
+    const pendingBridges = await this._redisGetPendingBridgesPreDeposit(account);
     if (pendingBridges.length > 0) {
       this.logger.debug({
         at: "CctpAdapter.getPendingRebalances",
@@ -171,7 +178,7 @@ export class CctpAdapter extends BaseAdapter {
           continue;
         }
       }
-      const pendingOrderDetails = await this._redisGetOrderDetails(cloid);
+      const pendingOrderDetails = await this._redisGetOrderDetails(cloid, account);
       const { destinationChain, amountToTransfer } = pendingOrderDetails;
       pendingRebalances[destinationChain] ??= {};
       pendingRebalances[destinationChain]["USDC"] = (pendingRebalances[destinationChain]?.["USDC"] ?? bnZero).add(
@@ -194,7 +201,7 @@ export class CctpAdapter extends BaseAdapter {
   }
 
   async getPendingOrders(): Promise<string[]> {
-    return this._redisGetPendingBridgesPreDeposit();
+    return this._redisGetPendingBridgesPreDeposit(this.baseSignerAddress);
   }
 
   private getCloidForBridge(rebalanceRoute: RebalanceRoute, txnHash: string): string {
@@ -251,6 +258,7 @@ export class CctpAdapter extends BaseAdapter {
       method: "depositForBurn",
       unpermissioned: false,
       nonMulticall: true,
+      ensureConfirmation: true,
       args: [
         amountToBridge,
         getCctpDomainForChainId(destinationChain),

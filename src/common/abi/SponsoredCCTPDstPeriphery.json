@@ -39,5 +39,39 @@
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "quoteNonce",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "address",
+        "name": "finalRecipient",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "fundingToken",
+        "type": "address"
+      }
+    ],
+    "name": "activateUserAccount",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "user",
+        "type": "address"
+      }
+    ],
+    "name": "AccountNotActivatedError",
+    "type": "error"
   }
 ]

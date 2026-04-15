@@ -1,19 +1,37 @@
 import {
   assert,
+  acrossApi,
   BigNumber,
   bnZero,
+  coingecko,
   ConvertDecimals,
+  defiLlama,
+  fromWei,
   getNetworkName,
   getTokenInfoFromSymbol,
   isDefined,
   mapAsync,
+  PriceClient,
   toBNWei,
 } from "../../utils";
 import { ExcessOrDeficit, RebalanceRoute } from "../utils/interfaces";
 import { sortDeficitFunction, sortExcessFunction } from "../utils/utils";
 import { BaseRebalancerClient } from "./BaseRebalancerClient";
+import { getAcrossHost } from "../../clients/AcrossAPIClient";
 
 export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
+  private readonly priceClient: PriceClient;
+  private readonly tokenPriceCache = new Map<string, BigNumber>();
+
+  constructor(...args: ConstructorParameters<typeof BaseRebalancerClient>) {
+    super(...args);
+    this.priceClient = new PriceClient(this.logger, [
+      new acrossApi.PriceFeed({ host: getAcrossHost(this.config.hubPoolChainId) }),
+      new coingecko.PriceFeed({ apiKey: process.env.COINGECKO_PRO_API_KEY }),
+      new defiLlama.PriceFeed(),
+    ]);
+  }
+
   /**
    * @notice Rebalances cumulative balances of tokens across chains where cumulative token balances are above
    * configured targets to to tokens that have cumulative balances below configured thresholds. Tokens are sourced
@@ -84,12 +102,9 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
       ),
     });
 
-    // Identify all tokens with cumulative balance deficits and sort them by size, assuming that 1 unit of each token
-    // is worth the same amount of USD. Deficits are ranked from most negative to least.
-    // @todo We would need to change this logic if we accept the user setting targets for tokens that are not all
-    // stablecoins.
     const sortedDeficits: ExcessOrDeficit[] = [];
     const sortedExcesses: ExcessOrDeficit[] = [];
+    const tokenPricesUsd = new Map<string, BigNumber>();
     for (const [token, cumulativeBalance] of Object.entries(cumulativeBalances)) {
       // If current balance is below threshold, we want to refill back to target balance.
       const { targetBalance, thresholdBalance, priorityTier } = cumulativeTargetBalances[token];
@@ -97,13 +112,14 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
       if (currentCumulativeBalance.lt(thresholdBalance)) {
         const deficitAmount = targetBalance.sub(cumulativeBalance);
         sortedDeficits.push({ token, amount: deficitAmount, chainId: this.config.hubPoolChainId, priorityTier });
+        tokenPricesUsd.set(token, await this._getTokenPriceUsd(token));
       } else if (currentCumulativeBalance.gt(targetBalance)) {
         const excessAmount = currentCumulativeBalance.sub(targetBalance);
         sortedExcesses.push({ token, amount: excessAmount, chainId: this.config.hubPoolChainId, priorityTier });
+        tokenPricesUsd.set(token, await this._getTokenPriceUsd(token));
       }
     }
-    // Sort deficits by priority from highest to lowest and then by size from largest to smallest.
-    sortedDeficits.sort(sortDeficitFunction);
+    sortedDeficits.sort((deficitA, deficitB) => sortDeficitFunction(deficitA, deficitB, tokenPricesUsd));
     if (sortedDeficits.length > 0) {
       this.logger.debug({
         at: "CumulativeBalanceRebalancerClient.rebalanceInventory",
@@ -115,7 +131,7 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
       });
     }
     // Sort excesses by priority from lowest to highest and then by size from largest to smallest.
-    sortedExcesses.sort(sortExcessFunction);
+    sortedExcesses.sort((excessA, excessB) => sortExcessFunction(excessA, excessB, tokenPricesUsd));
     if (sortedExcesses.length > 0) {
       this.logger.debug({
         at: "CumulativeBalanceRebalancerClient.rebalanceInventory",
@@ -127,6 +143,8 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
       });
     }
 
+    const startingExcesses = Object.fromEntries(sortedExcesses.map(({ token, amount }) => [token, amount]));
+
     // Iterate through the sorted deficits and try to fill as much of it as possible from the configured
     // excess token chain list.
     for (const deficit of sortedDeficits) {
@@ -134,19 +152,18 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
       // Keep track of how much of the deficit we need to fill and also how much excess we have available to send.
       let deficitRemaining = deficitAmount;
       for (const excess of sortedExcesses) {
-        const { token: excessToken, amount: excessAmount } = excess;
-        let excessRemaining = excessAmount;
+        const excessToken = excess.token;
+        let excessRemaining = startingExcesses[excess.token];
 
         // Sort all the chains with excess tokens by priority from lowest to highest and then by current balance from highest to lowest.
         const excessSourceChainsForToken: ExcessOrDeficit[] = Object.entries(
           cumulativeTargetBalances[excessToken].chains
         )
-          .filter(([chainId]) => {
-            return isDefined(currentBalancesOnChain[chainId]?.[excessToken]);
-          })
+          .map(([chainId, x]) => [Number(chainId), x])
+          .filter(([chainId]) => isDefined(currentBalancesOnChain[chainId]?.[excessToken]))
           .map(([chainId, priorityTier]) => {
             return {
-              chainId: Number(chainId),
+              chainId,
               priorityTier,
               amount: currentBalancesOnChain[chainId][excessToken],
               token: excessToken,
@@ -155,7 +172,7 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
         const sortedExcessSourceChainsForToken = excessSourceChainsForToken.sort(sortExcessFunction);
         this.logger.debug({
           at: "CumulativeBalanceRebalancerClient.rebalanceInventory",
-          message: `Sorted excess source chains for token ${excessToken}`,
+          message: `Sorted excess source chains for token ${excessToken} we can use to fill the deficit of ${deficitToken}`,
           excessSourceChainsForToken: sortedExcessSourceChainsForToken.map(({ chainId, amount }) => {
             return {
               [chainId]: amount.toString(),
@@ -168,7 +185,7 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
         for (const chainWithExcess of sortedExcessSourceChainsForToken) {
           const { chainId, amount: currentBalance } = chainWithExcess;
           // Invariants: If excess or deficit is depleted, exit.
-          if (deficitRemaining.lte(bnZero) || excessRemaining.lte(bnZero)) {
+          if (deficitRemaining.lte(1) || excessRemaining.lte(1)) {
             break;
           }
 
@@ -187,7 +204,12 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
           const chainDecimals = getTokenInfoFromSymbol(excessToken, Number(chainId)).decimals;
           const l1ToChainConverter = ConvertDecimals(l1TokenDecimals, chainDecimals);
           const excessRemainingConverted = l1ToChainConverter(excessRemaining);
-          const deficitRemainingConverted = l1ToChainConverter(deficitRemaining);
+          const deficitRemainingInExcessToken = await this._convertL1TokenAmountForComparison(
+            deficitRemaining,
+            deficitToken,
+            excessToken
+          );
+          const deficitRemainingConverted = l1ToChainConverter(deficitRemainingInExcessToken);
           // The max we can transfer is the minimum of {the remaining deficit, the remaining excess, the max amount to transfer, the current balance}
           const maxAmountToTransfer = this.config.maxAmountsToTransfer[excessToken]?.[chainId];
           let amountToTransferCapped =
@@ -200,6 +222,9 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
           amountToTransferCapped = amountToTransferCapped.gt(excessRemainingConverted)
             ? excessRemainingConverted
             : amountToTransferCapped;
+          if (amountToTransferCapped.lte(bnZero)) {
+            continue;
+          }
 
           // To determine which destination chain to receive the deficit token on, we check the estimated cost
           // for all possible destination chains and then select the chain with the lowest estimated cost.
@@ -259,6 +284,7 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
             currentBalance: currentBalance.toString(),
             deficitRemaining: deficitRemaining.toString(),
             excessRemaining: excessRemaining.toString(),
+            deficitRemainingConvertedToExcessToken: deficitRemainingConverted.toString(),
             maxAmountToTransfer: maxAmountToTransfer?.toString(),
             cheapestCostRoute: `[${cheapestCostRoute.route.adapter}] ${getNetworkName(
               cheapestCostRoute.route.sourceChain
@@ -283,31 +309,91 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
             continue;
           }
 
-          // Initiate a new rebalance
           const chainToL1Converter = ConvertDecimals(chainDecimals, l1TokenDecimals);
-          deficitRemaining = deficitRemaining.sub(chainToL1Converter(amountToTransferCapped));
-          excessRemaining = excessRemaining.sub(chainToL1Converter(amountToTransferCapped));
-          this.logger.debug({
+          const amountTransferredL1 = chainToL1Converter(amountToTransferCapped);
+          const deficitReduction = await this._convertL1TokenAmountForComparison(
+            amountTransferredL1,
+            excessToken,
+            deficitToken
+          );
+          const nextDeficitRemaining = deficitReduction.gte(deficitRemaining)
+            ? bnZero
+            : deficitRemaining.sub(deficitReduction);
+          const nextExcessRemaining = excessRemaining.sub(amountTransferredL1);
+          const nextSourceBalance = currentBalance.sub(amountToTransferCapped);
+          this.logger[this.config.sendingTransactionsEnabled ? "info" : "debug"]({
             at: "RebalanceClient.rebalanceCumulativeInventory",
-            message: `Initializing new ${cheapestCostRoute.route.adapter} rebalance from ${
-              cheapestCostRoute.route.sourceToken
-            } on ${getNetworkName(cheapestCostRoute.route.sourceChain)} to ${
-              cheapestCostRoute.route.destinationToken
-            } on ${getNetworkName(cheapestCostRoute.route.destinationChain)}`,
+            message: `Initializing new ${cheapestCostRoute.route.adapter} ${fromWei(amountToTransferCapped, chainDecimals)} ${excessToken} rebalance from ${getNetworkName(cheapestCostRoute.route.sourceChain)} to ${getNetworkName(cheapestCostRoute.route.destinationChain)} ${deficitToken}`,
             adapter: cheapestCostRoute.route.adapter,
-            amountToTransfer: amountToTransferCapped.toString(),
-            expectedFees: cheapestCostRoute.cost.toString(),
-            deficitRemaining: deficitRemaining.toString(),
+            expectedFees: fromWei(cheapestCostRoute.cost, chainDecimals),
           });
 
           if (this.config.sendingTransactionsEnabled) {
-            await this.adapters[cheapestCostRoute.route.adapter].initializeRebalance(
+            const initializedAmount = await this.adapters[cheapestCostRoute.route.adapter].initializeRebalance(
               cheapestCostRoute.route,
               amountToTransferCapped
             );
+            if (initializedAmount.eq(bnZero)) {
+              this.logger.debug({
+                at: "CumulativeBalanceRebalancerClient.rebalanceInventory",
+                message: `Adapter ${cheapestCostRoute.route.adapter} declined to initialize rebalance; preserving remaining excess for later routes`,
+                route: cheapestCostRoute.route,
+                requestedAmountToTransfer: amountToTransferCapped.toString(),
+              });
+              continue;
+            }
           }
+
+          // Decrement the deficit remaining, the excess remaining for this token, and the current balance for this
+          // token only after the adapter successfully initializes the rebalance.
+          deficitRemaining = nextDeficitRemaining;
+          excessRemaining = nextExcessRemaining;
+          currentBalancesOnChain[cheapestCostRoute.route.sourceChain][excessToken] = nextSourceBalance;
         }
+
+        // Overwrite the excess remaining for the token to decrement the excess for the next deficit to evaluate.
+        startingExcesses[excessToken] = excessRemaining;
       }
     }
+  }
+
+  private async _convertL1TokenAmountForComparison(
+    amount: BigNumber,
+    fromToken: string,
+    toToken: string
+  ): Promise<BigNumber> {
+    if (fromToken === toToken) {
+      return amount;
+    }
+
+    const fromTokenDecimals = getTokenInfoFromSymbol(fromToken, this.config.hubPoolChainId).decimals;
+    const toTokenDecimals = getTokenInfoFromSymbol(toToken, this.config.hubPoolChainId).decimals;
+
+    const [fromPriceUsd, toPriceUsd] = await Promise.all([
+      this._getTokenPriceUsd(fromToken),
+      this._getTokenPriceUsd(toToken),
+    ]);
+    const fromTokenUnit = toBNWei("1", fromTokenDecimals);
+    const toTokenUnit = toBNWei("1", toTokenDecimals);
+    const usdValue = amount.mul(fromPriceUsd).div(fromTokenUnit);
+    return usdValue.mul(toTokenUnit).div(toPriceUsd);
+  }
+
+  private async _getTokenPriceUsd(token: string): Promise<BigNumber> {
+    // Assume that this client is never run in long lasting operations so we are safe to cache this price once
+    // per run.
+    const cachedPrice = this.tokenPriceCache.get(token);
+    if (cachedPrice) {
+      return cachedPrice;
+    }
+
+    const hubTokenAddress = getTokenInfoFromSymbol(token, this.config.hubPoolChainId).address.toNative();
+    const fixedPriceEnv = process.env[`RELAYER_TOKEN_PRICE_FIXED_${hubTokenAddress}`];
+    const priceUsd = isDefined(fixedPriceEnv)
+      ? toBNWei(fixedPriceEnv)
+      : toBNWei((await this.priceClient.getPriceByAddress(hubTokenAddress)).price);
+    assert(priceUsd.gt(bnZero), `Unable to resolve positive USD price for ${token}`);
+    this.tokenPriceCache.set(token, priceUsd);
+    return priceUsd;
   }
 }

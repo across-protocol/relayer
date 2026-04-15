@@ -46,7 +46,7 @@ If your local Google auth is expired, the build will fail before publishing the 
 If you also want the `{ graph_id, payload }` envelope on stdout for debugging or automation, call the built script directly instead of `yarn` and redirect that output. The stdout `payload` still uses the Jussi bundle body for `PUT /graph_bundles/{graph_id}`:
 
 ```bash
-yarn ts-node ./scripts/buildJussiGraph.ts --wallet gckms --keys bot4 --binanceSecretKey <binance-secret-key> \
+yarn tsx ./scripts/buildJussiGraph.ts --wallet gckms --keys bot4 --binanceSecretKey <binance-secret-key> \
   >/tmp/jussi-graph-envelope.json
 ```
 

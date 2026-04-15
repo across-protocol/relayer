@@ -16,12 +16,12 @@ const FEE_MANAGER_ABI = [
         name: "token",
       },
     ],
-    outputs: [],
+    outputs: Array<never>(),
   },
 ];
 
 // Example run:
-// ts-node ./scripts/setTempoFeeToken.ts
+// tsx ./scripts/setTempoFeeToken.ts
 // \ --token [fee_token]
 // \ --wallet gckms
 // \ --keys bot1

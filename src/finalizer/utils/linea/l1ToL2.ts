@@ -4,6 +4,7 @@ import { Contract } from "ethers";
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
 import { CONTRACT_ADDRESSES } from "../../../common";
 import {
+  BigNumber,
   EventSearchConfig,
   Signer,
   convertFromWei,
@@ -25,10 +26,10 @@ import {
 } from "./common";
 import { L2MessageServiceContract } from "./imports";
 
-const L1L2MessageStatuses = {
-  0: "UNKNOWN",
-  1: "CLAIMABLE",
-  2: "CLAIMED",
+const L1L2MessageStatuses: { [key: number]: OnChainMessageStatus } = {
+  0: OnChainMessageStatus.UNKNOWN,
+  1: OnChainMessageStatus.CLAIMABLE,
+  2: OnChainMessageStatus.CLAIMED,
 };
 // Temporary re-implementation of the SDK's `L2MessageServiceContract.getMessageStatus` functions that allow us to use
 // our custom provider, with retry and caching logic, to get around the SDK's hardcoded logic to query events
@@ -41,8 +42,8 @@ async function getL1ToL2MessageStatusUsingCustomProvider(
   const iface = new ethers.utils.Interface(messageService.contract.interface.fragments);
   const l2Contract = new Contract(messageService.contractAddress, iface, l2Provider);
 
-  const status: bigint = await l2Contract.inboxL1L2MessageStatus(messageHash);
-  return L1L2MessageStatuses[status.toString()];
+  const status: BigNumber = await l2Contract.inboxL1L2MessageStatus(messageHash);
+  return L1L2MessageStatuses[status.toNumber()];
 }
 
 export async function lineaL1ToL2Finalizer(

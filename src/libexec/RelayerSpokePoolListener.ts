@@ -38,12 +38,6 @@ let logger: winston.Logger;
 let chainId: number;
 let chain: string;
 
-// Teach BigInt how to be represented as JSON.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-(BigInt.prototype as any).toJSON = function () {
-  return this.toString();
-};
-
 /**
  * Instantiate websocket providers.
  * @param chainId Chain ID of network.
@@ -168,13 +162,14 @@ function subEvents(eventMgr: EventManager, spokePool: Contract, eventNames: stri
         abi,
         eventName,
         onLogs: (logs: viemLog[]) =>
-          logs.forEach((log) => {
+          logs.forEach((_log) => {
+            const log = _log as viemLog & { args: unknown; eventName: string };
             const event = {
               ...log,
-              args: log["args"],
+              args: log.args,
               blockNumber: Number(log.blockNumber),
-              event: log["eventName"],
-              topics: [], // Not supplied by viem, but not actually used by the relayer.
+              event: log.eventName,
+              topics: Array<string>(), // Not supplied by viem, but not actually used by the relayer.
             };
             if (log.removed) {
               eventMgr.remove(event, provider.name);
@@ -222,7 +217,7 @@ async function run(argv: string[]): Promise<void> {
   chain = getNetworkName(chainId);
 
   const quorumProvider = await getProvider(chainId);
-  const blockFinder = undefined;
+  const blockFinder: undefined = undefined;
   const cache = await getRedisCache();
   const latestBlock = await quorumProvider.getBlock("latest");
 

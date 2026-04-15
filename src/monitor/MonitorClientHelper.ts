@@ -56,16 +56,14 @@ export async function constructMonitorClients(
     config.blockRangeEndBlockBuffer
   );
 
-  // Spoke pool addresses can be reused on different chains so we need to deduplicate them.
-  const uniqueSpokePoolAddresses: { [chainId: number]: string } = {};
-  Object.entries(spokePoolClients).forEach(([chainId, client]) => {
-    if (!Object.values(uniqueSpokePoolAddresses).includes(client.spokePoolAddress.toNative())) {
-      uniqueSpokePoolAddresses[chainId] = client.spokePoolAddress.toNative();
-    }
-  });
-  const spokePoolAddresses = Object.entries(uniqueSpokePoolAddresses).map(([chainId, address]) =>
-    toAddressType(address, Number(chainId))
-  );
+  // Deduplicate spoke pool addresses that are reused across chains. spokePoolAddress is already a
+  // correctly-typed Address object (EvmAddress/SvmAddress), so use a Map keyed by native string
+  // to deduplicate by value while preserving the original Address instances and their chain types.
+  const spokePoolAddresses = [
+    ...new Map(
+      Object.values(spokePoolClients).map(({ spokePoolAddress }) => [spokePoolAddress.toNative(), spokePoolAddress])
+    ).values(),
+  ];
 
   // Cross-chain transfers will originate from the HubPool's address and target SpokePool addresses, so
   // track both.

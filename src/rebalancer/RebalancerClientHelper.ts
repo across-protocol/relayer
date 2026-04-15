@@ -7,8 +7,8 @@ import { CumulativeBalanceRebalancerClient } from "./clients/CumulativeBalanceRe
 import { ReadOnlyRebalancerClient } from "./clients/ReadOnlyRebalancerClient";
 
 import { RebalancerConfig } from "./RebalancerConfig";
-import { RebalancerAdapter, RebalanceRoute } from "./utils/interfaces";
 import { buildRebalanceRoutes } from "./buildRebalanceRoutes";
+import { RebalancerAdapter, RebalanceRoute } from "./utils/interfaces";
 
 function constructRebalancerDependencies(
   logger: winston.Logger,
