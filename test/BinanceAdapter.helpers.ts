@@ -154,7 +154,10 @@ describe("Binance adapter helpers", async function () {
       _redisGetPendingBridgesPreDeposit(account: EvmAddress): Promise<string[]>;
       _redisGetPendingOrders(account: EvmAddress): Promise<string[]>;
       _redisGetPendingWithdrawals(account: EvmAddress): Promise<string[]>;
-      _redisGetOrderDetails(cloid: string, account: EvmAddress): Promise<{
+      _redisGetOrderDetails(
+        cloid: string,
+        account: EvmAddress
+      ): Promise<{
         sourceChain: number;
         sourceToken: string;
         destinationChain: number;

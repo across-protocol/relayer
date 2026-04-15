@@ -780,8 +780,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       if (destinationToken === "WETH") {
         this.logger.debug({
           at: "BinanceStablecoinSwapAdapter.getPendingRebalances",
-          message:
-            `Withdrawal for order ${cloid} has finalized to ETH on ${binanceWithdrawalNetwork}, but the order remains pending until the ETH is wrapped into WETH. Keeping the destination-chain WETH credit until then`,
+          message: `Withdrawal for order ${cloid} has finalized to ETH on ${binanceWithdrawalNetwork}, but the order remains pending until the ETH is wrapped into WETH. Keeping the destination-chain WETH credit until then`,
           cloid: cloid,
           orderDetails: orderDetails,
           withdrawalDetails,
@@ -1233,7 +1232,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     return Number(coin.balance);
   }
 
-  private async _getExchangeInfo(): ReturnType<Binance["exchangeInfo"]> {
+  private async _getExchangeInfo(): Promise<ReturnType<Binance["exchangeInfo"]>> {
     this.exchangeInfoPromise ??= this.binanceApiClient.exchangeInfo();
     try {
       return await this.exchangeInfoPromise;
@@ -1458,7 +1457,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     });
   }
 
-  private async _getTradeFees(): ReturnType<Binance["tradeFee"]> {
+  private async _getTradeFees(): Promise<ReturnType<Binance["tradeFee"]>> {
     this.tradeFeesPromise ??= this.binanceApiClient.tradeFee();
     try {
       return await this.tradeFeesPromise;
