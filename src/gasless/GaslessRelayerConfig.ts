@@ -25,6 +25,10 @@ export class GaslessRelayerConfig extends CommonConfig {
   spokePoolPeripheryOverrides: { [chainId: number]: string };
   /** Gasless-only: allowed input→output token pairs (by L1 symbol). E.g. { "USDT": ["USDC"] }. */
   allowedPeggedPairs: AllowedPeggedPairs;
+  /**
+   * Max acceptable age (seconds) from API `submittedAt` to now when processing a deposit for logging.
+   */
+  depositProcessingSlaSeconds: number;
 
   constructor(env: ProcessEnv) {
     super(env);
@@ -41,6 +45,7 @@ export class GaslessRelayerConfig extends CommonConfig {
       RELAYER_GASLESS_REFUND_FLOW_TEST_ENABLED,
       SPOKE_POOL_PERIPHERY_OVERRIDES,
       GASLESS_ALLOWED_PEGGED_PAIRS,
+      GASLESS_DEPOSIT_PROCESSING_SLA_SECONDS,
       SWAP_API_KEY,
     } = env;
     this.apiPollingInterval = Number(API_POLLING_INTERVAL ?? 1); // Default to 1s
@@ -69,5 +74,8 @@ export class GaslessRelayerConfig extends CommonConfig {
         new Set(outputSymbols),
       ])
     );
+
+    this.depositProcessingSlaSeconds = Number(GASLESS_DEPOSIT_PROCESSING_SLA_SECONDS ?? 60);
+    assert(this.depositProcessingSlaSeconds > 0, "GASLESS_DEPOSIT_PROCESSING_SLA_SECONDS must be a positive number");
   }
 }
