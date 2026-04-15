@@ -12,7 +12,7 @@ import {
   Signer,
   disconnectRedisClients,
   isDefined,
-  getSvmSignerFromEvmSigner,
+  getKitKeypairFromEvmSigner,
   waitForPubSub,
   averageBlockTime,
   getRedisCache,
@@ -245,7 +245,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
         const tokenClient = new TokenClient(
           logger,
           EvmAddress.from(await baseSigner.getAddress()),
-          SvmAddress.from(getSvmSignerFromEvmSigner(baseSigner).publicKey.toBase58()),
+          SvmAddress.from((await getKitKeypairFromEvmSigner(baseSigner)).address),
           {}, // SpokePoolClients not required
           clients.hubPoolClient
         );

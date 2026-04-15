@@ -9,12 +9,12 @@ import {
   chainIsSvm,
   retrieveGckmsKeys,
   getGckmsConfig,
-  getSvmSignerFromPrivateKey,
+  getKitKeypairFromPrivateKey,
   toAddressType,
 } from "../../utils";
 import { checkIfAlreadyProcessedEvm, processMintEvm, getEvmProvider } from "../utils/evmUtils";
 import { checkIfAlreadyProcessedSvm, processMintSvm, getSvmProvider } from "../utils/svmUtils";
-import { address } from "@solana/kit";
+import { address, type KeyPairSigner } from "@solana/kit";
 import {
   NoAttestationFoundError,
   AttestationNotReadyError,
@@ -28,7 +28,7 @@ import {
 
 export class CCTPService {
   private evmPrivateKey: string;
-  private svmPrivateKey: Uint8Array;
+  private svmSigner: KeyPairSigner;
   private logger: winston.Logger;
 
   constructor(logger?: winston.Logger) {
@@ -54,7 +54,7 @@ export class CCTPService {
       } = message;
 
       this.evmPrivateKey = await this.getPrivateKey("evm");
-      this.svmPrivateKey = getSvmSignerFromPrivateKey("0x" + this.evmPrivateKey).secretKey;
+      this.svmSigner = await getKitKeypairFromPrivateKey("0x" + this.evmPrivateKey);
 
       const cctpMessage = cctpMessageUnion?.string;
       const cctpAttestation = cctpAttestationUnion?.string;
@@ -222,7 +222,7 @@ export class CCTPService {
   private async checkIfAlreadyProcessed(chainId: number, message: string): Promise<boolean> {
     try {
       if (chainIsSvm(chainId)) {
-        if (!this.svmPrivateKey) {
+        if (!this.svmSigner) {
           this.logger.warn({
             at: "CCTPService#checkIfAlreadyProcessed",
             message: "SVM private key not available, cannot check if message processed on Solana",
@@ -232,7 +232,7 @@ export class CCTPService {
 
         const rpcUrl = this.getRpcUrlForChain(chainId);
         const svmProvider = getSvmProvider(rpcUrl);
-        return await checkIfAlreadyProcessedSvm(message, this.svmPrivateKey, svmProvider, this.logger);
+        return await checkIfAlreadyProcessedSvm(message, this.svmSigner, svmProvider, this.logger);
       } else {
         const rpcUrl = this.getRpcUrlForChain(chainId);
         const provider = getEvmProvider(rpcUrl);
@@ -264,7 +264,7 @@ export class CCTPService {
 
     try {
       if (chainIsSvm(destinationChainId)) {
-        if (!this.svmPrivateKey) {
+        if (!this.svmSigner) {
           throw new SvmPrivateKeyNotConfiguredError();
         }
 
@@ -273,7 +273,7 @@ export class CCTPService {
         const altAddress = process.env.SOLANA_CCTP_V2_ALT ? address(process.env.SOLANA_CCTP_V2_ALT) : undefined;
         const result = await processMintSvm(
           attestation,
-          this.svmPrivateKey,
+          this.svmSigner,
           svmProvider,
           destinationChainId,
           originChainId,

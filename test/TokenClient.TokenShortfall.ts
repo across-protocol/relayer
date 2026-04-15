@@ -15,7 +15,7 @@ import {
   winston,
   deployMulticall3,
 } from "./utils";
-import { EvmAddress, getSvmSignerFromEvmSigner, SvmAddress, isSignerWallet, toAddressType } from "../src/utils";
+import { EvmAddress, getKitKeypairFromEvmSigner, SvmAddress, isSignerWallet, toAddressType } from "../src/utils";
 
 describe("TokenClient: Token shortfall", async function () {
   let spokePool_1: Contract, spokePool_2: Contract;
@@ -79,8 +79,8 @@ describe("TokenClient: Token shortfall", async function () {
 
     let svmAddress: SvmAddress;
     if (isSignerWallet(owner)) {
-      const svmSigner = getSvmSignerFromEvmSigner(owner);
-      svmAddress = SvmAddress.from(svmSigner.publicKey.toBase58());
+      const svmSigner = await getKitKeypairFromEvmSigner(owner);
+      svmAddress = SvmAddress.from(svmSigner.address);
     } else {
       // For tests with VoidSigner or other non-Wallet signers, use a default SVM address
       svmAddress = SvmAddress.from("11111111111111111111111111111111");
