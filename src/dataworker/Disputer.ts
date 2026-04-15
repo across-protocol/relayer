@@ -7,9 +7,9 @@ import {
   bnZero,
   formatEther,
   getNetworkName,
-  isDefined,
+  TransactionResponse,
+  submitTransaction,
   Provider,
-  TransactionReceipt,
   winston,
 } from "../utils";
 
@@ -82,7 +82,7 @@ export class Disputer {
     return this.bondToken.allowance(signer, this.hubPool.address);
   }
 
-  async approve(amount = bnUint256Max): Promise<TransactionReceipt | undefined> {
+  async approve(amount = bnUint256Max): Promise<TransactionResponse | undefined> {
     const { chainId, bondToken, hubPool } = this;
     const txn = {
       chainId,
@@ -94,12 +94,13 @@ export class Disputer {
       unpermissioned: false,
       canFailInSimulation: false,
       nonMulticall: true,
+      ensureConfirmation: true,
     };
 
     return this.submit(txn);
   }
 
-  async mintBond(amount: BigNumber): Promise<TransactionReceipt | undefined> {
+  async mintBond(amount: BigNumber): Promise<TransactionResponse | undefined> {
     const { chainId, bondToken } = this;
     const txn = {
       chainId,
@@ -111,12 +112,13 @@ export class Disputer {
       unpermissioned: false,
       canFailInSimulation: false,
       nonMulticall: true,
+      ensureConfirmation: true,
     };
 
     return this.submit(txn);
   }
 
-  dispute(): Promise<TransactionReceipt | undefined> {
+  dispute(): Promise<TransactionResponse | undefined> {
     const { chainId, hubPool } = this;
     const txn = {
       chainId,
@@ -127,6 +129,7 @@ export class Disputer {
       unpermissioned: false,
       canFailInSimulation: false,
       nonMulticall: true,
+      ensureConfirmation: true,
     };
 
     try {
@@ -138,29 +141,15 @@ export class Disputer {
     return Promise.resolve(undefined);
   }
 
-  protected async submit(txn: AugmentedTransaction, maxTries = 3): Promise<TransactionReceipt | undefined> {
-    const { chainId, logger, txnClient } = this;
+  protected async submit(txn: AugmentedTransaction): Promise<TransactionResponse | undefined> {
+    const { logger } = this;
 
     if (this.simulate) {
       logger.warn({ at: "Disputer::submit", message: `Suppressing ${txn.method} transaction.` });
       return Promise.resolve(undefined);
     }
 
-    let txnReceipt: TransactionReceipt;
-    let cause: unknown;
-    let tries = 0;
-
-    do {
-      try {
-        const [txnResponse] = await txnClient.submit(chainId, [txn]);
-        txnReceipt = await txnResponse.wait();
-        return txnReceipt;
-      } catch (err: unknown) {
-        cause = err;
-      }
-    } while (!isDefined(txnReceipt) && ++tries < maxTries);
-
-    throw new Error(`Unable to submit transaction on ${this.chain}`, { cause });
+    return submitTransaction(txn, this.txnClient);
   }
 
   private _getOrCreateInitPromise(): Promise<void> {
