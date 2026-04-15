@@ -66,8 +66,10 @@ describe("Binance adapter helpers", async function () {
     const symbolAdapter = adapter as unknown as {
       _getSymbol(sourceToken: string, destinationToken: string): Promise<{ symbol: string }>;
       binanceApiClient: { exchangeInfo: typeof exchangeInfoStub };
+      exchangeInfoPromise?: Promise<unknown>;
     };
     symbolAdapter.binanceApiClient = { exchangeInfo: exchangeInfoStub };
+    symbolAdapter.exchangeInfoPromise = undefined;
 
     try {
       await symbolAdapter._getSymbol("USDT", "USDC");
