@@ -20,7 +20,7 @@ export class Disputer {
   protected provider: Provider;
   protected txnClient: TransactionClient;
   protected chain: string;
-  private initPromise: Promise<void>;
+  private initPromise: Promise<void> | undefined;
 
   constructor(
     protected readonly chainId: number,
@@ -38,21 +38,11 @@ export class Disputer {
       target: 8,
     };
     this.txnClient = new TransactionClient(this.logger);
-
-    const initPromise = async () => {
-      // @todo: Optimise all calls here by using Multicall3 to query:
-      // - bondToken
-      // - bondAmount
-      // - native balance
-      const [bondToken, bondAmount] = await Promise.all([this.hubPool.bondToken(), this.hubPool.bondAmount()]);
-      this.bondToken = WETH9.connect(bondToken, this.signer);
-      this.bondAmount = bondAmount;
-    };
-    this.initPromise = initPromise();
+    this.initPromise = this._getOrCreateInitPromise();
   }
 
   async validate(): Promise<void> {
-    await this.initPromise;
+    await this._getOrCreateInitPromise();
 
     const { bondAmount, logger } = this;
     const minBondAmount = bondAmount.mul(this.bondMultiplier.min);
@@ -171,5 +161,27 @@ export class Disputer {
     } while (!isDefined(txnReceipt) && ++tries < maxTries);
 
     throw new Error(`Unable to submit transaction on ${this.chain}`, { cause });
+  }
+
+  private _getOrCreateInitPromise(): Promise<void> {
+    if (this.initPromise !== undefined) {
+      return this.initPromise;
+    }
+    const promise = (async () => {
+      // @todo: Optimise all calls here by using Multicall3 to query:
+      // - bondToken
+      // - bondAmount
+      // - native balance
+      const [bondToken, bondAmount] = await Promise.all([this.hubPool.bondToken(), this.hubPool.bondAmount()]);
+      this.bondToken = WETH9.connect(bondToken, this.signer);
+      this.bondAmount = bondAmount;
+    })().catch((error) => {
+      if (this.initPromise === promise) {
+        this.initPromise = undefined;
+      }
+      throw error;
+    });
+    this.initPromise = promise;
+    return promise;
   }
 }
