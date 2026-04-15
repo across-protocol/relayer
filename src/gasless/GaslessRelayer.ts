@@ -493,8 +493,7 @@ export class GaslessRelayer {
           requestId: depositMessage.requestId,
           submittedAt: depositMessage.submittedAt,
           secondsSinceSubmitted,
-          depositProcessingSlaStatus:
-            secondsSinceSubmitted > sla ? "WARRNING_SLA_VIOLATION" : "NORMAL",
+          depositProcessingSlaStatus: secondsSinceSubmitted > sla ? "WARRNING_SLA_VIOLATION" : "NORMAL",
           ...(isSwap ? { swapToken, swapTokenAmount } : {}),
           ...args,
         });
