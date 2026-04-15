@@ -112,11 +112,12 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
       if (currentCumulativeBalance.lt(thresholdBalance)) {
         const deficitAmount = targetBalance.sub(cumulativeBalance);
         sortedDeficits.push({ token, amount: deficitAmount, chainId: this.config.hubPoolChainId, priorityTier });
+        tokenPricesUsd.set(token, await this._getTokenPriceUsd(token));
       } else if (currentCumulativeBalance.gt(targetBalance)) {
         const excessAmount = currentCumulativeBalance.sub(targetBalance);
         sortedExcesses.push({ token, amount: excessAmount, chainId: this.config.hubPoolChainId, priorityTier });
+        tokenPricesUsd.set(token, await this._getTokenPriceUsd(token));
       }
-      tokenPricesUsd.set(token, await this._getTokenPriceUsd(token));
     }
     sortedDeficits.sort((deficitA, deficitB) => sortDeficitFunction(deficitA, deficitB, tokenPricesUsd));
     if (sortedDeficits.length > 0) {
@@ -308,7 +309,6 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
             continue;
           }
 
-          // Initiate a new rebalance
           const chainToL1Converter = ConvertDecimals(chainDecimals, l1TokenDecimals);
           const amountTransferredL1 = chainToL1Converter(amountToTransferCapped);
           const deficitReduction = await this._convertL1TokenAmountForComparison(
@@ -316,41 +316,39 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
             excessToken,
             deficitToken
           );
-
-          // Decrement the deficit remaining, the excess remaining for this token, and the current balance for this
-          // token.
-          deficitRemaining = deficitReduction.gte(deficitRemaining) ? bnZero : deficitRemaining.sub(deficitReduction);
-          excessRemaining = excessRemaining.sub(amountTransferredL1);
-          currentBalancesOnChain[cheapestCostRoute.route.sourceChain][excessToken] =
-            currentBalance.sub(amountToTransferCapped);
-          const deficitTokenChainDecimals = getTokenInfoFromSymbol(
-            deficitToken,
-            cheapestCostRoute.route.destinationChain
-          ).decimals;
-          const deficitTokenL1Decimals = getTokenInfoFromSymbol(deficitToken, this.config.hubPoolChainId).decimals;
+          const nextDeficitRemaining = deficitReduction.gte(deficitRemaining)
+            ? bnZero
+            : deficitRemaining.sub(deficitReduction);
+          const nextExcessRemaining = excessRemaining.sub(amountTransferredL1);
+          const nextSourceBalance = currentBalance.sub(amountToTransferCapped);
           this.logger[this.config.sendingTransactionsEnabled ? "info" : "debug"]({
             at: "RebalanceClient.rebalanceCumulativeInventory",
             message: `Initializing new ${cheapestCostRoute.route.adapter} ${fromWei(amountToTransferCapped, chainDecimals)} ${excessToken} rebalance from ${getNetworkName(cheapestCostRoute.route.sourceChain)} to ${getNetworkName(cheapestCostRoute.route.destinationChain)} ${deficitToken}`,
             adapter: cheapestCostRoute.route.adapter,
             expectedFees: fromWei(cheapestCostRoute.cost, chainDecimals),
-            sourceChainLeftoverBalance: fromWei(
-              currentBalancesOnChain[cheapestCostRoute.route.sourceChain][excessToken],
-              chainDecimals
-            ),
-            destinationChainCurrentBalance: fromWei(
-              currentBalancesOnChain[cheapestCostRoute.route.destinationChain][deficitToken],
-              deficitTokenChainDecimals
-            ),
-            deficitTokenRemainingCumulativeBalance: fromWei(deficitRemaining, deficitTokenL1Decimals),
-            excessTokenRemainingCumulativeBalance: fromWei(excessRemaining, l1TokenDecimals),
           });
 
           if (this.config.sendingTransactionsEnabled) {
-            await this.adapters[cheapestCostRoute.route.adapter].initializeRebalance(
+            const initializedAmount = await this.adapters[cheapestCostRoute.route.adapter].initializeRebalance(
               cheapestCostRoute.route,
               amountToTransferCapped
             );
+            if (initializedAmount.eq(bnZero)) {
+              this.logger.debug({
+                at: "CumulativeBalanceRebalancerClient.rebalanceInventory",
+                message: `Adapter ${cheapestCostRoute.route.adapter} declined to initialize rebalance; preserving remaining excess for later routes`,
+                route: cheapestCostRoute.route,
+                requestedAmountToTransfer: amountToTransferCapped.toString(),
+              });
+              continue;
+            }
           }
+
+          // Decrement the deficit remaining, the excess remaining for this token, and the current balance for this
+          // token only after the adapter successfully initializes the rebalance.
+          deficitRemaining = nextDeficitRemaining;
+          excessRemaining = nextExcessRemaining;
+          currentBalancesOnChain[cheapestCostRoute.route.sourceChain][excessToken] = nextSourceBalance;
         }
 
         // Overwrite the excess remaining for the token to decrement the excess for the next deficit to evaluate.

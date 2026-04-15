@@ -140,15 +140,17 @@ describe("Binance adapter conversion sizing", function () {
     expect(cctpGetEstimatedCost.getCall(0).args[1].eq(toBNWei("102.040816", 6))).to.equal(true);
   });
 
-  it("does not inflate stablecoin withdrawal fees when source and destination decimals differ", async function () {
-    const route = makeStablecoinRoute({ sourceChain: CHAIN_IDs.BSC, destinationChain: CHAIN_IDs.BASE });
+  it("does not inflate same-asset stablecoin withdrawal fees when chain decimals differ", async function () {
+    const route = makeStablecoinRoute({
+      sourceChain: CHAIN_IDs.BSC,
+      destinationChain: CHAIN_IDs.BASE,
+      sourceToken: "USDC",
+      destinationToken: "USDC",
+    });
     const adapter = await makeInitializedAdapter(route);
-    const internals = withBinanceInternals(adapter);
 
-    sinon.stub(internals, "_getSpotMarketMetaForRoute").resolves(makeSpotMeta(true, 1));
-    sinon.stub(internals, "_getTradeFees").resolves([{ symbol: "USDCUSDT", takerCommission: "0" }]);
-    sinon.stub(internals, "_getLatestPrice").resolves({ latestPrice: 1, slippagePct: 0 });
-    sinon.stub(internals, "_getAccountCoins").callsFake(async (token: string) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    sinon.stub(adapter as any, "_getAccountCoins").callsFake(async (token: string) => {
       return {
         symbol: token,
         balance: "0",
@@ -168,7 +170,8 @@ describe("Binance adapter conversion sizing", function () {
         ],
       };
     });
-    sinon.stub(internals, "_getEntrypointNetwork").callsFake(async (chainId: number) => chainId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    sinon.stub(adapter as any, "_getEntrypointNetwork").callsFake(async (chainId: number) => chainId);
 
     const cost = await adapter.getEstimatedCost(route, toBNWei("308304.851912549672926661", 18), false);
 

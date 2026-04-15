@@ -416,6 +416,53 @@ describe("RebalancerClient.cumulativeRebalancing", () => {
     }
   });
 
+  it("Preserves excess for later deficits when an adapter declines to initialize", async function () {
+    const restorePrices = withFixedTokenPrices({
+      [USDC]: "1",
+      [USDT]: "1",
+      [DAI]: "1",
+    });
+    try {
+      const cumulativeBalances = {
+        [USDC]: bnZero,
+        [DAI]: bnZero,
+        [USDT]: amount(USDT, "100"),
+      };
+      const currentBalances = {
+        [CHAIN_A]: {
+          [USDC]: bnZero,
+          [DAI]: bnZero,
+          [USDT]: amount(USDT, "100"),
+        },
+      };
+      const usdtToUsdc = makeRoute(CHAIN_A, CHAIN_A, USDT, USDC, "adapter1");
+      const usdtToDai = makeRoute(CHAIN_A, CHAIN_A, USDT, DAI, "adapter1");
+      const cumulativeTargetBalances: CumulativeTargetBalanceConfig = {
+        [USDC]: buildTarget(USDC, "80", "70", 2, { [CHAIN_A]: 0 }),
+        [DAI]: buildTarget(DAI, "80", "70", 1, { [CHAIN_A]: 0 }),
+        [USDT]: buildTarget(USDT, "0", "0", 0, { [CHAIN_A]: 0 }),
+      };
+      const baseSigner = ethers.Wallet.createRandom();
+      const adapter1 = new MockRebalancerAdapter(baseSigner);
+      adapter1.setInitializeRebalanceResult(usdtToUsdc, bnZero);
+      const rebalancerClient = await createClient(
+        cumulativeTargetBalances,
+        { adapter1 },
+        [usdtToUsdc, usdtToDai],
+        {},
+        {},
+        baseSigner
+      );
+
+      await rebalancerClient.rebalanceInventory(cumulativeBalances, currentBalances, MAX_FEE_PCT);
+
+      expect(adapter1.rebalances.length).to.equal(1);
+      expect(adapter1.rebalances[0].route.destinationToken).to.equal(DAI);
+      expect(adapter1.rebalances[0].amount).to.equal(amount(USDT, "80"));
+    } finally {
+      restorePrices();
+    }
+  });
   it("Iterates through excesses in sorted order", async function () {
     const cumulativeBalances = {
       [USDC]: bnZero,
@@ -724,6 +771,7 @@ class MockRebalancerAdapter implements RebalancerAdapter {
   public baseSignerAddress!: EvmAddress;
   public rebalances: { route: RebalanceRoute; amount: BigNumber }[] = [];
   public estimatedCostMapping: { [route: string]: BigNumber } = {};
+  public initializeRebalanceResultMapping: { [route: string]: BigNumber } = {};
   private pendingOrders: string[] | undefined;
   private pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
   private readonly baseSigner: Signer;
@@ -741,8 +789,11 @@ class MockRebalancerAdapter implements RebalancerAdapter {
   }
 
   initializeRebalance(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber): Promise<BigNumber> {
-    this.rebalances.push({ route: rebalanceRoute, amount: amountToTransfer });
-    return Promise.resolve(amountToTransfer);
+    const result = this.initializeRebalanceResultMapping[JSON.stringify(rebalanceRoute)] ?? amountToTransfer;
+    if (result.gt(bnZero)) {
+      this.rebalances.push({ route: rebalanceRoute, amount: amountToTransfer });
+    }
+    return Promise.resolve(result);
   }
 
   updateRebalanceStatuses(): Promise<void> {
@@ -771,6 +822,10 @@ class MockRebalancerAdapter implements RebalancerAdapter {
 
   setEstimatedCost(route: RebalanceRoute, cost: BigNumber): void {
     this.estimatedCostMapping[JSON.stringify(route)] = cost;
+  }
+
+  setInitializeRebalanceResult(route: RebalanceRoute, amount: BigNumber): void {
+    this.initializeRebalanceResultMapping[JSON.stringify(route)] = amount;
   }
 
   getEstimatedCost(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber, debugLog: boolean): Promise<BigNumber> {

@@ -497,11 +497,11 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       // a bridge to the final non-Binance network destination chain if necessary.
 
       const orderDetails = await this._redisGetOrderDetails(cloid, this.baseSignerAddress);
-      const { destinationToken, destinationChain } = orderDetails;
-      const matchingFill = this._routeRequiresSwap(orderDetails.sourceToken, orderDetails.destinationToken)
+      const { sourceToken, destinationToken, destinationChain } = orderDetails;
+      const matchingFill = this._routeRequiresSwap(sourceToken, destinationToken)
         ? (await this._getMatchingFillForCloid(cloid, this.baseSignerAddress))?.matchingFill
         : undefined;
-      if (this._routeRequiresSwap(orderDetails.sourceToken, orderDetails.destinationToken) && !matchingFill) {
+      if (this._routeRequiresSwap(sourceToken, destinationToken) && !matchingFill) {
         throw new Error(`No matching fill found for cloid ${cloid} that has status PENDING_WITHDRAWAL`);
       }
       const binanceWithdrawalNetwork = await this._getEntrypointNetwork(destinationChain, destinationToken);
@@ -521,8 +521,8 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         binanceWithdrawalNetwork,
         isDefined(matchingFill) ? Math.floor(matchingFill.time / 1000) - 5 * 60 : getCurrentTime() - 6 * 60 * 60,
         // If there is a matching fill, then look up withdrawals after the fill time. If there is no fill because
-        // its not a swap route, then use a conservative lookback period. If the withdrawal is older than this lookback
-        // period then it should have already been deleted from the Redis DB.
+        // it's not a swap route, then use a conservative lookback period. If the withdrawal is older than this
+        // lookback period then it should have already been deleted from Redis.
         this.baseSignerAddress.toNative()
       );
       const failedWithdrawal = failedWithdrawals.find((withdrawal) => withdrawal.id === initiatedWithdrawalId);
@@ -538,9 +538,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         await this._redisUpdateOrderStatus(
           cloid,
           STATUS.PENDING_WITHDRAWAL,
-          this._routeRequiresSwap(orderDetails.sourceToken, orderDetails.destinationToken)
-            ? STATUS.PENDING_SWAP
-            : STATUS.PENDING_DEPOSIT,
+          this._routeRequiresSwap(sourceToken, destinationToken) ? STATUS.PENDING_SWAP : STATUS.PENDING_DEPOSIT,
           this.baseSignerAddress
         );
         continue;
@@ -748,8 +746,8 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         binanceWithdrawalNetwork,
         isDefined(matchingFill) ? Math.floor(matchingFill.time / 1000) - 5 * 60 : getCurrentTime() - 6 * 60 * 60,
         // If there is a matching fill, then look up withdrawals after the fill time. If there is no fill because
-        // its not a swap route, then use a conservative lookback period. If the withdrawal is older than this lookback
-        // period then it should have already been deleted from the Redis DB.
+        // it's not a swap route, then use a conservative lookback period. If the withdrawal is older than this
+        // lookback period then it should have already been deleted from Redis.
         account.toNative()
       );
       const initiatedWithdrawalIsUnfinalized = unfinalizedWithdrawals.find(
