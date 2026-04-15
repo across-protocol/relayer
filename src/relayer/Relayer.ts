@@ -893,10 +893,11 @@ export class Relayer {
     pendingTxnHashes[chainId] = (async () => {
       return (await fillExecutorClient.executeTxnQueue(chainId, simulate)).map((response) => response.hash);
     })();
-    const txnReceipts = await pendingTxnHashes[chainId];
-    delete pendingTxnHashes[chainId];
-
-    return txnReceipts;
+    try {
+      return await pendingTxnHashes[chainId];
+    } finally {
+      delete pendingTxnHashes[chainId];
+    }
   }
 
   async checkForUnfilledDepositsAndFill(simulate = false): Promise<{ [chainId: number]: Promise<string[]> }> {
