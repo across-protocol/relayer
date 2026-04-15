@@ -21,6 +21,21 @@ A `RebalanceRoute` defines:
 
 Routes are assembled by the rebalancer construction layer and passed at client initialization time (`initialize(rebalanceRoutes)`). The mode clients then filter to routes that are valid for current balances/config.
 
+The built-in production route set is generated in `src/rebalancer/buildRebalanceRoutes.ts`. For the current stablecoin route families, it covers:
+
+- `USDC <-> USDT` swap routes on Binance and Hyperliquid
+- same-asset `USDC <-> USDC` routes on CCTP and direct Binance USDC networks
+- same-asset `USDT <-> USDT` routes on OFT and direct Binance USDT networks
+
+Route construction keeps two token-keyed chain maps:
+
+- `BINANCE_NETWORKS_BY_SYMBOL`: direct Binance deposit and withdrawal networks known for each token
+- `REBALANCE_CHAINS_BY_SYMBOL`: the narrower set of chains this repo currently enables for rebalancing that token
+
+Operational note:
+
+- Same-asset `USDC <-> USDC` and `USDT <-> USDT` Binance routes are included deliberately so they can compete on estimated cost against CCTP and OFT paths, but they are only generated when both sides are direct Binance networks for that asset.
+
 ### Rebalancer Adapter
 
 Adapters in `src/rebalancer/adapters/` initiate and progress multi-stage swap workflows. The interface currently is:
