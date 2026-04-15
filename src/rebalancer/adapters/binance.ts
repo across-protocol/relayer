@@ -76,10 +76,6 @@ export function isTerminalBinanceWithdrawal(status?: number): boolean {
   }
 }
 
-function supportsBinanceIntermediateBridgeToken(token: string): boolean {
-  return token === "USDC" || token === "USDT";
-}
-
 export function resolveBinanceCoinSymbol(token: string): string {
   return token === "WETH" ? "ETH" : token;
 }
