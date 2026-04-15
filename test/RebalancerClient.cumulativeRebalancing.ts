@@ -463,7 +463,6 @@ describe("RebalancerClient.cumulativeRebalancing", () => {
       restorePrices();
     }
   });
-
   it("Iterates through excesses in sorted order", async function () {
     const cumulativeBalances = {
       [USDC]: bnZero,

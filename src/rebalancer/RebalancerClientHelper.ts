@@ -12,7 +12,8 @@ import { RebalancerAdapter, RebalanceRoute } from "./utils/interfaces";
 
 function constructRebalancerDependencies(
   logger: winston.Logger,
-  baseSigner: Signer
+  baseSigner: Signer,
+  rebalanceRoutesOverride?: RebalanceRoute[]
 ): {
   rebalancerConfig: RebalancerConfig;
   adapters: { [name: string]: RebalancerAdapter };
@@ -38,7 +39,7 @@ function constructRebalancerDependencies(
     oftAdapter
   );
   const adapterMap = { hyperliquid: hyperliquidAdapter, binance: binanceAdapter, cctp: cctpAdapter, oft: oftAdapter };
-  const rebalanceRoutes: RebalanceRoute[] = buildRebalanceRoutes(rebalancerConfig);
+  const rebalanceRoutes = rebalanceRoutesOverride ?? buildRebalanceRoutes(rebalancerConfig);
 
   // @todo: Add test-net support for this client. For now, we only support production and we do not construct
   // any adapters or routes when running on test net.
@@ -50,9 +51,14 @@ function constructRebalancerDependencies(
 
 export async function constructCumulativeBalanceRebalancerClient(
   logger: winston.Logger,
-  baseSigner: Signer
+  baseSigner: Signer,
+  rebalanceRoutesOverride?: RebalanceRoute[]
 ): Promise<CumulativeBalanceRebalancerClient> {
-  const { rebalancerConfig, adapters, rebalanceRoutes } = constructRebalancerDependencies(logger, baseSigner);
+  const { rebalancerConfig, adapters, rebalanceRoutes } = constructRebalancerDependencies(
+    logger,
+    baseSigner,
+    rebalanceRoutesOverride
+  );
   const isReadonly = false;
   const rebalancerClient = new CumulativeBalanceRebalancerClient(
     logger,
