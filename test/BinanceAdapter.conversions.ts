@@ -97,6 +97,44 @@ describe("Binance adapter conversion sizing", function () {
     expect(cctpGetEstimatedCost.getCall(0).args[1].eq(toBNWei("102.040816", 6))).to.equal(true);
   });
 
+  it("does not inflate same-asset stablecoin withdrawal fees when chain decimals differ", async function () {
+    const route = makeStablecoinRoute({
+      sourceChain: CHAIN_IDs.BSC,
+      destinationChain: CHAIN_IDs.BASE,
+      sourceToken: "USDC",
+      destinationToken: "USDC",
+    });
+    const adapter = await makeInitializedAdapter(route);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    sinon.stub(adapter as any, "_getAccountCoins").callsFake(async (token: string) => {
+      return {
+        symbol: token,
+        balance: "0",
+        networkList: [
+          {
+            name: "BASE",
+            withdrawMin: "0.1",
+            withdrawMax: "1000000",
+            withdrawFee: "0.499695",
+          },
+          {
+            name: "BSC",
+            withdrawMin: "0.1",
+            withdrawMax: "1000000",
+            withdrawFee: "0",
+          },
+        ],
+      };
+    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    sinon.stub(adapter as any, "_getEntrypointNetwork").callsFake(async (chainId: number) => chainId);
+
+    const cost = await adapter.getEstimatedCost(route, toBNWei("308304.851912549672926661", 18), false);
+
+    expect(cost.eq(toBNWei("0.499695", 18))).to.equal(true);
+  });
+
   it("prices destination-to-source conversions using source-token precision", async function () {
     const route = makeStablecoinRoute();
     const adapter = await makeInitializedAdapter(route);
