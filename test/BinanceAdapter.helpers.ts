@@ -1,4 +1,5 @@
 import { ethers, expect, sinon, toBNWei } from "./utils";
+import winston from "winston";
 import {
   BinanceStablecoinSwapAdapter,
   convertBinanceRouteAmount,
@@ -7,6 +8,9 @@ import {
   resolveBinanceCoinSymbol,
   supportsBinanceIntermediateBridgeToken,
 } from "../src/rebalancer/adapters/binance";
+import { CctpAdapter } from "../src/rebalancer/adapters/cctpAdapter";
+import { OftAdapter } from "../src/rebalancer/adapters/oftAdapter";
+import { RebalancerConfig } from "../src/rebalancer/RebalancerConfig";
 
 describe("Binance adapter helpers", async function () {
   afterEach(function () {
@@ -144,8 +148,13 @@ describe("Binance adapter helpers", async function () {
 
 async function makeAdapter(): Promise<BinanceStablecoinSwapAdapter> {
   const [signer] = await ethers.getSigners();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return new BinanceStablecoinSwapAdapter(TEST_LOGGER, {} as any, signer, {} as any, {} as any);
+  return new BinanceStablecoinSwapAdapter(
+    TEST_LOGGER,
+    {} as RebalancerConfig,
+    signer,
+    {} as CctpAdapter,
+    {} as OftAdapter
+  );
 }
 
 function makeStablecoinSymbol() {
@@ -177,5 +186,4 @@ const TEST_LOGGER = {
   info: () => undefined,
   warn: () => undefined,
   error: () => undefined,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-} as any;
+} as unknown as winston.Logger;
