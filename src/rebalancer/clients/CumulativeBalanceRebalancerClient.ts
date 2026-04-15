@@ -221,6 +221,9 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
           amountToTransferCapped = amountToTransferCapped.gt(excessRemainingConverted)
             ? excessRemainingConverted
             : amountToTransferCapped;
+          if (amountToTransferCapped.lte(bnZero)) {
+            continue;
+          }
 
           // To determine which destination chain to receive the deficit token on, we check the estimated cost
           // for all possible destination chains and then select the chain with the lowest estimated cost.
