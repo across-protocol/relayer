@@ -476,21 +476,10 @@ export class GaslessRelayer {
 
       const at = "GaslessRelayer#evaluateApiSignatures";
       const submittedAtMs = new Date(depositMessage.submittedAt).getTime();
-      const hasValidSubmittedAt = !Number.isNaN(submittedAtMs);
+      const sla = this.config.depositProcessingSlaSeconds;
 
       const log = (level: "debug" | "info" | "warn", message: string, args: Record<string, unknown> = {}) => {
-        const timingLog: Record<string, unknown> = hasValidSubmittedAt
-          ? (() => {
-              const secondsSinceSubmitted = getCurrentTime() - Math.floor(submittedAtMs / 1000);
-              const sla = this.config.depositProcessingSlaSeconds;
-              return {
-                submittedAt: depositMessage.submittedAt,
-                secondsSinceSubmitted,
-                depositProcessingSlaStatus: secondsSinceSubmitted > sla ? "WARRNING_SLA_VIOLATION" : "NORMAL",
-              };
-            })()
-          : { submittedAt: depositMessage.submittedAt };
-
+        const secondsSinceSubmitted = getCurrentTime() - Math.floor(submittedAtMs / 1000);
         this.logger[level]({
           at,
           message,
@@ -502,7 +491,10 @@ export class GaslessRelayer {
           authorizer,
           nonce,
           requestId: depositMessage.requestId,
-          ...timingLog,
+          submittedAt: depositMessage.submittedAt,
+          secondsSinceSubmitted,
+          depositProcessingSlaStatus:
+            secondsSinceSubmitted > sla ? "WARRNING_SLA_VIOLATION" : "NORMAL",
           ...(isSwap ? { swapToken, swapTokenAmount } : {}),
           ...args,
         });
