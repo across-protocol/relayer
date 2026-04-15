@@ -71,6 +71,10 @@ export function isTerminalBinanceWithdrawal(status?: number): boolean {
   }
 }
 
+export function resolveBinanceCoinSymbol(token: string): string {
+  return token === "WETH" ? "ETH" : token;
+}
+
 export function deriveBinanceSpotMarketMeta(
   sourceToken: string,
   destinationToken: string,
@@ -986,21 +990,26 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     return Number(coin.balance);
   }
 
-  private async _getSymbol(sourceToken: string, destinationToken: string) {
+  private async _getExchangeInfo(): ReturnType<Binance["exchangeInfo"]> {
     this.exchangeInfoPromise ??= this.binanceApiClient.exchangeInfo();
-    let exchangeInfo;
     try {
-      exchangeInfo = await this.exchangeInfoPromise;
+      return await this.exchangeInfoPromise;
     } catch (error) {
       this.exchangeInfoPromise = undefined;
       throw error;
     }
+  }
+
+  private async _getSymbol(sourceToken: string, destinationToken: string) {
+    const sourceAsset = resolveBinanceCoinSymbol(sourceToken);
+    const destinationAsset = resolveBinanceCoinSymbol(destinationToken);
+    const exchangeInfo = await this._getExchangeInfo();
     const symbol = exchangeInfo.symbols.find((symbols) => {
       return (
-        symbols.symbol === `${sourceToken}${destinationToken}` || symbols.symbol === `${destinationToken}${sourceToken}`
+        symbols.symbol === `${sourceAsset}${destinationAsset}` || symbols.symbol === `${destinationAsset}${sourceAsset}`
       );
     });
-    assert(symbol, `No market found for ${sourceToken} and ${destinationToken}`);
+    assert(symbol, `No market found for ${sourceAsset} and ${destinationAsset}`);
     return symbol;
   }
 
