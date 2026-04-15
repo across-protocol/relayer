@@ -112,11 +112,12 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
       if (currentCumulativeBalance.lt(thresholdBalance)) {
         const deficitAmount = targetBalance.sub(cumulativeBalance);
         sortedDeficits.push({ token, amount: deficitAmount, chainId: this.config.hubPoolChainId, priorityTier });
+        tokenPricesUsd.set(token, await this._getTokenPriceUsd(token));
       } else if (currentCumulativeBalance.gt(targetBalance)) {
         const excessAmount = currentCumulativeBalance.sub(targetBalance);
         sortedExcesses.push({ token, amount: excessAmount, chainId: this.config.hubPoolChainId, priorityTier });
+        tokenPricesUsd.set(token, await this._getTokenPriceUsd(token));
       }
-      tokenPricesUsd.set(token, await this._getTokenPriceUsd(token));
     }
     sortedDeficits.sort((deficitA, deficitB) => sortDeficitFunction(deficitA, deficitB, tokenPricesUsd));
     if (sortedDeficits.length > 0) {
