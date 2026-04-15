@@ -962,7 +962,9 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const tradeFeePct = routeRequiresSwap
       ? (await this._getTradeFees()).find((fee) => fee.symbol === spotMarketMeta.symbol).takerCommission
       : "0";
-    const tradeFee = toBNWei(tradeFeePct, 18).mul(amountToTransfer).div(toBNWei(100, 18));
+    const tradeFee = toBNWei(truncate(Number(tradeFeePct), 18), 18)
+      .mul(amountToTransfer)
+      .div(toBNWei(100, 18));
     const destinationCoin = await this._getAccountCoins(destinationToken);
     const destinationEntrypointNetwork = await this._getEntrypointNetwork(destinationChain, destinationToken);
     const withdrawFee = destinationCoin.networkList.find(
@@ -981,7 +983,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
 
     const spreadPct = latestPrice.slippagePct; // slippage is a percentage so we need to divide it by an additional
     // 100 to get it to a decimal.
-    const spreadFee = toBNWei(spreadPct, 18).mul(amountToTransfer).div(toBNWei(1, 20));
+    const spreadFee = toBNWei(truncate(spreadPct, 18), 18).mul(amountToTransfer).div(toBNWei(1, 20));
 
     // Bridge to Binance deposit network Fee:
     let bridgeToBinanceFee = bnZero;
@@ -1058,7 +1060,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const opportunityCostOfCapitalPct = requiresOftBridgeFromHyperevm
       ? this._getOpportunityCostOfCapitalPctForRebalanceTime(11 * 60 * 60 * 1000)
       : bnZero;
-    const opportunityCostOfCapitalFixed = toBNWei(opportunityCostOfCapitalPct, 18)
+    const opportunityCostOfCapitalFixed = toBNWei(truncate(Number(opportunityCostOfCapitalPct), 18), 18)
       .mul(amountToTransfer)
       .div(toBNWei(100, 18));
 

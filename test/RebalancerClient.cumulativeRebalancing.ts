@@ -311,6 +311,111 @@ describe("RebalancerClient.cumulativeRebalancing", () => {
     }
   });
 
+  it("Decrements excess remaining after each evaluated deficit", async function () {
+    const cumulativeBalances = {
+      [USDC]: bnZero,
+      [DAI]: bnZero,
+      [USDT]: amount(USDT, "100"),
+    };
+    const currentBalances = {
+      [CHAIN_A]: {
+        [USDC]: bnZero,
+        [DAI]: bnZero,
+        [USDT]: amount(USDT, "100"),
+      },
+    };
+    const cumulativeTargetBalances: CumulativeTargetBalanceConfig = {
+      [USDC]: buildTarget(USDC, "80", "70", 2, { [CHAIN_A]: 0 }),
+      [DAI]: buildTarget(DAI, "80", "70", 1, { [CHAIN_A]: 0 }),
+      [USDT]: buildTarget(USDT, "0", "0", 0, { [CHAIN_A]: 0 }),
+    };
+    const baseSigner = ethers.Wallet.createRandom();
+    const adapter1 = new MockRebalancerAdapter(baseSigner);
+    const rebalancerClient = await createClient(
+      cumulativeTargetBalances,
+      { adapter1 },
+      [makeRoute(CHAIN_A, CHAIN_A, USDT, USDC, "adapter1"), makeRoute(CHAIN_A, CHAIN_A, USDT, DAI, "adapter1")],
+      {},
+      {},
+      baseSigner
+    );
+
+    await rebalancerClient.rebalanceInventory(cumulativeBalances, currentBalances, MAX_FEE_PCT);
+
+    const usdcPrice = toBNWei(DEFAULT_FIXED_PRICES[USDC]);
+    const usdtPrice = toBNWei(DEFAULT_FIXED_PRICES[USDT]);
+    const expectedFirstAmount = amount(USDC, "80").mul(usdcPrice).div(usdtPrice);
+    const expectedSecondAmount = amount(USDT, "100").sub(expectedFirstAmount);
+
+    expect(adapter1.rebalances.length).to.equal(2);
+    expect(adapter1.rebalances[0].route.destinationToken).to.equal(USDC);
+    expect(adapter1.rebalances[0].amount).to.equal(expectedFirstAmount);
+    expect(adapter1.rebalances[1].route.destinationToken).to.equal(DAI);
+    expect(adapter1.rebalances[1].amount).to.equal(expectedSecondAmount);
+    const totalTransferred = adapter1.rebalances.reduce((acc, rebalance) => acc.add(rebalance.amount), bnZero);
+    expect(totalTransferred).to.equal(amount(USDT, "100"));
+  });
+
+  it("Uses updated excess source-chain balances after prior deficit transfers", async function () {
+    const restorePrices = withFixedTokenPrices({
+      [USDC]: "1",
+      [USDT]: "1",
+      [DAI]: "1",
+    });
+    try {
+      const cumulativeBalances = {
+        [USDC]: bnZero,
+        [DAI]: bnZero,
+        [USDT]: amount(USDT, "110"),
+      };
+      const currentBalances = {
+        [CHAIN_A]: {
+          [USDC]: bnZero,
+          [DAI]: bnZero,
+          [USDT]: amount(USDT, "60"),
+        },
+        [CHAIN_B]: {
+          [USDT]: amount(USDT, "50"),
+        },
+      };
+      const cumulativeTargetBalances: CumulativeTargetBalanceConfig = {
+        [USDC]: buildTarget(USDC, "60", "50", 2, { [CHAIN_A]: 0 }),
+        [DAI]: buildTarget(DAI, "60", "50", 1, { [CHAIN_A]: 0 }),
+        [USDT]: buildTarget(USDT, "0", "0", 0, {
+          [CHAIN_A]: 0,
+          [CHAIN_B]: 0,
+        }),
+      };
+      const baseSigner = ethers.Wallet.createRandom();
+      const adapter1 = new MockRebalancerAdapter(baseSigner);
+      const rebalancerClient = await createClient(
+        cumulativeTargetBalances,
+        { adapter1 },
+        [
+          makeRoute(CHAIN_A, CHAIN_A, USDT, USDC, "adapter1"),
+          makeRoute(CHAIN_B, CHAIN_A, USDT, USDC, "adapter1"),
+          makeRoute(CHAIN_A, CHAIN_A, USDT, DAI, "adapter1"),
+          makeRoute(CHAIN_B, CHAIN_A, USDT, DAI, "adapter1"),
+        ],
+        {},
+        {},
+        baseSigner
+      );
+
+      await rebalancerClient.rebalanceInventory(cumulativeBalances, currentBalances, MAX_FEE_PCT);
+
+      expect(adapter1.rebalances.length).to.equal(2);
+      expect(adapter1.rebalances[0].route.destinationToken).to.equal(USDC);
+      expect(adapter1.rebalances[0].route.sourceChain).to.equal(CHAIN_A);
+      expect(adapter1.rebalances[0].amount).to.equal(amount(USDT, "60"));
+      expect(adapter1.rebalances[1].route.destinationToken).to.equal(DAI);
+      expect(adapter1.rebalances[1].route.sourceChain).to.equal(CHAIN_B);
+      expect(adapter1.rebalances[1].amount).to.equal(amount(USDT, "50"));
+    } finally {
+      restorePrices();
+    }
+  });
+
   it("Iterates through excesses in sorted order", async function () {
     const cumulativeBalances = {
       [USDC]: bnZero,
