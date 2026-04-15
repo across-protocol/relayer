@@ -185,7 +185,6 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   >();
   private tradeFeesPromise?: ReturnType<Binance["tradeFee"]>;
   private spotMarketMetaPromiseByRoute = new Map<string, Promise<SPOT_MARKET_META>>();
-  private readonly priceClient: PriceClient;
   private readonly tokenPriceCache = new Map<string, BigNumber>();
 
   REDIS_PREFIX = "binance-stablecoin-swap:";
