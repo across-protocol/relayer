@@ -47,7 +47,6 @@ import {
   APIGaslessDepositResponse,
   DepositWithBlock,
   FillStatus,
-  FillWithBlock,
   GaslessDepositMessage,
   RelayData,
 } from "../interfaces";
@@ -273,7 +272,7 @@ export class GaslessRelayer {
         );
         for (const filledRelay of destinationFilledRelayEvents) {
           const fill = unpackFillEvent(spreadEventWithBlockNumber(filledRelay), destinationChainId);
-          observedFills.add(this._getFilledRelayKey(fill));
+          observedFills.add(this._getFilledRelayKey(fill.originChainId, fill.depositId.toString()));
         }
       }),
     ]);
@@ -406,7 +405,7 @@ export class GaslessRelayer {
         continue;
       }
 
-      const fillKey = this._getFilledRelayKey({ originChainId, depositId: toBN(depositId) });
+      const fillKey = this._getFilledRelayKey(originChainId, depositId);
       const fillSeen = this.observedFills[destinationChainId]?.has(fillKey) ?? false;
       if (fillSeen) {
         this._setState(depositKey, MessageState.FILLED);
@@ -1007,8 +1006,7 @@ export class GaslessRelayer {
    * @dev We key on the origin chain and depositId only since this is what uniquely identifies a deposit on an origin chain for a specific user (the only way to have a collision here with
    * a valid, unfilled deposit is by finding a collision in keccak).
    */
-  private _getFilledRelayKey(filledRelay: Pick<FillWithBlock, "originChainId" | "depositId">): string {
-    const { originChainId, depositId } = filledRelay;
+  private _getFilledRelayKey(originChainId: number, depositId: string): string {
     return `${originChainId}:${depositId}`;
   }
 }
