@@ -37,6 +37,20 @@ import { MockRebalancerClient } from "./mocks/MockRebalancerClient";
 describe("InventoryClient: Refund chain selection", async function () {
   const { MAINNET, OPTIMISM, POLYGON, ARBITRUM, BSC } = CHAIN_IDs;
   const enabledChainIds = [MAINNET, OPTIMISM, POLYGON, ARBITRUM, BSC];
+
+  // hasBinanceRoute() treats (chain, token) as fast-rebalanceable only when BINANCE_API_KEY is set.
+  // These tests assume the default "no Binance credentials" posture; individual tests that exercise
+  // quick-rebalance semantics set it explicitly and restore it on teardown.
+  let _binanceApiKey: string | undefined;
+  before(() => {
+    _binanceApiKey = process.env.BINANCE_API_KEY;
+    delete process.env.BINANCE_API_KEY;
+  });
+  after(() => {
+    if (_binanceApiKey !== undefined) {
+      process.env.BINANCE_API_KEY = _binanceApiKey;
+    }
+  });
   const mainnetWeth = TOKEN_SYMBOLS_MAP.WETH.addresses[MAINNET];
   const mainnetUsdc = TOKEN_SYMBOLS_MAP.USDC.addresses[MAINNET];
 
@@ -596,14 +610,36 @@ describe("InventoryClient: Refund chain selection", async function () {
       expect(refundChains.length).to.equal(0);
     });
     it("returns origin chain even if it is over allocated if origin chain is a quick rebalance source", async function () {
-      sampleDepositData.originChainId = BSC;
-      sampleDepositData.inputToken = toAddressType(l2TokensForWeth[BSC], BSC);
-      seedMocks({
-        [BSC]: { [mainnetWeth]: toWei(10), [mainnetUsdc]: toMegaWei(1000) },
-      });
-      tokenClient.setTokenData(BSC, toAddressType(l2TokensForWeth[BSC], BSC), toWei(10));
-      const refundChains = await inventoryClient.determineRefundChainId(sampleDepositData);
-      expect(refundChains).to.deep.equal([BSC]);
+      // BSC is only treated as quickly rebalanced when the operator has Binance credentials configured,
+      // since its sole exit path is via the Binance CEX bridge.
+      process.env.BINANCE_API_KEY = "test-key";
+      try {
+        sampleDepositData.originChainId = BSC;
+        sampleDepositData.inputToken = toAddressType(l2TokensForWeth[BSC], BSC);
+        seedMocks({
+          [BSC]: { [mainnetWeth]: toWei(10), [mainnetUsdc]: toMegaWei(1000) },
+        });
+        tokenClient.setTokenData(BSC, toAddressType(l2TokensForWeth[BSC], BSC), toWei(10));
+        const refundChains = await inventoryClient.determineRefundChainId(sampleDepositData);
+        expect(refundChains).to.deep.equal([BSC]);
+      } finally {
+        delete process.env.BINANCE_API_KEY;
+      }
+    });
+    it("treats overallocated origin as quick-rebalance when a per-token Binance route exists", async function () {
+      // Arbitrum WETH has a Binance route via L2BinanceCEXNativeBridge in CUSTOM_L2_BRIDGE. When the
+      // operator has Binance credentials, this makes Arbitrum quickly rebalanced for WETH even though
+      // it would otherwise be a 7-day slow-withdrawal chain.
+      process.env.BINANCE_API_KEY = "test-key";
+      try {
+        sampleDepositData.originChainId = ARBITRUM;
+        sampleDepositData.inputToken = toAddressType(l2TokensForWeth[ARBITRUM], ARBITRUM);
+        tokenClient.setTokenData(ARBITRUM, toAddressType(l2TokensForWeth[ARBITRUM], ARBITRUM), toWei(100));
+        const refundChains = await inventoryClient.determineRefundChainId(sampleDepositData);
+        expect(refundChains).to.deep.equal([ARBITRUM]);
+      } finally {
+        delete process.env.BINANCE_API_KEY;
+      }
     });
   });
 

@@ -722,6 +722,25 @@ export const CUSTOM_L2_BRIDGE: Record<number, Record<string, L2BridgeConstructor
   },
 };
 
+/**
+ * @notice Returns true if Binance acecpts deposits for the given chainId and (normalised) token address.
+ * @dev Route existence is derived from the configured L2 bridge for (chainId, l1Token), resolved with
+ * the same precedence as AdapterManager: CUSTOM_L2_BRIDGE first, then falling back to CANONICAL_L2_BRIDGE
+ * for the chain. This naturally covers BSC without a hardcoded special case.
+ * Additionally gated on BINANCE_API_KEY presence: if the operator has not configured Binance
+ * credentials, every route is treated as unavailable — there is no point claiming a route we cannot
+ * use. This is the same env var `getBinanceApiClient()` keys off, keeping the signal coherent with the
+ * rest of the Binance code path. It does NOT check real-time Binance API reachability or per-coin
+ * withdrawal status; a future change may layer a `getAccountCoins()` snapshot over this static check.
+ */
+export function hasBinanceRoute(chainId: number, l1TokenAddress: string): boolean {
+  if (!process.env.BINANCE_API_KEY) {
+    return false;
+  }
+  const bridge = CUSTOM_L2_BRIDGE[chainId]?.[l1TokenAddress] ?? CANONICAL_L2_BRIDGE[chainId];
+  return bridge === L2BinanceCEXBridge || bridge === L2BinanceCEXNativeBridge;
+}
+
 // Path to the external SpokePool indexer. Must be updated if src/libexec/* files are relocated or if the `outputDir` on TSC has been modified.
 export const RELAYER_SPOKEPOOL_LISTENER_EVM = "./dist/src/libexec/RelayerSpokePoolListener.js";
 export const RELAYER_SPOKEPOOL_LISTENER_SVM = "./dist/src/libexec/RelayerSpokePoolListenerSVM.js";
