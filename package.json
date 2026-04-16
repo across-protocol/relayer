@@ -12,10 +12,11 @@
   "dependencies": {
     "@across-protocol/constants": "^3.1.109",
     "@across-protocol/contracts": "5.0.6",
-    "@across-protocol/sdk": "4.3.142",
+    "@across-protocol/sdk": "4.4.0-alpha.8",
     "@arbitrum/sdk": "^4.0.2",
     "@consensys/linea-sdk": "^0.3.0",
     "@coral-xyz/anchor": "^0.31.1",
+    "@coral-xyz/borsh": "^0.31.1",
     "@eth-optimism/sdk": "^3.3.2",
     "@ethersproject/abi": "^5.7.0",
     "@ethersproject/abstract-provider": "^5.7.0",

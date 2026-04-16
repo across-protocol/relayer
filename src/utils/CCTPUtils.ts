@@ -1,5 +1,5 @@
 import { arch, utils } from "@across-protocol/sdk";
-import { TokenMessengerMinterIdl } from "@across-protocol/contracts";
+import { TokenMessengerMinterIdl } from "@across-protocol/sdk/svm";
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { Contract, ethers } from "ethers";
 import { CONTRACT_ADDRESSES, CCTP_MAX_SEND_AMOUNT } from "../common";

@@ -2,6 +2,7 @@
   "compilerOptions": {
     "target": "es2024",
     "module": "commonjs",
+    "moduleResolution": "bundler",
     "esModuleInterop": true,
     "rootDir": ".",
     "outDir": "./dist",
