@@ -43,7 +43,7 @@ RPC_PROVIDER_INFURA_10=https://optimism-mainnet.infura.io/v3/...
 ### Basic Usage
 
 ```bash
-yarn ts-node ./scripts/simulateFill.ts --originChainId <chainId> --txnHash <transactionHash> [options]
+yarn tsx ./scripts/simulateFill.ts --originChainId <chainId> --txnHash <transactionHash> [options]
 ```
 
 ### Parameters
@@ -66,7 +66,7 @@ yarn ts-node ./scripts/simulateFill.ts --originChainId <chainId> --txnHash <tran
 #### Simulate a fill for a mainnet deposit:
 
 ```bash
-yarn ts-node ./scripts/simulateFill.ts \
+yarn tsx ./scripts/simulateFill.ts \
   --originChainId 1 \
   --txnHash 0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef
 ```
@@ -74,7 +74,7 @@ yarn ts-node ./scripts/simulateFill.ts \
 #### Simulate a fill for an Optimism deposit:
 
 ```bash
-yarn ts-node ./scripts/simulateFill.ts \
+yarn tsx ./scripts/simulateFill.ts \
   --originChainId 10 \
   --txnHash 0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
 ```
@@ -82,7 +82,7 @@ yarn ts-node ./scripts/simulateFill.ts \
 #### Simulate with a custom relayer address:
 
 ```bash
-yarn ts-node ./scripts/simulateFill.ts \
+yarn tsx ./scripts/simulateFill.ts \
   --originChainId 1 \
   --txnHash 0x123... \
   --relayer 0xYourCustomAddress
@@ -91,7 +91,7 @@ yarn ts-node ./scripts/simulateFill.ts \
 #### Simulate with a longer delay (10 seconds after deposit):
 
 ```bash
-yarn ts-node ./scripts/simulateFill.ts \
+yarn tsx ./scripts/simulateFill.ts \
   --originChainId 1 \
   --txnHash 0x123... \
   --delay 10
@@ -100,7 +100,7 @@ yarn ts-node ./scripts/simulateFill.ts \
 #### Simulate immediately after deposit (0 second delay):
 
 ```bash
-yarn ts-node ./scripts/simulateFill.ts \
+yarn tsx ./scripts/simulateFill.ts \
   --originChainId 1 \
   --txnHash 0x123... \
   --delay 0
@@ -109,7 +109,7 @@ yarn ts-node ./scripts/simulateFill.ts \
 #### Combine multiple options:
 
 ```bash
-yarn ts-node ./scripts/simulateFill.ts \
+yarn tsx ./scripts/simulateFill.ts \
   --originChainId 1 \
   --txnHash 0x123... \
   --relayer 0xYourAddress \

@@ -934,7 +934,14 @@ export class InventoryClient {
   ): Promise<{ [chainId: number]: BigNumber }> {
     if (!isDefined(this.excessRunningBalancePromises[l1Token.toNative()])) {
       // @dev Save this as a promise so that other parallel calls to this function don't make the same call.
-      this.excessRunningBalancePromises[l1Token.toNative()] = this._getLatestRunningBalances(l1Token, chainsToEvaluate);
+      const cacheKey = l1Token.toNative();
+      const runningBalancePromise = this._getLatestRunningBalances(l1Token, chainsToEvaluate).catch((error) => {
+        if (this.excessRunningBalancePromises[cacheKey] === runningBalancePromise) {
+          delete this.excessRunningBalancePromises[cacheKey];
+        }
+        throw error;
+      });
+      this.excessRunningBalancePromises[cacheKey] = runningBalancePromise;
     }
     const excessRunningBalances = lodash.cloneDeep(await this.excessRunningBalancePromises[l1Token.toNative()]);
     return this._getExcessRunningBalancePcts(excessRunningBalances, l1Token, refundAmountInL1TokenDecimals);

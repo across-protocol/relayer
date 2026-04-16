@@ -478,7 +478,7 @@ export async function runDisputerWatchdog(logger: winston.Logger, signer: Signer
       const message = enabled
         ? "Submitted HubPool root bundle dispute."
         : "Suppressed HubPool root bundle dispute due to configuration.";
-      const txn = isDefined(dispute) ? blockExplorerLink(dispute.transactionHash, hubChainId) : undefined;
+      const txn = isDefined(dispute) ? blockExplorerLink(dispute.hash, hubChainId) : undefined;
       logger.error({ at, message, proposal, txn });
     } else {
       const waiting = challengeRemaining - challengeLimit;

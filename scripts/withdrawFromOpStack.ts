@@ -28,7 +28,7 @@ const args = minimist(process.argv.slice(2), {
 });
 
 // Example run:
-// ts-node ./scripts/withdrawFromOpStack.ts
+// tsx ./scripts/withdrawFromOpStack.ts
 // \ --amount 3000000000000000000
 // \ --chainId 1135
 // \ --wallet gckms

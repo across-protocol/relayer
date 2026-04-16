@@ -21,7 +21,7 @@ const FEE_MANAGER_ABI = [
 ];
 
 // Example run:
-// ts-node ./scripts/setTempoFeeToken.ts
+// tsx ./scripts/setTempoFeeToken.ts
 // \ --token [fee_token]
 // \ --wallet gckms
 // \ --keys bot1
