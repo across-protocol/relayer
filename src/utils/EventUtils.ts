@@ -53,6 +53,7 @@ export class EventManager {
   public readonly chain: string;
   public readonly events: { [eventHash: string]: QuorumEvent } = {};
   public readonly blockHashes: { [blockHash: string]: string[] } = {};
+  public readonly blockNumbers: Map<number, Set<string>> = new Map();
 
   constructor(
     private readonly logger: winston.Logger,
@@ -93,6 +94,12 @@ export class EventManager {
     this.events[eventHash] = event;
     this.blockHashes[event.blockHash] ??= [];
     this.blockHashes[event.blockHash].push(eventHash);
+    const blockHashes = this.blockNumbers.get(event.blockNumber);
+    if (blockHashes !== undefined) {
+      blockHashes.add(event.blockHash);
+    } else {
+      this.blockNumbers.set(event.blockNumber, new Set([event.blockHash]));
+    }
   }
 
   /**
@@ -139,15 +146,70 @@ export class EventManager {
     assert(event.removed);
 
     const eventHashes = this.blockHashes[event.blockHash];
-    const nEvents = eventHashes.length;
-    if (nEvents > 0) {
-      eventHashes.forEach((eventHash) => delete this.events[eventHash]);
+    if (!isDefined(eventHashes) || eventHashes.length === 0) {
+      return;
+    }
+
+    eventHashes.forEach((eventHash) => delete this.events[eventHash]);
+    delete this.blockHashes[event.blockHash];
+
+    // Clean up blockNumbers entry for this blockHash.
+    const hashes = this.blockNumbers.get(event.blockNumber);
+    if (hashes !== undefined) {
+      hashes.delete(event.blockHash);
+      if (hashes.size === 0) {
+        this.blockNumbers.delete(event.blockNumber);
+      }
+    }
+
+    this.logger.warn({
+      at: "EventManager::remove",
+      message: `Dropped ${eventHashes.length} event(s) at ${this.chain} block ${event.blockNumber}.`,
+      provider,
+    });
+  }
+
+  /**
+   * Remove all events above a given block number. Used to eject events from orphaned blocks
+   * during a chain reorganization.
+   * @param forkPoint Block number at which the fork occurred. Events strictly above this are removed.
+   * @returns Array of removed events.
+   */
+  removeAbove(forkPoint: number): Log[] {
+    const removed: Log[] = [];
+    const blocksToRemove: number[] = [];
+
+    for (const [blockNumber, blockHashes] of this.blockNumbers) {
+      if (blockNumber <= forkPoint) {
+        continue;
+      }
+
+      blocksToRemove.push(blockNumber);
+      for (const blockHash of blockHashes) {
+        const eventHashes = this.blockHashes[blockHash] ?? [];
+        for (const hash of eventHashes) {
+          const event = this.events[hash];
+          if (isDefined(event)) {
+            removed.push(event);
+            delete this.events[hash];
+          }
+        }
+        delete this.blockHashes[blockHash];
+      }
+    }
+
+    for (const blockNumber of blocksToRemove) {
+      this.blockNumbers.delete(blockNumber);
+    }
+
+    if (removed.length > 0) {
       this.logger.warn({
-        at: "EventManager::remove",
-        message: `Dropped ${nEvents} event(s) at ${this.chain} block ${event.blockNumber}.`,
-        provider,
+        at: "EventManager::removeAbove",
+        message: `Re-org above ${this.chain} block ${forkPoint}: ejected ${removed.length} event(s).`,
       });
     }
+
+    return removed;
   }
 
   /**
