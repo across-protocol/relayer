@@ -68,12 +68,6 @@ import {
   validateDeposit,
 } from "../utils/GaslessUtils";
 
-type GaslessRelayerUpdate = {
-  observedFundsDeposited: {
-    [chainId: number]: Omit<DepositWithBlock, "fromLiteChain" | "toLiteChain" | "quoteBlockNumber">[];
-  };
-  observedFilledRelay: { [chainId: number]: FillWithBlock[] };
-};
 const DEPOSIT_EVENT = "FundsDeposited";
 
 export enum MessageState {
@@ -187,9 +181,6 @@ export class GaslessRelayer {
       this.abortController.abort();
     });
 
-    // For the first runthrough, we want to specifically check the API for nonces which have corresponding deposits but no corresponding fills, and then
-    // submit fills for those deposits. This is because this scenario may happen as an edge case when a prior relayer process is killed in the middle of
-    // a deposit/fill flow.
     this.logger.debug({
       at: "GaslessRelayer#initialize",
       message: "Querying gasless API for initial messages",
@@ -238,78 +229,54 @@ export class GaslessRelayer {
     this.abortController.abort();
   }
 
-  /*
-   * @notice Performs an initial lookback to determine which signatures have been observed/processed onchain.
+  /**
+   * Look back on origin/destination chains and populate {@link observedDeposits} / {@link observedFills} for use by
+   * {@link _markFilledFromInitialObservation} (and any future logic that reads those sets).
    */
-  // Update our observed signatures/fills up until `this.depositLookback`.
-  private async updateObserved(apiMessages: AnyGaslessDepositMessage[]): Promise<GaslessRelayerUpdate> {
-    // If a signature is spent, then the deposit must also have been initiated since the `receiveWithAuthorization` signature
-    // can only be redeemed by the periphery contract.
-    const [observedFundsDeposited, observedFilledRelay] = await Promise.all([
-      // For each origin chain, find all the funds deposited events in lookback and check if they have an associated match with an API message. If they do, then we consider the
-      // deposit "observed" and the API message in the middle of the gasless flow.
-      Object.fromEntries(
-        await mapAsync(this.config.relayerOriginChains, async (originChainId) => {
-          const provider = this.providersByChain[originChainId];
-          const observedDeposits = this.observedDeposits[originChainId];
+  private async updateObserved(apiMessages: AnyGaslessDepositMessage[]): Promise<void> {
+    await Promise.all([
+      mapAsync(this.config.relayerOriginChains, async (originChainId) => {
+        const provider = this.providersByChain[originChainId];
+        const observedDeposits = this.observedDeposits[originChainId];
 
-          const searchConfig = await this._getEventSearchConfig(originChainId);
+        const searchConfig = await this._getEventSearchConfig(originChainId);
 
-          const originSpokePool = getSpokePool(originChainId).connect(provider);
-          const originFundsDepositedEvents = await paginatedEventQuery(
-            originSpokePool,
-            originSpokePool.filters.FundsDeposited(),
-            searchConfig
+        const originSpokePool = getSpokePool(originChainId).connect(provider);
+        const originFundsDepositedEvents = await paginatedEventQuery(
+          originSpokePool,
+          originSpokePool.filters.FundsDeposited(),
+          searchConfig
+        );
+        for (const event of originFundsDepositedEvents) {
+          const deposit = unpackDepositEvent(spreadEventWithBlockNumber(event), originChainId);
+          const apiMessage = apiMessages.find(({ depositId }) => deposit.depositId.toString() === depositId);
+          if (!isDefined(apiMessage)) {
+            continue;
+          }
+          observedDeposits.add(
+            this._getDepositKey(deposit.inputToken.toNative(), originChainId, deposit.depositId.toString())
           );
-          const originEventsWithApiMessages = originFundsDepositedEvents
-            .map((event) => {
-              const deposit = unpackDepositEvent(spreadEventWithBlockNumber(event), originChainId);
-              const apiMessage = apiMessages.find(({ depositId }) => deposit.depositId.toString() === depositId);
-              if (isDefined(apiMessage)) {
-                return { apiMessage, deposit };
-              }
-              return undefined;
-            })
-            .filter(isDefined);
-          originEventsWithApiMessages.forEach(({ deposit }) => {
-            observedDeposits.add(
-              this._getDepositKey(deposit.inputToken.toNative(), originChainId, deposit.depositId.toString())
-            );
-          });
-          return [originChainId, originEventsWithApiMessages.map(({ deposit }) => deposit)];
-        })
-      ),
+        }
+      }),
 
-      // For each destination chain, we need to index all `FilledRelay` events. This will let us know whether a deposit from the API has been filled by this relayer
-      // (or any other relayer).
-      Object.fromEntries(
-        await mapAsync(this.config.relayerDestinationChains, async (destinationChainId) => {
-          const provider = this.providersByChain[destinationChainId];
-          const observedFills = this.observedFills[destinationChainId];
+      mapAsync(this.config.relayerDestinationChains, async (destinationChainId) => {
+        const provider = this.providersByChain[destinationChainId];
+        const observedFills = this.observedFills[destinationChainId];
 
-          const searchConfig = await this._getEventSearchConfig(destinationChainId);
-          const destinationSpokePool = getSpokePool(destinationChainId).connect(provider);
+        const searchConfig = await this._getEventSearchConfig(destinationChainId);
+        const destinationSpokePool = getSpokePool(destinationChainId).connect(provider);
 
-          // Query all filledRelay events in the lookback. The lookback should only be a function of the max TTL of an API-served 3009 deposit.
-          const destinationFilledRelayEvents = await paginatedEventQuery(
-            destinationSpokePool,
-            destinationSpokePool.filters.FilledRelay(),
-            searchConfig
-          );
-          const fillEvents = destinationFilledRelayEvents.map((filledRelay) =>
-            unpackFillEvent(spreadEventWithBlockNumber(filledRelay), destinationChainId)
-          );
-
-          // For each fill we observed, index it in our local set.
-          fillEvents.forEach((fill) => observedFills.add(this._getFilledRelayKey(fill)));
-          return [destinationChainId, fillEvents.flat()];
-        })
-      ),
+        const destinationFilledRelayEvents = await paginatedEventQuery(
+          destinationSpokePool,
+          destinationSpokePool.filters.FilledRelay(),
+          searchConfig
+        );
+        for (const filledRelay of destinationFilledRelayEvents) {
+          const fill = unpackFillEvent(spreadEventWithBlockNumber(filledRelay), destinationChainId);
+          observedFills.add(this._getFilledRelayKey(fill));
+        }
+      }),
     ]);
-    return {
-      observedFundsDeposited,
-      observedFilledRelay,
-    };
   }
 
   /**
