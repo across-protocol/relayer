@@ -173,16 +173,19 @@ export class EventListener extends EventEmitter {
             }
 
             const fromBlock = previousBlockNumber + 1n;
+            let logs: Parameters<typeof onLogs>[0] = [];
             try {
-              const logs = await provider.getLogs({ address: address as `0x${string}`, event, fromBlock, toBlock });
-              if ((this.tvmBlocks[provider.name][eventDescriptor] ?? 0n) < toBlock) {
-                this.tvmBlocks[provider.name][eventDescriptor] = toBlock;
-              }
-              if (logs.length > 0) {
-                onLogs(logs);
-              }
+              logs = await provider.getLogs({ address: address as `0x${string}`, event, fromBlock, toBlock });
             } catch (err) {
               onError(err);
+              return;
+            }
+
+            if ((this.tvmBlocks[provider.name][eventDescriptor] ?? 0n) < toBlock) {
+              this.tvmBlocks[provider.name][eventDescriptor] = toBlock;
+            }
+            if (logs.length > 0) {
+              onLogs(logs);
             }
           });
           return;
