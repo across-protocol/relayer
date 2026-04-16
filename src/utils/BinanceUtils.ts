@@ -101,10 +101,7 @@ type ParsedAccountCoins = Coin[];
  * check async.
  */
 export function binanceCredentialsConfigured(): boolean {
-  const {
-   BINANCE_API_KEY: apiKey,
-   BINANCE_HMAC_KEY: hmacKey
-  } = process.env;
+  const { BINANCE_API_KEY: apiKey, BINANCE_HMAC_KEY: hmacKey } = process.env;
   const gckmsKeyArgPresent = process.argv.some(
     (arg) => arg === "--binanceSecretKey" || arg.startsWith("--binanceSecretKey=")
   );
