@@ -1837,7 +1837,7 @@ export class InventoryClient {
     return SLOW_WITHDRAWAL_CHAINS.filter((repaymentChainId) => {
       let fastWithdrawal = isUSDC && sdkUtils.chainIsCCTPEnabled(repaymentChainId);
       fastWithdrawal ||= isUSDT && repaymentChainId === CHAIN_IDs.ARBITRUM;
-      fastWithdrawal ||= hasBinanceRoute(repaymentChainId, l1TokenStr);
+      fastWithdrawal ||= hasBinanceRoute(repaymentChainId, l1Token);
       return (
         !fastWithdrawal &&
         this._l1TokenEnabledForChain(l1Token, repaymentChainId) &&

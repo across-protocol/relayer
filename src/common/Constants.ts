@@ -11,6 +11,7 @@ import {
   TOKEN_SYMBOLS_MAP,
   Signer,
   ZERO_ADDRESS,
+  Address,
   EvmAddress,
   toWei,
   toGWei,
@@ -733,11 +734,11 @@ export const CUSTOM_L2_BRIDGE: Record<number, Record<string, L2BridgeConstructor
  * rest of the Binance code path. It does NOT check real-time Binance API reachability or per-coin
  * withdrawal status; a future change may layer a `getAccountCoins()` snapshot over this static check.
  */
-export function hasBinanceRoute(chainId: number, l1TokenAddress: string): boolean {
+export function hasBinanceRoute(chainId: number, l1Token: Address): boolean {
   if (!process.env.BINANCE_API_KEY) {
     return false;
   }
-  const bridge = CUSTOM_L2_BRIDGE[chainId]?.[l1TokenAddress] ?? CANONICAL_L2_BRIDGE[chainId];
+  const bridge = CUSTOM_L2_BRIDGE[chainId]?.[l1Token.toNative()] ?? CANONICAL_L2_BRIDGE[chainId];
   return bridge === L2BinanceCEXBridge || bridge === L2BinanceCEXNativeBridge;
 }
 

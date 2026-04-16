@@ -105,7 +105,7 @@ export function repaymentChainCanBeQuicklyRebalanced(
   // slow-withdrawal chains like Arbitrum, Optimism, and Base.
   try {
     const l1Token = getInventoryEquivalentL1TokenAddress(repaymentToken, repaymentChainId, hubChainId);
-    return hasBinanceRoute(repaymentChainId, l1Token.toNative());
+    return hasBinanceRoute(repaymentChainId, l1Token);
   } catch {
     return false;
   }
