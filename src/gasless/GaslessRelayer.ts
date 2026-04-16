@@ -196,58 +196,16 @@ export class GaslessRelayer {
     });
     const initialMessages = await this._queryGaslessApi(this.config.initializationRetryAttempts);
 
-    // Update our observed signatures/fills up until `this.depositLookback`.
-    // Include the list of initial deposit messages so we can map FundsDeposited events back to EIP-3009 deposit nonces.
-    const observedEvents = await this.updateObserved(initialMessages);
+    // Index on-chain deposits/fills for API messages (lookback), then mark FILLED in messageState when already complete.
+    await this.updateObserved(initialMessages);
     await this.updateObservedCctpDeposits(initialMessages);
-
-    const unfilledDeposits = initialMessages.filter((depositMessage) => {
-      const { originChainId, depositId, spokePool } = depositMessage;
-
-      // SwapAndBridge deposits go through a separate flow; exclude from the bridge unfilled check.
-      if (depositMessage.depositFlowType === "swapAndBridge" || this._isCctpDeposit(originChainId, spokePool)) {
-        return false;
-      }
-
-      const { destinationChainId, inputToken } = depositMessage.baseDepositData;
-
-      const depositKey = this._getDepositKey(inputToken, originChainId, depositId);
-      const fillKey = this._getFilledRelayKey({ originChainId, depositId: toBN(depositId) });
-      return (
-        this.observedDeposits[originChainId]?.has(depositKey) &&
-        isDefined(this.observedFills[destinationChainId]) &&
-        !this.observedFills[destinationChainId].has(fillKey)
-      );
-    });
+    const markedFilledCount = this._markFilledFromInitialObservation(initialMessages);
 
     this.logger.debug({
       at: "GaslessRelayer#initialize",
-      message: "Found unfilled deposits",
-      unfilledDeposits: unfilledDeposits.length,
-    });
-
-    await mapAsync(unfilledDeposits, async (depositMessage) => {
-      const { originChainId, depositId, spokePool } = depositMessage;
-
-      // In theory, unfilledDeposits will not have CCTP deposits, but just in case.
-      if (this._isCctpDeposit(originChainId, spokePool)) {
-        this.logger.debug({
-          at: "GaslessRelayer#initialize",
-          message: "Skipping fill for CCTP deposit (relayer does not fill CCTP).",
-          depositId,
-          originChainId,
-        });
-        return;
-      }
-
-      const correspondingDeposit = observedEvents.observedFundsDeposited[originChainId].find(
-        (fundsDeposited) => fundsDeposited.depositId.toString() === depositId
-      );
-      assert(
-        isDefined(correspondingDeposit),
-        "Inconsistent data between this.observedDeposits and return data from gaslessRelayer.updateObserved()"
-      );
-      await this.initiateFill(correspondingDeposit, spokePool);
+      message: "Marked FILLED state from initial chain observation",
+      markedFilledCount,
+      apiMessages: initialMessages.length,
     });
 
     // Establish a new bot instance.
@@ -371,6 +329,11 @@ export class GaslessRelayer {
       return false;
     }
 
+    // If the deposit is a refund test deposit, we do not want to fill it at all.
+    if (this.config.refundFlowTestEnabled && deposit.outputAmount.eq(MAX_UINT_VAL)) {
+      return false;
+    }
+
     // Verify that deposit.exclusivityParameter will produce an absolute exclusivityDeadline,
     // not relative to the deposit block timestamp.
     if (isExclusivityRelative(deposit.exclusivityParameter)) {
@@ -447,6 +410,43 @@ export class GaslessRelayer {
       const depositKey = this._getDepositKey(inputToken.toNative(), originChainId, depositId.toString());
       this.observedDeposits[originChainId].add(depositKey);
     });
+  }
+
+  /**
+   * For each API message, set {@link MessageState.FILLED} when the deposit is already fully handled on-chain so
+   * {@link evaluateApiSignatures} skips it.
+   * - Swap-and-bridge and CCTP (relayer does not fill): deposit observed on origin → FILLED.
+   * - Standard bridge: both origin deposit and destination fill observed → FILLED.
+   * Otherwise leave state unset so the message runs through the normal state machine.
+   */
+  protected _markFilledFromInitialObservation(apiMessages: AnyGaslessDepositMessage[]): number {
+    let markedFilledCount = 0;
+    for (const depositMessage of apiMessages) {
+      const { originChainId, depositId, spokePool, depositFlowType } = depositMessage;
+      const { destinationChainId, inputToken } = extractGaslessDepositFields(depositMessage);
+      const depositKey = this._getDepositKey(inputToken.toNative(), originChainId, depositId);
+
+      const depositSeen = this.observedDeposits[originChainId]?.has(depositKey) ?? false;
+      if (!depositSeen) {
+        continue;
+      }
+
+      const isSwap = depositFlowType === "swapAndBridge";
+      const isCctp = this._isCctpDeposit(originChainId, spokePool);
+      if (isSwap || isCctp) {
+        this._setState(depositKey, MessageState.FILLED);
+        markedFilledCount++;
+        continue;
+      }
+
+      const fillKey = this._getFilledRelayKey({ originChainId, depositId: toBN(depositId) });
+      const fillSeen = this.observedFills[destinationChainId]?.has(fillKey) ?? false;
+      if (fillSeen) {
+        this._setState(depositKey, MessageState.FILLED);
+        markedFilledCount++;
+      }
+    }
+    return markedFilledCount;
   }
 
   /*
