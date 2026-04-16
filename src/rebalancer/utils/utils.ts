@@ -24,35 +24,50 @@ export async function getRedisCacheForRebalancerStatusTracking(
   return (await getRedisCache(logger, undefined, getRebalancerStatusTrackingNamespace())) as RedisCache;
 }
 
+function compareNormalizedAmounts(
+  excessA: ExcessOrDeficit,
+  excessB: ExcessOrDeficit,
+  tokenPricesUsd?: Map<string, BigNumber>
+): number {
+  const { token: tokenA, amount: amountA, chainId: chainIdA } = excessA;
+  const { token: tokenB, amount: amountB, chainId: chainIdB } = excessB;
+  const tokenADecimals = getTokenInfoFromSymbol(tokenA, Number(chainIdA)).decimals;
+  const tokenBDecimals = getTokenInfoFromSymbol(tokenB, Number(chainIdB)).decimals;
+  const converter = ConvertDecimals(tokenADecimals, tokenBDecimals);
+  const normalizedAmountA =
+    tokenPricesUsd && tokenPricesUsd.has(tokenA) ? amountA.mul(tokenPricesUsd.get(tokenA)) : amountA;
+  const normalizedAmountB =
+    tokenPricesUsd && tokenPricesUsd.has(tokenB) ? amountB.mul(tokenPricesUsd.get(tokenB)) : amountB;
+  if (converter(normalizedAmountA).eq(normalizedAmountB)) {
+    return 0;
+  }
+  return converter(normalizedAmountA).gt(normalizedAmountB) ? -1 : 1;
+}
 // Excesses are always sorted in priority from lowest to highest and then by amount from largest to smallest.
-export function sortExcessFunction(excessA: ExcessOrDeficit, excessB: ExcessOrDeficit): number {
-  const { token: tokenA, amount: amountA, priorityTier: priorityTierA, chainId: chainIdA } = excessA;
-  const { token: tokenB, amount: amountB, priorityTier: priorityTierB, chainId: chainIdB } = excessB;
+export function sortExcessFunction(
+  excessA: ExcessOrDeficit,
+  excessB: ExcessOrDeficit,
+  tokenPricesUsd?: Map<string, BigNumber>
+): number {
+  const { priorityTier: priorityTierA } = excessA;
+  const { priorityTier: priorityTierB } = excessB;
   if (priorityTierA !== priorityTierB) {
     return priorityTierA - priorityTierB;
   }
-  const tokenADecimals = getTokenInfoFromSymbol(tokenA, Number(chainIdA)).decimals;
-  const tokenBDecimals = getTokenInfoFromSymbol(tokenB, Number(chainIdB)).decimals;
-  const converter = ConvertDecimals(tokenADecimals, tokenBDecimals);
-  if (converter(amountA).eq(amountB)) {
-    return 0;
-  }
-  return converter(amountA).gt(amountB) ? -1 : 1;
+  return compareNormalizedAmounts(excessA, excessB, tokenPricesUsd);
 }
 // Deficits are always sorted in priority from highest to lowest and then by amount from largest to smallest.
-export function sortDeficitFunction(deficitA: ExcessOrDeficit, deficitB: ExcessOrDeficit): number {
-  const { token: tokenA, amount: amountA, priorityTier: priorityTierA, chainId: chainIdA } = deficitA;
-  const { token: tokenB, amount: amountB, priorityTier: priorityTierB, chainId: chainIdB } = deficitB;
+export function sortDeficitFunction(
+  deficitA: ExcessOrDeficit,
+  deficitB: ExcessOrDeficit,
+  tokenPricesUsd?: Map<string, BigNumber>
+): number {
+  const { priorityTier: priorityTierA } = deficitA;
+  const { priorityTier: priorityTierB } = deficitB;
   if (priorityTierA !== priorityTierB) {
     return priorityTierB - priorityTierA;
   }
-  const tokenADecimals = getTokenInfoFromSymbol(tokenA, Number(chainIdA)).decimals;
-  const tokenBDecimals = getTokenInfoFromSymbol(tokenB, Number(chainIdB)).decimals;
-  const converter = ConvertDecimals(tokenADecimals, tokenBDecimals);
-  if (converter(amountA).eq(amountB)) {
-    return 0;
-  }
-  return converter(amountA).gt(amountB) ? -1 : 1;
+  return compareNormalizedAmounts(deficitA, deficitB, tokenPricesUsd);
 }
 
 export function getCloidForAccount(account: string): string {
