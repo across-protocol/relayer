@@ -747,6 +747,7 @@ export function hasBinanceRoute(chainId: number, l1Token: Address): boolean {
 // Path to the external SpokePool indexer. Must be updated if src/libexec/* files are relocated or if the `outputDir` on TSC has been modified.
 export const RELAYER_SPOKEPOOL_LISTENER_EVM = "./dist/src/libexec/RelayerSpokePoolListener.js";
 export const RELAYER_SPOKEPOOL_LISTENER_SVM = "./dist/src/libexec/RelayerSpokePoolListenerSVM.js";
+export const RELAYER_SPOKEPOOL_LISTENER_TVM = "./dist/src/libexec/RelayerSpokePoolListenerTVM.js";
 
 export const DEFAULT_ARWEAVE_GATEWAY = { url: "arweave.net", port: 443, protocol: "https" };
 
