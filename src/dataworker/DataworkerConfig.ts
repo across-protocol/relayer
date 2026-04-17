@@ -1,5 +1,5 @@
 import { CommonConfig, ProcessEnv } from "../common";
-import { assert, getArweaveJWKSigner } from "../utils";
+import { assert, getArweaveJWKSigner, parseJson, isDefined } from "../utils";
 
 export class DataworkerConfig extends CommonConfig {
   readonly minChallengeLeadTime: number;
@@ -38,6 +38,9 @@ export class DataworkerConfig extends CommonConfig {
   // A list of chains to ignore slow fill/relayer refund execution. Primarily used for debugging purposes.
   readonly executorIgnoreChains: number[];
 
+  // Used to instruct the dataworker to load data from arweave in times when doing so is optional (i.e. execution).
+  readonly loadArweaveData: boolean | undefined;
+
   constructor(env: ProcessEnv) {
     const {
       MAX_POOL_REBALANCE_LEAF_SIZE_OVERRIDE,
@@ -57,12 +60,14 @@ export class DataworkerConfig extends CommonConfig {
       MIN_CHALLENGE_LEAD_TIME = "600",
       AWAIT_CHALLENGE_PERIOD = "false",
       DISPUTE_COOLDOWN,
+      LOAD_ARWEAVE_DATA,
     } = env;
     super(env);
 
     this.minChallengeLeadTime = Number(MIN_CHALLENGE_LEAD_TIME);
     this.awaitChallengePeriod = AWAIT_CHALLENGE_PERIOD === "true";
     this.disputeCooldown = Number(DISPUTE_COOLDOWN ?? 120);
+    this.loadArweaveData = isDefined(LOAD_ARWEAVE_DATA) ? LOAD_ARWEAVE_DATA === "true" : undefined;
 
     this.bufferToPropose = BUFFER_TO_PROPOSE ? Number(BUFFER_TO_PROPOSE) : (20 * 60) / 15; // 20 mins of blocks;
     // Should we assert that the leaf count caps are > 0?
@@ -83,7 +88,7 @@ export class DataworkerConfig extends CommonConfig {
     this.proposerEnabled = PROPOSER_ENABLED === "true";
     this.l2ExecutorEnabled = L2_EXECUTOR_ENABLED === "true";
     this.l1ExecutorEnabled = L1_EXECUTOR_ENABLED === "true";
-    this.executorIgnoreChains = JSON.parse(EXECUTOR_IGNORE_CHAINS ?? "[]");
+    this.executorIgnoreChains = parseJson.numberArray(EXECUTOR_IGNORE_CHAINS);
     if (this.l2ExecutorEnabled) {
       assert(this.spokeRootsLookbackCount > 0, "must set spokeRootsLookbackCount > 0 if L2 executor enabled");
     } else if (this.disputerEnabled || this.proposerEnabled) {

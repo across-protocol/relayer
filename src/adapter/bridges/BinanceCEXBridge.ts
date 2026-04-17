@@ -9,6 +9,7 @@ import {
   assert,
   isDefined,
   getTimestampForBlock,
+  BinanceApi,
   getBinanceApiClient,
   floatToBN,
   CHAIN_IDs,
@@ -24,6 +25,7 @@ import {
   getBinanceDepositType,
   BinanceTransactionType,
   getBinanceWithdrawalType,
+  isCompletedBinanceWithdrawal,
   toAddressType,
 } from "../../utils";
 import { BaseBridgeAdapter, BridgeTransactionDetails, BridgeEvents, BridgeEvent } from "./BaseBridgeAdapter";
@@ -32,7 +34,7 @@ import ERC20_ABI from "../../common/abi/MinimalERC20.json";
 export class BinanceCEXBridge extends BaseBridgeAdapter {
   // Only store the promise in the constructor and evaluate the promise in async blocks.
   protected readonly binanceApiClientPromise;
-  protected binanceApiClient;
+  protected binanceApiClient: BinanceApi | undefined;
   protected tokenSymbol: string;
   protected l2Provider: Provider;
 
@@ -155,6 +157,7 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
     const withdrawalHistory = await filterAsync(_withdrawalHistory, async (withdrawal) => {
       const withdrawalType = await getBinanceWithdrawalType(withdrawal);
       return (
+        isCompletedBinanceWithdrawal(withdrawal.status) &&
         withdrawal.network === BINANCE_NETWORKS[CHAIN_IDs.BSC] &&
         compareAddressesSimple(withdrawal.recipient, toAddress.toNative()) &&
         withdrawalType !== BinanceTransactionType.SWAP

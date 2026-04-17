@@ -1,5 +1,6 @@
 import winston from "winston";
 import { GaslessRelayerConfig } from "./GaslessRelayerConfig";
+import { RedisCacheInterface } from "../caching/RedisCache";
 import {
   Address,
   isDefined,
@@ -75,12 +76,6 @@ type GaslessRelayerUpdate = {
 };
 const DEPOSIT_EVENT = "FundsDeposited";
 
-// Teach BigInt how to be represented as JSON.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-(BigInt.prototype as any).toJSON = function () {
-  return this.toString();
-};
-
 export enum MessageState {
   INITIAL = 0,
   DEPOSIT_SUBMIT,
@@ -108,7 +103,7 @@ const stateToStr = (state: MessageState) => MESSAGE_STATES[state] ?? "UNKNOWN";
  */
 export class GaslessRelayer {
   private abortController = new AbortController();
-  private instanceCoordinator;
+  private instanceCoordinator: InstanceCoordinator;
   private initialized = false;
 
   protected messageState: { [key: string]: MessageState } = {};
@@ -131,7 +126,7 @@ export class GaslessRelayer {
   protected signerAddress: EvmAddress;
 
   private transactionClient;
-  private redisCache;
+  private redisCache: RedisCacheInterface | undefined;
 
   public constructor(
     readonly logger: winston.Logger,
@@ -139,7 +134,7 @@ export class GaslessRelayer {
     readonly baseSigner: Signer,
     readonly depositSigners: Signer[]
   ) {
-    this.api = new AcrossSwapApiClient(this.logger, this.config.apiTimeoutOverride);
+    this.api = new AcrossSwapApiClient(this.logger, this.config.apiTimeoutOverride, this.config.swapApiKey);
     this.transactionClient = new TransactionClient(this.logger, depositSigners);
   }
 

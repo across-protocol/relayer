@@ -7,7 +7,7 @@
 //    NODE_URL_137=https://polygon-mainnet.infura.io/v3/KEY
 //    NODE_URL_42161=https://arb-mainnet.g.alchemy.com/v2/KEY
 // 2. To validate the proposal at timestamp 1653594774:
-//    REQUEST_TIME=1653594774 ts-node ./src/scripts/validateRootBundle.ts
+//    REQUEST_TIME=1653594774 tsx ./src/scripts/validateRootBundle.ts
 
 import {
   winston,

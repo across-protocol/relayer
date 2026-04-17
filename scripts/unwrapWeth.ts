@@ -17,7 +17,7 @@ const args = minimist(process.argv.slice(2), {
 });
 
 // Example run:
-// ts-node ./scripts/unwrapWeth.ts
+// tsx ./scripts/unwrapWeth.ts
 // \ --amount 3000000000000000000
 // \ --chainId 1
 // \ --wrap true

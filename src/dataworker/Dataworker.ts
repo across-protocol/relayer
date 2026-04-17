@@ -1236,7 +1236,7 @@ export class Dataworker {
             blockNumberRanges,
             spokePoolClients,
             matchingRootBundle.blockNumber,
-            true // Load data from arweave when executing for speed.
+            this.config.loadArweaveData ?? true // Load data from arweave when executing for speed.
           );
 
           const { slowFillLeaves: leaves, slowFillTree: tree } = rootBundleData;
@@ -1566,7 +1566,7 @@ export class Dataworker {
       pendingRootBundle,
       spokePoolClients,
       earliestBlocksInSpokePoolClients,
-      true // Load data from arweave when executing leaves for speed.
+      this.config.loadArweaveData ?? true // Load data from arweave when executing leaves for speed.
     );
 
     if (!valid) {
@@ -2327,7 +2327,7 @@ export class Dataworker {
           blockNumberRanges,
           spokePoolClients,
           matchingRootBundle.blockNumber,
-          true // Load data from arweave when executing leaves for speed.
+          this.config.loadArweaveData ?? true // Load data from arweave when executing leaves for speed.
         );
 
         if (tree.getHexRoot() !== rootBundleRelay.relayerRefundRoot) {
@@ -2923,7 +2923,7 @@ export class Dataworker {
 
     // Optionally close the existing instruction params account and add an instruction which loads new data into the instruction params PDA.
     const instructionParamsAccount = await fetchEncodedAccount(provider, instructionParamsPda);
-    let closeInstructionParamsIx;
+    let closeInstructionParamsIx: SvmSpokeClient.CloseInstructionParamsInstruction | undefined;
     // If the account exists, define the instruction needed to close the instruction account.
     if (instructionParamsAccount.exists) {
       this.logger.debug({

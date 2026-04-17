@@ -8,11 +8,12 @@ import {
   Address,
   getHubPoolAddress,
   getSpokePoolAddress,
+  getTranslatedTokenAddress,
   SVMProvider,
   SolanaTransaction,
   isDefined,
 } from "../../utils";
-import { PendingBridgeAdapterName, PendingBridgeRedisReader } from "../../rebalancer/utils/PendingBridgeRedis";
+import { CctpOftReadOnlyClient, PendingBridgeAdapterName } from "../../rebalancer/clients/CctpOftReadOnlyClient";
 import { TransferTokenParams } from "../utils";
 
 const DEFAULT_PENDING_WITHDRAWAL_LOOKBACK_PERIOD_SECONDS = 7200;
@@ -22,7 +23,7 @@ export abstract class BaseL2BridgeAdapter {
   protected l1Bridge: Contract;
   protected readonly hubPoolAddress: EvmAddress;
   protected readonly spokePoolAddress: Address;
-  protected pendingBridgeRedisReader?: PendingBridgeRedisReader;
+  protected pendingBridgeRedisReader?: CctpOftReadOnlyClient;
   // Whether either of these two are defined is determined at construction.
   // The solana bridge defines `svmProvider` while the EVM bridges define `l2Signer`.
   protected readonly l2Signer: Signer | undefined;
@@ -48,6 +49,14 @@ export abstract class BaseL2BridgeAdapter {
     return DEFAULT_PENDING_WITHDRAWAL_LOOKBACK_PERIOD_SECONDS;
   }
 
+  /**
+   * Returns the L2 token address this bridge operates on.
+   * Override in subclasses that use a non-canonical L2 token (e.g. BridgeApi using pathUSD).
+   */
+  getL2Token(): Address {
+    return getTranslatedTokenAddress(this.l1Token, this.hubChainId, this.l2chainId);
+  }
+
   abstract constructWithdrawToL1Txns(
     toAddress: Address,
     l2Token: Address,
@@ -69,7 +78,7 @@ export abstract class BaseL2BridgeAdapter {
     return [];
   }
 
-  setPendingBridgeRedisReader(pendingBridgeRedisReader?: PendingBridgeRedisReader): void {
+  setPendingBridgeRedisReader(pendingBridgeRedisReader?: CctpOftReadOnlyClient): void {
     this.pendingBridgeRedisReader = pendingBridgeRedisReader;
   }
 
@@ -95,6 +104,11 @@ export abstract class BaseL2BridgeAdapter {
       return new Set();
     }
 
-    return this.pendingBridgeRedisReader.getPendingBridgeTxnRefsForRoute(adapter, sourceChain, destinationChain);
+    return this.pendingBridgeRedisReader.getPendingBridgeTxnRefsForRoute(
+      adapter,
+      sourceChain,
+      destinationChain,
+      EvmAddress.from(address.toNative())
+    );
   }
 }

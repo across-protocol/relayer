@@ -173,10 +173,10 @@ export class BalanceAllocator {
   // This method is primarily here to be overridden for testing purposes.
   protected async _queryBalance(chainId: number, token: Address, holder: Address): Promise<BigNumber> {
     if (chainIsEvm(chainId)) {
-      const holderAddr = holder.toNative();
+      const holderAddr = holder.toEvmAddress();
       return getNativeTokenAddressForChain(chainId).eq(token) && chainHasNativeToken(chainId)
         ? await this.providers[chainId].getBalance(holderAddr)
-        : await ERC20.connect(token.toNative(), this.providers[chainId]).balanceOf(holderAddr);
+        : await ERC20.connect(token.toEvmAddress(), this.providers[chainId]).balanceOf(holderAddr);
     } else {
       assert(token.isSVM());
       assert(holder.isSVM());

@@ -18,7 +18,7 @@ import {
 } from "../../utils";
 import { processEvent, matchL2EthDepositAndWrapEvents } from "../utils";
 import { CONTRACT_ADDRESSES } from "../../common";
-import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
+import { BridgeEvent, BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
 import { gasPriceOracle } from "@across-protocol/sdk";
 import { PUBLIC_NETWORKS } from "@across-protocol/constants";
 import * as zksync from "zksync-ethers";
@@ -149,7 +149,7 @@ export class ZKStackBridge extends BaseBridgeAdapter {
     const isL2Contract = await this._isContract(toAddress.toNative(), this.getL2Bridge().provider!);
     const annotatedFromAddress = isL2Contract ? this.hubPool.address : fromAddress.toNative();
     const bridgingCustomGasToken = isDefined(this.gasToken) && this.gasToken.eq(l1Token);
-    let processedEvents;
+    let processedEvents: BridgeEvent[];
     if (!bridgingCustomGasToken) {
       const assetId = await this.nativeTokenVault.assetId(l1Token.toNative());
       if (assetId === ZERO_BYTES) {
@@ -205,7 +205,7 @@ export class ZKStackBridge extends BaseBridgeAdapter {
     // so we add a special case for this reason.
     const isSpokePool = await isContractDeployedToAddress(toAddress.toNative(), this.l2Bridge.provider);
     const bridgingCustomGasToken = isDefined(this.gasToken) && this.gasToken.eq(l1Token);
-    let processedEvents;
+    let processedEvents: BridgeEvent[];
     if (!bridgingCustomGasToken) {
       const assetId = await this.getL2Bridge().assetId(l2Token);
       if (assetId === ZERO_BYTES) {

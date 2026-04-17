@@ -26,6 +26,7 @@ import {
   CHAIN_IDs,
   convertRelayDataParamsToBytes32,
   chainIsSvm,
+  TvmAddress,
 } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
@@ -116,6 +117,7 @@ export class Relayer {
       message: "Completed one-time init.",
       relayerEvmAddress: this.relayerEvmAddress,
       relayerSvmAddress: tokenClient.relayerSvmAddress,
+      relayerTvmAddress: TvmAddress.from(this.relayerEvmAddress.toNative()).toNative(),
     });
   }
 
@@ -149,7 +151,7 @@ export class Relayer {
    * @description Perform inventory management as needed. This is capped to 1/minute in looping mode.
    */
   async runMaintenance(): Promise<void> {
-    const { inventoryClient, profitClient, tokenClient } = this.clients;
+    const { inventoryClient, tokenClient } = this.clients;
 
     const currentTime = getCurrentTime();
     if (currentTime < this.lastMaintenance + this.config.maintenanceInterval) {
@@ -157,7 +159,7 @@ export class Relayer {
     }
 
     tokenClient.clearTokenData();
-    await Promise.all([tokenClient.update(), profitClient.update()]);
+    await tokenClient.update();
     await inventoryClient.update(this.inventoryChainIds);
     await inventoryClient.wrapL2EthIfAboveThreshold();
 
@@ -891,10 +893,11 @@ export class Relayer {
     pendingTxnHashes[chainId] = (async () => {
       return (await fillExecutorClient.executeTxnQueue(chainId, simulate)).map((response) => response.hash);
     })();
-    const txnReceipts = await pendingTxnHashes[chainId];
-    delete pendingTxnHashes[chainId];
-
-    return txnReceipts;
+    try {
+      return await pendingTxnHashes[chainId];
+    } finally {
+      delete pendingTxnHashes[chainId];
+    }
   }
 
   async checkForUnfilledDepositsAndFill(simulate = false): Promise<{ [chainId: number]: Promise<string[]> }> {
@@ -914,7 +917,7 @@ export class Relayer {
       this.clients.svmFillerClient.clearTransactionQueue();
     }
     const txnReceipts: { [chainId: number]: Promise<string[]> } = Object.fromEntries(
-      Object.values(spokePoolClients).map(({ chainId }) => [chainId, []])
+      Object.values(spokePoolClients).map(({ chainId }): [number, Promise<string[]>] => [chainId, Promise.resolve([])])
     );
 
     // Fetch unfilled deposits and filter out deposits upfront before we compute the minimum deposit confirmation
