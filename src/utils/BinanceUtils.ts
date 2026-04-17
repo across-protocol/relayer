@@ -93,19 +93,39 @@ export enum BINANCE_WITHDRAWAL_STATUS {
 type ParsedAccountCoins = Coin[];
 
 /**
- * @notice Synchronous check that mirrors the inputs `getBinanceApiClient()` requires: a Binance API key
- * plus either an HMAC secret in the environment or a `--binanceSecretKey` CLI arg indicating GCKMS-backed
- * secret retrieval. This is best-effort — it cannot confirm that GCKMS retrieval will actually succeed,
- * nor that Binance is reachable at runtime — but it avoids false positives where only one credential is
- * present. Used by inventory/repayment logic to gate "Binance route available" claims without making the
- * check async.
+ * Structural description of the inputs Binance auth requires. Both `binanceCredentialsConfigured()`
+ * (sync predicate) and `getBinanceApiClient()` (async resolver) project from this shape, so new
+ * required inputs only need to be added in one place.
+ *   - `apiKey`: Binance API key, read from `BINANCE_API_KEY`.
+ *   - `hmacKey`: HMAC secret from `BINANCE_HMAC_KEY`. Used directly if no GCKMS key is configured.
+ *   - `gckmsKeyName`: Value of `--binanceSecretKey` CLI arg. When set, the secret is fetched from
+ *     GCKMS; this field is the *name* of the key, not the resolved secret.
+ */
+type BinanceCredentialConfig = {
+  apiKey?: string;
+  hmacKey?: string;
+  gckmsKeyName?: string;
+};
+
+function readBinanceCredentialConfig(): BinanceCredentialConfig {
+  const { BINANCE_API_KEY: apiKey, BINANCE_HMAC_KEY: hmacKey } = process.env;
+  const { binanceSecretKey: gckmsKeyName } = minimist(process.argv.slice(2), {
+    string: ["binanceSecretKey"],
+  });
+  return { apiKey, hmacKey, gckmsKeyName };
+}
+
+/**
+ * @notice Synchronous check that the operator has configured complete Binance credentials — an API
+ * key plus either an HMAC secret in the environment or a `--binanceSecretKey` CLI arg indicating
+ * GCKMS-backed secret retrieval. This is best-effort — it cannot confirm that GCKMS retrieval will
+ * actually succeed, nor that Binance is reachable at runtime — but it avoids false positives where
+ * only one credential is present. Used by inventory/repayment logic to gate "Binance route available"
+ * claims without making the check async.
  */
 export function binanceCredentialsConfigured(): boolean {
-  const { BINANCE_API_KEY: apiKey, BINANCE_HMAC_KEY: hmacKey } = process.env;
-  const gckmsKeyArgPresent = process.argv.some(
-    (arg) => arg === "--binanceSecretKey" || arg.startsWith("--binanceSecretKey=")
-  );
-  return isDefined(apiKey) && (isDefined(hmacKey) || gckmsKeyArgPresent);
+  const { apiKey, hmacKey, gckmsKeyName } = readBinanceCredentialConfig();
+  return isDefined(apiKey) && (isDefined(hmacKey) || isDefined(gckmsKeyName));
 }
 
 /**
@@ -114,8 +134,9 @@ export function binanceCredentialsConfigured(): boolean {
  * @returns A Binance client from `binance-api-node`.
  */
 export async function getBinanceApiClient(url = "https://api.binance.com") {
-  const apiKey = process.env["BINANCE_API_KEY"];
-  const secretKey = (await getBinanceSecretKey()) ?? process.env["BINANCE_HMAC_KEY"];
+  const { apiKey, hmacKey, gckmsKeyName } = readBinanceCredentialConfig();
+  const gckmsSecret = isDefined(gckmsKeyName) ? await resolveGckmsSecret(gckmsKeyName) : undefined;
+  const secretKey = gckmsSecret ?? hmacKey;
   assert(isDefined(apiKey) && isDefined(secretKey), "Binance client cannot be constructed due to missing keys.");
   return Binance({
     apiKey,
@@ -125,31 +146,19 @@ export async function getBinanceApiClient(url = "https://api.binance.com") {
 }
 
 /**
- * Retrieves a Binance API secret key from GCKMS if the key is stored in GCKMS.
- * @returns A base64 encoded secret key, or undefined if the key is not present in GCKMS.
+ * Resolves a GCKMS-backed Binance secret, memoizing the in-flight promise so concurrent callers
+ * share a single retrieval. CLI args are stable for a process, so the memo is not keyed on
+ * `gckmsKeyName`.
  */
-async function getBinanceSecretKey(): Promise<string | undefined> {
-  binanceSecretKeyPromise ??= retrieveBinanceSecretKeyFromCLIArgs();
+async function resolveGckmsSecret(gckmsKeyName: string): Promise<string | undefined> {
+  binanceSecretKeyPromise ??= (async () => {
+    const binanceKeys = await retrieveGckmsKeys(getGckmsConfig([gckmsKeyName]));
+    if (binanceKeys.length === 0) {
+      return undefined;
+    }
+    return binanceKeys[0].slice(2);
+  })();
   return binanceSecretKeyPromise;
-}
-
-/**
- * Retrieves a Binance HMAC secret key based on CLI args.
- * @returns A Binance API secret key if present in the arguments, or otherwise `undefined`.
- */
-async function retrieveBinanceSecretKeyFromCLIArgs(): Promise<string | undefined> {
-  const opts = {
-    string: ["binanceSecretKey"],
-  };
-  const args = minimist(process.argv.slice(2), opts);
-  if (!isDefined(args.binanceSecretKey)) {
-    return undefined;
-  }
-  const binanceKeys = await retrieveGckmsKeys(getGckmsConfig([args.binanceSecretKey]));
-  if (binanceKeys.length === 0) {
-    return undefined;
-  }
-  return binanceKeys[0].slice(2);
 }
 
 /**
