@@ -36,6 +36,9 @@ class TestableEventListener extends EventListener {
   get testEventMgr(): EventManager {
     return this.eventMgr;
   }
+  get testTvmBlocks(): { [provider: string]: bigint } {
+    return this.tvmBlocks;
+  }
 }
 
 // `providers` is private on EventListener; this narrow cast is the one isolation point.
@@ -206,6 +209,23 @@ describe("EventListener: Re-org Detection", function () {
     expect(removedEvents[0].removed).to.be.true;
   });
 
+  it("Re-org resets TVM poller high-water marks", function () {
+    const hash100 = makeHash();
+    const hash101 = makeHash();
+
+    feedBlock(makeBlock(100, hash100, makeHash()));
+    feedBlock(makeBlock(101, hash101, hash100));
+
+    // Set up TVM poller state above the fork point.
+    listener.testTvmBlocks["mock"] = 101n;
+
+    // Feed block 102 whose parentHash points at hash100 → fork point at 100.
+    feedBlock(makeBlock(102, makeHash(), hash100));
+
+    // tvmBlocks entry should be reset to the fork point (100).
+    expect(Number(listener.testTvmBlocks["mock"])).to.equal(100);
+  });
+
   it("Re-org at block 0 fork point", function () {
     const hash0 = makeHash();
     const hash1 = makeHash();
@@ -288,6 +308,26 @@ describe("EventListener: Re-org Detection", function () {
       const hash102Event = listener.testEventMgr.hashEvent(event102);
       expect(listener.testEventMgr.findEvent(hash101Event)).to.exist;
       expect(listener.testEventMgr.findEvent(hash102Event)).to.exist;
+    });
+
+    it("Resets TVM marks above highest observed block", function () {
+      const hash100 = makeHash();
+      const hash101 = makeHash();
+
+      feedBlock(makeBlock(100, hash100, makeHash()));
+      feedBlock(makeBlock(101, hash101, hash100));
+
+      // One provider's mark is above the highest observed (101); another is at-or-below.
+      listener.testTvmBlocks["provider-above"] = 105n;
+      listener.testTvmBlocks["provider-at-or-below"] = 100n;
+
+      // Block 102 with parentHash not matching hash101 → deep re-org, fork at 101.
+      feedBlock(makeBlock(102, makeHash(), makeHash()));
+
+      // Mark above fork point (101) should be reset to 101.
+      expect(Number(listener.testTvmBlocks["provider-above"])).to.equal(101);
+      // Mark at or below fork point should be untouched.
+      expect(Number(listener.testTvmBlocks["provider-at-or-below"])).to.equal(100);
     });
 
     it("Prunes tracked blocks above highest observed", function () {
