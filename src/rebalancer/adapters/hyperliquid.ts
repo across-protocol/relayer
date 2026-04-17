@@ -1255,6 +1255,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         mrkdwn: `Deposited ${amountReadable} USDC into Hypercore via CoreDepositWallet from ${getNetworkName(
           HYPEREVM
         )}`,
+        ensureConfirmation: true,
       };
     } else {
       const tokenMeta = this._getTokenMeta(sourceToken);

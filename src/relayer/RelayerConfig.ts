@@ -5,6 +5,7 @@ import {
   BigNumber,
   bnUint256Max,
   chainIsSvm,
+  chainIsTvm,
   CHAIN_IDs,
   dedupArray,
   toBNWei,
@@ -450,7 +451,9 @@ export class RelayerConfig extends CommonConfig {
     chainIds.forEach((chainId) => {
       const defaultPath = chainIsSvm(chainId)
         ? Constants.RELAYER_SPOKEPOOL_LISTENER_SVM
-        : Constants.RELAYER_SPOKEPOOL_LISTENER_EVM;
+        : chainIsTvm(chainId)
+          ? Constants.RELAYER_SPOKEPOOL_LISTENER_TVM
+          : Constants.RELAYER_SPOKEPOOL_LISTENER_EVM;
       const { RELAYER_SPOKEPOOL_LISTENER_PATH = defaultPath } = process.env;
       minFillTime[chainId] = Number(process.env[`RELAYER_MIN_FILL_TIME_${chainId}`] ?? 0);
       listenerPath[chainId] =

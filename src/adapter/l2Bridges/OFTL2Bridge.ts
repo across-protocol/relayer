@@ -105,6 +105,7 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
           method: "approve",
           unpermissionsed: false,
           nonMulticall: true,
+          ensureConfirmation: true,
           args: [this.l2Bridge.address, feeStruct.nativeFee],
           message: "🎰 Approved OftL2Bridge to spend LZ fee token.",
           mrkdwn: `Approved ${formatter(feeStruct.nativeFee.toString())} to ${this.l2Bridge.address}`,

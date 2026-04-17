@@ -3,7 +3,6 @@ import WETH_ABI from "../common/abi/Weth.json";
 import {
   bnZero,
   BigNumber,
-  CHAIN_IDs,
   winston,
   toBN,
   getNetworkName,
@@ -989,7 +988,14 @@ export class InventoryClient {
   ): Promise<{ [chainId: number]: BigNumber }> {
     if (!isDefined(this.excessRunningBalancePromises[l1Token.toNative()])) {
       // @dev Save this as a promise so that other parallel calls to this function don't make the same call.
-      this.excessRunningBalancePromises[l1Token.toNative()] = this._getLatestRunningBalances(l1Token, chainsToEvaluate);
+      const cacheKey = l1Token.toNative();
+      const runningBalancePromise = this._getLatestRunningBalances(l1Token, chainsToEvaluate).catch((error) => {
+        if (this.excessRunningBalancePromises[cacheKey] === runningBalancePromise) {
+          delete this.excessRunningBalancePromises[cacheKey];
+        }
+        throw error;
+      });
+      this.excessRunningBalancePromises[cacheKey] = runningBalancePromise;
     }
     const excessRunningBalances = lodash.cloneDeep(await this.excessRunningBalancePromises[l1Token.toNative()]);
     return this._getExcessRunningBalancePcts(excessRunningBalances, l1Token, refundAmountInL1TokenDecimals);
@@ -1822,19 +1828,15 @@ export class InventoryClient {
    */
   getSlowWithdrawalRepaymentChains(l1Token: EvmAddress): number[] {
     const { hubPoolClient } = this;
-    const { USDC, USDT } = TOKEN_SYMBOLS_MAP;
-    const l1TokenStr = l1Token.toNative();
-    const isUSDC = USDC.addresses[hubPoolClient.chainId] === l1TokenStr;
-    const isUSDT = !isUSDC && USDT.addresses[hubPoolClient.chainId] === l1TokenStr;
-
     return SLOW_WITHDRAWAL_CHAINS.filter((repaymentChainId) => {
-      let fastWithdrawal = isUSDC && sdkUtils.chainIsCCTPEnabled(repaymentChainId);
-      fastWithdrawal ||= isUSDT && repaymentChainId === CHAIN_IDs.ARBITRUM;
-      return (
-        !fastWithdrawal &&
-        this._l1TokenEnabledForChain(l1Token, repaymentChainId) &&
-        this.hubPoolClient.l2TokenEnabledForL1Token(l1Token, repaymentChainId)
-      );
+      if (
+        !this._l1TokenEnabledForChain(l1Token, repaymentChainId) ||
+        !this.hubPoolClient.l2TokenEnabledForL1Token(l1Token, repaymentChainId)
+      ) {
+        return false;
+      }
+      const repaymentToken = this.hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, repaymentChainId);
+      return !repaymentChainCanBeQuicklyRebalanced(repaymentChainId, repaymentToken, hubPoolClient);
     });
   }
 

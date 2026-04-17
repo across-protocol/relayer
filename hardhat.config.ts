@@ -13,7 +13,6 @@ import { CHAIN_IDs, getNetworkName, getNodeUrlList, isDefined, PUBLIC_NETWORKS }
 import "@nomicfoundation/hardhat-verify";
 import "@nomiclabs/hardhat-ethers";
 import "@nomicfoundation/hardhat-chai-matchers";
-import "@typechain/hardhat";
 import "hardhat-deploy";
 import "@openzeppelin/hardhat-upgrades";
 

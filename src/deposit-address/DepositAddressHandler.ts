@@ -290,6 +290,10 @@ export class DepositAddressHandler {
           at: "DepositAddressHandler#initiateDeposit",
           message: "Failed to submit deploy tx",
           depositKey,
+          deployTx: {
+            ...deployTx,
+            contract: deployTx.contract.address,
+          },
         });
         return;
       }
@@ -326,6 +330,10 @@ export class DepositAddressHandler {
         at: "DepositAddressHandler#initiateDeposit",
         message: "Failed to submit execute tx",
         depositKey,
+        executeTx: {
+          ...executeTx,
+          contract: executeTx.contract.address,
+        },
       });
       this.observedExecutedDeposits[originChainId].delete(depositKey);
       return;
@@ -385,6 +393,7 @@ export class DepositAddressHandler {
       recipient,
       depositAddress,
       executionFeeRecipient: this.signerAddress.toNative(),
+      shouldSponsorAccountCreation: String(depositMessage.shouldSponsorAccountCreation),
     };
     try {
       return await this.api.get<SwapApiResponse>(this.config.apiEndpoint, params);
