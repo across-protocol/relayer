@@ -113,12 +113,12 @@ export function processBlock(
 // Tron JSON-RPC endpoints, and viem's `watchBlocks` degrades to polling under http, which
 // is the right behaviour here.
 function resolveProviders(chainId: number, quorum = 1) {
-  const urls = Object.values(getNodeUrlList(chainId, quorum, "https"));
-  const nProviders = urls.length;
+  const providerUrls = getNodeUrlList(chainId, quorum, "https");
+  const nProviders = Object.keys(providerUrls).length;
   assert(nProviders >= quorum, `Insufficient providers for ${chain} (minimum ${quorum} required by quorum)`);
 
   const viemChain = getViemChain(chainId);
-  return Object.entries(urls).map(([provider, url]) => {
+  return Object.entries(providerUrls).map(([provider, url]) => {
     const headers = getProviderHeaders(provider, chainId);
     return createPublicClient({
       chain: viemChain,
