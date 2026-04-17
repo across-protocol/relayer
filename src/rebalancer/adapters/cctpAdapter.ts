@@ -28,6 +28,10 @@ import { PRODUCTION_NETWORKS, CCTP_NO_DOMAIN } from "@across-protocol/constants"
 import { utils } from "@across-protocol/sdk";
 import { MultiCallerClient } from "../../clients/MultiCallerClient";
 
+type CctpAttestationMessage = Awaited<
+  ReturnType<typeof utils.fetchCctpV2Attestations>
+>[string]["messages"][number];
+
 export class CctpAdapter extends BaseAdapter {
   REDIS_PREFIX = CCTP_PENDING_BRIDGE_REDIS_PREFIX;
 
@@ -290,7 +294,11 @@ export class CctpAdapter extends BaseAdapter {
     );
   }
 
-  private async _getCctpAttestation(txnHash: string, sourceChainId: number, retryCount = 0) {
+  private async _getCctpAttestation(
+    txnHash: string,
+    sourceChainId: number,
+    retryCount = 0
+  ): Promise<CctpAttestationMessage | undefined> {
     if (retryCount > 2) {
       this.logger.warn({
         at: "CctpAdapter._getCctpAttestation",

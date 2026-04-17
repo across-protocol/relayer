@@ -26,6 +26,7 @@ import {
   isSVMSpokePoolClient,
   bnZero,
   resolveTokenBySymbol,
+  SVMProvider,
 } from "../../utils";
 import { SpokePoolClient, HubPoolClient, SpokePoolManager } from "../";
 import { BaseChainAdapter } from "../../adapter";
@@ -109,7 +110,7 @@ export class AdapterManager {
         return {};
       }
       const spokePoolClient = this.spokePoolManager.getClient(chainId);
-      let l2SignerOrSvmProvider;
+      let l2SignerOrSvmProvider: Signer | SVMProvider | undefined;
       if (isEVMSpokePoolClient(spokePoolClient)) {
         l2SignerOrSvmProvider = spokePoolClient.spokePool.signer;
       } else if (isSVMSpokePoolClient(spokePoolClient)) {
