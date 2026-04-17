@@ -11,6 +11,8 @@ import {
   TOKEN_SYMBOLS_MAP,
   Signer,
   ZERO_ADDRESS,
+  Address,
+  binanceCredentialsConfigured,
   EvmAddress,
   toWei,
   toGWei,
@@ -721,6 +723,26 @@ export const CUSTOM_L2_BRIDGE: Record<number, Record<string, L2BridgeConstructor
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2BinanceCEXBridge,
   },
 };
+
+/**
+ * @notice Returns true if Binance acecpts deposits for the given chainId and (normalised) token address.
+ * @dev Route existence is derived from the configured L2 bridge for (chainId, l1Token), resolved with
+ * the same precedence as AdapterManager: CUSTOM_L2_BRIDGE first, then falling back to CANONICAL_L2_BRIDGE
+ * for the chain. This naturally covers BSC without a hardcoded special case.
+ * Additionally gated on `binanceCredentialsConfigured()`, which mirrors the inputs `getBinanceApiClient()`
+ * requires (API key plus either HMAC secret or GCKMS-backed secret via `--binanceSecretKey`). If the
+ * operator has not configured complete Binance credentials, every route is treated as unavailable —
+ * there is no point claiming a route we cannot use. This does NOT check real-time Binance API
+ * reachability or per-coin withdrawal status; a future change may layer a `getAccountCoins()` snapshot
+ * over this static check.
+ */
+export function hasBinanceRoute(chainId: number, l1Token: Address): boolean {
+  if (!binanceCredentialsConfigured()) {
+    return false;
+  }
+  const bridge = CUSTOM_L2_BRIDGE[chainId]?.[l1Token.toNative()] ?? CANONICAL_L2_BRIDGE[chainId];
+  return bridge === L2BinanceCEXBridge || bridge === L2BinanceCEXNativeBridge;
+}
 
 // Path to the external SpokePool indexer. Must be updated if src/libexec/* files are relocated or if the `outputDir` on TSC has been modified.
 export const RELAYER_SPOKEPOOL_LISTENER_EVM = "./dist/src/libexec/RelayerSpokePoolListener.js";
