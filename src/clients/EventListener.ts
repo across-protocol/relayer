@@ -197,8 +197,9 @@ export class EventListener extends EventEmitter {
       }
     }
 
-    // If no fork point was found within our window, fall back to the highest observed block.
-    forkedBlock ??= Math.max(...[...this.blocks.keys()].map(Number));
+    // If no fork point was found within our window, the reorg is deeper than we can see. Eject
+    // everything tracked by setting the fork below our oldest block.
+    forkedBlock ??= Math.min(...[...this.blocks.keys()].map(Number)) - 1;
     logger.warn({
       at,
       message: `${chain} re-org detected at block ${block.number}; resuming from block ${forkedBlock}.`,
