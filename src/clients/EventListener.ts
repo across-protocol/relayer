@@ -119,16 +119,13 @@ export class EventListener extends EventEmitter {
     if (chainIsTvm(this.chainId)) {
       this.providers.forEach((p) => {
         this.on("block", (blockNumber: number) => {
-          this.tvmPoll(p, blockNumber);
+          void this.tvmPoll(p, blockNumber);
         });
       });
     }
   }
 
-  private async tvmPoll(
-    provider: ReturnType<typeof resolveProviders>[number],
-    blockNumber: number
-  ): Promise<void> {
+  private async tvmPoll(provider: ReturnType<typeof resolveProviders>[number], blockNumber: number): Promise<void> {
     const { chain, eventMgr, logger } = this;
     const registry = this.tvmRegistry[provider.name];
     if (!registry || registry.events.size === 0) {
