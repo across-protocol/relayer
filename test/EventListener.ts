@@ -233,8 +233,7 @@ describe("EventListener: Re-org Detection", function () {
   });
 
   describe("Deep re-org (fork point outside tracking window)", function () {
-    it("Uses highest observed block as fork point", function () {
-      // Build a chain up to block 102.
+    it("Purges all tracked events when fork point not found", function () {
       const hash100 = makeHash();
       const hash101 = makeHash();
       const hash102 = makeHash();
@@ -243,14 +242,14 @@ describe("EventListener: Re-org Detection", function () {
       feedBlock(makeBlock(101, hash101, hash100));
       feedBlock(makeBlock(102, hash102, hash101));
 
-      // Inject an event at block 103 directly into EventManager (simulates an event
-      // that arrived via watchEvent but whose block was never tracked in the blocks map).
-      const event103 = makeEvent(103, makeHash());
-      listener.testEventMgr.add(event103, "mock");
+      // Events across the full tracked window.
+      const event100 = makeEvent(100, hash100);
+      const event101 = makeEvent(101, hash101);
+      const event102 = makeEvent(102, hash102);
+      listener.testEventMgr.add(event100, "mock");
+      listener.testEventMgr.add(event101, "mock");
+      listener.testEventMgr.add(event102, "mock");
 
-      // Feed block 103 with a parentHash that doesn't match hash102 and isn't in our window.
-      // This triggers handleReorg (parent hash mismatch at block 102), but the parentHash
-      // search inside handleReorg fails → falls back to highest observed block (102).
       const removedEvents: Log[] = [];
       listener.on("TestEvent", (e: Log) => {
         if (e.removed) {
@@ -258,14 +257,18 @@ describe("EventListener: Re-org Detection", function () {
         }
       });
 
+      // Deep re-org: parentHash matches nothing in the tracked window.
       feedBlock(makeBlock(103, makeHash(), makeHash()));
 
-      // Event at 103 must have been ejected (103 > fork point 102).
-      expect(removedEvents).to.have.lengthOf(1);
-      expect(removedEvents[0].blockNumber).to.equal(103);
+      // All tracked events (100, 101, 102) must be ejected and re-emitted with removed:true.
+      expect(removedEvents).to.have.lengthOf(3);
+      expect(removedEvents.map((e) => e.blockNumber).sort()).to.deep.equal([100, 101, 102]);
+      for (const e of removedEvents) {
+        expect(e.removed).to.be.true;
+      }
     });
 
-    it("Preserves events at and below highest observed block", function () {
+    it("Purges tracked blocks above fork point, retains new tip", function () {
       const hash100 = makeHash();
       const hash101 = makeHash();
       const hash102 = makeHash();
@@ -274,41 +277,16 @@ describe("EventListener: Re-org Detection", function () {
       feedBlock(makeBlock(101, hash101, hash100));
       feedBlock(makeBlock(102, hash102, hash101));
 
-      // Add events at blocks 101 and 102.
-      const event101 = makeEvent(101, hash101);
-      const event102 = makeEvent(102, hash102);
-      listener.testEventMgr.add(event101, "mock");
-      listener.testEventMgr.add(event102, "mock");
-
-      // Deep re-org: block 103 with parentHash not matching hash102.
+      // Block 103 with parentHash not matching hash102 → deep re-org, purge entire window.
       feedBlock(makeBlock(103, makeHash(), makeHash()));
 
-      // Fork point is 102 (highest observed). removeAbove(102) keeps events at <= 102.
-      const hash101Event = listener.testEventMgr.hashEvent(event101);
-      const hash102Event = listener.testEventMgr.hashEvent(event102);
-      expect(listener.testEventMgr.findEvent(hash101Event)).to.exist;
-      expect(listener.testEventMgr.findEvent(hash102Event)).to.exist;
-    });
-
-    it("Prunes tracked blocks above highest observed", function () {
-      const hash100 = makeHash();
-      const hash101 = makeHash();
-      const hash102 = makeHash();
-
-      feedBlock(makeBlock(100, hash100, makeHash()));
-      feedBlock(makeBlock(101, hash101, hash100));
-      feedBlock(makeBlock(102, hash102, hash101));
-
-      // Block 103 with parentHash not matching hash102 → deep re-org, fork at 102.
-      feedBlock(makeBlock(103, makeHash(), makeHash()));
-
-      // Blocks 100-102 should be retained (at or below fork point 102).
-      expect(listener.testBlocks.has(100n)).to.be.true;
-      expect(listener.testBlocks.has(101n)).to.be.true;
-      expect(listener.testBlocks.has(102n)).to.be.true;
+      // Blocks 100-102 should be removed (all above forkedBlock=99).
+      expect(listener.testBlocks.has(100n)).to.be.false;
+      expect(listener.testBlocks.has(101n)).to.be.false;
+      expect(listener.testBlocks.has(102n)).to.be.false;
       // Block 103 is set after handleReorg returns, so it should be present.
       expect(listener.testBlocks.has(103n)).to.be.true;
-      expect(listener.testBlocks.size).to.equal(4);
+      expect(listener.testBlocks.size).to.equal(1);
     });
   });
 

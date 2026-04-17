@@ -112,13 +112,15 @@ export class EventListener extends EventEmitter {
       }
     }
 
-    // If no fork point was found within our window, fall back to the highest observed block.
-    forkedBlock ??= Math.max(...[...this.blocks.keys()].map(Number));
-    logger.warn({
-      at,
-      message: `${chain} re-org detected at block ${block.number}; resuming from block ${forkedBlock}.`,
-      provider,
-    });
+    // If no fork point was found within our window, the re-org depth exceeds our tracking
+    // horizon. Purge the entire window: we cannot prove any tracked block is still canonical,
+    // and downstream state past the window may remain inconsistent — treat as a loud signal.
+    const deepReorg = forkedBlock === undefined;
+    forkedBlock ??= Math.min(...[...this.blocks.keys()].map(Number)) - 1;
+    const  message = deepReorg
+        ? `${chain} deep re-org at block ${block.number}; purging all tracked events above block ${forkedBlock}.`
+        : `${chain} re-org detected at block ${block.number}; resuming from block ${forkedBlock}.`;
+    logger.warn({ at, message, provider });
 
     // Eject orphaned events from EventManager.
     const removed = eventMgr.removeAbove(forkedBlock);
