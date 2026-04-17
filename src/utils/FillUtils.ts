@@ -1,6 +1,8 @@
 import { HubPoolClient, SpokePoolClient } from "../clients";
+import { hasBinanceRoute } from "../common";
 import { FillStatus, FillWithBlock, SpokePoolClientsByChain, DepositWithBlock, RelayData } from "../interfaces";
-import { Address, CHAIN_IDs, compareAddressesSimple, EMPTY_MESSAGE, TOKEN_SYMBOLS_MAP } from "../utils";
+import { Address, compareAddressesSimple, EMPTY_MESSAGE, TOKEN_SYMBOLS_MAP } from "../utils";
+import { getInventoryEquivalentL1TokenAddress } from "./TokenUtils";
 import { utils as sdkUtils } from "@across-protocol/sdk";
 
 export type RelayerUnfilledDeposit = {
@@ -86,19 +88,27 @@ export function repaymentChainCanBeQuicklyRebalanced(
   repaymentToken: Address,
   hubPoolClient: HubPoolClient
 ): boolean {
+  const { chainId: hubChainId } = hubPoolClient;
   const originChainIsCctpEnabled =
     sdkUtils.chainIsCCTPEnabled(repaymentChainId) &&
     compareAddressesSimple(TOKEN_SYMBOLS_MAP.USDC.addresses[repaymentChainId], repaymentToken.toNative());
   const originChainIsOFTEnabled =
     sdkUtils.chainIsOFTEnabled(repaymentChainId) &&
     compareAddressesSimple(TOKEN_SYMBOLS_MAP.USDT.addresses[repaymentChainId], repaymentToken.toNative());
-  return (
-    originChainIsCctpEnabled ||
-    originChainIsOFTEnabled ||
-    // We assume that all repayments sent to Mainnet and BSC can be quickly rebalanced to a different chain using
-    // canonical bridges out of L1 or the Binance API respectively.
-    [hubPoolClient.chainId, CHAIN_IDs.BSC].includes(repaymentChainId)
-  );
+  // Repayments on Mainnet can be quickly rebalanced via canonical bridges out of L1.
+  if (originChainIsCctpEnabled || originChainIsOFTEnabled || repaymentChainId === hubChainId) {
+    return true;
+  }
+  // If Binance offers a withdrawal route for this (chain, token), inventory repaid on this chain can be
+  // moved off via Binance in place of the canonical slow-withdrawal bridge. This naturally covers BSC
+  // (whose canonical L2 bridge is Binance for every token) as well as per-token Binance routes on
+  // slow-withdrawal chains like Arbitrum, Optimism, and Base.
+  try {
+    const l1Token = getInventoryEquivalentL1TokenAddress(repaymentToken, repaymentChainId, hubChainId);
+    return hasBinanceRoute(repaymentChainId, l1Token);
+  } catch {
+    return false;
+  }
 }
 
 export function getAllUnfilledDeposits(
