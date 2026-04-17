@@ -89,6 +89,18 @@ export enum BINANCE_WITHDRAWAL_STATUS {
   COMPLETED = 6,
 }
 
+export function resolveBinanceCoinSymbol(token: string): string {
+  switch (token) {
+    case "WETH":
+      return "ETH";
+    case "ZKUSDCE":
+      return "USDC";
+    default:
+      return token;
+  }
+}
+
+
 // ParsedAccountCoins represents a simplified return type of the Binance `accountCoins` endpoint.
 type ParsedAccountCoins = Coin[];
 
@@ -292,7 +304,7 @@ export async function getBinanceDeposits(
   return Object.values(depositHistory).map((deposit) => {
     return {
       amount: Number(deposit.amount),
-      coin: deposit.coin,
+      coin: resolveBinanceCoinSymbol(deposit.coin),
       network: deposit.network,
       txId: deposit.txId,
       status: deposit.status,
@@ -314,7 +326,7 @@ export async function getBinanceWithdrawals(
 ): Promise<BinanceWithdrawal[]> {
   let withdrawHistory: WithdrawHistoryResponse;
   try {
-    withdrawHistory = await binanceApi.withdrawHistory({ coin, startTime });
+    withdrawHistory = await binanceApi.withdrawHistory({ coin: resolveBinanceCoinSymbol(coin), startTime });
   } catch (_err) {
     const err = _err.toString();
     if (KNOWN_BINANCE_ERROR_REASONS.some((errorReason) => err.includes(errorReason)) && nRetries < maxRetries) {
@@ -329,7 +341,7 @@ export async function getBinanceWithdrawals(
       amount: Number(withdrawal.amount),
       transactionFee: Number(withdrawal.transactionFee),
       recipient: withdrawal.address,
-      coin,
+      coin: resolveBinanceCoinSymbol(coin),
       id: withdrawal.id,
       txId: withdrawal.txId,
       network: withdrawal.network,
@@ -353,7 +365,7 @@ export async function getAccountCoins(binanceApi: BinanceApi): Promise<ParsedAcc
     const networkList = coin.networkList?.map((network) => {
       return {
         name: network["network"],
-        coin: network["coin"],
+        coin: resolveBinanceCoinSymbol(network["coin"] as string),
         withdrawMin: network["withdrawMin"],
         withdrawMax: network["withdrawMax"],
         withdrawFee: network["withdrawFee"],
