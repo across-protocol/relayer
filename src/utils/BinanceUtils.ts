@@ -93,22 +93,6 @@ export enum BINANCE_WITHDRAWAL_STATUS {
 type ParsedAccountCoins = Coin[];
 
 /**
- * @notice Synchronous check that mirrors the inputs `getBinanceApiClient()` requires: a Binance API key
- * plus either an HMAC secret in the environment or a `--binanceSecretKey` CLI arg indicating GCKMS-backed
- * secret retrieval. This is best-effort — it cannot confirm that GCKMS retrieval will actually succeed,
- * nor that Binance is reachable at runtime — but it avoids false positives where only one credential is
- * present. Used by inventory/repayment logic to gate "Binance route available" claims without making the
- * check async.
- */
-export function binanceCredentialsConfigured(): boolean {
-  const { BINANCE_API_KEY: apiKey, BINANCE_HMAC_KEY: hmacKey } = process.env;
-  const gckmsKeyArgPresent = process.argv.some(
-    (arg) => arg === "--binanceSecretKey" || arg.startsWith("--binanceSecretKey=")
-  );
-  return isDefined(apiKey) && (isDefined(hmacKey) || gckmsKeyArgPresent);
-}
-
-/**
  * Returns an API client to interface with Binance
  * @param url The base HTTP url to use to connect to Binance.
  * @returns A Binance client from `binance-api-node`.

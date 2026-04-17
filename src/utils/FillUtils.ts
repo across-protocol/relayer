@@ -83,11 +83,11 @@ export function depositForcesOriginChainRepayment(
  * @dev This function can be used by the InventoryClient and Relayer to help determine whether a deposit should
  * be filled or ignored given current inventory allocation levels.
  */
-export function repaymentChainCanBeQuicklyRebalanced(
+export async function repaymentChainCanBeQuicklyRebalanced(
   repaymentChainId: number,
   repaymentToken: Address,
   hubPoolClient: HubPoolClient
-): boolean {
+): Promise<boolean> {
   const { chainId: hubChainId } = hubPoolClient;
   const originChainIsCctpEnabled =
     sdkUtils.chainIsCCTPEnabled(repaymentChainId) &&
@@ -106,7 +106,7 @@ export function repaymentChainCanBeQuicklyRebalanced(
   // slow-withdrawal chains like Arbitrum, Optimism, and Base.
   try {
     const l1Token = getInventoryEquivalentL1TokenAddress(repaymentToken, repaymentChainId, hubChainId);
-    return hasBinanceRoute(repaymentChainId, l1Token);
+    return await hasBinanceRoute(repaymentChainId, l1Token);
   } catch {
     return false;
   }

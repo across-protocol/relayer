@@ -509,7 +509,7 @@ export class InventoryClient {
     return perChainRepaymentOverride ?? globalRepaymentOverride;
   }
 
-  getPossibleRepaymentChainIds(deposit: Deposit): number[] {
+  async getPossibleRepaymentChainIds(deposit: Deposit): Promise<number[]> {
     // Origin chain is always included in the repayment chain list.
     const { originChainId, destinationChainId, inputToken } = deposit;
     const chainIds = new Set<number>();
@@ -534,7 +534,7 @@ export class InventoryClient {
         isDefined(l1Token),
         `InventoryClient#getPossibleRepaymentChainIds: No L1 token found for input token ${inputToken.toNative()} on origin chain ${originChainId}`
       );
-      this.getSlowWithdrawalRepaymentChains(l1Token).forEach((chainId) => {
+      (await this.getSlowWithdrawalRepaymentChains(l1Token)).forEach((chainId) => {
         if (this.hubPoolClient.l2TokenEnabledForL1Token(l1Token, chainId)) {
           chainIds.add(chainId);
         }
@@ -673,7 +673,10 @@ export class InventoryClient {
     // If the deposit forces origin chain repayment but the origin chain is one we can easily rebalance inventory from,
     // then don't ignore this deposit based on perceived over-allocation. For example, the hub chain and chains connected
     // to the user's Binance API are easy to move inventory from so we should never skip filling these deposits.
-    if (forceOriginRepayment && repaymentChainCanBeQuicklyRebalanced(originChainId, inputToken, this.hubPoolClient)) {
+    if (
+      forceOriginRepayment &&
+      (await repaymentChainCanBeQuicklyRebalanced(originChainId, inputToken, this.hubPoolClient))
+    ) {
       return [originChainId];
     }
 
@@ -721,7 +724,7 @@ export class InventoryClient {
       const excessRunningBalancePcts = await this.getExcessRunningBalancePcts(
         l1Token,
         inputAmountInL1TokenDecimals,
-        this.getSlowWithdrawalRepaymentChains(l1Token)
+        await this.getSlowWithdrawalRepaymentChains(l1Token)
       );
       // Sort chains by highest excess percentage over the spoke target, so we can prioritize
       // taking repayment on chains with the most excess balance.
@@ -737,7 +740,8 @@ export class InventoryClient {
     // we should take repayment away from the lite chain where possible.
     // We also want to prioritize taking repayment on the origin chain if it is a quick rebalance source.
     if (
-      (deposit.toLiteChain || repaymentChainCanBeQuicklyRebalanced(originChainId, inputToken, this.hubPoolClient)) &&
+      (deposit.toLiteChain ||
+        (await repaymentChainCanBeQuicklyRebalanced(originChainId, inputToken, this.hubPoolClient))) &&
       !chainsToEvaluate.includes(originChainId) &&
       this._l1TokenEnabledForChain(l1Token, Number(originChainId))
     ) {
@@ -765,7 +769,7 @@ export class InventoryClient {
 
     // Sanity check that the possible chains used to pre-compute LP fees by the relayer are a subset of the
     // chains that are actually eligible for repayment.
-    const possibleRepaymentChainIds = this.getPossibleRepaymentChainIds(deposit);
+    const possibleRepaymentChainIds = await this.getPossibleRepaymentChainIds(deposit);
     if (chainsToEvaluate.some((_chain) => !possibleRepaymentChainIds.includes(_chain))) {
       throw new Error(
         `InventoryClient.getPossibleRepaymentChainIds (${possibleRepaymentChainIds})and determineRefundChainId (${chainsToEvaluate}) disagree on eligible repayment chains`
@@ -882,7 +886,7 @@ export class InventoryClient {
     // Conditionally add the origin chain as a fallback option if the relayer has a fast rebalance route.
     if (
       !eligibleRefundChains.includes(originChainId) &&
-      repaymentChainCanBeQuicklyRebalanced(originChainId, inputToken, this.hubPoolClient)
+      (await repaymentChainCanBeQuicklyRebalanced(originChainId, inputToken, this.hubPoolClient))
     ) {
       eligibleRefundChains.push(originChainId);
     }
@@ -1826,9 +1830,9 @@ export class InventoryClient {
    * @param l1Token
    * @returns list of chains for l1Token that have a token config enabled and have pool rebalance routes set.
    */
-  getSlowWithdrawalRepaymentChains(l1Token: EvmAddress): number[] {
+  async getSlowWithdrawalRepaymentChains(l1Token: EvmAddress): Promise<number[]> {
     const { hubPoolClient } = this;
-    return SLOW_WITHDRAWAL_CHAINS.filter((repaymentChainId) => {
+    return await sdkUtils.filterAsync(SLOW_WITHDRAWAL_CHAINS, async (repaymentChainId) => {
       if (
         !this._l1TokenEnabledForChain(l1Token, repaymentChainId) ||
         !this.hubPoolClient.l2TokenEnabledForL1Token(l1Token, repaymentChainId)
@@ -1836,7 +1840,7 @@ export class InventoryClient {
         return false;
       }
       const repaymentToken = this.hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, repaymentChainId);
-      return !repaymentChainCanBeQuicklyRebalanced(repaymentChainId, repaymentToken, hubPoolClient);
+      return !(await repaymentChainCanBeQuicklyRebalanced(repaymentChainId, repaymentToken, hubPoolClient));
     });
   }
 

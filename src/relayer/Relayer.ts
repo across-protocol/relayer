@@ -855,14 +855,14 @@ export class Relayer {
 
     // We need to compute LP fees for any possible repayment chain the inventory client could select
     // for each deposit filled.
-    const lpFeeRequests = deposits
-      .map((deposit) => {
-        const possibleRepaymentChainIds = inventoryClient.getPossibleRepaymentChainIds(deposit);
+    const lpFeeRequests = (
+      await sdkUtils.mapAsync(deposits, async (deposit) => {
+        const possibleRepaymentChainIds = await inventoryClient.getPossibleRepaymentChainIds(deposit);
         return possibleRepaymentChainIds.map((paymentChainId) => {
           return { ...deposit, paymentChainId };
         });
       })
-      .flat();
+    ).flat();
 
     const _lpFees = await hubPoolClient.batchComputeRealizedLpFeePct(lpFeeRequests);
 

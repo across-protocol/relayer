@@ -429,7 +429,7 @@ describe("InventoryClient: Refund chain selection", async function () {
     it("includes origin, destination, and hub chain in repayment chain list", async function () {
       // In the case of a deposit that doesn't force origin chain repayment, the possible repayment chain
       // list should include the origin, destination, and hub chain.
-      const possibleRepaymentChains = inventoryClient.getPossibleRepaymentChainIds(sampleDepositData);
+      const possibleRepaymentChains = await inventoryClient.getPossibleRepaymentChainIds(sampleDepositData);
       [sampleDepositData.originChainId, sampleDepositData.destinationChainId, hubPoolClient.chainId].forEach(
         (chainId) => {
           expect(possibleRepaymentChains).to.include(chainId);
@@ -576,7 +576,7 @@ describe("InventoryClient: Refund chain selection", async function () {
       expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"74074074074074074"')).to.be.true;
     });
     it("includes origin, destination and hub chain in repayment chain list", async function () {
-      const possibleRepaymentChains = inventoryClient.getPossibleRepaymentChainIds(sampleDepositData);
+      const possibleRepaymentChains = await inventoryClient.getPossibleRepaymentChainIds(sampleDepositData);
       [sampleDepositData.originChainId, sampleDepositData.destinationChainId, MAINNET].forEach((chainId) => {
         expect(possibleRepaymentChains).to.include(chainId);
       });
@@ -717,7 +717,7 @@ describe("InventoryClient: Refund chain selection", async function () {
       expect(refundChains.length).to.equal(0);
     });
     it("includes only origin chain repayment chain list", async function () {
-      const possibleRepaymentChains = inventoryClient.getPossibleRepaymentChainIds(sampleDepositData);
+      const possibleRepaymentChains = await inventoryClient.getPossibleRepaymentChainIds(sampleDepositData);
       [sampleDepositData.originChainId].forEach((chainId) => {
         expect(possibleRepaymentChains).to.include(chainId);
       });
@@ -777,7 +777,7 @@ describe("InventoryClient: Refund chain selection", async function () {
       expect(refundChains.length).to.equal(0);
     });
     it("includes only origin chain repayment chain list", async function () {
-      const possibleRepaymentChains = inventoryClient.getPossibleRepaymentChainIds(sampleDepositData);
+      const possibleRepaymentChains = await inventoryClient.getPossibleRepaymentChainIds(sampleDepositData);
       [sampleDepositData.originChainId].forEach((chainId) => {
         expect(possibleRepaymentChains).to.include(chainId);
       });
@@ -836,7 +836,7 @@ describe("InventoryClient: Refund chain selection", async function () {
       expect(refundChains).to.deep.equal([MAINNET]);
     });
     it("includes hub chain and origin chain on repayment chain list, does not include destination chain", async function () {
-      const possibleRepaymentChains = inventoryClient.getPossibleRepaymentChainIds(sampleDepositData);
+      const possibleRepaymentChains = await inventoryClient.getPossibleRepaymentChainIds(sampleDepositData);
       expect(possibleRepaymentChains).to.not.include(sampleDepositData.destinationChainId);
       expect(possibleRepaymentChains).to.include(sampleDepositData.originChainId);
       expect(possibleRepaymentChains).to.include(hubPoolClient.chainId);
@@ -854,11 +854,13 @@ describe("InventoryClient: Refund chain selection", async function () {
         [ARBITRUM]: toWei("0.2"),
       };
       // Fill in rest of slow withdrawal chains with 0 excess since we won't test them.
-      inventoryClient.getSlowWithdrawalRepaymentChains(toAddressType(mainnetWeth, MAINNET)).forEach((chainId) => {
-        if (!excessRunningBalances[chainId]) {
-          excessRunningBalances[chainId] = toWei("0");
+      (await inventoryClient.getSlowWithdrawalRepaymentChains(toAddressType(mainnetWeth, MAINNET))).forEach(
+        (chainId) => {
+          if (!excessRunningBalances[chainId]) {
+            excessRunningBalances[chainId] = toWei("0");
+          }
         }
-      });
+      );
       inventoryClient = new MockInventoryClient(
         toAddressType(owner.address, MAINNET),
         spyLogger,
@@ -919,10 +921,12 @@ describe("InventoryClient: Refund chain selection", async function () {
       ]);
     });
     it("includes slow withdrawal chains in possible repayment chain list", async function () {
-      const possibleRepaymentChains = inventoryClient.getPossibleRepaymentChainIds(sampleDepositData);
-      inventoryClient.getSlowWithdrawalRepaymentChains(toAddressType(mainnetWeth, MAINNET)).forEach((chainId) => {
-        expect(possibleRepaymentChains).to.include(chainId);
-      });
+      const possibleRepaymentChains = await inventoryClient.getPossibleRepaymentChainIds(sampleDepositData);
+      (await inventoryClient.getSlowWithdrawalRepaymentChains(toAddressType(mainnetWeth, MAINNET))).forEach(
+        (chainId) => {
+          expect(possibleRepaymentChains).to.include(chainId);
+        }
+      );
       [sampleDepositData.originChainId, sampleDepositData.destinationChainId].forEach((chainId) => {
         expect(possibleRepaymentChains).to.include(chainId);
       });
@@ -1123,7 +1127,7 @@ describe("InventoryClient: Refund chain selection", async function () {
       sampleDepositData.outputAmount = toBNWei(1);
       // Should not force origin chain repayment (uses global false, and Arbitrum with WETH is not a quick rebalance source)
       // Check getPossibleRepaymentChainIds to verify it includes multiple chains
-      const possibleChains2 = _inventoryClient.getPossibleRepaymentChainIds(sampleDepositData);
+      const possibleChains2 = await _inventoryClient.getPossibleRepaymentChainIds(sampleDepositData);
       // When forceOriginRepayment is false, possible chains should include more than just origin
       expect(possibleChains2.length).to.be.greaterThan(1);
       expect(possibleChains2).to.include(ARBITRUM); // Origin chain should be in the list
@@ -1172,7 +1176,7 @@ describe("InventoryClient: Refund chain selection", async function () {
       // Should NOT force origin chain repayment because per-chain config overrides global
       // Since forceOriginRepaymentPerChain[MAINNET] = false, shouldForceOriginRepayment returns false
       // Verify that forceOriginRepayment is actually false by checking getPossibleRepaymentChainIds
-      const possibleChains = _inventoryClient.getPossibleRepaymentChainIds(sampleDepositData);
+      const possibleChains = await _inventoryClient.getPossibleRepaymentChainIds(sampleDepositData);
       // When forceOriginRepayment is false, possible chains should include more than just origin
       // This is the key test - it should not be forced to only Polygon
       expect(possibleChains.length).to.be.greaterThan(1);
@@ -1264,7 +1268,7 @@ describe("InventoryClient: Refund chain selection", async function () {
       });
       (_inventoryClient as MockInventoryClient).setUpcomingRefunds(mainnetUsdc, {});
 
-      const possibleRepaymentChains = _inventoryClient.getPossibleRepaymentChainIds(sampleDepositData);
+      const possibleRepaymentChains = await _inventoryClient.getPossibleRepaymentChainIds(sampleDepositData);
       // When forceOriginRepayment is true and origin is a quick rebalance source (Polygon with native USDC/CCTP),
       // getPossibleRepaymentChainIds should return only origin chain
       expect(possibleRepaymentChains).to.deep.equal([POLYGON]);
@@ -1422,7 +1426,7 @@ describe("InventoryClient: Refund chain selection", async function () {
       });
       (_inventoryClient as MockInventoryClient).setUpcomingRefunds(mainnetWeth, {});
 
-      const possibleRepaymentChains = _inventoryClient.getPossibleRepaymentChainIds(sampleDepositData);
+      const possibleRepaymentChains = await _inventoryClient.getPossibleRepaymentChainIds(sampleDepositData);
       expect(possibleRepaymentChains).to.include(ARBITRUM);
     });
 
