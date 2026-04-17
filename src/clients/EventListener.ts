@@ -38,9 +38,8 @@ function resolveProviders(chainId: number, quorum = 1) {
 
 export class EventListener extends EventEmitter {
   public readonly chain: string;
-  protected readonly eventMgr: EventManager;
+  private readonly eventMgr: EventManager;
   private readonly providers: ReturnType<typeof resolveProviders>;
-  protected readonly blocks: Map<bigint, string> = new Map();
   // private readonly abortController: AbortController;
 
   constructor(
@@ -61,27 +60,12 @@ export class EventListener extends EventEmitter {
 
     const newBlock = (block: Block, provider: string) => {
       // Transient error that sometimes occurs. Catch it here and try to flush out the provider.
-      if (!block || block.hash === null) {
+      if (!block) {
         logger.debug({ at, message: `Received empty ${chain} block from ${provider}.` });
         return;
       }
-
-      // Detect re-orgs via parent hash continuity.
-      const expectedParentHash = this.blocks.get(block.number - 1n);
-      if (expectedParentHash !== undefined && expectedParentHash !== block.parentHash) {
-        this.handleReorg(block, provider);
-      }
-
-      // Track block hash for future continuity checks.
-      this.blocks.set(block.number, block.hash);
-
       const [blockNumber, currentTime] = [parseInt(block.number.toString()), parseInt(block.timestamp.toString())];
       this.emit("block", blockNumber, currentTime);
-
-      // Prune finalized blocks (well beyond any realistic re-org depth).
-      const pruneThreshold = block.number - 128n;
-      const staleBlocks = [...this.blocks.keys()].filter((num) => num < pruneThreshold);
-      staleBlocks.forEach((num) => this.blocks.delete(num));
     };
 
     const blockError = (error: Error, provider: string) => {
@@ -97,42 +81,6 @@ export class EventListener extends EventEmitter {
       onBlock: (block: Block) => newBlock(block, provider.name),
       onError: (error: Error) => blockError(error, provider.name),
     });
-  }
-
-  private handleReorg(block: Block, provider: string): void {
-    const at = "EventListener::handleReorg";
-    const { chain, eventMgr, logger } = this;
-
-    // Find the fork point by locating the new block's parentHash in our stored chain.
-    let forkedBlock: number | undefined;
-    for (const [num, hash] of this.blocks) {
-      if (hash === block.parentHash) {
-        forkedBlock = Number(num);
-        break;
-      }
-    }
-
-    // If no fork point was found within our window, the re-org depth exceeds our tracking
-    // horizon. Purge the entire window: we cannot prove any tracked block is still canonical,
-    // and downstream state past the window may remain inconsistent — treat as a loud signal.
-    const deepReorg = forkedBlock === undefined;
-    forkedBlock ??= Math.min(...[...this.blocks.keys()].map(Number)) - 1;
-    const  message = deepReorg
-        ? `${chain} deep re-org at block ${block.number}; purging all tracked events above block ${forkedBlock}.`
-        : `${chain} re-org detected at block ${block.number}; resuming from block ${forkedBlock}.`;
-    logger.warn({ at, message, provider });
-
-    // Eject orphaned events from EventManager.
-    const removed = eventMgr.removeAbove(forkedBlock);
-    for (const event of removed) {
-      this.emit(event.event, { ...event, removed: true });
-    }
-
-    // Prune orphaned blocks from our chain tracker.
-    const orphanedBlocks = [...this.blocks.keys()].filter((num) => Number(num) > forkedBlock);
-    for (const num of orphanedBlocks) {
-      this.blocks.delete(num);
-    }
   }
 
   onEvent(address: string, event: string, handler: (log: Log) => void): void {
