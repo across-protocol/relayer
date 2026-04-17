@@ -18,7 +18,7 @@ import {
   getBlockForTimestamp,
   Multicall2Call,
   CHAIN_IDs,
-  resolveTokenBySymbol,
+  resolveAcrossToken,
   getProvider,
   paginatedEventQuery,
   getNetworkName,
@@ -156,7 +156,7 @@ export async function arbStackFinalizer(
     }),
     ...withdrawalNativeEvents.map((e) => {
       const nativeTokenSymbol = getNativeTokenSymbol(chainId);
-      const l2Token = resolveTokenBySymbol(nativeTokenSymbol, chainId, true);
+      const l2Token = resolveAcrossToken(nativeTokenSymbol, chainId, true);
       return {
         ...e,
         amount: e.args.callvalue,

@@ -6,7 +6,7 @@ import {
   retrieveSignerFromCLIArgs,
   getProvider,
   ERC20,
-  resolveTokenBySymbol,
+  resolveAcrossToken,
   assert,
   EvmAddress,
   getL1TokenAddress,
@@ -43,7 +43,7 @@ export async function run(): Promise<void> {
   const signerAddr = await baseSigner.getAddress();
   const chainId = parseInt(args.chainId);
   const connectedSigner = baseSigner.connect(await getProvider(chainId));
-  const l2TokenAddress = resolveTokenBySymbol(String(args.token), chainId);
+  const l2TokenAddress = resolveAcrossToken(String(args.token), chainId);
   assert(l2TokenAddress, `${args.token} not found on chain ${chainId} in TOKEN_SYMBOLS_MAP`);
   const l2Token = EvmAddress.from(l2TokenAddress);
   const l1TokenAddress = getL1TokenAddress(l2Token, chainId);

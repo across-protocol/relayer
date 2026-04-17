@@ -4,7 +4,7 @@ import {
   CHAIN_IDs,
   getNativeTokenAddressForChain,
   isDefined,
-  resolveTokenBySymbol,
+  resolveAcrossToken,
   Address,
   toAddressType,
   parseJson,
@@ -110,7 +110,7 @@ export class MonitorConfig extends CommonConfig {
     this.bundlesCount = Number(BUNDLES_COUNT ?? 4);
     this.additionalL1NonLpTokens = parseJson
       .stringArray(MONITOR_REPORT_NON_LP_TOKENS)
-      .map((token) => resolveTokenBySymbol(token, CHAIN_IDs.MAINNET))
+      .map((token) => resolveAcrossToken(token, CHAIN_IDs.MAINNET))
       .filter(isDefined);
 
     this.binanceWithdrawWarnThreshold = Number(BINANCE_WITHDRAW_WARN_THRESHOLD ?? 1);

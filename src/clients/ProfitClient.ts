@@ -21,7 +21,7 @@ import {
   CHAIN_IDs,
   TOKEN_SYMBOLS_MAP,
   TOKEN_EQUIVALENCE_REMAPPING,
-  resolveTokenBySymbol,
+  resolveAcrossToken,
   ZERO_ADDRESS,
   ZERO_BYTES,
   formatGwei,
@@ -654,7 +654,7 @@ export class ProfitClient {
       l1Tokens
         .map(({ symbol: _symbol }) => {
           // If the L1 token is defined in token symbols map, then use the L1 token symbol. Otherwise, use the remapping in constants.
-          const symbol = isDefined(resolveTokenBySymbol(_symbol)) ? _symbol : this._getRemappedTokenSymbol(_symbol);
+          const symbol = isDefined(resolveAcrossToken(_symbol)) ? _symbol : this._getRemappedTokenSymbol(_symbol);
           if (!isDefined(symbol)) {
             // If the symbol is undefined, then there is missing configuration in the constants repository.
             // Throw an error if we are on mainnet, since this indicates that we are attempting to fetch prices for an unsupported token.
@@ -668,7 +668,7 @@ export class ProfitClient {
             );
           }
 
-          const tokenInfo = resolveTokenBySymbol(symbol);
+          const tokenInfo = resolveAcrossToken(symbol);
           assert(isDefined(tokenInfo), `Token ${symbol} not found in TOKEN_SYMBOLS_MAP`);
           let address = tokenInfo.addresses[CHAIN_IDs.MAINNET];
           // For testnet only, if we cannot resolve the token address, revert to ETH. On mainnet, if `address` is undefined,
@@ -684,7 +684,7 @@ export class ProfitClient {
     // Log any tokens that are in the L1Tokens list but are not in the tokenSymbolsMap.
     // Note: we should batch these up and log them all at once to avoid spamming the logs.
     const unknownTokens = l1Tokens.filter(
-      ({ symbol }) => !isDefined(resolveTokenBySymbol(symbol)) && !isDefined(this._getRemappedTokenSymbol(symbol))
+      ({ symbol }) => !isDefined(resolveAcrossToken(symbol)) && !isDefined(this._getRemappedTokenSymbol(symbol))
     );
     if (unknownTokens.length > 0) {
       this.logger.debug({
@@ -699,7 +699,7 @@ export class ProfitClient {
     // Also ensure all gas tokens are included in the lookup.
     this.enabledChainIds.forEach((chainId) => {
       const symbol = getNativeTokenSymbol(chainId);
-      const nativeTokenInfo = resolveTokenBySymbol(symbol);
+      const nativeTokenInfo = resolveAcrossToken(symbol);
       assert(isDefined(nativeTokenInfo), `Native token ${symbol} not found in TOKEN_SYMBOLS_MAP`);
 
       // If the gas token isn't available on the hub chain, default to the destination itself.
@@ -786,9 +786,9 @@ export class ProfitClient {
           destinationChainId
         );
 
-        const symbol = outputTokenSymbols.find((symbol) => resolveTokenBySymbol(symbol, destinationChainId));
+        const symbol = outputTokenSymbols.find((symbol) => resolveAcrossToken(symbol, destinationChainId));
         assert(isDefined(symbol), `No output token found for chain ${destinationChainId}`);
-        const hubToken = EvmAddress.from(resolveTokenBySymbol(symbol, this.hubPoolClient.chainId, true));
+        const hubToken = EvmAddress.from(resolveAcrossToken(symbol, this.hubPoolClient.chainId, true));
         const outputToken =
           destinationChainId === hubPoolClient.chainId
             ? hubToken

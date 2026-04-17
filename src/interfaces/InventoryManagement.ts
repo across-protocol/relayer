@@ -1,4 +1,4 @@
-import { BigNumber, EvmAddress, SvmAddress, isDefined, resolveTokenBySymbol } from "../utils";
+import { BigNumber, EvmAddress, SvmAddress, isDefined, resolveAcrossToken } from "../utils";
 
 export type TokenBalanceConfig = {
   targetOverageBuffer: BigNumber; // Max multiplier for targetPct, to give flexibility in repayment chain selection.
@@ -89,7 +89,7 @@ export interface InventoryConfig {
 
 export function isAliasConfig(config: ChainTokenConfig | ChainTokenInventory): config is ChainTokenInventory {
   // Keys are token symbols.
-  if (Object.keys(config).every((k) => isDefined(resolveTokenBySymbol(k)))) {
+  if (Object.keys(config).every((k) => isDefined(resolveAcrossToken(k)))) {
     return true;
   }
 

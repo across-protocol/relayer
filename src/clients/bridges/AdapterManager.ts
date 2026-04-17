@@ -25,7 +25,7 @@ import {
   Address,
   isSVMSpokePoolClient,
   bnZero,
-  resolveTokenBySymbol,
+  resolveAcrossToken,
   SVMProvider,
 } from "../../utils";
 import { SpokePoolClient, HubPoolClient, SpokePoolManager } from "../";
@@ -91,7 +91,7 @@ export class AdapterManager {
           } else if (isSVMSpokePoolClient(spokePoolClient)) {
             l2SignerOrProvider = spokePoolClient.svmEventsClient.getRpc();
           }
-          const l1Token = resolveTokenBySymbol(symbol, hubChainId, true);
+          const l1Token = resolveAcrossToken(symbol, hubChainId, true);
           const bridgeConstructor = CUSTOM_BRIDGE[chainId]?.[l1Token] ?? CANONICAL_BRIDGE[chainId];
           const bridge = new bridgeConstructor(
             chainId,
@@ -119,7 +119,7 @@ export class AdapterManager {
       return Object.fromEntries(
         SUPPORTED_TOKENS[chainId]
           ?.map((symbol) => {
-            const l1Token = resolveTokenBySymbol(symbol, hubChainId, true);
+            const l1Token = resolveAcrossToken(symbol, hubChainId, true);
             const bridgeConstructor = CUSTOM_L2_BRIDGE[chainId]?.[l1Token] ?? CANONICAL_L2_BRIDGE[chainId];
             if (!isDefined(bridgeConstructor)) {
               return undefined;
@@ -141,7 +141,7 @@ export class AdapterManager {
       // route for the l1 token.
       const monitoredAddresses = Object.fromEntries(
         (SUPPORTED_TOKENS[chainId] ?? []).map((symbol) => {
-          const l1Token = resolveTokenBySymbol(symbol, hubChainId, true);
+          const l1Token = resolveAcrossToken(symbol, hubChainId, true);
           return [
             l1Token,
             filterMonitoredAddresses(chainId).filter((address) => {

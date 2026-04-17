@@ -7,7 +7,7 @@ import {
   Provider,
   toBN,
   toWei,
-  resolveTokenBySymbol,
+  resolveAcrossToken,
   isDefined,
   ethers,
   bnZero,
@@ -63,7 +63,7 @@ export class ArbitrumOrbitBridge extends BaseBridgeAdapter {
     const nativeToken = PUBLIC_NETWORKS[l2chainId].nativeToken;
     // Only set nonstandard gas tokens.
     if (nativeToken !== "ETH") {
-      this.gasToken = EvmAddress.from(resolveTokenBySymbol(nativeToken, hubChainId, true));
+      this.gasToken = EvmAddress.from(resolveAcrossToken(nativeToken, hubChainId, true));
     }
     this.l1SubmitValue = bridgeSubmitValue[l2chainId];
     this.l2GasPrice = maxFeePerGas[l2chainId];
