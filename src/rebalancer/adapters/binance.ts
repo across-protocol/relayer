@@ -821,37 +821,39 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const { withdrawMin, withdrawMax } = destinationBinanceNetwork;
 
     // Make sure that the amount to transfer will be larger than the minimum withdrawal size after expected fees.
-    const expectedCost = await this.getEstimatedCost(rebalanceRoute, amountToTransfer, false);
     const sourceTokenInfo = this._getTokenInfo(sourceToken, sourceChain);
     const destinationTokenInfo = this._getTokenInfo(destinationToken, destinationEntrypointNetwork);
-    const expectedAmountToWithdraw = amountToTransfer.sub(expectedCost);
-    const minimumWithdrawalSize = await this._convertDestinationToSource(
-      destinationToken,
-      destinationEntrypointNetwork,
+    const bridgeToBinanceFee = await this._getBridgingFees(rebalanceRoute, amountToTransfer);
+    const expectedSourceAmountToDepositForSwap = amountToTransfer.sub(bridgeToBinanceFee);
+    const expectedAmountToWithdrawInDestinationUnits = await this._convertSourceToDestination(
       sourceToken,
       sourceChain,
-      // add 1% buffer to minimum withdrawal size to account for any precision loss due to the conversion from
-      // destination to source token precision.
-      toBNWei(truncate(Number(withdrawMin) * 1.01, destinationTokenInfo.decimals), destinationTokenInfo.decimals)
-    );
-    const maximumWithdrawalSize = await this._convertDestinationToSource(
       destinationToken,
       destinationEntrypointNetwork,
-      sourceToken,
-      sourceChain,
-      toBNWei(truncate(Number(withdrawMax), destinationTokenInfo.decimals), destinationTokenInfo.decimals)
+      expectedSourceAmountToDepositForSwap
     );
-    if (expectedAmountToWithdraw.lt(minimumWithdrawalSize)) {
+    // add 1% buffer to minimum withdrawal size to account for any precision loss due to the conversion from
+    // source to destination token precision.
+    const withdrawMinWithBuffer = Number(withdrawMin) * 1.01;
+    const withdrawMinWei = toBNWei(
+      truncate(withdrawMinWithBuffer, destinationTokenInfo.decimals),
+      destinationTokenInfo.decimals
+    );
+    if (expectedAmountToWithdrawInDestinationUnits.lt(withdrawMinWei)) {
       this.logger.debug({
         at: "BinanceStablecoinSwapAdapter.initializeRebalance",
-        message: `Expected amount to withdraw ${expectedAmountToWithdraw.toString()} is less than minimum withdrawal size ${minimumWithdrawalSize.toString()} on Binance destination chain ${destinationEntrypointNetwork}`,
+        message: `Expected amount to withdraw ${expectedAmountToWithdrawInDestinationUnits.toString()} is less than minimum withdrawal size ${withdrawMinWei.toString()} on Binance destination chain ${destinationEntrypointNetwork}`,
       });
       return bnZero;
     }
-    if (expectedAmountToWithdraw.gt(maximumWithdrawalSize)) {
+    const withdrawMaxWei = toBNWei(
+      truncate(Number(withdrawMax), destinationTokenInfo.decimals),
+      destinationTokenInfo.decimals
+    );
+    if (expectedAmountToWithdrawInDestinationUnits.gt(withdrawMaxWei)) {
       this.logger.debug({
         at: "BinanceStablecoinSwapAdapter.initializeRebalance",
-        message: `Expected amount to withdraw ${expectedAmountToWithdraw.toString()} is greater than maximum withdrawal size ${maximumWithdrawalSize.toString()} on Binance destination chain ${destinationEntrypointNetwork}`,
+        message: `Expected amount to withdraw ${expectedAmountToWithdrawInDestinationUnits.toString()} is greater than maximum withdrawal size ${withdrawMaxWei.toString()} on Binance destination chain ${destinationEntrypointNetwork}`,
       });
       return bnZero;
     }
@@ -994,32 +996,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const spreadFee = toBNWei(truncate(spreadPct, 18), 18).mul(amountToTransfer).div(toBNWei(1, 20));
 
     // Bridge to Binance deposit network Fee:
-    let bridgeToBinanceFee = bnZero;
-    const binanceDepositNetwork = await this._getEntrypointNetwork(sourceChain, sourceToken);
-    if (binanceDepositNetwork !== sourceChain) {
-      assert(
-        supportsBinanceIntermediateBridgeToken(sourceToken),
-        `Source token ${sourceToken} cannot use an intermediate bridge leg into Binance`
-      );
-      const _rebalanceRoute = { ...rebalanceRoute, destinationChain: binanceDepositNetwork };
-      if (
-        sourceToken === "USDT" &&
-        this.oftAdapter.supportsRoute({ ..._rebalanceRoute, destinationToken: "USDT", adapter: "oft" })
-      ) {
-        bridgeToBinanceFee = await this.oftAdapter.getEstimatedCost(
-          { ..._rebalanceRoute, destinationToken: "USDT", adapter: "oft" },
-          amountToTransfer
-        );
-      } else if (
-        sourceToken === "USDC" &&
-        this.cctpAdapter.supportsRoute({ ..._rebalanceRoute, destinationToken: "USDC", adapter: "cctp" })
-      ) {
-        bridgeToBinanceFee = await this.cctpAdapter.getEstimatedCost(
-          { ..._rebalanceRoute, destinationToken: "USDC", adapter: "cctp" },
-          amountToTransfer
-        );
-      }
-    }
+    const bridgeToBinanceFee = await this._getBridgingFees(rebalanceRoute, amountToTransfer);
 
     // Bridge from Binance withdrawal network fee:
     let bridgeFromBinanceFee = bnZero;
@@ -1137,6 +1114,38 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const coin = await this._getAccountCoins(token);
     const coinHasNetwork = coin.networkList.find((network) => network.name === BINANCE_NETWORKS[chainId]);
     return coinHasNetwork ? chainId : defaultBinanceNetwork;
+  }
+
+  private async _getBridgingFees(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber): Promise<BigNumber> {
+    const { sourceChain, sourceToken } = rebalanceRoute;
+    // Bridge to Binance deposit network Fee:
+    let bridgeToBinanceFee = bnZero;
+    const binanceDepositNetwork = await this._getEntrypointNetwork(sourceChain, sourceToken);
+    if (binanceDepositNetwork !== sourceChain) {
+      assert(
+        supportsBinanceIntermediateBridgeToken(sourceToken),
+        `Source token ${sourceToken} cannot use an intermediate bridge leg into Binance`
+      );
+      const _rebalanceRoute = { ...rebalanceRoute, destinationChain: binanceDepositNetwork };
+      if (
+        sourceToken === "USDT" &&
+        this.oftAdapter.supportsRoute({ ..._rebalanceRoute, destinationToken: "USDT", adapter: "oft" })
+      ) {
+        bridgeToBinanceFee = await this.oftAdapter.getEstimatedCost(
+          { ..._rebalanceRoute, destinationToken: "USDT", adapter: "oft" },
+          amountToTransfer
+        );
+      } else if (
+        sourceToken === "USDC" &&
+        this.cctpAdapter.supportsRoute({ ..._rebalanceRoute, destinationToken: "USDC", adapter: "cctp" })
+      ) {
+        bridgeToBinanceFee = await this.cctpAdapter.getEstimatedCost(
+          { ..._rebalanceRoute, destinationToken: "USDC", adapter: "cctp" },
+          amountToTransfer
+        );
+      }
+    }
+    return bridgeToBinanceFee;
   }
 
   private async _depositToBinance(sourceToken: string, sourceChain: number, amountToDeposit: BigNumber): Promise<void> {
