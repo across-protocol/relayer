@@ -45,7 +45,7 @@ import { HubPoolClient, TokenClient, TransactionClient } from ".";
 import { Deposit, TokenInfo } from "../interfaces";
 import { InventoryConfig, isAliasConfig, TokenBalanceConfig } from "../interfaces/InventoryManagement";
 import lodash from "lodash";
-import { SLOW_WITHDRAWAL_CHAINS } from "../common";
+import { hasBinanceRoute, SLOW_WITHDRAWAL_CHAINS } from "../common";
 import { AdapterManager, CrossChainTransferClient } from "./bridges";
 import { TransferTokenParams } from "../adapter/utils";
 import { RebalancerClient } from "../rebalancer/utils/interfaces";
@@ -1837,6 +1837,7 @@ export class InventoryClient {
     return SLOW_WITHDRAWAL_CHAINS.filter((repaymentChainId) => {
       let fastWithdrawal = isUSDC && sdkUtils.chainIsCCTPEnabled(repaymentChainId);
       fastWithdrawal ||= isUSDT && repaymentChainId === CHAIN_IDs.ARBITRUM;
+      fastWithdrawal ||= hasBinanceRoute(repaymentChainId, l1Token);
       return (
         !fastWithdrawal &&
         this._l1TokenEnabledForChain(l1Token, repaymentChainId) &&
