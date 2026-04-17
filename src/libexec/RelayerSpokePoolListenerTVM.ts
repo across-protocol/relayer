@@ -168,6 +168,10 @@ async function scrapeEvents(
  * Drive `processBlock` for each head from the primary provider and fan the event
  * stream through EventManager across all providers. EventManager stays on its
  * master API; orphan removal is handled by `processBlock`.
+ *
+ * TRON JSON-RPC providers expire filter ids aggressively, so viem's `watchEvent`
+ * (which polls via `eth_newFilter` + `eth_getFilterChanges`) fails with
+ * "filter not found". Poll `eth_getLogs` per accepted block instead.
  */
 async function listen(
   eventMgr: EventManager,
@@ -178,6 +182,51 @@ async function listen(
   const at = `${PROGRAM}::listen`;
   const providers = resolveProviders(chainId, quorum);
   const blocks = new Map<bigint, string>();
+  const events = eventSignatures.map((sig) => parseAbiItem(sig.replace("tuple", "")) as AbiEvent);
+  const address = spokePoolAddr as `0x${string}`;
+
+  const pollLogs = async (blockNumber: bigint): Promise<void> => {
+    await Promise.all(
+      providers.map(async (provider) => {
+        let rawLogs: (viemLog & { args: unknown; eventName: string })[];
+        try {
+          rawLogs = (await provider.getLogs({
+            address,
+            events,
+            fromBlock: blockNumber,
+            toBlock: blockNumber,
+          })) as (viemLog & { args: unknown; eventName: string })[];
+        } catch (error) {
+          const { message: errorMessage, details, shortMessage, metaMessages } = error as BaseError;
+          logger.warn({
+            at,
+            message: `Caught ${chain} getLogs error.`,
+            errorMessage,
+            shortMessage,
+            details,
+            metaMessages,
+            provider: provider.name,
+            blockNumber: Number(blockNumber),
+          });
+          return;
+        }
+
+        for (const raw of rawLogs) {
+          const log: Log = {
+            ...raw,
+            args: raw.args,
+            blockNumber: Number(raw.blockNumber),
+            event: raw.eventName,
+            topics: Array<string>(),
+          };
+
+          if (eventMgr.add(log, provider.name) && !postEvents([log])) {
+            abortController.abort();
+          }
+        }
+      })
+    );
+  };
 
   const [blockProvider] = providers;
   blockProvider.watchBlocks({
@@ -193,6 +242,7 @@ async function listen(
       if (!postBlock(Number(block.number), Number(block.timestamp))) {
         abortController.abort();
       }
+      void pollLogs(block.number);
     },
     onError: (error: Error) => {
       const { message: errorMessage, details, shortMessage, metaMessages } = error as BaseError;
@@ -207,49 +257,6 @@ async function listen(
       });
     },
   });
-
-  for (const sig of eventSignatures) {
-    const event = parseAbiItem(sig.replace("tuple", "")) as AbiEvent;
-    for (const provider of providers) {
-      provider.watchEvent({
-        address: spokePoolAddr as `0x${string}`,
-        event,
-        onLogs: (rawLogs: (viemLog & { args: unknown; eventName: string })[]) => {
-          for (const raw of rawLogs) {
-            const log: Log = {
-              ...raw,
-              args: raw.args,
-              blockNumber: Number(raw.blockNumber),
-              event: raw.eventName,
-              topics: Array<string>(),
-            };
-
-            if (log.removed) {
-              eventMgr.remove(log, provider.name);
-              removeEvent(log);
-              continue;
-            }
-
-            if (eventMgr.add(log, provider.name) && !postEvents([log])) {
-              abortController.abort();
-            }
-          }
-        },
-        onError: (error: Error) => {
-          const { message: errorMessage, details, shortMessage, metaMessages } = error as BaseError;
-          logger.warn({
-            at,
-            message: `Caught ${chain} ${event.name} provider error.`,
-            errorMessage,
-            shortMessage,
-            details,
-            metaMessages,
-            provider: provider.name,
-          });
-        },
-      });
-    }
-  }
 
   return new Promise((resolve) => abortController.signal.addEventListener("abort", () => resolve()));
 }
