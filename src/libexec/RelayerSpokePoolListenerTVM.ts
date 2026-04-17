@@ -1,15 +1,7 @@
 import assert from "assert";
 import minimist from "minimist";
 import { Contract, utils as ethersUtils } from "ethers";
-import {
-  AbiEvent,
-  BaseError,
-  Block,
-  createPublicClient,
-  http,
-  Log as viemLog,
-  parseAbiItem,
-} from "viem";
+import { AbiEvent, BaseError, Block, createPublicClient, http, Log as viemLog, parseAbiItem } from "viem";
 import * as utils from "../../scripts/utils";
 import { Log } from "../interfaces";
 import {
