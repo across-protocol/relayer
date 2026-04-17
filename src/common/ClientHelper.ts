@@ -403,6 +403,7 @@ export async function constructClients(
   const arweaveClient = new caching.ArweaveClient(
     getArweaveJWKSigner({ keyType: "read-only" }),
     logger,
+    config.arweaveGateways
   );
 
   return { hubPoolClient, configStoreClient, multiCallerClient, hubSigner, arweaveClient };

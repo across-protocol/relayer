@@ -52,6 +52,7 @@ export async function constructDataworkerClients(
   const arweaveClient = new caching.ArweaveClient(
     getArweaveJWKSigner({ keyType: config.persistingBundleData ? "read-write" : "read-only" }),
     logger,
+    config.arweaveGateways
   );
 
   return {
