@@ -91,7 +91,8 @@ export class CommonConfig {
     const _arweaveGateways = isDefined(ARWEAVE_GATEWAYS) ? JSON.parse(ARWEAVE_GATEWAYS) : undefined;
     assert(
       !isDefined(_arweaveGateways) ||
-        _arweaveGateways.every((_arweaveGateway) => ArweaveGatewayConfigSS.is(_arweaveGateway)),
+        (Array.isArray(_arweaveGateways) &&
+          _arweaveGateways.every((_arweaveGateway) => ArweaveGatewayConfigSS.is(_arweaveGateway))),
       "Invalid Arweave gateway"
     );
     this.arweaveGateways = _arweaveGateways;
