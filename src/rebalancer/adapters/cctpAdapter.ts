@@ -28,9 +28,7 @@ import { PRODUCTION_NETWORKS, CCTP_NO_DOMAIN } from "@across-protocol/constants"
 import { utils } from "@across-protocol/sdk";
 import { MultiCallerClient } from "../../clients/MultiCallerClient";
 
-type CctpAttestationMessage = Awaited<
-  ReturnType<typeof utils.fetchCctpV2Attestations>
->[string]["messages"][number];
+type CctpAttestationMessage = Awaited<ReturnType<typeof utils.fetchCctpV2Attestations>>[string]["messages"][number];
 
 export class CctpAdapter extends BaseAdapter {
   REDIS_PREFIX = CCTP_PENDING_BRIDGE_REDIS_PREFIX;
