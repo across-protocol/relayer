@@ -100,7 +100,6 @@ export function resolveBinanceCoinSymbol(token: string): string {
   }
 }
 
-
 // ParsedAccountCoins represents a simplified return type of the Binance `accountCoins` endpoint.
 type ParsedAccountCoins = Coin[];
 
