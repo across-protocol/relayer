@@ -14,7 +14,7 @@ import {
   getL2Book,
   getDstCctpHandler,
   getOpenOrders,
-  TOKEN_SYMBOLS_MAP,
+  resolveAcrossToken,
   bnZero,
   BigNumber,
   forEachAsync,
@@ -138,8 +138,8 @@ export class HyperliquidExecutor {
         const baseForFinal = pair.tokens[0] === baseToken.index;
         // Take the tokens from TOKEN_SYMBOLS_MAP, since the spot meta `evmContract` does not necessarily point to the ERC20 address.
         const castSymbol = (symbol: string) => (symbol === "USDT0" ? "USDT" : symbol);
-        const baseTokenAddress = TOKEN_SYMBOLS_MAP[castSymbol(baseToken.name)].addresses[this.chainId];
-        const finalTokenAddress = TOKEN_SYMBOLS_MAP[castSymbol(finalToken.name)].addresses[this.chainId];
+        const baseTokenAddress = resolveAcrossToken(castSymbol(baseToken.name), this.chainId, true);
+        const finalTokenAddress = resolveAcrossToken(castSymbol(finalToken.name), this.chainId, true);
 
         // There are only two available swap handlers.
         const dstHandler = baseToken.name === "USDT0" ? this.dstOftMessenger : this.dstCctpMessenger;

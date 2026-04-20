@@ -6,6 +6,7 @@ import {
   Provider,
   ethers,
   TOKEN_SYMBOLS_MAP,
+  resolveAcrossToken,
   compareAddressesSimple,
   paginatedEventQuery,
   isContractDeployedToAddress,
@@ -60,7 +61,7 @@ export class ZKStackBridge extends BaseBridgeAdapter {
     const nativeToken = PUBLIC_NETWORKS[l2chainId].nativeToken;
     // Only set nonstandard gas tokens.
     if (nativeToken !== "ETH") {
-      this.gasToken = EvmAddress.from(TOKEN_SYMBOLS_MAP[nativeToken].addresses[hubChainId]);
+      this.gasToken = EvmAddress.from(resolveAcrossToken(nativeToken, hubChainId, true));
 
       const { address: nativeTokenAddress, abi: nativeTokenAbi } = CONTRACT_ADDRESSES[l2chainId].nativeToken;
       this.nativeToken = new Contract(nativeTokenAddress, nativeTokenAbi, l2SignerOrProvider);
