@@ -246,16 +246,14 @@ export class GaslessRelayer {
           originSpokePool.filters.FundsDeposited(),
           searchConfig
         );
-        for (const event of originFundsDepositedEvents) {
-          const deposit = unpackDepositEvent(spreadEventWithBlockNumber(event), originChainId);
-          const apiMessage = apiMessages.find(({ depositId }) => deposit.depositId.toString() === depositId);
-          if (!isDefined(apiMessage)) {
-            continue;
-          }
-          observedDeposits.add(
-            this._getDepositKey(deposit.inputToken.toNative(), originChainId, deposit.depositId.toString())
+        originFundsDepositedEvents
+          .map((event) => unpackDepositEvent(spreadEventWithBlockNumber(event), originChainId))
+          .filter((deposit) => apiMessages.some(({ depositId }) => deposit.depositId.eq(depositId)))
+          .forEach((deposit) =>
+            observedDeposits.add(
+              this._getDepositKey(deposit.inputToken.toNative(), originChainId, deposit.depositId.toString())
+            )
           );
-        }
       }),
 
       mapAsync(this.config.relayerDestinationChains, async (destinationChainId) => {
@@ -296,7 +294,7 @@ export class GaslessRelayer {
     }
 
     // If the deposit is a refund test deposit, we do not want to fill it at all.
-    if (this.config.refundFlowTestEnabled && deposit.outputAmount.eq(MAX_UINT_VAL)) {
+    if (this.isRefundFlowTestDeposit(deposit.outputAmount)) {
       return false;
     }
 
@@ -622,7 +620,7 @@ export class GaslessRelayer {
             let fillStatus: FillStatus;
 
             if (deposit) {
-              if (this.config.refundFlowTestEnabled && deposit.outputAmount.eq(MAX_UINT_VAL)) {
+              if (this.isRefundFlowTestDeposit(deposit.outputAmount)) {
                 log("info", `Skipped fill on ${destination} for ${origin} deposit (deposit refund test).`);
                 setState(MessageState.FILLED);
                 break;
@@ -773,7 +771,7 @@ export class GaslessRelayer {
     const outputTokenInfo = getTokenInfo(outputToken, destinationChainId);
     const inputTokenInfo = getTokenInfo(inputToken, originChainId);
     const inputAmountInOutputDecimals = ConvertDecimals(inputTokenInfo.decimals, outputTokenInfo.decimals)(inputAmount);
-    if (this.config.refundFlowTestEnabled && outputAmount.eq(MAX_UINT_VAL)) {
+    if (this.isRefundFlowTestDeposit(outputAmount)) {
       this.logger.info({
         at: "GaslessRelayer#initiateFill",
         message: "Refund flow test: skipping fill (deposit already made).",
@@ -999,6 +997,10 @@ export class GaslessRelayer {
    */
   protected _getState(depositKey: string): MessageState {
     return (this.messageState[depositKey] ??= MessageState.INITIAL);
+  }
+
+  private isRefundFlowTestDeposit(outputAmount: RelayData["outputAmount"]): boolean {
+    return this.config.refundFlowTestEnabled && outputAmount.eq(MAX_UINT_VAL);
   }
 
   /*
