@@ -20,15 +20,6 @@ export interface DataworkerClients extends Clients {
   arweaveTopicCache?: interfaces.CachingMechanismInterface;
 }
 
-type BundleDataClientWithTopicCacheConstructor = new (
-  logger: winston.Logger,
-  clients: Clients,
-  spokePoolClients: Record<number, never>,
-  chainIdListForBundleEvaluationBlockNumbers: number[],
-  blockRangeEndBlockBuffer?: { [chainId: number]: number },
-  arweaveTopicCache?: interfaces.CachingMechanismInterface
-) => BundleDataClient;
-
 export async function constructDataworkerClients(
   logger: winston.Logger,
   config: DataworkerConfig,
@@ -59,10 +50,7 @@ export async function constructDataworkerClients(
 
   // TODO: Remove need to pass in spokePoolClients into BundleDataClient since we pass in empty {} here and pass in
   // clients for each class level call we make. Its more of a static class.
-  // The published SDK type still exposes the older 5-arg constructor. The runtime ignores extra args today,
-  // and the paired SDK topic-cache PR consumes the 6th arg once released.
-  const BundleDataClientCtor = BundleDataClient as unknown as BundleDataClientWithTopicCacheConstructor;
-  const bundleDataClient = new BundleDataClientCtor(
+  const bundleDataClient = new BundleDataClient(
     logger,
     commonClients,
     {},
