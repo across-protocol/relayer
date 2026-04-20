@@ -734,8 +734,7 @@ export class InventoryClient {
     const standardCandidateChains = [...new Set(standardChainOrder)].filter((chainId) =>
       chainId === originChainId ? canEvaluateOrigin : canEvaluateDestination
     );
-    const candidateChains = [...new Set([...slowWithdrawalCandidateChains, ...standardCandidateChains])];
-    const rankedChains = candidateChains;
+    const rankedChains = [...new Set([...slowWithdrawalCandidateChains, ...standardCandidateChains])];
 
     const eligibleChains: number[] = [];
     // At this point, all ranked chains have defined token configs or are destination chains that can be accepted
