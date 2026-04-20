@@ -1,3 +1,4 @@
+import { CHAIN_IDs } from "@across-protocol/constants";
 import { utils } from "@across-protocol/sdk";
 import {
   spokesThatHoldNativeTokens,
@@ -24,9 +25,10 @@ import {
   Address,
   isSVMSpokePoolClient,
   bnZero,
+  resolveAcrossToken,
+  SVMProvider,
 } from "../../utils";
 import { SpokePoolClient, HubPoolClient, SpokePoolManager } from "../";
-import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { BaseChainAdapter } from "../../adapter";
 import { TransferTokenParams } from "../../adapter/utils";
 import { CctpOftReadOnlyClient } from "../../rebalancer/clients/CctpOftReadOnlyClient";
@@ -89,7 +91,7 @@ export class AdapterManager {
           } else if (isSVMSpokePoolClient(spokePoolClient)) {
             l2SignerOrProvider = spokePoolClient.svmEventsClient.getRpc();
           }
-          const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[hubChainId];
+          const l1Token = resolveAcrossToken(symbol, hubChainId, true);
           const bridgeConstructor = CUSTOM_BRIDGE[chainId]?.[l1Token] ?? CANONICAL_BRIDGE[chainId];
           const bridge = new bridgeConstructor(
             chainId,
@@ -108,7 +110,7 @@ export class AdapterManager {
         return {};
       }
       const spokePoolClient = this.spokePoolManager.getClient(chainId);
-      let l2SignerOrSvmProvider;
+      let l2SignerOrSvmProvider: Signer | SVMProvider | undefined;
       if (isEVMSpokePoolClient(spokePoolClient)) {
         l2SignerOrSvmProvider = spokePoolClient.spokePool.signer;
       } else if (isSVMSpokePoolClient(spokePoolClient)) {
@@ -117,7 +119,7 @@ export class AdapterManager {
       return Object.fromEntries(
         SUPPORTED_TOKENS[chainId]
           ?.map((symbol) => {
-            const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[hubChainId];
+            const l1Token = resolveAcrossToken(symbol, hubChainId, true);
             const bridgeConstructor = CUSTOM_L2_BRIDGE[chainId]?.[l1Token] ?? CANONICAL_L2_BRIDGE[chainId];
             if (!isDefined(bridgeConstructor)) {
               return undefined;
@@ -139,7 +141,7 @@ export class AdapterManager {
       // route for the l1 token.
       const monitoredAddresses = Object.fromEntries(
         (SUPPORTED_TOKENS[chainId] ?? []).map((symbol) => {
-          const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[hubChainId];
+          const l1Token = resolveAcrossToken(symbol, hubChainId, true);
           return [
             l1Token,
             filterMonitoredAddresses(chainId).filter((address) => {

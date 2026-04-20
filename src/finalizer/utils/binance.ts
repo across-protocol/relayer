@@ -4,7 +4,7 @@ import {
   getTimestampForBlock,
   mapAsync,
   getBinanceApiClient,
-  TOKEN_SYMBOLS_MAP,
+  resolveAcrossToken,
   compareAddressesSimple,
   formatUnits,
   floatToBN,
@@ -123,7 +123,7 @@ export async function binanceFinalizer(
         continue;
       }
       let coinBalance = Number(coin.balance);
-      const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[hubChainId];
+      const l1Token = resolveAcrossToken(symbol, hubChainId, true);
       const { decimals: l1Decimals } = getTokenInfo(EvmAddress.from(l1Token), hubChainId);
       const _withdrawals = await getBinanceWithdrawals(binanceApi, symbol, fromTimestamp);
       // Similar to the reasoning for filtering deposits, we need to filter withdrawals by removing any
