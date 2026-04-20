@@ -25,6 +25,7 @@ import {
   getTokenInfoFromSymbol,
   isDefined,
   MAX_SAFE_ALLOWANCE,
+  resolveBinanceCoinSymbol,
   setBinanceDepositType,
   setBinanceWithdrawalType,
   Signer,
@@ -74,10 +75,6 @@ export function isTerminalBinanceWithdrawal(status?: number): boolean {
     default:
       return false;
   }
-}
-
-export function resolveBinanceCoinSymbol(token: string): string {
-  return token === "WETH" ? "ETH" : token;
 }
 
 export function isSameBinanceCoin(sourceToken: string, destinationToken: string): boolean {
