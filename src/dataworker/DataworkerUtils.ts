@@ -469,7 +469,8 @@ export async function persistDataToArweave(
   tag?: string,
   topicCache?: interfaces.CachingMechanismInterface
 ): Promise<void> {
-  const normalizedTag = tag ?? "";
+  assert(isDefined(tag) && tag.length > 0, "Arweave tag is required");
+  const normalizedTag = tag;
   assert(
     Buffer.from(normalizedTag).length <= ARWEAVE_TAG_BYTE_LIMIT,
     `Arweave tag cannot exceed ${ARWEAVE_TAG_BYTE_LIMIT} bytes`

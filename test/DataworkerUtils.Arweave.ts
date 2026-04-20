@@ -59,4 +59,23 @@ describe("persistDataToArweave topic cache seeding", () => {
     const cachedPayload = await topicCache.get<string>(`arweave-topic:${tag}`);
     expect(cachedPayload).to.equal(null);
   });
+
+  it("should fail fast when the Arweave tag is omitted", async () => {
+    const { spyLogger } = createSpyLogger();
+    const topicCache = new caching.MemoryCacheClient();
+    const getByTopic = sinon.stub().resolves([]);
+    const client = {
+      getByTopic,
+      getAddress: sinon.stub().resolves("arweave-address"),
+      getBalance: sinon.stub().resolves(parseWinston("2")),
+      set: sinon.stub().resolves("tx-1"),
+    } as unknown as caching.ArweaveClient;
+
+    await assertPromiseError(
+      persistDataToArweave(client, payload, spyLogger, undefined, topicCache),
+      "Arweave tag is required"
+    );
+
+    expect(getByTopic.called).to.be.false;
+  });
 });
