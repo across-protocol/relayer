@@ -1,5 +1,5 @@
 import assert from "assert";
-import { utils, interfaces, caching } from "@across-protocol/sdk";
+import { utils, interfaces, caching, constants as sdkConstants } from "@across-protocol/sdk";
 import { SpokePoolClient } from "../clients";
 import {
   ARWEAVE_TAG_BYTE_LIMIT,
@@ -466,10 +466,12 @@ export async function persistDataToArweave(
   client: caching.ArweaveClient,
   data: Record<string, unknown>,
   logger: winston.Logger,
-  tag?: string
+  tag?: string,
+  topicCache?: interfaces.CachingMechanismInterface
 ): Promise<void> {
+  const normalizedTag = tag ?? "";
   assert(
-    Buffer.from(tag).length <= ARWEAVE_TAG_BYTE_LIMIT,
+    Buffer.from(normalizedTag).length <= ARWEAVE_TAG_BYTE_LIMIT,
     `Arweave tag cannot exceed ${ARWEAVE_TAG_BYTE_LIMIT} bytes`
   );
 
@@ -482,7 +484,7 @@ export async function persistDataToArweave(
   // Check if data already exists on Arweave with the given tag.
   // If so, we don't need to persist it again.
   const [matchingTxns, address, balance] = await Promise.all([
-    client.getByTopic(tag, any()),
+    client.getByTopic(normalizedTag, any()),
     client.getAddress(),
     client.getBalance(),
   ]);
@@ -510,23 +512,55 @@ export async function persistDataToArweave(
   if (matchingTxns.length > 0) {
     logger.debug({
       at: "DataworkerUtils#persistDataToArweave",
-      message: `Data already exists on Arweave with tag: ${tag}`,
+      message: `Data already exists on Arweave with tag: ${normalizedTag}`,
       hash: matchingTxns.map((txn) => txn.hash),
     });
+    await persistArweaveTopicToCache(topicCache, normalizedTag, data, logger);
   } else {
-    const hashTxn = await client.set(data, tag);
+    const hashTxn = await client.set(data, normalizedTag);
     logger.info({
       at: "DataworkerUtils#persistDataToArweave",
       message: "Persisted data to Arweave! 💾",
-      tag,
+      tag: normalizedTag,
       receipt: `https://arweave.app/tx/${hashTxn}`,
       rawData: `https://arweave.net/${hashTxn}`,
       address,
       balance: formatWinston(balance),
       notificationPath: "across-arweave",
     });
+    await persistArweaveTopicToCache(topicCache, normalizedTag, data, logger);
     mark.stop({
       message: "Time to persist to Arweave",
     });
   }
+}
+
+async function persistArweaveTopicToCache(
+  topicCache: interfaces.CachingMechanismInterface | undefined,
+  tag: string,
+  data: Record<string, unknown>,
+  logger: winston.Logger
+): Promise<void> {
+  if (!isDefined(topicCache) || tag.length === 0) {
+    return;
+  }
+
+  try {
+    await topicCache.set(
+      getArweaveTopicCacheKey(tag),
+      JSON.stringify(data, utils.jsonReplacerWithBigNumbers),
+      sdkConstants.DEFAULT_CACHING_TTL
+    );
+  } catch (error) {
+    logger.debug({
+      at: "DataworkerUtils#persistArweaveTopicToCache",
+      message: "Failed to persist Arweave topic payload into Redis cache",
+      tag,
+      error: String(error),
+    });
+  }
+}
+
+function getArweaveTopicCacheKey(tag: string): string {
+  return `arweave-topic:${tag}`;
 }
