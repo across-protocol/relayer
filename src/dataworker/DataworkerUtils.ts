@@ -466,10 +466,10 @@ export async function persistDataToArweave(
   client: caching.ArweaveClient,
   data: Record<string, unknown>,
   logger: winston.Logger,
-  tag?: string,
+  tag: string,
   topicCache?: interfaces.CachingMechanismInterface
 ): Promise<void> {
-  assert(isDefined(tag) && tag.length > 0, "Arweave tag is required");
+  assert(tag.length > 0, "Arweave tag is required");
   assert(
     Buffer.from(tag).length <= ARWEAVE_TAG_BYTE_LIMIT,
     `Arweave tag cannot exceed ${ARWEAVE_TAG_BYTE_LIMIT} bytes`

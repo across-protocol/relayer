@@ -60,7 +60,7 @@ describe("persistDataToArweave topic cache seeding", () => {
     expect(cachedPayload).to.equal(null);
   });
 
-  it("should fail fast when the Arweave tag is omitted", async () => {
+  it("should fail fast when the Arweave tag is empty", async () => {
     const { spyLogger } = createSpyLogger();
     const topicCache = new caching.MemoryCacheClient();
     const getByTopic = sinon.stub().resolves([]);
@@ -72,7 +72,7 @@ describe("persistDataToArweave topic cache seeding", () => {
     } as unknown as caching.ArweaveClient;
 
     await assertPromiseError(
-      persistDataToArweave(client, payload, spyLogger, undefined, topicCache),
+      persistDataToArweave(client, payload, spyLogger, "", topicCache),
       "Arweave tag is required"
     );
 
