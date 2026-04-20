@@ -470,9 +470,8 @@ export async function persistDataToArweave(
   topicCache?: interfaces.CachingMechanismInterface
 ): Promise<void> {
   assert(isDefined(tag) && tag.length > 0, "Arweave tag is required");
-  const normalizedTag = tag;
   assert(
-    Buffer.from(normalizedTag).length <= ARWEAVE_TAG_BYTE_LIMIT,
+    Buffer.from(tag).length <= ARWEAVE_TAG_BYTE_LIMIT,
     `Arweave tag cannot exceed ${ARWEAVE_TAG_BYTE_LIMIT} bytes`
   );
 
@@ -485,7 +484,7 @@ export async function persistDataToArweave(
   // Check if data already exists on Arweave with the given tag.
   // If so, we don't need to persist it again.
   const [matchingTxns, address, balance] = await Promise.all([
-    client.getByTopic(normalizedTag, any()),
+    client.getByTopic(tag, any()),
     client.getAddress(),
     client.getBalance(),
   ]);
@@ -513,23 +512,23 @@ export async function persistDataToArweave(
   if (matchingTxns.length > 0) {
     logger.debug({
       at: "DataworkerUtils#persistDataToArweave",
-      message: `Data already exists on Arweave with tag: ${normalizedTag}`,
+      message: `Data already exists on Arweave with tag: ${tag}`,
       hash: matchingTxns.map((txn) => txn.hash),
     });
-    await persistArweaveTopicToCache(topicCache, normalizedTag, data, logger);
+    await persistArweaveTopicToCache(topicCache, tag, data, logger);
   } else {
-    const hashTxn = await client.set(data, normalizedTag);
+    const hashTxn = await client.set(data, tag);
     logger.info({
       at: "DataworkerUtils#persistDataToArweave",
       message: "Persisted data to Arweave! 💾",
-      tag: normalizedTag,
+      tag,
       receipt: `https://arweave.app/tx/${hashTxn}`,
       rawData: `https://arweave.net/${hashTxn}`,
       address,
       balance: formatWinston(balance),
       notificationPath: "across-arweave",
     });
-    await persistArweaveTopicToCache(topicCache, normalizedTag, data, logger);
+    await persistArweaveTopicToCache(topicCache, tag, data, logger);
     mark.stop({
       message: "Time to persist to Arweave",
     });
