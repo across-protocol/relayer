@@ -29,18 +29,19 @@ describe("persistDataToArweave topic cache seeding", () => {
   it("should seed the topic cache even when the topic already exists on Arweave", async () => {
     const { spyLogger } = createSpyLogger();
     const topicCache = new caching.MemoryCacheClient();
+    const set = sinon.stub().resolves("tx-2");
     const client = {
       getByTopic: sinon.stub().resolves([{ data: { existing: true }, hash: "tx-existing" }]),
       getAddress: sinon.stub().resolves("arweave-address"),
       getBalance: sinon.stub().resolves(parseWinston("2")),
-      set: sinon.stub().resolves("tx-2"),
+      set,
     } as unknown as caching.ArweaveClient;
 
     await persistDataToArweave(client, payload, spyLogger, tag, topicCache);
 
     const cachedPayload = await topicCache.get<string>(`arweave-topic:${tag}`);
     expect(JSON.parse(cachedPayload!)).to.deep.equal(payload);
-    expect((client as any).set.called).to.be.false;
+    expect(set.called).to.be.false;
   });
 
   it("should not seed the topic cache when the Arweave write fails", async () => {
