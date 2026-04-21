@@ -1,9 +1,4 @@
-import Binance, {
-  HttpMethod,
-  DepositHistoryResponse,
-  WithdrawHistoryResponse,
-  type Binance as BinanceApi,
-} from "binance-api-node";
+import Binance, { DepositHistoryResponse, WithdrawHistoryResponse, type Binance as BinanceApi } from "binance-api-node";
 export type { BinanceApi };
 import minimist from "minimist";
 import { getGckmsConfig, retrieveGckmsKeys, isDefined, assert, delay, CHAIN_IDs, getRedisCache, truncate } from "./";
@@ -18,7 +13,7 @@ const KNOWN_BINANCE_ERROR_REASONS = [
   "TypeError: fetch failed",
 ];
 
-type WithdrawalQuota = {
+export type WithdrawalQuota = {
   wdQuota: number;
   usedWdQuota: number;
 };
@@ -161,27 +156,6 @@ async function retrieveBinanceSecretKeyFromCLIArgs(): Promise<string | undefined
     return undefined;
   }
   return binanceKeys[0].slice(2);
-}
-
-/**
- * Retrieves the input client account's withdrawal quota.
- * @dev This is in a utility function since the Binance API does not natively support calling this endpoint.
- * @returns an object with two fields: `wdQuota` and `usedWdQuota`, corresponding to the total amount
- * available to rebalance per day and the amount already used.
- */
-export async function getBinanceWithdrawalLimits(binanceApi: BinanceApi): Promise<WithdrawalQuota> {
-  const unparsedQuota = (await binanceApi.privateRequest(
-    "GET" as HttpMethod,
-    "/sapi/v1/capital/withdraw/quota",
-    {}
-  )) as {
-    wdQuota: number;
-    usedWdQuota: number;
-  };
-  return {
-    wdQuota: unparsedQuota.wdQuota,
-    usedWdQuota: unparsedQuota.usedWdQuota,
-  };
 }
 
 export enum BinanceTransactionType {
