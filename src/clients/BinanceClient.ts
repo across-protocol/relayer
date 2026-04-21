@@ -1,15 +1,17 @@
 import Binance, { HttpMethod, type Binance as BinanceApi } from "binance-api-node";
 import minimist from "minimist";
-import { create, number, type } from "superstruct";
+import { coerce, create, number, string, type } from "superstruct";
 import { assert, getGckmsConfig, isDefined, retrieveGckmsKeys } from "../utils";
 import type { WithdrawalQuota } from "../utils/BinanceUtils";
 
 export type { WithdrawalQuota };
 
 // `type()` over `object()` to tolerate additional fields Binance may add later.
+const numberish = coerce(number(), string(), (s) => Number(s));
+
 const WithdrawalQuotaSS = type({
-  wdQuota: number(),
-  usedWdQuota: number(),
+  wdQuota: numberish,
+  usedWdQuota: numberish,
 });
 
 export class BinanceClient {
