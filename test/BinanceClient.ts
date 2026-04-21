@@ -13,8 +13,13 @@ describe("BinanceClient", function () {
   });
 
   after(function () {
-    process.env.BINANCE_API_KEY = savedEnv.BINANCE_API_KEY;
-    process.env.BINANCE_HMAC_KEY = savedEnv.BINANCE_HMAC_KEY;
+    for (const [key, value] of Object.entries(savedEnv)) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
   });
 
   it("create() throws when credentials are missing", async function () {
