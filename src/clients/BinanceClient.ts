@@ -10,6 +10,7 @@ export type { WithdrawalQuota };
 
 // `type()` over `object()` to tolerate additional fields Binance may add later.
 const numberish = coerce(number(), string(), (s) => Number(s));
+
 const WithdrawalQuotaSS = type({
   wdQuota: numberish,
   usedWdQuota: numberish,
