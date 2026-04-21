@@ -719,7 +719,8 @@ export class InventoryClient {
 
     const slowWithdrawalCandidateChains = possibleChains
       .filter(
-        (chainId) => slowWithdrawalRepaymentChainSet.has(chainId) && (excessRunningBalancePcts[chainId] ?? bnZero).gt(bnZero)
+        (chainId) =>
+          slowWithdrawalRepaymentChainSet.has(chainId) && (excessRunningBalancePcts[chainId] ?? bnZero).gt(bnZero)
       )
       .sort((chainIdx, chainIdy) =>
         bnComparatorDescending(excessRunningBalancePcts[chainIdx], excessRunningBalancePcts[chainIdy])
