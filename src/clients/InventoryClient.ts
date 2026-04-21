@@ -709,16 +709,11 @@ export class InventoryClient {
           .mul(this.cexRebalanceBuffer)
           .div(fixedPointAdjustment)
       : undefined;
-    const canBinanceAccommodate = (chainId: number, token: Address): boolean =>
-      isDefined(bufferedFillUsd) && (this.binanceClient?.canAccommodate(bufferedFillUsd, chainId, token) ?? false);
 
     const forceOriginRepayment = this.shouldForceOriginRepayment(deposit);
 
-    // If the deposit forces origin repayment and Binance can accommodate the fill, take origin.
-    if (
-      forceOriginRepayment &&
-      repaymentChainCanBeQuicklyRebalanced(originChainId, inputToken, this.hubPoolClient, canBinanceAccommodate)
-    ) {
+    // If the deposit forces origin repayment and origin is a quick-rebalance source, take origin.
+    if (forceOriginRepayment && this.isQuicklyRebalanced(originChainId, inputToken, bufferedFillUsd)) {
       return [originChainId];
     }
 
@@ -730,8 +725,14 @@ export class InventoryClient {
       }
     }
 
-    // Short-circuit to origin when Binance has capacity AND origin is enabled for this token.
-    if (this._l1TokenEnabledForChain(l1Token, originChainId) && canBinanceAccommodate(originChainId, l1Token)) {
+    // Short-circuit to origin when Binance has fill-level capacity AND origin is enabled for this token.
+    // Kept separate from `repaymentChainCanBeQuicklyRebalanced` because that predicate is chain-level
+    // (hub/CCTP/OFT always return true) and would over-aggressively bypass allocation for those chains.
+    if (
+      isDefined(bufferedFillUsd) &&
+      this._l1TokenEnabledForChain(l1Token, originChainId) &&
+      (this.binanceClient?.canAccommodate(bufferedFillUsd, originChainId, l1Token) ?? false)
+    ) {
       return [originChainId];
     }
 
@@ -756,7 +757,7 @@ export class InventoryClient {
       const excessRunningBalancePcts = await this.getExcessRunningBalancePcts(
         l1Token,
         inputAmountInL1TokenDecimals,
-        this.getSlowWithdrawalRepaymentChains(l1Token, canBinanceAccommodate)
+        this.getSlowWithdrawalRepaymentChains(l1Token)
       );
       // Sort chains by highest excess percentage over the spoke target, so we can prioritize
       // taking repayment on chains with the most excess balance.
@@ -772,10 +773,9 @@ export class InventoryClient {
     // we should take repayment away from the lite chain where possible.
     // We also want to prioritize taking repayment on the origin chain if it is a quick rebalance source.
     if (
-      (deposit.toLiteChain ||
-        repaymentChainCanBeQuicklyRebalanced(originChainId, inputToken, this.hubPoolClient, canBinanceAccommodate)) &&
+      (deposit.toLiteChain || this.isQuicklyRebalanced(originChainId, inputToken, bufferedFillUsd)) &&
       !chainsToEvaluate.includes(originChainId) &&
-      this._l1TokenEnabledForChain(l1Token, Number(originChainId))
+      this._l1TokenEnabledForChain(l1Token, originChainId)
     ) {
       chainsToEvaluate.push(originChainId);
     }
@@ -918,7 +918,7 @@ export class InventoryClient {
     // Conditionally add the origin chain as a fallback option if the relayer has a fast rebalance route.
     if (
       !eligibleRefundChains.includes(originChainId) &&
-      repaymentChainCanBeQuicklyRebalanced(originChainId, inputToken, this.hubPoolClient, canBinanceAccommodate)
+      this.isQuicklyRebalanced(originChainId, inputToken, bufferedFillUsd)
     ) {
       eligibleRefundChains.push(originChainId);
     }
@@ -1898,11 +1898,7 @@ export class InventoryClient {
    * @param l1Token
    * @returns list of chains for l1Token that have a token config enabled and have pool rebalance routes set.
    */
-  getSlowWithdrawalRepaymentChains(
-    l1Token: EvmAddress,
-    canBinanceAccommodate: (chainId: number, l1Token: Address) => boolean = () => false
-  ): number[] {
-    const { hubPoolClient } = this;
+  getSlowWithdrawalRepaymentChains(l1Token: EvmAddress): number[] {
     return SLOW_WITHDRAWAL_CHAINS.filter((repaymentChainId) => {
       if (
         !this._l1TokenEnabledForChain(l1Token, repaymentChainId) ||
@@ -1911,13 +1907,14 @@ export class InventoryClient {
         return false;
       }
       const repaymentToken = this.hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, repaymentChainId);
-      return !repaymentChainCanBeQuicklyRebalanced(
-        repaymentChainId,
-        repaymentToken,
-        hubPoolClient,
-        canBinanceAccommodate
-      );
+      return !this.isQuicklyRebalanced(repaymentChainId, repaymentToken);
     });
+  }
+
+  // Private wrapper over the FillUtils predicate that threads in our hubPoolClient and binanceClient.
+  // Pass `amountUsd` for fill-level Binance capacity; omit for a chain-level "any quota" check.
+  private isQuicklyRebalanced(chainId: number, token: Address, amountUsd?: BigNumber): boolean {
+    return repaymentChainCanBeQuicklyRebalanced(chainId, token, this.hubPoolClient, this.binanceClient, amountUsd);
   }
 
   log(message: string, data?: AnyObject, level: DefaultLogLevels = "debug"): void {

@@ -63,13 +63,13 @@ export class BinanceClient {
     }
   }
 
-  // Callers convert token amount → USD via their own price source before calling.
-  canAccommodate(fillUsd: BigNumber, chainId: number, l1Token: Address): boolean {
+  // Callers supply the USD-denominated amount to check; this client doesn't do pricing.
+  canAccommodate(amountUsd: BigNumber, chainId: number, l1Token: Address): boolean {
     return (
       hasBinanceRoute(chainId, l1Token) &&
       isDefined(this.remainingQuotaUsd) &&
       this.remainingQuotaUsd.gt(bnZero) &&
-      fillUsd.lte(this.remainingQuotaUsd)
+      amountUsd.lte(this.remainingQuotaUsd)
     );
   }
 

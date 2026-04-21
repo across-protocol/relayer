@@ -1,7 +1,8 @@
 import { HubPoolClient, SpokePoolClient } from "../clients";
+import type { BinanceClient } from "../clients/BinanceClient";
 import { hasBinanceRoute } from "../common";
 import { FillStatus, FillWithBlock, SpokePoolClientsByChain, DepositWithBlock, RelayData } from "../interfaces";
-import { Address, CHAIN_IDs, compareAddressesSimple, EMPTY_MESSAGE, TOKEN_SYMBOLS_MAP } from "../utils";
+import { Address, BigNumber, bnZero, CHAIN_IDs, compareAddressesSimple, EMPTY_MESSAGE, isDefined, TOKEN_SYMBOLS_MAP } from "../utils";
 import { getInventoryEquivalentL1TokenAddress } from "./TokenUtils";
 import { utils as sdkUtils } from "@across-protocol/sdk";
 
@@ -80,13 +81,15 @@ export function depositForcesOriginChainRepayment(
 
 /**
  * @notice Returns true if after filling this deposit, the repayment can be quickly rebalanced to a different chain.
- * @dev `binanceIsOperational` gates the Binance branch on live drainability. Default is a no-op true.
+ * @dev The Binance branch additionally requires live capacity via `binanceClient`. Pass `amountUsd` to gate
+ * on capacity for a specific fill; omit for a chain-level "any capacity" check.
  */
 export function repaymentChainCanBeQuicklyRebalanced(
   repaymentChainId: number,
   repaymentToken: Address,
   hubPoolClient: HubPoolClient,
-  binanceIsOperational: (chainId: number, l1Token: Address) => boolean = () => true
+  binanceClient?: BinanceClient,
+  amountUsd?: BigNumber
 ): boolean {
   const { chainId: hubChainId } = hubPoolClient;
   const originChainIsCctpEnabled =
@@ -101,7 +104,11 @@ export function repaymentChainCanBeQuicklyRebalanced(
   }
   try {
     const l1Token = getInventoryEquivalentL1TokenAddress(repaymentToken, repaymentChainId, hubChainId);
-    return hasBinanceRoute(repaymentChainId, l1Token) && binanceIsOperational(repaymentChainId, l1Token);
+    return (
+      hasBinanceRoute(repaymentChainId, l1Token) &&
+      isDefined(binanceClient) &&
+      binanceClient.canAccommodate(amountUsd ?? bnZero, repaymentChainId, l1Token)
+    );
   } catch {
     return false;
   }
