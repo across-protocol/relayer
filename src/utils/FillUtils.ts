@@ -80,13 +80,13 @@ export function depositForcesOriginChainRepayment(
 
 /**
  * @notice Returns true if after filling this deposit, the repayment can be quickly rebalanced to a different chain.
- * @dev This function can be used by the InventoryClient and Relayer to help determine whether a deposit should
- * be filled or ignored given current inventory allocation levels.
+ * @dev `binanceIsOperational` gates the Binance branch on live drainability. Default is a no-op true.
  */
 export function repaymentChainCanBeQuicklyRebalanced(
   repaymentChainId: number,
   repaymentToken: Address,
-  hubPoolClient: HubPoolClient
+  hubPoolClient: HubPoolClient,
+  binanceIsOperational: (chainId: number, l1Token: Address) => boolean = () => true
 ): boolean {
   const { chainId: hubChainId } = hubPoolClient;
   const originChainIsCctpEnabled =
@@ -96,17 +96,12 @@ export function repaymentChainCanBeQuicklyRebalanced(
     sdkUtils.chainIsOFTEnabled(repaymentChainId) &&
     compareAddressesSimple(TOKEN_SYMBOLS_MAP.USDT.addresses[repaymentChainId], repaymentToken.toNative()) &&
     repaymentChainId !== CHAIN_IDs.HYPEREVM; // OFT withdrawals from HyperEVM take ~12 hours.
-  // Repayments on Mainnet can be quickly rebalanced via canonical bridges out of L1.
   if (originChainIsCctpEnabled || originChainIsOFTEnabled || repaymentChainId === hubChainId) {
     return true;
   }
-  // If Binance offers a withdrawal route for this (chain, token), inventory repaid on this chain can be
-  // moved off via Binance in place of the canonical slow-withdrawal bridge. This naturally covers BSC
-  // (whose canonical L2 bridge is Binance for every token) as well as per-token Binance routes on
-  // slow-withdrawal chains like Arbitrum, Optimism, and Base.
   try {
     const l1Token = getInventoryEquivalentL1TokenAddress(repaymentToken, repaymentChainId, hubChainId);
-    return hasBinanceRoute(repaymentChainId, l1Token);
+    return hasBinanceRoute(repaymentChainId, l1Token) && binanceIsOperational(repaymentChainId, l1Token);
   } catch {
     return false;
   }

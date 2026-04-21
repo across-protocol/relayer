@@ -1,8 +1,4 @@
-import Binance, {
-  DepositHistoryResponse,
-  WithdrawHistoryResponse,
-  type Binance as BinanceApi,
-} from "binance-api-node";
+import Binance, { DepositHistoryResponse, WithdrawHistoryResponse, type Binance as BinanceApi } from "binance-api-node";
 export type { BinanceApi };
 import minimist from "minimist";
 import { getGckmsConfig, retrieveGckmsKeys, isDefined, assert, delay, CHAIN_IDs, getRedisCache, truncate } from "./";

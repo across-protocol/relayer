@@ -16,7 +16,7 @@ import {
   randomAddress,
 } from "./utils";
 
-import { ConfigStoreClient, InventoryClient } from "../src/clients"; // Tested
+import { BinanceClient, ConfigStoreClient, InventoryClient } from "../src/clients"; // Tested
 import { CrossChainTransferClient } from "../src/clients/bridges";
 import { Deposit, InventoryConfig, SwapRoute } from "../src/interfaces";
 import {
@@ -60,6 +60,19 @@ describe("InventoryClient: Refund chain selection", async function () {
   });
   const mainnetWeth = TOKEN_SYMBOLS_MAP.WETH.addresses[MAINNET];
   const mainnetUsdc = TOKEN_SYMBOLS_MAP.USDC.addresses[MAINNET];
+
+  // Minimal in-memory stub that implements the narrow BinanceClient surface the InventoryClient
+  // consults during refund-chain selection. Tests swap it onto `inventoryClient.binanceClient`
+  // to simulate "Binance has live capacity" without constructing a real client.
+  const makeFakeBinanceClient = (opts: { isOperational?: boolean; canAccommodate?: boolean } = {}) =>
+    ({
+      isOperational: () => opts.isOperational ?? true,
+      canAccommodate: () => opts.canAccommodate ?? true,
+      refresh: async () => undefined,
+    }) as unknown as BinanceClient;
+  const setBinanceClient = (client: InventoryClient, stub: BinanceClient | undefined): void => {
+    (client as unknown as { binanceClient: BinanceClient | undefined }).binanceClient = stub;
+  };
 
   let hubPoolClient: MockHubPoolClient, adapterManager: MockAdapterManager, tokenClient: MockTokenClient;
   let mockRebalancerClient: MockRebalancerClient;
@@ -617,10 +630,11 @@ describe("InventoryClient: Refund chain selection", async function () {
       expect(refundChains.length).to.equal(0);
     });
     it("returns origin chain even if it is over allocated if origin chain is a quick rebalance source", async function () {
-      // BSC is only treated as quickly rebalanced when the operator has complete Binance credentials
-      // configured, since its sole exit path is via the Binance CEX bridge.
+      // BSC is only treated as quickly rebalanced with credentials AND a live BinanceClient that reports
+      // operational capacity — canAccommodate is kept false so we isolate the isOperational-driven path.
       process.env.BINANCE_API_KEY = "test-key";
       process.env.BINANCE_HMAC_KEY = "test-secret";
+      setBinanceClient(inventoryClient, makeFakeBinanceClient({ canAccommodate: false }));
       try {
         sampleDepositData.originChainId = BSC;
         sampleDepositData.inputToken = toAddressType(l2TokensForWeth[BSC], BSC);
@@ -633,14 +647,16 @@ describe("InventoryClient: Refund chain selection", async function () {
       } finally {
         delete process.env.BINANCE_API_KEY;
         delete process.env.BINANCE_HMAC_KEY;
+        setBinanceClient(inventoryClient, undefined);
       }
     });
     it("treats overallocated origin as quick-rebalance when a per-token Binance route exists", async function () {
-      // Arbitrum WETH has a Binance route via L2BinanceCEXNativeBridge in CUSTOM_L2_BRIDGE. When the
-      // operator has complete Binance credentials, this makes Arbitrum quickly rebalanced for WETH even
+      // Arbitrum WETH has a Binance route via L2BinanceCEXNativeBridge; with credentials AND a live
+      // BinanceClient reporting operational capacity, Arbitrum is quickly rebalanced for WETH even
       // though it would otherwise be a 7-day slow-withdrawal chain.
       process.env.BINANCE_API_KEY = "test-key";
       process.env.BINANCE_HMAC_KEY = "test-secret";
+      setBinanceClient(inventoryClient, makeFakeBinanceClient({ canAccommodate: false }));
       try {
         sampleDepositData.originChainId = ARBITRUM;
         sampleDepositData.inputToken = toAddressType(l2TokensForWeth[ARBITRUM], ARBITRUM);
@@ -650,6 +666,7 @@ describe("InventoryClient: Refund chain selection", async function () {
       } finally {
         delete process.env.BINANCE_API_KEY;
         delete process.env.BINANCE_HMAC_KEY;
+        setBinanceClient(inventoryClient, undefined);
       }
     });
     it("does not treat Arbitrum WETH as quick-rebalance when only api key is set (missing secret)", async function () {
@@ -989,6 +1006,59 @@ describe("InventoryClient: Refund chain selection", async function () {
       expect(depositForcesOriginChainRepayment(sampleDepositData, hubPoolClient)).to.be.true;
       const refundChains = await inventoryClient.determineRefundChainId(sampleDepositData);
       expect(refundChains).to.deep.equal([sampleDepositData.originChainId]);
+    });
+  });
+
+  describe("BinanceClient canAccommodate short-circuit", function () {
+    beforeEach(async function () {
+      const inputAmount = toBNWei(1);
+      // Arbitrum WETH has a Binance route; when canAccommodate returns true, origin should be
+      // preferred regardless of allocation.
+      process.env.BINANCE_API_KEY = "test-key";
+      process.env.BINANCE_HMAC_KEY = "test-secret";
+      sampleDepositData = {
+        depositId: bnZero,
+        fromLiteChain: false,
+        toLiteChain: false,
+        originChainId: ARBITRUM,
+        destinationChainId: OPTIMISM,
+        depositor: toAddressType(owner.address, MAINNET),
+        recipient: toAddressType(owner.address, MAINNET),
+        inputToken: toAddressType(l2TokensForWeth[ARBITRUM], ARBITRUM),
+        inputAmount,
+        outputToken: toAddressType(l2TokensForWeth[OPTIMISM], OPTIMISM),
+        outputAmount: inputAmount,
+        message: "0x",
+        messageHash: "0x",
+        quoteTimestamp: hubPoolClient.currentTime!,
+        fillDeadline: 0,
+        exclusivityDeadline: 0,
+        exclusiveRelayer: toAddressType(ZERO_ADDRESS, MAINNET),
+      };
+    });
+    afterEach(function () {
+      delete process.env.BINANCE_API_KEY;
+      delete process.env.BINANCE_HMAC_KEY;
+      setBinanceClient(inventoryClient, undefined);
+    });
+
+    it("returns only origin chain when canAccommodate is true, regardless of allocation", async function () {
+      setBinanceClient(inventoryClient, makeFakeBinanceClient({ canAccommodate: true }));
+      tokenClient.setTokenData(ARBITRUM, toAddressType(l2TokensForWeth[ARBITRUM], ARBITRUM), toWei(100));
+      tokenClient.setTokenData(OPTIMISM, toAddressType(l2TokensForWeth[OPTIMISM], OPTIMISM), toWei(0));
+      expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.deep.equal([ARBITRUM]);
+    });
+
+    it("does not short-circuit when canAccommodate is false", async function () {
+      setBinanceClient(inventoryClient, makeFakeBinanceClient({ canAccommodate: false }));
+      tokenClient.setTokenData(ARBITRUM, toAddressType(l2TokensForWeth[ARBITRUM], ARBITRUM), toWei(100));
+      expect((await inventoryClient.determineRefundChainId(sampleDepositData))[0]).to.not.equal(ARBITRUM);
+    });
+
+    it("does not short-circuit when no BinanceClient is wired", async function () {
+      // Default state: no BinanceClient attached → canAccommodate is effectively false.
+      tokenClient.setTokenData(ARBITRUM, toAddressType(l2TokensForWeth[ARBITRUM], ARBITRUM), toWei(100));
+      expect((await inventoryClient.determineRefundChainId(sampleDepositData))[0]).to.not.equal(ARBITRUM);
     });
   });
 

@@ -39,6 +39,7 @@ import {
   getLatestRunningBalances,
   getInventoryBalanceContributorTokens,
 } from "../utils";
+import { BinanceClient } from "./BinanceClient";
 import { BundleDataApproxClient, BundleDataState } from "./BundleDataApproxClient";
 import { HubPoolClient, TokenClient, TransactionClient } from ".";
 import { Deposit, TokenInfo } from "../interfaces";
@@ -83,6 +84,14 @@ export class InventoryClient {
   private pendingL2Withdrawals: { [l1Token: string]: { [chainId: number]: BigNumber } } = {};
   private pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
   private transactionClient: TransactionClient;
+  // Reserves CEX-withdrawal headroom for concurrent fills against the same stale quota snapshot.
+  // Overridable via RELAYER_CEX_REBALANCE_BUFFER (default 3x).
+  private readonly cexRebalanceBuffer: BigNumber;
+
+  // Arrow field so it can be passed as a callback without losing `this`.
+  private readonly binanceCapacityCheck = (chainId: number, l1Token: Address): boolean => {
+    return this.binanceClient?.isOperational(chainId, l1Token) ?? false;
+  };
 
   constructor(
     readonly relayer: EvmAddress,
@@ -96,11 +105,14 @@ export class InventoryClient {
     readonly rebalancerClient: RebalancerClient,
     readonly simMode = false,
     readonly prioritizeLpUtilization = true,
-    readonly l1TokensOverride: string[] = []
+    readonly l1TokensOverride: string[] = [],
+    readonly binanceClient?: BinanceClient
   ) {
     this.transactionClient = new TransactionClient(logger);
     this.inventoryConfig = inventoryConfig;
     this.scalar = sdkUtils.fixedPointAdjustment;
+    const rawBuffer = Number(process.env.RELAYER_CEX_REBALANCE_BUFFER);
+    this.cexRebalanceBuffer = toBNWei(Number.isFinite(rawBuffer) && rawBuffer > 0 ? rawBuffer : 3);
     this.formatWei = createFormatFunction(2, 4, false, 18);
     this.profiler = new Profiler({
       logger: this.logger,
@@ -673,7 +685,10 @@ export class InventoryClient {
     // If the deposit forces origin chain repayment but the origin chain is one we can easily rebalance inventory from,
     // then don't ignore this deposit based on perceived over-allocation. For example, the hub chain and chains connected
     // to the user's Binance API are easy to move inventory from so we should never skip filling these deposits.
-    if (forceOriginRepayment && repaymentChainCanBeQuicklyRebalanced(originChainId, inputToken, this.hubPoolClient)) {
+    if (
+      forceOriginRepayment &&
+      repaymentChainCanBeQuicklyRebalanced(originChainId, inputToken, this.hubPoolClient, this.binanceCapacityCheck)
+    ) {
       return [originChainId];
     }
 
@@ -699,6 +714,14 @@ export class InventoryClient {
     const { decimals: l1TokenDecimals } = this.getTokenInfo(l1Token, this.hubPoolClient.chainId);
     const { decimals: inputTokenDecimals } = this.getTokenInfo(inputToken, originChainId);
     const inputAmountInL1TokenDecimals = sdkUtils.ConvertDecimals(inputTokenDecimals, l1TokenDecimals)(inputAmount);
+
+    // If Binance can drain origin and the remaining daily quota covers this fill with the
+    // configured buffer, prefer origin repayment regardless of allocation.
+    // Inflate the fill so concurrent decisions against the same stale quota don't overdraw.
+    const bufferedAmount = inputAmountInL1TokenDecimals.mul(this.cexRebalanceBuffer).div(fixedPointAdjustment);
+    if (this.binanceClient?.canAccommodate(bufferedAmount, l1TokenDecimals, originChainId, l1Token)) {
+      return [originChainId];
+    }
 
     // Consider any upcoming refunds.
     const totalRefundsPerChain: { [chainId: number]: BigNumber } = {};
@@ -737,7 +760,13 @@ export class InventoryClient {
     // we should take repayment away from the lite chain where possible.
     // We also want to prioritize taking repayment on the origin chain if it is a quick rebalance source.
     if (
-      (deposit.toLiteChain || repaymentChainCanBeQuicklyRebalanced(originChainId, inputToken, this.hubPoolClient)) &&
+      (deposit.toLiteChain ||
+        repaymentChainCanBeQuicklyRebalanced(
+          originChainId,
+          inputToken,
+          this.hubPoolClient,
+          this.binanceCapacityCheck
+        )) &&
       !chainsToEvaluate.includes(originChainId) &&
       this._l1TokenEnabledForChain(l1Token, Number(originChainId))
     ) {
@@ -882,7 +911,7 @@ export class InventoryClient {
     // Conditionally add the origin chain as a fallback option if the relayer has a fast rebalance route.
     if (
       !eligibleRefundChains.includes(originChainId) &&
-      repaymentChainCanBeQuicklyRebalanced(originChainId, inputToken, this.hubPoolClient)
+      repaymentChainCanBeQuicklyRebalanced(originChainId, inputToken, this.hubPoolClient, this.binanceCapacityCheck)
     ) {
       eligibleRefundChains.push(originChainId);
     }
@@ -1787,6 +1816,8 @@ export class InventoryClient {
         })),
       });
     }
+
+    await this.binanceClient?.refresh(this.getL1Tokens(), this.getEnabledChains());
   }
 
   isInventoryManagementEnabled(): boolean {
@@ -1836,7 +1867,12 @@ export class InventoryClient {
         return false;
       }
       const repaymentToken = this.hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, repaymentChainId);
-      return !repaymentChainCanBeQuicklyRebalanced(repaymentChainId, repaymentToken, hubPoolClient);
+      return !repaymentChainCanBeQuicklyRebalanced(
+        repaymentChainId,
+        repaymentToken,
+        hubPoolClient,
+        this.binanceCapacityCheck
+      );
     });
   }
 
