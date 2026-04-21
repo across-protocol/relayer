@@ -260,24 +260,41 @@ export class Refiller {
         const nativeSymbolForChain = getNativeTokenSymbol(chainId);
         // To send a raw transaction, we need to create a fake Contract instance at the recipient address and
         // set the method param to be an empty string.
-        const sendRawTransactionContract = new Contract(
-          account.toEvmAddress(),
-          [],
-          this.baseSigner.connect(l2Provider)
-        );
-        const txn = await (
-          await submitTransaction(
-            {
-              contract: sendRawTransactionContract,
-              method: "",
-              args: [],
-              value: deficit,
-              ensureConfirmation: true,
-              chainId,
-            },
-            this.transactionClient
-          )
-        ).wait();
+        let txn;
+        if (chainHasNativeToken(chainId)) {
+          const sendRawTransactionContract = new Contract(
+            account.toEvmAddress(),
+            [],
+            this.baseSigner.connect(l2Provider)
+          );
+          txn = await (
+            await submitTransaction(
+              {
+                contract: sendRawTransactionContract,
+                method: "",
+                args: [],
+                value: deficit,
+                ensureConfirmation: true,
+                chainId,
+              },
+              this.transactionClient
+            )
+          ).wait();
+        } else {
+          const sendTokenContract = new Contract(token.toEvmAddress(), ERC20_ABI, this.baseSigner.connect(l2Provider));
+          txn = await (
+            await submitTransaction(
+              {
+                contract: sendTokenContract,
+                method: "transfer",
+                args: [account.toEvmAddress(), deficit],
+                ensureConfirmation: true,
+                chainId,
+              },
+              this.transactionClient
+            )
+          ).wait();
+        }
         this.logger.info({
           at: "Refiller#refillBalances",
           message: `Reloaded ${formatUnits(deficit, decimals)} ${nativeSymbolForChain} for ${account} from ${

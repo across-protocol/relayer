@@ -1073,7 +1073,14 @@ interface SwapRouteConfig {
 }
 
 const generateSwapRoutes = (): { [chainId: string]: SwapRouteConfig } => {
-  const swapChains = [CHAIN_IDs.BSC, CHAIN_IDs.HYPEREVM, CHAIN_IDs.MONAD, CHAIN_IDs.POLYGON, CHAIN_IDs.PLASMA];
+  const swapChains = [
+    CHAIN_IDs.BSC,
+    CHAIN_IDs.HYPEREVM,
+    CHAIN_IDs.MONAD,
+    CHAIN_IDs.POLYGON,
+    CHAIN_IDs.PLASMA,
+    CHAIN_IDs.TEMPO,
+  ];
 
   // Stable defaults that are a good fit for most chains.
   // Arbitrum WETH is selected because the relayer receives bridge fee refunds from the Arbitrum canonical bridge.
@@ -1088,6 +1095,10 @@ const generateSwapRoutes = (): { [chainId: string]: SwapRouteConfig } => {
   const overrides: { [chainId: number]: Partial<typeof defaults> } = {
     [CHAIN_IDs.HYPEREVM]: { inputTokenSymbol: "USDC" },
     [CHAIN_IDs.PLASMA]: { inputTokenSymbol: "USDT" },
+    [CHAIN_IDs.TEMPO]: {
+      inputTokenSymbol: "USDC",
+      outputToken: EvmAddress.from(CONTRACT_ADDRESSES[CHAIN_IDs.TEMPO].nativeToken.address),
+    },
   };
 
   return Object.fromEntries(

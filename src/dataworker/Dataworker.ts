@@ -762,7 +762,8 @@ export class Dataworker {
             bundleBlockRanges: bundleBlockRangeMap,
           },
           this.logger,
-          `bundles-${partialArweaveDataKey}`
+          `bundles-${partialArweaveDataKey}`,
+          this.clients.arweaveTopicCache
         ),
         persistDataToArweave(
           this.clients.arweaveClient,
@@ -795,7 +796,8 @@ export class Dataworker {
             slowRelayRoot: expectedTrees.slowRelayTree.tree.getHexRoot(),
           },
           this.logger,
-          `merkletree-${partialArweaveDataKey}`
+          `merkletree-${partialArweaveDataKey}`,
+          this.clients.arweaveTopicCache
         ),
       ]);
     }
