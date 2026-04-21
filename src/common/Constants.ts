@@ -1088,6 +1088,10 @@ const generateSwapRoutes = (): { [chainId: string]: SwapRouteConfig } => {
   const overrides: { [chainId: number]: Partial<typeof defaults> } = {
     [CHAIN_IDs.HYPEREVM]: { inputTokenSymbol: "USDC" },
     [CHAIN_IDs.PLASMA]: { inputTokenSymbol: "USDT" },
+    [CHAIN_IDs.TEMPO]: {
+      inputTokenSymbol: "USDC",
+      outputToken: EvmAddress.from(CONTRACT_ADDRESSES[CHAIN_IDs.TEMPO].nativeToken.address),
+    },
   };
 
   return Object.fromEntries(
