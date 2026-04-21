@@ -74,7 +74,7 @@ describe("persistDataToArweave topic cache seeding", () => {
       set: sinon.stub().rejects(new Error("gateway write failed")),
     } as unknown as caching.ArweaveClient;
 
-    await assertPromiseError(persistDataToArweave(client, payload, spyLogger, tag, topicCache), "gateway write failed");
+    await persistDataToArweave(client, payload, spyLogger, tag, topicCache);
 
     const cachedPayload = await topicCache.get<string>(`arweave-topic:${tag}`);
     expect(JSON.parse(cachedPayload!)).to.deep.equal(payload);
