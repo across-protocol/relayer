@@ -2,6 +2,7 @@ import { arch, utils as sdkUtils } from "@across-protocol/sdk";
 import winston from "winston";
 import {
   AcrossApiClient,
+  BinanceClient,
   EVMSpokePoolClient,
   SVMSpokePoolClient,
   HubPoolClient,
@@ -22,6 +23,7 @@ import {
 } from "../common";
 import { SpokePoolClientsByChain } from "../interfaces";
 import {
+  binanceCredentialsConfigured,
   chainIsEvm,
   getBlockForTimestamp,
   getCurrentTime,
@@ -207,6 +209,12 @@ export async function constructRelayerClients(
 
   const rebalancerClient = await constructReadOnlyRebalancerClient(logger, baseSigner);
 
+  // Wire a BinanceClient only when credentials are configured; absent means the InventoryClient
+  // gates all capacity checks to false and falls through to the legacy allocation logic.
+  const binanceClient = binanceCredentialsConfigured()
+    ? await BinanceClient.create({ logger, url: process.env.BINANCE_API_BASE })
+    : undefined;
+
   const inventoryClient = new InventoryClient(
     signerAddr,
     logger,
@@ -219,7 +227,8 @@ export async function constructRelayerClients(
     rebalancerClient,
     !config.sendingTransactionsEnabled,
     undefined,
-    config.l1TokensOverride
+    config.l1TokensOverride,
+    binanceClient
   );
 
   const tryMulticallClient = new TryMulticallClient(logger, multiCallerClient.chunkSize, multiCallerClient.baseSigner);
