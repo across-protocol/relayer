@@ -689,13 +689,33 @@ export class InventoryClient {
       );
     }
 
-    // @dev getL1TokenAddress() should never return undefined because validateOutputToken() filters
-    // out deposits whose input token isn't mapped to an L1 token.
+    // Check if origin chain repayment is forced by protocol rules or config overrides
+    const forceOriginRepayment = this.shouldForceOriginRepayment(deposit);
+
+    // If the deposit forces origin chain repayment but the origin chain is one we can easily rebalance inventory from,
+    // then don't ignore this deposit based on perceived over-allocation. For example, the hub chain and chains connected
+    // to the user's Binance API are easy to move inventory from so we should never skip filling these deposits.
+    if (forceOriginRepayment && this.isQuicklyRebalanced(originChainId, inputToken)) {
+      return [originChainId];
+    }
+
+    // @dev This getL1TokenAddress() should never return undefined because we call `validateOutputToken()` first, which would return
+    // false if the input token and origin chain weren't mapped to an L1 token.
     const l1Token = this.getL1TokenAddress(inputToken, originChainId);
     if (!isDefined(l1Token)) {
       throw new Error(
         `InventoryClient#determineRefundChainId: No L1 token found for input token ${inputToken} on origin chain ${originChainId}`
       );
+    }
+
+    // If we have defined an override repayment chain in inventory config and we do not need to take origin chain repayment,
+    // then short-circuit this check.
+    // Priority: repaymentChainOverridePerChain[originChainId] > repaymentChainOverride
+    if (!forceOriginRepayment) {
+      const chainOverride = this.getRepaymentChainOverride(originChainId);
+      if (isDefined(chainOverride)) {
+        return [chainOverride];
+      }
     }
 
     // Raw fill USD for the Binance capacity check below. `undefined` if no price cached.
@@ -707,21 +727,6 @@ export class InventoryClient {
     const fillUsd = isDefined(priceUsd)
       ? inputAmountInL1TokenDecimals.mul(priceUsd).div(BigNumber.from(10).pow(l1TokenDecimals))
       : undefined;
-
-    const forceOriginRepayment = this.shouldForceOriginRepayment(deposit);
-
-    // If the deposit forces origin repayment and origin is a quick-rebalance source, take origin.
-    if (forceOriginRepayment && this.isQuicklyRebalanced(originChainId, inputToken, fillUsd)) {
-      return [originChainId];
-    }
-
-    // Priority: repaymentChainOverridePerChain[originChainId] > repaymentChainOverride
-    if (!forceOriginRepayment) {
-      const chainOverride = this.getRepaymentChainOverride(originChainId);
-      if (isDefined(chainOverride)) {
-        return [chainOverride];
-      }
-    }
 
     // Short-circuit to origin when it's a fast-rebalance source and enabled for this token —
     // allocation state should not derail an origin repayment we can quickly drain.
