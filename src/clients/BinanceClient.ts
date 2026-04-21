@@ -68,9 +68,9 @@ export class BinanceClient {
   // Zero-amount queries return false — there's no such thing as a zero-value withdrawal.
   canWithdraw(amountUsd: BigNumber, chainId: number, l1Token: Address): boolean {
     return (
-      amountUsd.gt(bnZero) &&
       hasBinanceRoute(chainId, l1Token) &&
       isDefined(this.remainingQuotaUsd) &&
+      amountUsd.gt(bnZero) &&
       amountUsd.lte(this.remainingQuotaUsd)
     );
   }
