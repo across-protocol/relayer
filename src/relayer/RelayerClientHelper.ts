@@ -209,11 +209,16 @@ export async function constructRelayerClients(
 
   const rebalancerClient = await constructReadOnlyRebalancerClient(logger, baseSigner);
 
-  // Wire a BinanceClient only when credentials are configured; absent means the InventoryClient
-  // gates all capacity checks to false and falls through to the legacy allocation logic.
-  const binanceClient = binanceCredentialsConfigured()
-    ? await BinanceClient.create({ logger, url: process.env.BINANCE_API_BASE })
-    : undefined;
+  // Degrade to undefined on construction failure (e.g. GCKMS) so startup isn't blocked.
+  let binanceClient: BinanceClient | undefined;
+  try {
+    binanceClient = binanceCredentialsConfigured()
+      ? await BinanceClient.create({ logger, url: process.env.BINANCE_API_BASE })
+      : undefined;
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err);
+    logger.warn({ at: "RelayerClientHelper", message: "BinanceClient construction failed", error });
+  }
 
   const inventoryClient = new InventoryClient(
     signerAddr,
