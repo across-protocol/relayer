@@ -33,7 +33,8 @@ import {
   EvmAddress,
   Address,
   toAddressType,
-  repaymentChainCanBeQuicklyRebalanced,
+  CHAIN_IDs,
+  compareAddressesSimple,
   forEachAsync,
   max,
   getLatestRunningBalances,
@@ -44,7 +45,7 @@ import { HubPoolClient, TokenClient, TransactionClient } from ".";
 import { Deposit, TokenInfo } from "../interfaces";
 import { InventoryConfig, isAliasConfig, TokenBalanceConfig } from "../interfaces/InventoryManagement";
 import lodash from "lodash";
-import { SLOW_WITHDRAWAL_CHAINS } from "../common";
+import { hasBinanceRoute, SLOW_WITHDRAWAL_CHAINS } from "../common";
 import { AdapterManager, CrossChainTransferClient } from "./bridges";
 import { TransferTokenParams } from "../adapter/utils";
 import { RebalancerClient } from "../rebalancer/utils/interfaces";
@@ -673,7 +674,7 @@ export class InventoryClient {
     // If the deposit forces origin chain repayment but the origin chain is one we can easily rebalance inventory from,
     // then don't ignore this deposit based on perceived over-allocation. For example, the hub chain and chains connected
     // to the user's Binance API are easy to move inventory from so we should never skip filling these deposits.
-    if (forceOriginRepayment && repaymentChainCanBeQuicklyRebalanced(originChainId, inputToken, this.hubPoolClient)) {
+    if (forceOriginRepayment && this.isQuicklyRebalanced(originChainId, inputToken)) {
       return [originChainId];
     }
 
@@ -737,7 +738,7 @@ export class InventoryClient {
     // we should take repayment away from the lite chain where possible.
     // We also want to prioritize taking repayment on the origin chain if it is a quick rebalance source.
     if (
-      (deposit.toLiteChain || repaymentChainCanBeQuicklyRebalanced(originChainId, inputToken, this.hubPoolClient)) &&
+      (deposit.toLiteChain || this.isQuicklyRebalanced(originChainId, inputToken)) &&
       !chainsToEvaluate.includes(originChainId) &&
       this._l1TokenEnabledForChain(l1Token, Number(originChainId))
     ) {
@@ -882,7 +883,7 @@ export class InventoryClient {
     // Conditionally add the origin chain as a fallback option if the relayer has a fast rebalance route.
     if (
       !eligibleRefundChains.includes(originChainId) &&
-      repaymentChainCanBeQuicklyRebalanced(originChainId, inputToken, this.hubPoolClient)
+      this.isQuicklyRebalanced(originChainId, inputToken)
     ) {
       eligibleRefundChains.push(originChainId);
     }
@@ -1827,7 +1828,6 @@ export class InventoryClient {
    * @returns list of chains for l1Token that have a token config enabled and have pool rebalance routes set.
    */
   getSlowWithdrawalRepaymentChains(l1Token: EvmAddress): number[] {
-    const { hubPoolClient } = this;
     return SLOW_WITHDRAWAL_CHAINS.filter((repaymentChainId) => {
       if (
         !this._l1TokenEnabledForChain(l1Token, repaymentChainId) ||
@@ -1836,8 +1836,38 @@ export class InventoryClient {
         return false;
       }
       const repaymentToken = this.hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, repaymentChainId);
-      return !repaymentChainCanBeQuicklyRebalanced(repaymentChainId, repaymentToken, hubPoolClient);
+      return !this.isQuicklyRebalanced(repaymentChainId, repaymentToken);
     });
+  }
+
+  /**
+   * @notice Returns true if after filling this deposit, the repayment can be quickly rebalanced to a different chain.
+   * @dev This function can be used by the InventoryClient and Relayer to help determine whether a deposit should
+   * be filled or ignored given current inventory allocation levels.
+   */
+  private isQuicklyRebalanced(repaymentChainId: number, repaymentToken: Address): boolean {
+    const { chainId: hubChainId } = this.hubPoolClient;
+    const originChainIsCctpEnabled =
+      sdkUtils.chainIsCCTPEnabled(repaymentChainId) &&
+      compareAddressesSimple(TOKEN_SYMBOLS_MAP.USDC.addresses[repaymentChainId], repaymentToken.toNative());
+    const originChainIsOFTEnabled =
+      sdkUtils.chainIsOFTEnabled(repaymentChainId) &&
+      compareAddressesSimple(TOKEN_SYMBOLS_MAP.USDT.addresses[repaymentChainId], repaymentToken.toNative()) &&
+      repaymentChainId !== CHAIN_IDs.HYPEREVM; // OFT withdrawals from HyperEVM take ~12 hours.
+    // Repayments on Mainnet can be quickly rebalanced via canonical bridges out of L1.
+    if (originChainIsCctpEnabled || originChainIsOFTEnabled || repaymentChainId === hubChainId) {
+      return true;
+    }
+    // If Binance offers a withdrawal route for this (chain, token), inventory repaid on this chain can be
+    // moved off via Binance in place of the canonical slow-withdrawal bridge. This naturally covers BSC
+    // (whose canonical L2 bridge is Binance for every token) as well as per-token Binance routes on
+    // slow-withdrawal chains like Arbitrum, Optimism, and Base.
+    try {
+      const l1Token = getInventoryEquivalentL1TokenAddress(repaymentToken, repaymentChainId, hubChainId);
+      return hasBinanceRoute(repaymentChainId, l1Token);
+    } catch {
+      return false;
+    }
   }
 
   log(message: string, data?: AnyObject, level: DefaultLogLevels = "debug"): void {
