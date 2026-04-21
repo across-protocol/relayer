@@ -698,23 +698,20 @@ export class InventoryClient {
       );
     }
 
-    // Buffered fill USD for every Binance capacity check below. `undefined` if no price cached.
+    // Raw fill USD for the Binance capacity check below. `undefined` if no price cached.
+    // `isQuicklyRebalanced` applies `cexRebalanceBuffer` internally on the Binance branch only.
     const { decimals: l1TokenDecimals } = this.getTokenInfo(l1Token, this.hubPoolClient.chainId);
     const { decimals: inputTokenDecimals } = this.getTokenInfo(inputToken, originChainId);
     const inputAmountInL1TokenDecimals = sdkUtils.ConvertDecimals(inputTokenDecimals, l1TokenDecimals)(inputAmount);
     const priceUsd = this.l1TokenPricesUsd.get(l1Token.toNative());
-    const bufferedFillUsd = isDefined(priceUsd)
-      ? inputAmountInL1TokenDecimals
-          .mul(priceUsd)
-          .div(BigNumber.from(10).pow(l1TokenDecimals))
-          .mul(this.cexRebalanceBuffer)
-          .div(fixedPointAdjustment)
+    const fillUsd = isDefined(priceUsd)
+      ? inputAmountInL1TokenDecimals.mul(priceUsd).div(BigNumber.from(10).pow(l1TokenDecimals))
       : undefined;
 
     const forceOriginRepayment = this.shouldForceOriginRepayment(deposit);
 
     // If the deposit forces origin repayment and origin is a quick-rebalance source, take origin.
-    if (forceOriginRepayment && this.isQuicklyRebalanced(originChainId, inputToken, bufferedFillUsd)) {
+    if (forceOriginRepayment && this.isQuicklyRebalanced(originChainId, inputToken, fillUsd)) {
       return [originChainId];
     }
 
@@ -730,7 +727,7 @@ export class InventoryClient {
     // allocation state should not derail an origin repayment we can quickly drain.
     if (
       this._l1TokenEnabledForChain(l1Token, originChainId) &&
-      this.isQuicklyRebalanced(originChainId, inputToken, bufferedFillUsd)
+      this.isQuicklyRebalanced(originChainId, inputToken, fillUsd)
     ) {
       return [originChainId];
     }
@@ -772,7 +769,7 @@ export class InventoryClient {
     // we should take repayment away from the lite chain where possible.
     // We also want to prioritize taking repayment on the origin chain if it is a quick rebalance source.
     if (
-      (deposit.toLiteChain || this.isQuicklyRebalanced(originChainId, inputToken, bufferedFillUsd)) &&
+      (deposit.toLiteChain || this.isQuicklyRebalanced(originChainId, inputToken, fillUsd)) &&
       !chainsToEvaluate.includes(originChainId) &&
       this._l1TokenEnabledForChain(l1Token, originChainId)
     ) {
@@ -917,7 +914,7 @@ export class InventoryClient {
     // Conditionally add the origin chain as a fallback option if the relayer has a fast rebalance route.
     if (
       !eligibleRefundChains.includes(originChainId) &&
-      this.isQuicklyRebalanced(originChainId, inputToken, bufferedFillUsd)
+      this.isQuicklyRebalanced(originChainId, inputToken, fillUsd)
     ) {
       eligibleRefundChains.push(originChainId);
     }
@@ -1910,9 +1907,9 @@ export class InventoryClient {
     });
   }
 
-  // True if repayment on `chainId` can be quickly rebalanced off-chain. Pass `amountUsd` to gate
-  // Binance on fill-level quota; omit for a chain-level "any quota" check.
-  private isQuicklyRebalanced(chainId: number, token: Address, amountUsd?: BigNumber): boolean {
+  // True if repayment on `chainId` can be quickly rebalanced off-chain. Pass `fillUsd` to gate
+  // Binance on fill-level quota (buffered by `cexRebalanceBuffer`); omit for a chain-level "any quota" check.
+  private isQuicklyRebalanced(chainId: number, token: Address, fillUsd?: BigNumber): boolean {
     const { chainId: hubChainId } = this.hubPoolClient;
     const chainIsCctpEnabled =
       sdkUtils.chainIsCCTPEnabled(chainId) &&
@@ -1929,7 +1926,10 @@ export class InventoryClient {
     }
     try {
       const l1Token = getInventoryEquivalentL1TokenAddress(token, chainId, hubChainId);
-      return this.binanceClient.canAccommodate(amountUsd ?? bnZero, chainId, l1Token);
+      const bufferedUsd = isDefined(fillUsd)
+        ? fillUsd.mul(this.cexRebalanceBuffer).div(fixedPointAdjustment)
+        : bnZero;
+      return this.binanceClient.canAccommodate(bufferedUsd, chainId, l1Token);
     } catch {
       return false;
     }
