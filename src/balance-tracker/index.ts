@@ -6,6 +6,8 @@ import {
   Signer,
   disconnectRedisClients,
   formatUnits,
+  BigNumber,
+  bnZero,
 } from "../utils";
 import { Monitor } from "../monitor/Monitor";
 import { constructMonitorClients } from "../monitor/MonitorClientHelper";
@@ -15,6 +17,10 @@ config();
 
 let logger: winston.Logger;
 
+// Aggregate a relayer's balances by the L2 token symbol (not the L1 token symbol) so that
+// distinct L2 variants like USDC.e, USDH, WGHO appear as separate columns in the sheet
+// rather than being silently rolled into their L1-equivalent (USDC, LGHO).
+// Upcoming refunds are keyed by L1 token symbol since they are per-L1-token by nature.
 export async function runBalanceTracker(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
   logger = _logger;
   const btConfig = new BalanceTrackerConfig(process.env);
@@ -42,20 +48,51 @@ export async function runBalanceTracker(_logger: winston.Logger, baseSigner: Sig
       const now = new Date().toISOString();
 
       for (const [relayer, perToken] of Object.entries(report)) {
+        // Aggregate by display symbol. For balance rows, display symbol = L2 token symbol
+        // (so USDC.e, USDH, WGHO are separate). For refunds, display symbol = L1 token symbol.
+        const buckets = new Map<
+          string,
+          { current: BigNumber; pending: BigNumber; upcomingRefunds: BigNumber; decimals: number }
+        >();
+
+        const ensureBucket = (symbol: string, decimals: number) => {
+          let b = buckets.get(symbol);
+          if (!b) {
+            b = { current: bnZero, pending: bnZero, upcomingRefunds: bnZero, decimals };
+            buckets.set(symbol, b);
+          }
+          return b;
+        };
+
+        for (const tokenReport of Object.values(perToken)) {
+          const l1Decimals = tokenReport.l1Token.decimals;
+
+          for (const row of tokenReport.rows) {
+            const b = ensureBucket(row.tokenSymbol, l1Decimals);
+            b.current = b.current.add(row.current);
+            b.pending = b.pending.add(row.pending);
+          }
+
+          if (!tokenReport.upcomingRefundsTotal.isZero()) {
+            const b = ensureBucket(tokenReport.l1Token.symbol, l1Decimals);
+            b.upcomingRefunds = b.upcomingRefunds.add(tokenReport.upcomingRefundsTotal);
+          }
+        }
+
         const tokenTotals = new Map<string, number>();
         const tokenBreakdown: Record<string, Record<string, number>> = {};
 
-        for (const [tokenSymbol, tokenReport] of Object.entries(perToken)) {
-          const decimals = tokenReport.l1Token.decimals;
-          if (tokenReport.tokenTotal.isZero()) {
+        for (const [symbol, { current, pending, upcomingRefunds, decimals }] of buckets) {
+          const total = current.add(pending).add(upcomingRefunds);
+          if (total.isZero()) {
             continue;
           }
-          tokenTotals.set(tokenSymbol, Number(formatUnits(tokenReport.tokenTotal, decimals)));
-          tokenBreakdown[tokenSymbol] = {
-            current: Number(formatUnits(tokenReport.currentTotal, decimals)),
-            pending: Number(formatUnits(tokenReport.pendingTotal, decimals)),
-            upcomingRefunds: Number(formatUnits(tokenReport.upcomingRefundsTotal, decimals)),
-            total: Number(formatUnits(tokenReport.tokenTotal, decimals)),
+          tokenTotals.set(symbol, Number(formatUnits(total, decimals)));
+          tokenBreakdown[symbol] = {
+            current: Number(formatUnits(current, decimals)),
+            pending: Number(formatUnits(pending, decimals)),
+            upcomingRefunds: Number(formatUnits(upcomingRefunds, decimals)),
+            total: Number(formatUnits(total, decimals)),
           };
         }
 
