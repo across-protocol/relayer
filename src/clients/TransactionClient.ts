@@ -489,9 +489,6 @@ async function _runTransactionTvm(
   //
   // `wait` must resolve to a real receipt (including `logs`). TronWeb submits the tx; we still
   // have an ethers `Provider`, so mirror JsonRpcProvider: `wait` → `provider.waitForTransaction`.
-  const txHexHash = result.txid.startsWith("0x") ? result.txid : `0x${result.txid}`;
-  const tvmWaitTimeoutMs = Number(process.env.TVM_WAIT_FOR_TRANSACTION_TIMEOUT_MS ?? 0);
-
   return {
     hash: result.txid,
     nonce: 0,
@@ -501,8 +498,10 @@ async function _runTransactionTvm(
     gasLimit: BigNumber.from(feeLimit),
     value,
     data: populatedTransaction.data ?? "0x",
-    wait: (confirmations?: number) =>
-      provider.waitForTransaction(txHexHash, confirmations ?? 1, tvmWaitTimeoutMs > 0 ? tvmWaitTimeoutMs : undefined),
+    wait: (confirmations?: number) => {
+      const txHexHash = result.txid.startsWith("0x") ? result.txid : `0x${result.txid}`;
+      return provider.waitForTransaction(txHexHash, confirmations ?? 1);
+    },
   } as unknown as TransactionResponse;
 }
 
