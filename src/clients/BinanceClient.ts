@@ -15,16 +15,11 @@ const WithdrawalQuotaSS = type({
 });
 
 /**
- * Wrapper around the `binance-api-node` client. Encapsulates Binance API construction
- * (including GCKMS secret resolution) and endpoint helpers not exposed by the upstream
- * library. Constructed via the async `create()` factory since GCKMS retrieval is async.
- *
- * The module-level `getBinanceApiClient()` in `BinanceUtils` remains as a legacy entry
- * point for the rebalancer + finalizer, and will be migrated in follow-up work.
+ * Wrapper around `binance-api-node` with GCKMS secret resolution. Constructed via the
+ * async `create()` factory since GCKMS retrieval is async.
  */
 export class BinanceClient {
-  // Memoizes GCKMS retrieval so that concurrent `create()` callers share one key fetch
-  // (mirrors the prior module-level memoization in BinanceUtils).
+  // Memoizes GCKMS retrieval so that concurrent `create()` callers share one key fetch.
   private static binanceSecretKeyPromise: Promise<string | undefined> | undefined = undefined;
 
   private constructor(private readonly api: BinanceApi) {}
@@ -37,8 +32,7 @@ export class BinanceClient {
   }
 
   // Exposes the underlying `binance-api-node` client for callers that still issue
-  // low-level requests (deposit/withdraw/depositHistory). Retained during the transition
-  // away from the module-level `getBinanceApiClient()` factory.
+  // low-level requests (deposit/withdraw/depositHistory).
   rawApi(): BinanceApi {
     return this.api;
   }
