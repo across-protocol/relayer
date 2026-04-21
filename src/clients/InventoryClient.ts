@@ -38,6 +38,7 @@ import {
   max,
   getLatestRunningBalances,
   getInventoryBalanceContributorTokens,
+  dedupArray,
 } from "../utils";
 import { BundleDataApproxClient, BundleDataState } from "./BundleDataApproxClient";
 import { HubPoolClient, TokenClient, TransactionClient } from ".";
@@ -693,7 +694,7 @@ export class InventoryClient {
     const inputAmountInL1TokenDecimals = sdkUtils.ConvertDecimals(inputTokenDecimals, l1TokenDecimals)(inputAmount);
     const totalRefundsPerChain: { [chainId: number]: BigNumber } = Object.fromEntries(
       this.chainIdList.map((chainId) => [chainId, this.getUpcomingRefunds(chainId, l1Token, this.relayer)])
-    ) as { [chainId: number]: BigNumber };
+    );
     const destinationTokensAreEquivalent = this.hubPoolClient.areTokensEquivalent(
       inputToken,
       originChainId,
@@ -718,7 +719,7 @@ export class InventoryClient {
 
     const slowWithdrawalCandidateChains = possibleChains
       .filter(
-        (chainId) => slowWithdrawalRepaymentChainSet.has(chainId) && (excessRunningBalancePcts[chainId] ?? bnZero).gt(0)
+        (chainId) => slowWithdrawalRepaymentChainSet.has(chainId) && (excessRunningBalancePcts[chainId] ?? bnZero).gt(bnZero)
       )
       .sort((chainIdx, chainIdy) =>
         bnComparatorDescending(excessRunningBalancePcts[chainIdx], excessRunningBalancePcts[chainIdy])
@@ -730,10 +731,10 @@ export class InventoryClient {
       this._l1TokenEnabledForChain(l1Token, originChainId) && (prioritizeOrigin || originChainId !== hubChainId);
     const canEvaluateDestination =
       this.canTakeDestinationChainRepayment(deposit) && this._l1TokenEnabledForChain(l1Token, destinationChainId);
-    const standardCandidateChains = [...new Set(standardChainOrder)].filter((chainId) =>
+    const standardCandidateChains = [...standardChainOrder].filter((chainId) =>
       chainId === originChainId ? canEvaluateOrigin : canEvaluateDestination
     );
-    const rankedChains = [...new Set([...slowWithdrawalCandidateChains, ...standardCandidateChains])];
+    const rankedChains = dedupArray([...slowWithdrawalCandidateChains, ...standardCandidateChains]);
 
     const eligibleChains: number[] = [];
     // At this point, all ranked chains have defined token configs or are destination chains that can be accepted
