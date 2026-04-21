@@ -37,6 +37,27 @@ import { MockRebalancerClient } from "./mocks/MockRebalancerClient";
 describe("InventoryClient: Refund chain selection", async function () {
   const { MAINNET, OPTIMISM, POLYGON, ARBITRUM, BSC } = CHAIN_IDs;
   const enabledChainIds = [MAINNET, OPTIMISM, POLYGON, ARBITRUM, BSC];
+
+  // hasBinanceRoute() treats (chain, token) as fast-rebalanceable only when complete Binance credentials
+  // (api key + hmac/gckms secret) are configured. These tests assume the default "no Binance credentials"
+  // posture; individual tests that exercise quick-rebalance semantics set them explicitly and restore on
+  // teardown.
+  let _binanceApiKey: string | undefined;
+  let _binanceHmacKey: string | undefined;
+  before(() => {
+    _binanceApiKey = process.env.BINANCE_API_KEY;
+    _binanceHmacKey = process.env.BINANCE_HMAC_KEY;
+    delete process.env.BINANCE_API_KEY;
+    delete process.env.BINANCE_HMAC_KEY;
+  });
+  after(() => {
+    if (_binanceApiKey !== undefined) {
+      process.env.BINANCE_API_KEY = _binanceApiKey;
+    }
+    if (_binanceHmacKey !== undefined) {
+      process.env.BINANCE_HMAC_KEY = _binanceHmacKey;
+    }
+  });
   const mainnetWeth = TOKEN_SYMBOLS_MAP.WETH.addresses[MAINNET];
   const mainnetUsdc = TOKEN_SYMBOLS_MAP.USDC.addresses[MAINNET];
 
@@ -596,14 +617,54 @@ describe("InventoryClient: Refund chain selection", async function () {
       expect(refundChains.length).to.equal(0);
     });
     it("returns origin chain even if it is over allocated if origin chain is a quick rebalance source", async function () {
-      sampleDepositData.originChainId = BSC;
-      sampleDepositData.inputToken = toAddressType(l2TokensForWeth[BSC], BSC);
-      seedMocks({
-        [BSC]: { [mainnetWeth]: toWei(10), [mainnetUsdc]: toMegaWei(1000) },
-      });
-      tokenClient.setTokenData(BSC, toAddressType(l2TokensForWeth[BSC], BSC), toWei(10));
-      const refundChains = await inventoryClient.determineRefundChainId(sampleDepositData);
-      expect(refundChains).to.deep.equal([BSC]);
+      // BSC is only treated as quickly rebalanced when the operator has complete Binance credentials
+      // configured, since its sole exit path is via the Binance CEX bridge.
+      process.env.BINANCE_API_KEY = "test-key";
+      process.env.BINANCE_HMAC_KEY = "test-secret";
+      try {
+        sampleDepositData.originChainId = BSC;
+        sampleDepositData.inputToken = toAddressType(l2TokensForWeth[BSC], BSC);
+        seedMocks({
+          [BSC]: { [mainnetWeth]: toWei(10), [mainnetUsdc]: toMegaWei(1000) },
+        });
+        tokenClient.setTokenData(BSC, toAddressType(l2TokensForWeth[BSC], BSC), toWei(10));
+        const refundChains = await inventoryClient.determineRefundChainId(sampleDepositData);
+        expect(refundChains).to.deep.equal([BSC]);
+      } finally {
+        delete process.env.BINANCE_API_KEY;
+        delete process.env.BINANCE_HMAC_KEY;
+      }
+    });
+    it("treats overallocated origin as quick-rebalance when a per-token Binance route exists", async function () {
+      // Arbitrum WETH has a Binance route via L2BinanceCEXNativeBridge in CUSTOM_L2_BRIDGE. When the
+      // operator has complete Binance credentials, this makes Arbitrum quickly rebalanced for WETH even
+      // though it would otherwise be a 7-day slow-withdrawal chain.
+      process.env.BINANCE_API_KEY = "test-key";
+      process.env.BINANCE_HMAC_KEY = "test-secret";
+      try {
+        sampleDepositData.originChainId = ARBITRUM;
+        sampleDepositData.inputToken = toAddressType(l2TokensForWeth[ARBITRUM], ARBITRUM);
+        tokenClient.setTokenData(ARBITRUM, toAddressType(l2TokensForWeth[ARBITRUM], ARBITRUM), toWei(100));
+        const refundChains = await inventoryClient.determineRefundChainId(sampleDepositData);
+        expect(refundChains).to.deep.equal([ARBITRUM]);
+      } finally {
+        delete process.env.BINANCE_API_KEY;
+        delete process.env.BINANCE_HMAC_KEY;
+      }
+    });
+    it("does not treat Arbitrum WETH as quick-rebalance when only api key is set (missing secret)", async function () {
+      // With only BINANCE_API_KEY and no HMAC secret or GCKMS CLI arg, getBinanceApiClient() would fail
+      // at runtime. hasBinanceRoute() must mirror that by refusing to claim a Binance route.
+      process.env.BINANCE_API_KEY = "test-key";
+      try {
+        sampleDepositData.originChainId = ARBITRUM;
+        sampleDepositData.inputToken = toAddressType(l2TokensForWeth[ARBITRUM], ARBITRUM);
+        tokenClient.setTokenData(ARBITRUM, toAddressType(l2TokensForWeth[ARBITRUM], ARBITRUM), toWei(100));
+        const refundChains = await inventoryClient.determineRefundChainId(sampleDepositData);
+        expect(refundChains.length).to.equal(0);
+      } finally {
+        delete process.env.BINANCE_API_KEY;
+      }
     });
   });
 

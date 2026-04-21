@@ -12,10 +12,10 @@
   resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.109.tgz#3a7e9f7581405cd09dbbdc480800d4a775051c46"
   integrity sha512-Mt0wYTzMPbfNSEWZFuGdMTn8N4z9+yNWJ0HDFaZwVlaiW8m9F1uK5SWHsc6TAZURTvrC2T98nIDGm+ibPgwEYA==
 
-"@across-protocol/contracts@5.0.6":
-  version "5.0.6"
-  resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-5.0.6.tgz#5aa1101201ac581bbf96ce29712c2da42cf96675"
-  integrity sha512-JS68PqktXYLQlBDminUXmuVPcXh6tKHMDS8fQbrcObL8/tWOxyY6dFgcydBUWi9WEkocvKjQ9KpJIbsfx7zs7w==
+"@across-protocol/contracts@5.0.7":
+  version "5.0.7"
+  resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-5.0.7.tgz#158b2d3bd0f765f82349d9017c5eba133f0c6839"
+  integrity sha512-6/+kmuzFqm0ajSemzD4GvVceWVGBCuiSfbJxhxrnhy3zuhCfVaonAqMRS09G7I36mc7uXkx4hA1BjbB5ehrYnQ==
   dependencies:
     "@across-protocol/constants" "^3.1.107"
     "@coral-xyz/anchor" "^0.31.1"
@@ -34,13 +34,13 @@
     bs58 "^6.0.0"
     ethers "5.7.2"
 
-"@across-protocol/sdk@4.3.142":
-  version "4.3.142"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.3.142.tgz#e5222d4d97686fec377125ea30be5544cc9eecac"
-  integrity sha512-nBcmDVq17Iy2kt9d8SNYSUG9+Q0y5suxtuxVL9avaB62RRBeVWjQmcnFPuX+oWaoHuM0SND2Moi4+mTX6/t9HQ==
+"@across-protocol/sdk@4.3.144":
+  version "4.3.144"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.3.144.tgz#0052bf3c156c9bb42ec075aaa229f132a368694a"
+  integrity sha512-ml6tR6QcxfGjEPfEAYzhSYMalK0M4tSBKOkRHU5BmXQKyS/5EdDDBa2K0pyNnK6p+pwmuz/2fUKufA5NqxTqTw==
   dependencies:
     "@across-protocol/constants" "^3.1.109"
-    "@across-protocol/contracts" "5.0.6"
+    "@across-protocol/contracts" "5.0.7"
     "@coral-xyz/anchor" "^0.30.1"
     "@eth-optimism/sdk" "^3.3.1"
     "@ethersproject/bignumber" "^5.7.0"
@@ -5783,15 +5783,10 @@ fn.name@1.x.x:
   resolved "https://registry.yarnpkg.com/fn.name/-/fn.name-1.1.0.tgz#26cad8017967aea8731bc42961d04a3d5988accc"
   integrity sha512-GRnmB5gPyJpAhTQdSZTSp9uaPSvl09KoYcMQtsB9rQoOmzs9dH6ffeccH+Z+cv6P68Hu5bC6JjRh4Ah/mHSNRw==
 
-follow-redirects@^1.12.1, follow-redirects@^1.14.0, follow-redirects@^1.15.6:
-  version "1.15.9"
-  resolved "https://registry.yarnpkg.com/follow-redirects/-/follow-redirects-1.15.9.tgz#a604fa10e443bf98ca94228d9eebcc2e8a2c8ee1"
-  integrity sha512-gew4GsXizNgdoRyqmyfMHyAmXsZDk6mHkSxZFCzW9gwlbtOW44CDtYavM+y+72qD/Vq2l550kMF52DT8fOLJqQ==
-
-follow-redirects@^1.15.11:
-  version "1.15.11"
-  resolved "https://registry.yarnpkg.com/follow-redirects/-/follow-redirects-1.15.11.tgz#777d73d72a92f8ec4d2e410eb47352a56b8e8340"
-  integrity sha512-deG2P0JfjrTxl50XGCDyfI97ZGVCxIpfKYmfyrQ54n5FO/0gfIES8C/Psl6kWVDolizcaaxZJnTS0QSMxvnsBQ==
+follow-redirects@^1.12.1, follow-redirects@^1.14.0, follow-redirects@^1.15.11, follow-redirects@^1.15.6:
+  version "1.16.0"
+  resolved "https://registry.yarnpkg.com/follow-redirects/-/follow-redirects-1.16.0.tgz#28474a159d3b9d11ef62050a14ed60e4df6d61bc"
+  integrity sha512-y5rN/uOsadFT/JfYwhxRS5R7Qce+g3zG97+JrtFZlC9klX/W5hD7iiLzScI4nZqUS7DNUdhPgw4xI8W2LuXlUw==
 
 foreground-child@^3.1.0:
   version "3.1.1"
