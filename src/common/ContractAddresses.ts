@@ -669,6 +669,11 @@ export const CONTRACT_ADDRESSES: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
   },
+  [CHAIN_IDs.TEMPO]: {
+    nativeToken: {
+      address: "0x20C0000000000000000000000000000000000000",
+    },
+  },
   // Testnets
   [CHAIN_IDs.SEPOLIA]: {
     ovmStandardBridge_4202: {
