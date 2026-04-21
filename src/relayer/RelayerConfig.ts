@@ -17,6 +17,7 @@ import {
   ethers,
   TESTNET_CHAIN_IDs,
   TOKEN_SYMBOLS_MAP,
+  resolveAcrossToken,
   Address,
   toAddressType,
   EvmAddress,
@@ -271,8 +272,7 @@ export class RelayerConfig extends CommonConfig {
         // If the l1Token is a symbol, resolve the correct address.
         const effectiveL1Token = ethersUtils.isAddress(l1Token)
           ? ethersUtils.getAddress(l1Token)
-          : TOKEN_SYMBOLS_MAP[l1Token].addresses[this.hubPoolChainId];
-        assert(effectiveL1Token !== undefined, `No token identified for ${l1Token}`);
+          : resolveAcrossToken(l1Token, this.hubPoolChainId, true);
 
         // Filter inventory configuration by supported tokens, if specified.
         const known =
@@ -292,7 +292,7 @@ export class RelayerConfig extends CommonConfig {
           Object.keys(hubTokenConfig).forEach((symbol) => {
             Object.keys(hubTokenConfig[symbol]).forEach((chainId) => {
               const rawTokenConfig = hubTokenConfig[symbol][chainId];
-              const effectiveSpokeToken = TOKEN_SYMBOLS_MAP[symbol].addresses[chainId];
+              const effectiveSpokeToken = resolveAcrossToken(symbol, Number(chainId), true);
 
               inventoryEntry[effectiveSpokeToken] ??= {};
               inventoryEntry[effectiveSpokeToken][chainId] = parseTokenConfig(l1Token, chainId, rawTokenConfig);
@@ -313,22 +313,30 @@ export class RelayerConfig extends CommonConfig {
       const swapRoutes = (inventoryConfig.allowedSwapRoutes = [] as SwapRoute[]);
       rawSwapRoutes.forEach((rawSwapRoute) => {
         // @dev If the fromChain/toChain is 'ALL', then `fromToken`/`toToken` MUST be the symbol (otherwise we try to index TOKEN_SYMBOLS_MAP on an address).
-        const fromTokens =
-          rawSwapRoute.fromChain === "ALL"
-            ? Object.values(TOKEN_SYMBOLS_MAP[rawSwapRoute.fromToken].addresses)
-            : [
-                ethersUtils.isAddress(rawSwapRoute.fromToken)
-                  ? rawSwapRoute.fromToken
-                  : TOKEN_SYMBOLS_MAP[rawSwapRoute.fromToken].addresses[rawSwapRoute.fromChain],
-              ];
-        const toTokens =
-          rawSwapRoute.toChain === "ALL"
-            ? Object.values(TOKEN_SYMBOLS_MAP[rawSwapRoute.toToken].addresses)
-            : [
-                ethersUtils.isAddress(rawSwapRoute.toToken)
-                  ? rawSwapRoute.toToken
-                  : TOKEN_SYMBOLS_MAP[rawSwapRoute.toToken].addresses[rawSwapRoute.toChain],
-              ];
+        let fromTokens: string[];
+        if (rawSwapRoute.fromChain === "ALL") {
+          const fromTokenInfo = resolveAcrossToken(rawSwapRoute.fromToken);
+          assert(isDefined(fromTokenInfo), `Unknown token symbol: ${rawSwapRoute.fromToken}`);
+          fromTokens = Object.values(fromTokenInfo.addresses);
+        } else {
+          fromTokens = [
+            ethersUtils.isAddress(rawSwapRoute.fromToken)
+              ? rawSwapRoute.fromToken
+              : resolveAcrossToken(rawSwapRoute.fromToken, rawSwapRoute.fromChain, true),
+          ];
+        }
+        let toTokens: string[];
+        if (rawSwapRoute.toChain === "ALL") {
+          const toTokenInfo = resolveAcrossToken(rawSwapRoute.toToken);
+          assert(isDefined(toTokenInfo), `Unknown token symbol: ${rawSwapRoute.toToken}`);
+          toTokens = Object.values(toTokenInfo.addresses);
+        } else {
+          toTokens = [
+            ethersUtils.isAddress(rawSwapRoute.toToken)
+              ? rawSwapRoute.toToken
+              : resolveAcrossToken(rawSwapRoute.toToken, rawSwapRoute.toChain, true),
+          ];
+        }
         fromTokens.forEach((fromToken) => {
           toTokens.forEach((toToken) => {
             const swapRoute = {
