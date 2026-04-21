@@ -18,14 +18,14 @@ import {
   retrieveGckmsKeys,
   toBNWei,
 } from "../utils";
-import { getAcrossHost } from "./AcrossAPIClient";
 import type { WithdrawalQuota } from "../utils/BinanceUtils";
+import { getAcrossHost } from "./AcrossAPIClient";
 
 export type { WithdrawalQuota };
 
 // `type()` over `object()` to tolerate additional fields Binance may add later.
-// Binance sometimes returns numeric fields as strings; coerce before validating.
 const numberish = coerce(number(), string(), (s) => Number(s));
+
 const WithdrawalQuotaSS = type({
   wdQuota: numberish,
   usedWdQuota: numberish,
