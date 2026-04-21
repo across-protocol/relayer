@@ -23,6 +23,7 @@ import {
   mapAsync,
   parseUnits,
   postWithTimeout,
+  retryAsync,
   submitTransaction,
   Signer,
   toAddressType,
@@ -469,9 +470,16 @@ export class Refiller {
     if (isDefined(addressIdCache)) {
       addressId = addressIdCache;
     } else {
-      const registeredAddresses = await fetchWithTimeout<{
-        items: { chain: string; token: string; address_hex: string; id: string }[];
-      }>(`${nativeMarketsApiUrl}/addresses`, {}, headers);
+      const registeredAddresses = await retryAsync(
+        fetchWithTimeout<{
+          items: { chain: string; token: string; address_hex: string; id: string }[];
+        }>,
+        3,
+        1,
+        `${nativeMarketsApiUrl}/addresses`,
+        {},
+        headers
+      );
       addressId = registeredAddresses.items.find(
         ({ chain, token, address_hex }) =>
           chain === "hyper_evm" && token === "usdh" && address_hex === this.baseSignerAddress.toNative()
@@ -511,7 +519,10 @@ export class Refiller {
       source_address?: TransferRouteAddress;
       destination_address: TransferRouteAddress;
     }
-    const transferRoutes = await fetchWithTimeout<{ items: TransferRoute[] }>(
+    const transferRoutes = await retryAsync(
+      fetchWithTimeout<{ items: TransferRoute[] }>,
+      3,
+      1,
       `${nativeMarketsApiUrl}/transfer_routes`,
       {},
       headers
@@ -539,7 +550,7 @@ export class Refiller {
         address: this.baseSignerAddress,
         addressId,
       });
-      availableTransferRoute = await postWithTimeout(
+      availableTransferRoute = await postWithTimeout<TransferRoute>(
         `${nativeMarketsApiUrl}/transfer_routes`,
         newTransferRouteData,
         {},
