@@ -38,6 +38,7 @@ import {
   CHAIN_IDs,
   chainHasNativeToken,
   getNativeTokenInfoForChain,
+  retry,
 } from "../utils";
 import { SWAP_ROUTES, SwapRoute, CUSTOM_BRIDGE, CANONICAL_BRIDGE } from "../common";
 import ERC20_ABI from "../common/abi/MinimalERC20.json";
@@ -469,9 +470,11 @@ export class Refiller {
     if (isDefined(addressIdCache)) {
       addressId = addressIdCache;
     } else {
-      const registeredAddresses = await fetchWithTimeout<{
-        items: { chain: string; token: string; address_hex: string; id: string }[];
-      }>(`${nativeMarketsApiUrl}/addresses`, {}, headers);
+      const fn = () =>
+        fetchWithTimeout<{
+          items: { chain: string; token: string; address_hex: string; id: string }[];
+        }>(`${nativeMarketsApiUrl}/addresses`, {}, headers);
+      const registeredAddresses = await retry(fn, 3, 1);
       addressId = registeredAddresses.items.find(
         ({ chain, token, address_hex }) =>
           chain === "hyper_evm" && token === "usdh" && address_hex === this.baseSignerAddress.toNative()
@@ -511,11 +514,9 @@ export class Refiller {
       source_address?: TransferRouteAddress;
       destination_address: TransferRouteAddress;
     }
-    const transferRoutes = await fetchWithTimeout<{ items: TransferRoute[] }>(
-      `${nativeMarketsApiUrl}/transfer_routes`,
-      {},
-      headers
-    );
+    const transferRouteFn = () =>
+      fetchWithTimeout<{ items: TransferRoute[] }>(`${nativeMarketsApiUrl}/transfer_routes`, {}, headers);
+    const transferRoutes = await retry(transferRouteFn, 3, 1);
     let availableTransferRoute = transferRoutes.items
       .filter((route) => isDefined(route.source_address))
       .find(
@@ -539,7 +540,7 @@ export class Refiller {
         address: this.baseSignerAddress,
         addressId,
       });
-      availableTransferRoute = await postWithTimeout(
+      availableTransferRoute = await postWithTimeout<TransferRoute>(
         `${nativeMarketsApiUrl}/transfer_routes`,
         newTransferRouteData,
         {},

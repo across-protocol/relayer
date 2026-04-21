@@ -9,6 +9,7 @@ import {
   winston,
   bnZero,
   blockExplorerLink,
+  retry,
 } from "./";
 import * as hl from "@nktkas/hyperliquid";
 import { utils as sdkUtils } from "@across-protocol/sdk";
@@ -30,101 +31,85 @@ export function getHlExchangeClient(
 export async function getL2Book(
   infoClient: hl.InfoClient,
   params: hl.L2BookParameters,
-  nRetries = 0,
-  maxRetries = 3
+  maxRetries = 3,
+  delayS = 1
 ): Promise<hl.L2BookResponse> {
-  return await _callWithRetry(infoClient.l2Book.bind(infoClient), [params], nRetries, maxRetries);
+  const fn = () => infoClient.l2Book.bind(infoClient)(params);
+  return await retry(fn, maxRetries, delayS);
 }
 
-export async function getSpotMeta(
-  infoClient: hl.InfoClient,
-  nRetries = 0,
-  maxRetries = 3
-): Promise<hl.SpotMetaResponse> {
-  return await _callWithRetry(infoClient.spotMeta.bind(infoClient), [], nRetries, maxRetries);
+export async function getSpotMeta(infoClient: hl.InfoClient, maxRetries = 3, delayS = 1): Promise<hl.SpotMetaResponse> {
+  return await retry(infoClient.spotMeta.bind(infoClient), maxRetries, delayS);
 }
 
 export async function getSpotClearinghouseState(
   infoClient: hl.InfoClient,
   params: hl.SpotClearinghouseStateParameters,
-  nRetries = 0,
-  maxRetries = 3
+  maxRetries = 3,
+  delayS = 1
 ): Promise<hl.SpotClearinghouseStateResponse> {
-  return await _callWithRetry(infoClient.spotClearinghouseState.bind(infoClient), [params], nRetries, maxRetries);
+  const fn = () => infoClient.spotClearinghouseState.bind(infoClient)(params);
+  return await retry(fn, maxRetries, delayS);
 }
 
 export async function getUserNonFundingLedgerUpdates(
   infoClient: hl.InfoClient,
   params: hl.UserNonFundingLedgerUpdatesParameters,
-  nRetries = 0,
-  maxRetries = 3
+  maxRetries = 3,
+  delayS = 1
 ): Promise<hl.UserNonFundingLedgerUpdatesResponse> {
-  return await _callWithRetry(infoClient.userNonFundingLedgerUpdates.bind(infoClient), [params], nRetries, maxRetries);
+  const fn = () => infoClient.userNonFundingLedgerUpdates.bind(infoClient)(params);
+  return await retry(fn, maxRetries, delayS);
 }
 
 export async function getOpenOrders(
   infoClient: hl.InfoClient,
   params: hl.OpenOrdersParameters,
-  nRetries = 0,
-  maxRetries = 3
+  maxRetries = 3,
+  delayS = 1
 ): Promise<hl.OpenOrdersResponse> {
-  return _callWithRetry(infoClient.openOrders.bind(infoClient), [params], nRetries, maxRetries);
+  const fn = () => infoClient.openOrders.bind(infoClient)(params);
+  return retry(fn, maxRetries, delayS);
 }
 
 export async function getUserFees(
   infoClient: hl.InfoClient,
   params: hl.UserFeesParameters,
-  nRetries = 0,
-  maxRetries = 3
+  maxRetries = 3,
+  delayS = 1
 ): Promise<hl.UserFeesResponse> {
-  return _callWithRetry(infoClient.userFees.bind(infoClient), [params], nRetries, maxRetries);
+  const fn = () => infoClient.userFees.bind(infoClient)(params);
+  return retry(fn, maxRetries, delayS);
 }
 
 export async function getHistoricalOrders(
   infoClient: hl.InfoClient,
   params: hl.HistoricalOrdersParameters,
-  nRetries = 0,
-  maxRetries = 3
+  maxRetries = 3,
+  delayS = 1
 ): Promise<hl.HistoricalOrdersResponse> {
-  return _callWithRetry(infoClient.historicalOrders.bind(infoClient), [params], nRetries, maxRetries);
+  const fn = () => infoClient.historicalOrders.bind(infoClient)(params);
+  return retry(fn, maxRetries, delayS);
 }
 
 export async function getUserFillsByTime(
   infoClient: hl.InfoClient,
   params: hl.UserFillsByTimeParameters,
-  nRetries = 0,
-  maxRetries = 3
+  maxRetries = 3,
+  delayS = 1
 ): Promise<hl.UserFillsByTimeResponse> {
-  return _callWithRetry(infoClient.userFillsByTime.bind(infoClient), [params], nRetries, maxRetries);
+  const fn = () => infoClient.userFillsByTime.bind(infoClient)(params);
+  return retry(fn, maxRetries, delayS);
 }
 
 export async function getOrderStatus(
   infoClient: hl.InfoClient,
   params: hl.OrderStatusParameters,
-  nRetries = 0,
-  maxRetries = 3
+  maxRetries = 3,
+  delayS = 1
 ): Promise<hl.OrderStatusResponse> {
-  return _callWithRetry(infoClient.orderStatus.bind(infoClient), [params], nRetries, maxRetries);
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function _callWithRetry<T, A extends any[]>(
-  apiCall: (...args: A) => Promise<T>,
-  args: A,
-  nRetries: number,
-  maxRetries: number
-): Promise<T> {
-  try {
-    return await apiCall(...args);
-  } catch (e) {
-    if (nRetries > maxRetries) {
-      throw new Error(`Max retries exceeded when querying the hyperliquid API: ${e}`);
-    }
-    const delaySeconds = 2 ** nRetries + Math.random();
-    await delay(delaySeconds);
-    // @todo Once we have a better idea on the types of errors we can suppress/retry on, then choose appropriate action based on the error thrown.
-    return await _callWithRetry(apiCall, args, ++nRetries, maxRetries);
-  }
+  const fn = () => infoClient.orderStatus.bind(infoClient)(params);
+  return retry(fn, maxRetries, delayS);
 }
 
 export async function depositToHypercore(account: string, signer: Signer, logger: winston.Logger): Promise<string> {
