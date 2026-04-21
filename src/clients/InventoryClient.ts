@@ -38,7 +38,8 @@ import {
   EvmAddress,
   Address,
   toAddressType,
-  repaymentChainCanBeQuicklyRebalanced,
+  CHAIN_IDs,
+  compareAddressesSimple,
   forEachAsync,
   max,
   getLatestRunningBalances,
@@ -725,13 +726,11 @@ export class InventoryClient {
       }
     }
 
-    // Short-circuit to origin when Binance has fill-level capacity AND origin is enabled for this token.
-    // Kept separate from `repaymentChainCanBeQuicklyRebalanced` because that predicate is chain-level
-    // (hub/CCTP/OFT always return true) and would over-aggressively bypass allocation for those chains.
+    // Short-circuit to origin when it's a fast-rebalance source and enabled for this token —
+    // allocation state should not derail an origin repayment we can quickly drain.
     if (
-      isDefined(bufferedFillUsd) &&
       this._l1TokenEnabledForChain(l1Token, originChainId) &&
-      (this.binanceClient?.canAccommodate(bufferedFillUsd, originChainId, l1Token) ?? false)
+      this.isQuicklyRebalanced(originChainId, inputToken, bufferedFillUsd)
     ) {
       return [originChainId];
     }
@@ -1911,10 +1910,29 @@ export class InventoryClient {
     });
   }
 
-  // Private wrapper over the FillUtils predicate that threads in our hubPoolClient and binanceClient.
-  // Pass `amountUsd` for fill-level Binance capacity; omit for a chain-level "any quota" check.
+  // True if repayment on `chainId` can be quickly rebalanced off-chain. Pass `amountUsd` to gate
+  // Binance on fill-level quota; omit for a chain-level "any quota" check.
   private isQuicklyRebalanced(chainId: number, token: Address, amountUsd?: BigNumber): boolean {
-    return repaymentChainCanBeQuicklyRebalanced(chainId, token, this.hubPoolClient, this.binanceClient, amountUsd);
+    const { chainId: hubChainId } = this.hubPoolClient;
+    const chainIsCctpEnabled =
+      sdkUtils.chainIsCCTPEnabled(chainId) &&
+      compareAddressesSimple(TOKEN_SYMBOLS_MAP.USDC.addresses[chainId], token.toNative());
+    const chainIsOFTEnabled =
+      sdkUtils.chainIsOFTEnabled(chainId) &&
+      compareAddressesSimple(TOKEN_SYMBOLS_MAP.USDT.addresses[chainId], token.toNative()) &&
+      chainId !== CHAIN_IDs.HYPEREVM; // OFT withdrawals from HyperEVM take ~12 hours.
+    if (chainIsCctpEnabled || chainIsOFTEnabled || chainId === hubChainId) {
+      return true;
+    }
+    if (!isDefined(this.binanceClient)) {
+      return false;
+    }
+    try {
+      const l1Token = getInventoryEquivalentL1TokenAddress(token, chainId, hubChainId);
+      return this.binanceClient.canAccommodate(amountUsd ?? bnZero, chainId, l1Token);
+    } catch {
+      return false;
+    }
   }
 
   log(message: string, data?: AnyObject, level: DefaultLogLevels = "debug"): void {

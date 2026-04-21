@@ -1,19 +1,6 @@
 import { HubPoolClient, SpokePoolClient } from "../clients";
-import type { BinanceClient } from "../clients/BinanceClient";
-import { hasBinanceRoute } from "../common";
 import { FillStatus, FillWithBlock, SpokePoolClientsByChain, DepositWithBlock, RelayData } from "../interfaces";
-import {
-  Address,
-  BigNumber,
-  bnZero,
-  CHAIN_IDs,
-  compareAddressesSimple,
-  EMPTY_MESSAGE,
-  isDefined,
-  TOKEN_SYMBOLS_MAP,
-} from "../utils";
-import { getInventoryEquivalentL1TokenAddress } from "./TokenUtils";
-import { utils as sdkUtils } from "@across-protocol/sdk";
+import { EMPTY_MESSAGE } from "../utils";
 
 export type RelayerUnfilledDeposit = {
   deposit: DepositWithBlock;
@@ -86,41 +73,6 @@ export function depositForcesOriginChainRepayment(
   return (
     deposit.fromLiteChain || !hubPoolClient.l2TokenHasPoolRebalanceRoute(deposit.inputToken, deposit.originChainId)
   );
-}
-
-/**
- * @notice Returns true if after filling this deposit, the repayment can be quickly rebalanced to a different chain.
- * @dev The Binance branch additionally requires live capacity via `binanceClient`. Pass `amountUsd` to gate
- * on capacity for a specific fill; omit for a chain-level "any capacity" check.
- */
-export function repaymentChainCanBeQuicklyRebalanced(
-  repaymentChainId: number,
-  repaymentToken: Address,
-  hubPoolClient: HubPoolClient,
-  binanceClient?: BinanceClient,
-  amountUsd?: BigNumber
-): boolean {
-  const { chainId: hubChainId } = hubPoolClient;
-  const originChainIsCctpEnabled =
-    sdkUtils.chainIsCCTPEnabled(repaymentChainId) &&
-    compareAddressesSimple(TOKEN_SYMBOLS_MAP.USDC.addresses[repaymentChainId], repaymentToken.toNative());
-  const originChainIsOFTEnabled =
-    sdkUtils.chainIsOFTEnabled(repaymentChainId) &&
-    compareAddressesSimple(TOKEN_SYMBOLS_MAP.USDT.addresses[repaymentChainId], repaymentToken.toNative()) &&
-    repaymentChainId !== CHAIN_IDs.HYPEREVM; // OFT withdrawals from HyperEVM take ~12 hours.
-  if (originChainIsCctpEnabled || originChainIsOFTEnabled || repaymentChainId === hubChainId) {
-    return true;
-  }
-  try {
-    const l1Token = getInventoryEquivalentL1TokenAddress(repaymentToken, repaymentChainId, hubChainId);
-    return (
-      hasBinanceRoute(repaymentChainId, l1Token) &&
-      isDefined(binanceClient) &&
-      binanceClient.canAccommodate(amountUsd ?? bnZero, repaymentChainId, l1Token)
-    );
-  } catch {
-    return false;
-  }
 }
 
 export function getAllUnfilledDeposits(

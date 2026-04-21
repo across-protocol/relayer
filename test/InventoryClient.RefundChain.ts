@@ -985,16 +985,12 @@ describe("InventoryClient: Refund chain selection", async function () {
         exclusiveRelayer: toAddressType(ZERO_ADDRESS, MAINNET),
       };
     });
-    it("returns origin chain before destination chain", async function () {
+    it("short-circuits to origin chain only when it is a fast-rebalance source", async function () {
       // Make sure that deposit doesn't force origin chain repayment otherwise this test would succeed and return
       // the origin chain for the wrong reason (i.e. this would be a false positive).
       expect(depositForcesOriginChainRepayment(sampleDepositData, hubPoolClient)).to.be.false;
       const refundChains = await inventoryClient.determineRefundChainId(sampleDepositData);
-      expect(refundChains).to.deep.equal([
-        sampleDepositData.originChainId,
-        sampleDepositData.destinationChainId,
-        MAINNET,
-      ]);
+      expect(refundChains).to.deep.equal([sampleDepositData.originChainId]);
     });
     it("forced origin chain repayment returns origin chain as only repayment chain", async function () {
       sampleDepositData.fromLiteChain = true;
