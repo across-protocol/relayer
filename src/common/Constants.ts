@@ -1073,7 +1073,14 @@ interface SwapRouteConfig {
 }
 
 const generateSwapRoutes = (): { [chainId: string]: SwapRouteConfig } => {
-  const swapChains = [CHAIN_IDs.BSC, CHAIN_IDs.HYPEREVM, CHAIN_IDs.MONAD, CHAIN_IDs.POLYGON, CHAIN_IDs.PLASMA, CHAIN_IDs.TEMPO];
+  const swapChains = [
+    CHAIN_IDs.BSC,
+    CHAIN_IDs.HYPEREVM,
+    CHAIN_IDs.MONAD,
+    CHAIN_IDs.POLYGON,
+    CHAIN_IDs.PLASMA,
+    CHAIN_IDs.TEMPO,
+  ];
 
   // Stable defaults that are a good fit for most chains.
   // Arbitrum WETH is selected because the relayer receives bridge fee refunds from the Arbitrum canonical bridge.
