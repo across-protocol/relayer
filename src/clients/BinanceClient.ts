@@ -65,7 +65,7 @@ export class BinanceClient {
   }
 
   // Callers supply the USD-denominated amount to check; this client doesn't do pricing.
-  canAccommodate(amountUsd: BigNumber, chainId: number, l1Token: Address): boolean {
+  canWithdraw(amountUsd: BigNumber, chainId: number, l1Token: Address): boolean {
     return (
       hasBinanceRoute(chainId, l1Token) &&
       isDefined(this.remainingQuotaUsd) &&

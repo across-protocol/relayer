@@ -63,10 +63,10 @@ describe("InventoryClient: Refund chain selection", async function () {
 
   // Minimal in-memory stub of the BinanceClient methods InventoryClient consults during
   // refund-chain selection. TODO: replace the cast with a cleaner test-fake pattern.
-  const makeFakeBinanceClient = (opts: { isOperational?: boolean; canAccommodate?: boolean } = {}): BinanceClient =>
+  const makeFakeBinanceClient = (opts: { isOperational?: boolean; canWithdraw?: boolean } = {}): BinanceClient =>
     ({
       isOperational: () => opts.isOperational ?? true,
-      canAccommodate: () => opts.canAccommodate ?? true,
+      canWithdraw: () => opts.canWithdraw ?? true,
       refresh: async () => undefined,
     }) as unknown as BinanceClient;
 
@@ -627,7 +627,7 @@ describe("InventoryClient: Refund chain selection", async function () {
       // BSC is only treated as quickly rebalanced with credentials AND live Binance capacity for the fill.
       process.env.BINANCE_API_KEY = "test-key";
       process.env.BINANCE_HMAC_KEY = "test-secret";
-      (inventoryClient as MockInventoryClient).setBinanceClient(makeFakeBinanceClient({ canAccommodate: true }));
+      (inventoryClient as MockInventoryClient).setBinanceClient(makeFakeBinanceClient({ canWithdraw: true }));
       (inventoryClient as MockInventoryClient).seedL1TokenPriceUsd(mainnetWeth, toWei(2000));
       try {
         sampleDepositData.originChainId = BSC;
@@ -650,7 +650,7 @@ describe("InventoryClient: Refund chain selection", async function () {
       // be a 7-day slow-withdrawal chain.
       process.env.BINANCE_API_KEY = "test-key";
       process.env.BINANCE_HMAC_KEY = "test-secret";
-      (inventoryClient as MockInventoryClient).setBinanceClient(makeFakeBinanceClient({ canAccommodate: true }));
+      (inventoryClient as MockInventoryClient).setBinanceClient(makeFakeBinanceClient({ canWithdraw: true }));
       (inventoryClient as MockInventoryClient).seedL1TokenPriceUsd(mainnetWeth, toWei(2000));
       try {
         sampleDepositData.originChainId = ARBITRUM;
@@ -1000,10 +1000,10 @@ describe("InventoryClient: Refund chain selection", async function () {
     });
   });
 
-  describe("BinanceClient canAccommodate short-circuit", function () {
+  describe("BinanceClient canWithdraw short-circuit", function () {
     beforeEach(async function () {
       const inputAmount = toBNWei(1);
-      // Arbitrum WETH has a Binance route; when canAccommodate returns true, origin should be
+      // Arbitrum WETH has a Binance route; when canWithdraw returns true, origin should be
       // preferred regardless of allocation.
       process.env.BINANCE_API_KEY = "test-key";
       process.env.BINANCE_HMAC_KEY = "test-secret";
@@ -1033,23 +1033,23 @@ describe("InventoryClient: Refund chain selection", async function () {
       (inventoryClient as MockInventoryClient).setBinanceClient(undefined);
     });
 
-    it("returns only origin chain when canAccommodate is true, regardless of allocation", async function () {
-      (inventoryClient as MockInventoryClient).setBinanceClient(makeFakeBinanceClient({ canAccommodate: true }));
+    it("returns only origin chain when canWithdraw is true, regardless of allocation", async function () {
+      (inventoryClient as MockInventoryClient).setBinanceClient(makeFakeBinanceClient({ canWithdraw: true }));
       (inventoryClient as MockInventoryClient).seedL1TokenPriceUsd(mainnetWeth, toWei(2000));
       tokenClient.setTokenData(ARBITRUM, toAddressType(l2TokensForWeth[ARBITRUM], ARBITRUM), toWei(100));
       tokenClient.setTokenData(OPTIMISM, toAddressType(l2TokensForWeth[OPTIMISM], OPTIMISM), toWei(0));
       expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.deep.equal([ARBITRUM]);
     });
 
-    it("does not short-circuit when canAccommodate is false", async function () {
-      (inventoryClient as MockInventoryClient).setBinanceClient(makeFakeBinanceClient({ canAccommodate: false }));
+    it("does not short-circuit when canWithdraw is false", async function () {
+      (inventoryClient as MockInventoryClient).setBinanceClient(makeFakeBinanceClient({ canWithdraw: false }));
       (inventoryClient as MockInventoryClient).seedL1TokenPriceUsd(mainnetWeth, toWei(2000));
       tokenClient.setTokenData(ARBITRUM, toAddressType(l2TokensForWeth[ARBITRUM], ARBITRUM), toWei(100));
       expect((await inventoryClient.determineRefundChainId(sampleDepositData))[0]).to.not.equal(ARBITRUM);
     });
 
     it("does not short-circuit when no BinanceClient is wired", async function () {
-      // Default state: no BinanceClient attached → canAccommodate is effectively false.
+      // Default state: no BinanceClient attached → canWithdraw is effectively false.
       tokenClient.setTokenData(ARBITRUM, toAddressType(l2TokensForWeth[ARBITRUM], ARBITRUM), toWei(100));
       expect((await inventoryClient.determineRefundChainId(sampleDepositData))[0]).to.not.equal(ARBITRUM);
     });

@@ -912,10 +912,7 @@ export class InventoryClient {
     }
 
     // Conditionally add the origin chain as a fallback option if the relayer has a fast rebalance route.
-    if (
-      !eligibleRefundChains.includes(originChainId) &&
-      this.isQuicklyRebalanced(originChainId, inputToken, fillUsd)
-    ) {
+    if (!eligibleRefundChains.includes(originChainId) && this.isQuicklyRebalanced(originChainId, inputToken, fillUsd)) {
       eligibleRefundChains.push(originChainId);
     }
 
@@ -1926,10 +1923,8 @@ export class InventoryClient {
     }
     try {
       const l1Token = getInventoryEquivalentL1TokenAddress(token, chainId, hubChainId);
-      const bufferedUsd = isDefined(fillUsd)
-        ? fillUsd.mul(this.cexRebalanceBuffer).div(fixedPointAdjustment)
-        : bnZero;
-      return this.binanceClient.canAccommodate(bufferedUsd, chainId, l1Token);
+      const bufferedUsd = isDefined(fillUsd) ? fillUsd.mul(this.cexRebalanceBuffer).div(fixedPointAdjustment) : bnZero;
+      return this.binanceClient.canWithdraw(bufferedUsd, chainId, l1Token);
     } catch {
       return false;
     }
