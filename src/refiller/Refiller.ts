@@ -550,10 +550,7 @@ export class Refiller {
         address: this.baseSignerAddress,
         addressId,
       });
-      availableTransferRoute = await retryAsync(
-        postWithTimeout<TransferRoute>,
-        3,
-        1,
+      availableTransferRoute = await postWithTimeout<TransferRoute>(
         `${nativeMarketsApiUrl}/transfer_routes`,
         newTransferRouteData,
         {},
