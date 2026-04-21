@@ -2,7 +2,16 @@ import { HubPoolClient, SpokePoolClient } from "../clients";
 import type { BinanceClient } from "../clients/BinanceClient";
 import { hasBinanceRoute } from "../common";
 import { FillStatus, FillWithBlock, SpokePoolClientsByChain, DepositWithBlock, RelayData } from "../interfaces";
-import { Address, BigNumber, bnZero, CHAIN_IDs, compareAddressesSimple, EMPTY_MESSAGE, isDefined, TOKEN_SYMBOLS_MAP } from "../utils";
+import {
+  Address,
+  BigNumber,
+  bnZero,
+  CHAIN_IDs,
+  compareAddressesSimple,
+  EMPTY_MESSAGE,
+  isDefined,
+  TOKEN_SYMBOLS_MAP,
+} from "../utils";
 import { getInventoryEquivalentL1TokenAddress } from "./TokenUtils";
 import { utils as sdkUtils } from "@across-protocol/sdk";
 
