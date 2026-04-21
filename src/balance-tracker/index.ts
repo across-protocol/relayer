@@ -9,6 +9,7 @@ import {
   BigNumber,
   bnZero,
 } from "../utils";
+import { TOKEN_EQUIVALENCE_REMAPPING } from "@across-protocol/constants";
 import { Monitor } from "../monitor/Monitor";
 import { constructMonitorClients } from "../monitor/MonitorClientHelper";
 import { BalanceTrackerConfig } from "./BalanceTrackerConfig";
@@ -17,10 +18,20 @@ config();
 
 let logger: winston.Logger;
 
-// Aggregate a relayer's balances by the L2 token symbol (not the L1 token symbol) so that
-// distinct L2 variants like USDC.e, USDH, WGHO appear as separate columns in the sheet
-// rather than being silently rolled into their L1-equivalent (USDC, LGHO).
-// Upcoming refunds are keyed by L1 token symbol since they are per-L1-token by nature.
+// Preserve these symbols as distinct columns even though the SDK remaps them to an L1 equivalent.
+// USDC.e, USDH, WGHO represent distinct assets we want to track separately.
+const PRESERVED_DISTINCT_SYMBOLS = new Set(["USDC.e", "USDH", "WGHO"]);
+
+function normalizeSymbol(symbol: string): string {
+  if (PRESERVED_DISTINCT_SYMBOLS.has(symbol)) {
+    return symbol;
+  }
+  return TOKEN_EQUIVALENCE_REMAPPING[symbol] ?? symbol;
+}
+
+// Aggregate a relayer's balances by display symbol, applying TOKEN_EQUIVALENCE_REMAPPING
+// (so ETH rolls into WETH, USDB into DAI, USDC-BNB/USDbC/USDzC into USDC, etc.) except for
+// a short list of distinct variants we want as their own columns.
 export async function runBalanceTracker(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
   logger = _logger;
   const btConfig = new BalanceTrackerConfig(process.env);
@@ -68,13 +79,13 @@ export async function runBalanceTracker(_logger: winston.Logger, baseSigner: Sig
           const l1Decimals = tokenReport.l1Token.decimals;
 
           for (const row of tokenReport.rows) {
-            const b = ensureBucket(row.tokenSymbol, l1Decimals);
+            const b = ensureBucket(normalizeSymbol(row.tokenSymbol), l1Decimals);
             b.current = b.current.add(row.current);
             b.pending = b.pending.add(row.pending);
           }
 
           if (!tokenReport.upcomingRefundsTotal.isZero()) {
-            const b = ensureBucket(tokenReport.l1Token.symbol, l1Decimals);
+            const b = ensureBucket(normalizeSymbol(tokenReport.l1Token.symbol), l1Decimals);
             b.upcomingRefunds = b.upcomingRefunds.add(tokenReport.upcomingRefundsTotal);
           }
         }
