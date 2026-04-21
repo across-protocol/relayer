@@ -23,9 +23,7 @@ import type { WithdrawalQuota } from "../utils/BinanceUtils";
 
 export type { WithdrawalQuota };
 
-// Validates the quote-endpoint response shape at runtime. Uses `type()` (loose) rather
-// than `object()` (strict) so that additional fields Binance may introduce in future
-// API revisions do not cause the quota check to start failing.
+// `type()` over `object()` to tolerate additional fields Binance may add later.
 const WithdrawalQuotaSS = type({
   wdQuota: number(),
   usedWdQuota: number(),
@@ -37,14 +35,7 @@ export type BinanceClientOptions = {
   url?: string;
 };
 
-/**
- * Wrapper around `binance-api-node` that also caches live daily-withdrawal capacity so
- * consumers can ask yes/no questions without touching Binance or pricing plumbing.
- * Constructed via the async `create()` factory since GCKMS retrieval is async.
- */
 export class BinanceClient {
-  // Memoizes GCKMS retrieval so that concurrent `create()` callers share one key fetch
-  // (mirrors the prior module-level memoization in BinanceUtils).
   private static binanceSecretKeyPromise: Promise<string | undefined> | undefined = undefined;
 
   // Undefined before first refresh and after any failure — treated as "no capacity".
@@ -72,17 +63,10 @@ export class BinanceClient {
     return new BinanceClient(Binance({ apiKey, apiSecret: secretKey, httpBase: url }), priceClient, logger);
   }
 
-  // Exposes the underlying `binance-api-node` client for callers that still issue
-  // low-level requests (deposit/withdraw/depositHistory). Retained during the transition
-  // away from the module-level `getBinanceApiClient()` factory.
   rawApi(): BinanceApi {
     return this.api;
   }
 
-  /**
-   * Fetches the account's daily withdrawal quota, validated against the expected response
-   * shape via superstruct. Throws on request failure or schema mismatch.
-   */
   async getWithdrawalLimits(): Promise<WithdrawalQuota> {
     const raw = await this.api.privateRequest("GET" as HttpMethod, "/sapi/v1/capital/withdraw/quota", {});
     return create(raw, WithdrawalQuotaSS);
