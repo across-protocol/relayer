@@ -30,13 +30,21 @@ function getTypechainAbi(contractName: string): readonly JsonFragment[] {
 import COUNTERFACTUAL_DEPOSIT_FACTORY_ABI from "../common/abi/CounterfactualDepositFactory.json";
 import { TronWeb } from "tronweb";
 
+/**
+ * Returns an address string suitable for ethers / EVM JSON-RPC (`0x` + 20 bytes).
+ * On TVM, deployment metadata may use Tron base58 — that case is normalized; otherwise unchanged.
+ */
+export function getEthersCompatibleAddress(chainId: number, address: string): string {
+  if (chainIsTvm(chainId) && TronWeb.isAddress(address)) {
+    return TvmAddress.from(address).toEvmAddress();
+  }
+  return address;
+}
+
 // Return an ethers contract instance for a deployed contract, imported from the Across-protocol contracts repo.
 export function getDeployedContract(contractName: string, networkId: number, signer?: Signer): Contract {
   try {
-    let address = getDeployedAddress(contractName, networkId);
-    if (chainIsTvm(networkId) && TronWeb.isAddress(address)) {
-      address = TvmAddress.from(address).toEvmAddress();
-    }
+    const address = getEthersCompatibleAddress(networkId, getDeployedAddress(contractName, networkId));
     // If the contractName is SpokePool then we need to modify it to find the correct contract factory artifact.
     const abi = getTypechainAbi(contractName);
     return new Contract(address, abi, signer);
@@ -59,11 +67,11 @@ export function getSpokePool(chainId: number, address?: string): Contract {
 
 // For a chain ID and optional SpokePoolPeriphery address, return a Contract instance with the corresponding ABI.
 export function getSpokePoolPeriphery(chainId: number, address?: string): Contract {
-  address ??= getDeployedAddress("SpokePoolPeriphery", chainId);
-  if (chainIsTvm(chainId) && TronWeb.isAddress(address)) {
-    address = TvmAddress.from(address).toEvmAddress();
-  }
-  return new Contract(address, CONTRACT_ADDRESSES[chainId].spokePoolPeriphery.abi);
+  const resolved = address ?? getDeployedAddress("SpokePoolPeriphery", chainId);
+  return new Contract(
+    getEthersCompatibleAddress(chainId, resolved),
+    CONTRACT_ADDRESSES[chainId].spokePoolPeriphery.abi
+  );
 }
 
 // Uniswap Permit2 (same deployment address on supported EVM chains). Falls back to mainnet metadata when `chainId` has no entry.
