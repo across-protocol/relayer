@@ -728,9 +728,9 @@ export class InventoryClient {
     const { decimals: inputTokenDecimals } = this.getTokenInfo(inputToken, originChainId);
     const inputAmountInL1TokenDecimals = sdkUtils.ConvertDecimals(inputTokenDecimals, l1TokenDecimals)(inputAmount);
 
-    // Prefer origin repayment when Binance has capacity for the buffered fill.
+    // Short-circuit to origin when Binance has capacity AND origin is enabled for this token.
     const priceUsd = this.l1TokenPricesUsd.get(l1Token.toNative());
-    if (isDefined(priceUsd)) {
+    if (isDefined(priceUsd) && this._l1TokenEnabledForChain(l1Token, originChainId)) {
       const fillUsd = inputAmountInL1TokenDecimals.mul(priceUsd).div(BigNumber.from(10).pow(l1TokenDecimals));
       const bufferedFillUsd = fillUsd.mul(this.cexRebalanceBuffer).div(fixedPointAdjustment);
       if (this.binanceClient?.canAccommodate(bufferedFillUsd, originChainId, l1Token)) {
