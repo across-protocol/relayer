@@ -456,7 +456,12 @@ export function l2TokensToCountTowardsSpokePoolLeafExecutionCapital(
 
 /**
  * Persists data to Arweave with a given tag, given that the data doesn't
- * already exist on Arweave with the tag.
+ * already exist on Arweave with the tag. Also persists the data to the cache (e.g. a Redis cache) if provided.
+ * Contract:
+ * - `tag` is a deterministic identifier for the bundle payload.
+ * - Repeated calls with the same `tag` must provide semantically identical `data`.
+ * - Because of that invariant, it is safe to seed Redis from `data` even if Arweave is unavailable.
+ * - When Arweave already has data for `tag`, that persisted payload is assumed to must match `data`.
  * @param client The Arweave client to use for persistence.
  * @param data The data to persist to Arweave.
  * @param logger A winston logger
@@ -475,63 +480,66 @@ export async function persistDataToArweave(
     `Arweave tag cannot exceed ${ARWEAVE_TAG_BYTE_LIMIT} bytes`
   );
 
-  const profiler = new Profiler({
-    logger,
-    at: "DataworkerUtils#persistDataToArweave",
-  });
-  const mark = profiler.start("persistDataToArweave");
-
-  // Check if data already exists on Arweave with the given tag.
-  // If so, we don't need to persist it again.
-  const [matchingTxns, address, balance] = await Promise.all([
-    client.getByTopic(tag, any()),
-    client.getAddress(),
-    client.getBalance(),
-  ]);
-
-  // Check balance. Maybe move this to Monitor function.
-  const MINIMUM_AR_BALANCE = parseWinston("1");
-  if (balance.lte(MINIMUM_AR_BALANCE)) {
-    logger.error({
+  // Wrap all Arweave operations in a try-catch block to ensure that we always persist to the cache if provided.
+  try {
+    const profiler = new Profiler({
+      logger,
       at: "DataworkerUtils#persistDataToArweave",
-      message: "Arweave balance is below minimum target balance",
-      address,
-      balance: formatWinston(balance),
-      minimumBalance: formatWinston(MINIMUM_AR_BALANCE),
     });
-  } else {
-    logger.debug({
-      at: "DataworkerUtils#persistDataToArweave",
-      message: "Arweave balance is above minimum target balance",
-      address,
-      balance: formatWinston(balance),
-      minimumBalance: formatWinston(MINIMUM_AR_BALANCE),
-    });
-  }
+    const mark = profiler.start("persistDataToArweave");
 
-  if (matchingTxns.length > 0) {
-    logger.debug({
-      at: "DataworkerUtils#persistDataToArweave",
-      message: `Data already exists on Arweave with tag: ${tag}`,
-      hash: matchingTxns.map((txn) => txn.hash),
-    });
+    // Check if data already exists on Arweave with the given tag.
+    // If so, we don't need to persist it again.
+    const [matchingTxns, address, balance] = await Promise.all([
+      client.getByTopic(tag, any()),
+      client.getAddress(),
+      client.getBalance(),
+    ]);
+
+    // Check balance. Maybe move this to Monitor function.
+    const MINIMUM_AR_BALANCE = parseWinston("1");
+    if (balance.lte(MINIMUM_AR_BALANCE)) {
+      logger.warn({
+        at: "DataworkerUtils#persistDataToArweave",
+        message: "Arweave balance is below minimum target balance",
+        address,
+        balance: formatWinston(balance),
+        minimumBalance: formatWinston(MINIMUM_AR_BALANCE),
+      });
+    } else {
+      logger.debug({
+        at: "DataworkerUtils#persistDataToArweave",
+        message: "Arweave balance is above minimum target balance",
+        address,
+        balance: formatWinston(balance),
+        minimumBalance: formatWinston(MINIMUM_AR_BALANCE),
+      });
+    }
+
+    if (matchingTxns.length > 0) {
+      logger.debug({
+        at: "DataworkerUtils#persistDataToArweave",
+        message: `Data already exists on Arweave with tag: ${tag}`,
+        hash: matchingTxns.map((txn) => txn.hash),
+      });
+    } else {
+      const hashTxn = await client.set(data, tag);
+      logger.info({
+        at: "DataworkerUtils#persistDataToArweave",
+        message: "Persisted data to Arweave! 💾",
+        tag,
+        receipt: `https://arweave.app/tx/${hashTxn}`,
+        rawData: `https://arweave.net/${hashTxn}`,
+        address,
+        balance: formatWinston(balance),
+        notificationPath: "across-arweave",
+      });
+      mark.stop({
+        message: "Time to persist to Arweave",
+      });
+    }
+  } finally {
     await persistArweaveTopicToCache(topicCache, tag, data, logger);
-  } else {
-    const hashTxn = await client.set(data, tag);
-    logger.info({
-      at: "DataworkerUtils#persistDataToArweave",
-      message: "Persisted data to Arweave! 💾",
-      tag,
-      receipt: `https://arweave.app/tx/${hashTxn}`,
-      rawData: `https://arweave.net/${hashTxn}`,
-      address,
-      balance: formatWinston(balance),
-      notificationPath: "across-arweave",
-    });
-    await persistArweaveTopicToCache(topicCache, tag, data, logger);
-    mark.stop({
-      message: "Time to persist to Arweave",
-    });
   }
 }
 
@@ -546,11 +554,22 @@ async function persistArweaveTopicToCache(
   }
 
   try {
-    await topicCache.set(
-      getArweaveTopicCacheKey(tag),
-      JSON.stringify(data, utils.jsonReplacerWithBigNumbers),
-      sdkConstants.DEFAULT_CACHING_TTL
-    );
+    const cacheKey = getArweaveTopicCacheKey(tag);
+    const cachedData = await topicCache.get<string>(cacheKey);
+    if (isDefined(cachedData)) {
+      // We can return here and not update because we assume that the input data is the same for any given tag.
+      return;
+    }
+    const serializedPayload = serializeArweaveTopicPayload(data);
+    await topicCache.set(cacheKey, serializedPayload, sdkConstants.DEFAULT_CACHING_TTL);
+    logger.debug({
+      at: "DataworkerUtils#persistArweaveTopicToCache",
+      message: isDefined(cachedData)
+        ? "Updated Arweave topic payload in Redis cache"
+        : "Persisted Arweave topic payload into Redis cache",
+      tag,
+      cacheKey,
+    });
   } catch (error) {
     logger.debug({
       at: "DataworkerUtils#persistArweaveTopicToCache",
@@ -563,4 +582,8 @@ async function persistArweaveTopicToCache(
 
 function getArweaveTopicCacheKey(tag: string): string {
   return `arweave-topic:${tag}`;
+}
+
+function serializeArweaveTopicPayload(data: Record<string, unknown>): string {
+  return JSON.stringify(data, utils.jsonReplacerWithBigNumbers);
 }
