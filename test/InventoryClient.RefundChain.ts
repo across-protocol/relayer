@@ -843,9 +843,7 @@ describe("InventoryClient: Refund chain selection", async function () {
     });
     it("does not evaluate destination as a standard candidate when it is only present via slow-withdrawal support", async function () {
       hubPoolClient.setEnableAllL2Tokens(true);
-      sinon
-        .stub(inventoryClient, "getSlowWithdrawalRepaymentChains")
-        .returns([sampleDepositData.destinationChainId]);
+      sinon.stub(inventoryClient, "getSlowWithdrawalRepaymentChains").returns([sampleDepositData.destinationChainId]);
 
       const possibleRepaymentChains = inventoryClient.getPossibleRepaymentChainIds(sampleDepositData);
       expect(possibleRepaymentChains).to.include(sampleDepositData.destinationChainId);
