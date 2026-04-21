@@ -480,49 +480,63 @@ export async function persistDataToArweave(
     `Arweave tag cannot exceed ${ARWEAVE_TAG_BYTE_LIMIT} bytes`
   );
 
-  // Wrap all Arweave operations in a try-catch block to ensure that we always persist to the cache if provided.
-  try {
-    const profiler = new Profiler({
-      logger,
-      at: "DataworkerUtils#persistDataToArweave",
-    });
-    const mark = profiler.start("persistDataToArweave");
+  const profiler = new Profiler({
+    logger,
+    at: "DataworkerUtils#persistDataToArweave",
+  });
+  const mark = profiler.start("persistDataToArweave");
 
+  // Wrap all Arweave operations in a try-catch block to ensure that we always persist to the cache if provided.
+  let matchingTxns: { hash: string }[];
+  let address: string;
+  let balance: BigNumber;
+  try {
     // Check if data already exists on Arweave with the given tag.
     // If so, we don't need to persist it again.
-    const [matchingTxns, address, balance] = await Promise.all([
+    [matchingTxns, address, balance] = await Promise.all([
       client.getByTopic(tag, any()),
       client.getAddress(),
       client.getBalance(),
     ]);
+  } catch (error) {
+    logger.debug({
+      at: "DataworkerUtils#persistDataToArweave",
+      message: "getByTopic, getAddress, or getBalance failed; cannot persist to Arweave",
+      tag,
+      error: String(error),
+    });
+    await persistArweaveTopicToCache(topicCache, tag, data, logger);
+    return;
+  }
 
-    // Check balance. Maybe move this to Monitor function.
-    const MINIMUM_AR_BALANCE = parseWinston("1");
-    if (balance.lte(MINIMUM_AR_BALANCE)) {
-      logger.warn({
-        at: "DataworkerUtils#persistDataToArweave",
-        message: "Arweave balance is below minimum target balance",
-        address,
-        balance: formatWinston(balance),
-        minimumBalance: formatWinston(MINIMUM_AR_BALANCE),
-      });
-    } else {
-      logger.debug({
-        at: "DataworkerUtils#persistDataToArweave",
-        message: "Arweave balance is above minimum target balance",
-        address,
-        balance: formatWinston(balance),
-        minimumBalance: formatWinston(MINIMUM_AR_BALANCE),
-      });
-    }
+  // Check balance. Maybe move this to Monitor function.
+  const MINIMUM_AR_BALANCE = parseWinston("1");
+  if (balance.lte(MINIMUM_AR_BALANCE)) {
+    logger.warn({
+      at: "DataworkerUtils#persistDataToArweave",
+      message: "Arweave balance is below minimum target balance",
+      address,
+      balance: formatWinston(balance),
+      minimumBalance: formatWinston(MINIMUM_AR_BALANCE),
+    });
+  } else {
+    logger.debug({
+      at: "DataworkerUtils#persistDataToArweave",
+      message: "Arweave balance is above minimum target balance",
+      address,
+      balance: formatWinston(balance),
+      minimumBalance: formatWinston(MINIMUM_AR_BALANCE),
+    });
+  }
 
-    if (matchingTxns.length > 0) {
-      logger.debug({
-        at: "DataworkerUtils#persistDataToArweave",
-        message: `Data already exists on Arweave with tag: ${tag}`,
-        hash: matchingTxns.map((txn) => txn.hash),
-      });
-    } else {
+  if (matchingTxns.length > 0) {
+    logger.debug({
+      at: "DataworkerUtils#persistDataToArweave",
+      message: `Data already exists on Arweave with tag: ${tag}`,
+      hash: matchingTxns.map((txn) => txn.hash),
+    });
+  } else {
+    try {
       const hashTxn = await client.set(data, tag);
       logger.info({
         at: "DataworkerUtils#persistDataToArweave",
@@ -537,10 +551,18 @@ export async function persistDataToArweave(
       mark.stop({
         message: "Time to persist to Arweave",
       });
+    } catch (error) {
+      logger.debug({
+        at: "DataworkerUtils#persistDataToArweave",
+        message: "Failed to persist data to Arweave",
+        tag,
+        error: String(error),
+      });
     }
-  } finally {
-    await persistArweaveTopicToCache(topicCache, tag, data, logger);
   }
+
+  // Regardless of whether the data was persisted to Arweave, we should persist to the cache.
+  await persistArweaveTopicToCache(topicCache, tag, data, logger);
 }
 
 async function persistArweaveTopicToCache(
