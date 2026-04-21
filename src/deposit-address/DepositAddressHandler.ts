@@ -1,8 +1,10 @@
 import winston from "winston";
 import { DepositAddressHandlerConfig } from "./DepositAddressHandlerConfig";
+import { RedisCacheInterface } from "../caching/RedisCache";
 import {
   getRedisCache,
   isDefined,
+  parseJson,
   Signer,
   scheduleTask,
   Provider,
@@ -17,7 +19,6 @@ import {
   toBN,
   getDepositKey,
   assert,
-  getCounterfactualDepositImplementationAddress,
   getNetworkName,
   blockExplorerLink,
 } from "../utils";
@@ -26,32 +27,28 @@ import { AcrossSwapApiClient, TransactionClient, SwapApiResponse } from "../clie
 import { AcrossIndexerApiClient } from "../clients/AcrossIndexerApiClient";
 import ERC20_ABI from "../common/abi/MinimalERC20.json";
 
-// Teach BigInt how to be represented as JSON.
-(BigInt.prototype as any).toJSON = function () {
-  return this.toString();
-};
-
 /**
  * Independent relayer bot which processes EIP-3009 signatures into deposits and corresponding fills.
  */
 export class DepositAddressHandler {
   private abortController = new AbortController();
-  private instanceCoordinator;
+  private instanceCoordinator: InstanceCoordinator;
   private initialized = false;
 
   private providersByChain: { [chainId: number]: Provider } = {};
 
-  private counterfactualDepositFactories: { [chainId: number]: Contract } = {};
-
   /** Per chainId: set of deposit keys already executed (like gasless depositNonces). */
   private observedExecutedDeposits: { [chainId: number]: Set<string> } = {};
+
+  /** Set of erc20Transfer.transactionHash for deposits successfully executed (persisted in Redis for handover). */
+  private executedDepositTxHashes: Set<string> = new Set();
 
   private api: AcrossSwapApiClient;
   private indexerApi: AcrossIndexerApiClient;
   private signerAddress: EvmAddress;
 
   private transactionClient;
-  private redisCache;
+  private redisCache: RedisCacheInterface | undefined;
 
   public constructor(
     readonly logger: winston.Logger,
@@ -99,11 +96,10 @@ export class DepositAddressHandler {
     await forEachAsync(this.config.relayerOriginChains, async (chainId) => {
       const provider = await getProvider(chainId);
       this.providersByChain[chainId] = provider;
-      this.counterfactualDepositFactories[chainId] = getCounterfactualDepositFactory(chainId).connect(provider);
       this.observedExecutedDeposits[chainId] = new Set<string>();
     });
 
-    // Establish a new bot instance.
+    // Establish bot instance and take over. First thing after handover: load persisted executed deposits from Redis.
     this.instanceCoordinator = new InstanceCoordinator(
       this.logger,
       this.redisCache,
@@ -113,7 +109,41 @@ export class DepositAddressHandler {
     );
     await this.instanceCoordinator.initiateHandover();
 
+    await this._loadExecutedDepositsFromRedis();
+
     this.initialized = true;
+  }
+
+  private getExecutedDepositsRedisKey(): string {
+    const botId = process.env.BOT_IDENTIFIER ?? "deposit-address-handler";
+    return `deposit-address:executed:${botId}`;
+  }
+
+  /** Loads executed deposit tx hashes from Redis (e.g. after handover). */
+  private async _loadExecutedDepositsFromRedis(): Promise<void> {
+    const redisKey = this.getExecutedDepositsRedisKey();
+    const raw = (await this.redisCache.get(redisKey)) as string | undefined;
+    let arr: string[] = [];
+    try {
+      if (raw) {
+        arr = parseJson.stringArray(raw);
+      }
+    } catch (err) {
+      this.logger.error({
+        at: "DepositAddressHandler#_loadExecutedDepositsFromRedis",
+        message: "Failed to parse executed deposits from Redis, using empty set",
+        redisKey,
+        err: err instanceof Error ? err.message : String(err),
+      });
+
+      throw err;
+    }
+    this.executedDepositTxHashes = new Set(arr);
+    this.logger.debug({
+      at: "DepositAddressHandler#_loadExecutedDepositsFromRedis",
+      message: "Loaded executed deposit tx hashes from Redis",
+      count: this.executedDepositTxHashes.size,
+    });
   }
 
   /*
@@ -138,12 +168,34 @@ export class DepositAddressHandler {
 
   private async evaluateDepositAddresses(): Promise<void> {
     const depositMessages = await this._queryIndexerApi();
-    const filtered = depositMessages.filter((m) =>
-      this.config.relayerOriginChains.includes(Number(m.routeParams.originChainId))
+    const filtered = depositMessages.filter(
+      (m) =>
+        this.config.relayerOriginChains.includes(Number(m.routeParams.originChainId)) &&
+        !this.executedDepositTxHashes.has(m.erc20Transfer.transactionHash)
     );
+
+    // We want to remove all executed deposits from the in-memory set if they are not returned by the indexer.
+    // This is because the indexer will stop sending the deposit once it has been "expired" (internal TTL).
+    // So there is no point of keeping them in Redis after Indexer API stops returning them.
+    const refTxHashesFromIndexer = new Set(depositMessages.map((m) => m.erc20Transfer.transactionHash));
+    for (const tx of [...this.executedDepositTxHashes]) {
+      if (!refTxHashesFromIndexer.has(tx)) {
+        this.executedDepositTxHashes.delete(tx);
+      }
+    }
+
     await forEachAsync(filtered, async (depositMessage) => {
       await this.initiateDeposit(depositMessage);
     });
+  }
+
+  /**
+   * Overwrites Redis key with the full executedDepositTxHashes set (single SET; value is JSON array).
+   * Called at start of each poll (after filtering) and after each successful execute.
+   */
+  private async _persistExecutedDepositsRedis(): Promise<void> {
+    const redisKey = this.getExecutedDepositsRedisKey();
+    await this.redisCache.set(redisKey, JSON.stringify([...this.executedDepositTxHashes]));
   }
 
   private async initiateDeposit(depositMessage: DepositAddressMessage): Promise<void> {
@@ -152,11 +204,23 @@ export class DepositAddressHandler {
       originChainId: _originChainId,
       destinationChainId: _destinationChainId,
     } = depositMessage.routeParams;
-    const { amount: _inputAmount } = depositMessage.erc20Transfer;
+    const { amount: _inputAmount, transactionHash: refTxHash } = depositMessage.erc20Transfer;
     const originChainId = Number(_originChainId);
     const destinationChainId = Number(_destinationChainId);
     const inputAmount = toBN(_inputAmount);
     const depositKey = getDepositKey(depositMessage);
+
+    // Skip if a previous instance (or this one) already executed this deposit (persisted in Redis).
+    if (this.executedDepositTxHashes.has(refTxHash)) {
+      this.logger.debug({
+        at: "DepositAddressHandler#initiateDeposit",
+        message: "Skipping already executed deposit (found in Redis)",
+        refTxHash,
+        depositKey,
+      });
+      return;
+    }
+
     if (this.observedExecutedDeposits[originChainId]?.has(depositKey)) {
       return;
     }
@@ -166,7 +230,7 @@ export class DepositAddressHandler {
     let isDepositAddressDeployed = false;
     try {
       isDepositAddressDeployed = await this.isContractDeployed(originChainId, depositMessage.depositAddress);
-    } catch (err) {
+    } catch {
       this.observedExecutedDeposits[originChainId].delete(depositKey);
       this.logger.warn({
         at: "DepositAddressHandler#initiateDeposit",
@@ -176,7 +240,9 @@ export class DepositAddressHandler {
       return;
     }
 
-    const baseFactoryContract = this.counterfactualDepositFactories[originChainId];
+    const baseFactoryContract = getCounterfactualDepositFactory(
+      depositMessage.counterfactualFactoryContractAddress
+    ).connect(this.providersByChain[originChainId]);
 
     const useDispatcher = this.depositAddressSigners.length > 0;
     const factoryContract = useDispatcher
@@ -204,7 +270,7 @@ export class DepositAddressHandler {
       const _deployTx = buildDeployTx(
         factoryContract,
         originChainId,
-        getCounterfactualDepositImplementationAddress(originChainId),
+        depositMessage.counterfactualDepositContractAddress,
         depositMessage.paramsHash,
         depositMessage.salt
       );
@@ -224,6 +290,10 @@ export class DepositAddressHandler {
           at: "DepositAddressHandler#initiateDeposit",
           message: "Failed to submit deploy tx",
           depositKey,
+          deployTx: {
+            ...deployTx,
+            contract: deployTx.contract.address,
+          },
         });
         return;
       }
@@ -260,10 +330,18 @@ export class DepositAddressHandler {
         at: "DepositAddressHandler#initiateDeposit",
         message: "Failed to submit execute tx",
         depositKey,
+        executeTx: {
+          ...executeTx,
+          contract: executeTx.contract.address,
+        },
       });
       this.observedExecutedDeposits[originChainId].delete(depositKey);
       return;
     }
+
+    // Persist full set to Redis immediately so handover cannot miss this execute.
+    this.executedDepositTxHashes.add(refTxHash);
+    await this._persistExecutedDepositsRedis();
   }
 
   private getExecuteContract(address: string, originChainId: number, useDispatcher: boolean): Contract {
@@ -315,6 +393,7 @@ export class DepositAddressHandler {
       recipient,
       depositAddress,
       executionFeeRecipient: this.signerAddress.toNative(),
+      shouldSponsorAccountCreation: String(depositMessage.shouldSponsorAccountCreation),
     };
     try {
       return await this.api.get<SwapApiResponse>(this.config.apiEndpoint, params);

@@ -26,6 +26,7 @@ import {
 import { CCTP_NO_DOMAIN } from "@across-protocol/constants";
 import { CCTP_MAX_SEND_AMOUNT } from "../../common";
 import { SortableEvent } from "../../interfaces";
+import { PendingBridgeAdapterName } from "../../rebalancer/clients/CctpOftReadOnlyClient";
 
 export class UsdcCCTPBridge extends BaseBridgeAdapter {
   private IS_CCTP_V2 = false;
@@ -60,8 +61,7 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
     return getCctpDomainForChainId(this.l2chainId);
   }
 
-  protected resolveL2TokenAddress(l1Token: EvmAddress): string {
-    l1Token;
+  protected resolveL2TokenAddress(_l1Token: EvmAddress): string {
     return TOKEN_SYMBOLS_MAP.USDC.addresses[this.l2chainId];
   }
 
@@ -147,5 +147,9 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
 
   async _getCctpV2DepositForBurnMaxFee(amount: BigNumber): Promise<{ maxFee: BigNumber; finalityThreshold: number }> {
     return getV2DepositForBurnMaxFee(this.l1UsdcTokenAddress, this.hubChainId, this.l2chainId, amount);
+  }
+
+  override getRebalancerPendingBridgeAdapterName(): PendingBridgeAdapterName {
+    return "cctp";
   }
 }

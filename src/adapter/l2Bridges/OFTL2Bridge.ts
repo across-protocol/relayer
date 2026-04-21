@@ -15,15 +15,17 @@ import {
   fixedPointAdjustment,
   chainHasNativeToken,
   isDefined,
+  CHAIN_IDs,
 } from "../../utils";
 import { interfaces as sdkInterfaces } from "@across-protocol/sdk";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
 import { IOFT_ABI_FULL, OFT_DEFAULT_FEE_CAP, OFT_FEE_CAP_OVERRIDES, LZ_FEE_TOKENS } from "../../common";
 import * as OFT from "../../utils/OFTUtils";
 import ERC20_ABI from "../../common/abi/MinimalERC20.json";
+import { PendingBridgeAdapterName } from "../../rebalancer/clients/CctpOftReadOnlyClient";
 
 export class OFTL2Bridge extends BaseL2BridgeAdapter {
-  readonly l2Token: EvmAddress;
+  readonly l2Token: Address;
   private readonly l2ChainEid: number;
   private readonly l1ChainEid: number;
   private l2TokenInfo: sdkInterfaces.TokenInfo;
@@ -36,11 +38,10 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
     super(l2chainId, hubChainId, l2Signer, l1Signer, l1Token);
 
     const translatedL2Token = getTranslatedTokenAddress(l1Token, hubChainId, l2chainId);
-    assert(translatedL2Token.isEVM());
     this.l2Token = translatedL2Token;
 
-    const l1OftMessenger = OFT.getMessengerEvm(l1Token, hubChainId);
-    const l2OftMessenger = OFT.getMessengerEvm(l1Token, l2chainId);
+    const l1OftMessenger = OFT.getMessengerEvm(l1Token, hubChainId, l2chainId);
+    const l2OftMessenger = OFT.getMessengerEvm(l1Token, l2chainId, l2chainId);
 
     this.nativeFeeCap = OFT_FEE_CAP_OVERRIDES[this.l2chainId] ?? OFT_DEFAULT_FEE_CAP;
 
@@ -104,6 +105,7 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
           method: "approve",
           unpermissionsed: false,
           nonMulticall: true,
+          ensureConfirmation: true,
           args: [this.l2Bridge.address, feeStruct.nativeFee],
           message: "🎰 Approved OftL2Bridge to spend LZ fee token.",
           mrkdwn: `Approved ${formatter(feeStruct.nativeFee.toString())} to ${this.l2Bridge.address}`,
@@ -117,7 +119,7 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
       contract: this.l2Bridge,
       chainId: this.l2chainId,
       method: "send",
-      unpermissionsed: false,
+      unpermissioned: false,
       nonMulticall: true,
       canFailInSimulation: payFeeInLzToken, // This can fail if the approval for the fee token is not set.
       args: [sendParamStruct, feeStruct, refundAddress],
@@ -137,8 +139,6 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
     fromAddress: Address,
     l2Token: Address
   ): Promise<BigNumber> {
-    assert(l2Token.isEVM(), `Non-evm l2Token not supported: ${l2Token.toNative()}`);
-
     if (!this.l2Token.eq(l2Token)) {
       // Return 0 for tokens not associated with this OFTBridge
       // https://github.com/across-protocol/relayer/pull/2509#discussion_r2305205369
@@ -167,11 +167,19 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
 
     const l2BridgeInitiationEvents = l2SentAll.filter((event) => event.args.dstEid === this.l1ChainEid);
     const l1BridgeFinalizationEvents = l1ReceivedAll.filter((event) => event.args.srcEid === this.l2ChainEid);
+    const ignoredPendingBridgeTxnRefs = await this.getIgnoredPendingBridgeTxnRefs(
+      this.l2chainId,
+      this.hubChainId,
+      fromAddress
+    );
 
     const finalizedGuids = new Set<string>(l1BridgeFinalizationEvents.map((event) => event.args.guid));
 
     let outstandingWithdrawalAmount = bnZero;
     for (const events of l2BridgeInitiationEvents) {
+      if (ignoredPendingBridgeTxnRefs.has(events.transactionHash)) {
+        continue;
+      }
       if (!finalizedGuids.has(events.args.guid)) {
         // Convert `amountReceivedLD` from event from LD (local decimals of the sending chain, which is the L2) into the
         // decimals of receiving chain (mainnet) to aggregate these amounts correctly upstream
@@ -184,6 +192,12 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
     return outstandingWithdrawalAmount;
   }
 
+  public pendingWithdrawalLookbackPeriodSeconds(): number {
+    if (this.l2chainId === CHAIN_IDs.HYPEREVM) {
+      return 25 * 60 * 60; // USDT0 from HyperEVM is a special case taking ~24 hours to finalize.
+    }
+    return super.pendingWithdrawalLookbackPeriodSeconds();
+  }
   /**
    * Rounds send amount so that dust doesn't get subtracted from it in the OFT contract.
    * @param amount amount to round
@@ -209,9 +223,13 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
   public override requiredTokenApprovals(): { token: EvmAddress; bridge: EvmAddress }[] {
     return [
       {
-        token: this.l2Token,
+        token: EvmAddress.from(this.l2Token.toEvmAddress()),
         bridge: EvmAddress.from(this.l2Bridge.address),
       },
     ];
+  }
+
+  override getRebalancerPendingBridgeAdapterName(): PendingBridgeAdapterName {
+    return "oft";
   }
 }

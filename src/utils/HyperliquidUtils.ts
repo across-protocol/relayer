@@ -107,6 +107,7 @@ export async function getOrderStatus(
   return _callWithRetry(infoClient.orderStatus.bind(infoClient), [params], nRetries, maxRetries);
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function _callWithRetry<T, A extends any[]>(
   apiCall: (...args: A) => Promise<T>,
   args: A,

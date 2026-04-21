@@ -1,7 +1,7 @@
-import { Deposit, InventoryConfig } from "../../src/interfaces";
+import { Deposit, InventoryConfig, TokenInfo } from "../../src/interfaces";
 import { HubPoolClient, InventoryClient, Rebalance, TokenClient } from "../../src/clients";
 import { AdapterManager, CrossChainTransferClient } from "../../src/clients/bridges";
-import { BigNumber, bnZero, EvmAddress, toAddressType } from "../../src/utils";
+import { Address, BigNumber, bnZero, EvmAddress, getTokenInfo, toAddressType } from "../../src/utils";
 import winston from "winston";
 import { RebalancerClient } from "../../src/rebalancer/utils/interfaces";
 
@@ -42,6 +42,14 @@ export class MockInventoryClient extends InventoryClient {
     );
   }
 
+  protected override getTokenInfo(token: Address, chainId: number): TokenInfo {
+    try {
+      return this.hubPoolClient.getTokenInfoForAddress(token, chainId);
+    } catch {
+      return getTokenInfo(token, chainId);
+    }
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   override async determineRefundChainId(_deposit: Deposit): Promise<number[]> {
     return this.inventoryConfig === null ? [1] : super.determineRefundChainId(_deposit);
@@ -72,7 +80,7 @@ export class MockInventoryClient extends InventoryClient {
   }
 
   override getPossibleRebalances(): Rebalance[] {
-    return this.possibleRebalances;
+    return this.possibleRebalances.length > 0 ? this.possibleRebalances : super.getPossibleRebalances();
   }
 
   setBalanceOnChainForL1Token(newBalance: BigNumber | undefined): void {

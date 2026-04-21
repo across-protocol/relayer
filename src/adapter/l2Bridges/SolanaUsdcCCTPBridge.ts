@@ -34,9 +34,9 @@ import {
 } from "@solana/kit";
 
 type DepositForBurnEvent = {
-  nonce: BigInt;
+  nonce: bigint;
   burnToken: string;
-  amount: BigInt;
+  amount: bigint;
   depositor: string;
   mintRecipient: string;
   destinationDomain: number;
@@ -166,6 +166,9 @@ export class SolanaUsdcCCTPBridge extends BaseL2BridgeAdapter {
     const counted = new Set<number>();
     const withdrawalAmount = withdrawalInitiatedEvents.reduce((totalAmount, _l2Args) => {
       const l2Args = _l2Args.data as DepositForBurnEvent;
+      if (l2Args.destinationDomain !== this.l1DestinationDomain) {
+        return totalAmount;
+      }
       const l2MintRecipient = l2Args.mintRecipient;
       // Exit early if the event parsed was initiated by an address we are not tracking.
       if (l2MintRecipient !== fromAddress.toBase58()) {

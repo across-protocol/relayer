@@ -234,10 +234,18 @@ export class SvmFillerClient {
     }
 
     const simulationResults = await Promise.allSettled(
-      queue.map(({ txPromises }) => txPromises[0].then((tx) => signAndSimulateTransaction(this.provider, tx)))
+      queue.map(({ txPromises }) =>
+        txPromises[0].then((tx) => {
+          if (Array.isArray(tx)) {
+            throw new Error("Unexpected multipart transaction in simulation queue");
+          }
+          return signAndSimulateTransaction(this.provider, tx);
+        })
+      )
     );
 
     const successfulSims: { logs: string[]; message: string; mrkdwn: string }[] = [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const failedSims: { error: any; message: string; mrkdwn: string }[] = [];
 
     simulationResults.forEach((result, idx) => {

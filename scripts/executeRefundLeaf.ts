@@ -1,7 +1,6 @@
 import {
   ethers,
   retrieveSignerFromCLIArgs,
-  RelayerRefundLeaf,
   toBN,
   getProvider,
   blockExplorerLink,
@@ -13,11 +12,12 @@ import {
 // copying a leaf's contents from the GCP console and executing it.
 
 // INSTRUCTIONS:
-// - run command: ts-node ./scripts/executeRefundLeaf.ts --wallet mnemonic
+// - run command: tsx ./scripts/executeRefundLeaf.ts --wallet mnemonic
 // - step 1: Copy GCP leaf into the following structure. You can do so by locating the relevant "Relayer refund leaf #"
 //           log, like: "Relayer refund leaf #44", and clicking "Copy > Copy as JSON":
 // - step 2: Enter in the `rootBundleId` associated with the merkle tree. We can improve this script in the future
 //           by auto detecting this rootBundleId from the associated relayerRefundRoot executed on Mainnet.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const gcpCopiedRefundLeaf: any = {
   jsonPayload: {
     proof: [
@@ -50,9 +50,9 @@ export async function run(): Promise<void> {
   const baseSigner = await retrieveSignerFromCLIArgs();
 
   // Reformat leaf such that we can execute it on-chain:
-  const relayerRefundLeaf: RelayerRefundLeaf = {
+  const relayerRefundLeaf = {
     ...gcpCopiedRefundLeaf.jsonPayload.leaf,
-    refundAmounts: gcpCopiedRefundLeaf.jsonPayload.leaf.refundAmounts.map((x) => toBN(x)),
+    refundAmounts: gcpCopiedRefundLeaf.jsonPayload.leaf.refundAmounts.map(toBN),
   };
   const connectedSigner = baseSigner.connect(await getProvider(Number(relayerRefundLeaf.chainId)));
 

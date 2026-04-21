@@ -82,8 +82,6 @@ export class OpStackUSDCBridge extends BaseL2BridgeAdapter {
     from: EvmAddress,
     _l2Token: EvmAddress
   ): Promise<BigNumber> {
-    _l2Token; // unused
-
     const sentFilter = this.l2Bridge.filters.MessageSent(from.toNative());
     const receiveFilter = this.l1Bridge.filters.MessageReceived(from.toNative());
 
@@ -110,5 +108,10 @@ export class OpStackUSDCBridge extends BaseL2BridgeAdapter {
     }, bnZero);
 
     return withdrawalAmount;
+  }
+
+  public pendingWithdrawalLookbackPeriodSeconds(): number {
+    return 7 * 24 * 60 * 60 + 60 * 60; // 7 days + 1 hour, to account for the time needed to execute the withdrawal
+    // once it has passed the challenge period.
   }
 }

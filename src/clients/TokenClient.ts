@@ -19,7 +19,7 @@ import {
   toBN,
   winston,
   getRedisCache,
-  TOKEN_SYMBOLS_MAP,
+  getInventoryBalanceContributorTokens,
   getRemoteTokenForL1Token,
   getTokenInfo,
   isEVMSpokePoolClient,
@@ -249,26 +249,19 @@ export class TokenClient {
     }
 
     const tokens = hubPoolTokens
-      .map(({ symbol, address }) => {
+      .map(({ address }) => {
         let tokenAddrs: string[] = [];
         try {
-          const spokePoolToken = getRemoteTokenForL1Token(address, chainId, this.hubPoolClient.chainId);
-          tokenAddrs.push(spokePoolToken.toEvmAddress());
+          tokenAddrs = dedupArray(
+            getInventoryBalanceContributorTokens(address, chainId, this.hubPoolClient.chainId).map((token) =>
+              token.toEvmAddress()
+            )
+          );
         } catch {
           // No known deployment for this token on the SpokePool.
           // note: To be overhauled subject to https://github.com/across-protocol/sdk/pull/643
         }
-
-        // If the HubPool token is USDC then it might map to multiple tokens on the destination chain.
-        if (symbol === "USDC") {
-          ["USDC.e", "USDbC", "USDzC"]
-            .map((symbol) => TOKEN_SYMBOLS_MAP[symbol]?.addresses[chainId])
-            .filter(isDefined)
-            .forEach((address) => tokenAddrs.push(address));
-          tokenAddrs = dedupArray(tokenAddrs);
-        }
-
-        return tokenAddrs.filter(isDefined).map((address) => erc20.attach(address));
+        return tokenAddrs.filter(isDefined).map((tokenAddress) => erc20.attach(tokenAddress));
       })
       .flat();
 
@@ -284,7 +277,7 @@ export class TokenClient {
           // Validate that the remote token is a valid Solana address
           assert(remoteToken.isSVM());
           return remoteToken;
-        } catch (error) {
+        } catch {
           // No known deployment for this token on the SpokePool.
           return undefined;
         }
@@ -388,7 +381,7 @@ export class TokenClient {
     // Add additional L2 tokens to the balances and allowances.
     const erc20 = this.erc20.connect(provider);
     this.additionalL2Tokens[chainId]?.forEach((token) => {
-      const contract = erc20.attach(token.toNative());
+      const contract = erc20.attach(token.toEvmAddress());
       balances.push({ contract, method: "balanceOf", args: [this.relayerEvmAddress.toEvmAddress()] });
       allowances.push({
         contract,
@@ -403,7 +396,7 @@ export class TokenClient {
     const allowanceOffset = balances.length;
     const balanceInfo = Object.fromEntries(
       balances.map(({ contract: { address } }, idx) => [
-        EvmAddress.from(address).toNative(),
+        toAddressType(address, chainId).toNative(),
         { balance: results[idx][0], allowance: results[allowanceOffset + idx][0] },
       ])
     );

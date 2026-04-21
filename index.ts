@@ -5,6 +5,7 @@ import {
   exit,
   retrieveSignerFromCLIArgs,
   help,
+  isKeyOf,
   Logger,
   usage,
   waitForLogger,
@@ -47,7 +48,7 @@ export async function run(args: { [k: string]: boolean | string }): Promise<void
   logger = Logger;
 
   // todo Make the mode of operation an operand, rather than an option.
-  // i.e. ts-node ./index.ts [options] <relayer|...>
+  // i.e. tsx ./index.ts [options] <relayer|...>
   // Note: ts does not produce a narrow type from Object.keys, so we have to help.
   cmd = Object.keys(CMDS).find((_cmd) => !!args[_cmd]);
 
@@ -60,7 +61,7 @@ export async function run(args: { [k: string]: boolean | string }): Promise<void
   else if (typeof args["wallet"] !== "string" || args["wallet"].length === 0) {
     // todo: Update usage() to provide a hint that wallet is missing/malformed.
     usage(""); // no return
-  } else {
+  } else if (isKeyOf(cmd, CMDS)) {
     // One global signer for use with a specific per-chain provider.
     // todo: Support a void signer for monitor mode (only) if no wallet was supplied.
     const signer = await retrieveSignerFromCLIArgs();

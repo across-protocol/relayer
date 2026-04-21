@@ -1,14 +1,10 @@
-import Binance, {
-  HttpMethod,
-  DepositHistoryResponse,
-  WithdrawHistoryResponse,
-  type Binance as BinanceApi,
-} from "binance-api-node";
+import Binance, { DepositHistoryResponse, WithdrawHistoryResponse, type Binance as BinanceApi } from "binance-api-node";
+export type { BinanceApi };
 import minimist from "minimist";
-import { getGckmsConfig, retrieveGckmsKeys, isDefined, assert, delay, CHAIN_IDs, getRedisCache } from "./";
+import { getGckmsConfig, retrieveGckmsKeys, isDefined, assert, delay, CHAIN_IDs, getRedisCache, truncate } from "./";
 
 // Store global promises on Gckms key retrieval actions so that we don't retrieve the same key multiple times.
-let binanceSecretKeyPromise = undefined;
+let binanceSecretKeyPromise: Promise<string | undefined> | undefined = undefined;
 
 // Known transient errors the Binance API returns. If a response is one of these errors, then the API call should be retried.
 const KNOWN_BINANCE_ERROR_REASONS = [
@@ -17,7 +13,7 @@ const KNOWN_BINANCE_ERROR_REASONS = [
   "TypeError: fetch failed",
 ];
 
-type WithdrawalQuota = {
+export type WithdrawalQuota = {
   wdQuota: number;
   usedWdQuota: number;
 };
@@ -51,7 +47,7 @@ type Network = {
 };
 
 // A BinanceDeposit is either a simplified element of the return type of the Binance API's `depositHistory`.
-type BinanceDeposit = {
+export type BinanceDeposit = {
   // The amount of `coin` transferred in this interaction.
   amount: number;
   // The coin used in this interaction (i.e. the token symbol).
@@ -60,12 +56,14 @@ type BinanceDeposit = {
   network: string;
   // The transaction hash of the deposit.
   txId: string;
+  // The timestamp that Binance assigns the deposit.
+  insertTime: number;
   // The status of the deposit/withdrawal.
   status?: number;
 };
 
 // A BinanceWithdrawal is a simplified element of the return type of the Binance API's `withdrawHistory`.
-export type BinanceWithdrawal = BinanceDeposit & {
+export type BinanceWithdrawal = Omit<BinanceDeposit, "insertTime"> & {
   // The recipient of `coin` on the destination network.
   recipient: string;
   // The unique withdrawal ID.
@@ -76,8 +74,45 @@ export type BinanceWithdrawal = BinanceDeposit & {
   applyTime: string;
 };
 
+export enum BINANCE_WITHDRAWAL_STATUS {
+  EMAIL_SENT = 0,
+  CANCELLED = 1,
+  AWAITING_APPROVAL = 2,
+  REJECTED = 3,
+  PROCESSING = 4,
+  FAILURE = 5,
+  COMPLETED = 6,
+}
+
+export function resolveBinanceCoinSymbol(token: string): string {
+  switch (token) {
+    case "WETH":
+      return "ETH";
+    case "ZKUSDCE":
+      return "USDC";
+    default:
+      return token;
+  }
+}
+
 // ParsedAccountCoins represents a simplified return type of the Binance `accountCoins` endpoint.
 type ParsedAccountCoins = Coin[];
+
+/**
+ * @notice Synchronous check that mirrors the inputs `getBinanceApiClient()` requires: a Binance API key
+ * plus either an HMAC secret in the environment or a `--binanceSecretKey` CLI arg indicating GCKMS-backed
+ * secret retrieval. This is best-effort — it cannot confirm that GCKMS retrieval will actually succeed,
+ * nor that Binance is reachable at runtime — but it avoids false positives where only one credential is
+ * present. Used by inventory/repayment logic to gate "Binance route available" claims without making the
+ * check async.
+ */
+export function binanceCredentialsConfigured(): boolean {
+  const { BINANCE_API_KEY: apiKey, BINANCE_HMAC_KEY: hmacKey } = process.env;
+  const gckmsKeyArgPresent = process.argv.some(
+    (arg) => arg === "--binanceSecretKey" || arg.startsWith("--binanceSecretKey=")
+  );
+  return isDefined(apiKey) && (isDefined(hmacKey) || gckmsKeyArgPresent);
+}
 
 /**
  * Returns an API client to interface with Binance
@@ -121,20 +156,6 @@ async function retrieveBinanceSecretKeyFromCLIArgs(): Promise<string | undefined
     return undefined;
   }
   return binanceKeys[0].slice(2);
-}
-
-/**
- * Retrieves the input client account's withdrawal quota.
- * @dev This is in a utility function since the Binance API does not natively support calling this endpoint.
- * @returns an object with two fields: `wdQuota` and `usedWdQuota`, corresponding to the total amount
- * available to rebalance per day and the amount already used.
- */
-export async function getBinanceWithdrawalLimits(binanceApi: BinanceApi): Promise<WithdrawalQuota> {
-  const unparsedQuota = await binanceApi.privateRequest("GET" as HttpMethod, "/sapi/v1/capital/withdraw/quota", {});
-  return {
-    wdQuota: unparsedQuota["wdQuota"],
-    usedWdQuota: unparsedQuota["usedWdQuota"],
-  };
 }
 
 export enum BinanceTransactionType {
@@ -227,6 +248,10 @@ export async function getBinanceWithdrawalType(
   }
 }
 
+export function isCompletedBinanceWithdrawal(status?: number): boolean {
+  return status === BINANCE_WITHDRAWAL_STATUS.COMPLETED;
+}
+
 /**
  * Gets all binance deposits for the Binance account starting from `startTime`-present.
  * @returns An array of parsed binance deposits.
@@ -252,10 +277,11 @@ export async function getBinanceDeposits(
   return Object.values(depositHistory).map((deposit) => {
     return {
       amount: Number(deposit.amount),
-      coin: deposit.coin,
+      coin: resolveBinanceCoinSymbol(deposit.coin),
       network: deposit.network,
       txId: deposit.txId,
       status: deposit.status,
+      insertTime: deposit.insertTime,
     } satisfies BinanceDeposit;
   });
 }
@@ -273,7 +299,7 @@ export async function getBinanceWithdrawals(
 ): Promise<BinanceWithdrawal[]> {
   let withdrawHistory: WithdrawHistoryResponse;
   try {
-    withdrawHistory = await binanceApi.withdrawHistory({ coin, startTime });
+    withdrawHistory = await binanceApi.withdrawHistory({ coin: resolveBinanceCoinSymbol(coin), startTime });
   } catch (_err) {
     const err = _err.toString();
     if (KNOWN_BINANCE_ERROR_REASONS.some((errorReason) => err.includes(errorReason)) && nRetries < maxRetries) {
@@ -288,7 +314,7 @@ export async function getBinanceWithdrawals(
       amount: Number(withdrawal.amount),
       transactionFee: Number(withdrawal.transactionFee),
       recipient: withdrawal.address,
-      coin,
+      coin: resolveBinanceCoinSymbol(coin),
       id: withdrawal.id,
       txId: withdrawal.txId,
       network: withdrawal.network,
@@ -304,12 +330,15 @@ export async function getBinanceWithdrawals(
  * @returns A typed `AccountCoins` response.
  */
 export async function getAccountCoins(binanceApi: BinanceApi): Promise<ParsedAccountCoins> {
-  const coins = Object.values(await binanceApi["accountCoins"]());
+  // accountCoins is an undocumented Binance API method not present in binance-api-node type defs.
+  type RawCoin = { coin: string; free: string; networkList?: Record<string, unknown>[] };
+  const apiWithCoins = binanceApi as BinanceApi & { accountCoins(): Promise<Record<string, RawCoin>> };
+  const coins = Object.values(await apiWithCoins.accountCoins());
   return coins.map((coin) => {
-    const networkList = coin["networkList"]?.map((network) => {
+    const networkList = coin.networkList?.map((network) => {
       return {
         name: network["network"],
-        coin: network["coin"],
+        coin: resolveBinanceCoinSymbol(network["coin"] as string),
         withdrawMin: network["withdrawMin"],
         withdrawMax: network["withdrawMax"],
         withdrawFee: network["withdrawFee"],
@@ -317,9 +346,75 @@ export async function getAccountCoins(binanceApi: BinanceApi): Promise<ParsedAcc
       } as Network;
     });
     return {
-      symbol: coin["coin"],
-      balance: coin["free"],
+      symbol: coin.coin,
+      balance: coin.free,
       networkList,
     } as Coin;
   });
+}
+
+/**
+ * Computes outstanding deposits for a given deposit network given a list of executed withdrawals that
+ * match against non-outstanding or already-finalized deposits.
+ * @param deposits All deposits for the same coin across all networks for the monitored address.
+ * @param withdrawals All L1 withdrawals for the same coin for the monitored address.
+ * @param depositNetwork The network to compute unmatched volume for.
+ * @returns The list of unmatched deposits on `depositNetwork` along with their amount outstanding.
+ */
+export function getOutstandingBinanceDeposits(
+  deposits: BinanceDeposit[],
+  withdrawals: BinanceWithdrawal[],
+  depositNetwork: string
+): BinanceDeposit[] {
+  assert(
+    withdrawals.every((withdrawal) => withdrawal.network === BINANCE_NETWORKS[CHAIN_IDs.MAINNET]),
+    "Withdrawals must be for the Mainnet network"
+  );
+  if (deposits.length === 0) {
+    return [];
+  }
+  assert(
+    deposits.every((deposit) => deposit.coin === deposits[0].coin),
+    "Deposits must be for the same coin"
+  );
+  // Determining which deposits are outstanding is tricky for two reasons:
+  // - Binance withdrawals on Ethereum can batch together deposited amounts from different L2s.
+  // - It is not possible to determine which deposit is getting "finalized" by any withdrawal on Etheruem because
+  //   there is no metadata associated with the withdrawal that indicates the L2 it originated from.
+  // - Binance withdrawals can be greater than or less than the deposited amount for individual deposits.
+
+  // First, find the net outstanding deposited amount.
+  // @dev amount + txnFee can often exceed deposited amount due to existing dust on the Binance account
+  // that also gets included in the batch withdrawal.
+  const totalWithdrawalAmount = withdrawals.reduce((acc, w) => acc + Number(w.amount) + Number(w.transactionFee), 0);
+  const totalDepositedAmount = deposits.reduce((acc, d) => acc + Number(d.amount), 0);
+  let remainingOutstanding = totalDepositedAmount - totalWithdrawalAmount;
+  if (remainingOutstanding <= 0) {
+    return [];
+  }
+
+  // There is outstanding deposited amount, so iterate through deposits from newest to oldest
+  // (newest deposits are most likely to be the ones not yet finalized) until we've accounted for
+  // all outstanding volume.
+  const sortedDepositsNewestFirst = deposits.slice().sort((a, b) => b.insertTime - a.insertTime);
+  const outstandingDeposits: BinanceDeposit[] = [];
+  for (const deposit of sortedDepositsNewestFirst) {
+    if (remainingOutstanding <= 0) {
+      break;
+    }
+
+    if (deposit.amount <= remainingOutstanding) {
+      // Entire deposit is outstanding.
+      outstandingDeposits.push({ ...deposit });
+      remainingOutstanding -= deposit.amount;
+    } else {
+      // Only part of this deposit is outstanding. The rest was covered by withdrawals.
+      // 8 decimal places is the precision of the Binance API and we truncate for simplicity sake and avoiding BN to float conversion issues.
+      outstandingDeposits.push({ ...deposit, amount: truncate(remainingOutstanding, 8) });
+      remainingOutstanding = 0;
+    }
+  }
+
+  // Filter for the deposits on the specific network and return them.
+  return outstandingDeposits.filter((deposit) => deposit.network === depositNetwork);
 }

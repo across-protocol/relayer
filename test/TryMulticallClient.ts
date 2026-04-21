@@ -1,4 +1,4 @@
-import { utils as sdkUtils } from "@across-protocol/sdk";
+import { Multicall3__factory } from "@across-protocol/sdk/src/utils/abi/typechain";
 import { AugmentedTransaction, TryMulticallClient } from "../src/clients";
 import { BigNumber, TransactionSimulationResult } from "../src/utils";
 import { MockedTransactionClient, txnClientPassResult } from "./mocks/MockTransactionClient";
@@ -19,7 +19,11 @@ class DummyTryMulticallClient extends TryMulticallClient {
   public ignoredSimulationFailures: TransactionSimulationResult[] = [];
   public loggedSimulationFailures: TransactionSimulationResult[] = [];
 
-  constructor(logger: winston.Logger, chunkSize: { [chainId: number]: number } = {}, public multisend?: Contract) {
+  constructor(
+    logger: winston.Logger,
+    chunkSize: { [chainId: number]: number } = {},
+    public multisend?: Contract
+  ) {
     super(logger, chunkSize, multisend);
     this.txnClient = new MockedTransactionClient(logger);
   }
@@ -78,7 +82,7 @@ describe("TryMulticallClient", async function () {
     });
 
     it("Propagates input transaction gasLimits: internal multicall", async function () {
-      const fakeMultisender = await smock.fake(await sdkUtils.getABI("Multicall3"), { address: randomAddress() });
+      const fakeMultisender = await smock.fake(Multicall3__factory.abi, { address: randomAddress() });
       multiCaller = new DummyTryMulticallClient(spyLogger, {}, fakeMultisender as unknown as Contract);
 
       const nTxns = 10;
@@ -108,7 +112,7 @@ describe("TryMulticallClient", async function () {
     });
 
     it("Can revert to undefined gasLimit: internal multicall", async function () {
-      const fakeMultisender = await smock.fake(await sdkUtils.getABI("Multicall3"), { address: randomAddress() });
+      const fakeMultisender = await smock.fake(Multicall3__factory.abi, { address: randomAddress() });
       multiCaller = new DummyTryMulticallClient(spyLogger, {}, fakeMultisender as unknown as Contract);
 
       const nTxns = 10;
@@ -230,7 +234,7 @@ describe("TryMulticallClient", async function () {
     });
 
     it("Correctly handles unpermissioned transactions", async function () {
-      const fakeMultisender = await smock.fake(await sdkUtils.getABI("Multicall3"), { address: randomAddress() });
+      const fakeMultisender = await smock.fake(Multicall3__factory.abi, { address: randomAddress() });
       const multicallerWithMultisend = new DummyTryMulticallClient(
         spyLogger,
         {},

@@ -1,3 +1,4 @@
+import { CHAIN_IDs } from "@across-protocol/constants";
 import { utils } from "@across-protocol/sdk";
 import {
   spokesThatHoldNativeTokens,
@@ -24,14 +25,17 @@ import {
   Address,
   isSVMSpokePoolClient,
   bnZero,
+  resolveAcrossToken,
+  SVMProvider,
 } from "../../utils";
 import { SpokePoolClient, HubPoolClient, SpokePoolManager } from "../";
-import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { BaseChainAdapter } from "../../adapter";
 import { TransferTokenParams } from "../../adapter/utils";
+import { CctpOftReadOnlyClient } from "../../rebalancer/clients/CctpOftReadOnlyClient";
 
 export class AdapterManager {
   public adapters: { [chainId: number]: BaseChainAdapter } = {};
+  protected readonly pendingBridgeRedisReader?: CctpOftReadOnlyClient;
 
   // Some L2's canonical bridges send ETH, not WETH, over the canonical bridges, resulting in recipient addresses
   // receiving ETH that needs to be wrapped on the L2. This array contains the chainIds of the chains that this
@@ -48,18 +52,25 @@ export class AdapterManager {
     if (!spokePoolClients) {
       return;
     }
+    this.pendingBridgeRedisReader = new CctpOftReadOnlyClient(logger);
     this.spokePoolManager = new SpokePoolManager(logger, spokePoolClients);
     const spokePoolAddresses = Object.values(this.spokePoolManager.getSpokePoolClients()).map(
       (client) => client.spokePoolAddress
     );
+
+    const isHubPoolOrSpokePoolAddress = (chainId: number, address: Address) => {
+      return (
+        EvmAddress.from(this.hubPoolClient.hubPool.address).eq(address) ||
+        this.spokePoolManager.getClient(chainId)?.spokePoolAddress.eq(address)
+      );
+    };
 
     // The adapters are only set up to monitor EOA's and the HubPool and SpokePool address, so remove
     // spoke pool addresses from other chains.
     const filterMonitoredAddresses = (chainId: number) => {
       return monitoredAddresses.filter(
         (address) =>
-          EvmAddress.from(this.hubPoolClient.hubPool.address).eq(address) ||
-          this.spokePoolManager.getClient(chainId)?.spokePoolAddress.eq(address) ||
+          isHubPoolOrSpokePoolAddress(chainId, address) ||
           !spokePoolAddresses.some((spokePoolAddress) => spokePoolAddress.eq(address))
       );
     };
@@ -80,7 +91,7 @@ export class AdapterManager {
           } else if (isSVMSpokePoolClient(spokePoolClient)) {
             l2SignerOrProvider = spokePoolClient.svmEventsClient.getRpc();
           }
-          const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[hubChainId];
+          const l1Token = resolveAcrossToken(symbol, hubChainId, true);
           const bridgeConstructor = CUSTOM_BRIDGE[chainId]?.[l1Token] ?? CANONICAL_BRIDGE[chainId];
           const bridge = new bridgeConstructor(
             chainId,
@@ -99,7 +110,7 @@ export class AdapterManager {
         return {};
       }
       const spokePoolClient = this.spokePoolManager.getClient(chainId);
-      let l2SignerOrSvmProvider;
+      let l2SignerOrSvmProvider: Signer | SVMProvider | undefined;
       if (isEVMSpokePoolClient(spokePoolClient)) {
         l2SignerOrSvmProvider = spokePoolClient.spokePool.signer;
       } else if (isSVMSpokePoolClient(spokePoolClient)) {
@@ -108,7 +119,7 @@ export class AdapterManager {
       return Object.fromEntries(
         SUPPORTED_TOKENS[chainId]
           ?.map((symbol) => {
-            const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[hubChainId];
+            const l1Token = resolveAcrossToken(symbol, hubChainId, true);
             const bridgeConstructor = CUSTOM_L2_BRIDGE[chainId]?.[l1Token] ?? CANONICAL_L2_BRIDGE[chainId];
             if (!isDefined(bridgeConstructor)) {
               return undefined;
@@ -126,17 +137,40 @@ export class AdapterManager {
       );
     };
     Object.values(this.spokePoolManager.getSpokePoolClients()).map(({ chainId }) => {
+      // Filter hub/spoke pool addresses from the monitored addresses for chains that don't have a pool rebalance
+      // route for the l1 token.
+      const monitoredAddresses = Object.fromEntries(
+        (SUPPORTED_TOKENS[chainId] ?? []).map((symbol) => {
+          const l1Token = resolveAcrossToken(symbol, hubChainId, true);
+          return [
+            l1Token,
+            filterMonitoredAddresses(chainId).filter((address) => {
+              if (!l1Token) {
+                return false;
+              }
+              const hasPoolRebalanceRoute = hubPoolClient.l2TokenEnabledForL1Token(EvmAddress.from(l1Token), chainId);
+              if (!hasPoolRebalanceRoute) {
+                // Chain does not have a pool rebalance route, only allow EOA's.
+                return !isHubPoolOrSpokePoolAddress(chainId, address);
+              }
+              // Chain has pool rebalance route, all addresses from filterMonitoredAddresses are valid.
+              return true;
+            }),
+          ];
+        })
+      );
       // Instantiate a generic adapter and supply all network-specific configurations.
       this.adapters[chainId] = new BaseChainAdapter(
         this.spokePoolManager.getSpokePoolClients(),
         chainId,
         hubChainId,
-        filterMonitoredAddresses(chainId),
+        monitoredAddresses,
         logger,
         SUPPORTED_TOKENS[chainId] ?? [],
         constructBridges(chainId),
         constructL2Bridges(chainId),
-        DEFAULT_GAS_MULTIPLIER[chainId] ?? 1
+        DEFAULT_GAS_MULTIPLIER[chainId] ?? 1,
+        this.pendingBridgeRedisReader
       );
     });
     logger.debug({
@@ -164,12 +198,6 @@ export class AdapterManager {
         adapter.supportedTokens.includes(TOKEN_EQUIVALENCE_REMAPPING[tokenSymbol])
       );
     });
-    this.logger.debug({
-      at: "AdapterManager",
-      message: `Getting outstandingCrossChainTransfers for ${chainId}`,
-      adapterSupportedL1Tokens: adapterSupportedL1Tokens.map((l1Token) => l1Token.toNative()),
-      searchConfigs: adapter.getUpdatedSearchConfigs(),
-    });
     return this.adapters[chainId].getOutstandingCrossChainTransfers(adapterSupportedL1Tokens);
   }
 
@@ -187,7 +215,7 @@ export class AdapterManager {
       message: "Sending token cross-chain",
       optionalParams,
       chainId,
-      l1Token: l1Token.toNative(),
+      l1Token,
       amount,
     });
     l2Token ??= this.l2TokenForL1Token(l1Token, chainId);
@@ -207,14 +235,21 @@ export class AdapterManager {
       at: "AdapterManager",
       message: "Withdrawing token from L2",
       chainId,
-      l2Token: l2Token.toNative(),
+      l2Token,
       amount,
     });
     const txnReceipts = this.adapters[chainId].withdrawTokenFromL2(address, l2Token, amount, simMode, optionalParams);
     return txnReceipts;
   }
 
-  async getL2PendingWithdrawalAmount(
+  /**
+   * @notice Call this function to get the total withdrawal amount for a given lookback period. If you want the
+   * to know the total pending withdrawal amount regardless of the lookback period, use the getTotalPendingWithdrawalAmount() function,
+   * which defaults to the L2 bridge's recommended lookback period seconds.
+   * @param withdrawExcessPeriod Lookback period in seconds.
+   * @returns Total pending withdrawal amount for the given lookback period.
+   */
+  async getL2PendingWithdrawalAmountWithLookbackPeriod(
     lookbackPeriodSeconds: number,
     chainId: number | string,
     fromAddress: Address,
@@ -224,8 +259,13 @@ export class AdapterManager {
     return await this.adapters[chainId].getL2PendingWithdrawalAmount(lookbackPeriodSeconds, fromAddress, l2Token);
   }
 
+  /**
+   * @notice Call this function to get the total pending withdrawal amount for a given L1 token and from address.
+   * @dev This function will lookback long enough to see all pending withdrawals.
+   * @param chainsToEvaluate List of chain IDs to evaluate.
+   * @returns Total pending withdrawal amount for all chains.
+   */
   async getTotalPendingWithdrawalAmount(
-    lookbackPeriodSeconds: number,
     l2ChainIds: number[],
     fromAddress: Address,
     l1Token: EvmAddress
@@ -234,7 +274,6 @@ export class AdapterManager {
     const totalBalance: { [l2ChainId: number]: BigNumber } = {};
     await Promise.all(
       l2ChainIds.map(async (chainId) => {
-        totalBalance[chainId] = bnZero;
         if (!this.l2TokenExistForL1Token(l1Token, chainId)) {
           return;
         }
@@ -247,12 +286,17 @@ export class AdapterManager {
         const l2Token = this.l2TokenForL1Token(l1Token, chainId);
         const l2TokenInfo = getTokenInfo(l2Token, chainId);
         const l2ToL1DecimalConverter = utils.ConvertDecimals(l2TokenInfo.decimals, l1TokenInfo.decimals);
+        // Use the adapter's recommended lookback period seconds to capture all pending withdrawals, even those that
+        // are several days old but sent on the ORU 7 day bridges.
+        const lookbackPeriodSeconds = await this.adapters[chainId].getL2PendingWithdrawalLookbackPeriodSeconds(l2Token);
         const pendingAmount = await this.adapters[chainId].getL2PendingWithdrawalAmount(
           lookbackPeriodSeconds,
           fromAddress,
           l2Token
         );
-        totalBalance[chainId] = l2ToL1DecimalConverter(pendingAmount);
+        if (pendingAmount.gt(bnZero)) {
+          totalBalance[chainId] = l2ToL1DecimalConverter(pendingAmount);
+        }
       })
     );
     return totalBalance;

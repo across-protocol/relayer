@@ -37,11 +37,6 @@ let logger: winston.Logger;
 let chainId: number;
 let chain: string;
 
-// Teach BigInt how to be represented as JSON.
-(BigInt.prototype as any).toJSON = function () {
-  return this.toString();
-};
-
 // These are Log fields that are irrelevant for SVM and are only needed for the messaging interface.
 // These will ultimately be dropped from the messaging interface.
 const UNUSED_FIELDS = {
@@ -49,7 +44,7 @@ const UNUSED_FIELDS = {
   transactionIndex: 0,
   logIndex: 0,
   data: "",
-  topics: [],
+  topics: Array<string>(),
 };
 
 /**
@@ -213,7 +208,7 @@ async function run(argv: string[]): Promise<void> {
   chain = getNetworkName(chainId);
 
   const provider = getSvmProvider(await getRedisCache());
-  const blockFinder = undefined;
+  const blockFinder: undefined = undefined;
   const { slot: latestSlot, timestamp: now } = await arch.svm.getNearestSlotTime(
     provider,
     { commitment: "confirmed" },

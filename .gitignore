@@ -27,8 +27,8 @@ addresses.json
 # Inventory config
 inventoryConfig.json
 
-# AI context files
-CLAUDE.*
+# i.e. CLAUDE.local.md
+*.local.md
 
 # yalc
 .yalc

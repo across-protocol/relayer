@@ -1,5 +1,4 @@
 import winston from "winston";
-import axios from "axios";
 import { RefillerConfig, RefillBalanceData } from "./RefillerConfig";
 import {
   Address,
@@ -12,6 +11,7 @@ import {
   delay,
   ERC20,
   EvmAddress,
+  fetchWithTimeout,
   formatUnits,
   getNativeTokenAddressForChain,
   getNativeTokenSymbol,
@@ -22,6 +22,7 @@ import {
   getTokenInfo,
   mapAsync,
   parseUnits,
+  postWithTimeout,
   submitTransaction,
   Signer,
   toAddressType,
@@ -36,6 +37,7 @@ import {
   getL1TokenAddress,
   CHAIN_IDs,
   chainHasNativeToken,
+  getNativeTokenInfoForChain,
 } from "../utils";
 import { SWAP_ROUTES, SwapRoute, CUSTOM_BRIDGE, CANONICAL_BRIDGE } from "../common";
 import ERC20_ABI from "../common/abi/MinimalERC20.json";
@@ -97,8 +99,8 @@ export class Refiller {
       currentBalances: refillEnabledBalances.map(({ chainId, token, account, target }, i) => {
         return {
           chainId,
-          token: token.toNative(),
-          account: account.toNative(),
+          token,
+          account,
           currentBalance: currentBalances[i].toString(),
           target: parseUnits(target.toString(), decimalValues[i]),
         };
@@ -232,11 +234,11 @@ export class Refiller {
         at: "Monitor#refillBalances",
         message: "Balance below trigger and can refill to target",
         from: this.baseSignerAddress,
-        to: account.toEvmAddress(),
+        to: account,
         balanceTrigger,
         balanceTarget,
         deficit,
-        token: token.toEvmAddress(),
+        token,
         chainId,
         isHubPool,
       });
@@ -258,24 +260,41 @@ export class Refiller {
         const nativeSymbolForChain = getNativeTokenSymbol(chainId);
         // To send a raw transaction, we need to create a fake Contract instance at the recipient address and
         // set the method param to be an empty string.
-        const sendRawTransactionContract = new Contract(
-          account.toEvmAddress(),
-          [],
-          this.baseSigner.connect(l2Provider)
-        );
-        const txn = await (
-          await submitTransaction(
-            {
-              contract: sendRawTransactionContract,
-              method: "",
-              args: [],
-              value: deficit,
-              ensureConfirmation: true,
-              chainId,
-            },
-            this.transactionClient
-          )
-        ).wait();
+        let txn;
+        if (chainHasNativeToken(chainId)) {
+          const sendRawTransactionContract = new Contract(
+            account.toEvmAddress(),
+            [],
+            this.baseSigner.connect(l2Provider)
+          );
+          txn = await (
+            await submitTransaction(
+              {
+                contract: sendRawTransactionContract,
+                method: "",
+                args: [],
+                value: deficit,
+                ensureConfirmation: true,
+                chainId,
+              },
+              this.transactionClient
+            )
+          ).wait();
+        } else {
+          const sendTokenContract = new Contract(token.toEvmAddress(), ERC20_ABI, this.baseSigner.connect(l2Provider));
+          txn = await (
+            await submitTransaction(
+              {
+                contract: sendTokenContract,
+                method: "transfer",
+                args: [account.toEvmAddress(), deficit],
+                ensureConfirmation: true,
+                chainId,
+              },
+              this.transactionClient
+            )
+          ).wait();
+        }
         this.logger.info({
           at: "Refiller#refillBalances",
           message: `Reloaded ${formatUnits(deficit, decimals)} ${nativeSymbolForChain} for ${account} from ${
@@ -450,7 +469,9 @@ export class Refiller {
     if (isDefined(addressIdCache)) {
       addressId = addressIdCache;
     } else {
-      const { data: registeredAddresses } = await axios.get(`${nativeMarketsApiUrl}/addresses`, { headers });
+      const registeredAddresses = await fetchWithTimeout<{
+        items: { chain: string; token: string; address_hex: string; id: string }[];
+      }>(`${nativeMarketsApiUrl}/addresses`, {}, headers);
       addressId = registeredAddresses.items.find(
         ({ chain, token, address_hex }) =>
           chain === "hyper_evm" && token === "usdh" && address_hex === this.baseSignerAddress.toNative()
@@ -467,18 +488,34 @@ export class Refiller {
         this.logger.info({
           at: "Refiller#refillNativeTokenBalances",
           message: `Address ${this.baseSignerAddress.toNative()} is not registered in the native markets API. Creating new address ID.`,
-          address: this.baseSignerAddress.toNative(),
+          address: this.baseSignerAddress,
         });
-        const { data: _addressId } = await axios.post(`${nativeMarketsApiUrl}/addresses`, newAddressIdData, {
-          headers,
-        });
+        const _addressId = await postWithTimeout<{ id: string }>(
+          `${nativeMarketsApiUrl}/addresses`,
+          newAddressIdData,
+          {},
+          headers
+        );
         addressId = _addressId.id;
       }
       await this.redisCache.set(addressIdCacheKey, addressId, 7 * day);
     }
 
     // Next, get the transfer route deposit address on Arbitrum.
-    const { data: transferRoutes } = await axios.get(`${nativeMarketsApiUrl}/transfer_routes`, { headers });
+    interface TransferRouteAddress {
+      chain: string;
+      token: string;
+      address_hex: string;
+    }
+    interface TransferRoute {
+      source_address?: TransferRouteAddress;
+      destination_address: TransferRouteAddress;
+    }
+    const transferRoutes = await fetchWithTimeout<{ items: TransferRoute[] }>(
+      `${nativeMarketsApiUrl}/transfer_routes`,
+      {},
+      headers
+    );
     let availableTransferRoute = transferRoutes.items
       .filter((route) => isDefined(route.source_address))
       .find(
@@ -499,17 +536,15 @@ export class Refiller {
       this.logger.info({
         at: "Refiller#refillNativeTokenBalances",
         message: `Address ID ${addressId} does not have an Arbitrum USDC -> HyperEVM USDH transfer route configured. Creating a new route.`,
-        address: this.baseSignerAddress.toNative(),
+        address: this.baseSignerAddress,
         addressId,
       });
-      const { data: _availableTransferRoute } = await axios.post(
+      availableTransferRoute = await postWithTimeout(
         `${nativeMarketsApiUrl}/transfer_routes`,
         newTransferRouteData,
-        {
-          headers,
-        }
+        {},
+        headers
       );
-      availableTransferRoute = _availableTransferRoute;
     }
 
     // Create the transfer transaction.
@@ -569,7 +604,7 @@ export class Refiller {
         message: "Submitted approval transaction for swap route.",
         transaction: blockExplorerLink(txnReceipt.hash, swapRoute.originChainId),
         swapRoute,
-        swapper: this.baseSignerAddress.toNative(),
+        swapper: this.baseSignerAddress,
       });
       await delay(1);
       await txnReceipt.wait();
@@ -586,7 +621,7 @@ export class Refiller {
         swapRoute,
         amount,
         swapper: this.baseSignerAddress,
-        recipient: recipient.toEvmAddress(),
+        recipient,
       });
       return;
     }
@@ -655,7 +690,7 @@ export class Refiller {
       decimalrequests.map(async ({ chainId, token }) => {
         const gasTokenAddressForChain = getNativeTokenAddressForChain(chainId);
         if (token.eq(gasTokenAddressForChain)) {
-          return chainIsEvm(chainId) ? 18 : 9;
+          return getNativeTokenInfoForChain(chainId).decimals;
         } // Assume all EVM chains have 18 decimal native tokens.
         if (this.decimals[chainId]?.[token.toBytes32()]) {
           return this.decimals[chainId][token.toBytes32()];

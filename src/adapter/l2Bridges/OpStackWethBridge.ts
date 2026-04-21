@@ -73,7 +73,6 @@ export class OpStackWethBridge extends BaseL2BridgeAdapter {
     fromAddress: EvmAddress,
     _l2Token: EvmAddress
   ): Promise<BigNumber> {
-    _l2Token; // unused
     const [withdrawalInitiatedEvents, withdrawalFinalizedEvents] = await Promise.all([
       paginatedEventQuery(
         this.l2Bridge,
@@ -107,5 +106,10 @@ export class OpStackWethBridge extends BaseL2BridgeAdapter {
       return isDefined(received) ? totalAmount : totalAmount.add(l2Args.amount);
     }, bnZero);
     return withdrawalAmount;
+  }
+
+  public pendingWithdrawalLookbackPeriodSeconds(): number {
+    return 7 * 24 * 60 * 60 + 60 * 60; // 7 days + 1 hour, to account for the time needed to execute the withdrawal
+    // once it has passed the challenge period.
   }
 }

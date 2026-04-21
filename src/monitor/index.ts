@@ -51,7 +51,7 @@ export async function runMonitor(_logger: winston.Logger, baseSigner: Signer): P
       }
 
       if (config.botModes.spokePoolBalanceReportEnabled) {
-        await acrossMonitor.checkSpokePoolRunningBalances();
+        await acrossMonitor.reportSpokePoolRunningBalances();
       } else {
         logger.debug({ at: "Monitor#index", message: "Check spoke pool balances monitor disabled" });
       }
@@ -66,6 +66,12 @@ export async function runMonitor(_logger: winston.Logger, baseSigner: Signer): P
         await acrossMonitor.closePDAs();
       } else {
         logger.debug({ at: "Monitor#index", message: "Close PDAs disabled" });
+      }
+
+      if (config.botModes.closeALTsEnabled) {
+        await acrossMonitor.closeALTs();
+      } else {
+        logger.debug({ at: "Monitor#index", message: "Close ALTs disabled" });
       }
 
       if (config.botModes.reportOpenHyperliquidOrders) {

@@ -1,3 +1,5 @@
+import "./extensions";
+
 // Utils from other packages.
 import { constants as sdkConstants } from "@across-protocol/sdk";
 import { constants as ethersConstants } from "ethers";
@@ -53,6 +55,7 @@ export * from "./fsUtils";
 export * from "./ProviderUtils";
 export * from "./SignerUtils";
 export * from "./SvmSignerUtils";
+export * from "./TvmSignerUtils";
 export * from "./BlockUtils";
 export * from "./EventUtils";
 export * from "./FillUtils";
@@ -83,3 +86,5 @@ export * from "./HyperliquidUtils";
 export * from "./Tasks";
 export * from "./TimeUtils";
 export * from "./DepositAddressUtils";
+export * from "./BridgeUtils";
+export * from "./RunningBalanceUtils";

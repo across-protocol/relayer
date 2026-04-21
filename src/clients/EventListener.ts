@@ -1,9 +1,16 @@
 import assert from "assert";
 import { EventEmitter } from "node:events";
-import * as chains from "viem/chains";
 import { AbiEvent, BaseError, Block, createPublicClient, http, Log as viemLog, parseAbiItem, webSocket } from "viem";
 import { Log } from "../interfaces";
-import { EventManager, getNetworkName, getNodeUrlList, getOriginFromURL, getProviderHeaders, winston } from "../utils";
+import {
+  EventManager,
+  getNetworkName,
+  getNodeUrlList,
+  getOriginFromURL,
+  getProviderHeaders,
+  getViemChain,
+  winston,
+} from "../utils";
 
 function resolveProviders(chainId: number, quorum = 1) {
   const protocol = process.env[`RPC_PROVIDERS_TRANSPORT_${chainId}`] ?? "wss";
@@ -14,7 +21,7 @@ function resolveProviders(chainId: number, quorum = 1) {
   const chain = getNetworkName(chainId);
   assert(nProviders >= quorum, `Insufficient providers for ${chain} (minimum ${quorum} required by quorum)`);
 
-  const viemChain = Object.values(chains).find(({ id }) => id === chainId);
+  const viemChain = getViemChain(chainId);
   const providers = Object.entries(urls).map(([provider, url]) => {
     const headers = getProviderHeaders(provider, chainId);
     const transport = protocol === "wss" ? webSocket(url) : http(url, { fetchOptions: { headers } });
@@ -35,7 +42,11 @@ export class EventListener extends EventEmitter {
   private readonly providers: ReturnType<typeof resolveProviders>;
   // private readonly abortController: AbortController;
 
-  constructor(public readonly chainId: number, private readonly logger: winston.Logger, public readonly quorum = 1) {
+  constructor(
+    public readonly chainId: number,
+    private readonly logger: winston.Logger,
+    public readonly quorum = 1
+  ) {
     super();
     this.chain = getNetworkName(chainId);
     // this.abortController = new AbortController();
@@ -85,14 +96,14 @@ export class EventListener extends EventEmitter {
       this.on(event.name, handler);
 
       providers.forEach((provider) => {
-        const onLogs = (logs: viemLog[]) => {
+        const onLogs = (logs: (viemLog & { args: unknown; eventName: string })[]) => {
           logs.forEach((log) => {
             const event = {
               ...log,
-              args: log["args"],
+              args: log.args,
               blockNumber: Number(log.blockNumber),
-              event: log["eventName"],
-              topics: [], // Not supplied by viem, but not actually used by the relayer.
+              event: log.eventName,
+              topics: Array<string>(), // Not supplied by viem, but not actually used by the relayer.
             };
 
             if (log.removed) {
@@ -107,11 +118,20 @@ export class EventListener extends EventEmitter {
           });
         };
 
-        provider.watchEvent({
-          address: address as `0x${string}`,
-          event,
-          onLogs,
-        });
+        const onError = (error: Error) => {
+          const { message: errorMessage, details, shortMessage, metaMessages } = error as BaseError;
+          this.logger.warn({
+            at: "EventListener::onEvents",
+            message: `Caught ${this.chain} ${event.name} provider error.`,
+            errorMessage,
+            shortMessage,
+            provider: provider.name,
+            details,
+            metaMessages,
+          });
+        };
+
+        provider.watchEvent({ address: address as `0x${string}`, event, onLogs, onError });
       });
     });
   }

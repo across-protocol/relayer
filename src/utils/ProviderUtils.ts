@@ -13,11 +13,13 @@ import { CachingMechanismInterface } from "../interfaces";
 export const defaultTimeout = 60 * 1000;
 export class RetryProvider extends sdkProviders.RetryProvider {}
 
-// Global provider cache to avoid creating multiple providers for the same chain.
-const providerCache: { [chainId: number]: RetryProvider } = {};
+// Global provider caches to avoid creating multiple providers for the same chain.
+// Separate caches for redis-enabled vs redis-disabled providers.
+const providerCacheWithRedis: { [chainId: number]: RetryProvider } = {};
+const providerCacheWithoutRedis: { [chainId: number]: RetryProvider } = {};
 
-function getProviderCacheKey(chainId: number, redisEnabled: boolean) {
-  return `${chainId}_${redisEnabled ? "cache" : "nocache"}`;
+function getProviderCache(redisEnabled: boolean): { [chainId: number]: RetryProvider } {
+  return redisEnabled ? providerCacheWithRedis : providerCacheWithoutRedis;
 }
 
 /**
@@ -28,10 +30,11 @@ function getProviderCacheKey(chainId: number, redisEnabled: boolean) {
  * @returns ethers.provider
  */
 export function getCachedProvider(chainId: number, redisEnabled = true): RetryProvider {
-  if (!providerCache[getProviderCacheKey(chainId, redisEnabled)]) {
+  const cache = getProviderCache(redisEnabled);
+  if (!cache[chainId]) {
     throw new Error(`No cached provider for chainId ${chainId} and redisEnabled ${redisEnabled}`);
   }
-  return providerCache[getProviderCacheKey(chainId, redisEnabled)];
+  return cache[chainId];
 }
 
 export function isJsonRpcError(response: unknown): { code: number; message: string; data?: unknown } | undefined {
@@ -118,9 +121,9 @@ export async function getProvider(
 ): Promise<RetryProvider> {
   const redisClient = await getRedisCache(logger);
   if (useCache) {
-    const cachedProvider = providerCache[getProviderCacheKey(chainId, redisClient !== undefined)];
-    if (cachedProvider) {
-      return cachedProvider;
+    const cache = getProviderCache(redisClient !== undefined);
+    if (cache[chainId]) {
+      return cache[chainId];
     }
   }
   const {
@@ -178,7 +181,7 @@ export async function getProvider(
   let rateLimitLogCounter = 0;
   const chain = getNetworkName(chainId);
   const rpcRateLimited =
-    ({ nodeMaxConcurrency, logger }) =>
+    ({ nodeMaxConcurrency, logger }: { nodeMaxConcurrency: number; logger?: winston.Logger }) =>
     async (attempt: number, url: string): Promise<boolean> => {
       // Implement a slightly aggressive exponential backoff to account for fierce parallelism.
       // @todo: Start w/ maxConcurrency low and increase until 429 responses start arriving.
@@ -236,9 +239,44 @@ export async function getProvider(
   );
 
   if (useCache) {
-    providerCache[getProviderCacheKey(chainId, redisClient !== undefined)] = provider;
+    getProviderCache(redisClient !== undefined)[chainId] = provider;
   }
   return provider;
+}
+
+/**
+ * @notice Constructs a SpeedProvider for the given chain ID, racing all env-configured RPC endpoints
+ * in parallel and returning the first successful response.
+ */
+export function getSpeedProvider(chainId: number, logger?: winston.Logger): sdkProviders.SpeedProvider {
+  const { NODE_TIMEOUT, PROVIDER_CACHE_TTL } = process.env;
+  const timeout = Number(process.env[`NODE_TIMEOUT_${chainId}`] || NODE_TIMEOUT || defaultTimeout);
+  const providerCacheNamespace = getCacheNamespace(chainId);
+  const pctRpcCallsLogged = getPctRpcCallsLogged(chainId);
+  const nodeMaxConcurrency = getMaxConcurrency(chainId);
+  const providerCacheTtl = PROVIDER_CACHE_TTL ? Number(PROVIDER_CACHE_TTL) : undefined;
+
+  const nodeUrls = getNodeUrlList(chainId, 1);
+  const params = Object.entries(nodeUrls).map(
+    ([provider, url]): ConstructorParameters<typeof ethers.providers.StaticJsonRpcProvider> => [
+      { url, headers: getProviderHeaders(provider, chainId), timeout, allowGzip: true },
+      chainId,
+    ]
+  );
+
+  return new sdkProviders.SpeedProvider(
+    params,
+    chainId,
+    params.length, // maxConcurrencySpeed: race all available providers
+    nodeMaxConcurrency,
+    providerCacheNamespace,
+    pctRpcCallsLogged,
+    undefined, // redisClient
+    undefined, // standardTtlBlockDistance
+    undefined, // noTtlBlockDistance
+    providerCacheTtl,
+    logger
+  );
 }
 
 /**
@@ -252,6 +290,7 @@ export function createViemCustomTransportFromEthersProvider(providerChainId: num
         const provider = getCachedProvider(providerChainId, true);
         try {
           return await provider.send(method, params);
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (error: any) {
           // Ethers encodes RPC errors differently than Viem expects it so if the error is a JSON RPC error,
           // decode it in a way that Viem can gracefully handle.

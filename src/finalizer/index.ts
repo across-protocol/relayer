@@ -2,7 +2,6 @@ import { CCTP_NO_DOMAIN, ChainFamily, PRODUCTION_NETWORKS } from "@across-protoc
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import assert from "assert";
 import { Contract } from "ethers";
-import { groupBy } from "lodash";
 import { AugmentedTransaction, HubPoolClient, MultiCallerClient } from "../clients";
 import {
   CONTRACT_ADDRESSES,
@@ -100,7 +99,7 @@ const chainFinalizers: {
  * @returns void
  */
 function generateChainConfig(): void {
-  const erc20Defaults = {
+  const erc20Defaults: Partial<Record<ChainFamily, ChainFinalizer>> = {
     [ChainFamily.OP_STACK]: opStackFinalizer,
     [ChainFamily.ORBIT]: arbStackFinalizer,
     [ChainFamily.ZK_STACK]: zkSyncFinalizer,
@@ -291,7 +290,7 @@ export async function finalize(
     const multicallerClient = new MultiCallerClient(logger);
     let txnRefLookup: Record<number, string[]> = {};
     try {
-      const finalizationsByChain = groupBy(
+      const finalizationsByChain = Object.groupBy(
         finalizations,
         ({ crossChainMessage }) => crossChainMessage.destinationChainId
       );
@@ -337,7 +336,7 @@ export async function finalize(
       return;
     }
 
-    const { transfers = [], misc = [] } = groupBy(
+    const { transfers = [], misc = [] } = Object.groupBy(
       finalizations.filter(({ crossChainMessage }) => isDefined(crossChainMessage)),
       ({ crossChainMessage: { type } }) => {
         return type === "misc" ? "misc" : "transfers";

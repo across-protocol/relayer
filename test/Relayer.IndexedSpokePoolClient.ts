@@ -15,6 +15,7 @@ import {
 import { ListenerMessage } from "../src/libexec/types";
 import { assertPromiseError, createSpyLogger, deploySpokePoolWithToken, expect, randomAddress } from "./utils";
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Constructor<T = EVMSpokePoolClient> = new (...args: any[]) => T;
 
 // Minimum common-ish interface supplied by the SpokePoolClient.
@@ -97,6 +98,7 @@ describe("IndexedSpokePoolClient: Update", async function () {
 
   let logger: winston.Logger;
   let spokePool: Contract;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let spokePoolClient: any; // nasty @todo
   let currentTime: number;
 

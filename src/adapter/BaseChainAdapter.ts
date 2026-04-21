@@ -23,9 +23,8 @@ import {
   forEachAsync,
   filterAsync,
   mapAsync,
-  getL1TokenAddress,
+  getInventoryEquivalentL1TokenAddress,
   getBlockForTimestamp,
-  getTimestampForBlock,
   getCurrentTime,
   bnZero,
   Address,
@@ -34,14 +33,17 @@ import {
   stringifyThrownValue,
   ZERO_BYTES,
   isEVMSpokePoolClient,
-  isSVMSpokePoolClient,
   EvmAddress,
   chainIsEvm,
   sendAndConfirmSolanaTransaction,
+  SolanaTransaction,
   getSvmProvider,
   submitTransaction,
+  getTokenInfo,
+  ConvertDecimals,
+  toAddressType,
 } from "../utils";
-import { AugmentedTransaction, TransactionClient } from "../clients/TransactionClient";
+import { AugmentedTransaction, isAugmentedTransaction, TransactionClient } from "../clients/TransactionClient";
 import {
   approveTokens,
   getTokenAllowanceFromCache,
@@ -51,12 +53,12 @@ import {
   setL2TokenAllowanceInCache,
   TransferTokenParams,
 } from "./utils";
-import { BaseBridgeAdapter, BridgeEvent, BridgeTransactionDetails } from "./bridges/BaseBridgeAdapter";
-import { FINALIZER_TOKENBRIDGE_LOOKBACK } from "../common/Constants";
+import { BaseBridgeAdapter, BridgeTransactionDetails } from "./bridges/BaseBridgeAdapter";
 import { OutstandingTransfers } from "../interfaces";
 import WETH_ABI from "../common/abi/Weth.json";
 import { BaseL2BridgeAdapter } from "./l2Bridges/BaseL2BridgeAdapter";
 import { ExpandedERC20 } from "@across-protocol/sdk/typechain";
+import { CctpOftReadOnlyClient } from "../rebalancer/clients/CctpOftReadOnlyClient";
 
 export type SupportedL1Token = EvmAddress;
 export type SupportedTokenSymbol = string;
@@ -71,17 +73,22 @@ export class BaseChainAdapter {
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     protected readonly chainId: number,
     protected readonly hubChainId: number,
-    protected readonly monitoredAddresses: Address[],
+    protected readonly monitoredAddresses: { [l1Token: string]: Address[] },
     protected readonly logger: winston.Logger,
     public readonly supportedTokens: SupportedTokenSymbol[],
     protected readonly bridges: { [l1Token: string]: BaseBridgeAdapter },
     protected readonly l2Bridges: { [l1Token: string]: BaseL2BridgeAdapter },
-    protected readonly gasMultiplier: number
+    protected readonly gasMultiplier: number,
+    protected readonly pendingBridgeRedisReader?: CctpOftReadOnlyClient
   ) {
     this.spokePoolManager = new SpokePoolManager(logger, spokePoolClients);
     this.baseL1SearchConfig = { ...this.getSearchConfig(this.hubChainId) };
     this.baseL2SearchConfig = { ...this.getSearchConfig(this.chainId) };
     this.transactionClient = new TransactionClient(logger);
+    Object.values(this.bridges).forEach((bridge) => bridge.setPendingBridgeRedisReader(this.pendingBridgeRedisReader));
+    Object.values(this.l2Bridges).forEach((bridge) =>
+      bridge.setPendingBridgeRedisReader(this.pendingBridgeRedisReader)
+    );
   }
 
   public get adapterName(): string {
@@ -283,7 +290,7 @@ export class BaseChainAdapter {
       this.log("No token bridge approvals needed", { l1Tokens: l1Tokens.map((token) => token.toNative()) });
       return;
     }
-    const mrkdwn = await approveTokens(tokensToApprove, this.chainId, this.hubChainId, this.logger);
+    const mrkdwn = await approveTokens(tokensToApprove, this.hubChainId, this.hubChainId, this.logger);
     this.log("Approved whitelisted tokens! 💰", { mrkdwn }, "info");
   }
 
@@ -294,7 +301,7 @@ export class BaseChainAdapter {
     simMode: boolean,
     optionalParams?: TransferTokenParams
   ): Promise<string[]> {
-    const l1Token = getL1TokenAddress(l2Token, this.chainId);
+    const l1Token = this.getL1TokenAddress(l2Token, this.chainId);
     if (!this.isSupportedL2Bridge(l1Token)) {
       return [];
     }
@@ -312,8 +319,8 @@ export class BaseChainAdapter {
         "Failed to constructWithdrawToL1Txns",
         {
           toAddress: address,
-          l2Token: l2Token.toNative(),
-          l1Token: l1Token.toNative(),
+          l2Token,
+          l1Token,
           amount: amount.toString(),
           srcChainId: this.chainId,
           dstChainId: this.hubChainId,
@@ -326,15 +333,26 @@ export class BaseChainAdapter {
     }
     if (chainIsEvm(this.chainId)) {
       const multicallerClient = new MultiCallerClient(this.logger);
-      txnsToSend.forEach((txn) => multicallerClient.enqueueTransaction(txn));
+      txnsToSend.filter(isAugmentedTransaction).forEach((txn) => multicallerClient.enqueueTransaction(txn));
       const txnReceipts = await multicallerClient.executeTxnQueues(simMode, [this.chainId]);
       return txnReceipts[this.chainId];
     }
-    const txnSignatures = [];
-    for (const solanaTransaction of txnsToSend) {
-      txnSignatures.push(await sendAndConfirmSolanaTransaction(solanaTransaction, getSvmProvider()));
+    const txnSignatures: string[] = [];
+    const svmProvider = getSvmProvider();
+    for (const solanaTransaction of txnsToSend.filter((txn): txn is SolanaTransaction => !("contract" in txn))) {
+      txnSignatures.push(await sendAndConfirmSolanaTransaction(solanaTransaction, svmProvider));
     }
     return txnSignatures;
+  }
+
+  async getL2PendingWithdrawalLookbackPeriodSeconds(l2Token: Address): Promise<number> {
+    const l1Token = this.getL1TokenAddress(l2Token, this.chainId);
+    if (!this.isSupportedL2Bridge(l1Token)) {
+      return -1;
+    }
+    const l2Bridge = this.l2Bridges[l1Token.toNative()];
+    const lookbackPeriodSeconds = l2Bridge.pendingWithdrawalLookbackPeriodSeconds();
+    return lookbackPeriodSeconds;
   }
 
   async getL2PendingWithdrawalAmount(
@@ -342,7 +360,7 @@ export class BaseChainAdapter {
     fromAddress: Address,
     l2Token: Address
   ): Promise<BigNumber> {
-    const l1Token = getL1TokenAddress(l2Token, this.chainId);
+    const l1Token = this.getL1TokenAddress(l2Token, this.chainId);
     if (!this.isSupportedL2Bridge(l1Token)) {
       return bnZero;
     }
@@ -350,17 +368,22 @@ export class BaseChainAdapter {
       getBlockForTimestamp(this.logger, this.hubChainId, getCurrentTime() - lookbackPeriodSeconds),
       getBlockForTimestamp(this.logger, this.chainId, getCurrentTime() - lookbackPeriodSeconds),
     ]);
-    const hubChainBlockRange = this.spokePoolManager.getClient(this.hubChainId).eventSearchConfig.maxLookBack;
+
+    const l1SpokePoolClient = this.spokePoolManager.getClient(this.hubChainId);
+    const hubChainBlockRange = l1SpokePoolClient.eventSearchConfig.maxLookBack;
+    const l1LatestBlock = l1SpokePoolClient.latestHeightSearched;
     const l1EventSearchConfig = {
       from: l1SearchFromBlock,
-      to: this.baseL1SearchConfig.to,
+      to: this.baseL1SearchConfig?.to ?? l1LatestBlock,
       maxLookBack: hubChainBlockRange,
     };
 
-    const spokeChainBlockRange = this.spokePoolManager.getClient(this.chainId).eventSearchConfig.maxLookBack;
+    const l2SpokePoolClient = this.spokePoolManager.getClient(this.chainId);
+    const spokeChainBlockRange = l2SpokePoolClient.eventSearchConfig.maxLookBack;
+    const l2LatestBlock = l2SpokePoolClient.latestHeightSearched;
     const l2EventSearchConfig = {
       from: l2SearchFromBlock,
-      to: this.baseL2SearchConfig.to,
+      to: this.baseL2SearchConfig?.to ?? l2LatestBlock,
       maxLookBack: spokeChainBlockRange,
     };
 
@@ -400,9 +423,9 @@ export class BaseChainAdapter {
       this.log(
         "Failed to construct L1 to L2 transaction",
         {
-          address: address.toNative(),
-          l1Token: l1Token.toNative(),
-          l2Token: l2Token.toNative(),
+          address,
+          l1Token,
+          l2Token,
           amount: amount.toString(),
           srcChainId: this.hubChainId,
           dstChainId: this.chainId,
@@ -437,8 +460,8 @@ export class BaseChainAdapter {
     this.log(
       message,
       {
-        l1Token: l1Token.toNative(),
-        l2Token: l2Token.toNative(),
+        l1Token,
+        l2Token,
         amount,
         contract: contract.address,
         txnRequestData,
@@ -499,7 +522,7 @@ export class BaseChainAdapter {
     const message = `${formatFunc(toBN(value).toString())} ${nativeTokenSymbol} wrapped on target chain ${
       this.chainId
     }🎁`;
-    const augmentedTxn = { contract, chainId: this.chainId, method, args: [], value, mrkdwn, message };
+    const augmentedTxn = { contract, chainId: this.chainId, method, args: Array<unknown>(), value, mrkdwn, message };
     if (simMode) {
       const { succeed, reason } = (await this.transactionClient.simulate([augmentedTxn]))[0];
       this.log(
@@ -509,233 +532,78 @@ export class BaseChainAdapter {
         "wrapNativeTokenIfAboveThreshold"
       );
       return { hash: ZERO_BYTES } as TransactionResponse;
-    } else {
-      (await this.transactionClient.submit(this.chainId, [augmentedTxn]))[0];
     }
-  }
-
-  /**
-   * Resolve block-number-based timestamps for a set of bridge events across two chains.
-   * Deduplicates block numbers to minimize RPC calls. Handles both EVM and SVM chains.
-   */
-  private async resolveEventTimestamps(
-    l1Events: BridgeEvent[],
-    l2Events: BridgeEvent[]
-  ): Promise<Map<BridgeEvent, number>> {
-    const l1Client = this.spokePoolManager.getClient(this.hubChainId);
-    const l2Client = this.spokePoolManager.getClient(this.chainId);
-    assert(isDefined(l1Client) && isEVMSpokePoolClient(l1Client));
-    assert(isDefined(l2Client));
-    const l1Provider = l1Client.spokePool.provider;
-
-    // Collect unique block numbers per chain.
-    const l1Blocks = [...new Set(l1Events.map((e) => e.blockNumber))];
-    const l2Blocks = [...new Set(l2Events.map((e) => e.blockNumber))];
-
-    // Resolve L1 timestamps (always EVM).
-    const l1Timestamps = await Promise.all(l1Blocks.map((b) => getTimestampForBlock(l1Provider, b)));
-
-    // Resolve L2 timestamps — handle EVM and SVM differently.
-    let l2Timestamps: number[];
-    if (isEVMSpokePoolClient(l2Client)) {
-      l2Timestamps = await Promise.all(l2Blocks.map((b) => getTimestampForBlock(l2Client.spokePool.provider, b)));
-    } else if (isSVMSpokePoolClient(l2Client)) {
-      const rpc = l2Client.svmEventsClient.getRpc();
-      l2Timestamps = await Promise.all(
-        l2Blocks.map(async (slot) => {
-          const blockTime = await rpc.getBlockTime(BigInt(slot) as Parameters<typeof rpc.getBlockTime>[0]).send();
-          assert(blockTime !== null, `No block time for Solana slot ${slot}`);
-          return Number(blockTime);
-        })
-      );
-    } else {
-      throw new Error(`Unsupported spoke pool client type for chain ${this.chainId}`);
-    }
-
-    const l1BlockToTs = new Map(l1Blocks.map((b, i) => [b, l1Timestamps[i]]));
-    const l2BlockToTs = new Map(l2Blocks.map((b, i) => [b, l2Timestamps[i]]));
-
-    const result = new Map<BridgeEvent, number>();
-    for (const e of l1Events) {
-      result.set(e, l1BlockToTs.get(e.blockNumber)!);
-    }
-    for (const e of l2Events) {
-      result.set(e, l2BlockToTs.get(e.blockNumber)!);
-    }
-    return result;
-  }
-
-  /**
-   * Compute timestamp-aligned search configs using a fixed wall-clock window (FINALIZER_TOKENBRIDGE_LOOKBACK).
-   * This ensures L1 and L2 event queries cover the same wall-clock period regardless of block times.
-   * Protected so test adapters can override to bypass timestamp-based block lookups.
-   */
-  protected async computeTimestampAlignedSearchConfigs(): Promise<{
-    l1SearchConfig: EventSearchConfig;
-    l2SearchConfig: EventSearchConfig;
-    windowStartTimestamp: number;
-  }> {
-    const { l1SearchConfig: baseL1, l2SearchConfig: baseL2 } = this.getUpdatedSearchConfigs();
-    const now = getCurrentTime();
-    const windowStart = now - FINALIZER_TOKENBRIDGE_LOOKBACK;
-    // Query one extra day to ensure we don't miss events near the boundary.
-    const queryFrom = now - FINALIZER_TOKENBRIDGE_LOOKBACK - 86400;
-
-    const hubChainBlockRange = this.spokePoolManager.getClient(this.hubChainId).eventSearchConfig.maxLookBack;
-    const spokeChainBlockRange = this.spokePoolManager.getClient(this.chainId).eventSearchConfig.maxLookBack;
-
-    const [l1FromBlock, l2FromBlock] = await Promise.all([
-      getBlockForTimestamp(this.logger, this.hubChainId, queryFrom),
-      getBlockForTimestamp(this.logger, this.chainId, queryFrom),
-    ]);
-
-    return {
-      l1SearchConfig: { from: l1FromBlock, to: baseL1.to, maxLookBack: hubChainBlockRange },
-      l2SearchConfig: { from: l2FromBlock, to: baseL2.to, maxLookBack: spokeChainBlockRange },
-      windowStartTimestamp: windowStart,
-    };
-  }
-
-  /**
-   * Match initiation events against finalization events by amount + temporal ordering.
-   * Returns unmatched initiations (= outstanding/in-flight transfers).
-   *
-   * For each finalization, finds the most recent unmatched same-amount initiation with
-   * timestamp <= finalization timestamp. Finalizations before warnAfterTimestamp that go
-   * unmatched are expected (their initiations preceded the window) and silently skipped.
-   */
-  private matchTransfers(
-    initiations: BridgeEvent[],
-    finalizations: BridgeEvent[],
-    timestamps: Map<BridgeEvent, number>,
-    warnAfterTimestamp: number
-  ): BridgeEvent[] {
-    // Group initiations by amount string, sorted by timestamp descending (newest first) within each group.
-    const initiationsByAmount = new Map<string, BridgeEvent[]>();
-    for (const event of initiations) {
-      const key = event.amount.toString();
-      const group = initiationsByAmount.get(key) ?? [];
-      group.push(event);
-      initiationsByAmount.set(key, group);
-    }
-    for (const group of initiationsByAmount.values()) {
-      group.sort((a, b) => timestamps.get(b)! - timestamps.get(a)!);
-    }
-
-    // Track which initiations have been matched.
-    const matched = new Set<BridgeEvent>();
-
-    // Sort finalizations by timestamp descending (newest first).
-    const sortedFinalizations = [...finalizations].sort((a, b) => timestamps.get(b)! - timestamps.get(a)!);
-
-    for (const fin of sortedFinalizations) {
-      const finTs = timestamps.get(fin)!;
-      const key = fin.amount.toString();
-      const candidates = initiationsByAmount.get(key);
-      if (!candidates) {
-        if (finTs >= warnAfterTimestamp) {
-          this.log(
-            "Unmatched finalization event in recent window",
-            { amount: key, blockNumber: fin.blockNumber, txnRef: fin.txnRef, timestamp: finTs },
-            "warn",
-            "matchTransfers"
-          );
-        }
-        continue;
-      }
-
-      // Find most recent unmatched initiation with timestamp <= finalization timestamp.
-      // Candidates are sorted newest-first, so the first qualifying match is the most recent.
-      let foundMatch = false;
-      for (const init of candidates) {
-        if (!matched.has(init) && timestamps.get(init)! <= finTs) {
-          matched.add(init);
-          foundMatch = true;
-          break;
-        }
-      }
-
-      if (!foundMatch && finTs >= warnAfterTimestamp) {
-        this.log(
-          "Unmatched finalization event in recent window",
-          { amount: key, blockNumber: fin.blockNumber, txnRef: fin.txnRef, timestamp: finTs },
-          "warn",
-          "matchTransfers"
-        );
-      }
-    }
-
-    // Return unmatched initiations (preserving original order).
-    return initiations.filter((e) => !matched.has(e));
+    return (await this.transactionClient.submit(this.chainId, [augmentedTxn]))[0];
   }
 
   async getOutstandingCrossChainTransfers(l1Tokens: EvmAddress[]): Promise<OutstandingTransfers> {
-    const { l1SearchConfig, l2SearchConfig, windowStartTimestamp } =
-      await this.computeTimestampAlignedSearchConfigs();
+    const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
     const availableL1Tokens = this.filterSupportedTokens(l1Tokens);
-    const warnAfterTimestamp = windowStartTimestamp + FINALIZER_TOKENBRIDGE_LOOKBACK / 2;
 
     const outstandingTransfers: OutstandingTransfers = {};
 
-    for (const monitoredAddress of this.monitoredAddresses) {
-      for (const l1Token of availableL1Tokens) {
+    this.logger.debug({
+      at: `${this.adapterName}#getOutstandingCrossChainTransfers`,
+      message: "Getting outstanding cross chain transfers",
+      monitoredAddresses: Object.fromEntries(
+        Object.entries(this.monitoredAddresses).map(([l1Token, addresses]) => [l1Token, addresses])
+      ),
+    });
+
+    await forEachAsync(availableL1Tokens, async (l1Token) => {
+      const monitoredAddresses = this.monitoredAddresses[l1Token.toNative()];
+      await forEachAsync(monitoredAddresses, async (monitoredAddress) => {
         const bridge = this.bridges[l1Token.toNative()];
         const [depositInitiatedResults, depositFinalizedResults] = await Promise.all([
           bridge.queryL1BridgeInitiationEvents(l1Token, monitoredAddress, monitoredAddress, l1SearchConfig),
           bridge.queryL2BridgeFinalizationEvents(l1Token, monitoredAddress, monitoredAddress, l2SearchConfig),
         ]);
-
-        for (const [l2Token, initiationEvents] of Object.entries(depositInitiatedResults)) {
-          const finalizationEvents = depositFinalizedResults?.[l2Token] ?? [];
-
-          // Resolve timestamps for all events.
-          const timestamps = await this.resolveEventTimestamps(initiationEvents, finalizationEvents);
-
-          // Trim events to the window.
-          const windowedInitiations = initiationEvents.filter((e) => timestamps.get(e)! >= windowStartTimestamp);
-          const windowedFinalizations = finalizationEvents.filter((e) => timestamps.get(e)! >= windowStartTimestamp);
-
-          // Match transfers by amount + temporal ordering.
-          const unmatchedInitiations = this.matchTransfers(
-            windowedInitiations,
-            windowedFinalizations,
-            timestamps,
-            warnAfterTimestamp
+        const ignoredPendingBridgeTxnRefs = await bridge.getIgnoredPendingBridgeTxnRefs(
+          this.hubChainId,
+          this.chainId,
+          monitoredAddress
+        );
+        Object.entries(depositInitiatedResults).forEach(([l2Token, depositInitiatedEvents]) => {
+          const filteredDepositEvents = (depositInitiatedEvents ?? []).filter(
+            (event) => !ignoredPendingBridgeTxnRefs.has(event.txnRef)
           );
+          const totalDepositedAmount = filteredDepositEvents.reduce((acc, event) => {
+            return acc.add(event.amount);
+          }, bnZero);
+          const l2TokenDecimals = getTokenInfo(toAddressType(l2Token, this.chainId), this.chainId).decimals;
+          const l1TokenDecimals = getTokenInfo(l1Token, this.hubChainId).decimals;
+          const totalFinalizedAmount = (depositFinalizedResults?.[l2Token] ?? []).reduce((acc, event) => {
+            return acc.add(ConvertDecimals(l2TokenDecimals, l1TokenDecimals)(event.amount));
+          }, bnZero);
 
-          const totalAmount = unmatchedInitiations.reduce((acc, event) => acc.add(event.amount), bnZero);
-
-          if (!totalAmount.isZero() || unmatchedInitiations.length > 0) {
-            this.log(
-              "Outstanding transfer summary",
-              {
-                monitoredAddress: monitoredAddress.toNative(),
-                l1Token: l1Token.toNative(),
-                l2Token,
-                initiations: windowedInitiations.length,
-                finalizations: windowedFinalizations.length,
-                unmatched: unmatchedInitiations.length,
-                totalAmount: totalAmount.toString(),
-                unmatchedDetails: unmatchedInitiations.map((e) => ({
-                  amount: e.amount.toString(),
-                  blockNumber: e.blockNumber,
-                  txnRef: e.txnRef,
-                  timestamp: timestamps.get(e),
-                })),
-              },
-              "debug",
-              "getOutstandingCrossChainTransfers"
-            );
+          // If there is a net unfinalized amount, go through deposit initiated events in newest to oldest order
+          // and assume that the newest bridges are the ones that are not yet finalized.
+          const outstandingInitiatedEvents: string[] = [];
+          const totalAmount = totalDepositedAmount.sub(totalFinalizedAmount);
+          let remainingUnfinalizedAmount = totalAmount;
+          if (remainingUnfinalizedAmount.gt(0)) {
+            for (const depositEvent of filteredDepositEvents) {
+              if (remainingUnfinalizedAmount.lte(0)) {
+                break;
+              }
+              outstandingInitiatedEvents.push(depositEvent.txnRef);
+              remainingUnfinalizedAmount = remainingUnfinalizedAmount.sub(depositEvent.amount);
+            }
           }
-
-          assign(outstandingTransfers, [monitoredAddress.toNative(), l1Token.toNative(), l2Token], {
-            totalAmount,
-            depositTxHashes: unmatchedInitiations.map((event) => event.txnRef),
-          });
-        }
-      }
-    }
+          if (totalAmount.gt(0) && outstandingInitiatedEvents.length > 0) {
+            assign(outstandingTransfers, [monitoredAddress.toNative(), l1Token.toNative(), l2Token], {
+              totalAmount,
+              depositTxHashes: outstandingInitiatedEvents,
+            });
+          }
+        });
+      });
+    });
 
     return outstandingTransfers;
+  }
+
+  private getL1TokenAddress(l2Token: Address, chainId: number): EvmAddress {
+    return getInventoryEquivalentL1TokenAddress(l2Token, chainId, this.hubChainId);
   }
 }

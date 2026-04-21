@@ -17,19 +17,19 @@
 //      indicating an amount of tokens that need to be taken out of the spoke pool to execute those slow fills
 //    - relayer_refund_t_c_i is the total amount of token t that needs to be refunded to relayers on chain c at block b
 //      which also indicates an amount of tokens that need to be taken out of the spoke pool to execute those refunds
-//  - excess_t_c_{i,i+1,i+2,...} should therefore be consistent unless tokens are dropped onto the spoke pool.
+// - excess_t_c_{i,i+1,i+2,...} should therefore be consistent unless tokens are dropped onto the spoke pool.
 
 // This script also can be used to identify any unexecuted leaves in the last N bundles, where N is configurable.
 // If there are any, this script will log the leaf + proof conveniently for manual execution.
 
 // Example usage:
 // Look back the most recent 32 bundles:
-// $ BUNDLES_COUNT=32 ts-node ./src/scripts/validateRunningBalances.ts
+// $ BUNDLES_COUNT=32 tsx ./src/scripts/validateRunningBalances.ts
 // Validate single chain and/or token:
-// $ SINGLE_CHAIN=42161 ts-node ./src/scripts/validateRunningBalances.ts
-// $ SINGLE_TOKEN_USDC ts-node ./src/scripts/validateRunningBalances.ts
+// $ SINGLE_CHAIN=42161 tsx ./src/scripts/validateRunningBalances.ts
+// $ SINGLE_TOKEN_USDC tsx ./src/scripts/validateRunningBalances.ts
 // Look at bundles #50-100 and query events up to 150 bundles ago:
-// $ BUNDLES_COUNT=150 PAGE_SIZE=50 PAGE=1 ts-node ./src/scripts/validateRunningBalances.ts
+// $ BUNDLES_COUNT=150 PAGE_SIZE=50 PAGE=1 tsx ./src/scripts/validateRunningBalances.ts
 
 import {
   bnZero,
@@ -62,14 +62,13 @@ import { Log, ProposedRootBundle, SpokePoolClientsByChain, BundleData } from "..
 import { CONTRACT_ADDRESSES, constructSpokePoolClientsWithStartBlocks, updateSpokePoolClients } from "../common";
 import { createConsoleTransport } from "@risk-labs/logger";
 import { interfaces as sdkInterfaces } from "@across-protocol/sdk";
-import _ from "lodash";
 import { SpokePoolClient } from "../clients/SpokePoolClient";
 
 config();
 let logger: winston.Logger;
 let silentLogger: winston.Logger;
 
-const rootCache = {};
+const rootCache: Record<string, { bundleData: BundleData; bundleSpokePoolClients: SpokePoolClientsByChain }> = {};
 
 // Add accidental transfers from users into the SpokePool's here. These fat finger transfers can confound this
 // script and report "excesses" that are not actually excesses. These balances are not pulled into the runningBalances
@@ -505,7 +504,8 @@ export async function runScript(baseSigner: Signer): Promise<void> {
     expectedExcesses,
     excesses,
   });
-  const unexpectedExcess = Object.entries(excesses).filter(([chainId, tokenExcesses]) => {
+  const unexpectedExcess = Object.entries(excesses).filter(([_chainId, tokenExcesses]) => {
+    const chainId = Number(_chainId);
     return Object.entries(tokenExcesses).some(([l1Token, excesses]) => {
       // We only care about the latest excess, because sometimes excesses can appear in historical bundles
       // due to ordering of executing leaves. As long as the excess resets back to 0 eventually it is fine.
@@ -650,10 +650,9 @@ export async function runScript(baseSigner: Signer): Promise<void> {
     // @dev Search from right to left since there can be multiple root bundles with the same relayer refund root.
     // The caller should take caution if they're trying to use this function to find matching refunds for older
     // root bundles as opposed to more recent ones.
-    const bundle = _.findLast(
-      spokePoolClient.getRootBundleRelays(),
-      (bundle) => bundle.relayerRefundRoot === relayerRefundRoot
-    );
+    const bundle = spokePoolClient
+      .getRootBundleRelays()
+      .findLast((bundle) => bundle.relayerRefundRoot === relayerRefundRoot);
     if (bundle === undefined) {
       return {};
     }

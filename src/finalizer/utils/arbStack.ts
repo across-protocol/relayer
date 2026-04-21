@@ -18,7 +18,7 @@ import {
   getBlockForTimestamp,
   Multicall2Call,
   CHAIN_IDs,
-  TOKEN_SYMBOLS_MAP,
+  resolveAcrossToken,
   getProvider,
   paginatedEventQuery,
   getNetworkName,
@@ -35,24 +35,10 @@ import { CONTRACT_ADDRESSES } from "../../common";
 import { FinalizerPromise, CrossChainMessage, AddressesToFinalize } from "../types";
 import { utils as sdkUtils, arch } from "@across-protocol/sdk";
 import ARBITRUM_ERC20_GATEWAY_L2_ABI from "../../common/abi/ArbitrumErc20GatewayL2.json";
+import { ARB_ORBIT_NETWORK_CONFIGS, getArbitrumOrbitFinalizationTime } from "../../utils/ArbSdkUtils";
 
 let LATEST_MAINNET_BLOCK: number;
 let MAINNET_BLOCK_TIME: number;
-
-type PartialArbitrumNetwork = Omit<ArbitrumNetwork, "confirmPeriodBlocks"> & {
-  challengePeriodSeconds: number;
-  registered: boolean;
-};
-// These network configs are defined in the Arbitrum SDK, and we need to register them in the SDK's memory.
-// We should export this out of a common file but we don't use this SDK elsewhere currentlyl.
-const ARB_ORBIT_NETWORK_CONFIGS: PartialArbitrumNetwork[] = [];
-
-function getOrbitNetwork(chainId: number): PartialArbitrumNetwork | undefined {
-  return ARB_ORBIT_NETWORK_CONFIGS.find((network) => network.chainId === chainId);
-}
-function getArbitrumOrbitFinalizationTime(chainId: number): number {
-  return getOrbitNetwork(chainId)?.challengePeriodSeconds ?? 7 * 60 * 60 * 24;
-}
 
 export async function arbStackFinalizer(
   logger: winston.Logger,
@@ -170,7 +156,7 @@ export async function arbStackFinalizer(
     }),
     ...withdrawalNativeEvents.map((e) => {
       const nativeTokenSymbol = getNativeTokenSymbol(chainId);
-      const l2Token = TOKEN_SYMBOLS_MAP[nativeTokenSymbol].addresses[chainId];
+      const l2Token = resolveAcrossToken(nativeTokenSymbol, chainId, true);
       return {
         ...e,
         amount: e.args.callvalue,
@@ -192,7 +178,7 @@ export async function arbStackFinalizer(
         txnIndex: transactionIndex,
       };
       withdrawalEvents.push(tokenBridgedEvent);
-    } catch (err) {
+    } catch {
       logger.debug({
         at: `Finalizer#${networkName}Finalizer`,
         message: `Skipping ERC20 withdrawal event for unknown token ${event.l2TokenAddress} on chain ${networkName}`,
@@ -381,7 +367,7 @@ async function getMessageOutboxStatusAndProof(
       message: l2Message,
       status: ChildToParentMessageStatus[outboxMessageExecutionStatus],
     };
-  } catch (error) {
+  } catch {
     // Likely L1 message hasn't been included in an arbitrum batch yet, so ignore it for now.
     return {
       message: undefined,

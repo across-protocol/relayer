@@ -252,8 +252,8 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
         logger[startupLogLevel(config)]({
           at: "Dataworker#index",
           message: "Dataworker addresses",
-          evmAddress: tokenClient.relayerEvmAddress.toNative(),
-          svmAddress: tokenClient.relayerSvmAddress.toNative(),
+          evmAddress: tokenClient.relayerEvmAddress,
+          svmAddress: tokenClient.relayerSvmAddress,
         });
         await tokenClient.update();
         // Run approval on hub pool.
@@ -478,7 +478,7 @@ export async function runDisputerWatchdog(logger: winston.Logger, signer: Signer
       const message = enabled
         ? "Submitted HubPool root bundle dispute."
         : "Suppressed HubPool root bundle dispute due to configuration.";
-      const txn = isDefined(dispute) ? blockExplorerLink(dispute.transactionHash, hubChainId) : undefined;
+      const txn = isDefined(dispute) ? blockExplorerLink(dispute.hash, hubChainId) : undefined;
       logger.error({ at, message, proposal, txn });
     } else {
       const waiting = challengeRemaining - challengeLimit;

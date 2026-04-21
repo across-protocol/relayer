@@ -1,4 +1,4 @@
-import axios, { AxiosError } from "axios";
+import { fetchWithTimeout } from "../utils/SDKUtils";
 import winston from "winston";
 
 /**
@@ -12,7 +12,13 @@ export abstract class BaseAcrossApiClient {
   protected readonly logContext: string;
   protected readonly apiKey: string | undefined;
 
-  constructor(readonly logger: winston.Logger, urlBase: string, logContext: string, timeoutMs = 3000, apiKey?: string) {
+  constructor(
+    readonly logger: winston.Logger,
+    urlBase: string,
+    logContext: string,
+    timeoutMs = 3000,
+    apiKey?: string
+  ) {
     this.urlBase = urlBase;
     this.logContext = logContext;
     this.apiResponseTimeout = timeoutMs;
@@ -28,18 +34,14 @@ export abstract class BaseAcrossApiClient {
 
   protected async _get<T>(endpoint: string, params: Record<string, unknown>): Promise<T | undefined> {
     try {
-      const config: { timeout: number; params: Record<string, unknown>; headers?: Record<string, string> } = {
-        timeout: this.apiResponseTimeout,
-        params,
-      };
-
+      const headers: Record<string, string> = {};
       if (this.apiKey) {
-        config.headers = { Authorization: `Bearer ${this.apiKey}` };
+        headers.Authorization = `Bearer ${this.apiKey}`;
       }
 
-      const response = await axios.get<T>(`${this.urlBase}/${endpoint}`, config);
+      const result = await fetchWithTimeout<T>(`${this.urlBase}/${endpoint}`, params, headers, this.apiResponseTimeout);
 
-      if (!response?.data) {
+      if (!result) {
         this.logger.warn({
           at: this.logContext,
           message: `Invalid response from ${this.urlBase}`,
@@ -48,14 +50,14 @@ export abstract class BaseAcrossApiClient {
         });
         return;
       }
-      return response.data;
+      return result;
     } catch (err) {
       this.logger.warn({
         at: this.logContext,
         message: `Failed to get from ${this.urlBase}`,
         endpoint,
         params,
-        error: (err as AxiosError).message,
+        error: (err as Error).message,
       });
       return;
     }

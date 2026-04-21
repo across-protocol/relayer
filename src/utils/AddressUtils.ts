@@ -25,6 +25,8 @@ interface LookupTableDefinitions {
   lookupTableMap: AddressesByLookupTableAddress;
 }
 
+export const ALT_DEACTIVATION_COOLDOWN = 512n;
+
 export function includesAddressSimple(address: string | undefined, list: string[]): boolean {
   if (!isDefined(address)) {
     return false;
@@ -44,19 +46,6 @@ export function matchTokenSymbol(tokenAddress: string, chainId: number): string[
   return Object.values(TOKEN_SYMBOLS_MAP)
     .filter(({ addresses }) => addresses[chainId]?.toLowerCase() === tokenAddress.toLowerCase())
     .map(({ symbol }) => symbol);
-}
-
-/**
- * Match the token decimals for a given token symbol.
- * @param tokenSymbol Symbol of the token to query.
- * @returns The number of ERC20 decimals configured for the requested token.
- */
-export function resolveTokenDecimals(tokenSymbol: string): number {
-  const decimals = TOKEN_SYMBOLS_MAP[tokenSymbol]?.decimals;
-  if (decimals === undefined) {
-    throw new Error(`Unrecognized token symbol: ${tokenSymbol}`);
-  }
-  return decimals;
 }
 
 /**

@@ -46,6 +46,7 @@ export function decodeProofOutputs(publicValuesBytes: string): ProofOutputs {
     prevHead: decodedResult[5], // Already a BigNumber from decoder
     syncCommitteeHash: decodedResult[6],
     startSyncCommitteeHash: decodedResult[7],
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     slots: decodedResult[8].map((slot: any[]) => ({
       key: slot[0],
       value: slot[1],

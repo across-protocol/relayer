@@ -23,6 +23,10 @@ import {
   Provider,
   Signer,
   isDefined,
+  getSpeedProvider,
+  chainIsTvm,
+  getTronWebFromEvmSigner,
+  submitTransactionTvm,
 } from "../utils";
 import { DEFAULT_GAS_FEE_SCALERS } from "../common";
 import { FeeData } from "@ethersproject/abstract-provider";
@@ -32,6 +36,10 @@ import { FeeData } from "@ethersproject/abstract-provider";
 const MIN_GAS_RETRY_SCALER_DEFAULT = 1.1;
 const MAX_GAS_RETRY_SCALER_DEFAULT = 3;
 const TRANSACTION_SUBMISSION_RETRIES_DEFAULT = 3;
+
+// Default TVM fee limit in SUN (1 TRX = 1,000,000 SUN). 100 TRX is a reasonable default for
+// contract interactions on TRON.
+const DEFAULT_TVM_FEE_LIMIT = 100_000_000;
 
 // Define chains that require legacy (type 0) transactions
 export const LEGACY_TRANSACTION_CHAINS = [CHAIN_IDs.BSC];
@@ -56,6 +64,19 @@ export interface AugmentedTransaction {
   nonMulticall?: boolean;
   // Flag indicating whether the client should await the transaction response for onchain confirmation.
   ensureConfirmation?: boolean;
+  // If true, the contract's provider will be replaced with the TransactionClient's SpeedProvider for
+  // this chain (if configured), enabling parallel multi-RPC dispatch for faster submission.
+  spray?: boolean;
+}
+
+export function isAugmentedTransaction(txn: unknown): txn is AugmentedTransaction {
+  if (txn === null || typeof txn !== "object") {
+    return false;
+  }
+  if (!("contract" in txn && "chainId" in txn && "method" in txn && "args" in txn)) {
+    return false;
+  }
+  return typeof txn.method === "string" && Array.isArray(txn.args);
 }
 
 const { fixedPointAdjustment: fixedPoint } = sdkUtils;
@@ -68,7 +89,10 @@ export class TransactionClient {
   protected readonly DEFAULT_GAS_LIMIT_MULTIPLIER = 1.0;
 
   // eslint-disable-next-line no-useless-constructor
-  constructor(readonly logger: winston.Logger, readonly signers: Signer[] = []) {}
+  constructor(
+    readonly logger: winston.Logger,
+    readonly signers: Signer[] = []
+  ) {}
 
   protected _simulate(txn: AugmentedTransaction): Promise<TransactionSimulationResult> {
     return willSucceed(txn);
@@ -97,8 +121,9 @@ export class TransactionClient {
   }
 
   protected _getTransactionPromise(txn: AugmentedTransaction, nonce: number | null): Promise<TransactionResponse> {
-    const { contract, method, args, value, gasLimit } = txn;
-    return _runTransaction(this.logger, contract, method, args, value, gasLimit, nonce);
+    const { contract, method, args, value, gasLimit, chainId } = txn;
+    const transactionHandler = chainIsTvm(chainId) ? _runTransactionTvm : _runTransaction;
+    return transactionHandler(this.logger, contract, method, args, value, gasLimit, nonce);
   }
 
   protected async _submit(
@@ -171,10 +196,17 @@ export class TransactionClient {
     // advanced nonce management may permit them to be submitted in parallel.
     let mrkdwn = "";
     for (let idx = 0; idx < txns.length; ++idx) {
-      const txn = txns[idx];
+      let txn = txns[idx];
 
       if (txn.chainId !== chainId) {
         throw new Error(`chainId mismatch for method ${txn.method} (${txn.chainId} !== ${chainId})`);
+      }
+
+      // If spray is set, transmute the contract's signer.provider to a SpeedProvider built from
+      // all env-configured RPC endpoints, then reconnect the contract through it.
+      if (txn.spray) {
+        const speedProvider = getSpeedProvider(chainId, this.logger);
+        txn = { ...txn, contract: txn.contract.connect(txn.contract.signer.connect(speedProvider)) };
       }
 
       const signerAddr = await txn.contract.signer.getAddress();
@@ -242,7 +274,7 @@ async function _runTransaction(
   logger: winston.Logger,
   contract: Contract,
   method: string,
-  args: unknown,
+  args: unknown[],
   value = bnZero,
   gasLimit: BigNumber | null = null,
   nonce: number | null = null,
@@ -255,18 +287,8 @@ async function _runTransaction(
   const chain = getNetworkName(chainId);
   const sendRawTxn = method === "";
 
-  retries ??= Number(
-    process.env[`TRANSACTION_SUBMISSION_RETRIES_${chainId}`] ??
-      process.env.TRANSACTION_SUBMISSION_RETRIES ??
-      TRANSACTION_SUBMISSION_RETRIES_DEFAULT
-  );
-
-  const priorityFeeScaler =
-    Number(process.env[`PRIORITY_FEE_SCALER_${chainId}`] || process.env.PRIORITY_FEE_SCALER) ||
-    DEFAULT_GAS_FEE_SCALERS[chainId]?.maxPriorityFeePerGasScaler;
-  const maxFeePerGasScaler =
-    Number(process.env[`MAX_FEE_PER_GAS_SCALER_${chainId}`] || process.env.MAX_FEE_PER_GAS_SCALER) ||
-    DEFAULT_GAS_FEE_SCALERS[chainId]?.maxFeePerGasScaler;
+  const { maxFeePerGasScaler, priorityFeeScaler, retries: _retries } = _readTransactionConfig(chainId);
+  retries ??= _retries;
 
   let gas: Partial<FeeData>;
   try {
@@ -275,7 +297,7 @@ async function _runTransaction(
       provider,
       priorityFeeScaler,
       maxFeePerGasScaler,
-      sendRawTxn ? undefined : await contract.populateTransaction[method](...(args as Array<unknown>), { value })
+      sendRawTxn ? undefined : await contract.populateTransaction[method](...args, { value })
     );
     gas = _scaleGasPrice(chainId, preGas, retryScaler);
   } catch (error) {
@@ -294,7 +316,7 @@ async function _runTransaction(
   // TX config has gas (from gasPrice function), value (how much eth to send) and an optional gasLimit. The reduce
   // operation below deletes any null/undefined elements from this object. If gasLimit or nonce are not specified,
   // ethers will determine the correct values to use.
-  const txConfig = Object.entries({ ...gas, value, nonce, gasLimit }).reduce(
+  const txConfig = Object.entries({ ...gas, value, nonce, gasLimit }).reduce<Record<string, unknown>>(
     (a, [k, v]) => (v ? ((a[k] = v), a) : a),
     {}
   );
@@ -302,7 +324,7 @@ async function _runTransaction(
   try {
     return sendRawTxn
       ? await signer.sendTransaction({ to, value, data: (args as ethers.utils.BytesLike[])[0], gasLimit, ...gas })
-      : await contract[method](...(args as Array<unknown>), txConfig);
+      : await contract[method](...args, txConfig);
   } catch (error) {
     // Narrow type. All errors caught here should be Ethers errors.
     if (!typeguards.isEthersError(error)) {
@@ -392,6 +414,91 @@ async function _runTransaction(
   }
 }
 
+async function _runTransactionTvm(
+  logger: winston.Logger,
+  contract: Contract,
+  method: string,
+  args: unknown[],
+  value = bnZero,
+  gasLimit: BigNumber | null = null,
+  _nonce: number | null = null,
+  retries?: number
+): Promise<TransactionResponse> {
+  const at = "TransactionClient#_runTransactionTvm";
+  const { provider } = contract;
+  const { chainId } = await provider.getNetwork();
+  const chain = getNetworkName(chainId);
+  const sendRawTxn = method === "";
+
+  const { maxFeePerGasScaler, priorityFeeScaler, retries: _retries } = _readTransactionConfig(chainId);
+  retries ??= _retries;
+
+  // The fee limit is a function of both the gas price and gas limit. We specify the number of TRX we are willing to spend
+  // on the transaction, not the number of unit gas to spend nor the max price for each unit gas.
+  // Essentially, the fee limit is just maxFeePerGas * gasLimit.
+  const { maxFeePerGas } = await getGasPrice(
+    provider,
+    priorityFeeScaler, // No priority fee scalar for TRON.
+    maxFeePerGasScaler,
+    sendRawTxn ? undefined : await contract.populateTransaction[method](...args, { value })
+  );
+  const gasLimitNumber = gasLimit?.toNumber() ?? process.env.TVM_GAS_LIMIT;
+  const feeLimit = isDefined(gasLimitNumber) ? Number(gasLimitNumber) * maxFeePerGas.toNumber() : DEFAULT_TVM_FEE_LIMIT;
+
+  const tronWeb = getTronWebFromEvmSigner(contract.signer);
+  const populatedTransaction = sendRawTxn
+    ? { from: await contract.signer.getAddress(), to: contract.address, data: (args as Array<string>)[0] }
+    : await contract.populateTransaction[method](...args, { value });
+
+  logger.debug({ at, message: "Submitting TVM transaction.", chain, method, feeLimit });
+  let result;
+  try {
+    result = await submitTransactionTvm(tronWeb, populatedTransaction, feeLimit, value.toNumber());
+  } catch (error) {
+    if (--retries < 0) {
+      throw error;
+    }
+    logger.debug({
+      at,
+      message: `TVM transaction submission failed on ${chain}, retrying.`,
+      method,
+      error: stringifyThrownValue(error),
+    });
+    return _runTransactionTvm(logger, contract, method, args, value, gasLimit, _nonce, retries);
+  }
+
+  if (!result.result) {
+    const error = new Error(`TVM transaction broadcast failed on ${chain}: ${result.txid}`);
+    if (--retries < 0) {
+      throw error;
+    }
+    logger.debug({
+      at,
+      message: `TVM broadcast returned result=false on ${chain}, retrying.`,
+      method,
+      txid: result.txid,
+    });
+    return _runTransactionTvm(logger, contract, method, args, value, gasLimit, _nonce, retries);
+  }
+
+  logger.debug({ at, message: "TVM transaction submitted.", chain, method, txid: result.txid });
+
+  // Adapt TronTransactionResult to an ethers-compatible TransactionResponse. TVM doesn't use
+  // nonces in the EVM sense, so we set nonce to 0 to satisfy downstream nonce tracking without
+  // side effects (TVM nonce tracking in submit() is harmless — it just overwrites to 0 each time).
+  return {
+    hash: result.txid,
+    nonce: 0,
+    confirmations: 0,
+    from: tronWeb.defaultAddress?.base58 ?? "",
+    chainId,
+    gasLimit: BigNumber.from(feeLimit),
+    value,
+    data: populatedTransaction.data ?? "0x",
+    wait: () => Promise.resolve({} as TransactionReceipt),
+  } as unknown as TransactionResponse;
+}
+
 /**
  * Apply local scaling to a gas price. The gas price can be scaled up in case it falls beneath an env-defined
  * price floor, or in case of a retry (i.e. due to replacement underpriced RPC rejection).
@@ -434,5 +541,30 @@ function _scaleGasPrice(
   return {
     maxFeePerGas,
     maxPriorityFeePerGas,
+  };
+}
+
+function _readTransactionConfig(chainId: number): {
+  maxFeePerGasScaler: number;
+  priorityFeeScaler: number;
+  retries: number;
+} {
+  const retries = Number(
+    process.env[`TRANSACTION_SUBMISSION_RETRIES_${chainId}`] ??
+      process.env.TRANSACTION_SUBMISSION_RETRIES ??
+      TRANSACTION_SUBMISSION_RETRIES_DEFAULT
+  );
+
+  const priorityFeeScaler =
+    Number(process.env[`PRIORITY_FEE_SCALER_${chainId}`] || process.env.PRIORITY_FEE_SCALER) ||
+    DEFAULT_GAS_FEE_SCALERS[chainId]?.maxPriorityFeePerGasScaler;
+  const maxFeePerGasScaler =
+    Number(process.env[`MAX_FEE_PER_GAS_SCALER_${chainId}`] || process.env.MAX_FEE_PER_GAS_SCALER) ||
+    DEFAULT_GAS_FEE_SCALERS[chainId]?.maxFeePerGasScaler;
+
+  return {
+    priorityFeeScaler,
+    maxFeePerGasScaler,
+    retries,
   };
 }

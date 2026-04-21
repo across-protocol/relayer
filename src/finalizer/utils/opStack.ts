@@ -1,5 +1,5 @@
 import assert from "assert";
-import { countBy, groupBy } from "lodash";
+import { countBy } from "lodash";
 import * as optimismSDK from "@eth-optimism/sdk";
 import * as viem from "viem";
 import * as viemChains from "viem/chains";
@@ -23,6 +23,7 @@ import {
   getNetworkName,
   getRedisCache,
   getUniqueLogIndex,
+  getViemChain,
   groupObjectCountsByProp,
   isDefined,
   Provider,
@@ -62,6 +63,7 @@ interface CrossChainMessageWithStatus extends CrossChainMessageWithEvent {
 const { USDB, USDC, WETH } = TOKEN_SYMBOLS_MAP;
 const USDCe = TOKEN_SYMBOLS_MAP["USDC.e"];
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- used only in typeof for OVM_CHAIN_ID type
 const OP_STACK_CHAINS = Object.values(CHAIN_IDs).filter((chainId) => chainIsOPStack(chainId));
 /* OP_STACK_CHAINS should contain all chains which satisfy chainIsOPStack().
  * (typeof OP_STACK_CHAINS)[number] then takes all elements in this array and "unions" their type (i.e. 10 | 8453 | 3443 | ... ).
@@ -95,22 +97,33 @@ function assertOpStackTargetChain(chain: viem.Chain): asserts chain is OpStackTa
   );
 }
 
-// We might want to export this mapping of chain ID to viem chain object out of a constant
-// file once we start using Viem elsewhere in the repo:
-const VIEM_OP_STACK_CHAINS: Record<number, viem.Chain> = {
-  [CHAIN_IDs.BASE]: viemChains.base,
-  [CHAIN_IDs.INK]: viemChains.ink,
-  [CHAIN_IDs.LISK]: viemChains.lisk,
-  [CHAIN_IDs.MEGAETH]: viemChains.megaeth, // From patched viem
-  [CHAIN_IDs.MODE]: viemChains.mode,
-  [CHAIN_IDs.OPTIMISM]: viemChains.optimism,
-  [CHAIN_IDs.SONEIUM]: viemChains.soneium,
-  [CHAIN_IDs.UNICHAIN]: viemChains.unichain,
-  [CHAIN_IDs.WORLD_CHAIN]: viemChains.worldchain,
-  [CHAIN_IDs.ZORA]: viemChains.zora,
-  // // @dev The following chains have non-standard interfaces or processes for withdrawing from L2 to L1
-  // [CHAIN_IDs.BLAST]: viemChains.blast,
-};
+/**
+ * Augment a viem chain definition with disputeGameFactory from OPSTACK_CONTRACT_OVERRIDES
+ * when the viem chain doesn't already provide one. No-op for chains that already have
+ * disputeGameFactory in their viem definition.
+ *
+ * This is intended as a short-term fix when on-chain changes (e.g. a portal upgrade to
+ * fault proofs) have not yet been propagated to viem's chain definitions. The preferred
+ * approach is to upstream the changes to viem, or at least to update the existing viem
+ * patches in this repository. In the interim, adding a DisputeGameFactory override in
+ * OPSTACK_CONTRACT_OVERRIDES is acceptable.
+ */
+function withContractOverrides(chainId: number, chain: viem.Chain): viem.Chain {
+  const overrides = OPSTACK_CONTRACT_OVERRIDES[chainId]?.l1;
+  if (!overrides?.DisputeGameFactory || chain.contracts?.disputeGameFactory) {
+    return chain;
+  }
+  const sourceId = chainIsProd(chainId) ? CHAIN_IDs.MAINNET : CHAIN_IDs.SEPOLIA;
+  return {
+    ...chain,
+    contracts: {
+      ...chain.contracts,
+      disputeGameFactory: {
+        [sourceId]: { address: overrides.DisputeGameFactory as viem.Address },
+      },
+    },
+  };
+}
 
 type OVM_CHAIN_ID = (typeof OP_STACK_CHAINS)[number];
 type OVM_CROSS_CHAIN_MESSENGER = optimismSDK.CrossChainMessenger;
@@ -148,7 +161,7 @@ export async function opStackFinalizer(
   // on Optimism, SNX on Optimism, USDC.e on Worldchain, etc) so the easiest way to query for these
   // events is to use the TokenBridged event emitted by the Across SpokePool on every withdrawal.
   const usdc = EvmAddress.from(USDC.addresses[chainId] ?? ZERO_ADDRESS);
-  const { recentTokensBridgedEvents = [], olderTokensBridgedEvents = [] } = groupBy(
+  const { recentTokensBridgedEvents = [], olderTokensBridgedEvents = [] } = Object.groupBy(
     spokePoolClient.getTokensBridged().filter(
       ({ l2TokenAddress }) =>
         // CCTP USDC withdrawals should be finalized via the CCTP Finalizer.
@@ -198,7 +211,7 @@ export async function opStackFinalizer(
   let callData: Multicall2Call[];
   let crossChainTransfers: CrossChainMessage[];
 
-  if (VIEM_OP_STACK_CHAINS[chainId]) {
+  if (!chainIsBlast(chainId)) {
     const viemTxns = await viem_multicallOptimismFinalizations(
       chainId,
       logger,
@@ -272,7 +285,7 @@ async function getOVMStdEvents(
   // that look exactly emit the same events as the standard bridge's ETH withdrawal process. This is used by the
   // https://blast.io/en/bridge UI, so the following query allows this finalizer to finalize withdrawals of WETH
   // from blast initiated through this hosted UI. ETH withdrawals sent in this manner through the Blast Bridge
-  // have the same ETHBridgeInitiated event signature so we only need to change the contract addres.
+  // have the same ETHBridgeInitiated event signature so we only need to change the contract address.
   if (chainIsBlast(chainId)) {
     const blastBridge = new Contract(CONTRACT_ADDRESSES[chainId].blastBridge.address, ovmStandardBridge.abi, provider);
     const blastEthEvents = (
@@ -351,7 +364,7 @@ async function viem_multicallOptimismFinalizations(
     withdrawals: [],
   };
   const hubChainId = hubPoolClient.chainId;
-  const l1Chain: viem.Chain = chainIsProd(chainId) ? viemChains.mainnet : viemChains.sepolia;
+  const l1Chain = chainIsProd(chainId) ? viemChains.mainnet : viemChains.sepolia;
   const publicClientL1 = viem.createPublicClient({
     batch: {
       multicall: true,
@@ -359,15 +372,19 @@ async function viem_multicallOptimismFinalizations(
     chain: l1Chain,
     transport: createViemCustomTransportFromEthersProvider(hubChainId),
   });
+  const targetChain = withContractOverrides(chainId, getViemChain(chainId));
+  // Validate the target chain has the required OP-stack contracts.
+  assertOpStackTargetChain(targetChain);
+
   const publicClientL2 = viem.createPublicClient({
     batch: {
       multicall: true,
     },
-    chain: VIEM_OP_STACK_CHAINS[chainId],
+    chain: targetChain,
     transport: createViemCustomTransportFromEthersProvider(chainId),
   });
-  const uniqueTokenhashes = {};
-  const logIndexesForMessage = [];
+  const uniqueTokenhashes: { [hash: string]: number } = {};
+  const logIndexesForMessage: number[] = [];
   const events = [...olderTokensBridgedEvents, ...recentTokensBridgedEvents];
   for (const event of events) {
     uniqueTokenhashes[event.txnRef] ??= 0;
@@ -376,23 +393,13 @@ async function viem_multicallOptimismFinalizations(
     uniqueTokenhashes[event.txnRef] += 1;
   }
 
-  // Validate the target chain has the required OP-stack contracts.
-  const targetChainRaw = VIEM_OP_STACK_CHAINS[chainId];
-  assertOpStackTargetChain(targetChainRaw);
-
-  const crossChainMessenger = new Contract(
-    targetChainRaw.contracts.portal[hubChainId].address,
-    OPStackPortalL1,
-    signer
-  );
+  const crossChainMessenger = new Contract(targetChain.contracts.portal[hubChainId].address, OPStackPortalL1, signer);
+  const chain: undefined = undefined; // Needed for viem OP type resolution.
+  const withdrawalStatuses: string[] = [];
 
   // Pass as targetChain to viem OP-stack functions. Viem looks up L2 contracts
   // using l1Chain.id (sourceId) and uses custom decoders from targetChain.custom
   // for MegaETH.
-  const targetChain = targetChainRaw;
-  const chain = undefined; // Needed for viem OP type resolution.
-
-  const withdrawalStatuses: string[] = [];
   await mapAsync(events, async (event, i) => {
     // Useful information for event:
     const { decimals, symbol } = getTokenInfo(event.l2TokenAddress, chainId);
@@ -541,8 +548,8 @@ async function getMessageStatuses(
 ): Promise<CrossChainMessageWithStatus[]> {
   // For each token bridge event, store a unique log index for the event within the arbitrum transaction hash.
   // This is important for bridge transactions containing multiple events.
-  const uniqueTokenhashes = {};
-  const logIndexesForMessage = [];
+  const uniqueTokenhashes: { [hash: string]: number } = {};
+  const logIndexesForMessage: number[] = [];
   for (const event of crossChainMessages.map((m) => m.event)) {
     uniqueTokenhashes[event.txnRef] = uniqueTokenhashes[event.txnRef] ?? 0;
     const logIndex = uniqueTokenhashes[event.txnRef];

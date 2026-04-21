@@ -7,11 +7,14 @@ import {
   address,
   getProgramDerivedAddress,
   appendTransactionMessageInstruction,
+  compressTransactionMessageUsingAddressLookupTables,
   pipe,
   type Address as KitAddress,
   AccountRole,
   type AccountMeta,
 } from "@solana/kit";
+import { updateOrAppendSetComputeUnitLimitInstruction } from "@solana-program/compute-budget";
+import { fetchAddressLookupTable } from "@solana-program/address-lookup-table";
 import {
   winston,
   SvmAddress,
@@ -188,9 +191,11 @@ async function sendAndConfirmCCTPV2ReceiveMessageTx(params: {
   message: string;
   destinationChainId: number;
   originChainId: number;
+  addressLookupTable: SolanaAddress;
   logger: winston.Logger;
 }): Promise<string> {
-  const { provider, signer, attestation, message, destinationChainId, originChainId, logger } = params;
+  const { provider, signer, attestation, message, destinationChainId, originChainId, addressLookupTable, logger } =
+    params;
 
   const parsedMessage = parseCctpV2Message(message);
   const [messageTransmitterAccounts, tokenMessengerAccounts] = await Promise.all([
@@ -215,8 +220,17 @@ async function sendAndConfirmCCTPV2ReceiveMessageTx(params: {
     accounts: [...receiveInstruction.accounts, ...buildHandleReceiveRemainingAccounts(tokenMessengerAccounts)],
   };
 
-  const tx = pipe(await sdk.arch.svm.createDefaultTransaction(provider, signer), (tx) =>
-    appendTransactionMessageInstruction(instructionWithRemainingAccounts, tx)
+  // Fetch the persistent ALT contents from chain to compress the transaction.
+  const altAccount = await fetchAddressLookupTable(provider, addressLookupTable);
+  const lookupTableMap = { [addressLookupTable]: altAccount.data.addresses };
+
+  const tx = updateOrAppendSetComputeUnitLimitInstruction(
+    300_000,
+    pipe(
+      await sdk.arch.svm.createDefaultTransaction(provider, signer),
+      (tx) => appendTransactionMessageInstruction(instructionWithRemainingAccounts, tx),
+      (tx) => compressTransactionMessageUsingAddressLookupTables(tx, lookupTableMap)
+    )
   );
 
   const signature = await sendAndConfirmSolanaTransaction(tx, provider);
@@ -283,7 +297,8 @@ export async function processMintSvm(
   svmProvider: SVMProvider,
   destinationChainId: number,
   originChainId: number,
-  logger: winston.Logger
+  logger: winston.Logger,
+  addressLookupTable?: SolanaAddress
 ): Promise<{ txHash: string }> {
   const svmSigner = await createKeyPairSignerFromBytes(svmPrivateKey);
 
@@ -331,6 +346,9 @@ export async function processMintSvm(
       originChainId,
       nonce,
     });
+    if (!addressLookupTable) {
+      throw new Error("CCTP V2 requires an Address Lookup Table. Create one with createCctpV2AddressLookupTable().");
+    }
     txSignature = await sendAndConfirmCCTPV2ReceiveMessageTx({
       provider: svmProvider,
       signer: svmSigner,
@@ -338,6 +356,7 @@ export async function processMintSvm(
       message: attestation.message,
       destinationChainId,
       originChainId,
+      addressLookupTable,
       logger,
     });
   }

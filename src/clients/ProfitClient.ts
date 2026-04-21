@@ -21,6 +21,7 @@ import {
   CHAIN_IDs,
   TOKEN_SYMBOLS_MAP,
   TOKEN_EQUIVALENCE_REMAPPING,
+  resolveAcrossToken,
   ZERO_ADDRESS,
   ZERO_BYTES,
   formatGwei,
@@ -171,6 +172,26 @@ export class ProfitClient {
   }
 
   resolveGasMultiplier(deposit: Deposit): BigNumber {
+    const { inputToken, originChainId, outputToken, destinationChainId } = deposit;
+    const srcSymbol = this.getTokenSymbol(inputToken, originChainId);
+    const dstSymbol = this.getTokenSymbol(outputToken, destinationChainId);
+    const effectiveSrcSymbol = this._getRemappedTokenSymbol(srcSymbol) ?? srcSymbol;
+    const effectiveDstSymbol =
+      dstSymbol !== "UNKNOWN" ? (this._getRemappedTokenSymbol(dstSymbol) ?? dstSymbol) : undefined;
+
+    const routeKey = effectiveDstSymbol
+      ? `RELAYER_GAS_MULTIPLIER_${effectiveSrcSymbol}_${effectiveDstSymbol}_${destinationChainId}`
+      : `RELAYER_GAS_MULTIPLIER_${effectiveSrcSymbol}_${destinationChainId}`;
+    const tokenKey = `RELAYER_GAS_MULTIPLIER_${effectiveSrcSymbol}`;
+    const chainKey = `RELAYER_GAS_MULTIPLIER_${destinationChainId}`;
+
+    const envVal = process.env[routeKey] ?? process.env[tokenKey] ?? process.env[chainKey];
+    if (isDefined(envVal)) {
+      const override = toBNWei(envVal);
+      assert(override.gte(bnZero) && override.lte(toBNWei(4)), `Gas multiplier override out of range (${override})`);
+      return override;
+    }
+
     return isMessageEmpty(resolveDepositMessage(deposit)) ? this.gasMultiplier : this.gasMessageMultiplier;
   }
 
@@ -239,8 +260,13 @@ export class ProfitClient {
   }
 
   private async _getTotalGasCost(deposit: Deposit, relayer: Address): Promise<TransactionCostEstimate> {
+    const rawFeeHistoryConfig =
+      process.env[`FEE_HISTORY_OPTIONS_${deposit.destinationChainId}`] ?? process.env["FEE_HISTORY_OPTIONS"];
+    const feeHistoryOptions = isDefined(rawFeeHistoryConfig) ? JSON.parse(rawFeeHistoryConfig) : undefined;
     try {
-      return await this.relayerFeeQueries[deposit.destinationChainId].getGasCosts(deposit, relayer);
+      return await this.relayerFeeQueries[deposit.destinationChainId].getGasCosts(deposit, relayer, {
+        feeHistoryOptions,
+      });
     } catch (err) {
       const reason = isEthersError(err) ? err.reason : isError(err) ? err.message : "unknown error";
       // Attempt to extract an underlying cause, if the error object exposes one. This is
@@ -385,7 +411,7 @@ export class ProfitClient {
     const dstSymbol = this.getTokenSymbol(outputToken, destinationChainId);
     const effectiveSourceSymbol = this._getRemappedTokenSymbol(srcSymbol) ?? srcSymbol;
     const effectiveDestinationSymbol =
-      dstSymbol !== "UNKNOWN" ? this._getRemappedTokenSymbol(dstSymbol) ?? dstSymbol : undefined;
+      dstSymbol !== "UNKNOWN" ? (this._getRemappedTokenSymbol(dstSymbol) ?? dstSymbol) : undefined;
 
     const tokenKey = effectiveDestinationSymbol
       ? `MIN_RELAYER_FEE_PCT_${effectiveSourceSymbol}_${effectiveDestinationSymbol}`
@@ -514,7 +540,7 @@ export class ProfitClient {
     try {
       const { symbol } = getTokenInfo(token, chainId);
       return symbol;
-    } catch (e) {
+    } catch {
       return "UNKNOWN";
     }
   }
@@ -628,7 +654,7 @@ export class ProfitClient {
       l1Tokens
         .map(({ symbol: _symbol }) => {
           // If the L1 token is defined in token symbols map, then use the L1 token symbol. Otherwise, use the remapping in constants.
-          const symbol = isDefined(TOKEN_SYMBOLS_MAP[_symbol]) ? _symbol : this._getRemappedTokenSymbol(_symbol);
+          const symbol = isDefined(resolveAcrossToken(_symbol)) ? _symbol : this._getRemappedTokenSymbol(_symbol);
           if (!isDefined(symbol)) {
             // If the symbol is undefined, then there is missing configuration in the constants repository.
             // Throw an error if we are on mainnet, since this indicates that we are attempting to fetch prices for an unsupported token.
@@ -642,8 +668,9 @@ export class ProfitClient {
             );
           }
 
-          const { addresses } = TOKEN_SYMBOLS_MAP[symbol];
-          let address = addresses[CHAIN_IDs.MAINNET];
+          const tokenInfo = resolveAcrossToken(symbol);
+          assert(isDefined(tokenInfo), `Token ${symbol} not found in TOKEN_SYMBOLS_MAP`);
+          let address = tokenInfo.addresses[CHAIN_IDs.MAINNET];
           // For testnet only, if we cannot resolve the token address, revert to ETH. On mainnet, if `address` is undefined,
           // we will throw an error instead.
           if (this.hubPoolClient.chainId === CHAIN_IDs.SEPOLIA && !isDefined(address)) {
@@ -657,7 +684,7 @@ export class ProfitClient {
     // Log any tokens that are in the L1Tokens list but are not in the tokenSymbolsMap.
     // Note: we should batch these up and log them all at once to avoid spamming the logs.
     const unknownTokens = l1Tokens.filter(
-      ({ symbol }) => !isDefined(TOKEN_SYMBOLS_MAP[symbol]) && !isDefined(this._getRemappedTokenSymbol(symbol))
+      ({ symbol }) => !isDefined(resolveAcrossToken(symbol)) && !isDefined(this._getRemappedTokenSymbol(symbol))
     );
     if (unknownTokens.length > 0) {
       this.logger.debug({
@@ -672,10 +699,12 @@ export class ProfitClient {
     // Also ensure all gas tokens are included in the lookup.
     this.enabledChainIds.forEach((chainId) => {
       const symbol = getNativeTokenSymbol(chainId);
-      const { addresses } = TOKEN_SYMBOLS_MAP[symbol];
+      const nativeTokenInfo = resolveAcrossToken(symbol);
+      assert(isDefined(nativeTokenInfo), `Native token ${symbol} not found in TOKEN_SYMBOLS_MAP`);
 
       // If the gas token isn't available on the hub chain, default to the destination itself.
-      let nativeTokenAddress = addresses[this.hubPoolClient.chainId] ?? addresses[chainId];
+      let nativeTokenAddress =
+        nativeTokenInfo.addresses[this.hubPoolClient.chainId] ?? nativeTokenInfo.addresses[chainId];
 
       // For testnet only, if the custom gas token has no mainnet address, use ETH.
       if (this.hubPoolClient.chainId === CHAIN_IDs.SEPOLIA && !isDefined(nativeTokenAddress)) {
@@ -757,8 +786,9 @@ export class ProfitClient {
           destinationChainId
         );
 
-        const symbol = outputTokenSymbols.find((symbol) => TOKEN_SYMBOLS_MAP[symbol].addresses[destinationChainId]);
-        const hubToken = EvmAddress.from(TOKEN_SYMBOLS_MAP[symbol].addresses[this.hubPoolClient.chainId]);
+        const symbol = outputTokenSymbols.find((symbol) => resolveAcrossToken(symbol, destinationChainId));
+        assert(isDefined(symbol), `No output token found for chain ${destinationChainId}`);
+        const hubToken = EvmAddress.from(resolveAcrossToken(symbol, this.hubPoolClient.chainId, true));
         const outputToken =
           destinationChainId === hubPoolClient.chainId
             ? hubToken
@@ -847,13 +877,16 @@ export class ProfitClient {
   ): relayFeeCalculator.QueryInterface {
     // Fallback to Coingecko's free API for now.
     // TODO: Add support for Coingecko Pro.
-    const coingeckoProApiKey = undefined;
+    const coingeckoProApiKey: undefined = undefined;
+    const spokePoolAddress = chainIsEvm(chainId)
+      ? toAddressType(getDeployedAddress("SpokePool", chainId), chainId).toEvmAddress()
+      : getDeployedAddress("SvmSpoke", chainId);
     // Call the factory to create a new QueryBase instance.
     return relayFeeCalculator.QueryBase__factory.create(
       chainId,
       provider,
       undefined, // symbolMapping
-      chainIsEvm(chainId) ? undefined : getDeployedAddress("SvmSpoke", chainId), // spokePoolAddress
+      spokePoolAddress,
       undefined, // simulatedRelayerAddress
       coingeckoProApiKey,
       this.logger

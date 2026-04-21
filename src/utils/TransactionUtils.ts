@@ -25,6 +25,7 @@ export type TransactionSimulationResult = {
   transaction: AugmentedTransaction;
   succeed: boolean;
   reason?: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   data?: any;
 };
 
@@ -99,6 +100,9 @@ export async function getGasPrice(
     };
   }
 
+  const rawFeeHistoryConfig = process.env[`FEE_HISTORY_OPTIONS_${chainId}`] ?? process.env["FEE_HISTORY_OPTIONS"];
+  const feeHistoryOptions = isDefined(rawFeeHistoryConfig) ? JSON.parse(rawFeeHistoryConfig) : undefined;
+
   // Floor scalers at 1.0 as we'll rarely want to submit too low of a gas price. We mostly
   // just want to submit with as close to prevailing fees as possible.
   maxFeePerGasScaler = Math.max(1, maxFeePerGasScaler);
@@ -110,6 +114,7 @@ export async function getGasPrice(
     baseFeeMultiplier: toBNWei(maxFeePerGasScaler),
     priorityFeeMultiplier: toBNWei(priorityScaler),
     unsignedTx: transactionObject,
+    feeHistoryOptions,
   });
 
   // Default to EIP-1559 (type 2) pricing. If gasPriceOracle is using a legacy adapter for this chain then
@@ -142,6 +147,7 @@ export async function willSucceed(transaction: AugmentedTransaction): Promise<Tr
       const args = transaction.value ? [...transaction.args, { value: transaction.value }] : transaction.args;
       data = await contract.callStatic[method](...args);
     }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (err: any) {
     if (err.errorName) {
       return {
@@ -153,19 +159,14 @@ export async function willSucceed(transaction: AugmentedTransaction): Promise<Tr
   }
 
   try {
-    let gasLimit;
-    if (rawTxn) {
-      const from = (await contract.signer?.getAddress()) ?? ZERO_ADDRESS;
-      gasLimit = await contract.provider.estimateGas({
-        ...transaction,
-        to: contract.address,
-        data: transaction.args[0],
-        from,
-      });
-    } else {
-      const args = transaction.value ? [...transaction.args, { value: transaction.value }] : transaction.args;
-      gasLimit = await contract.estimateGas[method](...args);
-    }
+    const from = (await contract.signer?.getAddress()) ?? ZERO_ADDRESS;
+    const input = rawTxn ? transaction.args[0] : (await contract.populateTransaction[method](...transaction.args)).data;
+    const gasLimit = await contract.provider.estimateGas({
+      ...transaction,
+      to: contract.address,
+      data: input,
+      from,
+    });
     return { transaction: { ...transaction, gasLimit }, succeed: true, data };
   } catch (error) {
     const reason = typeguards.isEthersError(error) ? error.reason : "unknown error";
@@ -184,7 +185,7 @@ export function getTarget(targetAddress: string):
     } {
   try {
     return { targetAddress, ...getContractInfoFromAddress(targetAddress) };
-  } catch (error) {
+  } catch {
     return { targetAddress };
   }
 }

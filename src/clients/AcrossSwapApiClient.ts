@@ -66,8 +66,8 @@ export class AcrossSwapApiClient extends BaseAcrossApiClient {
         url: this.urlBase,
         route,
         amountOut,
-        swapper: swapper.toNative(),
-        recipient: recipient.toNative(),
+        swapper,
+        recipient,
       });
       return;
     }

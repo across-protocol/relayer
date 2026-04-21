@@ -8,6 +8,7 @@ import {
   getRedisCache,
   isDefined,
   Profiler,
+  scheduleSequentialTask,
   scheduleTask,
   Signer,
   winston,
@@ -67,7 +68,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
   const relayer = new Relayer(await baseSigner.getAddress(), logger, relayerClients, config);
   await relayer.init();
 
-  const { acrossApiClient, inventoryClient, spokePoolClients, tokenClient } = relayerClients;
+  const { acrossApiClient, inventoryClient, profitClient, spokePoolClients, tokenClient } = relayerClients;
   const simulate = !config.sendingTransactionsEnabled || !config.sendingRelaysEnabled;
   let txnReceipts: { [chainId: number]: Promise<string[]> } = {};
   const inventoryManagement = inventoryClient.isInventoryManagementEnabled();
@@ -75,6 +76,14 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
 
   const apiUpdateInterval = 30; // seconds
   scheduleTask(() => acrossApiClient.update(config.ignoreLimits), apiUpdateInterval, abortController.signal);
+
+  scheduleSequentialTask(
+    "profitClient.update()",
+    logger,
+    () => profitClient.update(),
+    config.maintenanceInterval,
+    abortController.signal
+  );
 
   if (eventListener) {
     const hubChainSpoke = spokePoolClients[config.hubPoolChainId];

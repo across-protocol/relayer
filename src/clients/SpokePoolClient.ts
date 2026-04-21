@@ -25,6 +25,7 @@ export type SpokePoolClientWithListener = InstanceType<ReturnType<typeof SpokeLi
  * @returns true if the client has the onBlock method (i.e., has the listener mixin)
  */
 export function isSpokePoolClientWithListener(client: SpokePoolClient): client is SpokePoolClientWithListener {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return "onBlock" in client && typeof (client as any).onBlock === "function";
 }
 
@@ -38,6 +39,7 @@ export function isSpokePoolClientWithListener(client: SpokePoolClient): client i
  * more invasive and out of scope for now.
  * Reference: https://www.typescriptlang.org/docs/handbook/mixins.html
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Constructor<T = Record<string, unknown>> = new (...args: any[]) => T;
 
 // Minimum common-ish interface supplied by the SpokePoolClient.
@@ -52,7 +54,18 @@ type MinGenericSpokePoolClient = {
   logger: winston.Logger;
 };
 
-export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(SpokePoolClient: T) {
+interface SpokeListenerMethods {
+  init(opts: IndexerOpts): void;
+  onBlock(handler: (blockNumber: number, currentTime: number) => void): void;
+  _startWorker(): void;
+  stopWorker(): void;
+  _indexerUpdate(rawMessage: unknown): void;
+  _update(eventsToQuery: string[]): Promise<clients.SpokePoolUpdate>;
+}
+
+export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
+  SpokePoolClient: T
+): T & Constructor<SpokeListenerMethods> {
   return class extends SpokePoolClient {
     // Standard private/readonly constraints are not available to mixins; use ES2020 private properties instead.
     #chain: string;
@@ -75,7 +88,7 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
 
       this.#pendingBlockNumber = this.deploymentBlock;
       this.#pendingCurrentTime = 0;
-      this.#pendingEvents = this._queryableEventNames().map(() => []);
+      this.#pendingEvents = this._queryableEventNames().map((): Log[] => []);
       this.#pendingEventsRemoved = [];
 
       this.#eventEmitter = new EventEmitter();

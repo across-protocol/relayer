@@ -14,6 +14,7 @@ import {
 } from "../../utils";
 import { checkIfAlreadyProcessedEvm, processMintEvm, getEvmProvider } from "../utils/evmUtils";
 import { checkIfAlreadyProcessedSvm, processMintSvm, getSvmProvider } from "../utils/svmUtils";
+import { address } from "@solana/kit";
 import {
   NoAttestationFoundError,
   AttestationNotReadyError,
@@ -49,6 +50,7 @@ export class CCTPService {
         attestation: cctpAttestationUnion,
         destinationChainId: providedDestinationChainIdUnion,
         signature: signatureUnion,
+        quoteDeadline: quoteDeadlineUnion,
       } = message;
 
       this.evmPrivateKey = await this.getPrivateKey("evm");
@@ -58,6 +60,7 @@ export class CCTPService {
       const cctpAttestation = cctpAttestationUnion?.string;
       const providedDestinationChainId = providedDestinationChainIdUnion?.long;
       const signature = signatureUnion?.string;
+      const quoteDeadline = quoteDeadlineUnion?.long;
 
       this.logger.info({
         at: "CCTPService#processBurnTransaction",
@@ -167,7 +170,7 @@ export class CCTPService {
       }
 
       // Process the mint
-      return await this.processMint(destinationChainId, sourceChainId, attestation, signature);
+      return await this.processMint(destinationChainId, sourceChainId, attestation, signature, quoteDeadline);
     } catch (error) {
       if (isCCTPError(error)) {
         if (error instanceof AlreadyProcessedError) {
@@ -248,8 +251,10 @@ export class CCTPService {
   private async processMint(
     destinationChainId: number,
     originChainId: number,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     attestation: any,
-    signature?: string
+    signature?: string,
+    quoteDeadline?: number
   ): Promise<ProcessBurnTransactionResponse> {
     const chainName = PUBLIC_NETWORKS[destinationChainId]?.name || `Chain ${destinationChainId}`;
     this.logger.info({
@@ -265,13 +270,15 @@ export class CCTPService {
 
         const rpcUrl = this.getRpcUrlForChain(destinationChainId);
         const svmProvider = getSvmProvider(rpcUrl);
+        const altAddress = process.env.SOLANA_CCTP_V2_ALT ? address(process.env.SOLANA_CCTP_V2_ALT) : undefined;
         const result = await processMintSvm(
           attestation,
           this.svmPrivateKey,
           svmProvider,
           destinationChainId,
           originChainId,
-          this.logger
+          this.logger,
+          altAddress
         );
         return {
           success: true,
@@ -287,7 +294,8 @@ export class CCTPService {
           provider,
           this.evmPrivateKey,
           this.logger,
-          signature
+          signature,
+          quoteDeadline
         );
         return {
           success: true,

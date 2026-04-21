@@ -7,9 +7,9 @@ import {
   bnZero,
   formatEther,
   getNetworkName,
-  isDefined,
+  TransactionResponse,
+  submitTransaction,
   Provider,
-  TransactionReceipt,
   winston,
 } from "../utils";
 
@@ -20,7 +20,7 @@ export class Disputer {
   protected provider: Provider;
   protected txnClient: TransactionClient;
   protected chain: string;
-  private initPromise: Promise<void>;
+  private initPromise: Promise<void> | undefined;
 
   constructor(
     protected readonly chainId: number,
@@ -38,21 +38,11 @@ export class Disputer {
       target: 8,
     };
     this.txnClient = new TransactionClient(this.logger);
-
-    const initPromise = async () => {
-      // @todo: Optimise all calls here by using Multicall3 to query:
-      // - bondToken
-      // - bondAmount
-      // - native balance
-      const [bondToken, bondAmount] = await Promise.all([this.hubPool.bondToken(), this.hubPool.bondAmount()]);
-      this.bondToken = WETH9.connect(bondToken, this.signer);
-      this.bondAmount = bondAmount;
-    };
-    this.initPromise = initPromise();
+    this.initPromise = this._getOrCreateInitPromise();
   }
 
   async validate(): Promise<void> {
-    await this.initPromise;
+    await this._getOrCreateInitPromise();
 
     const { bondAmount, logger } = this;
     const minBondAmount = bondAmount.mul(this.bondMultiplier.min);
@@ -92,7 +82,7 @@ export class Disputer {
     return this.bondToken.allowance(signer, this.hubPool.address);
   }
 
-  async approve(amount = bnUint256Max): Promise<TransactionReceipt | undefined> {
+  async approve(amount = bnUint256Max): Promise<TransactionResponse | undefined> {
     const { chainId, bondToken, hubPool } = this;
     const txn = {
       chainId,
@@ -104,39 +94,42 @@ export class Disputer {
       unpermissioned: false,
       canFailInSimulation: false,
       nonMulticall: true,
+      ensureConfirmation: true,
     };
 
     return this.submit(txn);
   }
 
-  async mintBond(amount: BigNumber): Promise<TransactionReceipt | undefined> {
+  async mintBond(amount: BigNumber): Promise<TransactionResponse | undefined> {
     const { chainId, bondToken } = this;
     const txn = {
       chainId,
       contract: bondToken,
       method: "deposit",
-      args: [],
+      args: Array<unknown>(),
       message: `Minted ${amount} HubPool bondToken.`,
       value: amount,
       unpermissioned: false,
       canFailInSimulation: false,
       nonMulticall: true,
+      ensureConfirmation: true,
     };
 
     return this.submit(txn);
   }
 
-  dispute(): Promise<TransactionReceipt | undefined> {
+  dispute(): Promise<TransactionResponse | undefined> {
     const { chainId, hubPool } = this;
     const txn = {
       chainId,
       contract: hubPool.connect(this.signer),
       method: "disputeRootBundle",
-      args: [],
+      args: Array<unknown>(),
       message: "Disputed HubPool root bundle proposal.",
       unpermissioned: false,
       canFailInSimulation: false,
       nonMulticall: true,
+      ensureConfirmation: true,
     };
 
     try {
@@ -148,28 +141,36 @@ export class Disputer {
     return Promise.resolve(undefined);
   }
 
-  protected async submit(txn: AugmentedTransaction, maxTries = 3): Promise<TransactionReceipt | undefined> {
-    const { chainId, logger, txnClient } = this;
+  protected async submit(txn: AugmentedTransaction): Promise<TransactionResponse | undefined> {
+    const { logger } = this;
 
     if (this.simulate) {
       logger.warn({ at: "Disputer::submit", message: `Suppressing ${txn.method} transaction.` });
       return Promise.resolve(undefined);
     }
 
-    let txnReceipt: TransactionReceipt;
-    let cause: unknown;
-    let tries = 0;
+    return submitTransaction(txn, this.txnClient);
+  }
 
-    do {
-      try {
-        const [txnResponse] = await txnClient.submit(chainId, [txn]);
-        txnReceipt = await txnResponse.wait();
-        return txnReceipt;
-      } catch (err: unknown) {
-        cause = err;
+  private _getOrCreateInitPromise(): Promise<void> {
+    if (this.initPromise !== undefined) {
+      return this.initPromise;
+    }
+    const promise = (async () => {
+      // @todo: Optimise all calls here by using Multicall3 to query:
+      // - bondToken
+      // - bondAmount
+      // - native balance
+      const [bondToken, bondAmount] = await Promise.all([this.hubPool.bondToken(), this.hubPool.bondAmount()]);
+      this.bondToken = WETH9.connect(bondToken, this.signer);
+      this.bondAmount = bondAmount;
+    })().catch((error) => {
+      if (this.initPromise === promise) {
+        this.initPromise = undefined;
       }
-    } while (!isDefined(txnReceipt) && ++tries < maxTries);
-
-    throw new Error(`Unable to submit transaction on ${this.chain}`, { cause });
+      throw error;
+    });
+    this.initPromise = promise;
+    return promise;
   }
 }

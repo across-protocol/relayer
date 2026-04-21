@@ -10,12 +10,9 @@ import { CHAIN_IDs, getNetworkName, getNodeUrlList, isDefined, PUBLIC_NETWORKS }
 // TODO: Figure out which imported module in `./tasks` is causing HRE construction to fail.
 // require("./tasks");
 
-import "@nomiclabs/hardhat-etherscan";
+import "@nomicfoundation/hardhat-verify";
 import "@nomiclabs/hardhat-ethers";
 import "@nomicfoundation/hardhat-chai-matchers";
-import "@typechain/hardhat";
-import "hardhat-gas-reporter";
-import "solidity-coverage";
 import "hardhat-deploy";
 import "@openzeppelin/hardhat-upgrades";
 
@@ -105,7 +102,6 @@ const config: HardhatUserConfig = {
       companionNetworks: { l1: "mainnet" },
     },
   },
-  gasReporter: { enabled: process.env.REPORT_GAS !== undefined, currency: "USD" },
   etherscan: { apiKey: process.env.ETHERSCAN_API_KEY },
   namedAccounts: { deployer: 0 },
   mocha: {

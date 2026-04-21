@@ -31,6 +31,8 @@ type RebalancerRunContext = {
   rebalancerClient: RebalancerClient;
 };
 
+const sweepableAdapters: string[] = ["hyperliquid"];
+
 async function initializeRebalancerRun(_logger: winston.Logger, baseSigner: Signer): Promise<RebalancerRunContext> {
   const logLabel = "runCumulativeBalanceRebalancer";
   logger = _logger;
@@ -62,19 +64,27 @@ async function initializeRebalancerRun(_logger: winston.Logger, baseSigner: Sign
 
   let timerStart = performance.now();
 
-  // Update all adapter order statuses so we can get the most accurate latest balances, and then query their balances.
-  const adaptersToUpdate: Set<RebalancerAdapter> = new Set(Object.values(rebalancerClient.adapters));
-  for (const adapter of adaptersToUpdate) {
+  // Make sure we update the upstream adapters first, so there is a small chance of progressing an intermediate
+  // CCTP/OFT bridge before progressing the order in Binance/HL.
+  const allAdapters = Object.keys(rebalancerClient.adapters);
+  const upstreamAdapterNames: string[] = allAdapters.filter((adapter) => adapter === "cctp" || adapter === "oft");
+  const downstreamAdapterNames = allAdapters.filter((adapter) => !upstreamAdapterNames.includes(adapter));
+  const adapterNamesToUpdate = [...upstreamAdapterNames, ...downstreamAdapterNames];
+  const adaptersToUpdate = new Set(adapterNamesToUpdate.map((adapterName) => rebalancerClient.adapters[adapterName]));
+  for (const adapterName of adapterNamesToUpdate) {
+    const adapter = rebalancerClient.adapters[adapterName];
     timerStart = performance.now();
     // @todo Decide when to sweep, for now do it before updating rebalance statuses. In theory, it shouldn't really
     // matter when we sweep.
-    await adapter.sweepIntermediateBalances();
-    logger.debug({
-      at: `index.ts:${logLabel}`,
-      message: `Completed sweeping intermediate balances for adapter ${adapter.constructor.name}`,
-      duration: performance.now() - timerStart,
-    });
-    timerStart = performance.now();
+    if (sweepableAdapters.includes(adapterName)) {
+      await adapter.sweepIntermediateBalances();
+      logger.debug({
+        at: `index.ts:${logLabel}`,
+        message: `Completed sweeping intermediate balances for adapter ${adapter.constructor.name}`,
+        duration: performance.now() - timerStart,
+      });
+      timerStart = performance.now();
+    }
     await adapter.updateRebalanceStatuses();
     logger.debug({
       at: `index.ts:${logLabel}`,
@@ -106,33 +116,32 @@ function loadCumulativeModeBalances(
   for (const [token, chainConfig] of Object.entries(rebalancerConfig.cumulativeTargetBalances)) {
     const l1TokenInfo = getTokenInfoFromSymbol(token, rebalancerConfig.hubPoolChainId);
     assert(l1TokenInfo.address.isEVM());
-    for (const chainId of Object.keys(chainConfig.chains)) {
-      const l2TokenInfo = getTokenInfoFromSymbol(token, Number(chainId));
-      assert(l2TokenInfo.address.isEVM());
-      const currentBalance = inventoryClient.tokenClient.getBalance(Number(chainId), l2TokenInfo.address);
-      currentBalances[chainId] ??= {};
-      currentBalances[chainId][token] = currentBalance;
-    }
+    Object.keys(chainConfig.chains)
+      .map(Number)
+      .forEach((chainId) => {
+        const l2TokenInfo = getTokenInfoFromSymbol(token, chainId);
+        assert(l2TokenInfo.address.isEVM());
+        const currentBalance = inventoryClient.tokenClient.getBalance(chainId, l2TokenInfo.address);
+        currentBalances[chainId] ??= {};
+        currentBalances[chainId][token] = currentBalance;
+      });
 
-    const cumulativeBalance = inventoryClient.getCumulativeBalanceWithApproximateUpcomingRefunds(
-      EvmAddress.from(l1TokenInfo.address.toNative())
-    );
-    cumulativeBalances[token] = cumulativeBalance;
+    cumulativeBalances[token] = inventoryClient.getCumulativeBalanceWithApproximateUpcomingRefunds(l1TokenInfo.address);
   }
   return { currentBalances, cumulativeBalances };
 }
 
-async function applyPendingRebalanceAdjustments(
+async function applyPendingCumulativeRebalanceAdjustments(
+  baseSigner: Signer,
   rebalancerConfig: RebalancerConfig,
   adaptersToUpdate: Set<RebalancerAdapter>,
-  currentBalances: { [chainId: number]: { [token: string]: BigNumber } },
   logLabel: string,
   cumulativeBalances?: { [token: string]: BigNumber }
 ): Promise<void> {
   let timerStart = performance.now();
   for (const adapter of adaptersToUpdate) {
     timerStart = performance.now();
-    const pendingRebalances = await adapter.getPendingRebalances();
+    const pendingRebalances = await adapter.getPendingRebalances(EvmAddress.from(await baseSigner.getAddress()));
     logger.debug({
       at: `index.ts:${logLabel}`,
       message: `Completed getting pending rebalances for adapter ${adapter.constructor.name}`,
@@ -150,11 +159,7 @@ async function applyPendingRebalanceAdjustments(
 
     for (const [chainId, tokens] of Object.entries(pendingRebalances)) {
       for (const [token, amount] of Object.entries(tokens)) {
-        if (!isDefined(currentBalances[chainId]?.[token])) {
-          continue;
-        }
         const pendingRebalanceAmount = amount ?? bnZero;
-        currentBalances[chainId][token] = currentBalances[chainId][token].add(pendingRebalanceAmount);
         if (cumulativeBalances && isDefined(cumulativeBalances[token])) {
           // Convert pending rebalance amount to L1 token decimals
           const l1TokenInfo = getTokenInfoFromSymbol(token, rebalancerConfig.hubPoolChainId);
@@ -169,9 +174,8 @@ async function applyPendingRebalanceAdjustments(
             at: `index.ts:${logLabel}`,
             message: `${pendingRebalanceAmount.gt(bnZero) ? "Added" : "Subtracted"} pending rebalance amount from ${
               adapter.constructor.name
-            } of ${pendingRebalanceAmount.toString()} to current balance for ${token} on ${chainId}`,
+            } of ${pendingRebalanceAmount.toString()} to cumulative (virtual) balance for ${token} on ${chainId}`,
             pendingRebalanceAmount: pendingRebalanceAmount.toString(),
-            newCurrentBalance: currentBalances[chainId][token].toString(),
             newCumulativeBalance: cumulativeBalances?.[token]?.toString(),
           });
         }
@@ -187,10 +191,10 @@ export async function runCumulativeBalanceRebalancer(_logger: winston.Logger, ba
     baseSigner
   );
   const { currentBalances, cumulativeBalances } = loadCumulativeModeBalances(rebalancerConfig, inventoryClient);
-  await applyPendingRebalanceAdjustments(
+  await applyPendingCumulativeRebalanceAdjustments(
+    baseSigner,
     rebalancerConfig,
     adaptersToUpdate,
-    currentBalances,
     logLabel,
     cumulativeBalances
   );

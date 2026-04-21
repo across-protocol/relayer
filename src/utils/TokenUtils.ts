@@ -2,18 +2,44 @@ import { CHAIN_IDs, TOKEN_EQUIVALENCE_REMAPPING, TOKEN_SYMBOLS_MAP } from "@acro
 import { constants, utils, arch } from "@across-protocol/sdk";
 import { CONTRACT_ADDRESSES } from "../common";
 import { BigNumberish, BigNumber } from "./BNUtils";
-import { formatUnits, getTokenInfo } from "./SDKUtils";
-import { isDefined } from "./TypeGuards";
-import { Address, toAddressType, EvmAddress, SvmAddress, SVMProvider, toBN } from "./";
+import { formatUnits, getL1TokenAddress as resolveL1TokenAddress, getTokenInfo } from "./SDKUtils";
+import { isDefined, isKeyOf } from "./TypeGuards";
+import { assert, Address, toAddressType, EvmAddress, SvmAddress, SVMProvider, toBN } from "./";
 import { TokenInfo } from "../interfaces";
 
 const { ZERO_ADDRESS } = constants;
 
 export const { fetchTokenInfo, getL2TokenAddresses } = utils;
 
+type TokenSymbolInfo = (typeof TOKEN_SYMBOLS_MAP)[keyof typeof TOKEN_SYMBOLS_MAP];
+
+// Safely index TOKEN_SYMBOLS_MAP with a string key, returning undefined for unknown symbols.
+// When chainId is supplied, returns the token address on that chain (or undefined).
+// When assertExists is true, throws if the token (or address) is not found.
+export function resolveAcrossToken(symbol: string): TokenSymbolInfo | undefined;
+export function resolveAcrossToken(symbol: string, chainId: number): string | undefined;
+export function resolveAcrossToken(symbol: string, chainId: number, assertExists: true): string;
+export function resolveAcrossToken(
+  symbol: string,
+  chainId?: number,
+  assertExists?: boolean
+): TokenSymbolInfo | string | undefined {
+  const token = isKeyOf(symbol, TOKEN_SYMBOLS_MAP) ? TOKEN_SYMBOLS_MAP[symbol] : undefined;
+  if (chainId !== undefined) {
+    const address = token?.addresses[chainId];
+    assert(!assertExists || isDefined(address), `Token ${symbol} not found on chain ${chainId}`);
+    return address;
+  }
+  return token;
+}
+
+// Returns the canonical token for the given L1 token on the given remote chain, assuming that the L1 token
+// exists in only a single mapping in TOKEN_SYMBOLS_MAP. This is the case currently for all tokens except for
+// USDC.e, but that's why we use the TOKEN_EQUIVALENCE_REMAPPING to remap the token back to its inventory
+// equivalent L1 token.
 export function getRemoteTokenForL1Token(
   _l1Token: EvmAddress,
-  remoteChainId: number | string,
+  remoteChainId: number,
   hubChainId: number
 ): Address | undefined {
   const l1Token = _l1Token.toEvmAddress();
@@ -25,9 +51,68 @@ export function getRemoteTokenForL1Token(
   }
   const l1TokenSymbol = TOKEN_EQUIVALENCE_REMAPPING[tokenMapping.symbol] ?? tokenMapping.symbol;
   return toAddressType(
-    TOKEN_SYMBOLS_MAP[l1TokenSymbol]?.addresses[remoteChainId] ?? tokenMapping.addresses[remoteChainId],
-    Number(remoteChainId)
+    resolveAcrossToken(l1TokenSymbol, remoteChainId) ?? tokenMapping.addresses[remoteChainId],
+    remoteChainId
   );
+}
+
+// Returns the L1 token that is equivalent to the `l2Token` within the context of the inventory.
+// This is used to link tokens that are not linked via pool rebalance routes, for example.
+export function getInventoryEquivalentL1TokenAddress(
+  l2Token: Address,
+  chainId: number,
+  hubChainId = CHAIN_IDs.MAINNET
+): EvmAddress {
+  try {
+    return resolveL1TokenAddress(l2Token, chainId);
+  } catch {
+    const { symbol } = getTokenInfo(l2Token, chainId);
+    const remappedSymbol = TOKEN_EQUIVALENCE_REMAPPING[symbol] ?? symbol;
+    return EvmAddress.from(resolveAcrossToken(remappedSymbol, hubChainId, true));
+  }
+}
+
+// Returns the L2 tokens that are equivalent for a given `l1Token` within the context of the inventory.
+// Equivalency is defined by tokens that share the same L1 token within TOKEN_SYMBOLS_MAP or are
+// mapped to each other in TOKEN_EQUIVALENCE_REMAPPING.
+export function getInventoryBalanceContributorTokens(
+  l1Token: EvmAddress,
+  chainId: number,
+  hubChainId = CHAIN_IDs.MAINNET
+): Address[] {
+  if (chainId === hubChainId) {
+    return [l1Token];
+  }
+
+  const hubTokenSymbol = getTokenInfo(l1Token, hubChainId).symbol;
+  const balanceContributorTokens: Address[] = [];
+  const canonicalToken = getRemoteTokenForL1Token(l1Token, chainId, hubChainId);
+  if (isDefined(canonicalToken)) {
+    balanceContributorTokens.push(canonicalToken);
+  }
+
+  Object.values(TOKEN_SYMBOLS_MAP).forEach((token) => {
+    const remappedSymbol = TOKEN_EQUIVALENCE_REMAPPING[token.symbol] ?? token.symbol;
+    if (remappedSymbol === hubTokenSymbol && isDefined(token.addresses[chainId])) {
+      balanceContributorTokens.push(toAddressType(token.addresses[chainId], chainId));
+    }
+  });
+
+  return balanceContributorTokens.filter(
+    (token, index, allTokens) => allTokens.findIndex((candidate) => candidate.eq(token)) === index
+  );
+}
+
+// Returns true if the token symbol is an L2-only token that maps to a parent L1 token via
+// TOKEN_EQUIVALENCE_REMAPPING (e.g. pathUSD -> USDC, USDH -> USDC). These tokens have no
+// hub chain address and exist only on specific L2 chains.
+export function isL2OnlyEquivalentToken(symbol: string, hubChainId = CHAIN_IDs.MAINNET): boolean {
+  const remappedSymbol = TOKEN_EQUIVALENCE_REMAPPING[symbol];
+  if (!isDefined(remappedSymbol)) {
+    return false;
+  }
+  const tokenInfo = resolveAcrossToken(symbol);
+  return isDefined(tokenInfo) && !isDefined(tokenInfo.addresses[hubChainId]);
 }
 
 export function getNativeTokenAddressForChain(chainId: number): Address {
@@ -46,7 +131,7 @@ export function getNativeTokenInfoForChain(
     [CHAIN_IDs.TEMPO]: "USDC.e",
   };
   const symbol = remappings[chainId] ?? utils.getNativeTokenSymbol(chainId);
-  const token = TOKEN_SYMBOLS_MAP[symbol];
+  const token = resolveAcrossToken(symbol);
   if (!isDefined(symbol) || !isDefined(token)) {
     throw new Error(`Unable to resolve native token for chain ID ${chainId}`);
   }
@@ -66,7 +151,7 @@ export function getWrappedNativeTokenAddress(chainId: number): Address {
   const wrappedTokenSymbol = tokenSymbol === "ETH" ? "WETH" : tokenSymbol;
 
   // Undefined returns should be caught and handled by consumers of this function.
-  return toAddressType(TOKEN_SYMBOLS_MAP[wrappedTokenSymbol]?.addresses[chainId], chainId);
+  return toAddressType(resolveAcrossToken(wrappedTokenSymbol, chainId), chainId);
 }
 
 /**
@@ -76,7 +161,7 @@ export function getWrappedNativeTokenAddress(chainId: number): Address {
  * @returns The formatted amount as a decimal-inclusive string.
  */
 export function formatUnitsForToken(symbol: string, amount: BigNumberish): string {
-  const decimals = (TOKEN_SYMBOLS_MAP[symbol]?.decimals as number) ?? 18;
+  const decimals = resolveAcrossToken(symbol)?.decimals ?? 18;
   return formatUnits(amount, decimals);
 }
 
@@ -135,7 +220,7 @@ export async function getSolanaTokenBalance(
  */
 export function getTokenInfoFromSymbol(l1TokenSymbol: string, chainId: number): TokenInfo {
   const { MAINNET } = CHAIN_IDs;
-  const l1TokenAddress = EvmAddress.from(TOKEN_SYMBOLS_MAP[l1TokenSymbol]?.addresses[MAINNET]);
+  const l1TokenAddress = EvmAddress.from(resolveAcrossToken(l1TokenSymbol, MAINNET, true));
   const l1TokenInfo = getTokenInfo(l1TokenAddress, MAINNET);
 
   if (chainId === CHAIN_IDs.MAINNET) {

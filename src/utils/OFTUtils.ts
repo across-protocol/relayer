@@ -12,10 +12,10 @@ import {
   paginatedEventQuery,
   spreadEventWithBlockNumber,
   getSrcOftPeriphery,
+  fetchWithTimeout,
 } from ".";
 import { BytesLike } from "ethers";
-import axios from "axios";
-import { EVM_OFT_MESSENGERS } from "../common";
+import { EVM_OFT_MESSENGERS, LEGACY_MESH_NETWORKS, EVM_LEGACY_MESH_MESSENGERS } from "../common";
 import { SortableEvent } from "../interfaces";
 
 export type SendParamStruct = {
@@ -33,7 +33,12 @@ export type MessagingFeeStruct = {
   lzTokenFee: BigNumberish;
 };
 
-export type LzTransactionDetails = { destination: LzDestinationTransactionDetails; pathway: Pathway };
+export type LzTransactionDetails = {
+  status: string;
+  source: { tx: string };
+  destination: LzDestinationTransactionDetails;
+  pathway: Pathway;
+};
 
 export type LzDestinationTransactionDetails = { status: string; failedTx: TransactionOutcome[] };
 
@@ -78,8 +83,9 @@ export function getChainIdFromEndpointId(eid: number): number {
  * @returns IOFT messenger for a given chain. Only supports EVM chains for now
  * @throws If EVM_OFT_MESSENGERS mapping doesn't have an entry for the l1Token - chainId combination
  */
-export function getMessengerEvm(l1TokenAddress: EvmAddress, chainId: number): EvmAddress {
-  const messenger = EVM_OFT_MESSENGERS.get(l1TokenAddress.toNative())?.get(chainId);
+export function getMessengerEvm(l1TokenAddress: EvmAddress, chainId: number, l2ChainId: number): EvmAddress {
+  const messengerMap = LEGACY_MESH_NETWORKS.includes(l2ChainId) ? EVM_LEGACY_MESH_MESSENGERS : EVM_OFT_MESSENGERS;
+  const messenger = messengerMap.get(l1TokenAddress.toNative())?.get(chainId);
   assert(isDefined(messenger), `No OFT messenger configured for ${l1TokenAddress.toNative()} on chain ${chainId}`);
   return messenger;
 }
@@ -89,7 +95,7 @@ export function getMessengerEvm(l1TokenAddress: EvmAddress, chainId: number): Ev
  * @returns If the input chain ID's OFT adapter requires payment in the input token.
  */
 export function isStargateBridge(chainId: number): boolean {
-  return [CHAIN_IDs.PLASMA, CHAIN_IDs.TEMPO].includes(chainId);
+  return [CHAIN_IDs.PLASMA, CHAIN_IDs.TRON, CHAIN_IDs.TEMPO].includes(chainId);
 }
 
 /**
@@ -140,12 +146,13 @@ export function buildSimpleSendParamEvm(to: EvmAddress, dstEid: number, roundedA
 /**
  * @notice Fetches destination chain transaction details for a outbound message.
  * @param txHash Transaction hash of the outbound message on the origin chain.
- * @returns Message data as outlined in these docs: https://docs.layerzero.network/v2/concepts/troubleshooting/debugging-messages#response-shape.
+ * @returns Array of message data objects as outlined in these docs: https://docs.layerzero.network/v2/concepts/troubleshooting/debugging-messages#response-shape.
  */
-export async function getLzTransactionDetails(txHash: string): Promise<LzTransactionDetails> {
-  const httpResponse = await axios.get<LzTransactionDetails>(`https://scan.layerzero-api.com/v1/messages/tx/${txHash}`);
-  const txDetails = httpResponse.data;
-  return txDetails;
+export async function getLzTransactionDetails(txHash: string): Promise<LzTransactionDetails[]> {
+  const httpResponse = await fetchWithTimeout<{ data: LzTransactionDetails[] }>(
+    `https://scan.layerzero-api.com/v1/messages/tx/${txHash}`
+  );
+  return httpResponse.data;
 }
 
 /**

@@ -1,4 +1,4 @@
-import { BigNumber, EvmAddress, SvmAddress, isDefined, TOKEN_SYMBOLS_MAP } from "../utils";
+import { BigNumber, EvmAddress, SvmAddress, isDefined, resolveAcrossToken } from "../utils";
 
 export type TokenBalanceConfig = {
   targetOverageBuffer: BigNumber; // Max multiplier for targetPct, to give flexibility in repayment chain selection.
@@ -60,7 +60,7 @@ export type SwapRoute = {
  */
 export interface InventoryConfig {
   // tokenConfig can map to a single token allocation, or a set of allocations that all map to the same HubPool token.
-  tokenConfig: { [l1Token: string]: ChainTokenConfig } | { [l1Token: string]: ChainTokenInventory };
+  tokenConfig: { [l1Token: string]: ChainTokenConfig | ChainTokenInventory };
 
   // If ETH balance on chain is above threshold, wrap the excess over the target to WETH.
   wrapEtherTargetPerChain: {
@@ -89,7 +89,7 @@ export interface InventoryConfig {
 
 export function isAliasConfig(config: ChainTokenConfig | ChainTokenInventory): config is ChainTokenInventory {
   // Keys are token symbols.
-  if (Object.keys(config).every((k) => isDefined(TOKEN_SYMBOLS_MAP[k]))) {
+  if (Object.keys(config).every((k) => isDefined(resolveAcrossToken(k)))) {
     return true;
   }
 

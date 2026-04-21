@@ -61,7 +61,7 @@ async function indexedSpokePoolClient(
   const signer = baseSigner.connect(await getProvider(chainId));
   const spokePoolAddr = hubPoolClient.getSpokePoolForBlock(chainId);
 
-  const blockFinder = undefined;
+  const blockFinder: undefined = undefined;
   const redis = await getRedisCache(hubPoolClient.logger);
   const [activationBlock, from] = await Promise.all([
     resolveSpokePoolActivationBlock(chainId, hubPoolClient),

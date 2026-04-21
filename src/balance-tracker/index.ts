@@ -7,7 +7,7 @@ import {
   disconnectRedisClients,
   formatUnits,
 } from "../utils";
-import { Monitor, ALL_CHAINS_NAME } from "../monitor/Monitor";
+import { Monitor } from "../monitor/Monitor";
 import { constructMonitorClients } from "../monitor/MonitorClientHelper";
 import { BalanceTrackerConfig } from "./BalanceTrackerConfig";
 import { SheetsWriter } from "./SheetsWriter";
@@ -37,39 +37,26 @@ export async function runBalanceTracker(_logger: winston.Logger, baseSigner: Sig
       const loopStart = Date.now();
 
       await monitor.update();
-      const { reports, allL1Tokens, l2OnlyTokens } = await monitor.computeRelayerBalances();
-
-      // Build a decimal lookup from all tracked tokens.
-      const tokenDecimals = new Map<string, number>();
-      for (const t of allL1Tokens) {
-        tokenDecimals.set(t.symbol, t.decimals);
-      }
-      for (const t of l2OnlyTokens) {
-        tokenDecimals.set(t.symbol, t.decimals);
-      }
+      const report = await monitor.computeRelayerBalances();
 
       const now = new Date().toISOString();
 
-      for (const [relayer, balanceTable] of Object.entries(reports)) {
-        // Build a single row: time, then total balance per token (summed across all chains).
+      for (const [relayer, perToken] of Object.entries(report)) {
         const tokenTotals = new Map<string, number>();
         const tokenBreakdown: Record<string, Record<string, number>> = {};
-        for (const [tokenSymbol, columns] of Object.entries(balanceTable)) {
-          const decimals = tokenDecimals.get(tokenSymbol);
-          if (decimals === undefined) {
+
+        for (const [tokenSymbol, tokenReport] of Object.entries(perToken)) {
+          const decimals = tokenReport.l1Token.decimals;
+          if (tokenReport.tokenTotal.isZero()) {
             continue;
           }
-          const allChainsCell = columns[ALL_CHAINS_NAME];
-          const total = allChainsCell?.["total"];
-          if (total && !total.isZero()) {
-            tokenTotals.set(tokenSymbol, Number(formatUnits(total, decimals)));
-            tokenBreakdown[tokenSymbol] = {
-              current: Number(formatUnits(allChainsCell?.["current"] ?? 0, decimals)),
-              pending: Number(formatUnits(allChainsCell?.["pending"] ?? 0, decimals)),
-              pendingTransfers: Number(formatUnits(allChainsCell?.["pending transfers"] ?? 0, decimals)),
-              total: Number(formatUnits(total, decimals)),
-            };
-          }
+          tokenTotals.set(tokenSymbol, Number(formatUnits(tokenReport.tokenTotal, decimals)));
+          tokenBreakdown[tokenSymbol] = {
+            current: Number(formatUnits(tokenReport.currentTotal, decimals)),
+            pending: Number(formatUnits(tokenReport.pendingTotal, decimals)),
+            upcomingRefunds: Number(formatUnits(tokenReport.upcomingRefundsTotal, decimals)),
+            total: Number(formatUnits(tokenReport.tokenTotal, decimals)),
+          };
         }
 
         const symbols = [...tokenTotals.keys()].sort();

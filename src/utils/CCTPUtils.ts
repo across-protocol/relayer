@@ -1,7 +1,6 @@
 import { arch, utils } from "@across-protocol/sdk";
 import { TokenMessengerMinterIdl } from "@across-protocol/contracts";
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
-import axios from "axios";
 import { Contract, ethers } from "ethers";
 import { CONTRACT_ADDRESSES, CCTP_MAX_SEND_AMOUNT } from "../common";
 import { BigNumber } from "./BNUtils";
@@ -20,13 +19,14 @@ import {
   forEachAsync,
   chainIsEvm,
   createFormatFunction,
+  SVMProvider,
 } from "./SDKUtils";
 import { getNetworkName } from "./NetworkUtils";
 import { isDefined } from "./TypeGuards";
 import { getCachedProvider, getProvider, getSvmProvider } from "./ProviderUtils";
 import { EventSearchConfig, paginatedEventQuery, spreadEvent } from "./EventUtils";
 import { Log } from "../interfaces";
-import { assert, getRedisCache, Provider, Signer, ERC20, winston } from ".";
+import { assert, fetchWithTimeout, getRedisCache, Provider, Signer, ERC20, winston } from ".";
 import { KeyPairSigner } from "@solana/kit";
 import { TransactionRequest } from "@ethersproject/abstract-provider";
 import {
@@ -86,6 +86,8 @@ export type CCTPHookData = {
   maxUserSlippageBps: number;
   finalRecipient: string; // address (extracted from bytes32)
   finalToken: string; // address (extracted from bytes32)
+  destinationDex: number; // uint32
+  accountCreationMode: number; // uint8
   executionMode: number; // uint8
   actionData: string; // bytes
 };
@@ -134,7 +136,9 @@ export async function getCctpV2DepositForBurnTxnHashes(
   const eventFilterParams = [TOKEN_SYMBOLS_MAP.USDC.addresses[sourceChainId], undefined, senderAddresses];
   const eventFilter = srcTokenMessenger.filters.DepositForBurn(...eventFilterParams);
   const depositForBurnEvents = await paginatedEventQuery(srcTokenMessenger, eventFilter, sourceEventSearchConfig);
-  return depositForBurnEvents.map((e) => e.transactionHash);
+  return depositForBurnEvents
+    .filter((e) => chainIsEvm(getCctpDestinationChainFromDomain(e.args.destinationDomain, chainIsProd(sourceChainId))))
+    .map((e) => e.transactionHash);
 }
 
 /**
@@ -619,9 +623,9 @@ function _getCCTPV1EventsFromReceipt(
   */
 
   // Indices of individual `MessageSent` events in `receipt.logs`
-  const messageSentIndices = [];
+  const messageSentIndices: number[] = [];
   // Pairs of indices representing a single CCTP token transfer
-  const depositIndexPairs = [];
+  const depositIndexPairs: [number, number][] = [];
   receipt.logs.forEach((log, i) => {
     // Attempt to parse as `MessageSent`
     const messageSentVersion = utils.getMessageSentVersion(log);
@@ -694,7 +698,7 @@ async function _getCCTPV1MessagesWithStatus(
   const messageTransmitterContract = chainIsSvm(destinationChainId)
     ? undefined
     : new Contract(address, abi, dstProvider);
-  let svmProvider, latestBlockhash;
+  let svmProvider: SVMProvider | undefined, latestBlockhash;
   if (chainIsSvm(destinationChainId)) {
     svmProvider = getSvmProvider(await getRedisCache());
     latestBlockhash = await svmProvider.getLatestBlockhash().send();
@@ -785,13 +789,14 @@ async function _getCCTPV1DepositEventsSvm(
         decodedMessage.nonceHash,
         destinationMessageTransmitter
       );
+      const log: Log = undefined!; // No EVM log exists for SVM-originated CCTP deposits.
       return {
         ...decodedMessage,
         attestation: data.attestation,
         status: alreadyProcessed
           ? ("finalized" as utils.CCTPMessageStatus)
           : utils.getPendingAttestationStatus(attestationStatusObject),
-        log: undefined,
+        log,
       };
     });
   });
@@ -867,12 +872,20 @@ export function decodeCctpV2HookData(messageBytes: string): CCTPHookData | undef
 
   const hookDataBytes = messageBytesArray.slice(HOOK_DATA_START);
 
+  const format = [
+    "bytes32",
+    "uint256",
+    "uint256",
+    "uint256",
+    "bytes32",
+    "bytes32",
+    "uint32",
+    "uint8",
+    "uint8",
+    "bytes",
+  ];
   try {
-    // Decode hookData: abi.encode(nonce, deadline, maxBpsToSponsor, maxUserSlippageBps, finalRecipient, finalToken, executionMode, actionData)
-    const decoded = ethers.utils.defaultAbiCoder.decode(
-      ["bytes32", "uint256", "uint256", "uint256", "bytes32", "bytes32", "uint8", "bytes"],
-      hookDataBytes
-    );
+    const decoded = ethers.utils.defaultAbiCoder.decode(format, hookDataBytes);
 
     return {
       nonce: decoded[0],
@@ -881,11 +894,12 @@ export function decodeCctpV2HookData(messageBytes: string): CCTPHookData | undef
       maxUserSlippageBps: decoded[3].toNumber(),
       finalRecipient: EvmAddress.from(decoded[4]).toNative(),
       finalToken: EvmAddress.from(decoded[5]).toNative(),
-      executionMode: decoded[6],
-      actionData: decoded[7],
+      destinationDex: decoded[6],
+      accountCreationMode: decoded[7],
+      executionMode: decoded[8],
+      actionData: decoded[9],
     };
   } catch {
-    // If decoding fails, hookData is malformed or not present
     return undefined;
   }
 }
@@ -902,19 +916,15 @@ async function _fetchCctpV1Attestation(
   messageHash: string,
   isMainnet: boolean
 ): Promise<CCTPV1APIGetAttestationResponse> {
-  const httpResponse = await axios.get<CCTPV1APIGetAttestationResponse>(
+  return fetchWithTimeout<CCTPV1APIGetAttestationResponse>(
     `https://iris-api${isMainnet ? "" : "-sandbox"}.circle.com/attestations/${messageHash}`
   );
-  const attestationResponse = httpResponse.data;
-  return attestationResponse;
 }
 
 async function _fetchCCTPSvmAttestationProof(transactionHash: string): Promise<CCTPV1APIGetMessagesResponse> {
-  const httpResponse = await axios.get<CCTPV1APIGetMessagesResponse>(
+  return fetchWithTimeout<CCTPV1APIGetMessagesResponse>(
     `https://iris-api.circle.com/messages/${getCctpDomainForChainId(CHAIN_IDs.SOLANA)}/${transactionHash}`
   );
-  const attestationResponse = httpResponse.data;
-  return attestationResponse;
 }
 
 /**
@@ -968,7 +978,7 @@ async function checkAndApproveCctpTokenMessenger(
       message: "Approving USDC for CCTP TokenMessenger",
       chainName: sourceChainName,
       chainId: sourceChainId,
-      tokenAddress: sourceUsdcTokenAddress.toNative(),
+      tokenAddress: sourceUsdcTokenAddress,
       tokenMessengerAddress,
     });
 

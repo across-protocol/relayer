@@ -90,7 +90,7 @@ describe("Cross Chain Adapter: Arbitrum", async function () {
       },
       CHAIN_IDs.ARBITRUM,
       CHAIN_IDs.MAINNET,
-      [toAddress(monitoredEoa)],
+      { [l1Token]: [toAddress(monitoredEoa)], [l1UsdcAddress]: [toAddress(monitoredEoa)] },
       logger,
       SUPPORTED_TOKENS[CHAIN_IDs.ARBITRUM], // Supported Tokens.
       bridges,
@@ -140,24 +140,25 @@ describe("Cross Chain Adapter: Arbitrum", async function () {
 
     it("get outstanding cross-chain transfers", async () => {
       // Deposits that do not originate from monitoredEoa should be ignored
-      await erc20BridgeContract.emitDepositInitiated(l1Token, monitoredEoa, monitoredEoa, 0, 1);
+      const firstDepositEvent = await erc20BridgeContract.emitDepositInitiated(
+        l1Token,
+        monitoredEoa,
+        monitoredEoa,
+        0,
+        1
+      );
       await erc20BridgeContract.emitDepositFinalized(l1Token, monitoredEoa, monitoredEoa, 1);
       // Finalized deposits that should not be considered as outstanding
       await erc20BridgeContract.emitDepositInitiated(l1Token, monitoredEoa, monitoredEoa, 1, 1);
       await erc20BridgeContract.emitDepositFinalized(l1Token, monitoredEoa, monitoredEoa, 1);
       // Outstanding deposits
-      const outstandingDepositEvent = await erc20BridgeContract.emitDepositInitiated(
-        l1Token,
-        monitoredEoa,
-        monitoredEoa,
-        2,
-        1
-      );
+      await erc20BridgeContract.emitDepositInitiated(l1Token, monitoredEoa, monitoredEoa, 2, 1);
 
       const outstandingTransfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Token)]);
       const transferObject = outstandingTransfers[monitoredEoa][l1Token][l2Token];
       expect(transferObject.totalAmount).to.equal(toBN(1));
-      expect(transferObject.depositTxHashes).to.deep.equal([outstandingDepositEvent.hash]);
+      // Net-amount matching: totalDeposited(3) - totalFinalized(2) = 1, picks first event's hash
+      expect(transferObject.depositTxHashes).to.deep.equal([firstDepositEvent.hash]);
     });
   });
 

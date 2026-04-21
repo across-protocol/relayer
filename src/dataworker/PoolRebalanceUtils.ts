@@ -141,7 +141,9 @@ export function generateMarkdownForRootBundle(
     );
     leaf.l2Token = convertTokenAddressToSymbol(leaf.chainId, leaf.l2TokenAddress);
     delete leaf.l2TokenAddress;
-    leaf.refundAddresses = shortenHexStrings(leaf.refundAddresses.map((refundAddress) => refundAddress.toBytes32()));
+    leaf.refundAddresses = shortenHexStrings(
+      leaf.refundAddresses.map((refundAddress: Address) => refundAddress.toBytes32())
+    );
     relayerRefundLeavesPretty += `\n\t\t\t${index}: ${JSON.stringify(leaf)}`;
   });
 
@@ -199,27 +201,27 @@ export function generateMarkdownForRootBundle(
   );
 }
 
-export function prettyPrintLeaves(
+export function prettyPrintLeaves<T extends PoolRebalanceLeaf | RelayerRefundLeaf | SlowFillLeaf>(
   logger: winston.Logger,
-  tree: MerkleTree<PoolRebalanceLeaf> | MerkleTree<RelayerRefundLeaf> | MerkleTree<SlowFillLeaf>,
-  leaves: PoolRebalanceLeaf[] | RelayerRefundLeaf[] | SlowFillLeaf[],
+  tree: MerkleTree<T>,
+  leaves: T[],
   logType = "Pool rebalance"
 ): void {
   leaves.forEach((leaf, index) => {
-    const prettyLeaf = Object.keys(leaf).reduce((result, key) => {
+    const prettyLeaf = Object.entries(leaf).reduce<Record<string, unknown>>((result, [key, value]) => {
       // Check if leaf value is list of BN's or single BN.
-      if (Array.isArray(leaf[key]) && BigNumber.isBigNumber(leaf[key][0])) {
-        result[key] = leaf[key].map((val) => val.toString());
-      } else if (BigNumber.isBigNumber(leaf[key])) {
-        result[key] = leaf[key].toString();
-      } else if (typeof leaf[key] === "number") {
-        result[key] = leaf[key];
-      } else if (Array.isArray(leaf[key]) && isDefined(leaf[key][0]) && Address.isAddress(leaf[key][0])) {
-        result[key] = leaf[key].map((val) => val.toNative());
-      } else if (Address.isAddress(leaf[key])) {
-        result[key] = leaf[key].toNative();
+      if (Array.isArray(value) && BigNumber.isBigNumber(value[0])) {
+        result[key] = value.map((val) => val.toString());
+      } else if (BigNumber.isBigNumber(value)) {
+        result[key] = value.toString();
+      } else if (typeof value === "number") {
+        result[key] = value;
+      } else if (Array.isArray(value) && isDefined(value[0]) && Address.isAddress(value[0])) {
+        result[key] = value.map((val) => val.toNative());
+      } else if (Address.isAddress(value)) {
+        result[key] = value.toNative();
       } else {
-        result[key] = leaf[key];
+        result[key] = value;
       }
       return result;
     }, {});

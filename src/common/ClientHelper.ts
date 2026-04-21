@@ -2,6 +2,7 @@ import assert from "assert";
 import winston from "winston";
 import {
   chainIsSvm,
+  chainIsTvm,
   getProvider,
   getDeployedContract,
   getDeploymentBlockNumber,
@@ -80,7 +81,7 @@ export async function resolveSpokePoolActivationBlock(
 
   // Get the timestamp of the block where the SpokePool was activated on mainnet, and resolve that
   // to a block number on the SpokePool chain. Use this block as the lower bound for the search.
-  const blockFinder = undefined;
+  const blockFinder: undefined = undefined;
   const mainnetActivationBlock = hubPoolClient.getSpokePoolActivationBlock(chainId, spokePoolAddr);
   const { timestamp } = await hubPoolClient.hubPool.provider.getBlock(mainnetActivationBlock);
   const spokePool = chainIsSvm(chainId) ? "SvmSpoke" : "SpokePool";
@@ -135,7 +136,7 @@ export async function constructSpokePoolClientsWithLookback(
   // Use the first block that we'll query on mainnet to figure out which chains were enabled between then and the latest
   // mainnet block. These chains were enabled via the ConfigStore. These lookbacks should typically be fairly short, so
   // BlockFinder estimates are likely to be OK - avoid overriding them with hints.
-  const blockFinder = undefined;
+  const blockFinder: undefined = undefined;
   const redis = await getRedisCache(logger);
   const fromBlock_1 = await getBlockForTimestamp(logger, hubPoolChainId, lookback, blockFinder, redis);
   enabledChains ??= getEnabledChainsInBlockRange(configStoreClient, config.spokePoolChainsOverride, fromBlock_1);
@@ -221,7 +222,7 @@ export async function constructSpokePoolClientsWithStartBlocks(
     enabledChains,
   });
 
-  const blockFinder = undefined;
+  const blockFinder: undefined = undefined;
   const redis = await getRedisCache(logger);
 
   // Set up Spoke signers and connect them to spoke pool contract objects:
@@ -309,7 +310,7 @@ export async function getSpokePoolClientsForContract(
     }
     const spokePoolClientSearchSettings = {
       from: fromBlocks[chainId] ? Math.max(fromBlocks[chainId], registrationBlock) : registrationBlock,
-      to: toBlocks[chainId],
+      to: chainIsTvm(chainId) ? undefined : toBlocks[chainId],
       maxLookBack: config.maxBlockLookBack[chainId],
     };
     if (chainIsEvm(chainId)) {
@@ -402,9 +403,7 @@ export async function constructClients(
   const arweaveClient = new caching.ArweaveClient(
     getArweaveJWKSigner({ keyType: "read-only" }),
     logger,
-    config.arweaveGateway?.url,
-    config.arweaveGateway?.protocol,
-    config.arweaveGateway?.port
+    config.arweaveGateways
   );
 
   return { hubPoolClient, configStoreClient, multiCallerClient, hubSigner, arweaveClient };
