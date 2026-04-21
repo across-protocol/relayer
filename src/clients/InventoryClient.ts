@@ -689,16 +689,6 @@ export class InventoryClient {
       );
     }
 
-    // Check if origin chain repayment is forced by protocol rules or config overrides
-    const forceOriginRepayment = this.shouldForceOriginRepayment(deposit);
-
-    // If the deposit forces origin chain repayment but the origin chain is one we can easily rebalance inventory from,
-    // then don't ignore this deposit based on perceived over-allocation. For example, the hub chain and chains connected
-    // to the user's Binance API are easy to move inventory from so we should never skip filling these deposits.
-    if (forceOriginRepayment && this.isQuicklyRebalanced(originChainId, inputToken)) {
-      return [originChainId];
-    }
-
     // @dev This getL1TokenAddress() should never return undefined because we call `validateOutputToken()` first, which would return
     // false if the input token and origin chain weren't mapped to an L1 token.
     const l1Token = this.getL1TokenAddress(inputToken, originChainId);
@@ -706,6 +696,27 @@ export class InventoryClient {
       throw new Error(
         `InventoryClient#determineRefundChainId: No L1 token found for input token ${inputToken} on origin chain ${originChainId}`
       );
+    }
+
+    // Raw fill USD for the Binance capacity check below. `undefined` if no price cached.
+    // `isQuicklyRebalanced` applies `cexRebalanceBuffer` internally on the Binance branch only.
+    const { decimals: l1TokenDecimals } = this.getTokenInfo(l1Token, this.hubPoolClient.chainId);
+    const { decimals: inputTokenDecimals } = this.getTokenInfo(inputToken, originChainId);
+    const inputAmountInL1TokenDecimals = sdkUtils.ConvertDecimals(inputTokenDecimals, l1TokenDecimals)(inputAmount);
+    const priceUsd = this.l1TokenPricesUsd.get(l1Token.toNative());
+    const fillUsd = isDefined(priceUsd)
+      ? inputAmountInL1TokenDecimals.mul(priceUsd).div(BigNumber.from(10).pow(l1TokenDecimals))
+      : undefined;
+    const originIsQuicklyRebalanced = this.isQuicklyRebalanced(originChainId, inputToken, fillUsd);
+
+    // Check if origin chain repayment is forced by protocol rules or config overrides
+    const forceOriginRepayment = this.shouldForceOriginRepayment(deposit);
+
+    // If the deposit forces origin chain repayment but the origin chain is one we can easily rebalance inventory from,
+    // then don't ignore this deposit based on perceived over-allocation. For example, the hub chain and chains connected
+    // to the user's Binance API are easy to move inventory from so we should never skip filling these deposits.
+    if (forceOriginRepayment && originIsQuicklyRebalanced) {
+      return [originChainId];
     }
 
     // If we have defined an override repayment chain in inventory config and we do not need to take origin chain repayment,
@@ -718,22 +729,9 @@ export class InventoryClient {
       }
     }
 
-    // Raw fill USD for the Binance capacity check below. `undefined` if no price cached.
-    // `isQuicklyRebalanced` applies `cexRebalanceBuffer` internally on the Binance branch only.
-    const { decimals: l1TokenDecimals } = this.getTokenInfo(l1Token, this.hubPoolClient.chainId);
-    const { decimals: inputTokenDecimals } = this.getTokenInfo(inputToken, originChainId);
-    const inputAmountInL1TokenDecimals = sdkUtils.ConvertDecimals(inputTokenDecimals, l1TokenDecimals)(inputAmount);
-    const priceUsd = this.l1TokenPricesUsd.get(l1Token.toNative());
-    const fillUsd = isDefined(priceUsd)
-      ? inputAmountInL1TokenDecimals.mul(priceUsd).div(BigNumber.from(10).pow(l1TokenDecimals))
-      : undefined;
-
     // Short-circuit to origin when it's a fast-rebalance source and enabled for this token —
     // allocation state should not derail an origin repayment we can quickly drain.
-    if (
-      this._l1TokenEnabledForChain(l1Token, originChainId) &&
-      this.isQuicklyRebalanced(originChainId, inputToken, fillUsd)
-    ) {
+    if (this._l1TokenEnabledForChain(l1Token, originChainId) && originIsQuicklyRebalanced) {
       return [originChainId];
     }
 
@@ -774,7 +772,7 @@ export class InventoryClient {
     // we should take repayment away from the lite chain where possible.
     // We also want to prioritize taking repayment on the origin chain if it is a quick rebalance source.
     if (
-      (deposit.toLiteChain || this.isQuicklyRebalanced(originChainId, inputToken, fillUsd)) &&
+      (deposit.toLiteChain || originIsQuicklyRebalanced) &&
       !chainsToEvaluate.includes(originChainId) &&
       this._l1TokenEnabledForChain(l1Token, originChainId)
     ) {
@@ -917,7 +915,7 @@ export class InventoryClient {
     }
 
     // Conditionally add the origin chain as a fallback option if the relayer has a fast rebalance route.
-    if (!eligibleRefundChains.includes(originChainId) && this.isQuicklyRebalanced(originChainId, inputToken, fillUsd)) {
+    if (!eligibleRefundChains.includes(originChainId) && originIsQuicklyRebalanced) {
       eligibleRefundChains.push(originChainId);
     }
 
