@@ -65,11 +65,12 @@ export class BinanceClient {
   }
 
   // Callers supply the USD-denominated amount to check; this client doesn't do pricing.
+  // Zero-amount queries return false — there's no such thing as a zero-value withdrawal.
   canWithdraw(amountUsd: BigNumber, chainId: number, l1Token: Address): boolean {
     return (
+      amountUsd.gt(bnZero) &&
       hasBinanceRoute(chainId, l1Token) &&
       isDefined(this.remainingQuotaUsd) &&
-      this.remainingQuotaUsd.gt(bnZero) &&
       amountUsd.lte(this.remainingQuotaUsd)
     );
   }

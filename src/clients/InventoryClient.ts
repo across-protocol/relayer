@@ -1936,8 +1936,7 @@ export class InventoryClient {
     try {
       const l1Token = getInventoryEquivalentL1TokenAddress(repaymentToken, repaymentChainId, hubChainId);
       const bufferedUsd = isDefined(fillUsd) ? fillUsd.mul(this.cexRebalanceBuffer).div(fixedPointAdjustment) : bnZero;
-      // Require a positive fill size so a missing price never short-circuits the quota gate.
-      return bufferedUsd.gt(bnZero) && this.binanceClient.canWithdraw(bufferedUsd, repaymentChainId, l1Token);
+      return this.binanceClient.canWithdraw(bufferedUsd, repaymentChainId, l1Token);
     } catch {
       return false;
     }
