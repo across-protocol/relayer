@@ -554,7 +554,7 @@ async function persistArweaveTopicToCache(
   }
 
   try {
-    const cacheKey = getArweaveTopicCacheKey(tag);
+    const cacheKey = utils.getArweaveTopicCacheKey(tag);
     const cachedData = await topicCache.get<string>(cacheKey);
     if (isDefined(cachedData)) {
       // We can return here and not update because we assume that the input data is the same for any given tag.
@@ -578,10 +578,6 @@ async function persistArweaveTopicToCache(
       error: String(error),
     });
   }
-}
-
-function getArweaveTopicCacheKey(tag: string): string {
-  return `arweave-topic:${tag}`;
 }
 
 function serializeArweaveTopicPayload(data: Record<string, unknown>): string {
