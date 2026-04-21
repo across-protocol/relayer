@@ -486,6 +486,12 @@ async function _runTransactionTvm(
   // Adapt TronTransactionResult to an ethers-compatible TransactionResponse. TVM doesn't use
   // nonces in the EVM sense, so we set nonce to 0 to satisfy downstream nonce tracking without
   // side effects (TVM nonce tracking in submit() is harmless — it just overwrites to 0 each time).
+  //
+  // `wait` must resolve to a real receipt (including `logs`). TronWeb submits the tx; we still
+  // have an ethers `Provider`, so mirror JsonRpcProvider: `wait` → `provider.waitForTransaction`.
+  const txHexHash = result.txid.startsWith("0x") ? result.txid : `0x${result.txid}`;
+  const tvmWaitTimeoutMs = Number(process.env.TVM_WAIT_FOR_TRANSACTION_TIMEOUT_MS ?? 0);
+
   return {
     hash: result.txid,
     nonce: 0,
@@ -495,7 +501,8 @@ async function _runTransactionTvm(
     gasLimit: BigNumber.from(feeLimit),
     value,
     data: populatedTransaction.data ?? "0x",
-    wait: () => Promise.resolve({} as TransactionReceipt),
+    wait: (confirmations?: number) =>
+      provider.waitForTransaction(txHexHash, confirmations ?? 1, tvmWaitTimeoutMs > 0 ? tvmWaitTimeoutMs : undefined),
   } as unknown as TransactionResponse;
 }
 
