@@ -337,7 +337,6 @@ describe("InventoryClient: Refund chain selection", async function () {
           fromToken: l2TokensForWeth[POLYGON],
           toChain: OPTIMISM,
           toToken: l2TokensForUsdc[OPTIMISM],
-          bidirectional: false,
         },
       ];
       const _inventoryClient = new MockInventoryClient(
@@ -376,7 +375,6 @@ describe("InventoryClient: Refund chain selection", async function () {
           fromToken: l2TokensForWeth[POLYGON],
           toChain: "ALL",
           toToken: l2TokensForUsdc[OPTIMISM],
-          bidirectional: false,
         },
       ];
       const _inventoryClient = new MockInventoryClient(
