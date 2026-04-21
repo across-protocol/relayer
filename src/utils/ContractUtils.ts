@@ -12,6 +12,8 @@ import {
   assert,
   toAddressType,
   isDefined,
+  chainIsTvm,
+  TvmAddress,
 } from ".";
 import { CONTRACT_ADDRESSES } from "../common";
 import { isKeyOf } from "./TypeGuards";
@@ -26,11 +28,15 @@ function getTypechainAbi(contractName: string): readonly JsonFragment[] {
   return factory.abi as readonly JsonFragment[];
 }
 import COUNTERFACTUAL_DEPOSIT_FACTORY_ABI from "../common/abi/CounterfactualDepositFactory.json";
+import { TronWeb } from "tronweb";
 
 // Return an ethers contract instance for a deployed contract, imported from the Across-protocol contracts repo.
 export function getDeployedContract(contractName: string, networkId: number, signer?: Signer): Contract {
   try {
-    const address = getDeployedAddress(contractName, networkId);
+    let address = getDeployedAddress(contractName, networkId);
+    if (chainIsTvm(networkId) && TronWeb.isAddress(address)) {
+      address = TvmAddress.from(address).toEvmAddress();
+    }
     // If the contractName is SpokePool then we need to modify it to find the correct contract factory artifact.
     const abi = getTypechainAbi(contractName);
     return new Contract(address, abi, signer);
@@ -47,12 +53,16 @@ export function getCounterfactualDepositFactory(address: string): Contract {
 // For a chain ID and optional SpokePool address, return a Contract instance with the corresponding ABI.
 export function getSpokePool(chainId: number, address?: string): Contract {
   const spokePool = getDeployedContract("SpokePool", chainId);
-  return spokePool.connect(address ?? getDeployedAddress("SpokePool", chainId));
+
+  return address ? spokePool.connect(address) : spokePool;
 }
 
 // For a chain ID and optional SpokePoolPeriphery address, return a Contract instance with the corresponding ABI.
 export function getSpokePoolPeriphery(chainId: number, address?: string): Contract {
   address ??= getDeployedAddress("SpokePoolPeriphery", chainId);
+  if (chainIsTvm(chainId) && TronWeb.isAddress(address)) {
+    address = TvmAddress.from(address).toEvmAddress();
+  }
   return new Contract(address, CONTRACT_ADDRESSES[chainId].spokePoolPeriphery.abi);
 }
 
