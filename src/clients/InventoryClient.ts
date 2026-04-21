@@ -95,10 +95,6 @@ export class InventoryClient {
   private readonly priceClient: PriceClient | undefined;
   protected l1TokenPricesUsd: Map<string, BigNumber> = new Map();
 
-  private readonly binanceCapacityCheck = (chainId: number, l1Token: Address): boolean => {
-    return this.binanceClient?.isOperational(chainId, l1Token) ?? false;
-  };
-
   constructor(
     readonly relayer: EvmAddress,
     readonly logger: winston.Logger,
@@ -692,21 +688,8 @@ export class InventoryClient {
       );
     }
 
-    // Check if origin chain repayment is forced by protocol rules or config overrides
-    const forceOriginRepayment = this.shouldForceOriginRepayment(deposit);
-
-    // If the deposit forces origin chain repayment but the origin chain is one we can easily rebalance inventory from,
-    // then don't ignore this deposit based on perceived over-allocation. For example, the hub chain and chains connected
-    // to the user's Binance API are easy to move inventory from so we should never skip filling these deposits.
-    if (
-      forceOriginRepayment &&
-      repaymentChainCanBeQuicklyRebalanced(originChainId, inputToken, this.hubPoolClient, this.binanceCapacityCheck)
-    ) {
-      return [originChainId];
-    }
-
-    // @dev This getL1TokenAddress() should never return undefined because we call `validateOutputToken()` first, which would return
-    // false if the input token and origin chain weren't mapped to an L1 token.
+    // @dev getL1TokenAddress() should never return undefined because validateOutputToken() filters
+    // out deposits whose input token isn't mapped to an L1 token.
     const l1Token = this.getL1TokenAddress(inputToken, originChainId);
     if (!isDefined(l1Token)) {
       throw new Error(
@@ -714,8 +697,31 @@ export class InventoryClient {
       );
     }
 
-    // If we have defined an override repayment chain in inventory config and we do not need to take origin chain repayment,
-    // then short-circuit this check.
+    // Buffered fill USD for every Binance capacity check below. `undefined` if no price cached.
+    const { decimals: l1TokenDecimals } = this.getTokenInfo(l1Token, this.hubPoolClient.chainId);
+    const { decimals: inputTokenDecimals } = this.getTokenInfo(inputToken, originChainId);
+    const inputAmountInL1TokenDecimals = sdkUtils.ConvertDecimals(inputTokenDecimals, l1TokenDecimals)(inputAmount);
+    const priceUsd = this.l1TokenPricesUsd.get(l1Token.toNative());
+    const bufferedFillUsd = isDefined(priceUsd)
+      ? inputAmountInL1TokenDecimals
+          .mul(priceUsd)
+          .div(BigNumber.from(10).pow(l1TokenDecimals))
+          .mul(this.cexRebalanceBuffer)
+          .div(fixedPointAdjustment)
+      : undefined;
+    const canBinanceAccommodate = (chainId: number, token: Address): boolean =>
+      isDefined(bufferedFillUsd) && (this.binanceClient?.canAccommodate(bufferedFillUsd, chainId, token) ?? false);
+
+    const forceOriginRepayment = this.shouldForceOriginRepayment(deposit);
+
+    // If the deposit forces origin repayment and Binance can accommodate the fill, take origin.
+    if (
+      forceOriginRepayment &&
+      repaymentChainCanBeQuicklyRebalanced(originChainId, inputToken, this.hubPoolClient, canBinanceAccommodate)
+    ) {
+      return [originChainId];
+    }
+
     // Priority: repaymentChainOverridePerChain[originChainId] > repaymentChainOverride
     if (!forceOriginRepayment) {
       const chainOverride = this.getRepaymentChainOverride(originChainId);
@@ -724,18 +730,9 @@ export class InventoryClient {
       }
     }
 
-    const { decimals: l1TokenDecimals } = this.getTokenInfo(l1Token, this.hubPoolClient.chainId);
-    const { decimals: inputTokenDecimals } = this.getTokenInfo(inputToken, originChainId);
-    const inputAmountInL1TokenDecimals = sdkUtils.ConvertDecimals(inputTokenDecimals, l1TokenDecimals)(inputAmount);
-
     // Short-circuit to origin when Binance has capacity AND origin is enabled for this token.
-    const priceUsd = this.l1TokenPricesUsd.get(l1Token.toNative());
-    if (isDefined(priceUsd) && this._l1TokenEnabledForChain(l1Token, originChainId)) {
-      const fillUsd = inputAmountInL1TokenDecimals.mul(priceUsd).div(BigNumber.from(10).pow(l1TokenDecimals));
-      const bufferedFillUsd = fillUsd.mul(this.cexRebalanceBuffer).div(fixedPointAdjustment);
-      if (this.binanceClient?.canAccommodate(bufferedFillUsd, originChainId, l1Token)) {
-        return [originChainId];
-      }
+    if (this._l1TokenEnabledForChain(l1Token, originChainId) && canBinanceAccommodate(originChainId, l1Token)) {
+      return [originChainId];
     }
 
     // Consider any upcoming refunds.
@@ -759,7 +756,7 @@ export class InventoryClient {
       const excessRunningBalancePcts = await this.getExcessRunningBalancePcts(
         l1Token,
         inputAmountInL1TokenDecimals,
-        this.getSlowWithdrawalRepaymentChains(l1Token)
+        this.getSlowWithdrawalRepaymentChains(l1Token, canBinanceAccommodate)
       );
       // Sort chains by highest excess percentage over the spoke target, so we can prioritize
       // taking repayment on chains with the most excess balance.
@@ -776,12 +773,7 @@ export class InventoryClient {
     // We also want to prioritize taking repayment on the origin chain if it is a quick rebalance source.
     if (
       (deposit.toLiteChain ||
-        repaymentChainCanBeQuicklyRebalanced(
-          originChainId,
-          inputToken,
-          this.hubPoolClient,
-          this.binanceCapacityCheck
-        )) &&
+        repaymentChainCanBeQuicklyRebalanced(originChainId, inputToken, this.hubPoolClient, canBinanceAccommodate)) &&
       !chainsToEvaluate.includes(originChainId) &&
       this._l1TokenEnabledForChain(l1Token, Number(originChainId))
     ) {
@@ -926,7 +918,7 @@ export class InventoryClient {
     // Conditionally add the origin chain as a fallback option if the relayer has a fast rebalance route.
     if (
       !eligibleRefundChains.includes(originChainId) &&
-      repaymentChainCanBeQuicklyRebalanced(originChainId, inputToken, this.hubPoolClient, this.binanceCapacityCheck)
+      repaymentChainCanBeQuicklyRebalanced(originChainId, inputToken, this.hubPoolClient, canBinanceAccommodate)
     ) {
       eligibleRefundChains.push(originChainId);
     }
@@ -1906,7 +1898,10 @@ export class InventoryClient {
    * @param l1Token
    * @returns list of chains for l1Token that have a token config enabled and have pool rebalance routes set.
    */
-  getSlowWithdrawalRepaymentChains(l1Token: EvmAddress): number[] {
+  getSlowWithdrawalRepaymentChains(
+    l1Token: EvmAddress,
+    canBinanceAccommodate: (chainId: number, l1Token: Address) => boolean = () => false
+  ): number[] {
     const { hubPoolClient } = this;
     return SLOW_WITHDRAWAL_CHAINS.filter((repaymentChainId) => {
       if (
@@ -1920,7 +1915,7 @@ export class InventoryClient {
         repaymentChainId,
         repaymentToken,
         hubPoolClient,
-        this.binanceCapacityCheck
+        canBinanceAccommodate
       );
     });
   }

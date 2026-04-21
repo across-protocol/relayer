@@ -626,11 +626,11 @@ describe("InventoryClient: Refund chain selection", async function () {
       expect(refundChains.length).to.equal(0);
     });
     it("returns origin chain even if it is over allocated if origin chain is a quick rebalance source", async function () {
-      // BSC is only treated as quickly rebalanced with credentials AND a live BinanceClient that reports
-      // operational capacity — canAccommodate is kept false so we isolate the isOperational-driven path.
+      // BSC is only treated as quickly rebalanced with credentials AND live Binance capacity for the fill.
       process.env.BINANCE_API_KEY = "test-key";
       process.env.BINANCE_HMAC_KEY = "test-secret";
-      (inventoryClient as MockInventoryClient).setBinanceClient(makeFakeBinanceClient({ canAccommodate: false }));
+      (inventoryClient as MockInventoryClient).setBinanceClient(makeFakeBinanceClient({ canAccommodate: true }));
+      (inventoryClient as MockInventoryClient).seedL1TokenPriceUsd(mainnetWeth, toWei(2000));
       try {
         sampleDepositData.originChainId = BSC;
         sampleDepositData.inputToken = toAddressType(l2TokensForWeth[BSC], BSC);
@@ -647,12 +647,13 @@ describe("InventoryClient: Refund chain selection", async function () {
       }
     });
     it("treats overallocated origin as quick-rebalance when a per-token Binance route exists", async function () {
-      // Arbitrum WETH has a Binance route via L2BinanceCEXNativeBridge; with credentials AND a live
-      // BinanceClient reporting operational capacity, Arbitrum is quickly rebalanced for WETH even
-      // though it would otherwise be a 7-day slow-withdrawal chain.
+      // Arbitrum WETH has a Binance route via L2BinanceCEXNativeBridge; with credentials AND live
+      // Binance capacity for the fill, Arbitrum is quickly rebalanced even though it would otherwise
+      // be a 7-day slow-withdrawal chain.
       process.env.BINANCE_API_KEY = "test-key";
       process.env.BINANCE_HMAC_KEY = "test-secret";
-      (inventoryClient as MockInventoryClient).setBinanceClient(makeFakeBinanceClient({ canAccommodate: false }));
+      (inventoryClient as MockInventoryClient).setBinanceClient(makeFakeBinanceClient({ canAccommodate: true }));
+      (inventoryClient as MockInventoryClient).seedL1TokenPriceUsd(mainnetWeth, toWei(2000));
       try {
         sampleDepositData.originChainId = ARBITRUM;
         sampleDepositData.inputToken = toAddressType(l2TokensForWeth[ARBITRUM], ARBITRUM);

@@ -63,19 +63,14 @@ export class BinanceClient {
     }
   }
 
-  isOperational(chainId: number, l1Token: Address): boolean {
-    if (!hasBinanceRoute(chainId, l1Token)) {
-      return false;
-    }
-    return isDefined(this.remainingQuotaUsd) && this.remainingQuotaUsd.gt(bnZero);
-  }
-
   // Callers convert token amount → USD via their own price source before calling.
   canAccommodate(fillUsd: BigNumber, chainId: number, l1Token: Address): boolean {
-    if (!hasBinanceRoute(chainId, l1Token) || !isDefined(this.remainingQuotaUsd)) {
-      return false;
-    }
-    return this.remainingQuotaUsd.gt(bnZero) && fillUsd.lte(this.remainingQuotaUsd);
+    return (
+      hasBinanceRoute(chainId, l1Token) &&
+      isDefined(this.remainingQuotaUsd) &&
+      this.remainingQuotaUsd.gt(bnZero) &&
+      fillUsd.lte(this.remainingQuotaUsd)
+    );
   }
 
   private static async getBinanceSecretKey(): Promise<string | undefined> {
