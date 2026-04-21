@@ -772,7 +772,7 @@ export class InventoryClient {
     // we should take repayment away from the lite chain where possible.
     // We also want to prioritize taking repayment on the origin chain if it is a quick rebalance source.
     if (
-      (deposit.toLiteChain || originIsQuicklyRebalanced) &&
+      (deposit.toLiteChain || this.isQuicklyRebalanced(originChainId, inputToken)) &&
       !chainsToEvaluate.includes(originChainId) &&
       this._l1TokenEnabledForChain(l1Token, originChainId)
     ) {
@@ -915,7 +915,7 @@ export class InventoryClient {
     }
 
     // Conditionally add the origin chain as a fallback option if the relayer has a fast rebalance route.
-    if (!eligibleRefundChains.includes(originChainId) && originIsQuicklyRebalanced) {
+    if (!eligibleRefundChains.includes(originChainId) && this.isQuicklyRebalanced(originChainId, inputToken)) {
       eligibleRefundChains.push(originChainId);
     }
 
