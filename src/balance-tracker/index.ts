@@ -53,6 +53,7 @@ export async function runBalanceTracker(_logger: winston.Logger, baseSigner: Sig
       for (const [relayer, balanceTable] of Object.entries(reports)) {
         // Build a single row: time, then total balance per token (summed across all chains).
         const tokenTotals = new Map<string, number>();
+        const tokenBreakdown: Record<string, Record<string, number>> = {};
         for (const [tokenSymbol, columns] of Object.entries(balanceTable)) {
           const decimals = tokenDecimals.get(tokenSymbol);
           if (decimals === undefined) {
@@ -62,6 +63,12 @@ export async function runBalanceTracker(_logger: winston.Logger, baseSigner: Sig
           const total = allChainsCell?.["total"];
           if (total && !total.isZero()) {
             tokenTotals.set(tokenSymbol, Number(formatUnits(total, decimals)));
+            tokenBreakdown[tokenSymbol] = {
+              current: Number(formatUnits(allChainsCell?.["current"] ?? 0, decimals)),
+              pending: Number(formatUnits(allChainsCell?.["pending"] ?? 0, decimals)),
+              pendingTransfers: Number(formatUnits(allChainsCell?.["pending transfers"] ?? 0, decimals)),
+              total: Number(formatUnits(total, decimals)),
+            };
           }
         }
 
@@ -71,6 +78,7 @@ export async function runBalanceTracker(_logger: winston.Logger, baseSigner: Sig
         logger.debug({
           at: "BalanceTracker#index",
           message: `Computed balances for ${symbols.length} tokens for ${relayer}`,
+          breakdown: tokenBreakdown,
         });
 
         if (sheetsWriter) {

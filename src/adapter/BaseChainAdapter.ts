@@ -704,6 +704,30 @@ export class BaseChainAdapter {
           );
 
           const totalAmount = unmatchedInitiations.reduce((acc, event) => acc.add(event.amount), bnZero);
+
+          if (!totalAmount.isZero() || unmatchedInitiations.length > 0) {
+            this.log(
+              "Outstanding transfer summary",
+              {
+                monitoredAddress: monitoredAddress.toNative(),
+                l1Token: l1Token.toNative(),
+                l2Token,
+                initiations: windowedInitiations.length,
+                finalizations: windowedFinalizations.length,
+                unmatched: unmatchedInitiations.length,
+                totalAmount: totalAmount.toString(),
+                unmatchedDetails: unmatchedInitiations.map((e) => ({
+                  amount: e.amount.toString(),
+                  blockNumber: e.blockNumber,
+                  txnRef: e.txnRef,
+                  timestamp: timestamps.get(e),
+                })),
+              },
+              "debug",
+              "getOutstandingCrossChainTransfers"
+            );
+          }
+
           assign(outstandingTransfers, [monitoredAddress.toNative(), l1Token.toNative(), l2Token], {
             totalAmount,
             depositTxHashes: unmatchedInitiations.map((event) => event.txnRef),
