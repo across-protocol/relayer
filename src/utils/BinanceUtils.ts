@@ -1,5 +1,4 @@
 import Binance, {
-  HttpMethod,
   DepositHistoryResponse,
   WithdrawHistoryResponse,
   type Binance as BinanceApi,
