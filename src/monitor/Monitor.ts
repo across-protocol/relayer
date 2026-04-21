@@ -675,11 +675,7 @@ export class Monitor {
   }
 
   async checkBinanceWithdrawalLimits() {
-    const client = await BinanceClient.create({
-      logger: this.logger,
-      hubChainId: this.clients.hubPoolClient.chainId,
-      url: process.env.BINANCE_API_BASE,
-    });
+    const client = await BinanceClient.create({ logger: this.logger, url: process.env.BINANCE_API_BASE });
     const wdQuota = await client.getWithdrawalLimits();
     const aboveWarnThreshold =
       isDefined(this.monitorConfig.binanceWithdrawWarnThreshold) &&

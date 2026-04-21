@@ -1,14 +1,13 @@
 import winston from "winston";
 import { assertPromiseError, expect } from "./utils";
 import { BinanceClient } from "../src/clients";
-import { CHAIN_IDs } from "../src/utils";
 
 describe("BinanceClient", function () {
   const savedEnv = {
     BINANCE_API_KEY: process.env.BINANCE_API_KEY,
     BINANCE_HMAC_KEY: process.env.BINANCE_HMAC_KEY,
   };
-  const deps = { logger: winston.createLogger({ silent: true }), hubChainId: CHAIN_IDs.MAINNET };
+  const deps = { logger: winston.createLogger({ silent: true }) };
 
   beforeEach(function () {
     delete process.env.BINANCE_API_KEY;

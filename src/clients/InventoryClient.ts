@@ -1,8 +1,12 @@
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import WETH_ABI from "../common/abi/Weth.json";
 import {
+  acrossApi,
   bnZero,
   BigNumber,
+  binanceCredentialsConfigured,
+  coingecko,
+  defiLlama,
   winston,
   toBN,
   getNetworkName,
@@ -21,6 +25,7 @@ import {
   fixedPointAdjustment,
   bnComparatorDescending,
   MAX_UINT_VAL,
+  PriceClient,
   toBNWei,
   assert,
   Profiler,
@@ -39,13 +44,14 @@ import {
   getLatestRunningBalances,
   getInventoryBalanceContributorTokens,
 } from "../utils";
+import { getAcrossHost } from "./AcrossAPIClient";
 import { BinanceClient } from "./BinanceClient";
 import { BundleDataApproxClient, BundleDataState } from "./BundleDataApproxClient";
 import { HubPoolClient, TokenClient, TransactionClient } from ".";
 import { Deposit, TokenInfo } from "../interfaces";
 import { InventoryConfig, isAliasConfig, TokenBalanceConfig } from "../interfaces/InventoryManagement";
 import lodash from "lodash";
-import { SLOW_WITHDRAWAL_CHAINS } from "../common";
+import { hasBinanceRoute, SLOW_WITHDRAWAL_CHAINS } from "../common";
 import { AdapterManager, CrossChainTransferClient } from "./bridges";
 import { TransferTokenParams } from "../adapter/utils";
 import { RebalancerClient } from "../rebalancer/utils/interfaces";
@@ -84,11 +90,11 @@ export class InventoryClient {
   private pendingL2Withdrawals: { [l1Token: string]: { [chainId: number]: BigNumber } } = {};
   private pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
   private transactionClient: TransactionClient;
-  // Reserves CEX-withdrawal headroom for concurrent fills against the same stale quota snapshot.
-  // Overridable via RELAYER_CEX_REBALANCE_BUFFER (default 3x).
+  // Concurrent-fill headroom on the stale CEX quota; RELAYER_CEX_REBALANCE_BUFFER overrides (default 3x).
   private readonly cexRebalanceBuffer: BigNumber;
+  private readonly priceClient: PriceClient | undefined;
+  protected l1TokenPricesUsd: Map<string, BigNumber> = new Map();
 
-  // Arrow field so it can be passed as a callback without losing `this`.
   private readonly binanceCapacityCheck = (chainId: number, l1Token: Address): boolean => {
     return this.binanceClient?.isOperational(chainId, l1Token) ?? false;
   };
@@ -106,13 +112,20 @@ export class InventoryClient {
     readonly simMode = false,
     readonly prioritizeLpUtilization = true,
     readonly l1TokensOverride: string[] = [],
-    readonly binanceClient?: BinanceClient
+    protected binanceClient?: BinanceClient
   ) {
     this.transactionClient = new TransactionClient(logger);
     this.inventoryConfig = inventoryConfig;
     this.scalar = sdkUtils.fixedPointAdjustment;
     const rawBuffer = Number(process.env.RELAYER_CEX_REBALANCE_BUFFER);
     this.cexRebalanceBuffer = toBNWei(Number.isFinite(rawBuffer) && rawBuffer > 0 ? rawBuffer : 3);
+    if (binanceCredentialsConfigured()) {
+      this.priceClient = new PriceClient(logger, [
+        new acrossApi.PriceFeed({ host: getAcrossHost(this.hubPoolClient.chainId) }),
+        new coingecko.PriceFeed({ apiKey: process.env.COINGECKO_PRO_API_KEY }),
+        new defiLlama.PriceFeed(),
+      ]);
+    }
     this.formatWei = createFormatFunction(2, 4, false, 18);
     this.profiler = new Profiler({
       logger: this.logger,
@@ -715,12 +728,14 @@ export class InventoryClient {
     const { decimals: inputTokenDecimals } = this.getTokenInfo(inputToken, originChainId);
     const inputAmountInL1TokenDecimals = sdkUtils.ConvertDecimals(inputTokenDecimals, l1TokenDecimals)(inputAmount);
 
-    // If Binance can drain origin and the remaining daily quota covers this fill with the
-    // configured buffer, prefer origin repayment regardless of allocation.
-    // Inflate the fill so concurrent decisions against the same stale quota don't overdraw.
-    const bufferedAmount = inputAmountInL1TokenDecimals.mul(this.cexRebalanceBuffer).div(fixedPointAdjustment);
-    if (this.binanceClient?.canAccommodate(bufferedAmount, l1TokenDecimals, originChainId, l1Token)) {
-      return [originChainId];
+    // Prefer origin repayment when Binance has capacity for the buffered fill.
+    const priceUsd = this.l1TokenPricesUsd.get(l1Token.toNative());
+    if (isDefined(priceUsd)) {
+      const fillUsd = inputAmountInL1TokenDecimals.mul(priceUsd).div(BigNumber.from(10).pow(l1TokenDecimals));
+      const bufferedFillUsd = fillUsd.mul(this.cexRebalanceBuffer).div(fixedPointAdjustment);
+      if (this.binanceClient?.canAccommodate(bufferedFillUsd, originChainId, l1Token)) {
+        return [originChainId];
+      }
     }
 
     // Consider any upcoming refunds.
@@ -1817,7 +1832,41 @@ export class InventoryClient {
       });
     }
 
-    await this.binanceClient?.refresh(this.getL1Tokens(), this.getEnabledChains());
+    if (isDefined(this.binanceClient)) {
+      await this.binanceClient.refresh();
+      await this.updateTokenPrices();
+    }
+  }
+
+  // Strict-fail: any error clears the cache so downstream capacity checks fall through.
+  private async updateTokenPrices(): Promise<void> {
+    this.l1TokenPricesUsd.clear();
+    if (!isDefined(this.priceClient)) {
+      return;
+    }
+    const binanceRouteTokens = this.getL1Tokens().filter((l1Token) =>
+      this.getEnabledChains().some((chainId) => hasBinanceRoute(chainId, l1Token))
+    );
+    if (binanceRouteTokens.length === 0) {
+      return;
+    }
+    try {
+      const prices = await this.priceClient.getPricesByAddress(
+        binanceRouteTokens.map((l1Token) => l1Token.toNative()),
+        "usd"
+      );
+      prices.forEach(({ address, price }) => {
+        if (price > 0) {
+          this.l1TokenPricesUsd.set(address, toBNWei(price.toFixed(18)));
+        }
+      });
+    } catch (err) {
+      this.logger.warn({
+        at: "InventoryClient#updateTokenPrices",
+        message: "Failed to refresh token prices; downstream capacity checks disabled for this cycle",
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   isInventoryManagementEnabled(): boolean {

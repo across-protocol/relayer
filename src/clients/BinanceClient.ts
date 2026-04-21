@@ -3,29 +3,13 @@ import minimist from "minimist";
 import { coerce, create, number, string, type } from "superstruct";
 import winston from "winston";
 import { hasBinanceRoute } from "../common";
-import {
-  acrossApi,
-  Address,
-  assert,
-  BigNumber,
-  bnZero,
-  coingecko,
-  defiLlama,
-  EvmAddress,
-  getGckmsConfig,
-  isDefined,
-  PriceClient,
-  retrieveGckmsKeys,
-  toBNWei,
-} from "../utils";
+import { Address, assert, BigNumber, bnZero, getGckmsConfig, isDefined, retrieveGckmsKeys, toBNWei } from "../utils";
 import type { WithdrawalQuota } from "../utils/BinanceUtils";
-import { getAcrossHost } from "./AcrossAPIClient";
 
 export type { WithdrawalQuota };
 
 // `type()` over `object()` to tolerate additional fields Binance may add later.
 const numberish = coerce(number(), string(), (s) => Number(s));
-
 const WithdrawalQuotaSS = type({
   wdQuota: numberish,
   usedWdQuota: numberish,
@@ -33,7 +17,6 @@ const WithdrawalQuotaSS = type({
 
 export type BinanceClientOptions = {
   logger: winston.Logger;
-  hubChainId: number;
   url?: string;
 };
 
@@ -42,27 +25,18 @@ export class BinanceClient {
 
   // Undefined before first refresh and after any failure — treated as "no capacity".
   private remainingQuotaUsd: BigNumber | undefined;
-  private l1TokenPricesUsd: Map<string, BigNumber> = new Map();
 
   private constructor(
     private readonly api: BinanceApi,
-    private readonly priceClient: PriceClient,
     private readonly logger: winston.Logger
   ) {}
 
   static async create(options: BinanceClientOptions): Promise<BinanceClient> {
-    const { logger, hubChainId, url = "https://api.binance.com" } = options;
+    const { logger, url = "https://api.binance.com" } = options;
     const apiKey = process.env.BINANCE_API_KEY;
     const secretKey = (await BinanceClient.getBinanceSecretKey()) ?? process.env.BINANCE_HMAC_KEY;
     assert(isDefined(apiKey) && isDefined(secretKey), "Binance client cannot be constructed due to missing keys.");
-
-    const priceClient = new PriceClient(logger, [
-      new acrossApi.PriceFeed({ host: getAcrossHost(hubChainId) }),
-      new coingecko.PriceFeed({ apiKey: process.env.COINGECKO_PRO_API_KEY }),
-      new defiLlama.PriceFeed(),
-    ]);
-
-    return new BinanceClient(Binance({ apiKey, apiSecret: secretKey, httpBase: url }), priceClient, logger);
+    return new BinanceClient(Binance({ apiKey, apiSecret: secretKey, httpBase: url }), logger);
   }
 
   rawApi(): BinanceApi {
@@ -74,37 +48,16 @@ export class BinanceClient {
     return create(raw, WithdrawalQuotaSS);
   }
 
-  // Strict-fail: any error wipes both caches, leaving capacity checks false until the next refresh.
-  async refresh(l1Tokens: EvmAddress[], enabledChains: number[]): Promise<void> {
+  // Strict-fail: any error wipes the cache, leaving capacity checks false until the next refresh.
+  async refresh(): Promise<void> {
     this.remainingQuotaUsd = undefined;
-    this.l1TokenPricesUsd.clear();
-
-    const binanceRouteTokens = l1Tokens.filter((l1Token) =>
-      enabledChains.some((chainId) => hasBinanceRoute(chainId, l1Token))
-    );
-    if (binanceRouteTokens.length === 0) {
-      return;
-    }
-
     try {
       const quota = await this.getWithdrawalLimits();
-      const tokenPrices = await this.priceClient.getPricesByAddress(
-        binanceRouteTokens.map((l1Token) => l1Token.toNative()),
-        "usd"
-      );
-      const refreshedPrices = new Map<string, BigNumber>();
-      tokenPrices.forEach(({ address, price }) => {
-        if (price > 0) {
-          refreshedPrices.set(address, toBNWei(price.toFixed(18)));
-        }
-      });
-      // Assign only after both fetches succeed, so a partial refresh can't be observed.
       this.remainingQuotaUsd = toBNWei(Math.max(quota.wdQuota - quota.usedWdQuota, 0));
-      this.l1TokenPricesUsd = refreshedPrices;
     } catch (err) {
       this.logger.warn({
         at: "BinanceClient#refresh",
-        message: "Failed to refresh Binance withdrawal quota; origin-via-Binance capacity checks disabled",
+        message: "Failed to refresh Binance withdrawal quota; capacity checks disabled",
         error: err instanceof Error ? err.message : String(err),
       });
     }
@@ -117,17 +70,12 @@ export class BinanceClient {
     return isDefined(this.remainingQuotaUsd) && this.remainingQuotaUsd.gt(bnZero);
   }
 
-  // Callers that want headroom for concurrent draws should scale fillAmount up beforehand.
-  canAccommodate(fillAmount: BigNumber, fillDecimals: number, chainId: number, l1Token: Address): boolean {
-    if (!this.isOperational(chainId, l1Token)) {
+  // Callers convert token amount → USD via their own price source before calling.
+  canAccommodate(fillUsd: BigNumber, chainId: number, l1Token: Address): boolean {
+    if (!hasBinanceRoute(chainId, l1Token) || !isDefined(this.remainingQuotaUsd)) {
       return false;
     }
-    const priceUsd = this.l1TokenPricesUsd.get(l1Token.toNative());
-    if (!isDefined(priceUsd)) {
-      return false;
-    }
-    const fillUsd = fillAmount.mul(priceUsd).div(BigNumber.from(10).pow(fillDecimals));
-    return fillUsd.lte(this.remainingQuotaUsd);
+    return this.remainingQuotaUsd.gt(bnZero) && fillUsd.lte(this.remainingQuotaUsd);
   }
 
   private static async getBinanceSecretKey(): Promise<string | undefined> {
