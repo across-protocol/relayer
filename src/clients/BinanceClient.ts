@@ -1,6 +1,6 @@
 import Binance, { HttpMethod, type Binance as BinanceApi } from "binance-api-node";
 import minimist from "minimist";
-import { create, number, type } from "superstruct";
+import { coerce, create, number, string, type } from "superstruct";
 import winston from "winston";
 import { hasBinanceRoute } from "../common";
 import {
@@ -24,9 +24,11 @@ import type { WithdrawalQuota } from "../utils/BinanceUtils";
 export type { WithdrawalQuota };
 
 // `type()` over `object()` to tolerate additional fields Binance may add later.
+// Binance sometimes returns numeric fields as strings; coerce before validating.
+const numberish = coerce(number(), string(), (s) => Number(s));
 const WithdrawalQuotaSS = type({
-  wdQuota: number(),
-  usedWdQuota: number(),
+  wdQuota: numberish,
+  usedWdQuota: numberish,
 });
 
 export type BinanceClientOptions = {
