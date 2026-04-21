@@ -1907,27 +1907,36 @@ export class InventoryClient {
     });
   }
 
-  // True if repayment on `chainId` can be quickly rebalanced off-chain. Pass `fillUsd` to gate
-  // Binance on fill-level quota (buffered by `cexRebalanceBuffer`); omit for a chain-level "any quota" check.
-  private isQuicklyRebalanced(chainId: number, token: Address, fillUsd?: BigNumber): boolean {
+  /**
+   * @notice Returns true if after filling this deposit, the repayment can be quickly rebalanced to a different chain.
+   * @dev This function can be used by the InventoryClient and Relayer to help determine whether a deposit should
+   * be filled or ignored given current inventory allocation levels. Pass `fillUsd` to gate Binance on fill-level
+   * quota (buffered by `cexRebalanceBuffer`); omit for a chain-level "any quota" check.
+   */
+  private isQuicklyRebalanced(repaymentChainId: number, repaymentToken: Address, fillUsd?: BigNumber): boolean {
     const { chainId: hubChainId } = this.hubPoolClient;
-    const chainIsCctpEnabled =
-      sdkUtils.chainIsCCTPEnabled(chainId) &&
-      compareAddressesSimple(TOKEN_SYMBOLS_MAP.USDC.addresses[chainId], token.toNative());
-    const chainIsOFTEnabled =
-      sdkUtils.chainIsOFTEnabled(chainId) &&
-      compareAddressesSimple(TOKEN_SYMBOLS_MAP.USDT.addresses[chainId], token.toNative()) &&
-      chainId !== CHAIN_IDs.HYPEREVM; // OFT withdrawals from HyperEVM take ~12 hours.
-    if (chainIsCctpEnabled || chainIsOFTEnabled || chainId === hubChainId) {
+    const originChainIsCctpEnabled =
+      sdkUtils.chainIsCCTPEnabled(repaymentChainId) &&
+      compareAddressesSimple(TOKEN_SYMBOLS_MAP.USDC.addresses[repaymentChainId], repaymentToken.toNative());
+    const originChainIsOFTEnabled =
+      sdkUtils.chainIsOFTEnabled(repaymentChainId) &&
+      compareAddressesSimple(TOKEN_SYMBOLS_MAP.USDT.addresses[repaymentChainId], repaymentToken.toNative()) &&
+      repaymentChainId !== CHAIN_IDs.HYPEREVM; // OFT withdrawals from HyperEVM take ~12 hours.
+    // Repayments on Mainnet can be quickly rebalanced via canonical bridges out of L1.
+    if (originChainIsCctpEnabled || originChainIsOFTEnabled || repaymentChainId === hubChainId) {
       return true;
     }
+    // If Binance offers a withdrawal route for this (chain, token), inventory repaid on this chain can be
+    // moved off via Binance in place of the canonical slow-withdrawal bridge. This naturally covers BSC
+    // (whose canonical L2 bridge is Binance for every token) as well as per-token Binance routes on
+    // slow-withdrawal chains like Arbitrum, Optimism, and Base.
     if (!isDefined(this.binanceClient)) {
       return false;
     }
     try {
-      const l1Token = getInventoryEquivalentL1TokenAddress(token, chainId, hubChainId);
+      const l1Token = getInventoryEquivalentL1TokenAddress(repaymentToken, repaymentChainId, hubChainId);
       const bufferedUsd = isDefined(fillUsd) ? fillUsd.mul(this.cexRebalanceBuffer).div(fixedPointAdjustment) : bnZero;
-      return this.binanceClient.canWithdraw(bufferedUsd, chainId, l1Token);
+      return this.binanceClient.canWithdraw(bufferedUsd, repaymentChainId, l1Token);
     } catch {
       return false;
     }
