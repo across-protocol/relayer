@@ -881,10 +881,7 @@ export class InventoryClient {
     }
 
     // Conditionally add the origin chain as a fallback option if the relayer has a fast rebalance route.
-    if (
-      !eligibleRefundChains.includes(originChainId) &&
-      this.isQuicklyRebalanced(originChainId, inputToken)
-    ) {
+    if (!eligibleRefundChains.includes(originChainId) && this.isQuicklyRebalanced(originChainId, inputToken)) {
       eligibleRefundChains.push(originChainId);
     }
 
