@@ -498,10 +498,7 @@ export class Refiller {
           message: `Address ${this.baseSignerAddress.toNative()} is not registered in the native markets API. Creating new address ID.`,
           address: this.baseSignerAddress,
         });
-        const _addressId = await retryAsync(
-          postWithTimeout<{ id: string }>,
-          3,
-          1,
+        const _addressId = await postWithTimeout<{ id: string }>(
           `${nativeMarketsApiUrl}/addresses`,
           newAddressIdData,
           {},
