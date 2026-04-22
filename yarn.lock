@@ -2078,10 +2078,10 @@
     winston "^3.17.0"
     winston-transport "^4.9.0"
 
-"@risk-labs/serverless-orchestration@^1.0.7-alpha.0":
-  version "1.0.7-alpha.0"
-  resolved "https://registry.yarnpkg.com/@risk-labs/serverless-orchestration/-/serverless-orchestration-1.0.7-alpha.0.tgz#afff9e4e2bfb6bed3b7a4a062cab4498535b79e8"
-  integrity sha512-Sn8NpwFdrzQUE6vErWkwOPNVZIDhnkV4Sbi5g2VydwqbG6xjXnZIETVUyry3vCcBb//azvlCr4A2mW7Tl8SrVA==
+"@risk-labs/serverless-orchestration@^1.1.0":
+  version "1.1.0"
+  resolved "https://registry.yarnpkg.com/@risk-labs/serverless-orchestration/-/serverless-orchestration-1.1.0.tgz#24ecfd96d3a20c910e3c811a222cda4ec2466d5c"
+  integrity sha512-kiD7n5VPMg59ysyjIL84Qj3U7Oph40ri4wKzqpDlYfNzBCPz3in/etSxdwRXP009t3R05E5A7fsvUShv28iTLA==
   dependencies:
     "@awaitjs/express" "^0.3.0"
     "@google-cloud/datastore" "^10.1.0"
