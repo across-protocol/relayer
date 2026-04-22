@@ -97,6 +97,27 @@ export enum BINANCE_WITHDRAWAL_STATUS {
   COMPLETED = 6,
 }
 
+export function readableBinanceWithdrawalStatus(status?: number): string {
+  switch (status) {
+    case BINANCE_WITHDRAWAL_STATUS.EMAIL_SENT:
+      return "email-sent";
+    case BINANCE_WITHDRAWAL_STATUS.CANCELLED:
+      return "cancelled";
+    case BINANCE_WITHDRAWAL_STATUS.AWAITING_APPROVAL:
+      return "awaiting-approval";
+    case BINANCE_WITHDRAWAL_STATUS.REJECTED:
+      return "rejected";
+    case BINANCE_WITHDRAWAL_STATUS.PROCESSING:
+      return "processing";
+    case BINANCE_WITHDRAWAL_STATUS.FAILURE:
+      return "failure";
+    case BINANCE_WITHDRAWAL_STATUS.COMPLETED:
+      return "completed";
+    default:
+      return "unknown";
+  }
+}
+
 export function resolveBinanceCoinSymbol(token: string): string {
   switch (token) {
     case "WETH":
