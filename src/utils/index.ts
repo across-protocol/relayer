@@ -80,6 +80,7 @@ export * from "./BNUtils";
 export * from "./CCTPUtils";
 export * from "./RetryUtils";
 export * from "./BinanceUtils";
+export * from "./BinanceSwapUtils";
 export * from "./OFTUtils";
 export * from "./NumberUtils";
 export * from "./HyperliquidUtils";
