@@ -13,6 +13,7 @@ import {
   fetchWithTimeout,
   postWithTimeout,
   isHttpError,
+  CHAIN_IDs,
 } from "../../utils";
 import { spreadEventWithBlockNumber } from "../../utils/EventUtils";
 import { FinalizerPromise, CrossChainMessage } from "../types";
@@ -25,6 +26,16 @@ import { calculateHubPoolStoreStorageSlot, getHubPoolStoreContract } from "../..
 import { stringifyThrownValue } from "../../utils/LogUtils";
 import { getSp1HeliosContractEVM } from "../../utils/HeliosUtils";
 import { getBlockFinder, getBlockForTimestamp } from "../../utils/BlockUtils";
+
+// A configuration parameter for the number of _blocks_ the finalizer should wait before attempting a keep-alive action.
+// @dev Blocks, and not timestamps, are used as the unit here since some chains (TRON) do not support historical eth_* RPC queries.
+// The default refresh interval is 60/3 * 60 * 6 = 6 hrs w/ block times of 3 secs.
+const HELIOS_REFRESH_INTERVAL: { [chainId: number]: number } = {
+  [CHAIN_IDs.TEMPO]: 43200, // 500ms
+  [CHAIN_IDs.HYPEREVM]: 21600, // 1s
+  [CHAIN_IDs.PLASMA]: 21600, // 1s
+  [CHAIN_IDs.MONAD]: 54000, // 400ms
+};
 
 // --- Helios Action Types ---
 type HeliosActionType = "UpdateAndExecute" | "ExecuteOnly" | "UpdateOnly";
@@ -74,12 +85,12 @@ export async function heliosL1toL2Finalizer(
   // If it did not, then there is no need to run the helios finalizer.
   if (!shouldFinalize(hubPoolClient, l2SpokePoolClient, l2ChainId)) {
     logger.debug({
-    at: `Finalizer#heliosL1toL2Finalizer:${l2ChainId}`,
-    message: `No recently executed pool rebalance root for ${l2ChainId}. Skipping finalization procedure.`,
+      at: `Finalizer#heliosL1toL2Finalizer:${l2ChainId}`,
+      message: `No recently executed pool rebalance root for ${l2ChainId}. Skipping finalization procedure.`,
     });
     return { callData: [], crossChainMessages: [] };
   }
-  
+
   const sp1HeliosL2 = await getSp1HeliosContractEVM(l2SpokePoolClient.spokePool, l2SpokePoolClient.spokePool.signer);
   const { sp1HeliosHead, sp1HeliosHeader } = await getSp1HeliosHeadData(sp1HeliosL2);
   const sp1HeliosVkey: string = await sp1HeliosL2.heliosProgramVkey();
@@ -120,7 +131,7 @@ export async function heliosL1toL2Finalizer(
     logger.debug({
       at: `Finalizer#heliosL1toL2Finalizer:${l2ChainId}`,
       message: "No Helios actions are ready for submission after enrichment phase.",
-    })
+    });
     return { callData: [], crossChainMessages: [] };
   }
 
@@ -128,11 +139,7 @@ export async function heliosL1toL2Finalizer(
   return generateTxnsForHeliosActions(logger, readyActions, l1ChainId, l2ChainId, l2SpokePoolClient, sp1HeliosL2);
 }
 
-function shouldFinalize(
-  hubPoolClient: HubPoolClient,
-  l2SpokePoolClient: SpokePoolClient,
-  l2ChainId: number
-): Promise<boolean> {
+function shouldFinalize(hubPoolClient: HubPoolClient, l2SpokePoolClient: SpokePoolClient, l2ChainId: number): boolean {
   // If the most recent executed root bundle contained a pool rebalance leaf for `l2ChainId`, then we should finalize.
   const latestExecutedBundle = hubPoolClient.getLatestFullyExecutedRootBundle(hubPoolClient.latestHeightSearched);
   if (latestExecutedBundle) {
@@ -154,7 +161,7 @@ function shouldFinalize(
   }
   const currentBlock = l2SpokePoolClient.latestHeightSearched;
   const blocksSinceLastExecution = currentBlock - latestL2Execution.blockNumber;
-  return blocksSinceLastExecution > HELIOS_REFRESH_INTERVAL[l2ChainId] ?? 7200; // Default to lowest case @ 3s/block (6hrs).
+  return blocksSinceLastExecution > (HELIOS_REFRESH_INTERVAL[l2ChainId] ?? 7200); // Default to lowest case @ 3s/block (6hrs).
 }
 
 // ==================================
