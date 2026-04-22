@@ -24,7 +24,7 @@ export type BinanceClientOptions = {
 export class BinanceClient {
   private static binanceSecretKeyPromise: Promise<string | undefined> | undefined = undefined;
 
-  // Undefined before first refresh and after any failure — treated as "no capacity".
+  // Undefined before first refresh and after any failure.
   private remainingQuotaUsd: BigNumber | undefined;
 
   private constructor(
@@ -49,7 +49,7 @@ export class BinanceClient {
     return create(raw, WithdrawalQuotaSS);
   }
 
-  // Strict-fail: any error wipes the cache, leaving capacity checks false until the next refresh.
+  // Strict-fail: any error clears the cache.
   async refresh(): Promise<void> {
     this.remainingQuotaUsd = undefined;
     try {
@@ -64,8 +64,7 @@ export class BinanceClient {
     }
   }
 
-  // Callers supply the USD-denominated amount to check; this client doesn't do pricing.
-  // Zero-amount queries return false — there's no such thing as a zero-value withdrawal.
+  // Caller supplies USD amount; zero returns false.
   canWithdraw(amountUsd: BigNumber, chainId: number, l1Token: Address): boolean {
     return (
       hasBinanceRoute(chainId, l1Token) &&

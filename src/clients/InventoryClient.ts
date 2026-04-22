@@ -92,7 +92,7 @@ export class InventoryClient {
   private pendingL2Withdrawals: { [l1Token: string]: { [chainId: number]: BigNumber } } = {};
   private pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
   private transactionClient: TransactionClient;
-  // Concurrent-fill headroom on the stale CEX quota; RELAYER_CEX_REBALANCE_BUFFER overrides (default 3x).
+  // Headroom multiplier on CEX quota; RELAYER_CEX_REBALANCE_BUFFER overrides (default 3x).
   private readonly cexRebalanceBuffer: BigNumber;
   private readonly priceClient: PriceClient | undefined;
   protected l1TokenPricesUsd: Map<string, BigNumber> = new Map();
@@ -690,10 +690,9 @@ export class InventoryClient {
     const forceOriginRepayment = this.shouldForceOriginRepayment(deposit);
     const originQuickRebalance = this.isQuicklyRebalanced(originChainId, inputToken);
 
-    // If the deposit forces origin chain repayment but the origin chain is one we can easily rebalance inventory from,
-    // then don't ignore this deposit based on perceived over-allocation. For example, the hub chain and chains connected
-    // to the user's Binance API are easy to move inventory from so we should never skip filling these deposits.
-    if (forceOriginRepayment && originQuickRebalance) {
+    // Force-origin deposits with an unmetered fast-rebalance route (CCTP/OFT/hub) skip allocation checks.
+    // Binance-route origins are handled downstream with capacity gating.
+    if (forceOriginRepayment && this.isUnmeteredFastRebalance(originChainId, inputToken)) {
       return [originChainId];
     }
 
@@ -715,9 +714,7 @@ export class InventoryClient {
     const { decimals: inputTokenDecimals } = this.getTokenInfo(inputToken, originChainId);
     const inputAmountInL1TokenDecimals = sdkUtils.ConvertDecimals(inputTokenDecimals, l1TokenDecimals)(inputAmount);
 
-    // Short-circuit to origin when it's a fast-rebalance source and enabled for this token —
-    // allocation state should not derail an origin repayment we can quickly drain. For the Binance
-    // branch this requires a size-checked commitment; CCTP/OFT/hub origins match unconditionally.
+    // Prefer origin when it's a fast-rebalance source with capacity for this fill — ignore allocation.
     if (
       this._l1TokenEnabledForChain(l1Token, originChainId) &&
       this.canFastRebalanceFill(originChainId, inputToken, l1Token, inputAmountInL1TokenDecimals, l1TokenDecimals)
@@ -1774,7 +1771,7 @@ export class InventoryClient {
     }
   }
 
-  // Strict-fail: any error clears the cache so downstream capacity checks fall through.
+  // Strict-fail: any error clears the cache.
   private async updateTokenPrices(): Promise<void> {
     this.l1TokenPricesUsd.clear();
     if (!isDefined(this.priceClient)) {
@@ -1855,12 +1852,8 @@ export class InventoryClient {
     });
   }
 
-  /**
-   * @notice Returns true if after filling this deposit, the repayment can be quickly rebalanced to a different chain.
-   * @dev This function can be used by the InventoryClient and Relayer to help determine whether a deposit should
-   * be filled or ignored given current inventory allocation levels.
-   */
-  private isQuicklyRebalanced(repaymentChainId: number, repaymentToken: Address): boolean {
+  // True for unmetered fast-rebalance routes (CCTP, OFT, hub). Binance is excluded — it's quota-gated.
+  private isUnmeteredFastRebalance(repaymentChainId: number, repaymentToken: Address): boolean {
     const { chainId: hubChainId } = this.hubPoolClient;
     const originChainIsCctpEnabled =
       sdkUtils.chainIsCCTPEnabled(repaymentChainId) &&
@@ -1870,27 +1863,34 @@ export class InventoryClient {
       compareAddressesSimple(TOKEN_SYMBOLS_MAP.USDT.addresses[repaymentChainId], repaymentToken.toNative()) &&
       repaymentChainId !== CHAIN_IDs.HYPEREVM; // OFT withdrawals from HyperEVM take ~12 hours.
     // Repayments on Mainnet can be quickly rebalanced via canonical bridges out of L1.
-    if (originChainIsCctpEnabled || originChainIsOFTEnabled || repaymentChainId === hubChainId) {
+    return originChainIsCctpEnabled || originChainIsOFTEnabled || repaymentChainId === hubChainId;
+  }
+
+  /**
+   * @notice Returns true if after filling this deposit, the repayment can be quickly rebalanced to a different chain.
+   * @dev This function can be used by the InventoryClient and Relayer to help determine whether a deposit should
+   * be filled or ignored given current inventory allocation levels.
+   */
+  private isQuicklyRebalanced(repaymentChainId: number, repaymentToken: Address): boolean {
+    if (this.isUnmeteredFastRebalance(repaymentChainId, repaymentToken)) {
       return true;
     }
+
     // If Binance offers a withdrawal route for this (chain, token), inventory repaid on this chain can be
     // moved off via Binance in place of the canonical slow-withdrawal bridge. This naturally covers BSC
     // (whose canonical L2 bridge is Binance for every token) as well as per-token Binance routes on
     // slow-withdrawal chains like Arbitrum, Optimism, and Base.
+    const { chainId: hubChainId } = this.hubPoolClient;
     try {
-      const l1Token = getInventoryEquivalentL1TokenAddress(repaymentToken, repaymentChainId, hubChainId);
+      const l1Token = getInventoryEquivalentL1TokenAddress(repaymentToken,repaymentChainId, hubChainId);
       return hasBinanceRoute(repaymentChainId, l1Token);
     } catch {
       return false;
     }
   }
 
-  /**
-   * @notice Fill-level commit check: returns true when origin repayment can be drained quickly for THIS
-   * fill size. CCTP/OFT/hub are unmetered and match unconditionally; Binance-route origins require a
-   * wired `binanceClient` and a cached USD price for `l1Token`, so we never silently skip quota
-   * gating on missing prices or when the exchange client isn't configured.
-   */
+  // True if origin repayment can be drained quickly for this fill size. Binance requires a wired
+  // client and a cached USD price; missing either fails closed.
   private canFastRebalanceFill(
     repaymentChainId: number,
     repaymentToken: Address,
@@ -1898,15 +1898,7 @@ export class InventoryClient {
     inputAmountInL1TokenDecimals: BigNumber,
     l1TokenDecimals: number
   ): boolean {
-    const { chainId: hubChainId } = this.hubPoolClient;
-    const originChainIsCctpEnabled =
-      sdkUtils.chainIsCCTPEnabled(repaymentChainId) &&
-      compareAddressesSimple(TOKEN_SYMBOLS_MAP.USDC.addresses[repaymentChainId], repaymentToken.toNative());
-    const originChainIsOFTEnabled =
-      sdkUtils.chainIsOFTEnabled(repaymentChainId) &&
-      compareAddressesSimple(TOKEN_SYMBOLS_MAP.USDT.addresses[repaymentChainId], repaymentToken.toNative()) &&
-      repaymentChainId !== CHAIN_IDs.HYPEREVM;
-    if (originChainIsCctpEnabled || originChainIsOFTEnabled || repaymentChainId === hubChainId) {
+    if (this.isUnmeteredFastRebalance(repaymentChainId, repaymentToken)) {
       return true;
     }
     if (!isDefined(this.binanceClient)) {
