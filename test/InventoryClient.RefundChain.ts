@@ -839,6 +839,16 @@ describe("InventoryClient: Refund chain selection", async function () {
       expect(possibleRepaymentChains).to.include(sampleDepositData.originChainId);
       expect(possibleRepaymentChains).to.include(hubPoolClient.chainId);
     });
+    it("does not evaluate destination as a standard candidate when it is only present via slow-withdrawal support", async function () {
+      hubPoolClient.setEnableAllL2Tokens(true);
+      sinon.stub(inventoryClient, "getSlowWithdrawalRepaymentChains").returns([sampleDepositData.destinationChainId]);
+
+      const possibleRepaymentChains = inventoryClient.getPossibleRepaymentChainIds(sampleDepositData);
+      expect(possibleRepaymentChains).to.include(sampleDepositData.destinationChainId);
+
+      const refundChains = await inventoryClient.determineRefundChainId(sampleDepositData);
+      expect(refundChains).to.deep.equal([POLYGON, MAINNET]);
+    });
   });
 
   describe("evaluates slow withdrawal chains with excess running balances", function () {
@@ -915,6 +925,14 @@ describe("InventoryClient: Refund chain selection", async function () {
         POLYGON,
         MAINNET,
       ]);
+    });
+    it("drops zero-excess slow withdrawal chains before falling back to hub", async function () {
+      excessRunningBalances[ARBITRUM] = toWei("0");
+      excessRunningBalances[OPTIMISM] = toWei("0");
+      (inventoryClient as MockInventoryClient).setExcessRunningBalances(mainnetWeth, excessRunningBalances);
+      tokenClient.setTokenData(POLYGON, toAddressType(l2TokensForWeth[POLYGON], POLYGON), toWei(0));
+
+      expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.deep.equal([POLYGON, MAINNET]);
     });
     it("includes slow withdrawal chains in possible repayment chain list", async function () {
       const possibleRepaymentChains = inventoryClient.getPossibleRepaymentChainIds(sampleDepositData);
