@@ -56,7 +56,6 @@ import {
   getWrappedNativeTokenAddress,
   isDefined,
   isFailedBinanceWithdrawal,
-  isTerminalBinanceWithdrawal,
   MAX_SAFE_ALLOWANCE,
   parseUnits,
   resolveBinanceCoinSymbol,
@@ -70,6 +69,7 @@ import {
   toBNWei,
   truncate,
   willSucceed,
+  readableBinanceWithdrawalStatus,
 } from "../src/utils";
 import { getCloidForAccount } from "../src/rebalancer/utils/utils";
 
@@ -328,9 +328,15 @@ export async function run(): Promise<void> {
   const destinationBinanceFreeBalanceBeforeOrder = await venue.getSpotFreeBalance(destination.binanceCoin);
   const orderId = getCloidForAccount(await signer.getAddress());
   const fill = await venue.placeMarketOrder(orderId, source, destination, amount);
-  const expectedFilledAmount = Number(fill.side === "BUY" ? fill.executedQty : fill.cummulativeQuoteQty);
+  const expectedFilledAmount = await venue.getExpectedAmountToReceiveForFilledOrder(
+    fill.orderId,
+    orderId,
+    source,
+    destination
+  );
   console.log(
-    `Market ${fill.side} order filled for ${expectedFilledAmount} ${destination.binanceCoin} on Binance with client order id ${orderId}.`
+    `Market ${fill.side} order filled for ${expectedFilledAmount} ${destination.binanceCoin} on Binance with client order id ${orderId}.`,
+    expectedFilledAmount
   );
 
   const expectedTradeSettledAmount = quote.expectedDestinationAmount.gt(quote.tradeFeeDestinationToken)
@@ -372,7 +378,7 @@ export async function run(): Promise<void> {
     pollDelayMs: POLL_DELAY_MS,
     onProgress: ({ attempts, withdrawal }) => {
       console.log(
-        `[poll ${attempts}, elapsed: ${Math.round((Date.now() - timeElapsedMsStart) / 1000)}s] withdrawal=${withdrawal ? describeWithdrawal(withdrawal) : "not-seen"} id=${withdrawalId}`
+        `[poll ${attempts}, elapsed: ${Math.round((Date.now() - timeElapsedMsStart) / 1000)}s] withdrawal=${withdrawal ? readableBinanceWithdrawalStatus(withdrawal.status) : "not-seen"} id=${withdrawalId}`
       );
     },
   });
@@ -893,16 +899,6 @@ function buildAssetResolutionError(
   }
 }
 
-function describeWithdrawal(withdrawal: BinanceWithdrawal): string {
-  if (isFailedBinanceWithdrawal(withdrawal.status)) {
-    return "failed";
-  }
-  if (isTerminalBinanceWithdrawal(withdrawal.status)) {
-    return "completed";
-  }
-  return "pending";
-}
-
 function describeBinanceWithdrawalStatus(status?: number): string {
   switch (status) {
     case BINANCE_WITHDRAWAL_STATUS.EMAIL_SENT:
@@ -1352,8 +1348,9 @@ export class BinanceSwapVenue {
     );
     const spotMarketMeta = await this.getSpotMarketMeta(source.binanceCoin, destination.binanceCoin);
     const tradeFeePct = Number(
-      (await this.getTradeFees()).find((fee) => fee.symbol === spotMarketMeta.symbol)?.takerCommission ?? "0"
+      (await this.getTradeFees()).find((fee) => fee.symbol === spotMarketMeta.symbol)?.takerCommission
     );
+    assert(tradeFeePct !== undefined, `Trade fee percentage not found for symbol ${spotMarketMeta.symbol}`);
     const tradeFeeSourceToken = toBNWei(truncate(tradeFeePct, 18), 18).mul(sourceAmount).div(toBNWei(100, 18));
     const tradeFeeDestinationToken = tradeFeeSourceToken.gt(BigNumber.from(0))
       ? await this.convertSourceToDestination(source, destination, tradeFeeSourceToken)
@@ -1426,6 +1423,32 @@ export class BinanceSwapVenue {
     } as NewOrderSpot);
     assert(response.status === "FILLED", `Market order was not filled: ${JSON.stringify(response)}`);
     return response;
+  }
+
+  async getExpectedAmountToReceiveForFilledOrder(
+    fillOrderId: number,
+    cloid: string,
+    source: ResolvedBinanceAsset,
+    destination: ResolvedBinanceAsset
+  ): Promise<number | undefined> {
+    const spotMarketMeta = await this.getSpotMarketMeta(source.binanceCoin, destination.binanceCoin);
+    const allOrders = await this.binanceApiClient.allOrders({
+      orderId: fillOrderId,
+      symbol: spotMarketMeta.symbol,
+    });
+    const matchingFill = allOrders.find((order) => order.clientOrderId === cloid && order.status === "FILLED");
+    if (!matchingFill) {
+      return undefined;
+    }
+    const expectedAmountToReceive =
+      matchingFill.side === "BUY" ? matchingFill.executedQty : matchingFill.cummulativeQuoteQty;
+    console.log(matchingFill);
+    const tradeFeePct = Number(
+      (await this.getTradeFees()).find((fee) => fee.symbol === spotMarketMeta.symbol)?.takerCommission
+    );
+    assert(tradeFeePct !== undefined, `Trade fee percentage not found for symbol ${spotMarketMeta.symbol}`);
+    const tradeFee = Number(expectedAmountToReceive) * (Number(tradeFeePct) / 100);
+    return Number(expectedAmountToReceive) - tradeFee;
   }
 
   async getMatchingFillForCloid(
