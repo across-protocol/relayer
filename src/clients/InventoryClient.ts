@@ -715,10 +715,7 @@ export class InventoryClient {
     const inputAmountInL1TokenDecimals = sdkUtils.ConvertDecimals(inputTokenDecimals, l1TokenDecimals)(inputAmount);
 
     // Prefer origin when it's a fast-rebalance source with capacity for this fill — ignore allocation.
-    if (
-      this._l1TokenEnabledForChain(l1Token, originChainId) &&
-      this.canFastRebalanceFill(originChainId, inputToken, l1Token, inputAmountInL1TokenDecimals, l1TokenDecimals)
-    ) {
+    if (this._l1TokenEnabledForChain(l1Token, originChainId) && this.canFastRebalanceFill(deposit, l1Token)) {
       return [originChainId];
     }
 
@@ -1889,16 +1886,14 @@ export class InventoryClient {
     }
   }
 
-  // True if origin repayment can be drained quickly for this fill size. Binance requires a wired
+  // True if origin repayment can be drained quickly for this deposit. Binance requires a wired
   // client and a cached USD price; missing either fails closed.
   private canFastRebalanceFill(
-    repaymentChainId: number,
-    repaymentToken: Address,
-    l1Token: EvmAddress,
-    inputAmountInL1TokenDecimals: BigNumber,
-    l1TokenDecimals: number
+    deposit: Pick<Deposit, "originChainId" | "inputToken" | "inputAmount">,
+    l1Token: EvmAddress
   ): boolean {
-    if (this.isUnmeteredFastRebalance(repaymentChainId, repaymentToken)) {
+    const { originChainId, inputToken, inputAmount } = deposit;
+    if (this.isUnmeteredFastRebalance(originChainId, inputToken)) {
       return true;
     }
     if (!isDefined(this.binanceClient)) {
@@ -1908,9 +1903,12 @@ export class InventoryClient {
     if (!isDefined(priceUsd)) {
       return false;
     }
+    const { decimals: l1TokenDecimals } = this.getTokenInfo(l1Token, this.hubPoolClient.chainId);
+    const { decimals: inputTokenDecimals } = this.getTokenInfo(inputToken, originChainId);
+    const inputAmountInL1TokenDecimals = sdkUtils.ConvertDecimals(inputTokenDecimals, l1TokenDecimals)(inputAmount);
     const fillUsd = inputAmountInL1TokenDecimals.mul(priceUsd).div(BigNumber.from(10).pow(l1TokenDecimals));
     const bufferedUsd = fillUsd.mul(this.cexRebalanceBuffer).div(fixedPointAdjustment);
-    return this.binanceClient.canWithdraw(bufferedUsd, repaymentChainId, l1Token);
+    return this.binanceClient.canWithdraw(bufferedUsd, originChainId, l1Token);
   }
 
   log(message: string, data?: AnyObject, level: DefaultLogLevels = "debug"): void {
