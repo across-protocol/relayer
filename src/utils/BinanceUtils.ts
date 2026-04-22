@@ -34,6 +34,8 @@ export const BINANCE_NETWORKS: { [chainId: number]: string } = {
   [CHAIN_IDs.MAINNET]: "ETH",
   [CHAIN_IDs.OPTIMISM]: "OPTIMISM",
   [CHAIN_IDs.ZK_SYNC]: "ZKSYNCERA",
+  [CHAIN_IDs.TRON]: "TRX",
+  [CHAIN_IDs.POLYGON]: "MATIC",
 };
 
 // A Coin contains balance data and network information (such as withdrawal limits, extra information about the network, etc.) for a specific
@@ -52,6 +54,9 @@ type Network = {
   withdrawMax: string;
   contractAddress: string;
   withdrawFee: string;
+  depositEnable?: boolean;
+  withdrawEnable?: boolean;
+  withdrawTag?: boolean;
 };
 
 // A BinanceDeposit is either a simplified element of the return type of the Binance API's `depositHistory`.
@@ -374,6 +379,9 @@ export async function getAccountCoins(binanceApi: BinanceApi): Promise<ParsedAcc
         withdrawMax: network["withdrawMax"],
         withdrawFee: network["withdrawFee"],
         contractAddress: network["contractAddress"],
+        depositEnable: network["depositEnable"] as boolean | undefined,
+        withdrawEnable: network["withdrawEnable"] as boolean | undefined,
+        withdrawTag: network["withdrawTag"] as boolean | undefined,
       } as Network;
     });
     return {
