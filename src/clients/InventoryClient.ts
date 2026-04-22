@@ -715,19 +715,12 @@ export class InventoryClient {
     const { decimals: inputTokenDecimals } = this.getTokenInfo(inputToken, originChainId);
     const inputAmountInL1TokenDecimals = sdkUtils.ConvertDecimals(inputTokenDecimals, l1TokenDecimals)(inputAmount);
 
-    // Raw fill USD for the Binance capacity check below. `undefined` if no price cached.
-    // `isQuicklyRebalanced` applies `cexRebalanceBuffer` internally on the Binance branch only.
-    const priceUsd = this.l1TokenPricesUsd.get(l1Token.toNative());
-    const fillUsd = isDefined(priceUsd)
-      ? inputAmountInL1TokenDecimals.mul(priceUsd).div(BigNumber.from(10).pow(l1TokenDecimals))
-      : undefined;
-
     // Short-circuit to origin when it's a fast-rebalance source and enabled for this token —
     // allocation state should not derail an origin repayment we can quickly drain. For the Binance
     // branch this requires a size-checked commitment; CCTP/OFT/hub origins match unconditionally.
     if (
       this._l1TokenEnabledForChain(l1Token, originChainId) &&
-      this.canFastRebalanceFill(originChainId, inputToken, fillUsd)
+      this.canFastRebalanceFill(originChainId, inputToken, l1Token, inputAmountInL1TokenDecimals, l1TokenDecimals)
     ) {
       return [originChainId];
     }
@@ -1895,13 +1888,15 @@ export class InventoryClient {
   /**
    * @notice Fill-level commit check: returns true when origin repayment can be drained quickly for THIS
    * fill size. CCTP/OFT/hub are unmetered and match unconditionally; Binance-route origins require a
-   * wired `binanceClient` and a defined `fillUsd` so we never silently skip quota gating on missing
-   * prices or when the exchange client isn't configured.
+   * wired `binanceClient` and a cached USD price for `l1Token`, so we never silently skip quota
+   * gating on missing prices or when the exchange client isn't configured.
    */
   private canFastRebalanceFill(
     repaymentChainId: number,
     repaymentToken: Address,
-    fillUsd: BigNumber | undefined
+    l1Token: EvmAddress,
+    inputAmountInL1TokenDecimals: BigNumber,
+    l1TokenDecimals: number
   ): boolean {
     const { chainId: hubChainId } = this.hubPoolClient;
     const originChainIsCctpEnabled =
@@ -1914,16 +1909,16 @@ export class InventoryClient {
     if (originChainIsCctpEnabled || originChainIsOFTEnabled || repaymentChainId === hubChainId) {
       return true;
     }
-    if (!isDefined(this.binanceClient) || !isDefined(fillUsd)) {
+    if (!isDefined(this.binanceClient)) {
       return false;
     }
-    try {
-      const l1Token = getInventoryEquivalentL1TokenAddress(repaymentToken, repaymentChainId, hubChainId);
-      const bufferedUsd = fillUsd.mul(this.cexRebalanceBuffer).div(fixedPointAdjustment);
-      return this.binanceClient.canWithdraw(bufferedUsd, repaymentChainId, l1Token);
-    } catch {
+    const priceUsd = this.l1TokenPricesUsd.get(l1Token.toNative());
+    if (!isDefined(priceUsd)) {
       return false;
     }
+    const fillUsd = inputAmountInL1TokenDecimals.mul(priceUsd).div(BigNumber.from(10).pow(l1TokenDecimals));
+    const bufferedUsd = fillUsd.mul(this.cexRebalanceBuffer).div(fixedPointAdjustment);
+    return this.binanceClient.canWithdraw(bufferedUsd, repaymentChainId, l1Token);
   }
 
   log(message: string, data?: AnyObject, level: DefaultLogLevels = "debug"): void {
