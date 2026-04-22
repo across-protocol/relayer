@@ -24,6 +24,7 @@ import {
   getBinanceWithdrawalType,
   isCompletedBinanceWithdrawal,
   getOutstandingBinanceDeposits,
+  isDefined,
 } from "../../utils";
 import { L1Token } from "../../interfaces";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
@@ -105,9 +106,26 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
       getBinanceWithdrawals(binanceApiClient, this.l1TokenInfo.symbol, fromTimestamp),
     ]);
     // Remove any deposits and withdrawals that are marked as related to a swap.
+    // Also filter deposits by sender address — the Binance deposit API doesn't expose
+    // the sender, so we read tx.from directly. Without this, operators with a shared
+    // Binance account across multiple relayers see every relayer's outstanding deposits
+    // attributed to each relayer individually. Only deposits on this adapter's L2
+    // network can be filtered (we lack providers for other networks), so we drop
+    // cross-network deposits here — getOutstandingBinanceDeposits() then computes
+    // per-(relayer, network) net outstanding.
     const depositHistory = await filterAsync(_depositHistory, async (deposit) => {
+      if (deposit.coin !== this.l1TokenInfo.symbol) {
+        return false;
+      }
+      if (deposit.network !== this.depositNetwork) {
+        return false;
+      }
       const depositType = await getBinanceDepositType(deposit);
-      return deposit.coin === this.l1TokenInfo.symbol && depositType !== BinanceTransactionType.SWAP;
+      if (depositType === BinanceTransactionType.SWAP) {
+        return false;
+      }
+      const tx = await this.l2Bridge.provider.getTransaction(deposit.txId);
+      return isDefined(tx) && compareAddressesSimple(tx.from, fromAddress.toNative());
     });
     const withdrawHistory = await filterAsync(_withdrawHistory, async (withdrawal) => {
       const withdrawalType = await getBinanceWithdrawalType(withdrawal);
