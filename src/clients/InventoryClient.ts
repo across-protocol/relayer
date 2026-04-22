@@ -1882,7 +1882,7 @@ export class InventoryClient {
     // slow-withdrawal chains like Arbitrum, Optimism, and Base.
     const { chainId: hubChainId } = this.hubPoolClient;
     try {
-      const l1Token = getInventoryEquivalentL1TokenAddress(repaymentToken,repaymentChainId, hubChainId);
+      const l1Token = getInventoryEquivalentL1TokenAddress(repaymentToken, repaymentChainId, hubChainId);
       return hasBinanceRoute(repaymentChainId, l1Token);
     } catch {
       return false;
