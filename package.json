@@ -28,7 +28,7 @@
     "@maticnetwork/maticjs-ethers": "^1.0.3",
     "@nktkas/hyperliquid": "^0.25.9",
     "@risk-labs/logger": "^1.3.11",
-    "@risk-labs/serverless-orchestration": "^1.1.0",
+    "@risk-labs/serverless-orchestration": "^1.2.0-alpha.0",
     "@solana-program/address-lookup-table": "^0.7.0",
     "@solana-program/compute-budget": "^0.8.0",
     "@solana/kit": "^5.4.0",
