@@ -13,7 +13,6 @@ import {
   fetchWithTimeout,
   postWithTimeout,
   isHttpError,
-  CHAIN_IDs,
 } from "../../utils";
 import { spreadEventWithBlockNumber } from "../../utils/EventUtils";
 import { FinalizerPromise, CrossChainMessage } from "../types";
@@ -26,16 +25,6 @@ import { calculateHubPoolStoreStorageSlot, getHubPoolStoreContract } from "../..
 import { stringifyThrownValue } from "../../utils/LogUtils";
 import { getSp1HeliosContractEVM } from "../../utils/HeliosUtils";
 import { getBlockFinder, getBlockForTimestamp } from "../../utils/BlockUtils";
-
-// A configuration parameter for the number of _blocks_ the finalizer should wait before attempting a keep-alive action.
-// @dev Blocks, and not timestamps, are used as the unit here since some chains (TRON) do not support historical eth_* RPC queries.
-// The default refresh interval is 60/3 * 60 * 6 = 6 hrs w/ block times of 3 secs.
-const HELIOS_REFRESH_INTERVAL: { [chainId: number]: number } = {
-  [CHAIN_IDs.TEMPO]: 43200, // 500ms
-  [CHAIN_IDs.HYPEREVM]: 21600, // 1s
-  [CHAIN_IDs.PLASMA]: 21600, // 1s
-  [CHAIN_IDs.MONAD]: 54000, // 400ms
-};
 
 // --- Helios Action Types ---
 type HeliosActionType = "UpdateAndExecute" | "ExecuteOnly" | "UpdateOnly";
@@ -81,16 +70,6 @@ export async function heliosL1toL2Finalizer(
   );
   const l1ChainId = hubPoolClient.chainId;
   const l2ChainId = l2SpokePoolClient.chainId;
-  // Before we do anything, we should check if the last executed root bundle on L1 had a pool rebalance leaf for the destination network.
-  // If it did not, then there is no need to run the helios finalizer.
-  if (!shouldFinalize(hubPoolClient, l2SpokePoolClient, l2ChainId)) {
-    logger.debug({
-      at: `Finalizer#heliosL1toL2Finalizer:${l2ChainId}`,
-      message: `No recently executed pool rebalance root for ${l2ChainId}. Skipping finalization procedure.`,
-    });
-    return { callData: [], crossChainMessages: [] };
-  }
-
   const sp1HeliosL2 = await getSp1HeliosContractEVM(l2SpokePoolClient.spokePool, l2SpokePoolClient.spokePool.signer);
   const { sp1HeliosHead, sp1HeliosHeader } = await getSp1HeliosHeadData(sp1HeliosL2);
   const sp1HeliosVkey: string = await sp1HeliosL2.heliosProgramVkey();
@@ -135,6 +114,17 @@ export async function heliosL1toL2Finalizer(
     return { callData: [], crossChainMessages: [] };
   }
 
+  // Do not submit any transactions if we have no pool rebalance root to execute on the l2 chain ID or if we are not attempting a keep-alive action.
+  if (
+    !shouldFinalize(hubPoolClient, l2SpokePoolClient, l2ChainId) &&
+    actions.every((action) => action.type === "UpdateAndExecute")
+  ) {
+    logger.debug({
+      at: `Finalizer#heliosL1toL2Finalizer:${l2ChainId}`,
+      message: `No recently executed pool rebalance root for ${l2ChainId}. Skipping finalization procedure.`,
+    });
+    return { callData: [], crossChainMessages: [] };
+  }
   // --- Step 3: Generate transactions from ready-to-submit actions ---
   return generateTxnsForHeliosActions(logger, readyActions, l1ChainId, l2ChainId, l2SpokePoolClient, sp1HeliosL2);
 }
@@ -150,18 +140,9 @@ function shouldFinalize(hubPoolClient: HubPoolClient, l2SpokePoolClient: SpokePo
     if (executedLeaves.some((leaf) => leaf.chainId === l2ChainId)) {
       return true;
     }
+    return false;
   }
-
-  // If the L2 has not had a leaf execution in 6 hours, then we should also finalize.
-  assert(isEVMSpokePoolClient(l2SpokePoolClient), "shouldFinalize requires an EVM spoke pool client");
-  const l2Executions = l2SpokePoolClient.getRelayerRefundExecutions();
-  const latestL2Execution = l2Executions[l2Executions.length - 1];
-  if (!latestL2Execution) {
-    return true;
-  }
-  const currentBlock = l2SpokePoolClient.latestHeightSearched;
-  const blocksSinceLastExecution = currentBlock - latestL2Execution.blockNumber;
-  return blocksSinceLastExecution > (HELIOS_REFRESH_INTERVAL[l2ChainId] ?? 7200); // Default to lowest case @ 3s/block (6hrs).
+  return true;
 }
 
 // ==================================
