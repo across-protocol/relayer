@@ -39,6 +39,7 @@ import {
   max,
   getLatestRunningBalances,
   getInventoryBalanceContributorTokens,
+  dedupArray,
 } from "../utils";
 import { BundleDataApproxClient, BundleDataState } from "./BundleDataApproxClient";
 import { HubPoolClient, TokenClient, TransactionClient } from ".";
@@ -528,13 +529,8 @@ export class InventoryClient {
     }
 
     if (this.isInventoryManagementEnabled()) {
-      // @dev Because the `deposit` is a for an input token that have already filtered then we shouldn't expect
-      // to see any undefined return values from `getL1TokenAddress()`.
-      const l1Token = this.getL1TokenAddress(inputToken, originChainId);
-      assert(
-        isDefined(l1Token),
-        `InventoryClient#getPossibleRepaymentChainIds: No L1 token found for input token ${inputToken.toNative()} on origin chain ${originChainId}`
-      );
+      // @dev Because the `deposit` is for an input token that has already been filtered, this mapping should exist.
+      const l1Token = this.getRequiredL1TokenAddress(inputToken, originChainId);
       this.getSlowWithdrawalRepaymentChains(l1Token).forEach((chainId) => {
         if (this.hubPoolClient.l2TokenEnabledForL1Token(l1Token, chainId)) {
           chainIds.add(chainId);
@@ -564,6 +560,15 @@ export class InventoryClient {
     } catch {
       return undefined;
     }
+  }
+
+  private getRequiredL1TokenAddress(originToken: Address, originChainId: number): EvmAddress {
+    const l1Token = this.getL1TokenAddress(originToken, originChainId);
+    assert(
+      isDefined(l1Token),
+      `InventoryClient#getRequiredL1TokenAddress: No L1 token found for origin token ${originToken.toNative()} on origin chain ${originChainId}`
+    );
+    return l1Token;
   }
 
   /**
@@ -624,21 +629,13 @@ export class InventoryClient {
     return this.hubPoolClient.l2TokenEnabledForL1TokenAtBlock(l1Token, deposit.destinationChainId, hubPoolBlock);
   }
 
-  /*
-   * Return all eligible repayment chains for a deposit. If inventory management is enabled, then this function will
-   * only choose chains where the post-relay balance allocation for a potential repayment chain is under the maximum
-   * allowed allocation on that chain. Origin, Destination, and HubChains are always evaluated as potential
-   * repayment chains in addition to  "Slow Withdrawal chains" such as Base, Optimism and Arbitrum for which
-   * taking repayment would reduce HubPool utilization. Post-relay allocation percentages take into
-   * account pending cross-chain inventory-management transfers, upcoming bundle refunds, token shortfalls
-   * needed to cover other unfilled deposits in addition to current token balances. Slow withdrawal chains are only
-   * selected if the SpokePool's running balance for that chain is over the system's desired target.
-   * @dev The HubChain is always evaluated as a fallback option if the inventory management is enabled and all other
-   * chains are over-allocated, unless the origin chain is a lite chain, in which case
-   * there is no fallback if the origin chain is not an eligible repayment chain.
-   * @dev If the origin chain is a lite chain, then only the origin chain is evaluated as a potential repayment chain.
-   * @dev If inventory management is disabled, then destinationChain is used as a default unless the
-   * originChain is a lite chain, then originChain is the default used.
+  /**
+   * @notice Return eligible repayment chains for a deposit.
+   * @dev This function implements a four-stage pipeline for determining eligible repayment chains:
+   * - possibleChains: the authoritative superset from getPossibleRepaymentChainIds(deposit)
+   * - candidateChains: possibleChains minus chains that should not be allocation-evaluated
+   * - rankedChains: candidateChains ordered by current repayment priority rules
+   * - eligibleChains: rankedChains that pass the allocation check
    * @param deposit Deposit to determine repayment chains for.
    * @returns list of chain IDs that are possible repayment chains for the deposit, sorted from highest
    * to lowest priority.
@@ -670,22 +667,18 @@ export class InventoryClient {
 
     // Check if origin chain repayment is forced by protocol rules or config overrides
     const forceOriginRepayment = this.shouldForceOriginRepayment(deposit);
+    const originQuickRebalance = this.isQuicklyRebalanced(originChainId, inputToken);
 
     // If the deposit forces origin chain repayment but the origin chain is one we can easily rebalance inventory from,
     // then don't ignore this deposit based on perceived over-allocation. For example, the hub chain and chains connected
     // to the user's Binance API are easy to move inventory from so we should never skip filling these deposits.
-    if (forceOriginRepayment && this.isQuicklyRebalanced(originChainId, inputToken)) {
+    if (forceOriginRepayment && originQuickRebalance) {
       return [originChainId];
     }
 
-    // @dev This getL1TokenAddress() should never return undefined because we call `validateOutputToken()` first, which would return
-    // false if the input token and origin chain weren't mapped to an L1 token.
-    const l1Token = this.getL1TokenAddress(inputToken, originChainId);
-    if (!isDefined(l1Token)) {
-      throw new Error(
-        `InventoryClient#determineRefundChainId: No L1 token found for input token ${inputToken} on origin chain ${originChainId}`
-      );
-    }
+    // @dev This mapping should exist because `validateOutputToken()` would already have returned false if the
+    // input token and origin chain were not mapped to an L1 token.
+    const l1Token = this.getRequiredL1TokenAddress(inputToken, originChainId);
 
     // If we have defined an override repayment chain in inventory config and we do not need to take origin chain repayment,
     // then short-circuit this check.
@@ -700,93 +693,64 @@ export class InventoryClient {
     const { decimals: l1TokenDecimals } = this.getTokenInfo(l1Token, this.hubPoolClient.chainId);
     const { decimals: inputTokenDecimals } = this.getTokenInfo(inputToken, originChainId);
     const inputAmountInL1TokenDecimals = sdkUtils.ConvertDecimals(inputTokenDecimals, l1TokenDecimals)(inputAmount);
+    const totalRefundsPerChain: { [chainId: number]: BigNumber } = Object.fromEntries(
+      this.chainIdList.map((chainId) => [chainId, this.getUpcomingRefunds(chainId, l1Token, this.relayer)])
+    );
+    const destinationTokensAreEquivalent = this.hubPoolClient.areTokensEquivalent(
+      inputToken,
+      originChainId,
+      outputToken,
+      destinationChainId
+    );
+    // To correctly compute destination-chain allocation, add upcoming refunds for all equivalents of this L1 token.
+    const cumulativeVirtualBalancePostRefunds = this.getCumulativeBalanceWithApproximateUpcomingRefunds(l1Token);
 
-    // Consider any upcoming refunds.
-    const totalRefundsPerChain: { [chainId: number]: BigNumber } = {};
-    for (const chainId of this.chainIdList) {
-      const refundAmount = this.getUpcomingRefunds(chainId, l1Token, this.relayer);
-      totalRefundsPerChain[chainId] = refundAmount;
-    }
+    // Build the refund-chain pipeline from the public superset used by the relayer for LP fee precomputation.
+    const possibleChains = this.getPossibleRepaymentChainIds(deposit);
+    const prioritizeOrigin = deposit.toLiteChain || originQuickRebalance;
+    const slowWithdrawalRepaymentChains = this.getSlowWithdrawalRepaymentChains(l1Token);
+    const slowWithdrawalRepaymentChainSet = new Set(slowWithdrawalRepaymentChains);
 
-    // @dev: The following async call to `getExcessRunningBalancePcts` should be very fast compared to the above
-    // getBundleRefunds async call. Therefore, we choose not to compute them in parallel.
+    // @dev The async call to `getExcessRunningBalancePcts` should be very fast compared to upcoming refund lookups,
+    // so we choose not to compute them in parallel.
+    const excessRunningBalancePcts =
+      !forceOriginRepayment && this.prioritizeLpUtilization
+        ? await this.getExcessRunningBalancePcts(l1Token, inputAmountInL1TokenDecimals, slowWithdrawalRepaymentChains)
+        : {};
 
-    // Build list of chains we want to evaluate for repayment:
-    const chainsToEvaluate: number[] = [];
-    // Add optimistic rollups to front of evaluation list because these are chains with long withdrawal periods
-    // that we want to prioritize taking repayment on if the chain is going to end up sending funds back to the
-    // hub in the next root bundle over the slow canonical bridge.
-    // We need to calculate the latest running balance for each optimistic rollup chain.
-    // We'll add the last proposed running balance plus new deposits and refunds.
-    if (!forceOriginRepayment && this.prioritizeLpUtilization) {
-      const excessRunningBalancePcts = await this.getExcessRunningBalancePcts(
-        l1Token,
-        inputAmountInL1TokenDecimals,
-        this.getSlowWithdrawalRepaymentChains(l1Token)
+    const slowWithdrawalCandidateChains = possibleChains
+      .filter(
+        (chainId) =>
+          slowWithdrawalRepaymentChainSet.has(chainId) && (excessRunningBalancePcts[chainId] ?? bnZero).gt(bnZero)
+      )
+      .sort((chainIdx, chainIdy) =>
+        bnComparatorDescending(excessRunningBalancePcts[chainIdx], excessRunningBalancePcts[chainIdy])
       );
-      // Sort chains by highest excess percentage over the spoke target, so we can prioritize
-      // taking repayment on chains with the most excess balance.
-      const chainsWithExcessSpokeBalances = Object.entries(excessRunningBalancePcts)
-        .filter(([, pct]) => pct.gt(0))
-        .sort(([, pctx], [, pcty]) => bnComparatorDescending(pctx, pcty))
-        .map(([chainId]) => Number(chainId));
-      chainsToEvaluate.push(...chainsWithExcessSpokeBalances);
-    }
-    // Add origin chain to take higher priority than destination chain if the destination chain
-    // is a lite chain, which should allow the relayer to take more repayments away from the lite chain. Because
-    // lite chain deposits force repayment on origin, we end up taking lots of repayment on the lite chain so
-    // we should take repayment away from the lite chain where possible.
-    // We also want to prioritize taking repayment on the origin chain if it is a quick rebalance source.
-    if (
-      (deposit.toLiteChain || this.isQuicklyRebalanced(originChainId, inputToken)) &&
-      !chainsToEvaluate.includes(originChainId) &&
-      this._l1TokenEnabledForChain(l1Token, Number(originChainId))
-    ) {
-      chainsToEvaluate.push(originChainId);
-    }
-    // Add destination and origin chain if they are not already added.
-    // Prioritize destination chain repayment over origin chain repayment but prefer both over
-    // hub chain repayment if they are under allocated. We don't include hub chain
-    // since its the fallback chain if both destination and origin chain are over allocated.
-    // If destination chain is hub chain, we still want to evaluate it before the origin chain.
-    if (
-      this.canTakeDestinationChainRepayment(deposit) &&
-      !chainsToEvaluate.includes(destinationChainId) &&
-      this._l1TokenEnabledForChain(l1Token, Number(destinationChainId))
-    ) {
-      chainsToEvaluate.push(destinationChainId);
-    }
-    if (
-      !chainsToEvaluate.includes(originChainId) &&
-      originChainId !== hubChainId &&
-      this._l1TokenEnabledForChain(l1Token, Number(originChainId))
-    ) {
-      chainsToEvaluate.push(originChainId);
-    }
 
-    // Sanity check that the possible chains used to pre-compute LP fees by the relayer are a subset of the
-    // chains that are actually eligible for repayment.
-    const possibleRepaymentChainIds = this.getPossibleRepaymentChainIds(deposit);
-    if (chainsToEvaluate.some((_chain) => !possibleRepaymentChainIds.includes(_chain))) {
-      throw new Error(
-        `InventoryClient.getPossibleRepaymentChainIds (${possibleRepaymentChainIds})and determineRefundChainId (${chainsToEvaluate}) disagree on eligible repayment chains`
-      );
-    }
-    const eligibleRefundChains: number[] = [];
-    // At this point, all chains to evaluate have defined token configs and are sorted in order of
-    // highest priority to take repayment on, assuming the chain is under-allocated.
-    for (const chainId of chainsToEvaluate) {
+    const standardChainOrder = prioritizeOrigin
+      ? [originChainId, destinationChainId]
+      : [destinationChainId, originChainId];
+    const canEvaluateOrigin =
+      this._l1TokenEnabledForChain(l1Token, originChainId) && (prioritizeOrigin || originChainId !== hubChainId);
+    const canEvaluateDestination =
+      this.canTakeDestinationChainRepayment(deposit) && this._l1TokenEnabledForChain(l1Token, destinationChainId);
+    const standardCandidateChains = [...standardChainOrder].filter((chainId) =>
+      chainId === originChainId ? canEvaluateOrigin : canEvaluateDestination
+    );
+    const rankedChains = dedupArray([...slowWithdrawalCandidateChains, ...standardCandidateChains]);
+
+    const eligibleChains: number[] = [];
+    // At this point, all ranked chains have defined token configs or are destination chains that can be accepted
+    // without config, and are ordered from highest to lowest repayment priority.
+    for (const chainId of rankedChains) {
       assert(this._l1TokenEnabledForChain(l1Token, chainId), `Token ${l1Token} not enabled for chain ${chainId}`);
 
-      // Destination chain:
-      let repaymentToken = this.getRemoteTokenForL1Token(l1Token, chainId);
+      const repaymentToken = chainId === originChainId ? inputToken : this.getRemoteTokenForL1Token(l1Token, chainId);
       if (chainId !== originChainId) {
         assert(
           this.hubPoolClient.l2TokenHasPoolRebalanceRoute(repaymentToken, chainId),
           `Token ${repaymentToken} not enabled as PoolRebalanceRoute for chain ${chainId} for l1 token ${l1Token}`
         );
-      } else {
-        repaymentToken = inputToken;
       }
       const { decimals: l2TokenDecimals } = this.getTokenInfo(repaymentToken, chainId);
       const chainShortfall = sdkUtils.ConvertDecimals(
@@ -795,25 +759,11 @@ export class InventoryClient {
       )(this.tokenClient.getShortfallTotalRequirement(chainId, repaymentToken));
       const chainVirtualBalance = this.getBalanceOnChain(chainId, l1Token, repaymentToken);
       const chainVirtualBalanceWithShortfall = chainVirtualBalance.sub(chainShortfall);
-      // @dev Do not subtract outputAmount from virtual balance if output token and input token are not equivalent.
-      // This is possible when the output token is USDC.e and the input token is USDC which would still cause
-      // validateOutputToken() to return true above.
-      let chainVirtualBalanceWithShortfallPostRelay =
-        chainId === destinationChainId &&
-        this.hubPoolClient.areTokensEquivalent(inputToken, originChainId, outputToken, destinationChainId)
-          ? chainVirtualBalanceWithShortfall
-          : chainVirtualBalanceWithShortfall.add(inputAmountInL1TokenDecimals);
-
-      // Add upcoming refunds:
-      chainVirtualBalanceWithShortfallPostRelay = chainVirtualBalanceWithShortfallPostRelay.add(
-        totalRefundsPerChain[chainId] ?? bnZero
-      );
-      // To correctly compute the allocation % for this destination chain, we need to add all upcoming refunds for the
-      // equivalents of l1Token on all chains.
-      const cumulativeVirtualBalancePostRefunds = this.getCumulativeBalanceWithApproximateUpcomingRefunds(l1Token);
-
-      // Compute what the balance will be on the target chain, considering this relay and the finalization of the
-      // transfers that are currently flowing through the canonical bridge.
+      const inputAmountAddedPostRelay =
+        chainId === destinationChainId && destinationTokensAreEquivalent ? bnZero : inputAmountInL1TokenDecimals;
+      const chainVirtualBalanceWithShortfallPostRelay = chainVirtualBalanceWithShortfall
+        .add(inputAmountAddedPostRelay)
+        .add(totalRefundsPerChain[chainId] ?? bnZero);
       const expectedPostRelayAllocation = chainVirtualBalanceWithShortfallPostRelay
         .mul(this.scalar)
         .div(cumulativeVirtualBalancePostRefunds);
@@ -831,7 +781,7 @@ export class InventoryClient {
             at: "InventoryClient#determineRefundChainId",
             message: `Will consider to take repayment on ${repaymentChain} as destination chain.`,
           });
-          eligibleRefundChains.push(chainId);
+          eligibleChains.push(chainId);
         }
         continue;
       }
@@ -863,11 +813,11 @@ export class InventoryClient {
           targetOverage: formatUnits(targetOverageBuffer, 18),
           effectiveTargetPct: formatUnits(effectiveTargetPct, 18),
           expectedPostRelayAllocation,
-          chainsToEvaluate,
+          rankedChains,
         }
       );
       if (expectedPostRelayAllocation.lte(effectiveTargetPct)) {
-        eligibleRefundChains.push(chainId);
+        eligibleChains.push(chainId);
       }
     }
 
@@ -875,21 +825,21 @@ export class InventoryClient {
     // chain, and the origin chain is not an eligible repayment chain, then we shouldn't fill this deposit otherwise
     // the filler will be forced to be over-allocated on the origin chain, which could be very difficult to withdraw
     // funds from.
-    // @dev The RHS of this conditional is essentially true if eligibleRefundChains does NOT deep equal [originChainId].
-    if (forceOriginRepayment && (eligibleRefundChains.length !== 1 || !eligibleRefundChains.includes(originChainId))) {
+    // @dev The RHS of this conditional is essentially true if eligibleChains does NOT deep equal [originChainId].
+    if (forceOriginRepayment && (eligibleChains.length !== 1 || !eligibleChains.includes(originChainId))) {
       return [];
     }
 
     // Conditionally add the origin chain as a fallback option if the relayer has a fast rebalance route.
-    if (!eligibleRefundChains.includes(originChainId) && this.isQuicklyRebalanced(originChainId, inputToken)) {
-      eligibleRefundChains.push(originChainId);
+    if (!eligibleChains.includes(originChainId) && originQuickRebalance) {
+      eligibleChains.push(originChainId);
     }
 
     // Always add hubChain as a fallback option if inventory management is enabled and origin chain is not a lite chain.
-    if (!forceOriginRepayment && !eligibleRefundChains.includes(hubChainId)) {
-      eligibleRefundChains.push(hubChainId);
+    if (!forceOriginRepayment && !eligibleChains.includes(hubChainId)) {
+      eligibleChains.push(hubChainId);
     }
-    return eligibleRefundChains;
+    return eligibleChains;
   }
 
   /**
