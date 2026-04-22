@@ -290,7 +290,7 @@ describe("swapOnBinance script helpers", function () {
         binanceCoin: "USDC",
         contractAddress: resolveAcrossToken("USDC", CHAIN_IDs.BASE)!,
       }),
-      minFreeBalance: 149.25,
+      expectedFilledAmount: 149.25,
       pollDelayMs: 0,
     });
 
