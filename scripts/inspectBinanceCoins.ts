@@ -1,11 +1,18 @@
+/*
+Usage example:
+
+yarn ts-node ./scripts/inspectBinanceCoins.ts \
+  --coin ETH,USDC,USDT,TRX,POL \
+  --json
+
+Provide Binance credentials through the standard repo auth inputs for your environment.
+If your Binance secret is GCKMS-backed, run the script under with-gcp-auth.
+*/
+
 import minimist from "minimist";
-import { getBinanceApiClient, getAccountCoins, type BinanceApi } from "../src/utils/BinanceUtils";
+import { getBinanceApiClient, getAccountCoins } from "../src/utils/BinanceUtils";
 
 type ParsedArgs = minimist.ParsedArgs;
-
-type BinanceApiWithAccountCoins = BinanceApi & {
-  accountCoins(): Promise<Record<string, RawCoin>>;
-};
 
 type Coin = {
   symbol: string;
@@ -21,26 +28,6 @@ type Coin = {
     withdrawEnable?: boolean;
     withdrawTag?: boolean;
   }>;
-};
-
-type RawNetwork = {
-  network?: string;
-  coin?: string;
-  name?: string;
-  depositEnable?: boolean;
-  withdrawEnable?: boolean;
-  contractAddress?: string;
-  withdrawFee?: string;
-  withdrawMin?: string;
-  withdrawMax?: string;
-  [key: string]: unknown;
-};
-
-type RawCoin = {
-  coin: string;
-  free?: string;
-  networkList?: RawNetwork[];
-  [key: string]: unknown;
 };
 
 type InspectOutput = {
@@ -73,17 +60,15 @@ async function run(): Promise<void> {
   }
 
   const api = await getBinanceApiClient(process.env["BINANCE_API_BASE"]);
-  const rawApi = api as unknown as BinanceApiWithAccountCoins;
-  const [rawCoinsByKey, parsedCoins] = await Promise.all([rawApi.accountCoins(), getAccountCoins(api)]);
-  const rawCoins = Object.values(rawCoinsByKey);
+  const parsedCoins = await getAccountCoins(api);
 
   const selectedSymbols = args.allCoins ? undefined : new Set(resolveFlagValues(args.coin, DEFAULT_COINS));
-  const selectedCoins = rawCoins
-    .filter((coin) => selectedSymbols === undefined || selectedSymbols.has(coin.coin.toUpperCase()))
-    .sort((a, b) => a.coin.localeCompare(b.coin));
+  const selectedCoins = parsedCoins
+    .filter((coin) => selectedSymbols === undefined || selectedSymbols.has(coin.symbol.toUpperCase()))
+    .sort((a, b) => a.symbol.localeCompare(b.symbol));
 
   const distinctNetworkLabels = Array.from(
-    new Set(rawCoins.flatMap((coin) => (coin.networkList ?? []).map((network) => String(network.network ?? ""))))
+    new Set(parsedCoins.flatMap((coin) => coin.networkList.map((network) => network.name)))
   )
     .filter((label) => label.length > 0)
     .sort();
@@ -98,22 +83,21 @@ async function run(): Promise<void> {
 
   const output: InspectOutput = {
     generatedAt: new Date().toISOString(),
-    totalCoins: rawCoins.length,
+    totalCoins: parsedCoins.length,
     distinctNetworkLabels,
-    selectedCoins: selectedCoins.map((rawCoin) => {
-      const parsedCoin = parsedCoins.find((coin) => coin.symbol === rawCoin.coin);
+    selectedCoins: selectedCoins.map((coin) => {
       return {
-        coin: rawCoin.coin,
-        balance: parsedCoin?.balance ?? rawCoin.free ?? "0",
-        networks: (rawCoin.networkList ?? [])
+        coin: coin.symbol,
+        balance: coin.balance,
+        networks: coin.networkList
           .map((network) => ({
-            name: String(network.network ?? ""),
+            name: network.name,
             depositEnable: network.depositEnable,
             withdrawEnable: network.withdrawEnable,
-            contractAddress: stringifyOptional(network.contractAddress),
-            withdrawFee: stringifyOptional(network.withdrawFee),
-            withdrawMin: stringifyOptional(network.withdrawMin),
-            withdrawMax: stringifyOptional(network.withdrawMax),
+            contractAddress: network.contractAddress,
+            withdrawFee: network.withdrawFee,
+            withdrawMin: network.withdrawMin,
+            withdrawMax: network.withdrawMax,
           }))
           .sort((a, b) => a.name.localeCompare(b.name)),
       };
@@ -188,7 +172,12 @@ function printHumanReadable(output: InspectOutput, parsedCoins: Coin[]): void {
 
   console.log("");
   console.log("== Known Binance Coin Symbols ==");
-  console.log(parsedCoins.map((coin) => coin.symbol).sort().join(", "));
+  console.log(
+    parsedCoins
+      .map((coin) => coin.symbol)
+      .sort()
+      .join(", ")
+  );
 }
 
 function boolToWord(value: boolean | undefined): string {
@@ -201,13 +190,9 @@ function boolToWord(value: boolean | undefined): string {
   return "unknown";
 }
 
-function stringifyOptional(value: unknown): string | undefined {
-  return value === undefined || value === null ? undefined : String(value);
-}
-
 function printHelp(): void {
   console.log(`Usage:
-  yarn tsx ./scripts/inspectBinanceCoins.ts [options] --binanceSecretKey <gckms-key>
+  yarn ts-node ./scripts/inspectBinanceCoins.ts [options]
 
 Options:
   --coin, -c       Repeatable or comma-separated Binance coin symbols to inspect.
@@ -217,10 +202,11 @@ Options:
   --help, -h       Show this help text.
 
 Notes:
-  - This script loads /Users/nicholaspai/UMA/relayer-v2/.env automatically.
-  - If you use a GCKMS-backed secret such as binance-nick-test, run it under with-gcp-auth.
+  - This script loads the repo .env automatically.
+  - Provide Binance credentials through the standard repo auth inputs for your environment.
+  - If your Binance secret is GCKMS-backed, run it under with-gcp-auth.
   - Example:
-      GCP_PROJECT_ID='keys-across-3291' with-gcp-auth yarn tsx ./scripts/inspectBinanceCoins.ts --coin ETH,USDC,USDT,TRX,POL --json --binanceSecretKey binance-nick-test`);
+      yarn ts-node ./scripts/inspectBinanceCoins.ts --coin ETH,USDC,USDT,TRX,POL --json`);
 }
 
 if (require.main === module) {
