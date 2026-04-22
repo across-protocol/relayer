@@ -1,4 +1,3 @@
-// eslint-disable-next-line n/no-extraneous-import -- express is a transitive dependency from @uma/serverless-orchestration
 import express, { Request, Response } from "express";
 import { CCTPService } from "./services/cctpService";
 import { winston } from "../utils";
