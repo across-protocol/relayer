@@ -23,6 +23,7 @@ import {
   mapAsync,
   parseUnits,
   postWithTimeout,
+  retryAsync,
   submitTransaction,
   Signer,
   toAddressType,
@@ -260,24 +261,41 @@ export class Refiller {
         const nativeSymbolForChain = getNativeTokenSymbol(chainId);
         // To send a raw transaction, we need to create a fake Contract instance at the recipient address and
         // set the method param to be an empty string.
-        const sendRawTransactionContract = new Contract(
-          account.toEvmAddress(),
-          [],
-          this.baseSigner.connect(l2Provider)
-        );
-        const txn = await (
-          await submitTransaction(
-            {
-              contract: sendRawTransactionContract,
-              method: "",
-              args: [],
-              value: deficit,
-              ensureConfirmation: true,
-              chainId,
-            },
-            this.transactionClient
-          )
-        ).wait();
+        let txn;
+        if (chainHasNativeToken(chainId)) {
+          const sendRawTransactionContract = new Contract(
+            account.toEvmAddress(),
+            [],
+            this.baseSigner.connect(l2Provider)
+          );
+          txn = await (
+            await submitTransaction(
+              {
+                contract: sendRawTransactionContract,
+                method: "",
+                args: [],
+                value: deficit,
+                ensureConfirmation: true,
+                chainId,
+              },
+              this.transactionClient
+            )
+          ).wait();
+        } else {
+          const sendTokenContract = new Contract(token.toEvmAddress(), ERC20_ABI, this.baseSigner.connect(l2Provider));
+          txn = await (
+            await submitTransaction(
+              {
+                contract: sendTokenContract,
+                method: "transfer",
+                args: [account.toEvmAddress(), deficit],
+                ensureConfirmation: true,
+                chainId,
+              },
+              this.transactionClient
+            )
+          ).wait();
+        }
         this.logger.info({
           at: "Refiller#refillBalances",
           message: `Reloaded ${formatUnits(deficit, decimals)} ${nativeSymbolForChain} for ${account} from ${
@@ -452,9 +470,16 @@ export class Refiller {
     if (isDefined(addressIdCache)) {
       addressId = addressIdCache;
     } else {
-      const registeredAddresses = await fetchWithTimeout<{
-        items: { chain: string; token: string; address_hex: string; id: string }[];
-      }>(`${nativeMarketsApiUrl}/addresses`, {}, headers);
+      const registeredAddresses = await retryAsync(
+        fetchWithTimeout<{
+          items: { chain: string; token: string; address_hex: string; id: string }[];
+        }>,
+        3,
+        1,
+        `${nativeMarketsApiUrl}/addresses`,
+        {},
+        headers
+      );
       addressId = registeredAddresses.items.find(
         ({ chain, token, address_hex }) =>
           chain === "hyper_evm" && token === "usdh" && address_hex === this.baseSignerAddress.toNative()
@@ -494,7 +519,10 @@ export class Refiller {
       source_address?: TransferRouteAddress;
       destination_address: TransferRouteAddress;
     }
-    const transferRoutes = await fetchWithTimeout<{ items: TransferRoute[] }>(
+    const transferRoutes = await retryAsync(
+      fetchWithTimeout<{ items: TransferRoute[] }>,
+      3,
+      1,
       `${nativeMarketsApiUrl}/transfer_routes`,
       {},
       headers
@@ -522,7 +550,7 @@ export class Refiller {
         address: this.baseSignerAddress,
         addressId,
       });
-      availableTransferRoute = await postWithTimeout(
+      availableTransferRoute = await postWithTimeout<TransferRoute>(
         `${nativeMarketsApiUrl}/transfer_routes`,
         newTransferRouteData,
         {},
