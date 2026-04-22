@@ -75,6 +75,11 @@ export class BinanceClient {
     );
   }
 
+  // Chain-level readiness: is there any withdrawal quota left for this loop?
+  hasAvailableQuota(): boolean {
+    return isDefined(this.remainingQuotaUsd) && this.remainingQuotaUsd.gt(bnZero);
+  }
+
   private static async getBinanceSecretKey(): Promise<string | undefined> {
     BinanceClient.binanceSecretKeyPromise ??= BinanceClient.retrieveBinanceSecretKeyFromCLIArgs();
     return BinanceClient.binanceSecretKeyPromise;

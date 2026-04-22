@@ -1935,8 +1935,13 @@ export class InventoryClient {
     }
     try {
       const l1Token = getInventoryEquivalentL1TokenAddress(repaymentToken, repaymentChainId, hubChainId);
-      const bufferedUsd = isDefined(fillUsd) ? fillUsd.mul(this.cexRebalanceBuffer).div(fixedPointAdjustment) : bnZero;
-      return this.binanceClient.canWithdraw(bufferedUsd, repaymentChainId, l1Token);
+      // Fill-level gate when `fillUsd` is provided (caller wants size-aware capacity check); chain-level
+      // "any quota" when omitted (structural query, e.g. slow-withdrawal filtering).
+      if (isDefined(fillUsd)) {
+        const bufferedUsd = fillUsd.mul(this.cexRebalanceBuffer).div(fixedPointAdjustment);
+        return this.binanceClient.canWithdraw(bufferedUsd, repaymentChainId, l1Token);
+      }
+      return hasBinanceRoute(repaymentChainId, l1Token) && this.binanceClient.hasAvailableQuota();
     } catch {
       return false;
     }
