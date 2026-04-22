@@ -1,14 +1,10 @@
-import Binance, {
-  HttpMethod,
-  DepositHistoryResponse,
-  WithdrawHistoryResponse,
-  type Binance as BinanceApi,
-} from "binance-api-node";
+import Binance, { DepositHistoryResponse, WithdrawHistoryResponse, type Binance as BinanceApi } from "binance-api-node";
+export type { BinanceApi };
 import minimist from "minimist";
 import { getGckmsConfig, retrieveGckmsKeys, isDefined, assert, delay, CHAIN_IDs, getRedisCache, truncate } from "./";
 
 // Store global promises on Gckms key retrieval actions so that we don't retrieve the same key multiple times.
-let binanceSecretKeyPromise = undefined;
+let binanceSecretKeyPromise: Promise<string | undefined> | undefined = undefined;
 
 // Known transient errors the Binance API returns. If a response is one of these errors, then the API call should be retried.
 const KNOWN_BINANCE_ERROR_REASONS = [
@@ -17,7 +13,7 @@ const KNOWN_BINANCE_ERROR_REASONS = [
   "TypeError: fetch failed",
 ];
 
-type WithdrawalQuota = {
+export type WithdrawalQuota = {
   wdQuota: number;
   usedWdQuota: number;
 };
@@ -78,8 +74,45 @@ export type BinanceWithdrawal = Omit<BinanceDeposit, "insertTime"> & {
   applyTime: string;
 };
 
+export enum BINANCE_WITHDRAWAL_STATUS {
+  EMAIL_SENT = 0,
+  CANCELLED = 1,
+  AWAITING_APPROVAL = 2,
+  REJECTED = 3,
+  PROCESSING = 4,
+  FAILURE = 5,
+  COMPLETED = 6,
+}
+
+export function resolveBinanceCoinSymbol(token: string): string {
+  switch (token) {
+    case "WETH":
+      return "ETH";
+    case "ZKUSDCE":
+      return "USDC";
+    default:
+      return token;
+  }
+}
+
 // ParsedAccountCoins represents a simplified return type of the Binance `accountCoins` endpoint.
 type ParsedAccountCoins = Coin[];
+
+/**
+ * @notice Synchronous check that mirrors the inputs `getBinanceApiClient()` requires: a Binance API key
+ * plus either an HMAC secret in the environment or a `--binanceSecretKey` CLI arg indicating GCKMS-backed
+ * secret retrieval. This is best-effort — it cannot confirm that GCKMS retrieval will actually succeed,
+ * nor that Binance is reachable at runtime — but it avoids false positives where only one credential is
+ * present. Used by inventory/repayment logic to gate "Binance route available" claims without making the
+ * check async.
+ */
+export function binanceCredentialsConfigured(): boolean {
+  const { BINANCE_API_KEY: apiKey, BINANCE_HMAC_KEY: hmacKey } = process.env;
+  const gckmsKeyArgPresent = process.argv.some(
+    (arg) => arg === "--binanceSecretKey" || arg.startsWith("--binanceSecretKey=")
+  );
+  return isDefined(apiKey) && (isDefined(hmacKey) || gckmsKeyArgPresent);
+}
 
 /**
  * Returns an API client to interface with Binance
@@ -123,20 +156,6 @@ async function retrieveBinanceSecretKeyFromCLIArgs(): Promise<string | undefined
     return undefined;
   }
   return binanceKeys[0].slice(2);
-}
-
-/**
- * Retrieves the input client account's withdrawal quota.
- * @dev This is in a utility function since the Binance API does not natively support calling this endpoint.
- * @returns an object with two fields: `wdQuota` and `usedWdQuota`, corresponding to the total amount
- * available to rebalance per day and the amount already used.
- */
-export async function getBinanceWithdrawalLimits(binanceApi: BinanceApi): Promise<WithdrawalQuota> {
-  const unparsedQuota = await binanceApi.privateRequest("GET" as HttpMethod, "/sapi/v1/capital/withdraw/quota", {});
-  return {
-    wdQuota: unparsedQuota["wdQuota"],
-    usedWdQuota: unparsedQuota["usedWdQuota"],
-  };
 }
 
 export enum BinanceTransactionType {
@@ -229,6 +248,10 @@ export async function getBinanceWithdrawalType(
   }
 }
 
+export function isCompletedBinanceWithdrawal(status?: number): boolean {
+  return status === BINANCE_WITHDRAWAL_STATUS.COMPLETED;
+}
+
 /**
  * Gets all binance deposits for the Binance account starting from `startTime`-present.
  * @returns An array of parsed binance deposits.
@@ -254,7 +277,7 @@ export async function getBinanceDeposits(
   return Object.values(depositHistory).map((deposit) => {
     return {
       amount: Number(deposit.amount),
-      coin: deposit.coin,
+      coin: resolveBinanceCoinSymbol(deposit.coin),
       network: deposit.network,
       txId: deposit.txId,
       status: deposit.status,
@@ -276,7 +299,7 @@ export async function getBinanceWithdrawals(
 ): Promise<BinanceWithdrawal[]> {
   let withdrawHistory: WithdrawHistoryResponse;
   try {
-    withdrawHistory = await binanceApi.withdrawHistory({ coin, startTime });
+    withdrawHistory = await binanceApi.withdrawHistory({ coin: resolveBinanceCoinSymbol(coin), startTime });
   } catch (_err) {
     const err = _err.toString();
     if (KNOWN_BINANCE_ERROR_REASONS.some((errorReason) => err.includes(errorReason)) && nRetries < maxRetries) {
@@ -291,7 +314,7 @@ export async function getBinanceWithdrawals(
       amount: Number(withdrawal.amount),
       transactionFee: Number(withdrawal.transactionFee),
       recipient: withdrawal.address,
-      coin,
+      coin: resolveBinanceCoinSymbol(coin),
       id: withdrawal.id,
       txId: withdrawal.txId,
       network: withdrawal.network,
@@ -307,12 +330,15 @@ export async function getBinanceWithdrawals(
  * @returns A typed `AccountCoins` response.
  */
 export async function getAccountCoins(binanceApi: BinanceApi): Promise<ParsedAccountCoins> {
-  const coins = Object.values(await binanceApi["accountCoins"]());
+  // accountCoins is an undocumented Binance API method not present in binance-api-node type defs.
+  type RawCoin = { coin: string; free: string; networkList?: Record<string, unknown>[] };
+  const apiWithCoins = binanceApi as BinanceApi & { accountCoins(): Promise<Record<string, RawCoin>> };
+  const coins = Object.values(await apiWithCoins.accountCoins());
   return coins.map((coin) => {
-    const networkList = coin["networkList"]?.map((network) => {
+    const networkList = coin.networkList?.map((network) => {
       return {
         name: network["network"],
-        coin: network["coin"],
+        coin: resolveBinanceCoinSymbol(network["coin"] as string),
         withdrawMin: network["withdrawMin"],
         withdrawMax: network["withdrawMax"],
         withdrawFee: network["withdrawFee"],
@@ -320,8 +346,8 @@ export async function getAccountCoins(binanceApi: BinanceApi): Promise<ParsedAcc
       } as Network;
     });
     return {
-      symbol: coin["coin"],
-      balance: coin["free"],
+      symbol: coin.coin,
+      balance: coin.free,
       networkList,
     } as Coin;
   });

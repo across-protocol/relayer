@@ -4,9 +4,10 @@ import {
   CHAIN_IDs,
   getNativeTokenAddressForChain,
   isDefined,
-  TOKEN_SYMBOLS_MAP,
+  resolveAcrossToken,
   Address,
   toAddressType,
+  parseJson,
 } from "../utils";
 
 // Set modes to true that you want to enable in the AcrossMonitor bot.
@@ -104,19 +105,18 @@ export class MonitorConfig extends CommonConfig {
     this.whitelistedRelayers = parseAddressesOptional(WHITELISTED_RELAYERS);
     this.monitoredRelayers = parseAddressesOptional(MONITORED_RELAYERS);
     this.knownV1Addresses = parseAddressesOptional(KNOWN_V1_ADDRESSES);
-    this.monitoredSpokePoolChains = JSON.parse(MONITORED_SPOKE_POOL_CHAINS ?? "[]");
-    this.monitoredTokenSymbols = JSON.parse(MONITORED_TOKEN_SYMBOLS ?? "[]");
+    this.monitoredSpokePoolChains = parseJson.numberArray(MONITORED_SPOKE_POOL_CHAINS);
+    this.monitoredTokenSymbols = parseJson.stringArray(MONITORED_TOKEN_SYMBOLS);
     this.bundlesCount = Number(BUNDLES_COUNT ?? 4);
-    this.additionalL1NonLpTokens = JSON.parse(MONITOR_REPORT_NON_LP_TOKENS ?? "[]").map((token) => {
-      if (TOKEN_SYMBOLS_MAP[token]?.addresses?.[CHAIN_IDs.MAINNET]) {
-        return TOKEN_SYMBOLS_MAP[token]?.addresses?.[CHAIN_IDs.MAINNET];
-      }
-    });
+    this.additionalL1NonLpTokens = parseJson
+      .stringArray(MONITOR_REPORT_NON_LP_TOKENS)
+      .map((token) => resolveAcrossToken(token, CHAIN_IDs.MAINNET))
+      .filter(isDefined);
 
     this.binanceWithdrawWarnThreshold = Number(BINANCE_WITHDRAW_WARN_THRESHOLD ?? 1);
     this.binanceWithdrawAlertThreshold = Number(BINANCE_WITHDRAW_ALERT_THRESHOLD ?? 1);
 
-    this.hyperliquidTokens = JSON.parse(HYPERLIQUID_SUPPORTED_TOKENS ?? '["USDC", "USDT0", "USDH"]');
+    this.hyperliquidTokens = parseJson.stringArray(HYPERLIQUID_SUPPORTED_TOKENS ?? '["USDC", "USDT0", "USDH"]');
     this.hyperliquidOrderMaximumLifetime = Number(HYPERLIQUID_ORDER_MAXIMUM_LIFETIME ?? -1);
 
     // Default pool utilization threshold at 90%.
@@ -135,7 +135,20 @@ export class MonitorConfig extends CommonConfig {
 
     if (MONITORED_BALANCES) {
       this.monitoredBalances = JSON.parse(MONITORED_BALANCES).map(
-        ({ errorThreshold, warnThreshold, account, token, chainId }) => {
+        ({
+          errorThreshold,
+          warnThreshold,
+          account,
+          token,
+          chainId: _chainId,
+        }: {
+          errorThreshold?: string;
+          warnThreshold?: string;
+          account: string;
+          token?: string;
+          chainId: string;
+        }) => {
+          const chainId = parseInt(_chainId);
           if (!isDefined(errorThreshold) && !isDefined(warnThreshold)) {
             throw new Error("Must provide either an errorThreshold or a warnThreshold");
           }
@@ -162,7 +175,7 @@ export class MonitorConfig extends CommonConfig {
             errorThreshold: parsedErrorThreshold,
             warnThreshold: parsedWarnThreshold,
             account: toAddressType(account, chainId),
-            chainId: parseInt(chainId),
+            chainId,
           };
         }
       );
@@ -183,8 +196,10 @@ export class MonitorConfig extends CommonConfig {
 }
 
 const parseAddressesOptional = (addressJson?: string): Address[] => {
-  const rawAddresses: string[] = addressJson ? JSON.parse(addressJson) : [];
-  return rawAddresses.map((address) => {
+  if (!addressJson) {
+    return [];
+  }
+  return parseJson.stringArray(addressJson).map((address) => {
     const chainId = address.startsWith("0x") ? CHAIN_IDs.MAINNET : CHAIN_IDs.SOLANA;
     return toAddressType(address, chainId);
   });

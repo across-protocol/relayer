@@ -8,15 +8,16 @@ import {
   updateClients,
   updateSpokePoolClients,
 } from "../common";
-import { Signer, getArweaveJWKSigner } from "../utils";
+import { Signer, getArweaveJWKSigner, getRedisCache } from "../utils";
 import { BundleDataClient, HubPoolClient } from "../clients";
 import { getBlockForChain } from "./DataworkerUtils";
 import { Dataworker } from "./Dataworker";
 import { ProposedRootBundle, SpokePoolClientsByChain } from "../interfaces";
-import { caching } from "@across-protocol/sdk";
+import { caching, interfaces } from "@across-protocol/sdk";
 
 export interface DataworkerClients extends Clients {
   bundleDataClient: BundleDataClient;
+  arweaveTopicCache?: interfaces.CachingMechanismInterface;
 }
 
 export async function constructDataworkerClients(
@@ -36,6 +37,17 @@ export async function constructDataworkerClients(
   await updateClients(commonClients, config, logger);
   await hubPoolClient.update();
 
+  let arweaveTopicCache: interfaces.CachingMechanismInterface | undefined;
+  try {
+    arweaveTopicCache = await getRedisCache(logger);
+  } catch (error) {
+    logger.debug({
+      at: "DataworkerClientHelper#constructDataworkerClients",
+      message: "Failed to initialize Arweave topic cache, continuing without Redis topic caching",
+      error: String(error),
+    });
+  }
+
   // TODO: Remove need to pass in spokePoolClients into BundleDataClient since we pass in empty {} here and pass in
   // clients for each class level call we make. Its more of a static class.
   const bundleDataClient = new BundleDataClient(
@@ -43,7 +55,8 @@ export async function constructDataworkerClients(
     commonClients,
     {},
     configStoreClient.getChainIdIndicesForBlock(),
-    config.blockRangeEndBlockBuffer
+    config.blockRangeEndBlockBuffer,
+    arweaveTopicCache
   );
 
   // Define the Arweave client. We need to use a read-write signer for the
@@ -52,15 +65,14 @@ export async function constructDataworkerClients(
   const arweaveClient = new caching.ArweaveClient(
     getArweaveJWKSigner({ keyType: config.persistingBundleData ? "read-write" : "read-only" }),
     logger,
-    config.arweaveGateway?.url,
-    config.arweaveGateway?.protocol,
-    config.arweaveGateway?.port
+    config.arweaveGateways
   );
 
   return {
     ...commonClients,
     bundleDataClient,
     arweaveClient,
+    arweaveTopicCache,
   };
 }
 

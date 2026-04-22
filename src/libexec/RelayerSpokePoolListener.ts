@@ -1,24 +1,19 @@
 import assert from "assert";
 import minimist from "minimist";
 import { Contract, utils as ethersUtils } from "ethers";
-import { BaseError, Block, createPublicClient, http, Log as viemLog, webSocket } from "viem";
 import * as utils from "../../scripts/utils";
+import { EventListener } from "../clients";
 import {
   disconnectRedisClients,
-  EventManager,
   exit,
   isDefined,
   getBlockForTimestamp,
   getChainQuorum,
   getDeploymentBlockNumber,
   getNetworkName,
-  getNodeUrlList,
-  getOriginFromURL,
   getProvider,
-  getProviderHeaders,
   getSpokePool,
   getRedisCache,
-  getViemChain,
   Logger,
   Provider,
   winston,
@@ -32,46 +27,10 @@ const { NODE_SUCCESS, NODE_APP_ERR } = utils;
 const PROGRAM = "RelayerSpokePoolListener";
 const abortController = new AbortController();
 
-let providers: ReturnType<typeof resolveProviders>;
 let spokePool: Contract;
 let logger: winston.Logger;
 let chainId: number;
 let chain: string;
-
-// Teach BigInt how to be represented as JSON.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-(BigInt.prototype as any).toJSON = function () {
-  return this.toString();
-};
-
-/**
- * Instantiate websocket providers.
- * @param chainId Chain ID of network.
- * @param quorum Minimum number of providers required.
- * @returns An array of websocket providers.
- */
-function resolveProviders(chainId: number, quorum = 1) {
-  const protocol = process.env[`RPC_PROVIDERS_TRANSPORT_${chainId}`] ?? "wss";
-  assert(protocol === "wss" || protocol === "https");
-
-  const urls = Object.values(getNodeUrlList(chainId, quorum, protocol));
-  const nProviders = urls.length;
-  assert(nProviders >= quorum, `Insufficient providers for ${chain} (minimum ${quorum} required by quorum)`);
-
-  const viemChain = getViemChain(chainId);
-  const providers = Object.entries(urls).map(([provider, url]) => {
-    const headers = getProviderHeaders(provider, chainId);
-    const transport = protocol === "wss" ? webSocket(url) : http(url, { fetchOptions: { headers } });
-
-    return createPublicClient({
-      chain: viemChain,
-      transport,
-      name: getOriginFromURL(url),
-    });
-  });
-
-  return providers;
-}
 
 /**
  * Aggregate utils/scrapeEvents for a series of event names.
@@ -116,85 +75,6 @@ async function scrapeEvents(
 }
 
 /**
- * Setup a newHeads subscription.
- * @param eventMgr Event Manager instance.
- * @returns void
- */
-function subNewHeads(): void {
-  const at = `${PROGRAM}::newHeads`;
-
-  // On each new block, submit any "finalised" events.
-  const newBlock = (block: Block, provider: string) => {
-    // Transient error that sometimes occurs in production. Catch it here and try to flush out the provider.
-    if (!block) {
-      logger.debug({ at, message: `Received empty ${chain} block from ${provider}.` });
-      return;
-    }
-    const [blockNumber, currentTime] = [parseInt(block.number.toString()), parseInt(block.timestamp.toString())];
-    if (!postBlock(blockNumber, currentTime)) {
-      abortController.abort();
-    }
-  };
-
-  const blockError = (error: Error, provider: string) => {
-    const message = `Caught ${chain} provider error.`;
-    const { message: errorMessage, details, shortMessage, metaMessages } = error as BaseError;
-    logger.debug({ at, message, errorMessage, shortMessage, provider, details, metaMessages });
-  };
-
-  const [provider] = providers;
-  provider.watchBlocks({
-    emitOnBegin: true,
-    onBlock: (block: Block) => newBlock(block, provider.name),
-    onError: (error: Error) => blockError(error, provider.name),
-  });
-}
-
-/**
- * Given a SpokePool contract instance and an array of event names, subscribe to all future event emissions.
- * Periodically transmit received events to the parent process (if defined).
- * @param eventMgr Ethers Contract instance.
- * @param spokePool ethers SpokePool contract instances.
- * @param eventName The name of the event to be filtered.
- * @returns void
- */
-function subEvents(eventMgr: EventManager, spokePool: Contract, eventNames: string[]): void {
-  const abi = JSON.parse(spokePool.interface.format(ethersUtils.FormatTypes.json) as string);
-
-  providers.forEach((provider) => {
-    eventNames.forEach((eventName) => {
-      provider.watchContractEvent({
-        address: spokePool.address as `0x${string}`,
-        abi,
-        eventName,
-        onLogs: (logs: viemLog[]) =>
-          logs.forEach((log) => {
-            const event = {
-              ...log,
-              args: log["args"],
-              blockNumber: Number(log.blockNumber),
-              event: log["eventName"],
-              topics: [], // Not supplied by viem, but not actually used by the relayer.
-            };
-            if (log.removed) {
-              eventMgr.remove(event, provider.name);
-              removeEvent(event);
-              return;
-            }
-
-            const hasQuorum = eventMgr.add(event, provider.name);
-            if (hasQuorum) {
-              if (!postEvents([event])) {
-                abortController.abort();
-              }
-            }
-          }),
-      });
-    });
-  });
-}
-
-/**
  * Main entry point.
  */
 async function run(argv: string[]): Promise<void> {
@@ -222,7 +102,7 @@ async function run(argv: string[]): Promise<void> {
   chain = getNetworkName(chainId);
 
   const quorumProvider = await getProvider(chainId);
-  const blockFinder = undefined;
+  const blockFinder: undefined = undefined;
   const cache = await getRedisCache();
   const latestBlock = await quorumProvider.getBlock("latest");
 
@@ -287,13 +167,25 @@ async function run(argv: string[]): Promise<void> {
 
   // Events to listen for.
   const events = ["FundsDeposited", "FilledRelay"];
-  const eventMgr = new EventManager(logger, chainId, quorum);
-  providers = resolveProviders(chainId, quorum);
+  const signatures = events.map((event) => spokePool.interface.getEvent(event).format(ethersUtils.FormatTypes.full));
 
   logger.debug({ at, message: `Starting ${chain} listener.`, events, opts });
 
-  subNewHeads();
-  subEvents(eventMgr, spokePool, events);
+  const listener = new EventListener(chainId, logger, quorum);
+  listener.onBlock((blockNumber, currentTime) => {
+    if (!postBlock(blockNumber, currentTime)) {
+      abortController.abort();
+    }
+  });
+  listener.onEvents(spokePoolAddr, signatures, (log) => {
+    if (log.removed) {
+      removeEvent(log);
+      return;
+    }
+    if (!postEvents([log])) {
+      abortController.abort();
+    }
+  });
 
   return new Promise((resolve) => abortController.signal.addEventListener("abort", () => resolve()));
 }

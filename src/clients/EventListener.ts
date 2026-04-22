@@ -96,14 +96,14 @@ export class EventListener extends EventEmitter {
       this.on(event.name, handler);
 
       providers.forEach((provider) => {
-        const onLogs = (logs: viemLog[]) => {
+        const onLogs = (logs: (viemLog & { args: unknown; eventName: string })[]) => {
           logs.forEach((log) => {
             const event = {
               ...log,
-              args: log["args"],
+              args: log.args,
               blockNumber: Number(log.blockNumber),
-              event: log["eventName"],
-              topics: [], // Not supplied by viem, but not actually used by the relayer.
+              event: log.eventName,
+              topics: Array<string>(), // Not supplied by viem, but not actually used by the relayer.
             };
 
             if (log.removed) {
@@ -118,11 +118,20 @@ export class EventListener extends EventEmitter {
           });
         };
 
-        provider.watchEvent({
-          address: address as `0x${string}`,
-          event,
-          onLogs,
-        });
+        const onError = (error: Error) => {
+          const { message: errorMessage, details, shortMessage, metaMessages } = error as BaseError;
+          this.logger.warn({
+            at: "EventListener::onEvents",
+            message: `Caught ${this.chain} ${event.name} provider error.`,
+            errorMessage,
+            shortMessage,
+            provider: provider.name,
+            details,
+            metaMessages,
+          });
+        };
+
+        provider.watchEvent({ address: address as `0x${string}`, event, onLogs, onError });
       });
     });
   }

@@ -40,7 +40,6 @@ import SCROLL_GAS_PRICE_ORACLE_ABI from "./abi/ScrollGasPriceOracle.json";
 import IOFT_ABI_FULL from "./abi/IOFT.json";
 import HYPERLIQUID_DEPOSIT_HANDLER_ABI from "./abi/HyperliquidDepositHandler.json";
 import SPOKE_POOL_PERIPHERY_ABI from "./abi/SpokePoolPeriphery.json";
-import COUNTERFACTUAL_DEPOSIT_FACTORY_ABI from "./abi/CounterfactualDepositFactory.json";
 import PERMIT2_ABI from "./abi/Permit2.json";
 export { IOFT_ABI_FULL };
 import HUB_POOL_STORE_ABI from "./abi/HubPoolStore.json";
@@ -65,6 +64,14 @@ export const CONTRACT_ADDRESSES: {
     },
     zkStackSharedBridge: {
       address: "0x8829AD80E425C646DAB305381ff105169FeEcE56",
+      abi: ZKSTACK_SHARED_BRIDGE_ABI,
+    },
+    // The L1Nullifier is the contract that actually verifies withdrawal proofs and processes
+    // finalizeDeposit calls. The L1AssetRouter (aka zkStackSharedBridge) forwards to it, but
+    // its own finalizeDeposit has a different signature, so withdrawal finalizations must be
+    // sent directly to the L1Nullifier.
+    zkStackL1Nullifier: {
+      address: "0xD7f9f54194C633F36CCD5F3da84ad4a1c38cB2cB",
       abi: ZKSTACK_SHARED_BRIDGE_ABI,
     },
     zkStackBridgeHub: {
@@ -248,13 +255,6 @@ export const CONTRACT_ADDRESSES: {
     },
     spokePoolPeriphery: {
       abi: SPOKE_POOL_PERIPHERY_ABI,
-    },
-    counterfactualDepositFactory: {
-      address: "0x20e67fBE0150B498048709306cc7729d382F1fB1",
-      abi: COUNTERFACTUAL_DEPOSIT_FACTORY_ABI,
-    },
-    counterfactualDeposit: {
-      address: "0xfb090c119c838CeD214F962F931d5fa38b111E46",
     },
     permit2: {
       address: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
@@ -495,13 +495,6 @@ export const CONTRACT_ADDRESSES: {
     spokePoolPeriphery: {
       abi: SPOKE_POOL_PERIPHERY_ABI,
     },
-    counterfactualDepositFactory: {
-      address: "0x20e67fBE0150B498048709306cc7729d382F1fB1",
-      abi: COUNTERFACTUAL_DEPOSIT_FACTORY_ABI,
-    },
-    counterfactualDeposit: {
-      address: "0xfb090c119c838CeD214F962F931d5fa38b111E46",
-    },
     sponsoredCCTPDstPeriphery: {
       address: "0xd9dc78b969e9efb1e54b625c33a21aaf2509e6a1",
       abi: SPONSORED_CCTP_DST_PERIPHERY_ABI,
@@ -601,13 +594,6 @@ export const CONTRACT_ADDRESSES: {
     spokePoolPeriphery: {
       abi: SPOKE_POOL_PERIPHERY_ABI,
     },
-    counterfactualDepositFactory: {
-      address: "0x20e67fBE0150B498048709306cc7729d382F1fB1",
-      abi: COUNTERFACTUAL_DEPOSIT_FACTORY_ABI,
-    },
-    counterfactualDeposit: {
-      address: "0xfb090c119c838CeD214F962F931d5fa38b111E46",
-    },
     permit2: {
       address: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
       abi: PERMIT2_ABI,
@@ -660,6 +646,15 @@ export const CONTRACT_ADDRESSES: {
       address: "0x0000000000000000000000000000000000000000",
     },
   },
+  [CHAIN_IDs.TRON]: {
+    spokePoolPeriphery: {
+      abi: SPOKE_POOL_PERIPHERY_ABI,
+    },
+    permit2: {
+      address: "0xBE365314f2E77FD1257d60C346Bb32DbDa369403",
+      abi: PERMIT2_ABI,
+    },
+  },
   [CHAIN_IDs.SCROLL]: {
     scrollGatewayRouter: {
       address: "0x4C0926FF5252A435FD19e10ED15e5a249Ba19d79",
@@ -681,6 +676,11 @@ export const CONTRACT_ADDRESSES: {
     },
     nativeToken: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
+    },
+  },
+  [CHAIN_IDs.TEMPO]: {
+    nativeToken: {
+      address: "0x20C0000000000000000000000000000000000000",
     },
   },
   // Testnets
@@ -762,6 +762,12 @@ export const CONTRACT_ADDRESSES: {
       address: "0xfD3130Ea0e8B7Dd61Ac3663328a66d97eb02f84b",
       abi: ZKSTACK_SHARED_BRIDGE_ABI,
     },
+    // The L1Nullifier is where withdrawal finalizations (finalizeDeposit) must be sent; see
+    // mainnet note above.
+    zkStackL1Nullifier: {
+      address: "0x6f03861D12E6401623854E494BeAcD66BC46e6F0",
+      abi: ZKSTACK_SHARED_BRIDGE_ABI,
+    },
     zkStackNativeTokenVault: {
       address: "0x257CE1e946c9C6531E2C9deBF7fcf821F9467f73",
       abi: ZKSTACK_NATIVE_TOKEN_VAULT_ABI,
@@ -823,6 +829,10 @@ export const CONTRACT_ADDRESSES: {
     cctpV2TokenMessenger: {
       address: "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
+    },
+    sponsoredCCTPDstPeriphery: {
+      address: "0xA2cBA9cFcD2427C1201df51c19422E043c5bDe7a",
+      abi: SPONSORED_CCTP_DST_PERIPHERY_ABI,
     },
     spokePoolPeriphery: {
       abi: SPOKE_POOL_PERIPHERY_ABI,

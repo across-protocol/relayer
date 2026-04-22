@@ -2,6 +2,7 @@ import { arch, utils as sdkUtils } from "@across-protocol/sdk";
 import winston from "winston";
 import {
   AcrossApiClient,
+  BinanceClient,
   EVMSpokePoolClient,
   SVMSpokePoolClient,
   HubPoolClient,
@@ -22,6 +23,7 @@ import {
 } from "../common";
 import { SpokePoolClientsByChain } from "../interfaces";
 import {
+  binanceCredentialsConfigured,
   chainIsEvm,
   getBlockForTimestamp,
   getCurrentTime,
@@ -61,7 +63,7 @@ async function indexedSpokePoolClient(
   const signer = baseSigner.connect(await getProvider(chainId));
   const spokePoolAddr = hubPoolClient.getSpokePoolForBlock(chainId);
 
-  const blockFinder = undefined;
+  const blockFinder: undefined = undefined;
   const redis = await getRedisCache(hubPoolClient.logger);
   const [activationBlock, from] = await Promise.all([
     resolveSpokePoolActivationBlock(chainId, hubPoolClient),
@@ -207,6 +209,17 @@ export async function constructRelayerClients(
 
   const rebalancerClient = await constructReadOnlyRebalancerClient(logger, baseSigner);
 
+  // Degrade to undefined on construction failure (e.g. GCKMS) so startup isn't blocked.
+  let binanceClient: BinanceClient | undefined;
+  try {
+    binanceClient = binanceCredentialsConfigured()
+      ? await BinanceClient.create({ logger, url: process.env.BINANCE_API_BASE })
+      : undefined;
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err);
+    logger.warn({ at: "RelayerClientHelper", message: "BinanceClient construction failed", error });
+  }
+
   const inventoryClient = new InventoryClient(
     signerAddr,
     logger,
@@ -219,7 +232,8 @@ export async function constructRelayerClients(
     rebalancerClient,
     !config.sendingTransactionsEnabled,
     undefined,
-    config.l1TokensOverride
+    config.l1TokensOverride,
+    binanceClient
   );
 
   const tryMulticallClient = new TryMulticallClient(logger, multiCallerClient.chunkSize, multiCallerClient.baseSigner);

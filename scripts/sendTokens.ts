@@ -17,7 +17,7 @@ const args = minimist(process.argv.slice(2), {
 });
 
 // Example run:
-// ts-node ./scripts/sendTokens.ts
+// tsx ./scripts/sendTokens.ts
 // \ --token 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48
 // \ --amount 350000000000 --to 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48
 // \ --chainId 1
@@ -25,7 +25,7 @@ const args = minimist(process.argv.slice(2), {
 // \ --keys bot1
 
 // Example run to clear up a stuck nonce with a maxFeePerGas of 1 Gwei and a maxPriorityFeePerGas of 2 Gwei
-// ts-node ./scripts/sendTokens.ts
+// tsx ./scripts/sendTokens.ts
 // \ --token 0x
 // \ --amount 0 --to <self-EOA>
 // \ --chainId 1868

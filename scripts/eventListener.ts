@@ -4,12 +4,6 @@ import { Log } from "../src/interfaces";
 import { EventListener } from "../src/clients";
 import { getDeployedContract, Logger as logger } from "../src/utils";
 
-// Teach BigInt how to be represented as JSON.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-(BigInt.prototype as any).toJSON = function () {
-  return this.toString();
-};
-
 async function run() {
   const chainId = 8453;
   const spokePool = getDeployedContract("SpokePool", chainId);

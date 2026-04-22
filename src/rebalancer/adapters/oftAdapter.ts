@@ -1,5 +1,6 @@
 import { RebalanceRoute } from "../utils/interfaces";
-import { BaseAdapter, STATUS } from "./baseAdapter";
+import { STATUS, OFT_PENDING_BRIDGE_REDIS_PREFIX } from "../utils/utils";
+import { BaseAdapter } from "./baseAdapter";
 import {
   bnZero,
   forEachAsync,
@@ -31,7 +32,7 @@ import {
 import { MultiCallerClient } from "../../clients";
 import { EVM_OFT_MESSENGERS, IOFT_ABI_FULL, OFT_DEFAULT_FEE_CAP, OFT_FEE_CAP_OVERRIDES } from "../../common";
 import { OFT_NO_EID, PRODUCTION_NETWORKS } from "@across-protocol/constants";
-import { OFT_PENDING_BRIDGE_REDIS_PREFIX } from "../utils/PendingBridgeRedis";
+
 export class OftAdapter extends BaseAdapter {
   REDIS_PREFIX = OFT_PENDING_BRIDGE_REDIS_PREFIX;
 
@@ -62,7 +63,7 @@ export class OftAdapter extends BaseAdapter {
       const connectedSigner = this.baseSigner.connect(await getProvider(chainId));
       if (EVM_OFT_MESSENGERS.get(TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET])?.has(chainId)) {
         const usdt = new Contract(this._getTokenInfo("USDT", chainId).address.toNative(), ERC20.abi, connectedSigner);
-        const oftMessenger = await this._getOftMessenger(chainId);
+        const oftMessenger = await this._getOftMessenger(chainId, chainId);
         const oftAllowance = await usdt.allowance(this.baseSignerAddress.toNative(), oftMessenger.address);
         if (oftAllowance.lt(toBN(MAX_SAFE_ALLOWANCE).div(2))) {
           this.multicallerClient.enqueueTransaction({
@@ -101,6 +102,7 @@ export class OftAdapter extends BaseAdapter {
       STATUS.PENDING_BRIDGE_PRE_DEPOSIT,
       rebalanceRoute,
       amountToTransfer,
+      this.baseSignerAddress,
       ttlOverride
     );
     return amountToTransfer;
@@ -108,7 +110,7 @@ export class OftAdapter extends BaseAdapter {
 
   async updateRebalanceStatuses(): Promise<void> {
     this._assertInitialized();
-    const pendingBridges = await this._redisGetPendingBridgesPreDeposit();
+    const pendingBridges = await this._redisGetPendingBridgesPreDeposit(this.baseSignerAddress);
     if (pendingBridges.length > 0) {
       this.logger.debug({
         at: "OftAdapter.updateRebalanceStatuses",
@@ -124,7 +126,7 @@ export class OftAdapter extends BaseAdapter {
           at: "OftAdapter.updateRebalanceStatuses",
           message: `Order cloid ${txnHash} has been finalized`,
         });
-        await this._redisDeleteOrder(txnHash, STATUS.PENDING_BRIDGE_PRE_DEPOSIT);
+        await this._redisDeleteOrder(txnHash, STATUS.PENDING_BRIDGE_PRE_DEPOSIT, this.baseSignerAddress);
       }
     }
   }
@@ -134,11 +136,11 @@ export class OftAdapter extends BaseAdapter {
     return;
   }
 
-  async getPendingRebalances(): Promise<{ [chainId: number]: { [token: string]: BigNumber } }> {
+  async getPendingRebalances(account: EvmAddress): Promise<{ [chainId: number]: { [token: string]: BigNumber } }> {
     this._assertInitialized();
     const pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
 
-    const pendingBridges = await this._redisGetPendingBridgesPreDeposit();
+    const pendingBridges = await this._redisGetPendingBridgesPreDeposit(account);
     if (pendingBridges.length > 0) {
       this.logger.debug({
         at: "OftAdapter.getPendingRebalances",
@@ -155,7 +157,7 @@ export class OftAdapter extends BaseAdapter {
         });
         continue;
       }
-      const pendingOrderDetails = await this._redisGetOrderDetails(txnHash);
+      const pendingOrderDetails = await this._redisGetOrderDetails(txnHash, account);
       const { destinationChain, amountToTransfer } = pendingOrderDetails;
       pendingRebalances[destinationChain] ??= {};
       pendingRebalances[destinationChain]["USDT"] = (pendingRebalances[destinationChain]?.["USDT"] ?? bnZero).add(
@@ -184,13 +186,14 @@ export class OftAdapter extends BaseAdapter {
   }
 
   async getPendingOrders(): Promise<string[]> {
-    return this._redisGetPendingBridgesPreDeposit();
+    return this._redisGetPendingBridgesPreDeposit(this.baseSignerAddress);
   }
 
-  protected async _getOftMessenger(chainId: number): Promise<Contract> {
+  protected async _getOftMessenger(chainId: number, destinationChainId: number): Promise<Contract> {
     const oftMessengerAddress = getMessengerEvm(
       EvmAddress.from(this._getTokenInfo("USDT", CHAIN_IDs.MAINNET).address.toNative()),
-      chainId
+      chainId,
+      destinationChainId
     );
     const originProvider = await getProvider(chainId);
     return new Contract(oftMessengerAddress.toNative(), IOFT_ABI_FULL, this.baseSigner.connect(originProvider));
@@ -205,7 +208,7 @@ export class OftAdapter extends BaseAdapter {
     sendParamStruct: SendParamStruct;
     oftMessenger: Contract;
   }> {
-    const oftMessenger = await this._getOftMessenger(originChain);
+    const oftMessenger = await this._getOftMessenger(originChain, destinationChain);
     const sharedDecimals = await oftMessenger.sharedDecimals();
 
     const roundedAmount = roundAmountToSend(
@@ -261,6 +264,7 @@ export class OftAdapter extends BaseAdapter {
       method: "send",
       unpermissioned: false,
       nonMulticall: true,
+      ensureConfirmation: true,
       args: [sendParamStruct, feeStruct, refundAddress],
       value: BigNumber.from(feeStruct.nativeFee),
       message: `🎰 Withdrew USDT0 from ${getNetworkName(originChain)} to ${getNetworkName(destinationChain)} via OFT`,

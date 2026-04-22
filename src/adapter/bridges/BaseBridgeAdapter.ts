@@ -12,7 +12,7 @@ import {
   getSpokePoolAddress,
 } from "../../utils";
 import { SortableEvent } from "../../interfaces";
-import { PendingBridgeAdapterName, PendingBridgeRedisReader } from "../../rebalancer/utils/PendingBridgeRedis";
+import { CctpOftReadOnlyClient, PendingBridgeAdapterName } from "../../rebalancer/clients/CctpOftReadOnlyClient";
 import { TransferTokenParams } from "../utils";
 
 export interface BridgeTransactionDetails {
@@ -34,7 +34,7 @@ export abstract class BaseBridgeAdapter {
   public gasToken: EvmAddress | undefined;
   protected readonly hubPoolAddress: EvmAddress;
   protected readonly spokePoolAddress: Address;
-  protected pendingBridgeRedisReader?: PendingBridgeRedisReader;
+  protected pendingBridgeRedisReader?: CctpOftReadOnlyClient;
 
   constructor(
     protected l2chainId: number,
@@ -68,7 +68,7 @@ export abstract class BaseBridgeAdapter {
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents>;
 
-  setPendingBridgeRedisReader(pendingBridgeRedisReader?: PendingBridgeRedisReader): void {
+  setPendingBridgeRedisReader(pendingBridgeRedisReader?: CctpOftReadOnlyClient): void {
     this.pendingBridgeRedisReader = pendingBridgeRedisReader;
   }
 
@@ -94,7 +94,12 @@ export abstract class BaseBridgeAdapter {
       return new Set();
     }
 
-    return this.pendingBridgeRedisReader.getPendingBridgeTxnRefsForRoute(adapter, sourceChain, destinationChain);
+    return this.pendingBridgeRedisReader.getPendingBridgeTxnRefsForRoute(
+      adapter,
+      sourceChain,
+      destinationChain,
+      EvmAddress.from(address.toNative())
+    );
   }
 
   protected resolveL2TokenAddress(l1Token: EvmAddress): string {

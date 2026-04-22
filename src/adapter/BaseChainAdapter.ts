@@ -36,13 +36,14 @@ import {
   EvmAddress,
   chainIsEvm,
   sendAndConfirmSolanaTransaction,
+  SolanaTransaction,
   getSvmProvider,
   submitTransaction,
   getTokenInfo,
   ConvertDecimals,
   toAddressType,
 } from "../utils";
-import { AugmentedTransaction, TransactionClient } from "../clients/TransactionClient";
+import { AugmentedTransaction, isAugmentedTransaction, TransactionClient } from "../clients/TransactionClient";
 import {
   approveTokens,
   getTokenAllowanceFromCache,
@@ -57,7 +58,7 @@ import { OutstandingTransfers } from "../interfaces";
 import WETH_ABI from "../common/abi/Weth.json";
 import { BaseL2BridgeAdapter } from "./l2Bridges/BaseL2BridgeAdapter";
 import { ExpandedERC20 } from "@across-protocol/sdk/typechain";
-import { PendingBridgeRedisReader } from "../rebalancer/utils/PendingBridgeRedis";
+import { CctpOftReadOnlyClient } from "../rebalancer/clients/CctpOftReadOnlyClient";
 
 export type SupportedL1Token = EvmAddress;
 export type SupportedTokenSymbol = string;
@@ -78,7 +79,7 @@ export class BaseChainAdapter {
     protected readonly bridges: { [l1Token: string]: BaseBridgeAdapter },
     protected readonly l2Bridges: { [l1Token: string]: BaseL2BridgeAdapter },
     protected readonly gasMultiplier: number,
-    protected readonly pendingBridgeRedisReader?: PendingBridgeRedisReader
+    protected readonly pendingBridgeRedisReader?: CctpOftReadOnlyClient
   ) {
     this.spokePoolManager = new SpokePoolManager(logger, spokePoolClients);
     this.baseL1SearchConfig = { ...this.getSearchConfig(this.hubChainId) };
@@ -289,7 +290,7 @@ export class BaseChainAdapter {
       this.log("No token bridge approvals needed", { l1Tokens: l1Tokens.map((token) => token.toNative()) });
       return;
     }
-    const mrkdwn = await approveTokens(tokensToApprove, this.chainId, this.hubChainId, this.logger);
+    const mrkdwn = await approveTokens(tokensToApprove, this.hubChainId, this.hubChainId, this.logger);
     this.log("Approved whitelisted tokens! 💰", { mrkdwn }, "info");
   }
 
@@ -332,13 +333,14 @@ export class BaseChainAdapter {
     }
     if (chainIsEvm(this.chainId)) {
       const multicallerClient = new MultiCallerClient(this.logger);
-      txnsToSend.forEach((txn) => multicallerClient.enqueueTransaction(txn));
+      txnsToSend.filter(isAugmentedTransaction).forEach((txn) => multicallerClient.enqueueTransaction(txn));
       const txnReceipts = await multicallerClient.executeTxnQueues(simMode, [this.chainId]);
       return txnReceipts[this.chainId];
     }
-    const txnSignatures = [];
-    for (const solanaTransaction of txnsToSend) {
-      txnSignatures.push(await sendAndConfirmSolanaTransaction(solanaTransaction, getSvmProvider()));
+    const txnSignatures: string[] = [];
+    const svmProvider = getSvmProvider();
+    for (const solanaTransaction of txnsToSend.filter((txn): txn is SolanaTransaction => !("contract" in txn))) {
+      txnSignatures.push(await sendAndConfirmSolanaTransaction(solanaTransaction, svmProvider));
     }
     return txnSignatures;
   }
@@ -366,17 +368,22 @@ export class BaseChainAdapter {
       getBlockForTimestamp(this.logger, this.hubChainId, getCurrentTime() - lookbackPeriodSeconds),
       getBlockForTimestamp(this.logger, this.chainId, getCurrentTime() - lookbackPeriodSeconds),
     ]);
-    const hubChainBlockRange = this.spokePoolManager.getClient(this.hubChainId).eventSearchConfig.maxLookBack;
+
+    const l1SpokePoolClient = this.spokePoolManager.getClient(this.hubChainId);
+    const hubChainBlockRange = l1SpokePoolClient.eventSearchConfig.maxLookBack;
+    const l1LatestBlock = l1SpokePoolClient.latestHeightSearched;
     const l1EventSearchConfig = {
       from: l1SearchFromBlock,
-      to: this.baseL1SearchConfig.to,
+      to: this.baseL1SearchConfig?.to ?? l1LatestBlock,
       maxLookBack: hubChainBlockRange,
     };
 
-    const spokeChainBlockRange = this.spokePoolManager.getClient(this.chainId).eventSearchConfig.maxLookBack;
+    const l2SpokePoolClient = this.spokePoolManager.getClient(this.chainId);
+    const spokeChainBlockRange = l2SpokePoolClient.eventSearchConfig.maxLookBack;
+    const l2LatestBlock = l2SpokePoolClient.latestHeightSearched;
     const l2EventSearchConfig = {
       from: l2SearchFromBlock,
-      to: this.baseL2SearchConfig.to,
+      to: this.baseL2SearchConfig?.to ?? l2LatestBlock,
       maxLookBack: spokeChainBlockRange,
     };
 
@@ -515,7 +522,7 @@ export class BaseChainAdapter {
     const message = `${formatFunc(toBN(value).toString())} ${nativeTokenSymbol} wrapped on target chain ${
       this.chainId
     }🎁`;
-    const augmentedTxn = { contract, chainId: this.chainId, method, args: [], value, mrkdwn, message };
+    const augmentedTxn = { contract, chainId: this.chainId, method, args: Array<unknown>(), value, mrkdwn, message };
     if (simMode) {
       const { succeed, reason } = (await this.transactionClient.simulate([augmentedTxn]))[0];
       this.log(

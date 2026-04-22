@@ -1,4 +1,4 @@
-import { BundleDataApproxClient } from "../clients";
+import { BinanceClient, BundleDataApproxClient } from "../clients";
 import { EXPECTED_L1_TO_L2_MESSAGE_TIME } from "../common";
 import {
   BundleAction,
@@ -21,6 +21,7 @@ import {
   blockExplorerLinks,
   formatUnits,
   getNativeTokenAddressForChain,
+  getNativeTokenInfoForChain,
   getNativeTokenSymbol,
   getNetworkName,
   getUnfilledDeposits,
@@ -41,11 +42,9 @@ import {
   toAddressType,
   Address,
   EvmAddress,
+  chainIsTvm,
   SvmAddress,
   assert,
-  getBinanceApiClient,
-  getBinanceWithdrawalLimits,
-  chainIsEvm,
   getSolanaTokenBalance,
   getFillStatusPda,
   getKitKeypairFromEvmSigner,
@@ -408,12 +407,12 @@ export class Monitor {
     const allL1Tokens = [...this.l1Tokens, ...this.additionalL1Tokens];
 
     // Fetch pending rebalances once for all relayers.
-    let pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
-    if (isDefined(this.clients.rebalancerClient)) {
-      pendingRebalances = await this.clients.rebalancerClient.getPendingRebalances();
-    }
 
     for (const relayer of relayers) {
+      let pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
+      if (isDefined(this.clients.rebalancerClient) && relayer.isEVM()) {
+        pendingRebalances = await this.clients.rebalancerClient.getPendingRebalances(relayer);
+      }
       // Pre-compute L2 tokens per (l1Token, chainId) and build a single batch of all balance requests
       // so we can fetch all balances in one parallel call instead of sequentially per chain.
       type L2TokenEntry = { l1Token: L1Token; chainId: number; l2Tokens: Address[] };
@@ -676,8 +675,8 @@ export class Monitor {
   }
 
   async checkBinanceWithdrawalLimits() {
-    const binanceApi = await getBinanceApiClient(process.env["BINANCE_API_BASE"]);
-    const wdQuota = await getBinanceWithdrawalLimits(binanceApi);
+    const client = await BinanceClient.create({ logger: this.logger, url: process.env.BINANCE_API_BASE });
+    const wdQuota = await client.getWithdrawalLimits();
     const aboveWarnThreshold =
       isDefined(this.monitorConfig.binanceWithdrawWarnThreshold) &&
       wdQuota.usedWdQuota / wdQuota.wdQuota > this.monitorConfig.binanceWithdrawWarnThreshold;
@@ -1187,7 +1186,7 @@ export class Monitor {
                 await new Contract(token.toEvmAddress(), ERC20.abi, spokePoolClient.spokePool.provider).balanceOf(
                   account.toEvmAddress(),
                   {
-                    blockTag: spokePoolClient.latestHeightSearched,
+                    blockTag: chainIsTvm(chainId) ? "latest" : spokePoolClient.latestHeightSearched,
                   }
                 );
           this.balanceCache[chainId] ??= {};
@@ -1215,8 +1214,8 @@ export class Monitor {
       decimalrequests.map(async ({ chainId, token }) => {
         const gasTokenAddressForChain = getNativeTokenAddressForChain(chainId);
         if (token.eq(gasTokenAddressForChain)) {
-          return chainIsEvm(chainId) ? 18 : 9;
-        } // Assume all EVM chains have 18 decimal native tokens.
+          return getNativeTokenInfoForChain(chainId).decimals;
+        }
         if (this.decimals[chainId]?.[token.toBytes32()]) {
           return this.decimals[chainId][token.toBytes32()];
         }
