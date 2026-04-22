@@ -12,12 +12,12 @@ import {
   expect,
   fillV3Relay,
   getDefaultBlockRange,
+  getLastBlockTime,
   randomAddress,
   smock,
 } from "./utils";
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
 import {
-  getCurrentTime,
   toBNWei,
   ZERO_ADDRESS,
   bnZero,
@@ -41,6 +41,7 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
   let hubPoolClient: HubPoolClient, configStoreClient: ConfigStoreClient;
   let dataworkerInstance: Dataworker;
   let spokePoolClients: { [chainId: number]: SpokePoolClient };
+  let currentTime: number;
 
   let spy: sinon.SinonSpy;
 
@@ -63,6 +64,7 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
       updateAllClients,
     } = await setupDataworker(ethers, 25, 25, 0));
     await updateAllClients();
+    currentTime = await getLastBlockTime(spokePoolClient_1.spokePool.provider);
   });
 
   describe("Tests with real events", function () {
@@ -165,8 +167,8 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
         inputAmount: eventOverride?.inputAmount ?? undefined,
         outputToken: toAddressType(eventOverride?.outputToken ?? erc20_2.address, destinationChainId),
         message: eventOverride?.message ?? "0x",
-        quoteTimestamp: eventOverride?.quoteTimestamp ?? getCurrentTime() - 10,
-        fillDeadline: eventOverride?.fillDeadline ?? getCurrentTime() + 14400,
+        quoteTimestamp: eventOverride?.quoteTimestamp ?? currentTime - 10,
+        fillDeadline: eventOverride?.fillDeadline ?? currentTime + 14400,
         destinationChainId,
         blockNumber: eventOverride?.blockNumber ?? spokePoolClient_1.latestHeightSearched, // @dev use latest block searched from non-mocked client
         // so that mocked client's latestHeightSearched gets set to the same value.

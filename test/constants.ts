@@ -58,12 +58,12 @@ export const defaultTokenConfig = JSON.stringify({
 // updates for config variables like MAX_REFUND_COUNT_FOR_RELAYER_REPAYMENT_LEAF.
 export const CHAIN_ID_TEST_LIST = [originChainId, destinationChainId, repaymentChainId, 1];
 export const DEFAULT_BLOCK_RANGE_FOR_CHAIN = [
-  // For each chain ID in above list, default range is set super high so as to contain all events in a test
-  // in the straightforward test cases.
-  [0, 1_000_000],
-  [0, 1_000_000],
-  [0, 1_000_000],
-  [0, 1_000_000],
+  // For each chain ID in above list, default range is set very high so a full hardhat test run still
+  // contains later events after the shared chain height advances well beyond the early-suite block range.
+  [0, 100_000_000],
+  [0, 100_000_000],
+  [0, 100_000_000],
+  [0, 100_000_000],
 ];
 
 export const IMPOSSIBLE_BLOCK_RANGE = DEFAULT_BLOCK_RANGE_FOR_CHAIN.map((range) => [range[1], range[1]]);
