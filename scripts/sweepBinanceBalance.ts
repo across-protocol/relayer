@@ -30,6 +30,7 @@ import {
   resolveBinanceCoinSymbol,
   toAddressType,
   truncate,
+  readableBinanceWithdrawalStatus,
 } from "../src/utils";
 import {
   BinanceSwapVenue,
@@ -136,7 +137,7 @@ async function run(): Promise<void> {
     onProgress(update) {
       const status = update.withdrawal ? describeWithdrawalStatus(update.withdrawal) : "pending-visibility";
       console.log(
-        `[elapsed: ${Math.round((Date.now() - timerStart) / 1000)}s] Polling Binance withdrawal status (attempt ${update.attempts}): ${status}`
+        `[poll ${update.attempts}, elapsed: ${Math.round((Date.now() - timerStart) / 1000)}s] Polling Binance withdrawal status: ${status}`
       );
     },
   });
@@ -378,7 +379,7 @@ function printLine(label: string, value: string, indentLevel = 0, emphasized = f
 
 function describeWithdrawalStatus(withdrawal: BinanceWithdrawal): string {
   const txSuffix = withdrawal.txId ? ` txId=${withdrawal.txId}` : "";
-  return `status=${withdrawal.status ?? "unknown"} amount=${withdrawal.amount} ${resolveBinanceCoinSymbol(withdrawal.coin)}${txSuffix}`;
+  return `status=${readableBinanceWithdrawalStatus(withdrawal.status)} amount=${withdrawal.amount} ${resolveBinanceCoinSymbol(withdrawal.coin)}${txSuffix}`;
 }
 
 function printHelp(): void {
