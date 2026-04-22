@@ -70,6 +70,16 @@ export async function heliosL1toL2Finalizer(
   );
   const l1ChainId = hubPoolClient.chainId;
   const l2ChainId = l2SpokePoolClient.chainId;
+  // Before we do anything, we should check if the last executed root bundle on L1 had a pool rebalance leaf for the destination network.
+  // If it did not, then there is no need to run the helios finalizer.
+  if (!shouldFinalize(hubPoolClient, l2SpokePoolClient, l2ChainId)) {
+    logger.debug({
+    at: `Finalizer#heliosL1toL2Finalizer:${l2ChainId}`,
+    message: `No recently executed pool rebalance root for ${l2ChainId}. Skipping finalization procedure.`,
+    });
+    return { callData: [], crossChainMessages: [] };
+  }
+  
   const sp1HeliosL2 = await getSp1HeliosContractEVM(l2SpokePoolClient.spokePool, l2SpokePoolClient.spokePool.signer);
   const { sp1HeliosHead, sp1HeliosHeader } = await getSp1HeliosHeadData(sp1HeliosL2);
   const sp1HeliosVkey: string = await sp1HeliosL2.heliosProgramVkey();
@@ -110,12 +120,41 @@ export async function heliosL1toL2Finalizer(
     logger.debug({
       at: `Finalizer#heliosL1toL2Finalizer:${l2ChainId}`,
       message: "No Helios actions are ready for submission after enrichment phase.",
-    });
+    })
     return { callData: [], crossChainMessages: [] };
   }
 
   // --- Step 3: Generate transactions from ready-to-submit actions ---
   return generateTxnsForHeliosActions(logger, readyActions, l1ChainId, l2ChainId, l2SpokePoolClient, sp1HeliosL2);
+}
+
+function shouldFinalize(
+  hubPoolClient: HubPoolClient,
+  l2SpokePoolClient: SpokePoolClient,
+  l2ChainId: number
+): Promise<boolean> {
+  // If the most recent executed root bundle contained a pool rebalance leaf for `l2ChainId`, then we should finalize.
+  const latestExecutedBundle = hubPoolClient.getLatestFullyExecutedRootBundle(hubPoolClient.latestHeightSearched);
+  if (latestExecutedBundle) {
+    const executedLeaves = hubPoolClient.getExecutedLeavesForRootBundle(
+      latestExecutedBundle,
+      hubPoolClient.latestHeightSearched
+    );
+    if (executedLeaves.some((leaf) => leaf.chainId === l2ChainId)) {
+      return true;
+    }
+  }
+
+  // If the L2 has not had a leaf execution in 6 hours, then we should also finalize.
+  assert(isEVMSpokePoolClient(l2SpokePoolClient), "shouldFinalize requires an EVM spoke pool client");
+  const l2Executions = l2SpokePoolClient.getRelayerRefundExecutions();
+  const latestL2Execution = l2Executions[l2Executions.length - 1];
+  if (!latestL2Execution) {
+    return true;
+  }
+  const currentBlock = l2SpokePoolClient.latestHeightSearched;
+  const blocksSinceLastExecution = currentBlock - latestL2Execution.blockNumber;
+  return blocksSinceLastExecution > HELIOS_REFRESH_INTERVAL[l2ChainId] ?? 7200; // Default to lowest case @ 3s/block (6hrs).
 }
 
 // ==================================
