@@ -330,7 +330,7 @@ export async function run(): Promise<void> {
   printSection("Step 3/4: Swap");
   const orderId = getCloidForAccount(await signer.getAddress());
   const fill = await venue.placeMarketOrder(orderId, source, destination, amount);
-  console.log(`Market ${fill.side} order submitted on Binance with client order id ${orderId}.`, fill);
+  console.log(`Market ${fill.side} order placed and filled: `, fill);
 
   timeElapsedMsStart = Date.now();
   const orderAvailability = await waitForBinanceOrderFillAndBalance({
@@ -346,10 +346,6 @@ export async function run(): Promise<void> {
     },
   });
   const requiredBalance = Number(orderAvailability.expectedAmountToReceive);
-  console.log(
-    `Market ${fill.side} order filled for ${requiredBalance} ${destination.binanceCoin} on Binance with client order id ${orderId}.`,
-    orderAvailability.matchingFill
-  );
   const amountToWithdraw = toBNWei(truncate(requiredBalance, destination.tokenDecimals), destination.tokenDecimals);
 
   printSection("Step 4/4: Withdraw");
