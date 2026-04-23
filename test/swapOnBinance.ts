@@ -10,6 +10,7 @@ import {
 } from "../src/utils";
 import {
   BinanceSwapVenue,
+  requireDefinedFilledAmount,
   ResolvedBinanceAsset,
   resolveBinanceAsset,
   waitForBinanceDepositToBeAvailable,
@@ -223,6 +224,46 @@ describe("swapOnBinance script helpers", function () {
     await expectRejected(
       venue.getLatestPrice("USDT", "USDC", 6, toBNWei("1000", 6)),
       "exceeds visible Binance order book depth"
+    );
+  });
+
+  it("fails fast when the filled amount is not yet available from Binance order history", function () {
+    expect(() => requireDefinedFilledAmount(undefined, "cloid-1", "TRX")).to.throw(
+      "Filled amount for Binance order cloid-1 (TRX) is not available yet from Binance order history"
+    );
+  });
+
+  it("throws a clear error when Binance trade fees are missing for the market symbol", async function () {
+    const venue = new BinanceSwapVenue({
+      exchangeInfo: sinon.stub().resolves({
+        symbols: [makeStablecoinMarketSymbol()],
+      }),
+      book: sinon.stub().resolves(
+        makeOrderBook({
+          asks: [{ price: "1.0000", quantity: "100" }],
+          bids: [],
+        })
+      ),
+      tradeFee: sinon.stub().resolves([]),
+    } as never);
+
+    await expectRejected(
+      venue.getQuote(
+        makeResolvedAsset({
+          tokenSymbol: "USDT",
+          chainId: CHAIN_IDs.POLYGON,
+          binanceCoin: "USDT",
+          contractAddress: resolveAcrossToken("USDT", CHAIN_IDs.POLYGON)!,
+        }),
+        makeResolvedAsset({
+          tokenSymbol: "USDC",
+          chainId: CHAIN_IDs.BASE,
+          binanceCoin: "USDC",
+          contractAddress: resolveAcrossToken("USDC", CHAIN_IDs.BASE)!,
+        }),
+        toBNWei("10", 6)
+      ),
+      "Trade fee percentage not found for symbol USDCUSDT"
     );
   });
 

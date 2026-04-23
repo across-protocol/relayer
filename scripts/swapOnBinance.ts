@@ -332,8 +332,9 @@ export async function run(): Promise<void> {
     source,
     destination
   );
+  const requiredBalance = requireDefinedFilledAmount(expectedFilledAmount, orderId, destination.binanceCoin);
   console.log(
-    `Market ${fill.side} order filled for ${expectedFilledAmount} ${destination.binanceCoin} on Binance with client order id ${orderId}.`,
+    `Market ${fill.side} order filled for ${requiredBalance} ${destination.binanceCoin} on Binance with client order id ${orderId}.`,
     fill
   );
 
@@ -343,7 +344,7 @@ export async function run(): Promise<void> {
     cloid: orderId,
     source,
     destination,
-    requiredBalance: expectedFilledAmount,
+    requiredBalance,
     pollDelayMs: POLL_DELAY_MS,
     onProgress: ({ attempts, freeBalance, requiredBalance, matchingFill }) => {
       console.log(
@@ -352,7 +353,7 @@ export async function run(): Promise<void> {
     },
   });
   const amountToWithdraw = toBNWei(
-    truncate(expectedFilledAmount, destination.tokenDecimals),
+    truncate(requiredBalance, destination.tokenDecimals),
     destination.tokenDecimals
   );
 
@@ -992,6 +993,14 @@ function printSection(title: string): void {
   console.log(`\n=== ${title} ===\n`);
 }
 
+export function requireDefinedFilledAmount(expectedFilledAmount: number | undefined, orderId: string, binanceCoin: string): number {
+  assert(
+    isDefined(expectedFilledAmount),
+    `Filled amount for Binance order ${orderId} (${binanceCoin}) is not available yet from Binance order history`
+  );
+  return expectedFilledAmount;
+}
+
 function formatAmount(amount: BigNumber, decimals: number): string {
   return createFormatFunction(2, 6, false, decimals)(amount.toString());
 }
@@ -1340,10 +1349,7 @@ export class BinanceSwapVenue {
       sourceAmount
     );
     const spotMarketMeta = await this.getSpotMarketMeta(source.binanceCoin, destination.binanceCoin);
-    const tradeFeePct = Number(
-      (await this.getTradeFees()).find((fee) => fee.symbol === spotMarketMeta.symbol)?.takerCommission
-    );
-    assert(tradeFeePct !== undefined, `Trade fee percentage not found for symbol ${spotMarketMeta.symbol}`);
+    const tradeFeePct = await this.getTradeFeePct(spotMarketMeta.symbol);
     const tradeFeeSourceToken = toBNWei(truncate(tradeFeePct, 18), 18).mul(sourceAmount).div(toBNWei(1, 18));
     const tradeFeeDestinationToken = tradeFeeSourceToken.gt(BigNumber.from(0))
       ? await this.convertSourceToDestination(source, destination, tradeFeeSourceToken)
@@ -1447,6 +1453,14 @@ export class BinanceSwapVenue {
     const expectedAmountToReceive =
       matchingFill.side === "BUY" ? matchingFill.executedQty : matchingFill.cummulativeQuoteQty;
     return Number(expectedAmountToReceive) - totalCommission;
+  }
+
+  private async getTradeFeePct(symbol: string): Promise<number> {
+    const tradeFee = (await this.getTradeFees()).find((fee) => fee.symbol === symbol)?.takerCommission;
+    assert(isDefined(tradeFee), `Trade fee percentage not found for symbol ${symbol}`);
+    const tradeFeePct = Number(tradeFee);
+    assert(Number.isFinite(tradeFeePct), `Trade fee percentage for symbol ${symbol} is not a finite number`);
+    return tradeFeePct;
   }
 
   async getMatchingFillForCloid(

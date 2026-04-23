@@ -3,6 +3,7 @@ import { OrderType_LT, Symbol } from "binance-api-node";
 import { CONTRACT_ADDRESSES } from "../common";
 import { BigNumber } from "./BNUtils";
 import { BINANCE_WITHDRAWAL_STATUS, resolveBinanceCoinSymbol } from "./BinanceUtils";
+import { truncate } from "./NumberUtils";
 import { fromWei, toBNWei } from "./SDKUtils";
 import { isDefined } from "./TypeGuards";
 
@@ -136,12 +137,4 @@ function resolveStepPrecision(stepSize: string): number {
   const normalized = stepSize.replace(/0+$/, "").replace(/\.$/, "");
   const decimalPart = normalized.split(".")[1];
   return decimalPart?.length ?? 0;
-}
-
-function truncate(value: number, decimals: number): number {
-  if (!Number.isFinite(value)) {
-    return value;
-  }
-  const factor = 10 ** decimals;
-  return Math.trunc(value * factor) / factor;
 }

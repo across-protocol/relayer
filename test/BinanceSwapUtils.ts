@@ -119,6 +119,19 @@ describe("BinanceSwapUtils", function () {
     expect(fifteenHundredUsdc.eq(toBNWei("1500", 6))).to.equal(true);
     expect(sourceEquivalent.eq(oneWeth)).to.equal(true);
   });
+
+  it("uses deterministic truncation for high-precision route conversion outputs", function () {
+    const convertedAmount = convertBinanceRouteAmount({
+      amount: toBNWei("1.07", 18),
+      sourceTokenDecimals: 18,
+      destinationTokenDecimals: 8,
+      isBuy: false,
+      price: 2.5,
+      direction: "source-to-destination",
+    });
+
+    expect(convertedAmount.eq(toBNWei("2.675", 8))).to.equal(true);
+  });
 });
 
 function makeStablecoinSymbol() {
