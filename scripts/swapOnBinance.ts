@@ -1433,14 +1433,14 @@ export class BinanceSwapVenue {
     if (!matchingFill) {
       return undefined;
     }
+    const myTrades = await this.binanceApiClient.myTrades({
+      symbol: spotMarketMeta.symbol,
+      orderId: matchingFill.orderId,
+    });
+    const totalCommission = myTrades.reduce((acc, trade) => acc + Number(trade.commission), 0);
     const expectedAmountToReceive =
       matchingFill.side === "BUY" ? matchingFill.executedQty : matchingFill.cummulativeQuoteQty;
-    const tradeFeePct = Number(
-      (await this.getTradeFees()).find((fee) => fee.symbol === spotMarketMeta.symbol)?.takerCommission
-    );
-    assert(tradeFeePct !== undefined, `Trade fee percentage not found for symbol ${spotMarketMeta.symbol}`);
-    const tradeFee = Number(expectedAmountToReceive) * tradeFeePct;
-    return Number(expectedAmountToReceive) - tradeFee;
+    return Number(expectedAmountToReceive) - totalCommission;
   }
 
   async getMatchingFillForCloid(
