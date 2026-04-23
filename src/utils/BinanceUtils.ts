@@ -23,10 +23,14 @@ export type SpotMarketMeta = {
   symbol: string;
   baseAssetName: string;
   quoteAssetName: string;
+  pxDecimals: number;
+  szDecimals: number;
+  minimumOrderSize: number;
   isBuy: boolean;
 };
 
 type BinanceTradeReader = Pick<BinanceApi, "myTrades">;
+type FillCommissionMarketMeta = Pick<SpotMarketMeta, "symbol" | "baseAssetName" | "quoteAssetName" | "isBuy">;
 
 // Alias for Binance network symbols.
 export const BINANCE_NETWORKS: { [chainId: number]: string } = {
@@ -336,7 +340,7 @@ export async function getBinanceWithdrawals(
 
 export async function getFillCommission(
   binanceApi: BinanceTradeReader,
-  spotMarketMeta: SpotMarketMeta,
+  spotMarketMeta: FillCommissionMarketMeta,
   orderId: number
 ): Promise<number> {
   const receivedAsset = spotMarketMeta.isBuy ? spotMarketMeta.baseAssetName : spotMarketMeta.quoteAssetName;

@@ -30,6 +30,7 @@ import {
   setBinanceDepositType,
   setBinanceWithdrawalType,
   Signer,
+  SpotMarketMeta,
   toBN,
   toBNWei,
   truncate,
@@ -44,16 +45,6 @@ import { CctpAdapter } from "./cctpAdapter";
 import { OftAdapter } from "./oftAdapter";
 import { CONTRACT_ADDRESSES } from "../../common";
 import WETH_ABI from "../../common/abi/Weth.json";
-
-interface SPOT_MARKET_META {
-  symbol: string;
-  baseAssetName: string;
-  quoteAssetName: string;
-  pxDecimals: number;
-  szDecimals: number;
-  minimumOrderSize: number;
-  isBuy: boolean;
-}
 
 export function isFailedBinanceWithdrawal(status?: number): boolean {
   switch (status) {
@@ -118,7 +109,7 @@ export function deriveBinanceSpotMarketMeta(
   sourceToken: string,
   destinationToken: string,
   symbol: Symbol<OrderType_LT>
-): SPOT_MARKET_META {
+): SpotMarketMeta {
   const sourceAsset = resolveBinanceCoinSymbol(sourceToken);
   const destinationAsset = resolveBinanceCoinSymbol(destinationToken);
   const isBuy = symbol.baseAsset === destinationAsset && symbol.quoteAsset === sourceAsset;
@@ -178,7 +169,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     { fetchedAtMs: number; book: Awaited<ReturnType<Binance["book"]>> }
   >();
   private tradeFeesPromise?: ReturnType<Binance["tradeFee"]>;
-  private spotMarketMetaPromiseByRoute = new Map<string, Promise<SPOT_MARKET_META>>();
+  private spotMarketMetaPromiseByRoute = new Map<string, Promise<SpotMarketMeta>>();
 
   REDIS_PREFIX = "binance-stablecoin-swap:";
   private static readonly ORDER_BOOK_CACHE_TTL_MS = 30_000;
@@ -1377,7 +1368,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     });
   }
 
-  private async _getSpotMarketMetaForRoute(sourceToken: string, destinationToken: string): Promise<SPOT_MARKET_META> {
+  private async _getSpotMarketMetaForRoute(sourceToken: string, destinationToken: string): Promise<SpotMarketMeta> {
     assert(
       this._routeRequiresSwap(sourceToken, destinationToken),
       `Route ${sourceToken}-${destinationToken} does not require a Binance spot market`
