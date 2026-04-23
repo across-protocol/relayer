@@ -4,13 +4,15 @@ import { BinanceStablecoinSwapAdapter } from "../src/rebalancer/adapters/binance
 import { CctpAdapter } from "../src/rebalancer/adapters/cctpAdapter";
 import { OftAdapter } from "../src/rebalancer/adapters/oftAdapter";
 import { RebalancerConfig } from "../src/rebalancer/RebalancerConfig";
-import { CHAIN_IDs, EvmAddress, resolveBinanceCoinSymbol } from "../src/utils";
 import {
+  CHAIN_IDs,
+  EvmAddress,
+  resolveBinanceCoinSymbol,
   convertBinanceRouteAmount,
   deriveBinanceSpotMarketMeta,
   isSameBinanceCoin,
   supportsBinanceIntermediateBridgeToken,
-} from "../src/utils";
+ } from "../src/utils";
 
 describe("Binance adapter helpers", async function () {
   afterEach(function () {
