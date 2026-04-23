@@ -352,10 +352,7 @@ export async function run(): Promise<void> {
       );
     },
   });
-  const amountToWithdraw = toBNWei(
-    truncate(requiredBalance, destination.tokenDecimals),
-    destination.tokenDecimals
-  );
+  const amountToWithdraw = toBNWei(truncate(requiredBalance, destination.tokenDecimals), destination.tokenDecimals);
 
   printSection("Step 4/4: Withdraw");
   const withdrawalSubmittedAtMs = Date.now();
@@ -993,7 +990,11 @@ function printSection(title: string): void {
   console.log(`\n=== ${title} ===\n`);
 }
 
-export function requireDefinedFilledAmount(expectedFilledAmount: number | undefined, orderId: string, binanceCoin: string): number {
+export function requireDefinedFilledAmount(
+  expectedFilledAmount: number | undefined,
+  orderId: string,
+  binanceCoin: string
+): number {
   assert(
     isDefined(expectedFilledAmount),
     `Filled amount for Binance order ${orderId} (${binanceCoin}) is not available yet from Binance order history`
