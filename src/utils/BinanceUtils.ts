@@ -332,8 +332,11 @@ export async function getBinanceWithdrawals(
   });
 }
 
-export async function getFillCommission(spotMarketMeta: SpotMarketMeta, orderId: number): Promise<number> {
-  const binanceApi = await getBinanceApiClient(process.env.BINANCE_API_BASE);
+export async function getFillCommission(
+  binanceApi: BinanceApi,
+  spotMarketMeta: SpotMarketMeta,
+  orderId: number
+): Promise<number> {
   const receivedAsset = spotMarketMeta.isBuy ? spotMarketMeta.baseAssetName : spotMarketMeta.quoteAssetName;
   let fromId: number | undefined;
   let totalCommission = 0;

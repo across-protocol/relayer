@@ -5,6 +5,7 @@ import {
   BinanceDeposit,
   SpotMarketMeta,
   BinanceWithdrawal,
+  getBinanceApiClient,
   getFillCommission,
   getOutstandingBinanceDeposits,
   isCompletedBinanceWithdrawal,
@@ -173,8 +174,9 @@ describe("BinanceUtils fill commission helpers", function () {
         minimumOrderSize: 1,
         isBuy: true,
       };
+      const binanceApi = await getBinanceApiClient(process.env.BINANCE_API_BASE);
 
-      const totalCommission = await getFillCommission(spotMarketMeta, 123);
+      const totalCommission = await getFillCommission(binanceApi, spotMarketMeta, 123);
 
       expect(totalCommission).to.be.closeTo(100.3, 1e-9);
       expect(requests).to.deep.equal([
