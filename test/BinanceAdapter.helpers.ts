@@ -219,7 +219,6 @@ describe("Binance adapter helpers", async function () {
     expect(myTradesStub.getCall(0).args[0]).to.deep.equal({
       symbol: "USDCUSDT",
       orderId: 123,
-      fromId: undefined,
       limit: 1000,
     });
     expect(myTradesStub.getCall(1).args[0]).to.deep.equal({

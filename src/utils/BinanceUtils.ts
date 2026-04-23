@@ -396,8 +396,8 @@ async function getBinanceFillTrades(
     return await binanceApi.myTrades({
       symbol,
       orderId,
-      fromId,
       limit: BINANCE_TRADES_PAGE_LIMIT,
+      ...(fromId !== undefined ? { fromId } : {}),
     });
   } catch (_err) {
     const err = _err.toString();

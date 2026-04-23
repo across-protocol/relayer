@@ -180,7 +180,7 @@ describe("BinanceUtils fill commission helpers", function () {
 
       expect(totalCommission).to.be.closeTo(100.3, 1e-9);
       expect(requests).to.deep.equal([
-        { orderId: "123", fromId: "undefined", limit: "1000" },
+        { orderId: "123", fromId: null, limit: "1000" },
         { orderId: "123", fromId: "1000", limit: "1000" },
       ]);
     } finally {
