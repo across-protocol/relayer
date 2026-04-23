@@ -2,6 +2,7 @@ import * as BinanceUtils from "../src/utils/BinanceUtils";
 import {
   BINANCE_NETWORKS,
   BINANCE_WITHDRAWAL_STATUS,
+  BigNumber,
   CHAIN_IDs,
   Coin,
   getNativeTokenInfoForChain,
@@ -10,6 +11,8 @@ import {
 } from "../src/utils";
 import {
   BinanceSwapVenue,
+  estimateDepositGasWithDeps,
+  formatWithdrawalProgressLine,
   requireDefinedFilledAmount,
   ResolvedBinanceAsset,
   resolveBinanceAsset,
@@ -411,6 +414,12 @@ describe("swapOnBinance script helpers", function () {
     expect(completion.withdrawal.txId).to.equal("0xdef");
   });
 
+  it("formats withdrawal progress before Binance exposes the history entry", function () {
+    const line = formatWithdrawalProgressLine({ attempts: 1, elapsedMs: 1_200 });
+
+    expect(line).to.equal("[poll 1, elapsed: 1s] withdrawal=not-seen amount=unknown");
+  });
+
   it("surfaces rejected Binance withdrawals immediately", async function () {
     const venue = new BinanceSwapVenue({} as never);
     sinon
@@ -432,6 +441,54 @@ describe("swapOnBinance script helpers", function () {
       }),
       "failed with status rejected"
     );
+  });
+
+  it("uses a dependent-step gas fallback when a bridge simulation waits on a prior approval", async function () {
+    const simulateTransaction = sinon
+      .stub()
+      .onFirstCall()
+      .resolves({
+        succeed: true,
+        transaction: { gasLimit: BigNumber.from(50_000) },
+      })
+      .onSecondCall()
+      .resolves({
+        succeed: false,
+        transaction: {},
+        reason: "ERC20: insufficient allowance",
+      });
+    const estimateGasPrice = sinon.stub().resolves({
+      maxFeePerGas: BigNumber.from(2),
+      maxPriorityFeePerGas: BigNumber.from(1),
+    });
+
+    const estimate = await estimateDepositGasWithDeps(
+      {
+        steps: [
+          {
+            label: "approve",
+            transaction: {
+              contract: { provider: {} },
+              method: "approve",
+              args: [],
+            },
+          },
+          {
+            label: "bridge",
+            transaction: {
+              contract: { provider: {} },
+              method: "bridgeWeth",
+              args: [],
+            },
+          },
+        ],
+      } as never,
+      { priorityFeeScaler: 1.2, maxFeePerGasScaler: 3 },
+      { willSucceed: simulateTransaction as never, getGasPrice: estimateGasPrice as never }
+    );
+
+    expect(estimate.gasLimit.eq(BigNumber.from(300_000))).to.equal(true);
+    expect(estimate.gasCost.eq(BigNumber.from(600_000))).to.equal(true);
   });
 });
 

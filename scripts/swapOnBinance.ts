@@ -640,9 +640,20 @@ export async function estimateDepositGas(
   depositPlan: DepositExecutionPlan,
   gasPricing: { priorityFeeScaler: number; maxFeePerGasScaler: number }
 ): Promise<DepositGasEstimate> {
+  return estimateDepositGasWithDeps(depositPlan, gasPricing, { willSucceed, getGasPrice });
+}
+
+export async function estimateDepositGasWithDeps(
+  depositPlan: DepositExecutionPlan,
+  gasPricing: { priorityFeeScaler: number; maxFeePerGasScaler: number },
+  deps: {
+    willSucceed: typeof willSucceed;
+    getGasPrice: typeof getGasPrice;
+  }
+): Promise<DepositGasEstimate> {
   assert(depositPlan.steps.length > 0, "Deposit plan must include at least one transaction");
-  const gasLimits = await simulateDepositGasLimits(depositPlan);
-  const feeData = await getGasPrice(
+  const gasLimits = await simulateDepositGasLimits(depositPlan, deps.willSucceed);
+  const feeData = await deps.getGasPrice(
     depositPlan.steps[0].transaction.contract.provider,
     gasPricing.priorityFeeScaler,
     gasPricing.maxFeePerGasScaler
@@ -661,11 +672,14 @@ export async function estimateDepositGas(
   };
 }
 
-async function simulateDepositGasLimits(depositPlan: DepositExecutionPlan): Promise<BigNumber[]> {
+async function simulateDepositGasLimits(
+  depositPlan: DepositExecutionPlan,
+  simulateTransaction: typeof willSucceed
+): Promise<BigNumber[]> {
   const gasLimits: BigNumber[] = [];
 
   for (const [stepIndex, step] of depositPlan.steps.entries()) {
-    const simulation = await willSucceed(step.transaction);
+    const simulation = await simulateTransaction(step.transaction);
     if (simulation.succeed && simulation.transaction.gasLimit) {
       gasLimits.push(simulation.transaction.gasLimit);
       continue;
