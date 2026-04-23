@@ -132,7 +132,6 @@ export interface BinanceDepositAvailability {
 export interface BinanceOrderFillAvailability {
   attempts: number;
   freeBalance: number;
-  freeBalanceDelta: number;
   matchingFill: QueryOrderResult;
   expectedAmountToReceive: string;
 }
@@ -325,7 +324,6 @@ export async function run(): Promise<void> {
   });
 
   printSection("Step 3/4: Swap");
-  const destinationBinanceFreeBalanceBeforeOrder = await venue.getSpotFreeBalance(destination.binanceCoin);
   const orderId = getCloidForAccount(await signer.getAddress());
   const fill = await venue.placeMarketOrder(orderId, source, destination, amount);
   const expectedFilledAmount = await venue.getExpectedAmountToReceiveForFilledOrder(
@@ -339,22 +337,17 @@ export async function run(): Promise<void> {
     expectedFilledAmount
   );
 
-  const expectedTradeSettledAmount = quote.expectedDestinationAmount.gt(quote.tradeFeeDestinationToken)
-    ? quote.expectedDestinationAmount.sub(quote.tradeFeeDestinationToken)
-    : BigNumber.from(0);
-  const requiredDestinationFreeBalance = Number(fromWei(expectedTradeSettledAmount, destination.tokenDecimals));
   timeElapsedMsStart = Date.now();
   await waitForBinanceOrderFillAndBalance({
     venue,
     cloid: orderId,
     source,
     destination,
-    expectedFilledAmount,
-    baselineFreeBalance: destinationBinanceFreeBalanceBeforeOrder,
+    requiredBalance: expectedFilledAmount,
     pollDelayMs: POLL_DELAY_MS,
-    onProgress: ({ attempts, freeBalance, freeBalanceDelta, matchingFill }) => {
+    onProgress: ({ attempts, freeBalance, requiredBalance, matchingFill }) => {
       console.log(
-        `[poll ${attempts}, elapsed: ${Math.round((Date.now() - timeElapsedMsStart) / 1000)}s] order=${matchingFill?.status ?? "pending"} free=${freeBalance} ${destination.binanceCoin} delta=${freeBalanceDelta} required-delta=${requiredDestinationFreeBalance}`
+        `[poll ${attempts}, elapsed: ${Math.round((Date.now() - timeElapsedMsStart) / 1000)}s] order=${matchingFill?.status ?? "pending"} free=${freeBalance} ${destination.binanceCoin} required=${requiredBalance}`
       );
     },
   });
@@ -378,7 +371,7 @@ export async function run(): Promise<void> {
     pollDelayMs: POLL_DELAY_MS,
     onProgress: ({ attempts, withdrawal }) => {
       console.log(
-        `[poll ${attempts}, elapsed: ${Math.round((Date.now() - timeElapsedMsStart) / 1000)}s] withdrawal=${withdrawal ? readableBinanceWithdrawalStatus(withdrawal.status) : "not-seen"} id=${withdrawalId}`
+        `[poll ${attempts}, elapsed: ${Math.round((Date.now() - timeElapsedMsStart) / 1000)}s] withdrawal=${withdrawal ? readableBinanceWithdrawalStatus(withdrawal.status) : "not-seen"} id=${withdrawalId} amount=${withdrawal.amount}`
       );
     },
   });
@@ -1351,7 +1344,7 @@ export class BinanceSwapVenue {
       (await this.getTradeFees()).find((fee) => fee.symbol === spotMarketMeta.symbol)?.takerCommission
     );
     assert(tradeFeePct !== undefined, `Trade fee percentage not found for symbol ${spotMarketMeta.symbol}`);
-    const tradeFeeSourceToken = toBNWei(truncate(tradeFeePct, 18), 18).mul(sourceAmount).div(toBNWei(100, 18));
+    const tradeFeeSourceToken = toBNWei(truncate(tradeFeePct, 18), 18).mul(sourceAmount).div(toBNWei(1, 18));
     const tradeFeeDestinationToken = tradeFeeSourceToken.gt(BigNumber.from(0))
       ? await this.convertSourceToDestination(source, destination, tradeFeeSourceToken)
       : BigNumber.from(0);
@@ -1442,12 +1435,11 @@ export class BinanceSwapVenue {
     }
     const expectedAmountToReceive =
       matchingFill.side === "BUY" ? matchingFill.executedQty : matchingFill.cummulativeQuoteQty;
-    console.log(matchingFill);
     const tradeFeePct = Number(
       (await this.getTradeFees()).find((fee) => fee.symbol === spotMarketMeta.symbol)?.takerCommission
     );
     assert(tradeFeePct !== undefined, `Trade fee percentage not found for symbol ${spotMarketMeta.symbol}`);
-    const tradeFee = Number(expectedAmountToReceive) * (Number(tradeFeePct) / 100);
+    const tradeFee = Number(expectedAmountToReceive) * tradeFeePct;
     return Number(expectedAmountToReceive) - tradeFee;
   }
 
@@ -1495,7 +1487,7 @@ export async function waitForBinanceDepositToBeAvailable(params: {
 
   for (;;) {
     attempts++;
-    const [deposits, accountCoin] = await Promise.all([
+    const [deposits, freeBalance] = await Promise.all([
       getBinanceDeposits(venue.rawApi(), startTimeMs),
       venue.getSpotFreeBalance(source.binanceCoin),
     ]);
@@ -1505,7 +1497,6 @@ export async function waitForBinanceDepositToBeAvailable(params: {
         deposit.network === source.network.name &&
         compareAddressesSimple(deposit.txId, depositTxHash)
     );
-    const freeBalance = accountCoin;
 
     if (
       matchingDeposit?.status === BinanceDepositStatus.Rejected ||
@@ -1533,35 +1524,35 @@ export async function waitForBinanceOrderFillAndBalance(params: {
   cloid: string;
   source: ResolvedBinanceAsset;
   destination: ResolvedBinanceAsset;
-  expectedFilledAmount: number;
-  baselineFreeBalance?: number;
+  requiredBalance: number;
   pollDelayMs?: number;
   onProgress?: (update: {
     attempts: number;
     freeBalance: number;
-    freeBalanceDelta: number;
+    requiredBalance: number;
     matchingFill?: QueryOrderResult;
   }) => void;
 }): Promise<BinanceOrderFillAvailability> {
   const pollDelayMs = params.pollDelayMs ?? POLL_DELAY_MS;
-  const baselineFreeBalance = params.baselineFreeBalance ?? 0;
   let attempts = 0;
 
   for (;;) {
     attempts++;
-    const [matchingFill, destinationCoin] = await Promise.all([
+    const [matchingFill, freeBalance] = await Promise.all([
       params.venue.getMatchingFillForCloid(params.cloid, params.source, params.destination),
       params.venue.getSpotFreeBalance(params.destination.binanceCoin),
     ]);
-    const freeBalance = destinationCoin;
-    const freeBalanceDelta = Math.max(freeBalance - baselineFreeBalance, 0);
-    params.onProgress?.({ attempts, freeBalance, freeBalanceDelta, matchingFill: matchingFill?.matchingFill });
+    params.onProgress?.({
+      attempts,
+      freeBalance,
+      matchingFill: matchingFill?.matchingFill,
+      requiredBalance: params.requiredBalance,
+    });
 
-    if (matchingFill && freeBalanceDelta >= params.expectedFilledAmount) {
+    if (matchingFill && freeBalance >= params.requiredBalance) {
       return {
         attempts,
         freeBalance,
-        freeBalanceDelta,
         matchingFill: matchingFill.matchingFill,
         expectedAmountToReceive: matchingFill.expectedAmountToReceive,
       };
