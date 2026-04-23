@@ -1,7 +1,6 @@
 import { Binance, NewOrderSpot, OrderType, QueryOrderResult } from "binance-api-node";
 import {
   assert,
-  BinanceSpotMarketMeta,
   BigNumber,
   BINANCE_NETWORKS,
   BINANCE_WITHDRAWAL_STATUS,
