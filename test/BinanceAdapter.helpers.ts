@@ -145,6 +145,63 @@ describe("Binance adapter helpers", async function () {
     expect(tradeFeeStub.callCount).to.equal(2);
   });
 
+  it("only subtracts realized commissions charged in the received asset", async function () {
+    const adapter = await makeAdapter();
+    const [signer] = await ethers.getSigners();
+    const internals = adapter as unknown as {
+      _getMatchingFillForCloid(
+        cloid: string,
+        account: EvmAddress
+      ): Promise<{ expectedAmountToReceive: number } | undefined>;
+      _redisGetOrderDetails(cloid: string, account: EvmAddress): Promise<{ sourceToken: string; destinationToken: string }>;
+      _getSpotMarketMetaForRoute(
+        sourceToken: string,
+        destinationToken: string
+      ): Promise<{
+        symbol: string;
+        baseAssetName: string;
+        quoteAssetName: string;
+        pxDecimals: number;
+        szDecimals: number;
+        minimumOrderSize: number;
+        isBuy: boolean;
+      }>;
+      binanceApiClient: {
+        allOrders: sinon.SinonStub;
+        myTrades: sinon.SinonStub;
+      };
+    };
+    sinon.stub(internals, "_redisGetOrderDetails").resolves({ sourceToken: "USDT", destinationToken: "USDC" });
+    sinon.stub(internals, "_getSpotMarketMetaForRoute").resolves({
+      symbol: "USDCUSDT",
+      baseAssetName: "USDC",
+      quoteAssetName: "USDT",
+      pxDecimals: 4,
+      szDecimals: 0,
+      minimumOrderSize: 1,
+      isBuy: true,
+    });
+    internals.binanceApiClient = {
+      allOrders: sinon.stub().resolves([
+        {
+          clientOrderId: "cloid",
+          status: "FILLED",
+          orderId: 123,
+          executedQty: "100",
+          cummulativeQuoteQty: "100.1",
+        },
+      ]),
+      myTrades: sinon.stub().resolves([
+        { commission: "0.1", commissionAsset: "USDC" },
+        { commission: "0.2", commissionAsset: "BNB" },
+      ]),
+    };
+
+    const result = await internals._getMatchingFillForCloid("cloid", EvmAddress.from(await signer.getAddress()));
+
+    expect(result?.expectedAmountToReceive).to.equal(99.9);
+  });
+
   it("keeps pending WETH credit until a finalized Binance withdrawal is wrapped", async function () {
     const adapter = await makeAdapter();
     const [signer] = await ethers.getSigners();

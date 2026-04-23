@@ -1494,7 +1494,12 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       symbol: spotMarketMeta.symbol,
       orderId: matchingFill.orderId,
     });
-    const totalCommission = myTrades.reduce((acc, trade) => acc + Number(trade.commission), 0);
+    const receivedAsset = spotMarketMeta.isBuy ? spotMarketMeta.baseAssetName : spotMarketMeta.quoteAssetName;
+    const totalCommission = myTrades.reduce(
+      (acc, trade) =>
+        acc + (resolveBinanceCoinSymbol(trade.commissionAsset) === receivedAsset ? Number(trade.commission) : 0),
+      0
+    );
     const expectedAmountToReceive = spotMarketMeta.isBuy ? matchingFill.executedQty : matchingFill.cummulativeQuoteQty;
     return { matchingFill, expectedAmountToReceive: Number(expectedAmountToReceive) - totalCommission };
   }
