@@ -1,17 +1,7 @@
 import Binance, { DepositHistoryResponse, WithdrawHistoryResponse, type Binance as BinanceApi } from "binance-api-node";
 export type { BinanceApi };
 import minimist from "minimist";
-import {
-  getGckmsConfig,
-  retrieveGckmsKeys,
-  isDefined,
-  assert,
-  delay,
-  CHAIN_IDs,
-  getRedisCache,
-  truncate,
-  bnZero,
-} from "./";
+import { getGckmsConfig, retrieveGckmsKeys, isDefined, assert, delay, CHAIN_IDs, getRedisCache, truncate } from "./";
 
 // Store global promises on Gckms key retrieval actions so that we don't retrieve the same key multiple times.
 let binanceSecretKeyPromise: Promise<string | undefined> | undefined = undefined;
@@ -359,13 +349,11 @@ export async function getFillCommission(
   // because these rebalance orders are not expected to fragment into >1000 fills. If that ever
   // changes in production, replace this with an explicit oldest-to-newest pagination strategy.
   const trades = await getBinanceFillTrades(binanceApi, spotMarketMeta.symbol, orderId);
-  return trades
-    .reduce(
-      (acc, trade) =>
-        acc.add(resolveBinanceCoinSymbol(trade.commissionAsset) === receivedAsset ? Number(trade.commission) : bnZero),
-      bnZero
-    )
-    .toNumber();
+  return trades.reduce(
+    (acc, trade) =>
+      acc + (resolveBinanceCoinSymbol(trade.commissionAsset) === receivedAsset ? Number(trade.commission) : 0),
+    0
+  );
 }
 
 /**

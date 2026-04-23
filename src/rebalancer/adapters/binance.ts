@@ -1485,7 +1485,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       ? matchingFill.executedQty
       : matchingFill.cummulativeQuoteQty;
     const fillCommission = await getFillCommission(this.binanceApiClient, spotMarketMeta, matchingFill.orderId);
-    const expectedAmountToReceive = BigNumber.from(grossExpectedAmountToReceive).sub(fillCommission).toNumber();
+    const expectedAmountToReceive = Number(grossExpectedAmountToReceive) - fillCommission;
     return { matchingFill, expectedAmountToReceive };
   }
 
