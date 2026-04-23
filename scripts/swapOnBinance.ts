@@ -27,8 +27,8 @@ import {
   BinanceDeposit,
   BinanceTransactionType,
   BinanceWithdrawal,
-  BinanceSpotMarketMeta,
   BigNumber,
+  SpotMarketMeta,
   CHAIN_IDs,
   Coin,
   ConvertDecimals,
@@ -113,7 +113,7 @@ type BinanceAssetResolutionResult =
   | { ok: false; reason: BinanceAssetResolutionFailureReason };
 
 export interface BinanceQuote {
-  spotMarketMeta: BinanceSpotMarketMeta;
+  spotMarketMeta: SpotMarketMeta;
   latestPrice: number;
   slippagePct: number;
   tradeFeePct: number;
@@ -1264,7 +1264,7 @@ export class BinanceSwapVenue {
     return symbol;
   }
 
-  async getSpotMarketMeta(sourceBinanceCoin: string, destinationBinanceCoin: string): Promise<BinanceSpotMarketMeta> {
+  async getSpotMarketMeta(sourceBinanceCoin: string, destinationBinanceCoin: string): Promise<SpotMarketMeta> {
     const symbol = await this.getSymbol(sourceBinanceCoin, destinationBinanceCoin);
     return deriveBinanceSpotMarketMeta(sourceBinanceCoin, destinationBinanceCoin, symbol);
   }
