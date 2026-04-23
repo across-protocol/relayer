@@ -140,9 +140,9 @@ describe("BinanceUtils fill commission helpers", function () {
     const myTradesStub = sinon.stub();
     myTradesStub.onCall(0).resolves(firstPage);
     myTradesStub.onCall(1).resolves(secondPage);
-    const binanceApi = {
+    const binanceApi: Pick<BinanceApi, "myTrades"> = {
       myTrades: myTradesStub,
-    } as unknown as BinanceApi;
+    };
     const spotMarketMeta: SpotMarketMeta = {
       symbol: "USDCUSDT",
       baseAssetName: "USDC",

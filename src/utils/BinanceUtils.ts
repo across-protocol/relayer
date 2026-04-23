@@ -26,6 +26,8 @@ export type SpotMarketMeta = {
   isBuy: boolean;
 };
 
+type BinanceTradeReader = Pick<BinanceApi, "myTrades">;
+
 // Alias for Binance network symbols.
 export const BINANCE_NETWORKS: { [chainId: number]: string } = {
   [CHAIN_IDs.ARBITRUM]: "ARBITRUM",
@@ -333,7 +335,7 @@ export async function getBinanceWithdrawals(
 }
 
 export async function getFillCommission(
-  binanceApi: BinanceApi,
+  binanceApi: BinanceTradeReader,
   spotMarketMeta: SpotMarketMeta,
   orderId: number
 ): Promise<number> {
@@ -385,7 +387,7 @@ export async function getAccountCoins(binanceApi: BinanceApi): Promise<ParsedAcc
 }
 
 async function getBinanceFillTrades(
-  binanceApi: BinanceApi,
+  binanceApi: BinanceTradeReader,
   symbol: string,
   orderId: number,
   fromId?: number,
