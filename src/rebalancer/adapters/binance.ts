@@ -36,6 +36,7 @@ import {
   setBinanceWithdrawalType,
   Signer,
   supportsBinanceIntermediateBridgeToken,
+  SpotMarketMeta,
   toBN,
   toBNWei,
   truncate,
@@ -62,7 +63,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     { fetchedAtMs: number; book: Awaited<ReturnType<Binance["book"]>> }
   >();
   private tradeFeesPromise?: ReturnType<Binance["tradeFee"]>;
-  private spotMarketMetaPromiseByRoute = new Map<string, Promise<BinanceSpotMarketMeta>>();
+  private spotMarketMetaPromiseByRoute = new Map<string, Promise<SpotMarketMeta>>();
 
   REDIS_PREFIX = "binance-stablecoin-swap:";
   private static readonly ORDER_BOOK_CACHE_TTL_MS = 30_000;
@@ -1261,10 +1262,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     });
   }
 
-  private async _getSpotMarketMetaForRoute(
-    sourceToken: string,
-    destinationToken: string
-  ): Promise<BinanceSpotMarketMeta> {
+  private async _getSpotMarketMetaForRoute(sourceToken: string, destinationToken: string): Promise<SpotMarketMeta> {
     assert(
       this._routeRequiresSwap(sourceToken, destinationToken),
       `Route ${sourceToken}-${destinationToken} does not require a Binance spot market`

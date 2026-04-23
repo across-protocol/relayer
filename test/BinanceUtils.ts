@@ -1,11 +1,9 @@
-import { createServer } from "http";
-import type { AddressInfo } from "net";
-import { expect } from "./utils";
+import { expect, sinon } from "./utils";
 import {
+  type BinanceApi,
   BinanceDeposit,
   SpotMarketMeta,
   BinanceWithdrawal,
-  getBinanceApiClient,
   getFillCommission,
   getOutstandingBinanceDeposits,
   isCompletedBinanceWithdrawal,
@@ -139,55 +137,36 @@ describe("BinanceUtils fill commission helpers", function () {
         commissionAsset: "BNB",
       },
     ];
-    const requests: Array<{ orderId: string | null; fromId: string | null; limit: string | null }> = [];
-    const server = createServer((req, res) => {
-      const url = new URL(req.url ?? "/", "http://127.0.0.1");
-      requests.push({
-        orderId: url.searchParams.get("orderId"),
-        fromId: url.searchParams.get("fromId"),
-        limit: url.searchParams.get("limit"),
-      });
-      res.setHeader("Content-Type", "application/json");
-      if (url.pathname !== "/api/v3/myTrades") {
-        res.statusCode = 404;
-        res.end(JSON.stringify({ msg: "not found" }));
-        return;
-      }
-      res.end(JSON.stringify(url.searchParams.get("fromId") === "1000" ? secondPage : firstPage));
+    const myTradesStub = sinon.stub();
+    myTradesStub.onCall(0).resolves(firstPage);
+    myTradesStub.onCall(1).resolves(secondPage);
+    const binanceApi: Pick<BinanceApi, "myTrades"> = {
+      myTrades: myTradesStub,
+    };
+    const spotMarketMeta: SpotMarketMeta = {
+      symbol: "USDCUSDT",
+      baseAssetName: "USDC",
+      quoteAssetName: "USDT",
+      pxDecimals: 4,
+      szDecimals: 0,
+      minimumOrderSize: 1,
+      isBuy: true,
+    };
+
+    const totalCommission = await getFillCommission(binanceApi, spotMarketMeta, 123);
+
+    expect(totalCommission).to.be.closeTo(100.3, 1e-9);
+    expect(myTradesStub.callCount).to.equal(2);
+    expect(myTradesStub.getCall(0).args[0]).to.deep.equal({
+      symbol: "USDCUSDT",
+      orderId: 123,
+      limit: 1000,
     });
-    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-    const { port } = server.address() as AddressInfo;
-    const originalBinanceApiBase = process.env.BINANCE_API_BASE;
-    const originalBinanceApiKey = process.env.BINANCE_API_KEY;
-    const originalBinanceHmacKey = process.env.BINANCE_HMAC_KEY;
-    process.env.BINANCE_API_BASE = `http://127.0.0.1:${port}`;
-    process.env.BINANCE_API_KEY = "test-api-key";
-    process.env.BINANCE_HMAC_KEY = "test-secret-key";
-
-    try {
-      const spotMarketMeta: SpotMarketMeta = {
-        symbol: "USDCUSDT",
-        baseAssetName: "USDC",
-        quoteAssetName: "USDT",
-        pxDecimals: 4,
-        szDecimals: 0,
-        minimumOrderSize: 1,
-        isBuy: true,
-      };
-      const binanceApi = await getBinanceApiClient(process.env.BINANCE_API_BASE);
-
-      const totalCommission = await getFillCommission(binanceApi, spotMarketMeta, 123);
-
-      expect(totalCommission).to.be.closeTo(100.3, 1e-9);
-      expect(requests).to.deep.equal([
-        { orderId: "123", fromId: "undefined", limit: "1000" },
-        { orderId: "123", fromId: "1000", limit: "1000" },
-      ]);
-    } finally {
-      process.env.BINANCE_API_BASE = originalBinanceApiBase;
-      process.env.BINANCE_API_KEY = originalBinanceApiKey;
-      process.env.BINANCE_HMAC_KEY = originalBinanceHmacKey;
-      await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
-    }
+    expect(myTradesStub.getCall(1).args[0]).to.deep.equal({
+      symbol: "USDCUSDT",
+      orderId: 123,
+      fromId: 1000,
+      limit: 1000,
+    });
   });
 });
