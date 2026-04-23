@@ -130,6 +130,9 @@
       "pre-commit": "echo '🏃‍♂️ Running pretty-quick on staged files' && pretty-quick --staged"
     }
   },
+  "resolutions": {
+    "protobufjs": "^7.5.4"
+  },
   "publishConfig": {
     "registry": "https://registry.npmjs.com/",
     "access": "public"
