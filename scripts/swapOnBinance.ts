@@ -322,7 +322,7 @@ export async function run(): Promise<void> {
     pollDelayMs: POLL_DELAY_MS,
     onProgress: ({ attempts, deposit, freeBalance }) => {
       console.log(
-        `[poll ${attempts}, elapsed: ${Math.round((Date.now() - timeElapsedMsStart) / 1000)}s] deposit status=${deposit?.status ? BINANCE_DEPOSIT_STATUS_LABELS[deposit.status] : "not-seen"} free=${freeBalance} ${source.binanceCoin} required=${requiredSourceFreeBalance}`
+        `[poll ${attempts}, elapsed: ${Math.round((Date.now() - timeElapsedMsStart) / 1000)}s] deposit status=${formatBinanceDepositPollStatus(deposit)} free=${freeBalance} ${source.binanceCoin} required=${requiredSourceFreeBalance}`
       );
     },
   });
@@ -330,32 +330,26 @@ export async function run(): Promise<void> {
   printSection("Step 3/4: Swap");
   const orderId = getCloidForAccount(await signer.getAddress());
   const fill = await venue.placeMarketOrder(orderId, source, destination, amount);
-  const expectedFilledAmount = await venue.getExpectedAmountToReceiveForFilledOrder(
-    fill.orderId,
-    orderId,
-    source,
-    destination
-  );
-  const requiredBalance = requireDefinedFilledAmount(expectedFilledAmount, orderId, destination.binanceCoin);
-  console.log(
-    `Market ${fill.side} order filled for ${requiredBalance} ${destination.binanceCoin} on Binance with client order id ${orderId}.`,
-    fill
-  );
+  console.log(`Market ${fill.side} order submitted on Binance with client order id ${orderId}.`, fill);
 
   timeElapsedMsStart = Date.now();
-  await waitForBinanceOrderFillAndBalance({
+  const orderAvailability = await waitForBinanceOrderFillAndBalance({
     venue,
     cloid: orderId,
     source,
     destination,
-    requiredBalance,
     pollDelayMs: POLL_DELAY_MS,
     onProgress: ({ attempts, freeBalance, requiredBalance, matchingFill }) => {
       console.log(
-        `[poll ${attempts}, elapsed: ${Math.round((Date.now() - timeElapsedMsStart) / 1000)}s] order=${matchingFill?.status ?? "pending"} free=${freeBalance} ${destination.binanceCoin} required=${requiredBalance}`
+        `[poll ${attempts}, elapsed: ${Math.round((Date.now() - timeElapsedMsStart) / 1000)}s] order=${matchingFill?.status ?? "pending"} free=${freeBalance} ${destination.binanceCoin} required=${requiredBalance ?? "pending"}`
       );
     },
   });
+  const requiredBalance = Number(orderAvailability.expectedAmountToReceive);
+  console.log(
+    `Market ${fill.side} order filled for ${requiredBalance} ${destination.binanceCoin} on Binance with client order id ${orderId}.`,
+    orderAvailability.matchingFill
+  );
   const amountToWithdraw = toBNWei(truncate(requiredBalance, destination.tokenDecimals), destination.tokenDecimals);
 
   printSection("Step 4/4: Withdraw");
@@ -1524,8 +1518,11 @@ export class BinanceSwapVenue {
     if (!matchingFill) {
       return undefined;
     }
-    const expectedAmountToReceive = spotMarketMeta.isBuy ? matchingFill.executedQty : matchingFill.cummulativeQuoteQty;
-    return { matchingFill, expectedAmountToReceive };
+    const totalCommission = await getFillCommission(this.binanceApiClient, spotMarketMeta, matchingFill.orderId);
+    const grossExpectedAmountToReceive = spotMarketMeta.isBuy
+      ? Number(matchingFill.executedQty)
+      : Number(matchingFill.cummulativeQuoteQty);
+    return { matchingFill, expectedAmountToReceive: String(grossExpectedAmountToReceive - totalCommission) };
   }
 
   async initiateWithdrawal(destination: ResolvedBinanceAsset, recipient: string, amount: BigNumber): Promise<string> {
@@ -1582,7 +1579,7 @@ export async function waitForBinanceDepositToBeAvailable(params: {
 
     params.onProgress?.({ attempts, deposit: matchingDeposit, freeBalance });
 
-    if (matchingDeposit && freeBalance >= minFreeBalance) {
+    if (matchingDeposit?.status === BinanceDepositStatus.Credited && freeBalance >= minFreeBalance) {
       return { attempts, deposit: matchingDeposit, freeBalance };
     }
     await sleepMs(pollDelayMs);
@@ -1594,12 +1591,12 @@ export async function waitForBinanceOrderFillAndBalance(params: {
   cloid: string;
   source: ResolvedBinanceAsset;
   destination: ResolvedBinanceAsset;
-  requiredBalance: number;
+  requiredBalance?: number;
   pollDelayMs?: number;
   onProgress?: (update: {
     attempts: number;
     freeBalance: number;
-    requiredBalance: number;
+    requiredBalance?: number;
     matchingFill?: QueryOrderResult;
   }) => void;
 }): Promise<BinanceOrderFillAvailability> {
@@ -1612,14 +1609,16 @@ export async function waitForBinanceOrderFillAndBalance(params: {
       params.venue.getMatchingFillForCloid(params.cloid, params.source, params.destination),
       params.venue.getSpotFreeBalance(params.destination.binanceCoin),
     ]);
+    const requiredBalance =
+      params.requiredBalance ?? (matchingFill ? Number(matchingFill.expectedAmountToReceive) : undefined);
     params.onProgress?.({
       attempts,
       freeBalance,
       matchingFill: matchingFill?.matchingFill,
-      requiredBalance: params.requiredBalance,
+      requiredBalance,
     });
 
-    if (matchingFill && freeBalance >= params.requiredBalance) {
+    if (matchingFill && isDefined(requiredBalance) && freeBalance >= requiredBalance) {
       return {
         attempts,
         freeBalance,
@@ -1731,6 +1730,13 @@ function describeBinanceDepositStatus(status?: number): string {
     default:
       return "unknown";
   }
+}
+
+function formatBinanceDepositPollStatus(deposit?: BinanceDeposit): string {
+  if (!deposit) {
+    return "not-seen";
+  }
+  return BINANCE_DEPOSIT_STATUS_LABELS[deposit.status] ?? describeBinanceDepositStatus(deposit.status);
 }
 
 function isKnownTokenSymbol(symbol: string): boolean {

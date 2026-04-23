@@ -321,7 +321,7 @@ describe("swapOnBinance script helpers", function () {
       .onCall(0)
       .resolves([])
       .onCall(1)
-      .resolves([makeDeposit({ txId: "0xabc", status: 1, network: "MATIC", coin: "USDC" })])
+      .resolves([makeDeposit({ txId: "0xabc", status: 0, network: "MATIC", coin: "USDC" })])
       .onCall(2)
       .resolves([makeDeposit({ txId: "0xabc", status: 6, network: "MATIC", coin: "USDC" })]);
     sinon.stub(venue, "getSpotFreeBalance").onCall(0).resolves(100).onCall(1).resolves(100).onCall(2).resolves(100);
@@ -340,8 +340,8 @@ describe("swapOnBinance script helpers", function () {
       pollDelayMs: 0,
     });
 
-    expect(availability.attempts).to.equal(2);
-    expect(availability.deposit.status).to.equal(1);
+    expect(availability.attempts).to.equal(3);
+    expect(availability.deposit.status).to.equal(6);
     expect(availability.freeBalance).to.equal(100);
   });
 
@@ -378,7 +378,6 @@ describe("swapOnBinance script helpers", function () {
         binanceCoin: "USDC",
         contractAddress: resolveAcrossToken("USDC", CHAIN_IDs.BASE)!,
       }),
-      requiredBalance: 149.25,
       pollDelayMs: 0,
     });
 
