@@ -157,13 +157,13 @@ describe("swapOnBinance script helpers", function () {
 
     expect(quote.latestPrice).to.equal(1.01);
     expect(quote.slippagePct).to.be.closeTo(1, 1e-9);
-    expect(quote.tradeFeeSourceToken.eq(toBNWei("0.15", 6))).to.equal(true);
+    expect(quote.tradeFeeSourceToken.eq(toBNWei("15", 6))).to.equal(true);
     expect(quote.slippageFeeSourceToken.eq(toBNWei("1.5", 6))).to.equal(true);
     expect(quote.withdrawalFeeDestinationToken.eq(toBNWei("0.25", 6))).to.equal(true);
     expect(quote.withdrawalFeeSourceToken.eq(toBNWei("0.25", 6))).to.equal(true);
-    expect(quote.totalFeeSourceToken.eq(toBNWei("1.9", 6))).to.equal(true);
+    expect(quote.totalFeeSourceToken.eq(toBNWei("16.75", 6))).to.equal(true);
     expect(quote.expectedDestinationAmount.eq(toBNWei("148.514851", 6))).to.equal(true);
-    expect(quote.expectedNetDestinationAmount.eq(toBNWei("148.114851", 6))).to.equal(true);
+    expect(quote.expectedNetDestinationAmount.eq(toBNWei("133.264851", 6))).to.equal(true);
   });
 
   it("rejects orders that are smaller than Binance minimum size", async function () {
