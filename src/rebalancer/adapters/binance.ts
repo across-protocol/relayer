@@ -1489,11 +1489,22 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     if (!matchingFill) {
       return undefined;
     }
-    // Query myTrades to get the realized commissions on the received asset.
-    const myTrades = await this.binanceApiClient.myTrades({
-      symbol: spotMarketMeta.symbol,
-      orderId: matchingFill.orderId,
-    });
+    const myTrades = [];
+    const pageLimit = 1000;
+    let fromId: number | undefined;
+    for (;;) {
+      const page = await this.binanceApiClient.myTrades({
+        symbol: spotMarketMeta.symbol,
+        orderId: matchingFill.orderId,
+        fromId,
+        limit: pageLimit,
+      });
+      myTrades.push(...page);
+      if (page.length < pageLimit) {
+        break;
+      }
+      fromId = page[page.length - 1].id + 1;
+    }
     const receivedAsset = spotMarketMeta.isBuy ? spotMarketMeta.baseAssetName : spotMarketMeta.quoteAssetName;
     const totalCommission = myTrades.reduce(
       (acc, trade) =>
