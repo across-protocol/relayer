@@ -1,7 +1,10 @@
-import { expect } from "./utils";
+import { expect, sinon } from "./utils";
 import {
+  type BinanceApi,
   BinanceDeposit,
+  SpotMarketMeta,
   BinanceWithdrawal,
+  getFillCommission,
   getOutstandingBinanceDeposits,
   isCompletedBinanceWithdrawal,
 } from "../src/utils";
@@ -112,5 +115,38 @@ describe("BinanceUtils withdrawal helpers", function () {
     expect(isCompletedBinanceWithdrawal(4)).to.equal(false);
     expect(isCompletedBinanceWithdrawal(5)).to.equal(false);
     expect(isCompletedBinanceWithdrawal(undefined)).to.equal(false);
+  });
+});
+
+describe("BinanceUtils fill commission helpers", function () {
+  it("sums only commissions charged in the received asset from the most recent trade page", async function () {
+    const trades = Array.from({ length: 1000 }, (_, index) => ({
+      id: index,
+      commission: index === 0 ? "0.2" : "0.1",
+      commissionAsset: index === 1 ? "BNB" : "USDC",
+    }));
+    const myTradesStub = sinon.stub().resolves(trades);
+    const binanceApi: Pick<BinanceApi, "myTrades"> = {
+      myTrades: myTradesStub,
+    };
+    const spotMarketMeta: SpotMarketMeta = {
+      symbol: "USDCUSDT",
+      baseAssetName: "USDC",
+      quoteAssetName: "USDT",
+      pxDecimals: 4,
+      szDecimals: 0,
+      minimumOrderSize: 1,
+      isBuy: true,
+    };
+
+    const totalCommission = await getFillCommission(binanceApi, spotMarketMeta, 123);
+
+    expect(totalCommission).to.be.closeTo(100, 1e-9);
+    expect(myTradesStub.callCount).to.equal(1);
+    expect(myTradesStub.getCall(0).args[0]).to.deep.equal({
+      symbol: "USDCUSDT",
+      orderId: 123,
+      limit: 1000,
+    });
   });
 });
