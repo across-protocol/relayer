@@ -73,7 +73,7 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
     });
     const formatter = createFormatFunction(2, 4, false, l2TokenInfo.decimals);
     const transferTxn: AugmentedTransaction = {
-      contract: this.l2Bridge,
+      contract: this.getL2Bridge(),
       chainId: this.l2chainId,
       method: "transfer",
       args: [
@@ -99,7 +99,7 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
   ): Promise<BigNumber> {
     const binanceApiClient = await this.getBinanceClient();
     const l2TokenInfo = getTokenInfo(l2Token, this.l2chainId);
-    const fromTimestamp = (await getTimestampForBlock(this.l2Bridge.provider, l2EventConfig.from)) * 1_000;
+    const fromTimestamp = (await getTimestampForBlock(this.getL2Bridge().provider, l2EventConfig.from)) * 1_000;
     const [_depositHistory, _withdrawHistory] = await Promise.all([
       getBinanceDeposits(binanceApiClient, fromTimestamp),
       getBinanceWithdrawals(binanceApiClient, this.l1TokenInfo.symbol, fromTimestamp),

@@ -7,7 +7,6 @@ import {
   EventSearchConfig,
   Provider,
   getBlockForTimestamp,
-  EVMBlockFinder,
   isDefined,
   EvmAddress,
   winston,
@@ -18,7 +17,6 @@ import { processEvent } from "../utils";
 
 export class LineaWethBridge extends BaseBridgeAdapter {
   protected atomicDepositor: Contract;
-  protected blockFinder: EVMBlockFinder;
 
   // We by default do not include a fee for Linea bridges.
   protected bridgeFee = 0;
@@ -94,8 +92,8 @@ export class LineaWethBridge extends BaseBridgeAdapter {
     ]);
 
     const [l1FromBlock, l1ToBlock] = [
-      await getBlockForTimestamp(this.logger, this.hubChainId, fromBlock.timestamp, this.blockFinder),
-      await getBlockForTimestamp(this.logger, this.hubChainId, toBlock.timestamp, this.blockFinder),
+      await getBlockForTimestamp(this.logger, this.hubChainId, fromBlock.timestamp),
+      await getBlockForTimestamp(this.logger, this.hubChainId, toBlock.timestamp),
     ];
     const l1SearchConfig = {
       from: l1FromBlock,

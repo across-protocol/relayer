@@ -92,7 +92,7 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
     const payFeeInLzToken = !chainHasNativeToken(this.l2chainId);
 
     // Get the messaging fee for this transfer
-    const feeStruct: OFT.MessagingFeeStruct = await this.l2Bridge.quoteSend(sendParamStruct, false);
+    const feeStruct: OFT.MessagingFeeStruct = await this.getL2Bridge().quoteSend(sendParamStruct, false);
     if (BigNumber.from(feeStruct.nativeFee).gt(this.nativeFeeCap)) {
       throw new Error(`Fee exceeds maximum allowed (${feeStruct.nativeFee} > ${this.nativeFeeCap})`);
     }
@@ -106,17 +106,17 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
           unpermissionsed: false,
           nonMulticall: true,
           ensureConfirmation: true,
-          args: [this.l2Bridge.address, feeStruct.nativeFee],
+          args: [this.getL2Bridge().address, feeStruct.nativeFee],
           message: "🎰 Approved OftL2Bridge to spend LZ fee token.",
-          mrkdwn: `Approved ${formatter(feeStruct.nativeFee.toString())} to ${this.l2Bridge.address}`,
+          mrkdwn: `Approved ${formatter(feeStruct.nativeFee.toString())} to ${this.getL2Bridge().address}`,
         }
       : undefined;
 
     // Set refund address to signer's address. This should technically never be required as all of our calcs
     // are precise, set it just in case
-    const refundAddress = await this.l2Bridge.signer.getAddress();
+    const refundAddress = await this.getL2Bridge().signer.getAddress();
     const withdrawTxn = {
-      contract: this.l2Bridge,
+      contract: this.getL2Bridge(),
       chainId: this.l2chainId,
       method: "send",
       unpermissioned: false,
@@ -152,15 +152,15 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
 
     const [l2SentAll, l1ReceivedAll] = await Promise.all([
       paginatedEventQuery(
-        this.l2Bridge,
+        this.getL2Bridge(),
         // guid (Topic[1]) not filtered -> null, dstEid (non-indexed) -> undefined, fromAddress (Topic[3]) filtered
-        this.l2Bridge.filters.OFTSent(null, undefined, fromAddress.toNative()),
+        this.getL2Bridge().filters.OFTSent(null, undefined, fromAddress.toNative()),
         l2EventSearchConfig
       ),
       paginatedEventQuery(
-        this.l1Bridge,
+        this.getL1Bridge(),
         // guid (Topic[1]) not filtered -> null, srcEid (non-indexed) -> undefined, toAddress (Topic[3]) filtered
-        this.l1Bridge.filters.OFTReceived(null, undefined, l1RecipientAddress),
+        this.getL1Bridge().filters.OFTReceived(null, undefined, l1RecipientAddress),
         l1EventSearchConfig
       ),
     ]);
@@ -206,7 +206,7 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
    */
   private async roundAmountToSend(amount: BigNumber, decimals: number): Promise<BigNumber> {
     // Fetch `sharedDecimals` if not already fetched
-    this.sharedDecimals ??= await this.l2Bridge.sharedDecimals();
+    this.sharedDecimals ??= await this.getL2Bridge().sharedDecimals();
 
     return OFT.roundAmountToSend(amount, decimals, this.sharedDecimals);
   }
@@ -224,7 +224,7 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
     return [
       {
         token: EvmAddress.from(this.l2Token.toEvmAddress()),
-        bridge: EvmAddress.from(this.l2Bridge.address),
+        bridge: EvmAddress.from(this.getL2Bridge().address),
       },
     ];
   }
