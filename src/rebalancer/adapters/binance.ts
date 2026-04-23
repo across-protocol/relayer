@@ -449,7 +449,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       const matchingFill = await this._getMatchingFillForCloid(cloid, this.baseSignerAddress);
       if (matchingFill) {
         const balance = await this._getBinanceBalance(destinationToken);
-        const withdrawAmount = Number(matchingFill.expectedAmountToReceive);
+        const withdrawAmount = matchingFill.expectedAmountToReceive;
         if (balance < withdrawAmount) {
           this.logger.debug({
             at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",
@@ -689,7 +689,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       if (matchingFill) {
         const destinationTokenInfo = this._getTokenInfo(destinationToken, destinationChain);
         expectedAmountToReceive = toBNWei(
-          truncate(Number(matchingFill.expectedAmountToReceive), destinationTokenInfo.decimals),
+          truncate(matchingFill.expectedAmountToReceive, destinationTokenInfo.decimals),
           destinationTokenInfo.decimals
         );
       } else {
@@ -1476,7 +1476,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   private async _getMatchingFillForCloid(
     cloid: string,
     account: EvmAddress
-  ): Promise<{ matchingFill: QueryOrderResult; expectedAmountToReceive: string } | undefined> {
+  ): Promise<{ matchingFill: QueryOrderResult; expectedAmountToReceive: number } | undefined> {
     const orderDetails = await this._redisGetOrderDetails(cloid, account);
     const spotMarketMeta = await this._getSpotMarketMetaForRoute(
       orderDetails.sourceToken,
@@ -1489,8 +1489,13 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     if (!matchingFill) {
       return undefined;
     }
+    // Need to subtract the taker commission from the expected amount to receive.
+    const tradeFeePct = (await this._getTradeFees()).find(
+      (fee) => fee.symbol === spotMarketMeta.symbol
+    )?.takerCommission;
     const expectedAmountToReceive = spotMarketMeta.isBuy ? matchingFill.executedQty : matchingFill.cummulativeQuoteQty;
-    return { matchingFill, expectedAmountToReceive };
+    const tradeFee = Number(expectedAmountToReceive) * tradeFeePct;
+    return { matchingFill, expectedAmountToReceive: Number(expectedAmountToReceive) - tradeFee };
   }
 
   private _routeRequiresSwap(sourceToken: string, destinationToken: string): boolean {
