@@ -7,16 +7,12 @@ import {
   getNetworkName,
   Signer,
   EvmAddress,
-  BinanceApi,
-  getBinanceApiClient,
   getTranslatedTokenAddress,
   floatToBN,
   getTimestampForBlock,
   CHAIN_IDs,
   getTokenInfo,
   compareAddressesSimple,
-  getBinanceDeposits,
-  getBinanceWithdrawals,
   BINANCE_NETWORKS,
   filterAsync,
   getBinanceDepositType,
@@ -27,13 +23,14 @@ import {
 } from "../../utils";
 import { L1Token } from "../../interfaces";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
+import { BinanceClient } from "../../clients";
 import ERC20_ABI from "../../common/abi/MinimalERC20.json";
 import { AugmentedTransaction } from "../../clients/TransactionClient";
 
 export class BinanceCEXBridge extends BaseL2BridgeAdapter {
   // Store the promise to be evaluated when needed so that we can construct the bridge synchronously.
-  protected readonly binanceApiClientPromise;
-  protected binanceApiClient: BinanceApi | undefined;
+  protected readonly binanceClientPromise;
+  protected binanceClient: BinanceClient | undefined;
   // Store the token info for the bridge so we can reference the L1 decimals and L1 token symbol.
   protected l1TokenInfo: L1Token;
   // The deposit network corresponding to the L2.
@@ -56,7 +53,7 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
 
     this.depositNetwork = BINANCE_NETWORKS[l2chainId];
 
-    this.binanceApiClientPromise = getBinanceApiClient(process.env["BINANCE_API_BASE"]);
+    this.binanceClientPromise = BinanceClient.create({ url: process.env.BINANCE_API_BASE });
   }
 
   async constructWithdrawToL1Txns(
@@ -65,9 +62,9 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
     _l1Token: EvmAddress,
     amount: BigNumber
   ): Promise<AugmentedTransaction[]> {
-    const binanceApiClient = await this.getBinanceClient();
+    const binanceClient = await this.getBinanceClient();
     const l2TokenInfo = getTokenInfo(l2Token, this.l2chainId);
-    const depositAddress = await binanceApiClient.depositAddress({
+    const depositAddress = await binanceClient.rawApi().depositAddress({
       coin: this.l1TokenInfo.symbol,
       network: this.depositNetwork,
     });
@@ -97,12 +94,12 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
     fromAddress: EvmAddress,
     l2Token: EvmAddress
   ): Promise<BigNumber> {
-    const binanceApiClient = await this.getBinanceClient();
+    const binanceClient = await this.getBinanceClient();
     const l2TokenInfo = getTokenInfo(l2Token, this.l2chainId);
     const fromTimestamp = (await getTimestampForBlock(this.l2Bridge.provider, l2EventConfig.from)) * 1_000;
     const [_depositHistory, _withdrawHistory] = await Promise.all([
-      getBinanceDeposits(binanceApiClient, fromTimestamp),
-      getBinanceWithdrawals(binanceApiClient, this.l1TokenInfo.symbol, fromTimestamp),
+      binanceClient.getDeposits(fromTimestamp),
+      binanceClient.getWithdrawals(this.l1TokenInfo.symbol, fromTimestamp),
     ]);
     // Remove any deposits and withdrawals that are marked as related to a swap.
     const depositHistory = await filterAsync(_depositHistory, async (deposit) => {
@@ -123,8 +120,8 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
     return unmatchedDeposits.reduce((sum, deposit) => sum.add(floatToBN(deposit.amount, l2TokenInfo.decimals)), bnZero);
   }
 
-  protected async getBinanceClient() {
-    return (this.binanceApiClient ??= await this.binanceApiClientPromise);
+  protected async getBinanceClient(): Promise<BinanceClient> {
+    return (this.binanceClient ??= await this.binanceClientPromise);
   }
 
   public pendingWithdrawalLookbackPeriodSeconds(): number {

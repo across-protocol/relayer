@@ -15,11 +15,8 @@ import {
   EvmAddress,
   forEachAsync,
   fromWei,
-  getAccountCoins,
-  getBinanceApiClient,
   getFillCommission,
   getBinanceTransactionTypeKey,
-  getBinanceWithdrawals,
   getCurrentTime,
   getNetworkName,
   getProvider,
@@ -39,7 +36,7 @@ import {
 import { OrderDetails, RebalanceRoute } from "../utils/interfaces";
 import { STATUS } from "../utils/utils";
 import { BaseAdapter } from "./baseAdapter";
-import { AugmentedTransaction, MultiCallerClient } from "../../clients";
+import { AugmentedTransaction, BinanceClient, MultiCallerClient } from "../../clients";
 import { RebalancerConfig } from "../RebalancerConfig";
 import { CctpAdapter } from "./cctpAdapter";
 import { OftAdapter } from "./oftAdapter";
@@ -161,7 +158,7 @@ function resolveStepPrecision(stepSize: string): number {
 }
 
 export class BinanceStablecoinSwapAdapter extends BaseAdapter {
-  private binanceApiClient: Binance;
+  private binanceClient: BinanceClient;
   private exchangeInfoPromise?: ReturnType<Binance["exchangeInfo"]>;
   private orderBookPromiseBySymbol = new Map<string, Promise<Awaited<ReturnType<Binance["book"]>>>>();
   private orderBookSnapshotBySymbol = new Map<
@@ -195,7 +192,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     }
     await super.initialize(_availableRoutes.filter((route) => route.adapter === "binance"));
 
-    this.binanceApiClient = await getBinanceApiClient(process.env.BINANCE_API_BASE);
+    this.binanceClient = await BinanceClient.create({ logger: this.logger, url: process.env.BINANCE_API_BASE });
 
     await forEachAsync(this.availableRoutes, async (route) => {
       const { sourceToken, destinationToken, sourceChain, destinationChain } = route;
@@ -1073,16 +1070,16 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const binanceSymbol = resolveBinanceCoinSymbol(symbol);
     const cacheKey = "binance-account-coins";
 
-    type ParsedAccountCoins = Awaited<ReturnType<typeof getAccountCoins>>;
-    let accountCoins: ParsedAccountCoins | undefined;
+    let accountCoins: Coin[] | undefined;
     if (!skipCache) {
       const cachedAccountCoins = await this.redisCache.get<string>(cacheKey);
       if (cachedAccountCoins) {
-        accountCoins = JSON.parse(cachedAccountCoins) as ParsedAccountCoins;
+        // todo: Validate typing
+        accountCoins = JSON.parse(cachedAccountCoins) as Coin[];
       }
     }
     if (!accountCoins) {
-      accountCoins = await getAccountCoins(this.binanceApiClient);
+      accountCoins = await this.binanceClient.getAccountCoins();
       // Reset cache if we've fetched a new API response.
       await this.redisCache.set(cacheKey, JSON.stringify(accountCoins)); // Use default TTL which is a long time as
       // the entry for this coin is not expected to change frequently.
@@ -1143,7 +1140,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       sourceToken !== "WETH" || isDefined(getAtomicDepositorContracts(sourceChain)),
       `Atomic depositor contracts missing for WETH source chain ${getNetworkName(sourceChain)}`
     );
-    const depositAddress = await this.binanceApiClient.depositAddress({
+    const depositAddress = await this.binanceClient.rawApi().depositAddress({
       coin: resolveBinanceCoinSymbol(sourceToken),
       network: BINANCE_NETWORKS[sourceChain],
     });
@@ -1231,7 +1228,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   }
 
   private async _getExchangeInfo(): Promise<ReturnType<Binance["exchangeInfo"]>> {
-    this.exchangeInfoPromise ??= this.binanceApiClient.exchangeInfo();
+    this.exchangeInfoPromise ??= this.binanceClient.rawApi().exchangeInfo();
     try {
       return await this.exchangeInfoPromise;
     } catch (error) {
@@ -1326,7 +1323,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     maxRetries = 3
   ): Promise<Awaited<ReturnType<Binance["book"]>>> {
     try {
-      return await this.binanceApiClient.book({ symbol, limit: 5000 });
+      return await this.binanceClient.rawApi().book({ symbol, limit: 5000 });
     } catch (error) {
       if (nRetries >= maxRetries) {
         throw error;
@@ -1456,7 +1453,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   }
 
   private async _getTradeFees(): Promise<ReturnType<Binance["tradeFee"]>> {
-    this.tradeFeesPromise ??= this.binanceApiClient.tradeFee();
+    this.tradeFeesPromise ??= this.binanceClient.rawApi().tradeFee();
     try {
       return await this.tradeFeesPromise;
     } catch (error) {
@@ -1474,7 +1471,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       orderDetails.sourceToken,
       orderDetails.destinationToken
     );
-    const allOrders = await this.binanceApiClient.allOrders({
+    const allOrders = await this.binanceClient.rawApi().allOrders({
       symbol: spotMarketMeta.symbol,
     });
     const matchingFill = allOrders.find((order) => order.clientOrderId === cloid && order.status === "FILLED");
@@ -1484,7 +1481,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const grossExpectedAmountToReceive = spotMarketMeta.isBuy
       ? matchingFill.executedQty
       : matchingFill.cummulativeQuoteQty;
-    const fillCommission = await getFillCommission(this.binanceApiClient, spotMarketMeta, matchingFill.orderId);
+    const fillCommission = await getFillCommission(this.binanceClient.rawApi(), spotMarketMeta, matchingFill.orderId);
     const expectedAmountToReceive = Number(grossExpectedAmountToReceive) - fillCommission;
     return { matchingFill, expectedAmountToReceive };
   }
@@ -1518,7 +1515,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       } with size ${szForOrder}`,
       orderStruct,
     });
-    const response = await this.binanceApiClient.order(orderStruct as NewOrderSpot);
+    const response = await this.binanceClient.rawApi().order(orderStruct as NewOrderSpot);
     assert(response.status == "FILLED", `Market order was not filled: ${JSON.stringify(response)}`);
     this.logger.info({
       at: "BinanceStablecoinSwapAdapter._placeMarketOrder",
@@ -1536,7 +1533,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   ): Promise<BinanceWithdrawal[]> {
     const binanceToken = resolveBinanceCoinSymbol(token);
     assert(isDefined(BINANCE_NETWORKS[chain]), "Chain should be a Binance network");
-    return (await getBinanceWithdrawals(this.binanceApiClient, binanceToken, startTime)).filter(
+    return (await this.binanceClient.getWithdrawals(binanceToken, startTime)).filter(
       (withdrawal) =>
         withdrawal.coin === binanceToken &&
         withdrawal.network === BINANCE_NETWORKS[chain] &&
@@ -1640,7 +1637,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     // We need to truncate the amount to withdraw to the destination chain's decimal places.
     const destinationTokenInfo = this._getTokenInfo(destinationToken, destinationEntrypointNetwork);
     const amountToWithdraw = truncate(quantity, destinationTokenInfo.decimals);
-    const withdrawalId = await this.binanceApiClient.withdraw({
+    const withdrawalId = await this.binanceClient.rawApi().withdraw({
       coin: resolveBinanceCoinSymbol(destinationToken),
       address: this.baseSignerAddress.toNative(),
       amount: Number(amountToWithdraw),

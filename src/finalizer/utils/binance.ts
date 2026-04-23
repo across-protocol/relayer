@@ -3,7 +3,6 @@ import {
   Signer,
   getTimestampForBlock,
   mapAsync,
-  getBinanceApiClient,
   resolveAcrossToken,
   compareAddressesSimple,
   formatUnits,
@@ -14,9 +13,6 @@ import {
   isEVMSpokePoolClient,
   assert,
   EvmAddress,
-  getBinanceDeposits,
-  getBinanceWithdrawals,
-  getAccountCoins,
   BINANCE_NETWORKS,
   isDefined,
   filterAsync,
@@ -26,7 +22,7 @@ import {
   isCompletedBinanceWithdrawal,
   truncate,
 } from "../../utils";
-import { HubPoolClient, SpokePoolClient } from "../../clients";
+import { BinanceClient, HubPoolClient, SpokePoolClient } from "../../clients";
 import { FinalizerPromise, AddressesToFinalize } from "../types";
 
 // Alias for a Binance deposit/withdrawal status.
@@ -66,15 +62,15 @@ export async function binanceFinalizer(
   const l2ChainId = l2SpokePoolClient.chainId;
   const l1EventSearchConfig = l1SpokePoolClient.eventSearchConfig;
 
-  const [binanceApi, _fromTimestamp] = await Promise.all([
-    getBinanceApiClient(process.env["BINANCE_API_BASE"]),
+  const [binanceClient, _fromTimestamp] = await Promise.all([
+    BinanceClient.create({ logger, url: process.env.BINANCE_API_BASE }),
     getTimestampForBlock(hubSigner.provider, l1EventSearchConfig.from),
   ]);
   const fromTimestamp = _fromTimestamp * 1_000;
 
   const [_binanceDeposits, accountCoins] = await Promise.all([
-    getBinanceDeposits(binanceApi, fromTimestamp),
-    getAccountCoins(binanceApi),
+    binanceClient.getDeposits(fromTimestamp),
+    binanceClient.getAccountCoins(),
   ]);
   // Remove any _binanceDeposits that are marked as related to a swap. The reason why we check "!== SWAP" instead of
   // "=== BRIDGE" is because we want this code to be backwards compatible with the existing inventory client logic which
@@ -125,7 +121,7 @@ export async function binanceFinalizer(
       let coinBalance = Number(coin.balance);
       const l1Token = resolveAcrossToken(symbol, hubChainId, true);
       const { decimals: l1Decimals } = getTokenInfo(EvmAddress.from(l1Token), hubChainId);
-      const _withdrawals = await getBinanceWithdrawals(binanceApi, symbol, fromTimestamp);
+      const _withdrawals = await binanceClient.getWithdrawals(symbol, fromTimestamp);
       // Similar to the reasoning for filtering deposits, we need to filter withdrawals by removing any
       // that are explicitly marked as related to a swap. To make this backwards compatible, we check "!== SWAP" instead of "=== BRIDGE"
       // as the existing inventory client logic does not yet tag withdrawals with this BRIDGE type.
@@ -207,7 +203,7 @@ export async function binanceFinalizer(
           amountToFinalize = Math.floor(amountToFinalize * DECIMAL_PRECISION) / DECIMAL_PRECISION;
           // Balance from Binance is in 8 decimal places, so we need to truncate to 8 decimal places.
           coinBalance = Number((coinBalance - amountToFinalize).toFixed(8));
-          const withdrawalId = await binanceApi.withdraw({
+          const withdrawalId = await binanceClient.rawApi().withdraw({
             coin: symbol,
             address,
             network: withdrawNetwork,
@@ -243,7 +239,7 @@ export async function binanceFinalizer(
               });
               // Lastly, we need to truncate the amount to withdraw to 6 decimal places
               const amountToSweep = truncate(cappedWithdraw, 6);
-              const withdrawalId = await binanceApi.withdraw({
+              const withdrawalId = await binanceClient.rawApi().withdraw({
                 coin: symbol,
                 address,
                 network: withdrawNetwork,

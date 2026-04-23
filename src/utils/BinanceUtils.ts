@@ -128,8 +128,8 @@ export function binanceCredentialsConfigured(): boolean {
  * @returns A Binance client from `binance-api-node`.
  */
 export async function getBinanceApiClient(url = "https://api.binance.com") {
-  const apiKey = process.env["BINANCE_API_KEY"];
-  const secretKey = (await getBinanceSecretKey()) ?? process.env["BINANCE_HMAC_KEY"];
+  const apiKey = process.env.BINANCE_API_KEY;
+  const secretKey = (await getBinanceSecretKey()) ?? apiKey;
   assert(isDefined(apiKey) && isDefined(secretKey), "Binance client cannot be constructed due to missing keys.");
   return Binance({
     apiKey,
