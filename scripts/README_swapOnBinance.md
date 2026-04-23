@@ -101,7 +101,7 @@ Before any transaction is sent, the script:
 
 ## Contributor notes
 
-- Adapter-derived shared helpers live in `src/utils/BinanceSwapUtils.ts`.
+- Adapter-derived shared helpers live in `src/utils/BinanceUtils.ts`.
 - Script-specific validation, quote, and polling logic lives directly in `scripts/swapOnBinance.ts`.
 - The CLI intentionally supports a wider live-Binance universe than the production rebalancer route maps in `src/rebalancer/`.
 - If you widen rebalancer support for a Binance route, update both the route construction layer and its documentation; script support alone is not enough.

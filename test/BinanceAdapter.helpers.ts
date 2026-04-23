@@ -10,7 +10,7 @@ import {
   deriveBinanceSpotMarketMeta,
   isSameBinanceCoin,
   supportsBinanceIntermediateBridgeToken,
-} from "../src/utils/BinanceSwapUtils";
+} from "../src/utils";
 
 describe("Binance adapter helpers", async function () {
   afterEach(function () {
