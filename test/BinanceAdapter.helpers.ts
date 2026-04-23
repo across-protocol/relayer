@@ -153,7 +153,10 @@ describe("Binance adapter helpers", async function () {
         cloid: string,
         account: EvmAddress
       ): Promise<{ expectedAmountToReceive: number } | undefined>;
-      _redisGetOrderDetails(cloid: string, account: EvmAddress): Promise<{ sourceToken: string; destinationToken: string }>;
+      _redisGetOrderDetails(
+        cloid: string,
+        account: EvmAddress
+      ): Promise<{ sourceToken: string; destinationToken: string }>;
       _getSpotMarketMetaForRoute(
         sourceToken: string,
         destinationToken: string
