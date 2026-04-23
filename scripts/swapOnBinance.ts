@@ -1433,11 +1433,17 @@ export class BinanceSwapVenue {
     if (!matchingFill) {
       return undefined;
     }
+    // Query myTrades to get the realized commissions on the received asset.
     const myTrades = await this.binanceApiClient.myTrades({
       symbol: spotMarketMeta.symbol,
       orderId: matchingFill.orderId,
     });
-    const totalCommission = myTrades.reduce((acc, trade) => acc + Number(trade.commission), 0);
+    const receivedAsset = spotMarketMeta.isBuy ? spotMarketMeta.baseAssetName : spotMarketMeta.quoteAssetName;
+    const totalCommission = myTrades.reduce(
+      (acc, trade) =>
+        acc + (resolveBinanceCoinSymbol(trade.commissionAsset) === receivedAsset ? Number(trade.commission) : 0),
+      0
+    );
     const expectedAmountToReceive =
       matchingFill.side === "BUY" ? matchingFill.executedQty : matchingFill.cummulativeQuoteQty;
     return Number(expectedAmountToReceive) - totalCommission;
