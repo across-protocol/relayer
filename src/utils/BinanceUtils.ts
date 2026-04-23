@@ -12,11 +12,25 @@ const KNOWN_BINANCE_ERROR_REASONS = [
   "Too many requests; current request has limited",
   "TypeError: fetch failed",
 ];
+const BINANCE_TRADES_FETCH_LIMIT = 1000;
 
 export type WithdrawalQuota = {
   wdQuota: number;
   usedWdQuota: number;
 };
+
+export type SpotMarketMeta = {
+  symbol: string;
+  baseAssetName: string;
+  quoteAssetName: string;
+  pxDecimals: number;
+  szDecimals: number;
+  minimumOrderSize: number;
+  isBuy: boolean;
+};
+
+type BinanceTradeReader = Pick<BinanceApi, "myTrades">;
+type FillCommissionMarketMeta = Pick<SpotMarketMeta, "symbol" | "baseAssetName" | "quoteAssetName" | "isBuy">;
 
 // Alias for Binance network symbols.
 export const BINANCE_NETWORKS: { [chainId: number]: string } = {
@@ -324,6 +338,24 @@ export async function getBinanceWithdrawals(
   });
 }
 
+export async function getFillCommission(
+  binanceApi: BinanceTradeReader,
+  spotMarketMeta: FillCommissionMarketMeta,
+  orderId: number
+): Promise<number> {
+  const receivedAsset = spotMarketMeta.isBuy ? spotMarketMeta.baseAssetName : spotMarketMeta.quoteAssetName;
+  // Binance `myTrades` returns the most recent trades when `fromId` is omitted, so naively paging
+  // forward from that first page can skip older fills. We intentionally read a single page here
+  // because these rebalance orders are not expected to fragment into >1000 fills. If that ever
+  // changes in production, replace this with an explicit oldest-to-newest pagination strategy.
+  const trades = await getBinanceFillTrades(binanceApi, spotMarketMeta.symbol, orderId);
+  return trades.reduce(
+    (acc, trade) =>
+      acc + (resolveBinanceCoinSymbol(trade.commissionAsset) === receivedAsset ? Number(trade.commission) : 0),
+    0
+  );
+}
+
 /**
  * The call to accountCoins returns an opaque `unknown` object with extraneous information. This function
  * parses the unknown into a readable object to be used by the finalizers.
@@ -351,6 +383,30 @@ export async function getAccountCoins(binanceApi: BinanceApi): Promise<ParsedAcc
       networkList,
     } as Coin;
   });
+}
+
+async function getBinanceFillTrades(
+  binanceApi: BinanceTradeReader,
+  symbol: string,
+  orderId: number,
+  nRetries = 0,
+  maxRetries = 3
+): Promise<Awaited<ReturnType<BinanceApi["myTrades"]>>> {
+  try {
+    return await binanceApi.myTrades({
+      symbol,
+      orderId,
+      limit: BINANCE_TRADES_FETCH_LIMIT,
+    });
+  } catch (_err) {
+    const err = _err.toString();
+    if (KNOWN_BINANCE_ERROR_REASONS.some((errorReason) => err.includes(errorReason)) && nRetries < maxRetries) {
+      const delaySeconds = 2 ** nRetries + Math.random();
+      await delay(delaySeconds);
+      return getBinanceFillTrades(binanceApi, symbol, orderId, ++nRetries, maxRetries);
+    }
+    throw err;
+  }
 }
 
 /**

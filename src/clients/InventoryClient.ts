@@ -1,8 +1,12 @@
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import WETH_ABI from "../common/abi/Weth.json";
 import {
+  acrossApi,
   bnZero,
   BigNumber,
+  binanceCredentialsConfigured,
+  coingecko,
+  defiLlama,
   winston,
   toBN,
   getNetworkName,
@@ -21,6 +25,7 @@ import {
   fixedPointAdjustment,
   bnComparatorDescending,
   MAX_UINT_VAL,
+  PriceClient,
   toBNWei,
   assert,
   Profiler,
@@ -41,6 +46,8 @@ import {
   getInventoryBalanceContributorTokens,
   dedupArray,
 } from "../utils";
+import { getAcrossHost } from "./AcrossAPIClient";
+import { BinanceClient } from "./BinanceClient";
 import { BundleDataApproxClient, BundleDataState } from "./BundleDataApproxClient";
 import { HubPoolClient, TokenClient, TransactionClient } from ".";
 import { Deposit, TokenInfo } from "../interfaces";
@@ -85,6 +92,10 @@ export class InventoryClient {
   private pendingL2Withdrawals: { [l1Token: string]: { [chainId: number]: BigNumber } } = {};
   private pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
   private transactionClient: TransactionClient;
+  // Headroom multiplier on CEX quota; RELAYER_CEX_REBALANCE_BUFFER overrides (default 3x).
+  private readonly cexRebalanceBuffer: BigNumber;
+  private readonly priceClient: PriceClient | undefined;
+  protected l1TokenPricesUsd: Map<string, BigNumber> = new Map();
 
   constructor(
     readonly relayer: EvmAddress,
@@ -98,11 +109,21 @@ export class InventoryClient {
     readonly rebalancerClient: RebalancerClient,
     readonly simMode = false,
     readonly prioritizeLpUtilization = true,
-    readonly l1TokensOverride: string[] = []
+    readonly l1TokensOverride: string[] = [],
+    protected binanceClient?: BinanceClient
   ) {
     this.transactionClient = new TransactionClient(logger);
     this.inventoryConfig = inventoryConfig;
     this.scalar = sdkUtils.fixedPointAdjustment;
+    const rawBuffer = Number(process.env.RELAYER_CEX_REBALANCE_BUFFER);
+    this.cexRebalanceBuffer = toBNWei(Number.isFinite(rawBuffer) && rawBuffer > 0 ? rawBuffer : 3);
+    if (binanceCredentialsConfigured()) {
+      this.priceClient = new PriceClient(logger, [
+        new acrossApi.PriceFeed({ host: getAcrossHost(this.hubPoolClient.chainId) }),
+        new coingecko.PriceFeed({ apiKey: process.env.COINGECKO_PRO_API_KEY }),
+        new defiLlama.PriceFeed(),
+      ]);
+    }
     this.formatWei = createFormatFunction(2, 4, false, 18);
     this.profiler = new Profiler({
       logger: this.logger,
@@ -669,10 +690,9 @@ export class InventoryClient {
     const forceOriginRepayment = this.shouldForceOriginRepayment(deposit);
     const originQuickRebalance = this.isQuicklyRebalanced(originChainId, inputToken);
 
-    // If the deposit forces origin chain repayment but the origin chain is one we can easily rebalance inventory from,
-    // then don't ignore this deposit based on perceived over-allocation. For example, the hub chain and chains connected
-    // to the user's Binance API are easy to move inventory from so we should never skip filling these deposits.
-    if (forceOriginRepayment && originQuickRebalance) {
+    // Force-origin deposits with an unmetered fast-rebalance route (CCTP/OFT/hub) skip allocation checks.
+    // Binance-route origins are handled downstream with capacity gating.
+    if (forceOriginRepayment && this.isUnmeteredFastRebalance(originChainId, inputToken)) {
       return [originChainId];
     }
 
@@ -693,6 +713,12 @@ export class InventoryClient {
     const { decimals: l1TokenDecimals } = this.getTokenInfo(l1Token, this.hubPoolClient.chainId);
     const { decimals: inputTokenDecimals } = this.getTokenInfo(inputToken, originChainId);
     const inputAmountInL1TokenDecimals = sdkUtils.ConvertDecimals(inputTokenDecimals, l1TokenDecimals)(inputAmount);
+
+    // Prefer origin when it's a fast-rebalance source with capacity for this fill — ignore allocation.
+    if (this._l1TokenEnabledForChain(l1Token, originChainId) && this.canFastRebalanceFill(deposit, l1Token)) {
+      return [originChainId];
+    }
+
     const totalRefundsPerChain: { [chainId: number]: BigNumber } = Object.fromEntries(
       this.chainIdList.map((chainId) => [chainId, this.getUpcomingRefunds(chainId, l1Token, this.relayer)])
     );
@@ -1735,6 +1761,42 @@ export class InventoryClient {
         })),
       });
     }
+
+    if (isDefined(this.binanceClient)) {
+      await this.binanceClient.refresh();
+      await this.updateTokenPrices();
+    }
+  }
+
+  // Strict-fail: any error clears the cache.
+  private async updateTokenPrices(): Promise<void> {
+    this.l1TokenPricesUsd.clear();
+    if (!isDefined(this.priceClient)) {
+      return;
+    }
+    const binanceRouteTokens = this.getL1Tokens().filter((l1Token) =>
+      this.getEnabledChains().some((chainId) => hasBinanceRoute(chainId, l1Token))
+    );
+    if (binanceRouteTokens.length === 0) {
+      return;
+    }
+    try {
+      const prices = await this.priceClient.getPricesByAddress(
+        binanceRouteTokens.map((l1Token) => l1Token.toNative()),
+        "usd"
+      );
+      prices.forEach(({ address, price }) => {
+        if (price > 0) {
+          this.l1TokenPricesUsd.set(address, toBNWei(price.toFixed(18)));
+        }
+      });
+    } catch (err) {
+      this.logger.warn({
+        at: "InventoryClient#updateTokenPrices",
+        message: "Failed to refresh token prices; downstream capacity checks disabled for this cycle",
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   isInventoryManagementEnabled(): boolean {
@@ -1787,12 +1849,8 @@ export class InventoryClient {
     });
   }
 
-  /**
-   * @notice Returns true if after filling this deposit, the repayment can be quickly rebalanced to a different chain.
-   * @dev This function can be used by the InventoryClient and Relayer to help determine whether a deposit should
-   * be filled or ignored given current inventory allocation levels.
-   */
-  private isQuicklyRebalanced(repaymentChainId: number, repaymentToken: Address): boolean {
+  // True for unmetered fast-rebalance routes (CCTP, OFT, hub). Binance is excluded — it's quota-gated.
+  private isUnmeteredFastRebalance(repaymentChainId: number, repaymentToken: Address): boolean {
     const { chainId: hubChainId } = this.hubPoolClient;
     const originChainIsCctpEnabled =
       sdkUtils.chainIsCCTPEnabled(repaymentChainId) &&
@@ -1802,19 +1860,55 @@ export class InventoryClient {
       compareAddressesSimple(TOKEN_SYMBOLS_MAP.USDT.addresses[repaymentChainId], repaymentToken.toNative()) &&
       repaymentChainId !== CHAIN_IDs.HYPEREVM; // OFT withdrawals from HyperEVM take ~12 hours.
     // Repayments on Mainnet can be quickly rebalanced via canonical bridges out of L1.
-    if (originChainIsCctpEnabled || originChainIsOFTEnabled || repaymentChainId === hubChainId) {
+    return originChainIsCctpEnabled || originChainIsOFTEnabled || repaymentChainId === hubChainId;
+  }
+
+  /**
+   * @notice Returns true if after filling this deposit, the repayment can be quickly rebalanced to a different chain.
+   * @dev This function can be used by the InventoryClient and Relayer to help determine whether a deposit should
+   * be filled or ignored given current inventory allocation levels.
+   */
+  private isQuicklyRebalanced(repaymentChainId: number, repaymentToken: Address): boolean {
+    if (this.isUnmeteredFastRebalance(repaymentChainId, repaymentToken)) {
       return true;
     }
+
     // If Binance offers a withdrawal route for this (chain, token), inventory repaid on this chain can be
     // moved off via Binance in place of the canonical slow-withdrawal bridge. This naturally covers BSC
     // (whose canonical L2 bridge is Binance for every token) as well as per-token Binance routes on
     // slow-withdrawal chains like Arbitrum, Optimism, and Base.
+    const { chainId: hubChainId } = this.hubPoolClient;
     try {
       const l1Token = getInventoryEquivalentL1TokenAddress(repaymentToken, repaymentChainId, hubChainId);
       return hasBinanceRoute(repaymentChainId, l1Token);
     } catch {
       return false;
     }
+  }
+
+  // True if origin repayment can be drained quickly for this deposit. Binance requires a wired
+  // client and a cached USD price; missing either fails closed.
+  private canFastRebalanceFill(
+    deposit: Pick<Deposit, "originChainId" | "inputToken" | "inputAmount">,
+    l1Token: EvmAddress
+  ): boolean {
+    const { originChainId, inputToken, inputAmount } = deposit;
+    if (this.isUnmeteredFastRebalance(originChainId, inputToken)) {
+      return true;
+    }
+    if (!isDefined(this.binanceClient)) {
+      return false;
+    }
+    const priceUsd = this.l1TokenPricesUsd.get(l1Token.toNative());
+    if (!isDefined(priceUsd)) {
+      return false;
+    }
+    const { decimals: l1TokenDecimals } = this.getTokenInfo(l1Token, this.hubPoolClient.chainId);
+    const { decimals: inputTokenDecimals } = this.getTokenInfo(inputToken, originChainId);
+    const inputAmountInL1TokenDecimals = sdkUtils.ConvertDecimals(inputTokenDecimals, l1TokenDecimals)(inputAmount);
+    const fillUsd = inputAmountInL1TokenDecimals.mul(priceUsd).div(BigNumber.from(10).pow(l1TokenDecimals));
+    const bufferedUsd = fillUsd.mul(this.cexRebalanceBuffer).div(fixedPointAdjustment);
+    return this.binanceClient.canWithdraw(bufferedUsd, originChainId, l1Token);
   }
 
   log(message: string, data?: AnyObject, level: DefaultLogLevels = "debug"): void {
