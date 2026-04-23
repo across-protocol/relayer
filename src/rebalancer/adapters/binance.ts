@@ -1492,7 +1492,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     // Need to subtract the taker commission from the expected amount to receive.
     const tradeFeePct = (await this._getTradeFees()).find(
       (fee) => fee.symbol === spotMarketMeta.symbol
-    )?.takerCommission;
+    ).takerCommission;
     const expectedAmountToReceive = spotMarketMeta.isBuy ? matchingFill.executedQty : matchingFill.cummulativeQuoteQty;
     const tradeFee = Number(expectedAmountToReceive) * tradeFeePct;
     return { matchingFill, expectedAmountToReceive: Number(expectedAmountToReceive) - tradeFee };
