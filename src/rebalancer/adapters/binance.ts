@@ -1489,13 +1489,14 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     if (!matchingFill) {
       return undefined;
     }
-    // Need to subtract the taker commission from the expected amount to receive.
-    const tradeFeePct = (await this._getTradeFees()).find(
-      (fee) => fee.symbol === spotMarketMeta.symbol
-    ).takerCommission;
+    // Query myTrades to get the realized commissions on the received asset.
+    const myTrades = await this.binanceApiClient.myTrades({
+      symbol: spotMarketMeta.symbol,
+      orderId: matchingFill.orderId,
+    });
+    const totalCommission = myTrades.reduce((acc, trade) => acc + Number(trade.commission), 0);
     const expectedAmountToReceive = spotMarketMeta.isBuy ? matchingFill.executedQty : matchingFill.cummulativeQuoteQty;
-    const tradeFee = Number(expectedAmountToReceive) * tradeFeePct;
-    return { matchingFill, expectedAmountToReceive: Number(expectedAmountToReceive) - tradeFee };
+    return { matchingFill, expectedAmountToReceive: Number(expectedAmountToReceive) - totalCommission };
   }
 
   private _routeRequiresSwap(sourceToken: string, destinationToken: string): boolean {
