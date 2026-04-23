@@ -131,7 +131,9 @@
     }
   },
   "resolutions": {
-    "protobufjs": "^7.5.4"
+    "protobufjs": "^7.5.4",
+    "follow-redirects": "^1.16.0",
+    "fast-xml-parser": "^5.7.1"
   },
   "publishConfig": {
     "registry": "https://registry.npmjs.com/",
