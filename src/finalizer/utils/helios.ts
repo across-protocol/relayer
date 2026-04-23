@@ -13,6 +13,7 @@ import {
   fetchWithTimeout,
   postWithTimeout,
   isHttpError,
+  isDefined,
 } from "../../utils";
 import { spreadEventWithBlockNumber } from "../../utils/EventUtils";
 import { FinalizerPromise, CrossChainMessage } from "../types";
@@ -75,7 +76,7 @@ export async function heliosL1toL2Finalizer(
   const sp1HeliosVkey: string = await sp1HeliosL2.heliosProgramVkey();
 
   // --- Step 1: Identify all actions needed (pending L1 -> L2 messages to finalize & keep-alive) ---
-  const actions = await identifyRequiredActions(
+  const _actions = await identifyRequiredActions(
     logger,
     hubPoolClient,
     l1SpokePoolClient,
@@ -84,6 +85,7 @@ export async function heliosL1toL2Finalizer(
     l1ChainId,
     l2ChainId
   );
+  const actions = filterRequiredActions(hubPoolClient, l2SpokePoolClient, l2ChainId, _actions);
 
   logger.debug({
     at: `Finalizer#heliosL1toL2Finalizer:${l2ChainId}`,
@@ -114,35 +116,8 @@ export async function heliosL1toL2Finalizer(
     return { callData: [], crossChainMessages: [] };
   }
 
-  // Do not submit any transactions if we have no pool rebalance root to execute on the l2 chain ID or if we are not attempting a keep-alive action.
-  if (
-    !shouldFinalize(hubPoolClient, l2SpokePoolClient, l2ChainId) &&
-    actions.every((action) => action.type === "UpdateAndExecute")
-  ) {
-    logger.debug({
-      at: `Finalizer#heliosL1toL2Finalizer:${l2ChainId}`,
-      message: `No recently executed pool rebalance root for ${l2ChainId}. Skipping finalization procedure.`,
-    });
-    return { callData: [], crossChainMessages: [] };
-  }
   // --- Step 3: Generate transactions from ready-to-submit actions ---
   return generateTxnsForHeliosActions(logger, readyActions, l1ChainId, l2ChainId, l2SpokePoolClient, sp1HeliosL2);
-}
-
-function shouldFinalize(hubPoolClient: HubPoolClient, l2SpokePoolClient: SpokePoolClient, l2ChainId: number): boolean {
-  // If the most recent executed root bundle contained a pool rebalance leaf for `l2ChainId`, then we should finalize.
-  const latestExecutedBundle = hubPoolClient.getLatestFullyExecutedRootBundle(hubPoolClient.latestHeightSearched);
-  if (latestExecutedBundle) {
-    const executedLeaves = hubPoolClient.getExecutedLeavesForRootBundle(
-      latestExecutedBundle,
-      hubPoolClient.latestHeightSearched
-    );
-    if (executedLeaves.some((leaf) => leaf.chainId === l2ChainId)) {
-      return true;
-    }
-    return false;
-  }
-  return true;
 }
 
 // ==================================
@@ -481,6 +456,28 @@ async function getRelevantL1Events(
   );
 
   return relevantStoredCallDataEvents;
+}
+
+function filterRequiredActions(
+  hubPoolClient: HubPoolClient,
+  l2SpokePoolClient: SpokePoolClient,
+  l2ChainId: number,
+  actions: HeliosAction[]
+): HeliosAction[] {
+  return actions.filter((action) => {
+    if (action.type !== "UpdateAndExecute") {
+      return true;
+    }
+    // If a root bundle in our lookback has an unexecuted L2 leaf and that leaf has a corresponding pool rebalance leaf for the l2 network, then we want to execute.
+    const matchingExecutedRootBundle = hubPoolClient.getExecutedRootBundles().find((leaf) => {
+      if (leaf.chainId !== l2ChainId) {
+        return false;
+      }
+      // The action's `StoredCalldataEvent` will be in the same transaction as the HubPool's `ExecutedRootBundle` event since the execution of any pool rebalance leaf is atomic.
+      return leaf.txnRef === action.l1Event.txnRef;
+    });
+    return isDefined(matchingExecutedRootBundle) ? true : false;
+  });
 }
 
 /** Query L2 Verification Events and return verified slots map */
