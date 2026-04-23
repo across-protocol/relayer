@@ -331,7 +331,7 @@ describe("swapOnBinance script helpers", function () {
         binanceCoin: "USDC",
         contractAddress: resolveAcrossToken("USDC", CHAIN_IDs.BASE)!,
       }),
-      expectedFilledAmount: 149.25,
+      requiredBalance: 149.25,
       pollDelayMs: 0,
     });
 
