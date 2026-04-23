@@ -145,7 +145,7 @@ describe("Binance adapter helpers", async function () {
     expect(tradeFeeStub.callCount).to.equal(2);
   });
 
-  it("paginates myTrades and only subtracts realized commissions charged in the received asset", async function () {
+  it("subtracts realized commissions charged in the received asset from the most recent trade page", async function () {
     const adapter = await makeAdapter();
     const [signer] = await ethers.getSigners();
     const allOrdersStub = sinon.stub().resolves([
@@ -157,20 +157,15 @@ describe("Binance adapter helpers", async function () {
         cummulativeQuoteQty: "100.1",
       },
     ]);
-    const myTradesStub = sinon
-      .stub()
-      .onCall(0)
-      .resolves([
-        ...Array.from({ length: 998 }, (_, index) => ({
-          id: index + 1,
-          commission: "0",
-          commissionAsset: "USDC",
-        })),
-        { id: 999, commission: "1", commissionAsset: "USDC" },
-        { id: 1000, commission: "5", commissionAsset: "BNB" },
-      ])
-      .onCall(1)
-      .resolves([{ id: 1001, commission: "2", commissionAsset: "USDC" }]);
+    const myTradesStub = sinon.stub().resolves([
+      ...Array.from({ length: 998 }, (_, index) => ({
+        id: index + 1,
+        commission: "0",
+        commissionAsset: "USDC",
+      })),
+      { id: 999, commission: "1", commissionAsset: "USDC" },
+      { id: 1000, commission: "5", commissionAsset: "BNB" },
+    ]);
     const internals = adapter as unknown as {
       _getMatchingFillForCloid(
         cloid: string,
@@ -214,17 +209,11 @@ describe("Binance adapter helpers", async function () {
 
     const result = await internals._getMatchingFillForCloid("cloid", EvmAddress.from(await signer.getAddress()));
 
-    expect(result?.expectedAmountToReceive).to.equal(97);
-    expect(myTradesStub.callCount).to.equal(2);
+    expect(result?.expectedAmountToReceive).to.equal(99);
+    expect(myTradesStub.callCount).to.equal(1);
     expect(myTradesStub.getCall(0).args[0]).to.deep.equal({
       symbol: "USDCUSDT",
       orderId: 123,
-      limit: 1000,
-    });
-    expect(myTradesStub.getCall(1).args[0]).to.deep.equal({
-      symbol: "USDCUSDT",
-      orderId: 123,
-      fromId: 1001,
       limit: 1000,
     });
   });

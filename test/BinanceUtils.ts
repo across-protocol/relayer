@@ -119,27 +119,13 @@ describe("BinanceUtils withdrawal helpers", function () {
 });
 
 describe("BinanceUtils fill commission helpers", function () {
-  it("sums only commissions charged in the received asset across paginated trade results", async function () {
-    const firstPage = Array.from({ length: 1000 }, (_, index) => ({
+  it("sums only commissions charged in the received asset from the most recent trade page", async function () {
+    const trades = Array.from({ length: 1000 }, (_, index) => ({
       id: index,
       commission: index === 0 ? "0.2" : "0.1",
       commissionAsset: index === 1 ? "BNB" : "USDC",
     }));
-    const secondPage = [
-      {
-        id: 1000,
-        commission: "0.3",
-        commissionAsset: "USDC",
-      },
-      {
-        id: 1001,
-        commission: "0.4",
-        commissionAsset: "BNB",
-      },
-    ];
-    const myTradesStub = sinon.stub();
-    myTradesStub.onCall(0).resolves(firstPage);
-    myTradesStub.onCall(1).resolves(secondPage);
+    const myTradesStub = sinon.stub().resolves(trades);
     const binanceApi: Pick<BinanceApi, "myTrades"> = {
       myTrades: myTradesStub,
     };
@@ -155,17 +141,11 @@ describe("BinanceUtils fill commission helpers", function () {
 
     const totalCommission = await getFillCommission(binanceApi, spotMarketMeta, 123);
 
-    expect(totalCommission).to.be.closeTo(100.3, 1e-9);
-    expect(myTradesStub.callCount).to.equal(2);
+    expect(totalCommission).to.be.closeTo(100, 1e-9);
+    expect(myTradesStub.callCount).to.equal(1);
     expect(myTradesStub.getCall(0).args[0]).to.deep.equal({
       symbol: "USDCUSDT",
       orderId: 123,
-      limit: 1000,
-    });
-    expect(myTradesStub.getCall(1).args[0]).to.deep.equal({
-      symbol: "USDCUSDT",
-      orderId: 123,
-      fromId: 1000,
       limit: 1000,
     });
   });
