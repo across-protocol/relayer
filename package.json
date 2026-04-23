@@ -55,7 +55,7 @@
   "types": "dist/index.d.ts",
   "main": "dist/index.js",
   "scripts": {
-    "postinstall": "patch-package; npm run update-addresses",
+    "postinstall": "patch-package; npm run update-addresses; git rev-parse --git-dir >/dev/null 2>&1 && git config core.hooksPath .githooks || true",
     "lint": "eslint . && prettier --list-different .",
     "lint-fix": "eslint . --fix && prettier --write .",
     "prettier": "prettier .",
@@ -64,6 +64,7 @@
     "test:parallel": "RELAYER_TEST=true hardhat test --parallel",
     "build": "tsc --build",
     "typecheck": "tsc --noEmit",
+    "strict-null-budget": "./scripts/strict-null-budget.sh",
     "watch": "tsc --build --incremental --watch",
     "build:test": "tsc --project tsconfig.test.json",
     "clean": "dir=\"./node_modules\"; mv \"${dir}\" \"${dir}_\" 2>/dev/null && rm -r \"${dir}_\" & rm -f dist/tsconfig.tsbuildinfo",
@@ -125,11 +126,6 @@
     "sinon": "^21.1.2",
     "tar": "^7.5.13",
     "typescript": "^6"
-  },
-  "husky": {
-    "hooks": {
-      "pre-commit": "echo '🏃‍♂️ Running pretty-quick on staged files' && pretty-quick --staged"
-    }
   },
   "resolutions": {
     "protobufjs": "^7.5.4",
