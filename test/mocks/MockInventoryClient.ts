@@ -27,9 +27,10 @@ export class MockInventoryClient extends InventoryClient {
     simMode = false,
     prioritizeLpUtilization = false
   ) {
+    const effectiveLogger = logger ?? winston.createLogger({ silent: true });
     super(
       relayer, // relayer
-      logger, // logger
+      effectiveLogger, // logger
       inventoryConfig, // inventory config
       tokenClient, // token client
       chainIds, // chain ID list
