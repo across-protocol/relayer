@@ -13,5 +13,6 @@ jobs:
       - name: "Dependency Review"
         uses: actions/dependency-review-action@v4.9.0
         with:
+          # uuid@9.x v3/v5/v6 buffer bounds — not reachable; GCP deps only call v4()
           allow-ghsas: |
-            GHSA-h755-8qp9-cq85
+            GHSA-w5hq-g745-h8pq

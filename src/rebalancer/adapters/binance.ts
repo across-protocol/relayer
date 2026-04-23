@@ -17,6 +17,7 @@ import {
   fromWei,
   getAccountCoins,
   getBinanceApiClient,
+  getFillCommission,
   getBinanceTransactionTypeKey,
   getBinanceWithdrawals,
   getCurrentTime,
@@ -29,6 +30,7 @@ import {
   setBinanceDepositType,
   setBinanceWithdrawalType,
   Signer,
+  SpotMarketMeta,
   toBN,
   toBNWei,
   truncate,
@@ -43,16 +45,6 @@ import { CctpAdapter } from "./cctpAdapter";
 import { OftAdapter } from "./oftAdapter";
 import { CONTRACT_ADDRESSES } from "../../common";
 import WETH_ABI from "../../common/abi/Weth.json";
-
-interface SPOT_MARKET_META {
-  symbol: string;
-  baseAssetName: string;
-  quoteAssetName: string;
-  pxDecimals: number;
-  szDecimals: number;
-  minimumOrderSize: number;
-  isBuy: boolean;
-}
 
 export function isFailedBinanceWithdrawal(status?: number): boolean {
   switch (status) {
@@ -117,7 +109,7 @@ export function deriveBinanceSpotMarketMeta(
   sourceToken: string,
   destinationToken: string,
   symbol: Symbol<OrderType_LT>
-): SPOT_MARKET_META {
+): SpotMarketMeta {
   const sourceAsset = resolveBinanceCoinSymbol(sourceToken);
   const destinationAsset = resolveBinanceCoinSymbol(destinationToken);
   const isBuy = symbol.baseAsset === destinationAsset && symbol.quoteAsset === sourceAsset;
@@ -177,7 +169,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     { fetchedAtMs: number; book: Awaited<ReturnType<Binance["book"]>> }
   >();
   private tradeFeesPromise?: ReturnType<Binance["tradeFee"]>;
-  private spotMarketMetaPromiseByRoute = new Map<string, Promise<SPOT_MARKET_META>>();
+  private spotMarketMetaPromiseByRoute = new Map<string, Promise<SpotMarketMeta>>();
 
   REDIS_PREFIX = "binance-stablecoin-swap:";
   private static readonly ORDER_BOOK_CACHE_TTL_MS = 30_000;
@@ -449,7 +441,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       const matchingFill = await this._getMatchingFillForCloid(cloid, this.baseSignerAddress);
       if (matchingFill) {
         const balance = await this._getBinanceBalance(destinationToken);
-        const withdrawAmount = Number(matchingFill.expectedAmountToReceive);
+        const withdrawAmount = matchingFill.expectedAmountToReceive;
         if (balance < withdrawAmount) {
           this.logger.debug({
             at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",
@@ -689,7 +681,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       if (matchingFill) {
         const destinationTokenInfo = this._getTokenInfo(destinationToken, destinationChain);
         expectedAmountToReceive = toBNWei(
-          truncate(Number(matchingFill.expectedAmountToReceive), destinationTokenInfo.decimals),
+          truncate(matchingFill.expectedAmountToReceive, destinationTokenInfo.decimals),
           destinationTokenInfo.decimals
         );
       } else {
@@ -971,7 +963,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       : "0";
     const tradeFee = toBNWei(truncate(Number(tradeFeePct), 18), 18)
       .mul(amountToTransfer)
-      .div(toBNWei(100, 18));
+      .div(toBNWei(1, 18));
     const destinationCoin = await this._getAccountCoins(destinationToken);
     const destinationEntrypointNetwork = await this._getEntrypointNetwork(destinationChain, destinationToken);
     const withdrawFee = destinationCoin.networkList.find(
@@ -1376,7 +1368,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     });
   }
 
-  private async _getSpotMarketMetaForRoute(sourceToken: string, destinationToken: string): Promise<SPOT_MARKET_META> {
+  private async _getSpotMarketMetaForRoute(sourceToken: string, destinationToken: string): Promise<SpotMarketMeta> {
     assert(
       this._routeRequiresSwap(sourceToken, destinationToken),
       `Route ${sourceToken}-${destinationToken} does not require a Binance spot market`
@@ -1476,7 +1468,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   private async _getMatchingFillForCloid(
     cloid: string,
     account: EvmAddress
-  ): Promise<{ matchingFill: QueryOrderResult; expectedAmountToReceive: string } | undefined> {
+  ): Promise<{ matchingFill: QueryOrderResult; expectedAmountToReceive: number } | undefined> {
     const orderDetails = await this._redisGetOrderDetails(cloid, account);
     const spotMarketMeta = await this._getSpotMarketMetaForRoute(
       orderDetails.sourceToken,
@@ -1489,7 +1481,11 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     if (!matchingFill) {
       return undefined;
     }
-    const expectedAmountToReceive = spotMarketMeta.isBuy ? matchingFill.executedQty : matchingFill.cummulativeQuoteQty;
+    const grossExpectedAmountToReceive = spotMarketMeta.isBuy
+      ? matchingFill.executedQty
+      : matchingFill.cummulativeQuoteQty;
+    const fillCommission = await getFillCommission(this.binanceApiClient, spotMarketMeta, matchingFill.orderId);
+    const expectedAmountToReceive = Number(grossExpectedAmountToReceive) - fillCommission;
     return { matchingFill, expectedAmountToReceive };
   }
 
