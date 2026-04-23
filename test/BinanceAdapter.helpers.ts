@@ -145,6 +145,79 @@ describe("Binance adapter helpers", async function () {
     expect(tradeFeeStub.callCount).to.equal(2);
   });
 
+  it("subtracts realized commissions charged in the received asset from the most recent trade page", async function () {
+    const adapter = await makeAdapter();
+    const [signer] = await ethers.getSigners();
+    const allOrdersStub = sinon.stub().resolves([
+      {
+        clientOrderId: "cloid",
+        status: "FILLED",
+        orderId: 123,
+        executedQty: "100",
+        cummulativeQuoteQty: "100.1",
+      },
+    ]);
+    const myTradesStub = sinon.stub().resolves([
+      ...Array.from({ length: 998 }, (_, index) => ({
+        id: index + 1,
+        commission: "0",
+        commissionAsset: "USDC",
+      })),
+      { id: 999, commission: "1", commissionAsset: "USDC" },
+      { id: 1000, commission: "5", commissionAsset: "BNB" },
+    ]);
+    const internals = adapter as unknown as {
+      _getMatchingFillForCloid(
+        cloid: string,
+        account: EvmAddress
+      ): Promise<{ expectedAmountToReceive: number } | undefined>;
+      _redisGetOrderDetails(
+        cloid: string,
+        account: EvmAddress
+      ): Promise<{ sourceToken: string; destinationToken: string }>;
+      _getSpotMarketMetaForRoute(
+        sourceToken: string,
+        destinationToken: string
+      ): Promise<{
+        symbol: string;
+        baseAssetName: string;
+        quoteAssetName: string;
+        pxDecimals: number;
+        szDecimals: number;
+        minimumOrderSize: number;
+        isBuy: boolean;
+      }>;
+      binanceApiClient: {
+        allOrders: sinon.SinonStub;
+        myTrades: sinon.SinonStub;
+      };
+    };
+    sinon.stub(internals, "_redisGetOrderDetails").resolves({ sourceToken: "USDT", destinationToken: "USDC" });
+    sinon.stub(internals, "_getSpotMarketMetaForRoute").resolves({
+      symbol: "USDCUSDT",
+      baseAssetName: "USDC",
+      quoteAssetName: "USDT",
+      pxDecimals: 4,
+      szDecimals: 0,
+      minimumOrderSize: 1,
+      isBuy: true,
+    });
+    internals.binanceApiClient = {
+      allOrders: allOrdersStub,
+      myTrades: myTradesStub,
+    };
+
+    const result = await internals._getMatchingFillForCloid("cloid", EvmAddress.from(await signer.getAddress()));
+
+    expect(result?.expectedAmountToReceive).to.equal(99);
+    expect(myTradesStub.callCount).to.equal(1);
+    expect(myTradesStub.getCall(0).args[0]).to.deep.equal({
+      symbol: "USDCUSDT",
+      orderId: 123,
+      limit: 1000,
+    });
+  });
+
   it("keeps pending WETH credit until a finalized Binance withdrawal is wrapped", async function () {
     const adapter = await makeAdapter();
     const [signer] = await ethers.getSigners();
