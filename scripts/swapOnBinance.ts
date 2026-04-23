@@ -334,7 +334,7 @@ export async function run(): Promise<void> {
   );
   console.log(
     `Market ${fill.side} order filled for ${expectedFilledAmount} ${destination.binanceCoin} on Binance with client order id ${orderId}.`,
-    expectedFilledAmount
+    fill
   );
 
   timeElapsedMsStart = Date.now();
@@ -371,7 +371,7 @@ export async function run(): Promise<void> {
     pollDelayMs: POLL_DELAY_MS,
     onProgress: ({ attempts, withdrawal }) => {
       console.log(
-        `[poll ${attempts}, elapsed: ${Math.round((Date.now() - timeElapsedMsStart) / 1000)}s] withdrawal=${withdrawal ? readableBinanceWithdrawalStatus(withdrawal.status) : "not-seen"} id=${withdrawalId} amount=${withdrawal.amount}`
+        `[poll ${attempts}, elapsed: ${Math.round((Date.now() - timeElapsedMsStart) / 1000)}s] withdrawal=${withdrawal ? readableBinanceWithdrawalStatus(withdrawal.status) : "not-seen"} amount=${withdrawal.amount}${withdrawal.txId ? ` txId=${withdrawal.txId}` : ""}`
       );
     },
   });
