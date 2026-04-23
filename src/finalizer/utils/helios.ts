@@ -476,7 +476,7 @@ function filterRequiredActions(
       // The action's `StoredCalldataEvent` will be in the same transaction as the HubPool's `ExecutedRootBundle` event since the execution of any pool rebalance leaf is atomic.
       return leaf.txnRef === action.l1Event.txnRef;
     });
-    return isDefined(matchingExecutedRootBundle) ? true : false;
+    return isDefined(matchingExecutedRootBundle);
   });
 }
 
