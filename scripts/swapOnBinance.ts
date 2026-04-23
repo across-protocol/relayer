@@ -259,16 +259,9 @@ export async function run(): Promise<void> {
   }
   const recipientBalances = await gatherRecipientBalances(destination, recipient);
 
-  const withdrawalQuota = await binanceClient.getWithdrawalLimits();
-  const remainingWithdrawalQuota = withdrawalQuota.wdQuota - withdrawalQuota.usedWdQuota;
-  if (remainingWithdrawalQuota <= 0) {
-    throw new Error(
-      `Binance withdrawal quota is exhausted (${withdrawalQuota.usedWdQuota}/${withdrawalQuota.wdQuota} used). Retry later.`
-    );
-  }
-
   const quote = await venue.getQuote(source, destination, amount);
   validateQuote(destination, quote);
+  const withdrawalQuota = await binanceClient.getWithdrawalLimits();
 
   printPreflightSummary({
     signerAddress,
@@ -705,9 +698,6 @@ function getApprovalDependentBridgeGasLimitFallback(
 }
 
 function validateQuote(destination: ResolvedBinanceAsset, quote: BinanceQuote): void {
-  if (quote.expectedDestinationAmount.lte(BigNumber.from(0))) {
-    throw new Error("Expected withdrawal amount is zero.");
-  }
   if (quote.expectedNetDestinationAmount.lte(BigNumber.from(0))) {
     throw new Error("Expected recipient amount is zero after Binance trade and withdrawal fees.");
   }
@@ -715,10 +705,11 @@ function validateQuote(destination: ResolvedBinanceAsset, quote: BinanceQuote): 
     truncate(Number(destination.network.withdrawMin), destination.tokenDecimals),
     destination.tokenDecimals
   );
-  if (quote.expectedDestinationAmount.lt(withdrawMin)) {
+  const amountToWithdraw = quote.expectedDestinationAmount.sub(quote.tradeFeeDestinationToken);
+  if (amountToWithdraw.lt(withdrawMin)) {
     throw new Error(
       `Expected withdrawal amount ${formatAmount(
-        quote.expectedDestinationAmount,
+        amountToWithdraw,
         destination.tokenDecimals
       )} ${destination.tokenSymbol} is below Binance minimum withdrawal size ${formatAmount(withdrawMin, destination.tokenDecimals)} ${destination.tokenSymbol}.`
     );
@@ -727,10 +718,10 @@ function validateQuote(destination: ResolvedBinanceAsset, quote: BinanceQuote): 
     truncate(Number(destination.network.withdrawMax), destination.tokenDecimals),
     destination.tokenDecimals
   );
-  if (quote.expectedDestinationAmount.gt(withdrawMax)) {
+  if (amountToWithdraw.gt(withdrawMax)) {
     throw new Error(
       `Expected withdrawal amount ${formatAmount(
-        quote.expectedDestinationAmount,
+        amountToWithdraw,
         destination.tokenDecimals
       )} ${destination.tokenSymbol} exceeds Binance maximum withdrawal size ${formatAmount(withdrawMax, destination.tokenDecimals)} ${destination.tokenSymbol}.`
     );
