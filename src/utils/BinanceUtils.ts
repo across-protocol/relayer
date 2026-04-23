@@ -1,7 +1,6 @@
 import Binance, { DepositHistoryResponse, WithdrawHistoryResponse, type Binance as BinanceApi } from "binance-api-node";
 export type { BinanceApi };
 import minimist from "minimist";
-import type { BinanceSpotMarketMeta } from "./BinanceSwapUtils";
 import { getGckmsConfig, retrieveGckmsKeys, isDefined, assert, delay, CHAIN_IDs, getRedisCache, truncate } from "./";
 
 // Store global promises on Gckms key retrieval actions so that we don't retrieve the same key multiple times.
@@ -18,6 +17,13 @@ const BINANCE_TRADES_PAGE_LIMIT = 1000;
 export type WithdrawalQuota = {
   wdQuota: number;
   usedWdQuota: number;
+};
+
+export type SpotMarketMeta = {
+  symbol: string;
+  baseAssetName: string;
+  quoteAssetName: string;
+  isBuy: boolean;
 };
 
 // Alias for Binance network symbols.
@@ -326,7 +332,7 @@ export async function getBinanceWithdrawals(
   });
 }
 
-export async function getFillCommission(spotMarketMeta: BinanceSpotMarketMeta, orderId: number): Promise<number> {
+export async function getFillCommission(spotMarketMeta: SpotMarketMeta, orderId: number): Promise<number> {
   const binanceApi = await getBinanceApiClient(process.env.BINANCE_API_BASE);
   const receivedAsset = spotMarketMeta.isBuy ? spotMarketMeta.baseAssetName : spotMarketMeta.quoteAssetName;
   let fromId: number | undefined;

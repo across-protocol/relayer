@@ -3,7 +3,7 @@ import type { AddressInfo } from "net";
 import { expect } from "./utils";
 import {
   BinanceDeposit,
-  BinanceSpotMarketMeta,
+  SpotMarketMeta,
   BinanceWithdrawal,
   getFillCommission,
   getOutstandingBinanceDeposits,
@@ -164,7 +164,7 @@ describe("BinanceUtils fill commission helpers", function () {
     process.env.BINANCE_HMAC_KEY = "test-secret-key";
 
     try {
-      const spotMarketMeta: BinanceSpotMarketMeta = {
+      const spotMarketMeta: SpotMarketMeta = {
         symbol: "USDCUSDT",
         baseAssetName: "USDC",
         quoteAssetName: "USDT",

@@ -1,3 +1,5 @@
+import { createServer } from "http";
+import type { AddressInfo } from "net";
 import { ethers, expect, sinon, toBNWei } from "./utils";
 import winston from "winston";
 import {
@@ -148,6 +150,40 @@ describe("Binance adapter helpers", async function () {
   it("paginates myTrades and only subtracts realized commissions charged in the received asset", async function () {
     const adapter = await makeAdapter();
     const [signer] = await ethers.getSigners();
+    const firstPage = [
+      ...Array.from({ length: 998 }, (_, index) => ({
+        id: index + 1,
+        commission: "0",
+        commissionAsset: "USDC",
+      })),
+      { id: 999, commission: "1", commissionAsset: "USDC" },
+      { id: 1000, commission: "5", commissionAsset: "BNB" },
+    ];
+    const secondPage = [{ id: 1001, commission: "2", commissionAsset: "USDC" }];
+    const requests: Array<{ orderId: string | null; fromId: string | null; limit: string | null }> = [];
+    const server = createServer((req, res) => {
+      const url = new URL(req.url ?? "/", "http://127.0.0.1");
+      requests.push({
+        orderId: url.searchParams.get("orderId"),
+        fromId: url.searchParams.get("fromId"),
+        limit: url.searchParams.get("limit"),
+      });
+      res.setHeader("Content-Type", "application/json");
+      if (url.pathname !== "/api/v3/myTrades") {
+        res.statusCode = 404;
+        res.end(JSON.stringify({ msg: "not found" }));
+        return;
+      }
+      res.end(JSON.stringify(url.searchParams.get("fromId") === "1001" ? secondPage : firstPage));
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const { port } = server.address() as AddressInfo;
+    const originalBinanceApiBase = process.env.BINANCE_API_BASE;
+    const originalBinanceApiKey = process.env.BINANCE_API_KEY;
+    const originalBinanceHmacKey = process.env.BINANCE_HMAC_KEY;
+    process.env.BINANCE_API_BASE = `http://127.0.0.1:${port}`;
+    process.env.BINANCE_API_KEY = "test-api-key";
+    process.env.BINANCE_HMAC_KEY = "test-secret-key";
     const allOrdersStub = sinon.stub().resolves([
       {
         clientOrderId: "cloid",
@@ -157,20 +193,6 @@ describe("Binance adapter helpers", async function () {
         cummulativeQuoteQty: "100.1",
       },
     ]);
-    const myTradesStub = sinon
-      .stub()
-      .onCall(0)
-      .resolves([
-        ...Array.from({ length: 998 }, (_, index) => ({
-          id: index + 1,
-          commission: "0",
-          commissionAsset: "USDC",
-        })),
-        { id: 999, commission: "1", commissionAsset: "USDC" },
-        { id: 1000, commission: "5", commissionAsset: "BNB" },
-      ])
-      .onCall(1)
-      .resolves([{ id: 1001, commission: "2", commissionAsset: "USDC" }]);
     const internals = adapter as unknown as {
       _getMatchingFillForCloid(
         cloid: string,
@@ -194,7 +216,6 @@ describe("Binance adapter helpers", async function () {
       }>;
       binanceApiClient: {
         allOrders: sinon.SinonStub;
-        myTrades: sinon.SinonStub;
       };
     };
     sinon.stub(internals, "_redisGetOrderDetails").resolves({ sourceToken: "USDT", destinationToken: "USDC" });
@@ -209,25 +230,22 @@ describe("Binance adapter helpers", async function () {
     });
     internals.binanceApiClient = {
       allOrders: allOrdersStub,
-      myTrades: myTradesStub,
     };
 
-    const result = await internals._getMatchingFillForCloid("cloid", EvmAddress.from(await signer.getAddress()));
+    try {
+      const result = await internals._getMatchingFillForCloid("cloid", EvmAddress.from(await signer.getAddress()));
 
-    expect(result?.expectedAmountToReceive).to.equal(97);
-    expect(myTradesStub.callCount).to.equal(2);
-    expect(myTradesStub.getCall(0).args[0]).to.deep.equal({
-      symbol: "USDCUSDT",
-      orderId: 123,
-      fromId: undefined,
-      limit: 1000,
-    });
-    expect(myTradesStub.getCall(1).args[0]).to.deep.equal({
-      symbol: "USDCUSDT",
-      orderId: 123,
-      fromId: 1001,
-      limit: 1000,
-    });
+      expect(result?.expectedAmountToReceive).to.equal(97);
+      expect(requests).to.deep.equal([
+        { orderId: "123", fromId: "undefined", limit: "1000" },
+        { orderId: "123", fromId: "1001", limit: "1000" },
+      ]);
+    } finally {
+      process.env.BINANCE_API_BASE = originalBinanceApiBase;
+      process.env.BINANCE_API_KEY = originalBinanceApiKey;
+      process.env.BINANCE_HMAC_KEY = originalBinanceHmacKey;
+      await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+    }
   });
 
   it("keeps pending WETH credit until a finalized Binance withdrawal is wrapped", async function () {
