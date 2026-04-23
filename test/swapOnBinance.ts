@@ -233,6 +233,50 @@ describe("swapOnBinance script helpers", function () {
     );
   });
 
+  it("subtracts realized fill commission using Binance fill trades", async function () {
+    const allOrders = sinon.stub().resolves([
+      {
+        orderId: 42,
+        clientOrderId: "cloid-1",
+        status: "FILLED",
+        side: "BUY",
+        executedQty: "149.25",
+        cummulativeQuoteQty: "150",
+      },
+    ]);
+    const myTrades = sinon.stub().resolves([
+      { id: 1, commissionAsset: "USDC", commission: "0.25" },
+      { id: 2, commissionAsset: "BNB", commission: "0.10" },
+    ]);
+    const venue = new BinanceSwapVenue({
+      exchangeInfo: sinon.stub().resolves({
+        symbols: [makeStablecoinMarketSymbol()],
+      }),
+      allOrders,
+      myTrades,
+    } as never);
+
+    const expectedAmountToReceive = await venue.getExpectedAmountToReceiveForFilledOrder(
+      42,
+      "cloid-1",
+      makeResolvedAsset({
+        tokenSymbol: "USDT",
+        chainId: CHAIN_IDs.POLYGON,
+        binanceCoin: "USDT",
+        contractAddress: resolveAcrossToken("USDT", CHAIN_IDs.POLYGON)!,
+      }),
+      makeResolvedAsset({
+        tokenSymbol: "USDC",
+        chainId: CHAIN_IDs.BASE,
+        binanceCoin: "USDC",
+        contractAddress: resolveAcrossToken("USDC", CHAIN_IDs.BASE)!,
+      })
+    );
+
+    expect(expectedAmountToReceive).to.equal(149);
+    expect(myTrades.calledOnce).to.equal(true);
+  });
+
   it("throws a clear error when Binance trade fees are missing for the market symbol", async function () {
     const venue = new BinanceSwapVenue({
       exchangeInfo: sinon.stub().resolves({

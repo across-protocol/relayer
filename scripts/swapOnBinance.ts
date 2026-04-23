@@ -48,6 +48,7 @@ import {
   getBinanceDeposits,
   getBinanceWithdrawals,
   getEthersCompatibleAddress,
+  getFillCommission,
   getGasPrice,
   getNetworkName,
   getNativeTokenInfoForChain,
@@ -78,6 +79,9 @@ const POLL_DELAY_MS = 5_000;
 
 // TTL to set for cached deposit data initiated by this script.
 const SWAP_DEPOSIT_TYPE_TTL_SECONDS = 30 * 60;
+
+// Conservative fallback for bridge gas when an approval step must land before the bridge can be simulated.
+const APPROVAL_DEPENDENT_BRIDGE_GAS_LIMIT_FALLBACK = BigNumber.from(250_000);
 
 type ParsedSwapArgs = minimist.ParsedArgs;
 type BinanceAssetNetwork = Coin["networkList"][number];
@@ -368,9 +372,7 @@ export async function run(): Promise<void> {
     startTimeMs: withdrawalSubmittedAtMs - 60_000,
     pollDelayMs: POLL_DELAY_MS,
     onProgress: ({ attempts, withdrawal }) => {
-      console.log(
-        `[poll ${attempts}, elapsed: ${Math.round((Date.now() - timeElapsedMsStart) / 1000)}s] withdrawal=${withdrawal ? readableBinanceWithdrawalStatus(withdrawal.status) : "not-seen"} amount=${withdrawal.amount}${withdrawal.txId ? ` txId=${withdrawal.txId}` : ""}`
-      );
+      console.log(formatWithdrawalProgressLine({ attempts, elapsedMs: Date.now() - timeElapsedMsStart, withdrawal }));
     },
   });
 
@@ -634,16 +636,12 @@ async function buildDepositExecutionPlan(
   };
 }
 
-async function estimateDepositGas(
+export async function estimateDepositGas(
   depositPlan: DepositExecutionPlan,
   gasPricing: { priorityFeeScaler: number; maxFeePerGasScaler: number }
 ): Promise<DepositGasEstimate> {
   assert(depositPlan.steps.length > 0, "Deposit plan must include at least one transaction");
-  const simulations = await Promise.all(depositPlan.steps.map((step) => willSucceed(step.transaction)));
-  const failedSimulation = simulations.find((simulation) => !simulation.succeed || !simulation.transaction.gasLimit);
-  if (failedSimulation) {
-    throw new Error(`Unable to estimate the deposit transaction gas (${failedSimulation.reason ?? "unknown reason"})`);
-  }
+  const gasLimits = await simulateDepositGasLimits(depositPlan);
   const feeData = await getGasPrice(
     depositPlan.steps[0].transaction.contract.provider,
     gasPricing.priorityFeeScaler,
@@ -651,10 +649,7 @@ async function estimateDepositGas(
   );
   const gasPrice = feeData.maxFeePerGas ?? BigNumber.from(0);
   const maxPriorityFeePerGas = feeData.maxPriorityFeePerGas ?? BigNumber.from(0);
-  const gasLimit = simulations.reduce(
-    (sum, simulation) => sum.add(simulation.transaction.gasLimit!),
-    BigNumber.from(0)
-  );
+  const gasLimit = gasLimits.reduce((sum, stepGasLimit) => sum.add(stepGasLimit), BigNumber.from(0));
   const gasCost = gasLimit.mul(gasPrice);
   return {
     gasLimit,
@@ -664,6 +659,45 @@ async function estimateDepositGas(
     priorityFeeScaler: gasPricing.priorityFeeScaler,
     maxFeePerGasScaler: gasPricing.maxFeePerGasScaler,
   };
+}
+
+async function simulateDepositGasLimits(depositPlan: DepositExecutionPlan): Promise<BigNumber[]> {
+  const gasLimits: BigNumber[] = [];
+
+  for (const [stepIndex, step] of depositPlan.steps.entries()) {
+    const simulation = await willSucceed(step.transaction);
+    if (simulation.succeed && simulation.transaction.gasLimit) {
+      gasLimits.push(simulation.transaction.gasLimit);
+      continue;
+    }
+
+    const fallbackGasLimit = getApprovalDependentBridgeGasLimitFallback(depositPlan.steps, stepIndex);
+    if (fallbackGasLimit) {
+      gasLimits.push(fallbackGasLimit);
+      continue;
+    }
+
+    throw new Error(`Unable to estimate the deposit transaction gas (${simulation.reason ?? "unknown reason"})`);
+  }
+
+  return gasLimits;
+}
+
+function getApprovalDependentBridgeGasLimitFallback(
+  steps: DepositPlanStep[],
+  stepIndex: number
+): BigNumber | undefined {
+  const currentStep = steps[stepIndex];
+  const previousStep = stepIndex > 0 ? steps[stepIndex - 1] : undefined;
+  if (!currentStep || !previousStep) {
+    return undefined;
+  }
+
+  if (previousStep.transaction.method !== "approve" || currentStep.transaction.method !== "bridgeWeth") {
+    return undefined;
+  }
+
+  return APPROVAL_DEPENDENT_BRIDGE_GAS_LIMIT_FALLBACK;
 }
 
 function validateQuote(destination: ResolvedBinanceAsset, quote: BinanceQuote): void {
@@ -988,6 +1022,17 @@ function normalizeLongFlags(argv: string[]): string[] {
 
 function printSection(title: string): void {
   console.log(`\n=== ${title} ===\n`);
+}
+
+export function formatWithdrawalProgressLine(params: {
+  attempts: number;
+  elapsedMs: number;
+  withdrawal?: BinanceWithdrawal;
+}): string {
+  const status = params.withdrawal ? readableBinanceWithdrawalStatus(params.withdrawal.status) : "not-seen";
+  const amount = params.withdrawal ? params.withdrawal.amount : "unknown";
+  const txIdSuffix = params.withdrawal?.txId ? ` txId=${params.withdrawal.txId}` : "";
+  return `[poll ${params.attempts}, elapsed: ${Math.round(params.elapsedMs / 1000)}s] withdrawal=${status} amount=${amount}${txIdSuffix}`;
 }
 
 export function requireDefinedFilledAmount(
@@ -1440,17 +1485,7 @@ export class BinanceSwapVenue {
     if (!matchingFill) {
       return undefined;
     }
-    // Query myTrades to get the realized commissions on the received asset.
-    const myTrades = await this.binanceApiClient.myTrades({
-      symbol: spotMarketMeta.symbol,
-      orderId: matchingFill.orderId,
-    });
-    const receivedAsset = spotMarketMeta.isBuy ? spotMarketMeta.baseAssetName : spotMarketMeta.quoteAssetName;
-    const totalCommission = myTrades.reduce(
-      (acc, trade) =>
-        acc + (resolveBinanceCoinSymbol(trade.commissionAsset) === receivedAsset ? Number(trade.commission) : 0),
-      0
-    );
+    const totalCommission = await getFillCommission(this.binanceApiClient, spotMarketMeta, matchingFill.orderId);
     const expectedAmountToReceive =
       matchingFill.side === "BUY" ? matchingFill.executedQty : matchingFill.cummulativeQuoteQty;
     return Number(expectedAmountToReceive) - totalCommission;
