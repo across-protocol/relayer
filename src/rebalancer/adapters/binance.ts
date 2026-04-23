@@ -856,7 +856,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       : "0";
     const tradeFee = toBNWei(truncate(Number(tradeFeePct), 18), 18)
       .mul(amountToTransfer)
-      .div(toBNWei(1, 18));
+      .div(toBNWei(100, 18));
     const destinationCoin = await this._getAccountCoins(destinationToken);
     const destinationEntrypointNetwork = await this._getEntrypointNetwork(destinationChain, destinationToken);
     const withdrawFee = destinationCoin.networkList.find(
