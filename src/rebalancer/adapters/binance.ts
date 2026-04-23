@@ -17,6 +17,7 @@ import {
   fromWei,
   getAccountCoins,
   getBinanceApiClient,
+  getFillCommission,
   getBinanceTransactionTypeKey,
   getBinanceWithdrawals,
   getCurrentTime,
@@ -1489,30 +1490,12 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     if (!matchingFill) {
       return undefined;
     }
-    const myTrades = [];
-    const pageLimit = 1000;
-    let fromId: number | undefined;
-    for (;;) {
-      const page = await this.binanceApiClient.myTrades({
-        symbol: spotMarketMeta.symbol,
-        orderId: matchingFill.orderId,
-        fromId,
-        limit: pageLimit,
-      });
-      myTrades.push(...page);
-      if (page.length < pageLimit) {
-        break;
-      }
-      fromId = page[page.length - 1].id + 1;
-    }
-    const receivedAsset = spotMarketMeta.isBuy ? spotMarketMeta.baseAssetName : spotMarketMeta.quoteAssetName;
-    const totalCommission = myTrades.reduce(
-      (acc, trade) =>
-        acc + (resolveBinanceCoinSymbol(trade.commissionAsset) === receivedAsset ? Number(trade.commission) : 0),
-      0
-    );
-    const expectedAmountToReceive = spotMarketMeta.isBuy ? matchingFill.executedQty : matchingFill.cummulativeQuoteQty;
-    return { matchingFill, expectedAmountToReceive: Number(expectedAmountToReceive) - totalCommission };
+    const grossExpectedAmountToReceive = spotMarketMeta.isBuy
+      ? matchingFill.executedQty
+      : matchingFill.cummulativeQuoteQty;
+    const fillCommission = await getFillCommission(spotMarketMeta, matchingFill.orderId);
+    const expectedAmountToReceive = Number(grossExpectedAmountToReceive) - fillCommission;
+    return { matchingFill, expectedAmountToReceive };
   }
 
   private _routeRequiresSwap(sourceToken: string, destinationToken: string): boolean {

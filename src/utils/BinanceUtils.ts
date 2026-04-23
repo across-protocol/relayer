@@ -1,6 +1,7 @@
 import Binance, { DepositHistoryResponse, WithdrawHistoryResponse, type Binance as BinanceApi } from "binance-api-node";
 export type { BinanceApi };
 import minimist from "minimist";
+import type { BinanceSpotMarketMeta } from "./BinanceSwapUtils";
 import { getGckmsConfig, retrieveGckmsKeys, isDefined, assert, delay, CHAIN_IDs, getRedisCache, truncate } from "./";
 
 // Store global promises on Gckms key retrieval actions so that we don't retrieve the same key multiple times.
@@ -12,6 +13,7 @@ const KNOWN_BINANCE_ERROR_REASONS = [
   "Too many requests; current request has limited",
   "TypeError: fetch failed",
 ];
+const BINANCE_TRADES_PAGE_LIMIT = 1000;
 
 export type WithdrawalQuota = {
   wdQuota: number;
@@ -324,6 +326,26 @@ export async function getBinanceWithdrawals(
   });
 }
 
+export async function getFillCommission(spotMarketMeta: BinanceSpotMarketMeta, orderId: number): Promise<number> {
+  const binanceApi = await getBinanceApiClient(process.env.BINANCE_API_BASE);
+  const receivedAsset = spotMarketMeta.isBuy ? spotMarketMeta.baseAssetName : spotMarketMeta.quoteAssetName;
+  let fromId: number | undefined;
+  let totalCommission = 0;
+
+  for (;;) {
+    const trades = await getBinanceFillTrades(binanceApi, spotMarketMeta.symbol, orderId, fromId);
+    totalCommission += trades.reduce(
+      (acc, trade) =>
+        acc + (resolveBinanceCoinSymbol(trade.commissionAsset) === receivedAsset ? Number(trade.commission) : 0),
+      0
+    );
+    if (trades.length < BINANCE_TRADES_PAGE_LIMIT) {
+      return totalCommission;
+    }
+    fromId = trades[trades.length - 1].id + 1;
+  }
+}
+
 /**
  * The call to accountCoins returns an opaque `unknown` object with extraneous information. This function
  * parses the unknown into a readable object to be used by the finalizers.
@@ -351,6 +373,32 @@ export async function getAccountCoins(binanceApi: BinanceApi): Promise<ParsedAcc
       networkList,
     } as Coin;
   });
+}
+
+async function getBinanceFillTrades(
+  binanceApi: BinanceApi,
+  symbol: string,
+  orderId: number,
+  fromId?: number,
+  nRetries = 0,
+  maxRetries = 3
+): Promise<Awaited<ReturnType<BinanceApi["myTrades"]>>> {
+  try {
+    return await binanceApi.myTrades({
+      symbol,
+      orderId,
+      fromId,
+      limit: BINANCE_TRADES_PAGE_LIMIT,
+    });
+  } catch (_err) {
+    const err = _err.toString();
+    if (KNOWN_BINANCE_ERROR_REASONS.some((errorReason) => err.includes(errorReason)) && nRetries < maxRetries) {
+      const delaySeconds = 2 ** nRetries + Math.random();
+      await delay(delaySeconds);
+      return getBinanceFillTrades(binanceApi, symbol, orderId, fromId, ++nRetries, maxRetries);
+    }
+    throw err;
+  }
 }
 
 /**
