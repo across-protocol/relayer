@@ -12,7 +12,6 @@ import { CONTRACT_ADDRESSES } from "../common";
 import { BigNumber } from "./BNUtils";
 import { fromWei, toBNWei } from "./SDKUtils";
 
-
 // Store global promises on Gckms key retrieval actions so that we don't retrieve the same key multiple times.
 let binanceSecretKeyPromise: Promise<string | undefined> | undefined = undefined;
 
@@ -642,4 +641,3 @@ function resolveStepPrecision(stepSize: string): number {
   const decimalPart = normalized.split(".")[1];
   return decimalPart?.length ?? 0;
 }
-
