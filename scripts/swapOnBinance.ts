@@ -1344,7 +1344,7 @@ export class BinanceSwapVenue {
       (await this.getTradeFees()).find((fee) => fee.symbol === spotMarketMeta.symbol)?.takerCommission
     );
     assert(tradeFeePct !== undefined, `Trade fee percentage not found for symbol ${spotMarketMeta.symbol}`);
-    const tradeFeeSourceToken = toBNWei(truncate(tradeFeePct, 18), 18).mul(sourceAmount).div(toBNWei(1, 18));
+    const tradeFeeSourceToken = toBNWei(truncate(tradeFeePct, 18), 18).mul(sourceAmount).div(toBNWei(100, 18));
     const tradeFeeDestinationToken = tradeFeeSourceToken.gt(BigNumber.from(0))
       ? await this.convertSourceToDestination(source, destination, tradeFeeSourceToken)
       : BigNumber.from(0);
@@ -1439,7 +1439,7 @@ export class BinanceSwapVenue {
       (await this.getTradeFees()).find((fee) => fee.symbol === spotMarketMeta.symbol)?.takerCommission
     );
     assert(tradeFeePct !== undefined, `Trade fee percentage not found for symbol ${spotMarketMeta.symbol}`);
-    const tradeFee = Number(expectedAmountToReceive) * tradeFeePct;
+    const tradeFee = Number(expectedAmountToReceive) * (tradeFeePct / 100);
     return Number(expectedAmountToReceive) - tradeFee;
   }
 
