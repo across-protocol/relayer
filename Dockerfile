@@ -13,7 +13,8 @@ WORKDIR /across-relayer
 COPY . ./
 
 RUN apk add --no-cache --virtual .build-deps python3 make g++ \
- && yarn \
+ && yarn install \
+ && yarn cache clean \
  && apk del .build-deps
 
 RUN yarn build
