@@ -1,4 +1,4 @@
-FROM node:22.18-alpine3.22
+FROM node:22.18-bookworm-slim
 
 ARG CONFIGURAMA_FOLDER_PATH
 ARG CONFIGURAMA_FOLDER_ENVIRONMENT
@@ -12,11 +12,9 @@ WORKDIR /across-relayer
 
 COPY . ./
 
-RUN apk add --no-cache --virtual .build-deps python3 make g++ \
- && yarn install --frozen-lockfile \
+RUN yarn install --frozen-lockfile \
  && yarn build \
  && yarn install --production --frozen-lockfile \
- && yarn cache clean \
- && apk del .build-deps
+ && yarn cache clean
 
 ENTRYPOINT ["/bin/sh", "scripts/runCommand.sh"]
