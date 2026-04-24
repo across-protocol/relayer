@@ -62,13 +62,28 @@ jobs:
             fi
 
             echo "Using Solana version: $SOLANA_VERSION"
+            echo "$SOLANA_VERSION" > /tmp/solana-version
             echo "export SOLANA_VERSION=$SOLANA_VERSION" >> $BASH_ENV
+
+      - restore_cache:
+          name: Restore Solana CLI Cache
+          keys:
+            - solana-cli-v1-{{ checksum "/tmp/solana-version" }}
 
       # Install Solana CLI
       - run:
           name: Install Solana CLI
           command: |
-            source $BASH_ENV
+            export SOLANA_INSTALL="$HOME/.local/share/solana/install"
+            SOLANA_BIN="$SOLANA_INSTALL/active_release/bin"
+            export PATH="$SOLANA_BIN:$PATH"
+            echo "export PATH=\"$SOLANA_BIN:\$PATH\"" >> $BASH_ENV
+
+            if [ -x "$SOLANA_BIN/solana" ]; then
+              echo "Solana CLI already installed (cache hit): $(solana --version)"
+              exit 0
+            fi
+
             echo "Installing Solana version: $SOLANA_VERSION"
 
             # Parse version numbers
@@ -90,19 +105,19 @@ jobs:
             chmod +x /tmp/solana-install.sh
             /tmp/solana-install.sh
 
-            # Add to PATH
-            echo 'export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"' >> $BASH_ENV
-
-            # Verify installation
-            source $BASH_ENV
             solana --version
+
+      - save_cache:
+          name: Save Solana CLI Cache
+          key: solana-cli-v1-{{ checksum "/tmp/solana-version" }}
+          paths:
+            - ~/.local/share/solana/install
       - run:
           name: Run build
           command: yarn build
       - run:
           name: Run tests
           command: |
-            source $BASH_ENV
             circleci tests glob "test/**/*.ts" | circleci tests split > /tmp/test-files
             yarn test --bail $(cat /tmp/test-files)
   lint:
