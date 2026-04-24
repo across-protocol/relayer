@@ -10,13 +10,13 @@ jobs:
       - restore_cache:
           name: Restore Yarn Package Cache
           keys:
-            - cache-node-v4-{{ checksum "yarn.lock" }}
+            - &yarn_cache_key cache-node-v4-{{ checksum "yarn.lock" }}
       - run:
           name: Install Dependencies
           command: yarn install --immutable
       - save_cache:
           name: Save Yarn Package Cache
-          key: cache-node-v4-{{ checksum "yarn.lock" }}
+          key: *yarn_cache_key
           paths:
             - node_modules
   test:
@@ -32,7 +32,7 @@ jobs:
       - restore_cache:
           name: Restore Yarn Package Cache
           keys:
-            - cache-node-v4-{{ checksum "yarn.lock" }}
+            - *yarn_cache_key
 
       # Extract Solana version from across-protocol/contracts
       - run:
@@ -68,12 +68,13 @@ jobs:
       - restore_cache:
           name: Restore Solana CLI Cache
           keys:
-            - solana-cli-v1-{{ checksum "/tmp/solana-version" }}
+            - &solana_cache_key solana-cli-v1-{{ checksum "/tmp/solana-version" }}
 
       # Install Solana CLI
       - run:
           name: Install Solana CLI
           command: |
+            # Keep in sync with save_cache.paths below (solana_install_path).
             export SOLANA_INSTALL="$HOME/.local/share/solana/install"
             SOLANA_BIN="$SOLANA_INSTALL/active_release/bin"
             export PATH="$SOLANA_BIN:$PATH"
@@ -109,9 +110,9 @@ jobs:
 
       - save_cache:
           name: Save Solana CLI Cache
-          key: solana-cli-v1-{{ checksum "/tmp/solana-version" }}
+          key: *solana_cache_key
           paths:
-            - ~/.local/share/solana/install
+            - &solana_install_path ~/.local/share/solana/install
       - run:
           name: Run build
           command: yarn build
@@ -132,7 +133,7 @@ jobs:
       - restore_cache:
           name: Restore Yarn Package Cache
           keys:
-            - cache-node-v4-{{ checksum "yarn.lock" }}
+            - *yarn_cache_key
       - run:
           name: Run lint
           command: yarn lint
