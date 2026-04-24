@@ -7,10 +7,10 @@
   resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.108.tgz#982e230c0193f3b4124e3cb880eb6cb481f76a7e"
   integrity sha512-uYcIw6VjWhSRal9+xv5aTgk3cK1qVH/8SkpSCpa6KMQUXmCKZ3eGGaVMl7Nogl6S0Cj/D76LnMgM3jUP6NK9ag==
 
-"@across-protocol/constants@^3.1.109":
-  version "3.1.109"
-  resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.109.tgz#3a7e9f7581405cd09dbbdc480800d4a775051c46"
-  integrity sha512-Mt0wYTzMPbfNSEWZFuGdMTn8N4z9+yNWJ0HDFaZwVlaiW8m9F1uK5SWHsc6TAZURTvrC2T98nIDGm+ibPgwEYA==
+"@across-protocol/constants@^3.1.110":
+  version "3.1.110"
+  resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.110.tgz#8db121beb440187295874476ad05b1a8d4729acf"
+  integrity sha512-4GfJed7zziPBW4ywsaQaqtT5kSnIo0xthMcAJYqVcDm37e1oIv5lHFNoyGT8bOUNa0T1ZeEGcHLTOzbz+mfTnw==
 
 "@across-protocol/contracts@5.0.7":
   version "5.0.7"
@@ -34,12 +34,12 @@
     bs58 "^6.0.0"
     ethers "5.7.2"
 
-"@across-protocol/sdk@4.3.145":
-  version "4.3.145"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.3.145.tgz#649a205a492825fe269e0a6273cb38aa2294626c"
-  integrity sha512-j9bk4m73HpXHn7GbBfimX5r7c4FwwHFVQsZslA1cdxY4zQdKQePedPQxEbvlLN1Ayv9YlS0G8KelSXi/ykFPBw==
+"@across-protocol/sdk@4.3.146":
+  version "4.3.146"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.3.146.tgz#c0c3b941d8209a8f8ad466dc5fae6cabc0abef9a"
+  integrity sha512-fMM79/UGj8QaVDESYSKnSsb0a52asliRl5+xIJ//LGMAlf/H1zKdkBIHerwcp3sbgo+VChgrrjcti3jf3rHpOg==
   dependencies:
-    "@across-protocol/constants" "^3.1.109"
+    "@across-protocol/constants" "^3.1.110"
     "@across-protocol/contracts" "5.0.7"
     "@coral-xyz/anchor" "^0.30.1"
     "@eth-optimism/sdk" "^3.3.1"
@@ -2088,10 +2088,10 @@
     winston "^3.17.0"
     winston-transport "^4.9.0"
 
-"@risk-labs/serverless-orchestration@^1.2.0-alpha.1":
-  version "1.2.0-alpha.1"
-  resolved "https://registry.yarnpkg.com/@risk-labs/serverless-orchestration/-/serverless-orchestration-1.2.0-alpha.1.tgz#40e97bd4d69129d13cd003381c03f814aaf92d4c"
-  integrity sha512-vpveY0j0YIsyF9/9UhOVheYHkV0FvezZRFXXEZ8gF+l8RBeTOkk1VMKWbDgjjSRHUsGggbQ4USuIt+rcr2Hr3g==
+"@risk-labs/serverless-orchestration@^1.2.0":
+  version "1.2.0"
+  resolved "https://registry.yarnpkg.com/@risk-labs/serverless-orchestration/-/serverless-orchestration-1.2.0.tgz#489860c7196e0e863ef0c7eb03c0d6217cdea6d2"
+  integrity sha512-iMbU30G0SdEu0RMFy7k1oxhgmJ837FP7BlYGJHR7D2GqjrB4I2lv2O+D5m9QHLRllEcaO20dp3GTFSuynWiAZA==
   dependencies:
     "@awaitjs/express" "^0.3.0"
     "@google-cloud/datastore" "^10.1.0"
