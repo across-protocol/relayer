@@ -19,6 +19,14 @@ jobs:
           key: *yarn_cache_key
           paths:
             - node_modules
+      - run:
+          name: Build
+          command: yarn build
+      - persist_to_workspace:
+          root: .
+          paths:
+            - node_modules
+            - dist
   test:
     docker:
       - image: cimg/node:22.18.0
@@ -29,10 +37,8 @@ jobs:
       NODE_OPTIONS: --max-old-space-size=5120
     steps:
       - checkout
-      - restore_cache:
-          name: Restore Yarn Package Cache
-          keys:
-            - *yarn_cache_key
+      - attach_workspace:
+          at: .
 
       # Extract Solana version from across-protocol/contracts
       - run:
@@ -114,9 +120,6 @@ jobs:
           paths:
             - &solana_install_path ~/.local/share/solana/install
       - run:
-          name: Run build
-          command: yarn build
-      - run:
           name: Run tests
           command: |
             circleci tests glob "test/**/*.ts" | circleci tests split > /tmp/test-files
@@ -130,10 +133,8 @@ jobs:
       NODE_OPTIONS: --max-old-space-size=5120
     steps:
       - checkout
-      - restore_cache:
-          name: Restore Yarn Package Cache
-          keys:
-            - *yarn_cache_key
+      - attach_workspace:
+          at: .
       - run:
           name: Run lint
           command: yarn lint
