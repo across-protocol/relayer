@@ -7,10 +7,10 @@
   resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.108.tgz#982e230c0193f3b4124e3cb880eb6cb481f76a7e"
   integrity sha512-uYcIw6VjWhSRal9+xv5aTgk3cK1qVH/8SkpSCpa6KMQUXmCKZ3eGGaVMl7Nogl6S0Cj/D76LnMgM3jUP6NK9ag==
 
-"@across-protocol/constants@^3.1.109":
-  version "3.1.109"
-  resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.109.tgz#3a7e9f7581405cd09dbbdc480800d4a775051c46"
-  integrity sha512-Mt0wYTzMPbfNSEWZFuGdMTn8N4z9+yNWJ0HDFaZwVlaiW8m9F1uK5SWHsc6TAZURTvrC2T98nIDGm+ibPgwEYA==
+"@across-protocol/constants@^3.1.110":
+  version "3.1.110"
+  resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.110.tgz#8db121beb440187295874476ad05b1a8d4729acf"
+  integrity sha512-4GfJed7zziPBW4ywsaQaqtT5kSnIo0xthMcAJYqVcDm37e1oIv5lHFNoyGT8bOUNa0T1ZeEGcHLTOzbz+mfTnw==
 
 "@across-protocol/contracts@5.0.7":
   version "5.0.7"
@@ -34,12 +34,12 @@
     bs58 "^6.0.0"
     ethers "5.7.2"
 
-"@across-protocol/sdk@4.3.145":
-  version "4.3.145"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.3.145.tgz#649a205a492825fe269e0a6273cb38aa2294626c"
-  integrity sha512-j9bk4m73HpXHn7GbBfimX5r7c4FwwHFVQsZslA1cdxY4zQdKQePedPQxEbvlLN1Ayv9YlS0G8KelSXi/ykFPBw==
+"@across-protocol/sdk@4.3.147":
+  version "4.3.147"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.3.147.tgz#1da7a639ef056581d87e048fe638127313c3dddf"
+  integrity sha512-kAFeqgfqA9vUD0iv6WT6l3GXyW09lzIzTNy7D4xTKCZDmcikduG6FG6siaz/XJfQO0W3xnVEVxNKGmkEBfD6rQ==
   dependencies:
-    "@across-protocol/constants" "^3.1.109"
+    "@across-protocol/constants" "^3.1.110"
     "@across-protocol/contracts" "5.0.7"
     "@coral-xyz/anchor" "^0.30.1"
     "@eth-optimism/sdk" "^3.3.1"

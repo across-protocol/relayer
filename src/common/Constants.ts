@@ -87,6 +87,7 @@ export const FINALIZER_TOKENBRIDGE_LOOKBACK = 14 * 24 * 60 * 60;
 
 // Chain IDs using the Succinct/Helios SP1 messaging bridge.
 export const UNIVERSAL_CHAINS = [
+  CHAIN_IDs.AVALANCHE, // @TODO: Should be universal chain
   CHAIN_IDs.BSC,
   CHAIN_IDs.HYPEREVM,
   CHAIN_IDs.PLASMA,
@@ -116,6 +117,7 @@ const ORBIT_MIN_DEPOSIT_CONFIRMATIONS = 1;
 const SVM_MIN_DEPOSIT_CONFIRMATIONS = 4;
 const MDC_DEFAULT_THRESHOLD = 1000;
 
+// Should we add some deposit confirmations for Avalanche?
 export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chainId: number]: number } } = {
   10000: {
     [CHAIN_IDs.MAINNET]: 32,
@@ -195,6 +197,7 @@ const resolveChainBundleBuffers = () => {
 
   const buffers = {
     [CHAIN_IDs.ARBITRUM]: defaultBuffers[ChainFamily.ORBIT], // Inherit Orbit default.
+    [CHAIN_IDs.AVALANCHE]: 60, // ~1-2s block, almost instant finality
     [CHAIN_IDs.BSC]: 5, // 2x the average 2.5 block finality (https://www.bnbchain.org/en/blog/the-coming-fastfinality-on-bsc)
     [CHAIN_IDs.HYPEREVM]: 120, // 60s/big block
     [CHAIN_IDs.LINEA]: 40, // ~3s/block
@@ -249,6 +252,7 @@ const resolveChainCacheDelay = () => {
 
   const cacheDelay = {
     [CHAIN_IDs.ARBITRUM]: cacheDelays[ChainFamily.ORBIT],
+    [CHAIN_IDs.AVALANCHE]: 20, // ~1-2s block, almost instant finality but we want to be conservative for the start.
     [CHAIN_IDs.BSC]: 5, // FastFinality on BSC makes finality time probabilistic but it takes an average of 2.5 blocks.
     [CHAIN_IDs.HYPEREVM]: 120, // big blocks are 60s/block
     [CHAIN_IDs.LINEA]: 100, // Linea has a soft-finality of 1 block. This value is padded - but at 3s/block the padding is 5 minutes
@@ -278,6 +282,7 @@ export const CHAIN_CACHE_FOLLOW_DISTANCE = resolveChainCacheDelay();
 // blocks = 172800 / avg_block_time
 export const DEFAULT_NO_TTL_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.ARBITRUM]: 691200,
+  [CHAIN_IDs.AVALANCHE]: 86400,
   [CHAIN_IDs.BASE]: 86400,
   [CHAIN_IDs.BLAST]: 86400,
   [CHAIN_IDs.BOBA]: 86400,
@@ -336,6 +341,7 @@ export const spokesThatHoldNativeTokens = resolveNativeTokenSpokes();
 // A mapping of L2 chain IDs to an array of tokens Across supports on that chain.
 export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.ARBITRUM]: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "POOL", "ezETH"],
+  [CHAIN_IDs.AVALANCHE]: ["USDC"], // @TODO: Check other tokens
   [CHAIN_IDs.BASE]: ["BAL", "DAI", "ETH", "WETH", "USDC", "USDT", "POOL", "VLR", "ezETH"],
   [CHAIN_IDs.BLAST]: ["DAI", "WBTC", "WETH", "ezETH"],
   [CHAIN_IDs.BSC]: ["CAKE", "WBNB", "USDC", "USDT", "WETH"],
@@ -472,6 +478,9 @@ export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<Ba
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcTokenSplitterBridge,
     [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTBridge,
     [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20Bridge,
+  },
+  [CHAIN_IDs.AVALANCHE]: {
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcCCTPBridge,
   },
   [CHAIN_IDs.BASE]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcTokenSplitterBridge,
@@ -638,6 +647,9 @@ export const L2_TOKEN_SPLITTER_BRIDGES: Record<
 };
 
 export const CUSTOM_L2_BRIDGE: Record<number, Record<string, L2BridgeConstructor<BaseL2BridgeAdapter>>> = {
+  [CHAIN_IDs.AVALANCHE]: {
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2UsdcCCTPBridge,
+  },
   [CHAIN_IDs.LISK]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2OpStackUSDCBridge,
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: L2OpStackWethBridge,
