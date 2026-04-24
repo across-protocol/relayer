@@ -15,7 +15,7 @@ COPY . ./
 RUN apk add --no-cache --virtual .build-deps python3 make g++ \
  && yarn install --frozen-lockfile \
  && yarn build \
- && yarn install --production --ignore-scripts --frozen-lockfile \
+ && yarn install --production --frozen-lockfile \
  && yarn cache clean \
  && apk del .build-deps
 
