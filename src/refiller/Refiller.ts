@@ -23,7 +23,6 @@ import {
   mapAsync,
   parseUnits,
   postWithTimeout,
-  retryAsync,
   submitTransaction,
   Signer,
   toAddressType,
@@ -39,6 +38,7 @@ import {
   CHAIN_IDs,
   chainHasNativeToken,
   getNativeTokenInfoForChain,
+  retry,
 } from "../utils";
 import { SWAP_ROUTES, SwapRoute, CUSTOM_BRIDGE, CANONICAL_BRIDGE } from "../common";
 import ERC20_ABI from "../common/abi/MinimalERC20.json";
@@ -470,16 +470,11 @@ export class Refiller {
     if (isDefined(addressIdCache)) {
       addressId = addressIdCache;
     } else {
-      const registeredAddresses = await retryAsync(
+      const fn = () =>
         fetchWithTimeout<{
           items: { chain: string; token: string; address_hex: string; id: string }[];
-        }>,
-        3,
-        1,
-        `${nativeMarketsApiUrl}/addresses`,
-        {},
-        headers
-      );
+        }>(`${nativeMarketsApiUrl}/addresses`, {}, headers);
+      const registeredAddresses = await retry(fn, 3, 1);
       addressId = registeredAddresses.items.find(
         ({ chain, token, address_hex }) =>
           chain === "hyper_evm" && token === "usdh" && address_hex === this.baseSignerAddress.toNative()
@@ -519,14 +514,9 @@ export class Refiller {
       source_address?: TransferRouteAddress;
       destination_address: TransferRouteAddress;
     }
-    const transferRoutes = await retryAsync(
-      fetchWithTimeout<{ items: TransferRoute[] }>,
-      3,
-      1,
-      `${nativeMarketsApiUrl}/transfer_routes`,
-      {},
-      headers
-    );
+    const transferRouteFn = () =>
+      fetchWithTimeout<{ items: TransferRoute[] }>(`${nativeMarketsApiUrl}/transfer_routes`, {}, headers);
+    const transferRoutes = await retry(transferRouteFn, 3, 1);
     let availableTransferRoute = transferRoutes.items
       .filter((route) => isDefined(route.source_address))
       .find(
