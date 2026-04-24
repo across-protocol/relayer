@@ -268,7 +268,7 @@ export async function getBinanceDeposits(
   binanceApi: BinanceApi,
   startTime: number,
   maxRetries = 3,
-  delayS = 1
+  delayS = 2
 ): Promise<BinanceDeposit[]> {
   const fn = () => binanceApi.depositHistory.bind(binanceApi)({ startTime });
   const depositHistory = await retry<DepositHistoryResponse>(fn, maxRetries, delayS);
@@ -293,7 +293,7 @@ export async function getBinanceWithdrawals(
   coin: string,
   startTime: number,
   maxRetries = 3,
-  delayS = 1
+  delayS = 2
 ): Promise<BinanceWithdrawal[]> {
   const fn = () => binanceApi.withdrawHistory.bind(binanceApi)({ coin: resolveBinanceCoinSymbol(coin), startTime });
   const withdrawHistory = await retry<WithdrawHistoryResponse>(fn, maxRetries, delayS);

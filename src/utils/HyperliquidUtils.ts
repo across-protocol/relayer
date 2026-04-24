@@ -32,13 +32,13 @@ export async function getL2Book(
   infoClient: hl.InfoClient,
   params: hl.L2BookParameters,
   maxRetries = 3,
-  delayS = 1
+  delayS = 2
 ): Promise<hl.L2BookResponse> {
   const fn = () => infoClient.l2Book.bind(infoClient)(params);
   return await retry(fn, maxRetries, delayS);
 }
 
-export async function getSpotMeta(infoClient: hl.InfoClient, maxRetries = 3, delayS = 1): Promise<hl.SpotMetaResponse> {
+export async function getSpotMeta(infoClient: hl.InfoClient, maxRetries = 3, delayS = 2): Promise<hl.SpotMetaResponse> {
   return await retry(infoClient.spotMeta.bind(infoClient), maxRetries, delayS);
 }
 
@@ -46,7 +46,7 @@ export async function getSpotClearinghouseState(
   infoClient: hl.InfoClient,
   params: hl.SpotClearinghouseStateParameters,
   maxRetries = 3,
-  delayS = 1
+  delayS = 2
 ): Promise<hl.SpotClearinghouseStateResponse> {
   const fn = () => infoClient.spotClearinghouseState.bind(infoClient)(params);
   return await retry(fn, maxRetries, delayS);
@@ -56,7 +56,7 @@ export async function getUserNonFundingLedgerUpdates(
   infoClient: hl.InfoClient,
   params: hl.UserNonFundingLedgerUpdatesParameters,
   maxRetries = 3,
-  delayS = 1
+  delayS = 2
 ): Promise<hl.UserNonFundingLedgerUpdatesResponse> {
   const fn = () => infoClient.userNonFundingLedgerUpdates.bind(infoClient)(params);
   return await retry(fn, maxRetries, delayS);
@@ -66,7 +66,7 @@ export async function getOpenOrders(
   infoClient: hl.InfoClient,
   params: hl.OpenOrdersParameters,
   maxRetries = 3,
-  delayS = 1
+  delayS = 2
 ): Promise<hl.OpenOrdersResponse> {
   const fn = () => infoClient.openOrders.bind(infoClient)(params);
   return retry(fn, maxRetries, delayS);
@@ -76,7 +76,7 @@ export async function getUserFees(
   infoClient: hl.InfoClient,
   params: hl.UserFeesParameters,
   maxRetries = 3,
-  delayS = 1
+  delayS = 2
 ): Promise<hl.UserFeesResponse> {
   const fn = () => infoClient.userFees.bind(infoClient)(params);
   return retry(fn, maxRetries, delayS);
@@ -86,7 +86,7 @@ export async function getHistoricalOrders(
   infoClient: hl.InfoClient,
   params: hl.HistoricalOrdersParameters,
   maxRetries = 3,
-  delayS = 1
+  delayS = 2
 ): Promise<hl.HistoricalOrdersResponse> {
   const fn = () => infoClient.historicalOrders.bind(infoClient)(params);
   return retry(fn, maxRetries, delayS);
@@ -96,7 +96,7 @@ export async function getUserFillsByTime(
   infoClient: hl.InfoClient,
   params: hl.UserFillsByTimeParameters,
   maxRetries = 3,
-  delayS = 1
+  delayS = 2
 ): Promise<hl.UserFillsByTimeResponse> {
   const fn = () => infoClient.userFillsByTime.bind(infoClient)(params);
   return retry(fn, maxRetries, delayS);
@@ -106,7 +106,7 @@ export async function getOrderStatus(
   infoClient: hl.InfoClient,
   params: hl.OrderStatusParameters,
   maxRetries = 3,
-  delayS = 1
+  delayS = 2
 ): Promise<hl.OrderStatusResponse> {
   const fn = () => infoClient.orderStatus.bind(infoClient)(params);
   return retry(fn, maxRetries, delayS);
