@@ -12,13 +12,9 @@ WORKDIR /across-relayer
 
 COPY . ./
 
-RUN apt-get update \
- && apt-get install -y --no-install-recommends python3 make g++ \
- && yarn install --frozen-lockfile \
+RUN yarn install --frozen-lockfile \
  && yarn build \
  && yarn install --production --frozen-lockfile \
- && yarn cache clean \
- && apt-get purge -y --auto-remove python3 make g++ \
- && rm -rf /var/lib/apt/lists/*
+ && yarn cache clean
 
 ENTRYPOINT ["/bin/sh", "scripts/runCommand.sh"]
