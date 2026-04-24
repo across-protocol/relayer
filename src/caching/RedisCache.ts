@@ -1,7 +1,7 @@
 import assert from "assert";
 import { interfaces, constants } from "@across-protocol/sdk";
 import { isDefined } from "../utils";
-import { createClient } from "redis4";
+import { createClient } from "redis";
 import winston from "winston";
 
 export type RedisClient = ReturnType<typeof createClient>;
