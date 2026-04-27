@@ -27,9 +27,6 @@ jobs:
           paths:
             - node_modules
       - run:
-          name: Build
-          command: yarn build
-      - run:
           name: Extract Solana version
           command: |
             set -euo pipefail
@@ -61,10 +58,18 @@ jobs:
           root: .
           paths:
             - node_modules
-            - dist
             - artifacts
             - cache
             - .solana-version
+  typecheck:
+    executor: node
+    steps:
+      - checkout
+      - attach_workspace:
+          at: .
+      - run:
+          name: Typecheck
+          command: yarn typecheck
   test:
     executor: node
     parallelism: 20
@@ -140,6 +145,9 @@ workflows:
   build_and_test:
     jobs:
       - install
+      - typecheck:
+          requires:
+            - install
       - test:
           requires:
             - install

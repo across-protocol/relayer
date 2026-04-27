@@ -63,6 +63,7 @@
     "test": "RELAYER_TEST=true hardhat test",
     "test:parallel": "RELAYER_TEST=true hardhat test --parallel",
     "build": "tsc --build",
+    "typecheck": "tsc --noEmit",
     "watch": "tsc --build --incremental --watch",
     "build:test": "tsc --project tsconfig.test.json",
     "clean": "dir=\"./node_modules\"; mv \"${dir}\" \"${dir}_\" 2>/dev/null && rm -r \"${dir}_\" & rm -f dist/tsconfig.tsbuildinfo",
