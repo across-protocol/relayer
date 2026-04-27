@@ -301,7 +301,7 @@ export class DepositAddressHandler {
 
     // At this point, the user's deposit contract is deployed on the origin network.
     const swapTx = await this._getSwapApiQuote(depositMessage);
-    if (!isDefined(swapTx) || !swapTx.swapTx.simulationSuccess) {
+    if (!isDefined(swapTx)) {
       this.logger.warn({
         at: "DepositAddressHandler#initiateDeposit",
         message: "Failed to fetch swap tx from swap API",
