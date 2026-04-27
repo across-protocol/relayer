@@ -8,23 +8,29 @@
 #                                         commit picks up the reduction.
 #
 # Uses `tsc --incremental` with a dedicated buildinfo file so warm runs are
-# fast. When the budget reaches 0, flip `strictNullChecks: true` in
-# tsconfig.json and delete this script.
+# fast. The error list is cached in $ERRORS_FILE; tsc is skipped if no input
+# is newer than the cache. When the budget reaches 0, flip
+# `strictNullChecks: true` in tsconfig.json and delete this script.
 
 set -eu
 
 MODE="${1:-enforce}"
 BUDGET_FILE=".strict-null-budget"
 BUILDINFO=".tsbuildinfo-strict"
+ERRORS_FILE=".strict-null-errors"
+INPUTS="src scripts index.ts hardhat.config.ts tsconfig.json package.json yarn.lock"
 
 [ -f "$BUDGET_FILE" ] || { echo "missing $BUDGET_FILE"; exit 2; }
 BUDGET=$(cat "$BUDGET_FILE")
 
-ERRORS_FILE=$(mktemp)
-trap 'rm -f "$ERRORS_FILE"' EXIT
-
-yarn -s tsc --noEmit --strictNullChecks --incremental --tsBuildInfoFile "$BUILDINFO" 2>&1 \
-  | grep -E "^(src|scripts|index\.ts).*error TS" > "$ERRORS_FILE" || true
+# Skip tsc if every input is older than the cached error list.
+if [ -f "$ERRORS_FILE" ] && \
+   [ -z "$(find $INPUTS "$0" -newer "$ERRORS_FILE" -type f 2>/dev/null | head -1)" ]; then
+  : # cache hit
+else
+  yarn -s tsc --noEmit --strictNullChecks --incremental --tsBuildInfoFile "$BUILDINFO" 2>&1 \
+    | grep -E "^(src|scripts|index\.ts).*error TS" > "$ERRORS_FILE" || true
+fi
 ACTUAL=$(wc -l < "$ERRORS_FILE" | tr -d ' ')
 
 if [ "$ACTUAL" -gt "$BUDGET" ]; then
