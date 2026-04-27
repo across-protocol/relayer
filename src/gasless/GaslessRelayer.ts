@@ -60,6 +60,7 @@ import {
   extractGaslessDepositFields,
   getGaslessPermitNonce,
   isPermit2NonceUsed,
+  isErc2612PermitNonceConsumed,
   isAllowedGaslessPair,
   isExclusivityRelative,
   isStablecoin,
@@ -155,7 +156,9 @@ export class GaslessRelayer {
         chainId,
         this.config.spokePoolPeripheryOverrides[chainId]
       ).connect(provider);
-      this.permit2Contracts[chainId] = getPermit2(chainId).connect(provider);
+      if (!this.config.noPermit2ContractChainIds.has(chainId)) {
+        this.permit2Contracts[chainId] = getPermit2(chainId).connect(provider);
+      }
     });
     await forEachAsync(this.config.relayerDestinationChains, async (chainId) => {
       this.providersByChain[chainId] ??= await getProvider(chainId);
@@ -323,9 +326,10 @@ export class GaslessRelayer {
    * @notice For each CCTP deposit in the API messages, detects an already-submitted deposit on origin and adds
    * the corresponding key to observedDeposits so we do not re-submit.
    * - EIP-3009 (bridge): AuthorizationUsed on bridge inputToken.
-   * - EIP-3009 (swap-and-bridge): AuthorizationUsed on swapToken (the signed token); observed key uses depositData.inputToken to match messageFilter / FundsDeposited.
+   * - EIP-3009 / erc3009 (swap-and-bridge): AuthorizationUsed on swapToken (the signed token); observed key uses depositData.inputToken to match messageFilter / FundsDeposited.
    * - Permit2 (bridge only): FundsDeposited on SpokePool by depositId (no AuthorizationUsed on the transfer token).
    * - Permit2 (swap-and-bridge): Permit2 nonceBitmap on canonical Permit2 — if nonce used, treat deposit as already submitted.
+   * - Permit (swap-and-bridge): token.nonces(owner) > signed nonce means permit already consumed.
    */
   protected async updateObservedCctpDeposits(apiMessages: AnyGaslessDepositMessage[]): Promise<void> {
     const cctpMessages = apiMessages.filter((msg) => this._isCctpDeposit(msg.originChainId, msg.spokePool));
@@ -333,10 +337,19 @@ export class GaslessRelayer {
       const { originChainId, depositId } = depositMessage;
 
       if (depositMessage.depositFlowType === "swapAndBridge") {
-        if (depositMessage.permitType === "permit2") {
+        const swapTokenAddr = toAddressType(depositMessage.swapToken, originChainId);
+        if (["permit2", "permit"].includes(depositMessage.permitType)) {
           const owner = getGaslessAuthorizerAddress(depositMessage);
           const permitNonce = getGaslessPermitNonce(depositMessage);
-          const nonceUsed = await isPermit2NonceUsed(this.permit2Contracts[originChainId], owner, permitNonce);
+          const nonceUsed =
+            depositMessage.permitType === "permit2"
+              ? await isPermit2NonceUsed(this.permit2Contracts[originChainId], owner, permitNonce)
+              : await isErc2612PermitNonceConsumed({
+                  tokenAddress: swapTokenAddr.toNative(),
+                  owner,
+                  signedNonce: permitNonce,
+                  provider: this.providersByChain[originChainId],
+                });
           if (!nonceUsed) {
             return;
           }
@@ -348,7 +361,6 @@ export class GaslessRelayer {
           this.observedDeposits[originChainId].add(depositKey);
           return;
         }
-        const swapTokenAddr = toAddressType(depositMessage.swapToken, originChainId);
         const authorizer = getGaslessAuthorizerAddress(depositMessage);
         const nonce = getGaslessPermitNonce(depositMessage);
         const transactionHash = await this._findAuthorizationUsed(originChainId, swapTokenAddr, authorizer, nonce);
@@ -548,15 +560,25 @@ export class GaslessRelayer {
           case MessageState.DEPOSIT_CONFIRM: {
             const depositReceipt = await depositReceiptPromise;
 
-            // Swap-and-bridge and CCTP bridge: no fill; confirm via receipt hash and/or EIP-3009 AuthorizationUsed.
-            // Swap-and-bridge with Permit2: confirm via Permit2 nonceBitmap.
+            // Swap-and-bridge and CCTP bridge: no fill; confirm via receipt hash and/or nonce/auth usage.
+            // Permit2: nonceBitmap, Permit (EIP-2612): token nonce advancement, EIP-3009: AuthorizationUsed.
             if (isSwap || isCctpDeposit) {
               let found: string | undefined = depositReceipt?.transactionHash;
 
               if (!found) {
-                if (depositMessage.permitType === "receiveWithAuthorization") {
-                  const authToken = isSwap ? toAddressType(depositMessage.swapToken, originChainId) : inputToken;
+                const authToken = isSwap ? toAddressType(depositMessage.swapToken, originChainId) : inputToken;
+                if (depositMessage.permitType === "erc3009") {
                   found = await this._findAuthorizationUsed(originChainId, authToken, authorizer, nonce);
+                } else if (depositMessage.permitType === "permit") {
+                  const nonceConsumed = await isErc2612PermitNonceConsumed({
+                    tokenAddress: authToken.toNative(),
+                    owner: authorizer,
+                    signedNonce: nonce,
+                    provider: this.providersByChain[originChainId],
+                  });
+                  if (nonceConsumed) {
+                    found = "permit-nonce-consumed";
+                  }
                 } else if (depositMessage.permitType === "permit2") {
                   const nonceUsed = await isPermit2NonceUsed(this.permit2Contracts[originChainId], authorizer, nonce);
                   // Same outcome as AuthorizationUsed: confirm origin submission without a tx receipt (no EIP-3009 event).

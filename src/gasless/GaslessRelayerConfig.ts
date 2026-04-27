@@ -25,6 +25,11 @@ export class GaslessRelayerConfig extends CommonConfig {
   spokePoolPeripheryOverrides: { [chainId: number]: string };
   /** Gasless-only: allowed input→output token pairs (by L1 symbol). E.g. { "USDT": ["USDC"] }. */
   allowedPeggedPairs: AllowedPeggedPairs;
+  /**
+   * Origin chain IDs where canonical Permit2 is not used (skip loading and nonce-bitmap reads).
+   * JSON array of numbers, e.g. `[999]` for HyperEVM. Default `[]`.
+   */
+  noPermit2ContractChainIds: Set<number>;
 
   constructor(env: ProcessEnv) {
     super(env);
@@ -42,6 +47,7 @@ export class GaslessRelayerConfig extends CommonConfig {
       SPOKE_POOL_PERIPHERY_OVERRIDES,
       GASLESS_ALLOWED_PEGGED_PAIRS,
       SWAP_API_KEY,
+      NO_PERMIT2_CONTRACT_CHAINS,
     } = env;
     this.apiPollingInterval = Number(API_POLLING_INTERVAL ?? 1); // Default to 1s
     this.apiEndpoint = String(API_GASLESS_ENDPOINT);
@@ -69,5 +75,7 @@ export class GaslessRelayerConfig extends CommonConfig {
         new Set(outputSymbols),
       ])
     );
+
+    this.noPermit2ContractChainIds = new Set(parseJson.numberArray(NO_PERMIT2_CONTRACT_CHAINS ?? "[]"));
   }
 }

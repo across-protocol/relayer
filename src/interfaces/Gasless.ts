@@ -153,6 +153,14 @@ export interface Permit2SwapAndBridgePermit {
   };
 }
 
+/** EIP-712 witness for swap-and-bridge + EIP-2612 permit flow (not Permit2). */
+export interface PermitSwapAndBridgeWitness {
+  types: Record<string, Array<{ name: string; type: string }>>;
+  domain: { name: string; version: string; chainId: number; verifyingContract: string };
+  primaryType: string;
+  message: SwapAndDepositData;
+}
+
 // ---------------------------------------------------------------------------
 // Raw API response shapes
 // ---------------------------------------------------------------------------
@@ -209,7 +217,7 @@ export interface APIGaslessSwapAndBridgeDepositResponse {
           data: BridgeAndSwapWitnessData;
         };
       };
-      permit: ReceiveWithAuthorization | Permit2SwapAndBridgePermit;
+      permit: ReceiveWithAuthorization | Permit2SwapAndBridgePermit | PermitSwapAndBridgeWitness;
       domainSeparator: string;
       integratorId?: string;
       metadata?: GaslessDepositMetadata;
@@ -219,6 +227,10 @@ export interface APIGaslessSwapAndBridgeDepositResponse {
   submittedAt: string;
   requestId: string;
   messageId: string;
+  /** EIP-2612 permit signature for token approval (swapAndBridgeWithPermit). */
+  permitApprovalSignature?: string;
+  /** EIP-2612 permit deadline used for token approval (swapAndBridgeWithPermit). */
+  permitApprovalDeadline?: number;
 }
 
 /**
@@ -267,7 +279,7 @@ export interface DepositWithAuthorizationParams {
 // ---------------------------------------------------------------------------
 
 /** Discriminant for which permit flow a gasless message uses. */
-export type GaslessPermitType = "receiveWithAuthorization" | "permit2";
+export type GaslessPermitType = "erc3009" | "permit2" | "permit";
 
 /**
  * Flattened bridge-only gasless deposit message.
@@ -303,7 +315,11 @@ export interface SwapAndBridgeGaslessDepositMessage {
   requestId: string;
   signature: string;
   permitType: GaslessPermitType;
-  permit: ReceiveWithAuthorization | Permit2SwapAndBridgePermit;
+  permit: ReceiveWithAuthorization | Permit2SwapAndBridgePermit | PermitSwapAndBridgeWitness;
+  /** Required for permitType === "permit" (EIP-2612 flow). */
+  permitApprovalSignature?: string;
+  /** Required for permitType === "permit" (EIP-2612 flow). */
+  permitApprovalDeadline?: number;
   /** Destructured from BridgeAndSwapWitnessData. */
   depositData: SwapBaseDepositData;
   submissionFees: Fees;
