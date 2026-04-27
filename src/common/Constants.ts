@@ -87,7 +87,7 @@ export const FINALIZER_TOKENBRIDGE_LOOKBACK = 14 * 24 * 60 * 60;
 
 // Chain IDs using the Succinct/Helios SP1 messaging bridge.
 export const UNIVERSAL_CHAINS = [
-  CHAIN_IDs.AVALANCHE, // @TODO: Should be universal chain
+  CHAIN_IDs.AVALANCHE,
   CHAIN_IDs.BSC,
   CHAIN_IDs.HYPEREVM,
   CHAIN_IDs.PLASMA,
