@@ -54,11 +54,16 @@ jobs:
 
             echo "Using Solana version: $SOLANA_VERSION"
             echo "$SOLANA_VERSION" > .solana-version
+      - run:
+          name: Compile contracts
+          command: yarn hardhat compile
       - persist_to_workspace:
           root: .
           paths:
             - node_modules
             - dist
+            - artifacts
+            - cache
             - .solana-version
   test:
     executor: node
