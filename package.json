@@ -55,9 +55,9 @@
   "types": "dist/index.d.ts",
   "main": "dist/index.js",
   "scripts": {
-    "postinstall": "patch-package; yarn update-addresses",
-    "lint": "yarn eslint && yarn prettier --list-different",
-    "lint-fix": "yarn eslint --fix && yarn prettier --write",
+    "postinstall": "patch-package; npm run update-addresses",
+    "lint": "eslint . && prettier --list-different .",
+    "lint-fix": "eslint . --fix && prettier --write .",
     "prettier": "prettier .",
     "eslint": "eslint .",
     "test": "RELAYER_TEST=true hardhat test",
@@ -83,12 +83,12 @@
     "run-depositAddressHandler": "node ./dist/index.js --depositAddressHandler",
     "relay": "node ./dist/index.js --relayer",
     "refill-usdc": "node ./dist/scripts/refillUsdcToSpecificChain.js",
-    "deposit": "yarn node ./dist/scripts/spokepool.js deposit",
+    "update-inventory-config": "node ./dist/scripts/fetchInventoryConfig.js",
+    "deposit": "tsx ./scripts/spokepool.ts deposit",
     "dispute": "tsx ./scripts/hubpool.ts dispute",
     "update": "git pull && yarn reinstall && yarn version --non-interactive && git show --quiet",
     "update-addresses": "tsx ./scripts/fetch-addresses.ts",
-    "update-inventory-config": "node ./dist/scripts/fetchInventoryConfig.js",
-    "validate-root-bundle": "yarn node ./dist/src/scripts/validateRootBundle.js | tee validateRootBundle-${REQUEST_TIME}.log"
+    "validate-root-bundle": "tsx ./src/scripts/validateRootBundle.ts | tee validateRootBundle-${REQUEST_TIME}.log"
   },
   "devDependencies": {
     "@defi-wonderland/smock": "^2.4.0",
