@@ -55,7 +55,8 @@
   "types": "dist/index.d.ts",
   "main": "dist/index.js",
   "scripts": {
-    "postinstall": "patch-package; npm run update-addresses; git rev-parse --git-dir >/dev/null 2>&1 && git config core.hooksPath .githooks || true",
+    "postinstall": "patch-package; npm run update-addresses; npm run setup-hooks",
+    "setup-hooks": "git rev-parse --git-dir >/dev/null 2>&1 && git config core.hooksPath .githooks || true",
     "lint": "eslint . && prettier --list-different .",
     "lint-fix": "eslint . --fix && prettier --write .",
     "prettier": "prettier .",
