@@ -1,10 +1,17 @@
 version: 2.1
-jobs:
-  install:
+
+executors:
+  node:
     docker:
       - image: cimg/node:22.18.0
-    working_directory: ~/relayer-v2
+    working_directory: ~/relayer
     resource_class: medium+
+    environment:
+      NODE_OPTIONS: --max-old-space-size=5120
+
+jobs:
+  install:
+    executor: node
     steps:
       - checkout
       - restore_cache:
@@ -59,13 +66,8 @@ jobs:
             - cache
             - .solana-version
   test:
-    docker:
-      - image: cimg/node:22.18.0
-    working_directory: ~/relayer-v2
-    resource_class: medium+
+    executor: node
     parallelism: 20
-    environment:
-      NODE_OPTIONS: --max-old-space-size=5120
     steps:
       - checkout
       - attach_workspace:
@@ -125,12 +127,7 @@ jobs:
             circleci tests glob "test/**/*.ts" | circleci tests split > /tmp/test-files
             yarn test --bail $(cat /tmp/test-files)
   lint:
-    docker:
-      - image: cimg/node:22.18.0
-    working_directory: ~/relayer-v2
-    resource_class: medium+
-    environment:
-      NODE_OPTIONS: --max-old-space-size=5120
+    executor: node
     steps:
       - checkout
       - attach_workspace:
