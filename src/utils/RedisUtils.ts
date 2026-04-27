@@ -1,6 +1,6 @@
 import { assert, toBN, BigNumberish, isDefined } from "./";
 import { REDIS_URL_DEFAULT } from "../common/Constants";
-import { createClient } from "redis4";
+import { createClient } from "redis";
 import winston from "winston";
 import { Deposit, Fill, PubSubMechanismInterface } from "../interfaces";
 import dotenv from "dotenv";
