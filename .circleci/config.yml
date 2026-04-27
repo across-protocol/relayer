@@ -50,8 +50,25 @@ jobs:
             echo "Using Solana version: $SOLANA_VERSION"
             echo "$SOLANA_VERSION" > .solana-version
       - run:
+          name: Compute hardhat cache key
+          command: |
+            # Discriminate hardhat artifacts by the content of contracts/ +
+            # hardhat.config.ts (compiler version, viaIR, etc. live in the config).
+            git rev-parse HEAD:contracts > .hardhat-cache-key
+            git rev-parse HEAD:hardhat.config.ts >> .hardhat-cache-key
+      - restore_cache:
+          name: Restore hardhat artifacts cache
+          keys:
+            - &hardhat_cache_key hardhat-v1-{{ checksum ".hardhat-cache-key" }}
+      - run:
           name: Compile contracts
           command: yarn hardhat compile
+      - save_cache:
+          name: Save hardhat artifacts cache
+          key: *hardhat_cache_key
+          paths:
+            - artifacts
+            - cache
       - persist_to_workspace:
           root: .
           paths:
