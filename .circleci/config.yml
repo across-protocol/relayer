@@ -68,7 +68,7 @@ jobs:
       - restore_cache:
           name: Restore Solana CLI Cache
           keys:
-            - &solana_cache_key solana-cli-v1-{{ checksum "/tmp/solana-version" }}
+            - &solana_cache_key solana-cli-v2-{{ arch }}-{{ checksum "/tmp/solana-version" }}
 
       # Install Solana CLI
       - run:
