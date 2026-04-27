@@ -31,13 +31,11 @@ jobs:
           command: |
             set -euo pipefail
 
-            REPO="across-protocol/contracts"
-            REF="master"
-
-            if [ -n "${OVERRIDE_SOLANA_VERSION:-}" ]; then
-              SOLANA_VERSION="${OVERRIDE_SOLANA_VERSION}"
-            else
-              # Fetch Cargo.lock directly to avoid cloning the contracts repo.
+            if [ -z "${SOLANA_VERSION:-}" ]; then
+              # Derive from the Cargo.lock of the contracts release matching the installed package version.
+              REPO="across-protocol/contracts"
+              CONTRACTS_VERSION=$(node -p "require('@across-protocol/contracts/package.json').version")
+              REF="v${CONTRACTS_VERSION}"
               curl -fsSL "https://raw.githubusercontent.com/$REPO/$REF/Cargo.lock" -o /tmp/Cargo.lock
               EXTRACTED_VERSION=$(grep -A2 'name = "solana-program"' /tmp/Cargo.lock \
                                  | grep 'version' | head -n1 | cut -d'"' -f2)
@@ -86,7 +84,7 @@ jobs:
       - run:
           name: Install Solana CLI
           command: |
-            # Keep in sync with save_cache.paths below (solana_install_path).
+            # Keep in sync with save_cache.paths below.
             export SOLANA_INSTALL="$HOME/.local/share/solana/install"
             SOLANA_BIN="$SOLANA_INSTALL/active_release/bin"
             export PATH="$SOLANA_BIN:$PATH"
@@ -125,7 +123,7 @@ jobs:
           name: Save Solana CLI Cache
           key: *solana_cache_key
           paths:
-            - &solana_install_path ~/.local/share/solana/install
+            - ~/.local/share/solana/install
       - run:
           name: Run tests
           command: |
