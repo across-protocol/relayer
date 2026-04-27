@@ -497,7 +497,7 @@ export class BaseChainAdapter {
     if (simMode === false) {
       const symbol = await contract.symbol();
       const { AVALANCHE, BSC, HYPEREVM, MAINNET, MONAD, PLASMA } = CHAIN_IDs;
-      const nativeTokenChains = [AVALANCHE,BSC, HYPEREVM, MAINNET, MONAD, PLASMA];
+      const nativeTokenChains = [AVALANCHE, BSC, HYPEREVM, MAINNET, MONAD, PLASMA];
       const prependW = nativeTokenChains.some((chainId) => PUBLIC_NETWORKS[chainId].nativeToken === nativeTokenSymbol);
       const expectedTokenSymbol = prependW ? `W${nativeTokenSymbol}` : nativeTokenSymbol;
       assert(
