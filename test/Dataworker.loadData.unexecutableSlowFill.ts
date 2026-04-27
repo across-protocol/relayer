@@ -50,6 +50,10 @@ describe("Dataworker: Load bundle data: Computing unexecutable slow fills", asyn
   let mockConfigStore: MockConfigStoreClient;
   const lpFeePct = toBNWei("0.01");
 
+  type ConfigStoreAware = { configStoreClient: MockConfigStoreClient };
+
+  const withConfigStore = <T extends object>(value: T): T & ConfigStoreAware => value as T & ConfigStoreAware;
+
   function generateV3Deposit(eventOverride?: Partial<interfaces.DepositWithBlock>): interfaces.Log {
     return mockOriginSpokePoolClient.deposit({
       inputToken: toAddressType(erc20_1.address, originChainId),
@@ -356,10 +360,8 @@ describe("Dataworker: Load bundle data: Computing unexecutable slow fills", asyn
       JSON.stringify([mockOriginSpokePoolClient.chainId])
     );
     await mockConfigStore.update();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (spokePoolClient_1 as any).configStoreClient = mockConfigStore;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (spokePoolClient_2 as any).configStoreClient = mockConfigStore;
+    withConfigStore(spokePoolClient_1).configStoreClient = mockConfigStore;
+    withConfigStore(spokePoolClient_2).configStoreClient = mockConfigStore;
 
     // Generate a deposit that cannot be slow filled, to test that its ignored as a slow fill excess.
     // - first deposit is FROM lite chain
@@ -554,10 +556,8 @@ describe("Dataworker: Load bundle data: Computing unexecutable slow fills", asyn
       JSON.stringify([mockOriginSpokePoolClient.chainId])
     );
     await mockConfigStore.update();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (mockOriginSpokePoolClient as any).configStoreClient = mockConfigStore;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (mockDestinationSpokePool as any).configStoreClient = mockConfigStore;
+    withConfigStore(mockOriginSpokePoolClient).configStoreClient = mockConfigStore;
+    withConfigStore(mockDestinationSpokePool).configStoreClient = mockConfigStore;
     const updateEventTimestamp = mockConfigStore.liteChainIndicesUpdates[0].timestamp;
 
     // Send lite chain deposit that expires in this bundle.

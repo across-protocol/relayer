@@ -477,9 +477,54 @@ export function getDisabledBlockRanges(): number[][] {
   return DEFAULT_BLOCK_RANGE_FOR_CHAIN.map((range) => [range[0], range[0]]);
 }
 
+type RelayDataArgs = {
+  originChainId: RelayData["originChainId"];
+  destinationChainId: number;
+  depositor: string;
+  recipient: string;
+  depositId: RelayData["depositId"];
+  inputToken: string;
+  inputAmount: RelayData["inputAmount"];
+  outputToken: string;
+  outputAmount: RelayData["outputAmount"];
+  message: RelayData["message"];
+  fillDeadline: RelayData["fillDeadline"];
+  exclusiveRelayer: string;
+  exclusivityDeadline: RelayData["exclusivityDeadline"];
+};
+
+type RelayExecutionInfoArgs = {
+  updatedRecipient: string;
+  updatedOutputAmount: RelayExecutionEventInfo["updatedOutputAmount"];
+  updatedMessageHash: RelayExecutionEventInfo["updatedMessageHash"];
+  fillType: RelayExecutionEventInfo["fillType"];
+  updatedMessage?: string;
+};
+
+type FillArgs = RelayDataArgs & {
+  messageHash: Fill["messageHash"];
+  relayer: string;
+  repaymentChainId: Fill["repaymentChainId"];
+  relayExecutionInfo: RelayExecutionInfoArgs;
+};
+
+type SlowFillRequestArgs = RelayDataArgs & {
+  messageHash?: SlowFillRequest["messageHash"];
+};
+
+type DepositArgs = RelayDataArgs & {
+  messageHash: Deposit["messageHash"];
+  quoteTimestamp: Deposit["quoteTimestamp"];
+  fromLiteChain: Deposit["fromLiteChain"];
+  toLiteChain: Deposit["toLiteChain"];
+  speedUpSignature?: NonNullable<Deposit["speedUpSignature"]>;
+  updatedRecipient?: string;
+  updatedOutputAmount?: NonNullable<Deposit["updatedOutputAmount"]>;
+  updatedMessage?: NonNullable<Deposit["updatedMessage"]>;
+};
+
 // A helper function to parse key - value map into a Fill object
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function fillFromArgs(fillArgs: { [key: string]: any }): Fill {
+export function fillFromArgs(fillArgs: FillArgs): Fill {
   const { message, ...relayData } = relayDataFromArgs(fillArgs);
   const { relayExecutionInfo: relayExecutionInfoArgs } = fillArgs;
   const relayExecutionInfo: RelayExecutionEventInfo = {
@@ -518,8 +563,7 @@ export function fillIntoPrimitiveTypes(fill: Fill) {
   };
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function relayDataFromArgs(relayDataArgs: { [key: string]: any }): RelayData {
+export function relayDataFromArgs(relayDataArgs: RelayDataArgs): RelayData {
   return {
     originChainId: relayDataArgs.originChainId,
     depositor: toAddressType(relayDataArgs.depositor, relayDataArgs.originChainId),
@@ -536,8 +580,7 @@ export function relayDataFromArgs(relayDataArgs: { [key: string]: any }): RelayD
   };
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function slowFillRequestFromArgs(slowFillRequestArgs: { [key: string]: any }): SlowFillRequest {
+export function slowFillRequestFromArgs(slowFillRequestArgs: SlowFillRequestArgs): SlowFillRequest {
   const { message, ...relayData } = relayDataFromArgs(slowFillRequestArgs);
   return {
     ...relayData,
@@ -547,8 +590,7 @@ export function slowFillRequestFromArgs(slowFillRequestArgs: { [key: string]: an
 }
 
 // A helper function to parse key - value map into a Deposit object with correct types (e.g. Address)
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function depositFromArgs(depositArgs: { [key: string]: any }): Deposit {
+export function depositFromArgs(depositArgs: DepositArgs): Deposit {
   const deposit: Deposit = {
     ...relayDataFromArgs(depositArgs),
     destinationChainId: depositArgs.destinationChainId,
