@@ -277,6 +277,7 @@ export interface GaslessDepositMessage {
   depositFlowType: "bridge";
   originChainId: number;
   depositId: string;
+  submittedAt: string;
   requestId: string;
   signature: string;
   permitType: GaslessPermitType;
@@ -300,6 +301,7 @@ export interface SwapAndBridgeGaslessDepositMessage {
   depositFlowType: "swapAndBridge";
   originChainId: number;
   depositId: string;
+  submittedAt: string;
   requestId: string;
   signature: string;
   permitType: GaslessPermitType;

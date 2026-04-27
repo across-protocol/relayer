@@ -14,6 +14,7 @@ function makeDepositMessage(overrides: Record<string, unknown> = {}) {
   return {
     originChainId: 1,
     depositId: "1",
+    submittedAt: "2024-01-01T00:00:00Z",
     requestId: "req-1",
     signature: DUMMY_SIGNATURE,
     permitType: "receiveWithAuthorization",
@@ -128,6 +129,12 @@ describe("GaslessUtils", function () {
       const apiResponse = makeApiResponse();
       const [result] = restructureGaslessDeposits([apiResponse]);
       expect(result.integratorId).to.be.undefined;
+    });
+
+    it("propagates submittedAt from API", function () {
+      const apiResponse = makeApiResponse();
+      const [result] = restructureGaslessDeposits([apiResponse]);
+      expect(result.submittedAt).to.equal("2024-01-01T00:00:00Z");
     });
   });
 
