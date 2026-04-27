@@ -22,11 +22,37 @@ jobs:
       - run:
           name: Build
           command: yarn build
+      - run:
+          name: Extract Solana version
+          command: |
+            set -euo pipefail
+
+            REPO="across-protocol/contracts"
+            REF="master"
+
+            if [ -n "${OVERRIDE_SOLANA_VERSION:-}" ]; then
+              SOLANA_VERSION="${OVERRIDE_SOLANA_VERSION}"
+            else
+              # Fetch Cargo.lock directly to avoid cloning the contracts repo.
+              curl -fsSL "https://raw.githubusercontent.com/$REPO/$REF/Cargo.lock" -o /tmp/Cargo.lock
+              EXTRACTED_VERSION=$(grep -A2 'name = "solana-program"' /tmp/Cargo.lock \
+                                 | grep 'version' | head -n1 | cut -d'"' -f2)
+              if [ -n "$EXTRACTED_VERSION" ]; then
+                VERSION_NUMBER=$(echo "$EXTRACTED_VERSION" | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+')
+                if [ -n "$VERSION_NUMBER" ]; then
+                  SOLANA_VERSION="$VERSION_NUMBER"
+                fi
+              fi
+            fi
+
+            echo "Using Solana version: $SOLANA_VERSION"
+            echo "$SOLANA_VERSION" > .solana-version
       - persist_to_workspace:
           root: .
           paths:
             - node_modules
             - dist
+            - .solana-version
   test:
     docker:
       - image: cimg/node:22.18.0
@@ -39,42 +65,10 @@ jobs:
       - checkout
       - attach_workspace:
           at: .
-
-      # Extract Solana version from across-protocol/contracts
-      - run:
-          name: Extract Solana version
-          command: |
-            set -euo pipefail
-
-            REPO="across-protocol/contracts"
-            REF="master"
-
-            if [ -n "${OVERRIDE_SOLANA_VERSION:-}" ]; then
-              SOLANA_VERSION="${OVERRIDE_SOLANA_VERSION}"
-            else
-              # Clone the contracts repository to get Cargo.lock
-              git clone --depth 1 --branch $REF https://github.com/$REPO.git /tmp/contracts
-              cd /tmp/contracts
-              if [ -f Cargo.lock ]; then
-                EXTRACTED_VERSION=$(grep -A2 'name = "solana-program"' Cargo.lock \
-                                   | grep 'version' | head -n1 | cut -d'"' -f2)
-                if [ -n "$EXTRACTED_VERSION" ]; then
-                  VERSION_NUMBER=$(echo "$EXTRACTED_VERSION" | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+')
-                  if [ -n "$VERSION_NUMBER" ]; then
-                    SOLANA_VERSION="$VERSION_NUMBER"
-                  fi
-                fi
-              fi
-            fi
-
-            echo "Using Solana version: $SOLANA_VERSION"
-            echo "$SOLANA_VERSION" > /tmp/solana-version
-            echo "export SOLANA_VERSION=$SOLANA_VERSION" >> $BASH_ENV
-
       - restore_cache:
           name: Restore Solana CLI Cache
           keys:
-            - &solana_cache_key solana-cli-v2-{{ arch }}-{{ checksum "/tmp/solana-version" }}
+            - &solana_cache_key solana-cli-v2-{{ arch }}-{{ checksum ".solana-version" }}
 
       # Install Solana CLI
       - run:
@@ -91,6 +85,7 @@ jobs:
               exit 0
             fi
 
+            SOLANA_VERSION=$(cat .solana-version)
             echo "Installing Solana version: $SOLANA_VERSION"
 
             # Parse version numbers
