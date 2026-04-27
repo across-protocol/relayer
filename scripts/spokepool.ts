@@ -8,7 +8,7 @@ import { constants as sdkConsts, utils as sdkUtils } from "@across-protocol/sdk"
 import { ExpandedERC20__factory as ERC20 } from "@across-protocol/sdk/typechain";
 import { RelayData } from "../src/interfaces";
 import { CHAIN_MAX_BLOCK_LOOKBACK } from "../src/common";
-import { EventListener, getAcrossHost } from "../src/clients";
+import { EventListener, getAcrossHost, TransactionClient } from "../src/clients";
 import {
   BigNumber,
   blockExplorerLink,
@@ -183,7 +183,9 @@ async function getRelayerQuote(
   let quoteAccepted = false;
 
   const params = {
-    token: token.address,
+    // The suggested-fees API expects the origin token as EVM-format hex; origin-native
+    // encodings (e.g. TVM base58) don't match its accepted union.
+    token: toAddressType(token.address, fromChainId).toEvmAddress(),
     originChainId: fromChainId,
     destinationChainId: toChainId,
     amount: amount.toString(),
@@ -271,7 +273,10 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
   // todo: only EVM `fromChainId`s are supported now
   assert(chainIsEvm(fromChainId));
   const depositor = toAddressType(await signer.getAddress(), fromChainId);
-  const recipient = toAddressType(String(args.recipient ?? depositor.toNative()), toChainId);
+  // `depositor.toNative()` emits the origin's native encoding (e.g. base58 for TVM), which
+  // does not parse as a valid address on EVM destinations. Fall back to the EVM-format bytes
+  // so cross-family recipient defaults (TVM -> EVM) validate correctly.
+  const recipient = toAddressType(String(args.recipient ?? depositor.toEvmAddress()), toChainId);
 
   if (!recipient.isValidOn(toChainId)) {
     console.log(`Invalid recipient address for chain ${toChainId}: (${recipient}).`);
@@ -289,10 +294,17 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
   signer = signer.connect(provider);
   const spokePool = (await utils.getSpokePoolContract(fromChainId)).connect(signer);
 
-  const erc20 = new Contract(token.address, ERC20.abi, signer);
+  // Route writes through TransactionClient so TVM origins (TRON) flow through the
+  // TronWeb submission path. The ethers direct-send path requires `eth_getTransactionCount`,
+  // which TRON's JSON-RPC compat layer does not implement.
+  const txnClient = new TransactionClient(logger, [signer]);
+
+  // ethers Contract instances want the 20-byte EVM form for addresses; the origin-native
+  // encoding stays on the `inputToken` / `depositor` Address objects.
+  const erc20 = new Contract(inputToken.toEvmAddress(), ERC20.abi, signer);
   const [balance, allowance] = await Promise.all([
-    erc20.balanceOf(depositor.toNative()),
-    erc20.allowance(depositor.toNative(), spokePool.address),
+    erc20.balanceOf(depositor.toEvmAddress()),
+    erc20.allowance(depositor.toEvmAddress(), spokePool.address),
   ]);
 
   if (inputAmount.gt(balance)) {
@@ -303,10 +315,23 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
 
   if (inputAmount.gt(allowance)) {
     const approvalAmount = inputAmount.mul(5);
-    const approval = await erc20.approve(spokePool.address, approvalAmount);
-    console.log(`Approving SpokePool for ${approvalAmount} ${tokenSymbol}: ${approval.hash}.`);
-    await approval.wait();
-    console.log("Approval complete...");
+    console.log(`Approving SpokePool for ${approvalAmount} ${tokenSymbol}`);
+    const [approval] = await txnClient.submit(fromChainId, [
+      {
+        contract: erc20,
+        chainId: fromChainId,
+        method: "approve",
+        args: [spokePool.address, approvalAmount],
+        message: "Approve SpokePool",
+        mrkdwn: `Approve ${approvalAmount} ${tokenSymbol} to SpokePool`,
+        ensureConfirmation: true,
+      },
+    ]);
+    if (!isDefined(approval)) {
+      console.log(`Approval of ${approvalAmount} ${tokenSymbol} failed.`);
+      return false;
+    }
+    console.log(`Approval complete: ${approval.hash}...`);
   }
 
   const depositQuote = await getRelayerQuote(fromChainId, toChainId, token, inputAmount, recipient, message);
@@ -361,20 +386,33 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
     }
   });
 
-  await spokePool.deposit(
-    depositor.toBytes32(),
-    recipient.toBytes32(),
-    inputToken.toBytes32(),
-    depositQuote.outputToken.toBytes32(),
-    inputAmount,
-    depositQuote.outputAmount,
-    toChainId,
-    exclusiveRelayer.toBytes32(),
-    depositQuote.quoteTimestamp,
-    fillDeadline,
-    exclusivityParameter,
-    message
-  );
+  const [depositResponse] = await txnClient.submit(fromChainId, [
+    {
+      contract: spokePool,
+      chainId: fromChainId,
+      method: "deposit",
+      args: [
+        depositor.toBytes32(),
+        recipient.toBytes32(),
+        inputToken.toBytes32(),
+        depositQuote.outputToken.toBytes32(),
+        inputAmount,
+        depositQuote.outputAmount,
+        toChainId,
+        exclusiveRelayer.toBytes32(),
+        depositQuote.quoteTimestamp,
+        fillDeadline,
+        exclusivityParameter,
+        message,
+      ],
+      message: "SpokePool deposit",
+      mrkdwn: `Deposit ${inputAmount} ${tokenSymbol} ${fromChainId} -> ${toChainId}`,
+    },
+  ]);
+  if (!isDefined(depositResponse)) {
+    console.log(`Deposit submission of ${baseAmount} ${tokenSymbol} ${fromChainId} -> ${toChainId} failed.`);
+    return false;
+  }
 
   return new Promise((resolve) => abortController.signal.addEventListener("abort", async () => resolve(true)));
 }
