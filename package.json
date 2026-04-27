@@ -132,7 +132,8 @@
   },
   "resolutions": {
     "protobufjs": "^7.5.4",
-    "fast-xml-parser": "^5.7.1"
+    "fast-xml-parser": "^5.7.1",
+    "better-sqlite3": "^11.10.0"
   },
   "publishConfig": {
     "registry": "https://registry.npmjs.com/",
