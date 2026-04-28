@@ -7,7 +7,7 @@ import Binance, {
 } from "binance-api-node";
 export type { BinanceApi };
 import minimist from "minimist";
-import { getGckmsConfig, retrieveGckmsKeys, isDefined, assert, delay, CHAIN_IDs, getRedisCache, truncate } from "./";
+import { getGckmsConfig, retrieveGckmsKeys, isDefined, assert, CHAIN_IDs, getRedisCache, truncate } from "./";
 import { CONTRACT_ADDRESSES } from "../common";
 import { BigNumber } from "./BNUtils";
 import { fromWei, toBNWei } from "./SDKUtils";
