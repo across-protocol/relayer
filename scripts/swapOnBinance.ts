@@ -338,8 +338,7 @@ export async function run(): Promise<void> {
       );
     },
   });
-  const requiredBalance = Number(orderAvailability.expectedAmountToReceive);
-  const amountToWithdraw = toBNWei(truncate(requiredBalance, destination.tokenDecimals), destination.tokenDecimals);
+  const amountToWithdraw = toBNWei(orderAvailability.expectedAmountToReceive, destination.tokenDecimals);
 
   printSection("Step 4/4: Withdraw");
   const withdrawalSubmittedAtMs = Date.now();
@@ -1596,8 +1595,10 @@ export async function waitForBinanceOrderFillAndBalance(params: {
       params.venue.getMatchingFillForCloid(params.cloid, params.source, params.destination),
       params.venue.getSpotFreeBalance(params.destination.binanceCoin),
     ]);
-    const requiredBalance =
-      params.requiredBalance ?? (matchingFill ? Number(matchingFill.expectedAmountToReceive) : undefined);
+    const requiredBalance = truncate(
+      params.requiredBalance ?? (matchingFill ? Number(matchingFill.expectedAmountToReceive) : undefined),
+      params.destination.tokenDecimals
+    );
     params.onProgress?.({
       attempts,
       freeBalance,
