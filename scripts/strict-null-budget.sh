@@ -40,23 +40,25 @@ else
 fi
 ACTUAL=$(wc -l < "$ERRORS_FILE" | tr -d ' ')
 
+PREV_FILE=$(mktemp)
+trap 'rm -f "$PREV_FILE"' EXIT
 if git cat-file -e HEAD:"$ERRORS_FILE" 2>/dev/null; then
-  PREVIOUS=$(git show HEAD:"$ERRORS_FILE" | wc -l | tr -d ' ')
+  git show HEAD:"$ERRORS_FILE" > "$PREV_FILE"
+  PREVIOUS=$(wc -l < "$PREV_FILE" | tr -d ' ')
 else
   PREVIOUS=$ACTUAL # bootstrap: no baseline yet
 fi
 
 if [ "$ACTUAL" -gt "$PREVIOUS" ]; then
   echo "strictNullChecks regressed: $ACTUAL > $PREVIOUS"
-  CHANGED=$( { git diff --name-only origin/master... 2>/dev/null; git diff --name-only; git diff --cached --name-only; } | sort -u | grep -E '\.(ts|tsx)$' || true)
-  if [ -n "$CHANGED" ]; then
-    SUSPECTS=$(printf '%s\n' "$CHANGED" | grep -F -f - "$ERRORS_FILE" || true)
-    if [ -n "$SUSPECTS" ]; then
-      echo
-      echo "Likely culprits (errors in files touched on this branch):"
-      printf '%s\n' "$SUSPECTS"
-    fi
+  NEW_ERRORS=$(grep -vxFf "$PREV_FILE" "$ERRORS_FILE" || true)
+  if [ -n "$NEW_ERRORS" ]; then
+    echo
+    echo "New violations:"
+    printf '%s\n' "$NEW_ERRORS"
   fi
+  echo
+  echo "Reproduce locally: yarn strict-null-budget --no-cache"
   exit 1
 fi
 
@@ -68,7 +70,14 @@ if [ "$ACTUAL" -lt "$PREVIOUS" ]; then
     exit 0
   fi
   echo "Nice — strictNullChecks down by $DELTA: $PREVIOUS -> $ACTUAL."
-  echo "Stage $ERRORS_FILE in this commit to ratchet the budget (or run \`yarn update-strict\`)."
+  FIXED_ERRORS=$(grep -vxFf "$ERRORS_FILE" "$PREV_FILE" || true)
+  if [ -n "$FIXED_ERRORS" ]; then
+    echo
+    echo "Fixed violations not yet recorded:"
+    printf '%s\n' "$FIXED_ERRORS"
+  fi
+  echo
+  echo "Run \`yarn update-strict\` and stage $ERRORS_FILE before pushing."
   exit 1
 fi
 
