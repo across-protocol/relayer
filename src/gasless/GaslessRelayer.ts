@@ -860,7 +860,7 @@ export class GaslessRelayer {
     if (!isDefined(apiResponseData)) {
       return retriesRemaining > 0 ? this._queryGaslessApi(--retriesRemaining) : [];
     }
-    return restructureGaslessDeposits(apiResponseData.deposits);
+    return restructureGaslessDeposits(apiResponseData.deposits, this.logger);
   }
 
   /*

@@ -1,4 +1,4 @@
-import { expect } from "./utils";
+import { expect, sinon, winston } from "./utils";
 import { Contract, ethers } from "ethers";
 import { tagIntegratorId, restructureGaslessDeposits, buildGaslessDepositTx } from "../src/utils/GaslessUtils";
 import { APIGaslessDepositResponse } from "../src/interfaces";
@@ -9,6 +9,7 @@ const DUMMY_SIGNATURE = "0x" + "ab".repeat(65);
 
 const DUMMY_ADDRESS = "0x" + "11".repeat(20);
 const DUMMY_BYTES32 = "0x" + "22".repeat(32);
+const TEST_LOGGER = winston.createLogger({ silent: true });
 
 function makeDepositMessage(overrides: Record<string, unknown> = {}) {
   return {
@@ -53,7 +54,7 @@ function makeDepositMessage(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function makeApiResponse(overrides: { integratorId?: string } = {}): APIGaslessDepositResponse {
+function makeApiResponse(overrides: { integratorId?: string; type?: string } = {}): APIGaslessDepositResponse {
   const msg = makeDepositMessage();
   return {
     swapTx: {
@@ -61,7 +62,7 @@ function makeApiResponse(overrides: { integratorId?: string } = {}): APIGaslessD
       chainId: msg.originChainId,
       to: DUMMY_ADDRESS,
       data: {
-        type: "BridgeWitness",
+        type: overrides.type ?? "erc3009",
         depositId: msg.depositId,
         witness: {
           BridgeWitness: {
@@ -120,13 +121,13 @@ describe("GaslessUtils", function () {
   describe("restructureGaslessDeposits", function () {
     it("propagates integratorId when present", function () {
       const apiResponse = makeApiResponse({ integratorId: "0xABCD" });
-      const [result] = restructureGaslessDeposits([apiResponse]);
+      const [result] = restructureGaslessDeposits([apiResponse], TEST_LOGGER);
       expect(result.integratorId).to.equal("0xABCD");
     });
 
     it("sets integratorId to undefined when absent", function () {
       const apiResponse = makeApiResponse();
-      const [result] = restructureGaslessDeposits([apiResponse]);
+      const [result] = restructureGaslessDeposits([apiResponse], TEST_LOGGER);
       expect(result.integratorId).to.be.undefined;
     });
 
@@ -211,7 +212,7 @@ describe("GaslessUtils", function () {
         permitApprovalSignature: DUMMY_SIGNATURE,
         permitApprovalDeadline: 123456,
       } as unknown as APIGaslessDepositResponse;
-      const [result] = restructureGaslessDeposits([apiResponse]);
+      const [result] = restructureGaslessDeposits([apiResponse], TEST_LOGGER);
       expect(result.depositFlowType).to.equal("swapAndBridge");
       expect(result.permitType).to.equal("permit");
       if (result.depositFlowType !== "swapAndBridge") {
@@ -219,6 +220,22 @@ describe("GaslessUtils", function () {
       }
       expect(result.permitApprovalSignature).to.equal(DUMMY_SIGNATURE);
       expect(result.permitApprovalDeadline).to.equal(123456);
+    });
+
+    it("skips deposits with unsupported permit type and logs warning", function () {
+      const invalidApiResponse = makeApiResponse({ type: "BridgeWitness" });
+      const warn = sinon.spy();
+      const logger = { warn } as unknown as winston.Logger;
+
+      const result = restructureGaslessDeposits([invalidApiResponse], logger);
+
+      expect(result).to.deep.equal([]);
+      expect(warn.calledOnce).to.be.true;
+      expect(warn.firstCall.args[0]).to.include({
+        at: "GaslessUtils#restructureGaslessDeposits",
+        message: "Skipping gasless deposit with unsupported permit type.",
+        permitType: "BridgeWitness",
+      });
     });
   });
 

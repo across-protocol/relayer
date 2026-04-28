@@ -11,6 +11,7 @@ import {
   Permit2Permit,
   Permit2SwapAndBridgePermit,
   SwapAndBridgeGaslessDepositMessage,
+  GASLESS_TYPES,
 } from "../interfaces";
 import type { AllowedPeggedPairs } from "../gasless/GaslessRelayerConfig";
 import {
@@ -27,6 +28,7 @@ import {
   MAX_UINT_VAL,
   TOKEN_SYMBOLS_MAP,
   Provider,
+  winston,
 } from "../utils";
 import { AugmentedTransaction } from "../clients";
 import { Contract, BigNumber, ethers } from "ethers";
@@ -74,6 +76,9 @@ export function extractGaslessDepositFields(depositMessage: AnyGaslessDepositMes
 }
 
 const DOMAIN_CALLDATA_DELIMITER = "0x1dc0de";
+export function isGaslessPermitType(value: string): value is GaslessPermitType {
+  return GASLESS_TYPES.includes(value as GaslessPermitType);
+}
 
 /*
  * The exclusivityParameter argument is interpreted depending on its relationship to 1 year in seconds.
@@ -146,12 +151,24 @@ export function tagIntegratorId(txData: string, integratorId: string): string {
  * Supports bridge-only (BridgeWitness) and swap-and-bridge (BridgeAndSwapWitness) deposits.
  * Use depositFlowType to branch: "bridge" | "swapAndBridge".
  */
-export function restructureGaslessDeposits(depositMessages: APIGaslessDepositResponse[]): AnyGaslessDepositMessage[] {
-  return depositMessages.map((msg): AnyGaslessDepositMessage => {
+export function restructureGaslessDeposits(
+  depositMessages: APIGaslessDepositResponse[],
+  logger: winston.Logger
+): AnyGaslessDepositMessage[] {
+  return depositMessages.flatMap((msg): AnyGaslessDepositMessage[] => {
     const { swapTx, requestId, signature } = msg;
     const { chainId: originChainId, data } = swapTx;
-    const { depositId, witness, integratorId, metadata, type } = data;
-    const permitType = type as GaslessPermitType;
+    const { depositId, witness, integratorId, metadata, type: permitType } = data;
+    if (!isGaslessPermitType(permitType)) {
+      logger.warn({
+        at: "GaslessUtils#restructureGaslessDeposits",
+        message: "Skipping gasless deposit with unsupported permit type.",
+        requestId,
+        depositId,
+        permitType,
+      });
+      return [];
+    }
 
     if ("BridgeAndSwapWitness" in witness) {
       const raw = witness.BridgeAndSwapWitness.data;
@@ -162,53 +179,57 @@ export function restructureGaslessDeposits(depositMessages: APIGaslessDepositRes
         typeof raw.enableProportionalAdjustment === "boolean"
           ? raw.enableProportionalAdjustment
           : raw.enableProportionalAdjustment.boolean;
-      return {
-        depositFlowType: "swapAndBridge",
+      return [
+        {
+          depositFlowType: "swapAndBridge",
+          originChainId,
+          depositId,
+          requestId,
+          signature,
+          permitType,
+          // permit type for this branch is erc3009 | Permit2SwapAndBridgePermit | EIP-2612 witness.
+          // Cast required because data is still the union type after narrowing witness.
+          permit: data.permit as SwapAndBridgeGaslessDepositMessage["permit"],
+          permitApprovalSignature: swapMsg.permitApprovalSignature,
+          permitApprovalDeadline: swapMsg.permitApprovalDeadline,
+          depositData: raw.depositData,
+          submissionFees: raw.submissionFees,
+          swapToken: raw.swapToken,
+          exchange: raw.exchange,
+          transferType,
+          swapTokenAmount: raw.swapTokenAmount,
+          minExpectedInputTokenAmount: raw.minExpectedInputTokenAmount,
+          routerCalldata: raw.routerCalldata,
+          enableProportionalAdjustment,
+          spokePool: raw.spokePool,
+          nonce: raw.nonce,
+          integratorId,
+          metadata,
+        },
+      ];
+    }
+
+    const { inputAmount, baseDepositData, submissionFees, spokePool, nonce } = witness.BridgeWitness.data;
+    return [
+      {
+        depositFlowType: "bridge",
         originChainId,
         depositId,
         requestId,
         signature,
         permitType,
-        // permit type for this branch is erc3009 | Permit2SwapAndBridgePermit | EIP-2612 witness.
+        // permit type for this branch is erc3009 | Permit2Permit.
         // Cast required because data is still the union type after narrowing witness.
-        permit: data.permit as SwapAndBridgeGaslessDepositMessage["permit"],
-        permitApprovalSignature: swapMsg.permitApprovalSignature,
-        permitApprovalDeadline: swapMsg.permitApprovalDeadline,
-        depositData: raw.depositData,
-        submissionFees: raw.submissionFees,
-        swapToken: raw.swapToken,
-        exchange: raw.exchange,
-        transferType,
-        swapTokenAmount: raw.swapTokenAmount,
-        minExpectedInputTokenAmount: raw.minExpectedInputTokenAmount,
-        routerCalldata: raw.routerCalldata,
-        enableProportionalAdjustment,
-        spokePool: raw.spokePool,
-        nonce: raw.nonce,
+        permit: data.permit as GaslessDepositMessage["permit"],
+        inputAmount,
+        baseDepositData,
+        submissionFees,
+        spokePool,
+        nonce,
         integratorId,
         metadata,
-      };
-    }
-
-    const { inputAmount, baseDepositData, submissionFees, spokePool, nonce } = witness.BridgeWitness.data;
-    return {
-      depositFlowType: "bridge",
-      originChainId,
-      depositId,
-      requestId,
-      signature,
-      permitType,
-      // permit type for this branch is erc3009 | Permit2Permit.
-      // Cast required because data is still the union type after narrowing witness.
-      permit: data.permit as GaslessDepositMessage["permit"],
-      inputAmount,
-      baseDepositData,
-      submissionFees,
-      spokePool,
-      nonce,
-      integratorId,
-      metadata,
-    };
+      },
+    ];
   });
 }
 

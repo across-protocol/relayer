@@ -279,7 +279,9 @@ export interface DepositWithAuthorizationParams {
 // ---------------------------------------------------------------------------
 
 /** Discriminant for which permit flow a gasless message uses. */
-export type GaslessPermitType = "erc3009" | "permit2" | "permit";
+export const GASLESS_TYPES = ["erc3009", "permit2", "permit"] as const;
+
+export type GaslessPermitType = (typeof GASLESS_TYPES)[number];
 
 /**
  * Flattened bridge-only gasless deposit message.
