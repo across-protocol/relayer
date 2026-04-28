@@ -1,4 +1,6 @@
-import { CHAIN_IDs, getDeployedAddress } from "../utils";
+import assert from "assert";
+import { ContractInterface } from "ethers";
+import { CHAIN_IDs, getDeployedAddress, isDefined } from "../utils";
 import CCTP_MESSAGE_TRANSMITTER_ABI from "./abi/CctpMessageTransmitter.json";
 import CCTP_TOKEN_MESSENGER_ABI from "./abi/CctpTokenMessenger.json";
 import CCTP_V2_TOKEN_MESSENGER_ABI from "./abi/CctpV2TokenMessenger.json";
@@ -970,3 +972,14 @@ export const CONTRACT_ADDRESSES: {
     },
   },
 };
+
+/**
+ * Look up a contract entry that is required to have both `address` and `abi` populated.
+ * Throws if either is missing — useful for adapter constructors that immediately build a Contract.
+ */
+export function getContractEntry(chainId: number, name: string): { address: string; abi: ContractInterface } {
+  const entry = CONTRACT_ADDRESSES[chainId]?.[name];
+  assert(isDefined(entry?.address) && isDefined(entry?.abi), `Missing CONTRACT_ADDRESSES entry: ${chainId}/${name}`);
+  // Stored ABI is typed `unknown[]` by the table; the JSON files are hand-authored ABI fragments.
+  return { address: entry.address, abi: entry.abi as ContractInterface };
+}

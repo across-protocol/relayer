@@ -4,7 +4,7 @@ scripts/sendTokens.ts(69,41): error TS18047: 'gas.maxFeePerGas' is possibly 'nul
 scripts/sendTokens.ts(69,89): error TS18047: 'gas.maxPriorityFeePerGas' is possibly 'null'.
 scripts/sendTokens.ts(72,19): error TS18047: 'gas.maxFeePerGas' is possibly 'null'.
 scripts/sendTokens.ts(72,40): error TS2345: Argument of type 'BigNumber | null' is not assignable to parameter of type 'BigNumberish'.
-scripts/sendTokens.ts(86,54): error TS2345: Argument of type '{ gasPrice: BigNumber; to: any; value: BigNumber; nonce: number | undefined; } | { maxFeePerGas: BigNumber | null; maxPriorityFeePerGas: BigNumber | null; gasPrice?: undefined; to: any; value: BigNumber; nonce: number | undefined; }' is not assignable to parameter of type 'Deferrable<TransactionRequest>'.
+scripts/sendTokens.ts(86,54): error TS2345: Argument of type '{ gasPrice: BigNumber; to: any; value: BigNumber; nonce: number | undefined; } | { maxPriorityFeePerGas: BigNumber | null; maxFeePerGas: BigNumber | null; gasPrice?: undefined; to: any; value: BigNumber; nonce: number | undefined; }' is not assignable to parameter of type 'Deferrable<TransactionRequest>'.
 scripts/spokepool.ts(70,3): error TS2322: Type '(string | undefined)[]' is not assignable to type 'string[]'.
 scripts/spokepool.ts(190,23): error TS18048: 'recipient' is possibly 'undefined'.
 scripts/spokepool.ts(553,12): error TS18048: 'depositBlock' is possibly 'undefined'.
@@ -91,14 +91,6 @@ src/adapter/bridges/UsdcCCTPBridge.ts(52,34): error TS2345: Argument of type 'st
 src/adapter/bridges/UsdcCCTPBridge.ts(55,34): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
 src/adapter/bridges/ZKStackBridge.ts(44,12): error TS2564: Property 'nativeToken' has no initializer and is not definitely assigned in the constructor.
 src/adapter/bridges/ZKStackBridge.ts(45,12): error TS2564: Property 'wrappedNativeToken' has no initializer and is not definitely assigned in the constructor.
-src/adapter/bridges/ZKStackBridge.ts(58,61): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/adapter/bridges/ZKStackBridge.ts(59,38): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/adapter/bridges/ZKStackBridge.ts(67,39): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/adapter/bridges/ZKStackBridge.ts(70,46): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/adapter/bridges/ZKStackBridge.ts(74,34): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/adapter/bridges/ZKStackBridge.ts(77,34): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/adapter/bridges/ZKStackBridge.ts(81,42): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/adapter/bridges/ZKStackBridge.ts(85,33): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
 src/adapter/bridges/ZKStackUSDCBridge.ts(38,36): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
 src/adapter/bridges/ZKStackUSDCBridge.ts(41,34): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
 src/adapter/bridges/ZKStackWethBridge.ts(25,20): error TS2564: Property 'l2Eth' has no initializer and is not definitely assigned in the constructor.
@@ -393,7 +385,6 @@ src/hyperliquid/HyperliquidExecutor.ts(192,7): error TS2345: Argument of type 'R
 src/hyperliquid/HyperliquidExecutor.ts(221,45): error TS18047: 'l2Book' is possibly 'null'.
 src/hyperliquid/HyperliquidExecutor.ts(221,70): error TS18047: 'l2Book' is possibly 'null'.
 src/hyperliquid/HyperliquidExecutor.ts(399,28): error TS18047: 'l2Book' is possibly 'null'.
-src/hyperliquid/HyperliquidExecutor.ts(603,5): error TS2722: Cannot invoke an object which is possibly 'undefined'.
 src/libexec/RelayerSpokePoolListenerSVM.ts(64,5): error TS2322: Type 'unknown' is not assignable to type '{ [key: string]: any; }'.
 src/libexec/RelayerSpokePoolListenerTVM.ts(221,15): error TS2322: Type 'unknown' is not assignable to type '{ [key: string]: any; }'.
 src/libexec/util/evm/util.ts(23,5): error TS2322: Type 'Logger | undefined' is not assignable to type 'Logger'.
@@ -423,11 +414,11 @@ src/rebalancer/adapters/binance.ts(969,25): error TS2532: Object is possibly 'un
 src/rebalancer/adapters/binance.ts(1201,7): error TS2345: Argument of type 'unknown[]' is not assignable to parameter of type 'ContractInterface'.
 src/rebalancer/adapters/binance.ts(1206,7): error TS2345: Argument of type 'unknown[]' is not assignable to parameter of type 'ContractInterface'.
 src/rebalancer/adapters/binance.ts(1590,5): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
-src/rebalancer/adapters/cctpAdapter.ts(116,45): error TS2345: Argument of type 'CCTPV2APIAttestation | undefined' is not assignable to parameter of type 'Pick<CCTPV2APIAttestation, "status" | "attestation">'.
+src/rebalancer/adapters/cctpAdapter.ts(116,45): error TS2345: Argument of type 'CCTPV2APIAttestation | undefined' is not assignable to parameter of type 'Pick<CCTPV2APIAttestation, "attestation" | "status">'.
 src/rebalancer/adapters/cctpAdapter.ts(122,9): error TS18048: 'attestation' is possibly 'undefined'.
 src/rebalancer/adapters/cctpAdapter.ts(126,58): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
 src/rebalancer/adapters/cctpAdapter.ts(128,9): error TS18048: 'attestation' is possibly 'undefined'.
-src/rebalancer/adapters/cctpAdapter.ts(164,45): error TS2345: Argument of type 'CCTPV2APIAttestation | undefined' is not assignable to parameter of type 'Pick<CCTPV2APIAttestation, "status" | "attestation">'.
+src/rebalancer/adapters/cctpAdapter.ts(164,45): error TS2345: Argument of type 'CCTPV2APIAttestation | undefined' is not assignable to parameter of type 'Pick<CCTPV2APIAttestation, "attestation" | "status">'.
 src/rebalancer/adapters/cctpAdapter.ts(166,11): error TS18048: 'attestation' is possibly 'undefined'.
 src/rebalancer/adapters/cctpAdapter.ts(170,60): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
 src/rebalancer/adapters/cctpAdapter.ts(172,11): error TS18048: 'attestation' is possibly 'undefined'.
@@ -450,11 +441,6 @@ src/refiller/Refiller.ts(596,34): error TS18048: 'swapData' is possibly 'undefin
 src/refiller/Refiller.ts(598,18): error TS18048: 'swapData' is possibly 'undefined'.
 src/refiller/Refiller.ts(614,13): error TS2339: Property 'swap' does not exist on type 'SwapData | undefined'.
 src/refiller/Refiller.ts(632,32): error TS18048: 'swapData' is possibly 'undefined'.
-src/refiller/RefillerConfig.ts(77,24): error TS2769: No overload matches this call.
-src/refiller/RefillerConfig.ts(79,19): error TS2339: Property 'target' does not exist on type 'unknown'.
-src/refiller/RefillerConfig.ts(79,27): error TS2339: Property 'trigger' does not exist on type 'unknown'.
-src/refiller/RefillerConfig.ts(79,36): error TS2339: Property 'isHubPool' does not exist on type 'unknown'.
-src/refiller/RefillerConfig.ts(79,47): error TS2339: Property 'token' does not exist on type 'unknown'.
 src/relayer/Relayer.ts(68,13): error TS2564: Property 'fillLimits' has no initializer and is not definitely assigned in the constructor.
 src/relayer/Relayer.ts(390,34): error TS18048: 'hubPoolClient.currentTime' is possibly 'undefined'.
 src/relayer/Relayer.ts(390,62): error TS2532: Object is possibly 'undefined'.
@@ -534,7 +520,6 @@ src/utils/ContractUtils.ts(134,23): error TS2345: Argument of type 'string | und
 src/utils/HyperliquidUtils.ts(119,5): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
 src/utils/InstanceCoordinator.ts(19,5): error TS2322: Type 'Promise<string | undefined>' is not assignable to type 'Promise<string>'.
 src/utils/InstanceCoordinator.ts(46,7): error TS2322: Type 'string | null' is not assignable to type 'string | undefined'.
-src/utils/OFTUtils.ts(78,9): error TS2488: Type '[string, PublicNetwork] | undefined' must have a '[Symbol.iterator]()' method that returns an iterator.
 src/utils/ProviderUtils.ts(76,5): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
 src/utils/ProviderUtils.ts(79,10): error TS2454: Variable 'headers' is used before being assigned.
 src/utils/RedisUtils.ts(71,35): error TS2345: Argument of type 'import("/tmp/pxrl/worktrees/relayer-tsconfigSplit/node_modules/@redis/client/dist/lib/client/index").RedisClientType<{ graph: { CONFIG_GET: typeof import("/tmp/pxrl/worktrees/relayer-tsconfigSplit/node_modules/@redis/graph/dist/commands/CONFIG_GET"); configGet: typeof import("/tmp/pxrl/worktrees/relayer-tsconfigSpli...' is not assignable to parameter of type 'import("/tmp/pxrl/worktrees/relayer-tsconfigSplit/node_modules/@redis/client/dist/lib/client/index").RedisClientType<{ graph: { CONFIG_GET: typeof import("/tmp/pxrl/worktrees/relayer-tsconfigSplit/node_modules/@redis/graph/dist/commands/CONFIG_GET"); configGet: typeof import("/tmp/pxrl/worktrees/relayer-tsconfigSpli...'.
