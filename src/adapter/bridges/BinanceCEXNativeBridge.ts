@@ -40,7 +40,7 @@ export class BinanceCEXNativeBridge extends BinanceCEXBridge {
     // Fetch the deposit address from the binance API.
 
     const binanceClient = await this.getBinanceClient();
-    const depositAddress = await binanceClient.rawApi().depositAddress({
+    const depositAddress = await binanceClient.getDepositAddress({
       coin: this.tokenSymbol,
       network: "ETH",
     });

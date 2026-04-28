@@ -1140,7 +1140,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       sourceToken !== "WETH" || isDefined(getAtomicDepositorContracts(sourceChain)),
       `Atomic depositor contracts missing for WETH source chain ${getNetworkName(sourceChain)}`
     );
-    const depositAddress = await this.binanceClient.rawApi().depositAddress({
+    const depositAddress = await this.binanceClient.getDepositAddress({
       coin: resolveBinanceCoinSymbol(sourceToken),
       network: BINANCE_NETWORKS[sourceChain],
     });
@@ -1228,7 +1228,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   }
 
   private async _getExchangeInfo(): Promise<ReturnType<Binance["exchangeInfo"]>> {
-    this.exchangeInfoPromise ??= this.binanceClient.rawApi().exchangeInfo();
+    this.exchangeInfoPromise ??= this.binanceClient.getExchangeInfo();
     try {
       return await this.exchangeInfoPromise;
     } catch (error) {
@@ -1323,7 +1323,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     maxRetries = 3
   ): Promise<Awaited<ReturnType<Binance["book"]>>> {
     try {
-      return await this.binanceClient.rawApi().book({ symbol, limit: 5000 });
+      return await this.binanceClient.getOrderBook({ symbol, limit: 5000 });
     } catch (error) {
       if (nRetries >= maxRetries) {
         throw error;
@@ -1453,7 +1453,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   }
 
   private async _getTradeFees(): Promise<ReturnType<Binance["tradeFee"]>> {
-    this.tradeFeesPromise ??= this.binanceClient.rawApi().tradeFee();
+    this.tradeFeesPromise ??= this.binanceClient.getTradeFees();
     try {
       return await this.tradeFeesPromise;
     } catch (error) {
@@ -1471,7 +1471,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       orderDetails.sourceToken,
       orderDetails.destinationToken
     );
-    const allOrders = await this.binanceClient.rawApi().allOrders({
+    const allOrders = await this.binanceClient.getAllOrders({
       symbol: spotMarketMeta.symbol,
     });
     const matchingFill = allOrders.find((order) => order.clientOrderId === cloid && order.status === "FILLED");
@@ -1481,7 +1481,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const grossExpectedAmountToReceive = spotMarketMeta.isBuy
       ? matchingFill.executedQty
       : matchingFill.cummulativeQuoteQty;
-    const fillCommission = await getFillCommission(this.binanceClient.rawApi(), spotMarketMeta, matchingFill.orderId);
+    const fillCommission = await getFillCommission(this.binanceClient, spotMarketMeta, matchingFill.orderId);
     const expectedAmountToReceive = Number(grossExpectedAmountToReceive) - fillCommission;
     return { matchingFill, expectedAmountToReceive };
   }
@@ -1515,7 +1515,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       } with size ${szForOrder}`,
       orderStruct,
     });
-    const response = await this.binanceClient.rawApi().order(orderStruct as NewOrderSpot);
+    const response = await this.binanceClient.placeOrder(orderStruct as NewOrderSpot);
     assert(response.status == "FILLED", `Market order was not filled: ${JSON.stringify(response)}`);
     this.logger.info({
       at: "BinanceStablecoinSwapAdapter._placeMarketOrder",
@@ -1637,7 +1637,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     // We need to truncate the amount to withdraw to the destination chain's decimal places.
     const destinationTokenInfo = this._getTokenInfo(destinationToken, destinationEntrypointNetwork);
     const amountToWithdraw = truncate(quantity, destinationTokenInfo.decimals);
-    const withdrawalId = await this.binanceClient.rawApi().withdraw({
+    const withdrawalId = await this.binanceClient.withdraw({
       coin: resolveBinanceCoinSymbol(destinationToken),
       address: this.baseSignerAddress.toNative(),
       amount: Number(amountToWithdraw),

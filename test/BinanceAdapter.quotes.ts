@@ -4,9 +4,9 @@ import { ethers, expect, sinon, toBNWei } from "./utils";
 
 type OrderBook = ReturnType<typeof makeOrderBook>;
 type QuoteTestAdapter = {
-  binanceApiClient: {
-    book?: sinon.SinonStub;
-    exchangeInfo?: sinon.SinonStub;
+  binanceClient: {
+    getOrderBook?: sinon.SinonStub;
+    getExchangeInfo?: sinon.SinonStub;
   };
   exchangeInfoPromise?: Promise<{
     symbols: Array<{
@@ -35,7 +35,7 @@ describe("Binance adapter quotes", function () {
     const adapter = asQuoteAdapter(await makeAdapter());
     const book = makeOrderBook({ asks: [{ price: "1.0001", quantity: "1000" }], bids: [] });
     const bookStub = sinon.stub().resolves(book);
-    adapter.binanceApiClient = { book: bookStub };
+    adapter.binanceClient = { getOrderBook: bookStub };
 
     const first = await adapter._getOrderBook("USDCUSDT");
     const second = await adapter._getOrderBook("USDCUSDT");
@@ -52,7 +52,7 @@ describe("Binance adapter quotes", function () {
       await new Promise((resolve) => setTimeout(resolve, 10));
       return book;
     });
-    adapter.binanceApiClient = { book: bookStub };
+    adapter.binanceClient = { getOrderBook: bookStub };
 
     const [first, second] = await Promise.all([adapter._getOrderBook("USDCUSDT"), adapter._getOrderBook("USDCUSDT")]);
 
@@ -67,7 +67,7 @@ describe("Binance adapter quotes", function () {
     const bookStub = sinon.stub();
     bookStub.onCall(0).rejects(new Error("temporary outage"));
     bookStub.onCall(1).resolves(book);
-    adapter.binanceApiClient = { book: bookStub };
+    adapter.binanceClient = { getOrderBook: bookStub };
 
     const fetched = await adapter._fetchOrderBook("USDCUSDT", 0, 1);
 
@@ -104,7 +104,7 @@ describe("Binance adapter quotes", function () {
       })
     );
     adapter.exchangeInfoPromise = Promise.resolve(exchangeInfo);
-    adapter.binanceApiClient = { book: bookStub };
+    adapter.binanceClient = { getOrderBook: bookStub };
 
     try {
       await adapter._getLatestPrice("USDT", "USDC", CHAIN_IDs.MAINNET, toBNWei("1000", 6));

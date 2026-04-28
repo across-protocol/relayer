@@ -23,7 +23,9 @@ export type SpotMarketMeta = {
   isBuy: boolean;
 };
 
-type BinanceTradeReader = Pick<BinanceApi, "myTrades">;
+type BinanceTradeReader = {
+  getMyTrades(...args: Parameters<BinanceApi["myTrades"]>): ReturnType<BinanceApi["myTrades"]>;
+};
 type FillCommissionMarketMeta = Pick<SpotMarketMeta, "symbol" | "baseAssetName" | "quoteAssetName" | "isBuy">;
 
 // Alias for Binance network symbols.
@@ -367,7 +369,7 @@ async function getBinanceFillTrades(
   delayS = 2
 ): Promise<Awaited<ReturnType<BinanceApi["myTrades"]>>> {
   const fn = () =>
-    binanceApi.myTrades.bind(binanceApi)({
+    binanceApi.getMyTrades({
       symbol,
       orderId,
       limit: BINANCE_TRADES_FETCH_LIMIT,

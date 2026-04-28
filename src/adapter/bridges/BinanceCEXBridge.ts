@@ -74,7 +74,7 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
 
     const binanceClient = await this.getBinanceClient();
 
-    const depositAddress = await binanceClient.rawApi().depositAddress({
+    const depositAddress = await binanceClient.getDepositAddress({
       coin: this.tokenSymbol,
       network: "ETH",
     });

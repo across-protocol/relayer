@@ -203,7 +203,7 @@ export async function binanceFinalizer(
           amountToFinalize = Math.floor(amountToFinalize * DECIMAL_PRECISION) / DECIMAL_PRECISION;
           // Balance from Binance is in 8 decimal places, so we need to truncate to 8 decimal places.
           coinBalance = Number((coinBalance - amountToFinalize).toFixed(8));
-          const withdrawalId = await binanceClient.rawApi().withdraw({
+          const withdrawalId = await binanceClient.withdraw({
             coin: symbol,
             address,
             network: withdrawNetwork,
@@ -239,7 +239,7 @@ export async function binanceFinalizer(
               });
               // Lastly, we need to truncate the amount to withdraw to 6 decimal places
               const amountToSweep = truncate(cappedWithdraw, 6);
-              const withdrawalId = await binanceClient.rawApi().withdraw({
+              const withdrawalId = await binanceClient.withdraw({
                 coin: symbol,
                 address,
                 network: withdrawNetwork,

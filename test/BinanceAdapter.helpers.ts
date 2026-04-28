@@ -102,10 +102,10 @@ describe("Binance adapter helpers", async function () {
     });
     const symbolAdapter = adapter as unknown as {
       _getSymbol(sourceToken: string, destinationToken: string): Promise<{ symbol: string }>;
-      binanceApiClient: { exchangeInfo: typeof exchangeInfoStub };
+      binanceClient: { getExchangeInfo: typeof exchangeInfoStub };
       exchangeInfoPromise?: Promise<unknown>;
     };
-    symbolAdapter.binanceApiClient = { exchangeInfo: exchangeInfoStub };
+    symbolAdapter.binanceClient = { getExchangeInfo: exchangeInfoStub };
     symbolAdapter.exchangeInfoPromise = undefined;
 
     try {
@@ -128,9 +128,9 @@ describe("Binance adapter helpers", async function () {
     tradeFeeStub.onCall(1).resolves([{ symbol: "USDCUSDT", takerCommission: "0.1" }]);
     const feeAdapter = adapter as unknown as {
       _getTradeFees(): Promise<Array<{ symbol: string; takerCommission: string }>>;
-      binanceApiClient: { tradeFee: typeof tradeFeeStub };
+      binanceClient: { getTradeFees: typeof tradeFeeStub };
     };
-    feeAdapter.binanceApiClient = { tradeFee: tradeFeeStub };
+    feeAdapter.binanceClient = { getTradeFees: tradeFeeStub };
 
     try {
       await feeAdapter._getTradeFees();
@@ -187,9 +187,9 @@ describe("Binance adapter helpers", async function () {
         minimumOrderSize: number;
         isBuy: boolean;
       }>;
-      binanceApiClient: {
-        allOrders: sinon.SinonStub;
-        myTrades: sinon.SinonStub;
+      binanceClient: {
+        getAllOrders: sinon.SinonStub;
+        getMyTrades: sinon.SinonStub;
       };
     };
     sinon.stub(internals, "_redisGetOrderDetails").resolves({ sourceToken: "USDT", destinationToken: "USDC" });
@@ -202,9 +202,9 @@ describe("Binance adapter helpers", async function () {
       minimumOrderSize: 1,
       isBuy: true,
     });
-    internals.binanceApiClient = {
-      allOrders: allOrdersStub,
-      myTrades: myTradesStub,
+    internals.binanceClient = {
+      getAllOrders: allOrdersStub,
+      getMyTrades: myTradesStub,
     };
 
     const result = await internals._getMatchingFillForCloid("cloid", EvmAddress.from(await signer.getAddress()));

@@ -27,7 +27,7 @@ export class BinanceCEXNativeBridge extends BinanceCEXBridge {
     const weth = new Contract(l2Token.toNative(), WETH_ABI, this.l2Signer);
     const binanceClient = await this.getBinanceClient();
     const l2TokenInfo = getTokenInfo(l2Token, this.l2chainId);
-    const depositAddress = await binanceClient.rawApi().depositAddress({
+    const depositAddress = await binanceClient.getDepositAddress({
       coin: this.l1TokenInfo.symbol,
       network: this.depositNetwork,
     });

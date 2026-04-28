@@ -73,6 +73,38 @@ export class BinanceClient {
     return getAccountCoins(this.api);
   }
 
+  getDepositAddress(...args: Parameters<BinanceApi["depositAddress"]>): ReturnType<BinanceApi["depositAddress"]> {
+    return this.api.depositAddress(...args);
+  }
+
+  withdraw(...args: Parameters<BinanceApi["withdraw"]>): ReturnType<BinanceApi["withdraw"]> {
+    return this.api.withdraw(...args);
+  }
+
+  getExchangeInfo(...args: Parameters<BinanceApi["exchangeInfo"]>): ReturnType<BinanceApi["exchangeInfo"]> {
+    return this.api.exchangeInfo(...args);
+  }
+
+  getOrderBook(...args: Parameters<BinanceApi["book"]>): ReturnType<BinanceApi["book"]> {
+    return this.api.book(...args);
+  }
+
+  getTradeFees(...args: Parameters<BinanceApi["tradeFee"]>): ReturnType<BinanceApi["tradeFee"]> {
+    return this.api.tradeFee(...args);
+  }
+
+  getAllOrders(...args: Parameters<BinanceApi["allOrders"]>): ReturnType<BinanceApi["allOrders"]> {
+    return this.api.allOrders(...args);
+  }
+
+  placeOrder(...args: Parameters<BinanceApi["order"]>): ReturnType<BinanceApi["order"]> {
+    return this.api.order(...args);
+  }
+
+  getMyTrades(...args: Parameters<BinanceApi["myTrades"]>): ReturnType<BinanceApi["myTrades"]> {
+    return this.api.myTrades(...args);
+  }
+
   // Strict-fail: any error clears the cache.
   async refresh(): Promise<void> {
     this.remainingQuotaUsd = undefined;
