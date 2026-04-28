@@ -1,7 +1,16 @@
 import { expect } from "./utils";
 import { Contract, ethers } from "ethers";
-import { tagIntegratorId, restructureGaslessDeposits, buildGaslessDepositTx } from "../src/utils/GaslessUtils";
-import { APIGaslessDepositResponse } from "../src/interfaces";
+import {
+  appendCalldataSegments,
+  restructureGaslessDeposits,
+  buildGaslessDepositTx,
+  buildSwapAndBridgeDepositTx,
+} from "../src/utils/GaslessUtils";
+import {
+  APIGaslessDepositResponse,
+  type GaslessDepositMessage,
+  type SwapAndBridgeGaslessDepositMessage,
+} from "../src/interfaces";
 import SPOKE_POOL_PERIPHERY_ABI from "../src/common/abi/SpokePoolPeriphery.json";
 
 // Minimal valid 65-byte signature (hex)
@@ -10,8 +19,9 @@ const DUMMY_SIGNATURE = "0x" + "ab".repeat(65);
 const DUMMY_ADDRESS = "0x" + "11".repeat(20);
 const DUMMY_BYTES32 = "0x" + "22".repeat(32);
 
-function makeDepositMessage(overrides: Record<string, unknown> = {}) {
+function makeDepositMessage(overrides: Record<string, unknown> = {}): GaslessDepositMessage {
   return {
+    depositFlowType: "bridge",
     originChainId: 1,
     depositId: "1",
     requestId: "req-1",
@@ -92,28 +102,31 @@ function makeSpokePoolPeripheryContract(): Contract {
 }
 
 describe("GaslessUtils", function () {
-  describe("tagIntegratorId", function () {
-    it("appends delimiter and integratorId to calldata", function () {
-      const txData = "0xdeadbeef";
-      const integratorId = "0xABCD";
-      const result = tagIntegratorId(txData, integratorId);
-      // Expected: [txData][0x1dc0de][0xABCD]
+  describe("appendCalldataSegments", function () {
+    it("concatenates base calldata with hex segments in order", function () {
+      const result = appendCalldataSegments("0xdeadbeef", ["0x1dc0de", "0xABCD"]);
       expect(result).to.equal("0xdeadbeef1dc0deabcd");
     });
 
-    it("handles integratorId without 0x prefix", function () {
-      const result = tagIntegratorId("0xaa", "FFEE");
+    it("accepts segments without 0x prefix", function () {
+      const result = appendCalldataSegments("0xaa", ["1dc0de", "FFEE"]);
       expect(result).to.equal("0xaa1dc0deffee");
     });
 
-    it("throws for integratorId that is not exactly 2 bytes", function () {
-      expect(() => tagIntegratorId("0xaa", "0xAB")).to.throw("2 bytes");
-      expect(() => tagIntegratorId("0xaa", "0xABCDEF")).to.throw("2 bytes");
-      expect(() => tagIntegratorId("0xaa", "")).to.throw("2 bytes");
+    it("throws for invalid hex segment", function () {
+      expect(() => appendCalldataSegments("0xaa", ["0xZZ"])).to.throw("invalid hex segment");
     });
 
-    it("throws for non-hex integratorId", function () {
-      expect(() => tagIntegratorId("0xaa", "0xGGHH")).to.throw("2 bytes");
+    it("throws for empty segment", function () {
+      expect(() => appendCalldataSegments("0xaa", ["0xabcd", ""])).to.throw("empty segment");
+    });
+  });
+
+  describe("integrator deposit calldata (invalid integratorId)", function () {
+    it("throws when integratorId is not exactly 2 bytes", function () {
+      const msg = makeDepositMessage({ integratorId: "0xAB" });
+      const contract = makeSpokePoolPeripheryContract();
+      expect(() => buildGaslessDepositTx(msg, contract)).to.throw("2 bytes");
     });
   });
 
@@ -136,7 +149,7 @@ describe("GaslessUtils", function () {
       const msg = makeDepositMessage();
       const contract = makeSpokePoolPeripheryContract();
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const tx = buildGaslessDepositTx(msg as any, contract);
+      const tx = buildGaslessDepositTx(msg, contract);
       expect(tx.method).to.equal("depositWithAuthorization");
       expect(tx.args.length).to.equal(5);
       expect(tx.ensureConfirmation).to.be.true;
@@ -146,20 +159,86 @@ describe("GaslessUtils", function () {
       const msg = makeDepositMessage({ integratorId: "0xABCD" });
       const contract = makeSpokePoolPeripheryContract();
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const tx = buildGaslessDepositTx(msg as any, contract);
+      const tx = buildGaslessDepositTx(msg, contract);
       expect(tx.method).to.equal("");
       expect(tx.args.length).to.equal(1);
       const calldata = tx.args[0] as string;
-      // Calldata should end with delimiter + integratorId
-      expect(calldata.toLowerCase()).to.match(/1dc0deabcd$/);
+      // Calldata should end with delimiter + integratorId + swap API marker
+      expect(calldata.toLowerCase()).to.match(/1dc0deabcd73c0de$/);
       expect(tx.ensureConfirmation).to.be.true;
+    });
+
+    it("swap-and-bridge + integratorId returns raw tx with integrator + swap API suffix", function () {
+      const depositData = {
+        inputToken: DUMMY_ADDRESS,
+        outputToken: DUMMY_BYTES32,
+        outputAmount: "900000",
+        depositor: DUMMY_ADDRESS,
+        recipient: DUMMY_BYTES32,
+        destinationChainId: 10,
+        exclusiveRelayer: DUMMY_BYTES32,
+        quoteTimestamp: 1700000000,
+        fillDeadline: 1700003600,
+        exclusivityDeadline: 0,
+        exclusivityParameter: 0,
+        message: "0x",
+      };
+      const msg: SwapAndBridgeGaslessDepositMessage = {
+        depositFlowType: "swapAndBridge",
+        originChainId: 1,
+        depositId: "1",
+        requestId: "req-1",
+        signature: DUMMY_SIGNATURE,
+        permitType: "permit2",
+        permit: {
+          types: { PermitWitnessTransferFrom: [] },
+          domain: { name: "Permit2", chainId: 1, verifyingContract: DUMMY_ADDRESS },
+          primaryType: "PermitWitnessTransferFrom",
+          message: {
+            permitted: { token: DUMMY_ADDRESS, amount: "1000000" },
+            spender: DUMMY_ADDRESS,
+            nonce: "0",
+            deadline: 999999999999,
+            witness: {
+              submissionFees: { amount: "100", recipient: DUMMY_ADDRESS },
+              depositData,
+              swapToken: DUMMY_ADDRESS,
+              exchange: DUMMY_ADDRESS,
+              transferType: 0,
+              swapTokenAmount: "1000000",
+              minExpectedInputTokenAmount: "1000000",
+              routerCalldata: "0x",
+              enableProportionalAdjustment: false,
+              spokePool: DUMMY_ADDRESS,
+              nonce: "1",
+            },
+          },
+        },
+        depositData,
+        submissionFees: { amount: "100", recipient: DUMMY_ADDRESS },
+        swapToken: DUMMY_ADDRESS,
+        exchange: DUMMY_ADDRESS,
+        transferType: 0,
+        swapTokenAmount: "1000000",
+        minExpectedInputTokenAmount: "1000000",
+        routerCalldata: "0x",
+        enableProportionalAdjustment: false,
+        spokePool: DUMMY_ADDRESS,
+        nonce: "1",
+        integratorId: "0xABCD",
+      };
+      const contract = makeSpokePoolPeripheryContract();
+      const tx = buildSwapAndBridgeDepositTx(msg, contract);
+      expect(tx.method).to.equal("");
+      const calldata = tx.args[0] as string;
+      expect(calldata.toLowerCase()).to.match(/1dc0deabcd73c0de$/);
     });
 
     it("raw tx calldata starts with the depositWithAuthorization selector", function () {
       const msg = makeDepositMessage({ integratorId: "0x0001" });
       const contract = makeSpokePoolPeripheryContract();
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const tx = buildGaslessDepositTx(msg as any, contract);
+      const tx = buildGaslessDepositTx(msg, contract);
       const calldata = tx.args[0] as string;
       // First 4 bytes = function selector for depositWithAuthorization
       const iface = new ethers.utils.Interface(SPOKE_POOL_PERIPHERY_ABI);
