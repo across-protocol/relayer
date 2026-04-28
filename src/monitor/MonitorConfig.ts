@@ -30,7 +30,6 @@ export class MonitorConfig extends CommonConfig {
   readonly utilizationThreshold: number;
   readonly hubPoolStartingBlock: number | undefined;
   readonly hubPoolEndingBlock: number | undefined;
-  readonly stuckRebalancesEnabled: boolean;
   readonly monitoredRelayers: Address[];
   readonly monitoredSpokePoolChains: number[];
   readonly monitoredTokenSymbols: string[];
