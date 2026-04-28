@@ -1,9 +1,11 @@
 import {
   AnyGaslessDepositMessage,
   APIGaslessDepositResponse,
+  APIGaslessSwapAndBridgeDepositResponse,
   BaseDepositData,
   BridgeWitnessData,
   GaslessDepositMessage,
+  GaslessPermitType,
   ReceiveWithAuthorization,
   RelayData,
   Permit2Permit,
@@ -24,6 +26,7 @@ import {
   CHAIN_IDs,
   MAX_UINT_VAL,
   TOKEN_SYMBOLS_MAP,
+  Provider,
 } from "../utils";
 import { AugmentedTransaction } from "../clients";
 import { Contract, BigNumber, ethers } from "ethers";
@@ -147,11 +150,12 @@ export function restructureGaslessDeposits(depositMessages: APIGaslessDepositRes
   return depositMessages.map((msg): AnyGaslessDepositMessage => {
     const { swapTx, requestId, signature } = msg;
     const { chainId: originChainId, data } = swapTx;
-    const { depositId, witness, integratorId, metadata } = data;
-    const permitType = data.type === "permit2" ? "permit2" : "receiveWithAuthorization";
+    const { depositId, witness, integratorId, metadata, type } = data;
+    const permitType = type as GaslessPermitType;
 
     if ("BridgeAndSwapWitness" in witness) {
       const raw = witness.BridgeAndSwapWitness.data;
+      const swapMsg = msg as APIGaslessSwapAndBridgeDepositResponse;
       // Unwrap protobuf-style objects to plain primitives.
       const transferType = typeof raw.transferType === "number" ? raw.transferType : raw.transferType.long;
       const enableProportionalAdjustment =
@@ -165,9 +169,11 @@ export function restructureGaslessDeposits(depositMessages: APIGaslessDepositRes
         requestId,
         signature,
         permitType,
-        // permit type for this branch is ReceiveWithAuthorization | Permit2SwapAndBridgePermit.
+        // permit type for this branch is erc3009 | Permit2SwapAndBridgePermit | EIP-2612 witness.
         // Cast required because data is still the union type after narrowing witness.
         permit: data.permit as SwapAndBridgeGaslessDepositMessage["permit"],
+        permitApprovalSignature: swapMsg.permitApprovalSignature,
+        permitApprovalDeadline: swapMsg.permitApprovalDeadline,
         depositData: raw.depositData,
         submissionFees: raw.submissionFees,
         swapToken: raw.swapToken,
@@ -192,7 +198,7 @@ export function restructureGaslessDeposits(depositMessages: APIGaslessDepositRes
       requestId,
       signature,
       permitType,
-      // permit type for this branch is ReceiveWithAuthorization | Permit2Permit.
+      // permit type for this branch is erc3009 | Permit2Permit.
       // Cast required because data is still the union type after narrowing witness.
       permit: data.permit as GaslessDepositMessage["permit"],
       inputAmount,
@@ -319,12 +325,12 @@ export function buildPermit2GaslessDepositTx(
 
 /**
  * Authorizer/signer address for logging or lookup.
- * ReceiveWithAuthorization: permit.message.from.
+ * EIP-3009 (erc3009): permit.message.from.
  * Permit2 bridge: baseDepositData.depositor.
- * Permit2 swapAndBridge: depositData.depositor.
+ * Permit2 / EIP-2612 swapAndBridge: depositData.depositor.
  */
 export function getGaslessAuthorizerAddress(depositMessage: AnyGaslessDepositMessage): string {
-  if (depositMessage.permitType === "permit2") {
+  if (["permit", "permit2"].includes(depositMessage.permitType)) {
     return depositMessage.depositFlowType === "swapAndBridge"
       ? depositMessage.depositData.depositor
       : depositMessage.baseDepositData.depositor;
@@ -333,7 +339,7 @@ export function getGaslessAuthorizerAddress(depositMessage: AnyGaslessDepositMes
 }
 
 /**
- * Permit nonce for lookup/dedup. Both permit types have message.nonce.
+ * Permit / witness nonce for lookup/dedup (Permit2, EIP-3009, or swap-and-bridge witness nonce).
  */
 export function getGaslessPermitNonce(depositMessage: AnyGaslessDepositMessage): string {
   return depositMessage.permit.message.nonce;
@@ -351,6 +357,34 @@ export async function isPermit2NonceUsed(permit2: Contract, owner: string, permi
   const bitmapBn = await permit2.nonceBitmap(owner, wordPos);
   const bitmap = bitmapBn.toBigInt();
   return (bitmap & (1n << bitPos)) !== 0n;
+}
+
+const ERC2612_NONCES_ABI = ["function nonces(address owner) view returns (uint256)"];
+
+export async function getTokenPermitNonce(params: {
+  tokenAddress: string;
+  owner: string;
+  provider: Provider;
+}): Promise<BigNumber> {
+  const token = new Contract(params.tokenAddress, ERC2612_NONCES_ABI, params.provider);
+  return token.nonces(params.owner);
+}
+
+/**
+ * Returns true when the token's EIP-2612 nonce has advanced beyond the signed nonce.
+ */
+export async function isErc2612PermitNonceConsumed(params: {
+  tokenAddress: string;
+  owner: string;
+  signedNonce: string;
+  provider: Provider;
+}): Promise<boolean> {
+  const onChainNonce = await getTokenPermitNonce({
+    tokenAddress: params.tokenAddress,
+    owner: params.owner,
+    provider: params.provider,
+  });
+  return onChainNonce.gt(BigNumber.from(params.signedNonce));
 }
 
 /**
@@ -457,7 +491,7 @@ export function buildSwapAndBridgeDepositTx(
 ): AugmentedTransaction {
   const swapAndDepositData = toContractSwapAndDepositData(depositMessage);
 
-  let method: "swapAndBridgeWithAuthorization" | "swapAndBridgeWithPermit2";
+  let method: "swapAndBridgeWithAuthorization" | "swapAndBridgeWithPermit2" | "swapAndBridgeWithPermit";
   let args: unknown[];
 
   if (depositMessage.permitType === "permit2") {
@@ -474,6 +508,19 @@ export function buildSwapAndBridgeDepositTx(
         nonce: BigNumber.from(permit2.message.nonce),
         deadline: BigNumber.from(permit2.message.deadline),
       },
+      normalizeSignatureBytes(depositMessage.signature),
+    ];
+  } else if (depositMessage.permitType === "permit") {
+    method = "swapAndBridgeWithPermit";
+    if (!depositMessage.permitApprovalSignature || !depositMessage.permitApprovalDeadline) {
+      throw new Error("swapAndBridgeWithPermit requires permitApprovalSignature and permitApprovalDeadline");
+    }
+    const signatureOwner = depositMessage.depositData.depositor;
+    args = [
+      signatureOwner,
+      swapAndDepositData,
+      BigNumber.from(depositMessage.permitApprovalDeadline),
+      normalizeSignatureBytes(depositMessage.permitApprovalSignature),
       normalizeSignatureBytes(depositMessage.signature),
     ];
   } else {
