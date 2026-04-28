@@ -85,6 +85,12 @@ jobs:
       - run:
           name: Typecheck
           command: yarn typecheck
+  strict-null:
+    executor: node
+    steps:
+      - checkout
+      - attach_workspace:
+          at: .
       - run:
           name: strictNullChecks budget
           command: yarn strict-null-budget --no-cache
@@ -164,6 +170,9 @@ workflows:
     jobs:
       - install
       - typecheck:
+          requires:
+            - install
+      - strict-null:
           requires:
             - install
       - test:
