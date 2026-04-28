@@ -1,22 +1,10 @@
 scripts/executeRefundLeaf.ts(60,41): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-scripts/hubpool.ts(52,7): error TS18048: 'args' is possibly 'undefined'.
-scripts/hubpool.ts(53,7): error TS18048: 'args' is possibly 'undefined'.
-scripts/hubpool.ts(54,7): error TS18048: 'args' is possibly 'undefined'.
-scripts/hubpool.ts(128,19): error TS18048: 'rootBundleProposal' is possibly 'undefined'.
-scripts/hubpool.ts(134,26): error TS18048: 'rootBundleProposal' is possibly 'undefined'.
-scripts/hubpool.ts(136,39): error TS18048: 'rootBundleProposal' is possibly 'undefined'.
-scripts/hubpool.ts(156,14): error TS2345: Argument of type 'number | undefined' is not assignable to parameter of type 'number'.
-scripts/hubpool.ts(156,35): error TS2345: Argument of type 'number | undefined' is not assignable to parameter of type 'number'.
-scripts/hubpool.ts(156,47): error TS18048: 'toBlock' is possibly 'undefined'.
-scripts/hubpool.ts(156,57): error TS18048: 'fromBlock' is possibly 'undefined'.
 scripts/sendTokens.ts(67,27): error TS2345: Argument of type 'Provider | undefined' is not assignable to parameter of type 'Provider'.
 scripts/sendTokens.ts(69,41): error TS18047: 'gas.maxFeePerGas' is possibly 'null'.
 scripts/sendTokens.ts(69,89): error TS18047: 'gas.maxPriorityFeePerGas' is possibly 'null'.
 scripts/sendTokens.ts(72,19): error TS18047: 'gas.maxFeePerGas' is possibly 'null'.
 scripts/sendTokens.ts(72,40): error TS2345: Argument of type 'BigNumber | null' is not assignable to parameter of type 'BigNumberish'.
 scripts/sendTokens.ts(86,54): error TS2345: Argument of type '{ gasPrice: BigNumber; to: any; value: BigNumber; nonce: number | undefined; } | { maxFeePerGas: BigNumber | null; maxPriorityFeePerGas: BigNumber | null; gasPrice?: undefined; to: any; value: BigNumber; nonce: number | undefined; }' is not assignable to parameter of type 'Deferrable<TransactionRequest>'.
-scripts/simulateFill.ts(134,5): error TS2783: 'depositId' is specified more than once, so this usage will be overwritten.
-scripts/simulateFill.ts(135,5): error TS2783: 'originChainId' is specified more than once, so this usage will be overwritten.
 scripts/spokepool.ts(70,3): error TS2322: Type '(string | undefined)[]' is not assignable to type 'string[]'.
 scripts/spokepool.ts(190,23): error TS18048: 'recipient' is possibly 'undefined'.
 scripts/spokepool.ts(553,12): error TS18048: 'depositBlock' is possibly 'undefined'.
@@ -283,7 +271,6 @@ src/dataworker/DataworkerUtils.ts(352,9): error TS2322: Type 'Address | undefine
 src/dataworker/DataworkerUtils.ts(429,19): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
 src/dataworker/Disputer.ts(17,13): error TS2564: Property 'bondToken' has no initializer and is not definitely assigned in the constructor.
 src/dataworker/Disputer.ts(18,13): error TS2564: Property 'bondAmount' has no initializer and is not definitely assigned in the constructor.
-src/dataworker/RelayerRefundUtils.ts(48,14): error TS2790: The operand of a 'delete' operator must be optional.
 src/dataworker/index.ts(306,56): error TS18048: 'clients.hubPoolClient.currentTime' is possibly 'undefined'.
 src/dataworker/index.ts(317,81): error TS18048: 'clients.hubPoolClient.currentTime' is possibly 'undefined'.
 src/dataworker/index.ts(464,28): error TS18048: 'redis' is possibly 'undefined'.
@@ -447,7 +434,6 @@ src/rebalancer/adapters/cctpAdapter.ts(172,11): error TS18048: 'attestation' is 
 src/rebalancer/adapters/cctpAdapter.ts(289,7): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
 src/rebalancer/adapters/hyperliquid.ts(916,18): error TS18047: 'l2Book' is possibly 'null'.
 src/rebalancer/adapters/hyperliquid.ts(917,18): error TS18047: 'l2Book' is possibly 'null'.
-src/rebalancer/adapters/hyperliquid.ts(1148,18): error TS18046: 'error' is of type 'unknown'.
 src/rebalancer/clients/BaseRebalancerClient.ts(12,10): error TS2564: Property 'rebalanceRoutes' has no initializer and is not definitely assigned in the constructor.
 src/rebalancer/clients/BaseRebalancerClient.ts(13,13): error TS2564: Property 'baseSignerAddress' has no initializer and is not definitely assigned in the constructor.
 src/rebalancer/clients/CctpOftReadOnlyClient.ts(113,71): error TS2345: Argument of type 'Logger | undefined' is not assignable to parameter of type 'Logger'.

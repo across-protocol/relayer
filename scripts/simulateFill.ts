@@ -131,8 +131,6 @@ async function fetchDepositFromTxn(
 
   // Construct complete deposit object with all required fields for populateV3Relay
   const deposit = {
-    depositId: depositArgs.depositId,
-    originChainId,
     destinationChainId,
     ...relayData,
   };
