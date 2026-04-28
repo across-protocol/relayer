@@ -23,7 +23,9 @@ export type SpotMarketMeta = {
   isBuy: boolean;
 };
 
-type BinanceTradeReader = Pick<BinanceApi, "myTrades">;
+type BinanceTradeReader = {
+  getMyTrades(...args: Parameters<BinanceApi["myTrades"]>): ReturnType<BinanceApi["myTrades"]>;
+};
 type FillCommissionMarketMeta = Pick<SpotMarketMeta, "symbol" | "baseAssetName" | "quoteAssetName" | "isBuy">;
 
 // Alias for Binance network symbols.
@@ -128,8 +130,8 @@ export function binanceCredentialsConfigured(): boolean {
  * @returns A Binance client from `binance-api-node`.
  */
 export async function getBinanceApiClient(url = "https://api.binance.com") {
-  const apiKey = process.env["BINANCE_API_KEY"];
-  const secretKey = (await getBinanceSecretKey()) ?? process.env["BINANCE_HMAC_KEY"];
+  const apiKey = process.env.BINANCE_API_KEY;
+  const secretKey = (await getBinanceSecretKey()) ?? apiKey;
   assert(isDefined(apiKey) && isDefined(secretKey), "Binance client cannot be constructed due to missing keys.");
   return Binance({
     apiKey,
@@ -367,7 +369,7 @@ async function getBinanceFillTrades(
   delayS = 2
 ): Promise<Awaited<ReturnType<BinanceApi["myTrades"]>>> {
   const fn = () =>
-    binanceApi.myTrades.bind(binanceApi)({
+    binanceApi.getMyTrades({
       symbol,
       orderId,
       limit: BINANCE_TRADES_FETCH_LIMIT,

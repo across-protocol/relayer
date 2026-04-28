@@ -9,15 +9,11 @@ import {
   assert,
   isDefined,
   getTimestampForBlock,
-  BinanceApi,
-  getBinanceApiClient,
   floatToBN,
   CHAIN_IDs,
   compareAddressesSimple,
   isContractDeployedToAddress,
   winston,
-  getBinanceDeposits,
-  getBinanceWithdrawals,
   mapAsync,
   BINANCE_NETWORKS,
   ethers,
@@ -28,13 +24,14 @@ import {
   isCompletedBinanceWithdrawal,
   toAddressType,
 } from "../../utils";
+import { BinanceClient } from "../../clients";
 import { BaseBridgeAdapter, BridgeTransactionDetails, BridgeEvents, BridgeEvent } from "./BaseBridgeAdapter";
 import ERC20_ABI from "../../common/abi/MinimalERC20.json";
 
 export class BinanceCEXBridge extends BaseBridgeAdapter {
   // Only store the promise in the constructor and evaluate the promise in async blocks.
-  protected readonly binanceApiClientPromise;
-  protected binanceApiClient: BinanceApi | undefined;
+  protected readonly binanceClientPromise;
+  protected binanceClient: BinanceClient | undefined;
   protected tokenSymbol: string;
   protected l2Provider: Provider;
 
@@ -44,8 +41,7 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
     l1Signer: Signer,
     l2SignerOrProvider: Signer | Provider,
     l1Token: EvmAddress,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    _logger: winston.Logger
+    logger: winston.Logger
   ) {
     if (hubChainId !== CHAIN_IDs.MAINNET) {
       throw new Error("Cannot define a binance CEX bridge on a non-production network");
@@ -53,7 +49,7 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
     // No L1 gateways needed since no L1 bridge transfers tokens from the EOA.
     super(l2chainId, hubChainId, l1Signer, []);
     // Pull the binance API key from environment and throw if we cannot instantiate this bridge.
-    this.binanceApiClientPromise = getBinanceApiClient(process.env["BINANCE_API_BASE"]);
+    this.binanceClientPromise = BinanceClient.create({ logger, url: process.env.BINANCE_API_BASE });
 
     // Pass in the WETH ABI as the ERC20 ABI. This is fine to do since we only call `transfer` on `this.l1Bridge`.
     this.l1Bridge = new Contract(l1Token.toNative(), ERC20_ABI, l1Signer);
@@ -76,9 +72,9 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
     assert(l1Token.toNative() === this.getL1Bridge().address);
     // Fetch the deposit address from the binance API.
 
-    const binanceApiClient = await this.getBinanceClient();
+    const binanceClient = await this.getBinanceClient();
 
-    const depositAddress = await binanceApiClient.depositAddress({
+    const depositAddress = await binanceClient.getDepositAddress({
       coin: this.tokenSymbol,
       network: "ETH",
     });
@@ -105,9 +101,9 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
     assert(l1Token.toNative() === this.getL1Bridge().address);
     const fromTimestamp = (await getTimestampForBlock(this.getL1Bridge().provider, eventConfig.from)) * 1_000; // Convert timestamp to ms.
 
-    const binanceApiClient = await this.getBinanceClient();
+    const binanceClient = await this.getBinanceClient();
     // Fetch the deposit address from the binance API.
-    const _depositHistory = await getBinanceDeposits(binanceApiClient, fromTimestamp);
+    const _depositHistory = await binanceClient.getDeposits(fromTimestamp);
 
     // Remove any binance deposits that are marked as related to a swap, or were not sent on L1.
     const depositHistory = await filterAsync(_depositHistory, async (deposit) => {
@@ -150,9 +146,9 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
     assert(l1Token.toNative() === this.getL1Bridge().address);
     const fromTimestamp = (await getTimestampForBlock(this.l2Provider, eventConfig.from)) * 1_000; // Convert timestamp to ms.
 
-    const binanceApiClient = await this.getBinanceClient();
+    const binanceClient = await this.getBinanceClient();
     // Fetch the deposit address from the binance API.
-    const _withdrawalHistory = await getBinanceWithdrawals(binanceApiClient, this.tokenSymbol, fromTimestamp);
+    const _withdrawalHistory = await binanceClient.getWithdrawals(this.tokenSymbol, fromTimestamp);
     // Filter withdrawals based on whether their destination network was BSC and those associated with a swap rebalance.
     const withdrawalHistory = await filterAsync(_withdrawalHistory, async (withdrawal) => {
       const withdrawalType = await getBinanceWithdrawalType(withdrawal);
@@ -194,7 +190,7 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
     };
   }
 
-  protected async getBinanceClient() {
-    return (this.binanceApiClient ??= await this.binanceApiClientPromise);
+  protected async getBinanceClient(): Promise<BinanceClient> {
+    return (this.binanceClient ??= await this.binanceClientPromise);
   }
 }
