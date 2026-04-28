@@ -326,10 +326,10 @@ async function getOPUSDCEvents(
   const chain = getNetworkName(chainId);
   const at = `${chain}Finalizer`;
 
-  const { opUSDCBridge } = CONTRACT_ADDRESSES[chainId];
-  if (!opUSDCBridge?.address || !opUSDCBridge.abi) {
+  if (!CONTRACT_ADDRESSES[chainId]?.opUSDCBridge) {
     return []; // No need to warn; many chains do not have OP USDC.
   }
+  const opUSDCBridge = getContractEntry(chainId, "opUSDCBridge");
   const bridge = new Contract(opUSDCBridge.address, opUSDCBridge.abi, provider);
   const filter = bridge.filters.MessageSent(fromAddresses);
   const events = (await paginatedEventQuery(bridge, filter, searchConfig))
@@ -432,6 +432,7 @@ async function viem_multicallOptimismFinalizations(
         });
         const proofArgs = [withdrawal, l2OutputIndex, outputRootProof, withdrawalProof];
         const callData = await crossChainMessenger.populateTransaction.proveWithdrawalTransaction(...proofArgs);
+        assert(isDefined(callData.data), "opStack: proveWithdrawalTransaction populateTransaction missing data");
         viemTxns.callData.push({
           callData: callData.data,
           target: crossChainMessenger.address,
@@ -481,6 +482,7 @@ async function viem_multicallOptimismFinalizations(
         // Calling OptimismPortal: https://github.com/ethereum-optimism/optimism/blob/d6bda0339005d98c992c749c137938d515755029/packages/contracts-bedrock/src/L1/OptimismPortal.sol
         callData = await crossChainMessenger.populateTransaction.finalizeWithdrawalTransaction(withdrawal);
       }
+      assert(isDefined(callData.data), "opStack: finalizeWithdrawalTransaction populateTransaction missing data");
       viemTxns.callData.push({
         callData: callData.data,
         target: crossChainMessenger.address,
@@ -611,6 +613,10 @@ async function finalizeOptimismMessage(
       undefined,
       logIndex
     );
+    assert(
+      isDefined(callData.data) && isDefined(callData.to),
+      "opStack: finalizeMessage populateTransaction missing to/data"
+    );
     return {
       callData: callData.data,
       target: callData.to,
@@ -622,7 +628,8 @@ async function finalizeOptimismMessage(
   // to finalize, inside of which contains a `requestId` we need to use to find the `hintId` parameter
   // we need to submit when finalizing the withdrawal. Note that the `hintId` can be hard-coded to 0
   // for non-ETH withdrawals.
-  const { blastOptimismPortal, blastEthYieldManager } = CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET];
+  const blastOptimismPortal = getContractEntry(CHAIN_IDs.MAINNET, "blastOptimismPortal");
+  const blastEthYieldManager = getContractEntry(CHAIN_IDs.MAINNET, "blastEthYieldManager");
   const blastPortal = new Contract(
     blastOptimismPortal.address,
     blastOptimismPortal.abi,
@@ -695,6 +702,10 @@ async function finalizeOptimismMessage(
     }
   }
   const callData = await blastPortal.populateTransaction.finalizeWithdrawalTransaction(hintId, l2WithdrawalParams);
+  assert(
+    isDefined(callData.data) && isDefined(callData.to),
+    "opStack: blastPortal.finalizeWithdrawalTransaction populateTransaction missing to/data"
+  );
   return {
     callData: callData.data,
     target: callData.to,
@@ -711,6 +722,10 @@ async function proveOptimismMessage(
     message.message as optimismSDK.MessageLike,
     undefined,
     logIndex
+  );
+  assert(
+    isDefined(callData.data) && isDefined(callData.to),
+    "opStack: proveMessage populateTransaction missing to/data"
   );
   return {
     callData: callData.data,
@@ -774,7 +789,8 @@ async function multicallOptimismFinalizations(
     };
   }
 
-  const { blastUsdYieldManager, blastDaiRetriever } = CONTRACT_ADDRESSES[hubPoolClient.chainId];
+  const blastUsdYieldManager = getContractEntry(hubPoolClient.chainId, "blastUsdYieldManager");
+  const blastDaiRetriever = getContractEntry(hubPoolClient.chainId, "blastDaiRetriever");
   const usdYieldManager = new Contract(
     blastUsdYieldManager.address,
     blastUsdYieldManager.abi,
@@ -786,6 +802,7 @@ async function multicallOptimismFinalizations(
   const l2Provider = Signer.isSigner(crossChainMessenger.l2SignerOrProvider)
     ? crossChainMessenger.l2SignerOrProvider.provider
     : crossChainMessenger.l2SignerOrProvider;
+  assert(isDefined(l2Provider), "opStack: crossChainMessenger has no l2 provider");
   const [l2Block, latestL1Block] = await Promise.all([
     l2Provider.getBlock(l2FromBlock),
     usdYieldManager.provider.getBlockNumber(),
@@ -915,6 +932,10 @@ async function multicallOptimismFinalizations(
           destinationChainId: hubPoolClient.chainId,
         });
         const claimCallData = await tokenRetriever.populateTransaction.retrieve(requestId, hintIds[i]);
+        assert(
+          isDefined(claimCallData.data) && isDefined(claimCallData.to),
+          "opStack: blastDaiRetriever.retrieve populateTransaction missing to/data"
+        );
         return {
           callData: claimCallData.data,
           target: claimCallData.to,

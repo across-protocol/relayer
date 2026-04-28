@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
-import { CONTRACT_ADDRESSES } from "../../common";
+import { getContractEntry } from "../../common";
 import {
   Contract,
   Signer,
@@ -11,6 +11,7 @@ import {
   fetchWithTimeout,
   getTokenInfo,
   assert,
+  isDefined,
   isEVMSpokePoolClient,
   EvmAddress,
 } from "../../utils";
@@ -132,7 +133,7 @@ async function findOutstandingClaims(targetAddress: string): Promise<ScrollClaim
  * @returns A Scroll Relay contract, instantiated with the given signer
  */
 function getScrollRelayContract(l1ChainId: number, signer: Signer) {
-  const { abi: scrollRelayAbi, address: scrollRelayAddress } = CONTRACT_ADDRESSES[l1ChainId].scrollRelayMessenger;
+  const { abi: scrollRelayAbi, address: scrollRelayAddress } = getContractEntry(l1ChainId, "scrollRelayMessenger");
   return new Contract(scrollRelayAddress, scrollRelayAbi, signer);
 }
 
@@ -154,6 +155,7 @@ async function populateClaimTransaction(claim: ScrollClaimInfo, relayContract: C
       merkleProof: claim.proof.merkle_proof,
     }
   );
+  assert(isDefined(to) && isDefined(data), "scroll: relayMessageWithProof populateTransaction missing to/data");
   return {
     callData: data,
     target: to,

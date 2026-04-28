@@ -1,5 +1,4 @@
 import assert from "assert";
-import { ContractInterface } from "ethers";
 import { JsonFragment } from "@ethersproject/abi";
 import { CHAIN_IDs, getDeployedAddress, isDefined } from "../utils";
 import CCTP_MESSAGE_TRANSMITTER_ABI from "./abi/CctpMessageTransmitter.json";
@@ -974,7 +973,7 @@ export const CONTRACT_ADDRESSES: {
   },
 };
 
-// Narrow `unknown[]` (the table's loose ABI typing) to a shape assignable to `ContractInterface`.
+// Narrow the table's loose `unknown[]` ABI typing to ethers' `JsonFragment[]` shape.
 function isJsonAbi(value: unknown[]): value is JsonFragment[] {
   return value.every((item) => typeof item === "object" && item !== null);
 }
@@ -983,7 +982,7 @@ function isJsonAbi(value: unknown[]): value is JsonFragment[] {
  * Look up a contract entry that is required to have both `address` and `abi` populated.
  * Throws if either is missing — useful for adapter constructors that immediately build a Contract.
  */
-export function getContractEntry(chainId: number, name: string): { address: string; abi: ContractInterface } {
+export function getContractEntry(chainId: number, name: string): { address: string; abi: JsonFragment[] } {
   const entry = CONTRACT_ADDRESSES[chainId]?.[name];
   assert(isDefined(entry?.address) && isDefined(entry?.abi), `Missing CONTRACT_ADDRESSES entry: ${chainId}/${name}`);
   assert(isJsonAbi(entry.abi), `Invalid ABI shape: ${chainId}/${name}`);

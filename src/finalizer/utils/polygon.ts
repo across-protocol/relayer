@@ -20,6 +20,8 @@ import {
   getL1TokenAddress,
   toAddressType,
   EvmAddress,
+  assert,
+  isDefined,
 } from "../../utils";
 import { EthersError, TokensBridged } from "../../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
@@ -287,6 +289,7 @@ async function retrieveTokenFromMainnetTokenBridger(l2Token: string, mainnetSign
   const l1Token = getL1TokenAddress(EvmAddress.from(l2Token), CHAIN_ID);
   const mainnetTokenBridger = getMainnetTokenBridger(mainnetSigner);
   const callData = await mainnetTokenBridger.populateTransaction.retrieve(l1Token.toNative());
+  assert(isDefined(callData.data) && isDefined(callData.to), "polygon: retrieve populateTransaction missing data/to");
   return {
     callData: callData.data,
     target: callData.to,

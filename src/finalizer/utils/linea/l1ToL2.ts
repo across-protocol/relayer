@@ -2,7 +2,7 @@ import { utils as sdkUtils } from "@across-protocol/sdk";
 import { OnChainMessageStatus } from "@consensys/linea-sdk";
 import { Contract } from "ethers";
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
-import { CONTRACT_ADDRESSES } from "../../../common";
+import { getContractEntry } from "../../../common";
 import {
   BigNumber,
   EventSearchConfig,
@@ -39,7 +39,7 @@ async function getL1ToL2MessageStatusUsingCustomProvider(
   messageHash: string,
   l2Provider: ethers.providers.Provider
 ): Promise<OnChainMessageStatus> {
-  const iface = new ethers.utils.Interface(messageService.contract.interface.fragments);
+  const iface = new ethers.utils.Interface(messageService.contract.interface.format(true));
   const l2Contract = new Contract(messageService.contractAddress, iface, l2Provider);
 
   const status: BigNumber = await l2Contract.inboxL1L2MessageStatus(messageHash);
@@ -66,9 +66,10 @@ export async function lineaL1ToL2Finalizer(
   const lineaSdk = initLineaSdk(l1ChainId, l2ChainId, signer);
   const l2MessageServiceContract = lineaSdk.getL2Contract();
   const l1MessageServiceContract = lineaSdk.getL1Contract();
+  const lineaL1TokenBridge = getContractEntry(l1ChainId, "lineaL1TokenBridge");
   const l1TokenBridge = new Contract(
-    CONTRACT_ADDRESSES[l1ChainId].lineaL1TokenBridge.address,
-    CONTRACT_ADDRESSES[l1ChainId].lineaL1TokenBridge.abi,
+    lineaL1TokenBridge.address,
+    lineaL1TokenBridge.abi,
     hubPoolClient.hubPool.provider
   );
   const searchConfig: EventSearchConfig = {

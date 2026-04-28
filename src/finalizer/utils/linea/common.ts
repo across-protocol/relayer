@@ -21,7 +21,7 @@ import {
   assert,
 } from "../../../utils";
 import { HubPoolClient } from "../../../clients";
-import { CONTRACT_ADDRESSES } from "../../../common";
+import { getContractEntry } from "../../../common";
 import { Log } from "../../../interfaces";
 import { L1ClaimingService, L1MessageServiceContract, L2MessageServiceContract, MessageSentEvent } from "./imports";
 
@@ -40,7 +40,7 @@ export interface ParsedMessageSentLog {
 
 export const lineaAdapterIface = Linea_Adapter__factory.createInterface() as ethers.utils.Interface;
 
-export function initLineaSdk(l1ChainId: number, l2ChainId: number, signer?: Signer): LineaSDK {
+export function initLineaSdk(l1ChainId: number, l2ChainId: number, signer: Signer): LineaSDK {
   assert(isSignerWallet(signer), "Signer is not a Wallet");
   return new LineaSDK({
     l1RpcUrl: Object.values(getNodeUrlList(l1ChainId))[0],
@@ -242,7 +242,7 @@ export function determineMessageType(
   // Start with the TokenBridge calldata format.
   try {
     const contractInterface = new ethers.utils.Interface(
-      CONTRACT_ADDRESSES[hubPoolClient.chainId].lineaL1TokenBridge.abi
+      getContractEntry(hubPoolClient.chainId, "lineaL1TokenBridge").abi
     );
     const decoded = contractInterface.decodeFunctionData("completeBridging", _calldata);
     // If we've made it this far, then the calldata is a valid TokenBridge calldata.
