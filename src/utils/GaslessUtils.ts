@@ -145,7 +145,7 @@ export function tagIntegratorId(txData: string, integratorId: string): string {
  */
 export function restructureGaslessDeposits(depositMessages: APIGaslessDepositResponse[]): AnyGaslessDepositMessage[] {
   return depositMessages.map((msg): AnyGaslessDepositMessage => {
-    const { swapTx, requestId, signature } = msg;
+    const { swapTx, requestId, signature, submittedAt } = msg;
     const { chainId: originChainId, data } = swapTx;
     const { depositId, witness, integratorId, metadata } = data;
     const permitType = data.type === "permit2" ? "permit2" : "receiveWithAuthorization";
@@ -162,6 +162,7 @@ export function restructureGaslessDeposits(depositMessages: APIGaslessDepositRes
         depositFlowType: "swapAndBridge",
         originChainId,
         depositId,
+        submittedAt,
         requestId,
         signature,
         permitType,
@@ -189,6 +190,7 @@ export function restructureGaslessDeposits(depositMessages: APIGaslessDepositRes
       depositFlowType: "bridge",
       originChainId,
       depositId,
+      submittedAt,
       requestId,
       signature,
       permitType,
