@@ -161,7 +161,11 @@ export class SolanaUsdcCCTPBridge extends BaseL2BridgeAdapter {
         BigInt(l2EventConfig.from),
         BigInt(l2EventConfig.to)
       ),
-      paginatedEventQuery(this.getL1Bridge(), this.getL1Bridge().filters.MintAndWithdraw(...l1EventFilterArgs), l1EventConfig),
+      paginatedEventQuery(
+        this.getL1Bridge(),
+        this.getL1Bridge().filters.MintAndWithdraw(...l1EventFilterArgs),
+        l1EventConfig
+      ),
     ]);
     const counted = new Set<number>();
     const withdrawalAmount = withdrawalInitiatedEvents.reduce((totalAmount, _l2Args) => {

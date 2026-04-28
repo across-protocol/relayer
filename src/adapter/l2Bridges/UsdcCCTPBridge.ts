@@ -108,8 +108,16 @@ export class UsdcCCTPBridge extends BaseL2BridgeAdapter {
     // for all use cases of this adapter.
     const l1EventFilterArgs = [fromAddress.toNative(), undefined, this.l1UsdcTokenAddress.toNative()];
     const [withdrawalInitiatedEvents, withdrawalFinalizedEvents] = await Promise.all([
-      paginatedEventQuery(this.getL2Bridge(), this.getL2Bridge().filters.DepositForBurn(...l2EventFilterArgs), l2EventConfig),
-      paginatedEventQuery(this.getL1Bridge(), this.getL1Bridge().filters.MintAndWithdraw(...l1EventFilterArgs), l1EventConfig),
+      paginatedEventQuery(
+        this.getL2Bridge(),
+        this.getL2Bridge().filters.DepositForBurn(...l2EventFilterArgs),
+        l2EventConfig
+      ),
+      paginatedEventQuery(
+        this.getL1Bridge(),
+        this.getL1Bridge().filters.MintAndWithdraw(...l1EventFilterArgs),
+        l1EventConfig
+      ),
     ]);
     const ignoredPendingBridgeTxnRefs = await this.getIgnoredPendingBridgeTxnRefs(
       this.l2chainId,
