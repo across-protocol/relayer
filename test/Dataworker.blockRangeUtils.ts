@@ -17,7 +17,7 @@ let hubPoolClient: HubPoolClient;
 let updateAllClients: () => Promise<void>;
 
 describe("Dataworker block range-related utility methods", async function () {
-  beforeEach(async function () {
+  before(async function () {
     ({ dataworkerClients, spokePoolClients, updateAllClients, hubPoolClient } = await setupDataworker(ethers, 1, 1, 0));
     await updateAllClients();
   });

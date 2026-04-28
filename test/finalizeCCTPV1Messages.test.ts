@@ -5,7 +5,7 @@ import { PublicKey } from "@solana/web3.js";
 import { expect } from "chai";
 import { arch, clients } from "@across-protocol/sdk";
 import { createDefaultSolanaClient, encodePauseDepositsMessageBody } from "./utils/svm/utils";
-import { signer } from "./Solana.setup";
+import { setupSolana, SolanaSigner, teardownSolana } from "./Solana.setup";
 import { finalizeCCTPV1MessagesSVM } from "../src/finalizer/utils/cctp/svmUtils";
 import { cctpV1L1toSvmL2Finalizer } from "../src/finalizer/utils/cctp/l1ToSvmL2";
 import { AttestedCCTPMessage, ZERO_ADDRESS, EvmAddress } from "../src/utils";
@@ -81,6 +81,17 @@ describe("finalizeCCTPV1Messages", () => {
   const solanaClient = createDefaultSolanaClient() as ExtendedSolanaClient;
   const { spyLogger } = createSpyLogger();
   let hubPoolClient: clients.HubPoolClient;
+  let signer: SolanaSigner;
+
+  before(async function () {
+    // Local validator spin-up can take a few seconds.
+    this.timeout(60_000);
+    signer = await setupSolana();
+  });
+
+  after(() => {
+    teardownSolana();
+  });
 
   beforeEach(async function () {
     ({ hubPoolClient } = await setupDataworker(ethers, 25, 25, 0));
