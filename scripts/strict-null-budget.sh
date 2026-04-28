@@ -2,26 +2,23 @@
 # Ratchet down strictNullChecks errors.
 #
 #   strict-null-budget.sh                 enforce: fails on regression AND
-#                                         on improvement (prompts manual update).
-#   strict-null-budget.sh --auto-ratchet  on improvement, rewrite the budget
-#                                         file and `git add` it so the current
-#                                         commit picks up the reduction.
+#                                         on improvement (prompts manual stage).
+#   strict-null-budget.sh --auto-ratchet  on improvement, restage the error list
+#                                         so the current commit picks up the
+#                                         reduction.
 #
 # Uses `tsc --incremental` with a dedicated buildinfo file so warm runs are
 # fast. The error list is cached in $ERRORS_FILE; tsc is skipped if no input
-# is newer than the cache. When the budget reaches 0, flip
+# is newer than the cache. The committed copy of $ERRORS_FILE is the baseline:
+# its line count is the previous budget. When the file is empty, flip
 # `strictNullChecks: true` in tsconfig.json and delete this script.
 
 set -eu
 
 MODE="${1:-enforce}"
-BUDGET_FILE=".strict-null-budget"
 BUILDINFO=".tsbuildinfo-strict"
 ERRORS_FILE=".strict-null-errors"
 INPUTS="src scripts index.ts hardhat.config.ts tsconfig.json package.json yarn.lock"
-
-[ -f "$BUDGET_FILE" ] || { echo "missing $BUDGET_FILE"; exit 2; }
-BUDGET=$(cat "$BUDGET_FILE")
 
 # Skip tsc if every input is older than the cached error list.
 if [ -f "$ERRORS_FILE" ] && \
@@ -33,8 +30,14 @@ else
 fi
 ACTUAL=$(wc -l < "$ERRORS_FILE" | tr -d ' ')
 
-if [ "$ACTUAL" -gt "$BUDGET" ]; then
-  echo "strictNullChecks regressed: $ACTUAL > $BUDGET (baseline in $BUDGET_FILE)"
+if git cat-file -e HEAD:"$ERRORS_FILE" 2>/dev/null; then
+  PREVIOUS=$(git show HEAD:"$ERRORS_FILE" | wc -l | tr -d ' ')
+else
+  PREVIOUS=$ACTUAL # bootstrap: no baseline yet
+fi
+
+if [ "$ACTUAL" -gt "$PREVIOUS" ]; then
+  echo "strictNullChecks regressed: $ACTUAL > $PREVIOUS"
   CHANGED=$( { git diff --name-only origin/master... 2>/dev/null; git diff --name-only; git diff --cached --name-only; } | sort -u | grep -E '\.(ts|tsx)$' || true)
   if [ -n "$CHANGED" ]; then
     SUSPECTS=$(printf '%s\n' "$CHANGED" | grep -F -f - "$ERRORS_FILE" || true)
@@ -47,16 +50,15 @@ if [ "$ACTUAL" -gt "$BUDGET" ]; then
   exit 1
 fi
 
-if [ "$ACTUAL" -lt "$BUDGET" ]; then
-  DELTA=$((BUDGET - ACTUAL))
+if [ "$ACTUAL" -lt "$PREVIOUS" ]; then
+  DELTA=$((PREVIOUS - ACTUAL))
   if [ "$MODE" = "--auto-ratchet" ]; then
-    echo "$ACTUAL" > "$BUDGET_FILE"
-    git add "$BUDGET_FILE"
-    echo "Nice — strictNullChecks down by $DELTA: $BUDGET -> $ACTUAL. Budget file updated and staged."
+    git add "$ERRORS_FILE"
+    echo "Nice — strictNullChecks down by $DELTA: $PREVIOUS -> $ACTUAL. Error list updated and staged."
     exit 0
   fi
-  echo "Nice — strictNullChecks down by $DELTA: $BUDGET -> $ACTUAL."
-  echo "Update $BUDGET_FILE to $ACTUAL in this commit to ratchet the budget (or rerun with --auto-ratchet)."
+  echo "Nice — strictNullChecks down by $DELTA: $PREVIOUS -> $ACTUAL."
+  echo "Stage $ERRORS_FILE in this commit to ratchet the budget (or rerun with --auto-ratchet)."
   exit 1
 fi
 
