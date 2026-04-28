@@ -10,7 +10,16 @@ import {
   originChainId,
 } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
-import { Contract, SignerWithAddress, depositV3, ethers, expect, fillV3Relay, requestSlowFill } from "./utils";
+import {
+  Contract,
+  SignerWithAddress,
+  depositV3,
+  ethers,
+  expect,
+  fillV3Relay,
+  requestSlowFill,
+  setSpokePoolTime,
+} from "./utils";
 import { interfaces } from "@across-protocol/sdk";
 
 // Tested
@@ -213,7 +222,9 @@ describe("Dataworker: Execute slow relays", async function () {
     await updateAllClients();
 
     // Check that dataworker skips the slow fill once we're past the deadline.
-    await spokePool_2.setCurrentTime(deposit.fillDeadline + 1);
+    // SpokePoolClient now reads currentTime from the latest block timestamp, so we have to
+    // advance the simulated chain — calling setCurrentTime alone would not move the client forward.
+    await setSpokePoolTime(spokePool_2, deposit.fillDeadline + 1);
     await updateAllClients();
     await dataworkerInstance.executeSlowRelayLeaves(spokePoolClients, new BalanceAllocator(providers));
     expect(multiCallerClient.transactionCount()).to.equal(0);
