@@ -1,4 +1,4 @@
-import type { ethers } from "ethers";
+import type { ContractInterface, ethers } from "ethers";
 import type winston from "winston";
 
 export interface ProcessBurnTransactionResponse {
@@ -40,7 +40,7 @@ export type DestinationType = "hypercore" | "lighter" | "direct-evm" | "standard
 export interface DestinationInfo {
   type: DestinationType;
   address: string;
-  abi: unknown[];
+  abi: ContractInterface;
   requiresSignature: boolean;
   accountInitialization?: (
     message: string,

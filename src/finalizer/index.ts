@@ -8,6 +8,7 @@ import {
   Clients,
   constructClients,
   constructSpokePoolClientsWithLookback,
+  getContractEntry,
   updateSpokePoolClients,
   UNIVERSAL_CHAINS,
 } from "../common";
@@ -152,7 +153,7 @@ export async function finalize(
 
   // Note: Could move this into a client in the future to manage # of calls and chunk calls based on
   // input byte length.
-  const finalizations: { txn: Multicall2Call | AugmentedTransaction; crossChainMessage?: CrossChainMessage }[] = [];
+  const finalizations: { txn: Multicall2Call | AugmentedTransaction; crossChainMessage: CrossChainMessage }[] = [];
 
   // For each chain, delegate to a handler to look up any TokensBridged events and attempt finalization.
   for (const chainIdBatch of chunk(configuredChainIds, config.chunkSize)) {
@@ -172,27 +173,35 @@ export async function finalize(
 
       // We should only finalize the direction that has been specified in
       // the finalization strategy.
+      const chainFinalizer = chainFinalizers[chainId];
+      if (chainFinalizer === undefined) {
+        logger.warn({
+          at: "Finalizer",
+          message: `No finalizer configured for ${getNetworkName(chainId)}, skipping.`,
+        });
+        return;
+      }
       const chainSpecificFinalizers: { genericFinalizer: boolean; finalizer: ChainFinalizer | Finalizer }[] = [];
       switch (finalizationStrategy) {
         case "l1->l2":
           chainSpecificFinalizers.push(
-            ...chainFinalizers[chainId].finalizeOnL2.map((finalizer) => ({ finalizer, genericFinalizer: false }))
+            ...(chainFinalizer.finalizeOnL2 ?? []).map((finalizer) => ({ finalizer, genericFinalizer: false }))
           );
           break;
         case "l2->l1":
           chainSpecificFinalizers.push(
-            ...chainFinalizers[chainId].finalizeOnL1.map((finalizer) => ({ finalizer, genericFinalizer: false }))
+            ...(chainFinalizer.finalizeOnL1 ?? []).map((finalizer) => ({ finalizer, genericFinalizer: false }))
           );
           break;
         case "any<->any":
           chainSpecificFinalizers.push(
-            ...chainFinalizers[chainId].finalizeOnAny.map((finalizer) => ({ finalizer, genericFinalizer: true }))
+            ...(chainFinalizer.finalizeOnAny ?? []).map((finalizer) => ({ finalizer, genericFinalizer: true }))
           );
           break;
         case "l1<->l2":
           chainSpecificFinalizers.push(
-            ...chainFinalizers[chainId].finalizeOnL1.map((finalizer) => ({ finalizer, genericFinalizer: false })),
-            ...chainFinalizers[chainId].finalizeOnL2.map((finalizer) => ({ finalizer, genericFinalizer: false }))
+            ...(chainFinalizer.finalizeOnL1 ?? []).map((finalizer) => ({ finalizer, genericFinalizer: false })),
+            ...(chainFinalizer.finalizeOnL2 ?? []).map((finalizer) => ({ finalizer, genericFinalizer: false }))
           );
           break;
       }
@@ -208,8 +217,9 @@ export async function finalize(
       // tokens to the SpokePool, while the relayer rebalances ETH via the AtomicDepositor.
       const addressesToFinalize = new Map(config.userAddresses);
       addressesToFinalize.set(EvmAddress.from(hubPoolClient.hubPool.address), []);
-      addressesToFinalize.set(EvmAddress.from(CONTRACT_ADDRESSES[hubChainId]?.atomicDepositor?.address), []);
-      addressesToFinalize.set(spokePoolClients[chainId].spokePoolAddress, []);
+      addressesToFinalize.set(EvmAddress.from(getContractEntry(hubChainId, "atomicDepositor").address), []);
+      assert(isDefined(client.spokePoolAddress), `${getNetworkName(chainId)} spoke pool address not yet known`);
+      addressesToFinalize.set(client.spokePoolAddress, []);
 
       // We can subloop through the finalizers for each chain, and then execute the finalizer. For now, the
       // main reason for this is related to CCTP finalizations. We want to run the CCTP finalizer AND the
@@ -242,7 +252,9 @@ export async function finalize(
           }
 
           callData.forEach((txn, idx) => {
-            finalizations.push({ txn, crossChainMessage: crossChainMessages[idx] });
+            const crossChainMessage = crossChainMessages[idx];
+            assert(isDefined(crossChainMessage), `Missing crossChainMessage for ${network} txn ${idx}`);
+            finalizations.push({ txn, crossChainMessage });
           });
 
           totalWithdrawalsForChain += crossChainMessages.filter(({ type }) => type === "withdrawal").length;
@@ -299,7 +311,7 @@ export async function finalize(
       for (const [chainId, finalizations] of Object.entries(finalizationsByChain)) {
         const multicallTxns: Multicall2Call[] = [];
 
-        finalizations.forEach(({ txn }) => {
+        finalizations?.forEach(({ txn }) => {
           if (isAugmentedTransaction(txn)) {
             // It's an AugmentedTransaction, enqueue directly
             txn.nonMulticall = true; // cautiously enforce an invariant that should already be present
@@ -449,6 +461,7 @@ export async function runFinalizer(_logger: winston.Logger, baseSigner: Signer):
       await updateSpokePoolClients(spokePoolClients, ["TokensBridged"]);
       profiler.mark("loopStartPostSpokePoolUpdates");
 
+      assert(isDefined(commonClients.hubSigner), "Finalizer: hubSigner not configured");
       await finalize(logger, commonClients.hubSigner, commonClients.hubPoolClient, spokePoolClients, config);
 
       profiler.mark("loopEndPostFinalizations");

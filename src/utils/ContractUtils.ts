@@ -15,7 +15,7 @@ import {
   chainIsTvm,
   TvmAddress,
 } from ".";
-import { CONTRACT_ADDRESSES } from "../common";
+import { CONTRACT_ADDRESSES, getContractEntry } from "../common";
 import { isKeyOf } from "./TypeGuards";
 
 function getTypechainAbi(contractName: string): readonly JsonFragment[] {
@@ -70,13 +70,13 @@ export function getSpokePoolPeriphery(chainId: number, address?: string): Contra
   const resolved = address ?? getDeployedAddress("SpokePoolPeriphery", chainId);
   return new Contract(
     getEthersCompatibleAddress(chainId, resolved),
-    CONTRACT_ADDRESSES[chainId].spokePoolPeriphery.abi
+    getContractEntry(chainId, "spokePoolPeriphery").abi
   );
 }
 
 // Uniswap Permit2 (same deployment address on supported EVM chains). Falls back to mainnet metadata when `chainId` has no entry.
 export function getPermit2(chainId: number, address?: string): Contract {
-  const permit2 = CONTRACT_ADDRESSES[chainId].permit2;
+  const permit2 = getContractEntry(chainId, "permit2");
   return new Contract(address ?? permit2.address, permit2.abi);
 }
 
