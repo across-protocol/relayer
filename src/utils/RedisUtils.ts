@@ -68,7 +68,9 @@ async function _getRedis(
       redisClients[redisInstanceKey] = new RedisCache(redisClient, namespace);
     } catch (err) {
       delete redisClients[redisInstanceKey];
-      await disconnectRedisClient(redisClient, logger);
+      if (isDefined(redisClient)) {
+        await disconnectRedisClient(redisClient, logger);
+      }
       logger?.debug({
         at: "RedisUtils#getRedis",
         message: `Failed to connect to redis server at ${url}.`,
