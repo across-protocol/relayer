@@ -345,7 +345,7 @@ export class GaslessRelayer {
             depositMessage.permitType === "permit2"
               ? await isPermit2NonceUsed(this.permit2Contracts[originChainId], owner, permitNonce)
               : await isErc2612PermitNonceConsumed({
-                  tokenAddress: swapTokenAddr.toNative(),
+                  tokenAddress: swapTokenAddr.toEvmAddress(),
                   owner,
                   signedNonce: permitNonce,
                   provider: this.providersByChain[originChainId],
@@ -571,7 +571,7 @@ export class GaslessRelayer {
                   found = await this._findAuthorizationUsed(originChainId, authToken, authorizer, nonce);
                 } else if (depositMessage.permitType === "permit") {
                   const nonceConsumed = await isErc2612PermitNonceConsumed({
-                    tokenAddress: authToken.toNative(),
+                    tokenAddress: authToken.toEvmAddress(),
                     owner: authorizer,
                     signedNonce: nonce,
                     provider: this.providersByChain[originChainId],
