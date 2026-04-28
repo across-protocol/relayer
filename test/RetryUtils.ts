@@ -1,7 +1,7 @@
 import { assertPromiseError, expect } from "./utils";
 
 // Tested
-import { delay, retryAsync } from "../src/utils";
+import { delay, retry } from "../src/utils";
 
 const expectedErrorMsg = "async error";
 const expectedReturnValue = 1;
@@ -26,14 +26,14 @@ describe("RetryUtils", async function () {
   beforeEach(async function () {
     ERROR_COUNTER = 0;
   });
-  it("retryAsync", async function () {
+  it("retry", async function () {
     // Succeeds first time, runs one loop.
-    expect(await retryAsync(() => incrementCounterThrowError(ERROR_COUNTER), 3, 1)).to.equal(expectedReturnValue);
+    expect(await retry(() => incrementCounterThrowError(ERROR_COUNTER), 3, 1)).to.equal(expectedReturnValue);
     expect(ERROR_COUNTER).to.equal(1);
 
     // Fails every time, should throw error, runs four loops, one for first try, and then three retries.
     await assertPromiseError(
-      retryAsync(() => incrementCounterThrowError(ERROR_COUNTER + 1), 3, 1),
+      retry(() => incrementCounterThrowError(ERROR_COUNTER + 1), 3, 1),
       expectedErrorMsg
     );
     expect(ERROR_COUNTER).to.equal(5);
@@ -41,13 +41,13 @@ describe("RetryUtils", async function () {
     // Fails first time only, runs two loops, one for first failure, and then retries
     // successfully:
     const errorCounter = ERROR_COUNTER;
-    expect(await retryAsync(() => incrementCounterThrowError(errorCounter + 1), 3, 1)).to.equal(expectedReturnValue);
+    expect(await retry(() => incrementCounterThrowError(errorCounter + 1), 3, 1)).to.equal(expectedReturnValue);
     expect(ERROR_COUNTER).to.equal(7);
 
     // Delays 1s per retry, retries three times for four more iterations.
     const timerStart = performance.now();
     await assertPromiseError(
-      retryAsync(() => incrementCounterThrowError(ERROR_COUNTER + 1), 3, 1),
+      retry(() => incrementCounterThrowError(ERROR_COUNTER + 1), 3, 1),
       expectedErrorMsg
     );
     expect(ERROR_COUNTER).to.equal(11);

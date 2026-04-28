@@ -76,6 +76,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
 
   const apiUpdateInterval = 30; // seconds
   scheduleTask(() => acrossApiClient.update(config.ignoreLimits), apiUpdateInterval, abortController.signal);
+  scheduleTask(() => config.update(logger), apiUpdateInterval, abortController.signal);
 
   scheduleSequentialTask(
     "profitClient.update()",

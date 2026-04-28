@@ -15,12 +15,6 @@ import { fromWei, toBNWei } from "./SDKUtils";
 // Store global promises on Gckms key retrieval actions so that we don't retrieve the same key multiple times.
 let binanceSecretKeyPromise: Promise<string | undefined> | undefined = undefined;
 
-// Known transient errors the Binance API returns. If a response is one of these errors, then the API call should be retried.
-const KNOWN_BINANCE_ERROR_REASONS = [
-  "Timestamp for this request is outside of the recvWindow",
-  "Too many requests; current request has limited",
-  "TypeError: fetch failed",
-];
 const BINANCE_TRADES_FETCH_LIMIT = 1000;
 
 export type WithdrawalQuota = {
@@ -308,21 +302,11 @@ export function isCompletedBinanceWithdrawal(status?: number): boolean {
 export async function getBinanceDeposits(
   binanceApi: BinanceApi,
   startTime: number,
-  nRetries = 0,
-  maxRetries = 3
+  maxRetries = 3,
+  delayS = 2
 ): Promise<BinanceDeposit[]> {
-  let depositHistory: DepositHistoryResponse;
-  try {
-    depositHistory = await binanceApi.depositHistory({ startTime });
-  } catch (_err) {
-    const err = _err.toString();
-    if (KNOWN_BINANCE_ERROR_REASONS.some((errorReason) => err.includes(errorReason)) && nRetries < maxRetries) {
-      const delaySeconds = 2 ** nRetries + Math.random();
-      await delay(delaySeconds);
-      return getBinanceDeposits(binanceApi, startTime, ++nRetries, maxRetries);
-    }
-    throw err;
-  }
+  const fn = () => binanceApi.depositHistory.bind(binanceApi)({ startTime });
+  const depositHistory = await retry<DepositHistoryResponse>(fn, maxRetries, delayS);
   return Object.values(depositHistory).map((deposit) => {
     return {
       amount: Number(deposit.amount),
@@ -343,21 +327,11 @@ export async function getBinanceWithdrawals(
   binanceApi: BinanceApi,
   coin: string,
   startTime: number,
-  nRetries = 0,
-  maxRetries = 3
+  maxRetries = 3,
+  delayS = 2
 ): Promise<BinanceWithdrawal[]> {
-  let withdrawHistory: WithdrawHistoryResponse;
-  try {
-    withdrawHistory = await binanceApi.withdrawHistory({ coin: resolveBinanceCoinSymbol(coin), startTime });
-  } catch (_err) {
-    const err = _err.toString();
-    if (KNOWN_BINANCE_ERROR_REASONS.some((errorReason) => err.includes(errorReason)) && nRetries < maxRetries) {
-      const delaySeconds = 2 ** nRetries + Math.random();
-      await delay(delaySeconds);
-      return getBinanceWithdrawals(binanceApi, coin, startTime, ++nRetries, maxRetries);
-    }
-    throw err;
-  }
+  const fn = () => binanceApi.withdrawHistory.bind(binanceApi)({ coin: resolveBinanceCoinSymbol(coin), startTime });
+  const withdrawHistory = await retry<WithdrawHistoryResponse>(fn, maxRetries, delayS);
   return Object.values(withdrawHistory).map((withdrawal) => {
     return {
       amount: Number(withdrawal.amount),
@@ -427,24 +401,16 @@ async function getBinanceFillTrades(
   binanceApi: BinanceTradeReader,
   symbol: string,
   orderId: number,
-  nRetries = 0,
-  maxRetries = 3
+  maxRetries = 3,
+  delayS = 2
 ): Promise<Awaited<ReturnType<BinanceApi["myTrades"]>>> {
-  try {
-    return await binanceApi.myTrades({
+  const fn = () =>
+    binanceApi.myTrades.bind(binanceApi)({
       symbol,
       orderId,
       limit: BINANCE_TRADES_FETCH_LIMIT,
     });
-  } catch (_err) {
-    const err = _err.toString();
-    if (KNOWN_BINANCE_ERROR_REASONS.some((errorReason) => err.includes(errorReason)) && nRetries < maxRetries) {
-      const delaySeconds = 2 ** nRetries + Math.random();
-      await delay(delaySeconds);
-      return getBinanceFillTrades(binanceApi, symbol, orderId, ++nRetries, maxRetries);
-    }
-    throw err;
-  }
+  return retry(fn, maxRetries, delayS);
 }
 
 /**

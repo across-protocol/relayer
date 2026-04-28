@@ -1,5 +1,6 @@
 import { DEFAULT_L2_CONTRACT_ADDRESSES } from "@eth-optimism/sdk";
 import { ChainFamily, PUBLIC_NETWORKS } from "@across-protocol/constants";
+import { constants as ethersConstants } from "ethers";
 import { isDefined, isKeyOf } from "../utils/TypeGuards";
 import {
   assert,
@@ -10,7 +11,6 @@ import {
   CHAIN_IDs,
   TOKEN_SYMBOLS_MAP,
   Signer,
-  ZERO_ADDRESS,
   Address,
   binanceCredentialsConfigured,
   EvmAddress,
@@ -20,6 +20,9 @@ import {
   winston,
   toBN,
 } from "../utils";
+
+// Sourced directly to avoid a tsx/esbuild TDZ on the cyclic re-export from ../utils.
+const { AddressZero: ZERO_ADDRESS } = ethersConstants;
 import {
   BaseBridgeAdapter,
   OpStackDefaultERC20Bridge,
