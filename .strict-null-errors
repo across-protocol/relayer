@@ -10,6 +10,10 @@ scripts/spokepool.ts(190,23): error TS18048: 'recipient' is possibly 'undefined'
 scripts/spokepool.ts(553,12): error TS18048: 'depositBlock' is possibly 'undefined'.
 scripts/spokepool.ts(554,10): error TS18048: 'depositBlock' is possibly 'undefined'.
 scripts/spokepool.ts(569,62): error TS2345: Argument of type '({ topics }: Log) => "deposits" | "fills" | undefined' is not assignable to parameter of type '(item: Log, index: number) => PropertyKey'.
+scripts/swapOnBinance.ts(580,76): error TS2345: Argument of type 'unknown[]' is not assignable to parameter of type 'ContractInterface'.
+scripts/swapOnBinance.ts(581,72): error TS2345: Argument of type 'unknown[]' is not assignable to parameter of type 'ContractInterface'.
+scripts/swapOnBinance.ts(1599,7): error TS2345: Argument of type 'number | undefined' is not assignable to parameter of type 'number'.
+scripts/swapOnBinance.ts(1727,40): error TS2538: Type 'undefined' cannot be used as an index type.
 scripts/unwrapWeth.ts(47,59): error TS18048: 'connectedSigner.provider' is possibly 'undefined'.
 scripts/unwrapWeth.ts(49,16): error TS18048: 'connectedSigner.provider' is possibly 'undefined'.
 scripts/updateAtomicDepositor.ts(14,3): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
@@ -375,7 +379,7 @@ src/gasless/GaslessRelayer.ts(204,7): error TS2345: Argument of type 'RedisCache
 src/gasless/GaslessRelayer.ts(538,17): error TS2322: Type 'undefined' is not assignable to type 'RelayData & { destinationChainId: number; }'.
 src/gasless/GaslessRelayer.ts(549,42): error TS2454: Variable 'depositReceiptPromise' is used before being assigned.
 src/gasless/GaslessRelayer.ts(586,44): error TS2454: Variable 'deposit' is used before being assigned.
-src/gasless/GaslessRelayer.ts(603,15): error TS2322: Type 'Omit<DepositWithBlock, "fromLiteChain" | "toLiteChain" | "quoteBlockNumber"> | undefined' is not assignable to type 'RelayData & { destinationChainId: number; }'.
+src/gasless/GaslessRelayer.ts(603,15): error TS2322: Type 'Omit<DepositWithBlock, "quoteBlockNumber" | "fromLiteChain" | "toLiteChain"> | undefined' is not assignable to type 'RelayData & { destinationChainId: number; }'.
 src/gasless/GaslessRelayer.ts(622,17): error TS2454: Variable 'deposit' is used before being assigned.
 src/gasless/GaslessRelayer.ts(755,5): error TS2322: Type 'TransactionReceipt | undefined' is not assignable to type 'TransactionReceipt | null'.
 src/gasless/GaslessRelayer.ts(825,5): error TS2322: Type 'TransactionReceipt | undefined' is not assignable to type 'TransactionReceipt | null'.
@@ -405,15 +409,15 @@ src/rebalancer/adapters/baseAdapter.ts(51,13): error TS2564: Property 'allDestin
 src/rebalancer/adapters/baseAdapter.ts(52,13): error TS2564: Property 'allSourceChains' has no initializer and is not definitely assigned in the constructor.
 src/rebalancer/adapters/baseAdapter.ts(53,13): error TS2564: Property 'allSourceTokens' has no initializer and is not definitely assigned in the constructor.
 src/rebalancer/adapters/baseAdapter.ts(83,5): error TS2322: Type 'RedisCache | undefined' is not assignable to type 'RedisCache'.
-src/rebalancer/adapters/binance.ts(164,11): error TS2564: Property 'binanceApiClient' has no initializer and is not definitely assigned in the constructor.
-src/rebalancer/adapters/binance.ts(810,13): error TS2339: Property 'withdrawMin' does not exist on type 'Network | undefined'.
-src/rebalancer/adapters/binance.ts(810,26): error TS2339: Property 'withdrawMax' does not exist on type 'Network | undefined'.
-src/rebalancer/adapters/binance.ts(962,9): error TS2532: Object is possibly 'undefined'.
-src/rebalancer/adapters/binance.ts(962,67): error TS18048: 'spotMarketMeta' is possibly 'undefined'.
-src/rebalancer/adapters/binance.ts(969,25): error TS2532: Object is possibly 'undefined'.
-src/rebalancer/adapters/binance.ts(1201,7): error TS2345: Argument of type 'unknown[]' is not assignable to parameter of type 'ContractInterface'.
-src/rebalancer/adapters/binance.ts(1206,7): error TS2345: Argument of type 'unknown[]' is not assignable to parameter of type 'ContractInterface'.
-src/rebalancer/adapters/binance.ts(1590,5): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
+src/rebalancer/adapters/binance.ts(57,11): error TS2564: Property 'binanceApiClient' has no initializer and is not definitely assigned in the constructor.
+src/rebalancer/adapters/binance.ts(703,13): error TS2339: Property 'withdrawMin' does not exist on type 'Network | undefined'.
+src/rebalancer/adapters/binance.ts(703,26): error TS2339: Property 'withdrawMax' does not exist on type 'Network | undefined'.
+src/rebalancer/adapters/binance.ts(855,9): error TS2532: Object is possibly 'undefined'.
+src/rebalancer/adapters/binance.ts(855,67): error TS18048: 'spotMarketMeta' is possibly 'undefined'.
+src/rebalancer/adapters/binance.ts(862,25): error TS2532: Object is possibly 'undefined'.
+src/rebalancer/adapters/binance.ts(1094,7): error TS2345: Argument of type 'unknown[]' is not assignable to parameter of type 'ContractInterface'.
+src/rebalancer/adapters/binance.ts(1099,7): error TS2345: Argument of type 'unknown[]' is not assignable to parameter of type 'ContractInterface'.
+src/rebalancer/adapters/binance.ts(1483,5): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
 src/rebalancer/adapters/cctpAdapter.ts(116,45): error TS2345: Argument of type 'CCTPV2APIAttestation | undefined' is not assignable to parameter of type 'Pick<CCTPV2APIAttestation, "attestation" | "status">'.
 src/rebalancer/adapters/cctpAdapter.ts(122,9): error TS18048: 'attestation' is possibly 'undefined'.
 src/rebalancer/adapters/cctpAdapter.ts(126,58): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
@@ -489,10 +493,10 @@ src/scripts/validateRunningBalances.ts(483,32): error TS18048: 'tokenInfo' is po
 src/scripts/validateRunningBalances.ts(581,9): error TS2345: Argument of type '{ [k: string]: number | undefined; }' is not assignable to parameter of type '{ [chainId: number]: number; }'.
 src/utils/AddressUtils.ts(72,5): error TS2322: Type 'Address | undefined' is not assignable to type 'Address'.
 src/utils/AddressUtils.ts(79,24): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/utils/BinanceUtils.ts(201,9): error TS18048: 'redisCache' is possibly 'undefined'.
-src/utils/BinanceUtils.ts(218,9): error TS18048: 'redisCache' is possibly 'undefined'.
-src/utils/BinanceUtils.ts(232,29): error TS18048: 'redisCache' is possibly 'undefined'.
-src/utils/BinanceUtils.ts(251,32): error TS18048: 'redisCache' is possibly 'undefined'.
+src/utils/BinanceUtils.ts(236,9): error TS18048: 'redisCache' is possibly 'undefined'.
+src/utils/BinanceUtils.ts(253,9): error TS18048: 'redisCache' is possibly 'undefined'.
+src/utils/BinanceUtils.ts(267,29): error TS18048: 'redisCache' is possibly 'undefined'.
+src/utils/BinanceUtils.ts(286,32): error TS18048: 'redisCache' is possibly 'undefined'.
 src/utils/CCTPUtils.ts(134,42): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
 src/utils/CCTPUtils.ts(413,30): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
 src/utils/CCTPUtils.ts(447,42): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
