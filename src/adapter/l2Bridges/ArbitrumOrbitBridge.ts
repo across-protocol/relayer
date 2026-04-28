@@ -72,16 +72,16 @@ export class ArbitrumOrbitBridge extends BaseL2BridgeAdapter {
     const l1Token = getL1TokenAddress(l2Token, this.l2chainId);
     const [withdrawalInitiatedEvents, withdrawalFinalizedEvents] = await Promise.all([
       paginatedEventQuery(
-        this.l2Bridge,
-        this.l2Bridge.filters.WithdrawalInitiated(
+        this.getL2Bridge(),
+        this.getL2Bridge().filters.WithdrawalInitiated(
           null, // l1Token non-indexed
           fromAddress.toNative() // from
         ),
         l2EventConfig
       ),
       paginatedEventQuery(
-        this.l1Bridge,
-        this.l1Bridge.filters.WithdrawalFinalized(
+        this.getL1Bridge(),
+        this.getL1Bridge().filters.WithdrawalFinalized(
           null, // l1Token non-indexed
           fromAddress.toNative() // from
         ),

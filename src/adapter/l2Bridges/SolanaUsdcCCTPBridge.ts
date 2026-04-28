@@ -52,8 +52,8 @@ export class SolanaUsdcCCTPBridge extends BaseL2BridgeAdapter {
   private readonly tokenMessengerMinter: Address;
   private readonly messageTransmitter: Address;
   private readonly svmSignerPromise: Promise<KeyPairSigner>;
-  private svmSigner: KeyPairSigner;
-  private solanaEventsClient: arch.svm.SvmCpiEventsClient;
+  private svmSigner?: KeyPairSigner;
+  private solanaEventsClient?: arch.svm.SvmCpiEventsClient;
 
   constructor(l2chainId: number, hubChainId: number, l2Provider: SVMProvider, l1Signer: Signer, l1Token: EvmAddress) {
     super(l2chainId, hubChainId, l2Provider, l1Signer, l1Token);
@@ -161,7 +161,11 @@ export class SolanaUsdcCCTPBridge extends BaseL2BridgeAdapter {
         BigInt(l2EventConfig.from),
         BigInt(l2EventConfig.to)
       ),
-      paginatedEventQuery(this.l1Bridge, this.l1Bridge.filters.MintAndWithdraw(...l1EventFilterArgs), l1EventConfig),
+      paginatedEventQuery(
+        this.getL1Bridge(),
+        this.getL1Bridge().filters.MintAndWithdraw(...l1EventFilterArgs),
+        l1EventConfig
+      ),
     ]);
     const counted = new Set<number>();
     const withdrawalAmount = withdrawalInitiatedEvents.reduce((totalAmount, _l2Args) => {

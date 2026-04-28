@@ -204,7 +204,7 @@ export class ZKStackBridge extends BaseBridgeAdapter {
     const l2Token = this.resolveL2TokenAddress(l1Token);
     // Similar to the query, if we are sending to the spoke pool, we must assume that the sender is the hubPool,
     // so we add a special case for this reason.
-    const isSpokePool = await isContractDeployedToAddress(toAddress.toNative(), this.l2Bridge.provider);
+    const isSpokePool = await isContractDeployedToAddress(toAddress.toNative(), this.getL2Bridge().provider);
     const bridgingCustomGasToken = isDefined(this.gasToken) && this.gasToken.eq(l1Token);
     let processedEvents: BridgeEvent[];
     if (!bridgingCustomGasToken) {

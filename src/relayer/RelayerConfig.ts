@@ -79,9 +79,6 @@ export class RelayerConfig extends CommonConfig {
   // It is up to the user to ensure that the spoke pool on the target chain has tryMulticall in its active implementation.
   readonly tryMulticallChains: number[];
 
-  // TODO: Remove this config item once we fully move to generic chain adapters.
-  readonly useGenericAdapter: boolean;
-
   constructor(env: ProcessEnv) {
     const {
       RELAYER_ORIGIN_CHAINS,

@@ -49,7 +49,7 @@ export class OpStackWethBridge extends BaseL2BridgeAdapter {
       )} to L1`,
     };
     const withdrawTxn: AugmentedTransaction = {
-      contract: this.l2Bridge,
+      contract: this.getL2Bridge(),
       chainId: this.l2chainId,
       method: "bridgeETHTo",
       args: [
@@ -75,15 +75,15 @@ export class OpStackWethBridge extends BaseL2BridgeAdapter {
   ): Promise<BigNumber> {
     const [withdrawalInitiatedEvents, withdrawalFinalizedEvents] = await Promise.all([
       paginatedEventQuery(
-        this.l2Bridge,
-        this.l2Bridge.filters.ETHBridgeInitiated(
+        this.getL2Bridge(),
+        this.getL2Bridge().filters.ETHBridgeInitiated(
           fromAddress.toNative() // from
         ),
         l2EventConfig
       ),
       paginatedEventQuery(
-        this.l1Bridge,
-        this.l1Bridge.filters.ETHBridgeFinalized(
+        this.getL1Bridge(),
+        this.getL1Bridge().filters.ETHBridgeFinalized(
           fromAddress.toNative() // from
         ),
         l1EventConfig
