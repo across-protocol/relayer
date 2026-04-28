@@ -27,8 +27,8 @@ import {
 } from "../errors";
 
 export class CCTPService {
-  private evmPrivateKey: string;
-  private svmPrivateKey: Uint8Array;
+  private evmPrivateKey?: string;
+  private svmPrivateKey?: Uint8Array;
   private logger: winston.Logger;
 
   constructor(logger?: winston.Logger) {

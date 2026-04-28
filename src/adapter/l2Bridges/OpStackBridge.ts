@@ -35,7 +35,7 @@ export class OpStackBridge extends BaseL2BridgeAdapter {
     const { decimals, symbol } = getTokenInfo(l2Token, this.l2chainId);
     const formatter = createFormatFunction(2, 4, false, decimals);
     const withdrawTxn: AugmentedTransaction = {
-      contract: this.l2Bridge,
+      contract: this.getL2Bridge(),
       chainId: this.l2chainId,
       method: "bridgeERC20To",
       args: [
@@ -64,8 +64,8 @@ export class OpStackBridge extends BaseL2BridgeAdapter {
   ): Promise<BigNumber> {
     const [withdrawalInitiatedEvents, withdrawalFinalizedEvents] = await Promise.all([
       paginatedEventQuery(
-        this.l2Bridge,
-        this.l2Bridge.filters.ERC20BridgeInitiated(
+        this.getL2Bridge(),
+        this.getL2Bridge().filters.ERC20BridgeInitiated(
           l2Token.toNative(), // localToken
           null, // remoteToken
           fromAddress.toNative() // from
@@ -73,8 +73,8 @@ export class OpStackBridge extends BaseL2BridgeAdapter {
         l2EventConfig
       ),
       paginatedEventQuery(
-        this.l1Bridge,
-        this.l1Bridge.filters.ERC20BridgeFinalized(
+        this.getL1Bridge(),
+        this.getL1Bridge().filters.ERC20BridgeFinalized(
           null, // localToken
           l2Token.toNative(), // remoteToken
           fromAddress.toNative() // from
