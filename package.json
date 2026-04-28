@@ -56,8 +56,8 @@
   "main": "dist/index.js",
   "scripts": {
     "postinstall": "patch-package; npm run update-addresses",
-    "lint": "eslint --cache . && prettier --list-different .",
-    "lint-fix": "eslint --cache --fix . && prettier --write .",
+    "lint": "eslint --cache . && prettier --cache --list-different .",
+    "lint-fix": "eslint --cache --fix . && prettier --cache --write .",
     "test": "RELAYER_TEST=true hardhat test",
     "test:parallel": "RELAYER_TEST=true hardhat test --parallel",
     "build": "tsc --build",
