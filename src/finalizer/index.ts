@@ -4,6 +4,7 @@ import assert from "assert";
 import { Contract } from "ethers";
 import { AugmentedTransaction, HubPoolClient, MultiCallerClient } from "../clients";
 import {
+  CONTRACT_ADDRESSES,
   Clients,
   constructClients,
   constructSpokePoolClientsWithLookback,
