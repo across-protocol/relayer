@@ -54,6 +54,14 @@ async function dispute(args: Record<string, number | string>, signer: Signer): P
       args?.slowRelayRoot === slowRelayRoot
     );
   });
+
+  if (rootBundleProposal === undefined) {
+    console.log(
+      `Warning: No matching root bundle proposal found between ${network} blocks ${fromBlock}, ${latestBlock.number}.`
+    );
+    return false;
+  }
+
   const fields = {
     address: bondToken.address,
     symbol,
@@ -81,12 +89,6 @@ async function dispute(args: Record<string, number | string>, signer: Signer): P
       "\n"
   );
 
-  if (rootBundleProposal === undefined) {
-    console.log(
-      `Warning: No matching root bundle proposal found between ${network} blocks ${fromBlock}, ${latestBlock.number}.`
-    );
-    return txnHash === undefined;
-  }
   console.log(
     `${network} Root Bundle Proposal:\n` +
       Object.entries(_proposal)
