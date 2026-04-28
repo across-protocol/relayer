@@ -379,12 +379,8 @@ export async function isErc2612PermitNonceConsumed(params: {
   signedNonce: string;
   provider: Provider;
 }): Promise<boolean> {
-  const onChainNonce = await getTokenPermitNonce({
-    tokenAddress: params.tokenAddress,
-    owner: params.owner,
-    provider: params.provider,
-  });
-  return onChainNonce.gt(BigNumber.from(params.signedNonce));
+  const onChainNonce = await getTokenPermitNonce(params);
+  return onChainNonce.gt(params.signedNonce);
 }
 
 /**
