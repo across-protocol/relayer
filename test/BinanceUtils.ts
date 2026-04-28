@@ -1,6 +1,5 @@
 import { expect, sinon } from "./utils";
 import {
-  type BinanceApi,
   BinanceDeposit,
   SpotMarketMeta,
   BinanceWithdrawal,
@@ -126,9 +125,7 @@ describe("BinanceUtils fill commission helpers", function () {
       commissionAsset: index === 1 ? "BNB" : "USDC",
     }));
     const myTradesStub = sinon.stub().resolves(trades);
-    const binanceApi: Pick<BinanceApi, "myTrades"> = {
-      myTrades: myTradesStub,
-    };
+    const binanceClient = { getMyTrades: myTradesStub };
     const spotMarketMeta: SpotMarketMeta = {
       symbol: "USDCUSDT",
       baseAssetName: "USDC",
@@ -139,7 +136,7 @@ describe("BinanceUtils fill commission helpers", function () {
       isBuy: true,
     };
 
-    const totalCommission = await getFillCommission(binanceApi, spotMarketMeta, 123);
+    const totalCommission = await getFillCommission(binanceClient, spotMarketMeta, 123);
 
     expect(totalCommission).to.be.closeTo(100, 1e-9);
     expect(myTradesStub.callCount).to.equal(1);

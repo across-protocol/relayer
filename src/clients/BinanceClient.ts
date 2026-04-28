@@ -3,8 +3,20 @@ import minimist from "minimist";
 import { coerce, create, number, string, type } from "superstruct";
 import winston from "winston";
 import { hasBinanceRoute } from "../common";
-import { Address, assert, BigNumber, bnZero, getGckmsConfig, isDefined, retrieveGckmsKeys, toBNWei } from "../utils";
-import type { WithdrawalQuota } from "../utils/BinanceUtils";
+import {
+  Address,
+  assert,
+  BigNumber,
+  bnZero,
+  getAccountCoins,
+  getBinanceDeposits,
+  getBinanceWithdrawals,
+  getGckmsConfig,
+  isDefined,
+  retrieveGckmsKeys,
+  toBNWei,
+} from "../utils";
+import type { BinanceDeposit, BinanceWithdrawal, Coin, WithdrawalQuota } from "../utils/BinanceUtils";
 
 export type { WithdrawalQuota };
 
@@ -17,7 +29,7 @@ const WithdrawalQuotaSS = type({
 });
 
 export type BinanceClientOptions = {
-  logger: winston.Logger;
+  logger?: winston.Logger;
   url?: string;
 };
 
@@ -29,10 +41,10 @@ export class BinanceClient {
 
   private constructor(
     private readonly api: BinanceApi,
-    private readonly logger: winston.Logger
+    private readonly logger: winston.Logger | undefined
   ) {}
 
-  static async create(options: BinanceClientOptions): Promise<BinanceClient> {
+  static async create(options: BinanceClientOptions = {}): Promise<BinanceClient> {
     const { logger, url = "https://api.binance.com" } = options;
     const apiKey = process.env.BINANCE_API_KEY;
     const secretKey = (await BinanceClient.getBinanceSecretKey()) ?? process.env.BINANCE_HMAC_KEY;
@@ -49,6 +61,50 @@ export class BinanceClient {
     return create(raw, WithdrawalQuotaSS);
   }
 
+  getDeposits(startTime: number): Promise<BinanceDeposit[]> {
+    return getBinanceDeposits(this.api, startTime);
+  }
+
+  getWithdrawals(coin: string, startTime: number): Promise<BinanceWithdrawal[]> {
+    return getBinanceWithdrawals(this.api, coin, startTime);
+  }
+
+  getAccountCoins(): Promise<Coin[]> {
+    return getAccountCoins(this.api);
+  }
+
+  getDepositAddress(...args: Parameters<BinanceApi["depositAddress"]>): ReturnType<BinanceApi["depositAddress"]> {
+    return this.api.depositAddress(...args);
+  }
+
+  withdraw(...args: Parameters<BinanceApi["withdraw"]>): ReturnType<BinanceApi["withdraw"]> {
+    return this.api.withdraw(...args);
+  }
+
+  getExchangeInfo(...args: Parameters<BinanceApi["exchangeInfo"]>): ReturnType<BinanceApi["exchangeInfo"]> {
+    return this.api.exchangeInfo(...args);
+  }
+
+  getOrderBook(...args: Parameters<BinanceApi["book"]>): ReturnType<BinanceApi["book"]> {
+    return this.api.book(...args);
+  }
+
+  getTradeFees(...args: Parameters<BinanceApi["tradeFee"]>): ReturnType<BinanceApi["tradeFee"]> {
+    return this.api.tradeFee(...args);
+  }
+
+  getAllOrders(...args: Parameters<BinanceApi["allOrders"]>): ReturnType<BinanceApi["allOrders"]> {
+    return this.api.allOrders(...args);
+  }
+
+  placeOrder(...args: Parameters<BinanceApi["order"]>): ReturnType<BinanceApi["order"]> {
+    return this.api.order(...args);
+  }
+
+  getMyTrades(...args: Parameters<BinanceApi["myTrades"]>): ReturnType<BinanceApi["myTrades"]> {
+    return this.api.myTrades(...args);
+  }
+
   // Strict-fail: any error clears the cache.
   async refresh(): Promise<void> {
     this.remainingQuotaUsd = undefined;
@@ -56,7 +112,7 @@ export class BinanceClient {
       const quota = await this.getWithdrawalLimits();
       this.remainingQuotaUsd = toBNWei(Math.max(quota.wdQuota - quota.usedWdQuota, 0));
     } catch (err) {
-      this.logger.warn({
+      this.logger?.warn({
         at: "BinanceClient#refresh",
         message: "Failed to refresh Binance withdrawal quota; capacity checks disabled",
         error: err instanceof Error ? err.message : String(err),
