@@ -1,11 +1,12 @@
 #!/bin/sh
 # Ratchet down strictNullChecks errors.
 #
-#   strict-null-budget.sh                 enforce: fails on regression AND
-#                                         on improvement (prompts manual stage).
-#   strict-null-budget.sh --auto-ratchet  on improvement, restage the error list
-#                                         so the current commit picks up the
-#                                         reduction.
+#   strict-null-budget.sh                 enforce: fail on regression AND on
+#                                         unratcheted improvement.
+#   strict-null-budget.sh --auto-ratchet  on improvement, restage the error
+#                                         list (used by `yarn update-strict`).
+#   strict-null-budget.sh --no-cache      bypass the freshness shortcut and
+#                                         always run tsc (used in CI).
 #
 # Uses `tsc --incremental` with a dedicated buildinfo file so warm runs are
 # fast. The error list is cached in $ERRORS_FILE; tsc is skipped if no input
@@ -15,13 +16,22 @@
 
 set -eu
 
-MODE="${1:-enforce}"
+MODE=enforce
+NO_CACHE=
+for arg in "$@"; do
+  case "$arg" in
+    --auto-ratchet) MODE=auto-ratchet ;;
+    --no-cache) NO_CACHE=1 ;;
+    *) echo "unknown arg: $arg" >&2; exit 2 ;;
+  esac
+done
+
 BUILDINFO=".tsbuildinfo-strict"
 ERRORS_FILE=".strict-null-errors"
 INPUTS="src scripts index.ts hardhat.config.ts tsconfig.json package.json yarn.lock"
 
 # Skip tsc if every input is older than the cached error list.
-if [ -f "$ERRORS_FILE" ] && \
+if [ -z "$NO_CACHE" ] && [ -f "$ERRORS_FILE" ] && \
    [ -z "$(find $INPUTS "$0" -newer "$ERRORS_FILE" -type f 2>/dev/null | head -1)" ]; then
   : # cache hit
 else
@@ -52,13 +62,13 @@ fi
 
 if [ "$ACTUAL" -lt "$PREVIOUS" ]; then
   DELTA=$((PREVIOUS - ACTUAL))
-  if [ "$MODE" = "--auto-ratchet" ]; then
+  if [ "$MODE" = "auto-ratchet" ]; then
     git add "$ERRORS_FILE"
     echo "Nice — strictNullChecks down by $DELTA: $PREVIOUS -> $ACTUAL. Error list updated and staged."
     exit 0
   fi
   echo "Nice — strictNullChecks down by $DELTA: $PREVIOUS -> $ACTUAL."
-  echo "Stage $ERRORS_FILE in this commit to ratchet the budget (or rerun with --auto-ratchet)."
+  echo "Stage $ERRORS_FILE in this commit to ratchet the budget (or run \`yarn update-strict\`)."
   exit 1
 fi
 

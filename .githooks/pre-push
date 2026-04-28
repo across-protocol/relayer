@@ -1,4 +1,0 @@
-#!/bin/sh
-set -eu
-
-./scripts/strict-null-budget.sh

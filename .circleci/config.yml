@@ -85,6 +85,9 @@ jobs:
       - run:
           name: Typecheck
           command: yarn typecheck
+      - run:
+          name: strictNullChecks budget
+          command: yarn strict-null-budget --no-cache
   test:
     executor: node
     parallelism: 20

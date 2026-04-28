@@ -2,7 +2,3 @@
 set -eu
 
 yarn pretty-quick --staged
-
-if git diff --cached --name-only --diff-filter=ACMR | grep -qE '\.ts$'; then
-  ./scripts/strict-null-budget.sh --auto-ratchet
-fi
