@@ -56,7 +56,6 @@ export class InstanceCoordinator {
           });
           break;
         }
-        continue;
       }
     } while (activeInstance === this.instance);
 
