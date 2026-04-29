@@ -244,7 +244,7 @@ src/dataworker/Dataworker.ts(2480,17): error TS2345: Argument of type 'Address |
 src/dataworker/Dataworker.ts(2725,63): error TS2345: Argument of type 'unknown[]' is not assignable to parameter of type 'ContractInterface'.
 src/dataworker/Dataworker.ts(2885,45): error TS2345: Argument of type 'Address | undefined' is not assignable to parameter of type 'Address'.
 src/dataworker/Dataworker.ts(2936,7): error TS2322: Type 'CloseInstructionParamsInstruction<Address, string, string, []>' is not assignable to type 'CloseInstructionParamsInstruction<Address<"DLv3NggMiSaef97YCkew5xKUHDh13tVGZ7tydt3ZeAru">, string, string, []> | undefined'.
-src/dataworker/Dataworker.ts(2944,55): error TS2322: Type 'CloseInstructionParamsInstruction<Address<"DLv3NggMiSaef97YCkew5xKUHDh13tVGZ7tydt3ZeAru">, string, string, []> | undefined' is not assignable to type 'Instruction<string, readonly (AccountMeta<string> | AccountLookupMeta<string, string>)[]>'.
+src/dataworker/Dataworker.ts(2944,55): error TS2322: Type 'CloseInstructionParamsInstruction<Address<"DLv3NggMiSaef97YCkew5xKUHDh13tVGZ7tydt3ZeAru">, string, string, []> | undefined' is not assignable to type 'Instruction<string, readonly (AccountLookupMeta<string, string> | AccountMeta<string>)[]>'.
 src/dataworker/Dataworker.ts(3299,45): error TS2345: Argument of type 'Address | undefined' is not assignable to parameter of type 'Address'.
 src/dataworker/DataworkerClientHelper.ts(176,5): error TS2322: Type 'ProposedRootBundle | undefined' is not assignable to type 'ProposedRootBundle'.
 src/dataworker/DataworkerClientHelper.ts(177,5): error TS2322: Type 'ProposedRootBundle | undefined' is not assignable to type 'ProposedRootBundle'.
@@ -303,8 +303,8 @@ src/finalizer/utils/helios.ts(444,85): error TS2345: Argument of type 'Address |
 src/finalizer/utils/helios.ts(447,75): error TS18048: 'l2SpokePoolClient.spokePoolAddress' is possibly 'undefined'.
 src/finalizer/utils/helios.ts(450,31): error TS18048: 'l2SpokePoolClient.spokePoolAddress' is possibly 'undefined'.
 src/finalizer/utils/linea/common.ts(44,25): error TS2345: Argument of type 'Signer | undefined' is not assignable to parameter of type 'Signer'.
-src/finalizer/utils/linea/common.ts(245,7): error TS2345: Argument of type 'unknown[] | undefined' is not assignable to parameter of type 'string | readonly (string | JsonFragment | Fragment)[]'.
-src/finalizer/utils/linea/l1ToL2.ts(42,44): error TS2345: Argument of type 'readonly Fragment[]' is not assignable to parameter of type 'string | readonly (string | JsonFragment | Fragment)[]'.
+src/finalizer/utils/linea/common.ts(245,7): error TS2345: Argument of type 'unknown[] | undefined' is not assignable to parameter of type 'string | readonly (string | Fragment | JsonFragment)[]'.
+src/finalizer/utils/linea/l1ToL2.ts(42,44): error TS2345: Argument of type 'readonly Fragment[]' is not assignable to parameter of type 'string | readonly (string | Fragment | JsonFragment)[]'.
 src/finalizer/utils/linea/l1ToL2.ts(70,5): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
 src/finalizer/utils/linea/l2ToL1.ts(126,34): error TS18047: 'parsedLog' is possibly 'null'.
 src/finalizer/utils/linea/l2ToL1.ts(127,26): error TS18047: 'parsedLog' is possibly 'null'.
@@ -385,11 +385,11 @@ src/rebalancer/adapters/binance.ts(855,67): error TS18048: 'spotMarketMeta' is p
 src/rebalancer/adapters/binance.ts(862,25): error TS2532: Object is possibly 'undefined'.
 src/rebalancer/adapters/binance.ts(1094,7): error TS2345: Argument of type 'unknown[]' is not assignable to parameter of type 'ContractInterface'.
 src/rebalancer/adapters/binance.ts(1099,7): error TS2345: Argument of type 'unknown[]' is not assignable to parameter of type 'ContractInterface'.
-src/rebalancer/adapters/cctpAdapter.ts(116,45): error TS2345: Argument of type 'CCTPV2APIAttestation | undefined' is not assignable to parameter of type 'Pick<CCTPV2APIAttestation, "attestation" | "status">'.
+src/rebalancer/adapters/cctpAdapter.ts(116,45): error TS2345: Argument of type 'CCTPV2APIAttestation | undefined' is not assignable to parameter of type 'Pick<CCTPV2APIAttestation, "status" | "attestation">'.
 src/rebalancer/adapters/cctpAdapter.ts(122,9): error TS18048: 'attestation' is possibly 'undefined'.
 src/rebalancer/adapters/cctpAdapter.ts(126,58): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
 src/rebalancer/adapters/cctpAdapter.ts(128,9): error TS18048: 'attestation' is possibly 'undefined'.
-src/rebalancer/adapters/cctpAdapter.ts(164,45): error TS2345: Argument of type 'CCTPV2APIAttestation | undefined' is not assignable to parameter of type 'Pick<CCTPV2APIAttestation, "attestation" | "status">'.
+src/rebalancer/adapters/cctpAdapter.ts(164,45): error TS2345: Argument of type 'CCTPV2APIAttestation | undefined' is not assignable to parameter of type 'Pick<CCTPV2APIAttestation, "status" | "attestation">'.
 src/rebalancer/adapters/cctpAdapter.ts(166,11): error TS18048: 'attestation' is possibly 'undefined'.
 src/rebalancer/adapters/cctpAdapter.ts(170,60): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
 src/rebalancer/adapters/cctpAdapter.ts(172,11): error TS18048: 'attestation' is possibly 'undefined'.
@@ -468,8 +468,8 @@ src/utils/CCTPUtils.ts(134,42): error TS2345: Argument of type 'string | undefin
 src/utils/CCTPUtils.ts(413,30): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
 src/utils/CCTPUtils.ts(447,42): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
 src/utils/CCTPUtils.ts(462,42): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/utils/CCTPUtils.ts(508,62): error TS2345: Argument of type 'unknown[] | undefined' is not assignable to parameter of type 'string | readonly (string | JsonFragment | Fragment)[]'.
-src/utils/CCTPUtils.ts(509,66): error TS2345: Argument of type 'unknown[] | undefined' is not assignable to parameter of type 'string | readonly (string | JsonFragment | Fragment)[]'.
+src/utils/CCTPUtils.ts(508,62): error TS2345: Argument of type 'unknown[] | undefined' is not assignable to parameter of type 'string | readonly (string | Fragment | JsonFragment)[]'.
+src/utils/CCTPUtils.ts(509,66): error TS2345: Argument of type 'unknown[] | undefined' is not assignable to parameter of type 'string | readonly (string | Fragment | JsonFragment)[]'.
 src/utils/CCTPUtils.ts(656,29): error TS2322: Type 'number | undefined' is not assignable to type 'number'.
 src/utils/CCTPUtils.ts(700,20): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
 src/utils/CCTPUtils.ts(712,11): error TS2345: Argument of type 'Rpc<SolanaRpcApiForTestClusters> | undefined' is not assignable to parameter of type 'Rpc<SolanaRpcApiForTestClusters>'.
@@ -488,7 +488,7 @@ src/utils/ContractUtils.ts(125,23): error TS2345: Argument of type 'string | und
 src/utils/ContractUtils.ts(131,23): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
 src/utils/HyperliquidUtils.ts(119,5): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
 src/utils/InstanceCoordinator.ts(19,5): error TS2322: Type 'Promise<string | undefined>' is not assignable to type 'Promise<string>'.
-src/utils/InstanceCoordinator.ts(46,7): error TS2322: Type 'string | null' is not assignable to type 'string | undefined'.
+src/utils/InstanceCoordinator.ts(48,9): error TS2322: Type 'string | null' is not assignable to type 'string | undefined'.
 src/utils/ProviderUtils.ts(76,5): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
 src/utils/ProviderUtils.ts(79,10): error TS2454: Variable 'headers' is used before being assigned.
 src/utils/SignerUtils.ts(148,41): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
