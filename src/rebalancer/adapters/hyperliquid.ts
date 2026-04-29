@@ -1145,7 +1145,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         this.logger.error({
           at: "HyperliquidStablecoinSwapAdapter._placeLimitOrder",
           message: "Unknown error",
-          error: error.toString(),
+          error: String(error),
         });
       }
     }

@@ -1477,10 +1477,9 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     return this.REDIS_KEY_INITIATED_WITHDRAWALS + ":" + cloid;
   }
 
-  private async _redisGetInitiatedWithdrawalId(cloid: string): Promise<string> {
+  private async _redisGetInitiatedWithdrawalId(cloid: string): Promise<string | null> {
     const initiatedWithdrawalKey = this._redisGetInitiatedWithdrawalKey(cloid);
-    const initiatedWithdrawal = await this.redisCache.get<string>(initiatedWithdrawalKey);
-    return initiatedWithdrawal;
+    return this.redisCache.get<string>(initiatedWithdrawalKey);
   }
 
   private async _redisDeleteInitiatedWithdrawalId(cloid: string): Promise<void> {

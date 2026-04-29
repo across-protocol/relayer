@@ -1,4 +1,7 @@
-import { CHAIN_IDs, getDeployedAddress } from "../utils";
+import assert from "assert";
+import { ContractInterface } from "ethers";
+import { JsonFragment } from "@ethersproject/abi";
+import { CHAIN_IDs, getDeployedAddress, isDefined } from "../utils";
 import CCTP_MESSAGE_TRANSMITTER_ABI from "./abi/CctpMessageTransmitter.json";
 import CCTP_TOKEN_MESSENGER_ABI from "./abi/CctpTokenMessenger.json";
 import CCTP_V2_TOKEN_MESSENGER_ABI from "./abi/CctpV2TokenMessenger.json";
@@ -364,6 +367,9 @@ export const CONTRACT_ADDRESSES: {
     hyperliquidDepositHandler: {
       address: getDeployedAddress("HyperliquidDepositHandler", CHAIN_IDs.HYPEREVM),
       abi: HYPERLIQUID_DEPOSIT_HANDLER_ABI,
+    },
+    spokePoolPeriphery: {
+      abi: SPOKE_POOL_PERIPHERY_ABI,
     },
   },
   [CHAIN_IDs.ZK_SYNC]: {
@@ -970,3 +976,30 @@ export const CONTRACT_ADDRESSES: {
     },
   },
 };
+
+// Narrow `unknown[]` (the table's loose ABI typing) to a shape assignable to `ContractInterface`.
+function isJsonAbi(value: unknown[]): value is JsonFragment[] {
+  return value.every((item) => typeof item === "object" && item !== null);
+}
+
+/**
+ * Look up a contract entry that is required to have both `address` and `abi` populated.
+ * Throws if either is missing — useful for adapter constructors that immediately build a Contract.
+ */
+export function getContractEntry(chainId: number, name: string): { address: string; abi: ContractInterface } {
+  const entry = CONTRACT_ADDRESSES[chainId]?.[name];
+  assert(isDefined(entry?.address) && isDefined(entry?.abi), `Missing CONTRACT_ADDRESSES entry: ${chainId}/${name}`);
+  assert(isJsonAbi(entry.abi), `Invalid ABI shape: ${chainId}/${name}`);
+  return { address: entry.address, abi: entry.abi };
+}
+
+/**
+ * Look up only the `abi` for a contract entry (address resolved via deployment metadata).
+ * Throws if the abi is missing or malformed.
+ */
+export function getContractAbi(chainId: number, name: string): ContractInterface {
+  const entry = CONTRACT_ADDRESSES[chainId]?.[name];
+  assert(isDefined(entry?.abi), `Missing CONTRACT_ADDRESSES abi: ${chainId}/${name}`);
+  assert(isJsonAbi(entry.abi), `Invalid ABI shape: ${chainId}/${name}`);
+  return entry.abi;
+}

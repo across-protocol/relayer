@@ -49,11 +49,19 @@ async function dispute(args: Record<string, number | string>, signer: Signer): P
   const { poolRebalanceRoot, relayerRefundRoot, slowRelayRoot, challengePeriodEndTimestamp } = proposal;
   const rootBundleProposal = proposals.find(({ args }) => {
     return (
-      args.poolRebalanceRoot === poolRebalanceRoot &&
-      args.relayerRefundRoot === relayerRefundRoot &&
-      args.slowRelayRoot === slowRelayRoot
+      args?.poolRebalanceRoot === poolRebalanceRoot &&
+      args?.relayerRefundRoot === relayerRefundRoot &&
+      args?.slowRelayRoot === slowRelayRoot
     );
   });
+
+  if (rootBundleProposal === undefined) {
+    console.log(
+      `Warning: No matching root bundle proposal found between ${network} blocks ${fromBlock}, ${latestBlock.number}.`
+    );
+    return false;
+  }
+
   const fields = {
     address: bondToken.address,
     symbol,
@@ -81,19 +89,13 @@ async function dispute(args: Record<string, number | string>, signer: Signer): P
       "\n"
   );
 
-  if (rootBundleProposal === undefined) {
-    console.log(
-      `Warning: No matching root bundle proposal found between ${network} blocks ${fromBlock}, ${latestBlock.number}.`
-    );
-  } else {
-    console.log(
-      `${network} Root Bundle Proposal:\n` +
-        Object.entries(_proposal)
-          .map(([k, v]) => `\t${k.padEnd(padLeft)} : ${v}`)
-          .join("\n") +
-        "\n"
-    );
-  }
+  console.log(
+    `${network} Root Bundle Proposal:\n` +
+      Object.entries(_proposal)
+        .map(([k, v]) => `\t${k.padEnd(padLeft)} : ${v}`)
+        .join("\n") +
+      "\n"
+  );
 
   if (allowance.lt(bondAmount)) {
     console.log(`Approving ${network} HubPool @ ${hubPool.address} to transfer ${symbol}.`);
@@ -153,7 +155,7 @@ async function search(args: Record<string, number | string>, _signer: Signer): P
   const toBlock = Number(args.toBlock) || undefined;
   const chainId = Number(args.chainId);
 
-  if (!isNaN(fromBlock) && !isNaN(toBlock) && toBlock < fromBlock) {
+  if (fromBlock !== undefined && toBlock !== undefined && toBlock < fromBlock) {
     throw new Error(`Invalid block range: ${fromBlock}, ${toBlock}`);
   }
 
