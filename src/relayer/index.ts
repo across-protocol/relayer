@@ -22,7 +22,7 @@ import { RedisCacheInterface } from "../caching/RedisCache";
 config();
 let logger: winston.Logger;
 
-const ACTIVE_RELAYER_EXPIRY = 600; // 10 minutes.
+const ACTIVE_RELAYER_EXPIRY = 1200; // 20 minutes.
 const {
   RUN_IDENTIFIER: runIdentifier,
   BOT_IDENTIFIER: botIdentifier = "across-relayer",

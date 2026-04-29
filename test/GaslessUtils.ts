@@ -1,4 +1,4 @@
-import { expect } from "./utils";
+import { expect, sinon, winston } from "./utils";
 import { Contract, ethers } from "ethers";
 import { tagIntegratorId, restructureGaslessDeposits, buildGaslessDepositTx } from "../src/utils/GaslessUtils";
 import { APIGaslessDepositResponse } from "../src/interfaces";
@@ -9,6 +9,7 @@ const DUMMY_SIGNATURE = "0x" + "ab".repeat(65);
 
 const DUMMY_ADDRESS = "0x" + "11".repeat(20);
 const DUMMY_BYTES32 = "0x" + "22".repeat(32);
+const TEST_LOGGER = winston.createLogger({ silent: true });
 
 function makeDepositMessage(overrides: Record<string, unknown> = {}) {
   return {
@@ -16,7 +17,7 @@ function makeDepositMessage(overrides: Record<string, unknown> = {}) {
     depositId: "1",
     requestId: "req-1",
     signature: DUMMY_SIGNATURE,
-    permitType: "receiveWithAuthorization",
+    permitType: "erc3009",
     permit: {
       types: { ReceiveWithAuthorization: [] },
       domain: { name: "USDC", version: "2", chainId: 1, verifyingContract: DUMMY_ADDRESS },
@@ -53,7 +54,7 @@ function makeDepositMessage(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function makeApiResponse(overrides: { integratorId?: string } = {}): APIGaslessDepositResponse {
+function makeApiResponse(overrides: { integratorId?: string; type?: string } = {}): APIGaslessDepositResponse {
   const msg = makeDepositMessage();
   return {
     swapTx: {
@@ -61,7 +62,7 @@ function makeApiResponse(overrides: { integratorId?: string } = {}): APIGaslessD
       chainId: msg.originChainId,
       to: DUMMY_ADDRESS,
       data: {
-        type: "BridgeWitness",
+        type: overrides.type ?? "erc3009",
         depositId: msg.depositId,
         witness: {
           BridgeWitness: {
@@ -120,14 +121,121 @@ describe("GaslessUtils", function () {
   describe("restructureGaslessDeposits", function () {
     it("propagates integratorId when present", function () {
       const apiResponse = makeApiResponse({ integratorId: "0xABCD" });
-      const [result] = restructureGaslessDeposits([apiResponse]);
+      const [result] = restructureGaslessDeposits([apiResponse], TEST_LOGGER);
       expect(result.integratorId).to.equal("0xABCD");
     });
 
     it("sets integratorId to undefined when absent", function () {
       const apiResponse = makeApiResponse();
-      const [result] = restructureGaslessDeposits([apiResponse]);
+      const [result] = restructureGaslessDeposits([apiResponse], TEST_LOGGER);
       expect(result.integratorId).to.be.undefined;
+    });
+
+    it("maps swapAndBridge permit payloads with permitApproval fields", function () {
+      const apiResponse = {
+        swapTx: {
+          ecosystem: "evm",
+          chainId: 42161,
+          to: DUMMY_ADDRESS,
+          typedData: null,
+          data: {
+            type: "permit",
+            depositId: "77",
+            witness: {
+              BridgeAndSwapWitness: {
+                type: "BridgeAndSwapWitness",
+                data: {
+                  submissionFees: { amount: "0", recipient: DUMMY_ADDRESS },
+                  depositData: {
+                    inputToken: DUMMY_ADDRESS,
+                    outputToken: DUMMY_BYTES32,
+                    outputAmount: "100",
+                    depositor: DUMMY_ADDRESS,
+                    recipient: DUMMY_BYTES32,
+                    destinationChainId: 8453,
+                    exclusiveRelayer: DUMMY_BYTES32,
+                    quoteTimestamp: 1,
+                    fillDeadline: 2,
+                    exclusivityParameter: 0,
+                    exclusivityDeadline: 0,
+                    message: "0x",
+                  },
+                  swapToken: DUMMY_ADDRESS,
+                  exchange: DUMMY_ADDRESS,
+                  transferType: { long: 0 },
+                  swapTokenAmount: "123",
+                  minExpectedInputTokenAmount: "120",
+                  routerCalldata: "0x",
+                  enableProportionalAdjustment: { boolean: true },
+                  spokePool: DUMMY_ADDRESS,
+                  nonce: "4",
+                },
+              },
+            },
+            permit: {
+              types: { SwapAndDepositData: [] },
+              domain: { name: "ACROSS-PERIPHERY", version: "1.0.0", chainId: 42161, verifyingContract: DUMMY_ADDRESS },
+              primaryType: "SwapAndDepositData",
+              message: {
+                submissionFees: { amount: "0", recipient: DUMMY_ADDRESS },
+                depositData: {
+                  inputToken: DUMMY_ADDRESS,
+                  outputToken: DUMMY_BYTES32,
+                  outputAmount: "100",
+                  depositor: DUMMY_ADDRESS,
+                  recipient: DUMMY_BYTES32,
+                  destinationChainId: 8453,
+                  exclusiveRelayer: DUMMY_BYTES32,
+                  quoteTimestamp: 1,
+                  fillDeadline: 2,
+                  exclusivityParameter: 0,
+                  message: "0x",
+                },
+                swapToken: DUMMY_ADDRESS,
+                exchange: DUMMY_ADDRESS,
+                transferType: 0,
+                swapTokenAmount: "123",
+                minExpectedInputTokenAmount: "120",
+                routerCalldata: "0x",
+                enableProportionalAdjustment: true,
+                spokePool: DUMMY_ADDRESS,
+                nonce: "4",
+              },
+            } as unknown as APIGaslessDepositResponse["swapTx"]["data"]["permit"],
+            domainSeparator: DUMMY_BYTES32,
+          },
+        },
+        signature: DUMMY_SIGNATURE,
+        submittedAt: "2024-01-01T00:00:00Z",
+        requestId: "req-swap",
+        messageId: "msg-swap",
+        permitApprovalSignature: DUMMY_SIGNATURE,
+        permitApprovalDeadline: 123456,
+      } as unknown as APIGaslessDepositResponse;
+      const [result] = restructureGaslessDeposits([apiResponse], TEST_LOGGER);
+      expect(result.depositFlowType).to.equal("swapAndBridge");
+      expect(result.permitType).to.equal("permit");
+      if (result.depositFlowType !== "swapAndBridge") {
+        throw new Error("expected swapAndBridge result");
+      }
+      expect(result.permitApprovalSignature).to.equal(DUMMY_SIGNATURE);
+      expect(result.permitApprovalDeadline).to.equal(123456);
+    });
+
+    it("skips deposits with unsupported permit type and logs warning", function () {
+      const invalidApiResponse = makeApiResponse({ type: "BridgeWitness" });
+      const warn = sinon.spy();
+      const logger = { warn } as unknown as winston.Logger;
+
+      const result = restructureGaslessDeposits([invalidApiResponse], logger);
+
+      expect(result).to.deep.equal([]);
+      expect(warn.calledOnce).to.be.true;
+      expect(warn.firstCall.args[0]).to.include({
+        at: "GaslessUtils#restructureGaslessDeposits",
+        message: "Skipping gasless deposit with unsupported permit type.",
+        permitType: "BridgeWitness",
+      });
     });
   });
 
@@ -165,6 +273,79 @@ describe("GaslessUtils", function () {
       const iface = new ethers.utils.Interface(SPOKE_POOL_PERIPHERY_ABI);
       const selector = iface.getSighash("depositWithAuthorization");
       expect(calldata.startsWith(selector)).to.be.true;
+    });
+
+    it("builds swapAndBridgeWithPermit tx for permit flow", function () {
+      const msg = {
+        depositFlowType: "swapAndBridge",
+        originChainId: 42161,
+        depositId: "7",
+        requestId: "req",
+        signature: DUMMY_SIGNATURE,
+        permitType: "permit",
+        permitApprovalSignature: DUMMY_SIGNATURE,
+        permitApprovalDeadline: 99999999,
+        permit: {
+          types: { SwapAndDepositData: [] },
+          domain: { name: "ACROSS-PERIPHERY", version: "1.0.0", chainId: 42161, verifyingContract: DUMMY_ADDRESS },
+          primaryType: "SwapAndDepositData",
+          message: {
+            submissionFees: { amount: "0", recipient: DUMMY_ADDRESS },
+            depositData: {
+              inputToken: DUMMY_ADDRESS,
+              outputToken: DUMMY_BYTES32,
+              outputAmount: "100",
+              depositor: DUMMY_ADDRESS,
+              recipient: DUMMY_BYTES32,
+              destinationChainId: 8453,
+              exclusiveRelayer: DUMMY_BYTES32,
+              quoteTimestamp: 1,
+              fillDeadline: 2,
+              exclusivityParameter: 0,
+              message: "0x",
+            },
+            swapToken: DUMMY_ADDRESS,
+            exchange: DUMMY_ADDRESS,
+            transferType: 0,
+            swapTokenAmount: "123",
+            minExpectedInputTokenAmount: "120",
+            routerCalldata: "0x",
+            enableProportionalAdjustment: true,
+            spokePool: DUMMY_ADDRESS,
+            nonce: "4",
+          },
+        },
+        depositData: {
+          inputToken: DUMMY_ADDRESS,
+          outputToken: DUMMY_BYTES32,
+          outputAmount: "100",
+          depositor: DUMMY_ADDRESS,
+          recipient: DUMMY_BYTES32,
+          destinationChainId: 8453,
+          exclusiveRelayer: DUMMY_BYTES32,
+          quoteTimestamp: 1,
+          fillDeadline: 2,
+          exclusivityParameter: 0,
+          exclusivityDeadline: 0,
+          message: "0x",
+        },
+        submissionFees: { amount: "0", recipient: DUMMY_ADDRESS },
+        swapToken: DUMMY_ADDRESS,
+        exchange: DUMMY_ADDRESS,
+        transferType: 0,
+        swapTokenAmount: "123",
+        minExpectedInputTokenAmount: "120",
+        routerCalldata: "0x",
+        enableProportionalAdjustment: true,
+        spokePool: DUMMY_ADDRESS,
+        nonce: "4",
+      };
+      const contract = makeSpokePoolPeripheryContract();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const tx = buildGaslessDepositTx(msg as any, contract);
+      expect(tx.method).to.equal("swapAndBridgeWithPermit");
+      expect(tx.args.length).to.equal(5);
+      expect(tx.ensureConfirmation).to.be.true;
     });
   });
 });

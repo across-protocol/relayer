@@ -148,7 +148,7 @@ describe("Relayer: Initiates slow fill requests", async function () {
     mockCrossChainTransferClient = new MockCrossChainTransferClient();
     mockInventoryClient = new MockInventoryClient(
       null,
-      null,
+      spyLogger,
       null,
       null,
       null,

@@ -241,10 +241,8 @@ export function determineMessageType(
 
   // Start with the TokenBridge calldata format.
   try {
-    const contractInterface = new ethers.utils.Interface(
-      getContractEntry(hubPoolClient.chainId, "lineaL1TokenBridge").abi
-    );
-    const decoded = contractInterface.decodeFunctionData("completeBridging", _calldata);
+    const { address, abi } = getContractEntry(hubPoolClient.chainId, "lineaL1TokenBridge");
+    const decoded = new Contract(address, abi).interface.decodeFunctionData("completeBridging", _calldata);
     // If we've made it this far, then the calldata is a valid TokenBridge calldata.
     const token = getTokenInfo(decoded._nativeToken, hubPoolClient.chainId);
     return {

@@ -329,8 +329,8 @@ async function getOPUSDCEvents(
   if (!CONTRACT_ADDRESSES[chainId]?.opUSDCBridge) {
     return []; // No need to warn; many chains do not have OP USDC.
   }
-  const opUSDCBridge = getContractEntry(chainId, "opUSDCBridge");
-  const bridge = new Contract(opUSDCBridge.address, opUSDCBridge.abi, provider);
+  const { address, abi } = getContractEntry(chainId, "opUSDCBridge");
+  const bridge = new Contract(address, abi, provider);
   const filter = bridge.filters.MessageSent(fromAddresses);
   const events = (await paginatedEventQuery(bridge, filter, searchConfig))
     .map(({ args, ...event }) => {
