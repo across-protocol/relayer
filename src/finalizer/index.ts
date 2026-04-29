@@ -180,27 +180,22 @@ export async function finalize(
         });
         return;
       }
+      const { finalizeOnL1 = [], finalizeOnL2 = [], finalizeOnAny = [] } = chainFinalizer;
       const chainSpecificFinalizers: { genericFinalizer: boolean; finalizer: ChainFinalizer | Finalizer }[] = [];
       switch (finalizationStrategy) {
         case "l1->l2":
-          chainSpecificFinalizers.push(
-            ...(chainFinalizer.finalizeOnL2 ?? []).map((finalizer) => ({ finalizer, genericFinalizer: false }))
-          );
+          chainSpecificFinalizers.push(...finalizeOnL2.map((finalizer) => ({ finalizer, genericFinalizer: false })));
           break;
         case "l2->l1":
-          chainSpecificFinalizers.push(
-            ...(chainFinalizer.finalizeOnL1 ?? []).map((finalizer) => ({ finalizer, genericFinalizer: false }))
-          );
+          chainSpecificFinalizers.push(...finalizeOnL1.map((finalizer) => ({ finalizer, genericFinalizer: false })));
           break;
         case "any<->any":
-          chainSpecificFinalizers.push(
-            ...(chainFinalizer.finalizeOnAny ?? []).map((finalizer) => ({ finalizer, genericFinalizer: true }))
-          );
+          chainSpecificFinalizers.push(...finalizeOnAny.map((finalizer) => ({ finalizer, genericFinalizer: true })));
           break;
         case "l1<->l2":
           chainSpecificFinalizers.push(
-            ...(chainFinalizer.finalizeOnL1 ?? []).map((finalizer) => ({ finalizer, genericFinalizer: false })),
-            ...(chainFinalizer.finalizeOnL2 ?? []).map((finalizer) => ({ finalizer, genericFinalizer: false }))
+            ...finalizeOnL1.map((finalizer) => ({ finalizer, genericFinalizer: false })),
+            ...finalizeOnL2.map((finalizer) => ({ finalizer, genericFinalizer: false }))
           );
           break;
       }
