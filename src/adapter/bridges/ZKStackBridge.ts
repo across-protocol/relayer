@@ -18,7 +18,7 @@ import {
   winston,
 } from "../../utils";
 import { processEvent, matchL2EthDepositAndWrapEvents } from "../utils";
-import { CONTRACT_ADDRESSES } from "../../common";
+import { getContractEntry } from "../../common";
 import { BridgeEvent, BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
 import { gasPriceOracle } from "@across-protocol/sdk";
 import { PUBLIC_NETWORKS } from "@across-protocol/constants";
@@ -54,7 +54,7 @@ export class ZKStackBridge extends BaseBridgeAdapter {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _logger: winston.Logger
   ) {
-    const { address: sharedBridgeAddress, abi: sharedBridgeAbi } = CONTRACT_ADDRESSES[hubChainId].zkStackSharedBridge;
+    const { address: sharedBridgeAddress, abi: sharedBridgeAbi } = getContractEntry(hubChainId, "zkStackSharedBridge");
     super(l2chainId, hubChainId, l1Signer, [EvmAddress.from(sharedBridgeAddress)]);
     this.sharedBridge = new Contract(sharedBridgeAddress, sharedBridgeAbi, l1Signer);
 
@@ -63,25 +63,29 @@ export class ZKStackBridge extends BaseBridgeAdapter {
     if (nativeToken !== "ETH") {
       this.gasToken = EvmAddress.from(resolveAcrossToken(nativeToken, hubChainId, true));
 
-      const { address: nativeTokenAddress, abi: nativeTokenAbi } = CONTRACT_ADDRESSES[l2chainId].nativeToken;
+      const { address: nativeTokenAddress, abi: nativeTokenAbi } = getContractEntry(l2chainId, "nativeToken");
       this.nativeToken = new Contract(nativeTokenAddress, nativeTokenAbi, l2SignerOrProvider);
-      const { address: wrappedNativeTokenAddress, abi: wrappedNativeTokenAbi } =
-        CONTRACT_ADDRESSES[l2chainId].wrappedNativeToken;
+      const { address: wrappedNativeTokenAddress, abi: wrappedNativeTokenAbi } = getContractEntry(
+        l2chainId,
+        "wrappedNativeToken"
+      );
       this.wrappedNativeToken = new Contract(wrappedNativeTokenAddress, wrappedNativeTokenAbi, l2SignerOrProvider);
     }
 
-    const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].zkStackBridgeHub;
+    const { address: l1Address, abi: l1Abi } = getContractEntry(hubChainId, "zkStackBridgeHub");
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
 
-    const { address: l2Address, abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].nativeTokenVault;
+    const { address: l2Address, abi: l2Abi } = getContractEntry(l2chainId, "nativeTokenVault");
     this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider);
 
-    const { address: nativeTokenVaultAddress, abi: nativeTokenVaultAbi } =
-      CONTRACT_ADDRESSES[hubChainId].zkStackNativeTokenVault;
+    const { address: nativeTokenVaultAddress, abi: nativeTokenVaultAbi } = getContractEntry(
+      hubChainId,
+      "zkStackNativeTokenVault"
+    );
     this.nativeTokenVault = new Contract(nativeTokenVaultAddress, nativeTokenVaultAbi, l1Signer);
 
     // This bridge treats hub pool transfers differently from EOA rebalances, so we must know the hub pool address.
-    const { address: hubPoolAddress, abi: hubPoolAbi } = CONTRACT_ADDRESSES[hubChainId].hubPool;
+    const { address: hubPoolAddress, abi: hubPoolAbi } = getContractEntry(hubChainId, "hubPool");
     this.hubPool = new Contract(hubPoolAddress, hubPoolAbi, l1Signer);
   }
 

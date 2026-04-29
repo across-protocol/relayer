@@ -75,8 +75,9 @@ export function getEndpointId(chainId: number): number {
  * @throws If oftEid is not defined for a chain or equal to OFT_NO_EID.
  */
 export function getChainIdFromEndpointId(eid: number): number {
-  const [chainId] = Object.entries(PUBLIC_NETWORKS).find(([, network]) => network.oftEid === eid);
-  return Number(chainId);
+  const entry = Object.entries(PUBLIC_NETWORKS).find(([, network]) => network.oftEid === eid);
+  assert(isDefined(entry), `No chain found for OFT endpoint ID: ${eid}`);
+  return Number(entry[0]);
 }
 
 /**
