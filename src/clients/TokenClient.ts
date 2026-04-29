@@ -187,7 +187,7 @@ export class TokenClient {
     let mrkdwn = "*Approval transactions:* \n";
     for (const { token: _token, chainId } of tokensToApprove) {
       const targetSpokePoolClient = this.spokePoolManager.getClient(chainId);
-      if (isEVMSpokePoolClient(targetSpokePoolClient)) {
+      if (isDefined(targetSpokePoolClient) && isEVMSpokePoolClient(targetSpokePoolClient)) {
         const targetSpokePool = targetSpokePoolClient.spokePool;
         const token = toAddressType(_token, chainId).toEvmAddress();
         const contract = new Contract(token, ERC20.abi, targetSpokePool.signer);
@@ -275,7 +275,7 @@ export class TokenClient {
         try {
           const remoteToken = getRemoteTokenForL1Token(address, chainId, this.hubPoolClient.chainId);
           // Validate that the remote token is a valid Solana address
-          assert(remoteToken.isSVM());
+          assert(isDefined(remoteToken) && remoteToken.isSVM());
           return remoteToken;
         } catch {
           // No known deployment for this token on the SpokePool.
@@ -356,11 +356,13 @@ export class TokenClient {
 
   private async updateEVM(chainId: number, hubPoolTokens: L1Token[]) {
     const spokePoolClient = this.spokePoolManager.getClient(chainId);
+    assert(isDefined(spokePoolClient), `SpokePoolClient not found for chainId ${chainId}`);
     assert(isEVMSpokePoolClient(spokePoolClient));
     const {
       spokePool: { provider },
       spokePoolAddress,
     } = spokePoolClient;
+    assert(isDefined(spokePoolAddress), `${chainId} spoke pool address not yet known`);
 
     const multicall3 = sdkUtils.getMulticall3(chainId, provider);
     if (!isDefined(multicall3)) {
@@ -427,10 +429,11 @@ export class TokenClient {
   }
 
   private _getAllowanceCacheKey(spokePoolClient: SpokePoolClient, originToken: string): string {
-    const { chainId } = spokePoolClient;
+    const { chainId, spokePoolAddress } = spokePoolClient;
+    assert(isDefined(spokePoolAddress), `${chainId} spoke pool address not yet known`);
     return `l2TokenAllowance_${chainId}_${originToken}_${
       this.relayerEvmAddress
-    }_targetContract:${spokePoolClient.spokePoolAddress.toEvmAddress()}`;
+    }_targetContract:${spokePoolAddress.toEvmAddress()}`;
   }
 
   private async _getAllowance(spokePoolClient: SpokePoolClient, token: Contract): Promise<BigNumber> {
@@ -442,9 +445,11 @@ export class TokenClient {
         return toBN(result);
       }
     }
+    const { spokePoolAddress } = spokePoolClient;
+    assert(isDefined(spokePoolAddress), `${spokePoolClient.chainId} spoke pool address not yet known`);
     const allowance: BigNumber = await token.allowance(
       this.relayerEvmAddress.toNative(),
-      spokePoolClient.spokePoolAddress.toEvmAddress()
+      spokePoolAddress.toEvmAddress()
     );
     if (allowance.gte(MAX_SAFE_ALLOWANCE) && redis) {
       // Save allowance in cache with no TTL as these should be exhausted.
