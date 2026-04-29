@@ -136,7 +136,7 @@ src/adapter/l2Bridges/UsdcCCTPBridge.ts(39,34): error TS2345: Argument of type '
 src/adapter/l2Bridges/UsdcCCTPBridge.ts(42,34): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
 src/adapter/utils.ts(82,32): error TS2532: Object is possibly 'undefined'.
 src/cctp-finalizer/services/cctpService.ts(295,11): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/cctp-finalizer/services/cctpService.ts(353,23): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
+src/cctp-finalizer/services/cctpService.ts(354,23): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
 src/cctp-finalizer/utils/evmUtils.ts(33,50): error TS2345: Argument of type 'unknown[] | undefined' is not assignable to parameter of type 'ContractInterface'.
 src/cctp-finalizer/utils/evmUtils.ts(44,27): error TS18048: 'hookData.maxBpsToSponsor' is possibly 'undefined'.
 src/cctp-finalizer/utils/evmUtils.ts(64,66): error TS18048: 'hookData' is possibly 'undefined'.
@@ -168,7 +168,7 @@ src/clients/MultiCallerClient.ts(410,80): error TS2322: Type 'string | undefined
 src/clients/MultiCallerClient.ts(413,13): error TS18048: 'txns' is possibly 'undefined'.
 src/clients/MultiCallerClient.ts(479,29): error TS18048: 'reason' is possibly 'undefined'.
 src/clients/MultiCallerClient.ts(596,84): error TS2345: Argument of type 'BigNumber | undefined' is not assignable to parameter of type 'BigNumber'.
-src/clients/ProfitClient.ts(168,80): error TS2345: Argument of type 'Rpc<SolanaRpcApiForTestClusters> | Provider | undefined' is not assignable to parameter of type 'Rpc<SolanaRpcApiForTestClusters> | Provider'.
+src/clients/ProfitClient.ts(168,80): error TS2345: Argument of type 'Provider | Rpc<SolanaRpcApiForTestClusters> | undefined' is not assignable to parameter of type 'Provider | Rpc<SolanaRpcApiForTestClusters>'.
 src/clients/ProfitClient.ts(732,13): error TS2532: Object is possibly 'undefined'.
 src/clients/ProfitClient.ts(869,7): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
 src/clients/ProfitClient.ts(882,23): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
@@ -347,10 +347,10 @@ src/finalizer/utils/oftRetry.ts(80,5): error TS2322: Type '{ target: string | un
 src/finalizer/utils/opStack.ts(276,31): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
 src/finalizer/utils/opStack.ts(290,38): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
 src/finalizer/utils/opStack.ts(331,31): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/finalizer/utils/opStack.ts(415,7): error TS2322: Type 'OpStackTargetChain' is not assignable to type '{ contracts: { l2OutputOracle: { 1: ChainContract; }; portal: { 1: ChainContract; }; }; } | { contracts: { l2OutputOracle: { 11155111: ChainContract; }; portal: { 11155111: ChainContract; }; }; } | { contracts: { portal: { 1: ChainContract; }; disputeGameFactory: { 1: ChainContract; }; }; } | { contracts: { portal: { 11155111: ChainContract; }; disputeGameFactory: { 11155111: ChainContract; }; }; } | undefined'.
+src/finalizer/utils/opStack.ts(415,7): error TS2322: Type 'OpStackTargetChain' is not assignable to type '{ contracts: { portal: { 1: ChainContract; }; l2OutputOracle: { 1: ChainContract; }; }; } | { contracts: { portal: { 11155111: ChainContract; }; l2OutputOracle: { 11155111: ChainContract; }; }; } | { contracts: { portal: { 1: ChainContract; }; disputeGameFactory: { 1: ChainContract; }; }; } | { contracts: { portal: { 11155111: ChainContract; }; disputeGameFactory: { 11155111: ChainContract; }; }; } | undefined'.
 src/finalizer/utils/opStack.ts(423,9): error TS2322: Type 'OpStackTargetChain' is not assignable to type '{ contracts: { portal: { 1: ChainContract; }; disputeGameFactory: { 1: ChainContract; }; }; } | { contracts: { portal: { 11155111: ChainContract; }; disputeGameFactory: { 11155111: ChainContract; }; }; } | { contracts: { l2OutputOracle: { 1: ChainContract; }; }; } | { contracts: { l2OutputOracle: { 11155111: ChainContract; }; }; } | undefined'.
 src/finalizer/utils/opStack.ts(434,11): error TS2322: Type 'string | undefined' is not assignable to type 'BytesLike'.
-src/finalizer/utils/opStack.ts(450,9): error TS2322: Type 'OpStackTargetChain' is not assignable to type '{ contracts: { l2OutputOracle: { 1: ChainContract; }; portal: { 1: ChainContract; }; }; } | { contracts: { l2OutputOracle: { 11155111: ChainContract; }; portal: { 11155111: ChainContract; }; }; } | undefined'.
+src/finalizer/utils/opStack.ts(450,9): error TS2322: Type 'OpStackTargetChain' is not assignable to type '{ contracts: { portal: { 1: ChainContract; }; l2OutputOracle: { 1: ChainContract; }; }; } | { contracts: { portal: { 11155111: ChainContract; }; l2OutputOracle: { 11155111: ChainContract; }; }; } | undefined'.
 src/finalizer/utils/opStack.ts(483,9): error TS2322: Type 'string | undefined' is not assignable to type 'BytesLike'.
 src/finalizer/utils/opStack.ts(613,7): error TS2322: Type 'BytesLike | undefined' is not assignable to type 'BytesLike'.
 src/finalizer/utils/opStack.ts(614,7): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
