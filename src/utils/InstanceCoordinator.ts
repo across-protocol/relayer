@@ -8,7 +8,7 @@ export class InstanceCoordinator {
     public readonly identifier: string,
     public readonly instance: string,
     private readonly abortController: AbortController,
-    public readonly instanceExpiry = 900
+    public readonly instanceExpiry = 1200
   ) {}
 
   async getActiveInstance(): Promise<string | undefined> {
