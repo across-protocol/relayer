@@ -35,8 +35,13 @@ if [ -z "$NO_CACHE" ] && [ -f "$ERRORS_FILE" ] && \
    [ -z "$(find $INPUTS "$0" -newer "$ERRORS_FILE" -type f 2>/dev/null | head -1)" ]; then
   : # cache hit
 else
-  yarn -s tsc --noEmit --strictNullChecks --incremental --tsBuildInfoFile "$BUILDINFO" 2>&1 \
-    | grep -E "^(src|scripts|index\.ts).*error TS" > "$ERRORS_FILE" || true
+  # Strip the worktree's absolute path so the cache is identical across developers.
+  # `--noErrorTruncation` keeps tsc from cutting messages mid-path, so the sed below
+  # can normalize every occurrence rather than leaving truncated stubs behind.
+  REPO_ROOT=$(pwd)
+  yarn -s tsc --noEmit --strictNullChecks --noErrorTruncation --incremental --tsBuildInfoFile "$BUILDINFO" 2>&1 \
+    | grep -E "^(src|scripts|index\.ts).*error TS" \
+    | sed "s#${REPO_ROOT}/##g" > "$ERRORS_FILE" || true
 fi
 ACTUAL=$(wc -l < "$ERRORS_FILE" | tr -d ' ')
 
