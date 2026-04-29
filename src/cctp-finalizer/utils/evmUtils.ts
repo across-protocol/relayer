@@ -3,7 +3,6 @@ import { utils } from "@across-protocol/sdk";
 import {
   winston,
   submitTransaction,
-  getCctpV2MessageTransmitter,
   CHAIN_IDs,
   decodeCctpV2HookData,
   TOKEN_SYMBOLS_MAP,
