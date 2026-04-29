@@ -128,7 +128,7 @@ src/adapter/l2Bridges/UsdcCCTPBridge.ts(39,34): error TS2345: Argument of type '
 src/adapter/l2Bridges/UsdcCCTPBridge.ts(42,34): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
 src/adapter/utils.ts(82,32): error TS2532: Object is possibly 'undefined'.
 src/cctp-finalizer/services/cctpService.ts(295,11): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/cctp-finalizer/services/cctpService.ts(353,23): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
+src/cctp-finalizer/services/cctpService.ts(354,23): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
 src/cctp-finalizer/utils/evmUtils.ts(33,50): error TS2345: Argument of type 'unknown[] | undefined' is not assignable to parameter of type 'ContractInterface'.
 src/cctp-finalizer/utils/evmUtils.ts(44,27): error TS18048: 'hookData.maxBpsToSponsor' is possibly 'undefined'.
 src/cctp-finalizer/utils/evmUtils.ts(64,66): error TS18048: 'hookData' is possibly 'undefined'.
@@ -303,8 +303,8 @@ src/finalizer/utils/helios.ts(444,85): error TS2345: Argument of type 'Address |
 src/finalizer/utils/helios.ts(447,75): error TS18048: 'l2SpokePoolClient.spokePoolAddress' is possibly 'undefined'.
 src/finalizer/utils/helios.ts(450,31): error TS18048: 'l2SpokePoolClient.spokePoolAddress' is possibly 'undefined'.
 src/finalizer/utils/linea/common.ts(44,25): error TS2345: Argument of type 'Signer | undefined' is not assignable to parameter of type 'Signer'.
-src/finalizer/utils/linea/common.ts(245,7): error TS2345: Argument of type 'unknown[] | undefined' is not assignable to parameter of type 'string | readonly (string | JsonFragment | Fragment)[]'.
-src/finalizer/utils/linea/l1ToL2.ts(42,44): error TS2345: Argument of type 'readonly Fragment[]' is not assignable to parameter of type 'string | readonly (string | JsonFragment | Fragment)[]'.
+src/finalizer/utils/linea/common.ts(245,7): error TS2345: Argument of type 'unknown[] | undefined' is not assignable to parameter of type 'string | readonly (string | Fragment | JsonFragment)[]'.
+src/finalizer/utils/linea/l1ToL2.ts(42,44): error TS2345: Argument of type 'readonly Fragment[]' is not assignable to parameter of type 'string | readonly (string | Fragment | JsonFragment)[]'.
 src/finalizer/utils/linea/l1ToL2.ts(70,5): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
 src/finalizer/utils/linea/l2ToL1.ts(126,34): error TS18047: 'parsedLog' is possibly 'null'.
 src/finalizer/utils/linea/l2ToL1.ts(127,26): error TS18047: 'parsedLog' is possibly 'null'.
@@ -468,8 +468,8 @@ src/utils/CCTPUtils.ts(134,42): error TS2345: Argument of type 'string | undefin
 src/utils/CCTPUtils.ts(413,30): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
 src/utils/CCTPUtils.ts(447,42): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
 src/utils/CCTPUtils.ts(462,42): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/utils/CCTPUtils.ts(508,62): error TS2345: Argument of type 'unknown[] | undefined' is not assignable to parameter of type 'string | readonly (string | JsonFragment | Fragment)[]'.
-src/utils/CCTPUtils.ts(509,66): error TS2345: Argument of type 'unknown[] | undefined' is not assignable to parameter of type 'string | readonly (string | JsonFragment | Fragment)[]'.
+src/utils/CCTPUtils.ts(508,62): error TS2345: Argument of type 'unknown[] | undefined' is not assignable to parameter of type 'string | readonly (string | Fragment | JsonFragment)[]'.
+src/utils/CCTPUtils.ts(509,66): error TS2345: Argument of type 'unknown[] | undefined' is not assignable to parameter of type 'string | readonly (string | Fragment | JsonFragment)[]'.
 src/utils/CCTPUtils.ts(656,29): error TS2322: Type 'number | undefined' is not assignable to type 'number'.
 src/utils/CCTPUtils.ts(700,20): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
 src/utils/CCTPUtils.ts(712,11): error TS2345: Argument of type 'Rpc<SolanaRpcApiForTestClusters> | undefined' is not assignable to parameter of type 'Rpc<SolanaRpcApiForTestClusters>'.

@@ -193,7 +193,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     }
 
     chainIds = Object.values(spokePoolClients).map(({ chainId }) => chainId);
-    inventoryClient = new MockInventoryClient(null, null, null, null, null, hubPoolClient);
+    inventoryClient = new MockInventoryClient(null, spyLogger, null, null, null, hubPoolClient);
     relayerInstance = new Relayer(
       relayer.address,
       spyLogger,
@@ -419,7 +419,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
           profitClient,
           multiCallerClient,
           tryMulticallClient,
-          inventoryClient: new MockInventoryClient(null, null, null, null, null, hubPoolClient),
+          inventoryClient: new MockInventoryClient(null, spyLogger, null, null, null, hubPoolClient),
           acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient, chainIds),
         },
         {
