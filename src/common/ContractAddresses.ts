@@ -368,6 +368,9 @@ export const CONTRACT_ADDRESSES: {
       address: getDeployedAddress("HyperliquidDepositHandler", CHAIN_IDs.HYPEREVM),
       abi: HYPERLIQUID_DEPOSIT_HANDLER_ABI,
     },
+    spokePoolPeriphery: {
+      abi: SPOKE_POOL_PERIPHERY_ABI,
+    },
   },
   [CHAIN_IDs.ZK_SYNC]: {
     nativeTokenVault: {
