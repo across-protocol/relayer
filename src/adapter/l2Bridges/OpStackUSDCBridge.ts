@@ -82,12 +82,12 @@ export class OpStackUSDCBridge extends BaseL2BridgeAdapter {
     from: EvmAddress,
     _l2Token: EvmAddress
   ): Promise<BigNumber> {
-    const sentFilter = this.l2Bridge.filters.MessageSent(from.toNative());
-    const receiveFilter = this.l1Bridge.filters.MessageReceived(from.toNative());
+    const sentFilter = this.getL2Bridge().filters.MessageSent(from.toNative());
+    const receiveFilter = this.getL1Bridge().filters.MessageReceived(from.toNative());
 
     const [l2Events, l1Events] = await Promise.all([
-      paginatedEventQuery(this.l2Bridge, sentFilter, l2EventConfig),
-      paginatedEventQuery(this.l1Bridge, receiveFilter, l1EventConfig),
+      paginatedEventQuery(this.getL2Bridge(), sentFilter, l2EventConfig),
+      paginatedEventQuery(this.getL1Bridge(), receiveFilter, l1EventConfig),
     ]);
 
     const counted = new Set<number>();

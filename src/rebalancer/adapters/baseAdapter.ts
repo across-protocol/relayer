@@ -52,7 +52,7 @@ export abstract class BaseAdapter implements RebalancerAdapter {
   protected allSourceChains: Set<number>;
   protected allSourceTokens: Set<string>;
 
-  protected REDIS_PREFIX: string;
+  protected abstract REDIS_PREFIX: string;
 
   constructor(
     readonly logger: winston.Logger,

@@ -27,8 +27,8 @@ import {
 } from "../errors";
 
 export class CCTPService {
-  private evmPrivateKey: string;
-  private svmPrivateKey: Uint8Array;
+  private evmPrivateKey?: string;
+  private svmPrivateKey?: Uint8Array;
   private logger: winston.Logger;
 
   constructor(logger?: winston.Logger) {
@@ -329,6 +329,7 @@ export class CCTPService {
       999: process.env.HYPEREVM_RPC_URL!,
       56: process.env.BSC_RPC_URL!,
       143: process.env.MONAD_RPC_URL!,
+      57073: process.env.INK_RPC_URL!,
       34268394551451: process.env.SOLANA_RPC_URL!,
       // Test networks
       11155111: process.env.SEPOLIA_RPC_URL!,

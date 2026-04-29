@@ -12,7 +12,7 @@
   "dependencies": {
     "@across-protocol/constants": "^3.1.109",
     "@across-protocol/contracts": "5.0.7",
-    "@across-protocol/sdk": "4.3.148",
+    "@across-protocol/sdk": "4.3.150",
     "@arbitrum/sdk": "^4.0.5",
     "@consensys/linea-sdk": "^0.3.0",
     "@coral-xyz/anchor": "^0.31.1",
@@ -56,14 +56,14 @@
   "main": "dist/index.js",
   "scripts": {
     "postinstall": "patch-package; npm run update-addresses",
-    "lint": "eslint . && prettier --list-different .",
-    "lint-fix": "eslint . --fix && prettier --write .",
-    "prettier": "prettier .",
-    "eslint": "eslint .",
+    "lint": "eslint --cache . && prettier --cache --list-different .",
+    "lint-fix": "eslint --cache --fix . && prettier --cache --write .",
     "test": "RELAYER_TEST=true hardhat test",
     "test:parallel": "RELAYER_TEST=true hardhat test --parallel",
     "build": "tsc --build",
     "typecheck": "tsc --noEmit",
+    "strict-null-budget": "./scripts/strict-null-budget.sh",
+    "update-strict": "./scripts/strict-null-budget.sh --auto-ratchet",
     "watch": "tsc --build --incremental --watch",
     "build:test": "tsc --project tsconfig.test.json",
     "clean": "dir=\"./node_modules\"; mv \"${dir}\" \"${dir}_\" 2>/dev/null && rm -r \"${dir}_\" & rm -f dist/tsconfig.tsbuildinfo",
@@ -125,11 +125,6 @@
     "sinon": "^21.1.2",
     "tar": "^7.5.13",
     "typescript": "^6"
-  },
-  "husky": {
-    "hooks": {
-      "pre-commit": "echo '🏃‍♂️ Running pretty-quick on staged files' && pretty-quick --staged"
-    }
   },
   "resolutions": {
     "protobufjs": "^7.5.4",

@@ -83,7 +83,7 @@ export class ScrollERC20Bridge extends BaseBridgeAdapter {
     toAddress: EvmAddress,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
-    const isL2Contract = await isContractDeployedToAddress(toAddress.toNative(), this.l2Bridge.provider);
+    const isL2Contract = await isContractDeployedToAddress(toAddress.toNative(), this.getL2Bridge().provider);
     const monitoredFromAddress: string = isL2Contract ? this.hubPoolAddress.toNative() : fromAddress.toNative();
 
     const l1Bridge = this.getL1Bridge();
@@ -108,7 +108,7 @@ export class ScrollERC20Bridge extends BaseBridgeAdapter {
     toAddress: EvmAddress,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
-    const isL2Contract = await isContractDeployedToAddress(toAddress.toNative(), this.l2Bridge.provider);
+    const isL2Contract = await isContractDeployedToAddress(toAddress.toNative(), this.getL2Bridge().provider);
     const monitoredFromAddress: string = isL2Contract ? this.hubPoolAddress.toNative() : fromAddress.toNative();
 
     const l2Bridge = this.getL2Bridge();
