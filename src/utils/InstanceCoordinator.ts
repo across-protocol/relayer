@@ -12,7 +12,7 @@ export class InstanceCoordinator {
   ) {}
 
   async getActiveInstance(): Promise<string | undefined> {
-    return (await this.redis.get(this.identifier)) ?? Promise.resolve(undefined);
+    return (await this.redis.get<string>(this.identifier)) ?? undefined;
   }
 
   setActiveInstance(): Promise<string> {
@@ -35,15 +35,28 @@ export class InstanceCoordinator {
 
   // Poor-man's subscription - just poll on a 1s interval.
   async subscribe(): Promise<string | undefined> {
-    let activeInstance: string | undefined;
+    const maxConsecutiveErrors = 10;
+    let consecutiveErrors = 0;
+    let activeInstance: string | undefined = this.instance;
     do {
       await delay(1);
       if (this.abortController.signal.aborted) {
-        activeInstance = undefined;
         break;
       }
 
-      activeInstance = await this.redis.get<string>(this.identifier);
+      try {
+        activeInstance = await this.redis.get<string>(this.identifier);
+        consecutiveErrors = 0;
+      } catch (err) {
+        if (++consecutiveErrors >= maxConsecutiveErrors) {
+          this.logger.error({
+            at: "Coordinator::subscribe",
+            message: "Redis unreachable; exiting.",
+            err: String(err),
+          });
+          break;
+        }
+      }
     } while (activeInstance === this.instance);
 
     if (activeInstance !== this.instance) {
