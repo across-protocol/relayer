@@ -210,7 +210,7 @@ function makeDepositMessage(
     depositId: "42",
     requestId: "req-test",
     signature: DUMMY_SIGNATURE,
-    permitType: "receiveWithAuthorization",
+    permitType: "erc3009",
     permit: {
       types: { ReceiveWithAuthorization: [] },
       domain: { name: "USD Coin", version: "2", chainId: ORIGIN_CHAIN_ID, verifyingContract: USDC_MAINNET },
