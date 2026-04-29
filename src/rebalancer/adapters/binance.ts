@@ -1,4 +1,4 @@
-import { Binance, NewOrderSpot, OrderType, OrderType_LT, QueryOrderResult, Symbol } from "binance-api-node";
+import { Binance, NewOrderSpot, OrderType, QueryOrderResult } from "binance-api-node";
 import {
   assert,
   BigNumber,
@@ -15,9 +15,14 @@ import {
   EvmAddress,
   forEachAsync,
   fromWei,
+  getAtomicDepositorContracts,
   getAccountCoins,
   getBinanceApiClient,
+  getFillCommission,
   getBinanceTransactionTypeKey,
+  isFailedBinanceWithdrawal,
+  isSameBinanceCoin,
+  isTerminalBinanceWithdrawal,
   getBinanceWithdrawals,
   getCurrentTime,
   getNetworkName,
@@ -25,13 +30,19 @@ import {
   getTokenInfoFromSymbol,
   isDefined,
   MAX_SAFE_ALLOWANCE,
+  resolveBinanceCoinSymbol,
   setBinanceDepositType,
   setBinanceWithdrawalType,
   Signer,
+  supportsBinanceIntermediateBridgeToken,
+  SpotMarketMeta,
   toBN,
   toBNWei,
   truncate,
+  usesBinanceAtomicDepositorTransfer,
   winston,
+  deriveBinanceSpotMarketMeta,
+  convertBinanceRouteAmount,
 } from "../../utils";
 import { OrderDetails, RebalanceRoute } from "../utils/interfaces";
 import { STATUS } from "../utils/utils";
@@ -40,136 +51,7 @@ import { AugmentedTransaction, MultiCallerClient } from "../../clients";
 import { RebalancerConfig } from "../RebalancerConfig";
 import { CctpAdapter } from "./cctpAdapter";
 import { OftAdapter } from "./oftAdapter";
-import { CONTRACT_ADDRESSES } from "../../common";
 import WETH_ABI from "../../common/abi/Weth.json";
-
-interface SPOT_MARKET_META {
-  symbol: string;
-  baseAssetName: string;
-  quoteAssetName: string;
-  pxDecimals: number;
-  szDecimals: number;
-  minimumOrderSize: number;
-  isBuy: boolean;
-}
-
-export function isFailedBinanceWithdrawal(status?: number): boolean {
-  switch (status) {
-    case BINANCE_WITHDRAWAL_STATUS.CANCELLED:
-    case BINANCE_WITHDRAWAL_STATUS.REJECTED:
-    case BINANCE_WITHDRAWAL_STATUS.FAILURE:
-      return true;
-    default:
-      return false;
-  }
-}
-
-export function isTerminalBinanceWithdrawal(status?: number): boolean {
-  switch (status) {
-    case BINANCE_WITHDRAWAL_STATUS.CANCELLED:
-    case BINANCE_WITHDRAWAL_STATUS.REJECTED:
-    case BINANCE_WITHDRAWAL_STATUS.FAILURE:
-    case BINANCE_WITHDRAWAL_STATUS.COMPLETED:
-      return true;
-    default:
-      return false;
-  }
-}
-
-export function resolveBinanceCoinSymbol(token: string): string {
-  return token === "WETH" ? "ETH" : token;
-}
-
-export function isSameBinanceCoin(sourceToken: string, destinationToken: string): boolean {
-  return resolveBinanceCoinSymbol(sourceToken) === resolveBinanceCoinSymbol(destinationToken);
-}
-
-export function supportsBinanceIntermediateBridgeToken(token: string): boolean {
-  return token === "USDC" || token === "USDT";
-}
-
-function getAtomicDepositorContracts(chainId: number):
-  | {
-      atomicDepositorAddress: string;
-      atomicDepositorAbi: unknown[];
-      transferProxyAddress: string;
-      transferProxyAbi: unknown[];
-    }
-  | undefined {
-  const chainContracts = CONTRACT_ADDRESSES[chainId];
-  const atomicDepositorAddress = chainContracts?.atomicDepositor?.address;
-  const atomicDepositorAbi = chainContracts?.atomicDepositor?.abi;
-  const transferProxyAddress = chainContracts?.atomicDepositorTransferProxy?.address;
-  const transferProxyAbi = chainContracts?.atomicDepositorTransferProxy?.abi;
-  if (
-    !isDefined(atomicDepositorAddress) ||
-    !isDefined(atomicDepositorAbi) ||
-    !isDefined(transferProxyAddress) ||
-    !isDefined(transferProxyAbi)
-  ) {
-    return undefined;
-  }
-  return { atomicDepositorAddress, atomicDepositorAbi, transferProxyAddress, transferProxyAbi };
-}
-
-function usesBinanceAtomicDepositorTransfer(token: string, chainId: number): boolean {
-  return token === "WETH" && isDefined(getAtomicDepositorContracts(chainId));
-}
-
-export function deriveBinanceSpotMarketMeta(
-  sourceToken: string,
-  destinationToken: string,
-  symbol: Symbol<OrderType_LT>
-): SPOT_MARKET_META {
-  const sourceAsset = resolveBinanceCoinSymbol(sourceToken);
-  const destinationAsset = resolveBinanceCoinSymbol(destinationToken);
-  const isBuy = symbol.baseAsset === destinationAsset && symbol.quoteAsset === sourceAsset;
-  const isSell = symbol.baseAsset === sourceAsset && symbol.quoteAsset === destinationAsset;
-  assert(isBuy || isSell, `No spot market meta found for route: ${sourceToken}-${destinationToken}`);
-
-  const priceFilter = symbol.filters.find((filter) => filter.filterType === "PRICE_FILTER");
-  const sizeFilter = symbol.filters.find((filter) => filter.filterType === "LOT_SIZE");
-  assert(isDefined(priceFilter?.tickSize), `PRICE_FILTER missing tickSize for ${symbol.symbol}`);
-  assert(isDefined(sizeFilter?.stepSize) && isDefined(sizeFilter?.minQty), `LOT_SIZE missing for ${symbol.symbol}`);
-
-  return {
-    symbol: symbol.symbol,
-    baseAssetName: symbol.baseAsset,
-    quoteAssetName: symbol.quoteAsset,
-    pxDecimals: resolveStepPrecision(priceFilter.tickSize),
-    szDecimals: resolveStepPrecision(sizeFilter.stepSize),
-    minimumOrderSize: Number(sizeFilter.minQty),
-    isBuy,
-  };
-}
-
-export function convertBinanceRouteAmount(params: {
-  amount: BigNumber;
-  sourceTokenDecimals: number;
-  destinationTokenDecimals: number;
-  isBuy: boolean;
-  price: number;
-  direction: "source-to-destination" | "destination-to-source";
-}): BigNumber {
-  const isSourceToDestination = params.direction === "source-to-destination";
-  const inputDecimals = isSourceToDestination ? params.sourceTokenDecimals : params.destinationTokenDecimals;
-  const outputDecimals = isSourceToDestination ? params.destinationTokenDecimals : params.sourceTokenDecimals;
-  const readableAmount = Number(fromWei(params.amount, inputDecimals));
-  const convertedAmount = isSourceToDestination
-    ? params.isBuy
-      ? readableAmount / params.price
-      : readableAmount * params.price
-    : params.isBuy
-      ? readableAmount * params.price
-      : readableAmount / params.price;
-
-  return toBNWei(truncate(convertedAmount, outputDecimals), outputDecimals);
-}
-function resolveStepPrecision(stepSize: string): number {
-  const normalized = stepSize.replace(/0+$/, "").replace(/\.$/, "");
-  const decimalPart = normalized.split(".")[1];
-  return decimalPart?.length ?? 0;
-}
 
 export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   private binanceApiClient: Binance;
@@ -180,7 +62,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     { fetchedAtMs: number; book: Awaited<ReturnType<Binance["book"]>> }
   >();
   private tradeFeesPromise?: ReturnType<Binance["tradeFee"]>;
-  private spotMarketMetaPromiseByRoute = new Map<string, Promise<SPOT_MARKET_META>>();
+  private spotMarketMetaPromiseByRoute = new Map<string, Promise<SpotMarketMeta>>();
 
   REDIS_PREFIX = "binance-stablecoin-swap:";
   private static readonly ORDER_BOOK_CACHE_TTL_MS = 30_000;
@@ -452,7 +334,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       const matchingFill = await this._getMatchingFillForCloid(cloid, this.baseSignerAddress);
       if (matchingFill) {
         const balance = await this._getBinanceBalance(destinationToken);
-        const withdrawAmount = Number(matchingFill.expectedAmountToReceive);
+        const withdrawAmount = matchingFill.expectedAmountToReceive;
         if (balance < withdrawAmount) {
           this.logger.debug({
             at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",
@@ -692,7 +574,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       if (matchingFill) {
         const destinationTokenInfo = this._getTokenInfo(destinationToken, destinationChain);
         expectedAmountToReceive = toBNWei(
-          truncate(Number(matchingFill.expectedAmountToReceive), destinationTokenInfo.decimals),
+          truncate(matchingFill.expectedAmountToReceive, destinationTokenInfo.decimals),
           destinationTokenInfo.decimals
         );
       } else {
@@ -974,7 +856,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       : "0";
     const tradeFee = toBNWei(truncate(Number(tradeFeePct), 18), 18)
       .mul(amountToTransfer)
-      .div(toBNWei(100, 18));
+      .div(toBNWei(1, 18));
     const destinationCoin = await this._getAccountCoins(destinationToken);
     const destinationEntrypointNetwork = await this._getEntrypointNetwork(destinationChain, destinationToken);
     const withdrawFee = destinationCoin.networkList.find(
@@ -1379,7 +1261,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     });
   }
 
-  private async _getSpotMarketMetaForRoute(sourceToken: string, destinationToken: string): Promise<SPOT_MARKET_META> {
+  private async _getSpotMarketMetaForRoute(sourceToken: string, destinationToken: string): Promise<SpotMarketMeta> {
     assert(
       this._routeRequiresSwap(sourceToken, destinationToken),
       `Route ${sourceToken}-${destinationToken} does not require a Binance spot market`
@@ -1479,7 +1361,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   private async _getMatchingFillForCloid(
     cloid: string,
     account: EvmAddress
-  ): Promise<{ matchingFill: QueryOrderResult; expectedAmountToReceive: string } | undefined> {
+  ): Promise<{ matchingFill: QueryOrderResult; expectedAmountToReceive: number } | undefined> {
     const orderDetails = await this._redisGetOrderDetails(cloid, account);
     const spotMarketMeta = await this._getSpotMarketMetaForRoute(
       orderDetails.sourceToken,
@@ -1492,7 +1374,11 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     if (!matchingFill) {
       return undefined;
     }
-    const expectedAmountToReceive = spotMarketMeta.isBuy ? matchingFill.executedQty : matchingFill.cummulativeQuoteQty;
+    const grossExpectedAmountToReceive = spotMarketMeta.isBuy
+      ? matchingFill.executedQty
+      : matchingFill.cummulativeQuoteQty;
+    const fillCommission = await getFillCommission(this.binanceApiClient, spotMarketMeta, matchingFill.orderId);
+    const expectedAmountToReceive = Number(grossExpectedAmountToReceive) - fillCommission;
     return { matchingFill, expectedAmountToReceive };
   }
 
@@ -1591,10 +1477,9 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     return this.REDIS_KEY_INITIATED_WITHDRAWALS + ":" + cloid;
   }
 
-  private async _redisGetInitiatedWithdrawalId(cloid: string): Promise<string> {
+  private async _redisGetInitiatedWithdrawalId(cloid: string): Promise<string | null> {
     const initiatedWithdrawalKey = this._redisGetInitiatedWithdrawalKey(cloid);
-    const initiatedWithdrawal = await this.redisCache.get<string>(initiatedWithdrawalKey);
-    return initiatedWithdrawal;
+    return this.redisCache.get<string>(initiatedWithdrawalKey);
   }
 
   private async _redisDeleteInitiatedWithdrawalId(cloid: string): Promise<void> {

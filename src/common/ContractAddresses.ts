@@ -365,6 +365,9 @@ export const CONTRACT_ADDRESSES: {
       address: getDeployedAddress("HyperliquidDepositHandler", CHAIN_IDs.HYPEREVM),
       abi: HYPERLIQUID_DEPOSIT_HANDLER_ABI,
     },
+    spokePoolPeriphery: {
+      abi: SPOKE_POOL_PERIPHERY_ABI,
+    },
   },
   [CHAIN_IDs.ZK_SYNC]: {
     nativeTokenVault: {
@@ -646,6 +649,15 @@ export const CONTRACT_ADDRESSES: {
       address: "0x0000000000000000000000000000000000000000",
     },
   },
+  [CHAIN_IDs.TRON]: {
+    spokePoolPeriphery: {
+      abi: SPOKE_POOL_PERIPHERY_ABI,
+    },
+    permit2: {
+      address: "0xBE365314f2E77FD1257d60C346Bb32DbDa369403",
+      abi: PERMIT2_ABI,
+    },
+  },
   [CHAIN_IDs.SCROLL]: {
     scrollGatewayRouter: {
       address: "0x4C0926FF5252A435FD19e10ED15e5a249Ba19d79",
@@ -667,6 +679,11 @@ export const CONTRACT_ADDRESSES: {
     },
     nativeToken: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
+    },
+  },
+  [CHAIN_IDs.TEMPO]: {
+    nativeToken: {
+      address: "0x20C0000000000000000000000000000000000000",
     },
   },
   // Testnets

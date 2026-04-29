@@ -1,4 +1,4 @@
-import { BundleDataApproxClient } from "../clients";
+import { BinanceClient, BundleDataApproxClient } from "../clients";
 import { EXPECTED_L1_TO_L2_MESSAGE_TIME } from "../common";
 import {
   BundleAction,
@@ -45,8 +45,6 @@ import {
   chainIsTvm,
   SvmAddress,
   assert,
-  getBinanceApiClient,
-  getBinanceWithdrawalLimits,
   getSolanaTokenBalance,
   getFillStatusPda,
   getKitKeypairFromEvmSigner,
@@ -677,8 +675,8 @@ export class Monitor {
   }
 
   async checkBinanceWithdrawalLimits() {
-    const binanceApi = await getBinanceApiClient(process.env["BINANCE_API_BASE"]);
-    const wdQuota = await getBinanceWithdrawalLimits(binanceApi);
+    const client = await BinanceClient.create({ logger: this.logger, url: process.env.BINANCE_API_BASE });
+    const wdQuota = await client.getWithdrawalLimits();
     const aboveWarnThreshold =
       isDefined(this.monitorConfig.binanceWithdrawWarnThreshold) &&
       wdQuota.usedWdQuota / wdQuota.wdQuota > this.monitorConfig.binanceWithdrawWarnThreshold;

@@ -45,8 +45,8 @@ export function sortRelayerRefundLeaves(relayerRefundLeaves: RelayerRefundLeafWi
       }
     })
     .map((leaf: RelayerRefundLeafWithGroup, i: number): RelayerRefundLeaf => {
-      delete leaf.groupIndex; // Delete group index now that we've used it to sort leaves for the same
-      // { repaymentChain, l2TokenAddress } since it doesn't exist in RelayerRefundLeaf
-      return { ...leaf, leafId: i };
+      // Drop groupIndex: only used for sorting within { repaymentChain, l2TokenAddress }; not part of RelayerRefundLeaf.
+      const { groupIndex: _groupIndex, ...rest } = leaf;
+      return { ...rest, leafId: i };
     });
 }

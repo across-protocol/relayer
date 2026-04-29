@@ -13,7 +13,7 @@ export type RefillBalanceData = {
 
 export class RefillerConfig extends CommonConfig {
   readonly refillEnabledBalances: RefillBalanceData[] = [];
-  readonly nativeMarketsApiConfig: { apiKey: string; apiUrl: string };
+  readonly nativeMarketsApiConfig?: { apiKey: string; apiUrl: string };
   readonly minUsdhRebalanceAmount: BigNumber;
 
   constructor(env: ProcessEnv) {

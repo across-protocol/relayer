@@ -1,27 +1,39 @@
 import Binance, {
-  HttpMethod,
   DepositHistoryResponse,
   WithdrawHistoryResponse,
+  OrderType_LT,
+  Symbol,
   type Binance as BinanceApi,
 } from "binance-api-node";
 export type { BinanceApi };
 import minimist from "minimist";
-import { getGckmsConfig, retrieveGckmsKeys, isDefined, assert, delay, CHAIN_IDs, getRedisCache, truncate } from "./";
+import { getGckmsConfig, retrieveGckmsKeys, isDefined, assert, CHAIN_IDs, getRedisCache, truncate } from "./";
+import { CONTRACT_ADDRESSES } from "../common";
+import { BigNumber } from "./BNUtils";
+import { fromWei, retry, toBNWei } from "./SDKUtils";
 
 // Store global promises on Gckms key retrieval actions so that we don't retrieve the same key multiple times.
 let binanceSecretKeyPromise: Promise<string | undefined> | undefined = undefined;
 
-// Known transient errors the Binance API returns. If a response is one of these errors, then the API call should be retried.
-const KNOWN_BINANCE_ERROR_REASONS = [
-  "Timestamp for this request is outside of the recvWindow",
-  "Too many requests; current request has limited",
-  "TypeError: fetch failed",
-];
+const BINANCE_TRADES_FETCH_LIMIT = 1000;
 
-type WithdrawalQuota = {
+export type WithdrawalQuota = {
   wdQuota: number;
   usedWdQuota: number;
 };
+
+export type SpotMarketMeta = {
+  symbol: string;
+  baseAssetName: string;
+  quoteAssetName: string;
+  pxDecimals: number;
+  szDecimals: number;
+  minimumOrderSize: number;
+  isBuy: boolean;
+};
+
+type BinanceTradeReader = Pick<BinanceApi, "myTrades">;
+type FillCommissionMarketMeta = Pick<SpotMarketMeta, "symbol" | "baseAssetName" | "quoteAssetName" | "isBuy">;
 
 // Alias for Binance network symbols.
 export const BINANCE_NETWORKS: { [chainId: number]: string } = {
@@ -31,6 +43,8 @@ export const BINANCE_NETWORKS: { [chainId: number]: string } = {
   [CHAIN_IDs.MAINNET]: "ETH",
   [CHAIN_IDs.OPTIMISM]: "OPTIMISM",
   [CHAIN_IDs.ZK_SYNC]: "ZKSYNCERA",
+  [CHAIN_IDs.TRON]: "TRX",
+  [CHAIN_IDs.POLYGON]: "MATIC",
 };
 
 // A Coin contains balance data and network information (such as withdrawal limits, extra information about the network, etc.) for a specific
@@ -49,6 +63,9 @@ type Network = {
   withdrawMax: string;
   contractAddress: string;
   withdrawFee: string;
+  depositEnable?: boolean;
+  withdrawEnable?: boolean;
+  withdrawTag?: boolean;
 };
 
 // A BinanceDeposit is either a simplified element of the return type of the Binance API's `depositHistory`.
@@ -87,6 +104,38 @@ export enum BINANCE_WITHDRAWAL_STATUS {
   PROCESSING = 4,
   FAILURE = 5,
   COMPLETED = 6,
+}
+
+export function readableBinanceWithdrawalStatus(status?: number): string {
+  switch (status) {
+    case BINANCE_WITHDRAWAL_STATUS.EMAIL_SENT:
+      return "email-sent";
+    case BINANCE_WITHDRAWAL_STATUS.CANCELLED:
+      return "cancelled";
+    case BINANCE_WITHDRAWAL_STATUS.AWAITING_APPROVAL:
+      return "awaiting-approval";
+    case BINANCE_WITHDRAWAL_STATUS.REJECTED:
+      return "rejected";
+    case BINANCE_WITHDRAWAL_STATUS.PROCESSING:
+      return "processing";
+    case BINANCE_WITHDRAWAL_STATUS.FAILURE:
+      return "failure";
+    case BINANCE_WITHDRAWAL_STATUS.COMPLETED:
+      return "completed";
+    default:
+      return "unknown";
+  }
+}
+
+export function resolveBinanceCoinSymbol(token: string): string {
+  switch (token) {
+    case "WETH":
+      return "ETH";
+    case "ZKUSDCE":
+      return "USDC";
+    default:
+      return token;
+  }
 }
 
 // ParsedAccountCoins represents a simplified return type of the Binance `accountCoins` endpoint.
@@ -150,27 +199,6 @@ async function retrieveBinanceSecretKeyFromCLIArgs(): Promise<string | undefined
     return undefined;
   }
   return binanceKeys[0].slice(2);
-}
-
-/**
- * Retrieves the input client account's withdrawal quota.
- * @dev This is in a utility function since the Binance API does not natively support calling this endpoint.
- * @returns an object with two fields: `wdQuota` and `usedWdQuota`, corresponding to the total amount
- * available to rebalance per day and the amount already used.
- */
-export async function getBinanceWithdrawalLimits(binanceApi: BinanceApi): Promise<WithdrawalQuota> {
-  const unparsedQuota = (await binanceApi.privateRequest(
-    "GET" as HttpMethod,
-    "/sapi/v1/capital/withdraw/quota",
-    {}
-  )) as {
-    wdQuota: number;
-    usedWdQuota: number;
-  };
-  return {
-    wdQuota: unparsedQuota.wdQuota,
-    usedWdQuota: unparsedQuota.usedWdQuota,
-  };
 }
 
 export enum BinanceTransactionType {
@@ -274,25 +302,15 @@ export function isCompletedBinanceWithdrawal(status?: number): boolean {
 export async function getBinanceDeposits(
   binanceApi: BinanceApi,
   startTime: number,
-  nRetries = 0,
-  maxRetries = 3
+  maxRetries = 3,
+  delayS = 2
 ): Promise<BinanceDeposit[]> {
-  let depositHistory: DepositHistoryResponse;
-  try {
-    depositHistory = await binanceApi.depositHistory({ startTime });
-  } catch (_err) {
-    const err = _err.toString();
-    if (KNOWN_BINANCE_ERROR_REASONS.some((errorReason) => err.includes(errorReason)) && nRetries < maxRetries) {
-      const delaySeconds = 2 ** nRetries + Math.random();
-      await delay(delaySeconds);
-      return getBinanceDeposits(binanceApi, startTime, ++nRetries, maxRetries);
-    }
-    throw err;
-  }
+  const fn = () => binanceApi.depositHistory.bind(binanceApi)({ startTime });
+  const depositHistory = await retry<DepositHistoryResponse>(fn, maxRetries, delayS);
   return Object.values(depositHistory).map((deposit) => {
     return {
       amount: Number(deposit.amount),
-      coin: deposit.coin,
+      coin: resolveBinanceCoinSymbol(deposit.coin),
       network: deposit.network,
       txId: deposit.txId,
       status: deposit.status,
@@ -309,27 +327,17 @@ export async function getBinanceWithdrawals(
   binanceApi: BinanceApi,
   coin: string,
   startTime: number,
-  nRetries = 0,
-  maxRetries = 3
+  maxRetries = 3,
+  delayS = 2
 ): Promise<BinanceWithdrawal[]> {
-  let withdrawHistory: WithdrawHistoryResponse;
-  try {
-    withdrawHistory = await binanceApi.withdrawHistory({ coin, startTime });
-  } catch (_err) {
-    const err = _err.toString();
-    if (KNOWN_BINANCE_ERROR_REASONS.some((errorReason) => err.includes(errorReason)) && nRetries < maxRetries) {
-      const delaySeconds = 2 ** nRetries + Math.random();
-      await delay(delaySeconds);
-      return getBinanceWithdrawals(binanceApi, coin, startTime, ++nRetries, maxRetries);
-    }
-    throw err;
-  }
+  const fn = () => binanceApi.withdrawHistory.bind(binanceApi)({ coin: resolveBinanceCoinSymbol(coin), startTime });
+  const withdrawHistory = await retry<WithdrawHistoryResponse>(fn, maxRetries, delayS);
   return Object.values(withdrawHistory).map((withdrawal) => {
     return {
       amount: Number(withdrawal.amount),
       transactionFee: Number(withdrawal.transactionFee),
       recipient: withdrawal.address,
-      coin,
+      coin: resolveBinanceCoinSymbol(coin),
       id: withdrawal.id,
       txId: withdrawal.txId,
       network: withdrawal.network,
@@ -337,6 +345,24 @@ export async function getBinanceWithdrawals(
       applyTime: withdrawal.applyTime,
     } satisfies BinanceWithdrawal;
   });
+}
+
+export async function getFillCommission(
+  binanceApi: BinanceTradeReader,
+  spotMarketMeta: FillCommissionMarketMeta,
+  orderId: number
+): Promise<number> {
+  const receivedAsset = spotMarketMeta.isBuy ? spotMarketMeta.baseAssetName : spotMarketMeta.quoteAssetName;
+  // Binance `myTrades` returns the most recent trades when `fromId` is omitted, so naively paging
+  // forward from that first page can skip older fills. We intentionally read a single page here
+  // because these rebalance orders are not expected to fragment into >1000 fills. If that ever
+  // changes in production, replace this with an explicit oldest-to-newest pagination strategy.
+  const trades = await getBinanceFillTrades(binanceApi, spotMarketMeta.symbol, orderId);
+  return trades.reduce(
+    (acc, trade) =>
+      acc + (resolveBinanceCoinSymbol(trade.commissionAsset) === receivedAsset ? Number(trade.commission) : 0),
+    0
+  );
 }
 
 /**
@@ -353,11 +379,14 @@ export async function getAccountCoins(binanceApi: BinanceApi): Promise<ParsedAcc
     const networkList = coin.networkList?.map((network) => {
       return {
         name: network["network"],
-        coin: network["coin"],
+        coin: resolveBinanceCoinSymbol(network["coin"] as string),
         withdrawMin: network["withdrawMin"],
         withdrawMax: network["withdrawMax"],
         withdrawFee: network["withdrawFee"],
         contractAddress: network["contractAddress"],
+        depositEnable: network["depositEnable"] as boolean | undefined,
+        withdrawEnable: network["withdrawEnable"] as boolean | undefined,
+        withdrawTag: network["withdrawTag"] as boolean | undefined,
       } as Network;
     });
     return {
@@ -366,6 +395,22 @@ export async function getAccountCoins(binanceApi: BinanceApi): Promise<ParsedAcc
       networkList,
     } as Coin;
   });
+}
+
+async function getBinanceFillTrades(
+  binanceApi: BinanceTradeReader,
+  symbol: string,
+  orderId: number,
+  maxRetries = 3,
+  delayS = 2
+): Promise<Awaited<ReturnType<BinanceApi["myTrades"]>>> {
+  const fn = () =>
+    binanceApi.myTrades.bind(binanceApi)({
+      symbol,
+      orderId,
+      limit: BINANCE_TRADES_FETCH_LIMIT,
+    });
+  return retry(fn, maxRetries, delayS);
 }
 
 /**
@@ -432,4 +477,126 @@ export function getOutstandingBinanceDeposits(
 
   // Filter for the deposits on the specific network and return them.
   return outstandingDeposits.filter((deposit) => deposit.network === depositNetwork);
+}
+
+export function isFailedBinanceWithdrawal(status?: number): boolean {
+  switch (status) {
+    case BINANCE_WITHDRAWAL_STATUS.CANCELLED:
+    case BINANCE_WITHDRAWAL_STATUS.REJECTED:
+    case BINANCE_WITHDRAWAL_STATUS.FAILURE:
+      return true;
+    default:
+      return false;
+  }
+}
+
+export function isTerminalBinanceWithdrawal(status?: number): boolean {
+  switch (status) {
+    case BINANCE_WITHDRAWAL_STATUS.CANCELLED:
+    case BINANCE_WITHDRAWAL_STATUS.REJECTED:
+    case BINANCE_WITHDRAWAL_STATUS.FAILURE:
+    case BINANCE_WITHDRAWAL_STATUS.COMPLETED:
+      return true;
+    default:
+      return false;
+  }
+}
+
+export function isSameBinanceCoin(sourceToken: string, destinationToken: string): boolean {
+  return resolveBinanceCoinSymbol(sourceToken) === resolveBinanceCoinSymbol(destinationToken);
+}
+
+export function supportsBinanceIntermediateBridgeToken(token: string): boolean {
+  return token === "USDC" || token === "USDT";
+}
+
+export function getAtomicDepositorContracts(chainId: number):
+  | {
+      atomicDepositorAddress: string;
+      atomicDepositorAbi: unknown[];
+      transferProxyAddress: string;
+      transferProxyAbi: unknown[];
+    }
+  | undefined {
+  const chainContracts = CONTRACT_ADDRESSES[chainId];
+  const atomicDepositorAddress = chainContracts?.atomicDepositor?.address;
+  const atomicDepositorAbi = chainContracts?.atomicDepositor?.abi;
+  const transferProxyAddress = chainContracts?.atomicDepositorTransferProxy?.address;
+  const transferProxyAbi = chainContracts?.atomicDepositorTransferProxy?.abi;
+
+  if (
+    !isDefined(atomicDepositorAddress) ||
+    !isDefined(atomicDepositorAbi) ||
+    !isDefined(transferProxyAddress) ||
+    !isDefined(transferProxyAbi)
+  ) {
+    return undefined;
+  }
+
+  return {
+    atomicDepositorAddress,
+    atomicDepositorAbi,
+    transferProxyAddress,
+    transferProxyAbi,
+  };
+}
+
+export function usesBinanceAtomicDepositorTransfer(token: string, chainId: number): boolean {
+  return token === "WETH" && isDefined(getAtomicDepositorContracts(chainId));
+}
+
+export function deriveBinanceSpotMarketMeta(
+  sourceToken: string,
+  destinationToken: string,
+  symbol: Symbol<OrderType_LT>
+): SpotMarketMeta {
+  const sourceAsset = resolveBinanceCoinSymbol(sourceToken);
+  const destinationAsset = resolveBinanceCoinSymbol(destinationToken);
+  const isBuy = symbol.baseAsset === destinationAsset && symbol.quoteAsset === sourceAsset;
+  const isSell = symbol.baseAsset === sourceAsset && symbol.quoteAsset === destinationAsset;
+  assert(isBuy || isSell, `No spot market meta found for route: ${sourceToken}-${destinationToken}`);
+
+  const priceFilter = symbol.filters.find((filter) => filter.filterType === "PRICE_FILTER");
+  const sizeFilter = symbol.filters.find((filter) => filter.filterType === "LOT_SIZE");
+  assert(isDefined(priceFilter?.tickSize), `PRICE_FILTER missing tickSize for ${symbol.symbol}`);
+  assert(isDefined(sizeFilter?.stepSize) && isDefined(sizeFilter?.minQty), `LOT_SIZE missing for ${symbol.symbol}`);
+
+  return {
+    symbol: symbol.symbol,
+    baseAssetName: symbol.baseAsset,
+    quoteAssetName: symbol.quoteAsset,
+    pxDecimals: resolveStepPrecision(priceFilter.tickSize),
+    szDecimals: resolveStepPrecision(sizeFilter.stepSize),
+    minimumOrderSize: Number(sizeFilter.minQty),
+    isBuy,
+  };
+}
+
+export function convertBinanceRouteAmount(params: {
+  amount: BigNumber;
+  sourceTokenDecimals: number;
+  destinationTokenDecimals: number;
+  isBuy: boolean;
+  price: number;
+  direction: "source-to-destination" | "destination-to-source";
+}): BigNumber {
+  const isSourceToDestination = params.direction === "source-to-destination";
+  const inputDecimals = isSourceToDestination ? params.sourceTokenDecimals : params.destinationTokenDecimals;
+  const outputDecimals = isSourceToDestination ? params.destinationTokenDecimals : params.sourceTokenDecimals;
+  const readableAmount = Number(fromWei(params.amount, inputDecimals));
+  const convertedAmount = isSourceToDestination
+    ? params.isBuy
+      ? readableAmount / params.price
+      : readableAmount * params.price
+    : params.isBuy
+      ? readableAmount * params.price
+      : readableAmount / params.price;
+
+  return toBNWei(truncate(convertedAmount, outputDecimals), outputDecimals);
+}
+
+function resolveStepPrecision(stepSize: string): number {
+  const normalized = stepSize.replace(/0+$/, "").replace(/\.$/, "");
+  const decimalPart = normalized.split(".")[1];
+  return decimalPart?.length ?? 0;
 }

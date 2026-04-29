@@ -4,7 +4,7 @@ import {
   CHAIN_IDs,
   getNativeTokenAddressForChain,
   isDefined,
-  TOKEN_SYMBOLS_MAP,
+  resolveAcrossToken,
   Address,
   toAddressType,
   parseJson,
@@ -30,7 +30,6 @@ export class MonitorConfig extends CommonConfig {
   readonly utilizationThreshold: number;
   readonly hubPoolStartingBlock: number | undefined;
   readonly hubPoolEndingBlock: number | undefined;
-  readonly stuckRebalancesEnabled: boolean;
   readonly monitoredRelayers: Address[];
   readonly monitoredSpokePoolChains: number[];
   readonly monitoredTokenSymbols: string[];
@@ -110,8 +109,8 @@ export class MonitorConfig extends CommonConfig {
     this.bundlesCount = Number(BUNDLES_COUNT ?? 4);
     this.additionalL1NonLpTokens = parseJson
       .stringArray(MONITOR_REPORT_NON_LP_TOKENS)
-      .filter((token) => TOKEN_SYMBOLS_MAP[token]?.addresses[CHAIN_IDs.MAINNET])
-      .map((token) => TOKEN_SYMBOLS_MAP[token].addresses[CHAIN_IDs.MAINNET]);
+      .map((token) => resolveAcrossToken(token, CHAIN_IDs.MAINNET))
+      .filter(isDefined);
 
     this.binanceWithdrawWarnThreshold = Number(BINANCE_WITHDRAW_WARN_THRESHOLD ?? 1);
     this.binanceWithdrawAlertThreshold = Number(BINANCE_WITHDRAW_ALERT_THRESHOLD ?? 1);

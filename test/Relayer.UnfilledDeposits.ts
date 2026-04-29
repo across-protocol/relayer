@@ -159,7 +159,7 @@ describe("Relayer: Unfilled Deposits", async function () {
     await profitClient.initToken(l1Token);
 
     const chainIds = Object.values(spokePoolClients).map(({ chainId }) => chainId);
-    inventoryClient = new MockInventoryClient(null, null, null, null, null, hubPoolClient);
+    inventoryClient = new MockInventoryClient(null, spyLogger, null, null, null, hubPoolClient);
     inventoryClient.setTokenMapping({
       [l1Token.address]: {
         [originChainId]: erc20_1.address,
