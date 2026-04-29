@@ -2,7 +2,7 @@ import { interfaces, utils as sdkUtils } from "@across-protocol/sdk";
 import { Contract, Signer } from "ethers";
 import { Provider as zksProvider, Wallet as zkWallet } from "zksync-ethers";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
-import { CONTRACT_ADDRESSES } from "../../common";
+import { CONTRACT_ADDRESSES, getContractEntry } from "../../common";
 import {
   convertFromWei,
   getBlockForTimestamp,
@@ -14,6 +14,7 @@ import {
   winston,
   zkSync as zkSyncUtils,
   assert,
+  isDefined,
   isEVMSpokePoolClient,
   isSignerWallet,
   TOKEN_SYMBOLS_MAP,
@@ -161,10 +162,11 @@ async function filterMessageLogs(
         // The following code is copied from the zksync-ethers SDK but replaces the l1BridgeContract
         // with the l1UsdcBridgeContract where we call isWithdrawalFinalized().
         const { l2ToL1LogIndex } = await wallet._getWithdrawalL2ToL1Log(txnRef, withdrawalIdx);
-        const { id } = await wallet._providerL2().getLogProof(txnRef, l2ToL1LogIndex);
+        const logProof = await wallet._providerL2().getLogProof(txnRef, l2ToL1LogIndex);
+        assert(logProof !== null, `zkSync: getLogProof returned null for ${txnRef}`);
         const { l1BatchNumber } = await wallet.finalizeWithdrawalParams(txnRef, withdrawalIdx);
         const l1UsdcBridge = getSharedBridge(l1ChainId, chainId, l2TokenAddress, wallet._providerL1());
-        return !(await l1UsdcBridge.isWithdrawalFinalized(chainId, l1BatchNumber, id));
+        return !(await l1UsdcBridge.isWithdrawalFinalized(chainId, l1BatchNumber, logProof.id));
       }
       return !(await wallet.isWithdrawalFinalized(txnRef, withdrawalIdx));
     } catch (error: unknown) {
@@ -194,10 +196,21 @@ async function getWithdrawalParams(
   wallet: zkWallet,
   msgLogs: { txnRef: string; withdrawalIdx: number }[]
 ): Promise<zkSyncWithdrawalData[]> {
-  return await sdkUtils.mapAsync(
-    msgLogs,
-    async ({ txnRef, withdrawalIdx }) => await wallet.finalizeWithdrawalParams(txnRef, withdrawalIdx)
-  );
+  return await sdkUtils.mapAsync(msgLogs, async ({ txnRef, withdrawalIdx }) => {
+    const params = await wallet.finalizeWithdrawalParams(txnRef, withdrawalIdx);
+    assert(
+      params.l1BatchNumber !== null && params.l2TxNumberInBlock !== null,
+      `zkSync: finalizeWithdrawalParams returned null fields for ${txnRef}`
+    );
+    return {
+      l1BatchNumber: params.l1BatchNumber,
+      l2MessageIndex: params.l2MessageIndex,
+      l2TxNumberInBlock: params.l2TxNumberInBlock,
+      message: params.message,
+      sender: params.sender,
+      proof: params.proof,
+    };
+  });
 }
 
 /**
@@ -224,7 +237,7 @@ async function prepareFinalization(
 
   // @todo Support withdrawing directly as WETH here.
   const [target, txn] = [l1SharedBridge.address, await l1SharedBridge.populateTransaction.finalizeDeposit(args)];
-
+  assert(isDefined(txn.data), "zkSync: finalizeDeposit populateTransaction missing data");
   return { target, callData: txn.data };
 }
 
@@ -267,16 +280,11 @@ function getFinalizationContract(
   l2TokenAddress: Address,
   l1Provider?: Provider
 ): Contract {
-  const contract =
-    CONTRACT_ADDRESSES[l1ChainId]?.[
-      withdrawalRequiresCustomUsdcBridge(l1ChainId, l2ChainId, l2TokenAddress)
-        ? `zkStackUSDCBridge_${l2ChainId}`
-        : "zkStackL1Nullifier"
-    ];
-  if (!contract) {
-    throw new Error(`zkStack finalization contract data not found for chain ${l1ChainId}`);
-  }
-  return new Contract(contract.address, contract.abi, l1Provider);
+  const name = withdrawalRequiresCustomUsdcBridge(l1ChainId, l2ChainId, l2TokenAddress)
+    ? `zkStackUSDCBridge_${l2ChainId}`
+    : "zkStackL1Nullifier";
+  const { address, abi } = getContractEntry(l1ChainId, name);
+  return new Contract(address, abi, l1Provider);
 }
 
 function getSharedBridge(
@@ -285,14 +293,9 @@ function getSharedBridge(
   l2TokenAddress: Address,
   l1Provider?: Provider
 ): Contract {
-  const contract =
-    CONTRACT_ADDRESSES[l1ChainId]?.[
-      withdrawalRequiresCustomUsdcBridge(l1ChainId, l2ChainId, l2TokenAddress)
-        ? `zkStackUSDCBridge_${l2ChainId}`
-        : "zkStackSharedBridge"
-    ];
-  if (!contract) {
-    throw new Error(`zkStack shared bridge contract data not found for chain ${l1ChainId}`);
-  }
-  return new Contract(contract.address, contract.abi, l1Provider);
+  const name = withdrawalRequiresCustomUsdcBridge(l1ChainId, l2ChainId, l2TokenAddress)
+    ? `zkStackUSDCBridge_${l2ChainId}`
+    : "zkStackSharedBridge";
+  const { address, abi } = getContractEntry(l1ChainId, name);
+  return new Contract(address, abi, l1Provider);
 }

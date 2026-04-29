@@ -18,6 +18,8 @@ import {
   chainIsProd,
   getEventAuthority,
   createFormatFunction,
+  assert,
+  isDefined,
 } from "../../../../utils";
 import { SvmSpokeClient } from "@across-protocol/contracts";
 
@@ -38,11 +40,16 @@ export async function bridgeTokensToHubPool(
 ): Promise<{ message: string; signature?: string }> {
   const svmProvider = solanaClient.svmEventsClient.getRpc();
   const svmSpoke = solanaClient.spokePoolAddress;
+  assert(isDefined(svmSpoke), "bridgeTokensToHubPool: solana spoke pool address not yet known");
   const svmSpokeProgramId = toKitAddress(svmSpoke);
 
   const l2ChainId = chainIsProd(hubChainId) ? CHAIN_IDs.SOLANA : CHAIN_IDs.SOLANA_DEVNET;
-  const { address: tokenMessengerAddress } = CONTRACT_ADDRESSES[l2ChainId].cctpTokenMessenger;
-  const { address: messageTransmitterAddress } = CONTRACT_ADDRESSES[l2ChainId].cctpMessageTransmitter;
+  const tokenMessengerAddress = CONTRACT_ADDRESSES[l2ChainId]?.cctpTokenMessenger?.address;
+  const messageTransmitterAddress = CONTRACT_ADDRESSES[l2ChainId]?.cctpMessageTransmitter?.address;
+  assert(
+    isDefined(tokenMessengerAddress) && isDefined(messageTransmitterAddress),
+    `bridgeTokensToHubPool: missing CCTP messenger addresses on chain ${l2ChainId}`
+  );
   const l2Usdc = SvmAddress.from(TOKEN_SYMBOLS_MAP.USDC.addresses[l2ChainId]);
   const destinationDomain = PUBLIC_NETWORKS[hubChainId].cctpDomain;
 
