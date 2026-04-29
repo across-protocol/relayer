@@ -21,7 +21,7 @@ import {
   assert,
 } from "../../../utils";
 import { HubPoolClient } from "../../../clients";
-import { getContractEntry } from "../../../common";
+import { getContractAbi } from "../../../common";
 import { Log } from "../../../interfaces";
 import { L1ClaimingService, L1MessageServiceContract, L2MessageServiceContract, MessageSentEvent } from "./imports";
 
@@ -241,8 +241,9 @@ export function determineMessageType(
 
   // Start with the TokenBridge calldata format.
   try {
-    const { address, abi } = getContractEntry(hubPoolClient.chainId, "lineaL1TokenBridge");
-    const decoded = new Contract(address, abi).interface.decodeFunctionData("completeBridging", _calldata);
+    const abi = getContractAbi(hubPoolClient.chainId, "lineaL1TokenBridge");
+    assert(Array.isArray(abi), "lineaL1TokenBridge abi must be a fragment array");
+    const decoded = new ethers.utils.Interface(abi).decodeFunctionData("completeBridging", _calldata);
     // If we've made it this far, then the calldata is a valid TokenBridge calldata.
     const token = getTokenInfo(decoded._nativeToken, hubPoolClient.chainId);
     return {
