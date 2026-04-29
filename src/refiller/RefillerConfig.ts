@@ -1,5 +1,19 @@
+import { boolean, create, number, object, optional, record, string } from "superstruct";
 import { CommonConfig, ProcessEnv } from "../common";
 import { getNativeTokenAddressForChain, Address, toAddressType, isDefined, toBNWei, BigNumber } from "../utils";
+
+const RefillBalances2Schema = record(
+  string(),
+  record(
+    string(),
+    object({
+      target: number(),
+      trigger: number(),
+      isHubPool: optional(boolean()),
+      token: optional(string()),
+    })
+  )
+);
 
 export type RefillBalanceData = {
   chainId: number;
@@ -72,7 +86,7 @@ export class RefillerConfig extends CommonConfig {
       );
     } else if (REFILL_BALANCES_2) {
       this.refillEnabledBalances = [];
-      const config = JSON.parse(REFILL_BALANCES_2);
+      const config = create(JSON.parse(REFILL_BALANCES_2), RefillBalances2Schema);
       Object.entries(config).forEach(([account, chainConfig]) => {
         Object.entries(chainConfig).forEach(([_chainId, tokenConfig]) => {
           const chainId = Number(_chainId);

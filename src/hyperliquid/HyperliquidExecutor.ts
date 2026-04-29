@@ -600,6 +600,7 @@ export class HyperliquidExecutor {
   // Adds a task to the task queue and calls the task resolver (thereby waking the promise in `resolveNextTask`).
   private updateTasks(task: Promise<TaskResult>) {
     this.tasks.push(task);
-    this.taskResolver();
+    // No-op if nobody is currently waiting; next waitForNextTask sees tasks.length > 0 and returns.
+    this.taskResolver?.();
   }
 }

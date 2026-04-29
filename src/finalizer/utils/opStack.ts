@@ -45,7 +45,12 @@ import {
   EvmAddress,
   ZERO_ADDRESS,
 } from "../../utils";
-import { CONTRACT_ADDRESSES, OPSTACK_CONTRACT_OVERRIDES, CHAIN_MAX_BLOCK_LOOKBACK } from "../../common";
+import {
+  CONTRACT_ADDRESSES,
+  OPSTACK_CONTRACT_OVERRIDES,
+  CHAIN_MAX_BLOCK_LOOKBACK,
+  getContractEntry,
+} from "../../common";
 import OPStackPortalL1 from "../../common/abi/OpStackPortalL1.json";
 import { FinalizerPromise, CrossChainMessage, AddressesToFinalize } from "../types";
 const { utils } = ethers;
@@ -268,11 +273,7 @@ async function getOVMStdEvents(
   // automate token withdrawals from Lite chains, which can build up ETH and ERC20 balances over time
   // and because they are lite chains, our only way to withdraw them is to initiate a manual bridge from the
   // the lite chain to Ethereum via the canonical OVM standard bridge.
-  const { ovmStandardBridge } = CONTRACT_ADDRESSES[chainId];
-  if (!ovmStandardBridge) {
-    logger.warn({ at, message: `No OVM standard bridge contract found for ${chain}.` });
-    return [];
-  }
+  const ovmStandardBridge = getContractEntry(chainId, "ovmStandardBridge");
   const bridge = new Contract(ovmStandardBridge.address, ovmStandardBridge.abi, provider);
 
   const ethFilter = bridge.filters.ETHBridgeInitiated(fromAddresses);
@@ -287,7 +288,8 @@ async function getOVMStdEvents(
   // from blast initiated through this hosted UI. ETH withdrawals sent in this manner through the Blast Bridge
   // have the same ETHBridgeInitiated event signature so we only need to change the contract address.
   if (chainIsBlast(chainId)) {
-    const blastBridge = new Contract(CONTRACT_ADDRESSES[chainId].blastBridge.address, ovmStandardBridge.abi, provider);
+    const { address: blastBridgeAddress } = getContractEntry(chainId, "blastBridge");
+    const blastBridge = new Contract(blastBridgeAddress, ovmStandardBridge.abi, provider);
     const blastEthEvents = (
       await paginatedEventQuery(blastBridge, blastBridge.filters.ETHBridgeInitiated(fromAddresses), searchConfig)
     ).map((event) => ({
@@ -325,7 +327,7 @@ async function getOPUSDCEvents(
   const at = `${chain}Finalizer`;
 
   const { opUSDCBridge } = CONTRACT_ADDRESSES[chainId];
-  if (!opUSDCBridge) {
+  if (!opUSDCBridge?.address || !opUSDCBridge.abi) {
     return []; // No need to warn; many chains do not have OP USDC.
   }
   const bridge = new Contract(opUSDCBridge.address, opUSDCBridge.abi, provider);
