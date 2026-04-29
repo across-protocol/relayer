@@ -64,7 +64,7 @@ export class Relayer {
   private lastLogTime = 0;
   private lastMaintenance = 0;
   private profiler: InstanceType<typeof Profiler>;
-  private hubPoolBlockBuffer: number;
+  private hubPoolBlockBuffer?: number;
   protected fillLimits: { [originChainId: number]: { fromBlock: number; limit: BigNumber }[] };
   protected ignoredDeposits: { [depositHash: string]: boolean } = {};
   protected updated = 0;

@@ -12,7 +12,6 @@ export class CommonConfig {
   readonly hubPoolChainId: number;
   readonly pollingDelay: number;
   readonly maxBlockLookBack: { [key: number]: number };
-  readonly maxTxWait: number;
   readonly spokePoolChainsOverride: number[];
   readonly l1TokensOverride: string[];
   readonly sendingTransactionsEnabled: boolean;
@@ -28,7 +27,7 @@ export class CommonConfig {
   public multiCallChunkSize: { [chainId: number]: number } = {};
   public toBlockOverride: Record<number, number> = {};
   public fromBlockOverride: Record<number, number> = {};
-  public addressFilter: Set<string>;
+  public addressFilter?: Set<string>;
 
   constructor(env: ProcessEnv) {
     const {
