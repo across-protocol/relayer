@@ -69,12 +69,15 @@ export class BundleDataApproxClient {
    * Makes a simple assumption that all fills that were sent by this relayer after the last executed bundle
    * are valid and will be refunded on the repayment chain selected.
    * @param l1Token L1 token to get refunds for all inventory-equivalent L2 tokens on each chain.
-   * @param fromBlocks Blocks to start counting refunds from.
+   * @param fromBlocks 2D block mapping indexed by [referenceChainId][fillChainId]. For refund counting, each fill
+   * is filtered using fromBlocks[repaymentChainId][fillChainId] so that a fill is only excluded when the
+   * repayment chain's refund leaf has been executed — not when the fill chain's own refund leaf was executed.
+   * This prevents under-counting refunds when cross-chain relay propagation is delayed.
    * @returns Refunds grouped by relayer for each chain. Refunds are denominated in L1 token decimals.
    */
   protected getApproximateRefundsForToken(
     l1Token: Address,
-    fromBlocks: { [chainId: number]: number }
+    fromBlocks: { [chainId: number]: { [chainId: number]: number } }
   ): { [repaymentChainId: number]: { [relayer: string]: BigNumber } } {
     const refundsForChain: { [repaymentChainId: number]: { [relayer: string]: BigNumber } } = {};
     for (const chainId of this.chainIdList) {
@@ -85,7 +88,9 @@ export class BundleDataApproxClient {
       }
       spokePoolClient.getFills().forEach((fill) => {
         const { inputAmount: _refundAmount, originChainId, repaymentChainId, relayer, inputToken, blockNumber } = fill;
-        if (blockNumber < fromBlocks[chainId]) {
+        // Filter based on the repayment chain's execution state: a fill on chain X with repayment on
+        // chain Y should only be excluded when chain Y's refund leaf has been executed.
+        if (blockNumber < (fromBlocks[repaymentChainId]?.[chainId] ?? 0)) {
           return;
         }
 
@@ -113,9 +118,16 @@ export class BundleDataApproxClient {
     return refundsForChain;
   }
 
-  // Return the next starting block for each chain following the bundle end block of the last executed bundle that
-  // was relayed to that chain.
-  protected getUnexecutedBundleStartBlocks(l1Token: Address, requireExecution: boolean): { [chainId: number]: number } {
+  // For each chain, find the last executed (or relayed) bundle and return a 2D mapping of start blocks:
+  // result[chainId][c] = the start block on chain c derived from the last executed bundle on chainId.
+  // This 2D structure is needed because a bundle executed on chain A may not yet be relayed to chain B
+  // (due to cross-chain propagation delays), so the correct start block for counting fills depends on
+  // which chain's execution state is being used as the reference. For refunds, the reference chain is
+  // the repayment chain; for deposits, it is the deposit's own chain (the diagonal: result[chainId][chainId]).
+  protected getUnexecutedBundleStartBlocks(
+    l1Token: Address,
+    requireExecution: boolean
+  ): { [chainId: number]: { [chainId: number]: number } } {
     assert(l1Token.isEVM());
     return Object.fromEntries(
       this.chainIdList.map((chainId) => {
@@ -153,7 +165,7 @@ export class BundleDataApproxClient {
           );
         });
         if (!isDefined(lastRelayedRootToChain)) {
-          return [chainId, 0];
+          return [chainId, Object.fromEntries(this.chainIdList.map((c) => [c, 0]))];
         }
 
         // Step 2: Match the last RelayedRootBundle event to a proposed root bundle. If there is no corresponding root
@@ -164,16 +176,25 @@ export class BundleDataApproxClient {
           .getValidatedRootBundles()
           .find((bundle) => bundle.relayerRefundRoot === lastRelayedRootToChain.relayerRefundRoot);
         if (!isDefined(correspondingProposedRootBundle)) {
-          return [chainId, Number.MAX_SAFE_INTEGER];
+          return [chainId, Object.fromEntries(this.chainIdList.map((c) => [c, Number.MAX_SAFE_INTEGER]))];
         }
 
-        // Step 3. Find the next bundle start blocks following the proposed root bundle.
-        const bundleEndBlock = this.hubPoolClient.getBundleEndBlockForChain(
-          correspondingProposedRootBundle,
+        // Step 3. Find the next bundle start blocks following the proposed root bundle for all chains.
+        // This returns the bundle's end blocks for every chain, not just this chain, so that callers
+        // can look up the correct boundary for cross-chain refund scenarios.
+        return [
           chainId,
-          this.protocolChainIdIndices
-        );
-        return [chainId, bundleEndBlock > 0 ? bundleEndBlock + 1 : 0];
+          Object.fromEntries(
+            this.chainIdList.map((c) => {
+              const bundleEndBlock = this.hubPoolClient.getBundleEndBlockForChain(
+                correspondingProposedRootBundle,
+                c,
+                this.protocolChainIdIndices
+              );
+              return [c, bundleEndBlock > 0 ? bundleEndBlock + 1 : 0];
+            })
+          ),
+        ];
       })
     );
   }
@@ -187,12 +208,13 @@ export class BundleDataApproxClient {
   /**
    * Return sum of deposits for all deposits sent after the fromBlocks.
    * @param l1Token L1 token to get deposits for all inventory-equivalent L2 tokens on each chain.
-   * @param fromBlocks Blocks to start counting deposits from.
+   * @param fromBlocks 2D block mapping indexed by [referenceChainId][depositChainId]. For deposit counting,
+   * only the diagonal is used: fromBlocks[chainId][chainId], since deposits are counted per origin chain.
    * @returns Deposits grouped by chain. Deposits are denominated in L1 token decimals.
    */
   private getApproximateDepositsForToken(
     l1Token: Address,
-    fromBlocks: { [chainId: number]: number }
+    fromBlocks: { [chainId: number]: { [chainId: number]: number } }
   ): { [chainId: number]: BigNumber } {
     const depositsForChain: { [chainId: number]: BigNumber } = {};
     for (const chainId of this.chainIdList) {
@@ -204,7 +226,7 @@ export class BundleDataApproxClient {
       spokePoolClient
         .getDeposits()
         .filter((deposit) => {
-          if (deposit.blockNumber < fromBlocks[chainId]) {
+          if (deposit.blockNumber < (fromBlocks[chainId]?.[chainId] ?? 0)) {
             return false;
           }
           // We are ok to group together deposits for inventory-equivalent tokens because these approximate

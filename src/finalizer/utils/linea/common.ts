@@ -76,7 +76,7 @@ export function makeGetMessagesWithStatusByTxHash(
 
     const messages = txReceipt.logs
       .filter((log) => log.address === l2MessageService.contractAddress)
-      .flatMap((log) => {
+      .flatMap((log): Omit<MessageWithStatus, "status"> | never[] => {
         const parsedLog = l2MessageService.contract.interface.parseLog(log);
 
         if (!parsedLog || parsedLog.name !== "MessageSent") {

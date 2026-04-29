@@ -22,7 +22,7 @@ import { RedisCacheInterface } from "../caching/RedisCache";
 config();
 let logger: winston.Logger;
 
-const ACTIVE_RELAYER_EXPIRY = 600; // 10 minutes.
+const ACTIVE_RELAYER_EXPIRY = 1200; // 20 minutes.
 const {
   RUN_IDENTIFIER: runIdentifier,
   BOT_IDENTIFIER: botIdentifier = "across-relayer",
@@ -76,6 +76,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
 
   const apiUpdateInterval = 30; // seconds
   scheduleTask(() => acrossApiClient.update(config.ignoreLimits), apiUpdateInterval, abortController.signal);
+  scheduleTask(() => config.update(logger), apiUpdateInterval, abortController.signal);
 
   scheduleSequentialTask(
     "profitClient.update()",

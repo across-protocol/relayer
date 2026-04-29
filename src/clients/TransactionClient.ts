@@ -69,6 +69,16 @@ export interface AugmentedTransaction {
   spray?: boolean;
 }
 
+export function isAugmentedTransaction(txn: unknown): txn is AugmentedTransaction {
+  if (txn === null || typeof txn !== "object") {
+    return false;
+  }
+  if (!("contract" in txn && "chainId" in txn && "method" in txn && "args" in txn)) {
+    return false;
+  }
+  return typeof txn.method === "string" && Array.isArray(txn.args);
+}
+
 const { fixedPointAdjustment: fixedPoint } = sdkUtils;
 const { isError } = typeguards;
 
@@ -264,7 +274,7 @@ async function _runTransaction(
   logger: winston.Logger,
   contract: Contract,
   method: string,
-  args: unknown,
+  args: unknown[],
   value = bnZero,
   gasLimit: BigNumber | null = null,
   nonce: number | null = null,
@@ -287,7 +297,7 @@ async function _runTransaction(
       provider,
       priorityFeeScaler,
       maxFeePerGasScaler,
-      sendRawTxn ? undefined : await contract.populateTransaction[method](...(args as Array<unknown>), { value })
+      sendRawTxn ? undefined : await contract.populateTransaction[method](...args, { value })
     );
     gas = _scaleGasPrice(chainId, preGas, retryScaler);
   } catch (error) {
@@ -314,7 +324,7 @@ async function _runTransaction(
   try {
     return sendRawTxn
       ? await signer.sendTransaction({ to, value, data: (args as ethers.utils.BytesLike[])[0], gasLimit, ...gas })
-      : await contract[method](...(args as Array<unknown>), txConfig);
+      : await contract[method](...args, txConfig);
   } catch (error) {
     // Narrow type. All errors caught here should be Ethers errors.
     if (!typeguards.isEthersError(error)) {
@@ -408,7 +418,7 @@ async function _runTransactionTvm(
   logger: winston.Logger,
   contract: Contract,
   method: string,
-  args: unknown,
+  args: unknown[],
   value = bnZero,
   gasLimit: BigNumber | null = null,
   _nonce: number | null = null,
@@ -430,7 +440,7 @@ async function _runTransactionTvm(
     provider,
     priorityFeeScaler, // No priority fee scalar for TRON.
     maxFeePerGasScaler,
-    sendRawTxn ? undefined : await contract.populateTransaction[method](...(args as Array<unknown>), { value })
+    sendRawTxn ? undefined : await contract.populateTransaction[method](...args, { value })
   );
   const gasLimitNumber = gasLimit?.toNumber() ?? process.env.TVM_GAS_LIMIT;
   const feeLimit = isDefined(gasLimitNumber) ? Number(gasLimitNumber) * maxFeePerGas.toNumber() : DEFAULT_TVM_FEE_LIMIT;
@@ -438,7 +448,7 @@ async function _runTransactionTvm(
   const tronWeb = getTronWebFromEvmSigner(contract.signer);
   const populatedTransaction = sendRawTxn
     ? { from: await contract.signer.getAddress(), to: contract.address, data: (args as Array<string>)[0] }
-    : await contract.populateTransaction[method](...(args as Array<unknown>), { value });
+    : await contract.populateTransaction[method](...args, { value });
 
   logger.debug({ at, message: "Submitting TVM transaction.", chain, method, feeLimit });
   let result;
@@ -476,6 +486,9 @@ async function _runTransactionTvm(
   // Adapt TronTransactionResult to an ethers-compatible TransactionResponse. TVM doesn't use
   // nonces in the EVM sense, so we set nonce to 0 to satisfy downstream nonce tracking without
   // side effects (TVM nonce tracking in submit() is harmless — it just overwrites to 0 each time).
+  //
+  // `wait` must resolve to a real receipt (including `logs`). TronWeb submits the tx; we still
+  // have an ethers `Provider`, so mirror JsonRpcProvider: `wait` → `provider.waitForTransaction`.
   return {
     hash: result.txid,
     nonce: 0,
@@ -485,7 +498,10 @@ async function _runTransactionTvm(
     gasLimit: BigNumber.from(feeLimit),
     value,
     data: populatedTransaction.data ?? "0x",
-    wait: () => Promise.resolve({} as TransactionReceipt),
+    wait: (confirmations?: number) => {
+      const txHexHash = result.txid.startsWith("0x") ? result.txid : `0x${result.txid}`;
+      return provider.waitForTransaction(txHexHash, confirmations ?? 1);
+    },
   } as unknown as TransactionResponse;
 }
 

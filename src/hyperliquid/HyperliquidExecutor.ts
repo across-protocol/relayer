@@ -1,6 +1,7 @@
 import winston from "winston";
 import { utils as ethersUtils } from "ethers";
 import { HyperliquidExecutorConfig } from "./HyperliquidExecutorConfig";
+import { RedisCacheInterface } from "../caching/RedisCache";
 import {
   Contract,
   Provider,
@@ -13,7 +14,7 @@ import {
   getL2Book,
   getDstCctpHandler,
   getOpenOrders,
-  TOKEN_SYMBOLS_MAP,
+  resolveAcrossToken,
   bnZero,
   BigNumber,
   forEachAsync,
@@ -78,19 +79,19 @@ const MIN_ORDER_AMOUNT = toBN(10 * HL_FIXED_ADJUSTMENT);
  */
 export class HyperliquidExecutor {
   private abortController = new AbortController();
-  private instanceCoordinator;
+  private instanceCoordinator: InstanceCoordinator;
   private dstOftMessenger: Contract;
   private dstCctpMessenger: Contract;
   public pairs: { [pair: string]: Pair } = {};
   private pairUpdates: { [pairName: string]: number } = {};
   private eventListener: EventListener;
   private infoClient;
-  private redisClient;
+  private redisClient: RedisCacheInterface | undefined;
   private handledEvents: Set<string> = new Set<string>();
   private dstSearchConfig: EventSearchConfig;
 
   private tasks: Promise<TaskResult>[] = [];
-  private taskResolver;
+  private taskResolver: ((value: void | PromiseLike<void>) => void) | undefined;
 
   public initialized = false;
   private chainId = CHAIN_IDs.HYPEREVM;
@@ -137,8 +138,8 @@ export class HyperliquidExecutor {
         const baseForFinal = pair.tokens[0] === baseToken.index;
         // Take the tokens from TOKEN_SYMBOLS_MAP, since the spot meta `evmContract` does not necessarily point to the ERC20 address.
         const castSymbol = (symbol: string) => (symbol === "USDT0" ? "USDT" : symbol);
-        const baseTokenAddress = TOKEN_SYMBOLS_MAP[castSymbol(baseToken.name)].addresses[this.chainId];
-        const finalTokenAddress = TOKEN_SYMBOLS_MAP[castSymbol(finalToken.name)].addresses[this.chainId];
+        const baseTokenAddress = resolveAcrossToken(castSymbol(baseToken.name), this.chainId, true);
+        const finalTokenAddress = resolveAcrossToken(castSymbol(finalToken.name), this.chainId, true);
 
         // There are only two available swap handlers.
         const dstHandler = baseToken.name === "USDT0" ? this.dstOftMessenger : this.dstCctpMessenger;

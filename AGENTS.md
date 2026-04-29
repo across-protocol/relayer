@@ -89,6 +89,11 @@ relayer-v2/
 - Environment variables map into bot-specific configuration objects.
 - Bots are designed to run in Dockerized, often serverless, environments.
 
+## Operator scripts
+
+- `scripts/` contains one-off and operator-facing tooling that reuses runtime clients/utilities without going through `index.ts`.
+- `scripts/swapOnBinance.ts` is an interactive CLI that deposits into the shared Binance account, optionally trades on Binance spot, and withdraws to a destination chain.
+
 ## Memory/state model
 
 Most bots are designed for stateless execution between runs. Persistent runtime state is stored in Redis when continuity is required across invocations.

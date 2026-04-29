@@ -1,6 +1,6 @@
 import winston from "winston";
-import { DEFAULT_MULTICALL_CHUNK_SIZE, DEFAULT_ARWEAVE_GATEWAY } from "../common";
-import { ArweaveGatewayInterface, ArweaveGatewayInterfaceSS } from "../interfaces";
+import { DEFAULT_MULTICALL_CHUNK_SIZE } from "../common";
+import { ArweaveGatewayConfigSS, ArweaveGatewayConfig } from "../interfaces";
 import { addressAdapters, AddressAggregator, assert, CHAIN_IDs, isDefined, parseJson } from "../utils";
 import * as Constants from "./Constants";
 
@@ -12,7 +12,6 @@ export class CommonConfig {
   readonly hubPoolChainId: number;
   readonly pollingDelay: number;
   readonly maxBlockLookBack: { [key: number]: number };
-  readonly maxTxWait: number;
   readonly spokePoolChainsOverride: number[];
   readonly l1TokensOverride: string[];
   readonly sendingTransactionsEnabled: boolean;
@@ -21,14 +20,14 @@ export class CommonConfig {
   readonly maxConfigVersion: number;
   readonly blockRangeEndBlockBuffer: { [chainId: number]: number };
   readonly timeToCache: number;
-  readonly arweaveGateway: ArweaveGatewayInterface;
+  readonly arweaveGateways: ArweaveGatewayConfig[] | undefined;
   readonly peggedTokenPrices: { [pegTokenSymbol: string]: Set<string> } = {};
 
   // State we'll load after we update the config store client and fetch all chains we want to support.
   public multiCallChunkSize: { [chainId: number]: number } = {};
   public toBlockOverride: Record<number, number> = {};
   public fromBlockOverride: Record<number, number> = {};
-  public addressFilter: Set<string>;
+  public addressFilter?: Set<string>;
 
   constructor(env: ProcessEnv) {
     const {
@@ -43,7 +42,7 @@ export class CommonConfig {
       ACROSS_BOT_VERSION,
       ACROSS_MAX_CONFIG_VERSION,
       HUB_POOL_TIME_TO_CACHE,
-      ARWEAVE_GATEWAY,
+      ARWEAVE_GATEWAYS,
       PEGGED_TOKEN_PRICES,
     } = env;
 
@@ -88,9 +87,14 @@ export class CommonConfig {
     this.sendingTransactionsEnabled = SEND_TRANSACTIONS === "true";
 
     // Load the Arweave gateway from the environment.
-    const _arweaveGateway = isDefined(ARWEAVE_GATEWAY) ? JSON.parse(ARWEAVE_GATEWAY ?? "{}") : DEFAULT_ARWEAVE_GATEWAY;
-    assert(ArweaveGatewayInterfaceSS.is(_arweaveGateway), "Invalid Arweave gateway");
-    this.arweaveGateway = _arweaveGateway;
+    const _arweaveGateways = isDefined(ARWEAVE_GATEWAYS) ? JSON.parse(ARWEAVE_GATEWAYS) : undefined;
+    assert(
+      !isDefined(_arweaveGateways) ||
+        (Array.isArray(_arweaveGateways) &&
+          _arweaveGateways.every((_arweaveGateway) => ArweaveGatewayConfigSS.is(_arweaveGateway))),
+      "Invalid Arweave gateway"
+    );
+    this.arweaveGateways = _arweaveGateways;
 
     this.peggedTokenPrices = Object.fromEntries(
       Object.entries(parseJson.stringArrayMap(PEGGED_TOKEN_PRICES)).map(([pegTokenSymbol, tokenSymbolsToPeg]) => [

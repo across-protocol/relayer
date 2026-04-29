@@ -1,74 +1,127 @@
 version: 2.1
-jobs:
-  install:
+
+executors:
+  node:
     docker:
       - image: cimg/node:22.18.0
-    working_directory: ~/relayer-v2
+    working_directory: ~/relayer
     resource_class: medium+
+    environment:
+      NODE_OPTIONS: --max-old-space-size=5120
+
+jobs:
+  install:
+    executor: node
     steps:
       - checkout
       - restore_cache:
           name: Restore Yarn Package Cache
           keys:
-            - cache-node-v4-{{ checksum "yarn.lock" }}
+            - &yarn_cache_key cache-node-v4-{{ checksum "yarn.lock" }}
       - run:
           name: Install Dependencies
           command: yarn install --immutable
       - save_cache:
           name: Save Yarn Package Cache
-          key: cache-node-v4-{{ checksum "yarn.lock" }}
+          key: *yarn_cache_key
           paths:
             - node_modules
-  test:
-    docker:
-      - image: cimg/node:22.18.0
-    working_directory: ~/relayer-v2
-    resource_class: medium+
-    parallelism: 20
-    environment:
-      NODE_OPTIONS: --max-old-space-size=5120
-    steps:
-      - checkout
-      - restore_cache:
-          name: Restore Yarn Package Cache
-          keys:
-            - cache-node-v4-{{ checksum "yarn.lock" }}
-
-      # Extract Solana version from across-protocol/contracts
       - run:
           name: Extract Solana version
           command: |
             set -euo pipefail
 
-            REPO="across-protocol/contracts"
-            REF="master"
-
-            if [ -n "${OVERRIDE_SOLANA_VERSION:-}" ]; then
-              SOLANA_VERSION="${OVERRIDE_SOLANA_VERSION}"
-            else
-              # Clone the contracts repository to get Cargo.lock
-              git clone --depth 1 --branch $REF https://github.com/$REPO.git /tmp/contracts
-              cd /tmp/contracts
-              if [ -f Cargo.lock ]; then
-                EXTRACTED_VERSION=$(grep -A2 'name = "solana-program"' Cargo.lock \
-                                   | grep 'version' | head -n1 | cut -d'"' -f2)
-                if [ -n "$EXTRACTED_VERSION" ]; then
-                  VERSION_NUMBER=$(echo "$EXTRACTED_VERSION" | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+')
-                  if [ -n "$VERSION_NUMBER" ]; then
-                    SOLANA_VERSION="$VERSION_NUMBER"
-                  fi
+            if [ -z "${SOLANA_VERSION:-}" ]; then
+              # Derive from the Cargo.lock of the contracts release matching the installed package version.
+              REPO="across-protocol/contracts"
+              CONTRACTS_VERSION=$(node -p "require('@across-protocol/contracts/package.json').version")
+              REF="v${CONTRACTS_VERSION}"
+              curl -fsSL "https://raw.githubusercontent.com/$REPO/$REF/Cargo.lock" -o /tmp/Cargo.lock
+              EXTRACTED_VERSION=$(grep -A2 'name = "solana-program"' /tmp/Cargo.lock \
+                                 | grep 'version' | head -n1 | cut -d'"' -f2)
+              if [ -n "$EXTRACTED_VERSION" ]; then
+                VERSION_NUMBER=$(echo "$EXTRACTED_VERSION" | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+')
+                if [ -n "$VERSION_NUMBER" ]; then
+                  SOLANA_VERSION="$VERSION_NUMBER"
                 fi
               fi
             fi
 
             echo "Using Solana version: $SOLANA_VERSION"
-            echo "export SOLANA_VERSION=$SOLANA_VERSION" >> $BASH_ENV
+            echo "$SOLANA_VERSION" > .solana-version
+      - run:
+          name: Compute hardhat cache key
+          command: |
+            # Discriminate hardhat artifacts by the content of contracts/ +
+            # hardhat.config.ts (compiler version, viaIR, etc. live in the config).
+            git rev-parse HEAD:contracts > .hardhat-cache-key
+            git rev-parse HEAD:hardhat.config.ts >> .hardhat-cache-key
+      - restore_cache:
+          name: Restore hardhat artifacts cache
+          keys:
+            - &hardhat_cache_key hardhat-v1-{{ checksum ".hardhat-cache-key" }}
+      - run:
+          name: Compile contracts
+          command: yarn hardhat compile
+      - save_cache:
+          name: Save hardhat artifacts cache
+          key: *hardhat_cache_key
+          paths:
+            - artifacts
+            - cache
+      - persist_to_workspace:
+          root: .
+          paths:
+            - node_modules
+            - artifacts
+            - cache
+            - .solana-version
+  typecheck:
+    executor: node
+    steps:
+      - checkout
+      - attach_workspace:
+          at: .
+      - run:
+          name: Typecheck
+          command: yarn typecheck
+  strict-null:
+    executor: node
+    steps:
+      - checkout
+      - attach_workspace:
+          at: .
+      - run:
+          name: strictNullChecks budget
+          command: yarn strict-null-budget --no-cache
+  test:
+    executor: node
+    parallelism: 20
+    steps:
+      - checkout
+      - attach_workspace:
+          at: .
+      - restore_cache:
+          name: Restore Solana CLI Cache
+          keys:
+            - &solana_cache_key solana-cli-v2-{{ arch }}-{{ checksum ".solana-version" }}
 
       # Install Solana CLI
       - run:
           name: Install Solana CLI
           command: |
-            source $BASH_ENV
+            # Keep in sync with save_cache.paths below.
+            export SOLANA_INSTALL="$HOME/.local/share/solana/install"
+            SOLANA_BIN="$SOLANA_INSTALL/active_release/bin"
+            export PATH="$SOLANA_BIN:$PATH"
+            echo "export PATH=\"$SOLANA_BIN:\$PATH\"" >> $BASH_ENV
+
+            if [ -x "$SOLANA_BIN/solana" ]; then
+              echo "Solana CLI already installed (cache hit): $(solana --version)"
+              exit 0
+            fi
+
+            SOLANA_VERSION=$(cat .solana-version)
             echo "Installing Solana version: $SOLANA_VERSION"
 
             # Parse version numbers
@@ -90,34 +143,24 @@ jobs:
             chmod +x /tmp/solana-install.sh
             /tmp/solana-install.sh
 
-            # Add to PATH
-            echo 'export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"' >> $BASH_ENV
-
-            # Verify installation
-            source $BASH_ENV
             solana --version
-      - run:
-          name: Run build
-          command: yarn build
+
+      - save_cache:
+          name: Save Solana CLI Cache
+          key: *solana_cache_key
+          paths:
+            - ~/.local/share/solana/install
       - run:
           name: Run tests
           command: |
-            source $BASH_ENV
             circleci tests glob "test/**/*.ts" | circleci tests split > /tmp/test-files
             yarn test --bail $(cat /tmp/test-files)
   lint:
-    docker:
-      - image: cimg/node:22.18.0
-    working_directory: ~/relayer-v2
-    resource_class: medium+
-    environment:
-      NODE_OPTIONS: --max-old-space-size=5120
+    executor: node
     steps:
       - checkout
-      - restore_cache:
-          name: Restore Yarn Package Cache
-          keys:
-            - cache-node-v4-{{ checksum "yarn.lock" }}
+      - attach_workspace:
+          at: .
       - run:
           name: Run lint
           command: yarn lint
@@ -126,6 +169,12 @@ workflows:
   build_and_test:
     jobs:
       - install
+      - typecheck:
+          requires:
+            - install
+      - strict-null:
+          requires:
+            - install
       - test:
           requires:
             - install

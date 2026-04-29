@@ -84,9 +84,12 @@ function decodeRelayData(originChainId: number, destinationChainId: number, log:
           return [key, log.args[key]];
       }
     })
-  ) as RelayData;
+  ) as Omit<RelayData, "originChainId">;
 
-  return relayData;
+  return {
+    ...relayData,
+    originChainId,
+  };
 }
 
 async function fetchDepositFromTxn(
@@ -131,8 +134,6 @@ async function fetchDepositFromTxn(
 
   // Construct complete deposit object with all required fields for populateV3Relay
   const deposit = {
-    depositId: depositArgs.depositId,
-    originChainId,
     destinationChainId,
     ...relayData,
   };
@@ -331,7 +332,7 @@ function usage(badInput?: string): boolean {
   let usageStr = badInput ? `\nUnrecognized input: "${badInput}".\n\n` : "";
   usageStr += `
     Usage:
-    \tyarn ts-node ./scripts/simulateFill.ts --originChainId <chainId> --txnHash <transactionHash> [options]
+    \tyarn tsx ./scripts/simulateFill.ts --originChainId <chainId> --txnHash <transactionHash> [options]
 
     Description:
     \tSimulates a fill transaction for a deposit on Tenderly. This is a backward-looking debugging tool
@@ -353,10 +354,10 @@ function usage(badInput?: string): boolean {
     \tTENDERLY_PROJECT\tYour Tenderly project name
 
     Examples:
-    \tyarn ts-node ./scripts/simulateFill.ts --originChainId 1 --txnHash 0x123...
-    \tyarn ts-node ./scripts/simulateFill.ts --originChainId 1 --txnHash 0x123... --relayer 0xYourAddress
-    \tyarn ts-node ./scripts/simulateFill.ts --originChainId 1 --txnHash 0x123... --delay 10
-    \tyarn ts-node ./scripts/simulateFill.ts --originChainId 1 --txnHash 0x123... --delay 5 --relayer 0xYourAddress
+    \tyarn tsx ./scripts/simulateFill.ts --originChainId 1 --txnHash 0x123...
+    \tyarn tsx ./scripts/simulateFill.ts --originChainId 1 --txnHash 0x123... --relayer 0xYourAddress
+    \tyarn tsx ./scripts/simulateFill.ts --originChainId 1 --txnHash 0x123... --delay 10
+    \tyarn tsx ./scripts/simulateFill.ts --originChainId 1 --txnHash 0x123... --delay 5 --relayer 0xYourAddress
   `.slice(1); // Skip leading newline
   console.log(usageStr);
 

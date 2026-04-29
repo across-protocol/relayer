@@ -1,7 +1,9 @@
 import { DEFAULT_L2_CONTRACT_ADDRESSES } from "@eth-optimism/sdk";
 import { ChainFamily, PUBLIC_NETWORKS } from "@across-protocol/constants";
-import { isDefined } from "../utils/TypeGuards";
+import { constants as ethersConstants } from "ethers";
+import { isDefined, isKeyOf } from "../utils/TypeGuards";
 import {
+  assert,
   chainIsOPStack,
   chainIsOrbit,
   chainIsProd,
@@ -9,7 +11,8 @@ import {
   CHAIN_IDs,
   TOKEN_SYMBOLS_MAP,
   Signer,
-  ZERO_ADDRESS,
+  Address,
+  binanceCredentialsConfigured,
   EvmAddress,
   toWei,
   toGWei,
@@ -17,6 +20,9 @@ import {
   winston,
   toBN,
 } from "../utils";
+
+// Sourced directly to avoid a tsx/esbuild TDZ on the cyclic re-export from ../utils.
+const { AddressZero: ZERO_ADDRESS } = ethersConstants;
 import {
   BaseBridgeAdapter,
   OpStackDefaultERC20Bridge,
@@ -53,6 +59,8 @@ import {
   UsdcCCTPBridge as L2UsdcCCTPBridge,
   BinanceCEXNativeBridge as L2BinanceCEXNativeBridge,
   SolanaUsdcCCTPBridge as L2SolanaUsdcCCTPBridge,
+  BridgeApi as L2BridgeApi,
+  TokenSplitterBridge as L2TokenSplitterBridge,
 } from "../adapter/l2Bridges";
 import { CONTRACT_ADDRESSES } from "./ContractAddresses";
 import { HyperlaneXERC20Bridge } from "../adapter/bridges/HyperlaneXERC20Bridge";
@@ -181,7 +189,7 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = resolveRpcConfig();
 const resolveChainBundleBuffers = () => {
   const DEFAULT_CHAIN_BUFFER = 1024;
 
-  const defaultBuffers = {
+  const defaultBuffers: Partial<Record<ChainFamily, number>> = {
     [ChainFamily.OP_STACK]: 60, // 2s/block
     [ChainFamily.ORBIT]: 240, // ~250ms/block
     [ChainFamily.SVM]: 150, // ~400ms/slot
@@ -235,7 +243,7 @@ export const IGNORED_HUB_EXECUTED_BUNDLES: number[] = [];
 const resolveChainCacheDelay = () => {
   const DEFAULT_CACHE_DELAY = 512;
 
-  const cacheDelays = {
+  const cacheDelays: Partial<Record<ChainFamily, number>> = {
     [ChainFamily.ORBIT]: 32,
     [ChainFamily.OP_STACK]: 120,
     [ChainFamily.SVM]: 512,
@@ -436,7 +444,7 @@ const resolveCanonicalBridges = (): Record<number, L1BridgeConstructor<BaseBridg
     [CHAIN_IDs.SCROLL_SEPOLIA]: ScrollERC20Bridge,
   };
 
-  const defaultBridges = {
+  const defaultBridges: Partial<Record<ChainFamily, L1BridgeConstructor<BaseBridgeAdapter>>> = {
     [ChainFamily.OP_STACK]: OpStackDefaultERC20Bridge,
     [ChainFamily.ORBIT]: ArbitrumOrbitBridge,
     [ChainFamily.ZK_STACK]: ZKStackBridge,
@@ -623,6 +631,15 @@ export const TOKEN_SPLITTER_BRIDGES: Record<
   },
 };
 
+export const L2_TOKEN_SPLITTER_BRIDGES: Record<
+  number,
+  Record<string, [L2BridgeConstructor<BaseL2BridgeAdapter>, L2BridgeConstructor<BaseL2BridgeAdapter>]>
+> = {
+  [CHAIN_IDs.TEMPO]: {
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: [OFTL2Bridge, L2BridgeApi],
+  },
+};
+
 export const CUSTOM_L2_BRIDGE: Record<number, Record<string, L2BridgeConstructor<BaseL2BridgeAdapter>>> = {
   [CHAIN_IDs.LISK]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2OpStackUSDCBridge,
@@ -673,7 +690,7 @@ export const CUSTOM_L2_BRIDGE: Record<number, Record<string, L2BridgeConstructor
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: L2BinanceCEXNativeBridge,
   },
   [CHAIN_IDs.TEMPO]: {
-    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: OFTL2Bridge,
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2TokenSplitterBridge,
   },
   [CHAIN_IDs.TRON]: {
     [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTL2Bridge,
@@ -710,9 +727,30 @@ export const CUSTOM_L2_BRIDGE: Record<number, Record<string, L2BridgeConstructor
   },
 };
 
+/**
+ * @notice Returns true if Binance acecpts deposits for the given chainId and (normalised) token address.
+ * @dev Route existence is derived from the configured L2 bridge for (chainId, l1Token), resolved with
+ * the same precedence as AdapterManager: CUSTOM_L2_BRIDGE first, then falling back to CANONICAL_L2_BRIDGE
+ * for the chain. This naturally covers BSC without a hardcoded special case.
+ * Additionally gated on `binanceCredentialsConfigured()`, which mirrors the inputs `getBinanceApiClient()`
+ * requires (API key plus either HMAC secret or GCKMS-backed secret via `--binanceSecretKey`). If the
+ * operator has not configured complete Binance credentials, every route is treated as unavailable —
+ * there is no point claiming a route we cannot use. This does NOT check real-time Binance API
+ * reachability or per-coin withdrawal status; a future change may layer a `getAccountCoins()` snapshot
+ * over this static check.
+ */
+export function hasBinanceRoute(chainId: number, l1Token: Address): boolean {
+  if (!binanceCredentialsConfigured()) {
+    return false;
+  }
+  const bridge = CUSTOM_L2_BRIDGE[chainId]?.[l1Token.toNative()] ?? CANONICAL_L2_BRIDGE[chainId];
+  return bridge === L2BinanceCEXBridge || bridge === L2BinanceCEXNativeBridge;
+}
+
 // Path to the external SpokePool indexer. Must be updated if src/libexec/* files are relocated or if the `outputDir` on TSC has been modified.
 export const RELAYER_SPOKEPOOL_LISTENER_EVM = "./dist/src/libexec/RelayerSpokePoolListener.js";
 export const RELAYER_SPOKEPOOL_LISTENER_SVM = "./dist/src/libexec/RelayerSpokePoolListenerSVM.js";
+export const RELAYER_SPOKEPOOL_LISTENER_TVM = "./dist/src/libexec/RelayerSpokePoolListenerTVM.js";
 
 export const DEFAULT_ARWEAVE_GATEWAY = { url: "arweave.net", port: 443, protocol: "https" };
 
@@ -785,7 +823,7 @@ export const SCROLL_CUSTOM_GATEWAY: { [hubToken: string]: { l1: string; l2: stri
 const resolveBridgeDelay = () => {
   const defaultBridgeDelay = 60 * 60;
 
-  const bridgeFamilies = {
+  const bridgeFamilies: Partial<Record<ChainFamily, number>> = {
     [ChainFamily.OP_STACK]: 20 * 60,
     [ChainFamily.ORBIT]: 40 * 60,
     [ChainFamily.ZK_STACK]: 60 * 60,
@@ -1028,8 +1066,24 @@ export type SwapRoute = {
 // Hardcoded swap routes the refiller can take to swap into the native token on the input destination chain ID.
 // @dev When calling the Swap API, the ZERO_ADDRESS is associated with the native gas token, even if
 // the native token address is not actually ZERO_ADDRESS.
-const generateSwapRoutes = () => {
-  const swapChains = [CHAIN_IDs.BSC, CHAIN_IDs.HYPEREVM, CHAIN_IDs.MONAD, CHAIN_IDs.POLYGON, CHAIN_IDs.PLASMA];
+interface SwapRouteConfig {
+  originChainId: number;
+  inputTokenSymbol: string;
+  outputToken: EvmAddress;
+  tradeType: string;
+  inputToken: EvmAddress;
+  destinationChainId: number;
+}
+
+const generateSwapRoutes = (): { [chainId: string]: SwapRouteConfig } => {
+  const swapChains = [
+    CHAIN_IDs.BSC,
+    CHAIN_IDs.HYPEREVM,
+    CHAIN_IDs.MONAD,
+    CHAIN_IDs.POLYGON,
+    CHAIN_IDs.PLASMA,
+    CHAIN_IDs.TEMPO,
+  ];
 
   // Stable defaults that are a good fit for most chains.
   // Arbitrum WETH is selected because the relayer receives bridge fee refunds from the Arbitrum canonical bridge.
@@ -1041,15 +1095,20 @@ const generateSwapRoutes = () => {
   };
 
   // Can override one or more defaults for a given chain here.
-  const overrides: Partial<typeof defaults> = {
+  const overrides: { [chainId: number]: Partial<typeof defaults> } = {
     [CHAIN_IDs.HYPEREVM]: { inputTokenSymbol: "USDC" },
     [CHAIN_IDs.PLASMA]: { inputTokenSymbol: "USDT" },
+    [CHAIN_IDs.TEMPO]: {
+      inputTokenSymbol: "USDC",
+      outputToken: EvmAddress.from(CONTRACT_ADDRESSES[CHAIN_IDs.TEMPO].nativeToken.address),
+    },
   };
 
   return Object.fromEntries(
     swapChains.map((destinationChainId) => {
       const swapRoute = { ...defaults, ...(overrides[destinationChainId] ?? {}) };
       const { originChainId, inputTokenSymbol } = swapRoute;
+      assert(isKeyOf(inputTokenSymbol, TOKEN_SYMBOLS_MAP), `Unknown swap token: ${inputTokenSymbol}`);
       const inputToken = EvmAddress.from(TOKEN_SYMBOLS_MAP[inputTokenSymbol].addresses[originChainId]);
 
       return [destinationChainId, { ...swapRoute, inputToken, destinationChainId }];

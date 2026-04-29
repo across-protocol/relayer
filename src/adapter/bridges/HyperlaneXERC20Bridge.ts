@@ -78,7 +78,7 @@ export class HyperlaneXERC20Bridge extends BaseBridgeAdapter {
       `this.l1Token does not match l1Token constructL1ToL2Txn was called with: ${this.hubToken} != ${l1Token}`
     );
 
-    const fee: BigNumber = await this.l1Bridge.quoteGasPayment(this.dstDomainId);
+    const fee: BigNumber = await this.getL1Bridge().quoteGasPayment(this.dstDomainId);
 
     const feeCap = HYPERLANE_FEE_CAP_OVERRIDES[this.l2chainId] ?? HYPERLANE_DEFAULT_FEE_CAP;
     if (fee.gt(feeCap)) {
@@ -90,7 +90,7 @@ export class HyperlaneXERC20Bridge extends BaseBridgeAdapter {
     }
 
     return {
-      contract: this.l1Bridge,
+      contract: this.getL1Bridge(),
       method: "transferRemote",
       args: [this.dstDomainId, toAddress.toBytes32(), amount],
       value: fee,
@@ -113,8 +113,8 @@ export class HyperlaneXERC20Bridge extends BaseBridgeAdapter {
     }
 
     const events = await paginatedEventQuery(
-      this.l1Bridge,
-      this.l1Bridge.filters.SentTransferRemote(this.dstDomainId, toAddress.toBytes32()),
+      this.getL1Bridge(),
+      this.getL1Bridge().filters.SentTransferRemote(this.dstDomainId, toAddress.toBytes32()),
       eventConfig
     );
 
@@ -141,8 +141,8 @@ export class HyperlaneXERC20Bridge extends BaseBridgeAdapter {
     }
 
     const events = await paginatedEventQuery(
-      this.l2Bridge,
-      this.l2Bridge.filters.ReceivedTransferRemote(this.hubDomainId, toAddress.toBytes32()),
+      this.getL2Bridge(),
+      this.getL2Bridge().filters.ReceivedTransferRemote(this.hubDomainId, toAddress.toBytes32()),
       eventConfig
     );
 

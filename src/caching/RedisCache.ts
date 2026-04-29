@@ -1,7 +1,7 @@
 import assert from "assert";
 import { interfaces, constants } from "@across-protocol/sdk";
 import { isDefined } from "../utils";
-import { createClient } from "redis4";
+import { createClient } from "redis";
 import winston from "winston";
 
 export type RedisClient = ReturnType<typeof createClient>;
@@ -36,12 +36,15 @@ export class RedisCache implements RedisCacheInterface {
     return isDefined(this.namespace) ? `${this.namespace}:${key}` : key;
   }
 
-  get url(): string {
-    return this.client.options.url;
+  get url(): string | undefined {
+    return this.client.options?.url;
   }
 
-  async get<T>(key: string): Promise<T | undefined> {
-    return this.client.get(this.getNamespacedKey(key)) as T;
+  async get<T>(key?: string): Promise<T | null> {
+    if (key === undefined) {
+      return null;
+    }
+    return (await this.client.get(this.getNamespacedKey(key))) as T | null;
   }
 
   async ttl(key: string): Promise<number | undefined> {
@@ -51,12 +54,13 @@ export class RedisCache implements RedisCacheInterface {
   async set<T>(key: string, val: T, expirySeconds = constants.DEFAULT_CACHING_TTL): Promise<string | undefined> {
     // Apply namespace to key.
     key = this.getNamespacedKey(key);
+    // The redis client returns `string | null`; the interface contract is `string | undefined`, so collapse null → undefined.
     if (expirySeconds === Number.POSITIVE_INFINITY) {
       // No TTL
-      return await this.client.set(key, String(val));
+      return (await this.client.set(key, String(val))) ?? undefined;
     } else if (expirySeconds > 0) {
       // EX: Expire key after expirySeconds.
-      return await this.client.set(key, String(val), { EX: expirySeconds });
+      return (await this.client.set(key, String(val), { EX: expirySeconds })) ?? undefined;
     }
 
     this.logger?.warn({
@@ -135,7 +139,7 @@ export async function disconnectRedisClient(client: RedisClient, logger?: winsto
   } catch (_e) {
     disconnectSuccessful = false;
   }
-  const url = client.options.url ?? "unknown";
+  const url = client.options?.url ?? "unknown";
   logger?.debug({
     at: "RedisCache#disconnect",
     message: `Disconnected from redis server at ${url} successfully? ${disconnectSuccessful}`,

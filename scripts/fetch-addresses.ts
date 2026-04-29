@@ -1,6 +1,9 @@
 import { writeFile } from "node:fs/promises";
 import { config } from "dotenv";
-import { addressAdapters, AddressAggregator, Logger } from "../src/utils";
+import { addressAggregator } from "@across-protocol/sdk";
+import { Logger } from "@risk-labs/logger";
+
+const { AddressAggregator, adapters: addressAdapters } = addressAggregator;
 
 const OUTPUT_PATH = "addresses.json";
 

@@ -33,7 +33,12 @@ export type MessagingFeeStruct = {
   lzTokenFee: BigNumberish;
 };
 
-export type LzTransactionDetails = { status: string; destination: LzDestinationTransactionDetails; pathway: Pathway };
+export type LzTransactionDetails = {
+  status: string;
+  source: { tx: string };
+  destination: LzDestinationTransactionDetails;
+  pathway: Pathway;
+};
 
 export type LzDestinationTransactionDetails = { status: string; failedTx: TransactionOutcome[] };
 
@@ -78,7 +83,7 @@ export function getChainIdFromEndpointId(eid: number): number {
  * @returns IOFT messenger for a given chain. Only supports EVM chains for now
  * @throws If EVM_OFT_MESSENGERS mapping doesn't have an entry for the l1Token - chainId combination
  */
-export function getMessengerEvm(l1TokenAddress: EvmAddress, chainId: number, l2ChainId): EvmAddress {
+export function getMessengerEvm(l1TokenAddress: EvmAddress, chainId: number, l2ChainId: number): EvmAddress {
   const messengerMap = LEGACY_MESH_NETWORKS.includes(l2ChainId) ? EVM_LEGACY_MESH_MESSENGERS : EVM_OFT_MESSENGERS;
   const messenger = messengerMap.get(l1TokenAddress.toNative())?.get(chainId);
   assert(isDefined(messenger), `No OFT messenger configured for ${l1TokenAddress.toNative()} on chain ${chainId}`);

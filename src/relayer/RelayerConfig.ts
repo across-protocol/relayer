@@ -5,6 +5,7 @@ import {
   BigNumber,
   bnUint256Max,
   chainIsSvm,
+  chainIsTvm,
   CHAIN_IDs,
   dedupArray,
   toBNWei,
@@ -16,6 +17,7 @@ import {
   ethers,
   TESTNET_CHAIN_IDs,
   TOKEN_SYMBOLS_MAP,
+  resolveAcrossToken,
   Address,
   toAddressType,
   EvmAddress,
@@ -23,7 +25,13 @@ import {
 } from "../utils";
 import { CommonConfig, ProcessEnv } from "../common";
 import * as Constants from "../common/Constants";
-import { InventoryConfig, TokenBalanceConfig, isAliasConfig, SwapRoute } from "../interfaces/InventoryManagement";
+import {
+  ChainTokenInventory,
+  InventoryConfig,
+  TokenBalanceConfig,
+  isAliasConfig,
+  SwapRoute,
+} from "../interfaces/InventoryManagement";
 
 type DepositConfirmationConfig = {
   usdThreshold: BigNumber;
@@ -70,9 +78,6 @@ export class RelayerConfig extends CommonConfig {
   // Set to all chain ids where the relayer should use tryMulticall over multicall on the associated spoke pool.
   // It is up to the user to ensure that the spoke pool on the target chain has tryMulticall in its active implementation.
   readonly tryMulticallChains: number[];
-
-  // TODO: Remove this config item once we fully move to generic chain adapters.
-  readonly useGenericAdapter: boolean;
 
   constructor(env: ProcessEnv) {
     const {
@@ -258,13 +263,13 @@ export class RelayerConfig extends CommonConfig {
       };
 
       const rawTokenConfigs = inventoryConfig?.tokenConfig ?? {};
-      const tokenConfigs = (inventoryConfig.tokenConfig = {});
+      inventoryConfig.tokenConfig = {};
+      const tokenConfigs = inventoryConfig.tokenConfig;
       Object.keys(rawTokenConfigs).forEach((l1Token) => {
         // If the l1Token is a symbol, resolve the correct address.
         const effectiveL1Token = ethersUtils.isAddress(l1Token)
           ? ethersUtils.getAddress(l1Token)
-          : TOKEN_SYMBOLS_MAP[l1Token].addresses[this.hubPoolChainId];
-        assert(effectiveL1Token !== undefined, `No token identified for ${l1Token}`);
+          : resolveAcrossToken(l1Token, this.hubPoolChainId, true);
 
         // Filter inventory configuration by supported tokens, if specified.
         const known =
@@ -275,24 +280,24 @@ export class RelayerConfig extends CommonConfig {
           return;
         }
 
-        tokenConfigs[effectiveL1Token] ??= {};
         const hubTokenConfig = rawTokenConfigs[l1Token];
 
         if (isAliasConfig(hubTokenConfig)) {
+          const existing = tokenConfigs[effectiveL1Token];
+          const inventoryEntry: ChainTokenInventory =
+            isDefined(existing) && isAliasConfig(existing) ? { ...existing } : {};
           Object.keys(hubTokenConfig).forEach((symbol) => {
             Object.keys(hubTokenConfig[symbol]).forEach((chainId) => {
               const rawTokenConfig = hubTokenConfig[symbol][chainId];
-              const effectiveSpokeToken = TOKEN_SYMBOLS_MAP[symbol].addresses[chainId];
+              const effectiveSpokeToken = resolveAcrossToken(symbol, Number(chainId), true);
 
-              tokenConfigs[effectiveL1Token][effectiveSpokeToken] ??= {};
-              tokenConfigs[effectiveL1Token][effectiveSpokeToken][chainId] = parseTokenConfig(
-                l1Token,
-                chainId,
-                rawTokenConfig
-              );
+              inventoryEntry[effectiveSpokeToken] ??= {};
+              inventoryEntry[effectiveSpokeToken][chainId] = parseTokenConfig(l1Token, chainId, rawTokenConfig);
             });
           });
+          tokenConfigs[effectiveL1Token] = inventoryEntry;
         } else {
+          tokenConfigs[effectiveL1Token] ??= {};
           Object.keys(hubTokenConfig).forEach((chainId) => {
             const rawTokenConfig = hubTokenConfig[chainId];
             tokenConfigs[effectiveL1Token][chainId] = parseTokenConfig(l1Token, chainId, rawTokenConfig);
@@ -305,22 +310,30 @@ export class RelayerConfig extends CommonConfig {
       const swapRoutes = (inventoryConfig.allowedSwapRoutes = [] as SwapRoute[]);
       rawSwapRoutes.forEach((rawSwapRoute) => {
         // @dev If the fromChain/toChain is 'ALL', then `fromToken`/`toToken` MUST be the symbol (otherwise we try to index TOKEN_SYMBOLS_MAP on an address).
-        const fromTokens =
-          rawSwapRoute.fromChain === "ALL"
-            ? Object.values(TOKEN_SYMBOLS_MAP[rawSwapRoute.fromToken].addresses)
-            : [
-                ethersUtils.isAddress(rawSwapRoute.fromToken)
-                  ? rawSwapRoute.fromToken
-                  : TOKEN_SYMBOLS_MAP[rawSwapRoute.fromToken].addresses[rawSwapRoute.fromChain],
-              ];
-        const toTokens =
-          rawSwapRoute.toChain === "ALL"
-            ? Object.values(TOKEN_SYMBOLS_MAP[rawSwapRoute.toToken].addresses)
-            : [
-                ethersUtils.isAddress(rawSwapRoute.toToken)
-                  ? rawSwapRoute.toToken
-                  : TOKEN_SYMBOLS_MAP[rawSwapRoute.toToken].addresses[rawSwapRoute.toChain],
-              ];
+        let fromTokens: string[];
+        if (rawSwapRoute.fromChain === "ALL") {
+          const fromTokenInfo = resolveAcrossToken(rawSwapRoute.fromToken);
+          assert(isDefined(fromTokenInfo), `Unknown token symbol: ${rawSwapRoute.fromToken}`);
+          fromTokens = Object.values(fromTokenInfo.addresses);
+        } else {
+          fromTokens = [
+            ethersUtils.isAddress(rawSwapRoute.fromToken)
+              ? rawSwapRoute.fromToken
+              : resolveAcrossToken(rawSwapRoute.fromToken, rawSwapRoute.fromChain, true),
+          ];
+        }
+        let toTokens: string[];
+        if (rawSwapRoute.toChain === "ALL") {
+          const toTokenInfo = resolveAcrossToken(rawSwapRoute.toToken);
+          assert(isDefined(toTokenInfo), `Unknown token symbol: ${rawSwapRoute.toToken}`);
+          toTokens = Object.values(toTokenInfo.addresses);
+        } else {
+          toTokens = [
+            ethersUtils.isAddress(rawSwapRoute.toToken)
+              ? rawSwapRoute.toToken
+              : resolveAcrossToken(rawSwapRoute.toToken, rawSwapRoute.toChain, true),
+          ];
+        }
         fromTokens.forEach((fromToken) => {
           toTokens.forEach((toToken) => {
             const swapRoute = {
@@ -435,7 +448,9 @@ export class RelayerConfig extends CommonConfig {
     chainIds.forEach((chainId) => {
       const defaultPath = chainIsSvm(chainId)
         ? Constants.RELAYER_SPOKEPOOL_LISTENER_SVM
-        : Constants.RELAYER_SPOKEPOOL_LISTENER_EVM;
+        : chainIsTvm(chainId)
+          ? Constants.RELAYER_SPOKEPOOL_LISTENER_TVM
+          : Constants.RELAYER_SPOKEPOOL_LISTENER_EVM;
       const { RELAYER_SPOKEPOOL_LISTENER_PATH = defaultPath } = process.env;
       minFillTime[chainId] = Number(process.env[`RELAYER_MIN_FILL_TIME_${chainId}`] ?? 0);
       listenerPath[chainId] =

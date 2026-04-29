@@ -42,5 +42,10 @@ export interface DestinationInfo {
   address: string;
   abi: unknown[];
   requiresSignature: boolean;
-  accountInitialization?: (message: string, signer: ethers.Wallet, logger: winston.Logger) => Promise<void>;
+  accountInitialization?: (
+    message: string,
+    contract: ethers.Contract,
+    chainId: number,
+    logger: winston.Logger
+  ) => Promise<void>;
 }

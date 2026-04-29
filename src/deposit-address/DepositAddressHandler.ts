@@ -1,5 +1,6 @@
 import winston from "winston";
 import { DepositAddressHandlerConfig } from "./DepositAddressHandlerConfig";
+import { RedisCacheInterface } from "../caching/RedisCache";
 import {
   getRedisCache,
   isDefined,
@@ -18,7 +19,6 @@ import {
   toBN,
   getDepositKey,
   assert,
-  getCounterfactualDepositImplementationAddress,
   getNetworkName,
   blockExplorerLink,
 } from "../utils";
@@ -32,12 +32,10 @@ import ERC20_ABI from "../common/abi/MinimalERC20.json";
  */
 export class DepositAddressHandler {
   private abortController = new AbortController();
-  private instanceCoordinator;
+  private instanceCoordinator: InstanceCoordinator;
   private initialized = false;
 
   private providersByChain: { [chainId: number]: Provider } = {};
-
-  private counterfactualDepositFactories: { [chainId: number]: Contract } = {};
 
   /** Per chainId: set of deposit keys already executed (like gasless depositNonces). */
   private observedExecutedDeposits: { [chainId: number]: Set<string> } = {};
@@ -50,7 +48,7 @@ export class DepositAddressHandler {
   private signerAddress: EvmAddress;
 
   private transactionClient;
-  private redisCache;
+  private redisCache: RedisCacheInterface | undefined;
 
   public constructor(
     readonly logger: winston.Logger,
@@ -98,7 +96,6 @@ export class DepositAddressHandler {
     await forEachAsync(this.config.relayerOriginChains, async (chainId) => {
       const provider = await getProvider(chainId);
       this.providersByChain[chainId] = provider;
-      this.counterfactualDepositFactories[chainId] = getCounterfactualDepositFactory(chainId).connect(provider);
       this.observedExecutedDeposits[chainId] = new Set<string>();
     });
 
@@ -243,7 +240,9 @@ export class DepositAddressHandler {
       return;
     }
 
-    const baseFactoryContract = this.counterfactualDepositFactories[originChainId];
+    const baseFactoryContract = getCounterfactualDepositFactory(
+      depositMessage.counterfactualFactoryContractAddress
+    ).connect(this.providersByChain[originChainId]);
 
     const useDispatcher = this.depositAddressSigners.length > 0;
     const factoryContract = useDispatcher
@@ -271,7 +270,7 @@ export class DepositAddressHandler {
       const _deployTx = buildDeployTx(
         factoryContract,
         originChainId,
-        getCounterfactualDepositImplementationAddress(originChainId),
+        depositMessage.counterfactualDepositContractAddress,
         depositMessage.paramsHash,
         depositMessage.salt
       );
@@ -291,6 +290,10 @@ export class DepositAddressHandler {
           at: "DepositAddressHandler#initiateDeposit",
           message: "Failed to submit deploy tx",
           depositKey,
+          deployTx: {
+            ...deployTx,
+            contract: deployTx.contract.address,
+          },
         });
         return;
       }
@@ -327,6 +330,10 @@ export class DepositAddressHandler {
         at: "DepositAddressHandler#initiateDeposit",
         message: "Failed to submit execute tx",
         depositKey,
+        executeTx: {
+          ...executeTx,
+          contract: executeTx.contract.address,
+        },
       });
       this.observedExecutedDeposits[originChainId].delete(depositKey);
       return;
@@ -386,6 +393,7 @@ export class DepositAddressHandler {
       recipient,
       depositAddress,
       executionFeeRecipient: this.signerAddress.toNative(),
+      shouldSponsorAccountCreation: String(depositMessage.shouldSponsorAccountCreation),
     };
     try {
       return await this.api.get<SwapApiResponse>(this.config.apiEndpoint, params);

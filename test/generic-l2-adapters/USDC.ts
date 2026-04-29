@@ -5,7 +5,7 @@ import { utils } from "@across-protocol/sdk";
 import { EvmAddress, toBNWei } from "../../src/utils/SDKUtils";
 import { BigNumber, getCctpDomainForChainId } from "../../src/utils";
 import { CCTPV2_FINALITY_THRESHOLD_FAST } from "../../src/common/Constants";
-import { PendingBridgeRedisReader } from "../../src/rebalancer/utils/PendingBridgeRedis";
+import { CctpOftReadOnlyClient } from "../../src/rebalancer/clients/CctpOftReadOnlyClient";
 
 describe("Cross Chain Adapter: USDC CCTP L2 Bridge", async function () {
   let adapter: MockBaseChainAdapter;
@@ -107,7 +107,7 @@ describe("Cross Chain Adapter: USDC CCTP L2 Bridge", async function () {
     );
     adapter.setPendingBridgeRedisReader({
       getPendingBridgeTxnRefsForRoute: async () => new Set([depositTxn.hash]),
-    } as unknown as PendingBridgeRedisReader);
+    } as unknown as CctpOftReadOnlyClient);
     const amount = await adapter.getL2PendingWithdrawalAmount(
       searchConfig,
       searchConfig,

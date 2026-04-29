@@ -171,6 +171,10 @@ class TestableGaslessRelayer extends GaslessRelayer {
     this.stateTransitions[depositKey] ??= [];
     this.stateTransitions[depositKey].push({ from: currentState, to: state });
   }
+
+  public runMarkFilledFromInitialObservation(messages: AnyGaslessDepositMessage[]): number {
+    return this._markFilledFromInitialObservation(messages);
+  }
 }
 
 /**
@@ -206,7 +210,7 @@ function makeDepositMessage(
     depositId: "42",
     requestId: "req-test",
     signature: DUMMY_SIGNATURE,
-    permitType: "receiveWithAuthorization",
+    permitType: "erc3009",
     permit: {
       types: { ReceiveWithAuthorization: [] },
       domain: { name: "USD Coin", version: "2", chainId: ORIGIN_CHAIN_ID, verifyingContract: USDC_MAINNET },
@@ -872,6 +876,45 @@ describe("GaslessRelayer", function () {
       expect(relayer.initiateDepositCalls).to.equal(1);
       expect(relayer.initiateFillCalls).to.equal(0);
       expectCctpTransitions(relayer.stateTransitions[nonce]);
+    });
+  });
+
+  describe("Initial observation (mark FILLED from observed deposits/fills)", function () {
+    it("Bridge: sets FILLED when both origin deposit and destination fill are observed", function () {
+      const msg = makeTestDepositMessage();
+      const nonce = depositNonceFor(relayer, msg);
+      const fillKey = `${ORIGIN_CHAIN_ID}:${toBN(msg.depositId)}`;
+
+      relayer.setObservedDeposits({ [ORIGIN_CHAIN_ID]: new Set([nonce]) });
+      relayer.setObservedFills({ [DESTINATION_CHAIN_ID]: new Set([fillKey]) });
+
+      const n = relayer.runMarkFilledFromInitialObservation([msg]);
+      expect(n).to.equal(1);
+      expect(relayer.getMessageState(nonce)).to.equal(MessageState.FILLED);
+    });
+
+    it("Bridge: does not set state when only deposit is observed", function () {
+      const msg = makeTestDepositMessage();
+      const nonce = depositNonceFor(relayer, msg);
+
+      relayer.setObservedDeposits({ [ORIGIN_CHAIN_ID]: new Set([nonce]) });
+      relayer.setObservedFills({ [DESTINATION_CHAIN_ID]: new Set() });
+
+      const n = relayer.runMarkFilledFromInitialObservation([msg]);
+      expect(n).to.equal(0);
+      expect(relayer.getMessageState(nonce)).to.equal(undefined);
+    });
+
+    it("CCTP: sets FILLED when origin deposit is observed (no fill required)", function () {
+      const msg = makeTestCctpMessage();
+      const nonce = depositNonceFor(relayer, msg);
+
+      relayer.setObservedDeposits({ [ORIGIN_CHAIN_ID]: new Set([nonce]) });
+      relayer.setObservedFills({ [DESTINATION_CHAIN_ID]: new Set() });
+
+      const n = relayer.runMarkFilledFromInitialObservation([msg]);
+      expect(n).to.equal(1);
+      expect(relayer.getMessageState(nonce)).to.equal(MessageState.FILLED);
     });
   });
 

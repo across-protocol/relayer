@@ -6,8 +6,9 @@ import {
   retrieveSignerFromCLIArgs,
   getProvider,
   ERC20,
-  TOKEN_SYMBOLS_MAP,
+  resolveAcrossToken,
   assert,
+  EvmAddress,
   getL1TokenAddress,
   Contract,
   fromWei,
@@ -26,7 +27,7 @@ const args = minimist(process.argv.slice(2), {
 });
 
 // Example run:
-// ts-node ./scripts/withdrawFromArbitrumOrbit.ts
+// tsx ./scripts/withdrawFromArbitrumOrbit.ts
 // \ --amount 3000000000000000000
 // \ --chainId 41455
 // \ --token WETH
@@ -42,15 +43,16 @@ export async function run(): Promise<void> {
   const signerAddr = await baseSigner.getAddress();
   const chainId = parseInt(args.chainId);
   const connectedSigner = baseSigner.connect(await getProvider(chainId));
-  const l2Token = TOKEN_SYMBOLS_MAP[args.token]?.addresses[chainId];
-  assert(l2Token, `${args.token} not found on chain ${chainId} in TOKEN_SYMBOLS_MAP`);
+  const l2TokenAddress = resolveAcrossToken(String(args.token), chainId);
+  assert(l2TokenAddress, `${args.token} not found on chain ${chainId} in TOKEN_SYMBOLS_MAP`);
+  const l2Token = EvmAddress.from(l2TokenAddress);
   const l1TokenAddress = getL1TokenAddress(l2Token, chainId);
   const { decimals, symbol } = getTokenInfo(l2Token, chainId);
   const amount = args.amount;
   const amountFromWei = ethers.utils.formatUnits(amount, decimals);
   console.log(`Amount to bridge from chain ${chainId}: ${amountFromWei} ${l2Token}`);
 
-  const erc20 = new Contract(l2Token, ERC20.abi, connectedSigner);
+  const erc20 = new Contract(l2Token.toNative(), ERC20.abi, connectedSigner);
   const currentBalance = await erc20.balanceOf(signerAddr);
   const nativeTokenSymbol = getNativeTokenSymbol(chainId);
   const currentNativeBalance = await connectedSigner.getBalance();

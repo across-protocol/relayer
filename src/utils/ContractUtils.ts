@@ -1,4 +1,5 @@
 import * as typechain from "@across-protocol/sdk/typechain";
+import { JsonFragment, ParamType } from "@ethersproject/abi";
 import {
   CHAIN_IDs,
   Contract,
@@ -8,45 +9,69 @@ import {
   EvmAddress,
   chainIsEvm,
   Address,
+  assert,
   toAddressType,
   isDefined,
+  chainIsTvm,
+  TvmAddress,
 } from ".";
 import { CONTRACT_ADDRESSES } from "../common";
+import { isKeyOf } from "./TypeGuards";
+
+function getTypechainAbi(contractName: string): readonly JsonFragment[] {
+  const factoryName = `${contractName}__factory`;
+  if (!isKeyOf(factoryName, typechain)) {
+    throw new Error(`No typechain factory found for ${contractName}`);
+  }
+  const factory = typechain[factoryName];
+  assert("abi" in factory, `Typechain export ${factoryName} has no abi`);
+  return factory.abi as readonly JsonFragment[];
+}
+import COUNTERFACTUAL_DEPOSIT_FACTORY_ABI from "../common/abi/CounterfactualDepositFactory.json";
+import { TronWeb } from "tronweb";
+
+/**
+ * Returns an address string suitable for ethers / EVM JSON-RPC (`0x` + 20 bytes).
+ * On TVM, deployment metadata may use Tron base58 — that case is normalized; otherwise unchanged.
+ */
+export function getEthersCompatibleAddress(chainId: number, address: string): string {
+  if (chainIsTvm(chainId) && TronWeb.isAddress(address)) {
+    return TvmAddress.from(address).toEvmAddress();
+  }
+  return address;
+}
 
 // Return an ethers contract instance for a deployed contract, imported from the Across-protocol contracts repo.
 export function getDeployedContract(contractName: string, networkId: number, signer?: Signer): Contract {
   try {
-    const address = getDeployedAddress(contractName, networkId);
+    const address = getEthersCompatibleAddress(networkId, getDeployedAddress(contractName, networkId));
     // If the contractName is SpokePool then we need to modify it to find the correct contract factory artifact.
-    const artifact = typechain[`${contractName}__factory`];
-    return new Contract(address, artifact.abi, signer);
+    const abi = getTypechainAbi(contractName);
+    return new Contract(address, abi, signer);
   } catch (error) {
     throw new Error(`Could not find address for contract ${contractName} on ${networkId} (${error})`);
   }
 }
 
-export function getCounterfactualDepositImplementationAddress(chainId: number): string {
-  return CONTRACT_ADDRESSES[chainId].counterfactualDeposit.address;
-}
-
-// For a chain ID and optional CounterfactualDepositFactory address, return a Contract instance with the corresponding ABI.
-export function getCounterfactualDepositFactory(chainId: number, address?: string): Contract {
-  return new Contract(
-    address ?? CONTRACT_ADDRESSES[chainId].counterfactualDepositFactory.address,
-    CONTRACT_ADDRESSES[chainId].counterfactualDepositFactory.abi
-  );
+// For a CounterfactualDepositFactory address, return a Contract instance with the corresponding ABI.
+export function getCounterfactualDepositFactory(address: string): Contract {
+  return new Contract(address, COUNTERFACTUAL_DEPOSIT_FACTORY_ABI);
 }
 
 // For a chain ID and optional SpokePool address, return a Contract instance with the corresponding ABI.
 export function getSpokePool(chainId: number, address?: string): Contract {
   const spokePool = getDeployedContract("SpokePool", chainId);
-  return spokePool.connect(address ?? getDeployedAddress("SpokePool", chainId));
+
+  return address ? spokePool.connect(address) : spokePool;
 }
 
 // For a chain ID and optional SpokePoolPeriphery address, return a Contract instance with the corresponding ABI.
 export function getSpokePoolPeriphery(chainId: number, address?: string): Contract {
-  address ??= getDeployedAddress("SpokePoolPeriphery", chainId);
-  return new Contract(address, CONTRACT_ADDRESSES[chainId].spokePoolPeriphery.abi);
+  const resolved = address ?? getDeployedAddress("SpokePoolPeriphery", chainId);
+  return new Contract(
+    getEthersCompatibleAddress(chainId, resolved),
+    CONTRACT_ADDRESSES[chainId].spokePoolPeriphery.abi
+  );
 }
 
 // Uniswap Permit2 (same deployment address on supported EVM chains). Falls back to mainnet metadata when `chainId` has no entry.
@@ -65,10 +90,13 @@ export function getHubPoolAddress(chainId: number): EvmAddress {
   return EvmAddress.from(getDeployedAddress("HubPool", chainId, true));
 }
 
-export function getParamType(contractName: string, functionName: string, paramName: string): string {
-  const artifact = typechain[`${[contractName]}__factory`];
-  const fragment = artifact.abi.find((fragment: { name: string }) => fragment.name === functionName);
-  return fragment.inputs.find((input: { name: string }) => input.name === paramName) || "";
+export function getParamType(contractName: string, functionName: string, paramName: string): ParamType {
+  const abi = getTypechainAbi(contractName);
+  const fragment = abi.find((fragment) => fragment.name === functionName);
+  assert(isDefined(fragment?.inputs), `No inputs found for ${contractName}.${functionName}`);
+  const param = fragment.inputs.find((input) => input.name === paramName);
+  assert(isDefined(param), `No param ${paramName} found in ${contractName}.${functionName}`);
+  return ParamType.from(param);
 }
 
 export function getDeploymentBlockNumber(contractName: string, networkId: number): number {

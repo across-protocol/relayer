@@ -9,6 +9,7 @@ import {
   assert,
   isDefined,
   getTimestampForBlock,
+  BinanceApi,
   getBinanceApiClient,
   floatToBN,
   CHAIN_IDs,
@@ -33,7 +34,7 @@ import ERC20_ABI from "../../common/abi/MinimalERC20.json";
 export class BinanceCEXBridge extends BaseBridgeAdapter {
   // Only store the promise in the constructor and evaluate the promise in async blocks.
   protected readonly binanceApiClientPromise;
-  protected binanceApiClient;
+  protected binanceApiClient: BinanceApi | undefined;
   protected tokenSymbol: string;
   protected l2Provider: Provider;
 
@@ -54,7 +55,7 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
     // Pull the binance API key from environment and throw if we cannot instantiate this bridge.
     this.binanceApiClientPromise = getBinanceApiClient(process.env["BINANCE_API_BASE"]);
 
-    // Pass in the WETH ABI as the ERC20 ABI. This is fine to do since we only call `transfer` on `this.l1Bridge`.
+    // Pass in the WETH ABI as the ERC20 ABI. This is fine to do since we only call `transfer` on `this.getL1Bridge()`.
     this.l1Bridge = new Contract(l1Token.toNative(), ERC20_ABI, l1Signer);
 
     // Get the required token/network context needed to query the Binance API.

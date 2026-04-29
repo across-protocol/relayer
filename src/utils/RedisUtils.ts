@@ -1,7 +1,7 @@
 import { assert, toBN, BigNumberish, isDefined } from "./";
 import { REDIS_URL_DEFAULT } from "../common/Constants";
 import { constants } from "@across-protocol/sdk";
-import { createClient } from "redis4";
+import { createClient } from "redis";
 import winston from "winston";
 import { Deposit, Fill } from "../interfaces";
 import dotenv from "dotenv";
@@ -89,7 +89,9 @@ async function _createRedisClient(
     });
     return new RedisCache(redisClient, namespace);
   } catch (err) {
-    await disconnectRedisClient(redisClient, logger);
+    if (isDefined(redisClient)) {
+      await disconnectRedisClient(redisClient, logger);
+    }
     logger?.debug({
       at: "RedisUtils#getRedis",
       message: `Failed to connect to redis server at ${url}.`,
@@ -180,7 +182,7 @@ export async function waitForPubSub(
 export async function disconnectRedisClients(logger?: winston.Logger): Promise<void> {
   const clients = Object.entries(redisClients);
   for (const [key, clientPromise] of clients) {
-    const logParams: Record<string, unknown> = {
+    const logParams: { at: string; message: string; key: string; success?: boolean; error?: unknown } = {
       at: "RedisUtils#disconnectRedisClient",
       message: "Disconnecting from redis server.",
       key,
@@ -193,10 +195,10 @@ export async function disconnectRedisClients(logger?: winston.Logger): Promise<v
     try {
       const client = await clientPromise;
       await client.disconnect();
-      logParams["success"] = true;
+      logParams.success = true;
     } catch (e) {
-      logParams["success"] = false;
-      logParams["error"] = e;
+      logParams.success = false;
+      logParams.error = e;
     }
     logger?.debug(logParams);
   }

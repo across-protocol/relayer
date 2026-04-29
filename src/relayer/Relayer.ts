@@ -64,7 +64,7 @@ export class Relayer {
   private lastLogTime = 0;
   private lastMaintenance = 0;
   private profiler: InstanceType<typeof Profiler>;
-  private hubPoolBlockBuffer: number;
+  private hubPoolBlockBuffer?: number;
   protected fillLimits: { [originChainId: number]: { fromBlock: number; limit: BigNumber }[] };
   protected ignoredDeposits: { [depositHash: string]: boolean } = {};
   protected updated = 0;
@@ -893,10 +893,11 @@ export class Relayer {
     pendingTxnHashes[chainId] = (async () => {
       return (await fillExecutorClient.executeTxnQueue(chainId, simulate)).map((response) => response.hash);
     })();
-    const txnReceipts = await pendingTxnHashes[chainId];
-    delete pendingTxnHashes[chainId];
-
-    return txnReceipts;
+    try {
+      return await pendingTxnHashes[chainId];
+    } finally {
+      delete pendingTxnHashes[chainId];
+    }
   }
 
   async checkForUnfilledDepositsAndFill(simulate = false): Promise<{ [chainId: number]: Promise<string[]> }> {
@@ -916,7 +917,7 @@ export class Relayer {
       this.clients.svmFillerClient.clearTransactionQueue();
     }
     const txnReceipts: { [chainId: number]: Promise<string[]> } = Object.fromEntries(
-      Object.values(spokePoolClients).map(({ chainId }) => [chainId, []])
+      Object.values(spokePoolClients).map(({ chainId }): [number, Promise<string[]>] => [chainId, Promise.resolve([])])
     );
 
     // Fetch unfilled deposits and filter out deposits upfront before we compute the minimum deposit confirmation

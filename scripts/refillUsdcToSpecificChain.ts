@@ -27,7 +27,7 @@ import { MultiCallerClient } from "../src/clients";
 config();
 
 // Example usage:
-//   ts-node ./scripts/refillUsdcToSpecificChain.ts --wallet gckms --keys bot1
+//   tsx ./scripts/refillUsdcToSpecificChain.ts --wallet gckms --keys bot1
 //
 // Required environment variables (set in .env file):
 //   SOURCE_CHAIN_IDS="[8453,42161,137]"  # JSON array of source chain IDs
@@ -293,7 +293,7 @@ async function run(): Promise<void> {
     logger.debug({
       at: "RefillUsdcToSpecificChain#run",
       message: "💡 To execute transactions, set SEND_TRANSACTIONS=true in your environment variables",
-      example: "SEND_TRANSACTIONS=true yarn ts-node ./scripts/refillUsdcToSpecificChain.ts --wallet gckms --keys bot1",
+      example: "SEND_TRANSACTIONS=true yarn tsx ./scripts/refillUsdcToSpecificChain.ts --wallet gckms --keys bot1",
     });
     return;
   }

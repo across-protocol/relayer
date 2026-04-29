@@ -2,7 +2,7 @@ import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { OFTL2Bridge } from "../../src/adapter/l2Bridges/OFTL2Bridge";
 import { ethers, expect, randomAddress, toBNWei } from "../utils";
 import { EvmAddress } from "../../src/utils/SDKUtils";
-import { PendingBridgeRedisReader } from "../../src/rebalancer/utils/PendingBridgeRedis";
+import { CctpOftReadOnlyClient } from "../../src/rebalancer/clients/CctpOftReadOnlyClient";
 import * as OFTUtils from "../../src/utils/OFTUtils";
 
 describe("Cross Chain Adapter: OFT L2 Bridge", function () {
@@ -18,7 +18,7 @@ describe("Cross Chain Adapter: OFT L2 Bridge", function () {
 
     adapter.setPendingBridgeRedisReader({
       getPendingBridgeTxnRefsForRoute: async () => new Set(["tracked-txn"]),
-    } as unknown as PendingBridgeRedisReader);
+    } as unknown as CctpOftReadOnlyClient);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (adapter as any).l2Bridge.queryFilter = async () => [
