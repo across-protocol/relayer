@@ -244,7 +244,7 @@ src/dataworker/Dataworker.ts(2480,17): error TS2345: Argument of type 'Address |
 src/dataworker/Dataworker.ts(2725,63): error TS2345: Argument of type 'unknown[]' is not assignable to parameter of type 'ContractInterface'.
 src/dataworker/Dataworker.ts(2885,45): error TS2345: Argument of type 'Address | undefined' is not assignable to parameter of type 'Address'.
 src/dataworker/Dataworker.ts(2936,7): error TS2322: Type 'CloseInstructionParamsInstruction<Address, string, string, []>' is not assignable to type 'CloseInstructionParamsInstruction<Address<"DLv3NggMiSaef97YCkew5xKUHDh13tVGZ7tydt3ZeAru">, string, string, []> | undefined'.
-src/dataworker/Dataworker.ts(2944,55): error TS2322: Type 'CloseInstructionParamsInstruction<Address<"DLv3NggMiSaef97YCkew5xKUHDh13tVGZ7tydt3ZeAru">, string, string, []> | undefined' is not assignable to type 'Instruction<string, readonly (AccountLookupMeta<string, string> | AccountMeta<string>)[]>'.
+src/dataworker/Dataworker.ts(2944,55): error TS2322: Type 'CloseInstructionParamsInstruction<Address<"DLv3NggMiSaef97YCkew5xKUHDh13tVGZ7tydt3ZeAru">, string, string, []> | undefined' is not assignable to type 'Instruction<string, readonly (AccountMeta<string> | AccountLookupMeta<string, string>)[]>'.
 src/dataworker/Dataworker.ts(3299,45): error TS2345: Argument of type 'Address | undefined' is not assignable to parameter of type 'Address'.
 src/dataworker/DataworkerClientHelper.ts(176,5): error TS2322: Type 'ProposedRootBundle | undefined' is not assignable to type 'ProposedRootBundle'.
 src/dataworker/DataworkerClientHelper.ts(177,5): error TS2322: Type 'ProposedRootBundle | undefined' is not assignable to type 'ProposedRootBundle'.
@@ -347,7 +347,7 @@ src/gasless/GaslessRelayer.ts(207,7): error TS2345: Argument of type 'RedisCache
 src/gasless/GaslessRelayer.ts(550,17): error TS2322: Type 'undefined' is not assignable to type 'RelayData & { destinationChainId: number; }'.
 src/gasless/GaslessRelayer.ts(561,42): error TS2454: Variable 'depositReceiptPromise' is used before being assigned.
 src/gasless/GaslessRelayer.ts(608,44): error TS2454: Variable 'deposit' is used before being assigned.
-src/gasless/GaslessRelayer.ts(625,15): error TS2322: Type 'Omit<DepositWithBlock, "quoteBlockNumber" | "fromLiteChain" | "toLiteChain"> | undefined' is not assignable to type 'RelayData & { destinationChainId: number; }'.
+src/gasless/GaslessRelayer.ts(625,15): error TS2322: Type 'Omit<DepositWithBlock, "fromLiteChain" | "toLiteChain" | "quoteBlockNumber"> | undefined' is not assignable to type 'RelayData & { destinationChainId: number; }'.
 src/gasless/GaslessRelayer.ts(644,17): error TS2454: Variable 'deposit' is used before being assigned.
 src/gasless/GaslessRelayer.ts(777,5): error TS2322: Type 'TransactionReceipt | undefined' is not assignable to type 'TransactionReceipt | null'.
 src/gasless/GaslessRelayer.ts(847,5): error TS2322: Type 'TransactionReceipt | undefined' is not assignable to type 'TransactionReceipt | null'.
@@ -480,12 +480,12 @@ src/utils/CCTPUtils.ts(758,61): error TS2345: Argument of type 'string | undefin
 src/utils/CCTPUtils.ts(1028,39): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
 src/utils/CCTPUtils.ts(1035,5): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
 src/utils/ContractUtils.ts(47,59): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/utils/ContractUtils.ts(72,41): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/utils/ContractUtils.ts(86,24): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/utils/ContractUtils.ts(90,26): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/utils/ContractUtils.ts(118,23): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/utils/ContractUtils.ts(128,23): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/utils/ContractUtils.ts(134,23): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+src/utils/ContractUtils.ts(71,59): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+src/utils/ContractUtils.ts(83,24): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+src/utils/ContractUtils.ts(87,26): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+src/utils/ContractUtils.ts(115,23): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+src/utils/ContractUtils.ts(125,23): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+src/utils/ContractUtils.ts(131,23): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
 src/utils/HyperliquidUtils.ts(119,5): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
 src/utils/InstanceCoordinator.ts(19,5): error TS2322: Type 'Promise<string | undefined>' is not assignable to type 'Promise<string>'.
 src/utils/InstanceCoordinator.ts(46,7): error TS2322: Type 'string | null' is not assignable to type 'string | undefined'.

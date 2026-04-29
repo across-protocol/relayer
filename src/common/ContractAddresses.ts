@@ -992,3 +992,14 @@ export function getContractEntry(chainId: number, name: string): { address: stri
   assert(isJsonAbi(entry.abi), `Invalid ABI shape: ${chainId}/${name}`);
   return { address: entry.address, abi: entry.abi };
 }
+
+/**
+ * Look up only the `abi` for a contract entry (address resolved via deployment metadata).
+ * Throws if the abi is missing or malformed.
+ */
+export function getContractEntryAbi(chainId: number, name: string): ContractInterface {
+  const entry = CONTRACT_ADDRESSES[chainId]?.[name];
+  assert(isDefined(entry?.abi), `Missing CONTRACT_ADDRESSES abi: ${chainId}/${name}`);
+  assert(isJsonAbi(entry.abi), `Invalid ABI shape: ${chainId}/${name}`);
+  return entry.abi;
+}
