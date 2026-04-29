@@ -39,7 +39,7 @@ async function getL1ToL2MessageStatusUsingCustomProvider(
   messageHash: string,
   l2Provider: ethers.providers.Provider
 ): Promise<OnChainMessageStatus> {
-  const iface = new ethers.utils.Interface(messageService.contract.interface.format(true));
+  const iface = new ethers.utils.Interface(messageService.contract.interface.format());
   const l2Contract = new Contract(messageService.contractAddress, iface, l2Provider);
 
   const status: BigNumber = await l2Contract.inboxL1L2MessageStatus(messageHash);
