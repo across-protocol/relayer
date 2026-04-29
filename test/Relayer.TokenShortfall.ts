@@ -155,7 +155,7 @@ describe("Relayer: Token balance shortfall", async function () {
     const chainIds = Object.values(spokePoolClients).map(({ chainId }) => chainId);
     inventoryClient = new MockInventoryClient(
       null,
-      null,
+      spyLogger,
       null,
       null,
       null,

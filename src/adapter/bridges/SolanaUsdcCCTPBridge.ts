@@ -37,8 +37,7 @@ export class SolanaUsdcCCTPBridge extends BaseBridgeAdapter {
   // We need the constructor to operate in a synchronous context, but the call to construct an event client is asynchronous, so
   // this bridge holds onto the client promise and lazily evaluates it for when it needs to use it (in `queryL2BridgeFinalizationEvents`).
   private readonly solanaEventsClientPromise: Promise<arch.svm.SvmCpiEventsClient>;
-  private solanaEventsClient: arch.svm.SvmCpiEventsClient;
-  private svmAddress: string;
+  private solanaEventsClient?: arch.svm.SvmCpiEventsClient;
 
   constructor(
     l2chainId: number,
