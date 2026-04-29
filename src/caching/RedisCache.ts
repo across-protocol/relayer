@@ -6,12 +6,11 @@ import winston from "winston";
 
 export type RedisClient = ReturnType<typeof createClient>;
 
-export interface RedisCacheInterface extends interfaces.CachingMechanismInterface, interfaces.PubSubMechanismInterface {
+export interface RedisCacheInterface extends interfaces.CachingMechanismInterface {
   decr(key: string): Promise<number>;
   decrBy(key: string, amount: number): Promise<number>;
   incr(key: string): Promise<number>;
   incrBy(key: string, amount: number): Promise<number>;
-  unsub(channel: string, listener: (message: string, channel: string) => void): Promise<void>;
 }
 
 /**
@@ -101,24 +100,6 @@ export class RedisCache implements RedisCacheInterface {
   incrBy(key: string, amount: number): Promise<number> {
     assert(amount >= 0);
     return this.client.incrBy(this.getNamespacedKey(key), amount);
-  }
-
-  pub(channel: string, message: string): Promise<number> {
-    return this.client.publish(channel, message);
-  }
-
-  async sub(channel: string, listener: (message: string, channel: string) => void): Promise<void> {
-    await this.client.subscribe(channel, listener);
-  }
-
-  async unsub(channel: string, listener: (message: string, channel: string) => void): Promise<void> {
-    await this.client.unsubscribe(channel, listener);
-  }
-
-  async duplicate(): Promise<RedisCache> {
-    const newClient = this.client.duplicate();
-    await newClient.connect();
-    return new RedisCache(newClient, this.namespace, this.logger);
   }
 
   async disconnect(): Promise<void> {
