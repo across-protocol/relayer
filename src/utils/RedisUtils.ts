@@ -6,6 +6,7 @@ import winston from "winston";
 import { Deposit, Fill } from "../interfaces";
 import dotenv from "dotenv";
 import { disconnectRedisClient, RedisCache, RedisCacheInterface, RedisClient } from "../caching/RedisCache";
+import { RedisPubSub } from "../caching/RedisPubSub";
 dotenv.config();
 
 const globalNamespace: string | undefined = process.env.GLOBAL_CACHE_NAMESPACE
@@ -43,18 +44,7 @@ async function _getRedis(
   }
 }
 
-async function _createRedisClient(
-  logger: winston.Logger | undefined,
-  url: string,
-  namespace?: string
-): Promise<RedisCache> {
-  const redisInstanceKey = namespace ? `${url}-${namespace}` : url;
-  logger?.debug({
-    at: "RedisUtils#_getRedis",
-    message: `Creating new redis client instance with key ${redisInstanceKey}`,
-  });
-
-  let redisClient: RedisClient | undefined = undefined;
+async function _createRawRedisClient(logger: winston.Logger | undefined, url: string): Promise<RedisClient> {
   const reconnectStrategy = (retries: number): number | Error => {
     // Set a maximum retry limit to prevent infinite reconnection attempts
     const MAX_RETRIES = 10;
@@ -78,16 +68,12 @@ async function _createRedisClient(
     return delay + jitter;
   };
 
+  let redisClient: RedisClient | undefined = undefined;
   try {
     redisClient = createClient({ url, socket: { reconnectStrategy } });
     redisClient.on("error", (err) => logger?.warn({ at: "RedisUtils", message: "Redis error", error: String(err) }));
     await redisClient.connect();
-    logger?.debug({
-      at: "RedisUtils#getRedis",
-      message: `Connected to redis server at ${url} successfully!`,
-      dbSize: await redisClient.dbSize(),
-    });
-    return new RedisCache(redisClient, namespace);
+    return redisClient;
   } catch (err) {
     if (isDefined(redisClient)) {
       await disconnectRedisClient(redisClient, logger);
@@ -99,6 +85,26 @@ async function _createRedisClient(
     });
     throw err;
   }
+}
+
+async function _createRedisClient(
+  logger: winston.Logger | undefined,
+  url: string,
+  namespace?: string
+): Promise<RedisCache> {
+  const redisInstanceKey = namespace ? `${url}-${namespace}` : url;
+  logger?.debug({
+    at: "RedisUtils#_getRedis",
+    message: `Creating new redis client instance with key ${redisInstanceKey}`,
+  });
+
+  const redisClient = await _createRawRedisClient(logger, url);
+  logger?.debug({
+    at: "RedisUtils#getRedis",
+    message: `Connected to redis server at ${url} successfully!`,
+    dbSize: await redisClient.dbSize(),
+  });
+  return new RedisCache(redisClient, namespace);
 }
 
 export async function getRedisCache(
@@ -114,18 +120,17 @@ export async function getRedisCache(
   return await _getRedis(logger, url, customNamespace);
 }
 
-export async function getRedisPubSub(logger?: winston.Logger, url?: string): Promise<RedisCacheInterface | undefined> {
+export async function getRedisPubSub(logger?: winston.Logger, url = REDIS_URL): Promise<RedisPubSub | undefined> {
   // Don't permit redis to be used in test.
   if (isDefined(process.env.RELAYER_TEST)) {
     return undefined;
   }
 
-  const client = await _getRedis(logger, url);
-  if (client) {
-    // since getRedis returns the same client instance for the same url,
-    // we need to duplicate it before creating a new RedisPubSub instance
-    return await client.duplicate();
-  }
+  // Pub/sub requires its own dedicated socket: once SUBSCRIBE is issued, Redis forbids
+  // regular commands on that connection. Build a fresh RedisClient rather than sharing
+  // the cache singleton's socket.
+  const client = await _createRawRedisClient(logger, url);
+  return new RedisPubSub(client, logger);
 }
 
 export function getRedisDepositKey(depositOrFill: Deposit | Fill): string {
@@ -151,7 +156,7 @@ export async function getDeposit(key: string, redisClient: RedisCache): Promise<
 }
 
 export async function waitForPubSub(
-  redisClient: RedisCacheInterface,
+  redisClient: RedisPubSub,
   channel: string,
   message: string,
   maxWaitMs = 60000
