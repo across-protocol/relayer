@@ -83,6 +83,7 @@ export async function resolveSpokePoolActivationBlock(
   // to a block number on the SpokePool chain. Use this block as the lower bound for the search.
   const blockFinder: undefined = undefined;
   const mainnetActivationBlock = hubPoolClient.getSpokePoolActivationBlock(chainId, spokePoolAddr);
+  assert(isDefined(mainnetActivationBlock), `No spoke pool activation block for chain ${chainId}`);
   const { timestamp } = await hubPoolClient.hubPool.provider.getBlock(mainnetActivationBlock);
   const spokePool = chainIsSvm(chainId) ? "SvmSpoke" : "SpokePool";
   const hints = { lowBlock: getDeploymentBlockNumber(spokePool, chainId) };
@@ -282,7 +283,7 @@ export async function getSpokePoolClientsForContract(
   logger: winston.Logger,
   hubPoolClient: HubPoolClient,
   config: CommonConfig,
-  spokePools: { chainId: number; contract: Contract; registrationBlock: number }[],
+  spokePools: { chainId: number; contract: Contract | undefined; registrationBlock: number }[],
   fromBlocks: { [chainId: number]: number },
   toBlocks: { [chainId: number]: number }
 ): Promise<SpokePoolClientsByChain> {
@@ -314,6 +315,7 @@ export async function getSpokePoolClientsForContract(
       maxLookBack: config.maxBlockLookBack[chainId],
     };
     if (chainIsEvm(chainId)) {
+      assert(isDefined(contract), `Missing spoke pool contract for EVM chain ${chainId}`);
       spokePoolClients[chainId] = new EVMSpokePoolClient(
         logger,
         contract,
@@ -345,7 +347,7 @@ export async function updateSpokePoolClients(
     Object.values(spokePoolClients).map((client) =>
       // SVM does not implement RequestedSpeedUpDeposit.
       chainIsSvm(client.chainId)
-        ? client.update(eventsToQuery.filter((event) => event !== "RequestedSpeedUpDeposit"))
+        ? client.update(eventsToQuery?.filter((event) => event !== "RequestedSpeedUpDeposit"))
         : client.update(eventsToQuery)
     )
   );
@@ -411,7 +413,7 @@ export async function constructClients(
 
 // @dev The HubPoolClient is dependent on the state of the ConfigStoreClient,
 //      so update the ConfigStoreClient first.
-export async function updateClients(clients: Clients, config: CommonConfig, logger?: winston.Logger): Promise<void> {
+export async function updateClients(clients: Clients, config: CommonConfig, logger: winston.Logger): Promise<void> {
   await clients.configStoreClient.update();
   config.validate(clients.configStoreClient.getChainIdIndicesForBlock(), logger);
 }
@@ -421,12 +423,12 @@ export function spokePoolClientsToProviders(spokePoolClients: { [chainId: number
 } {
   return Object.fromEntries(
     Object.entries(spokePoolClients)
-      .map(([chainId, client]): [number, ethers.providers.Provider] => {
+      .map(([chainId, client]): [number, ethers.providers.Provider | undefined] => {
         if (isEVMSpokePoolClient(client)) {
           return [Number(chainId), client.spokePool.signer.provider];
         }
         return [Number(chainId), undefined];
       })
-      .filter(([, provider]) => !!provider)
+      .filter((entry): entry is [number, ethers.providers.Provider] => isDefined(entry[1]))
   );
 }

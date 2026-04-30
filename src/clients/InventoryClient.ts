@@ -647,6 +647,7 @@ export class InventoryClient {
       deposit.originChainId,
       hubPoolBlock
     );
+    assert(isDefined(l1Token), `No L1 token mapping for ${deposit.inputToken} on chain ${deposit.originChainId}`);
     return this.hubPoolClient.l2TokenEnabledForL1TokenAtBlock(l1Token, deposit.destinationChainId, hubPoolBlock);
   }
 
@@ -772,6 +773,7 @@ export class InventoryClient {
       assert(this._l1TokenEnabledForChain(l1Token, chainId), `Token ${l1Token} not enabled for chain ${chainId}`);
 
       const repaymentToken = chainId === originChainId ? inputToken : this.getRemoteTokenForL1Token(l1Token, chainId);
+      assert(isDefined(repaymentToken), `No remote token mapping for ${l1Token} on chain ${chainId}`);
       if (chainId !== originChainId) {
         assert(
           this.hubPoolClient.l2TokenHasPoolRebalanceRoute(repaymentToken, chainId),
@@ -1185,6 +1187,9 @@ export class InventoryClient {
 
     const groupedRebalances = Object.groupBy(executedTransactions, (txn) => txn.chainId);
     for (const [_chainId, rebalances] of Object.entries(groupedRebalances)) {
+      if (!isDefined(rebalances)) {
+        continue;
+      }
       const chainId = Number(_chainId);
       mrkdwn += `*Rebalances sent to ${getNetworkName(chainId)}:*\n`;
       for (const { l1Token, l2Token, amount, hash, chainId, isShortfallRebalance } of rebalances) {
@@ -1200,6 +1205,7 @@ export class InventoryClient {
 
         const cumulativeBalance = this.getCumulativeBalance(l1Token);
         const tokenConfig = this.getTokenConfig(l1Token, chainId, l2Token);
+        assert(isDefined(tokenConfig), `No token config for ${l1Token} on chain ${chainId} (l2 token ${l2Token})`);
         const { thresholdPct, targetPct } = tokenConfig;
         if (isShortfallRebalance) {
           const totalShortfall = this.tokenClient.getShortfallTotalRequirement(chainId, l2Token);
@@ -1219,6 +1225,9 @@ export class InventoryClient {
 
     const groupedUnexecutedRebalances = Object.groupBy(unexecutedRebalances, (txn) => txn.chainId);
     for (const [_chainId, rebalances] of Object.entries(groupedUnexecutedRebalances)) {
+      if (!isDefined(rebalances)) {
+        continue;
+      }
       const chainId = Number(_chainId);
       mrkdwn += `*Insufficient amount to rebalance to ${getNetworkName(chainId)}:*\n`;
       for (const { l1Token, l2Token, balance, amount } of rebalances) {
@@ -1845,6 +1854,7 @@ export class InventoryClient {
         return false;
       }
       const repaymentToken = this.hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, repaymentChainId);
+      assert(isDefined(repaymentToken), `No L2 token for L1 ${l1Token} on chain ${repaymentChainId}`);
       return !this.isQuicklyRebalanced(repaymentChainId, repaymentToken);
     });
   }
