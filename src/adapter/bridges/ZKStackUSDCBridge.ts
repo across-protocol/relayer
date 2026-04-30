@@ -10,7 +10,7 @@ import {
   isDefined,
   bnZero,
 } from "../../utils";
-import { CONTRACT_ADDRESSES } from "../../common";
+import { getContractEntry } from "../../common";
 import { processEvent } from "../utils";
 import { BridgeEvents, BridgeTransactionDetails } from "./BaseBridgeAdapter";
 import { ZKStackBridge } from "./ZKStackBridge";
@@ -34,10 +34,10 @@ export class ZKStackUSDCBridge extends ZKStackBridge {
     logger: winston.Logger
   ) {
     super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, l1Token, logger);
-    const { address: l1Bridge, abi: l1ABI } = CONTRACT_ADDRESSES[hubChainId][`zkStackUSDCBridge_${l2chainId}`];
+    const { address: l1Bridge, abi: l1ABI } = getContractEntry(hubChainId, `zkStackUSDCBridge_${l2chainId}`);
     this.usdcBridge = new Contract(l1Bridge, l1ABI, l1Signer);
 
-    const { address: l2Bridge, abi: l2ABI } = CONTRACT_ADDRESSES[l2chainId].usdcBridge;
+    const { address: l2Bridge, abi: l2ABI } = getContractEntry(l2chainId, "usdcBridge");
     this.l2Bridge = new Contract(l2Bridge, l2ABI, l2SignerOrProvider);
 
     this.l1Gateways.push(EvmAddress.from(this.usdcBridge.address));
