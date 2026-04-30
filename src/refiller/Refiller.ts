@@ -517,8 +517,10 @@ export class Refiller {
     const transferRouteFn = () =>
       fetchWithTimeout<{ items: TransferRoute[] }>(`${nativeMarketsApiUrl}/transfer_routes`, {}, headers);
     const transferRoutes = await retry(transferRouteFn, 3, 1);
-    let availableTransferRoute = transferRoutes.items
-      .filter((route) => isDefined(route.source_address))
+    let availableTransferRoute: TransferRoute | undefined = transferRoutes.items
+      .filter((route): route is TransferRoute & { source_address: TransferRouteAddress } =>
+        isDefined(route.source_address)
+      )
       .find(
         ({ source_address, destination_address }) =>
           source_address.chain === "arbitrum" &&
@@ -559,6 +561,7 @@ export class Refiller {
     const amountToTransfer = await usdc.balanceOf(this.baseSignerAddress.toNative());
 
     if (amountToTransfer.gt(this.config.minUsdhRebalanceAmount)) {
+      assert(isDefined(availableTransferRoute.source_address), `Transfer route ${addressId} missing source_address`);
       this.clients.multiCallerClient.enqueueTransaction({
         contract: usdc,
         chainId: CHAIN_IDs.ARBITRUM,
@@ -590,6 +593,20 @@ export class Refiller {
     const originSigner = this.baseSigner.connect(this.clients.balanceAllocator.providers[swapRoute.originChainId]);
 
     const swapData = await this.acrossSwapApiClient.swapWithRoute(swapRoute, amount, this.baseSignerAddress, recipient);
+    if (!isDefined(swapData)) {
+      // swapData will be undefined if the transaction simulation fails on the Across Swap API side, which
+      // can happen if the swapper doesn't have enough swap input token balance in addition to other
+      // miscellaneous reasons.
+      this.logger.warn({
+        at: "Monitor#refillBalances",
+        message: `Failed to execute swap route on ${getNetworkName(swapRoute.originChainId)}`,
+        swapRoute,
+        amount,
+        swapper: this.baseSignerAddress,
+        recipient,
+      });
+      return;
+    }
     if (swapData.approval) {
       const txnReceipt = await submitTransaction(
         {
@@ -612,24 +629,9 @@ export class Refiller {
     }
 
     const { swap } = swapData;
-    if (!swap) {
-      // swapData will be undefined if the transaction simulation fails on the Across Swap API side, which
-      // can happen if the swapper doesn't have enough swap input token balance in addition to other
-      // miscellaneous reasons.
-      this.logger.warn({
-        at: "Monitor#refillBalances",
-        message: `Failed to execute swap route on ${getNetworkName(swapRoute.originChainId)}`,
-        swapRoute,
-        amount,
-        swapper: this.baseSignerAddress,
-        recipient,
-      });
-      return;
-    }
-
     const txnResponse = await submitTransaction(
       {
-        contract: new Contract(swapData.swap.target.toNative(), [], originSigner),
+        contract: new Contract(swap.target.toNative(), [], originSigner),
         value: swap.value,
         args: [swap.calldata],
         chainId: swapRoute.originChainId,

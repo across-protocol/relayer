@@ -33,7 +33,7 @@ import {
   findMessageSentEvents,
   findTokenBridgeEvents,
 } from "./common";
-import { CHAIN_MAX_BLOCK_LOOKBACK, CONTRACT_ADDRESSES } from "../../../common";
+import { CHAIN_MAX_BLOCK_LOOKBACK, getContractEntry } from "../../../common";
 import { arch, utils as sdkUtils } from "@across-protocol/sdk";
 import {
   L1ClaimingService,
@@ -122,6 +122,7 @@ async function getFinalizationMessagingInfo(
     }
 
     const parsedLog = l1Contract.contract.interface.parseLog(log);
+    assert(parsedLog !== null, `Failed to parse log with topic ${topic}`);
     if (topic === L2_MERKLE_TREE_ADDED_EVENT_SIGNATURE) {
       treeDepth = BigNumber.from(parsedLog.args.treeDepth).toNumber();
       l2MerkleRoots.push(parsedLog.args.l2MerkleRoot);
@@ -232,11 +233,8 @@ export async function lineaL2ToL1Finalizer(
     .filter((address) => address.isEVM())
     .map((address) => address.toEvmAddress())
     .filter((sender) => sender !== spokePoolClient.spokePool.address && sender !== hubPoolClient.hubPool.address);
-  const l2TokenBridge = new Contract(
-    CONTRACT_ADDRESSES[l2ChainId].lineaL2TokenBridge.address,
-    CONTRACT_ADDRESSES[l2ChainId].lineaL2TokenBridge.abi,
-    l2Provider
-  );
+  const lineaL2TokenBridge = getContractEntry(l2ChainId, "lineaL2TokenBridge");
+  const l2TokenBridge = new Contract(lineaL2TokenBridge.address, lineaL2TokenBridge.abi, l2Provider);
   const l2MessageServiceContract = getL2MessageServiceContractFromL1ClaimingService(
     lineaSdk.getL1ClaimingService(),
     l2Provider
@@ -379,8 +377,8 @@ function mergeMessagesWithTokensBridged(messages: MessageWithStatus[], allTokens
     tokensBridged: TokensBridged;
   }[] = [];
   for (const txHash of Object.keys(messagesByTxHash)) {
-    const messages = messagesByTxHash[txHash].sort((a, b) => a.logIndex - b.logIndex);
-    const tokensBridgedEvents = tokensBridgedEventByTxHash[txHash].sort((a, b) => a.logIndex - b.logIndex);
+    const messages = (messagesByTxHash[txHash] ?? []).sort((a, b) => a.logIndex - b.logIndex);
+    const tokensBridgedEvents = (tokensBridgedEventByTxHash[txHash] ?? []).sort((a, b) => a.logIndex - b.logIndex);
 
     if (messages.length !== tokensBridgedEvents.length) {
       throw new Error(

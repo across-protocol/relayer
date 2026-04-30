@@ -9,8 +9,6 @@ import {
   getCctpDomainForChainId,
   TOKEN_SYMBOLS_MAP,
   assert,
-  getCctpV1TokenMessenger,
-  getCctpV1MessageTransmitter,
   SvmAddress,
   getAssociatedTokenAddress,
   getKitKeypairFromEvmSigner,
@@ -21,7 +19,7 @@ import {
   SolanaTransaction,
 } from "../../utils";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
-import { CCTP_MAX_SEND_AMOUNT } from "../../common";
+import { CCTP_MAX_SEND_AMOUNT, CONTRACT_ADDRESSES, getContractEntry } from "../../common";
 import { arch } from "@across-protocol/sdk";
 import { TokenMessengerMinterIdl, TokenMessengerMinterClient } from "@across-protocol/contracts";
 import {
@@ -58,14 +56,19 @@ export class SolanaUsdcCCTPBridge extends BaseL2BridgeAdapter {
   constructor(l2chainId: number, hubChainId: number, l2Provider: SVMProvider, l1Signer: Signer, l1Token: EvmAddress) {
     super(l2chainId, hubChainId, l2Provider, l1Signer, l1Token);
 
-    const { address: l1TokenMessengerAddress, abi: l1Abi } = getCctpV1TokenMessenger(hubChainId);
+    const { address: l1TokenMessengerAddress, abi: l1Abi } = getContractEntry(hubChainId, "cctpTokenMessenger");
     this.l1Bridge = new Contract(l1TokenMessengerAddress, l1Abi, l1Signer);
 
     this.l1UsdcTokenAddress = EvmAddress.from(TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]);
     this.l2UsdcTokenAddress = SvmAddress.from(TOKEN_SYMBOLS_MAP.USDC.addresses[this.l2chainId]);
 
-    const { address: l2TokenMessengerAddress } = getCctpV1TokenMessenger(this.l2chainId);
-    const { address: l2MessageTransmitterAddress } = getCctpV1MessageTransmitter(this.l2chainId);
+    // SVM cctp* entries are address-only (no abi), so don't route through getContractEntry.
+    const l2TokenMessengerAddress = CONTRACT_ADDRESSES[this.l2chainId]?.cctpTokenMessenger?.address;
+    const l2MessageTransmitterAddress = CONTRACT_ADDRESSES[this.l2chainId]?.cctpMessageTransmitter?.address;
+    assert(
+      isDefined(l2TokenMessengerAddress) && isDefined(l2MessageTransmitterAddress),
+      `Missing CCTP messenger addresses for chain ${this.l2chainId}`
+    );
 
     this.tokenMessengerMinter = address(l2TokenMessengerAddress);
     this.messageTransmitter = address(l2MessageTransmitterAddress);

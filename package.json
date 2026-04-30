@@ -59,7 +59,7 @@
     "lint": "eslint --cache . && prettier --cache --list-different .",
     "lint-fix": "eslint --cache --fix . && prettier --cache --write .",
     "test": "RELAYER_TEST=true hardhat test",
-    "test:parallel": "RELAYER_TEST=true hardhat test --parallel",
+    "test:parallel": "RELAYER_TEST=true NODE_OPTIONS='--import tsx/esm --no-warnings' hardhat test --parallel",
     "build": "tsc --build",
     "typecheck": "tsc --noEmit",
     "strict-null-budget": "./scripts/strict-null-budget.sh",
