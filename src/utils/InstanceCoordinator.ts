@@ -15,7 +15,7 @@ export class InstanceCoordinator {
     return (await this.redis.get<string>(this.identifier)) ?? undefined;
   }
 
-  setActiveInstance(): Promise<string> {
+  setActiveInstance(): Promise<string | undefined> {
     return this.redis.set(this.identifier, this.instance, this.instanceExpiry);
   }
 
@@ -45,7 +45,7 @@ export class InstanceCoordinator {
       }
 
       try {
-        activeInstance = await this.redis.get<string>(this.identifier);
+        activeInstance = (await this.redis.get<string>(this.identifier)) ?? undefined;
         consecutiveErrors = 0;
       } catch (err) {
         if (++consecutiveErrors >= maxConsecutiveErrors) {

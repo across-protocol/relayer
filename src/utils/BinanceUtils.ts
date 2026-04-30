@@ -7,8 +7,9 @@ import Binance, {
 } from "binance-api-node";
 export type { BinanceApi };
 import minimist from "minimist";
+import { JsonFragment } from "@ethersproject/abi";
 import { getGckmsConfig, retrieveGckmsKeys, isDefined, assert, CHAIN_IDs, getRedisCache, truncate } from "./";
-import { CONTRACT_ADDRESSES } from "../common";
+import { CONTRACT_ADDRESSES, isJsonAbi } from "../common";
 import { BigNumber } from "./BNUtils";
 import { fromWei, retry, toBNWei } from "./SDKUtils";
 
@@ -232,6 +233,9 @@ export async function setBinanceDepositType(
   ttl?: number
 ): Promise<void> {
   const redisCache = await getRedisCache();
+  if (!isDefined(redisCache)) {
+    return;
+  }
   const redisKey = getBinanceTransactionTypeKey(depositChain, transactionHash);
   await redisCache.set(redisKey, type, ttl);
 }
@@ -249,6 +253,9 @@ export async function setBinanceWithdrawalType(
   type: BinanceTransactionType
 ): Promise<void> {
   const redisCache = await getRedisCache();
+  if (!isDefined(redisCache)) {
+    return;
+  }
   const redisKey = getBinanceTransactionTypeKey(withdrawalChain, withdrawalId);
   await redisCache.set(redisKey, type);
 }
@@ -263,6 +270,9 @@ export async function getBinanceDepositType(
   depositDetails: Pick<BinanceDeposit, "network" | "txId">
 ): Promise<BinanceTransactionType> {
   const redisCache = await getRedisCache();
+  if (!isDefined(redisCache)) {
+    return BinanceTransactionType.UNKNOWN;
+  }
   const redisKey = getBinanceTransactionTypeKeyFromNetworkName(depositDetails.network, depositDetails.txId);
   const depositType = await redisCache.get<string>(redisKey);
   if (isDefined(depositType)) {
@@ -282,6 +292,9 @@ export async function getBinanceWithdrawalType(
   withdrawalDetails: Pick<BinanceWithdrawal, "network" | "id">
 ): Promise<BinanceTransactionType> {
   const redisCache = await getRedisCache();
+  if (!isDefined(redisCache)) {
+    return BinanceTransactionType.UNKNOWN;
+  }
   const redisKey = getBinanceTransactionTypeKeyFromNetworkName(withdrawalDetails.network, withdrawalDetails.id);
   const withdrawalType = await redisCache.get<string>(redisKey);
   if (isDefined(withdrawalType)) {
@@ -513,9 +526,9 @@ export function supportsBinanceIntermediateBridgeToken(token: string): boolean {
 export function getAtomicDepositorContracts(chainId: number):
   | {
       atomicDepositorAddress: string;
-      atomicDepositorAbi: unknown[];
+      atomicDepositorAbi: JsonFragment[];
       transferProxyAddress: string;
-      transferProxyAbi: unknown[];
+      transferProxyAbi: JsonFragment[];
     }
   | undefined {
   const chainContracts = CONTRACT_ADDRESSES[chainId];
@@ -527,8 +540,10 @@ export function getAtomicDepositorContracts(chainId: number):
   if (
     !isDefined(atomicDepositorAddress) ||
     !isDefined(atomicDepositorAbi) ||
+    !isJsonAbi(atomicDepositorAbi) ||
     !isDefined(transferProxyAddress) ||
-    !isDefined(transferProxyAbi)
+    !isDefined(transferProxyAbi) ||
+    !isJsonAbi(transferProxyAbi)
   ) {
     return undefined;
   }
