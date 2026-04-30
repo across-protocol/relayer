@@ -46,7 +46,7 @@ export class CommonConfig {
       PEGGED_TOKEN_PRICES,
     } = env;
 
-    const mergeConfig = <T>(config: T, envVar: string): T => {
+    const mergeConfig = <T>(config: T, envVar: string | undefined): T => {
       const shallowCopy = { ...config };
       Object.entries(JSON.parse(envVar ?? "{}")).forEach(([k, v]) => {
         const _k = k as keyof T;

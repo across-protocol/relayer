@@ -2,8 +2,10 @@ import { ethers } from "ethers";
 import { utils } from "@across-protocol/sdk";
 import { ProcessBurnTransactionResponse, PubSubMessage } from "../types";
 import {
+  assert,
   winston,
   getCctpDestinationChainFromDomain,
+  isDefined,
   PUBLIC_NETWORKS,
   chainIsProd,
   chainIsSvm,
@@ -286,6 +288,7 @@ export class CCTPService {
           shouldRetry: false,
         };
       } else {
+        assert(isDefined(this.evmPrivateKey), "cctpService: evmPrivateKey not initialised");
         const rpcUrl = this.getRpcUrlForChain(destinationChainId);
         const provider = getEvmProvider(rpcUrl);
         const result = await processMintEvm(
@@ -350,9 +353,9 @@ export class CCTPService {
   }
 
   private async getPrivateKey(type: "evm" | "svm"): Promise<string> {
-    const privateKeys = await retrieveGckmsKeys(
-      getGckmsConfig([type === "evm" ? process.env.GCKMS_KEY_EVM : process.env.GCKMS_KEY_SVM])
-    );
+    const gckmsKey = type === "evm" ? process.env.GCKMS_KEY_EVM : process.env.GCKMS_KEY_SVM;
+    assert(isDefined(gckmsKey), `cctpService: GCKMS_KEY_${type.toUpperCase()} env var not set`);
+    const privateKeys = await retrieveGckmsKeys(getGckmsConfig([gckmsKey]));
     if (privateKeys.length === 0) {
       throw new PrivateKeyNotFoundError(type);
     }

@@ -5,7 +5,7 @@ import { createClient } from "redis";
 import winston from "winston";
 import { Deposit, Fill } from "../interfaces";
 import dotenv from "dotenv";
-import { disconnectRedisClient, RedisCache, RedisCacheInterface, RedisClient } from "../caching/RedisCache";
+import { disconnectRedisClient, RedisCache, RedisClient } from "../caching/RedisCache";
 import { RedisPubSub } from "../caching/RedisPubSub";
 dotenv.config();
 
@@ -111,7 +111,7 @@ export async function getRedisCache(
   logger?: winston.Logger,
   url?: string,
   customNamespace?: string
-): Promise<RedisCacheInterface | undefined> {
+): Promise<RedisCache | undefined> {
   // Don't permit redis to be used in test.
   if (isDefined(process.env.RELAYER_TEST)) {
     return undefined;
