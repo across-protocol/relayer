@@ -42,7 +42,7 @@ export interface Clients {
   arweaveClient: caching.ArweaveClient;
 }
 
-export async function getSpokePoolSigners(
+async function getSpokePoolSigners(
   baseSigner: Signer,
   spokePoolChains: number[]
 ): Promise<{ [chainId: number]: Signer }> {
@@ -278,7 +278,7 @@ export async function constructSpokePoolClientsWithStartBlocks(
  * @param toBlocks Mapping of chainId to toBlocks per chain to set in SpokePoolClients.
  * @returns Mapping of chainId to SpokePoolClient
  */
-export async function getSpokePoolClientsForContract(
+async function getSpokePoolClientsForContract(
   logger: winston.Logger,
   hubPoolClient: HubPoolClient,
   config: CommonConfig,

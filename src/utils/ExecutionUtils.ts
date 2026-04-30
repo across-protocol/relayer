@@ -23,12 +23,3 @@ export async function processEndPollingLoop(
 export function startupLogLevel(config: { pollingDelay: number }): "info" | "debug" {
   return config.pollingDelay > 0 ? "info" : "debug";
 }
-
-export function rejectAfterDelay(seconds: number, message = ""): Promise<never> {
-  return new Promise<never>((_, reject) => {
-    setTimeout(reject, seconds * 1000, {
-      status: "timeout",
-      message: `Execution took longer than ${seconds}s. ${message}`,
-    });
-  });
-}

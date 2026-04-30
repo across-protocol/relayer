@@ -20,7 +20,6 @@ import { TransactionClient } from "../clients/TransactionClient";
 
 export {
   matchL2EthDepositAndWrapEvents,
-  getAllowanceCacheKey,
   getTokenAllowanceFromCache,
   setTokenAllowanceInCache,
 } from "../clients/bridges/utils";

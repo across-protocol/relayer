@@ -1,5 +1,4 @@
 import { LineaSDK, Message, OnChainMessageStatus } from "@consensys/linea-sdk";
-import { Linea_Adapter__factory } from "@across-protocol/sdk/typechain";
 import {
   BigNumber,
   Contract,
@@ -37,8 +36,6 @@ export interface ParsedMessageSentLog {
   transactionHash: string;
   blockNumber: number;
 }
-
-export const lineaAdapterIface = Linea_Adapter__factory.createInterface() as ethers.utils.Interface;
 
 export function initLineaSdk(l1ChainId: number, l2ChainId: number, signer: Signer): LineaSDK {
   assert(isSignerWallet(signer), "Signer is not a Wallet");

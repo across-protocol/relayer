@@ -8,21 +8,10 @@ import winston from "winston";
 import assert from "assert";
 export { winston, assert };
 
-export const { MAX_SAFE_ALLOWANCE, ZERO_BYTES, DEFAULT_SIMULATED_RELAYER_ADDRESS_SVM, EMPTY_MESSAGE } = sdkConstants;
+export const { MAX_SAFE_ALLOWANCE, ZERO_BYTES, EMPTY_MESSAGE } = sdkConstants;
 export const { AddressZero: ZERO_ADDRESS, MaxUint256: MAX_UINT_VAL } = ethersConstants;
 
-export {
-  ethers,
-  providers,
-  utils,
-  BaseContract,
-  Contract,
-  ContractFactory,
-  EventFilter,
-  Signer,
-  Transaction,
-  Wallet,
-} from "ethers";
+export { ethers, providers, utils, BaseContract, Contract, Signer, Wallet } from "ethers";
 export type { Block, TransactionResponse, TransactionReceipt, Provider } from "@ethersproject/abstract-provider";
 
 export { config } from "dotenv";
@@ -41,10 +30,7 @@ export { getContractInfoFromAddress, getDeployedAddress, getDeployedBlockNumber 
 // TypeChain exports used in the bot.
 export {
   ExpandedERC20__factory as ERC20,
-  HubPool__factory as HubPool,
   SpokePool__factory as SpokePool,
-  AcrossConfigStore__factory as AcrossConfigStore,
-  PolygonTokenBridger__factory as PolygonTokenBridger,
   WETH9__factory as WETH9,
 } from "@across-protocol/sdk/typechain";
 
@@ -60,7 +46,6 @@ export * from "./BlockUtils";
 export * from "./EventUtils";
 export * from "./FillUtils";
 export * from "./InstanceCoordinator";
-export * from "./ObjectUtils";
 export * from "./ContractUtils";
 export * from "./ExecutionUtils";
 export * from "./NetworkUtils";

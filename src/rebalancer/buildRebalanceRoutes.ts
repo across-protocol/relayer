@@ -210,16 +210,3 @@ export function buildRebalanceRoutes(rebalancerConfig: RebalancerConfig): Rebala
     ...buildSameAssetRoutes(rebalancerConfig, "WETH"),
   ];
 }
-
-export function dedupeRebalanceRoutes(routes: RebalanceRoute[]): RebalanceRoute[] {
-  const uniqueRoutes = new Map<string, RebalanceRoute>();
-  for (const route of routes) {
-    uniqueRoutes.set(
-      [route.sourceChain, route.sourceToken, route.destinationChain, route.destinationToken, route.adapter].join("|"),
-      route
-    );
-  }
-  return Array.from(uniqueRoutes.values());
-}
-
-export { BINANCE_NETWORKS_BY_SYMBOL, REBALANCE_CHAINS_BY_SYMBOL };

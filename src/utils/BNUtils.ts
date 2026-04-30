@@ -18,16 +18,6 @@ export function bnComparatorDescending(a: BigNumber, b: BigNumber): -1 | 0 | 1 {
   }
 }
 
-export function bnComparatorAscending(a: BigNumber, b: BigNumber): -1 | 0 | 1 {
-  if (a.gt(b)) {
-    return 1;
-  } else if (b.gt(a)) {
-    return -1;
-  } else {
-    return 0;
-  }
-}
-
 export function floatToBN(float: string | number, precision: number): BigNumber {
   // Always parse from the rendered string form so we never depend on JS float
   // multiplication or toFixed(), both of which lose information for edge cases.
