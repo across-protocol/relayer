@@ -978,7 +978,7 @@ export const CONTRACT_ADDRESSES: {
 };
 
 // Narrow `unknown[]` (the table's loose ABI typing) to a shape assignable to `ContractInterface`.
-function isJsonAbi(value: unknown[]): value is JsonFragment[] {
+export function isJsonAbi(value: unknown[]): value is JsonFragment[] {
   return value.every((item) => typeof item === "object" && item !== null);
 }
 

@@ -424,7 +424,9 @@ async function _getCCTPV1DepositAndMessageTxnHashes(
 
   // Special case: The HubPool can initiate MessageSent events, which have no filters we can easily query on, so
   // we query for HubPool MessageRelayed events directly. These can theoretically appear without DepositForBurn events.
-  const hubPool = CONTRACT_ADDRESSES[sourceChainId]?.hubPool;
+  const hubPool = isDefined(CONTRACT_ADDRESSES[sourceChainId]?.hubPool)
+    ? getContractEntry(sourceChainId, "hubPool")
+    : undefined;
   const isHubPoolAmongSenders =
     isDefined(hubPool) && senderAddresses.some((senderAddr) => compareAddressesSimple(senderAddr, hubPool.address));
   const txHashesFromHubPool: string[] = [];
@@ -641,6 +643,10 @@ function _getCCTPV1EventsFromReceipt(
 
     // Record a `MessageSent` + `DepositForBurn` pair into the `depositIndexPairs` array
     const correspondingMessageSentIndex = messageSentIndices.pop();
+    assert(
+      isDefined(correspondingMessageSentIndex),
+      "messageSentIndices.pop() returned undefined despite length check"
+    );
     depositIndexPairs.push([correspondingMessageSentIndex, i]);
   });
 
@@ -697,6 +703,7 @@ async function _getCCTPV1MessagesWithStatus(
       let processed;
       if (chainIsSvm(destinationChainId)) {
         assert(signer, "Signer is required for Solana CCTP messages");
+        assert(isDefined(svmProvider), "SVM provider is required for Solana CCTP messages");
         processed = await arch.svm.hasCCTPV1MessageBeenProcessed(
           svmProvider,
           signer,
@@ -705,6 +712,7 @@ async function _getCCTPV1MessagesWithStatus(
           latestBlockhash!.value
         );
       } else {
+        assert(isDefined(messageTransmitterContract), "messageTransmitterContract is required for EVM CCTP messages");
         processed = await utils.hasCCTPMessageBeenProcessedEvm(messageEvent.nonceHash, messageTransmitterContract);
       }
 
