@@ -12,7 +12,7 @@ import {
   EvmAddress,
   winston,
 } from "../../utils";
-import { CONTRACT_ADDRESSES } from "../../common";
+import { getContractEntry } from "../../common";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
 import { processEvent } from "../utils";
 
@@ -31,9 +31,12 @@ export class LineaWethBridge extends BaseBridgeAdapter {
     _l1Token: EvmAddress,
     readonly logger: winston.Logger
   ) {
-    const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].lineaMessageService;
-    const { address: l2Address, abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].l2MessageService;
-    const { address: atomicDepositorAddress, abi: atomicDepositorAbi } = CONTRACT_ADDRESSES[hubChainId].atomicDepositor;
+    const { address: l1Address, abi: l1Abi } = getContractEntry(hubChainId, "lineaMessageService");
+    const { address: l2Address, abi: l2Abi } = getContractEntry(l2chainId, "l2MessageService");
+    const { address: atomicDepositorAddress, abi: atomicDepositorAbi } = getContractEntry(
+      hubChainId,
+      "atomicDepositor"
+    );
     super(l2chainId, hubChainId, l1Signer, [EvmAddress.from(atomicDepositorAddress)]);
 
     this.atomicDepositor = new Contract(atomicDepositorAddress, atomicDepositorAbi, l1Signer);

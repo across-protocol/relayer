@@ -1,4 +1,4 @@
-import { CONTRACT_ADDRESSES } from "../../common";
+import { getContractEntry } from "../../common";
 import { AugmentedTransaction } from "../../clients/TransactionClient";
 import ERC20_ABI from "../../common/abi/MinimalERC20.json";
 import {
@@ -24,10 +24,10 @@ export class OpStackUSDCBridge extends BaseL2BridgeAdapter {
   constructor(l2chainId: number, hubChainId: number, l2Signer: Signer, l1Signer: Signer, l1Token: EvmAddress) {
     super(l2chainId, hubChainId, l2Signer, l1Signer, l1Token);
 
-    const { address: l2Address, abi: l2ABI } = CONTRACT_ADDRESSES[l2chainId].opUSDCBridge;
+    const { address: l2Address, abi: l2ABI } = getContractEntry(l2chainId, "opUSDCBridge");
     this.l2Bridge = new Contract(l2Address, l2ABI, l2Signer);
 
-    const { address: l1Address, abi: l1ABI } = CONTRACT_ADDRESSES[hubChainId][`opUSDCBridge_${l2chainId}`];
+    const { address: l1Address, abi: l1ABI } = getContractEntry(hubChainId, `opUSDCBridge_${l2chainId}`);
     this.l1Bridge = new Contract(l1Address, l1ABI, l1Signer);
   }
 
@@ -37,7 +37,8 @@ export class OpStackUSDCBridge extends BaseL2BridgeAdapter {
     _l1Token: EvmAddress,
     amount: BigNumber
   ): Promise<AugmentedTransaction[]> {
-    const { l2chainId: chainId, l2Bridge } = this;
+    const { l2chainId: chainId } = this;
+    const l2Bridge = this.getL2Bridge();
 
     const txns: AugmentedTransaction[] = [];
     const { decimals, symbol } = getTokenInfo(l2Token, this.l2chainId);
