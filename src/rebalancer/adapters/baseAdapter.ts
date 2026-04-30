@@ -47,10 +47,10 @@ export abstract class BaseAdapter implements RebalancerAdapter {
   protected priceClient: PriceClient;
   protected multicallerClient: MultiCallerClient;
 
-  protected availableRoutes: RebalanceRoute[];
-  protected allDestinationChains: Set<number>;
-  protected allSourceChains: Set<number>;
-  protected allSourceTokens: Set<string>;
+  protected availableRoutes: RebalanceRoute[] = [];
+  protected allDestinationChains: Set<number> = new Set();
+  protected allSourceChains: Set<number> = new Set();
+  protected allSourceTokens: Set<string> = new Set();
 
   protected abstract REDIS_PREFIX: string;
 
@@ -80,7 +80,9 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     if (this.initialized) {
       return;
     }
-    this.redisCache = await getRedisCacheForRebalancerStatusTracking(this.logger);
+    const redisCache = await getRedisCacheForRebalancerStatusTracking(this.logger);
+    assert(isDefined(redisCache), "Rebalancer status tracking redis cache is required");
+    this.redisCache = redisCache;
 
     this.baseSignerAddress = EvmAddress.from(await this.baseSigner.getAddress());
 

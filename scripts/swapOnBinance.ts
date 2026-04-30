@@ -1595,10 +1595,11 @@ export async function waitForBinanceOrderFillAndBalance(params: {
       params.venue.getMatchingFillForCloid(params.cloid, params.source, params.destination),
       params.venue.getSpotFreeBalance(params.destination.binanceCoin),
     ]);
-    const requiredBalance = truncate(
-      params.requiredBalance ?? (matchingFill ? Number(matchingFill.expectedAmountToReceive) : undefined),
-      params.destination.tokenDecimals
-    );
+    const requiredBalance =
+      params.requiredBalance ??
+      (matchingFill
+        ? truncate(Number(matchingFill.expectedAmountToReceive), params.destination.tokenDecimals)
+        : undefined);
     params.onProgress?.({
       attempts,
       freeBalance,
@@ -1723,6 +1724,9 @@ function describeBinanceDepositStatus(status?: number): string {
 function formatBinanceDepositPollStatus(deposit?: BinanceDeposit): string {
   if (!deposit) {
     return "not-seen";
+  }
+  if (!isDefined(deposit.status)) {
+    return "unknown";
   }
   return BINANCE_DEPOSIT_STATUS_LABELS[deposit.status] ?? describeBinanceDepositStatus(deposit.status);
 }

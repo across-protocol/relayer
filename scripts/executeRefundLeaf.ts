@@ -4,7 +4,7 @@ import {
   toBN,
   getProvider,
   blockExplorerLink,
-  getDeployedAddress,
+  getSpokePoolAddress,
   SpokePool,
 } from "../src/utils";
 
@@ -56,8 +56,8 @@ export async function run(): Promise<void> {
   };
   const connectedSigner = baseSigner.connect(await getProvider(Number(relayerRefundLeaf.chainId)));
 
-  const spokePoolContract = getDeployedAddress("SpokePool", relayerRefundLeaf.chainId);
-  const spokePool = new ethers.Contract(spokePoolContract, SpokePool.abi, connectedSigner);
+  const spokePoolAddress = getSpokePoolAddress(relayerRefundLeaf.chainId).toEvmAddress();
+  const spokePool = new ethers.Contract(spokePoolAddress, SpokePool.abi, connectedSigner);
   const txn = await spokePool.executeRelayerRefundLeaf(
     rootBundleId,
     relayerRefundLeaf,

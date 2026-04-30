@@ -69,11 +69,16 @@ export function getChainQuorum(chainId: number): number {
  * RPC_PROVIDER_<provider>_<chainId>_HEADER_AUTH=xxx-auth-header
  */
 export function getProviderHeaders(provider: string, chainId: number): { [header: string]: string } | undefined {
-  let headers: { [k: string]: string };
   const _headers = process.env[`RPC_PROVIDER_${provider}_${chainId}_HEADERS`];
-  _headers?.split(",").forEach((header) => {
-    headers ??= {};
-    headers[header] = process.env[`RPC_PROVIDER_${provider}_${chainId}_HEADER_${header.toUpperCase()}`];
+  if (!isDefined(_headers)) {
+    return undefined;
+  }
+  const headers: { [k: string]: string } = {};
+  _headers.split(",").forEach((header) => {
+    const value = process.env[`RPC_PROVIDER_${provider}_${chainId}_HEADER_${header.toUpperCase()}`];
+    if (isDefined(value)) {
+      headers[header] = value;
+    }
   });
 
   return headers;

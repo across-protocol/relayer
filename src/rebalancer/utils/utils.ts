@@ -6,6 +6,7 @@ import {
   ethers,
   getRedisCache,
   getTokenInfoFromSymbol,
+  isDefined,
   winston,
 } from "../../utils";
 import { ExcessOrDeficit, OrderDetails, RedisOrderDetailsPayload } from "./interfaces";
@@ -34,10 +35,10 @@ function compareNormalizedAmounts(
   const tokenADecimals = getTokenInfoFromSymbol(tokenA, Number(chainIdA)).decimals;
   const tokenBDecimals = getTokenInfoFromSymbol(tokenB, Number(chainIdB)).decimals;
   const converter = ConvertDecimals(tokenADecimals, tokenBDecimals);
-  const normalizedAmountA =
-    tokenPricesUsd && tokenPricesUsd.has(tokenA) ? amountA.mul(tokenPricesUsd.get(tokenA)) : amountA;
-  const normalizedAmountB =
-    tokenPricesUsd && tokenPricesUsd.has(tokenB) ? amountB.mul(tokenPricesUsd.get(tokenB)) : amountB;
+  const priceA = tokenPricesUsd?.get(tokenA);
+  const priceB = tokenPricesUsd?.get(tokenB);
+  const normalizedAmountA = isDefined(priceA) ? amountA.mul(priceA) : amountA;
+  const normalizedAmountB = isDefined(priceB) ? amountB.mul(priceB) : amountB;
   if (converter(normalizedAmountA).eq(normalizedAmountB)) {
     return 0;
   }

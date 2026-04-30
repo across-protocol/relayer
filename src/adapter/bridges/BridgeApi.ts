@@ -106,7 +106,9 @@ export class BridgeApi extends BaseBridgeAdapter {
     toAddress: Address,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
-    const fromTimestamp = await getTimestampForBlock(this.l1Signer.provider, eventConfig.from);
+    const l1Provider = this.l1Signer.provider;
+    assert(isDefined(l1Provider), "BridgeApi: l1Signer must have a provider");
+    const fromTimestamp = await getTimestampForBlock(l1Provider, eventConfig.from);
     const pendingTransfers = await this.api.getAllTransfersInRange(toAddress, fromTimestamp * 1000);
 
     const statusesGrouped = groupObjectCountsByProp(pendingTransfers, (pendingTransfer) => pendingTransfer.state);
@@ -120,7 +122,7 @@ export class BridgeApi extends BaseBridgeAdapter {
       pendingTransfers.filter((pendingTransfer) => pendingTransfer.destination.currency === this.dstCurrency),
       fromAddress,
       eventConfig,
-      this.l1Signer.provider
+      l1Provider
     );
     const pendingRebalances = await mapAsync(
       initialPendingRebalances.filter(({ destination, source_deposit_instructions }) => {
@@ -132,7 +134,7 @@ export class BridgeApi extends BaseBridgeAdapter {
       }),
       async (pendingTransfer) => {
         const transaction = isDefined(pendingTransfer?.receipt?.source_tx_hash)
-          ? await this.l1Signer.provider.getTransactionReceipt(pendingTransfer.receipt.source_tx_hash)
+          ? await l1Provider.getTransactionReceipt(pendingTransfer.receipt.source_tx_hash)
           : undefined;
         return {
           txnRef: pendingTransfer.receipt?.source_tx_hash ?? ZERO_BYTES,

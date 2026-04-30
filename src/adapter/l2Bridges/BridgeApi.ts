@@ -109,14 +109,18 @@ export class BridgeApi extends BaseL2BridgeAdapter {
     fromAddress: EvmAddress,
     l2Token: EvmAddress
   ): Promise<BigNumber> {
-    const fromTimestamp = await getTimestampForBlock(this.l1Signer.provider, l1EventConfig.from);
+    const l1Provider = this.l1Signer.provider;
+    const l2Provider = this.l2Signer.provider;
+    assert(isDefined(l1Provider), "BridgeApi: l1Signer must have a provider");
+    assert(isDefined(l2Provider), "BridgeApi: l2Signer must have a provider");
+    const fromTimestamp = await getTimestampForBlock(l1Provider, l1EventConfig.from);
     const allTransfers = await this.api.getAllTransfersInRange(fromAddress, fromTimestamp * 1000);
 
     const allInitiatedTransfers = await this.api.filterInitiatedTransfers(
       allTransfers,
       fromAddress,
       l2EventConfig,
-      this.l2Signer.provider
+      l2Provider
     );
     return allInitiatedTransfers.reduce((acc, transfer) => {
       const { decimals: l2TokenDecimals } = getTokenInfo(l2Token, this.l2chainId);

@@ -15,7 +15,7 @@ import {
 import { askYesNoQuestion } from "./utils";
 import minimist from "minimist";
 import * as zksync from "zksync-ethers";
-import { CONTRACT_ADDRESSES } from "../src/common";
+import { getContractEntry } from "../src/common";
 import { gasPriceOracle } from "@across-protocol/sdk";
 const args = minimist(process.argv.slice(2), {
   string: ["token", "to", "amount", "chainId", "zkSyncChainId"],
@@ -53,10 +53,7 @@ export async function run(): Promise<void> {
   const txnClient = new TransactionClient(Logger);
 
   const zkSyncProvider = new zksync.Provider("https://mainnet.era.zksync.io");
-  const zkSyncMailboxContractData = CONTRACT_ADDRESSES[l1ChainId]?.zkSyncMailbox;
-  if (!zkSyncMailboxContractData) {
-    throw new Error(`zkSyncMailboxContractData not found for chain ${l1ChainId}`);
-  }
+  const zkSyncMailboxContractData = getContractEntry(l1ChainId, "zkSyncMailbox");
   const mailboxContract = new Contract(
     zkSyncMailboxContractData.address,
     zkSyncMailboxContractData.abi,
@@ -91,7 +88,7 @@ export async function run(): Promise<void> {
     console.log("sending...");
     const method = "requestL2Transaction";
     const l2GasLimit = await zksync.utils.estimateDefaultBridgeDepositL2Gas(
-      connectedSigner.provider,
+      l1Provider,
       zkSyncProvider,
       token,
       toBN(args.amount),
@@ -132,7 +129,7 @@ export async function run(): Promise<void> {
     }
     console.log("sending...");
 
-    const l1Erc20BridgeContractData = CONTRACT_ADDRESSES[l1ChainId]?.zkSyncDefaultErc20Bridge;
+    const l1Erc20BridgeContractData = getContractEntry(l1ChainId, "zkSyncDefaultErc20Bridge");
     const l1ERC20Bridge = new Contract(
       l1Erc20BridgeContractData.address,
       l1Erc20BridgeContractData.abi,
@@ -140,7 +137,7 @@ export async function run(): Promise<void> {
     );
     const method = "deposit";
     const l2GasLimit = await zksync.utils.estimateDefaultBridgeDepositL2Gas(
-      connectedSigner.provider,
+      l1Provider,
       zkSyncProvider,
       token,
       toBN(args.amount),
