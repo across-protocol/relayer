@@ -141,7 +141,7 @@ export class TransactionClient {
       const txnArgs = { chainId, contract: txn.contract.address, method: txn.method };
       const txnRef = blockExplorerLink(txnResponse.hash, chainId);
 
-      let txnReceipt: TransactionReceipt;
+      let txnReceipt: TransactionReceipt | undefined;
       let nTries = 0;
       do {
         try {
@@ -227,7 +227,7 @@ export class TransactionClient {
 
       let response: TransactionResponse;
       try {
-        response = await this._submit(txn, { nonce });
+        response = await this._submit(txn, { nonce: nonce ?? null });
       } catch (error) {
         delete chainNonceMap[signerAddr];
         this.logger.info({
@@ -323,7 +323,7 @@ async function _runTransaction(
 
   try {
     return sendRawTxn
-      ? await signer.sendTransaction({ to, value, data: (args as ethers.utils.BytesLike[])[0], gasLimit, ...gas })
+      ? await signer.sendTransaction({ to, data: (args as ethers.utils.BytesLike[])[0], ...txConfig })
       : await contract[method](...args, txConfig);
   } catch (error) {
     // Narrow type. All errors caught here should be Ethers errors.
@@ -515,9 +515,9 @@ async function _runTransactionTvm(
  */
 function _scaleGasPrice(
   chainId: number,
-  gas: Pick<FeeData, "maxFeePerGas" | "maxPriorityFeePerGas">,
+  gas: { maxFeePerGas: BigNumber; maxPriorityFeePerGas: BigNumber },
   retryScaler = 1.0
-): Pick<FeeData, "maxFeePerGas" | "maxPriorityFeePerGas"> | Pick<FeeData, "gasPrice"> {
+): { maxFeePerGas: BigNumber; maxPriorityFeePerGas: BigNumber } | { gasPrice: BigNumber } {
   let { maxFeePerGas, maxPriorityFeePerGas } = gas;
 
   const feeDeltaPct = toBNWei(Math.max(retryScaler - 1.0, 0));

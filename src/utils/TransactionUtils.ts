@@ -1,8 +1,8 @@
 import { gasPriceOracle, typeguards, utils as sdkUtils } from "@across-protocol/sdk";
-import { FeeData } from "@ethersproject/abstract-provider";
 import dotenv from "dotenv";
 import { AugmentedTransaction, TransactionClient } from "../clients";
 import {
+  BigNumber,
   Contract,
   isDefined,
   TransactionResponse,
@@ -88,7 +88,7 @@ export async function getGasPrice(
   priorityScaler = 1.2,
   maxFeePerGasScaler = 3,
   transactionObject?: ethers.PopulatedTransaction
-): Promise<Pick<FeeData, "maxFeePerGas" | "maxPriorityFeePerGas">> {
+): Promise<{ maxFeePerGas: BigNumber; maxPriorityFeePerGas: BigNumber }> {
   const { chainId } = await provider.getNetwork();
 
   const maxFee = process.env[`MAX_FEE_PER_GAS_OVERRIDE_${chainId}`];

@@ -111,7 +111,7 @@ export class CctpAdapter extends BaseAdapter {
     for (const cloid of pendingBridges) {
       const [sourceChainId, txnHash] = cloid.split("-");
       const attestation = await this._getCctpAttestation(txnHash, Number(sourceChainId));
-      if (utils.getPendingAttestationStatus(attestation) === "pending") {
+      if (!isDefined(attestation) || utils.getPendingAttestationStatus(attestation) === "pending") {
         continue;
       }
 
@@ -159,7 +159,7 @@ export class CctpAdapter extends BaseAdapter {
       const [sourceChainId, txnHash] = cloid.split("-");
       // Check if order has already been finalized if its no longer "pending"
       const attestation = await this._getCctpAttestation(txnHash, Number(sourceChainId));
-      if (utils.getPendingAttestationStatus(attestation) !== "pending") {
+      if (isDefined(attestation) && utils.getPendingAttestationStatus(attestation) !== "pending") {
         const destinationChainId = getCctpDestinationChainFromDomain(
           attestation.decodedMessage.destinationDomain,
           chainIsProd(Number(sourceChainId))
