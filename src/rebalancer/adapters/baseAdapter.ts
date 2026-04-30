@@ -47,14 +47,20 @@ export abstract class BaseAdapter implements RebalancerAdapter {
   protected priceClient: PriceClient;
   protected multicallerClient?: MultiCallerClient;
 
-  // baseSignerAddress and redisCache are populated by initialize(); access pre-init throws.
+  // baseSignerAddress and redisCache are populated by initialize(); reads pre-init throw, writes go through the setter.
   public get baseSignerAddress(): EvmAddress {
     assert(isDefined(this._baseSignerAddress), "BaseAdapter: baseSignerAddress accessed before initialize()");
     return this._baseSignerAddress;
   }
+  public set baseSignerAddress(value: EvmAddress) {
+    this._baseSignerAddress = value;
+  }
   protected get redisCache(): RedisCache {
     assert(isDefined(this._redisCache), "BaseAdapter: redisCache accessed before initialize()");
     return this._redisCache;
+  }
+  protected set redisCache(value: RedisCache) {
+    this._redisCache = value;
   }
 
   protected availableRoutes: RebalanceRoute[] = [];

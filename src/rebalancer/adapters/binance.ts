@@ -58,13 +58,16 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   private _binanceApiClient?: Binance;
   private exchangeInfoPromise?: ReturnType<Binance["exchangeInfo"]>;
 
-  // binanceApiClient is populated by initialize(); access pre-init throws.
+  // binanceApiClient is populated by initialize(); reads pre-init throw, writes go through the setter.
   private get binanceApiClient(): Binance {
     assert(
       isDefined(this._binanceApiClient),
       "BinanceStablecoinSwapAdapter: binanceApiClient accessed before initialize()"
     );
     return this._binanceApiClient;
+  }
+  private set binanceApiClient(value: Binance) {
+    this._binanceApiClient = value;
   }
   private orderBookPromiseBySymbol = new Map<string, Promise<Awaited<ReturnType<Binance["book"]>>>>();
   private orderBookSnapshotBySymbol = new Map<

@@ -13,6 +13,7 @@ import {
   fillV3Relay,
   getDefaultBlockRange,
   getLastBlockTime,
+  mineRandomBlocks,
   randomAddress,
   smock,
 } from "./utils";
@@ -139,6 +140,16 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
         spokePoolClient_2.chainId,
         spokePoolClient_2.deploymentBlock
       );
+      // The SDK's EventManager is a module-level singleton keyed by chainId; its `blockNumber` only
+      // advances. With outer `before(setupDataworker)`, the singleton's state survives across tests,
+      // so reset to the real chain head before mocking new events. Without this, generateEvent will
+      // emit events at blocks far ahead of the actual chain, causing `provider.getBlock(...)` lookups
+      // (e.g. BundleDataClient.getBundleBlockTimestamps) to return null on the hardhat node.
+      mockOriginSpokePoolClient.eventManager.blockNumber = spokePoolClient_1.latestHeightSearched;
+      mockDestinationSpokePoolClient.eventManager.blockNumber = spokePoolClient_2.latestHeightSearched;
+      // Mine enough headroom on the underlying hardhat chain so mock events generated at
+      // `eventManager.blockNumber + N` resolve to real blocks for `getTimestampForBlock` lookups.
+      await mineRandomBlocks(256);
       spokePoolClients = {
         ...spokePoolClients,
         [originChainId]: mockOriginSpokePoolClient,

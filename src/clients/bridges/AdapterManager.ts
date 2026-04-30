@@ -44,10 +44,13 @@ export class AdapterManager {
   private chainsToWrapEtherOn = [...spokesThatHoldNativeTokens, CHAIN_IDs.ARBITRUM, CHAIN_IDs.MAINNET];
   private _spokePoolManager?: SpokePoolManager;
   // spokePoolManager is populated by the constructor unless `spokePoolClients` is missing, in which case the
-  // adapter manager is constructed in a partial state and these accessors throw.
+  // adapter manager is constructed in a partial state. Reads pre-init throw, writes go through the setter.
   get spokePoolManager(): SpokePoolManager {
     assert(isDefined(this._spokePoolManager), "AdapterManager: spokePoolManager unavailable (no spokePoolClients)");
     return this._spokePoolManager;
+  }
+  set spokePoolManager(value: SpokePoolManager) {
+    this._spokePoolManager = value;
   }
   constructor(
     readonly logger: winston.Logger,

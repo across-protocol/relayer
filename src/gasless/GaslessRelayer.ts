@@ -100,10 +100,13 @@ export class GaslessRelayer {
   private _instanceCoordinator?: InstanceCoordinator;
   private initialized = false;
 
-  // Populated by initialize(); pre-init access throws.
+  // instanceCoordinator is populated by initialize(); reads pre-init throw, writes go through the setter.
   protected get instanceCoordinator(): InstanceCoordinator {
     assert(isDefined(this._instanceCoordinator), "GaslessRelayer: instanceCoordinator accessed before initialize()");
     return this._instanceCoordinator;
+  }
+  protected set instanceCoordinator(value: InstanceCoordinator) {
+    this._instanceCoordinator = value;
   }
 
   protected messageState: { [key: string]: MessageState } = {};
@@ -125,10 +128,13 @@ export class GaslessRelayer {
   private api: AcrossSwapApiClient;
   private _signerAddress?: EvmAddress;
 
-  // Populated by initialize(); pre-init access throws.
+  // signerAddress is populated by initialize(); reads pre-init throw, writes go through the setter.
   protected get signerAddress(): EvmAddress {
     assert(isDefined(this._signerAddress), "GaslessRelayer: signerAddress accessed before initialize()");
     return this._signerAddress;
+  }
+  protected set signerAddress(value: EvmAddress) {
+    this._signerAddress = value;
   }
 
   private transactionClient;
@@ -157,7 +163,7 @@ export class GaslessRelayer {
     assert(isDefined(runIdentifier), "GaslessRelayer: RUN_IDENTIFIER env var is required");
 
     // Set the signer address.
-    this._signerAddress = EvmAddress.from(await this.baseSigner.getAddress());
+    this.signerAddress = EvmAddress.from(await this.baseSigner.getAddress());
     this.redisCache = await getRedisCache(this.logger);
     assert(isDefined(this.redisCache), "GaslessRelayer: requires a Redis cache for handover state");
 
@@ -216,14 +222,14 @@ export class GaslessRelayer {
     });
 
     // Establish a new bot instance.
-    this._instanceCoordinator = new InstanceCoordinator(
+    this.instanceCoordinator = new InstanceCoordinator(
       this.logger,
       this.redisCache,
       botIdentifier,
       runIdentifier,
       this.abortController
     );
-    await this._instanceCoordinator.initiateHandover();
+    await this.instanceCoordinator.initiateHandover();
 
     this.initialized = true;
   }

@@ -91,7 +91,8 @@ export class HyperliquidExecutor {
   private handledEvents: Set<string> = new Set<string>();
   private _dstSearchConfig?: EventSearchConfig;
 
-  // Populated by initialize(); pre-init access throws.
+  // instanceCoordinator and dstSearchConfig are populated by initialize();
+  // reads pre-init throw, writes go through the setter.
   private get instanceCoordinator(): InstanceCoordinator {
     assert(
       isDefined(this._instanceCoordinator),
@@ -99,9 +100,15 @@ export class HyperliquidExecutor {
     );
     return this._instanceCoordinator;
   }
+  private set instanceCoordinator(value: InstanceCoordinator) {
+    this._instanceCoordinator = value;
+  }
   private get dstSearchConfig(): EventSearchConfig {
     assert(isDefined(this._dstSearchConfig), "HyperliquidExecutor: dstSearchConfig accessed before initialize()");
     return this._dstSearchConfig;
+  }
+  private set dstSearchConfig(value: EventSearchConfig) {
+    this._dstSearchConfig = value;
   }
 
   private tasks: Promise<TaskResult>[] = [];
