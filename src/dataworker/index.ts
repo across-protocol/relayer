@@ -457,12 +457,15 @@ export async function runDisputerWatchdog(logger: winston.Logger, signer: Signer
   try {
     await disputer.validate();
     const redis = await getRedisCache(logger);
+    // Watchdog disputes are gated on validator-attestation counts persisted in Redis. If Redis is unavailable we
+    // can't read those counts; falling back to 0 would dispute on missing data. Fail fast instead.
+    assert(isDefined(redis), "Disputer watchdog requires a Redis cache to read validator attestation counts");
 
     const { currentTime, currentBlock, ...proposal } = await getProposal(provider, hubChainId);
 
     const getValidations = async () => {
       const key = generateValidationKey(proposal);
-      const result = await redis?.get<string>(key);
+      const result = await redis.get<string>(key);
       return Number(result) || 0; // Revert to 0 on isNaN(result)
     };
 
