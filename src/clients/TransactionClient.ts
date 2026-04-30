@@ -442,7 +442,6 @@ async function _runTransactionTvm(
     maxFeePerGasScaler,
     sendRawTxn ? undefined : await contract.populateTransaction[method](...args, { value })
   );
-  assert(maxFeePerGas !== null, `getGasPrice returned null maxFeePerGas on ${chain}`);
   const gasLimitNumber = gasLimit?.toNumber() ?? process.env.TVM_GAS_LIMIT;
   const feeLimit = isDefined(gasLimitNumber) ? Number(gasLimitNumber) * maxFeePerGas.toNumber() : DEFAULT_TVM_FEE_LIMIT;
 
@@ -516,13 +515,9 @@ async function _runTransactionTvm(
  */
 function _scaleGasPrice(
   chainId: number,
-  gas: Pick<FeeData, "maxFeePerGas" | "maxPriorityFeePerGas">,
+  gas: { maxFeePerGas: BigNumber; maxPriorityFeePerGas: BigNumber },
   retryScaler = 1.0
-): Pick<FeeData, "maxFeePerGas" | "maxPriorityFeePerGas"> | Pick<FeeData, "gasPrice"> {
-  assert(
-    gas.maxFeePerGas !== null && gas.maxPriorityFeePerGas !== null,
-    `_scaleGasPrice: gas fee data missing on chain ${chainId}`
-  );
+): { maxFeePerGas: BigNumber; maxPriorityFeePerGas: BigNumber } | { gasPrice: BigNumber } {
   let { maxFeePerGas, maxPriorityFeePerGas } = gas;
 
   const feeDeltaPct = toBNWei(Math.max(retryScaler - 1.0, 0));
