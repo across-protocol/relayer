@@ -59,14 +59,18 @@ export function removeEvent(event: Log): boolean {
 
 function post(message: ListenerMessage): boolean {
   if (!isDefined(process.send)) {
-    return;
+    return true;
   }
 
-  try {
-    process.send(JSON.stringify(message));
-  } catch {
+  // process.send() does not throw on a closed channel; it returns false and emits
+  // an async 'error' event on `process`. Skip the call entirely once disconnected.
+  if (!process.connected) {
     return false;
   }
 
+  // Discard process.send()'s return value: per node docs it is also false under
+  // IPC backlog pressure, and treating backpressure as a hard failure would
+  // spuriously abort the listener. Disconnects are caught by process.connected.
+  process.send(JSON.stringify(message));
   return true;
 }
