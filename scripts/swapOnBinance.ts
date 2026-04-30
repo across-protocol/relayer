@@ -1714,9 +1714,12 @@ function contractAddressMatchesToken(
   if (!networkContractAddress) {
     return false;
   }
+  if (chainIsSvm(chainId)) {
+    return localTokenAddress === networkContractAddress;
+  }
   try {
-    const normalizedLocalAddress = getEthersCompatibleAddress(chainId, localTokenAddress).toLowerCase();
-    const normalizedNetworkAddress = getEthersCompatibleAddress(chainId, networkContractAddress).toLowerCase();
+    const normalizedLocalAddress = getEthersCompatibleAddress(chainId, localTokenAddress);
+    const normalizedNetworkAddress = getEthersCompatibleAddress(chainId, networkContractAddress);
     return compareAddressesSimple(normalizedLocalAddress, normalizedNetworkAddress);
   } catch {
     return false;

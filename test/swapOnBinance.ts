@@ -123,6 +123,30 @@ describe("swapOnBinance script helpers", function () {
     expect(resolution).to.deep.equal({ ok: false, reason: "CONTRACT_ADDRESS_MISMATCH" });
   });
 
+  it("compares Solana token contract addresses case-sensitively", function () {
+    const solanaUsdc = resolveAcrossToken("USDC", CHAIN_IDs.SOLANA)!;
+    const misCasedSolanaUsdc = `${solanaUsdc[0].toLowerCase()}${solanaUsdc.slice(1)}`;
+    const accountCoins = [
+      makeErc20Coin("USDC", [
+        {
+          chainId: CHAIN_IDs.SOLANA,
+          contractAddress: misCasedSolanaUsdc,
+        },
+      ]),
+    ];
+
+    const resolution = resolveBinanceAsset({
+      accountCoins,
+      tokenSymbol: "USDC",
+      chainId: CHAIN_IDs.SOLANA,
+      direction: "withdraw",
+    });
+
+    expect(misCasedSolanaUsdc.toLowerCase()).to.equal(solanaUsdc.toLowerCase());
+    expect(misCasedSolanaUsdc).to.not.equal(solanaUsdc);
+    expect(resolution).to.deep.equal({ ok: false, reason: "CONTRACT_ADDRESS_MISMATCH" });
+  });
+
   it("rejects same-coin routes because the script only supports swaps", async function () {
     const venue = new BinanceSwapVenue({} as never);
     const source = makeResolvedAsset({
