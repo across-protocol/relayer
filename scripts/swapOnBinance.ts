@@ -344,7 +344,7 @@ export async function run(): Promise<void> {
       );
     },
   });
-  const amountToWithdraw = toBNWei(orderAvailability.expectedAmountToReceive, destination.tokenDecimals);
+  const amountToWithdraw = toBNWei(truncate(Number(orderAvailability.expectedAmountToReceive), destination.tokenDecimals), destination.tokenDecimals);
 
   printSection("Step 4/4: Withdraw");
   const withdrawalSubmittedAtMs = Date.now();
@@ -1594,7 +1594,7 @@ export async function waitForBinanceDepositToBeAvailable(params: {
 
     params.onProgress?.({ attempts, deposit: matchingDeposit, freeBalance });
 
-    if (matchingDeposit?.status === BinanceDepositStatus.Credited && freeBalance >= minFreeBalance) {
+    if (freeBalance >= minFreeBalance) {
       return { attempts, deposit: matchingDeposit, freeBalance };
     }
     await sleepMs(pollDelayMs);
@@ -1677,7 +1677,7 @@ export async function waitForBinanceWithdrawalCompletion(params: {
         )}`
       );
     }
-    if (withdrawal?.status === BINANCE_WITHDRAWAL_STATUS.COMPLETED) {
+    if (withdrawal?.status === BINANCE_WITHDRAWAL_STATUS.COMPLETED || isDefined(withdrawal?.txId)) {
       return {
         attempts,
         observedCompletedAtMs: Date.now(),
