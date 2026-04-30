@@ -3,16 +3,16 @@
 #
 #   strict-null-budget.sh                 enforce: fail on regression AND on
 #                                         unratcheted improvement.
-#   strict-null-budget.sh --auto-ratchet  on improvement, restage the error
-#                                         list (used by `yarn update-strict`).
+#   strict-null-budget.sh --auto-ratchet  on improvement, update the budget
+#                                         (used by `yarn update-strict`).
 #   strict-null-budget.sh --no-cache      bypass the freshness shortcut and
 #                                         always run tsc (used in CI).
 #
 # Uses `tsc --incremental` with a dedicated buildinfo file so warm runs are
-# fast. The error list is cached in $ERRORS_FILE; tsc is skipped if no input
-# is newer than the cache. The committed copy of $ERRORS_FILE is the baseline:
-# its line count is the previous budget. When the file is empty, flip
-# `strictNullChecks: true` in tsconfig.json and delete this script.
+# fast. The full violation list is regenerated into $ERRORS_FILE (gitignored)
+# for local inspection. The committed budget is a single integer in
+# $BUDGET_FILE; when it reaches 0, flip `strictNullChecks: true` in
+# tsconfig.json and delete this script.
 
 set -eu
 
@@ -28,6 +28,7 @@ done
 
 BUILDINFO=".tsbuildinfo-strict"
 ERRORS_FILE=".strict-null-errors"
+BUDGET_FILE=".strict-null-budget"
 INPUTS="src scripts index.ts hardhat.config.ts tsconfig.json package.json yarn.lock"
 
 # Skip tsc if every input is older than the cached error list.
@@ -45,44 +46,33 @@ else
 fi
 ACTUAL=$(wc -l < "$ERRORS_FILE" | tr -d ' ')
 
-PREV_FILE=$(mktemp)
-trap 'rm -f "$PREV_FILE"' EXIT
-if git cat-file -e HEAD:"$ERRORS_FILE" 2>/dev/null; then
-  git show HEAD:"$ERRORS_FILE" > "$PREV_FILE"
-  PREVIOUS=$(wc -l < "$PREV_FILE" | tr -d ' ')
-else
-  PREVIOUS=$ACTUAL # bootstrap: no baseline yet
+if [ ! -f "$BUDGET_FILE" ]; then
+  echo "Missing $BUDGET_FILE" >&2
+  exit 2
 fi
+BUDGET=$(tr -d ' \n' < "$BUDGET_FILE")
 
-if [ "$ACTUAL" -gt "$PREVIOUS" ]; then
-  echo "strictNullChecks regressed: $ACTUAL > $PREVIOUS"
-  NEW_ERRORS=$(grep -vxFf "$PREV_FILE" "$ERRORS_FILE" || true)
-  if [ -n "$NEW_ERRORS" ]; then
-    echo
-    echo "New violations:"
-    printf '%s\n' "$NEW_ERRORS"
-  fi
+if [ "$ACTUAL" -gt "$BUDGET" ]; then
+  echo "strictNullChecks regressed: $ACTUAL > $BUDGET"
+  echo
+  echo "Current violations:"
+  cat "$ERRORS_FILE"
   echo
   echo "Reproduce locally: yarn strict-null-budget --no-cache"
   exit 1
 fi
 
-if [ "$ACTUAL" -lt "$PREVIOUS" ]; then
-  DELTA=$((PREVIOUS - ACTUAL))
+if [ "$ACTUAL" -lt "$BUDGET" ]; then
+  DELTA=$((BUDGET - ACTUAL))
   if [ "$MODE" = "auto-ratchet" ]; then
-    git add "$ERRORS_FILE"
-    echo "Nice — strictNullChecks down by $DELTA: $PREVIOUS -> $ACTUAL. Error list updated and staged."
+    printf '%s\n' "$ACTUAL" > "$BUDGET_FILE"
+    git add "$BUDGET_FILE"
+    echo "Nice — strictNullChecks down by $DELTA: $BUDGET -> $ACTUAL. Budget updated and staged."
     exit 0
   fi
-  echo "Nice — strictNullChecks down by $DELTA: $PREVIOUS -> $ACTUAL."
-  FIXED_ERRORS=$(grep -vxFf "$ERRORS_FILE" "$PREV_FILE" || true)
-  if [ -n "$FIXED_ERRORS" ]; then
-    echo
-    echo "Fixed violations not yet recorded:"
-    printf '%s\n' "$FIXED_ERRORS"
-  fi
+  echo "Nice — strictNullChecks down by $DELTA: $BUDGET -> $ACTUAL."
   echo
-  echo "Run \`yarn update-strict\` and stage $ERRORS_FILE before pushing."
+  echo "Run \`yarn update-strict\` and stage $BUDGET_FILE before pushing."
   exit 1
 fi
 
