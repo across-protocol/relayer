@@ -326,9 +326,6 @@ describe("finalizeCCTPV1Messages", () => {
 
     const testMessages = await getAttestedMessage(encodePauseDepositsMessageBody(true), 200, 0, 5);
     sinon.stub(CCTPUtils, "getCctpV1Messages").resolves(testMessages);
-    sinon.stub(CCTPUtils, "getCctpV1MessageTransmitter").returns({
-      address: "CCTPmbSD7gX1bxKPAmg77w8oFzNFpaQiQUWD43TKaecd",
-    });
     sinon.stub(svmSignerUtils, "getKitKeypairFromEvmSigner").resolves(signer);
 
     let originalSendTransactions: string | undefined;
@@ -392,9 +389,6 @@ describe("finalizeCCTPV1Messages", () => {
     // Create a test message
     const testMessages = await getAttestedMessage(encodePauseDepositsMessageBody(true), 200, 0, 5);
     sinon.stub(CCTPUtils, "getCctpV1Messages").resolves(testMessages);
-    sinon.stub(CCTPUtils, "getCctpV1MessageTransmitter").returns({
-      address: "CCTPmbSD7gX1bxKPAmg77w8oFzNFpaQiQUWD43TKaecd",
-    });
     sinon.stub(svmSignerUtils, "getKitKeypairFromEvmSigner").resolves(signer);
 
     let originalSendTransactions: string | undefined;
@@ -456,9 +450,6 @@ describe("finalizeCCTPV1Messages", () => {
     // This test is trying to handle empty message list.
     // It tests cctpL1toL2Finalizer function.
     sinon.stub(CCTPUtils, "getCctpV1Messages").resolves([]);
-    sinon.stub(CCTPUtils, "getCctpV1MessageTransmitter").returns({
-      address: "CCTPmbSD7gX1bxKPAmg77w8oFzNFpaQiQUWD43TKaecd",
-    });
     sinon.stub(svmSignerUtils, "getKitKeypairFromEvmSigner").resolves(signer);
 
     let originalSendTransactions: string | undefined;
@@ -527,9 +518,6 @@ describe("finalizeCCTPV1Messages", () => {
     const mixedMessages = [...depositMessage, ...tokenlessMessage];
 
     sinon.stub(CCTPUtils, "getCctpV1Messages").resolves(mixedMessages);
-    sinon.stub(CCTPUtils, "getCctpV1MessageTransmitter").returns({
-      address: "CCTPmbSD7gX1bxKPAmg77w8oFzNFpaQiQUWD43TKaecd",
-    });
     sinon.stub(svmSignerUtils, "getKitKeypairFromEvmSigner").resolves(signer);
 
     let originalSendTransactions: string | undefined;

@@ -3,13 +3,13 @@ import { utils } from "@across-protocol/sdk";
 import {
   winston,
   submitTransaction,
-  getCctpV2MessageTransmitter,
   CHAIN_IDs,
   decodeCctpV2HookData,
   TOKEN_SYMBOLS_MAP,
   CCTPHookData,
+  isDefined,
 } from "../../utils";
-import { CONTRACT_ADDRESSES } from "../../common/ContractAddresses";
+import { getContractAbi, getContractEntry } from "../../common/ContractAddresses";
 import { DestinationInfo } from "../types";
 import { TransactionClient } from "../../clients";
 import { extractMintRecipientAddress } from "./commonUtils";
@@ -29,8 +29,8 @@ export async function checkIfAlreadyProcessedEvm(
   message: string,
   provider: ethers.providers.JsonRpcProvider
 ): Promise<boolean> {
-  const { address, abi } = getCctpV2MessageTransmitter(chainId);
-  const contract = new ethers.Contract(address!, abi, provider);
+  const { address, abi } = getContractEntry(chainId, "cctpV2MessageTransmitter");
+  const contract = new ethers.Contract(address, abi, provider);
 
   const messageBytes = ethers.utils.arrayify(message);
   const nonceBytes = messageBytes.slice(12, 44);
@@ -39,9 +39,9 @@ export async function checkIfAlreadyProcessedEvm(
   return await utils.hasCCTPMessageBeenProcessedEvm(nonce, contract);
 }
 
-export function shouldCreateHyperCoreAccount(hookData?: CCTPHookData): boolean {
-  const isDestinationUsdc = hookData?.finalToken === TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.HYPEREVM];
-  const isSponsoredFlow = hookData?.maxBpsToSponsor > 0;
+export function shouldCreateHyperCoreAccount(hookData: CCTPHookData): boolean {
+  const isDestinationUsdc = hookData.finalToken === TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.HYPEREVM];
+  const isSponsoredFlow = hookData.maxBpsToSponsor > 0;
   return isSponsoredFlow || isDestinationUsdc;
 }
 
@@ -52,7 +52,7 @@ export async function createHyperCoreAccountIfNotExists(
   logger: winston.Logger
 ): Promise<void> {
   const hookData = decodeCctpV2HookData(message);
-  if (!shouldCreateHyperCoreAccount(hookData)) {
+  if (!isDefined(hookData) || !shouldCreateHyperCoreAccount(hookData)) {
     logger.info({
       at: "evmUtils#createHyperCoreAccountIfNotExists",
       message: "Skipping account activation because its not sponsored flow",
@@ -104,11 +104,7 @@ function getDestination(chainId: number, messageBytes: string, signature?: strin
 
     // Extract mint recipient from CCTP message - this is the SponsoredCCTPDstPeriphery contract
     const mintRecipient = extractMintRecipientAddress(messageBytes);
-    const { abi } = CONTRACT_ADDRESSES[chainId]?.sponsoredCCTPDstPeriphery || {};
-
-    if (!abi) {
-      throw new Error(`SponsoredCCTPDstPeriphery ABI not configured for chain ${chainId}`);
-    }
+    const abi = getContractAbi(chainId, "sponsoredCCTPDstPeriphery");
 
     const type = isHyperEVM ? "hypercore" : isMainnet ? "lighter" : "direct-evm";
     const accountInitialization = isHyperEVM ? createHyperCoreAccountIfNotExists : undefined;
@@ -122,10 +118,7 @@ function getDestination(chainId: number, messageBytes: string, signature?: strin
     };
   }
 
-  const { address, abi } = getCctpV2MessageTransmitter(chainId);
-  if (!address) {
-    throw new Error(`CCTP V2 MessageTransmitter address not configured for chain ${chainId}`);
-  }
+  const { address, abi } = getContractEntry(chainId, "cctpV2MessageTransmitter");
   return {
     type: "standard",
     address,

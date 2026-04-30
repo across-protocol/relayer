@@ -49,6 +49,7 @@ import { STATUS } from "../utils/utils";
 import { BaseAdapter } from "./baseAdapter";
 import { AugmentedTransaction, MultiCallerClient } from "../../clients";
 import { RebalancerConfig } from "../RebalancerConfig";
+import { getContractEntry } from "../../common";
 import { CctpAdapter } from "./cctpAdapter";
 import { OftAdapter } from "./oftAdapter";
 import WETH_ABI from "../../common/abi/Weth.json";
@@ -700,6 +701,10 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const destinationBinanceNetwork = destinationCoin.networkList.find(
       (network) => network.name === BINANCE_NETWORKS[destinationEntrypointNetwork]
     );
+    assert(
+      isDefined(destinationBinanceNetwork),
+      `No Binance network entry for ${destinationToken} on chain ${destinationEntrypointNetwork}`
+    );
     const { withdrawMin, withdrawMax } = destinationBinanceNetwork;
 
     // Make sure that the amount to transfer will be larger than the minimum withdrawal size after expected fees.
@@ -851,17 +856,26 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       ? await this._getSpotMarketMetaForRoute(sourceToken, destinationToken)
       : undefined;
     // Commission is denominated in percentage points.
-    const tradeFeePct = routeRequiresSwap
-      ? (await this._getTradeFees()).find((fee) => fee.symbol === spotMarketMeta.symbol).takerCommission
-      : "0";
+    let tradeFeePct = "0";
+    if (routeRequiresSwap) {
+      assert(isDefined(spotMarketMeta), `No Binance spot market for ${sourceToken} -> ${destinationToken}`);
+      const fee = (await this._getTradeFees()).find((fee) => fee.symbol === spotMarketMeta.symbol);
+      assert(isDefined(fee), `No trade fee entry for Binance market ${spotMarketMeta.symbol}`);
+      tradeFeePct = String(fee.takerCommission);
+    }
     const tradeFee = toBNWei(truncate(Number(tradeFeePct), 18), 18)
       .mul(amountToTransfer)
       .div(toBNWei(1, 18));
     const destinationCoin = await this._getAccountCoins(destinationToken);
     const destinationEntrypointNetwork = await this._getEntrypointNetwork(destinationChain, destinationToken);
-    const withdrawFee = destinationCoin.networkList.find(
+    const destinationNetwork = destinationCoin.networkList.find(
       (network) => network.name === BINANCE_NETWORKS[destinationEntrypointNetwork]
-    ).withdrawFee;
+    );
+    assert(
+      isDefined(destinationNetwork),
+      `No Binance network entry for ${destinationToken} on chain ${destinationEntrypointNetwork}`
+    );
+    const withdrawFee = destinationNetwork.withdrawFee;
 
     const latestPrice = await this._getLatestPrice(sourceToken, destinationToken, sourceChain, amountToTransfer);
     const destinationTokenInfo = this._getTokenInfo(destinationToken, destinationEntrypointNetwork);
@@ -1084,20 +1098,16 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   ): Promise<string> {
     const sourceProvider = await getProvider(sourceChain);
     const connectedSigner = this.baseSigner.connect(sourceProvider);
-    const atomicDepositorContracts = getAtomicDepositorContracts(sourceChain);
-    assert(
-      isDefined(atomicDepositorContracts),
-      `Atomic depositor contracts missing for ${getNetworkName(sourceChain)}`
+    const { address: atomicDepositorAddress, abi: atomicDepositorAbi } = getContractEntry(
+      sourceChain,
+      "atomicDepositor"
     );
-    const atomicDepositor = new Contract(
-      atomicDepositorContracts.atomicDepositorAddress,
-      atomicDepositorContracts.atomicDepositorAbi,
-      connectedSigner
+    const { address: transferProxyAddress, abi: transferProxyAbi } = getContractEntry(
+      sourceChain,
+      "atomicDepositorTransferProxy"
     );
-    const transferProxy = new Contract(
-      atomicDepositorContracts.transferProxyAddress,
-      atomicDepositorContracts.transferProxyAbi
-    );
+    const atomicDepositor = new Contract(atomicDepositorAddress, atomicDepositorAbi, connectedSigner);
+    const transferProxy = new Contract(transferProxyAddress, transferProxyAbi);
     const bridgeCalldata = transferProxy.interface.encodeFunctionData("transfer", [depositAddress]);
     // @dev The AtomicWethDepositor today is only deployed to Ethereum and the only way to use it to deposit ETH
     // into Binance is to use the bridgeCalldata as the whitelisted function selector mapped to chain ID 56.

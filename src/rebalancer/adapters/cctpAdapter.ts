@@ -10,12 +10,10 @@ import {
   getCctpDomainForChainId,
   ethers,
   getNetworkName,
-  getCctpV2TokenMessenger,
   Contract,
   getProvider,
   getCctpDestinationChainFromDomain,
   chainIsProd,
-  getCctpV2MessageTransmitter,
   forEachAsync,
   MAX_SAFE_ALLOWANCE,
   toBN,
@@ -23,7 +21,7 @@ import {
   isDefined,
   EvmAddress,
 } from "../../utils";
-import { CCTP_MAX_SEND_AMOUNT } from "../../common";
+import { CCTP_MAX_SEND_AMOUNT, CONTRACT_ADDRESSES, getContractEntry } from "../../common";
 import { PRODUCTION_NETWORKS, CCTP_NO_DOMAIN } from "@across-protocol/constants";
 import { utils } from "@across-protocol/sdk";
 import { MultiCallerClient } from "../../clients/MultiCallerClient";
@@ -42,9 +40,9 @@ export class CctpAdapter extends BaseAdapter {
     this.availableRoutes.forEach((route) => {
       assert(
         PRODUCTION_NETWORKS[route.sourceChain].cctpDomain !== CCTP_NO_DOMAIN &&
-          isDefined(getCctpV2TokenMessenger(route.sourceChain)?.address) &&
+          isDefined(CONTRACT_ADDRESSES[route.sourceChain]?.cctpV2TokenMessenger?.address) &&
           PRODUCTION_NETWORKS[route.destinationChain].cctpDomain !== CCTP_NO_DOMAIN &&
-          isDefined(getCctpV2TokenMessenger(route.destinationChain)?.address),
+          isDefined(CONTRACT_ADDRESSES[route.destinationChain]?.cctpV2TokenMessenger?.address),
         `CCTP bridge is not supported for route ${route.sourceChain} -> ${route.destinationChain}`
       );
     });
@@ -58,7 +56,7 @@ export class CctpAdapter extends BaseAdapter {
     const allChains = new Set<number>([...this.allSourceChains, ...this.allDestinationChains]);
     await forEachAsync(Array.from(allChains), async (chainId) => {
       const connectedSigner = this.baseSigner.connect(await getProvider(chainId));
-      if (getCctpV2TokenMessenger(chainId)?.address) {
+      if (CONTRACT_ADDRESSES[chainId]?.cctpV2TokenMessenger?.address) {
         const usdc = new Contract(this._getTokenInfo("USDC", chainId).address.toNative(), ERC20.abi, connectedSigner);
         const cctpMessenger = await this._getCctpMessenger(chainId);
         const cctpAllowance = await usdc.allowance(this.baseSignerAddress.toNative(), cctpMessenger.address);
@@ -122,7 +120,7 @@ export class CctpAdapter extends BaseAdapter {
         attestation.decodedMessage.destinationDomain,
         chainIsProd(Number(sourceChainId))
       );
-      const { address, abi } = getCctpV2MessageTransmitter(destinationChainId);
+      const { address, abi } = getContractEntry(destinationChainId, "cctpV2MessageTransmitter");
       const destinationMessageTransmitter = new Contract(address, abi, await getProvider(destinationChainId));
       const processed = await utils.hasCCTPMessageBeenProcessedEvm(
         attestation.eventNonce,
@@ -166,7 +164,7 @@ export class CctpAdapter extends BaseAdapter {
           attestation.decodedMessage.destinationDomain,
           chainIsProd(Number(sourceChainId))
         );
-        const { address, abi } = getCctpV2MessageTransmitter(destinationChainId);
+        const { address, abi } = getContractEntry(destinationChainId, "cctpV2MessageTransmitter");
         const destinationMessageTransmitter = new Contract(address, abi, await getProvider(destinationChainId));
         const processed = await utils.hasCCTPMessageBeenProcessedEvm(
           attestation.eventNonce,
@@ -283,13 +281,9 @@ export class CctpAdapter extends BaseAdapter {
   }
 
   protected async _getCctpMessenger(chainId: number): Promise<Contract> {
-    const cctpMessengerAddress = getCctpV2TokenMessenger(chainId);
+    const { address, abi } = getContractEntry(chainId, "cctpV2TokenMessenger");
     const originProvider = await getProvider(chainId);
-    return new Contract(
-      cctpMessengerAddress.address,
-      cctpMessengerAddress.abi,
-      this.baseSigner.connect(originProvider)
-    );
+    return new Contract(address, abi, this.baseSigner.connect(originProvider));
   }
 
   private async _getCctpAttestation(

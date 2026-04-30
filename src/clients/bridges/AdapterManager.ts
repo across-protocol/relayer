@@ -61,7 +61,7 @@ export class AdapterManager {
     const isHubPoolOrSpokePoolAddress = (chainId: number, address: Address) => {
       return (
         EvmAddress.from(this.hubPoolClient.hubPool.address).eq(address) ||
-        this.spokePoolManager.getClient(chainId)?.spokePoolAddress.eq(address)
+        this.spokePoolManager.getClient(chainId)?.spokePoolAddress?.eq(address)
       );
     };
 
@@ -71,7 +71,7 @@ export class AdapterManager {
       return monitoredAddresses.filter(
         (address) =>
           isHubPoolOrSpokePoolAddress(chainId, address) ||
-          !spokePoolAddresses.some((spokePoolAddress) => spokePoolAddress.eq(address))
+          !spokePoolAddresses.filter(isDefined).some((spokePoolAddress) => spokePoolAddress.eq(address))
       );
     };
 
@@ -86,9 +86,9 @@ export class AdapterManager {
         SUPPORTED_TOKENS[chainId]?.map((symbol) => {
           const spokePoolClient = this.spokePoolManager.getClient(chainId);
           let l2SignerOrProvider;
-          if (isEVMSpokePoolClient(spokePoolClient)) {
+          if (isDefined(spokePoolClient) && isEVMSpokePoolClient(spokePoolClient)) {
             l2SignerOrProvider = spokePoolClient.spokePool.signer;
-          } else if (isSVMSpokePoolClient(spokePoolClient)) {
+          } else if (isDefined(spokePoolClient) && isSVMSpokePoolClient(spokePoolClient)) {
             l2SignerOrProvider = spokePoolClient.svmEventsClient.getRpc();
           }
           const l1Token = resolveAcrossToken(symbol, hubChainId, true);
@@ -111,9 +111,9 @@ export class AdapterManager {
       }
       const spokePoolClient = this.spokePoolManager.getClient(chainId);
       let l2SignerOrSvmProvider: Signer | SVMProvider | undefined;
-      if (isEVMSpokePoolClient(spokePoolClient)) {
+      if (isDefined(spokePoolClient) && isEVMSpokePoolClient(spokePoolClient)) {
         l2SignerOrSvmProvider = spokePoolClient.spokePool.signer;
-      } else if (isSVMSpokePoolClient(spokePoolClient)) {
+      } else if (isDefined(spokePoolClient) && isSVMSpokePoolClient(spokePoolClient)) {
         l2SignerOrSvmProvider = spokePoolClient.svmEventsClient.getRpc();
       }
       return Object.fromEntries(
