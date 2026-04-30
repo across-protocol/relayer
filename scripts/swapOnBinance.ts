@@ -1597,7 +1597,11 @@ export async function waitForBinanceDepositToBeAvailable(params: {
 
     params.onProgress?.({ attempts, deposit: matchingDeposit, freeBalance });
 
-    if (freeBalance >= minFreeBalance) {
+    if (
+      (matchingDeposit?.status === BinanceDepositStatus.Credited ||
+        matchingDeposit?.status === BinanceDepositStatus.Confirmed) &&
+      freeBalance >= minFreeBalance
+    ) {
       return { attempts, deposit: matchingDeposit, freeBalance };
     }
     await sleepMs(pollDelayMs);
