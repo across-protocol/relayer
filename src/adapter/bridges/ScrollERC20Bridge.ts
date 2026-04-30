@@ -14,7 +14,7 @@ import {
   EvmAddress,
   winston,
 } from "../../utils";
-import { CONTRACT_ADDRESSES, SCROLL_CUSTOM_GATEWAY } from "../../common";
+import { getContractAbi, getContractEntry, SCROLL_CUSTOM_GATEWAY } from "../../common";
 import { BaseBridgeAdapter, BridgeTransactionDetails, BridgeEvents } from "./BaseBridgeAdapter";
 import { processEvent } from "../utils";
 
@@ -39,13 +39,15 @@ export class ScrollERC20Bridge extends BaseBridgeAdapter {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _logger: winston.Logger
   ) {
-    const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].scrollGatewayRouter;
-    const l2Abi = CONTRACT_ADDRESSES[l2chainId].scrollGatewayRouter.abi;
+    const { address: l1Address, abi: l1Abi } = getContractEntry(hubChainId, "scrollGatewayRouter");
+    const l2Abi = getContractAbi(l2chainId, "scrollGatewayRouter");
     const { l1: l1BridgeAddress, l2: l2BridgeAddress } =
       SCROLL_CUSTOM_GATEWAY[l1Token.toNative()] ?? SCROLL_STANDARD_GATEWAY;
 
-    const { address: gasPriceOracleAddress, abi: gasPriceOracleAbi } =
-      CONTRACT_ADDRESSES[hubChainId].scrollGasPriceOracle;
+    const { address: gasPriceOracleAddress, abi: gasPriceOracleAbi } = getContractEntry(
+      hubChainId,
+      "scrollGasPriceOracle"
+    );
     super(l2chainId, hubChainId, l1Signer, [EvmAddress.from(l1Address)]);
 
     this.l1Bridge = new Contract(l1BridgeAddress, l1Abi, l1Signer);
