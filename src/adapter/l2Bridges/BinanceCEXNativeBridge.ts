@@ -1,7 +1,9 @@
 import {
+  assert,
   BigNumber,
   createFormatFunction,
   getNetworkName,
+  isDefined,
   Signer,
   Contract,
   EvmAddress,
@@ -24,6 +26,8 @@ export class BinanceCEXNativeBridge extends BinanceCEXBridge {
     _l1Token: EvmAddress,
     amount: BigNumber
   ): Promise<AugmentedTransaction[]> {
+    const l2Provider = this.l2Signer.provider;
+    assert(isDefined(l2Provider), "BinanceCEXNativeBridge: l2Signer must have a provider");
     const weth = new Contract(l2Token.toNative(), WETH_ABI, this.l2Signer);
     const binanceApiClient = await this.getBinanceClient();
     const l2TokenInfo = getTokenInfo(l2Token, this.l2chainId);
@@ -47,7 +51,7 @@ export class BinanceCEXNativeBridge extends BinanceCEXBridge {
     const depositAddressContract = new Contract(depositAddress.address, [], this.l2Signer);
 
     // Get the cost of executing a transaction with no data. Here we just call the zero address.
-    const baseTransactionCost = await this.l2Signer.provider.estimateGas({ to: ZERO_ADDRESS });
+    const baseTransactionCost = await l2Provider.estimateGas({ to: ZERO_ADDRESS });
 
     const transferValueTxn: AugmentedTransaction = {
       contract: depositAddressContract,

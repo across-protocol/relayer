@@ -15,7 +15,7 @@ import {
   EvmAddress,
   winston,
 } from "../../utils";
-import { CONTRACT_ADDRESSES, CUSTOM_ARBITRUM_GATEWAYS, DEFAULT_ARBITRUM_GATEWAY } from "../../common";
+import { CUSTOM_ARBITRUM_GATEWAYS, DEFAULT_ARBITRUM_GATEWAY, getContractAbi, getContractEntry } from "../../common";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
 import { processEvent } from "../utils";
 import { PUBLIC_NETWORKS } from "@across-protocol/constants";
@@ -51,11 +51,13 @@ export class ArbitrumOrbitBridge extends BaseBridgeAdapter {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _logger: winston.Logger
   ) {
-    const { address: gatewayAddress, abi: gatewayRouterAbi } =
-      CONTRACT_ADDRESSES[hubChainId][`orbitErc20GatewayRouter_${l2chainId}`];
+    const { address: gatewayAddress, abi: gatewayRouterAbi } = getContractEntry(
+      hubChainId,
+      `orbitErc20GatewayRouter_${l2chainId}`
+    );
     const { l1: l1Address, l2: l2Address } =
       CUSTOM_ARBITRUM_GATEWAYS[l2chainId]?.[l1Token.toNative()] ?? DEFAULT_ARBITRUM_GATEWAY[l2chainId];
-    const l1Abi = CONTRACT_ADDRESSES[hubChainId][`orbitErc20Gateway_${l2chainId}`].abi;
+    const l1Abi = getContractAbi(hubChainId, `orbitErc20Gateway_${l2chainId}`);
     const l2Abi = ARBITRUM_ERC20_GATEWAY_L2_ABI;
 
     super(l2chainId, hubChainId, l1Signer, [EvmAddress.from(l1Address)]);

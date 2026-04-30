@@ -28,8 +28,8 @@ export type BundleDataState = {
 // on that chain since the last validated end block and adding the total refund amount on that chain since the last validated
 // end block.
 export class BundleDataApproxClient {
-  private upcomingRefunds: { [l1Token: string]: { [chainId: number]: { [relayer: string]: BigNumber } } } = undefined;
-  private upcomingDeposits: { [l1Token: string]: { [chainId: number]: BigNumber } } = undefined;
+  private upcomingRefunds: { [l1Token: string]: { [chainId: number]: { [relayer: string]: BigNumber } } } = {};
+  private upcomingDeposits: { [l1Token: string]: { [chainId: number]: BigNumber } } = {};
   private readonly spokePoolManager: SpokePoolManager;
 
   private readonly protocolChainIdIndices: number[];

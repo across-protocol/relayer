@@ -60,8 +60,8 @@ export class EventListener extends EventEmitter {
 
     const newBlock = (block: Block, provider: string) => {
       // Transient error that sometimes occurs. Catch it here and try to flush out the provider.
-      if (!block) {
-        logger.debug({ at, message: `Received empty ${chain} block from ${provider}.` });
+      if (!block || block.number === null) {
+        logger.debug({ at, message: `Received empty or pending ${chain} block from ${provider}.` });
         return;
       }
       const [blockNumber, currentTime] = [parseInt(block.number.toString()), parseInt(block.timestamp.toString())];
