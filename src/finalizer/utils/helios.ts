@@ -471,7 +471,6 @@ function filterRequiredActions(
     if (action.type !== "UpdateAndExecute") {
       return true;
     }
-    // If a root bundle in our lookback has an unexecuted L2 leaf and that leaf has a corresponding pool rebalance leaf for the l2 network, then we want to execute.
     const matchingExecutedRootBundle = hubPoolClient.getExecutedRootBundles().find((leaf) => {
       if (leaf.chainId !== l2ChainId) {
         return false;
@@ -479,7 +478,17 @@ function filterRequiredActions(
       // The action's `StoredCalldataEvent` will be in the same transaction as the HubPool's `ExecutedRootBundle` event since the execution of any pool rebalance leaf is atomic.
       return leaf.txnRef === action.l1Event.txnRef;
     });
-    return isDefined(matchingExecutedRootBundle);
+    // If we have found a matching root bundle, then we should run this action. Otherwise, the last check we need
+    // to run is whether there was _any_ root bundle in lookback which corresponds to this action.
+    // If there is no root bundle, then we can assume this action corresponds to an out-of-band relay which
+    // also needs to be executed (e.g. a `relaySpokePoolAdminFunction` call).
+    if (isDefined(matchingExecutedRootBundle)) {
+      return true;
+    }
+    const noExecutedRootBundle = hubPoolClient
+      .getExecutedRootBundles()
+      .every((leaf) => leaf.txnRef !== action.l1Event.txnRef);
+    return noExecutedRootBundle;
   });
 }
 
