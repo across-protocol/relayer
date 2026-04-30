@@ -9,6 +9,7 @@ import {
   chainIsSvm,
   getCachedProvider,
   getNetworkName,
+  isDefined,
   mapAsync,
 } from "../../../utils";
 import {
@@ -80,6 +81,7 @@ export async function cctpV2Finalizer(
     })),
     callData: await mapAsync(readyToFinalizeDeposits, async (attestation) => {
       const txn = await getCctpReceiveMessageCallData(attestation, false /* CCTP V2 */);
+      assert(isDefined(txn.to) && isDefined(txn.data), "CCTPV2AnyToAnyFinalizer: receiveMessage missing to/data");
       return {
         target: txn.to,
         callData: txn.data,

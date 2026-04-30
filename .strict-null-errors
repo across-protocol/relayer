@@ -25,13 +25,6 @@ scripts/zkSyncDemo.ts(61,5): error TS2345: Argument of type 'string | undefined'
 scripts/zkSyncDemo.ts(94,7): error TS2345: Argument of type 'Provider | undefined' is not assignable to parameter of type 'Provider'.
 scripts/zkSyncDemo.ts(137,7): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
 scripts/zkSyncDemo.ts(143,7): error TS2345: Argument of type 'Provider | undefined' is not assignable to parameter of type 'Provider'.
-src/adapter/BaseChainAdapter.ts(261,39): error TS18048: 'gasToken' is possibly 'undefined'.
-src/adapter/BaseChainAdapter.ts(264,67): error TS2345: Argument of type 'EvmAddress | undefined' is not assignable to parameter of type 'EvmAddress'.
-src/adapter/BaseChainAdapter.ts(267,46): error TS2345: Argument of type 'EvmAddress | undefined' is not assignable to parameter of type 'EvmAddress'.
-src/adapter/BaseChainAdapter.ts(373,32): error TS18048: 'l1SpokePoolClient' is possibly 'undefined'.
-src/adapter/BaseChainAdapter.ts(374,27): error TS18048: 'l1SpokePoolClient' is possibly 'undefined'.
-src/adapter/BaseChainAdapter.ts(382,34): error TS18048: 'l2SpokePoolClient' is possibly 'undefined'.
-src/adapter/BaseChainAdapter.ts(383,27): error TS18048: 'l2SpokePoolClient' is possibly 'undefined'.
 src/adapter/bridges/ArbitrumOrbitBridge.ts(70,45): error TS2345: Argument of type 'unknown[] | undefined' is not assignable to parameter of type 'ContractInterface'.
 src/adapter/bridges/ArbitrumOrbitBridge.ts(72,41): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
 src/adapter/bridges/BinanceCEXBridge.ts(67,5): error TS2322: Type 'Provider | undefined' is not assignable to type 'Provider'.
@@ -86,13 +79,6 @@ src/adapter/bridges/SnxOptimismBridge.ts(27,61): error TS2345: Argument of type 
 src/adapter/bridges/SnxOptimismBridge.ts(30,34): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
 src/adapter/bridges/SnxOptimismBridge.ts(33,34): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
 src/adapter/bridges/SnxOptimismBridge.ts(96,25): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/adapter/bridges/SolanaUsdcCCTPBridge.ts(55,61): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/adapter/bridges/SolanaUsdcCCTPBridge.ts(61,34): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/adapter/bridges/SolanaUsdcCCTPBridge.ts(64,53): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/adapter/bridges/SolanaUsdcCCTPBridge.ts(67,7): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/adapter/bridges/UsdcCCTPBridge.ts(46,61): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/adapter/bridges/UsdcCCTPBridge.ts(52,34): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/adapter/bridges/UsdcCCTPBridge.ts(55,34): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
 src/adapter/bridges/ZKStackBridge.ts(44,12): error TS2564: Property 'nativeToken' has no initializer and is not definitely assigned in the constructor.
 src/adapter/bridges/ZKStackBridge.ts(45,12): error TS2564: Property 'wrappedNativeToken' has no initializer and is not definitely assigned in the constructor.
 src/adapter/bridges/ZKStackUSDCBridge.ts(38,36): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
@@ -120,25 +106,11 @@ src/adapter/l2Bridges/OpStackUSDCBridge.ts(59,16): error TS18048: 'l2Bridge' is 
 src/adapter/l2Bridges/OpStackUSDCBridge.ts(67,9): error TS2322: Type 'Contract | undefined' is not assignable to type 'Contract'.
 src/adapter/l2Bridges/OpStackWethBridge.ts(25,34): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
 src/adapter/l2Bridges/OpStackWethBridge.ts(27,34): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/adapter/l2Bridges/SolanaUsdcCCTPBridge.ts(62,34): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/adapter/l2Bridges/SolanaUsdcCCTPBridge.ts(70,41): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/adapter/l2Bridges/SolanaUsdcCCTPBridge.ts(71,39): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/adapter/l2Bridges/SolanaUsdcCCTPBridge.ts(136,66): error TS2345: Argument of type 'Rpc<SolanaRpcApiForTestClusters> | undefined' is not assignable to parameter of type 'Rpc<SolanaRpcApiForTestClusters>'.
-src/adapter/l2Bridges/UsdcCCTPBridge.ts(39,34): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/adapter/l2Bridges/UsdcCCTPBridge.ts(42,34): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+src/adapter/l2Bridges/SolanaUsdcCCTPBridge.ts(139,66): error TS2345: Argument of type 'Rpc<SolanaRpcApiForTestClusters> | undefined' is not assignable to parameter of type 'Rpc<SolanaRpcApiForTestClusters>'.
 src/adapter/utils.ts(82,32): error TS2532: Object is possibly 'undefined'.
 src/cctp-finalizer/services/cctpService.ts(295,11): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
 src/cctp-finalizer/services/cctpService.ts(354,23): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
-src/cctp-finalizer/utils/evmUtils.ts(33,50): error TS2345: Argument of type 'unknown[] | undefined' is not assignable to parameter of type 'ContractInterface'.
-src/cctp-finalizer/utils/evmUtils.ts(44,27): error TS18048: 'hookData.maxBpsToSponsor' is possibly 'undefined'.
-src/cctp-finalizer/utils/evmUtils.ts(64,66): error TS18048: 'hookData' is possibly 'undefined'.
-src/cctp-finalizer/utils/evmUtils.ts(69,23): error TS18048: 'hookData' is possibly 'undefined'.
-src/cctp-finalizer/utils/evmUtils.ts(77,16): error TS18048: 'hookData' is possibly 'undefined'.
-src/cctp-finalizer/utils/evmUtils.ts(77,32): error TS18048: 'hookData' is possibly 'undefined'.
-src/cctp-finalizer/utils/evmUtils.ts(86,23): error TS18048: 'hookData' is possibly 'undefined'.
-src/cctp-finalizer/utils/evmUtils.ts(119,7): error TS2322: Type 'unknown[]' is not assignable to type 'ContractInterface'.
-src/cctp-finalizer/utils/evmUtils.ts(132,5): error TS2322: Type 'unknown[] | undefined' is not assignable to type 'ContractInterface'.
-src/cctp-finalizer/utils/evmUtils.ts(164,40): error TS18048: 'quoteDeadline' is possibly 'undefined'.
+src/cctp-finalizer/utils/evmUtils.ts(157,40): error TS18048: 'quoteDeadline' is possibly 'undefined'.
 src/clients/BundleDataApproxClient.ts(31,11): error TS2322: Type 'undefined' is not assignable to type '{ [l1Token: string]: { [chainId: number]: { [relayer: string]: BigNumber; }; }; }'.
 src/clients/BundleDataApproxClient.ts(32,11): error TS2322: Type 'undefined' is not assignable to type '{ [l1Token: string]: { [chainId: number]: BigNumber; }; }'.
 src/clients/ConfigStoreClient.ts(54,40): error TS2532: Object is possibly 'undefined'.
@@ -155,11 +127,6 @@ src/clients/InventoryClient.ts(1203,17): error TS2339: Property 'thresholdPct' d
 src/clients/InventoryClient.ts(1203,31): error TS2339: Property 'targetPct' does not exist on type 'TokenBalanceConfig | undefined'.
 src/clients/InventoryClient.ts(1224,59): error TS18048: 'rebalances' is possibly 'undefined'.
 src/clients/InventoryClient.ts(1848,58): error TS2345: Argument of type 'Address | undefined' is not assignable to parameter of type 'Address'.
-src/clients/MultiCallerClient.ts(320,41): error TS2345: Argument of type 'AugmentedTransaction[] | undefined' is not assignable to parameter of type 'AugmentedTransaction[]'.
-src/clients/MultiCallerClient.ts(410,80): error TS2322: Type 'string | undefined' is not assignable to type 'PropertyKey'.
-src/clients/MultiCallerClient.ts(413,13): error TS18048: 'txns' is possibly 'undefined'.
-src/clients/MultiCallerClient.ts(479,29): error TS18048: 'reason' is possibly 'undefined'.
-src/clients/MultiCallerClient.ts(596,84): error TS2345: Argument of type 'BigNumber | undefined' is not assignable to parameter of type 'BigNumber'.
 src/clients/ProfitClient.ts(168,80): error TS2345: Argument of type 'Provider | Rpc<SolanaRpcApiForTestClusters> | undefined' is not assignable to parameter of type 'Provider | Rpc<SolanaRpcApiForTestClusters>'.
 src/clients/ProfitClient.ts(732,13): error TS2532: Object is possibly 'undefined'.
 src/clients/ProfitClient.ts(869,7): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
@@ -178,13 +145,6 @@ src/clients/SpokePoolClient.ts(125,65): error TS2345: Argument of type 'number |
 src/clients/SvmFillerClient.ts(157,40): error TS2345: Argument of type 'number | undefined' is not assignable to parameter of type 'number'.
 src/clients/SvmFillerClient.ts(187,39): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
 src/clients/SvmFillerClient.ts(256,33): error TS2322: Type 'string[] | null' is not assignable to type 'string[]'.
-src/clients/TokenClient.ts(190,32): error TS2345: Argument of type 'SpokePoolClient | undefined' is not assignable to parameter of type 'SpokePoolClient'.
-src/clients/TokenClient.ts(278,18): error TS18048: 'remoteToken' is possibly 'undefined'.
-src/clients/TokenClient.ts(359,33): error TS2345: Argument of type 'SpokePoolClient | undefined' is not assignable to parameter of type 'SpokePoolClient'.
-src/clients/TokenClient.ts(377,55): error TS18048: 'spokePoolAddress' is possibly 'undefined'.
-src/clients/TokenClient.ts(389,55): error TS18048: 'spokePoolAddress' is possibly 'undefined'.
-src/clients/TokenClient.ts(433,24): error TS18048: 'spokePoolClient.spokePoolAddress' is possibly 'undefined'.
-src/clients/TokenClient.ts(447,7): error TS18048: 'spokePoolClient.spokePoolAddress' is possibly 'undefined'.
 src/clients/TransactionClient.ts(176,17): error TS2454: Variable 'txnReceipt' is used before being assigned.
 src/clients/TransactionClient.ts(178,12): error TS2454: Variable 'txnReceipt' is used before being assigned.
 src/clients/TransactionClient.ts(230,46): error TS2322: Type 'number | undefined' is not assignable to type 'number | null'.
@@ -196,12 +156,6 @@ src/clients/TransactionClient.ts(535,41): error TS2345: Argument of type 'BigNum
 src/clients/TransactionClient.ts(538,46): error TS2345: Argument of type 'BigNumber | null' is not assignable to parameter of type 'BigNumberish'.
 src/clients/TransactionClient.ts(539,18): error TS18047: 'maxFeePerGas' is possibly 'null'.
 src/clients/bridges/AdapterManager.ts(45,12): error TS2564: Property 'spokePoolManager' has no initializer and is not definitely assigned in the constructor.
-src/clients/bridges/AdapterManager.ts(64,9): error TS2532: Object is possibly 'undefined'.
-src/clients/bridges/AdapterManager.ts(74,58): error TS18048: 'spokePoolAddress' is possibly 'undefined'.
-src/clients/bridges/AdapterManager.ts(89,36): error TS2345: Argument of type 'SpokePoolClient | undefined' is not assignable to parameter of type 'SpokePoolClient'.
-src/clients/bridges/AdapterManager.ts(91,43): error TS2345: Argument of type 'SpokePoolClient | undefined' is not assignable to parameter of type 'SpokePoolClient'.
-src/clients/bridges/AdapterManager.ts(114,32): error TS2345: Argument of type 'SpokePoolClient | undefined' is not assignable to parameter of type 'SpokePoolClient'.
-src/clients/bridges/AdapterManager.ts(116,39): error TS2345: Argument of type 'SpokePoolClient | undefined' is not assignable to parameter of type 'SpokePoolClient'.
 src/clients/bridges/utils.ts(55,15): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'BigNumberish'.
 src/clients/bridges/utils.ts(91,15): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'BigNumberish'.
 src/common/ClientHelper.ts(86,71): error TS2345: Argument of type 'number | undefined' is not assignable to parameter of type 'BlockTag | Promise<BlockTag>'.
@@ -244,7 +198,7 @@ src/dataworker/Dataworker.ts(2480,17): error TS2345: Argument of type 'Address |
 src/dataworker/Dataworker.ts(2725,63): error TS2345: Argument of type 'unknown[]' is not assignable to parameter of type 'ContractInterface'.
 src/dataworker/Dataworker.ts(2885,45): error TS2345: Argument of type 'Address | undefined' is not assignable to parameter of type 'Address'.
 src/dataworker/Dataworker.ts(2936,7): error TS2322: Type 'CloseInstructionParamsInstruction<Address, string, string, []>' is not assignable to type 'CloseInstructionParamsInstruction<Address<"DLv3NggMiSaef97YCkew5xKUHDh13tVGZ7tydt3ZeAru">, string, string, []> | undefined'.
-src/dataworker/Dataworker.ts(2944,55): error TS2322: Type 'CloseInstructionParamsInstruction<Address<"DLv3NggMiSaef97YCkew5xKUHDh13tVGZ7tydt3ZeAru">, string, string, []> | undefined' is not assignable to type 'Instruction<string, readonly (AccountMeta<string> | AccountLookupMeta<string, string>)[]>'.
+src/dataworker/Dataworker.ts(2944,55): error TS2322: Type 'CloseInstructionParamsInstruction<Address<"DLv3NggMiSaef97YCkew5xKUHDh13tVGZ7tydt3ZeAru">, string, string, []> | undefined' is not assignable to type 'Instruction<string, readonly (AccountLookupMeta<string, string> | AccountMeta<string>)[]>'.
 src/dataworker/Dataworker.ts(3299,45): error TS2345: Argument of type 'Address | undefined' is not assignable to parameter of type 'Address'.
 src/dataworker/DataworkerClientHelper.ts(176,5): error TS2322: Type 'ProposedRootBundle | undefined' is not assignable to type 'ProposedRootBundle'.
 src/dataworker/DataworkerClientHelper.ts(177,5): error TS2322: Type 'ProposedRootBundle | undefined' is not assignable to type 'ProposedRootBundle'.
@@ -268,79 +222,9 @@ src/deposit-address/DepositAddressHandler.ts(48,11): error TS2564: Property 'sig
 src/deposit-address/DepositAddressHandler.ts(105,7): error TS2345: Argument of type 'RedisCacheInterface | undefined' is not assignable to parameter of type 'RedisCacheInterface'.
 src/deposit-address/DepositAddressHandler.ts(125,24): error TS2532: Object is possibly 'undefined'.
 src/deposit-address/DepositAddressHandler.ts(198,11): error TS2532: Object is possibly 'undefined'.
-src/finalizer/utils/arbStack.ts(96,31): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/finalizer/utils/arbStack.ts(99,5): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/finalizer/utils/arbStack.ts(150,23): error TS2532: Object is possibly 'undefined'.
-src/finalizer/utils/arbStack.ts(225,31): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/finalizer/utils/arbStack.ts(242,5): error TS2322: Type 'string | undefined' is not assignable to type 'BytesLike'.
-src/finalizer/utils/arbStack.ts(243,5): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
-src/finalizer/utils/arbStack.ts(351,47): error TS18047: 'estimatedFinalizationBlock' is possibly 'null'.
-src/finalizer/utils/arbStack.ts(373,7): error TS2322: Type 'undefined' is not assignable to type 'ChildToParentMessageWriter'.
-src/finalizer/utils/binance.ts(71,26): error TS2345: Argument of type 'Provider | undefined' is not assignable to parameter of type 'Provider'.
-src/finalizer/utils/binance.ts(181,40): error TS18048: 'networkLimits' is possibly 'undefined'.
-src/finalizer/utils/binance.ts(184,146): error TS18048: 'networkLimits' is possibly 'undefined'.
-src/finalizer/utils/binance.ts(186,37): error TS18048: 'networkLimits' is possibly 'undefined'.
-src/finalizer/utils/binance.ts(205,40): error TS18048: 'networkLimits' is possibly 'undefined'.
-src/finalizer/utils/binance.ts(226,112): error TS18048: 'networkLimits' is possibly 'undefined'.
-src/finalizer/utils/binance.ts(237,56): error TS18048: 'networkLimits' is possibly 'undefined'.
-src/finalizer/utils/binance.ts(238,42): error TS18048: 'networkLimits' is possibly 'undefined'.
-src/finalizer/utils/cctp/Svml2ToL1.ts(104,5): error TS2322: Type '{ target: string | undefined; callData: BytesLike | undefined; }[]' is not assignable to type '(AugmentedTransaction | Multicall2Call)[]'.
-src/finalizer/utils/cctp/Svml2ToL1.ts(109,13): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
-src/finalizer/utils/cctp/Svml2ToL1.ts(156,54): error TS2345: Argument of type 'Address | undefined' is not assignable to parameter of type 'Address'.
-src/finalizer/utils/cctp/anyToAny.ts(81,5): error TS2322: Type '{ target: string | undefined; callData: BytesLike | undefined; }[]' is not assignable to type '(AugmentedTransaction | Multicall2Call)[]'.
-src/finalizer/utils/cctp/svmUtils/l1Tol2.ts(91,5): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
-src/finalizer/utils/cctp/svmUtils/l2Tol1.ts(41,42): error TS2345: Argument of type 'Address | undefined' is not assignable to parameter of type 'Address'.
-src/finalizer/utils/cctp/svmUtils/l2Tol1.ts(70,15): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/finalizer/utils/cctp/svmUtils/l2Tol1.ts(71,15): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/finalizer/utils/helios.ts(189,27): error TS18048: 'verifiedEvent' is possibly 'undefined'.
-src/finalizer/utils/helios.ts(373,13): error TS18047: 'proofState' is possibly 'null'.
-src/finalizer/utils/helios.ts(382,11): error TS18047: 'proofState' is possibly 'null'.
-src/finalizer/utils/helios.ts(382,39): error TS18047: 'proofState' is possibly 'null'.
-src/finalizer/utils/helios.ts(389,25): error TS18047: 'proofState' is possibly 'null'.
-src/finalizer/utils/helios.ts(397,14): error TS18047: 'proofState' is possibly 'null'.
-src/finalizer/utils/helios.ts(402,30): error TS18047: 'proofState' is possibly 'null'.
-src/finalizer/utils/helios.ts(444,85): error TS2345: Argument of type 'Address | undefined' is not assignable to parameter of type 'Address'.
-src/finalizer/utils/helios.ts(447,75): error TS18048: 'l2SpokePoolClient.spokePoolAddress' is possibly 'undefined'.
-src/finalizer/utils/helios.ts(450,31): error TS18048: 'l2SpokePoolClient.spokePoolAddress' is possibly 'undefined'.
-src/finalizer/utils/linea/common.ts(44,25): error TS2345: Argument of type 'Signer | undefined' is not assignable to parameter of type 'Signer'.
-src/finalizer/utils/linea/common.ts(245,7): error TS2345: Argument of type 'unknown[] | undefined' is not assignable to parameter of type 'string | readonly (string | JsonFragment | Fragment)[]'.
-src/finalizer/utils/linea/l1ToL2.ts(42,44): error TS2345: Argument of type 'readonly Fragment[]' is not assignable to parameter of type 'string | readonly (string | JsonFragment | Fragment)[]'.
-src/finalizer/utils/linea/l1ToL2.ts(70,5): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/finalizer/utils/linea/l2ToL1.ts(126,34): error TS18047: 'parsedLog' is possibly 'null'.
-src/finalizer/utils/linea/l2ToL1.ts(127,26): error TS18047: 'parsedLog' is possibly 'null'.
-src/finalizer/utils/linea/l2ToL1.ts(129,40): error TS18047: 'parsedLog' is possibly 'null'.
-src/finalizer/utils/linea/l2ToL1.ts(236,5): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/finalizer/utils/linea/l2ToL1.ts(382,22): error TS2532: Object is possibly 'undefined'.
-src/finalizer/utils/linea/l2ToL1.ts(383,33): error TS2532: Object is possibly 'undefined'.
-src/finalizer/utils/oftRetry.ts(80,5): error TS2322: Type '{ target: string | undefined; callData: string; }[]' is not assignable to type '(AugmentedTransaction | Multicall2Call)[]'.
-src/finalizer/utils/opStack.ts(333,53): error TS2345: Argument of type 'unknown[]' is not assignable to parameter of type 'ContractInterface'.
 src/finalizer/utils/opStack.ts(417,7): error TS2322: Type 'OpStackTargetChain' is not assignable to type '{ contracts: { portal: { 1: ChainContract; }; l2OutputOracle: { 1: ChainContract; }; }; } | { contracts: { portal: { 11155111: ChainContract; }; l2OutputOracle: { 11155111: ChainContract; }; }; } | { contracts: { portal: { 1: ChainContract; }; disputeGameFactory: { 1: ChainContract; }; }; } | { contracts: { portal: { 11155111: ChainContract; }; disputeGameFactory: { 11155111: ChainContract; }; }; } | undefined'.
 src/finalizer/utils/opStack.ts(425,9): error TS2322: Type 'OpStackTargetChain' is not assignable to type '{ contracts: { portal: { 1: ChainContract; }; disputeGameFactory: { 1: ChainContract; }; }; } | { contracts: { portal: { 11155111: ChainContract; }; disputeGameFactory: { 11155111: ChainContract; }; }; } | { contracts: { l2OutputOracle: { 1: ChainContract; }; }; } | { contracts: { l2OutputOracle: { 11155111: ChainContract; }; }; } | undefined'.
-src/finalizer/utils/opStack.ts(436,11): error TS2322: Type 'string | undefined' is not assignable to type 'BytesLike'.
-src/finalizer/utils/opStack.ts(452,9): error TS2322: Type 'OpStackTargetChain' is not assignable to type '{ contracts: { portal: { 1: ChainContract; }; l2OutputOracle: { 1: ChainContract; }; }; } | { contracts: { portal: { 11155111: ChainContract; }; l2OutputOracle: { 11155111: ChainContract; }; }; } | undefined'.
-src/finalizer/utils/opStack.ts(485,9): error TS2322: Type 'string | undefined' is not assignable to type 'BytesLike'.
-src/finalizer/utils/opStack.ts(615,7): error TS2322: Type 'BytesLike | undefined' is not assignable to type 'BytesLike'.
-src/finalizer/utils/opStack.ts(616,7): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
-src/finalizer/utils/opStack.ts(627,5): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/finalizer/utils/opStack.ts(654,7): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/finalizer/utils/opStack.ts(699,5): error TS2322: Type 'string | undefined' is not assignable to type 'BytesLike'.
-src/finalizer/utils/opStack.ts(700,5): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
-src/finalizer/utils/opStack.ts(716,5): error TS2322: Type 'BytesLike | undefined' is not assignable to type 'BytesLike'.
-src/finalizer/utils/opStack.ts(717,5): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
-src/finalizer/utils/opStack.ts(779,5): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/finalizer/utils/opStack.ts(790,5): error TS18048: 'l2Provider' is possibly 'undefined'.
-src/finalizer/utils/opStack.ts(878,39): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/finalizer/utils/opStack.ts(927,5): error TS2322: Type '(Multicall2Call | { callData: string | undefined; target: string | undefined; })[]' is not assignable to type 'Multicall2Call[]'.
-src/finalizer/utils/polygon.ts(291,5): error TS2322: Type 'string | undefined' is not assignable to type 'BytesLike'.
-src/finalizer/utils/polygon.ts(292,5): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
-src/finalizer/utils/scroll.ts(136,23): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/finalizer/utils/scroll.ts(158,5): error TS2322: Type 'string | undefined' is not assignable to type 'BytesLike'.
-src/finalizer/utils/scroll.ts(159,5): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
-src/finalizer/utils/zkSync.ts(164,17): error TS2339: Property 'id' does not exist on type 'MessageProof | null'.
-src/finalizer/utils/zkSync.ts(197,3): error TS2322: Type 'FinalizeWithdrawalParams[]' is not assignable to type 'zkSyncWithdrawalData[]'.
-src/finalizer/utils/zkSync.ts(228,20): error TS2322: Type 'string | undefined' is not assignable to type 'BytesLike'.
-src/finalizer/utils/zkSync.ts(279,23): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/finalizer/utils/zkSync.ts(297,23): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+src/finalizer/utils/opStack.ts(453,9): error TS2322: Type 'OpStackTargetChain' is not assignable to type '{ contracts: { portal: { 1: ChainContract; }; l2OutputOracle: { 1: ChainContract; }; }; } | { contracts: { portal: { 11155111: ChainContract; }; l2OutputOracle: { 11155111: ChainContract; }; }; } | undefined'.
 src/gasless/GaslessRelayer.ts(100,11): error TS2564: Property 'instanceCoordinator' has no initializer and is not definitely assigned in the constructor.
 src/gasless/GaslessRelayer.ts(120,13): error TS2564: Property 'signerAddress' has no initializer and is not definitely assigned in the constructor.
 src/gasless/GaslessRelayer.ts(207,7): error TS2345: Argument of type 'RedisCacheInterface | undefined' is not assignable to parameter of type 'RedisCacheInterface'.
@@ -377,23 +261,13 @@ src/rebalancer/adapters/baseAdapter.ts(51,13): error TS2564: Property 'allDestin
 src/rebalancer/adapters/baseAdapter.ts(52,13): error TS2564: Property 'allSourceChains' has no initializer and is not definitely assigned in the constructor.
 src/rebalancer/adapters/baseAdapter.ts(53,13): error TS2564: Property 'allSourceTokens' has no initializer and is not definitely assigned in the constructor.
 src/rebalancer/adapters/baseAdapter.ts(83,5): error TS2322: Type 'RedisCache | undefined' is not assignable to type 'RedisCache'.
-src/rebalancer/adapters/binance.ts(57,11): error TS2564: Property 'binanceApiClient' has no initializer and is not definitely assigned in the constructor.
-src/rebalancer/adapters/binance.ts(703,13): error TS2339: Property 'withdrawMin' does not exist on type 'Network | undefined'.
-src/rebalancer/adapters/binance.ts(703,26): error TS2339: Property 'withdrawMax' does not exist on type 'Network | undefined'.
-src/rebalancer/adapters/binance.ts(855,9): error TS2532: Object is possibly 'undefined'.
-src/rebalancer/adapters/binance.ts(855,67): error TS18048: 'spotMarketMeta' is possibly 'undefined'.
-src/rebalancer/adapters/binance.ts(862,25): error TS2532: Object is possibly 'undefined'.
-src/rebalancer/adapters/binance.ts(1094,7): error TS2345: Argument of type 'unknown[]' is not assignable to parameter of type 'ContractInterface'.
-src/rebalancer/adapters/binance.ts(1099,7): error TS2345: Argument of type 'unknown[]' is not assignable to parameter of type 'ContractInterface'.
-src/rebalancer/adapters/cctpAdapter.ts(116,45): error TS2345: Argument of type 'CCTPV2APIAttestation | undefined' is not assignable to parameter of type 'Pick<CCTPV2APIAttestation, "attestation" | "status">'.
-src/rebalancer/adapters/cctpAdapter.ts(122,9): error TS18048: 'attestation' is possibly 'undefined'.
-src/rebalancer/adapters/cctpAdapter.ts(126,58): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/rebalancer/adapters/cctpAdapter.ts(128,9): error TS18048: 'attestation' is possibly 'undefined'.
-src/rebalancer/adapters/cctpAdapter.ts(164,45): error TS2345: Argument of type 'CCTPV2APIAttestation | undefined' is not assignable to parameter of type 'Pick<CCTPV2APIAttestation, "attestation" | "status">'.
-src/rebalancer/adapters/cctpAdapter.ts(166,11): error TS18048: 'attestation' is possibly 'undefined'.
-src/rebalancer/adapters/cctpAdapter.ts(170,60): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/rebalancer/adapters/cctpAdapter.ts(172,11): error TS18048: 'attestation' is possibly 'undefined'.
-src/rebalancer/adapters/cctpAdapter.ts(289,7): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+src/rebalancer/adapters/binance.ts(58,11): error TS2564: Property 'binanceApiClient' has no initializer and is not definitely assigned in the constructor.
+src/rebalancer/adapters/cctpAdapter.ts(114,45): error TS2345: Argument of type 'CCTPV2APIAttestation | undefined' is not assignable to parameter of type 'Pick<CCTPV2APIAttestation, "attestation" | "status">'.
+src/rebalancer/adapters/cctpAdapter.ts(120,9): error TS18048: 'attestation' is possibly 'undefined'.
+src/rebalancer/adapters/cctpAdapter.ts(126,9): error TS18048: 'attestation' is possibly 'undefined'.
+src/rebalancer/adapters/cctpAdapter.ts(162,45): error TS2345: Argument of type 'CCTPV2APIAttestation | undefined' is not assignable to parameter of type 'Pick<CCTPV2APIAttestation, "attestation" | "status">'.
+src/rebalancer/adapters/cctpAdapter.ts(164,11): error TS18048: 'attestation' is possibly 'undefined'.
+src/rebalancer/adapters/cctpAdapter.ts(170,11): error TS18048: 'attestation' is possibly 'undefined'.
 src/rebalancer/adapters/hyperliquid.ts(916,18): error TS18047: 'l2Book' is possibly 'null'.
 src/rebalancer/adapters/hyperliquid.ts(917,18): error TS18047: 'l2Book' is possibly 'null'.
 src/rebalancer/clients/BaseRebalancerClient.ts(12,10): error TS2564: Property 'rebalanceRoutes' has no initializer and is not definitely assigned in the constructor.
@@ -404,14 +278,6 @@ src/rebalancer/utils/utils.ts(40,64): error TS2345: Argument of type 'BigNumber 
 src/rebalancer/utils/utils.ts(123,5): error TS2322: Type 'undefined' is not assignable to type 'OrderDetails'.
 src/refiller/Refiller.ts(65,11): error TS2564: Property 'redisCache' has no initializer and is not definitely assigned in the constructor.
 src/refiller/Refiller.ts(67,11): error TS2564: Property 'baseSignerAddress' has no initializer and is not definitely assigned in the constructor.
-src/refiller/Refiller.ts(524,11): error TS18048: 'source_address' is possibly 'undefined'.
-src/refiller/Refiller.ts(525,11): error TS18048: 'source_address' is possibly 'undefined'.
-src/refiller/Refiller.ts(566,16): error TS18048: 'availableTransferRoute.source_address' is possibly 'undefined'.
-src/refiller/Refiller.ts(593,9): error TS18048: 'swapData' is possibly 'undefined'.
-src/refiller/Refiller.ts(596,34): error TS18048: 'swapData' is possibly 'undefined'.
-src/refiller/Refiller.ts(598,18): error TS18048: 'swapData' is possibly 'undefined'.
-src/refiller/Refiller.ts(614,13): error TS2339: Property 'swap' does not exist on type 'SwapData | undefined'.
-src/refiller/Refiller.ts(632,32): error TS18048: 'swapData' is possibly 'undefined'.
 src/relayer/Relayer.ts(68,13): error TS2564: Property 'fillLimits' has no initializer and is not definitely assigned in the constructor.
 src/relayer/Relayer.ts(390,34): error TS18048: 'hubPoolClient.currentTime' is possibly 'undefined'.
 src/relayer/Relayer.ts(390,62): error TS2532: Object is possibly 'undefined'.
@@ -464,31 +330,13 @@ src/utils/BinanceUtils.ts(236,9): error TS18048: 'redisCache' is possibly 'undef
 src/utils/BinanceUtils.ts(253,9): error TS18048: 'redisCache' is possibly 'undefined'.
 src/utils/BinanceUtils.ts(267,29): error TS18048: 'redisCache' is possibly 'undefined'.
 src/utils/BinanceUtils.ts(286,32): error TS18048: 'redisCache' is possibly 'undefined'.
-src/utils/CCTPUtils.ts(134,42): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/utils/CCTPUtils.ts(413,30): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/utils/CCTPUtils.ts(447,42): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/utils/CCTPUtils.ts(462,42): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/utils/CCTPUtils.ts(508,62): error TS2345: Argument of type 'unknown[] | undefined' is not assignable to parameter of type 'string | readonly (string | JsonFragment | Fragment)[]'.
-src/utils/CCTPUtils.ts(509,66): error TS2345: Argument of type 'unknown[] | undefined' is not assignable to parameter of type 'string | readonly (string | JsonFragment | Fragment)[]'.
-src/utils/CCTPUtils.ts(656,29): error TS2322: Type 'number | undefined' is not assignable to type 'number'.
-src/utils/CCTPUtils.ts(700,20): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/utils/CCTPUtils.ts(712,11): error TS2345: Argument of type 'Rpc<SolanaRpcApiForTestClusters> | undefined' is not assignable to parameter of type 'Rpc<SolanaRpcApiForTestClusters>'.
-src/utils/CCTPUtils.ts(719,88): error TS2345: Argument of type 'Contract | undefined' is not assignable to parameter of type 'Contract'.
-src/utils/CCTPUtils.ts(748,68): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/utils/CCTPUtils.ts(751,40): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/utils/CCTPUtils.ts(758,61): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/utils/CCTPUtils.ts(1028,39): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/utils/CCTPUtils.ts(1035,5): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/utils/ContractUtils.ts(47,59): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/utils/ContractUtils.ts(71,59): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/utils/ContractUtils.ts(83,24): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/utils/ContractUtils.ts(87,26): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/utils/ContractUtils.ts(115,23): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/utils/ContractUtils.ts(125,23): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
-src/utils/ContractUtils.ts(131,23): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+src/utils/CCTPUtils.ts(432,42): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+src/utils/CCTPUtils.ts(644,29): error TS2322: Type 'number | undefined' is not assignable to type 'number'.
+src/utils/CCTPUtils.ts(701,11): error TS2345: Argument of type 'Rpc<SolanaRpcApiForTestClusters> | undefined' is not assignable to parameter of type 'Rpc<SolanaRpcApiForTestClusters>'.
+src/utils/CCTPUtils.ts(708,88): error TS2345: Argument of type 'Contract | undefined' is not assignable to parameter of type 'Contract'.
 src/utils/HyperliquidUtils.ts(119,5): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
 src/utils/InstanceCoordinator.ts(19,5): error TS2322: Type 'Promise<string | undefined>' is not assignable to type 'Promise<string>'.
-src/utils/InstanceCoordinator.ts(46,7): error TS2322: Type 'string | null' is not assignable to type 'string | undefined'.
+src/utils/InstanceCoordinator.ts(48,9): error TS2322: Type 'string | null' is not assignable to type 'string | undefined'.
 src/utils/ProviderUtils.ts(76,5): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
 src/utils/ProviderUtils.ts(79,10): error TS2454: Variable 'headers' is used before being assigned.
 src/utils/SignerUtils.ts(148,41): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.

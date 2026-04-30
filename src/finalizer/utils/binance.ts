@@ -56,6 +56,7 @@ export async function binanceFinalizer(
   _senderAddresses: AddressesToFinalize
 ): Promise<FinalizerPromise> {
   assert(isEVMSpokePoolClient(l1SpokePoolClient) && isEVMSpokePoolClient(l2SpokePoolClient));
+  assert(isDefined(hubSigner.provider), "BinanceFinalizer: hubSigner has no provider");
   const senderAddresses = Object.fromEntries(
     Array.from(_senderAddresses.entries()).map(([senderAddress, tokensToFinalize]) => [
       senderAddress.toNative(),
@@ -145,6 +146,9 @@ export async function binanceFinalizer(
       // must be finalized on L1. Withdrawals to Binance Smart Chain must originate from Ethereum L1.
       for (const withdrawNetwork of [BINANCE_NETWORKS[l2ChainId], BINANCE_NETWORKS[hubChainId]]) {
         const networkLimits = coin.networkList.find((network) => network.name === withdrawNetwork);
+        if (!isDefined(networkLimits)) {
+          continue;
+        }
         // Get both the amount deposited and ready to be finalized and the amount already withdrawn on L2.
         const finalizingOnL2 = withdrawNetwork === BINANCE_NETWORKS[l2ChainId];
         const depositAmounts = depositsInScope
