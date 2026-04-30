@@ -1,5 +1,6 @@
 import { TokenClient } from "../clients";
 import {
+  assert,
   blockExplorerLink,
   CHAIN_IDs,
   EvmAddress,
@@ -289,7 +290,8 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
     // @dev The dataworker loop takes a long-time to run, so if the proposer is enabled, run a final check and early
     // exit if a proposal is already pending. Similarly, the executor is enabled and if there are pool rebalance
     // leaves to be executed but the proposed bundle was already executed, then exit early.
-    const { hubPool } = clients.hubPoolClient;
+    const { hubPool, currentTime: hubPoolCurrentTime } = clients.hubPoolClient;
+    assert(isDefined(hubPoolCurrentTime), "HubPoolClient currentTime is unset");
     const pendingProposal: PendingRootBundle = await hubPool.rootBundleProposal();
 
     const proposalCollision =
@@ -303,8 +305,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
     const executorCollision =
       poolRebalanceLeafExecutionCount > 0 &&
       (pendingProposal.unclaimedPoolRebalanceLeafCount !== poolRebalanceLeafExecutionCount ||
-        (pendingProposal.challengePeriodEndTimestamp > clients.hubPoolClient.currentTime &&
-          !config.awaitChallengePeriod));
+        (pendingProposal.challengePeriodEndTimestamp > hubPoolCurrentTime && !config.awaitChallengePeriod));
     if (proposalCollision || executorCollision) {
       logger[startupLogLevel(config)]({
         at: "Dataworker#index",
@@ -314,7 +315,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
         executorCollision,
         poolRebalanceLeafExecutionCount,
         unclaimedPoolRebalanceLeafCount: pendingProposal.unclaimedPoolRebalanceLeafCount,
-        challengePeriodNotPassed: pendingProposal.challengePeriodEndTimestamp > clients.hubPoolClient.currentTime,
+        challengePeriodNotPassed: pendingProposal.challengePeriodEndTimestamp > hubPoolCurrentTime,
         pendingProposal,
       });
     } else if (!clients.hubPoolClient.hasPendingProposal()) {
@@ -456,6 +457,9 @@ export async function runDisputerWatchdog(logger: winston.Logger, signer: Signer
   try {
     await disputer.validate();
     const redis = await getRedisCache(logger);
+    // Watchdog disputes are gated on validator-attestation counts persisted in Redis. If Redis is unavailable we
+    // can't read those counts; falling back to 0 would dispute on missing data. Fail fast instead.
+    assert(isDefined(redis), "Disputer watchdog requires a Redis cache to read validator attestation counts");
 
     const { currentTime, currentBlock, ...proposal } = await getProposal(provider, hubChainId);
 

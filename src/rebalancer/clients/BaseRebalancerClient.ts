@@ -1,5 +1,5 @@
 import { RebalancerConfig } from "../RebalancerConfig";
-import { assert, BigNumber, bnZero, EvmAddress, forEachAsync, Signer, winston } from "../../utils";
+import { assert, BigNumber, bnZero, EvmAddress, forEachAsync, Signer, winston, ZERO_ADDRESS } from "../../utils";
 import { RebalancerAdapter, RebalancerClient, RebalanceRoute } from "../utils/interfaces";
 
 /**
@@ -9,8 +9,8 @@ import { RebalancerAdapter, RebalancerClient, RebalanceRoute } from "../utils/in
  * inventory-rebalancing modes.
  */
 export abstract class BaseRebalancerClient implements RebalancerClient {
-  public rebalanceRoutes: RebalanceRoute[];
-  protected baseSignerAddress: EvmAddress;
+  public rebalanceRoutes: RebalanceRoute[] = [];
+  protected baseSignerAddress: EvmAddress = EvmAddress.from(ZERO_ADDRESS);
   constructor(
     readonly logger: winston.Logger,
     readonly config: RebalancerConfig,

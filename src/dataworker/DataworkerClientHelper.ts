@@ -113,10 +113,10 @@ export function getSpokePoolClientEventSearchConfigsForFastDataworker(
   clients: DataworkerClients,
   dataworker: Dataworker
 ): {
-  fromBundle: ProposedRootBundle;
-  toBundle: ProposedRootBundle;
-  fromBlocks: { [k: string]: number };
-  toBlocks: { [k: string]: number };
+  fromBundle: ProposedRootBundle | undefined;
+  toBundle: ProposedRootBundle | undefined;
+  fromBlocks: { [chainId: number]: number };
+  toBlocks: { [chainId: number]: number };
 } {
   const toBundle =
     config.dataworkerFastStartBundle === "latest"
@@ -127,17 +127,15 @@ export function getSpokePoolClientEventSearchConfigsForFastDataworker(
       ? undefined
       : clients.hubPoolClient.getNthFullyExecutedRootBundle(-config.dataworkerFastLookbackCount, toBundle?.blockNumber);
 
-  const toBlocks =
+  const toBlocks: { [chainId: number]: number } =
     toBundle === undefined
       ? {}
       : Object.fromEntries(
-          dataworker.chainIdListForBundleEvaluationBlockNumbers.map((chainId, i) => {
-            // If block for chainId doesn't exist in bundleEvaluationBlockNumbers, then leave undefined which will
+          dataworker.chainIdListForBundleEvaluationBlockNumbers
+            // If block for chainId doesn't exist in bundleEvaluationBlockNumbers, then omit it which will
             // result in querying until the latest block.
-            if (i >= toBundle.bundleEvaluationBlockNumbers.length) {
-              return [chainId, undefined];
-            }
-            return [
+            .filter((_chainId, i) => i < toBundle.bundleEvaluationBlockNumbers.length)
+            .map((chainId) => [
               chainId,
               // TODO: I think this has a bug for disabled chains where we don't want to +1 if the chain is disabled
               // at the time of this bundle.
@@ -146,20 +144,17 @@ export function getSpokePoolClientEventSearchConfigsForFastDataworker(
                 chainId,
                 dataworker.chainIdListForBundleEvaluationBlockNumbers
               ) + 1, // Need to add 1 to bundle end block since bundles begin at previous bundle end blocks + 1
-            ];
-          })
+            ])
         );
-  const fromBlocks =
+  const fromBlocks: { [chainId: number]: number } =
     fromBundle === undefined
       ? {}
       : Object.fromEntries(
-          dataworker.chainIdListForBundleEvaluationBlockNumbers.map((chainId, i) => {
-            // If block for chainId doesn't exist in bundleEvaluationBlockNumbers, then leave undefined which
+          dataworker.chainIdListForBundleEvaluationBlockNumbers
+            // If block for chainId doesn't exist in bundleEvaluationBlockNumbers, then omit it which
             // will result in querying from the spoke activation block.
-            if (i >= fromBundle.bundleEvaluationBlockNumbers.length) {
-              return [chainId, undefined];
-            }
-            return [
+            .filter((_chainId, i) => i < fromBundle.bundleEvaluationBlockNumbers.length)
+            .map((chainId) => [
               chainId,
               // TODO: I think this has a bug for disabled chains where we don't want to +1 if the chain is disabled
               // at the time of this bundle.
@@ -168,8 +163,7 @@ export function getSpokePoolClientEventSearchConfigsForFastDataworker(
                 chainId,
                 dataworker.chainIdListForBundleEvaluationBlockNumbers
               ) + 1, // Need to add 1 to bundle end block since bundles begin at previous bundle end blocks + 1
-            ];
-          })
+            ])
         );
 
   return {

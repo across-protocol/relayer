@@ -285,6 +285,10 @@ export function _buildRelayerRefundRoot(
         repaymentChainId,
         endBlockForMainnet
       );
+      assert(
+        isDefined(l1TokenCounterpart),
+        `No L1 token counterpart for L2 token ${l2TokenAddress} on chain ${repaymentChainId}`
+      );
 
       const spokePoolTargetBalance = clients.configStoreClient.getSpokeTargetBalancesForBlock(
         l1TokenCounterpart.toEvmAddress(),
@@ -322,6 +326,10 @@ export function _buildRelayerRefundRoot(
         leaf.l1Tokens[index],
         leaf.chainId,
         endBlockForMainnet
+      );
+      assert(
+        isDefined(l2TokenCounterpart),
+        `No L2 token counterpart for L1 token ${leaf.l1Tokens[index]} on chain ${leaf.chainId}`
       );
       // If we've already seen this leaf, then skip.
       const existingLeaf = relayerRefundLeaves.find(
@@ -423,15 +431,14 @@ export function generateValidationKey(
  */
 function getNativeTokens(chainId: number): Address[] {
   const nativeTokenSymbol = getNativeTokenSymbol(chainId);
+  const nativeTokenAddress = CONTRACT_ADDRESSES[chainId]?.nativeToken?.address;
+  const wrappedNativeToken = getWrappedNativeTokenAddress(chainId);
+  assert(
+    isDefined(nativeTokenAddress) && isDefined(wrappedNativeToken),
+    `${nativeTokenSymbol} address not defined for chain ${chainId}`
+  );
   // Can't use TOKEN_SYMBOLS_MAP for ETH because it duplicates the WETH addresses, which is not correct for this use case.
-  const nativeTokens = [
-    getWrappedNativeTokenAddress(chainId),
-    toAddressType(CONTRACT_ADDRESSES[chainId].nativeToken.address, chainId),
-  ];
-  if (nativeTokens.some((tokenAddress) => !isDefined(tokenAddress))) {
-    throw new Error(`${nativeTokenSymbol} address not defined for chain ${chainId}`);
-  }
-  return nativeTokens;
+  return [wrappedNativeToken, toAddressType(nativeTokenAddress, chainId)];
 }
 /**
  * @notice Some SpokePools will contain balances of ETH and WETH, while others will only contain balances of WETH,

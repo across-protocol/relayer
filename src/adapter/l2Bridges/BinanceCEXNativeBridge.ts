@@ -53,7 +53,7 @@ export class BinanceCEXNativeBridge extends BinanceCEXBridge {
     const depositAddressContract = new Contract(depositAddress.address, [], l2Signer);
 
     // Get the cost of executing a transaction with no data. Here we just call the zero address.
-    const baseTransactionCost = await this.l2Signer.provider.estimateGas({ to: ZERO_ADDRESS });
+    const baseTransactionCost = await l2Provider.estimateGas({ to: ZERO_ADDRESS });
 
     const transferValueTxn: AugmentedTransaction = {
       contract: depositAddressContract,

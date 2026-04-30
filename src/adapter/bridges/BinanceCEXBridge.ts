@@ -64,7 +64,9 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
     this.tokenSymbol = _tokenSymbol === "WBNB" ? "BNB" : _tokenSymbol;
 
     // Cast the input Signer | Provider to a Provider.
-    this.l2Provider = l2SignerOrProvider instanceof Signer ? l2SignerOrProvider.provider : l2SignerOrProvider;
+    const l2Provider = l2SignerOrProvider instanceof Signer ? l2SignerOrProvider.provider : l2SignerOrProvider;
+    assert(isDefined(l2Provider), "BinanceCEXBridge: l2Signer must have a provider");
+    this.l2Provider = l2Provider;
   }
 
   async constructL1ToL2Txn(
@@ -175,8 +177,10 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
   }
 
   private async isL1OrL2Contract(address: EvmAddress): Promise<boolean> {
+    const l1Provider = this.l1Signer.provider;
+    assert(isDefined(l1Provider), "BinanceCEXBridge: l1Signer must have a provider");
     const [isL1Contract, isL2Contract] = await Promise.all([
-      isContractDeployedToAddress(address.toNative(), this.l1Signer.provider),
+      isContractDeployedToAddress(address.toNative(), l1Provider),
       isContractDeployedToAddress(address.toNative(), this.l2Provider),
     ]);
     return isL1Contract || isL2Contract;
