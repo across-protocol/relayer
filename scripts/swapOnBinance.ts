@@ -344,7 +344,10 @@ export async function run(): Promise<void> {
       );
     },
   });
-  const amountToWithdraw = toBNWei(truncate(Number(orderAvailability.expectedAmountToReceive), destination.tokenDecimals), destination.tokenDecimals);
+  const amountToWithdraw = toBNWei(
+    truncate(Number(orderAvailability.expectedAmountToReceive), destination.tokenDecimals),
+    destination.tokenDecimals
+  );
 
   printSection("Step 4/4: Withdraw");
   const withdrawalSubmittedAtMs = Date.now();
