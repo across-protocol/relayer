@@ -68,5 +68,9 @@ function post(message: ListenerMessage): boolean {
     return false;
   }
 
-  return process.send(JSON.stringify(message));
+  // Discard process.send()'s return value: per node docs it is also false under
+  // IPC backlog pressure, and treating backpressure as a hard failure would
+  // spuriously abort the listener. Disconnects are caught by process.connected.
+  process.send(JSON.stringify(message));
+  return true;
 }
