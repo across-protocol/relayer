@@ -629,14 +629,14 @@ function makeDeposit({ txId, status, network, coin }: { txId: string; status: nu
   };
 }
 
-function makeWithdrawal({ id, status, txId = "" }: { id: string; status: number; txId?: string }) {
+function makeWithdrawal({ id, status, txId }: { id: string; status: number; txId?: string }) {
   return {
     id,
     amount: 100,
     coin: "USDC",
     network: "BASE",
     recipient: "0x1111111111111111111111111111111111111111",
-    txId,
+    ...(txId ? { txId } : {}),
     transactionFee: 0.1,
     applyTime: new Date().toISOString(),
     status,
