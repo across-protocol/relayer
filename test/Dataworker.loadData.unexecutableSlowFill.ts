@@ -116,7 +116,7 @@ describe("Dataworker: Load bundle data: Computing unexecutable slow fills", asyn
     } as interfaces.SlowFillRequestWithBlock);
   }
 
-  beforeEach(async function () {
+  before(async function () {
     ({
       spokePool_1,
       erc20_1,
@@ -134,6 +134,15 @@ describe("Dataworker: Load bundle data: Computing unexecutable slow fills", asyn
       spokePoolClients,
       updateAllClients,
     } = await setupDataworker(ethers, 25, 25, 0));
+  });
+
+  // Clear the spy log so tests can count their own calls without leakage
+  // from prior tests.
+  beforeEach(function () {
+    spy.resetHistory();
+  });
+
+  beforeEach(async function () {
     await updateAllClients();
     mockHubPoolClient = new MockHubPoolClient(
       hubPoolClient.logger,
@@ -387,8 +396,12 @@ describe("Dataworker: Load bundle data: Computing unexecutable slow fills", asyn
 
     await spokePoolClient_1.update();
     await spokePoolClient_2.update();
-    const originChainDeposit = spokePoolClient_1.getDeposits()[0];
-    const destinationChainDeposit = spokePoolClient_2.getDeposits()[0];
+    const originChainDeposit = spokePoolClient_1
+      .getDeposits()
+      .find((d) => d.depositId.eq(depositsWithSlowFillRequests[0].depositId));
+    const destinationChainDeposit = spokePoolClient_2
+      .getDeposits()
+      .find((d) => d.depositId.eq(depositsWithSlowFillRequests[1].depositId));
 
     // Generate slow fill requests for the slow fill-eligible deposits
     await requestSlowFill(spokePool_2, relayer, depositsWithSlowFillRequests[0]);

@@ -47,7 +47,7 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
 
   let updateAllClients: () => Promise<void>;
 
-  beforeEach(async function () {
+  before(async function () {
     ({
       erc20_1,
       erc20_2,
@@ -63,6 +63,15 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
       spokePoolClients,
       updateAllClients,
     } = await setupDataworker(ethers, 25, 25, 0));
+  });
+
+  // Clear the spy log so tests can count their own calls without leakage
+  // from prior tests.
+  beforeEach(function () {
+    spy.resetHistory();
+  });
+
+  beforeEach(async function () {
     await updateAllClients();
     currentTime = await getLastBlockTime(spokePoolClient_1.spokePool.provider);
   });
