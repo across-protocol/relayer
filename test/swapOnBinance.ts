@@ -84,6 +84,25 @@ describe("swapOnBinance script helpers", function () {
     }
   });
 
+  it("accepts native SOL withdrawals on Solana", function () {
+    const accountCoins = [makeNativeCoin("SOL", CHAIN_IDs.SOLANA)];
+
+    const resolution = resolveBinanceAsset({
+      accountCoins,
+      tokenSymbol: "SOL",
+      chainId: CHAIN_IDs.SOLANA,
+      direction: "withdraw",
+    });
+
+    expect(resolution.ok).to.equal(true);
+    if (resolution.ok) {
+      expect(resolution.asset.isNativeAsset).to.equal(true);
+      expect(resolution.asset.binanceCoin).to.equal("SOL");
+      expect(resolution.asset.network.name).to.equal("SOL");
+      expect(resolution.asset.tokenDecimals).to.equal(9);
+    }
+  });
+
   it("rejects ERC20 routes when Binance contract metadata does not match the repo token address", function () {
     const accountCoins = [
       makeErc20Coin("USDC", [

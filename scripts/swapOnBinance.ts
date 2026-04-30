@@ -34,6 +34,7 @@ import {
   ConvertDecimals,
   TOKEN_SYMBOLS_MAP,
   blockExplorerLink,
+  chainIsSvm,
   chainIsTvm,
   compareAddressesSimple,
   Contract,
@@ -53,6 +54,9 @@ import {
   getNetworkName,
   getNativeTokenInfoForChain,
   getProvider,
+  getRedisCache,
+  getSolanaTokenBalance,
+  getSvmProvider,
   getTokenInfoFromSymbol,
   getWrappedNativeTokenAddress,
   isDefined,
@@ -66,8 +70,10 @@ import {
   setBinanceWithdrawalType,
   Signer,
   submitTransaction,
+  SvmAddress,
   toAddressType,
   toBNWei,
+  toKitAddress,
   truncate,
   willSucceed,
   readableBinanceWithdrawalStatus,
@@ -512,6 +518,21 @@ async function gatherRecipientBalances(
   destination: ResolvedBinanceAsset,
   recipient: string
 ): Promise<RecipientBalances> {
+  if (chainIsSvm(destination.chainId)) {
+    const provider = getSvmProvider(await getRedisCache(), undefined, destination.chainId);
+    const recipientAddress = SvmAddress.from(recipient);
+    const nativeBalanceResponse = await provider.getBalance(toKitAddress(recipientAddress)).send();
+    const nativeBalance = BigNumber.from(nativeBalanceResponse.value.toString());
+    const destinationTokenBalance = destination.isNativeAsset
+      ? nativeBalance
+      : await getSolanaTokenBalance(provider, SvmAddress.from(destination.localTokenAddress!), recipientAddress);
+
+    return {
+      destinationTokenBalance,
+      nativeBalance,
+    };
+  }
+
   const provider = await getProvider(destination.chainId);
   const recipientAddress = getEthersCompatibleAddress(destination.chainId, recipient);
   const nativeBalance = await provider.getBalance(recipientAddress);
@@ -1116,6 +1137,14 @@ function formatChainList(chainIds: number[]): string {
   return chainIds.map((chainId) => `${getNetworkName(chainId)} (${chainId})`).join(", ");
 }
 
+function tryGetTokenAddressForL1TokenSymbol(tokenSymbol: string, chainId: number): string | undefined {
+  try {
+    return getTokenInfoFromSymbol(tokenSymbol, chainId).address.toNative();
+  } catch (_e) {
+    return resolveAcrossToken(tokenSymbol, chainId);
+  }
+}
+
 export function resolveBinanceAsset(params: {
   accountCoins: Coin[];
   tokenSymbol: string;
@@ -1125,7 +1154,7 @@ export function resolveBinanceAsset(params: {
   const { accountCoins, chainId, direction } = params;
   const tokenSymbol = params.tokenSymbol.trim().toUpperCase();
   const isNativeToken = tokenSymbol === getNativeTokenInfoForChain(chainId).symbol.toUpperCase();
-  const localTokenAddress = isNativeToken ? undefined : resolveAcrossToken(tokenSymbol, chainId);
+  const localTokenAddress = isNativeToken ? undefined : tryGetTokenAddressForL1TokenSymbol(tokenSymbol, chainId);
 
   const depositMode: BinanceSourceDepositMode | undefined =
     direction === "deposit" ? (isNativeToken ? "native" : "erc20") : undefined;
