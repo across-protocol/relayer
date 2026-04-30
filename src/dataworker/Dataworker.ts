@@ -89,7 +89,6 @@ import { _buildRelayerRefundRoot, _buildSlowRelayRoot, generateValidationKey } f
 import _ from "lodash";
 import {
   ARBITRUM_ORBIT_L1L2_MESSAGE_FEE_DATA,
-  CONTRACT_ADDRESSES,
   getContractEntry,
   IOFT_ABI_FULL,
   spokePoolClientsToProviders,
@@ -1297,7 +1296,7 @@ export class Dataworker {
     const submitExecution = this.config.sendingTransactionsEnabled;
     const currentTime = client.getCurrentTime();
     const spokePoolAddress = client.spokePoolAddress;
-    assert(isDefined(spokePoolAddress), `_executeSlowFillLeaf: SpokePoolClient missing spokePoolAddress`);
+    assert(isDefined(spokePoolAddress), "_executeSlowFillLeaf: SpokePoolClient missing spokePoolAddress");
 
     // Ignore slow fill leaves for deposits with messages as these messages might be very expensive to execute.
     // The original depositor can always execute these and pay for the gas themselves.
@@ -2390,7 +2389,7 @@ export class Dataworker {
     }
     const { chainId, spokePoolAddress } = client;
     const submitExecution = this.config.sendingTransactionsEnabled;
-    assert(isDefined(spokePoolAddress), `_executeRelayerRefundLeaves: SpokePoolClient missing spokePoolAddress`);
+    assert(isDefined(spokePoolAddress), "_executeRelayerRefundLeaves: SpokePoolClient missing spokePoolAddress");
 
     // Pre-compute msg.value per leaf id to use consistently in allocation and execution
     const msgValuesByLeafId: Map<number, BigNumber | undefined> = new Map();
@@ -2421,7 +2420,7 @@ export class Dataworker {
               leaf.leafId
             );
             const { maxLookBack } = client.eventSearchConfig;
-            assert(isDefined(maxLookBack), `_executeRelayerRefundLeaves: SpokePoolClient missing maxLookBack`);
+            assert(isDefined(maxLookBack), "_executeRelayerRefundLeaves: SpokePoolClient missing maxLookBack");
             const searchConfig = {
               maxLookBack,
               from: client.latestHeightSearched - maxLookBack,
@@ -2884,7 +2883,7 @@ export class Dataworker {
   ): Promise<string> {
     // Parse relevant info from the relayer refund leaf/dataworker.
     const { spokePoolAddress } = spokePoolClient;
-    assert(isDefined(spokePoolAddress), `_executeRelayerRefundLeafSvm: SpokePoolClient missing spokePoolAddress`);
+    assert(isDefined(spokePoolAddress), "_executeRelayerRefundLeafSvm: SpokePoolClient missing spokePoolAddress");
     const spokePoolProgramId = toKitAddress(spokePoolAddress);
     const provider = spokePoolClient.svmEventsClient.getRpc();
     const _l2TokenAddress = leaf.l2TokenAddress;
@@ -3298,7 +3297,7 @@ export class Dataworker {
   ): Promise<{ executable: boolean; signature?: string }> {
     // Parse relevant info from the slow fill leaf/dataworker.
     const { spokePoolAddress } = spokePoolClient;
-    assert(isDefined(spokePoolAddress), `_executeSlowFillLeafSvm: SpokePoolClient missing spokePoolAddress`);
+    assert(isDefined(spokePoolAddress), "_executeSlowFillLeafSvm: SpokePoolClient missing spokePoolAddress");
     const provider = spokePoolClient.svmEventsClient.getRpc();
     const spokePoolProgramId = toKitAddress(spokePoolAddress);
     const l2TokenAddress = toKitAddress(leaf.relayData.outputToken);
