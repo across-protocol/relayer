@@ -32,7 +32,7 @@ import ERC20_ABI from "../common/abi/MinimalERC20.json";
  */
 export class DepositAddressHandler {
   private abortController = new AbortController();
-  private instanceCoordinator: InstanceCoordinator;
+  private _instanceCoordinator?: InstanceCoordinator;
   private initialized = false;
 
   private providersByChain: { [chainId: number]: Provider } = {};
@@ -45,10 +45,27 @@ export class DepositAddressHandler {
 
   private api: AcrossSwapApiClient;
   private indexerApi: AcrossIndexerApiClient;
-  private signerAddress: EvmAddress;
+  private _signerAddress?: EvmAddress;
 
   private transactionClient;
   private redisCache: RedisCacheInterface | undefined;
+
+  // signerAddress, instanceCoordinator, and redisCache are populated by initialize(); access pre-init throws.
+  private get signerAddress(): EvmAddress {
+    assert(isDefined(this._signerAddress), "DepositAddressHandler: signerAddress accessed before initialize()");
+    return this._signerAddress;
+  }
+  private get instanceCoordinator(): InstanceCoordinator {
+    assert(
+      isDefined(this._instanceCoordinator),
+      "DepositAddressHandler: instanceCoordinator accessed before initialize()"
+    );
+    return this._instanceCoordinator;
+  }
+  private getRedisCache(): RedisCacheInterface {
+    assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
+    return this.redisCache;
+  }
 
   public constructor(
     readonly logger: winston.Logger,
@@ -70,11 +87,13 @@ export class DepositAddressHandler {
       message: "Initializing DepositAddressHandler",
     });
 
-    const { RUN_IDENTIFIER: runIdentifier, BOT_IDENTIFIER: botIdentifier } = process.env;
+    const { RUN_IDENTIFIER: runIdentifier, BOT_IDENTIFIER: botIdentifier = "deposit-address-handler" } = process.env;
+    assert(isDefined(runIdentifier), "DepositAddressHandler: RUN_IDENTIFIER env var is required");
 
     // Set the signer address.
-    this.signerAddress = EvmAddress.from(await this.baseSigner.getAddress());
+    this._signerAddress = EvmAddress.from(await this.baseSigner.getAddress());
     this.redisCache = await getRedisCache(this.logger);
+    assert(isDefined(this.redisCache), "DepositAddressHandler: requires a Redis cache for handover state");
 
     // Exit if OS instructs us to do so.
     process.on("SIGHUP", () => {
@@ -100,7 +119,7 @@ export class DepositAddressHandler {
     });
 
     // Establish bot instance and take over. First thing after handover: load persisted executed deposits from Redis.
-    this.instanceCoordinator = new InstanceCoordinator(
+    this._instanceCoordinator = new InstanceCoordinator(
       this.logger,
       this.redisCache,
       botIdentifier,
@@ -122,7 +141,7 @@ export class DepositAddressHandler {
   /** Loads executed deposit tx hashes from Redis (e.g. after handover). */
   private async _loadExecutedDepositsFromRedis(): Promise<void> {
     const redisKey = this.getExecutedDepositsRedisKey();
-    const raw = (await this.redisCache.get(redisKey)) as string | undefined;
+    const raw = (await this.getRedisCache().get(redisKey)) as string | undefined;
     let arr: string[] = [];
     try {
       if (raw) {
@@ -195,7 +214,7 @@ export class DepositAddressHandler {
    */
   private async _persistExecutedDepositsRedis(): Promise<void> {
     const redisKey = this.getExecutedDepositsRedisKey();
-    await this.redisCache.set(redisKey, JSON.stringify([...this.executedDepositTxHashes]));
+    await this.getRedisCache().set(redisKey, JSON.stringify([...this.executedDepositTxHashes]));
   }
 
   private async initiateDeposit(depositMessage: DepositAddressMessage): Promise<void> {

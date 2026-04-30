@@ -145,7 +145,7 @@ export function getArweaveJWKSigner({ keyType, cleanEnv }: SignerOptions): Arwea
     if (!isDefined(ARWEAVE_WALLET_JWK)) {
       throw new Error("Arweave wallet JWK requested but no ARWEAVE_WALLET_JWK env set!");
     }
-    const arweaveWalletJWK = JSON.parse(process.env.ARWEAVE_WALLET_JWK);
+    const arweaveWalletJWK = JSON.parse(ARWEAVE_WALLET_JWK);
     assert(ArweaveWalletJWKInterfaceSS.is(arweaveWalletJWK), "Invalid Arweave wallet JWK");
     if (cleanEnv) {
       cleanKeysFromEnvironment({ arweave: true, eth: false });

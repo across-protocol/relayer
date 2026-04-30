@@ -59,7 +59,7 @@ import {
 import { createDataworker } from "../dataworker";
 import { _buildSlowRelayRoot, getBlockForChain } from "../dataworker/DataworkerUtils";
 import { Log, ProposedRootBundle, SpokePoolClientsByChain, BundleData } from "../interfaces";
-import { CONTRACT_ADDRESSES, constructSpokePoolClientsWithStartBlocks, updateSpokePoolClients } from "../common";
+import { getContractEntry, constructSpokePoolClientsWithStartBlocks, updateSpokePoolClients } from "../common";
 import { createConsoleTransport } from "@risk-labs/logger";
 import { interfaces as sdkInterfaces } from "@across-protocol/sdk";
 import { SpokePoolClient } from "../clients/SpokePoolClient";
@@ -109,18 +109,15 @@ export async function runScript(baseSigner: Signer): Promise<void> {
   // using SpokePool clients that have events from as old the bundle X-8 to X.
   const oldestBundleToLookupEventsFor = validatedBundles[bundlesToValidate + BUNDLE_LOOKBACK];
   const _oldestBundleEndBlocks = oldestBundleToLookupEventsFor.bundleEvaluationBlockNumbers.map((x) => x.toNumber());
-  const oldestBundleEndBlocks = Object.fromEntries(
-    dataworker.chainIdListForBundleEvaluationBlockNumbers.map((chainId, i) => {
-      // If chain wasn't active at time of the bundle, set from block to undefined which will set from blocks to the
-      // spoke pool registration block this chain.
-      if (i >= oldestBundleToLookupEventsFor.bundleEvaluationBlockNumbers.length) {
-        return [chainId, undefined];
-      }
-      return [
+  // If chain wasn't active at time of the bundle, omit the entry so callers fall back to the spoke pool
+  // registration block for that chain.
+  const oldestBundleEndBlocks: { [chainId: number]: number } = Object.fromEntries(
+    dataworker.chainIdListForBundleEvaluationBlockNumbers
+      .filter((_chainId, i) => i < oldestBundleToLookupEventsFor.bundleEvaluationBlockNumbers.length)
+      .map((chainId) => [
         chainId,
         getBlockForChain(_oldestBundleEndBlocks, chainId, dataworker.chainIdListForBundleEvaluationBlockNumbers),
-      ];
-    })
+      ])
   );
   logger.debug({
     message: "Updating all clients, please wait... ",
@@ -164,6 +161,7 @@ export async function runScript(baseSigner: Signer): Promise<void> {
       for (let i = 0; i < leaf.l1Tokens.length; i++) {
         const l1Token = leaf.l1Tokens[i];
         const tokenInfo = clients.hubPoolClient.getTokenInfoForL1Token(l1Token);
+        assert(isDefined(tokenInfo), `No token info for L1 token ${l1Token}`);
         if (process.env.SINGLE_TOKEN && tokenInfo.symbol !== process.env.SINGLE_TOKEN) {
           continue;
         }
@@ -177,6 +175,9 @@ export async function runScript(baseSigner: Signer): Promise<void> {
         logs.push(`**** Chain ${leaf.chainId} - ${tokenInfo.symbol} (${l1Token}) ****`);
         const decimals = tokenInfo.decimals;
         const l2Token = clients.hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, leaf.chainId, followingBlockNumber);
+        assert(isDefined(l2Token), `No L2 token for L1 token ${l1Token} on chain ${leaf.chainId}`);
+        const spokePoolAddress = spokePoolClients[leaf.chainId].spokePoolAddress;
+        assert(isDefined(spokePoolAddress), `No spokePoolAddress for chain ${leaf.chainId}`);
         const l2TokenContract = new Contract(l2Token.toEvmAddress(), ERC20.abi, await getProvider(leaf.chainId));
         const runningBalance = leaf.runningBalances[i];
         const netSendAmount = leaf.netSendAmounts[i];
@@ -185,12 +186,9 @@ export async function runScript(baseSigner: Signer): Promise<void> {
             dataworker.chainIdListForBundleEvaluationBlockNumbers.indexOf(leaf.chainId)
           ];
         logs.push(`- Bundle end block for chain: ${bundleEndBlockForChain.toNumber()}`);
-        let tokenBalanceAtBundleEndBlock = await l2TokenContract.balanceOf(
-          spokePoolClients[leaf.chainId].spokePoolAddress.toEvmAddress(),
-          {
-            blockTag: bundleEndBlockForChain.toNumber(),
-          }
-        );
+        let tokenBalanceAtBundleEndBlock = await l2TokenContract.balanceOf(spokePoolAddress.toEvmAddress(), {
+          blockTag: bundleEndBlockForChain.toNumber(),
+        });
         logs.push(`- Token balance at bundle end block: ${fromWei(tokenBalanceAtBundleEndBlock.toString(), decimals)}`);
 
         // To paint a more accurate picture of the excess, we need to check that the previous bundle's leaf
@@ -255,13 +253,14 @@ export async function runScript(baseSigner: Signer): Promise<void> {
                 ];
               logs.push(`- Previous net send amount: ${fromWei(previousNetSendAmount.toString(), decimals)}`);
               if (previousNetSendAmount.gt(bnZero)) {
-                const spokePoolAddress = spokePoolClients[leaf.chainId].spokePoolAddress.toEvmAddress();
+                const spokePoolAddressStr = spokePoolAddress.toEvmAddress();
                 let depositsToSpokePool: Log[];
                 // Handle the case that L1-->L2 deposits for some chains for ETH do not emit Transfer events, but
                 // emit other events instead. This is the case for OpStack chains which emit DepositFinalized events
                 // including the L1 and L2 ETH (native gas token) addresses.
                 if (chainIsOPStack(leaf.chainId) && tokenInfo.symbol === "WETH") {
-                  const ovmL2BridgeContractInfo = CONTRACT_ADDRESSES[leaf.chainId].ovmStandardBridge;
+                  const ovmL2BridgeContractInfo = getContractEntry(leaf.chainId, "ovmStandardBridge");
+                  const nativeTokenInfo = getContractEntry(leaf.chainId, "nativeToken");
                   const ovmL2Bridge = new Contract(
                     ovmL2BridgeContractInfo.address,
                     ovmL2BridgeContractInfo.abi,
@@ -272,7 +271,7 @@ export async function runScript(baseSigner: Signer): Promise<void> {
                       ovmL2Bridge,
                       ovmL2Bridge.filters.DepositFinalized(
                         ZERO_ADDRESS, // L1 token
-                        CONTRACT_ADDRESSES[leaf.chainId].nativeToken.address, // L2 token
+                        nativeTokenInfo.address, // L2 token
                         clients.hubPoolClient.hubPool.address // from
                       ),
                       {
@@ -281,14 +280,14 @@ export async function runScript(baseSigner: Signer): Promise<void> {
                         maxLookBack: config.maxBlockLookBack[leaf.chainId],
                       }
                     )
-                  ).filter((e) => e.args._amount.eq(previousNetSendAmount) && e.args._to === spokePoolAddress);
+                  ).filter((e) => e.args._amount.eq(previousNetSendAmount) && e.args._to === spokePoolAddressStr);
                 } else {
                   // This part could be inaccurate if there is a duplicate Transfer event for the exact same amount
                   // to the SpokePool address. This is unlikely so we'll ignore it for now.
                   depositsToSpokePool = (
                     await paginatedEventQuery(
                       l2TokenContract,
-                      l2TokenContract.filters.Transfer(undefined, spokePoolAddress),
+                      l2TokenContract.filters.Transfer(undefined, spokePoolAddressStr),
                       {
                         from: previousBundleEndBlockForChain.toNumber(),
                         to: bundleEndBlockForChain.toNumber(),
@@ -537,39 +536,32 @@ export async function runScript(baseSigner: Signer): Promise<void> {
     futureBundle: ProposedRootBundle
   ): Promise<{ bundleData: BundleData; bundleSpokePoolClients: SpokePoolClientsByChain }> {
     // Construct custom spoke pool clients to query events needed to reconstruct bundle.
-    const spokeClientFromBlocks = Object.fromEntries(
-      dataworker.chainIdListForBundleEvaluationBlockNumbers.map((chainId, i) => {
-        // If chain was not active at the time of the older bundle, then set from blocks to undefined
-        // which will load events since the registration block for the chain.
-        if (i >= olderBundle.bundleEvaluationBlockNumbers.length) {
-          return [chainId, undefined];
-        }
-        return [
+    // If chain was not active at the time of the older bundle, omit the entry so callers fall back to the
+    // spoke pool registration block for that chain (downstream lookup via `dict[chainId]` returns undefined either way).
+    const spokeClientFromBlocks: { [chainId: number]: number } = Object.fromEntries(
+      dataworker.chainIdListForBundleEvaluationBlockNumbers
+        .filter((_chainId, i) => i < olderBundle.bundleEvaluationBlockNumbers.length)
+        .map((chainId) => [
           chainId,
           getBlockForChain(
             olderBundle.bundleEvaluationBlockNumbers.map((x) => x.toNumber()),
             Number(chainId),
             dataworker.chainIdListForBundleEvaluationBlockNumbers
           ),
-        ];
-      })
+        ])
     );
-    const spokeClientToBlocks = Object.fromEntries(
-      dataworker.chainIdListForBundleEvaluationBlockNumbers.map((chainId, i) => {
-        // If chain was not active at the time of the future bundle, then set to blocks to undefined
-        // which will load events until latest
-        if (i >= futureBundle.bundleEvaluationBlockNumbers.length) {
-          return [chainId, undefined];
-        }
-        return [
+    // If chain was not active at the time of the future bundle, omit the entry so callers query until latest.
+    const spokeClientToBlocks: { [chainId: number]: number } = Object.fromEntries(
+      dataworker.chainIdListForBundleEvaluationBlockNumbers
+        .filter((_chainId, i) => i < futureBundle.bundleEvaluationBlockNumbers.length)
+        .map((chainId) => [
           chainId,
           getBlockForChain(
             futureBundle.bundleEvaluationBlockNumbers.map((x) => x.toNumber()),
             Number(chainId),
             dataworker.chainIdListForBundleEvaluationBlockNumbers
           ),
-        ];
-      })
+        ])
     );
     const key = `${JSON.stringify(spokeClientFromBlocks)}-${JSON.stringify(spokeClientToBlocks)}`;
     if (!rootCache[key]) {
