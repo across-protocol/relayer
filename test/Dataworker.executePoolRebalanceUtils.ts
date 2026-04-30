@@ -74,7 +74,11 @@ describe("Dataworker: Utilities to execute pool rebalance leaves", async functio
       fakeHubPool,
     };
   }
-  beforeEach(async function () {
+  // "update exchange rates" smock-fakes hubPool.address (permanent for the file),
+  // so restore hubPoolClient by reference rather than reinstantiate.
+  let originalHubPoolClient: HubPoolClient;
+
+  before(async function () {
     ({
       hubPool,
       erc20_1,
@@ -92,6 +96,13 @@ describe("Dataworker: Utilities to execute pool rebalance leaves", async functio
       0,
       destinationChainId
     ));
+    originalHubPoolClient = dataworkerInstance.clients.hubPoolClient;
+  });
+
+  beforeEach(function () {
+    spy.resetHistory();
+    multiCallerClient.clearTransactionQueue();
+    dataworkerInstance.clients.hubPoolClient = originalHubPoolClient;
   });
   describe("update exchange rates", function () {
     let mockHubPoolClient: MockHubPoolClient, fakeHubPool: FakeContract;

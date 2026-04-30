@@ -35,7 +35,7 @@ let updateAllClients: () => Promise<void>;
 
 // TODO: Rename this file to BundleDataClient
 describe("Dataworker: Load bundle data", async function () {
-  beforeEach(async function () {
+  before(async function () {
     ({
       erc20_1,
       erc20_2,
