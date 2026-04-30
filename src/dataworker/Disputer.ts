@@ -2,11 +2,13 @@ import { Contract, Signer } from "ethers";
 import { WETH9__factory as WETH9 } from "@across-protocol/sdk/typechain";
 import { AugmentedTransaction, TransactionClient } from "../clients";
 import {
+  assert,
   BigNumber,
   bnUint256Max,
   bnZero,
   formatEther,
   getNetworkName,
+  isDefined,
   TransactionResponse,
   submitTransaction,
   Provider,
@@ -14,13 +16,19 @@ import {
 } from "../utils";
 
 export class Disputer {
-  protected bondToken: Contract;
-  protected bondAmount: BigNumber;
+  private _bondToken?: Contract;
+  protected bondAmount = bnZero;
   protected bondMultiplier: { min: number; target: number };
   protected provider: Provider;
   protected txnClient: TransactionClient;
   protected chain: string;
   private initPromise: Promise<void> | undefined;
+
+  // bondToken is queried from HubPool during init(); access pre-init throws.
+  protected get bondToken(): Contract {
+    assert(isDefined(this._bondToken), "Disputer: bondToken accessed before init() completed");
+    return this._bondToken;
+  }
 
   constructor(
     protected readonly chainId: number,
@@ -162,7 +170,7 @@ export class Disputer {
       // - bondAmount
       // - native balance
       const [bondToken, bondAmount] = await Promise.all([this.hubPool.bondToken(), this.hubPool.bondAmount()]);
-      this.bondToken = WETH9.connect(bondToken, this.signer);
+      this._bondToken = WETH9.connect(bondToken, this.signer);
       this.bondAmount = bondAmount;
     })().catch((error) => {
       if (this.initPromise === promise) {

@@ -4,9 +4,9 @@ import { assert, getArweaveJWKSigner, parseJson, isDefined } from "../utils";
 export class DataworkerConfig extends CommonConfig {
   readonly minChallengeLeadTime: number;
   readonly awaitChallengePeriod: boolean;
-  readonly maxPoolRebalanceLeafSizeOverride: number;
-  readonly maxRelayerRepaymentLeafSizeOverride: number;
-  readonly spokeRootsLookbackCount: number; // Consider making this configurable per chain ID.
+  readonly maxPoolRebalanceLeafSizeOverride?: number;
+  readonly maxRelayerRepaymentLeafSizeOverride?: number;
+  spokeRootsLookbackCount?: number; // Consider making this configurable per chain ID.
 
   // These variables can be toggled to choose whether the bot will go through the dataworker logic.
   readonly disputerEnabled: boolean;
@@ -90,7 +90,10 @@ export class DataworkerConfig extends CommonConfig {
     this.l1ExecutorEnabled = L1_EXECUTOR_ENABLED === "true";
     this.executorIgnoreChains = parseJson.numberArray(EXECUTOR_IGNORE_CHAINS);
     if (this.l2ExecutorEnabled) {
-      assert(this.spokeRootsLookbackCount > 0, "must set spokeRootsLookbackCount > 0 if L2 executor enabled");
+      assert(
+        isDefined(this.spokeRootsLookbackCount) && this.spokeRootsLookbackCount > 0,
+        "must set spokeRootsLookbackCount > 0 if L2 executor enabled"
+      );
     } else if (this.disputerEnabled || this.proposerEnabled) {
       // should set spokeRootsLookbackCount == 0 if executor disabled and proposer/disputer enabled
       this.spokeRootsLookbackCount = 0;
@@ -102,11 +105,12 @@ export class DataworkerConfig extends CommonConfig {
     if (FORCE_PROPOSAL_BUNDLE_RANGE) {
       // The format is [number, number][] where the two numbers are the start and end bundle ranges and the array
       // represents the bundle ranges that will be proposed per the chain id indices.
-      this.forceProposalBundleRange = JSON.parse(FORCE_PROPOSAL_BUNDLE_RANGE);
+      const forceProposalBundleRange: [number, number][] = JSON.parse(FORCE_PROPOSAL_BUNDLE_RANGE);
+      this.forceProposalBundleRange = forceProposalBundleRange;
       // We need to ensure that the bundle ranges are valid. A valid bundle range
       // is an array of [start, end] where both start and end are numeric and
       // positive whole numbers and start < end.
-      this.forceProposalBundleRange.forEach((bundleRange, index) => {
+      forceProposalBundleRange.forEach((bundleRange, index) => {
         assert(Array.isArray(bundleRange), `forceProposalBundleRange[${index}] is not an array`);
         assert(bundleRange.length === 2, `forceProposalBundleRange[${index}] does not have length 2`);
         const [start, end] = bundleRange;
