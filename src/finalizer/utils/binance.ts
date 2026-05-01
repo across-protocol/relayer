@@ -57,6 +57,7 @@ const BINANCE_SWEEP_BLOCKING_STATUSES = [
   STATUS.PENDING_SWAP,
   STATUS.PENDING_WITHDRAWAL,
 ];
+export const UNKNOWN_PENDING_BINANCE_REBALANCE_SYMBOL = "UNKNOWN_PENDING_BINANCE_REBALANCE";
 
 /**
  * Unlike other finalizers, the Binance finalizer is only used to withdraw EOA deposits on Binance.
@@ -268,8 +269,9 @@ export async function binanceFinalizer(
           // If the confirmed coin balance minus any pending swap balances is greater than the withdraw minimum, and there is
           // nothing to withdraw in this lookback window, then we should try to sweep the balance to L1.
           if (withdrawNetwork === BINANCE_NETWORKS[hubChainId]) {
-            const hasPendingRebalanceForSymbol = sharedBinanceAccountPendingRebalanceSymbols.has(
-              resolveBinanceCoinSymbol(symbol)
+            const hasPendingRebalanceForSymbol = hasPendingBinanceRebalanceForSymbol(
+              symbol,
+              sharedBinanceAccountPendingRebalanceSymbols
             );
             const coinBalanceMinusSwapDeposits = getSweepableOrphanBinanceBalance(
               coinBalance,
@@ -337,6 +339,13 @@ export function getPendingBinanceRebalanceSymbols(
   }, new Set());
 }
 
+export function hasPendingBinanceRebalanceForSymbol(symbol: string, pendingRebalanceSymbols: Set<string>): boolean {
+  return (
+    pendingRebalanceSymbols.has(UNKNOWN_PENDING_BINANCE_REBALANCE_SYMBOL) ||
+    pendingRebalanceSymbols.has(resolveBinanceCoinSymbol(symbol))
+  );
+}
+
 export function getEvmBinanceRebalanceLookupAccounts(addresses: string[], signerAddress?: string): EvmAddress[] {
   const seenAddresses = new Set<string>();
   return [...addresses, signerAddress]
@@ -365,7 +374,7 @@ export async function getPendingBinanceRebalanceSymbolsForAccount(
       return new Set();
     }
 
-    const orders = (
+    const symbolsByStatus = (
       await Promise.all(
         BINANCE_SWEEP_BLOCKING_STATUSES.map(async (status) => {
           const statusSetKey = getPendingBridgeStatusSetKey(
@@ -383,18 +392,26 @@ export async function getPendingBinanceRebalanceSymbolsForAccount(
                 account
               );
               if (!isDefined(order)) {
-                await redisCache.sRem(statusSetKey, cloid);
+                logger.warn({
+                  at: "BinanceFinalizer",
+                  message:
+                    "Found pending Binance rebalance status without order details; preserving orphan sweep guard for all symbols.",
+                  account: account.toNative(),
+                  cloid,
+                  statusSetKey,
+                });
+                return [UNKNOWN_PENDING_BINANCE_REBALANCE_SYMBOL];
               }
-              return order;
+              return [...getPendingBinanceRebalanceSymbols([order])];
             })
           );
         })
       )
     )
-      .flat()
+      .flat(2)
       .filter(isDefined);
 
-    return getPendingBinanceRebalanceSymbols(orders);
+    return new Set(symbolsByStatus);
   } catch (error) {
     logger.warn({
       at: "BinanceFinalizer",

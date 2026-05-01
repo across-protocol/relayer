@@ -1,6 +1,7 @@
 import { expect, sinon } from "./utils";
 import {
   getEvmBinanceRebalanceLookupAccounts,
+  hasPendingBinanceRebalanceForSymbol,
   getPendingBinanceRebalanceSymbolsForAccount,
   getPendingBinanceRebalanceSymbols,
   getSweepableOrphanBinanceBalance,
@@ -67,6 +68,33 @@ describe("Binance finalizer helpers", function () {
       at: "BinanceFinalizer",
       account: account.toNative(),
       error: "temporary redis outage",
+    });
+  });
+
+  it("preserves the sweep guard when pending order details have expired", async function () {
+    const logger = { warn: sinon.stub() };
+    const account = EvmAddress.from("0x0000000000000000000000000000000000000001");
+    const redisCache = {
+      sMembers: sinon.stub(),
+      get: sinon.stub().resolves(undefined),
+      sRem: sinon.stub(),
+    };
+    redisCache.sMembers.onFirstCall().resolves(["missing-cloid"]);
+    redisCache.sMembers.resolves([]);
+
+    const symbols = await getPendingBinanceRebalanceSymbolsForAccount(
+      logger as never,
+      account,
+      async () => redisCache as never
+    );
+
+    expect(hasPendingBinanceRebalanceForSymbol("USDC", symbols)).to.equal(true);
+    expect(redisCache.sRem.notCalled).to.equal(true);
+    expect(logger.warn.calledOnce).to.equal(true);
+    expect(logger.warn.firstCall.args[0]).to.include({
+      at: "BinanceFinalizer",
+      account: account.toNative(),
+      cloid: "missing-cloid",
     });
   });
 });

@@ -255,7 +255,9 @@ output balances are not swept while an order is waiting for Binance's deposit un
 Because pending-order Redis sets are keyed by signer account and finalizer withdrawal recipients can be configured
 separately, the finalizer checks both configured EVM withdrawal recipients and the running signer account before applying
 this shared Binance-account sweep guard. If Redis cannot be read, the finalizer logs a warning and falls back to the
-previous orphan-sweep behavior for that run.
+previous orphan-sweep behavior for that run. If a Redis status set still contains a cloid but the order details have
+expired, the finalizer treats the pending token as unknown and skips orphan sweeps until normal adapter cleanup removes
+the stale status entry.
 
 ## Venue-specific operational note
 
