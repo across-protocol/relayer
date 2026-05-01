@@ -410,7 +410,7 @@ export async function getPendingBinanceRebalanceSweepReservationsForAccount(
       return {};
     }
 
-    const reservations = (
+    const pendingStatusEntries = (
       await Promise.all(
         BINANCE_SWEEP_BLOCKING_STATUSES.map(async (status) => {
           const statusSetKey = getPendingBridgeStatusSetKey(
@@ -419,33 +419,46 @@ export async function getPendingBinanceRebalanceSweepReservationsForAccount(
             account.toNative()
           );
           const cloids = await redisCache.sMembers(statusSetKey);
-          return await Promise.all(
-            cloids.map(async (cloid) => {
-              const order = await redisGetOrderDetailsForAdapter(
-                redisCache,
-                BINANCE_STABLECOIN_SWAP_REDIS_PREFIX,
-                cloid,
-                account
-              );
-              if (!isDefined(order)) {
-                logger.warn({
-                  at: "BinanceFinalizer",
-                  message:
-                    "Found pending Binance rebalance status without order details; cannot reserve an amount for orphan sweep accounting.",
-                  account: account.toNative(),
-                  cloid,
-                  statusSetKey,
-                });
-                return {};
-              }
-              return getPendingBinanceRebalanceSweepReservationsForOrder(logger, binanceApi, cloid, status, order);
-            })
-          );
+          return cloids.map((cloid) => ({ cloid, status, statusSetKey }));
         })
       )
-    )
-      .flat()
-      .filter(isDefined);
+    ).flat();
+    const pendingStatusEntryByCloid = new Map<string, { cloid: string; status: STATUS; statusSetKey: string }>();
+    for (const pendingStatusEntry of pendingStatusEntries) {
+      const existingEntry = pendingStatusEntryByCloid.get(pendingStatusEntry.cloid);
+      if (
+        !isDefined(existingEntry) ||
+        getBinanceSweepBlockingStatusPriority(pendingStatusEntry.status) >
+          getBinanceSweepBlockingStatusPriority(existingEntry.status)
+      ) {
+        pendingStatusEntryByCloid.set(pendingStatusEntry.cloid, pendingStatusEntry);
+      }
+    }
+
+    const reservations = (
+      await Promise.all(
+        [...pendingStatusEntryByCloid.values()].map(async ({ cloid, status, statusSetKey }) => {
+          const order = await redisGetOrderDetailsForAdapter(
+            redisCache,
+            BINANCE_STABLECOIN_SWAP_REDIS_PREFIX,
+            cloid,
+            account
+          );
+          if (!isDefined(order)) {
+            logger.warn({
+              at: "BinanceFinalizer",
+              message:
+                "Found pending Binance rebalance status without order details; cannot reserve an amount for orphan sweep accounting.",
+              account: account.toNative(),
+              cloid,
+              statusSetKey,
+            });
+            return {};
+          }
+          return getPendingBinanceRebalanceSweepReservationsForOrder(logger, binanceApi, cloid, status, order);
+        })
+      )
+    ).filter(isDefined);
 
     return sumPendingBinanceRebalanceSweepReservations(reservations);
   } catch (error) {
@@ -457,6 +470,10 @@ export async function getPendingBinanceRebalanceSweepReservationsForAccount(
     });
     return {};
   }
+}
+
+function getBinanceSweepBlockingStatusPriority(status: STATUS): number {
+  return BINANCE_SWEEP_BLOCKING_STATUSES.indexOf(status);
 }
 
 export async function getPendingBinanceRebalanceSweepReservationsForOrder(

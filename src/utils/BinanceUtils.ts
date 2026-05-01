@@ -18,6 +18,9 @@ import { fromWei, retry, toBNWei } from "./SDKUtils";
 let binanceSecretKeyPromise: Promise<string | undefined> | undefined = undefined;
 
 const BINANCE_TRADES_FETCH_LIMIT = 1000;
+const BINANCE_ORDERS_FETCH_LIMIT = 1000;
+const BINANCE_ORDER_LOOKUP_TTL_BUFFER_MS = 5 * 60 * 1000;
+const BINANCE_ORDER_LOOKUP_MIN_WINDOW_MS = 60 * 1000;
 
 export type WithdrawalQuota = {
   wdQuota: number;
@@ -403,10 +406,7 @@ export async function getMatchingBinanceFillForCloid(
   cloid: string,
   spotMarketMeta: SpotMarketMeta
 ): Promise<{ matchingFill: QueryOrderResult; expectedAmountToReceive: number } | undefined> {
-  const allOrders = await binanceApi.allOrders({
-    symbol: spotMarketMeta.symbol,
-  });
-  const matchingFill = allOrders.find((order) => order.clientOrderId === cloid && order.status === "FILLED");
+  const matchingFill = await getBinanceOrderForCloid(binanceApi, cloid, spotMarketMeta.symbol);
   if (!matchingFill) {
     return undefined;
   }
@@ -422,6 +422,49 @@ export async function getMatchingBinanceFillForCloid(
     return undefined;
   }
   return { matchingFill, expectedAmountToReceive };
+}
+
+async function getBinanceOrderForCloid(
+  binanceApi: BinanceOrderReader,
+  cloid: string,
+  symbol: string
+): Promise<QueryOrderResult | undefined> {
+  const now = Date.now();
+  const intervals = [
+    {
+      startTime: now - getPendingOrderLookupWindowMs(),
+      endTime: now,
+    },
+  ];
+
+  while (intervals.length > 0) {
+    const { startTime, endTime } = intervals.pop()!;
+    const orders = await binanceApi.allOrders({
+      symbol,
+      startTime,
+      endTime,
+      limit: BINANCE_ORDERS_FETCH_LIMIT,
+    });
+    const matchingOrder = orders.find((order) => order.clientOrderId === cloid && order.status === "FILLED");
+    if (matchingOrder) {
+      return matchingOrder;
+    }
+
+    if (orders.length >= BINANCE_ORDERS_FETCH_LIMIT && endTime - startTime > BINANCE_ORDER_LOOKUP_MIN_WINDOW_MS) {
+      const midpoint = Math.floor((startTime + endTime) / 2);
+      intervals.push({ startTime, endTime: midpoint });
+      intervals.push({ startTime: midpoint + 1, endTime });
+    }
+  }
+
+  return undefined;
+}
+
+function getPendingOrderLookupWindowMs(): number {
+  const configuredTtlSeconds = Number(process.env.REBALANCER_PENDING_ORDER_TTL);
+  const pendingOrderTtlSeconds =
+    Number.isFinite(configuredTtlSeconds) && configuredTtlSeconds > 0 ? configuredTtlSeconds : 60 * 60;
+  return pendingOrderTtlSeconds * 1000 + BINANCE_ORDER_LOOKUP_TTL_BUFFER_MS;
 }
 
 export async function getBinanceSpotMarketMetaForRoute(

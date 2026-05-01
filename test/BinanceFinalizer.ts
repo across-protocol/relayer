@@ -99,6 +99,61 @@ describe("Binance finalizer helpers", function () {
     });
   });
 
+  it("deduplicates cloids across pending status sets before reserving sweep amounts", async function () {
+    const account = EvmAddress.from("0x0000000000000000000000000000000000000001");
+    const redisCache = {
+      sMembers: sinon.stub(),
+      get: sinon.stub().resolves(
+        JSON.stringify({
+          sourceChain: CHAIN_IDs.MAINNET,
+          sourceToken: "USDT",
+          destinationChain: CHAIN_IDs.MAINNET,
+          destinationToken: "USDC",
+          amountToTransfer: toBNWei("100", 6).toString(),
+        })
+      ),
+    };
+    redisCache.sMembers.onCall(0).resolves([]);
+    redisCache.sMembers.onCall(1).resolves(["cloid"]);
+    redisCache.sMembers.onCall(2).resolves(["cloid"]);
+    redisCache.sMembers.onCall(3).resolves([]);
+    const binanceApi = {
+      exchangeInfo: sinon.stub().resolves({
+        symbols: [
+          {
+            symbol: "USDCUSDT",
+            baseAsset: "USDC",
+            quoteAsset: "USDT",
+            filters: [
+              { filterType: "PRICE_FILTER", tickSize: "0.0001" },
+              { filterType: "LOT_SIZE", stepSize: "1.00000000", minQty: "1.00000000" },
+            ],
+          },
+        ],
+      }),
+      allOrders: sinon.stub().resolves([
+        {
+          clientOrderId: "cloid",
+          status: "FILLED",
+          orderId: 123,
+          executedQty: "100",
+          cummulativeQuoteQty: "100.1",
+        },
+      ]),
+      myTrades: sinon.stub().resolves([{ commission: "1", commissionAsset: "USDC" }]),
+    };
+
+    const reservations = await getPendingBinanceRebalanceSweepReservationsForAccount(
+      { warn: sinon.stub() } as never,
+      account,
+      binanceApi as never,
+      async () => redisCache as never
+    );
+
+    expect(reservations).to.deep.equal({ USDC: 99 });
+    expect(redisCache.get.callCount).to.equal(1);
+  });
+
   it("reserves source token amount for pending Binance deposits", async function () {
     const reservations = await getPendingBinanceRebalanceSweepReservationsForOrder(
       { warn: sinon.stub() } as never,
