@@ -367,7 +367,10 @@ export class ProfitClient {
     const gasMultiplier = this.resolveGasMultiplier(deposit);
     tokenGasCost = tokenGasCost.mul(gasMultiplier).div(fixedPoint);
 
-    const gasCostUsd = tokenGasCost.mul(gasTokenPriceUsd).div(bn10.pow(gasToken.decimals));
+    // EVM gas is metered in wei (1e-18 base units) regardless of the native token's nominal decimals
+    // (e.g. Tempo's pathUSD is 6dp but gas is still wei). SVM meters in lamports (1e-9 SOL).
+    const gasAccountingDecimals = chainIsSvm(chainId) ? gasToken.decimals : 18;
+    const gasCostUsd = tokenGasCost.mul(gasTokenPriceUsd).div(bn10.pow(gasAccountingDecimals));
 
     const auxiliaryNativeTokenCost = this.getAuxiliaryNativeTokenCost(deposit);
     const nativeToken = this.resolveNativeToken(chainId);
