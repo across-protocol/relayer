@@ -109,6 +109,7 @@ export type BinanceAssetResolutionFailureReason =
   | "UNKNOWN_TOKEN"
   | "UNSUPPORTED_CHAIN"
   | "CONTRACT_ADDRESS_MISMATCH"
+  | "SVM_SOURCE_DEPOSIT_UNSUPPORTED"
   | "NATIVE_SOURCE_ATOMIC_DEPOSITOR_REQUIRED"
   | "DEPOSIT_DISABLED"
   | "WITHDRAW_DISABLED"
@@ -927,6 +928,8 @@ function buildAssetResolutionError(
       return `${title}\nAvailable chains for ${tokenSymbol}: ${formatChainList(getAvailableChainsForToken(accountCoins, tokenSymbol, direction)) || "none"}`;
     case "CONTRACT_ADDRESS_MISMATCH":
       return `${title}\nBinance exposes a network for ${tokenSymbol}, but its contract address does not match the token address configured in this repo on chain ${chainId}.`;
+    case "SVM_SOURCE_DEPOSIT_UNSUPPORTED":
+      return `${title}\nThis script does not yet support depositing from SVM source chains into Binance.`;
     case "NATIVE_SOURCE_ATOMIC_DEPOSITOR_REQUIRED":
       return `${title}\nNative-asset source deposits require an AtomicWethDepositor deployment and transfer proxy on ${getNetworkName(
         chainId
@@ -1161,6 +1164,10 @@ export function resolveBinanceAsset(params: {
 
   const depositMode: BinanceSourceDepositMode | undefined =
     direction === "deposit" ? (isNativeToken ? "native" : "erc20") : undefined;
+
+  if (direction === "deposit" && chainIsSvm(chainId)) {
+    return { ok: false, reason: "SVM_SOURCE_DEPOSIT_UNSUPPORTED" };
+  }
 
   if (isNativeToken) {
     const matchingCoin = accountCoins.find(

@@ -103,6 +103,19 @@ describe("swapOnBinance script helpers", function () {
     }
   });
 
+  it("rejects Solana source deposits because deposit execution is EVM-only", function () {
+    const accountCoins = [makeErc20Coin("USDC", [{ chainId: CHAIN_IDs.SOLANA }])];
+
+    const resolution = resolveBinanceAsset({
+      accountCoins,
+      tokenSymbol: "USDC",
+      chainId: CHAIN_IDs.SOLANA,
+      direction: "deposit",
+    });
+
+    expect(resolution).to.deep.equal({ ok: false, reason: "SVM_SOURCE_DEPOSIT_UNSUPPORTED" });
+  });
+
   it("rejects ERC20 routes when Binance contract metadata does not match the repo token address", function () {
     const accountCoins = [
       makeErc20Coin("USDC", [
