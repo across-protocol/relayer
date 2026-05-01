@@ -1576,8 +1576,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         cloid,
         destinationToken,
         amountToWithdraw,
-        lockedBtcValue: unlockErrorInfo.lockedBtcValue,
-        error: unlockErrorInfo.message,
+        error: unlockErrorInfo,
       });
       return false;
     }
@@ -1625,11 +1624,10 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   }
 }
 
-function getBinanceDepositUnlockErrorInfo(error: unknown): { message: string; lockedBtcValue?: string } | undefined {
+function getBinanceDepositUnlockErrorInfo(error: unknown): string | undefined {
   const message = error instanceof Error ? error.message : String(error);
   if (!message.includes("[RW00441]") && !message.includes("required unlock confirmations for withdrawal")) {
     return undefined;
   }
-  const lockedBtcValue = message.match(/deposits of ([0-9.]+) BTC in value/)?.[1];
-  return { message, lockedBtcValue };
+  return message;
 }

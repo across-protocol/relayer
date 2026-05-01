@@ -255,7 +255,8 @@ describe("Binance adapter helpers", async function () {
     expect(result).to.equal(false);
     expect(internals.binanceApiClient.withdraw.calledOnce).to.equal(true);
     expect(debug.calledOnce).to.equal(true);
-    expect(debug.getCall(0).args[0].lockedBtcValue).to.equal("2.13569561");
+    expect(debug.getCall(0).args[0].error).to.include("[RW00441]");
+    expect(debug.getCall(0).args[0].error).to.include("required unlock confirmations for withdrawal");
   });
 
   it("keeps pending WETH credit until a finalized Binance withdrawal is wrapped", async function () {
