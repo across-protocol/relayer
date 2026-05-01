@@ -202,6 +202,10 @@ accounting) and should not initiate new rebalances.
 The read-only mode still initializes adapters (with an empty route set) so `getPendingRebalances(account)` and
 `getPendingOrders()` remain available without coupling callers to a specific operational rebalancing mode.
 
+For Binance-specific finalizer accounting, read-only mode also exposes Binance adapter pending balances through
+`getPendingBinanceRebalances(recipientAddresses)`. This lets the Binance finalizer subtract positive destination-token
+pending amounts from exchange withdrawal capacity without reading adapter Redis status sets directly.
+
 The OFT and CCTP adapters also expose their pending bridge-pre-deposit Redis schema through `src/rebalancer/clients/CctpOftReadOnlyClient.ts`. Adapter-side bridge accounting uses that readonly reader to ignore rebalancer-owned OFT/CCTP transfers instead of instantiating rebalancer adapters inside `AdapterManager`.
 
 ### Future mode extensibility
@@ -246,20 +250,19 @@ Running the Rebalancer allows the relayer to support in-protocol swap flows whil
 
 ### Binance Finalizer
 
-The Binance finalizer sweeps exchange balances as a fallback path. The Binance adapter marks expected swap lifecycle transfers, and stale balances are eventually swept if swaps do not complete.
+The Binance finalizer sweeps exchange balances as a fallback path. Before withdrawing, it asks
+`ReadOnlyRebalancerClient` for Binance adapter pending rebalances and subtracts positive destination-token amounts from
+the shared exchange-account withdrawal capacity. The Binance adapter marks expected swap lifecycle transfers, and stale
+balances are eventually swept if swaps do not complete.
 
 When Binance reports `RW00441`, the account has recently credited deposit value that is not withdrawal-unlocked yet.
-The Binance adapter treats this as a retryable wait state and leaves the order pending. The Binance finalizer reads the
-adapter's pending-order Redis state and subtracts active Binance rebalance reservations from orphan sweep candidates so
-post-swap output balances are not swept while an order is waiting for Binance's deposit unlock confirmations.
-Because pending-order Redis sets are keyed by signer account and finalizer withdrawal recipients can be configured
-separately, the finalizer checks both configured EVM withdrawal recipients and the running signer account before applying
-this shared Binance-account reservation. If Redis cannot be read, the finalizer logs a warning and falls back to the
-previous orphan-sweep behavior for that run. If a Redis status set still contains a cloid but the order details have
-expired, the finalizer cannot compute a reservation amount and leaves normal orphan sweep accounting unchanged.
-For post-swap orders, the reservation uses the actual filled destination amount when Binance fill details are available;
-if those fill details are temporarily unavailable, the finalizer reserves an estimated destination amount from the
-current Binance book rather than reserving the pre-swap source token.
+The Binance adapter treats this as a retryable wait state and leaves the order pending. The Binance finalizer reads
+Binance pending rebalance amounts through `ReadOnlyRebalancerClient` so post-swap output balances are not withdrawn
+while an order is waiting for Binance's deposit unlock confirmations. Because pending-order Redis sets are keyed by
+signer account and finalizer withdrawal recipients can be configured separately, the finalizer checks both configured
+EVM withdrawal recipients and the running signer account before applying this shared Binance-account deduction. If
+read-only pending-state loading fails, the finalizer logs a warning and falls back to the previous withdrawal behavior
+for that run.
 
 ## Venue-specific operational note
 

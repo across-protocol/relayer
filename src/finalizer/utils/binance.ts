@@ -6,6 +6,7 @@ import {
   getBinanceApiClient,
   resolveAcrossToken,
   compareAddressesSimple,
+  BigNumber,
   formatUnits,
   floatToBN,
   bnZero,
@@ -24,25 +25,12 @@ import {
   BinanceTransactionType,
   getBinanceWithdrawalType,
   isCompletedBinanceWithdrawal,
-  isSameBinanceCoin,
-  getBinanceSpotMarketMetaForRoute,
-  getMatchingBinanceFillForCloid,
   resolveBinanceCoinSymbol,
-  SpotMarketMeta,
   truncate,
-  ethers,
 } from "../../utils";
-import type { Binance as BinanceApi } from "binance-api-node";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { FinalizerPromise, AddressesToFinalize } from "../types";
-import type { OrderDetails } from "../../rebalancer/utils/interfaces";
-import {
-  BINANCE_STABLECOIN_SWAP_REDIS_PREFIX,
-  getPendingBridgeStatusSetKey,
-  getRedisCacheForRebalancerStatusTracking,
-  redisGetOrderDetailsForAdapter,
-  STATUS,
-} from "../../rebalancer/utils/utils";
+import { constructReadOnlyRebalancerClient } from "../../rebalancer/RebalancerClientHelper";
 
 // Alias for a Binance deposit/withdrawal status.
 enum Status {
@@ -56,13 +44,6 @@ enum Status {
 
 // The precision of a `DECIMAL` type in the Binance API.
 const DECIMAL_PRECISION = 1_000_000;
-const BINANCE_SWEEP_BLOCKING_STATUSES = [
-  STATUS.PENDING_BRIDGE_PRE_DEPOSIT,
-  STATUS.PENDING_DEPOSIT,
-  STATUS.PENDING_SWAP,
-  STATUS.PENDING_WITHDRAWAL,
-];
-
 /**
  * Unlike other finalizers, the Binance finalizer is only used to withdraw EOA deposits on Binance.
  * This means we need to be cautious on the addresses to finalize, as a "finalization" is essentially a withdrawal
@@ -132,19 +113,10 @@ export async function binanceFinalizer(
   });
   const binanceDeposits = _binanceBridgeDeposits.filter((deposit) => deposit.status === Status.Confirmed);
   const creditedDeposits = _binanceBridgeDeposits.filter((deposit) => deposit.status === Status.Credited);
-  // Binance balances are shared across finalizer withdrawal recipients. Pending rebalance Redis state is keyed by
-  // signer account, while finalizer withdrawal recipients can be configured separately, so include the running signer
-  // in the lookup before using one symbol guard for the shared exchange account.
-  const pendingRebalanceLookupAccounts = getEvmBinanceRebalanceLookupAccounts(
-    Object.keys(senderAddresses),
-    await hubSigner.getAddress()
-  );
-  const sharedBinanceAccountReservedRebalanceAmounts = sumPendingBinanceRebalanceSweepReservations(
-    await Promise.all(
-      pendingRebalanceLookupAccounts.map((account) =>
-        getPendingBinanceRebalanceSweepReservationsForAccount(logger, account, binanceApi)
-      )
-    )
+  const pendingBinanceRebalanceDeductions = await getPendingBinanceRebalanceDeductions(
+    logger,
+    hubSigner,
+    Object.keys(senderAddresses)
   );
 
   // We can run this in parallel since deposits for each tokens are independent of each other.
@@ -207,6 +179,7 @@ export async function binanceFinalizer(
         // the lookback windows used to query deposits and withdrawals, so we require this value to be > bnZero.
         const _amountToFinalize = depositAmounts.sub(withdrawalAmounts);
         let amountToFinalize = _amountToFinalize.gt(bnZero) ? Number(formatUnits(_amountToFinalize, l1Decimals)) : 0;
+        const pendingRebalanceDeduction = pendingBinanceRebalanceDeductions[resolveBinanceCoinSymbol(symbol)] ?? 0;
 
         logger.debug({
           at: "BinanceFinalizer",
@@ -214,6 +187,7 @@ export async function binanceFinalizer(
           totalDepositedAmount: formatUnits(depositAmounts, l1Decimals),
           withdrawalAmount: formatUnits(withdrawalAmounts, l1Decimals),
           amountToFinalize,
+          pendingRebalanceDeduction,
         });
         // Additionally, binance imposes a minimum amount to withdraw. If the amount we want to finalize is less than the minimum, then
         // do not attempt to withdraw anything. Likewise, if the amount we want to withdraw is greater than the maximum, then warn and withdraw the maximum amount.
@@ -237,10 +211,18 @@ export async function binanceFinalizer(
         }
         // If the amount we can finalize is above the withdraw minimum for this network, and if the amount to finalize is within the amount of our balance which corresponds to _finalized_ not credited
         // deposits, then we can continue.
-        amountToFinalize = Math.min(
-          Number((coinBalance - creditedDepositAmount).toFixed(l1Decimals)),
-          amountToFinalize
-        );
+        const availableCoinBalance = Math.max(coinBalance - creditedDepositAmount - pendingRebalanceDeduction, 0);
+        amountToFinalize = Math.min(Number(availableCoinBalance.toFixed(l1Decimals)), amountToFinalize);
+        if (pendingRebalanceDeduction > 0) {
+          logger.debug({
+            at: "BinanceFinalizer",
+            message: `Reducing ${symbol} withdrawal capacity for ${address} by pending Binance rebalance amount.`,
+            pendingRebalanceDeduction,
+            amountToFinalize,
+            availableCoinBalance,
+            pendingBinanceRebalanceDeductions,
+          });
+        }
         if (amountToFinalize >= Number(networkLimits.withdrawMin)) {
           // Lastly, we need to truncate the amount to withdraw to 6 decimal places.
           amountToFinalize = Math.floor(amountToFinalize * DECIMAL_PRECISION) / DECIMAL_PRECISION;
@@ -271,21 +253,19 @@ export async function binanceFinalizer(
           // If the confirmed coin balance minus any pending swap balances is greater than the withdraw minimum, and there is
           // nothing to withdraw in this lookback window, then we should try to sweep the balance to L1.
           if (withdrawNetwork === BINANCE_NETWORKS[hubChainId]) {
-            const reservedRebalanceAmount =
-              sharedBinanceAccountReservedRebalanceAmounts[resolveBinanceCoinSymbol(symbol)] ?? 0;
             const coinBalanceMinusSwapDeposits = getSweepableOrphanBinanceBalance(
               coinBalance,
               creditedDepositAmount,
               binanceSwapDepositAmount[symbol] ?? 0,
-              reservedRebalanceAmount
+              pendingRebalanceDeduction
             );
-            if (reservedRebalanceAmount > 0) {
+            if (pendingRebalanceDeduction > 0) {
               logger.debug({
                 at: "BinanceFinalizer",
                 message: `Reducing orphaned ${symbol} sweep candidate for ${address} by pending Binance rebalance amount.`,
-                reservedRebalanceAmount,
+                pendingRebalanceDeduction,
                 coinBalanceMinusSwapDeposits,
-                reservedRebalanceAmounts: sharedBinanceAccountReservedRebalanceAmounts,
+                pendingBinanceRebalanceDeductions,
               });
             }
             if (coinBalanceMinusSwapDeposits >= Number(networkLimits.withdrawMin)) {
@@ -329,219 +309,46 @@ export function getSweepableOrphanBinanceBalance(
   coinBalance: number,
   creditedDepositAmount: number,
   swapDepositAmount: number,
-  reservedRebalanceAmount = 0
+  pendingRebalanceDeduction = 0
 ): number {
-  return Math.max(coinBalance - creditedDepositAmount - swapDepositAmount - reservedRebalanceAmount, 0);
+  return Math.max(coinBalance - creditedDepositAmount - swapDepositAmount - pendingRebalanceDeduction, 0);
 }
 
-type PendingBinanceRebalanceSweepReservations = Record<string, number>;
-type BinanceRebalanceReservationApi = Parameters<typeof getMatchingBinanceFillForCloid>[0] &
-  Parameters<typeof getBinanceSpotMarketMetaForRoute>[0] &
-  Pick<BinanceApi, "book">;
-const CONSERVATIVE_UNKNOWN_DESTINATION_RESERVATION = Number.MAX_SAFE_INTEGER;
-
-export function sumPendingBinanceRebalanceSweepReservations(
-  reservations: PendingBinanceRebalanceSweepReservations[]
-): PendingBinanceRebalanceSweepReservations {
-  return reservations.reduce<PendingBinanceRebalanceSweepReservations>((acc, reservation) => {
-    for (const [symbol, amount] of Object.entries(reservation)) {
-      acc[symbol] = (acc[symbol] ?? 0) + amount;
-    }
-    return acc;
-  }, {});
-}
-
-function addPendingBinanceRebalanceSweepReservation(
-  reservations: PendingBinanceRebalanceSweepReservations,
-  symbol: string,
-  amount: number
-): void {
-  const binanceSymbol = resolveBinanceCoinSymbol(symbol);
-  reservations[binanceSymbol] = (reservations[binanceSymbol] ?? 0) + amount;
-}
-
-function getReadableOrderAmount(order: Pick<OrderDetails, "sourceToken" | "sourceChain" | "amountToTransfer">): number {
-  const { decimals } = getTokenInfo(
-    EvmAddress.from(resolveAcrossToken(order.sourceToken, order.sourceChain, true)),
-    order.sourceChain
-  );
-  return Number(formatUnits(order.amountToTransfer, decimals));
-}
-
-async function getEstimatedDestinationReservationAmount(
-  binanceApi: Pick<BinanceApi, "book">,
-  spotMarketMeta: SpotMarketMeta,
-  sourceAmount: number
-): Promise<number> {
-  const book = await binanceApi.book({ symbol: spotMarketMeta.symbol, limit: 5 });
-  const topLevel = spotMarketMeta.isBuy ? book.asks[0] : book.bids[0];
-  assert(isDefined(topLevel), `Order book is empty for ${spotMarketMeta.symbol}`);
-  const bestPrice = Number(topLevel.price);
-  assert(bestPrice > 0, `Invalid best price ${topLevel.price} for ${spotMarketMeta.symbol}`);
-  return spotMarketMeta.isBuy ? sourceAmount / bestPrice : sourceAmount * bestPrice;
-}
-
-export function getEvmBinanceRebalanceLookupAccounts(addresses: string[], signerAddress?: string): EvmAddress[] {
-  const seenAddresses = new Set<string>();
-  return [...addresses, signerAddress]
-    .filter(isDefined)
-    .filter((address) => ethers.utils.isAddress(address))
-    .map((address) => EvmAddress.from(address))
-    .filter((address) => {
-      const normalizedAddress = address.toNative();
-      if (seenAddresses.has(normalizedAddress)) {
-        return false;
-      }
-      seenAddresses.add(normalizedAddress);
-      return true;
-    })
-    .filter(isDefined);
-}
-
-export async function getPendingBinanceRebalanceSweepReservationsForAccount(
+async function getPendingBinanceRebalanceDeductions(
   logger: winston.Logger,
-  account: EvmAddress,
-  binanceApi: BinanceRebalanceReservationApi,
-  getRedisCache = getRedisCacheForRebalancerStatusTracking
-): Promise<PendingBinanceRebalanceSweepReservations> {
+  hubSigner: Signer,
+  recipientAddresses: string[]
+): Promise<Record<string, number>> {
   try {
-    const redisCache = await getRedisCache(logger);
-    if (!isDefined(redisCache)) {
-      return {};
-    }
-
-    const pendingStatusEntries = (
-      await Promise.all(
-        BINANCE_SWEEP_BLOCKING_STATUSES.map(async (status) => {
-          const statusSetKey = getPendingBridgeStatusSetKey(
-            BINANCE_STABLECOIN_SWAP_REDIS_PREFIX,
-            status,
-            account.toNative()
-          );
-          const cloids = await redisCache.sMembers(statusSetKey);
-          return cloids.map((cloid) => ({ cloid, status, statusSetKey }));
-        })
-      )
-    ).flat();
-    const pendingStatusEntryByCloid = new Map<string, { cloid: string; status: STATUS; statusSetKey: string }>();
-    for (const pendingStatusEntry of pendingStatusEntries) {
-      const existingEntry = pendingStatusEntryByCloid.get(pendingStatusEntry.cloid);
-      if (
-        !isDefined(existingEntry) ||
-        getBinanceSweepBlockingStatusPriority(pendingStatusEntry.status) >
-          getBinanceSweepBlockingStatusPriority(existingEntry.status)
-      ) {
-        pendingStatusEntryByCloid.set(pendingStatusEntry.cloid, pendingStatusEntry);
-      }
-    }
-
-    const reservations = (
-      await Promise.all(
-        [...pendingStatusEntryByCloid.values()].map(async ({ cloid, status, statusSetKey }) => {
-          const order = await redisGetOrderDetailsForAdapter(
-            redisCache,
-            BINANCE_STABLECOIN_SWAP_REDIS_PREFIX,
-            cloid,
-            account
-          );
-          if (!isDefined(order)) {
-            logger.warn({
-              at: "BinanceFinalizer",
-              message:
-                "Found pending Binance rebalance status without order details; cannot reserve an amount for orphan sweep accounting.",
-              account: account.toNative(),
-              cloid,
-              statusSetKey,
-            });
-            return {};
-          }
-          return getPendingBinanceRebalanceSweepReservationsForOrder(logger, binanceApi, cloid, status, order);
-        })
-      )
-    ).filter(isDefined);
-
-    return sumPendingBinanceRebalanceSweepReservations(reservations);
+    const readOnlyRebalancerClient = await constructReadOnlyRebalancerClient(logger, hubSigner);
+    return getPositivePendingRebalanceAmountsByBinanceCoin(
+      await readOnlyRebalancerClient.getPendingBinanceRebalances(recipientAddresses)
+    );
   } catch (error) {
     logger.warn({
       at: "BinanceFinalizer",
-      message: "Unable to load pending Binance rebalance state from Redis; continuing without this sweep guard.",
-      account: account.toNative(),
+      message:
+        "Unable to load pending Binance rebalance amounts through ReadOnlyRebalancerClient; continuing without this deduction.",
       error: error instanceof Error ? error.message : String(error),
     });
     return {};
   }
 }
 
-function getBinanceSweepBlockingStatusPriority(status: STATUS): number {
-  return BINANCE_SWEEP_BLOCKING_STATUSES.indexOf(status);
-}
-
-export async function getPendingBinanceRebalanceSweepReservationsForOrder(
-  logger: winston.Logger,
-  binanceApi: BinanceRebalanceReservationApi,
-  cloid: string,
-  status: STATUS,
-  order: OrderDetails
-): Promise<PendingBinanceRebalanceSweepReservations> {
-  const reservations: PendingBinanceRebalanceSweepReservations = {};
-  if (status === STATUS.PENDING_BRIDGE_PRE_DEPOSIT) {
-    return reservations;
-  }
-
-  const sourceAmount = getReadableOrderAmount(order);
-  const routeRequiresSwap = !isSameBinanceCoin(order.sourceToken, order.destinationToken);
-  if (!routeRequiresSwap || status === STATUS.PENDING_DEPOSIT) {
-    addPendingBinanceRebalanceSweepReservation(reservations, order.sourceToken, sourceAmount);
-    return reservations;
-  }
-
-  let spotMarketMeta: SpotMarketMeta | undefined;
-  try {
-    spotMarketMeta = await getBinanceSpotMarketMetaForRoute(binanceApi, order.sourceToken, order.destinationToken);
-    const matchingFill = await getMatchingBinanceFillForCloid(binanceApi, cloid, spotMarketMeta);
-    if (matchingFill) {
-      addPendingBinanceRebalanceSweepReservation(
-        reservations,
-        order.destinationToken,
-        matchingFill.expectedAmountToReceive
-      );
-      return reservations;
+export function getPositivePendingRebalanceAmountsByBinanceCoin(pendingRebalances: {
+  [chainId: number]: { [token: string]: BigNumber };
+}): Record<string, number> {
+  const totals: Record<string, number> = {};
+  for (const [_chainId, tokenBalances] of Object.entries(pendingRebalances)) {
+    const chainId = Number(_chainId);
+    for (const [token, amount] of Object.entries(tokenBalances)) {
+      if (amount.lte(bnZero)) {
+        continue;
+      }
+      const { decimals } = getTokenInfo(EvmAddress.from(resolveAcrossToken(token, chainId, true)), chainId);
+      const binanceCoin = resolveBinanceCoinSymbol(token);
+      totals[binanceCoin] = (totals[binanceCoin] ?? 0) + Number(formatUnits(amount, decimals));
     }
-  } catch (error) {
-    logger.warn({
-      at: "BinanceFinalizer",
-      message: "Unable to load Binance fill details for pending rebalance; reserving estimated destination amount.",
-      cloid,
-      sourceToken: order.sourceToken,
-      destinationToken: order.destinationToken,
-      error: error instanceof Error ? error.message : String(error),
-    });
   }
-
-  try {
-    spotMarketMeta ??= await getBinanceSpotMarketMetaForRoute(binanceApi, order.sourceToken, order.destinationToken);
-    addPendingBinanceRebalanceSweepReservation(
-      reservations,
-      order.destinationToken,
-      await getEstimatedDestinationReservationAmount(binanceApi, spotMarketMeta, sourceAmount)
-    );
-    return reservations;
-  } catch (error) {
-    logger.warn({
-      at: "BinanceFinalizer",
-      message:
-        "Unable to estimate Binance destination amount for pending rebalance; reserving destination token conservatively.",
-      cloid,
-      sourceToken: order.sourceToken,
-      destinationToken: order.destinationToken,
-      error: error instanceof Error ? error.message : String(error),
-    });
-  }
-
-  addPendingBinanceRebalanceSweepReservation(
-    reservations,
-    order.destinationToken,
-    CONSERVATIVE_UNKNOWN_DESTINATION_RESERVATION
-  );
-  return reservations;
+  return totals;
 }
