@@ -36,6 +36,7 @@ const { getAddress } = ethersUtils;
 const { isDepositSpedUp, isMessageEmpty, resolveDepositMessage } = sdkUtils;
 const UNPROFITABLE_DEPOSIT_NOTICE_PERIOD = 60 * 60; // 1 hour
 const RELAYER_DEPOSIT_RATE_LIMIT = 25;
+const RELAYER_DEPOSITOR_RATE_LIMIT = 10;
 const HUB_SPOKE_BLOCK_LAG = 2; // Permit SpokePool timestamps to be ahead of the HubPool by 2 HubPool blocks.
 const SPOKEPOOL_EVENTS = [
   "FundsDeposited",
@@ -901,6 +902,7 @@ export class Relayer {
   }
 
   async checkForUnfilledDepositsAndFill(simulate = false): Promise<{ [chainId: number]: Promise<string[]> }> {
+    const at = "Relayer::checkForUnfilledDepositsAndFill";
     const { hubPoolClient, profitClient, spokePoolClients, tokenClient, multiCallerClient, tryMulticallClient } =
       this.clients;
 
@@ -927,10 +929,7 @@ export class Relayer {
       .flat()
       .map(({ deposit }) => deposit);
 
-    this.logger.debug({
-      at: "Relayer::checkForUnfilledDepositsAndFill",
-      message: `${allUnfilledDeposits.length} unfilled deposits found.`,
-    });
+    this.logger.debug({ at, message: `${allUnfilledDeposits.length} unfilled deposits found.` });
     if (allUnfilledDeposits.length === 0) {
       return txnReceipts;
     }
@@ -950,7 +949,10 @@ export class Relayer {
       // In looping mode, limit the number of deposits per chain per loop. This is an anti-spam mechanism that avoids
       // an activity surge on any single chain from significantly degrading overall performance. When running in
       // single-shot mode (pollingDelay 0), do not limit. This permits sweeper instances to work correctly.
-      const depositLimit = this.config.pollingDelay === 0 ? deposits.length : RELAYER_DEPOSIT_RATE_LIMIT;
+      const { pollingDelay } = this.config;
+      const applyRateLimit = pollingDelay > 0;
+      const depositLimit = applyRateLimit ? RELAYER_DEPOSIT_RATE_LIMIT : deposits.length;
+      const originDepositors: { [originChainId: number]: { [depositor: string]: number } } = {};
       const unfilledDeposits = deposits
         .map((deposit, idx) => ({ ...deposit, fillStatus: fillStatus[idx] }))
         .filter(({ fillStatus, ...deposit }) => {
@@ -958,6 +960,24 @@ export class Relayer {
           const depositHash = spokePoolClients[deposit.destinationChainId].getDepositHash(deposit);
           this.fillStatus[depositHash] = fillStatus;
           return fillStatus !== FillStatus.Filled;
+        })
+        .filter(({ originChainId, depositor }) => {
+          if (!applyRateLimit) {
+            return true;
+          }
+
+          // Restrict the number of concurrent deposits that a depositor can force the relayer to evaluate per loop.
+          const depositorAddr = depositor.toNative();
+          originDepositors[originChainId] ??= {};
+          originDepositors[originChainId][depositorAddr] ??= 0;
+          const nDeposits = ++originDepositors[originChainId][depositorAddr];
+          if (nDeposits === RELAYER_DEPOSITOR_RATE_LIMIT + 1) {
+            const origin = getNetworkName(originChainId);
+            const message = `Rate-limiting ${origin} depositor ${depositor} due to perceived deposit spam.`;
+            this.logger.warn({ at, message });
+          }
+
+          return nDeposits <= RELAYER_DEPOSITOR_RATE_LIMIT;
         })
         .slice(0, depositLimit);
 
