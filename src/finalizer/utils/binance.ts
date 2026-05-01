@@ -126,10 +126,18 @@ export async function binanceFinalizer(
   });
   const binanceDeposits = _binanceBridgeDeposits.filter((deposit) => deposit.status === Status.Confirmed);
   const creditedDeposits = _binanceBridgeDeposits.filter((deposit) => deposit.status === Status.Credited);
+  const pendingRebalanceSymbols = new Set(
+    (
+      await Promise.all(
+        Object.keys(senderAddresses).map(async (address) => [
+          ...(await getPendingBinanceRebalanceSymbolsForAccount(logger, EvmAddress.from(address))),
+        ])
+      )
+    ).flat()
+  );
 
   // We can run this in parallel since deposits for each tokens are independent of each other.
   await mapAsync(Object.entries(senderAddresses), async ([address, symbols]) => {
-    const pendingRebalanceSymbols = await getPendingBinanceRebalanceSymbolsForAccount(logger, EvmAddress.from(address));
     for (const symbol of symbols) {
       const coin = accountCoins.find((coin) => coin.symbol === symbol);
       if (!isDefined(coin)) {
