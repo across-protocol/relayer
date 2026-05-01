@@ -447,7 +447,7 @@ describe("swapOnBinance script helpers", function () {
     sinon
       .stub(BinanceUtils, "getBinanceWithdrawals")
       .onCall(0)
-      .resolves([makeWithdrawal({ id: "withdraw-1", status: BINANCE_WITHDRAWAL_STATUS.PROCESSING })])
+      .resolves([makeWithdrawal({ id: "withdraw-1", status: BINANCE_WITHDRAWAL_STATUS.PROCESSING, txId: "" })])
       .onCall(1)
       .resolves([makeWithdrawal({ id: "withdraw-1", status: BINANCE_WITHDRAWAL_STATUS.COMPLETED, txId: "0xdef" })]);
 
@@ -673,7 +673,7 @@ function makeWithdrawal({ id, status, txId }: { id: string; status: number; txId
     coin: "USDC",
     network: "BASE",
     recipient: "0x1111111111111111111111111111111111111111",
-    ...(txId ? { txId } : {}),
+    ...(txId !== undefined ? { txId } : {}),
     transactionFee: 0.1,
     applyTime: new Date().toISOString(),
     status,

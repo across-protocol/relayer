@@ -1691,7 +1691,7 @@ export async function waitForBinanceWithdrawalCompletion(params: {
         )}`
       );
     }
-    if (withdrawal?.status === BINANCE_WITHDRAWAL_STATUS.COMPLETED || isDefined(withdrawal?.txId)) {
+    if (withdrawal?.status === BINANCE_WITHDRAWAL_STATUS.COMPLETED) {
       return {
         attempts,
         observedCompletedAtMs: Date.now(),
