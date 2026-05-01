@@ -260,15 +260,6 @@ export async function binanceFinalizer(
               binanceSwapDepositAmount[symbol] ?? 0,
               pendingRebalanceDeduction
             );
-            if (pendingRebalanceDeduction > 0) {
-              logger.debug({
-                at: "BinanceFinalizer",
-                message: `Reducing orphaned ${symbol} sweep candidate for ${address} by pending Binance rebalance amount.`,
-                pendingRebalanceDeduction,
-                coinBalanceMinusSwapDeposits,
-                pendingBinanceRebalanceDeductions,
-              });
-            }
             if (coinBalanceMinusSwapDeposits >= Number(networkLimits.withdrawMin)) {
               const withdrawMax = Number(networkLimits.withdrawMax);
               const cappedWithdraw = Math.min(coinBalanceMinusSwapDeposits, withdrawMax);
@@ -278,6 +269,7 @@ export async function binanceFinalizer(
                 coinBalance,
                 creditedDepositAmount,
                 swapDepositAmount: binanceSwapDepositAmount[symbol] ?? 0,
+                pendingRebalanceDeduction,
               });
               // Lastly, we need to truncate the amount to withdraw to 6 decimal places
               const amountToSweep = truncate(cappedWithdraw, 6);
