@@ -660,6 +660,15 @@ export function validateDeposit(
   const inputTokenInfo = getTokenInfo(inputToken, originChainId);
   const outputTokenInfo = getTokenInfo(outputToken, destinationChainId);
 
+  const inputAmountInOutputTokenDecimals = ConvertDecimals(
+    inputTokenInfo.decimals,
+    outputTokenInfo.decimals
+  )(inputAmount);
+  // If the input amount is less than the output amount, reject unless refund-flow test is enabled and outputAmount === MAX_UINT_VAL.
+  if (inputAmountInOutputTokenDecimals.lt(outputAmount)) {
+    return allowRefundFlowTest ? outputAmount.eq(MAX_UINT_VAL) : false;
+  }
+
   if (isDefined(logger) && depositUsdPageThreshold > 0 && isStablecoin(inputToken, originChainId)) {
     const thresholdBn = toBNWei(depositUsdPageThreshold, inputTokenInfo.decimals);
     if (inputAmount.gt(thresholdBn)) {
@@ -674,15 +683,6 @@ export function validateDeposit(
         inputAmount: inputAmount.toString(),
       });
     }
-  }
-
-  const inputAmountInOutputTokenDecimals = ConvertDecimals(
-    inputTokenInfo.decimals,
-    outputTokenInfo.decimals
-  )(inputAmount);
-  // If the input amount is less than the output amount, reject unless refund-flow test is enabled and outputAmount === MAX_UINT_VAL.
-  if (inputAmountInOutputTokenDecimals.lt(outputAmount)) {
-    return allowRefundFlowTest ? outputAmount.eq(MAX_UINT_VAL) : false;
   }
 
   return true;
