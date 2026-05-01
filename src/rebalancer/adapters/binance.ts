@@ -1566,8 +1566,8 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         transactionFeeFlag: false,
       });
     } catch (error) {
-      const unlockErrorInfo = getBinanceDepositUnlockErrorInfo(error);
-      if (!unlockErrorInfo) {
+      const unlockErrorMessage = getBinanceDepositUnlockErrorMessage(error);
+      if (!unlockErrorMessage) {
         throw error;
       }
       this.logger.debug({
@@ -1576,7 +1576,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         cloid,
         destinationToken,
         amountToWithdraw,
-        error: unlockErrorInfo,
+        error: unlockErrorMessage,
       });
       return false;
     }
@@ -1624,10 +1624,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   }
 }
 
-function getBinanceDepositUnlockErrorInfo(error: unknown): string | undefined {
+function getBinanceDepositUnlockErrorMessage(error: unknown): string | undefined {
   const message = error instanceof Error ? error.message : String(error);
-  if (!message.includes("[RW00441]") && !message.includes("required unlock confirmations for withdrawal")) {
-    return undefined;
-  }
-  return message;
+  return message.startsWith("[RW00441]") ? message : undefined;
 }
