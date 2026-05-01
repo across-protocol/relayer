@@ -2,6 +2,7 @@ import Binance, {
   DepositHistoryResponse,
   WithdrawHistoryResponse,
   OrderType_LT,
+  QueryOrderResult,
   Symbol,
   type Binance as BinanceApi,
 } from "binance-api-node";
@@ -34,6 +35,8 @@ export type SpotMarketMeta = {
 };
 
 type BinanceTradeReader = Pick<BinanceApi, "myTrades">;
+type BinanceOrderReader = Pick<BinanceApi, "allOrders">;
+type BinanceExchangeInfoReader = Pick<BinanceApi, "exchangeInfo">;
 type FillCommissionMarketMeta = Pick<SpotMarketMeta, "symbol" | "baseAssetName" | "quoteAssetName" | "isBuy">;
 
 // Alias for Binance network symbols.
@@ -393,6 +396,42 @@ export async function getFillCommission(
       acc + (resolveBinanceCoinSymbol(trade.commissionAsset) === receivedAsset ? Number(trade.commission) : 0),
     0
   );
+}
+
+export async function getMatchingBinanceFillForCloid(
+  binanceApi: BinanceOrderReader & BinanceTradeReader,
+  cloid: string,
+  spotMarketMeta: SpotMarketMeta
+): Promise<{ matchingFill: QueryOrderResult; expectedAmountToReceive: number } | undefined> {
+  const allOrders = await binanceApi.allOrders({
+    symbol: spotMarketMeta.symbol,
+  });
+  const matchingFill = allOrders.find((order) => order.clientOrderId === cloid && order.status === "FILLED");
+  if (!matchingFill) {
+    return undefined;
+  }
+  const grossExpectedAmountToReceive = spotMarketMeta.isBuy
+    ? matchingFill.executedQty
+    : matchingFill.cummulativeQuoteQty;
+  const fillCommission = await getFillCommission(binanceApi, spotMarketMeta, matchingFill.orderId);
+  return { matchingFill, expectedAmountToReceive: Number(grossExpectedAmountToReceive) - fillCommission };
+}
+
+export async function getBinanceSpotMarketMetaForRoute(
+  binanceApi: BinanceExchangeInfoReader,
+  sourceToken: string,
+  destinationToken: string
+): Promise<SpotMarketMeta> {
+  const sourceAsset = resolveBinanceCoinSymbol(sourceToken);
+  const destinationAsset = resolveBinanceCoinSymbol(destinationToken);
+  const exchangeInfo = await binanceApi.exchangeInfo();
+  const symbol = exchangeInfo.symbols.find((symbols) => {
+    return (
+      symbols.symbol === `${sourceAsset}${destinationAsset}` || symbols.symbol === `${destinationAsset}${sourceAsset}`
+    );
+  });
+  assert(isDefined(symbol), `No market found for ${sourceAsset} and ${destinationAsset}`);
+  return deriveBinanceSpotMarketMeta(sourceToken, destinationToken, symbol);
 }
 
 /**

@@ -19,11 +19,12 @@ import {
   getAccountCoins,
   getBinanceDepositUnlockErrorInfo,
   getBinanceApiClient,
-  getFillCommission,
+  getBinanceSpotMarketMetaForRoute,
   getBinanceTransactionTypeKey,
   isFailedBinanceWithdrawal,
   isSameBinanceCoin,
   isTerminalBinanceWithdrawal,
+  getMatchingBinanceFillForCloid,
   getBinanceWithdrawals,
   getCurrentTime,
   getNetworkName,
@@ -42,7 +43,6 @@ import {
   truncate,
   usesBinanceAtomicDepositorTransfer,
   winston,
-  deriveBinanceSpotMarketMeta,
   convertBinanceRouteAmount,
 } from "../../utils";
 import { OrderDetails, RebalanceRoute } from "../utils/interfaces";
@@ -1289,9 +1289,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       return existingPromise;
     }
 
-    const promise = this._getSymbol(sourceToken, destinationToken).then((symbol) =>
-      deriveBinanceSpotMarketMeta(sourceToken, destinationToken, symbol)
-    );
+    const promise = getBinanceSpotMarketMetaForRoute(this.binanceApiClient, sourceToken, destinationToken);
     this.spotMarketMetaPromiseByRoute.set(routeName, promise);
     void promise.finally(() => {
       if (this.spotMarketMetaPromiseByRoute.get(routeName) === promise) {
@@ -1384,19 +1382,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       orderDetails.sourceToken,
       orderDetails.destinationToken
     );
-    const allOrders = await this.binanceApiClient.allOrders({
-      symbol: spotMarketMeta.symbol,
-    });
-    const matchingFill = allOrders.find((order) => order.clientOrderId === cloid && order.status === "FILLED");
-    if (!matchingFill) {
-      return undefined;
-    }
-    const grossExpectedAmountToReceive = spotMarketMeta.isBuy
-      ? matchingFill.executedQty
-      : matchingFill.cummulativeQuoteQty;
-    const fillCommission = await getFillCommission(this.binanceApiClient, spotMarketMeta, matchingFill.orderId);
-    const expectedAmountToReceive = Number(grossExpectedAmountToReceive) - fillCommission;
-    return { matchingFill, expectedAmountToReceive };
+    return getMatchingBinanceFillForCloid(this.binanceApiClient, cloid, spotMarketMeta);
   }
 
   private _routeRequiresSwap(sourceToken: string, destinationToken: string): boolean {

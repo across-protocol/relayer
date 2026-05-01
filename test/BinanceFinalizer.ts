@@ -1,37 +1,32 @@
 import { expect, sinon } from "./utils";
 import {
   getEvmBinanceRebalanceLookupAccounts,
-  hasPendingBinanceRebalanceForSymbol,
-  getPendingBinanceRebalanceSymbolsForAccount,
-  getPendingBinanceRebalanceSymbols,
+  getPendingBinanceRebalanceSweepReservationsForAccount,
+  getPendingBinanceRebalanceSweepReservationsForOrder,
   getSweepableOrphanBinanceBalance,
+  sumPendingBinanceRebalanceSweepReservations,
 } from "../src/finalizer/utils/binance";
-import { EvmAddress } from "../src/utils";
+import { CHAIN_IDs, EvmAddress, toBNWei } from "../src/utils";
+import { STATUS } from "../src/rebalancer/utils/utils";
 
 describe("Binance finalizer helpers", function () {
   afterEach(function () {
     sinon.restore();
   });
 
-  it("collects Binance symbols from pending rebalancer orders", function () {
-    const symbols = getPendingBinanceRebalanceSymbols([
-      {
-        sourceToken: "USDT",
-        destinationToken: "USDC",
-      },
-      {
-        sourceToken: "WETH",
-        destinationToken: "USDT",
-      },
+  it("sums Binance sweep reservations by symbol", function () {
+    const reservations = sumPendingBinanceRebalanceSweepReservations([
+      { USDC: 100, USDT: 50 },
+      { USDC: 25, ETH: 1 },
     ]);
 
-    expect([...symbols].sort()).to.deep.equal(["ETH", "USDC", "USDT"]);
+    expect(reservations).to.deep.equal({ USDC: 125, USDT: 50, ETH: 1 });
   });
 
-  it("subtracts credited and swap deposits from orphan sweep candidates", function () {
-    const sweepableBalance = getSweepableOrphanBinanceBalance(250_000, 10_000, 20_000);
+  it("subtracts credited, swap, and reserved rebalance amounts from orphan sweep candidates", function () {
+    const sweepableBalance = getSweepableOrphanBinanceBalance(250_000, 10_000, 20_000, 30_000);
 
-    expect(sweepableBalance).to.equal(220_000);
+    expect(sweepableBalance).to.equal(190_000);
   });
 
   it("skips non-EVM addresses when collecting pending rebalance accounts", function () {
@@ -60,9 +55,14 @@ describe("Binance finalizer helpers", function () {
     const account = EvmAddress.from("0x0000000000000000000000000000000000000001");
     const getRedisCache = sinon.stub().rejects(new Error("temporary redis outage"));
 
-    const symbols = await getPendingBinanceRebalanceSymbolsForAccount(logger as never, account, getRedisCache);
+    const reservations = await getPendingBinanceRebalanceSweepReservationsForAccount(
+      logger as never,
+      account,
+      {} as never,
+      getRedisCache
+    );
 
-    expect([...symbols]).to.deep.equal([]);
+    expect(reservations).to.deep.equal({});
     expect(logger.warn.calledOnce).to.equal(true);
     expect(logger.warn.firstCall.args[0]).to.include({
       at: "BinanceFinalizer",
@@ -71,7 +71,7 @@ describe("Binance finalizer helpers", function () {
     });
   });
 
-  it("preserves the sweep guard when pending order details have expired", async function () {
+  it("does not reserve sweep amounts when pending order details have expired", async function () {
     const logger = { warn: sinon.stub() };
     const account = EvmAddress.from("0x0000000000000000000000000000000000000001");
     const redisCache = {
@@ -82,13 +82,14 @@ describe("Binance finalizer helpers", function () {
     redisCache.sMembers.onFirstCall().resolves(["missing-cloid"]);
     redisCache.sMembers.resolves([]);
 
-    const symbols = await getPendingBinanceRebalanceSymbolsForAccount(
+    const reservations = await getPendingBinanceRebalanceSweepReservationsForAccount(
       logger as never,
       account,
+      {} as never,
       async () => redisCache as never
     );
 
-    expect(hasPendingBinanceRebalanceForSymbol("USDC", symbols)).to.equal(true);
+    expect(reservations).to.deep.equal({});
     expect(redisCache.sRem.notCalled).to.equal(true);
     expect(logger.warn.calledOnce).to.equal(true);
     expect(logger.warn.firstCall.args[0]).to.include({
@@ -96,5 +97,67 @@ describe("Binance finalizer helpers", function () {
       account: account.toNative(),
       cloid: "missing-cloid",
     });
+  });
+
+  it("reserves source token amount for pending Binance deposits", async function () {
+    const reservations = await getPendingBinanceRebalanceSweepReservationsForOrder(
+      { warn: sinon.stub() } as never,
+      {} as never,
+      "cloid",
+      STATUS.PENDING_DEPOSIT,
+      {
+        sourceChain: CHAIN_IDs.MAINNET,
+        sourceToken: "USDT",
+        destinationChain: CHAIN_IDs.MAINNET,
+        destinationToken: "USDC",
+        amountToTransfer: toBNWei("100", 6),
+      }
+    );
+
+    expect(reservations).to.deep.equal({ USDT: 100 });
+  });
+
+  it("reserves filled destination token amount for pending Binance swaps", async function () {
+    const binanceApi = {
+      exchangeInfo: sinon.stub().resolves({
+        symbols: [
+          {
+            symbol: "USDCUSDT",
+            baseAsset: "USDC",
+            quoteAsset: "USDT",
+            filters: [
+              { filterType: "PRICE_FILTER", tickSize: "0.0001" },
+              { filterType: "LOT_SIZE", stepSize: "1.00000000", minQty: "1.00000000" },
+            ],
+          },
+        ],
+      }),
+      allOrders: sinon.stub().resolves([
+        {
+          clientOrderId: "cloid",
+          status: "FILLED",
+          orderId: 123,
+          executedQty: "100",
+          cummulativeQuoteQty: "100.1",
+        },
+      ]),
+      myTrades: sinon.stub().resolves([{ commission: "1", commissionAsset: "USDC" }]),
+    };
+
+    const reservations = await getPendingBinanceRebalanceSweepReservationsForOrder(
+      { warn: sinon.stub() } as never,
+      binanceApi as never,
+      "cloid",
+      STATUS.PENDING_SWAP,
+      {
+        sourceChain: CHAIN_IDs.MAINNET,
+        sourceToken: "USDT",
+        destinationChain: CHAIN_IDs.MAINNET,
+        destinationToken: "USDC",
+        amountToTransfer: toBNWei("100", 6),
+      }
+    );
+
+    expect(reservations).to.deep.equal({ USDC: 99 });
   });
 });

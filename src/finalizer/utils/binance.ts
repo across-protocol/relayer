@@ -24,6 +24,9 @@ import {
   BinanceTransactionType,
   getBinanceWithdrawalType,
   isCompletedBinanceWithdrawal,
+  isSameBinanceCoin,
+  getBinanceSpotMarketMetaForRoute,
+  getMatchingBinanceFillForCloid,
   resolveBinanceCoinSymbol,
   truncate,
   ethers,
@@ -57,7 +60,6 @@ const BINANCE_SWEEP_BLOCKING_STATUSES = [
   STATUS.PENDING_SWAP,
   STATUS.PENDING_WITHDRAWAL,
 ];
-export const UNKNOWN_PENDING_BINANCE_REBALANCE_SYMBOL = "UNKNOWN_PENDING_BINANCE_REBALANCE";
 
 /**
  * Unlike other finalizers, the Binance finalizer is only used to withdraw EOA deposits on Binance.
@@ -135,14 +137,12 @@ export async function binanceFinalizer(
     Object.keys(senderAddresses),
     await hubSigner.getAddress()
   );
-  const sharedBinanceAccountPendingRebalanceSymbols = new Set(
-    (
-      await Promise.all(
-        pendingRebalanceLookupAccounts.map(async (account) => [
-          ...(await getPendingBinanceRebalanceSymbolsForAccount(logger, account)),
-        ])
+  const sharedBinanceAccountReservedRebalanceAmounts = sumPendingBinanceRebalanceSweepReservations(
+    await Promise.all(
+      pendingRebalanceLookupAccounts.map((account) =>
+        getPendingBinanceRebalanceSweepReservationsForAccount(logger, account, binanceApi)
       )
-    ).flat()
+    )
   );
 
   // We can run this in parallel since deposits for each tokens are independent of each other.
@@ -269,22 +269,24 @@ export async function binanceFinalizer(
           // If the confirmed coin balance minus any pending swap balances is greater than the withdraw minimum, and there is
           // nothing to withdraw in this lookback window, then we should try to sweep the balance to L1.
           if (withdrawNetwork === BINANCE_NETWORKS[hubChainId]) {
-            const hasPendingRebalanceForSymbol = hasPendingBinanceRebalanceForSymbol(
-              symbol,
-              sharedBinanceAccountPendingRebalanceSymbols
-            );
+            const reservedRebalanceAmount =
+              sharedBinanceAccountReservedRebalanceAmounts[resolveBinanceCoinSymbol(symbol)] ?? 0;
             const coinBalanceMinusSwapDeposits = getSweepableOrphanBinanceBalance(
               coinBalance,
               creditedDepositAmount,
-              binanceSwapDepositAmount[symbol] ?? 0
+              binanceSwapDepositAmount[symbol] ?? 0,
+              reservedRebalanceAmount
             );
-            if (hasPendingRebalanceForSymbol) {
+            if (reservedRebalanceAmount > 0) {
               logger.debug({
                 at: "BinanceFinalizer",
-                message: `Skipping orphaned ${symbol} sweep for ${address} because a pending Binance rebalance uses this token.`,
-                pendingRebalanceSymbols: [...sharedBinanceAccountPendingRebalanceSymbols],
+                message: `Reducing orphaned ${symbol} sweep candidate for ${address} by pending Binance rebalance amount.`,
+                reservedRebalanceAmount,
+                coinBalanceMinusSwapDeposits,
+                reservedRebalanceAmounts: sharedBinanceAccountReservedRebalanceAmounts,
               });
-            } else if (coinBalanceMinusSwapDeposits >= Number(networkLimits.withdrawMin)) {
+            }
+            if (coinBalanceMinusSwapDeposits >= Number(networkLimits.withdrawMin)) {
               const withdrawMax = Number(networkLimits.withdrawMax);
               const cappedWithdraw = Math.min(coinBalanceMinusSwapDeposits, withdrawMax);
               logger.debug({
@@ -324,26 +326,42 @@ export async function binanceFinalizer(
 export function getSweepableOrphanBinanceBalance(
   coinBalance: number,
   creditedDepositAmount: number,
-  swapDepositAmount: number
+  swapDepositAmount: number,
+  reservedRebalanceAmount = 0
 ): number {
-  return Math.max(coinBalance - creditedDepositAmount - swapDepositAmount, 0);
+  return Math.max(coinBalance - creditedDepositAmount - swapDepositAmount - reservedRebalanceAmount, 0);
 }
 
-export function getPendingBinanceRebalanceSymbols(
-  pendingOrders: Pick<OrderDetails, "sourceToken" | "destinationToken">[]
-): Set<string> {
-  return pendingOrders.reduce<Set<string>>((symbols, order) => {
-    symbols.add(resolveBinanceCoinSymbol(order.sourceToken));
-    symbols.add(resolveBinanceCoinSymbol(order.destinationToken));
-    return symbols;
-  }, new Set());
+type PendingBinanceRebalanceSweepReservations = Record<string, number>;
+type BinanceRebalanceReservationApi = Parameters<typeof getMatchingBinanceFillForCloid>[0] &
+  Parameters<typeof getBinanceSpotMarketMetaForRoute>[0];
+
+export function sumPendingBinanceRebalanceSweepReservations(
+  reservations: PendingBinanceRebalanceSweepReservations[]
+): PendingBinanceRebalanceSweepReservations {
+  return reservations.reduce<PendingBinanceRebalanceSweepReservations>((acc, reservation) => {
+    for (const [symbol, amount] of Object.entries(reservation)) {
+      acc[symbol] = (acc[symbol] ?? 0) + amount;
+    }
+    return acc;
+  }, {});
 }
 
-export function hasPendingBinanceRebalanceForSymbol(symbol: string, pendingRebalanceSymbols: Set<string>): boolean {
-  return (
-    pendingRebalanceSymbols.has(UNKNOWN_PENDING_BINANCE_REBALANCE_SYMBOL) ||
-    pendingRebalanceSymbols.has(resolveBinanceCoinSymbol(symbol))
+function addPendingBinanceRebalanceSweepReservation(
+  reservations: PendingBinanceRebalanceSweepReservations,
+  symbol: string,
+  amount: number
+): void {
+  const binanceSymbol = resolveBinanceCoinSymbol(symbol);
+  reservations[binanceSymbol] = (reservations[binanceSymbol] ?? 0) + amount;
+}
+
+function getReadableOrderAmount(order: Pick<OrderDetails, "sourceToken" | "sourceChain" | "amountToTransfer">): number {
+  const { decimals } = getTokenInfo(
+    EvmAddress.from(resolveAcrossToken(order.sourceToken, order.sourceChain, true)),
+    order.sourceChain
   );
+  return Number(formatUnits(order.amountToTransfer, decimals));
 }
 
 export function getEvmBinanceRebalanceLookupAccounts(addresses: string[], signerAddress?: string): EvmAddress[] {
@@ -363,18 +381,19 @@ export function getEvmBinanceRebalanceLookupAccounts(addresses: string[], signer
     .filter(isDefined);
 }
 
-export async function getPendingBinanceRebalanceSymbolsForAccount(
+export async function getPendingBinanceRebalanceSweepReservationsForAccount(
   logger: winston.Logger,
   account: EvmAddress,
+  binanceApi: BinanceRebalanceReservationApi,
   getRedisCache = getRedisCacheForRebalancerStatusTracking
-): Promise<Set<string>> {
+): Promise<PendingBinanceRebalanceSweepReservations> {
   try {
     const redisCache = await getRedisCache(logger);
     if (!isDefined(redisCache)) {
-      return new Set();
+      return {};
     }
 
-    const symbolsByStatus = (
+    const reservations = (
       await Promise.all(
         BINANCE_SWEEP_BLOCKING_STATUSES.map(async (status) => {
           const statusSetKey = getPendingBridgeStatusSetKey(
@@ -395,23 +414,23 @@ export async function getPendingBinanceRebalanceSymbolsForAccount(
                 logger.warn({
                   at: "BinanceFinalizer",
                   message:
-                    "Found pending Binance rebalance status without order details; preserving orphan sweep guard for all symbols.",
+                    "Found pending Binance rebalance status without order details; cannot reserve an amount for orphan sweep accounting.",
                   account: account.toNative(),
                   cloid,
                   statusSetKey,
                 });
-                return [UNKNOWN_PENDING_BINANCE_REBALANCE_SYMBOL];
+                return {};
               }
-              return [...getPendingBinanceRebalanceSymbols([order])];
+              return getPendingBinanceRebalanceSweepReservationsForOrder(logger, binanceApi, cloid, status, order);
             })
           );
         })
       )
     )
-      .flat(2)
+      .flat()
       .filter(isDefined);
 
-    return new Set(symbolsByStatus);
+    return sumPendingBinanceRebalanceSweepReservations(reservations);
   } catch (error) {
     logger.warn({
       at: "BinanceFinalizer",
@@ -419,6 +438,55 @@ export async function getPendingBinanceRebalanceSymbolsForAccount(
       account: account.toNative(),
       error: error instanceof Error ? error.message : String(error),
     });
-    return new Set();
+    return {};
   }
+}
+
+export async function getPendingBinanceRebalanceSweepReservationsForOrder(
+  logger: winston.Logger,
+  binanceApi: BinanceRebalanceReservationApi,
+  cloid: string,
+  status: STATUS,
+  order: OrderDetails
+): Promise<PendingBinanceRebalanceSweepReservations> {
+  const reservations: PendingBinanceRebalanceSweepReservations = {};
+  if (status === STATUS.PENDING_BRIDGE_PRE_DEPOSIT) {
+    return reservations;
+  }
+
+  const sourceAmount = getReadableOrderAmount(order);
+  const routeRequiresSwap = !isSameBinanceCoin(order.sourceToken, order.destinationToken);
+  if (!routeRequiresSwap || status === STATUS.PENDING_DEPOSIT) {
+    addPendingBinanceRebalanceSweepReservation(reservations, order.sourceToken, sourceAmount);
+    return reservations;
+  }
+
+  try {
+    const spotMarketMeta = await getBinanceSpotMarketMetaForRoute(
+      binanceApi,
+      order.sourceToken,
+      order.destinationToken
+    );
+    const matchingFill = await getMatchingBinanceFillForCloid(binanceApi, cloid, spotMarketMeta);
+    if (matchingFill) {
+      addPendingBinanceRebalanceSweepReservation(
+        reservations,
+        order.destinationToken,
+        matchingFill.expectedAmountToReceive
+      );
+      return reservations;
+    }
+  } catch (error) {
+    logger.warn({
+      at: "BinanceFinalizer",
+      message: "Unable to load Binance fill details for pending rebalance; reserving source amount only.",
+      cloid,
+      sourceToken: order.sourceToken,
+      destinationToken: order.destinationToken,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  addPendingBinanceRebalanceSweepReservation(reservations, order.sourceToken, sourceAmount);
+  return reservations;
 }

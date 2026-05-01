@@ -250,14 +250,13 @@ The Binance finalizer sweeps exchange balances as a fallback path. The Binance a
 
 When Binance reports `RW00441`, the account has recently credited deposit value that is not withdrawal-unlocked yet.
 The Binance adapter treats this as a retryable wait state and leaves the order pending. The Binance finalizer reads the
-adapter's pending-order Redis state and skips orphan sweeps for tokens used by active Binance rebalances so post-swap
-output balances are not swept while an order is waiting for Binance's deposit unlock confirmations.
+adapter's pending-order Redis state and subtracts active Binance rebalance reservations from orphan sweep candidates so
+post-swap output balances are not swept while an order is waiting for Binance's deposit unlock confirmations.
 Because pending-order Redis sets are keyed by signer account and finalizer withdrawal recipients can be configured
 separately, the finalizer checks both configured EVM withdrawal recipients and the running signer account before applying
-this shared Binance-account sweep guard. If Redis cannot be read, the finalizer logs a warning and falls back to the
+this shared Binance-account reservation. If Redis cannot be read, the finalizer logs a warning and falls back to the
 previous orphan-sweep behavior for that run. If a Redis status set still contains a cloid but the order details have
-expired, the finalizer treats the pending token as unknown and skips orphan sweeps until normal adapter cleanup removes
-the stale status entry.
+expired, the finalizer cannot compute a reservation amount and leaves normal orphan sweep accounting unchanged.
 
 ## Venue-specific operational note
 
