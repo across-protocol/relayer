@@ -214,16 +214,6 @@ export async function binanceFinalizer(
         // deposits, then we can continue.
         const availableCoinBalance = Math.max(coinBalance - creditedDepositAmount - pendingRebalanceDeduction, 0);
         amountToFinalize = Math.min(Number(availableCoinBalance.toFixed(l1Decimals)), amountToFinalize);
-        if (pendingRebalanceDeduction > 0) {
-          logger.debug({
-            at: "BinanceFinalizer",
-            message: `Reducing ${symbol} withdrawal capacity for ${address} by pending Binance rebalance amount.`,
-            pendingRebalanceDeduction,
-            amountToFinalize,
-            availableCoinBalance,
-            pendingBinanceRebalanceDeductions,
-          });
-        }
         if (amountToFinalize >= Number(networkLimits.withdrawMin)) {
           // Lastly, we need to truncate the amount to withdraw to 6 decimal places.
           amountToFinalize = Math.floor(amountToFinalize * DECIMAL_PRECISION) / DECIMAL_PRECISION;
