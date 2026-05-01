@@ -28,9 +28,11 @@ import {
   getBinanceSpotMarketMetaForRoute,
   getMatchingBinanceFillForCloid,
   resolveBinanceCoinSymbol,
+  SpotMarketMeta,
   truncate,
   ethers,
 } from "../../utils";
+import type { Binance as BinanceApi } from "binance-api-node";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { FinalizerPromise, AddressesToFinalize } from "../types";
 import type { OrderDetails } from "../../rebalancer/utils/interfaces";
@@ -334,7 +336,9 @@ export function getSweepableOrphanBinanceBalance(
 
 type PendingBinanceRebalanceSweepReservations = Record<string, number>;
 type BinanceRebalanceReservationApi = Parameters<typeof getMatchingBinanceFillForCloid>[0] &
-  Parameters<typeof getBinanceSpotMarketMetaForRoute>[0];
+  Parameters<typeof getBinanceSpotMarketMetaForRoute>[0] &
+  Pick<BinanceApi, "book">;
+const CONSERVATIVE_UNKNOWN_DESTINATION_RESERVATION = Number.MAX_SAFE_INTEGER;
 
 export function sumPendingBinanceRebalanceSweepReservations(
   reservations: PendingBinanceRebalanceSweepReservations[]
@@ -362,6 +366,19 @@ function getReadableOrderAmount(order: Pick<OrderDetails, "sourceToken" | "sourc
     order.sourceChain
   );
   return Number(formatUnits(order.amountToTransfer, decimals));
+}
+
+async function getEstimatedDestinationReservationAmount(
+  binanceApi: Pick<BinanceApi, "book">,
+  spotMarketMeta: SpotMarketMeta,
+  sourceAmount: number
+): Promise<number> {
+  const book = await binanceApi.book({ symbol: spotMarketMeta.symbol, limit: 5 });
+  const topLevel = spotMarketMeta.isBuy ? book.asks[0] : book.bids[0];
+  assert(isDefined(topLevel), `Order book is empty for ${spotMarketMeta.symbol}`);
+  const bestPrice = Number(topLevel.price);
+  assert(bestPrice > 0, `Invalid best price ${topLevel.price} for ${spotMarketMeta.symbol}`);
+  return spotMarketMeta.isBuy ? sourceAmount / bestPrice : sourceAmount * bestPrice;
 }
 
 export function getEvmBinanceRebalanceLookupAccounts(addresses: string[], signerAddress?: string): EvmAddress[] {
@@ -461,12 +478,9 @@ export async function getPendingBinanceRebalanceSweepReservationsForOrder(
     return reservations;
   }
 
+  let spotMarketMeta: SpotMarketMeta | undefined;
   try {
-    const spotMarketMeta = await getBinanceSpotMarketMetaForRoute(
-      binanceApi,
-      order.sourceToken,
-      order.destinationToken
-    );
+    spotMarketMeta = await getBinanceSpotMarketMetaForRoute(binanceApi, order.sourceToken, order.destinationToken);
     const matchingFill = await getMatchingBinanceFillForCloid(binanceApi, cloid, spotMarketMeta);
     if (matchingFill) {
       addPendingBinanceRebalanceSweepReservation(
@@ -479,7 +493,7 @@ export async function getPendingBinanceRebalanceSweepReservationsForOrder(
   } catch (error) {
     logger.warn({
       at: "BinanceFinalizer",
-      message: "Unable to load Binance fill details for pending rebalance; reserving source amount only.",
+      message: "Unable to load Binance fill details for pending rebalance; reserving estimated destination amount.",
       cloid,
       sourceToken: order.sourceToken,
       destinationToken: order.destinationToken,
@@ -487,6 +501,30 @@ export async function getPendingBinanceRebalanceSweepReservationsForOrder(
     });
   }
 
-  addPendingBinanceRebalanceSweepReservation(reservations, order.sourceToken, sourceAmount);
+  try {
+    spotMarketMeta ??= await getBinanceSpotMarketMetaForRoute(binanceApi, order.sourceToken, order.destinationToken);
+    addPendingBinanceRebalanceSweepReservation(
+      reservations,
+      order.destinationToken,
+      await getEstimatedDestinationReservationAmount(binanceApi, spotMarketMeta, sourceAmount)
+    );
+    return reservations;
+  } catch (error) {
+    logger.warn({
+      at: "BinanceFinalizer",
+      message:
+        "Unable to estimate Binance destination amount for pending rebalance; reserving destination token conservatively.",
+      cloid,
+      sourceToken: order.sourceToken,
+      destinationToken: order.destinationToken,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  addPendingBinanceRebalanceSweepReservation(
+    reservations,
+    order.destinationToken,
+    CONSERVATIVE_UNKNOWN_DESTINATION_RESERVATION
+  );
   return reservations;
 }

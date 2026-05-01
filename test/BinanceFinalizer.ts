@@ -160,4 +160,51 @@ describe("Binance finalizer helpers", function () {
 
     expect(reservations).to.deep.equal({ USDC: 99 });
   });
+
+  it("reserves estimated destination token amount when Binance fill lookup fails after a swap", async function () {
+    const logger = { warn: sinon.stub() };
+    const binanceApi = {
+      exchangeInfo: sinon.stub().resolves({
+        symbols: [
+          {
+            symbol: "ETHUSDC",
+            baseAsset: "ETH",
+            quoteAsset: "USDC",
+            filters: [
+              { filterType: "PRICE_FILTER", tickSize: "0.01" },
+              { filterType: "LOT_SIZE", stepSize: "0.00010000", minQty: "0.00010000" },
+            ],
+          },
+        ],
+      }),
+      allOrders: sinon.stub().rejects(new Error("rate limited")),
+      myTrades: sinon.stub(),
+      book: sinon.stub().resolves({
+        asks: [],
+        bids: [{ price: "2500", quantity: "10" }],
+      }),
+    };
+
+    const reservations = await getPendingBinanceRebalanceSweepReservationsForOrder(
+      logger as never,
+      binanceApi as never,
+      "cloid",
+      STATUS.PENDING_WITHDRAWAL,
+      {
+        sourceChain: CHAIN_IDs.MAINNET,
+        sourceToken: "WETH",
+        destinationChain: CHAIN_IDs.MAINNET,
+        destinationToken: "USDC",
+        amountToTransfer: toBNWei("1", 18),
+      }
+    );
+
+    expect(reservations).to.deep.equal({ USDC: 2500 });
+    expect(logger.warn.calledOnce).to.equal(true);
+    expect(logger.warn.firstCall.args[0]).to.include({
+      at: "BinanceFinalizer",
+      cloid: "cloid",
+      error: "rate limited",
+    });
+  });
 });

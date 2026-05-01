@@ -257,6 +257,9 @@ separately, the finalizer checks both configured EVM withdrawal recipients and t
 this shared Binance-account reservation. If Redis cannot be read, the finalizer logs a warning and falls back to the
 previous orphan-sweep behavior for that run. If a Redis status set still contains a cloid but the order details have
 expired, the finalizer cannot compute a reservation amount and leaves normal orphan sweep accounting unchanged.
+For post-swap orders, the reservation uses the actual filled destination amount when Binance fill details are available;
+if those fill details are temporarily unavailable, the finalizer reserves an estimated destination amount from the
+current Binance book rather than reserving the pre-swap source token.
 
 ## Venue-specific operational note
 
