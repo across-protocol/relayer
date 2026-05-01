@@ -524,7 +524,13 @@ async function gatherRecipientBalances(
   recipient: string
 ): Promise<RecipientBalances> {
   if (chainIsSvm(destination.chainId)) {
-    const provider = getSvmProvider(await getRedisCache(), undefined, destination.chainId);
+    let redisCache: Awaited<ReturnType<typeof getRedisCache>>;
+    try {
+      redisCache = await getRedisCache();
+    } catch {
+      redisCache = undefined;
+    }
+    const provider = getSvmProvider(redisCache, undefined, destination.chainId);
     const recipientAddress = SvmAddress.from(recipient);
     const nativeBalanceResponse = await provider.getBalance(toKitAddress(recipientAddress)).send();
     const nativeBalance = BigNumber.from(nativeBalanceResponse.value.toString());
