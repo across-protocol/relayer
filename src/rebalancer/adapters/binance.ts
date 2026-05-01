@@ -19,7 +19,6 @@ import {
   getAccountCoins,
   getBinanceDepositUnlockErrorInfo,
   getBinanceApiClient,
-  getBinanceSpotMarketMetaForRoute,
   getBinanceTransactionTypeKey,
   isFailedBinanceWithdrawal,
   isSameBinanceCoin,
@@ -44,6 +43,7 @@ import {
   usesBinanceAtomicDepositorTransfer,
   winston,
   convertBinanceRouteAmount,
+  deriveBinanceSpotMarketMeta,
 } from "../../utils";
 import { OrderDetails, RebalanceRoute } from "../utils/interfaces";
 import { BINANCE_STABLECOIN_SWAP_REDIS_PREFIX, STATUS } from "../utils/utils";
@@ -1289,7 +1289,9 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       return existingPromise;
     }
 
-    const promise = getBinanceSpotMarketMetaForRoute(this.binanceApiClient, sourceToken, destinationToken);
+    const promise = this._getSymbol(sourceToken, destinationToken).then((symbol) =>
+      deriveBinanceSpotMarketMeta(sourceToken, destinationToken, symbol)
+    );
     this.spotMarketMetaPromiseByRoute.set(routeName, promise);
     void promise.finally(() => {
       if (this.spotMarketMetaPromiseByRoute.get(routeName) === promise) {
