@@ -127,7 +127,9 @@ export async function binanceFinalizer(
   });
   const binanceDeposits = _binanceBridgeDeposits.filter((deposit) => deposit.status === Status.Confirmed);
   const creditedDeposits = _binanceBridgeDeposits.filter((deposit) => deposit.status === Status.Credited);
-  const pendingRebalanceSymbols = new Set(
+  // Binance balances are shared across finalizer withdrawal recipients. Use one symbol guard for the shared
+  // exchange account so one recipient iteration cannot sweep a token needed by another pending Binance rebalance.
+  const sharedBinanceAccountPendingRebalanceSymbols = new Set(
     (
       await Promise.all(
         getEvmBinanceRebalanceLookupAccounts(Object.keys(senderAddresses)).map(async (account) => [
@@ -261,7 +263,9 @@ export async function binanceFinalizer(
           // If the confirmed coin balance minus any pending swap balances is greater than the withdraw minimum, and there is
           // nothing to withdraw in this lookback window, then we should try to sweep the balance to L1.
           if (withdrawNetwork === BINANCE_NETWORKS[hubChainId]) {
-            const hasPendingRebalanceForSymbol = pendingRebalanceSymbols.has(resolveBinanceCoinSymbol(symbol));
+            const hasPendingRebalanceForSymbol = sharedBinanceAccountPendingRebalanceSymbols.has(
+              resolveBinanceCoinSymbol(symbol)
+            );
             const coinBalanceMinusSwapDeposits = getSweepableOrphanBinanceBalance(
               coinBalance,
               creditedDepositAmount,
@@ -271,7 +275,7 @@ export async function binanceFinalizer(
               logger.debug({
                 at: "BinanceFinalizer",
                 message: `Skipping orphaned ${symbol} sweep for ${address} because a pending Binance rebalance uses this token.`,
-                pendingRebalanceSymbols: [...pendingRebalanceSymbols],
+                pendingRebalanceSymbols: [...sharedBinanceAccountPendingRebalanceSymbols],
               });
             } else if (coinBalanceMinusSwapDeposits >= Number(networkLimits.withdrawMin)) {
               const withdrawMax = Number(networkLimits.withdrawMax);
