@@ -13,6 +13,7 @@ import {
   fillV3Relay,
   getDefaultBlockRange,
   getLastBlockTime,
+  mineRandomBlocks,
   randomAddress,
   smock,
 } from "./utils";
@@ -27,7 +28,13 @@ import {
   toBytes32,
 } from "../src/utils";
 import { MockBundleDataClient, MockHubPoolClient, MockSpokePoolClient } from "./mocks";
-import { constants as sdkConstants, interfaces, utils as sdkUtils, providers } from "@across-protocol/sdk";
+import {
+  clients as sdkClients,
+  constants as sdkConstants,
+  interfaces,
+  utils as sdkUtils,
+  providers,
+} from "@across-protocol/sdk";
 import { FillWithBlock } from "../src/interfaces";
 
 describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic", async function () {
@@ -126,19 +133,24 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
       );
       // Mock a realized lp fee pct for each deposit so we can check refund amounts and bundle lp fees.
       mockHubPoolClient.setDefaultRealizedLpFeePct(lpFeePct);
+      // Anchor each fresh EventManager to the live chain head; outer before() leaves it lagging at deploymentBlock.
       mockOriginSpokePoolClient = new MockSpokePoolClient(
         spokePoolClient_1.logger,
         spokePoolClient_1.spokePool,
         spokePoolClient_1.chainId,
-        spokePoolClient_1.deploymentBlock
+        spokePoolClient_1.deploymentBlock,
+        { eventManager: new sdkClients.mocks.EventManager(spokePoolClient_1.latestHeightSearched) }
       );
       mockDestinationSpokePool = await smock.fake(spokePoolClient_2.spokePool.interface);
       mockDestinationSpokePoolClient = new MockSpokePoolClient(
         spokePoolClient_2.logger,
         mockDestinationSpokePool as Contract,
         spokePoolClient_2.chainId,
-        spokePoolClient_2.deploymentBlock
+        spokePoolClient_2.deploymentBlock,
+        { eventManager: new sdkClients.mocks.EventManager(spokePoolClient_2.latestHeightSearched) }
       );
+      // Headroom so `eventManager.blockNumber + N` lookups resolve to real blocks.
+      await mineRandomBlocks(256);
       spokePoolClients = {
         ...spokePoolClients,
         [originChainId]: mockOriginSpokePoolClient,
