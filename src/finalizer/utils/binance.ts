@@ -320,28 +320,15 @@ async function getPendingBinanceRebalanceDeductions(
   hubSigner: Signer,
   recipientAddresses: string[]
 ): Promise<Record<string, number>> {
-  try {
-    const readOnlyRebalancerClient = await constructReadOnlyRebalancerClient(logger, hubSigner, ["binance"]);
-    const lookupAccounts = getEvmBinanceRebalanceLookupAccounts(recipientAddresses, await hubSigner.getAddress());
-    const pendingRebalanceDeductions = await Promise.all(
+  const readOnlyRebalancerClient = await constructReadOnlyRebalancerClient(logger, hubSigner, ["binance"]);
+  const lookupAccounts = getEvmBinanceRebalanceLookupAccounts(recipientAddresses, await hubSigner.getAddress());
+  return (
+    await Promise.all(
       lookupAccounts.map(async (account) =>
         getPositivePendingRebalanceAmountsByBinanceCoin(await readOnlyRebalancerClient.getPendingRebalances(account))
       )
-    );
-    return sumPendingBinanceRebalanceDeductions(pendingRebalanceDeductions);
-  } catch (error) {
-    logger.warn({
-      at: "BinanceFinalizer",
-      message:
-        "Unable to load pending Binance rebalance amounts through ReadOnlyRebalancerClient; continuing without this deduction.",
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return {};
-  }
-}
-
-function sumPendingBinanceRebalanceDeductions(deductions: Record<string, number>[]): Record<string, number> {
-  return deductions.reduce<Record<string, number>>((acc, deduction) => {
+    )
+  ).reduce<Record<string, number>>((acc, deduction) => {
     for (const [symbol, amount] of Object.entries(deduction)) {
       acc[symbol] = (acc[symbol] ?? 0) + amount;
     }
