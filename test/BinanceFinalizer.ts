@@ -207,4 +207,53 @@ describe("Binance finalizer helpers", function () {
       error: "rate limited",
     });
   });
+
+  it("reserves estimated destination token amount when filled sell proceeds are unavailable", async function () {
+    const binanceApi = {
+      exchangeInfo: sinon.stub().resolves({
+        symbols: [
+          {
+            symbol: "ETHUSDC",
+            baseAsset: "ETH",
+            quoteAsset: "USDC",
+            filters: [
+              { filterType: "PRICE_FILTER", tickSize: "0.01" },
+              { filterType: "LOT_SIZE", stepSize: "0.00010000", minQty: "0.00010000" },
+            ],
+          },
+        ],
+      }),
+      allOrders: sinon.stub().resolves([
+        {
+          clientOrderId: "cloid",
+          status: "FILLED",
+          orderId: 123,
+          executedQty: "1",
+          cummulativeQuoteQty: "-1",
+        },
+      ]),
+      myTrades: sinon.stub(),
+      book: sinon.stub().resolves({
+        asks: [],
+        bids: [{ price: "2500", quantity: "10" }],
+      }),
+    };
+
+    const reservations = await getPendingBinanceRebalanceSweepReservationsForOrder(
+      { warn: sinon.stub() } as never,
+      binanceApi as never,
+      "cloid",
+      STATUS.PENDING_WITHDRAWAL,
+      {
+        sourceChain: CHAIN_IDs.MAINNET,
+        sourceToken: "WETH",
+        destinationChain: CHAIN_IDs.MAINNET,
+        destinationToken: "USDC",
+        amountToTransfer: toBNWei("1", 18),
+      }
+    );
+
+    expect(reservations).to.deep.equal({ USDC: 2500 });
+    expect(binanceApi.myTrades.callCount).to.equal(0);
+  });
 });

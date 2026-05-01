@@ -10,6 +10,7 @@ import {
   getFillCommission,
   getAtomicDepositorContracts,
   getBinanceDepositUnlockErrorInfo,
+  getMatchingBinanceFillForCloid,
   getOutstandingBinanceDeposits,
   isCompletedBinanceWithdrawal,
   isFailedBinanceWithdrawal,
@@ -171,6 +172,39 @@ describe("BinanceUtils: getFillCommission", function () {
       orderId: 123,
       limit: 1000,
     });
+  });
+});
+
+describe("BinanceUtils: getMatchingBinanceFillForCloid", function () {
+  it("treats negative historical sell proceeds as unavailable fill data", async function () {
+    const myTradesStub = sinon.stub();
+    const allOrdersStub = sinon.stub().resolves([
+      {
+        clientOrderId: "cloid",
+        status: "FILLED",
+        orderId: 123,
+        executedQty: "1",
+        cummulativeQuoteQty: "-1",
+      },
+    ]);
+    const spotMarketMeta: SpotMarketMeta = {
+      symbol: "ETHUSDC",
+      baseAssetName: "ETH",
+      quoteAssetName: "USDC",
+      pxDecimals: 2,
+      szDecimals: 4,
+      minimumOrderSize: 0.0001,
+      isBuy: false,
+    };
+
+    const matchingFill = await getMatchingBinanceFillForCloid(
+      { allOrders: allOrdersStub, myTrades: myTradesStub } as never,
+      "cloid",
+      spotMarketMeta
+    );
+
+    expect(matchingFill).to.equal(undefined);
+    expect(myTradesStub.callCount).to.equal(0);
   });
 });
 

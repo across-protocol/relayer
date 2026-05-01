@@ -410,11 +410,18 @@ export async function getMatchingBinanceFillForCloid(
   if (!matchingFill) {
     return undefined;
   }
-  const grossExpectedAmountToReceive = spotMarketMeta.isBuy
-    ? matchingFill.executedQty
-    : matchingFill.cummulativeQuoteQty;
+  const grossExpectedAmountToReceive = Number(
+    spotMarketMeta.isBuy ? matchingFill.executedQty : matchingFill.cummulativeQuoteQty
+  );
+  if (!Number.isFinite(grossExpectedAmountToReceive) || grossExpectedAmountToReceive < 0) {
+    return undefined;
+  }
   const fillCommission = await getFillCommission(binanceApi, spotMarketMeta, matchingFill.orderId);
-  return { matchingFill, expectedAmountToReceive: Number(grossExpectedAmountToReceive) - fillCommission };
+  const expectedAmountToReceive = grossExpectedAmountToReceive - fillCommission;
+  if (!Number.isFinite(expectedAmountToReceive) || expectedAmountToReceive < 0) {
+    return undefined;
+  }
+  return { matchingFill, expectedAmountToReceive };
 }
 
 export async function getBinanceSpotMarketMetaForRoute(
