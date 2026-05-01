@@ -314,18 +314,21 @@ async function getPendingBinanceRebalanceDeductions(
 ): Promise<Record<string, number>> {
   const readOnlyRebalancerClient = await constructReadOnlyRebalancerClient(logger, hubSigner, ["binance"]);
   const lookupAccounts = getEvmBinanceRebalanceLookupAccounts(recipientAddresses, await hubSigner.getAddress());
-  return (
-    await Promise.all(
-      lookupAccounts.map(async (account) =>
-        getPositivePendingRebalanceAmountsByBinanceCoin(await readOnlyRebalancerClient.getPendingRebalances(account))
-      )
-    )
-  ).reduce<Record<string, number>>((acc, deduction) => {
-    for (const [symbol, amount] of Object.entries(deduction)) {
-      acc[symbol] = (acc[symbol] ?? 0) + amount;
+  const pendingRebalances = (
+    await Promise.all(lookupAccounts.map((account) => readOnlyRebalancerClient.getPendingRebalances(account)))
+  ).reduce<{
+    [chainId: number]: { [token: string]: BigNumber };
+  }>((acc, pending) => {
+    for (const [_chainId, tokenBalances] of Object.entries(pending)) {
+      const chainId = Number(_chainId);
+      acc[chainId] ??= {};
+      for (const [token, amount] of Object.entries(tokenBalances)) {
+        acc[chainId][token] = (acc[chainId][token] ?? bnZero).add(amount);
+      }
     }
     return acc;
   }, {});
+  return getPositivePendingRebalanceAmountsByBinanceCoin(pendingRebalances);
 }
 
 export function getEvmBinanceRebalanceLookupAccounts(addresses: string[], signerAddress?: string): EvmAddress[] {
