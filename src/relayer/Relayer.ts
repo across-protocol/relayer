@@ -973,7 +973,7 @@ export class Relayer {
           if (nDeposits === RELAYER_DEPOSITOR_RATE_LIMIT) {
             this.logger.warn({
               at,
-              message: `Rate-limiting ${origin} depositor ${depositor} due to perceived deposit spam.`,
+              message: `Rate-limiting ${originChainId} depositor ${depositor} due to perceived deposit spam.`,
             });
           }
 
