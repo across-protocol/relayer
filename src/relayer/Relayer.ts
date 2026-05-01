@@ -36,6 +36,7 @@ const { getAddress } = ethersUtils;
 const { isDepositSpedUp, isMessageEmpty, resolveDepositMessage } = sdkUtils;
 const UNPROFITABLE_DEPOSIT_NOTICE_PERIOD = 60 * 60; // 1 hour
 const RELAYER_DEPOSIT_RATE_LIMIT = 25;
+const RELAYER_DEPOSITOR_RATE_LIMIT = 10;
 const HUB_SPOKE_BLOCK_LAG = 2; // Permit SpokePool timestamps to be ahead of the HubPool by 2 HubPool blocks.
 const SPOKEPOOL_EVENTS = [
   "FundsDeposited",
@@ -951,9 +952,19 @@ export class Relayer {
       // an activity surge on any single chain from significantly degrading overall performance. When running in
       // single-shot mode (pollingDelay 0), do not limit. This permits sweeper instances to work correctly.
       const depositLimit = this.config.pollingDelay === 0 ? deposits.length : RELAYER_DEPOSIT_RATE_LIMIT;
+      const originDepositors: { [originChainId: number]: { [depositor: string]: number } } = {};
       const unfilledDeposits = deposits
         .map((deposit, idx) => ({ ...deposit, fillStatus: fillStatus[idx] }))
         .filter(({ fillStatus, ...deposit }) => {
+          const { originChainId, depositor } = deposit;
+
+          // Restrict the number of concurrent deposits and that a depositor can force the relayer to evaluate per loop.
+          originDepositors[originChainId] ??= {};
+          originDepositors[originChainId][depositor.toNative()] ??= 0;
+          if (++originDepositors[originChainId][depositor.toNative()] > RELAYER_DEPOSITOR_RATE_LIMIT) {
+            return false;
+          }
+
           // Track the fill status for faster filtering on subsequent loops.
           const depositHash = spokePoolClients[deposit.destinationChainId].getDepositHash(deposit);
           this.fillStatus[depositHash] = fillStatus;
