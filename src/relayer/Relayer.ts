@@ -902,6 +902,7 @@ export class Relayer {
   }
 
   async checkForUnfilledDepositsAndFill(simulate = false): Promise<{ [chainId: number]: Promise<string[]> }> {
+    const at = "Relayer::checkForUnfilledDepositsAndFill";
     const { hubPoolClient, profitClient, spokePoolClients, tokenClient, multiCallerClient, tryMulticallClient } =
       this.clients;
 
@@ -928,10 +929,7 @@ export class Relayer {
       .flat()
       .map(({ deposit }) => deposit);
 
-    this.logger.debug({
-      at: "Relayer::checkForUnfilledDepositsAndFill",
-      message: `${allUnfilledDeposits.length} unfilled deposits found.`,
-    });
+    this.logger.debug({ at, message: `${allUnfilledDeposits.length} unfilled deposits found.` });
     if (allUnfilledDeposits.length === 0) {
       return txnReceipts;
     }
@@ -951,7 +949,9 @@ export class Relayer {
       // In looping mode, limit the number of deposits per chain per loop. This is an anti-spam mechanism that avoids
       // an activity surge on any single chain from significantly degrading overall performance. When running in
       // single-shot mode (pollingDelay 0), do not limit. This permits sweeper instances to work correctly.
-      const depositLimit = this.config.pollingDelay === 0 ? deposits.length : RELAYER_DEPOSIT_RATE_LIMIT;
+      const { pollingDelay } = this.config;
+      const applyRateLimit = pollingDelay > 0;
+      const depositLimit = applyRateLimit ? RELAYER_DEPOSIT_RATE_LIMIT : deposits.length;
       const originDepositors: { [originChainId: number]: { [depositor: string]: number } } = {};
       const unfilledDeposits = deposits
         .map((deposit, idx) => ({ ...deposit, fillStatus: fillStatus[idx] }))
@@ -962,14 +962,22 @@ export class Relayer {
           return fillStatus !== FillStatus.Filled;
         })
         .filter(({ originChainId, depositor }) => {
+          if (!applyRateLimit) {
+            return true;
+          }
+
           // Restrict the number of concurrent deposits and that a depositor can force the relayer to evaluate per loop.
           originDepositors[originChainId] ??= {};
           originDepositors[originChainId][depositor.toNative()] ??= 0;
-          if (++originDepositors[originChainId][depositor.toNative()] > RELAYER_DEPOSITOR_RATE_LIMIT) {
-            return false;
+          const nDeposits = ++originDepositors[originChainId][depositor.toNative()];
+          if (nDeposits === RELAYER_DEPOSITOR_RATE_LIMIT) {
+            this.logger.warn({
+              at,
+              message: `Rate-limiting ${origin} depositor ${depositor} due to perceived deposit spam.`,
+            });
           }
 
-          return true;
+          return nDeposits < RELAYER_DEPOSITOR_RATE_LIMIT;
         })
         .slice(0, depositLimit);
 
