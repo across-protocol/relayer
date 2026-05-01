@@ -966,18 +966,19 @@ export class Relayer {
             return true;
           }
 
-          // Restrict the number of concurrent deposits and that a depositor can force the relayer to evaluate per loop.
+          // Restrict the number of concurrent deposits that a depositor can force the relayer to evaluate per loop.
+          const depositorAddr = depositor.toNative();
           originDepositors[originChainId] ??= {};
-          originDepositors[originChainId][depositor.toNative()] ??= 0;
-          const nDeposits = ++originDepositors[originChainId][depositor.toNative()];
-          if (nDeposits === RELAYER_DEPOSITOR_RATE_LIMIT) {
+          originDepositors[originChainId][depositorAddr] ??= 0;
+          const nDeposits = ++originDepositors[originChainId][depositorAddr];
+          if (nDeposits === RELAYER_DEPOSITOR_RATE_LIMIT + 1) {
             this.logger.warn({
               at,
-              message: `Rate-limiting ${originChainId} depositor ${depositor} due to perceived deposit spam.`,
+              message: `Rate-limiting ${getNetworkName(originChainId)} depositor ${depositor} due to perceived deposit spam.`,
             });
           }
 
-          return nDeposits < RELAYER_DEPOSITOR_RATE_LIMIT;
+          return nDeposits <= RELAYER_DEPOSITOR_RATE_LIMIT;
         })
         .slice(0, depositLimit);
 
