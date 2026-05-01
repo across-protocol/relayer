@@ -972,10 +972,9 @@ export class Relayer {
           originDepositors[originChainId][depositorAddr] ??= 0;
           const nDeposits = ++originDepositors[originChainId][depositorAddr];
           if (nDeposits === RELAYER_DEPOSITOR_RATE_LIMIT + 1) {
-            this.logger.warn({
-              at,
-              message: `Rate-limiting ${getNetworkName(originChainId)} depositor ${depositor} due to perceived deposit spam.`,
-            });
+            const origin = getNetworkName(originChainId);
+            const message = `Rate-limiting ${origin} depositor ${depositor} due to perceived deposit spam.`;
+            this.logger.debug({ at, message });
           }
 
           return nDeposits <= RELAYER_DEPOSITOR_RATE_LIMIT;
