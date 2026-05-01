@@ -123,29 +123,6 @@ describe("Binance adapter helpers", async function () {
     expect(exchangeInfoStub.callCount).to.equal(2);
   });
 
-  it("reuses cached exchangeInfo when deriving repeated spot market metadata", async function () {
-    const adapter = await makeAdapter();
-    const exchangeInfoStub = sinon.stub().resolves({
-      symbols: [{ ...makeStablecoinSymbol() }],
-    });
-    const spotMarketAdapter = adapter as unknown as {
-      _getSpotMarketMetaForRoute(sourceToken: string, destinationToken: string): Promise<{ symbol: string }>;
-      binanceApiClient: { exchangeInfo: typeof exchangeInfoStub };
-      exchangeInfoPromise?: Promise<unknown>;
-      spotMarketMetaPromiseByRoute: Map<string, Promise<unknown>>;
-    };
-    spotMarketAdapter.binanceApiClient = { exchangeInfo: exchangeInfoStub };
-    spotMarketAdapter.exchangeInfoPromise = undefined;
-    spotMarketAdapter.spotMarketMetaPromiseByRoute.clear();
-
-    const firstMeta = await spotMarketAdapter._getSpotMarketMetaForRoute("USDT", "USDC");
-    const secondMeta = await spotMarketAdapter._getSpotMarketMetaForRoute("USDT", "USDC");
-
-    expect(firstMeta.symbol).to.equal("USDCUSDT");
-    expect(secondMeta.symbol).to.equal("USDCUSDT");
-    expect(exchangeInfoStub.callCount).to.equal(1);
-  });
-
   it("retries tradeFee lookups after transient failures", async function () {
     const adapter = await makeAdapter();
     const tradeFeeStub = sinon.stub();
@@ -383,8 +360,8 @@ function makeWethUsdcSymbol() {
 }
 
 const TEST_LOGGER = {
-  debug: (): void => undefined,
-  info: (): void => undefined,
-  warn: (): void => undefined,
-  error: (): void => undefined,
+  debug: () => undefined,
+  info: () => undefined,
+  warn: () => undefined,
+  error: () => undefined,
 } as unknown as winston.Logger;

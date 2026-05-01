@@ -17,13 +17,12 @@ import {
   fromWei,
   getAtomicDepositorContracts,
   getAccountCoins,
-  getBinanceDepositUnlockErrorInfo,
   getBinanceApiClient,
+  getFillCommission,
   getBinanceTransactionTypeKey,
   isFailedBinanceWithdrawal,
   isSameBinanceCoin,
   isTerminalBinanceWithdrawal,
-  getMatchingBinanceFillForCloid,
   getBinanceWithdrawals,
   getCurrentTime,
   getNetworkName,
@@ -42,11 +41,11 @@ import {
   truncate,
   usesBinanceAtomicDepositorTransfer,
   winston,
-  convertBinanceRouteAmount,
   deriveBinanceSpotMarketMeta,
+  convertBinanceRouteAmount,
 } from "../../utils";
 import { OrderDetails, RebalanceRoute } from "../utils/interfaces";
-import { BINANCE_STABLECOIN_SWAP_REDIS_PREFIX, STATUS } from "../utils/utils";
+import { STATUS } from "../utils/utils";
 import { BaseAdapter } from "./baseAdapter";
 import { AugmentedTransaction, MultiCallerClient } from "../../clients";
 import { RebalancerConfig } from "../RebalancerConfig";
@@ -66,7 +65,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   private tradeFeesPromise?: ReturnType<Binance["tradeFee"]>;
   private spotMarketMetaPromiseByRoute = new Map<string, Promise<SpotMarketMeta>>();
 
-  REDIS_PREFIX = BINANCE_STABLECOIN_SWAP_REDIS_PREFIX;
+  REDIS_PREFIX = "binance-stablecoin-swap:";
   private static readonly ORDER_BOOK_CACHE_TTL_MS = 30_000;
 
   REDIS_KEY_INITIATED_WITHDRAWALS = this.REDIS_PREFIX + "initiated-withdrawals";
@@ -1384,7 +1383,25 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       orderDetails.sourceToken,
       orderDetails.destinationToken
     );
-    return getMatchingBinanceFillForCloid(this.binanceApiClient, cloid, spotMarketMeta);
+    const allOrders = await this.binanceApiClient.allOrders({
+      symbol: spotMarketMeta.symbol,
+    });
+    const matchingFill = allOrders.find((order) => order.clientOrderId === cloid && order.status === "FILLED");
+    if (!matchingFill) {
+      return undefined;
+    }
+    const grossExpectedAmountToReceive = Number(
+      spotMarketMeta.isBuy ? matchingFill.executedQty : matchingFill.cummulativeQuoteQty
+    );
+    if (!Number.isFinite(grossExpectedAmountToReceive) || grossExpectedAmountToReceive < 0) {
+      return undefined;
+    }
+    const fillCommission = await getFillCommission(this.binanceApiClient, spotMarketMeta, matchingFill.orderId);
+    const expectedAmountToReceive = grossExpectedAmountToReceive - fillCommission;
+    if (!Number.isFinite(expectedAmountToReceive) || expectedAmountToReceive < 0) {
+      return undefined;
+    }
+    return { matchingFill, expectedAmountToReceive };
   }
 
   private _routeRequiresSwap(sourceToken: string, destinationToken: string): boolean {
@@ -1606,4 +1623,13 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       txnHash,
     });
   }
+}
+
+function getBinanceDepositUnlockErrorInfo(error: unknown): { message: string; lockedBtcValue?: string } | undefined {
+  const message = error instanceof Error ? error.message : String(error);
+  if (!message.includes("[RW00441]") && !message.includes("required unlock confirmations for withdrawal")) {
+    return undefined;
+  }
+  const lockedBtcValue = message.match(/deposits of ([0-9.]+) BTC in value/)?.[1];
+  return { message, lockedBtcValue };
 }

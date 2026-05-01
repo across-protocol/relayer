@@ -2,7 +2,6 @@ import Binance, {
   DepositHistoryResponse,
   WithdrawHistoryResponse,
   OrderType_LT,
-  QueryOrderResult,
   Symbol,
   type Binance as BinanceApi,
 } from "binance-api-node";
@@ -18,9 +17,6 @@ import { fromWei, retry, toBNWei } from "./SDKUtils";
 let binanceSecretKeyPromise: Promise<string | undefined> | undefined = undefined;
 
 const BINANCE_TRADES_FETCH_LIMIT = 1000;
-const BINANCE_ORDERS_FETCH_LIMIT = 1000;
-const BINANCE_ORDER_LOOKUP_TTL_BUFFER_MS = 5 * 60 * 1000;
-const BINANCE_ORDER_LOOKUP_MIN_WINDOW_MS = 60 * 1000;
 
 export type WithdrawalQuota = {
   wdQuota: number;
@@ -38,8 +34,6 @@ export type SpotMarketMeta = {
 };
 
 type BinanceTradeReader = Pick<BinanceApi, "myTrades">;
-type BinanceOrderReader = Pick<BinanceApi, "allOrders">;
-type BinanceExchangeInfoReader = Pick<BinanceApi, "exchangeInfo">;
 type FillCommissionMarketMeta = Pick<SpotMarketMeta, "symbol" | "baseAssetName" | "quoteAssetName" | "isBuy">;
 
 // Alias for Binance network symbols.
@@ -215,7 +209,6 @@ export enum BinanceTransactionType {
 }
 
 const BINANCE_TRANSACTION_TYPE_PREFIX = "binance-transaction-type";
-
 export function getBinanceTransactionTypeKey(chainId: number, uniqueIdentifier: string): string {
   const binanceNetworkName = BINANCE_NETWORKS[chainId].toLowerCase();
   return getBinanceTransactionTypeKeyFromNetworkName(binanceNetworkName, uniqueIdentifier);
@@ -339,22 +332,6 @@ export async function getBinanceDeposits(
   });
 }
 
-export function isBinanceDepositUnlockError(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  return message.includes("[RW00441]") || message.includes("required unlock confirmations for withdrawal");
-}
-
-export function getBinanceDepositUnlockErrorInfo(
-  error: unknown
-): { message: string; lockedBtcValue?: string } | undefined {
-  if (!isBinanceDepositUnlockError(error)) {
-    return undefined;
-  }
-  const message = error instanceof Error ? error.message : String(error);
-  const lockedBtcValue = message.match(/deposits of ([0-9.]+) BTC in value/)?.[1];
-  return { message, lockedBtcValue };
-}
-
 /**
  * Gets all Binance withdrawals of a specific coin starting from `startTime`-present.
  * @returns An array of parsed binance withdrawals.
@@ -399,89 +376,6 @@ export async function getFillCommission(
       acc + (resolveBinanceCoinSymbol(trade.commissionAsset) === receivedAsset ? Number(trade.commission) : 0),
     0
   );
-}
-
-export async function getMatchingBinanceFillForCloid(
-  binanceApi: BinanceOrderReader & BinanceTradeReader,
-  cloid: string,
-  spotMarketMeta: SpotMarketMeta
-): Promise<{ matchingFill: QueryOrderResult; expectedAmountToReceive: number } | undefined> {
-  const matchingFill = await getBinanceOrderForCloid(binanceApi, cloid, spotMarketMeta.symbol);
-  if (!matchingFill) {
-    return undefined;
-  }
-  const grossExpectedAmountToReceive = Number(
-    spotMarketMeta.isBuy ? matchingFill.executedQty : matchingFill.cummulativeQuoteQty
-  );
-  if (!Number.isFinite(grossExpectedAmountToReceive) || grossExpectedAmountToReceive < 0) {
-    return undefined;
-  }
-  const fillCommission = await getFillCommission(binanceApi, spotMarketMeta, matchingFill.orderId);
-  const expectedAmountToReceive = grossExpectedAmountToReceive - fillCommission;
-  if (!Number.isFinite(expectedAmountToReceive) || expectedAmountToReceive < 0) {
-    return undefined;
-  }
-  return { matchingFill, expectedAmountToReceive };
-}
-
-async function getBinanceOrderForCloid(
-  binanceApi: BinanceOrderReader,
-  cloid: string,
-  symbol: string
-): Promise<QueryOrderResult | undefined> {
-  const now = Date.now();
-  const intervals = [
-    {
-      startTime: now - getPendingOrderLookupWindowMs(),
-      endTime: now,
-    },
-  ];
-
-  while (intervals.length > 0) {
-    const { startTime, endTime } = intervals.pop()!;
-    const orders = await binanceApi.allOrders({
-      symbol,
-      startTime,
-      endTime,
-      limit: BINANCE_ORDERS_FETCH_LIMIT,
-    });
-    const matchingOrder = orders.find((order) => order.clientOrderId === cloid && order.status === "FILLED");
-    if (matchingOrder) {
-      return matchingOrder;
-    }
-
-    if (orders.length >= BINANCE_ORDERS_FETCH_LIMIT && endTime - startTime > BINANCE_ORDER_LOOKUP_MIN_WINDOW_MS) {
-      const midpoint = Math.floor((startTime + endTime) / 2);
-      intervals.push({ startTime, endTime: midpoint });
-      intervals.push({ startTime: midpoint + 1, endTime });
-    }
-  }
-
-  return undefined;
-}
-
-function getPendingOrderLookupWindowMs(): number {
-  const configuredTtlSeconds = Number(process.env.REBALANCER_PENDING_ORDER_TTL);
-  const pendingOrderTtlSeconds =
-    Number.isFinite(configuredTtlSeconds) && configuredTtlSeconds > 0 ? configuredTtlSeconds : 60 * 60;
-  return pendingOrderTtlSeconds * 1000 + BINANCE_ORDER_LOOKUP_TTL_BUFFER_MS;
-}
-
-export async function getBinanceSpotMarketMetaForRoute(
-  binanceApi: BinanceExchangeInfoReader,
-  sourceToken: string,
-  destinationToken: string
-): Promise<SpotMarketMeta> {
-  const sourceAsset = resolveBinanceCoinSymbol(sourceToken);
-  const destinationAsset = resolveBinanceCoinSymbol(destinationToken);
-  const exchangeInfo = await binanceApi.exchangeInfo();
-  const symbol = exchangeInfo.symbols.find((symbols) => {
-    return (
-      symbols.symbol === `${sourceAsset}${destinationAsset}` || symbols.symbol === `${destinationAsset}${sourceAsset}`
-    );
-  });
-  assert(isDefined(symbol), `No market found for ${sourceAsset} and ${destinationAsset}`);
-  return deriveBinanceSpotMarketMeta(sourceToken, destinationToken, symbol);
 }
 
 /**

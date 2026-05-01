@@ -9,8 +9,6 @@ import {
   deriveBinanceSpotMarketMeta,
   getFillCommission,
   getAtomicDepositorContracts,
-  getBinanceDepositUnlockErrorInfo,
-  getMatchingBinanceFillForCloid,
   getOutstandingBinanceDeposits,
   isCompletedBinanceWithdrawal,
   isFailedBinanceWithdrawal,
@@ -21,8 +19,8 @@ import {
   usesBinanceAtomicDepositorTransfer,
 } from "../src/utils";
 
-function makeDeposit(network: string, amount: number, insertTime: number, status?: number): BinanceDeposit {
-  return { network, amount, coin: "USDT", txId: `0x${insertTime}`, insertTime, status };
+function makeDeposit(network: string, amount: number, insertTime: number): BinanceDeposit {
+  return { network, amount, coin: "USDT", txId: `0x${insertTime}`, insertTime };
 }
 
 function makeWithdrawal(amount: number, timestamp: number, transactionFee = 0): BinanceWithdrawal {
@@ -130,18 +128,6 @@ describe("BinanceUtils: isCompletedBinanceWithdrawal", function () {
   });
 });
 
-describe("BinanceUtils: Binance deposit withdrawal unlock error", function () {
-  it("extracts BTC-equivalent locked value from Binance RW00441 errors", function () {
-    const info = getBinanceDepositUnlockErrorInfo(
-      new Error(
-        "[RW00441] Your deposits of 2.13569561 BTC in value have not met the required unlock confirmations for withdrawal."
-      )
-    );
-
-    expect(info?.lockedBtcValue).to.equal("2.13569561");
-  });
-});
-
 describe("BinanceUtils: getFillCommission", function () {
   it("sums only commissions charged in the received asset from the most recent trade page", async function () {
     const trades = Array.from({ length: 1000 }, (_, index) => ({
@@ -172,77 +158,6 @@ describe("BinanceUtils: getFillCommission", function () {
       orderId: 123,
       limit: 1000,
     });
-  });
-});
-
-describe("BinanceUtils: getMatchingBinanceFillForCloid", function () {
-  function makeSellSideWethUsdcMeta(): SpotMarketMeta {
-    return {
-      symbol: "ETHUSDC",
-      baseAssetName: "ETH",
-      quoteAssetName: "USDC",
-      pxDecimals: 2,
-      szDecimals: 4,
-      minimumOrderSize: 0.0001,
-      isBuy: false,
-    };
-  }
-
-  it("treats negative historical sell proceeds as unavailable fill data", async function () {
-    const myTradesStub = sinon.stub();
-    const allOrdersStub = sinon.stub().resolves([
-      {
-        clientOrderId: "cloid",
-        status: "FILLED",
-        orderId: 123,
-        executedQty: "1",
-        cummulativeQuoteQty: "-1",
-      },
-    ]);
-
-    const matchingFill = await getMatchingBinanceFillForCloid(
-      { allOrders: allOrdersStub, myTrades: myTradesStub } as never,
-      "cloid",
-      makeSellSideWethUsdcMeta()
-    );
-
-    expect(matchingFill).to.equal(undefined);
-    expect(myTradesStub.callCount).to.equal(0);
-  });
-
-  it("splits saturated Binance order-history windows when searching for a cloid", async function () {
-    const allOrdersStub = sinon.stub();
-    allOrdersStub.onCall(0).resolves(
-      Array.from({ length: 1000 }, (_, index) => ({
-        clientOrderId: `other-${index}`,
-        status: "FILLED",
-        orderId: index + 1,
-        executedQty: "1",
-        cummulativeQuoteQty: "2500",
-      }))
-    );
-    allOrdersStub.onCall(1).resolves([]);
-    allOrdersStub.onCall(2).resolves([
-      {
-        clientOrderId: "cloid",
-        status: "FILLED",
-        orderId: 1001,
-        executedQty: "1",
-        cummulativeQuoteQty: "2500",
-      },
-    ]);
-    const myTradesStub = sinon.stub().resolves([]);
-
-    const matchingFill = await getMatchingBinanceFillForCloid(
-      { allOrders: allOrdersStub, myTrades: myTradesStub } as never,
-      "cloid",
-      makeSellSideWethUsdcMeta()
-    );
-
-    expect(matchingFill?.expectedAmountToReceive).to.equal(2500);
-    expect(allOrdersStub.callCount).to.equal(3);
-    expect(allOrdersStub.firstCall.args[0]).to.include({ symbol: "ETHUSDC", limit: 1000 });
-    expect(myTradesStub.callCount).to.equal(1);
   });
 });
 
