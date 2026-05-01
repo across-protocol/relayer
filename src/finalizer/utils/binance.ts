@@ -24,10 +24,19 @@ import {
   BinanceTransactionType,
   getBinanceWithdrawalType,
   isCompletedBinanceWithdrawal,
+  resolveBinanceCoinSymbol,
   truncate,
 } from "../../utils";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { FinalizerPromise, AddressesToFinalize } from "../types";
+import type { OrderDetails } from "../../rebalancer/utils/interfaces";
+import {
+  BINANCE_STABLECOIN_SWAP_REDIS_PREFIX,
+  getPendingBridgeStatusSetKey,
+  getRedisCacheForRebalancerStatusTracking,
+  redisGetOrderDetailsForAdapter,
+  STATUS,
+} from "../../rebalancer/utils/utils";
 
 // Alias for a Binance deposit/withdrawal status.
 enum Status {
@@ -41,6 +50,12 @@ enum Status {
 
 // The precision of a `DECIMAL` type in the Binance API.
 const DECIMAL_PRECISION = 1_000_000;
+const BINANCE_SWEEP_BLOCKING_STATUSES = [
+  STATUS.PENDING_BRIDGE_PRE_DEPOSIT,
+  STATUS.PENDING_DEPOSIT,
+  STATUS.PENDING_SWAP,
+  STATUS.PENDING_WITHDRAWAL,
+];
 
 /**
  * Unlike other finalizers, the Binance finalizer is only used to withdraw EOA deposits on Binance.
@@ -114,6 +129,7 @@ export async function binanceFinalizer(
 
   // We can run this in parallel since deposits for each tokens are independent of each other.
   await mapAsync(Object.entries(senderAddresses), async ([address, symbols]) => {
+    const pendingRebalanceSymbols = await getPendingBinanceRebalanceSymbolsForAccount(logger, EvmAddress.from(address));
     for (const symbol of symbols) {
       const coin = accountCoins.find((coin) => coin.symbol === symbol);
       if (!isDefined(coin)) {
@@ -236,14 +252,27 @@ export async function binanceFinalizer(
           // If the confirmed coin balance minus any pending swap balances is greater than the withdraw minimum, and there is
           // nothing to withdraw in this lookback window, then we should try to sweep the balance to L1.
           if (withdrawNetwork === BINANCE_NETWORKS[hubChainId]) {
-            const coinBalanceMinusSwapDeposits =
-              coinBalance - creditedDepositAmount - (binanceSwapDepositAmount[symbol] ?? 0);
-            if (coinBalanceMinusSwapDeposits >= Number(networkLimits.withdrawMin)) {
+            const hasPendingRebalanceForSymbol = pendingRebalanceSymbols.has(resolveBinanceCoinSymbol(symbol));
+            const coinBalanceMinusSwapDeposits = getSweepableOrphanBinanceBalance(
+              coinBalance,
+              creditedDepositAmount,
+              binanceSwapDepositAmount[symbol] ?? 0
+            );
+            if (hasPendingRebalanceForSymbol) {
+              logger.debug({
+                at: "BinanceFinalizer",
+                message: `Skipping orphaned ${symbol} sweep for ${address} because a pending Binance rebalance uses this token.`,
+                pendingRebalanceSymbols: [...pendingRebalanceSymbols],
+              });
+            } else if (coinBalanceMinusSwapDeposits >= Number(networkLimits.withdrawMin)) {
               const withdrawMax = Number(networkLimits.withdrawMax);
               const cappedWithdraw = Math.min(coinBalanceMinusSwapDeposits, withdrawMax);
               logger.debug({
                 at: "BinanceFinalizer",
                 message: `Sweeping orphaned ${cappedWithdraw} ${symbol} balance for ${address}.`,
+                coinBalance,
+                creditedDepositAmount,
+                swapDepositAmount: binanceSwapDepositAmount[symbol] ?? 0,
               });
               // Lastly, we need to truncate the amount to withdraw to 6 decimal places
               const amountToSweep = truncate(cappedWithdraw, 6);
@@ -270,4 +299,63 @@ export async function binanceFinalizer(
     callData: [],
     crossChainMessages: [],
   };
+}
+
+export function getSweepableOrphanBinanceBalance(
+  coinBalance: number,
+  creditedDepositAmount: number,
+  swapDepositAmount: number
+): number {
+  return Math.max(coinBalance - creditedDepositAmount - swapDepositAmount, 0);
+}
+
+export function getPendingBinanceRebalanceSymbols(
+  pendingOrders: Pick<OrderDetails, "sourceToken" | "destinationToken">[]
+): Set<string> {
+  return pendingOrders.reduce<Set<string>>((symbols, order) => {
+    symbols.add(resolveBinanceCoinSymbol(order.sourceToken));
+    symbols.add(resolveBinanceCoinSymbol(order.destinationToken));
+    return symbols;
+  }, new Set());
+}
+
+async function getPendingBinanceRebalanceSymbolsForAccount(
+  logger: winston.Logger,
+  account: EvmAddress
+): Promise<Set<string>> {
+  const redisCache = await getRedisCacheForRebalancerStatusTracking(logger);
+  if (!isDefined(redisCache)) {
+    return new Set();
+  }
+
+  const orders = (
+    await Promise.all(
+      BINANCE_SWEEP_BLOCKING_STATUSES.map(async (status) => {
+        const statusSetKey = getPendingBridgeStatusSetKey(
+          BINANCE_STABLECOIN_SWAP_REDIS_PREFIX,
+          status,
+          account.toNative()
+        );
+        const cloids = await redisCache.sMembers(statusSetKey);
+        return await Promise.all(
+          cloids.map(async (cloid) => {
+            const order = await redisGetOrderDetailsForAdapter(
+              redisCache,
+              BINANCE_STABLECOIN_SWAP_REDIS_PREFIX,
+              cloid,
+              account
+            );
+            if (!isDefined(order)) {
+              await redisCache.sRem(statusSetKey, cloid);
+            }
+            return order;
+          })
+        );
+      })
+    )
+  )
+    .flat()
+    .filter(isDefined);
+
+  return getPendingBinanceRebalanceSymbols(orders);
 }

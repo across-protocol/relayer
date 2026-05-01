@@ -248,6 +248,11 @@ Running the Rebalancer allows the relayer to support in-protocol swap flows whil
 
 The Binance finalizer sweeps exchange balances as a fallback path. The Binance adapter marks expected swap lifecycle transfers, and stale balances are eventually swept if swaps do not complete.
 
+When Binance reports `RW00441`, the account has recently credited deposit value that is not withdrawal-unlocked yet.
+The Binance adapter treats this as a retryable wait state and leaves the order pending. The Binance finalizer reads the
+adapter's pending-order Redis state and skips orphan sweeps for tokens used by active Binance rebalances so post-swap
+output balances are not swept while an order is waiting for Binance's deposit unlock confirmations.
+
 ## Venue-specific operational note
 
 Hyperliquid spot metadata is currently configured with `pxDecimals=4` for USDT/USDC and prices are truncated to `pxDecimals` when submitting orders. This is a pragmatic setting to avoid tick-size divisibility rejections observed with more granular precision.

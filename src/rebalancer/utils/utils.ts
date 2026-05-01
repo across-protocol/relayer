@@ -132,3 +132,4 @@ export async function redisGetOrderDetailsForAdapter(
 
 export const CCTP_PENDING_BRIDGE_REDIS_PREFIX = "cctp-bridge:";
 export const OFT_PENDING_BRIDGE_REDIS_PREFIX = "oft-bridge:";
+export const BINANCE_STABLECOIN_SWAP_REDIS_PREFIX = "binance-stablecoin-swap:";

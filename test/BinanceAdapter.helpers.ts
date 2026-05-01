@@ -220,6 +220,44 @@ describe("Binance adapter helpers", async function () {
     });
   });
 
+  it("treats Binance RW00441 withdrawal rejections as a retryable wait state", async function () {
+    const [signer] = await ethers.getSigners();
+    const debug = sinon.stub();
+    const adapter = new BinanceStablecoinSwapAdapter(
+      { ...TEST_LOGGER, debug } as unknown as winston.Logger,
+      {} as RebalancerConfig,
+      signer,
+      {} as CctpAdapter,
+      {} as OftAdapter
+    );
+    const internals = adapter as unknown as {
+      baseSignerAddress: EvmAddress;
+      binanceApiClient: { withdraw: sinon.SinonStub };
+      _withdraw(cloid: string, quantity: number, destinationToken: string, destinationChain: number): Promise<boolean>;
+      _getEntrypointNetwork(chainId: number, token: string): Promise<number>;
+      _getTokenInfo(token: string, chainId: number): { decimals: number };
+    };
+    internals.baseSignerAddress = EvmAddress.from(await signer.getAddress());
+    internals.binanceApiClient = {
+      withdraw: sinon
+        .stub()
+        .rejects(
+          new Error(
+            "[RW00441] Your deposits of 2.13569561 BTC in value have not met the required unlock confirmations for withdrawal."
+          )
+        ),
+    };
+    sinon.stub(internals, "_getEntrypointNetwork").resolves(CHAIN_IDs.MAINNET);
+    sinon.stub(internals, "_getTokenInfo").returns({ decimals: 6 });
+
+    const result = await internals._withdraw("cloid", 100, "USDC", CHAIN_IDs.MAINNET);
+
+    expect(result).to.equal(false);
+    expect(internals.binanceApiClient.withdraw.calledOnce).to.equal(true);
+    expect(debug.calledOnce).to.equal(true);
+    expect(debug.getCall(0).args[0].lockedBtcValue).to.equal("2.13569561");
+  });
+
   it("keeps pending WETH credit until a finalized Binance withdrawal is wrapped", async function () {
     const adapter = await makeAdapter();
     const [signer] = await ethers.getSigners();
@@ -322,8 +360,8 @@ function makeWethUsdcSymbol() {
 }
 
 const TEST_LOGGER = {
-  debug: () => undefined,
-  info: () => undefined,
-  warn: () => undefined,
-  error: () => undefined,
+  debug: (): void => undefined,
+  info: (): void => undefined,
+  warn: (): void => undefined,
+  error: (): void => undefined,
 } as unknown as winston.Logger;

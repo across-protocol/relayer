@@ -209,6 +209,7 @@ export enum BinanceTransactionType {
 }
 
 const BINANCE_TRANSACTION_TYPE_PREFIX = "binance-transaction-type";
+
 export function getBinanceTransactionTypeKey(chainId: number, uniqueIdentifier: string): string {
   const binanceNetworkName = BINANCE_NETWORKS[chainId].toLowerCase();
   return getBinanceTransactionTypeKeyFromNetworkName(binanceNetworkName, uniqueIdentifier);
@@ -330,6 +331,22 @@ export async function getBinanceDeposits(
       insertTime: deposit.insertTime,
     } satisfies BinanceDeposit;
   });
+}
+
+export function isBinanceDepositUnlockError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes("[RW00441]") || message.includes("required unlock confirmations for withdrawal");
+}
+
+export function getBinanceDepositUnlockErrorInfo(
+  error: unknown
+): { message: string; lockedBtcValue?: string } | undefined {
+  if (!isBinanceDepositUnlockError(error)) {
+    return undefined;
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  const lockedBtcValue = message.match(/deposits of ([0-9.]+) BTC in value/)?.[1];
+  return { message, lockedBtcValue };
 }
 
 /**

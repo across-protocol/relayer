@@ -9,6 +9,7 @@ import {
   deriveBinanceSpotMarketMeta,
   getFillCommission,
   getAtomicDepositorContracts,
+  getBinanceDepositUnlockErrorInfo,
   getOutstandingBinanceDeposits,
   isCompletedBinanceWithdrawal,
   isFailedBinanceWithdrawal,
@@ -19,8 +20,8 @@ import {
   usesBinanceAtomicDepositorTransfer,
 } from "../src/utils";
 
-function makeDeposit(network: string, amount: number, insertTime: number): BinanceDeposit {
-  return { network, amount, coin: "USDT", txId: `0x${insertTime}`, insertTime };
+function makeDeposit(network: string, amount: number, insertTime: number, status?: number): BinanceDeposit {
+  return { network, amount, coin: "USDT", txId: `0x${insertTime}`, insertTime, status };
 }
 
 function makeWithdrawal(amount: number, timestamp: number, transactionFee = 0): BinanceWithdrawal {
@@ -125,6 +126,18 @@ describe("BinanceUtils: isCompletedBinanceWithdrawal", function () {
     expect(isCompletedBinanceWithdrawal(4)).to.equal(false);
     expect(isCompletedBinanceWithdrawal(5)).to.equal(false);
     expect(isCompletedBinanceWithdrawal(undefined)).to.equal(false);
+  });
+});
+
+describe("BinanceUtils: Binance deposit withdrawal unlock error", function () {
+  it("extracts BTC-equivalent locked value from Binance RW00441 errors", function () {
+    const info = getBinanceDepositUnlockErrorInfo(
+      new Error(
+        "[RW00441] Your deposits of 2.13569561 BTC in value have not met the required unlock confirmations for withdrawal."
+      )
+    );
+
+    expect(info?.lockedBtcValue).to.equal("2.13569561");
   });
 });
 

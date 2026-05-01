@@ -17,6 +17,7 @@ import {
   fromWei,
   getAtomicDepositorContracts,
   getAccountCoins,
+  getBinanceDepositUnlockErrorInfo,
   getBinanceApiClient,
   getFillCommission,
   getBinanceTransactionTypeKey,
@@ -45,7 +46,7 @@ import {
   convertBinanceRouteAmount,
 } from "../../utils";
 import { OrderDetails, RebalanceRoute } from "../utils/interfaces";
-import { STATUS } from "../utils/utils";
+import { BINANCE_STABLECOIN_SWAP_REDIS_PREFIX, STATUS } from "../utils/utils";
 import { BaseAdapter } from "./baseAdapter";
 import { AugmentedTransaction, MultiCallerClient } from "../../clients";
 import { RebalancerConfig } from "../RebalancerConfig";
@@ -65,7 +66,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   private tradeFeesPromise?: ReturnType<Binance["tradeFee"]>;
   private spotMarketMetaPromiseByRoute = new Map<string, Promise<SpotMarketMeta>>();
 
-  REDIS_PREFIX = "binance-stablecoin-swap:";
+  REDIS_PREFIX = BINANCE_STABLECOIN_SWAP_REDIS_PREFIX;
   private static readonly ORDER_BOOK_CACHE_TTL_MS = 30_000;
 
   REDIS_KEY_INITIATED_WITHDRAWALS = this.REDIS_PREFIX + "initiated-withdrawals";
@@ -302,12 +303,15 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         await this._placeMarketOrder(cloid, orderDetails);
         await this._redisUpdateOrderStatus(cloid, STATUS.PENDING_DEPOSIT, STATUS.PENDING_SWAP, this.baseSignerAddress);
       } else {
-        await this._withdraw(
+        const withdrawalInitiated = await this._withdraw(
           cloid,
           Number(fromWei(amountToTransfer, sourceTokenInfo.decimals)),
           destinationToken,
           destinationChain
         );
+        if (!withdrawalInitiated) {
+          continue;
+        }
         await this._redisUpdateOrderStatus(
           cloid,
           STATUS.PENDING_DEPOSIT,
@@ -351,7 +355,10 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
           matchingFill: matchingFill,
           balanceBeforeWithdraw: balance,
         });
-        await this._withdraw(cloid, withdrawAmount, destinationToken, destinationChain);
+        const withdrawalInitiated = await this._withdraw(cloid, withdrawAmount, destinationToken, destinationChain);
+        if (!withdrawalInitiated) {
+          continue;
+        }
         await this._redisUpdateOrderStatus(
           cloid,
           STATUS.PENDING_SWAP,
@@ -1536,19 +1543,39 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     quantity: number,
     destinationToken: string,
     destinationChain: number
-  ): Promise<void> {
+  ): Promise<boolean> {
     const destinationEntrypointNetwork = await this._getEntrypointNetwork(destinationChain, destinationToken);
 
     // We need to truncate the amount to withdraw to the destination chain's decimal places.
     const destinationTokenInfo = this._getTokenInfo(destinationToken, destinationEntrypointNetwork);
     const amountToWithdraw = truncate(quantity, destinationTokenInfo.decimals);
-    const withdrawalId = await this.binanceApiClient.withdraw({
-      coin: resolveBinanceCoinSymbol(destinationToken),
-      address: this.baseSignerAddress.toNative(),
-      amount: Number(amountToWithdraw),
-      network: BINANCE_NETWORKS[destinationEntrypointNetwork],
-      transactionFeeFlag: false,
-    });
+    const binanceDestinationCoin = resolveBinanceCoinSymbol(destinationToken);
+
+    let withdrawalId: { id: string };
+    try {
+      withdrawalId = await this.binanceApiClient.withdraw({
+        coin: binanceDestinationCoin,
+        address: this.baseSignerAddress.toNative(),
+        amount: Number(amountToWithdraw),
+        network: BINANCE_NETWORKS[destinationEntrypointNetwork],
+        transactionFeeFlag: false,
+      });
+    } catch (error) {
+      const unlockErrorInfo = getBinanceDepositUnlockErrorInfo(error);
+      if (!unlockErrorInfo) {
+        throw error;
+      }
+      this.logger.debug({
+        at: "BinanceStablecoinSwapAdapter._withdraw",
+        message: `Binance rejected withdrawal for order ${cloid} because recent deposits have not reached withdrawal-unlock confirmations. Waiting before retrying.`,
+        cloid,
+        destinationToken,
+        amountToWithdraw,
+        lockedBtcValue: unlockErrorInfo.lockedBtcValue,
+        error: unlockErrorInfo.message,
+      });
+      return false;
+    }
     const initiatedWithdrawalKey = this._redisGetInitiatedWithdrawalKey(cloid);
     await this.redisCache.set(initiatedWithdrawalKey, withdrawalId.id);
     await setBinanceWithdrawalType(destinationEntrypointNetwork, withdrawalId.id, BinanceTransactionType.SWAP);
@@ -1561,6 +1588,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       redisWithdrawalTypeKey: getBinanceTransactionTypeKey(destinationEntrypointNetwork, withdrawalId.id),
       finalDestinationChain: destinationChain,
     });
+    return true;
   }
 
   private async _wrapEth(chainId: number, amount: BigNumber): Promise<void> {
