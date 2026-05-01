@@ -1626,5 +1626,5 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
 
 function getBinanceDepositUnlockErrorMessage(error: unknown): string | undefined {
   const message = error instanceof Error ? error.message : String(error);
-  return message.startsWith("[RW00441]") ? message : undefined;
+  return message.includes("[RW00441]") ? message : undefined;
 }
