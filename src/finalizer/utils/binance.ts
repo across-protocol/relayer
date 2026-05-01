@@ -351,13 +351,10 @@ export function getPositivePendingRebalanceAmountsByBinanceCoin(pendingRebalance
   for (const [_chainId, tokenBalances] of Object.entries(pendingRebalances)) {
     const chainId = Number(_chainId);
     for (const [token, amount] of Object.entries(tokenBalances)) {
-      if (amount.lte(bnZero)) {
-        continue;
-      }
       const { decimals } = getTokenInfo(EvmAddress.from(resolveAcrossToken(token, chainId, true)), chainId);
       const binanceCoin = resolveBinanceCoinSymbol(token);
       totals[binanceCoin] = (totals[binanceCoin] ?? 0) + Number(formatUnits(amount, decimals));
     }
   }
-  return totals;
+  return Object.fromEntries(Object.entries(totals).filter(([_symbol, amount]) => amount > 0));
 }

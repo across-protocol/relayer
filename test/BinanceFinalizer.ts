@@ -23,6 +23,20 @@ describe("Binance finalizer helpers", function () {
     expect(deductions).to.deep.equal({ USDC: 100, ETH: 1 });
   });
 
+  it("nets pending rebalance amounts by Binance coin before applying positive deductions", function () {
+    const deductions = getPositivePendingRebalanceAmountsByBinanceCoin({
+      [CHAIN_IDs.MAINNET]: {
+        USDC: toBNWei("100", 6),
+      },
+      [CHAIN_IDs.ARBITRUM]: {
+        USDC: bnZero.sub(toBNWei("40", 6)),
+        WETH: bnZero.sub(toBNWei("1", 18)),
+      },
+    });
+
+    expect(deductions).to.deep.equal({ USDC: 60 });
+  });
+
   it("subtracts credited, swap, and pending rebalance amounts from orphan sweep candidates", function () {
     const sweepableBalance = getSweepableOrphanBinanceBalance(250_000, 10_000, 20_000, 30_000);
 
