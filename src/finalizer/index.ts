@@ -30,7 +30,6 @@ import {
   EvmAddress,
   getProvider,
   chunk,
-  getCurrentTime,
 } from "../utils";
 import { ChainFinalizer, CrossChainMessage, Finalizer, isAugmentedTransaction } from "./types";
 import {
@@ -394,7 +393,7 @@ export async function constructFinalizerClients(
   // withdrawn to L1, so assuming these L1 tokens do not change in the future, then we can reduce the hub pool
   // client lookback. Note, this should not be impacted by L2 tokens changing, for example when changing
   // USDC.e --> USDC because the l1 token matching both L2 version stays the same.
-  const hubPoolLookBack = getCurrentTime() - config.maxFinalizerLookback + 8 * 3600;
+  const hubPoolLookBack = config.maxFinalizerLookback + 8 * 3600;
   const commonClients = await constructClients(_logger, config, baseSigner, hubPoolLookBack);
   await updateFinalizerClients(commonClients);
 
