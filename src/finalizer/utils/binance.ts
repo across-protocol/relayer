@@ -27,6 +27,7 @@ import {
   isCompletedBinanceWithdrawal,
   resolveBinanceCoinSymbol,
   truncate,
+  ethers,
 } from "../../utils";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { FinalizerPromise, AddressesToFinalize } from "../types";
@@ -320,10 +321,14 @@ async function getPendingBinanceRebalanceDeductions(
   recipientAddresses: string[]
 ): Promise<Record<string, number>> {
   try {
-    const readOnlyRebalancerClient = await constructReadOnlyRebalancerClient(logger, hubSigner);
-    return getPositivePendingRebalanceAmountsByBinanceCoin(
-      await readOnlyRebalancerClient.getPendingBinanceRebalances(recipientAddresses)
+    const readOnlyRebalancerClient = await constructReadOnlyRebalancerClient(logger, hubSigner, ["binance"]);
+    const lookupAccounts = getEvmBinanceRebalanceLookupAccounts(recipientAddresses, await hubSigner.getAddress());
+    const pendingRebalanceDeductions = await Promise.all(
+      lookupAccounts.map(async (account) =>
+        getPositivePendingRebalanceAmountsByBinanceCoin(await readOnlyRebalancerClient.getPendingRebalances(account))
+      )
     );
+    return sumPendingBinanceRebalanceDeductions(pendingRebalanceDeductions);
   } catch (error) {
     logger.warn({
       at: "BinanceFinalizer",
@@ -333,6 +338,31 @@ async function getPendingBinanceRebalanceDeductions(
     });
     return {};
   }
+}
+
+function sumPendingBinanceRebalanceDeductions(deductions: Record<string, number>[]): Record<string, number> {
+  return deductions.reduce<Record<string, number>>((acc, deduction) => {
+    for (const [symbol, amount] of Object.entries(deduction)) {
+      acc[symbol] = (acc[symbol] ?? 0) + amount;
+    }
+    return acc;
+  }, {});
+}
+
+export function getEvmBinanceRebalanceLookupAccounts(addresses: string[], signerAddress?: string): EvmAddress[] {
+  const seenAddresses = new Set<string>();
+  return [...addresses, signerAddress]
+    .filter(isDefined)
+    .filter((address) => ethers.utils.isAddress(address))
+    .map((address) => EvmAddress.from(address))
+    .filter((address) => {
+      const normalizedAddress = address.toNative();
+      if (seenAddresses.has(normalizedAddress)) {
+        return false;
+      }
+      seenAddresses.add(normalizedAddress);
+      return true;
+    });
 }
 
 export function getPositivePendingRebalanceAmountsByBinanceCoin(pendingRebalances: {

@@ -1,9 +1,9 @@
 import { expect, sinon } from "./utils";
 import {
+  getEvmBinanceRebalanceLookupAccounts,
   getPositivePendingRebalanceAmountsByBinanceCoin,
   getSweepableOrphanBinanceBalance,
 } from "../src/finalizer/utils/binance";
-import { getEvmBinanceRebalanceLookupAccounts } from "../src/rebalancer/clients/ReadOnlyRebalancerClient";
 import { bnZero, CHAIN_IDs, EvmAddress, toBNWei } from "../src/utils";
 
 describe("Binance finalizer helpers", function () {

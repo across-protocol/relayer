@@ -202,8 +202,8 @@ accounting) and should not initiate new rebalances.
 The read-only mode still initializes adapters (with an empty route set) so `getPendingRebalances(account)` and
 `getPendingOrders()` remain available without coupling callers to a specific operational rebalancing mode.
 
-For Binance-specific finalizer accounting, read-only mode also exposes Binance adapter pending balances through
-`getPendingBinanceRebalances(recipientAddresses)`. This lets the Binance finalizer subtract positive destination-token
+For adapter-specific accounting, `constructReadOnlyRebalancerClient()` can be given an adapter-name filter. The Binance
+finalizer uses a read-only client constructed with only the Binance adapter, then subtracts positive destination-token
 pending amounts from exchange withdrawal capacity without reading adapter Redis status sets directly.
 
 The OFT and CCTP adapters also expose their pending bridge-pre-deposit Redis schema through `src/rebalancer/clients/CctpOftReadOnlyClient.ts`. Adapter-side bridge accounting uses that readonly reader to ignore rebalancer-owned OFT/CCTP transfers instead of instantiating rebalancer adapters inside `AdapterManager`.

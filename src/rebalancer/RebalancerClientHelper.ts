@@ -13,7 +13,8 @@ import { RebalancerAdapter, RebalanceRoute } from "./utils/interfaces";
 function constructRebalancerDependencies(
   logger: winston.Logger,
   baseSigner: Signer,
-  rebalanceRoutesOverride?: RebalanceRoute[]
+  rebalanceRoutesOverride?: RebalanceRoute[],
+  adapterNamesOverride?: string[]
 ): {
   rebalancerConfig: RebalancerConfig;
   adapters: { [name: string]: RebalancerAdapter };
@@ -45,8 +46,12 @@ function constructRebalancerDependencies(
   // any adapters or routes when running on test net.
   const adaptersToUpdate: Record<string, RebalancerAdapter> =
     rebalancerConfig.hubPoolChainId === CHAIN_IDs.MAINNET ? adapterMap : {};
+  const filteredAdapters =
+    adapterNamesOverride === undefined
+      ? adaptersToUpdate
+      : Object.fromEntries(Object.entries(adaptersToUpdate).filter(([name]) => adapterNamesOverride.includes(name)));
 
-  return { rebalancerConfig, adapters: adaptersToUpdate, rebalanceRoutes };
+  return { rebalancerConfig, adapters: filteredAdapters, rebalanceRoutes };
 }
 
 export async function constructCumulativeBalanceRebalancerClient(
@@ -89,9 +94,15 @@ export async function constructCumulativeBalanceRebalancerClient(
 
 export async function constructReadOnlyRebalancerClient(
   logger: winston.Logger,
-  baseSigner: Signer
+  baseSigner: Signer,
+  adapterNamesOverride?: string[]
 ): Promise<ReadOnlyRebalancerClient> {
-  const { rebalancerConfig, adapters } = constructRebalancerDependencies(logger, baseSigner);
+  const { rebalancerConfig, adapters } = constructRebalancerDependencies(
+    logger,
+    baseSigner,
+    undefined,
+    adapterNamesOverride
+  );
   const isReadonly = true;
   const rebalancerClient = new ReadOnlyRebalancerClient(logger, rebalancerConfig, adapters, baseSigner, isReadonly);
   // Initialize the CCTP and OFT Adapters first before initializing the Binance and HL adapters which use the former
