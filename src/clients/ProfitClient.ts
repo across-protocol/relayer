@@ -367,7 +367,7 @@ export class ProfitClient {
     const gasMultiplier = this.resolveGasMultiplier(deposit);
     tokenGasCost = tokenGasCost.mul(gasMultiplier).div(fixedPoint);
 
-    const gasCostUsd = tokenGasCost.mul(gasTokenPriceUsd).div(fixedPoint);
+    const gasCostUsd = tokenGasCost.mul(gasTokenPriceUsd).div(bn10.pow(gasToken.decimals));
 
     const auxiliaryNativeTokenCost = this.getAuxiliaryNativeTokenCost(deposit);
     const nativeToken = this.resolveNativeToken(chainId);
