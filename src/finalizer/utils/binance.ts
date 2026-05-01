@@ -127,12 +127,17 @@ export async function binanceFinalizer(
   });
   const binanceDeposits = _binanceBridgeDeposits.filter((deposit) => deposit.status === Status.Confirmed);
   const creditedDeposits = _binanceBridgeDeposits.filter((deposit) => deposit.status === Status.Credited);
-  // Binance balances are shared across finalizer withdrawal recipients. Use one symbol guard for the shared
-  // exchange account so one recipient iteration cannot sweep a token needed by another pending Binance rebalance.
+  // Binance balances are shared across finalizer withdrawal recipients. Pending rebalance Redis state is keyed by
+  // signer account, while finalizer withdrawal recipients can be configured separately, so include the running signer
+  // in the lookup before using one symbol guard for the shared exchange account.
+  const pendingRebalanceLookupAccounts = getEvmBinanceRebalanceLookupAccounts(
+    Object.keys(senderAddresses),
+    await hubSigner.getAddress()
+  );
   const sharedBinanceAccountPendingRebalanceSymbols = new Set(
     (
       await Promise.all(
-        getEvmBinanceRebalanceLookupAccounts(Object.keys(senderAddresses)).map(async (account) => [
+        pendingRebalanceLookupAccounts.map(async (account) => [
           ...(await getPendingBinanceRebalanceSymbolsForAccount(logger, account)),
         ])
       )
@@ -332,10 +337,20 @@ export function getPendingBinanceRebalanceSymbols(
   }, new Set());
 }
 
-export function getEvmBinanceRebalanceLookupAccounts(addresses: string[]): EvmAddress[] {
-  return addresses
+export function getEvmBinanceRebalanceLookupAccounts(addresses: string[], signerAddress?: string): EvmAddress[] {
+  const seenAddresses = new Set<string>();
+  return [...addresses, signerAddress]
+    .filter(isDefined)
     .filter((address) => ethers.utils.isAddress(address))
     .map((address) => EvmAddress.from(address))
+    .filter((address) => {
+      const normalizedAddress = address.toNative();
+      if (seenAddresses.has(normalizedAddress)) {
+        return false;
+      }
+      seenAddresses.add(normalizedAddress);
+      return true;
+    })
     .filter(isDefined);
 }
 

@@ -252,6 +252,9 @@ When Binance reports `RW00441`, the account has recently credited deposit value 
 The Binance adapter treats this as a retryable wait state and leaves the order pending. The Binance finalizer reads the
 adapter's pending-order Redis state and skips orphan sweeps for tokens used by active Binance rebalances so post-swap
 output balances are not swept while an order is waiting for Binance's deposit unlock confirmations.
+Because pending-order Redis sets are keyed by signer account and finalizer withdrawal recipients can be configured
+separately, the finalizer checks both configured EVM withdrawal recipients and the running signer account before applying
+this shared Binance-account sweep guard.
 
 ## Venue-specific operational note
 

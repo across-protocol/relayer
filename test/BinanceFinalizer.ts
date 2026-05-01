@@ -36,4 +36,16 @@ describe("Binance finalizer helpers", function () {
 
     expect(accounts.map((account) => account.toNative())).to.deep.equal([EvmAddress.from(evmAddress).toNative()]);
   });
+
+  it("includes the signer account when collecting pending rebalance accounts", function () {
+    const recipientAddress = "0x0000000000000000000000000000000000000001";
+    const signerAddress = "0x0000000000000000000000000000000000000002";
+
+    const accounts = getEvmBinanceRebalanceLookupAccounts([recipientAddress], signerAddress);
+
+    expect(accounts.map((account) => account.toNative())).to.deep.equal([
+      EvmAddress.from(recipientAddress).toNative(),
+      EvmAddress.from(signerAddress).toNative(),
+    ]);
+  });
 });
