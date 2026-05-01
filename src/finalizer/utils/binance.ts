@@ -354,43 +354,54 @@ export function getEvmBinanceRebalanceLookupAccounts(addresses: string[], signer
     .filter(isDefined);
 }
 
-async function getPendingBinanceRebalanceSymbolsForAccount(
+export async function getPendingBinanceRebalanceSymbolsForAccount(
   logger: winston.Logger,
-  account: EvmAddress
+  account: EvmAddress,
+  getRedisCache = getRedisCacheForRebalancerStatusTracking
 ): Promise<Set<string>> {
-  const redisCache = await getRedisCacheForRebalancerStatusTracking(logger);
-  if (!isDefined(redisCache)) {
+  try {
+    const redisCache = await getRedisCache(logger);
+    if (!isDefined(redisCache)) {
+      return new Set();
+    }
+
+    const orders = (
+      await Promise.all(
+        BINANCE_SWEEP_BLOCKING_STATUSES.map(async (status) => {
+          const statusSetKey = getPendingBridgeStatusSetKey(
+            BINANCE_STABLECOIN_SWAP_REDIS_PREFIX,
+            status,
+            account.toNative()
+          );
+          const cloids = await redisCache.sMembers(statusSetKey);
+          return await Promise.all(
+            cloids.map(async (cloid) => {
+              const order = await redisGetOrderDetailsForAdapter(
+                redisCache,
+                BINANCE_STABLECOIN_SWAP_REDIS_PREFIX,
+                cloid,
+                account
+              );
+              if (!isDefined(order)) {
+                await redisCache.sRem(statusSetKey, cloid);
+              }
+              return order;
+            })
+          );
+        })
+      )
+    )
+      .flat()
+      .filter(isDefined);
+
+    return getPendingBinanceRebalanceSymbols(orders);
+  } catch (error) {
+    logger.warn({
+      at: "BinanceFinalizer",
+      message: "Unable to load pending Binance rebalance state from Redis; continuing without this sweep guard.",
+      account: account.toNative(),
+      error: error instanceof Error ? error.message : String(error),
+    });
     return new Set();
   }
-
-  const orders = (
-    await Promise.all(
-      BINANCE_SWEEP_BLOCKING_STATUSES.map(async (status) => {
-        const statusSetKey = getPendingBridgeStatusSetKey(
-          BINANCE_STABLECOIN_SWAP_REDIS_PREFIX,
-          status,
-          account.toNative()
-        );
-        const cloids = await redisCache.sMembers(statusSetKey);
-        return await Promise.all(
-          cloids.map(async (cloid) => {
-            const order = await redisGetOrderDetailsForAdapter(
-              redisCache,
-              BINANCE_STABLECOIN_SWAP_REDIS_PREFIX,
-              cloid,
-              account
-            );
-            if (!isDefined(order)) {
-              await redisCache.sRem(statusSetKey, cloid);
-            }
-            return order;
-          })
-        );
-      })
-    )
-  )
-    .flat()
-    .filter(isDefined);
-
-  return getPendingBinanceRebalanceSymbols(orders);
 }
