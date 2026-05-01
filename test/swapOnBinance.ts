@@ -13,6 +13,7 @@ import {
   BinanceSwapVenue,
   estimateDepositGasWithDeps,
   formatWithdrawalProgressLine,
+  getBinanceWithdrawalAmount,
   requireDefinedFilledAmount,
   ResolvedBinanceAsset,
   resolveBinanceAsset,
@@ -114,6 +115,31 @@ describe("swapOnBinance script helpers", function () {
     });
 
     expect(resolution).to.deep.equal({ ok: false, reason: "SVM_SOURCE_DEPOSIT_UNSUPPORTED" });
+  });
+
+  it("uses token-specific mappings for non-L1 token symbols", function () {
+    const usdbcAddress = resolveAcrossToken("USDbC", CHAIN_IDs.BASE)!;
+    const accountCoins = [
+      makeErc20Coin("USDC", [
+        {
+          chainId: CHAIN_IDs.BASE,
+          contractAddress: usdbcAddress,
+        },
+      ]),
+    ];
+
+    const resolution = resolveBinanceAsset({
+      accountCoins,
+      tokenSymbol: "USDbC",
+      chainId: CHAIN_IDs.BASE,
+      direction: "deposit",
+    });
+
+    expect(resolution.ok).to.equal(true);
+    if (resolution.ok) {
+      expect(resolution.asset.binanceCoin).to.equal("USDC");
+      expect(resolution.asset.localTokenAddress).to.equal(usdbcAddress);
+    }
   });
 
   it("rejects ERC20 routes when Binance contract metadata does not match the repo token address", function () {
@@ -290,6 +316,12 @@ describe("swapOnBinance script helpers", function () {
     expect(() => requireDefinedFilledAmount(undefined, "cloid-1", "TRX")).to.throw(
       "Filled amount for Binance order cloid-1 (TRX) is not available yet from Binance order history"
     );
+  });
+
+  it("converts withdrawal amount strings without float precision loss", function () {
+    const amount = getBinanceWithdrawalAmount("123456789012345.123456789", 6);
+
+    expect(amount.eq(toBNWei("123456789012345.123456", 6))).to.equal(true);
   });
 
   it("subtracts realized fill commission using Binance fill trades", async function () {

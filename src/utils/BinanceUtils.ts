@@ -130,13 +130,15 @@ export function readableBinanceWithdrawalStatus(status?: number): string {
 }
 
 export function resolveBinanceCoinSymbol(token: string): string {
-  switch (token) {
+  switch (token.toUpperCase()) {
     case "WETH":
       return "ETH";
+    case "USDC.E":
+    case "USDBC":
     case "ZKUSDCE":
       return "USDC";
     default:
-      return token;
+      return token.toUpperCase();
   }
 }
 

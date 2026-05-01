@@ -57,6 +57,7 @@ import {
   getRedisCache,
   getSolanaTokenBalance,
   getSvmProvider,
+  getTokenInfo,
   getTokenInfoFromSymbol,
   getWrappedNativeTokenAddress,
   isDefined,
@@ -345,8 +346,8 @@ export async function run(): Promise<void> {
       );
     },
   });
-  const amountToWithdraw = toBNWei(
-    truncate(Number(orderAvailability.expectedAmountToReceive), destination.tokenDecimals),
+  const amountToWithdraw = getBinanceWithdrawalAmount(
+    orderAvailability.expectedAmountToReceive,
     destination.tokenDecimals
   );
 
@@ -1068,6 +1069,17 @@ export function requireDefinedFilledAmount(
   return expectedFilledAmount;
 }
 
+function truncateDecimalString(value: string, decimals: number): string {
+  const [integerPart, fractionalPart = ""] = value.split(".");
+  const integer = integerPart === "" ? "0" : integerPart;
+  const truncatedFraction = fractionalPart.slice(0, Math.max(0, Math.trunc(decimals)));
+  return truncatedFraction.length === 0 ? integer : `${integer}.${truncatedFraction}`;
+}
+
+export function getBinanceWithdrawalAmount(expectedAmountToReceive: string, tokenDecimals: number): BigNumber {
+  return toBNWei(truncateDecimalString(expectedAmountToReceive, tokenDecimals), tokenDecimals);
+}
+
 function formatAmount(amount: BigNumber, decimals: number): string {
   return createFormatFunction(2, 6, false, decimals)(amount.toString());
 }
@@ -1143,11 +1155,24 @@ function formatChainList(chainIds: number[]): string {
   return chainIds.map((chainId) => `${getNetworkName(chainId)} (${chainId})`).join(", ");
 }
 
-function tryGetTokenAddressForL1TokenSymbol(tokenSymbol: string, chainId: number): string | undefined {
+function normalizeTokenSymbol(tokenSymbol: string): string {
+  const trimmedTokenSymbol = tokenSymbol.trim();
+  return (
+    Object.keys(TOKEN_SYMBOLS_MAP).find(
+      (knownTokenSymbol) => knownTokenSymbol.toUpperCase() === trimmedTokenSymbol.toUpperCase()
+    ) ?? trimmedTokenSymbol.toUpperCase()
+  );
+}
+
+function tryGetTokenAddressForTokenSymbol(tokenSymbol: string, chainId: number): string | undefined {
+  const tokenAddress = resolveAcrossToken(tokenSymbol, chainId);
+  if (isDefined(tokenAddress)) {
+    return tokenAddress;
+  }
   try {
     return getTokenInfoFromSymbol(tokenSymbol, chainId).address.toNative();
   } catch (_e) {
-    return resolveAcrossToken(tokenSymbol, chainId);
+    return undefined;
   }
 }
 
@@ -1158,9 +1183,9 @@ export function resolveBinanceAsset(params: {
   direction: "deposit" | "withdraw";
 }): BinanceAssetResolutionResult {
   const { accountCoins, chainId, direction } = params;
-  const tokenSymbol = params.tokenSymbol.trim().toUpperCase();
-  const isNativeToken = tokenSymbol === getNativeTokenInfoForChain(chainId).symbol.toUpperCase();
-  const localTokenAddress = isNativeToken ? undefined : tryGetTokenAddressForL1TokenSymbol(tokenSymbol, chainId);
+  const tokenSymbol = normalizeTokenSymbol(params.tokenSymbol);
+  const isNativeToken = tokenSymbol.toUpperCase() === getNativeTokenInfoForChain(chainId).symbol.toUpperCase();
+  const localTokenAddress = isNativeToken ? undefined : tryGetTokenAddressForTokenSymbol(tokenSymbol, chainId);
 
   const depositMode: BinanceSourceDepositMode | undefined =
     direction === "deposit" ? (isNativeToken ? "native" : "erc20") : undefined;
@@ -1239,7 +1264,7 @@ export function resolveBinanceAsset(params: {
       chainId,
       binanceCoin: matchingCoin.symbol,
       network: matchingNetwork,
-      tokenDecimals: getTokenInfoFromSymbol(tokenSymbol, chainId).decimals,
+      tokenDecimals: getTokenInfo(toAddressType(localTokenAddress, chainId), chainId).decimals,
       isNativeAsset: false,
       localTokenAddress,
       depositMode,
