@@ -956,8 +956,12 @@ export class Relayer {
       const unfilledDeposits = deposits
         .map((deposit, idx) => ({ ...deposit, fillStatus: fillStatus[idx] }))
         .filter(({ fillStatus, ...deposit }) => {
-          const { originChainId, depositor } = deposit;
-
+          // Track the fill status for faster filtering on subsequent loops.
+          const depositHash = spokePoolClients[deposit.destinationChainId].getDepositHash(deposit);
+          this.fillStatus[depositHash] = fillStatus;
+          return fillStatus !== FillStatus.Filled;
+        })
+        .filter(({ originChainId, depositor }) => {
           // Restrict the number of concurrent deposits and that a depositor can force the relayer to evaluate per loop.
           originDepositors[originChainId] ??= {};
           originDepositors[originChainId][depositor.toNative()] ??= 0;
@@ -965,10 +969,7 @@ export class Relayer {
             return false;
           }
 
-          // Track the fill status for faster filtering on subsequent loops.
-          const depositHash = spokePoolClients[deposit.destinationChainId].getDepositHash(deposit);
-          this.fillStatus[depositHash] = fillStatus;
-          return fillStatus !== FillStatus.Filled;
+          return true;
         })
         .slice(0, depositLimit);
 
