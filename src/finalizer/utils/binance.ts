@@ -26,6 +26,7 @@ import {
   isCompletedBinanceWithdrawal,
   resolveBinanceCoinSymbol,
   truncate,
+  ethers,
 } from "../../utils";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { FinalizerPromise, AddressesToFinalize } from "../types";
@@ -129,8 +130,8 @@ export async function binanceFinalizer(
   const pendingRebalanceSymbols = new Set(
     (
       await Promise.all(
-        Object.keys(senderAddresses).map(async (address) => [
-          ...(await getPendingBinanceRebalanceSymbolsForAccount(logger, EvmAddress.from(address))),
+        getEvmBinanceRebalanceLookupAccounts(Object.keys(senderAddresses)).map(async (account) => [
+          ...(await getPendingBinanceRebalanceSymbolsForAccount(logger, account)),
         ])
       )
     ).flat()
@@ -325,6 +326,13 @@ export function getPendingBinanceRebalanceSymbols(
     symbols.add(resolveBinanceCoinSymbol(order.destinationToken));
     return symbols;
   }, new Set());
+}
+
+export function getEvmBinanceRebalanceLookupAccounts(addresses: string[]): EvmAddress[] {
+  return addresses
+    .filter((address) => ethers.utils.isAddress(address))
+    .map((address) => EvmAddress.from(address))
+    .filter(isDefined);
 }
 
 async function getPendingBinanceRebalanceSymbolsForAccount(
