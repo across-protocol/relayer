@@ -1,11 +1,8 @@
 import assert from "assert";
 import minimist from "minimist";
 import { Contract, utils as ethersUtils } from "ethers";
-import * as utils from "../../scripts/utils";
 import { EventListener } from "../clients";
 import {
-  disconnectRedisClients,
-  exit,
   isDefined,
   getBlockForTimestamp,
   getChainQuorum,
@@ -19,10 +16,9 @@ import {
   winston,
 } from "../utils";
 import { ScraperOpts } from "./types";
+import { bootstrap, waitForAbort } from "./util/bootstrap";
 import { postBlock, postEvents, removeEvent } from "./util/ipc";
 import { scrapeEvents as _scrapeEvents } from "./util/evm";
-
-const { NODE_SUCCESS, NODE_APP_ERR } = utils;
 
 const PROGRAM = "RelayerSpokePoolListener";
 const abortController = new AbortController();
@@ -101,18 +97,6 @@ async function run(argv: string[]): Promise<void> {
 
   chain = getNetworkName(chainId);
 
-  // Register signal/disconnect handlers before any awaits so the listener can abort
-  // if the parent dies during startup.
-  process.on("SIGHUP", () => {
-    logger.debug({ at, message: `Received SIGHUP in ${chain} listener, stopping...` });
-    abortController.abort();
-  });
-
-  process.on("disconnect", () => {
-    logger.debug({ at, message: `${chain} parent disconnected, stopping...` });
-    abortController.abort();
-  });
-
   const quorumProvider = await getProvider(chainId);
   const blockFinder: undefined = undefined;
   const cache = await getRedisCache();
@@ -186,24 +170,10 @@ async function run(argv: string[]): Promise<void> {
     }
   });
 
-  return new Promise((resolve) => abortController.signal.addEventListener("abort", () => resolve()));
+  return waitForAbort(abortController.signal);
 }
 
 if (require.main === module) {
-  const at = PROGRAM;
   logger = Logger;
-
-  run(process.argv.slice(2))
-    .then(() => {
-      process.exitCode = NODE_SUCCESS;
-    })
-    .catch((error) => {
-      logger.error({ at, message: `${chain} listener exited with error.`, error });
-      process.exitCode = NODE_APP_ERR;
-    })
-    .finally(async () => {
-      await disconnectRedisClients();
-      logger.debug({ at, message: `Exiting ${chain} listener.` });
-      exit(Number(process.exitCode));
-    });
+  bootstrap({ program: PROGRAM, abortController, chainName: () => chain, run });
 }
