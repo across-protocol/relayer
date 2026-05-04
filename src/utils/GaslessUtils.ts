@@ -124,7 +124,7 @@ export function isAllowedGaslessPair(
   if (allowedPeggedPairs[inputSymbol]?.has(outputSymbol)) {
     return true;
   }
-  
+
   const inputL1 = getInventoryEquivalentL1TokenAddress(inputAddr, originChainId);
   const outputL1 = getInventoryEquivalentL1TokenAddress(outputAddr, destinationChainId);
   if (inputL1.eq(outputL1)) {
@@ -685,4 +685,3 @@ export function validateDeposit(
 
   return true;
 }
-
