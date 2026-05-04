@@ -402,8 +402,10 @@ export class DepositAddressHandler {
     retriesRemaining = 3
   ): Promise<SwapApiResponse | undefined> {
     const { depositAddress, routeParams, erc20Transfer } = depositMessage;
-    const { inputToken, outputToken, originChainId, destinationChainId, recipient } = routeParams;
+    const { inputToken, outputToken, originChainId, destinationChainId, recipient, refundAddress } = routeParams;
     const { amount } = erc20Transfer;
+    // refundAddress must match what was committed in the withdraw leaf at PDA creation time so the
+    // swap-api rebuilds the same merkle root the on-chain factory derives the deposit address from.
     const params = {
       originChainId,
       destinationChainId,
@@ -413,6 +415,7 @@ export class DepositAddressHandler {
       amount,
       depositor: depositAddress,
       recipient,
+      refundAddress,
       depositAddress,
       executionFeeRecipient: this.signerAddress.toNative(),
       shouldSponsorAccountCreation: String(depositMessage.shouldSponsorAccountCreation),
