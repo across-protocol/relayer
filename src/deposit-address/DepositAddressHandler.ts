@@ -168,7 +168,29 @@ export class DepositAddressHandler {
 
   private async evaluateDepositAddresses(): Promise<void> {
     const depositMessages = await this._queryIndexerApi();
-    const filtered = depositMessages.filter(
+
+    // Only execute correct_transfer rows. mis_route and intent_refund transfers are routed to the
+    // refund-withdraw path (OPS-353), which is not implemented yet — drop them here so the bot
+    // doesn't try to bridge them (intent_refund in particular would re-loop the same intent).
+    // Unknown classifications are also dropped (forward-compat) until explicitly supported.
+    const correctTransferMessages = depositMessages.filter((m) => {
+      const classification = m.erc20Transfer.transferClassification;
+      if (classification === "correct_transfer") {
+        return true;
+      }
+      this.logger.info({
+        at: "DepositAddressHandler#evaluateDepositAddresses",
+        message: "deposit-address transfer skipped: non-correct classification",
+        classification,
+        depositAddress: m.depositAddress,
+        paramsHash: m.paramsHash,
+        txHash: m.erc20Transfer.transactionHash,
+        chainId: m.erc20Transfer.chainId,
+      });
+      return false;
+    });
+
+    const filtered = correctTransferMessages.filter(
       (m) =>
         this.config.relayerOriginChains.includes(Number(m.routeParams.originChainId)) &&
         !this.executedDepositTxHashes.has(m.erc20Transfer.transactionHash)
