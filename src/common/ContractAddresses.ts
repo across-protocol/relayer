@@ -1,7 +1,8 @@
 import assert from "assert";
 import { ContractInterface } from "ethers";
 import { JsonFragment } from "@ethersproject/abi";
-import { CHAIN_IDs, getDeployedAddress, isDefined } from "../utils";
+import { CHAIN_IDs, getDeployedAddress } from "../utils";
+import { isDefined } from "../utils/TypeGuards";
 import CCTP_MESSAGE_TRANSMITTER_ABI from "./abi/CctpMessageTransmitter.json";
 import CCTP_TOKEN_MESSENGER_ABI from "./abi/CctpTokenMessenger.json";
 import CCTP_V2_TOKEN_MESSENGER_ABI from "./abi/CctpV2TokenMessenger.json";
