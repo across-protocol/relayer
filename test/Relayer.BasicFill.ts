@@ -1001,6 +1001,41 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       ).to.not.be.undefined;
     });
 
+    it("Rate-limits per-depositor deposits per loop", async function () {
+      // Per-depositor rate-limiting only engages in looping mode; pollingDelay === 0 is the sweeper bypass.
+      Object.assign(relayerInstance.config, { pollingDelay: 1 });
+
+      // Submit one more deposit than the per-depositor cap (10), all from the same depositor on the same origin chain.
+      const limit = 10;
+      const nDeposits = limit + 1;
+      const perInputAmount = inputAmount.div(nDeposits);
+      const perOutputAmount = outputAmount.div(nDeposits);
+      for (let i = 0; i < nDeposits; ++i) {
+        await depositV3(
+          spokePool_1,
+          destinationChainId,
+          depositor,
+          inputToken,
+          perInputAmount,
+          outputToken,
+          perOutputAmount
+        );
+      }
+
+      const evaluateSpy = sinon.spy(relayerInstance, "evaluateFills");
+      await updateAllClients();
+      await relayerInstance.checkForUnfilledDepositsAndFill();
+      evaluateSpy.restore();
+
+      // Exactly `limit` deposits should reach evaluateFills; the (limit + 1)th is filtered out.
+      expect(evaluateSpy.callCount).to.equal(1);
+      expect(evaluateSpy.firstCall.args[0].length).to.equal(limit);
+
+      // A single warn fires on the first deposit that exceeds the cap.
+      const rateLimitLogs = spy.getCalls().filter(({ lastArg }) => lastArg.message?.includes("Rate-limiting"));
+      expect(rateLimitLogs.length).to.equal(1);
+    });
+
     it("Uses lowest outputAmount on updated deposits", async function () {
       const deposit = await depositV3(
         spokePool_1,
