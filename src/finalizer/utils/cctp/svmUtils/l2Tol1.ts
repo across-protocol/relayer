@@ -1,6 +1,6 @@
 import { KeyPairSigner, appendTransactionMessageInstructions, pipe, address, generateKeyPairSigner } from "@solana/kit";
 import { SVMSpokePoolClient } from "../../../../clients";
-import { CONTRACT_ADDRESSES, CCTP_MAX_SEND_AMOUNT } from "../../../../common";
+import { CCTP_MAX_SEND_AMOUNT, getContractAddress } from "../../../../common";
 import {
   winston,
   SvmAddress,
@@ -44,12 +44,8 @@ export async function bridgeTokensToHubPool(
   const svmSpokeProgramId = toKitAddress(svmSpoke);
 
   const l2ChainId = chainIsProd(hubChainId) ? CHAIN_IDs.SOLANA : CHAIN_IDs.SOLANA_DEVNET;
-  const tokenMessengerAddress = CONTRACT_ADDRESSES[l2ChainId]?.cctpTokenMessenger?.address;
-  const messageTransmitterAddress = CONTRACT_ADDRESSES[l2ChainId]?.cctpMessageTransmitter?.address;
-  assert(
-    isDefined(tokenMessengerAddress) && isDefined(messageTransmitterAddress),
-    `bridgeTokensToHubPool: missing CCTP messenger addresses on chain ${l2ChainId}`
-  );
+  const tokenMessengerAddress = getContractAddress(l2ChainId, "cctpTokenMessenger");
+  const messageTransmitterAddress = getContractAddress(l2ChainId, "cctpMessageTransmitter");
   const l2Usdc = SvmAddress.from(TOKEN_SYMBOLS_MAP.USDC.addresses[l2ChainId]);
   const destinationDomain = PUBLIC_NETWORKS[hubChainId].cctpDomain;
 

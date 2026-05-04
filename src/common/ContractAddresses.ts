@@ -994,6 +994,16 @@ export function getContractEntry(chainId: number, name: string): { address: stri
 }
 
 /**
+ * Look up only the `address` for a contract entry (ABI not required, e.g. native tokens).
+ * Throws if the address is missing.
+ */
+export function getContractAddress(chainId: number, name: string): string {
+  const entry = CONTRACT_ADDRESSES[chainId]?.[name];
+  assert(isDefined(entry?.address), `Missing CONTRACT_ADDRESSES address: ${chainId}/${name}`);
+  return entry.address;
+}
+
+/**
  * Look up only the `abi` for a contract entry (address resolved via deployment metadata).
  * Throws if the abi is missing or malformed.
  */

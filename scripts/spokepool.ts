@@ -72,7 +72,7 @@ function resolveTokenSymbols(tokenAddresses: string[], chainId: number): string[
       return tokenSymbols.find(({ addresses }) => addresses[chainId]?.toLowerCase() === tokenAddress.toLowerCase())
         ?.symbol;
     })
-    .filter(Boolean);
+    .filter(isDefined);
 }
 
 function decodeRelayData(originChainId: number, destinationChainId: number, log: LogDescription): RelayData {
@@ -169,7 +169,7 @@ async function getRelayerQuote(
   toChainId: number,
   token: utils.ERC20,
   amount: BigNumber,
-  recipient?: Address,
+  recipient: Address,
   message?: string
 ): Promise<{
   outputToken: Address;
@@ -550,6 +550,7 @@ async function _fetchDeposit(spokePool: Contract, _depositId: number | string): 
       deploymentBlockNumber,
       latestBlockNumber
     );
+    assert(isDefined(depositBlock), `Could not find deposit block for depositId ${depositId}`);
     from = depositBlock - 1;
     to = depositBlock + 1;
   }
@@ -565,15 +566,13 @@ async function _fetchTxn(spokePool: Contract, txnHash: string): Promise<{ deposi
   const txn = await spokePool.provider.getTransactionReceipt(txnHash);
   const fundsDeposited = spokePool.interface.getEventTopic(DEPOSIT_EVENT);
   const filledRelay = spokePool.interface.getEventTopic(FILL_EVENT);
-  const logs = txn.logs.filter(({ address }) => address === spokePool.address);
-  const { deposits = [], fills = [] } = Object.groupBy(logs, ({ topics }) => {
-    switch (topics[0]) {
-      case fundsDeposited:
-        return "deposits";
-      case filledRelay:
-        return "fills";
-    }
-  });
+  const logs = txn.logs.filter(
+    ({ address, topics }) =>
+      address === spokePool.address && (topics[0] === fundsDeposited || topics[0] === filledRelay)
+  );
+  const { deposits = [], fills = [] } = Object.groupBy(logs, ({ topics }) =>
+    topics[0] === fundsDeposited ? "deposits" : "fills"
+  );
 
   return { deposits, fills };
 }

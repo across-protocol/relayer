@@ -62,7 +62,7 @@ import {
   BridgeApi as L2BridgeApi,
   TokenSplitterBridge as L2TokenSplitterBridge,
 } from "../adapter/l2Bridges";
-import { CONTRACT_ADDRESSES } from "./ContractAddresses";
+import { getContractAddress } from "./ContractAddresses";
 import { HyperlaneXERC20Bridge } from "../adapter/bridges/HyperlaneXERC20Bridge";
 import { HyperlaneXERC20BridgeL2 } from "../adapter/l2Bridges/HyperlaneXERC20Bridge";
 import { OFTL2Bridge } from "../adapter/l2Bridges/OFTL2Bridge";
@@ -849,11 +849,11 @@ export const OPSTACK_CONTRACT_OVERRIDES = {
     l1: {
       AddressManager: "0xE064B565Cf2A312a3e66Fe4118890583727380C0",
       L1CrossDomainMessenger: "0x5D4472f31Bd9385709ec61305AFc749F0fA8e9d0",
-      L1StandardBridge: CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET].ovmStandardBridge_81457.address,
+      L1StandardBridge: getContractAddress(CHAIN_IDs.MAINNET, "ovmStandardBridge_81457"),
       StateCommitmentChain: ZERO_ADDRESS,
       CanonicalTransactionChain: ZERO_ADDRESS,
       BondManager: ZERO_ADDRESS,
-      OptimismPortal: CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET].blastOptimismPortal.address,
+      OptimismPortal: getContractAddress(CHAIN_IDs.MAINNET, "blastOptimismPortal"),
       L2OutputOracle: "0x826D1B0D4111Ad9146Eb8941D7Ca2B6a44215c76",
       OptimismPortal2: ZERO_ADDRESS,
       DisputeGameFactory: ZERO_ADDRESS,
@@ -868,7 +868,7 @@ export const OPSTACK_CONTRACT_OVERRIDES = {
     l1: {
       AddressManager: "0x9754fD3D63B3EAC3fd62b6D54DE4f61b00D6E0Df",
       L1CrossDomainMessenger: "0x6C7198250087B29A8040eC63903Bc130f4831Cc9",
-      L1StandardBridge: CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET].ovmStandardBridge_4326.address,
+      L1StandardBridge: getContractAddress(CHAIN_IDs.MAINNET, "ovmStandardBridge_4326"),
       StateCommitmentChain: ZERO_ADDRESS,
       CanonicalTransactionChain: ZERO_ADDRESS,
       BondManager: ZERO_ADDRESS,
@@ -884,7 +884,7 @@ export const OPSTACK_CONTRACT_OVERRIDES = {
     l1: {
       AddressManager: "0x092dD3E2272a372cdfbcCb8F689423F09ED6242a",
       L1CrossDomainMessenger: "0x9338F298F29D3918D5D1Feb209aeB9915CC96333",
-      L1StandardBridge: CONTRACT_ADDRESSES[CHAIN_IDs.SEPOLIA].ovmStandardBridge_168587773.address,
+      L1StandardBridge: getContractAddress(CHAIN_IDs.SEPOLIA, "ovmStandardBridge_168587773"),
       StateCommitmentChain: ZERO_ADDRESS,
       CanonicalTransactionChain: ZERO_ADDRESS,
       BondManager: ZERO_ADDRESS,
@@ -1100,7 +1100,7 @@ const generateSwapRoutes = (): { [chainId: string]: SwapRouteConfig } => {
     [CHAIN_IDs.PLASMA]: { inputTokenSymbol: "USDT" },
     [CHAIN_IDs.TEMPO]: {
       inputTokenSymbol: "USDC",
-      outputToken: EvmAddress.from(CONTRACT_ADDRESSES[CHAIN_IDs.TEMPO].nativeToken.address),
+      outputToken: EvmAddress.from(getContractAddress(CHAIN_IDs.TEMPO, "nativeToken")),
     },
   };
 
