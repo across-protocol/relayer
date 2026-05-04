@@ -19,7 +19,6 @@ import {
   assert,
   ConvertDecimals,
   convertRelayDataParamsToBytes32,
-  getL1TokenAddress,
   getTokenInfo,
   toBN,
   toBytes32,
@@ -31,6 +30,8 @@ import {
   toBNWei,
   winston,
   isDefined,
+  getInventoryEquivalentL1TokenAddress,
+  getTokenSymbol,
 } from "../utils";
 import { AugmentedTransaction } from "../clients";
 import { Contract, BigNumber, ethers } from "ethers";
@@ -117,20 +118,17 @@ export function isAllowedGaslessPair(
 ): boolean {
   const inputAddr = typeof inputToken === "string" ? toAddressType(inputToken, originChainId) : inputToken;
   const outputAddr = typeof outputToken === "string" ? toAddressType(outputToken, destinationChainId) : outputToken;
-  const inputL1 = getL1TokenAddress(inputAddr, originChainId);
-  const outputL1 = getL1TokenAddress(outputAddr, destinationChainId);
-  if (inputL1.eq(outputL1)) {
+
+  const inputSymbol = getTokenSymbol(inputAddr, originChainId);
+  const outputSymbol = getTokenSymbol(outputAddr, destinationChainId);
+  if (allowedPeggedPairs[inputSymbol]?.has(outputSymbol)) {
     return true;
   }
-  if (Object.keys(allowedPeggedPairs).length === 0) {
-    return false;
-  }
-  try {
-    const inputSymbol = getTokenInfo(inputL1, CHAIN_IDs.MAINNET).symbol;
-    const outputSymbol = getTokenInfo(outputL1, CHAIN_IDs.MAINNET).symbol;
-    return allowedPeggedPairs[inputSymbol]?.has(outputSymbol) ?? false;
-  } catch {
-    return false;
+  
+  const inputL1 = getInventoryEquivalentL1TokenAddress(inputAddr, originChainId);
+  const outputL1 = getInventoryEquivalentL1TokenAddress(outputAddr, destinationChainId);
+  if (inputL1.eq(outputL1)) {
+    return true;
   }
 }
 
@@ -687,3 +685,4 @@ export function validateDeposit(
 
   return true;
 }
+
