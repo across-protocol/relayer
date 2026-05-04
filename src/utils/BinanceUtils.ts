@@ -1,4 +1,5 @@
 import Binance, {
+  HttpMethod,
   DepositHistoryResponse,
   WithdrawHistoryResponse,
   OrderType_LT,
@@ -18,6 +19,14 @@ let binanceSecretKeyPromise: Promise<string | undefined> | undefined = undefined
 
 const BINANCE_TRADES_FETCH_LIMIT = 1000;
 
+// Binance only accepts a signed request while its timestamp remains within recvWindow.
+// Signed reads can tolerate a much larger window because a delayed accepted request still returns current server data.
+export const BINANCE_READ_RECV_WINDOW_MS = 60_000;
+// Market orders are latency-sensitive but still need to tolerate the clock skew and request delay that motivated this change.
+export const BINANCE_ORDER_RECV_WINDOW_MS = 60_000;
+// Withdrawals remain tight so delayed accepted requests cannot submit funds transfers much later than intended.
+export const BINANCE_WITHDRAW_RECV_WINDOW_MS = 5_000;
+
 export type WithdrawalQuota = {
   wdQuota: number;
   usedWdQuota: number;
@@ -35,6 +44,21 @@ export type SpotMarketMeta = {
 
 type BinanceTradeReader = Pick<BinanceApi, "myTrades">;
 type FillCommissionMarketMeta = Pick<SpotMarketMeta, "symbol" | "baseAssetName" | "quoteAssetName" | "isBuy">;
+
+type BinanceApiWithRecvWindow = BinanceApi & {
+  tradeFee(options?: { recvWindow?: number; useServerTime?: boolean }): ReturnType<BinanceApi["tradeFee"]>;
+  withdraw(
+    options: Parameters<BinanceApi["withdraw"]>[0] & {
+      recvWindow?: number;
+      withdrawOrderId?: string;
+    }
+  ): ReturnType<BinanceApi["withdraw"]>;
+  withdrawHistory(
+    options: Parameters<BinanceApi["withdrawHistory"]>[0] & {
+      recvWindow?: number;
+    }
+  ): ReturnType<BinanceApi["withdrawHistory"]>;
+};
 
 // Alias for Binance network symbols.
 export const BINANCE_NETWORKS: { [chainId: number]: string } = {
@@ -202,6 +226,59 @@ async function retrieveBinanceSecretKeyFromCLIArgs(): Promise<string | undefined
   return binanceKeys[0].slice(2);
 }
 
+/**
+ * Retrieves the input client account's withdrawal quota.
+ * @dev This is in a utility function since the Binance API does not natively support calling this endpoint.
+ * @returns an object with two fields: `wdQuota` and `usedWdQuota`, corresponding to the total amount
+ * available to rebalance per day and the amount already used.
+ */
+export async function getBinanceWithdrawalLimits(binanceApi: BinanceApi): Promise<WithdrawalQuota> {
+  const unparsedQuota = (await binanceApi.privateRequest(
+    "GET" as HttpMethod,
+    "/sapi/v1/capital/withdraw/quota",
+    {}
+  )) as {
+    wdQuota: number;
+    usedWdQuota: number;
+  };
+  return {
+    wdQuota: unparsedQuota.wdQuota,
+    usedWdQuota: unparsedQuota.usedWdQuota,
+  };
+}
+
+export async function getBinanceTradeFees(binanceApi: BinanceApi): ReturnType<BinanceApi["tradeFee"]> {
+  return (binanceApi as BinanceApiWithRecvWindow).tradeFee({ recvWindow: BINANCE_READ_RECV_WINDOW_MS });
+}
+
+export async function getBinanceDepositAddress(
+  binanceApi: BinanceApi,
+  options: Parameters<BinanceApi["depositAddress"]>[0]
+): ReturnType<BinanceApi["depositAddress"]> {
+  return binanceApi.depositAddress({ ...options, recvWindow: BINANCE_READ_RECV_WINDOW_MS });
+}
+
+export async function getBinanceAllOrders(
+  binanceApi: BinanceApi,
+  options: Parameters<BinanceApi["allOrders"]>[0]
+): ReturnType<BinanceApi["allOrders"]> {
+  return binanceApi.allOrders({ ...options, recvWindow: BINANCE_READ_RECV_WINDOW_MS });
+}
+
+export async function submitBinanceOrder(
+  binanceApi: BinanceApi,
+  options: Parameters<BinanceApi["order"]>[0]
+): ReturnType<BinanceApi["order"]> {
+  return binanceApi.order({ ...options, recvWindow: BINANCE_ORDER_RECV_WINDOW_MS });
+}
+
+export async function submitBinanceWithdrawal(
+  binanceApi: BinanceApi,
+  options: Parameters<BinanceApi["withdraw"]>[0]
+): ReturnType<BinanceApi["withdraw"]> {
+  return (binanceApi as BinanceApiWithRecvWindow).withdraw({ ...options, recvWindow: BINANCE_WITHDRAW_RECV_WINDOW_MS });
+}
+
 export enum BinanceTransactionType {
   BRIDGE, // A deposit into Binance from one network designed to be withdrawn to another network.
   SWAP, // A deposit into Binance from one network designed to be swapped and then withdrawn to another network.
@@ -318,7 +395,7 @@ export async function getBinanceDeposits(
   maxRetries = 3,
   delayS = 2
 ): Promise<BinanceDeposit[]> {
-  const fn = () => binanceApi.depositHistory.bind(binanceApi)({ startTime });
+  const fn = () => binanceApi.depositHistory.bind(binanceApi)({ startTime, recvWindow: BINANCE_READ_RECV_WINDOW_MS });
   const depositHistory = await retry<DepositHistoryResponse>(fn, maxRetries, delayS);
   return Object.values(depositHistory).map((deposit) => {
     return {
@@ -343,7 +420,12 @@ export async function getBinanceWithdrawals(
   maxRetries = 3,
   delayS = 2
 ): Promise<BinanceWithdrawal[]> {
-  const fn = () => binanceApi.withdrawHistory.bind(binanceApi)({ coin: resolveBinanceCoinSymbol(coin), startTime });
+  const fn = () =>
+    (binanceApi as BinanceApiWithRecvWindow).withdrawHistory({
+      coin: resolveBinanceCoinSymbol(coin),
+      startTime,
+      recvWindow: BINANCE_READ_RECV_WINDOW_MS,
+    });
   const withdrawHistory = await retry<WithdrawHistoryResponse>(fn, maxRetries, delayS);
   return Object.values(withdrawHistory).map((withdrawal) => {
     return {
@@ -386,8 +468,10 @@ export async function getFillCommission(
 export async function getAccountCoins(binanceApi: BinanceApi): Promise<ParsedAccountCoins> {
   // accountCoins is an undocumented Binance API method not present in binance-api-node type defs.
   type RawCoin = { coin: string; free: string; networkList?: Record<string, unknown>[] };
-  const apiWithCoins = binanceApi as BinanceApi & { accountCoins(): Promise<Record<string, RawCoin>> };
-  const coins = Object.values(await apiWithCoins.accountCoins());
+  const apiWithCoins = binanceApi as BinanceApi & {
+    accountCoins(options?: { recvWindow?: number }): Promise<Record<string, RawCoin>>;
+  };
+  const coins = Object.values(await apiWithCoins.accountCoins({ recvWindow: BINANCE_READ_RECV_WINDOW_MS }));
   return coins.map((coin) => {
     const networkList = coin.networkList?.map((network) => {
       return {

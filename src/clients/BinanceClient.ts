@@ -1,10 +1,10 @@
-import Binance, { HttpMethod, type Binance as BinanceApi } from "binance-api-node";
+import Binance, { type Binance as BinanceApi } from "binance-api-node";
 import minimist from "minimist";
 import { coerce, create, number, string, type } from "superstruct";
 import winston from "winston";
 import { hasBinanceRoute } from "../common";
 import { Address, assert, BigNumber, bnZero, getGckmsConfig, isDefined, retrieveGckmsKeys, toBNWei } from "../utils";
-import type { WithdrawalQuota } from "../utils/BinanceUtils";
+import { getBinanceWithdrawalLimits, type WithdrawalQuota } from "../utils/BinanceUtils";
 
 export type { WithdrawalQuota };
 
@@ -45,7 +45,7 @@ export class BinanceClient {
   }
 
   async getWithdrawalLimits(): Promise<WithdrawalQuota> {
-    const raw = await this.api.privateRequest("GET" as HttpMethod, "/sapi/v1/capital/withdraw/quota", {});
+    const raw = await getBinanceWithdrawalLimits(this.api);
     return create(raw, WithdrawalQuotaSS);
   }
 
