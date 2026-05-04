@@ -207,6 +207,18 @@ async function run(argv: string[]): Promise<void> {
 
   chain = getNetworkName(chainId);
 
+  // Register signal/disconnect handlers before any awaits so the listener can abort
+  // if the parent dies during startup.
+  process.on("SIGHUP", () => {
+    logger.debug({ at, message: `Received SIGHUP in ${chain} listener, stopping...` });
+    abortController.abort();
+  });
+
+  process.on("disconnect", () => {
+    logger.debug({ at, message: `${chain} parent disconnected, stopping...` });
+    abortController.abort();
+  });
+
   const provider = getSvmProvider(await getRedisCache());
   const blockFinder: undefined = undefined;
   const { slot: latestSlot, timestamp: now } = await arch.svm.getNearestSlotTime(
@@ -242,16 +254,6 @@ async function run(argv: string[]): Promise<void> {
   };
 
   logger.debug({ at, message: `Starting ${chain} SpokePool Indexer.`, opts });
-
-  process.on("SIGHUP", () => {
-    logger.debug({ at, message: `Received SIGHUP in ${chain} listener, stopping...` });
-    abortController.abort();
-  });
-
-  process.on("disconnect", () => {
-    logger.debug({ at, message: `${chain} parent disconnected, stopping...` });
-    abortController.abort();
-  });
 
   const eventsClient = await arch.svm.SvmCpiEventsClient.create(getSvmProvider());
   if (latestSlot > startSlot) {

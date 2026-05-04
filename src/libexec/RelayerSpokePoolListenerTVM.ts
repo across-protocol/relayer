@@ -188,7 +188,10 @@ async function listen(
         return;
       }
       for (const orphan of orphans) {
-        removeEvent({ ...orphan, removed: true });
+        if (!removeEvent({ ...orphan, removed: true })) {
+          abortController.abort();
+          return;
+        }
       }
       if (!postBlock(Number(block.number), Number(block.timestamp))) {
         abortController.abort();
@@ -226,7 +229,9 @@ async function listen(
 
             if (log.removed) {
               eventMgr.remove(log, provider.name);
-              removeEvent(log);
+              if (!removeEvent(log)) {
+                abortController.abort();
+              }
               continue;
             }
 
@@ -280,6 +285,18 @@ async function run(argv: string[]): Promise<void> {
 
   chain = getNetworkName(chainId);
 
+  // Register signal/disconnect handlers before any awaits so the listener can abort
+  // if the parent dies during startup.
+  process.on("SIGHUP", () => {
+    logger.debug({ at, message: `Received SIGHUP in ${chain} listener, stopping...` });
+    abortController.abort();
+  });
+
+  process.on("disconnect", () => {
+    logger.debug({ at, message: `${chain} parent disconnected, stopping...` });
+    abortController.abort();
+  });
+
   const quorumProvider = await getProvider(chainId);
   const blockFinder: undefined = undefined;
   const cache = await getRedisCache();
@@ -318,16 +335,6 @@ async function run(argv: string[]): Promise<void> {
   };
 
   logger.debug({ at, message: `Starting ${chain} SpokePool Indexer.`, opts });
-
-  process.on("SIGHUP", () => {
-    logger.debug({ at, message: `Received SIGHUP in ${chain} listener, stopping...` });
-    abortController.abort();
-  });
-
-  process.on("disconnect", () => {
-    logger.debug({ at, message: `${chain} parent disconnected, stopping...` });
-    abortController.abort();
-  });
 
   logger.debug({ at, message: `Scraping previous ${chain} events.`, opts });
 
