@@ -178,7 +178,7 @@ export class DepositAddressHandler {
       if (classification === "correct_transfer") {
         return true;
       }
-      this.logger.info({
+      this.logger.debug({
         at: "DepositAddressHandler#evaluateDepositAddresses",
         message: "deposit-address transfer skipped: non-correct classification",
         classification,
