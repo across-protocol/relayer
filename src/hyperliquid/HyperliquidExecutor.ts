@@ -3,6 +3,7 @@ import { utils as ethersUtils } from "ethers";
 import { HyperliquidExecutorConfig } from "./HyperliquidExecutorConfig";
 import { RedisCacheInterface } from "../caching/RedisCache";
 import {
+  assert,
   Contract,
   Provider,
   isDefined,
@@ -79,7 +80,7 @@ const MIN_ORDER_AMOUNT = toBN(10 * HL_FIXED_ADJUSTMENT);
  */
 export class HyperliquidExecutor {
   private abortController = new AbortController();
-  private instanceCoordinator: InstanceCoordinator;
+  private _instanceCoordinator?: InstanceCoordinator;
   private dstOftMessenger: Contract;
   private dstCctpMessenger: Contract;
   public pairs: { [pair: string]: Pair } = {};
@@ -88,7 +89,27 @@ export class HyperliquidExecutor {
   private infoClient;
   private redisClient: RedisCacheInterface | undefined;
   private handledEvents: Set<string> = new Set<string>();
-  private dstSearchConfig: EventSearchConfig;
+  private _dstSearchConfig?: EventSearchConfig;
+
+  // instanceCoordinator and dstSearchConfig are populated by initialize();
+  // reads pre-init throw, writes go through the setter.
+  private get instanceCoordinator(): InstanceCoordinator {
+    assert(
+      isDefined(this._instanceCoordinator),
+      "HyperliquidExecutor: instanceCoordinator accessed before initialize()"
+    );
+    return this._instanceCoordinator;
+  }
+  private set instanceCoordinator(value: InstanceCoordinator) {
+    this._instanceCoordinator = value;
+  }
+  private get dstSearchConfig(): EventSearchConfig {
+    assert(isDefined(this._dstSearchConfig), "HyperliquidExecutor: dstSearchConfig accessed before initialize()");
+    return this._dstSearchConfig;
+  }
+  private set dstSearchConfig(value: EventSearchConfig) {
+    this._dstSearchConfig = value;
+  }
 
   private tasks: Promise<TaskResult>[] = [];
   private taskResolver: ((value: void | PromiseLike<void>) => void) | undefined;
@@ -163,7 +184,7 @@ export class HyperliquidExecutor {
     // Derive EventSearchConfig by using the configured lookback.
     const toBlock = await this.clients.dstProvider.getBlock("latest");
     const fromBlock = await getBlockForTimestamp(this.logger, this.chainId, toBlock.timestamp - this.config.lookback);
-    this.dstSearchConfig = {
+    this._dstSearchConfig = {
       to: toBlock.number,
       from: fromBlock,
       maxLookBack: CHAIN_MAX_BLOCK_LOOKBACK[this.chainId],
@@ -184,17 +205,19 @@ export class HyperliquidExecutor {
       });
       this.abortController.abort();
     });
-    const { RUN_IDENTIFIER: runIdentifier, BOT_IDENTIFIER: botIdentifier } = process.env;
+    const { RUN_IDENTIFIER: runIdentifier, BOT_IDENTIFIER: botIdentifier = "across-relayer-hyperliquid" } = process.env;
+    assert(isDefined(runIdentifier), "HyperliquidExecutor: RUN_IDENTIFIER env var is required");
+    assert(isDefined(this.redisClient), "HyperliquidExecutor: requires a Redis cache for handover state");
 
     // Establish a new bot instance.
-    this.instanceCoordinator = new InstanceCoordinator(
+    this._instanceCoordinator = new InstanceCoordinator(
       this.logger,
       this.redisClient,
       botIdentifier,
       runIdentifier,
       this.abortController
     );
-    await this.instanceCoordinator.initiateHandover();
+    await this._instanceCoordinator.initiateHandover();
 
     this.initialized = true;
   }

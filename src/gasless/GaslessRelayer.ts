@@ -97,8 +97,17 @@ const stateToStr = (state: MessageState) => MESSAGE_STATES[state] ?? "UNKNOWN";
  */
 export class GaslessRelayer {
   private abortController = new AbortController();
-  private instanceCoordinator: InstanceCoordinator;
+  private _instanceCoordinator?: InstanceCoordinator;
   private initialized = false;
+
+  // instanceCoordinator is populated by initialize(); reads pre-init throw, writes go through the setter.
+  protected get instanceCoordinator(): InstanceCoordinator {
+    assert(isDefined(this._instanceCoordinator), "GaslessRelayer: instanceCoordinator accessed before initialize()");
+    return this._instanceCoordinator;
+  }
+  protected set instanceCoordinator(value: InstanceCoordinator) {
+    this._instanceCoordinator = value;
+  }
 
   protected messageState: { [key: string]: MessageState } = {};
   protected providersByChain: { [chainId: number]: Provider } = {};
@@ -117,7 +126,16 @@ export class GaslessRelayer {
   protected fillLock: { [key: string]: string } = {};
 
   private api: AcrossSwapApiClient;
-  protected signerAddress: EvmAddress;
+  private _signerAddress?: EvmAddress;
+
+  // signerAddress is populated by initialize(); reads pre-init throw, writes go through the setter.
+  protected get signerAddress(): EvmAddress {
+    assert(isDefined(this._signerAddress), "GaslessRelayer: signerAddress accessed before initialize()");
+    return this._signerAddress;
+  }
+  protected set signerAddress(value: EvmAddress) {
+    this._signerAddress = value;
+  }
 
   private transactionClient;
   private redisCache: RedisCacheInterface | undefined;
@@ -141,11 +159,13 @@ export class GaslessRelayer {
       message: "Initializing GaslessRelayer",
     });
 
-    const { RUN_IDENTIFIER: runIdentifier, BOT_IDENTIFIER: botIdentifier } = process.env;
+    const { RUN_IDENTIFIER: runIdentifier, BOT_IDENTIFIER: botIdentifier = "across-relayer-gasless" } = process.env;
+    assert(isDefined(runIdentifier), "GaslessRelayer: RUN_IDENTIFIER env var is required");
 
     // Set the signer address.
     this.signerAddress = EvmAddress.from(await this.baseSigner.getAddress());
     this.redisCache = await getRedisCache(this.logger);
+    assert(isDefined(this.redisCache), "GaslessRelayer: requires a Redis cache for handover state");
 
     // Initialize the map with newly allocated sets.
     await forEachAsync(this.config.relayerOriginChains, async (chainId) => {
@@ -489,8 +509,8 @@ export class GaslessRelayer {
       const tStart = performance.now();
 
       let fillImmediate = false;
-      let deposit: RelayData & { destinationChainId: number };
-      let depositReceiptPromise: Promise<TransactionReceipt | null>;
+      let deposit: (RelayData & { destinationChainId: number }) | undefined;
+      let depositReceiptPromise: Promise<TransactionReceipt | null | undefined> | undefined;
 
       const bridgeMessage = depositMessage as GaslessDepositMessage;
 
@@ -719,7 +739,9 @@ export class GaslessRelayer {
       : contract;
   }
 
-  protected async initiateDeposit(depositMessage: AnyGaslessDepositMessage): Promise<TransactionReceipt | null> {
+  protected async initiateDeposit(
+    depositMessage: AnyGaslessDepositMessage
+  ): Promise<TransactionReceipt | null | undefined> {
     const { originChainId, depositId } = depositMessage;
     const authorizer = getGaslessAuthorizerAddress(depositMessage);
     const spokePoolPeripheryContract = this.getPeripheryContract(originChainId);
@@ -785,7 +807,7 @@ export class GaslessRelayer {
   protected async initiateFill(
     deposit: RelayData & { destinationChainId: number },
     originChainSpokePool: string
-  ): Promise<TransactionReceipt | null> {
+  ): Promise<TransactionReceipt | null | undefined> {
     const { originChainId, depositId, destinationChainId, outputToken, outputAmount, inputToken, inputAmount } =
       deposit;
 

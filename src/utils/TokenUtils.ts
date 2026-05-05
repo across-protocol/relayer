@@ -150,8 +150,12 @@ export function getWrappedNativeTokenAddress(chainId: number): Address {
   // to the symbol.
   const wrappedTokenSymbol = tokenSymbol === "ETH" ? "WETH" : tokenSymbol;
 
-  // Undefined returns should be caught and handled by consumers of this function.
-  return toAddressType(resolveAcrossToken(wrappedTokenSymbol, chainId), chainId);
+  const wrappedTokenAddress = resolveAcrossToken(wrappedTokenSymbol, chainId);
+  assert(
+    isDefined(wrappedTokenAddress),
+    `No wrapped native token (${wrappedTokenSymbol}) address for chain ${chainId}`
+  );
+  return toAddressType(wrappedTokenAddress, chainId);
 }
 
 /**

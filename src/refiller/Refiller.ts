@@ -68,14 +68,21 @@ export class Refiller {
   private initialized = false;
   private transactionClient: TransactionClient;
 
-  // redisCache and baseSignerAddress are populated by initialize(); access pre-init throws.
+  // redisCache may be undefined in test mode (RELAYER_TEST=true) — the setter accepts undefined; reads
+  // assert it's defined since redis-using code paths can't proceed without it.
   private get redisCache(): RedisCache {
-    assert(isDefined(this._redisCache), "Refiller: redisCache accessed before initialize()");
+    assert(isDefined(this._redisCache), "Refiller: redisCache accessed before initialize() or in test mode");
     return this._redisCache;
+  }
+  private set redisCache(value: RedisCache | undefined) {
+    this._redisCache = value;
   }
   private get baseSignerAddress(): EvmAddress {
     assert(isDefined(this._baseSignerAddress), "Refiller: baseSignerAddress accessed before initialize()");
     return this._baseSignerAddress;
+  }
+  private set baseSignerAddress(value: EvmAddress) {
+    this._baseSignerAddress = value;
   }
 
   public constructor(
@@ -92,8 +99,8 @@ export class Refiller {
    * @notice One time initialization of the Refiller for any async operations.
    */
   async initialize(): Promise<void> {
-    this._baseSignerAddress = EvmAddress.from(await this.baseSigner.getAddress());
-    this._redisCache = await getRedisCache(this.logger);
+    this.baseSignerAddress = EvmAddress.from(await this.baseSigner.getAddress());
+    this.redisCache = await getRedisCache(this.logger);
     this.initialized = true;
   }
 
