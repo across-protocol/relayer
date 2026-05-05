@@ -5,7 +5,7 @@ import { Log } from "../src/interfaces";
 import { EventManager } from "../src/utils";
 import { createSpyLogger, expect, randomAddress } from "./utils";
 
-describe("EventManager: Event Handling ", async function () {
+describe("EventManager: Event Handling ", function () {
   const chainId = CHAIN_IDs.MAINNET;
   const providers = ["infura", "alchemy", "llamanodes", "quicknode"];
 

@@ -7,7 +7,7 @@ import { BigNumber, getCctpDomainForChainId } from "../../src/utils";
 import { CCTPV2_FINALITY_THRESHOLD_FAST } from "../../src/common/Constants";
 import { CctpOftReadOnlyClient } from "../../src/rebalancer/clients/CctpOftReadOnlyClient";
 
-describe("Cross Chain Adapter: USDC CCTP L2 Bridge", async function () {
+describe("Cross Chain Adapter: USDC CCTP L2 Bridge", function () {
   let adapter: MockBaseChainAdapter;
   let monitoredEoa: string;
   let l1USDCToken, l2USDCToken: string;

@@ -54,7 +54,7 @@ class TestBaseChainAdapter extends BaseChainAdapter {
   }
 }
 
-describe("Cross Chain Adapter: Polygon", async function () {
+describe("Cross Chain Adapter: Polygon", function () {
   const logger = createSpyLogger().spyLogger;
 
   let adapter: TestAdapter;

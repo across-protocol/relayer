@@ -18,7 +18,7 @@ import { getCctpDomainForChainId, ZERO_ADDRESS } from "../../src/utils";
 
 const logger = createSpyLogger().spyLogger;
 
-describe("Cross Chain Adapter: Linea", async function () {
+describe("Cross Chain Adapter: Linea", function () {
   let adapter: BaseChainAdapter;
   let monitoredEoa: string;
   let l1Token, l1USDCToken, l1WETHToken, l2Token, l2USDCToken, l2WETHToken: string;

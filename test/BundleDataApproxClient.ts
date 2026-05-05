@@ -27,7 +27,7 @@ import { MockBundleDataApproxClient, MockConfigStoreClient, MockHubPoolClient, M
 import { interfaces } from "@across-protocol/sdk";
 import { ProposedRootBundle, RootBundleRelayWithBlock } from "../src/interfaces";
 
-describe("BundleDataApproxClient: Accounting for unexecuted, upcoming relayer refunds and deposits", async function () {
+describe("BundleDataApproxClient: Accounting for unexecuted, upcoming relayer refunds and deposits", function () {
   const { MAINNET, OPTIMISM, BSC, POLYGON } = CHAIN_IDs;
   const enabledChainIds = [MAINNET, OPTIMISM, BSC];
   const mainnetWeth = TOKEN_SYMBOLS_MAP.WETH.addresses[MAINNET];

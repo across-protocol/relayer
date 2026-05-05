@@ -69,8 +69,8 @@ function encodeFunctionData(_method: string, args: ReadonlyArray<unknown> = []):
   return args;
 }
 
-describe("TryMulticallClient", async function () {
-  describe("MockTransactionClient Tests", async function () {
+describe("TryMulticallClient", function () {
+  describe("MockTransactionClient Tests", function () {
     const { spyLogger }: { spyLogger: winston.Logger } = createSpyLogger();
     const address = randomAddress(); // Test contract address
     let multiCaller: DummyTryMulticallClient;
@@ -355,7 +355,7 @@ describe("TryMulticallClient", async function () {
       expect(bundle[1].args[0][1].target).to.equal(secondAddress);
     });
   });
-  describe("MockSpokePool Tests", async function () {
+  describe("MockSpokePool Tests", function () {
     const { spyLogger }: { spyLogger: winston.Logger } = createSpyLogger();
     let multiCaller: TryMulticallClient;
     let multicallReceiver: Contract;

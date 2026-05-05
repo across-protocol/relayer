@@ -32,7 +32,7 @@ let spokePoolClients: { [chainId: number]: SpokePoolClient };
 
 let updateAllClients: () => Promise<void>;
 
-describe("Dataworker: Build merkle roots", async function () {
+describe("Dataworker: Build merkle roots", function () {
   beforeEach(async function () {
     const fastDataworkerResult = await setupFastDataworker(ethers);
     ({

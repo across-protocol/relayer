@@ -67,7 +67,7 @@ import {
   deployMulticall3,
 } from "./utils";
 
-describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
+describe("Relayer: Check for Unfilled Deposits and Fill", function () {
   const [srcChain, dstChain] = [getNetworkName(originChainId), getNetworkName(destinationChainId)];
   const { EMPTY_MESSAGE } = constants;
   const { fixedPointAdjustment: fixedPoint } = sdkUtils;
@@ -245,7 +245,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     await spokePool_1.setCurrentTime(await getLastBlockTime(spokePool_1.provider));
   });
 
-  describe("Relayer: Check for Unfilled v3 Deposits and Fill", async function () {
+  describe("Relayer: Check for Unfilled v3 Deposits and Fill", function () {
     // Helper for quickly computing fill amounts.
     const getFillAmount = (relayData: RelayData, tokenPrice: BigNumber): BigNumber =>
       relayData.outputAmount.mul(tokenPrice).div(fixedPoint);

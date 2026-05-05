@@ -3,7 +3,7 @@ import { expect } from "./utils";
 // Tested
 import { getPaginatedBlockRanges, getUniqueLogIndex } from "../src/utils/EventUtils";
 
-describe("EventUtils", async function () {
+describe("EventUtils", function () {
   it("getPaginatedBlockRanges", async function () {
     // Undefined lookback returns full range
     expect(getPaginatedBlockRanges({ from: 0, to: 4, maxLookBack: undefined })).to.deep.equal([[0, 4]]);

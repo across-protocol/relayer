@@ -32,7 +32,7 @@ class TestBalanceAllocator extends BalanceAllocator {
   }
 }
 
-describe("BalanceAllocator", async function () {
+describe("BalanceAllocator", function () {
   let balanceAllocator: TestBalanceAllocator;
   const testToken1 = toAddressType(randomAddress(), 1);
   const testToken2 = toAddressType(randomAddress(), 1);

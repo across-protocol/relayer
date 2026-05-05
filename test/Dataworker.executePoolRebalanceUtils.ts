@@ -43,7 +43,7 @@ let spokePoolClients: { [chainId: number]: SpokePoolClient };
 
 let updateAllClients: () => Promise<void>;
 
-describe("Dataworker: Utilities to execute pool rebalance leaves", async function () {
+describe("Dataworker: Utilities to execute pool rebalance leaves", function () {
   function getNewBalanceAllocator(): BalanceAllocator {
     const providers = {
       ...spokePoolClientsToProviders(spokePoolClients),
@@ -580,7 +580,7 @@ describe("Dataworker: Utilities to execute pool rebalance leaves", async functio
       });
     });
   });
-  describe("_executePoolRebalanceLeaves", async function () {
+  describe("_executePoolRebalanceLeaves", function () {
     let token1: EvmAddress, token2: EvmAddress, balanceAllocator: BalanceAllocator;
     beforeEach(function () {
       token1 = EvmAddress.from(randomAddress());

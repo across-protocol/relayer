@@ -64,7 +64,7 @@ const mainnetTokens = {
   bal: TOKEN_SYMBOLS_MAP.BAL.addresses[CHAIN_IDs.MAINNET],
 } as const;
 
-describe("AdapterManager: Send tokens cross-chain", async function () {
+describe("AdapterManager: Send tokens cross-chain", function () {
   beforeEach(async function () {
     [relayer, owner] = await ethers.getSigners();
     ({ spyLogger } = createSpyLogger());
