@@ -46,6 +46,7 @@ export const BINANCE_NETWORKS: { [chainId: number]: string } = {
   [CHAIN_IDs.ZK_SYNC]: "ZKSYNCERA",
   [CHAIN_IDs.TRON]: "TRX",
   [CHAIN_IDs.POLYGON]: "MATIC",
+  [CHAIN_IDs.SOLANA]: "SOL",
 };
 
 // A Coin contains balance data and network information (such as withdrawal limits, extra information about the network, etc.) for a specific
@@ -129,13 +130,15 @@ export function readableBinanceWithdrawalStatus(status?: number): string {
 }
 
 export function resolveBinanceCoinSymbol(token: string): string {
-  switch (token) {
+  switch (token.toUpperCase()) {
     case "WETH":
       return "ETH";
+    case "USDC.E":
+    case "USDBC":
     case "ZKUSDCE":
       return "USDC";
     default:
-      return token;
+      return token.toUpperCase();
   }
 }
 
