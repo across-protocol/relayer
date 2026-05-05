@@ -1,4 +1,14 @@
-import { Contract, BigNumber, Signer, Provider, EvmAddress, assert, bnZero, winston } from "../../utils";
+import {
+  Contract,
+  BigNumber,
+  Signer,
+  Provider,
+  EvmAddress,
+  assert,
+  bnZero,
+  getBinanceDepositAddress,
+  winston,
+} from "../../utils";
 import { getContractEntry } from "../../common";
 import { BridgeTransactionDetails } from "./BaseBridgeAdapter";
 import { BinanceCEXBridge } from "./";
@@ -44,7 +54,7 @@ export class BinanceCEXNativeBridge extends BinanceCEXBridge {
     // Fetch the deposit address from the binance API.
 
     const binanceApiClient = await this.getBinanceClient();
-    const depositAddress = await binanceApiClient.depositAddress({
+    const depositAddress = await getBinanceDepositAddress(binanceApiClient, {
       coin: this.tokenSymbol,
       network: "ETH",
     });

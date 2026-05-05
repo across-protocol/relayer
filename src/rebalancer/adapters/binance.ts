@@ -17,7 +17,10 @@ import {
   fromWei,
   getAtomicDepositorContracts,
   getAccountCoins,
+  getBinanceAllOrders,
   getBinanceApiClient,
+  getBinanceDepositAddress,
+  getBinanceTradeFees,
   getFillCommission,
   getBinanceTransactionTypeKey,
   isFailedBinanceWithdrawal,
@@ -34,6 +37,8 @@ import {
   setBinanceDepositType,
   setBinanceWithdrawalType,
   Signer,
+  submitBinanceOrder,
+  submitBinanceWithdrawal,
   supportsBinanceIntermediateBridgeToken,
   SpotMarketMeta,
   toBN,
@@ -1050,7 +1055,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       sourceToken !== "WETH" || isDefined(getAtomicDepositorContracts(sourceChain)),
       `Atomic depositor contracts missing for WETH source chain ${getNetworkName(sourceChain)}`
     );
-    const depositAddress = await this.binanceApiClient.depositAddress({
+    const depositAddress = await getBinanceDepositAddress(this.binanceApiClient, {
       coin: resolveBinanceCoinSymbol(sourceToken),
       network: BINANCE_NETWORKS[sourceChain],
     });
@@ -1359,7 +1364,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   }
 
   private async _getTradeFees(): Promise<ReturnType<Binance["tradeFee"]>> {
-    this.tradeFeesPromise ??= this.binanceApiClient.tradeFee();
+    this.tradeFeesPromise ??= getBinanceTradeFees(this.binanceApiClient);
     try {
       return await this.tradeFeesPromise;
     } catch (error) {
@@ -1377,7 +1382,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       orderDetails.sourceToken,
       orderDetails.destinationToken
     );
-    const allOrders = await this.binanceApiClient.allOrders({
+    const allOrders = await getBinanceAllOrders(this.binanceApiClient, {
       symbol: spotMarketMeta.symbol,
     });
     const matchingFill = allOrders.find((order) => order.clientOrderId === cloid && order.status === "FILLED");
@@ -1412,7 +1417,6 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       side: spotMarketMeta.isBuy ? "BUY" : "SELL",
       type: OrderType.MARKET,
       quantity: szForOrder.toString(),
-      recvWindow: 60000,
     };
     this.logger.debug({
       at: "BinanceStablecoinSwapAdapter._placeMarketOrder",
@@ -1421,7 +1425,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       } with size ${szForOrder}`,
       orderStruct,
     });
-    const response = await this.binanceApiClient.order(orderStruct as NewOrderSpot);
+    const response = await submitBinanceOrder(this.binanceApiClient, orderStruct as NewOrderSpot);
     assert(response.status == "FILLED", `Market order was not filled: ${JSON.stringify(response)}`);
     this.logger.info({
       at: "BinanceStablecoinSwapAdapter._placeMarketOrder",
@@ -1542,7 +1546,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     // We need to truncate the amount to withdraw to the destination chain's decimal places.
     const destinationTokenInfo = this._getTokenInfo(destinationToken, destinationEntrypointNetwork);
     const amountToWithdraw = truncate(quantity, destinationTokenInfo.decimals);
-    const withdrawalId = await this.binanceApiClient.withdraw({
+    const withdrawalId = await submitBinanceWithdrawal(this.binanceApiClient, {
       coin: resolveBinanceCoinSymbol(destinationToken),
       address: this.baseSignerAddress.toNative(),
       amount: Number(amountToWithdraw),
