@@ -1,6 +1,6 @@
 import { Disputer } from "../src/dataworker/Disputer";
 import { bnUint256Max, bnZero, bnOne, toBNWei, ZERO_BYTES } from "../src/utils";
-import { setupUmaEcosystem } from "./fixtures/UmaEcosystemFixture";
+import { getUmaFixture } from "./fixtures/UmaEcosystemFixture";
 import {
   Contract,
   createSpyLogger,
@@ -28,7 +28,7 @@ describe("Disputer: Watchdog", async function () {
     [owner, signer] = await ethers.getSigners();
     signerAddr = await signer.getAddress();
 
-    const umaEcosystem = await setupUmaEcosystem(owner);
+    const umaEcosystem = getUmaFixture();
     ({ hubPool } = await deployAndConfigureHubPool(owner, [], umaEcosystem.finder.address, umaEcosystem.timer.address));
 
     ({ chainId } = await hubPool.provider.getNetwork());
