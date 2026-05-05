@@ -95,9 +95,8 @@ export class OFTBridge extends BaseBridgeAdapter {
    */
   async roundAmountToSend(amount: BigNumber): Promise<BigNumber> {
     // Fetch `sharedDecimals` if not already fetched
-    this.sharedDecimals ??= await this.getL1Bridge().sharedDecimals();
-
-    return OFT.roundAmountToSend(amount, this.l1TokenInfo.decimals, this.sharedDecimals);
+    const sharedDecimals = (this.sharedDecimals ??= await this.getL1Bridge().sharedDecimals());
+    return OFT.roundAmountToSend(amount, this.l1TokenInfo.decimals, sharedDecimals);
   }
 
   async buildOftTransactionArgs(
