@@ -9,6 +9,7 @@ import {
   EventManager,
   exit,
   isDefined,
+  viemLogToEthersLog,
   getBlockForTimestamp,
   getChainQuorum,
   getDeploymentBlockNumber,
@@ -216,13 +217,10 @@ async function listen(
         event,
         onLogs: (rawLogs: (viemLog & { args: unknown; eventName: string })[]) => {
           for (const raw of rawLogs) {
-            const log: Log = {
-              ...raw,
-              args: raw.args,
-              blockNumber: Number(raw.blockNumber),
-              event: raw.eventName,
-              topics: Array<string>(),
-            };
+            const log = viemLogToEthersLog(raw);
+            if (!isDefined(log)) {
+              continue;
+            }
 
             if (log.removed) {
               eventMgr.remove(log, provider.name);

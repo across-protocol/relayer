@@ -138,7 +138,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
         logger.warn({ at: "Relayer#run", message: "Assuming active relayer role in degraded state", degraded });
       }
 
-      if (!inventoryInit && config.relayerUseInventoryManager) {
+      if (!inventoryInit && config.relayerUseInventoryManager && isDefined(redis)) {
         logger.debug({ at: "Relayer#run", message: "Checking for inventory state in cache" });
         const key = inventoryClient.getInventoryCacheKey(config.inventoryTopic);
         const inventoryState = await getInventoryState(redis, key);
@@ -189,7 +189,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
           loopCount: run,
         });
         if (!abortController.signal.aborted) {
-          const runTime = Math.round(runTimeMilliseconds / 1000);
+          const runTime = Math.round((runTimeMilliseconds ?? 0) / 1000);
 
           // When txns are pending submission, yield execution to ensure they can be submitted.
           const minDelay = Object.values(txnReceipts).length > 0 ? 0.1 : 0;
@@ -291,6 +291,7 @@ export async function runInventoryManager(_logger: winston.Logger, baseSigner: S
     await inventoryClient.update(config.spokePoolChainsOverride);
 
     const inventory = inventoryClient.export();
+    assert(isDefined(redis), "Inventory state export requires a Redis cache");
     await setInventoryState(redis, inventoryClient.getInventoryCacheKey(config.inventoryTopic), inventory);
   } finally {
     await disconnectRedisClients(logger);
