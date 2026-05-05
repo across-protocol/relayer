@@ -44,14 +44,15 @@ export class ConfigStoreClient extends clients.AcrossConfigStoreClient {
     // the super update function. This is to prevent the injected chain id inclusion
     // from issuing an error. We will re-add the injected chain id inclusion after
     // in the overloaded _.update() function.
-    if (isDefined(this.injectedChain)) {
+    const { injectedChain } = this;
+    if (isDefined(injectedChain)) {
       // Track the initial length of the chain id indices updates
       const initialLength = this.chainIdIndicesUpdates.length;
       // Because this chain is `injected` we know that it doesn't occur
       // on-chain, and therefore we just need to remove it altogether
       // wherever an instance of it appears.
       this.chainIdIndicesUpdates = this.chainIdIndicesUpdates.filter(
-        ({ value }) => !value.includes(this.injectedChain.chainId)
+        ({ value }) => !value.includes(injectedChain.chainId)
       );
       if (this.chainIdIndicesUpdates.length !== initialLength) {
         this.logger.debug({

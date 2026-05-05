@@ -94,6 +94,8 @@ export class SolanaUsdcCCTPBridge extends BaseL2BridgeAdapter {
   ): Promise<SolanaTransaction[]> {
     assert(l1Token.eq(this.l1UsdcTokenAddress));
     assert(l2Token.eq(this.l2UsdcTokenAddress));
+    const { svmProvider } = this;
+    assert(isDefined(svmProvider), "SolanaUsdcCCTPBridge: svmProvider is required");
     this.svmSigner ??= await this.svmSignerPromise;
 
     amount = amount.gt(CCTP_MAX_SEND_AMOUNT) ? CCTP_MAX_SEND_AMOUNT : amount;
@@ -136,7 +138,7 @@ export class SolanaUsdcCCTPBridge extends BaseL2BridgeAdapter {
       destinationDomain: this.l1DestinationDomain,
       mintRecipient: address(toAddress.toBase58()),
     });
-    const depositForBurnTx = pipe(await createDefaultTransaction(this.svmProvider, this.svmSigner), (tx) =>
+    const depositForBurnTx = pipe(await createDefaultTransaction(svmProvider, this.svmSigner), (tx) =>
       appendTransactionMessageInstruction(depositForBurnIx, tx)
     );
     return [depositForBurnTx];

@@ -1,4 +1,5 @@
 import {
+  assert,
   Contract,
   BigNumber,
   EventSearchConfig,
@@ -22,7 +23,8 @@ const ETH_TOKEN_ADDRESS = EvmAddress.from("0x00000000000000000000000000000000000
 export class ZKStackWethBridge extends ZKStackBridge {
   private readonly atomicDepositor: Contract;
   private readonly l2Weth: Contract;
-  private readonly l2Eth: Contract;
+  // l2Eth is only set when the L2 uses ETH as its gas token. Use sites are guarded by `usingCustomGasToken`.
+  private readonly l2Eth?: Contract;
 
   constructor(
     l2chainId: number,
@@ -158,19 +160,21 @@ export class ZKStackWethBridge extends ZKStackBridge {
     // ZkSync uses different logic for ETH L2 finalization. Most notably, the transfer events on L2 mark the aliased L1 sender as the sender, while
     // for custom gas token L2s, the L1 sender is the zero address.
     if (!usingCustomGasToken) {
+      const { l2Eth } = this;
+      assert(isDefined(l2Eth), "ZKStackWethBridge: l2Eth must be configured when L2 uses ETH as gas token");
       if (isL2Contract) {
         // Assume the transfer came from the hub pool if the L2 toAddress is a contract.
         processedEvents = await paginatedEventQuery(
-          this.l2Eth,
-          this.l2Eth.filters.Transfer(zksync.utils.applyL1ToL2Alias(this.hubPool.address), toAddress.toNative()),
+          l2Eth,
+          l2Eth.filters.Transfer(zksync.utils.applyL1ToL2Alias(this.hubPool.address), toAddress.toNative()),
           eventConfig
         );
       } else {
         // The transaction originated from the atomic depositor and the L2 does not use a custom gas token.
         const [events, wrapEvents] = await Promise.all([
           paginatedEventQuery(
-            this.l2Eth,
-            this.l2Eth.filters.Transfer(
+            l2Eth,
+            l2Eth.filters.Transfer(
               zksync.utils.applyL1ToL2Alias(this.getAtomicDepositor().address),
               toAddress.toNative()
             ),
