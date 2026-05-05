@@ -11,6 +11,10 @@ import path from "node:path";
 import * as tar from "tar";
 import contractsPkg from "@across-protocol/contracts/package.json" assert { type: "json" };
 
+const globalWithValidatorPid = globalThis as typeof globalThis & {
+  __SOLANA_VALIDATOR_PID__?: number;
+};
+
 // Helper function to get the @across-protocol/contracts version from the package.json
 const getContractsVersion = (): string => {
   return `v${contractsPkg.version}`;
@@ -109,16 +113,14 @@ export async function validatorSetup(upgradeAuthority: Address): Promise<void> {
   });
 
   // Store PID for teardown
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (global as any).__SOLANA_VALIDATOR_PID__ = proc.pid;
+  globalWithValidatorPid.__SOLANA_VALIDATOR_PID__ = proc.pid;
 }
 
 /**
  * Stops the running Solana test validator, if any.
  */
 export function validatorTeardown(): void {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const pid = (global as any).__SOLANA_VALIDATOR_PID__;
+  const pid = globalWithValidatorPid.__SOLANA_VALIDATOR_PID__;
   if (pid) {
     process.kill(pid);
   }

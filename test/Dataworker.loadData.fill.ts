@@ -65,6 +65,12 @@ describe("Dataworker: Load bundle data", async function () {
 
   let updateAllClients: () => Promise<void>;
 
+  type ConfigStoreAware = { configStoreClient: MockConfigStoreClient };
+  type DepositHashAware = { depositHashes: Record<string, interfaces.DepositWithBlock> };
+
+  const withConfigStore = <T extends object>(value: T): T & ConfigStoreAware => value as T & ConfigStoreAware;
+  const withDepositHashes = <T extends object>(value: T): T & DepositHashAware => value as T & DepositHashAware;
+
   beforeEach(async function () {
     ({
       spokePool_1,
@@ -698,8 +704,7 @@ describe("Dataworker: Load bundle data", async function () {
 
       // Manually remove the deposit from the client's cache to force historical query
       const depositKey = sdkUtils.getRelayEventKey(deposit);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      delete (spokePoolClient_1 as any).depositHashes[depositKey];
+      delete withDepositHashes(spokePoolClient_1).depositHashes[depositKey];
 
       const deposits = spokePoolClient_1.getDeposits();
       expect(deposits.length).to.equal(0);
@@ -790,8 +795,7 @@ describe("Dataworker: Load bundle data", async function () {
       expect(repaymentChainId).to.not.eq(originChainId);
 
       // Mock the config store client being included on the spoke client
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (spokePoolClient_1 as any).configStoreClient = mockConfigStore;
+      withConfigStore(spokePoolClient_1).configStoreClient = mockConfigStore;
 
       // Send a fill now and force the bundle data client to query for the historical deposit.
       await fillV3Relay(spokePool_2, deposit, relayer, repaymentChainId);
@@ -801,8 +805,7 @@ describe("Dataworker: Load bundle data", async function () {
 
       // Manually remove the deposit from the client's cache to force historical query
       const depositKey = sdkUtils.getRelayEventKey(deposit);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      delete (spokePoolClient_1 as any).depositHashes[depositKey];
+      delete withDepositHashes(spokePoolClient_1).depositHashes[depositKey];
 
       // Load information needed to build a bundle
       const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), {
