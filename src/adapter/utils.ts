@@ -1,5 +1,6 @@
 import { TOKEN_APPROVALS_TO_FIRST_ZERO } from "../common";
 import {
+  assert,
   BigNumber,
   spreadEventWithBlockNumber,
   toBN,
@@ -9,6 +10,7 @@ import {
   bnZero,
   getNetworkName,
   blockExplorerLink,
+  isDefined,
   mapAsync,
   winston,
   Address,
@@ -76,10 +78,12 @@ export async function approveTokens(
     );
     const networkName = getNetworkName(approvalChainId);
 
+    const lastTx = txs.at(-1);
+    assert(isDefined(lastTx), "approvalMarkdwn: expected at least one approval txn");
     let internalMrkdwn =
       ` - Approved token bridge ${blockExplorerLink(bridge.toNative(), approvalChainId)} ` +
       `to spend ${await token.symbol()} ${blockExplorerLink(token.address, approvalChainId)} on ${networkName}.` +
-      `tx: ${blockExplorerLink(txs.at(-1).hash, approvalChainId)}`;
+      `tx: ${blockExplorerLink(lastTx.hash, approvalChainId)}`;
 
     if (txs.length > 1) {
       internalMrkdwn += ` tx (to zero approval first): ${blockExplorerLink(txs[0].hash, hubChainId)}`;
