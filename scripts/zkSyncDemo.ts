@@ -11,6 +11,7 @@ import {
   isDefined,
   TransactionSimulationResult,
   type EvmGasPriceEstimate,
+  submitTransaction,
 } from "../src/utils";
 import { askYesNoQuestion } from "./utils";
 import minimist from "minimist";
@@ -168,7 +169,7 @@ export async function run(): Promise<void> {
   }
 
   if (simulationResult.succeed) {
-    await txnClient.submit(args.chainId, [simulationResult.transaction]);
+    await submitTransaction(simulationResult.transaction, txnClient);
   } else {
     console.log("Simulation failed", simulationResult);
   }
