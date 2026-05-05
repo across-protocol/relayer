@@ -9,6 +9,8 @@ import {
   getOriginFromURL,
   getProviderHeaders,
   getViemChain,
+  isDefined,
+  viemLogToEthersLog,
   winston,
 } from "../utils";
 
@@ -98,13 +100,10 @@ export class EventListener extends EventEmitter {
       providers.forEach((provider) => {
         const onLogs = (logs: (viemLog & { args: unknown; eventName: string })[]) => {
           logs.forEach((log) => {
-            const event = {
-              ...log,
-              args: log.args,
-              blockNumber: Number(log.blockNumber),
-              event: log.eventName,
-              topics: Array<string>(), // Not supplied by viem, but not actually used by the relayer.
-            };
+            const event = viemLogToEthersLog(log);
+            if (!isDefined(event)) {
+              return;
+            }
 
             if (log.removed) {
               eventMgr.remove(event, provider.name);

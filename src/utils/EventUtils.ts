@@ -1,11 +1,44 @@
 import assert from "assert";
 import winston from "winston";
 import { utils as ethersUtils } from "ethers";
+import { Log as viemLog } from "viem";
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import { Log } from "../interfaces";
 import { getNetworkName } from "./NetworkUtils";
 import { dedupArray } from "./SDKUtils";
 import { isDefined } from "./TypeGuards";
+
+type ViemEventLog = viemLog & { args: unknown; eventName: string };
+
+/**
+ * Convert a viem watchEvent log into the relayer's ethers-shaped Log.
+ * Returns undefined for pending logs (where viem nulls block-confirmation fields)
+ * or non-record event args; callers should skip such entries.
+ */
+export function viemLogToEthersLog(raw: ViemEventLog): Log | undefined {
+  if (
+    raw.blockHash === null ||
+    raw.transactionHash === null ||
+    raw.transactionIndex === null ||
+    raw.logIndex === null ||
+    typeof raw.args !== "object" ||
+    raw.args === null ||
+    Array.isArray(raw.args)
+  ) {
+    return undefined;
+  }
+  return {
+    ...raw,
+    blockHash: raw.blockHash,
+    transactionHash: raw.transactionHash,
+    transactionIndex: raw.transactionIndex,
+    logIndex: raw.logIndex,
+    args: raw.args,
+    blockNumber: Number(raw.blockNumber),
+    event: raw.eventName,
+    topics: Array<string>(), // viem doesn't supply topics, but the relayer doesn't read them either.
+  };
+}
 
 export type EventSearchConfig = sdkUtils.EventSearchConfig;
 
