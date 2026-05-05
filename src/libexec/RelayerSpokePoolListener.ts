@@ -1,11 +1,8 @@
 import assert from "assert";
 import minimist from "minimist";
 import { Contract, utils as ethersUtils } from "ethers";
-import * as utils from "../../scripts/utils";
 import { EventListener } from "../clients";
 import {
-  disconnectRedisClients,
-  exit,
   isDefined,
   getBlockForTimestamp,
   getChainQuorum,
@@ -19,10 +16,9 @@ import {
   winston,
 } from "../utils";
 import { ScraperOpts } from "./types";
+import { bootstrap, waitForAbort } from "./util/bootstrap";
 import { postBlock, postEvents, removeEvent } from "./util/ipc";
 import { scrapeEvents as _scrapeEvents } from "./util/evm";
-
-const { NODE_SUCCESS, NODE_APP_ERR } = utils;
 
 const PROGRAM = "RelayerSpokePoolListener";
 const abortController = new AbortController();
@@ -137,16 +133,6 @@ async function run(argv: string[]): Promise<void> {
 
   logger.debug({ at, message: `Starting ${chain} SpokePool Indexer.`, opts });
 
-  process.on("SIGHUP", () => {
-    logger.debug({ at, message: `Received SIGHUP in ${chain} listener, stopping...` });
-    abortController.abort();
-  });
-
-  process.on("disconnect", () => {
-    logger.debug({ at, message: `${chain} parent disconnected, stopping...` });
-    abortController.abort();
-  });
-
   // Note: An event emitted between scrapeEvents() and listen(). @todo: Ensure that there is overlap and deduplication.
   logger.debug({ at, message: `Scraping previous ${chain} events.`, opts });
 
@@ -178,33 +164,16 @@ async function run(argv: string[]): Promise<void> {
     }
   });
   listener.onEvents(spokePoolAddr, signatures, (log) => {
-    if (log.removed) {
-      removeEvent(log);
-      return;
-    }
-    if (!postEvents([log])) {
+    const ok = log.removed ? removeEvent(log) : postEvents([log]);
+    if (!ok) {
       abortController.abort();
     }
   });
 
-  return new Promise((resolve) => abortController.signal.addEventListener("abort", () => resolve()));
+  return waitForAbort(abortController.signal);
 }
 
 if (require.main === module) {
-  const at = PROGRAM;
   logger = Logger;
-
-  run(process.argv.slice(2))
-    .then(() => {
-      process.exitCode = NODE_SUCCESS;
-    })
-    .catch((error) => {
-      logger.error({ at, message: `${chain} listener exited with error.`, error });
-      process.exitCode = NODE_APP_ERR;
-    })
-    .finally(async () => {
-      await disconnectRedisClients();
-      logger.debug({ at, message: `Exiting ${chain} listener.` });
-      exit(Number(process.exitCode));
-    });
+  bootstrap({ program: PROGRAM, abortController, chainName: () => chain, run });
 }
