@@ -13,40 +13,53 @@ import { RebalancerAdapter, RebalanceRoute } from "./utils/interfaces";
 function constructRebalancerDependencies(
   logger: winston.Logger,
   baseSigner: Signer,
-  rebalanceRoutesOverride?: RebalanceRoute[]
+  rebalanceRoutesOverride?: RebalanceRoute[],
+  adapterNamesOverride?: string[]
 ): {
   rebalancerConfig: RebalancerConfig;
   adapters: { [name: string]: RebalancerAdapter };
   rebalanceRoutes: RebalanceRoute[];
 } {
   const rebalancerConfig = new RebalancerConfig(process.env);
+  const shouldIncludeAdapter = (name: string) =>
+    rebalancerConfig.hubPoolChainId === CHAIN_IDs.MAINNET &&
+    (adapterNamesOverride === undefined || adapterNamesOverride.includes(name));
 
   // Construct adapters:
-  const cctpAdapter = new CctpAdapter(logger, rebalancerConfig, baseSigner);
-  const oftAdapter = new OftAdapter(logger, rebalancerConfig, baseSigner);
-  const hyperliquidAdapter = new HyperliquidStablecoinSwapAdapter(
-    logger,
-    rebalancerConfig,
-    baseSigner,
-    cctpAdapter,
-    oftAdapter
-  );
-  const binanceAdapter = new BinanceStablecoinSwapAdapter(
-    logger,
-    rebalancerConfig,
-    baseSigner,
-    cctpAdapter,
-    oftAdapter
-  );
-  const adapterMap = { hyperliquid: hyperliquidAdapter, binance: binanceAdapter, cctp: cctpAdapter, oft: oftAdapter };
+  const needsCctpAdapter =
+    shouldIncludeAdapter("cctp") || shouldIncludeAdapter("binance") || shouldIncludeAdapter("hyperliquid");
+  const needsOftAdapter =
+    shouldIncludeAdapter("oft") || shouldIncludeAdapter("binance") || shouldIncludeAdapter("hyperliquid");
+  const cctpAdapter = needsCctpAdapter ? new CctpAdapter(logger, rebalancerConfig, baseSigner) : undefined;
+  const oftAdapter = needsOftAdapter ? new OftAdapter(logger, rebalancerConfig, baseSigner) : undefined;
+  const adapterMap: { [name: string]: RebalancerAdapter } = {};
+  if (shouldIncludeAdapter("cctp")) {
+    adapterMap.cctp = cctpAdapter!;
+  }
+  if (shouldIncludeAdapter("oft")) {
+    adapterMap.oft = oftAdapter!;
+  }
+  if (shouldIncludeAdapter("hyperliquid")) {
+    adapterMap.hyperliquid = new HyperliquidStablecoinSwapAdapter(
+      logger,
+      rebalancerConfig,
+      baseSigner,
+      cctpAdapter!,
+      oftAdapter!
+    );
+  }
+  if (shouldIncludeAdapter("binance")) {
+    adapterMap.binance = new BinanceStablecoinSwapAdapter(
+      logger,
+      rebalancerConfig,
+      baseSigner,
+      cctpAdapter!,
+      oftAdapter!
+    );
+  }
   const rebalanceRoutes = rebalanceRoutesOverride ?? buildRebalanceRoutes(rebalancerConfig);
 
-  // @todo: Add test-net support for this client. For now, we only support production and we do not construct
-  // any adapters or routes when running on test net.
-  const adaptersToUpdate: Record<string, RebalancerAdapter> =
-    rebalancerConfig.hubPoolChainId === CHAIN_IDs.MAINNET ? adapterMap : {};
-
-  return { rebalancerConfig, adapters: adaptersToUpdate, rebalanceRoutes };
+  return { rebalancerConfig, adapters: adapterMap, rebalanceRoutes };
 }
 
 export async function constructCumulativeBalanceRebalancerClient(
@@ -89,9 +102,15 @@ export async function constructCumulativeBalanceRebalancerClient(
 
 export async function constructReadOnlyRebalancerClient(
   logger: winston.Logger,
-  baseSigner: Signer
+  baseSigner: Signer,
+  adapterNamesOverride?: string[]
 ): Promise<ReadOnlyRebalancerClient> {
-  const { rebalancerConfig, adapters } = constructRebalancerDependencies(logger, baseSigner);
+  const { rebalancerConfig, adapters } = constructRebalancerDependencies(
+    logger,
+    baseSigner,
+    undefined,
+    adapterNamesOverride
+  );
   const isReadonly = true;
   const rebalancerClient = new ReadOnlyRebalancerClient(logger, rebalancerConfig, adapters, baseSigner, isReadonly);
   // Initialize the CCTP and OFT Adapters first before initializing the Binance and HL adapters which use the former

@@ -6,6 +6,7 @@ import {
   getBinanceApiClient,
   resolveAcrossToken,
   compareAddressesSimple,
+  BigNumber,
   formatUnits,
   floatToBN,
   bnZero,
@@ -24,10 +25,13 @@ import {
   BinanceTransactionType,
   getBinanceWithdrawalType,
   isCompletedBinanceWithdrawal,
+  resolveBinanceCoinSymbol,
   truncate,
+  ethers,
 } from "../../utils";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { FinalizerPromise, AddressesToFinalize } from "../types";
+import { constructReadOnlyRebalancerClient } from "../../rebalancer/RebalancerClientHelper";
 
 // Alias for a Binance deposit/withdrawal status.
 enum Status {
@@ -41,7 +45,6 @@ enum Status {
 
 // The precision of a `DECIMAL` type in the Binance API.
 const DECIMAL_PRECISION = 1_000_000;
-
 /**
  * Unlike other finalizers, the Binance finalizer is only used to withdraw EOA deposits on Binance.
  * This means we need to be cautious on the addresses to finalize, as a "finalization" is essentially a withdrawal
@@ -111,6 +114,11 @@ export async function binanceFinalizer(
   });
   const binanceDeposits = _binanceBridgeDeposits.filter((deposit) => deposit.status === Status.Confirmed);
   const creditedDeposits = _binanceBridgeDeposits.filter((deposit) => deposit.status === Status.Credited);
+  const pendingBinanceRebalanceDeductions = await getPendingBinanceRebalanceDeductions(
+    logger,
+    hubSigner,
+    Object.keys(senderAddresses)
+  );
 
   // We can run this in parallel since deposits for each tokens are independent of each other.
   await mapAsync(Object.entries(senderAddresses), async ([address, symbols]) => {
@@ -172,6 +180,7 @@ export async function binanceFinalizer(
         // the lookback windows used to query deposits and withdrawals, so we require this value to be > bnZero.
         const _amountToFinalize = depositAmounts.sub(withdrawalAmounts);
         let amountToFinalize = _amountToFinalize.gt(bnZero) ? Number(formatUnits(_amountToFinalize, l1Decimals)) : 0;
+        const pendingRebalanceDeduction = pendingBinanceRebalanceDeductions[resolveBinanceCoinSymbol(symbol)] ?? 0;
 
         logger.debug({
           at: "BinanceFinalizer",
@@ -179,6 +188,7 @@ export async function binanceFinalizer(
           totalDepositedAmount: formatUnits(depositAmounts, l1Decimals),
           withdrawalAmount: formatUnits(withdrawalAmounts, l1Decimals),
           amountToFinalize,
+          pendingRebalanceDeduction,
         });
         // Additionally, binance imposes a minimum amount to withdraw. If the amount we want to finalize is less than the minimum, then
         // do not attempt to withdraw anything. Likewise, if the amount we want to withdraw is greater than the maximum, then warn and withdraw the maximum amount.
@@ -202,10 +212,8 @@ export async function binanceFinalizer(
         }
         // If the amount we can finalize is above the withdraw minimum for this network, and if the amount to finalize is within the amount of our balance which corresponds to _finalized_ not credited
         // deposits, then we can continue.
-        amountToFinalize = Math.min(
-          Number((coinBalance - creditedDepositAmount).toFixed(l1Decimals)),
-          amountToFinalize
-        );
+        const availableCoinBalance = Math.max(coinBalance - creditedDepositAmount - pendingRebalanceDeduction, 0);
+        amountToFinalize = Math.min(Number(availableCoinBalance.toFixed(l1Decimals)), amountToFinalize);
         if (amountToFinalize >= Number(networkLimits.withdrawMin)) {
           // Lastly, we need to truncate the amount to withdraw to 6 decimal places.
           amountToFinalize = Math.floor(amountToFinalize * DECIMAL_PRECISION) / DECIMAL_PRECISION;
@@ -236,14 +244,22 @@ export async function binanceFinalizer(
           // If the confirmed coin balance minus any pending swap balances is greater than the withdraw minimum, and there is
           // nothing to withdraw in this lookback window, then we should try to sweep the balance to L1.
           if (withdrawNetwork === BINANCE_NETWORKS[hubChainId]) {
-            const coinBalanceMinusSwapDeposits =
-              coinBalance - creditedDepositAmount - (binanceSwapDepositAmount[symbol] ?? 0);
+            const coinBalanceMinusSwapDeposits = getSweepableOrphanBinanceBalance(
+              coinBalance,
+              creditedDepositAmount,
+              binanceSwapDepositAmount[symbol] ?? 0,
+              pendingRebalanceDeduction
+            );
             if (coinBalanceMinusSwapDeposits >= Number(networkLimits.withdrawMin)) {
               const withdrawMax = Number(networkLimits.withdrawMax);
               const cappedWithdraw = Math.min(coinBalanceMinusSwapDeposits, withdrawMax);
               logger.debug({
                 at: "BinanceFinalizer",
                 message: `Sweeping orphaned ${cappedWithdraw} ${symbol} balance for ${address}.`,
+                coinBalance,
+                creditedDepositAmount,
+                swapDepositAmount: binanceSwapDepositAmount[symbol] ?? 0,
+                pendingRebalanceDeduction,
               });
               // Lastly, we need to truncate the amount to withdraw to 6 decimal places
               const amountToSweep = truncate(cappedWithdraw, 6);
@@ -270,4 +286,68 @@ export async function binanceFinalizer(
     callData: [],
     crossChainMessages: [],
   };
+}
+
+export function getSweepableOrphanBinanceBalance(
+  coinBalance: number,
+  creditedDepositAmount: number,
+  swapDepositAmount: number,
+  pendingRebalanceDeduction = 0
+): number {
+  return Math.max(coinBalance - creditedDepositAmount - swapDepositAmount - pendingRebalanceDeduction, 0);
+}
+
+async function getPendingBinanceRebalanceDeductions(
+  logger: winston.Logger,
+  hubSigner: Signer,
+  recipientAddresses: string[]
+): Promise<Record<string, number>> {
+  const readOnlyRebalancerClient = await constructReadOnlyRebalancerClient(logger, hubSigner, ["binance"]);
+  const lookupAccounts = getEvmBinanceRebalanceLookupAccounts(recipientAddresses, await hubSigner.getAddress());
+  const pendingRebalances = (
+    await Promise.all(lookupAccounts.map((account) => readOnlyRebalancerClient.getPendingRebalances(account)))
+  ).reduce<{
+    [chainId: number]: { [token: string]: BigNumber };
+  }>((acc, pending) => {
+    for (const [_chainId, tokenBalances] of Object.entries(pending)) {
+      const chainId = Number(_chainId);
+      acc[chainId] ??= {};
+      for (const [token, amount] of Object.entries(tokenBalances)) {
+        acc[chainId][token] = (acc[chainId][token] ?? bnZero).add(amount);
+      }
+    }
+    return acc;
+  }, {});
+  return getPositivePendingRebalanceAmountsByBinanceCoin(pendingRebalances);
+}
+
+export function getEvmBinanceRebalanceLookupAccounts(addresses: string[], signerAddress?: string): EvmAddress[] {
+  const seenAddresses = new Set<string>();
+  return [...addresses, signerAddress]
+    .filter(isDefined)
+    .filter((address) => ethers.utils.isAddress(address))
+    .map((address) => EvmAddress.from(address))
+    .filter((address) => {
+      const normalizedAddress = address.toNative();
+      if (seenAddresses.has(normalizedAddress)) {
+        return false;
+      }
+      seenAddresses.add(normalizedAddress);
+      return true;
+    });
+}
+
+export function getPositivePendingRebalanceAmountsByBinanceCoin(pendingRebalances: {
+  [chainId: number]: { [token: string]: BigNumber };
+}): Record<string, number> {
+  const totals: Record<string, number> = {};
+  for (const [_chainId, tokenBalances] of Object.entries(pendingRebalances)) {
+    const chainId = Number(_chainId);
+    for (const [token, amount] of Object.entries(tokenBalances)) {
+      const { decimals } = getTokenInfo(EvmAddress.from(resolveAcrossToken(token, chainId, true)), chainId);
+      const binanceCoin = resolveBinanceCoinSymbol(token);
+      totals[binanceCoin] = (totals[binanceCoin] ?? 0) + Number(formatUnits(amount, decimals));
+    }
+  }
+  return Object.fromEntries(Object.entries(totals).filter(([_symbol, amount]) => amount > 0));
 }
