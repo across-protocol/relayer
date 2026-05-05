@@ -117,7 +117,7 @@ export async function redisGetOrderDetailsForAdapter(
   adapterRedisPrefix: string,
   cloid: string,
   account: EvmAddress
-): Promise<OrderDetails> {
+): Promise<OrderDetails | undefined> {
   const orderDetailsKey = getPendingBridgeOrderKey(adapterRedisPrefix, cloid, account.toNative());
   const orderDetails = await redisCache.get<string>(orderDetailsKey);
   if (!orderDetails) {

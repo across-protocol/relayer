@@ -297,7 +297,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       });
     }
     for (const cloid of pendingBridgeToHyperevm) {
-      const orderDetails = await this._redisGetOrderDetails(cloid, this.baseSignerAddress);
+      const orderDetails = await this._redisGetOrderDetailsRequired(cloid, this.baseSignerAddress);
       const { sourceToken, amountToTransfer, sourceChain } = orderDetails;
       // Check if we have enough balance on HyperEVM to progress the order status:
       const hyperevmBalance = await this._getERC20Balance(
@@ -345,7 +345,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       });
     }
     for (const cloid of pendingDeposits) {
-      const orderDetails = await this._redisGetOrderDetails(cloid, this.baseSignerAddress);
+      const orderDetails = await this._redisGetOrderDetailsRequired(cloid, this.baseSignerAddress);
       const orderResult = await this._createHlOrder(orderDetails, cloid);
       if (orderResult) {
         await this._redisUpdateOrderStatus(
@@ -390,7 +390,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         });
 
         // Issue a withdrawal from HL now:
-        const existingOrder = await this._redisGetOrderDetails(cloid, this.baseSignerAddress);
+        const existingOrder = await this._redisGetOrderDetailsRequired(cloid, this.baseSignerAddress);
         this.logger.debug({
           at: "HyperliquidStablecoinSwapAdapter.updateRebalanceStatuses",
           message: `Withdrawing ${matchingFill.amountToWithdraw.toString()} ${
@@ -411,7 +411,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
           at: "HyperliquidStablecoinSwapAdapter.updateRebalanceStatuses",
           message: `Order ${cloid} was never filled and no longer exists, creating new order`,
         });
-        const existingOrder = await this._redisGetOrderDetails(cloid, this.baseSignerAddress);
+        const existingOrder = await this._redisGetOrderDetailsRequired(cloid, this.baseSignerAddress);
         await this._createHlOrder(existingOrder, cloid);
       } else {
         this.logger.debug({
@@ -434,7 +434,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     for (const cloid of pendingWithdrawals) {
       // For each finalized withdrawal from Hypercore, delete its status from Redis and optionally initiate
       // a bridge to the final destination chain if necessary.
-      const orderDetails = await this._redisGetOrderDetails(cloid, this.baseSignerAddress);
+      const orderDetails = await this._redisGetOrderDetailsRequired(cloid, this.baseSignerAddress);
       const { destinationToken, destinationChain } = orderDetails;
       const matchingFill = await this._getMatchingFillForCloid(this.baseSignerAddress, cloid);
       if (!matchingFill) {
@@ -696,7 +696,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     // chain's virtual balance (i.e. HyperEVM in this case).
     const pendingBridgeToHyperevm = await this._redisGetPendingBridgesPreDeposit(account);
     for (const cloid of pendingBridgeToHyperevm) {
-      const orderDetails = await this._redisGetOrderDetails(cloid, account);
+      const orderDetails = await this._redisGetOrderDetailsRequired(cloid, account);
       const { sourceChain, sourceToken, amountToTransfer } = orderDetails;
       const amountConverter = this._getAmountConverter(
         sourceChain,
@@ -739,7 +739,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       ),
     ]);
     for (const cloid of pendingWithdrawalsFromHypercore) {
-      const orderDetails = await this._redisGetOrderDetails(cloid, account);
+      const orderDetails = await this._redisGetOrderDetailsRequired(cloid, account);
       const { destinationToken, destinationChain } = orderDetails;
       const matchingFill = await this._getMatchingFillForCloid(account, cloid);
       if (!matchingFill) {
@@ -801,7 +801,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     }
     for (const cloid of pendingOrders) {
       // Filter this to match pending rebalance routes:
-      const orderDetails = await this._redisGetOrderDetails(cloid, account);
+      const orderDetails = await this._redisGetOrderDetailsRequired(cloid, account);
       const { destinationChain, destinationToken, sourceChain, sourceToken, amountToTransfer } = orderDetails;
       // Convert amountToTransfer to destination chain precision:
       const amountConverter = this._getAmountConverter(
@@ -976,7 +976,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     cloid: string
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ): Promise<{ details: any; amountToWithdraw: BigNumber } | undefined> {
-    const existingOrder = await this._redisGetOrderDetails(cloid, account);
+    const existingOrder = await this._redisGetOrderDetailsRequired(cloid, account);
     const { destinationToken, destinationChain } = existingOrder;
 
     const infoClient = new hl.InfoClient({ transport: new hl.HttpTransport() });

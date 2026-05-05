@@ -224,8 +224,16 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     return getCloidForAccount(this.baseSignerAddress.toNative());
   }
 
-  protected _redisGetOrderDetails(cloid: string, account: EvmAddress): Promise<OrderDetails> {
+  protected _redisGetOrderDetails(cloid: string, account: EvmAddress): Promise<OrderDetails | undefined> {
     return redisGetOrderDetailsForAdapter(this.redisCache, this.REDIS_PREFIX, cloid, account);
+  }
+
+  // Variant for callers that have just listed `cloid` as pending and require the details to be present.
+  // Throws if the redis entry is missing (e.g. expired between sMembers() and this lookup).
+  protected async _redisGetOrderDetailsRequired(cloid: string, account: EvmAddress): Promise<OrderDetails> {
+    const orderDetails = await this._redisGetOrderDetails(cloid, account);
+    assert(isDefined(orderDetails), `Missing order details for cloid ${cloid}`);
+    return orderDetails;
   }
 
   protected async _redisDeleteOrder(cloid: string, currentStatus: number, account: EvmAddress): Promise<void> {

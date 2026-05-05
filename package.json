@@ -62,8 +62,6 @@
     "test:parallel": "RELAYER_TEST=true NODE_OPTIONS='--import tsx/esm --no-warnings' hardhat test --parallel",
     "build": "tsc --build",
     "typecheck": "tsc --noEmit",
-    "strict-null-budget": "./scripts/strict-null-budget.sh",
-    "update-strict": "./scripts/strict-null-budget.sh --auto-ratchet",
     "watch": "tsc --build --incremental --watch",
     "build:test": "tsc --project tsconfig.test.json",
     "clean": "dir=\"./node_modules\"; mv \"${dir}\" \"${dir}_\" 2>/dev/null && rm -r \"${dir}_\" & rm -f dist/tsconfig.tsbuildinfo",

@@ -30,13 +30,13 @@ const LARGE_CONTRACT_COMPILER_SETTINGS = {
 
 const getNodeUrl = (chainId: number): string => {
   const chain = getNetworkName(chainId);
-  let url: string;
+  let url: string | undefined;
   try {
     url = Object.values(getNodeUrlList(chainId)).at(0);
   } catch {
     // eslint-disable-next-line no-console
     console.log(`No configured RPC provider for ${chain}, reverting to public RPC.`);
-    url = PUBLIC_NETWORKS[chainId].publicRPC;
+    url = PUBLIC_NETWORKS[chainId]?.publicRPC;
   }
 
   assert(isDefined(url), `No known RPC provider for ${chain}`);
