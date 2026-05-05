@@ -49,7 +49,7 @@ import {
 import { interfaces, constants as sdkConstants, utils as sdkUtils, providers } from "@across-protocol/sdk";
 import { cloneDeep } from "lodash";
 
-describe("Dataworker: Load bundle data", async function () {
+describe("Dataworker: Load bundle data", function () {
   const { EMPTY_MESSAGE } = sdkConstants;
 
   let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
@@ -979,7 +979,7 @@ describe("Dataworker: Load bundle data", async function () {
       dataworkerInstance.clients.bundleDataClient.setBundleTimestampsInCache(key3, cache3);
       expect(dataworkerInstance.clients.bundleDataClient.getBundleTimestampsFromCache(key3)).to.deep.equal(cache3);
     });
-    describe("Load data from Arweave", async function () {
+    describe("Load data from Arweave", function () {
       beforeEach(function () {
         const arweaveClient = new MockArweaveClient("", dataworkerInstance.logger);
         dataworkerInstance.clients.arweaveClient = arweaveClient;
@@ -1094,7 +1094,7 @@ describe("Dataworker: Load bundle data", async function () {
         });
       });
     });
-    describe("Bytes32 address invalid cases", async function () {
+    describe("Bytes32 address invalid cases", function () {
       it("Fallback to msg.sender when the relayer repayment address is invalid on an EVM chain", async function () {
         const depositV3Events: interfaces.Log[] = [];
         const fillV3Events: interfaces.Log[] = [];

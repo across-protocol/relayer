@@ -1,10 +1,19 @@
 /**
+ * Wrap an async task as a fire-and-forget callback for `setTimeout`/`setInterval` slots
+ * that expect `() => void`. Rejections are swallowed so a failed task can't crash the process
+ * via an unhandled rejection.
+ */
+export function fireAndForget(task: () => Promise<unknown>): () => void {
+  return () => void task().catch(() => undefined);
+}
+
+/**
  * Schedule a recurring task, to be executed `interval` seconds after each successive call.
  * @param task Function that returns a Promise to be awaited.
  * @param interval Task interval.
  */
 export function scheduleTask(task: () => Promise<unknown>, interval: number, signal: AbortSignal): void {
-  const timer = setInterval(async () => await task(), interval * 1000);
+  const timer = setInterval(fireAndForget(task), interval * 1000);
   signal.addEventListener("abort", () => clearInterval(timer));
 }
 
@@ -26,21 +35,22 @@ export function scheduleSequentialTask(
   signal: AbortSignal
 ): void {
   let timer: ReturnType<typeof setTimeout>;
+  const runOnce = async () => {
+    try {
+      await task();
+    } catch (err) {
+      logger.warn({
+        at: "scheduleSequentialTask",
+        message: `${name} update failed.`,
+        reason: err instanceof Error ? err.message : String(err),
+      });
+    }
+    if (!signal.aborted) {
+      schedule();
+    }
+  };
   const schedule = () => {
-    timer = setTimeout(async () => {
-      try {
-        await task();
-      } catch (err) {
-        logger.warn({
-          at: "scheduleSequentialTask",
-          message: `${name} update failed.`,
-          reason: err instanceof Error ? err.message : String(err),
-        });
-      }
-      if (!signal.aborted) {
-        schedule();
-      }
-    }, interval * 1000);
+    timer = setTimeout(() => void runOnce(), interval * 1000);
   };
   signal.addEventListener("abort", () => clearTimeout(timer));
   schedule();

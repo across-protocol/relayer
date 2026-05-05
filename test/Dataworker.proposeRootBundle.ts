@@ -31,7 +31,7 @@ let spokePoolClients: { [chainId: number]: SpokePoolClient };
 
 let updateAllClients: () => Promise<void>;
 
-describe("Dataworker: Propose root bundle", async function () {
+describe("Dataworker: Propose root bundle", function () {
   beforeEach(async function () {
     ({
       hubPool,

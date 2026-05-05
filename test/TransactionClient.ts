@@ -17,7 +17,7 @@ const method = "testMethod";
 let txnClient: MockedTransactionClient;
 let signer;
 
-describe("TransactionClient", async function () {
+describe("TransactionClient", function () {
   beforeEach(async function () {
     txnClient = new MockedTransactionClient(spyLogger);
     [signer] = await testEthers.getSigners();

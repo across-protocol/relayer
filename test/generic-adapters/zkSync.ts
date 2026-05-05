@@ -108,7 +108,7 @@ class TestZkSyncUSDCBridge extends ZKStackUSDCBridge {
   }
 }
 
-describe("Cross Chain Adapter: zkSync", async function () {
+describe("Cross Chain Adapter: zkSync", function () {
   const logger = createSpyLogger().spyLogger;
   const l2TxGasLimit = bnZero;
   const l2TxGasPerPubdataByte = bnZero;
@@ -773,7 +773,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
     });
   });
 
-  describe("USDC bridge", async function () {
+  describe("USDC bridge", function () {
     let randomEoa: string;
     const l1Token = USDC.addresses[MAINNET];
     const l2Token = USDC.addresses[LENS];

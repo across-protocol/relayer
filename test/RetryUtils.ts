@@ -22,7 +22,7 @@ async function incrementCounterThrowError(errorIndex: number, returnValue = expe
   }
 }
 
-describe("RetryUtils", async function () {
+describe("RetryUtils", function () {
   beforeEach(async function () {
     ERROR_COUNTER = 0;
   });

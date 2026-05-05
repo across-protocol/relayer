@@ -17,7 +17,7 @@ import {
 } from "./utils";
 import { EvmAddress, getSvmSignerFromEvmSigner, SvmAddress, isSignerWallet, toAddressType } from "../src/utils";
 
-describe("TokenClient: Balance and Allowance", async function () {
+describe("TokenClient: Balance and Allowance", function () {
   let spokePool_1: Contract, spokePool_2: Contract;
   let erc20_1: Contract, weth_1: Contract, erc20_2: Contract, weth_2: Contract;
   let hubPoolClient: MockHubPoolClient, spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;

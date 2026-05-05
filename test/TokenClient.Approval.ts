@@ -21,7 +21,7 @@ import {
 import { EvmAddress, getSvmSignerFromEvmSigner, SvmAddress, isSignerWallet } from "../src/utils";
 import { MockHubPoolClient, SimpleMockTokenClient } from "./mocks";
 
-describe("TokenClient: Origin token approval", async function () {
+describe("TokenClient: Origin token approval", function () {
   let spokePool_1: Contract, spokePool_2: Contract, hubPool: Contract;
   let erc20_1: Contract,
     weth_1: Contract,

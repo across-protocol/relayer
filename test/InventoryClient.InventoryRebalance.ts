@@ -105,7 +105,7 @@ const initialWethTotal = toWei(150); // Sum over all 5 chains is 150
 const initialUsdcTotal = toMegaWei(15000); // Sum over all 5 chains is 15000
 const initialTotals = { [mainnetWeth]: initialWethTotal, [mainnetUsdc]: initialUsdcTotal };
 
-describe("InventoryClient: Rebalancing inventory", async function () {
+describe("InventoryClient: Rebalancing inventory", function () {
   beforeEach(async function () {
     [owner] = await ethers.getSigners();
     ({ spy, spyLogger } = createSpyLogger());
@@ -509,7 +509,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     });
   });
 
-  describe("Remote chain token mappings", async function () {
+  describe("Remote chain token mappings", function () {
     const nativeUSDC = TOKEN_SYMBOLS_MAP.USDC.addresses;
     const bridgedUSDC = { ...TOKEN_SYMBOLS_MAP["USDC.e"].addresses, ...TOKEN_SYMBOLS_MAP["USDbC"].addresses };
     const usdcConfig = {

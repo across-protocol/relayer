@@ -37,7 +37,7 @@ import {
 } from "@across-protocol/sdk";
 import { FillWithBlock } from "../src/interfaces";
 
-describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic", async function () {
+describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic", function () {
   const { EMPTY_MESSAGE } = sdkConstants;
 
   let erc20_1: Contract, erc20_2: Contract;
