@@ -55,7 +55,7 @@ Therefore, supporting in-protocol swaps requires that the relayer has a module f
 
 In the future, the relayer bot should be able to support in-protocol swaps between many different types of assets. However, there are risk-management reasons why we are rolling this feature out slowly with the USDT->USDC relayer as the first instance of broader in-protocol swaps support.
 
-First, read the "Filling in-protocol swaps" section on the the challenges facing relayers of in-protocol swaps.
+First, read the "Filling in-protocol swaps" section on the challenges facing relayers of in-protocol swaps.
 
 Next, consider that supporting in-protocol swaps between stablecoins is a much easier problem than supporting swaps between any two arbitrary assets, because stablecoins can generally be assumed to have highly correlated prices that do not deviate permanently from each other.
 
