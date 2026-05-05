@@ -7,6 +7,8 @@ export interface RouteParams {
   refundAddress: string;
 }
 
+export type DepositAddressTransferClassification = "correct_transfer" | "mis_route" | "intent_refund";
+
 export interface Erc20Transfer {
   chainId: string;
   from: string;
@@ -14,6 +16,7 @@ export interface Erc20Transfer {
   amount: string;
   contractAddress: string;
   transactionHash: string;
+  transferClassification: DepositAddressTransferClassification;
 }
 export interface DepositAddressMessage {
   depositAddress: string;
