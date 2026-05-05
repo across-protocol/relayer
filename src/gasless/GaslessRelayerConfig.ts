@@ -23,13 +23,19 @@ export class GaslessRelayerConfig extends CommonConfig {
   /** When true, allow deposits with inputAmount < outputAmount and outputAmount === MAX_UINT_VAL (refund-flow test); deposit is made but fill is skipped. */
   refundFlowTestEnabled: boolean;
   spokePoolPeripheryOverrides: { [chainId: number]: string };
-  /** Gasless-only: allowed input→output token pairs (by L1 symbol). E.g. { "USDT": ["USDC"] }. */
+  /** Gasless-only: allowed input→output token pairs (by L2 symbol). E.g. { "USDT": ["USDC", "USDH", "USDC.e"] }. */
   allowedPeggedPairs: AllowedPeggedPairs;
   /**
    * Origin chain IDs where canonical Permit2 is not used (skip loading and nonce-bitmap reads).
    * JSON array of numbers, e.g. `[999]` for HyperEVM. Default `[]`.
    */
   noPermit2ContractChainIds: Set<number>;
+
+  /**
+   * USD nominal above which `validateDeposit` may emit an `error` log for paging (stablecoin input only).
+   * `0` or invalid = disabled. From `RELAYER_GASLESS_DEPOSIT_USD_PAGE_THRESHOLD`.
+   */
+  depositUsdPageThreshold: number;
 
   constructor(env: ProcessEnv) {
     super(env);
@@ -48,6 +54,7 @@ export class GaslessRelayerConfig extends CommonConfig {
       GASLESS_ALLOWED_PEGGED_PAIRS,
       SWAP_API_KEY,
       NO_PERMIT2_CONTRACT_CHAINS,
+      RELAYER_GASLESS_DEPOSIT_USD_PAGE_THRESHOLD,
     } = env;
     this.apiPollingInterval = Number(API_POLLING_INTERVAL ?? 1); // Default to 1s
     this.apiEndpoint = String(API_GASLESS_ENDPOINT);
@@ -77,5 +84,6 @@ export class GaslessRelayerConfig extends CommonConfig {
     );
 
     this.noPermit2ContractChainIds = new Set(parseJson.numberArray(NO_PERMIT2_CONTRACT_CHAINS ?? "[]"));
+    this.depositUsdPageThreshold = Number(RELAYER_GASLESS_DEPOSIT_USD_PAGE_THRESHOLD ?? 1000);
   }
 }

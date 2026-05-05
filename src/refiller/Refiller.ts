@@ -62,11 +62,21 @@ export class Refiller {
   private balanceCache: { [chainId: number]: { [token: string]: { [account: string]: BigNumber } } } = {};
   private decimals: { [chainId: number]: { [token: string]: number } } = {};
   private acrossSwapApiClient: AcrossSwapApiClient;
-  private redisCache: RedisCache;
+  private _redisCache?: RedisCache;
   private baseSigner: Signer;
-  private baseSignerAddress: EvmAddress;
+  private _baseSignerAddress?: EvmAddress;
   private initialized = false;
   private transactionClient: TransactionClient;
+
+  // redisCache and baseSignerAddress are populated by initialize(); access pre-init throws.
+  private get redisCache(): RedisCache {
+    assert(isDefined(this._redisCache), "Refiller: redisCache accessed before initialize()");
+    return this._redisCache;
+  }
+  private get baseSignerAddress(): EvmAddress {
+    assert(isDefined(this._baseSignerAddress), "Refiller: baseSignerAddress accessed before initialize()");
+    return this._baseSignerAddress;
+  }
 
   public constructor(
     readonly logger: winston.Logger,
@@ -82,8 +92,8 @@ export class Refiller {
    * @notice One time initialization of the Refiller for any async operations.
    */
   async initialize(): Promise<void> {
-    this.baseSignerAddress = EvmAddress.from(await this.baseSigner.getAddress());
-    this.redisCache = (await getRedisCache(this.logger)) as RedisCache;
+    this._baseSignerAddress = EvmAddress.from(await this.baseSigner.getAddress());
+    this._redisCache = await getRedisCache(this.logger);
     this.initialized = true;
   }
 

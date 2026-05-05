@@ -1,5 +1,5 @@
 import { Log } from "../../interfaces";
-import { BigNumber, getRedisCache, toBN, EvmAddress } from "../../utils";
+import { BigNumber, getRedisCache, isDefined, toBN, EvmAddress } from "../../utils";
 
 /**
  * @notice This function is designed to be used in L2 chain adapters when identifying "finalized" cross
@@ -49,7 +49,7 @@ export async function getTokenAllowanceFromCache(
   const redis = await getRedisCache();
   const key = getAllowanceCacheKey(l1Token, contractAddress, userAddress);
   const allowance = await redis?.get<string>(key);
-  if (allowance === null) {
+  if (!isDefined(allowance)) {
     return undefined;
   }
   return toBN(allowance);
@@ -85,7 +85,7 @@ export async function getL2TokenAllowanceFromCache(
   const redis = await getRedisCache();
   const key = getL2AllowanceCacheKey(l2ChainId, l2Token, userAddress, contractAddress);
   const allowance = await redis?.get<string>(key);
-  if (allowance === null) {
+  if (!isDefined(allowance)) {
     return undefined;
   }
   return toBN(allowance);

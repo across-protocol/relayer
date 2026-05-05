@@ -16,7 +16,7 @@ import {
   getNativeTokenSymbol,
   getTokenInfo,
 } from "../src/utils";
-import { CONTRACT_ADDRESSES } from "../src/common";
+import { getContractEntry } from "../src/common";
 import { askYesNoQuestion } from "./utils";
 
 import minimist from "minimist";
@@ -65,7 +65,7 @@ export async function run(): Promise<void> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let contract: Contract, functionName: string, functionArgs: any[];
   if (symbol !== nativeTokenSymbol) {
-    const arbErc20GatewayObj = CONTRACT_ADDRESSES[chainId].erc20GatewayRouter;
+    const arbErc20GatewayObj = getContractEntry(chainId, "erc20GatewayRouter");
     contract = new Contract(arbErc20GatewayObj.address, arbErc20GatewayObj.abi, connectedSigner);
     functionName = "outboundTransfer";
     functionArgs = [
@@ -80,7 +80,7 @@ export async function run(): Promise<void> {
       ...functionArgs
     );
   } else {
-    const arbSys = CONTRACT_ADDRESSES[chainId].arbSys;
+    const arbSys = getContractEntry(chainId, "arbSys");
     contract = new Contract(arbSys.address, arbSys.abi, connectedSigner);
     functionName = "withdrawEth";
     functionArgs = [

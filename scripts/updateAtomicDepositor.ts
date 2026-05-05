@@ -1,5 +1,5 @@
 import { ethers, Contract, CHAIN_IDs, ZERO_ADDRESS, isDefined } from "../src/utils";
-import { CONTRACT_ADDRESSES } from "../src/common/ContractAddresses";
+import { getContractEntry } from "../src/common/ContractAddresses";
 import { askYesNoQuestion } from "./utils";
 
 import minimist from "minimist";
@@ -10,10 +10,8 @@ const args = minimist(process.argv.slice(2), {
 const { MAINNET } = CHAIN_IDs;
 
 // The atomic depositor should not change on each new chain deployment.
-const atomicDepositor = new Contract(
-  CONTRACT_ADDRESSES[MAINNET].atomicDepositor.address,
-  CONTRACT_ADDRESSES[MAINNET].atomicDepositor.abi
-);
+const { address: atomicDepositorAddress, abi: atomicDepositorAbi } = getContractEntry(MAINNET, "atomicDepositor");
+const atomicDepositor = new Contract(atomicDepositorAddress, atomicDepositorAbi);
 
 // Example run:
 // tsx ./scripts/updateAtomicDepositor.ts \

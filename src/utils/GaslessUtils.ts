@@ -19,7 +19,6 @@ import {
   assert,
   ConvertDecimals,
   convertRelayDataParamsToBytes32,
-  getL1TokenAddress,
   getTokenInfo,
   toBN,
   toBytes32,
@@ -28,7 +27,11 @@ import {
   MAX_UINT_VAL,
   TOKEN_SYMBOLS_MAP,
   Provider,
+  toBNWei,
   winston,
+  isDefined,
+  getInventoryEquivalentL1TokenAddress,
+  getTokenSymbol,
 } from "../utils";
 import { AugmentedTransaction } from "../clients";
 import { Contract, BigNumber, ethers } from "ethers";
@@ -115,21 +118,17 @@ export function isAllowedGaslessPair(
 ): boolean {
   const inputAddr = typeof inputToken === "string" ? toAddressType(inputToken, originChainId) : inputToken;
   const outputAddr = typeof outputToken === "string" ? toAddressType(outputToken, destinationChainId) : outputToken;
-  const inputL1 = getL1TokenAddress(inputAddr, originChainId);
-  const outputL1 = getL1TokenAddress(outputAddr, destinationChainId);
-  if (inputL1.eq(outputL1)) {
+
+  const inputSymbol = getTokenSymbol(inputAddr, originChainId);
+  const outputSymbol = getTokenSymbol(outputAddr, destinationChainId);
+  if (allowedPeggedPairs[inputSymbol]?.has(outputSymbol)) {
     return true;
   }
-  if (Object.keys(allowedPeggedPairs).length === 0) {
-    return false;
-  }
-  try {
-    const inputSymbol = getTokenInfo(inputL1, CHAIN_IDs.MAINNET).symbol;
-    const outputSymbol = getTokenInfo(outputL1, CHAIN_IDs.MAINNET).symbol;
-    return allowedPeggedPairs[inputSymbol]?.has(outputSymbol) ?? false;
-  } catch {
-    return false;
-  }
+
+  const inputL1 = getInventoryEquivalentL1TokenAddress(inputAddr, originChainId);
+  const outputL1 = getInventoryEquivalentL1TokenAddress(outputAddr, destinationChainId);
+
+  return inputL1.eq(outputL1) ?? false;
 }
 
 /**
@@ -636,6 +635,8 @@ export function buildSyntheticDeposit(msg: GaslessDepositMessage): RelayData & {
  * Simple validation function for deposit tokens & amounts.
  * @param allowRefundFlowTest When true, deposits with inputAmount < outputAmount and outputAmount === MAX_UINT_VAL are considered valid (for refund-flow testing).
  * @param allowedPeggedPairs When provided, input/output pairs in this map (e.g. { "USDC": ["USDH"] }) are allowed in addition to same-L1 pairs.
+ * @param logger When set and `depositUsdPageThreshold` is positive, may emit `logger.error` for paging when input exceeds threshold (does not change validation result).
+ * @param depositUsdPageThreshold USD nominal from config (`RELAYER_GASLESS_DEPOSIT_USD_PAGE_THRESHOLD`); `0` disables. USDC/USDT input treated as ~1 USD per token unit at chain-native decimals.
  */
 export function validateDeposit(
   originChainId: number,
@@ -645,7 +646,9 @@ export function validateDeposit(
   outputToken: Address,
   outputAmount: BigNumber,
   allowRefundFlowTest = false,
-  allowedPeggedPairs: AllowedPeggedPairs = {}
+  allowedPeggedPairs: AllowedPeggedPairs = {},
+  logger?: winston.Logger,
+  depositUsdPageThreshold = 0
 ): boolean {
   if (!isAllowedGaslessPair(inputToken, outputToken, originChainId, destinationChainId, allowedPeggedPairs)) {
     return false;
@@ -653,6 +656,7 @@ export function validateDeposit(
 
   const inputTokenInfo = getTokenInfo(inputToken, originChainId);
   const outputTokenInfo = getTokenInfo(outputToken, destinationChainId);
+
   const inputAmountInOutputTokenDecimals = ConvertDecimals(
     inputTokenInfo.decimals,
     outputTokenInfo.decimals
@@ -660,6 +664,22 @@ export function validateDeposit(
   // If the input amount is less than the output amount, reject unless refund-flow test is enabled and outputAmount === MAX_UINT_VAL.
   if (inputAmountInOutputTokenDecimals.lt(outputAmount)) {
     return allowRefundFlowTest ? outputAmount.eq(MAX_UINT_VAL) : false;
+  }
+
+  if (isDefined(logger) && depositUsdPageThreshold > 0 && isStablecoin(inputToken, originChainId)) {
+    const thresholdBn = toBNWei(depositUsdPageThreshold, inputTokenInfo.decimals);
+    if (inputAmount.gt(thresholdBn)) {
+      logger.error({
+        at: "GaslessUtils#validateDeposit",
+        message:
+          "Gasless deposit input exceeds USD paging threshold (operational alert only; deposit may still be valid).",
+        originChainId,
+        thresholdUsd: depositUsdPageThreshold,
+        inputToken: inputToken.toNative(),
+        inputSymbol: inputTokenInfo.symbol,
+        inputAmount: inputAmount.toString(),
+      });
+    }
   }
 
   return true;

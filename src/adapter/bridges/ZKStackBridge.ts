@@ -1,4 +1,5 @@
 import {
+  assert,
   Contract,
   BigNumber,
   Signer,
@@ -41,8 +42,8 @@ export class ZKStackBridge extends BaseBridgeAdapter {
   readonly hubPool: Contract;
   readonly nativeTokenVault: Contract;
   // @dev The native and wrapped native token contracts are only used when we are bridging the custom gas token.
-  readonly nativeToken: Contract;
-  readonly wrappedNativeToken: Contract;
+  readonly nativeToken?: Contract;
+  readonly wrappedNativeToken?: Contract;
 
   constructor(
     l2chainId: number,
@@ -226,24 +227,29 @@ export class ZKStackBridge extends BaseBridgeAdapter {
         .map((event) => processEvent(event, "amount"));
     } else {
       // We are bridging the native token so we need to query transfer events from the aliased senders.
+      const { nativeToken, wrappedNativeToken } = this;
+      assert(
+        isDefined(nativeToken) && isDefined(wrappedNativeToken),
+        "ZKStackBridge: nativeToken/wrappedNativeToken must be configured when bridging custom gas token"
+      );
       let events;
       if (isSpokePool) {
         events = await paginatedEventQuery(
-          this.nativeToken,
-          this.nativeToken.filters.Transfer(zksync.utils.applyL1ToL2Alias(this.hubPool.address), toAddress.toNative()),
+          nativeToken,
+          nativeToken.filters.Transfer(zksync.utils.applyL1ToL2Alias(this.hubPool.address), toAddress.toNative()),
           eventConfig
         );
       } else {
         // The transaction originated from the atomic depositor and the L2 does not use a custom gas token.
         const [_events, wrapEvents] = await Promise.all([
           paginatedEventQuery(
-            this.nativeToken,
-            this.nativeToken.filters.Transfer(fromAddress.toNative(), toAddress.toNative()),
+            nativeToken,
+            nativeToken.filters.Transfer(fromAddress.toNative(), toAddress.toNative()),
             eventConfig
           ),
           paginatedEventQuery(
-            this.wrappedNativeToken,
-            this.wrappedNativeToken.filters.Deposit(toAddress.toNative()),
+            wrappedNativeToken,
+            wrappedNativeToken.filters.Deposit(toAddress.toNative()),
             eventConfig
           ),
         ]);

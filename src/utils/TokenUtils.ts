@@ -221,3 +221,12 @@ export function getTokenInfoFromSymbol(l1TokenSymbol: string, chainId: number): 
     return getTokenInfo(remoteTokenAddress, chainId);
   }
 }
+
+export function getTokenSymbol(token: Address, chainId: number): string {
+  try {
+    const { symbol } = getTokenInfo(token, chainId);
+    return symbol;
+  } catch {
+    return "UNKNOWN";
+  }
+}
