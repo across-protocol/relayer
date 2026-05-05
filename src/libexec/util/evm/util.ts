@@ -9,7 +9,7 @@ import { Log, ScraperOpts } from "../../types";
  * @param address Contract address to filter on.
  * @param event The event descriptor to filter for.
  * @param opts Options to configure event scraping behaviour, including the target block number.
- * @param logger Optional Winston logger instance.
+ * @param logger Winston logger instance.
  * @returns Promise resolving to an array of log entries.
  */
 export async function scrapeEvents(
@@ -17,7 +17,7 @@ export async function scrapeEvents(
   address: string,
   event: string,
   opts: ScraperOpts & { toBlock: number },
-  logger?: winston.Logger
+  logger: winston.Logger
 ): Promise<Log[]> {
   const profiler = new Profiler({
     logger,

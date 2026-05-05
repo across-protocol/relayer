@@ -6,7 +6,7 @@ import {
   CONSERVATIVE_BUNDLE_FREQUENCY_SECONDS,
   spokesThatHoldNativeTokens,
 } from "../common/Constants";
-import { CONTRACT_ADDRESSES } from "../common/ContractAddresses";
+import { getContractAddress } from "../common/ContractAddresses";
 import {
   PoolRebalanceLeaf,
   ProposedRootBundle,
@@ -431,12 +431,9 @@ export function generateValidationKey(
  */
 function getNativeTokens(chainId: number): Address[] {
   const nativeTokenSymbol = getNativeTokenSymbol(chainId);
-  const nativeTokenAddress = CONTRACT_ADDRESSES[chainId]?.nativeToken?.address;
+  const nativeTokenAddress = getContractAddress(chainId, "nativeToken");
   const wrappedNativeToken = getWrappedNativeTokenAddress(chainId);
-  assert(
-    isDefined(nativeTokenAddress) && isDefined(wrappedNativeToken),
-    `${nativeTokenSymbol} address not defined for chain ${chainId}`
-  );
+  assert(isDefined(wrappedNativeToken), `${nativeTokenSymbol} wrapped address not defined for chain ${chainId}`);
   // Can't use TOKEN_SYMBOLS_MAP for ETH because it duplicates the WETH addresses, which is not correct for this use case.
   return [wrappedNativeToken, toAddressType(nativeTokenAddress, chainId)];
 }

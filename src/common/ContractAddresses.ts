@@ -1,7 +1,8 @@
 import assert from "assert";
 import { ContractInterface } from "ethers";
 import { JsonFragment } from "@ethersproject/abi";
-import { CHAIN_IDs, getDeployedAddress, isDefined } from "../utils";
+import { CHAIN_IDs, getDeployedAddress } from "../utils";
+import { isDefined } from "../utils/TypeGuards";
 import CCTP_MESSAGE_TRANSMITTER_ABI from "./abi/CctpMessageTransmitter.json";
 import CCTP_TOKEN_MESSENGER_ABI from "./abi/CctpTokenMessenger.json";
 import CCTP_V2_TOKEN_MESSENGER_ABI from "./abi/CctpV2TokenMessenger.json";
@@ -991,6 +992,16 @@ export function getContractEntry(chainId: number, name: string): { address: stri
   assert(isDefined(entry?.address) && isDefined(entry?.abi), `Missing CONTRACT_ADDRESSES entry: ${chainId}/${name}`);
   assert(isJsonAbi(entry.abi), `Invalid ABI shape: ${chainId}/${name}`);
   return { address: entry.address, abi: entry.abi };
+}
+
+/**
+ * Look up only the `address` for a contract entry (ABI not required, e.g. native tokens).
+ * Throws if the address is missing.
+ */
+export function getContractAddress(chainId: number, name: string): string {
+  const entry = CONTRACT_ADDRESSES[chainId]?.[name];
+  assert(isDefined(entry?.address), `Missing CONTRACT_ADDRESSES address: ${chainId}/${name}`);
+  return entry.address;
 }
 
 /**
