@@ -7,6 +7,7 @@ import {
   getNetworkName,
   getRedisCache,
   isDefined,
+  isPromiseRejected,
   Profiler,
   scheduleSequentialTask,
   scheduleTask,
@@ -206,7 +207,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
     // Before exiting, wait for transaction submission to complete.
     for (const [chainId, submission] of Object.entries(txnReceipts)) {
       const [result] = await Promise.allSettled([submission]);
-      if (sdkUtils.isPromiseRejected(result)) {
+      if (isPromiseRejected(result)) {
         logger.warn({
           at: "Relayer#runRelayer",
           message: `Failed transaction submission on ${getNetworkName(Number(chainId))}.`,

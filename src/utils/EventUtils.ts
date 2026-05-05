@@ -11,13 +11,11 @@ export type EventSearchConfig = sdkUtils.EventSearchConfig;
 
 export const {
   getPaginatedBlockRanges,
-  getTransactionRefs,
   isEventOlder,
   paginatedEventQuery,
   sortEventsAscending,
   sortEventsAscendingInPlace,
   sortEventsDescending,
-  sortEventsDescendingInPlace,
   spreadEvent,
   spreadEventWithBlockNumber,
 } = sdkUtils;

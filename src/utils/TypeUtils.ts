@@ -15,7 +15,7 @@ export function toSvmSlowFillLeaf(slowFillLeaf: SlowFillLeaf): SvmSpokeClient.Sl
   };
 }
 
-export function toSvmRelayData(relayData: RelayData): SvmSpokeClient.RelayData {
+function toSvmRelayData(relayData: RelayData): SvmSpokeClient.RelayData {
   return {
     originChainId: BigInt(relayData.originChainId),
     depositor: address(relayData.depositor.toBase58()),

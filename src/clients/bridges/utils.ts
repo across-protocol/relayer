@@ -37,7 +37,7 @@ export function matchL2EthDepositAndWrapEvents(l2EthDepositEvents: Log[], _l2Wra
 }
 
 // Note: All of these are set as `EvmAddress` types since their `toString()` implementation outputs a 20 byte address.
-export function getAllowanceCacheKey(l1Token: EvmAddress, targetContract: EvmAddress, userAddress: EvmAddress): string {
+function getAllowanceCacheKey(l1Token: EvmAddress, targetContract: EvmAddress, userAddress: EvmAddress): string {
   return `l1CanonicalTokenBridgeAllowance_${l1Token}_${userAddress}_targetContract:${targetContract}`;
 }
 

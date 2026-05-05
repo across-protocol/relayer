@@ -81,9 +81,7 @@ export async function finalizeCCTPV1MessagesSVM(
   return finalizedTxns;
 }
 
-export function attestedCCTPMessageToSvmAttestedCCTPMessage(
-  message: AttestedCCTPMessage
-): arch.svm.AttestedCCTPMessage {
+function attestedCCTPMessageToSvmAttestedCCTPMessage(message: AttestedCCTPMessage): arch.svm.AttestedCCTPMessage {
   assert(isDefined(message.attestation), "attestedCCTPMessageToSvmAttestedCCTPMessage: missing attestation");
   return {
     nonce: message.nonce,

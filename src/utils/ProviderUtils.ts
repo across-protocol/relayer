@@ -10,7 +10,7 @@ import * as viem from "viem";
 import { ClusterUrl } from "@solana/kit";
 import { CachingMechanismInterface } from "../interfaces";
 
-export const defaultTimeout = 60 * 1000;
+const defaultTimeout = 60 * 1000;
 export class RetryProvider extends sdkProviders.RetryProvider {}
 
 // Global provider caches to avoid creating multiple providers for the same chain.
@@ -37,7 +37,7 @@ export function getCachedProvider(chainId: number, redisEnabled = true): RetryPr
   return cache[chainId];
 }
 
-export function isJsonRpcError(response: unknown): { code: number; message: string; data?: unknown } | undefined {
+function isJsonRpcError(response: unknown): { code: number; message: string; data?: unknown } | undefined {
   if (!sdkProviders.RpcError.is(response)) {
     return;
   }
@@ -314,12 +314,6 @@ export function createViemCustomTransportFromEthersProvider(providerChainId: num
       retryCount: 0,
     }
   );
-}
-
-export function getWSProviders(chainId: number, quorum?: number): ethers.providers.WebSocketProvider[] {
-  quorum ??= getChainQuorum(chainId);
-  const urls = getNodeUrlList(chainId, quorum, "wss");
-  return Object.values(urls).map((url) => new ethers.providers.WebSocketProvider(url));
 }
 
 /**

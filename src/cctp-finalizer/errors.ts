@@ -1,4 +1,4 @@
-export abstract class CCTPError extends Error {
+abstract class CCTPError extends Error {
   abstract readonly shouldRetry: boolean;
   abstract readonly code: string;
 
