@@ -12,6 +12,7 @@ export class DepositAddressHandlerConfig extends CommonConfig {
   apiTimeoutOverride: number;
   initializationRetryAttempts: number;
   swapApiKey: string;
+  withdrawEnabled: boolean;
 
   constructor(env: ProcessEnv) {
     super(env);
@@ -25,6 +26,7 @@ export class DepositAddressHandlerConfig extends CommonConfig {
       API_TIMEOUT_OVERRIDE,
       SWAP_API_KEY,
       INITIALIZATION_RETRY_ATTEMPTS,
+      WITHDRAW_ENABLED,
     } = env;
     this.indexerPollingInterval = Number(INDEXER_API_POLLING_INTERVAL ?? 1); // Default to 1s
     this.indexerApiEndpoint = String(INDEXER_API_ENDPOINT);
@@ -41,5 +43,6 @@ export class DepositAddressHandlerConfig extends CommonConfig {
 
     this.apiTimeoutOverride = Number(API_TIMEOUT_OVERRIDE ?? 3000); // In ms
     this.initializationRetryAttempts = Number(INITIALIZATION_RETRY_ATTEMPTS ?? 3);
+    this.withdrawEnabled = WITHDRAW_ENABLED === "true";
   }
 }
