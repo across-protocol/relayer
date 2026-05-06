@@ -398,7 +398,7 @@ export class GaslessRelayer {
   protected _markFilledFromInitialObservation(apiMessages: AnyGaslessDepositMessage[]): number {
     let markedFilledCount = 0;
     for (const depositMessage of apiMessages) {
-      const { originChainId, depositId, spokePool, depositFlowType } = depositMessage;
+      const { originChainId, depositId, spokePool } = depositMessage;
       const { destinationChainId, inputToken } = extractGaslessDepositFields(depositMessage);
       const depositKey = this._getDepositKey(inputToken.toNative(), originChainId, depositId);
 
