@@ -91,9 +91,6 @@ export class DepositAddressHandler {
       message: "Initializing DepositAddressHandler",
     });
 
-    const { RUN_IDENTIFIER: runIdentifier, BOT_IDENTIFIER: botIdentifier = "deposit-address-handler" } = process.env;
-    assert(isDefined(runIdentifier), "DepositAddressHandler: RUN_IDENTIFIER env var is required");
-
     // Set the signer address.
     this.signerAddress = EvmAddress.from(await this.baseSigner.getAddress());
     this.redisCache = await getRedisCache(this.logger);
@@ -126,8 +123,8 @@ export class DepositAddressHandler {
     this.instanceCoordinator = new InstanceCoordinator(
       this.logger,
       this.redisCache,
-      botIdentifier,
-      runIdentifier,
+      this.config.botIdentifier,
+      this.config.runIdentifier,
       this.abortController
     );
     await this.instanceCoordinator.initiateHandover();
@@ -138,8 +135,7 @@ export class DepositAddressHandler {
   }
 
   private getExecutedDepositsRedisKey(): string {
-    const botId = process.env.BOT_IDENTIFIER ?? "deposit-address-handler";
-    return `deposit-address:executed:${botId}`;
+    return `deposit-address:executed:${this.config.botIdentifier}`;
   }
 
   /** Loads executed deposit tx hashes from Redis (e.g. after handover). */

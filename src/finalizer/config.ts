@@ -23,7 +23,7 @@ export class FinalizerConfig extends CommonConfig {
       FINALIZATION_STRATEGY = "l1<->l2",
       FINALIZER_CHUNK_SIZE = 3,
     } = env;
-    super(env);
+    super(env, { botIdentifier: "across-finalizer" });
 
     const userAddresses = parseJson.stringArrayMap(FINALIZER_WITHDRAWAL_TO_ADDRESSES);
     this.userAddresses = new Map();
