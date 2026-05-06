@@ -1,6 +1,11 @@
-import { expect, sinon, winston } from "./utils";
-import { Contract, ethers } from "ethers";
-import { tagIntegratorId, restructureGaslessDeposits, buildGaslessDepositTx } from "../src/utils/GaslessUtils";
+import { expect, sinon, winston, smock, ethers } from "./utils";
+import { Contract } from "ethers";
+import {
+  tagIntegratorId,
+  restructureGaslessDeposits,
+  buildGaslessDepositTx,
+  isErc2612PermitNonceConsumed,
+} from "../src/utils/GaslessUtils";
 import { APIGaslessDepositResponse } from "../src/interfaces";
 import SPOKE_POOL_PERIPHERY_ABI from "../src/common/abi/SpokePoolPeriphery.json";
 
@@ -346,6 +351,32 @@ describe("GaslessUtils", function () {
       expect(tx.method).to.equal("swapAndBridgeWithPermit");
       expect(tx.args.length).to.equal(5);
       expect(tx.ensureConfirmation).to.be.true;
+    });
+  });
+
+  describe("isErc2612PermitNonceConsumed (SpokePoolPeriphery.permitNonces)", function () {
+    it("returns true when permitNonces equals signed nonce", async function () {
+      const fake = await smock.fake(["function permitNonces(address user) view returns (uint256)"]);
+      fake.permitNonces.returns(ethers.BigNumber.from(3));
+      expect(
+        await isErc2612PermitNonceConsumed({
+          spokePoolPeriphery: fake as unknown as Contract,
+          owner: DUMMY_ADDRESS,
+          signedNonce: "3",
+        })
+      ).to.be.true;
+    });
+
+    it("returns true when permitNonces exceeds signed nonce", async function () {
+      const fake = await smock.fake(["function permitNonces(address user) view returns (uint256)"]);
+      fake.permitNonces.returns(ethers.BigNumber.from(4));
+      expect(
+        await isErc2612PermitNonceConsumed({
+          spokePoolPeriphery: fake as unknown as Contract,
+          owner: DUMMY_ADDRESS,
+          signedNonce: "3",
+        })
+      ).to.be.true;
     });
   });
 });
