@@ -1,8 +1,33 @@
 import { CHAIN_IDs } from "@across-protocol/constants";
+import winston from "winston";
 import { CctpAdapter } from "../src/rebalancer/adapters/cctpAdapter";
 import { OftAdapter } from "../src/rebalancer/adapters/oftAdapter";
 import { ethers, expect, sinon, toBNWei } from "./utils";
 import { EvmAddress } from "../src/utils";
+import { RebalancerConfig } from "../src/rebalancer/RebalancerConfig";
+import { OrderDetails } from "../src/rebalancer/utils/interfaces";
+
+type OftAdapterInternals = OftAdapter & {
+  initialized: boolean;
+  _redisGetPendingBridgesPreDeposit: (account: EvmAddress) => Promise<string[]>;
+  _getOftStatus: (txHash: string) => Promise<string | undefined>;
+  _redisGetOrderDetails: (cloid: string, account: EvmAddress) => Promise<OrderDetails>;
+};
+
+type CctpAdapterInternals = CctpAdapter & {
+  initialized: boolean;
+  _redisGetPendingBridgesPreDeposit: (account: EvmAddress) => Promise<string[]>;
+  _getCctpAttestation: (txHash: string) => Promise<{ status: string; attestation?: string }>;
+  _redisGetOrderDetails: (cloid: string, account: EvmAddress) => Promise<OrderDetails>;
+};
+
+function withOftInternals(adapter: OftAdapter): OftAdapterInternals {
+  return adapter as unknown as OftAdapterInternals;
+}
+
+function withCctpInternals(adapter: CctpAdapter): CctpAdapterInternals {
+  return adapter as unknown as CctpAdapterInternals;
+}
 
 describe("Rebalancer bridge adapters", function () {
   afterEach(function () {
@@ -11,18 +36,16 @@ describe("Rebalancer bridge adapters", function () {
 
   it("tracks OFT routes involving the hub chain", async function () {
     const [signer] = await ethers.getSigners();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const adapter = new OftAdapter(TEST_LOGGER, {} as any, signer);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (adapter as any).initialized = true;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (adapter as any)._redisGetPendingBridgesPreDeposit = async () => ["tx-hash"];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (adapter as any)._getOftStatus = async () => undefined;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (adapter as any)._redisGetOrderDetails = async () => ({
+    const adapter = new OftAdapter(TEST_LOGGER, {} as RebalancerConfig, signer);
+    const internals = withOftInternals(adapter);
+    internals.initialized = true;
+    internals._redisGetPendingBridgesPreDeposit = async () => ["tx-hash"];
+    internals._getOftStatus = async () => undefined;
+    internals._redisGetOrderDetails = async () => ({
       sourceChain: CHAIN_IDs.MAINNET,
+      sourceToken: "USDT",
       destinationChain: CHAIN_IDs.ARBITRUM,
+      destinationToken: "USDT",
       amountToTransfer: toBNWei("1", 6),
     });
 
@@ -32,18 +55,16 @@ describe("Rebalancer bridge adapters", function () {
 
   it("tracks CCTP routes involving the hub chain", async function () {
     const [signer] = await ethers.getSigners();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const adapter = new CctpAdapter(TEST_LOGGER, {} as any, signer);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (adapter as any).initialized = true;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (adapter as any)._redisGetPendingBridgesPreDeposit = async () => ["1-tx-hash"];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (adapter as any)._getCctpAttestation = async () => ({ status: "pending", attestation: undefined });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (adapter as any)._redisGetOrderDetails = async () => ({
+    const adapter = new CctpAdapter(TEST_LOGGER, {} as RebalancerConfig, signer);
+    const internals = withCctpInternals(adapter);
+    internals.initialized = true;
+    internals._redisGetPendingBridgesPreDeposit = async () => ["1-tx-hash"];
+    internals._getCctpAttestation = async () => ({ status: "pending", attestation: undefined });
+    internals._redisGetOrderDetails = async () => ({
       sourceChain: CHAIN_IDs.MAINNET,
+      sourceToken: "USDC",
       destinationChain: CHAIN_IDs.BASE,
+      destinationToken: "USDC",
       amountToTransfer: toBNWei("2", 6),
     });
 
@@ -57,5 +78,4 @@ const TEST_LOGGER = {
   info: () => undefined,
   warn: () => undefined,
   error: () => undefined,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-} as any;
+} as unknown as winston.Logger;
