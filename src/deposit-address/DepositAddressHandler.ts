@@ -168,7 +168,29 @@ export class DepositAddressHandler {
 
   private async evaluateDepositAddresses(): Promise<void> {
     const depositMessages = await this._queryIndexerApi();
-    const filtered = depositMessages.filter(
+
+    // Only execute correct_transfer rows. mis_route and intent_refund transfers are routed to the
+    // refund-withdraw path (OPS-353), which is not implemented yet — drop them here so the bot
+    // doesn't try to bridge them (intent_refund in particular would re-loop the same intent).
+    // Unknown classifications are also dropped (forward-compat) until explicitly supported.
+    const correctTransferMessages = depositMessages.filter((m) => {
+      const classification = m.erc20Transfer.transferClassification;
+      if (classification === "correct_transfer") {
+        return true;
+      }
+      this.logger.debug({
+        at: "DepositAddressHandler#evaluateDepositAddresses",
+        message: "deposit-address transfer skipped: non-correct classification",
+        classification,
+        depositAddress: m.depositAddress,
+        paramsHash: m.paramsHash,
+        txHash: m.erc20Transfer.transactionHash,
+        chainId: m.erc20Transfer.chainId,
+      });
+      return false;
+    });
+
+    const filtered = correctTransferMessages.filter(
       (m) =>
         this.config.relayerOriginChains.includes(Number(m.routeParams.originChainId)) &&
         !this.executedDepositTxHashes.has(m.erc20Transfer.transactionHash)
@@ -380,8 +402,10 @@ export class DepositAddressHandler {
     retriesRemaining = 3
   ): Promise<SwapApiResponse | undefined> {
     const { depositAddress, routeParams, erc20Transfer } = depositMessage;
-    const { inputToken, outputToken, originChainId, destinationChainId, recipient } = routeParams;
+    const { inputToken, outputToken, originChainId, destinationChainId, recipient, refundAddress } = routeParams;
     const { amount } = erc20Transfer;
+    // refundAddress must match what was committed in the withdraw leaf at PDA creation time so the
+    // swap-api rebuilds the same merkle root the on-chain factory derives the deposit address from.
     const params = {
       originChainId,
       destinationChainId,
@@ -391,6 +415,7 @@ export class DepositAddressHandler {
       amount,
       depositor: depositAddress,
       recipient,
+      refundAddress,
       depositAddress,
       executionFeeRecipient: this.signerAddress.toNative(),
       shouldSponsorAccountCreation: String(depositMessage.shouldSponsorAccountCreation),

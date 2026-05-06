@@ -42,7 +42,13 @@ export class AdapterManager {
   // manager will attempt to wrap ETH on into WETH. This list also includes chains like Arbitrum where the relayer is
   // expected to receive ETH as a gas refund from an L1 to L2 deposit that was intended to rebalance inventory.
   private chainsToWrapEtherOn = [...spokesThatHoldNativeTokens, CHAIN_IDs.ARBITRUM, CHAIN_IDs.MAINNET];
-  readonly spokePoolManager: SpokePoolManager;
+  private _spokePoolManager?: SpokePoolManager;
+  // spokePoolManager is populated by the constructor unless `spokePoolClients` is missing, in which case the
+  // adapter manager is constructed in a partial state and these accessors throw.
+  get spokePoolManager(): SpokePoolManager {
+    assert(isDefined(this._spokePoolManager), "AdapterManager: spokePoolManager unavailable (no spokePoolClients)");
+    return this._spokePoolManager;
+  }
   constructor(
     readonly logger: winston.Logger,
     spokePoolClients: { [chainId: number]: SpokePoolClient },
@@ -53,7 +59,7 @@ export class AdapterManager {
       return;
     }
     this.pendingBridgeRedisReader = new CctpOftReadOnlyClient(logger);
-    this.spokePoolManager = new SpokePoolManager(logger, spokePoolClients);
+    this._spokePoolManager = new SpokePoolManager(logger, spokePoolClients);
     const spokePoolAddresses = Object.values(this.spokePoolManager.getSpokePoolClients()).map(
       (client) => client.spokePoolAddress
     );
