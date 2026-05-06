@@ -159,9 +159,6 @@ export class GaslessRelayer {
       message: "Initializing GaslessRelayer",
     });
 
-    const { RUN_IDENTIFIER: runIdentifier, BOT_IDENTIFIER: botIdentifier = "across-relayer-gasless" } = process.env;
-    assert(isDefined(runIdentifier), "GaslessRelayer: RUN_IDENTIFIER env var is required");
-
     // Set the signer address.
     this.signerAddress = EvmAddress.from(await this.baseSigner.getAddress());
     this.redisCache = await getRedisCache(this.logger);
@@ -225,8 +222,8 @@ export class GaslessRelayer {
     this.instanceCoordinator = new InstanceCoordinator(
       this.logger,
       this.redisCache,
-      botIdentifier,
-      runIdentifier,
+      this.config.botIdentifier,
+      this.config.runIdentifier,
       this.abortController
     );
     await this.instanceCoordinator.initiateHandover();

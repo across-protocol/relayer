@@ -23,11 +23,7 @@ config();
 let logger: winston.Logger;
 
 const ACTIVE_RELAYER_EXPIRY = 1200; // 20 minutes.
-const {
-  RUN_IDENTIFIER: runIdentifier,
-  BOT_IDENTIFIER: botIdentifier = "across-relayer",
-  RELAYER_MAX_STARTUP_DELAY = "120",
-} = process.env;
+const { RELAYER_MAX_STARTUP_DELAY = "120" } = process.env;
 
 const maxStartupDelay = Number(RELAYER_MAX_STARTUP_DELAY);
 const abortController = new AbortController();
@@ -53,7 +49,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
   });
 
   const config = new RelayerConfig(process.env);
-  const { eventListener, externalListener, pollingDelay } = config;
+  const { botIdentifier, runIdentifier, eventListener, externalListener, pollingDelay } = config;
 
   const loop = pollingDelay > 0;
 
@@ -160,7 +156,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
 
       // Signal to any existing relayer that a handover is underway, or alternatively
       // check for handover initiated by another (newer) relayer instance.
-      if (loop && runIdentifier && redis) {
+      if (loop && redis) {
         if (activeRelayer !== runIdentifier) {
           if (!activeRelayerUpdated) {
             logger.debug({
