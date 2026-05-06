@@ -355,7 +355,7 @@ describe("GaslessUtils", function () {
   });
 
   describe("isErc2612PermitNonceConsumed (SpokePoolPeriphery.permitNonces)", function () {
-    it("returns true when permitNonces equals signed nonce", async function () {
+    it("returns false when permitNonces equals signed nonce", async function () {
       const fake = await smock.fake(["function permitNonces(address user) view returns (uint256)"]);
       fake.permitNonces.returns(ethers.BigNumber.from(3));
       expect(
@@ -364,7 +364,7 @@ describe("GaslessUtils", function () {
           owner: DUMMY_ADDRESS,
           signedNonce: "3",
         })
-      ).to.be.true;
+      ).to.be.false;
     });
 
     it("returns true when permitNonces exceeds signed nonce", async function () {
