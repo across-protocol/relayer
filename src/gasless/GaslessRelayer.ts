@@ -407,9 +407,8 @@ export class GaslessRelayer {
         continue;
       }
 
-      const isSwap = depositFlowType === "swapAndBridge";
       const isCctp = this._isCctpDeposit(originChainId, spokePool);
-      if (isSwap || isCctp) {
+      if (isCctp) {
         this._setState(depositKey, MessageState.FILLED);
         markedFilledCount++;
         continue;
