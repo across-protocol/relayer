@@ -10,13 +10,15 @@ import { RebalancerConfig } from "./RebalancerConfig";
 import { buildRebalanceRoutes } from "./buildRebalanceRoutes";
 import { RebalancerAdapter, RebalanceRoute } from "./utils/interfaces";
 
+export type AdapterName = "cctp" | "oft" | "hyperliquid" | "binance";
+
 function constructRebalancerDependencies(
   logger: winston.Logger,
   baseSigner: Signer,
   rebalanceRoutesOverride?: RebalanceRoute[]
 ): {
   rebalancerConfig: RebalancerConfig;
-  adapters: { [name: string]: RebalancerAdapter };
+  adapters: { [name in AdapterName]: RebalancerAdapter };
   rebalanceRoutes: RebalanceRoute[];
 } {
   const rebalancerConfig = new RebalancerConfig(process.env);
@@ -43,8 +45,10 @@ function constructRebalancerDependencies(
 
   // @todo: Add test-net support for this client. For now, we only support production and we do not construct
   // any adapters or routes when running on test net.
-  const adaptersToUpdate: Record<string, RebalancerAdapter> =
-    rebalancerConfig.hubPoolChainId === CHAIN_IDs.MAINNET ? adapterMap : {};
+  const adaptersToUpdate: { [name in AdapterName]: RebalancerAdapter } =
+    rebalancerConfig.hubPoolChainId === CHAIN_IDs.MAINNET
+      ? adapterMap
+      : { cctp: undefined, oft: undefined, hyperliquid: undefined, binance: undefined };
 
   return { rebalancerConfig, adapters: adaptersToUpdate, rebalanceRoutes };
 }
@@ -117,7 +121,7 @@ export async function constructReadOnlyRebalancerClient(
 export async function constructAdapter(
   logger: winston.Logger,
   baseSigner: Signer,
-  adapterName: string
+  adapterName: AdapterName
 ): Promise<RebalancerAdapter> {
   const { adapters } = constructRebalancerDependencies(logger, baseSigner);
   const adapter = adapters[adapterName];

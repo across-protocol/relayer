@@ -326,12 +326,13 @@ export function getEvmBinanceRebalanceLookupAccounts(addresses: string[], signer
   return [...addresses, signerAddress]
     .filter(isDefined)
     .filter((address) => ethers.utils.isAddress(address))
-    .map((address) => EvmAddress.from(address).toNative())
+    .map((address) => EvmAddress.from(address))
     .filter((address) => {
-      if (seenAddresses.has(address)) {
+      const normalizedAddress = address.toNative();
+      if (seenAddresses.has(normalizedAddress)) {
         return false;
       }
-      seenAddresses.add(address);
+      seenAddresses.add(normalizedAddress);
       return true;
     });
 }
