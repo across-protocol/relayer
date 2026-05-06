@@ -564,7 +564,7 @@ export class GaslessRelayer {
 
             // Swap-and-bridge and CCTP bridge: no fill; confirm via receipt hash and/or nonce/auth usage.
             // Permit2: nonceBitmap, Permit (EIP-2612): token nonce advancement, EIP-3009: AuthorizationUsed.
-            if (isSwap || isCctpDeposit) {
+            if (isCctpDeposit) {
               let found: string | undefined = depositReceipt?.transactionHash;
 
               if (!found) {
