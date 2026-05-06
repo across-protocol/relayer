@@ -1,4 +1,4 @@
-import { CHAIN_IDs, Signer, winston } from "../utils";
+import { assert, CHAIN_IDs, Signer, winston } from "../utils";
 import { BinanceStablecoinSwapAdapter } from "./adapters/binance";
 import { CctpAdapter } from "./adapters/cctpAdapter";
 import { HyperliquidStablecoinSwapAdapter } from "./adapters/hyperliquid";
@@ -123,6 +123,7 @@ export async function constructAdapter(
 ): Promise<RebalancerAdapter> {
   const { adapters } = constructRebalancerDependencies(logger, baseSigner);
   const adapter = adapters[adapterName];
+  assert(adapter, `Adapter ${adapterName} is unavailable for the configured hub chain`);
   await adapter.initialize([]);
   return adapter;
 }
