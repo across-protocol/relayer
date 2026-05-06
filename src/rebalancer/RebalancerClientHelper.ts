@@ -18,7 +18,7 @@ function constructRebalancerDependencies(
   rebalanceRoutesOverride?: RebalanceRoute[]
 ): {
   rebalancerConfig: RebalancerConfig;
-  adapters: { [name in AdapterName]: RebalancerAdapter };
+  adapters: Partial<{ [name in AdapterName]: RebalancerAdapter }>;
   rebalanceRoutes: RebalanceRoute[];
 } {
   const rebalancerConfig = new RebalancerConfig(process.env);
@@ -45,10 +45,8 @@ function constructRebalancerDependencies(
 
   // @todo: Add test-net support for this client. For now, we only support production and we do not construct
   // any adapters or routes when running on test net.
-  const adaptersToUpdate: { [name in AdapterName]: RebalancerAdapter } =
-    rebalancerConfig.hubPoolChainId === CHAIN_IDs.MAINNET
-      ? adapterMap
-      : { cctp: undefined, oft: undefined, hyperliquid: undefined, binance: undefined };
+  const adaptersToUpdate: Partial<{ [name in AdapterName]: RebalancerAdapter }> =
+    rebalancerConfig.hubPoolChainId === CHAIN_IDs.MAINNET ? adapterMap : {};
 
   return { rebalancerConfig, adapters: adaptersToUpdate, rebalanceRoutes };
 }
