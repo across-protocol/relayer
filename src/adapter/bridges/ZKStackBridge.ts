@@ -15,7 +15,6 @@ import {
   isDefined,
   bnZero,
   ZERO_BYTES,
-  EvmGasPriceEstimate,
   winston,
 } from "../../utils";
 import { processEvent, matchL2EthDepositAndWrapEvents } from "../utils";
@@ -152,7 +151,7 @@ export class ZKStackBridge extends BaseBridgeAdapter {
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     // Logic changes based on whether we are sending tokens to the spoke pool or to an EOA.
-    const isL2Contract = await this._isContract(toAddress.toNative(), this.getL2Bridge().provider!);
+    const isL2Contract = await this._isContract(toAddress.toNative(), this.getL2Bridge().provider);
     const annotatedFromAddress = isL2Contract ? this.hubPool.address : fromAddress.toNative();
     const bridgingCustomGasToken = isDefined(this.gasToken) && this.gasToken.eq(l1Token);
     let processedEvents: BridgeEvent[];
@@ -270,9 +269,7 @@ export class ZKStackBridge extends BaseBridgeAdapter {
   }
 
   async _txBaseCost(): Promise<BigNumber> {
-    const l1GasPriceData = (await gasPriceOracle.getGasPriceEstimate(
-      this.getL1Bridge().provider!
-    )) as EvmGasPriceEstimate;
+    const l1GasPriceData = await gasPriceOracle.getGasPriceEstimate(this.getL1Bridge().provider);
 
     // Similar to the ZkSyncBridge types, we must calculate the l2 gas cost by querying a system contract. In this case,
     // the system contract to query is the bridge hub contract.

@@ -274,7 +274,7 @@ describe("Relayer: Unfilled Deposits", function () {
     const filledDeposit = deposits.at(-2);
     expect(filledDeposit).to.exist;
 
-    const depositHash = spokePoolClient_1.getDepositHash(filledDeposit!);
+    const depositHash = spokePoolClient_1.getDepositHash(filledDeposit);
     const { fillStatus } = relayerInstance;
     fillStatus[depositHash] = FillStatus.Filled;
 
