@@ -34,6 +34,7 @@ import {
   ConvertDecimals,
   TOKEN_SYMBOLS_MAP,
   blockExplorerLink,
+  chainIsSvm,
   chainIsTvm,
   compareAddressesSimple,
   Contract,
@@ -53,6 +54,10 @@ import {
   getNetworkName,
   getNativeTokenInfoForChain,
   getProvider,
+  getRedisCache,
+  getSolanaTokenBalance,
+  getSvmProvider,
+  getTokenInfo,
   getTokenInfoFromSymbol,
   getWrappedNativeTokenAddress,
   isDefined,
@@ -66,8 +71,10 @@ import {
   setBinanceWithdrawalType,
   Signer,
   submitTransaction,
+  SvmAddress,
   toAddressType,
   toBNWei,
+  toKitAddress,
   truncate,
   willSucceed,
   readableBinanceWithdrawalStatus,
@@ -103,6 +110,7 @@ export type BinanceAssetResolutionFailureReason =
   | "UNKNOWN_TOKEN"
   | "UNSUPPORTED_CHAIN"
   | "CONTRACT_ADDRESS_MISMATCH"
+  | "SVM_SOURCE_DEPOSIT_UNSUPPORTED"
   | "NATIVE_SOURCE_ATOMIC_DEPOSITOR_REQUIRED"
   | "DEPOSIT_DISABLED"
   | "WITHDRAW_DISABLED"
@@ -338,7 +346,10 @@ export async function run(): Promise<void> {
       );
     },
   });
-  const amountToWithdraw = toBNWei(orderAvailability.expectedAmountToReceive, destination.tokenDecimals);
+  const amountToWithdraw = getBinanceWithdrawalAmount(
+    orderAvailability.expectedAmountToReceive,
+    destination.tokenDecimals
+  );
 
   printSection("Step 4/4: Withdraw");
   const withdrawalSubmittedAtMs = Date.now();
@@ -512,6 +523,27 @@ async function gatherRecipientBalances(
   destination: ResolvedBinanceAsset,
   recipient: string
 ): Promise<RecipientBalances> {
+  if (chainIsSvm(destination.chainId)) {
+    let redisCache: Awaited<ReturnType<typeof getRedisCache>>;
+    try {
+      redisCache = await getRedisCache();
+    } catch {
+      redisCache = undefined;
+    }
+    const provider = getSvmProvider(redisCache, undefined, destination.chainId);
+    const recipientAddress = SvmAddress.from(recipient);
+    const nativeBalanceResponse = await provider.getBalance(toKitAddress(recipientAddress)).send();
+    const nativeBalance = BigNumber.from(nativeBalanceResponse.value.toString());
+    const destinationTokenBalance = destination.isNativeAsset
+      ? nativeBalance
+      : await getSolanaTokenBalance(provider, SvmAddress.from(destination.localTokenAddress!), recipientAddress);
+
+    return {
+      destinationTokenBalance,
+      nativeBalance,
+    };
+  }
+
   const provider = await getProvider(destination.chainId);
   const recipientAddress = getEthersCompatibleAddress(destination.chainId, recipient);
   const nativeBalance = await provider.getBalance(recipientAddress);
@@ -903,6 +935,8 @@ function buildAssetResolutionError(
       return `${title}\nAvailable chains for ${tokenSymbol}: ${formatChainList(getAvailableChainsForToken(accountCoins, tokenSymbol, direction)) || "none"}`;
     case "CONTRACT_ADDRESS_MISMATCH":
       return `${title}\nBinance exposes a network for ${tokenSymbol}, but its contract address does not match the token address configured in this repo on chain ${chainId}.`;
+    case "SVM_SOURCE_DEPOSIT_UNSUPPORTED":
+      return `${title}\nThis script does not yet support depositing from SVM source chains into Binance.`;
     case "NATIVE_SOURCE_ATOMIC_DEPOSITOR_REQUIRED":
       return `${title}\nNative-asset source deposits require an AtomicWethDepositor deployment and transfer proxy on ${getNetworkName(
         chainId
@@ -1041,6 +1075,17 @@ export function requireDefinedFilledAmount(
   return expectedFilledAmount;
 }
 
+function truncateDecimalString(value: string, decimals: number): string {
+  const [integerPart, fractionalPart = ""] = value.split(".");
+  const integer = integerPart === "" ? "0" : integerPart;
+  const truncatedFraction = fractionalPart.slice(0, Math.max(0, Math.trunc(decimals)));
+  return truncatedFraction.length === 0 ? integer : `${integer}.${truncatedFraction}`;
+}
+
+export function getBinanceWithdrawalAmount(expectedAmountToReceive: string, tokenDecimals: number): BigNumber {
+  return toBNWei(truncateDecimalString(expectedAmountToReceive, tokenDecimals), tokenDecimals);
+}
+
 function formatAmount(amount: BigNumber, decimals: number): string {
   return createFormatFunction(2, 6, false, decimals)(amount.toString());
 }
@@ -1116,6 +1161,27 @@ function formatChainList(chainIds: number[]): string {
   return chainIds.map((chainId) => `${getNetworkName(chainId)} (${chainId})`).join(", ");
 }
 
+function normalizeTokenSymbol(tokenSymbol: string): string {
+  const trimmedTokenSymbol = tokenSymbol.trim();
+  return (
+    Object.keys(TOKEN_SYMBOLS_MAP).find(
+      (knownTokenSymbol) => knownTokenSymbol.toUpperCase() === trimmedTokenSymbol.toUpperCase()
+    ) ?? trimmedTokenSymbol.toUpperCase()
+  );
+}
+
+function tryGetTokenAddressForTokenSymbol(tokenSymbol: string, chainId: number): string | undefined {
+  const tokenAddress = resolveAcrossToken(tokenSymbol, chainId);
+  if (isDefined(tokenAddress)) {
+    return tokenAddress;
+  }
+  try {
+    return getTokenInfoFromSymbol(tokenSymbol, chainId).address.toNative();
+  } catch (_e) {
+    return undefined;
+  }
+}
+
 export function resolveBinanceAsset(params: {
   accountCoins: Coin[];
   tokenSymbol: string;
@@ -1123,12 +1189,16 @@ export function resolveBinanceAsset(params: {
   direction: "deposit" | "withdraw";
 }): BinanceAssetResolutionResult {
   const { accountCoins, chainId, direction } = params;
-  const tokenSymbol = params.tokenSymbol.trim().toUpperCase();
-  const isNativeToken = tokenSymbol === getNativeTokenInfoForChain(chainId).symbol.toUpperCase();
-  const localTokenAddress = isNativeToken ? undefined : resolveAcrossToken(tokenSymbol, chainId);
+  const tokenSymbol = normalizeTokenSymbol(params.tokenSymbol);
+  const isNativeToken = tokenSymbol.toUpperCase() === getNativeTokenInfoForChain(chainId).symbol.toUpperCase();
+  const localTokenAddress = isNativeToken ? undefined : tryGetTokenAddressForTokenSymbol(tokenSymbol, chainId);
 
   const depositMode: BinanceSourceDepositMode | undefined =
     direction === "deposit" ? (isNativeToken ? "native" : "erc20") : undefined;
+
+  if (direction === "deposit" && chainIsSvm(chainId)) {
+    return { ok: false, reason: "SVM_SOURCE_DEPOSIT_UNSUPPORTED" };
+  }
 
   if (isNativeToken) {
     const matchingCoin = accountCoins.find(
@@ -1200,7 +1270,7 @@ export function resolveBinanceAsset(params: {
       chainId,
       binanceCoin: matchingCoin.symbol,
       network: matchingNetwork,
-      tokenDecimals: getTokenInfoFromSymbol(tokenSymbol, chainId).decimals,
+      tokenDecimals: getTokenInfo(toAddressType(localTokenAddress, chainId), chainId).decimals,
       isNativeAsset: false,
       localTokenAddress,
       depositMode,
@@ -1565,7 +1635,11 @@ export async function waitForBinanceDepositToBeAvailable(params: {
 
     params.onProgress?.({ attempts, deposit: matchingDeposit, freeBalance });
 
-    if (matchingDeposit?.status === BinanceDepositStatus.Credited && freeBalance >= minFreeBalance) {
+    if (
+      (matchingDeposit?.status === BinanceDepositStatus.Credited ||
+        matchingDeposit?.status === BinanceDepositStatus.Confirmed) &&
+      freeBalance >= minFreeBalance
+    ) {
       return { attempts, deposit: matchingDeposit, freeBalance };
     }
     await sleepMs(pollDelayMs);
@@ -1678,9 +1752,12 @@ function contractAddressMatchesToken(
   if (!networkContractAddress) {
     return false;
   }
+  if (chainIsSvm(chainId)) {
+    return localTokenAddress === networkContractAddress;
+  }
   try {
-    const normalizedLocalAddress = getEthersCompatibleAddress(chainId, localTokenAddress).toLowerCase();
-    const normalizedNetworkAddress = getEthersCompatibleAddress(chainId, networkContractAddress).toLowerCase();
+    const normalizedLocalAddress = getEthersCompatibleAddress(chainId, localTokenAddress);
+    const normalizedNetworkAddress = getEthersCompatibleAddress(chainId, networkContractAddress);
     return compareAddressesSimple(normalizedLocalAddress, normalizedNetworkAddress);
   } catch {
     return false;
