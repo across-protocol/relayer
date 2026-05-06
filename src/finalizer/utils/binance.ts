@@ -31,7 +31,7 @@ import {
 } from "../../utils";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { FinalizerPromise, AddressesToFinalize } from "../types";
-import { constructReadOnlyRebalancerClient } from "../../rebalancer/RebalancerClientHelper";
+import { constructAdapter } from "../../rebalancer/RebalancerClientHelper";
 
 // Alias for a Binance deposit/withdrawal status.
 enum Status {
@@ -302,10 +302,10 @@ async function getPendingBinanceRebalanceDeductions(
   hubSigner: Signer,
   recipientAddresses: string[]
 ): Promise<Record<string, number>> {
-  const readOnlyRebalancerClient = await constructReadOnlyRebalancerClient(logger, hubSigner, ["binance"]);
+  const binanceAdapter = await constructAdapter(logger, hubSigner, "binance");
   const lookupAccounts = getEvmBinanceRebalanceLookupAccounts(recipientAddresses, await hubSigner.getAddress());
   const pendingRebalances = (
-    await Promise.all(lookupAccounts.map((account) => readOnlyRebalancerClient.getPendingRebalances(account)))
+    await Promise.all(lookupAccounts.map((account) => binanceAdapter.getPendingRebalances(account)))
   ).reduce<{
     [chainId: number]: { [token: string]: BigNumber };
   }>((acc, pending) => {
