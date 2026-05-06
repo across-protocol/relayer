@@ -1563,7 +1563,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     let withdrawalId: { id: string };
     try {
       withdrawalId = await submitBinanceWithdrawal(this.binanceApiClient, {
-        coin: resolveBinanceCoinSymbol(destinationToken),
+        coin: binanceDestinationCoin,
         address: this.baseSignerAddress.toNative(),
         amount: Number(amountToWithdraw),
         network: BINANCE_NETWORKS[destinationEntrypointNetwork],
