@@ -389,7 +389,7 @@ export async function isErc2612PermitNonceConsumed(params: {
   signedNonce: string;
 }): Promise<boolean> {
   const onChainNonce = await params.spokePoolPeriphery.permitNonces(params.owner);
-  return onChainNonce.gte(params.signedNonce);
+  return onChainNonce.gt(params.signedNonce);
 }
 
 /**
