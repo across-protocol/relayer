@@ -329,7 +329,7 @@ export class GaslessRelayer {
    * - EIP-3009 / erc3009 (swap-and-bridge): AuthorizationUsed on swapToken (the signed token); observed key uses depositData.inputToken to match messageFilter / FundsDeposited.
    * - Permit2 (bridge only): FundsDeposited on SpokePool by depositId (no AuthorizationUsed on the transfer token).
    * - Permit2 (swap-and-bridge): Permit2 nonceBitmap on canonical Permit2 — if nonce used, treat deposit as already submitted.
-   * - Permit (swap-and-bridge): SpokePoolPeriphery.permitNonces(owner) > signed nonce (not token.nonces).
+   * - Permit (swap-and-bridge): SpokePoolPeriphery.permitNonces(owner) >= signed nonce means it's already used.
    */
   protected async updateObservedCctpDeposits(apiMessages: AnyGaslessDepositMessage[]): Promise<void> {
     const cctpMessages = apiMessages.filter((msg) => this._isCctpDeposit(msg.originChainId, msg.spokePool));
