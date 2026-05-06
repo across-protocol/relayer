@@ -31,7 +31,7 @@ export class RefillerConfig extends CommonConfig {
   readonly minUsdhRebalanceAmount: BigNumber;
 
   constructor(env: ProcessEnv) {
-    super(env);
+    super(env, { botIdentifier: "across-refiller" });
 
     const {
       REFILL_BALANCES,
