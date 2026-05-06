@@ -408,15 +408,21 @@ async function gatherPreflightBalances(
   const signerAddress = await connectedSigner.getAddress();
   const nativeBalance = await provider.getBalance(signerAddress);
   const nativeSymbol = getNativeTokenInfoForChain(source.chainId).symbol;
-  const sourceBalance = source.isNativeAsset
-    ? await new Contract(getWrappedNativeTokenAddress(source.chainId).toNative(), ERC20.abi, connectedSigner).balanceOf(
-        signerAddress
-      )
-    : await new Contract(
-        getEthersCompatibleAddress(source.chainId, source.localTokenAddress!),
-        ERC20.abi,
-        connectedSigner
-      ).balanceOf(signerAddress);
+  let sourceBalance: BigNumber;
+  if (source.isNativeAsset) {
+    sourceBalance = await new Contract(
+      getWrappedNativeTokenAddress(source.chainId).toNative(),
+      ERC20.abi,
+      connectedSigner
+    ).balanceOf(signerAddress);
+  } else {
+    assert(isDefined(source.localTokenAddress), `ERC20 source missing localTokenAddress on chain ${source.chainId}`);
+    sourceBalance = await new Contract(
+      getEthersCompatibleAddress(source.chainId, source.localTokenAddress),
+      ERC20.abi,
+      connectedSigner
+    ).balanceOf(signerAddress);
+  }
 
   let shortfallMessage: string | undefined;
   if (source.isNativeAsset) {
@@ -480,13 +486,18 @@ async function formatOtherKnownBalances(
         const nativeSymbol = getNativeTokenInfoForChain(chainId).symbol.toUpperCase();
         const isNativeCandidate = symbol === nativeSymbol;
 
-        const balance = isNativeCandidate
-          ? await provider.getBalance(address)
-          : await new Contract(
-              getEthersCompatibleAddress(chainId, resolveAcrossToken(symbol, chainId)!),
-              ERC20.abi,
-              connectedSigner
-            ).balanceOf(address);
+        let balance: BigNumber;
+        if (isNativeCandidate) {
+          balance = await provider.getBalance(address);
+        } else {
+          const tokenAddress = resolveAcrossToken(symbol, chainId);
+          assert(isDefined(tokenAddress), `Missing Across token ${symbol} on chain ${chainId}`);
+          balance = await new Contract(
+            getEthersCompatibleAddress(chainId, tokenAddress),
+            ERC20.abi,
+            connectedSigner
+          ).balanceOf(address);
+        }
         if (balance.lte(BigNumber.from(0))) {
           return undefined;
         }
@@ -515,13 +526,20 @@ async function gatherRecipientBalances(
   const provider = await getProvider(destination.chainId);
   const recipientAddress = getEthersCompatibleAddress(destination.chainId, recipient);
   const nativeBalance = await provider.getBalance(recipientAddress);
-  const destinationTokenBalance = destination.isNativeAsset
-    ? nativeBalance
-    : await new Contract(
-        getEthersCompatibleAddress(destination.chainId, destination.localTokenAddress!),
-        ERC20.abi,
-        provider
-      ).balanceOf(recipientAddress);
+  let destinationTokenBalance: BigNumber;
+  if (destination.isNativeAsset) {
+    destinationTokenBalance = nativeBalance;
+  } else {
+    assert(
+      isDefined(destination.localTokenAddress),
+      `ERC20 destination missing localTokenAddress on chain ${destination.chainId}`
+    );
+    destinationTokenBalance = await new Contract(
+      getEthersCompatibleAddress(destination.chainId, destination.localTokenAddress),
+      ERC20.abi,
+      provider
+    ).balanceOf(recipientAddress);
+  }
 
   return {
     destinationTokenBalance,
@@ -597,7 +615,8 @@ async function buildDepositExecutionPlan(
     return { steps };
   }
 
-  const tokenContract = new Contract(getEthersCompatibleAddress(chainId, source.localTokenAddress!), ERC20.abi, signer);
+  assert(isDefined(source.localTokenAddress), `ERC20 source missing localTokenAddress on chain ${chainId}`);
+  const tokenContract = new Contract(getEthersCompatibleAddress(chainId, source.localTokenAddress), ERC20.abi, signer);
   return {
     steps: [
       {

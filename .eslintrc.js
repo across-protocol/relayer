@@ -47,6 +47,8 @@ module.exports = {
     "@typescript-eslint/await-thenable": ["error"],
     "@typescript-eslint/require-array-sort-compare": ["error"],
     "@typescript-eslint/no-unnecessary-type-assertion": ["error"],
+    "@typescript-eslint/no-non-null-assertion": ["error"],
+    "@typescript-eslint/no-redundant-type-constituents": ["error"],
     "no-restricted-imports": [
       "error",
       {

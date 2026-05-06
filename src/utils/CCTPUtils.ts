@@ -790,7 +790,11 @@ async function _getCCTPV1DepositEventsSvm(
         decodedMessage.nonceHash,
         destinationMessageTransmitter
       );
-      const log: Log = undefined!; // No EVM log exists for SVM-originated CCTP deposits.
+      // SDK's AttestedCCTPDeposit type requires `log: Log`, but no EVM log exists for SVM-originated
+      // CCTP deposits. Tightening the SDK type would cascade through many consumers; until then,
+      // emit an explicit undefined and let downstream callers ignore the field for SVM entries.
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      const log: Log = undefined!;
       return {
         ...decodedMessage,
         attestation: data.attestation,

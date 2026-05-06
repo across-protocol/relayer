@@ -23,7 +23,8 @@ describe("persistDataToArweave topic cache seeding", () => {
     await persistDataToArweave(client, payload, spyLogger, tag, topicCache);
 
     const cachedPayload = await topicCache.get<string>(`arweave-topic:${tag}`);
-    expect(JSON.parse(cachedPayload!)).to.deep.equal(payload);
+    expect(cachedPayload).to.not.be.undefined;
+    expect(JSON.parse(cachedPayload ?? "null")).to.deep.equal(payload);
   });
 
   it("should seed the topic cache even when the topic already exists on Arweave", async () => {
@@ -41,7 +42,8 @@ describe("persistDataToArweave topic cache seeding", () => {
     await persistDataToArweave(client, payload, spyLogger, tag, topicCache);
 
     const cachedPayload = await topicCache.get<string>(`arweave-topic:${tag}`);
-    expect(JSON.parse(cachedPayload!)).to.deep.equal(existingPayload);
+    expect(cachedPayload).to.not.be.undefined;
+    expect(JSON.parse(cachedPayload ?? "null")).to.deep.equal(existingPayload);
     expect(set.called).to.be.false;
   });
 
@@ -60,7 +62,8 @@ describe("persistDataToArweave topic cache seeding", () => {
     await persistDataToArweave(client, payload, spyLogger, tag, topicCache);
 
     const cachedPayload = await topicCache.get<string>(`arweave-topic:${tag}`);
-    expect(JSON.parse(cachedPayload!)).to.deep.equal({ stale: true });
+    expect(cachedPayload).to.not.be.undefined;
+    expect(JSON.parse(cachedPayload ?? "null")).to.deep.equal({ stale: true });
     expect(set.called).to.be.false;
   });
 
@@ -77,7 +80,8 @@ describe("persistDataToArweave topic cache seeding", () => {
     await persistDataToArweave(client, payload, spyLogger, tag, topicCache);
 
     const cachedPayload = await topicCache.get<string>(`arweave-topic:${tag}`);
-    expect(JSON.parse(cachedPayload!)).to.deep.equal(payload);
+    expect(cachedPayload).to.not.be.undefined;
+    expect(JSON.parse(cachedPayload ?? "null")).to.deep.equal(payload);
   });
 
   it("should fail fast when the Arweave tag is empty", async () => {

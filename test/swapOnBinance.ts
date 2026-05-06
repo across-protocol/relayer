@@ -1,11 +1,13 @@
 import * as BinanceUtils from "../src/utils/BinanceUtils";
 import {
+  assert,
   BINANCE_NETWORKS,
   BINANCE_WITHDRAWAL_STATUS,
   BigNumber,
   CHAIN_IDs,
   Coin,
   getNativeTokenInfoForChain,
+  isDefined,
   resolveAcrossToken,
   toBNWei,
 } from "../src/utils";
@@ -21,6 +23,12 @@ import {
   waitForBinanceWithdrawalCompletion,
 } from "../scripts/swapOnBinance";
 import { expect, sinon } from "./utils";
+
+const tokenAddress = (symbol: string, chainId: number): string => {
+  const addr = resolveAcrossToken(symbol, chainId);
+  assert(isDefined(addr), `Missing Across token ${symbol} on chain ${chainId}`);
+  return addr;
+};
 
 describe("swapOnBinance script helpers", function () {
   afterEach(function () {
@@ -110,14 +118,14 @@ describe("swapOnBinance script helpers", function () {
       tokenSymbol: "USDC",
       chainId: CHAIN_IDs.POLYGON,
       binanceCoin: "USDC",
-      contractAddress: resolveAcrossToken("USDC", CHAIN_IDs.POLYGON)!,
+      contractAddress: tokenAddress("USDC", CHAIN_IDs.POLYGON),
       withdrawFee: "0.25",
     });
     const destination = makeResolvedAsset({
       tokenSymbol: "USDC",
       chainId: CHAIN_IDs.BASE,
       binanceCoin: "USDC",
-      contractAddress: resolveAcrossToken("USDC", CHAIN_IDs.BASE)!,
+      contractAddress: tokenAddress("USDC", CHAIN_IDs.BASE),
       withdrawFee: "0.25",
     });
 
@@ -147,13 +155,13 @@ describe("swapOnBinance script helpers", function () {
       tokenSymbol: "USDT",
       chainId: CHAIN_IDs.POLYGON,
       binanceCoin: "USDT",
-      contractAddress: resolveAcrossToken("USDT", CHAIN_IDs.POLYGON)!,
+      contractAddress: tokenAddress("USDT", CHAIN_IDs.POLYGON),
     });
     const destination = makeResolvedAsset({
       tokenSymbol: "USDC",
       chainId: CHAIN_IDs.BASE,
       binanceCoin: "USDC",
-      contractAddress: resolveAcrossToken("USDC", CHAIN_IDs.BASE)!,
+      contractAddress: tokenAddress("USDC", CHAIN_IDs.BASE),
       withdrawFee: "0.25",
     });
 
@@ -197,13 +205,13 @@ describe("swapOnBinance script helpers", function () {
           tokenSymbol: "USDT",
           chainId: CHAIN_IDs.POLYGON,
           binanceCoin: "USDT",
-          contractAddress: resolveAcrossToken("USDT", CHAIN_IDs.POLYGON)!,
+          contractAddress: tokenAddress("USDT", CHAIN_IDs.POLYGON),
         }),
         makeResolvedAsset({
           tokenSymbol: "USDC",
           chainId: CHAIN_IDs.BASE,
           binanceCoin: "USDC",
-          contractAddress: resolveAcrossToken("USDC", CHAIN_IDs.BASE)!,
+          contractAddress: tokenAddress("USDC", CHAIN_IDs.BASE),
         }),
         toBNWei("50", 6)
       ),
@@ -266,13 +274,13 @@ describe("swapOnBinance script helpers", function () {
         tokenSymbol: "USDT",
         chainId: CHAIN_IDs.POLYGON,
         binanceCoin: "USDT",
-        contractAddress: resolveAcrossToken("USDT", CHAIN_IDs.POLYGON)!,
+        contractAddress: tokenAddress("USDT", CHAIN_IDs.POLYGON),
       }),
       makeResolvedAsset({
         tokenSymbol: "USDC",
         chainId: CHAIN_IDs.BASE,
         binanceCoin: "USDC",
-        contractAddress: resolveAcrossToken("USDC", CHAIN_IDs.BASE)!,
+        contractAddress: tokenAddress("USDC", CHAIN_IDs.BASE),
       })
     );
 
@@ -300,13 +308,13 @@ describe("swapOnBinance script helpers", function () {
           tokenSymbol: "USDT",
           chainId: CHAIN_IDs.POLYGON,
           binanceCoin: "USDT",
-          contractAddress: resolveAcrossToken("USDT", CHAIN_IDs.POLYGON)!,
+          contractAddress: tokenAddress("USDT", CHAIN_IDs.POLYGON),
         }),
         makeResolvedAsset({
           tokenSymbol: "USDC",
           chainId: CHAIN_IDs.BASE,
           binanceCoin: "USDC",
-          contractAddress: resolveAcrossToken("USDC", CHAIN_IDs.BASE)!,
+          contractAddress: tokenAddress("USDC", CHAIN_IDs.BASE),
         }),
         toBNWei("10", 6)
       ),
@@ -332,7 +340,7 @@ describe("swapOnBinance script helpers", function () {
         tokenSymbol: "USDC",
         chainId: CHAIN_IDs.POLYGON,
         binanceCoin: "USDC",
-        contractAddress: resolveAcrossToken("USDC", CHAIN_IDs.POLYGON)!,
+        contractAddress: tokenAddress("USDC", CHAIN_IDs.POLYGON),
       }),
       depositTxHash: "0xabc",
       minFreeBalance: 100,
@@ -370,13 +378,13 @@ describe("swapOnBinance script helpers", function () {
         tokenSymbol: "USDT",
         chainId: CHAIN_IDs.POLYGON,
         binanceCoin: "USDT",
-        contractAddress: resolveAcrossToken("USDT", CHAIN_IDs.POLYGON)!,
+        contractAddress: tokenAddress("USDT", CHAIN_IDs.POLYGON),
       }),
       destination: makeResolvedAsset({
         tokenSymbol: "USDC",
         chainId: CHAIN_IDs.BASE,
         binanceCoin: "USDC",
-        contractAddress: resolveAcrossToken("USDC", CHAIN_IDs.BASE)!,
+        contractAddress: tokenAddress("USDC", CHAIN_IDs.BASE),
       }),
       pollDelayMs: 0,
     });
@@ -401,7 +409,7 @@ describe("swapOnBinance script helpers", function () {
         tokenSymbol: "USDC",
         chainId: CHAIN_IDs.BASE,
         binanceCoin: "USDC",
-        contractAddress: resolveAcrossToken("USDC", CHAIN_IDs.BASE)!,
+        contractAddress: tokenAddress("USDC", CHAIN_IDs.BASE),
       }),
       withdrawalId: "withdraw-1",
       startTimeMs: 0,
@@ -432,7 +440,7 @@ describe("swapOnBinance script helpers", function () {
           tokenSymbol: "USDC",
           chainId: CHAIN_IDs.BASE,
           binanceCoin: "USDC",
-          contractAddress: resolveAcrossToken("USDC", CHAIN_IDs.BASE)!,
+          contractAddress: tokenAddress("USDC", CHAIN_IDs.BASE),
         }),
         withdrawalId: "withdraw-2",
         startTimeMs: 0,
@@ -569,7 +577,7 @@ function makeErc20Coin(
       coin: symbol,
       withdrawMin: "0.01",
       withdrawMax: "1000000",
-      contractAddress: contractAddress ?? resolveAcrossToken(symbol, chainId)!,
+      contractAddress: contractAddress ?? tokenAddress(symbol, chainId),
       withdrawFee: "0.1",
       depositEnable: true,
       withdrawEnable: true,
