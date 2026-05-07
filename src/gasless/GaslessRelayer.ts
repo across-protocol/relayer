@@ -414,7 +414,7 @@ export class GaslessRelayer {
   protected _markFilledFromInitialObservation(apiMessages: AnyGaslessDepositMessage[]): number {
     let markedFilledCount = 0;
     for (const depositMessage of apiMessages) {
-      const { originChainId, depositId, spokePool, depositFlowType } = depositMessage;
+      const { originChainId, depositId, spokePool } = depositMessage;
       const { destinationChainId, inputToken } = extractGaslessDepositFields(depositMessage);
       const depositKey = this._getDepositKey(inputToken.toNative(), originChainId, depositId);
 
@@ -423,9 +423,8 @@ export class GaslessRelayer {
         continue;
       }
 
-      const isSwap = depositFlowType === "swapAndBridge";
       const isCctp = this._isCctpDeposit(originChainId, spokePool);
-      if (isSwap || isCctp) {
+      if (isCctp) {
         this._setState(depositKey, MessageState.FILLED);
         markedFilledCount++;
         continue;
@@ -579,8 +578,8 @@ export class GaslessRelayer {
             const depositReceipt = await depositReceiptPromise;
 
             // Swap-and-bridge and CCTP bridge: no fill; confirm via receipt hash and/or nonce/auth usage.
-            // Permit2: nonceBitmap, Permit (swap-and-bridge): SpokePoolPeriphery.permitNonces, EIP-3009: AuthorizationUsed.
-            if (isSwap || isCctpDeposit) {
+            // Permit2: nonceBitmap, Permit (EIP-2612): token nonce advancement, EIP-3009: AuthorizationUsed.
+            if (isCctpDeposit) {
               let found: string | undefined = depositReceipt?.transactionHash;
 
               if (!found) {
