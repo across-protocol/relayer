@@ -21,6 +21,7 @@ import {
   EvmAddress,
   Address,
   Provider,
+  CHAIN_IDs,
 } from "../../utils";
 import { FinalizerPromise, CrossChainMessage } from "../types";
 
@@ -225,18 +226,22 @@ async function prepareFinalization(
   l2ChainId: number,
   l1SharedBridge: Contract
 ): Promise<Multicall2Call> {
+  const isLegacyBridge = [CHAIN_IDs.LENS].includes(l2ChainId);
   const args = [
     l2ChainId,
     withdrawal.l1BatchNumber,
     withdrawal.l2MessageIndex,
-    withdrawal.sender,
+    isLegacyBridge ? undefined : withdrawal.sender,
     withdrawal.l2TxNumberInBlock,
     withdrawal.message,
     withdrawal.proof,
   ];
+  const calldata = isLegacyBridge
+    ? await l1SharedBridge.populateTransaction.finalizeWithdrawal(...args.filter(isDefined))
+    : await l1SharedBridge.populateTransaction.finalizeDeposit(args);
 
   // @todo Support withdrawing directly as WETH here.
-  const [target, txn] = [l1SharedBridge.address, await l1SharedBridge.populateTransaction.finalizeDeposit(args)];
+  const [target, txn] = [l1SharedBridge.address, calldata];
   assert(isDefined(txn.data), "zkSync: finalizeDeposit populateTransaction missing data");
   return { target, callData: txn.data };
 }

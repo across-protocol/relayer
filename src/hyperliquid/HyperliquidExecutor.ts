@@ -205,16 +205,14 @@ export class HyperliquidExecutor {
       });
       this.abortController.abort();
     });
-    const { RUN_IDENTIFIER: runIdentifier, BOT_IDENTIFIER: botIdentifier = "across-relayer-hyperliquid" } = process.env;
-    assert(isDefined(runIdentifier), "HyperliquidExecutor: RUN_IDENTIFIER env var is required");
     assert(isDefined(this.redisClient), "HyperliquidExecutor: requires a Redis cache for handover state");
 
     // Establish a new bot instance.
     this._instanceCoordinator = new InstanceCoordinator(
       this.logger,
       this.redisClient,
-      botIdentifier,
-      runIdentifier,
+      this.config.botIdentifier,
+      this.config.runIdentifier,
       this.abortController
     );
     await this._instanceCoordinator.initiateHandover();

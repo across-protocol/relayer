@@ -90,6 +90,7 @@ export class EventListener extends EventEmitter {
   }
 
   onEvents(address: string, events: string[], handler: (log: Log) => void): void {
+    const at = "EventListener::onEvents";
     const { eventMgr, providers } = this;
     events.forEach((eventDescriptor) => {
       // Viem is unhappy with "tuple" in the event descriptor; sub it out.
@@ -102,6 +103,7 @@ export class EventListener extends EventEmitter {
           logs.forEach((log) => {
             const event = viemLogToEthersLog(log);
             if (!isDefined(event)) {
+              this.logger.warn({ at, message: "Unable to translate ethers viem event.", provider, log });
               return;
             }
 
@@ -120,7 +122,7 @@ export class EventListener extends EventEmitter {
         const onError = (error: Error) => {
           const { message: errorMessage, details, shortMessage, metaMessages } = error as BaseError;
           this.logger.warn({
-            at: "EventListener::onEvents",
+            at,
             message: `Caught ${this.chain} ${event.name} provider error.`,
             errorMessage,
             shortMessage,
