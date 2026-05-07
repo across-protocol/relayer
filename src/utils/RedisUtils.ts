@@ -1,9 +1,7 @@
-import { assert, toBN, BigNumberish, isDefined } from "./";
+import { isDefined } from "./";
 import { REDIS_URL_DEFAULT } from "../common/Constants";
-import { constants } from "@across-protocol/sdk";
 import { createClient } from "redis";
 import winston from "winston";
-import { Deposit, Fill } from "../interfaces";
 import dotenv from "dotenv";
 import { disconnectRedisClient, RedisCache, RedisClient } from "../caching/RedisCache";
 import { RedisPubSub } from "../caching/RedisPubSub";
@@ -12,10 +10,6 @@ dotenv.config();
 const globalNamespace: string | undefined = process.env.GLOBAL_CACHE_NAMESPACE
   ? String(process.env.GLOBAL_CACHE_NAMESPACE)
   : undefined;
-
-// Avoid caching calls that are recent enough to be affected by things like reorgs.
-// Current time must be >= 15 minutes past the event timestamp for it to be stable enough to cache.
-export const REDIS_CACHEABLE_AGE = 15 * 60;
 
 export const REDIS_URL = process.env.REDIS_URL || REDIS_URL_DEFAULT;
 
@@ -104,7 +98,7 @@ async function _createRedisClient(
     message: `Connected to redis server at ${url} successfully!`,
     dbSize: await redisClient.dbSize(),
   });
-  return new RedisCache(redisClient, namespace);
+  return new RedisCache(redisClient, namespace, logger);
 }
 
 export async function getRedisCache(
@@ -131,28 +125,6 @@ export async function getRedisPubSub(logger?: winston.Logger, url = REDIS_URL): 
   // the cache singleton's socket.
   const client = await _createRawRedisClient(logger, url);
   return new RedisPubSub(client, logger);
-}
-
-export function getRedisDepositKey(depositOrFill: Deposit | Fill): string {
-  return `deposit_${depositOrFill.originChainId}_${depositOrFill.depositId.toString()}`;
-}
-
-export async function setDeposit(
-  deposit: Deposit,
-  currentChainTime: number,
-  redisClient: RedisCache,
-  expirySeconds = constants.DEFAULT_CACHING_TTL
-): Promise<void> {
-  if (shouldCache(deposit.quoteTimestamp, currentChainTime)) {
-    await redisClient.set(getRedisDepositKey(deposit), JSON.stringify(deposit), expirySeconds);
-  }
-}
-
-export async function getDeposit(key: string, redisClient: RedisCache): Promise<Deposit | undefined> {
-  const depositRaw = await redisClient.get<string>(key);
-  if (depositRaw) {
-    return JSON.parse(depositRaw, objectWithBigNumberReviver);
-  }
 }
 
 export async function waitForPubSub(
@@ -207,20 +179,4 @@ export async function disconnectRedisClients(logger?: winston.Logger): Promise<v
     }
     logger?.debug(logParams);
   }
-}
-
-export function shouldCache(eventTimestamp: number, latestTime: number): boolean {
-  assert(eventTimestamp.toString().length === 10, "eventTimestamp must be in seconds");
-  assert(latestTime.toString().length === 10, "eventTimestamp must be in seconds");
-  return latestTime - eventTimestamp >= REDIS_CACHEABLE_AGE;
-}
-
-// JSON.stringify(object) ends up stringifying BigNumber objects as "{type:BigNumber,hex...}" so we can pass
-// this reviver function as the second arg to JSON.parse to instruct it to correctly revive a stringified
-// object with BigNumber values.
-export function objectWithBigNumberReviver(_: string, value: { type: string; hex: BigNumberish }): unknown {
-  if (typeof value !== "object" || value?.type !== "BigNumber") {
-    return value;
-  }
-  return toBN(value.hex);
 }
