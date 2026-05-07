@@ -17,6 +17,30 @@ export interface SwapApiResponse {
   };
 }
 
+export interface SignedWithdrawRequest {
+  chainId: number;
+  depositAddress: string;
+  token: string;
+  amount: string;
+  user: string;
+  withdrawImplementation: string;
+  proof: string[];
+  salt: string;
+  merkleRoot: string;
+}
+
+export interface SignedWithdrawResponse {
+  signedWithdrawTx: {
+    chainId: number;
+    to: string;
+    data: string;
+    value: string;
+  };
+  bundledDeploy: boolean;
+  signer: string;
+  deadline: number;
+}
+
 interface SwapData {
   approval?: {
     target: EvmAddress;
@@ -120,6 +144,10 @@ export class AcrossSwapApiClient extends BaseAcrossApiClient {
       recipient: recipient.toNative(),
     };
     return this._get<SwapApiResponse>("/swap/approval", params);
+  }
+
+  async signedWithdraw(req: SignedWithdrawRequest): Promise<SignedWithdrawResponse | undefined> {
+    return this._post<SignedWithdrawResponse>("swap/counterfactual/sign-withdraw", req);
   }
 
   private _isRouteSupported(route: SwapRoute): boolean {
