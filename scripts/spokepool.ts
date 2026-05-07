@@ -3,7 +3,7 @@ import minimist from "minimist";
 import { config } from "dotenv";
 import { Contract, ethers, Signer } from "ethers";
 import { LogDescription } from "@ethersproject/abi";
-import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
+import { CHAIN_IDs, MAINNET_CHAIN_IDs, TESTNET_CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { constants as sdkConsts, utils as sdkUtils } from "@across-protocol/sdk";
 import { ExpandedERC20__factory as ERC20 } from "@across-protocol/sdk/typechain";
 import { RelayData } from "../src/interfaces";
@@ -558,6 +558,28 @@ async function _fetchDeposit(spokePool: Contract, _depositId: number | string): 
   return paginatedEventQuery(spokePool, filter, { from, to, maxLookBack });
 }
 
+// Probe known EVM chains in parallel, returning the chainId on which the txn receipt resolves.
+async function resolveTxnChainId(txnHash: string): Promise<number | undefined> {
+  const candidateChainIds = [...Object.values(MAINNET_CHAIN_IDs), ...Object.values(TESTNET_CHAIN_IDs)].filter(
+    chainIsEvm
+  );
+
+  try {
+    return await Promise.any(
+      candidateChainIds.map(async (chainId) => {
+        const provider = await getProvider(chainId);
+        const receipt = await provider.getTransactionReceipt(txnHash);
+        if (!isDefined(receipt)) {
+          throw new Error(`No receipt for ${txnHash} on chain ${chainId}`);
+        }
+        return chainId;
+      })
+    );
+  } catch {
+    return undefined;
+  }
+}
+
 async function _fetchTxn(spokePool: Contract, txnHash: string): Promise<{ deposits: Log[]; fills: Log[] }> {
   if (txnHash === undefined || typeof txnHash !== "string" || txnHash.length != 66 || !txnHash.startsWith("0x")) {
     throw new Error(`Missing or malformed transaction hash: ${txnHash}`);
@@ -580,7 +602,25 @@ async function _fetchTxn(spokePool: Contract, txnHash: string): Promise<{ deposi
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function fetchTxn(args: Record<string, number | string>, _signer: Signer): Promise<boolean> {
   const { txnHash } = args;
-  const chainId = Number(args.chainId);
+  let chainId: number | undefined = isDefined(args.chainId) ? Number(args.chainId) : undefined;
+
+  if (!isDefined(chainId)) {
+    if (isDefined(args.depositId)) {
+      console.log("--chainId is required when --depositId is provided.");
+      return false;
+    }
+    if (typeof txnHash !== "string") {
+      console.log("--txnHash is required when --chainId is not provided.");
+      return false;
+    }
+    console.log(`Resolving chain for transaction ${txnHash}...`);
+    chainId = await resolveTxnChainId(txnHash);
+    if (!isDefined(chainId)) {
+      console.log(`Could not resolve transaction ${txnHash} on any configured RPC provider.`);
+      return false;
+    }
+    console.log(`Resolved to ${getNetworkName(chainId)} (${chainId}).`);
+  }
 
   if (!utils.validateChainIds([chainId])) {
     console.log(`Invalid chain ID (${chainId}).`);
@@ -619,7 +659,7 @@ function usage(badInput?: string): boolean {
     " [--relayer <exclusiveRelayer> --exclusivityDeadline <exclusivityDeadline>]";
 
   const dumpConfigArgs = "--chainId";
-  const fetchArgs = "--chainId <chainId> [--depositId <depositId> | --txnHash <txnHash>]";
+  const fetchArgs = "[--chainId <chainId>] --txnHash <txnHash> | --chainId <chainId> --depositId <depositId>";
   const fillArgs = "--chainId <originChainId> --txnHash <depositHash> [--depositId <depositId>] [--slow] [--execute]";
 
   const pad = "deposit".length;
