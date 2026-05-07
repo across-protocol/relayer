@@ -1,21 +1,16 @@
-import { assert, toBN, BigNumberish, isDefined } from "./";
+import { isDefined } from "./";
 import { REDIS_URL_DEFAULT } from "../common/Constants";
-import { constants } from "@across-protocol/sdk";
 import { createClient } from "redis";
 import winston from "winston";
-import { Deposit, Fill } from "../interfaces";
 import dotenv from "dotenv";
 import { disconnectRedisClient, RedisCache, RedisClient } from "../caching/RedisCache";
 import { RedisPubSub } from "../caching/RedisPubSub";
+import { RedisStream } from "../messaging/redis/Stream";
 dotenv.config();
 
 const globalNamespace: string | undefined = process.env.GLOBAL_CACHE_NAMESPACE
   ? String(process.env.GLOBAL_CACHE_NAMESPACE)
   : undefined;
-
-// Avoid caching calls that are recent enough to be affected by things like reorgs.
-// Current time must be >= 15 minutes past the event timestamp for it to be stable enough to cache.
-export const REDIS_CACHEABLE_AGE = 15 * 60;
 
 export const REDIS_URL = process.env.REDIS_URL || REDIS_URL_DEFAULT;
 
@@ -26,13 +21,14 @@ const redisClients: { [key: string]: Promise<RedisCache> } = {};
 async function _getRedis(
   logger?: winston.Logger,
   url = REDIS_URL,
-  customNamespace?: string
+  customNamespace?: string,
+  label?: string
 ): Promise<RedisCache | undefined> {
   const namespace = customNamespace || globalNamespace;
   const redisInstanceKey = namespace ? `${url}-${namespace}` : url;
   if (!isDefined(redisClients[redisInstanceKey])) {
     // Store the promise immediately so concurrent callers share the same connection attempt.
-    redisClients[redisInstanceKey] = _createRedisClient(logger, url, namespace);
+    redisClients[redisInstanceKey] = _createRedisClient(logger, url, namespace, label);
   }
 
   try {
@@ -44,7 +40,11 @@ async function _getRedis(
   }
 }
 
-async function _createRawRedisClient(logger: winston.Logger | undefined, url: string): Promise<RedisClient> {
+async function _createRawRedisClient(
+  logger: winston.Logger | undefined,
+  url: string,
+  label?: string
+): Promise<RedisClient> {
   const reconnectStrategy = (retries: number): number | Error => {
     // Set a maximum retry limit to prevent infinite reconnection attempts
     const MAX_RETRIES = 10;
@@ -53,6 +53,7 @@ async function _createRawRedisClient(logger: winston.Logger | undefined, url: st
       logger?.error({
         at: "RedisUtils",
         message: `Redis connection failed after ${MAX_RETRIES} retries. Giving up.`,
+        label,
       });
       return new Error(`Redis connection failed after ${MAX_RETRIES} retries`);
     }
@@ -64,6 +65,7 @@ async function _createRawRedisClient(logger: winston.Logger | undefined, url: st
     logger?.debug({
       at: "RedisUtils",
       message: `Lost redis connection, retrying in ${delay} ms (attempt ${retries + 1}/${MAX_RETRIES}).`,
+      label,
     });
     return delay + jitter;
   };
@@ -71,17 +73,20 @@ async function _createRawRedisClient(logger: winston.Logger | undefined, url: st
   let redisClient: RedisClient | undefined = undefined;
   try {
     redisClient = createClient({ url, socket: { reconnectStrategy } });
-    redisClient.on("error", (err) => logger?.warn({ at: "RedisUtils", message: "Redis error", error: String(err) }));
+    redisClient.on("error", (err) =>
+      logger?.warn({ at: "RedisUtils", message: "Redis error", error: String(err), label })
+    );
     await redisClient.connect();
     return redisClient;
   } catch (err) {
     if (isDefined(redisClient)) {
-      await disconnectRedisClient(redisClient, logger);
+      await disconnectRedisClient(redisClient, logger, label);
     }
     logger?.debug({
       at: "RedisUtils#getRedis",
       message: `Failed to connect to redis server at ${url}.`,
       error: String(err),
+      label,
     });
     throw err;
   }
@@ -90,37 +95,45 @@ async function _createRawRedisClient(logger: winston.Logger | undefined, url: st
 async function _createRedisClient(
   logger: winston.Logger | undefined,
   url: string,
-  namespace?: string
+  namespace?: string,
+  label?: string
 ): Promise<RedisCache> {
   const redisInstanceKey = namespace ? `${url}-${namespace}` : url;
   logger?.debug({
     at: "RedisUtils#_getRedis",
     message: `Creating new redis client instance with key ${redisInstanceKey}`,
+    label,
   });
 
-  const redisClient = await _createRawRedisClient(logger, url);
+  const redisClient = await _createRawRedisClient(logger, url, label);
   logger?.debug({
     at: "RedisUtils#getRedis",
     message: `Connected to redis server at ${url} successfully!`,
     dbSize: await redisClient.dbSize(),
+    label,
   });
-  return new RedisCache(redisClient, namespace);
+  return new RedisCache(redisClient, namespace, logger, label);
 }
 
 export async function getRedisCache(
   logger?: winston.Logger,
   url?: string,
-  customNamespace?: string
+  customNamespace?: string,
+  label?: string
 ): Promise<RedisCache | undefined> {
   // Don't permit redis to be used in test.
   if (isDefined(process.env.RELAYER_TEST)) {
     return undefined;
   }
 
-  return await _getRedis(logger, url, customNamespace);
+  return await _getRedis(logger, url, customNamespace, label);
 }
 
-export async function getRedisPubSub(logger?: winston.Logger, url = REDIS_URL): Promise<RedisPubSub | undefined> {
+export async function getRedisPubSub(
+  logger?: winston.Logger,
+  url = REDIS_URL,
+  label?: string
+): Promise<RedisPubSub | undefined> {
   // Don't permit redis to be used in test.
   if (isDefined(process.env.RELAYER_TEST)) {
     return undefined;
@@ -129,30 +142,24 @@ export async function getRedisPubSub(logger?: winston.Logger, url = REDIS_URL): 
   // Pub/sub requires its own dedicated socket: once SUBSCRIBE is issued, Redis forbids
   // regular commands on that connection. Build a fresh RedisClient rather than sharing
   // the cache singleton's socket.
-  const client = await _createRawRedisClient(logger, url);
+  const client = await _createRawRedisClient(logger, url, label);
   return new RedisPubSub(client, logger);
 }
 
-export function getRedisDepositKey(depositOrFill: Deposit | Fill): string {
-  return `deposit_${depositOrFill.originChainId}_${depositOrFill.depositId.toString()}`;
-}
-
-export async function setDeposit(
-  deposit: Deposit,
-  currentChainTime: number,
-  redisClient: RedisCache,
-  expirySeconds = constants.DEFAULT_CACHING_TTL
-): Promise<void> {
-  if (shouldCache(deposit.quoteTimestamp, currentChainTime)) {
-    await redisClient.set(getRedisDepositKey(deposit), JSON.stringify(deposit), expirySeconds);
+export async function getRedisStream(
+  logger?: winston.Logger,
+  url = REDIS_URL,
+  label?: string
+): Promise<RedisStream | undefined> {
+  // Don't permit redis to be used in test.
+  if (isDefined(process.env.RELAYER_TEST)) {
+    return undefined;
   }
-}
 
-export async function getDeposit(key: string, redisClient: RedisCache): Promise<Deposit | undefined> {
-  const depositRaw = await redisClient.get<string>(key);
-  if (depositRaw) {
-    return JSON.parse(depositRaw, objectWithBigNumberReviver);
-  }
+  // Each consumer issues blocking XREADGROUP, which monopolises the connection
+  // for the duration of the block. Always build a fresh RedisClient.
+  const client = await _createRawRedisClient(logger, url, label);
+  return new RedisStream(client, logger, { label });
 }
 
 export async function waitForPubSub(
@@ -207,20 +214,4 @@ export async function disconnectRedisClients(logger?: winston.Logger): Promise<v
     }
     logger?.debug(logParams);
   }
-}
-
-export function shouldCache(eventTimestamp: number, latestTime: number): boolean {
-  assert(eventTimestamp.toString().length === 10, "eventTimestamp must be in seconds");
-  assert(latestTime.toString().length === 10, "eventTimestamp must be in seconds");
-  return latestTime - eventTimestamp >= REDIS_CACHEABLE_AGE;
-}
-
-// JSON.stringify(object) ends up stringifying BigNumber objects as "{type:BigNumber,hex...}" so we can pass
-// this reviver function as the second arg to JSON.parse to instruct it to correctly revive a stringified
-// object with BigNumber values.
-export function objectWithBigNumberReviver(_: string, value: { type: string; hex: BigNumberish }): unknown {
-  if (typeof value !== "object" || value?.type !== "BigNumber") {
-    return value;
-  }
-  return toBN(value.hex);
 }
