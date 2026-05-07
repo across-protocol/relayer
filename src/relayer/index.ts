@@ -4,6 +4,7 @@ import {
   config,
   delay,
   disconnectRedisClients,
+  fireAndForget,
   getNetworkName,
   getRedisCache,
   isDefined,
@@ -103,7 +104,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
 
       updates[blockNumber] = true;
       logger.debug({ at, message: "Received new Hub Chain block update.", blockNumber, currentTime });
-      setTimeout(async () => updateHub());
+      setTimeout(fireAndForget(updateHub));
     };
     hubChainSpoke.onBlock(newBlock);
   }

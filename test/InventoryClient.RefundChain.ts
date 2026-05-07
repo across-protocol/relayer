@@ -34,7 +34,7 @@ import { MockAdapterManager, MockHubPoolClient, MockInventoryClient, MockTokenCl
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import { MockRebalancerClient } from "./mocks/MockRebalancerClient";
 
-describe("InventoryClient: Refund chain selection", async function () {
+describe("InventoryClient: Refund chain selection", function () {
   const { MAINNET, OPTIMISM, POLYGON, ARBITRUM, BSC } = CHAIN_IDs;
   const enabledChainIds = [MAINNET, OPTIMISM, POLYGON, ARBITRUM, BSC];
 

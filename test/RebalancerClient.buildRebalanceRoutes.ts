@@ -93,7 +93,7 @@ function buildSyntheticRebalancerConfigWithMainnet(): RebalancerConfig {
     }),
   });
 }
-describe("buildRebalanceRoutes", async function () {
+describe("buildRebalanceRoutes", function () {
   it("builds the exact stablecoin route families implied by synthetic config", async function () {
     const config = buildSyntheticRebalancerConfig();
 

@@ -1,5 +1,5 @@
 import { arch, interfaces, utils } from "@across-protocol/sdk";
-import { isDefined, winston, type LatestBlockhash } from "./";
+import { fireAndForget, isDefined, winston } from "./";
 import {
   BlockFinderHints,
   EVMBlockFinder,
@@ -96,22 +96,23 @@ export async function getTimestampsForBundleStartBlocks(
 export async function waitForNewSolanaBlock(provider: SVMProvider, _offset = 1): Promise<void> {
   const offset = BigInt(_offset);
   // Get the initial block height of the blockchain
-  const { value: initialBlock } = (await provider.getLatestBlockhash().send()) as { value: LatestBlockhash };
+  const { value: initialBlock } = await provider.getLatestBlockhash().send();
 
   return new Promise((resolve) => {
     const SECOND = 1000;
     const checkInterval = 1 * SECOND; // Interval to check for new blocks (1000ms)
 
-    // Set an interval to check for new block heights
-    const intervalId = setInterval(async () => {
+    const checkBlock = async (): Promise<void> => {
       // Get the current block height
-      const { value: currentBlock } = (await provider.getLatestBlockhash().send()) as { value: LatestBlockhash };
+      const { value: currentBlock } = await provider.getLatestBlockhash().send();
 
       // If the current block height exceeds the target, resolve and clear interval
       if (currentBlock.lastValidBlockHeight >= initialBlock.lastValidBlockHeight + offset) {
         clearInterval(intervalId);
         resolve();
       }
-    }, checkInterval);
+    };
+    // Set an interval to check for new block heights
+    const intervalId = setInterval(fireAndForget(checkBlock), checkInterval);
   });
 }

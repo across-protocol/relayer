@@ -34,7 +34,7 @@ import {
   utils as sdkUtils,
 } from "@across-protocol/sdk";
 
-describe("Dataworker: Load bundle data: Computing unexecutable slow fills", async function () {
+describe("Dataworker: Load bundle data: Computing unexecutable slow fills", function () {
   const { EMPTY_MESSAGE } = sdkConstants;
 
   let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;

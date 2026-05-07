@@ -9,7 +9,7 @@ import { CONTRACT_ADDRESSES } from "../../src/common";
 
 const logger = createSpyLogger().spyLogger;
 
-describe("Cross Chain Adapter: Scroll", async function () {
+describe("Cross Chain Adapter: Scroll", function () {
   let adapter: BaseChainAdapter;
   let monitoredEoa: string;
 

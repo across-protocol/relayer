@@ -37,7 +37,7 @@ function _MockSpokeListener<T extends Constructor<MinSpokeListener>>(SpokeListen
   };
 }
 
-describe("IndexedSpokePoolClient: Update", async function () {
+describe("IndexedSpokePoolClient: Update", function () {
   const MockSpokeListener = _MockSpokeListener(SpokeListener(EVMSpokePoolClient));
   const chainId = CHAIN_IDs.MAINNET;
 
