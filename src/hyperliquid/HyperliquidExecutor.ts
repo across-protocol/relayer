@@ -184,14 +184,12 @@ export class HyperliquidExecutor {
       });
       this.abortController.abort();
     });
-    const { RUN_IDENTIFIER: runIdentifier, BOT_IDENTIFIER: botIdentifier } = process.env;
-
     // Establish a new bot instance.
     this.instanceCoordinator = new InstanceCoordinator(
       this.logger,
       this.redisClient,
-      botIdentifier,
-      runIdentifier,
+      this.config.botIdentifier,
+      this.config.runIdentifier,
       this.abortController
     );
     await this.instanceCoordinator.initiateHandover();

@@ -14,7 +14,7 @@ export class DepositAddressHandlerConfig extends CommonConfig {
   swapApiKey: string;
 
   constructor(env: ProcessEnv) {
-    super(env);
+    super(env, { botIdentifier: "across-deposit-address-handler" });
 
     const {
       INDEXER_API_POLLING_INTERVAL,

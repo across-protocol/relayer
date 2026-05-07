@@ -141,8 +141,6 @@ export class GaslessRelayer {
       message: "Initializing GaslessRelayer",
     });
 
-    const { RUN_IDENTIFIER: runIdentifier, BOT_IDENTIFIER: botIdentifier } = process.env;
-
     // Set the signer address.
     this.signerAddress = EvmAddress.from(await this.baseSigner.getAddress());
     this.redisCache = await getRedisCache(this.logger);
@@ -205,8 +203,8 @@ export class GaslessRelayer {
     this.instanceCoordinator = new InstanceCoordinator(
       this.logger,
       this.redisCache,
-      botIdentifier,
-      runIdentifier,
+      this.config.botIdentifier,
+      this.config.runIdentifier,
       this.abortController
     );
     await this.instanceCoordinator.initiateHandover();
@@ -329,7 +327,7 @@ export class GaslessRelayer {
    * - EIP-3009 / erc3009 (swap-and-bridge): AuthorizationUsed on swapToken (the signed token); observed key uses depositData.inputToken to match messageFilter / FundsDeposited.
    * - Permit2 (bridge only): FundsDeposited on SpokePool by depositId (no AuthorizationUsed on the transfer token).
    * - Permit2 (swap-and-bridge): Permit2 nonceBitmap on canonical Permit2 — if nonce used, treat deposit as already submitted.
-   * - Permit (swap-and-bridge): token.nonces(owner) > signed nonce means permit already consumed.
+   * - Permit (swap-and-bridge): SpokePoolPeriphery.permitNonces(owner) > signed nonce means it's already used.
    */
   protected async updateObservedCctpDeposits(apiMessages: AnyGaslessDepositMessage[]): Promise<void> {
     const cctpMessages = apiMessages.filter((msg) => this._isCctpDeposit(msg.originChainId, msg.spokePool));
@@ -345,10 +343,9 @@ export class GaslessRelayer {
             depositMessage.permitType === "permit2"
               ? await isPermit2NonceUsed(this.permit2Contracts[originChainId], owner, permitNonce)
               : await isErc2612PermitNonceConsumed({
-                  tokenAddress: swapTokenAddr.toEvmAddress(),
+                  spokePoolPeriphery: this.spokePoolPeripheries[originChainId],
                   owner,
                   signedNonce: permitNonce,
-                  provider: this.providersByChain[originChainId],
                 });
           if (!nonceUsed) {
             return;
@@ -572,10 +569,9 @@ export class GaslessRelayer {
                   found = await this._findAuthorizationUsed(originChainId, authToken, authorizer, nonce);
                 } else if (depositMessage.permitType === "permit") {
                   const nonceConsumed = await isErc2612PermitNonceConsumed({
-                    tokenAddress: authToken.toEvmAddress(),
+                    spokePoolPeriphery: this.spokePoolPeripheries[originChainId],
                     owner: authorizer,
                     signedNonce: nonce,
-                    provider: this.providersByChain[originChainId],
                   });
                   if (nonceConsumed) {
                     found = "permit-nonce-consumed";
