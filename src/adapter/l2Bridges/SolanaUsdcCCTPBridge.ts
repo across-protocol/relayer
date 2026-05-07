@@ -63,11 +63,8 @@ export class SolanaUsdcCCTPBridge extends BaseL2BridgeAdapter {
     this.l2UsdcTokenAddress = SvmAddress.from(TOKEN_SYMBOLS_MAP.USDC.addresses[this.l2chainId]);
 
     // SVM cctp* entries are address-only (no abi), so don't route through getContractEntry.
-    const l2TokenMessengerAddress = getContractAddress(this.l2chainId, "cctpTokenMessenger");
-    const l2MessageTransmitterAddress = getContractAddress(this.l2chainId, "cctpMessageTransmitter");
-
-    this.tokenMessengerMinter = address(l2TokenMessengerAddress);
-    this.messageTransmitter = address(l2MessageTransmitterAddress);
+    this.tokenMessengerMinter = address(getContractAddress(this.l2chainId, "cctpTokenMessenger"));
+    this.messageTransmitter = address(getContractAddress(this.l2chainId, "cctpMessageTransmitter"));
 
     this.solanaEventsClientPromise = arch.svm.SvmCpiEventsClient.createFor(
       l2Provider,

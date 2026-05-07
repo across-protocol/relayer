@@ -44,8 +44,7 @@ export async function run(): Promise<void> {
   const signerAddr = await baseSigner.getAddress();
   const chainId = parseInt(args.chainId);
   const connectedSigner = baseSigner.connect(await getProvider(chainId));
-  const l2Token = EvmAddress.from(resolveAcrossToken(String(args.token), chainId));
-  assert(l2Token, `${args.token} not found on chain ${chainId} in TOKEN_SYMBOLS_MAP`);
+  const l2Token = EvmAddress.from(resolveAcrossToken(String(args.token), chainId, true));
   const l1TokenAddress = getL1TokenAddress(l2Token, chainId);
   const { symbol, decimals } = getTokenInfo(l2Token, chainId);
   const amount = args.amount;
