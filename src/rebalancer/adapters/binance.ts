@@ -60,8 +60,20 @@ import { OftAdapter } from "./oftAdapter";
 import WETH_ABI from "../../common/abi/Weth.json";
 
 export class BinanceStablecoinSwapAdapter extends BaseAdapter {
-  private binanceApiClient: Binance;
+  private _binanceApiClient?: Binance;
   private exchangeInfoPromise?: ReturnType<Binance["exchangeInfo"]>;
+
+  // binanceApiClient is populated by initialize(); reads pre-init throw, writes go through the setter.
+  private get binanceApiClient(): Binance {
+    assert(
+      isDefined(this._binanceApiClient),
+      "BinanceStablecoinSwapAdapter: binanceApiClient accessed before initialize()"
+    );
+    return this._binanceApiClient;
+  }
+  private set binanceApiClient(value: Binance) {
+    this._binanceApiClient = value;
+  }
   private orderBookPromiseBySymbol = new Map<string, Promise<Awaited<ReturnType<Binance["book"]>>>>();
   private orderBookSnapshotBySymbol = new Map<
     string,
@@ -94,7 +106,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     }
     await super.initialize(_availableRoutes.filter((route) => route.adapter === "binance"));
 
-    this.binanceApiClient = await getBinanceApiClient(process.env.BINANCE_API_BASE);
+    this._binanceApiClient = await getBinanceApiClient(process.env.BINANCE_API_BASE);
 
     await forEachAsync(this.availableRoutes, async (route) => {
       const { sourceToken, destinationToken, sourceChain, destinationChain } = route;
@@ -190,7 +202,8 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       return;
     }
 
-    this.multicallerClient = new MultiCallerClient(this.logger, this.config.multiCallChunkSize, this.baseSigner);
+    const multicallerClient = new MultiCallerClient(this.logger, this.config.multiCallChunkSize, this.baseSigner);
+    this.multicallerClient = multicallerClient;
 
     await forEachAsync(approvalChains, async (sourceChain) => {
       const connectedSigner = this.baseSigner.connect(await getProvider(sourceChain));
@@ -205,7 +218,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         atomicDepositorContracts.atomicDepositorAddress
       );
       if (allowance.lt(toBN(MAX_SAFE_ALLOWANCE).div(2))) {
-        this.multicallerClient.enqueueTransaction({
+        multicallerClient.enqueueTransaction({
           contract: weth,
           chainId: sourceChain,
           method: "approve",
@@ -219,7 +232,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     });
 
     const simMode = !this.config.sendingTransactionsEnabled;
-    await this.multicallerClient.executeTxnQueues(simMode);
+    await multicallerClient.executeTxnQueues(simMode);
   }
 
   async updateRebalanceStatuses(): Promise<void> {

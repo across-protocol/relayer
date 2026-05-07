@@ -38,7 +38,7 @@ export class GaslessRelayerConfig extends CommonConfig {
   depositUsdPageThreshold: number;
 
   constructor(env: ProcessEnv) {
-    super(env);
+    super(env, { botIdentifier: "across-relayer-gasless" });
 
     const {
       API_POLLING_INTERVAL,

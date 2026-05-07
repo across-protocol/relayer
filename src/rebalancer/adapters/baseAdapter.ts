@@ -39,13 +39,29 @@ import {
 } from "../utils/utils";
 
 export abstract class BaseAdapter implements RebalancerAdapter {
-  public baseSignerAddress: EvmAddress;
+  private _baseSignerAddress?: EvmAddress;
+  private _redisCache?: RedisCache;
 
   protected transactionClient: TransactionClient;
-  protected redisCache: RedisCache;
   protected initialized = false;
   protected priceClient: PriceClient;
-  protected multicallerClient: MultiCallerClient;
+  protected multicallerClient?: MultiCallerClient;
+
+  // baseSignerAddress and redisCache are populated by initialize(); reads pre-init throw, writes go through the setter.
+  public get baseSignerAddress(): EvmAddress {
+    assert(isDefined(this._baseSignerAddress), "BaseAdapter: baseSignerAddress accessed before initialize()");
+    return this._baseSignerAddress;
+  }
+  public set baseSignerAddress(value: EvmAddress) {
+    this._baseSignerAddress = value;
+  }
+  protected get redisCache(): RedisCache {
+    assert(isDefined(this._redisCache), "BaseAdapter: redisCache accessed before initialize()");
+    return this._redisCache;
+  }
+  protected set redisCache(value: RedisCache) {
+    this._redisCache = value;
+  }
 
   protected availableRoutes: RebalanceRoute[] = [];
   protected allDestinationChains: Set<number> = new Set();
@@ -82,9 +98,9 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     }
     const redisCache = await getRedisCacheForRebalancerStatusTracking(this.logger);
     assert(isDefined(redisCache), "Rebalancer status tracking redis cache is required");
-    this.redisCache = redisCache;
+    this._redisCache = redisCache;
 
-    this.baseSignerAddress = EvmAddress.from(await this.baseSigner.getAddress());
+    this._baseSignerAddress = EvmAddress.from(await this.baseSigner.getAddress());
 
     // Make sure each source token and destination token has an entry in token symbols map:
     for (const route of availableRoutes) {

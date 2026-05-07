@@ -24,10 +24,13 @@ export class Disputer {
   protected chain: string;
   private initPromise: Promise<void> | undefined;
 
-  // bondToken is queried from HubPool during init(); access pre-init throws.
+  // bondToken is queried from HubPool during init(); reads pre-init throw, writes go through the setter.
   protected get bondToken(): Contract {
     assert(isDefined(this._bondToken), "Disputer: bondToken accessed before init() completed");
     return this._bondToken;
+  }
+  protected set bondToken(value: Contract) {
+    this._bondToken = value;
   }
 
   constructor(

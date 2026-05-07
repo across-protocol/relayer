@@ -97,8 +97,17 @@ const stateToStr = (state: MessageState) => MESSAGE_STATES[state] ?? "UNKNOWN";
  */
 export class GaslessRelayer {
   private abortController = new AbortController();
-  private instanceCoordinator: InstanceCoordinator;
+  private _instanceCoordinator?: InstanceCoordinator;
   private initialized = false;
+
+  // instanceCoordinator is populated by initialize(); reads pre-init throw, writes go through the setter.
+  protected get instanceCoordinator(): InstanceCoordinator {
+    assert(isDefined(this._instanceCoordinator), "GaslessRelayer: instanceCoordinator accessed before initialize()");
+    return this._instanceCoordinator;
+  }
+  protected set instanceCoordinator(value: InstanceCoordinator) {
+    this._instanceCoordinator = value;
+  }
 
   protected messageState: { [key: string]: MessageState } = {};
   protected providersByChain: { [chainId: number]: Provider } = {};
@@ -117,7 +126,16 @@ export class GaslessRelayer {
   protected fillLock: { [key: string]: string } = {};
 
   private api: AcrossSwapApiClient;
-  protected signerAddress: EvmAddress;
+  private _signerAddress?: EvmAddress;
+
+  // signerAddress is populated by initialize(); reads pre-init throw, writes go through the setter.
+  protected get signerAddress(): EvmAddress {
+    assert(isDefined(this._signerAddress), "GaslessRelayer: signerAddress accessed before initialize()");
+    return this._signerAddress;
+  }
+  protected set signerAddress(value: EvmAddress) {
+    this._signerAddress = value;
+  }
 
   private transactionClient;
   private redisCache: RedisCacheInterface | undefined;
@@ -141,11 +159,10 @@ export class GaslessRelayer {
       message: "Initializing GaslessRelayer",
     });
 
-    const { RUN_IDENTIFIER: runIdentifier, BOT_IDENTIFIER: botIdentifier } = process.env;
-
     // Set the signer address.
     this.signerAddress = EvmAddress.from(await this.baseSigner.getAddress());
     this.redisCache = await getRedisCache(this.logger);
+    assert(isDefined(this.redisCache), "GaslessRelayer: requires a Redis cache for handover state");
 
     // Initialize the map with newly allocated sets.
     await forEachAsync(this.config.relayerOriginChains, async (chainId) => {
@@ -205,8 +222,8 @@ export class GaslessRelayer {
     this.instanceCoordinator = new InstanceCoordinator(
       this.logger,
       this.redisCache,
-      botIdentifier,
-      runIdentifier,
+      this.config.botIdentifier,
+      this.config.runIdentifier,
       this.abortController
     );
     await this.instanceCoordinator.initiateHandover();
@@ -397,7 +414,7 @@ export class GaslessRelayer {
   protected _markFilledFromInitialObservation(apiMessages: AnyGaslessDepositMessage[]): number {
     let markedFilledCount = 0;
     for (const depositMessage of apiMessages) {
-      const { originChainId, depositId, spokePool, depositFlowType } = depositMessage;
+      const { originChainId, depositId, spokePool } = depositMessage;
       const { destinationChainId, inputToken } = extractGaslessDepositFields(depositMessage);
       const depositKey = this._getDepositKey(inputToken.toNative(), originChainId, depositId);
 
@@ -406,9 +423,8 @@ export class GaslessRelayer {
         continue;
       }
 
-      const isSwap = depositFlowType === "swapAndBridge";
       const isCctp = this._isCctpDeposit(originChainId, spokePool);
-      if (isSwap || isCctp) {
+      if (isCctp) {
         this._setState(depositKey, MessageState.FILLED);
         markedFilledCount++;
         continue;
@@ -488,8 +504,8 @@ export class GaslessRelayer {
       const tStart = performance.now();
 
       let fillImmediate = false;
-      let deposit: RelayData & { destinationChainId: number };
-      let depositReceiptPromise: Promise<TransactionReceipt | null>;
+      let deposit: (RelayData & { destinationChainId: number }) | undefined;
+      let depositReceiptPromise: Promise<TransactionReceipt | null | undefined> | undefined;
 
       const bridgeMessage = depositMessage as GaslessDepositMessage;
 
@@ -562,8 +578,8 @@ export class GaslessRelayer {
             const depositReceipt = await depositReceiptPromise;
 
             // Swap-and-bridge and CCTP bridge: no fill; confirm via receipt hash and/or nonce/auth usage.
-            // Permit2: nonceBitmap, Permit (swap-and-bridge): SpokePoolPeriphery.permitNonces, EIP-3009: AuthorizationUsed.
-            if (isSwap || isCctpDeposit) {
+            // Permit2: nonceBitmap, Permit (EIP-2612): token nonce advancement, EIP-3009: AuthorizationUsed.
+            if (isCctpDeposit) {
               let found: string | undefined = depositReceipt?.transactionHash;
 
               if (!found) {
@@ -717,7 +733,9 @@ export class GaslessRelayer {
       : contract;
   }
 
-  protected async initiateDeposit(depositMessage: AnyGaslessDepositMessage): Promise<TransactionReceipt | null> {
+  protected async initiateDeposit(
+    depositMessage: AnyGaslessDepositMessage
+  ): Promise<TransactionReceipt | null | undefined> {
     const { originChainId, depositId } = depositMessage;
     const authorizer = getGaslessAuthorizerAddress(depositMessage);
     const spokePoolPeripheryContract = this.getPeripheryContract(originChainId);
@@ -783,7 +801,7 @@ export class GaslessRelayer {
   protected async initiateFill(
     deposit: RelayData & { destinationChainId: number },
     originChainSpokePool: string
-  ): Promise<TransactionReceipt | null> {
+  ): Promise<TransactionReceipt | null | undefined> {
     const { originChainId, depositId, destinationChainId, outputToken, outputAmount, inputToken, inputAmount } =
       deposit;
 

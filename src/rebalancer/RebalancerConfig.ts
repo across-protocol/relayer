@@ -68,7 +68,7 @@ export class RebalancerConfig extends CommonConfig {
   public chainIds: number[];
   constructor(env: ProcessEnv) {
     const { REBALANCER_CONFIG, REBALANCER_EXTERNAL_CONFIG } = env;
-    super(env);
+    super(env, { botIdentifier: "across-rebalancer" });
 
     let rebalancerConfig;
     try {
