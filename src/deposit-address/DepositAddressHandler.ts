@@ -143,7 +143,7 @@ export class DepositAddressHandler {
     assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
     const { redisCache } = this;
     const redisKey = this.getExecutedDepositsRedisKey();
-    const raw = (await redisCache.get(redisKey)) as string | undefined;
+    const raw = await redisCache.get<string>(redisKey);
     let arr: string[] = [];
     try {
       if (raw) {
