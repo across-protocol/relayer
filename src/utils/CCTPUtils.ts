@@ -2,7 +2,13 @@ import { arch, utils } from "@across-protocol/sdk";
 import { TokenMessengerMinterIdl } from "@across-protocol/contracts";
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { Contract, ethers } from "ethers";
-import { CONTRACT_ADDRESSES, CCTP_MAX_SEND_AMOUNT, getContractAbi, getContractEntry } from "../common";
+import {
+  CONTRACT_ADDRESSES,
+  CCTP_MAX_SEND_AMOUNT,
+  getContractAbi,
+  getContractAddress,
+  getContractEntry,
+} from "../common";
 import { BigNumber } from "./BNUtils";
 import {
   bnZero,
@@ -19,7 +25,6 @@ import {
   forEachAsync,
   chainIsEvm,
   createFormatFunction,
-  SVMProvider,
 } from "./SDKUtils";
 import { getNetworkName } from "./NetworkUtils";
 import { isDefined } from "./TypeGuards";
@@ -693,23 +698,21 @@ async function _getCCTPV1MessagesWithStatus(
     const { address, abi } = getContractEntry(destinationChainId, "cctpMessageTransmitter");
     messageTransmitterContract = new Contract(address, abi, dstProvider);
   }
-  let svmProvider: SVMProvider | undefined, latestBlockhash;
-  if (chainIsSvm(destinationChainId)) {
-    svmProvider = getSvmProvider(await getRedisCache());
-    latestBlockhash = await svmProvider.getLatestBlockhash().send();
-  }
+  const svmProvider = chainIsSvm(destinationChainId) ? getSvmProvider(await getRedisCache()) : undefined;
+  const latestBlockhash = isDefined(svmProvider) ? await svmProvider.getLatestBlockhash().send() : undefined;
   return await Promise.all(
     cctpMessageEvents.map(async (messageEvent) => {
       let processed;
       if (chainIsSvm(destinationChainId)) {
         assert(signer, "Signer is required for Solana CCTP messages");
         assert(isDefined(svmProvider), "SVM provider is required for Solana CCTP messages");
+        assert(isDefined(latestBlockhash), "Latest blockhash is required for Solana CCTP messages");
         processed = await arch.svm.hasCCTPV1MessageBeenProcessed(
           svmProvider,
           signer,
           messageEvent.nonce,
           messageEvent.sourceDomain,
-          latestBlockhash!.value
+          latestBlockhash.value
         );
       } else {
         assert(isDefined(messageTransmitterContract), "messageTransmitterContract is required for EVM CCTP messages");
@@ -741,8 +744,7 @@ async function _getCCTPV1DepositEventsSvm(
   // Get the `DepositForBurn` events on Solana.
   const provider = getSvmProvider(await getRedisCache());
   // SVM cctpTokenMessenger entries are address-only (no abi), so don't route through getContractEntry.
-  const address = CONTRACT_ADDRESSES[sourceChainId]?.cctpTokenMessenger?.address;
-  assert(isDefined(address), `Missing cctpTokenMessenger address for chain ${sourceChainId}`);
+  const address = getContractAddress(sourceChainId, "cctpTokenMessenger");
 
   const eventClient = await SvmCpiEventsClient.createFor(provider, address, TokenMessengerMinterIdl);
   const depositForBurnEvents = await eventClient.queryDerivedAddressEvents(

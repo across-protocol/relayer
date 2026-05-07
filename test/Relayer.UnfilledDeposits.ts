@@ -59,7 +59,7 @@ import {
   toAddressType,
 } from "../src/utils";
 
-describe("Relayer: Unfilled Deposits", async function () {
+describe("Relayer: Unfilled Deposits", function () {
   const { bnOne } = sdkUtils;
 
   let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
@@ -274,7 +274,7 @@ describe("Relayer: Unfilled Deposits", async function () {
     const filledDeposit = deposits.at(-2);
     expect(filledDeposit).to.exist;
 
-    const depositHash = spokePoolClient_1.getDepositHash(filledDeposit!);
+    const depositHash = spokePoolClient_1.getDepositHash(filledDeposit);
     const { fillStatus } = relayerInstance;
     fillStatus[depositHash] = FillStatus.Filled;
 

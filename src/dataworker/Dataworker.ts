@@ -3258,7 +3258,7 @@ export class Dataworker {
           // If the claim account exists, then initializer will be defined https://github.com/anza-xyz/kit/blob/491c96ed8ccda40d13b30deaf03ad762de58e0d5/packages/accounts/src/maybe-account.ts#L90.
           // Otherwise, this means that we created the claim account earlier in this function, so the kit keypair is the initializer.
           const initializer = accountData.claimAccount.claimAccount.exists
-            ? accountData.claimAccount.claimAccount.data!.initializer
+            ? accountData.claimAccount.claimAccount.data.initializer
             : kitKeypair.address;
           const claimRefundSignature = await claimRelayerRefund(
             toKitAddress(accountData.claimAccount.refundAddress),

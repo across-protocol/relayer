@@ -109,8 +109,10 @@ export class BridgeApi extends BaseL2BridgeAdapter {
     fromAddress: EvmAddress,
     l2Token: EvmAddress
   ): Promise<BigNumber> {
+    const { l2Signer } = this;
+    assert(isDefined(l2Signer), "BridgeApi: l2Signer is required");
     const l1Provider = this.l1Signer.provider;
-    const l2Provider = this.l2Signer.provider;
+    const l2Provider = l2Signer.provider;
     assert(isDefined(l1Provider), "BridgeApi: l1Signer must have a provider");
     assert(isDefined(l2Provider), "BridgeApi: l2Signer must have a provider");
     const fromTimestamp = await getTimestampForBlock(l1Provider, l1EventConfig.from);

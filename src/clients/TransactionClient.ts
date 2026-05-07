@@ -235,7 +235,7 @@ export class TransactionClient {
           message: `Transaction ${idx + 1} submission on ${networkName} failed or timed out.`,
           mrkdwn,
           // @dev `error` _sometimes_ doesn't decode correctly (especially on Polygon), so fish for the reason.
-          errorMessage: isError(error) ? (error as Error).message : undefined,
+          errorMessage: isError(error) ? error.message : undefined,
           error: stringifyThrownValue(error),
           notificationPath: "across-error",
         });

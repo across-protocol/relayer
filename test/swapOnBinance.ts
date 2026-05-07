@@ -13,6 +13,7 @@ import {
   BinanceSwapVenue,
   estimateDepositGasWithDeps,
   formatWithdrawalProgressLine,
+  getBinanceWithdrawalAmount,
   requireDefinedFilledAmount,
   ResolvedBinanceAsset,
   resolveBinanceAsset,
@@ -84,6 +85,63 @@ describe("swapOnBinance script helpers", function () {
     }
   });
 
+  it("accepts native SOL withdrawals on Solana", function () {
+    const accountCoins = [makeNativeCoin("SOL", CHAIN_IDs.SOLANA)];
+
+    const resolution = resolveBinanceAsset({
+      accountCoins,
+      tokenSymbol: "SOL",
+      chainId: CHAIN_IDs.SOLANA,
+      direction: "withdraw",
+    });
+
+    expect(resolution.ok).to.equal(true);
+    if (resolution.ok) {
+      expect(resolution.asset.isNativeAsset).to.equal(true);
+      expect(resolution.asset.binanceCoin).to.equal("SOL");
+      expect(resolution.asset.network.name).to.equal("SOL");
+      expect(resolution.asset.tokenDecimals).to.equal(9);
+    }
+  });
+
+  it("rejects Solana source deposits because deposit execution is EVM-only", function () {
+    const accountCoins = [makeErc20Coin("USDC", [{ chainId: CHAIN_IDs.SOLANA }])];
+
+    const resolution = resolveBinanceAsset({
+      accountCoins,
+      tokenSymbol: "USDC",
+      chainId: CHAIN_IDs.SOLANA,
+      direction: "deposit",
+    });
+
+    expect(resolution).to.deep.equal({ ok: false, reason: "SVM_SOURCE_DEPOSIT_UNSUPPORTED" });
+  });
+
+  it("uses token-specific mappings for non-L1 token symbols", function () {
+    const usdbcAddress = resolveAcrossToken("USDbC", CHAIN_IDs.BASE)!;
+    const accountCoins = [
+      makeErc20Coin("USDC", [
+        {
+          chainId: CHAIN_IDs.BASE,
+          contractAddress: usdbcAddress,
+        },
+      ]),
+    ];
+
+    const resolution = resolveBinanceAsset({
+      accountCoins,
+      tokenSymbol: "USDbC",
+      chainId: CHAIN_IDs.BASE,
+      direction: "deposit",
+    });
+
+    expect(resolution.ok).to.equal(true);
+    if (resolution.ok) {
+      expect(resolution.asset.binanceCoin).to.equal("USDC");
+      expect(resolution.asset.localTokenAddress).to.equal(usdbcAddress);
+    }
+  });
+
   it("rejects ERC20 routes when Binance contract metadata does not match the repo token address", function () {
     const accountCoins = [
       makeErc20Coin("USDC", [
@@ -101,6 +159,30 @@ describe("swapOnBinance script helpers", function () {
       direction: "deposit",
     });
 
+    expect(resolution).to.deep.equal({ ok: false, reason: "CONTRACT_ADDRESS_MISMATCH" });
+  });
+
+  it("compares Solana token contract addresses case-sensitively", function () {
+    const solanaUsdc = resolveAcrossToken("USDC", CHAIN_IDs.SOLANA)!;
+    const misCasedSolanaUsdc = `${solanaUsdc[0].toLowerCase()}${solanaUsdc.slice(1)}`;
+    const accountCoins = [
+      makeErc20Coin("USDC", [
+        {
+          chainId: CHAIN_IDs.SOLANA,
+          contractAddress: misCasedSolanaUsdc,
+        },
+      ]),
+    ];
+
+    const resolution = resolveBinanceAsset({
+      accountCoins,
+      tokenSymbol: "USDC",
+      chainId: CHAIN_IDs.SOLANA,
+      direction: "withdraw",
+    });
+
+    expect(misCasedSolanaUsdc.toLowerCase()).to.equal(solanaUsdc.toLowerCase());
+    expect(misCasedSolanaUsdc).to.not.equal(solanaUsdc);
     expect(resolution).to.deep.equal({ ok: false, reason: "CONTRACT_ADDRESS_MISMATCH" });
   });
 
@@ -234,6 +316,12 @@ describe("swapOnBinance script helpers", function () {
     expect(() => requireDefinedFilledAmount(undefined, "cloid-1", "TRX")).to.throw(
       "Filled amount for Binance order cloid-1 (TRX) is not available yet from Binance order history"
     );
+  });
+
+  it("converts withdrawal amount strings without float precision loss", function () {
+    const amount = getBinanceWithdrawalAmount("123456789012345.123456789", 6);
+
+    expect(amount.eq(toBNWei("123456789012345.123456", 6))).to.equal(true);
   });
 
   it("subtracts realized fill commission using Binance fill trades", async function () {
@@ -391,7 +479,7 @@ describe("swapOnBinance script helpers", function () {
     sinon
       .stub(BinanceUtils, "getBinanceWithdrawals")
       .onCall(0)
-      .resolves([makeWithdrawal({ id: "withdraw-1", status: BINANCE_WITHDRAWAL_STATUS.PROCESSING })])
+      .resolves([makeWithdrawal({ id: "withdraw-1", status: BINANCE_WITHDRAWAL_STATUS.PROCESSING, txId: "" })])
       .onCall(1)
       .resolves([makeWithdrawal({ id: "withdraw-1", status: BINANCE_WITHDRAWAL_STATUS.COMPLETED, txId: "0xdef" })]);
 
@@ -610,14 +698,14 @@ function makeDeposit({ txId, status, network, coin }: { txId: string; status: nu
   };
 }
 
-function makeWithdrawal({ id, status, txId = "" }: { id: string; status: number; txId?: string }) {
+function makeWithdrawal({ id, status, txId }: { id: string; status: number; txId?: string }) {
   return {
     id,
     amount: 100,
     coin: "USDC",
     network: "BASE",
     recipient: "0x1111111111111111111111111111111111111111",
-    txId,
+    ...(txId !== undefined ? { txId } : {}),
     transactionFee: 0.1,
     applyTime: new Date().toISOString(),
     status,

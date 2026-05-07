@@ -206,9 +206,8 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
    */
   private async roundAmountToSend(amount: BigNumber, decimals: number): Promise<BigNumber> {
     // Fetch `sharedDecimals` if not already fetched
-    this.sharedDecimals ??= await this.getL2Bridge().sharedDecimals();
-
-    return OFT.roundAmountToSend(amount, decimals, this.sharedDecimals);
+    const sharedDecimals = (this.sharedDecimals ??= await this.getL2Bridge().sharedDecimals());
+    return OFT.roundAmountToSend(amount, decimals, sharedDecimals);
   }
 
   /**

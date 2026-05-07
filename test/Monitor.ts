@@ -33,7 +33,7 @@ import {
   deployMulticall3,
 } from "./utils";
 
-describe("Monitor", async function () {
+describe("Monitor", function () {
   let l1Token: Contract, l2Token: Contract, erc20_2: Contract;
   let hubPool: Contract, spokePool_1: Contract, spokePool_2: Contract;
   let dataworker: SignerWithAddress, depositor: SignerWithAddress, relayer: SignerWithAddress;

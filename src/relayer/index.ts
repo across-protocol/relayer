@@ -4,6 +4,7 @@ import {
   config,
   delay,
   disconnectRedisClients,
+  fireAndForget,
   getNetworkName,
   getRedisCache,
   isDefined,
@@ -23,11 +24,7 @@ config();
 let logger: winston.Logger;
 
 const ACTIVE_RELAYER_EXPIRY = 1200; // 20 minutes.
-const {
-  RUN_IDENTIFIER: runIdentifier,
-  BOT_IDENTIFIER: botIdentifier = "across-relayer",
-  RELAYER_MAX_STARTUP_DELAY = "120",
-} = process.env;
+const { RELAYER_MAX_STARTUP_DELAY = "120" } = process.env;
 
 const maxStartupDelay = Number(RELAYER_MAX_STARTUP_DELAY);
 const abortController = new AbortController();
@@ -53,7 +50,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
   });
 
   const config = new RelayerConfig(process.env);
-  const { eventListener, externalListener, pollingDelay } = config;
+  const { botIdentifier, runIdentifier, eventListener, externalListener, pollingDelay } = config;
 
   const loop = pollingDelay > 0;
 
@@ -107,7 +104,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
 
       updates[blockNumber] = true;
       logger.debug({ at, message: "Received new Hub Chain block update.", blockNumber, currentTime });
-      setTimeout(async () => updateHub());
+      setTimeout(fireAndForget(updateHub));
     };
     hubChainSpoke.onBlock(newBlock);
   }
@@ -138,7 +135,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
         logger.warn({ at: "Relayer#run", message: "Assuming active relayer role in degraded state", degraded });
       }
 
-      if (!inventoryInit && config.relayerUseInventoryManager) {
+      if (!inventoryInit && config.relayerUseInventoryManager && isDefined(redis)) {
         logger.debug({ at: "Relayer#run", message: "Checking for inventory state in cache" });
         const key = inventoryClient.getInventoryCacheKey(config.inventoryTopic);
         const inventoryState = await getInventoryState(redis, key);
@@ -160,7 +157,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
 
       // Signal to any existing relayer that a handover is underway, or alternatively
       // check for handover initiated by another (newer) relayer instance.
-      if (loop && runIdentifier && redis) {
+      if (loop && redis) {
         if (activeRelayer !== runIdentifier) {
           if (!activeRelayerUpdated) {
             logger.debug({
@@ -189,7 +186,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
           loopCount: run,
         });
         if (!abortController.signal.aborted) {
-          const runTime = Math.round(runTimeMilliseconds / 1000);
+          const runTime = Math.round((runTimeMilliseconds ?? 0) / 1000);
 
           // When txns are pending submission, yield execution to ensure they can be submitted.
           const minDelay = Object.values(txnReceipts).length > 0 ? 0.1 : 0;
@@ -291,6 +288,7 @@ export async function runInventoryManager(_logger: winston.Logger, baseSigner: S
     await inventoryClient.update(config.spokePoolChainsOverride);
 
     const inventory = inventoryClient.export();
+    assert(isDefined(redis), "Inventory state export requires a Redis cache");
     await setInventoryState(redis, inventoryClient.getInventoryCacheKey(config.inventoryTopic), inventory);
   } finally {
     await disconnectRedisClients(logger);

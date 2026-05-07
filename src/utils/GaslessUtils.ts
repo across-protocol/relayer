@@ -19,7 +19,6 @@ import {
   assert,
   ConvertDecimals,
   convertRelayDataParamsToBytes32,
-  getL1TokenAddress,
   getTokenInfo,
   toBN,
   toBytes32,
@@ -27,10 +26,11 @@ import {
   CHAIN_IDs,
   MAX_UINT_VAL,
   TOKEN_SYMBOLS_MAP,
-  Provider,
   toBNWei,
   winston,
   isDefined,
+  getInventoryEquivalentL1TokenAddress,
+  getTokenSymbol,
 } from "../utils";
 import { AugmentedTransaction } from "../clients";
 import { Contract, BigNumber, ethers } from "ethers";
@@ -117,21 +117,17 @@ export function isAllowedGaslessPair(
 ): boolean {
   const inputAddr = typeof inputToken === "string" ? toAddressType(inputToken, originChainId) : inputToken;
   const outputAddr = typeof outputToken === "string" ? toAddressType(outputToken, destinationChainId) : outputToken;
-  const inputL1 = getL1TokenAddress(inputAddr, originChainId);
-  const outputL1 = getL1TokenAddress(outputAddr, destinationChainId);
-  if (inputL1.eq(outputL1)) {
+
+  const inputSymbol = getTokenSymbol(inputAddr, originChainId);
+  const outputSymbol = getTokenSymbol(outputAddr, destinationChainId);
+  if (allowedPeggedPairs[inputSymbol]?.has(outputSymbol)) {
     return true;
   }
-  if (Object.keys(allowedPeggedPairs).length === 0) {
-    return false;
-  }
-  try {
-    const inputSymbol = getTokenInfo(inputL1, CHAIN_IDs.MAINNET).symbol;
-    const outputSymbol = getTokenInfo(outputL1, CHAIN_IDs.MAINNET).symbol;
-    return allowedPeggedPairs[inputSymbol]?.has(outputSymbol) ?? false;
-  } catch {
-    return false;
-  }
+
+  const inputL1 = getInventoryEquivalentL1TokenAddress(inputAddr, originChainId);
+  const outputL1 = getInventoryEquivalentL1TokenAddress(outputAddr, destinationChainId);
+
+  return inputL1.eq(outputL1) ?? false;
 }
 
 /**
@@ -382,27 +378,17 @@ export async function isPermit2NonceUsed(permit2: Contract, owner: string, permi
   return (bitmap & (1n << bitPos)) !== 0n;
 }
 
-const ERC2612_NONCES_ABI = ["function nonces(address owner) view returns (uint256)"];
-
-export async function getTokenPermitNonce(params: {
-  tokenAddress: string;
-  owner: string;
-  provider: Provider;
-}): Promise<BigNumber> {
-  const token = new Contract(params.tokenAddress, ERC2612_NONCES_ABI, params.provider);
-  return token.nonces(params.owner);
-}
-
 /**
- * Returns true when the token's EIP-2612 nonce has advanced beyond the signed nonce.
+ * swapAndBridgeWithPermit: permit consumption is tracked on SpokePoolPeriphery (`permitNonces(address)`, 0x191d0ffc),
+ * not on the swap token's EIP-2612 `nonces`. Returns true after the permit has been executed on-chain
+ * (`permitNonces(owner) > signedNonce`).
  */
 export async function isErc2612PermitNonceConsumed(params: {
-  tokenAddress: string;
+  spokePoolPeriphery: Contract;
   owner: string;
   signedNonce: string;
-  provider: Provider;
 }): Promise<boolean> {
-  const onChainNonce = await getTokenPermitNonce(params);
+  const onChainNonce = await params.spokePoolPeriphery.permitNonces(params.owner);
   return onChainNonce.gt(params.signedNonce);
 }
 

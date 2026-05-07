@@ -20,9 +20,9 @@ function getRebalancerStatusTrackingNamespace(): string | undefined {
 }
 
 export async function getRedisCacheForRebalancerStatusTracking(
-  logger: winston.Logger
+  logger?: winston.Logger
 ): Promise<RedisCache | undefined> {
-  return (await getRedisCache(logger, undefined, getRebalancerStatusTrackingNamespace())) as RedisCache;
+  return await getRedisCache(logger, undefined, getRebalancerStatusTrackingNamespace());
 }
 
 function compareNormalizedAmounts(
@@ -117,7 +117,7 @@ export async function redisGetOrderDetailsForAdapter(
   adapterRedisPrefix: string,
   cloid: string,
   account: EvmAddress
-): Promise<OrderDetails> {
+): Promise<OrderDetails | undefined> {
   const orderDetailsKey = getPendingBridgeOrderKey(adapterRedisPrefix, cloid, account.toNative());
   const orderDetails = await redisCache.get<string>(orderDetailsKey);
   if (!orderDetails) {

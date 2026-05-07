@@ -2,6 +2,7 @@ import { getContractEntry } from "../../common";
 import { AugmentedTransaction } from "../../clients/TransactionClient";
 import ERC20_ABI from "../../common/abi/MinimalERC20.json";
 import {
+  assert,
   BigNumber,
   bnZero,
   Contract,
@@ -37,20 +38,21 @@ export class OpStackUSDCBridge extends BaseL2BridgeAdapter {
     _l1Token: EvmAddress,
     amount: BigNumber
   ): Promise<AugmentedTransaction[]> {
-    const { l2chainId: chainId } = this;
+    const { l2chainId: chainId, l2Signer } = this;
+    assert(isDefined(l2Signer), "OpStackUSDCBridge: l2Signer is required");
     const l2Bridge = this.getL2Bridge();
 
     const txns: AugmentedTransaction[] = [];
     const { decimals, symbol } = getTokenInfo(l2Token, this.l2chainId);
     const formatter = createFormatFunction(2, 4, false, decimals);
 
-    const erc20 = new Contract(l2Token.toNative(), ERC20_ABI, this.l2Signer);
+    const erc20 = new Contract(l2Token.toNative(), ERC20_ABI, l2Signer);
     const formattedAmount = formatter(amount.toString());
     const chain = getNetworkName(chainId);
     const nonMulticall = true;
     const unpermissioned = false;
 
-    const allowance = await erc20.allowance(await this.l2Signer.getAddress(), l2Bridge.address);
+    const allowance = await erc20.allowance(await l2Signer.getAddress(), l2Bridge.address);
     if (allowance.lt(amount)) {
       // Approval must be in place before withdrawal is enqueued. Catch the withdrawal on the next run.
       txns.push({

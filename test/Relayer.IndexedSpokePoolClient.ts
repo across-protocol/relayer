@@ -37,7 +37,7 @@ function _MockSpokeListener<T extends Constructor<MinSpokeListener>>(SpokeListen
   };
 }
 
-describe("IndexedSpokePoolClient: Update", async function () {
+describe("IndexedSpokePoolClient: Update", function () {
   const MockSpokeListener = _MockSpokeListener(SpokeListener(EVMSpokePoolClient));
   const chainId = CHAIN_IDs.MAINNET;
 
@@ -165,16 +165,16 @@ describe("IndexedSpokePoolClient: Update", async function () {
       expect(deposit.txnIndex).to.equal(log.transactionIndex);
       expect(deposit.txnRef).to.equal(log.transactionHash);
       expect(deposit.logIndex).to.equal(log.logIndex);
-      expect(deposit.depositId).to.equal(log.args!.depositId);
-      expect(deposit.inputToken.toEvmAddress()).to.equal(log.args!.inputToken);
-      expect(deposit.inputAmount).to.equal(log.args!.inputAmount);
-      expect(deposit.outputToken.toEvmAddress()).to.equal(log.args!.outputToken);
-      expect(deposit.outputAmount).to.equal(log.args!.outputAmount);
-      expect(deposit.message).to.equal(log.args!.message);
-      expect(deposit.quoteTimestamp).to.equal(log.args!.quoteTimestamp);
-      expect(deposit.fillDeadline).to.equal(log.args!.fillDeadline);
-      expect(deposit.exclusivityDeadline).to.equal(log.args!.exclusivityDeadline);
-      expect(deposit.exclusiveRelayer.toEvmAddress()).to.equal(log.args!.exclusiveRelayer);
+      expect(deposit.depositId).to.equal(log.args.depositId);
+      expect(deposit.inputToken.toEvmAddress()).to.equal(log.args.inputToken);
+      expect(deposit.inputAmount).to.equal(log.args.inputAmount);
+      expect(deposit.outputToken.toEvmAddress()).to.equal(log.args.outputToken);
+      expect(deposit.outputAmount).to.equal(log.args.outputAmount);
+      expect(deposit.message).to.equal(log.args.message);
+      expect(deposit.quoteTimestamp).to.equal(log.args.quoteTimestamp);
+      expect(deposit.fillDeadline).to.equal(log.args.fillDeadline);
+      expect(deposit.exclusivityDeadline).to.equal(log.args.exclusivityDeadline);
+      expect(deposit.exclusiveRelayer.toEvmAddress()).to.equal(log.args.exclusiveRelayer);
     });
   });
 

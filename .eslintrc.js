@@ -43,7 +43,10 @@ module.exports = {
     "chai-expect/missing-assertion": 2,
     "no-duplicate-imports": "error",
     "@typescript-eslint/no-floating-promises": ["error"],
-    "@typescript-eslint/no-misused-promises": ["error", { checksVoidReturn: false }],
+    "@typescript-eslint/no-misused-promises": ["error"],
+    "@typescript-eslint/await-thenable": ["error"],
+    "@typescript-eslint/require-array-sort-compare": ["error"],
+    "@typescript-eslint/no-unnecessary-type-assertion": ["error"],
     "no-restricted-imports": [
       "error",
       {

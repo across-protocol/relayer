@@ -39,13 +39,29 @@ import {
 } from "../utils/utils";
 
 export abstract class BaseAdapter implements RebalancerAdapter {
-  public baseSignerAddress: EvmAddress;
+  private _baseSignerAddress?: EvmAddress;
+  private _redisCache?: RedisCache;
 
   protected transactionClient: TransactionClient;
-  protected redisCache: RedisCache;
   protected initialized = false;
   protected priceClient: PriceClient;
-  protected multicallerClient: MultiCallerClient;
+  protected multicallerClient?: MultiCallerClient;
+
+  // baseSignerAddress and redisCache are populated by initialize(); reads pre-init throw, writes go through the setter.
+  public get baseSignerAddress(): EvmAddress {
+    assert(isDefined(this._baseSignerAddress), "BaseAdapter: baseSignerAddress accessed before initialize()");
+    return this._baseSignerAddress;
+  }
+  public set baseSignerAddress(value: EvmAddress) {
+    this._baseSignerAddress = value;
+  }
+  protected get redisCache(): RedisCache {
+    assert(isDefined(this._redisCache), "BaseAdapter: redisCache accessed before initialize()");
+    return this._redisCache;
+  }
+  protected set redisCache(value: RedisCache) {
+    this._redisCache = value;
+  }
 
   protected availableRoutes: RebalanceRoute[] = [];
   protected allDestinationChains: Set<number> = new Set();
@@ -82,9 +98,9 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     }
     const redisCache = await getRedisCacheForRebalancerStatusTracking(this.logger);
     assert(isDefined(redisCache), "Rebalancer status tracking redis cache is required");
-    this.redisCache = redisCache;
+    this._redisCache = redisCache;
 
-    this.baseSignerAddress = EvmAddress.from(await this.baseSigner.getAddress());
+    this._baseSignerAddress = EvmAddress.from(await this.baseSigner.getAddress());
 
     // Make sure each source token and destination token has an entry in token symbols map:
     for (const route of availableRoutes) {
@@ -208,8 +224,16 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     return getCloidForAccount(this.baseSignerAddress.toNative());
   }
 
-  protected _redisGetOrderDetails(cloid: string, account: EvmAddress): Promise<OrderDetails> {
+  protected _redisGetOrderDetails(cloid: string, account: EvmAddress): Promise<OrderDetails | undefined> {
     return redisGetOrderDetailsForAdapter(this.redisCache, this.REDIS_PREFIX, cloid, account);
+  }
+
+  // Variant for callers that have just listed `cloid` as pending and require the details to be present.
+  // Throws if the redis entry is missing (e.g. expired between sMembers() and this lookup).
+  protected async _redisGetOrderDetailsRequired(cloid: string, account: EvmAddress): Promise<OrderDetails> {
+    const orderDetails = await this._redisGetOrderDetails(cloid, account);
+    assert(isDefined(orderDetails), `Missing order details for cloid ${cloid}`);
+    return orderDetails;
   }
 
   protected async _redisDeleteOrder(cloid: string, currentStatus: number, account: EvmAddress): Promise<void> {

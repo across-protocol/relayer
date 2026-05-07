@@ -32,8 +32,20 @@ import ERC20_ABI from "../common/abi/MinimalERC20.json";
  */
 export class DepositAddressHandler {
   private abortController = new AbortController();
-  private instanceCoordinator: InstanceCoordinator;
+  private _instanceCoordinator?: InstanceCoordinator;
   private initialized = false;
+
+  // instanceCoordinator is populated by initialize(); reads pre-init throw, writes go through the setter.
+  private get instanceCoordinator(): InstanceCoordinator {
+    assert(
+      isDefined(this._instanceCoordinator),
+      "DepositAddressHandler: instanceCoordinator accessed before initialize()"
+    );
+    return this._instanceCoordinator;
+  }
+  private set instanceCoordinator(value: InstanceCoordinator) {
+    this._instanceCoordinator = value;
+  }
 
   private providersByChain: { [chainId: number]: Provider } = {};
 
@@ -45,7 +57,16 @@ export class DepositAddressHandler {
 
   private api: AcrossSwapApiClient;
   private indexerApi: AcrossIndexerApiClient;
-  private signerAddress: EvmAddress;
+  private _signerAddress?: EvmAddress;
+
+  // signerAddress is populated by initialize(); reads pre-init throw, writes go through the setter.
+  private get signerAddress(): EvmAddress {
+    assert(isDefined(this._signerAddress), "DepositAddressHandler: signerAddress accessed before initialize()");
+    return this._signerAddress;
+  }
+  private set signerAddress(value: EvmAddress) {
+    this._signerAddress = value;
+  }
 
   private transactionClient;
   private redisCache: RedisCacheInterface | undefined;
@@ -70,11 +91,10 @@ export class DepositAddressHandler {
       message: "Initializing DepositAddressHandler",
     });
 
-    const { RUN_IDENTIFIER: runIdentifier, BOT_IDENTIFIER: botIdentifier } = process.env;
-
     // Set the signer address.
     this.signerAddress = EvmAddress.from(await this.baseSigner.getAddress());
     this.redisCache = await getRedisCache(this.logger);
+    assert(isDefined(this.redisCache), "DepositAddressHandler: requires a Redis cache for handover state");
 
     // Exit if OS instructs us to do so.
     process.on("SIGHUP", () => {
@@ -103,8 +123,8 @@ export class DepositAddressHandler {
     this.instanceCoordinator = new InstanceCoordinator(
       this.logger,
       this.redisCache,
-      botIdentifier,
-      runIdentifier,
+      this.config.botIdentifier,
+      this.config.runIdentifier,
       this.abortController
     );
     await this.instanceCoordinator.initiateHandover();
@@ -115,14 +135,15 @@ export class DepositAddressHandler {
   }
 
   private getExecutedDepositsRedisKey(): string {
-    const botId = process.env.BOT_IDENTIFIER ?? "deposit-address-handler";
-    return `deposit-address:executed:${botId}`;
+    return `deposit-address:executed:${this.config.botIdentifier}`;
   }
 
   /** Loads executed deposit tx hashes from Redis (e.g. after handover). */
   private async _loadExecutedDepositsFromRedis(): Promise<void> {
+    assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
+    const { redisCache } = this;
     const redisKey = this.getExecutedDepositsRedisKey();
-    const raw = (await this.redisCache.get(redisKey)) as string | undefined;
+    const raw = await redisCache.get<string>(redisKey);
     let arr: string[] = [];
     try {
       if (raw) {
@@ -168,7 +189,29 @@ export class DepositAddressHandler {
 
   private async evaluateDepositAddresses(): Promise<void> {
     const depositMessages = await this._queryIndexerApi();
-    const filtered = depositMessages.filter(
+
+    // Only execute correct_transfer rows. mis_route and intent_refund transfers are routed to the
+    // refund-withdraw path (OPS-353), which is not implemented yet — drop them here so the bot
+    // doesn't try to bridge them (intent_refund in particular would re-loop the same intent).
+    // Unknown classifications are also dropped (forward-compat) until explicitly supported.
+    const correctTransferMessages = depositMessages.filter((m) => {
+      const classification = m.erc20Transfer.transferClassification;
+      if (classification === "correct_transfer") {
+        return true;
+      }
+      this.logger.debug({
+        at: "DepositAddressHandler#evaluateDepositAddresses",
+        message: "deposit-address transfer skipped: non-correct classification",
+        classification,
+        depositAddress: m.depositAddress,
+        paramsHash: m.paramsHash,
+        txHash: m.erc20Transfer.transactionHash,
+        chainId: m.erc20Transfer.chainId,
+      });
+      return false;
+    });
+
+    const filtered = correctTransferMessages.filter(
       (m) =>
         this.config.relayerOriginChains.includes(Number(m.routeParams.originChainId)) &&
         !this.executedDepositTxHashes.has(m.erc20Transfer.transactionHash)
@@ -194,8 +237,10 @@ export class DepositAddressHandler {
    * Called at start of each poll (after filtering) and after each successful execute.
    */
   private async _persistExecutedDepositsRedis(): Promise<void> {
+    assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
+    const { redisCache } = this;
     const redisKey = this.getExecutedDepositsRedisKey();
-    await this.redisCache.set(redisKey, JSON.stringify([...this.executedDepositTxHashes]));
+    await redisCache.set(redisKey, JSON.stringify([...this.executedDepositTxHashes]));
   }
 
   private async initiateDeposit(depositMessage: DepositAddressMessage): Promise<void> {
@@ -380,8 +425,10 @@ export class DepositAddressHandler {
     retriesRemaining = 3
   ): Promise<SwapApiResponse | undefined> {
     const { depositAddress, routeParams, erc20Transfer } = depositMessage;
-    const { inputToken, outputToken, originChainId, destinationChainId, recipient } = routeParams;
+    const { inputToken, outputToken, originChainId, destinationChainId, recipient, refundAddress } = routeParams;
     const { amount } = erc20Transfer;
+    // refundAddress must match what was committed in the withdraw leaf at PDA creation time so the
+    // swap-api rebuilds the same merkle root the on-chain factory derives the deposit address from.
     const params = {
       originChainId,
       destinationChainId,
@@ -391,6 +438,7 @@ export class DepositAddressHandler {
       amount,
       depositor: depositAddress,
       recipient,
+      refundAddress,
       depositAddress,
       executionFeeRecipient: this.signerAddress.toNative(),
       shouldSponsorAccountCreation: String(depositMessage.shouldSponsorAccountCreation),

@@ -12,7 +12,7 @@ import {
   winston,
 } from "./utils";
 
-describe("Disputer: Watchdog", async function () {
+describe("Disputer: Watchdog", function () {
   let chainId: number;
   const simulate = false;
   const bondAmount = toBNWei(1);
