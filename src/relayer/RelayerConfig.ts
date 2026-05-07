@@ -395,7 +395,9 @@ export class RelayerConfig extends CommonConfig {
 
       // Ensure that there is always a deposit confirmation config for the maximum theoretical value of a fill.
       Object.values(this.minDepositConfirmations).forEach((depositConfirmations) => {
-        const { usdThreshold: maxThreshold, minConfirmations: maxConfirmations } = depositConfirmations.at(-1);
+        const last = depositConfirmations.at(-1);
+        assert(isDefined(last), "Empty depositConfirmations array");
+        const { usdThreshold: maxThreshold, minConfirmations: maxConfirmations } = last;
         if (maxThreshold.lt(bnUint256Max)) {
           depositConfirmations.push({
             usdThreshold: bnUint256Max,
