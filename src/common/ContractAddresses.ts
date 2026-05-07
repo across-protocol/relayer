@@ -1003,3 +1003,14 @@ export function getContractAbi(chainId: number, name: string): ContractInterface
   assert(isJsonAbi(entry.abi), `Invalid ABI shape: ${chainId}/${name}`);
   return entry.abi;
 }
+
+/**
+ * Look up only the `address` for a contract entry. Use this for entries that may not define an `abi`
+ * (e.g. nativeToken on most OP Stack chains, SVM cctp* entries).
+ * Throws if the address is missing.
+ */
+export function getContractAddress(chainId: number, name: string): string {
+  const entry = CONTRACT_ADDRESSES[chainId]?.[name];
+  assert(isDefined(entry?.address), `Missing CONTRACT_ADDRESSES address: ${chainId}/${name}`);
+  return entry.address;
+}
