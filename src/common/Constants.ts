@@ -752,8 +752,6 @@ export const RELAYER_SPOKEPOOL_LISTENER_EVM = "./dist/src/libexec/RelayerSpokePo
 export const RELAYER_SPOKEPOOL_LISTENER_SVM = "./dist/src/libexec/RelayerSpokePoolListenerSVM.js";
 export const RELAYER_SPOKEPOOL_LISTENER_TVM = "./dist/src/libexec/RelayerSpokePoolListenerTVM.js";
 
-export const DEFAULT_ARWEAVE_GATEWAY = { url: "arweave.net", port: 443, protocol: "https" };
-
 export const ARWEAVE_TAG_BYTE_LIMIT = 2048;
 
 // Chains with slow (> 2 day liveness) canonical L2-->L1 bridges that we prioritize taking repayment on.

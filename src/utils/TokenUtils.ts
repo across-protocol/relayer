@@ -9,7 +9,7 @@ import { TokenInfo } from "../interfaces";
 
 const { ZERO_ADDRESS } = constants;
 
-export const { fetchTokenInfo, getL2TokenAddresses } = utils;
+export const { getL2TokenAddresses } = utils;
 
 type TokenSymbolInfo = (typeof TOKEN_SYMBOLS_MAP)[keyof typeof TOKEN_SYMBOLS_MAP];
 
@@ -101,18 +101,6 @@ export function getInventoryBalanceContributorTokens(
   return balanceContributorTokens.filter(
     (token, index, allTokens) => allTokens.findIndex((candidate) => candidate.eq(token)) === index
   );
-}
-
-// Returns true if the token symbol is an L2-only token that maps to a parent L1 token via
-// TOKEN_EQUIVALENCE_REMAPPING (e.g. pathUSD -> USDC, USDH -> USDC). These tokens have no
-// hub chain address and exist only on specific L2 chains.
-export function isL2OnlyEquivalentToken(symbol: string, hubChainId = CHAIN_IDs.MAINNET): boolean {
-  const remappedSymbol = TOKEN_EQUIVALENCE_REMAPPING[symbol];
-  if (!isDefined(remappedSymbol)) {
-    return false;
-  }
-  const tokenInfo = resolveAcrossToken(symbol);
-  return isDefined(tokenInfo) && !isDefined(tokenInfo.addresses[hubChainId]);
 }
 
 export function getNativeTokenAddressForChain(chainId: number): Address {

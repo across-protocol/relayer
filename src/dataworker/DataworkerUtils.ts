@@ -40,8 +40,8 @@ import {
   sortRelayerRefundLeaves,
 } from "./RelayerRefundUtils";
 import { BundleFillsV3, BundleSlowFills, ExpiredDepositsToRefundV3 } from "../interfaces/BundleData";
-export const { getImpliedBundleBlockRanges, getBlockRangeForChain, getBlockForChain, parseWinston, formatWinston } =
-  utils;
+export const { getImpliedBundleBlockRanges, getBlockRangeForChain, getBlockForChain, parseWinston } = utils;
+const { formatWinston } = utils;
 import { any } from "superstruct";
 
 // TODO: Move to SDK since this implements UMIP logic about validating block ranges.

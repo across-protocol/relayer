@@ -22,10 +22,10 @@ import {
 import { arch, typeguards } from "@across-protocol/sdk";
 import { RelayData } from "../interfaces";
 
-export const SOLANA_TX_SIZE_LIMIT = 1232; // bytes
 // Maximum size a message on a deposit can be in order to fill on Solana in a single transaction _and_ have that
-// single transaction contain approve and create ATA instructions.
-export const MAXIMUM_MESSAGE_SIZE = 466; // string length. equals 466/2-1 = 232 bytes.
+// single transaction contain approve and create ATA instructions. Limit is the Solana tx size cap (1232 bytes)
+// minus headroom for approve + create-ATA instructions.
+const MAXIMUM_MESSAGE_SIZE = 466; // string length. equals 466/2-1 = 232 bytes.
 
 type ProtoFill = Omit<RelayData, "recipient" | "outputToken"> & {
   destinationChainId: number;

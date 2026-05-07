@@ -2,7 +2,6 @@ import { TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import {
   assert,
   compareAddressesSimple,
-  ethers,
   getRemoteTokenForL1Token,
   isDefined,
   Address,
@@ -27,13 +26,6 @@ interface LookupTableDefinitions {
 }
 
 export const ALT_DEACTIVATION_COOLDOWN = 512n;
-
-export function includesAddressSimple(address: string | undefined, list: string[]): boolean {
-  if (!isDefined(address)) {
-    return false;
-  }
-  return list.filter((listAddress) => compareAddressesSimple(address, listAddress)).length > 0;
-}
 
 /**
  * Match the token symbol for the given token address and chain ID.
@@ -85,14 +77,6 @@ export function getTranslatedTokenAddress(
     `No bridged USDC mapping for L1 ${l1Token.toEvmAddress()} on chain ${l2ChainId}`
   );
   return toAddressType(bridgedUsdcAddress, l2ChainId);
-}
-
-export function checkAddressChecksum(tokenAddress: string): boolean {
-  return ethers.utils.getAddress(tokenAddress) === tokenAddress;
-}
-
-export function toBuffer(address: Address): Buffer {
-  return Buffer.from(address.rawAddress);
 }
 
 export function getAccountMeta(value: KitAddress, isWritable: boolean): WritableAccount | ReadonlyAccount {

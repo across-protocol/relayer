@@ -133,7 +133,7 @@ function generateChainConfig(): void {
   });
 }
 
-export async function finalize(
+async function finalize(
   logger: winston.Logger,
   hubSigner: Signer,
   hubPoolClient: HubPoolClient,
@@ -381,7 +381,7 @@ export async function finalize(
   }
 }
 
-export async function constructFinalizerClients(
+async function constructFinalizerClients(
   _logger: winston.Logger,
   config: FinalizerConfig,
   baseSigner: Signer

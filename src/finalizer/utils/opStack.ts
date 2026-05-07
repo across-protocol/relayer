@@ -136,8 +136,7 @@ type OVM_CROSS_CHAIN_MESSENGER = optimismSDK.CrossChainMessenger;
 const BLAST_CLAIM_NOT_READY = 0;
 // Start ID used to query hint ID's on Blast L1 yield manager, this should never change.
 const BLAST_YIELD_MANAGER_STARTING_REQUEST_ID = 1;
-export const chainIsBlast = (chainId: OVM_CHAIN_ID): boolean =>
-  [CHAIN_IDs.BLAST, CHAIN_IDs.BLAST_SEPOLIA].includes(chainId);
+const chainIsBlast = (chainId: OVM_CHAIN_ID): boolean => [CHAIN_IDs.BLAST, CHAIN_IDs.BLAST_SEPOLIA].includes(chainId);
 
 export async function opStackFinalizer(
   logger: winston.Logger,
