@@ -214,7 +214,7 @@ export async function submitTransaction(
   return response[0];
 }
 
-export async function dispatchTransaction(
+async function dispatchTransaction(
   transaction: AugmentedTransaction,
   dispatcher: TransactionClient
 ): Promise<TransactionResponse> {
