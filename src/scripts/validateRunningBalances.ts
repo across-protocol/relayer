@@ -59,7 +59,12 @@ import {
 import { createDataworker } from "../dataworker";
 import { _buildSlowRelayRoot, getBlockForChain } from "../dataworker/DataworkerUtils";
 import { Log, ProposedRootBundle, SpokePoolClientsByChain, BundleData } from "../interfaces";
-import { getContractEntry, constructSpokePoolClientsWithStartBlocks, updateSpokePoolClients } from "../common";
+import {
+  getContractAddress,
+  getContractEntry,
+  constructSpokePoolClientsWithStartBlocks,
+  updateSpokePoolClients,
+} from "../common";
 import { createConsoleTransport } from "@risk-labs/logger";
 import { interfaces as sdkInterfaces } from "@across-protocol/sdk";
 import { SpokePoolClient } from "../clients/SpokePoolClient";
@@ -260,7 +265,7 @@ export async function runScript(baseSigner: Signer): Promise<void> {
                 // including the L1 and L2 ETH (native gas token) addresses.
                 if (chainIsOPStack(leaf.chainId) && tokenInfo.symbol === "WETH") {
                   const ovmL2BridgeContractInfo = getContractEntry(leaf.chainId, "ovmStandardBridge");
-                  const nativeTokenInfo = getContractEntry(leaf.chainId, "nativeToken");
+                  const nativeTokenAddress = getContractAddress(leaf.chainId, "nativeToken");
                   const ovmL2Bridge = new Contract(
                     ovmL2BridgeContractInfo.address,
                     ovmL2BridgeContractInfo.abi,
@@ -271,7 +276,7 @@ export async function runScript(baseSigner: Signer): Promise<void> {
                       ovmL2Bridge,
                       ovmL2Bridge.filters.DepositFinalized(
                         ZERO_ADDRESS, // L1 token
-                        nativeTokenInfo.address, // L2 token
+                        nativeTokenAddress, // L2 token
                         clients.hubPoolClient.hubPool.address // from
                       ),
                       {

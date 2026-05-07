@@ -9,6 +9,7 @@ import {
   EvmAddress,
   BinanceApi,
   getBinanceApiClient,
+  getBinanceDepositAddress,
   getTranslatedTokenAddress,
   floatToBN,
   getTimestampForBlock,
@@ -67,7 +68,7 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
   ): Promise<AugmentedTransaction[]> {
     const binanceApiClient = await this.getBinanceClient();
     const l2TokenInfo = getTokenInfo(l2Token, this.l2chainId);
-    const depositAddress = await binanceApiClient.depositAddress({
+    const depositAddress = await getBinanceDepositAddress(binanceApiClient, {
       coin: this.l1TokenInfo.symbol,
       network: this.depositNetwork,
     });
