@@ -219,6 +219,7 @@ async function listen(
           for (const raw of rawLogs) {
             const log = viemLogToEthersLog(raw);
             if (!isDefined(log)) {
+              logger.warn({ at, message: "Unable to translate ethers viem event.", provider, log });
               continue;
             }
 

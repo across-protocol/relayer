@@ -1,0 +1,234 @@
+import assert from "assert";
+import { BalanceAllocator } from "../clients/BalanceAllocator";
+import { spokePoolClientsToProviders } from "../common";
+import {
+  CHAIN_IDs,
+  EMPTY_MERKLE_ROOT,
+  winston,
+  config,
+  getProvider,
+  getSigner,
+  startupLogLevel,
+  Logger,
+  getDvmContract,
+  getDisputedProposal,
+  sortEventsDescending,
+  getDisputeForTimestamp,
+  disconnectRedisClients,
+  Signer,
+  getEndBlockBuffers,
+  getWidestPossibleExpectedBlockRange,
+} from "../utils";
+import {
+  constructSpokePoolClientsForFastDataworker,
+  getSpokePoolClientEventSearchConfigsForFastDataworker,
+} from "../dataworker/DataworkerClientHelper";
+import { PendingRootBundle, ProposedRootBundle, RootBundleRelayWithBlock } from "../interfaces";
+import { createDataworker } from "../dataworker";
+import { getBlockForChain, getImpliedBundleBlockRanges } from "../dataworker/DataworkerUtils";
+
+config();
+let logger: winston.Logger;
+
+export async function execute(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
+  logger = _logger;
+  const { PROPOSAL: txnHash } = process.env;
+  if (!txnHash) {
+    throw new Error("Must set environment variable 'PROPOSAL=<hash>' to execute.");
+  }
+
+  // Override default config with sensible defaults:
+  // - DATAWORKER_FAST_LOOKBACK_COUNT=8 balances limiting RPC requests with querying
+  // enough data to limit # of excess historical deposit queries.
+  // - SPOKE_ROOTS_LOOKBACK_COUNT unused in this script so set to something < DATAWORKER_FAST_LOOKBACK_COUNT
+  // to avoid configuration error.
+  process.env.DATAWORKER_FAST_LOOKBACK_COUNT = "10";
+  process.env.SPOKE_ROOTS_LOOKBACK_COUNT = "1";
+  const { clients, config, dataworker } = await createDataworker(logger, baseSigner);
+  logger[startupLogLevel(config)]({
+    at: "RootBundleValidator",
+    message: "Executing root bundle proposal.",
+    txnHash,
+    config,
+  });
+
+  const { configStoreClient, hubPoolClient } = clients;
+
+  // Figure out which block corresponds with the disputed price request time.
+  // const provider = await getProvider(CHAIN_IDs.MAINNET);
+  const proposal = hubPoolClient.getProposedRootBundles().find(({ txnRef }) => txnRef === txnHash);
+  assert(proposal);
+  logger.debug({
+    at: "Dataworker#execute",
+    message: "xxx",
+    proposal,
+  });
+
+  const chainIds = configStoreClient.getChainIdIndicesForBlock(proposal.blockNumber);
+  const toBlocks = Object.fromEntries(
+    proposal.bundleEvaluationBlockNumbers.map((toBlock, idx) => [chainIds[idx], toBlock.toNumber() + 7500])
+  );
+
+  const fromBlocks = { ...toBlocks };
+  Object.entries(fromBlocks).forEach(([chainId, fromBlock]) => (fromBlocks[chainId] = fromBlock - 100_000));
+  fromBlocks[42161] -= 300_000;
+
+  const spokePoolClients = await constructSpokePoolClientsForFastDataworker(
+    logger,
+    hubPoolClient,
+    config,
+    baseSigner,
+    fromBlocks,
+    toBlocks
+  );
+
+  const balanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients));
+  await dataworker.executeRelayerRefundLeaves(
+    spokePoolClients,
+    balanceAllocator,
+    config.sendingTransactionsEnabled,
+    fromBlocks
+  );
+
+  const nextBundleMainnetStartBlock = dataworker.getNextHubChainBundleStartBlock();
+  const widestPossibleExpectedBlockRange = dataworker._getWidestPossibleBlockRangeForNextBundle(
+    spokePoolClients,
+    nextBundleMainnetStartBlock
+  );
+
+  for (const client of Object.values(spokePoolClients)) {
+    const { chainId } = client;
+    console.log(`xxx chainId ${chainId}.`);
+    if (chainId !== 130) {
+      continue;
+    }
+    let rootBundleRelays = sortEventsDescending(client.getRootBundleRelays()).filter(
+      (rootBundle) => rootBundle.blockNumber >= client.eventSearchConfig.from
+    ) as RootBundleRelayWithBlock[];
+
+    // Filter out roots that are not in the latest N root bundles. This assumes that
+    // relayerRefundRoot+slowFillRoot combinations are unique.
+    rootBundleRelays = dataworker._getRelayedRootsFromBundles(
+      [proposal],
+      rootBundleRelays as RootBundleRelayWithBlock[]
+    );
+    const nextBlockNumber =
+      hubPoolClient.getFollowingRootBundle(proposal)?.blockNumber || hubPoolClient.latestHeightSearched;
+    const leaves = hubPoolClient.getExecutedLeavesForRootBundle(proposal, nextBlockNumber);
+
+    rootBundleRelays = rootBundleRelays.filter((rootBundle) => {
+      if (chainId === 130) {
+        console.log(`xxx Checking rootBundle ${rootBundle.rootBundleId}: ${rootBundle.relayerRefundRoot}.`);
+      }
+      return proposal.relayerRefundRoot !== EMPTY_MERKLE_ROOT;
+    });
+
+    console.log(`xxx got ${rootBundleRelays.length} root bundle relays`);
+
+    for (const rootBundleRelay of rootBundleRelays) {
+      const matchingRootBundle = hubPoolClient.getProposedRootBundles().find((bundle) => {
+        if (bundle.relayerRefundRoot !== proposal.relayerRefundRoot) {
+          return false;
+        }
+        const followingBlockNumber =
+          hubPoolClient.getFollowingRootBundle(bundle)?.blockNumber || hubPoolClient.latestHeightSearched;
+
+        if (followingBlockNumber === undefined) {
+          return false;
+        }
+
+        const leaves = hubPoolClient.getExecutedLeavesForRootBundle(bundle, followingBlockNumber);
+
+        // Only use this bundle if it had valid leaves returned (meaning it was at least partially executed).
+        return leaves.length > 0;
+      });
+
+      if (!matchingRootBundle) {
+        logger.warn({
+          at: "Dataworke#executeRelayerRefundLeaves",
+          message: "Couldn't find a matching mainnet root bundle for a relayerRefundRoot on L2!",
+          chainId,
+        });
+        continue;
+      }
+
+      const blockNumberRanges = getImpliedBundleBlockRanges(hubPoolClient, configStoreClient, matchingRootBundle);
+      const mainnetBlockRanges = blockNumberRanges[0];
+      const chainIds = configStoreClient.getChainIdIndicesForBlock(mainnetBlockRanges[0]);
+      const invalidBlockRanges = await dataworker._validateBlockRanges(
+        spokePoolClients,
+        blockNumberRanges,
+        chainIds,
+        fromBlocks,
+        true
+      );
+      if (invalidBlockRanges.length > 0) {
+        logger.warn({
+          at: "Dataworke#executeRelayerRefundLeaves",
+          message: "Cannot validate bundle with insufficient event data. Set a larger DATAWORKER_FAST_LOOKBACK_COUNT",
+          invalidBlockRanges,
+          bundleTxn: matchingRootBundle.txnRef,
+        });
+        continue;
+      }
+
+      const { relayerRefundLeaves: leaves, relayerRefundTree: tree } = await dataworker._proposeRootBundle(
+        blockNumberRanges,
+        spokePoolClients,
+        matchingRootBundle.blockNumber,
+        true // load data from Arweave for speed purposes
+      );
+
+      if (tree.getHexRoot() !== proposal.relayerRefundRoot) {
+        logger.warn({
+          at: "Dataworke#executeRelayerRefundLeaves",
+          message: "Constructed a different root for the block range!",
+          chainId,
+          rootBundleRelay,
+          mainnetRootBundleBlock: matchingRootBundle.blockNumber,
+          mainnetRootBundleTxn: matchingRootBundle.txnRef,
+          // publishedRelayerRefundRoot: rootBundleRelay.relayerRefundRoot,
+          constructedRelayerRefundRoot: tree.getHexRoot(),
+        });
+        continue;
+      }
+
+      const executedLeavesForChain = client.getRelayerRefundExecutions();
+
+      const leavesForChain = leaves.filter((leaf) => leaf.chainId === Number(chainId));
+      const unexecutedLeaves = leavesForChain.filter((leaf) => {
+        const executedLeaf = executedLeavesForChain.find(
+          (event) => event.rootBundleId === rootBundleRelay.rootBundleId && event.leafId === leaf.leafId
+        );
+        // Only return true if no leaf was found in the list of executed leaves.
+        return !executedLeaf;
+      });
+      if (unexecutedLeaves.length === 0) {
+        continue;
+      }
+
+      await dataworker._executeRelayerRefundLeaves(
+        unexecutedLeaves,
+        balanceAllocator,
+        client,
+        tree,
+        true,
+        rootBundleRelay.rootBundleId
+      );
+    }
+
+    console.log(`xxx got leaves: ${JSON.stringify(leaves, null, 2)}`);
+  }
+}
+
+export async function run(_logger: winston.Logger): Promise<void> {
+  try {
+    const signer = await getSigner({ keyType: "secret", cleanEnv: true });
+    await execute(_logger, signer);
+  } finally {
+    await disconnectRedisClients(logger);
+  }
+}
+
+// eslint-disable-next-line no-process-exit
+void run(Logger).then(async () => process.exit(0));
