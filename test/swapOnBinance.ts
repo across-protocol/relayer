@@ -25,11 +25,7 @@ import {
 } from "../scripts/swapOnBinance";
 import { expect, sinon } from "./utils";
 
-const tokenAddress = (symbol: string, chainId: number): string => {
-  const addr = resolveAcrossToken(symbol, chainId);
-  assert(isDefined(addr), `Missing Across token ${symbol} on chain ${chainId}`);
-  return addr;
-};
+const tokenAddress = (symbol: string, chainId: number): string => resolveAcrossToken(symbol, chainId, true);
 
 describe("swapOnBinance script helpers", function () {
   afterEach(function () {
@@ -611,24 +607,23 @@ function makeResolvedAsset({
 }): ResolvedBinanceAsset {
   const tokenDecimals = tokenSymbol === "ETH" ? 18 : 6;
   const nativeSymbol = getNativeTokenInfoForChain(chainId).symbol.toUpperCase();
-  return {
-    tokenSymbol,
-    chainId,
-    binanceCoin,
-    tokenDecimals,
-    isNativeAsset: tokenSymbol.toUpperCase() === nativeSymbol,
-    localTokenAddress: contractAddress,
-    network: {
-      name: getTestBinanceNetworkName(chainId),
-      coin: binanceCoin,
-      withdrawFee,
-      withdrawMin: "0.01",
-      withdrawMax: "1000000",
-      contractAddress: contractAddress ?? "",
-      depositEnable: true,
-      withdrawEnable: true,
-    },
+  const isNative = tokenSymbol.toUpperCase() === nativeSymbol;
+  const network = {
+    name: getTestBinanceNetworkName(chainId),
+    coin: binanceCoin,
+    withdrawFee,
+    withdrawMin: "0.01",
+    withdrawMax: "1000000",
+    contractAddress: contractAddress ?? "",
+    depositEnable: true,
+    withdrawEnable: true,
   };
+  const base = { tokenSymbol, chainId, binanceCoin, tokenDecimals, network };
+  if (isNative) {
+    return { ...base, isNativeAsset: true };
+  }
+  assert(isDefined(contractAddress), `makeResolvedAsset: ERC20 ${tokenSymbol} requires contractAddress`);
+  return { ...base, isNativeAsset: false, localTokenAddress: contractAddress };
 }
 
 function makeNativeCoin(symbol: string, chainId: number): Coin {

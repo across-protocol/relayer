@@ -95,16 +95,25 @@ type BinanceAssetNetwork = Coin["networkList"][number];
 
 export type BinanceSourceDepositMode = "erc20" | "native";
 
-export interface ResolvedBinanceAsset {
+interface ResolvedBinanceAssetBase {
   tokenSymbol: string;
   chainId: number;
   binanceCoin: string;
   network: BinanceAssetNetwork;
   tokenDecimals: number;
-  isNativeAsset: boolean;
-  localTokenAddress?: string;
   depositMode?: BinanceSourceDepositMode;
 }
+
+export interface ResolvedBinanceNativeAsset extends ResolvedBinanceAssetBase {
+  isNativeAsset: true;
+}
+
+export interface ResolvedBinanceErc20Asset extends ResolvedBinanceAssetBase {
+  isNativeAsset: false;
+  localTokenAddress: string;
+}
+
+export type ResolvedBinanceAsset = ResolvedBinanceNativeAsset | ResolvedBinanceErc20Asset;
 
 export type BinanceAssetResolutionFailureReason =
   | "UNKNOWN_TOKEN"
@@ -427,7 +436,6 @@ async function gatherPreflightBalances(
       connectedSigner
     ).balanceOf(signerAddress);
   } else {
-    assert(isDefined(source.localTokenAddress), `ERC20 source missing localTokenAddress on chain ${source.chainId}`);
     sourceBalance = await new Contract(
       getEthersCompatibleAddress(source.chainId, source.localTokenAddress),
       ERC20.abi,
@@ -501,8 +509,7 @@ async function formatOtherKnownBalances(
         if (isNativeCandidate) {
           balance = await provider.getBalance(address);
         } else {
-          const tokenAddress = resolveAcrossToken(symbol, chainId);
-          assert(isDefined(tokenAddress), `Missing Across token ${symbol} on chain ${chainId}`);
+          const tokenAddress = resolveAcrossToken(symbol, chainId, true);
           balance = await new Contract(
             getEthersCompatibleAddress(chainId, tokenAddress),
             ERC20.abi,
@@ -545,20 +552,9 @@ async function gatherRecipientBalances(
     const recipientAddress = SvmAddress.from(recipient);
     const nativeBalanceResponse = await provider.getBalance(toKitAddress(recipientAddress)).send();
     const nativeBalance = BigNumber.from(nativeBalanceResponse.value.toString());
-    let destinationTokenBalance: BigNumber;
-    if (destination.isNativeAsset) {
-      destinationTokenBalance = nativeBalance;
-    } else {
-      assert(
-        isDefined(destination.localTokenAddress),
-        `SPL destination missing localTokenAddress on chain ${destination.chainId}`
-      );
-      destinationTokenBalance = await getSolanaTokenBalance(
-        provider,
-        SvmAddress.from(destination.localTokenAddress),
-        recipientAddress
-      );
-    }
+    const destinationTokenBalance = destination.isNativeAsset
+      ? nativeBalance
+      : await getSolanaTokenBalance(provider, SvmAddress.from(destination.localTokenAddress), recipientAddress);
 
     return {
       destinationTokenBalance,
@@ -573,10 +569,6 @@ async function gatherRecipientBalances(
   if (destination.isNativeAsset) {
     destinationTokenBalance = nativeBalance;
   } else {
-    assert(
-      isDefined(destination.localTokenAddress),
-      `ERC20 destination missing localTokenAddress on chain ${destination.chainId}`
-    );
     destinationTokenBalance = await new Contract(
       getEthersCompatibleAddress(destination.chainId, destination.localTokenAddress),
       ERC20.abi,
@@ -658,7 +650,6 @@ async function buildDepositExecutionPlan(
     return { steps };
   }
 
-  assert(isDefined(source.localTokenAddress), `ERC20 source missing localTokenAddress on chain ${chainId}`);
   const tokenContract = new Contract(getEthersCompatibleAddress(chainId, source.localTokenAddress), ERC20.abi, signer);
   return {
     steps: [
@@ -1257,7 +1248,7 @@ export function resolveBinanceAsset(params: {
         binanceCoin: matchingCoin.symbol,
         network: matchingNetwork,
         tokenDecimals: getNativeTokenInfoForChain(chainId).decimals,
-        isNativeAsset: depositMode === "native" || direction === "withdraw",
+        isNativeAsset: true,
         depositMode,
       },
     };
