@@ -1,7 +1,8 @@
 import assert from "assert";
 import { ContractInterface } from "ethers";
 import { JsonFragment } from "@ethersproject/abi";
-import { CHAIN_IDs, getDeployedAddress, isDefined } from "../utils";
+import { CHAIN_IDs, getDeployedAddress } from "../utils";
+import { isDefined } from "../utils/TypeGuards";
 import CCTP_MESSAGE_TRANSMITTER_ABI from "./abi/CctpMessageTransmitter.json";
 import CCTP_TOKEN_MESSENGER_ABI from "./abi/CctpTokenMessenger.json";
 import CCTP_V2_TOKEN_MESSENGER_ABI from "./abi/CctpV2TokenMessenger.json";
@@ -1002,4 +1003,15 @@ export function getContractAbi(chainId: number, name: string): ContractInterface
   assert(isDefined(entry?.abi), `Missing CONTRACT_ADDRESSES abi: ${chainId}/${name}`);
   assert(isJsonAbi(entry.abi), `Invalid ABI shape: ${chainId}/${name}`);
   return entry.abi;
+}
+
+/**
+ * Look up only the `address` for a contract entry. Use this for entries that may not define an `abi`
+ * (e.g. nativeToken on most OP Stack chains, SVM cctp* entries).
+ * Throws if the address is missing.
+ */
+export function getContractAddress(chainId: number, name: string): string {
+  const entry = CONTRACT_ADDRESSES[chainId]?.[name];
+  assert(isDefined(entry?.address), `Missing CONTRACT_ADDRESSES address: ${chainId}/${name}`);
+  return entry.address;
 }

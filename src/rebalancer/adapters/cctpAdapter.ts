@@ -50,7 +50,8 @@ export class CctpAdapter extends BaseAdapter {
 
   async setApprovals(): Promise<void> {
     this._assertInitialized();
-    this.multicallerClient = new MultiCallerClient(this.logger, this.config.multiCallChunkSize, this.baseSigner);
+    const multicallerClient = new MultiCallerClient(this.logger, this.config.multiCallChunkSize, this.baseSigner);
+    this.multicallerClient = multicallerClient;
 
     // Set Bridge allowances:
     const allChains = new Set<number>([...this.allSourceChains, ...this.allDestinationChains]);
@@ -61,7 +62,7 @@ export class CctpAdapter extends BaseAdapter {
         const cctpMessenger = await this._getCctpMessenger(chainId);
         const cctpAllowance = await usdc.allowance(this.baseSignerAddress.toNative(), cctpMessenger.address);
         if (cctpAllowance.lt(toBN(MAX_SAFE_ALLOWANCE).div(2))) {
-          this.multicallerClient.enqueueTransaction({
+          multicallerClient.enqueueTransaction({
             contract: usdc,
             chainId,
             method: "approve",
@@ -76,7 +77,7 @@ export class CctpAdapter extends BaseAdapter {
     });
 
     const simMode = !this.config.sendingTransactionsEnabled;
-    await this.multicallerClient.executeTxnQueues(simMode);
+    await multicallerClient.executeTxnQueues(simMode);
   }
 
   async initializeRebalance(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber): Promise<BigNumber> {

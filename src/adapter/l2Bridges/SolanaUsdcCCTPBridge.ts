@@ -19,7 +19,7 @@ import {
   SolanaTransaction,
 } from "../../utils";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
-import { CCTP_MAX_SEND_AMOUNT, CONTRACT_ADDRESSES, getContractEntry } from "../../common";
+import { CCTP_MAX_SEND_AMOUNT, getContractAddress, getContractEntry } from "../../common";
 import { arch } from "@across-protocol/sdk";
 import { TokenMessengerMinterIdl, TokenMessengerMinterClient } from "@across-protocol/contracts";
 import {
@@ -63,15 +63,8 @@ export class SolanaUsdcCCTPBridge extends BaseL2BridgeAdapter {
     this.l2UsdcTokenAddress = SvmAddress.from(TOKEN_SYMBOLS_MAP.USDC.addresses[this.l2chainId]);
 
     // SVM cctp* entries are address-only (no abi), so don't route through getContractEntry.
-    const l2TokenMessengerAddress = CONTRACT_ADDRESSES[this.l2chainId]?.cctpTokenMessenger?.address;
-    const l2MessageTransmitterAddress = CONTRACT_ADDRESSES[this.l2chainId]?.cctpMessageTransmitter?.address;
-    assert(
-      isDefined(l2TokenMessengerAddress) && isDefined(l2MessageTransmitterAddress),
-      `Missing CCTP messenger addresses for chain ${this.l2chainId}`
-    );
-
-    this.tokenMessengerMinter = address(l2TokenMessengerAddress);
-    this.messageTransmitter = address(l2MessageTransmitterAddress);
+    this.tokenMessengerMinter = address(getContractAddress(this.l2chainId, "cctpTokenMessenger"));
+    this.messageTransmitter = address(getContractAddress(this.l2chainId, "cctpMessageTransmitter"));
 
     this.solanaEventsClientPromise = arch.svm.SvmCpiEventsClient.createFor(
       l2Provider,

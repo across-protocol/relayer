@@ -51,7 +51,7 @@ export class MonitorConfig extends CommonConfig {
   readonly hyperliquidOrderMaximumLifetime: number;
   readonly hyperliquidTokens: string[];
   constructor(env: ProcessEnv) {
-    super(env);
+    super(env, { botIdentifier: "across-monitor" });
 
     const {
       STARTING_BLOCK_NUMBER,

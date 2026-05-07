@@ -15,7 +15,7 @@ export class DepositAddressHandlerConfig extends CommonConfig {
   withdrawEnabled: boolean;
 
   constructor(env: ProcessEnv) {
-    super(env);
+    super(env, { botIdentifier: "across-deposit-address-handler" });
 
     const {
       INDEXER_API_POLLING_INTERVAL,

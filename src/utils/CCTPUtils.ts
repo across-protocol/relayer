@@ -2,7 +2,13 @@ import { arch, utils } from "@across-protocol/sdk";
 import { TokenMessengerMinterIdl } from "@across-protocol/contracts";
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { Contract, ethers } from "ethers";
-import { CONTRACT_ADDRESSES, CCTP_MAX_SEND_AMOUNT, getContractAbi, getContractEntry } from "../common";
+import {
+  CONTRACT_ADDRESSES,
+  CCTP_MAX_SEND_AMOUNT,
+  getContractAbi,
+  getContractAddress,
+  getContractEntry,
+} from "../common";
 import { BigNumber } from "./BNUtils";
 import {
   bnZero,
@@ -741,8 +747,7 @@ async function _getCCTPV1DepositEventsSvm(
   // Get the `DepositForBurn` events on Solana.
   const provider = getSvmProvider(await getRedisCache());
   // SVM cctpTokenMessenger entries are address-only (no abi), so don't route through getContractEntry.
-  const address = CONTRACT_ADDRESSES[sourceChainId]?.cctpTokenMessenger?.address;
-  assert(isDefined(address), `Missing cctpTokenMessenger address for chain ${sourceChainId}`);
+  const address = getContractAddress(sourceChainId, "cctpTokenMessenger");
 
   const eventClient = await SvmCpiEventsClient.createFor(provider, address, TokenMessengerMinterIdl);
   const depositForBurnEvents = await eventClient.queryDerivedAddressEvents(
