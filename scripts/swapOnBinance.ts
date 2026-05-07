@@ -545,9 +545,20 @@ async function gatherRecipientBalances(
     const recipientAddress = SvmAddress.from(recipient);
     const nativeBalanceResponse = await provider.getBalance(toKitAddress(recipientAddress)).send();
     const nativeBalance = BigNumber.from(nativeBalanceResponse.value.toString());
-    const destinationTokenBalance = destination.isNativeAsset
-      ? nativeBalance
-      : await getSolanaTokenBalance(provider, SvmAddress.from(destination.localTokenAddress!), recipientAddress);
+    let destinationTokenBalance: BigNumber;
+    if (destination.isNativeAsset) {
+      destinationTokenBalance = nativeBalance;
+    } else {
+      assert(
+        isDefined(destination.localTokenAddress),
+        `SPL destination missing localTokenAddress on chain ${destination.chainId}`
+      );
+      destinationTokenBalance = await getSolanaTokenBalance(
+        provider,
+        SvmAddress.from(destination.localTokenAddress),
+        recipientAddress
+      );
+    }
 
     return {
       destinationTokenBalance,
