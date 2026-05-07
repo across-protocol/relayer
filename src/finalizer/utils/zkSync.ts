@@ -236,9 +236,9 @@ async function prepareFinalization(
     withdrawal.message,
     withdrawal.proof,
   ];
-  const calldata = await (isLegacyBridge
-    ? l1SharedBridge.populateTransaction.finalizeWithdrawal(...args.filter(isDefined))
-    : l1SharedBridge.populateTransaction.finalizeDeposit(args));
+  const calldata = isLegacyBridge
+    ? await l1SharedBridge.populateTransaction.finalizeWithdrawal(...args.filter(isDefined))
+    : await l1SharedBridge.populateTransaction.finalizeDeposit(args);
 
   // @todo Support withdrawing directly as WETH here.
   const [target, txn] = [l1SharedBridge.address, calldata];
