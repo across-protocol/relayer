@@ -23,7 +23,7 @@ export class GaslessRelayerConfig extends CommonConfig {
   /** When true, allow deposits with inputAmount < outputAmount and outputAmount === MAX_UINT_VAL (refund-flow test); deposit is made but fill is skipped. */
   refundFlowTestEnabled: boolean;
   spokePoolPeripheryOverrides: { [chainId: number]: string };
-  /** Gasless-only: allowed input→output token pairs (by L1 symbol). E.g. { "USDT": ["USDC"] }. */
+  /** Gasless-only: allowed input→output token pairs (by L2 symbol). E.g. { "USDT": ["USDC", "USDH", "USDC.e"] }. */
   allowedPeggedPairs: AllowedPeggedPairs;
   /**
    * Origin chain IDs where canonical Permit2 is not used (skip loading and nonce-bitmap reads).
@@ -38,7 +38,7 @@ export class GaslessRelayerConfig extends CommonConfig {
   depositUsdPageThreshold: number;
 
   constructor(env: ProcessEnv) {
-    super(env);
+    super(env, { botIdentifier: "across-relayer-gasless" });
 
     const {
       API_POLLING_INTERVAL,

@@ -106,7 +106,7 @@ export class RelayerConfig extends CommonConfig {
       RELAYER_USE_INVENTORY_MANAGER = "false",
       RELAYER_EVENT_LISTENER = "false",
     } = env;
-    super(env);
+    super(env, { botIdentifier: "across-relayer" });
 
     // External listeners are dependent on looping mode being configured.
     this.externalListener = this.pollingDelay > 0 && RELAYER_EXTERNAL_LISTENER === "true";
