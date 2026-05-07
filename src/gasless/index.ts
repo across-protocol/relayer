@@ -1,4 +1,5 @@
-import { winston, config, startupLogLevel, Signer, disconnectRedisClients, getDispatcherKeys } from "../utils";
+import { winston, config, startupLogLevel, Signer, getDispatcherKeys } from "../utils";
+import { disconnectRedisClients } from "../utils/redis";
 import { GaslessRelayer } from "./GaslessRelayer";
 import { GaslessRelayerConfig } from "./GaslessRelayerConfig";
 

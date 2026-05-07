@@ -3,10 +3,8 @@ import { utils as sdkUtils } from "@across-protocol/sdk";
 import {
   config,
   delay,
-  disconnectRedisClients,
   fireAndForget,
   getNetworkName,
-  getRedisCache,
   isDefined,
   Profiler,
   scheduleSequentialTask,
@@ -19,7 +17,8 @@ import { RelayerConfig } from "./RelayerConfig";
 import { constructRelayerClients } from "./RelayerClientHelper";
 import { InventoryClientState, isSpokePoolClientWithListener } from "../clients";
 import { updateSpokePoolClients } from "../common";
-import { RedisCacheInterface } from "../caching/RedisCache";
+import { getRedisCache, RedisCacheInterface } from "../cache/redis";
+import { disconnectRedisClients } from "../utils/redis";
 config();
 let logger: winston.Logger;
 

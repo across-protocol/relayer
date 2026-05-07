@@ -6,7 +6,6 @@ import { SvmSpokeClient } from "@across-protocol/contracts";
 import { Log } from "../interfaces";
 import * as utils from "../../scripts/utils";
 import {
-  disconnectRedisClients,
   EventManager,
   exit,
   isDefined,
@@ -17,11 +16,12 @@ import {
   getNetworkName,
   getNodeUrlList,
   getOriginFromURL,
-  getRedisCache,
   getSvmProvider,
   Logger,
   winston,
 } from "../utils";
+import { getRedisCache } from "../cache/redis";
+import { disconnectRedisClients } from "../utils/redis";
 import { ScraperOpts } from "./types";
 import { postBlock, postEvents } from "./util/ipc";
 import { scrapeEvents as _scrapeEvents } from "./util/svm";

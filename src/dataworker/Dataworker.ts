@@ -28,7 +28,6 @@ import {
   toAddressType,
   getKitKeypairFromEvmSigner,
   getEventAuthority,
-  getRedisCache,
   getStatePda,
   getFillStatusPda,
   LatestBlockhash,
@@ -67,6 +66,7 @@ import {
   FillStatus,
   ConvertedRelayData,
 } from "../interfaces";
+import { getRedisCache } from "../cache/redis";
 import { DataworkerConfig } from "./DataworkerConfig";
 import { DataworkerClients } from "./DataworkerClientHelper";
 import {

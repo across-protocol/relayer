@@ -9,7 +9,8 @@ import Binance, {
 export type { BinanceApi };
 import minimist from "minimist";
 import { JsonFragment } from "@ethersproject/abi";
-import { getGckmsConfig, retrieveGckmsKeys, isDefined, assert, CHAIN_IDs, getRedisCache, truncate } from "./";
+import { getGckmsConfig, retrieveGckmsKeys, isDefined, assert, CHAIN_IDs, truncate } from "./";
+import { getRedisCache } from "../cache/redis";
 import { CONTRACT_ADDRESSES, isJsonAbi } from "../common";
 import { BigNumber } from "./BNUtils";
 import { fromWei, retry, toBNWei } from "./SDKUtils";

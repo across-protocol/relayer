@@ -1,10 +1,9 @@
-import { RedisCache } from "../../caching/RedisCache";
+import { getRedisCache, RedisCache } from "../../cache/redis";
 import {
   BigNumber,
   ConvertDecimals,
   EvmAddress,
   ethers,
-  getRedisCache,
   getTokenInfoFromSymbol,
   isDefined,
   winston,

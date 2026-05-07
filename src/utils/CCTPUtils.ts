@@ -31,7 +31,8 @@ import { isDefined } from "./TypeGuards";
 import { getCachedProvider, getProvider, getSvmProvider } from "./ProviderUtils";
 import { EventSearchConfig, paginatedEventQuery, spreadEvent } from "./EventUtils";
 import { Log } from "../interfaces";
-import { assert, fetchWithTimeout, getRedisCache, Provider, Signer, ERC20, winston } from ".";
+import { assert, fetchWithTimeout, Provider, Signer, ERC20, winston } from ".";
+import { getRedisCache } from "../cache/redis";
 import { KeyPairSigner } from "@solana/kit";
 import { TransactionRequest } from "@ethersproject/abstract-provider";
 import {

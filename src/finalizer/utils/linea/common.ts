@@ -11,7 +11,6 @@ import {
   getBlockForTimestamp,
   getCurrentTime,
   getNodeUrlList,
-  getRedisCache,
   paginatedEventQuery,
   CHAIN_IDs,
   getTokenInfo,
@@ -20,6 +19,7 @@ import {
   isSignerWallet,
   assert,
 } from "../../../utils";
+import { getRedisCache } from "../../../cache/redis";
 import { HubPoolClient } from "../../../clients";
 import { getContractAbi } from "../../../common";
 import { Log } from "../../../interfaces";

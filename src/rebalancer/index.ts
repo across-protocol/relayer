@@ -8,7 +8,6 @@ import {
   bnZero,
   config,
   ConvertDecimals,
-  disconnectRedisClients,
   EvmAddress,
   getTokenInfoFromSymbol,
   isDefined,
@@ -16,6 +15,7 @@ import {
   toBNWei,
   winston,
 } from "../utils";
+import { disconnectRedisClients } from "../utils/redis";
 import { CumulativeBalanceRebalancerClient } from "./clients/CumulativeBalanceRebalancerClient";
 
 import { constructCumulativeBalanceRebalancerClient } from "./RebalancerClientHelper";

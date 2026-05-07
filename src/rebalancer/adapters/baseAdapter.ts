@@ -1,4 +1,4 @@
-import { RedisCache } from "../../caching/RedisCache";
+import { RedisCache } from "../../cache/redis";
 import { AugmentedTransaction, getAcrossHost, MultiCallerClient, TransactionClient } from "../../clients";
 import { TokenInfo } from "../../interfaces";
 import {

@@ -28,7 +28,6 @@ import {
   getBlockForTimestamp,
   getCurrentTime,
   getProvider,
-  getRedisCache,
   getSvmProvider,
   Signer,
   SpokePool,
@@ -37,6 +36,7 @@ import {
   getSvmSignerFromEvmSigner,
   chainIsSvm,
 } from "../utils";
+import { getRedisCache } from "../cache/redis";
 import { RelayerConfig } from "./RelayerConfig";
 import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
 import { constructReadOnlyRebalancerClient } from "../rebalancer/RebalancerClientHelper";

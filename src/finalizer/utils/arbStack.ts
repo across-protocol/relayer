@@ -14,7 +14,6 @@ import {
   getUniqueLogIndex,
   Signer,
   getCurrentTime,
-  getRedisCache,
   getBlockForTimestamp,
   Multicall2Call,
   CHAIN_IDs,
@@ -30,6 +29,7 @@ import {
   isEVMSpokePoolClient,
   EvmAddress,
 } from "../../utils";
+import { getRedisCache } from "../../cache/redis";
 import { TokensBridged } from "../../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { getContractEntry } from "../../common";

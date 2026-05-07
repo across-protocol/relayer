@@ -1,4 +1,4 @@
-import { RedisCacheInterface } from "../caching/RedisCache";
+import { RedisCacheInterface } from "../cache/redis";
 import { delay, winston } from "./";
 
 export class InstanceCoordinator {

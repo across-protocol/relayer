@@ -10,7 +10,7 @@ import {
   SVMProvider,
 } from "./SDKUtils";
 import { getProvider, getSvmProvider } from "./ProviderUtils";
-import { getRedisCache } from "./RedisUtils";
+import { getRedisCache } from "../cache/redis";
 import { SpokePoolClientsByChain } from "../interfaces/SpokePool";
 
 const evmBlockFinders: { [chainId: number]: EVMBlockFinder } = {};

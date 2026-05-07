@@ -1,4 +1,5 @@
-import { winston, config, startupLogLevel, Signer, disconnectRedisClients } from "../utils";
+import { winston, config, startupLogLevel, Signer } from "../utils";
+import { disconnectRedisClients } from "../utils/redis";
 import { Refiller } from "./Refiller";
 import { constructRefillerClients } from "./RefillerClientHelper";
 import { RefillerConfig } from "./RefillerConfig";

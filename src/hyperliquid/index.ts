@@ -1,5 +1,6 @@
 import { EventListener } from "../clients";
-import { CHAIN_IDs, winston, config, fireAndForget, startupLogLevel, Signer, disconnectRedisClients } from "../utils";
+import { CHAIN_IDs, winston, config, fireAndForget, startupLogLevel, Signer } from "../utils";
+import { disconnectRedisClients } from "../utils/redis";
 import { HyperliquidExecutor } from "./HyperliquidExecutor";
 import { constructHyperliquidExecutorClients } from "./HyperliquidExecutorClientHelper";
 import { HyperliquidExecutorConfig } from "./HyperliquidExecutorConfig";

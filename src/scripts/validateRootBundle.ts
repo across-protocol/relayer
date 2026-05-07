@@ -20,11 +20,11 @@ import {
   getBlockForTimestamp,
   sortEventsDescending,
   getDisputeForTimestamp,
-  disconnectRedisClients,
   Signer,
   assert,
   isDefined,
 } from "../utils";
+import { disconnectRedisClients } from "../utils/redis";
 import {
   constructSpokePoolClientsForFastDataworker,
   getSpokePoolClientEventSearchConfigsForFastDataworker,

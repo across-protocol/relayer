@@ -8,7 +8,8 @@ import {
   updateClients,
   updateSpokePoolClients,
 } from "../common";
-import { Signer, getArweaveJWKSigner, getRedisCache } from "../utils";
+import { Signer, getArweaveJWKSigner } from "../utils";
+import { getRedisCache } from "../cache/redis";
 import { BundleDataClient, HubPoolClient } from "../clients";
 import { getBlockForChain } from "./DataworkerUtils";
 import { Dataworker } from "./Dataworker";

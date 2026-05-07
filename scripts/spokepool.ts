@@ -13,7 +13,6 @@ import {
   BigNumber,
   blockExplorerLink,
   Address,
-  disconnectRedisClients,
   EvmAddress,
   exit,
   findDepositBlock,
@@ -35,6 +34,7 @@ import {
   unpackFillEvent,
   chainIsEvm,
 } from "../src/utils";
+import { disconnectRedisClients } from "../src/utils/redis";
 import * as utils from "./utils";
 
 type Log = ethers.providers.Log;

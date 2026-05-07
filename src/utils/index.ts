@@ -72,7 +72,6 @@ export * from "./TypeGuards";
 export * from "./Help";
 export * from "./LogUtils";
 export * from "./TypeUtils";
-export * from "./RedisUtils";
 export * from "./UmaUtils";
 export * from "./TokenUtils";
 export * from "./CLIUtils";
