@@ -126,7 +126,7 @@ describe("swapOnBinance script helpers", function () {
   });
 
   it("uses token-specific mappings for non-L1 token symbols", function () {
-    const usdbcAddress = resolveAcrossToken("USDbC", CHAIN_IDs.BASE)!;
+    const usdbcAddress = resolveAcrossToken("USDbC", CHAIN_IDs.BASE, true);
     const accountCoins = [
       makeErc20Coin("USDC", [
         {
@@ -171,7 +171,7 @@ describe("swapOnBinance script helpers", function () {
   });
 
   it("compares Solana token contract addresses case-sensitively", function () {
-    const solanaUsdc = resolveAcrossToken("USDC", CHAIN_IDs.SOLANA)!;
+    const solanaUsdc = resolveAcrossToken("USDC", CHAIN_IDs.SOLANA, true);
     const misCasedSolanaUsdc = `${solanaUsdc[0].toLowerCase()}${solanaUsdc.slice(1)}`;
     const accountCoins = [
       makeErc20Coin("USDC", [
