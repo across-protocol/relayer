@@ -15,7 +15,6 @@ import { SpokePoolClientsByChain } from "../interfaces";
 import {
   Signer,
   blockExplorerLink,
-  config as dotenvConfig,
   disconnectRedisClients,
   getMultisender,
   getNetworkName,
@@ -51,7 +50,6 @@ import { FinalizerConfig } from "./config";
 
 const { isDefined } = sdkUtils;
 
-dotenvConfig();
 let logger: winston.Logger;
 
 /**

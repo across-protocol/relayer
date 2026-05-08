@@ -80,7 +80,8 @@ import { HyperliquidExecutorConfig } from "../hyperliquid/HyperliquidExecutorCon
 
 // 60 minutes, which is the length of the challenge window, so if a rebalance takes longer than this to finalize,
 // then its finalizing after the subsequent challenge period has started, which is sub-optimal.
-export const REBALANCE_FINALIZE_GRACE_PERIOD = Number(process.env.REBALANCE_FINALIZE_GRACE_PERIOD ?? 60 * 60);
+export const getRebalanceFinalizeGracePeriod = (): number =>
+  Number(process.env.REBALANCE_FINALIZE_GRACE_PERIOD ?? 60 * 60);
 
 type BalanceRequest = { chainId: number; token: Address; account: Address };
 
@@ -783,7 +784,7 @@ export class Monitor {
         });
         continue;
       }
-      const gracePeriod = EXPECTED_L1_TO_L2_MESSAGE_TIME[chainId] ?? REBALANCE_FINALIZE_GRACE_PERIOD;
+      const gracePeriod = EXPECTED_L1_TO_L2_MESSAGE_TIME[chainId] ?? getRebalanceFinalizeGracePeriod();
       // If we're still within the grace period, skip looking for any stuck rebalances.
       // Again, this would give false negatives for transfers that have been stuck for longer than one bundle if the
       // current time is within the grace period of last executed bundle. But this is a good trade off for simpler code.

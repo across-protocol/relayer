@@ -5,11 +5,11 @@ import winston from "winston";
 import { disconnectRedisClient, RedisCache, RedisClient } from "../caching/RedisCache";
 import { RedisPubSub } from "../caching/RedisPubSub";
 
-const globalNamespace: string | undefined = process.env.GLOBAL_CACHE_NAMESPACE
-  ? String(process.env.GLOBAL_CACHE_NAMESPACE)
-  : undefined;
+// Read env at call time so dotenv-loaded values are picked up regardless of import order.
+const getGlobalNamespace = (): string | undefined =>
+  process.env.GLOBAL_CACHE_NAMESPACE ? String(process.env.GLOBAL_CACHE_NAMESPACE) : undefined;
 
-export const REDIS_URL = process.env.REDIS_URL || REDIS_URL_DEFAULT;
+export const getRedisUrl = (): string => process.env.REDIS_URL || REDIS_URL_DEFAULT;
 
 // Make the redis client for a particular url + namespace essentially a singleton.
 // Stores promises to avoid TOCTOU races when multiple callers request the same client concurrently.
@@ -17,10 +17,10 @@ const redisClients: { [key: string]: Promise<RedisCache> } = {};
 
 async function _getRedis(
   logger?: winston.Logger,
-  url = REDIS_URL,
+  url = getRedisUrl(),
   customNamespace?: string
 ): Promise<RedisCache | undefined> {
-  const namespace = customNamespace || globalNamespace;
+  const namespace = customNamespace || getGlobalNamespace();
   const redisInstanceKey = namespace ? `${url}-${namespace}` : url;
   if (!isDefined(redisClients[redisInstanceKey])) {
     // Store the promise immediately so concurrent callers share the same connection attempt.
@@ -112,7 +112,7 @@ export async function getRedisCache(
   return await _getRedis(logger, url, customNamespace);
 }
 
-export async function getRedisPubSub(logger?: winston.Logger, url = REDIS_URL): Promise<RedisPubSub | undefined> {
+export async function getRedisPubSub(logger?: winston.Logger, url = getRedisUrl()): Promise<RedisPubSub | undefined> {
   // Don't permit redis to be used in test.
   if (isDefined(process.env.RELAYER_TEST)) {
     return undefined;

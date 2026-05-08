@@ -25,8 +25,6 @@ export {
 } from "ethers";
 export type { Block, TransactionResponse, TransactionReceipt, Provider } from "@ethersproject/abstract-provider";
 
-export { config } from "dotenv";
-
 export { Logger, waitForLogger } from "@risk-labs/logger";
 
 export {

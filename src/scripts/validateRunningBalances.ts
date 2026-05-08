@@ -31,10 +31,10 @@
 // Look at bundles #50-100 and query events up to 150 bundles ago:
 // $ BUNDLES_COUNT=150 PAGE_SIZE=50 PAGE=1 tsx ./src/scripts/validateRunningBalances.ts
 
+import "dotenv/config";
 import {
   bnZero,
   winston,
-  config,
   Logger,
   toBN,
   fromWei,
@@ -69,7 +69,6 @@ import { createConsoleTransport } from "@risk-labs/logger";
 import { interfaces as sdkInterfaces } from "@across-protocol/sdk";
 import { SpokePoolClient } from "../clients/SpokePoolClient";
 
-config();
 let logger: winston.Logger;
 let silentLogger: winston.Logger;
 

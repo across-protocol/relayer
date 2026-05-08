@@ -1,9 +1,9 @@
 import { EventListener } from "../clients";
-import { CHAIN_IDs, winston, config, fireAndForget, startupLogLevel, Signer, disconnectRedisClients } from "../utils";
+import { CHAIN_IDs, winston, fireAndForget, startupLogLevel, Signer, disconnectRedisClients } from "../utils";
 import { HyperliquidExecutor } from "./HyperliquidExecutor";
 import { constructHyperliquidExecutorClients } from "./HyperliquidExecutorClientHelper";
 import { HyperliquidExecutorConfig } from "./HyperliquidExecutorConfig";
-config();
+
 let logger: winston.Logger;
 
 export async function runHyperliquidExecutor(_logger: winston.Logger, baseSigner: Signer): Promise<void> {

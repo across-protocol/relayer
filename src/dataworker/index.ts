@@ -6,7 +6,6 @@ import {
   EvmAddress,
   SvmAddress,
   winston,
-  config,
   getDeployedContract,
   getProvider,
   startupLogLevel,
@@ -36,7 +35,6 @@ import { BalanceAllocator } from "../clients/BalanceAllocator";
 import { PendingRootBundle, ProposedRootBundle, BundleData } from "../interfaces";
 import { Disputer } from "./Disputer";
 
-config();
 let logger: winston.Logger;
 
 export async function createDataworker(

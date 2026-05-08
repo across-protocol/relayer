@@ -85,5 +85,11 @@ module.exports = {
         "@typescript-eslint/no-unused-expressions": "off", // Chai assertions are "unused expressions"
       },
     },
+    {
+      // Bot code is loaded via top-level entrypoints that load dotenv before any other import body
+      // executes. Top-level process.env reads here would race with that load; force them inside functions.
+      files: ["src/**/*.ts"],
+      rules: { "no-toplevel-process-env": "error" },
+    },
   ],
 };

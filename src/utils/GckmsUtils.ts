@@ -1,7 +1,7 @@
 // TODO: this can be replaced by an import from @uma/common when exported from the protocol package. The code herein is
 // a reduced version of that found in common.
 import kms from "@google-cloud/kms";
-import { Storage } from "@google-cloud/storage";
+import { Storage, StorageOptions } from "@google-cloud/storage";
 import fs from "fs";
 export interface KeyConfig {
   projectId: string;
@@ -17,14 +17,13 @@ export interface GckmsConfig {
   };
 }
 
-const { GCP_STORAGE_CONFIG } = process.env;
-
 // Allows the environment to customize the config that's used to interact with google cloud storage.
 // Relevant options can be found here: https://googleapis.dev/nodejs/storage/latest/global.html#StorageOptions.
 // Specific fields of interest:
 // - timeout: allows the env to set the timeout for all http requests.
 // - retryOptions: object that allows the caller to specify how the library retries.
-const storageConfig = GCP_STORAGE_CONFIG ? JSON.parse(GCP_STORAGE_CONFIG) : undefined;
+const getGcpStorageOptions = (): StorageOptions | undefined =>
+  process.env.GCP_STORAGE_CONFIG ? JSON.parse(process.env.GCP_STORAGE_CONFIG) : undefined;
 
 export function getGckmsConfig(keys: string[]): KeyConfig[] {
   let configOverride: GckmsConfig = {};
@@ -50,6 +49,7 @@ export function getGckmsConfig(keys: string[]): KeyConfig[] {
 }
 
 export async function retrieveGckmsKeys(gckmsConfigs: KeyConfig[]): Promise<string[]> {
+  const storageConfig = getGcpStorageOptions();
   return await Promise.all(
     gckmsConfigs.map(async (config) => {
       const storage = new Storage(storageConfig);

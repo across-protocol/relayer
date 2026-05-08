@@ -72,6 +72,9 @@ export class RelayerConfig extends CommonConfig {
   // Maintenance interval (in seconds).
   readonly maintenanceInterval: number;
 
+  // Max wait (in seconds) for this relayer instance to become ready before proceeding when another relayer is active.
+  readonly maxStartupDelay: number;
+
   // Set to false to skip querying max deposit limit from /limits Vercel API endpoint. Otherwise relayer will not
   // fill any deposit over the limit which is based on liquidReserves in the HubPool.
   readonly ignoreLimits: boolean;
@@ -102,6 +105,7 @@ export class RelayerConfig extends CommonConfig {
       RELAYER_TRY_MULTICALL_CHAINS,
       RELAYER_LOGGING_INTERVAL = "30",
       RELAYER_MAINTENANCE_INTERVAL = "60",
+      RELAYER_MAX_STARTUP_DELAY = "120",
       INVENTORY_TOPIC = "across-relayer-inventory",
       RELAYER_USE_INVENTORY_MANAGER = "false",
       RELAYER_EVENT_LISTENER = "false",
@@ -139,6 +143,7 @@ export class RelayerConfig extends CommonConfig {
     this.tryMulticallChains = parseJson.numberArray(RELAYER_TRY_MULTICALL_CHAINS);
     this.loggingInterval = Number(RELAYER_LOGGING_INTERVAL);
     this.maintenanceInterval = Number(RELAYER_MAINTENANCE_INTERVAL);
+    this.maxStartupDelay = Number(RELAYER_MAX_STARTUP_DELAY);
 
     this.inventoryTopic = INVENTORY_TOPIC;
     this.relayerUseInventoryManager = RELAYER_USE_INVENTORY_MANAGER === "true";
