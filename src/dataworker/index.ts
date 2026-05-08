@@ -15,11 +15,11 @@ import {
   isDefined,
   getSvmSignerFromEvmSigner,
   averageBlockTime,
-  getRedisCache,
   Provider,
   ZERO_BYTES,
   paginatedEventQuery,
 } from "../utils";
+import { getRedisCache } from "../cache/Redis";
 import { waitForPubSub, getRedisPubSub } from "../messaging/redis";
 import { spokePoolClientsToProviders } from "../common";
 import { Dataworker } from "./Dataworker";

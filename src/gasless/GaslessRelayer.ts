@@ -3,7 +3,6 @@ import { GaslessRelayerConfig } from "./GaslessRelayerConfig";
 import {
   Address,
   isDefined,
-  getRedisCache,
   delay,
   Signer,
   scheduleTask,
@@ -25,7 +24,6 @@ import {
   toBN,
   blockExplorerLink,
   getNetworkName,
-  RedisCacheInterface,
   relayFillStatus,
   sendAndConfirmTransaction,
   getTokenInfo,
@@ -42,6 +40,7 @@ import {
   utils,
   willSucceed,
 } from "../utils";
+import { getRedisCache, RedisCacheInterface } from "../cache/Redis";
 import {
   AnyGaslessDepositMessage,
   APIGaslessDepositResponse,

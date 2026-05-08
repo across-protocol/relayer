@@ -87,7 +87,3 @@ export * from "./TimeUtils";
 export * from "./DepositAddressUtils";
 export * from "./BridgeUtils";
 export * from "./RunningBalanceUtils";
-// Re-export the cache layer through the utils barrel to keep call sites
-// terse (`import { getRedisCache } from "../utils"`). The cache module itself
-// imports redis primitives from utils/Redis, not via the barrel.
-export { getRedisCache, RedisCache, type RedisCacheInterface } from "../cache/Redis";

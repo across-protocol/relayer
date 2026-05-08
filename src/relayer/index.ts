@@ -6,15 +6,14 @@ import {
   disconnectRedisClients,
   fireAndForget,
   getNetworkName,
-  getRedisCache,
   isDefined,
   Profiler,
-  RedisCacheInterface,
   scheduleSequentialTask,
   scheduleTask,
   Signer,
   winston,
 } from "../utils";
+import { getRedisCache, RedisCacheInterface } from "../cache/Redis";
 import { Relayer } from "./Relayer";
 import { RelayerConfig } from "./RelayerConfig";
 import { constructRelayerClients } from "./RelayerClientHelper";

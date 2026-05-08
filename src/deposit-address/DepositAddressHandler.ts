@@ -1,7 +1,6 @@
 import winston from "winston";
 import { DepositAddressHandlerConfig } from "./DepositAddressHandlerConfig";
 import {
-  getRedisCache,
   isDefined,
   parseJson,
   Signer,
@@ -15,13 +14,13 @@ import {
   sendAndConfirmTransaction,
   getCounterfactualDepositFactory,
   buildDeployTx,
-  RedisCacheInterface,
   toBN,
   getDepositKey,
   assert,
   getNetworkName,
   blockExplorerLink,
 } from "../utils";
+import { getRedisCache, RedisCacheInterface } from "../cache/Redis";
 import { DepositAddressMessage } from "../interfaces";
 import { AcrossSwapApiClient, TransactionClient, SwapApiResponse } from "../clients";
 import { AcrossIndexerApiClient } from "../clients/AcrossIndexerApiClient";

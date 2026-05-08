@@ -22,11 +22,11 @@ import {
   isDefined,
   isWeekday,
   PriceClient,
-  RedisCache,
   Signer,
   submitTransaction,
   winston,
 } from "../../utils";
+import { RedisCache } from "../../cache/Redis";
 import { OrderDetails, RebalancerAdapter, RebalanceRoute } from "../utils/interfaces";
 import { RebalancerConfig } from "../RebalancerConfig";
 import {

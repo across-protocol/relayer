@@ -3,12 +3,11 @@ import {
   ConvertDecimals,
   EvmAddress,
   ethers,
-  getRedisCache,
   getTokenInfoFromSymbol,
   isDefined,
-  RedisCache,
   winston,
 } from "../../utils";
+import { getRedisCache, RedisCache } from "../../cache/Redis";
 import { ExcessOrDeficit, OrderDetails, RedisOrderDetailsPayload } from "./interfaces";
 
 // Optional namespace that lets different rebalancer deployments keep their status-tracking data isolated

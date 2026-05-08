@@ -26,12 +26,11 @@ import {
   getUserFees,
   getChainQuorum,
   toBN,
-  RedisCacheInterface,
-  getRedisCache,
   spreadEventWithBlockNumber,
   createFormatFunction,
   InstanceCoordinator,
 } from "../utils";
+import { getRedisCache, RedisCacheInterface } from "../cache/Redis";
 import { Log, SwapFlowInitialized } from "../interfaces";
 import { CHAIN_MAX_BLOCK_LOOKBACK } from "../common";
 import { MultiCallerClient, EventListener, HubPoolClient } from "../clients";
