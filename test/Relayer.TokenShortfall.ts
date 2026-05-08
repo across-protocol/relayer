@@ -45,7 +45,7 @@ import {
 } from "./utils";
 import { EvmAddress, SvmAddress } from "../src/utils";
 
-describe("Relayer: Token balance shortfall", async function () {
+describe("Relayer: Token balance shortfall", function () {
   const noSlowRelays = false; // Don't send slow fills.
   const bn10 = toBN(10);
 

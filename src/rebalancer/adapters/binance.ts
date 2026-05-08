@@ -248,7 +248,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       });
     }
     for (const cloid of pendingBridgeToBinanceDepositNetwork) {
-      const orderDetails = await this._redisGetOrderDetails(cloid, this.baseSignerAddress);
+      const orderDetails = await this._redisGetOrderDetailsRequired(cloid, this.baseSignerAddress);
       const { sourceToken, amountToTransfer, sourceChain } = orderDetails;
       const binanceDepositNetwork = await this._getEntrypointNetwork(sourceChain, sourceToken);
       // Check if we have enough balance on HyperEVM to progress the order status:
@@ -297,7 +297,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       });
     }
     for (const cloid of pendingDeposits) {
-      const orderDetails = await this._redisGetOrderDetails(cloid, this.baseSignerAddress);
+      const orderDetails = await this._redisGetOrderDetailsRequired(cloid, this.baseSignerAddress);
       const { sourceToken, sourceChain, destinationToken, destinationChain, amountToTransfer } = orderDetails;
 
       const binanceBalance = await this._getBinanceBalance(sourceToken);
@@ -352,7 +352,10 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       });
     }
     for (const cloid of pendingSwaps) {
-      const { destinationToken, destinationChain } = await this._redisGetOrderDetails(cloid, this.baseSignerAddress);
+      const { destinationToken, destinationChain } = await this._redisGetOrderDetailsRequired(
+        cloid,
+        this.baseSignerAddress
+      );
       const matchingFill = await this._getMatchingFillForCloid(cloid, this.baseSignerAddress);
       if (matchingFill) {
         const balance = await this._getBinanceBalance(destinationToken);
@@ -403,7 +406,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       // For each finalized withdrawal from Binance, delete its status from Redis and optionally initiate
       // a bridge to the final non-Binance network destination chain if necessary.
 
-      const orderDetails = await this._redisGetOrderDetails(cloid, this.baseSignerAddress);
+      const orderDetails = await this._redisGetOrderDetailsRequired(cloid, this.baseSignerAddress);
       const { sourceToken, destinationToken, destinationChain } = orderDetails;
       const matchingFill = this._routeRequiresSwap(sourceToken, destinationToken)
         ? (await this._getMatchingFillForCloid(cloid, this.baseSignerAddress))?.matchingFill
@@ -557,7 +560,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     // virtual balance (i.e. Binance deposit entrypoint network in this case).
     const pendingBridgeToBinanceNetwork = await this._redisGetPendingBridgesPreDeposit(account);
     for (const cloid of pendingBridgeToBinanceNetwork) {
-      const orderDetails = await this._redisGetOrderDetails(cloid, account);
+      const orderDetails = await this._redisGetOrderDetailsRequired(cloid, account);
       const { sourceChain, sourceToken, amountToTransfer } = orderDetails;
       const binanceDepositNetwork = await this._getEntrypointNetwork(sourceChain, sourceToken);
       const convertedAmount = await this._convertSourceToDestination(
@@ -588,7 +591,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       });
     }
     for (const cloid of pendingOrders) {
-      const orderDetails = await this._redisGetOrderDetails(cloid, account);
+      const orderDetails = await this._redisGetOrderDetailsRequired(cloid, account);
       const { destinationChain, destinationToken, sourceChain, sourceToken, amountToTransfer } = orderDetails;
 
       let expectedAmountToReceive: BigNumber;
@@ -628,7 +631,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     // then we should subtract the order's virtual balance from the withdrawal network.
     const pendingWithdrawals = await this._redisGetPendingWithdrawals(account);
     for (const cloid of pendingWithdrawals) {
-      const orderDetails = await this._redisGetOrderDetails(cloid, account);
+      const orderDetails = await this._redisGetOrderDetailsRequired(cloid, account);
       const { destinationChain, destinationToken, sourceToken } = orderDetails;
       const matchingFill = this._routeRequiresSwap(sourceToken, destinationToken)
         ? (await this._getMatchingFillForCloid(cloid, account))?.matchingFill
@@ -1396,7 +1399,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     cloid: string,
     account: EvmAddress
   ): Promise<{ matchingFill: QueryOrderResult; expectedAmountToReceive: number } | undefined> {
-    const orderDetails = await this._redisGetOrderDetails(cloid, account);
+    const orderDetails = await this._redisGetOrderDetailsRequired(cloid, account);
     const spotMarketMeta = await this._getSpotMarketMetaForRoute(
       orderDetails.sourceToken,
       orderDetails.destinationToken

@@ -41,7 +41,7 @@ class ArbitrumAdapter extends BaseChainAdapter {
   }
 }
 
-describe("Cross Chain Adapter: Arbitrum", async function () {
+describe("Cross Chain Adapter: Arbitrum", function () {
   const toAddress = (address: string): EvmAddress => {
     return EvmAddress.from(address);
   };

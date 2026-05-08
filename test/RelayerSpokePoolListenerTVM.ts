@@ -119,7 +119,7 @@ describe("RelayerSpokePoolListenerTVM: processBlock re-org detection", function 
     // Block 103's parentHash is completely unknown → deep re-org, purge all.
     const { orphans } = processBlock(makeBlock(103, makeHash(), makeHash()), blocks, eventMgr, chain, provider, logger);
 
-    expect(orphans.map((e) => e.blockNumber).sort()).to.deep.equal([100, 101, 102]);
+    expect(orphans.map((e) => e.blockNumber).sort((a, b) => a - b)).to.deep.equal([100, 101, 102]);
     expect(blocks.size).to.equal(1);
     expect(blocks.has(103n)).to.be.true;
   });

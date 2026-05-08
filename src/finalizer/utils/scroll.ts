@@ -71,10 +71,10 @@ export async function scrollFinalizer(
     message: `Detected ${outstandingClaims.length} claims for ${targetAddress}`,
   });
 
-  const [callData, crossChainMessages] = await Promise.all([
-    sdkUtils.mapAsync(outstandingClaims, (claim) => populateClaimTransaction(claim, relayContract)),
-    outstandingClaims.map((claim) => populateClaimWithdrawal(claim, l2ChainId, hubPoolClient)),
-  ]);
+  const callData = await sdkUtils.mapAsync(outstandingClaims, (claim) =>
+    populateClaimTransaction(claim, relayContract)
+  );
+  const crossChainMessages = outstandingClaims.map((claim) => populateClaimWithdrawal(claim, l2ChainId, hubPoolClient));
   return {
     crossChainMessages,
     callData,
