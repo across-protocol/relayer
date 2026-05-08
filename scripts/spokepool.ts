@@ -376,7 +376,7 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
     message
   );
 
-  return new Promise((resolve) => abortController.signal.addEventListener("abort", async () => resolve(true)));
+  return new Promise((resolve) => abortController.signal.addEventListener("abort", () => resolve(true)));
 }
 
 async function fillDeposit(args: Record<string, number | string | boolean>, signer: Signer): Promise<boolean> {

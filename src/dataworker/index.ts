@@ -14,14 +14,13 @@ import {
   disconnectRedisClients,
   isDefined,
   getSvmSignerFromEvmSigner,
-  waitForPubSub,
   averageBlockTime,
-  getRedisCache,
-  getRedisPubSub,
   Provider,
   ZERO_BYTES,
   paginatedEventQuery,
 } from "../utils";
+import { getRedisCache } from "../cache/Redis";
+import { waitForPubSub, getRedisPubSub } from "../messaging/redis";
 import { spokePoolClientsToProviders } from "../common";
 import { Dataworker } from "./Dataworker";
 import { DataworkerConfig } from "./DataworkerConfig";

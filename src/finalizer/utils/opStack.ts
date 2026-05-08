@@ -21,7 +21,6 @@ import {
   getCachedProvider,
   getCurrentTime,
   getNetworkName,
-  getRedisCache,
   getUniqueLogIndex,
   getViemChain,
   groupObjectCountsByProp,
@@ -45,6 +44,7 @@ import {
   EvmAddress,
   ZERO_ADDRESS,
 } from "../../utils";
+import { getRedisCache } from "../../cache/Redis";
 import {
   CONTRACT_ADDRESSES,
   OPSTACK_CONTRACT_OVERRIDES,
@@ -575,10 +575,7 @@ async function getMessageStatuses(
 
   const statuses = await Promise.all(
     crossChainMessages.map((message, i) => {
-      return (crossChainMessenger as optimismSDK.CrossChainMessenger).getMessageStatus(
-        message.message as optimismSDK.MessageLike,
-        logIndexesForMessage[i]
-      );
+      return crossChainMessenger.getMessageStatus(message.message, logIndexesForMessage[i]);
     })
   );
   return statuses.map((status, i) => {
@@ -620,8 +617,8 @@ async function finalizeOptimismMessage(
   logIndex = 0
 ): Promise<Multicall2Call | undefined> {
   if (!chainIsBlast(_chainId)) {
-    const callData = await (crossChainMessenger as optimismSDK.CrossChainMessenger).populateTransaction.finalizeMessage(
-      message.message as optimismSDK.MessageLike,
+    const callData = await crossChainMessenger.populateTransaction.finalizeMessage(
+      message.message,
       undefined,
       logIndex
     );
@@ -648,10 +645,7 @@ async function finalizeOptimismMessage(
     crossChainMessenger.l1Provider
   );
 
-  const resolvedMessage = await crossChainMessenger.toCrossChainMessage(
-    message.message as optimismSDK.MessageLike,
-    logIndex
-  );
+  const resolvedMessage = await crossChainMessenger.toCrossChainMessage(message.message, logIndex);
   const withdrawalStruct = await crossChainMessenger.toLowLevelMessage(resolvedMessage, logIndex);
   const l2WithdrawalParams = [
     withdrawalStruct.messageNonce,
@@ -730,11 +724,7 @@ async function proveOptimismMessage(
   message: CrossChainMessageWithStatus,
   logIndex = 0
 ): Promise<Multicall2Call> {
-  const callData = await (crossChainMessenger as optimismSDK.CrossChainMessenger).populateTransaction.proveMessage(
-    message.message as optimismSDK.MessageLike,
-    undefined,
-    logIndex
-  );
+  const callData = await crossChainMessenger.populateTransaction.proveMessage(message.message, undefined, logIndex);
   assert(
     isDefined(callData.data) && isDefined(callData.to),
     "opStack: proveMessage populateTransaction missing to/data"

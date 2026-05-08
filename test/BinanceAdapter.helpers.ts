@@ -14,7 +14,7 @@ import {
   supportsBinanceIntermediateBridgeToken,
 } from "../src/utils";
 
-describe("Binance adapter helpers", async function () {
+describe("Binance adapter helpers", function () {
   afterEach(function () {
     sinon.restore();
   });

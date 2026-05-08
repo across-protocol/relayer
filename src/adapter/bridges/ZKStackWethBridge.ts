@@ -119,7 +119,7 @@ export class ZKStackWethBridge extends ZKStackBridge {
       return {};
     }
 
-    const isL2Contract = await this._isContract(toAddress.toNative(), this.getL2Bridge().provider!);
+    const isL2Contract = await this._isContract(toAddress.toNative(), this.getL2Bridge().provider);
     let processedEvents;
     if (isL2Contract) {
       processedEvents = (await paginatedEventQuery(this.hubPool, this.hubPool.filters.TokensRelayed(), eventConfig))
@@ -153,7 +153,7 @@ export class ZKStackWethBridge extends ZKStackBridge {
     if (compareAddressesSimple(fromAddress.toNative(), this.hubPool.address)) {
       return {};
     }
-    const isL2Contract = await this._isContract(toAddress.toNative(), this.getL2Bridge().provider!);
+    const isL2Contract = await this._isContract(toAddress.toNative(), this.getL2Bridge().provider);
     const usingCustomGasToken = isDefined(this.gasToken);
 
     let processedEvents;

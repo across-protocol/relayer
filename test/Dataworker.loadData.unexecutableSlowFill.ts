@@ -24,7 +24,16 @@ import {
 } from "./utils";
 
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
-import { getCurrentTime, toBNWei, assert, ZERO_ADDRESS, bnZero, toAddressType, toBytes32 } from "../src/utils";
+import {
+  bnComparatorAscending,
+  getCurrentTime,
+  toBNWei,
+  assert,
+  ZERO_ADDRESS,
+  bnZero,
+  toAddressType,
+  toBytes32,
+} from "../src/utils";
 import { MockConfigStoreClient, MockHubPoolClient, MockSpokePoolClient } from "./mocks";
 import {
   clients as sdkClients,
@@ -34,7 +43,7 @@ import {
   utils as sdkUtils,
 } from "@across-protocol/sdk";
 
-describe("Dataworker: Load bundle data: Computing unexecutable slow fills", async function () {
+describe("Dataworker: Load bundle data: Computing unexecutable slow fills", function () {
   const { EMPTY_MESSAGE } = sdkConstants;
 
   let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
@@ -319,8 +328,12 @@ describe("Dataworker: Load bundle data: Computing unexecutable slow fills", asyn
     // - one slow fill request is in an older bundle
     expect(data1.unexecutableSlowFills[destinationChainId][toBytes32(erc20_2.address)].length).to.equal(2);
     expect(
-      data1.unexecutableSlowFills[destinationChainId][toBytes32(erc20_2.address)].map((x) => x.depositId).sort()
-    ).to.deep.equal([depositWithMissingSlowFillRequest.depositId, eligibleSlowFills[0].depositId].sort());
+      data1.unexecutableSlowFills[destinationChainId][toBytes32(erc20_2.address)]
+        .map((x) => x.depositId)
+        .sort(bnComparatorAscending)
+    ).to.deep.equal(
+      [depositWithMissingSlowFillRequest.depositId, eligibleSlowFills[0].depositId].sort(bnComparatorAscending)
+    );
   });
 
   it("Creates unexecutable slow fill even if fast fill repayment information is invalid", async function () {

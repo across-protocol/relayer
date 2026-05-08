@@ -10,9 +10,9 @@ import {
   chainIsEvm,
   getSvmProvider,
   getSolanaTokenBalance,
-  getRedisCache,
   chainHasNativeToken,
 } from "../utils";
+import { getRedisCache } from "../cache/Redis";
 
 // This type is used to map used and current balances of different users.
 export interface BalanceMap {

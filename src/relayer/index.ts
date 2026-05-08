@@ -4,8 +4,8 @@ import {
   config,
   delay,
   disconnectRedisClients,
+  fireAndForget,
   getNetworkName,
-  getRedisCache,
   isDefined,
   Profiler,
   scheduleSequentialTask,
@@ -13,12 +13,12 @@ import {
   Signer,
   winston,
 } from "../utils";
+import { getRedisCache, RedisCacheInterface } from "../cache/Redis";
 import { Relayer } from "./Relayer";
 import { RelayerConfig } from "./RelayerConfig";
 import { constructRelayerClients } from "./RelayerClientHelper";
 import { InventoryClientState, isSpokePoolClientWithListener } from "../clients";
 import { updateSpokePoolClients } from "../common";
-import { RedisCacheInterface } from "../caching/RedisCache";
 config();
 let logger: winston.Logger;
 
@@ -103,7 +103,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
 
       updates[blockNumber] = true;
       logger.debug({ at, message: "Received new Hub Chain block update.", blockNumber, currentTime });
-      setTimeout(async () => updateHub());
+      setTimeout(fireAndForget(updateHub));
     };
     hubChainSpoke.onBlock(newBlock);
   }
