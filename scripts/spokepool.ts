@@ -34,7 +34,7 @@ import {
   unpackFillEvent,
   chainIsEvm,
 } from "../src/utils";
-import { disconnectRedisClients } from "../src/utils/redis";
+import { disconnectRedisClients } from "../src/utils/Redis";
 import * as utils from "./utils";
 
 type Log = ethers.providers.Log;

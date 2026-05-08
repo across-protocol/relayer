@@ -29,7 +29,7 @@ import {
   isEVMSpokePoolClient,
   EvmAddress,
 } from "../../utils";
-import { getRedisCache } from "../../cache/redis";
+import { getRedisCache } from "../../cache/Redis";
 import { TokensBridged } from "../../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { getContractEntry } from "../../common";

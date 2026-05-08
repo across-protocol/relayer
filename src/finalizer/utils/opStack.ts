@@ -44,7 +44,7 @@ import {
   EvmAddress,
   ZERO_ADDRESS,
 } from "../../utils";
-import { getRedisCache } from "../../cache/redis";
+import { getRedisCache } from "../../cache/Redis";
 import {
   CONTRACT_ADDRESSES,
   OPSTACK_CONTRACT_OVERRIDES,

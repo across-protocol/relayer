@@ -16,8 +16,8 @@ import {
   Provider,
   winston,
 } from "../utils";
-import { getRedisCache } from "../cache/redis";
-import { disconnectRedisClients } from "../utils/redis";
+import { getRedisCache } from "../cache/Redis";
+import { disconnectRedisClients } from "../utils/Redis";
 import { ScraperOpts } from "./types";
 import { postBlock, postEvents, removeEvent } from "./util/ipc";
 import { scrapeEvents as _scrapeEvents } from "./util/evm";

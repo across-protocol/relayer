@@ -55,7 +55,7 @@ import {
   isDefined,
   BigNumber,
 } from "../utils";
-import { disconnectRedisClients } from "../utils/redis";
+import { disconnectRedisClients } from "../utils/Redis";
 import { createDataworker } from "../dataworker";
 import { _buildSlowRelayRoot, getBlockForChain } from "../dataworker/DataworkerUtils";
 import { Log, ProposedRootBundle, SpokePoolClientsByChain, BundleData } from "../interfaces";

@@ -22,7 +22,7 @@ import {
   assert,
   isDefined,
 } from "../../utils";
-import { getRedisCache } from "../../cache/redis";
+import { getRedisCache } from "../../cache/Redis";
 import { EthersError, TokensBridged } from "../../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { FinalizerPromise, CrossChainMessage } from "../types";

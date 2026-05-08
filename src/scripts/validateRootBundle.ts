@@ -24,7 +24,7 @@ import {
   assert,
   isDefined,
 } from "../utils";
-import { disconnectRedisClients } from "../utils/redis";
+import { disconnectRedisClients } from "../utils/Redis";
 import {
   constructSpokePoolClientsForFastDataworker,
   getSpokePoolClientEventSearchConfigsForFastDataworker,

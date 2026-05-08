@@ -1,6 +1,6 @@
 import winston from "winston";
 import { DepositAddressHandlerConfig } from "./DepositAddressHandlerConfig";
-import { getRedisCache, RedisCacheInterface } from "../cache/redis";
+import { getRedisCache, RedisCacheInterface } from "../cache/Redis";
 import {
   isDefined,
   parseJson,

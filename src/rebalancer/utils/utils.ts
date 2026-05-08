@@ -1,4 +1,4 @@
-import { getRedisCache, RedisCache } from "../../cache/redis";
+import { getRedisCache, RedisCache } from "../../cache/Redis";
 import {
   BigNumber,
   ConvertDecimals,

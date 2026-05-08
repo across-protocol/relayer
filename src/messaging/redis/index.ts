@@ -1,1 +1,1 @@
-export * from "./pubSub";
+export * from "./PubSub";

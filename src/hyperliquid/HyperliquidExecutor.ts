@@ -1,7 +1,7 @@
 import winston from "winston";
 import { utils as ethersUtils } from "ethers";
 import { HyperliquidExecutorConfig } from "./HyperliquidExecutorConfig";
-import { getRedisCache, RedisCacheInterface } from "../cache/redis";
+import { getRedisCache, RedisCacheInterface } from "../cache/Redis";
 import {
   assert,
   Contract,

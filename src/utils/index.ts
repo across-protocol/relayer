@@ -86,3 +86,4 @@ export * from "./TimeUtils";
 export * from "./DepositAddressUtils";
 export * from "./BridgeUtils";
 export * from "./RunningBalanceUtils";
+export * from "./Redis";

@@ -15,7 +15,7 @@ import {
   toBNWei,
   winston,
 } from "../utils";
-import { disconnectRedisClients } from "../utils/redis";
+import { disconnectRedisClients } from "../utils/Redis";
 import { CumulativeBalanceRebalancerClient } from "./clients/CumulativeBalanceRebalancerClient";
 
 import { constructCumulativeBalanceRebalancerClient } from "./RebalancerClientHelper";

@@ -18,8 +18,8 @@ import {
   ZERO_BYTES,
   paginatedEventQuery,
 } from "../utils";
-import { getRedisCache } from "../cache/redis";
-import { disconnectRedisClients } from "../utils/redis";
+import { getRedisCache } from "../cache/Redis";
+import { disconnectRedisClients } from "../utils/Redis";
 import { getRedisPubSub, waitForPubSub } from "../messaging/redis";
 import { spokePoolClientsToProviders } from "../common";
 import { Dataworker } from "./Dataworker";

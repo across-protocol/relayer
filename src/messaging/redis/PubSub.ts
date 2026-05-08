@@ -1,7 +1,7 @@
 import { interfaces } from "@across-protocol/sdk";
 import winston from "winston";
 import { isDefined } from "../../utils/TypeGuards";
-import { connectRedisClient, disconnectRedisClient, RedisClient } from "../../utils/redis";
+import { connectRedisClient, disconnectRedisClient, RedisClient } from "../../utils/Redis";
 
 /**
  * RedisPubSub wraps a dedicated RedisClient connection that has been (or will be) placed

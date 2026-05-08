@@ -1,6 +1,6 @@
 import winston from "winston";
 import { GaslessRelayerConfig } from "./GaslessRelayerConfig";
-import { getRedisCache, RedisCacheInterface } from "../cache/redis";
+import { getRedisCache, RedisCacheInterface } from "../cache/Redis";
 import {
   Address,
   isDefined,

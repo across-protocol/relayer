@@ -15,7 +15,7 @@ import {
   getBlockForTimestamp,
   winston,
 } from "../src/utils";
-import { disconnectRedisClients } from "../src/utils/redis";
+import { disconnectRedisClients } from "../src/utils/Redis";
 import * as utils from "./utils";
 
 const { NODE_SUCCESS, NODE_INPUT_ERR, NODE_APP_ERR } = utils;

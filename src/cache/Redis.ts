@@ -2,7 +2,7 @@ import assert from "assert";
 import { interfaces, constants } from "@across-protocol/sdk";
 import winston from "winston";
 import { isDefined } from "../utils/TypeGuards";
-import { disconnectRedisClient, getRedisClient, RedisClient } from "../utils/redis";
+import { disconnectRedisClient, getRedisClient, RedisClient } from "../utils/Redis";
 
 export { RedisClient };
 

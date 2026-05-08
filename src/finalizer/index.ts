@@ -30,7 +30,7 @@ import {
   getProvider,
   chunk,
 } from "../utils";
-import { disconnectRedisClients } from "../utils/redis";
+import { disconnectRedisClients } from "../utils/Redis";
 import { ChainFinalizer, CrossChainMessage, Finalizer, isAugmentedTransaction } from "./types";
 import {
   arbStackFinalizer,

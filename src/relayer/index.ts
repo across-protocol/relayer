@@ -17,8 +17,8 @@ import { RelayerConfig } from "./RelayerConfig";
 import { constructRelayerClients } from "./RelayerClientHelper";
 import { InventoryClientState, isSpokePoolClientWithListener } from "../clients";
 import { updateSpokePoolClients } from "../common";
-import { getRedisCache, RedisCacheInterface } from "../cache/redis";
-import { disconnectRedisClients } from "../utils/redis";
+import { getRedisCache, RedisCacheInterface } from "../cache/Redis";
+import { disconnectRedisClients } from "../utils/Redis";
 config();
 let logger: winston.Logger;
 

@@ -32,7 +32,7 @@ import { getCachedProvider, getProvider, getSvmProvider } from "./ProviderUtils"
 import { EventSearchConfig, paginatedEventQuery, spreadEvent } from "./EventUtils";
 import { Log } from "../interfaces";
 import { assert, fetchWithTimeout, Provider, Signer, ERC20, winston } from ".";
-import { getRedisCache } from "../cache/redis";
+import { getRedisCache } from "../cache/Redis";
 import { KeyPairSigner } from "@solana/kit";
 import { TransactionRequest } from "@ethersproject/abstract-provider";
 import {
