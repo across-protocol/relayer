@@ -4,8 +4,6 @@ import winston from "winston";
 import { isDefined } from "../utils/TypeGuards";
 import { disconnectRedisClient, getRedisClient, RedisClient } from "../utils/redis";
 
-export { RedisClient };
-
 export interface RedisCacheInterface extends interfaces.CachingMechanismInterface {
   decr(key: string): Promise<number>;
   decrBy(key: string, amount: number): Promise<number>;
@@ -60,8 +58,10 @@ export class RedisCache implements RedisCacheInterface {
       // No TTL
       return (await this.client.set(key, String(val))) ?? undefined;
     } else if (expirySeconds > 0) {
-      // EX: Expire key after expirySeconds.
-      return (await this.client.set(key, String(val), { EX: expirySeconds })) ?? undefined;
+      // Expire key after expirySeconds.
+      return (
+        (await this.client.set(key, String(val), { expiration: { type: "EX", value: expirySeconds } })) ?? undefined
+      );
     }
 
     this.logger?.warn({
