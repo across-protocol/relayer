@@ -4,7 +4,7 @@ import { ethers } from "ethers";
 import winston from "winston";
 import { CHAIN_CACHE_FOLLOW_DISTANCE, DEFAULT_NO_TTL_DISTANCE } from "../common";
 import { delay, getNetworkName, getOriginFromURL, Logger, SVMProvider } from "./";
-import { getRedisCache } from "./RedisUtils";
+import { getRedisCache } from "../cache/Redis";
 import { isDefined } from "./TypeGuards";
 import * as viem from "viem";
 import { ClusterUrl } from "@solana/kit";

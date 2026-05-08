@@ -1,5 +1,6 @@
 import { Log } from "../../interfaces";
-import { BigNumber, getRedisCache, isDefined, toBN, EvmAddress } from "../../utils";
+import { BigNumber, isDefined, toBN, EvmAddress } from "../../utils";
+import { getRedisCache } from "../../cache/Redis";
 
 /**
  * @notice This function is designed to be used in L2 chain adapters when identifying "finalized" cross
