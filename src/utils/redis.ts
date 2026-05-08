@@ -1,15 +1,14 @@
-import { createClient } from "redis";
+import { createClient, RedisClientType as RedisClient } from "redis";
 import dotenv from "dotenv";
 import winston from "winston";
 import { isDefined } from "./TypeGuards";
-import { REDIS_URL_DEFAULT } from "../common/Constants";
 dotenv.config();
 
-export type RedisClient = ReturnType<typeof createClient>;
+export type { RedisClient };
 
-export const REDIS_URL = process.env.REDIS_URL || REDIS_URL_DEFAULT;
+const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
 
-export async function connectRedisClient(logger: winston.Logger | undefined, url: string): Promise<RedisClient> {
+export async function connectRedisClient(logger: winston.Logger | undefined, url = REDIS_URL): Promise<RedisClient> {
   const reconnectStrategy = (retries: number): number | Error => {
     // Cap reconnection attempts to avoid livelock.
     const MAX_RETRIES = 10;

@@ -1,7 +1,7 @@
 import { interfaces } from "@across-protocol/sdk";
 import winston from "winston";
 import { isDefined } from "../../utils/TypeGuards";
-import { connectRedisClient, disconnectRedisClient, REDIS_URL, RedisClient } from "../../utils/redis";
+import { connectRedisClient, disconnectRedisClient, RedisClient } from "../../utils/redis";
 
 /**
  * RedisPubSub wraps a dedicated RedisClient connection that has been (or will be) placed
@@ -32,7 +32,7 @@ export class RedisPubSub implements interfaces.PubSubMechanismInterface {
   }
 }
 
-export async function getRedisPubSub(logger?: winston.Logger, url = REDIS_URL): Promise<RedisPubSub | undefined> {
+export async function getRedisPubSub(logger?: winston.Logger, url?: string): Promise<RedisPubSub | undefined> {
   // Don't permit redis to be used in test.
   if (isDefined(process.env.RELAYER_TEST)) {
     return undefined;
