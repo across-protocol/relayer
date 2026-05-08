@@ -19,7 +19,7 @@ import {
   isSignerWallet,
   assert,
 } from "../../../utils";
-import { getRedisCache } from "../../../cache/redis";
+import { getRedisCache } from "../../../cache/Redis";
 import { HubPoolClient } from "../../../clients";
 import { getContractAbi } from "../../../common";
 import { Log } from "../../../interfaces";

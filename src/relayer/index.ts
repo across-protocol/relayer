@@ -3,6 +3,7 @@ import { utils as sdkUtils } from "@across-protocol/sdk";
 import {
   config,
   delay,
+  disconnectRedisClients,
   fireAndForget,
   getNetworkName,
   isDefined,
@@ -12,13 +13,12 @@ import {
   Signer,
   winston,
 } from "../utils";
+import { getRedisCache, RedisCacheInterface } from "../cache/Redis";
 import { Relayer } from "./Relayer";
 import { RelayerConfig } from "./RelayerConfig";
 import { constructRelayerClients } from "./RelayerClientHelper";
 import { InventoryClientState, isSpokePoolClientWithListener } from "../clients";
 import { updateSpokePoolClients } from "../common";
-import { getRedisCache, RedisCacheInterface } from "../cache/redis";
-import { disconnectRedisClients } from "../utils/redis";
 config();
 let logger: winston.Logger;
 

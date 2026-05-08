@@ -9,7 +9,7 @@ import {
   updateSpokePoolClients,
 } from "../common";
 import { Signer, getArweaveJWKSigner } from "../utils";
-import { getRedisCache } from "../cache/redis";
+import { getRedisCache } from "../cache/Redis";
 import { BundleDataClient, HubPoolClient } from "../clients";
 import { getBlockForChain } from "./DataworkerUtils";
 import { Dataworker } from "./Dataworker";

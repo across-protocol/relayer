@@ -20,6 +20,7 @@ import {
   getSvmProvider,
   getBlockFinder,
 } from "../utils";
+import { getRedisCache } from "../cache/Redis";
 import {
   HubPoolClient,
   MultiCallerClient,
@@ -29,7 +30,6 @@ import {
   SpokePoolClient,
 } from "../clients";
 import { CommonConfig } from "./Config";
-import { getRedisCache } from "../cache/redis";
 import { SpokePoolClientsByChain } from "../interfaces";
 import { caching, clients, arch } from "@across-protocol/sdk";
 import V3_SPOKE_POOL_ABI from "./abi/V3SpokePool.json";

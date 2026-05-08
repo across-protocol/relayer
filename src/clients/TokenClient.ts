@@ -1,7 +1,6 @@
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import { HubPoolClient, SpokePoolClient, SpokePoolManager, TransactionClient } from ".";
 import { CachingMechanismInterface, L1Token, Deposit } from "../interfaces";
-import { getRedisCache } from "../cache/redis";
 import {
   BigNumber,
   bnZero,
@@ -35,6 +34,7 @@ import {
   getSolanaTokenBalance,
   ZERO_ADDRESS,
 } from "../utils";
+import { getRedisCache } from "../cache/Redis";
 
 export type TokenDataType = { [chainId: number]: { [token: string]: { balance: BigNumber; allowance: BigNumber } } };
 type TokenShortfallType = {

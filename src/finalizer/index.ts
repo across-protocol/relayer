@@ -16,6 +16,7 @@ import {
   Signer,
   blockExplorerLink,
   config as dotenvConfig,
+  disconnectRedisClients,
   getMultisender,
   getNetworkName,
   Multicall2Call,
@@ -30,7 +31,6 @@ import {
   getProvider,
   chunk,
 } from "../utils";
-import { disconnectRedisClients } from "../utils/redis";
 import { ChainFinalizer, CrossChainMessage, Finalizer, isAugmentedTransaction } from "./types";
 import {
   arbStackFinalizer,

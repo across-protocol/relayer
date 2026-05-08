@@ -54,6 +54,7 @@ import {
   createDefaultTransaction,
   getNativeTokenAddressForChain,
 } from "../utils";
+import { getRedisCache } from "../cache/Redis";
 import {
   ProposedRootBundle,
   RootBundleRelayWithBlock,
@@ -66,7 +67,6 @@ import {
   FillStatus,
   ConvertedRelayData,
 } from "../interfaces";
-import { getRedisCache } from "../cache/redis";
 import { DataworkerConfig } from "./DataworkerConfig";
 import { DataworkerClients } from "./DataworkerClientHelper";
 import {

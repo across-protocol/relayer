@@ -1,6 +1,5 @@
 import winston from "winston";
 import { GaslessRelayerConfig } from "./GaslessRelayerConfig";
-import { getRedisCache, RedisCacheInterface } from "../cache/redis";
 import {
   Address,
   isDefined,
@@ -41,6 +40,7 @@ import {
   utils,
   willSucceed,
 } from "../utils";
+import { getRedisCache, RedisCacheInterface } from "../cache/Redis";
 import {
   AnyGaslessDepositMessage,
   APIGaslessDepositResponse,

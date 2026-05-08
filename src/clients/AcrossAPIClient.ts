@@ -12,7 +12,7 @@ import {
   EvmAddress,
   isDefined,
 } from "../utils";
-import { getRedisCache } from "../cache/redis";
+import { getRedisCache } from "../cache/Redis";
 import { HubPoolClient } from "./HubPoolClient";
 
 export interface DepositLimits {

@@ -4,6 +4,7 @@ import { Contract, utils as ethersUtils } from "ethers";
 import * as utils from "../../scripts/utils";
 import { EventListener } from "../clients";
 import {
+  disconnectRedisClients,
   exit,
   isDefined,
   getBlockForTimestamp,
@@ -16,8 +17,7 @@ import {
   Provider,
   winston,
 } from "../utils";
-import { getRedisCache } from "../cache/redis";
-import { disconnectRedisClients } from "../utils/redis";
+import { getRedisCache } from "../cache/Redis";
 import { ScraperOpts } from "./types";
 import { postBlock, postEvents, removeEvent } from "./util/ipc";
 import { scrapeEvents as _scrapeEvents } from "./util/evm";

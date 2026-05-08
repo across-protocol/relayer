@@ -1,4 +1,3 @@
-import { RedisCache } from "../../cache/redis";
 import { AugmentedTransaction, getAcrossHost, MultiCallerClient, TransactionClient } from "../../clients";
 import { TokenInfo } from "../../interfaces";
 import {
@@ -27,6 +26,7 @@ import {
   submitTransaction,
   winston,
 } from "../../utils";
+import { RedisCache } from "../../cache/Redis";
 import { OrderDetails, RebalancerAdapter, RebalanceRoute } from "../utils/interfaces";
 import { RebalancerConfig } from "../RebalancerConfig";
 import {

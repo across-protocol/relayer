@@ -22,7 +22,7 @@ import {
   Provider,
   CHAIN_IDs,
 } from "../../utils";
-import { getRedisCache } from "../../cache/redis";
+import { getRedisCache } from "../../cache/Redis";
 import { FinalizerPromise, CrossChainMessage } from "../types";
 
 type TokensBridged = interfaces.TokensBridged;

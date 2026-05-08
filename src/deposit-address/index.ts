@@ -1,5 +1,4 @@
-import { winston, config, startupLogLevel, Signer, getDispatcherKeys } from "../utils";
-import { disconnectRedisClients } from "../utils/redis";
+import { winston, config, startupLogLevel, Signer, disconnectRedisClients, getDispatcherKeys } from "../utils";
 import { DepositAddressHandler } from "./DepositAddressHandler";
 import { DepositAddressHandlerConfig } from "./DepositAddressHandlerConfig";
 

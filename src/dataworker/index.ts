@@ -11,6 +11,7 @@ import {
   getProvider,
   startupLogLevel,
   Signer,
+  disconnectRedisClients,
   isDefined,
   getSvmSignerFromEvmSigner,
   averageBlockTime,
@@ -18,9 +19,8 @@ import {
   ZERO_BYTES,
   paginatedEventQuery,
 } from "../utils";
-import { getRedisCache } from "../cache/redis";
-import { disconnectRedisClients } from "../utils/redis";
-import { getRedisPubSub, waitForPubSub } from "../messaging/redis";
+import { getRedisCache } from "../cache/Redis";
+import { waitForPubSub, getRedisPubSub } from "../messaging/redis";
 import { spokePoolClientsToProviders } from "../common";
 import { Dataworker } from "./Dataworker";
 import { DataworkerConfig } from "./DataworkerConfig";
