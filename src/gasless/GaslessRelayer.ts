@@ -1,9 +1,9 @@
 import winston from "winston";
 import { GaslessRelayerConfig } from "./GaslessRelayerConfig";
-import { getRedisCache, RedisCacheInterface } from "../cache/Redis";
 import {
   Address,
   isDefined,
+  getRedisCache,
   delay,
   Signer,
   scheduleTask,
@@ -25,6 +25,7 @@ import {
   toBN,
   blockExplorerLink,
   getNetworkName,
+  RedisCacheInterface,
   relayFillStatus,
   sendAndConfirmTransaction,
   getTokenInfo,

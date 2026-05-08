@@ -16,6 +16,7 @@ import {
   getNativeTokenAddressForChain,
   getNativeTokenSymbol,
   getNetworkName,
+  getRedisCache,
   getSolanaTokenBalance,
   getSvmProvider,
   getTokenInfo,
@@ -32,6 +33,7 @@ import {
   isDefined,
   chainIsL1,
   Provider,
+  RedisCache,
   bnZero,
   getL1TokenAddress,
   CHAIN_IDs,
@@ -43,7 +45,6 @@ import { SWAP_ROUTES, SwapRoute, CUSTOM_BRIDGE, CANONICAL_BRIDGE } from "../comm
 import ERC20_ABI from "../common/abi/MinimalERC20.json";
 import { arch } from "@across-protocol/sdk";
 import { AcrossSwapApiClient, BalanceAllocator, MultiCallerClient, TransactionClient } from "../clients";
-import { getRedisCache, RedisCache } from "../cache/Redis";
 
 export interface RefillerClients {
   balanceAllocator: BalanceAllocator;

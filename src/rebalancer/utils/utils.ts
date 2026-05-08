@@ -1,11 +1,12 @@
-import { getRedisCache, RedisCache } from "../../cache/Redis";
 import {
   BigNumber,
   ConvertDecimals,
   EvmAddress,
   ethers,
+  getRedisCache,
   getTokenInfoFromSymbol,
   isDefined,
+  RedisCache,
   winston,
 } from "../../utils";
 import { ExcessOrDeficit, OrderDetails, RedisOrderDetailsPayload } from "./interfaces";

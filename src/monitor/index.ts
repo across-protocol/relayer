@@ -1,5 +1,4 @@
-import { winston, processEndPollingLoop, config, startupLogLevel, Signer } from "../utils";
-import { disconnectRedisClients } from "../utils/Redis";
+import { winston, processEndPollingLoop, config, startupLogLevel, Signer, disconnectRedisClients } from "../utils";
 import { Monitor } from "./Monitor";
 import { MonitorConfig } from "./MonitorConfig";
 import { constructMonitorClients } from "./MonitorClientHelper";

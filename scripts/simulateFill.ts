@@ -4,6 +4,7 @@ import { LogDescription } from "@ethersproject/abi";
 import { CHAIN_IDs } from "@across-protocol/constants";
 import { RelayData } from "../src/interfaces";
 import {
+  disconnectRedisClients,
   EvmAddress,
   getNetworkName,
   getProvider,
@@ -15,7 +16,6 @@ import {
   getBlockForTimestamp,
   winston,
 } from "../src/utils";
-import { disconnectRedisClients } from "../src/utils/Redis";
 import * as utils from "./utils";
 
 const { NODE_SUCCESS, NODE_INPUT_ERR, NODE_APP_ERR } = utils;

@@ -5,6 +5,7 @@ import { AbiEvent, BaseError, Block, createPublicClient, http, Log as viemLog, p
 import * as utils from "../../scripts/utils";
 import { Log } from "../interfaces";
 import {
+  disconnectRedisClients,
   EventManager,
   exit,
   isDefined,
@@ -17,14 +18,13 @@ import {
   getOriginFromURL,
   getProvider,
   getProviderHeaders,
+  getRedisCache,
   getViemChain,
   Logger,
   Provider,
   SpokePool,
   winston,
 } from "../utils";
-import { getRedisCache } from "../cache/Redis";
-import { disconnectRedisClients } from "../utils/Redis";
 import { ScraperOpts } from "./types";
 import { postBlock, postEvents, removeEvent } from "./util/ipc";
 import { scrapeEvents as _scrapeEvents } from "./util/evm";

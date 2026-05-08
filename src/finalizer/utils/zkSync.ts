@@ -7,6 +7,7 @@ import {
   convertFromWei,
   getBlockForTimestamp,
   getCurrentTime,
+  getRedisCache,
   getTokenInfo,
   getUniqueLogIndex,
   Multicall2Call,
@@ -22,7 +23,6 @@ import {
   Provider,
   CHAIN_IDs,
 } from "../../utils";
-import { getRedisCache } from "../../cache/Redis";
 import { FinalizerPromise, CrossChainMessage } from "../types";
 
 type TokensBridged = interfaces.TokensBridged;

@@ -8,11 +8,11 @@ import {
   getCurrentTime,
   TOKEN_SYMBOLS_MAP,
   CHAIN_IDs,
+  getRedisCache,
   bnUint256Max as uint256Max,
   EvmAddress,
   isDefined,
 } from "../utils";
-import { getRedisCache } from "../cache/Redis";
 import { HubPoolClient } from "./HubPoolClient";
 
 export interface DepositLimits {

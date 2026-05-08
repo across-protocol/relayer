@@ -1,4 +1,3 @@
-import { RedisCache } from "../../cache/Redis";
 import { AugmentedTransaction, getAcrossHost, MultiCallerClient, TransactionClient } from "../../clients";
 import { TokenInfo } from "../../interfaces";
 import {
@@ -23,6 +22,7 @@ import {
   isDefined,
   isWeekday,
   PriceClient,
+  RedisCache,
   Signer,
   submitTransaction,
   winston,

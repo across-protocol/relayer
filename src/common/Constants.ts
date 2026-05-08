@@ -163,6 +163,8 @@ Object.values(CHAIN_IDs).forEach((chainId) => {
   }
 });
 
+export const REDIS_URL_DEFAULT = "redis://localhost:6379";
+
 // Autogenerate RPC config for each supported chain.
 // Any exceptions can be added to the ranges object.
 const resolveRpcConfig = () => {

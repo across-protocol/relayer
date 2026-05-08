@@ -54,6 +54,7 @@ import {
   getNetworkName,
   getNativeTokenInfoForChain,
   getProvider,
+  getRedisCache,
   getSolanaTokenBalance,
   getSvmProvider,
   getTokenInfo,
@@ -78,7 +79,6 @@ import {
   willSucceed,
   readableBinanceWithdrawalStatus,
 } from "../src/utils";
-import { getRedisCache } from "../src/cache/Redis";
 import { getCloidForAccount } from "../src/rebalancer/utils/utils";
 
 // Time between polling attempts when waiting on asynchronous operations to complete.

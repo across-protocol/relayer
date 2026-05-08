@@ -1,7 +1,7 @@
 import winston from "winston";
 import { DepositAddressHandlerConfig } from "./DepositAddressHandlerConfig";
-import { getRedisCache, RedisCacheInterface } from "../cache/Redis";
 import {
+  getRedisCache,
   isDefined,
   parseJson,
   Signer,
@@ -15,6 +15,7 @@ import {
   sendAndConfirmTransaction,
   getCounterfactualDepositFactory,
   buildDeployTx,
+  RedisCacheInterface,
   toBN,
   getDepositKey,
   assert,
