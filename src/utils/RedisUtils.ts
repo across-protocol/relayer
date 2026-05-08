@@ -2,10 +2,8 @@ import { isDefined } from "./";
 import { REDIS_URL_DEFAULT } from "../common/Constants";
 import { createClient } from "redis";
 import winston from "winston";
-import dotenv from "dotenv";
 import { disconnectRedisClient, RedisCache, RedisClient } from "../caching/RedisCache";
 import { RedisPubSub } from "../caching/RedisPubSub";
-dotenv.config();
 
 const globalNamespace: string | undefined = process.env.GLOBAL_CACHE_NAMESPACE
   ? String(process.env.GLOBAL_CACHE_NAMESPACE)
