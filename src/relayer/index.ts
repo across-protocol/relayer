@@ -5,7 +5,6 @@ import {
   disconnectRedisClients,
   fireAndForget,
   getNetworkName,
-  getRedisCache,
   isDefined,
   Profiler,
   scheduleSequentialTask,
@@ -13,12 +12,12 @@ import {
   Signer,
   winston,
 } from "../utils";
+import { getRedisCache, RedisCacheInterface } from "../cache/Redis";
 import { Relayer } from "./Relayer";
 import { RelayerConfig } from "./RelayerConfig";
 import { constructRelayerClients } from "./RelayerClientHelper";
 import { InventoryClientState, isSpokePoolClientWithListener } from "../clients";
 import { updateSpokePoolClients } from "../common";
-import { RedisCacheInterface } from "../caching/RedisCache";
 
 let logger: winston.Logger;
 

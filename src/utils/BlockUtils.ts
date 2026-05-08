@@ -1,4 +1,5 @@
 import { arch, interfaces, utils } from "@across-protocol/sdk";
+import { getRedisCache } from "../cache/Redis";
 import { fireAndForget, isDefined, winston } from "./";
 import {
   BlockFinderHints,
@@ -10,7 +11,6 @@ import {
   SVMProvider,
 } from "./SDKUtils";
 import { getProvider, getSvmProvider } from "./ProviderUtils";
-import { getRedisCache } from "./RedisUtils";
 import { SpokePoolClientsByChain } from "../interfaces/SpokePool";
 
 const evmBlockFinders: { [chainId: number]: EVMBlockFinder } = {};

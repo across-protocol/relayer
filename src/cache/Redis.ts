@@ -1,10 +1,10 @@
 import assert from "assert";
 import { interfaces, constants } from "@across-protocol/sdk";
-import { isDefined } from "../utils";
-import { createClient } from "redis";
 import winston from "winston";
+import { isDefined } from "../utils/TypeGuards";
+import { disconnectRedisClient, getRedisClient, RedisClient } from "../utils/Redis";
 
-export type RedisClient = ReturnType<typeof createClient>;
+export { RedisClient };
 
 export interface RedisCacheInterface extends interfaces.CachingMechanismInterface {
   decr(key: string): Promise<number>;
@@ -12,6 +12,9 @@ export interface RedisCacheInterface extends interfaces.CachingMechanismInterfac
   incr(key: string): Promise<number>;
   incrBy(key: string, amount: number): Promise<number>;
 }
+
+// Read env at call time so dotenv-loaded values are picked up regardless of import order.
+const getGlobalNamespace = (): string | undefined => process.env.GLOBAL_CACHE_NAMESPACE || undefined;
 
 /**
  * RedisCache is a caching mechanism that uses Redis as the backing store. It is used by the
@@ -107,22 +110,17 @@ export class RedisCache implements RedisCacheInterface {
   }
 }
 
-/**
- * An internal function to disconnect from a redis client. This function is designed to NOT throw an error if the
- * disconnect fails.
- * @param client The redis client to disconnect from.
- * @param logger An optional logger to use to log the disconnect.
- */
-export async function disconnectRedisClient(client: RedisClient, logger?: winston.Logger): Promise<void> {
-  let disconnectSuccessful = true;
-  try {
-    await client.disconnect();
-  } catch (_e) {
-    disconnectSuccessful = false;
+export async function getRedisCache(
+  logger?: winston.Logger,
+  url?: string,
+  customNamespace?: string
+): Promise<RedisCache | undefined> {
+  // Don't permit redis to be used in test.
+  if (isDefined(process.env.RELAYER_TEST)) {
+    return undefined;
   }
-  const url = client.options?.url ?? "unknown";
-  logger?.debug({
-    at: "RedisCache#disconnect",
-    message: `Disconnected from redis server at ${url} successfully? ${disconnectSuccessful}`,
-  });
+
+  const namespace = customNamespace || getGlobalNamespace();
+  const client = await getRedisClient(logger, url);
+  return new RedisCache(client, namespace, logger);
 }

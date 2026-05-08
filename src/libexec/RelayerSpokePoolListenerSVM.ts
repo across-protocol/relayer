@@ -17,11 +17,11 @@ import {
   getNetworkName,
   getNodeUrlList,
   getOriginFromURL,
-  getRedisCache,
   getSvmProvider,
   Logger,
   winston,
 } from "../utils";
+import { getRedisCache } from "../cache/Redis";
 import { ScraperOpts } from "./types";
 import { postBlock, postEvents } from "./util/ipc";
 import { scrapeEvents as _scrapeEvents } from "./util/svm";

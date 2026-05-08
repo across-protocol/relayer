@@ -1,7 +1,6 @@
 import winston from "winston";
 import { utils as ethersUtils } from "ethers";
 import { HyperliquidExecutorConfig } from "./HyperliquidExecutorConfig";
-import { RedisCacheInterface } from "../caching/RedisCache";
 import {
   assert,
   Contract,
@@ -27,11 +26,11 @@ import {
   getUserFees,
   getChainQuorum,
   toBN,
-  getRedisCache,
   spreadEventWithBlockNumber,
   createFormatFunction,
   InstanceCoordinator,
 } from "../utils";
+import { getRedisCache, RedisCacheInterface } from "../cache/Redis";
 import { Log, SwapFlowInitialized } from "../interfaces";
 import { CHAIN_MAX_BLOCK_LOOKBACK } from "../common";
 import { MultiCallerClient, EventListener, HubPoolClient } from "../clients";
