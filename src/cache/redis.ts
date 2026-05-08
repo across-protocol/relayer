@@ -13,9 +13,7 @@ export interface RedisCacheInterface extends interfaces.CachingMechanismInterfac
   incrBy(key: string, amount: number): Promise<number>;
 }
 
-const globalNamespace: string | undefined = process.env.GLOBAL_CACHE_NAMESPACE
-  ? String(process.env.GLOBAL_CACHE_NAMESPACE)
-  : undefined;
+const globalNamespace = process.env.GLOBAL_CACHE_NAMESPACE || undefined;
 
 /**
  * RedisCache is a caching mechanism that uses Redis as the backing store. It is used by the
