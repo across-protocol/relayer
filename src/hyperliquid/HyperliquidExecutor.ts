@@ -305,7 +305,7 @@ export class HyperliquidExecutor {
   /*
    * @notice Starts event listeners for the HyperliquidExecutor.
    * @dev The executor reacts to new blocks and new `SwapFlowInitialized` events. Upon an event/new block being observed, it pushes a new task to a queue.
-   * Note that the task itself may be unactionable, but since determining whether there is something to do is async, it is left to the task processer, not the
+   * Note that the task itself may be unactionable, but since determining whether there is something to do is async, it is left to the task processor, not the
    * event listener.
    */
   public startListeners(): void {
