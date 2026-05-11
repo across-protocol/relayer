@@ -8,8 +8,8 @@ export type { RedisClient };
 
 const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
 
-export async function connectRedisClient(logger: winston.Logger | undefined, url = REDIS_URL): Promise<RedisClient> {
-  const reconnectStrategy = (retries: number): number | Error => {
+export async function connectRedisClient(logger?: winston.Logger, url = REDIS_URL): Promise<RedisClient> {
+  const reconnectStrategy = (retries: number, cause: Error): number | Error => {
     // Cap reconnection attempts to avoid livelock.
     const MAX_RETRIES = 10;
 
@@ -17,6 +17,7 @@ export async function connectRedisClient(logger: winston.Logger | undefined, url
       logger?.error({
         at: "RedisClient",
         message: `Redis connection failed after ${MAX_RETRIES} retries. Giving up.`,
+        cause: String(cause),
       });
       return new Error(`Redis connection failed after ${MAX_RETRIES} retries`);
     }
@@ -27,6 +28,7 @@ export async function connectRedisClient(logger: winston.Logger | undefined, url
     logger?.debug({
       at: "RedisClient",
       message: `Lost redis connection, retrying in ${delay} ms (attempt ${retries + 1}/${MAX_RETRIES}).`,
+      cause: String(cause),
     });
     return delay + jitter;
   };
@@ -34,7 +36,7 @@ export async function connectRedisClient(logger: winston.Logger | undefined, url
   let redisClient: RedisClient | undefined = undefined;
   try {
     redisClient = createClient({ url, socket: { reconnectStrategy } });
-    redisClient.on("error", (err) => logger?.warn({ at: "RedisClient", message: "Redis error", error: String(err) }));
+    redisClient.on("error", (err) => logger?.warn({ at: "RedisClient", message: "Redis error", cause: String(err) }));
     await redisClient.connect();
     return redisClient;
   } catch (err) {
@@ -44,7 +46,7 @@ export async function connectRedisClient(logger: winston.Logger | undefined, url
     logger?.debug({
       at: "RedisClient#connect",
       message: `Failed to connect to redis server at ${url}.`,
-      error: String(err),
+      cause: String(err),
     });
     throw err;
   }
@@ -57,7 +59,7 @@ export async function connectRedisClient(logger: winston.Logger | undefined, url
 export async function disconnectRedisClient(client: RedisClient, logger?: winston.Logger): Promise<void> {
   let disconnectSuccessful = true;
   try {
-    await client.disconnect();
+    await client.close();
   } catch (_e) {
     disconnectSuccessful = false;
   }
@@ -75,7 +77,7 @@ export async function disconnectRedisClient(client: RedisClient, logger?: winsto
 // XREADGROUP monopolise the connection.
 const clients: { [url: string]: Promise<RedisClient> } = {};
 
-export async function getRedisClient(logger: winston.Logger | undefined, url = REDIS_URL): Promise<RedisClient> {
+export async function getRedisClient(logger?: winston.Logger, url = REDIS_URL): Promise<RedisClient> {
   if (!isDefined(clients[url])) {
     clients[url] = connectRedisClient(logger, url);
   }
@@ -99,7 +101,7 @@ export async function disconnectRedisClients(logger?: winston.Logger): Promise<v
         at: "RedisClient#disconnectRedisClients",
         message: "Failed to disconnect from redis server.",
         url,
-        error: err,
+        cause: String(err),
       });
     }
   }
