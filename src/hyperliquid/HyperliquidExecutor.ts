@@ -1,7 +1,6 @@
 import winston from "winston";
 import { utils as ethersUtils } from "ethers";
 import { HyperliquidExecutorConfig } from "./HyperliquidExecutorConfig";
-import { RedisCacheInterface } from "../caching/RedisCache";
 import {
   assert,
   Contract,
@@ -27,11 +26,11 @@ import {
   getUserFees,
   getChainQuorum,
   toBN,
-  getRedisCache,
   spreadEventWithBlockNumber,
   createFormatFunction,
   InstanceCoordinator,
 } from "../utils";
+import { getRedisCache, RedisCacheInterface } from "../cache/Redis";
 import { Log, SwapFlowInitialized } from "../interfaces";
 import { CHAIN_MAX_BLOCK_LOOKBACK } from "../common";
 import { MultiCallerClient, EventListener, HubPoolClient } from "../clients";
@@ -306,7 +305,7 @@ export class HyperliquidExecutor {
   /*
    * @notice Starts event listeners for the HyperliquidExecutor.
    * @dev The executor reacts to new blocks and new `SwapFlowInitialized` events. Upon an event/new block being observed, it pushes a new task to a queue.
-   * Note that the task itself may be unactionable, but since determining whether there is something to do is async, it is left to the task processer, not the
+   * Note that the task itself may be unactionable, but since determining whether there is something to do is async, it is left to the task processor, not the
    * event listener.
    */
   public startListeners(): void {
