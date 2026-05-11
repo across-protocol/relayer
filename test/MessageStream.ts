@@ -6,8 +6,12 @@ async function readN(sub: Subscription, n: number, ack = true): Promise<Delivere
   const out: DeliveredMessage[] = [];
   for await (const m of sub.messages()) {
     out.push(m);
-    if (ack) await m.ack();
-    if (out.length >= n) break;
+    if (ack) {
+      await m.ack();
+    }
+    if (out.length >= n) {
+      break;
+    }
   }
   return out;
 }

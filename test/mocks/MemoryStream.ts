@@ -61,10 +61,14 @@ export class MemoryStream implements MessageStream {
 
   _ack(groupKey: string, id: string): void {
     const state = this.groups.get(groupKey);
-    if (state === undefined) return;
+    if (state === undefined) {
+      return;
+    }
     const entries = this.topics.get(state.topic) ?? [];
     const idx = entries.findIndex((e) => e.id === id);
-    if (idx >= 0) state.pending.delete(idx);
+    if (idx >= 0) {
+      state.pending.delete(idx);
+    }
   }
 }
 
@@ -80,14 +84,20 @@ class MemorySubscription implements Subscription {
 
   async *messages(): AsyncIterableIterator<DeliveredMessage> {
     const state = this.stream._group(this.groupKey);
-    if (state === undefined) return;
+    if (state === undefined) {
+      return;
+    }
 
     // Redelivery: yield entries pending from prior subscriptions, in id order.
     const pendingSnapshot = [...state.pending].sort((a, b) => a - b);
     for (const idx of pendingSnapshot) {
-      if (this.aborted) return;
+      if (this.aborted) {
+        return;
+      }
       const entry = this.stream._entries(this.topic)[idx];
-      if (entry !== undefined) yield this.toDelivered(entry);
+      if (entry !== undefined) {
+        yield this.toDelivered(entry);
+      }
     }
 
     // Live: yield new entries as they're published.
@@ -99,7 +109,9 @@ class MemorySubscription implements Subscription {
         state.pending.add(idx);
         yield this.toDelivered(entries[idx]);
       }
-      if (this.aborted) return;
+      if (this.aborted) {
+        return;
+      }
       await new Promise((r) => setTimeout(r, blockMs));
     }
   }
