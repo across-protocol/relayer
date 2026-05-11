@@ -129,7 +129,7 @@ export class EventManager {
   }
 
   /**
-   * Record event receiption. Retain a record of the providers that have reported each event. This applies a
+   * Record event reception. Retain a record of the providers that have reported each event. This applies a
    * rudimentary quorum system to the event and ensures that providers agree on the events being transmitted.
    * @param event Event to be recorded.
    * @param provider A string uniquely identifying the provider that supplied the event.
