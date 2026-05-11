@@ -189,31 +189,57 @@ export class DepositAddressHandler {
   private async evaluateDepositAddresses(): Promise<void> {
     const depositMessages = await this._queryIndexerApi();
 
-    // Only execute correct_transfer rows. mis_route and intent_refund transfers are routed to the
-    // refund-withdraw path (OPS-353), which is not implemented yet — drop them here so the bot
-    // doesn't try to bridge them (intent_refund in particular would re-loop the same intent).
-    // Unknown classifications are also dropped (forward-compat) until explicitly supported.
-    const correctTransferMessages = depositMessages.filter((m) => {
+    // Partition by classification:
+    //   - correct_transfer: forward deposit/execute path.
+    //   - mis_route / intent_refund: refund-withdraw path (OPS-353). Gated behind WITHDRAW_ENABLED.
+    //     While the gate is closed, drop them so the bot doesn't try to bridge them
+    //     (intent_refund in particular would re-loop the same intent).
+    //   - unknown: drop (forward-compat) until explicitly supported.
+    const correctTransferMessages: DepositAddressMessage[] = [];
+    const withdrawMessages: DepositAddressMessage[] = [];
+    for (const m of depositMessages) {
       const classification = m.erc20Transfer.transferClassification;
       if (classification === "correct_transfer") {
-        return true;
+        correctTransferMessages.push(m);
+        continue;
+      }
+      if (classification === "mis_route" || classification === "intent_refund") {
+        if (this.config.withdrawEnabled) {
+          withdrawMessages.push(m);
+        } else {
+          this.logger.debug({
+            at: "DepositAddressHandler#evaluateDepositAddresses",
+            message: "deposit-address transfer skipped: withdraw flow disabled",
+            classification,
+            depositAddress: m.depositAddress,
+            paramsHash: m.paramsHash,
+            txHash: m.erc20Transfer.transactionHash,
+            chainId: m.erc20Transfer.chainId,
+          });
+        }
+        continue;
       }
       this.logger.debug({
         at: "DepositAddressHandler#evaluateDepositAddresses",
-        message: "deposit-address transfer skipped: non-correct classification",
+        message: "deposit-address transfer skipped: unknown classification",
         classification,
         depositAddress: m.depositAddress,
         paramsHash: m.paramsHash,
         txHash: m.erc20Transfer.transactionHash,
         chainId: m.erc20Transfer.chainId,
       });
-      return false;
-    });
+    }
 
     const filtered = correctTransferMessages.filter(
       (m) =>
         this.config.relayerOriginChains.includes(Number(m.routeParams.originChainId)) &&
         !this.executedDepositTxHashes.has(m.erc20Transfer.transactionHash)
+    );
+
+    // For mis_route the funds land on a chain different from routeParams.originChainId, so the
+    // bot must act on whichever chain the ERC20 actually arrived on (erc20Transfer.chainId).
+    const filteredWithdraws = withdrawMessages.filter((m) =>
+      this.config.relayerOriginChains.includes(Number(m.erc20Transfer.chainId))
     );
 
     // We want to remove all executed deposits from the in-memory set if they are not returned by the indexer.
@@ -228,6 +254,27 @@ export class DepositAddressHandler {
 
     await forEachAsync(filtered, async (depositMessage) => {
       await this.initiateDeposit(depositMessage);
+    });
+
+    await forEachAsync(filteredWithdraws, async (depositMessage) => {
+      await this.initiateWithdraw(depositMessage);
+    });
+  }
+
+  /**
+   * @notice Refund-withdraw path entry point (OPS-353). Gated behind config.withdrawEnabled.
+   * Implementation pending: gas-reserve computation, dispatcher deploy-on-first-touch, and
+   * refund-action submission with the backend-signed authorization (ACB-407).
+   */
+  private async initiateWithdraw(depositMessage: DepositAddressMessage): Promise<void> {
+    this.logger.debug({
+      at: "DepositAddressHandler#initiateWithdraw",
+      message: "Withdraw flow not implemented yet; skipping",
+      classification: depositMessage.erc20Transfer.transferClassification,
+      depositAddress: depositMessage.depositAddress,
+      paramsHash: depositMessage.paramsHash,
+      txHash: depositMessage.erc20Transfer.transactionHash,
+      chainId: depositMessage.erc20Transfer.chainId,
     });
   }
 
