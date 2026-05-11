@@ -377,7 +377,7 @@ async function _runTransaction(
 
       // Likely irrecoverable error due to native token wrap/unwrap collision.
       case errors.INSUFFICIENT_FUNDS: {
-        message = "Cannot execute transaction due to insufficent native token balance.";
+        message = "Cannot execute transaction due to insufficient native token balance.";
         logger.warn({ at, message, code, reason, ...commonFields });
         throw error;
       }
