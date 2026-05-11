@@ -30,6 +30,17 @@ import {
 } from "../utils";
 import { DEFAULT_GAS_FEE_SCALERS } from "../common";
 import { FeeData } from "@ethersproject/abstract-provider";
+import { Backend, broadcastMode, sharedBackend } from "./transactionBackend";
+
+export {
+  Backend,
+  BackendOptions,
+  BackendPubSub,
+  initTransactionBackend,
+  disposeTransactionBackend,
+  requestTopic,
+  responseTopic,
+} from "./transactionBackend";
 
 // Empirically, a max fee scaler of ~5% can result in successful transaction replacement.
 // Stuck transactions are very disruptive, so go for 10% to avoid the hassle.
@@ -88,11 +99,19 @@ export class TransactionClient {
 
   protected readonly DEFAULT_GAS_LIMIT_MULTIPLIER = 1.0;
 
-  // eslint-disable-next-line no-useless-constructor
+  // Per-instance backend override; falls back to the process-level
+  // module-level shared backend if not set. Useful for tests.
+  private backend?: Backend;
+
   constructor(
     readonly logger: winston.Logger,
-    readonly signers: Signer[] = []
+    readonly signers: Signer[] = [],
+    private readonly broadcast: "rpc" | "redis" = broadcastMode()
   ) {}
+
+  setBackend(backend: Backend): void {
+    this.backend = backend;
+  }
 
   protected _simulate(txn: AugmentedTransaction): Promise<TransactionSimulationResult> {
     return willSucceed(txn);
@@ -184,6 +203,10 @@ export class TransactionClient {
   }
 
   async submit(chainId: number, txns: AugmentedTransaction[]): Promise<TransactionResponse[]> {
+    if (this.broadcast === "redis") {
+      return this._submitViaRedis(chainId, txns);
+    }
+
     const networkName = getNetworkName(chainId);
     const txnResponses: TransactionResponse[] = [];
 
@@ -251,6 +274,75 @@ export class TransactionClient {
     this.logger.info({
       at: "TransactionClient#submit",
       message: `Completed ${networkName} transaction submission! 🧙`,
+      mrkdwn,
+    });
+
+    return txnResponses;
+  }
+
+  // Submit via the configured Backend. Mirrors the per-txn loop and
+  // partial-return-on-failure semantics of the direct-RPC path above, but
+  // delegates the actual submission to the backend (which handles wire
+  // serialisation, ACK/final correlation, and synthesised TransactionResponse
+  // construction). Nonce tracking lives in the manager and is therefore
+  // absent here.
+  private async _submitViaRedis(chainId: number, txns: AugmentedTransaction[]): Promise<TransactionResponse[]> {
+    const backend = this.backend ?? sharedBackend();
+    if (!isDefined(backend)) {
+      throw new Error(
+        "TransactionClient is in redis broadcast mode but no Backend has been configured. " +
+          "Call initTransactionBackend() at bot startup, or setBackend() per-instance."
+      );
+    }
+    const networkName = getNetworkName(chainId);
+    const txnResponses: TransactionResponse[] = [];
+
+    this.logger.debug({
+      at: "TransactionClient#submit",
+      message: `Processing ${txns.length} transactions via redis.`,
+    });
+
+    let mrkdwn = "";
+    for (let idx = 0; idx < txns.length; ++idx) {
+      let txn = txns[idx];
+      if (txn.chainId !== chainId) {
+        throw new Error(`chainId mismatch for method ${txn.method} (${txn.chainId} !== ${chainId})`);
+      }
+
+      // Apply gasLimit multiplier client-side, matching direct-mode behaviour.
+      // The wire's `gasLimitMultiplier` field is informational; the manager
+      // applies it only if it estimates gas itself.
+      const gasLimitMultiplier = txn.gasLimitMultiplier ?? this.DEFAULT_GAS_LIMIT_MULTIPLIER;
+      if (gasLimitMultiplier > this.DEFAULT_GAS_LIMIT_MULTIPLIER) {
+        txn = {
+          ...txn,
+          gasLimit: txn.gasLimit?.mul(toBNWei(gasLimitMultiplier)).div(fixedPoint),
+        };
+      }
+
+      let response: TransactionResponse;
+      try {
+        response = await backend.submit(txn);
+      } catch (error) {
+        this.logger.info({
+          at: "TransactionClient#submitViaRedis",
+          message: `Transaction ${idx + 1} submission on ${networkName} failed.`,
+          mrkdwn,
+          errorMessage: isError(error) ? error.message : undefined,
+          error: stringifyThrownValue(error),
+          notificationPath: "across-error",
+        });
+        return txnResponses;
+      }
+
+      const blockExplorer = blockExplorerLink(response.hash, txn.chainId);
+      mrkdwn += `  ${idx + 1}. ${txn.message || "No message"} (${blockExplorer}): ${txn.mrkdwn || "No markdown"}\n`;
+      txnResponses.push(response);
+    }
+
+    this.logger.info({
+      at: "TransactionClient#submitViaRedis",
+      message: `Completed ${networkName} transaction submission via redis! 🧙`,
       mrkdwn,
     });
 
