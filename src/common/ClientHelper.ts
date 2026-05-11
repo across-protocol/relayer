@@ -13,7 +13,6 @@ import {
   getCurrentTime,
   SpokePool,
   isDefined,
-  getRedisCache,
   getArweaveJWKSigner,
   chainIsEvm,
   forEachAsync,
@@ -21,6 +20,7 @@ import {
   getSvmProvider,
   getBlockFinder,
 } from "../utils";
+import { getRedisCache } from "../cache/Redis";
 import {
   HubPoolClient,
   MultiCallerClient,

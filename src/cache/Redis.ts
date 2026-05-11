@@ -1,10 +1,10 @@
 import assert from "assert";
 import { interfaces, constants } from "@across-protocol/sdk";
-import { isDefined } from "../utils";
-import { createClient } from "redis";
 import winston from "winston";
+import { isDefined } from "../utils/TypeGuards";
+import { disconnectRedisClient, getRedisClient, RedisClient } from "../utils/Redis";
 
-export type RedisClient = ReturnType<typeof createClient>;
+export { RedisClient };
 
 export interface RedisCacheInterface extends interfaces.CachingMechanismInterface {
   decr(key: string): Promise<number>;
@@ -12,6 +12,12 @@ export interface RedisCacheInterface extends interfaces.CachingMechanismInterfac
   incr(key: string): Promise<number>;
   incrBy(key: string, amount: number): Promise<number>;
 }
+
+const globalNamespace = process.env.GLOBAL_CACHE_NAMESPACE || undefined;
+
+// Track (url, namespace) tuples already announced so we log namespace resolution
+// once per tuple rather than on every getRedisCache() call.
+const namespaces = new Set<string>();
 
 /**
  * RedisCache is a caching mechanism that uses Redis as the backing store. It is used by the
@@ -24,12 +30,7 @@ export class RedisCache implements RedisCacheInterface {
     private readonly client: RedisClient,
     private readonly namespace?: string,
     private readonly logger?: winston.Logger
-  ) {
-    this.logger?.debug({
-      at: "RedisCache#constructor",
-      message: isDefined(namespace) ? `Created redis client with namespace ${namespace}` : "Created redis client.",
-    });
-  }
+  ) {}
 
   private getNamespacedKey(key: string): string {
     return isDefined(this.namespace) ? `${this.namespace}:${key}` : key;
@@ -58,8 +59,10 @@ export class RedisCache implements RedisCacheInterface {
       // No TTL
       return (await this.client.set(key, String(val))) ?? undefined;
     } else if (expirySeconds > 0) {
-      // EX: Expire key after expirySeconds.
-      return (await this.client.set(key, String(val), { EX: expirySeconds })) ?? undefined;
+      // Expire key after expirySeconds.
+      return (
+        (await this.client.set(key, String(val), { expiration: { type: "EX", value: expirySeconds } })) ?? undefined
+      );
     }
 
     this.logger?.warn({
@@ -107,22 +110,30 @@ export class RedisCache implements RedisCacheInterface {
   }
 }
 
-/**
- * An internal function to disconnect from a redis client. This function is designed to NOT throw an error if the
- * disconnect fails.
- * @param client The redis client to disconnect from.
- * @param logger An optional logger to use to log the disconnect.
- */
-export async function disconnectRedisClient(client: RedisClient, logger?: winston.Logger): Promise<void> {
-  let disconnectSuccessful = true;
-  try {
-    await client.disconnect();
-  } catch (_e) {
-    disconnectSuccessful = false;
+export async function getRedisCache(
+  logger?: winston.Logger,
+  url?: string,
+  customNamespace?: string
+): Promise<RedisCache | undefined> {
+  // Don't permit redis to be used in test.
+  if (isDefined(process.env.RELAYER_TEST)) {
+    return undefined;
   }
-  const url = client.options?.url ?? "unknown";
-  logger?.debug({
-    at: "RedisCache#disconnect",
-    message: `Disconnected from redis server at ${url} successfully? ${disconnectSuccessful}`,
-  });
+
+  const namespace = customNamespace || globalNamespace;
+  const client = await getRedisClient(logger, url);
+
+  const resolvedUrl = client.options?.url ?? "unknown";
+  const announceKey = `${resolvedUrl}|${namespace ?? ""}`;
+  if (!namespaces.has(announceKey)) {
+    namespaces.add(announceKey);
+    logger?.debug({
+      at: "RedisCache#getRedisCache",
+      message: isDefined(namespace)
+        ? `RedisCache initialized for namespace ${namespace} at ${resolvedUrl}.`
+        : `RedisCache initialized (no namespace) at ${resolvedUrl}.`,
+    });
+  }
+
+  return new RedisCache(client, namespace, logger);
 }

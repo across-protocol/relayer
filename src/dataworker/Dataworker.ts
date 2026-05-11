@@ -28,7 +28,6 @@ import {
   toAddressType,
   getKitKeypairFromEvmSigner,
   getEventAuthority,
-  getRedisCache,
   getStatePda,
   getFillStatusPda,
   LatestBlockhash,
@@ -55,6 +54,7 @@ import {
   createDefaultTransaction,
   getNativeTokenAddressForChain,
 } from "../utils";
+import { getRedisCache } from "../cache/Redis";
 import {
   ProposedRootBundle,
   RootBundleRelayWithBlock,

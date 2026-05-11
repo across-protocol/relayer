@@ -18,7 +18,6 @@ import {
   submitTransaction,
   toBN,
   winston,
-  getRedisCache,
   getInventoryBalanceContributorTokens,
   getRemoteTokenForL1Token,
   getTokenInfo,
@@ -35,6 +34,7 @@ import {
   getSolanaTokenBalance,
   ZERO_ADDRESS,
 } from "../utils";
+import { getRedisCache } from "../cache/Redis";
 
 export type TokenDataType = { [chainId: number]: { [token: string]: { balance: BigNumber; allowance: BigNumber } } };
 type TokenShortfallType = {
