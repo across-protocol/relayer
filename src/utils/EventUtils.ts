@@ -1,6 +1,5 @@
 import assert from "assert";
 import winston from "winston";
-import { utils as ethersUtils } from "ethers";
 import { Log as viemLog } from "viem";
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import { Log } from "../interfaces";
@@ -84,7 +83,7 @@ type QuorumEvent = Log & { providers: string[] };
  */
 export class EventManager {
   public readonly chain: string;
-  public readonly events: { [eventHash: string]: QuorumEvent } = {};
+  public readonly events: { [eventKey: string]: QuorumEvent } = {};
   public readonly blockHashes: { [blockHash: string]: string[] } = {};
 
   constructor(
@@ -103,8 +102,8 @@ export class EventManager {
    * @param event Event to search for.
    * @returns The matching event, or undefined.
    */
-  findEvent(eventHash: string): QuorumEvent | undefined {
-    return this.events[eventHash];
+  findEvent(eventKey: string): QuorumEvent | undefined {
+    return this.events[eventKey];
   }
 
   /**
@@ -112,8 +111,8 @@ export class EventManager {
    * @param event A Log instance with appended provider information.
    * @returns The number of unique providers that reported this event.
    */
-  getEventQuorum(eventHash: string): number {
-    const storedEvent = this.findEvent(eventHash);
+  getEventQuorum(eventKey: string): number {
+    const storedEvent = this.findEvent(eventKey);
     return isDefined(storedEvent) ? dedupArray(storedEvent.providers).length : 0;
   }
 
@@ -122,10 +121,10 @@ export class EventManager {
    * @param event A Log instance with appended provider information.
    * @returns The number of unique providers that reported this event.
    */
-  protected _addEvent(eventHash: string, event: QuorumEvent): void {
-    this.events[eventHash] = event;
+  protected _addEvent(eventKey: string, event: QuorumEvent): void {
+    this.events[eventKey] = event;
     this.blockHashes[event.blockHash] ??= [];
-    this.blockHashes[event.blockHash].push(eventHash);
+    this.blockHashes[event.blockHash].push(eventKey);
   }
 
   /**
@@ -138,16 +137,16 @@ export class EventManager {
   add(event: Log, provider: string): boolean {
     assert(!event.removed);
 
-    const eventHash = this.hashEvent(event);
+    const eventKey = this.getEventKey(event);
 
-    // If `eventHash` is not recorded in `eventHashes` then it's presumed to be a new event. If it is
-    // already found in the `eventHashes` array, then at least one provider has already supplied it.
-    const storedEvent = this.findEvent(eventHash);
+    // If `eventKey` is not recorded then it's presumed to be a new event. If it is already found,
+    // then at least one provider has already supplied it.
+    const storedEvent = this.findEvent(eventKey);
 
     // Store or update the set of events for this block number.
     if (!isDefined(storedEvent)) {
       // Event hasn't been seen before, so store it.
-      this._addEvent(eventHash, { ...event, providers: [provider] });
+      this._addEvent(eventKey, { ...event, providers: [provider] });
       return this.quorum === 1;
     }
 
@@ -171,10 +170,10 @@ export class EventManager {
   remove(event: Log, provider: string): void {
     assert(event.removed);
 
-    const eventHashes = this.blockHashes[event.blockHash];
-    const nEvents = eventHashes.length;
+    const eventKeys = this.blockHashes[event.blockHash];
+    const nEvents = eventKeys.length;
     if (nEvents > 0) {
-      eventHashes.forEach((eventHash) => delete this.events[eventHash]);
+      eventKeys.forEach((eventKey) => delete this.events[eventKey]);
       this.logger.warn({
         at: "EventManager::remove",
         message: `Dropped ${nEvents} event(s) at ${this.chain} block ${event.blockNumber}.`,
@@ -183,17 +182,9 @@ export class EventManager {
     }
   }
 
-  /**
-   * Produce a SHA256 hash representing an Ethers event, based on its on-chain identity.
-   * `(blockHash, transactionHash, logIndex)` uniquely identifies a log on the canonical chain;
-   * blockNumber/transactionIndex are derivable, and args is omitted to avoid hash drift between
-   * ingestion paths that parse logs differently (e.g. viem vs ethers).
-   * @param event An Ethers event to be hashed.
-   * @returns A SHA256 string derived from the event.
-   */
-  hashEvent(event: Log): string {
+  // Key on canonical on-chain identity; avoids drift between viem/ethers parsings of the same log.
+  getEventKey(event: Log): string {
     const { event: eventName, blockHash, transactionHash, logIndex } = event;
-    const key = `${eventName}-${blockHash}-${transactionHash}-${logIndex}`;
-    return ethersUtils.id(key);
+    return `${eventName}-${blockHash}-${transactionHash}-${logIndex}`;
   }
 }

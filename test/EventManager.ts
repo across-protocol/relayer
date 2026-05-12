@@ -27,7 +27,7 @@ describe("EventManager: Event Handling ", function () {
     blockHash: makeHash(),
     event: "randomEvent",
   };
-  let eventHash: string;
+  let eventKey: string;
 
   let logger: winston.Logger;
   let eventMgr: EventManager;
@@ -37,23 +37,23 @@ describe("EventManager: Event Handling ", function () {
     ({ spyLogger: logger } = createSpyLogger());
     quorum = 2;
     eventMgr = new EventManager(logger, chainId, quorum);
-    eventHash = eventMgr.hashEvent(eventTemplate);
+    eventKey = eventMgr.getEventKey(eventTemplate);
   });
 
   it("Correctly applies quorum on added events", async function () {
     providers.forEach((provider, idx) => {
       // Verify initial quorum.
-      let eventQuorum = eventMgr.getEventQuorum(eventHash);
+      let eventQuorum = eventMgr.getEventQuorum(eventKey);
       expect(eventQuorum).to.equal(idx);
 
       // Add the event from the current provider and verify that quorum updates.
       eventMgr.add(eventTemplate, provider);
-      eventQuorum = eventMgr.getEventQuorum(eventHash);
+      eventQuorum = eventMgr.getEventQuorum(eventKey);
       expect(eventQuorum).to.equal(idx + 1);
 
       // Try re-adding the same event from the same provider => shouldn't affect quorum.
       eventMgr.add(eventTemplate, provider);
-      eventQuorum = eventMgr.getEventQuorum(eventHash);
+      eventQuorum = eventMgr.getEventQuorum(eventKey);
       expect(eventQuorum).to.equal(idx + 1);
     });
   });
@@ -84,23 +84,23 @@ describe("EventManager: Event Handling ", function () {
     let metQuorum = eventMgr.add(eventTemplate, provider1);
     expect(metQuorum).to.be.false;
 
-    let eventQuorum = eventMgr.getEventQuorum(eventHash);
+    let eventQuorum = eventMgr.getEventQuorum(eventKey);
     expect(eventQuorum).to.equal(1);
 
     // Remove the event after notification by the same provider.
     eventMgr.remove({ ...eventTemplate, removed }, provider1);
-    eventQuorum = eventMgr.getEventQuorum(eventHash);
+    eventQuorum = eventMgr.getEventQuorum(eventKey);
     expect(eventQuorum).to.equal(0);
 
     // Re-add the same event.
     metQuorum = eventMgr.add(eventTemplate, provider1);
     expect(metQuorum).to.be.false;
-    eventQuorum = eventMgr.getEventQuorum(eventHash);
+    eventQuorum = eventMgr.getEventQuorum(eventKey);
     expect(eventQuorum).to.equal(1);
 
     // Remove the event after notification by a different provider.
     eventMgr.remove({ ...eventTemplate, removed }, "randomProvider");
-    eventQuorum = eventMgr.getEventQuorum(eventHash);
+    eventQuorum = eventMgr.getEventQuorum(eventKey);
     expect(eventQuorum).to.equal(0);
 
     // Add the same event from provider2. There should be no quorum.
@@ -108,57 +108,18 @@ describe("EventManager: Event Handling ", function () {
     expect(eventQuorum).to.equal(0);
   });
 
-  it("Hashes events correctly: uniqueness", async function () {
+  it("Keys events correctly: uniqueness", async function () {
     const log1 = eventTemplate;
-    const hash1 = eventMgr.hashEvent(log1);
-    expect(hash1).to.exist;
+    const key1 = eventMgr.getEventKey(log1);
+    expect(key1).to.exist;
 
     const log2 = { ...log1, logIndex: log1.logIndex + 1 };
-    const hash2 = eventMgr.hashEvent(log2);
-    expect(hash2).to.not.equal(hash1);
+    const key2 = eventMgr.getEventKey(log2);
+    expect(key2).to.not.equal(key1);
 
     const log3 = { ...log2, logIndex: log2.logIndex - 1 };
-    const hash3 = eventMgr.hashEvent(log3);
-    expect(hash3).to.equal(hash1);
-  });
-
-  it("Hashes events correctly: sorting", async function () {
-    const log = {
-      ...eventTemplate,
-      args: {
-        c: 3,
-        b: 2,
-        f: {
-          h: 7,
-          i: 8,
-          g: 6,
-        },
-        a: 1,
-        d: 4,
-        e: 5,
-      },
-    };
-    const sortedLog = {
-      ...log,
-      args: {
-        a: 1,
-        b: 2,
-        c: 3,
-        d: 4,
-        e: 5,
-        f: {
-          g: 6,
-          h: 7,
-          i: 8,
-        },
-      },
-    };
-
-    const hash1 = eventMgr.hashEvent(log);
-    expect(hash1).to.exist;
-
-    const hash2 = eventMgr.hashEvent(sortedLog);
-    expect(hash2).to.equal(hash1);
+    const key3 = eventMgr.getEventKey(log3);
+    expect(key3).to.equal(key1);
   });
 
   it("Does not submit duplicate events", async function () {
