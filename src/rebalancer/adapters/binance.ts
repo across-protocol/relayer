@@ -23,6 +23,7 @@ import {
   getBinanceTradeFees,
   getFillCommission,
   getBinanceTransactionTypeKey,
+  getEthersCompatibleAddress,
   isFailedBinanceWithdrawal,
   isSameBinanceCoin,
   isTerminalBinanceWithdrawal,
@@ -48,6 +49,7 @@ import {
   winston,
   deriveBinanceSpotMarketMeta,
   convertBinanceRouteAmount,
+  toAddressType,
 } from "../../utils";
 import { OrderDetails, RebalanceRoute } from "../utils/interfaces";
 import { STATUS } from "../utils/utils";
@@ -1094,18 +1096,15 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         amountToDeposit
       );
     } else {
-      const erc20 = new Contract(sourceTokenInfo.address.toNative(), ERC20.abi, connectedSigner);
-      const txn: AugmentedTransaction = {
-        contract: erc20,
-        method: "transfer",
-        args: [depositAddress.address, amountToDeposit],
-        chainId: sourceChain,
-        nonMulticall: true,
-        unpermissioned: false,
-        ensureConfirmation: true,
-        message: `Deposited ${amountReadable} ${sourceToken} to Binance on chain ${getNetworkName(sourceChain)}`,
-        mrkdwn: `Deposited ${amountReadable} ${sourceToken} to Binance on chain ${getNetworkName(sourceChain)}`,
-      };
+      const txn = this._buildDirectBinanceTokenDepositTransaction(
+        sourceToken,
+        sourceChain,
+        sourceTokenInfo.address.toNative(),
+        connectedSigner,
+        depositAddress.address,
+        amountToDeposit,
+        amountReadable
+      );
       txnHash = await this._submitTransaction(txn);
     }
     // Set the TTL to 30 minutes so that the Binance sweeper finalizer only attempts to pull back these deposited
@@ -1116,6 +1115,33 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       message: `Deposited ${amountReadable} ${sourceToken} to Binance from chain ${getNetworkName(sourceChain)}`,
       redisDepositTypeKey: getBinanceTransactionTypeKey(sourceChain, txnHash),
     });
+  }
+
+  private _buildDirectBinanceTokenDepositTransaction(
+    sourceToken: string,
+    sourceChain: number,
+    sourceTokenAddress: string,
+    connectedSigner: Signer,
+    depositAddress: string,
+    amountToDeposit: BigNumber,
+    amountReadable: string
+  ): AugmentedTransaction {
+    const erc20 = new Contract(
+      this._getEthersCompatibleAddress(sourceChain, sourceTokenAddress),
+      ERC20.abi,
+      connectedSigner
+    );
+    return {
+      contract: erc20,
+      method: "transfer",
+      args: [this._getEthersCompatibleAddress(sourceChain, depositAddress), amountToDeposit],
+      chainId: sourceChain,
+      nonMulticall: true,
+      unpermissioned: false,
+      ensureConfirmation: true,
+      message: `Deposited ${amountReadable} ${sourceToken} to Binance on chain ${getNetworkName(sourceChain)}`,
+      mrkdwn: `Deposited ${amountReadable} ${sourceToken} to Binance on chain ${getNetworkName(sourceChain)}`,
+    };
   }
 
   private async _depositNativeEthToBinanceViaAtomicDepositor(
@@ -1471,11 +1497,12 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   ): Promise<BinanceWithdrawal[]> {
     const binanceToken = resolveBinanceCoinSymbol(token);
     assert(isDefined(BINANCE_NETWORKS[chain]), "Chain should be a Binance network");
+    const recipientAddress = this._getBinanceRecipientAddress(chain, account);
     return (await getBinanceWithdrawals(this.binanceApiClient, binanceToken, startTime)).filter(
       (withdrawal) =>
         withdrawal.coin === binanceToken &&
         withdrawal.network === BINANCE_NETWORKS[chain] &&
-        withdrawal.recipient.toLowerCase() === account.toLowerCase() &&
+        withdrawal.recipient.toLowerCase() === recipientAddress.toLowerCase() &&
         isTerminalBinanceWithdrawal(withdrawal.status)
     );
   }
@@ -1580,7 +1607,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     try {
       withdrawalId = await submitBinanceWithdrawal(this.binanceApiClient, {
         coin: binanceDestinationCoin,
-        address: this.baseSignerAddress.toNative(),
+        address: this._getBinanceRecipientAddress(destinationEntrypointNetwork, this.baseSignerAddress.toNative()),
         amount: Number(amountToWithdraw),
         network: BINANCE_NETWORKS[destinationEntrypointNetwork],
         transactionFeeFlag: false,
@@ -1613,6 +1640,14 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       finalDestinationChain: destinationChain,
     });
     return true;
+  }
+
+  private _getEthersCompatibleAddress(chainId: number, address: string): string {
+    return getEthersCompatibleAddress(chainId, address);
+  }
+
+  private _getBinanceRecipientAddress(chainId: number, account: string): string {
+    return toAddressType(account, chainId).toNative();
   }
 
   private async _wrapEth(chainId: number, amount: BigNumber): Promise<void> {
