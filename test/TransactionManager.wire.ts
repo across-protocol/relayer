@@ -11,7 +11,7 @@ import {
   encodeAck,
   encodeFinal,
   encodeRequest,
-} from "../src/transactionManager_/wire";
+} from "../src/transactionManager/wire";
 
 const baseRequest: SubmissionRequest = {
   id: "req-1",
