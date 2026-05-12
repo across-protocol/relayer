@@ -184,32 +184,16 @@ export class EventManager {
   }
 
   /**
-   * Produce a SHA256 hash representing an Ethers event, based on select input fields.
+   * Produce a SHA256 hash representing an Ethers event, based on its on-chain identity.
+   * `(blockHash, transactionHash, logIndex)` uniquely identifies a log on the canonical chain;
+   * blockNumber/transactionIndex are derivable, and args is omitted to avoid hash drift between
+   * ingestion paths that parse logs differently (e.g. viem vs ethers).
    * @param event An Ethers event to be hashed.
    * @returns A SHA256 string derived from the event.
    */
   hashEvent(event: Log): string {
-    const { event: eventName, blockNumber, blockHash, transactionHash, transactionIndex, logIndex, args } = event;
-    const _args = this.flattenObject(args);
-    const key = `${eventName}-${blockNumber}-${blockHash}-${transactionHash}-${transactionIndex}-${logIndex}-${_args}`;
+    const { event: eventName, blockHash, transactionHash, logIndex } = event;
+    const key = `${eventName}-${blockHash}-${transactionHash}-${logIndex}`;
     return ethersUtils.id(key);
-  }
-
-  /**
-   * Recurse through an object and sort its keys in order to produce an ordered string of values.
-   * @param obj Object to iterate through.
-   * @returns string A hyphenated string containing all arguments of the object, sorted by key.
-   */
-  private flattenObject(obj: Record<string, unknown>): string {
-    const args = Object.keys(obj)
-      .sort()
-      .map((k) => {
-        const val = obj[k];
-        // When val is a nested object, recursively flatten and stringify it.
-        return typeof val === "object" ? this.flattenObject(val as Record<string, unknown>) : val;
-      })
-      .join("-");
-
-    return args;
   }
 }
