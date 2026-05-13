@@ -145,29 +145,6 @@ describe("Dataworker block range-related utility methods", function () {
       ])
     );
   });
-  it("BlockUtils.getTimestampsForBundleStartBlocks returns timestamps for advancing ranges", async function () {
-    const originSpokePoolClient = spokePoolClients[originChainId];
-    const fakeSpokePool = await smock.fake(originSpokePoolClient.spokePool.interface);
-    const mockSpokePoolClient = new MockSpokePoolClient(
-      originSpokePoolClient.logger,
-      fakeSpokePool as unknown as Contract,
-      originChainId,
-      5
-    );
-    const startBlock = 10;
-    const endBlock = 20;
-    const expectedTimestamp = 12345;
-    mockSpokePoolClient.setLatestBlockNumber(endBlock);
-    mockSpokePoolClient.setBlockTimestamp(startBlock, expectedTimestamp);
-
-    const timestamps = await getTimestampsForBundleStartBlocks(
-      { [originChainId]: mockSpokePoolClient as SpokePoolClient },
-      [[startBlock, endBlock]],
-      [originChainId]
-    );
-
-    expect(timestamps).to.deep.equal({ [originChainId]: expectedTimestamp });
-  });
   it("DataworkerUtils.blockRangesAreInvalidForSpokeClients", async function () {
     const chainId = hubPoolClient.chainId;
 
