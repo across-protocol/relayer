@@ -5,13 +5,21 @@ import { CctpAdapter } from "../src/rebalancer/adapters/cctpAdapter";
 import { OftAdapter } from "../src/rebalancer/adapters/oftAdapter";
 import { RebalancerConfig } from "../src/rebalancer/RebalancerConfig";
 import {
+  BINANCE_NETWORKS,
+  BINANCE_READ_RECV_WINDOW_MS,
+  BINANCE_WITHDRAW_RECV_WINDOW_MS,
+  BINANCE_WITHDRAWAL_STATUS,
+  BigNumber,
   CHAIN_IDs,
   EvmAddress,
+  getEthersCompatibleAddress,
   resolveBinanceCoinSymbol,
   convertBinanceRouteAmount,
   deriveBinanceSpotMarketMeta,
   isSameBinanceCoin,
   supportsBinanceIntermediateBridgeToken,
+  TOKEN_SYMBOLS_MAP,
+  toAddressType,
 } from "../src/utils";
 
 describe("Binance adapter helpers", function () {
@@ -257,6 +265,135 @@ describe("Binance adapter helpers", function () {
     expect(debug.calledOnce).to.equal(true);
     expect(debug.getCall(0).args[0].error).to.include("[RW00441]");
     expect(debug.getCall(0).args[0].error).to.include("required unlock confirmations for withdrawal");
+  });
+
+  it("builds Tron direct deposit transfers with ethers-compatible addresses", async function () {
+    const adapter = await makeAdapter();
+    const [signer] = await ethers.getSigners();
+    const amount = toBNWei("100", 6);
+    const tronUsdt = TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.TRON];
+    const tronDepositAddress = toAddressType(await signer.getAddress(), CHAIN_IDs.TRON).toNative();
+    const internals = adapter as unknown as {
+      _buildDirectBinanceTokenDepositTransaction(
+        sourceToken: string,
+        sourceChain: number,
+        sourceTokenAddress: string,
+        connectedSigner: typeof signer,
+        depositAddress: string,
+        amountToDeposit: BigNumber,
+        amountReadable: string
+      ): { contract: { address: string }; method: string; args: unknown[]; chainId: number };
+    };
+
+    const txn = internals._buildDirectBinanceTokenDepositTransaction(
+      "USDT",
+      CHAIN_IDs.TRON,
+      tronUsdt,
+      signer,
+      tronDepositAddress,
+      amount,
+      "100"
+    );
+
+    expect(txn.chainId).to.equal(CHAIN_IDs.TRON);
+    expect(txn.method).to.equal("transfer");
+    expect(txn.contract.address).to.equal(getEthersCompatibleAddress(CHAIN_IDs.TRON, tronUsdt));
+    expect(txn.args).to.deep.equal([getEthersCompatibleAddress(CHAIN_IDs.TRON, tronDepositAddress), amount]);
+  });
+
+  it("submits Tron withdrawals to the signer native Tron address on the TRX network", async function () {
+    const [signer] = await ethers.getSigners();
+    const withdrawStub = sinon
+      .stub()
+      .rejects(
+        new Error(
+          "[RW00441] Your deposits of 2.13569561 BTC in value have not met the required unlock confirmations for withdrawal."
+        )
+      );
+    const adapter = new BinanceStablecoinSwapAdapter(
+      TEST_LOGGER,
+      {} as RebalancerConfig,
+      signer,
+      {} as CctpAdapter,
+      {} as OftAdapter
+    );
+    const internals = adapter as unknown as {
+      baseSignerAddress: EvmAddress;
+      binanceApiClient: { withdraw: sinon.SinonStub };
+      _withdraw(cloid: string, quantity: number, destinationToken: string, destinationChain: number): Promise<boolean>;
+      _getEntrypointNetwork(chainId: number, token: string): Promise<number>;
+      _getTokenInfo(token: string, chainId: number): { decimals: number };
+    };
+    internals.baseSignerAddress = EvmAddress.from(await signer.getAddress());
+    internals.binanceApiClient = { withdraw: withdrawStub };
+    sinon.stub(internals, "_getEntrypointNetwork").resolves(CHAIN_IDs.TRON);
+    sinon.stub(internals, "_getTokenInfo").returns({ decimals: 6 });
+
+    const result = await internals._withdraw("cloid", 100, "USDT", CHAIN_IDs.TRON);
+
+    const payload = withdrawStub.getCall(0).args[0];
+    expect(result).to.equal(false);
+    expect(payload).to.deep.equal({
+      coin: "USDT",
+      address: toAddressType(await signer.getAddress(), CHAIN_IDs.TRON).toNative(),
+      amount: 100,
+      network: BINANCE_NETWORKS[CHAIN_IDs.TRON],
+      transactionFeeFlag: false,
+      recvWindow: BINANCE_WITHDRAW_RECV_WINDOW_MS,
+    });
+  });
+
+  it("matches Tron withdrawal history against the signer native Tron address", async function () {
+    const adapter = await makeAdapter();
+    const [signer] = await ethers.getSigners();
+    const tronRecipient = toAddressType(await signer.getAddress(), CHAIN_IDs.TRON).toNative();
+    const withdrawHistoryStub = sinon.stub().resolves([
+      {
+        amount: "100",
+        transactionFee: "1",
+        address: tronRecipient,
+        id: "matching-withdrawal",
+        txId: "tron-tx",
+        network: BINANCE_NETWORKS[CHAIN_IDs.TRON],
+        status: BINANCE_WITHDRAWAL_STATUS.COMPLETED,
+        applyTime: new Date(0).toISOString(),
+      },
+      {
+        amount: "100",
+        transactionFee: "1",
+        address: await signer.getAddress(),
+        id: "evm-form-withdrawal",
+        txId: "evm-form-tx",
+        network: BINANCE_NETWORKS[CHAIN_IDs.TRON],
+        status: BINANCE_WITHDRAWAL_STATUS.COMPLETED,
+        applyTime: new Date(0).toISOString(),
+      },
+    ]);
+    const internals = adapter as unknown as {
+      binanceApiClient: { withdrawHistory: sinon.SinonStub };
+      _getInitiatedBinanceWithdrawals(
+        token: string,
+        chain: number,
+        startTime: number,
+        account: string
+      ): Promise<Array<{ id: string; recipient: string }>>;
+    };
+    internals.binanceApiClient = { withdrawHistory: withdrawHistoryStub };
+
+    const withdrawals = await internals._getInitiatedBinanceWithdrawals(
+      "USDT",
+      CHAIN_IDs.TRON,
+      123,
+      await signer.getAddress()
+    );
+
+    expect(withdrawals.map((withdrawal) => withdrawal.id)).to.deep.equal(["matching-withdrawal"]);
+    expect(withdrawals[0].recipient).to.equal(tronRecipient);
+    expect(withdrawHistoryStub.getCall(0).args[0]).to.deep.equal({
+      coin: "USDT",
+      startTime: 123,
+      recvWindow: BINANCE_READ_RECV_WINDOW_MS,
+    });
   });
 
   it("keeps pending WETH credit until a finalized Binance withdrawal is wrapped", async function () {
