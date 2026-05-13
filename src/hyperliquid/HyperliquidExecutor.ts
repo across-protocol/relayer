@@ -13,6 +13,7 @@ import {
   getDstOftHandler,
   getL2Book,
   getDstCctpHandler,
+  getDstUsdhHandler,
   getOpenOrders,
   resolveAcrossToken,
   bnZero,
@@ -66,7 +67,7 @@ export type Pair = {
   finalTokenDecimals: number;
 };
 
-const BASE_TOKENS = ["USDT0", "USDC"];
+const BASE_TOKENS = ["USDT0", "USDC", "USDH"];
 const USD_DECIMALS = 8;
 const HL_FIXED_ADJUSTMENT = 10 ** USD_DECIMALS;
 const STABLE_SWAP_DISCOUNT = 0.2;
@@ -82,6 +83,7 @@ export class HyperliquidExecutor {
   private _instanceCoordinator?: InstanceCoordinator;
   private dstOftMessenger: Contract;
   private dstCctpMessenger: Contract;
+  private dstUsdhMessenger: Contract;
   public pairs: { [pair: string]: Pair } = {};
   private pairUpdates: { [pairName: string]: number } = {};
   private eventListener: EventListener;
@@ -125,6 +127,7 @@ export class HyperliquidExecutor {
     const signer = clients.hubPoolClient.hubPool.signer;
     this.dstOftMessenger = getDstOftHandler().connect(signer.connect(this.clients.dstProvider));
     this.dstCctpMessenger = getDstCctpHandler().connect(signer.connect(this.clients.dstProvider));
+    this.dstUsdhMessenger = getDstUsdhHandler().connect(signer.connect(this.clients.dstProvider));
 
     this.infoClient = sdkUtils.getHlInfoClient();
     this.eventListener = new EventListener(this.chainId, this.logger, getChainQuorum(this.chainId));
@@ -162,7 +165,7 @@ export class HyperliquidExecutor {
         const finalTokenAddress = resolveAcrossToken(castSymbol(finalToken.name), this.chainId, true);
 
         // There are only two available swap handlers.
-        const dstHandler = baseToken.name === "USDT0" ? this.dstOftMessenger : this.dstCctpMessenger;
+        const dstHandler = this.dstHandler(baseToken.name);
         const swapHandler = await dstHandler.predictSwapHandler(finalTokenAddress);
 
         const pairId = `${baseToken.name}-${finalToken.name}`;
@@ -323,7 +326,12 @@ export class HyperliquidExecutor {
         message: "Observed new order event",
         swapFlowInitiated,
       });
-      const baseToken = this.dstOftMessenger.address === log.address ? "USDT0" : "USDC";
+      const baseToken =
+        this.dstOftMessenger.address === log.address
+          ? "USDT0"
+          : this.dstCctpMessenger.address === log.address
+            ? "USDC"
+            : "USDH";
       const finalToken = getTokenInfo(EvmAddress.from(swapFlowInitiated.finalToken), this.chainId).symbol;
       const pairId = `${baseToken}-${finalToken}`;
       const pair = this.pairs[pairId];
@@ -336,7 +344,7 @@ export class HyperliquidExecutor {
     };
 
     // Handle `SwapFlowInitialized` events coming from all destination handlers.
-    for (const handler of [this.dstOftMessenger, this.dstCctpMessenger]) {
+    for (const handler of [this.dstOftMessenger, this.dstCctpMessenger, this.dstUsdhMessenger]) {
       const eventDescriptor = handler.interface.getEvent("SwapFlowInitialized");
       const eventFormatted = eventDescriptor.format(ethersUtils.FormatTypes.full);
       this.eventListener.onEvent(handler.address, eventFormatted, handleSwapFlowInitiated);
@@ -456,7 +464,7 @@ export class HyperliquidExecutor {
   private placeOrder(baseToken: EvmAddress, finalToken: EvmAddress, price: BigNumber, size: BigNumber, oid: number) {
     const l2TokenInfo = this._getTokenInfo(baseToken, this.chainId);
     const finalTokenInfo = this._getTokenInfo(finalToken, this.chainId);
-    const dstHandler = l2TokenInfo.symbol === "USDC" ? this.dstCctpMessenger : this.dstOftMessenger;
+    const dstHandler = this.dstHandler(l2TokenInfo.symbol);
     const formatter = createFormatFunction(2, 4, false, 8);
 
     const mrkdwn = `\nbaseToken: ${l2TokenInfo.symbol}\n finalToken: ${finalTokenInfo.symbol}\n price: ${formatter(
@@ -491,7 +499,7 @@ export class HyperliquidExecutor {
   // Spot sends a token to the swap handler.
   private sendSponsorshipFundsToSwapHandler(baseToken: EvmAddress, amount: BigNumber) {
     const l2TokenInfo = this._getTokenInfo(baseToken, this.chainId);
-    const dstHandler = l2TokenInfo.symbol === "USDC" ? this.dstCctpMessenger : this.dstOftMessenger;
+    const dstHandler = this.dstHandler(l2TokenInfo.symbol);
 
     const mrkdwn = `\nbaseToken: ${l2TokenInfo.symbol}\n amount: ${amount}`;
     this.clients.multiCallerClient.enqueueTransaction({
@@ -510,7 +518,7 @@ export class HyperliquidExecutor {
   private cancelLimitOrderByCloid(baseToken: EvmAddress, finalToken: EvmAddress, oid: BigNumber) {
     const l2TokenInfo = this._getTokenInfo(baseToken, this.chainId);
     const finalTokenInfo = this._getTokenInfo(finalToken, this.chainId);
-    const dstHandler = l2TokenInfo.symbol === "USDC" ? this.dstCctpMessenger : this.dstOftMessenger;
+    const dstHandler = this.dstHandler(l2TokenInfo.symbol);
 
     const mrkdwn = `\nbaseToken: ${l2TokenInfo.symbol}\n finalToken: ${finalTokenInfo.symbol}\n oid: ${oid}`;
     this.clients.multiCallerClient.enqueueTransaction({
@@ -531,7 +539,7 @@ export class HyperliquidExecutor {
    */
   async getOutstandingOrdersOnPair(pair: Pair, to = this.dstSearchConfig.to): Promise<SwapFlowInitialized[]> {
     const l2TokenInfo = this._getTokenInfo(pair.baseToken, this.chainId);
-    const dstHandler = l2TokenInfo.symbol === "USDC" ? this.dstCctpMessenger : this.dstOftMessenger;
+    const dstHandler = this.dstHandler(l2TokenInfo.symbol);
     const searchConfig = { ...this.dstSearchConfig, to };
     const [orderInitializedEvents, orderFinalizedEvents] = await Promise.all([
       paginatedEventQuery(
@@ -562,7 +570,7 @@ export class HyperliquidExecutor {
     // limitOrderOutputs is the amount of final tokens received for each limit order associated with a quoteNonce.
     const l2TokenInfo = this._getTokenInfo(baseToken, this.chainId);
     const finalTokenInfo = this._getTokenInfo(finalToken, this.chainId);
-    const dstHandler = l2TokenInfo.symbol === "USDC" ? this.dstCctpMessenger : this.dstOftMessenger;
+    const dstHandler = this.dstHandler(l2TokenInfo.symbol);
     const formatter = createFormatFunction(2, 4, false, 8);
 
     const mrkdwn = `\nbaseToken: ${l2TokenInfo.symbol}\n finalToken: ${
@@ -601,6 +609,14 @@ export class HyperliquidExecutor {
       return;
     }
     await new Promise<void>((resolve) => (this.taskResolver = resolve));
+  }
+
+  private dstHandler(tokenSymbol: string): Contract {
+    return tokenSymbol === "USDT0"
+      ? this.dstOftMessenger
+      : tokenSymbol === "USDH"
+        ? this.dstUsdhMessenger
+        : this.dstCctpMessenger;
   }
 
   // Async iterator which yields the top task in the task queue. If no task is present, then it waits for the task queue to receive
