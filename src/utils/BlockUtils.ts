@@ -64,7 +64,7 @@ export async function getTimestampsForBundleStartBlocks(
       await utils.mapAsync(blockRanges, async ([startBlock, endBlock], index) => {
         const chainId = chainIdListForBundleEvaluationBlockNumbers[index];
         const spokePoolClient = spokePoolClients[chainId];
-        if (spokePoolClient === undefined || startBlock === undefined || startBlock <= endBlock) {
+        if (spokePoolClient === undefined || startBlock === undefined || startBlock === endBlock) {
           return;
         }
 
