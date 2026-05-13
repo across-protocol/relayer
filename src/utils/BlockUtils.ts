@@ -61,10 +61,10 @@ export async function getTimestampsForBundleStartBlocks(
 ): Promise<{ [chainId: number]: number }> {
   return Object.fromEntries(
     (
-      await utils.mapAsync(blockRanges, async ([startBlock], index) => {
+      await utils.mapAsync(blockRanges, async ([startBlock, endBlock], index) => {
         const chainId = chainIdListForBundleEvaluationBlockNumbers[index];
         const spokePoolClient = spokePoolClients[chainId];
-        if (spokePoolClient === undefined || startBlock === undefined) {
+        if (spokePoolClient === undefined || startBlock === undefined || startBlock <= endBlock) {
           return;
         }
 
