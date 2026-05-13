@@ -56,7 +56,7 @@ export class DepositAddressHandler {
   private executedDepositTxHashes: Set<string> = new Set();
 
   /** Set of depositKeys for refund withdraws successfully executed (persisted in Redis for handover). */
-  private executedWithdrawDepositKeys: Set<string> = new Set();
+  private executedWithdrawKeys: Set<string> = new Set();
 
   /**
    * Per chainId (refund chain = erc20Transfer.chainId): set of depositKeys for withdraws currently
@@ -142,7 +142,7 @@ export class DepositAddressHandler {
     await this.instanceCoordinator.initiateHandover();
 
     await this._loadExecutedDepositsFromRedis();
-    await this._loadWithdrawnDepositKeysFromRedis();
+    await this._loadWithdrawnKeysFromRedis();
 
     this.initialized = true;
   }
@@ -151,7 +151,7 @@ export class DepositAddressHandler {
     return `deposit-address:executed:${this.config.botIdentifier}`;
   }
 
-  private getWithdrawnDepositKeysRedisKey(): string {
+  private getWithdrawnKeysRedisKey(): string {
     return `deposit-address:withdrawn-deposit-keys:${this.config.botIdentifier}`;
   }
 
@@ -185,10 +185,10 @@ export class DepositAddressHandler {
   }
 
   /** Loads executed refund-withdraw depositKeys from Redis (e.g. after handover). */
-  private async _loadWithdrawnDepositKeysFromRedis(): Promise<void> {
+  private async _loadWithdrawnKeysFromRedis(): Promise<void> {
     assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
     const { redisCache } = this;
-    const redisKey = this.getWithdrawnDepositKeysRedisKey();
+    const redisKey = this.getWithdrawnKeysRedisKey();
     const raw = await redisCache.get<string>(redisKey);
     let arr: string[] = [];
     try {
@@ -197,7 +197,7 @@ export class DepositAddressHandler {
       }
     } catch (err) {
       this.logger.error({
-        at: "DepositAddressHandler#_loadWithdrawnDepositKeysFromRedis",
+        at: "DepositAddressHandler#_loadWithdrawnKeysFromRedis",
         message: "Failed to parse withdrawn deposit keys from Redis, using empty set",
         redisKey,
         err: err instanceof Error ? err.message : String(err),
@@ -205,11 +205,11 @@ export class DepositAddressHandler {
 
       throw err;
     }
-    this.executedWithdrawDepositKeys = new Set(arr);
+    this.executedWithdrawKeys = new Set(arr);
     this.logger.debug({
-      at: "DepositAddressHandler#_loadWithdrawnDepositKeysFromRedis",
+      at: "DepositAddressHandler#_loadWithdrawnKeysFromRedis",
       message: "Loaded executed withdraw deposit keys from Redis",
-      count: this.executedWithdrawDepositKeys.size,
+      count: this.executedWithdrawKeys.size,
     });
   }
 
@@ -236,61 +236,6 @@ export class DepositAddressHandler {
   private async evaluateDepositAddresses(): Promise<void> {
     const depositMessages = await this._queryIndexerApi();
 
-    // Partition by classification:
-    //   - correct_transfer: forward deposit/execute path.
-    //   - mis_route / intent_refund: refund-withdraw path (OPS-353). Gated behind WITHDRAW_ENABLED.
-    //     While the gate is closed, drop them so the bot doesn't try to bridge them
-    //     (intent_refund in particular would re-loop the same intent).
-    //   - unknown: drop (forward-compat) until explicitly supported.
-    const correctTransferMessages: DepositAddressMessage[] = [];
-    const withdrawMessages: DepositAddressMessage[] = [];
-    for (const m of depositMessages) {
-      const classification = m.erc20Transfer.transferClassification;
-      if (classification === "correct_transfer") {
-        correctTransferMessages.push(m);
-        continue;
-      }
-      if (classification === "mis_route" || classification === "intent_refund") {
-        if (this.config.withdrawEnabled) {
-          withdrawMessages.push(m);
-        } else {
-          this.logger.debug({
-            at: "DepositAddressHandler#evaluateDepositAddresses",
-            message: "deposit-address transfer skipped: withdraw flow disabled",
-            classification,
-            depositAddress: m.depositAddress,
-            paramsHash: m.paramsHash,
-            txHash: m.erc20Transfer.transactionHash,
-            chainId: m.erc20Transfer.chainId,
-          });
-        }
-        continue;
-      }
-      this.logger.debug({
-        at: "DepositAddressHandler#evaluateDepositAddresses",
-        message: "deposit-address transfer skipped: unknown classification",
-        classification,
-        depositAddress: m.depositAddress,
-        paramsHash: m.paramsHash,
-        txHash: m.erc20Transfer.transactionHash,
-        chainId: m.erc20Transfer.chainId,
-      });
-    }
-
-    const filtered = correctTransferMessages.filter(
-      (m) =>
-        this.config.relayerOriginChains.includes(Number(m.routeParams.originChainId)) &&
-        !this.executedDepositTxHashes.has(m.erc20Transfer.transactionHash)
-    );
-
-    // For mis_route the funds land on a chain different from routeParams.originChainId, so the
-    // bot must act on whichever chain the ERC20 actually arrived on (erc20Transfer.chainId).
-    const filteredWithdraws = withdrawMessages.filter(
-      (m) =>
-        this.config.relayerOriginChains.includes(Number(m.erc20Transfer.chainId)) &&
-        !this.executedWithdrawDepositKeys.has(getDepositKey(m))
-    );
-
     // We want to remove all executed deposits from the in-memory set if they are not returned by the indexer.
     // This is because the indexer will stop sending the deposit once it has been "expired" (internal TTL).
     // So there is no point of keeping them in Redis after Indexer API stops returning them.
@@ -301,18 +246,41 @@ export class DepositAddressHandler {
         this.executedDepositTxHashes.delete(tx);
       }
     }
-    for (const key of [...this.executedWithdrawDepositKeys]) {
+    for (const key of [...this.executedWithdrawKeys]) {
       if (!depositKeysFromIndexer.has(key)) {
-        this.executedWithdrawDepositKeys.delete(key);
+        this.executedWithdrawKeys.delete(key);
       }
     }
 
-    await forEachAsync(filtered, async (depositMessage) => {
-      await this.initiateDeposit(depositMessage);
+    await forEachAsync(depositMessages, async (depositMessage) => {
+      await this.processExecution(depositMessage);
     });
+  }
 
-    await forEachAsync(filteredWithdraws, async (depositMessage) => {
-      await this.initiateWithdraw(depositMessage);
+  /**
+   * Dispatches an indexer message to the deposit or refund-withdraw path based on its classification:
+   *   - correct_transfer: forward deposit/execute path.
+   *   - mis_route / intent_refund: refund-withdraw path (OPS-353).
+   *   - anything else: dropped (forward-compat) until explicitly supported.
+   * Per-path gating (chain membership, withdraw-enabled flag, executed-set checks) lives inside
+   * `initiateDeposit` / `initiateWithdraw`.
+   */
+  private async processExecution(depositMessage: DepositAddressMessage): Promise<void> {
+    const classification = depositMessage.erc20Transfer.transferClassification;
+    if (classification === "correct_transfer") {
+      return this.initiateDeposit(depositMessage);
+    }
+    if (classification === "mis_route" || classification === "intent_refund") {
+      return this.initiateWithdraw(depositMessage);
+    }
+    this.logger.debug({
+      at: "DepositAddressHandler#processExecution",
+      message: "deposit-address transfer skipped: unknown classification",
+      classification,
+      depositAddress: depositMessage.depositAddress,
+      paramsHash: depositMessage.paramsHash,
+      txHash: depositMessage.erc20Transfer.transactionHash,
+      chainId: depositMessage.erc20Transfer.chainId,
     });
   }
 
@@ -324,14 +292,39 @@ export class DepositAddressHandler {
    * deposit clone is not yet on-chain, so the bot does not need its own deploy step.
    */
   private async initiateWithdraw(depositMessage: DepositAddressMessage): Promise<void> {
-    const { erc20Transfer, depositAddress } = depositMessage;
-    const { transactionHash: refTxHash, contractAddress: token, amount, chainId: _chainId } = erc20Transfer;
+    const { erc20Transfer, depositAddress, paramsHash } = depositMessage;
+    const {
+      transactionHash: refTxHash,
+      contractAddress: token,
+      amount,
+      chainId: _chainId,
+      transferClassification: classification,
+    } = erc20Transfer;
     // Refund chain is where funds landed (NOT routeParams.originChainId — for mis_routes those differ).
     const chainId = Number(_chainId);
     const depositKey = getDepositKey(depositMessage);
 
+    // Drop refund-withdraws while the gate is closed. intent_refund in particular would re-loop the
+    // same intent if forwarded down the deposit path, so we cannot fall back to initiateDeposit.
+    if (!this.config.withdrawEnabled) {
+      this.logger.debug({
+        at: "DepositAddressHandler#initiateWithdraw",
+        message: "deposit-address transfer skipped: withdraw flow disabled",
+        classification,
+        depositAddress,
+        paramsHash,
+        txHash: refTxHash,
+        chainId: _chainId,
+      });
+      return;
+    }
+
+    if (!this.config.relayerOriginChains.includes(chainId)) {
+      return;
+    }
+
     // Skip if a previous instance (or this one) already executed this withdraw (persisted in Redis).
-    if (this.executedWithdrawDepositKeys.has(depositKey)) {
+    if (this.executedWithdrawKeys.has(depositKey)) {
       this.logger.debug({
         at: "DepositAddressHandler#initiateWithdraw",
         message: "Skipping already executed withdraw (found in Redis)",
@@ -429,8 +422,8 @@ export class DepositAddressHandler {
     }
 
     // Persist full set to Redis immediately so handover cannot miss this withdraw.
-    this.executedWithdrawDepositKeys.add(depositKey);
-    await this._persistWithdrawnDepositKeysRedis();
+    this.executedWithdrawKeys.add(depositKey);
+    await this._persistWithdrawnKeysRedis();
   }
 
   private async _getSignedWithdraw(
@@ -470,11 +463,11 @@ export class DepositAddressHandler {
   }
 
   /** Same pattern as `_persistExecutedDepositsRedis` but for refund-withdraw deposit keys. */
-  private async _persistWithdrawnDepositKeysRedis(): Promise<void> {
+  private async _persistWithdrawnKeysRedis(): Promise<void> {
     assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
     const { redisCache } = this;
-    const redisKey = this.getWithdrawnDepositKeysRedisKey();
-    await redisCache.set(redisKey, JSON.stringify([...this.executedWithdrawDepositKeys]));
+    const redisKey = this.getWithdrawnKeysRedisKey();
+    await redisCache.set(redisKey, JSON.stringify([...this.executedWithdrawKeys]));
   }
 
   private async initiateDeposit(depositMessage: DepositAddressMessage): Promise<void> {
@@ -488,6 +481,10 @@ export class DepositAddressHandler {
     const destinationChainId = Number(_destinationChainId);
     const inputAmount = toBN(_inputAmount);
     const depositKey = getDepositKey(depositMessage);
+
+    if (!this.config.relayerOriginChains.includes(originChainId)) {
+      return;
+    }
 
     // Skip if a previous instance (or this one) already executed this deposit (persisted in Redis).
     if (this.executedDepositTxHashes.has(refTxHash)) {
