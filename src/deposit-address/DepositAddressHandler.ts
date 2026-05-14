@@ -430,8 +430,9 @@ export class DepositAddressHandler {
     const { erc20Transfer, routeParams, depositAddress, paramsHash, salt, counterfactualMaterials } = depositMessage;
     const { contractAddress: token, amount, chainId } = erc20Transfer;
     const { withdrawLeaf } = counterfactualMaterials;
+    // `_post` swallows errors and returns undefined, so retry on both throw and falsy return.
     try {
-      return await this.api.signedWithdraw({
+      const result = await this.api.signedWithdraw({
         chainId: Number(chainId),
         depositAddress,
         token,
@@ -442,10 +443,13 @@ export class DepositAddressHandler {
         salt,
         merkleRoot: paramsHash,
       });
+      if (result) {
+        return result;
+      }
     } catch {
-      // Logging is handled in AcrossSwapApiClient (matches `_getSwapApiQuote`).
-      return retriesRemaining > 0 ? this._getSignedWithdraw(depositMessage, --retriesRemaining) : undefined;
+      // Logging is handled in AcrossSwapApiClient.
     }
+    return retriesRemaining > 0 ? this._getSignedWithdraw(depositMessage, --retriesRemaining) : undefined;
   }
 
   /**
