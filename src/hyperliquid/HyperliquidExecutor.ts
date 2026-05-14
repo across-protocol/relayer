@@ -326,12 +326,12 @@ export class HyperliquidExecutor {
         message: "Observed new order event",
         swapFlowInitiated,
       });
-      const baseToken =
-        this.dstOftMessenger.address === log.address
-          ? "USDT0"
-          : this.dstCctpMessenger.address === log.address
-            ? "USDC"
-            : "USDH";
+      const baseToken = {
+        [this.dstOftMessenger.address]: "USDT0",
+        [this.dstCctpMessenger.address]: "USDC",
+        [this.dstUsdhMessenger.address]: "USDH",
+      }[log.address];
+      assert(isDefined(baseToken), `Could not find the base token for handler ${log.address}`);
       const finalToken = getTokenInfo(EvmAddress.from(swapFlowInitiated.finalToken), this.chainId).symbol;
       const pairId = `${baseToken}-${finalToken}`;
       const pair = this.pairs[pairId];
@@ -612,11 +612,13 @@ export class HyperliquidExecutor {
   }
 
   private dstHandler(tokenSymbol: string): Contract {
-    return tokenSymbol === "USDT0"
-      ? this.dstOftMessenger
-      : tokenSymbol === "USDH"
-        ? this.dstUsdhMessenger
-        : this.dstCctpMessenger;
+    const dstHandler = {
+      USDH: this.dstUsdhMessenger,
+      USDC: this.dstCctpMessenger,
+      USDT0: this.dstOftMessenger,
+    }[tokenSymbol];
+    assert(isDefined(dstHandler), `No dstHandler contract configured for token ${tokenSymbol}`);
+    return dstHandler;
   }
 
   // Async iterator which yields the top task in the task queue. If no task is present, then it waits for the task queue to receive
