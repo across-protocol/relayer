@@ -336,91 +336,110 @@ export class DepositAddressHandler {
     }
 
     this.observedExecutedWithdraws[chainId].add(depositKey);
-
-    // Defensive on-chain balance check — guards against reorged indexer messages and against
-    // acting on a deposit-address that has already been withdrawn through another path.
-    const provider = this.providersByChain[chainId];
-    const tokenContract = new Contract(token, ERC20_ABI, provider);
-
-    let onchainBalance: BigNumber;
+    // Release the in-flight lock on every exit path except a confirmed on-chain withdraw; an
+    // unexpected throw must not strand the depositKey, since the next poll would silently skip it.
+    let withdrawCommitted = false;
     try {
-      onchainBalance = await tokenContract.balanceOf(depositAddress);
-    } catch (err) {
-      this.logger.warn({
-        at: "DepositAddressHandler#initiateWithdraw",
-        message: "Skipping withdraw: failed to fetch deposit address balance",
-        depositAddress,
-        token,
-        depositKey,
-        refTxHash,
+      // Defensive on-chain balance check — guards against reorged indexer messages and against
+      // acting on a deposit-address that has already been withdrawn through another path.
+      const provider = this.providersByChain[chainId];
+      const tokenContract = new Contract(token, ERC20_ABI, provider);
+
+      let onchainBalance: BigNumber;
+      try {
+        onchainBalance = await tokenContract.balanceOf(depositAddress);
+      } catch (err) {
+        this.logger.warn({
+          at: "DepositAddressHandler#initiateWithdraw",
+          message: "Skipping withdraw: failed to fetch deposit address balance",
+          depositAddress,
+          token,
+          depositKey,
+          refTxHash,
+          chainId,
+          err: err instanceof Error ? err.message : String(err),
+        });
+        return;
+      }
+
+      if (onchainBalance.lt(toBN(amount))) {
+        this.logger.debug({
+          at: "DepositAddressHandler#initiateWithdraw",
+          message: "Skipping withdraw: deposit address balance below transfer amount",
+          depositAddress,
+          token,
+          amount,
+          onchainBalance: onchainBalance.toString(),
+          depositKey,
+          refTxHash,
+          chainId,
+        });
+        return;
+      }
+
+      const signed = await this._getSignedWithdraw(depositMessage);
+      if (!isDefined(signed)) {
+        this.logger.warn({
+          at: "DepositAddressHandler#initiateWithdraw",
+          message: "Failed to fetch signed withdraw from quote-api",
+          depositKey,
+          refTxHash,
+          depositAddress,
+          chainId,
+        });
+        return;
+      }
+
+      if (signed.signedWithdrawTx.chainId !== chainId) {
+        this.logger.warn({
+          at: "DepositAddressHandler#initiateWithdraw",
+          message: "Skipping withdraw: signed payload chainId does not match refund chainId",
+          signedChainId: signed.signedWithdrawTx.chainId,
+          chainId,
+          depositKey,
+          refTxHash,
+          depositAddress,
+        });
+        return;
+      }
+
+      const useDispatcher = this.depositAddressSigners.length > 0;
+      const withdrawTx = {
+        contract: this.getExecuteContract(signed.signedWithdrawTx.to, chainId, useDispatcher),
+        method: "",
+        args: [signed.signedWithdrawTx.data],
+        value: toBN(signed.signedWithdrawTx.value),
         chainId,
-        err: err instanceof Error ? err.message : String(err),
-      });
-      this.observedExecutedWithdraws[chainId].delete(depositKey);
-      return;
+        message: "Completed Refund Withdraw 💸",
+        mrkdwn: `Refund withdraw on ${getNetworkName(chainId)} for deposit address ${blockExplorerLink(
+          depositAddress,
+          chainId
+        )} (classification: ${erc20Transfer.transferClassification}, bundledDeploy: ${signed.bundledDeploy})`,
+      };
+
+      const receipt = await sendAndConfirmTransaction(withdrawTx, this.transactionClient, useDispatcher);
+      if (!isDefined(receipt)) {
+        this.logger.warn({
+          at: "DepositAddressHandler#initiateWithdraw",
+          message: "Failed to submit withdraw tx",
+          depositKey,
+          refTxHash,
+          depositAddress,
+          chainId,
+        });
+        return;
+      }
+
+      // The withdraw is on-chain; keep the in-flight lock and never re-attempt this depositKey,
+      // even if the Redis persist below throws (handover may miss it, but a double-send is worse).
+      this.executedWithdrawKeys.add(depositKey);
+      withdrawCommitted = true;
+      await this._persistWithdrawnKeysRedis();
+    } finally {
+      if (!withdrawCommitted) {
+        this.observedExecutedWithdraws[chainId].delete(depositKey);
+      }
     }
-
-    if (onchainBalance.lt(toBN(amount))) {
-      this.logger.debug({
-        at: "DepositAddressHandler#initiateWithdraw",
-        message: "Skipping withdraw: deposit address balance below transfer amount",
-        depositAddress,
-        token,
-        amount,
-        onchainBalance: onchainBalance.toString(),
-        depositKey,
-        refTxHash,
-        chainId,
-      });
-      this.observedExecutedWithdraws[chainId].delete(depositKey);
-      return;
-    }
-
-    const signed = await this._getSignedWithdraw(depositMessage);
-    if (!isDefined(signed)) {
-      this.logger.warn({
-        at: "DepositAddressHandler#initiateWithdraw",
-        message: "Failed to fetch signed withdraw from quote-api",
-        depositKey,
-        refTxHash,
-        depositAddress,
-        chainId,
-      });
-      this.observedExecutedWithdraws[chainId].delete(depositKey);
-      return;
-    }
-
-    const useDispatcher = this.depositAddressSigners.length > 0;
-    const withdrawTx = {
-      contract: this.getExecuteContract(signed.signedWithdrawTx.to, chainId, useDispatcher),
-      method: "",
-      args: [signed.signedWithdrawTx.data],
-      value: toBN(signed.signedWithdrawTx.value),
-      chainId,
-      message: "Completed Refund Withdraw 💸",
-      mrkdwn: `Refund withdraw on ${getNetworkName(chainId)} for deposit address ${blockExplorerLink(
-        depositAddress,
-        chainId
-      )} (classification: ${erc20Transfer.transferClassification}, bundledDeploy: ${signed.bundledDeploy})`,
-    };
-
-    const receipt = await sendAndConfirmTransaction(withdrawTx, this.transactionClient, useDispatcher);
-    if (!isDefined(receipt)) {
-      this.logger.warn({
-        at: "DepositAddressHandler#initiateWithdraw",
-        message: "Failed to submit withdraw tx",
-        depositKey,
-        refTxHash,
-        depositAddress,
-        chainId,
-      });
-      this.observedExecutedWithdraws[chainId].delete(depositKey);
-      return;
-    }
-
-    // Persist full set to Redis immediately so handover cannot miss this withdraw.
-    this.executedWithdrawKeys.add(depositKey);
-    await this._persistWithdrawnKeysRedis();
   }
 
   private async _getSignedWithdraw(
@@ -429,7 +448,22 @@ export class DepositAddressHandler {
   ): Promise<SignedWithdrawResponse | undefined> {
     const { erc20Transfer, routeParams, depositAddress, paramsHash, salt, counterfactualMaterials } = depositMessage;
     const { contractAddress: token, amount, chainId } = erc20Transfer;
-    const { withdrawLeaf } = counterfactualMaterials;
+    const withdrawLeaf = counterfactualMaterials?.withdrawLeaf;
+    if (
+      !isDefined(withdrawLeaf) ||
+      !isDefined(withdrawLeaf.implementationAddress) ||
+      !isDefined(withdrawLeaf.merkleProof)
+    ) {
+      this.logger.warn({
+        at: "DepositAddressHandler#_getSignedWithdraw",
+        message: "Skipping withdraw: indexer message missing counterfactual withdraw materials",
+        depositAddress,
+        paramsHash,
+        txHash: erc20Transfer.transactionHash,
+        chainId,
+      });
+      return undefined;
+    }
     // `_post` swallows errors and returns undefined, so retry on both throw and falsy return.
     try {
       const result = await this.api.signedWithdraw({
