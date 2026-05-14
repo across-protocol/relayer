@@ -260,10 +260,8 @@ export class DepositAddressHandler {
   /**
    * Dispatches an indexer message to the deposit or refund-withdraw path based on its classification:
    *   - correct_transfer: forward deposit/execute path.
-   *   - mis_route / intent_refund: refund-withdraw path (OPS-353).
+   *   - mis_route / intent_refund: refund-withdraw path.
    *   - anything else: dropped (forward-compat) until explicitly supported.
-   * Per-path gating (chain membership, withdraw-enabled flag, executed-set checks) lives inside
-   * `initiateDeposit` / `initiateWithdraw`.
    */
   private async processExecution(depositMessage: DepositAddressMessage): Promise<void> {
     const classification = depositMessage.erc20Transfer.transferClassification;
@@ -285,7 +283,7 @@ export class DepositAddressHandler {
   }
 
   /**
-   * @notice Refund-withdraw path entry point (OPS-353). Gated behind config.withdrawEnabled.
+   * @notice Refund-withdraw path entry point. Gated behind config.withdrawEnabled.
    * Refunds the full transfer amount via the quote-api signed-withdraw flow; gas-reserve / fee
    * deduction is deferred to a follow-up task. The quote-api response bundles the
    * counterfactual-deposit deploy + signedWithdrawToUser into a single Multicall3 call when the
@@ -297,11 +295,10 @@ export class DepositAddressHandler {
       transactionHash: refTxHash,
       contractAddress: token,
       amount,
-      chainId: _chainId,
       transferClassification: classification,
     } = erc20Transfer;
     // Refund chain is where funds landed (NOT routeParams.originChainId — for mis_routes those differ).
-    const chainId = Number(_chainId);
+    const chainId = Number(erc20Transfer.chainId);
     const depositKey = getDepositKey(depositMessage);
 
     // Drop refund-withdraws while the gate is closed. intent_refund in particular would re-loop the
@@ -314,7 +311,7 @@ export class DepositAddressHandler {
         depositAddress,
         paramsHash,
         txHash: refTxHash,
-        chainId: _chainId,
+        chainId,
       });
       return;
     }

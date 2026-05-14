@@ -147,7 +147,7 @@ export class AcrossSwapApiClient extends BaseAcrossApiClient {
   }
 
   async signedWithdraw(req: SignedWithdrawRequest): Promise<SignedWithdrawResponse | undefined> {
-    return this._post<SignedWithdrawResponse>("swap/counterfactual/sign-withdraw", req);
+    return this._post<SignedWithdrawResponse>("/swap/counterfactual/sign-withdraw", req);
   }
 
   private _isRouteSupported(route: SwapRoute): boolean {
