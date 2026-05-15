@@ -18,6 +18,18 @@ export interface Erc20Transfer {
   transactionHash: string;
   transferClassification: DepositAddressTransferClassification;
 }
+
+export interface CounterfactualLeaf {
+  implementationAddress: string;
+  encodedParams: string;
+  leafHash: string;
+  merkleProof: string[];
+}
+
+export interface CounterfactualMaterials {
+  withdrawLeaf: CounterfactualLeaf;
+}
+
 export interface DepositAddressMessage {
   depositAddress: string;
   paramsHash: string;
@@ -26,6 +38,8 @@ export interface DepositAddressMessage {
   salt: string;
   counterfactualDepositContractAddress: string;
   counterfactualFactoryContractAddress: string;
+  adminWithdrawManagerContractAddress: string;
+  counterfactualMaterials: CounterfactualMaterials;
   shouldSponsorAccountCreation: boolean;
 }
 
