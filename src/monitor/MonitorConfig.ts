@@ -200,7 +200,7 @@ export class MonitorConfig extends CommonConfig {
 
         let parsedWarnThreshold: number | null = null;
         if (isDefined(warnThreshold)) {
-          if (Number.isNaN(Number(errorThreshold))) {
+          if (Number.isNaN(Number(warnThreshold))) {
             throw new Error(`warnThreshold value: ${warnThreshold} cannot be converted to a number`);
           }
           parsedWarnThreshold = Number(warnThreshold);
