@@ -1,5 +1,5 @@
 import winston from "winston";
-import { array, create, number, object, optional, record, string } from "superstruct";
+import { array, create, number, object, optional, record, string, union } from "superstruct";
 import { CommonConfig, ProcessEnv } from "../common";
 import {
   CHAIN_IDs,
@@ -27,11 +27,11 @@ const MonitoredBalances2Schema = record(
 
 const MonitoredBalancesSchema = array(
   object({
-    chainId: string(),
+    chainId: union([string(), number()]),
     account: string(),
     token: optional(string()),
-    warnThreshold: optional(string()),
-    errorThreshold: optional(string()),
+    warnThreshold: optional(union([string(), number()])),
+    errorThreshold: optional(union([string(), number()])),
   })
 );
 
@@ -185,7 +185,7 @@ export class MonitorConfig extends CommonConfig {
     } else if (MONITORED_BALANCES) {
       const config = create(JSON.parse(MONITORED_BALANCES), MonitoredBalancesSchema);
       this.monitoredBalances = config.map(({ errorThreshold, warnThreshold, account, token, chainId: _chainId }) => {
-        const chainId = parseInt(_chainId);
+        const chainId = parseInt(String(_chainId));
         if (!isDefined(errorThreshold) && !isDefined(warnThreshold)) {
           throw new Error("Must provide either an errorThreshold or a warnThreshold");
         }
