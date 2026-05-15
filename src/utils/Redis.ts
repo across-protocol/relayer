@@ -19,6 +19,7 @@ export async function connectRedisClient(
       logger?.error({
         at: "RedisClient",
         message: `Redis connection failed after ${MAX_RETRIES} retries. Giving up.`,
+        cause: String(cause),
       });
       return new Error(`Redis connection failed after ${MAX_RETRIES} retries`);
     }
@@ -29,6 +30,7 @@ export async function connectRedisClient(
     logger?.debug({
       at: "RedisClient",
       message: `Lost redis connection, retrying in ${delay} ms (attempt ${retries + 1}/${MAX_RETRIES}).`,
+      cause: String(cause),
     });
     return delay + jitter;
   };
@@ -36,7 +38,7 @@ export async function connectRedisClient(
   let redisClient: RedisClient | undefined = undefined;
   try {
     redisClient = createClient({ url, socket: { reconnectStrategy } });
-    redisClient.on("error", (err) => logger?.warn({ at: "RedisClient", message: "Redis error", error: String(err) }));
+    redisClient.on("error", (err) => logger?.warn({ at: "RedisClient", message: "Redis error", cause: String(err) }));
     await redisClient.connect();
     return redisClient;
   } catch (err) {
@@ -46,7 +48,7 @@ export async function connectRedisClient(
     logger?.debug({
       at: "RedisClient#connect",
       message: `Failed to connect to redis server at ${url}.`,
-      error: String(err),
+      cause: String(err),
     });
     throw err;
   }
@@ -59,7 +61,7 @@ export async function connectRedisClient(
 export async function disconnectRedisClient(client: RedisClient, logger?: winston.Logger): Promise<void> {
   let disconnectSuccessful = true;
   try {
-    await client.disconnect();
+    await client.close();
   } catch (_e) {
     disconnectSuccessful = false;
   }
@@ -101,7 +103,7 @@ export async function disconnectRedisClients(logger?: winston.Logger): Promise<v
         at: "RedisClient#disconnectRedisClients",
         message: "Failed to disconnect from redis server.",
         url,
-        error: err,
+        cause: String(err),
       });
     }
   }

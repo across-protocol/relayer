@@ -123,11 +123,22 @@ export function getDstOftHandler(): Contract {
 }
 
 export function getDstCctpHandler(): Contract {
-  const factoryName = "SponsoredCCTPDstPeriphery";
+  const factoryName = "SponsoredCCTPDstPeriphery_CCTP_USDC";
   const artifact = typechain["HyperCoreFlowExecutor__factory"];
   const address = isDefined(process.env.DST_CCTP_HANDLER)
     ? process.env.DST_CCTP_HANDLER
     : (CONTRACT_ADDRESSES[CHAIN_IDs.HYPEREVM]?.dstCctpHandler?.address ??
+      getDeployedAddress(factoryName, CHAIN_IDs.HYPEREVM));
+  assert(isDefined(address), `No address found for ${factoryName} on HyperEVM`);
+  return new Contract(address, artifact.abi);
+}
+
+export function getDstUsdhHandler(): Contract {
+  const factoryName = "SponsoredCCTPDstPeriphery_CCTP_USDH";
+  const artifact = typechain["HyperCoreFlowExecutor__factory"];
+  const address = isDefined(process.env.DST_USDH_HANDLER)
+    ? process.env.DST_USDH_HANDLER
+    : (CONTRACT_ADDRESSES[CHAIN_IDs.HYPEREVM]?.dstUsdhHandler?.address ??
       getDeployedAddress(factoryName, CHAIN_IDs.HYPEREVM));
   assert(isDefined(address), `No address found for ${factoryName} on HyperEVM`);
   return new Contract(address, artifact.abi);

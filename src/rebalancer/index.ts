@@ -100,7 +100,7 @@ async function initializeRebalancerRun(_logger: winston.Logger, baseSigner: Sign
   };
 }
 
-function loadCumulativeModeBalances(
+export function loadCumulativeModeBalances(
   rebalancerConfig: RebalancerConfig,
   inventoryClient: InventoryClient
 ): {
@@ -119,7 +119,6 @@ function loadCumulativeModeBalances(
       .map(Number)
       .forEach((chainId) => {
         const l2TokenInfo = getTokenInfoFromSymbol(token, chainId);
-        assert(l2TokenInfo.address.isEVM());
         const currentBalance = inventoryClient.tokenClient.getBalance(chainId, l2TokenInfo.address);
         currentBalances[chainId] ??= {};
         currentBalances[chainId][token] = currentBalance;
