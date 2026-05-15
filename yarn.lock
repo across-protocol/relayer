@@ -2,15 +2,20 @@
 # yarn lockfile v1
 
 
-"@across-protocol/constants@^3.1.100", "@across-protocol/constants@^3.1.109":
-  version "3.1.109"
-  resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.109.tgz#3a7e9f7581405cd09dbbdc480800d4a775051c46"
-  integrity sha512-Mt0wYTzMPbfNSEWZFuGdMTn8N4z9+yNWJ0HDFaZwVlaiW8m9F1uK5SWHsc6TAZURTvrC2T98nIDGm+ibPgwEYA==
-
 "@across-protocol/constants@^3.1.107":
   version "3.1.108"
   resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.108.tgz#982e230c0193f3b4124e3cb880eb6cb481f76a7e"
   integrity sha512-uYcIw6VjWhSRal9+xv5aTgk3cK1qVH/8SkpSCpa6KMQUXmCKZ3eGGaVMl7Nogl6S0Cj/D76LnMgM3jUP6NK9ag==
+
+"@across-protocol/constants@^3.1.109":
+  version "3.1.109"
+  resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.109.tgz#3a7e9f7581405cd09dbbdc480800d4a775051c46"
+  integrity sha512-Mt0wYTzMPbfNSEWZFuGdMTn8N4z9+yNWJ0HDFaZwVlaiW8m9F1uK5SWHsc6TAZURTvrC2T98nIDGm+ibPgwEYA==
+
+"@across-protocol/constants@^3.1.110":
+  version "3.1.111"
+  resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.111.tgz#bad4718e4d6179a2012a6d66d3440e1a8c1b2cb5"
+  integrity sha512-z1ly6ROzCHE6G66wYaARFtYDRLii9LWBL1HhBiHnzi2ukLA5Qg62MipFXN5Ux5aS62xLyvBcgtCB8HKUvGzhrA==
 
 "@across-protocol/contracts@5.0.10":
   version "5.0.10"
@@ -34,35 +39,13 @@
     bs58 "^6.0.0"
     ethers "5.7.2"
 
-"@across-protocol/contracts@5.0.6":
-  version "5.0.6"
-  resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-5.0.6.tgz#5aa1101201ac581bbf96ce29712c2da42cf96675"
-  integrity sha512-JS68PqktXYLQlBDminUXmuVPcXh6tKHMDS8fQbrcObL8/tWOxyY6dFgcydBUWi9WEkocvKjQ9KpJIbsfx7zs7w==
+"@across-protocol/sdk@4.4.0-alpha.10":
+  version "4.4.0-alpha.10"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.4.0-alpha.10.tgz#b4a0ae9824288866e501b5419df993c868ae2f8d"
+  integrity sha512-/ohGPSFfUTDn1oJZRdp5MD1ZfL5WF0sy8LdNKEiCSlyq1sHkKscPITVEA6rmS0Eptj3Cq9A1yZHWYqXB0dqBuA==
   dependencies:
-    "@across-protocol/constants" "^3.1.107"
-    "@coral-xyz/anchor" "^0.31.1"
-    "@eth-optimism/contracts" "^0.5.40"
-    "@ethersproject/bignumber" "5.7.0"
-    "@ethersproject/bytes" "5.7.0"
-    "@ethersproject/keccak256" "5.7.0"
-    "@openzeppelin/contracts" "5.5.0"
-    "@openzeppelin/contracts-upgradeable" "5.5.0"
-    "@openzeppelin/contracts-upgradeable-v4" "npm:@openzeppelin/contracts-upgradeable@4.9.6"
-    "@openzeppelin/contracts-v4" "npm:@openzeppelin/contracts@4.9.6"
-    "@scroll-tech/contracts" "^0.1.0"
-    "@solana-program/address-lookup-table" "0.10.0"
-    "@solana/kit" "^5.4.0"
-    "@solana/web3.js" "1.98.2"
-    bs58 "^6.0.0"
-    ethers "5.7.2"
-
-"@across-protocol/sdk@4.4.0-alpha.8":
-  version "4.4.0-alpha.8"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.4.0-alpha.8.tgz#c0f0a6ae479bac874bd532ab703e27f535acf976"
-  integrity sha512-9WoWRPyNMioyWDDgWLoz5GWpvdzwW0/rkxqkbfXqMNHdoVzm6kHureegOUx5PQEP+1zSLuLkS0B3RVGqdAjXJw==
-  dependencies:
-    "@across-protocol/constants" "^3.1.100"
-    "@across-protocol/contracts" "5.0.6"
+    "@across-protocol/constants" "^3.1.110"
+    "@across-protocol/contracts" "5.0.10"
     "@coral-xyz/anchor" "^0.31.1"
     "@coral-xyz/borsh" "^0.31.1"
     "@eth-optimism/sdk" "^3.3.1"

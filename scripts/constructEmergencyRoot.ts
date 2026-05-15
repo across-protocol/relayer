@@ -87,7 +87,7 @@ export async function run(): Promise<void> {
       refundAddresses: [EvmAddress.from("0x428AB2BA90Eba0a4Be7aF34C9Ac451ab061AC010")],
     },
   ];
-  const poolRebalanceRoot: MerkleTree<PoolRebalanceLeaf> = buildPoolRebalanceLeafTree(poolRebalanceLeaves);
+  const poolRebalanceRoot = buildPoolRebalanceLeafTree(poolRebalanceLeaves);
 
   const relayerRefundRoot2: MerkleTree<RelayerRefundLeaf> = buildRelayerRefundTree(relayerRefundLeaves2);
   console.log("relayerRefundRoot2:", prettyRelayerRefundLeaf(relayerRefundLeaves2), relayerRefundRoot2.getHexRoot());
