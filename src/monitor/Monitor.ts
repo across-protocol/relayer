@@ -1,4 +1,4 @@
-import { BundleDataApproxClient } from "../clients";
+import { BinanceClient, BundleDataApproxClient } from "../clients";
 import { EXPECTED_L1_TO_L2_MESSAGE_TIME } from "../common";
 import {
   BundleAction,
@@ -45,8 +45,6 @@ import {
   chainIsTvm,
   SvmAddress,
   assert,
-  getBinanceApiClient,
-  getBinanceWithdrawalLimits,
   getSolanaTokenBalance,
   getFillStatusPda,
   getKitKeypairFromEvmSigner,
@@ -181,6 +179,10 @@ export class Monitor {
   async checkUnknownRootBundleCallers(): Promise<void> {
     this.logger.debug({ at: "Monitor#RootBundleCallers", message: "Checking for unknown root bundle callers" });
 
+    assert(
+      isDefined(this.hubPoolStartingBlock) && isDefined(this.hubPoolEndingBlock),
+      "Monitor: hub pool block range not initialized"
+    );
     const proposedBundles = this.clients.hubPoolClient.getProposedRootBundlesInBlockRange(
       this.hubPoolStartingBlock,
       this.hubPoolEndingBlock
@@ -616,8 +618,8 @@ export class Monitor {
           token,
           account,
           currentBalance: balances[i].toString(),
-          warnThreshold: parseUnits(warnThreshold.toString(), decimalValues[i]),
-          errorThreshold: parseUnits(errorThreshold.toString(), decimalValues[i]),
+          warnThreshold: warnThreshold === null ? null : parseUnits(warnThreshold.toString(), decimalValues[i]),
+          errorThreshold: errorThreshold === null ? null : parseUnits(errorThreshold.toString(), decimalValues[i]),
         };
       }),
     });
@@ -677,8 +679,8 @@ export class Monitor {
   }
 
   async checkBinanceWithdrawalLimits() {
-    const binanceApi = await getBinanceApiClient(process.env["BINANCE_API_BASE"]);
-    const wdQuota = await getBinanceWithdrawalLimits(binanceApi);
+    const client = await BinanceClient.create({ logger: this.logger, url: process.env.BINANCE_API_BASE });
+    const wdQuota = await client.getWithdrawalLimits();
     const aboveWarnThreshold =
       isDefined(this.monitorConfig.binanceWithdrawWarnThreshold) &&
       wdQuota.usedWdQuota / wdQuota.wdQuota > this.monitorConfig.binanceWithdrawWarnThreshold;
@@ -758,6 +760,7 @@ export class Monitor {
   async checkStuckRebalances(): Promise<void> {
     const hubPoolClient = this.clients.hubPoolClient;
     const { currentTime, latestHeightSearched } = hubPoolClient;
+    assert(isDefined(currentTime), "Monitor: hubPoolClient currentTime not yet known");
     const lastFullyExecutedBundle = hubPoolClient.getLatestFullyExecutedRootBundle(latestHeightSearched);
     // This case shouldn't happen outside of tests as Across V2 has already launched.
     if (lastFullyExecutedBundle === undefined) {
@@ -816,6 +819,7 @@ export class Monitor {
       }
 
       const spokePoolAddress = this.clients.spokePoolClients[chainId].spokePoolAddress;
+      assert(isDefined(spokePoolAddress), `Monitor: spoke pool address not yet known for chain ${chainId}`);
       for (const l1Token of allL1Tokens) {
         // Outstanding transfers are mapped to either the spoke pool or the hub pool, depending on which
         // chain events are queried. Some only allow us to index on the fromAddress, the L1 originator or the
@@ -873,6 +877,7 @@ export class Monitor {
       fills.push(...relayerFills);
     }
 
+    assert(isDefined(svmSpokePoolClient.spokePoolAddress), "Monitor: SVM spoke pool address not yet known");
     const spokePoolProgramId = address(svmSpokePoolClient.spokePoolAddress.toBase58());
     const signer = await getKitKeypairFromEvmSigner(this.clients.hubPoolClient.hubPool.signer);
     const svmRpc = svmSpokePoolClient.svmEventsClient.getRpc();

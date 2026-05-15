@@ -1,5 +1,7 @@
 import { assert } from "chai";
+import { Contract } from "ethers";
 import { random } from "lodash";
+import { AcrossConfigStore } from "@across-protocol/contracts";
 import { constants as sdkConstants, utils as sdkUtils } from "@across-protocol/sdk";
 import { ConfigStoreClient, FillProfit, EVMSpokePoolClient } from "../src/clients";
 import { Deposit } from "../src/interfaces";
@@ -138,36 +140,39 @@ describe("ProfitClient: Consider relay profit", () => {
     };
   };
 
-  beforeEach(async () => {
+  let configStore: AcrossConfigStore;
+  let hubPool: Contract;
+  let deployedSpokes: { chainId: number; spokePool: Contract; deploymentBlock: number }[];
+
+  before(async () => {
     const [owner] = await ethers.getSigners();
+    ({ configStore } = await deployConfigStore(owner, []));
+    ({ hubPool } = await hubPoolFixture());
+
+    assert(chainIds.length === 2, "SpokePool deployment requires only 2 chainIds");
+    deployedSpokes = await sdkUtils.mapAsync(chainIds, async (spokeChainId, idx) => {
+      const { spokePool, deploymentBlock } = await deploySpokePoolWithToken(
+        spokeChainId,
+        chainIds[(idx + 1) % 2] // @dev Only works for 2 chainIds.
+      );
+      return { chainId: spokeChainId, spokePool: spokePool.connect(owner), deploymentBlock };
+    });
+  });
+
+  beforeEach(async () => {
     const logger = createSpyLogger().spyLogger;
 
-    const { configStore } = await deployConfigStore(owner, []);
     const configStoreClient = new ConfigStoreClient(logger, configStore);
     await configStoreClient.update();
 
-    const { hubPool } = await hubPoolFixture();
     hubPoolClient = new MockHubPoolClient(logger, hubPool, configStoreClient);
     await hubPoolClient.update();
 
-    const chainIds = [originChainId, destinationChainId];
-    assert(chainIds.length === 2, "SpokePool deployment requires only 2 chainIds");
     const spokePoolClients = Object.fromEntries(
-      await sdkUtils.mapAsync(chainIds, async (spokeChainId, idx) => {
-        const { spokePool, deploymentBlock } = await deploySpokePoolWithToken(
-          spokeChainId,
-          chainIds[(idx + 1) % 2] // @dev Only works for 2 chainIds.
-        );
-        const spokePoolClient = new EVMSpokePoolClient(
-          spyLogger,
-          spokePool.connect(owner),
-          null,
-          spokeChainId,
-          deploymentBlock
-        );
-
-        return [spokeChainId, spokePoolClient];
-      })
+      deployedSpokes.map(({ chainId, spokePool, deploymentBlock }) => [
+        chainId,
+        new EVMSpokePoolClient(spyLogger, spokePool, null, chainId, deploymentBlock),
+      ])
     );
 
     const debugProfitability = true;

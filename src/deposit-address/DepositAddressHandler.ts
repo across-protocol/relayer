@@ -1,8 +1,6 @@
 import winston from "winston";
 import { DepositAddressHandlerConfig } from "./DepositAddressHandlerConfig";
-import { RedisCacheInterface } from "../caching/RedisCache";
 import {
-  getRedisCache,
   isDefined,
   parseJson,
   Signer,
@@ -21,9 +19,11 @@ import {
   assert,
   getNetworkName,
   blockExplorerLink,
+  BigNumber,
 } from "../utils";
+import { getRedisCache, RedisCacheInterface } from "../cache/Redis";
 import { DepositAddressMessage } from "../interfaces";
-import { AcrossSwapApiClient, TransactionClient, SwapApiResponse } from "../clients";
+import { AcrossSwapApiClient, TransactionClient, SwapApiResponse, SignedWithdrawResponse } from "../clients";
 import { AcrossIndexerApiClient } from "../clients/AcrossIndexerApiClient";
 import ERC20_ABI from "../common/abi/MinimalERC20.json";
 
@@ -32,8 +32,20 @@ import ERC20_ABI from "../common/abi/MinimalERC20.json";
  */
 export class DepositAddressHandler {
   private abortController = new AbortController();
-  private instanceCoordinator: InstanceCoordinator;
+  private _instanceCoordinator?: InstanceCoordinator;
   private initialized = false;
+
+  // instanceCoordinator is populated by initialize(); reads pre-init throw, writes go through the setter.
+  private get instanceCoordinator(): InstanceCoordinator {
+    assert(
+      isDefined(this._instanceCoordinator),
+      "DepositAddressHandler: instanceCoordinator accessed before initialize()"
+    );
+    return this._instanceCoordinator;
+  }
+  private set instanceCoordinator(value: InstanceCoordinator) {
+    this._instanceCoordinator = value;
+  }
 
   private providersByChain: { [chainId: number]: Provider } = {};
 
@@ -43,9 +55,29 @@ export class DepositAddressHandler {
   /** Set of erc20Transfer.transactionHash for deposits successfully executed (persisted in Redis for handover). */
   private executedDepositTxHashes: Set<string> = new Set();
 
+  /** Set of depositKeys for refund withdraws successfully executed (persisted in Redis for handover). */
+  private executedWithdrawKeys: Set<string> = new Set();
+
+  /**
+   * Per chainId (refund chain = erc20Transfer.chainId): set of depositKeys for withdraws currently
+   * being processed in this run. Prevents the next poll (which can fire on a 1s interval, faster
+   * than a withdraw confirms) from racing against an in-flight broadcast. Mirrors
+   * `observedExecutedDeposits` on the deposit path.
+   */
+  private observedExecutedWithdraws: { [chainId: number]: Set<string> } = {};
+
   private api: AcrossSwapApiClient;
   private indexerApi: AcrossIndexerApiClient;
-  private signerAddress: EvmAddress;
+  private _signerAddress?: EvmAddress;
+
+  // signerAddress is populated by initialize(); reads pre-init throw, writes go through the setter.
+  private get signerAddress(): EvmAddress {
+    assert(isDefined(this._signerAddress), "DepositAddressHandler: signerAddress accessed before initialize()");
+    return this._signerAddress;
+  }
+  private set signerAddress(value: EvmAddress) {
+    this._signerAddress = value;
+  }
 
   private transactionClient;
   private redisCache: RedisCacheInterface | undefined;
@@ -70,11 +102,10 @@ export class DepositAddressHandler {
       message: "Initializing DepositAddressHandler",
     });
 
-    const { RUN_IDENTIFIER: runIdentifier, BOT_IDENTIFIER: botIdentifier } = process.env;
-
     // Set the signer address.
     this.signerAddress = EvmAddress.from(await this.baseSigner.getAddress());
     this.redisCache = await getRedisCache(this.logger);
+    assert(isDefined(this.redisCache), "DepositAddressHandler: requires a Redis cache for handover state");
 
     // Exit if OS instructs us to do so.
     process.on("SIGHUP", () => {
@@ -97,32 +128,39 @@ export class DepositAddressHandler {
       const provider = await getProvider(chainId);
       this.providersByChain[chainId] = provider;
       this.observedExecutedDeposits[chainId] = new Set<string>();
+      this.observedExecutedWithdraws[chainId] = new Set<string>();
     });
 
     // Establish bot instance and take over. First thing after handover: load persisted executed deposits from Redis.
     this.instanceCoordinator = new InstanceCoordinator(
       this.logger,
       this.redisCache,
-      botIdentifier,
-      runIdentifier,
+      this.config.botIdentifier,
+      this.config.runIdentifier,
       this.abortController
     );
     await this.instanceCoordinator.initiateHandover();
 
     await this._loadExecutedDepositsFromRedis();
+    await this._loadWithdrawnKeysFromRedis();
 
     this.initialized = true;
   }
 
   private getExecutedDepositsRedisKey(): string {
-    const botId = process.env.BOT_IDENTIFIER ?? "deposit-address-handler";
-    return `deposit-address:executed:${botId}`;
+    return `deposit-address:executed:${this.config.botIdentifier}`;
+  }
+
+  private getWithdrawnKeysRedisKey(): string {
+    return `deposit-address:withdrawn-deposit-keys:${this.config.botIdentifier}`;
   }
 
   /** Loads executed deposit tx hashes from Redis (e.g. after handover). */
   private async _loadExecutedDepositsFromRedis(): Promise<void> {
+    assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
+    const { redisCache } = this;
     const redisKey = this.getExecutedDepositsRedisKey();
-    const raw = (await this.redisCache.get(redisKey)) as string | undefined;
+    const raw = await redisCache.get<string>(redisKey);
     let arr: string[] = [];
     try {
       if (raw) {
@@ -143,6 +181,35 @@ export class DepositAddressHandler {
       at: "DepositAddressHandler#_loadExecutedDepositsFromRedis",
       message: "Loaded executed deposit tx hashes from Redis",
       count: this.executedDepositTxHashes.size,
+    });
+  }
+
+  /** Loads executed refund-withdraw depositKeys from Redis (e.g. after handover). */
+  private async _loadWithdrawnKeysFromRedis(): Promise<void> {
+    assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
+    const { redisCache } = this;
+    const redisKey = this.getWithdrawnKeysRedisKey();
+    const raw = await redisCache.get<string>(redisKey);
+    let arr: string[] = [];
+    try {
+      if (raw) {
+        arr = parseJson.stringArray(raw);
+      }
+    } catch (err) {
+      this.logger.error({
+        at: "DepositAddressHandler#_loadWithdrawnKeysFromRedis",
+        message: "Failed to parse withdrawn deposit keys from Redis, using empty set",
+        redisKey,
+        err: err instanceof Error ? err.message : String(err),
+      });
+
+      throw err;
+    }
+    this.executedWithdrawKeys = new Set(arr);
+    this.logger.debug({
+      at: "DepositAddressHandler#_loadWithdrawnKeysFromRedis",
+      message: "Loaded executed withdraw deposit keys from Redis",
+      count: this.executedWithdrawKeys.size,
     });
   }
 
@@ -168,25 +235,255 @@ export class DepositAddressHandler {
 
   private async evaluateDepositAddresses(): Promise<void> {
     const depositMessages = await this._queryIndexerApi();
-    const filtered = depositMessages.filter(
-      (m) =>
-        this.config.relayerOriginChains.includes(Number(m.routeParams.originChainId)) &&
-        !this.executedDepositTxHashes.has(m.erc20Transfer.transactionHash)
-    );
 
     // We want to remove all executed deposits from the in-memory set if they are not returned by the indexer.
     // This is because the indexer will stop sending the deposit once it has been "expired" (internal TTL).
     // So there is no point of keeping them in Redis after Indexer API stops returning them.
     const refTxHashesFromIndexer = new Set(depositMessages.map((m) => m.erc20Transfer.transactionHash));
+    const depositKeysFromIndexer = new Set(depositMessages.map((m) => getDepositKey(m)));
     for (const tx of [...this.executedDepositTxHashes]) {
       if (!refTxHashesFromIndexer.has(tx)) {
         this.executedDepositTxHashes.delete(tx);
       }
     }
+    for (const key of [...this.executedWithdrawKeys]) {
+      if (!depositKeysFromIndexer.has(key)) {
+        this.executedWithdrawKeys.delete(key);
+      }
+    }
 
-    await forEachAsync(filtered, async (depositMessage) => {
-      await this.initiateDeposit(depositMessage);
+    await forEachAsync(depositMessages, async (depositMessage) => {
+      await this.processExecution(depositMessage);
     });
+  }
+
+  /**
+   * Dispatches an indexer message to the deposit or refund-withdraw path based on its classification:
+   *   - correct_transfer: forward deposit/execute path.
+   *   - mis_route / intent_refund: refund-withdraw path.
+   *   - anything else: dropped (forward-compat) until explicitly supported.
+   */
+  private async processExecution(depositMessage: DepositAddressMessage): Promise<void> {
+    const classification = depositMessage.erc20Transfer.transferClassification;
+    if (classification === "correct_transfer") {
+      return this.initiateDeposit(depositMessage);
+    }
+    if (classification === "mis_route" || classification === "intent_refund") {
+      return this.initiateWithdraw(depositMessage);
+    }
+    this.logger.debug({
+      at: "DepositAddressHandler#processExecution",
+      message: "deposit-address transfer skipped: unknown classification",
+      classification,
+      depositAddress: depositMessage.depositAddress,
+      paramsHash: depositMessage.paramsHash,
+      txHash: depositMessage.erc20Transfer.transactionHash,
+      chainId: depositMessage.erc20Transfer.chainId,
+    });
+  }
+
+  /**
+   * @notice Refund-withdraw path entry point. Gated behind config.withdrawEnabled.
+   * Refunds the full transfer amount via the quote-api signed-withdraw flow; gas-reserve / fee
+   * deduction is deferred to a follow-up task. The quote-api response bundles the
+   * counterfactual-deposit deploy + signedWithdrawToUser into a single Multicall3 call when the
+   * deposit clone is not yet on-chain, so the bot does not need its own deploy step.
+   */
+  private async initiateWithdraw(depositMessage: DepositAddressMessage): Promise<void> {
+    const { erc20Transfer, depositAddress, paramsHash } = depositMessage;
+    const {
+      transactionHash: refTxHash,
+      contractAddress: token,
+      amount,
+      transferClassification: classification,
+    } = erc20Transfer;
+    // Refund chain is where funds landed (NOT routeParams.originChainId — for mis_routes those differ).
+    const chainId = Number(erc20Transfer.chainId);
+    const depositKey = getDepositKey(depositMessage);
+
+    // Drop refund-withdraws while the gate is closed. intent_refund in particular would re-loop the
+    // same intent if forwarded down the deposit path, so we cannot fall back to initiateDeposit.
+    if (!this.config.withdrawEnabled) {
+      this.logger.debug({
+        at: "DepositAddressHandler#initiateWithdraw",
+        message: "deposit-address transfer skipped: withdraw flow disabled",
+        classification,
+        depositAddress,
+        paramsHash,
+        txHash: refTxHash,
+        chainId,
+      });
+      return;
+    }
+
+    if (!this.config.relayerOriginChains.includes(chainId)) {
+      return;
+    }
+
+    // Skip if a previous instance (or this one) already executed this withdraw (persisted in Redis).
+    if (this.executedWithdrawKeys.has(depositKey)) {
+      this.logger.debug({
+        at: "DepositAddressHandler#initiateWithdraw",
+        message: "Skipping already executed withdraw (found in Redis)",
+        refTxHash,
+        depositKey,
+      });
+      return;
+    }
+
+    if (this.observedExecutedWithdraws[chainId]?.has(depositKey)) {
+      return;
+    }
+
+    this.observedExecutedWithdraws[chainId].add(depositKey);
+    // Release the in-flight lock on every exit path except a confirmed on-chain withdraw; an
+    // unexpected throw must not strand the depositKey, since the next poll would silently skip it.
+    let withdrawCommitted = false;
+    try {
+      // Defensive on-chain balance check — guards against reorged indexer messages and against
+      // acting on a deposit-address that has already been withdrawn through another path.
+      const provider = this.providersByChain[chainId];
+      const tokenContract = new Contract(token, ERC20_ABI, provider);
+
+      let onchainBalance: BigNumber;
+      try {
+        onchainBalance = await tokenContract.balanceOf(depositAddress);
+      } catch (err) {
+        this.logger.warn({
+          at: "DepositAddressHandler#initiateWithdraw",
+          message: "Skipping withdraw: failed to fetch deposit address balance",
+          depositAddress,
+          token,
+          depositKey,
+          refTxHash,
+          chainId,
+          err: err instanceof Error ? err.message : String(err),
+        });
+        return;
+      }
+
+      if (onchainBalance.lt(toBN(amount))) {
+        this.logger.debug({
+          at: "DepositAddressHandler#initiateWithdraw",
+          message: "Skipping withdraw: deposit address balance below transfer amount",
+          depositAddress,
+          token,
+          amount,
+          onchainBalance: onchainBalance.toString(),
+          depositKey,
+          refTxHash,
+          chainId,
+        });
+        return;
+      }
+
+      const signed = await this._getSignedWithdraw(depositMessage);
+      if (!isDefined(signed)) {
+        this.logger.warn({
+          at: "DepositAddressHandler#initiateWithdraw",
+          message: "Failed to fetch signed withdraw from quote-api",
+          depositKey,
+          refTxHash,
+          depositAddress,
+          chainId,
+        });
+        return;
+      }
+
+      if (signed.signedWithdrawTx.chainId !== chainId) {
+        this.logger.warn({
+          at: "DepositAddressHandler#initiateWithdraw",
+          message: "Skipping withdraw: signed payload chainId does not match refund chainId",
+          signedChainId: signed.signedWithdrawTx.chainId,
+          chainId,
+          depositKey,
+          refTxHash,
+          depositAddress,
+        });
+        return;
+      }
+
+      const useDispatcher = this.depositAddressSigners.length > 0;
+      const withdrawTx = {
+        contract: this.getExecuteContract(signed.signedWithdrawTx.to, chainId, useDispatcher),
+        method: "",
+        args: [signed.signedWithdrawTx.data],
+        value: toBN(signed.signedWithdrawTx.value),
+        chainId,
+        message: "Completed Refund Withdraw 💸",
+        mrkdwn: `Refund withdraw on ${getNetworkName(chainId)} for deposit address ${blockExplorerLink(
+          depositAddress,
+          chainId
+        )} (classification: ${erc20Transfer.transferClassification}, bundledDeploy: ${signed.bundledDeploy})`,
+      };
+
+      const receipt = await sendAndConfirmTransaction(withdrawTx, this.transactionClient, useDispatcher);
+      if (!isDefined(receipt)) {
+        this.logger.warn({
+          at: "DepositAddressHandler#initiateWithdraw",
+          message: "Failed to submit withdraw tx",
+          depositKey,
+          refTxHash,
+          depositAddress,
+          chainId,
+        });
+        return;
+      }
+
+      // The withdraw is on-chain; keep the in-flight lock and never re-attempt this depositKey,
+      // even if the Redis persist below throws (handover may miss it, but a double-send is worse).
+      this.executedWithdrawKeys.add(depositKey);
+      withdrawCommitted = true;
+      await this._persistWithdrawnKeysRedis();
+    } finally {
+      if (!withdrawCommitted) {
+        this.observedExecutedWithdraws[chainId].delete(depositKey);
+      }
+    }
+  }
+
+  private async _getSignedWithdraw(
+    depositMessage: DepositAddressMessage,
+    retriesRemaining = 3
+  ): Promise<SignedWithdrawResponse | undefined> {
+    const { erc20Transfer, routeParams, depositAddress, paramsHash, salt, counterfactualMaterials } = depositMessage;
+    const { contractAddress: token, amount, chainId } = erc20Transfer;
+    const withdrawLeaf = counterfactualMaterials?.withdrawLeaf;
+    if (
+      !isDefined(withdrawLeaf) ||
+      !isDefined(withdrawLeaf.implementationAddress) ||
+      !isDefined(withdrawLeaf.merkleProof)
+    ) {
+      this.logger.warn({
+        at: "DepositAddressHandler#_getSignedWithdraw",
+        message: "Skipping withdraw: indexer message missing counterfactual withdraw materials",
+        depositAddress,
+        paramsHash,
+        txHash: erc20Transfer.transactionHash,
+        chainId,
+      });
+      return undefined;
+    }
+    // `_post` swallows errors and returns undefined, so retry on both throw and falsy return.
+    try {
+      const result = await this.api.signedWithdraw({
+        chainId: Number(chainId),
+        depositAddress,
+        token,
+        amount,
+        user: routeParams.refundAddress,
+        withdrawImplementation: withdrawLeaf.implementationAddress,
+        proof: withdrawLeaf.merkleProof,
+        salt,
+        merkleRoot: paramsHash,
+      });
+      if (result) {
+        return result;
+      }
+    } catch {
+      // Logging is handled in AcrossSwapApiClient.
+    }
+    return retriesRemaining > 0 ? this._getSignedWithdraw(depositMessage, --retriesRemaining) : undefined;
   }
 
   /**
@@ -194,8 +491,18 @@ export class DepositAddressHandler {
    * Called at start of each poll (after filtering) and after each successful execute.
    */
   private async _persistExecutedDepositsRedis(): Promise<void> {
+    assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
+    const { redisCache } = this;
     const redisKey = this.getExecutedDepositsRedisKey();
-    await this.redisCache.set(redisKey, JSON.stringify([...this.executedDepositTxHashes]));
+    await redisCache.set(redisKey, JSON.stringify([...this.executedDepositTxHashes]));
+  }
+
+  /** Same pattern as `_persistExecutedDepositsRedis` but for refund-withdraw deposit keys. */
+  private async _persistWithdrawnKeysRedis(): Promise<void> {
+    assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
+    const { redisCache } = this;
+    const redisKey = this.getWithdrawnKeysRedisKey();
+    await redisCache.set(redisKey, JSON.stringify([...this.executedWithdrawKeys]));
   }
 
   private async initiateDeposit(depositMessage: DepositAddressMessage): Promise<void> {
@@ -209,6 +516,10 @@ export class DepositAddressHandler {
     const destinationChainId = Number(_destinationChainId);
     const inputAmount = toBN(_inputAmount);
     const depositKey = getDepositKey(depositMessage);
+
+    if (!this.config.relayerOriginChains.includes(originChainId)) {
+      return;
+    }
 
     // Skip if a previous instance (or this one) already executed this deposit (persisted in Redis).
     if (this.executedDepositTxHashes.has(refTxHash)) {
@@ -380,8 +691,10 @@ export class DepositAddressHandler {
     retriesRemaining = 3
   ): Promise<SwapApiResponse | undefined> {
     const { depositAddress, routeParams, erc20Transfer } = depositMessage;
-    const { inputToken, outputToken, originChainId, destinationChainId, recipient } = routeParams;
+    const { inputToken, outputToken, originChainId, destinationChainId, recipient, refundAddress } = routeParams;
     const { amount } = erc20Transfer;
+    // refundAddress must match what was committed in the withdraw leaf at PDA creation time so the
+    // swap-api rebuilds the same merkle root the on-chain factory derives the deposit address from.
     const params = {
       originChainId,
       destinationChainId,
@@ -391,6 +704,7 @@ export class DepositAddressHandler {
       amount,
       depositor: depositAddress,
       recipient,
+      refundAddress,
       depositAddress,
       executionFeeRecipient: this.signerAddress.toNative(),
       shouldSponsorAccountCreation: String(depositMessage.shouldSponsorAccountCreation),

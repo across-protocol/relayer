@@ -2,8 +2,10 @@ import { ethers } from "ethers";
 import { utils } from "@across-protocol/sdk";
 import { ProcessBurnTransactionResponse, PubSubMessage } from "../types";
 import {
+  assert,
   winston,
   getCctpDestinationChainFromDomain,
+  isDefined,
   PUBLIC_NETWORKS,
   chainIsProd,
   chainIsSvm,
@@ -27,8 +29,8 @@ import {
 } from "../errors";
 
 export class CCTPService {
-  private evmPrivateKey: string;
-  private svmPrivateKey: Uint8Array;
+  private evmPrivateKey?: string;
+  private svmPrivateKey?: Uint8Array;
   private logger: winston.Logger;
 
   constructor(logger?: winston.Logger) {
@@ -286,6 +288,7 @@ export class CCTPService {
           shouldRetry: false,
         };
       } else {
+        assert(isDefined(this.evmPrivateKey), "cctpService: evmPrivateKey not initialised");
         const rpcUrl = this.getRpcUrlForChain(destinationChainId);
         const provider = getEvmProvider(rpcUrl);
         const result = await processMintEvm(
@@ -329,6 +332,7 @@ export class CCTPService {
       999: process.env.HYPEREVM_RPC_URL!,
       56: process.env.BSC_RPC_URL!,
       143: process.env.MONAD_RPC_URL!,
+      57073: process.env.INK_RPC_URL!,
       34268394551451: process.env.SOLANA_RPC_URL!,
       // Test networks
       11155111: process.env.SEPOLIA_RPC_URL!,
@@ -349,9 +353,9 @@ export class CCTPService {
   }
 
   private async getPrivateKey(type: "evm" | "svm"): Promise<string> {
-    const privateKeys = await retrieveGckmsKeys(
-      getGckmsConfig([type === "evm" ? process.env.GCKMS_KEY_EVM : process.env.GCKMS_KEY_SVM])
-    );
+    const gckmsKey = type === "evm" ? process.env.GCKMS_KEY_EVM : process.env.GCKMS_KEY_SVM;
+    assert(isDefined(gckmsKey), `cctpService: GCKMS_KEY_${type.toUpperCase()} env var not set`);
+    const privateKeys = await retrieveGckmsKeys(getGckmsConfig([gckmsKey]));
     if (privateKeys.length === 0) {
       throw new PrivateKeyNotFoundError(type);
     }

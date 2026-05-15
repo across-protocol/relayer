@@ -1,4 +1,8 @@
+import assert from "assert";
+import { ContractInterface } from "ethers";
+import { JsonFragment } from "@ethersproject/abi";
 import { CHAIN_IDs, getDeployedAddress } from "../utils";
+import { isDefined } from "../utils/TypeGuards";
 import CCTP_MESSAGE_TRANSMITTER_ABI from "./abi/CctpMessageTransmitter.json";
 import CCTP_TOKEN_MESSENGER_ABI from "./abi/CctpTokenMessenger.json";
 import CCTP_V2_TOKEN_MESSENGER_ABI from "./abi/CctpV2TokenMessenger.json";
@@ -365,6 +369,9 @@ export const CONTRACT_ADDRESSES: {
       address: getDeployedAddress("HyperliquidDepositHandler", CHAIN_IDs.HYPEREVM),
       abi: HYPERLIQUID_DEPOSIT_HANDLER_ABI,
     },
+    spokePoolPeriphery: {
+      abi: SPOKE_POOL_PERIPHERY_ABI,
+    },
   },
   [CHAIN_IDs.ZK_SYNC]: {
     nativeTokenVault: {
@@ -646,6 +653,15 @@ export const CONTRACT_ADDRESSES: {
       address: "0x0000000000000000000000000000000000000000",
     },
   },
+  [CHAIN_IDs.TRON]: {
+    spokePoolPeriphery: {
+      abi: SPOKE_POOL_PERIPHERY_ABI,
+    },
+    permit2: {
+      address: "0xBE365314f2E77FD1257d60C346Bb32DbDa369403",
+      abi: PERMIT2_ABI,
+    },
+  },
   [CHAIN_IDs.SCROLL]: {
     scrollGatewayRouter: {
       address: "0x4C0926FF5252A435FD19e10ED15e5a249Ba19d79",
@@ -667,6 +683,11 @@ export const CONTRACT_ADDRESSES: {
     },
     nativeToken: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
+    },
+  },
+  [CHAIN_IDs.TEMPO]: {
+    nativeToken: {
+      address: "0x20C0000000000000000000000000000000000000",
     },
   },
   // Testnets
@@ -816,6 +837,10 @@ export const CONTRACT_ADDRESSES: {
       address: "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
     },
+    sponsoredCCTPDstPeriphery: {
+      address: "0xA2cBA9cFcD2427C1201df51c19422E043c5bDe7a",
+      abi: SPONSORED_CCTP_DST_PERIPHERY_ABI,
+    },
     spokePoolPeriphery: {
       abi: SPOKE_POOL_PERIPHERY_ABI,
     },
@@ -952,3 +977,41 @@ export const CONTRACT_ADDRESSES: {
     },
   },
 };
+
+// Narrow `unknown[]` (the table's loose ABI typing) to a shape assignable to `ContractInterface`.
+export function isJsonAbi(value: unknown[]): value is JsonFragment[] {
+  return value.every((item) => typeof item === "object" && item !== null);
+}
+
+/**
+ * Look up a contract entry that is required to have both `address` and `abi` populated.
+ * Throws if either is missing — useful for adapter constructors that immediately build a Contract.
+ */
+export function getContractEntry(chainId: number, name: string): { address: string; abi: ContractInterface } {
+  const entry = CONTRACT_ADDRESSES[chainId]?.[name];
+  assert(isDefined(entry?.address) && isDefined(entry?.abi), `Missing CONTRACT_ADDRESSES entry: ${chainId}/${name}`);
+  assert(isJsonAbi(entry.abi), `Invalid ABI shape: ${chainId}/${name}`);
+  return { address: entry.address, abi: entry.abi };
+}
+
+/**
+ * Look up only the `abi` for a contract entry (address resolved via deployment metadata).
+ * Throws if the abi is missing or malformed.
+ */
+export function getContractAbi(chainId: number, name: string): ContractInterface {
+  const entry = CONTRACT_ADDRESSES[chainId]?.[name];
+  assert(isDefined(entry?.abi), `Missing CONTRACT_ADDRESSES abi: ${chainId}/${name}`);
+  assert(isJsonAbi(entry.abi), `Invalid ABI shape: ${chainId}/${name}`);
+  return entry.abi;
+}
+
+/**
+ * Look up only the `address` for a contract entry. Use this for entries that may not define an `abi`
+ * (e.g. nativeToken on most OP Stack chains, SVM cctp* entries).
+ * Throws if the address is missing.
+ */
+export function getContractAddress(chainId: number, name: string): string {
+  const entry = CONTRACT_ADDRESSES[chainId]?.[name];
+  assert(isDefined(entry?.address), `Missing CONTRACT_ADDRESSES address: ${chainId}/${name}`);
+  return entry.address;
+}

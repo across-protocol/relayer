@@ -1,12 +1,12 @@
 import { CommonConfig, ProcessEnv } from "../common";
-import { assert, getArweaveJWKSigner, parseJson } from "../utils";
+import { assert, getArweaveJWKSigner, parseJson, isDefined } from "../utils";
 
 export class DataworkerConfig extends CommonConfig {
   readonly minChallengeLeadTime: number;
   readonly awaitChallengePeriod: boolean;
-  readonly maxPoolRebalanceLeafSizeOverride: number;
-  readonly maxRelayerRepaymentLeafSizeOverride: number;
-  readonly spokeRootsLookbackCount: number; // Consider making this configurable per chain ID.
+  readonly maxPoolRebalanceLeafSizeOverride?: number;
+  readonly maxRelayerRepaymentLeafSizeOverride?: number;
+  spokeRootsLookbackCount?: number; // Consider making this configurable per chain ID.
 
   // These variables can be toggled to choose whether the bot will go through the dataworker logic.
   readonly disputerEnabled: boolean;
@@ -38,6 +38,9 @@ export class DataworkerConfig extends CommonConfig {
   // A list of chains to ignore slow fill/relayer refund execution. Primarily used for debugging purposes.
   readonly executorIgnoreChains: number[];
 
+  // Used to instruct the dataworker to load data from arweave in times when doing so is optional (i.e. execution).
+  readonly loadArweaveData: boolean | undefined;
+
   constructor(env: ProcessEnv) {
     const {
       MAX_POOL_REBALANCE_LEAF_SIZE_OVERRIDE,
@@ -57,12 +60,14 @@ export class DataworkerConfig extends CommonConfig {
       MIN_CHALLENGE_LEAD_TIME = "600",
       AWAIT_CHALLENGE_PERIOD = "false",
       DISPUTE_COOLDOWN,
+      LOAD_ARWEAVE_DATA,
     } = env;
-    super(env);
+    super(env, { botIdentifier: "across-dataworker" });
 
     this.minChallengeLeadTime = Number(MIN_CHALLENGE_LEAD_TIME);
     this.awaitChallengePeriod = AWAIT_CHALLENGE_PERIOD === "true";
     this.disputeCooldown = Number(DISPUTE_COOLDOWN ?? 120);
+    this.loadArweaveData = isDefined(LOAD_ARWEAVE_DATA) ? LOAD_ARWEAVE_DATA === "true" : undefined;
 
     this.bufferToPropose = BUFFER_TO_PROPOSE ? Number(BUFFER_TO_PROPOSE) : (20 * 60) / 15; // 20 mins of blocks;
     // Should we assert that the leaf count caps are > 0?
@@ -85,7 +90,10 @@ export class DataworkerConfig extends CommonConfig {
     this.l1ExecutorEnabled = L1_EXECUTOR_ENABLED === "true";
     this.executorIgnoreChains = parseJson.numberArray(EXECUTOR_IGNORE_CHAINS);
     if (this.l2ExecutorEnabled) {
-      assert(this.spokeRootsLookbackCount > 0, "must set spokeRootsLookbackCount > 0 if L2 executor enabled");
+      assert(
+        isDefined(this.spokeRootsLookbackCount) && this.spokeRootsLookbackCount > 0,
+        "must set spokeRootsLookbackCount > 0 if L2 executor enabled"
+      );
     } else if (this.disputerEnabled || this.proposerEnabled) {
       // should set spokeRootsLookbackCount == 0 if executor disabled and proposer/disputer enabled
       this.spokeRootsLookbackCount = 0;
@@ -97,11 +105,12 @@ export class DataworkerConfig extends CommonConfig {
     if (FORCE_PROPOSAL_BUNDLE_RANGE) {
       // The format is [number, number][] where the two numbers are the start and end bundle ranges and the array
       // represents the bundle ranges that will be proposed per the chain id indices.
-      this.forceProposalBundleRange = JSON.parse(FORCE_PROPOSAL_BUNDLE_RANGE);
+      const forceProposalBundleRange: [number, number][] = JSON.parse(FORCE_PROPOSAL_BUNDLE_RANGE);
+      this.forceProposalBundleRange = forceProposalBundleRange;
       // We need to ensure that the bundle ranges are valid. A valid bundle range
       // is an array of [start, end] where both start and end are numeric and
       // positive whole numbers and start < end.
-      this.forceProposalBundleRange.forEach((bundleRange, index) => {
+      forceProposalBundleRange.forEach((bundleRange, index) => {
         assert(Array.isArray(bundleRange), `forceProposalBundleRange[${index}] is not an array`);
         assert(bundleRange.length === 2, `forceProposalBundleRange[${index}] does not have length 2`);
         const [start, end] = bundleRange;

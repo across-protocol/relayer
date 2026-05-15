@@ -84,9 +84,12 @@ function decodeRelayData(originChainId: number, destinationChainId: number, log:
           return [key, log.args[key]];
       }
     })
-  ) as RelayData;
+  ) as Omit<RelayData, "originChainId">;
 
-  return relayData;
+  return {
+    ...relayData,
+    originChainId,
+  };
 }
 
 async function fetchDepositFromTxn(
@@ -131,8 +134,6 @@ async function fetchDepositFromTxn(
 
   // Construct complete deposit object with all required fields for populateV3Relay
   const deposit = {
-    depositId: depositArgs.depositId,
-    originChainId,
     destinationChainId,
     ...relayData,
   };

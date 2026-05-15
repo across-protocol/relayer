@@ -2,7 +2,13 @@ import { arch, utils } from "@across-protocol/sdk";
 import { TokenMessengerMinterIdl } from "@across-protocol/sdk/svm";
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { Contract, ethers } from "ethers";
-import { CONTRACT_ADDRESSES, CCTP_MAX_SEND_AMOUNT } from "../common";
+import {
+  CONTRACT_ADDRESSES,
+  CCTP_MAX_SEND_AMOUNT,
+  getContractAbi,
+  getContractAddress,
+  getContractEntry,
+} from "../common";
 import { BigNumber } from "./BNUtils";
 import {
   bnZero,
@@ -19,14 +25,14 @@ import {
   forEachAsync,
   chainIsEvm,
   createFormatFunction,
-  SVMProvider,
 } from "./SDKUtils";
 import { getNetworkName } from "./NetworkUtils";
 import { isDefined } from "./TypeGuards";
 import { getCachedProvider, getProvider, getSvmProvider } from "./ProviderUtils";
 import { EventSearchConfig, paginatedEventQuery, spreadEvent } from "./EventUtils";
 import { Log } from "../interfaces";
-import { assert, fetchWithTimeout, getRedisCache, Provider, Signer, ERC20, winston } from ".";
+import { assert, fetchWithTimeout, Provider, Signer, ERC20, winston } from ".";
+import { getRedisCache } from "../cache/Redis";
 import { KeyPairSigner } from "@solana/kit";
 import { TransactionRequest } from "@ethersproject/abstract-provider";
 import {
@@ -130,7 +136,7 @@ export async function getCctpV2DepositForBurnTxnHashes(
   sourceEventSearchConfig: EventSearchConfig
 ): Promise<string[]> {
   const senderAddresses = _senderAddresses.map((address) => address.toNative());
-  const { address, abi } = getCctpV2TokenMessenger(sourceChainId);
+  const { address, abi } = getContractEntry(sourceChainId, "cctpV2TokenMessenger");
   const srcTokenMessenger = new Contract(address, abi, srcProvider);
 
   const eventFilterParams = [TOKEN_SYMBOLS_MAP.USDC.addresses[sourceChainId], undefined, senderAddresses];
@@ -380,22 +386,6 @@ export function getV2MaxExpectedTransferFee(sourceChainId: number): BigNumber {
   }
 }
 
-export function getCctpV1TokenMessenger(tokenMessengerChainId: number): { address?: string; abi?: unknown[] } {
-  return CONTRACT_ADDRESSES[tokenMessengerChainId]?.["cctpTokenMessenger"];
-}
-
-export function getCctpV2TokenMessenger(chainId: number): { address?: string; abi?: unknown[] } {
-  return CONTRACT_ADDRESSES[chainId]?.["cctpV2TokenMessenger"];
-}
-
-export function getCctpV1MessageTransmitter(messageTransmitterChainId: number): { address?: string; abi?: unknown[] } {
-  return CONTRACT_ADDRESSES[messageTransmitterChainId]?.["cctpMessageTransmitter"];
-}
-
-export function getCctpV2MessageTransmitter(chainId: number): { address?: string; abi?: unknown[] } {
-  return CONTRACT_ADDRESSES[chainId]?.["cctpV2MessageTransmitter"];
-}
-
 /** ********************************************************************************************************************
  *
  * Internal functions and constants:
@@ -407,9 +397,10 @@ async function _getDestinationMessageTransmitterContract(
   cctpV1: boolean
 ): Promise<Contract> {
   const dstProvider = await getProvider(destinationChainId);
-  const { address, abi } = cctpV1
-    ? getCctpV1MessageTransmitter(destinationChainId)
-    : getCctpV2MessageTransmitter(destinationChainId);
+  const { address, abi } = getContractEntry(
+    destinationChainId,
+    cctpV1 ? "cctpMessageTransmitter" : "cctpV2MessageTransmitter"
+  );
   return new ethers.Contract(address, abi, dstProvider);
 }
 
@@ -439,7 +430,9 @@ async function _getCCTPV1DepositAndMessageTxnHashes(
 
   // Special case: The HubPool can initiate MessageSent events, which have no filters we can easily query on, so
   // we query for HubPool MessageRelayed events directly. These can theoretically appear without DepositForBurn events.
-  const hubPool = CONTRACT_ADDRESSES[sourceChainId]?.hubPool;
+  const hubPool = isDefined(CONTRACT_ADDRESSES[sourceChainId]?.hubPool)
+    ? getContractEntry(sourceChainId, "hubPool")
+    : undefined;
   const isHubPoolAmongSenders =
     isDefined(hubPool) && senderAddresses.some((senderAddr) => compareAddressesSimple(senderAddr, hubPool.address));
   const txHashesFromHubPool: string[] = [];
@@ -458,7 +451,7 @@ async function _getCCTPV1DepositAndMessageTxnHashes(
   }
 
   let depositForBurnEventTxnHashes: string[] = [];
-  const { address, abi } = getCctpV1TokenMessenger(sourceChainId);
+  const { address, abi } = getContractEntry(sourceChainId, "cctpTokenMessenger");
   const srcTokenMessenger = new Contract(address, abi, srcProvider);
 
   const eventFilterParams = [undefined, TOKEN_SYMBOLS_MAP.USDC.addresses[sourceChainId], undefined, senderAddresses];
@@ -505,8 +498,11 @@ async function _getCCTPV1MessageEvents(
   const usdcAddress = TOKEN_SYMBOLS_MAP.USDC.addresses[sourceChainId];
   assert(isDefined(usdcAddress), `USDC address not defined for chain ${sourceChainId}`);
 
-  const tokenMessengerInterface = new ethers.utils.Interface(getCctpV1TokenMessenger(sourceChainId).abi);
-  const messageTransmitterInterface = new ethers.utils.Interface(getCctpV1MessageTransmitter(sourceChainId).abi);
+  const tokenMessengerAbi = getContractAbi(sourceChainId, "cctpTokenMessenger");
+  const messageTransmitterAbi = getContractAbi(sourceChainId, "cctpMessageTransmitter");
+  assert(Array.isArray(tokenMessengerAbi) && Array.isArray(messageTransmitterAbi), "Expected CCTP V1 abi arrays");
+  const tokenMessengerInterface = new ethers.utils.Interface(tokenMessengerAbi);
+  const messageTransmitterInterface = new ethers.utils.Interface(messageTransmitterAbi);
 
   const relevantEvents: CCTPMessageEvent[] = [];
   for (const receipt of receipts) {
@@ -653,6 +649,10 @@ function _getCCTPV1EventsFromReceipt(
 
     // Record a `MessageSent` + `DepositForBurn` pair into the `depositIndexPairs` array
     const correspondingMessageSentIndex = messageSentIndices.pop();
+    assert(
+      isDefined(correspondingMessageSentIndex),
+      "messageSentIndices.pop() returned undefined despite length check"
+    );
     depositIndexPairs.push([correspondingMessageSentIndex, i]);
   });
 
@@ -694,28 +694,29 @@ async function _getCCTPV1MessagesWithStatus(
     sourceEventSearchConfig
   );
   const dstProvider = getCachedProvider(destinationChainId);
-  const { address, abi } = getCctpV1MessageTransmitter(destinationChainId);
-  const messageTransmitterContract = chainIsSvm(destinationChainId)
-    ? undefined
-    : new Contract(address, abi, dstProvider);
-  let svmProvider: SVMProvider | undefined, latestBlockhash;
-  if (chainIsSvm(destinationChainId)) {
-    svmProvider = getSvmProvider(await getRedisCache());
-    latestBlockhash = await svmProvider.getLatestBlockhash().send();
+  let messageTransmitterContract: Contract | undefined;
+  if (!chainIsSvm(destinationChainId)) {
+    const { address, abi } = getContractEntry(destinationChainId, "cctpMessageTransmitter");
+    messageTransmitterContract = new Contract(address, abi, dstProvider);
   }
+  const svmProvider = chainIsSvm(destinationChainId) ? getSvmProvider(await getRedisCache()) : undefined;
+  const latestBlockhash = isDefined(svmProvider) ? await svmProvider.getLatestBlockhash().send() : undefined;
   return await Promise.all(
     cctpMessageEvents.map(async (messageEvent) => {
       let processed;
       if (chainIsSvm(destinationChainId)) {
         assert(signer, "Signer is required for Solana CCTP messages");
+        assert(isDefined(svmProvider), "SVM provider is required for Solana CCTP messages");
+        assert(isDefined(latestBlockhash), "Latest blockhash is required for Solana CCTP messages");
         processed = await arch.svm.hasCCTPV1MessageBeenProcessed(
           svmProvider,
           signer,
           messageEvent.nonce,
           messageEvent.sourceDomain,
-          latestBlockhash!.value
+          latestBlockhash.value
         );
       } else {
+        assert(isDefined(messageTransmitterContract), "messageTransmitterContract is required for EVM CCTP messages");
         processed = await utils.hasCCTPMessageBeenProcessedEvm(messageEvent.nonceHash, messageTransmitterContract);
       }
 
@@ -743,7 +744,8 @@ async function _getCCTPV1DepositEventsSvm(
   assert(chainIsSvm(sourceChainId));
   // Get the `DepositForBurn` events on Solana.
   const provider = getSvmProvider(await getRedisCache());
-  const { address } = getCctpV1TokenMessenger(sourceChainId);
+  // SVM cctpTokenMessenger entries are address-only (no abi), so don't route through getContractEntry.
+  const address = getContractAddress(sourceChainId, "cctpTokenMessenger");
 
   const eventClient = await SvmCpiEventsClient.createFor(provider, address, TokenMessengerMinterIdl);
   const depositForBurnEvents = await eventClient.queryDerivedAddressEvents(
@@ -754,7 +756,7 @@ async function _getCCTPV1DepositEventsSvm(
   );
 
   const dstProvider = getCachedProvider(destinationChainId);
-  const { address: dstMessageTransmitterAddress, abi } = getCctpV1MessageTransmitter(destinationChainId);
+  const { address: dstMessageTransmitterAddress, abi } = getContractEntry(destinationChainId, "cctpMessageTransmitter");
   const destinationMessageTransmitter = new ethers.Contract(dstMessageTransmitterAddress, abi, dstProvider);
 
   // Query the CCTP API to get the encoded message bytes/attestation.
@@ -1024,7 +1026,10 @@ export async function constructCctpDepositForBurnTxn(
   logger: winston.Logger,
   optionalParams?: TransferTokenParams
 ): Promise<AugmentedTransaction> {
-  const { address: tokenMessengerAddress, abi: tokenMessengerAbi } = getCctpV2TokenMessenger(sourceChainId);
+  const { address: tokenMessengerAddress, abi: tokenMessengerAbi } = getContractEntry(
+    sourceChainId,
+    "cctpV2TokenMessenger"
+  );
   const bridgeContract = new Contract(tokenMessengerAddress, tokenMessengerAbi, sourceSigner);
 
   // Check and set CCTP TokenMessenger approval if needed

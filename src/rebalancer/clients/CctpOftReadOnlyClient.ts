@@ -63,10 +63,10 @@ function getTxnRefFromCloid(adapter: PendingBridgeAdapterName, cloid: string): s
 //   accounting pass, but we still want cross-process Redis updates to become visible quickly.
 export class CctpOftReadOnlyClient {
   supportedAdapterNames: PendingBridgeAdapterName[] = ["oft", "cctp"];
-  // Cache one parsed snapshot per adapter so repeated route lookups don't re-scan Redis immediately.
-  private snapshots: Partial<Record<PendingBridgeAdapterName, PendingBridgeSnapshot>> = {};
-  // Reuse the same refresh when multiple callers ask for the same adapter concurrently.
-  private snapshotPromises: Partial<Record<PendingBridgeAdapterName, Promise<PendingBridgeSnapshot>>> = {};
+  // Cache one parsed snapshot per (adapter, account) so repeated route lookups don't re-scan Redis immediately.
+  private snapshots: Record<string, PendingBridgeSnapshot> = {};
+  // Reuse the same refresh when multiple callers ask for the same (adapter, account) concurrently.
+  private snapshotPromises: Record<string, Promise<PendingBridgeSnapshot>> = {};
 
   constructor(private readonly logger?: winston.Logger) {}
 

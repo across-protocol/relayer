@@ -1,13 +1,13 @@
-import { RedisCache } from "../../caching/RedisCache";
 import {
   BigNumber,
   ConvertDecimals,
   EvmAddress,
   ethers,
-  getRedisCache,
   getTokenInfoFromSymbol,
+  isDefined,
   winston,
 } from "../../utils";
+import { getRedisCache, RedisCache } from "../../cache/Redis";
 import { ExcessOrDeficit, OrderDetails, RedisOrderDetailsPayload } from "./interfaces";
 
 // Optional namespace that lets different rebalancer deployments keep their status-tracking data isolated
@@ -19,40 +19,55 @@ function getRebalancerStatusTrackingNamespace(): string | undefined {
 }
 
 export async function getRedisCacheForRebalancerStatusTracking(
-  logger: winston.Logger
+  logger?: winston.Logger
 ): Promise<RedisCache | undefined> {
-  return (await getRedisCache(logger, undefined, getRebalancerStatusTrackingNamespace())) as RedisCache;
+  return await getRedisCache(logger, undefined, getRebalancerStatusTrackingNamespace());
 }
 
+function compareNormalizedAmounts(
+  excessA: ExcessOrDeficit,
+  excessB: ExcessOrDeficit,
+  tokenPricesUsd?: Map<string, BigNumber>
+): number {
+  const { token: tokenA, amount: amountA, chainId: chainIdA } = excessA;
+  const { token: tokenB, amount: amountB, chainId: chainIdB } = excessB;
+  const tokenADecimals = getTokenInfoFromSymbol(tokenA, Number(chainIdA)).decimals;
+  const tokenBDecimals = getTokenInfoFromSymbol(tokenB, Number(chainIdB)).decimals;
+  const converter = ConvertDecimals(tokenADecimals, tokenBDecimals);
+  const priceA = tokenPricesUsd?.get(tokenA);
+  const priceB = tokenPricesUsd?.get(tokenB);
+  const normalizedAmountA = isDefined(priceA) ? amountA.mul(priceA) : amountA;
+  const normalizedAmountB = isDefined(priceB) ? amountB.mul(priceB) : amountB;
+  if (converter(normalizedAmountA).eq(normalizedAmountB)) {
+    return 0;
+  }
+  return converter(normalizedAmountA).gt(normalizedAmountB) ? -1 : 1;
+}
 // Excesses are always sorted in priority from lowest to highest and then by amount from largest to smallest.
-export function sortExcessFunction(excessA: ExcessOrDeficit, excessB: ExcessOrDeficit): number {
-  const { token: tokenA, amount: amountA, priorityTier: priorityTierA, chainId: chainIdA } = excessA;
-  const { token: tokenB, amount: amountB, priorityTier: priorityTierB, chainId: chainIdB } = excessB;
+export function sortExcessFunction(
+  excessA: ExcessOrDeficit,
+  excessB: ExcessOrDeficit,
+  tokenPricesUsd?: Map<string, BigNumber>
+): number {
+  const { priorityTier: priorityTierA } = excessA;
+  const { priorityTier: priorityTierB } = excessB;
   if (priorityTierA !== priorityTierB) {
     return priorityTierA - priorityTierB;
   }
-  const tokenADecimals = getTokenInfoFromSymbol(tokenA, Number(chainIdA)).decimals;
-  const tokenBDecimals = getTokenInfoFromSymbol(tokenB, Number(chainIdB)).decimals;
-  const converter = ConvertDecimals(tokenADecimals, tokenBDecimals);
-  if (converter(amountA).eq(amountB)) {
-    return 0;
-  }
-  return converter(amountA).gt(amountB) ? -1 : 1;
+  return compareNormalizedAmounts(excessA, excessB, tokenPricesUsd);
 }
 // Deficits are always sorted in priority from highest to lowest and then by amount from largest to smallest.
-export function sortDeficitFunction(deficitA: ExcessOrDeficit, deficitB: ExcessOrDeficit): number {
-  const { token: tokenA, amount: amountA, priorityTier: priorityTierA, chainId: chainIdA } = deficitA;
-  const { token: tokenB, amount: amountB, priorityTier: priorityTierB, chainId: chainIdB } = deficitB;
+export function sortDeficitFunction(
+  deficitA: ExcessOrDeficit,
+  deficitB: ExcessOrDeficit,
+  tokenPricesUsd?: Map<string, BigNumber>
+): number {
+  const { priorityTier: priorityTierA } = deficitA;
+  const { priorityTier: priorityTierB } = deficitB;
   if (priorityTierA !== priorityTierB) {
     return priorityTierB - priorityTierA;
   }
-  const tokenADecimals = getTokenInfoFromSymbol(tokenA, Number(chainIdA)).decimals;
-  const tokenBDecimals = getTokenInfoFromSymbol(tokenB, Number(chainIdB)).decimals;
-  const converter = ConvertDecimals(tokenADecimals, tokenBDecimals);
-  if (converter(amountA).eq(amountB)) {
-    return 0;
-  }
-  return converter(amountA).gt(amountB) ? -1 : 1;
+  return compareNormalizedAmounts(deficitA, deficitB, tokenPricesUsd);
 }
 
 export function getCloidForAccount(account: string): string {
@@ -101,7 +116,7 @@ export async function redisGetOrderDetailsForAdapter(
   adapterRedisPrefix: string,
   cloid: string,
   account: EvmAddress
-): Promise<OrderDetails> {
+): Promise<OrderDetails | undefined> {
   const orderDetailsKey = getPendingBridgeOrderKey(adapterRedisPrefix, cloid, account.toNative());
   const orderDetails = await redisCache.get<string>(orderDetailsKey);
   if (!orderDetails) {

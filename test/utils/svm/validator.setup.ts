@@ -9,7 +9,7 @@ import { spawn } from "child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import * as tar from "tar";
-import contractsPkg from "@across-protocol/contracts/package.json" assert { type: "json" };
+import contractsPkg from "@across-protocol/contracts/package.json" with { type: "json" };
 
 // Helper function to get the @across-protocol/contracts version from the package.json
 const getContractsVersion = (): string => {

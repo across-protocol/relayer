@@ -11,6 +11,7 @@ export { SpokeListener, SpokePoolClientWithListener, isSpokePoolClientWithListen
 export class BundleDataClient extends clients.BundleDataClient.BundleDataClient {}
 
 export * from "./BalanceAllocator";
+export * from "./BinanceClient";
 export * from "./EventListener";
 export * from "./HubPoolClient";
 export * from "./ConfigStoreClient";

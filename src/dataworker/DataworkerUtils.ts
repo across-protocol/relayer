@@ -1,12 +1,12 @@
 import assert from "assert";
-import { utils, interfaces, caching } from "@across-protocol/sdk";
+import { utils, interfaces, caching, constants as sdkConstants } from "@across-protocol/sdk";
 import { SpokePoolClient } from "../clients";
 import {
   ARWEAVE_TAG_BYTE_LIMIT,
   CONSERVATIVE_BUNDLE_FREQUENCY_SECONDS,
   spokesThatHoldNativeTokens,
 } from "../common/Constants";
-import { CONTRACT_ADDRESSES } from "../common/ContractAddresses";
+import { getContractAddress } from "../common/ContractAddresses";
 import {
   PoolRebalanceLeaf,
   ProposedRootBundle,
@@ -285,6 +285,10 @@ export function _buildRelayerRefundRoot(
         repaymentChainId,
         endBlockForMainnet
       );
+      assert(
+        isDefined(l1TokenCounterpart),
+        `No L1 token counterpart for L2 token ${l2TokenAddress} on chain ${repaymentChainId}`
+      );
 
       const spokePoolTargetBalance = clients.configStoreClient.getSpokeTargetBalancesForBlock(
         l1TokenCounterpart.toEvmAddress(),
@@ -322,6 +326,10 @@ export function _buildRelayerRefundRoot(
         leaf.l1Tokens[index],
         leaf.chainId,
         endBlockForMainnet
+      );
+      assert(
+        isDefined(l2TokenCounterpart),
+        `No L2 token counterpart for L1 token ${leaf.l1Tokens[index]} on chain ${leaf.chainId}`
       );
       // If we've already seen this leaf, then skip.
       const existingLeaf = relayerRefundLeaves.find(
@@ -423,15 +431,11 @@ export function generateValidationKey(
  */
 function getNativeTokens(chainId: number): Address[] {
   const nativeTokenSymbol = getNativeTokenSymbol(chainId);
+  const nativeTokenAddress = getContractAddress(chainId, "nativeToken");
+  const wrappedNativeToken = getWrappedNativeTokenAddress(chainId);
+  assert(isDefined(wrappedNativeToken), `${nativeTokenSymbol} wrapped address not defined for chain ${chainId}`);
   // Can't use TOKEN_SYMBOLS_MAP for ETH because it duplicates the WETH addresses, which is not correct for this use case.
-  const nativeTokens = [
-    getWrappedNativeTokenAddress(chainId),
-    toAddressType(CONTRACT_ADDRESSES[chainId].nativeToken.address, chainId),
-  ];
-  if (nativeTokens.some((tokenAddress) => !isDefined(tokenAddress))) {
-    throw new Error(`${nativeTokenSymbol} address not defined for chain ${chainId}`);
-  }
-  return nativeTokens;
+  return [wrappedNativeToken, toAddressType(nativeTokenAddress, chainId)];
 }
 /**
  * @notice Some SpokePools will contain balances of ETH and WETH, while others will only contain balances of WETH,
@@ -456,7 +460,12 @@ export function l2TokensToCountTowardsSpokePoolLeafExecutionCapital(
 
 /**
  * Persists data to Arweave with a given tag, given that the data doesn't
- * already exist on Arweave with the tag.
+ * already exist on Arweave with the tag. Also persists the data to the cache (e.g. a Redis cache) if provided.
+ * Contract:
+ * - `tag` is a deterministic identifier for the bundle payload.
+ * - Repeated calls with the same `tag` must provide semantically identical `data`.
+ * - Because of that invariant, it is safe to seed Redis from `data` even if Arweave is unavailable.
+ * - When Arweave already has data for `tag`, that persisted payload is assumed to must match `data`.
  * @param client The Arweave client to use for persistence.
  * @param data The data to persist to Arweave.
  * @param logger A winston logger
@@ -466,8 +475,10 @@ export async function persistDataToArweave(
   client: caching.ArweaveClient,
   data: Record<string, unknown>,
   logger: winston.Logger,
-  tag?: string
+  tag: string,
+  topicCache?: interfaces.CachingMechanismInterface
 ): Promise<void> {
+  assert(tag.length > 0, "Arweave tag is required");
   assert(
     Buffer.from(tag).length <= ARWEAVE_TAG_BYTE_LIMIT,
     `Arweave tag cannot exceed ${ARWEAVE_TAG_BYTE_LIMIT} bytes`
@@ -479,18 +490,33 @@ export async function persistDataToArweave(
   });
   const mark = profiler.start("persistDataToArweave");
 
-  // Check if data already exists on Arweave with the given tag.
-  // If so, we don't need to persist it again.
-  const [matchingTxns, address, balance] = await Promise.all([
-    client.getByTopic(tag, any()),
-    client.getAddress(),
-    client.getBalance(),
-  ]);
+  // Wrap all Arweave operations in a try-catch block to ensure that we always persist to the cache if provided.
+  let matchingTxns: { hash: string }[];
+  let address: string;
+  let balance: BigNumber;
+  try {
+    // Check if data already exists on Arweave with the given tag.
+    // If so, we don't need to persist it again.
+    [matchingTxns, address, balance] = await Promise.all([
+      client.getByTopic(tag, any()),
+      client.getAddress(),
+      client.getBalance(),
+    ]);
+  } catch (error) {
+    logger.debug({
+      at: "DataworkerUtils#persistDataToArweave",
+      message: "getByTopic, getAddress, or getBalance failed; cannot persist to Arweave",
+      tag,
+      error: String(error),
+    });
+    await persistArweaveTopicToCache(topicCache, tag, data, logger);
+    return;
+  }
 
   // Check balance. Maybe move this to Monitor function.
   const MINIMUM_AR_BALANCE = parseWinston("1");
   if (balance.lte(MINIMUM_AR_BALANCE)) {
-    logger.error({
+    logger.warn({
       at: "DataworkerUtils#persistDataToArweave",
       message: "Arweave balance is below minimum target balance",
       address,
@@ -514,19 +540,72 @@ export async function persistDataToArweave(
       hash: matchingTxns.map((txn) => txn.hash),
     });
   } else {
-    const hashTxn = await client.set(data, tag);
-    logger.info({
-      at: "DataworkerUtils#persistDataToArweave",
-      message: "Persisted data to Arweave! 💾",
+    try {
+      const hashTxn = await client.set(data, tag);
+      logger.info({
+        at: "DataworkerUtils#persistDataToArweave",
+        message: "Persisted data to Arweave! 💾",
+        tag,
+        receipt: `https://arweave.app/tx/${hashTxn}`,
+        rawData: `https://arweave.net/${hashTxn}`,
+        address,
+        balance: formatWinston(balance),
+        notificationPath: "across-arweave",
+      });
+      mark.stop({
+        message: "Time to persist to Arweave",
+      });
+    } catch (error) {
+      logger.debug({
+        at: "DataworkerUtils#persistDataToArweave",
+        message: "Failed to persist data to Arweave",
+        tag,
+        error: String(error),
+      });
+    }
+  }
+
+  // Regardless of whether the data was persisted to Arweave, we should persist to the cache.
+  await persistArweaveTopicToCache(topicCache, tag, data, logger);
+}
+
+async function persistArweaveTopicToCache(
+  topicCache: interfaces.CachingMechanismInterface | undefined,
+  tag: string,
+  data: Record<string, unknown>,
+  logger: winston.Logger
+): Promise<void> {
+  if (!isDefined(topicCache) || tag.length === 0) {
+    return;
+  }
+
+  try {
+    const cacheKey = utils.getArweaveTopicCacheKey(tag);
+    const cachedData = await topicCache.get<string>(cacheKey);
+    if (isDefined(cachedData)) {
+      // We can return here and not update because we assume that the input data is the same for any given tag.
+      return;
+    }
+    const serializedPayload = serializeArweaveTopicPayload(data);
+    await topicCache.set(cacheKey, serializedPayload, sdkConstants.DEFAULT_CACHING_TTL);
+    logger.debug({
+      at: "DataworkerUtils#persistArweaveTopicToCache",
+      message: isDefined(cachedData)
+        ? "Updated Arweave topic payload in Redis cache"
+        : "Persisted Arweave topic payload into Redis cache",
       tag,
-      receipt: `https://arweave.app/tx/${hashTxn}`,
-      rawData: `https://arweave.net/${hashTxn}`,
-      address,
-      balance: formatWinston(balance),
-      notificationPath: "across-arweave",
+      cacheKey,
     });
-    mark.stop({
-      message: "Time to persist to Arweave",
+  } catch (error) {
+    logger.debug({
+      at: "DataworkerUtils#persistArweaveTopicToCache",
+      message: "Failed to persist Arweave topic payload into Redis cache",
+      tag,
+      error: String(error),
     });
   }
+}
+
+function serializeArweaveTopicPayload(data: Record<string, unknown>): string {
+  return JSON.stringify(data, utils.jsonReplacerWithBigNumbers);
 }

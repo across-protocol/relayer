@@ -1,9 +1,11 @@
 import {
+  assert,
   ethers,
   retrieveSignerFromCLIArgs,
   getProvider,
   ERC20,
   ZERO_ADDRESS,
+  isDefined,
   toBN,
   getGasPrice,
   toGWei,
@@ -61,10 +63,10 @@ export async function run(): Promise<void> {
   const nonce = args.nonce ? Number(args.nonce) : undefined;
   const maxFeePerGas = args.maxFeePerGas ? toGWei(args.maxFeePerGas) : undefined;
   const maxPriorityFeePerGas = args.maxFeePerGas ? toGWei(args.maxFeePerGas) : undefined;
+  const { provider } = connectedSigner;
+  assert(isDefined(provider), "Connected signer must have a provider");
   const gas =
-    maxFeePerGas && maxPriorityFeePerGas
-      ? { maxFeePerGas, maxPriorityFeePerGas }
-      : await getGasPrice(connectedSigner.provider);
+    maxFeePerGas && maxPriorityFeePerGas ? { maxFeePerGas, maxPriorityFeePerGas } : await getGasPrice(provider);
   console.log(
     `Submitting txn with maxFeePerGas ${gas.maxFeePerGas.toString()} and priority fee ${gas.maxPriorityFeePerGas.toString()} with overridden nonce ${nonce}`
   );
