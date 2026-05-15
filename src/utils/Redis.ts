@@ -11,7 +11,7 @@ export async function connectRedisClient(
   logger: winston.Logger | undefined,
   url = getRedisUrl()
 ): Promise<RedisClient> {
-  const reconnectStrategy = (retries: number): number | Error => {
+  const reconnectStrategy = (retries: number, cause: Error): number | Error => {
     // Cap reconnection attempts to avoid livelock.
     const MAX_RETRIES = 10;
 
