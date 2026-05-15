@@ -159,8 +159,8 @@ export class MonitorConfig extends CommonConfig {
     this.hubPoolEndingBlock = ENDING_BLOCK_NUMBER ? Number(ENDING_BLOCK_NUMBER) : undefined;
 
     const validate = (chainId: number, account: string, warnThreshold?: number, errorThreshold?: number) => {
-      if (!isDefined(errorThreshold) && !isDefined(warnThreshold)) {
-        throw new Error("Must provide either an errorThreshold or a warnThreshold");
+      if (!isDefined(errorThreshold) || !isDefined(warnThreshold)) {
+        throw new Error("Must provide both errorThreshold and warnThreshold");
       }
     };
 
@@ -186,8 +186,8 @@ export class MonitorConfig extends CommonConfig {
       const config = create(JSON.parse(MONITORED_BALANCES), MonitoredBalancesSchema);
       this.monitoredBalances = config.map(({ errorThreshold, warnThreshold, account, token, chainId: _chainId }) => {
         const chainId = parseInt(String(_chainId));
-        if (!isDefined(errorThreshold) && !isDefined(warnThreshold)) {
-          throw new Error("Must provide either an errorThreshold or a warnThreshold");
+        if (!isDefined(errorThreshold) || !isDefined(warnThreshold)) {
+          throw new Error("Must provide both errorThreshold and warnThreshold");
         }
 
         let parsedErrorThreshold: number | null = null;
