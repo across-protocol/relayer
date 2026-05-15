@@ -9,7 +9,18 @@ import {
   Address,
   toAddressType,
   parseJson,
+  ZERO_ADDRESS,
 } from "../utils";
+
+// Operators may identify the native token implicitly (omit `token`) or explicitly via "0x" / zero address.
+const resolveTokenAddress = (token: string | undefined, chainId: number): Address => {
+  const native = getNativeTokenAddressForChain(chainId);
+  if (!isDefined(token) || token === "0x" || token === ZERO_ADDRESS) {
+    return native;
+  }
+  const addr = toAddressType(token, chainId);
+  return addr.eq(native) ? native : addr;
+};
 
 const MonitoredBalances2Schema = record(
   string(),
@@ -177,7 +188,7 @@ export class MonitorConfig extends CommonConfig {
               account: toAddressType(account, chainId),
               warnThreshold: warnThreshold ?? null,
               errorThreshold: errorThreshold ?? null,
-              token: isDefined(token) ? toAddressType(token, chainId) : getNativeTokenAddressForChain(chainId),
+              token: resolveTokenAddress(token, chainId),
             });
           });
         });
@@ -206,9 +217,8 @@ export class MonitorConfig extends CommonConfig {
           parsedWarnThreshold = Number(warnThreshold);
         }
 
-        const isNativeToken = !token || toAddressType(token, chainId).eq(getNativeTokenAddressForChain(chainId));
         return {
-          token: isNativeToken ? getNativeTokenAddressForChain(chainId) : toAddressType(token, chainId),
+          token: resolveTokenAddress(token, chainId),
           errorThreshold: parsedErrorThreshold,
           warnThreshold: parsedWarnThreshold,
           account: toAddressType(account, chainId),
