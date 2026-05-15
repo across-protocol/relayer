@@ -5,8 +5,9 @@ import { utils } from "@across-protocol/sdk";
 import { EvmAddress, toBNWei } from "../../src/utils/SDKUtils";
 import { BigNumber, getCctpDomainForChainId } from "../../src/utils";
 import { CCTPV2_FINALITY_THRESHOLD_FAST } from "../../src/common/Constants";
+import { CctpOftReadOnlyClient } from "../../src/rebalancer/clients/CctpOftReadOnlyClient";
 
-describe("Cross Chain Adapter: USDC CCTP L2 Bridge", async function () {
+describe("Cross Chain Adapter: USDC CCTP L2 Bridge", function () {
   let adapter: MockBaseChainAdapter;
   let monitoredEoa: string;
   let l1USDCToken, l2USDCToken: string;
@@ -86,6 +87,28 @@ describe("Cross Chain Adapter: USDC CCTP L2 Bridge", async function () {
       feeCollected
     );
     amount = await adapter.getL2PendingWithdrawalAmount(
+      searchConfig,
+      searchConfig,
+      toAddress(monitoredEoa),
+      toAddress(l2USDCToken)
+    );
+    expect(amount).to.equal(0);
+  });
+  it("ignores rebalancer-owned pending withdrawals", async function () {
+    const amountToWithdraw = toBNWei("100", 6);
+    const depositTxn = await cctpBridgeContract.emitDepositForBurn(
+      l2USDCToken,
+      amountToWithdraw,
+      monitoredEoa,
+      toAddress(monitoredEoa),
+      getCctpDomainForChainId(hubChainId),
+      toAddress(cctpBridgeContract.address),
+      ethers.constants.HashZero
+    );
+    adapter.setPendingBridgeRedisReader({
+      getPendingBridgeTxnRefsForRoute: async () => new Set([depositTxn.hash]),
+    } as unknown as CctpOftReadOnlyClient);
+    const amount = await adapter.getL2PendingWithdrawalAmount(
       searchConfig,
       searchConfig,
       toAddress(monitoredEoa),

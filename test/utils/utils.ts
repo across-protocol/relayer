@@ -1,10 +1,12 @@
-import * as utils from "@across-protocol/contracts/dist/test-utils";
+import * as utils from "@across-protocol/sdk/test-utils";
 import { SpyTransport, bigNumberFormatter } from "@risk-labs/logger";
 import { AcrossConfigStore, FakeContract } from "@across-protocol/contracts";
 import { constants, utils as sdkUtils } from "@across-protocol/sdk";
 import { Contract, providers } from "ethers";
+import { ethers } from "hardhat";
 import chai, { assert, expect } from "chai";
 import chaiExclude from "chai-exclude";
+import { smock } from "@defi-wonderland/smock";
 import sinon from "sinon";
 import winston from "winston";
 import { GLOBAL_CONFIG_STORE_KEYS } from "../../src/clients";
@@ -51,8 +53,8 @@ export {
   spyLogLevel,
 } from "@risk-labs/logger";
 export { MAX_SAFE_ALLOWANCE, MAX_UINT_VAL } from "../../src/utils";
+export { ethers };
 export const {
-  ethers,
   buildPoolRebalanceLeafTree,
   buildPoolRebalanceLeaves,
   buildSlowRelayTree,
@@ -69,6 +71,7 @@ export type SignerWithAddress = utils.SignerWithAddress;
 export { assert, chai, expect, BigNumber, Contract, FakeContract, sinon, toBN, toBNWei, toWei, utf8ToHex, winston };
 
 chai.use(chaiExclude);
+chai.use(smock.matchers);
 
 export async function assertPromiseError<T>(promise: Promise<T>, errMessage?: string): Promise<void> {
   const SPECIAL_ERROR_MESSAGE = "Promise didn't fail";
@@ -121,7 +124,7 @@ export function createSpyLogger(): SpyLoggerResult {
 }
 
 export async function deploySpokePoolWithToken(fromChainId = 0): Promise<SpokePoolDeploymentResult> {
-  const { weth, erc20, spokePool, unwhitelistedErc20, destErc20 } = await utils.deploySpokePool(utils.ethers);
+  const { weth, erc20, spokePool, unwhitelistedErc20, destErc20 } = await utils.deploySpokePool(ethers);
   const receipt = await spokePool.deployTransaction.wait();
 
   await spokePool.setChainId(fromChainId == 0 ? utils.originChainId : fromChainId);
@@ -475,6 +478,7 @@ export function getDisabledBlockRanges(): number[][] {
 }
 
 // A helper function to parse key - value map into a Fill object
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function fillFromArgs(fillArgs: { [key: string]: any }): Fill {
   const { message, ...relayData } = relayDataFromArgs(fillArgs);
   const { relayExecutionInfo: relayExecutionInfoArgs } = fillArgs;
@@ -514,6 +518,7 @@ export function fillIntoPrimitiveTypes(fill: Fill) {
   };
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function relayDataFromArgs(relayDataArgs: { [key: string]: any }): RelayData {
   return {
     originChainId: relayDataArgs.originChainId,
@@ -531,6 +536,7 @@ export function relayDataFromArgs(relayDataArgs: { [key: string]: any }): RelayD
   };
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function slowFillRequestFromArgs(slowFillRequestArgs: { [key: string]: any }): SlowFillRequest {
   const { message, ...relayData } = relayDataFromArgs(slowFillRequestArgs);
   return {
@@ -541,6 +547,7 @@ export function slowFillRequestFromArgs(slowFillRequestArgs: { [key: string]: an
 }
 
 // A helper function to parse key - value map into a Deposit object with correct types (e.g. Address)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function depositFromArgs(depositArgs: { [key: string]: any }): Deposit {
   const deposit: Deposit = {
     ...relayDataFromArgs(depositArgs),

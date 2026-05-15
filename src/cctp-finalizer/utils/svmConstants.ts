@@ -1,14 +1,8 @@
 import { address } from "@solana/kit";
 
+/**
+ * Solana Program Addresses for CCTP V2
+ */
 export const MESSAGE_TRANSMITTER_V2_PROGRAM = address("CCTPV2Sm4AdWt5296sk4P66VBZ7bEhcARwFaaS9YPbeC");
 export const TOKEN_MESSENGER_V2_PROGRAM = address("CCTPV2vPZJS2u2BBsUoscuikbYjnpFmbFsvVuJdgUMQe");
 export const TOKEN_2022_PROGRAM = address("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
-
-export const MESSAGE_HEADER_LENGTH = 148;
-export const MESSAGE_BODY_VERSION_LENGTH = 4;
-export const MESSAGE_BODY_BURN_TOKEN_LENGTH = 32;
-export const MINT_RECIPIENT_LENGTH = 32;
-export const NONCE_LENGTH = 32;
-export const NONCE_OFFSET = 12;
-export const MINT_RECIPIENT_OFFSET =
-  MESSAGE_HEADER_LENGTH + MESSAGE_BODY_VERSION_LENGTH + MESSAGE_BODY_BURN_TOKEN_LENGTH;

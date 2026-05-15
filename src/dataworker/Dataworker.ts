@@ -28,7 +28,6 @@ import {
   toAddressType,
   getKitKeypairFromEvmSigner,
   getEventAuthority,
-  getRedisCache,
   getStatePda,
   getFillStatusPda,
   LatestBlockhash,
@@ -55,6 +54,7 @@ import {
   createDefaultTransaction,
   getNativeTokenAddressForChain,
 } from "../utils";
+import { getRedisCache } from "../cache/Redis";
 import {
   ProposedRootBundle,
   RootBundleRelayWithBlock,
@@ -89,7 +89,7 @@ import { _buildRelayerRefundRoot, _buildSlowRelayRoot, generateValidationKey } f
 import _ from "lodash";
 import {
   ARBITRUM_ORBIT_L1L2_MESSAGE_FEE_DATA,
-  CONTRACT_ADDRESSES,
+  getContractEntry,
   IOFT_ABI_FULL,
   spokePoolClientsToProviders,
 } from "../common";
@@ -428,7 +428,7 @@ export class Dataworker {
   async proposeRootBundle(
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
-  ): Promise<BundleData> {
+  ): Promise<BundleData | undefined> {
     const submitProposals = this.config.sendingTransactionsEnabled;
 
     // TODO: Handle the case where we can't get event data or even blockchain data from any chain. This will require
@@ -617,10 +617,7 @@ export class Dataworker {
     this.logger.debug({
       at: "Dataworker#validate",
       message: "Found pending proposal",
-      pendingRootBundle: {
-        ...pendingRootBundle,
-        proposer: pendingRootBundle.proposer.toNative(),
-      },
+      pendingRootBundle,
     });
 
     // Exit early if challenge period timestamp has passed:
@@ -686,7 +683,7 @@ export class Dataworker {
 
     // Root bundle is valid, attempt to persist the raw bundle data and the merkle leaf data to DA layer
     // if not already there.
-    if (persistBundleData && isDefined(bundleData)) {
+    if (persistBundleData && isDefined(bundleData) && isDefined(expectedTrees)) {
       const chainIds = this.clients.configStoreClient.getChainIdIndicesForBlock(nextBundleMainnetStartBlock);
       // Store the bundle block ranges on Arweave as a map of chainId to block range to aid users in querying.
       const bundleBlockRangeMap = Object.fromEntries(
@@ -765,7 +762,8 @@ export class Dataworker {
             bundleBlockRanges: bundleBlockRangeMap,
           },
           this.logger,
-          `bundles-${partialArweaveDataKey}`
+          `bundles-${partialArweaveDataKey}`,
+          this.clients.arweaveTopicCache
         ),
         persistDataToArweave(
           this.clients.arweaveClient,
@@ -798,7 +796,8 @@ export class Dataworker {
             slowRelayRoot: expectedTrees.slowRelayTree.tree.getHexRoot(),
           },
           this.logger,
-          `merkletree-${partialArweaveDataKey}`
+          `merkletree-${partialArweaveDataKey}`,
+          this.clients.arweaveTopicCache
         ),
       ]);
     }
@@ -858,10 +857,7 @@ export class Dataworker {
       this.logger.debug({
         at: "Dataworker#validate",
         message: "Empty pool rebalance root, submitting dispute",
-        rootBundle: {
-          ...rootBundle,
-          proposer: rootBundle.proposer.toNative(),
-        },
+        rootBundle,
       });
       return {
         valid: false,
@@ -1024,6 +1020,7 @@ export class Dataworker {
       );
     }
 
+    assert(isDefined(rootBundle.proposalBlockNumber), "validateRootBundle: rootBundle.proposalBlockNumber is required");
     const logData = true;
     const rootBundleData = await this._proposeRootBundle(
       blockRangesImpliedByBundleEndBlocks,
@@ -1072,7 +1069,6 @@ export class Dataworker {
         expectedRelayerRefundLeaves: expectedRelayerRefundRoot.leaves.map((leaf) => {
           return {
             ...leaf,
-            l2TokenAddress: leaf.l2TokenAddress.toNative(),
             refundAddresses: leaf.refundAddresses.map((refundAddress) => refundAddress.toNative()),
           };
         }),
@@ -1080,11 +1076,11 @@ export class Dataworker {
         expectedSlowRelayLeaves: expectedSlowRelayRoot.leaves.map((leaf) => {
           return {
             ...leaf,
-            depositor: leaf.relayData.depositor.toNative(),
-            recipient: leaf.relayData.recipient.toNative(),
-            inputToken: leaf.relayData.inputToken.toNative(),
-            outputToken: leaf.relayData.outputToken.toNative(),
-            exclusiveRelayer: leaf.relayData.exclusiveRelayer.toNative(),
+            depositor: leaf.relayData.depositor,
+            recipient: leaf.relayData.recipient,
+            inputToken: leaf.relayData.inputToken,
+            outputToken: leaf.relayData.outputToken,
+            exclusiveRelayer: leaf.relayData.exclusiveRelayer,
           };
         }),
         expectedSlowRelayRoot: expectedSlowRelayRoot.tree.getHexRoot(),
@@ -1243,7 +1239,7 @@ export class Dataworker {
             blockNumberRanges,
             spokePoolClients,
             matchingRootBundle.blockNumber,
-            true // Load data from arweave when executing for speed.
+            this.config.loadArweaveData ?? true // Load data from arweave when executing for speed.
           );
 
           const { slowFillLeaves: leaves, slowFillTree: tree } = rootBundleData;
@@ -1299,6 +1295,8 @@ export class Dataworker {
   ): Promise<void> {
     const submitExecution = this.config.sendingTransactionsEnabled;
     const currentTime = client.getCurrentTime();
+    const spokePoolAddress = client.spokePoolAddress;
+    assert(isDefined(spokePoolAddress), "_executeSlowFillLeaf: SpokePoolClient missing spokePoolAddress");
 
     // Ignore slow fill leaves for deposits with messages as these messages might be very expensive to execute.
     // The original depositor can always execute these and pay for the gas themselves.
@@ -1319,6 +1317,7 @@ export class Dataworker {
 
       // If there is a message, we ignore the leaf and log an error.
       if (!sdk.utils.isMessageEmpty(message)) {
+        assert(isDefined(rootBundleId), "_executeSlowFillLeaf: rootBundleId required for slow fill encoding");
         const { method, args } = this.encodeSlowFillLeaf(slowRelayTree, rootBundleId, leaf);
 
         this.logger.warn({
@@ -1355,8 +1354,7 @@ export class Dataworker {
       const messageHash = getMessageHash(relayData.message);
 
       // Start with the most recent fills and search backwards.
-      const fill = _.findLast(
-        sortedFills,
+      const fill = sortedFills.findLast(
         (fill) =>
           fill.depositId.eq(relayData.depositId) &&
           fill.originChainId === relayData.originChainId &&
@@ -1398,8 +1396,8 @@ export class Dataworker {
 
           const { outputToken } = slowFill.relayData;
           const holder = chainIsSvm(destinationChainId)
-            ? SvmAddress.from(await getStatePda(arch.svm.toAddress(client.spokePoolAddress)))
-            : client.spokePoolAddress;
+            ? SvmAddress.from(await getStatePda(arch.svm.toAddress(spokePoolAddress)))
+            : spokePoolAddress;
           const success = await balanceAllocator.requestBalanceAllocation(
             destinationChainId,
             l2TokensToCountTowardsSpokePoolLeafExecutionCapital(outputToken, destinationChainId),
@@ -1416,13 +1414,13 @@ export class Dataworker {
               depositId: slowFill.relayData.depositId,
               fromChain: slowFill.relayData.originChainId,
               chainId: destinationChainId,
-              token: outputToken.toNative(),
+              token: outputToken,
               amount: outputAmount,
               spokeBalance: await this._getSpokeBalanceForL2Tokens(
                 balanceAllocator,
                 destinationChainId,
                 outputToken,
-                client.spokePoolAddress
+                spokePoolAddress
               ),
             });
           }
@@ -1449,6 +1447,7 @@ export class Dataworker {
         `amount: ${outputAmount.toString()}`;
 
       if (submitExecution) {
+        assert(isDefined(rootBundleId), "executeSlowRelayLeaves: rootBundleId required to submit execution");
         if (isEVMSpokePoolClient(client)) {
           const { method, args } = this.encodeSlowFillLeaf(slowRelayTree, rootBundleId, leaf);
 
@@ -1558,10 +1557,7 @@ export class Dataworker {
       at: "Dataworker#executePoolRebalanceLeaves",
       message: "Found pending proposal",
       hubPoolCurrentTime: this.clients.hubPoolClient.currentTime,
-      pendingRootBundle: {
-        ...pendingRootBundle,
-        proposer: pendingRootBundle.proposer.toNative(),
-      },
+      pendingRootBundle,
     });
 
     const nextBundleMainnetStartBlock = this.getNextHubChainBundleStartBlock();
@@ -1577,7 +1573,7 @@ export class Dataworker {
       pendingRootBundle,
       spokePoolClients,
       earliestBlocksInSpokePoolClients,
-      true // Load data from arweave when executing leaves for speed.
+      this.config.loadArweaveData ?? true // Load data from arweave when executing leaves for speed.
     );
 
     if (!valid) {
@@ -1749,7 +1745,7 @@ export class Dataworker {
     });
 
     // Save all L1 tokens that we haven't updated exchange rates for in a different step.
-    const l1TokensWithPotentiallyOlderUpdate = poolLeaves.reduce((l1TokenSet, leaf) => {
+    const l1TokensWithPotentiallyOlderUpdate = poolLeaves.reduce<EvmAddress[]>((l1TokenSet, leaf) => {
       const currLeafL1Tokens = leaf.l1Tokens;
       currLeafL1Tokens.forEach((l1Token, i) => {
         if (
@@ -1861,7 +1857,7 @@ export class Dataworker {
             ...leaf,
             l1Tokens: leaf.l1Tokens.map((l1Token) => l1Token.toNative()),
           },
-          feeToken: feeToken.toNative(),
+          feeToken,
           requiredAmount,
         });
         if (submitExecution) {
@@ -1909,7 +1905,7 @@ export class Dataworker {
           message: `feePayer ${holder} has sufficient orbit gas token to pay for L1->L2 message submission fees to ${getNetworkName(
             leaf.chainId
           )}`,
-          feeToken: feeToken.toNative(),
+          feeToken,
           requiredAmount,
           feePayerBalance: await balanceAllocator.getBalanceSubUsed(hubPoolChainId, feeToken, holder),
         });
@@ -1921,14 +1917,11 @@ export class Dataworker {
     executableLeaves.forEach((leaf) => {
       // Add balances to spoke pool on mainnet since we know it will be sent atomically.
       if (leaf.chainId === hubPoolChainId) {
+        const hubChainSpokePoolAddress = spokePoolClients[leaf.chainId].spokePoolAddress;
+        assert(isDefined(hubChainSpokePoolAddress), `Missing spokePoolAddress for hub chain ${leaf.chainId}`);
         leaf.netSendAmounts.forEach((amount, i) => {
           if (amount.gt(bnZero)) {
-            balanceAllocator.addUsed(
-              leaf.chainId,
-              leaf.l1Tokens[i],
-              spokePoolClients[leaf.chainId].spokePoolAddress,
-              amount.mul(-1)
-            );
+            balanceAllocator.addUsed(leaf.chainId, leaf.l1Tokens[i], hubChainSpokePoolAddress, amount.mul(-1));
           }
         });
       }
@@ -1974,8 +1967,8 @@ export class Dataworker {
     const { netSendAmounts, l1Tokens } = poolRebalanceLeaf;
     await sdk.utils.forEachAsync(l1Tokens, async (l1Token, idx) => {
       const currentLiquidReserves = this.clients.hubPoolClient.getLpTokenInfoForL1Token(l1Token)?.liquidReserves;
-      updatedLiquidReserves[l1Token.toEvmAddress()] = currentLiquidReserves;
       assert(currentLiquidReserves !== undefined && currentLiquidReserves.gte(0), "Liquid reserves should be >= 0");
+      updatedLiquidReserves[l1Token.toEvmAddress()] = currentLiquidReserves;
       const tokenSymbol = this.clients.hubPoolClient.getTokenInfoForL1Token(l1Token)?.symbol;
 
       // If netSendAmounts is negative, there is no need to update this exchange rate.
@@ -1990,7 +1983,7 @@ export class Dataworker {
           message: `Skipping exchange rate update for ${tokenSymbol} because current liquid reserves > netSendAmount for hubChain`,
           currentLiquidReserves,
           netSendAmount: netSendAmounts[idx],
-          l1Token: l1Token.toNative(),
+          l1Token,
         });
         updatedLiquidReserves[l1Token.toEvmAddress()] = currentLiquidReserves.sub(netSendAmounts[idx]);
         return;
@@ -2179,7 +2172,8 @@ export class Dataworker {
 
   async _updateOldExchangeRates(l1Tokens: EvmAddress[]): Promise<void> {
     const submitExecution = this.config.sendingTransactionsEnabled;
-    const { hubPool, chainId } = this.clients.hubPoolClient;
+    const { hubPoolClient } = this.clients;
+    const { hubPool, chainId, currentTime } = hubPoolClient;
     const seenL1Tokens = new Set<string>();
 
     await sdk.utils.forEachAsync(l1Tokens, async (l1Token) => {
@@ -2187,17 +2181,14 @@ export class Dataworker {
         return;
       }
       seenL1Tokens.add(l1Token.toEvmAddress());
-      const tokenSymbol = this.clients.hubPoolClient.getTokenInfoForL1Token(l1Token)?.symbol;
+      const tokenSymbol = hubPoolClient.getTokenInfoForL1Token(l1Token)?.symbol;
 
       // Exit early if we recently synced this token.
-      const latestFeesCompoundedTime =
-        this.clients.hubPoolClient.getLpTokenInfoForL1Token(l1Token)?.lastLpFeeUpdate ?? 0;
+      const latestFeesCompoundedTime = hubPoolClient.getLpTokenInfoForL1Token(l1Token)?.lastLpFeeUpdate ?? 0;
       // Force update every 2 days:
-      if (
-        this.clients.hubPoolClient.currentTime === undefined ||
-        this.clients.hubPoolClient.currentTime - latestFeesCompoundedTime <= 2 * 24 * 60 * 60
-      ) {
-        const timeToNextUpdate = 2 * 24 * 60 * 60 - (this.clients.hubPoolClient.currentTime - latestFeesCompoundedTime);
+      if (currentTime === undefined || currentTime - latestFeesCompoundedTime <= 2 * 24 * 60 * 60) {
+        const timeToNextUpdate =
+          currentTime === undefined ? 0 : 2 * 24 * 60 * 60 - (currentTime - latestFeesCompoundedTime);
         this.logger.debug({
           at: "Dataworker#_updateOldExchangeRates",
           message: `Skipping exchange rate update for ${tokenSymbol} because it was recently updated. Seconds to next update: ${timeToNextUpdate}s`,
@@ -2232,7 +2223,7 @@ export class Dataworker {
         lastUpdateTime: latestFeesCompoundedTime,
         currentLiquidReserves,
         updatedLiquidReserves,
-        l1Token: l1Token.toNative(),
+        l1Token,
       });
       if (submitExecution) {
         this.clients.multiCallerClient.enqueueTransaction({
@@ -2338,7 +2329,7 @@ export class Dataworker {
           blockNumberRanges,
           spokePoolClients,
           matchingRootBundle.blockNumber,
-          true // load data from Arweave for speed purposes
+          this.config.loadArweaveData ?? true // Load data from arweave when executing leaves for speed.
         );
 
         if (tree.getHexRoot() !== rootBundleRelay.relayerRefundRoot) {
@@ -2381,7 +2372,7 @@ export class Dataworker {
   protected getTokenInfo(l2Token: Address, chainId: number): string {
     try {
       return getTokenInfo(l2Token, chainId).symbol;
-    } catch (e) {
+    } catch {
       return "UNKNOWN";
     }
   }
@@ -2396,8 +2387,9 @@ export class Dataworker {
     if (leaves.length === 0) {
       return;
     }
-    const chainId = client.chainId;
+    const { chainId, spokePoolAddress } = client;
     const submitExecution = this.config.sendingTransactionsEnabled;
+    assert(isDefined(spokePoolAddress), "_executeRelayerRefundLeaves: SpokePoolClient missing spokePoolAddress");
 
     // Pre-compute msg.value per leaf id to use consistently in allocation and execution
     const msgValuesByLeafId: Map<number, BigNumber | undefined> = new Map();
@@ -2427,9 +2419,11 @@ export class Dataworker {
               rootBundleId,
               leaf.leafId
             );
+            const { maxLookBack } = client.eventSearchConfig;
+            assert(isDefined(maxLookBack), "_executeRelayerRefundLeaves: SpokePoolClient missing maxLookBack");
             const searchConfig = {
-              maxLookBack: client.eventSearchConfig.maxLookBack,
-              from: client.latestHeightSearched - client.eventSearchConfig.maxLookBack,
+              maxLookBack,
+              from: client.latestHeightSearched - maxLookBack,
               to: await client.spokePool.provider.getBlockNumber(),
             };
             const duplicateEvents = await sdkUtils.paginatedEventQuery(client.spokePool, eventFilter, searchConfig);
@@ -2445,8 +2439,8 @@ export class Dataworker {
           const refundSum = leaf.refundAmounts.reduce((acc, curr) => acc.add(curr), BigNumber.from(0));
           const totalSent = refundSum.add(leaf.amountToReturn.gte(0) ? leaf.amountToReturn : BigNumber.from(0));
           const holder = chainIsSvm(leaf.chainId)
-            ? SvmAddress.from(await getStatePda(arch.svm.toAddress(client.spokePoolAddress)))
-            : client.spokePoolAddress;
+            ? SvmAddress.from(await getStatePda(arch.svm.toAddress(spokePoolAddress)))
+            : spokePoolAddress;
           const balanceRequestsToQuery = [
             {
               chainId: leaf.chainId,
@@ -2486,7 +2480,7 @@ export class Dataworker {
                 balanceAllocator,
                 leaf.chainId,
                 leaf.l2TokenAddress,
-                client.spokePoolAddress
+                spokePoolAddress
               ),
               requiredEthValue: valueToPassViaPayable,
             });
@@ -2726,10 +2720,7 @@ export class Dataworker {
       "This method should only be called on Linea chains!"
     );
     // Resolve and sanitize the L2MessageService contract ABI and address.
-    const l2MessageABI = CONTRACT_ADDRESSES[client.chainId]?.l2MessageService?.abi;
-    const l2MessageAddress = CONTRACT_ADDRESSES[client.chainId]?.l2MessageService?.address;
-    assert(isDefined(l2MessageABI), "L2MessageService contract ABI is not defined for Linea chain!");
-    assert(isDefined(l2MessageAddress), "L2MessageService contract address is not defined for Linea chain!");
+    const { address: l2MessageAddress, abi: l2MessageABI } = getContractEntry(client.chainId, "l2MessageService");
     // For Linea, the bot needs enough ETH to pay for each L2 -> L1 message.
     const l2MessagerContract = new Contract(l2MessageAddress, l2MessageABI, client.spokePool.provider);
     // Get the latest relay fee from the L2Linea Messenger contract.
@@ -2891,7 +2882,9 @@ export class Dataworker {
     relayerRefundLeafHexProof: string[]
   ): Promise<string> {
     // Parse relevant info from the relayer refund leaf/dataworker.
-    const spokePoolProgramId = toKitAddress(spokePoolClient.spokePoolAddress);
+    const { spokePoolAddress } = spokePoolClient;
+    assert(isDefined(spokePoolAddress), "_executeRelayerRefundLeafSvm: SpokePoolClient missing spokePoolAddress");
+    const spokePoolProgramId = toKitAddress(spokePoolAddress);
     const provider = spokePoolClient.svmEventsClient.getRpc();
     const _l2TokenAddress = leaf.l2TokenAddress;
     assert(
@@ -2921,7 +2914,6 @@ export class Dataworker {
       message: "Relayer refund leaf accounts",
       leaf: {
         ...leaf,
-        l2TokenAddress: leaf.l2TokenAddress.toNative(),
         refundAddresses: leaf.refundAddresses.map((address) => address.toNative()),
       },
       rootBundleId,
@@ -2935,7 +2927,6 @@ export class Dataworker {
 
     // Optionally close the existing instruction params account and add an instruction which loads new data into the instruction params PDA.
     const instructionParamsAccount = await fetchEncodedAccount(provider, instructionParamsPda);
-    let closeInstructionParamsIx;
     // If the account exists, define the instruction needed to close the instruction account.
     if (instructionParamsAccount.exists) {
       this.logger.debug({
@@ -2943,7 +2934,7 @@ export class Dataworker {
         message: "Need to close existing instruction params account",
         instructionParamsAccount: instructionParamsAccount.address,
       });
-      closeInstructionParamsIx = SvmSpokeClient.getCloseInstructionParamsInstruction({
+      const closeInstructionParamsIx = SvmSpokeClient.getCloseInstructionParamsInstruction({
         signer: kitKeypair,
         instructionParams: instructionParamsPda,
       });
@@ -3267,7 +3258,7 @@ export class Dataworker {
           // If the claim account exists, then initializer will be defined https://github.com/anza-xyz/kit/blob/491c96ed8ccda40d13b30deaf03ad762de58e0d5/packages/accounts/src/maybe-account.ts#L90.
           // Otherwise, this means that we created the claim account earlier in this function, so the kit keypair is the initializer.
           const initializer = accountData.claimAccount.claimAccount.exists
-            ? accountData.claimAccount.claimAccount.data!.initializer
+            ? accountData.claimAccount.claimAccount.data.initializer
             : kitKeypair.address;
           const claimRefundSignature = await claimRelayerRefund(
             toKitAddress(accountData.claimAccount.refundAddress),
@@ -3305,8 +3296,10 @@ export class Dataworker {
     slowFillHexProof: string[]
   ): Promise<{ executable: boolean; signature?: string }> {
     // Parse relevant info from the slow fill leaf/dataworker.
+    const { spokePoolAddress } = spokePoolClient;
+    assert(isDefined(spokePoolAddress), "_executeSlowFillLeafSvm: SpokePoolClient missing spokePoolAddress");
     const provider = spokePoolClient.svmEventsClient.getRpc();
-    const spokePoolProgramId = toKitAddress(spokePoolClient.spokePoolAddress);
+    const spokePoolProgramId = toKitAddress(spokePoolAddress);
     const l2TokenAddress = toKitAddress(leaf.relayData.outputToken);
     const recipient = toKitAddress(leaf.relayData.recipient);
     const proof = slowFillHexProof.map((hexLeaf) => Uint8Array.from(Buffer.from(hexLeaf.slice(2), "hex")));

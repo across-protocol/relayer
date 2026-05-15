@@ -1,5 +1,6 @@
 import { TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import {
+  assert,
   compareAddressesSimple,
   ethers,
   getRemoteTokenForL1Token,
@@ -25,6 +26,8 @@ interface LookupTableDefinitions {
   lookupTableMap: AddressesByLookupTableAddress;
 }
 
+export const ALT_DEACTIVATION_COOLDOWN = 512n;
+
 export function includesAddressSimple(address: string | undefined, list: string[]): boolean {
   if (!isDefined(address)) {
     return false;
@@ -44,19 +47,6 @@ export function matchTokenSymbol(tokenAddress: string, chainId: number): string[
   return Object.values(TOKEN_SYMBOLS_MAP)
     .filter(({ addresses }) => addresses[chainId]?.toLowerCase() === tokenAddress.toLowerCase())
     .map(({ symbol }) => symbol);
-}
-
-/**
- * Match the token decimals for a given token symbol.
- * @param tokenSymbol Symbol of the token to query.
- * @returns The number of ERC20 decimals configured for the requested token.
- */
-export function resolveTokenDecimals(tokenSymbol: string): number {
-  const decimals = TOKEN_SYMBOLS_MAP[tokenSymbol]?.decimals;
-  if (decimals === undefined) {
-    throw new Error(`Unrecognized token symbol: ${tokenSymbol}`);
-  }
-  return decimals;
 }
 
 /**
@@ -80,14 +70,21 @@ export function getTranslatedTokenAddress(
   }
   // Native USDC or not USDC, we can just look up in the token map directly.
   if (isNativeUsdc || !compareAddressesSimple(l1Token.toEvmAddress(), TOKEN_SYMBOLS_MAP.USDC.addresses[hubChainId])) {
-    return getRemoteTokenForL1Token(l1Token, l2ChainId, hubChainId);
+    const remoteToken = getRemoteTokenForL1Token(l1Token, l2ChainId, hubChainId);
+    assert(isDefined(remoteToken), `No remote token mapping for L1 ${l1Token.toEvmAddress()} on chain ${l2ChainId}`);
+    return remoteToken;
   }
   // Handle USDC special case where there could be multiple versions of USDC on an L2: Bridged or Native
   const bridgedUsdcMapping = Object.values(TOKEN_SYMBOLS_MAP).find(
     ({ symbol, addresses }) =>
       symbol !== "USDC" && compareAddressesSimple(addresses[hubChainId], l1Token.toEvmAddress()) && addresses[l2ChainId]
   );
-  return toAddressType(bridgedUsdcMapping?.addresses[l2ChainId], l2ChainId);
+  const bridgedUsdcAddress = bridgedUsdcMapping?.addresses[l2ChainId];
+  assert(
+    isDefined(bridgedUsdcAddress),
+    `No bridged USDC mapping for L1 ${l1Token.toEvmAddress()} on chain ${l2ChainId}`
+  );
+  return toAddressType(bridgedUsdcAddress, l2ChainId);
 }
 
 export function checkAddressChecksum(tokenAddress: string): boolean {

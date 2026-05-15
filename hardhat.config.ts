@@ -10,12 +10,9 @@ import { CHAIN_IDs, getNetworkName, getNodeUrlList, isDefined, PUBLIC_NETWORKS }
 // TODO: Figure out which imported module in `./tasks` is causing HRE construction to fail.
 // require("./tasks");
 
-import "@nomiclabs/hardhat-etherscan";
+import "@nomicfoundation/hardhat-verify";
 import "@nomiclabs/hardhat-ethers";
 import "@nomicfoundation/hardhat-chai-matchers";
-import "@typechain/hardhat";
-import "hardhat-gas-reporter";
-import "solidity-coverage";
 import "hardhat-deploy";
 import "@openzeppelin/hardhat-upgrades";
 
@@ -33,13 +30,13 @@ const LARGE_CONTRACT_COMPILER_SETTINGS = {
 
 const getNodeUrl = (chainId: number): string => {
   const chain = getNetworkName(chainId);
-  let url: string;
+  let url: string | undefined;
   try {
     url = Object.values(getNodeUrlList(chainId)).at(0);
   } catch {
     // eslint-disable-next-line no-console
     console.log(`No configured RPC provider for ${chain}, reverting to public RPC.`);
-    url = PUBLIC_NETWORKS[chainId].publicRPC;
+    url = PUBLIC_NETWORKS[chainId]?.publicRPC;
   }
 
   assert(isDefined(url), `No known RPC provider for ${chain}`);
@@ -105,7 +102,6 @@ const config: HardhatUserConfig = {
       companionNetworks: { l1: "mainnet" },
     },
   },
-  gasReporter: { enabled: process.env.REPORT_GAS !== undefined, currency: "USD" },
   etherscan: { apiKey: process.env.ETHERSCAN_API_KEY },
   namedAccounts: { deployer: 0 },
   mocha: {

@@ -18,7 +18,7 @@ import {
 import { ConfigStoreClient, InventoryClient } from "../src/clients"; // Tested
 import { CrossChainTransferClient } from "../src/clients/bridges";
 import { InventoryConfig } from "../src/interfaces";
-import { MockAdapterManager, MockHubPoolClient, MockTokenClient } from "./mocks/";
+import { MockAdapterManager, MockHubPoolClient, MockInventoryClient, MockTokenClient } from "./mocks/";
 import {
   bnZero,
   CHAIN_IDs,
@@ -33,6 +33,7 @@ import {
 } from "../src/utils";
 import { MockBaseChainAdapter } from "./mocks/MockBaseChainAdapter";
 import { utils as sdkUtils } from "@across-protocol/sdk";
+import { MockRebalancerClient } from "./mocks/MockRebalancerClient";
 
 const toMegaWei = (num: string | number | BigNumber) => parseUnits(num.toString(), 6);
 
@@ -40,6 +41,7 @@ let hubPoolClient: MockHubPoolClient, adapterManager: MockAdapterManager, tokenC
 let owner: SignerWithAddress, spy: sinon.SinonSpy, spyLogger: winston.Logger;
 let inventoryClient: InventoryClient; // tested
 let crossChainTransferClient: CrossChainTransferClient;
+let mockRebalancerClient: MockRebalancerClient;
 
 const { MAINNET, OPTIMISM, POLYGON, BASE, ARBITRUM } = CHAIN_IDs;
 const enabledChainIds = [MAINNET, OPTIMISM, POLYGON, BASE, ARBITRUM];
@@ -74,10 +76,18 @@ const inventoryConfig: InventoryConfig = {
       [ARBITRUM]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
     },
     [mainnetUsdc]: {
-      [OPTIMISM]: { targetPct: toWei(0.12), thresholdPct: toWei(0.1), targetOverageBuffer },
-      [POLYGON]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
-      [BASE]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
-      [ARBITRUM]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
+      [l2TokensForUsdc[OPTIMISM]]: {
+        [OPTIMISM]: { targetPct: toWei(0.12), thresholdPct: toWei(0.1), targetOverageBuffer },
+      },
+      [l2TokensForUsdc[POLYGON]]: {
+        [POLYGON]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
+      },
+      [l2TokensForUsdc[BASE]]: {
+        [BASE]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
+      },
+      [l2TokensForUsdc[ARBITRUM]]: {
+        [ARBITRUM]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
+      },
     },
   },
 };
@@ -95,7 +105,7 @@ const initialWethTotal = toWei(150); // Sum over all 5 chains is 150
 const initialUsdcTotal = toMegaWei(15000); // Sum over all 5 chains is 15000
 const initialTotals = { [mainnetWeth]: initialWethTotal, [mainnetUsdc]: initialUsdcTotal };
 
-describe("InventoryClient: Rebalancing inventory", async function () {
+describe("InventoryClient: Rebalancing inventory", function () {
   beforeEach(async function () {
     [owner] = await ethers.getSigners();
     ({ spy, spyLogger } = createSpyLogger());
@@ -117,8 +127,9 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     tokenClient = new MockTokenClient(null, null, null, null);
 
     crossChainTransferClient = new CrossChainTransferClient(spyLogger, enabledChainIds, adapterManager);
+    mockRebalancerClient = new MockRebalancerClient(spyLogger);
 
-    inventoryClient = new InventoryClient(
+    inventoryClient = new MockInventoryClient(
       EvmAddress.from(owner.address),
       spyLogger,
       inventoryConfig,
@@ -126,7 +137,8 @@ describe("InventoryClient: Rebalancing inventory", async function () {
       enabledChainIds,
       hubPoolClient,
       adapterManager,
-      crossChainTransferClient
+      crossChainTransferClient,
+      mockRebalancerClient
     );
 
     mainnetWethContract = await smock.fake(ERC20.abi, { address: mainnetWeth });
@@ -348,6 +360,41 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     expect(lastSpyLogIncludes(spy, "8.00 WETH rebalanced to cover total chain shortfall of 18.00 WETH")).to.be.true;
   });
 
+  it("Correctly decides when to rebalance: cross chain swap rebalances", async function () {
+    const pendingUsdcSwapRebalance = toMegaWei(123);
+    mockRebalancerClient.setPendingRebalance(ARBITRUM, "USDC", pendingUsdcSwapRebalance);
+    await inventoryClient.update();
+
+    const polygonUsdcL2Token = toAddressType(l2TokensForUsdc[POLYGON], POLYGON);
+    const arbitrumWethL2Token = toAddressType(l2TokensForWeth[ARBITRUM], ARBITRUM);
+    const arbitrumUsdcL2Token = toAddressType(l2TokensForUsdc[ARBITRUM], ARBITRUM);
+
+    // Case 1: this.pendingRebalances[chainId] is undefined.
+    const polygonUsdcBalance = inventoryClient.getBalanceOnChain(
+      POLYGON,
+      EvmAddress.from(mainnetUsdc),
+      polygonUsdcL2Token
+    );
+    expect(polygonUsdcBalance.eq(tokenClient.getBalance(POLYGON, polygonUsdcL2Token))).to.be.true;
+
+    // Case 2: this.pendingRebalances[chainId][symbol] is undefined.
+    const arbitrumWethBalance = inventoryClient.getBalanceOnChain(
+      ARBITRUM,
+      EvmAddress.from(mainnetWeth),
+      arbitrumWethL2Token
+    );
+    expect(arbitrumWethBalance.eq(tokenClient.getBalance(ARBITRUM, arbitrumWethL2Token))).to.be.true;
+
+    // Case 3: this.pendingRebalances[chainId][symbol] is defined and added to virtual balance.
+    const arbitrumUsdcBalance = inventoryClient.getBalanceOnChain(
+      ARBITRUM,
+      EvmAddress.from(mainnetUsdc),
+      arbitrumUsdcL2Token
+    );
+    expect(arbitrumUsdcBalance.eq(tokenClient.getBalance(ARBITRUM, arbitrumUsdcL2Token).add(pendingUsdcSwapRebalance)))
+      .to.be.true;
+  });
+
   it("Refuses to send rebalance when ERC20 balance changes", async function () {
     await inventoryClient.update();
     await inventoryClient.rebalanceInventoryIfNeeded();
@@ -394,8 +441,9 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     const testL2Token = toAddressType(l2TokensForUsdc[testChain], testChain);
     const targetOverageBuffer = toWei("2");
     beforeEach(function () {
-      inventoryConfig.tokenConfig[testL1Token][testChain].withdrawExcessPeriod = 7200;
-      inventoryConfig.tokenConfig[testL1Token][testChain].targetOverageBuffer = targetOverageBuffer;
+      inventoryConfig.tokenConfig[testL1Token][testL2Token.toNative()][testChain].withdrawExcessPeriod = 7200;
+      inventoryConfig.tokenConfig[testL1Token][testL2Token.toNative()][testChain].targetOverageBuffer =
+        targetOverageBuffer;
       const mockAdapter = new MockBaseChainAdapter();
       adapterManager.setAdapters(testChain, mockAdapter);
     });
@@ -404,7 +452,9 @@ describe("InventoryClient: Rebalancing inventory", async function () {
       // The threshold to trigger an excess withdrawal is when the currentAllocPct is greater than the
       // targetPct multiplied by the "targetPctMultiplier"
       const targetPctMultiplier = targetOverageBuffer.mul(toWei("0.95")).div(toWei("1"));
-      const excessWithdrawThresholdPct = inventoryConfig.tokenConfig[testL1Token][testChain].targetPct
+      const excessWithdrawThresholdPct = inventoryConfig.tokenConfig[testL1Token][testL2Token.toNative()][
+        testChain
+      ].targetPct
         .mul(targetPctMultiplier)
         .div(toWei("1"));
 
@@ -420,7 +470,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
 
       await inventoryClient.withdrawExcessBalances();
       const expectedWithdrawalPct = currentAllocationPct.sub(
-        inventoryConfig.tokenConfig[testL1Token][testChain].targetPct
+        inventoryConfig.tokenConfig[testL1Token][testL2Token.toNative()][testChain].targetPct
       );
       const expectedWithdrawalAmount = expectedWithdrawalPct.mul(currentCumulativeBalance).div(toWei(1));
       expect(adapterManager.withdrawalsRequired[0].amountToWithdraw).eq(expectedWithdrawalAmount);
@@ -448,7 +498,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
 
       await inventoryClient.withdrawExcessBalances();
       const expectedWithdrawalPct = currentAllocationPct.sub(
-        BigNumber.from(inventoryConfig.tokenConfig[testL1Token][testChain].targetPct)
+        BigNumber.from(inventoryConfig.tokenConfig[testL1Token][testL2Token.toNative()][testChain].targetPct)
       );
 
       // Expected withdrawal amount is in correct decimals:
@@ -459,7 +509,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     });
   });
 
-  describe("Remote chain token mappings", async function () {
+  describe("Remote chain token mappings", function () {
     const nativeUSDC = TOKEN_SYMBOLS_MAP.USDC.addresses;
     const bridgedUSDC = { ...TOKEN_SYMBOLS_MAP["USDC.e"].addresses, ...TOKEN_SYMBOLS_MAP["USDbC"].addresses };
     const usdcConfig = {
@@ -621,6 +671,55 @@ describe("InventoryClient: Rebalancing inventory", async function () {
         .mul(toWei("1"))
         .div(sdkUtils.ConvertDecimals(6, 18)(cumulativeBalance));
       expect(currentAllocationPct).eq(expectedCurrentAllocationPct);
+    });
+
+    it("Correct normalizes pending rebalances to L1 token decimals", async function () {
+      const testChain = CHAIN_IDs.OPTIMISM;
+      hubPoolClient.mapTokenInfo(toAddressType(nativeUSDC[testChain], testChain), "USDC", 18);
+
+      // Pending rebalance should be in chain decimals:
+      const pendingRebalanceAmount = toWei("1");
+      mockRebalancerClient.setPendingRebalance(testChain, "USDC", pendingRebalanceAmount);
+      await inventoryClient.update();
+
+      // Expected balance should be in L1 token decimals:
+      const expectedBalance = toMegaWei("1");
+      expect(
+        inventoryClient
+          .getBalanceOnChain(testChain, EvmAddress.from(mainnetUsdc), toAddressType(nativeUSDC[testChain], testChain))
+          .eq(expectedBalance)
+      ).to.be.true;
+    });
+
+    it("Includes pending rebalances once in aggregate chain balances", async function () {
+      const testChain = CHAIN_IDs.OPTIMISM;
+      const canonicalL2Token = toAddressType(nativeUSDC[testChain], testChain);
+      const nonCanonicalL2Token = toAddressType(bridgedUSDC[testChain], testChain);
+      hubPoolClient.mapTokenInfo(canonicalL2Token, "USDC", 18);
+      tokenClient.setTokenData(testChain, canonicalL2Token, toWei("2000"));
+
+      const bridgedBalance = toMegaWei("2");
+      tokenClient.setTokenData(testChain, nonCanonicalL2Token, bridgedBalance);
+
+      const pendingRebalanceAmount = toWei("1");
+      mockRebalancerClient.setPendingRebalance(testChain, "USDC", pendingRebalanceAmount);
+      await inventoryClient.update();
+
+      const aggregateBalance = inventoryClient.getBalanceOnChain(testChain, EvmAddress.from(mainnetUsdc));
+      const canonicalBalance = inventoryClient.getBalanceOnChain(
+        testChain,
+        EvmAddress.from(mainnetUsdc),
+        canonicalL2Token
+      );
+      const nonCanonicalBalance = inventoryClient.getBalanceOnChain(
+        testChain,
+        EvmAddress.from(mainnetUsdc),
+        nonCanonicalL2Token
+      );
+
+      expect(aggregateBalance).to.eq(toMegaWei("2003"));
+      expect(canonicalBalance).to.eq(toMegaWei("2001"));
+      expect(nonCanonicalBalance).to.eq(bridgedBalance);
     });
 
     it("Correctly sums 1:many token balances", async function () {

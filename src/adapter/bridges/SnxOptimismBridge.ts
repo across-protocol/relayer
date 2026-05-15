@@ -9,7 +9,7 @@ import {
   EvmAddress,
   winston,
 } from "../../utils";
-import { CONTRACT_ADDRESSES } from "../../common";
+import { getContractEntry } from "../../common";
 import { BaseBridgeAdapter, BridgeTransactionDetails, BridgeEvents } from "./BaseBridgeAdapter";
 import { processEvent } from "../utils";
 
@@ -24,12 +24,12 @@ export class SnxOptimismBridge extends BaseBridgeAdapter {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _logger: winston.Logger
   ) {
-    super(l2chainId, hubChainId, l1Signer, [EvmAddress.from(CONTRACT_ADDRESSES[hubChainId].snxOptimismBridge.address)]);
+    const { address: l1Address, abi: l1Abi } = getContractEntry(hubChainId, "snxOptimismBridge");
+    super(l2chainId, hubChainId, l1Signer, [EvmAddress.from(l1Address)]);
 
-    const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].snxOptimismBridge;
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
 
-    const { address: l2Address, abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].snxOptimismBridge;
+    const { address: l2Address, abi: l2Abi } = getContractEntry(l2chainId, "snxOptimismBridge");
     this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider);
   }
 
@@ -89,11 +89,8 @@ export class SnxOptimismBridge extends BaseBridgeAdapter {
   }
 
   private getHubPool(): Contract {
-    const hubPoolContractData = CONTRACT_ADDRESSES[this.hubChainId]?.hubPool;
-    if (!hubPoolContractData) {
-      throw new Error(`hubPoolContractData not found for chain ${this.hubChainId}`);
-    }
-    return new Contract(hubPoolContractData.address, hubPoolContractData.abi, this.l1Signer);
+    const { address, abi } = getContractEntry(this.hubChainId, "hubPool");
+    return new Contract(address, abi, this.l1Signer);
   }
 
   private isL2ChainContract(address: EvmAddress): Promise<boolean> {

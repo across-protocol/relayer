@@ -1,7 +1,8 @@
-import { CONTRACT_ADDRESSES } from "../../common";
+import { getContractEntry } from "../../common";
 import { AugmentedTransaction } from "../../clients/TransactionClient";
 import ERC20_ABI from "../../common/abi/MinimalERC20.json";
 import {
+  assert,
   BigNumber,
   bnZero,
   Contract,
@@ -24,10 +25,10 @@ export class OpStackUSDCBridge extends BaseL2BridgeAdapter {
   constructor(l2chainId: number, hubChainId: number, l2Signer: Signer, l1Signer: Signer, l1Token: EvmAddress) {
     super(l2chainId, hubChainId, l2Signer, l1Signer, l1Token);
 
-    const { address: l2Address, abi: l2ABI } = CONTRACT_ADDRESSES[l2chainId].opUSDCBridge;
+    const { address: l2Address, abi: l2ABI } = getContractEntry(l2chainId, "opUSDCBridge");
     this.l2Bridge = new Contract(l2Address, l2ABI, l2Signer);
 
-    const { address: l1Address, abi: l1ABI } = CONTRACT_ADDRESSES[hubChainId][`opUSDCBridge_${l2chainId}`];
+    const { address: l1Address, abi: l1ABI } = getContractEntry(hubChainId, `opUSDCBridge_${l2chainId}`);
     this.l1Bridge = new Contract(l1Address, l1ABI, l1Signer);
   }
 
@@ -37,19 +38,21 @@ export class OpStackUSDCBridge extends BaseL2BridgeAdapter {
     _l1Token: EvmAddress,
     amount: BigNumber
   ): Promise<AugmentedTransaction[]> {
-    const { l2chainId: chainId, l2Bridge } = this;
+    const { l2chainId: chainId, l2Signer } = this;
+    assert(isDefined(l2Signer), "OpStackUSDCBridge: l2Signer is required");
+    const l2Bridge = this.getL2Bridge();
 
     const txns: AugmentedTransaction[] = [];
     const { decimals, symbol } = getTokenInfo(l2Token, this.l2chainId);
     const formatter = createFormatFunction(2, 4, false, decimals);
 
-    const erc20 = new Contract(l2Token.toNative(), ERC20_ABI, this.l2Signer);
+    const erc20 = new Contract(l2Token.toNative(), ERC20_ABI, l2Signer);
     const formattedAmount = formatter(amount.toString());
     const chain = getNetworkName(chainId);
     const nonMulticall = true;
     const unpermissioned = false;
 
-    const allowance = await erc20.allowance(await this.l2Signer.getAddress(), l2Bridge.address);
+    const allowance = await erc20.allowance(await l2Signer.getAddress(), l2Bridge.address);
     if (allowance.lt(amount)) {
       // Approval must be in place before withdrawal is enqueued. Catch the withdrawal on the next run.
       txns.push({
@@ -82,14 +85,12 @@ export class OpStackUSDCBridge extends BaseL2BridgeAdapter {
     from: EvmAddress,
     _l2Token: EvmAddress
   ): Promise<BigNumber> {
-    _l2Token; // unused
-
-    const sentFilter = this.l2Bridge.filters.MessageSent(from.toNative());
-    const receiveFilter = this.l1Bridge.filters.MessageReceived(from.toNative());
+    const sentFilter = this.getL2Bridge().filters.MessageSent(from.toNative());
+    const receiveFilter = this.getL1Bridge().filters.MessageReceived(from.toNative());
 
     const [l2Events, l1Events] = await Promise.all([
-      paginatedEventQuery(this.l2Bridge, sentFilter, l2EventConfig),
-      paginatedEventQuery(this.l1Bridge, receiveFilter, l1EventConfig),
+      paginatedEventQuery(this.getL2Bridge(), sentFilter, l2EventConfig),
+      paginatedEventQuery(this.getL1Bridge(), receiveFilter, l1EventConfig),
     ]);
 
     const counted = new Set<number>();
@@ -110,5 +111,10 @@ export class OpStackUSDCBridge extends BaseL2BridgeAdapter {
     }, bnZero);
 
     return withdrawalAmount;
+  }
+
+  public pendingWithdrawalLookbackPeriodSeconds(): number {
+    return 7 * 24 * 60 * 60 + 60 * 60; // 7 days + 1 hour, to account for the time needed to execute the withdrawal
+    // once it has passed the challenge period.
   }
 }

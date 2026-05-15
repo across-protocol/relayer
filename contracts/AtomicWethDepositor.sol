@@ -4,8 +4,8 @@ pragma solidity ^0.8.0;
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@uma/core/contracts/common/implementation/MultiCaller.sol";
-import "@uma/core/contracts/common/implementation/Lockable.sol";
+import "@across-protocol/contracts/contracts/external/uma/core/contracts/common/implementation/MultiCaller.sol";
+import "@across-protocol/contracts/contracts/libraries/Lockable.sol";
 
 interface Weth {
     function withdraw(uint256 _wad) external;
@@ -20,6 +20,9 @@ interface Weth {
  */
 contract AtomicWethDepositor is Ownable, MultiCaller, Lockable {
     using SafeERC20 for IERC20;
+
+    constructor() Ownable(msg.sender) {}
+
     // The Bridge used to send ETH to another chain. Only the function selector can be used when
     // calling the bridge contract.
     struct Bridge {

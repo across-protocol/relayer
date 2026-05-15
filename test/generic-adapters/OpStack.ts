@@ -65,7 +65,7 @@ class TestBaseChainAdapter extends BaseChainAdapter {
   }
 }
 
-describe("Cross Chain Adapter: OP Stack", async function () {
+describe("Cross Chain Adapter: OP Stack", function () {
   const toAddress = (address: string): EvmAddress => {
     return EvmAddress.from(address);
   };
@@ -122,7 +122,13 @@ describe("Cross Chain Adapter: OP Stack", async function () {
       },
       CHAIN_IDs.OPTIMISM,
       CHAIN_IDs.MAINNET,
-      [toAddress(monitoredEoa)],
+      {
+        [l1WethAddress]: [toAddress(monitoredEoa)],
+        [l1SnxAddress]: [toAddress(monitoredEoa)],
+        [l1DaiAddress]: [toAddress(monitoredEoa)],
+        [l1Erc20Address]: [toAddress(monitoredEoa)],
+        [l1UsdcAddress]: [toAddress(monitoredEoa)],
+      },
       logger,
       ["WETH", "SNX", "DAI", "WBTC", "USDC"],
       bridges,

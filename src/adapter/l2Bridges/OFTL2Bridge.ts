@@ -13,14 +13,19 @@ import {
   EventSearchConfig,
   getTokenInfo,
   fixedPointAdjustment,
+  chainHasNativeToken,
+  isDefined,
+  CHAIN_IDs,
 } from "../../utils";
 import { interfaces as sdkInterfaces } from "@across-protocol/sdk";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
-import { IOFT_ABI_FULL, OFT_DEFAULT_FEE_CAP, OFT_FEE_CAP_OVERRIDES } from "../../common";
+import { IOFT_ABI_FULL, OFT_DEFAULT_FEE_CAP, OFT_FEE_CAP_OVERRIDES, LZ_FEE_TOKENS } from "../../common";
 import * as OFT from "../../utils/OFTUtils";
+import ERC20_ABI from "../../common/abi/MinimalERC20.json";
+import { PendingBridgeAdapterName } from "../../rebalancer/clients/CctpOftReadOnlyClient";
 
 export class OFTL2Bridge extends BaseL2BridgeAdapter {
-  readonly l2Token: EvmAddress;
+  readonly l2Token: Address;
   private readonly l2ChainEid: number;
   private readonly l1ChainEid: number;
   private l2TokenInfo: sdkInterfaces.TokenInfo;
@@ -33,11 +38,10 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
     super(l2chainId, hubChainId, l2Signer, l1Signer, l1Token);
 
     const translatedL2Token = getTranslatedTokenAddress(l1Token, hubChainId, l2chainId);
-    assert(translatedL2Token.isEVM());
     this.l2Token = translatedL2Token;
 
-    const l1OftMessenger = OFT.getMessengerEvm(l1Token, hubChainId);
-    const l2OftMessenger = OFT.getMessengerEvm(l1Token, l2chainId);
+    const l1OftMessenger = OFT.getMessengerEvm(l1Token, hubChainId, l2chainId);
+    const l2OftMessenger = OFT.getMessengerEvm(l1Token, l2chainId, l2chainId);
 
     this.nativeFeeCap = OFT_FEE_CAP_OVERRIDES[this.l2chainId] ?? OFT_DEFAULT_FEE_CAP;
 
@@ -84,32 +88,49 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
       composeMsg: "0x",
       oftCmd: "0x",
     };
+    // Pay the bridge fee in the Lz token if the network does not have a native token (i.e. Tempo).
+    const payFeeInLzToken = !chainHasNativeToken(this.l2chainId);
 
     // Get the messaging fee for this transfer
-    const feeStruct: OFT.MessagingFeeStruct = await this.l2Bridge.quoteSend(sendParamStruct, false);
+    const feeStruct: OFT.MessagingFeeStruct = await this.getL2Bridge().quoteSend(sendParamStruct, false);
     if (BigNumber.from(feeStruct.nativeFee).gt(this.nativeFeeCap)) {
       throw new Error(`Fee exceeds maximum allowed (${feeStruct.nativeFee} > ${this.nativeFeeCap})`);
     }
 
     const formatter = createFormatFunction(2, 4, false, this.l2TokenInfo.decimals);
+    const approveTxn = payFeeInLzToken
+      ? {
+          contract: new Contract(LZ_FEE_TOKENS[this.l2chainId].toNative(), ERC20_ABI, this.l2Signer),
+          chainId: this.l2chainId,
+          method: "approve",
+          unpermissionsed: false,
+          nonMulticall: true,
+          ensureConfirmation: true,
+          args: [this.getL2Bridge().address, feeStruct.nativeFee],
+          message: "🎰 Approved OftL2Bridge to spend LZ fee token.",
+          mrkdwn: `Approved ${formatter(feeStruct.nativeFee.toString())} to ${this.getL2Bridge().address}`,
+        }
+      : undefined;
+
     // Set refund address to signer's address. This should technically never be required as all of our calcs
     // are precise, set it just in case
-    const refundAddress = await this.l2Bridge.signer.getAddress();
+    const refundAddress = await this.getL2Bridge().signer.getAddress();
     const withdrawTxn = {
-      contract: this.l2Bridge,
+      contract: this.getL2Bridge(),
       chainId: this.l2chainId,
       method: "send",
-      unpermissionsed: false,
+      unpermissioned: false,
       nonMulticall: true,
+      canFailInSimulation: payFeeInLzToken, // This can fail if the approval for the fee token is not set.
       args: [sendParamStruct, feeStruct, refundAddress],
-      value: BigNumber.from(feeStruct.nativeFee),
+      value: payFeeInLzToken ? bnZero : BigNumber.from(feeStruct.nativeFee),
       message: `🎰 Withdrew ${this.l2Token} via OftL2Bridge to L1`,
       mrkdwn: `Withdrew ${formatter(amount.toString())} ${this.l2TokenInfo.symbol} from ${getNetworkName(
         this.l2chainId
       )} to L1 via OftL2Bridge`,
     };
 
-    return [withdrawTxn];
+    return isDefined(approveTxn) ? [approveTxn, withdrawTxn] : [withdrawTxn];
   }
 
   async getL2PendingWithdrawalAmount(
@@ -118,8 +139,6 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
     fromAddress: Address,
     l2Token: Address
   ): Promise<BigNumber> {
-    assert(l2Token.isEVM(), `Non-evm l2Token not supported: ${l2Token.toNative()}`);
-
     if (!this.l2Token.eq(l2Token)) {
       // Return 0 for tokens not associated with this OFTBridge
       // https://github.com/across-protocol/relayer/pull/2509#discussion_r2305205369
@@ -133,26 +152,34 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
 
     const [l2SentAll, l1ReceivedAll] = await Promise.all([
       paginatedEventQuery(
-        this.l2Bridge,
+        this.getL2Bridge(),
         // guid (Topic[1]) not filtered -> null, dstEid (non-indexed) -> undefined, fromAddress (Topic[3]) filtered
-        this.l2Bridge.filters.OFTSent(null, undefined, fromAddress.toNative()),
+        this.getL2Bridge().filters.OFTSent(null, undefined, fromAddress.toNative()),
         l2EventSearchConfig
       ),
       paginatedEventQuery(
-        this.l1Bridge,
+        this.getL1Bridge(),
         // guid (Topic[1]) not filtered -> null, srcEid (non-indexed) -> undefined, toAddress (Topic[3]) filtered
-        this.l1Bridge.filters.OFTReceived(null, undefined, l1RecipientAddress),
+        this.getL1Bridge().filters.OFTReceived(null, undefined, l1RecipientAddress),
         l1EventSearchConfig
       ),
     ]);
 
     const l2BridgeInitiationEvents = l2SentAll.filter((event) => event.args.dstEid === this.l1ChainEid);
     const l1BridgeFinalizationEvents = l1ReceivedAll.filter((event) => event.args.srcEid === this.l2ChainEid);
+    const ignoredPendingBridgeTxnRefs = await this.getIgnoredPendingBridgeTxnRefs(
+      this.l2chainId,
+      this.hubChainId,
+      fromAddress
+    );
 
     const finalizedGuids = new Set<string>(l1BridgeFinalizationEvents.map((event) => event.args.guid));
 
     let outstandingWithdrawalAmount = bnZero;
     for (const events of l2BridgeInitiationEvents) {
+      if (ignoredPendingBridgeTxnRefs.has(events.transactionHash)) {
+        continue;
+      }
       if (!finalizedGuids.has(events.args.guid)) {
         // Convert `amountReceivedLD` from event from LD (local decimals of the sending chain, which is the L2) into the
         // decimals of receiving chain (mainnet) to aggregate these amounts correctly upstream
@@ -165,6 +192,12 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
     return outstandingWithdrawalAmount;
   }
 
+  public pendingWithdrawalLookbackPeriodSeconds(): number {
+    if (this.l2chainId === CHAIN_IDs.HYPEREVM) {
+      return 25 * 60 * 60; // USDT0 from HyperEVM is a special case taking ~24 hours to finalize.
+    }
+    return super.pendingWithdrawalLookbackPeriodSeconds();
+  }
   /**
    * Rounds send amount so that dust doesn't get subtracted from it in the OFT contract.
    * @param amount amount to round
@@ -173,9 +206,8 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
    */
   private async roundAmountToSend(amount: BigNumber, decimals: number): Promise<BigNumber> {
     // Fetch `sharedDecimals` if not already fetched
-    this.sharedDecimals ??= await this.l2Bridge.sharedDecimals();
-
-    return OFT.roundAmountToSend(amount, decimals, this.sharedDecimals);
+    const sharedDecimals = (this.sharedDecimals ??= await this.getL2Bridge().sharedDecimals());
+    return OFT.roundAmountToSend(amount, decimals, sharedDecimals);
   }
 
   /**
@@ -190,9 +222,13 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
   public override requiredTokenApprovals(): { token: EvmAddress; bridge: EvmAddress }[] {
     return [
       {
-        token: this.l2Token,
-        bridge: EvmAddress.from(this.l2Bridge.address),
+        token: EvmAddress.from(this.l2Token.toEvmAddress()),
+        bridge: EvmAddress.from(this.getL2Bridge().address),
       },
     ];
+  }
+
+  override getRebalancerPendingBridgeAdapterName(): PendingBridgeAdapterName {
+    return "oft";
   }
 }

@@ -1,5 +1,5 @@
-import * as contracts from "@across-protocol/contracts/dist/test-utils";
-import { ExpandedERC20__factory as ERC20 } from "@across-protocol/contracts";
+import * as sdkTestUtils from "@across-protocol/sdk/test-utils";
+import { ExpandedERC20__factory as ERC20 } from "@across-protocol/sdk/typechain";
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import {
   AcrossApiClient,
@@ -59,7 +59,7 @@ import {
   toAddressType,
 } from "../src/utils";
 
-describe("Relayer: Unfilled Deposits", async function () {
+describe("Relayer: Unfilled Deposits", function () {
   const { bnOne } = sdkUtils;
 
   let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
@@ -159,7 +159,7 @@ describe("Relayer: Unfilled Deposits", async function () {
     await profitClient.initToken(l1Token);
 
     const chainIds = Object.values(spokePoolClients).map(({ chainId }) => chainId);
-    inventoryClient = new MockInventoryClient(null, null, null, null, null, hubPoolClient);
+    inventoryClient = new MockInventoryClient(null, spyLogger, null, null, null, hubPoolClient);
     inventoryClient.setTokenMapping({
       [l1Token.address]: {
         [originChainId]: erc20_1.address,
@@ -274,7 +274,7 @@ describe("Relayer: Unfilled Deposits", async function () {
     const filledDeposit = deposits.at(-2);
     expect(filledDeposit).to.exist;
 
-    const depositHash = spokePoolClient_1.getDepositHash(filledDeposit!);
+    const depositHash = spokePoolClient_1.getDepositHash(filledDeposit);
     const { fillStatus } = relayerInstance;
     fillStatus[depositHash] = FillStatus.Filled;
 
@@ -402,7 +402,7 @@ describe("Relayer: Unfilled Deposits", async function () {
     // Update the deposit before either is filled.
     const updatedOutputAmount = outputAmount.sub(bnOne);
     for (const deposit of [deposit1, deposit2]) {
-      const signature = await contracts.getUpdatedV3DepositSignature(
+      const signature = await sdkTestUtils.getUpdatedV3DepositSignature(
         depositor,
         deposit.depositId,
         originChainId,
@@ -461,7 +461,7 @@ describe("Relayer: Unfilled Deposits", async function () {
 
     // Speed up deposit, and check that unfilled amount is still the same.
     const updatedOutputAmount = deposit.outputAmount.sub(bnOne);
-    const signature = await contracts.getUpdatedV3DepositSignature(
+    const signature = await sdkTestUtils.getUpdatedV3DepositSignature(
       depositor,
       deposit.depositId,
       originChainId,

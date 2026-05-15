@@ -4,16 +4,18 @@ import {
   assert,
   delay,
   CHAIN_IDs,
-  runTransaction,
+  submitTransaction,
   TOKEN_SYMBOLS_MAP,
   winston,
   bnZero,
   blockExplorerLink,
+  retry,
 } from "./";
 import * as hl from "@nktkas/hyperliquid";
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import { ethers } from "ethers";
-import { CONTRACT_ADDRESSES } from "../common/ContractAddresses";
+import { getContractEntry } from "../common/ContractAddresses";
+import { TransactionClient } from "../clients";
 
 export function getHlExchangeClient(
   signer: Signer,
@@ -29,107 +31,110 @@ export function getHlExchangeClient(
 export async function getL2Book(
   infoClient: hl.InfoClient,
   params: hl.L2BookParameters,
-  nRetries = 0,
-  maxRetries = 3
-): Promise<hl.L2BookResponse> {
-  return await _callWithRetry(infoClient.l2Book.bind(infoClient), [params], nRetries, maxRetries);
+  maxRetries = 3,
+  delayS = 2
+): Promise<NonNullable<hl.L2BookResponse>> {
+  const fn = () => infoClient.l2Book.bind(infoClient)(params);
+  const l2Book = await retry(fn, maxRetries, delayS);
+  assert(l2Book !== null, `L2 order book missing for ${params.coin}`);
+  return l2Book;
 }
 
-export async function getSpotMeta(
-  infoClient: hl.InfoClient,
-  nRetries = 0,
-  maxRetries = 3
-): Promise<hl.SpotMetaResponse> {
-  return await _callWithRetry(infoClient.spotMeta.bind(infoClient), [], nRetries, maxRetries);
+export async function getSpotMeta(infoClient: hl.InfoClient, maxRetries = 3, delayS = 2): Promise<hl.SpotMetaResponse> {
+  return await retry(infoClient.spotMeta.bind(infoClient), maxRetries, delayS);
 }
 
 export async function getSpotClearinghouseState(
   infoClient: hl.InfoClient,
   params: hl.SpotClearinghouseStateParameters,
-  nRetries = 0,
-  maxRetries = 3
+  maxRetries = 3,
+  delayS = 2
 ): Promise<hl.SpotClearinghouseStateResponse> {
-  return await _callWithRetry(infoClient.spotClearinghouseState.bind(infoClient), [params], nRetries, maxRetries);
+  const fn = () => infoClient.spotClearinghouseState.bind(infoClient)(params);
+  return await retry(fn, maxRetries, delayS);
 }
 
 export async function getUserNonFundingLedgerUpdates(
   infoClient: hl.InfoClient,
   params: hl.UserNonFundingLedgerUpdatesParameters,
-  nRetries = 0,
-  maxRetries = 3
+  maxRetries = 3,
+  delayS = 2
 ): Promise<hl.UserNonFundingLedgerUpdatesResponse> {
-  return await _callWithRetry(infoClient.userNonFundingLedgerUpdates.bind(infoClient), [params], nRetries, maxRetries);
+  const fn = () => infoClient.userNonFundingLedgerUpdates.bind(infoClient)(params);
+  return await retry(fn, maxRetries, delayS);
 }
 
 export async function getOpenOrders(
   infoClient: hl.InfoClient,
   params: hl.OpenOrdersParameters,
-  nRetries = 0,
-  maxRetries = 3
+  maxRetries = 3,
+  delayS = 2
 ): Promise<hl.OpenOrdersResponse> {
-  return _callWithRetry(infoClient.openOrders.bind(infoClient), [params], nRetries, maxRetries);
+  const fn = () => infoClient.openOrders.bind(infoClient)(params);
+  return retry(fn, maxRetries, delayS);
 }
 
 export async function getUserFees(
   infoClient: hl.InfoClient,
   params: hl.UserFeesParameters,
-  nRetries = 0,
-  maxRetries = 3
+  maxRetries = 3,
+  delayS = 2
 ): Promise<hl.UserFeesResponse> {
-  return _callWithRetry(infoClient.userFees.bind(infoClient), [params], nRetries, maxRetries);
+  const fn = () => infoClient.userFees.bind(infoClient)(params);
+  return retry(fn, maxRetries, delayS);
 }
 
 export async function getHistoricalOrders(
   infoClient: hl.InfoClient,
   params: hl.HistoricalOrdersParameters,
-  nRetries = 0,
-  maxRetries = 3
+  maxRetries = 3,
+  delayS = 2
 ): Promise<hl.HistoricalOrdersResponse> {
-  return _callWithRetry(infoClient.historicalOrders.bind(infoClient), [params], nRetries, maxRetries);
+  const fn = () => infoClient.historicalOrders.bind(infoClient)(params);
+  return retry(fn, maxRetries, delayS);
+}
+
+export async function getUserFillsByTime(
+  infoClient: hl.InfoClient,
+  params: hl.UserFillsByTimeParameters,
+  maxRetries = 3,
+  delayS = 2
+): Promise<hl.UserFillsByTimeResponse> {
+  const fn = () => infoClient.userFillsByTime.bind(infoClient)(params);
+  return retry(fn, maxRetries, delayS);
 }
 
 export async function getOrderStatus(
   infoClient: hl.InfoClient,
   params: hl.OrderStatusParameters,
-  nRetries = 0,
-  maxRetries = 3
+  maxRetries = 3,
+  delayS = 2
 ): Promise<hl.OrderStatusResponse> {
-  return _callWithRetry(infoClient.orderStatus.bind(infoClient), [params], nRetries, maxRetries);
-}
-
-async function _callWithRetry<T, A extends any[]>(
-  apiCall: (...args: A) => Promise<T>,
-  args: A,
-  nRetries: number,
-  maxRetries: number
-): Promise<T> {
-  try {
-    return await apiCall(...args);
-  } catch (e) {
-    if (nRetries > maxRetries) {
-      throw new Error(`Max retries exceeded when querying the hyperliquid API: ${e}`);
-    }
-    const delaySeconds = 2 ** nRetries + Math.random();
-    await delay(delaySeconds);
-    // @todo Once we have a better idea on the types of errors we can suppress/retry on, then choose appropriate action based on the error thrown.
-    return await _callWithRetry(apiCall, args, ++nRetries, maxRetries);
-  }
+  const fn = () => infoClient.orderStatus.bind(infoClient)(params);
+  return retry(fn, maxRetries, delayS);
 }
 
 export async function depositToHypercore(account: string, signer: Signer, logger: winston.Logger): Promise<string> {
-  const contract = new ethers.Contract(
-    CONTRACT_ADDRESSES[CHAIN_IDs.HYPEREVM].hyperliquidDepositHandler.address,
-    CONTRACT_ADDRESSES[CHAIN_IDs.HYPEREVM].hyperliquidDepositHandler.abi,
-    signer
+  const transactionClient = new TransactionClient(logger);
+  const chainId = CHAIN_IDs.HYPEREVM;
+  const { address, abi } = getContractEntry(chainId, "hyperliquidDepositHandler");
+  const contract = new ethers.Contract(address, abi, signer);
+  const depositToHypercoreArgs = [TOKEN_SYMBOLS_MAP.USDH.addresses[chainId], bnZero, account];
+  const depositToHypercoreTx = await submitTransaction(
+    {
+      contract: contract,
+      method: "depositToHypercore",
+      args: depositToHypercoreArgs,
+      chainId: chainId,
+    },
+    transactionClient
   );
-  const depositToHypercoreArgs = [TOKEN_SYMBOLS_MAP.USDH.addresses[CHAIN_IDs.HYPEREVM], bnZero, account];
-  const depositToHypercoreTx = await runTransaction(logger, contract, "depositToHypercore", depositToHypercoreArgs);
   await delay(1);
   const receipt = await depositToHypercoreTx.wait();
   logger.info({
     at: "HyperliquidUtils#depositToHypercore",
     message: `HyperCore account ${account} created 🫡!`,
-    transactionHash: blockExplorerLink(receipt.transactionHash, CHAIN_IDs.HYPEREVM),
+    transactionHash: blockExplorerLink(receipt.transactionHash, chainId),
   });
   return receipt.transactionHash;
 }

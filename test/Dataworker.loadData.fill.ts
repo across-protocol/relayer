@@ -48,9 +48,8 @@ import {
 } from "./mocks";
 import { interfaces, constants as sdkConstants, utils as sdkUtils, providers } from "@across-protocol/sdk";
 import { cloneDeep } from "lodash";
-import { INFINITE_FILL_DEADLINE } from "../src/common";
 
-describe("Dataworker: Load bundle data", async function () {
+describe("Dataworker: Load bundle data", function () {
   const { EMPTY_MESSAGE } = sdkConstants;
 
   let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
@@ -699,6 +698,7 @@ describe("Dataworker: Load bundle data", async function () {
 
       // Manually remove the deposit from the client's cache to force historical query
       const depositKey = sdkUtils.getRelayEventKey(deposit);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       delete (spokePoolClient_1 as any).depositHashes[depositKey];
 
       const deposits = spokePoolClient_1.getDeposits();
@@ -727,10 +727,7 @@ describe("Dataworker: Load bundle data", async function () {
         erc20_1.address,
         amountToDeposit,
         erc20_2.address,
-        amountToDeposit,
-        {
-          fillDeadline: INFINITE_FILL_DEADLINE.toNumber(),
-        }
+        amountToDeposit
       );
 
       // Modify the block ranges such that the deposit is in a future bundle block range. This should render
@@ -793,6 +790,7 @@ describe("Dataworker: Load bundle data", async function () {
       expect(repaymentChainId).to.not.eq(originChainId);
 
       // Mock the config store client being included on the spoke client
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (spokePoolClient_1 as any).configStoreClient = mockConfigStore;
 
       // Send a fill now and force the bundle data client to query for the historical deposit.
@@ -803,6 +801,7 @@ describe("Dataworker: Load bundle data", async function () {
 
       // Manually remove the deposit from the client's cache to force historical query
       const depositKey = sdkUtils.getRelayEventKey(deposit);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       delete (spokePoolClient_1 as any).depositHashes[depositKey];
 
       // Load information needed to build a bundle
@@ -831,10 +830,7 @@ describe("Dataworker: Load bundle data", async function () {
         erc20_1.address,
         amountToDeposit,
         erc20_2.address,
-        amountToDeposit,
-        {
-          fillDeadline: INFINITE_FILL_DEADLINE.toNumber(),
-        }
+        amountToDeposit
       );
       const depositBlock = await spokePool_1.provider.getBlockNumber();
 
@@ -983,7 +979,7 @@ describe("Dataworker: Load bundle data", async function () {
       dataworkerInstance.clients.bundleDataClient.setBundleTimestampsInCache(key3, cache3);
       expect(dataworkerInstance.clients.bundleDataClient.getBundleTimestampsFromCache(key3)).to.deep.equal(cache3);
     });
-    describe("Load data from Arweave", async function () {
+    describe("Load data from Arweave", function () {
       beforeEach(function () {
         const arweaveClient = new MockArweaveClient("", dataworkerInstance.logger);
         dataworkerInstance.clients.arweaveClient = arweaveClient;
@@ -1098,7 +1094,7 @@ describe("Dataworker: Load bundle data", async function () {
         });
       });
     });
-    describe("Bytes32 address invalid cases", async function () {
+    describe("Bytes32 address invalid cases", function () {
       it("Fallback to msg.sender when the relayer repayment address is invalid on an EVM chain", async function () {
         const depositV3Events: interfaces.Log[] = [];
         const fillV3Events: interfaces.Log[] = [];

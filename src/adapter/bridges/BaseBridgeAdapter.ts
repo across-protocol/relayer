@@ -12,6 +12,7 @@ import {
   getSpokePoolAddress,
 } from "../../utils";
 import { SortableEvent } from "../../interfaces";
+import { CctpOftReadOnlyClient, PendingBridgeAdapterName } from "../../rebalancer/clients/CctpOftReadOnlyClient";
 import { TransferTokenParams } from "../utils";
 
 export interface BridgeTransactionDetails {
@@ -28,11 +29,12 @@ export type BridgeEvent = SortableEvent & {
 export type BridgeEvents = { [l2Token: string]: BridgeEvent[] };
 
 export abstract class BaseBridgeAdapter {
-  protected l1Bridge: Contract;
-  protected l2Bridge: Contract;
+  protected l1Bridge?: Contract;
+  protected l2Bridge?: Contract;
   public gasToken: EvmAddress | undefined;
   protected readonly hubPoolAddress: EvmAddress;
   protected readonly spokePoolAddress: Address;
+  protected pendingBridgeRedisReader?: CctpOftReadOnlyClient;
 
   constructor(
     protected l2chainId: number,
@@ -65,6 +67,40 @@ export abstract class BaseBridgeAdapter {
     toAddress: Address,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents>;
+
+  setPendingBridgeRedisReader(pendingBridgeRedisReader?: CctpOftReadOnlyClient): void {
+    this.pendingBridgeRedisReader = pendingBridgeRedisReader;
+  }
+
+  getRebalancerPendingBridgeAdapterName(): PendingBridgeAdapterName | undefined {
+    return undefined;
+  }
+
+  isPoolMonitoringAddress(address: Address): boolean {
+    return this.hubPoolAddress.eq(address) || this.spokePoolAddress.eq(address);
+  }
+
+  async getIgnoredPendingBridgeTxnRefs(
+    sourceChain: number,
+    destinationChain: number,
+    address: Address
+  ): Promise<Set<string>> {
+    if (!isDefined(this.pendingBridgeRedisReader) || this.isPoolMonitoringAddress(address)) {
+      return new Set();
+    }
+
+    const adapter = this.getRebalancerPendingBridgeAdapterName();
+    if (!isDefined(adapter)) {
+      return new Set();
+    }
+
+    return this.pendingBridgeRedisReader.getPendingBridgeTxnRefsForRoute(
+      adapter,
+      sourceChain,
+      destinationChain,
+      EvmAddress.from(address.toNative())
+    );
+  }
 
   protected resolveL2TokenAddress(l1Token: EvmAddress): string {
     return getTranslatedTokenAddress(l1Token, this.hubChainId, this.l2chainId, false).toNative();

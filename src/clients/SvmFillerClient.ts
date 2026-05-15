@@ -7,6 +7,7 @@ import {
 import {
   assert,
   getKitKeypairFromEvmSigner,
+  isDefined,
   Signer,
   SolanaTransaction,
   SvmAddress,
@@ -154,7 +155,7 @@ export class SvmFillerClient {
         code = undefined;
       }
 
-      if (retryableErrorCodes.includes(code) && retryAttempt > 0) {
+      if (isDefined(code) && retryableErrorCodes.includes(code) && retryAttempt > 0) {
         await delay(retryDelaySeconds);
         return this._executeTxnQueueWithRetry(txPromises, --retryAttempt);
       }
@@ -179,12 +180,13 @@ export class SvmFillerClient {
     for (const { txPromises, message, mrkdwn } of queue) {
       try {
         const signatureStrings = await this._executeTxnQueueWithRetry(txPromises, maxRetries);
+        const lastSignature = signatureStrings.at(-1);
         this.logger.info({
           at: "SvmFillerClient#executeTxnQueue",
           message,
           mrkdwn,
           signatures: signatureStrings,
-          explorer: blockExplorerLink(signatureStrings.at(-1), this.chainId),
+          explorer: isDefined(lastSignature) ? blockExplorerLink(lastSignature, this.chainId) : undefined,
         });
         signatures.push(signatureStrings);
       } catch (e: unknown) {
@@ -234,10 +236,18 @@ export class SvmFillerClient {
     }
 
     const simulationResults = await Promise.allSettled(
-      queue.map(({ txPromises }) => txPromises[0].then((tx) => signAndSimulateTransaction(this.provider, tx)))
+      queue.map(({ txPromises }) =>
+        txPromises[0].then((tx) => {
+          if (Array.isArray(tx)) {
+            throw new Error("Unexpected multipart transaction in simulation queue");
+          }
+          return signAndSimulateTransaction(this.provider, tx);
+        })
+      )
     );
 
     const successfulSims: { logs: string[]; message: string; mrkdwn: string }[] = [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const failedSims: { error: any; message: string; mrkdwn: string }[] = [];
 
     simulationResults.forEach((result, idx) => {
@@ -245,7 +255,7 @@ export class SvmFillerClient {
       if (result.status === "fulfilled") {
         const simValue = result.value.value;
         if (simValue.err === null) {
-          successfulSims.push({ logs: simValue.logs, message, mrkdwn });
+          successfulSims.push({ logs: simValue.logs ?? [], message, mrkdwn });
         } else {
           failedSims.push({ error: simValue.err, message, mrkdwn });
         }

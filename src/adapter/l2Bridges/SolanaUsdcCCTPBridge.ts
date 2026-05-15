@@ -9,8 +9,6 @@ import {
   getCctpDomainForChainId,
   TOKEN_SYMBOLS_MAP,
   assert,
-  getCctpV1TokenMessenger,
-  getCctpV1MessageTransmitter,
   SvmAddress,
   getAssociatedTokenAddress,
   getKitKeypairFromEvmSigner,
@@ -21,7 +19,7 @@ import {
   SolanaTransaction,
 } from "../../utils";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
-import { CCTP_MAX_SEND_AMOUNT } from "../../common";
+import { CCTP_MAX_SEND_AMOUNT, getContractAddress, getContractEntry } from "../../common";
 import { arch } from "@across-protocol/sdk";
 import { TokenMessengerMinterIdl, TokenMessengerMinterClient } from "@across-protocol/contracts";
 import {
@@ -34,9 +32,9 @@ import {
 } from "@solana/kit";
 
 type DepositForBurnEvent = {
-  nonce: BigInt;
+  nonce: bigint;
   burnToken: string;
-  amount: BigInt;
+  amount: bigint;
   depositor: string;
   mintRecipient: string;
   destinationDomain: number;
@@ -52,23 +50,21 @@ export class SolanaUsdcCCTPBridge extends BaseL2BridgeAdapter {
   private readonly tokenMessengerMinter: Address;
   private readonly messageTransmitter: Address;
   private readonly svmSignerPromise: Promise<KeyPairSigner>;
-  private svmSigner: KeyPairSigner;
-  private solanaEventsClient: arch.svm.SvmCpiEventsClient;
+  private svmSigner?: KeyPairSigner;
+  private solanaEventsClient?: arch.svm.SvmCpiEventsClient;
 
   constructor(l2chainId: number, hubChainId: number, l2Provider: SVMProvider, l1Signer: Signer, l1Token: EvmAddress) {
     super(l2chainId, hubChainId, l2Provider, l1Signer, l1Token);
 
-    const { address: l1TokenMessengerAddress, abi: l1Abi } = getCctpV1TokenMessenger(hubChainId);
+    const { address: l1TokenMessengerAddress, abi: l1Abi } = getContractEntry(hubChainId, "cctpTokenMessenger");
     this.l1Bridge = new Contract(l1TokenMessengerAddress, l1Abi, l1Signer);
 
     this.l1UsdcTokenAddress = EvmAddress.from(TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]);
     this.l2UsdcTokenAddress = SvmAddress.from(TOKEN_SYMBOLS_MAP.USDC.addresses[this.l2chainId]);
 
-    const { address: l2TokenMessengerAddress } = getCctpV1TokenMessenger(this.l2chainId);
-    const { address: l2MessageTransmitterAddress } = getCctpV1MessageTransmitter(this.l2chainId);
-
-    this.tokenMessengerMinter = address(l2TokenMessengerAddress);
-    this.messageTransmitter = address(l2MessageTransmitterAddress);
+    // SVM cctp* entries are address-only (no abi), so don't route through getContractEntry.
+    this.tokenMessengerMinter = address(getContractAddress(this.l2chainId, "cctpTokenMessenger"));
+    this.messageTransmitter = address(getContractAddress(this.l2chainId, "cctpMessageTransmitter"));
 
     this.solanaEventsClientPromise = arch.svm.SvmCpiEventsClient.createFor(
       l2Provider,
@@ -91,6 +87,8 @@ export class SolanaUsdcCCTPBridge extends BaseL2BridgeAdapter {
   ): Promise<SolanaTransaction[]> {
     assert(l1Token.eq(this.l1UsdcTokenAddress));
     assert(l2Token.eq(this.l2UsdcTokenAddress));
+    const { svmProvider } = this;
+    assert(isDefined(svmProvider), "SolanaUsdcCCTPBridge: svmProvider is required");
     this.svmSigner ??= await this.svmSignerPromise;
 
     amount = amount.gt(CCTP_MAX_SEND_AMOUNT) ? CCTP_MAX_SEND_AMOUNT : amount;
@@ -133,7 +131,7 @@ export class SolanaUsdcCCTPBridge extends BaseL2BridgeAdapter {
       destinationDomain: this.l1DestinationDomain,
       mintRecipient: address(toAddress.toBase58()),
     });
-    const depositForBurnTx = pipe(await createDefaultTransaction(this.svmProvider, this.svmSigner), (tx) =>
+    const depositForBurnTx = pipe(await createDefaultTransaction(svmProvider, this.svmSigner), (tx) =>
       appendTransactionMessageInstruction(depositForBurnIx, tx)
     );
     return [depositForBurnTx];
@@ -161,11 +159,18 @@ export class SolanaUsdcCCTPBridge extends BaseL2BridgeAdapter {
         BigInt(l2EventConfig.from),
         BigInt(l2EventConfig.to)
       ),
-      paginatedEventQuery(this.l1Bridge, this.l1Bridge.filters.MintAndWithdraw(...l1EventFilterArgs), l1EventConfig),
+      paginatedEventQuery(
+        this.getL1Bridge(),
+        this.getL1Bridge().filters.MintAndWithdraw(...l1EventFilterArgs),
+        l1EventConfig
+      ),
     ]);
     const counted = new Set<number>();
     const withdrawalAmount = withdrawalInitiatedEvents.reduce((totalAmount, _l2Args) => {
       const l2Args = _l2Args.data as DepositForBurnEvent;
+      if (l2Args.destinationDomain !== this.l1DestinationDomain) {
+        return totalAmount;
+      }
       const l2MintRecipient = l2Args.mintRecipient;
       // Exit early if the event parsed was initiated by an address we are not tracking.
       if (l2MintRecipient !== fromAddress.toBase58()) {

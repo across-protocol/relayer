@@ -1,13 +1,13 @@
 import assert from "assert";
 import minimist from "minimist";
-import { groupBy } from "lodash";
 import { config } from "dotenv";
 import { Contract, ethers, Signer } from "ethers";
 import { LogDescription } from "@ethersproject/abi";
-import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
+import { CHAIN_IDs, MAINNET_CHAIN_IDs, TESTNET_CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { constants as sdkConsts, utils as sdkUtils } from "@across-protocol/sdk";
-import { ExpandedERC20__factory as ERC20 } from "@across-protocol/contracts";
+import { ExpandedERC20__factory as ERC20 } from "@across-protocol/sdk/typechain";
 import { RelayData } from "../src/interfaces";
+import { CHAIN_MAX_BLOCK_LOOKBACK } from "../src/common";
 import { EventListener, getAcrossHost } from "../src/clients";
 import {
   BigNumber,
@@ -16,6 +16,7 @@ import {
   disconnectRedisClients,
   EvmAddress,
   exit,
+  findDepositBlock,
   formatFeePct,
   getDeploymentBlockNumber,
   getMessageHash,
@@ -23,7 +24,9 @@ import {
   getProvider,
   getSigner,
   isDefined,
+  isUnsafeDepositId,
   Logger as logger,
+  paginatedEventQuery,
   populateV3Relay,
   spreadEventWithBlockNumber,
   toBN,
@@ -45,11 +48,6 @@ type RelayerFeeQuery = {
   message?: string;
   skipAmountLimit?: string;
   timestamp?: number;
-};
-
-// Teach BigInt how to be represented as JSON.
-(BigInt.prototype as any).toJSON = function () {
-  return this.toString();
 };
 
 const { NODE_SUCCESS, NODE_INPUT_ERR, NODE_APP_ERR } = utils;
@@ -74,7 +72,7 @@ function resolveTokenSymbols(tokenAddresses: string[], chainId: number): string[
       return tokenSymbols.find(({ addresses }) => addresses[chainId]?.toLowerCase() === tokenAddress.toLowerCase())
         ?.symbol;
     })
-    .filter(Boolean);
+    .filter(isDefined);
 }
 
 function decodeRelayData(originChainId: number, destinationChainId: number, log: LogDescription): RelayData {
@@ -171,7 +169,7 @@ async function getRelayerQuote(
   toChainId: number,
   token: utils.ERC20,
   amount: BigNumber,
-  recipient?: Address,
+  recipient: Address,
   message?: string
 ): Promise<{
   outputToken: Address;
@@ -378,7 +376,7 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
     message
   );
 
-  return new Promise((resolve) => abortController.signal.addEventListener("abort", async () => resolve(true)));
+  return new Promise((resolve) => abortController.signal.addEventListener("abort", () => resolve(true)));
 }
 
 async function fillDeposit(args: Record<string, number | string | boolean>, signer: Signer): Promise<boolean> {
@@ -535,10 +533,7 @@ async function dumpConfig(args: Record<string, number | string>, _signer: Signer
 }
 
 async function _fetchDeposit(spokePool: Contract, _depositId: number | string): Promise<Log[]> {
-  const depositId = parseInt(_depositId.toString());
-  if (isNaN(depositId)) {
-    throw new Error("No depositId specified");
-  }
+  const depositId = BigNumber.from(_depositId);
 
   const { chainId } = await spokePool.provider.getNetwork();
   const deploymentBlockNumber = getDeploymentBlockNumber("SpokePool", chainId);
@@ -546,10 +541,43 @@ async function _fetchDeposit(spokePool: Contract, _depositId: number | string): 
   console.log(`Searching for depositId ${depositId} between ${deploymentBlockNumber} and ${latestBlockNumber}.`);
   const filter = spokePool.filters.FundsDeposited(null, null, null, null, null, depositId);
 
-  // @note: Querying over such a large block range typically only works on top-tier providers.
-  // @todo: Narrow the block range for the depositId, subject to this PR:
-  //        https://github.com/across-protocol/sdk/pull/476
-  return await spokePool.queryFilter(filter, deploymentBlockNumber, latestBlockNumber);
+  let from = deploymentBlockNumber;
+  let to = latestBlockNumber;
+  if (!isUnsafeDepositId(depositId)) {
+    const depositBlock = await findDepositBlock(
+      spokePool,
+      BigNumber.from(depositId),
+      deploymentBlockNumber,
+      latestBlockNumber
+    );
+    assert(isDefined(depositBlock), `Could not find deposit block for depositId ${depositId}`);
+    from = depositBlock - 1;
+    to = depositBlock + 1;
+  }
+  const maxLookBack = CHAIN_MAX_BLOCK_LOOKBACK[chainId] ?? 5_000;
+  return paginatedEventQuery(spokePool, filter, { from, to, maxLookBack });
+}
+
+// Probe known EVM chains in parallel, returning the chainId on which the txn receipt resolves.
+async function resolveTxnChainId(txnHash: string): Promise<number | undefined> {
+  const candidateChainIds = [...Object.values(MAINNET_CHAIN_IDs), ...Object.values(TESTNET_CHAIN_IDs)].filter(
+    chainIsEvm
+  );
+
+  try {
+    return await Promise.any(
+      candidateChainIds.map(async (chainId) => {
+        const provider = await getProvider(chainId);
+        const receipt = await provider.getTransactionReceipt(txnHash);
+        if (!isDefined(receipt)) {
+          throw new Error(`No receipt for ${txnHash} on chain ${chainId}`);
+        }
+        return chainId;
+      })
+    );
+  } catch {
+    return undefined;
+  }
 }
 
 async function _fetchTxn(spokePool: Contract, txnHash: string): Promise<{ deposits: Log[]; fills: Log[] }> {
@@ -560,15 +588,13 @@ async function _fetchTxn(spokePool: Contract, txnHash: string): Promise<{ deposi
   const txn = await spokePool.provider.getTransactionReceipt(txnHash);
   const fundsDeposited = spokePool.interface.getEventTopic(DEPOSIT_EVENT);
   const filledRelay = spokePool.interface.getEventTopic(FILL_EVENT);
-  const logs = txn.logs.filter(({ address }) => address === spokePool.address);
-  const { deposits = [], fills = [] } = groupBy(logs, ({ topics }) => {
-    switch (topics[0]) {
-      case fundsDeposited:
-        return "deposits";
-      case filledRelay:
-        return "fills";
-    }
-  });
+  const logs = txn.logs.filter(
+    ({ address, topics }) =>
+      address === spokePool.address && (topics[0] === fundsDeposited || topics[0] === filledRelay)
+  );
+  const { deposits = [], fills = [] } = Object.groupBy(logs, ({ topics }) =>
+    topics[0] === fundsDeposited ? "deposits" : "fills"
+  );
 
   return { deposits, fills };
 }
@@ -576,7 +602,25 @@ async function _fetchTxn(spokePool: Contract, txnHash: string): Promise<{ deposi
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function fetchTxn(args: Record<string, number | string>, _signer: Signer): Promise<boolean> {
   const { txnHash } = args;
-  const chainId = Number(args.chainId);
+  let chainId: number | undefined = isDefined(args.chainId) ? Number(args.chainId) : undefined;
+
+  if (!isDefined(chainId)) {
+    if (isDefined(args.depositId)) {
+      console.log("--chainId is required when --depositId is provided.");
+      return false;
+    }
+    if (typeof txnHash !== "string") {
+      console.log("--txnHash is required when --chainId is not provided.");
+      return false;
+    }
+    console.log(`Resolving chain for transaction ${txnHash}...`);
+    chainId = await resolveTxnChainId(txnHash);
+    if (!isDefined(chainId)) {
+      console.log(`Could not resolve transaction ${txnHash} on any configured RPC provider.`);
+      return false;
+    }
+    console.log(`Resolved to ${getNetworkName(chainId)} (${chainId}).`);
+  }
 
   if (!utils.validateChainIds([chainId])) {
     console.log(`Invalid chain ID (${chainId}).`);
@@ -615,16 +659,16 @@ function usage(badInput?: string): boolean {
     " [--relayer <exclusiveRelayer> --exclusivityDeadline <exclusivityDeadline>]";
 
   const dumpConfigArgs = "--chainId";
-  const fetchArgs = "--chainId <chainId> [--depositId <depositId> | --txnHash <txnHash>]";
+  const fetchArgs = "[--chainId <chainId>] --txnHash <txnHash> | --chainId <chainId> --depositId <depositId>";
   const fillArgs = "--chainId <originChainId> --txnHash <depositHash> [--depositId <depositId>] [--slow] [--execute]";
 
   const pad = "deposit".length;
   usageStr += `
     Usage:
-    \tyarn ts-node ./scripts/spokepool --wallet <${walletOpts}> ${"deposit".padEnd(pad)} ${depositArgs}
-    \tyarn ts-node ./scripts/spokepool --wallet <${walletOpts}> ${"dump".padEnd(pad)} ${dumpConfigArgs}
-    \tyarn ts-node ./scripts/spokepool --wallet <${walletOpts}> ${"fetch".padEnd(pad)} ${fetchArgs}
-    \tyarn ts-node ./scripts/spokepool --wallet <${walletOpts}> ${"fetch".padEnd(pad)} ${fillArgs}
+    \tyarn tsx ./scripts/spokepool --wallet <${walletOpts}> ${"deposit".padEnd(pad)} ${depositArgs}
+    \tyarn tsx ./scripts/spokepool --wallet <${walletOpts}> ${"dump".padEnd(pad)} ${dumpConfigArgs}
+    \tyarn tsx ./scripts/spokepool --wallet <${walletOpts}> ${"fetch".padEnd(pad)} ${fetchArgs}
+    \tyarn tsx ./scripts/spokepool --wallet <${walletOpts}> ${"fetch".padEnd(pad)} ${fillArgs}
   `.slice(1); // Skip leading newline
   console.log(usageStr);
 
@@ -666,7 +710,7 @@ async function run(argv: string[]): Promise<number> {
   try {
     const keyType = ["deposit", "fill"].includes(cmd) ? args.wallet : "void";
     signer = await getSigner({ keyType, cleanEnv: true });
-  } catch (err) {
+  } catch {
     return usage(args.wallet) ? NODE_SUCCESS : NODE_INPUT_ERR;
   }
 

@@ -21,3 +21,5 @@ export * from "./ZKStackWethBridge";
 export * from "./SolanaUsdcCCTPBridge";
 export * from "./OFTBridge";
 export * from "./OFTWethBridge";
+export * from "./BridgeApi";
+export * from "./TokenSplitterBridge";

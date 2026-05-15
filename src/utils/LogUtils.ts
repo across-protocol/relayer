@@ -6,8 +6,8 @@ export function stringifyThrownValue(value: unknown): string {
     return value.stack
       ? value.stack
       : value.message || errToString !== "[object Object]"
-      ? errToString
-      : `could not extract error from 'Error' instance ${errToString}`;
+        ? errToString
+        : `could not extract error from 'Error' instance ${errToString}`;
   } else if (value instanceof Object) {
     const objStringified = JSON.stringify(value);
     return objStringified !== "{}"

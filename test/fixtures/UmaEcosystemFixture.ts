@@ -1,7 +1,6 @@
-import * as utils from "@across-protocol/contracts/dist/test-utils";
 import { Contract } from "ethers";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
-import { utf8ToHex, identifier, refundProposalLiveness } from "@across-protocol/contracts/dist/test-utils";
+import { getContractFactory, utf8ToHex, identifier, refundProposalLiveness } from "@across-protocol/sdk/test-utils";
 
 export async function setupUmaEcosystem(owner: SignerWithAddress): Promise<{
   timer: Contract;
@@ -11,18 +10,18 @@ export async function setupUmaEcosystem(owner: SignerWithAddress): Promise<{
 }> {
   // Setup minimum UMA ecosystem contracts. Note that we don't use the umaEcosystemFixture because Hardhat Fixture's
   // seem to produce non-deterministic behavior between tests.
-  const timer = await (await utils.getContractFactory("Timer", owner)).deploy();
-  const finder = await (await utils.getContractFactory("Finder", owner)).deploy();
-  const identifierWhitelist = await (await utils.getContractFactory("IdentifierWhitelist", owner)).deploy();
+  const timer = await (await getContractFactory("Timer", owner)).deploy();
+  const finder = await (await getContractFactory("Finder", owner)).deploy();
+  const identifierWhitelist = await (await getContractFactory("IdentifierWhitelist", owner)).deploy();
   const mockOracle = await (
-    await utils.getContractFactory("MockOracleAncillary", owner)
+    await getContractFactory("MockOracleAncillary", owner)
   ).deploy(finder.address, timer.address);
   const optimisticOracle = await (
-    await utils.getContractFactory("SkinnyOptimisticOracle", owner)
+    await getContractFactory("SkinnyOptimisticOracle", owner)
   ).deploy(refundProposalLiveness, finder.address, timer.address);
-  const collateralWhitelist = await (await utils.getContractFactory("AddressWhitelist", owner)).deploy();
+  const collateralWhitelist = await (await getContractFactory("AddressWhitelist", owner)).deploy();
   const store = await (
-    await utils.getContractFactory("Store", owner)
+    await getContractFactory("Store", owner)
   ).deploy({ rawValue: "0" }, { rawValue: "0" }, timer.address);
   await finder.changeImplementationAddress(utf8ToHex("CollateralWhitelist"), collateralWhitelist.address);
   await finder.changeImplementationAddress(utf8ToHex("IdentifierWhitelist"), identifierWhitelist.address);

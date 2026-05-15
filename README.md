@@ -38,7 +38,6 @@ REDIS_URL=redis://localhost:6379
 
 ```sh
 # install dependencies
-cd relayer
 yarn install
 
 # build relayer bot

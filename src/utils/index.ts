@@ -1,3 +1,5 @@
+import "./extensions";
+
 // Utils from other packages.
 import { constants as sdkConstants } from "@across-protocol/sdk";
 import { constants as ethersConstants } from "ethers";
@@ -35,18 +37,16 @@ export {
   TOKEN_EQUIVALENCE_REMAPPING,
 } from "@across-protocol/constants";
 
+export { getContractInfoFromAddress, getDeployedAddress, getDeployedBlockNumber } from "@across-protocol/contracts";
 // TypeChain exports used in the bot.
 export {
-  getContractInfoFromAddress,
-  getDeployedAddress,
-  getDeployedBlockNumber,
   ExpandedERC20__factory as ERC20,
   HubPool__factory as HubPool,
   SpokePool__factory as SpokePool,
   AcrossConfigStore__factory as AcrossConfigStore,
   PolygonTokenBridger__factory as PolygonTokenBridger,
   WETH9__factory as WETH9,
-} from "@across-protocol/contracts";
+} from "@across-protocol/sdk/typechain";
 
 // Utils specifically for this bot.
 export * from "./SDKUtils";
@@ -55,6 +55,7 @@ export * from "./fsUtils";
 export * from "./ProviderUtils";
 export * from "./SignerUtils";
 export * from "./SvmSignerUtils";
+export * from "./TvmSignerUtils";
 export * from "./BlockUtils";
 export * from "./EventUtils";
 export * from "./FillUtils";
@@ -71,14 +72,18 @@ export * from "./TypeGuards";
 export * from "./Help";
 export * from "./LogUtils";
 export * from "./TypeUtils";
-export * from "./RedisUtils";
+export * from "./Redis";
 export * from "./UmaUtils";
 export * from "./TokenUtils";
 export * from "./CLIUtils";
 export * from "./BNUtils";
 export * from "./CCTPUtils";
-export * from "./RetryUtils";
 export * from "./BinanceUtils";
 export * from "./OFTUtils";
+export * from "./NumberUtils";
 export * from "./HyperliquidUtils";
 export * from "./Tasks";
+export * from "./TimeUtils";
+export * from "./DepositAddressUtils";
+export * from "./BridgeUtils";
+export * from "./RunningBalanceUtils";

@@ -1,5 +1,30 @@
+import { array, boolean, create, number, object, optional, record, string } from "superstruct";
 import { CommonConfig, ProcessEnv } from "../common";
 import { getNativeTokenAddressForChain, Address, toAddressType, isDefined, toBNWei, BigNumber } from "../utils";
+
+const RefillBalances2Schema = record(
+  string(),
+  record(
+    string(),
+    object({
+      target: number(),
+      trigger: number(),
+      isHubPool: optional(boolean()),
+      token: optional(string()),
+    })
+  )
+);
+
+const RefillBalancesSchema = array(
+  object({
+    chainId: number(),
+    account: string(),
+    target: number(),
+    trigger: number(),
+    isHubPool: optional(boolean()),
+    token: optional(string()),
+  })
+);
 
 export type RefillBalanceData = {
   chainId: number;
@@ -13,11 +38,11 @@ export type RefillBalanceData = {
 
 export class RefillerConfig extends CommonConfig {
   readonly refillEnabledBalances: RefillBalanceData[] = [];
-  readonly nativeMarketsApiConfig: { apiKey: string; apiUrl: string };
+  readonly nativeMarketsApiConfig?: { apiKey: string; apiUrl: string };
   readonly minUsdhRebalanceAmount: BigNumber;
 
   constructor(env: ProcessEnv) {
-    super(env);
+    super(env, { botIdentifier: "across-refiller" });
 
     const {
       REFILL_BALANCES,
@@ -42,7 +67,7 @@ export class RefillerConfig extends CommonConfig {
     // Used to send tokens if available in wallet to balances under target balances.
     if (REFILL_BALANCES_2) {
       this.refillEnabledBalances = [];
-      const config = JSON.parse(REFILL_BALANCES_2);
+      const config = create(JSON.parse(REFILL_BALANCES_2), RefillBalances2Schema);
       Object.entries(config).forEach(([account, chainConfig]) => {
         Object.entries(chainConfig).forEach(([_chainId, tokenConfig]) => {
           const chainId = Number(_chainId);
@@ -59,21 +84,20 @@ export class RefillerConfig extends CommonConfig {
         });
       });
     } else if (REFILL_BALANCES) {
-      this.refillEnabledBalances = JSON.parse(REFILL_BALANCES).map(
-        ({ chainId, account, isHubPool, target, trigger, token }) => {
-          validate(chainId, account, target, trigger);
-          return {
-            // Required fields:
-            chainId,
-            account: toAddressType(account, chainId),
-            target,
-            trigger,
-            // Optional fields that will set to defaults:
-            isHubPool: Boolean(isHubPool),
-            token: isDefined(token) ? toAddressType(token, chainId) : getNativeTokenAddressForChain(chainId),
-          };
-        }
-      );
+      const config = create(JSON.parse(REFILL_BALANCES), RefillBalancesSchema);
+      this.refillEnabledBalances = config.map(({ chainId, account, isHubPool, target, trigger, token }) => {
+        validate(chainId, account, target, trigger);
+        return {
+          // Required fields:
+          chainId,
+          account: toAddressType(account, chainId),
+          target,
+          trigger,
+          // Optional fields that will set to defaults:
+          isHubPool: Boolean(isHubPool),
+          token: isDefined(token) ? toAddressType(token, chainId) : getNativeTokenAddressForChain(chainId),
+        };
+      });
     }
 
     if (isDefined(NATIVE_MARKETS_API_KEY) && isDefined(NATIVE_MARKETS_API_BASE)) {

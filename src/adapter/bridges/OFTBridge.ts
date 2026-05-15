@@ -10,7 +10,9 @@ import {
   Address,
   winston,
   CHAIN_IDs,
+  chainIsTvm,
   getTokenInfo,
+  fixedPointAdjustment,
 } from "../../utils";
 import { interfaces as sdkInterfaces } from "@across-protocol/sdk";
 import { processEvent } from "../utils";
@@ -18,6 +20,7 @@ import * as OFT from "../../utils/OFTUtils";
 import { OFT_DEFAULT_FEE_CAP, OFT_FEE_CAP_OVERRIDES } from "../../common/Constants";
 import { IOFT_ABI_FULL } from "../../common/ContractAddresses";
 import { Options } from "@layerzerolabs/lz-v2-utilities";
+import { PendingBridgeAdapterName } from "../../rebalancer/clients/CctpOftReadOnlyClient";
 
 type OFTBridgeArguments = {
   sendParamStruct: OFT.SendParamStruct;
@@ -34,6 +37,7 @@ export class OFTBridge extends BaseBridgeAdapter {
   private l1TokenInfo: sdkInterfaces.TokenInfo;
   private sharedDecimals?: number;
   private readonly nativeFeeCap: BigNumber;
+  private readonly feePct: BigNumber = BigNumber.from(5 * 10 ** 15); // Default fee percent of 0.5%
 
   constructor(
     l2ChainId: number,
@@ -51,8 +55,8 @@ export class OFTBridge extends BaseBridgeAdapter {
     );
 
     // Route discovery via configured IOFT messengers: if both L1 and L2 messengers exist, the route exists
-    const l1OftMessenger = OFT.getMessengerEvm(l1TokenAddress, l1ChainId);
-    const l2OftMessenger = OFT.getMessengerEvm(l1TokenAddress, l2ChainId);
+    const l1OftMessenger = OFT.getMessengerEvm(l1TokenAddress, l1ChainId, l2ChainId);
+    const l2OftMessenger = OFT.getMessengerEvm(l1TokenAddress, l2ChainId, l2ChainId);
 
     super(l2ChainId, l1ChainId, l1Signer, [l1OftMessenger]);
 
@@ -77,7 +81,7 @@ export class OFTBridge extends BaseBridgeAdapter {
       amount
     );
     return {
-      contract: this.l1Bridge,
+      contract: this.getL1Bridge(),
       method: "send",
       args: [sendParamStruct, feeStruct, refundAddress],
       value: BigNumber.from(feeStruct.nativeFee),
@@ -91,9 +95,8 @@ export class OFTBridge extends BaseBridgeAdapter {
    */
   async roundAmountToSend(amount: BigNumber): Promise<BigNumber> {
     // Fetch `sharedDecimals` if not already fetched
-    this.sharedDecimals ??= await this.l1Bridge.sharedDecimals();
-
-    return OFT.roundAmountToSend(amount, this.l1TokenInfo.decimals, this.sharedDecimals);
+    const sharedDecimals = (this.sharedDecimals ??= await this.getL1Bridge().sharedDecimals());
+    return OFT.roundAmountToSend(amount, this.l1TokenInfo.decimals, sharedDecimals);
   }
 
   async buildOftTransactionArgs(
@@ -115,16 +118,20 @@ export class OFTBridge extends BaseBridgeAdapter {
     // We round `amount` to a specific precision to prevent rounding on the contract side. This way, we
     // receive the exact amount we sent in the transaction
     const roundedAmount = await this.roundAmountToSend(amount);
+    let minAmountLD = roundedAmount;
     let extraOptions: BytesLike = "0x";
     if (this.l2chainId === CHAIN_IDs.MONAD) {
       extraOptions = Options.newOptions().addExecutorLzReceiveOption(MONAD_EXECUTOR_LZ_RECEIVE_GAS_LIMIT).toBytes();
+    }
+    if (chainIsTvm(this.l2chainId)) {
+      minAmountLD = minAmountLD.sub(minAmountLD.mul(this.feePct).div(fixedPointAdjustment));
     }
     const sendParamStruct: OFT.SendParamStruct = {
       dstEid: this.l2ChainEid,
       to: OFT.formatToAddress(toAddress),
       amountLD: roundedAmount,
       // @dev Setting `minAmountLD` equal to `amountLD` ensures we won't hit contract-side rounding
-      minAmountLD: roundedAmount,
+      minAmountLD,
       extraOptions,
       composeMsg: "0x",
       oftCmd: "0x",
@@ -138,7 +145,7 @@ export class OFTBridge extends BaseBridgeAdapter {
 
     // Set refund address to signer's address. This should technically never be required as all of our calcs
     // are precise, set it just in case
-    const refundAddress = await this.l1Bridge.signer.getAddress();
+    const refundAddress = await this.getL1Bridge().signer.getAddress();
 
     return {
       sendParamStruct,
@@ -165,8 +172,8 @@ export class OFTBridge extends BaseBridgeAdapter {
 
     const isAssociatedSpokePool = this.spokePoolAddress.eq(toAddress);
     const fromHubEvents = await paginatedEventQuery(
-      this.l1Bridge,
-      this.l1Bridge.filters.OFTSent(
+      this.getL1Bridge(),
+      this.getL1Bridge().filters.OFTSent(
         null, // guid - not filtering by guid (Topic[1])
         undefined, // dstEid - not an indexed parameter, must be `undefined`
         // If the request is for a spoke pool, return `OFTSent` events from hubPool
@@ -203,8 +210,8 @@ export class OFTBridge extends BaseBridgeAdapter {
 
     // Get `OFTReceived` events for [hub chain -> toAddress]
     const allEvents = await paginatedEventQuery(
-      this.l2Bridge,
-      this.l2Bridge.filters.OFTReceived(
+      this.getL2Bridge(),
+      this.getL2Bridge().filters.OFTReceived(
         null, // guid - not filtering by guid (Topic[1])
         undefined, // srcEid - not an indexed parameter, should be undefined
         toAddress.toNative() // filter by `toAddress`
@@ -220,5 +227,9 @@ export class OFTBridge extends BaseBridgeAdapter {
         return processEvent(event, "amountReceivedLD");
       }),
     };
+  }
+
+  override getRebalancerPendingBridgeAdapterName(): PendingBridgeAdapterName {
+    return "oft";
   }
 }

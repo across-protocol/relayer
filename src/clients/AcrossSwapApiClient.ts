@@ -1,8 +1,9 @@
-import axios, { AxiosError } from "axios";
-import { BigNumber, EvmAddress, winston } from "../utils";
+import { getAcrossHost } from "./";
+import { BigNumber, EvmAddress, winston, CHAIN_IDs } from "../utils";
 import { SWAP_ROUTES, SwapRoute } from "../common";
+import { BaseAcrossApiClient } from "./AcrossApiBaseClient";
 
-interface SwapApiResponse {
+export interface SwapApiResponse {
   approvalTxns?: {
     chainId: number;
     to: string;
@@ -14,6 +15,30 @@ interface SwapApiResponse {
     data: string;
     value: string;
   };
+}
+
+export interface SignedWithdrawRequest {
+  chainId: number;
+  depositAddress: string;
+  token: string;
+  amount: string;
+  user: string;
+  withdrawImplementation: string;
+  proof: string[];
+  salt: string;
+  merkleRoot: string;
+}
+
+export interface SignedWithdrawResponse {
+  signedWithdrawTx: {
+    chainId: number;
+    to: string;
+    data: string;
+    value: string;
+  };
+  bundledDeploy: boolean;
+  signer: string;
+  deadline: number;
 }
 
 interface SwapData {
@@ -31,12 +56,12 @@ interface SwapData {
 /**
  * @notice This class interfaces with the Across Swap API to execute swaps between chains.
  */
-export class AcrossSwapApiClient {
+export class AcrossSwapApiClient extends BaseAcrossApiClient {
   private routesSupported: Set<SwapRoute> = new Set(Object.values(SWAP_ROUTES));
-  private readonly urlBase = "https://app.across.to/api/swap/approval";
-  private readonly apiResponseTimeout = 3000;
 
-  constructor(readonly logger: winston.Logger) {}
+  constructor(logger: winston.Logger, timeoutMs = 3000, apiKey?: string) {
+    super(logger, `https://${getAcrossHost(CHAIN_IDs.MAINNET)}/api`, "AcrossSwapApiClient", timeoutMs, apiKey);
+  }
 
   /**
    * @notice Returns calldata necessary to swap exact output using the Across Swap API.
@@ -65,8 +90,8 @@ export class AcrossSwapApiClient {
         url: this.urlBase,
         route,
         amountOut,
-        swapper: swapper.toNative(),
-        recipient: recipient.toNative(),
+        swapper,
+        recipient,
       });
       return;
     }
@@ -118,34 +143,11 @@ export class AcrossSwapApiClient {
       depositor: swapper.toNative(),
       recipient: recipient.toNative(),
     };
+    return this._get<SwapApiResponse>("/swap/approval", params);
+  }
 
-    try {
-      const response = await axios.get<SwapApiResponse>(`${this.urlBase}`, {
-        timeout: this.apiResponseTimeout,
-        params,
-      });
-
-      if (!response?.data) {
-        this.logger.warn({
-          at: "AcrossAPIClient",
-          message: `Invalid response from ${this.urlBase}`,
-          url: this.urlBase,
-          params,
-        });
-        return;
-      }
-
-      return response.data;
-    } catch (err) {
-      this.logger.warn({
-        at: "AcrossSwapApiClient",
-        message: `Failed to post to ${this.urlBase}`,
-        url: this.urlBase,
-        params,
-        error: (err as AxiosError).message,
-      });
-      return;
-    }
+  async signedWithdraw(req: SignedWithdrawRequest): Promise<SignedWithdrawResponse | undefined> {
+    return this._post<SignedWithdrawResponse>("/swap/counterfactual/sign-withdraw", req);
   }
 
   private _isRouteSupported(route: SwapRoute): boolean {

@@ -1,16 +1,17 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { utils as sdkUtils } from "@across-protocol/sdk";
-import axios from "axios";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
-import { CONTRACT_ADDRESSES } from "../../common";
+import { getContractEntry } from "../../common";
 import {
   Contract,
   Signer,
   Multicall2Call,
   winston,
   convertFromWei,
+  fetchWithTimeout,
   getTokenInfo,
   assert,
+  isDefined,
   isEVMSpokePoolClient,
   EvmAddress,
 } from "../../utils";
@@ -70,10 +71,10 @@ export async function scrollFinalizer(
     message: `Detected ${outstandingClaims.length} claims for ${targetAddress}`,
   });
 
-  const [callData, crossChainMessages] = await Promise.all([
-    sdkUtils.mapAsync(outstandingClaims, (claim) => populateClaimTransaction(claim, relayContract)),
-    outstandingClaims.map((claim) => populateClaimWithdrawal(claim, l2ChainId, hubPoolClient)),
-  ]);
+  const callData = await sdkUtils.mapAsync(outstandingClaims, (claim) =>
+    populateClaimTransaction(claim, relayContract)
+  );
+  const crossChainMessages = outstandingClaims.map((claim) => populateClaimWithdrawal(claim, l2ChainId, hubPoolClient));
   return {
     crossChainMessages,
     callData,
@@ -97,7 +98,7 @@ async function findOutstandingClaims(targetAddress: string): Promise<ScrollClaim
   do {
     requestResponse =
       (
-        await axios.get<{
+        await fetchWithTimeout<{
           data: {
             results: {
               claim_info: ScrollClaimInfo;
@@ -106,13 +107,11 @@ async function findOutstandingClaims(targetAddress: string): Promise<ScrollClaim
             }[];
           };
         }>(apiUrl, {
-          params: {
-            address: targetAddress,
-            page_size: MAX_PAGE_SIZE,
-            page: currentPage,
-          },
+          address: targetAddress,
+          page_size: MAX_PAGE_SIZE,
+          page: currentPage,
         })
-      ).data.data?.results ?? [];
+      ).data?.results ?? [];
     claimList.push(
       ...requestResponse
         .filter(({ claim_info }) => claim_info?.claimable)
@@ -134,7 +133,7 @@ async function findOutstandingClaims(targetAddress: string): Promise<ScrollClaim
  * @returns A Scroll Relay contract, instantiated with the given signer
  */
 function getScrollRelayContract(l1ChainId: number, signer: Signer) {
-  const { abi: scrollRelayAbi, address: scrollRelayAddress } = CONTRACT_ADDRESSES[l1ChainId]?.scrollRelayMessenger;
+  const { abi: scrollRelayAbi, address: scrollRelayAddress } = getContractEntry(l1ChainId, "scrollRelayMessenger");
   return new Contract(scrollRelayAddress, scrollRelayAbi, signer);
 }
 
@@ -156,6 +155,7 @@ async function populateClaimTransaction(claim: ScrollClaimInfo, relayContract: C
       merkleProof: claim.proof.merkle_proof,
     }
   );
+  assert(isDefined(to) && isDefined(data), "scroll: relayMessageWithProof populateTransaction missing to/data");
   return {
     callData: data,
     target: to,

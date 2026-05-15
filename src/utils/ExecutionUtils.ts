@@ -20,7 +20,7 @@ export async function processEndPollingLoop(
   return false;
 }
 
-export function startupLogLevel(config: { pollingDelay: number }): string {
+export function startupLogLevel(config: { pollingDelay: number }): "info" | "debug" {
   return config.pollingDelay > 0 ? "info" : "debug";
 }
 

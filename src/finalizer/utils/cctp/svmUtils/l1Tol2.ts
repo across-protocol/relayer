@@ -2,7 +2,7 @@ import { getBase64EncodedWireTransaction, KeyPairSigner, signTransactionMessageW
 import { updateOrAppendSetComputeUnitLimitInstruction } from "@solana-program/compute-budget";
 import { SVMSpokePoolClient } from "../../../../clients";
 import { AttestedCCTPMessage, isDepositForBurnEvent } from "../../../../utils/CCTPUtils";
-import { winston, SvmAddress, isDefined } from "../../../../utils";
+import { winston, SvmAddress, assert, isDefined } from "../../../../utils";
 import { arch } from "@across-protocol/sdk";
 
 /**
@@ -84,6 +84,7 @@ export async function finalizeCCTPV1MessagesSVM(
 export function attestedCCTPMessageToSvmAttestedCCTPMessage(
   message: AttestedCCTPMessage
 ): arch.svm.AttestedCCTPMessage {
+  assert(isDefined(message.attestation), "attestedCCTPMessageToSvmAttestedCCTPMessage: missing attestation");
   return {
     nonce: message.nonce,
     sourceDomain: message.sourceDomain,

@@ -1,7 +1,8 @@
+import { randomUUID } from "crypto";
 import winston from "winston";
-import { DEFAULT_MULTICALL_CHUNK_SIZE, DEFAULT_ARWEAVE_GATEWAY } from "../common";
-import { ArweaveGatewayInterface, ArweaveGatewayInterfaceSS } from "../interfaces";
-import { addressAdapters, AddressAggregator, assert, CHAIN_IDs, isDefined } from "../utils";
+import { DEFAULT_MULTICALL_CHUNK_SIZE } from "../common";
+import { ArweaveGatewayConfigSS, ArweaveGatewayConfig } from "../interfaces";
+import { addressAdapters, AddressAggregator, assert, CHAIN_IDs, isDefined, parseJson } from "../utils";
 import * as Constants from "./Constants";
 
 export interface ProcessEnv {
@@ -12,24 +13,26 @@ export class CommonConfig {
   readonly hubPoolChainId: number;
   readonly pollingDelay: number;
   readonly maxBlockLookBack: { [key: number]: number };
-  readonly maxTxWait: number;
   readonly spokePoolChainsOverride: number[];
+  readonly l1TokensOverride: string[];
   readonly sendingTransactionsEnabled: boolean;
   readonly maxRelayerLookBack: number;
   readonly version: string;
   readonly maxConfigVersion: number;
   readonly blockRangeEndBlockBuffer: { [chainId: number]: number };
   readonly timeToCache: number;
-  readonly arweaveGateway: ArweaveGatewayInterface;
+  readonly arweaveGateways: ArweaveGatewayConfig[] | undefined;
   readonly peggedTokenPrices: { [pegTokenSymbol: string]: Set<string> } = {};
+  readonly botIdentifier: string;
+  readonly runIdentifier: string;
 
   // State we'll load after we update the config store client and fetch all chains we want to support.
   public multiCallChunkSize: { [chainId: number]: number } = {};
   public toBlockOverride: Record<number, number> = {};
   public fromBlockOverride: Record<number, number> = {};
-  public addressFilter: Set<string>;
+  public addressFilter?: Set<string>;
 
-  constructor(env: ProcessEnv) {
+  constructor(env: ProcessEnv, opts: { botIdentifier?: string } = {}) {
     const {
       MAX_RELAYER_DEPOSIT_LOOK_BACK,
       BLOCK_RANGE_END_BLOCK_BUFFER,
@@ -38,21 +41,25 @@ export class CommonConfig {
       MAX_BLOCK_LOOK_BACK,
       SEND_TRANSACTIONS,
       SPOKE_POOL_CHAINS_OVERRIDE,
+      L1_TOKENS_OVERRIDE,
       ACROSS_BOT_VERSION,
       ACROSS_MAX_CONFIG_VERSION,
       HUB_POOL_TIME_TO_CACHE,
-      ARWEAVE_GATEWAY,
+      ARWEAVE_GATEWAYS,
       PEGGED_TOKEN_PRICES,
+      BOT_IDENTIFIER,
+      RUN_IDENTIFIER,
     } = env;
 
-    const mergeConfig = <T>(config: T, envVar: string): T => {
+    const mergeConfig = <T>(config: T, envVar: string | undefined): T => {
       const shallowCopy = { ...config };
       Object.entries(JSON.parse(envVar ?? "{}")).forEach(([k, v]) => {
+        const _k = k as keyof T;
         assert(
-          typeof v === typeof shallowCopy[k] || !isDefined(shallowCopy[k]),
-          `Invalid ${envVar} configuration on key ${k} (${typeof v} != ${typeof shallowCopy[k]})`
+          typeof v === typeof shallowCopy[_k] || !isDefined(shallowCopy[_k]),
+          `Invalid ${envVar} configuration on key ${k} (${typeof v} != ${typeof shallowCopy[_k]})`
         );
-        shallowCopy[k] = v;
+        shallowCopy[_k] = v as T[keyof T];
       });
       return shallowCopy;
     };
@@ -76,7 +83,8 @@ export class CommonConfig {
     // `maxRelayerLookBack` is how far we fetch events from, modifying the search config's 'fromBlock'
     this.maxRelayerLookBack = Number(MAX_RELAYER_DEPOSIT_LOOK_BACK ?? Constants.MAX_RELAYER_DEPOSIT_LOOK_BACK);
     this.pollingDelay = Number(POLLING_DELAY ?? 60);
-    this.spokePoolChainsOverride = JSON.parse(SPOKE_POOL_CHAINS_OVERRIDE ?? "[]");
+    this.spokePoolChainsOverride = parseJson.numberArray(SPOKE_POOL_CHAINS_OVERRIDE);
+    this.l1TokensOverride = parseJson.stringArray(L1_TOKENS_OVERRIDE);
 
     // Inherit the default eth_getLogs block range config, then sub in any env-based overrides.
     this.maxBlockLookBack = mergeConfig(Constants.CHAIN_MAX_BLOCK_LOOKBACK, MAX_BLOCK_LOOK_BACK);
@@ -84,16 +92,24 @@ export class CommonConfig {
     this.sendingTransactionsEnabled = SEND_TRANSACTIONS === "true";
 
     // Load the Arweave gateway from the environment.
-    const _arweaveGateway = isDefined(ARWEAVE_GATEWAY) ? JSON.parse(ARWEAVE_GATEWAY ?? "{}") : DEFAULT_ARWEAVE_GATEWAY;
-    assert(ArweaveGatewayInterfaceSS.is(_arweaveGateway), "Invalid Arweave gateway");
-    this.arweaveGateway = _arweaveGateway;
+    const _arweaveGateways = isDefined(ARWEAVE_GATEWAYS) ? JSON.parse(ARWEAVE_GATEWAYS) : undefined;
+    assert(
+      !isDefined(_arweaveGateways) ||
+        (Array.isArray(_arweaveGateways) &&
+          _arweaveGateways.every((_arweaveGateway) => ArweaveGatewayConfigSS.is(_arweaveGateway))),
+      "Invalid Arweave gateway"
+    );
+    this.arweaveGateways = _arweaveGateways;
 
     this.peggedTokenPrices = Object.fromEntries(
-      Object.entries(JSON.parse(PEGGED_TOKEN_PRICES ?? "{}")).map(([pegTokenSymbol, tokenSymbolsToPeg]) => [
+      Object.entries(parseJson.stringArrayMap(PEGGED_TOKEN_PRICES)).map(([pegTokenSymbol, tokenSymbolsToPeg]) => [
         pegTokenSymbol,
-        new Set(tokenSymbolsToPeg as string[]),
+        new Set(tokenSymbolsToPeg),
       ])
     );
+
+    this.botIdentifier = BOT_IDENTIFIER ?? opts.botIdentifier ?? "across";
+    this.runIdentifier = RUN_IDENTIFIER ?? randomUUID();
   }
 
   /**

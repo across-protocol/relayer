@@ -17,6 +17,7 @@ import {
   expect,
   getDefaultBlockRange,
   getDisabledBlockRanges,
+  getLastBlockTime,
   randomAddress,
   requestSlowFill,
   sinon,
@@ -26,13 +27,12 @@ import {
 } from "./utils";
 
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
-import { EvmAddress, getCurrentTime, toBNWei, ZERO_ADDRESS, bnZero, toAddressType, toBytes32 } from "../src/utils";
+import { EvmAddress, toBNWei, ZERO_ADDRESS, bnZero, toAddressType, toBytes32 } from "../src/utils";
 import { MockConfigStoreClient, MockHubPoolClient, MockSpokePoolClient } from "./mocks";
 import { interfaces, utils as sdkUtils, constants as sdkConstants, providers } from "@across-protocol/sdk";
 import { cloneDeep } from "lodash";
-import { INFINITE_FILL_DEADLINE } from "../src/common";
 
-describe("Dataworker: Load bundle data: Computing slow fills", async function () {
+describe("Dataworker: Load bundle data: Computing slow fills", function () {
   const { EMPTY_MESSAGE } = sdkConstants;
 
   let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
@@ -43,6 +43,7 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
   let hubPoolClient: HubPoolClient, configStoreClient: ConfigStoreClient;
   let dataworkerInstance: Dataworker;
   let spokePoolClients: { [chainId: number]: SpokePoolClient };
+  let currentTime: number;
 
   let spy: sinon.SinonSpy;
 
@@ -60,8 +61,8 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
       inputAmount: eventOverride?.inputAmount ?? undefined,
       outputToken: eventOverride?.outputToken ?? EvmAddress.from(erc20_2.address),
       message: eventOverride?.message ?? "0x",
-      quoteTimestamp: eventOverride?.quoteTimestamp ?? getCurrentTime() - 10,
-      fillDeadline: eventOverride?.fillDeadline ?? getCurrentTime() + 14400,
+      quoteTimestamp: eventOverride?.quoteTimestamp ?? currentTime - 10,
+      fillDeadline: eventOverride?.fillDeadline ?? currentTime + 14400,
       destinationChainId: eventOverride?.destinationChainId ?? destinationChainId,
       blockNumber: eventOverride?.blockNumber ?? spokePoolClient_1.latestHeightSearched, // @dev use latest block searched from non-mocked client
       // so that mocked client's latestHeightSearched gets set to the same value.
@@ -137,6 +138,7 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
       spy,
     } = await setupDataworker(ethers, 25, 25, 0));
     await updateAllClients();
+    currentTime = await getLastBlockTime(spokePool_1.provider);
 
     // Deploy Multicall3 to the hardhat test networks.
     for (const deployer of [depositor, relayer]) {
@@ -355,6 +357,7 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
 
     // Manually remove the deposit from the client's cache to force historical query
     const depositKey = sdkUtils.getRelayEventKey(deposit);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     delete (spokePoolClient_1 as any).depositHashes[depositKey];
 
     const deposits = spokePoolClient_1.getDeposits();
@@ -382,10 +385,7 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
       erc20_1.address,
       amountToDeposit,
       erc20_2.address,
-      amountToDeposit,
-      {
-        fillDeadline: INFINITE_FILL_DEADLINE.toNumber(),
-      }
+      amountToDeposit
     );
 
     // Modify the block ranges such that the deposit is in a future bundle block range. This should render
@@ -488,10 +488,7 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
       erc20_1.address,
       amountToDeposit,
       erc20_2.address,
-      amountToDeposit,
-      {
-        fillDeadline: INFINITE_FILL_DEADLINE.toNumber(),
-      }
+      amountToDeposit
     );
     const depositBlock = await spokePool_1.provider.getBlockNumber();
 
@@ -531,10 +528,7 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
       erc20_1.address,
       amountToDeposit,
       invalidOutputToken.address,
-      amountToDeposit,
-      {
-        fillDeadline: INFINITE_FILL_DEADLINE.toNumber(),
-      }
+      amountToDeposit
     );
     const depositBlock = await spokePool_1.provider.getBlockNumber();
 
@@ -606,7 +600,9 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
       JSON.stringify([spokePoolClient_1.chainId])
     );
     await mockConfigStore.update();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (spokePoolClient_1 as any).configStoreClient = mockConfigStore;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (spokePoolClient_2 as any).configStoreClient = mockConfigStore;
     const depositObject = await depositV3(
       spokePool_1,
@@ -645,7 +641,9 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
       JSON.stringify([spokePoolClient_2.chainId])
     );
     await mockConfigStore.update();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (spokePoolClient_1 as any).configStoreClient = mockConfigStore;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (spokePoolClient_2 as any).configStoreClient = mockConfigStore;
     const depositObject = await depositV3(
       spokePool_1,
@@ -684,7 +682,9 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
       JSON.stringify([spokePoolClient_1.chainId])
     );
     await mockConfigStore.update();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (spokePoolClient_1 as any).configStoreClient = mockConfigStore;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (spokePoolClient_2 as any).configStoreClient = mockConfigStore;
     // Send a legacy deposit.
     const depositObject = await depositV3(
@@ -694,10 +694,7 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
       erc20_1.address,
       amountToDeposit,
       erc20_2.address,
-      amountToDeposit,
-      {
-        fillDeadline: INFINITE_FILL_DEADLINE.toNumber(),
-      }
+      amountToDeposit
     );
     const depositBlock = await spokePool_1.provider.getBlockNumber();
 
@@ -732,7 +729,9 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
       JSON.stringify([spokePoolClient_2.chainId])
     );
     await mockConfigStore.update();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (spokePoolClient_1 as any).configStoreClient = mockConfigStore;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (spokePoolClient_2 as any).configStoreClient = mockConfigStore;
     // Send a legacy deposit.
     const depositObject = await depositV3(
@@ -742,10 +741,7 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
       erc20_1.address,
       amountToDeposit,
       erc20_2.address,
-      amountToDeposit,
-      {
-        fillDeadline: INFINITE_FILL_DEADLINE.toNumber(),
-      }
+      amountToDeposit
     );
     const depositBlock = await spokePool_1.provider.getBlockNumber();
 

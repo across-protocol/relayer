@@ -25,6 +25,7 @@ export type SpokePoolClientWithListener = InstanceType<ReturnType<typeof SpokeLi
  * @returns true if the client has the onBlock method (i.e., has the listener mixin)
  */
 export function isSpokePoolClientWithListener(client: SpokePoolClient): client is SpokePoolClientWithListener {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return "onBlock" in client && typeof (client as any).onBlock === "function";
 }
 
@@ -38,6 +39,7 @@ export function isSpokePoolClientWithListener(client: SpokePoolClient): client i
  * more invasive and out of scope for now.
  * Reference: https://www.typescriptlang.org/docs/handbook/mixins.html
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Constructor<T = Record<string, unknown>> = new (...args: any[]) => T;
 
 // Minimum common-ish interface supplied by the SpokePoolClient.
@@ -52,30 +54,42 @@ type MinGenericSpokePoolClient = {
   logger: winston.Logger;
 };
 
-export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(SpokePoolClient: T) {
+interface SpokeListenerMethods {
+  init(opts: IndexerOpts): void;
+  onBlock(handler: (blockNumber: number, currentTime: number) => void): void;
+  _startWorker(): void;
+  stopWorker(): void;
+  _indexerUpdate(rawMessage: unknown): void;
+  _update(eventsToQuery: string[]): Promise<clients.SpokePoolUpdate>;
+}
+
+export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
+  SpokePoolClient: T
+): T & Constructor<SpokeListenerMethods> {
   return class extends SpokePoolClient {
     // Standard private/readonly constraints are not available to mixins; use ES2020 private properties instead.
-    #chain: string;
-    #indexerPath: string;
-    #eventEmitter: EventEmitter;
+    // Field-level defaults are placeholders; init() overwrites them before any external use.
+    #chain = "";
+    #indexerPath = "";
+    #eventEmitter: EventEmitter = new EventEmitter();
 
-    #worker: ChildProcess;
-    #pendingBlockNumber: number;
-    #pendingCurrentTime: number;
+    #worker?: ChildProcess;
+    #pendingBlockNumber = 0;
+    #pendingCurrentTime = 0;
 
-    #pendingEvents: Log[][];
-    #pendingEventsRemoved: Log[];
+    #pendingEvents: Log[][] = [];
+    #pendingEventsRemoved: Log[] = [];
 
     #misorderedBlocks: number[] = [];
 
     init(opts: IndexerOpts) {
       this.#chain = getNetworkName(this.chainId);
-      this.#indexerPath = opts.path;
-      this.#indexerPath ??= chainIsSvm(this.chainId) ? RELAYER_SPOKEPOOL_LISTENER_SVM : RELAYER_SPOKEPOOL_LISTENER_EVM;
+      this.#indexerPath =
+        opts.path ?? (chainIsSvm(this.chainId) ? RELAYER_SPOKEPOOL_LISTENER_SVM : RELAYER_SPOKEPOOL_LISTENER_EVM);
 
       this.#pendingBlockNumber = this.deploymentBlock;
       this.#pendingCurrentTime = 0;
-      this.#pendingEvents = this._queryableEventNames().map(() => []);
+      this.#pendingEvents = this._queryableEventNames().map((): Log[] => []);
       this.#pendingEventsRemoved = [];
 
       this.#eventEmitter = new EventEmitter();
@@ -100,37 +114,44 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
         eventSearchConfig: { from, maxLookBack: blockrange },
         spokePoolAddress: spokepool,
       } = this;
+      assert(isDefined(spokepool), `${this.#chain} spoke pool address not yet known`);
       const opts = { spokepool: spokepool.toNative(), blockrange, lookback: `@${from}` };
 
       const args = Object.entries(opts)
         .map(([k, v]) => [`--${k}`, `${v}`])
         .flat();
-      this.#worker = spawn("node", [this.#indexerPath, "--chainid", this.chainId.toString(), ...args], {
+      const worker = spawn("node", [this.#indexerPath, "--chainid", this.chainId.toString(), ...args], {
         stdio: ["ignore", "inherit", "inherit", "ipc"],
       });
+      this.#worker = worker;
 
-      this.#worker.on("exit", (code, signal) => this.#childExit(code, signal));
-      this.#worker.on("message", (message) => this._indexerUpdate(message));
+      worker.on("exit", (code, signal) => this.#childExit(code, signal));
+      worker.on("message", (message) => this._indexerUpdate(message));
       this.logger.debug({
         at: "SpokePoolClient#startWorker",
         message: `Spawned ${this.#chain} SpokePool indexer.`,
-        args: this.#worker.spawnargs,
+        args: worker.spawnargs,
       });
     }
 
     stopWorker(): void {
       const at = "SpokePoolClient#stopWorker";
+      const worker = this.#worker;
+      if (!worker) {
+        this.logger.warn({ at, message: `${this.#chain} SpokePool listener not started; nothing to stop.` });
+        return;
+      }
 
-      if (this.#worker.connected) {
-        this.#worker.disconnect();
+      if (worker.connected) {
+        worker.disconnect();
       } else {
         const message = `Skipped disconnecting on ${this.#chain} SpokePool listener (already disconnected).`;
         this.logger.warn({ at, message });
       }
 
-      const { exitCode } = this.#worker;
+      const { exitCode } = worker;
       if (exitCode === null) {
-        this.#worker.kill("SIGKILL");
+        worker.kill("SIGKILL");
       } else {
         const message = `Skipped SIGKILL on ${this.#chain} SpokePool listener (already exited).`;
         this.logger.warn({ at, message, exitCode });
@@ -144,7 +165,7 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
      * @param signal Optional signal resulting in termination.
      * @returns void
      */
-    #childExit(code?: number, signal?: string): void {
+    #childExit(code: number | null, signal: NodeJS.Signals | null): void {
       const at = "SpokePoolClient#childExit";
       if (code === 0) {
         return;

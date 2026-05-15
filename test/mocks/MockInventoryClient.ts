@@ -1,8 +1,9 @@
-import { Deposit, InventoryConfig } from "../../src/interfaces";
-import { HubPoolClient, InventoryClient, Rebalance, TokenClient } from "../../src/clients";
+import { Deposit, InventoryConfig, TokenInfo } from "../../src/interfaces";
+import { BinanceClient, HubPoolClient, InventoryClient, Rebalance, TokenClient } from "../../src/clients";
 import { AdapterManager, CrossChainTransferClient } from "../../src/clients/bridges";
-import { BigNumber, bnZero, EvmAddress, toAddressType } from "../../src/utils";
+import { Address, BigNumber, bnZero, EvmAddress, getTokenInfo, toAddressType } from "../../src/utils";
 import winston from "winston";
+import { RebalancerClient } from "../../src/rebalancer/utils/interfaces";
 
 type TokenMapping = { [l1Token: string]: { [chainId: number]: string } };
 export class MockInventoryClient extends InventoryClient {
@@ -22,6 +23,7 @@ export class MockInventoryClient extends InventoryClient {
     hubPoolClient: HubPoolClient | null = null,
     adapterManager: AdapterManager | null = null,
     crossChainTransferClient: CrossChainTransferClient | null = null,
+    rebalancerClient: RebalancerClient | null = null,
     simMode = false,
     prioritizeLpUtilization = false
   ) {
@@ -34,9 +36,18 @@ export class MockInventoryClient extends InventoryClient {
       hubPoolClient, // hubPoolClient
       adapterManager, // adapter manager
       crossChainTransferClient,
+      rebalancerClient, // rebalancer client
       simMode, // sim mode
       prioritizeLpUtilization // prioritize lp utilization
     );
+  }
+
+  protected override getTokenInfo(token: Address, chainId: number): TokenInfo {
+    try {
+      return this.hubPoolClient.getTokenInfoForAddress(token, chainId);
+    } catch {
+      return getTokenInfo(token, chainId);
+    }
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -46,6 +57,14 @@ export class MockInventoryClient extends InventoryClient {
 
   setExcessRunningBalances(l1Token: string, balances: { [chainId: number]: BigNumber }): void {
     this.excessRunningBalancePcts[l1Token] = balances;
+  }
+
+  setBinanceClient(binanceClient: BinanceClient | undefined): void {
+    this.binanceClient = binanceClient;
+  }
+
+  seedL1TokenPriceUsd(l1Token: string, priceUsd: BigNumber): void {
+    this.l1TokenPricesUsd.set(l1Token, priceUsd);
   }
 
   async getExcessRunningBalancePcts(l1Token: Address): Promise<{ [chainId: number]: BigNumber }> {
@@ -69,7 +88,7 @@ export class MockInventoryClient extends InventoryClient {
   }
 
   override getPossibleRebalances(): Rebalance[] {
-    return this.possibleRebalances;
+    return this.possibleRebalances.length > 0 ? this.possibleRebalances : super.getPossibleRebalances();
   }
 
   setBalanceOnChainForL1Token(newBalance: BigNumber | undefined): void {

@@ -1,0 +1,48 @@
+import { CommonConfig, ProcessEnv } from "../common";
+import { parseJson } from "../utils";
+
+export class DepositAddressHandlerConfig extends CommonConfig {
+  apiEndpoint: string;
+
+  indexerApiEndpoint: string;
+  indexerPollingInterval: number;
+
+  relayerOriginChains: number[];
+  depositLookback: number;
+  apiTimeoutOverride: number;
+  initializationRetryAttempts: number;
+  swapApiKey: string;
+  withdrawEnabled: boolean;
+
+  constructor(env: ProcessEnv) {
+    super(env, { botIdentifier: "across-deposit-address-handler" });
+
+    const {
+      INDEXER_API_POLLING_INTERVAL,
+      INDEXER_API_ENDPOINT,
+      API_ENDPOINT,
+      MAX_RELAYER_DEPOSIT_LOOKBACK,
+      RELAYER_ORIGIN_CHAINS,
+      API_TIMEOUT_OVERRIDE,
+      SWAP_API_KEY,
+      INITIALIZATION_RETRY_ATTEMPTS,
+      WITHDRAW_ENABLED,
+    } = env;
+    this.indexerPollingInterval = Number(INDEXER_API_POLLING_INTERVAL ?? 1); // Default to 1s
+    this.indexerApiEndpoint = String(INDEXER_API_ENDPOINT);
+    this.apiEndpoint = String(API_ENDPOINT);
+    this.swapApiKey = SWAP_API_KEY?.trim() ?? "";
+    if (!this.swapApiKey) {
+      throw new Error("SWAP_API_KEY is required (set SWAP_API_KEY in env)");
+    }
+
+    const relayerOriginChains = new Set(parseJson.numberArray(RELAYER_ORIGIN_CHAINS));
+    this.relayerOriginChains = Array.from(relayerOriginChains);
+
+    this.depositLookback = Number(MAX_RELAYER_DEPOSIT_LOOKBACK ?? 3600);
+
+    this.apiTimeoutOverride = Number(API_TIMEOUT_OVERRIDE ?? 3000); // In ms
+    this.initializationRetryAttempts = Number(INITIALIZATION_RETRY_ATTEMPTS ?? 3);
+    this.withdrawEnabled = WITHDRAW_ENABLED === "true";
+  }
+}

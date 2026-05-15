@@ -17,11 +17,18 @@ export const { isEVMSpokePoolClient, isSVMSpokePoolClient } = sdk.clients;
 export class Address extends sdk.utils.Address {}
 export class EvmAddress extends sdk.utils.EvmAddress {}
 export class SvmAddress extends sdk.utils.SvmAddress {}
+export class TvmAddress extends sdk.utils.TvmAddress {}
 
 export type EvmGasPriceEstimate = sdk.gasPriceOracle.EvmGasPriceEstimate;
 
-export const { fillStatusArray, populateV3Relay, relayFillStatus, getTimestampForBlock, averageBlockTime } =
-  sdk.arch.evm;
+export const {
+  fillStatusArray,
+  findDepositBlock,
+  populateV3Relay,
+  relayFillStatus,
+  getTimestampForBlock,
+  averageBlockTime,
+} = sdk.arch.evm;
 export const {
   getAssociatedTokenAddress,
   toAddress: toKitAddress,
@@ -36,6 +43,7 @@ export const {
   createDefaultTransaction,
   getCCTPDepositAccounts,
 } = sdk.arch.svm;
+export const { submitTransaction: submitTransactionTvm } = sdk.arch.tvm;
 export type SVMProvider = sdk.arch.svm.SVMProvider;
 export type LatestBlockhash = sdk.arch.svm.LatestBlockhash;
 export type SolanaTransaction = sdk.arch.svm.SolanaTransaction;
@@ -46,6 +54,7 @@ export const {
   groupObjectCountsByTwoProps,
   groupObjectCountsByThreeProps,
   delay,
+  retry,
   getCurrentTime,
   bnZero,
   bnOne,
@@ -62,6 +71,7 @@ export const {
   forEachAsync,
   formatEther,
   formatUnits,
+  isUnsafeDepositId,
   mapAsync,
   parseUnits,
   filterAsync,
@@ -107,7 +117,15 @@ export const {
   chainIsL1,
   unpackDepositEvent,
   unpackFillEvent,
+  chainHasNativeToken,
+  chainIsTvm,
+  fetchWithTimeout,
+  postWithTimeout,
+  isHttpError,
 } = sdk.utils;
+
+export type FetchHeaders = sdk.utils.FetchHeaders;
+export type FetchQueryParams = sdk.utils.FetchQueryParams;
 
 export const {
   getRefundsFromBundle,
