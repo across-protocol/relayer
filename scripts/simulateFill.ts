@@ -1,5 +1,4 @@
 import minimist from "minimist";
-import { config } from "dotenv";
 import { LogDescription } from "@ethersproject/abi";
 import { CHAIN_IDs } from "@across-protocol/constants";
 import { RelayData } from "../src/interfaces";
@@ -377,8 +376,6 @@ async function run(argv: string[]): Promise<number> {
   if (!args.originChainId || !args.txnHash) {
     return usage("Missing required arguments") ? NODE_SUCCESS : NODE_INPUT_ERR;
   }
-
-  config();
 
   try {
     const result = await simulateFill(args);

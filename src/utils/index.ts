@@ -1,3 +1,4 @@
+import "./dotenv";
 import "./extensions";
 
 // Utils from other packages.

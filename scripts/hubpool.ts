@@ -2,7 +2,6 @@ import minimist from "minimist";
 import { WETH9__factory as WETH9 } from "@across-protocol/sdk/typechain";
 import { constants as sdkConsts } from "@across-protocol/sdk";
 import { ethers, Signer } from "ethers";
-import { config } from "dotenv";
 import { BigNumber, bnOne, bnUint256Max, formatEther, formatUnits, getNetworkName, getSigner } from "../src/utils";
 import * as utils from "./utils";
 
@@ -240,8 +239,6 @@ async function run(argv: string[]): Promise<number> {
     unknown: usage,
   };
   const args = minimist(argv.slice(1), opts);
-
-  config();
 
   const cmd = argv[0];
   let signer: Signer;

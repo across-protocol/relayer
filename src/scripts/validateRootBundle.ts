@@ -9,7 +9,6 @@
 // 2. To validate the proposal at timestamp 1653594774:
 //    REQUEST_TIME=1653594774 tsx ./src/scripts/validateRootBundle.ts
 
-import "dotenv/config";
 import {
   winston,
   getSigner,

@@ -1,6 +1,5 @@
 import assert from "assert";
 import minimist from "minimist";
-import { config } from "dotenv";
 import { Contract, ethers, Signer } from "ethers";
 import { LogDescription } from "@ethersproject/abi";
 import { CHAIN_IDs, MAINNET_CHAIN_IDs, TESTNET_CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
@@ -704,7 +703,6 @@ async function run(argv: string[]): Promise<number> {
   };
   const args = minimist(argv.slice(1), opts);
 
-  config();
   const cmd = argv[0];
   let signer: Signer;
   try {

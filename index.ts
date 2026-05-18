@@ -1,4 +1,3 @@
-import "dotenv/config";
 import minimist from "minimist";
 import {
   delay,
