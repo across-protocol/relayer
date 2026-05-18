@@ -449,6 +449,8 @@ export class DepositAddressHandler {
   ): Promise<SignedWithdrawResponse | undefined> {
     const { erc20Transfer, routeParams, depositAddress, paramsHash, salt, counterfactualMaterials } = depositMessage;
     const { contractAddress: token, amount, chainId } = erc20Transfer;
+    // @TODO: some old indexer messages may not have counterfactual materials, so we need to handle that for some time.
+    // We should remove this once we have migrated all indexer messages to the new format.
     const withdrawLeaf = counterfactualMaterials?.withdrawLeaf;
     if (
       !isDefined(withdrawLeaf) ||
