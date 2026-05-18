@@ -20,6 +20,7 @@ import {
   getNetworkName,
   blockExplorerLink,
   BigNumber,
+  getEthersCompatibleAddress,
 } from "../utils";
 import { getRedisCache, RedisCacheInterface } from "../cache/Redis";
 import { DepositAddressMessage } from "../interfaces";
@@ -683,7 +684,54 @@ export class DepositAddressHandler {
     if (!isDefined(apiResponseData)) {
       return retriesRemaining > 0 ? this._queryIndexerApi(--retriesRemaining) : [];
     }
-    return apiResponseData;
+    return apiResponseData.map((message) => this._normalizeIndexerMessage(message));
+  }
+
+  /** Converts TVM base58 addresses to `0x` hex for ethers / JSON-RPC (no-op on EVM chains). */
+  private _normalizeIndexerMessage(message: DepositAddressMessage): DepositAddressMessage {
+    const { routeParams, erc20Transfer } = message;
+    const originChainId = Number(routeParams.originChainId);
+    const destinationChainId = Number(routeParams.destinationChainId);
+    const transferChainId = Number(erc20Transfer.chainId);
+
+    return {
+      ...message,
+      depositAddress: getEthersCompatibleAddress(transferChainId, message.depositAddress),
+      routeParams: {
+        ...routeParams,
+        inputToken: getEthersCompatibleAddress(originChainId, routeParams.inputToken),
+        outputToken: getEthersCompatibleAddress(destinationChainId, routeParams.outputToken),
+        recipient: getEthersCompatibleAddress(destinationChainId, routeParams.recipient),
+        refundAddress: getEthersCompatibleAddress(originChainId, routeParams.refundAddress),
+      },
+      erc20Transfer: {
+        ...erc20Transfer,
+        from: getEthersCompatibleAddress(transferChainId, erc20Transfer.from),
+        to: getEthersCompatibleAddress(transferChainId, erc20Transfer.to),
+        contractAddress: getEthersCompatibleAddress(transferChainId, erc20Transfer.contractAddress),
+      },
+      counterfactualDepositContractAddress: getEthersCompatibleAddress(
+        originChainId,
+        message.counterfactualDepositContractAddress
+      ),
+      counterfactualFactoryContractAddress: getEthersCompatibleAddress(
+        originChainId,
+        message.counterfactualFactoryContractAddress
+      ),
+      adminWithdrawManagerContractAddress: getEthersCompatibleAddress(
+        originChainId,
+        message.adminWithdrawManagerContractAddress
+      ),
+      counterfactualMaterials: {
+        withdrawLeaf: {
+          ...message.counterfactualMaterials.withdrawLeaf,
+          implementationAddress: getEthersCompatibleAddress(
+            originChainId,
+            message.counterfactualMaterials.withdrawLeaf.implementationAddress
+          ),
+        },
+      },
+    };
   }
 
   private async _getSwapApiQuote(
