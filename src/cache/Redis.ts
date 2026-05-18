@@ -15,6 +15,10 @@ export interface RedisCacheInterface extends interfaces.CachingMechanismInterfac
 
 const globalNamespace = process.env.GLOBAL_CACHE_NAMESPACE || undefined;
 
+// Track (url, namespace) tuples already announced so we log namespace resolution
+// once per tuple rather than on every getRedisCache() call.
+const namespaces = new Set<string>();
+
 /**
  * RedisCache is a caching mechanism that uses Redis as the backing store. It is used by the
  * Across SDK to cache data that is expensive to compute or retrieve from the blockchain. It
@@ -26,12 +30,7 @@ export class RedisCache implements RedisCacheInterface {
     private readonly client: RedisClient,
     private readonly namespace?: string,
     private readonly logger?: winston.Logger
-  ) {
-    this.logger?.debug({
-      at: "RedisCache#constructor",
-      message: isDefined(namespace) ? `Created redis client with namespace ${namespace}` : "Created redis client.",
-    });
-  }
+  ) {}
 
   private getNamespacedKey(key: string): string {
     return isDefined(this.namespace) ? `${this.namespace}:${key}` : key;
@@ -60,8 +59,10 @@ export class RedisCache implements RedisCacheInterface {
       // No TTL
       return (await this.client.set(key, String(val))) ?? undefined;
     } else if (expirySeconds > 0) {
-      // EX: Expire key after expirySeconds.
-      return (await this.client.set(key, String(val), { EX: expirySeconds })) ?? undefined;
+      // Expire key after expirySeconds.
+      return (
+        (await this.client.set(key, String(val), { expiration: { type: "EX", value: expirySeconds } })) ?? undefined
+      );
     }
 
     this.logger?.warn({
@@ -121,5 +122,18 @@ export async function getRedisCache(
 
   const namespace = customNamespace || globalNamespace;
   const client = await getRedisClient(logger, url);
+
+  const resolvedUrl = client.options?.url ?? "unknown";
+  const announceKey = `${resolvedUrl}|${namespace ?? ""}`;
+  if (!namespaces.has(announceKey)) {
+    namespaces.add(announceKey);
+    logger?.debug({
+      at: "RedisCache#getRedisCache",
+      message: isDefined(namespace)
+        ? `RedisCache initialized for namespace ${namespace} at ${resolvedUrl}.`
+        : `RedisCache initialized (no namespace) at ${resolvedUrl}.`,
+    });
+  }
+
   return new RedisCache(client, namespace, logger);
 }

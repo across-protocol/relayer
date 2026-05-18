@@ -81,7 +81,7 @@ describe("RelayerSpokePoolListenerTVM: processBlock re-org detection", function 
     const { orphans } = processBlock(makeBlock(102, makeHash(), makeHash()), blocks, eventMgr, chain, provider, logger);
 
     expect(orphans).to.be.empty;
-    expect(eventMgr.findEvent(eventMgr.hashEvent(event100))).to.exist;
+    expect(eventMgr.findEvent(eventMgr.getEventKey(event100))).to.exist;
   });
 
   it("Parent-hash mismatch ejects orphaned events", function () {
@@ -99,7 +99,7 @@ describe("RelayerSpokePoolListenerTVM: processBlock re-org detection", function 
 
     expect(orphans).to.have.lengthOf(1);
     expect(orphans[0].blockNumber).to.equal(101);
-    expect(eventMgr.findEvent(eventMgr.hashEvent(event101))).to.not.exist;
+    expect(eventMgr.findEvent(eventMgr.getEventKey(event101))).to.not.exist;
     expect(blocks.has(101n)).to.be.false;
     expect(blocks.has(102n)).to.be.true;
   });
