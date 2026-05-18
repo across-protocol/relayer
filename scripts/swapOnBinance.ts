@@ -12,6 +12,15 @@ yarn ts-node ./scripts/swapOnBinance.ts \
 
 Provide Binance credentials through the standard repo auth inputs for your environment.
 If your signer or Binance secret is GCKMS-backed, run the script under with-gcp-auth.
+
+Usage caveats:
+
+- If the script is halted in the middle of a swap (i.e. before the deposit has been confirmed and before a swap has
+taken place, or before a withdrawal has been issued) then use the sibling script to recover back to a clean state:
+./sweepBinanceBalance.ts.
+- We purposefully do not use any existing balance on Binance for the swap (and therefore explicitly require the deposit
+sent by this script to fund any swaps) because we assume that the binance account is shared and used for other purposes
+and we don't want the user to be able to accidentally spend funds that are not intended for the swap.
 */
 
 import assert from "assert";
@@ -1325,9 +1334,9 @@ export class BinanceSwapVenue {
     return deriveBinanceSpotMarketMeta(sourceBinanceCoin, destinationBinanceCoin, symbol);
   }
 
-  async getOrderBook(symbol: string): Promise<Awaited<ReturnType<Binance["book"]>>> {
+  async getOrderBook(symbol: string, skipCache = false): Promise<Awaited<ReturnType<Binance["book"]>>> {
     const cachedBook = this.orderBookBySymbol.get(symbol);
-    if (cachedBook) {
+    if (cachedBook && !skipCache) {
       return cachedBook;
     }
 
@@ -1352,14 +1361,15 @@ export class BinanceSwapVenue {
     sourceBinanceCoin: string,
     destinationBinanceCoin: string,
     sourceTokenDecimals: number,
-    sourceAmount: BigNumber
+    sourceAmount: BigNumber,
+    skipCache = false
   ): Promise<{ latestPrice: number; slippagePct: number }> {
     if (sourceBinanceCoin === destinationBinanceCoin) {
       return { latestPrice: 1, slippagePct: 0 };
     }
 
     const symbol = await this.getSymbol(sourceBinanceCoin, destinationBinanceCoin);
-    const book = await this.getOrderBook(symbol.symbol);
+    const book = await this.getOrderBook(symbol.symbol, skipCache);
     const spotMarketMeta = await this.getSpotMarketMeta(sourceBinanceCoin, destinationBinanceCoin);
     const sideOfBookToTraverse = spotMarketMeta.isBuy ? book.asks : book.bids;
     assert(sideOfBookToTraverse.length > 0, `Order book is empty for ${symbol.symbol}`);
@@ -1390,7 +1400,8 @@ export class BinanceSwapVenue {
   async convertSourceToDestination(
     source: ResolvedBinanceAsset,
     destination: ResolvedBinanceAsset,
-    sourceAmount: BigNumber
+    sourceAmount: BigNumber,
+    skipCache = false
   ): Promise<BigNumber> {
     if (source.binanceCoin === destination.binanceCoin) {
       return ConvertDecimals(source.tokenDecimals, destination.tokenDecimals)(sourceAmount);
@@ -1401,7 +1412,8 @@ export class BinanceSwapVenue {
       source.binanceCoin,
       destination.binanceCoin,
       source.tokenDecimals,
-      sourceAmount
+      sourceAmount,
+      skipCache
     );
     return convertBinanceRouteAmount({
       amount: sourceAmount,
@@ -1416,7 +1428,8 @@ export class BinanceSwapVenue {
   async convertDestinationToSource(
     source: ResolvedBinanceAsset,
     destination: ResolvedBinanceAsset,
-    destinationAmount: BigNumber
+    destinationAmount: BigNumber,
+    skipCache = false
   ): Promise<BigNumber> {
     if (source.binanceCoin === destination.binanceCoin) {
       return ConvertDecimals(destination.tokenDecimals, source.tokenDecimals)(destinationAmount);
@@ -1431,7 +1444,8 @@ export class BinanceSwapVenue {
       source.binanceCoin,
       destination.binanceCoin,
       source.tokenDecimals,
-      destinationAmountInSourcePrecision
+      destinationAmountInSourcePrecision,
+      skipCache
     );
     return convertBinanceRouteAmount({
       amount: destinationAmount,
@@ -1502,8 +1516,10 @@ export class BinanceSwapVenue {
     sourceAmount: BigNumber
   ): Promise<number> {
     const spotMarketMeta = await this.getSpotMarketMeta(source.binanceCoin, destination.binanceCoin);
+    const skipCache = true; // This function is called only once per order placement and we should always fetch
+    // the latest orderbook to construct the most accurate quantity and avoid using cached data.
     const amountToOrder = spotMarketMeta.isBuy
-      ? await this.convertSourceToDestination(source, destination, sourceAmount)
+      ? await this.convertSourceToDestination(source, destination, sourceAmount, skipCache)
       : sourceAmount;
     const orderDecimals = spotMarketMeta.isBuy ? destination.tokenDecimals : source.tokenDecimals;
     const size = truncate(Number(fromWei(amountToOrder, orderDecimals)), spotMarketMeta.szDecimals);
@@ -1521,17 +1537,44 @@ export class BinanceSwapVenue {
     sourceAmount: BigNumber
   ): Promise<Awaited<ReturnType<Binance["order"]>>> {
     const spotMarketMeta = await this.getSpotMarketMeta(source.binanceCoin, destination.binanceCoin);
-    const quantity = await this.getQuantityForOrder(source, destination, sourceAmount);
-    const response = await this.binanceApiClient.order({
-      symbol: spotMarketMeta.symbol,
-      newClientOrderId: cloid,
-      side: spotMarketMeta.isBuy ? "BUY" : "SELL",
-      type: OrderType.MARKET,
-      quantity: quantity.toString(),
-      recvWindow: 60_000,
-    } as NewOrderSpot);
-    assert(response.status === "FILLED", `Market order was not filled: ${JSON.stringify(response)}`);
-    return response;
+    let nRetries = 0;
+    const maxRetries = 3;
+    while (nRetries < maxRetries) {
+      const quantity = await this.getQuantityForOrder(source, destination, sourceAmount);
+      // Sometimes the following call can fail with a "Error: Account has insufficient balance for requested action."
+      // message, which I think is possible because we're converting sourceAmount into quantity and by the time we
+      // place the order, the market might have moved such that our source amount is no longer sufficient to place
+      // the order. We treat this failure as transient and retry the order placement loop after a short delay.
+      // Alternatively, we could add a buffer and decrease the quantity by a small amount but that more likely leaves
+      // dust in the account balance.
+      try {
+        const response = await this.binanceApiClient.order({
+          symbol: spotMarketMeta.symbol,
+          newClientOrderId: cloid,
+          side: spotMarketMeta.isBuy ? "BUY" : "SELL",
+          type: OrderType.MARKET,
+          quantity: quantity.toString(),
+          recvWindow: 60_000,
+        } as NewOrderSpot);
+        assert(response.status === "FILLED", `Market order was not filled: ${JSON.stringify(response)}`);
+        return response;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        console.error(
+          `Failed to place market order for ${quantity} ${destination.binanceCoin} on ${spotMarketMeta.symbol} using ${sourceAmount.toString()} ${source.binanceCoin}: ${errorMessage}`
+        );
+        const knownErrorRetryDelayMs = 5000;
+        if (errorMessage.includes("insufficient balance")) {
+          console.log(`Retrying known transient error after waiting ${knownErrorRetryDelayMs / 1000}s...`);
+        } else {
+          throw error;
+        }
+        nRetries++;
+        await sleepMs(knownErrorRetryDelayMs);
+      }
+    }
+
+    throw new Error(`Failed to place market order after ${maxRetries} retries`);
   }
 
   async getExpectedAmountToReceiveForFilledOrder(
