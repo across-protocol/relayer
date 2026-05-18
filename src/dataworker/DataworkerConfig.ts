@@ -62,7 +62,7 @@ export class DataworkerConfig extends CommonConfig {
       DISPUTE_COOLDOWN,
       LOAD_ARWEAVE_DATA,
     } = env;
-    super(env);
+    super(env, { botIdentifier: "across-dataworker" });
 
     this.minChallengeLeadTime = Number(MIN_CHALLENGE_LEAD_TIME);
     this.awaitChallengePeriod = AWAIT_CHALLENGE_PERIOD === "true";

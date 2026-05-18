@@ -11,7 +11,7 @@ jobs:
       - name: "Checkout Repository"
         uses: actions/checkout@v6
       - name: "Dependency Review"
-        uses: actions/dependency-review-action@v4.9.0
+        uses: actions/dependency-review-action@v5.0.0
         with:
           # uuid@9.x v3/v5/v6 buffer bounds — not reachable; GCP deps only call v4()
           allow-ghsas: |

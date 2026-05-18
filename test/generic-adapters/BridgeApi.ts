@@ -51,7 +51,7 @@ class MockBridgeApi extends BridgeApi {
 
 const toAddress = (address: string): EvmAddress => EvmAddress.from(address);
 
-describe("Cross Chain Adapter: BridgeApi", async function () {
+describe("Cross Chain Adapter: BridgeApi", function () {
   let adapter: MockBridgeApi;
   let mockApi: MockBridgeApiClient;
   let monitoredEoa: string;

@@ -10,11 +10,11 @@ import {
   getNetworkName,
   getProvider,
   getSpokePool,
-  getRedisCache,
   Logger,
   Provider,
   winston,
 } from "../utils";
+import { getRedisCache } from "../cache/Redis";
 import { ScraperOpts } from "./types";
 import { bootstrap, waitForAbort } from "./util/bootstrap";
 import { postBlock, postEvents, removeEvent } from "./util/ipc";

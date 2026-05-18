@@ -6,6 +6,7 @@ import { Log } from "../interfaces";
 import {
   EventManager,
   isDefined,
+  viemLogToEthersLog,
   getBlockForTimestamp,
   getChainQuorum,
   getDeploymentBlockNumber,
@@ -14,13 +15,13 @@ import {
   getOriginFromURL,
   getProvider,
   getProviderHeaders,
-  getRedisCache,
   getViemChain,
   Logger,
   Provider,
   SpokePool,
   winston,
 } from "../utils";
+import { getRedisCache } from "../cache/Redis";
 import { ScraperOpts } from "./types";
 import { bootstrap, waitForAbort } from "./util/bootstrap";
 import { postBlock, postEvents, removeEvent } from "./util/ipc";
@@ -215,13 +216,11 @@ async function listen(
         event,
         onLogs: (rawLogs: (viemLog & { args: unknown; eventName: string })[]) => {
           for (const raw of rawLogs) {
-            const log: Log = {
-              ...raw,
-              args: raw.args,
-              blockNumber: Number(raw.blockNumber),
-              event: raw.eventName,
-              topics: Array<string>(),
-            };
+            const log = viemLogToEthersLog(raw);
+            if (!isDefined(log)) {
+              logger.warn({ at, message: "Unable to translate ethers viem event.", provider, log });
+              continue;
+            }
 
             if (log.removed) {
               eventMgr.remove(log, provider.name);

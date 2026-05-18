@@ -14,14 +14,13 @@ import {
   disconnectRedisClients,
   isDefined,
   getSvmSignerFromEvmSigner,
-  waitForPubSub,
   averageBlockTime,
-  getRedisCache,
-  getRedisPubSub,
   Provider,
   ZERO_BYTES,
   paginatedEventQuery,
 } from "../utils";
+import { getRedisCache } from "../cache/Redis";
+import { waitForPubSub, getRedisPubSub } from "../messaging/redis";
 import { spokePoolClientsToProviders } from "../common";
 import { Dataworker } from "./Dataworker";
 import { DataworkerConfig } from "./DataworkerConfig";
@@ -38,8 +37,6 @@ import { Disputer } from "./Disputer";
 
 config();
 let logger: winston.Logger;
-
-const { RUN_IDENTIFIER: runIdentifier, BOT_IDENTIFIER: botIdentifier = "across-dataworker" } = process.env;
 
 export async function createDataworker(
   _logger: winston.Logger,
@@ -161,14 +158,12 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
   logger = _logger;
 
   const config = new DataworkerConfig(process.env);
+  const { botIdentifier, runIdentifier } = config;
   const personality = resolvePersonality(config);
   const challengeRemaining = await getChallengeRemaining(config.hubPoolChainId, 0, logger);
 
-  // @dev The check for `runIdentifier` doubles as a check whether this instance is being run in GCP (or mocked as a production instance) and as a unique identifier
-  // which can be cached in redis (that is, for any executor/proposer instance, the run identifier lets any other instance know of its existence via a redis mapping
-  // from botIdentifier -> runIdentifier).
   if (
-    isDefined(runIdentifier) &&
+    !config.forcePropose &&
     challengeRemaining > config.minChallengeLeadTime &&
     (config.proposerEnabled || config.l1ExecutorEnabled)
   ) {
@@ -350,7 +345,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
       // - We need to check whether we have an enqueued transaction in the multiCallerClient. Having no transaction there indicates that the executor/proposer instance
       //   exited early for a valid reason (such as insufficient lookback), so there would be no reason to await submitting a transaction.
       const hasTransactionQueued = clients.multiCallerClient.transactionCount() !== 0;
-      if ((config.l1ExecutorEnabled || config.proposerEnabled) && pubSub && runIdentifier && hasTransactionQueued) {
+      if ((config.l1ExecutorEnabled || config.proposerEnabled) && pubSub && hasTransactionQueued) {
         const challengeBuffer = Number(process.env.L1_EXECUTOR_CHALLENGE_BUFFER ?? 24); // Default to 24 seconds or 2 blocks.
         let updatedChallengeRemaining = await getChallengeRemaining(config.hubPoolChainId, challengeBuffer, logger);
         // If the updated challenge remaining is greater than the challenge remaining we observed at the start, then this indicates that during the runtime of this bot,

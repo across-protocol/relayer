@@ -22,7 +22,7 @@ import { processEvent } from "../utils";
 import { CCTP_NO_DOMAIN } from "@across-protocol/constants";
 import { arch } from "@across-protocol/sdk";
 import { TokenMessengerMinterIdl } from "@across-protocol/contracts";
-import { CCTP_MAX_SEND_AMOUNT, CONTRACT_ADDRESSES, getContractEntry } from "../../common";
+import { CCTP_MAX_SEND_AMOUNT, getContractAddress, getContractEntry } from "../../common";
 
 type MintAndWithdrawData = {
   mintRecipient: string;
@@ -60,8 +60,7 @@ export class SolanaUsdcCCTPBridge extends BaseBridgeAdapter {
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
 
     // SVM cctpTokenMessenger entries are address-only (no abi), so don't route through getContractEntry.
-    const l2Address = CONTRACT_ADDRESSES[l2chainId]?.cctpTokenMessenger?.address;
-    assert(isDefined(l2Address), `Missing cctpTokenMessenger address for chain ${l2chainId}`);
+    const l2Address = getContractAddress(l2chainId, "cctpTokenMessenger");
     this.solanaMessageTransmitter = SvmAddress.from(l2Address);
     this.solanaEventsClientPromise = arch.svm.SvmCpiEventsClient.createFor(
       l2Provider,

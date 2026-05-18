@@ -34,7 +34,7 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
 
   /**
    * @notice Rebalances cumulative balances of tokens across chains where cumulative token balances are above
-   * configured targets to to tokens that have cumulative balances below configured thresholds. Tokens are sourced
+   * configured targets to tokens that have cumulative balances below configured thresholds. Tokens are sourced
    * from chains sorted by configured priority tier and current balance level.
    * @param cumulativeBalances Dictionary of token -> cumulative virtual balances.
    * @param currentBalancesOnChain Dictionary of chainId -> token -> current on-chain balance.

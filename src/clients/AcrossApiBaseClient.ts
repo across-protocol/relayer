@@ -1,4 +1,4 @@
-import { fetchWithTimeout } from "../utils/SDKUtils";
+import { fetchWithTimeout, postWithTimeout } from "../utils/SDKUtils";
 import winston from "winston";
 
 /**
@@ -57,6 +57,41 @@ export abstract class BaseAcrossApiClient {
         message: `Failed to get from ${this.urlBase}`,
         endpoint,
         params,
+        error: (err as Error).message,
+      });
+      return;
+    }
+  }
+
+  protected async _post<T>(endpoint: string, body: unknown): Promise<T | undefined> {
+    try {
+      const headers: Record<string, string> = { "Content-Type": "application/json", Accept: "application/json" };
+      if (this.apiKey) {
+        headers.Authorization = `Bearer ${this.apiKey}`;
+      }
+
+      const result = await postWithTimeout<T>(
+        `${this.urlBase}/${endpoint}`,
+        body,
+        {},
+        headers,
+        this.apiResponseTimeout
+      );
+
+      if (!result) {
+        this.logger.warn({
+          at: this.logContext,
+          message: `Invalid response from ${this.urlBase}`,
+          endpoint,
+        });
+        return;
+      }
+      return result;
+    } catch (err) {
+      this.logger.warn({
+        at: this.logContext,
+        message: `Failed to post to ${this.urlBase}`,
+        endpoint,
         error: (err as Error).message,
       });
       return;

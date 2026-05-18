@@ -14,11 +14,11 @@ import {
   getNetworkName,
   getNodeUrlList,
   getOriginFromURL,
-  getRedisCache,
   getSvmProvider,
   Logger,
   winston,
 } from "../utils";
+import { getRedisCache } from "../cache/Redis";
 import { ScraperOpts } from "./types";
 import { bootstrap } from "./util/bootstrap";
 import { postBlock, postEvents } from "./util/ipc";
