@@ -21,7 +21,7 @@ import {
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
 import { CCTP_MAX_SEND_AMOUNT, getContractAddress, getContractEntry } from "../../common";
 import { arch } from "@across-protocol/sdk";
-import { TokenMessengerMinterIdl, TokenMessengerMinterClient } from "@across-protocol/contracts";
+import { TokenMessengerMinterIdl, TokenMessengerMinterClient } from "@across-protocol/sdk/svm";
 import {
   Address,
   generateKeyPairSigner,

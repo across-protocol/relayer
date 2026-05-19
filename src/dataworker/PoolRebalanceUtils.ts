@@ -3,7 +3,6 @@ import { HubPoolClient } from "../clients";
 import { PendingRootBundle, PoolRebalanceLeaf, RelayerRefundLeaf, SlowFillLeaf } from "../interfaces";
 import {
   BigNumber,
-  MerkleTree,
   convertFromWei,
   formatFeePct,
   shortenHexString,
@@ -16,6 +15,10 @@ import {
   Address,
   isDefined,
 } from "../utils";
+
+type ProofTree<T> = {
+  getHexProof(leaf: T): string[];
+};
 
 export function generateMarkdownForDisputeInvalidBundleBlocks(
   chainIdListForBundleEvaluationBlockNumbers: number[],
@@ -203,7 +206,7 @@ export function generateMarkdownForRootBundle(
 
 export function prettyPrintLeaves<T extends PoolRebalanceLeaf | RelayerRefundLeaf | SlowFillLeaf>(
   logger: winston.Logger,
-  tree: MerkleTree<T>,
+  tree: ProofTree<T>,
   leaves: T[],
   logType = "Pool rebalance"
 ): void {

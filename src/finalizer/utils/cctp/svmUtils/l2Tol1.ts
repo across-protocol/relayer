@@ -21,7 +21,7 @@ import {
   assert,
   isDefined,
 } from "../../../../utils";
-import { SvmSpokeClient } from "@across-protocol/contracts";
+import { SvmSpokeClient } from "@across-protocol/sdk/svm";
 
 /**
  * Initiates a withdrawal from the Solana spoke pool.

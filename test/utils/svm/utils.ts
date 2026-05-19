@@ -1,8 +1,6 @@
 import { CHAIN_IDs } from "@across-protocol/constants";
 import { SpokePool__factory } from "@across-protocol/sdk/typechain";
-import { SvmSpokeClient } from "@across-protocol/contracts";
-import { RelayDataArgs } from "@across-protocol/contracts/dist/src/svm/clients/SvmSpoke";
-import { intToU8Array32 } from "@across-protocol/contracts/dist/src/svm/web3-v1";
+import { SvmSpokeClient, intToU8Array32 } from "@across-protocol/sdk/svm";
 import { SYSTEM_PROGRAM_ADDRESS, getCreateAccountInstruction } from "@solana-program/system";
 import {
   ASSOCIATED_TOKEN_PROGRAM_ADDRESS,
@@ -222,7 +220,7 @@ export const sendCreateFill = async (
   signer: KeyPairSigner,
   mint: KeyPairSigner,
   mintDecimals: number,
-  overrides: Partial<RelayDataArgs> = {}
+  overrides: Partial<SvmSpokeClient.RelayDataArgs> = {}
 ) => {
   const currentTime = await getCurrentTime(solanaClient);
   const { getRandomSvmAddress, toAddress, SVM_DEFAULT_ADDRESS } = arch.svm;
@@ -302,7 +300,7 @@ export const sendCreateFill = async (
 export const sendRequestSlowFill = async (
   solanaClient: arch.svm.RpcClient,
   signer: KeyPairSigner,
-  overrides: Partial<RelayDataArgs> = {}
+  overrides: Partial<SvmSpokeClient.RelayDataArgs> = {}
 ) => {
   const { getRandomSvmAddress, toAddress, SVM_DEFAULT_ADDRESS } = arch.svm;
   const destinationChainId = CHAIN_IDs.SOLANA;

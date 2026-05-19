@@ -18,6 +18,7 @@ import {
   CHAIN_IDs,
   getWidestPossibleExpectedBlockRange,
   getEndBlockBuffers,
+  buildPoolRebalanceLeafTree,
   _buildPoolRebalanceRoot,
   ERC20,
   getTokenInfo,
@@ -116,7 +117,7 @@ import {
   type Address as KitAddress,
   type KeyPairSigner,
 } from "@solana/kit";
-import { SvmSpokeClient } from "@across-protocol/contracts";
+import { SvmSpokeClient } from "@across-protocol/sdk/svm";
 import {
   findAddressLookupTablePda,
   getCreateLookupTableInstruction,
@@ -136,6 +137,8 @@ const INSTRUCTION_PARAMS_MAX_WRITE_SIZE = 900;
 
 const { getMessageHash, getRelayEventKey } = sdkUtils;
 
+type PoolRebalanceTree = ReturnType<typeof buildPoolRebalanceLeafTree>;
+
 // Create a type for storing a collection of roots
 type SlowRootBundle = {
   leaves: SlowFillLeaf[];
@@ -144,7 +147,7 @@ type SlowRootBundle = {
 
 type ProposeRootBundleReturnType = {
   poolRebalanceLeaves: PoolRebalanceLeaf[];
-  poolRebalanceTree: MerkleTree<PoolRebalanceLeaf>;
+  poolRebalanceTree: PoolRebalanceTree;
   relayerRefundLeaves: RelayerRefundLeaf[];
   relayerRefundTree: MerkleTree<RelayerRefundLeaf>;
   slowFillLeaves: SlowFillLeaf[];
@@ -152,12 +155,7 @@ type ProposeRootBundleReturnType = {
   bundleData: BundleData;
 };
 
-export type PoolRebalanceRoot = {
-  runningBalances: RunningBalances;
-  realizedLpFees: RunningBalances;
-  leaves: PoolRebalanceLeaf[];
-  tree: MerkleTree<PoolRebalanceLeaf>;
-};
+export type PoolRebalanceRoot = Awaited<ReturnType<typeof _buildPoolRebalanceRoot>>;
 
 type PoolRebalanceRootCache = Record<string, PoolRebalanceRoot>;
 
@@ -817,7 +815,7 @@ export class Dataworker {
         reason: string;
         expectedTrees?: {
           poolRebalanceTree: {
-            tree: MerkleTree<PoolRebalanceLeaf>;
+            tree: PoolRebalanceTree;
             leaves: PoolRebalanceLeaf[];
           };
           relayerRefundTree: {
@@ -837,7 +835,7 @@ export class Dataworker {
         reason: undefined;
         expectedTrees: {
           poolRebalanceTree: {
-            tree: MerkleTree<PoolRebalanceLeaf>;
+            tree: PoolRebalanceTree;
             leaves: PoolRebalanceLeaf[];
           };
           relayerRefundTree: {
@@ -1661,7 +1659,7 @@ export class Dataworker {
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     balanceAllocator: BalanceAllocator,
     poolLeaves: PoolRebalanceLeaf[],
-    poolRebalanceTree: MerkleTree<PoolRebalanceLeaf>,
+    poolRebalanceTree: PoolRebalanceTree,
     relayerRefundLeaves: RelayerRefundLeaf[],
     relayerRefundTree: MerkleTree<RelayerRefundLeaf>,
     slowFillLeaves: SlowFillLeaf[],
@@ -1818,7 +1816,7 @@ export class Dataworker {
     },
     allLeaves: PoolRebalanceLeaf[],
     balanceAllocator: BalanceAllocator,
-    tree: MerkleTree<PoolRebalanceLeaf>
+    tree: PoolRebalanceTree
   ): Promise<number> {
     const submitExecution = this.config.sendingTransactionsEnabled;
     const hubPoolChainId = this.clients.hubPoolClient.chainId;

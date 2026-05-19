@@ -21,7 +21,7 @@ import {
 import { processEvent } from "../utils";
 import { CCTP_NO_DOMAIN } from "@across-protocol/constants";
 import { arch } from "@across-protocol/sdk";
-import { TokenMessengerMinterIdl } from "@across-protocol/contracts";
+import { TokenMessengerMinterIdl } from "@across-protocol/sdk/svm";
 import { CCTP_MAX_SEND_AMOUNT, getContractAddress, getContractEntry } from "../../common";
 
 type MintAndWithdrawData = {

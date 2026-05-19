@@ -1,4 +1,5 @@
-import { MerkleTree, EMPTY_MERKLE_ROOT, SvmSpokeClient } from "@across-protocol/contracts";
+import { MerkleTree, EMPTY_MERKLE_ROOT } from "@across-protocol/contracts";
+import { SvmSpokeClient } from "@across-protocol/sdk/svm";
 import { RelayerRefundLeaf, RelayerRefundLeafWithGroup, SlowFillLeaf } from "../interfaces";
 import {
   getParamType,
