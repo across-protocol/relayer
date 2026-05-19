@@ -43,7 +43,6 @@ import {
   lineaL2ToL1Finalizer,
   opStackFinalizer,
   polygonFinalizer,
-  scrollFinalizer,
   zkSyncFinalizer,
   oftRetryFinalizer,
 } from "./utils";
@@ -74,9 +73,6 @@ const chainFinalizers: {
   [CHAIN_IDs.LINEA]: {
     finalizeOnL1: [lineaL2ToL1Finalizer],
     finalizeOnL2: [lineaL1ToL2Finalizer],
-  },
-  [CHAIN_IDs.SCROLL]: {
-    finalizeOnL1: [scrollFinalizer],
   },
   [CHAIN_IDs.BSC]: {
     finalizeOnL1: [binanceFinalizer],
