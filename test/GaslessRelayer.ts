@@ -7,7 +7,7 @@ import {
   RelayData,
   SwapAndBridgeGaslessDepositMessage,
 } from "../src/interfaces";
-import { GaslessRelayer, MessageState } from "../src/gasless/GaslessRelayer";
+import { GaslessFillSubmissionResult, GaslessRelayer, MessageState } from "../src/gasless/GaslessRelayer";
 import { GaslessRelayerConfig } from "../src/gasless/GaslessRelayerConfig";
 import SPOKE_POOL_PERIPHERY_ABI from "../src/common/abi/SpokePoolPeriphery.json";
 import PERMIT2_ABI from "../src/common/abi/Permit2.json";
@@ -114,7 +114,7 @@ class TestableGaslessRelayer extends GaslessRelayer {
   public getPeripheryContractFn: (chainId: number) => Contract = (chainId) => this.spokePoolPeripheries[chainId];
   public queryGaslessApiFn: () => Promise<AnyGaslessDepositMessage[]> = async () => [];
   public initiateDepositFn: (msg: AnyGaslessDepositMessage) => Promise<TransactionReceipt | null> = async () => null;
-  public initiateFillFn: (deposit: GaslessDeposit) => Promise<TransactionReceipt | null> = async () => null;
+  public initiateFillFn: (deposit: GaslessDeposit) => Promise<GaslessFillSubmissionResult | null> = async () => null;
   public extractDepositFromReceiptFn: (receipt: TransactionReceipt, chainId: number) => StrippedDeposit = () => {
     throw new Error("extractDepositFromReceiptFn not configured");
   };
@@ -140,7 +140,7 @@ class TestableGaslessRelayer extends GaslessRelayer {
   protected override async initiateFill(
     deposit: StrippedDeposit,
     originChainSpokePool: string
-  ): Promise<TransactionReceipt | null> {
+  ): Promise<GaslessFillSubmissionResult | null> {
     this.initiateFillCalls++;
 
     // Validate that non-CCTP deposits pass the correct spokePool address
