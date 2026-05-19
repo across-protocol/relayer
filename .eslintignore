@@ -4,3 +4,4 @@ dist
 cache
 typechain*
 .eslintrc.js
+eslint-rules

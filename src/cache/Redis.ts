@@ -13,7 +13,8 @@ export interface RedisCacheInterface extends interfaces.CachingMechanismInterfac
   incrBy(key: string, amount: number): Promise<number>;
 }
 
-const globalNamespace = process.env.GLOBAL_CACHE_NAMESPACE || undefined;
+// Read env at call time so dotenv-loaded values are picked up regardless of import order.
+const getGlobalNamespace = (): string | undefined => process.env.GLOBAL_CACHE_NAMESPACE || undefined;
 
 // Track (url, namespace) tuples already announced so we log namespace resolution
 // once per tuple rather than on every getRedisCache() call.
@@ -120,7 +121,7 @@ export async function getRedisCache(
     return undefined;
   }
 
-  const namespace = customNamespace || globalNamespace;
+  const namespace = customNamespace || getGlobalNamespace();
   const client = await getRedisClient(logger, url);
 
   const resolvedUrl = client.options?.url ?? "unknown";

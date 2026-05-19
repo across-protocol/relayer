@@ -1,4 +1,3 @@
-import { config } from "dotenv";
 import {
   retrieveSignerFromCLIArgs,
   getProvider,
@@ -22,9 +21,6 @@ import {
 import { CCTP_NO_DOMAIN } from "@across-protocol/constants";
 import { constructCctpDepositForBurnTxn } from "../src/utils/CCTPUtils";
 import { MultiCallerClient } from "../src/clients";
-
-// Load environment variables from .env file
-config();
 
 // Example usage:
 //   tsx ./scripts/refillUsdcToSpecificChain.ts --wallet gckms --keys bot1

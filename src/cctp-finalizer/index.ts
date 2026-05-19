@@ -1,8 +1,6 @@
 import app from "./app";
 import { winston } from "../utils";
 
-const PORT = parseInt(process.env.PORT || "8080", 10);
-
 // Create logger instance
 const logger = winston.createLogger({
   level: "info",
@@ -22,7 +20,12 @@ process.on("unhandledRejection", (reason, promise) => {
   process.exit(1);
 });
 
-app.listen(PORT, "0.0.0.0", () => {
-  logger.info({ at: "CCTPFinalizer#startup", message: `Server is running on port ${PORT}` });
-  logger.info({ at: "CCTPFinalizer#startup", message: `Health check available at http://localhost:${PORT}/health` });
-});
+function start(): void {
+  const port = parseInt(process.env.PORT || "8080", 10);
+  app.listen(port, "0.0.0.0", () => {
+    logger.info({ at: "CCTPFinalizer#startup", message: `Server is running on port ${port}` });
+    logger.info({ at: "CCTPFinalizer#startup", message: `Health check available at http://localhost:${port}/health` });
+  });
+}
+
+start();
