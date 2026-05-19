@@ -122,6 +122,13 @@ export class GaslessRelayer {
   protected providersByChain: { [chainId: number]: Provider } = {};
   // The object is indexed by `chainId`. An `AuthorizationUsed` event is marked by adding `${token}:${authorizer}:${nonce}` to the respective chain's set.
   protected observedDeposits: { [chainId: number]: Set<string> } = {};
+  /**
+   * Origin deposits observed at init with an SVM {@link Deposit.destinationChainId}, keyed by {@link _getDepositKey}.
+   * Used for fill status / fillRelay instead of synthetic API-derived relay data.
+   */
+  protected cachedSvmOriginDeposits: {
+    [depositKey: string]: Omit<DepositWithBlock, "fromLiteChain" | "toLiteChain" | "quoteBlockNumber">;
+  } = {};
   // The object is indexed by `chainId`. A `FilledRelay` event is marked by adding `${originChainId}:${depositId}` to the respective chain's set.
   protected observedFills: { [chainId: number]: Set<string> } = {};
   // The object is indexed by `chainId`. A SpokePoolPeriphery contract is indexed by the chain ID.
@@ -301,11 +308,18 @@ export class GaslessRelayer {
         originFundsDepositedEvents
           .map((event) => unpackDepositEvent(spreadEventWithBlockNumber(event), originChainId))
           .filter((deposit) => apiMessages.some(({ depositId }) => deposit.depositId.eq(depositId)))
-          .forEach((deposit) =>
-            observedDeposits.add(
-              this._getDepositKey(deposit.inputToken.toNative(), originChainId, deposit.depositId.toString())
-            )
-          );
+          .forEach((deposit) => {
+            const depositKey = this._getDepositKey(
+              deposit.inputToken.toNative(),
+              originChainId,
+              deposit.depositId.toString()
+            );
+            observedDeposits.add(depositKey);
+
+            if (chainIsSvm(deposit.destinationChainId)) {
+              this.cachedSvmOriginDeposits[depositKey] = deposit;
+            }
+          });
       }),
 
       mapAsync(this.config.relayerDestinationChains.filter(chainIsEvm), async (destinationChainId) => {
@@ -340,40 +354,18 @@ export class GaslessRelayer {
     });
 
     await mapAsync(svmMessages, async (depositMessage) => {
-      const relayData = this._relayDataFromApiMessage(depositMessage);
-      const fillStatus = await this._getDestinationFillStatus(relayData);
+      const deposit = this.cachedSvmOriginDeposits[this._getDepositKeyFromMessage(depositMessage)];
+      if (!isDefined(deposit)) {
+        return;
+      }
+
+      const fillStatus = await this._getDestinationFillStatus(deposit);
       if (fillStatus === FillStatus.Filled) {
-        this.observedFills[relayData.destinationChainId].add(
-          this._getFilledRelayKey(relayData.originChainId, relayData.depositId.toString())
+        this.observedFills[deposit.destinationChainId].add(
+          this._getFilledRelayKey(deposit.originChainId, deposit.depositId.toString())
         );
       }
     });
-  }
-
-  private _relayDataFromApiMessage(
-    depositMessage: AnyGaslessDepositMessage
-  ): RelayData & { destinationChainId: number } {
-    if (depositMessage.depositFlowType === "bridge") {
-      return buildSyntheticDeposit(depositMessage);
-    }
-
-    const { originChainId, depositId } = depositMessage;
-    const bd = depositMessage.depositData;
-    return {
-      originChainId,
-      depositor: toAddressType(bd.depositor, originChainId),
-      recipient: toAddressType(bd.recipient, bd.destinationChainId),
-      depositId: toBN(depositId),
-      inputToken: toAddressType(bd.inputToken, originChainId),
-      inputAmount: toBN(depositMessage.minExpectedInputTokenAmount),
-      outputToken: toAddressType(bd.outputToken, bd.destinationChainId),
-      outputAmount: toBN(bd.outputAmount),
-      message: bd.message.startsWith("0x") ? bd.message : "0x" + Buffer.from(bd.message, "utf8").toString("hex"),
-      fillDeadline: bd.fillDeadline,
-      exclusiveRelayer: toAddressType(bd.exclusiveRelayer, bd.destinationChainId),
-      exclusivityDeadline: bd.exclusivityDeadline,
-      destinationChainId: bd.destinationChainId,
-    };
   }
 
   private async _getDestinationFillStatus(deposit: RelayData & { destinationChainId: number }): Promise<FillStatus> {
@@ -415,6 +407,11 @@ export class GaslessRelayer {
     spokePool: string
   ): boolean {
     if (this._isCctpDeposit(deposit.originChainId, spokePool)) {
+      return false;
+    }
+
+    // Solana fills require an on-chain origin deposit; never fill from API-derived synthetic relay data.
+    if (chainIsSvm(deposit.destinationChainId)) {
       return false;
     }
 
@@ -567,7 +564,7 @@ export class GaslessRelayer {
         swapTokenAmount,
       } = extractGaslessDepositFields(depositMessage);
 
-      const depositKey = this._getDepositKey(inputToken.toNative(), originChainId, depositId);
+      const depositKey = this._getDepositKeyFromMessage(depositMessage);
       const fillKey = `${authorizer}:${originChainId}`;
 
       const at = "GaslessRelayer#evaluateApiSignatures";
@@ -1157,6 +1154,11 @@ export class GaslessRelayer {
    */
   protected _getDepositKey(token: string, originChainId: number, depositId: string): string {
     return `${token}:${originChainId}:${depositId}`;
+  }
+
+  protected _getDepositKeyFromMessage(depositMessage: AnyGaslessDepositMessage): string {
+    const { inputToken } = extractGaslessDepositFields(depositMessage);
+    return this._getDepositKey(inputToken.toNative(), depositMessage.originChainId, depositMessage.depositId);
   }
 
   /*

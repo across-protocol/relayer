@@ -1077,6 +1077,21 @@ describe("GaslessRelayer", function () {
         ).to.be.false;
       });
 
+      it("Returns false when destination is Solana", function () {
+        process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`] = "10";
+        const result = relayer.testFillImmediate(
+          {
+            originChainId: ORIGIN_CHAIN_ID,
+            destinationChainId: CHAIN_IDs.SOLANA,
+            outputToken: EvmAddress.from(USDC_BASE),
+            outputAmount: toBN("1000000"),
+            exclusivityParameter: 1700000000,
+          },
+          fakeSpokePoolAddress
+        );
+        expect(result).to.be.false;
+      });
+
       it("Returns false for non-stablecoin tokens regardless of amount", function () {
         // WETH is not USDC/USDT, so fillImmediate is always false.
         process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`] = "10";
