@@ -20,6 +20,7 @@ import {
   getNetworkName,
   blockExplorerLink,
   BigNumber,
+  normalizeDepositAddressMessage,
 } from "../utils";
 import { getRedisCache, RedisCacheInterface } from "../cache/Redis";
 import { DepositAddressMessage } from "../interfaces";
@@ -448,6 +449,8 @@ export class DepositAddressHandler {
   ): Promise<SignedWithdrawResponse | undefined> {
     const { erc20Transfer, routeParams, depositAddress, paramsHash, salt, counterfactualMaterials } = depositMessage;
     const { contractAddress: token, amount, chainId } = erc20Transfer;
+    // @TODO: some old indexer messages may not have counterfactual materials, so we need to handle that for some time.
+    // We should remove this once we have migrated all indexer messages to the new format.
     const withdrawLeaf = counterfactualMaterials?.withdrawLeaf;
     if (
       !isDefined(withdrawLeaf) ||
@@ -683,7 +686,7 @@ export class DepositAddressHandler {
     if (!isDefined(apiResponseData)) {
       return retriesRemaining > 0 ? this._queryIndexerApi(--retriesRemaining) : [];
     }
-    return apiResponseData;
+    return apiResponseData.map(normalizeDepositAddressMessage);
   }
 
   private async _getSwapApiQuote(

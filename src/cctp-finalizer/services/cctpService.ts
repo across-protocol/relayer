@@ -74,7 +74,7 @@ export class CCTPService {
         hasProvidedDestinationChainId: !!providedDestinationChainId,
       });
 
-      let attestation: { message: string; attestation: string; status?: string };
+      let attestation: { message: string; attestation: string; status?: string; eventNonce?: string };
       let destinationChainId: number;
 
       // If message and attestation are provided, use them directly
@@ -116,8 +116,13 @@ export class CCTPService {
 
         attestation = attestations.messages[0];
 
-        if (!this.isAttestationReady(attestation.status!)) {
-          throw new AttestationNotReadyError(attestation.status!);
+        const { status, eventNonce } = attestation;
+        assert(
+          isDefined(status),
+          `Attestation status missing for burn ${burnTransactionHash} (eventNonce ${eventNonce ?? "<unknown>"})`
+        );
+        if (!this.isAttestationReady(status)) {
+          throw new AttestationNotReadyError(status);
         }
 
         // CCTP V2 API sometimes returns "0x" as the message, even though we can get the full reconstructed message from
@@ -319,30 +324,30 @@ export class CCTPService {
   }
 
   private getRpcUrlForChain(chainId: number): string {
-    const rpcUrlMap: { [chainId: number]: string } = {
+    const rpcUrlMap: { [chainId: number]: string | undefined } = {
       // Production networks
-      1: process.env.ETHEREUM_RPC_URL!,
-      10: process.env.OPTIMISM_RPC_URL!,
-      137: process.env.POLYGON_RPC_URL!,
-      42161: process.env.ARBITRUM_RPC_URL!,
-      8453: process.env.BASE_RPC_URL!,
-      130: process.env.UNICHAIN_RPC_URL!,
-      59144: process.env.LINEA_RPC_URL!,
-      480: process.env.WORLD_CHAIN_RPC_URL!,
-      999: process.env.HYPEREVM_RPC_URL!,
-      56: process.env.BSC_RPC_URL!,
-      143: process.env.MONAD_RPC_URL!,
-      57073: process.env.INK_RPC_URL!,
-      34268394551451: process.env.SOLANA_RPC_URL!,
+      1: process.env.ETHEREUM_RPC_URL,
+      10: process.env.OPTIMISM_RPC_URL,
+      137: process.env.POLYGON_RPC_URL,
+      42161: process.env.ARBITRUM_RPC_URL,
+      8453: process.env.BASE_RPC_URL,
+      130: process.env.UNICHAIN_RPC_URL,
+      59144: process.env.LINEA_RPC_URL,
+      480: process.env.WORLD_CHAIN_RPC_URL,
+      999: process.env.HYPEREVM_RPC_URL,
+      56: process.env.BSC_RPC_URL,
+      143: process.env.MONAD_RPC_URL,
+      57073: process.env.INK_RPC_URL,
+      34268394551451: process.env.SOLANA_RPC_URL,
       // Test networks
-      11155111: process.env.SEPOLIA_RPC_URL!,
-      11155420: process.env.OPTIMISM_SEPOLIA_RPC_URL!,
-      421614: process.env.ARBITRUM_SEPOLIA_RPC_URL!,
-      84532: process.env.BASE_SEPOLIA_RPC_URL!,
-      80002: process.env.POLYGON_AMOY_RPC_URL!,
-      1301: process.env.ARBITRUM_NOVA_SEPOLIA_RPC_URL!,
-      998: process.env.HYPEREVM_TESTNET_RPC_URL!,
-      133268194659241: process.env.SOLANA_DEVNET_RPC_URL!,
+      11155111: process.env.SEPOLIA_RPC_URL,
+      11155420: process.env.OPTIMISM_SEPOLIA_RPC_URL,
+      421614: process.env.ARBITRUM_SEPOLIA_RPC_URL,
+      84532: process.env.BASE_SEPOLIA_RPC_URL,
+      80002: process.env.POLYGON_AMOY_RPC_URL,
+      1301: process.env.ARBITRUM_NOVA_SEPOLIA_RPC_URL,
+      998: process.env.HYPEREVM_TESTNET_RPC_URL,
+      133268194659241: process.env.SOLANA_DEVNET_RPC_URL,
     };
 
     const rpcUrl = rpcUrlMap[chainId];

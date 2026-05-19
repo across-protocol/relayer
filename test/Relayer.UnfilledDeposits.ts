@@ -27,6 +27,7 @@ import {
   SimpleMockTokenClient,
 } from "./mocks";
 import {
+  assert,
   BigNumber,
   Contract,
   SignerWithAddress,
@@ -55,6 +56,7 @@ import {
   RelayerUnfilledDeposit,
   getAllUnfilledDeposits,
   getUnfilledDeposits,
+  isDefined,
   utf8ToHex,
   toAddressType,
 } from "../src/utils";
@@ -272,7 +274,7 @@ describe("Relayer: Unfilled Deposits", function () {
     // Take the 2nd last deposit and mark it filled.
     expect(deposits.length > 2).to.be.true;
     const filledDeposit = deposits.at(-2);
-    expect(filledDeposit).to.exist;
+    assert(isDefined(filledDeposit), "Expected at least 2 deposits");
 
     const depositHash = spokePoolClient_1.getDepositHash(filledDeposit);
     const { fillStatus } = relayerInstance;
@@ -295,7 +297,7 @@ describe("Relayer: Unfilled Deposits", function () {
       .excludingEvery(["realizedLpFeePct", "quoteBlockNumber", "fromLiteChain", "toLiteChain"])
       .to.deep.equal(
         deposits
-          .filter(({ depositId }) => depositId !== filledDeposit!.depositId)
+          .filter(({ depositId }) => depositId !== filledDeposit.depositId)
           .map((deposit) => ({
             deposit: depositIntoPrimitiveTypes(deposit),
             invalidFills: [],
@@ -527,8 +529,8 @@ describe("Relayer: Unfilled Deposits", function () {
     deposits.forEach((deposit, idx) => {
       const lpFeeKey = relayerInstance.getLPFeeKey(deposit);
       const relayerLpFee = relayerLpFees[lpFeeKey].find(({ paymentChainId }) => paymentChainId === destinationChainId);
-      expect(relayerLpFee).to.exist;
-      expect(relayerLpFee!.lpFeePct.eq(hubPoolLpFees[idx].realizedLpFeePct)).to.be.true;
+      assert(isDefined(relayerLpFee), "Expected relayer LP fee");
+      expect(relayerLpFee.lpFeePct.eq(hubPoolLpFees[idx].realizedLpFeePct)).to.be.true;
     });
 
     // Compute LP fees for taking repayment on the origin chain.
@@ -540,8 +542,8 @@ describe("Relayer: Unfilled Deposits", function () {
     deposits.forEach((deposit, idx) => {
       const lpFeeKey = relayerInstance.getLPFeeKey(deposit);
       const relayerLpFee = relayerLpFees[lpFeeKey].find(({ paymentChainId }) => paymentChainId === originChainId);
-      expect(relayerLpFee).to.exist;
-      expect(relayerLpFee!.lpFeePct.eq(hubPoolLpFees[idx].realizedLpFeePct)).to.be.true;
+      assert(isDefined(relayerLpFee), "Expected relayer LP fee");
+      expect(relayerLpFee.lpFeePct.eq(hubPoolLpFees[idx].realizedLpFeePct)).to.be.true;
     });
 
     // Compute LP fees for taking repayment on the HubPool chain.
@@ -555,8 +557,8 @@ describe("Relayer: Unfilled Deposits", function () {
       const relayerLpFee = relayerLpFees[lpFeeKey].find(
         ({ paymentChainId }) => paymentChainId === hubPoolClient.chainId
       );
-      expect(relayerLpFee).to.exist;
-      expect(relayerLpFee!.lpFeePct.eq(hubPoolLpFees[idx].realizedLpFeePct)).to.be.true;
+      assert(isDefined(relayerLpFee), "Expected relayer LP fee");
+      expect(relayerLpFee.lpFeePct.eq(hubPoolLpFees[idx].realizedLpFeePct)).to.be.true;
     });
 
     // Test for collisions on the LP fee key.

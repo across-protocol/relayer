@@ -12,8 +12,10 @@ import { GaslessRelayerConfig } from "../src/gasless/GaslessRelayerConfig";
 import SPOKE_POOL_PERIPHERY_ABI from "../src/common/abi/SpokePoolPeriphery.json";
 import PERMIT2_ABI from "../src/common/abi/Permit2.json";
 import {
+  assert,
   CHAIN_IDs,
   EvmAddress,
+  isDefined,
   Provider,
   TransactionReceipt,
   getCurrentTime,
@@ -596,9 +598,11 @@ describe("GaslessRelayer", function () {
     // Save the address for use in message factories.
     fakeSpokePoolAddress = fakeSpokePool.address;
 
+    const provider = signer.provider;
+    assert(isDefined(provider), "Signer must have a provider in test setup");
     relayer.setProvidersByChain({
-      [ORIGIN_CHAIN_ID]: signer.provider!,
-      [DESTINATION_CHAIN_ID]: signer.provider!,
+      [ORIGIN_CHAIN_ID]: provider,
+      [DESTINATION_CHAIN_ID]: provider,
     });
     relayer.setSpokePoolPeripheries({ [ORIGIN_CHAIN_ID]: fakePeriphery });
     relayer.setSpokePools({
@@ -768,9 +772,9 @@ describe("GaslessRelayer", function () {
 
     expect(relayer.getMessageState(depositNonceFor(relayer, msg))).to.equal(MessageState.FILLED);
     // Verify that the fill was called with normalized (hex) message, not plain text
-    expect(capturedFillDeposit).to.not.be.undefined;
-    expect(capturedFillDeposit!.message).to.equal(expectedHexMessage);
-    expect(capturedFillDeposit!.message).to.not.equal(plainTextMessage);
+    assert(isDefined(capturedFillDeposit), "Expected fillDeposit to be called");
+    expect(capturedFillDeposit.message).to.equal(expectedHexMessage);
+    expect(capturedFillDeposit.message).to.not.equal(plainTextMessage);
   });
 
   it("Throws error if buildSyntheticDeposit called with relative exclusivityParameter", function () {

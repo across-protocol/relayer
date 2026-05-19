@@ -1,11 +1,13 @@
 import * as BinanceUtils from "../src/utils/BinanceUtils";
 import {
+  assert,
   BINANCE_NETWORKS,
   BINANCE_WITHDRAWAL_STATUS,
   BigNumber,
   CHAIN_IDs,
   Coin,
   getNativeTokenInfoForChain,
+  isDefined,
   resolveAcrossToken,
   toBNWei,
 } from "../src/utils";
@@ -22,6 +24,8 @@ import {
   waitForBinanceWithdrawalCompletion,
 } from "../scripts/swapOnBinance";
 import { expect, sinon } from "./utils";
+
+const tokenAddress = (symbol: string, chainId: number): string => resolveAcrossToken(symbol, chainId, true);
 
 describe("swapOnBinance script helpers", function () {
   afterEach(function () {
@@ -118,7 +122,7 @@ describe("swapOnBinance script helpers", function () {
   });
 
   it("uses token-specific mappings for non-L1 token symbols", function () {
-    const usdbcAddress = resolveAcrossToken("USDbC", CHAIN_IDs.BASE)!;
+    const usdbcAddress = resolveAcrossToken("USDbC", CHAIN_IDs.BASE, true);
     const accountCoins = [
       makeErc20Coin("USDC", [
         {
@@ -163,7 +167,7 @@ describe("swapOnBinance script helpers", function () {
   });
 
   it("compares Solana token contract addresses case-sensitively", function () {
-    const solanaUsdc = resolveAcrossToken("USDC", CHAIN_IDs.SOLANA)!;
+    const solanaUsdc = resolveAcrossToken("USDC", CHAIN_IDs.SOLANA, true);
     const misCasedSolanaUsdc = `${solanaUsdc[0].toLowerCase()}${solanaUsdc.slice(1)}`;
     const accountCoins = [
       makeErc20Coin("USDC", [
@@ -192,14 +196,14 @@ describe("swapOnBinance script helpers", function () {
       tokenSymbol: "USDC",
       chainId: CHAIN_IDs.POLYGON,
       binanceCoin: "USDC",
-      contractAddress: resolveAcrossToken("USDC", CHAIN_IDs.POLYGON)!,
+      contractAddress: tokenAddress("USDC", CHAIN_IDs.POLYGON),
       withdrawFee: "0.25",
     });
     const destination = makeResolvedAsset({
       tokenSymbol: "USDC",
       chainId: CHAIN_IDs.BASE,
       binanceCoin: "USDC",
-      contractAddress: resolveAcrossToken("USDC", CHAIN_IDs.BASE)!,
+      contractAddress: tokenAddress("USDC", CHAIN_IDs.BASE),
       withdrawFee: "0.25",
     });
 
@@ -229,13 +233,13 @@ describe("swapOnBinance script helpers", function () {
       tokenSymbol: "USDT",
       chainId: CHAIN_IDs.POLYGON,
       binanceCoin: "USDT",
-      contractAddress: resolveAcrossToken("USDT", CHAIN_IDs.POLYGON)!,
+      contractAddress: tokenAddress("USDT", CHAIN_IDs.POLYGON),
     });
     const destination = makeResolvedAsset({
       tokenSymbol: "USDC",
       chainId: CHAIN_IDs.BASE,
       binanceCoin: "USDC",
-      contractAddress: resolveAcrossToken("USDC", CHAIN_IDs.BASE)!,
+      contractAddress: tokenAddress("USDC", CHAIN_IDs.BASE),
       withdrawFee: "0.25",
     });
 
@@ -279,13 +283,13 @@ describe("swapOnBinance script helpers", function () {
           tokenSymbol: "USDT",
           chainId: CHAIN_IDs.POLYGON,
           binanceCoin: "USDT",
-          contractAddress: resolveAcrossToken("USDT", CHAIN_IDs.POLYGON)!,
+          contractAddress: tokenAddress("USDT", CHAIN_IDs.POLYGON),
         }),
         makeResolvedAsset({
           tokenSymbol: "USDC",
           chainId: CHAIN_IDs.BASE,
           binanceCoin: "USDC",
-          contractAddress: resolveAcrossToken("USDC", CHAIN_IDs.BASE)!,
+          contractAddress: tokenAddress("USDC", CHAIN_IDs.BASE),
         }),
         toBNWei("50", 6)
       ),
@@ -354,13 +358,13 @@ describe("swapOnBinance script helpers", function () {
         tokenSymbol: "USDT",
         chainId: CHAIN_IDs.POLYGON,
         binanceCoin: "USDT",
-        contractAddress: resolveAcrossToken("USDT", CHAIN_IDs.POLYGON)!,
+        contractAddress: tokenAddress("USDT", CHAIN_IDs.POLYGON),
       }),
       makeResolvedAsset({
         tokenSymbol: "USDC",
         chainId: CHAIN_IDs.BASE,
         binanceCoin: "USDC",
-        contractAddress: resolveAcrossToken("USDC", CHAIN_IDs.BASE)!,
+        contractAddress: tokenAddress("USDC", CHAIN_IDs.BASE),
       })
     );
 
@@ -388,13 +392,13 @@ describe("swapOnBinance script helpers", function () {
           tokenSymbol: "USDT",
           chainId: CHAIN_IDs.POLYGON,
           binanceCoin: "USDT",
-          contractAddress: resolveAcrossToken("USDT", CHAIN_IDs.POLYGON)!,
+          contractAddress: tokenAddress("USDT", CHAIN_IDs.POLYGON),
         }),
         makeResolvedAsset({
           tokenSymbol: "USDC",
           chainId: CHAIN_IDs.BASE,
           binanceCoin: "USDC",
-          contractAddress: resolveAcrossToken("USDC", CHAIN_IDs.BASE)!,
+          contractAddress: tokenAddress("USDC", CHAIN_IDs.BASE),
         }),
         toBNWei("10", 6)
       ),
@@ -420,7 +424,7 @@ describe("swapOnBinance script helpers", function () {
         tokenSymbol: "USDC",
         chainId: CHAIN_IDs.POLYGON,
         binanceCoin: "USDC",
-        contractAddress: resolveAcrossToken("USDC", CHAIN_IDs.POLYGON)!,
+        contractAddress: tokenAddress("USDC", CHAIN_IDs.POLYGON),
       }),
       depositTxHash: "0xabc",
       minFreeBalance: 100,
@@ -458,13 +462,13 @@ describe("swapOnBinance script helpers", function () {
         tokenSymbol: "USDT",
         chainId: CHAIN_IDs.POLYGON,
         binanceCoin: "USDT",
-        contractAddress: resolveAcrossToken("USDT", CHAIN_IDs.POLYGON)!,
+        contractAddress: tokenAddress("USDT", CHAIN_IDs.POLYGON),
       }),
       destination: makeResolvedAsset({
         tokenSymbol: "USDC",
         chainId: CHAIN_IDs.BASE,
         binanceCoin: "USDC",
-        contractAddress: resolveAcrossToken("USDC", CHAIN_IDs.BASE)!,
+        contractAddress: tokenAddress("USDC", CHAIN_IDs.BASE),
       }),
       pollDelayMs: 0,
     });
@@ -489,7 +493,7 @@ describe("swapOnBinance script helpers", function () {
         tokenSymbol: "USDC",
         chainId: CHAIN_IDs.BASE,
         binanceCoin: "USDC",
-        contractAddress: resolveAcrossToken("USDC", CHAIN_IDs.BASE)!,
+        contractAddress: tokenAddress("USDC", CHAIN_IDs.BASE),
       }),
       withdrawalId: "withdraw-1",
       startTimeMs: 0,
@@ -520,7 +524,7 @@ describe("swapOnBinance script helpers", function () {
           tokenSymbol: "USDC",
           chainId: CHAIN_IDs.BASE,
           binanceCoin: "USDC",
-          contractAddress: resolveAcrossToken("USDC", CHAIN_IDs.BASE)!,
+          contractAddress: tokenAddress("USDC", CHAIN_IDs.BASE),
         }),
         withdrawalId: "withdraw-2",
         startTimeMs: 0,
@@ -603,24 +607,23 @@ function makeResolvedAsset({
 }): ResolvedBinanceAsset {
   const tokenDecimals = tokenSymbol === "ETH" ? 18 : 6;
   const nativeSymbol = getNativeTokenInfoForChain(chainId).symbol.toUpperCase();
-  return {
-    tokenSymbol,
-    chainId,
-    binanceCoin,
-    tokenDecimals,
-    isNativeAsset: tokenSymbol.toUpperCase() === nativeSymbol,
-    localTokenAddress: contractAddress,
-    network: {
-      name: getTestBinanceNetworkName(chainId),
-      coin: binanceCoin,
-      withdrawFee,
-      withdrawMin: "0.01",
-      withdrawMax: "1000000",
-      contractAddress: contractAddress ?? "",
-      depositEnable: true,
-      withdrawEnable: true,
-    },
+  const isNative = tokenSymbol.toUpperCase() === nativeSymbol;
+  const network = {
+    name: getTestBinanceNetworkName(chainId),
+    coin: binanceCoin,
+    withdrawFee,
+    withdrawMin: "0.01",
+    withdrawMax: "1000000",
+    contractAddress: contractAddress ?? "",
+    depositEnable: true,
+    withdrawEnable: true,
   };
+  const base = { tokenSymbol, chainId, binanceCoin, tokenDecimals, network };
+  if (isNative) {
+    return { ...base, isNativeAsset: true };
+  }
+  assert(isDefined(contractAddress), `makeResolvedAsset: ERC20 ${tokenSymbol} requires contractAddress`);
+  return { ...base, isNativeAsset: false, localTokenAddress: contractAddress };
 }
 
 function makeNativeCoin(symbol: string, chainId: number): Coin {
@@ -657,7 +660,7 @@ function makeErc20Coin(
       coin: symbol,
       withdrawMin: "0.01",
       withdrawMax: "1000000",
-      contractAddress: contractAddress ?? resolveAcrossToken(symbol, chainId)!,
+      contractAddress: contractAddress ?? tokenAddress(symbol, chainId),
       withdrawFee: "0.1",
       depositEnable: true,
       withdrawEnable: true,
