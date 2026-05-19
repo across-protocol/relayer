@@ -41,8 +41,6 @@ const AVERAGE_BLOCK_TIMES: { [chainId: number]: number } = {
   [CHAIN_IDs.OPTIMISM]: 2,
   [CHAIN_IDs.PLASMA]: 1,
   [CHAIN_IDs.POLYGON]: 2,
-  [CHAIN_IDs.REDSTONE]: 2,
-  [CHAIN_IDs.SCROLL]: 3,
   [CHAIN_IDs.SOLANA]: 0.4,
   [CHAIN_IDs.SONEIUM]: 2,
   [CHAIN_IDs.UNICHAIN]: 1,
