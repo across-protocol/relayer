@@ -211,8 +211,10 @@ export class GaslessRelayer {
       this.svmEventsClient = await SvmCpiEventsClient.create(svmProvider);
       this.svmFillerClient = await SvmFillerClient.from(this.baseSigner, svmProvider, svmChainId, this.logger);
       const spokePoolAddress = getSpokePoolAddress(svmChainId);
-      assert(spokePoolAddress.isSVM(), `Expected SVM spoke pool for chain ${svmChainId}`);
-      this.svmSpokePoolAddress = spokePoolAddress as SvmAddress;
+      if (!spokePoolAddress.isSVM()) {
+        throw new Error(`Expected SVM spoke pool for chain ${svmChainId}`);
+      }
+      this.svmSpokePoolAddress = spokePoolAddress;
       this.observedFills[svmChainId] = new Set<string>();
     }
 
@@ -322,35 +324,51 @@ export class GaslessRelayer {
           });
       }),
 
-      mapAsync(this.config.relayerDestinationChains.filter(chainIsEvm), async (destinationChainId) => {
-        const provider = this.providersByChain[destinationChainId];
-        const observedFills = this.observedFills[destinationChainId];
-
-        const searchConfig = await this._getEventSearchConfig(destinationChainId);
-        const destinationSpokePool = getSpokePool(destinationChainId).connect(provider);
-
-        const destinationFilledRelayEvents = await paginatedEventQuery(
-          destinationSpokePool,
-          destinationSpokePool.filters.FilledRelay(),
-          searchConfig
-        );
-        for (const filledRelay of destinationFilledRelayEvents) {
-          const fill = unpackFillEvent(spreadEventWithBlockNumber(filledRelay), destinationChainId);
-          observedFills.add(this._getFilledRelayKey(fill.originChainId, fill.depositId.toString()));
+      mapAsync(this.config.relayerDestinationChains, async (destinationChainId) => {
+        if (chainIsEvm(destinationChainId)) {
+          await this._updateObservedEvmFills(destinationChainId);
+        } else if (chainIsSvm(destinationChainId)) {
+          await this._updateObservedSvmFills(destinationChainId, apiMessages);
         }
       }),
     ]);
+  }
 
-    await this._updateObservedSvmFills(apiMessages);
+  /**
+   * Populates {@link observedFills} for an EVM destination by scanning {@link FilledRelay} events.
+   */
+  private async _updateObservedEvmFills(destinationChainId: number): Promise<void> {
+    const provider = this.providersByChain[destinationChainId];
+    const observedFills = this.observedFills[destinationChainId];
+
+    const searchConfig = await this._getEventSearchConfig(destinationChainId);
+    const destinationSpokePool = getSpokePool(destinationChainId).connect(provider);
+
+    const destinationFilledRelayEvents = await paginatedEventQuery(
+      destinationSpokePool,
+      destinationSpokePool.filters.FilledRelay(),
+      searchConfig
+    );
+    for (const filledRelay of destinationFilledRelayEvents) {
+      const fill = unpackFillEvent(spreadEventWithBlockNumber(filledRelay), destinationChainId);
+      observedFills.add(this._getFilledRelayKey(fill.originChainId, fill.depositId.toString()));
+    }
   }
 
   /**
    * Marks already-filled Solana destination relays in {@link observedFills} by querying fill status per API message.
    */
-  private async _updateObservedSvmFills(apiMessages: AnyGaslessDepositMessage[]): Promise<void> {
+  private async _updateObservedSvmFills(
+    destinationChainId: number,
+    apiMessages: AnyGaslessDepositMessage[]
+  ): Promise<void> {
+    if (!isDefined(this.svmSpokePoolAddress)) {
+      return;
+    }
+
     const svmMessages = apiMessages.filter((msg) => {
-      const { destinationChainId } = extractGaslessDepositFields(msg);
-      return chainIsSvm(destinationChainId) && isDefined(this.svmSpokePoolAddress);
+      const { destinationChainId: msgDestinationChainId } = extractGaslessDepositFields(msg);
+      return msgDestinationChainId === destinationChainId;
     });
 
     await mapAsync(svmMessages, async (depositMessage) => {

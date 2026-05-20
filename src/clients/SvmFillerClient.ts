@@ -149,13 +149,15 @@ export class SvmFillerClient {
     try {
       const signatureStrings = await this._executeTxnPromisesWithRetry(txPromises, maxRetries, true);
       const lastSignature = signatureStrings.at(-1);
-      this.logger.info({
-        at: "SvmFillerClient#executeFillImmediately",
-        message,
-        mrkdwn,
-        signatures: signatureStrings,
-        explorer: isDefined(lastSignature) ? blockExplorerLink(lastSignature, this.chainId) : undefined,
-      });
+      if (isDefined(lastSignature)) {
+        this.logger.info({
+          at: "SvmFillerClient#executeFillImmediately",
+          message,
+          mrkdwn,
+          signatures: signatureStrings,
+          explorer: blockExplorerLink(lastSignature, this.chainId),
+        });
+      }
       return lastSignature;
     } catch (e: unknown) {
       if (!typeguards.isError(e)) {
