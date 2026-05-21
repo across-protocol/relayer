@@ -1,5 +1,5 @@
 import { expect } from "chai";
-import { CHAIN_IDs, getEthersCompatibleAddress } from "../src/utils";
+import { CHAIN_IDs, getEthersCompatibleAddress, toAddressType } from "../src/utils";
 import { getDepositKey, normalizeDepositAddressMessage } from "../src/utils/DepositAddressUtils";
 import { DepositAddressMessage } from "../src/interfaces/DepositAddress";
 
@@ -76,6 +76,23 @@ describe("DepositAddressUtils", function () {
     expect(normalized.paramsHash).to.equal(raw.paramsHash);
     expect(normalized.erc20Transfer.transactionHash).to.equal(raw.erc20Transfer.transactionHash);
     expect(normalized.erc20Transfer.amount).to.equal("500000");
+  });
+
+  it("toAddressType().toNative() returns chain-native strings for swap API params", function () {
+    const raw = tronOriginIndexerMessage();
+    const normalized = normalizeDepositAddressMessage(raw);
+
+    expect(toAddressType(normalized.depositAddress, CHAIN_IDs.TRON).toNative()).to.equal(raw.depositAddress);
+    expect(toAddressType(normalized.routeParams.inputToken, CHAIN_IDs.TRON).toNative()).to.equal(
+      raw.routeParams.inputToken
+    );
+    expect(toAddressType(normalized.routeParams.refundAddress, CHAIN_IDs.TRON).toNative()).to.equal(
+      raw.routeParams.refundAddress
+    );
+
+    expect(toAddressType(normalized.routeParams.recipient, CHAIN_IDs.BASE).toNative()).to.equal(
+      normalized.routeParams.recipient
+    );
   });
 
   it("getDepositKey uses normalized deposit address after indexer remap", function () {

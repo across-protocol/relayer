@@ -21,6 +21,7 @@ import {
   blockExplorerLink,
   BigNumber,
   normalizeDepositAddressMessage,
+  toAddressType,
 } from "../utils";
 import { getRedisCache, RedisCacheInterface } from "../cache/Redis";
 import { DepositAddressMessage } from "../interfaces";
@@ -696,20 +697,23 @@ export class DepositAddressHandler {
     const { depositAddress, routeParams, erc20Transfer } = depositMessage;
     const { inputToken, outputToken, originChainId, destinationChainId, recipient, refundAddress } = routeParams;
     const { amount } = erc20Transfer;
+    const originChainIdNum = Number(originChainId);
+    const destinationChainIdNum = Number(destinationChainId);
+    // Swap API expects Tron origin fields in base58; on-chain paths keep ethers `0x` via normalizeDepositAddressMessage.
     // refundAddress must match what was committed in the withdraw leaf at PDA creation time so the
     // swap-api rebuilds the same merkle root the on-chain factory derives the deposit address from.
     const params = {
       originChainId,
       destinationChainId,
-      inputToken,
-      outputToken,
+      inputToken: toAddressType(inputToken, originChainIdNum).toNative(),
+      outputToken: toAddressType(outputToken, destinationChainIdNum).toNative(),
       tradeType: "exactInput", // Should be exactInput for counterfactual deposits.
       amount,
-      depositor: depositAddress,
-      recipient,
-      refundAddress,
-      depositAddress,
-      executionFeeRecipient: this.signerAddress.toNative(),
+      depositor: toAddressType(depositAddress, originChainIdNum).toNative(),
+      recipient: toAddressType(recipient, destinationChainIdNum).toNative(),
+      refundAddress: toAddressType(refundAddress, originChainIdNum).toNative(),
+      depositAddress: toAddressType(depositAddress, originChainIdNum).toNative(),
+      executionFeeRecipient: toAddressType(this.signerAddress.toNative(), originChainIdNum).toNative(),
       shouldSponsorAccountCreation: String(depositMessage.shouldSponsorAccountCreation),
     };
     try {
