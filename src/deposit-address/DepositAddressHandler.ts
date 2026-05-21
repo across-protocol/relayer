@@ -698,6 +698,7 @@ export class DepositAddressHandler {
     const { inputToken, outputToken, originChainId, destinationChainId, recipient, refundAddress } = routeParams;
     const { amount } = erc20Transfer;
     const originChainIdNum = Number(originChainId);
+    const destinationChainIdNum = Number(destinationChainId);
     // Swap API expects Tron origin fields in base58; on-chain paths keep ethers `0x` via normalizeDepositAddressMessage.
     // refundAddress must match what was committed in the withdraw leaf at PDA creation time so the
     // swap-api rebuilds the same merkle root the on-chain factory derives the deposit address from.
@@ -705,11 +706,11 @@ export class DepositAddressHandler {
       originChainId,
       destinationChainId,
       inputToken: toChainNativeAddress(originChainIdNum, inputToken),
-      outputToken,
+      outputToken: toChainNativeAddress(destinationChainIdNum, outputToken),
       tradeType: "exactInput", // Should be exactInput for counterfactual deposits.
       amount,
       depositor: toChainNativeAddress(originChainIdNum, depositAddress),
-      recipient,
+      recipient: toChainNativeAddress(destinationChainIdNum, recipient),
       refundAddress: toChainNativeAddress(originChainIdNum, refundAddress),
       depositAddress: toChainNativeAddress(originChainIdNum, depositAddress),
       executionFeeRecipient: toChainNativeAddress(originChainIdNum, this.signerAddress.toNative()),

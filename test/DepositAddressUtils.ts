@@ -1,10 +1,6 @@
 import { expect } from "chai";
 import { CHAIN_IDs, getEthersCompatibleAddress } from "../src/utils";
-import {
-  getDepositKey,
-  toChainNativeAddress,
-  normalizeDepositAddressMessage,
-} from "../src/utils/DepositAddressUtils";
+import { getDepositKey, toChainNativeAddress, normalizeDepositAddressMessage } from "../src/utils/DepositAddressUtils";
 import { DepositAddressMessage } from "../src/interfaces/DepositAddress";
 
 /** Indexer API sample: Tron origin, Base destination, USDT correct_transfer. */
