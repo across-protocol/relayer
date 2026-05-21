@@ -21,7 +21,7 @@ import {
   blockExplorerLink,
   BigNumber,
   normalizeDepositAddressMessage,
-  toChainNativeAddress,
+  toAddressType,
 } from "../utils";
 import { getRedisCache, RedisCacheInterface } from "../cache/Redis";
 import { DepositAddressMessage } from "../interfaces";
@@ -705,15 +705,15 @@ export class DepositAddressHandler {
     const params = {
       originChainId,
       destinationChainId,
-      inputToken: toChainNativeAddress(originChainIdNum, inputToken),
-      outputToken: toChainNativeAddress(destinationChainIdNum, outputToken),
+      inputToken: toAddressType(inputToken, originChainIdNum).toNative(),
+      outputToken: toAddressType(outputToken, destinationChainIdNum).toNative(),
       tradeType: "exactInput", // Should be exactInput for counterfactual deposits.
       amount,
-      depositor: toChainNativeAddress(originChainIdNum, depositAddress),
-      recipient: toChainNativeAddress(destinationChainIdNum, recipient),
-      refundAddress: toChainNativeAddress(originChainIdNum, refundAddress),
-      depositAddress: toChainNativeAddress(originChainIdNum, depositAddress),
-      executionFeeRecipient: toChainNativeAddress(originChainIdNum, this.signerAddress.toNative()),
+      depositor: toAddressType(depositAddress, originChainIdNum).toNative(),
+      recipient: toAddressType(recipient, destinationChainIdNum).toNative(),
+      refundAddress: toAddressType(refundAddress, originChainIdNum).toNative(),
+      depositAddress: toAddressType(depositAddress, originChainIdNum).toNative(),
+      executionFeeRecipient: toAddressType(this.signerAddress.toNative(), originChainIdNum).toNative(),
       shouldSponsorAccountCreation: String(depositMessage.shouldSponsorAccountCreation),
     };
     try {
