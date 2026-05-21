@@ -1,6 +1,7 @@
 import { Contract } from "ethers";
 import { AugmentedTransaction } from "../clients";
 import { DepositAddressMessage } from "../interfaces/DepositAddress";
+import { chainIsTvm, TvmAddress } from "./SDKUtils";
 import { getEthersCompatibleAddress } from "./ContractUtils";
 
 /**
@@ -51,6 +52,17 @@ export function normalizeDepositAddressMessage(message: DepositAddressMessage): 
       },
     },
   };
+}
+
+/**
+ * Returns the chain-native address string. TVM (Tron) uses Base58Check (`T...`); EVM chains keep `0x`.
+ * Accepts either form as input (e.g. after {@link normalizeDepositAddressMessage}).
+ */
+export function toChainNativeAddress(chainId: number, address: string): string {
+  if (!chainIsTvm(chainId)) {
+    return address;
+  }
+  return TvmAddress.from(address).toNative();
 }
 
 /**

@@ -21,6 +21,7 @@ import {
   blockExplorerLink,
   BigNumber,
   normalizeDepositAddressMessage,
+  toChainNativeAddress,
 } from "../utils";
 import { getRedisCache, RedisCacheInterface } from "../cache/Redis";
 import { DepositAddressMessage } from "../interfaces";
@@ -696,20 +697,22 @@ export class DepositAddressHandler {
     const { depositAddress, routeParams, erc20Transfer } = depositMessage;
     const { inputToken, outputToken, originChainId, destinationChainId, recipient, refundAddress } = routeParams;
     const { amount } = erc20Transfer;
+    const originChainIdNum = Number(originChainId);
+    // Swap API expects Tron origin fields in base58; on-chain paths keep ethers `0x` via normalizeDepositAddressMessage.
     // refundAddress must match what was committed in the withdraw leaf at PDA creation time so the
     // swap-api rebuilds the same merkle root the on-chain factory derives the deposit address from.
     const params = {
       originChainId,
       destinationChainId,
-      inputToken,
+      inputToken: toChainNativeAddress(originChainIdNum, inputToken),
       outputToken,
       tradeType: "exactInput", // Should be exactInput for counterfactual deposits.
       amount,
-      depositor: depositAddress,
+      depositor: toChainNativeAddress(originChainIdNum, depositAddress),
       recipient,
-      refundAddress,
-      depositAddress,
-      executionFeeRecipient: this.signerAddress.toNative(),
+      refundAddress: toChainNativeAddress(originChainIdNum, refundAddress),
+      depositAddress: toChainNativeAddress(originChainIdNum, depositAddress),
+      executionFeeRecipient: toChainNativeAddress(originChainIdNum, this.signerAddress.toNative()),
       shouldSponsorAccountCreation: String(depositMessage.shouldSponsorAccountCreation),
     };
     try {

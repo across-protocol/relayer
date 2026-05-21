@@ -1,6 +1,10 @@
 import { expect } from "chai";
 import { CHAIN_IDs, getEthersCompatibleAddress } from "../src/utils";
-import { getDepositKey, normalizeDepositAddressMessage } from "../src/utils/DepositAddressUtils";
+import {
+  getDepositKey,
+  toChainNativeAddress,
+  normalizeDepositAddressMessage,
+} from "../src/utils/DepositAddressUtils";
 import { DepositAddressMessage } from "../src/interfaces/DepositAddress";
 
 /** Indexer API sample: Tron origin, Base destination, USDT correct_transfer. */
@@ -76,6 +80,24 @@ describe("DepositAddressUtils", function () {
     expect(normalized.paramsHash).to.equal(raw.paramsHash);
     expect(normalized.erc20Transfer.transactionHash).to.equal(raw.erc20Transfer.transactionHash);
     expect(normalized.erc20Transfer.amount).to.equal("500000");
+  });
+
+  it("toChainNativeAddress returns Tron base58 for TVM chains", function () {
+    const raw = tronOriginIndexerMessage();
+    const normalized = normalizeDepositAddressMessage(raw);
+
+    expect(toChainNativeAddress(CHAIN_IDs.TRON, normalized.depositAddress)).to.equal(raw.depositAddress);
+    expect(toChainNativeAddress(CHAIN_IDs.TRON, normalized.routeParams.inputToken)).to.equal(
+      raw.routeParams.inputToken
+    );
+    expect(toChainNativeAddress(CHAIN_IDs.TRON, normalized.routeParams.refundAddress)).to.equal(
+      raw.routeParams.refundAddress
+    );
+
+    // Non-TVM chains pass addresses through unchanged.
+    expect(toChainNativeAddress(CHAIN_IDs.BASE, normalized.routeParams.recipient)).to.equal(
+      normalized.routeParams.recipient
+    );
   });
 
   it("getDepositKey uses normalized deposit address after indexer remap", function () {
