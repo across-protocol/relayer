@@ -67,6 +67,20 @@ index d8a07c5..6146d65 100644
          return !l2BlockNumber || blockNumber > l2BlockNumber
              ? { ...game, l2BlockNumber: blockNumber }
              : null;
+diff --git a/node_modules/viem/_cjs/op-stack/actions/getWithdrawalStatus.js b/node_modules/viem/_cjs/op-stack/actions/getWithdrawalStatus.js
+index eefc218..bf0a036 100644
+--- a/node_modules/viem/_cjs/op-stack/actions/getWithdrawalStatus.js
++++ b/node_modules/viem/_cjs/op-stack/actions/getWithdrawalStatus.js
+@@ -148,6 +148,9 @@ async function getWithdrawalStatus(client, parameters) {
+                     'OptimismPortal: proven withdrawal has not matured yet',
+                     'OptimismPortal: output proposal has not been finalized yet',
+                     'OptimismPortal: output proposal in air-gap',
++                    // MegaETH's Portal-2 reverts with ProposalNotValidated() while the
++                    // dispute game is still resolving; treat as waiting, not as error.
++                    'ProposalNotValidated',
+                 ],
+             };
+             const errors = [
 diff --git a/node_modules/viem/_esm/chains/definitions/megaeth.js b/node_modules/viem/_esm/chains/definitions/megaeth.js
 index 3347805..8a1093c 100644
 --- a/node_modules/viem/_esm/chains/definitions/megaeth.js
@@ -136,6 +150,20 @@ index d283a6c..56f6663 100644
          return !l2BlockNumber || blockNumber > l2BlockNumber
              ? { ...game, l2BlockNumber: blockNumber }
              : null;
+diff --git a/node_modules/viem/_esm/op-stack/actions/getWithdrawalStatus.js b/node_modules/viem/_esm/op-stack/actions/getWithdrawalStatus.js
+index 2c88ff1..8e12b65 100644
+--- a/node_modules/viem/_esm/op-stack/actions/getWithdrawalStatus.js
++++ b/node_modules/viem/_esm/op-stack/actions/getWithdrawalStatus.js
+@@ -181,6 +181,9 @@ export async function getWithdrawalStatus(client, parameters) {
+                     'OptimismPortal: proven withdrawal has not matured yet',
+                     'OptimismPortal: output proposal has not been finalized yet',
+                     'OptimismPortal: output proposal in air-gap',
++                    // MegaETH's Portal-2 reverts with ProposalNotValidated() while the
++                    // dispute game is still resolving; treat as waiting, not as error.
++                    'ProposalNotValidated',
+                 ],
+             };
+             // Pick out the error message and/or error name
 diff --git a/node_modules/viem/_types/clients/createClient.d.ts b/node_modules/viem/_types/clients/createClient.d.ts
 index 1697039..85e7e81 100644
 --- a/node_modules/viem/_types/clients/createClient.d.ts
@@ -178,3 +206,17 @@ index 41b4d70..7527021 100644
 +  },
    sourceId,
  })
+diff --git a/node_modules/viem/op-stack/actions/getWithdrawalStatus.ts b/node_modules/viem/op-stack/actions/getWithdrawalStatus.ts
+index 50eb88d..4d9e7a9 100644
+--- a/node_modules/viem/op-stack/actions/getWithdrawalStatus.ts
++++ b/node_modules/viem/op-stack/actions/getWithdrawalStatus.ts
+@@ -314,6 +314,9 @@ export async function getWithdrawalStatus<
+           'OptimismPortal: proven withdrawal has not matured yet',
+           'OptimismPortal: output proposal has not been finalized yet',
+           'OptimismPortal: output proposal in air-gap',
++          // MegaETH's Portal-2 reverts with ProposalNotValidated() while the
++          // dispute game is still resolving; treat as waiting, not as error.
++          'ProposalNotValidated',
+         ],
+       }
+ 
