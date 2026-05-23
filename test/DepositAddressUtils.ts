@@ -35,6 +35,8 @@ function tronOriginIndexerMessage(): DepositAddressMessage {
     },
     erc20Transfer: {
       chainId: String(CHAIN_IDs.TRON),
+      blockNumber: 73_500_000,
+      logIndex: 2,
       from: "TQ4T4DgHoezYBTRoZPCspsSgRw38Ni9prA",
       to: "TRiKGHiWuKvDjwgNTmi6ohsucSfLBoLAVu",
       amount: "500000",
