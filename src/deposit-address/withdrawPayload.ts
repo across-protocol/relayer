@@ -19,13 +19,14 @@ export type WithdrawExecutedPayload = {
 
 /**
  * Builds the `withdraw_executed` payload published to GCP Pub/Sub. Returns `undefined` when
- * the receipt contains no ERC20 `Transfer` event with the expected
- * `(address=token, from=depositAddress)` — caller should warn and skip.
+ * the receipt contains no ERC20 `Transfer` event matching the expected
+ * `(address=token, from=depositAddress, to=refundAddress)` — caller should warn and skip.
  *
- * When the receipt contains multiple matching Transfer logs (e.g. a Multicall3-bundled
- * withdraw that emits intermediate transfers), the **last** match is used. The final
- * Transfer out of the deposit address is the one that settles funds to the user, so its
- * logIndex is the canonical reference for the indexer row.
+ * The `to=refundAddress` constraint disambiguates fee-on-transfer / tax / burn tokens that
+ * emit several `Transfer` events from the deposit address in one tx (one to the user, one
+ * to a fee recipient, etc.). If multiple Transfer logs still match all three filters (e.g.
+ * a Multicall3-bundled withdraw with intermediate hops to the same refund address), the
+ * **last** match is used — that is the final settlement out of the deposit address.
  *
  * The payload shape is locked by the indexer consumer
  * (`indexer/packages/indexer/src/pubsub/DepositAddressWithdrawConsumer.ts`).
@@ -34,15 +35,17 @@ export function buildWithdrawExecutedPayload(
   receipt: TransactionReceipt,
   depositMessage: DepositAddressMessage
 ): WithdrawExecutedPayload | undefined {
-  const { erc20Transfer, depositAddress } = depositMessage;
+  const { erc20Transfer, depositAddress, routeParams } = depositMessage;
   const token = erc20Transfer.contractAddress;
 
   const paddedFrom = utils.hexZeroPad(depositAddress.toLowerCase(), 32);
+  const paddedTo = utils.hexZeroPad(routeParams.refundAddress.toLowerCase(), 32);
   const transferLogs = receipt.logs.filter(
     (log) =>
       log.address.toLowerCase() === token.toLowerCase() &&
       log.topics[0] === ERC20_TRANSFER_TOPIC &&
-      log.topics[1]?.toLowerCase() === paddedFrom
+      log.topics[1]?.toLowerCase() === paddedFrom &&
+      log.topics[2]?.toLowerCase() === paddedTo
   );
   if (transferLogs.length === 0) {
     return undefined;
