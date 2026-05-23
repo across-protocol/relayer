@@ -14,6 +14,14 @@ import {
   winston,
 } from "../utils";
 
+// viem's default wss reconnect is 5 attempts × 2 s (~10 s window) before the socket is abandoned
+// permanently — short enough that a routine provider blip lands us in a dead-socket state with no
+// further events. Bump the window so realistic outages ride through; viem re-issues the active
+// eth_subscribe requests against the new socket on each successful reconnect.
+const WSS_RECONNECT_ATTEMPTS = Number(process.env.RPC_WSS_RECONNECT_ATTEMPTS ?? 60);
+const WSS_RECONNECT_DELAY_MS = Number(process.env.RPC_WSS_RECONNECT_DELAY_MS ?? 5_000);
+const WSS_KEEPALIVE_INTERVAL_MS = Number(process.env.RPC_WSS_KEEPALIVE_INTERVAL_MS ?? 30_000);
+
 function resolveProviders(chainId: number, quorum = 1) {
   const protocol = process.env[`RPC_PROVIDERS_TRANSPORT_${chainId}`] ?? "wss";
   assert(protocol === "wss" || protocol === "https");
@@ -26,7 +34,13 @@ function resolveProviders(chainId: number, quorum = 1) {
   const viemChain = getViemChain(chainId);
   const providers = Object.entries(urls).map(([provider, url]) => {
     const headers = getProviderHeaders(provider, chainId);
-    const transport = protocol === "wss" ? webSocket(url) : http(url, { fetchOptions: { headers } });
+    const transport =
+      protocol === "wss"
+        ? webSocket(url, {
+            reconnect: { attempts: WSS_RECONNECT_ATTEMPTS, delay: WSS_RECONNECT_DELAY_MS },
+            keepAlive: { interval: WSS_KEEPALIVE_INTERVAL_MS },
+          })
+        : http(url, { fetchOptions: { headers } });
 
     return createPublicClient({
       chain: viemChain,
