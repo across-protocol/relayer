@@ -30,7 +30,6 @@ import {
   getEventAuthority,
   getStatePda,
   getFillStatusPda,
-  LatestBlockhash,
   getRelayDataHash,
   sendAndConfirmSolanaTransaction,
   SvmAddress,
@@ -107,7 +106,6 @@ import {
   address,
   createTransactionMessage,
   setTransactionMessageFeePayer,
-  setTransactionMessageLifetimeUsingBlockhash,
   appendTransactionMessageInstructions,
   pipe,
   some,
@@ -2895,14 +2893,12 @@ export class Dataworker {
     const proof = relayerRefundLeafHexProof.map((hexLeaf) => Uint8Array.from(Buffer.from(hexLeaf.slice(2), "hex")));
 
     // Derive static accounts.
-    const [kitKeypair, eventAuthority, statePda, transferLiabilityPda, _recentBlockhash] = await Promise.all([
+    const [kitKeypair, eventAuthority, statePda, transferLiabilityPda] = await Promise.all([
       this._getKitKeypair(),
       getEventAuthority(spokePoolProgramId),
       getStatePda(spokePoolProgramId),
       getTransferLiabilityPda(spokePoolProgramId, l2TokenAddress),
-      provider.getLatestBlockhash().send(),
     ]);
-    const recentBlockhash = _recentBlockhash as { value: LatestBlockhash };
     assert(leaf.l2TokenAddress.isSVM());
     const [rootBundlePda, instructionParamsPda, vault] = await Promise.all([
       getRootBundlePda(spokePoolProgramId, rootBundleId),
@@ -2953,7 +2949,6 @@ export class Dataworker {
       const closeInstructionParamsTx = pipe(
         createTransactionMessage({ version: 0 }),
         (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
-        (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash.value, tx),
         (tx) => appendTransactionMessageInstructions([closeInstructionParamsIx], tx)
       );
       const closeSig = await sendAndConfirmSolanaTransaction(closeInstructionParamsTx, provider);
@@ -2972,7 +2967,6 @@ export class Dataworker {
       const initInstructionParamsTx = pipe(
         createTransactionMessage({ version: 0 }),
         (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
-        (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash.value, tx),
         (tx) => appendTransactionMessageInstructions([initializeInstructionParamsIx], tx)
       );
       txSignature = await sendAndConfirmSolanaTransaction(initInstructionParamsTx, provider);
@@ -3007,7 +3001,6 @@ export class Dataworker {
       const writeInstructionParamsTx = pipe(
         createTransactionMessage({ version: 0 }),
         (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
-        (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash.value, tx),
         (tx) => appendTransactionMessageInstructions([writeInstructionParamsIx], tx)
       );
       txSignature = await sendAndConfirmSolanaTransaction(writeInstructionParamsTx, provider);
@@ -3035,7 +3028,6 @@ export class Dataworker {
     const createLookupTableTx = pipe(
       createTransactionMessage({ version: 0 }),
       (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
-      (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash.value, tx),
       (tx) => appendTransactionMessageInstructions([lookupTableIx], tx)
     );
     txSignature = await sendAndConfirmSolanaTransaction(createLookupTableTx, provider);
@@ -3058,7 +3050,6 @@ export class Dataworker {
       const deactivateLutTx = pipe(
         createTransactionMessage({ version: 0 }),
         (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
-        (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash.value, tx),
         (tx) => appendTransactionMessageInstructions([deactivateLutIx], tx)
       );
       const deactivateLutSignature = await sendAndConfirmSolanaTransaction(deactivateLutTx, provider);
@@ -3114,7 +3105,6 @@ export class Dataworker {
           const extendLutTx = pipe(
             createTransactionMessage({ version: 0 }),
             (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
-            (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash.value, tx),
             (tx) => appendTransactionMessageInstructions([extendLookupTableIx], tx)
           );
           await sendAndConfirmSolanaTransaction(extendLutTx, provider);
@@ -3126,7 +3116,6 @@ export class Dataworker {
         const executeRelayerRefundLeafTx = pipe(
           createTransactionMessage({ version: 0 }),
           (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
-          (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash.value, tx),
           (tx) => appendTransactionMessageInstructions([executeRelayerRefundLeafIx], tx),
           (tx) => compressTransactionMessageUsingAddressLookupTables(tx, addressLookupTableDefinitions.lookupTableMap)
         );
@@ -3183,7 +3172,6 @@ export class Dataworker {
             const initializeClaimAccountTx = pipe(
               createTransactionMessage({ version: 0 }),
               (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
-              (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash.value, tx),
               (tx) => appendTransactionMessageInstructions([initializeClaimAccountIx], tx)
             );
             txSignature = await sendAndConfirmSolanaTransaction(initializeClaimAccountTx, provider);
@@ -3211,7 +3199,6 @@ export class Dataworker {
           const extendLutTx = pipe(
             createTransactionMessage({ version: 0 }),
             (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
-            (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash.value, tx),
             (tx) => appendTransactionMessageInstructions([extendLookupTableIx], tx)
           );
           await sendAndConfirmSolanaTransaction(extendLutTx, provider);
@@ -3223,7 +3210,6 @@ export class Dataworker {
         const executeRelayerRefundLeafDeferredTx = pipe(
           createTransactionMessage({ version: 0 }),
           (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
-          (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash.value, tx),
           (tx) => appendTransactionMessageInstructions([executeRelayerRefundLeafDeferredIx], tx),
           (tx) => compressTransactionMessageUsingAddressLookupTables(tx, addressLookupTableDefinitions.lookupTableMap)
         );
@@ -3287,11 +3273,11 @@ export class Dataworker {
           claimSignatures: Object.fromEntries(claimedRefunds),
         });
       }
-    } catch (e) {
+    } catch (err) {
       this.logger.error({
         at: "Dataworker#executeRelayerRefundLeafSvm",
         message: "Something failed during the relayer refund leaf execution stage",
-        cause: e,
+        error: err,
       });
       try {
         await deactivateLut();
@@ -3299,10 +3285,10 @@ export class Dataworker {
         this.logger.warn({
           at: "Dataworker#executeRelayerRefundLeafSvm",
           message: "deactivateLut cleanup failed after refund execution error",
-          cause: err,
+          error: err,
         });
       }
-      throw e;
+      throw err;
     }
     // The refund was successful, so return the signature.
     await deactivateLut();
@@ -3326,14 +3312,12 @@ export class Dataworker {
     const proof = slowFillHexProof.map((hexLeaf) => Uint8Array.from(Buffer.from(hexLeaf.slice(2), "hex")));
 
     // Gather the PDAs required to execute the slow fill leaf.
-    const [kitKeypair, eventAuthority, statePda, fillStatusPda, _recentBlockhash] = await Promise.all([
+    const [kitKeypair, eventAuthority, statePda, fillStatusPda] = await Promise.all([
       this._getKitKeypair(),
       getEventAuthority(spokePoolProgramId),
       getStatePda(spokePoolProgramId),
       getFillStatusPda(spokePoolProgramId, leaf.relayData, leaf.chainId),
-      provider.getLatestBlockhash().send(),
     ]);
-    const recentBlockhash = _recentBlockhash as { value: LatestBlockhash };
     assert(leaf.relayData.outputToken.isSVM());
     const [rootBundlePda, recipientTokenAccount, vault] = await Promise.all([
       getRootBundlePda(spokePoolProgramId, rootBundleId),
@@ -3383,7 +3367,6 @@ export class Dataworker {
     const executeSlowFillTx = pipe(
       createTransactionMessage({ version: 0 }),
       (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
-      (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash.value, tx),
       (tx) => appendTransactionMessageInstructions([executeSlowFillIx], tx)
     );
     const signature = await sendAndConfirmSolanaTransaction(executeSlowFillTx, provider);
