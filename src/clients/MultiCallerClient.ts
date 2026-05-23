@@ -16,6 +16,7 @@ import {
   getProvider,
   Multicall2Call,
   assert,
+  sanitizeSimulationReason,
 } from "../utils";
 import { AugmentedTransaction, TransactionClient } from "./TransactionClient";
 import lodash from "lodash";
@@ -520,7 +521,7 @@ export class MultiCallerClient {
           return {
             target: getTarget(txn.transaction.contract.address),
             args: txn.transaction.args,
-            reason: txn.reason,
+            reason: sanitizeSimulationReason(txn.reason),
             message: txn.transaction.message,
             mrkdwn: txn.transaction.mrkdwn,
           };

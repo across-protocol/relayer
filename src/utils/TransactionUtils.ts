@@ -39,6 +39,33 @@ export type Multicall2Call = {
   target: string;
 };
 
+// Path segments shaped like opaque API keys (≥16 base64/hex/url-safe chars).
+// Conservative: leaves origins and short path components (e.g. "/v2") intact.
+const RPC_KEY_PATH_SEGMENT = /\/[A-Za-z0-9_-]{16,}/g;
+
+// Redact API-key-like path segments from any URL embedded in the input. Used
+// to scrub RPC provider URLs (Alchemy/Infura/QuickNode/etc.) before they're
+// surfaced to Slack/Datadog warning logs.
+export function redactRpcSecrets(s: string): string {
+  return s.replace(RPC_KEY_PATH_SEGMENT, "/<redacted>");
+}
+
+// Reduce a simulation-failure reason to a single short line suitable for
+// human-readable warning logs. Prefers the inner "execution reverted: …"
+// string when present (e.g. when the failure bubbles up from the SDK's
+// RetryProvider as a multi-provider aggregate error wrapping an ethers
+// stack trace), and always redacts any embedded RPC URLs.
+export function sanitizeSimulationReason(reason: string | undefined): string {
+  if (!reason) {
+    return "unknown error";
+  }
+  const revertMatch = reason.match(/execution reverted:?\s*([^"\\\n]+)/i);
+  const extracted = revertMatch
+    ? revertMatch[1].trim()
+    : (reason.split("\n").find((line) => line.trim().length > 0) ?? reason).trim();
+  return redactRpcSecrets(extracted).slice(0, 200);
+}
+
 export function getMultisender(chainId: number, baseSigner: Signer): Contract | undefined {
   return sdkUtils.getMulticall3(chainId, baseSigner);
 }
