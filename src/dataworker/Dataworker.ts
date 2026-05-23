@@ -2925,14 +2925,27 @@ export class Dataworker {
       vault,
     });
 
-    // Optionally close the existing instruction params account and add an instruction which loads new data into the instruction params PDA.
+    const relayerRefundLeafParamsEncoder = SvmSpokeClient.getExecuteRelayerRefundLeafParamsEncoder();
+    const relayerRefundLeafBytes = relayerRefundLeafParamsEncoder.encode({
+      rootBundleId,
+      relayerRefundLeaf: toSvmRelayerRefundLeaf(leaf),
+      proof,
+    });
+
+    // executeRelayerRefundLeaf auto-closes the PDA via `close = signer`, so a leftover PDA here
+    // means a prior run crashed; reuse when sized to fit to avoid the close→init preflight race.
     const instructionParamsAccount = await fetchEncodedAccount(provider, instructionParamsPda);
-    // If the account exists, define the instruction needed to close the instruction account.
-    if (instructionParamsAccount.exists) {
+    const needsClose =
+      instructionParamsAccount.exists && instructionParamsAccount.data.length < relayerRefundLeafBytes.length;
+    const needsInit = !instructionParamsAccount.exists || needsClose;
+    let txSignature;
+    if (needsClose) {
       this.logger.debug({
         at: "Dataworker#executeRelayerRefundLeafSvm",
-        message: "Need to close existing instruction params account",
+        message: "Existing instruction params account is undersized; closing and reinitializing",
         instructionParamsAccount: instructionParamsAccount.address,
+        existingSize: instructionParamsAccount.data.length,
+        requiredSize: relayerRefundLeafBytes.length,
       });
       const closeInstructionParamsIx = SvmSpokeClient.getCloseInstructionParamsInstruction({
         signer: kitKeypair,
@@ -2951,34 +2964,35 @@ export class Dataworker {
         signature: closeSig,
       });
     }
-    // First, add an instruction which initializes a new instruction params PDA for the relayer refund leaf.
-    const relayerRefundLeafParamsEncoder = SvmSpokeClient.getExecuteRelayerRefundLeafParamsEncoder();
-    const relayerRefundLeafBytes = relayerRefundLeafParamsEncoder.encode({
-      rootBundleId,
-      relayerRefundLeaf: toSvmRelayerRefundLeaf(leaf),
-      proof,
-    });
-    const initializeInstructionParamsIx = SvmSpokeClient.getInitializeInstructionParamsInstruction({
-      signer: kitKeypair,
-      instructionParams: instructionParamsPda,
-      totalSize: relayerRefundLeafBytes.length,
-    });
-
-    const initInstructionParamsTx = pipe(
-      createTransactionMessage({ version: 0 }),
-      (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
-      (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash.value, tx),
-      (tx) => appendTransactionMessageInstructions([initializeInstructionParamsIx], tx)
-    );
-    let txSignature;
-    txSignature = await sendAndConfirmSolanaTransaction(initInstructionParamsTx, provider);
-    this.logger.debug({
-      at: "Dataworker#executeRelayerRefundLeafSvm",
-      message: "Initialized instruction params account",
-      instructionParamsAccount: instructionParamsAccount.address,
-      allocatedMemory: relayerRefundLeafBytes.length,
-      txSignature,
-    });
+    if (needsInit) {
+      const initializeInstructionParamsIx = SvmSpokeClient.getInitializeInstructionParamsInstruction({
+        signer: kitKeypair,
+        instructionParams: instructionParamsPda,
+        totalSize: relayerRefundLeafBytes.length,
+      });
+      const initInstructionParamsTx = pipe(
+        createTransactionMessage({ version: 0 }),
+        (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
+        (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash.value, tx),
+        (tx) => appendTransactionMessageInstructions([initializeInstructionParamsIx], tx)
+      );
+      txSignature = await sendAndConfirmSolanaTransaction(initInstructionParamsTx, provider);
+      this.logger.debug({
+        at: "Dataworker#executeRelayerRefundLeafSvm",
+        message: "Initialized instruction params account",
+        instructionParamsAccount: instructionParamsAccount.address,
+        allocatedMemory: relayerRefundLeafBytes.length,
+        txSignature,
+      });
+    } else {
+      this.logger.debug({
+        at: "Dataworker#executeRelayerRefundLeafSvm",
+        message: "Reusing existing instruction params account",
+        instructionParamsAccount: instructionParamsAccount.address,
+        existingSize: instructionParamsAccount.data.length,
+        requiredSize: relayerRefundLeafBytes.length,
+      });
+    }
 
     // Then add an instruction which populates that initialized PDA with the data of the relayer refund leaf.
     for (let i = 0; i <= relayerRefundLeafBytes.length / INSTRUCTION_PARAMS_MAX_WRITE_SIZE; ++i) {
