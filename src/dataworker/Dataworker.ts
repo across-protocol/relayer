@@ -3273,11 +3273,11 @@ export class Dataworker {
           claimSignatures: Object.fromEntries(claimedRefunds),
         });
       }
-    } catch (e) {
+    } catch (err) {
       this.logger.error({
         at: "Dataworker#executeRelayerRefundLeafSvm",
         message: "Something failed during the relayer refund leaf execution stage",
-        cause: e,
+        error: err,
       });
       try {
         await deactivateLut();
@@ -3285,10 +3285,10 @@ export class Dataworker {
         this.logger.warn({
           at: "Dataworker#executeRelayerRefundLeafSvm",
           message: "deactivateLut cleanup failed after refund execution error",
-          cause: err,
+          error: err,
         });
       }
-      throw e;
+      throw err;
     }
     // The refund was successful, so return the signature.
     await deactivateLut();
