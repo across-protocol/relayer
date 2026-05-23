@@ -78,7 +78,7 @@ Auth uses Application Default Credentials. In Cloud Run / GKE the workload SA pr
 }
 ```
 
-All integer fields are `number`; tx hashes are lowercase hex strings. The `erc20Transfer` block identifies the original user transfer (the indexer keys rows on it); the top-level fields identify the withdraw transaction the bot just sent. The `logIndex` of the withdraw is the index of the ERC-20 `Transfer(address,address,uint256)` event whose `from` is the deposit address and whose token contract matches `erc20Transfer.contractAddress`.
+All integer fields are `number`; tx hashes are lowercase hex strings. The `erc20Transfer` block identifies the original user transfer (the indexer keys rows on it); the top-level fields identify the withdraw transaction the bot just sent. The `logIndex` of the withdraw is the index of the ERC-20 `Transfer(address,address,uint256)` event whose `from` is the deposit address and whose token contract matches `erc20Transfer.contractAddress`. If multiple such transfers appear in one receipt (e.g. a Multicall3-bundled withdraw with intermediate hops), the **last** match is used — that is the final settlement out of the deposit address.
 
 ### Failure semantics
 

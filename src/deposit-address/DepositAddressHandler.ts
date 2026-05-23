@@ -538,7 +538,7 @@ export class DepositAddressHandler {
     if (!isDefined(payload)) {
       this.logger.warn({
         at: "DepositAddressHandler#_publishWithdrawExecuted",
-        message: "Skipping publish: expected exactly one ERC20 Transfer log from deposit address",
+        message: "Skipping publish: no ERC20 Transfer log from deposit address found in receipt",
         depositAddress: depositMessage.depositAddress,
         token: depositMessage.erc20Transfer.contractAddress,
         txHash: receipt.transactionHash,

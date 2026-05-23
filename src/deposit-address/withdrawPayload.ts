@@ -19,8 +19,13 @@ export type WithdrawExecutedPayload = {
 
 /**
  * Builds the `withdraw_executed` payload published to GCP Pub/Sub. Returns `undefined` when
- * the receipt does not contain exactly one ERC20 `Transfer` event with the expected
+ * the receipt contains no ERC20 `Transfer` event with the expected
  * `(address=token, from=depositAddress)` — caller should warn and skip.
+ *
+ * When the receipt contains multiple matching Transfer logs (e.g. a Multicall3-bundled
+ * withdraw that emits intermediate transfers), the **last** match is used. The final
+ * Transfer out of the deposit address is the one that settles funds to the user, so its
+ * logIndex is the canonical reference for the indexer row.
  *
  * The payload shape is locked by the indexer consumer
  * (`indexer/packages/indexer/src/pubsub/DepositAddressWithdrawConsumer.ts`).
@@ -39,10 +44,10 @@ export function buildWithdrawExecutedPayload(
       log.topics[0] === ERC20_TRANSFER_TOPIC &&
       log.topics[1]?.toLowerCase() === paddedFrom
   );
-  if (transferLogs.length !== 1) {
+  if (transferLogs.length === 0) {
     return undefined;
   }
-  const transferLog = transferLogs[0];
+  const transferLog = transferLogs[transferLogs.length - 1];
 
   return {
     type: "withdraw_executed",

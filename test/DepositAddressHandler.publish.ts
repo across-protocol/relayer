@@ -131,12 +131,17 @@ describe("buildWithdrawExecutedPayload", function () {
     expect(buildWithdrawExecutedPayload(receipt, depositMessage())).to.be.undefined;
   });
 
-  it("returns undefined when multiple matching Transfer logs exist", function () {
+  it("picks the LAST matching Transfer log when multiple exist (e.g. Multicall3-bundled withdraw)", function () {
     const receipt = fakeReceipt([
+      // Intermediate transfer from the deposit address (e.g., to an internal router).
       { address: TOKEN, topics: [ERC20_TRANSFER_TOPIC, topicAddress(DEPOSIT_ADDRESS), topicAddress(OTHER_ADDRESS)] },
+      // Unrelated log between the two matches.
+      { address: OTHER_TOKEN, topics: [ERC20_TRANSFER_TOPIC, topicAddress(OTHER_ADDRESS), topicAddress(DEPOSIT_ADDRESS)] },
+      // Final settlement transfer from the deposit address — this is the one we want.
       { address: TOKEN, topics: [ERC20_TRANSFER_TOPIC, topicAddress(DEPOSIT_ADDRESS), topicAddress(OTHER_ADDRESS)] },
     ]);
-    expect(buildWithdrawExecutedPayload(receipt, depositMessage())).to.be.undefined;
+    const payload = buildWithdrawExecutedPayload(receipt, depositMessage());
+    expect(payload?.logIndex).to.equal(2);
   });
 });
 
