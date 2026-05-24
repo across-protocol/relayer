@@ -2540,8 +2540,7 @@ export class Dataworker {
             at: "Dataworker#_executeRelayerRefundLeaves",
             message: "Executed RelayerRefundLeaf 🌿!",
             mrkdwn,
-            signature,
-            explorer: blockExplorerLink(signature, chainId),
+            signature: blockExplorerLink(signature, chainId),
           });
         }
       } else {
