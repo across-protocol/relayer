@@ -29,9 +29,10 @@ export function sortRefundAddresses(refunds: Refund, chainId: number): Address[]
     .map((address) => toAddressType(address, chainId));
 }
 
-// Shared `{ message, mrkdwn }` for a relayer-refund-leaf execution log. EVM passes this through
-// MultiCallerClient (TransactionClient renders the explorer link from the tx response); SVM logs
-// directly and appends `(${blockExplorerLink(signature, chainId)})` to `message` to match.
+// Shared `{ message, mrkdwn }` for a relayer-refund-leaf execution log. Both EVM and SVM call
+// this with the same args; pass `explorerLink` when the explorer link is known at log time (SVM
+// has the signature in hand). EVM omits it and lets TransactionClient#submit append the
+// parenthetical from the tx response in the same `<message> (<explorer>): <mrkdwn>` shape.
 export function formatRelayerRefundLeafExecutionLog(args: {
   rootBundleId: number;
   relayerRefundRoot: string;
@@ -39,9 +40,11 @@ export function formatRelayerRefundLeafExecutionLog(args: {
   chainId: number;
   symbol: string;
   amountToReturn: BigNumber;
+  explorerLink?: string;
 }): { message: string; mrkdwn: string } {
+  const baseMessage = "Executed RelayerRefundLeaf 🌿!";
   return {
-    message: "Executed RelayerRefundLeaf 🌿!",
+    message: args.explorerLink ? `${baseMessage} (${args.explorerLink})` : baseMessage,
     mrkdwn:
       `rootBundleId: ${args.rootBundleId}\n` +
       `relayerRefundRoot: ${args.relayerRefundRoot}\n` +

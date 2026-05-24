@@ -2502,53 +2502,57 @@ export class Dataworker {
     ).filter(isDefined);
 
     await forEachAsync(fundedLeaves, async (leaf) => {
-      const symbol = this.getTokenInfo(leaf.l2TokenAddress, chainId);
-      const { message, mrkdwn } = formatRelayerRefundLeafExecutionLog({
+      const leafLogArgs = {
         rootBundleId,
         relayerRefundRoot: relayerRefundTree.getHexRoot(),
         leafId: leaf.leafId,
         chainId,
-        symbol,
+        symbol: this.getTokenInfo(leaf.l2TokenAddress, chainId),
         amountToReturn: leaf.amountToReturn,
-      });
-      if (submitExecution) {
-        if (isEVMSpokePoolClient(client)) {
-          const valueToPassViaPayable = msgValuesByLeafId.get(leaf.leafId);
-          const ethersLeaf = {
-            ...leaf,
-            l2TokenAddress: leaf.l2TokenAddress.toEvmAddress(),
-            refundAddresses: leaf.refundAddresses.map((refundAddress) => refundAddress.toEvmAddress()),
-          };
-          this.clients.multiCallerClient.enqueueTransaction({
-            value: valueToPassViaPayable,
-            contract: client.spokePool,
-            chainId,
-            method: "executeRelayerRefundLeaf",
-            args: [rootBundleId, ethersLeaf, relayerRefundTree.getHexProof(leaf)],
-            message,
-            mrkdwn,
-            // If mainnet, send through Multicall3 so it can be batched with PoolRebalanceLeaf executions, otherwise
-            // SpokePool.multicall() is fine.
-            unpermissioned: Number(chainId) === this.clients.hubPoolClient.chainId,
-            // If simulating mainnet execution, can fail as it may require funds to be sent from
-            // pool rebalance leaf.
-            canFailInSimulation: leaf.chainId === this.clients.hubPoolClient.chainId,
-          });
-        } else if (isSVMSpokePoolClient(client)) {
-          const signature = await this._executeRelayerRefundLeafSvm(
-            client,
-            leaf,
-            rootBundleId,
-            relayerRefundTree.getHexProof(leaf)
-          );
-          this.logger.info({
-            at: "Dataworker#_executeRelayerRefundLeaves",
-            message: `${message} (${blockExplorerLink(signature, chainId)})`,
-            mrkdwn,
-          });
-        }
-      } else {
-        this.logger.debug({ at: "Dataworker#_executeRelayerRefundLeaves", message: mrkdwn });
+      };
+      if (!submitExecution) {
+        this.logger.debug({
+          at: "Dataworker#_executeRelayerRefundLeaves",
+          message: formatRelayerRefundLeafExecutionLog(leafLogArgs).mrkdwn,
+        });
+        return;
+      }
+      if (isEVMSpokePoolClient(client)) {
+        const valueToPassViaPayable = msgValuesByLeafId.get(leaf.leafId);
+        const ethersLeaf = {
+          ...leaf,
+          l2TokenAddress: leaf.l2TokenAddress.toEvmAddress(),
+          refundAddresses: leaf.refundAddresses.map((refundAddress) => refundAddress.toEvmAddress()),
+        };
+        this.clients.multiCallerClient.enqueueTransaction({
+          value: valueToPassViaPayable,
+          contract: client.spokePool,
+          chainId,
+          method: "executeRelayerRefundLeaf",
+          args: [rootBundleId, ethersLeaf, relayerRefundTree.getHexProof(leaf)],
+          // TransactionClient#submit appends `(<explorer>)` from the tx response.
+          ...formatRelayerRefundLeafExecutionLog(leafLogArgs),
+          // If mainnet, send through Multicall3 so it can be batched with PoolRebalanceLeaf executions, otherwise
+          // SpokePool.multicall() is fine.
+          unpermissioned: Number(chainId) === this.clients.hubPoolClient.chainId,
+          // If simulating mainnet execution, can fail as it may require funds to be sent from
+          // pool rebalance leaf.
+          canFailInSimulation: leaf.chainId === this.clients.hubPoolClient.chainId,
+        });
+      } else if (isSVMSpokePoolClient(client)) {
+        const signature = await this._executeRelayerRefundLeafSvm(
+          client,
+          leaf,
+          rootBundleId,
+          relayerRefundTree.getHexProof(leaf)
+        );
+        this.logger.info({
+          at: "Dataworker#_executeRelayerRefundLeaves",
+          ...formatRelayerRefundLeafExecutionLog({
+            ...leafLogArgs,
+            explorerLink: blockExplorerLink(signature, chainId),
+          }),
+        });
       }
     });
   }
