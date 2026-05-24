@@ -29,6 +29,29 @@ export function sortRefundAddresses(refunds: Refund, chainId: number): Address[]
     .map((address) => toAddressType(address, chainId));
 }
 
+// Shared `{ message, mrkdwn }` for a relayer-refund-leaf execution log. EVM passes this through
+// MultiCallerClient (TransactionClient renders the explorer link from the tx response); SVM logs
+// directly and appends `(${blockExplorerLink(signature, chainId)})` to `message` to match.
+export function formatRelayerRefundLeafExecutionLog(args: {
+  rootBundleId: number;
+  relayerRefundRoot: string;
+  leafId: number;
+  chainId: number;
+  symbol: string;
+  amountToReturn: BigNumber;
+}): { message: string; mrkdwn: string } {
+  return {
+    message: "Executed RelayerRefundLeaf 🌿!",
+    mrkdwn:
+      `rootBundleId: ${args.rootBundleId}\n` +
+      `relayerRefundRoot: ${args.relayerRefundRoot}\n` +
+      `Leaf: ${args.leafId}\n` +
+      `chainId: ${args.chainId}\n` +
+      `token: ${args.symbol}\n` +
+      `amount: ${args.amountToReturn.toString()}`,
+  };
+}
+
 // Sort leaves by chain ID and then L2 token address in ascending order. Assign leaves unique, ascending ID's
 // beginning from 0.
 export function sortRelayerRefundLeaves(relayerRefundLeaves: RelayerRefundLeafWithGroup[]): RelayerRefundLeaf[] {

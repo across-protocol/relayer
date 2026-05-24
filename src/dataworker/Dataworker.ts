@@ -86,6 +86,7 @@ import {
   persistDataToArweave,
 } from "../dataworker/DataworkerUtils";
 import { _buildRelayerRefundRoot, _buildSlowRelayRoot, generateValidationKey } from "./DataworkerUtils";
+import { formatRelayerRefundLeafExecutionLog } from "./RelayerRefundUtils";
 import _ from "lodash";
 import {
   ARBITRUM_ORBIT_L1L2_MESSAGE_FEE_DATA,
@@ -2502,10 +2503,14 @@ export class Dataworker {
 
     await forEachAsync(fundedLeaves, async (leaf) => {
       const symbol = this.getTokenInfo(leaf.l2TokenAddress, chainId);
-
-      const mrkdwn = `rootBundleId: ${rootBundleId}\nrelayerRefundRoot: ${relayerRefundTree.getHexRoot()}\nLeaf: ${
-        leaf.leafId
-      }\nchainId: ${chainId}\ntoken: ${symbol}\namount: ${leaf.amountToReturn.toString()}`;
+      const { message, mrkdwn } = formatRelayerRefundLeafExecutionLog({
+        rootBundleId,
+        relayerRefundRoot: relayerRefundTree.getHexRoot(),
+        leafId: leaf.leafId,
+        chainId,
+        symbol,
+        amountToReturn: leaf.amountToReturn,
+      });
       if (submitExecution) {
         if (isEVMSpokePoolClient(client)) {
           const valueToPassViaPayable = msgValuesByLeafId.get(leaf.leafId);
@@ -2520,7 +2525,7 @@ export class Dataworker {
             chainId,
             method: "executeRelayerRefundLeaf",
             args: [rootBundleId, ethersLeaf, relayerRefundTree.getHexProof(leaf)],
-            message: "Executed RelayerRefundLeaf 🌿!",
+            message,
             mrkdwn,
             // If mainnet, send through Multicall3 so it can be batched with PoolRebalanceLeaf executions, otherwise
             // SpokePool.multicall() is fine.
@@ -2538,7 +2543,7 @@ export class Dataworker {
           );
           this.logger.info({
             at: "Dataworker#_executeRelayerRefundLeaves",
-            message: `Executed RelayerRefundLeaf 🌿! (${blockExplorerLink(signature, chainId)})`,
+            message: `${message} (${blockExplorerLink(signature, chainId)})`,
             mrkdwn,
           });
         }
