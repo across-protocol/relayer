@@ -2538,9 +2538,8 @@ export class Dataworker {
           );
           this.logger.info({
             at: "Dataworker#_executeRelayerRefundLeaves",
-            message: "Executed RelayerRefundLeaf 🌿!",
+            message: `Executed RelayerRefundLeaf 🌿! (${blockExplorerLink(signature, chainId)})`,
             mrkdwn,
-            signature: blockExplorerLink(signature, chainId),
           });
         }
       } else {
