@@ -2,6 +2,7 @@ import assert from "assert";
 import { Contract } from "ethers";
 import { utils as sdkUtils, arch } from "@across-protocol/sdk";
 import {
+  blockExplorerLink,
   bnZero,
   winston,
   EMPTY_MERKLE_ROOT,
@@ -2537,8 +2538,10 @@ export class Dataworker {
           );
           this.logger.info({
             at: "Dataworker#_executeRelayerRefundLeaves",
-            message: mrkdwn,
+            message: "Executed RelayerRefundLeaf 🌿!",
+            mrkdwn,
             signature,
+            explorer: blockExplorerLink(signature, chainId),
           });
         }
       } else {
