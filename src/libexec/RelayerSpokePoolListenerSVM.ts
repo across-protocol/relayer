@@ -140,9 +140,8 @@ async function listen(
     while (!abortSignal.aborted) {
       try {
         const subscription = await provider.slotNotifications().subscribe({ abortSignal });
-        for await (const update of subscription) {
+        for await (const { slot } of subscription) {
           backoffS = RECONNECT_BACKOFF_MIN_S; // reset on any successful update
-          const { slot } = update as { slot: bigint }; // Bodge: pretend slots are blocks.
           const currentTime = getCurrentTime(); // @todo Try to subscribe w/ timestamp updates.
 
           if (!postBlock(Number(slot), currentTime)) {
