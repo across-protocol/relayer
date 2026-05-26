@@ -5,7 +5,6 @@ import { arch, typeguards } from "@across-protocol/sdk";
 import { SvmSpokeClient } from "@across-protocol/contracts";
 import { Log } from "../interfaces";
 import {
-  delay,
   EventManager,
   isDefined,
   getBlockForTimestamp,
@@ -21,7 +20,7 @@ import {
 } from "../utils";
 import { getRedisCache } from "../cache/Redis";
 import { ScraperOpts } from "./types";
-import { bootstrap, waitForAbort } from "./util/bootstrap";
+import { bootstrap } from "./util/bootstrap";
 import { postBlock, postEvents } from "./util/ipc";
 import { scrapeEvents as _scrapeEvents } from "./util/svm";
 
@@ -124,10 +123,26 @@ async function listen(
   const RECONNECT_BACKOFF_MIN_S = 1;
   const RECONNECT_BACKOFF_MAX_S = 30;
 
-  // Abortable sleep: returns once the backoff elapses or the abort signal fires, whichever
-  // comes first. Without this, a SIGHUP arriving mid-backoff would block child shutdown for
-  // up to RECONNECT_BACKOFF_MAX_S, conflicting with the bootstrap teardown contract.
-  const abortableDelay = (seconds: number) => Promise.race([delay(seconds), waitForAbort(abortSignal)]);
+  // Abortable sleep: resolves once the backoff elapses or the abort signal fires, whichever
+  // comes first. Cleans up the pending timer on abort (so it doesn't keep the event loop alive
+  // and delay process exit by up to RECONNECT_BACKOFF_MAX_S) and detaches the abort listener
+  // on the normal path (so listeners don't accumulate across reconnect retries).
+  const abortableDelay = (seconds: number): Promise<void> =>
+    new Promise((resolve) => {
+      if (abortSignal.aborted) {
+        resolve();
+        return;
+      }
+      const onAbort = () => {
+        clearTimeout(timer);
+        resolve();
+      };
+      const timer = setTimeout(() => {
+        abortSignal.removeEventListener("abort", onAbort);
+        resolve();
+      }, seconds * 1000);
+      abortSignal.addEventListener("abort", onAbort, { once: true });
+    });
 
   const logProviderError = (providerName: string, err: unknown, backoffS: number) => {
     const message = "Caught error on Solana provider; reconnecting.";
