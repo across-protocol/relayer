@@ -171,7 +171,7 @@ export class SvmFillerClient {
         errorMessage = `Solana error code: ${e.context.__code}`;
       }
 
-      this.logger.error({
+      this.logger.debug({
         at: "SvmFillerClient#executeFillImmediately",
         message: `Failed to send fill transaction (${errorMessage})`,
         mrkdwn,
@@ -253,7 +253,7 @@ export class SvmFillerClient {
           errorMessage = `Solana error code: ${e.context.__code}`;
         }
 
-        this.logger.error({
+        this.logger.debug({
           at: "SvmFillerClient#executeTxnQueue",
           message: `Failed to send fill transaction (${errorMessage})`,
           mrkdwn,
