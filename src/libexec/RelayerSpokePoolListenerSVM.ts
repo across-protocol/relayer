@@ -21,7 +21,7 @@ import {
 } from "../utils";
 import { getRedisCache } from "../cache/Redis";
 import { ScraperOpts } from "./types";
-import { bootstrap } from "./util/bootstrap";
+import { bootstrap, waitForAbort } from "./util/bootstrap";
 import { postBlock, postEvents } from "./util/ipc";
 import { scrapeEvents as _scrapeEvents } from "./util/svm";
 
@@ -124,6 +124,11 @@ async function listen(
   const RECONNECT_BACKOFF_MIN_S = 1;
   const RECONNECT_BACKOFF_MAX_S = 30;
 
+  // Abortable sleep: returns once the backoff elapses or the abort signal fires, whichever
+  // comes first. Without this, a SIGHUP arriving mid-backoff would block child shutdown for
+  // up to RECONNECT_BACKOFF_MAX_S, conflicting with the bootstrap teardown contract.
+  const abortableDelay = (seconds: number) => Promise.race([delay(seconds), waitForAbort(abortSignal)]);
+
   const logProviderError = (providerName: string, err: unknown, backoffS: number) => {
     const message = "Caught error on Solana provider; reconnecting.";
     const ctx = { at, message, provider: providerName, backoffS };
@@ -155,7 +160,7 @@ async function listen(
           return;
         }
         logProviderError(providerName, err, backoffS);
-        await delay(backoffS);
+        await abortableDelay(backoffS);
         backoffS = Math.min(backoffS * 2, RECONNECT_BACKOFF_MAX_S);
       }
     }
@@ -188,7 +193,7 @@ async function listen(
           return;
         }
         logProviderError(providerName, err, backoffS);
-        await delay(backoffS);
+        await abortableDelay(backoffS);
         backoffS = Math.min(backoffS * 2, RECONNECT_BACKOFF_MAX_S);
       }
     }
