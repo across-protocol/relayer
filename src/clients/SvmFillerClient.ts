@@ -49,15 +49,15 @@ type QueuedSvmFill = {
   mrkdwn: string;
 };
 
-// Known-benign FillRelay error codes (recoverable: another relayer won the race, or our outer loop retries).
-// EVM parity: `knownRevertReasons` / `canIgnoreRevertReason` in MultiCallerClient.ts.
+// Known-benign Solana error codes for fillRelay / slowFillRequest submission (recoverable: another
+// actor won the race, or our outer loop retries). EVM parity: `knownRevertReasons` in MultiCallerClient.ts.
 const knownSolanaFillErrorCodes = new Set<number>([arch.svm.SVM_TRANSACTION_PREFLIGHT_FAILURE]);
 const retryDelaySeconds = 1;
 
-// Suppression is gated on both the tx kind (only fillRelay — slow-fill request failures stay loud)
-// and the error code (only the known-benign codes). Either dimension alone would be too broad.
-function canIgnoreSvmFillError(kind: SvmTxKind, e: unknown): boolean {
-  return kind === "fillRelay" && isSolanaError(e) && knownSolanaFillErrorCodes.has(e.context.__code);
+// Both fillRelay and slowFillRequest preflight failures can be recoverable races (another actor won
+// the race, or our outer loop retries), so suppression is gated only on the benign error code.
+function canIgnoreSvmFillError(e: unknown): boolean {
+  return isSolanaError(e) && knownSolanaFillErrorCodes.has(e.context.__code);
 }
 
 export class SvmFillerClient {
@@ -193,9 +193,7 @@ export class SvmFillerClient {
         errorMessage = `Solana error code: ${e.context.__code}`;
       }
 
-      // executeFillImmediately only builds fillRelay txs (via buildFillRelayTxPromises), so the kind
-      // is fixed at the call site.
-      const ignorable = canIgnoreSvmFillError("fillRelay", e);
+      const ignorable = canIgnoreSvmFillError(e);
       this.logger[ignorable ? "debug" : "error"]({
         at: "SvmFillerClient#executeFillImmediately",
         message: `Failed to send fill transaction (${errorMessage})`,
@@ -279,7 +277,7 @@ export class SvmFillerClient {
           errorMessage = `Solana error code: ${e.context.__code}`;
         }
 
-        const ignorable = canIgnoreSvmFillError(kind, e);
+        const ignorable = canIgnoreSvmFillError(e);
         this.logger[ignorable ? "debug" : "error"]({
           at: "SvmFillerClient#executeTxnQueue",
           message: `Failed to send fill transaction (${errorMessage})`,
