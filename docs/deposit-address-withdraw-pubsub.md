@@ -14,11 +14,12 @@ The Pub/Sub topic carries lifecycle events from the bot to the indexer so the ro
 
 - **Topic host project:** `data-hub-pubsub-3360` (a dedicated GCP project used as the pub/sub hub).
 - **Topics:**
-  - `topic-deposit-address-withdraw` — production.
-  - `topic-deposit-address-withdraw-sandbox` — non-production.
+  - `topic-deposit-address-execution` — production.
+  - `topic-deposit-address-execution-sandbox` — non-production.
+  - The "execution" naming is intentionally broader than "withdraw" — the same topic is the future home for any deposit-address execution lifecycle event (e.g. `deposit_executed` for the correct-transfer path), even though only `withdraw_executed` is emitted today.
 - **Subscriptions** (consumer side, not the bot's concern):
-  - `subscription-deposit-address-withdraw-indexer` → indexer pulls in prod.
-  - `subscription-deposit-address-withdraw-sandbox-indexer` → indexer pulls in sandbox.
+  - `subscription-deposit-address-execution-indexer` → indexer pulls in prod.
+  - `subscription-deposit-address-execution-sandbox-indexer` → indexer pulls in sandbox.
 - **Publisher service account:** `cloudrun-bots-across-spoke-sa@bots-across-3839.iam.gserviceaccount.com` — the SA both prod and `-test` bot handlers run as, granted `roles/pubsub.publisher` on both topics. The bot's runtime project (`bots-across-3839`) is therefore **different** from the topic host project; cross-project publish is supported because the IAM grant lives on the topic.
 - **No message ordering, no DLT, no Avro schema** — the consumer validates payload shape at the app layer and is poison-pill safe (ack on malformed, nack only on transient DB error).
 

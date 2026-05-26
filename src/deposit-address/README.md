@@ -56,7 +56,7 @@ When `ENABLE_DEPOSIT_ADDRESS_WITHDRAW_PUBLISHER=true`, every confirmed refund wi
 | --- | --- | --- |
 | `ENABLE_DEPOSIT_ADDRESS_WITHDRAW_PUBLISHER` | No (default `false`) | Master gate. When false, no Pub/Sub client is constructed. |
 | `PUBSUB_GCP_PROJECT_ID` | When gate is on | GCP project that **hosts the topic** (may differ from the bot's runtime project — cross-project publish is supported when the runtime SA holds `roles/pubsub.publisher` on the topic in the host project). |
-| `PUBSUB_DEPOSIT_ADDRESS_WITHDRAW_TOPIC` | When gate is on | Short topic name (e.g. `topic-deposit-address-withdraw` in prod, `…-sandbox` in non-prod). |
+| `PUBSUB_DEPOSIT_ADDRESS_WITHDRAW_TOPIC` | When gate is on | Short topic name (e.g. `topic-deposit-address-execution` in prod, `…-sandbox` in non-prod). |
 
 Auth uses Application Default Credentials. In Cloud Run / GKE the workload SA provides them; locally set `GOOGLE_APPLICATION_CREDENTIALS`.
 
