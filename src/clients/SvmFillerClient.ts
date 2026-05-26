@@ -39,8 +39,12 @@ type ReadyTransactionsPromise = Promise<SolanaTransaction[]>;
 /** Promises that resolve to fillRelay transaction(s): one tx, or IP txs then fill. */
 export type SvmFillRelayTxPromises = [ReadyTransactionPromise] | [ReadyTransactionsPromise, ReadyTransactionPromise];
 
+/** Which SpokePool method a queued SVM tx invokes. Gates alerting on submission failures. */
+export type SvmTxKind = "fillRelay" | "slowFillRequest";
+
 type QueuedSvmFill = {
   txPromises: SvmFillRelayTxPromises;
+  kind: SvmTxKind;
   message: string;
   mrkdwn: string;
 };
@@ -50,8 +54,10 @@ type QueuedSvmFill = {
 const knownSolanaFillErrorCodes = new Set<number>([arch.svm.SVM_TRANSACTION_PREFLIGHT_FAILURE]);
 const retryDelaySeconds = 1;
 
-function canIgnoreSvmFillError(e: unknown): boolean {
-  return isSolanaError(e) && knownSolanaFillErrorCodes.has(e.context.__code);
+// Suppression is gated on both the tx kind (only fillRelay — slow-fill request failures stay loud)
+// and the error code (only the known-benign codes). Either dimension alone would be too broad.
+function canIgnoreSvmFillError(kind: SvmTxKind, e: unknown): boolean {
+  return kind === "fillRelay" && isSolanaError(e) && knownSolanaFillErrorCodes.has(e.context.__code);
 }
 
 export class SvmFillerClient {
@@ -118,8 +124,13 @@ export class SvmFillerClient {
     return arch.svm.getSlowFillRequestTx(spokePool, this.provider, relayData, this.signer);
   }
 
-  enqueueFillRelayTxPromises(txPromises: SvmFillRelayTxPromises, message: string, mrkdwn: string): void {
-    this.queuedFills.push({ txPromises, message, mrkdwn });
+  enqueueFillRelayTxPromises(
+    txPromises: SvmFillRelayTxPromises,
+    kind: SvmTxKind,
+    message: string,
+    mrkdwn: string
+  ): void {
+    this.queuedFills.push({ txPromises, kind, message, mrkdwn });
   }
 
   enqueueFill(
@@ -131,11 +142,16 @@ export class SvmFillerClient {
     mrkdwn: string
   ): void {
     const txPromises = this.buildFillRelayTxPromises(spokePool, relayData, repaymentChainId, repaymentAddress);
-    this.enqueueFillRelayTxPromises(txPromises, message, mrkdwn);
+    this.enqueueFillRelayTxPromises(txPromises, "fillRelay", message, mrkdwn);
   }
 
   enqueueSlowFill(spokePool: SvmAddress, relayData: ProtoFill, message: string, mrkdwn: string): void {
-    this.enqueueFillRelayTxPromises([this.buildSlowFillTxPromise(spokePool, relayData)], message, mrkdwn);
+    this.enqueueFillRelayTxPromises(
+      [this.buildSlowFillTxPromise(spokePool, relayData)],
+      "slowFillRequest",
+      message,
+      mrkdwn
+    );
   }
 
   /**
@@ -177,7 +193,9 @@ export class SvmFillerClient {
         errorMessage = `Solana error code: ${e.context.__code}`;
       }
 
-      const ignorable = canIgnoreSvmFillError(e);
+      // executeFillImmediately only builds fillRelay txs (via buildFillRelayTxPromises), so the kind
+      // is fixed at the call site.
+      const ignorable = canIgnoreSvmFillError("fillRelay", e);
       this.logger[ignorable ? "debug" : "error"]({
         at: "SvmFillerClient#executeFillImmediately",
         message: `Failed to send fill transaction (${errorMessage})`,
@@ -237,7 +255,7 @@ export class SvmFillerClient {
     }
 
     const signatures: string[][] = [];
-    for (const { txPromises, message, mrkdwn } of queue) {
+    for (const { txPromises, kind, message, mrkdwn } of queue) {
       try {
         const signatureStrings = await this._executeTxnPromisesWithRetry(txPromises, maxRetries, false);
         const lastSignature = signatureStrings.at(-1);
@@ -261,10 +279,11 @@ export class SvmFillerClient {
           errorMessage = `Solana error code: ${e.context.__code}`;
         }
 
-        const ignorable = canIgnoreSvmFillError(e);
+        const ignorable = canIgnoreSvmFillError(kind, e);
         this.logger[ignorable ? "debug" : "error"]({
           at: "SvmFillerClient#executeTxnQueue",
           message: `Failed to send fill transaction (${errorMessage})`,
+          kind,
           mrkdwn,
           error: e,
           notificationPath: ignorable ? undefined : "across-error",
