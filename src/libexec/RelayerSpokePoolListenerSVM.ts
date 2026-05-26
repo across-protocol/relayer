@@ -5,6 +5,7 @@ import { arch, typeguards } from "@across-protocol/sdk";
 import { SvmSpokeClient } from "@across-protocol/contracts";
 import { Log } from "../interfaces";
 import {
+  abortableDelay,
   EventManager,
   isDefined,
   getBlockForTimestamp,
@@ -123,27 +124,6 @@ async function listen(
   const RECONNECT_BACKOFF_MIN_S = 1;
   const RECONNECT_BACKOFF_MAX_S = 30;
 
-  // Abortable sleep: resolves once the backoff elapses or the abort signal fires, whichever
-  // comes first. Cleans up the pending timer on abort (so it doesn't keep the event loop alive
-  // and delay process exit by up to RECONNECT_BACKOFF_MAX_S) and detaches the abort listener
-  // on the normal path (so listeners don't accumulate across reconnect retries).
-  const abortableDelay = (seconds: number): Promise<void> =>
-    new Promise((resolve) => {
-      if (abortSignal.aborted) {
-        resolve();
-        return;
-      }
-      const onAbort = () => {
-        clearTimeout(timer);
-        resolve();
-      };
-      const timer = setTimeout(() => {
-        abortSignal.removeEventListener("abort", onAbort);
-        resolve();
-      }, seconds * 1000);
-      abortSignal.addEventListener("abort", onAbort, { once: true });
-    });
-
   const logProviderError = (providerName: string, err: unknown, backoffS: number) => {
     const message = "Caught error on Solana provider; reconnecting.";
     const ctx = { at, message, provider: providerName, backoffS };
@@ -175,7 +155,7 @@ async function listen(
           return;
         }
         logProviderError(providerName, err, backoffS);
-        await abortableDelay(backoffS);
+        await abortableDelay(backoffS, abortSignal);
         backoffS = Math.min(backoffS * 2, RECONNECT_BACKOFF_MAX_S);
       }
     }
@@ -208,7 +188,7 @@ async function listen(
           return;
         }
         logProviderError(providerName, err, backoffS);
-        await abortableDelay(backoffS);
+        await abortableDelay(backoffS, abortSignal);
         backoffS = Math.min(backoffS * 2, RECONNECT_BACKOFF_MAX_S);
       }
     }
