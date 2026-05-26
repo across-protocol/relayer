@@ -2530,14 +2530,14 @@ export class Dataworker {
           chainId,
           method: "executeRelayerRefundLeaf",
           args: [rootBundleId, ethersLeaf, relayerRefundTree.getHexProof(leaf)],
-          // TransactionClient#submit appends `(<explorer>)` from the tx response.
-          ...formatRelayerRefundLeafExecutionLog(leafLogArgs),
           // If mainnet, send through Multicall3 so it can be batched with PoolRebalanceLeaf executions, otherwise
           // SpokePool.multicall() is fine.
           unpermissioned: Number(chainId) === this.clients.hubPoolClient.chainId,
           // If simulating mainnet execution, can fail as it may require funds to be sent from
           // pool rebalance leaf.
           canFailInSimulation: leaf.chainId === this.clients.hubPoolClient.chainId,
+          // TransactionClient#submit appends `(<explorer>)` from the tx response.
+          ...formatRelayerRefundLeafExecutionLog(leafLogArgs),
         });
       } else if (isSVMSpokePoolClient(client)) {
         const signature = await this._executeRelayerRefundLeafSvm(
