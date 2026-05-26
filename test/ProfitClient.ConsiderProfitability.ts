@@ -127,10 +127,15 @@ describe("ProfitClient: Consider relay profit", () => {
   ): Pick<FillProfit, "grossRelayerFeeUsd" | "netRelayerFeePct" | "netRelayerFeeUsd" | "profitable"> => {
     const grossRelayerFeeUsd = inputAmountUsd.sub(outputAmountUsd).sub(lpFeeUsd);
     const netRelayerFeeUsd = grossRelayerFeeUsd.sub(gasCostUsd);
-    const netRelayerFeePct = netRelayerFeeUsd.mul(fixedPoint).div(outputAmountUsd);
-
-    const minRelayerFeeUsd = outputAmountUsd.mul(minRelayerFeePct).div(fixedPoint);
-    const profitable = netRelayerFeeUsd.gte(minRelayerFeeUsd);
+    // Mirror ProfitClient.calculateFillProfitability: compare netRelayerFeePct (floor-divided) against
+    // minRelayerFeePct directly. Comparing the equivalent USD thresholds instead (netRelayerFeeUsd >=
+    // outputAmountUsd * minRelayerFeePct / fixedPoint) is mathematically equivalent in real arithmetic
+    // but diverges by 1 wei at the boundary under integer math, producing flaky results when the random
+    // token prices happen to land near the threshold.
+    const netRelayerFeePct = outputAmountUsd.gt(bnZero)
+      ? netRelayerFeeUsd.mul(fixedPoint).div(outputAmountUsd)
+      : bnZero;
+    const profitable = netRelayerFeePct.gte(minRelayerFeePct);
 
     return {
       grossRelayerFeeUsd,
