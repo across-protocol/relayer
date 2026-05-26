@@ -39,14 +39,26 @@ type ReadyTransactionsPromise = Promise<SolanaTransaction[]>;
 /** Promises that resolve to fillRelay transaction(s): one tx, or IP txs then fill. */
 export type SvmFillRelayTxPromises = [ReadyTransactionPromise] | [ReadyTransactionsPromise, ReadyTransactionPromise];
 
+/** Which SpokePool method a queued SVM tx invokes. Gates alerting on submission failures. */
+export type SvmTxKind = "fillRelay" | "slowFillRequest";
+
 type QueuedSvmFill = {
   txPromises: SvmFillRelayTxPromises;
+  kind: SvmTxKind;
   message: string;
   mrkdwn: string;
 };
 
-const retryableErrorCodes = [arch.svm.SVM_TRANSACTION_PREFLIGHT_FAILURE];
+// Known-benign Solana error codes for fillRelay / slowFillRequest submission (recoverable: another
+// actor won the race, or our outer loop retries). EVM parity: `knownRevertReasons` in MultiCallerClient.ts.
+const knownSolanaFillErrorCodes = new Set<number>([arch.svm.SVM_TRANSACTION_PREFLIGHT_FAILURE]);
 const retryDelaySeconds = 1;
+
+// Both fillRelay and slowFillRequest preflight failures can be recoverable races (another actor won
+// the race, or our outer loop retries), so suppression is gated only on the benign error code.
+function canIgnoreSvmFillError(e: unknown): boolean {
+  return isSolanaError(e) && knownSolanaFillErrorCodes.has(e.context.__code);
+}
 
 export class SvmFillerClient {
   private queuedFills: QueuedSvmFill[] = [];
@@ -112,8 +124,13 @@ export class SvmFillerClient {
     return arch.svm.getSlowFillRequestTx(spokePool, this.provider, relayData, this.signer);
   }
 
-  enqueueFillRelayTxPromises(txPromises: SvmFillRelayTxPromises, message: string, mrkdwn: string): void {
-    this.queuedFills.push({ txPromises, message, mrkdwn });
+  enqueueFillRelayTxPromises(
+    txPromises: SvmFillRelayTxPromises,
+    kind: SvmTxKind,
+    message: string,
+    mrkdwn: string
+  ): void {
+    this.queuedFills.push({ txPromises, kind, message, mrkdwn });
   }
 
   enqueueFill(
@@ -125,11 +142,16 @@ export class SvmFillerClient {
     mrkdwn: string
   ): void {
     const txPromises = this.buildFillRelayTxPromises(spokePool, relayData, repaymentChainId, repaymentAddress);
-    this.enqueueFillRelayTxPromises(txPromises, message, mrkdwn);
+    this.enqueueFillRelayTxPromises(txPromises, "fillRelay", message, mrkdwn);
   }
 
   enqueueSlowFill(spokePool: SvmAddress, relayData: ProtoFill, message: string, mrkdwn: string): void {
-    this.enqueueFillRelayTxPromises([this.buildSlowFillTxPromise(spokePool, relayData)], message, mrkdwn);
+    this.enqueueFillRelayTxPromises(
+      [this.buildSlowFillTxPromise(spokePool, relayData)],
+      "slowFillRequest",
+      message,
+      mrkdwn
+    );
   }
 
   /**
@@ -171,11 +193,13 @@ export class SvmFillerClient {
         errorMessage = `Solana error code: ${e.context.__code}`;
       }
 
-      this.logger.error({
+      const ignorable = canIgnoreSvmFillError(e);
+      this.logger[ignorable ? "debug" : "error"]({
         at: "SvmFillerClient#executeFillImmediately",
         message: `Failed to send fill transaction (${errorMessage})`,
         mrkdwn,
         error: e,
+        notificationPath: ignorable ? undefined : "across-error",
       });
       return undefined;
     }
@@ -208,7 +232,7 @@ export class SvmFillerClient {
         code = undefined;
       }
 
-      if (isDefined(code) && retryableErrorCodes.includes(code) && retryAttempt > 0) {
+      if (isDefined(code) && knownSolanaFillErrorCodes.has(code) && retryAttempt > 0) {
         await delay(retryDelaySeconds);
         return this._executeTxnPromisesWithRetry(txPromises, --retryAttempt, confirmAll);
       }
@@ -229,7 +253,7 @@ export class SvmFillerClient {
     }
 
     const signatures: string[][] = [];
-    for (const { txPromises, message, mrkdwn } of queue) {
+    for (const { txPromises, kind, message, mrkdwn } of queue) {
       try {
         const signatureStrings = await this._executeTxnPromisesWithRetry(txPromises, maxRetries, false);
         const lastSignature = signatureStrings.at(-1);
@@ -253,11 +277,14 @@ export class SvmFillerClient {
           errorMessage = `Solana error code: ${e.context.__code}`;
         }
 
-        this.logger.error({
+        const ignorable = canIgnoreSvmFillError(e);
+        this.logger[ignorable ? "debug" : "error"]({
           at: "SvmFillerClient#executeTxnQueue",
           message: `Failed to send fill transaction (${errorMessage})`,
+          kind,
           mrkdwn,
           error: e,
+          notificationPath: ignorable ? undefined : "across-error",
         });
       }
     }

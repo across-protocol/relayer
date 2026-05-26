@@ -63,7 +63,6 @@ import {
   address,
   createTransactionMessage,
   setTransactionMessageFeePayer,
-  setTransactionMessageLifetimeUsingBlockhash,
   appendTransactionMessageInstructions,
   pipe,
   fetchEncodedAccount,
@@ -1016,11 +1015,9 @@ export class Monitor {
           recipient: signer.address,
         });
 
-        const { value: recentBlockhash } = await svmRpc.getLatestBlockhash().send();
         const txMessage = pipe(
           createTransactionMessage({ version: 0 }),
           (tx) => setTransactionMessageFeePayer(signer.address, tx),
-          (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash, tx),
           (tx) => appendTransactionMessageInstructions([closeIx], tx)
         );
 
