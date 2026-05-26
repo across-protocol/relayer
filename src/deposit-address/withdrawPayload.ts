@@ -3,8 +3,12 @@ import { TransactionReceipt, utils } from "../utils";
 
 export const ERC20_TRANSFER_TOPIC = utils.id("Transfer(address,address,uint256)");
 
-export type WithdrawExecutedPayload = {
-  type: "withdraw_executed";
+/**
+ * Body of a `withdraw_executed` lifecycle event. Carried in the `data` field of the
+ * outer envelope so future message types can attach their own `data` shape under the
+ * same `{ type, data }` skeleton.
+ */
+export type WithdrawExecutedData = {
   chainId: number;
   blockNumber: number;
   txHash: string;
@@ -15,6 +19,11 @@ export type WithdrawExecutedPayload = {
     txHash: string;
     logIndex: number;
   };
+};
+
+export type WithdrawExecutedPayload = {
+  type: "withdraw_executed";
+  data: WithdrawExecutedData;
 };
 
 /**
@@ -28,8 +37,10 @@ export type WithdrawExecutedPayload = {
  * a Multicall3-bundled withdraw with intermediate hops to the same refund address), the
  * **last** match is used — that is the final settlement out of the deposit address.
  *
- * The payload shape is locked by the indexer consumer
- * (`indexer/packages/indexer/src/pubsub/DepositAddressWithdrawConsumer.ts`).
+ * The envelope shape `{ type, data }` is shared by every Pub/Sub message the bot publishes;
+ * `data`'s shape varies per `type`. The consumer at
+ * `indexer/packages/indexer/src/pubsub/DepositAddressWithdrawConsumer.ts` keys on `type`
+ * and validates `data` against the matching schema.
  */
 export function buildWithdrawExecutedPayload(
   receipt: TransactionReceipt,
@@ -54,15 +65,17 @@ export function buildWithdrawExecutedPayload(
 
   return {
     type: "withdraw_executed",
-    chainId: Number(erc20Transfer.chainId),
-    blockNumber: receipt.blockNumber,
-    txHash: receipt.transactionHash.toLowerCase(),
-    logIndex: transferLog.logIndex,
-    erc20Transfer: {
+    data: {
       chainId: Number(erc20Transfer.chainId),
-      blockNumber: erc20Transfer.blockNumber,
-      txHash: erc20Transfer.transactionHash.toLowerCase(),
-      logIndex: erc20Transfer.logIndex,
+      blockNumber: receipt.blockNumber,
+      txHash: receipt.transactionHash.toLowerCase(),
+      logIndex: transferLog.logIndex,
+      erc20Transfer: {
+        chainId: Number(erc20Transfer.chainId),
+        blockNumber: erc20Transfer.blockNumber,
+        txHash: erc20Transfer.transactionHash.toLowerCase(),
+        logIndex: erc20Transfer.logIndex,
+      },
     },
   };
 }

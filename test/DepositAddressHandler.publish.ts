@@ -96,15 +96,17 @@ describe("buildWithdrawExecutedPayload", function () {
     expect(payload).to.not.be.undefined;
     expect(payload).to.deep.equal({
       type: "withdraw_executed",
-      chainId: 1,
-      blockNumber: 1_234_567,
-      txHash: REFUND_TX.toLowerCase(),
-      logIndex: 4,
-      erc20Transfer: {
+      data: {
         chainId: 1,
-        blockNumber: 1_000_000,
-        txHash: INBOUND_TX,
+        blockNumber: 1_234_567,
+        txHash: REFUND_TX.toLowerCase(),
         logIndex: 4,
+        erc20Transfer: {
+          chainId: 1,
+          blockNumber: 1_000_000,
+          txHash: INBOUND_TX,
+          logIndex: 4,
+        },
       },
     });
   });
@@ -120,7 +122,7 @@ describe("buildWithdrawExecutedPayload", function () {
       },
     ]);
     const payload = buildWithdrawExecutedPayload(receipt, message);
-    expect(payload?.logIndex).to.equal(0);
+    expect(payload?.data.logIndex).to.equal(0);
   });
 
   it("returns undefined when no Transfer (depositAddress -> refundAddress) exists in the receipt", function () {
@@ -146,7 +148,7 @@ describe("buildWithdrawExecutedPayload", function () {
       { address: TOKEN, topics: [ERC20_TRANSFER_TOPIC, topicAddress(DEPOSIT_ADDRESS), topicAddress(REFUND_ADDRESS)] },
     ]);
     const payload = buildWithdrawExecutedPayload(receipt, depositMessage());
-    expect(payload?.logIndex).to.equal(1);
+    expect(payload?.data.logIndex).to.equal(1);
   });
 
   it("picks the LAST matching Transfer log when multiple deposit->refund transfers exist (e.g. Multicall3-bundled withdraw)", function () {
@@ -162,7 +164,7 @@ describe("buildWithdrawExecutedPayload", function () {
       { address: TOKEN, topics: [ERC20_TRANSFER_TOPIC, topicAddress(DEPOSIT_ADDRESS), topicAddress(REFUND_ADDRESS)] },
     ]);
     const payload = buildWithdrawExecutedPayload(receipt, depositMessage());
-    expect(payload?.logIndex).to.equal(2);
+    expect(payload?.data.logIndex).to.equal(2);
   });
 });
 

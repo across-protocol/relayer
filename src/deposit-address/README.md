@@ -62,23 +62,27 @@ Auth uses Application Default Credentials. In Cloud Run / GKE the workload SA pr
 
 ### Payload (locked by the consumer)
 
+Every Pub/Sub message uses an envelope: `{ "type": "<message_type>", "data": <type-specific body> }`. The envelope shape is shared by all current and future message types so the consumer can dispatch on `type` and validate `data` against the matching schema. Today only one type is emitted:
+
 ```jsonc
 {
   "type": "withdraw_executed",
-  "chainId":     <withdraw tx chain>,
-  "blockNumber": <withdraw tx block number>,
-  "txHash":      "<withdraw tx hash>",
-  "logIndex":    <logIndex of the ERC20 Transfer leaving the deposit address>,
-  "erc20Transfer": {
-    "chainId":     <inbound transfer chain>,
-    "blockNumber": <inbound transfer block number>,
-    "txHash":      "<inbound transfer tx hash>",
-    "logIndex":    <inbound transfer logIndex>
+  "data": {
+    "chainId":     <withdraw tx chain>,
+    "blockNumber": <withdraw tx block number>,
+    "txHash":      "<withdraw tx hash>",
+    "logIndex":    <logIndex of the ERC20 Transfer leaving the deposit address>,
+    "erc20Transfer": {
+      "chainId":     <inbound transfer chain>,
+      "blockNumber": <inbound transfer block number>,
+      "txHash":      "<inbound transfer tx hash>",
+      "logIndex":    <inbound transfer logIndex>
+    }
   }
 }
 ```
 
-All integer fields are `number`; tx hashes are lowercase hex strings. The `erc20Transfer` block identifies the original user transfer (the indexer keys rows on it); the top-level fields identify the withdraw transaction the bot just sent. The `logIndex` of the withdraw is the index of the ERC-20 `Transfer(address,address,uint256)` event whose `address` matches `erc20Transfer.contractAddress`, whose `from` is the deposit address, and whose `to` is the user's `routeParams.refundAddress`. Matching on `to` is necessary to disambiguate fee-on-transfer / tax / burn tokens that emit several Transfer events from the deposit address in one tx (one to the user, one to a fee recipient). If multiple Transfer logs still satisfy all three filters (e.g. a Multicall3-bundled withdraw with intermediate hops to the same refund address), the **last** match is used.
+All integer fields are `number`; tx hashes are lowercase hex strings. The `erc20Transfer` block identifies the original user transfer (the indexer keys rows on it); the sibling fields identify the withdraw transaction the bot just sent. The `logIndex` of the withdraw is the index of the ERC-20 `Transfer(address,address,uint256)` event whose `address` matches `erc20Transfer.contractAddress`, whose `from` is the deposit address, and whose `to` is the user's `routeParams.refundAddress`. Matching on `to` is necessary to disambiguate fee-on-transfer / tax / burn tokens that emit several Transfer events from the deposit address in one tx (one to the user, one to a fee recipient). If multiple Transfer logs still satisfy all three filters (e.g. a Multicall3-bundled withdraw with intermediate hops to the same refund address), the **last** match is used.
 
 ### Failure semantics
 

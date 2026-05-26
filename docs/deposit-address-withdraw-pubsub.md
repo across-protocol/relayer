@@ -24,35 +24,41 @@ The Pub/Sub topic carries lifecycle events from the bot to the indexer so the ro
 
 ### Payload
 
+Every Pub/Sub message uses a shared envelope: `{ type, data }`. `type` is the message-type discriminator; `data` carries a body whose shape depends on `type`. New message types are added by introducing new `type` values; existing types are versioned by changing the `data` shape and rolling producer + consumer in lockstep.
+
 The consumer's validator (`isDepositAddressWithdrawPayload` in `indexer/packages/indexer/src/pubsub/DepositAddressWithdrawConsumer.ts`) accepts two shapes:
 
 ```ts
 type WithdrawExecutedPayload = {
   type: "withdraw_executed";
-  chainId: number;       // withdraw tx chain
-  blockNumber: number;   // withdraw tx block
-  txHash: string;        // withdraw tx hash, lowercase hex
-  logIndex: number;      // logIndex of the ERC20 Transfer leaving the deposit address
-  erc20Transfer: {
-    chainId: number;
-    blockNumber: number;
-    txHash: string;
-    logIndex: number;
+  data: {
+    chainId: number;       // withdraw tx chain
+    blockNumber: number;   // withdraw tx block
+    txHash: string;        // withdraw tx hash, lowercase hex
+    logIndex: number;      // logIndex of the ERC20 Transfer leaving the deposit address
+    erc20Transfer: {
+      chainId: number;
+      blockNumber: number;
+      txHash: string;
+      logIndex: number;
+    };
   };
 };
 
 type WithdrawFailedPayload = {
   type: "withdraw_failed";
-  erc20Transfer: { chainId: number; blockNumber: number; txHash: string; logIndex: number };
-  reason: string;
+  data: {
+    erc20Transfer: { chainId: number; blockNumber: number; txHash: string; logIndex: number };
+    reason: string;
+  };
 };
 ```
 
 The bot currently emits **only `withdraw_executed`**. `withdraw_failed` is reserved by the contract but not produced — the bot retries internally on most failure paths and does not track a "retries exhausted" terminal state.
 
-The `erc20Transfer` block is the lookup key the consumer uses to find the row (`(chainId, blockNumber, transactionHash, logIndex)` on the `deposit_address_transfer` table); the top-level fields populate the withdraw-tx columns on the row being transitioned.
+The `data.erc20Transfer` block is the lookup key the consumer uses to find the row (`(chainId, blockNumber, transactionHash, logIndex)` on the `deposit_address_transfer` table); the sibling fields under `data` populate the withdraw-tx columns on the row being transitioned.
 
-The publisher sends the payload as the `data` field of the Pub/Sub message (UTF-8 JSON). No message attributes are used; the consumer ignores them.
+The publisher serializes the envelope as a UTF-8 JSON string and sends it as the GCP Pub/Sub message `data` (the transport-level Pub/Sub field — not to be confused with the application-level `data` inside our envelope). No message attributes are used; the consumer ignores them.
 
 ### Producer mechanics (this repo)
 
