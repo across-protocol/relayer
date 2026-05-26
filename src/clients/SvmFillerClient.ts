@@ -45,8 +45,14 @@ type QueuedSvmFill = {
   mrkdwn: string;
 };
 
-const retryableErrorCodes = [arch.svm.SVM_TRANSACTION_PREFLIGHT_FAILURE];
+// Known-benign FillRelay error codes (recoverable: another relayer won the race, or our outer loop retries).
+// EVM parity: `knownRevertReasons` / `canIgnoreRevertReason` in MultiCallerClient.ts.
+const knownSolanaFillErrorCodes = new Set<number>([arch.svm.SVM_TRANSACTION_PREFLIGHT_FAILURE]);
 const retryDelaySeconds = 1;
+
+function canIgnoreSvmFillError(e: unknown): boolean {
+  return isSolanaError(e) && knownSolanaFillErrorCodes.has(e.context.__code);
+}
 
 export class SvmFillerClient {
   private queuedFills: QueuedSvmFill[] = [];
@@ -171,11 +177,13 @@ export class SvmFillerClient {
         errorMessage = `Solana error code: ${e.context.__code}`;
       }
 
-      this.logger.debug({
+      const ignorable = canIgnoreSvmFillError(e);
+      this.logger[ignorable ? "debug" : "error"]({
         at: "SvmFillerClient#executeFillImmediately",
         message: `Failed to send fill transaction (${errorMessage})`,
         mrkdwn,
         error: e,
+        notificationPath: ignorable ? undefined : "across-error",
       });
       return undefined;
     }
@@ -208,7 +216,7 @@ export class SvmFillerClient {
         code = undefined;
       }
 
-      if (isDefined(code) && retryableErrorCodes.includes(code) && retryAttempt > 0) {
+      if (isDefined(code) && knownSolanaFillErrorCodes.has(code) && retryAttempt > 0) {
         await delay(retryDelaySeconds);
         return this._executeTxnPromisesWithRetry(txPromises, --retryAttempt, confirmAll);
       }
@@ -253,11 +261,13 @@ export class SvmFillerClient {
           errorMessage = `Solana error code: ${e.context.__code}`;
         }
 
-        this.logger.debug({
+        const ignorable = canIgnoreSvmFillError(e);
+        this.logger[ignorable ? "debug" : "error"]({
           at: "SvmFillerClient#executeTxnQueue",
           message: `Failed to send fill transaction (${errorMessage})`,
           mrkdwn,
           error: e,
+          notificationPath: ignorable ? undefined : "across-error",
         });
       }
     }
