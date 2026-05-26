@@ -11,6 +11,8 @@ export type DepositAddressTransferClassification = "correct_transfer" | "mis_rou
 
 export interface Erc20Transfer {
   chainId: string;
+  blockNumber: number;
+  logIndex: number;
   from: string;
   to: string;
   amount: string;
