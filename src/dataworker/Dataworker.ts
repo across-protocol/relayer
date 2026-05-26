@@ -2,6 +2,7 @@ import assert from "assert";
 import { Contract } from "ethers";
 import { utils as sdkUtils, arch } from "@across-protocol/sdk";
 import {
+  blockExplorerLink,
   bnZero,
   winston,
   EMPTY_MERKLE_ROOT,
@@ -85,6 +86,7 @@ import {
   persistDataToArweave,
 } from "../dataworker/DataworkerUtils";
 import { _buildRelayerRefundRoot, _buildSlowRelayRoot, generateValidationKey } from "./DataworkerUtils";
+import { formatRelayerRefundLeafExecutionLog } from "./RelayerRefundUtils";
 import _ from "lodash";
 import {
   ARBITRUM_ORBIT_L1L2_MESSAGE_FEE_DATA,
@@ -2500,49 +2502,57 @@ export class Dataworker {
     ).filter(isDefined);
 
     await forEachAsync(fundedLeaves, async (leaf) => {
-      const symbol = this.getTokenInfo(leaf.l2TokenAddress, chainId);
-
-      const mrkdwn = `rootBundleId: ${rootBundleId}\nrelayerRefundRoot: ${relayerRefundTree.getHexRoot()}\nLeaf: ${
-        leaf.leafId
-      }\nchainId: ${chainId}\ntoken: ${symbol}\namount: ${leaf.amountToReturn.toString()}`;
-      if (submitExecution) {
-        if (isEVMSpokePoolClient(client)) {
-          const valueToPassViaPayable = msgValuesByLeafId.get(leaf.leafId);
-          const ethersLeaf = {
-            ...leaf,
-            l2TokenAddress: leaf.l2TokenAddress.toEvmAddress(),
-            refundAddresses: leaf.refundAddresses.map((refundAddress) => refundAddress.toEvmAddress()),
-          };
-          this.clients.multiCallerClient.enqueueTransaction({
-            value: valueToPassViaPayable,
-            contract: client.spokePool,
-            chainId,
-            method: "executeRelayerRefundLeaf",
-            args: [rootBundleId, ethersLeaf, relayerRefundTree.getHexProof(leaf)],
-            message: "Executed RelayerRefundLeaf 🌿!",
-            mrkdwn,
-            // If mainnet, send through Multicall3 so it can be batched with PoolRebalanceLeaf executions, otherwise
-            // SpokePool.multicall() is fine.
-            unpermissioned: Number(chainId) === this.clients.hubPoolClient.chainId,
-            // If simulating mainnet execution, can fail as it may require funds to be sent from
-            // pool rebalance leaf.
-            canFailInSimulation: leaf.chainId === this.clients.hubPoolClient.chainId,
-          });
-        } else if (isSVMSpokePoolClient(client)) {
-          const signature = await this._executeRelayerRefundLeafSvm(
-            client,
-            leaf,
-            rootBundleId,
-            relayerRefundTree.getHexProof(leaf)
-          );
-          this.logger.info({
-            at: "Dataworker#_executeRelayerRefundLeaves",
-            message: mrkdwn,
-            signature,
-          });
-        }
-      } else {
-        this.logger.debug({ at: "Dataworker#_executeRelayerRefundLeaves", message: mrkdwn });
+      const leafLogArgs = {
+        rootBundleId,
+        relayerRefundRoot: relayerRefundTree.getHexRoot(),
+        leafId: leaf.leafId,
+        chainId,
+        symbol: this.getTokenInfo(leaf.l2TokenAddress, chainId),
+        amountToReturn: leaf.amountToReturn,
+      };
+      if (!submitExecution) {
+        this.logger.debug({
+          at: "Dataworker#_executeRelayerRefundLeaves",
+          message: formatRelayerRefundLeafExecutionLog(leafLogArgs).mrkdwn,
+        });
+        return;
+      }
+      if (isEVMSpokePoolClient(client)) {
+        const valueToPassViaPayable = msgValuesByLeafId.get(leaf.leafId);
+        const ethersLeaf = {
+          ...leaf,
+          l2TokenAddress: leaf.l2TokenAddress.toEvmAddress(),
+          refundAddresses: leaf.refundAddresses.map((refundAddress) => refundAddress.toEvmAddress()),
+        };
+        this.clients.multiCallerClient.enqueueTransaction({
+          value: valueToPassViaPayable,
+          contract: client.spokePool,
+          chainId,
+          method: "executeRelayerRefundLeaf",
+          args: [rootBundleId, ethersLeaf, relayerRefundTree.getHexProof(leaf)],
+          // If mainnet, send through Multicall3 so it can be batched with PoolRebalanceLeaf executions, otherwise
+          // SpokePool.multicall() is fine.
+          unpermissioned: Number(chainId) === this.clients.hubPoolClient.chainId,
+          // If simulating mainnet execution, can fail as it may require funds to be sent from
+          // pool rebalance leaf.
+          canFailInSimulation: leaf.chainId === this.clients.hubPoolClient.chainId,
+          // TransactionClient#submit appends `(<explorer>)` from the tx response.
+          ...formatRelayerRefundLeafExecutionLog(leafLogArgs),
+        });
+      } else if (isSVMSpokePoolClient(client)) {
+        const signature = await this._executeRelayerRefundLeafSvm(
+          client,
+          leaf,
+          rootBundleId,
+          relayerRefundTree.getHexProof(leaf)
+        );
+        this.logger.info({
+          at: "Dataworker#_executeRelayerRefundLeaves",
+          ...formatRelayerRefundLeafExecutionLog({
+            ...leafLogArgs,
+            explorerLink: blockExplorerLink(signature, chainId),
+          }),
+        });
       }
     });
   }
