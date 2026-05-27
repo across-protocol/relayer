@@ -198,7 +198,7 @@ export class InventoryClient {
    * @param l2Token Optional L2 token address when l1Token maps to multiple l2Token addresses.
    */
   getTokenConfig(l1Token: EvmAddress, chainId: number, l2Token?: Address): TokenBalanceConfig | undefined {
-    const tokenConfig = this.inventoryConfig.tokenConfig[l1Token.toEvmAddress()];
+    const tokenConfig = this.inventoryConfig.tokenConfig?.[l1Token.toEvmAddress()];
     if (!isDefined(tokenConfig)) {
       return;
     }
@@ -437,7 +437,7 @@ export class InventoryClient {
       return [l1Token];
     }
 
-    const tokenConfig = this.inventoryConfig.tokenConfig[l1Token.toNative()];
+    const tokenConfig = this.inventoryConfig.tokenConfig?.[l1Token.toNative()];
     if (!isDefined(tokenConfig)) {
       return [];
     }

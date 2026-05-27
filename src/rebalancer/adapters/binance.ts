@@ -18,6 +18,7 @@ import {
   getAtomicDepositorContracts,
   getAccountCoins,
   getBinanceAllOrders,
+  binanceCredentialsConfigured,
   getBinanceApiClient,
   getBinanceDepositAddress,
   getBinanceTradeFees,
@@ -107,6 +108,11 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       return;
     }
     await super.initialize(_availableRoutes.filter((route) => route.adapter === "binance"));
+
+    // Skip Binance-specific setup without credentials; upstream filters routes via hasBinanceRoute().
+    if (!binanceCredentialsConfigured()) {
+      return;
+    }
 
     this._binanceApiClient = await getBinanceApiClient(process.env.BINANCE_API_BASE);
 
