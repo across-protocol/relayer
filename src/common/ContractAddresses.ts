@@ -611,6 +611,16 @@ export const CONTRACT_ADDRESSES: {
       abi: PERMIT2_ABI,
     },
   },
+  [CHAIN_IDs.ARC]: {
+    cctpV2MessageTransmitter: {
+      address: "0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275", // @TODO: Get the correct address from ARC, this is testnet address.
+      abi: CCTP_MESSAGE_TRANSMITTER_ABI,
+    },
+    cctpV2TokenMessenger: {
+      address: "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA", // @TODO: Get the correct address from ARC, this is testnet address.
+      abi: CCTP_V2_TOKEN_MESSENGER_ABI,
+    },
+  },
   [CHAIN_IDs.LENS]: {
     nativeTokenVault: {
       address: "0x0000000000000000000000000000000000010004",

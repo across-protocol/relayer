@@ -402,7 +402,7 @@ export class ProfitClient {
     const nativeTokenPriceUsd = this.getPriceOfToken(nativeToken.symbol);
     const auxiliaryNativeTokenCostUsd = auxiliaryNativeTokenCost
       .mul(nativeTokenPriceUsd)
-      .div(bn10.pow(nativeToken.decimals));
+      .div(bn10.pow(chainId === CHAIN_IDs.ARC ? 18 : nativeToken.decimals));
 
     const nativeTokenFillCostUsd = gasCostUsd.add(auxiliaryNativeTokenCostUsd);
     return {
