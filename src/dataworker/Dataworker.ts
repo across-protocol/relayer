@@ -4,6 +4,7 @@ import { utils as sdkUtils, arch } from "@across-protocol/sdk";
 import {
   blockExplorerLink,
   bnZero,
+  describeSolanaError,
   winston,
   EMPTY_MERKLE_ROOT,
   sortEventsDescending,
@@ -3288,14 +3289,16 @@ export class Dataworker {
         at: "Dataworker#executeRelayerRefundLeafSvm",
         message: "Something failed during the relayer refund leaf execution stage",
         error: err,
+        ...describeSolanaError(err),
       });
       try {
         await deactivateLut();
-      } catch (err) {
+      } catch (cleanupErr) {
         this.logger.warn({
           at: "Dataworker#executeRelayerRefundLeafSvm",
           message: "deactivateLut cleanup failed after refund execution error",
-          error: err,
+          error: cleanupErr,
+          ...describeSolanaError(cleanupErr),
         });
       }
       throw err;
