@@ -25,12 +25,15 @@ Keep all relevant `AGENTS.md` and `README.md` files updated in the same change w
 - Rebalancer behavior and adapters: `src/rebalancer/README.md`
 - Refiller behavior: `src/refiller/README.md`
 - Dataworker root-bundle flow: `src/dataworker/README.md`
+- Deposit-address handler and withdraw lifecycle: `src/deposit-address/README.md`
 - Shared runtime clients: `src/clients/README.md`
+- Cross-bot messaging transports (Redis pub/sub + GCP Pub/Sub publisher): `src/messaging/`
 - Finalization-specific workflows: `src/finalizer/*` and `src/cctp-finalizer/*`
 - UMA and smart-contract context: `docs/uma.md` and `docs/smart-contracts.md`
 - Relayer fill and repayment deep dives: `docs/relayer-fill-decision-flow.md` and `docs/repayment-selection.md`
 - Inventory deep dives: `docs/repayment-eligibility.md` and `docs/inventory-virtual-balance-model.md`
 - Rebalancer modularity deep dive: `docs/rebalancer-mode-adapter-architecture.md`
+- Deposit-address withdraw lifecycle Pub/Sub contract: `docs/deposit-address-withdraw-pubsub.md`
 
 ## Bot types
 
@@ -43,6 +46,7 @@ The main bot types in `src/`:
 - `finalizer`: Completes delayed cross-chain flows and multi-step bridge finalization tasks.
 - `monitor`: Runs monitoring and reporting checks.
 - `gasless`: Handles gasless relay flows.
+- `deposit-address`: Polls the across-indexer for counterfactual deposit-address transfers and executes the resulting deposits or refund withdraws.
 
 ## Directory tree
 
@@ -58,6 +62,7 @@ relayer-v2/
 │   ├── cctp-finalizer/           # CCTP-focused finalization runtime and utility modules.
 │   ├── monitor/                  # Monitoring and operational health checks.
 │   ├── gasless/                  # Gasless relay runtime.
+│   ├── deposit-address/          # Counterfactual deposit-address handler: deposit + refund-withdraw paths.
 │   ├── hyperliquid/              # Hyperliquid-specific execution and integration flows.
 │   ├── clients/                  # Shared clients for events, txs, inventory, pricing, and bridges.
 │   │   ├── ProfitClient.ts       # Profitability evaluation for potential fills.
@@ -67,6 +72,9 @@ relayer-v2/
 │   │   ├── SpokePoolClient.ts    # SpokePool event/state client wrappers.
 │   │   └── bridges/              # Bridge adapter selection and cross-chain transfer helpers.
 │   ├── caching/                  # Redis-backed and in-memory cache helpers.
+│   ├── messaging/                # Cross-bot messaging transports.
+│   │   ├── redis/                # Redis pub/sub wrapper (handover signaling).
+│   │   └── gcp/                  # GCP Pub/Sub publisher (lifecycle events to the indexer).
 │   ├── adapter/                  # Chain/exchange adapter abstractions.
 │   ├── interfaces/               # Shared interfaces and cross-module types.
 │   ├── libexec/                  # Websocket/event listener execution helpers.

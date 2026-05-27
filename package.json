@@ -22,6 +22,7 @@
     "@ethersproject/abstract-signer": "^5.7.0",
     "@ethersproject/bignumber": "^5.7.0",
     "@google-cloud/kms": "^5.4.0",
+    "@google-cloud/pubsub": "^5.2.0",
     "@google-cloud/storage": "^7.19.0",
     "@layerzerolabs/lz-v2-utilities": "^3.0.147",
     "@maticnetwork/maticjs": "^3.6.0",
