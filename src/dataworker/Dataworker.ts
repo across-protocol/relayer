@@ -5,6 +5,7 @@ import {
   blockExplorerLink,
   bnZero,
   describeSolanaError,
+  isSvmLeafAlreadyClaimedError,
   winston,
   EMPTY_MERKLE_ROOT,
   sortEventsDescending,
@@ -2547,13 +2548,18 @@ export class Dataworker {
           rootBundleId,
           relayerRefundTree.getHexProof(leaf)
         );
-        this.logger.info({
-          at: "Dataworker#_executeRelayerRefundLeaves",
-          ...formatRelayerRefundLeafExecutionLog({
-            ...leafLogArgs,
-            explorerLink: blockExplorerLink(signature, chainId),
-          }),
-        });
+        // `undefined` means we caught a benign race (leaf was claimed on chain by another actor);
+        // `_executeRelayerRefundLeafSvm` already logged the skip at debug. Avoid the success-path info
+        // log so we don't claim we executed a leaf we didn't.
+        if (isDefined(signature)) {
+          this.logger.info({
+            at: "Dataworker#_executeRelayerRefundLeaves",
+            ...formatRelayerRefundLeafExecutionLog({
+              ...leafLogArgs,
+              explorerLink: blockExplorerLink(signature, chainId),
+            }),
+          });
+        }
       }
     });
   }
@@ -2889,7 +2895,7 @@ export class Dataworker {
     leaf: RelayerRefundLeaf,
     rootBundleId: number,
     relayerRefundLeafHexProof: string[]
-  ): Promise<string> {
+  ): Promise<string | undefined> {
     // Parse relevant info from the relayer refund leaf/dataworker.
     const { spokePoolAddress } = spokePoolClient;
     assert(isDefined(spokePoolAddress), "_executeRelayerRefundLeafSvm: SpokePoolClient missing spokePoolAddress");
@@ -3285,9 +3291,19 @@ export class Dataworker {
         });
       }
     } catch (err) {
-      this.logger.error({
+      // The on-chain `is_claimed` check at programs/svm-spoke/src/instructions/bundle.rs returns
+      // `CommonError::ClaimedMerkleLeaf` when another actor (concurrent dataworker, manual exec)
+      // landed this leaf between our pre-flight `getRelayerRefundExecutions()` filter and now.
+      // Treat as benign: log at debug, clean up the LUT we created, and return undefined so the
+      // caller skips the success-path "Executed RelayerRefundLeaf" info log.
+      const alreadyClaimed = isSvmLeafAlreadyClaimedError(err);
+      this.logger[alreadyClaimed ? "debug" : "error"]({
         at: "Dataworker#executeRelayerRefundLeafSvm",
-        message: "Something failed during the relayer refund leaf execution stage",
+        message: alreadyClaimed
+          ? "Refund leaf was already claimed on chain; skipping"
+          : "Something failed during the relayer refund leaf execution stage",
+        rootBundleId,
+        leafId: leaf.leafId,
         error: err,
         ...describeSolanaError(err),
       });
@@ -3300,6 +3316,9 @@ export class Dataworker {
           error: cleanupErr,
           ...describeSolanaError(cleanupErr),
         });
+      }
+      if (alreadyClaimed) {
+        return undefined;
       }
       throw err;
     }
