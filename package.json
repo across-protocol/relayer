@@ -12,7 +12,7 @@
   "dependencies": {
     "@across-protocol/constants": "^3.1.109",
     "@across-protocol/contracts": "5.0.10",
-    "@across-protocol/sdk": "4.3.161",
+    "@across-protocol/sdk": "4.3.163",
     "@arbitrum/sdk": "^4.0.5",
     "@consensys/linea-sdk": "^0.3.0",
     "@coral-xyz/anchor": "^0.31.1",
@@ -22,6 +22,7 @@
     "@ethersproject/abstract-signer": "^5.7.0",
     "@ethersproject/bignumber": "^5.7.0",
     "@google-cloud/kms": "^5.4.0",
+    "@google-cloud/pubsub": "^5.2.0",
     "@google-cloud/storage": "^7.19.0",
     "@layerzerolabs/lz-v2-utilities": "^3.0.147",
     "@maticnetwork/maticjs": "^3.6.0",

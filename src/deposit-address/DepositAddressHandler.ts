@@ -22,11 +22,14 @@ import {
   BigNumber,
   normalizeDepositAddressMessage,
   toAddressType,
+  TransactionReceipt,
 } from "../utils";
 import { getRedisCache, RedisCacheInterface } from "../cache/Redis";
 import { DepositAddressMessage } from "../interfaces";
 import { AcrossSwapApiClient, TransactionClient, SwapApiResponse, SignedWithdrawResponse } from "../clients";
 import { AcrossIndexerApiClient } from "../clients/AcrossIndexerApiClient";
+import { GcpPubSubPublisher, getGcpPubSubPublisher } from "../messaging/gcp";
+import { buildWithdrawExecutedPayload } from "./withdrawPayload";
 import ERC20_ABI from "../common/abi/MinimalERC20.json";
 
 /**
@@ -83,6 +86,7 @@ export class DepositAddressHandler {
 
   private transactionClient;
   private redisCache: RedisCacheInterface | undefined;
+  private withdrawPublisher: GcpPubSubPublisher | undefined;
 
   public constructor(
     readonly logger: winston.Logger,
@@ -108,6 +112,10 @@ export class DepositAddressHandler {
     this.signerAddress = EvmAddress.from(await this.baseSigner.getAddress());
     this.redisCache = await getRedisCache(this.logger);
     assert(isDefined(this.redisCache), "DepositAddressHandler: requires a Redis cache for handover state");
+
+    if (this.config.enableDepositAddressWithdrawPublisher) {
+      this.withdrawPublisher = getGcpPubSubPublisher(this.logger, this.config.pubSubGcpProjectId);
+    }
 
     // Exit if OS instructs us to do so.
     process.on("SIGHUP", () => {
@@ -437,6 +445,7 @@ export class DepositAddressHandler {
       this.executedWithdrawKeys.add(depositKey);
       withdrawCommitted = true;
       await this._persistWithdrawnKeysRedis();
+      await this._publishWithdrawExecuted(receipt, depositMessage);
     } finally {
       if (!withdrawCommitted) {
         this.observedExecutedWithdraws[chainId].delete(depositKey);
@@ -507,6 +516,66 @@ export class DepositAddressHandler {
     const { redisCache } = this;
     const redisKey = this.getWithdrawnKeysRedisKey();
     await redisCache.set(redisKey, JSON.stringify([...this.executedWithdrawKeys]));
+  }
+
+  /**
+   * Best-effort publish of a `withdraw_executed` lifecycle event to GCP Pub/Sub. Payload shape
+   * is locked by the consumer (`isDepositAddressWithdrawPayload` in
+   * `indexer/packages/indexer/src/pubsub/DepositAddressWithdrawConsumer.ts`).
+   *
+   * The withdraw is already on-chain by the time we get here; a publish failure never rolls
+   * back state and never throws to the caller. The downside is that a dropped publish leaves
+   * the indexer row in `auto_pending` — accepted trade-off for v1, see the module README.
+   */
+  private async _publishWithdrawExecuted(
+    receipt: TransactionReceipt,
+    depositMessage: DepositAddressMessage
+  ): Promise<void> {
+    if (!isDefined(this.withdrawPublisher)) {
+      return;
+    }
+    const payload = buildWithdrawExecutedPayload(receipt, depositMessage);
+    if (!isDefined(payload)) {
+      this.logger.warn({
+        at: "DepositAddressHandler#_publishWithdrawExecuted",
+        message: "Skipping publish: no ERC20 Transfer (deposit address → refund address) found in receipt",
+        depositAddress: depositMessage.depositAddress,
+        refundAddress: depositMessage.routeParams.refundAddress,
+        token: depositMessage.erc20Transfer.contractAddress,
+        txHash: receipt.transactionHash,
+      });
+      return;
+    }
+
+    try {
+      const messageId = await this.withdrawPublisher.publishJson(
+        this.config.pubSubDepositAddressWithdrawTopic,
+        payload
+      );
+      this.logger.debug({
+        at: "DepositAddressHandler#_publishWithdrawExecuted",
+        message: "Published withdraw_executed",
+        messageId,
+        payload,
+      });
+    } catch (err) {
+      this.logger.error({
+        at: "DepositAddressHandler#_publishWithdrawExecuted",
+        message: "Failed to publish withdraw_executed to GCP Pub/Sub",
+        topic: this.config.pubSubDepositAddressWithdrawTopic,
+        payload,
+        err: err instanceof Error ? err.message : String(err),
+        notificationPath: "across-bot-error",
+      });
+    }
+  }
+
+  /** Releases the Pub/Sub client. Idempotent. Safe to call when the publisher is not configured. */
+  public async disconnect(): Promise<void> {
+    if (isDefined(this.withdrawPublisher)) {
+      await this.withdrawPublisher.close();
+      this.withdrawPublisher = undefined;
+    }
   }
 
   private async initiateDeposit(depositMessage: DepositAddressMessage): Promise<void> {
