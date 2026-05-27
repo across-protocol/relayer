@@ -11,6 +11,7 @@ import {
   floatToBN,
   bnZero,
   getTokenInfo,
+  getTokenInfoFromSymbol,
   groupObjectCountsByProp,
   isEVMSpokePoolClient,
   assert,
@@ -345,7 +346,9 @@ export function getPositivePendingRebalanceAmountsByBinanceCoin(pendingRebalance
   for (const [_chainId, tokenBalances] of Object.entries(pendingRebalances)) {
     const chainId = Number(_chainId);
     for (const [token, amount] of Object.entries(tokenBalances)) {
-      const { decimals } = getTokenInfo(EvmAddress.from(resolveAcrossToken(token, chainId, true)), chainId);
+      // Pending rebalances are keyed by logical symbol (e.g. "USDC") even where the on-chain symbol
+      // differs (e.g. "USDC-BNB" on BSC); getTokenInfoFromSymbol routes through TOKEN_EQUIVALENCE_REMAPPING.
+      const { decimals } = getTokenInfoFromSymbol(token, chainId);
       const binanceCoin = resolveBinanceCoinSymbol(token);
       totals[binanceCoin] = (totals[binanceCoin] ?? 0) + Number(formatUnits(amount, decimals));
     }
