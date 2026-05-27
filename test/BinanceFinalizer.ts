@@ -37,6 +37,16 @@ describe("Binance finalizer helpers", function () {
     expect(deductions).to.deep.equal({ USDC: 60 });
   });
 
+  it("resolves logical USDC symbol on BSC where the on-chain symbol is USDC-BNB", function () {
+    const deductions = getPositivePendingRebalanceAmountsByBinanceCoin({
+      [CHAIN_IDs.BSC]: {
+        USDC: toBNWei("50", 18),
+      },
+    });
+
+    expect(deductions).to.deep.equal({ USDC: 50 });
+  });
+
   it("subtracts credited, swap, and pending rebalance amounts from orphan sweep candidates", function () {
     const sweepableBalance = getSweepableOrphanBinanceBalance(250_000, 10_000, 20_000, 30_000);
 
