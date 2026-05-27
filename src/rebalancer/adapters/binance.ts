@@ -501,7 +501,6 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
 
       // Check if we need to bridge the withdrawal to the final destination chain:
       const requiresBridgeAfterWithdrawal = binanceWithdrawalNetwork !== destinationChain;
-      const destTokenInfo = this._getTokenInfo(destinationToken, destinationChain);
       if (requiresBridgeAfterWithdrawal) {
         assert(
           supportsBinanceIntermediateBridgeToken(destinationToken),
@@ -509,7 +508,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         );
         const balance = await this._getERC20Balance(
           binanceWithdrawalNetwork,
-          destTokenInfo.address.toNative(),
+          this._getTokenInfo(destinationToken, binanceWithdrawalNetwork).address.toNative(),
           this.baseSignerAddress
         );
         if (balance.lt(withdrawAmountWei)) {
@@ -525,6 +524,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         await this._bridgeToChain(destinationToken, binanceWithdrawalNetwork, destinationChain, withdrawAmountWei);
       }
       // We no longer need this order information, so we can delete it.
+      const destTokenInfo = this._getTokenInfo(destinationToken, destinationChain);
       this.logger.info({
         at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",
         message: `✨ Order ${cloid} of ${fromWei(withdrawAmountWei, destTokenInfo.decimals)} ${destTokenInfo.symbol} has finalized withdrawing to the final destination chain ${destinationChain}!`,
