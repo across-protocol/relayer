@@ -95,16 +95,25 @@ type BinanceAssetNetwork = Coin["networkList"][number];
 
 export type BinanceSourceDepositMode = "erc20" | "native";
 
-export interface ResolvedBinanceAsset {
+interface ResolvedBinanceAssetBase {
   tokenSymbol: string;
   chainId: number;
   binanceCoin: string;
   network: BinanceAssetNetwork;
   tokenDecimals: number;
-  isNativeAsset: boolean;
-  localTokenAddress?: string;
   depositMode?: BinanceSourceDepositMode;
 }
+
+export interface ResolvedBinanceNativeAsset extends ResolvedBinanceAssetBase {
+  isNativeAsset: true;
+}
+
+export interface ResolvedBinanceErc20Asset extends ResolvedBinanceAssetBase {
+  isNativeAsset: false;
+  localTokenAddress: string;
+}
+
+export type ResolvedBinanceAsset = ResolvedBinanceNativeAsset | ResolvedBinanceErc20Asset;
 
 export type BinanceAssetResolutionFailureReason =
   | "UNKNOWN_TOKEN"
@@ -419,15 +428,20 @@ async function gatherPreflightBalances(
   const signerAddress = await connectedSigner.getAddress();
   const nativeBalance = await provider.getBalance(signerAddress);
   const nativeSymbol = getNativeTokenInfoForChain(source.chainId).symbol;
-  const sourceBalance = source.isNativeAsset
-    ? await new Contract(getWrappedNativeTokenAddress(source.chainId).toNative(), ERC20.abi, connectedSigner).balanceOf(
-        signerAddress
-      )
-    : await new Contract(
-        getEthersCompatibleAddress(source.chainId, source.localTokenAddress!),
-        ERC20.abi,
-        connectedSigner
-      ).balanceOf(signerAddress);
+  let sourceBalance: BigNumber;
+  if (source.isNativeAsset) {
+    sourceBalance = await new Contract(
+      getWrappedNativeTokenAddress(source.chainId).toNative(),
+      ERC20.abi,
+      connectedSigner
+    ).balanceOf(signerAddress);
+  } else {
+    sourceBalance = await new Contract(
+      getEthersCompatibleAddress(source.chainId, source.localTokenAddress),
+      ERC20.abi,
+      connectedSigner
+    ).balanceOf(signerAddress);
+  }
 
   let shortfallMessage: string | undefined;
   if (source.isNativeAsset) {
@@ -491,13 +505,17 @@ async function formatOtherKnownBalances(
         const nativeSymbol = getNativeTokenInfoForChain(chainId).symbol.toUpperCase();
         const isNativeCandidate = symbol === nativeSymbol;
 
-        const balance = isNativeCandidate
-          ? await provider.getBalance(address)
-          : await new Contract(
-              getEthersCompatibleAddress(chainId, resolveAcrossToken(symbol, chainId)!),
-              ERC20.abi,
-              connectedSigner
-            ).balanceOf(address);
+        let balance: BigNumber;
+        if (isNativeCandidate) {
+          balance = await provider.getBalance(address);
+        } else {
+          const tokenAddress = resolveAcrossToken(symbol, chainId, true);
+          balance = await new Contract(
+            getEthersCompatibleAddress(chainId, tokenAddress),
+            ERC20.abi,
+            connectedSigner
+          ).balanceOf(address);
+        }
         if (balance.lte(BigNumber.from(0))) {
           return undefined;
         }
@@ -536,7 +554,7 @@ async function gatherRecipientBalances(
     const nativeBalance = BigNumber.from(nativeBalanceResponse.value.toString());
     const destinationTokenBalance = destination.isNativeAsset
       ? nativeBalance
-      : await getSolanaTokenBalance(provider, SvmAddress.from(destination.localTokenAddress!), recipientAddress);
+      : await getSolanaTokenBalance(provider, SvmAddress.from(destination.localTokenAddress), recipientAddress);
 
     return {
       destinationTokenBalance,
@@ -547,13 +565,16 @@ async function gatherRecipientBalances(
   const provider = await getProvider(destination.chainId);
   const recipientAddress = getEthersCompatibleAddress(destination.chainId, recipient);
   const nativeBalance = await provider.getBalance(recipientAddress);
-  const destinationTokenBalance = destination.isNativeAsset
-    ? nativeBalance
-    : await new Contract(
-        getEthersCompatibleAddress(destination.chainId, destination.localTokenAddress!),
-        ERC20.abi,
-        provider
-      ).balanceOf(recipientAddress);
+  let destinationTokenBalance: BigNumber;
+  if (destination.isNativeAsset) {
+    destinationTokenBalance = nativeBalance;
+  } else {
+    destinationTokenBalance = await new Contract(
+      getEthersCompatibleAddress(destination.chainId, destination.localTokenAddress),
+      ERC20.abi,
+      provider
+    ).balanceOf(recipientAddress);
+  }
 
   return {
     destinationTokenBalance,
@@ -629,7 +650,7 @@ async function buildDepositExecutionPlan(
     return { steps };
   }
 
-  const tokenContract = new Contract(getEthersCompatibleAddress(chainId, source.localTokenAddress!), ERC20.abi, signer);
+  const tokenContract = new Contract(getEthersCompatibleAddress(chainId, source.localTokenAddress), ERC20.abi, signer);
   return {
     steps: [
       {
@@ -1227,7 +1248,7 @@ export function resolveBinanceAsset(params: {
         binanceCoin: matchingCoin.symbol,
         network: matchingNetwork,
         tokenDecimals: getNativeTokenInfoForChain(chainId).decimals,
-        isNativeAsset: depositMode === "native" || direction === "withdraw",
+        isNativeAsset: true,
         depositMode,
       },
     };

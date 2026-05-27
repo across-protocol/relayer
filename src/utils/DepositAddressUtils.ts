@@ -1,6 +1,57 @@
 import { Contract } from "ethers";
 import { AugmentedTransaction } from "../clients";
 import { DepositAddressMessage } from "../interfaces/DepositAddress";
+import { getEthersCompatibleAddress } from "./ContractUtils";
+
+/**
+ * Converts indexer deposit-address payloads so on-chain calls use ethers-compatible `0x`
+ * addresses on TVM chains (Tron returns base58 in API fields).
+ */
+export function normalizeDepositAddressMessage(message: DepositAddressMessage): DepositAddressMessage {
+  const { routeParams, erc20Transfer } = message;
+  const originChainId = Number(routeParams.originChainId);
+  const destinationChainId = Number(routeParams.destinationChainId);
+  const transferChainId = Number(erc20Transfer.chainId);
+
+  return {
+    ...message,
+    depositAddress: getEthersCompatibleAddress(transferChainId, message.depositAddress),
+    routeParams: {
+      ...routeParams,
+      inputToken: getEthersCompatibleAddress(originChainId, routeParams.inputToken),
+      outputToken: getEthersCompatibleAddress(destinationChainId, routeParams.outputToken),
+      recipient: getEthersCompatibleAddress(destinationChainId, routeParams.recipient),
+      refundAddress: getEthersCompatibleAddress(originChainId, routeParams.refundAddress),
+    },
+    erc20Transfer: {
+      ...erc20Transfer,
+      from: getEthersCompatibleAddress(transferChainId, erc20Transfer.from),
+      to: getEthersCompatibleAddress(transferChainId, erc20Transfer.to),
+      contractAddress: getEthersCompatibleAddress(transferChainId, erc20Transfer.contractAddress),
+    },
+    counterfactualDepositContractAddress: getEthersCompatibleAddress(
+      originChainId,
+      message.counterfactualDepositContractAddress
+    ),
+    counterfactualFactoryContractAddress: getEthersCompatibleAddress(
+      originChainId,
+      message.counterfactualFactoryContractAddress
+    ),
+    adminWithdrawManagerContractAddress: getEthersCompatibleAddress(
+      originChainId,
+      message.adminWithdrawManagerContractAddress
+    ),
+    counterfactualMaterials: {
+      withdrawLeaf: {
+        ...message.counterfactualMaterials.withdrawLeaf,
+        implementationAddress: getEthersCompatibleAddress(
+          originChainId,
+          message.counterfactualMaterials.withdrawLeaf.implementationAddress
+        ),
+      },
+    },
+  };
+}
 
 /**
  * Returns a unique key for a deposit so we can track if it was already executed (e.g. in observedExecutedDeposits).

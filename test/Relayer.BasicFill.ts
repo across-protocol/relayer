@@ -17,6 +17,7 @@ import {
   getNetworkName,
   getAllUnfilledDeposits,
   getMessageHash,
+  isDefined,
   toAddressType,
   EvmAddress,
   SvmAddress,
@@ -41,6 +42,7 @@ import {
 } from "./mocks";
 import { MockedMultiCallerClient } from "./mocks/MockMultiCallerClient";
 import {
+  assert,
   BigNumber,
   Contract,
   SignerWithAddress,
@@ -545,11 +547,11 @@ describe("Relayer: Check for Unfilled Deposits and Fill", function () {
       expect(lastSpyLogIncludes(spy, "0 unfilled deposits found")).to.be.true;
 
       const exclusiveDeposit = deposits.find(({ exclusiveRelayer }) => exclusiveRelayer.eq(relayerAddress));
-      expect(exclusiveDeposit).to.exist;
+      assert(isDefined(exclusiveDeposit), "Expected exclusive deposit");
       // Advance both block.timestamp and the SpokePool's _currentTime past the exclusivity
       // deadline. The block timestamp drives the SpokePoolClient's currentTime, while the
       // contract's _currentTime is still required for the on-chain exclusivity check at fill time.
-      await setSpokePoolTime(spokePool_2, exclusiveDeposit!.exclusivityDeadline + 1);
+      await setSpokePoolTime(spokePool_2, exclusiveDeposit.exclusivityDeadline + 1);
       await updateAllClients();
 
       // Relayer can unconditionally fill after the exclusivityDeadline.
@@ -668,8 +670,8 @@ describe("Relayer: Check for Unfilled Deposits and Fill", function () {
         outputToken,
         outputAmount
       );
-      const fillAmount = profitClient.getFillAmountInUsd(deposit1)!;
-      expect(fillAmount).to.exist;
+      const fillAmount = profitClient.getFillAmountInUsd(deposit1);
+      assert(isDefined(fillAmount), "Expected fill amount in USD");
 
       // Simple escalating confirmation requirements; cap off with a default upper limit.
       const originChainConfirmations = [1, 4, 8].map((n) => ({
@@ -1085,9 +1087,8 @@ describe("Relayer: Check for Unfilled Deposits and Fill", function () {
           expect(lastSpyLogIncludes(spy, "Filled v3 deposit")).to.be.true;
 
           await spokePoolClient_2.update();
-          let fill = spokePoolClient_2.getFillsForRelayer(toAddressType(relayer.address, destinationChainId)).at(-1);
-          expect(fill).to.exist;
-          fill = fill!;
+          const fill = spokePoolClient_2.getFillsForRelayer(toAddressType(relayer.address, destinationChainId)).at(-1);
+          assert(isDefined(fill), "Expected fill for relayer");
 
           expect(fill.relayExecutionInfo.updatedOutputAmount.eq(deposit.outputAmount)).to.be.false;
           expect(fill.relayExecutionInfo.updatedOutputAmount.eq(update.outputAmount)).to.be.true;

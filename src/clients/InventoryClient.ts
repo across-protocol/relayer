@@ -570,10 +570,10 @@ export class InventoryClient {
 
   /**
    * Returns the L1 token address for a given L2 token address on a given chain. Returns undefined
-   *  if the l2 token and chain ID do not not have a corresponding L1 token mapping.
+   *  if the l2 token and chain ID do not have a corresponding L1 token mapping.
    * @param l2Token L2 token address
    * @param chainId Chain ID
-   * @returns L1 token address from TokenSymbolsMap or undefined if the l2 token and chain ID do not not have a corresponding L1 token mapping.
+   * @returns L1 token address from TokenSymbolsMap or undefined if the l2 token and chain ID do not have a corresponding L1 token mapping.
    */
   getL1TokenAddress(l2Token: Address, chainId: number): EvmAddress | undefined {
     try {

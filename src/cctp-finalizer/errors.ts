@@ -60,7 +60,7 @@ export class MintTransactionFailedError extends CCTPError {
   readonly shouldRetry = true;
   readonly code = "MINT_TRANSACTION_FAILED";
 
-  constructor(originalError: Error | unknown) {
+  constructor(originalError: unknown) {
     const message = originalError instanceof Error ? originalError.message : "Mint transaction failed";
     super(message);
     if (originalError instanceof Error) {

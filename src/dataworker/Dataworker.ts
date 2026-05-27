@@ -2,6 +2,7 @@ import assert from "assert";
 import { Contract } from "ethers";
 import { utils as sdkUtils, arch } from "@across-protocol/sdk";
 import {
+  blockExplorerLink,
   bnZero,
   winston,
   EMPTY_MERKLE_ROOT,
@@ -30,7 +31,6 @@ import {
   getEventAuthority,
   getStatePda,
   getFillStatusPda,
-  LatestBlockhash,
   getRelayDataHash,
   sendAndConfirmSolanaTransaction,
   SvmAddress,
@@ -86,6 +86,7 @@ import {
   persistDataToArweave,
 } from "../dataworker/DataworkerUtils";
 import { _buildRelayerRefundRoot, _buildSlowRelayRoot, generateValidationKey } from "./DataworkerUtils";
+import { formatRelayerRefundLeafExecutionLog } from "./RelayerRefundUtils";
 import _ from "lodash";
 import {
   ARBITRUM_ORBIT_L1L2_MESSAGE_FEE_DATA,
@@ -107,7 +108,6 @@ import {
   address,
   createTransactionMessage,
   setTransactionMessageFeePayer,
-  setTransactionMessageLifetimeUsingBlockhash,
   appendTransactionMessageInstructions,
   pipe,
   some,
@@ -2502,49 +2502,57 @@ export class Dataworker {
     ).filter(isDefined);
 
     await forEachAsync(fundedLeaves, async (leaf) => {
-      const symbol = this.getTokenInfo(leaf.l2TokenAddress, chainId);
-
-      const mrkdwn = `rootBundleId: ${rootBundleId}\nrelayerRefundRoot: ${relayerRefundTree.getHexRoot()}\nLeaf: ${
-        leaf.leafId
-      }\nchainId: ${chainId}\ntoken: ${symbol}\namount: ${leaf.amountToReturn.toString()}`;
-      if (submitExecution) {
-        if (isEVMSpokePoolClient(client)) {
-          const valueToPassViaPayable = msgValuesByLeafId.get(leaf.leafId);
-          const ethersLeaf = {
-            ...leaf,
-            l2TokenAddress: leaf.l2TokenAddress.toEvmAddress(),
-            refundAddresses: leaf.refundAddresses.map((refundAddress) => refundAddress.toEvmAddress()),
-          };
-          this.clients.multiCallerClient.enqueueTransaction({
-            value: valueToPassViaPayable,
-            contract: client.spokePool,
-            chainId,
-            method: "executeRelayerRefundLeaf",
-            args: [rootBundleId, ethersLeaf, relayerRefundTree.getHexProof(leaf)],
-            message: "Executed RelayerRefundLeaf 🌿!",
-            mrkdwn,
-            // If mainnet, send through Multicall3 so it can be batched with PoolRebalanceLeaf executions, otherwise
-            // SpokePool.multicall() is fine.
-            unpermissioned: Number(chainId) === this.clients.hubPoolClient.chainId,
-            // If simulating mainnet execution, can fail as it may require funds to be sent from
-            // pool rebalance leaf.
-            canFailInSimulation: leaf.chainId === this.clients.hubPoolClient.chainId,
-          });
-        } else if (isSVMSpokePoolClient(client)) {
-          const signature = await this._executeRelayerRefundLeafSvm(
-            client,
-            leaf,
-            rootBundleId,
-            relayerRefundTree.getHexProof(leaf)
-          );
-          this.logger.info({
-            at: "Dataworker#_executeRelayerRefundLeaves",
-            message: mrkdwn,
-            signature,
-          });
-        }
-      } else {
-        this.logger.debug({ at: "Dataworker#_executeRelayerRefundLeaves", message: mrkdwn });
+      const leafLogArgs = {
+        rootBundleId,
+        relayerRefundRoot: relayerRefundTree.getHexRoot(),
+        leafId: leaf.leafId,
+        chainId,
+        symbol: this.getTokenInfo(leaf.l2TokenAddress, chainId),
+        amountToReturn: leaf.amountToReturn,
+      };
+      if (!submitExecution) {
+        this.logger.debug({
+          at: "Dataworker#_executeRelayerRefundLeaves",
+          message: formatRelayerRefundLeafExecutionLog(leafLogArgs).mrkdwn,
+        });
+        return;
+      }
+      if (isEVMSpokePoolClient(client)) {
+        const valueToPassViaPayable = msgValuesByLeafId.get(leaf.leafId);
+        const ethersLeaf = {
+          ...leaf,
+          l2TokenAddress: leaf.l2TokenAddress.toEvmAddress(),
+          refundAddresses: leaf.refundAddresses.map((refundAddress) => refundAddress.toEvmAddress()),
+        };
+        this.clients.multiCallerClient.enqueueTransaction({
+          value: valueToPassViaPayable,
+          contract: client.spokePool,
+          chainId,
+          method: "executeRelayerRefundLeaf",
+          args: [rootBundleId, ethersLeaf, relayerRefundTree.getHexProof(leaf)],
+          // If mainnet, send through Multicall3 so it can be batched with PoolRebalanceLeaf executions, otherwise
+          // SpokePool.multicall() is fine.
+          unpermissioned: Number(chainId) === this.clients.hubPoolClient.chainId,
+          // If simulating mainnet execution, can fail as it may require funds to be sent from
+          // pool rebalance leaf.
+          canFailInSimulation: leaf.chainId === this.clients.hubPoolClient.chainId,
+          // TransactionClient#submit appends `(<explorer>)` from the tx response.
+          ...formatRelayerRefundLeafExecutionLog(leafLogArgs),
+        });
+      } else if (isSVMSpokePoolClient(client)) {
+        const signature = await this._executeRelayerRefundLeafSvm(
+          client,
+          leaf,
+          rootBundleId,
+          relayerRefundTree.getHexProof(leaf)
+        );
+        this.logger.info({
+          at: "Dataworker#_executeRelayerRefundLeaves",
+          ...formatRelayerRefundLeafExecutionLog({
+            ...leafLogArgs,
+            explorerLink: blockExplorerLink(signature, chainId),
+          }),
+        });
       }
     });
   }
@@ -2895,14 +2903,12 @@ export class Dataworker {
     const proof = relayerRefundLeafHexProof.map((hexLeaf) => Uint8Array.from(Buffer.from(hexLeaf.slice(2), "hex")));
 
     // Derive static accounts.
-    const [kitKeypair, eventAuthority, statePda, transferLiabilityPda, _recentBlockhash] = await Promise.all([
+    const [kitKeypair, eventAuthority, statePda, transferLiabilityPda] = await Promise.all([
       this._getKitKeypair(),
       getEventAuthority(spokePoolProgramId),
       getStatePda(spokePoolProgramId),
       getTransferLiabilityPda(spokePoolProgramId, l2TokenAddress),
-      provider.getLatestBlockhash().send(),
     ]);
-    const recentBlockhash = _recentBlockhash as { value: LatestBlockhash };
     assert(leaf.l2TokenAddress.isSVM());
     const [rootBundlePda, instructionParamsPda, vault] = await Promise.all([
       getRootBundlePda(spokePoolProgramId, rootBundleId),
@@ -2925,14 +2931,26 @@ export class Dataworker {
       vault,
     });
 
-    // Optionally close the existing instruction params account and add an instruction which loads new data into the instruction params PDA.
+    const relayerRefundLeafParamsEncoder = SvmSpokeClient.getExecuteRelayerRefundLeafParamsEncoder();
+    const relayerRefundLeafBytes = relayerRefundLeafParamsEncoder.encode({
+      rootBundleId,
+      relayerRefundLeaf: toSvmRelayerRefundLeaf(leaf),
+      proof,
+    });
+
+    // PDA auto-closes via `close = signer`; existence here implies a prior crashed run. Reuse if sized to fit.
     const instructionParamsAccount = await fetchEncodedAccount(provider, instructionParamsPda);
-    // If the account exists, define the instruction needed to close the instruction account.
-    if (instructionParamsAccount.exists) {
+    const needsClose =
+      instructionParamsAccount.exists && instructionParamsAccount.data.length < relayerRefundLeafBytes.length;
+    const needsInit = !instructionParamsAccount.exists || needsClose;
+    let txSignature;
+    if (needsClose) {
       this.logger.debug({
         at: "Dataworker#executeRelayerRefundLeafSvm",
-        message: "Need to close existing instruction params account",
+        message: "Existing instruction params account is undersized; closing and reinitializing",
         instructionParamsAccount: instructionParamsAccount.address,
+        existingSize: instructionParamsAccount.data.length,
+        requiredSize: relayerRefundLeafBytes.length,
       });
       const closeInstructionParamsIx = SvmSpokeClient.getCloseInstructionParamsInstruction({
         signer: kitKeypair,
@@ -2941,7 +2959,6 @@ export class Dataworker {
       const closeInstructionParamsTx = pipe(
         createTransactionMessage({ version: 0 }),
         (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
-        (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash.value, tx),
         (tx) => appendTransactionMessageInstructions([closeInstructionParamsIx], tx)
       );
       const closeSig = await sendAndConfirmSolanaTransaction(closeInstructionParamsTx, provider);
@@ -2951,34 +2968,34 @@ export class Dataworker {
         signature: closeSig,
       });
     }
-    // First, add an instruction which initializes a new instruction params PDA for the relayer refund leaf.
-    const relayerRefundLeafParamsEncoder = SvmSpokeClient.getExecuteRelayerRefundLeafParamsEncoder();
-    const relayerRefundLeafBytes = relayerRefundLeafParamsEncoder.encode({
-      rootBundleId,
-      relayerRefundLeaf: toSvmRelayerRefundLeaf(leaf),
-      proof,
-    });
-    const initializeInstructionParamsIx = SvmSpokeClient.getInitializeInstructionParamsInstruction({
-      signer: kitKeypair,
-      instructionParams: instructionParamsPda,
-      totalSize: relayerRefundLeafBytes.length,
-    });
-
-    const initInstructionParamsTx = pipe(
-      createTransactionMessage({ version: 0 }),
-      (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
-      (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash.value, tx),
-      (tx) => appendTransactionMessageInstructions([initializeInstructionParamsIx], tx)
-    );
-    let txSignature;
-    txSignature = await sendAndConfirmSolanaTransaction(initInstructionParamsTx, provider);
-    this.logger.debug({
-      at: "Dataworker#executeRelayerRefundLeafSvm",
-      message: "Initialized instruction params account",
-      instructionParamsAccount: instructionParamsAccount.address,
-      allocatedMemory: relayerRefundLeafBytes.length,
-      txSignature,
-    });
+    if (needsInit) {
+      const initializeInstructionParamsIx = SvmSpokeClient.getInitializeInstructionParamsInstruction({
+        signer: kitKeypair,
+        instructionParams: instructionParamsPda,
+        totalSize: relayerRefundLeafBytes.length,
+      });
+      const initInstructionParamsTx = pipe(
+        createTransactionMessage({ version: 0 }),
+        (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
+        (tx) => appendTransactionMessageInstructions([initializeInstructionParamsIx], tx)
+      );
+      txSignature = await sendAndConfirmSolanaTransaction(initInstructionParamsTx, provider);
+      this.logger.debug({
+        at: "Dataworker#executeRelayerRefundLeafSvm",
+        message: "Initialized instruction params account",
+        instructionParamsAccount: instructionParamsAccount.address,
+        allocatedMemory: relayerRefundLeafBytes.length,
+        txSignature,
+      });
+    } else {
+      this.logger.debug({
+        at: "Dataworker#executeRelayerRefundLeafSvm",
+        message: "Reusing existing instruction params account",
+        instructionParamsAccount: instructionParamsAccount.address,
+        existingSize: instructionParamsAccount.data.length,
+        requiredSize: relayerRefundLeafBytes.length,
+      });
+    }
 
     // Then add an instruction which populates that initialized PDA with the data of the relayer refund leaf.
     for (let i = 0; i <= relayerRefundLeafBytes.length / INSTRUCTION_PARAMS_MAX_WRITE_SIZE; ++i) {
@@ -2994,7 +3011,6 @@ export class Dataworker {
       const writeInstructionParamsTx = pipe(
         createTransactionMessage({ version: 0 }),
         (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
-        (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash.value, tx),
         (tx) => appendTransactionMessageInstructions([writeInstructionParamsIx], tx)
       );
       txSignature = await sendAndConfirmSolanaTransaction(writeInstructionParamsTx, provider);
@@ -3022,7 +3038,6 @@ export class Dataworker {
     const createLookupTableTx = pipe(
       createTransactionMessage({ version: 0 }),
       (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
-      (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash.value, tx),
       (tx) => appendTransactionMessageInstructions([lookupTableIx], tx)
     );
     txSignature = await sendAndConfirmSolanaTransaction(createLookupTableTx, provider);
@@ -3045,7 +3060,6 @@ export class Dataworker {
       const deactivateLutTx = pipe(
         createTransactionMessage({ version: 0 }),
         (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
-        (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash.value, tx),
         (tx) => appendTransactionMessageInstructions([deactivateLutIx], tx)
       );
       const deactivateLutSignature = await sendAndConfirmSolanaTransaction(deactivateLutTx, provider);
@@ -3101,7 +3115,6 @@ export class Dataworker {
           const extendLutTx = pipe(
             createTransactionMessage({ version: 0 }),
             (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
-            (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash.value, tx),
             (tx) => appendTransactionMessageInstructions([extendLookupTableIx], tx)
           );
           await sendAndConfirmSolanaTransaction(extendLutTx, provider);
@@ -3113,7 +3126,6 @@ export class Dataworker {
         const executeRelayerRefundLeafTx = pipe(
           createTransactionMessage({ version: 0 }),
           (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
-          (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash.value, tx),
           (tx) => appendTransactionMessageInstructions([executeRelayerRefundLeafIx], tx),
           (tx) => compressTransactionMessageUsingAddressLookupTables(tx, addressLookupTableDefinitions.lookupTableMap)
         );
@@ -3170,7 +3182,6 @@ export class Dataworker {
             const initializeClaimAccountTx = pipe(
               createTransactionMessage({ version: 0 }),
               (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
-              (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash.value, tx),
               (tx) => appendTransactionMessageInstructions([initializeClaimAccountIx], tx)
             );
             txSignature = await sendAndConfirmSolanaTransaction(initializeClaimAccountTx, provider);
@@ -3198,7 +3209,6 @@ export class Dataworker {
           const extendLutTx = pipe(
             createTransactionMessage({ version: 0 }),
             (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
-            (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash.value, tx),
             (tx) => appendTransactionMessageInstructions([extendLookupTableIx], tx)
           );
           await sendAndConfirmSolanaTransaction(extendLutTx, provider);
@@ -3210,7 +3220,6 @@ export class Dataworker {
         const executeRelayerRefundLeafDeferredTx = pipe(
           createTransactionMessage({ version: 0 }),
           (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
-          (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash.value, tx),
           (tx) => appendTransactionMessageInstructions([executeRelayerRefundLeafDeferredIx], tx),
           (tx) => compressTransactionMessageUsingAddressLookupTables(tx, addressLookupTableDefinitions.lookupTableMap)
         );
@@ -3274,14 +3283,22 @@ export class Dataworker {
           claimSignatures: Object.fromEntries(claimedRefunds),
         });
       }
-    } catch (e) {
+    } catch (err) {
       this.logger.error({
         at: "Dataworker#executeRelayerRefundLeafSvm",
         message: "Something failed during the relayer refund leaf execution stage",
-        error: e,
+        error: err,
       });
-      await deactivateLut();
-      throw e;
+      try {
+        await deactivateLut();
+      } catch (err) {
+        this.logger.warn({
+          at: "Dataworker#executeRelayerRefundLeafSvm",
+          message: "deactivateLut cleanup failed after refund execution error",
+          error: err,
+        });
+      }
+      throw err;
     }
     // The refund was successful, so return the signature.
     await deactivateLut();
@@ -3305,14 +3322,12 @@ export class Dataworker {
     const proof = slowFillHexProof.map((hexLeaf) => Uint8Array.from(Buffer.from(hexLeaf.slice(2), "hex")));
 
     // Gather the PDAs required to execute the slow fill leaf.
-    const [kitKeypair, eventAuthority, statePda, fillStatusPda, _recentBlockhash] = await Promise.all([
+    const [kitKeypair, eventAuthority, statePda, fillStatusPda] = await Promise.all([
       this._getKitKeypair(),
       getEventAuthority(spokePoolProgramId),
       getStatePda(spokePoolProgramId),
       getFillStatusPda(spokePoolProgramId, leaf.relayData, leaf.chainId),
-      provider.getLatestBlockhash().send(),
     ]);
-    const recentBlockhash = _recentBlockhash as { value: LatestBlockhash };
     assert(leaf.relayData.outputToken.isSVM());
     const [rootBundlePda, recipientTokenAccount, vault] = await Promise.all([
       getRootBundlePda(spokePoolProgramId, rootBundleId),
@@ -3362,7 +3377,6 @@ export class Dataworker {
     const executeSlowFillTx = pipe(
       createTransactionMessage({ version: 0 }),
       (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
-      (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash.value, tx),
       (tx) => appendTransactionMessageInstructions([executeSlowFillIx], tx)
     );
     const signature = await sendAndConfirmSolanaTransaction(executeSlowFillTx, provider);

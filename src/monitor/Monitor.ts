@@ -63,7 +63,6 @@ import {
   address,
   createTransactionMessage,
   setTransactionMessageFeePayer,
-  setTransactionMessageLifetimeUsingBlockhash,
   appendTransactionMessageInstructions,
   pipe,
   fetchEncodedAccount,
@@ -657,12 +656,14 @@ export class Monitor {
                   symbol = this.getTokenInfo(token, chainId).symbol;
                 }
               }
+              const levelTag = trippedThreshold.level === "error" ? "[ERROR]" : "[WARN]";
+              const thresholdLabel = trippedThreshold.level === "error" ? "Error threshold" : "Warn threshold";
               return {
                 level: trippedThreshold.level,
-                text: `  ${getNetworkName(chainId)} ${symbol} balance for ${blockExplorerLink(
+                text: `  ${levelTag} ${getNetworkName(chainId)} ${symbol} balance for ${blockExplorerLink(
                   account.toNative(),
                   chainId
-                )} is ${formatUnits(balance, decimals)}. Threshold: ${trippedThreshold.threshold}`,
+                )} is ${formatUnits(balance, decimals)}. ${thresholdLabel}: ${trippedThreshold.threshold}`,
               };
             }
           }
@@ -1014,11 +1015,9 @@ export class Monitor {
           recipient: signer.address,
         });
 
-        const { value: recentBlockhash } = await svmRpc.getLatestBlockhash().send();
         const txMessage = pipe(
           createTransactionMessage({ version: 0 }),
           (tx) => setTransactionMessageFeePayer(signer.address, tx),
-          (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash, tx),
           (tx) => appendTransactionMessageInstructions([closeIx], tx)
         );
 
