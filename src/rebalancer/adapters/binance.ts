@@ -521,22 +521,15 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
           });
           continue;
         }
-        this.logger.info({
-          at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",
-          message: `✨ Order ${cloid} has finalized withdrawing to ${binanceWithdrawalNetwork}; bridging ${destinationToken} from ${binanceWithdrawalNetwork} to final destination chain ${destinationChain} and deleting order details from Redis!`,
-          requiredWithdrawAmount: withdrawAmountWei.toString(),
-          destinationToken,
-          withdrawalDetails,
-        });
         await this._bridgeToChain(destinationToken, binanceWithdrawalNetwork, destinationChain, withdrawAmountWei);
-      } else {
-        this.logger.info({
-          at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",
-          message: `✨ Deleting order details from Redis with cloid ${cloid} because its withdrawal has finalized to the final destination chain ${destinationChain}!`,
-          withdrawalDetails,
-        });
       }
       // We no longer need this order information, so we can delete it.
+      const destTokenInfo = this._getTokenInfo(destinationToken, destinationChain);
+      this.logger.info({
+        at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",
+        message: `✨ Order ${cloid} of ${fromWei(withdrawAmountWei, destTokenInfo.decimals)} ${destTokenInfo.symbol} has finalized withdrawing to the final destination chain ${destinationChain}!`,
+        withdrawalDetails,
+      });
       await this._redisDeleteOrder(cloid, STATUS.PENDING_WITHDRAWAL, this.baseSignerAddress);
     }
   }
@@ -817,7 +810,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       );
       const balance = await this._getERC20Balance(
         sourceChain,
-        this._getTokenInfo(sourceToken, sourceChain).address.toNative(),
+        sourceTokenInfo.address.toNative(),
         this.baseSignerAddress
       );
       if (balance.lt(amountToTransfer)) {
@@ -831,12 +824,9 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       }
       this.logger.info({
         at: "BinanceStablecoinSwapAdapter.initializeRebalance",
-        message: `🍻 Creating new order ${cloid} by first bridging ${sourceToken} into ${getNetworkName(
+        message: `🍻 Creating new order ${cloid} by first bridging ${fromWei(amountToTransfer, sourceTokenInfo.decimals)} ${sourceTokenInfo.symbol} into ${getNetworkName(
           binanceDepositNetwork
-        )} from ${getNetworkName(sourceChain)}`,
-        destinationToken,
-        destinationChain: getNetworkName(destinationChain),
-        amountToTransfer: amountToTransfer.toString(),
+        )} from ${getNetworkName(sourceChain)} before depositing into Binance in order to acquire ${destinationTokenInfo.symbol} on ${getNetworkName(destinationChain)}`,
       });
       const amountReceivedFromBridge = await this._bridgeToChain(
         sourceToken,
@@ -855,11 +845,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     } else {
       this.logger.info({
         at: "BinanceStablecoinSwapAdapter.initializeRebalance",
-        message: `🍻 Creating new order ${cloid} by first transferring ${amountToTransfer.toString()} ${sourceToken} into Binance from ${getNetworkName(
-          sourceChain
-        )}`,
-        destinationToken,
-        destinationChain: getNetworkName(destinationChain),
+        message: `🍻 Creating new order ${cloid} by first transferring ${fromWei(amountToTransfer, sourceTokenInfo.decimals)} ${sourceTokenInfo.symbol} into Binance from ${getNetworkName(sourceChain)} in order to acquire ${destinationTokenInfo.symbol} on ${getNetworkName(destinationChain)}`,
       });
       await this._depositToBinance(sourceToken, sourceChain, amountToTransfer);
       await this._redisCreateOrder(
@@ -1481,7 +1467,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     });
     const response = await submitBinanceOrder(this.binanceApiClient, orderStruct as NewOrderSpot);
     assert(response.status == "FILLED", `Market order was not filled: ${JSON.stringify(response)}`);
-    this.logger.info({
+    this.logger.debug({
       at: "BinanceStablecoinSwapAdapter._placeMarketOrder",
       message: `🎰 Submitted new market order for cloid ${cloid} with size ${szForOrder}`,
       orderStruct,
@@ -1630,7 +1616,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const initiatedWithdrawalKey = this._redisGetInitiatedWithdrawalKey(cloid);
     await this.redisCache.set(initiatedWithdrawalKey, withdrawalId.id);
     await setBinanceWithdrawalType(destinationEntrypointNetwork, withdrawalId.id, BinanceTransactionType.SWAP);
-    this.logger.info({
+    this.logger.debug({
       at: "BinanceStablecoinSwapAdapter._withdraw",
       message: `🏧 Withdrew ${quantity} ${destinationToken} from Binance to withdrawal network ${getNetworkName(
         destinationEntrypointNetwork
