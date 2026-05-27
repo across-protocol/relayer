@@ -589,6 +589,12 @@ export class DepositAddressHandler {
     const destinationChainId = Number(_destinationChainId);
     const inputAmount = toBN(_inputAmount);
     const depositKey = getDepositKey(depositMessage);
+    // Committed execution fees forwarded to the swap API (see _getSwapApiQuote). Surfaced in the
+    // logs below so a merkle-mismatch quote failure is diagnosable; "omitted" means the leaf carried
+    // no fee (legacy/pre-fee address) and the bot sent no fee param for it.
+    const cctpExecutionFee = depositMessage.counterfactualMaterials?.cctpLeaf?.params?.executionFee ?? "omitted";
+    const spokePoolExecutionFee =
+      depositMessage.counterfactualMaterials?.spokePoolLeaf?.params?.executionFee ?? "omitted";
 
     if (!this.config.relayerOriginChains.includes(originChainId)) {
       return;
@@ -690,6 +696,8 @@ export class DepositAddressHandler {
         at: "DepositAddressHandler#initiateDeposit",
         message: "Failed to fetch swap tx from swap API",
         depositKey,
+        cctpExecutionFee,
+        spokePoolExecutionFee,
       });
       this.observedExecutedDeposits[originChainId].delete(depositKey);
       return;
@@ -704,7 +712,10 @@ export class DepositAddressHandler {
       message: "Completed Deposit Execution Successfully 🎯",
       mrkdwn: `Completed execution of Deposit on ${getNetworkName(originChainId)} to ${getNetworkName(
         destinationChainId
-      )}, using deposit address ${blockExplorerLink(depositMessage.depositAddress, originChainId)}`,
+      )}, using deposit address ${blockExplorerLink(
+        depositMessage.depositAddress,
+        originChainId
+      )} (cctpExecutionFee: ${cctpExecutionFee}, spokePoolExecutionFee: ${spokePoolExecutionFee})`,
     };
 
     const depositReceipt = await sendAndConfirmTransaction(executeTx, this.transactionClient, useDispatcher);
@@ -763,11 +774,17 @@ export class DepositAddressHandler {
     depositMessage: DepositAddressMessage,
     retriesRemaining = 3
   ): Promise<SwapApiResponse | undefined> {
-    const { depositAddress, routeParams, erc20Transfer } = depositMessage;
+    const { depositAddress, routeParams, erc20Transfer, counterfactualMaterials } = depositMessage;
     const { inputToken, outputToken, originChainId, destinationChainId, recipient, refundAddress } = routeParams;
     const { amount } = erc20Transfer;
     const originChainIdNum = Number(originChainId);
     const destinationChainIdNum = Number(destinationChainId);
+    // Worst-case executionFee committed per leaf into the immutable merkle root at deposit-address
+    // creation. Echo the exact committed value back (verbatim, never re-priced) so the swap-api
+    // rebuilds the same leaf/root; omit when absent so legacy (pre-fee) addresses request as before.
+    // Only the route-relevant leaf is nonzero; the swap-api selects which one applies by strategy.
+    const cctpExecutionFee = counterfactualMaterials?.cctpLeaf?.params?.executionFee;
+    const spokePoolExecutionFee = counterfactualMaterials?.spokePoolLeaf?.params?.executionFee;
     // Swap API expects Tron origin fields in base58; on-chain paths keep ethers `0x` via normalizeDepositAddressMessage.
     // refundAddress must match what was committed in the withdraw leaf at PDA creation time so the
     // swap-api rebuilds the same merkle root the on-chain factory derives the deposit address from.
@@ -784,6 +801,8 @@ export class DepositAddressHandler {
       depositAddress: toAddressType(depositAddress, originChainIdNum).toNative(),
       executionFeeRecipient: toAddressType(this.signerAddress.toNative(), originChainIdNum).toNative(),
       shouldSponsorAccountCreation: String(depositMessage.shouldSponsorAccountCreation),
+      ...(isDefined(cctpExecutionFee) && { cctpExecutionFee }),
+      ...(isDefined(spokePoolExecutionFee) && { spokePoolExecutionFee }),
     };
     try {
       return await this.api.get<SwapApiResponse>(this.config.apiEndpoint, params);
