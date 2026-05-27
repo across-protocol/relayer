@@ -223,6 +223,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     const { sourceToken, sourceChain, destinationChain, destinationToken } = rebalanceRoute;
     const spotMarketMeta = this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
     const sourceTokenInfo = getTokenInfoFromSymbol(sourceToken, sourceChain);
+    const destinationTokenInfo = getTokenInfoFromSymbol(destinationToken, destinationChain);
     if (amountToTransfer.lt(toBNWei(spotMarketMeta.minimumOrderSize, sourceTokenInfo.decimals))) {
       this.logger.debug({
         at: "HyperliquidStablecoinSwapAdapter.initializeRebalance",
@@ -246,12 +247,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       // Bridge this token into HyperEVM first
       this.logger.info({
         at: "HyperliquidStablecoinSwapAdapter.initializeRebalance",
-        message: `🍻 Creating new order ${cloid} by first bridging ${sourceToken} into HyperEVM from ${getNetworkName(
-          sourceChain
-        )}`,
-        destinationToken,
-        destinationChain: getNetworkName(destinationChain),
-        amountToTransfer: amountToTransfer.toString(),
+        message: `🍻 Creating new order ${cloid} by first bridging ${fromWei(amountToTransfer, sourceTokenInfo.decimals)} ${sourceTokenInfo.symbol} into HyperEVM from ${getNetworkName(sourceChain)} before depositing into Hypercore in order to acquire ${destinationTokenInfo.symbol} on ${getNetworkName(destinationChain)}`,
       });
 
       const amountReceivedFromBridge = await this._bridgeToChain(sourceToken, sourceChain, HYPEREVM, amountToTransfer);
@@ -267,10 +263,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     } else {
       this.logger.info({
         at: "HyperliquidStablecoinSwapAdapter.initializeRebalance",
-        message: `🍻 Creating new order ${cloid} by depositing ${sourceToken} from HyperEVM to HyperCore`,
-        destinationToken,
-        destinationChain: getNetworkName(destinationChain),
-        amountToTransfer: amountToTransfer.toString(),
+        message: `🍻 Creating new order ${cloid} by first transferring ${fromWei(amountToTransfer, sourceTokenInfo.decimals)} ${sourceTokenInfo.symbol} into Hypercore from ${getNetworkName(sourceChain)} in order to acquire ${destinationTokenInfo.symbol} on ${getNetworkName(destinationChain)}`,
       });
 
       await this._depositToHypercore(sourceToken, amountToTransfer);
@@ -478,20 +471,14 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         continue;
       }
 
-      if (destinationChain === HYPEREVM) {
-        this.logger.info({
-          at: "HyperliquidStablecoinSwapAdapter.updateRebalanceStatuses",
-          message: `✨ Deleting order details from Redis with cloid ${cloid} because it has completed!`,
-        });
-      } else {
-        this.logger.info({
-          at: "HyperliquidStablecoinSwapAdapter.updateRebalanceStatuses",
-          message: `✨ Sending order with cloid ${cloid} from HyperEVM to final destination chain ${destinationChain}, and deleting order details from Redis!`,
-          expectedAmountToReceive: expectedAmountToReceive.toString(),
-        });
+      if (destinationChain !== HYPEREVM) {
         await this._bridgeToChain(destinationToken, HYPEREVM, destinationChain, expectedAmountToReceive);
       }
       // We no longer need this order information, so we can delete it:
+      this.logger.info({
+        at: "HyperliquidStablecoinSwapAdapter.updateRebalanceStatuses",
+        message: `✨ Order ${cloid} of ${fromWei(expectedAmountToReceive, destinationTokenInfo.decimals)} ${destinationTokenInfo.symbol} has finalized withdrawing to the final destination chain ${destinationChain}!`,
+      });
       await this._redisDeleteOrder(cloid, STATUS.PENDING_WITHDRAWAL_FROM_HYPERCORE, this.baseSignerAddress);
     }
   }
@@ -1121,7 +1108,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         orders: [orderDetails],
         grouping: "na",
       });
-      this.logger.info({
+      this.logger.debug({
         at: "HyperliquidStablecoinSwapAdapter._placeLimitOrder",
         message: `🎰 Submitted new limit order for cloid ${cloid} with px ${px} and sz ${sz}`,
         result,
@@ -1220,7 +1207,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     // Note: I'd like this to work via the multicaller client or runTransaction but the .wait() seems to fail.
     // Note: If sending multicaller client txn, unpermissioned:false and nonMulticall:true must be set.
     const txn = await coreWriterContract.sendRawAction(bytes);
-    this.logger.info({
+    this.logger.debug({
       at: "HyperliquidStablecoinSwapAdapter._withdrawToHyperevm",
       message: `🏧 Withdrew ${amountToWithdraw} ${destinationToken} from Hypercore to HyperEVM`,
       txn: blockExplorerLink(txn.hash, HYPEREVM),
