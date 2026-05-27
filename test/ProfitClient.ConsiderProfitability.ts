@@ -127,10 +127,12 @@ describe("ProfitClient: Consider relay profit", () => {
   ): Pick<FillProfit, "grossRelayerFeeUsd" | "netRelayerFeePct" | "netRelayerFeeUsd" | "profitable"> => {
     const grossRelayerFeeUsd = inputAmountUsd.sub(outputAmountUsd).sub(lpFeeUsd);
     const netRelayerFeeUsd = grossRelayerFeeUsd.sub(gasCostUsd);
-    const netRelayerFeePct = netRelayerFeeUsd.mul(fixedPoint).div(outputAmountUsd);
-
-    const minRelayerFeeUsd = outputAmountUsd.mul(minRelayerFeePct).div(fixedPoint);
-    const profitable = netRelayerFeeUsd.gte(minRelayerFeeUsd);
+    // Mirror ProfitClient.calculateFillProfitability's integer-math comparison; comparing the
+    // equivalent USD threshold diverges by 1 wei at the boundary and flakes.
+    const netRelayerFeePct = outputAmountUsd.gt(bnZero)
+      ? netRelayerFeeUsd.mul(fixedPoint).div(outputAmountUsd)
+      : bnZero;
+    const profitable = netRelayerFeePct.gte(minRelayerFeePct);
 
     return {
       grossRelayerFeeUsd,
