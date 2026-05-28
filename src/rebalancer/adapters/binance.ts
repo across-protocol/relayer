@@ -50,6 +50,8 @@ import {
   deriveBinanceSpotMarketMeta,
   convertBinanceRouteAmount,
   toAddressType,
+  createFormatFunction,
+  blockExplorerLink,
 } from "../../utils";
 import { OrderDetails, RebalanceRoute } from "../utils/interfaces";
 import { STATUS } from "../utils/utils";
@@ -525,10 +527,11 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       }
       // We no longer need this order information, so we can delete it.
       const destTokenInfo = this._getTokenInfo(destinationToken, destinationChain);
+      const destinationFormatter = createFormatFunction(2, 4, false, destTokenInfo.decimals);
       this.logger.info({
         at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",
-        message: `✨ Order ${cloid} of ${fromWei(withdrawAmountWei, destTokenInfo.decimals)} ${destTokenInfo.symbol} has finalized withdrawing to the final destination chain ${destinationChain}!`,
-        withdrawalDetails,
+        message: `✨ Order ${cloid} of ${destinationFormatter(withdrawAmountWei)} ${destTokenInfo.symbol} has finalized withdrawing to the final destination chain ${destinationChain}!`,
+        binanceWithdrawalTxnId: blockExplorerLink(withdrawalDetails.txId, binanceWithdrawalNetwork),
       });
       await this._redisDeleteOrder(cloid, STATUS.PENDING_WITHDRAWAL, this.baseSignerAddress);
     }
@@ -732,6 +735,8 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     // Make sure that the amount to transfer will be larger than the minimum withdrawal size after expected fees.
     const sourceTokenInfo = this._getTokenInfo(sourceToken, sourceChain);
     const destinationTokenInfo = this._getTokenInfo(destinationToken, destinationEntrypointNetwork);
+    const sourceFormatter = createFormatFunction(2, 4, false, sourceTokenInfo.decimals);
+    const destinationFormatter = createFormatFunction(2, 4, false, destinationTokenInfo.decimals);
     const bridgeToBinanceFee = await this._getBridgingFees(rebalanceRoute, amountToTransfer);
     const expectedSourceAmountToDepositForSwap = amountToTransfer.sub(bridgeToBinanceFee);
     const expectedAmountToWithdrawInDestinationUnits = await this._convertSourceToDestination(
@@ -824,9 +829,10 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       }
       this.logger.info({
         at: "BinanceStablecoinSwapAdapter.initializeRebalance",
-        message: `🍻 Creating new order ${cloid} by first bridging ${fromWei(amountToTransfer, sourceTokenInfo.decimals)} ${sourceTokenInfo.symbol} into ${getNetworkName(
+        message: `🍻 Creating new order ${cloid} by first bridging ${sourceFormatter(amountToTransfer)} ${sourceTokenInfo.symbol} into ${getNetworkName(
           binanceDepositNetwork
         )} from ${getNetworkName(sourceChain)} before depositing into Binance in order to acquire ${destinationTokenInfo.symbol} on ${getNetworkName(destinationChain)}`,
+        expectedOutput: destinationFormatter(expectedAmountToWithdrawInDestinationUnits),
       });
       const amountReceivedFromBridge = await this._bridgeToChain(
         sourceToken,
@@ -845,7 +851,8 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     } else {
       this.logger.info({
         at: "BinanceStablecoinSwapAdapter.initializeRebalance",
-        message: `🍻 Creating new order ${cloid} by first transferring ${fromWei(amountToTransfer, sourceTokenInfo.decimals)} ${sourceTokenInfo.symbol} into Binance from ${getNetworkName(sourceChain)} in order to acquire ${destinationTokenInfo.symbol} on ${getNetworkName(destinationChain)}`,
+        message: `🍻 Creating new order ${cloid} by first transferring ${sourceFormatter(amountToTransfer)} ${sourceTokenInfo.symbol} into Binance from ${getNetworkName(sourceChain)} in order to acquire ${destinationTokenInfo.symbol} on ${getNetworkName(destinationChain)}`,
+        expectedOutput: destinationFormatter(expectedAmountToWithdrawInDestinationUnits),
       });
       await this._depositToBinance(sourceToken, sourceChain, amountToTransfer);
       await this._redisCreateOrder(
