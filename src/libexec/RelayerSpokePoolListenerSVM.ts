@@ -124,14 +124,42 @@ async function listen(
   const RECONNECT_BACKOFF_MIN_S = 1;
   const RECONNECT_BACKOFF_MAX_S = 30;
 
+  // CloseEvent exposes code/wasClean/reason as prototype getters, so winston serializes
+  // the cause as {} (or "[object CloseEvent]") and drops the only useful fields. Project
+  // them onto own properties before logging.
+  const extractCloseEventSignal = (cause: unknown): { code?: number; wasClean?: boolean; reason?: string } => {
+    if (cause === null || typeof cause !== "object") {
+      return {};
+    }
+    const { code, wasClean, reason } = cause as {
+      code?: unknown;
+      wasClean?: unknown;
+      reason?: unknown;
+    };
+    return {
+      code: typeof code === "number" ? code : undefined,
+      wasClean: typeof wasClean === "boolean" ? wasClean : undefined,
+      reason: typeof reason === "string" ? reason : undefined,
+    };
+  };
+
   const logProviderError = (providerName: string, err: unknown, backoffS: number) => {
     const message = "Caught error on Solana provider; reconnecting.";
-    const ctx = { at, message, provider: providerName, backoffS };
+    const baseCtx = { at, message, provider: providerName, backoffS };
     if (arch.svm.isSolanaError(err)) {
-      logger.warn({ ...ctx, cause: err.cause });
+      const { code, wasClean, reason } = extractCloseEventSignal(err.cause);
+      const ctx = { ...baseCtx, code, wasClean, reason };
+      // 1006 with no close frame is the documented Chainstack shared-gateway rotation
+      // (https://docs.chainstack.com/docs/error-reference); demote to debug. Anything
+      // else (e.g. 1011 Internal Error from Alchemy, unknown codes) stays at warn.
+      if (code === 1006 && wasClean === false) {
+        logger.debug(ctx);
+      } else {
+        logger.warn(ctx);
+      }
     } else {
       const cause = typeguards.isError(err) ? err.message : "unknown cause";
-      logger.warn({ ...ctx, cause });
+      logger.warn({ ...baseCtx, cause });
     }
   };
 
