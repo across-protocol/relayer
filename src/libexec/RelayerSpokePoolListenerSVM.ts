@@ -124,30 +124,18 @@ async function listen(
   const RECONNECT_BACKOFF_MIN_S = 1;
   const RECONNECT_BACKOFF_MAX_S = 30;
 
-  // CloseEvent exposes code/wasClean/reason as prototype getters, so winston serializes
-  // the cause as {} (or "[object CloseEvent]") and drops the only useful fields. Project
-  // them onto own properties before logging.
-  const extractCloseEventSignal = (cause: unknown): { code?: number; wasClean?: boolean; reason?: string } => {
-    if (cause === null || typeof cause !== "object") {
-      return {};
-    }
-    const { code, wasClean, reason } = cause as {
-      code?: unknown;
-      wasClean?: unknown;
-      reason?: unknown;
-    };
-    return {
-      code: typeof code === "number" ? code : undefined,
-      wasClean: typeof wasClean === "boolean" ? wasClean : undefined,
-      reason: typeof reason === "string" ? reason : undefined,
-    };
-  };
+  // SolanaError.cause is a WebSocket CloseEvent. The CloseEvent interface is global via
+  // @types/node (undici-types), so we narrow with a structural guard and let TS infer
+  // code/wasClean/reason. Projecting them onto own properties is still required because
+  // winston serializes the CloseEvent prototype-getter fields as {}.
+  const isCloseEvent = (x: unknown): x is CloseEvent =>
+    typeof x === "object" && x !== null && "code" in x && "wasClean" in x && "reason" in x;
 
   const logProviderError = (providerName: string, err: unknown, backoffS: number) => {
     const message = "Caught error on Solana provider; reconnecting.";
     const baseCtx = { at, message, provider: providerName, backoffS };
-    if (arch.svm.isSolanaError(err)) {
-      const { code, wasClean, reason } = extractCloseEventSignal(err.cause);
+    if (arch.svm.isSolanaError(err) && isCloseEvent(err.cause)) {
+      const { code, wasClean, reason } = err.cause;
       const ctx = { ...baseCtx, code, wasClean, reason };
       // 1006 with no close frame is the documented Chainstack shared-gateway rotation
       // (https://docs.chainstack.com/docs/error-reference); demote to debug. Anything
@@ -157,10 +145,10 @@ async function listen(
       } else {
         logger.warn(ctx);
       }
-    } else {
-      const cause = typeguards.isError(err) ? err.message : "unknown cause";
-      logger.warn({ ...baseCtx, cause });
+      return;
     }
+    const cause = typeguards.isError(err) ? err.message : "unknown cause";
+    logger.warn({ ...baseCtx, cause });
   };
 
   const readSlot = async (provider: WSProvider, providerName: string) => {
