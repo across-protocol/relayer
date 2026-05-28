@@ -606,7 +606,7 @@ export class Monitor {
   async checkBalances(): Promise<void> {
     const { monitoredBalances } = this.monitorConfig;
     const balances = await this._getBalances(monitoredBalances);
-    const decimalValues = await this._getDecimals(monitoredBalances); // @TODO: Do we need to handle ARC decimals here? I think we can always look at the 6 decimals value for USDC.
+    const decimalValues = await this._getDecimals(monitoredBalances);
 
     this.logger.debug({
       at: "Monitor#checkBalances",
