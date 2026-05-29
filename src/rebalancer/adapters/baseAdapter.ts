@@ -236,18 +236,22 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     return orderDetails;
   }
 
-  protected async _redisDeleteOrder(cloid: string, currentStatus: number, account: EvmAddress): Promise<void> {
+  // Returns whether the status-set member was actually removed by this call (i.e. it was present
+  // when sRem ran). `_redisCleanupPendingOrders` uses this to disambiguate a TTL prune from a
+  // concurrent finalize; sequential sRem→del guarantees an observer seeing the details key gone
+  // has also seen the set member removed, so the sRem return value is authoritative.
+  protected async _redisDeleteOrder(cloid: string, currentStatus: number, account: EvmAddress): Promise<boolean> {
     const orderStatusKey = getPendingBridgeStatusSetKey(this.REDIS_PREFIX, currentStatus, account.toNative());
     const orderDetailsKey = getPendingBridgeOrderKey(this.REDIS_PREFIX, cloid, account.toNative());
-    const result = await Promise.all([
-      this.redisCache.sRem(orderStatusKey, cloid),
-      this.redisCache.del(orderDetailsKey),
-    ]);
+    const memberRemoved = (await this.redisCache.sRem(orderStatusKey, cloid)) > 0;
+    const detailsRemoved = await this.redisCache.del(orderDetailsKey);
     this.logger.debug({
       at: "BaseAdapter._redisDeleteOrder",
       message: `Deleted order details for cloid ${cloid}`,
-      result,
+      memberRemoved,
+      detailsRemoved,
     });
+    return memberRemoved;
   }
 
   protected _redisGetLatestNonceKey(): string {
@@ -266,12 +270,13 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     const orderDetails = await Promise.all(sMembers.map((cloid) => this._redisGetOrderDetails(cloid, account)));
     await forEachAsync(sMembers, async (cloid, i) => {
       if (!isDefined(orderDetails[i])) {
-        // _redisDeleteOrder removes the status-set member and the details key concurrently. A concurrent finalization
-        // (e.g. from another rebalancer instance sharing this signer address) can land the details `del` before the
-        // set `sRem` is observed here, which would falsely flag a finalized order as abandoned. Re-check set
-        // membership against the live state to suppress that race; a genuine TTL prune still has the member present.
-        const stillMember = await this.redisCache.sIsMember(statusSetKey, cloid);
-        if (!stillMember) {
+        // A concurrent finalize (e.g. from another rebalancer instance sharing this signer address)
+        // could have removed the details key but landed its set `sRem` after we captured `sMembers`.
+        // `_redisDeleteOrder` is sequential (sRem then del) and returns whether sRem actually removed
+        // the member: false means the finalize beat us to sRem and we should suppress; true means the
+        // member was still present, i.e. a genuine TTL prune that deserves the warn.
+        const memberRemoved = await this._redisDeleteOrder(cloid, status, account);
+        if (!memberRemoved) {
           return;
         }
         this.logger.warn({
@@ -279,7 +284,6 @@ export abstract class BaseAdapter implements RebalancerAdapter {
           message: `⏰ Pruning expired pending order ${cloid} from status set ${statusSetKey} without finalization. The order's REBALANCER_PENDING_ORDER_TTL elapsed before it could progress out of this status.`,
           account: account.toNative(),
         });
-        await this._redisDeleteOrder(cloid, status, account);
       }
     });
   }

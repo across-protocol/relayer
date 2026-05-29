@@ -79,10 +79,6 @@ export class RedisCache implements RedisCacheInterface {
     return this.client.sMembers(this.getNamespacedKey(key));
   }
 
-  async sIsMember(key: string, value: string): Promise<boolean> {
-    return Boolean(await this.client.sIsMember(this.getNamespacedKey(key), value));
-  }
-
   sRem(key: string, value: string): Promise<number> {
     return this.client.sRem(this.getNamespacedKey(key), value);
   }
