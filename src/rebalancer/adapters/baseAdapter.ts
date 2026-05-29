@@ -270,7 +270,6 @@ export abstract class BaseAdapter implements RebalancerAdapter {
           at: "BaseAdapter._redisCleanupPendingOrders",
           message: `⏰ Pruning expired pending order ${cloid} from status set ${statusSetKey} without finalization. The order's REBALANCER_PENDING_ORDER_TTL elapsed before it could progress out of this status.`,
           account: account.toNative(),
-          statusSetKey,
         });
         await this._redisDeleteOrder(cloid, status, account);
       }
