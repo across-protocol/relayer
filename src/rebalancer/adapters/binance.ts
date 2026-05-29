@@ -60,7 +60,7 @@ import { AugmentedTransaction, MultiCallerClient } from "../../clients";
 import { RebalancerConfig } from "../RebalancerConfig";
 import { getContractEntry } from "../../common";
 import { CctpAdapter } from "./cctpAdapter";
-import { OftAdapter } from "./oftAdapter";
+import { OftAdapter, getOftPreDepositOrderTtlOverride } from "./oftAdapter";
 import WETH_ABI from "../../common/abi/Weth.json";
 
 export class BinanceStablecoinSwapAdapter extends BaseAdapter {
@@ -840,12 +840,18 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         binanceDepositNetwork,
         amountToTransfer
       );
+      // Mirror the underlying OFT bridge's pending-order TTL. Without this, long-finality
+      // bridges (e.g. USDT0 from HyperEVM, ~12h to land on Arbitrum) outlive this adapter's
+      // default 1h TTL and get silently pruned by BaseAdapter._redisCleanupPendingOrders
+      // while the bridge is still in flight — losing the swap context entirely.
+      const preDepositTtlOverride = getOftPreDepositOrderTtlOverride(rebalanceRoute);
       await this._redisCreateOrder(
         cloid,
         STATUS.PENDING_BRIDGE_PRE_DEPOSIT,
         rebalanceRoute,
         amountReceivedFromBridge,
-        this.baseSignerAddress
+        this.baseSignerAddress,
+        preDepositTtlOverride
       );
       return amountReceivedFromBridge;
     } else {
