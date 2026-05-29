@@ -266,6 +266,14 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     const orderDetails = await Promise.all(sMembers.map((cloid) => this._redisGetOrderDetails(cloid, account)));
     await forEachAsync(sMembers, async (cloid, i) => {
       if (!isDefined(orderDetails[i])) {
+        // _redisDeleteOrder removes the status-set member and the details key concurrently. A concurrent finalization
+        // (e.g. from another rebalancer instance sharing this signer address) can land the details `del` before the
+        // set `sRem` is observed here, which would falsely flag a finalized order as abandoned. Re-check set
+        // membership against the live state to suppress that race; a genuine TTL prune still has the member present.
+        const stillMember = await this.redisCache.sIsMember(statusSetKey, cloid);
+        if (!stillMember) {
+          return;
+        }
         this.logger.warn({
           at: "BaseAdapter._redisCleanupPendingOrders",
           message: `⏰ Pruning expired pending order ${cloid} from status set ${statusSetKey} without finalization. The order's REBALANCER_PENDING_ORDER_TTL elapsed before it could progress out of this status.`,
