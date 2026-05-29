@@ -536,6 +536,12 @@ export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<Ba
   [CHAIN_IDs.TEMPO]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: TokenSplitterBridge,
   },
+  // Tron USDT L1 -> L2 must stay on OFTBridge. The binanceFinalizer is registered for BSC only
+  // (finalizer/index.ts) and assumes any UNTAGGED Mainnet-network Binance deposit is BSC-bound;
+  // routing the legacy InventoryClient's Mainnet -> Tron USDT refill through BinanceCEXBridge here
+  // would have that finalizer mis-withdraw the deposit on BSC. Tron USDT routing through Binance is
+  // owned by the swap-rebalancer (BinanceStablecoinSwapAdapter), which tags its deposits SWAP and is
+  // skipped by binanceFinalizer.
   [CHAIN_IDs.TRON]: {
     [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTBridge,
   },
@@ -679,6 +685,11 @@ export const CUSTOM_L2_BRIDGE: Record<number, Record<string, L2BridgeConstructor
   [CHAIN_IDs.TEMPO]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2TokenSplitterBridge,
   },
+  // Tron USDT L2 -> L1 must stay on OFTL2Bridge. The binanceFinalizer is registered for BSC only
+  // (finalizer/index.ts) and treats any UNTAGGED non-ETH Binance deposit as ETH-bound for its single
+  // BSC pair; routing the legacy InventoryClient's Tron USDT excess drain through L2BinanceCEXBridge
+  // here would compete with the same code path. Tron USDT routing through Binance is owned by the
+  // swap-rebalancer (BinanceStablecoinSwapAdapter), which tags SWAP and is skipped by binanceFinalizer.
   [CHAIN_IDs.TRON]: {
     [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTL2Bridge,
   },
