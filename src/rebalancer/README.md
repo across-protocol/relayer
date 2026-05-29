@@ -85,9 +85,11 @@ When adapters create new orders, order detail keys are stored with `REBALANCER_P
 If this env var is unset, the rebalancer uses the 1-hour default.
 
 If an order does not finalize before the TTL expires, order details and associated pending-order status tracking are
-eventually pruned from Redis cache state. At that point, operators should rely on adapter lifecycle reconciliation
-(including `sweepIntermediateBalances`) to recover stranded intermediate capital instead of assuming pending-order cache
-entries remain indefinitely.
+eventually pruned from Redis cache state. `BaseAdapter._redisCleanupPendingOrders` emits a `warn` log (`⏰ Pruning
+expired pending order ...`) when this happens so operators can detect abandoned orders that never received a
+finalization log. At that point, operators should rely on adapter lifecycle reconciliation (including
+`sweepIntermediateBalances`) to recover stranded intermediate capital instead of assuming pending-order cache entries
+remain indefinitely.
 
 Contributor guidance:
 
