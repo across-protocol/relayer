@@ -269,7 +269,6 @@ export abstract class BaseAdapter implements RebalancerAdapter {
         this.logger.warn({
           at: "BaseAdapter._redisCleanupPendingOrders",
           message: `⏰ Pruning expired pending order ${cloid} from status set ${statusSetKey} without finalization. The order's REBALANCER_PENDING_ORDER_TTL elapsed before it could progress out of this status.`,
-          cloid,
           status: STATUS[status],
           account: account.toNative(),
           statusSetKey,
