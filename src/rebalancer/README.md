@@ -84,6 +84,13 @@ Binance account assumption:
 When adapters create new orders, order detail keys are stored with `REBALANCER_PENDING_ORDER_TTL` (default: 1 hour).
 If this env var is unset, the rebalancer uses the 1-hour default.
 
+Adapters may also pass a `ttlOverride` to `BaseAdapter._redisCreateOrder` to extend the default for routes whose
+expected finality outlives 1 hour. Long-finality OFT pre-deposit bridges (currently USDT0 from HyperEVM, ~12h) use
+`getOftPreDepositOrderTtlOverride` from `oftAdapter.ts` so both `OftAdapter` and adapters that delegate their
+pre-deposit bridge to OFT (e.g. `BinanceStablecoinSwapAdapter`) keep their pending-order TTL aligned with the
+underlying bridge. Note that `_redisUpdateOrderStatus` does not refresh the TTL, so the value set at creation is the
+lifetime of the whole order across all status transitions.
+
 If an order does not finalize before the TTL expires, order details and associated pending-order status tracking are
 eventually pruned from Redis cache state. At that point, operators should rely on adapter lifecycle reconciliation
 (including `sweepIntermediateBalances`) to recover stranded intermediate capital instead of assuming pending-order cache
