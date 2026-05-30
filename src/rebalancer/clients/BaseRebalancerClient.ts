@@ -54,8 +54,21 @@ export abstract class BaseRebalancerClient implements RebalancerClient {
    */
   async getPendingRebalances(account: EvmAddress): Promise<{ [chainId: number]: { [token: string]: BigNumber } }> {
     const pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
-    await forEachAsync(Object.values(this.adapters), async (adapter) => {
-      const pending = await adapter.getPendingRebalances(account);
+    await forEachAsync(Object.entries(this.adapters), async ([adapterName, adapter]) => {
+      let pending: { [chainId: number]: { [token: string]: BigNumber } };
+      try {
+        pending = await adapter.getPendingRebalances(account);
+      } catch (error) {
+        // Isolate per-adapter failures: a transient outage in one venue's read API (e.g. a 502
+        // from Hyperliquid) must not propagate up to callers like InventoryClient.update and take
+        // the relayer down. The caller operates on a partial view for this cycle.
+        this.logger.error({
+          at: "BaseRebalancerClient#getPendingRebalances",
+          message: `Failed to fetch pending rebalances from ${adapterName} adapter; skipping for this cycle`,
+          error: (error as Error)?.toString() ?? String(error),
+        });
+        return;
+      }
       Object.entries(pending).forEach(([_chainId, tokenBalance]) => {
         const chainId = Number(_chainId);
         Object.entries(tokenBalance).forEach(([token, amount]) => {
