@@ -21,7 +21,9 @@ export class HyperliquidExecutorConfig extends CommonConfig {
       MAX_SLIPPAGE_BY_ROUTE_BPS,
     } = env;
     this.supportedTokens = parseJson.stringArray(HYPERLIQUID_SUPPORTED_TOKENS);
-    this.lookback = Number(HL_DEPOSIT_LOOKBACK ?? 3600);
+    // Search window is anchored at startup and never widens backward, so the default must comfortably
+    // cover the longest expected pod restart gap to avoid silently dropping in-flight SwapFlows.
+    this.lookback = Number(HL_DEPOSIT_LOOKBACK ?? 7 * 24 * 60 * 60);
     this.reviewInterval = Number(HYPERLIQUID_REPLACE_ORDER_BLOCK_TIMEOUT ?? 20);
     this.maxSlippageBps = toBNWei(Number(MAX_SLIPPAGE_BPS ?? 5), 4); // With 8 decimal precision, a basis point is 10000. Default to 5bps.
     this.settlementInterval = Number(HYPERLIQUID_SETTLEMENT_INTERVAL);
