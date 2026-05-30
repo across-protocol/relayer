@@ -449,7 +449,20 @@ export class HyperliquidExecutor {
       const sizeFormatter = createFormatFunction(2, 4, false, pair.baseTokenDecimals);
       // Fetch the user-level SwapFlows blocked by this rejection so the log identifies
       // which deposits are held up. Only done in this warning branch to keep the hot path cheap.
-      const blockedSwapFlows = await this.getOutstandingOrdersOnPair(pair);
+      // Query against the latest block so events observed after startup are not missed, and
+      // swallow any RPC/pagination errors so a transient enrichment failure cannot abort the task.
+      let blockedSwapFlows: SwapFlowInitialized[] = [];
+      try {
+        const latestBlock = await this.clients.dstProvider.getBlockNumber();
+        blockedSwapFlows = await this.getOutstandingOrdersOnPair(pair, latestBlock);
+      } catch (error) {
+        this.logger.debug({
+          at: "HyperliquidExecutor#updateOrderAmount",
+          message: "Failed to enrich excessive-slippage warning with blocked SwapFlows",
+          pair: pair.name,
+          error,
+        });
+      }
       this.logger.warn({
         at: "HyperliquidExecutor#updateOrderAmount",
         message: "Not submitting new limit order due to excessive slippage",
