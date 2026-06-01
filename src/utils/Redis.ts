@@ -68,18 +68,14 @@ export async function connectRedisClient(logger?: winston.Logger, url = REDIS_UR
         flushTimer = setTimeout(flushErrors, ERROR_DEBOUNCE_MS);
       }
     });
-    redisClient.on("ready", () => {
+    const flushOnTransition = (): void => {
       if (flushTimer) {
         clearTimeout(flushTimer);
         flushErrors();
       }
-    });
-    redisClient.on("end", () => {
-      if (flushTimer) {
-        clearTimeout(flushTimer);
-        flushErrors();
-      }
-    });
+    };
+    redisClient.on("ready", flushOnTransition);
+    redisClient.on("end", flushOnTransition);
 
     await redisClient.connect();
     return redisClient;
