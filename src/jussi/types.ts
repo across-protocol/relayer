@@ -157,8 +157,13 @@ export type OftRouteTransferQuote = {
   sendParamStruct: SendParamStruct;
 };
 // prettier-ignore
-export type BridgeBreakdownParams = { baseSigner: Signer; pricingContext: RuntimePricingContext; rebalancerAdapters: Record<string, RebalancerAdapter> };
-export type ExchangeBreakdownParams = BridgeBreakdownParams & { logger: winston.Logger };
+export type BridgeBreakdownParams = {
+  logger: winston.Logger;
+  baseSigner: Signer;
+  pricingContext: RuntimePricingContext;
+  rebalancerAdapters: Record<string, RebalancerAdapter>;
+};
+export type ExchangeBreakdownParams = BridgeBreakdownParams;
 export type EdgePricingParams = ExchangeBreakdownParams & {
   cumulativeBalancesByLogicalAsset: Record<LogicalAsset, BigNumber>;
 };

@@ -5,7 +5,6 @@ import type { EdgeFamily, JussiRateLimitBucketDefinition, LogicalAsset, StableLo
 export const DEFAULT_HUB_POOL_CHAIN_ID = CHAIN_IDs.MAINNET;
 export const BUILDER_TOPOLOGY_VERSION = 1;
 export const JUSSI_LOGICAL_ASSETS: readonly LogicalAsset[] = ["USDC", "USDT", "WETH"];
-export const TRANSIENT_EDGE_PRICING_ERROR_PATTERNS = ["fetch failed", "recvWindow", "Too many requests", "429"];
 export const EDGE_BUILD_BATCH_SIZE = Math.max(1, Number(process.env.JUSSI_EDGE_BUILD_BATCH_SIZE ?? "8") || 8);
 export const STABLECOIN_PRICE_USD: Record<StableLogicalAsset, number> = { USDC: 1, USDT: 1 };
 export const UNIVERSAL_INPUT_TIER_USD = "1000000000.000000";

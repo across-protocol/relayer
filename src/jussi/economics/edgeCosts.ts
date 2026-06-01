@@ -16,14 +16,13 @@ import {
   assert,
   bnZero,
   chainIsSvm,
-  delay,
   getProvider,
   getTokenInfoFromSymbol,
   isDefined,
   toAddressType,
   toBNWei,
 } from "../../utils";
-import { LATENCY_BY_FAMILY, TRANSIENT_EDGE_PRICING_ERROR_PATTERNS, UNIVERSAL_INPUT_TIER_USD } from "../constants";
+import { LATENCY_BY_FAMILY, UNIVERSAL_INPUT_TIER_USD } from "../constants";
 import type { RuntimePricingContext } from "./PricingContext";
 import type {
   BinanceInternalAdapter,
@@ -71,56 +70,45 @@ export function serializeEdgeDefinition(
 
 export async function estimateEdgeEconomics(
   candidate: GraphEdgeCandidate,
-  params: EdgePricingParams,
-  attempt = 0
+  params: EdgePricingParams
 ): Promise<EdgeEconomics> {
-  try {
-    const referenceInputNative = await resolveInputCapacityNative(candidate, params);
-    const breakdown =
-      candidate.family === "binance"
-        ? await estimateBinanceSwapBreakdown(candidate, referenceInputNative, params)
-        : candidate.family === "hyperliquid"
-          ? await estimateHyperliquidSwapBreakdown(candidate, referenceInputNative, params)
-          : candidate.family === "cctp"
-            ? await estimateCctpBreakdown(candidate, referenceInputNative, params)
-            : candidate.family === "oft"
-              ? await estimateOftBreakdown(candidate, referenceInputNative, params)
-              : candidate.family === "binance_cex_bridge"
-                ? await estimateBinanceCexBridgeBreakdown(candidate, params)
-                : candidate.family === "bridgeapi"
-                  ? await estimateBridgeApiBreakdown(candidate, params)
-                  : await estimateQuotedBridgeBreakdown(
-                      candidate,
-                      referenceInputNative,
-                      params,
-                      candidate.family === "hyperlane" ? "hyperlane" : "canonical"
-                    );
+  const referenceInputNative = await resolveInputCapacityNative(candidate, params);
+  let breakdown: CostBreakdown;
 
-    return {
-      inputCapacityNative: referenceInputNative,
-      fixedInputFeeNative: minBigNumber(breakdown.fixedInputFeeSourceNative, referenceInputNative),
-      fixedOutputFeeNative: breakdown.fixedOutputFeeDestinationNative,
-      fixedCostNative: await params.pricingContext.usdToNativeValue(breakdown.fixedCostUsd, candidate.from.chainId),
-      latencySeconds: breakdown.latencySeconds,
-    };
-  } catch (error) {
-    const errorText = error instanceof Error ? `${error.message} ${error.stack ?? ""}` : String(error);
-    if (attempt >= 3 || !TRANSIENT_EDGE_PRICING_ERROR_PATTERNS.some((pattern) => errorText.includes(pattern))) {
-      throw error;
-    }
-
-    params.logger.warn({
-      at: "buildGraph.estimateEdgeEconomics",
-      message: "Retrying transient edge pricing failure",
-      attempt: attempt + 1,
-      family: candidate.family,
-      fromNodeKey: candidate.from.nodeKey,
-      toNodeKey: candidate.to.nodeKey,
-      error: error instanceof Error ? error.message : String(error),
-    });
-    await delay(2 ** attempt + Math.random());
-    return estimateEdgeEconomics(candidate, params, attempt + 1);
+  switch (candidate.family) {
+    case "binance":
+      breakdown = await estimateBinanceSwapBreakdown(candidate, referenceInputNative, params);
+      break;
+    case "hyperliquid":
+      breakdown = await estimateHyperliquidSwapBreakdown(candidate, referenceInputNative, params);
+      break;
+    case "cctp":
+      breakdown = await estimateCctpBreakdown(candidate, referenceInputNative, params);
+      break;
+    case "oft":
+      breakdown = await estimateOftBreakdown(candidate, referenceInputNative, params);
+      break;
+    case "binance_cex_bridge":
+      breakdown = await estimateBinanceCexBridgeBreakdown(candidate, params);
+      break;
+    case "bridgeapi":
+      breakdown = await estimateBridgeApiBreakdown(candidate, params);
+      break;
+    case "hyperlane":
+      breakdown = await estimateQuotedBridgeBreakdown(candidate, referenceInputNative, params, "hyperlane");
+      break;
+    case "canonical":
+      breakdown = await estimateQuotedBridgeBreakdown(candidate, referenceInputNative, params, "canonical");
+      break;
   }
+
+  return {
+    inputCapacityNative: referenceInputNative,
+    fixedInputFeeNative: minBigNumber(breakdown.fixedInputFeeSourceNative, referenceInputNative),
+    fixedOutputFeeNative: breakdown.fixedOutputFeeDestinationNative,
+    fixedCostNative: await params.pricingContext.usdToNativeValue(breakdown.fixedCostUsd, candidate.from.chainId),
+    latencySeconds: breakdown.latencySeconds,
+  };
 }
 
 async function resolveInputCapacityNative(

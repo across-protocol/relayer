@@ -267,14 +267,7 @@ export function buildRebalanceEdgeCandidates(
     if (!isDefined(from) || !isDefined(to)) {
       return [];
     }
-    const family =
-      route.adapter === "cctp"
-        ? "cctp"
-        : route.adapter === "oft"
-          ? "oft"
-          : route.adapter === "binance" && isSameBinanceCoin(route.sourceToken, route.destinationToken)
-            ? "binance_cex_bridge"
-            : (route.adapter as EdgeFamily);
+    const family = familyForRebalanceRoute(route);
     return [
       {
         family,
@@ -285,6 +278,19 @@ export function buildRebalanceEdgeCandidates(
       } satisfies GraphEdgeCandidate,
     ];
   });
+}
+
+function familyForRebalanceRoute(route: RebalanceRoute): EdgeFamily {
+  switch (route.adapter) {
+    case "cctp":
+      return "cctp";
+    case "oft":
+      return "oft";
+    case "binance":
+      return isSameBinanceCoin(route.sourceToken, route.destinationToken) ? "binance_cex_bridge" : "binance";
+    default:
+      return route.adapter as EdgeFamily;
+  }
 }
 
 function toSupportedBridgeAdapterRoute(candidate: GraphEdgeCandidate): RebalanceRoute | undefined {

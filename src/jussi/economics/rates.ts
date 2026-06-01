@@ -9,6 +9,7 @@ import type { RuntimePricingContext } from "./PricingContext";
 import type {
   BinanceInternalAdapter,
   EdgePricingParams,
+  EdgeFamily,
   GraphEdgeCandidate,
   HyperliquidInternalAdapter,
   JussiEdgeClassDefinition,
@@ -18,6 +19,14 @@ import type {
 } from "../types";
 import { resolveEdgeClassId, resolveRateLimitBucketId } from "../topology/edges";
 import { quoteLiveOftRouteTransfer } from "./quotes";
+
+const ONE_TO_ONE_OUTPUT_RATE_FAMILIES: readonly EdgeFamily[] = [
+  "cctp",
+  "canonical",
+  "bridgeapi",
+  "hyperlane",
+  "binance_cex_bridge",
+];
 
 export async function serializeEdgeClassDefinition(
   candidate: GraphEdgeCandidate,
@@ -47,11 +56,7 @@ async function resolveOutputSegments(
   }
 
   if (
-    candidate.family === "cctp" ||
-    candidate.family === "canonical" ||
-    candidate.family === "bridgeapi" ||
-    candidate.family === "hyperlane" ||
-    candidate.family === "binance_cex_bridge" ||
+    ONE_TO_ONE_OUTPUT_RATE_FAMILIES.includes(candidate.family) ||
     candidate.from.logicalAsset === candidate.to.logicalAsset
   ) {
     return [{ up_to_input_usd: UNIVERSAL_INPUT_TIER_USD, marginal_output_rate: { numerator: "1", denominator: "1" } }];
