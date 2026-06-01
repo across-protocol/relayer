@@ -29,9 +29,7 @@
         "534352": 6,
         "7777777": 6
       },
-      "native_price_alias_chain_ids": [
-        "4217"
-      ]
+      "native_price_alias_chain_ids": ["4217"]
     },
     "USDT": {
       "decimals_by_chain": {

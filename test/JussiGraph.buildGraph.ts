@@ -6,6 +6,7 @@ import { buildRebalanceRoutes } from "../src/rebalancer/buildRebalanceRoutes";
 import {
   GraphEdgeCandidate,
   BuiltJussiGraph,
+  ManagedNodeContext,
   buildJussiGraphBundleJson,
   buildBridgeEdgeCandidates,
   buildCumulativeBalancePainDefinitions,
@@ -39,6 +40,37 @@ import {
   JussiGraphPublisher,
   validateJussiUploadEnv,
 } from "../src/jussi/JussiGraphPublisher";
+
+function findExpectedNode(
+  nodeContexts: ManagedNodeContext[],
+  predicate: (node: ManagedNodeContext) => boolean,
+  description: string
+): ManagedNodeContext {
+  const node = nodeContexts.find(predicate);
+  if (!node) {
+    throw new Error(`Expected Jussi node not found: ${description}`);
+  }
+  return node;
+}
+
+function findExpectedEdge(
+  edgeCandidates: GraphEdgeCandidate[],
+  predicate: (candidate: GraphEdgeCandidate) => boolean,
+  description: string
+): GraphEdgeCandidate {
+  const edge = edgeCandidates.find(predicate);
+  if (!edge) {
+    throw new Error(`Expected Jussi edge not found: ${description}`);
+  }
+  return edge;
+}
+
+function requireString(value: string | undefined, description: string): string {
+  if (value === undefined) {
+    throw new Error(`Expected string not found: ${description}`);
+  }
+  return value;
+}
 
 function buildRelayerConfig(optimismUsdcTargetPct = 8): RelayerConfig {
   return new RelayerConfig({
@@ -202,7 +234,7 @@ class MetadataFailingJussiRedis extends InMemoryJussiRedis {
   }
 }
 
-describe("Jussi graph builder helpers", async function () {
+describe("Jussi graph builder helpers", function () {
   it("extracts mainnet and aliased USDC/USDT/WETH node templates from synthetic inventory config", async function () {
     const relayerConfig = buildRelayerConfig();
     const templates = buildManagedNodeTemplates(relayerConfig.inventoryConfig, CHAIN_IDs.MAINNET);
@@ -228,12 +260,16 @@ describe("Jussi graph builder helpers", async function () {
   it("normalizes allocation ratios per logical asset and emits cumulative balance pain bands", async function () {
     const relayerConfig = buildRelayerConfig();
     const nodeContexts = materializeNodeDefinitions(buildManagedNodeTemplates(relayerConfig.inventoryConfig));
-    const optimismUsdc = nodeContexts.find(
-      (node) => node.chainId === CHAIN_IDs.OPTIMISM && node.symbol === "USDC" && node.logicalAsset === "USDC"
-    )!;
-    const mainnetUsdc = nodeContexts.find(
-      (node) => node.chainId === CHAIN_IDs.MAINNET && node.symbol === "USDC" && node.logicalAsset === "USDC"
-    )!;
+    const optimismUsdc = findExpectedNode(
+      nodeContexts,
+      (node) => node.chainId === CHAIN_IDs.OPTIMISM && node.symbol === "USDC" && node.logicalAsset === "USDC",
+      "Optimism USDC"
+    );
+    const mainnetUsdc = findExpectedNode(
+      nodeContexts,
+      (node) => node.chainId === CHAIN_IDs.MAINNET && node.symbol === "USDC" && node.logicalAsset === "USDC",
+      "Mainnet USDC"
+    );
     const cumulativeBalancePain = buildCumulativeBalancePainDefinitions({
       USDC: toBNWei("1000", 6),
       USDT: toBNWei("500", 6),
@@ -366,16 +402,28 @@ describe("Jussi graph builder helpers", async function () {
   it("discovers only direct token-splitter bridge candidates for pathUSD", async function () {
     const relayerConfig = buildRelayerConfig();
     const nodeContexts = materializeNodeDefinitions(buildManagedNodeTemplates(relayerConfig.inventoryConfig));
-    const edgeCandidates = await buildBridgeEdgeCandidates(nodeContexts);
+    const edgeCandidates = buildBridgeEdgeCandidates(nodeContexts);
 
-    const mainnetUsdc = nodeContexts.find(
-      (node) => node.chainId === CHAIN_IDs.MAINNET && node.symbol === "USDC" && node.logicalAsset === "USDC"
-    )!;
-    const optimismUsdc = nodeContexts.find(
-      (node) => node.chainId === CHAIN_IDs.OPTIMISM && node.symbol === "USDC" && node.logicalAsset === "USDC"
-    )!;
-    const tempoUsdc = nodeContexts.find((node) => node.chainId === CHAIN_IDs.TEMPO && node.symbol === "USDC.e")!;
-    const pathUsd = nodeContexts.find((node) => node.chainId === CHAIN_IDs.TEMPO && node.symbol === "pathUSD")!;
+    const mainnetUsdc = findExpectedNode(
+      nodeContexts,
+      (node) => node.chainId === CHAIN_IDs.MAINNET && node.symbol === "USDC" && node.logicalAsset === "USDC",
+      "Mainnet USDC"
+    );
+    const optimismUsdc = findExpectedNode(
+      nodeContexts,
+      (node) => node.chainId === CHAIN_IDs.OPTIMISM && node.symbol === "USDC" && node.logicalAsset === "USDC",
+      "Optimism USDC"
+    );
+    const tempoUsdc = findExpectedNode(
+      nodeContexts,
+      (node) => node.chainId === CHAIN_IDs.TEMPO && node.symbol === "USDC.e",
+      "Tempo USDC.e"
+    );
+    const pathUsd = findExpectedNode(
+      nodeContexts,
+      (node) => node.chainId === CHAIN_IDs.TEMPO && node.symbol === "pathUSD",
+      "Tempo pathUSD"
+    );
 
     expect(
       edgeCandidates.some(
@@ -416,12 +464,26 @@ describe("Jussi graph builder helpers", async function () {
   it("dedupes identical edges while preserving parallel adapters", async function () {
     const relayerConfig = buildRelayerConfig();
     const nodeContexts = materializeNodeDefinitions(buildManagedNodeTemplates(relayerConfig.inventoryConfig));
-    const mainnetUsdc = nodeContexts.find(
-      (node) => node.chainId === CHAIN_IDs.MAINNET && node.symbol === "USDC" && node.logicalAsset === "USDC"
-    )!;
-    const pathUsd = nodeContexts.find((node) => node.chainId === CHAIN_IDs.TEMPO && node.symbol === "pathUSD")!;
-    const hyperevmUsdt = nodeContexts.find((node) => node.chainId === CHAIN_IDs.HYPEREVM && node.symbol === "USDT")!;
-    const optimismUsdc = nodeContexts.find((node) => node.chainId === CHAIN_IDs.OPTIMISM && node.symbol === "USDC")!;
+    const mainnetUsdc = findExpectedNode(
+      nodeContexts,
+      (node) => node.chainId === CHAIN_IDs.MAINNET && node.symbol === "USDC" && node.logicalAsset === "USDC",
+      "Mainnet USDC"
+    );
+    const pathUsd = findExpectedNode(
+      nodeContexts,
+      (node) => node.chainId === CHAIN_IDs.TEMPO && node.symbol === "pathUSD",
+      "Tempo pathUSD"
+    );
+    const hyperevmUsdt = findExpectedNode(
+      nodeContexts,
+      (node) => node.chainId === CHAIN_IDs.HYPEREVM && node.symbol === "USDT",
+      "HyperEVM USDT"
+    );
+    const optimismUsdc = findExpectedNode(
+      nodeContexts,
+      (node) => node.chainId === CHAIN_IDs.OPTIMISM && node.symbol === "USDC",
+      "Optimism USDC"
+    );
 
     const candidates: GraphEdgeCandidate[] = [
       {
@@ -525,7 +587,7 @@ describe("Jussi graph builder helpers", async function () {
   it("discovers WETH bridge candidates from constants and applies WETH bridge latency overrides", async function () {
     const relayerConfig = buildRelayerConfig();
     const nodeContexts = materializeNodeDefinitions(buildManagedNodeTemplates(relayerConfig.inventoryConfig));
-    const bridgeCandidates = await buildBridgeEdgeCandidates(nodeContexts);
+    const bridgeCandidates = buildBridgeEdgeCandidates(nodeContexts);
     const hasBridge = (
       sourceChain: number,
       sourceToken: string,
@@ -549,30 +611,42 @@ describe("Jussi graph builder helpers", async function () {
     expect(hasBridge(CHAIN_IDs.MAINNET, "WETH", CHAIN_IDs.ZORA, "WETH", "canonical")).to.equal(true);
     expect(hasBridge(CHAIN_IDs.ZORA, "WETH", CHAIN_IDs.MAINNET, "WETH", "canonical")).to.equal(true);
 
-    const zoraToMainnet = bridgeCandidates.find(
+    const zoraToMainnet = findExpectedEdge(
+      bridgeCandidates,
       (candidate) =>
         candidate.from.chainId === CHAIN_IDs.ZORA &&
         candidate.to.chainId === CHAIN_IDs.MAINNET &&
-        candidate.from.logicalAsset === "WETH"
-    )!;
-    const mainnetToZora = bridgeCandidates.find(
+        candidate.from.logicalAsset === "WETH",
+      "Zora WETH to mainnet"
+    );
+    const mainnetToZora = findExpectedEdge(
+      bridgeCandidates,
       (candidate) =>
         candidate.from.chainId === CHAIN_IDs.MAINNET &&
         candidate.to.chainId === CHAIN_IDs.ZORA &&
-        candidate.from.logicalAsset === "WETH"
-    )!;
-    const plasmaToMainnet = bridgeCandidates.find(
+        candidate.from.logicalAsset === "WETH",
+      "Mainnet WETH to Zora"
+    );
+    const plasmaToMainnet = findExpectedEdge(
+      bridgeCandidates,
       (candidate) =>
         candidate.from.chainId === CHAIN_IDs.PLASMA &&
         candidate.to.chainId === CHAIN_IDs.MAINNET &&
-        candidate.from.logicalAsset === "WETH"
-    )!;
+        candidate.from.logicalAsset === "WETH",
+      "Plasma WETH to mainnet"
+    );
 
     expect(resolveGraphBridgeLatencySeconds(zoraToMainnet)).to.equal(7 * 24 * 60 * 60);
     expect(resolveGraphBridgeLatencySeconds(mainnetToZora)).to.equal(20 * 60);
     expect(resolveGraphBridgeLatencySeconds(plasmaToMainnet)).to.equal(20 * 60);
     expect(
-      resolveGraphBridgeLatencySeconds(bridgeCandidates.find((candidate) => candidate.family === "binance_cex_bridge")!)
+      resolveGraphBridgeLatencySeconds(
+        findExpectedEdge(
+          bridgeCandidates,
+          (candidate) => candidate.family === "binance_cex_bridge",
+          "Binance CEX bridge"
+        )
+      )
     ).to.equal(5 * 60);
   });
 
@@ -901,7 +975,7 @@ describe("Jussi graph builder helpers", async function () {
 
     const result = await publisher.publishUpload(prepared);
     const lastPublishedRaw = await redis.get<string>(JUSSI_LAST_PUBLISHED_KEY);
-    const lastPublished = JSON.parse(lastPublishedRaw!);
+    const lastPublished = JSON.parse(requireString(lastPublishedRaw, JUSSI_LAST_PUBLISHED_KEY));
 
     expect(result.uploaded).to.equal(true);
     expect(result.graphId).to.equal("usdc-usdt-weth-20260401T091011Z");
