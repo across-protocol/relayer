@@ -73,7 +73,6 @@ export async function connectRedisClient(logger?: winston.Logger, url = REDIS_UR
         clearTimeout(flushTimer);
         flushErrors();
       }
-      logger?.info({ at: "RedisClient", message: "Redis client ready.", url });
     });
     redisClient.on("end", () => {
       if (flushTimer) {
