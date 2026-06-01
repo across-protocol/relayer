@@ -27,6 +27,7 @@ import {
   resolveOftQuoteSendFeeAsset,
   resolveOptionalTranslatedTokenAddress,
   resolveRequiredNativePriceChains,
+  RuntimePricingContext,
   buildTopology,
 } from "../src/jussi/buildGraph";
 import { topologyFingerprint } from "../src/jussi/topology/fingerprint";
@@ -353,15 +354,30 @@ describe("Jussi graph builder helpers", function () {
       },
     };
 
-    const graph = await buildJussiGraphDefinition({
-      logger: { info: () => undefined, debug: () => undefined } as never,
-      baseSigner: {} as never,
-      relayerConfig,
-      inventoryClient: inventoryClient as never,
-      rebalanceRoutes: [],
-      rebalancerAdapters: {},
-      graphId: "test-graph",
-    });
+    const describeGasPricesStub = sinon
+      .stub(RuntimePricingContext.prototype, "describeGasPrices")
+      .callsFake(async (chainIds: number[]) =>
+        Array.from(new Set(chainIds)).map((chainId) => ({
+          chainId,
+          gasPriceWei: "1",
+          gasPriceGwei: "0.000000001",
+          source: "fallback_current_oracle",
+        }))
+      );
+    let graph: BuiltJussiGraph;
+    try {
+      graph = await buildJussiGraphDefinition({
+        logger: { info: () => undefined, debug: () => undefined } as never,
+        baseSigner: {} as never,
+        relayerConfig,
+        inventoryClient: inventoryClient as never,
+        rebalanceRoutes: [],
+        rebalancerAdapters: {},
+        graphId: "test-graph",
+      });
+    } finally {
+      describeGasPricesStub.restore();
+    }
 
     expect(requestedTokens).to.deep.equal([
       TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET].toLowerCase(),
