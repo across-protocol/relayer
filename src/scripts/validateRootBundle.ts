@@ -44,11 +44,11 @@ export async function validate(_logger: winston.Logger, baseSigner: Signer): Pro
   const priceRequestTime = Number(process.env.REQUEST_TIME);
 
   // Override default config with sensible defaults:
-  // - DATAWORKER_FAST_LOOKBACK_COUNT=8 balances limiting RPC requests with querying
-  // enough data to limit # of excess historical deposit queries.
+  // - DATAWORKER_FAST_LOOKBACK_COUNT=64 balances limiting RPC requests with looking back far enough to validate
+  // 99% of bundles.
   // - SPOKE_ROOTS_LOOKBACK_COUNT unused in this script so set to something < DATAWORKER_FAST_LOOKBACK_COUNT
   // to avoid configuration error.
-  process.env.DATAWORKER_FAST_LOOKBACK_COUNT = "20";
+  process.env.DATAWORKER_FAST_LOOKBACK_COUNT = "64";
   process.env.SPOKE_ROOTS_LOOKBACK_COUNT = "1";
   const { clients, config, dataworker } = await createDataworker(logger, baseSigner);
   logger[startupLogLevel(config)]({
