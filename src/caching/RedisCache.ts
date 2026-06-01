@@ -7,10 +7,17 @@ import winston from "winston";
 export type RedisClient = ReturnType<typeof createClient>;
 
 export interface RedisCacheInterface extends interfaces.CachingMechanismInterface, interfaces.PubSubMechanismInterface {
+  acquireLock(key: string, token: string, ttlMs: number): Promise<boolean>;
   decr(key: string): Promise<number>;
   decrBy(key: string, amount: number): Promise<number>;
+  del(key: string): Promise<number>;
+  get<T>(key: string): Promise<T | undefined>;
+  releaseLock(key: string, token: string): Promise<boolean>;
+  renewLock(key: string, token: string, ttlMs: number): Promise<boolean>;
   incr(key: string): Promise<number>;
   incrBy(key: string, amount: number): Promise<number>;
+  set<T>(key: string, val: T, expirySeconds?: number): Promise<string | undefined>;
+  ttl(key: string): Promise<number | undefined>;
 }
 
 /**
@@ -65,6 +72,33 @@ export class RedisCache implements RedisCacheInterface {
       }
       return await this.client.set(key, String(val));
     }
+  }
+
+  async acquireLock(key: string, token: string, ttlMs: number): Promise<boolean> {
+    const reply = await this.client.set(this.getNamespacedKey(key), token, { NX: true, PX: ttlMs });
+    return reply === "OK";
+  }
+
+  async renewLock(key: string, token: string, ttlMs: number): Promise<boolean> {
+    const reply = await this.client.eval(
+      "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('pexpire', KEYS[1], ARGV[2]) else return 0 end",
+      {
+        keys: [this.getNamespacedKey(key)],
+        arguments: [token, String(ttlMs)],
+      }
+    );
+    return reply === 1;
+  }
+
+  async releaseLock(key: string, token: string): Promise<boolean> {
+    const reply = await this.client.eval(
+      "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
+      {
+        keys: [this.getNamespacedKey(key)],
+        arguments: [token],
+      }
+    );
+    return reply === 1;
   }
 
   sAdd(key: string, value: string): Promise<number> {

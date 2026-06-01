@@ -25,6 +25,7 @@ Keep all relevant `AGENTS.md` and `README.md` files updated in the same change w
 - Rebalancer behavior and adapters: `src/rebalancer/README.md`
 - Refiller behavior: `src/refiller/README.md`
 - Dataworker root-bundle flow: `src/dataworker/README.md`
+- Jussi graph builder topology/economics/upload flow: `src/jussi/README.md`
 - Shared runtime clients: `src/clients/README.md`
 - Finalization-specific workflows: `src/finalizer/*` and `src/cctp-finalizer/*`
 - UMA and smart-contract context: `docs/uma.md` and `docs/smart-contracts.md`

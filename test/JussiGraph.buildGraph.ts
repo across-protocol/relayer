@@ -1,8 +1,11 @@
-import { expect, toBNWei } from "./utils";
+import { expect, sinon, toBNWei, winston } from "./utils";
 import { CHAIN_IDs, EvmAddress, TOKEN_SYMBOLS_MAP } from "../src/utils";
 import { RelayerConfig } from "../src/relayer/RelayerConfig";
+import { RebalancerConfig } from "../src/rebalancer/RebalancerConfig";
+import { buildRebalanceRoutes } from "../src/rebalancer/buildRebalanceRoutes";
 import {
   GraphEdgeCandidate,
+  BuiltJussiGraph,
   buildJussiGraphBundleJson,
   buildBridgeEdgeCandidates,
   buildCumulativeBalancePainDefinitions,
@@ -23,16 +26,28 @@ import {
   resolveOftQuoteSendFeeAsset,
   resolveOptionalTranslatedTokenAddress,
   resolveRequiredNativePriceChains,
+  buildTopology,
 } from "../src/jussi/buildGraph";
+import { topologyFingerprint } from "../src/jussi/topology/fingerprint";
+import { bundleHash } from "../src/jussi/serialize";
+import { JussiApiClient, putJsonWithTimeout } from "../src/jussi/JussiApiClient";
+import {
+  compareTopologyFingerprintWithRedis,
+  JUSSI_LAST_PUBLISHED_KEY,
+  JUSSI_PUBLISH_LOCK_KEY,
+  JUSSI_TOPOLOGY_FINGERPRINT_KEY,
+  JussiGraphPublisher,
+  validateJussiUploadEnv,
+} from "../src/jussi/JussiGraphPublisher";
 
-function buildRelayerConfig(): RelayerConfig {
+function buildRelayerConfig(optimismUsdcTargetPct = 8): RelayerConfig {
   return new RelayerConfig({
     HUB_CHAIN_ID: String(CHAIN_IDs.MAINNET),
     RELAYER_INVENTORY_CONFIG: JSON.stringify({
       tokenConfig: {
         USDC: {
           USDC: {
-            [CHAIN_IDs.OPTIMISM]: { targetPct: 8, thresholdPct: 4 },
+            [CHAIN_IDs.OPTIMISM]: { targetPct: optimismUsdcTargetPct, thresholdPct: 4 },
             [CHAIN_IDs.BASE]: { targetPct: 6, thresholdPct: 3 },
           },
           "USDC.e": {
@@ -66,6 +81,125 @@ function buildRelayerConfig(): RelayerConfig {
       wrapEtherThresholdPerChain: {},
     }),
   });
+}
+
+function buildRebalancerConfig(targetBalance = "100"): RebalancerConfig {
+  return new RebalancerConfig({
+    HUB_CHAIN_ID: String(CHAIN_IDs.MAINNET),
+    REBALANCER_CONFIG: JSON.stringify({
+      cumulativeTargetBalances: {
+        USDC: {
+          targetBalance,
+          thresholdBalance: targetBalance === "0" ? "0" : "50",
+          priorityTier: 0,
+          chains: {
+            [CHAIN_IDs.OPTIMISM]: 0,
+            [CHAIN_IDs.BASE]: 0,
+          },
+        },
+      },
+      maxAmountsToTransfer: {},
+      maxPendingOrders: {},
+    }),
+  });
+}
+
+function buildNoopLogger(): winston.Logger {
+  return { info: () => undefined, debug: () => undefined, warn: () => undefined } as never;
+}
+
+function buildMinimalGraph(graphId: string): BuiltJussiGraph {
+  return {
+    graphId,
+    rate_limit_buckets: [],
+    payload: {
+      latency_annualized_cost_rate: "0.05",
+      pain_model: {
+        surplus_annualized_cost_rate: "0.000219",
+        deficit_annualized_cost_rate: "0.002055",
+        out_of_band_severity_multiplier: "4.0",
+      },
+      logical_assets: { USDC: { decimals_by_chain: { "1": 6 } } },
+      cumulative_balance_pain: {},
+      edge_classes: [],
+      nodes: [],
+      edges: [],
+    },
+  };
+}
+
+class InMemoryJussiRedis {
+  private values = new Map<string, { value: string; expiresAt?: number }>();
+
+  async get<T>(key: string): Promise<T | undefined> {
+    const entry = this.values.get(key);
+    if (!entry) {
+      return undefined;
+    }
+    if (entry.expiresAt && entry.expiresAt <= Date.now()) {
+      this.values.delete(key);
+      return undefined;
+    }
+    return entry.value as T;
+  }
+
+  async set<T>(key: string, val: T, expirySeconds = 60): Promise<string> {
+    this.values.set(key, {
+      value: String(val),
+      ...(expirySeconds === Number.POSITIVE_INFINITY ? {} : { expiresAt: Date.now() + expirySeconds * 1000 }),
+    });
+    return "OK";
+  }
+
+  async ttl(key: string): Promise<number | undefined> {
+    const entry = this.values.get(key);
+    if (!entry) {
+      return -2;
+    }
+    if (!entry.expiresAt) {
+      return -1;
+    }
+    return Math.max(0, Math.ceil((entry.expiresAt - Date.now()) / 1000));
+  }
+
+  async del(key: string): Promise<number> {
+    return this.values.delete(key) ? 1 : 0;
+  }
+
+  async acquireLock(key: string, token: string, ttlMs: number): Promise<boolean> {
+    if (await this.get(key)) {
+      return false;
+    }
+    this.values.set(key, { value: token, expiresAt: Date.now() + ttlMs });
+    return true;
+  }
+
+  async renewLock(key: string, token: string, ttlMs: number): Promise<boolean> {
+    const entry = this.values.get(key);
+    if (!entry || entry.value !== token) {
+      return false;
+    }
+    entry.expiresAt = Date.now() + ttlMs;
+    return true;
+  }
+
+  async releaseLock(key: string, token: string): Promise<boolean> {
+    const entry = this.values.get(key);
+    if (!entry || entry.value !== token) {
+      return false;
+    }
+    this.values.delete(key);
+    return true;
+  }
+}
+
+class MetadataFailingJussiRedis extends InMemoryJussiRedis {
+  async set<T>(key: string, val: T, expirySeconds = 60): Promise<string> {
+    if (key === JUSSI_LAST_PUBLISHED_KEY) {
+      throw new Error("metadata write failed");
+    }
+    return super.set(key, val, expirySeconds);
+  }
 }
 
 describe("Jussi graph builder helpers", async function () {
@@ -605,5 +739,249 @@ describe("Jussi graph builder helpers", async function () {
       rate_limit_buckets: [],
     });
     expect(Object.keys(envelope)).to.deep.equal(["graph_id", "payload"]);
+  });
+
+  it("fingerprints the final deduped topology and deterministic payload policy", async function () {
+    const hubCtx = { hubPoolChainId: CHAIN_IDs.MAINNET };
+    const relayerConfig = buildRelayerConfig();
+    const route = {
+      sourceChain: CHAIN_IDs.OPTIMISM,
+      sourceToken: "USDC",
+      destinationChain: CHAIN_IDs.BASE,
+      destinationToken: "USDC",
+      adapter: "cctp",
+    };
+    const topology = buildTopology({ relayerConfig, rebalanceRoutes: [route], hubCtx });
+    const fingerprint = topologyFingerprint(topology, hubCtx);
+    const renamedAdapterTopology = {
+      ...topology,
+      edgeCandidates: topology.edgeCandidates.map((candidate) => ({
+        ...candidate,
+        adapterOrBridgeName: `${candidate.adapterOrBridgeName}-renamed`,
+      })),
+    };
+    const changedAllocationTopology = buildTopology({
+      relayerConfig: buildRelayerConfig(9),
+      rebalanceRoutes: [route],
+      hubCtx,
+    });
+
+    expect(fingerprint).to.match(/^[0-9a-f]{64}$/);
+    expect(topologyFingerprint(buildTopology({ relayerConfig, rebalanceRoutes: [route], hubCtx }), hubCtx)).to.equal(
+      fingerprint
+    );
+    expect(topologyFingerprint(renamedAdapterTopology, hubCtx)).to.equal(fingerprint);
+    expect(topologyFingerprint(changedAllocationTopology, hubCtx)).to.not.equal(fingerprint);
+  });
+
+  it("keeps target-balance magnitude out of route-shape fingerprints when the token remains configured", async function () {
+    const hubCtx = { hubPoolChainId: CHAIN_IDs.MAINNET };
+    const relayerConfig = buildRelayerConfig();
+    const nonZeroRoutes = buildTopology({
+      relayerConfig,
+      rebalanceRoutes: buildRebalanceRoutes(buildRebalancerConfig("100")),
+      hubCtx,
+    });
+    const zeroMagnitudeRoutes = buildTopology({
+      relayerConfig,
+      rebalanceRoutes: buildRebalanceRoutes(buildRebalancerConfig("0")),
+      hubCtx,
+    });
+
+    expect(topologyFingerprint(nonZeroRoutes, hubCtx)).to.equal(topologyFingerprint(zeroMagnitudeRoutes, hubCtx));
+    expect(buildRebalancerConfig("0").cumulativeTargetBalances.USDC.targetBalance.toString()).to.equal("0");
+  });
+
+  it("hashes graph bundles with canonical key ordering", async function () {
+    const graph = buildMinimalGraph("test-graph");
+    const bundle = buildJussiGraphBundleJson(graph);
+    const reorderedBundle = {
+      rate_limit_buckets: bundle.rate_limit_buckets,
+      graph: {
+        edges: bundle.graph.edges,
+        nodes: bundle.graph.nodes,
+        edge_classes: bundle.graph.edge_classes,
+        cumulative_balance_pain: bundle.graph.cumulative_balance_pain,
+        logical_assets: bundle.graph.logical_assets,
+        pain_model: bundle.graph.pain_model,
+        latency_annualized_cost_rate: bundle.graph.latency_annualized_cost_rate,
+      },
+    };
+
+    expect(bundleHash(bundle)).to.match(/^[0-9a-f]{64}$/);
+    expect(bundleHash(bundle)).to.equal(bundleHash(reorderedBundle));
+  });
+
+  it("PUTs graph bundles with bearer auth and accepts empty 2xx responses", async function () {
+    const fetchStub = sinon.stub(globalThis, "fetch").resolves(new Response(null, { status: 204 }));
+    try {
+      const bundle = buildJussiGraphBundleJson(buildMinimalGraph("test-graph"));
+      await new JussiApiClient("http://localhost:8080", "secret-token").putGraphBundle("test-graph", bundle);
+      expect(fetchStub.calledOnce).to.equal(true);
+      expect(fetchStub.firstCall.args[0]).to.equal("http://localhost:8080/graph_bundles/test-graph");
+      expect(fetchStub.firstCall.args[1]?.method).to.equal("PUT");
+      expect((fetchStub.firstCall.args[1]?.headers as Record<string, string>).Authorization).to.equal(
+        "Bearer secret-token"
+      );
+      expect(fetchStub.firstCall.args[1]?.body).to.equal(JSON.stringify(bundle));
+    } finally {
+      fetchStub.restore();
+    }
+  });
+
+  it("throws PUT status information on non-2xx responses", async function () {
+    const fetchStub = sinon.stub(globalThis, "fetch").resolves(new Response("not allowed", { status: 403 }));
+    try {
+      let errorMessage = "";
+      try {
+        await putJsonWithTimeout("http://localhost:8080/graph_bundles/test", {}, {}, 1_000);
+      } catch (error) {
+        errorMessage = error instanceof Error ? error.message : String(error);
+      }
+      expect(errorMessage).to.contain("status 403");
+      expect(errorMessage).to.contain("not allowed");
+    } finally {
+      fetchStub.restore();
+    }
+  });
+
+  it("validates upload targets and compares Redis fingerprints without a signer", async function () {
+    expect(validateJussiUploadEnv({ JUSSI_API_URL: "http://localhost:8080" }).hostname).to.equal("localhost");
+    expect(
+      validateJussiUploadEnv({
+        JUSSI_API_URL: "https://jussi.example.com",
+        JUSSI_ALLOW_PROD_UPLOAD: "true",
+      }).hostname
+    ).to.equal("jussi.example.com");
+
+    let errorMessage = "";
+    try {
+      validateJussiUploadEnv({ JUSSI_API_URL: "https://jussi.example.com" });
+    } catch (error) {
+      errorMessage = error instanceof Error ? error.message : String(error);
+    }
+    expect(errorMessage).to.contain("JUSSI_ALLOW_PROD_UPLOAD=true");
+
+    const redis = new InMemoryJussiRedis();
+    await redis.set(JUSSI_TOPOLOGY_FINGERPRINT_KEY, "fingerprint-a", Number.POSITIVE_INFINITY);
+    expect(await compareTopologyFingerprintWithRedis(redis, "fingerprint-a")).to.deep.equal({
+      matches: true,
+      publishedTopologyFingerprint: "fingerprint-a",
+    });
+    expect(await compareTopologyFingerprintWithRedis(redis, "fingerprint-b")).to.deep.equal({
+      matches: false,
+      publishedTopologyFingerprint: "fingerprint-a",
+    });
+  });
+
+  it("publishes under a token-checked Redis lock and persists no-TTL metadata", async function () {
+    const relayerConfig = buildRelayerConfig();
+    const hubCtx = { hubPoolChainId: CHAIN_IDs.MAINNET };
+    const topology = buildTopology({ relayerConfig, rebalanceRoutes: [], hubCtx });
+    const prepared = {
+      relayerConfig,
+      rebalancerConfig: buildRebalancerConfig(),
+      hubCtx,
+      rebalanceRoutes: [],
+      topology,
+      topologyFingerprint: topologyFingerprint(topology, hubCtx),
+    };
+    const redis = new InMemoryJussiRedis();
+    const apiClient = { putGraphBundle: sinon.stub().resolves() } as unknown as JussiApiClient;
+    const runFullBuildStub = sinon.stub().callsFake(async (graphId: string) => buildMinimalGraph(graphId));
+    const now = () => new Date("2026-04-01T09:10:11.000Z");
+    const publisher = new JussiGraphPublisher({
+      apiClient,
+      logger: buildNoopLogger(),
+      redis,
+      runFullBuild: runFullBuildStub,
+      lockTtlMs: 1_000,
+      now,
+    });
+
+    const result = await publisher.publishUpload(prepared);
+    const lastPublishedRaw = await redis.get<string>(JUSSI_LAST_PUBLISHED_KEY);
+    const lastPublished = JSON.parse(lastPublishedRaw!);
+
+    expect(result.uploaded).to.equal(true);
+    expect(result.graphId).to.equal("usdc-usdt-weth-20260401T091011Z");
+    expect(runFullBuildStub.calledOnceWith(result.graphId)).to.equal(true);
+    expect((apiClient.putGraphBundle as sinon.SinonStub).calledOnce).to.equal(true);
+    expect(await redis.get<string>(JUSSI_TOPOLOGY_FINGERPRINT_KEY)).to.equal(prepared.topologyFingerprint);
+    expect(await redis.ttl(JUSSI_TOPOLOGY_FINGERPRINT_KEY)).to.equal(-1);
+    expect(await redis.ttl(JUSSI_LAST_PUBLISHED_KEY)).to.equal(-1);
+    expect(lastPublished.graphId).to.equal(result.graphId);
+    expect(lastPublished.topologyFingerprint).to.equal(prepared.topologyFingerprint);
+    expect(lastPublished.bundleHash).to.equal(result.bundleHash);
+    expect(await redis.get(JUSSI_PUBLISH_LOCK_KEY)).to.equal(undefined);
+  });
+
+  it("throws graph id and bundle hash when metadata persistence fails after PUT", async function () {
+    const relayerConfig = buildRelayerConfig();
+    const hubCtx = { hubPoolChainId: CHAIN_IDs.MAINNET };
+    const topology = buildTopology({ relayerConfig, rebalanceRoutes: [], hubCtx });
+    const prepared = {
+      relayerConfig,
+      rebalancerConfig: buildRebalancerConfig(),
+      hubCtx,
+      rebalanceRoutes: [],
+      topology,
+      topologyFingerprint: topologyFingerprint(topology, hubCtx),
+    };
+    const apiClient = { putGraphBundle: sinon.stub().resolves() } as unknown as JussiApiClient;
+    const publisher = new JussiGraphPublisher({
+      apiClient,
+      logger: buildNoopLogger(),
+      redis: new MetadataFailingJussiRedis(),
+      runFullBuild: async (graphId) => buildMinimalGraph(graphId),
+      now: () => new Date("2026-04-01T09:10:11.000Z"),
+    });
+
+    let errorMessage = "";
+    try {
+      await publisher.publishUpload(prepared);
+    } catch (error) {
+      errorMessage = error instanceof Error ? error.message : String(error);
+    }
+
+    expect(errorMessage).to.contain("graphId=usdc-usdt-weth-20260401T091011Z");
+    expect(errorMessage).to.contain("bundleHash=");
+    expect(errorMessage).to.contain("metadata write failed");
+  });
+
+  it("does not run the build or PUT when the upload lock is contended", async function () {
+    const relayerConfig = buildRelayerConfig();
+    const hubCtx = { hubPoolChainId: CHAIN_IDs.MAINNET };
+    const topology = buildTopology({ relayerConfig, rebalanceRoutes: [], hubCtx });
+    const prepared = {
+      relayerConfig,
+      rebalancerConfig: buildRebalancerConfig(),
+      hubCtx,
+      rebalanceRoutes: [],
+      topology,
+      topologyFingerprint: topologyFingerprint(topology, hubCtx),
+    };
+    const redis = new InMemoryJussiRedis();
+    await redis.acquireLock(JUSSI_PUBLISH_LOCK_KEY, "other-token", 60_000);
+    const apiClient = { putGraphBundle: sinon.stub().resolves() } as unknown as JussiApiClient;
+    const runFullBuildStub = sinon.stub().resolves(buildMinimalGraph("unused"));
+    const publisher = new JussiGraphPublisher({
+      apiClient,
+      logger: buildNoopLogger(),
+      redis,
+      runFullBuild: runFullBuildStub,
+      lockTtlMs: 1_000,
+    });
+
+    let errorMessage = "";
+    try {
+      await publisher.publishUpload(prepared);
+    } catch (error) {
+      errorMessage = error instanceof Error ? error.message : String(error);
+    }
+
+    expect(errorMessage).to.contain("Could not acquire");
+    expect(runFullBuildStub.called).to.equal(false);
+    expect((apiClient.putGraphBundle as sinon.SinonStub).called).to.equal(false);
   });
 });
