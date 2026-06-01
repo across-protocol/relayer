@@ -8,10 +8,9 @@ import {
   BuiltJussiGraph,
   ManagedNodeContext,
   buildJussiGraphBundleJson,
-  buildJussiGraphUploadBundleFromGraph,
+  buildJussiGraphUploadBundle,
   buildBridgeEdgeCandidates,
   buildCumulativeBalancePainDefinitions,
-  buildJussiGraphDefinition,
   buildLogicalAssetDefinitions,
   buildJussiGraphEnvelope,
   buildJussiGraphJson,
@@ -365,9 +364,9 @@ describe("Jussi graph builder helpers", function () {
           source: "fallback_current_oracle",
         }))
       );
-    let graph: BuiltJussiGraph;
+    let uploadBundle: Awaited<ReturnType<typeof buildJussiGraphUploadBundle>>;
     try {
-      graph = await buildJussiGraphDefinition({
+      uploadBundle = await buildJussiGraphUploadBundle({
         logger: { info: () => undefined, debug: () => undefined } as never,
         baseSigner: {} as never,
         relayerConfig,
@@ -379,6 +378,7 @@ describe("Jussi graph builder helpers", function () {
     } finally {
       describeGasPricesStub.restore();
     }
+    const { graph } = uploadBundle;
 
     expect(requestedTokens).to.deep.equal([
       TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET].toLowerCase(),
@@ -392,6 +392,10 @@ describe("Jussi graph builder helpers", function () {
     expect(graph.payload.cumulative_balance_pain.WETH.target_balance_native).to.equal(balances.WETH.toString());
     expect(graph.payload.logical_assets.WETH.native_price_alias_chain_ids).to.deep.equal(["1"]);
     expect(graph.payload.logical_assets.USDC.native_price_alias_chain_ids).to.equal(undefined);
+    expect(uploadBundle.graphId).to.equal("test-graph");
+    expect(uploadBundle.bundle).to.deep.equal(buildJussiGraphBundleJson(graph));
+    expect(uploadBundle.envelope).to.deep.equal(buildJussiGraphEnvelope(graph));
+    expect(uploadBundle.bundleHash).to.equal(bundleHash(uploadBundle.bundle));
   });
 
   it("splits graph native price coverage between aliases and explicit native request prices", async function () {
@@ -830,17 +834,6 @@ describe("Jussi graph builder helpers", function () {
       rate_limit_buckets: [],
     });
     expect(Object.keys(envelope)).to.deep.equal(["graph_id", "payload"]);
-  });
-
-  it("builds the upload-facing bundle shape from a built graph", async function () {
-    const graph = buildMinimalGraph("test-graph");
-    const uploadBundle = buildJussiGraphUploadBundleFromGraph(graph);
-
-    expect(uploadBundle.graphId).to.equal("test-graph");
-    expect(uploadBundle.graph).to.equal(graph);
-    expect(uploadBundle.bundle).to.deep.equal(buildJussiGraphBundleJson(graph));
-    expect(uploadBundle.envelope).to.deep.equal(buildJussiGraphEnvelope(graph));
-    expect(uploadBundle.bundleHash).to.equal(bundleHash(uploadBundle.bundle));
   });
 
   it("fingerprints the final deduped topology and deterministic payload policy", async function () {

@@ -14,10 +14,7 @@ export type JussiGraphUploadBundle = {
  * Public client entrypoint for building a Jussi graph bundle ready for PUT /graph_bundles/{graphId}.
  */
 export async function buildJussiGraphUploadBundle(params: BuildGraphParams): Promise<JussiGraphUploadBundle> {
-  return buildJussiGraphUploadBundleFromGraph(await buildJussiGraphDefinition(params));
-}
-
-export function buildJussiGraphUploadBundleFromGraph(graph: BuiltJussiGraph): JussiGraphUploadBundle {
+  const graph = await buildJussiGraphDefinition(params);
   const bundle = buildJussiGraphBundleJson(graph);
   return {
     graphId: graph.graphId,
