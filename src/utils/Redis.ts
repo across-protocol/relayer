@@ -47,7 +47,9 @@ export async function connectRedisClient(logger?: winston.Logger, url = REDIS_UR
     let flushTimer: NodeJS.Timeout | undefined;
     const flushErrors = (): void => {
       flushTimer = undefined;
-      if (pendingErrorCount === 0) return;
+      if (pendingErrorCount === 0) {
+        return;
+      }
       logger?.warn({
         at: "RedisClient",
         message: pendingErrorCount > 1 ? `Redis error (x${pendingErrorCount})` : "Redis error",
