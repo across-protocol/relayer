@@ -35,7 +35,20 @@ export async function connectRedisClient(logger?: winston.Logger, url = REDIS_UR
 
   let redisClient: RedisClient | undefined = undefined;
   try {
-    redisClient = createClient({ url, socket: { reconnectStrategy } });
+    redisClient = createClient({
+      url,
+      socket: {
+        reconnectStrategy,
+        // Enable TCP keepalive (initial delay 5s). node-redis v5's default is
+        // also 5_000, but we pin it explicitly to guard against config drift.
+        keepAlive: 5_000,
+      },
+      // Send a Redis-level PING every 30s when the connection is idle. This
+      // surfaces a half-open socket faster than TCP keepalive alone and keeps
+      // the connection warm against any intermediary (VPC connector / LB)
+      // that may evict idle TCP flows.
+      pingInterval: 30_000,
+    });
     redisClient.on("error", (err) => logger?.warn({ at: "RedisClient", message: "Redis error", cause: String(err) }));
     await redisClient.connect();
     return redisClient;
