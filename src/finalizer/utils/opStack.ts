@@ -150,6 +150,31 @@ const BLAST_YIELD_MANAGER_STARTING_REQUEST_ID = 1;
 export const chainIsBlast = (chainId: OVM_CHAIN_ID): boolean =>
   [CHAIN_IDs.BLAST, CHAIN_IDs.BLAST_SEPOLIA].includes(chainId);
 
+// Minimal dispute-game read surface for computing the dispute-game finality airgap.
+const DISPUTE_GAME_RESOLVED_AT_ABI = ["function resolvedAt() view returns (uint64)"];
+
+// For a proven-but-not-yet-finalizable Portal-2 withdrawal, return the L1 timestamp at which the
+// dispute-game finality airgap elapses (when finalization becomes possible), or undefined if the
+// backing game has not resolved yet (the airgap clock has not started).
+async function getDisputeGameFinalizableAt(
+  portal: Contract,
+  withdrawalHash: string,
+  signer: Signer
+): Promise<number | undefined> {
+  const numProofSubmitters: ethers.BigNumber = await portal.numProofSubmitters(withdrawalHash);
+  const proofSubmitter: string = await portal.proofSubmitters(withdrawalHash, numProofSubmitters.sub(1));
+  const { disputeGameProxy }: { disputeGameProxy: string } = await portal.provenWithdrawals(
+    withdrawalHash,
+    proofSubmitter
+  );
+  const game = new Contract(disputeGameProxy, DISPUTE_GAME_RESOLVED_AT_ABI, signer);
+  const [resolvedAt, finalityDelay]: [ethers.BigNumber, ethers.BigNumber] = await Promise.all([
+    game.resolvedAt(),
+    portal.disputeGameFinalityDelaySeconds(),
+  ]);
+  return resolvedAt.isZero() ? undefined : resolvedAt.toNumber() + finalityDelay.toNumber();
+}
+
 export async function opStackFinalizer(
   logger: winston.Logger,
   signer: Signer,
@@ -411,6 +436,9 @@ async function viem_multicallOptimismFinalizations(
   const chain: undefined = undefined; // Needed for viem OP type resolution.
   const withdrawalStatuses: string[] = [];
 
+  // Portal version gates the dispute-game finality airgap read (Portal-2, major >= 3).
+  const portalMajorVersion = Number((await crossChainMessenger.version()).split(".")[0]);
+
   // Pass as targetChain to viem OP-stack functions. Viem looks up L2 contracts
   // using l1Chain.id (sourceId) and uses custom decoders from targetChain.custom
   // for MegaETH.
@@ -459,17 +487,41 @@ async function viem_multicallOptimismFinalizations(
         });
       }
     } else if (withdrawalStatus === "waiting-to-finalize") {
-      const { seconds } = await getTimeToFinalize(publicClientL1, {
+      // Proof-maturity clock — the only clock viem's getTimeToFinalize measures.
+      const { seconds: proofMaturitySeconds } = await getTimeToFinalize(publicClientL1, {
         chain,
         withdrawalHash: withdrawal.withdrawalHash,
         targetChain,
       });
-      logger.debug({
-        at: `${getNetworkName(chainId)}Finalizer`,
-        message: `Withdrawal ${event.txnRef} for ${amountFromWei} of ${symbol} is in challenge period for ${(
-          seconds / 3600
-        ).toFixed(2)} hours`,
-      });
+      const prefix = `Withdrawal ${event.txnRef} for ${amountFromWei} of ${symbol}`;
+      // Portal-2 (fault-proof) chains gate finalization on a second clock getTimeToFinalize ignores:
+      // the dispute-game finality airgap, which only starts once the backing game resolves. Without
+      // it, a matured proof logs "0.00 hours" while the withdrawal is still airgapped. Report the
+      // real finalization ETA for Portal-2; keep the proof-maturity countdown for legacy portals.
+      if (portalMajorVersion < 3) {
+        logger.debug({
+          at: `${getNetworkName(chainId)}Finalizer`,
+          message: `${prefix} is in challenge period for ${(proofMaturitySeconds / 3600).toFixed(2)} hours`,
+        });
+      } else {
+        const finalizableAt = await getDisputeGameFinalizableAt(crossChainMessenger, withdrawal.withdrawalHash, signer);
+        if (!isDefined(finalizableAt)) {
+          logger.debug({
+            at: `${getNetworkName(chainId)}Finalizer`,
+            message: `${prefix} is waiting on dispute-game resolution (airgap not yet started)`,
+          });
+        } else {
+          const secondsRemaining = Math.max(proofMaturitySeconds, finalizableAt - getCurrentTime(), 0);
+          const finalizableInHours = Number((secondsRemaining / 3600).toFixed(2));
+          const finalizableAtIso = new Date(finalizableAt * 1000).toISOString();
+          logger.debug({
+            at: `${getNetworkName(chainId)}Finalizer`,
+            message: `${prefix} is in dispute-game airgap; finalizable in ${finalizableInHours} hours (at ${finalizableAtIso})`,
+            finalizableInHours,
+            finalizableAt: finalizableAtIso,
+          });
+        }
+      }
     } else if (withdrawalStatus === "ready-to-finalize") {
       // @dev Some OpStack chains use OptimismPortal instead of the newer OptimismPortal2, the latter of which
       // requires that the msg.sender of the  finalizeWithdrawalTransaction is equal to the address that
@@ -477,9 +529,10 @@ async function viem_multicallOptimismFinalizations(
       // See this comment in OptimismPortal2 for more context on why the new portal requires checking the
       // proof submitter address: https://github.com/ethereum-optimism/optimism/blob/d6bda0339005d98c992c749c137938d515755029/packages/contracts-bedrock/src/L1/OptimismPortal2.sol#L132
       let callData: ethers.PopulatedTransaction;
-      const portalVersion: string = await crossChainMessenger.version();
-      const majorVersion = Number(portalVersion.split(".")[0]);
-      if (majorVersion > 3) {
+      // Portal-2 (major >= 3) requires the proof submitter be passed explicitly, since proofs may be
+      // submitted by an address other than the finalizer (e.g. Multicall3 on MegaETH). The legacy
+      // OptimismPortal path keys the proof off msg.sender. Boundary matches viem (major < 3 = legacy).
+      if (portalMajorVersion >= 3) {
         // Calling OptimismPortal2: https://github.com/ethereum-optimism/optimism/blob/d6bda0339005d98c992c749c137938d515755029/packages/contracts-bedrock/src/L1/OptimismPortal2.sol
         const numProofSubmitters = await crossChainMessenger.numProofSubmitters(withdrawal.withdrawalHash);
         const proofSubmitter = await crossChainMessenger.proofSubmitters(
