@@ -99,9 +99,8 @@ export function isExclusivityRelative(exclusivityParameter: number): boolean {
  * @param chainId The chain ID where the token resides
  */
 export function isStablecoin(token: Address, chainId: number): boolean {
-  return [TOKEN_SYMBOLS_MAP.USDC, TOKEN_SYMBOLS_MAP.USDT].some(({ addresses }) =>
-    token.eq(toAddressType(addresses[chainId], chainId))
-  );
+  const symbol = getTokenSymbol(token, chainId);
+  return symbol === TOKEN_SYMBOLS_MAP.USDC.symbol || symbol === TOKEN_SYMBOLS_MAP.USDT.symbol;
 }
 
 /**
