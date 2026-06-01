@@ -80,21 +80,35 @@ describe("DepositAddressUtils", function () {
     expect(normalized.erc20Transfer.amount).to.equal("500000");
   });
 
-  it("toAddressType().toNative() returns chain-native strings for swap API params", function () {
+  it("toAddressType().toNative() returns chain-native strings for swap and withdraw API params", function () {
     const raw = tronOriginIndexerMessage();
     const normalized = normalizeDepositAddressMessage(raw);
+    const originChainId = Number(normalized.routeParams.originChainId);
+    const refundChainId = Number(normalized.erc20Transfer.chainId);
 
-    expect(toAddressType(normalized.depositAddress, CHAIN_IDs.TRON).toNative()).to.equal(raw.depositAddress);
-    expect(toAddressType(normalized.routeParams.inputToken, CHAIN_IDs.TRON).toNative()).to.equal(
+    // Swap API (Tron origin).
+    expect(toAddressType(normalized.depositAddress, originChainId).toNative()).to.equal(raw.depositAddress);
+    expect(toAddressType(normalized.routeParams.inputToken, originChainId).toNative()).to.equal(
       raw.routeParams.inputToken
     );
-    expect(toAddressType(normalized.routeParams.refundAddress, CHAIN_IDs.TRON).toNative()).to.equal(
+    expect(toAddressType(normalized.routeParams.refundAddress, originChainId).toNative()).to.equal(
       raw.routeParams.refundAddress
     );
-
     expect(toAddressType(normalized.routeParams.recipient, CHAIN_IDs.BASE).toNative()).to.equal(
       normalized.routeParams.recipient
     );
+
+    // Signed-withdraw API (Tron refund chain; origin matches for this fixture).
+    expect(toAddressType(normalized.depositAddress, refundChainId).toNative()).to.equal(raw.depositAddress);
+    expect(toAddressType(normalized.erc20Transfer.contractAddress, refundChainId).toNative()).to.equal(
+      raw.erc20Transfer.contractAddress
+    );
+    expect(toAddressType(normalized.routeParams.refundAddress, originChainId).toNative()).to.equal(
+      raw.routeParams.refundAddress
+    );
+    expect(
+      toAddressType(normalized.counterfactualMaterials.withdrawLeaf.implementationAddress, originChainId).toNative()
+    ).to.match(/^T/);
   });
 
   it("getDepositKey uses normalized deposit address after indexer remap", function () {

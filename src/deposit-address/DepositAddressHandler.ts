@@ -477,15 +477,17 @@ export class DepositAddressHandler {
       });
       return undefined;
     }
+    const refundChainId = Number(chainId);
+    // Quote API expects chain-native address strings (e.g. Tron base58 on TVM refund chains).
     // `_post` swallows errors and returns undefined, so retry on both throw and falsy return.
     try {
       const result = await this.api.signedWithdraw({
-        chainId: Number(chainId),
-        depositAddress,
-        token,
+        chainId: refundChainId,
+        depositAddress: toAddressType(depositAddress, refundChainId).toNative(),
+        token: toAddressType(token, refundChainId).toNative(),
         amount,
-        user: routeParams.refundAddress,
-        withdrawImplementation: withdrawLeaf.implementationAddress,
+        user: toAddressType(routeParams.refundAddress, refundChainId).toNative(),
+        withdrawImplementation: toAddressType(withdrawLeaf.implementationAddress, refundChainId).toNative(),
         proof: withdrawLeaf.merkleProof,
         salt,
         merkleRoot: paramsHash,
