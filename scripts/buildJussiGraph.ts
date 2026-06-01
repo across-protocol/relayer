@@ -4,17 +4,23 @@ import util from "util";
 import winston from "winston";
 import { version } from "../package.json";
 import { updateSpokePoolClients } from "../src/common";
-import { buildJussiGraphEnvelope, buildJussiGraphJson, buildJussiRateLimitBucketsJson } from "../src/jussi/serialize";
-import { JUSSI_LOGICAL_ASSETS } from "../src/jussi/constants";
+import {
+  buildJussiGraphEnvelope,
+  buildJussiGraphJson,
+  buildJussiRateLimitBucketsJson,
+  JUSSI_LOGICAL_ASSETS,
+  JussiGraphJson,
+  LogicalAsset,
+  PreparedGraphTopology,
+  prepareGraphTopology,
+  runFullBuild,
+} from "../src/jussi/buildGraph";
 import { JussiApiClient } from "../src/jussi/JussiApiClient";
 import {
   compareTopologyFingerprintWithRedis,
   JussiGraphPublisher,
   validateJussiUploadEnv,
 } from "../src/jussi/JussiGraphPublisher";
-import { runFullBuild } from "../src/jussi/economics/enrichEconomics";
-import { prepareGraphTopology } from "../src/jussi/prepareGraphTopology";
-import { JussiGraphJson, LogicalAsset, PreparedGraphTopology } from "../src/jussi/types";
 import { getRedisCache } from "../src/cache/Redis";
 import { getAcrossHost } from "../src/clients/AcrossAPIClient";
 import { constructRelayerClients } from "../src/relayer/RelayerClientHelper";

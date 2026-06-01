@@ -8,6 +8,7 @@ import {
   BuiltJussiGraph,
   ManagedNodeContext,
   buildJussiGraphBundleJson,
+  buildJussiGraphUploadBundleFromGraph,
   buildBridgeEdgeCandidates,
   buildCumulativeBalancePainDefinitions,
   buildJussiGraphDefinition,
@@ -29,9 +30,9 @@ import {
   resolveRequiredNativePriceChains,
   RuntimePricingContext,
   buildTopology,
+  bundleHash,
+  topologyFingerprint,
 } from "../src/jussi/buildGraph";
-import { topologyFingerprint } from "../src/jussi/topology/fingerprint";
-import { bundleHash } from "../src/jussi/serialize";
 import { JussiApiClient, putJsonWithTimeout } from "../src/jussi/JussiApiClient";
 import {
   compareTopologyFingerprintWithRedis,
@@ -829,6 +830,17 @@ describe("Jussi graph builder helpers", function () {
       rate_limit_buckets: [],
     });
     expect(Object.keys(envelope)).to.deep.equal(["graph_id", "payload"]);
+  });
+
+  it("builds the upload-facing bundle shape from a built graph", async function () {
+    const graph = buildMinimalGraph("test-graph");
+    const uploadBundle = buildJussiGraphUploadBundleFromGraph(graph);
+
+    expect(uploadBundle.graphId).to.equal("test-graph");
+    expect(uploadBundle.graph).to.equal(graph);
+    expect(uploadBundle.bundle).to.deep.equal(buildJussiGraphBundleJson(graph));
+    expect(uploadBundle.envelope).to.deep.equal(buildJussiGraphEnvelope(graph));
+    expect(uploadBundle.bundleHash).to.equal(bundleHash(uploadBundle.bundle));
   });
 
   it("fingerprints the final deduped topology and deterministic payload policy", async function () {
