@@ -34,6 +34,7 @@ import {
   isSVMSpokePoolClient,
   getSpokePoolAddress,
   chainIsEvm,
+  chainIsTvm,
   chainIsSvm,
   EvmAddress,
   Address,
