@@ -39,9 +39,10 @@ export async function connectRedisClient(logger?: winston.Logger, url = REDIS_UR
       url,
       socket: {
         reconnectStrategy,
-        // Enable TCP keepalive (initial delay 5s). node-redis v5's default is
-        // also 5_000, but we pin it explicitly to guard against config drift.
-        keepAlive: 5_000,
+        // Enable TCP keepalive with an explicit 5s initial delay. node-redis v5
+        // defaults to the same value, but we pin it to guard against drift.
+        keepAlive: true,
+        keepAliveInitialDelay: 5_000,
       },
       // Send a Redis-level PING every 30s when the connection is idle. This
       // surfaces a half-open socket faster than TCP keepalive alone and keeps
