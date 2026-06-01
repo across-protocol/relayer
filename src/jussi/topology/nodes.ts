@@ -1,2 +1,213 @@
-export { buildManagedNodeTemplates, canonicalNodeKey, materializeNodeDefinitions } from "../GraphBuilder";
-export type { ManagedNodeContext, ManagedNodeTemplate } from "../types";
+import { InventoryConfig, TokenBalanceConfig, isAliasConfig } from "../../interfaces/InventoryManagement";
+import {
+  assert,
+  bnZero,
+  formatUnits,
+  getTokenInfo,
+  getTokenInfoFromSymbol,
+  isDefined,
+  toAddressType,
+  toBNWei,
+} from "../../utils";
+import { DEFAULT_HUB_POOL_CHAIN_ID, JUSSI_LOGICAL_ASSETS } from "../constants";
+import type {
+  JussiNodeDefinition,
+  LogicalAsset,
+  ManagedNodeContext,
+  ManagedNodeRatios,
+  ManagedNodeTemplate,
+} from "../types";
+
+export function canonicalNodeKey(chainId: number, tokenAddress: string): string {
+  return `evm:${chainId}:${tokenAddress.toLowerCase()}`;
+}
+
+export function buildManagedNodeTemplates(
+  inventoryConfig: InventoryConfig,
+  hubChainId = DEFAULT_HUB_POOL_CHAIN_ID
+): ManagedNodeTemplate[] {
+  const templates = new Map<string, ManagedNodeTemplate>();
+
+  const addTemplate = (template: ManagedNodeTemplate) => {
+    const nodeKey = canonicalNodeKey(template.chainId, template.tokenAddress);
+    templates.set(nodeKey, template);
+  };
+
+  for (const logicalAsset of JUSSI_LOGICAL_ASSETS) {
+    const hubTokenInfo = getTokenInfoFromSymbol(logicalAsset, hubChainId);
+    addTemplate({
+      chainId: hubChainId,
+      tokenAddress: hubTokenInfo.address.toNative(),
+      symbol: hubTokenInfo.symbol,
+      logicalAsset,
+      decimals: hubTokenInfo.decimals,
+      managed: false,
+    });
+
+    const tokenConfig = inventoryConfig.tokenConfig?.[hubTokenInfo.address.toNative()];
+    if (!isDefined(tokenConfig)) {
+      continue;
+    }
+
+    if (isAliasConfig(tokenConfig)) {
+      Object.entries(tokenConfig).forEach(([spokeTokenAddress, chainConfig]) => {
+        Object.entries(chainConfig).forEach(([chainIdString, balanceConfig]) => {
+          const chainId = Number(chainIdString);
+          const tokenInfo = getTokenInfo(toAddressType(spokeTokenAddress, chainId), chainId);
+          addTemplate({
+            chainId,
+            tokenAddress: spokeTokenAddress,
+            symbol: tokenInfo.symbol,
+            logicalAsset,
+            decimals: tokenInfo.decimals,
+            tokenConfig: balanceConfig,
+            managed: true,
+          });
+        });
+      });
+      continue;
+    }
+
+    Object.entries(tokenConfig).forEach(([chainIdString, balanceConfig]) => {
+      const chainId = Number(chainIdString);
+      const tokenInfo = getTokenInfoFromSymbol(logicalAsset, chainId);
+      addTemplate({
+        chainId,
+        tokenAddress: tokenInfo.address.toNative(),
+        symbol: tokenInfo.symbol,
+        logicalAsset,
+        decimals: tokenInfo.decimals,
+        tokenConfig: balanceConfig,
+        managed: true,
+      });
+    });
+  }
+
+  return Array.from(templates.values()).sort((a, b) => a.chainId - b.chainId || a.symbol.localeCompare(b.symbol));
+}
+
+export function materializeNodeDefinitions(templates: ManagedNodeTemplate[]): ManagedNodeContext[] {
+  const managedNodeRatios = resolveManagedNodeRatios(templates);
+  return templates.map((template) => {
+    const nodeKey = canonicalNodeKey(template.chainId, template.tokenAddress);
+    const definition = template.managed
+      ? buildManagedNodeDefinition(template, managedNodeRatios.get(nodeKey))
+      : buildNeutralNodeDefinition(template);
+
+    return {
+      ...template,
+      nodeKey,
+      definition: {
+        ...definition,
+        node_key: nodeKey,
+      },
+    };
+  });
+}
+
+function resolveManagedNodeRatios(templates: ManagedNodeTemplate[]): Map<string, ManagedNodeRatios> {
+  type ManagedNodeTemplateWithTokenConfig = ManagedNodeTemplate & { tokenConfig: TokenBalanceConfig };
+  const managedTemplatesByLogicalAsset = new Map<LogicalAsset, ManagedNodeTemplateWithTokenConfig[]>();
+  templates
+    .filter(
+      (template): template is ManagedNodeTemplateWithTokenConfig => template.managed && isDefined(template.tokenConfig)
+    )
+    .forEach((template) => {
+      const existing = managedTemplatesByLogicalAsset.get(template.logicalAsset) ?? [];
+      existing.push(template);
+      managedTemplatesByLogicalAsset.set(template.logicalAsset, existing);
+    });
+  const normalizedRatios = new Map<string, ManagedNodeRatios>();
+  const unitRatio = toBNWei(1);
+
+  Array.from(managedTemplatesByLogicalAsset.values()).forEach((logicalAssetTemplates) => {
+    const totalTargetAllocation = logicalAssetTemplates.reduce(
+      (sum, template) => sum.add(template.tokenConfig.targetPct),
+      bnZero
+    );
+
+    if (totalTargetAllocation.eq(0)) {
+      logicalAssetTemplates.forEach((template) => {
+        normalizedRatios.set(canonicalNodeKey(template.chainId, template.tokenAddress), {
+          targetAllocationRatio: bnZero,
+          minAllocationRatio: bnZero,
+          maxAllocationRatio: bnZero,
+        });
+      });
+      return;
+    }
+
+    const positiveTargetTemplates = logicalAssetTemplates.filter((template) => template.tokenConfig.targetPct.gt(0));
+    let assignedTargetAllocation = bnZero;
+
+    positiveTargetTemplates.forEach((template, index) => {
+      const tokenConfig = template.tokenConfig;
+      const rawMaxAllocation = tokenConfig.targetPct.mul(tokenConfig.targetOverageBuffer).div(unitRatio);
+      const isLastPositiveTarget = index === positiveTargetTemplates.length - 1;
+      const targetAllocationRatio = isLastPositiveTarget
+        ? unitRatio.sub(assignedTargetAllocation)
+        : tokenConfig.targetPct.mul(unitRatio).div(totalTargetAllocation);
+      const minAllocationRatio = tokenConfig.thresholdPct.mul(unitRatio).div(totalTargetAllocation);
+      const maxAllocationRatio = rawMaxAllocation.mul(unitRatio).div(totalTargetAllocation);
+
+      assignedTargetAllocation = assignedTargetAllocation.add(targetAllocationRatio);
+      normalizedRatios.set(canonicalNodeKey(template.chainId, template.tokenAddress), {
+        targetAllocationRatio,
+        minAllocationRatio: minAllocationRatio.gt(targetAllocationRatio) ? targetAllocationRatio : minAllocationRatio,
+        maxAllocationRatio: maxAllocationRatio.lt(targetAllocationRatio) ? targetAllocationRatio : maxAllocationRatio,
+      });
+    });
+
+    logicalAssetTemplates
+      .filter((template) => template.tokenConfig.targetPct.eq(0))
+      .forEach((template) => {
+        normalizedRatios.set(canonicalNodeKey(template.chainId, template.tokenAddress), {
+          targetAllocationRatio: bnZero,
+          minAllocationRatio: bnZero,
+          maxAllocationRatio: bnZero,
+        });
+      });
+  });
+
+  return normalizedRatios;
+}
+
+function buildManagedNodeDefinition(template: ManagedNodeTemplate, ratios?: ManagedNodeRatios): JussiNodeDefinition {
+  assert(
+    isDefined(template.tokenConfig),
+    `Managed node ${template.symbol} on ${template.chainId} is missing token config`
+  );
+  const normalizedRatios = ratios ?? {
+    targetAllocationRatio: template.tokenConfig.targetPct,
+    minAllocationRatio: template.tokenConfig.thresholdPct,
+    maxAllocationRatio: template.tokenConfig.targetPct.mul(template.tokenConfig.targetOverageBuffer).div(toBNWei(1)),
+  };
+
+  return {
+    node_key: "",
+    chain_id: template.chainId,
+    token_address: template.tokenAddress,
+    symbol: template.symbol,
+    logical_asset: template.logicalAsset,
+    decimals: template.decimals,
+    target_allocation_ratio: formatUnits(normalizedRatios.targetAllocationRatio, 18),
+    min_allocation_ratio: formatUnits(normalizedRatios.minAllocationRatio, 18),
+    max_allocation_ratio: formatUnits(normalizedRatios.maxAllocationRatio, 18),
+  };
+}
+
+function buildNeutralNodeDefinition(template: ManagedNodeTemplate): JussiNodeDefinition {
+  return {
+    node_key: "",
+    chain_id: template.chainId,
+    token_address: template.tokenAddress,
+    symbol: template.symbol,
+    logical_asset: template.logicalAsset,
+    decimals: template.decimals,
+    target_allocation_ratio: "0",
+    min_allocation_ratio: "0",
+    max_allocation_ratio: "0",
+    shortage_cost_usd_per_unit_time: "0",
+    surplus_cost_usd_per_unit_time: "0",
+  };
+}

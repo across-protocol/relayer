@@ -1,21 +1,44 @@
 import { createHash } from "node:crypto";
 import { BigNumber } from "../utils";
-import {
-  buildJussiGraphBundleJson,
-  buildJussiGraphEnvelope,
-  buildJussiGraphId,
-  buildJussiGraphJson,
-  buildJussiRateLimitBucketsJson,
-} from "./GraphBuilder";
-import { JussiPutGraphBundleRequest } from "./types";
+import type {
+  BuiltJussiGraph,
+  JussiGraphBundleJson,
+  JussiGraphEnvelope,
+  JussiGraphJson,
+  JussiGraphRateLimitBucketsJson,
+  JussiPutGraphBundleRequest,
+} from "./types";
 
-export {
-  buildJussiGraphBundleJson,
-  buildJussiGraphEnvelope,
-  buildJussiGraphId,
-  buildJussiGraphJson,
-  buildJussiRateLimitBucketsJson,
-};
+export function buildJussiGraphId(now = new Date()): string {
+  return `usdc-usdt-weth-${now
+    .toISOString()
+    .replace(/[-:]/g, "")
+    .replace(/\.\d{3}Z$/, "Z")}`;
+}
+
+export function buildJussiGraphEnvelope(graph: BuiltJussiGraph): JussiGraphEnvelope {
+  return {
+    graph_id: graph.graphId,
+    payload: buildJussiGraphBundleJson(graph),
+  };
+}
+
+export function buildJussiGraphJson(graph: BuiltJussiGraph): JussiGraphJson {
+  return graph.payload;
+}
+
+export function buildJussiGraphBundleJson(graph: BuiltJussiGraph): JussiGraphBundleJson {
+  return {
+    graph: buildJussiGraphJson(graph),
+    rate_limit_buckets: graph.rate_limit_buckets,
+  };
+}
+
+export function buildJussiRateLimitBucketsJson(graph: BuiltJussiGraph): JussiGraphRateLimitBucketsJson {
+  return {
+    rate_limit_buckets: graph.rate_limit_buckets,
+  };
+}
 
 export function canonicalizeJson(value: unknown): unknown {
   if (BigNumber.isBigNumber(value)) {

@@ -12,7 +12,7 @@ import {
   JussiGraphPublisher,
   validateJussiUploadEnv,
 } from "../src/jussi/JussiGraphPublisher";
-import { runFullBuild } from "../src/jussi/GraphBuilder";
+import { runFullBuild } from "../src/jussi/economics/enrichEconomics";
 import { prepareGraphTopology } from "../src/jussi/prepareGraphTopology";
 import { JussiGraphJson, LogicalAsset, PreparedGraphTopology } from "../src/jussi/types";
 import { getRedisCache } from "../src/cache/Redis";
