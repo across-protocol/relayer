@@ -5,7 +5,7 @@ import { PublicKey } from "@solana/web3.js";
 import { expect } from "chai";
 import { arch, clients } from "@across-protocol/sdk";
 import { createDefaultSolanaClient, encodePauseDepositsMessageBody } from "./utils/svm/utils";
-import { signer } from "./Solana.setup";
+import { setupSolana, SolanaSigner, teardownSolana } from "./Solana.setup";
 import { finalizeCCTPV1MessagesSVM } from "../src/finalizer/utils/cctp/svmUtils";
 import { cctpV1L1toSvmL2Finalizer } from "../src/finalizer/utils/cctp/l1ToSvmL2";
 import { AttestedCCTPMessage, ZERO_ADDRESS, EvmAddress } from "../src/utils";
@@ -81,6 +81,17 @@ describe("finalizeCCTPV1Messages", () => {
   const solanaClient = createDefaultSolanaClient() as ExtendedSolanaClient;
   const { spyLogger } = createSpyLogger();
   let hubPoolClient: clients.HubPoolClient;
+  let signer: SolanaSigner;
+
+  before(async function () {
+    // Local validator spin-up can take a few seconds.
+    this.timeout(60_000);
+    signer = await setupSolana();
+  });
+
+  after(() => {
+    teardownSolana();
+  });
 
   beforeEach(async function () {
     ({ hubPoolClient } = await setupDataworker(ethers, 25, 25, 0));
@@ -315,9 +326,6 @@ describe("finalizeCCTPV1Messages", () => {
 
     const testMessages = await getAttestedMessage(encodePauseDepositsMessageBody(true), 200, 0, 5);
     sinon.stub(CCTPUtils, "getCctpV1Messages").resolves(testMessages);
-    sinon.stub(CCTPUtils, "getCctpV1MessageTransmitter").returns({
-      address: "CCTPmbSD7gX1bxKPAmg77w8oFzNFpaQiQUWD43TKaecd",
-    });
     sinon.stub(svmSignerUtils, "getKitKeypairFromEvmSigner").resolves(signer);
 
     let originalSendTransactions: string | undefined;
@@ -381,9 +389,6 @@ describe("finalizeCCTPV1Messages", () => {
     // Create a test message
     const testMessages = await getAttestedMessage(encodePauseDepositsMessageBody(true), 200, 0, 5);
     sinon.stub(CCTPUtils, "getCctpV1Messages").resolves(testMessages);
-    sinon.stub(CCTPUtils, "getCctpV1MessageTransmitter").returns({
-      address: "CCTPmbSD7gX1bxKPAmg77w8oFzNFpaQiQUWD43TKaecd",
-    });
     sinon.stub(svmSignerUtils, "getKitKeypairFromEvmSigner").resolves(signer);
 
     let originalSendTransactions: string | undefined;
@@ -445,9 +450,6 @@ describe("finalizeCCTPV1Messages", () => {
     // This test is trying to handle empty message list.
     // It tests cctpL1toL2Finalizer function.
     sinon.stub(CCTPUtils, "getCctpV1Messages").resolves([]);
-    sinon.stub(CCTPUtils, "getCctpV1MessageTransmitter").returns({
-      address: "CCTPmbSD7gX1bxKPAmg77w8oFzNFpaQiQUWD43TKaecd",
-    });
     sinon.stub(svmSignerUtils, "getKitKeypairFromEvmSigner").resolves(signer);
 
     let originalSendTransactions: string | undefined;
@@ -516,9 +518,6 @@ describe("finalizeCCTPV1Messages", () => {
     const mixedMessages = [...depositMessage, ...tokenlessMessage];
 
     sinon.stub(CCTPUtils, "getCctpV1Messages").resolves(mixedMessages);
-    sinon.stub(CCTPUtils, "getCctpV1MessageTransmitter").returns({
-      address: "CCTPmbSD7gX1bxKPAmg77w8oFzNFpaQiQUWD43TKaecd",
-    });
     sinon.stub(svmSignerUtils, "getKitKeypairFromEvmSigner").resolves(signer);
 
     let originalSendTransactions: string | undefined;

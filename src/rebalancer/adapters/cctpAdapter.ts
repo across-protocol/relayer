@@ -10,12 +10,10 @@ import {
   getCctpDomainForChainId,
   ethers,
   getNetworkName,
-  getCctpV2TokenMessenger,
   Contract,
   getProvider,
   getCctpDestinationChainFromDomain,
   chainIsProd,
-  getCctpV2MessageTransmitter,
   forEachAsync,
   MAX_SAFE_ALLOWANCE,
   toBN,
@@ -23,10 +21,12 @@ import {
   isDefined,
   EvmAddress,
 } from "../../utils";
-import { CCTP_MAX_SEND_AMOUNT } from "../../common";
+import { CCTP_MAX_SEND_AMOUNT, CONTRACT_ADDRESSES, getContractEntry } from "../../common";
 import { PRODUCTION_NETWORKS, CCTP_NO_DOMAIN } from "@across-protocol/constants";
 import { utils } from "@across-protocol/sdk";
 import { MultiCallerClient } from "../../clients/MultiCallerClient";
+
+type CctpAttestationMessage = Awaited<ReturnType<typeof utils.fetchCctpV2Attestations>>[string]["messages"][number];
 
 export class CctpAdapter extends BaseAdapter {
   REDIS_PREFIX = CCTP_PENDING_BRIDGE_REDIS_PREFIX;
@@ -40,9 +40,9 @@ export class CctpAdapter extends BaseAdapter {
     this.availableRoutes.forEach((route) => {
       assert(
         PRODUCTION_NETWORKS[route.sourceChain].cctpDomain !== CCTP_NO_DOMAIN &&
-          isDefined(getCctpV2TokenMessenger(route.sourceChain)?.address) &&
+          isDefined(CONTRACT_ADDRESSES[route.sourceChain]?.cctpV2TokenMessenger?.address) &&
           PRODUCTION_NETWORKS[route.destinationChain].cctpDomain !== CCTP_NO_DOMAIN &&
-          isDefined(getCctpV2TokenMessenger(route.destinationChain)?.address),
+          isDefined(CONTRACT_ADDRESSES[route.destinationChain]?.cctpV2TokenMessenger?.address),
         `CCTP bridge is not supported for route ${route.sourceChain} -> ${route.destinationChain}`
       );
     });
@@ -50,18 +50,19 @@ export class CctpAdapter extends BaseAdapter {
 
   async setApprovals(): Promise<void> {
     this._assertInitialized();
-    this.multicallerClient = new MultiCallerClient(this.logger, this.config.multiCallChunkSize, this.baseSigner);
+    const multicallerClient = new MultiCallerClient(this.logger, this.config.multiCallChunkSize, this.baseSigner);
+    this.multicallerClient = multicallerClient;
 
     // Set Bridge allowances:
     const allChains = new Set<number>([...this.allSourceChains, ...this.allDestinationChains]);
     await forEachAsync(Array.from(allChains), async (chainId) => {
       const connectedSigner = this.baseSigner.connect(await getProvider(chainId));
-      if (getCctpV2TokenMessenger(chainId)?.address) {
+      if (CONTRACT_ADDRESSES[chainId]?.cctpV2TokenMessenger?.address) {
         const usdc = new Contract(this._getTokenInfo("USDC", chainId).address.toNative(), ERC20.abi, connectedSigner);
         const cctpMessenger = await this._getCctpMessenger(chainId);
         const cctpAllowance = await usdc.allowance(this.baseSignerAddress.toNative(), cctpMessenger.address);
         if (cctpAllowance.lt(toBN(MAX_SAFE_ALLOWANCE).div(2))) {
-          this.multicallerClient.enqueueTransaction({
+          multicallerClient.enqueueTransaction({
             contract: usdc,
             chainId,
             method: "approve",
@@ -76,7 +77,7 @@ export class CctpAdapter extends BaseAdapter {
     });
 
     const simMode = !this.config.sendingTransactionsEnabled;
-    await this.multicallerClient.executeTxnQueues(simMode);
+    await multicallerClient.executeTxnQueues(simMode);
   }
 
   async initializeRebalance(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber): Promise<BigNumber> {
@@ -111,7 +112,7 @@ export class CctpAdapter extends BaseAdapter {
     for (const cloid of pendingBridges) {
       const [sourceChainId, txnHash] = cloid.split("-");
       const attestation = await this._getCctpAttestation(txnHash, Number(sourceChainId));
-      if (utils.getPendingAttestationStatus(attestation) === "pending") {
+      if (!isDefined(attestation) || utils.getPendingAttestationStatus(attestation) === "pending") {
         continue;
       }
 
@@ -120,7 +121,7 @@ export class CctpAdapter extends BaseAdapter {
         attestation.decodedMessage.destinationDomain,
         chainIsProd(Number(sourceChainId))
       );
-      const { address, abi } = getCctpV2MessageTransmitter(destinationChainId);
+      const { address, abi } = getContractEntry(destinationChainId, "cctpV2MessageTransmitter");
       const destinationMessageTransmitter = new Contract(address, abi, await getProvider(destinationChainId));
       const processed = await utils.hasCCTPMessageBeenProcessedEvm(
         attestation.eventNonce,
@@ -159,12 +160,12 @@ export class CctpAdapter extends BaseAdapter {
       const [sourceChainId, txnHash] = cloid.split("-");
       // Check if order has already been finalized if its no longer "pending"
       const attestation = await this._getCctpAttestation(txnHash, Number(sourceChainId));
-      if (utils.getPendingAttestationStatus(attestation) !== "pending") {
+      if (isDefined(attestation) && utils.getPendingAttestationStatus(attestation) !== "pending") {
         const destinationChainId = getCctpDestinationChainFromDomain(
           attestation.decodedMessage.destinationDomain,
           chainIsProd(Number(sourceChainId))
         );
-        const { address, abi } = getCctpV2MessageTransmitter(destinationChainId);
+        const { address, abi } = getContractEntry(destinationChainId, "cctpV2MessageTransmitter");
         const destinationMessageTransmitter = new Contract(address, abi, await getProvider(destinationChainId));
         const processed = await utils.hasCCTPMessageBeenProcessedEvm(
           attestation.eventNonce,
@@ -178,7 +179,7 @@ export class CctpAdapter extends BaseAdapter {
           continue;
         }
       }
-      const pendingOrderDetails = await this._redisGetOrderDetails(cloid, account);
+      const pendingOrderDetails = await this._redisGetOrderDetailsRequired(cloid, account);
       const { destinationChain, amountToTransfer } = pendingOrderDetails;
       pendingRebalances[destinationChain] ??= {};
       pendingRebalances[destinationChain]["USDC"] = (pendingRebalances[destinationChain]?.["USDC"] ?? bnZero).add(
@@ -281,16 +282,16 @@ export class CctpAdapter extends BaseAdapter {
   }
 
   protected async _getCctpMessenger(chainId: number): Promise<Contract> {
-    const cctpMessengerAddress = getCctpV2TokenMessenger(chainId);
+    const { address, abi } = getContractEntry(chainId, "cctpV2TokenMessenger");
     const originProvider = await getProvider(chainId);
-    return new Contract(
-      cctpMessengerAddress.address,
-      cctpMessengerAddress.abi,
-      this.baseSigner.connect(originProvider)
-    );
+    return new Contract(address, abi, this.baseSigner.connect(originProvider));
   }
 
-  private async _getCctpAttestation(txnHash: string, sourceChainId: number, retryCount = 0) {
+  private async _getCctpAttestation(
+    txnHash: string,
+    sourceChainId: number,
+    retryCount = 0
+  ): Promise<CctpAttestationMessage | undefined> {
     if (retryCount > 2) {
       this.logger.warn({
         at: "CctpAdapter._getCctpAttestation",

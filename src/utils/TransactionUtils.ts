@@ -1,8 +1,8 @@
 import { gasPriceOracle, typeguards, utils as sdkUtils } from "@across-protocol/sdk";
-import { FeeData } from "@ethersproject/abstract-provider";
 import dotenv from "dotenv";
 import { AugmentedTransaction, TransactionClient } from "../clients";
 import {
+  BigNumber,
   Contract,
   isDefined,
   TransactionResponse,
@@ -16,7 +16,12 @@ import {
   parseUnits,
   ZERO_ADDRESS,
 } from "../utils";
-import { getBase64EncodedWireTransaction, signTransactionMessageWithSigners, type MicroLamports } from "@solana/kit";
+import {
+  getBase64EncodedWireTransaction,
+  setTransactionMessageLifetimeUsingBlockhash,
+  signTransactionMessageWithSigners,
+  type MicroLamports,
+} from "@solana/kit";
 import { updateOrAppendSetComputeUnitPriceInstruction } from "@solana-program/compute-budget";
 
 dotenv.config();
@@ -38,12 +43,20 @@ export function getMultisender(chainId: number, baseSigner: Signer): Contract | 
   return sdkUtils.getMulticall3(chainId, baseSigner);
 }
 
-export async function signAndSendTransaction(provider: SVMProvider, _unsignedTxn: SolanaTransaction) {
+// Solana blockhashes expire after ~60s; refresh per tx.
+type SolanaUnsignedTransaction = Omit<SolanaTransaction, "lifetimeConstraint">;
+export async function withFreshBlockhash<T extends SolanaUnsignedTransaction>(provider: SVMProvider, tx: T) {
+  const { value: blockhash } = await provider.getLatestBlockhash().send();
+  return setTransactionMessageLifetimeUsingBlockhash(blockhash, tx);
+}
+
+export async function signAndSendTransaction(provider: SVMProvider, _unsignedTxn: SolanaUnsignedTransaction) {
   const priorityFeeOverride = process.env["SVM_PRIORITY_FEE_OVERRIDE"];
   const unsignedTxn = isDefined(priorityFeeOverride)
     ? updateOrAppendSetComputeUnitPriceInstruction(BigInt(priorityFeeOverride) as MicroLamports, _unsignedTxn)
     : _unsignedTxn;
-  const signedTransaction = await signTransactionMessageWithSigners(unsignedTxn);
+  const txWithFreshBlockhash = await withFreshBlockhash(provider, unsignedTxn);
+  const signedTransaction = await signTransactionMessageWithSigners(txWithFreshBlockhash);
   const serializedTx = getBase64EncodedWireTransaction(signedTransaction);
   return provider
     .sendTransaction(serializedTx, { preflightCommitment: "confirmed", skipPreflight: false, encoding: "base64" })
@@ -51,7 +64,7 @@ export async function signAndSendTransaction(provider: SVMProvider, _unsignedTxn
 }
 
 export async function sendAndConfirmSolanaTransaction(
-  unsignedTransaction: SolanaTransaction,
+  unsignedTransaction: SolanaUnsignedTransaction,
   provider: SVMProvider,
   cycles = 25,
   pollingDelay = 600 // 1.5 slots on Solana.
@@ -77,8 +90,9 @@ export async function sendAndConfirmSolanaTransaction(
   return txSignature;
 }
 
-export async function simulateSolanaTransaction(unsignedTransaction: SolanaTransaction, provider: SVMProvider) {
-  const signedTx = await signTransactionMessageWithSigners(unsignedTransaction);
+export async function simulateSolanaTransaction(unsignedTransaction: SolanaUnsignedTransaction, provider: SVMProvider) {
+  const txWithFreshBlockhash = await withFreshBlockhash(provider, unsignedTransaction);
+  const signedTx = await signTransactionMessageWithSigners(txWithFreshBlockhash);
   const serializedTx = getBase64EncodedWireTransaction(signedTx);
   return provider.simulateTransaction(serializedTx, { sigVerify: false, encoding: "base64" }).send();
 }
@@ -88,7 +102,7 @@ export async function getGasPrice(
   priorityScaler = 1.2,
   maxFeePerGasScaler = 3,
   transactionObject?: ethers.PopulatedTransaction
-): Promise<Pick<FeeData, "maxFeePerGas" | "maxPriorityFeePerGas">> {
+): Promise<{ maxFeePerGas: BigNumber; maxPriorityFeePerGas: BigNumber }> {
   const { chainId } = await provider.getNetwork();
 
   const maxFee = process.env[`MAX_FEE_PER_GAS_OVERRIDE_${chainId}`];

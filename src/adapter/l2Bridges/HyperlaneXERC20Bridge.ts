@@ -75,7 +75,7 @@ export class HyperlaneXERC20BridgeL2 extends BaseL2BridgeAdapter {
     const { decimals, symbol } = getTokenInfo(l2Token, this.l2chainId);
     const formatter = createFormatFunction(2, 4, false, decimals);
 
-    const fee: BigNumber = await this.l2Bridge.quoteGasPayment(this.destinationDomainId);
+    const fee: BigNumber = await this.getL2Bridge().quoteGasPayment(this.destinationDomainId);
     const feeCap = HYPERLANE_FEE_CAP_OVERRIDES[this.l2chainId] ?? HYPERLANE_DEFAULT_FEE_CAP;
     assert(
       fee.lte(feeCap),
@@ -85,7 +85,7 @@ export class HyperlaneXERC20BridgeL2 extends BaseL2BridgeAdapter {
     );
 
     const withdrawTxn: AugmentedTransaction = {
-      contract: this.l2Bridge,
+      contract: this.getL2Bridge(),
       chainId: this.l2chainId,
       method: "transferRemote",
       unpermissioned: false,
@@ -112,7 +112,7 @@ export class HyperlaneXERC20BridgeL2 extends BaseL2BridgeAdapter {
     }
 
     let recipientBytes32: string;
-    const isSpokePool = await isContractDeployedToAddress(fromAddress.toNative(), this.l2Bridge.provider);
+    const isSpokePool = await isContractDeployedToAddress(fromAddress.toNative(), this.getL2Bridge().provider);
     if (isSpokePool) {
       recipientBytes32 = this.hubPoolAddress.toBytes32();
     } else {
@@ -121,13 +121,13 @@ export class HyperlaneXERC20BridgeL2 extends BaseL2BridgeAdapter {
 
     const [withdrawalInitiatedEvents, withdrawalFinalizedEvents] = await Promise.all([
       paginatedEventQuery(
-        this.l2Bridge,
-        this.l2Bridge.filters.SentTransferRemote(this.destinationDomainId, recipientBytes32),
+        this.getL2Bridge(),
+        this.getL2Bridge().filters.SentTransferRemote(this.destinationDomainId, recipientBytes32),
         l2EventConfig
       ),
       paginatedEventQuery(
-        this.l1Bridge,
-        this.l1Bridge.filters.ReceivedTransferRemote(this.originDomainId, recipientBytes32),
+        this.getL1Bridge(),
+        this.getL1Bridge().filters.ReceivedTransferRemote(this.originDomainId, recipientBytes32),
         l1EventConfig
       ),
     ]);
@@ -157,7 +157,7 @@ export class HyperlaneXERC20BridgeL2 extends BaseL2BridgeAdapter {
     return [
       {
         token: this.l2Token,
-        bridge: EvmAddress.from(this.l2Bridge.address),
+        bridge: EvmAddress.from(this.getL2Bridge().address),
       },
     ];
   }

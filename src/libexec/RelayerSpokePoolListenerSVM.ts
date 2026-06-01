@@ -4,11 +4,9 @@ import { address, createSolanaRpcSubscriptions, RpcSubscriptions, SolanaRpcSubsc
 import { arch, typeguards } from "@across-protocol/sdk";
 import { SvmSpokeClient } from "@across-protocol/contracts";
 import { Log } from "../interfaces";
-import * as utils from "../../scripts/utils";
 import {
-  disconnectRedisClients,
+  abortableDelay,
   EventManager,
-  exit,
   isDefined,
   getBlockForTimestamp,
   getChainQuorum,
@@ -17,19 +15,19 @@ import {
   getNetworkName,
   getNodeUrlList,
   getOriginFromURL,
-  getRedisCache,
   getSvmProvider,
   Logger,
   winston,
 } from "../utils";
+import { getRedisCache } from "../cache/Redis";
 import { ScraperOpts } from "./types";
+import { bootstrap } from "./util/bootstrap";
 import { postBlock, postEvents } from "./util/ipc";
 import { scrapeEvents as _scrapeEvents } from "./util/svm";
 
 type WSProvider = RpcSubscriptions<SolanaRpcSubscriptionsApi>;
 type EventWithData = arch.svm.EventWithData;
 
-const { NODE_SUCCESS, NODE_APP_ERR } = utils;
 const abortController = new AbortController();
 
 const PROGRAM = "RelayerSpokePoolListenerSVM";
@@ -108,7 +106,7 @@ async function listen(
   const at = "RelayerSpokePoolListenerSVM::listen";
 
   const urls = Object.values(getNodeUrlList(chainId, quorum, "wss"));
-  let nProviders = urls.length;
+  const nProviders = urls.length;
   assert(nProviders >= quorum, `Insufficient providers for ${chain} (required ${quorum} by quorum)`);
 
   const eventAuthority = await arch.svm.getEventAuthority(SvmSpokeClient.SVM_SPOKE_PROGRAM_ADDRESS);
@@ -120,62 +118,94 @@ async function listen(
   const intervalMs = Number(process.env.RELAYER_SVM_WS_KEEPALIVE ?? 10) * 1000;
   const providers = urls.map((url) => createSolanaRpcSubscriptions(url, { intervalMs }));
 
-  const readSlot = async (provider: WSProvider, providerName: string) => {
-    const subscription = await provider.slotNotifications().subscribe({ abortSignal });
+  // Solana hosted WS providers periodically drop subscriptions without sending a close frame (code 1006).
+  // Chainstack does this on a deterministic ~10-minute wallclock schedule; Alchemy does it less predictably.
+  // Reconnect on close with bounded exponential backoff rather than aborting the whole listener.
+  const RECONNECT_BACKOFF_MIN_S = 1;
+  const RECONNECT_BACKOFF_MAX_S = 30;
 
-    try {
-      for await (const update of subscription) {
-        const { slot } = update as { slot: bigint }; // Bodge: pretend slots are blocks.
-        const currentTime = getCurrentTime(); // @todo Try to subscribe w/ timestamp updates.
+  // SolanaError.cause is a WebSocket CloseEvent. The CloseEvent interface is global via
+  // @types/node (undici-types), so we narrow with a structural guard and let TS infer
+  // code/wasClean/reason. Projecting them onto own properties is still required because
+  // winston serializes the CloseEvent prototype-getter fields as {}.
+  const isCloseEvent = (x: unknown): x is CloseEvent =>
+    typeof x === "object" && x !== null && "code" in x && "wasClean" in x && "reason" in x;
 
-        if (!postBlock(Number(slot), currentTime)) {
-          abortController.abort();
-        }
-      }
-    } catch (err: unknown) {
-      const message = "Caught error on Solana provider.";
-      if (arch.svm.isSolanaError(err)) {
-        logger.warn({ at, message, provider: providerName, cause: err.cause });
+  const logProviderError = (providerName: string, err: unknown, backoffS: number) => {
+    const message = "Caught error on Solana provider; reconnecting.";
+    const baseCtx = { at, message, provider: providerName, backoffS };
+    if (arch.svm.isSolanaError(err) && isCloseEvent(err.cause)) {
+      const { code, wasClean, reason } = err.cause;
+      const ctx = { ...baseCtx, code, wasClean, reason };
+      // 1006 with no close frame is the documented Chainstack shared-gateway rotation
+      // (https://docs.chainstack.com/docs/error-reference); demote to debug. Anything
+      // else (e.g. 1011 Internal Error from Alchemy, unknown codes) stays at warn.
+      if (code === 1006 && wasClean === false) {
+        logger.debug(ctx);
       } else {
-        const cause = typeguards.isError(err) ? err.message : "unknown cause";
-        logger.warn({ at, message, provider: providerName, cause });
+        logger.warn(ctx);
       }
+      return;
+    }
+    const cause = typeguards.isError(err) ? err.message : "unknown cause";
+    logger.warn({ ...baseCtx, cause });
+  };
 
-      abortController.abort();
+  const readSlot = async (provider: WSProvider, providerName: string) => {
+    let backoffS = RECONNECT_BACKOFF_MIN_S;
+    while (!abortSignal.aborted) {
+      try {
+        const subscription = await provider.slotNotifications().subscribe({ abortSignal });
+        for await (const { slot } of subscription) {
+          backoffS = RECONNECT_BACKOFF_MIN_S; // reset on any successful update
+          const currentTime = getCurrentTime(); // @todo Try to subscribe w/ timestamp updates.
+
+          if (!postBlock(Number(slot), currentTime)) {
+            abortController.abort();
+          }
+        }
+        // Iterator returned cleanly (abortSignal cancelled the subscription).
+        return;
+      } catch (err: unknown) {
+        if (abortSignal.aborted) {
+          return;
+        }
+        logProviderError(providerName, err, backoffS);
+        await abortableDelay(backoffS, abortSignal);
+        backoffS = Math.min(backoffS * 2, RECONNECT_BACKOFF_MAX_S);
+      }
     }
   };
 
   const readEvent = async (provider: WSProvider, providerName: string) => {
-    const subscription = await provider
-      .logsNotifications({ mentions: [address(eventAuthority)] }, config)
-      .subscribe({ abortSignal });
+    let backoffS = RECONNECT_BACKOFF_MIN_S;
+    while (!abortSignal.aborted) {
+      try {
+        const subscription = await provider
+          .logsNotifications({ mentions: [address(eventAuthority)] }, config)
+          .subscribe({ abortSignal });
+        for await (const log of subscription) {
+          backoffS = RECONNECT_BACKOFF_MIN_S;
+          const { signature } = log.value;
+          const rawEvents = await eventsClient.readEventsFromSignature(signature, "confirmed");
 
-    try {
-      for await (const log of subscription) {
-        const { signature } = log.value;
-        const rawEvents = await eventsClient.readEventsFromSignature(signature, "confirmed");
+          const events = rawEvents
+            .filter(({ name }) => eventNames.includes(name))
+            .map((event) => logFromEvent({ ...event, signature, slot: log.context.slot }));
 
-        const events = rawEvents
-          .filter(({ name }) => eventNames.includes(name))
-          .map((event) => logFromEvent({ ...event, signature, slot: log.context.slot }));
-
-        const quorumEvents = events.filter((event) => eventMgr.add(event, providerName));
-        if (quorumEvents.length > 0 && !postEvents(quorumEvents)) {
-          abortController.abort();
+          const quorumEvents = events.filter((event) => eventMgr.add(event, providerName));
+          if (quorumEvents.length > 0 && !postEvents(quorumEvents)) {
+            abortController.abort();
+          }
         }
-      }
-    } catch (err: unknown) {
-      const message = "Caught error on Solana provider.";
-      if (arch.svm.isSolanaError(err)) {
-        logger.warn({ at, message, provider: providerName, cause: err.cause });
-      } else {
-        const cause = typeguards.isError(err) ? err.message : "unknown cause";
-        logger.warn({ at, message, provider: providerName, cause });
-      }
-
-      if (!abortController.signal.aborted && --nProviders < quorum) {
-        logger.warn({ at, message: `Insufficient ${chain} providers to continue.`, quorum, nProviders });
-        abortController.abort();
+        return;
+      } catch (err: unknown) {
+        if (abortSignal.aborted) {
+          return;
+        }
+        logProviderError(providerName, err, backoffS);
+        await abortableDelay(backoffS, abortSignal);
+        backoffS = Math.min(backoffS * 2, RECONNECT_BACKOFF_MAX_S);
       }
     }
   };
@@ -243,16 +273,6 @@ async function run(argv: string[]): Promise<void> {
 
   logger.debug({ at, message: `Starting ${chain} SpokePool Indexer.`, opts });
 
-  process.on("SIGHUP", () => {
-    logger.debug({ at, message: `Received SIGHUP in ${chain} listener, stopping...` });
-    abortController.abort();
-  });
-
-  process.on("disconnect", () => {
-    logger.debug({ at, message: `${chain} parent disconnected, stopping...` });
-    abortController.abort();
-  });
-
   const eventsClient = await arch.svm.SvmCpiEventsClient.create(getSvmProvider());
   if (latestSlot > startSlot) {
     const events = ["FundsDeposited", "FilledRelay", "RelayedRootBundle", "ExecutedRelayerRefundRoot"];
@@ -267,20 +287,6 @@ async function run(argv: string[]): Promise<void> {
 }
 
 if (require.main === module) {
-  const at = PROGRAM;
   logger = Logger;
-
-  run(process.argv.slice(2))
-    .then(() => {
-      process.exitCode = NODE_SUCCESS;
-    })
-    .catch((error) => {
-      logger.error({ at, message: `${chain} listener exited with error.`, error });
-      process.exitCode = NODE_APP_ERR;
-    })
-    .finally(async () => {
-      await disconnectRedisClients();
-      logger.debug({ at, message: `Exiting ${chain} listener.` });
-      exit(Number(process.exitCode));
-    });
+  bootstrap({ program: PROGRAM, abortController, chainName: () => chain, run });
 }

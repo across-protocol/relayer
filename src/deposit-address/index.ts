@@ -28,6 +28,7 @@ export async function runDepositAddressHandler(_logger: winston.Logger, baseSign
 
     logger.debug({ at: "DepositAddressHandler#index", message: `Time to run: ${(Date.now() - start) / 1000}s` });
   } finally {
+    await relayer.disconnect();
     await disconnectRedisClients(logger);
   }
 }

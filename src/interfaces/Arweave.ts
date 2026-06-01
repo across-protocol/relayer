@@ -1,4 +1,5 @@
 import { number, object, optional, string } from "superstruct";
+import { caching } from "@across-protocol/sdk";
 
 export type ArweaveWalletJWKInterface = {
   kty: string;
@@ -12,11 +13,7 @@ export type ArweaveWalletJWKInterface = {
   qi?: string;
 };
 
-export type ArweaveGatewayInterface = {
-  url: string;
-  protocol: string;
-  port: number;
-};
+export type ArweaveGatewayConfig = caching.ArweaveGatewayConfig;
 
 export const ArweaveWalletJWKInterfaceSS = object({
   kty: string(),
@@ -30,8 +27,8 @@ export const ArweaveWalletJWKInterfaceSS = object({
   qi: optional(string()),
 });
 
-export const ArweaveGatewayInterfaceSS = object({
-  url: string(),
-  protocol: string(),
-  port: number(),
+export const ArweaveGatewayConfigSS = object({
+  host: string(),
+  protocol: optional(string()),
+  port: optional(number()),
 });

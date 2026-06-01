@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import winston from "winston";
-import { RedisCacheInterface } from "../caching/RedisCache";
+import { RedisCacheInterface } from "../cache/Redis";
 import { BUILDER_TOPOLOGY_VERSION } from "./constants";
 import { JussiApiClient } from "./JussiApiClient";
 import { buildJussiGraphBundleJson, buildJussiGraphId, bundleHash } from "./serialize";
@@ -40,7 +40,7 @@ export async function compareTopologyFingerprintWithRedis(
   redis: Pick<RedisCacheInterface, "get">,
   topologyFingerprint: string
 ): Promise<{ matches: boolean; publishedTopologyFingerprint?: string }> {
-  const publishedTopologyFingerprint = await redis.get<string>(JUSSI_TOPOLOGY_FINGERPRINT_KEY);
+  const publishedTopologyFingerprint = (await redis.get<string>(JUSSI_TOPOLOGY_FINGERPRINT_KEY)) ?? undefined;
   return {
     matches: publishedTopologyFingerprint === topologyFingerprint,
     publishedTopologyFingerprint,

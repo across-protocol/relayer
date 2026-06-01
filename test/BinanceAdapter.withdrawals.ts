@@ -1,5 +1,5 @@
 import { expect } from "./utils";
-import { isFailedBinanceWithdrawal, isTerminalBinanceWithdrawal } from "../src/rebalancer/adapters/binance";
+import { isFailedBinanceWithdrawal, isTerminalBinanceWithdrawal } from "../src/utils";
 
 describe("Binance adapter withdrawal state", function () {
   it("treats terminal Binance withdrawal failures as failed", function () {

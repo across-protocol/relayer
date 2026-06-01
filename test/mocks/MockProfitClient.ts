@@ -1,6 +1,6 @@
 import { Contract } from "ethers";
 import { utils as sdkUtils } from "@across-protocol/sdk";
-import { ProfitClient } from "../../src/clients";
+import { HubPoolClient, ProfitClient } from "../../src/clients";
 import { SpokePoolClientsByChain } from "../../src/interfaces";
 import { bnOne, bnZero, isDefined, TOKEN_SYMBOLS_MAP, EvmAddress, SvmAddress, Address } from "../../src/utils";
 import { BigNumber, toBN, toBNWei, winston } from "../utils";

@@ -1,5 +1,5 @@
 import { Deposit, InventoryConfig, TokenInfo } from "../../src/interfaces";
-import { HubPoolClient, InventoryClient, Rebalance, TokenClient } from "../../src/clients";
+import { BinanceClient, HubPoolClient, InventoryClient, Rebalance, TokenClient } from "../../src/clients";
 import { AdapterManager, CrossChainTransferClient } from "../../src/clients/bridges";
 import { Address, BigNumber, bnZero, EvmAddress, getTokenInfo, toAddressType } from "../../src/utils";
 import winston from "winston";
@@ -57,6 +57,14 @@ export class MockInventoryClient extends InventoryClient {
 
   setExcessRunningBalances(l1Token: string, balances: { [chainId: number]: BigNumber }): void {
     this.excessRunningBalancePcts[l1Token] = balances;
+  }
+
+  setBinanceClient(binanceClient: BinanceClient | undefined): void {
+    this.binanceClient = binanceClient;
+  }
+
+  seedL1TokenPriceUsd(l1Token: string, priceUsd: BigNumber): void {
+    this.l1TokenPricesUsd.set(l1Token, priceUsd);
   }
 
   async getExcessRunningBalancePcts(l1Token: Address): Promise<{ [chainId: number]: BigNumber }> {

@@ -32,6 +32,7 @@ import {
   getL2Book,
   getUserFillsByTime,
   isSignerWallet,
+  createFormatFunction,
 } from "../../utils";
 import { RebalanceRoute, OrderDetails } from "../utils/interfaces";
 import * as hl from "@nktkas/hyperliquid";
@@ -223,6 +224,9 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     const { sourceToken, sourceChain, destinationChain, destinationToken } = rebalanceRoute;
     const spotMarketMeta = this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
     const sourceTokenInfo = getTokenInfoFromSymbol(sourceToken, sourceChain);
+    const destinationTokenInfo = getTokenInfoFromSymbol(destinationToken, destinationChain);
+    const sourceFormatter = createFormatFunction(2, 4, false, sourceTokenInfo.decimals);
+    const destinationFormatter = createFormatFunction(2, 4, false, destinationTokenInfo.decimals);
     if (amountToTransfer.lt(toBNWei(spotMarketMeta.minimumOrderSize, sourceTokenInfo.decimals))) {
       this.logger.debug({
         at: "HyperliquidStablecoinSwapAdapter.initializeRebalance",
@@ -246,12 +250,8 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       // Bridge this token into HyperEVM first
       this.logger.info({
         at: "HyperliquidStablecoinSwapAdapter.initializeRebalance",
-        message: `🍻 Creating new order ${cloid} by first bridging ${sourceToken} into HyperEVM from ${getNetworkName(
-          sourceChain
-        )}`,
-        destinationToken,
-        destinationChain: getNetworkName(destinationChain),
-        amountToTransfer: amountToTransfer.toString(),
+        message: `🍻 Creating new order ${cloid} by first bridging ${sourceFormatter(amountToTransfer)} ${sourceTokenInfo.symbol} into HyperEVM from ${getNetworkName(sourceChain)} before depositing into Hypercore in order to acquire ${destinationTokenInfo.symbol} on ${getNetworkName(destinationChain)}`,
+        expectedOutput: destinationFormatter(amountToTransfer),
       });
 
       const amountReceivedFromBridge = await this._bridgeToChain(sourceToken, sourceChain, HYPEREVM, amountToTransfer);
@@ -267,10 +267,8 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     } else {
       this.logger.info({
         at: "HyperliquidStablecoinSwapAdapter.initializeRebalance",
-        message: `🍻 Creating new order ${cloid} by depositing ${sourceToken} from HyperEVM to HyperCore`,
-        destinationToken,
-        destinationChain: getNetworkName(destinationChain),
-        amountToTransfer: amountToTransfer.toString(),
+        message: `🍻 Creating new order ${cloid} by first transferring ${sourceFormatter(amountToTransfer)} ${sourceTokenInfo.symbol} into Hypercore from ${getNetworkName(sourceChain)} in order to acquire ${destinationTokenInfo.symbol} on ${getNetworkName(destinationChain)}`,
+        expectedOutput: destinationFormatter(amountToTransfer),
       });
 
       await this._depositToHypercore(sourceToken, amountToTransfer);
@@ -297,7 +295,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       });
     }
     for (const cloid of pendingBridgeToHyperevm) {
-      const orderDetails = await this._redisGetOrderDetails(cloid, this.baseSignerAddress);
+      const orderDetails = await this._redisGetOrderDetailsRequired(cloid, this.baseSignerAddress);
       const { sourceToken, amountToTransfer, sourceChain } = orderDetails;
       // Check if we have enough balance on HyperEVM to progress the order status:
       const hyperevmBalance = await this._getERC20Balance(
@@ -345,7 +343,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       });
     }
     for (const cloid of pendingDeposits) {
-      const orderDetails = await this._redisGetOrderDetails(cloid, this.baseSignerAddress);
+      const orderDetails = await this._redisGetOrderDetailsRequired(cloid, this.baseSignerAddress);
       const orderResult = await this._createHlOrder(orderDetails, cloid);
       if (orderResult) {
         await this._redisUpdateOrderStatus(
@@ -390,7 +388,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         });
 
         // Issue a withdrawal from HL now:
-        const existingOrder = await this._redisGetOrderDetails(cloid, this.baseSignerAddress);
+        const existingOrder = await this._redisGetOrderDetailsRequired(cloid, this.baseSignerAddress);
         this.logger.debug({
           at: "HyperliquidStablecoinSwapAdapter.updateRebalanceStatuses",
           message: `Withdrawing ${matchingFill.amountToWithdraw.toString()} ${
@@ -411,7 +409,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
           at: "HyperliquidStablecoinSwapAdapter.updateRebalanceStatuses",
           message: `Order ${cloid} was never filled and no longer exists, creating new order`,
         });
-        const existingOrder = await this._redisGetOrderDetails(cloid, this.baseSignerAddress);
+        const existingOrder = await this._redisGetOrderDetailsRequired(cloid, this.baseSignerAddress);
         await this._createHlOrder(existingOrder, cloid);
       } else {
         this.logger.debug({
@@ -434,7 +432,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     for (const cloid of pendingWithdrawals) {
       // For each finalized withdrawal from Hypercore, delete its status from Redis and optionally initiate
       // a bridge to the final destination chain if necessary.
-      const orderDetails = await this._redisGetOrderDetails(cloid, this.baseSignerAddress);
+      const orderDetails = await this._redisGetOrderDetailsRequired(cloid, this.baseSignerAddress);
       const { destinationToken, destinationChain } = orderDetails;
       const matchingFill = await this._getMatchingFillForCloid(this.baseSignerAddress, cloid);
       if (!matchingFill) {
@@ -455,6 +453,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         continue;
       }
       const destinationTokenInfo = getTokenInfoFromSymbol(destinationToken, destinationChain);
+      const destinationFormatter = createFormatFunction(2, 4, false, destinationTokenInfo.decimals);
       const destinationTokenMeta = this._getTokenMeta(destinationToken);
       const expectedAmountToReceive = ConvertDecimals(
         destinationTokenMeta.coreDecimals,
@@ -478,20 +477,14 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         continue;
       }
 
-      if (destinationChain === HYPEREVM) {
-        this.logger.info({
-          at: "HyperliquidStablecoinSwapAdapter.updateRebalanceStatuses",
-          message: `✨ Deleting order details from Redis with cloid ${cloid} because it has completed!`,
-        });
-      } else {
-        this.logger.info({
-          at: "HyperliquidStablecoinSwapAdapter.updateRebalanceStatuses",
-          message: `✨ Sending order with cloid ${cloid} from HyperEVM to final destination chain ${destinationChain}, and deleting order details from Redis!`,
-          expectedAmountToReceive: expectedAmountToReceive.toString(),
-        });
+      if (destinationChain !== HYPEREVM) {
         await this._bridgeToChain(destinationToken, HYPEREVM, destinationChain, expectedAmountToReceive);
       }
       // We no longer need this order information, so we can delete it:
+      this.logger.info({
+        at: "HyperliquidStablecoinSwapAdapter.updateRebalanceStatuses",
+        message: `✨ Order ${cloid} of ${destinationFormatter(expectedAmountToReceive)} ${destinationTokenInfo.symbol} has finalized withdrawing to the final destination chain ${destinationChain}!`,
+      });
       await this._redisDeleteOrder(cloid, STATUS.PENDING_WITHDRAWAL_FROM_HYPERCORE, this.baseSignerAddress);
     }
   }
@@ -521,6 +514,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     // if it exceeds a minimum threshold.
     for (const token of Object.keys(this.tokenMeta)) {
       const tokenMeta = this._getTokenMeta(token);
+      const hypercoreFormatter = createFormatFunction(2, 4, false, tokenMeta.coreDecimals);
       // Use a minimum threshold (in core decimals) to avoid sweeping dust.
       const minimumSweepThreshold = toBNWei(
         process.env.HYPERLIQUID_MINIMUM_SWEEP_THRESHOLD ?? 10,
@@ -528,24 +522,19 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       );
 
       const availableBalance = await this._getAvailableBalanceForToken(token);
-      const balanceReadable = fromWei(availableBalance, tokenMeta.coreDecimals);
-      const minimumSweepThresholdReadable = fromWei(minimumSweepThreshold, tokenMeta.coreDecimals);
-
-      const destinationTokenInfo = getTokenInfoFromSymbol(token, HYPEREVM);
       if (availableBalance.gt(minimumSweepThreshold)) {
         const amountToWithdraw = availableBalance;
         // Precision for withdraw amount must be equal to HyperEVM/destination chain precision:
+        const destinationTokenInfo = getTokenInfoFromSymbol(token, HYPEREVM);
         const amountToSweep = toBNWei(
           truncate(Number(fromWei(amountToWithdraw, tokenMeta.coreDecimals)), destinationTokenInfo.decimals),
           tokenMeta.coreDecimals
         );
-        const amountToSweepReadable = fromWei(amountToSweep, tokenMeta.coreDecimals);
         this.logger.info({
           at: "HyperliquidStablecoinSwapAdapter.sweepIntermediateBalances",
-          message: `🧹 Sweeping ${amountToSweepReadable} ${token} from Hypercore to HyperEVM`,
-          availableBalance: balanceReadable,
-          minimumSweepThreshold: minimumSweepThresholdReadable,
-          amountToSweep: amountToSweepReadable,
+          message: `🧹 Sweeping ${hypercoreFormatter(amountToSweep)} ${token} from Hypercore to HyperEVM`,
+          availableBalance: hypercoreFormatter(availableBalance),
+          minimumSweepThreshold: hypercoreFormatter(minimumSweepThreshold),
         });
         await this._withdrawToHyperevm(token, amountToSweep);
 
@@ -555,9 +544,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       } else {
         this.logger.debug({
           at: "HyperliquidStablecoinSwapAdapter.sweepIntermediateBalances",
-          message: `${token} balance on Hypercore (${balanceReadable}) is below minimum sweep threshold, skipping`,
-          availableBalance: balanceReadable,
-          minimumSweepThreshold: minimumSweepThresholdReadable,
+          message: `${token} balance on Hypercore (${hypercoreFormatter(availableBalance)}) is below minimum sweep threshold ${hypercoreFormatter(minimumSweepThreshold)}, skipping`,
         });
       }
     }
@@ -696,7 +683,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     // chain's virtual balance (i.e. HyperEVM in this case).
     const pendingBridgeToHyperevm = await this._redisGetPendingBridgesPreDeposit(account);
     for (const cloid of pendingBridgeToHyperevm) {
-      const orderDetails = await this._redisGetOrderDetails(cloid, account);
+      const orderDetails = await this._redisGetOrderDetailsRequired(cloid, account);
       const { sourceChain, sourceToken, amountToTransfer } = orderDetails;
       const amountConverter = this._getAmountConverter(
         sourceChain,
@@ -739,7 +726,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       ),
     ]);
     for (const cloid of pendingWithdrawalsFromHypercore) {
-      const orderDetails = await this._redisGetOrderDetails(cloid, account);
+      const orderDetails = await this._redisGetOrderDetailsRequired(cloid, account);
       const { destinationToken, destinationChain } = orderDetails;
       const matchingFill = await this._getMatchingFillForCloid(account, cloid);
       if (!matchingFill) {
@@ -801,7 +788,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     }
     for (const cloid of pendingOrders) {
       // Filter this to match pending rebalance routes:
-      const orderDetails = await this._redisGetOrderDetails(cloid, account);
+      const orderDetails = await this._redisGetOrderDetailsRequired(cloid, account);
       const { destinationChain, destinationToken, sourceChain, sourceToken, amountToTransfer } = orderDetails;
       // Convert amountToTransfer to destination chain precision:
       const amountConverter = this._getAmountConverter(
@@ -976,7 +963,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     cloid: string
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ): Promise<{ details: any; amountToWithdraw: BigNumber } | undefined> {
-    const existingOrder = await this._redisGetOrderDetails(cloid, account);
+    const existingOrder = await this._redisGetOrderDetailsRequired(cloid, account);
     const { destinationToken, destinationChain } = existingOrder;
 
     const infoClient = new hl.InfoClient({ transport: new hl.HttpTransport() });
@@ -1121,7 +1108,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         orders: [orderDetails],
         grouping: "na",
       });
-      this.logger.info({
+      this.logger.debug({
         at: "HyperliquidStablecoinSwapAdapter._placeLimitOrder",
         message: `🎰 Submitted new limit order for cloid ${cloid} with px ${px} and sz ${sz}`,
         result,
@@ -1145,7 +1132,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         this.logger.error({
           at: "HyperliquidStablecoinSwapAdapter._placeLimitOrder",
           message: "Unknown error",
-          error: error.toString(),
+          error: String(error),
         });
       }
     }
@@ -1220,7 +1207,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     // Note: I'd like this to work via the multicaller client or runTransaction but the .wait() seems to fail.
     // Note: If sending multicaller client txn, unpermissioned:false and nonMulticall:true must be set.
     const txn = await coreWriterContract.sendRawAction(bytes);
-    this.logger.info({
+    this.logger.debug({
       at: "HyperliquidStablecoinSwapAdapter._withdrawToHyperevm",
       message: `🏧 Withdrew ${amountToWithdraw} ${destinationToken} from Hypercore to HyperEVM`,
       txn: blockExplorerLink(txn.hash, HYPEREVM),

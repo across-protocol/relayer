@@ -13,7 +13,7 @@ import { EXPECTED_L1_TO_L2_MESSAGE_TIME, SLOW_WITHDRAWAL_CHAINS } from "../commo
 import { InventoryClient } from "../clients";
 import { InventoryConfig, TokenBalanceConfig, isAliasConfig } from "../interfaces/InventoryManagement";
 import { RelayerConfig } from "../relayer/RelayerConfig";
-import { BinanceStablecoinSwapAdapter, isSameBinanceCoin } from "../rebalancer/adapters/binance";
+import { BinanceStablecoinSwapAdapter } from "../rebalancer/adapters/binance";
 import { RebalanceRoute, RebalancerAdapter } from "../rebalancer/utils/interfaces";
 import { RebalancerConfig } from "../rebalancer/RebalancerConfig";
 import {
@@ -51,6 +51,7 @@ import {
   getTokenInfo,
   getTokenInfoFromSymbol,
   isDefined,
+  isSameBinanceCoin,
   formatToAddress,
   mapAsync,
   roundAmountToSend,
@@ -820,9 +821,12 @@ export function runFullBuild(
 }
 
 function resolveManagedNodeRatios(templates: ManagedNodeTemplate[]): Map<string, ManagedNodeRatios> {
-  const managedTemplatesByLogicalAsset = new Map<LogicalAsset, ManagedNodeTemplate[]>();
+  type ManagedNodeTemplateWithTokenConfig = ManagedNodeTemplate & { tokenConfig: TokenBalanceConfig };
+  const managedTemplatesByLogicalAsset = new Map<LogicalAsset, ManagedNodeTemplateWithTokenConfig[]>();
   templates
-    .filter((template) => template.managed && isDefined(template.tokenConfig))
+    .filter(
+      (template): template is ManagedNodeTemplateWithTokenConfig => template.managed && isDefined(template.tokenConfig)
+    )
     .forEach((template) => {
       const existing = managedTemplatesByLogicalAsset.get(template.logicalAsset) ?? [];
       existing.push(template);
@@ -833,7 +837,7 @@ function resolveManagedNodeRatios(templates: ManagedNodeTemplate[]): Map<string,
 
   Array.from(managedTemplatesByLogicalAsset.values()).forEach((logicalAssetTemplates) => {
     const totalTargetAllocation = logicalAssetTemplates.reduce(
-      (sum, template) => sum.add(template.tokenConfig!.targetPct),
+      (sum, template) => sum.add(template.tokenConfig.targetPct),
       bnZero
     );
 
@@ -848,11 +852,11 @@ function resolveManagedNodeRatios(templates: ManagedNodeTemplate[]): Map<string,
       return;
     }
 
-    const positiveTargetTemplates = logicalAssetTemplates.filter((template) => template.tokenConfig!.targetPct.gt(0));
+    const positiveTargetTemplates = logicalAssetTemplates.filter((template) => template.tokenConfig.targetPct.gt(0));
     let assignedTargetAllocation = bnZero;
 
     positiveTargetTemplates.forEach((template, index) => {
-      const tokenConfig = template.tokenConfig!;
+      const tokenConfig = template.tokenConfig;
       const rawMaxAllocation = tokenConfig.targetPct.mul(tokenConfig.targetOverageBuffer).div(unitRatio);
       const isLastPositiveTarget = index === positiveTargetTemplates.length - 1;
       const targetAllocationRatio = isLastPositiveTarget
@@ -870,7 +874,7 @@ function resolveManagedNodeRatios(templates: ManagedNodeTemplate[]): Map<string,
     });
 
     logicalAssetTemplates
-      .filter((template) => template.tokenConfig!.targetPct.eq(0))
+      .filter((template) => template.tokenConfig.targetPct.eq(0))
       .forEach((template) => {
         normalizedRatios.set(canonicalNodeKey(template.chainId, template.tokenAddress), {
           targetAllocationRatio: bnZero,
@@ -967,6 +971,8 @@ export function buildBridgeEdgeCandidates(
   for (const logicalAsset of JUSSI_LOGICAL_ASSETS) {
     const l1Token = TOKEN_SYMBOLS_MAP[logicalAsset].addresses[hubPoolChainId];
     const chainMap = nodesByLogicalAssetChain.get(logicalAsset) ?? new Map<number, ManagedNodeContext[]>();
+    const hubNode = hubNodesByLogicalAsset.get(logicalAsset);
+    assert(isDefined(hubNode), `Missing hub node for ${logicalAsset}`);
     for (const [chainId, chainNodes] of chainMap.entries()) {
       if (chainId === hubPoolChainId) {
         continue;
@@ -978,7 +984,7 @@ export function buildBridgeEdgeCandidates(
           ...resolveInboundBridgeCandidates({
             bridgeContext: buildBridgeLookupContext(chainId, logicalAsset, inboundBridge.name, hubPoolChainId),
             chainNodes,
-            fromNode: hubNodesByLogicalAsset.get(logicalAsset),
+            fromNode: hubNode,
           })
         );
       }
@@ -989,7 +995,7 @@ export function buildBridgeEdgeCandidates(
           ...resolveOutboundBridgeCandidates({
             bridgeContext: buildBridgeLookupContext(chainId, logicalAsset, outboundBridge.name, hubPoolChainId),
             chainNodes,
-            toNode: hubNodesByLogicalAsset.get(logicalAsset),
+            toNode: hubNode,
           })
         );
       }
@@ -1466,7 +1472,7 @@ async function estimateDirectionalHyperliquidMarginalOutputRate(
   }
 
   const { hubPoolChainId } = params.pricingContext;
-  const adapter = params.rebalancerAdapters.hyperliquid as RebalancerAdapter;
+  const adapter = params.rebalancerAdapters.hyperliquid;
   const adapterInternals = adapter as unknown as HyperliquidInternalAdapter;
   const sourceTokenInfo = getTokenInfoFromSymbol(sourceToken, hubPoolChainId);
   const destinationTokenInfo = getTokenInfoFromSymbol(destinationToken, hubPoolChainId);
@@ -1767,13 +1773,23 @@ async function estimateOftBreakdown(
     oftRouteQuote.messageFeeIsNative || isDefined(oftRouteQuote.messageFeeAssetAddress),
     `Missing OFT fee asset metadata for ${candidate.from.chainId} -> ${candidate.to.chainId}`
   );
-  const quotedMessageFeeUsd = oftRouteQuote.messageFeeIsNative
-    ? await params.pricingContext.nativeValueToUsd(oftRouteQuote.messageFeeAmount, candidate.from.chainId)
-    : await params.pricingContext.tokenValueToUsd(
-        oftRouteQuote.messageFeeAmount,
-        candidate.from.chainId,
-        oftRouteQuote.messageFeeAssetAddress
-      );
+  let quotedMessageFeeUsd: number;
+  if (oftRouteQuote.messageFeeIsNative) {
+    quotedMessageFeeUsd = await params.pricingContext.nativeValueToUsd(
+      oftRouteQuote.messageFeeAmount,
+      candidate.from.chainId
+    );
+  } else {
+    assert(
+      isDefined(oftRouteQuote.messageFeeAssetAddress),
+      `Missing OFT fee asset metadata for ${candidate.from.chainId} -> ${candidate.to.chainId}`
+    );
+    quotedMessageFeeUsd = await params.pricingContext.tokenValueToUsd(
+      oftRouteQuote.messageFeeAmount,
+      candidate.from.chainId,
+      oftRouteQuote.messageFeeAssetAddress
+    );
+  }
 
   return {
     fixedInputFeeSourceNative: bnZero,

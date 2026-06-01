@@ -6,8 +6,9 @@ import {
   retrieveSignerFromCLIArgs,
   getProvider,
   ERC20,
-  TOKEN_SYMBOLS_MAP,
+  resolveAcrossToken,
   assert,
+  EvmAddress,
   getL1TokenAddress,
   Contract,
   fromWei,
@@ -15,7 +16,7 @@ import {
   getNativeTokenSymbol,
   getTokenInfo,
 } from "../src/utils";
-import { CONTRACT_ADDRESSES } from "../src/common";
+import { getContractEntry } from "../src/common";
 import { askYesNoQuestion } from "./utils";
 
 import minimist from "minimist";
@@ -42,15 +43,16 @@ export async function run(): Promise<void> {
   const signerAddr = await baseSigner.getAddress();
   const chainId = parseInt(args.chainId);
   const connectedSigner = baseSigner.connect(await getProvider(chainId));
-  const l2Token = TOKEN_SYMBOLS_MAP[args.token]?.addresses[chainId];
-  assert(l2Token, `${args.token} not found on chain ${chainId} in TOKEN_SYMBOLS_MAP`);
+  const l2TokenAddress = resolveAcrossToken(String(args.token), chainId);
+  assert(l2TokenAddress, `${args.token} not found on chain ${chainId} in TOKEN_SYMBOLS_MAP`);
+  const l2Token = EvmAddress.from(l2TokenAddress);
   const l1TokenAddress = getL1TokenAddress(l2Token, chainId);
   const { decimals, symbol } = getTokenInfo(l2Token, chainId);
   const amount = args.amount;
   const amountFromWei = ethers.utils.formatUnits(amount, decimals);
   console.log(`Amount to bridge from chain ${chainId}: ${amountFromWei} ${l2Token}`);
 
-  const erc20 = new Contract(l2Token, ERC20.abi, connectedSigner);
+  const erc20 = new Contract(l2Token.toNative(), ERC20.abi, connectedSigner);
   const currentBalance = await erc20.balanceOf(signerAddr);
   const nativeTokenSymbol = getNativeTokenSymbol(chainId);
   const currentNativeBalance = await connectedSigner.getBalance();
@@ -63,7 +65,7 @@ export async function run(): Promise<void> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let contract: Contract, functionName: string, functionArgs: any[];
   if (symbol !== nativeTokenSymbol) {
-    const arbErc20GatewayObj = CONTRACT_ADDRESSES[chainId].erc20GatewayRouter;
+    const arbErc20GatewayObj = getContractEntry(chainId, "erc20GatewayRouter");
     contract = new Contract(arbErc20GatewayObj.address, arbErc20GatewayObj.abi, connectedSigner);
     functionName = "outboundTransfer";
     functionArgs = [
@@ -78,7 +80,7 @@ export async function run(): Promise<void> {
       ...functionArgs
     );
   } else {
-    const arbSys = CONTRACT_ADDRESSES[chainId].arbSys;
+    const arbSys = getContractEntry(chainId, "arbSys");
     contract = new Contract(arbSys.address, arbSys.abi, connectedSigner);
     functionName = "withdrawEth";
     functionArgs = [

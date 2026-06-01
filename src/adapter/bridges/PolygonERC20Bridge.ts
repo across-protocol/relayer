@@ -10,7 +10,7 @@ import {
   EvmAddress,
   winston,
 } from "../../utils";
-import { CONTRACT_ADDRESSES } from "../../common";
+import { getContractAbi, getContractEntry } from "../../common";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
 import { processEvent } from "../utils";
 
@@ -34,15 +34,15 @@ export class PolygonERC20Bridge extends BaseBridgeAdapter {
     // TOKEN_SYMBOLS_MAP. This constructor will therefore break if
     // either the SDK or the constants dependency in the SDK is not
     // up-to-date.
-    const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].polygonBridge;
-    const { address: l1GatewayAddress, abi: l1GatewayAbi } = CONTRACT_ADDRESSES[hubChainId].polygonRootChainManager;
+    const { address: l1Address, abi: l1Abi } = getContractEntry(hubChainId, "polygonBridge");
+    const { address: l1GatewayAddress, abi: l1GatewayAbi } = getContractEntry(hubChainId, "polygonRootChainManager");
     super(l2chainId, hubChainId, l1Signer, [EvmAddress.from(l1Address)]);
 
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
     this.l1Gateway = new Contract(l1GatewayAddress, l1GatewayAbi, l1Signer);
 
     // For Polygon, we look for mint events triggered by the L2 token, not the L2 Bridge.
-    const l2Abi = CONTRACT_ADDRESSES[l2chainId].withdrawableErc20.abi;
+    const l2Abi = getContractAbi(l2chainId, "withdrawableErc20");
     const l2TokenAddress = this.resolveL2TokenAddress(l1Token);
     this.l2Bridge = new Contract(l2TokenAddress, l2Abi, l2SignerOrProvider);
   }

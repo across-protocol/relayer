@@ -1,4 +1,4 @@
-import { CONTRACT_ADDRESSES } from "../../common";
+import { getContractEntry } from "../../common";
 import {
   BigNumber,
   bnZero,
@@ -20,9 +20,9 @@ export class OpStackBridge extends BaseL2BridgeAdapter {
   constructor(l2chainId: number, hubChainId: number, l2Signer: Signer, l1Signer: Signer, l1Token: EvmAddress) {
     super(l2chainId, hubChainId, l2Signer, l1Signer, l1Token);
 
-    const { address, abi } = CONTRACT_ADDRESSES[l2chainId].ovmStandardBridge;
+    const { address, abi } = getContractEntry(l2chainId, "ovmStandardBridge");
     this.l2Bridge = new Contract(address, abi, l2Signer);
-    const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId][`ovmStandardBridge_${l2chainId}`];
+    const { address: l1Address, abi: l1Abi } = getContractEntry(hubChainId, `ovmStandardBridge_${l2chainId}`);
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
   }
 
@@ -35,7 +35,7 @@ export class OpStackBridge extends BaseL2BridgeAdapter {
     const { decimals, symbol } = getTokenInfo(l2Token, this.l2chainId);
     const formatter = createFormatFunction(2, 4, false, decimals);
     const withdrawTxn: AugmentedTransaction = {
-      contract: this.l2Bridge,
+      contract: this.getL2Bridge(),
       chainId: this.l2chainId,
       method: "bridgeERC20To",
       args: [
@@ -64,8 +64,8 @@ export class OpStackBridge extends BaseL2BridgeAdapter {
   ): Promise<BigNumber> {
     const [withdrawalInitiatedEvents, withdrawalFinalizedEvents] = await Promise.all([
       paginatedEventQuery(
-        this.l2Bridge,
-        this.l2Bridge.filters.ERC20BridgeInitiated(
+        this.getL2Bridge(),
+        this.getL2Bridge().filters.ERC20BridgeInitiated(
           l2Token.toNative(), // localToken
           null, // remoteToken
           fromAddress.toNative() // from
@@ -73,8 +73,8 @@ export class OpStackBridge extends BaseL2BridgeAdapter {
         l2EventConfig
       ),
       paginatedEventQuery(
-        this.l1Bridge,
-        this.l1Bridge.filters.ERC20BridgeFinalized(
+        this.getL1Bridge(),
+        this.getL1Bridge().filters.ERC20BridgeFinalized(
           null, // localToken
           l2Token.toNative(), // remoteToken
           fromAddress.toNative() // from

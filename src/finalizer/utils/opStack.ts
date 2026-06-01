@@ -21,7 +21,6 @@ import {
   getCachedProvider,
   getCurrentTime,
   getNetworkName,
-  getRedisCache,
   getUniqueLogIndex,
   getViemChain,
   groupObjectCountsByProp,
@@ -45,7 +44,13 @@ import {
   EvmAddress,
   ZERO_ADDRESS,
 } from "../../utils";
-import { CONTRACT_ADDRESSES, OPSTACK_CONTRACT_OVERRIDES, CHAIN_MAX_BLOCK_LOOKBACK } from "../../common";
+import { getRedisCache } from "../../cache/Redis";
+import {
+  CONTRACT_ADDRESSES,
+  OPSTACK_CONTRACT_OVERRIDES,
+  CHAIN_MAX_BLOCK_LOOKBACK,
+  getContractEntry,
+} from "../../common";
 import OPStackPortalL1 from "../../common/abi/OpStackPortalL1.json";
 import { FinalizerPromise, CrossChainMessage, AddressesToFinalize } from "../types";
 const { utils } = ethers;
@@ -62,6 +67,10 @@ interface CrossChainMessageWithStatus extends CrossChainMessageWithEvent {
 
 const { USDB, USDC, WETH } = TOKEN_SYMBOLS_MAP;
 const USDCe = TOKEN_SYMBOLS_MAP["USDC.e"];
+// Mirror CHAIN_IDs.MAINNET / CHAIN_IDs.SEPOLIA as literal types — viem's OP-stack helpers key
+// L1 contracts by literal hub chain id, and the `number`-typed CHAIN_IDs entries widen and break narrowing.
+const MAINNET = 1 satisfies typeof CHAIN_IDs.MAINNET;
+const SEPOLIA = 11155111 satisfies typeof CHAIN_IDs.SEPOLIA;
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- used only in typeof for OVM_CHAIN_ID type
 const OP_STACK_CHAINS = Object.values(CHAIN_IDs).filter((chainId) => chainIsOPStack(chainId));
@@ -82,19 +91,26 @@ const PENDING_PROOF_OUTPUT_ROOT = "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdea
 // contract. This interface is necessary because viem's internal TargetChain type is not exported,
 // and viem's function signatures are stricter than their runtime behaviour (e.g. getTimeToFinalize
 // requires l2OutputOracle in the type even though it only reads it for portal v<3).
-interface OpStackTargetChain extends viem.Chain {
+type OpStackTargetChain<TId extends number> = viem.Chain & {
   contracts: {
-    portal: { [sourceId: number]: viem.ChainContract };
-    disputeGameFactory: { [sourceId: number]: viem.ChainContract };
-    l2OutputOracle: { [sourceId: number]: viem.ChainContract };
+    portal: Record<TId, viem.ChainContract>;
+    disputeGameFactory: Record<TId, viem.ChainContract>;
+    l2OutputOracle: Record<TId, viem.ChainContract>;
   };
-}
+};
 
-function assertOpStackTargetChain(chain: viem.Chain): asserts chain is OpStackTargetChain {
+function assertOpStackTargetChain<TId extends number>(
+  chain: viem.Chain,
+  hubChainId: TId
+): asserts chain is OpStackTargetChain<TId> {
+  const portal = chain.contracts?.portal;
+  // viem types `portal` as `ChainContract | { [sourceId: number]: ChainContract }`. OP-stack chains
+  // use the nested form, so narrow off the direct-`address` shape before indexing by hubChainId.
   assert(
-    chain.contracts !== undefined && "portal" in chain.contracts,
-    `Chain ${chain.id} missing required OP-stack 'portal' contract`
+    isDefined(portal) && typeof portal === "object" && !("address" in portal),
+    `Chain ${chain.id} missing OP-stack 'portal' contract record`
   );
+  assert(isDefined(portal[hubChainId]), `Chain ${chain.id} missing 'portal' contract for hub ${hubChainId}`);
 }
 
 /**
@@ -268,11 +284,7 @@ async function getOVMStdEvents(
   // automate token withdrawals from Lite chains, which can build up ETH and ERC20 balances over time
   // and because they are lite chains, our only way to withdraw them is to initiate a manual bridge from the
   // the lite chain to Ethereum via the canonical OVM standard bridge.
-  const { ovmStandardBridge } = CONTRACT_ADDRESSES[chainId];
-  if (!ovmStandardBridge) {
-    logger.warn({ at, message: `No OVM standard bridge contract found for ${chain}.` });
-    return [];
-  }
+  const ovmStandardBridge = getContractEntry(chainId, "ovmStandardBridge");
   const bridge = new Contract(ovmStandardBridge.address, ovmStandardBridge.abi, provider);
 
   const ethFilter = bridge.filters.ETHBridgeInitiated(fromAddresses);
@@ -287,7 +299,8 @@ async function getOVMStdEvents(
   // from blast initiated through this hosted UI. ETH withdrawals sent in this manner through the Blast Bridge
   // have the same ETHBridgeInitiated event signature so we only need to change the contract address.
   if (chainIsBlast(chainId)) {
-    const blastBridge = new Contract(CONTRACT_ADDRESSES[chainId].blastBridge.address, ovmStandardBridge.abi, provider);
+    const { address: blastBridgeAddress } = getContractEntry(chainId, "blastBridge");
+    const blastBridge = new Contract(blastBridgeAddress, ovmStandardBridge.abi, provider);
     const blastEthEvents = (
       await paginatedEventQuery(blastBridge, blastBridge.filters.ETHBridgeInitiated(fromAddresses), searchConfig)
     ).map((event) => ({
@@ -324,11 +337,11 @@ async function getOPUSDCEvents(
   const chain = getNetworkName(chainId);
   const at = `${chain}Finalizer`;
 
-  const { opUSDCBridge } = CONTRACT_ADDRESSES[chainId];
-  if (!opUSDCBridge) {
+  if (!CONTRACT_ADDRESSES[chainId]?.opUSDCBridge) {
     return []; // No need to warn; many chains do not have OP USDC.
   }
-  const bridge = new Contract(opUSDCBridge.address, opUSDCBridge.abi, provider);
+  const { address, abi } = getContractEntry(chainId, "opUSDCBridge");
+  const bridge = new Contract(address, abi, provider);
   const filter = bridge.filters.MessageSent(fromAddresses);
   const events = (await paginatedEventQuery(bridge, filter, searchConfig))
     .map(({ args, ...event }) => {
@@ -363,7 +376,8 @@ async function viem_multicallOptimismFinalizations(
     callData: [],
     withdrawals: [],
   };
-  const hubChainId = hubPoolClient.chainId;
+  // Literal-typed so viem op-stack helpers (which key contracts by 1 or 11155111) can narrow correctly.
+  const hubChainId: typeof MAINNET | typeof SEPOLIA = chainIsProd(chainId) ? MAINNET : SEPOLIA;
   const l1Chain = chainIsProd(chainId) ? viemChains.mainnet : viemChains.sepolia;
   const publicClientL1 = viem.createPublicClient({
     batch: {
@@ -374,7 +388,7 @@ async function viem_multicallOptimismFinalizations(
   });
   const targetChain = withContractOverrides(chainId, getViemChain(chainId));
   // Validate the target chain has the required OP-stack contracts.
-  assertOpStackTargetChain(targetChain);
+  assertOpStackTargetChain(targetChain, hubChainId);
 
   const publicClientL2 = viem.createPublicClient({
     batch: {
@@ -430,6 +444,7 @@ async function viem_multicallOptimismFinalizations(
         });
         const proofArgs = [withdrawal, l2OutputIndex, outputRootProof, withdrawalProof];
         const callData = await crossChainMessenger.populateTransaction.proveWithdrawalTransaction(...proofArgs);
+        assert(isDefined(callData.data), "opStack: proveWithdrawalTransaction populateTransaction missing data");
         viemTxns.callData.push({
           callData: callData.data,
           target: crossChainMessenger.address,
@@ -479,6 +494,7 @@ async function viem_multicallOptimismFinalizations(
         // Calling OptimismPortal: https://github.com/ethereum-optimism/optimism/blob/d6bda0339005d98c992c749c137938d515755029/packages/contracts-bedrock/src/L1/OptimismPortal.sol
         callData = await crossChainMessenger.populateTransaction.finalizeWithdrawalTransaction(withdrawal);
       }
+      assert(isDefined(callData.data), "opStack: finalizeWithdrawalTransaction populateTransaction missing data");
       viemTxns.callData.push({
         callData: callData.data,
         target: crossChainMessenger.address,
@@ -501,7 +517,7 @@ async function viem_multicallOptimismFinalizations(
 }
 
 function getOptimismClient(chainId: OVM_CHAIN_ID, hubSigner: Signer): OVM_CROSS_CHAIN_MESSENGER {
-  const hubChainId = chainIsProd(chainId) ? CHAIN_IDs.MAINNET : CHAIN_IDs.SEPOLIA;
+  const hubChainId = chainIsProd(chainId) ? MAINNET : SEPOLIA;
   const contractOverrides = OPSTACK_CONTRACT_OVERRIDES[Number(chainId)];
   return new optimismSDK.CrossChainMessenger({
     bedrock: true,
@@ -559,10 +575,7 @@ async function getMessageStatuses(
 
   const statuses = await Promise.all(
     crossChainMessages.map((message, i) => {
-      return (crossChainMessenger as optimismSDK.CrossChainMessenger).getMessageStatus(
-        message.message as optimismSDK.MessageLike,
-        logIndexesForMessage[i]
-      );
+      return crossChainMessenger.getMessageStatus(message.message, logIndexesForMessage[i]);
     })
   );
   return statuses.map((status, i) => {
@@ -604,10 +617,14 @@ async function finalizeOptimismMessage(
   logIndex = 0
 ): Promise<Multicall2Call | undefined> {
   if (!chainIsBlast(_chainId)) {
-    const callData = await (crossChainMessenger as optimismSDK.CrossChainMessenger).populateTransaction.finalizeMessage(
-      message.message as optimismSDK.MessageLike,
+    const callData = await crossChainMessenger.populateTransaction.finalizeMessage(
+      message.message,
       undefined,
       logIndex
+    );
+    assert(
+      isDefined(callData.data) && isDefined(callData.to),
+      "opStack: finalizeMessage populateTransaction missing to/data"
     );
     return {
       callData: callData.data,
@@ -620,17 +637,15 @@ async function finalizeOptimismMessage(
   // to finalize, inside of which contains a `requestId` we need to use to find the `hintId` parameter
   // we need to submit when finalizing the withdrawal. Note that the `hintId` can be hard-coded to 0
   // for non-ETH withdrawals.
-  const { blastOptimismPortal, blastEthYieldManager } = CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET];
+  const blastOptimismPortal = getContractEntry(MAINNET, "blastOptimismPortal");
+  const blastEthYieldManager = getContractEntry(MAINNET, "blastEthYieldManager");
   const blastPortal = new Contract(
     blastOptimismPortal.address,
     blastOptimismPortal.abi,
     crossChainMessenger.l1Provider
   );
 
-  const resolvedMessage = await crossChainMessenger.toCrossChainMessage(
-    message.message as optimismSDK.MessageLike,
-    logIndex
-  );
+  const resolvedMessage = await crossChainMessenger.toCrossChainMessage(message.message, logIndex);
   const withdrawalStruct = await crossChainMessenger.toLowLevelMessage(resolvedMessage, logIndex);
   const l2WithdrawalParams = [
     withdrawalStruct.messageNonce,
@@ -693,6 +708,10 @@ async function finalizeOptimismMessage(
     }
   }
   const callData = await blastPortal.populateTransaction.finalizeWithdrawalTransaction(hintId, l2WithdrawalParams);
+  assert(
+    isDefined(callData.data) && isDefined(callData.to),
+    "opStack: blastPortal.finalizeWithdrawalTransaction populateTransaction missing to/data"
+  );
   return {
     callData: callData.data,
     target: callData.to,
@@ -705,10 +724,10 @@ async function proveOptimismMessage(
   message: CrossChainMessageWithStatus,
   logIndex = 0
 ): Promise<Multicall2Call> {
-  const callData = await (crossChainMessenger as optimismSDK.CrossChainMessenger).populateTransaction.proveMessage(
-    message.message as optimismSDK.MessageLike,
-    undefined,
-    logIndex
+  const callData = await crossChainMessenger.populateTransaction.proveMessage(message.message, undefined, logIndex);
+  assert(
+    isDefined(callData.data) && isDefined(callData.to),
+    "opStack: proveMessage populateTransaction missing to/data"
   );
   return {
     callData: callData.data,
@@ -772,7 +791,8 @@ async function multicallOptimismFinalizations(
     };
   }
 
-  const { blastUsdYieldManager, blastDaiRetriever } = CONTRACT_ADDRESSES[hubPoolClient.chainId];
+  const blastUsdYieldManager = getContractEntry(hubPoolClient.chainId, "blastUsdYieldManager");
+  const blastDaiRetriever = getContractEntry(hubPoolClient.chainId, "blastDaiRetriever");
   const usdYieldManager = new Contract(
     blastUsdYieldManager.address,
     blastUsdYieldManager.abi,
@@ -784,6 +804,7 @@ async function multicallOptimismFinalizations(
   const l2Provider = Signer.isSigner(crossChainMessenger.l2SignerOrProvider)
     ? crossChainMessenger.l2SignerOrProvider.provider
     : crossChainMessenger.l2SignerOrProvider;
+  assert(isDefined(l2Provider), "opStack: crossChainMessenger has no l2 provider");
   const [l2Block, latestL1Block] = await Promise.all([
     l2Provider.getBlock(l2FromBlock),
     usdYieldManager.provider.getBlockNumber(),
@@ -913,6 +934,10 @@ async function multicallOptimismFinalizations(
           destinationChainId: hubPoolClient.chainId,
         });
         const claimCallData = await tokenRetriever.populateTransaction.retrieve(requestId, hintIds[i]);
+        assert(
+          isDefined(claimCallData.data) && isDefined(claimCallData.to),
+          "opStack: blastDaiRetriever.retrieve populateTransaction missing to/data"
+        );
         return {
           callData: claimCallData.data,
           target: claimCallData.to,

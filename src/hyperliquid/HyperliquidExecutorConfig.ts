@@ -10,7 +10,7 @@ export class HyperliquidExecutorConfig extends CommonConfig {
   public readonly maxSlippageByRoute: { [pairName: string]: BigNumber } = {};
 
   constructor(env: ProcessEnv) {
-    super(env);
+    super(env, { botIdentifier: "across-hyperliquid-executor" });
 
     const {
       HYPERLIQUID_SUPPORTED_TOKENS,

@@ -1,9 +1,10 @@
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { utils } from "@across-protocol/sdk";
 import { BridgeApi } from "../../src/adapter/bridges/BridgeApi";
-import { ethers, randomAddress, expect, createSpyLogger, sinon, toBN } from "../utils";
+import { assert, ethers, randomAddress, expect, createSpyLogger, sinon, toBN } from "../utils";
 import {
   EvmAddress,
+  isDefined,
   toBNWei,
   BridgeResponse,
   BRIDGE_API_DESTINATION_TOKENS,
@@ -51,7 +52,7 @@ class MockBridgeApi extends BridgeApi {
 
 const toAddress = (address: string): EvmAddress => EvmAddress.from(address);
 
-describe("Cross Chain Adapter: BridgeApi", async function () {
+describe("Cross Chain Adapter: BridgeApi", function () {
   let adapter: MockBridgeApi;
   let mockApi: MockBridgeApiClient;
   let monitoredEoa: string;
@@ -83,7 +84,8 @@ describe("Cross Chain Adapter: BridgeApi", async function () {
     // Stub getTimestampForBlock so queryL1BridgeInitiationEvents doesn't need a real provider.
     sinon.stub(sdkUtils, "getTimestampForBlock").resolves(1_000_000);
     // Stub getTransactionReceipt so queryL1BridgeInitiationEvents doesn't need a real provider.
-    sinon.stub(deployer.provider!, "getTransactionReceipt").resolves({ transactionIndex: 0, blockNumber: 1 });
+    assert(isDefined(deployer.provider), "Deployer signer must have a provider");
+    sinon.stub(deployer.provider, "getTransactionReceipt").resolves({ transactionIndex: 0, blockNumber: 1 });
   });
 
   afterEach(function () {

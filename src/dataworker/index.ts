@@ -1,5 +1,6 @@
 import { TokenClient } from "../clients";
 import {
+  assert,
   blockExplorerLink,
   CHAIN_IDs,
   EvmAddress,
@@ -13,14 +14,13 @@ import {
   disconnectRedisClients,
   isDefined,
   getSvmSignerFromEvmSigner,
-  waitForPubSub,
   averageBlockTime,
-  getRedisCache,
-  getRedisPubSub,
   Provider,
   ZERO_BYTES,
   paginatedEventQuery,
 } from "../utils";
+import { getRedisCache } from "../cache/Redis";
+import { waitForPubSub, getRedisPubSub } from "../messaging/redis";
 import { spokePoolClientsToProviders } from "../common";
 import { Dataworker } from "./Dataworker";
 import { DataworkerConfig } from "./DataworkerConfig";
@@ -37,8 +37,6 @@ import { Disputer } from "./Disputer";
 
 config();
 let logger: winston.Logger;
-
-const { RUN_IDENTIFIER: runIdentifier, BOT_IDENTIFIER: botIdentifier = "across-dataworker" } = process.env;
 
 export async function createDataworker(
   _logger: winston.Logger,
@@ -160,14 +158,12 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
   logger = _logger;
 
   const config = new DataworkerConfig(process.env);
+  const { botIdentifier, runIdentifier } = config;
   const personality = resolvePersonality(config);
   const challengeRemaining = await getChallengeRemaining(config.hubPoolChainId, 0, logger);
 
-  // @dev The check for `runIdentifier` doubles as a check whether this instance is being run in GCP (or mocked as a production instance) and as a unique identifier
-  // which can be cached in redis (that is, for any executor/proposer instance, the run identifier lets any other instance know of its existence via a redis mapping
-  // from botIdentifier -> runIdentifier).
   if (
-    isDefined(runIdentifier) &&
+    !config.forcePropose &&
     challengeRemaining > config.minChallengeLeadTime &&
     (config.proposerEnabled || config.l1ExecutorEnabled)
   ) {
@@ -289,7 +285,8 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
     // @dev The dataworker loop takes a long-time to run, so if the proposer is enabled, run a final check and early
     // exit if a proposal is already pending. Similarly, the executor is enabled and if there are pool rebalance
     // leaves to be executed but the proposed bundle was already executed, then exit early.
-    const { hubPool } = clients.hubPoolClient;
+    const { hubPool, currentTime: hubPoolCurrentTime } = clients.hubPoolClient;
+    assert(isDefined(hubPoolCurrentTime), "HubPoolClient currentTime is unset");
     const pendingProposal: PendingRootBundle = await hubPool.rootBundleProposal();
 
     const proposalCollision =
@@ -303,8 +300,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
     const executorCollision =
       poolRebalanceLeafExecutionCount > 0 &&
       (pendingProposal.unclaimedPoolRebalanceLeafCount !== poolRebalanceLeafExecutionCount ||
-        (pendingProposal.challengePeriodEndTimestamp > clients.hubPoolClient.currentTime &&
-          !config.awaitChallengePeriod));
+        (pendingProposal.challengePeriodEndTimestamp > hubPoolCurrentTime && !config.awaitChallengePeriod));
     if (proposalCollision || executorCollision) {
       logger[startupLogLevel(config)]({
         at: "Dataworker#index",
@@ -314,7 +310,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
         executorCollision,
         poolRebalanceLeafExecutionCount,
         unclaimedPoolRebalanceLeafCount: pendingProposal.unclaimedPoolRebalanceLeafCount,
-        challengePeriodNotPassed: pendingProposal.challengePeriodEndTimestamp > clients.hubPoolClient.currentTime,
+        challengePeriodNotPassed: pendingProposal.challengePeriodEndTimestamp > hubPoolCurrentTime,
         pendingProposal,
       });
     } else if (!clients.hubPoolClient.hasPendingProposal()) {
@@ -349,7 +345,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
       // - We need to check whether we have an enqueued transaction in the multiCallerClient. Having no transaction there indicates that the executor/proposer instance
       //   exited early for a valid reason (such as insufficient lookback), so there would be no reason to await submitting a transaction.
       const hasTransactionQueued = clients.multiCallerClient.transactionCount() !== 0;
-      if ((config.l1ExecutorEnabled || config.proposerEnabled) && pubSub && runIdentifier && hasTransactionQueued) {
+      if ((config.l1ExecutorEnabled || config.proposerEnabled) && pubSub && hasTransactionQueued) {
         const challengeBuffer = Number(process.env.L1_EXECUTOR_CHALLENGE_BUFFER ?? 24); // Default to 24 seconds or 2 blocks.
         let updatedChallengeRemaining = await getChallengeRemaining(config.hubPoolChainId, challengeBuffer, logger);
         // If the updated challenge remaining is greater than the challenge remaining we observed at the start, then this indicates that during the runtime of this bot,
@@ -456,6 +452,9 @@ export async function runDisputerWatchdog(logger: winston.Logger, signer: Signer
   try {
     await disputer.validate();
     const redis = await getRedisCache(logger);
+    // Watchdog disputes are gated on validator-attestation counts persisted in Redis. If Redis is unavailable we
+    // can't read those counts; falling back to 0 would dispute on missing data. Fail fast instead.
+    assert(isDefined(redis), "Disputer watchdog requires a Redis cache to read validator attestation counts");
 
     const { currentTime, currentBlock, ...proposal } = await getProposal(provider, hubChainId);
 

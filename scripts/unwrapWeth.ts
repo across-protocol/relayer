@@ -7,6 +7,7 @@ import {
   getNetworkName,
   TOKEN_SYMBOLS_MAP,
   assert,
+  isDefined,
 } from "../src/utils";
 import { askYesNoQuestion } from "./utils";
 import minimist from "minimist";
@@ -44,9 +45,11 @@ export async function run(): Promise<void> {
   const wrapping = args.wrap;
   if (wrapping) {
     console.log("Wrapping WETH 🎁");
-    const currentBalance = ethers.utils.formatUnits(await connectedSigner.provider.getBalance(signerAddr), decimals);
+    const { provider } = connectedSigner;
+    assert(isDefined(provider), "Connected signer must have a provider");
+    const currentBalance = ethers.utils.formatUnits(await provider.getBalance(signerAddr), decimals);
     console.log(`Current ETH balance for account ${signerAddr} on ${getNetworkName(chainId)}: ${currentBalance}`);
-    if ((await connectedSigner.provider.getBalance(signerAddr)).lt(toBN(args.amount))) {
+    if ((await provider.getBalance(signerAddr)).lt(toBN(args.amount))) {
       console.log(`ETH balance < ${amountFromWei}, exiting`);
       return;
     }

@@ -11,6 +11,7 @@ import {
   getTimestampForBlock,
   BinanceApi,
   getBinanceApiClient,
+  getBinanceDepositAddress,
   floatToBN,
   CHAIN_IDs,
   compareAddressesSimple,
@@ -55,7 +56,7 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
     // Pull the binance API key from environment and throw if we cannot instantiate this bridge.
     this.binanceApiClientPromise = getBinanceApiClient(process.env["BINANCE_API_BASE"]);
 
-    // Pass in the WETH ABI as the ERC20 ABI. This is fine to do since we only call `transfer` on `this.l1Bridge`.
+    // Pass in the WETH ABI as the ERC20 ABI. This is fine to do since we only call `transfer` on `this.getL1Bridge()`.
     this.l1Bridge = new Contract(l1Token.toNative(), ERC20_ABI, l1Signer);
 
     // Get the required token/network context needed to query the Binance API.
@@ -64,7 +65,9 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
     this.tokenSymbol = _tokenSymbol === "WBNB" ? "BNB" : _tokenSymbol;
 
     // Cast the input Signer | Provider to a Provider.
-    this.l2Provider = l2SignerOrProvider instanceof Signer ? l2SignerOrProvider.provider : l2SignerOrProvider;
+    const l2Provider = l2SignerOrProvider instanceof Signer ? l2SignerOrProvider.provider : l2SignerOrProvider;
+    assert(isDefined(l2Provider), "BinanceCEXBridge: l2Signer must have a provider");
+    this.l2Provider = l2Provider;
   }
 
   async constructL1ToL2Txn(
@@ -78,7 +81,7 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
 
     const binanceApiClient = await this.getBinanceClient();
 
-    const depositAddress = await binanceApiClient.depositAddress({
+    const depositAddress = await getBinanceDepositAddress(binanceApiClient, {
       coin: this.tokenSymbol,
       network: "ETH",
     });
@@ -175,8 +178,10 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
   }
 
   private async isL1OrL2Contract(address: EvmAddress): Promise<boolean> {
+    const l1Provider = this.l1Signer.provider;
+    assert(isDefined(l1Provider), "BinanceCEXBridge: l1Signer must have a provider");
     const [isL1Contract, isL2Contract] = await Promise.all([
-      isContractDeployedToAddress(address.toNative(), this.l1Signer.provider),
+      isContractDeployedToAddress(address.toNative(), l1Provider),
       isContractDeployedToAddress(address.toNative(), this.l2Provider),
     ]);
     return isL1Contract || isL2Contract;

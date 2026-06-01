@@ -23,7 +23,7 @@ Routes are assembled by the rebalancer construction layer and passed at client i
 
 The built-in production route set is generated in `src/rebalancer/buildRebalanceRoutes.ts`. It covers:
 
-- stablecoin swap routes between `USDC` and `USDT` on Binance and Hyperliquid,
+- stablecoin swap routes between `USDC` and `USDT` on Binance and Hyperliquid, excluding Tron from Hyperliquid,
 - same-asset routes for `USDC` via CCTP and on direct Binance-supported USDC networks via Binance, and for `USDT` via OFT and on direct Binance-supported USDT networks via Binance,
 - Binance-only `WETH <-> USDC` and `WETH <-> USDT` routes sourced or settled through mainnet. `WETH <-> WETH` route handling exists in the adapter, but no cross-chain `WETH <-> WETH` routes are generated while WETH Binance support is limited to mainnet.
 
@@ -35,10 +35,12 @@ Route construction keeps two token-keyed chain maps:
 Operational note:
 
 - Same-asset `USDC <-> USDC` and `USDT <-> USDT` Binance routes are included deliberately so they can compete on estimated cost against CCTP/OFT paths, but they are only generated when both chains are direct Binance networks for that asset.
+- USDT on Tron is treated as a direct Binance `TRX` network for both deposits and withdrawals. Tron USDT Binance routes deposit to and withdraw from Binance directly, rather than bridging through an OFT entrypoint network first.
 - Updating Binance venue support for a token does not automatically widen rebalancer support. New chains should usually be added to both maps intentionally after inventory/config/runtime review.
 - Current route construction limits Binance `WETH` support to mainnet because the rebalancer's native-ETH deposit path relies on the mainnet Atomic Depositor and transfer proxy wiring.
 - If additional direct Binance ETH networks are enabled later, same-coin `WETH <-> WETH` routes skip the spot swap leg and treat on-chain `WETH` as Binance `ETH`.
 - Intermediate on-chain bridge legs into or out of Binance remain restricted to `USDC` and `USDT`; current `WETH` routes therefore source or settle through mainnet rather than bridging WETH into another Binance ETH network.
+- Hyperliquid routes intentionally exclude Tron even when Tron USDT is configured, and same-asset USDT routes involving Tron use Binance rather than OFT.
 
 ### Rebalancer Adapter
 
@@ -82,10 +84,19 @@ Binance account assumption:
 When adapters create new orders, order detail keys are stored with `REBALANCER_PENDING_ORDER_TTL` (default: 1 hour).
 If this env var is unset, the rebalancer uses the 1-hour default.
 
+Adapters may also pass a `ttlOverride` to `BaseAdapter._redisCreateOrder` to extend the default for routes whose
+expected finality outlives 1 hour. Long-finality OFT pre-deposit bridges (currently USDT0 from HyperEVM, ~12h) use
+`getOftPreDepositOrderTtlOverride` from `oftAdapter.ts` so both `OftAdapter` and adapters that delegate their
+pre-deposit bridge to OFT (e.g. `BinanceStablecoinSwapAdapter`) keep their pending-order TTL aligned with the
+underlying bridge. Note that `_redisUpdateOrderStatus` does not refresh the TTL, so the value set at creation is the
+lifetime of the whole order across all status transitions.
+
 If an order does not finalize before the TTL expires, order details and associated pending-order status tracking are
-eventually pruned from Redis cache state. At that point, operators should rely on adapter lifecycle reconciliation
-(including `sweepIntermediateBalances`) to recover stranded intermediate capital instead of assuming pending-order cache
-entries remain indefinitely.
+eventually pruned from Redis cache state. `BaseAdapter._redisCleanupPendingOrders` emits a `warn` log (`⏰ Pruning
+expired pending order ...`) when this happens so operators can detect abandoned orders that never received a
+finalization log. At that point, operators should rely on adapter lifecycle reconciliation (including
+`sweepIntermediateBalances`) to recover stranded intermediate capital instead of assuming pending-order cache entries
+remain indefinitely.
 
 Contributor guidance:
 
@@ -246,7 +257,19 @@ Running the Rebalancer allows the relayer to support in-protocol swap flows whil
 
 ### Binance Finalizer
 
-The Binance finalizer sweeps exchange balances as a fallback path. The Binance adapter marks expected swap lifecycle transfers, and stale balances are eventually swept if swaps do not complete.
+The Binance finalizer sweeps exchange balances as a fallback path. Before withdrawing, it constructs a read-only Binance
+adapter, reads pending Binance rebalances with `getPendingRebalances(account)`, and subtracts positive destination-token
+amounts from the shared exchange-account withdrawal capacity. The Binance adapter marks expected swap lifecycle
+transfers, and stale balances are eventually swept if swaps do not complete.
+
+When Binance reports `RW00441`, the account has recently credited deposit value that is not withdrawal-unlocked yet.
+The Binance adapter treats this as a retryable wait state and leaves the order pending. The Binance finalizer reads
+Binance pending rebalance amounts through the Binance adapter so post-swap output balances are not withdrawn while an
+order is waiting for Binance's deposit unlock confirmations. Because pending-order Redis sets are keyed by
+signer account and finalizer withdrawal recipients can be configured separately, the finalizer checks both configured
+EVM withdrawal recipients and the running signer account before applying this shared Binance-account deduction. Pending
+rebalance loading errors surface normally so operators can investigate instead of silently sweeping without the
+deduction.
 
 ## Venue-specific operational note
 

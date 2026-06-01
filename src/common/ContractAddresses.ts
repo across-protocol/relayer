@@ -1,4 +1,8 @@
+import assert from "assert";
+import { ContractInterface } from "ethers";
+import { JsonFragment } from "@ethersproject/abi";
 import { CHAIN_IDs, getDeployedAddress } from "../utils";
+import { isDefined } from "../utils/TypeGuards";
 import CCTP_MESSAGE_TRANSMITTER_ABI from "./abi/CctpMessageTransmitter.json";
 import CCTP_TOKEN_MESSENGER_ABI from "./abi/CctpTokenMessenger.json";
 import CCTP_V2_TOKEN_MESSENGER_ABI from "./abi/CctpV2TokenMessenger.json";
@@ -29,14 +33,10 @@ import ARBITRUM_OUTBOX_ABI from "./abi/ArbitrumOutbox.json";
 import ARBSYS_L2_ABI from "./abi/ArbSysL2.json";
 import LINEA_MESSAGE_SERVICE_ABI from "./abi/LineaMessageService.json";
 import LINEA_TOKEN_BRIDGE_ABI from "./abi/LineaTokenBridge.json";
-import SCROLL_RELAY_MESSENGER_ABI from "./abi/ScrollRelayMessenger.json";
 import BLAST_BRIDGE_ABI from "./abi/BlastBridge.json";
 import BLAST_YIELD_MANAGER_ABI from "./abi/BlastYieldManager.json";
 import BLAST_DAI_RETRIEVER_ABI from "./abi/BlastDaiRetriever.json";
 import BLAST_OPTIMISM_PORTAL_ABI from "./abi/BlastOptimismPortal.json";
-import SCROLL_GATEWAY_ROUTER_L1_ABI from "./abi/ScrollGatewayRouterL1.json";
-import SCROLL_GATEWAY_ROUTER_L2_ABI from "./abi/ScrollGatewayRouterL2.json";
-import SCROLL_GAS_PRICE_ORACLE_ABI from "./abi/ScrollGasPriceOracle.json";
 import IOFT_ABI_FULL from "./abi/IOFT.json";
 import HYPERLIQUID_DEPOSIT_HANDLER_ABI from "./abi/HyperliquidDepositHandler.json";
 import SPOKE_POOL_PERIPHERY_ABI from "./abi/SpokePoolPeriphery.json";
@@ -205,14 +205,6 @@ export const CONTRACT_ADDRESSES: {
       address: "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
     },
-    scrollRelayMessenger: {
-      address: "0x6774Bcbd5ceCeF1336b5300fb5186a12DDD8b367",
-      abi: SCROLL_RELAY_MESSENGER_ABI,
-    },
-    scrollGatewayRouter: {
-      address: "0xF8B1378579659D8F7EE5f3C929c2f3E332E41Fd6",
-      abi: SCROLL_GATEWAY_ROUTER_L1_ABI,
-    },
     hubPool: {
       address: "0xc186fA914353c44b2E33eBE05f21846F1048bEda",
       abi: HUB_POOL_ABI,
@@ -240,10 +232,6 @@ export const CONTRACT_ADDRESSES: {
     blastOptimismPortal: {
       address: "0x0Ec68c5B10F21EFFb74f2A5C61DFe6b08C0Db6Cb",
       abi: BLAST_OPTIMISM_PORTAL_ABI,
-    },
-    scrollGasPriceOracle: {
-      address: "0x0d7E906BD9cAFa154b048cFa766Cc1E54E39AF9B",
-      abi: SCROLL_GAS_PRICE_ORACLE_ABI,
     },
     atomicDepositorTransferProxy: {
       address: "0xd8938466fE02dA664b806583edE9c77dCD968692",
@@ -365,6 +353,9 @@ export const CONTRACT_ADDRESSES: {
       address: getDeployedAddress("HyperliquidDepositHandler", CHAIN_IDs.HYPEREVM),
       abi: HYPERLIQUID_DEPOSIT_HANDLER_ABI,
     },
+    spokePoolPeriphery: {
+      abi: SPOKE_POOL_PERIPHERY_ABI,
+    },
   },
   [CHAIN_IDs.ZK_SYNC]: {
     nativeTokenVault: {
@@ -438,15 +429,6 @@ export const CONTRACT_ADDRESSES: {
       address: "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
     },
-    ovmStandardBridge: {
-      address: "0x4200000000000000000000000000000000000010",
-      abi: OVM_L2_STANDARD_BRIDGE_ABI,
-    },
-    nativeToken: {
-      address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
-    },
-  },
-  [CHAIN_IDs.REDSTONE]: {
     ovmStandardBridge: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
@@ -646,18 +628,13 @@ export const CONTRACT_ADDRESSES: {
       address: "0x0000000000000000000000000000000000000000",
     },
   },
-  [CHAIN_IDs.SCROLL]: {
-    scrollGatewayRouter: {
-      address: "0x4C0926FF5252A435FD19e10ED15e5a249Ba19d79",
-      abi: SCROLL_GATEWAY_ROUTER_L2_ABI,
+  [CHAIN_IDs.TRON]: {
+    spokePoolPeriphery: {
+      abi: SPOKE_POOL_PERIPHERY_ABI,
     },
-    // The Scroll canonical bridge will send WETH on a WETH deposit,
-    // so the dataworker will never use this address to wrap eth in
-    // the spoke pool. However, the relayer may need to wrap eth on
-    // the L2; therefore, we need to define an address here so the
-    // dataworker won't error.
-    nativeToken: {
-      address: "0x0000000000000000000000000000000000000000",
+    permit2: {
+      address: "0xBE365314f2E77FD1257d60C346Bb32DbDa369403",
+      abi: PERMIT2_ABI,
     },
   },
   [CHAIN_IDs.ZORA]: {
@@ -667,6 +644,11 @@ export const CONTRACT_ADDRESSES: {
     },
     nativeToken: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
+    },
+  },
+  [CHAIN_IDs.TEMPO]: {
+    nativeToken: {
+      address: "0x20C0000000000000000000000000000000000000",
     },
   },
   // Testnets
@@ -921,12 +903,6 @@ export const CONTRACT_ADDRESSES: {
       abi: PERMIT2_ABI,
     },
   },
-  [CHAIN_IDs.SCROLL_SEPOLIA]: {
-    scrollGatewayRouter: {
-      address: "0x9aD3c5617eCAa556d6E166787A97081907171230",
-      abi: SCROLL_GATEWAY_ROUTER_L2_ABI,
-    },
-  },
   [CHAIN_IDs.UNICHAIN_SEPOLIA]: {
     cctpMessageTransmitter: {
       address: "0xbc498c326533d675cf571B90A2Ced265ACb7d086",
@@ -956,3 +932,41 @@ export const CONTRACT_ADDRESSES: {
     },
   },
 };
+
+// Narrow `unknown[]` (the table's loose ABI typing) to a shape assignable to `ContractInterface`.
+export function isJsonAbi(value: unknown[]): value is JsonFragment[] {
+  return value.every((item) => typeof item === "object" && item !== null);
+}
+
+/**
+ * Look up a contract entry that is required to have both `address` and `abi` populated.
+ * Throws if either is missing — useful for adapter constructors that immediately build a Contract.
+ */
+export function getContractEntry(chainId: number, name: string): { address: string; abi: ContractInterface } {
+  const entry = CONTRACT_ADDRESSES[chainId]?.[name];
+  assert(isDefined(entry?.address) && isDefined(entry?.abi), `Missing CONTRACT_ADDRESSES entry: ${chainId}/${name}`);
+  assert(isJsonAbi(entry.abi), `Invalid ABI shape: ${chainId}/${name}`);
+  return { address: entry.address, abi: entry.abi };
+}
+
+/**
+ * Look up only the `abi` for a contract entry (address resolved via deployment metadata).
+ * Throws if the abi is missing or malformed.
+ */
+export function getContractAbi(chainId: number, name: string): ContractInterface {
+  const entry = CONTRACT_ADDRESSES[chainId]?.[name];
+  assert(isDefined(entry?.abi), `Missing CONTRACT_ADDRESSES abi: ${chainId}/${name}`);
+  assert(isJsonAbi(entry.abi), `Invalid ABI shape: ${chainId}/${name}`);
+  return entry.abi;
+}
+
+/**
+ * Look up only the `address` for a contract entry. Use this for entries that may not define an `abi`
+ * (e.g. nativeToken on most OP Stack chains, SVM cctp* entries).
+ * Throws if the address is missing.
+ */
+export function getContractAddress(chainId: number, name: string): string {
+  const entry = CONTRACT_ADDRESSES[chainId]?.[name];
+  assert(isDefined(entry?.address), `Missing CONTRACT_ADDRESSES address: ${chainId}/${name}`);
+  return entry.address;
+}

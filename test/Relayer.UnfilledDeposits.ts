@@ -27,6 +27,7 @@ import {
   SimpleMockTokenClient,
 } from "./mocks";
 import {
+  assert,
   BigNumber,
   Contract,
   SignerWithAddress,
@@ -55,11 +56,12 @@ import {
   RelayerUnfilledDeposit,
   getAllUnfilledDeposits,
   getUnfilledDeposits,
+  isDefined,
   utf8ToHex,
   toAddressType,
 } from "../src/utils";
 
-describe("Relayer: Unfilled Deposits", async function () {
+describe("Relayer: Unfilled Deposits", function () {
   const { bnOne } = sdkUtils;
 
   let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
@@ -159,7 +161,7 @@ describe("Relayer: Unfilled Deposits", async function () {
     await profitClient.initToken(l1Token);
 
     const chainIds = Object.values(spokePoolClients).map(({ chainId }) => chainId);
-    inventoryClient = new MockInventoryClient(null, null, null, null, null, hubPoolClient);
+    inventoryClient = new MockInventoryClient(null, spyLogger, null, null, null, hubPoolClient);
     inventoryClient.setTokenMapping({
       [l1Token.address]: {
         [originChainId]: erc20_1.address,
@@ -272,9 +274,9 @@ describe("Relayer: Unfilled Deposits", async function () {
     // Take the 2nd last deposit and mark it filled.
     expect(deposits.length > 2).to.be.true;
     const filledDeposit = deposits.at(-2);
-    expect(filledDeposit).to.exist;
+    assert(isDefined(filledDeposit), "Expected at least 2 deposits");
 
-    const depositHash = spokePoolClient_1.getDepositHash(filledDeposit!);
+    const depositHash = spokePoolClient_1.getDepositHash(filledDeposit);
     const { fillStatus } = relayerInstance;
     fillStatus[depositHash] = FillStatus.Filled;
 
@@ -295,7 +297,7 @@ describe("Relayer: Unfilled Deposits", async function () {
       .excludingEvery(["realizedLpFeePct", "quoteBlockNumber", "fromLiteChain", "toLiteChain"])
       .to.deep.equal(
         deposits
-          .filter(({ depositId }) => depositId !== filledDeposit!.depositId)
+          .filter(({ depositId }) => depositId !== filledDeposit.depositId)
           .map((deposit) => ({
             deposit: depositIntoPrimitiveTypes(deposit),
             invalidFills: [],
@@ -527,8 +529,8 @@ describe("Relayer: Unfilled Deposits", async function () {
     deposits.forEach((deposit, idx) => {
       const lpFeeKey = relayerInstance.getLPFeeKey(deposit);
       const relayerLpFee = relayerLpFees[lpFeeKey].find(({ paymentChainId }) => paymentChainId === destinationChainId);
-      expect(relayerLpFee).to.exist;
-      expect(relayerLpFee!.lpFeePct.eq(hubPoolLpFees[idx].realizedLpFeePct)).to.be.true;
+      assert(isDefined(relayerLpFee), "Expected relayer LP fee");
+      expect(relayerLpFee.lpFeePct.eq(hubPoolLpFees[idx].realizedLpFeePct)).to.be.true;
     });
 
     // Compute LP fees for taking repayment on the origin chain.
@@ -540,8 +542,8 @@ describe("Relayer: Unfilled Deposits", async function () {
     deposits.forEach((deposit, idx) => {
       const lpFeeKey = relayerInstance.getLPFeeKey(deposit);
       const relayerLpFee = relayerLpFees[lpFeeKey].find(({ paymentChainId }) => paymentChainId === originChainId);
-      expect(relayerLpFee).to.exist;
-      expect(relayerLpFee!.lpFeePct.eq(hubPoolLpFees[idx].realizedLpFeePct)).to.be.true;
+      assert(isDefined(relayerLpFee), "Expected relayer LP fee");
+      expect(relayerLpFee.lpFeePct.eq(hubPoolLpFees[idx].realizedLpFeePct)).to.be.true;
     });
 
     // Compute LP fees for taking repayment on the HubPool chain.
@@ -555,8 +557,8 @@ describe("Relayer: Unfilled Deposits", async function () {
       const relayerLpFee = relayerLpFees[lpFeeKey].find(
         ({ paymentChainId }) => paymentChainId === hubPoolClient.chainId
       );
-      expect(relayerLpFee).to.exist;
-      expect(relayerLpFee!.lpFeePct.eq(hubPoolLpFees[idx].realizedLpFeePct)).to.be.true;
+      assert(isDefined(relayerLpFee), "Expected relayer LP fee");
+      expect(relayerLpFee.lpFeePct.eq(hubPoolLpFees[idx].realizedLpFeePct)).to.be.true;
     });
 
     // Test for collisions on the LP fee key.

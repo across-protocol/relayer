@@ -69,7 +69,7 @@ function encodeFunctionData(_method: string, args: ReadonlyArray<unknown> = []):
   return args.join(" ");
 }
 
-describe("MultiCallerClient", async function () {
+describe("MultiCallerClient", function () {
   const { spyLogger }: { spyLogger: winston.Logger } = createSpyLogger();
   const address = randomAddress(); // Test contract address
   let multiCaller: DummyMultiCallerClient;

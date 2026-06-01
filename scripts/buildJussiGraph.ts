@@ -14,7 +14,8 @@ import {
 } from "../src/jussi/JussiGraphPublisher";
 import { runFullBuild } from "../src/jussi/GraphBuilder";
 import { prepareGraphTopology } from "../src/jussi/prepareGraphTopology";
-import { JussiGraphJson, PreparedGraphTopology } from "../src/jussi/types";
+import { JussiGraphJson, LogicalAsset, PreparedGraphTopology } from "../src/jussi/types";
+import { getRedisCache } from "../src/cache/Redis";
 import { getAcrossHost } from "../src/clients/AcrossAPIClient";
 import { constructRelayerClients } from "../src/relayer/RelayerClientHelper";
 import { RelayerConfig } from "../src/relayer/RelayerConfig";
@@ -31,7 +32,6 @@ import {
   delay,
   defiLlama,
   disconnectRedisClients,
-  getRedisCache,
   getNativeTokenInfoForChain,
   isDefined,
   retrieveSignerFromCLIArgs,
@@ -87,12 +87,8 @@ function requireEnvironmentVariable(name: string): void {
 }
 
 function syncRelayerChains(relayerConfig: RelayerConfig, chainIds: number[]): void {
-  (relayerConfig.relayerOriginChains as number[]).splice(0, relayerConfig.relayerOriginChains.length, ...chainIds);
-  (relayerConfig.relayerDestinationChains as number[]).splice(
-    0,
-    relayerConfig.relayerDestinationChains.length,
-    ...chainIds
-  );
+  relayerConfig.relayerOriginChains.splice(0, relayerConfig.relayerOriginChains.length, ...chainIds);
+  relayerConfig.relayerDestinationChains.splice(0, relayerConfig.relayerDestinationChains.length, ...chainIds);
 }
 
 function ensureGraphLogicalAssetsAreIncludedInRelayerTokens(): void {
@@ -170,7 +166,7 @@ async function buildExamplePricesByAsset(
   ]);
   const pricesByAsset: Record<string, string> = {};
 
-  for (const logicalAsset of Object.keys(graphJson.logical_assets).sort()) {
+  for (const logicalAsset of Object.keys(graphJson.logical_assets).sort() as LogicalAsset[]) {
     const address = TOKEN_SYMBOLS_MAP[logicalAsset].addresses[CHAIN_IDs.MAINNET];
     const price = await priceClient.getPriceByAddress(address);
     pricesByAsset[`logical:${logicalAsset}`] = formatExampleUsdPrice(Number(price.price));
@@ -306,9 +302,7 @@ async function runCheck(prepared: PreparedGraphTopology, logger: winston.Logger,
 }
 
 async function run(flags: BuildJussiGraphFlags, logger: winston.Logger): Promise<void> {
-  if (flags.upload) {
-    validateJussiUploadEnv(process.env);
-  }
+  const uploadUrl = flags.upload ? validateJussiUploadEnv(process.env) : undefined;
 
   const prepared = await prepareGraphTopologyFromEnv();
   if (flags.check) {
@@ -325,8 +319,11 @@ async function run(flags: BuildJussiGraphFlags, logger: winston.Logger): Promise
   if (!isDefined(redis)) {
     throw new Error("Redis is required for --upload");
   }
+  if (!isDefined(uploadUrl)) {
+    throw new Error("JUSSI_API_URL must be set for --upload");
+  }
   const publisher = new JussiGraphPublisher({
-    apiClient: new JussiApiClient(process.env.JUSSI_API_URL!, process.env.JUSSI_API_TOKEN),
+    apiClient: new JussiApiClient(uploadUrl.toString(), process.env.JUSSI_API_TOKEN),
     logger,
     redis,
     runFullBuild: (graphId) => runPreparedFullBuild(prepared, logger, graphId),

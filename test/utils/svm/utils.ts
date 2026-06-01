@@ -15,9 +15,7 @@ import {
 import {
   Address,
   Commitment,
-  CompilableTransactionMessage,
   KeyPairSigner,
-  TransactionMessageWithBlockhashLifetime,
   airdropFactory,
   appendTransactionMessageInstruction,
   createSolanaRpc,
@@ -71,7 +69,7 @@ export const generateKeyPairSignerWithSol = async (
 // Signs, sends and confirms a compiled transaction message.
 export const signAndSendTransaction = async (
   rpcClient: arch.svm.RpcClient,
-  transactionMessage: CompilableTransactionMessage & TransactionMessageWithBlockhashLifetime,
+  transactionMessage: Parameters<typeof signTransactionMessageWithSigners>[0],
   commitment: Commitment = "confirmed"
 ) => {
   const signedTransaction = await signTransactionMessageWithSigners(transactionMessage);
