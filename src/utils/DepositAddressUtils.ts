@@ -42,6 +42,9 @@ export function normalizeDepositAddressMessage(message: DepositAddressMessage): 
       message.adminWithdrawManagerContractAddress
     ),
     counterfactualMaterials: {
+      // Spread first so the fee-bearing cctp/spokePool leaves (and their `params.executionFee`)
+      // survive normalization; the explicit overrides below re-normalize the leaf addresses.
+      ...message.counterfactualMaterials,
       withdrawLeaf: {
         ...message.counterfactualMaterials.withdrawLeaf,
         implementationAddress: getEthersCompatibleAddress(
@@ -49,6 +52,24 @@ export function normalizeDepositAddressMessage(message: DepositAddressMessage): 
           message.counterfactualMaterials.withdrawLeaf.implementationAddress
         ),
       },
+      ...(message.counterfactualMaterials.cctpLeaf && {
+        cctpLeaf: {
+          ...message.counterfactualMaterials.cctpLeaf,
+          implementationAddress: getEthersCompatibleAddress(
+            originChainId,
+            message.counterfactualMaterials.cctpLeaf.implementationAddress
+          ),
+        },
+      }),
+      ...(message.counterfactualMaterials.spokePoolLeaf && {
+        spokePoolLeaf: {
+          ...message.counterfactualMaterials.spokePoolLeaf,
+          implementationAddress: getEthersCompatibleAddress(
+            originChainId,
+            message.counterfactualMaterials.spokePoolLeaf.implementationAddress
+          ),
+        },
+      }),
     },
   };
 }

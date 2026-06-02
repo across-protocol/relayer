@@ -28,8 +28,20 @@ export interface CounterfactualLeaf {
   merkleProof: string[];
 }
 
+/**
+ * Bridge leaf that carries the `executionFee` committed into the merkle root at deposit-address
+ * creation time (decimal string, input-token base units; absent on pre-fee messages, "0" on
+ * sponsored routes). The bot echoes this value back to the swap API verbatim so the rebuilt proof
+ * verifies. Only `cctpLeaf`/`spokePoolLeaf` carry it; `withdrawLeaf` never does.
+ */
+export interface ExecutionFeeLeaf extends CounterfactualLeaf {
+  params?: { executionFee: string };
+}
+
 export interface CounterfactualMaterials {
   withdrawLeaf: CounterfactualLeaf;
+  cctpLeaf?: ExecutionFeeLeaf;
+  spokePoolLeaf?: ExecutionFeeLeaf;
 }
 
 export interface DepositAddressMessage {
