@@ -236,18 +236,22 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     return orderDetails;
   }
 
-  protected async _redisDeleteOrder(cloid: string, currentStatus: number, account: EvmAddress): Promise<void> {
+  // Returns whether the status-set member was actually removed by this call (i.e. it was present
+  // when sRem ran). `_redisCleanupPendingOrders` uses this to disambiguate a TTL prune from a
+  // concurrent finalize; sequential sRem→del guarantees an observer seeing the details key gone
+  // has also seen the set member removed, so the sRem return value is authoritative.
+  protected async _redisDeleteOrder(cloid: string, currentStatus: number, account: EvmAddress): Promise<boolean> {
     const orderStatusKey = getPendingBridgeStatusSetKey(this.REDIS_PREFIX, currentStatus, account.toNative());
     const orderDetailsKey = getPendingBridgeOrderKey(this.REDIS_PREFIX, cloid, account.toNative());
-    const result = await Promise.all([
-      this.redisCache.sRem(orderStatusKey, cloid),
-      this.redisCache.del(orderDetailsKey),
-    ]);
+    const memberRemoved = (await this.redisCache.sRem(orderStatusKey, cloid)) > 0;
+    const detailsRemoved = await this.redisCache.del(orderDetailsKey);
     this.logger.debug({
       at: "BaseAdapter._redisDeleteOrder",
       message: `Deleted order details for cloid ${cloid}`,
-      result,
+      memberRemoved,
+      detailsRemoved,
     });
+    return memberRemoved;
   }
 
   protected _redisGetLatestNonceKey(): string {
@@ -258,18 +262,28 @@ export abstract class BaseAdapter implements RebalancerAdapter {
   // that no longer have an order details key in Redis. Will only be used to cleanup orders owned by this.baseSignerAddress, for safety.
   private async _redisCleanupPendingOrders(status: STATUS, account: EvmAddress): Promise<void> {
     // If sMembers don't expire and don't have a notion of TTL, so check if order detail keys have expired. If they have,
-    // then delete the member from the set.
-    const sMembers = await this.redisCache.sMembers(
-      getPendingBridgeStatusSetKey(this.REDIS_PREFIX, status, account.toNative())
-    );
+    // then delete the member from the set. Reaching this branch means the order's TTL elapsed before the adapter
+    // observed it transitioning out of `status` (e.g. via `_redisDeleteOrder` on finalization), so the rebalancer is
+    // abandoning the order without emitting its usual finalization log. Surface a warn so operators can detect this.
+    const statusSetKey = getPendingBridgeStatusSetKey(this.REDIS_PREFIX, status, account.toNative());
+    const sMembers = await this.redisCache.sMembers(statusSetKey);
     const orderDetails = await Promise.all(sMembers.map((cloid) => this._redisGetOrderDetails(cloid, account)));
     await forEachAsync(sMembers, async (cloid, i) => {
       if (!isDefined(orderDetails[i])) {
-        this.logger.debug({
+        // A concurrent finalize (e.g. from another rebalancer instance sharing this signer address)
+        // could have removed the details key but landed its set `sRem` after we captured `sMembers`.
+        // `_redisDeleteOrder` is sequential (sRem then del) and returns whether sRem actually removed
+        // the member: false means the finalize beat us to sRem and we should suppress; true means the
+        // member was still present, i.e. a genuine TTL prune that deserves the warn.
+        const memberRemoved = await this._redisDeleteOrder(cloid, status, account);
+        if (!memberRemoved) {
+          return;
+        }
+        this.logger.warn({
           at: "BaseAdapter._redisCleanupPendingOrders",
-          message: `Deleting expired order details for cloid ${cloid} from status set ${getPendingBridgeStatusSetKey(this.REDIS_PREFIX, status, account.toNative())}`,
+          message: `⏰ Pruning expired pending order ${cloid} from status set ${statusSetKey} without finalization. The order's REBALANCER_PENDING_ORDER_TTL elapsed before it could progress out of this status.`,
+          account: account.toNative(),
         });
-        await this._redisDeleteOrder(cloid, status, account);
       }
     });
   }

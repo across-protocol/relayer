@@ -50,6 +50,8 @@ import {
   deriveBinanceSpotMarketMeta,
   convertBinanceRouteAmount,
   toAddressType,
+  createFormatFunction,
+  blockExplorerLink,
 } from "../../utils";
 import { OrderDetails, RebalanceRoute } from "../utils/interfaces";
 import { STATUS } from "../utils/utils";
@@ -58,7 +60,7 @@ import { AugmentedTransaction, MultiCallerClient } from "../../clients";
 import { RebalancerConfig } from "../RebalancerConfig";
 import { getContractEntry } from "../../common";
 import { CctpAdapter } from "./cctpAdapter";
-import { OftAdapter } from "./oftAdapter";
+import { OftAdapter, getOftPreDepositOrderTtlOverride } from "./oftAdapter";
 import WETH_ABI from "../../common/abi/Weth.json";
 
 export class BinanceStablecoinSwapAdapter extends BaseAdapter {
@@ -525,10 +527,11 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       }
       // We no longer need this order information, so we can delete it.
       const destTokenInfo = this._getTokenInfo(destinationToken, destinationChain);
+      const destinationFormatter = createFormatFunction(2, 4, false, destTokenInfo.decimals);
       this.logger.info({
         at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",
-        message: `✨ Order ${cloid} of ${fromWei(withdrawAmountWei, destTokenInfo.decimals)} ${destTokenInfo.symbol} has finalized withdrawing to the final destination chain ${destinationChain}!`,
-        withdrawalDetails,
+        message: `✨ Order ${cloid} of ${destinationFormatter(withdrawAmountWei)} ${destTokenInfo.symbol} has finalized withdrawing to the final destination chain ${destinationChain}!`,
+        binanceWithdrawalTxnId: blockExplorerLink(withdrawalDetails.txId, binanceWithdrawalNetwork),
       });
       await this._redisDeleteOrder(cloid, STATUS.PENDING_WITHDRAWAL, this.baseSignerAddress);
     }
@@ -732,6 +735,8 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     // Make sure that the amount to transfer will be larger than the minimum withdrawal size after expected fees.
     const sourceTokenInfo = this._getTokenInfo(sourceToken, sourceChain);
     const destinationTokenInfo = this._getTokenInfo(destinationToken, destinationEntrypointNetwork);
+    const sourceFormatter = createFormatFunction(2, 4, false, sourceTokenInfo.decimals);
+    const destinationFormatter = createFormatFunction(2, 4, false, destinationTokenInfo.decimals);
     const bridgeToBinanceFee = await this._getBridgingFees(rebalanceRoute, amountToTransfer);
     const expectedSourceAmountToDepositForSwap = amountToTransfer.sub(bridgeToBinanceFee);
     const expectedAmountToWithdrawInDestinationUnits = await this._convertSourceToDestination(
@@ -824,9 +829,10 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       }
       this.logger.info({
         at: "BinanceStablecoinSwapAdapter.initializeRebalance",
-        message: `🍻 Creating new order ${cloid} by first bridging ${fromWei(amountToTransfer, sourceTokenInfo.decimals)} ${sourceTokenInfo.symbol} into ${getNetworkName(
+        message: `🍻 Creating new order ${cloid} by first bridging ${sourceFormatter(amountToTransfer)} ${sourceTokenInfo.symbol} into ${getNetworkName(
           binanceDepositNetwork
         )} from ${getNetworkName(sourceChain)} before depositing into Binance in order to acquire ${destinationTokenInfo.symbol} on ${getNetworkName(destinationChain)}`,
+        expectedOutput: destinationFormatter(expectedAmountToWithdrawInDestinationUnits),
       });
       const amountReceivedFromBridge = await this._bridgeToChain(
         sourceToken,
@@ -834,18 +840,25 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         binanceDepositNetwork,
         amountToTransfer
       );
+      // Mirror the underlying OFT bridge's pending-order TTL. Without this, long-finality
+      // bridges (e.g. USDT0 from HyperEVM, ~12h to land on Arbitrum) outlive this adapter's
+      // default 1h TTL and get silently pruned by BaseAdapter._redisCleanupPendingOrders
+      // while the bridge is still in flight — losing the swap context entirely.
+      const preDepositTtlOverride = getOftPreDepositOrderTtlOverride(rebalanceRoute);
       await this._redisCreateOrder(
         cloid,
         STATUS.PENDING_BRIDGE_PRE_DEPOSIT,
         rebalanceRoute,
         amountReceivedFromBridge,
-        this.baseSignerAddress
+        this.baseSignerAddress,
+        preDepositTtlOverride
       );
       return amountReceivedFromBridge;
     } else {
       this.logger.info({
         at: "BinanceStablecoinSwapAdapter.initializeRebalance",
-        message: `🍻 Creating new order ${cloid} by first transferring ${fromWei(amountToTransfer, sourceTokenInfo.decimals)} ${sourceTokenInfo.symbol} into Binance from ${getNetworkName(sourceChain)} in order to acquire ${destinationTokenInfo.symbol} on ${getNetworkName(destinationChain)}`,
+        message: `🍻 Creating new order ${cloid} by first transferring ${sourceFormatter(amountToTransfer)} ${sourceTokenInfo.symbol} into Binance from ${getNetworkName(sourceChain)} in order to acquire ${destinationTokenInfo.symbol} on ${getNetworkName(destinationChain)}`,
+        expectedOutput: destinationFormatter(expectedAmountToWithdrawInDestinationUnits),
       });
       await this._depositToBinance(sourceToken, sourceChain, amountToTransfer);
       await this._redisCreateOrder(
