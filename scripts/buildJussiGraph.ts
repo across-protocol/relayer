@@ -46,8 +46,6 @@ export function parseBuildJussiGraphFlags(args: string[]): BuildJussiGraphFlags 
       flags.check = true;
     } else if (arg === "--topology-only") {
       flags.topologyOnly = true;
-    } else if (arg === "--compare-artifact") {
-      throw new Error("--compare-artifact has been removed; use --topology-only --check");
     } else if (arg === "--upload") {
       flags.upload = true;
     }

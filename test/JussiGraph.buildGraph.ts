@@ -270,7 +270,6 @@ describe("Jussi graph builder helpers", function () {
     });
     expectParseError(["--check"], "--check requires --topology-only");
     expectParseError(["--topology-only", "--upload"], "--topology-only and --upload are mutually exclusive");
-    expectParseError(["--compare-artifact"], "--compare-artifact has been removed");
   });
 
   it("extracts mainnet and aliased USDC/USDT/WETH node templates from synthetic inventory config", async function () {
