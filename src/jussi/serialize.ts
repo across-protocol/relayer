@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { BigNumber } from "../utils";
+import { BigNumber } from "../utils/BNUtils";
 import type {
   BuiltJussiGraph,
   JussiGraphBundleJson,

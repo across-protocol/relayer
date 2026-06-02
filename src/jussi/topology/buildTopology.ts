@@ -1,4 +1,5 @@
-import { chainIsSvm, isDefined } from "../../utils";
+import { chainIsSvm } from "../../utils/SDKUtils";
+import { isDefined } from "../../utils/TypeGuards";
 import { DEFAULT_RATE_LIMIT_BUCKETS } from "../constants";
 import type { BuildTopologyParams, JussiGraphTopology } from "../types";
 import {

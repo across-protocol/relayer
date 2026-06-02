@@ -1,72 +1,66 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, parse, resolve } from "node:path";
 import util from "util";
 import winston from "winston";
+import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
+import { config } from "dotenv";
+import { waitForLogger } from "@risk-labs/logger";
 import { version } from "../package.json";
-import { updateSpokePoolClients } from "../src/common";
 import {
   buildJussiGraphEnvelope,
   buildJussiGraphJson,
   buildJussiRateLimitBucketsJson,
+  buildJussiTopologyArtifact,
   JUSSI_LOGICAL_ASSETS,
   JussiGraphJson,
   LogicalAsset,
   PreparedGraphTopology,
   prepareGraphTopology,
   runFullBuild,
+  stableJsonStringify,
 } from "../src/jussi/buildGraph";
-import { JussiApiClient } from "../src/jussi/JussiApiClient";
-import {
-  compareTopologyFingerprintWithRedis,
-  JussiGraphPublisher,
-  validateJussiUploadEnv,
-} from "../src/jussi/JussiGraphPublisher";
-import { getRedisCache } from "../src/cache/Redis";
-import { getAcrossHost } from "../src/clients/AcrossAPIClient";
-import { constructRelayerClients } from "../src/relayer/RelayerClientHelper";
 import { RelayerConfig } from "../src/relayer/RelayerConfig";
-import { constructCumulativeBalanceRebalancerClient } from "../src/rebalancer/RebalancerClientHelper";
 import { RebalancerConfig } from "../src/rebalancer/RebalancerConfig";
-import {
-  CHAIN_IDs,
-  PriceClient,
-  TOKEN_SYMBOLS_MAP,
-  acrossApi,
-  chainIsSvm,
-  coingecko,
-  config,
-  delay,
-  defiLlama,
-  disconnectRedisClients,
-  getNativeTokenInfoForChain,
-  isDefined,
-  retrieveSignerFromCLIArgs,
-  waitForLogger,
-} from "../src/utils";
+import { PriceClient, acrossApi, chainIsSvm, coingecko, delay, defiLlama } from "../src/utils/SDKUtils";
+import { getNativeTokenInfoForChain } from "../src/utils/TokenUtils";
+import { isDefined } from "../src/utils/TypeGuards";
+import { disconnectRedisClients } from "../src/utils/Redis";
 
 const GRAPH_JSON_OUT_ENV = "JUSSI_GRAPH_JSON_OUT";
 const RATE_LIMIT_BUCKETS_JSON_OUT_ENV = "JUSSI_RATE_LIMIT_BUCKETS_JSON_OUT";
 const PRICES_BY_ASSET_JSON_OUT_ENV = "JUSSI_PRICES_BY_ASSET_JSON_OUT";
+const TOPOLOGY_JSON_OUT_ENV = "JUSSI_TOPOLOGY_JSON_OUT";
+const TOPOLOGY_JSON_IN_ENV = "JUSSI_TOPOLOGY_JSON_IN";
+const DEFAULT_TOPOLOGY_ARTIFACT_PATH = "src/jussi/graphs/sampleTopology.json";
 
 export type BuildJussiGraphFlags = {
   check: boolean;
+  compareArtifact: boolean;
   compareRedis: boolean;
   upload: boolean;
 };
 
 export function parseBuildJussiGraphFlags(args: string[]): BuildJussiGraphFlags {
-  const flags: BuildJussiGraphFlags = { check: false, compareRedis: false, upload: false };
+  const flags: BuildJussiGraphFlags = { check: false, compareArtifact: false, compareRedis: false, upload: false };
   for (const arg of args) {
     if (arg === "--check") {
       flags.check = true;
+    } else if (arg === "--compare-artifact") {
+      flags.compareArtifact = true;
     } else if (arg === "--compare-redis") {
       flags.compareRedis = true;
     } else if (arg === "--upload") {
       flags.upload = true;
     }
   }
+  if (flags.compareArtifact && !flags.check) {
+    throw new Error("--compare-artifact can only be used with --check");
+  }
   if (flags.compareRedis && !flags.check) {
     throw new Error("--compare-redis can only be used with --check");
+  }
+  if (flags.compareArtifact && flags.compareRedis) {
+    throw new Error("--compare-artifact and --compare-redis are mutually exclusive");
   }
   if (flags.check && flags.upload) {
     throw new Error("--check and --upload are mutually exclusive");
@@ -131,6 +125,10 @@ async function writeJsonArtifact(filePath: string | undefined, value: unknown): 
   await writeFile(resolvedPath, `${JSON.stringify(value, null, 2)}\n`);
 }
 
+async function readJsonArtifact(filePath: string): Promise<unknown> {
+  return JSON.parse(await readFile(resolve(filePath), "utf8"));
+}
+
 function defaultRateLimitBucketsArtifactPath(graphJsonPath: string | undefined): string | undefined {
   if (!graphJsonPath) {
     return undefined;
@@ -161,12 +159,16 @@ function formatExampleUsdPrice(value: number): string {
   return value.toFixed(8).replace(/\.?0+$/, "");
 }
 
+function getAcrossApiHost(hubChainId: number): string {
+  return process.env.ACROSS_API_HOST ?? (hubChainId === CHAIN_IDs.MAINNET ? "app.across.to" : "testnet.across.to");
+}
+
 async function buildExamplePricesByAsset(
   graphJson: JussiGraphJson,
   logger: winston.Logger
 ): Promise<Record<string, string>> {
   const priceClient = new PriceClient(logger, [
-    new acrossApi.PriceFeed({ host: getAcrossHost(CHAIN_IDs.MAINNET) }),
+    new acrossApi.PriceFeed({ host: getAcrossApiHost(CHAIN_IDs.MAINNET) }),
     new coingecko.PriceFeed({ apiKey: process.env.COINGECKO_PRO_API_KEY }),
     new defiLlama.PriceFeed(),
   ]);
@@ -243,6 +245,17 @@ async function runPreparedFullBuild(
   logger: winston.Logger,
   graphId?: string
 ): Promise<Awaited<ReturnType<typeof runFullBuild>>> {
+  const [
+    { updateSpokePoolClients },
+    { constructRelayerClients },
+    { constructCumulativeBalanceRebalancerClient },
+    { retrieveSignerFromCLIArgs },
+  ] = await Promise.all([
+    import("../src/common"),
+    import("../src/relayer/RelayerClientHelper"),
+    import("../src/rebalancer/RebalancerClientHelper"),
+    import("../src/utils/CLIUtils"),
+  ]);
   const baseSigner = await retrieveSignerFromCLIArgs();
   logger.info({ at: "buildJussiGraph", message: "Constructing relayer clients" });
   const { inventoryClient, spokePoolClients, tokenClient } = await constructRelayerClients(
@@ -281,38 +294,80 @@ async function runPreparedFullBuild(
   return graph;
 }
 
-async function runCheck(prepared: PreparedGraphTopology, logger: winston.Logger, compareRedis: boolean): Promise<void> {
-  if (!compareRedis) {
-    process.stdout.write(`${prepared.topologyFingerprint}\n`);
+async function runCheck(
+  prepared: PreparedGraphTopology,
+  logger: winston.Logger,
+  flags: BuildJussiGraphFlags
+): Promise<void> {
+  if (flags.compareArtifact) {
+    await compareTopologyArtifact(prepared);
     return;
   }
-  const redis = await getRedisCache(logger);
-  if (!isDefined(redis)) {
-    throw new Error("Redis is required for --check --compare-redis");
+
+  if (flags.compareRedis) {
+    const [{ getRedisCache }, { compareTopologyFingerprintWithRedis }] = await Promise.all([
+      import("../src/cache/Redis"),
+      import("../src/jussi/JussiGraphPublisher"),
+    ]);
+    const redis = await getRedisCache(logger);
+    if (!isDefined(redis)) {
+      throw new Error("Redis is required for --check --compare-redis");
+    }
+    const comparison = await compareTopologyFingerprintWithRedis(redis, prepared.topologyFingerprint);
+    process.stdout.write(
+      `${JSON.stringify(
+        {
+          topologyFingerprint: prepared.topologyFingerprint,
+          publishedTopologyFingerprint: comparison.publishedTopologyFingerprint,
+          matches: comparison.matches,
+        },
+        null,
+        2
+      )}\n`
+    );
+    if (!comparison.matches) {
+      throw new Error("Topology fingerprint does not match Redis");
+    }
+    return;
   }
-  const comparison = await compareTopologyFingerprintWithRedis(redis, prepared.topologyFingerprint);
+
+  await writeJsonArtifact(process.env[TOPOLOGY_JSON_OUT_ENV], buildJussiTopologyArtifact(prepared));
+  process.stdout.write(`${prepared.topologyFingerprint}\n`);
+}
+
+async function compareTopologyArtifact(prepared: PreparedGraphTopology): Promise<void> {
+  const artifactPath = resolve(process.env[TOPOLOGY_JSON_IN_ENV] ?? DEFAULT_TOPOLOGY_ARTIFACT_PATH);
+  const artifact = buildJussiTopologyArtifact(prepared);
+  const committedArtifact = await readJsonArtifact(artifactPath);
+  const matches = stableJsonStringify(artifact) === stableJsonStringify(committedArtifact);
+  const committedTopologyFingerprint =
+    committedArtifact && typeof committedArtifact === "object"
+      ? (committedArtifact as { topology_fingerprint?: unknown }).topology_fingerprint
+      : undefined;
   process.stdout.write(
     `${JSON.stringify(
       {
         topologyFingerprint: prepared.topologyFingerprint,
-        publishedTopologyFingerprint: comparison.publishedTopologyFingerprint,
-        matches: comparison.matches,
+        committedTopologyFingerprint,
+        artifactPath,
+        matches,
       },
       null,
       2
     )}\n`
   );
-  if (!comparison.matches) {
-    throw new Error("Topology fingerprint does not match Redis");
+  if (!matches) {
+    throw new Error("Topology artifact does not match committed snapshot");
   }
 }
 
 async function run(flags: BuildJussiGraphFlags, logger: winston.Logger): Promise<void> {
-  const uploadUrl = flags.upload ? validateJussiUploadEnv(process.env) : undefined;
+  const publisherModule = flags.upload ? await import("../src/jussi/JussiGraphPublisher") : undefined;
+  const uploadUrl = publisherModule ? publisherModule.validateJussiUploadEnv(process.env) : undefined;
 
   const prepared = await prepareGraphTopologyFromEnv();
   if (flags.check) {
-    await runCheck(prepared, logger, flags.compareRedis);
+    await runCheck(prepared, logger, flags);
     return;
   }
 
@@ -321,6 +376,10 @@ async function run(flags: BuildJussiGraphFlags, logger: winston.Logger): Promise
     return;
   }
 
+  const [{ getRedisCache }, { JussiApiClient }] = await Promise.all([
+    import("../src/cache/Redis"),
+    import("../src/jussi/JussiApiClient"),
+  ]);
   const redis = await getRedisCache(logger);
   if (!isDefined(redis)) {
     throw new Error("Redis is required for --upload");
@@ -328,7 +387,10 @@ async function run(flags: BuildJussiGraphFlags, logger: winston.Logger): Promise
   if (!isDefined(uploadUrl)) {
     throw new Error("JUSSI_API_URL must be set for --upload");
   }
-  const publisher = new JussiGraphPublisher({
+  if (!publisherModule) {
+    throw new Error("Jussi graph publisher module was not loaded");
+  }
+  const publisher = new publisherModule.JussiGraphPublisher({
     apiClient: new JussiApiClient(uploadUrl.toString(), process.env.JUSSI_API_TOKEN),
     logger,
     redis,

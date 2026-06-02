@@ -103,6 +103,38 @@ export type JussiGraphEnvelope = { graph_id: string; payload: JussiPutGraphBundl
 export type JussiGraphJson = JussiPutGraphRequest;
 export type JussiGraphBundleJson = JussiPutGraphBundleRequest;
 export type JussiGraphRateLimitBucketsJson = JussiRateLimitBucketsJson;
+export type JussiTopologyArtifactRebalanceRoute = {
+  source_chain: number;
+  source_token: string;
+  destination_chain: number;
+  destination_token: string;
+  adapter: string;
+};
+export type JussiTopologyArtifactEdgeCandidate = {
+  edge_id: string;
+  edge_class_id: string;
+  family: EdgeFamily;
+  adapter_or_bridge_name: string;
+  effective_bridge_name?: string;
+  from_node_key: string;
+  to_node_key: string;
+  rate_limit_bucket_id?: string;
+  rebalance_route?: JussiTopologyArtifactRebalanceRoute;
+};
+export type JussiTopologyArtifactJson = {
+  builder_topology_version: number;
+  topology_fingerprint: string;
+  hub_pool_chain_id: number;
+  node_count: number;
+  edge_candidate_count: number;
+  rebalance_route_count: number;
+  logical_assets: Record<string, JussiLogicalAssetDefinition>;
+  required_native_price_chains: number[];
+  rate_limit_buckets: JussiRateLimitBucketDefinition[];
+  nodes: JussiNodeDefinition[];
+  edge_candidates: JussiTopologyArtifactEdgeCandidate[];
+  rebalance_routes: JussiTopologyArtifactRebalanceRoute[];
+};
 export type EdgeFamily =
   | "binance"
   | "binance_cex_bridge"

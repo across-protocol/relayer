@@ -1,5 +1,5 @@
 import { LZ_FEE_TOKENS } from "../common";
-import { CHAIN_IDs } from "../utils";
+import { CHAIN_IDs } from "@across-protocol/constants";
 import type { EdgeFamily, JussiRateLimitBucketDefinition, LogicalAsset, StableLogicalAsset } from "./types";
 
 export const DEFAULT_HUB_POOL_CHAIN_ID = CHAIN_IDs.MAINNET;

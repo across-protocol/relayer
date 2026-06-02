@@ -1,4 +1,4 @@
-import { getNativeTokenInfoForChain } from "../../utils";
+import { getNativeTokenInfoForChain } from "../../utils/TokenUtils";
 import { DEFAULT_HUB_POOL_CHAIN_ID, JUSSI_LOGICAL_ASSETS } from "../constants";
 import type { JussiLogicalAssetDefinition, LogicalAsset, ManagedNodeContext } from "../types";
 

@@ -6,17 +6,12 @@ import {
   L2_TOKEN_SPLITTER_BRIDGES,
   TOKEN_SPLITTER_BRIDGES,
 } from "../../common";
+import { TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
+import assert from "assert";
 import type { RebalanceRoute } from "../../rebalancer/utils/interfaces";
-import {
-  EvmAddress,
-  TOKEN_SYMBOLS_MAP,
-  assert,
-  compareAddressesSimple,
-  getRemoteTokenForL1Token,
-  getTokenInfoFromSymbol,
-  isDefined,
-  isSameBinanceCoin,
-} from "../../utils";
+import { EvmAddress, compareAddressesSimple } from "../../utils/SDKUtils";
+import { getRemoteTokenForL1Token, getTokenInfoFromSymbol } from "../../utils/TokenUtils";
+import { isDefined } from "../../utils/TypeGuards";
 import { BINANCE_RATE_LIMIT_BUCKET_ID, DEFAULT_HUB_POOL_CHAIN_ID, JUSSI_LOGICAL_ASSETS } from "../constants";
 import type {
   BridgeLookupContext,
@@ -287,9 +282,26 @@ function familyForRebalanceRoute(route: RebalanceRoute): EdgeFamily {
     case "oft":
       return "oft";
     case "binance":
-      return isSameBinanceCoin(route.sourceToken, route.destinationToken) ? "binance_cex_bridge" : "binance";
+      return isSameBinanceCoinSymbol(route.sourceToken, route.destinationToken) ? "binance_cex_bridge" : "binance";
     default:
       return route.adapter as EdgeFamily;
+  }
+}
+
+function isSameBinanceCoinSymbol(sourceToken: string, destinationToken: string): boolean {
+  return resolveBinanceCoinSymbol(sourceToken) === resolveBinanceCoinSymbol(destinationToken);
+}
+
+function resolveBinanceCoinSymbol(token: string): string {
+  switch (token.toUpperCase()) {
+    case "WETH":
+      return "ETH";
+    case "USDC.E":
+    case "USDBC":
+    case "ZKUSDCE":
+      return "USDC";
+    default:
+      return token.toUpperCase();
   }
 }
 

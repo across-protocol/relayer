@@ -34,12 +34,15 @@ All modes start with `prepareGraphTopology`, a pure step that parses relayer/reb
 
 | Mode | Behavior after topology prep | Signer | Redis |
 |------|------------------------------|--------|-------|
-| `--check` | Prints the topology fingerprint only. | No | No |
+| `--check` | Prints the topology fingerprint only; writes `JUSSI_TOPOLOGY_JSON_OUT` when set. | No | No |
+| `--check --compare-artifact` | Rebuilds deterministic topology and compares it with the committed topology artifact. | No | No |
 | `--check --compare-redis` | Reads `jussi:graph:topology:fingerprint`, compares it with the local fingerprint, and exits non-zero on mismatch or Redis failure. | No | Read only, required |
 | Default | Runs the shared full build core, writes artifacts, and prints the `{ graph_id, payload }` envelope. | Yes | No publisher gate; live adapters may connect as usual |
 | `--upload` | Validates the upload gate, acquires the publisher Redis lock, runs the same full build core, PUTs the bundle, and persists metadata. | Yes | Required |
 
 Topology is deterministic from constants plus `InventoryConfig`/`RebalancerConfig`. Economics are always live on default builds and uploads: cumulative balances, gas prices, venue quotes, output segments, capacities, and fixed costs are recomputed every run.
+
+Topology checks do not construct a signer, relayer clients, rebalancer adapters, GCP clients, or Binance API clients. Binance-labeled routes in the topology artifact are generated from static Binance network constants; live Binance API calls happen only in the default/upload full-build economics path.
 
 The topology fingerprint hashes the materialized nodes, final post-dedupe edge identities, logical assets, required native price chains, pain/band policy, attached rate-limit bucket bodies, latency policy identifiers, and `BUILDER_TOPOLOGY_VERSION`. It intentionally excludes live balances, gas, venue quotes, graph id, `bundleHash`, `prices_by_asset`, and adapter names that are not part of the emitted edge identity.
 
@@ -48,6 +51,7 @@ The topology fingerprint hashes the materialized nodes, final post-dedupe edge i
 - `src/jussi/graphs/sampleGraph.json`: the pure Jussi graph JSON
 - `src/jussi/graphs/sampleRateLimitBuckets.json`: the companion rate-limit bucket JSON
 - `src/jussi/graphs/samplePrices.json`: an example `prices_by_asset` value for `find_optimal_paths`, generated from live prices at build time
+- `src/jussi/graphs/sampleTopology.json`: the committed deterministic topology snapshot used by `--check --compare-artifact`
 
 ## How To Generate Them
 
@@ -88,7 +92,24 @@ REBALANCER_EXTERNAL_CONFIG=../inventory-configs/rebalancer.json \
 yarn build-jussi-graph --check
 ```
 
-Add `--compare-redis` only where Redis is reachable. This reads `jussi:graph:topology:fingerprint` and fails closed if Redis is unavailable or the value differs.
+To regenerate the committed topology snapshot without GCP, Binance, Redis, or a wallet:
+
+```bash
+RELAYER_EXTERNAL_INVENTORY_CONFIG=../inventory-configs/prod.json \
+REBALANCER_EXTERNAL_CONFIG=../inventory-configs/rebalancer.json \
+JUSSI_TOPOLOGY_JSON_OUT=src/jussi/graphs/sampleTopology.json \
+yarn build-jussi-graph --check
+```
+
+To verify topology drift against the committed snapshot:
+
+```bash
+RELAYER_EXTERNAL_INVENTORY_CONFIG=../inventory-configs/prod.json \
+REBALANCER_EXTERNAL_CONFIG=../inventory-configs/rebalancer.json \
+yarn build-jussi-graph --check --compare-artifact
+```
+
+`--compare-artifact` reads `src/jussi/graphs/sampleTopology.json` by default. Override the input path with `JUSSI_TOPOLOGY_JSON_IN`. Add `--compare-redis` only where Redis is reachable and you specifically want to compare with the last published Redis fingerprint.
 
 ## How To Use The PUT Payload
 
@@ -128,7 +149,9 @@ Environment:
 - `JUSSI_API_TOKEN`: optional bearer token sent as `Authorization: Bearer <token>`.
 - `JUSSI_ALLOW_PROD_UPLOAD=true`: required when `JUSSI_API_URL` is not localhost.
 - `REDIS_URL`: required reachable for `--upload` and `--check --compare-redis`; otherwise the repo default Redis URL is used.
-- `JUSSI_GRAPH_JSON_OUT`, `JUSSI_RATE_LIMIT_BUCKETS_JSON_OUT`, and `JUSSI_PRICES_BY_ASSET_JSON_OUT`: artifact paths, unchanged from artifact-only builds.
+- `JUSSI_GRAPH_JSON_OUT`, `JUSSI_RATE_LIMIT_BUCKETS_JSON_OUT`, and `JUSSI_PRICES_BY_ASSET_JSON_OUT`: full-build artifact paths, unchanged from artifact-only builds.
+- `JUSSI_TOPOLOGY_JSON_OUT`: topology snapshot output path for `--check`.
+- `JUSSI_TOPOLOGY_JSON_IN`: topology snapshot input path for `--check --compare-artifact`; defaults to `src/jussi/graphs/sampleTopology.json`.
 
 The production-upload gate runs before Redis preflight, signer construction, or live economics. This is intentional because the server semantics for `PUT /graph_bundles/{graph_id}` are not confirmed: the endpoint may create an inactive named bundle, or the latest PUT may become active immediately. Keep production upload disabled until operators confirm activation and rollback behavior.
 

@@ -1,5 +1,5 @@
 import { EXPECTED_L1_TO_L2_MESSAGE_TIME, SLOW_WITHDRAWAL_CHAINS } from "../../common/Constants";
-import { CHAIN_IDs } from "../../utils";
+import { CHAIN_IDs } from "@across-protocol/constants";
 import {
   DEFAULT_HUB_POOL_CHAIN_ID,
   LATENCY_BY_FAMILY,

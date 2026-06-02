@@ -34,9 +34,11 @@ export {
   buildJussiGraphJson,
   buildJussiRateLimitBucketsJson,
   bundleHash,
+  stableJsonStringify,
 } from "./serialize";
 export { prepareGraphTopology } from "./prepareGraphTopology";
 export { buildTopology } from "./topology/buildTopology";
+export { buildJussiTopologyArtifact } from "./topology/artifact";
 export { topologyFingerprint } from "./topology/fingerprint";
 export {
   buildLogicalAssetDefinitions,

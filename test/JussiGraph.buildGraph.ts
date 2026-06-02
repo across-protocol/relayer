@@ -16,9 +16,11 @@ import {
   buildJussiGraphJson,
   buildJussiGraphId,
   buildJussiRateLimitBucketsJson,
+  buildJussiTopologyArtifact,
   buildManagedNodeTemplates,
   dedupeGraphEdgeCandidates,
   materializeNodeDefinitions,
+  prepareGraphTopology,
   quoteOftRouteTransfer,
   resolveBridgeLatencySeconds,
   resolveExchangeLatencySeconds,
@@ -30,6 +32,7 @@ import {
   RuntimePricingContext,
   buildTopology,
   bundleHash,
+  stableJsonStringify,
   topologyFingerprint,
 } from "../src/jussi/buildGraph";
 import { JussiApiClient, putJsonWithTimeout } from "../src/jussi/JussiApiClient";
@@ -867,6 +870,28 @@ describe("Jussi graph builder helpers", function () {
     );
     expect(topologyFingerprint(renamedAdapterTopology, hubCtx)).to.equal(fingerprint);
     expect(topologyFingerprint(changedAllocationTopology, hubCtx)).to.not.equal(fingerprint);
+  });
+
+  it("serializes prepared topology as a deterministic artifact", async function () {
+    const prepared = await prepareGraphTopology({
+      relayerConfig: buildRelayerConfig(),
+      rebalancerConfig: buildRebalancerConfig(),
+    });
+    const artifact = buildJussiTopologyArtifact(prepared);
+    const rebuiltArtifact = buildJussiTopologyArtifact(prepared);
+
+    expect(artifact.builder_topology_version).to.equal(1);
+    expect(artifact.topology_fingerprint).to.equal(topologyFingerprint(prepared.topology, prepared.hubCtx));
+    expect(artifact.node_count).to.equal(prepared.topology.nodeContexts.length);
+    expect(artifact.edge_candidate_count).to.equal(prepared.topology.edgeCandidates.length);
+    expect(artifact.rebalance_route_count).to.equal(prepared.rebalanceRoutes.length);
+    expect(artifact.nodes.map((node) => node.node_key)).to.deep.equal(
+      [...artifact.nodes.map((node) => node.node_key)].sort((left, right) => left.localeCompare(right))
+    );
+    expect(artifact.edge_candidates.map((edge) => edge.edge_id)).to.deep.equal(
+      [...artifact.edge_candidates.map((edge) => edge.edge_id)].sort((left, right) => left.localeCompare(right))
+    );
+    expect(stableJsonStringify(artifact)).to.equal(stableJsonStringify(rebuiltArtifact));
   });
 
   it("keeps target-balance magnitude out of route-shape fingerprints when the token remains configured", async function () {

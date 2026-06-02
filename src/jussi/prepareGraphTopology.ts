@@ -1,4 +1,4 @@
-import { chainIsSvm } from "../utils";
+import { chainIsSvm } from "../utils/SDKUtils";
 import { RelayerConfig } from "../relayer/RelayerConfig";
 import { RebalancerConfig } from "../rebalancer/RebalancerConfig";
 import { buildRebalanceRoutes } from "../rebalancer/buildRebalanceRoutes";

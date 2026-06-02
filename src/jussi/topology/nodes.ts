@@ -1,14 +1,8 @@
 import { InventoryConfig, TokenBalanceConfig, isAliasConfig } from "../../interfaces/InventoryManagement";
-import {
-  assert,
-  bnZero,
-  formatUnits,
-  getTokenInfo,
-  getTokenInfoFromSymbol,
-  isDefined,
-  toAddressType,
-  toBNWei,
-} from "../../utils";
+import assert from "assert";
+import { bnZero, formatUnits, getTokenInfo, toAddressType, toBNWei } from "../../utils/SDKUtils";
+import { getTokenInfoFromSymbol } from "../../utils/TokenUtils";
+import { isDefined } from "../../utils/TypeGuards";
 import { DEFAULT_HUB_POOL_CHAIN_ID, JUSSI_LOGICAL_ASSETS } from "../constants";
 import type {
   JussiNodeDefinition,
