@@ -85,11 +85,11 @@ export class EventListener extends EventEmitter {
     });
   }
 
-  onEvent(address: string, event: string, handler: (log: Log) => void): void {
-    this.onEvents(address, [event], handler);
+  onEvent(address: string, event: string, handler: (log: Log) => void, args?: Record<string, unknown>): void {
+    this.onEvents(address, [event], handler, args);
   }
 
-  onEvents(address: string, events: string[], handler: (log: Log) => void): void {
+  onEvents(address: string, events: string[], handler: (log: Log) => void, args?: Record<string, unknown>): void {
     const at = "EventListener::onEvents";
     const { eventMgr, providers } = this;
     events.forEach((eventDescriptor) => {
@@ -132,7 +132,7 @@ export class EventListener extends EventEmitter {
           });
         };
 
-        provider.watchEvent({ address: address as `0x${string}`, event, onLogs, onError });
+        provider.watchEvent({ address: address as `0x${string}`, event, args, onLogs, onError });
       });
     });
   }
