@@ -105,18 +105,20 @@ describe("DepositAddressHandler._getSwapApiQuote execution-fee params", function
     expect(params.spokePoolExecutionFee).to.equal("12345");
   });
 
-  it("omits fee params for the leaves whose params are absent", async function () {
+  it("leaves the fee param undefined for the leaves whose params are absent", async function () {
     const params = await capturedParams(
       depositMessage({ withdrawLeaf, spokePoolLeaf: { ...withdrawLeaf, params: { executionFee: "12345" } } })
     );
-    expect(params).to.not.have.property("cctpExecutionFee");
+    // Undefined values are dropped at query-string serialization, so the absent leaf contributes no fee.
+    expect(params.cctpExecutionFee).to.equal(undefined);
     expect(params.spokePoolExecutionFee).to.equal("12345");
   });
 
-  it("produces the legacy request shape (no fee keys) when no fee leaves are present", async function () {
+  it("leaves both fee params undefined when no fee leaves are present", async function () {
     const params = await capturedParams(depositMessage({ withdrawLeaf }));
-    expect(params).to.not.have.property("cctpExecutionFee");
-    expect(params).to.not.have.property("spokePoolExecutionFee");
-    expect(Object.keys(params).sort()).to.deep.equal([...BASE_PARAM_KEYS].sort());
+    // No fee leaves => both fees undefined and dropped at serialization, yielding the legacy request shape.
+    expect(params.cctpExecutionFee).to.equal(undefined);
+    expect(params.spokePoolExecutionFee).to.equal(undefined);
+    expect(BASE_PARAM_KEYS.every((key) => key in params)).to.equal(true);
   });
 });
