@@ -801,8 +801,8 @@ export class DepositAddressHandler {
       depositAddress: toAddressType(depositAddress, originChainIdNum).toNative(),
       executionFeeRecipient: toAddressType(this.signerAddress.toNative(), originChainIdNum).toNative(),
       shouldSponsorAccountCreation: String(depositMessage.shouldSponsorAccountCreation),
-      ...(isDefined(cctpExecutionFee) && { cctpExecutionFee }),
-      ...(isDefined(spokePoolExecutionFee) && { spokePoolExecutionFee }),
+      cctpExecutionFee,
+      spokePoolExecutionFee,
     };
     try {
       return await this.api.get<SwapApiResponse>(this.config.apiEndpoint, params);
