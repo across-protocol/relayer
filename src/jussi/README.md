@@ -34,9 +34,9 @@ All modes start with `prepareGraphTopology`, a pure step that parses relayer/reb
 
 | Mode | Behavior after topology prep | Signer | Redis |
 |------|------------------------------|--------|-------|
-| `--check` | Prints the deterministic topology artifact; writes `JUSSI_TOPOLOGY_JSON_OUT` when set. | No | No |
-| `--check --compare-artifact` | Rebuilds deterministic topology and compares it with the committed topology artifact. | No | No |
 | Default | Runs the shared full build core, writes artifacts, and prints the `{ graph_id, payload }` envelope. | Yes | No publisher gate; live adapters may connect as usual |
+| `--topology-only` | Prints the deterministic topology artifact; writes `JUSSI_TOPOLOGY_JSON_OUT` when set. | No | No |
+| `--topology-only --check` | Rebuilds deterministic topology and compares it with the committed topology artifact. | No | No |
 | `--upload` | Validates the upload gate, acquires the publisher Redis lock, runs the same full build core, PUTs the bundle, and persists metadata. | Yes | Required |
 
 Topology is deterministic from constants plus `InventoryConfig`/`RebalancerConfig`. Economics are always live on default builds and uploads: cumulative balances, gas prices, venue quotes, output segments, capacities, and fixed costs are recomputed every run.
@@ -50,7 +50,7 @@ The committed topology artifact captures materialized nodes, final post-dedupe e
 - `src/jussi/graphs/sampleGraph.json`: the pure Jussi graph JSON
 - `src/jussi/graphs/sampleRateLimitBuckets.json`: the companion rate-limit bucket JSON
 - `src/jussi/graphs/samplePrices.json`: an example `prices_by_asset` value for `find_optimal_paths`, generated from live prices at build time
-- `src/jussi/graphs/sampleTopology.json`: the committed deterministic topology snapshot used by `--check --compare-artifact`
+- `src/jussi/graphs/sampleTopology.json`: the committed deterministic topology snapshot used by `--topology-only --check`
 
 ## How To Generate Them
 
@@ -83,12 +83,12 @@ yarn build-jussi-graph --wallet gckms --keys bot4 --binanceSecretKey <binance-se
   >/tmp/jussi-graph-envelope.json
 ```
 
-To run a signer-free topology check:
+To run a signer-free topology-only build:
 
 ```bash
 RELAYER_EXTERNAL_INVENTORY_CONFIG=../inventory-configs/prod.json \
 REBALANCER_EXTERNAL_CONFIG=../inventory-configs/rebalancer.json \
-yarn build-jussi-graph --check
+yarn build-jussi-graph --topology-only
 ```
 
 To regenerate the committed topology snapshot without GCP, Binance, Redis, or a wallet:
@@ -97,7 +97,7 @@ To regenerate the committed topology snapshot without GCP, Binance, Redis, or a 
 RELAYER_EXTERNAL_INVENTORY_CONFIG=../inventory-configs/prod.json \
 REBALANCER_EXTERNAL_CONFIG=../inventory-configs/rebalancer.json \
 JUSSI_TOPOLOGY_JSON_OUT=src/jussi/graphs/sampleTopology.json \
-yarn build-jussi-graph --check
+yarn build-jussi-graph --topology-only
 ```
 
 To verify topology drift against the committed snapshot:
@@ -105,10 +105,10 @@ To verify topology drift against the committed snapshot:
 ```bash
 RELAYER_EXTERNAL_INVENTORY_CONFIG=../inventory-configs/prod.json \
 REBALANCER_EXTERNAL_CONFIG=../inventory-configs/rebalancer.json \
-yarn build-jussi-graph --check --compare-artifact
+yarn build-jussi-graph --topology-only --check
 ```
 
-`--compare-artifact` reads `src/jussi/graphs/sampleTopology.json` by default. Override the input path with `JUSSI_TOPOLOGY_JSON_IN`.
+`--topology-only --check` reads `src/jussi/graphs/sampleTopology.json` by default. Override the input path with `JUSSI_TOPOLOGY_JSON_IN`.
 
 ## How To Use The PUT Payload
 
@@ -149,8 +149,8 @@ Environment:
 - `JUSSI_ALLOW_PROD_UPLOAD=true`: required when `JUSSI_API_URL` is not localhost.
 - `REDIS_URL`: required reachable for `--upload`; otherwise the repo default Redis URL is used.
 - `JUSSI_GRAPH_JSON_OUT`, `JUSSI_RATE_LIMIT_BUCKETS_JSON_OUT`, and `JUSSI_PRICES_BY_ASSET_JSON_OUT`: full-build artifact paths, unchanged from artifact-only builds.
-- `JUSSI_TOPOLOGY_JSON_OUT`: topology snapshot output path for `--check`.
-- `JUSSI_TOPOLOGY_JSON_IN`: topology snapshot input path for `--check --compare-artifact`; defaults to `src/jussi/graphs/sampleTopology.json`.
+- `JUSSI_TOPOLOGY_JSON_OUT`: topology snapshot output path for `--topology-only`.
+- `JUSSI_TOPOLOGY_JSON_IN`: topology snapshot input path for `--topology-only --check`; defaults to `src/jussi/graphs/sampleTopology.json`.
 
 The production-upload gate runs before Redis preflight, signer construction, or live economics. This is intentional because the server semantics for `PUT /graph_bundles/{graph_id}` are not confirmed: the endpoint may create an inactive named bundle, or the latest PUT may become active immediately. Keep production upload disabled until operators confirm activation and rollback behavior.
 

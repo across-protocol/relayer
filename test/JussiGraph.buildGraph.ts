@@ -35,6 +35,7 @@ import {
   stableJsonStringify,
 } from "../src/jussi/buildGraph";
 import { JussiApiClient, putJsonWithTimeout } from "../src/jussi/JussiApiClient";
+import { parseBuildJussiGraphFlags } from "../scripts/buildJussiGraph";
 import {
   JUSSI_LAST_PUBLISHED_KEY,
   JUSSI_PUBLISH_LOCK_KEY,
@@ -71,6 +72,16 @@ function requireString(value: string | undefined, description: string): string {
     throw new Error(`Expected string not found: ${description}`);
   }
   return value;
+}
+
+function expectParseError(args: string[], message: string): void {
+  let errorMessage = "";
+  try {
+    parseBuildJussiGraphFlags(args);
+  } catch (error) {
+    errorMessage = error instanceof Error ? error.message : String(error);
+  }
+  expect(errorMessage).to.contain(message);
 }
 
 function buildRelayerConfig(optimismUsdcTargetPct = 8): RelayerConfig {
@@ -236,6 +247,32 @@ class MetadataFailingJussiRedis extends InMemoryJussiRedis {
 }
 
 describe("Jussi graph builder helpers", function () {
+  it("parses topology-only CLI modes explicitly", function () {
+    expect(parseBuildJussiGraphFlags([])).to.deep.equal({
+      check: false,
+      topologyOnly: false,
+      upload: false,
+    });
+    expect(parseBuildJussiGraphFlags(["--topology-only"])).to.deep.equal({
+      check: false,
+      topologyOnly: true,
+      upload: false,
+    });
+    expect(parseBuildJussiGraphFlags(["--topology-only", "--check"])).to.deep.equal({
+      check: true,
+      topologyOnly: true,
+      upload: false,
+    });
+    expect(parseBuildJussiGraphFlags(["--upload"])).to.deep.equal({
+      check: false,
+      topologyOnly: false,
+      upload: true,
+    });
+    expectParseError(["--check"], "--check requires --topology-only");
+    expectParseError(["--topology-only", "--upload"], "--topology-only and --upload are mutually exclusive");
+    expectParseError(["--compare-artifact"], "--compare-artifact has been removed");
+  });
+
   it("extracts mainnet and aliased USDC/USDT/WETH node templates from synthetic inventory config", async function () {
     const relayerConfig = buildRelayerConfig();
     const templates = buildManagedNodeTemplates(relayerConfig.inventoryConfig, CHAIN_IDs.MAINNET);

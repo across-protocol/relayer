@@ -35,26 +35,28 @@ const DEFAULT_TOPOLOGY_ARTIFACT_PATH = "src/jussi/graphs/sampleTopology.json";
 
 export type BuildJussiGraphFlags = {
   check: boolean;
-  compareArtifact: boolean;
+  topologyOnly: boolean;
   upload: boolean;
 };
 
 export function parseBuildJussiGraphFlags(args: string[]): BuildJussiGraphFlags {
-  const flags: BuildJussiGraphFlags = { check: false, compareArtifact: false, upload: false };
+  const flags: BuildJussiGraphFlags = { check: false, topologyOnly: false, upload: false };
   for (const arg of args) {
     if (arg === "--check") {
       flags.check = true;
+    } else if (arg === "--topology-only") {
+      flags.topologyOnly = true;
     } else if (arg === "--compare-artifact") {
-      flags.compareArtifact = true;
+      throw new Error("--compare-artifact has been removed; use --topology-only --check");
     } else if (arg === "--upload") {
       flags.upload = true;
     }
   }
-  if (flags.compareArtifact && !flags.check) {
-    throw new Error("--compare-artifact can only be used with --check");
+  if (flags.check && !flags.topologyOnly) {
+    throw new Error("--check requires --topology-only");
   }
-  if (flags.check && flags.upload) {
-    throw new Error("--check and --upload are mutually exclusive");
+  if (flags.topologyOnly && flags.upload) {
+    throw new Error("--topology-only and --upload are mutually exclusive");
   }
   return flags;
 }
@@ -285,8 +287,8 @@ async function runPreparedFullBuild(
   return graph;
 }
 
-async function runCheck(prepared: PreparedGraphTopology, flags: BuildJussiGraphFlags): Promise<void> {
-  if (flags.compareArtifact) {
+async function runTopologyOnly(prepared: PreparedGraphTopology, flags: BuildJussiGraphFlags): Promise<void> {
+  if (flags.check) {
     await compareTopologyArtifact(prepared);
     return;
   }
@@ -321,8 +323,8 @@ async function run(flags: BuildJussiGraphFlags, logger: winston.Logger): Promise
   const uploadUrl = publisherModule ? publisherModule.validateJussiUploadEnv(process.env) : undefined;
 
   const prepared = await prepareGraphTopologyFromEnv();
-  if (flags.check) {
-    await runCheck(prepared, flags);
+  if (flags.topologyOnly) {
+    await runTopologyOnly(prepared, flags);
     return;
   }
 
