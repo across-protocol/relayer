@@ -3,7 +3,6 @@ import { CHAIN_IDs } from "@across-protocol/constants";
 import type { EdgeFamily, JussiRateLimitBucketDefinition, LogicalAsset, StableLogicalAsset } from "./types";
 
 export const DEFAULT_HUB_POOL_CHAIN_ID = CHAIN_IDs.MAINNET;
-export const BUILDER_TOPOLOGY_VERSION = 1;
 export const JUSSI_LOGICAL_ASSETS: readonly LogicalAsset[] = ["USDC", "USDT", "WETH"];
 export const EDGE_BUILD_BATCH_SIZE = Math.max(1, Number(process.env.JUSSI_EDGE_BUILD_BATCH_SIZE ?? "8") || 8);
 export const STABLECOIN_PRICE_USD: Record<StableLogicalAsset, number> = { USDC: 1, USDT: 1 };

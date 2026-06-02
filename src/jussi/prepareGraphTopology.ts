@@ -3,7 +3,6 @@ import { RelayerConfig } from "../relayer/RelayerConfig";
 import { RebalancerConfig } from "../rebalancer/RebalancerConfig";
 import { buildRebalanceRoutes } from "../rebalancer/buildRebalanceRoutes";
 import { buildTopology } from "./topology/buildTopology";
-import { topologyFingerprint } from "./topology/fingerprint";
 import { buildBridgeAdapterRoutes } from "./topology/edges";
 import { buildManagedNodeTemplates, materializeNodeDefinitions } from "./topology/nodes";
 import { PreparedGraphTopology } from "./types";
@@ -36,6 +35,5 @@ export async function prepareGraphTopology(params: {
     hubCtx,
     rebalanceRoutes,
     topology,
-    topologyFingerprint: topologyFingerprint(topology, hubCtx),
   };
 }

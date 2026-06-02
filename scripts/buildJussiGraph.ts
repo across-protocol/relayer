@@ -36,31 +36,22 @@ const DEFAULT_TOPOLOGY_ARTIFACT_PATH = "src/jussi/graphs/sampleTopology.json";
 export type BuildJussiGraphFlags = {
   check: boolean;
   compareArtifact: boolean;
-  compareRedis: boolean;
   upload: boolean;
 };
 
 export function parseBuildJussiGraphFlags(args: string[]): BuildJussiGraphFlags {
-  const flags: BuildJussiGraphFlags = { check: false, compareArtifact: false, compareRedis: false, upload: false };
+  const flags: BuildJussiGraphFlags = { check: false, compareArtifact: false, upload: false };
   for (const arg of args) {
     if (arg === "--check") {
       flags.check = true;
     } else if (arg === "--compare-artifact") {
       flags.compareArtifact = true;
-    } else if (arg === "--compare-redis") {
-      flags.compareRedis = true;
     } else if (arg === "--upload") {
       flags.upload = true;
     }
   }
   if (flags.compareArtifact && !flags.check) {
     throw new Error("--compare-artifact can only be used with --check");
-  }
-  if (flags.compareRedis && !flags.check) {
-    throw new Error("--compare-redis can only be used with --check");
-  }
-  if (flags.compareArtifact && flags.compareRedis) {
-    throw new Error("--compare-artifact and --compare-redis are mutually exclusive");
   }
   if (flags.check && flags.upload) {
     throw new Error("--check and --upload are mutually exclusive");
@@ -294,45 +285,15 @@ async function runPreparedFullBuild(
   return graph;
 }
 
-async function runCheck(
-  prepared: PreparedGraphTopology,
-  logger: winston.Logger,
-  flags: BuildJussiGraphFlags
-): Promise<void> {
+async function runCheck(prepared: PreparedGraphTopology, flags: BuildJussiGraphFlags): Promise<void> {
   if (flags.compareArtifact) {
     await compareTopologyArtifact(prepared);
     return;
   }
 
-  if (flags.compareRedis) {
-    const [{ getRedisCache }, { compareTopologyFingerprintWithRedis }] = await Promise.all([
-      import("../src/cache/Redis"),
-      import("../src/jussi/JussiGraphPublisher"),
-    ]);
-    const redis = await getRedisCache(logger);
-    if (!isDefined(redis)) {
-      throw new Error("Redis is required for --check --compare-redis");
-    }
-    const comparison = await compareTopologyFingerprintWithRedis(redis, prepared.topologyFingerprint);
-    process.stdout.write(
-      `${JSON.stringify(
-        {
-          topologyFingerprint: prepared.topologyFingerprint,
-          publishedTopologyFingerprint: comparison.publishedTopologyFingerprint,
-          matches: comparison.matches,
-        },
-        null,
-        2
-      )}\n`
-    );
-    if (!comparison.matches) {
-      throw new Error("Topology fingerprint does not match Redis");
-    }
-    return;
-  }
-
-  await writeJsonArtifact(process.env[TOPOLOGY_JSON_OUT_ENV], buildJussiTopologyArtifact(prepared));
-  process.stdout.write(`${prepared.topologyFingerprint}\n`);
+  const artifact = buildJussiTopologyArtifact(prepared);
+  await writeJsonArtifact(process.env[TOPOLOGY_JSON_OUT_ENV], artifact);
+  process.stdout.write(`${JSON.stringify(artifact, null, 2)}\n`);
 }
 
 async function compareTopologyArtifact(prepared: PreparedGraphTopology): Promise<void> {
@@ -340,15 +301,9 @@ async function compareTopologyArtifact(prepared: PreparedGraphTopology): Promise
   const artifact = buildJussiTopologyArtifact(prepared);
   const committedArtifact = await readJsonArtifact(artifactPath);
   const matches = stableJsonStringify(artifact) === stableJsonStringify(committedArtifact);
-  const committedTopologyFingerprint =
-    committedArtifact && typeof committedArtifact === "object"
-      ? (committedArtifact as { topology_fingerprint?: unknown }).topology_fingerprint
-      : undefined;
   process.stdout.write(
     `${JSON.stringify(
       {
-        topologyFingerprint: prepared.topologyFingerprint,
-        committedTopologyFingerprint,
         artifactPath,
         matches,
       },
@@ -367,7 +322,7 @@ async function run(flags: BuildJussiGraphFlags, logger: winston.Logger): Promise
 
   const prepared = await prepareGraphTopologyFromEnv();
   if (flags.check) {
-    await runCheck(prepared, logger, flags);
+    await runCheck(prepared, flags);
     return;
   }
 
@@ -396,7 +351,7 @@ async function run(flags: BuildJussiGraphFlags, logger: winston.Logger): Promise
     redis,
     runFullBuild: (graphId) => runPreparedFullBuild(prepared, logger, graphId),
   });
-  const result = await publisher.publishUpload(prepared);
+  const result = await publisher.publishUpload();
   logger.info({ at: "buildJussiGraph", message: "Uploaded Jussi graph bundle", ...result });
 }
 

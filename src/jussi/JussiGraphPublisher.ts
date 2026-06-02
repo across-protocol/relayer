@@ -1,12 +1,10 @@
 import { randomUUID } from "node:crypto";
 import winston from "winston";
 import { RedisCacheInterface } from "../cache/Redis";
-import { BUILDER_TOPOLOGY_VERSION } from "./constants";
 import { JussiApiClient } from "./JussiApiClient";
 import { buildJussiGraphBundleJson, buildJussiGraphId, bundleHash } from "./serialize";
-import { BuiltJussiGraph, PreparedGraphTopology } from "./types";
+import { BuiltJussiGraph } from "./types";
 
-export const JUSSI_TOPOLOGY_FINGERPRINT_KEY = "jussi:graph:topology:fingerprint";
 export const JUSSI_LAST_PUBLISHED_KEY = "jussi:graph:last_published";
 export const JUSSI_PUBLISH_LOCK_KEY = "jussi:graph:publish:lock";
 const JUSSI_PUBLISH_PREFLIGHT_KEY = "jussi:graph:publish:preflight";
@@ -14,12 +12,11 @@ const DEFAULT_PUBLISH_LOCK_TTL_MS = 10 * 60 * 1000;
 
 export type JussiPublisherRedis = Pick<
   RedisCacheInterface,
-  "acquireLock" | "del" | "get" | "releaseLock" | "renewLock" | "set" | "ttl"
+  "acquireLock" | "del" | "get" | "releaseLock" | "renewLock" | "set"
 >;
 export type JussiUploadResult = {
   uploaded: true;
   graphId: string;
-  topologyFingerprint: string;
   bundleHash: string;
 };
 
@@ -36,17 +33,6 @@ export function validateJussiUploadEnv(env: NodeJS.ProcessEnv): URL {
   return url;
 }
 
-export async function compareTopologyFingerprintWithRedis(
-  redis: Pick<RedisCacheInterface, "get">,
-  topologyFingerprint: string
-): Promise<{ matches: boolean; publishedTopologyFingerprint?: string }> {
-  const publishedTopologyFingerprint = (await redis.get<string>(JUSSI_TOPOLOGY_FINGERPRINT_KEY)) ?? undefined;
-  return {
-    matches: publishedTopologyFingerprint === topologyFingerprint,
-    publishedTopologyFingerprint,
-  };
-}
-
 export class JussiGraphPublisher {
   constructor(
     private readonly params: {
@@ -59,7 +45,7 @@ export class JussiGraphPublisher {
     }
   ) {}
 
-  async publishUpload(prepared: PreparedGraphTopology): Promise<JussiUploadResult> {
+  async publishUpload(): Promise<JussiUploadResult> {
     const lockTtlMs = this.params.lockTtlMs ?? DEFAULT_PUBLISH_LOCK_TTL_MS;
     const token = randomUUID();
     await this.preflightRedis(token);
@@ -96,12 +82,11 @@ export class JussiGraphPublisher {
       hash = bundleHash(bundle);
       await this.params.apiClient.putGraphBundle(graphId, bundle);
       didPut = true;
-      await this.persistMetadata(prepared, graphId, hash);
+      await this.persistMetadata(graphId, hash);
 
       return {
         uploaded: true,
         graphId,
-        topologyFingerprint: prepared.topologyFingerprint,
         bundleHash: hash,
       };
     } catch (error) {
@@ -131,17 +116,14 @@ export class JussiGraphPublisher {
     }
   }
 
-  private async persistMetadata(prepared: PreparedGraphTopology, graphId: string, hash: string): Promise<void> {
+  private async persistMetadata(graphId: string, hash: string): Promise<void> {
     const publishedAt = (this.params.now?.() ?? new Date()).toISOString();
-    await this.params.redis.set(JUSSI_TOPOLOGY_FINGERPRINT_KEY, prepared.topologyFingerprint, Number.POSITIVE_INFINITY);
     await this.params.redis.set(
       JUSSI_LAST_PUBLISHED_KEY,
       JSON.stringify({
         graphId,
-        topologyFingerprint: prepared.topologyFingerprint,
         bundleHash: hash,
         publishedAt,
-        builderVersion: BUILDER_TOPOLOGY_VERSION,
       }),
       Number.POSITIVE_INFINITY
     );

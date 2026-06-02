@@ -33,14 +33,11 @@ import {
   buildTopology,
   bundleHash,
   stableJsonStringify,
-  topologyFingerprint,
 } from "../src/jussi/buildGraph";
 import { JussiApiClient, putJsonWithTimeout } from "../src/jussi/JussiApiClient";
 import {
-  compareTopologyFingerprintWithRedis,
   JUSSI_LAST_PUBLISHED_KEY,
   JUSSI_PUBLISH_LOCK_KEY,
-  JUSSI_TOPOLOGY_FINGERPRINT_KEY,
   JussiGraphPublisher,
   validateJussiUploadEnv,
 } from "../src/jussi/JussiGraphPublisher";
@@ -839,39 +836,6 @@ describe("Jussi graph builder helpers", function () {
     expect(Object.keys(envelope)).to.deep.equal(["graph_id", "payload"]);
   });
 
-  it("fingerprints the final deduped topology and deterministic payload policy", async function () {
-    const hubCtx = { hubPoolChainId: CHAIN_IDs.MAINNET };
-    const relayerConfig = buildRelayerConfig();
-    const route = {
-      sourceChain: CHAIN_IDs.OPTIMISM,
-      sourceToken: "USDC",
-      destinationChain: CHAIN_IDs.BASE,
-      destinationToken: "USDC",
-      adapter: "cctp",
-    };
-    const topology = buildTopology({ relayerConfig, rebalanceRoutes: [route], hubCtx });
-    const fingerprint = topologyFingerprint(topology, hubCtx);
-    const renamedAdapterTopology = {
-      ...topology,
-      edgeCandidates: topology.edgeCandidates.map((candidate) => ({
-        ...candidate,
-        adapterOrBridgeName: `${candidate.adapterOrBridgeName}-renamed`,
-      })),
-    };
-    const changedAllocationTopology = buildTopology({
-      relayerConfig: buildRelayerConfig(9),
-      rebalanceRoutes: [route],
-      hubCtx,
-    });
-
-    expect(fingerprint).to.match(/^[0-9a-f]{64}$/);
-    expect(topologyFingerprint(buildTopology({ relayerConfig, rebalanceRoutes: [route], hubCtx }), hubCtx)).to.equal(
-      fingerprint
-    );
-    expect(topologyFingerprint(renamedAdapterTopology, hubCtx)).to.equal(fingerprint);
-    expect(topologyFingerprint(changedAllocationTopology, hubCtx)).to.not.equal(fingerprint);
-  });
-
   it("serializes prepared topology as a deterministic artifact", async function () {
     const prepared = await prepareGraphTopology({
       relayerConfig: buildRelayerConfig(),
@@ -880,11 +844,23 @@ describe("Jussi graph builder helpers", function () {
     const artifact = buildJussiTopologyArtifact(prepared);
     const rebuiltArtifact = buildJussiTopologyArtifact(prepared);
 
-    expect(artifact.builder_topology_version).to.equal(1);
-    expect(artifact.topology_fingerprint).to.equal(topologyFingerprint(prepared.topology, prepared.hubCtx));
     expect(artifact.node_count).to.equal(prepared.topology.nodeContexts.length);
     expect(artifact.edge_candidate_count).to.equal(prepared.topology.edgeCandidates.length);
     expect(artifact.rebalance_route_count).to.equal(prepared.rebalanceRoutes.length);
+    expect(Object.keys(artifact).sort()).to.deep.equal(
+      [
+        "edge_candidate_count",
+        "edge_candidates",
+        "hub_pool_chain_id",
+        "logical_assets",
+        "node_count",
+        "nodes",
+        "rate_limit_buckets",
+        "rebalance_route_count",
+        "rebalance_routes",
+        "required_native_price_chains",
+      ].sort()
+    );
     expect(artifact.nodes.map((node) => node.node_key)).to.deep.equal(
       [...artifact.nodes.map((node) => node.node_key)].sort((left, right) => left.localeCompare(right))
     );
@@ -894,21 +870,22 @@ describe("Jussi graph builder helpers", function () {
     expect(stableJsonStringify(artifact)).to.equal(stableJsonStringify(rebuiltArtifact));
   });
 
-  it("keeps target-balance magnitude out of route-shape fingerprints when the token remains configured", async function () {
+  it("keeps target-balance magnitude out of the topology artifact when the token remains configured", async function () {
     const hubCtx = { hubPoolChainId: CHAIN_IDs.MAINNET };
     const relayerConfig = buildRelayerConfig();
-    const nonZeroRoutes = buildTopology({
-      relayerConfig,
-      rebalanceRoutes: buildRebalanceRoutes(buildRebalancerConfig("100")),
-      hubCtx,
-    });
-    const zeroMagnitudeRoutes = buildTopology({
-      relayerConfig,
-      rebalanceRoutes: buildRebalanceRoutes(buildRebalancerConfig("0")),
-      hubCtx,
-    });
+    const buildPreparedArtifact = (targetBalance: string) => {
+      const rebalancerConfig = buildRebalancerConfig(targetBalance);
+      const rebalanceRoutes = buildRebalanceRoutes(rebalancerConfig);
+      return buildJussiTopologyArtifact({
+        relayerConfig,
+        rebalancerConfig,
+        hubCtx,
+        rebalanceRoutes,
+        topology: buildTopology({ relayerConfig, rebalanceRoutes, hubCtx }),
+      });
+    };
 
-    expect(topologyFingerprint(nonZeroRoutes, hubCtx)).to.equal(topologyFingerprint(zeroMagnitudeRoutes, hubCtx));
+    expect(stableJsonStringify(buildPreparedArtifact("100"))).to.equal(stableJsonStringify(buildPreparedArtifact("0")));
     expect(buildRebalancerConfig("0").cumulativeTargetBalances.USDC.targetBalance.toString()).to.equal("0");
   });
 
@@ -965,7 +942,7 @@ describe("Jussi graph builder helpers", function () {
     }
   });
 
-  it("validates upload targets and compares Redis fingerprints without a signer", async function () {
+  it("validates upload targets without a signer", async function () {
     expect(validateJussiUploadEnv({ JUSSI_API_URL: "http://localhost:8080" }).hostname).to.equal("localhost");
     expect(
       validateJussiUploadEnv({
@@ -981,31 +958,9 @@ describe("Jussi graph builder helpers", function () {
       errorMessage = error instanceof Error ? error.message : String(error);
     }
     expect(errorMessage).to.contain("JUSSI_ALLOW_PROD_UPLOAD=true");
-
-    const redis = new InMemoryJussiRedis();
-    await redis.set(JUSSI_TOPOLOGY_FINGERPRINT_KEY, "fingerprint-a", Number.POSITIVE_INFINITY);
-    expect(await compareTopologyFingerprintWithRedis(redis, "fingerprint-a")).to.deep.equal({
-      matches: true,
-      publishedTopologyFingerprint: "fingerprint-a",
-    });
-    expect(await compareTopologyFingerprintWithRedis(redis, "fingerprint-b")).to.deep.equal({
-      matches: false,
-      publishedTopologyFingerprint: "fingerprint-a",
-    });
   });
 
   it("publishes under a token-checked Redis lock and persists no-TTL metadata", async function () {
-    const relayerConfig = buildRelayerConfig();
-    const hubCtx = { hubPoolChainId: CHAIN_IDs.MAINNET };
-    const topology = buildTopology({ relayerConfig, rebalanceRoutes: [], hubCtx });
-    const prepared = {
-      relayerConfig,
-      rebalancerConfig: buildRebalancerConfig(),
-      hubCtx,
-      rebalanceRoutes: [],
-      topology,
-      topologyFingerprint: topologyFingerprint(topology, hubCtx),
-    };
     const redis = new InMemoryJussiRedis();
     const apiClient = { putGraphBundle: sinon.stub().resolves() } as unknown as JussiApiClient;
     const runFullBuildStub = sinon.stub().callsFake(async (graphId: string) => buildMinimalGraph(graphId));
@@ -1019,7 +974,7 @@ describe("Jussi graph builder helpers", function () {
       now,
     });
 
-    const result = await publisher.publishUpload(prepared);
+    const result = await publisher.publishUpload();
     const lastPublishedRaw = await redis.get<string>(JUSSI_LAST_PUBLISHED_KEY);
     const lastPublished = JSON.parse(requireString(lastPublishedRaw, JUSSI_LAST_PUBLISHED_KEY));
 
@@ -1027,27 +982,15 @@ describe("Jussi graph builder helpers", function () {
     expect(result.graphId).to.equal("usdc-usdt-weth-20260401T091011Z");
     expect(runFullBuildStub.calledOnceWith(result.graphId)).to.equal(true);
     expect((apiClient.putGraphBundle as sinon.SinonStub).calledOnce).to.equal(true);
-    expect(await redis.get<string>(JUSSI_TOPOLOGY_FINGERPRINT_KEY)).to.equal(prepared.topologyFingerprint);
-    expect(await redis.ttl(JUSSI_TOPOLOGY_FINGERPRINT_KEY)).to.equal(-1);
     expect(await redis.ttl(JUSSI_LAST_PUBLISHED_KEY)).to.equal(-1);
+    expect(Object.keys(lastPublished).sort()).to.deep.equal(["bundleHash", "graphId", "publishedAt"].sort());
     expect(lastPublished.graphId).to.equal(result.graphId);
-    expect(lastPublished.topologyFingerprint).to.equal(prepared.topologyFingerprint);
     expect(lastPublished.bundleHash).to.equal(result.bundleHash);
+    expect(lastPublished.publishedAt).to.equal("2026-04-01T09:10:11.000Z");
     expect(await redis.get(JUSSI_PUBLISH_LOCK_KEY)).to.equal(undefined);
   });
 
   it("throws graph id and bundle hash when metadata persistence fails after PUT", async function () {
-    const relayerConfig = buildRelayerConfig();
-    const hubCtx = { hubPoolChainId: CHAIN_IDs.MAINNET };
-    const topology = buildTopology({ relayerConfig, rebalanceRoutes: [], hubCtx });
-    const prepared = {
-      relayerConfig,
-      rebalancerConfig: buildRebalancerConfig(),
-      hubCtx,
-      rebalanceRoutes: [],
-      topology,
-      topologyFingerprint: topologyFingerprint(topology, hubCtx),
-    };
     const apiClient = { putGraphBundle: sinon.stub().resolves() } as unknown as JussiApiClient;
     const publisher = new JussiGraphPublisher({
       apiClient,
@@ -1059,7 +1002,7 @@ describe("Jussi graph builder helpers", function () {
 
     let errorMessage = "";
     try {
-      await publisher.publishUpload(prepared);
+      await publisher.publishUpload();
     } catch (error) {
       errorMessage = error instanceof Error ? error.message : String(error);
     }
@@ -1070,17 +1013,6 @@ describe("Jussi graph builder helpers", function () {
   });
 
   it("does not run the build or PUT when the upload lock is contended", async function () {
-    const relayerConfig = buildRelayerConfig();
-    const hubCtx = { hubPoolChainId: CHAIN_IDs.MAINNET };
-    const topology = buildTopology({ relayerConfig, rebalanceRoutes: [], hubCtx });
-    const prepared = {
-      relayerConfig,
-      rebalancerConfig: buildRebalancerConfig(),
-      hubCtx,
-      rebalanceRoutes: [],
-      topology,
-      topologyFingerprint: topologyFingerprint(topology, hubCtx),
-    };
     const redis = new InMemoryJussiRedis();
     await redis.acquireLock(JUSSI_PUBLISH_LOCK_KEY, "other-token", 60_000);
     const apiClient = { putGraphBundle: sinon.stub().resolves() } as unknown as JussiApiClient;
@@ -1095,7 +1027,7 @@ describe("Jussi graph builder helpers", function () {
 
     let errorMessage = "";
     try {
-      await publisher.publishUpload(prepared);
+      await publisher.publishUpload();
     } catch (error) {
       errorMessage = error instanceof Error ? error.message : String(error);
     }

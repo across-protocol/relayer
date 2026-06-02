@@ -30,13 +30,12 @@ Today that means:
 
 ## Build Modes
 
-All modes start with `prepareGraphTopology`, a pure step that parses relayer/rebalancer config, computes the hub context, computes the single rebalance route set, builds the final deduped topology, and hashes a topology fingerprint. It constructs no signer, clients, wallet, or Redis connection.
+All modes start with `prepareGraphTopology`, a pure step that parses relayer/rebalancer config, computes the hub context, computes the single rebalance route set, and builds the final deduped topology. It constructs no signer, clients, wallet, or Redis connection.
 
 | Mode | Behavior after topology prep | Signer | Redis |
 |------|------------------------------|--------|-------|
-| `--check` | Prints the topology fingerprint only; writes `JUSSI_TOPOLOGY_JSON_OUT` when set. | No | No |
+| `--check` | Prints the deterministic topology artifact; writes `JUSSI_TOPOLOGY_JSON_OUT` when set. | No | No |
 | `--check --compare-artifact` | Rebuilds deterministic topology and compares it with the committed topology artifact. | No | No |
-| `--check --compare-redis` | Reads `jussi:graph:topology:fingerprint`, compares it with the local fingerprint, and exits non-zero on mismatch or Redis failure. | No | Read only, required |
 | Default | Runs the shared full build core, writes artifacts, and prints the `{ graph_id, payload }` envelope. | Yes | No publisher gate; live adapters may connect as usual |
 | `--upload` | Validates the upload gate, acquires the publisher Redis lock, runs the same full build core, PUTs the bundle, and persists metadata. | Yes | Required |
 
@@ -44,7 +43,7 @@ Topology is deterministic from constants plus `InventoryConfig`/`RebalancerConfi
 
 Topology checks do not construct a signer, relayer clients, rebalancer adapters, GCP clients, or Binance API clients. Binance-labeled routes in the topology artifact are generated from static Binance network constants; live Binance API calls happen only in the default/upload full-build economics path.
 
-The topology fingerprint hashes the materialized nodes, final post-dedupe edge identities, logical assets, required native price chains, pain/band policy, attached rate-limit bucket bodies, latency policy identifiers, and `BUILDER_TOPOLOGY_VERSION`. It intentionally excludes live balances, gas, venue quotes, graph id, `bundleHash`, `prices_by_asset`, and adapter names that are not part of the emitted edge identity.
+The committed topology artifact captures materialized nodes, final post-dedupe edge candidates, logical assets, required native price chains, attached rate-limit bucket bodies, and the static rebalance route set. It intentionally excludes live balances, gas, venue quotes, graph id, `bundleHash`, and `prices_by_asset`.
 
 ## File Types
 
@@ -109,7 +108,7 @@ REBALANCER_EXTERNAL_CONFIG=../inventory-configs/rebalancer.json \
 yarn build-jussi-graph --check --compare-artifact
 ```
 
-`--compare-artifact` reads `src/jussi/graphs/sampleTopology.json` by default. Override the input path with `JUSSI_TOPOLOGY_JSON_IN`. Add `--compare-redis` only where Redis is reachable and you specifically want to compare with the last published Redis fingerprint.
+`--compare-artifact` reads `src/jussi/graphs/sampleTopology.json` by default. Override the input path with `JUSSI_TOPOLOGY_JSON_IN`.
 
 ## How To Use The PUT Payload
 
@@ -148,14 +147,14 @@ Environment:
 - `JUSSI_API_URL`: required for `--upload`.
 - `JUSSI_API_TOKEN`: optional bearer token sent as `Authorization: Bearer <token>`.
 - `JUSSI_ALLOW_PROD_UPLOAD=true`: required when `JUSSI_API_URL` is not localhost.
-- `REDIS_URL`: required reachable for `--upload` and `--check --compare-redis`; otherwise the repo default Redis URL is used.
+- `REDIS_URL`: required reachable for `--upload`; otherwise the repo default Redis URL is used.
 - `JUSSI_GRAPH_JSON_OUT`, `JUSSI_RATE_LIMIT_BUCKETS_JSON_OUT`, and `JUSSI_PRICES_BY_ASSET_JSON_OUT`: full-build artifact paths, unchanged from artifact-only builds.
 - `JUSSI_TOPOLOGY_JSON_OUT`: topology snapshot output path for `--check`.
 - `JUSSI_TOPOLOGY_JSON_IN`: topology snapshot input path for `--check --compare-artifact`; defaults to `src/jussi/graphs/sampleTopology.json`.
 
 The production-upload gate runs before Redis preflight, signer construction, or live economics. This is intentional because the server semantics for `PUT /graph_bundles/{graph_id}` are not confirmed: the endpoint may create an inactive named bundle, or the latest PUT may become active immediately. Keep production upload disabled until operators confirm activation and rollback behavior.
 
-Each upload uses `buildJussiGraphId(now)` for a timestamped graph id and stores the topology fingerprint separately. Always-PUT behavior can accumulate one stored bundle per run; confirm whether the Jussi service has retention or garbage collection for old graph bundles.
+Each upload uses `buildJussiGraphId(now)` for a timestamped graph id and stores publish metadata in Redis. Always-PUT behavior can accumulate one stored bundle per run; confirm whether the Jussi service has retention or garbage collection for old graph bundles.
 
 ## Redis Contract
 
@@ -170,8 +169,7 @@ Keys:
 
 | Key | Value | TTL |
 |-----|-------|-----|
-| `jussi:graph:topology:fingerprint` | Last successfully published topology fingerprint string | None |
-| `jussi:graph:last_published` | `JSON.stringify({ graphId, topologyFingerprint, bundleHash, publishedAt, builderVersion })` | None |
+| `jussi:graph:last_published` | `JSON.stringify({ graphId, bundleHash, publishedAt })` | None |
 | `jussi:graph:publish:lock` | Random lock holder token | `PX ttlMs`, heartbeat-renewed |
 
 Structured values are JSON-encoded by the caller because `RedisCache.set` stores strings. If the PUT succeeds but metadata persistence fails, the publisher throws an error containing `graphId` and `bundleHash` so operators can reconcile Redis manually; the previous `last_published` remains authoritative.

@@ -1,5 +1,4 @@
 {
-  "builder_topology_version": 1,
   "edge_candidate_count": 387,
   "edge_candidates": [
     {
@@ -9035,6 +9034,5 @@
       "source_token": "USDT"
     }
   ],
-  "required_native_price_chains": [56, 137, 143, 232, 999, 9745, 728126428],
-  "topology_fingerprint": "f2a6a586c8cf20e428d9d1cffe33c6173ac7738f2823c85ff677026e81d4ae6a"
+  "required_native_price_chains": [56, 137, 143, 232, 999, 9745, 728126428]
 }

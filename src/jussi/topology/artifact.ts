@@ -1,4 +1,3 @@
-import { BUILDER_TOPOLOGY_VERSION } from "../constants";
 import { canonicalizeJson } from "../serialize";
 import type { GraphEdgeCandidate, JussiTopologyArtifactJson, PreparedGraphTopology } from "../types";
 import { resolveEdgeClassId, resolveRateLimitBucketId, resolveSerializedEdgeId } from "./edges";
@@ -8,8 +7,6 @@ type SerializedRebalanceRoute = NonNullable<JussiTopologyArtifactJson["edge_cand
 export function buildJussiTopologyArtifact(prepared: PreparedGraphTopology): JussiTopologyArtifactJson {
   const { topology } = prepared;
   return canonicalizeJson({
-    builder_topology_version: BUILDER_TOPOLOGY_VERSION,
-    topology_fingerprint: prepared.topologyFingerprint,
     hub_pool_chain_id: prepared.hubCtx.hubPoolChainId,
     node_count: topology.nodeContexts.length,
     edge_candidate_count: topology.edgeCandidates.length,

@@ -122,8 +122,6 @@ export type JussiTopologyArtifactEdgeCandidate = {
   rebalance_route?: JussiTopologyArtifactRebalanceRoute;
 };
 export type JussiTopologyArtifactJson = {
-  builder_topology_version: number;
-  topology_fingerprint: string;
   hub_pool_chain_id: number;
   node_count: number;
   edge_candidate_count: number;
@@ -287,13 +285,12 @@ export type PreparedGraphTopology = {
   hubCtx: JussiHubContext;
   rebalanceRoutes: RebalanceRoute[];
   topology: JussiGraphTopology;
-  topologyFingerprint: string;
 };
 export type PreparedGraphTopologyForBuild = Pick<
   PreparedGraphTopology,
   "relayerConfig" | "hubCtx" | "rebalanceRoutes" | "topology"
 > &
-  Partial<Pick<PreparedGraphTopology, "rebalancerConfig" | "topologyFingerprint">>;
+  Partial<Pick<PreparedGraphTopology, "rebalancerConfig">>;
 export type BuildTopologyParams = {
   relayerConfig: RelayerConfig;
   rebalanceRoutes: RebalanceRoute[];
