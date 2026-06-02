@@ -1,11 +1,15 @@
+import "dotenv/config";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, parse, resolve } from "node:path";
 import util from "util";
 import winston from "winston";
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
-import { config } from "dotenv";
 import { waitForLogger } from "@risk-labs/logger";
 import { version } from "../package.json";
+import { getRedisCache } from "../src/cache/Redis";
+import { updateSpokePoolClients } from "../src/common";
+import { JussiApiClient } from "../src/jussi/JussiApiClient";
+import { JussiGraphPublisher, validateJussiUploadEnv } from "../src/jussi/JussiGraphPublisher";
 import {
   buildJussiGraphEnvelope,
   buildJussiGraphJson,
@@ -20,7 +24,10 @@ import {
   stableJsonStringify,
 } from "../src/jussi/buildGraph";
 import { RelayerConfig } from "../src/relayer/RelayerConfig";
+import { constructRelayerClients } from "../src/relayer/RelayerClientHelper";
 import { RebalancerConfig } from "../src/rebalancer/RebalancerConfig";
+import { constructCumulativeBalanceRebalancerClient } from "../src/rebalancer/RebalancerClientHelper";
+import { retrieveSignerFromCLIArgs } from "../src/utils/CLIUtils";
 import { PriceClient, acrossApi, chainIsSvm, coingecko, delay, defiLlama } from "../src/utils/SDKUtils";
 import { getNativeTokenInfoForChain } from "../src/utils/TokenUtils";
 import { isDefined } from "../src/utils/TypeGuards";
@@ -32,6 +39,8 @@ const PRICES_BY_ASSET_JSON_OUT_ENV = "JUSSI_PRICES_BY_ASSET_JSON_OUT";
 const TOPOLOGY_JSON_OUT_ENV = "JUSSI_TOPOLOGY_JSON_OUT";
 const TOPOLOGY_JSON_IN_ENV = "JUSSI_TOPOLOGY_JSON_IN";
 const DEFAULT_TOPOLOGY_ARTIFACT_PATH = "src/jussi/graphs/sampleTopology.json";
+
+process.env.ACROSS_BOT_VERSION ??= version;
 
 export type BuildJussiGraphFlags = {
   check: boolean;
@@ -236,19 +245,8 @@ async function runPreparedFullBuild(
   logger: winston.Logger,
   graphId?: string
 ): Promise<Awaited<ReturnType<typeof runFullBuild>>> {
-  const [
-    { updateSpokePoolClients },
-    { constructRelayerClients },
-    { constructCumulativeBalanceRebalancerClient },
-    { retrieveSignerFromCLIArgs },
-  ] = await Promise.all([
-    import("../src/common"),
-    import("../src/relayer/RelayerClientHelper"),
-    import("../src/rebalancer/RebalancerClientHelper"),
-    import("../src/utils/CLIUtils"),
-  ]);
   const baseSigner = await retrieveSignerFromCLIArgs();
-  logger.info({ at: "buildJussiGraph", message: "Constructing relayer clients" });
+  logger.debug({ at: "buildJussiGraph", message: "Constructing relayer clients" });
   const { inventoryClient, spokePoolClients, tokenClient } = await constructRelayerClients(
     logger,
     prepared.relayerConfig,
@@ -317,8 +315,7 @@ async function compareTopologyArtifact(prepared: PreparedGraphTopology): Promise
 }
 
 async function run(flags: BuildJussiGraphFlags, logger: winston.Logger): Promise<void> {
-  const publisherModule = flags.upload ? await import("../src/jussi/JussiGraphPublisher") : undefined;
-  const uploadUrl = publisherModule ? publisherModule.validateJussiUploadEnv(process.env) : undefined;
+  const uploadUrl = flags.upload ? validateJussiUploadEnv(process.env) : undefined;
 
   const prepared = await prepareGraphTopologyFromEnv();
   if (flags.topologyOnly) {
@@ -331,10 +328,6 @@ async function run(flags: BuildJussiGraphFlags, logger: winston.Logger): Promise
     return;
   }
 
-  const [{ getRedisCache }, { JussiApiClient }] = await Promise.all([
-    import("../src/cache/Redis"),
-    import("../src/jussi/JussiApiClient"),
-  ]);
   const redis = await getRedisCache(logger);
   if (!isDefined(redis)) {
     throw new Error("Redis is required for --upload");
@@ -342,23 +335,17 @@ async function run(flags: BuildJussiGraphFlags, logger: winston.Logger): Promise
   if (!isDefined(uploadUrl)) {
     throw new Error("JUSSI_API_URL must be set for --upload");
   }
-  if (!publisherModule) {
-    throw new Error("Jussi graph publisher module was not loaded");
-  }
-  const publisher = new publisherModule.JussiGraphPublisher({
+  const publisher = new JussiGraphPublisher({
     apiClient: new JussiApiClient(uploadUrl.toString(), process.env.JUSSI_API_TOKEN),
     logger,
     redis,
     runFullBuild: (graphId) => runPreparedFullBuild(prepared, logger, graphId),
   });
   const result = await publisher.publishUpload();
-  logger.info({ at: "buildJussiGraph", message: "Uploaded Jussi graph bundle", ...result });
+  logger.debug({ at: "buildJussiGraph", message: "Uploaded Jussi graph bundle", ...result });
 }
 
 async function main(): Promise<void> {
-  process.env.ACROSS_BOT_VERSION = version;
-  config();
-
   const logger = createScriptLogger();
   let exitCode = 0;
   try {
