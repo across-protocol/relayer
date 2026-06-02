@@ -32,6 +32,7 @@ import {
   getL2Book,
   getUserFillsByTime,
   isSignerWallet,
+  createFormatFunction,
 } from "../../utils";
 import { RebalanceRoute, OrderDetails } from "../utils/interfaces";
 import * as hl from "@nktkas/hyperliquid";
@@ -224,6 +225,8 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     const spotMarketMeta = this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
     const sourceTokenInfo = getTokenInfoFromSymbol(sourceToken, sourceChain);
     const destinationTokenInfo = getTokenInfoFromSymbol(destinationToken, destinationChain);
+    const sourceFormatter = createFormatFunction(2, 4, false, sourceTokenInfo.decimals);
+    const destinationFormatter = createFormatFunction(2, 4, false, destinationTokenInfo.decimals);
     if (amountToTransfer.lt(toBNWei(spotMarketMeta.minimumOrderSize, sourceTokenInfo.decimals))) {
       this.logger.debug({
         at: "HyperliquidStablecoinSwapAdapter.initializeRebalance",
@@ -247,7 +250,8 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       // Bridge this token into HyperEVM first
       this.logger.info({
         at: "HyperliquidStablecoinSwapAdapter.initializeRebalance",
-        message: `🍻 Creating new order ${cloid} by first bridging ${fromWei(amountToTransfer, sourceTokenInfo.decimals)} ${sourceTokenInfo.symbol} into HyperEVM from ${getNetworkName(sourceChain)} before depositing into Hypercore in order to acquire ${destinationTokenInfo.symbol} on ${getNetworkName(destinationChain)}`,
+        message: `🍻 Creating new order ${cloid} by first bridging ${sourceFormatter(amountToTransfer)} ${sourceTokenInfo.symbol} into HyperEVM from ${getNetworkName(sourceChain)} before depositing into Hypercore in order to acquire ${destinationTokenInfo.symbol} on ${getNetworkName(destinationChain)}`,
+        expectedOutput: destinationFormatter(amountToTransfer),
       });
 
       const amountReceivedFromBridge = await this._bridgeToChain(sourceToken, sourceChain, HYPEREVM, amountToTransfer);
@@ -263,7 +267,8 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     } else {
       this.logger.info({
         at: "HyperliquidStablecoinSwapAdapter.initializeRebalance",
-        message: `🍻 Creating new order ${cloid} by first transferring ${fromWei(amountToTransfer, sourceTokenInfo.decimals)} ${sourceTokenInfo.symbol} into Hypercore from ${getNetworkName(sourceChain)} in order to acquire ${destinationTokenInfo.symbol} on ${getNetworkName(destinationChain)}`,
+        message: `🍻 Creating new order ${cloid} by first transferring ${sourceFormatter(amountToTransfer)} ${sourceTokenInfo.symbol} into Hypercore from ${getNetworkName(sourceChain)} in order to acquire ${destinationTokenInfo.symbol} on ${getNetworkName(destinationChain)}`,
+        expectedOutput: destinationFormatter(amountToTransfer),
       });
 
       await this._depositToHypercore(sourceToken, amountToTransfer);
@@ -448,6 +453,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         continue;
       }
       const destinationTokenInfo = getTokenInfoFromSymbol(destinationToken, destinationChain);
+      const destinationFormatter = createFormatFunction(2, 4, false, destinationTokenInfo.decimals);
       const destinationTokenMeta = this._getTokenMeta(destinationToken);
       const expectedAmountToReceive = ConvertDecimals(
         destinationTokenMeta.coreDecimals,
@@ -477,7 +483,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       // We no longer need this order information, so we can delete it:
       this.logger.info({
         at: "HyperliquidStablecoinSwapAdapter.updateRebalanceStatuses",
-        message: `✨ Order ${cloid} of ${fromWei(expectedAmountToReceive, destinationTokenInfo.decimals)} ${destinationTokenInfo.symbol} has finalized withdrawing to the final destination chain ${destinationChain}!`,
+        message: `✨ Order ${cloid} of ${destinationFormatter(expectedAmountToReceive)} ${destinationTokenInfo.symbol} has finalized withdrawing to the final destination chain ${destinationChain}!`,
       });
       await this._redisDeleteOrder(cloid, STATUS.PENDING_WITHDRAWAL_FROM_HYPERCORE, this.baseSignerAddress);
     }
@@ -508,6 +514,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     // if it exceeds a minimum threshold.
     for (const token of Object.keys(this.tokenMeta)) {
       const tokenMeta = this._getTokenMeta(token);
+      const hypercoreFormatter = createFormatFunction(2, 4, false, tokenMeta.coreDecimals);
       // Use a minimum threshold (in core decimals) to avoid sweeping dust.
       const minimumSweepThreshold = toBNWei(
         process.env.HYPERLIQUID_MINIMUM_SWEEP_THRESHOLD ?? 10,
@@ -515,24 +522,19 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       );
 
       const availableBalance = await this._getAvailableBalanceForToken(token);
-      const balanceReadable = fromWei(availableBalance, tokenMeta.coreDecimals);
-      const minimumSweepThresholdReadable = fromWei(minimumSweepThreshold, tokenMeta.coreDecimals);
-
-      const destinationTokenInfo = getTokenInfoFromSymbol(token, HYPEREVM);
       if (availableBalance.gt(minimumSweepThreshold)) {
         const amountToWithdraw = availableBalance;
         // Precision for withdraw amount must be equal to HyperEVM/destination chain precision:
+        const destinationTokenInfo = getTokenInfoFromSymbol(token, HYPEREVM);
         const amountToSweep = toBNWei(
           truncate(Number(fromWei(amountToWithdraw, tokenMeta.coreDecimals)), destinationTokenInfo.decimals),
           tokenMeta.coreDecimals
         );
-        const amountToSweepReadable = fromWei(amountToSweep, tokenMeta.coreDecimals);
         this.logger.info({
           at: "HyperliquidStablecoinSwapAdapter.sweepIntermediateBalances",
-          message: `🧹 Sweeping ${amountToSweepReadable} ${token} from Hypercore to HyperEVM`,
-          availableBalance: balanceReadable,
-          minimumSweepThreshold: minimumSweepThresholdReadable,
-          amountToSweep: amountToSweepReadable,
+          message: `🧹 Sweeping ${hypercoreFormatter(amountToSweep)} ${token} from Hypercore to HyperEVM`,
+          availableBalance: hypercoreFormatter(availableBalance),
+          minimumSweepThreshold: hypercoreFormatter(minimumSweepThreshold),
         });
         await this._withdrawToHyperevm(token, amountToSweep);
 
@@ -542,9 +544,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       } else {
         this.logger.debug({
           at: "HyperliquidStablecoinSwapAdapter.sweepIntermediateBalances",
-          message: `${token} balance on Hypercore (${balanceReadable}) is below minimum sweep threshold, skipping`,
-          availableBalance: balanceReadable,
-          minimumSweepThreshold: minimumSweepThresholdReadable,
+          message: `${token} balance on Hypercore (${hypercoreFormatter(availableBalance)}) is below minimum sweep threshold ${hypercoreFormatter(minimumSweepThreshold)}, skipping`,
         });
       }
     }
