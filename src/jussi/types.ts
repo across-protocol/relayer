@@ -94,7 +94,7 @@ export type JussiGasPriceDiagnostic = {
   chainId: number;
   gasPriceWei: string;
   gasPriceGwei: string;
-  source: "72h_avg" | "fallback_current_oracle";
+  source: "24h_avg" | "fallback_current_oracle";
 };
 
 export type LogicalAsset = "USDC" | "USDT" | "WETH";
@@ -169,7 +169,7 @@ export type CostBreakdown = {
 };
 export type ResolvedGasPrice = {
   gasPriceWei: BigNumber;
-  source: "72h_avg" | "fallback_current_oracle";
+  source: "24h_avg" | "fallback_current_oracle";
 };
 export type OftQuoteReader = {
   sharedDecimals(): Promise<number>;
@@ -216,6 +216,13 @@ export type BridgeLookupContext = {
   l2SplitterBridges?: { name: string }[];
 };
 
+// WARNING: BinanceInternalAdapter and HyperliquidInternalAdapter below are structural shadows of
+// the private (`_`-prefixed) surface of the real rebalancer adapters. The economics builders reach
+// into them via `adapter as unknown as <ThisType>` casts (see economics/rates.ts and
+// economics/edgeCosts.ts), so this coupling is NOT verified by the compiler against the concrete
+// adapter classes. If you rename, re-signature, or remove any of these private methods on
+// BinanceStablecoinSwapAdapter / the Hyperliquid adapter, update the matching shadow here and the
+// cast sites — a mismatch will surface only at runtime, not at build time.
 export type BinanceInternalAdapter = {
   _getAccountCoins(
     token: string,

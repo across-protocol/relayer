@@ -153,6 +153,7 @@ async function estimateDirectionalBinanceMarginalOutputRate(
 
   const { hubPoolChainId } = params.pricingContext;
   const adapter = params.rebalancerAdapters.binance as BinanceStablecoinSwapAdapter;
+  // See BinanceInternalAdapter in ../types: this cast reaches private adapter methods unchecked.
   const adapterInternals = adapter as unknown as BinanceInternalAdapter;
   const sourceTokenInfo = getTokenInfoFromSymbol(sourceToken, hubPoolChainId);
   const destinationTokenInfo = getTokenInfoFromSymbol(destinationToken, hubPoolChainId);
@@ -222,6 +223,7 @@ async function estimateDirectionalHyperliquidMarginalOutputRate(
 
   const { hubPoolChainId } = params.pricingContext;
   const adapter = params.rebalancerAdapters.hyperliquid;
+  // See HyperliquidInternalAdapter in ../types: this cast reaches private adapter methods unchecked.
   const adapterInternals = adapter as unknown as HyperliquidInternalAdapter;
   const sourceTokenInfo = getTokenInfoFromSymbol(sourceToken, hubPoolChainId);
   const destinationTokenInfo = getTokenInfoFromSymbol(destinationToken, hubPoolChainId);

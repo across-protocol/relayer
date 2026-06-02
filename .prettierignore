@@ -8,3 +8,5 @@ typechain*
 addresses.json
 *.md
 .claude*
+# Generated Jussi graph fixtures: emitted by scripts/buildJussiGraph.ts via JSON.stringify, not hand-formatted.
+src/jussi/graphs/

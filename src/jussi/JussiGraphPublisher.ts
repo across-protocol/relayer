@@ -80,6 +80,12 @@ export class JussiGraphPublisher {
       }
       const bundle = buildJussiGraphBundleJson(builtGraph);
       hash = bundleHash(bundle);
+      // Re-check the heartbeat immediately before the PUT: the lock can be lost during the gap
+      // between finishing the build and issuing the upload, and we must not PUT while another
+      // publisher may already hold the lock.
+      if (heartbeatError) {
+        throw heartbeatError;
+      }
       await this.params.apiClient.putGraphBundle(graphId, bundle);
       didPut = true;
       await this.persistMetadata(graphId, hash);
@@ -118,6 +124,10 @@ export class JussiGraphPublisher {
 
   private async persistMetadata(graphId: string, hash: string): Promise<void> {
     const publishedAt = (this.params.now?.() ?? new Date()).toISOString();
+    // Intentionally persisted without a TTL (Number.POSITIVE_INFINITY): jussi:graph:last_published
+    // is the durable record of the most recently published graph and must survive indefinitely so
+    // operators can always reconcile the live Jussi state against the last upload. It is overwritten
+    // (not appended) on every successful publish.
     await this.params.redis.set(
       JUSSI_LAST_PUBLISHED_KEY,
       JSON.stringify({

@@ -38,6 +38,19 @@ import {
 } from "../constants";
 import type { EdgeFamily, JussiGasPriceDiagnostic, LogicalAsset, ResolvedGasPrice } from "../types";
 
+/**
+ * Guards against silently propagating a non-positive or non-finite USD price into rate/notional
+ * math, where it would otherwise be masked by `Math.max(price, Number.EPSILON)` and produce an
+ * astronomically large (and meaningless) ratio. Fail loudly instead so the graph build aborts.
+ */
+export function assertPositiveFiniteUsdPrice(price: number, description: string): number {
+  assert(
+    Number.isFinite(price) && price > 0,
+    `Resolved non-positive or non-finite USD price for ${description}: ${price}`
+  );
+  return price;
+}
+
 export class RuntimePricingContext {
   private readonly priceClient: PriceClient;
   private readonly gasPriceCache = new Map<number, Promise<ResolvedGasPrice>>();
@@ -118,7 +131,7 @@ export class RuntimePricingContext {
     return this.loadCachedValue(this.logicalAssetPriceCache, logicalAsset, async () => {
       const tokenInfo = getTokenInfoFromSymbol(logicalAsset, this.hubPoolChainId);
       const price = await this.priceClient.getPriceByAddress(tokenInfo.address.toNative());
-      return Number(price.price);
+      return assertPositiveFiniteUsdPrice(Number(price.price), `logical asset ${logicalAsset}`);
     });
   }
 
@@ -135,11 +148,11 @@ export class RuntimePricingContext {
           isDefined(averageGasPrice) && averageGasPrice.gt(bnZero),
           `Resolved non-positive gas price for ${chainId}`
         );
-        return { gasPriceWei: averageGasPrice, source: "72h_avg" };
+        return { gasPriceWei: averageGasPrice, source: "24h_avg" };
       } catch (error) {
         this.logger.warn({
           at: "buildGraph.RuntimePricingContext.getGasPrice",
-          message: "Failed to query 72h average gas price, falling back to current gasPriceOracle estimate",
+          message: "Failed to query 24h average gas price, falling back to current gasPriceOracle estimate",
           chainId,
           error: error instanceof Error ? error.message : String(error),
         });

@@ -210,6 +210,7 @@ async function estimateBinanceSwapBreakdown(
 ): Promise<CostBreakdown> {
   assert(isDefined(candidate.rebalanceRoute), "Binance swap edge is missing rebalance route");
   const adapter = params.rebalancerAdapters.binance as BinanceStablecoinSwapAdapter;
+  // See BinanceInternalAdapter in ../types: this cast reaches private adapter methods unchecked.
   const adapterInternals = adapter as unknown as BinanceInternalAdapter;
   const { sourceToken, destinationToken, sourceChain, destinationChain } = candidate.rebalanceRoute;
   const destinationCoin = await adapterInternals._getAccountCoins(destinationToken);
@@ -285,6 +286,7 @@ async function estimateBinanceCexBridgeBreakdown(
   params: Pick<BridgeBreakdownParams, "pricingContext" | "rebalancerAdapters">
 ): Promise<CostBreakdown> {
   const adapter = params.rebalancerAdapters.binance as BinanceStablecoinSwapAdapter;
+  // See BinanceInternalAdapter in ../types: this cast reaches private adapter methods unchecked.
   const adapterInternals = adapter as unknown as BinanceInternalAdapter;
   const tokenSymbol = candidate.from.logicalAsset;
   const network =
