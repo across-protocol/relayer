@@ -2,16 +2,15 @@ import assert from "assert";
 import minimist from "minimist";
 import {
   type Abi,
-  type AbiEvent,
   createPublicClient,
   decodeFunctionResult,
   encodeFunctionData,
+  erc20Abi,
   http,
   isAddress,
 } from "viem";
 import { getAbiItem } from "viem/utils";
 import { EventListener } from "../clients";
-import ERC20_ABI from "../common/abi/MinimalERC20.json";
 import {
   connectRedisClient,
   disconnectRedisClient,
@@ -72,11 +71,7 @@ const MULTICALL3_ABI = [
   },
 ] as const satisfies Abi;
 
-const transferAbi = getAbiItem({ abi: ERC20_ABI, name: "Transfer" });
-if (!transferAbi || transferAbi.type !== "event") {
-  throw new Error("MinimalERC20 ABI is missing Transfer event");
-}
-const TRANSFER_EVENT: AbiEvent = transferAbi;
+const TRANSFER_EVENT = getAbiItem({ abi: erc20Abi, name: "Transfer" });
 
 const abortController = new AbortController();
 
@@ -130,7 +125,7 @@ async function publishSnapshots(publicClient: PublicClient, tokens: string[], ad
   const calls = tokens.map((token) => ({
     target: token as `0x${string}`,
     callData: encodeFunctionData({
-      abi: ERC20_ABI as Abi,
+      abi: erc20Abi,
       functionName: "balanceOf",
       args: [address as `0x${string}`],
     }),
@@ -154,10 +149,10 @@ async function publishSnapshots(publicClient: PublicClient, tokens: string[], ad
   await Promise.all(
     tokens.map(async (token, i) => {
       const balance = decodeFunctionResult({
-        abi: ERC20_ABI as Abi,
+        abi: erc20Abi,
         functionName: "balanceOf",
         data: returnData[i].returnData,
-      }) as bigint;
+      });
 
       const payload = {
         type: "snapshot",
