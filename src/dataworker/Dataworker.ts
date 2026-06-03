@@ -137,6 +137,11 @@ const ERROR_DISPUTE_REASONS = new Set(["insufficient-dataworker-lookback", "out-
 // instruction is 900 bytes.
 const INSTRUCTION_PARAMS_MAX_WRITE_SIZE = 900;
 
+// Polling parameters for `sendAndConfirmSolanaTransactionWithSlot` when sending the chain of dependency-write txs that
+// precede an SVM relayer-refund-leaf execution. 25 cycles × 600 ms ≈ 15s, ~1.5 slots per cycle on Solana mainnet.
+const SVM_REFUND_LEAF_SEND_POLL_CYCLES = 25;
+const SVM_REFUND_LEAF_SEND_POLL_DELAY_MS = 600;
+
 const { getMessageHash, getRelayEventKey } = sdkUtils;
 
 // Create a type for storing a collection of roots
@@ -2957,9 +2962,13 @@ export class Dataworker {
     // SDK's `RetrySolanaRpcFactory` transparently retries.
     let minContextSlot: bigint | undefined;
     const sendPinned = async (tx: Parameters<typeof sendAndConfirmSolanaTransactionWithSlot>[0]): Promise<string> => {
-      const { signature, confirmedSlot } = await sendAndConfirmSolanaTransactionWithSlot(tx, provider, 25, 600, {
-        minContextSlot,
-      });
+      const { signature, confirmedSlot } = await sendAndConfirmSolanaTransactionWithSlot(
+        tx,
+        provider,
+        SVM_REFUND_LEAF_SEND_POLL_CYCLES,
+        SVM_REFUND_LEAF_SEND_POLL_DELAY_MS,
+        { minContextSlot }
+      );
       if (isDefined(confirmedSlot) && (minContextSlot === undefined || confirmedSlot > minContextSlot)) {
         minContextSlot = confirmedSlot;
       }
