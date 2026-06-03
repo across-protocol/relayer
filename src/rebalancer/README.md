@@ -68,6 +68,23 @@ Implemented production swap adapters:
 Pending-status Redis sets are keyed by adapter status and signer address, so callers can request pending rebalance
 accounting for a specific EVM account while keeping independently operated accounts isolated from one another.
 
+#### Estimated cost: spread vs oracle fair price
+
+`getEstimatedCost` on the Binance and Hyperliquid adapters includes a spread-cost component that compares the worst-fill price an order would cross on the venue's order book against the oracle-derived fair cross-token price `P_base_usd / P_quote_usd`. For dollar-pegged pairs (e.g. `USDC/USDT`) the ratio is ≈ 1 and the formula reduces to the prior par-based form; for non-par markets (e.g. `WETH/USDC`, `WETH/USDT`) the same formula correctly compares the worst-fill price to the true cross-token rate without producing nonsense estimates.
+
+Oracle wiring:
+
+- `BaseAdapter._getTokenPriceUsd(symbol)` resolves a token's USD price via the same hub-chain-address lookup `CumulativeBalanceRebalancerClient` uses, with results cached per adapter instance for the rebalancer cycle.
+- Operators can override a token's USD price with the `RELAYER_TOKEN_PRICE_FIXED_<address>` env var (where `<address>` is the hex hub-chain ERC-20 address), matching the existing override the cumulative client honors. Use for incident response when the upstream oracle is degraded.
+- `BaseAdapter._getFairCrossPrice(baseToken, quoteToken)` is the helper both adapters call; it returns the quote-per-base ratio so it can be compared directly to the order book's `latestPrice`.
+
+Fallback behavior on oracle failure:
+
+- Binance falls back to depth-only order-book slippage (the prior `slippagePct` measure) — a conservative lower bound that under-estimates real cost when a stablecoin pair trades off par.
+- Hyperliquid falls back to the legacy `1 - latestPrice` par-based formula, which preserves current behavior for the stablecoin pairs HL routes today.
+- Both adapters emit a `warn` log on oracle failure (`Oracle fair price unresolved for <base>/<quote>; falling back to ...`) so operators can detect degraded estimates.
+- Both adapters clamp negative spread to zero, so a favorably-priced book does not surface as a negative cost or fail the downstream `toBNWei` parse.
+
 Binance account assumption:
 
 - `relayer-v2` currently assumes all bots and clients that interact with the Binance rebalancer adapter share the same
