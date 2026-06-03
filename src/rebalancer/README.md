@@ -238,7 +238,7 @@ Lifecycle note:
 Runtime entrypoints in `src/rebalancer/`:
 
 - `runCumulativeBalanceRebalancer` (supported operational path).
-- The runtime updates adapter status/sweeps first, then applies adapter-reported pending rebalance adjustments before evaluating new rebalances.
+- The runtime updates adapter status/sweeps first, then refreshes `TokenClient` balances before applying adapter-reported pending rebalance adjustments and evaluating new rebalances. The refresh is required because the sweeps and `updateRebalanceStatuses` calls submit OFT/CCTP/Hypercore transactions that leave the initial `TokenClient.update()` snapshot stale; without it, `rebalanceInventory` can size a new bridge against a pre-burn balance and crash on the underlying simulation revert.
 
 ## Interactions with Other Bots and Clients
 
