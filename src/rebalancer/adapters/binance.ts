@@ -63,6 +63,11 @@ import { CctpAdapter } from "./cctpAdapter";
 import { OftAdapter, getOftPreDepositOrderTtlOverride } from "./oftAdapter";
 import WETH_ABI from "../../common/abi/Weth.json";
 
+// Symbols treated as $1-pegged for spread-cost estimation in getEstimatedCost. Only routes
+// where both sides of the swap are dollar-pegged use the par-based spread measure; non-par
+// markets fall back to depth-only slippage to avoid producing nonsense fee estimates.
+const STABLECOIN_SYMBOLS = new Set(["USDC", "USDT", "DAI"]);
+
 export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   private _binanceApiClient?: Binance;
   private exchangeInfoPromise?: ReturnType<Binance["exchangeInfo"]>;
@@ -915,16 +920,28 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       toBNWei(truncate(Number(withdrawFee), destinationTokenInfo.decimals), destinationTokenInfo.decimals)
     );
 
-    // Spread cost vs $1 par for the worst-fill price the order would cross. The previous
-    // implementation used only depth-induced slippage (price impact vs bestPx), which misses
-    // the bid-ask gap when the underlying pair trades off par on Binance (e.g. USDCUSDT asks
-    // sitting at ~$1.001 means a market BUY pays ~10 bps vs par even when it fills entirely
-    // at the top of book and slippagePct ≈ 0). Mirrors the par-based spread calculation in
-    // HyperliquidStablecoinSwapAdapter.getEstimatedCost. spreadPct is kept in percent units
-    // (consistent with the prior slippagePct path) so the downstream toBNWei(1, 20) divisor
-    // scales percent → decimal.
-    let spreadPct = 0;
-    if (routeRequiresSwap && isDefined(spotMarketMeta)) {
+    // Spread cost for the worst-fill price the order would cross. The prior implementation
+    // used only depth-induced slippage (price impact vs bestPx), which misses the bid-ask gap
+    // when a dollar-pegged pair trades off par on Binance — e.g. USDCUSDT asks sitting at
+    // ~$1.001 means a market BUY pays ~10 bps vs par even when it fills entirely at the top
+    // of book and slippagePct ≈ 0.
+    //
+    // For dollar-pegged pairs (both source and destination are recognized stablecoin symbols)
+    // we measure spread vs $1 par, mirroring HyperliquidStablecoinSwapAdapter.getEstimatedCost.
+    // For non-par markets (e.g. ETH/USDC where latestPrice is on the order of thousands), a
+    // par-based formula would produce nonsense, so we retain the depth-only measure as a
+    // safe lower bound. A future change can introduce an oracle-priced reference for those
+    // markets if the rebalancer ever routes them through Binance.
+    //
+    // spreadPct is kept in percent units (consistent with the prior slippagePct path) so the
+    // downstream toBNWei(1, 20) divisor scales percent → decimal.
+    let spreadPct = latestPrice.slippagePct;
+    if (
+      routeRequiresSwap &&
+      isDefined(spotMarketMeta) &&
+      STABLECOIN_SYMBOLS.has(sourceToken) &&
+      STABLECOIN_SYMBOLS.has(destinationToken)
+    ) {
       const parSpreadDecimal = spotMarketMeta.isBuy ? latestPrice.latestPrice - 1 : 1 - latestPrice.latestPrice;
       spreadPct = Math.max(0, parSpreadDecimal * 100);
     }
