@@ -54,6 +54,7 @@ import {
   createDefaultTransaction,
   getNativeTokenAddressForChain,
   stringifyThrownValue,
+  sendAndConfirmSolanaTransactionWithSlot,
 } from "../utils";
 import { getRedisCache } from "../cache/Redis";
 import {
@@ -135,6 +136,11 @@ const ERROR_DISPUTE_REASONS = new Set(["insufficient-dataworker-lookback", "out-
 // When executing Solana leaves, we need to write data to the `instruction_params` PDA. Empirically, the maximum amount we can write per
 // instruction is 900 bytes.
 const INSTRUCTION_PARAMS_MAX_WRITE_SIZE = 900;
+
+// Polling parameters for `sendAndConfirmSolanaTransactionWithSlot` when sending the chain of dependency-write txs that
+// precede an SVM relayer-refund-leaf execution. 25 cycles × 600 ms ≈ 15s, ~1.5 slots per cycle on Solana mainnet.
+const SVM_REFUND_LEAF_SEND_POLL_CYCLES = 25;
+const SVM_REFUND_LEAF_SEND_POLL_DELAY_MS = 600;
 
 const { getMessageHash, getRelayEventKey } = sdkUtils;
 
@@ -2946,6 +2952,28 @@ export class Dataworker {
       instructionParamsAccount.exists && instructionParamsAccount.data.length < relayerRefundLeafBytes.length;
     const needsInit = !instructionParamsAccount.exists || needsClose;
     let txSignature;
+    // Track the most recent confirmed slot from a dependency-write tx so we
+    // can pin subsequent `sendTransaction` preflights with `minContextSlot`.
+    // Without this, a receiving RPC that is one slot behind the just-confirmed
+    // write runs preflight against stale state (instruction-params PDA
+    // appears empty / wrong size) and rejects with `SolanaError: Transaction
+    // simulation failed` even though the on-chain state is correct. With it,
+    // a behind RPC returns `MinContextSlotNotReached` immediately, which the
+    // SDK's `RetrySolanaRpcFactory` transparently retries.
+    let minContextSlot: bigint | undefined;
+    const sendPinned = async (tx: Parameters<typeof sendAndConfirmSolanaTransactionWithSlot>[0]): Promise<string> => {
+      const { signature, confirmedSlot } = await sendAndConfirmSolanaTransactionWithSlot(
+        tx,
+        provider,
+        SVM_REFUND_LEAF_SEND_POLL_CYCLES,
+        SVM_REFUND_LEAF_SEND_POLL_DELAY_MS,
+        { minContextSlot }
+      );
+      if (isDefined(confirmedSlot) && (minContextSlot === undefined || confirmedSlot > minContextSlot)) {
+        minContextSlot = confirmedSlot;
+      }
+      return signature;
+    };
     if (needsClose) {
       this.logger.debug({
         at: "Dataworker#executeRelayerRefundLeafSvm",
@@ -2963,7 +2991,7 @@ export class Dataworker {
         (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
         (tx) => appendTransactionMessageInstructions([closeInstructionParamsIx], tx)
       );
-      const closeSig = await sendAndConfirmSolanaTransaction(closeInstructionParamsTx, provider);
+      const closeSig = await sendPinned(closeInstructionParamsTx);
       this.logger.debug({
         at: "Dataworker#executeRelayerRefundLeafSvm",
         message: "Closed instruction params PDA",
@@ -2981,7 +3009,7 @@ export class Dataworker {
         (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
         (tx) => appendTransactionMessageInstructions([initializeInstructionParamsIx], tx)
       );
-      txSignature = await sendAndConfirmSolanaTransaction(initInstructionParamsTx, provider);
+      txSignature = await sendPinned(initInstructionParamsTx);
       this.logger.debug({
         at: "Dataworker#executeRelayerRefundLeafSvm",
         message: "Initialized instruction params account",
@@ -3015,7 +3043,7 @@ export class Dataworker {
         (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
         (tx) => appendTransactionMessageInstructions([writeInstructionParamsIx], tx)
       );
-      txSignature = await sendAndConfirmSolanaTransaction(writeInstructionParamsTx, provider);
+      txSignature = await sendPinned(writeInstructionParamsTx);
       this.logger.debug({
         at: "Dataworker#executeRelayerRefundLeafSvm",
         message: "Wrote relayer refund leaf data to instruction params account",
@@ -3042,7 +3070,7 @@ export class Dataworker {
       (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
       (tx) => appendTransactionMessageInstructions([lookupTableIx], tx)
     );
-    txSignature = await sendAndConfirmSolanaTransaction(createLookupTableTx, provider);
+    txSignature = await sendPinned(createLookupTableTx);
     await waitForNewSolanaBlock(provider, 1);
 
     this.logger.debug({
@@ -3064,7 +3092,7 @@ export class Dataworker {
         (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
         (tx) => appendTransactionMessageInstructions([deactivateLutIx], tx)
       );
-      const deactivateLutSignature = await sendAndConfirmSolanaTransaction(deactivateLutTx, provider);
+      const deactivateLutSignature = await sendPinned(deactivateLutTx);
       this.logger.debug({
         at: "Dataworker#executeRelayerRefundLeafSvm",
         message: "Deactivated address lookup table",
@@ -3119,7 +3147,7 @@ export class Dataworker {
             (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
             (tx) => appendTransactionMessageInstructions([extendLookupTableIx], tx)
           );
-          await sendAndConfirmSolanaTransaction(extendLutTx, provider);
+          await sendPinned(extendLutTx);
           // @dev Every time we extend an ALT, we need to wait for a new solana block so that the table has
           // sufficient time to "activate." https://solana.com/developers/courses/program-optimization/lookup-tables#6-modify-main-to-use-lookup-tables
           await waitForNewSolanaBlock(provider, 1);
@@ -3131,7 +3159,7 @@ export class Dataworker {
           (tx) => appendTransactionMessageInstructions([executeRelayerRefundLeafIx], tx),
           (tx) => compressTransactionMessageUsingAddressLookupTables(tx, addressLookupTableDefinitions.lookupTableMap)
         );
-        refundLeafSignature = await sendAndConfirmSolanaTransaction(executeRelayerRefundLeafTx, provider);
+        refundLeafSignature = await sendPinned(executeRelayerRefundLeafTx);
       } else {
         // This is case 2. Some refundAddresses do not have ATAs for the l2TokenAddress.
         this.logger.warn({
@@ -3186,7 +3214,7 @@ export class Dataworker {
               (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
               (tx) => appendTransactionMessageInstructions([initializeClaimAccountIx], tx)
             );
-            txSignature = await sendAndConfirmSolanaTransaction(initializeClaimAccountTx, provider);
+            txSignature = await sendPinned(initializeClaimAccountTx);
             this.logger.debug({
               at: "Dataworker#executeRelayerRefundLeafSvm",
               message: "Initialized claim account",
@@ -3213,7 +3241,7 @@ export class Dataworker {
             (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
             (tx) => appendTransactionMessageInstructions([extendLookupTableIx], tx)
           );
-          await sendAndConfirmSolanaTransaction(extendLutTx, provider);
+          await sendPinned(extendLutTx);
           // @dev Every time we extend an ALT, we need to wait for a new solana block so that the table has
           // sufficient time to "activate." https://solana.com/developers/courses/program-optimization/lookup-tables#6-modify-main-to-use-lookup-tables
           await waitForNewSolanaBlock(provider, 1);
@@ -3225,7 +3253,7 @@ export class Dataworker {
           (tx) => appendTransactionMessageInstructions([executeRelayerRefundLeafDeferredIx], tx),
           (tx) => compressTransactionMessageUsingAddressLookupTables(tx, addressLookupTableDefinitions.lookupTableMap)
         );
-        refundLeafSignature = await sendAndConfirmSolanaTransaction(executeRelayerRefundLeafDeferredTx, provider);
+        refundLeafSignature = await sendPinned(executeRelayerRefundLeafDeferredTx);
         const claimRelayerRefund = async (
           refundAddress: KitAddress<string>,
           claimAccount: KitAddress<string>,
@@ -3254,7 +3282,7 @@ export class Dataworker {
           const claimRelayerRefundTx = pipe(await createDefaultTransaction(provider, kitKeypair), (tx) =>
             appendTransactionMessageInstructions([claimRelayerRefundIx], tx)
           );
-          return await sendAndConfirmSolanaTransaction(claimRelayerRefundTx, provider);
+          return await sendPinned(claimRelayerRefundTx);
         };
         // Zip the claimAccounts with the recipient ATA and then claim all refunds corresponding to refund accounts with ATAs.
         const recipientTokenAccounts = claimAccounts.map((claimAccount, idx) => {
