@@ -685,6 +685,9 @@ export class GaslessRelayer {
                 fillImmediate = false;
                 // Drop synthetic (or any in-memory) deposit so DEPOSIT_CONFIRM's standard branch must re-resolve from receipt / chain.
                 deposit = undefined;
+		// It's possible the deposit will always fail in simulation (e.g. insufficient balance). In this
+		// case, drop the lock on the deposit in case there were follow-up requests we need to unblock.
+		delete this.fillLock[fillKey];
               }
             }
 
