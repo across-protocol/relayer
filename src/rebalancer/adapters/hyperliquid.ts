@@ -247,15 +247,10 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     const cloid = await this._redisGetNextCloid();
 
     if (sourceChain !== HYPEREVM) {
-      // Bridge this token into HyperEVM first
-      this.logger.info({
-        at: "HyperliquidStablecoinSwapAdapter.initializeRebalance",
-        message: `🍻 Creating new order ${cloid} by first bridging ${sourceFormatter(amountToTransfer)} ${sourceTokenInfo.symbol} into HyperEVM from ${getNetworkName(sourceChain)} before depositing into Hypercore in order to acquire ${destinationTokenInfo.symbol} on ${getNetworkName(destinationChain)}`,
-        expectedOutput: destinationFormatter(amountToTransfer),
-      });
-
+      // The info-level "Creating new order" announcement must run after `_redisCreateOrder`
+      // so user-visible Slack logs reflect only orders that actually progressed past the
+      // bridge submission, not pre-flight simulation failures or transient crashes.
       const amountReceivedFromBridge = await this._bridgeToChain(sourceToken, sourceChain, HYPEREVM, amountToTransfer);
-
       await this._redisCreateOrder(
         cloid,
         STATUS.PENDING_BRIDGE_TO_HYPEREVM,
@@ -263,14 +258,13 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         amountReceivedFromBridge,
         this.baseSignerAddress
       );
-      return amountReceivedFromBridge;
-    } else {
       this.logger.info({
         at: "HyperliquidStablecoinSwapAdapter.initializeRebalance",
-        message: `🍻 Creating new order ${cloid} by first transferring ${sourceFormatter(amountToTransfer)} ${sourceTokenInfo.symbol} into Hypercore from ${getNetworkName(sourceChain)} in order to acquire ${destinationTokenInfo.symbol} on ${getNetworkName(destinationChain)}`,
+        message: `🍻 Creating new order ${cloid} by first bridging ${sourceFormatter(amountToTransfer)} ${sourceTokenInfo.symbol} into HyperEVM from ${getNetworkName(sourceChain)} before depositing into Hypercore in order to acquire ${destinationTokenInfo.symbol} on ${getNetworkName(destinationChain)}`,
         expectedOutput: destinationFormatter(amountToTransfer),
       });
-
+      return amountReceivedFromBridge;
+    } else {
       await this._depositToHypercore(sourceToken, amountToTransfer);
       await this._redisCreateOrder(
         cloid,
@@ -279,6 +273,11 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         amountToTransfer,
         this.baseSignerAddress
       );
+      this.logger.info({
+        at: "HyperliquidStablecoinSwapAdapter.initializeRebalance",
+        message: `🍻 Creating new order ${cloid} by first transferring ${sourceFormatter(amountToTransfer)} ${sourceTokenInfo.symbol} into Hypercore from ${getNetworkName(sourceChain)} in order to acquire ${destinationTokenInfo.symbol} on ${getNetworkName(destinationChain)}`,
+        expectedOutput: destinationFormatter(amountToTransfer),
+      });
       return amountToTransfer;
     }
   }
