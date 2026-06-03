@@ -35,7 +35,21 @@ export async function connectRedisClient(logger?: winston.Logger, url = REDIS_UR
 
   let redisClient: RedisClient | undefined = undefined;
   try {
-    redisClient = createClient({ url, socket: { reconnectStrategy } });
+    redisClient = createClient({
+      url,
+      socket: {
+        reconnectStrategy,
+        // Enable TCP keepalive with an explicit 5s initial delay. node-redis v5
+        // defaults to the same value, but we pin it to guard against drift.
+        keepAlive: true,
+        keepAliveInitialDelay: 5_000,
+      },
+      // Send a Redis-level PING every 30s when the connection is idle. This
+      // surfaces a half-open socket faster than TCP keepalive alone and keeps
+      // the connection warm against any intermediary (VPC connector / LB)
+      // that may evict idle TCP flows.
+      pingInterval: 30_000,
+    });
 
     // node-redis emits one `error` event per pending command at the moment a
     // socket resets, so a single disconnect can produce a burst of 10–25
