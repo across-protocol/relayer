@@ -32,6 +32,7 @@ Keep all relevant `AGENTS.md` and `README.md` files updated in the same change w
 - UMA and smart-contract context: `docs/uma.md` and `docs/smart-contracts.md`
 - Relayer fill and repayment deep dives: `docs/relayer-fill-decision-flow.md` and `docs/repayment-selection.md`
 - Inventory deep dives: `docs/repayment-eligibility.md` and `docs/inventory-virtual-balance-model.md`
+- Rebalancer config tuning from deposit flow: `docs/rebalancer-config-from-deposit-flow.md`
 - Rebalancer modularity deep dive: `docs/rebalancer-mode-adapter-architecture.md`
 - Deposit-address withdraw lifecycle Pub/Sub contract: `docs/deposit-address-withdraw-pubsub.md`
 

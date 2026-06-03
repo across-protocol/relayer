@@ -194,6 +194,9 @@ Notes:
 - `cumulativeTargetBalances[token].chains[chainId]` is a chain priority tier used when selecting where to source excess inventory from (lower tier is preferred for sourcing).
 - `chainIds` are derived from the union of chains found in `cumulativeTargetBalances`.
 
+For an operator playbook on sizing these values from expected deposit fills, see
+[`docs/rebalancer-config-from-deposit-flow.md`](../../docs/rebalancer-config-from-deposit-flow.md).
+
 ## Rebalancing Modes
 
 ### Cumulative mode: `CumulativeBalanceRebalancerClient.rebalanceInventory()`
