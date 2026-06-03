@@ -50,7 +50,49 @@ export async function connectRedisClient(logger?: winston.Logger, url = REDIS_UR
       // that may evict idle TCP flows.
       pingInterval: 30_000,
     });
-    redisClient.on("error", (err) => logger?.warn({ at: "RedisClient", message: "Redis error", cause: String(err) }));
+
+    // node-redis emits one `error` event per pending command at the moment a
+    // socket resets, so a single disconnect can produce a burst of 10–25
+    // identical warnings. Coalesce events with the same cause within
+    // ERROR_DEBOUNCE_MS into one log line, suffixed with the count when > 1.
+    const ERROR_DEBOUNCE_MS = 1_000;
+    let pendingErrorCause: string | undefined;
+    let pendingErrorCount = 0;
+    let flushTimer: NodeJS.Timeout | undefined;
+    const flushErrors = (): void => {
+      flushTimer = undefined;
+      if (pendingErrorCount === 0) {
+        return;
+      }
+      logger?.warn({
+        at: "RedisClient",
+        message: pendingErrorCount > 1 ? `Redis error (x${pendingErrorCount})` : "Redis error",
+        cause: pendingErrorCause,
+      });
+      pendingErrorCount = 0;
+      pendingErrorCause = undefined;
+    };
+
+    redisClient.on("error", (err) => {
+      const cause = String(err);
+      if (pendingErrorCause !== cause) {
+        flushErrors();
+        pendingErrorCause = cause;
+      }
+      pendingErrorCount += 1;
+      if (!flushTimer) {
+        flushTimer = setTimeout(flushErrors, ERROR_DEBOUNCE_MS);
+      }
+    });
+    const flushOnTransition = (): void => {
+      if (flushTimer) {
+        clearTimeout(flushTimer);
+        flushErrors();
+      }
+    };
+    redisClient.on("ready", flushOnTransition);
+    redisClient.on("end", flushOnTransition);
+
     await redisClient.connect();
     return redisClient;
   } catch (err) {
