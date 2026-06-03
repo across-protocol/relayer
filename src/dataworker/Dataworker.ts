@@ -53,6 +53,7 @@ import {
   toKitAddress,
   createDefaultTransaction,
   getNativeTokenAddressForChain,
+  stringifyThrownValue,
 } from "../utils";
 import { getRedisCache } from "../cache/Redis";
 import {
@@ -113,6 +114,7 @@ import {
   some,
   fetchEncodedAccount,
   compressTransactionMessageUsingAddressLookupTables,
+  isSolanaError,
   type Address as KitAddress,
   type KeyPairSigner,
 } from "@solana/kit";
@@ -3284,10 +3286,21 @@ export class Dataworker {
         });
       }
     } catch (err) {
+      // Mirror SvmFillerClient: when the underlying failure is a SolanaError
+      // (e.g. simulation rejected by the spoke), surface the program-level
+      // `__code` in the message so the page that fires upstream identifies
+      // the actual cause instead of a generic "simulation failed". The
+      // SolanaError's `.context` (with `value.err` / program logs) is now
+      // captured by `stringifyThrownValue` and flows into the umbrella
+      // `index.ts` error log too.
+      const solanaErrorCode = isSolanaError(err) ? err.context.__code : undefined;
       this.logger.error({
         at: "Dataworker#executeRelayerRefundLeafSvm",
-        message: "Something failed during the relayer refund leaf execution stage",
-        error: err,
+        message:
+          solanaErrorCode !== undefined
+            ? `Something failed during the relayer refund leaf execution stage (Solana error code: ${solanaErrorCode})`
+            : "Something failed during the relayer refund leaf execution stage",
+        error: stringifyThrownValue(err),
       });
       try {
         await deactivateLut();
@@ -3295,7 +3308,7 @@ export class Dataworker {
         this.logger.warn({
           at: "Dataworker#executeRelayerRefundLeafSvm",
           message: "deactivateLut cleanup failed after refund execution error",
-          error: err,
+          error: stringifyThrownValue(err),
         });
       }
       throw err;
