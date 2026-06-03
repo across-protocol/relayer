@@ -983,21 +983,29 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     const destinationTokenMeta = this._getTokenMeta(destinationToken);
     const destinationTokenInfo = getTokenInfoFromSymbol(destinationToken, destinationChain);
 
+    // Because we request fills with aggregateByTime=true, matchingFill.sz / .fee can carry more
+    // fractional digits than the token's coreDecimals (averaged across consolidated partial fills),
+    // which makes ethers `parseUnits` throw NUMERIC_FAULT (underflow) inside toBNWei. Truncate to
+    // coreDecimals first — the same mitigation pattern used at the end of this function. `px` is
+    // already toWei'd at 18 decimals below for the same reason.
+    const fillSz = truncate(Number(matchingFill.sz), destinationTokenMeta.coreDecimals);
+    const fillFee = truncate(Number(matchingFill.fee), destinationTokenMeta.coreDecimals);
+
     // If fill was a buy, then received amount is denominated in base asset, same as sz.
     // If fill was a sell, then received amount is denominated in quote asset, so receivedAmount = px * sz.
     let amountToWithdraw: BigNumber;
     if (matchingFill.dir === "Buy") {
-      amountToWithdraw = toBNWei(matchingFill.sz, destinationTokenMeta.coreDecimals);
+      amountToWithdraw = toBNWei(fillSz, destinationTokenMeta.coreDecimals);
     } else {
       // matchingFill.px might be an averagePx of all the partial fills so it can exceed pxDecimals so to be safe,
       // we toWei it to 18 decimals.
-      amountToWithdraw = toBNWei(matchingFill.sz, destinationTokenMeta.coreDecimals)
+      amountToWithdraw = toBNWei(fillSz, destinationTokenMeta.coreDecimals)
         .mul(toBNWei(matchingFill.px, 18))
         .div(toBNWei(1));
     }
 
     // Subtract the fee:
-    amountToWithdraw = amountToWithdraw.sub(toBNWei(matchingFill.fee, destinationTokenMeta.coreDecimals));
+    amountToWithdraw = amountToWithdraw.sub(toBNWei(fillFee, destinationTokenMeta.coreDecimals));
 
     // We need to make sure there are not more than evmDecimals decimals for the amount to withdraw or the HL
     // spotSend/sendAsset transaction will fail "Invalid number of decimals".
