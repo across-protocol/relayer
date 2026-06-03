@@ -27,6 +27,24 @@ The indexer tags each ERC-20 transfer with a `transferClassification`:
 
 The deposit path is always active. The refund-withdraw path is gated by `WITHDRAW_ENABLED`.
 
+## Execution fee (deposit-execute path)
+
+The swap API prices a worst-case `executionFee` at deposit-address creation time and commits it
+**per merkle leaf** into the address's immutable merkle root. The indexer surfaces it on each bridge
+leaf as `counterfactualMaterials.{cctpLeaf,spokePoolLeaf}.params.executionFee` (decimal string,
+input-token base units; absent on pre-fee addresses, `"0"` on sponsored routes). Only the
+route-relevant leaf is nonzero.
+
+On the deposit-execute path, `_getSwapApiQuote` reads those committed fees and echoes them back to
+the swap API as `cctpExecutionFee` / `spokePoolExecutionFee` — **verbatim**, since the API rebuilds
+the same leaf/root to verify the merkle proof; a mismatched or missing value for a nonzero-fee
+address fails the rebuild. Each param is sent **only when its leaf carries `params.executionFee`**, so
+legacy (pre-fee) addresses produce exactly the previous request. The bot never alters the value or
+the `amount` (the transferred balance is already the gross `bridgeInput + executionFee`; the clone
+subtracts the fee before bridging). `executionFeeRecipient` is the bot signer, so the bot collects
+the committed fee. The forwarded values are logged on the execute success and swap-quote failure
+lines for diagnosability. The withdraw path is unaffected — `withdrawLeaf` carries no fee.
+
 ## Redis persistence
 
 Two sets persist across runs so handover does not double-spend or double-refund:
