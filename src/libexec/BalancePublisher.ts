@@ -1,5 +1,6 @@
 import assert from "assert";
 import minimist from "minimist";
+import { TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import {
   type Abi,
   createPublicClient,
@@ -18,6 +19,7 @@ import {
   getNetworkName,
   getNodeUrlList,
   getProviderHeaders,
+  getSigner,
   getViemChain,
   isDefined,
   Logger,
@@ -172,28 +174,60 @@ async function publishSnapshots(publicClient: PublicClient, tokens: string[], ad
   );
 }
 
+/**
+ * Resolve a comma-separated token symbol list (e.g. "USDC,WETH") to the
+ * corresponding contract addresses on `chainId`, via @across-protocol/constants.
+ */
+function resolveTokenSymbols(symbols: string, chainId: number): string[] {
+  return symbols
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((symbol) => {
+      const token = TOKEN_SYMBOLS_MAP[symbol as keyof typeof TOKEN_SYMBOLS_MAP];
+      assert(isDefined(token), `Unknown token symbol (${symbol})`);
+      const address = token.addresses[chainId];
+      assert(isDefined(address), `No ${symbol} address known for chain ${chainId}`);
+      return address;
+    });
+}
+
 async function run(argv: string[]): Promise<void> {
   const at = `${PROGRAM}::run`;
-  const minimistOpts = { string: ["tokens", "address"] };
+  const minimistOpts = { string: ["tokens", "address", "symbols"] };
   const args = minimist(argv, minimistOpts);
 
-  ({ chainid: chainId } = args);
-  assert(Number.isInteger(chainId), "chainId must be numeric");
+  // Chain: --chainid wins, else BALANCE_PUBLISHER_CHAIN_ID (env-driven deploy).
+  chainId = Number(args.chainid ?? process.env.BALANCE_PUBLISHER_CHAIN_ID);
+  assert(Number.isInteger(chainId), "chainId required (--chainid or BALANCE_PUBLISHER_CHAIN_ID)");
 
-  const address: string = args.address ?? "";
+  // Address: --address wins, else derive from the relayer wallet (SECRET key
+  // file), so the publisher tracks whatever address the relayer signs as.
+  let address: string = args.address ?? "";
+  if (!address) {
+    address = await (await getSigner({ keyType: "secret" })).getAddress();
+  }
   assert(isAddress(address), `Invalid address (--address ${address})`);
 
-  const tokens: string[] = (args.tokens ?? "")
-    .split(",")
-    .map((s: string) => s.trim())
-    .filter(Boolean);
-  assert(tokens.length > 0, "at least one token contract required (--tokens 0x...,0x...)");
+  // Tokens: explicit --tokens addresses win; else resolve symbols (--symbols /
+  // BALANCE_PUBLISHER_TOKENS, default USDC) to per-chain addresses via constants.
+  let tokens: string[];
+  if (isDefined(args.tokens) && args.tokens !== "") {
+    tokens = args.tokens
+      .split(",")
+      .map((s: string) => s.trim())
+      .filter(Boolean);
+  } else {
+    const symbols = args.symbols ?? process.env.BALANCE_PUBLISHER_TOKENS ?? "USDC";
+    tokens = resolveTokenSymbols(symbols, chainId);
+  }
+  assert(tokens.length > 0, "at least one token required (--tokens 0x...,0x... or --symbols USDC,...)");
   tokens.forEach((token) => assert(isAddress(token), `Invalid token address (${token})`));
 
   const { quorum = getChainQuorum(chainId) } = args;
   assert(Number.isInteger(quorum), "quorum must be numeric");
 
-  const { interval = DEFAULT_SNAPSHOT_INTERVAL_SECS } = args;
+  const interval = Number(args.interval ?? process.env.BALANCE_PUBLISHER_INTERVAL ?? DEFAULT_SNAPSHOT_INTERVAL_SECS);
   assert(Number.isInteger(interval) && interval > 0, "interval must be a positive integer (seconds)");
 
   chain = getNetworkName(chainId);
