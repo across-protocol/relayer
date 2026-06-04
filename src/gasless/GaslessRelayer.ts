@@ -766,8 +766,11 @@ export class GaslessRelayer {
                 nextState = MessageState.FILL_PENDING;
               } else {
                 log("info", `Could not locate deposit on ${origin}.`);
-                await delay(1);
+                // It's possible the deposit will always fail in simulation (e.g. insufficient balance). In this
+                // case, drop the lock on the deposit in case there were follow-up requests we need to unblock.
+                delete this.fillLock[fillKey];
                 nextState = MessageState.DEPOSIT_SUBMIT;
+                await delay(1);
               }
             }
             setState(nextState);

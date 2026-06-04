@@ -68,6 +68,23 @@ Implemented production swap adapters:
 Pending-status Redis sets are keyed by adapter status and signer address, so callers can request pending rebalance
 accounting for a specific EVM account while keeping independently operated accounts isolated from one another.
 
+#### Estimated cost: spread vs oracle fair price
+
+`getEstimatedCost` on the Binance and Hyperliquid adapters includes a spread-cost component that compares the worst-fill price an order would cross on the venue's order book against the oracle-derived fair cross-token price `P_base_usd / P_quote_usd`. For dollar-pegged pairs (e.g. `USDC/USDT`) the ratio is ≈ 1 and the formula reduces to the prior par-based form; for non-par markets (e.g. `WETH/USDC`, `WETH/USDT`) the same formula correctly compares the worst-fill price to the true cross-token rate without producing nonsense estimates.
+
+Oracle wiring:
+
+- `BaseAdapter._getTokenPriceUsd(symbol)` resolves a token's USD price via the same hub-chain-address lookup `CumulativeBalanceRebalancerClient` uses, with results cached per adapter instance for the rebalancer cycle.
+- Operators can override a token's USD price with the `RELAYER_TOKEN_PRICE_FIXED_<address>` env var (where `<address>` is the hex hub-chain ERC-20 address), matching the existing override the cumulative client honors. Use for incident response when the upstream oracle is degraded.
+- `BaseAdapter._getFairCrossPrice(baseToken, quoteToken)` is the helper both adapters call; it returns the quote-per-base ratio so it can be compared directly to the order book's `latestPrice`.
+
+Fallback behavior on oracle failure:
+
+- Binance falls back to depth-only order-book slippage (the prior `slippagePct` measure) — a conservative lower bound that under-estimates real cost when a stablecoin pair trades off par.
+- Hyperliquid falls back to the legacy `1 - latestPrice` par-based formula, which preserves current behavior for the stablecoin pairs HL routes today.
+- Both adapters emit a `warn` log on oracle failure (`Oracle fair price unresolved for <base>/<quote>; falling back to ...`) so operators can detect degraded estimates.
+- Both adapters clamp negative spread to zero, so a favorably-priced book does not surface as a negative cost or fail the downstream `toBNWei` parse.
+
 Binance account assumption:
 
 - `relayer-v2` currently assumes all bots and clients that interact with the Binance rebalancer adapter share the same
@@ -84,10 +101,19 @@ Binance account assumption:
 When adapters create new orders, order detail keys are stored with `REBALANCER_PENDING_ORDER_TTL` (default: 1 hour).
 If this env var is unset, the rebalancer uses the 1-hour default.
 
+Adapters may also pass a `ttlOverride` to `BaseAdapter._redisCreateOrder` to extend the default for routes whose
+expected finality outlives 1 hour. Long-finality OFT pre-deposit bridges (currently USDT0 from HyperEVM, ~12h) use
+`getOftPreDepositOrderTtlOverride` from `oftAdapter.ts` so both `OftAdapter` and adapters that delegate their
+pre-deposit bridge to OFT (e.g. `BinanceStablecoinSwapAdapter`) keep their pending-order TTL aligned with the
+underlying bridge. Note that `_redisUpdateOrderStatus` does not refresh the TTL, so the value set at creation is the
+lifetime of the whole order across all status transitions.
+
 If an order does not finalize before the TTL expires, order details and associated pending-order status tracking are
-eventually pruned from Redis cache state. At that point, operators should rely on adapter lifecycle reconciliation
-(including `sweepIntermediateBalances`) to recover stranded intermediate capital instead of assuming pending-order cache
-entries remain indefinitely.
+eventually pruned from Redis cache state. `BaseAdapter._redisCleanupPendingOrders` emits a `warn` log (`⏰ Pruning
+expired pending order ...`) when this happens so operators can detect abandoned orders that never received a
+finalization log. At that point, operators should rely on adapter lifecycle reconciliation (including
+`sweepIntermediateBalances`) to recover stranded intermediate capital instead of assuming pending-order cache entries
+remain indefinitely.
 
 Contributor guidance:
 
@@ -168,6 +194,9 @@ Notes:
 - `cumulativeTargetBalances[token].chains[chainId]` is a chain priority tier used when selecting where to source excess inventory from (lower tier is preferred for sourcing).
 - `chainIds` are derived from the union of chains found in `cumulativeTargetBalances`.
 
+For an operator playbook on sizing these values from expected deposit fills, see
+[`docs/rebalancer-config-from-deposit-flow.md`](../../docs/rebalancer-config-from-deposit-flow.md).
+
 ## Rebalancing Modes
 
 ### Cumulative mode: `CumulativeBalanceRebalancerClient.rebalanceInventory()`
@@ -229,7 +258,7 @@ Lifecycle note:
 Runtime entrypoints in `src/rebalancer/`:
 
 - `runCumulativeBalanceRebalancer` (supported operational path).
-- The runtime updates adapter status/sweeps first, then applies adapter-reported pending rebalance adjustments before evaluating new rebalances.
+- The runtime updates adapter status/sweeps first, then refreshes `TokenClient` balances before applying adapter-reported pending rebalance adjustments and evaluating new rebalances. The refresh is required because the sweeps and `updateRebalanceStatuses` calls submit OFT/CCTP/Hypercore transactions that leave the initial `TokenClient.update()` snapshot stale; without it, `rebalanceInventory` can size a new bridge against a pre-burn balance and crash on the underlying simulation revert.
 
 ## Interactions with Other Bots and Clients
 

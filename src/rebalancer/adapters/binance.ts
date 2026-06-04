@@ -50,6 +50,8 @@ import {
   deriveBinanceSpotMarketMeta,
   convertBinanceRouteAmount,
   toAddressType,
+  createFormatFunction,
+  blockExplorerLink,
 } from "../../utils";
 import { OrderDetails, RebalanceRoute } from "../utils/interfaces";
 import { STATUS } from "../utils/utils";
@@ -58,7 +60,7 @@ import { AugmentedTransaction, MultiCallerClient } from "../../clients";
 import { RebalancerConfig } from "../RebalancerConfig";
 import { getContractEntry } from "../../common";
 import { CctpAdapter } from "./cctpAdapter";
-import { OftAdapter } from "./oftAdapter";
+import { OftAdapter, getOftPreDepositOrderTtlOverride } from "./oftAdapter";
 import WETH_ABI from "../../common/abi/Weth.json";
 
 export class BinanceStablecoinSwapAdapter extends BaseAdapter {
@@ -521,22 +523,16 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
           });
           continue;
         }
-        this.logger.info({
-          at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",
-          message: `✨ Order ${cloid} has finalized withdrawing to ${binanceWithdrawalNetwork}; bridging ${destinationToken} from ${binanceWithdrawalNetwork} to final destination chain ${destinationChain} and deleting order details from Redis!`,
-          requiredWithdrawAmount: withdrawAmountWei.toString(),
-          destinationToken,
-          withdrawalDetails,
-        });
         await this._bridgeToChain(destinationToken, binanceWithdrawalNetwork, destinationChain, withdrawAmountWei);
-      } else {
-        this.logger.info({
-          at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",
-          message: `✨ Deleting order details from Redis with cloid ${cloid} because its withdrawal has finalized to the final destination chain ${destinationChain}!`,
-          withdrawalDetails,
-        });
       }
       // We no longer need this order information, so we can delete it.
+      const destTokenInfo = this._getTokenInfo(destinationToken, destinationChain);
+      const destinationFormatter = createFormatFunction(2, 4, false, destTokenInfo.decimals);
+      this.logger.info({
+        at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",
+        message: `✨ Order ${cloid} of ${destinationFormatter(withdrawAmountWei)} ${destTokenInfo.symbol} has finalized withdrawing to the final destination chain ${destinationChain}!`,
+        binanceWithdrawalTxnId: blockExplorerLink(withdrawalDetails.txId, binanceWithdrawalNetwork),
+      });
       await this._redisDeleteOrder(cloid, STATUS.PENDING_WITHDRAWAL, this.baseSignerAddress);
     }
   }
@@ -739,6 +735,8 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     // Make sure that the amount to transfer will be larger than the minimum withdrawal size after expected fees.
     const sourceTokenInfo = this._getTokenInfo(sourceToken, sourceChain);
     const destinationTokenInfo = this._getTokenInfo(destinationToken, destinationEntrypointNetwork);
+    const sourceFormatter = createFormatFunction(2, 4, false, sourceTokenInfo.decimals);
+    const destinationFormatter = createFormatFunction(2, 4, false, destinationTokenInfo.decimals);
     const bridgeToBinanceFee = await this._getBridgingFees(rebalanceRoute, amountToTransfer);
     const expectedSourceAmountToDepositForSwap = amountToTransfer.sub(bridgeToBinanceFee);
     const expectedAmountToWithdrawInDestinationUnits = await this._convertSourceToDestination(
@@ -817,7 +815,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       );
       const balance = await this._getERC20Balance(
         sourceChain,
-        this._getTokenInfo(sourceToken, sourceChain).address.toNative(),
+        sourceTokenInfo.address.toNative(),
         this.baseSignerAddress
       );
       if (balance.lt(amountToTransfer)) {
@@ -831,12 +829,10 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       }
       this.logger.info({
         at: "BinanceStablecoinSwapAdapter.initializeRebalance",
-        message: `🍻 Creating new order ${cloid} by first bridging ${sourceToken} into ${getNetworkName(
+        message: `🍻 Creating new order ${cloid} by first bridging ${sourceFormatter(amountToTransfer)} ${sourceTokenInfo.symbol} into ${getNetworkName(
           binanceDepositNetwork
-        )} from ${getNetworkName(sourceChain)}`,
-        destinationToken,
-        destinationChain: getNetworkName(destinationChain),
-        amountToTransfer: amountToTransfer.toString(),
+        )} from ${getNetworkName(sourceChain)} before depositing into Binance in order to acquire ${destinationTokenInfo.symbol} on ${getNetworkName(destinationChain)}`,
+        expectedOutput: destinationFormatter(expectedAmountToWithdrawInDestinationUnits),
       });
       const amountReceivedFromBridge = await this._bridgeToChain(
         sourceToken,
@@ -844,22 +840,25 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         binanceDepositNetwork,
         amountToTransfer
       );
+      // Mirror the underlying OFT bridge's pending-order TTL. Without this, long-finality
+      // bridges (e.g. USDT0 from HyperEVM, ~12h to land on Arbitrum) outlive this adapter's
+      // default 1h TTL and get silently pruned by BaseAdapter._redisCleanupPendingOrders
+      // while the bridge is still in flight — losing the swap context entirely.
+      const preDepositTtlOverride = getOftPreDepositOrderTtlOverride(rebalanceRoute);
       await this._redisCreateOrder(
         cloid,
         STATUS.PENDING_BRIDGE_PRE_DEPOSIT,
         rebalanceRoute,
         amountReceivedFromBridge,
-        this.baseSignerAddress
+        this.baseSignerAddress,
+        preDepositTtlOverride
       );
       return amountReceivedFromBridge;
     } else {
       this.logger.info({
         at: "BinanceStablecoinSwapAdapter.initializeRebalance",
-        message: `🍻 Creating new order ${cloid} by first transferring ${amountToTransfer.toString()} ${sourceToken} into Binance from ${getNetworkName(
-          sourceChain
-        )}`,
-        destinationToken,
-        destinationChain: getNetworkName(destinationChain),
+        message: `🍻 Creating new order ${cloid} by first transferring ${sourceFormatter(amountToTransfer)} ${sourceTokenInfo.symbol} into Binance from ${getNetworkName(sourceChain)} in order to acquire ${destinationTokenInfo.symbol} on ${getNetworkName(destinationChain)}`,
+        expectedOutput: destinationFormatter(expectedAmountToWithdrawInDestinationUnits),
       });
       await this._depositToBinance(sourceToken, sourceChain, amountToTransfer);
       await this._redisCreateOrder(
@@ -916,8 +915,39 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       toBNWei(truncate(Number(withdrawFee), destinationTokenInfo.decimals), destinationTokenInfo.decimals)
     );
 
-    const spreadPct = latestPrice.slippagePct; // slippage is a percentage so we need to divide it by an additional
-    // 100 to get it to a decimal.
+    // Spread cost for the worst-fill price the order would cross. The prior implementation
+    // used only depth-induced slippage (price impact vs bestPx), which misses the bid-ask
+    // gap when the underlying pair trades off the oracle-implied fair rate — e.g. USDCUSDT
+    // asks sitting at ~$1.001 means a market BUY pays ~10 bps vs par even when it fills
+    // entirely at the top of book and slippagePct ≈ 0.
+    //
+    // Measure spread against the oracle-derived fair cross-token price (P_base_usd /
+    // P_quote_usd), which generalizes to any market: for stablecoin pairs the fair price is
+    // ≈ 1 and the formula reduces to the prior par-based form; for non-par pairs like
+    // ETH/USDC it correctly compares latestPrice (~3500) to the fair cross-token rate.
+    //
+    // If the oracle fails to resolve either side, fall back to the depth-only slippage as
+    // a safe lower bound and log a warn so operators can monitor.
+    //
+    // spreadPct is kept in percent units (consistent with the prior slippagePct path) so the
+    // downstream toBNWei(1, 20) divisor scales percent → decimal.
+    let spreadPct = latestPrice.slippagePct;
+    if (routeRequiresSwap && isDefined(spotMarketMeta)) {
+      try {
+        const fairPrice = await this._getFairCrossPrice(spotMarketMeta.baseAssetName, spotMarketMeta.quoteAssetName);
+        const slippageDecimal = spotMarketMeta.isBuy
+          ? (latestPrice.latestPrice - fairPrice) / fairPrice
+          : (fairPrice - latestPrice.latestPrice) / fairPrice;
+        spreadPct = Math.max(0, slippageDecimal * 100);
+      } catch (err) {
+        this.logger.warn({
+          at: "BinanceStablecoinSwapAdapter.getEstimatedCost",
+          message: `Oracle fair price unresolved for ${spotMarketMeta.baseAssetName}/${spotMarketMeta.quoteAssetName}; falling back to depth-only slippage`,
+          err: String(err),
+        });
+        // spreadPct already initialized to latestPrice.slippagePct above.
+      }
+    }
     const spreadFee = toBNWei(truncate(spreadPct, 18), 18).mul(amountToTransfer).div(toBNWei(1, 20));
 
     // Bridge to Binance deposit network Fee:
@@ -1481,7 +1511,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     });
     const response = await submitBinanceOrder(this.binanceApiClient, orderStruct as NewOrderSpot);
     assert(response.status == "FILLED", `Market order was not filled: ${JSON.stringify(response)}`);
-    this.logger.info({
+    this.logger.debug({
       at: "BinanceStablecoinSwapAdapter._placeMarketOrder",
       message: `🎰 Submitted new market order for cloid ${cloid} with size ${szForOrder}`,
       orderStruct,
@@ -1630,7 +1660,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const initiatedWithdrawalKey = this._redisGetInitiatedWithdrawalKey(cloid);
     await this.redisCache.set(initiatedWithdrawalKey, withdrawalId.id);
     await setBinanceWithdrawalType(destinationEntrypointNetwork, withdrawalId.id, BinanceTransactionType.SWAP);
-    this.logger.info({
+    this.logger.debug({
       at: "BinanceStablecoinSwapAdapter._withdraw",
       message: `🏧 Withdrew ${quantity} ${destinationToken} from Binance to withdrawal network ${getNetworkName(
         destinationEntrypointNetwork
