@@ -56,7 +56,7 @@ Computes the relayer's expected profit from filling a deposit by converting the 
 
 The Profit Client estimates what the gas cost would be to fill the deposit (i.e. submit the fill function's call data) on the destination chain and factors this into its profitability calculation.
 
-Importantly, the Profit CLient exposes certain configuration objects that the user can use to set profitability thresholds.
+Importantly, the Profit Client exposes certain configuration objects that the user can use to set profitability thresholds.
 
 ## Transaction Client
 
