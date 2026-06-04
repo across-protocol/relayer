@@ -5,6 +5,7 @@ import {
   Address,
   assert,
   BigNumber,
+  bnZero,
   CHAIN_IDs,
   coingecko,
   Contract,
@@ -15,6 +16,7 @@ import {
   EventSearchConfig,
   EvmAddress,
   forEachAsync,
+  fromWei,
   getBlockForTimestamp,
   getProvider,
   getTokenInfo,
@@ -24,6 +26,7 @@ import {
   PriceClient,
   Signer,
   submitTransaction,
+  toBNWei,
   winston,
 } from "../../utils";
 import { RedisCache } from "../../cache/Redis";
@@ -67,6 +70,12 @@ export abstract class BaseAdapter implements RebalancerAdapter {
   protected allDestinationChains: Set<number> = new Set();
   protected allSourceChains: Set<number> = new Set();
   protected allSourceTokens: Set<string> = new Set();
+
+  // Per-instance USD price cache for spread-cost estimation. The rebalancer is short-lived
+  // (one cycle per invocation), so we don't apply a TTL here; matches the cache scope used
+  // in CumulativeBalanceRebalancerClient._getTokenPriceUsd. If the adapter ever runs in a
+  // long-lived process, revisit this with a time-based eviction.
+  private readonly tokenPriceUsdCache = new Map<string, BigNumber>();
 
   protected abstract REDIS_PREFIX: string;
 
@@ -404,5 +413,46 @@ export abstract class BaseAdapter implements RebalancerAdapter {
 
   protected async _submitTransaction(transaction: AugmentedTransaction): Promise<string> {
     return (await submitTransaction(transaction, this.transactionClient)).hash;
+  }
+
+  /**
+   * Resolve the USD price for a token symbol, using the same lookup pattern as
+   * CumulativeBalanceRebalancerClient: the hub-chain address is used as the cache key and the
+   * oracle key, and a `RELAYER_TOKEN_PRICE_FIXED_<address>` env var can override the oracle
+   * value. Returns an 18-decimal BigNumber USD price.
+   */
+  protected async _getTokenPriceUsd(token: string): Promise<BigNumber> {
+    const cached = this.tokenPriceUsdCache.get(token);
+    if (isDefined(cached)) {
+      return cached;
+    }
+    const hubTokenAddress = getTokenInfoFromSymbol(token, this.config.hubPoolChainId).address.toNative();
+    const fixedPriceEnv = process.env[`RELAYER_TOKEN_PRICE_FIXED_${hubTokenAddress}`];
+    const priceUsd = isDefined(fixedPriceEnv)
+      ? toBNWei(fixedPriceEnv)
+      : toBNWei((await this.priceClient.getPriceByAddress(hubTokenAddress)).price);
+    assert(priceUsd.gt(bnZero), `Unable to resolve positive USD price for ${token}`);
+    this.tokenPriceUsdCache.set(token, priceUsd);
+    return priceUsd;
+  }
+
+  /**
+   * Oracle-derived fair cross-token price for a spot market, expressed as quote-per-base
+   * (so `latestPrice` from an order book can be compared directly to it). The ratio is
+   * dimensionless — both USD prices cancel out. Returns a plain number; callers handle the
+   * percent-vs-decimal scaling appropriate for their downstream math.
+   *
+   * Use this in place of hardcoded `1` references for spread-vs-par calculations so non-par
+   * markets (e.g. ETH/USDC) measure slippage correctly. For stablecoin pairs the ratio is
+   * ≈ 1 and the formula reduces to the prior par-based form.
+   */
+  protected async _getFairCrossPrice(baseToken: string, quoteToken: string): Promise<number> {
+    const [basePriceUsd, quotePriceUsd] = await Promise.all([
+      this._getTokenPriceUsd(baseToken),
+      this._getTokenPriceUsd(quoteToken),
+    ]);
+    // Both prices are 18-decimal BigNumbers; we expand the numerator by 1e18 before dividing
+    // so integer division preserves precision, then convert back to a float via fromWei.
+    return Number(fromWei(basePriceUsd.mul(toBNWei(1, 18)).div(quotePriceUsd), 18));
   }
 }
