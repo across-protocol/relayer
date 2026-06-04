@@ -3291,18 +3291,21 @@ export class Dataworker {
         });
       }
     } catch (err) {
-      // Log at `debug` regardless of branch — this catch must not page on its own.
+      // This catch must not page on its own; the top-level catch in `index.ts` (which logs at
+      // `error` with `notificationPath: "across-error"`) is the single PD-paging surface for this
+      // path. This avoids the double page we used to see: previously this site logged at `error`
+      // and then rethrew, so the top-level catch paged a second time for the same exception.
       //   - Benign `ClaimedMerkleLeaf` race (the on-chain `is_claimed` check at
       //     programs/svm-spoke/src/instructions/bundle.rs trips when another actor lands the
-      //     leaf between our pre-flight `getRelayerRefundExecutions()` filter and now):
-      //     swallow after LUT cleanup; return undefined so the caller skips the success-path
-      //     "Executed RelayerRefundLeaf" info log.
-      //   - Any other failure: rethrow. The top-level catch in `index.ts` will log at `error`
-      //     with `notificationPath: "across-error"`, which is what fires the PD page.
-      // This avoids the double page we used to see: previously this site logged at `error` and
-      // then rethrew, so the top-level catch paged a second time for the same exception.
+      //     leaf between our pre-flight `getRelayerRefundExecutions()` filter and now): log at
+      //     `debug`, swallow after LUT cleanup, return undefined so the caller skips the
+      //     success-path "Executed RelayerRefundLeaf" info log.
+      //   - Any other failure: log at `warn` so the structured SVM context (`describeSolanaError`,
+      //     `rootBundleId`, `leafId`) is preserved in Cloud Logging in prod even when `LOG_LEVEL`
+      //     excludes debug — the top-level `stringifyThrownValue` only carries the stack — then
+      //     rethrow. `warn` doesn't page; the rethrow reaches `index.ts` which does.
       const alreadyClaimed = isSvmLeafAlreadyClaimedError(err);
-      this.logger.debug({
+      this.logger[alreadyClaimed ? "debug" : "warn"]({
         at: "Dataworker#executeRelayerRefundLeafSvm",
         message: alreadyClaimed
           ? "Refund leaf was already claimed on chain; skipping"
@@ -3312,9 +3315,11 @@ export class Dataworker {
         error: err,
         ...describeSolanaError(err),
       });
+      let cleanupErr: unknown;
       try {
         await deactivateLut();
-      } catch (cleanupErr) {
+      } catch (e) {
+        cleanupErr = e;
         this.logger.warn({
           at: "Dataworker#executeRelayerRefundLeafSvm",
           message: "deactivateLut cleanup failed after refund execution error",
@@ -3323,6 +3328,13 @@ export class Dataworker {
         });
       }
       if (alreadyClaimed) {
+        // The leaf was already claimed (no real failure), so we'd normally swallow. But if LUT
+        // cleanup also failed, don't return silently — the LUT was created fresh from a recent
+        // slot just for this attempt and is not persisted elsewhere, so a swallowed cleanup
+        // leaves it active/funded until rent runs out. Surface it so the top-level catch pages.
+        if (cleanupErr !== undefined) {
+          throw cleanupErr;
+        }
         return undefined;
       }
       throw err;
