@@ -25,7 +25,7 @@ export class SheetsWriter {
     const client = await this.auth.getClient();
     const headers = await client.getRequestHeaders();
     const url = `${SHEETS_API_BASE}/${this.spreadsheetId}${path}`;
-    return axios({ method, url, headers: { Authorization: headers.Authorization as string }, data, params });
+    return axios({ method, url, headers: { Authorization: headers.get("Authorization") as string }, data, params });
   }
 
   private async ensureSheetTab(tabName: string): Promise<void> {

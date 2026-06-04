@@ -125,7 +125,7 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
       if (depositType === BinanceTransactionType.SWAP) {
         return false;
       }
-      const tx = await this.l2Bridge.provider.getTransaction(deposit.txId);
+      const tx = await this.getL2Bridge().provider.getTransaction(deposit.txId);
       return isDefined(tx) && compareAddressesSimple(tx.from, fromAddress.toNative());
     });
     const withdrawHistory = await filterAsync(_withdrawHistory, async (withdrawal) => {
