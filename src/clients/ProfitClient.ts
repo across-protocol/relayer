@@ -34,6 +34,7 @@ import {
   isSVMSpokePoolClient,
   getSpokePoolAddress,
   chainIsEvm,
+  chainIsTvm,
   chainIsSvm,
   EvmAddress,
   Address,
@@ -367,9 +368,11 @@ export class ProfitClient {
     const gasMultiplier = this.resolveGasMultiplier(deposit);
     tokenGasCost = tokenGasCost.mul(gasMultiplier).div(fixedPoint);
 
-    // EVM gas is metered in wei (1e-18 base units) regardless of the native token's nominal decimals
-    // (e.g. Tempo's pathUSD is 6dp but gas is still wei). SVM meters in lamports (1e-9 SOL).
-    const gasAccountingDecimals = chainIsSvm(chainId) ? gasToken.decimals : 18;
+    // The relay fee calculator's return values are generally determined by the RPC, *not* by the gas token decimals.
+    // - For EVM networks, the RPC will return with a precision of 18 regardless of the precision of the gas token.
+    // - For Solana, precision will match the precision of SOL.
+    // - For TRON, precision will match the precision of TRX. This is currently our only exception for "EVM" like chains.
+    const gasAccountingDecimals = chainIsSvm(chainId) || chainIsTvm(chainId) ? gasToken.decimals : 18;
     const gasCostUsd = tokenGasCost.mul(gasTokenPriceUsd).div(bn10.pow(gasAccountingDecimals));
 
     const auxiliaryNativeTokenCost = this.getAuxiliaryNativeTokenCost(deposit);

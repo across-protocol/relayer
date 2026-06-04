@@ -5,6 +5,7 @@ import {
   Address,
   assert,
   BigNumber,
+  bnZero,
   CHAIN_IDs,
   coingecko,
   Contract,
@@ -15,6 +16,7 @@ import {
   EventSearchConfig,
   EvmAddress,
   forEachAsync,
+  fromWei,
   getBlockForTimestamp,
   getProvider,
   getTokenInfo,
@@ -24,6 +26,7 @@ import {
   PriceClient,
   Signer,
   submitTransaction,
+  toBNWei,
   winston,
 } from "../../utils";
 import { RedisCache } from "../../cache/Redis";
@@ -67,6 +70,12 @@ export abstract class BaseAdapter implements RebalancerAdapter {
   protected allDestinationChains: Set<number> = new Set();
   protected allSourceChains: Set<number> = new Set();
   protected allSourceTokens: Set<string> = new Set();
+
+  // Per-instance USD price cache for spread-cost estimation. The rebalancer is short-lived
+  // (one cycle per invocation), so we don't apply a TTL here; matches the cache scope used
+  // in CumulativeBalanceRebalancerClient._getTokenPriceUsd. If the adapter ever runs in a
+  // long-lived process, revisit this with a time-based eviction.
+  private readonly tokenPriceUsdCache = new Map<string, BigNumber>();
 
   protected abstract REDIS_PREFIX: string;
 
@@ -236,18 +245,22 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     return orderDetails;
   }
 
-  protected async _redisDeleteOrder(cloid: string, currentStatus: number, account: EvmAddress): Promise<void> {
+  // Returns whether the status-set member was actually removed by this call (i.e. it was present
+  // when sRem ran). `_redisCleanupPendingOrders` uses this to disambiguate a TTL prune from a
+  // concurrent finalize; sequential sRem→del guarantees an observer seeing the details key gone
+  // has also seen the set member removed, so the sRem return value is authoritative.
+  protected async _redisDeleteOrder(cloid: string, currentStatus: number, account: EvmAddress): Promise<boolean> {
     const orderStatusKey = getPendingBridgeStatusSetKey(this.REDIS_PREFIX, currentStatus, account.toNative());
     const orderDetailsKey = getPendingBridgeOrderKey(this.REDIS_PREFIX, cloid, account.toNative());
-    const result = await Promise.all([
-      this.redisCache.sRem(orderStatusKey, cloid),
-      this.redisCache.del(orderDetailsKey),
-    ]);
+    const memberRemoved = (await this.redisCache.sRem(orderStatusKey, cloid)) > 0;
+    const detailsRemoved = await this.redisCache.del(orderDetailsKey);
     this.logger.debug({
       at: "BaseAdapter._redisDeleteOrder",
       message: `Deleted order details for cloid ${cloid}`,
-      result,
+      memberRemoved,
+      detailsRemoved,
     });
+    return memberRemoved;
   }
 
   protected _redisGetLatestNonceKey(): string {
@@ -258,18 +271,28 @@ export abstract class BaseAdapter implements RebalancerAdapter {
   // that no longer have an order details key in Redis. Will only be used to cleanup orders owned by this.baseSignerAddress, for safety.
   private async _redisCleanupPendingOrders(status: STATUS, account: EvmAddress): Promise<void> {
     // If sMembers don't expire and don't have a notion of TTL, so check if order detail keys have expired. If they have,
-    // then delete the member from the set.
-    const sMembers = await this.redisCache.sMembers(
-      getPendingBridgeStatusSetKey(this.REDIS_PREFIX, status, account.toNative())
-    );
+    // then delete the member from the set. Reaching this branch means the order's TTL elapsed before the adapter
+    // observed it transitioning out of `status` (e.g. via `_redisDeleteOrder` on finalization), so the rebalancer is
+    // abandoning the order without emitting its usual finalization log. Surface a warn so operators can detect this.
+    const statusSetKey = getPendingBridgeStatusSetKey(this.REDIS_PREFIX, status, account.toNative());
+    const sMembers = await this.redisCache.sMembers(statusSetKey);
     const orderDetails = await Promise.all(sMembers.map((cloid) => this._redisGetOrderDetails(cloid, account)));
     await forEachAsync(sMembers, async (cloid, i) => {
       if (!isDefined(orderDetails[i])) {
-        this.logger.debug({
+        // A concurrent finalize (e.g. from another rebalancer instance sharing this signer address)
+        // could have removed the details key but landed its set `sRem` after we captured `sMembers`.
+        // `_redisDeleteOrder` is sequential (sRem then del) and returns whether sRem actually removed
+        // the member: false means the finalize beat us to sRem and we should suppress; true means the
+        // member was still present, i.e. a genuine TTL prune that deserves the warn.
+        const memberRemoved = await this._redisDeleteOrder(cloid, status, account);
+        if (!memberRemoved) {
+          return;
+        }
+        this.logger.warn({
           at: "BaseAdapter._redisCleanupPendingOrders",
-          message: `Deleting expired order details for cloid ${cloid} from status set ${getPendingBridgeStatusSetKey(this.REDIS_PREFIX, status, account.toNative())}`,
+          message: `⏰ Pruning expired pending order ${cloid} from status set ${statusSetKey} without finalization. The order's REBALANCER_PENDING_ORDER_TTL elapsed before it could progress out of this status.`,
+          account: account.toNative(),
         });
-        await this._redisDeleteOrder(cloid, status, account);
       }
     });
   }
@@ -390,5 +413,46 @@ export abstract class BaseAdapter implements RebalancerAdapter {
 
   protected async _submitTransaction(transaction: AugmentedTransaction): Promise<string> {
     return (await submitTransaction(transaction, this.transactionClient)).hash;
+  }
+
+  /**
+   * Resolve the USD price for a token symbol, using the same lookup pattern as
+   * CumulativeBalanceRebalancerClient: the hub-chain address is used as the cache key and the
+   * oracle key, and a `RELAYER_TOKEN_PRICE_FIXED_<address>` env var can override the oracle
+   * value. Returns an 18-decimal BigNumber USD price.
+   */
+  protected async _getTokenPriceUsd(token: string): Promise<BigNumber> {
+    const cached = this.tokenPriceUsdCache.get(token);
+    if (isDefined(cached)) {
+      return cached;
+    }
+    const hubTokenAddress = getTokenInfoFromSymbol(token, this.config.hubPoolChainId).address.toNative();
+    const fixedPriceEnv = process.env[`RELAYER_TOKEN_PRICE_FIXED_${hubTokenAddress}`];
+    const priceUsd = isDefined(fixedPriceEnv)
+      ? toBNWei(fixedPriceEnv)
+      : toBNWei((await this.priceClient.getPriceByAddress(hubTokenAddress)).price);
+    assert(priceUsd.gt(bnZero), `Unable to resolve positive USD price for ${token}`);
+    this.tokenPriceUsdCache.set(token, priceUsd);
+    return priceUsd;
+  }
+
+  /**
+   * Oracle-derived fair cross-token price for a spot market, expressed as quote-per-base
+   * (so `latestPrice` from an order book can be compared directly to it). The ratio is
+   * dimensionless — both USD prices cancel out. Returns a plain number; callers handle the
+   * percent-vs-decimal scaling appropriate for their downstream math.
+   *
+   * Use this in place of hardcoded `1` references for spread-vs-par calculations so non-par
+   * markets (e.g. ETH/USDC) measure slippage correctly. For stablecoin pairs the ratio is
+   * ≈ 1 and the formula reduces to the prior par-based form.
+   */
+  protected async _getFairCrossPrice(baseToken: string, quoteToken: string): Promise<number> {
+    const [basePriceUsd, quotePriceUsd] = await Promise.all([
+      this._getTokenPriceUsd(baseToken),
+      this._getTokenPriceUsd(quoteToken),
+    ]);
+    // Both prices are 18-decimal BigNumbers; we expand the numerator by 1e18 before dividing
+    // so integer division preserves precision, then convert back to a float via fromWei.
+    return Number(fromWei(basePriceUsd.mul(toBNWei(1, 18)).div(quotePriceUsd), 18));
   }
 }
