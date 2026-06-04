@@ -70,7 +70,7 @@ export async function cctpV1SvmL2toL1Finalizer(
   );
 
   const unprocessedMessages = outstandingDeposits.filter(
-    ({ status, attestation }) => status === "ready" && attestation !== "PENDING"
+    ({ status, attestation }) => status === "ready" && isDefined(attestation) && attestation !== "PENDING"
   );
   const statusesGrouped = groupObjectCountsByProp(
     outstandingDeposits,
@@ -102,6 +102,7 @@ export async function cctpV1SvmL2toL1Finalizer(
       hubPoolClient.chainId
     ),
     callData: await mapAsync(unprocessedMessages, async (message) => {
+      assert(isDefined(message.attestation), "CCTPV1L2ToL1Finalizer: message has no attestation");
       const callData = await getCctpReceiveMessageCallData(
         {
           destinationChainId: hubPoolClient.chainId,
@@ -111,6 +112,10 @@ export async function cctpV1SvmL2toL1Finalizer(
           },
         },
         true /* CCTP V1 */
+      );
+      assert(
+        isDefined(callData.to) && isDefined(callData.data),
+        "CCTPV1L2ToL1Finalizer: receiveMessage missing to/data"
       );
       return {
         target: callData.to,
@@ -152,7 +157,7 @@ async function augmentSendersListForSolana(
 ): Promise<Address[]> {
   const spokeAddress = spokePoolClient.spokePoolAddress;
   // This format is taken from `src/finalizer/index.ts`
-  if (senderAddresses.some((address) => address.eq(spokeAddress))) {
+  if (isDefined(spokeAddress) && senderAddresses.some((address) => address.eq(spokeAddress))) {
     const _statePda = await getStatePda(toKitAddress(spokeAddress));
     // This format has to match format in CCTPUtils.ts >
     const statePda = SvmAddress.from(_statePda.toString());

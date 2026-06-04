@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import winston from "winston";
 import { DEFAULT_MULTICALL_CHUNK_SIZE } from "../common";
 import { ArweaveGatewayConfigSS, ArweaveGatewayConfig } from "../interfaces";
@@ -12,7 +13,6 @@ export class CommonConfig {
   readonly hubPoolChainId: number;
   readonly pollingDelay: number;
   readonly maxBlockLookBack: { [key: number]: number };
-  readonly maxTxWait: number;
   readonly spokePoolChainsOverride: number[];
   readonly l1TokensOverride: string[];
   readonly sendingTransactionsEnabled: boolean;
@@ -23,14 +23,16 @@ export class CommonConfig {
   readonly timeToCache: number;
   readonly arweaveGateways: ArweaveGatewayConfig[] | undefined;
   readonly peggedTokenPrices: { [pegTokenSymbol: string]: Set<string> } = {};
+  readonly botIdentifier: string;
+  readonly runIdentifier: string;
 
   // State we'll load after we update the config store client and fetch all chains we want to support.
   public multiCallChunkSize: { [chainId: number]: number } = {};
   public toBlockOverride: Record<number, number> = {};
   public fromBlockOverride: Record<number, number> = {};
-  public addressFilter: Set<string>;
+  public addressFilter?: Set<string>;
 
-  constructor(env: ProcessEnv) {
+  constructor(env: ProcessEnv, opts: { botIdentifier?: string } = {}) {
     const {
       MAX_RELAYER_DEPOSIT_LOOK_BACK,
       BLOCK_RANGE_END_BLOCK_BUFFER,
@@ -45,9 +47,11 @@ export class CommonConfig {
       HUB_POOL_TIME_TO_CACHE,
       ARWEAVE_GATEWAYS,
       PEGGED_TOKEN_PRICES,
+      BOT_IDENTIFIER,
+      RUN_IDENTIFIER,
     } = env;
 
-    const mergeConfig = <T>(config: T, envVar: string): T => {
+    const mergeConfig = <T>(config: T, envVar: string | undefined): T => {
       const shallowCopy = { ...config };
       Object.entries(JSON.parse(envVar ?? "{}")).forEach(([k, v]) => {
         const _k = k as keyof T;
@@ -103,6 +107,9 @@ export class CommonConfig {
         new Set(tokenSymbolsToPeg),
       ])
     );
+
+    this.botIdentifier = BOT_IDENTIFIER ?? opts.botIdentifier ?? "across";
+    this.runIdentifier = RUN_IDENTIFIER ?? randomUUID();
   }
 
   /**

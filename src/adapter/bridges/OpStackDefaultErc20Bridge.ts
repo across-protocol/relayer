@@ -8,7 +8,7 @@ import {
   EvmAddress,
   winston,
 } from "../../utils";
-import { CONTRACT_ADDRESSES } from "../../common";
+import { getContractEntry } from "../../common";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
 import { processEvent } from "../utils";
 
@@ -25,14 +25,12 @@ export class OpStackDefaultERC20Bridge extends BaseBridgeAdapter {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _logger: winston.Logger
   ) {
-    super(l2chainId, hubChainId, l1Signer, [
-      EvmAddress.from(CONTRACT_ADDRESSES[hubChainId][`ovmStandardBridge_${l2chainId}`].address),
-    ]);
+    const { address: l1Address, abi: l1Abi } = getContractEntry(hubChainId, `ovmStandardBridge_${l2chainId}`);
+    super(l2chainId, hubChainId, l1Signer, [EvmAddress.from(l1Address)]);
 
-    const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId][`ovmStandardBridge_${l2chainId}`];
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
 
-    const { address: l2Address, abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].ovmStandardBridge;
+    const { address: l2Address, abi: l2Abi } = getContractEntry(l2chainId, "ovmStandardBridge");
     this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider);
   }
 

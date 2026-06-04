@@ -34,7 +34,7 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
 
   /**
    * @notice Rebalances cumulative balances of tokens across chains where cumulative token balances are above
-   * configured targets to to tokens that have cumulative balances below configured thresholds. Tokens are sourced
+   * configured targets to tokens that have cumulative balances below configured thresholds. Tokens are sourced
    * from chains sorted by configured priority tier and current balance level.
    * @param cumulativeBalances Dictionary of token -> cumulative virtual balances.
    * @param currentBalancesOnChain Dictionary of chainId -> token -> current on-chain balance.
@@ -321,7 +321,7 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
             : deficitRemaining.sub(deficitReduction);
           const nextExcessRemaining = excessRemaining.sub(amountTransferredL1);
           const nextSourceBalance = currentBalance.sub(amountToTransferCapped);
-          this.logger[this.config.sendingTransactionsEnabled ? "info" : "debug"]({
+          this.logger.debug({
             at: "RebalanceClient.rebalanceCumulativeInventory",
             message: `Initializing new ${cheapestCostRoute.route.adapter} ${fromWei(amountToTransferCapped, chainDecimals)} ${excessToken} rebalance from ${getNetworkName(cheapestCostRoute.route.sourceChain)} to ${getNetworkName(cheapestCostRoute.route.destinationChain)} ${deficitToken}`,
             adapter: cheapestCostRoute.route.adapter,

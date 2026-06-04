@@ -76,7 +76,7 @@ class TestBaseChainAdapter extends BaseChainAdapter {
   }
 }
 
-describe("Cross Chain Adapter: OP Stack", async function () {
+describe("Cross Chain Adapter: OP Stack", function () {
   const toAddress = (address: string): EvmAddress => {
     return EvmAddress.from(address);
   };

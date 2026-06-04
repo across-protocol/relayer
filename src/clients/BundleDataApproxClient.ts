@@ -28,8 +28,9 @@ export type BundleDataState = {
 // on that chain since the last validated end block and adding the total refund amount on that chain since the last validated
 // end block.
 export class BundleDataApproxClient {
-  private upcomingRefunds: { [l1Token: string]: { [chainId: number]: { [relayer: string]: BigNumber } } } = undefined;
-  private upcomingDeposits: { [l1Token: string]: { [chainId: number]: BigNumber } } = undefined;
+  private upcomingRefunds: { [l1Token: string]: { [chainId: number]: { [relayer: string]: BigNumber } } } | undefined =
+    undefined;
+  private upcomingDeposits: { [l1Token: string]: { [chainId: number]: BigNumber } } | undefined = undefined;
   private readonly spokePoolManager: SpokePoolManager;
 
   private readonly protocolChainIdIndices: number[];
@@ -50,6 +51,10 @@ export class BundleDataApproxClient {
    */
   export(): BundleDataState {
     const { upcomingDeposits, upcomingRefunds } = this;
+    assert(
+      isDefined(upcomingDeposits) && isDefined(upcomingRefunds),
+      "BundleDataApproxClient#export: client not initialized"
+    );
     return { upcomingDeposits, upcomingRefunds };
   }
 

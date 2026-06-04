@@ -11,8 +11,7 @@
     "paths": {
       "ox/*": ["./node_modules/viem/node_modules/ox/_types/*"]
     },
-    "strict": true,
-    "strictNullChecks": false
+    "strict": true
   },
   "include": ["./src", "index.ts", "./scripts"],
   "files": ["./hardhat.config.ts"],

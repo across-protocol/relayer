@@ -24,7 +24,7 @@ import { runDepositAddressHandler } from "./src/deposit-address";
 import { runBalanceTracker } from "./src/balance-tracker";
 
 let logger: typeof Logger;
-let cmd: string;
+let cmd: string | undefined;
 
 const CMDS = {
   dataworker: runDataworker,

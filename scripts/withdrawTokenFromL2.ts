@@ -17,7 +17,6 @@ import {
   blockExplorerLink,
 } from "../src/utils";
 import { CUSTOM_L2_BRIDGE, CANONICAL_L2_BRIDGE } from "../src/common/Constants";
-import { BaseL2BridgeAdapter } from "../src/adapter/l2Bridges/BaseL2BridgeAdapter";
 import { MultiCallerClient, isAugmentedTransaction } from "../src/clients";
 import { askYesNoQuestion } from "./utils";
 
@@ -148,13 +147,7 @@ async function run(): Promise<void> {
 
   // Initialize L2 bridge adapter
   logger.info(`Initializing ${BridgeConstructor.name}...`);
-  const l2Bridge = new BridgeConstructor(
-    l2ChainId,
-    MAINNET_CHAIN_ID,
-    l2Signer,
-    mainnetSigner,
-    l1Token
-  ) as BaseL2BridgeAdapter;
+  const l2Bridge = new BridgeConstructor(l2ChainId, MAINNET_CHAIN_ID, l2Signer, mainnetSigner, l1Token);
 
   // Construct withdrawal transaction
   logger.info("Constructing withdrawal transaction...");

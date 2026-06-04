@@ -12,9 +12,17 @@ export class DepositAddressHandlerConfig extends CommonConfig {
   apiTimeoutOverride: number;
   initializationRetryAttempts: number;
   swapApiKey: string;
+  withdrawEnabled: boolean;
+
+  /** Gate for publishing `withdraw_executed` events to GCP Pub/Sub. */
+  enableDepositAddressWithdrawPublisher: boolean;
+  /** GCP project that hosts the withdraw-lifecycle topic. Required when the publisher gate is on. */
+  pubSubGcpProjectId: string;
+  /** Short topic name (e.g. `topic-deposit-address-withdraw`). Required when the publisher gate is on. */
+  pubSubDepositAddressWithdrawTopic: string;
 
   constructor(env: ProcessEnv) {
-    super(env);
+    super(env, { botIdentifier: "across-deposit-address-handler" });
 
     const {
       INDEXER_API_POLLING_INTERVAL,
@@ -25,6 +33,10 @@ export class DepositAddressHandlerConfig extends CommonConfig {
       API_TIMEOUT_OVERRIDE,
       SWAP_API_KEY,
       INITIALIZATION_RETRY_ATTEMPTS,
+      WITHDRAW_ENABLED,
+      ENABLE_DEPOSIT_ADDRESS_WITHDRAW_PUBLISHER,
+      PUBSUB_GCP_PROJECT_ID,
+      PUBSUB_DEPOSIT_ADDRESS_WITHDRAW_TOPIC,
     } = env;
     this.indexerPollingInterval = Number(INDEXER_API_POLLING_INTERVAL ?? 1); // Default to 1s
     this.indexerApiEndpoint = String(INDEXER_API_ENDPOINT);
@@ -41,5 +53,20 @@ export class DepositAddressHandlerConfig extends CommonConfig {
 
     this.apiTimeoutOverride = Number(API_TIMEOUT_OVERRIDE ?? 3000); // In ms
     this.initializationRetryAttempts = Number(INITIALIZATION_RETRY_ATTEMPTS ?? 3);
+    this.withdrawEnabled = WITHDRAW_ENABLED === "true";
+
+    this.enableDepositAddressWithdrawPublisher = ENABLE_DEPOSIT_ADDRESS_WITHDRAW_PUBLISHER === "true";
+    this.pubSubGcpProjectId = PUBSUB_GCP_PROJECT_ID?.trim() ?? "";
+    this.pubSubDepositAddressWithdrawTopic = PUBSUB_DEPOSIT_ADDRESS_WITHDRAW_TOPIC?.trim() ?? "";
+    if (this.enableDepositAddressWithdrawPublisher) {
+      if (!this.pubSubGcpProjectId) {
+        throw new Error("PUBSUB_GCP_PROJECT_ID is required when ENABLE_DEPOSIT_ADDRESS_WITHDRAW_PUBLISHER=true");
+      }
+      if (!this.pubSubDepositAddressWithdrawTopic) {
+        throw new Error(
+          "PUBSUB_DEPOSIT_ADDRESS_WITHDRAW_TOPIC is required when ENABLE_DEPOSIT_ADDRESS_WITHDRAW_PUBLISHER=true"
+        );
+      }
+    }
   }
 }

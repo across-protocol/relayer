@@ -1,18 +1,28 @@
 import { ethers, expect, sinon, toBNWei } from "./utils";
 import winston from "winston";
+import { BinanceStablecoinSwapAdapter } from "../src/rebalancer/adapters/binance";
+import { CctpAdapter } from "../src/rebalancer/adapters/cctpAdapter";
+import { OftAdapter } from "../src/rebalancer/adapters/oftAdapter";
+import { RebalancerConfig } from "../src/rebalancer/RebalancerConfig";
 import {
-  BinanceStablecoinSwapAdapter,
+  BINANCE_NETWORKS,
+  BINANCE_READ_RECV_WINDOW_MS,
+  BINANCE_WITHDRAW_RECV_WINDOW_MS,
+  BINANCE_WITHDRAWAL_STATUS,
+  BigNumber,
+  CHAIN_IDs,
+  EvmAddress,
+  getEthersCompatibleAddress,
+  resolveBinanceCoinSymbol,
   convertBinanceRouteAmount,
   deriveBinanceSpotMarketMeta,
   isSameBinanceCoin,
   supportsBinanceIntermediateBridgeToken,
-} from "../src/rebalancer/adapters/binance";
-import { CctpAdapter } from "../src/rebalancer/adapters/cctpAdapter";
-import { OftAdapter } from "../src/rebalancer/adapters/oftAdapter";
-import { RebalancerConfig } from "../src/rebalancer/RebalancerConfig";
-import { CHAIN_IDs, EvmAddress, resolveBinanceCoinSymbol } from "../src/utils";
+  TOKEN_SYMBOLS_MAP,
+  toAddressType,
+} from "../src/utils";
 
-describe("Binance adapter helpers", async function () {
+describe("Binance adapter helpers", function () {
   afterEach(function () {
     sinon.restore();
   });
@@ -143,6 +153,247 @@ describe("Binance adapter helpers", async function () {
 
     expect(fees[0].symbol).to.equal("USDCUSDT");
     expect(tradeFeeStub.callCount).to.equal(2);
+  });
+
+  it("subtracts realized commissions charged in the received asset from the most recent trade page", async function () {
+    const adapter = await makeAdapter();
+    const [signer] = await ethers.getSigners();
+    const allOrdersStub = sinon.stub().resolves([
+      {
+        clientOrderId: "cloid",
+        status: "FILLED",
+        orderId: 123,
+        executedQty: "100",
+        cummulativeQuoteQty: "100.1",
+      },
+    ]);
+    const myTradesStub = sinon.stub().resolves([
+      ...Array.from({ length: 998 }, (_, index) => ({
+        id: index + 1,
+        commission: "0",
+        commissionAsset: "USDC",
+      })),
+      { id: 999, commission: "1", commissionAsset: "USDC" },
+      { id: 1000, commission: "5", commissionAsset: "BNB" },
+    ]);
+    const internals = adapter as unknown as {
+      _getMatchingFillForCloid(
+        cloid: string,
+        account: EvmAddress
+      ): Promise<{ expectedAmountToReceive: number } | undefined>;
+      _redisGetOrderDetails(
+        cloid: string,
+        account: EvmAddress
+      ): Promise<{ sourceToken: string; destinationToken: string }>;
+      _getSpotMarketMetaForRoute(
+        sourceToken: string,
+        destinationToken: string
+      ): Promise<{
+        symbol: string;
+        baseAssetName: string;
+        quoteAssetName: string;
+        pxDecimals: number;
+        szDecimals: number;
+        minimumOrderSize: number;
+        isBuy: boolean;
+      }>;
+      binanceApiClient: {
+        allOrders: sinon.SinonStub;
+        myTrades: sinon.SinonStub;
+      };
+    };
+    sinon.stub(internals, "_redisGetOrderDetails").resolves({ sourceToken: "USDT", destinationToken: "USDC" });
+    sinon.stub(internals, "_getSpotMarketMetaForRoute").resolves({
+      symbol: "USDCUSDT",
+      baseAssetName: "USDC",
+      quoteAssetName: "USDT",
+      pxDecimals: 4,
+      szDecimals: 0,
+      minimumOrderSize: 1,
+      isBuy: true,
+    });
+    internals.binanceApiClient = {
+      allOrders: allOrdersStub,
+      myTrades: myTradesStub,
+    };
+
+    const result = await internals._getMatchingFillForCloid("cloid", EvmAddress.from(await signer.getAddress()));
+
+    expect(result?.expectedAmountToReceive).to.equal(99);
+    expect(myTradesStub.callCount).to.equal(1);
+    expect(myTradesStub.getCall(0).args[0]).to.deep.equal({
+      symbol: "USDCUSDT",
+      orderId: 123,
+      limit: 1000,
+    });
+  });
+
+  it("treats Binance RW00441 withdrawal rejections as a retryable wait state", async function () {
+    const [signer] = await ethers.getSigners();
+    const debug = sinon.stub();
+    const adapter = new BinanceStablecoinSwapAdapter(
+      { ...TEST_LOGGER, debug } as unknown as winston.Logger,
+      {} as RebalancerConfig,
+      signer,
+      {} as CctpAdapter,
+      {} as OftAdapter
+    );
+    const internals = adapter as unknown as {
+      baseSignerAddress: EvmAddress;
+      binanceApiClient: { withdraw: sinon.SinonStub };
+      _withdraw(cloid: string, quantity: number, destinationToken: string, destinationChain: number): Promise<boolean>;
+      _getEntrypointNetwork(chainId: number, token: string): Promise<number>;
+      _getTokenInfo(token: string, chainId: number): { decimals: number };
+    };
+    internals.baseSignerAddress = EvmAddress.from(await signer.getAddress());
+    internals.binanceApiClient = {
+      withdraw: sinon
+        .stub()
+        .rejects(
+          new Error(
+            "[RW00441] Your deposits of 2.13569561 BTC in value have not met the required unlock confirmations for withdrawal."
+          )
+        ),
+    };
+    sinon.stub(internals, "_getEntrypointNetwork").resolves(CHAIN_IDs.MAINNET);
+    sinon.stub(internals, "_getTokenInfo").returns({ decimals: 6 });
+
+    const result = await internals._withdraw("cloid", 100, "USDC", CHAIN_IDs.MAINNET);
+
+    expect(result).to.equal(false);
+    expect(internals.binanceApiClient.withdraw.calledOnce).to.equal(true);
+    expect(debug.calledOnce).to.equal(true);
+    expect(debug.getCall(0).args[0].error).to.include("[RW00441]");
+    expect(debug.getCall(0).args[0].error).to.include("required unlock confirmations for withdrawal");
+  });
+
+  it("builds Tron direct deposit transfers with ethers-compatible addresses", async function () {
+    const adapter = await makeAdapter();
+    const [signer] = await ethers.getSigners();
+    const amount = toBNWei("100", 6);
+    const tronUsdt = TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.TRON];
+    const tronDepositAddress = toAddressType(await signer.getAddress(), CHAIN_IDs.TRON).toNative();
+    const internals = adapter as unknown as {
+      _buildDirectBinanceTokenDepositTransaction(
+        sourceToken: string,
+        sourceChain: number,
+        sourceTokenAddress: string,
+        connectedSigner: typeof signer,
+        depositAddress: string,
+        amountToDeposit: BigNumber,
+        amountReadable: string
+      ): { contract: { address: string }; method: string; args: unknown[]; chainId: number };
+    };
+
+    const txn = internals._buildDirectBinanceTokenDepositTransaction(
+      "USDT",
+      CHAIN_IDs.TRON,
+      tronUsdt,
+      signer,
+      tronDepositAddress,
+      amount,
+      "100"
+    );
+
+    expect(txn.chainId).to.equal(CHAIN_IDs.TRON);
+    expect(txn.method).to.equal("transfer");
+    expect(txn.contract.address).to.equal(getEthersCompatibleAddress(CHAIN_IDs.TRON, tronUsdt));
+    expect(txn.args).to.deep.equal([getEthersCompatibleAddress(CHAIN_IDs.TRON, tronDepositAddress), amount]);
+  });
+
+  it("submits Tron withdrawals to the signer native Tron address on the TRX network", async function () {
+    const [signer] = await ethers.getSigners();
+    const withdrawStub = sinon
+      .stub()
+      .rejects(
+        new Error(
+          "[RW00441] Your deposits of 2.13569561 BTC in value have not met the required unlock confirmations for withdrawal."
+        )
+      );
+    const adapter = new BinanceStablecoinSwapAdapter(
+      TEST_LOGGER,
+      {} as RebalancerConfig,
+      signer,
+      {} as CctpAdapter,
+      {} as OftAdapter
+    );
+    const internals = adapter as unknown as {
+      baseSignerAddress: EvmAddress;
+      binanceApiClient: { withdraw: sinon.SinonStub };
+      _withdraw(cloid: string, quantity: number, destinationToken: string, destinationChain: number): Promise<boolean>;
+      _getEntrypointNetwork(chainId: number, token: string): Promise<number>;
+      _getTokenInfo(token: string, chainId: number): { decimals: number };
+    };
+    internals.baseSignerAddress = EvmAddress.from(await signer.getAddress());
+    internals.binanceApiClient = { withdraw: withdrawStub };
+    sinon.stub(internals, "_getEntrypointNetwork").resolves(CHAIN_IDs.TRON);
+    sinon.stub(internals, "_getTokenInfo").returns({ decimals: 6 });
+
+    const result = await internals._withdraw("cloid", 100, "USDT", CHAIN_IDs.TRON);
+
+    const payload = withdrawStub.getCall(0).args[0];
+    expect(result).to.equal(false);
+    expect(payload).to.deep.equal({
+      coin: "USDT",
+      address: toAddressType(await signer.getAddress(), CHAIN_IDs.TRON).toNative(),
+      amount: 100,
+      network: BINANCE_NETWORKS[CHAIN_IDs.TRON],
+      transactionFeeFlag: false,
+      recvWindow: BINANCE_WITHDRAW_RECV_WINDOW_MS,
+    });
+  });
+
+  it("matches Tron withdrawal history against the signer native Tron address", async function () {
+    const adapter = await makeAdapter();
+    const [signer] = await ethers.getSigners();
+    const tronRecipient = toAddressType(await signer.getAddress(), CHAIN_IDs.TRON).toNative();
+    const withdrawHistoryStub = sinon.stub().resolves([
+      {
+        amount: "100",
+        transactionFee: "1",
+        address: tronRecipient,
+        id: "matching-withdrawal",
+        txId: "tron-tx",
+        network: BINANCE_NETWORKS[CHAIN_IDs.TRON],
+        status: BINANCE_WITHDRAWAL_STATUS.COMPLETED,
+        applyTime: new Date(0).toISOString(),
+      },
+      {
+        amount: "100",
+        transactionFee: "1",
+        address: await signer.getAddress(),
+        id: "evm-form-withdrawal",
+        txId: "evm-form-tx",
+        network: BINANCE_NETWORKS[CHAIN_IDs.TRON],
+        status: BINANCE_WITHDRAWAL_STATUS.COMPLETED,
+        applyTime: new Date(0).toISOString(),
+      },
+    ]);
+    const internals = adapter as unknown as {
+      binanceApiClient: { withdrawHistory: sinon.SinonStub };
+      _getInitiatedBinanceWithdrawals(
+        token: string,
+        chain: number,
+        startTime: number,
+        account: string
+      ): Promise<Array<{ id: string; recipient: string }>>;
+    };
+    internals.binanceApiClient = { withdrawHistory: withdrawHistoryStub };
+
+    const withdrawals = await internals._getInitiatedBinanceWithdrawals(
+      "USDT",
+      CHAIN_IDs.TRON,
+      123,
+      await signer.getAddress()
+    );
+
+    expect(withdrawals.map((withdrawal) => withdrawal.id)).to.deep.equal(["matching-withdrawal"]);
+    expect(withdrawals[0].recipient).to.equal(tronRecipient);
+    expect(withdrawHistoryStub.getCall(0).args[0]).to.deep.equal({
+      coin: "USDT",
+      startTime: 123,
+      recvWindow: BINANCE_READ_RECV_WINDOW_MS,
+    });
   });
 
   it("keeps pending WETH credit until a finalized Binance withdrawal is wrapped", async function () {

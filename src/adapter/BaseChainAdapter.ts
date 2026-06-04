@@ -255,7 +255,9 @@ export class BaseChainAdapter {
         }
       ),
       mapAsync(
-        Object.values(this.bridges).filter((bridge) => isDefined(bridge.gasToken)),
+        Object.values(this.bridges).filter((bridge): bridge is typeof bridge & { gasToken: EvmAddress } =>
+          isDefined(bridge.gasToken)
+        ),
         async (bridge) => {
           const gasToken = bridge.gasToken;
           const erc20 = ERC20.connect(gasToken.toNative(), this.getSigner(this.hubChainId));
@@ -370,6 +372,7 @@ export class BaseChainAdapter {
     ]);
 
     const l1SpokePoolClient = this.spokePoolManager.getClient(this.hubChainId);
+    assert(isDefined(l1SpokePoolClient), `SpokePoolClient not found for hub chain ${this.hubChainId}`);
     const hubChainBlockRange = l1SpokePoolClient.eventSearchConfig.maxLookBack;
     const l1LatestBlock = l1SpokePoolClient.latestHeightSearched;
     const l1EventSearchConfig = {
@@ -379,6 +382,7 @@ export class BaseChainAdapter {
     };
 
     const l2SpokePoolClient = this.spokePoolManager.getClient(this.chainId);
+    assert(isDefined(l2SpokePoolClient), `SpokePoolClient not found for chain ${this.chainId}`);
     const spokeChainBlockRange = l2SpokePoolClient.eventSearchConfig.maxLookBack;
     const l2LatestBlock = l2SpokePoolClient.latestHeightSearched;
     const l2EventSearchConfig = {

@@ -54,6 +54,7 @@ export const {
   groupObjectCountsByTwoProps,
   groupObjectCountsByThreeProps,
   delay,
+  retry,
   getCurrentTime,
   bnZero,
   bnOne,

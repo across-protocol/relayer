@@ -62,7 +62,7 @@ async function getIdTokenHeaders(audience: string): Promise<Record<string, strin
     at: "fetchInventoryConfig#getIdTokenHeaders",
     message: "Authentication successful",
   });
-  return headers as Record<string, string>;
+  return Object.fromEntries(headers);
 }
 
 type ConfigKind = "relayer" | "rebalancer";

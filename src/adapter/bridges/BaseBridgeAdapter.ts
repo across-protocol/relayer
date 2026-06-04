@@ -29,8 +29,8 @@ export type BridgeEvent = SortableEvent & {
 export type BridgeEvents = { [l2Token: string]: BridgeEvent[] };
 
 export abstract class BaseBridgeAdapter {
-  protected l1Bridge: Contract;
-  protected l2Bridge: Contract;
+  protected l1Bridge?: Contract;
+  protected l2Bridge?: Contract;
   public gasToken: EvmAddress | undefined;
   protected readonly hubPoolAddress: EvmAddress;
   protected readonly spokePoolAddress: Address;

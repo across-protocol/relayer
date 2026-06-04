@@ -4,6 +4,7 @@ import { EVMSpokePoolClient } from "../../src/clients";
 import { BaseChainAdapter } from "../../src/adapter/BaseChainAdapter";
 import { PolygonWethBridge, PolygonERC20Bridge, UsdcTokenSplitterBridge } from "../../src/adapter/bridges";
 import {
+  assert,
   ethers,
   expect,
   BigNumber,
@@ -14,7 +15,7 @@ import {
   toBN,
 } from "../utils";
 import { ZERO_ADDRESS } from "../constants";
-import { getCctpDomainForChainId, EvmAddress } from "../../src/utils";
+import { getCctpDomainForChainId, isDefined, EvmAddress } from "../../src/utils";
 
 const { MAINNET, POLYGON } = CHAIN_IDs;
 const { USDC, WETH, WBTC } = TOKEN_SYMBOLS_MAP;
@@ -63,7 +64,7 @@ class TestBaseChainAdapter extends BaseChainAdapter {
   }
 }
 
-describe("Cross Chain Adapter: Polygon", async function () {
+describe("Cross Chain Adapter: Polygon", function () {
   const logger = createSpyLogger().spyLogger;
 
   let adapter: TestAdapter;
@@ -84,7 +85,8 @@ describe("Cross Chain Adapter: Polygon", async function () {
     hubPool = await (await getContractFactory("MockHubPool", depositor)).deploy();
 
     spokePool = await (await getContractFactory("MockSpokePool", depositor)).deploy(ZERO_ADDRESS);
-    const deploymentBlock = spokePool.deployTransaction.blockNumber!;
+    const { blockNumber: deploymentBlock } = spokePool.deployTransaction;
+    assert(isDefined(deploymentBlock), "Expected MockSpokePool deployment to have a block number");
 
     const hubPoolClient = null;
     const l2SpokePoolClient = new EVMSpokePoolClient(logger, spokePool, hubPoolClient, POLYGON, deploymentBlock, {

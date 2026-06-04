@@ -32,8 +32,10 @@ import {
   SVMProvider,
   isEVMSpokePoolClient,
   isSVMSpokePoolClient,
-  getDeployedAddress,
+  getSpokePoolAddress,
   chainIsEvm,
+  chainIsTvm,
+  chainIsSvm,
   EvmAddress,
   Address,
   SvmAddress,
@@ -165,6 +167,7 @@ export class ProfitClient {
       } else if (isSVMSpokePoolClient(spokePoolClient)) {
         provider = spokePoolClient.svmEventsClient.getRpc();
       }
+      assert(isDefined(provider), `ProfitClient: no provider for chain ${chainId}`);
       this.relayerFeeQueries[chainId] = this.constructRelayerFeeQuery(chainId, provider);
     }
 
@@ -365,7 +368,12 @@ export class ProfitClient {
     const gasMultiplier = this.resolveGasMultiplier(deposit);
     tokenGasCost = tokenGasCost.mul(gasMultiplier).div(fixedPoint);
 
-    const gasCostUsd = tokenGasCost.mul(gasTokenPriceUsd).div(fixedPoint);
+    // The relay fee calculator's return values are generally determined by the RPC, *not* by the gas token decimals.
+    // - For EVM networks, the RPC will return with a precision of 18 regardless of the precision of the gas token.
+    // - For Solana, precision will match the precision of SOL.
+    // - For TRON, precision will match the precision of TRX. This is currently our only exception for "EVM" like chains.
+    const gasAccountingDecimals = chainIsSvm(chainId) || chainIsTvm(chainId) ? gasToken.decimals : 18;
+    const gasCostUsd = tokenGasCost.mul(gasTokenPriceUsd).div(bn10.pow(gasAccountingDecimals));
 
     const auxiliaryNativeTokenCost = this.getAuxiliaryNativeTokenCost(deposit);
     const nativeToken = this.resolveNativeToken(chainId);
@@ -728,9 +736,14 @@ export class ProfitClient {
       const tokenPrices = await this.priceClient.getPricesByAddress(tokenAddrsToQuery, "usd");
       tokenAddrs.forEach((address) => {
         const hasExternalPrice = tokenAddrsToQuery.includes(address);
-        const price = hasExternalPrice
-          ? tokenPrices.find(({ address: _address }) => _address === address).price
-          : Number(process.env[`RELAYER_TOKEN_PRICE_DEFAULT_${address}`]) || 0;
+        let price: number;
+        if (hasExternalPrice) {
+          const externalPrice = tokenPrices.find(({ address: _address }) => _address === address);
+          assert(isDefined(externalPrice), `No external price returned for token ${address}`);
+          price = externalPrice.price;
+        } else {
+          price = Number(process.env[`RELAYER_TOKEN_PRICE_DEFAULT_${address}`]) || 0;
+        }
         this.tokenPrices[address] = toBNWei(price.toFixed(18));
       });
       this.logger.debug({ at: "ProfitClient", message: "Updated token prices", tokenPrices: this.tokenPrices });
@@ -863,7 +876,7 @@ export class ProfitClient {
     return dedupArray([...hubPoolTokens, ...additionalL1Tokens]);
   }
 
-  protected _getRemappedTokenSymbol(token: string): string {
+  protected _getRemappedTokenSymbol(token: string): string | undefined {
     // If token symbol exists in a set of pegged tokens, return the key of the set as the remapped symbol.
     if (Object.values(this.peggedTokens).some((peggedTokens) => peggedTokens.has(token))) {
       return Object.keys(this.peggedTokens).find((pegTokenSymbol) => this.peggedTokens[pegTokenSymbol].has(token));
@@ -878,9 +891,8 @@ export class ProfitClient {
     // Fallback to Coingecko's free API for now.
     // TODO: Add support for Coingecko Pro.
     const coingeckoProApiKey: undefined = undefined;
-    const spokePoolAddress = chainIsEvm(chainId)
-      ? toAddressType(getDeployedAddress("SpokePool", chainId), chainId).toEvmAddress()
-      : getDeployedAddress("SvmSpoke", chainId);
+    const spokePool = getSpokePoolAddress(chainId);
+    const spokePoolAddress = chainIsSvm(chainId) ? spokePool.toNative() : spokePool.toEvmAddress();
     // Call the factory to create a new QueryBase instance.
     return relayFeeCalculator.QueryBase__factory.create(
       chainId,

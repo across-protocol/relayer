@@ -11,8 +11,8 @@ type ChainSelector = (rebalancerConfig: RebalancerConfig) => number[];
 // set so we can track venue support without automatically enabling every listed network operationally.
 const BINANCE_NETWORKS_BY_SYMBOL: Record<SupportedToken, readonly number[]> = {
   USDC: [CHAIN_IDs.ARBITRUM, CHAIN_IDs.OPTIMISM, CHAIN_IDs.MAINNET, CHAIN_IDs.BASE, CHAIN_IDs.BSC],
-  USDT: [CHAIN_IDs.ARBITRUM, CHAIN_IDs.OPTIMISM, CHAIN_IDs.MAINNET, CHAIN_IDs.BSC],
-  // Live Binance ETH networkList currently includes ARBITRUM, BASE, BSC, ETH, OPTIMISM, SCROLL, and ZKSYNCERA.
+  USDT: [CHAIN_IDs.ARBITRUM, CHAIN_IDs.OPTIMISM, CHAIN_IDs.MAINNET, CHAIN_IDs.BSC, CHAIN_IDs.TRON],
+  // Live Binance ETH networkList currently includes ARBITRUM, BASE, BSC, ETH, OPTIMISM, and ZKSYNCERA.
   // The rebalancer support list below stays narrower until we intentionally enable more of those networks. We filter
   // this further by limiting to chains where we have an Atomic Depositor contract.
   WETH: [CHAIN_IDs.MAINNET],
@@ -27,6 +27,7 @@ const REBALANCE_CHAINS_BY_SYMBOL: Record<SupportedToken, readonly number[]> = {
     CHAIN_IDs.UNICHAIN,
     CHAIN_IDs.MONAD,
     CHAIN_IDs.BSC,
+    CHAIN_IDs.TRON,
   ],
   USDC: [
     CHAIN_IDs.HYPEREVM,
@@ -75,7 +76,26 @@ function canUseHyperliquidStablecoinRoute({
   sourceChain: number;
   destinationChain: number;
 }): boolean {
-  return sourceChain !== CHAIN_IDs.BSC && destinationChain !== CHAIN_IDs.BSC;
+  return (
+    sourceChain !== CHAIN_IDs.BSC &&
+    destinationChain !== CHAIN_IDs.BSC &&
+    sourceChain !== CHAIN_IDs.TRON &&
+    destinationChain !== CHAIN_IDs.TRON
+  );
+}
+
+function canUseSameAssetBridgeRoute(
+  token: SupportedToken,
+  sourceChain: number,
+  destinationChain: number
+): token is StableToken {
+  if (!hasSameAssetBridgeAdapter(token)) {
+    return false;
+  }
+  if (sourceChain === CHAIN_IDs.BSC || destinationChain === CHAIN_IDs.BSC) {
+    return false;
+  }
+  return token !== "USDT" || (sourceChain !== CHAIN_IDs.TRON && destinationChain !== CHAIN_IDs.TRON);
 }
 
 function buildSameAssetRoutes(rebalancerConfig: RebalancerConfig, token: SupportedToken): RebalanceRoute[] {
@@ -92,7 +112,7 @@ function buildSameAssetRoutes(rebalancerConfig: RebalancerConfig, token: Support
         continue;
       }
 
-      if (hasSameAssetBridgeAdapter(token) && sourceChain !== CHAIN_IDs.BSC && destinationChain !== CHAIN_IDs.BSC) {
+      if (canUseSameAssetBridgeRoute(token, sourceChain, destinationChain)) {
         routes.push({
           sourceChain,
           sourceToken: token,

@@ -1,5 +1,6 @@
 import { DEFAULT_L2_CONTRACT_ADDRESSES } from "@eth-optimism/sdk";
 import { ChainFamily, PUBLIC_NETWORKS } from "@across-protocol/constants";
+import { constants as ethersConstants } from "ethers";
 import { isDefined, isKeyOf } from "../utils/TypeGuards";
 import {
   assert,
@@ -10,7 +11,6 @@ import {
   CHAIN_IDs,
   TOKEN_SYMBOLS_MAP,
   Signer,
-  ZERO_ADDRESS,
   Address,
   binanceCredentialsConfigured,
   EvmAddress,
@@ -20,6 +20,9 @@ import {
   winston,
   toBN,
 } from "../utils";
+
+// Sourced directly to avoid a tsx/esbuild TDZ on the cyclic re-export from ../utils.
+const { AddressZero: ZERO_ADDRESS } = ethersConstants;
 import {
   BaseBridgeAdapter,
   OpStackDefaultERC20Bridge,
@@ -33,7 +36,6 @@ import {
   LineaBridge,
   LineaWethBridge,
   BlastBridge,
-  ScrollERC20Bridge,
   OpStackUSDCBridge,
   UsdcCCTPBridge,
   ZKStackBridge,
@@ -59,7 +61,7 @@ import {
   BridgeApi as L2BridgeApi,
   TokenSplitterBridge as L2TokenSplitterBridge,
 } from "../adapter/l2Bridges";
-import { CONTRACT_ADDRESSES } from "./ContractAddresses";
+import { getContractAddress } from "./ContractAddresses";
 import { HyperlaneXERC20Bridge } from "../adapter/bridges/HyperlaneXERC20Bridge";
 import { HyperlaneXERC20BridgeL2 } from "../adapter/l2Bridges/HyperlaneXERC20Bridge";
 import { OFTL2Bridge } from "../adapter/l2Bridges/OFTL2Bridge";
@@ -121,7 +123,6 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     [CHAIN_IDs.MAINNET]: 32,
     [CHAIN_IDs.POLYGON]: 128, // Commonly used finality level for CEX's that accept Polygon deposits
     [CHAIN_IDs.BSC]: 3, // Average takes 2.5 blocks to finalize but reorgs rarely happen
-    [CHAIN_IDs.SCROLL]: 18,
   },
   [MDC_DEFAULT_THRESHOLD]: {
     [CHAIN_IDs.MAINNET]: 4,
@@ -129,7 +130,6 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     [CHAIN_IDs.PLASMA]: 10,
     [CHAIN_IDs.POLYGON]: 64, // Probabilistically safe level based on historic Polygon reorgs
     [CHAIN_IDs.BSC]: 2, // Average takes 2.5 blocks to finalize but reorgs rarely happen
-    [CHAIN_IDs.SCROLL]: 8,
     [CHAIN_IDs.TRON]: 19, // 19 Blocks to finalize.
   },
   100: {
@@ -140,7 +140,6 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     [CHAIN_IDs.MONAD]: 1,
     [CHAIN_IDs.PLASMA]: 1,
     [CHAIN_IDs.POLYGON]: 16,
-    [CHAIN_IDs.SCROLL]: 2,
     [CHAIN_IDs.TEMPO]: 2,
     [CHAIN_IDs.TRON]: 0,
     [CHAIN_IDs.BSC]: 0,
@@ -160,14 +159,11 @@ Object.values(CHAIN_IDs).forEach((chainId) => {
   }
 });
 
-export const REDIS_URL_DEFAULT = "redis://localhost:6379";
-
 // Autogenerate RPC config for each supported chain.
 // Any exceptions can be added to the ranges object.
 const resolveRpcConfig = () => {
   const defaultRange = 10_000;
   const ranges = {
-    [CHAIN_IDs.ALEPH_ZERO]: 0,
     [CHAIN_IDs.BOBA]: 0,
     [CHAIN_IDs.HYPEREVM]: 1_000, // QuickNode constraint.
     [CHAIN_IDs.MONAD]: 1_000, // Alchemy constraint
@@ -203,7 +199,6 @@ const resolveChainBundleBuffers = () => {
     [CHAIN_IDs.MONAD]: 150, // ~400ms/block, 2 block finality
     [CHAIN_IDs.PLASMA]: 180, // ~1s/block variable. Finality guarantees are less certain, be a bit more conservative.
     [CHAIN_IDs.POLYGON]: 128, // ~2s/block. Polygon has historically re-orged often.
-    [CHAIN_IDs.SCROLL]: 40, // ~3s/block.
     [CHAIN_IDs.TEMPO]: 400, // ~500ms a block.
     [CHAIN_IDs.TRON]: 40, // 3s/block.
     [CHAIN_IDs.ZK_SYNC]: defaultBuffers[ChainFamily.ZK_STACK], // Inherit ZK_STACK default.
@@ -257,7 +252,6 @@ const resolveChainCacheDelay = () => {
     [CHAIN_IDs.MONAD]: 150,
     [CHAIN_IDs.PLASMA]: 300,
     [CHAIN_IDs.POLYGON]: 256,
-    [CHAIN_IDs.SCROLL]: 100,
     [CHAIN_IDs.TEMPO]: 400,
     [CHAIN_IDs.TRON]: 20, // 19 blocks for finalization.
     [CHAIN_IDs.ZK_SYNC]: cacheDelays[ChainFamily.ZK_STACK],
@@ -293,7 +287,6 @@ export const DEFAULT_NO_TTL_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.OPTIMISM]: 86400,
   [CHAIN_IDs.PLASMA]: 172800,
   [CHAIN_IDs.POLYGON]: 86400,
-  [CHAIN_IDs.SCROLL]: 57600,
   [CHAIN_IDs.SOLANA]: 432000,
   [CHAIN_IDs.SONEIUM]: 86400,
   [CHAIN_IDs.TEMPO]: 345600,
@@ -321,7 +314,7 @@ Object.values(CHAIN_IDs)
 // These are the spokes that can hold the native token for that network, so they should be added together when calculating whether
 // a bundle execution is possible with the funds in the pool.
 const resolveNativeTokenSpokes = () => {
-  const chains = [CHAIN_IDs.LINEA, CHAIN_IDs.SCROLL, CHAIN_IDs.ZK_SYNC];
+  const chains = [CHAIN_IDs.LINEA, CHAIN_IDs.ZK_SYNC];
   Object.entries(PUBLIC_NETWORKS).forEach(([_chainId, config]) => {
     const chainId = Number(_chainId);
     if ([ChainFamily.OP_STACK, ChainFamily.ZK_STACK].includes(config.family)) {
@@ -364,7 +357,6 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   ],
   [CHAIN_IDs.PLASMA]: ["USDT", "WETH"],
   [CHAIN_IDs.POLYGON]: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "POOL"],
-  [CHAIN_IDs.SCROLL]: ["WETH", "USDC", "USDT", "WBTC", "POOL"],
   [CHAIN_IDs.SOLANA]: ["USDC"],
   [CHAIN_IDs.SONEIUM]: ["WETH", "USDC"],
   [CHAIN_IDs.TEMPO]: ["USDC"],
@@ -432,13 +424,11 @@ const resolveCanonicalBridges = (): Record<number, L1BridgeConstructor<BaseBridg
     [CHAIN_IDs.BSC]: BinanceCEXBridge,
     [CHAIN_IDs.LINEA]: LineaBridge,
     [CHAIN_IDs.POLYGON]: PolygonERC20Bridge,
-    [CHAIN_IDs.SCROLL]: ScrollERC20Bridge,
     [CHAIN_IDs.SOLANA]: SolanaUsdcCCTPBridge,
     [CHAIN_IDs.ZK_SYNC]: ZKStackBridge,
     // Testnets:
     [CHAIN_IDs.ARBITRUM_SEPOLIA]: ArbitrumOrbitBridge,
     [CHAIN_IDs.POLYGON_AMOY]: PolygonERC20Bridge,
-    [CHAIN_IDs.SCROLL_SEPOLIA]: ScrollERC20Bridge,
   };
 
   const defaultBridges: Partial<Record<ChainFamily, L1BridgeConstructor<BaseBridgeAdapter>>> = {
@@ -802,20 +792,6 @@ export const DEFAULT_ARBITRUM_GATEWAY: { [chainId: number]: { l1: string; l2: st
   },
 };
 
-// We currently support WBTC, USDT, USDC, and WETH as routes on scroll. WBTC, USDT, and USDC transfer events can all be queried from the standard ERC20
-// gateway, WETH has its own custom gateways, and other ERC20s may also have their own gateway, so it is very important to define unique gateways (ones
-// which are NOT the standard ERC20 gateway) if/when we add new deposit routes.
-export const SCROLL_CUSTOM_GATEWAY: { [hubToken: string]: { l1: string; l2: string } } = {
-  [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: {
-    l1: "0x7AC440cAe8EB6328de4fA621163a792c1EA9D4fE",
-    l2: "0x7003E7B7186f0E6601203b99F7B8DECBfA391cf9",
-  },
-  [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: {
-    l1: "0xf1AF3b23DE0A5Ca3CAb7261cb0061C0D779A5c7B",
-    l2: "0x33B60d5Dd260d453cAC3782b0bDC01ce84672142",
-  },
-};
-
 // Expected worst-case time for message from L1 to propagate to L2 in seconds
 const resolveBridgeDelay = () => {
   const defaultBridgeDelay = 60 * 60;
@@ -846,11 +822,11 @@ export const OPSTACK_CONTRACT_OVERRIDES = {
     l1: {
       AddressManager: "0xE064B565Cf2A312a3e66Fe4118890583727380C0",
       L1CrossDomainMessenger: "0x5D4472f31Bd9385709ec61305AFc749F0fA8e9d0",
-      L1StandardBridge: CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET].ovmStandardBridge_81457.address,
+      L1StandardBridge: getContractAddress(CHAIN_IDs.MAINNET, "ovmStandardBridge_81457"),
       StateCommitmentChain: ZERO_ADDRESS,
       CanonicalTransactionChain: ZERO_ADDRESS,
       BondManager: ZERO_ADDRESS,
-      OptimismPortal: CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET].blastOptimismPortal.address,
+      OptimismPortal: getContractAddress(CHAIN_IDs.MAINNET, "blastOptimismPortal"),
       L2OutputOracle: "0x826D1B0D4111Ad9146Eb8941D7Ca2B6a44215c76",
       OptimismPortal2: ZERO_ADDRESS,
       DisputeGameFactory: ZERO_ADDRESS,
@@ -865,7 +841,7 @@ export const OPSTACK_CONTRACT_OVERRIDES = {
     l1: {
       AddressManager: "0x9754fD3D63B3EAC3fd62b6D54DE4f61b00D6E0Df",
       L1CrossDomainMessenger: "0x6C7198250087B29A8040eC63903Bc130f4831Cc9",
-      L1StandardBridge: CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET].ovmStandardBridge_4326.address,
+      L1StandardBridge: getContractAddress(CHAIN_IDs.MAINNET, "ovmStandardBridge_4326"),
       StateCommitmentChain: ZERO_ADDRESS,
       CanonicalTransactionChain: ZERO_ADDRESS,
       BondManager: ZERO_ADDRESS,
@@ -881,7 +857,7 @@ export const OPSTACK_CONTRACT_OVERRIDES = {
     l1: {
       AddressManager: "0x092dD3E2272a372cdfbcCb8F689423F09ED6242a",
       L1CrossDomainMessenger: "0x9338F298F29D3918D5D1Feb209aeB9915CC96333",
-      L1StandardBridge: CONTRACT_ADDRESSES[CHAIN_IDs.SEPOLIA].ovmStandardBridge_168587773.address,
+      L1StandardBridge: getContractAddress(CHAIN_IDs.SEPOLIA, "ovmStandardBridge_168587773"),
       StateCommitmentChain: ZERO_ADDRESS,
       CanonicalTransactionChain: ZERO_ADDRESS,
       BondManager: ZERO_ADDRESS,
@@ -1097,7 +1073,7 @@ const generateSwapRoutes = (): { [chainId: string]: SwapRouteConfig } => {
     [CHAIN_IDs.PLASMA]: { inputTokenSymbol: "USDT" },
     [CHAIN_IDs.TEMPO]: {
       inputTokenSymbol: "USDC",
-      outputToken: EvmAddress.from(CONTRACT_ADDRESSES[CHAIN_IDs.TEMPO].nativeToken.address),
+      outputToken: EvmAddress.from(getContractAddress(CHAIN_IDs.TEMPO, "nativeToken")),
     },
   };
 

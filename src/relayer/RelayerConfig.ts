@@ -79,9 +79,6 @@ export class RelayerConfig extends CommonConfig {
   // It is up to the user to ensure that the spoke pool on the target chain has tryMulticall in its active implementation.
   readonly tryMulticallChains: number[];
 
-  // TODO: Remove this config item once we fully move to generic chain adapters.
-  readonly useGenericAdapter: boolean;
-
   constructor(env: ProcessEnv) {
     const {
       RELAYER_ORIGIN_CHAINS,
@@ -109,7 +106,7 @@ export class RelayerConfig extends CommonConfig {
       RELAYER_USE_INVENTORY_MANAGER = "false",
       RELAYER_EVENT_LISTENER = "false",
     } = env;
-    super(env);
+    super(env, { botIdentifier: "across-relayer" });
 
     // External listeners are dependent on looping mode being configured.
     this.externalListener = this.pollingDelay > 0 && RELAYER_EXTERNAL_LISTENER === "true";
@@ -398,7 +395,9 @@ export class RelayerConfig extends CommonConfig {
 
       // Ensure that there is always a deposit confirmation config for the maximum theoretical value of a fill.
       Object.values(this.minDepositConfirmations).forEach((depositConfirmations) => {
-        const { usdThreshold: maxThreshold, minConfirmations: maxConfirmations } = depositConfirmations.at(-1);
+        const last = depositConfirmations.at(-1);
+        assert(isDefined(last), "Empty depositConfirmations array");
+        const { usdThreshold: maxThreshold, minConfirmations: maxConfirmations } = last;
         if (maxThreshold.lt(bnUint256Max)) {
           depositConfirmations.push({
             usdThreshold: bnUint256Max,
