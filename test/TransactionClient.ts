@@ -1,4 +1,5 @@
 import { AugmentedTransaction } from "../src/clients";
+import { extractErrorCause } from "../src/clients/TransactionClient";
 import {
   BigNumber,
   ethers,
@@ -149,6 +150,94 @@ describe("TransactionClient", function () {
     const txnResponses = await txnClient.submit(chainId, txns);
     txnResponses.forEach((txnResponse, idx) => {
       expect(txnResponse.gasLimit).to.equal(gasLimit.mul(idx + 1));
+    });
+  });
+
+  describe("extractErrorCause", function () {
+    it("parses a strict JSON-RPC body on the immediate inner error", function () {
+      const inner = {
+        reason: "processing response error",
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          error: { code: -32000, message: "Insufficient funds for gas", data: null },
+        }),
+      };
+      const outer = Object.assign(new Error("cannot estimate gas; transaction may fail"), {
+        code: ethers.errors.UNPREDICTABLE_GAS_LIMIT,
+        reason: "cannot estimate gas; transaction may fail",
+        error: inner,
+      });
+      expect(extractErrorCause(outer)).to.equal("insufficient funds for gas");
+    });
+
+    it("walks one wrapper deeper to find the JSON-RPC body", function () {
+      // ethers commonly nests one extra layer (SERVER_ERROR wrapping the raw RPC response).
+      const rpc = {
+        reason: "processing response error",
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          error: { code: -32000, message: "nonce too low", data: null },
+        }),
+      };
+      const middle = { error: rpc };
+      const outer = Object.assign(new Error("outer"), {
+        code: ethers.errors.SERVER_ERROR,
+        reason: "outer",
+        error: middle,
+      });
+      expect(extractErrorCause(outer)).to.equal("nonce too low");
+    });
+
+    it("falls back to the inner error's reason when no JSON-RPC body is present", function () {
+      const inner = { reason: "execution reverted: RelayFilled" };
+      const outer = Object.assign(new Error("outer"), {
+        code: ethers.errors.UNPREDICTABLE_GAS_LIMIT,
+        reason: "cannot estimate gas",
+        error: inner,
+      });
+      expect(extractErrorCause(outer)).to.equal("execution reverted: relayfilled");
+    });
+
+    it("falls back to the inner error's message when no reason or body is present", function () {
+      const inner = { message: "could not coalesce error" };
+      const outer = Object.assign(new Error("outer"), {
+        code: ethers.errors.SERVER_ERROR,
+        reason: "outer",
+        error: inner,
+      });
+      expect(extractErrorCause(outer)).to.equal("could not coalesce error");
+    });
+
+    it("falls back to the outer error when no inner error is attached", function () {
+      const outer = Object.assign(new Error("nonce has already been used"), {
+        code: ethers.errors.NONCE_EXPIRED,
+        reason: "nonce has already been used",
+      });
+      expect(extractErrorCause(outer)).to.equal("nonce has already been used");
+    });
+
+    it("returns 'unknown error' only when every layer is empty", function () {
+      const outer = Object.assign(new Error(""), {
+        code: ethers.errors.SERVER_ERROR,
+        reason: "",
+        error: { reason: "", message: "", error: {} },
+      });
+      expect(extractErrorCause(outer)).to.equal("unknown error");
+    });
+
+    it("rejects a non-JSON-RPC body but still returns the wrapper's reason", function () {
+      const inner = {
+        reason: "bad gateway",
+        body: "<html>502 Bad Gateway</html>",
+      };
+      const outer = Object.assign(new Error("outer"), {
+        code: ethers.errors.SERVER_ERROR,
+        reason: "outer",
+        error: inner,
+      });
+      expect(extractErrorCause(outer)).to.equal("bad gateway");
     });
   });
 

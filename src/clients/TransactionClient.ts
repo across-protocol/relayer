@@ -331,14 +331,9 @@ async function _runTransaction(
       throw error;
     }
 
-    const getCause = (error: unknown): string => {
-      const rpcError = sdkProviders.parseJsonRpcError(error);
-      return rpcError?.message.toLowerCase() ?? "unknown error";
-    };
-
     const { errors } = ethers;
-    const { code, reason, error: rawError } = error;
-    const cause = getCause(rawError);
+    const { code, reason } = error;
+    const cause = extractErrorCause(error);
     let scaleGas = false;
     let message = `Unhandled ${chain} transaction error (${cause})`;
     switch (code) {
@@ -392,10 +387,26 @@ async function _runTransaction(
       }
 
       default:
-        logger.warn({ at, message, code, retries, ...commonFields });
+        logger.warn({
+          at,
+          message,
+          code,
+          retries,
+          errorMessage: error.message,
+          error: stringifyThrownValue(error),
+          ...commonFields,
+        });
     }
 
-    logger.debug({ at, message, code, reason, ...commonFields });
+    logger.debug({
+      at,
+      message,
+      code,
+      reason,
+      errorMessage: error.message,
+      error: stringifyThrownValue(error),
+      ...commonFields,
+    });
     if (--retries < 0) {
       throw error;
     }
@@ -548,6 +559,27 @@ function _scaleGasPrice(
     maxFeePerGas,
     maxPriorityFeePerGas,
   };
+}
+
+// Walks the `.error` wrapper chain that ethers (and the SDK's RetryProvider/QuorumProvider)
+// builds around RPC failures. parseJsonRpcError only matches a strict `{ reason, body }`
+// SERVER_ERROR envelope, so when the JSON-RPC body is one layer deeper, or absent, or not a
+// strict JSON-RPC 2.0 response, we fall back to `reason` / `message` on each wrapper layer
+// (and finally on the outer error). Without this fallback nearly every non-SERVER_ERROR
+// surfaced in operator logs as the literal string "unknown error".
+export function extractErrorCause(error: unknown): string {
+  const pick = (s: unknown): string | undefined =>
+    typeof s === "string" && s.length > 0 ? s.toLowerCase() : undefined;
+
+  for (let cur: any = (error as any)?.error; cur; cur = cur?.error) {
+    const rpc = sdkProviders.parseJsonRpcError(cur);
+    const cause = pick(rpc?.message) ?? pick(cur?.reason) ?? pick(cur?.message);
+    if (cause) {
+      return cause;
+    }
+  }
+
+  return pick((error as any)?.reason) ?? pick((error as any)?.message) ?? "unknown error";
 }
 
 function _readTransactionConfig(chainId: number): {
