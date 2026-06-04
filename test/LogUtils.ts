@@ -1,5 +1,52 @@
+import "../src/utils"; // Triggers side-effect import of extensions (BigInt.toJSON patch).
+import { SolanaError, SOLANA_ERROR__JSON_RPC__SERVER_ERROR_SEND_TRANSACTION_PREFLIGHT_FAILURE } from "@solana/kit";
 import { expect } from "./utils";
-import { stringifyThrownValue } from "../src/utils/LogUtils";
+import { describeSolanaError, stringifyThrownValue } from "../src/utils/LogUtils";
+
+describe("describeSolanaError", function () {
+  it("returns an empty object for non-Solana errors", function () {
+    expect(describeSolanaError(new Error("nope"))).to.deep.equal({});
+    expect(describeSolanaError("oops")).to.deep.equal({});
+    expect(describeSolanaError(undefined)).to.deep.equal({});
+  });
+
+  it("extracts code and context from a SolanaError", function () {
+    const preflightContext = {
+      accounts: null,
+      logs: ["Program log: refund leaf already executed"],
+      returnData: null,
+      unitsConsumed: 4321n,
+    };
+    const err = new SolanaError(SOLANA_ERROR__JSON_RPC__SERVER_ERROR_SEND_TRANSACTION_PREFLIGHT_FAILURE, {
+      ...preflightContext,
+      cause: new Error("simulation failed"),
+    });
+    const result = describeSolanaError(err);
+    expect(result.solanaError).to.exist;
+    expect(result.solanaError?.code).to.equal(SOLANA_ERROR__JSON_RPC__SERVER_ERROR_SEND_TRANSACTION_PREFLIGHT_FAILURE);
+    expect(result.solanaError?.context).to.include({ logs: preflightContext.logs });
+    expect(result.solanaError?.message).to.be.a("string");
+  });
+
+  // Regression: JsonTransport in @risk-labs/logger calls JSON.stringify on the log
+  // payload. SolanaError contexts contain bigint `unitsConsumed` (typed by
+  // @solana/rpc-api as `bigint`), which would throw "BigInt value can't be
+  // serialized" without the global BigInt.prototype.toJSON patch in extensions.ts.
+  // This test confirms the helper's output round-trips through JSON.stringify so
+  // a refund-leaf failure doesn't crash the logger and skip the cleanup/rethrow.
+  it("serializes cleanly via JSON.stringify when context contains bigint", function () {
+    const err = new SolanaError(SOLANA_ERROR__JSON_RPC__SERVER_ERROR_SEND_TRANSACTION_PREFLIGHT_FAILURE, {
+      accounts: null,
+      logs: ["Program log: refund leaf already executed"],
+      returnData: null,
+      unitsConsumed: 4321n,
+    });
+    const payload = { at: "test", ...describeSolanaError(err) };
+    expect(() => JSON.stringify(payload)).to.not.throw();
+    const round = JSON.parse(JSON.stringify(payload));
+    expect(round.solanaError.context.unitsConsumed).to.equal("4321");
+  });
+});
 
 describe("stringifyThrownValue", function () {
   it("returns the stack for a plain Error (backwards compatible)", function () {
