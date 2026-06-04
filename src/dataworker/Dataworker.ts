@@ -3291,13 +3291,18 @@ export class Dataworker {
         });
       }
     } catch (err) {
-      // The on-chain `is_claimed` check at programs/svm-spoke/src/instructions/bundle.rs returns
-      // `CommonError::ClaimedMerkleLeaf` when another actor (concurrent dataworker, manual exec)
-      // landed this leaf between our pre-flight `getRelayerRefundExecutions()` filter and now.
-      // Treat as benign: log at debug, clean up the LUT we created, and return undefined so the
-      // caller skips the success-path "Executed RelayerRefundLeaf" info log.
+      // Log at `debug` regardless of branch — this catch must not page on its own.
+      //   - Benign `ClaimedMerkleLeaf` race (the on-chain `is_claimed` check at
+      //     programs/svm-spoke/src/instructions/bundle.rs trips when another actor lands the
+      //     leaf between our pre-flight `getRelayerRefundExecutions()` filter and now):
+      //     swallow after LUT cleanup; return undefined so the caller skips the success-path
+      //     "Executed RelayerRefundLeaf" info log.
+      //   - Any other failure: rethrow. The top-level catch in `index.ts` will log at `error`
+      //     with `notificationPath: "across-error"`, which is what fires the PD page.
+      // This avoids the double page we used to see: previously this site logged at `error` and
+      // then rethrew, so the top-level catch paged a second time for the same exception.
       const alreadyClaimed = isSvmLeafAlreadyClaimedError(err);
-      this.logger[alreadyClaimed ? "debug" : "error"]({
+      this.logger.debug({
         at: "Dataworker#executeRelayerRefundLeafSvm",
         message: alreadyClaimed
           ? "Refund leaf was already claimed on chain; skipping"
