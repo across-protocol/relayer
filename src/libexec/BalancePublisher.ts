@@ -159,8 +159,7 @@ async function publishSnapshots(publicClient: PublicClient, tokens: string[], ad
         platform: `chainId:${chainId}`,
         token,
         block_number: Number(blockNumber),
-        // Absolute on-chain balance, source-native integer string.
-        balance: balance.toString(),
+        balance,
         observed_at: new Date().toISOString(),
       };
 
