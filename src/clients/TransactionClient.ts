@@ -563,17 +563,26 @@ function _scaleGasPrice(
 
 // Walks the `.error` wrapper chain that ethers (and the SDK's RetryProvider/QuorumProvider)
 // builds around RPC failures. parseJsonRpcError only matches a strict `{ reason, body }`
-// SERVER_ERROR envelope, so when the JSON-RPC body is one layer deeper, or absent, or not a
-// strict JSON-RPC 2.0 response, we fall back to `reason` / `message` on each wrapper layer
-// (and finally on the outer error). Without this fallback nearly every non-SERVER_ERROR
-// surfaced in operator logs as the literal string "unknown error".
+// SERVER_ERROR envelope, so we first scan the entire chain for a parseable JSON-RPC body
+// (the most informative shape) before falling back to `reason` / `message` on each wrapper
+// layer. Doing the JSON-RPC scan in its own pass matters: ethers wrappers commonly carry
+// their own generic `reason` (e.g. "processing response error") with the real RPC body
+// nested one layer deeper, so a single-pass walk that short-circuits on wrapper text would
+// miss the useful `nonce too low` / revert detail message. Without these fallbacks nearly
+// every non-SERVER_ERROR surfaced in operator logs as the literal string "unknown error".
 export function extractErrorCause(error: unknown): string {
   const pick = (s: unknown): string | undefined =>
     typeof s === "string" && s.length > 0 ? s.toLowerCase() : undefined;
 
   for (let cur: any = (error as any)?.error; cur; cur = cur?.error) {
-    const rpc = sdkProviders.parseJsonRpcError(cur);
-    const cause = pick(rpc?.message) ?? pick(cur?.reason) ?? pick(cur?.message);
+    const cause = pick(sdkProviders.parseJsonRpcError(cur)?.message);
+    if (cause) {
+      return cause;
+    }
+  }
+
+  for (let cur: any = (error as any)?.error; cur; cur = cur?.error) {
+    const cause = pick(cur?.reason) ?? pick(cur?.message);
     if (cause) {
       return cause;
     }

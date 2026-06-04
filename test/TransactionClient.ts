@@ -190,6 +190,32 @@ describe("TransactionClient", function () {
       expect(extractErrorCause(outer)).to.equal("nonce too low");
     });
 
+    it("prefers a deeper JSON-RPC body over a wrapper layer's own reason/message", function () {
+      // RetryProvider/QuorumProvider often stack their own generic `reason` / `message`
+      // on top of the real RPC response. A single-pass walk that short-circuits on the
+      // wrapper's `reason` would return "processing response error" and miss the deeper
+      // body — this test pins the two-pass behavior.
+      const rpc = {
+        reason: "processing response error",
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          error: { code: -32000, message: "nonce too low", data: null },
+        }),
+      };
+      const middle = {
+        reason: "processing response error",
+        message: "wrapper message",
+        error: rpc,
+      };
+      const outer = Object.assign(new Error("outer"), {
+        code: ethers.errors.SERVER_ERROR,
+        reason: "outer",
+        error: middle,
+      });
+      expect(extractErrorCause(outer)).to.equal("nonce too low");
+    });
+
     it("falls back to the inner error's reason when no JSON-RPC body is present", function () {
       const inner = { reason: "execution reverted: RelayFilled" };
       const outer = Object.assign(new Error("outer"), {
