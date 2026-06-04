@@ -8,6 +8,29 @@ export function fireAndForget(task: () => Promise<unknown>): () => void {
 }
 
 /**
+ * Sleep for `seconds`, returning early if `signal` aborts. Clears the pending timer on abort
+ * (so it doesn't keep the event loop alive past shutdown) and detaches the abort listener on
+ * normal completion (so listeners don't accumulate when called in a retry loop).
+ */
+export function abortableDelay(seconds: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal.aborted) {
+      resolve();
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, seconds * 1000);
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+/**
  * Schedule a recurring task, to be executed `interval` seconds after each successive call.
  * @param task Function that returns a Promise to be awaited.
  * @param interval Task interval.
