@@ -325,7 +325,19 @@ export async function dispatchTransaction(
     throw new TransactionSimulationFailedError(reason ?? "unknown", `${message} (${reason})`);
   }
 
-  return dispatcher.dispatch(transaction, transaction.contract, transaction.contract.provider);
+  // `dispatcher.dispatch()` returns `(await submit(...))[0]`; when `submit()` exhausts its retries
+  // after simulation passed it returns an empty array, so we get `undefined` here. Surface that as
+  // a typed submission failure so the gasless stuck-queue counter increments instead of treating
+  // it as a benign skip.
+  const response = await dispatcher.dispatch(transaction, transaction.contract, transaction.contract.provider);
+  if (!response) {
+    throw new TransactionSubmissionFailedError(
+      `Transaction succeeded simulation but dispatcher failed to submit onchain to ${
+        targetContract.address
+      }.${method}(${txnRequestData.args.join(", ")}) on ${txnRequest.chainId}`
+    );
+  }
+  return response;
 }
 
 /**
@@ -340,15 +352,11 @@ export async function sendAndConfirmTransaction(
   useDispatcher = false
 ): Promise<TransactionOutcome> {
   const txWithConfirmation: AugmentedTransaction = { ...tx, ensureConfirmation: true };
+  let txResponse: TransactionResponse;
   try {
-    const txResponse = useDispatcher
+    txResponse = useDispatcher
       ? await dispatchTransaction(txWithConfirmation, transactionClient)
       : await submitTransaction(txWithConfirmation, transactionClient);
-    if (!txResponse) {
-      return { status: "skipped" };
-    }
-    const receipt = await txResponse.wait();
-    return isDefined(receipt) ? { status: "confirmed", receipt } : { status: "skipped" };
   } catch (err) {
     if (err instanceof TransactionSimulationFailedError) {
       return { status: "simulation_failed", reason: err.reason };
@@ -357,5 +365,18 @@ export async function sendAndConfirmTransaction(
       return { status: "submission_failed", error: err };
     }
     throw err;
+  }
+  if (!txResponse) {
+    return { status: "skipped" };
+  }
+  try {
+    const receipt = await txResponse.wait();
+    return isDefined(receipt) ? { status: "confirmed", receipt } : { status: "skipped" };
+  } catch {
+    // `TransactionClient._submit()` may exhaust its internal confirmation loop and still return
+    // the `TransactionResponse`, so this outer `wait()` can reject with transient provider errors
+    // (SERVER_ERROR / TIMEOUT) after the tx was actually placed. Preserve the legacy "no receipt →
+    // caller retries / clears locks" path instead of aborting the run.
+    return { status: "skipped" };
   }
 }

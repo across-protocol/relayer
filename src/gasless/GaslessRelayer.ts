@@ -150,6 +150,11 @@ export class GaslessRelayer {
   // after simulation already passed (stuck-queue indicator). Simulation failures and skipped
   // sends are intentionally excluded. Surfaced once at handover by `logRunSummary`.
   protected failedSubmissions: { [chainId: number]: { deposit: number; fill: number } } = {};
+  // In-flight `_sendTrackedTx` promises. `evaluateApiSignatures` is scheduled fire-and-forget,
+  // so handover only clears the polling interval; outstanding submissions need to be drained
+  // before `logRunSummary` reads `failedSubmissions`, otherwise the report can miss a stuck
+  // submission whose counter is updated moments after the summary fires.
+  private pendingTrackedSubmissions: Set<Promise<TransactionReceipt | undefined>> = new Set();
 
   private api: AcrossSwapApiClient;
   private _signerAddress?: EvmAddress;
@@ -291,6 +296,10 @@ export class GaslessRelayer {
     // Wait for the instance coordinator to receive a handover signal. Once one is received (or we expire), abort.
     await this.instanceCoordinator.subscribe();
     this.abortController.abort();
+    // Drain in-flight tracked submissions so `logRunSummary` sees their final counter updates.
+    if (this.pendingTrackedSubmissions.size > 0) {
+      await Promise.allSettled([...this.pendingTrackedSubmissions]);
+    }
   }
 
   /**
@@ -1206,11 +1215,26 @@ export class GaslessRelayer {
    * incrementing {@link failedSubmissions} only on `submission_failed`. The exhaustive switch
    * (including the `never` arm) is the compile-time guarantee that refactors to
    * {@link TransactionOutcome} cannot silently bypass this tracking.
+   *
+   * The whole call (including the counter update) is registered in
+   * {@link pendingTrackedSubmissions} so {@link waitForDisconnect} can drain it before
+   * {@link logRunSummary} reads `failedSubmissions`.
    */
-  private async _sendTrackedTx(
+  private _sendTrackedTx(
     tx: AugmentedTransaction,
     kind: "deposit" | "fill",
     useDispatcher = false
+  ): Promise<TransactionReceipt | undefined> {
+    const promise = this._doSendTrackedTx(tx, kind, useDispatcher);
+    this.pendingTrackedSubmissions.add(promise);
+    void promise.finally(() => this.pendingTrackedSubmissions.delete(promise));
+    return promise;
+  }
+
+  private async _doSendTrackedTx(
+    tx: AugmentedTransaction,
+    kind: "deposit" | "fill",
+    useDispatcher: boolean
   ): Promise<TransactionReceipt | undefined> {
     const outcome = await sendAndConfirmTransaction(tx, this.transactionClient, useDispatcher);
     switch (outcome.status) {

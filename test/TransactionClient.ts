@@ -299,6 +299,26 @@ describe("TransactionClient", function () {
       }
     });
 
+    it("Returns skipped when txResponse.wait() rejects after _submit gave up", async function () {
+      const chainId = chainIds[0];
+      // Inner _submit confirmation loop exhausts its retries (10 undefined receipts) and
+      // still returns the TransactionResponse, then the outer wait() in
+      // sendAndConfirmTransaction rejects with a transient provider error. Verify the run
+      // isn't aborted (callers were previously getting `undefined` from a `catch {}` and
+      // we must preserve that "skipped → release locks / retry" path).
+      let waitCalls = 0;
+      txnClient.waitOverride = () => {
+        if (++waitCalls <= 10) {
+          return Promise.resolve(undefined as unknown as TransactionReceipt);
+        }
+        return Promise.reject(new Error("ECONNRESET"));
+      };
+
+      const outcome = await sendAndConfirmTransaction(makeTxn(chainId, txnClientPassResult), txnClient);
+      expect(outcome.status).to.equal("skipped");
+      expect(waitCalls).to.be.greaterThan(10);
+    });
+
     it("Re-throws unexpected errors instead of swallowing them", async function () {
       const chainId = chainIds[0];
       // Pass simulation, then have submit() throw something other than the typed errors.
