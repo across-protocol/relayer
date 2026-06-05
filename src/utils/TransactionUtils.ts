@@ -280,6 +280,21 @@ export class TransactionSubmissionFailedError extends Error {
   }
 }
 
+// Thrown when simulation passed and the transaction reached the chain, but execution reverted
+// on inclusion (CALL_EXCEPTION during the `_submit` wait loop). Distinguished from
+// {@link TransactionSubmissionFailedError} so the gasless stuck-queue counter does not page on
+// state-race reverts that have nothing to do with dispatcher health.
+export class TransactionExecutionRevertedError extends Error {
+  readonly kind = "execution_reverted" as const;
+  constructor(
+    readonly reason: string,
+    message: string
+  ) {
+    super(message);
+    this.name = "TransactionExecutionRevertedError";
+  }
+}
+
 // Discriminated outcome surfaced by sendAndConfirmTransaction. Callers switch on `status`;
 // adding/removing a variant intentionally breaks every consumer's exhaustive switch.
 export type TransactionOutcome =
@@ -287,7 +302,26 @@ export type TransactionOutcome =
   | { status: "skipped" }
   | { status: "simulation_failed"; reason: string }
   | { status: "submission_failed"; error: TransactionSubmissionFailedError }
+  | { status: "execution_reverted"; reason: string }
   | { status: "unexpected_error"; error: unknown };
+
+// Classify a thrown error from `TransactionClient.submit` (with `throwOnError: true`) into the
+// post-simulation typed error best matching the cause. A CALL_EXCEPTION means the tx made it
+// on-chain and reverted (state-race vs simulation); anything else is treated as a placement
+// failure (nonce exhaustion, replacement-underpriced retries gave up, RPC unreachable, etc.).
+function classifyPostSimulationFailure(error: unknown, methodLabel: string, chainId: number): Error {
+  if (typeguards.isEthersError(error) && error.code === ethers.errors.CALL_EXCEPTION) {
+    return new TransactionExecutionRevertedError(
+      error.reason ?? "CALL_EXCEPTION",
+      `Transaction reverted on-chain after passing pre-flight simulation: ${methodLabel} on ${chainId} (${
+        error.reason ?? "CALL_EXCEPTION"
+      })`
+    );
+  }
+  return new TransactionSubmissionFailedError(
+    `Transaction succeeded simulation but failed to submit onchain to ${methodLabel} on ${chainId}`
+  );
+}
 
 export async function submitTransaction(
   transaction: AugmentedTransaction,
@@ -302,12 +336,18 @@ export async function submitTransaction(
     throw new TransactionSimulationFailedError(reason ?? "unknown", `${message} (${reason})`);
   }
 
-  const response = await transactionClient.submit(transaction.chainId, [transaction]);
+  const methodLabel = `${targetContract.address}.${method}(${txnRequestData.args.join(", ")})`;
+  let response: TransactionResponse[];
+  try {
+    response = await transactionClient.submit(transaction.chainId, [transaction], { throwOnError: true });
+  } catch (err) {
+    // `throwOnError` lets us distinguish CALL_EXCEPTION (mined revert) from a stuck-queue
+    // placement failure — both otherwise reach this branch as an empty array from `submit`.
+    throw classifyPostSimulationFailure(err, methodLabel, txnRequest.chainId);
+  }
   if (response.length === 0) {
     throw new TransactionSubmissionFailedError(
-      `Transaction succeeded simulation but failed to submit onchain to ${
-        targetContract.address
-      }.${method}(${txnRequestData.args.join(", ")}) on ${txnRequest.chainId}`
+      `Transaction succeeded simulation but failed to submit onchain to ${methodLabel} on ${txnRequest.chainId}`
     );
   }
   return response[0];
@@ -326,16 +366,21 @@ export async function dispatchTransaction(
     throw new TransactionSimulationFailedError(reason ?? "unknown", `${message} (${reason})`);
   }
 
-  // `dispatcher.dispatch()` returns `(await submit(...))[0]`; when `submit()` exhausts its retries
-  // after simulation passed it returns an empty array, so we get `undefined` here. Surface that as
-  // a typed submission failure so the gasless stuck-queue counter increments instead of treating
-  // it as a benign skip.
-  const response = await dispatcher.dispatch(transaction, transaction.contract, transaction.contract.provider);
+  // `dispatcher.dispatch()` returns `(await submit(...))[0]`; with `throwOnError: true` the
+  // dispatcher surfaces the underlying `_submit` rejection so we can distinguish a CALL_EXCEPTION
+  // mined revert from a genuine stuck-queue placement failure.
+  const methodLabel = `${targetContract.address}.${method}(${txnRequestData.args.join(", ")})`;
+  let response: TransactionResponse;
+  try {
+    response = await dispatcher.dispatch(transaction, transaction.contract, transaction.contract.provider, {
+      throwOnError: true,
+    });
+  } catch (err) {
+    throw classifyPostSimulationFailure(err, `dispatcher ${methodLabel}`, txnRequest.chainId);
+  }
   if (!response) {
     throw new TransactionSubmissionFailedError(
-      `Transaction succeeded simulation but dispatcher failed to submit onchain to ${
-        targetContract.address
-      }.${method}(${txnRequestData.args.join(", ")}) on ${txnRequest.chainId}`
+      `Transaction succeeded simulation but dispatcher failed to submit onchain to ${methodLabel} on ${txnRequest.chainId}`
     );
   }
   return response;
@@ -365,6 +410,9 @@ export async function sendAndConfirmTransaction(
     }
     if (err instanceof TransactionSubmissionFailedError) {
       return { status: "submission_failed", error: err };
+    }
+    if (err instanceof TransactionExecutionRevertedError) {
+      return { status: "execution_reverted", reason: err.reason };
     }
     // Unexpected errors (e.g. a throw inside `willSucceed` simulation) are surfaced as a typed
     // outcome rather than rethrown — callers that took locks before awaiting can branch on it and

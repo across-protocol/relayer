@@ -105,6 +105,11 @@ const stateToStr = (state: MessageState) => MESSAGE_STATES[state] ?? "UNKNOWN";
  * Independent relayer bot which processes EIP-3009 signatures into deposits and corresponding fills.
  */
 export class GaslessRelayer {
+  // Upper bound on how long `waitForDisconnect` will block draining in-flight tracked
+  // submissions before logging the run summary. Long enough for ordinary EVM confirmations to
+  // settle, short enough to keep handover from stalling on a dropped / never-mined transaction.
+  private static readonly SHUTDOWN_DRAIN_TIMEOUT_MS = 60_000;
+
   private abortController = new AbortController();
   private _instanceCoordinator?: InstanceCoordinator;
   private initialized = false;
@@ -296,14 +301,32 @@ export class GaslessRelayer {
     // Wait for the instance coordinator to receive a handover signal. Once one is received (or we expire), abort.
     await this.instanceCoordinator.subscribe();
     this.abortController.abort();
-    // Drain in-flight tracked submissions until none remain so `logRunSummary` sees their final
-    // counter updates. A single `Promise.allSettled` over a snapshot would miss submissions that
-    // a tick adds after the snapshot — e.g. a deposit settles, the state machine advances to
-    // FILL_PENDING, and registers a fresh fill `_sendTrackedTx`. Bounded in practice because
-    // `processDepositMessage` honours the abort signal (see do-while exit below) and individual
-    // submissions are bounded by `TransactionClient` retries.
+    // Drain in-flight tracked submissions so `logRunSummary` sees their final counter updates.
+    // `_sendTrackedTx` gates on the abort signal, so no new submission is registered after this
+    // point — the set only shrinks. Bounded by SHUTDOWN_DRAIN_TIMEOUT_MS to guarantee handover
+    // completes (and Redis cleanup runs) even when an outer `wait()` hangs on a never-mined tx;
+    // if the timeout fires we log loudly so the operator knows the summary may be partial.
+    const drainDeadline = Date.now() + GaslessRelayer.SHUTDOWN_DRAIN_TIMEOUT_MS;
     while (this.pendingTrackedSubmissions.size > 0) {
-      await Promise.allSettled([...this.pendingTrackedSubmissions]);
+      const remaining = drainDeadline - Date.now();
+      if (remaining <= 0) {
+        this.logger.warn({
+          at: "GaslessRelayer#waitForDisconnect",
+          message: "Drain timed out with submissions still pending; logRunSummary may miss late updates.",
+          timeoutMs: GaslessRelayer.SHUTDOWN_DRAIN_TIMEOUT_MS,
+          pending: this.pendingTrackedSubmissions.size,
+          notificationPath: "across-error",
+        });
+        break;
+      }
+      let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+      const timeoutPromise = new Promise<void>((resolve) => {
+        timeoutHandle = setTimeout(resolve, remaining);
+      });
+      await Promise.race([Promise.allSettled([...this.pendingTrackedSubmissions]), timeoutPromise]);
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
+      }
     }
   }
 
@@ -1237,6 +1260,20 @@ export class GaslessRelayer {
     kind: "deposit" | "fill",
     useDispatcher = false
   ): Promise<TransactionReceipt | undefined> {
+    // Hard gate on handover: any caller that passed the do-while abort check but was awaiting
+    // pre-submit work (e.g. `willSucceed`, peripheral lookups) reaches here after the signal
+    // fires. Returning early — *before* registering in `pendingTrackedSubmissions` — means the
+    // drain in `waitForDisconnect` never sees a late addition, so `logRunSummary` reads the
+    // final counter state.
+    if (this.abortController.signal.aborted) {
+      this.logger.debug({
+        at: "GaslessRelayer#_sendTrackedTx",
+        message: "Skipping submission after handover",
+        chainId: tx.chainId,
+        kind,
+      });
+      return Promise.resolve(undefined);
+    }
     const promise = this._doSendTrackedTx(tx, kind, useDispatcher);
     this.pendingTrackedSubmissions.add(promise);
     // Cleanup must not leak an unhandled rejection: `.finally()` re-throws the underlying
@@ -1266,6 +1303,17 @@ export class GaslessRelayer {
         counters[kind] += 1;
         return undefined;
       }
+      case "execution_reverted":
+        // A mined revert is a deposit-side issue (state race vs. simulation), not a stuck queue.
+        // Don't increment the paging counter — log the cause so the failure isn't lost.
+        this.logger.warn({
+          at: "GaslessRelayer#_sendTrackedTx",
+          message: "Transaction reverted on-chain after passing simulation",
+          chainId: tx.chainId,
+          kind,
+          reason: outcome.reason,
+        });
+        return undefined;
       case "unexpected_error":
         // Distinct from `submission_failed`: not a stuck-queue signal, so don't increment the
         // page-worthy counter. Log loudly so the underlying bug isn't lost.

@@ -299,6 +299,36 @@ describe("TransactionClient", function () {
       }
     });
 
+    it("Returns execution_reverted when wait() rejects with CALL_EXCEPTION (mined revert)", async function () {
+      const chainId = chainIds[0];
+      // Inner _submit's wait() throws CALL_EXCEPTION (mined revert after pre-flight pass). With
+      // `throwOnError: true`, submit() propagates the error so submitTransaction can distinguish
+      // a mined revert from a stuck-queue placement failure; sendAndConfirmTransaction then maps
+      // it to the `execution_reverted` outcome and the gasless stuck-queue counter does NOT
+      // increment (the tx reached chain — it's not a dispatcher health signal).
+      const original = txnClient["_simulate"].bind(txnClient);
+      (txnClient as unknown as { _simulate: typeof original })._simulate = async (txn) => ({
+        transaction: { ...txn, gasLimit: txnClient.randomGasLimit() },
+        succeed: true,
+      });
+      txnClient.waitOverride = () =>
+        Promise.reject(
+          Object.assign(new Error("CALL_EXCEPTION"), {
+            code: ethers.errors.CALL_EXCEPTION,
+            reason: "revert: state changed",
+          })
+        );
+      try {
+        const outcome = await sendAndConfirmTransaction(makeTxn(chainId, txnClientPassResult), txnClient);
+        expect(outcome.status).to.equal("execution_reverted");
+        if (outcome.status === "execution_reverted") {
+          expect(outcome.reason).to.equal("revert: state changed");
+        }
+      } finally {
+        (txnClient as unknown as { _simulate: typeof original })._simulate = original;
+      }
+    });
+
     it("Returns skipped when txResponse.wait() rejects after _submit gave up", async function () {
       const chainId = chainIds[0];
       // Inner _submit confirmation loop exhausts its retries (10 undefined receipts) and
