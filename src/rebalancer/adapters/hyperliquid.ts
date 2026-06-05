@@ -567,13 +567,25 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     );
     const latestPrice = Number(px);
 
-    const isBuy = spotMarketMeta.isBuy;
+    // Measure spread against the oracle-derived fair cross-token price (P_base_usd /
+    // P_quote_usd) rather than the hardcoded `1` par assumption. For dollar-pegged pairs
+    // this reduces to the prior par-based form; for non-par markets it generalizes
+    // correctly. If the oracle is unavailable, fall back to the par-based form as a safe
+    // default for the stablecoin pairs this adapter routes today.
     let spreadPct = 0;
-    if (isBuy) {
-      // if is buy, the fee is positive if the price is over 1
-      spreadPct = latestPrice - 1;
-    } else {
-      spreadPct = 1 - latestPrice;
+    try {
+      const fairPrice = await this._getFairCrossPrice(spotMarketMeta.baseAssetName, spotMarketMeta.quoteAssetName);
+      const slippageDecimal = spotMarketMeta.isBuy
+        ? (latestPrice - fairPrice) / fairPrice
+        : (fairPrice - latestPrice) / fairPrice;
+      spreadPct = Math.max(0, slippageDecimal);
+    } catch (err) {
+      this.logger.warn({
+        at: "HyperliquidStablecoinSwapAdapter.getEstimatedCost",
+        message: `Oracle fair price unresolved for ${spotMarketMeta.baseAssetName}/${spotMarketMeta.quoteAssetName}; falling back to par-based assumption`,
+        err: String(err),
+      });
+      spreadPct = Math.max(0, spotMarketMeta.isBuy ? latestPrice - 1 : 1 - latestPrice);
     }
     const spreadFee = toBNWei(spreadPct.toFixed(18), 18).mul(amountToTransfer).div(toBNWei(1, 18));
 

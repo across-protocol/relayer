@@ -4,6 +4,8 @@ import { utils as sdkUtils, arch } from "@across-protocol/sdk";
 import {
   blockExplorerLink,
   bnZero,
+  describeSolanaError,
+  isSvmLeafAlreadyClaimedError,
   winston,
   EMPTY_MERKLE_ROOT,
   sortEventsDescending,
@@ -53,7 +55,6 @@ import {
   toKitAddress,
   createDefaultTransaction,
   getNativeTokenAddressForChain,
-  stringifyThrownValue,
   sendAndConfirmSolanaTransactionWithSlot,
 } from "../utils";
 import { getRedisCache } from "../cache/Redis";
@@ -115,7 +116,6 @@ import {
   some,
   fetchEncodedAccount,
   compressTransactionMessageUsingAddressLookupTables,
-  isSolanaError,
   type Address as KitAddress,
   type KeyPairSigner,
 } from "@solana/kit";
@@ -2554,13 +2554,18 @@ export class Dataworker {
           rootBundleId,
           relayerRefundTree.getHexProof(leaf)
         );
-        this.logger.info({
-          at: "Dataworker#_executeRelayerRefundLeaves",
-          ...formatRelayerRefundLeafExecutionLog({
-            ...leafLogArgs,
-            explorerLink: blockExplorerLink(signature, chainId),
-          }),
-        });
+        // `undefined` means we caught a benign race (leaf was claimed on chain by another actor);
+        // `_executeRelayerRefundLeafSvm` already logged the skip at debug. Avoid the success-path info
+        // log so we don't claim we executed a leaf we didn't.
+        if (isDefined(signature)) {
+          this.logger.info({
+            at: "Dataworker#_executeRelayerRefundLeaves",
+            ...formatRelayerRefundLeafExecutionLog({
+              ...leafLogArgs,
+              explorerLink: blockExplorerLink(signature, chainId),
+            }),
+          });
+        }
       }
     });
   }
@@ -2896,7 +2901,7 @@ export class Dataworker {
     leaf: RelayerRefundLeaf,
     rootBundleId: number,
     relayerRefundLeafHexProof: string[]
-  ): Promise<string> {
+  ): Promise<string | undefined> {
     // Parse relevant info from the relayer refund leaf/dataworker.
     const { spokePoolAddress } = spokePoolClient;
     assert(isDefined(spokePoolAddress), "_executeRelayerRefundLeafSvm: SpokePoolClient missing spokePoolAddress");
@@ -3314,30 +3319,61 @@ export class Dataworker {
         });
       }
     } catch (err) {
-      // Mirror SvmFillerClient: when the underlying failure is a SolanaError
-      // (e.g. simulation rejected by the spoke), surface the program-level
-      // `__code` in the message so the page that fires upstream identifies
-      // the actual cause instead of a generic "simulation failed". The
-      // SolanaError's `.context` (with `value.err` / program logs) is now
-      // captured by `stringifyThrownValue` and flows into the umbrella
-      // `index.ts` error log too.
-      const solanaErrorCode = isSolanaError(err) ? err.context.__code : undefined;
-      this.logger.error({
+      // This catch must not page on its own; the top-level catch in `index.ts` (which logs at
+      // `error` with `notificationPath: "across-error"`) is the single PD-paging surface for this
+      // path. This avoids the double page we used to see: previously this site logged at `error`
+      // and then rethrew, so the top-level catch paged a second time for the same exception.
+      //   - Benign `ClaimedMerkleLeaf` race (the on-chain `is_claimed` check at
+      //     programs/svm-spoke/src/instructions/bundle.rs trips when another actor lands the
+      //     leaf between our pre-flight `getRelayerRefundExecutions()` filter and now): log at
+      //     `debug`, swallow after LUT cleanup, return undefined so the caller skips the
+      //     success-path "Executed RelayerRefundLeaf" info log.
+      //   - Any other failure: log at `warn` so the structured SVM context (`describeSolanaError`,
+      //     `rootBundleId`, `leafId`) is preserved in Cloud Logging in prod even when `LOG_LEVEL`
+      //     excludes debug — the top-level `stringifyThrownValue` only carries the stack — then
+      //     rethrow. `warn` doesn't page; the rethrow reaches `index.ts` which does.
+      const alreadyClaimed = isSvmLeafAlreadyClaimedError(err);
+      const solanaError = describeSolanaError(err);
+      // Surface the SVM program-level `__code` in the message for non-benign failures so any
+      // page that fires identifies the actual cause instead of a generic "simulation failed"
+      // (mirrors `SvmFillerClient`). Skip the suffix for the benign-race branch — the message
+      // already names the cause and the code there is always the preflight-failure wrapper.
+      const baseMessage = alreadyClaimed
+        ? "Refund leaf was already claimed on chain; skipping"
+        : "Something failed during the relayer refund leaf execution stage";
+      const message =
+        !alreadyClaimed && solanaError.solanaError
+          ? `${baseMessage} (Solana error code: ${solanaError.solanaError.code})`
+          : baseMessage;
+      this.logger[alreadyClaimed ? "debug" : "warn"]({
         at: "Dataworker#executeRelayerRefundLeafSvm",
-        message:
-          solanaErrorCode !== undefined
-            ? `Something failed during the relayer refund leaf execution stage (Solana error code: ${solanaErrorCode})`
-            : "Something failed during the relayer refund leaf execution stage",
-        error: stringifyThrownValue(err),
+        message,
+        rootBundleId,
+        leafId: leaf.leafId,
+        error: err,
+        ...solanaError,
       });
+      let cleanupErr: unknown;
       try {
         await deactivateLut();
-      } catch (err) {
+      } catch (e) {
+        cleanupErr = e;
         this.logger.warn({
           at: "Dataworker#executeRelayerRefundLeafSvm",
           message: "deactivateLut cleanup failed after refund execution error",
-          error: stringifyThrownValue(err),
+          error: cleanupErr,
+          ...describeSolanaError(cleanupErr),
         });
+      }
+      if (alreadyClaimed) {
+        // The leaf was already claimed (no real failure), so we'd normally swallow. But if LUT
+        // cleanup also failed, don't return silently — the LUT was created fresh from a recent
+        // slot just for this attempt and is not persisted elsewhere, so a swallowed cleanup
+        // leaves it active/funded until rent runs out. Surface it so the top-level catch pages.
+        if (cleanupErr !== undefined) {
+          throw cleanupErr;
+        }
+        return undefined;
       }
       throw err;
     }
