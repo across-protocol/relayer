@@ -56,7 +56,7 @@ import {
   GaslessDepositMessage,
   RelayData,
 } from "../interfaces";
-import { AcrossSwapApiClient, SvmFillerClient, TransactionClient } from "../clients";
+import { AcrossSwapApiClient, AugmentedTransaction, SvmFillerClient, TransactionClient } from "../clients";
 import EIP3009_ABI from "../common/abi/EIP3009.json";
 import {
   buildGaslessDepositTx,
@@ -146,6 +146,10 @@ export class GaslessRelayer {
   // Tracks whether a fill is currently in progress for a given user/originChainId combo.
   // Keyed by `${authorizer}:${originChainId}`.
   protected fillLock: { [key: string]: string } = {};
+  // Per-(chain, kind) count of on-chain submissions that exhausted TransactionClient retries
+  // after simulation already passed (stuck-queue indicator). Simulation failures and skipped
+  // sends are intentionally excluded. Surfaced once at handover by `logRunSummary`.
+  protected failedSubmissions: { [chainId: number]: { deposit: number; fill: number } } = {};
 
   private api: AcrossSwapApiClient;
   private _signerAddress?: EvmAddress;
@@ -891,11 +895,7 @@ export class GaslessRelayer {
       mrkdwn,
     };
 
-    const txReceipt = await sendAndConfirmTransaction(
-      gaslessDeposit,
-      this.transactionClient,
-      this.depositSigners.length > 0
-    );
+    const txReceipt = await this._sendTrackedTx(gaslessDeposit, "deposit", this.depositSigners.length > 0);
     if (!isDefined(txReceipt)) {
       this.logger.warn({
         at: "GaslessRelayer#initiateDeposit",
@@ -1006,7 +1006,7 @@ export class GaslessRelayer {
       mrkdwn,
     };
 
-    const txReceipt = await sendAndConfirmTransaction(gaslessFill, this.transactionClient);
+    const txReceipt = await this._sendTrackedTx(gaslessFill, "fill");
     if (!isDefined(txReceipt)) {
       this.logger.warn({
         at: "GaslessRelayer#initiateFill",
@@ -1198,6 +1198,58 @@ export class GaslessRelayer {
 
   private isRefundFlowTestDeposit(outputAmount: RelayData["outputAmount"]): boolean {
     return this.config.refundFlowTestEnabled && outputAmount.eq(MAX_UINT_VAL);
+  }
+
+  /**
+   * Calls {@link sendAndConfirmTransaction} and translates its discriminated outcome into the
+   * legacy `TransactionReceipt | undefined` shape the deposit/fill call sites expect, while
+   * incrementing {@link failedSubmissions} only on `submission_failed`. The exhaustive switch
+   * (including the `never` arm) is the compile-time guarantee that refactors to
+   * {@link TransactionOutcome} cannot silently bypass this tracking.
+   */
+  private async _sendTrackedTx(
+    tx: AugmentedTransaction,
+    kind: "deposit" | "fill",
+    useDispatcher = false
+  ): Promise<TransactionReceipt | undefined> {
+    const outcome = await sendAndConfirmTransaction(tx, this.transactionClient, useDispatcher);
+    switch (outcome.status) {
+      case "confirmed":
+        return outcome.receipt;
+      case "skipped":
+      case "simulation_failed":
+        return undefined;
+      case "submission_failed": {
+        const counters = (this.failedSubmissions[tx.chainId] ??= { deposit: 0, fill: 0 });
+        counters[kind] += 1;
+        return undefined;
+      }
+      default: {
+        const _exhaustive: never = outcome;
+        return _exhaustive;
+      }
+    }
+  }
+
+  /**
+   * Logged once after handover. Emits an `error`-level summary (with `notificationPath`
+   * for paging) iff at least one chain saw a stuck-queue submission failure during the run.
+   * No-ops when every chain is clean so a healthy run leaves no extra noise.
+   */
+  public logRunSummary(): void {
+    const failedByChain = Object.entries(this.failedSubmissions)
+      .map(([chainId, counts]) => ({ chainId: Number(chainId), ...counts }))
+      .filter(({ deposit, fill }) => deposit + fill > 0);
+    if (failedByChain.length === 0) {
+      return;
+    }
+    this.logger.error({
+      at: "GaslessRelayer#logRunSummary",
+      message:
+        "Gasless relayer: on-chain transaction submissions failed after passing simulation (stuck queue suspected).",
+      failedByChain,
+      notificationPath: "across-error",
+    });
   }
 
   /*

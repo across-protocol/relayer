@@ -3,9 +3,11 @@ import {
   BigNumber,
   ethers,
   isDefined,
+  sendAndConfirmTransaction,
   TransactionReceipt,
   TransactionResponse,
   TransactionSimulationResult,
+  TransactionSubmissionFailedError,
 } from "../src/utils";
 import { CHAIN_ID_TEST_LIST as chainIds } from "./constants";
 import { MockedTransactionClient, txnClientPassResult } from "./mocks/MockTransactionClient";
@@ -236,6 +238,85 @@ describe("TransactionClient", function () {
       expect(txnResponses.length).to.equal(1);
       // wait() was called maxTries times (default is 10).
       expect(waitCalls).to.equal(10);
+    });
+  });
+
+  describe("sendAndConfirmTransaction outcome typing", function () {
+    function makeTxn(chainId: number, result: string): AugmentedTransaction {
+      return {
+        chainId,
+        contract: { address, signer } as Contract,
+        method,
+        args: [{ result }],
+        message: "",
+        mrkdwn: "",
+      };
+    }
+
+    it("Returns confirmed when simulation passes and wait resolves", async function () {
+      const chainId = chainIds[0];
+      txnClient.waitOverride = () => Promise.resolve({} as TransactionReceipt);
+
+      const outcome = await sendAndConfirmTransaction(makeTxn(chainId, txnClientPassResult), txnClient);
+      expect(outcome.status).to.equal("confirmed");
+      if (outcome.status === "confirmed") {
+        expect(outcome.receipt).to.exist;
+      }
+    });
+
+    it("Returns simulation_failed (typed) when willSucceed rejects", async function () {
+      const chainId = chainIds[0];
+      const reason = "Forced simulation failure";
+
+      const outcome = await sendAndConfirmTransaction(makeTxn(chainId, reason), txnClient);
+      expect(outcome.status).to.equal("simulation_failed");
+      if (outcome.status === "simulation_failed") {
+        expect(outcome.reason).to.equal(reason);
+      }
+    });
+
+    it("Returns submission_failed (typed) when on-chain submit returns empty", async function () {
+      const chainId = chainIds[0];
+      // Pass simulation, fail submit by making _getTransactionPromise reject. Then submit() in
+      // TransactionClient catches and returns []; submitTransaction wraps that as the typed
+      // submission failure error which sendAndConfirmTransaction converts to the tagged outcome.
+      const failing: AugmentedTransaction = makeTxn(chainId, "force submit failure");
+      // First simulate must pass so willSucceed reports succeed=true. Override _simulate via
+      // a small lie: stub the mock to pass simulation but still reject the underlying tx.
+      const original = txnClient["_simulate"].bind(txnClient);
+      (txnClient as unknown as { _simulate: typeof original })._simulate = async (txn) => ({
+        transaction: { ...txn, gasLimit: txnClient.randomGasLimit() },
+        succeed: true,
+      });
+      try {
+        const outcome = await sendAndConfirmTransaction(failing, txnClient);
+        expect(outcome.status).to.equal("submission_failed");
+        if (outcome.status === "submission_failed") {
+          expect(outcome.error).to.be.instanceOf(TransactionSubmissionFailedError);
+        }
+      } finally {
+        (txnClient as unknown as { _simulate: typeof original })._simulate = original;
+      }
+    });
+
+    it("Re-throws unexpected errors instead of swallowing them", async function () {
+      const chainId = chainIds[0];
+      // Pass simulation, then have submit() throw something other than the typed errors.
+      const original = txnClient["_simulate"].bind(txnClient);
+      (txnClient as unknown as { _simulate: typeof original })._simulate = async () => {
+        throw new Error("unexpected boom");
+      };
+      try {
+        let caught: unknown;
+        try {
+          await sendAndConfirmTransaction(makeTxn(chainId, txnClientPassResult), txnClient);
+        } catch (e) {
+          caught = e;
+        }
+        expect((caught as Error)?.message).to.equal("unexpected boom");
+      } finally {
+        (txnClient as unknown as { _simulate: typeof original })._simulate = original;
+      }
     });
   });
 });

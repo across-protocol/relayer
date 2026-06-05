@@ -256,6 +256,38 @@ export function getTarget(targetAddress: string):
   }
 }
 
+// Thrown by submitTransaction / dispatchTransaction when the pre-flight simulation fails.
+// Distinguished from on-chain submission failure so callers (notably the gasless relayer's
+// stuck-queue reporting) can branch on cause without resorting to error-message matching.
+export class TransactionSimulationFailedError extends Error {
+  readonly kind = "simulation_failed" as const;
+  constructor(
+    readonly reason: string,
+    message: string
+  ) {
+    super(message);
+    this.name = "TransactionSimulationFailedError";
+  }
+}
+
+// Thrown when simulation passed but the underlying TransactionClient could not place the
+// transaction on-chain (e.g. replacement-underpriced / nonce-collision retries exhausted).
+export class TransactionSubmissionFailedError extends Error {
+  readonly kind = "submission_failed" as const;
+  constructor(message: string) {
+    super(message);
+    this.name = "TransactionSubmissionFailedError";
+  }
+}
+
+// Discriminated outcome surfaced by sendAndConfirmTransaction. Callers switch on `status`;
+// adding/removing a variant intentionally breaks every consumer's exhaustive switch.
+export type TransactionOutcome =
+  | { status: "confirmed"; receipt: TransactionReceipt }
+  | { status: "skipped" }
+  | { status: "simulation_failed"; reason: string }
+  | { status: "submission_failed"; error: TransactionSubmissionFailedError };
+
 export async function submitTransaction(
   transaction: AugmentedTransaction,
   transactionClient: TransactionClient
@@ -266,12 +298,12 @@ export async function submitTransaction(
     const message = `Failed to simulate ${targetContract.address}.${method}(${txnRequestData.args.join(", ")}) on ${
       txnRequest.chainId
     }`;
-    throw new Error(`${message} (${reason})`);
+    throw new TransactionSimulationFailedError(reason ?? "unknown", `${message} (${reason})`);
   }
 
   const response = await transactionClient.submit(transaction.chainId, [transaction]);
   if (response.length === 0) {
-    throw new Error(
+    throw new TransactionSubmissionFailedError(
       `Transaction succeeded simulation but failed to submit onchain to ${
         targetContract.address
       }.${method}(${txnRequestData.args.join(", ")}) on ${txnRequest.chainId}`
@@ -290,32 +322,40 @@ export async function dispatchTransaction(
     const message = `Failed to simulate ${targetContract.address}.${method}(${txnRequestData.args.join(", ")}) on ${
       txnRequest.chainId
     }`;
-    throw new Error(`${message} (${reason})`);
+    throw new TransactionSimulationFailedError(reason ?? "unknown", `${message} (${reason})`);
   }
 
   return dispatcher.dispatch(transaction, transaction.contract, transaction.contract.provider);
 }
 
 /**
- * Submits a transaction (via submitTransaction or dispatchTransaction), awaits the receipt, and returns it.
- * Ensures ensureConfirmation is true on the tx. On failure catches errors and returns undefined; callers should
- * check with isDefined(receipt) and log a warning.
+ * Submits a transaction (via submitTransaction or dispatchTransaction), awaits the receipt, and
+ * returns a tagged outcome. Simulation failures, on-chain submission failures, and skipped
+ * sends are distinguished by `status` so callers can branch with type-checked exhaustiveness.
+ * Unexpected errors (anything not modelled by the typed error classes above) are re-thrown.
  */
 export async function sendAndConfirmTransaction(
   tx: AugmentedTransaction,
   transactionClient: TransactionClient,
   useDispatcher = false
-): Promise<TransactionReceipt | undefined> {
+): Promise<TransactionOutcome> {
   const txWithConfirmation: AugmentedTransaction = { ...tx, ensureConfirmation: true };
   try {
     const txResponse = useDispatcher
       ? await dispatchTransaction(txWithConfirmation, transactionClient)
       : await submitTransaction(txWithConfirmation, transactionClient);
     if (!txResponse) {
-      return undefined;
+      return { status: "skipped" };
     }
-    return txResponse.wait();
-  } catch {
-    return undefined;
+    const receipt = await txResponse.wait();
+    return isDefined(receipt) ? { status: "confirmed", receipt } : { status: "skipped" };
+  } catch (err) {
+    if (err instanceof TransactionSimulationFailedError) {
+      return { status: "simulation_failed", reason: err.reason };
+    }
+    if (err instanceof TransactionSubmissionFailedError) {
+      return { status: "submission_failed", error: err };
+    }
+    throw err;
   }
 }
