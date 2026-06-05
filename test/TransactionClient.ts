@@ -319,21 +319,22 @@ describe("TransactionClient", function () {
       expect(waitCalls).to.be.greaterThan(10);
     });
 
-    it("Re-throws unexpected errors instead of swallowing them", async function () {
+    it("Returns unexpected_error (typed) for non-typed thrown errors", async function () {
       const chainId = chainIds[0];
-      // Pass simulation, then have submit() throw something other than the typed errors.
+      // Pass-by-throw: have `_simulate` reject with a generic error (e.g. a programming bug
+      // inside `willSucceed`). Callers take in-memory locks before awaiting and rely on a settled
+      // outcome (not a thrown exception) to release them, so `sendAndConfirmTransaction` must
+      // surface a typed outcome rather than rethrowing.
       const original = txnClient["_simulate"].bind(txnClient);
       (txnClient as unknown as { _simulate: typeof original })._simulate = async () => {
         throw new Error("unexpected boom");
       };
       try {
-        let caught: unknown;
-        try {
-          await sendAndConfirmTransaction(makeTxn(chainId, txnClientPassResult), txnClient);
-        } catch (e) {
-          caught = e;
+        const outcome = await sendAndConfirmTransaction(makeTxn(chainId, txnClientPassResult), txnClient);
+        expect(outcome.status).to.equal("unexpected_error");
+        if (outcome.status === "unexpected_error") {
+          expect((outcome.error as Error)?.message).to.equal("unexpected boom");
         }
-        expect((caught as Error)?.message).to.equal("unexpected boom");
       } finally {
         (txnClient as unknown as { _simulate: typeof original })._simulate = original;
       }

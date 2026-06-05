@@ -286,7 +286,8 @@ export type TransactionOutcome =
   | { status: "confirmed"; receipt: TransactionReceipt }
   | { status: "skipped" }
   | { status: "simulation_failed"; reason: string }
-  | { status: "submission_failed"; error: TransactionSubmissionFailedError };
+  | { status: "submission_failed"; error: TransactionSubmissionFailedError }
+  | { status: "unexpected_error"; error: unknown };
 
 export async function submitTransaction(
   transaction: AugmentedTransaction,
@@ -342,9 +343,10 @@ export async function dispatchTransaction(
 
 /**
  * Submits a transaction (via submitTransaction or dispatchTransaction), awaits the receipt, and
- * returns a tagged outcome. Simulation failures, on-chain submission failures, and skipped
- * sends are distinguished by `status` so callers can branch with type-checked exhaustiveness.
- * Unexpected errors (anything not modelled by the typed error classes above) are re-thrown.
+ * returns a tagged outcome. Simulation failures, on-chain submission failures, skipped sends, and
+ * unexpected errors are distinguished by `status` so callers can branch with type-checked
+ * exhaustiveness. No path throws: callers like the gasless relayer take in-memory locks before
+ * awaiting and rely on a settled outcome (not a thrown exception) to release them.
  */
 export async function sendAndConfirmTransaction(
   tx: AugmentedTransaction,
@@ -364,7 +366,10 @@ export async function sendAndConfirmTransaction(
     if (err instanceof TransactionSubmissionFailedError) {
       return { status: "submission_failed", error: err };
     }
-    throw err;
+    // Unexpected errors (e.g. a throw inside `willSucceed` simulation) are surfaced as a typed
+    // outcome rather than rethrown — callers that took locks before awaiting can branch on it and
+    // release them deterministically. The error is preserved on the variant for logging.
+    return { status: "unexpected_error", error: err };
   }
   if (!txResponse) {
     return { status: "skipped" };

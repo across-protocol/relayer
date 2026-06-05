@@ -296,8 +296,13 @@ export class GaslessRelayer {
     // Wait for the instance coordinator to receive a handover signal. Once one is received (or we expire), abort.
     await this.instanceCoordinator.subscribe();
     this.abortController.abort();
-    // Drain in-flight tracked submissions so `logRunSummary` sees their final counter updates.
-    if (this.pendingTrackedSubmissions.size > 0) {
+    // Drain in-flight tracked submissions until none remain so `logRunSummary` sees their final
+    // counter updates. A single `Promise.allSettled` over a snapshot would miss submissions that
+    // a tick adds after the snapshot — e.g. a deposit settles, the state machine advances to
+    // FILL_PENDING, and registers a fresh fill `_sendTrackedTx`. Bounded in practice because
+    // `processDepositMessage` honours the abort signal (see do-while exit below) and individual
+    // submissions are bounded by `TransactionClient` retries.
+    while (this.pendingTrackedSubmissions.size > 0) {
       await Promise.allSettled([...this.pendingTrackedSubmissions]);
     }
   }
@@ -643,6 +648,13 @@ export class GaslessRelayer {
       const bridgeMessage = depositMessage as GaslessDepositMessage;
 
       do {
+        // Stop the state machine on handover so `waitForDisconnect` can drain in-flight tracked
+        // submissions to a fixed point — otherwise this loop could keep adding new `_sendTrackedTx`
+        // promises after the drain snapshot and the summary would miss them.
+        if (this.abortController.signal.aborted) {
+          log("debug", "Aborted during processing, exiting state loop.");
+          break;
+        }
         // If we are currently processing a fill for the user, then do not process another fill until the first fill is completed.
         if (isDefined(this.fillLock[fillKey]) && this.fillLock[fillKey] !== depositKey) {
           log("debug", `Skipping deposit due to held lock on key ${fillKey} (held by ${this.fillLock[fillKey]})`);
@@ -1227,7 +1239,13 @@ export class GaslessRelayer {
   ): Promise<TransactionReceipt | undefined> {
     const promise = this._doSendTrackedTx(tx, kind, useDispatcher);
     this.pendingTrackedSubmissions.add(promise);
-    void promise.finally(() => this.pendingTrackedSubmissions.delete(promise));
+    // Cleanup must not leak an unhandled rejection: `.finally()` re-throws the underlying
+    // rejection on its returned promise; the caller awaits `promise` for the real error,
+    // so the cleanup chain just swallows it via paired `then` handlers.
+    const cleanup = () => {
+      this.pendingTrackedSubmissions.delete(promise);
+    };
+    void promise.then(cleanup, cleanup);
     return promise;
   }
 
@@ -1248,6 +1266,18 @@ export class GaslessRelayer {
         counters[kind] += 1;
         return undefined;
       }
+      case "unexpected_error":
+        // Distinct from `submission_failed`: not a stuck-queue signal, so don't increment the
+        // page-worthy counter. Log loudly so the underlying bug isn't lost.
+        this.logger.error({
+          at: "GaslessRelayer#_sendTrackedTx",
+          message: "Unexpected error while sending tracked transaction",
+          chainId: tx.chainId,
+          kind,
+          error: outcome.error,
+          notificationPath: "across-error",
+        });
+        return undefined;
       default: {
         const _exhaustive: never = outcome;
         return _exhaustive;
