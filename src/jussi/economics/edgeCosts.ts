@@ -338,10 +338,11 @@ async function estimateQuotedBridgeBreakdown(
   family: EdgeFamily
 ): Promise<CostBreakdown> {
   const quotedFeeUsd = await quoteNativeBridgeFeeUsd(candidate, amount, params);
+  const gasCostUsd = await params.pricingContext.deriveGasCostUsd(family, candidate.from.chainId);
   return {
     fixedInputFeeSourceNative: bnZero,
     fixedOutputFeeDestinationNative: bnZero,
-    fixedCostUsd: Math.max(quotedFeeUsd, await params.pricingContext.deriveGasCostUsd(family, candidate.from.chainId)),
+    fixedCostUsd: quotedFeeUsd + gasCostUsd,
     latencySeconds: resolveGraphBridgeLatencySeconds(candidate, params.pricingContext.hubPoolChainId),
   };
 }

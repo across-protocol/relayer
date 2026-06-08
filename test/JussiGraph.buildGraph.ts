@@ -1,4 +1,5 @@
 import { expect, sinon, toBNWei, winston } from "./utils";
+import { CUSTOM_BRIDGE } from "../src/common";
 import { CHAIN_IDs, EvmAddress, TOKEN_SYMBOLS_MAP } from "../src/utils";
 import { RelayerConfig } from "../src/relayer/RelayerConfig";
 import { RebalancerConfig } from "../src/rebalancer/RebalancerConfig";
@@ -898,6 +899,72 @@ describe("Jussi graph builder helpers", function () {
       CHAIN_IDs.MAINNET,
     ]);
     expect(quotedBridgeAmounts).to.deep.equal([destinationBridgeAmount.toString()]);
+  });
+
+  it("adds quoted bridge value fees to estimated gas costs", async function () {
+    class FakeCanonicalBridge {
+      async constructL1ToL2Txn() {
+        return { value: toBNWei("2") };
+      }
+    }
+
+    const relayerConfig = buildRelayerConfig();
+    const nodeContexts = materializeNodeDefinitions(buildManagedNodeTemplates(relayerConfig.inventoryConfig));
+    const source = findExpectedNode(
+      nodeContexts,
+      (node) => node.chainId === CHAIN_IDs.MAINNET && node.logicalAsset === "WETH",
+      "Mainnet WETH"
+    );
+    const destination = findExpectedNode(
+      nodeContexts,
+      (node) => node.chainId === CHAIN_IDs.BASE && node.logicalAsset === "WETH",
+      "Base WETH"
+    );
+    const candidate: GraphEdgeCandidate = {
+      family: "canonical",
+      adapterOrBridgeName: "canonical",
+      from: source,
+      to: destination,
+    };
+    const signer = {
+      connect() {
+        return signer;
+      },
+      async getAddress() {
+        return TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET];
+      },
+    };
+    const customBridgeByChain = CUSTOM_BRIDGE as unknown as Record<number, Record<string, unknown> | undefined>;
+    const wethL1Token = TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET];
+    customBridgeByChain[CHAIN_IDs.BASE] ??= {};
+    const originalBridge = customBridgeByChain[CHAIN_IDs.BASE]?.[wethL1Token];
+    customBridgeByChain[CHAIN_IDs.BASE][wethL1Token] = FakeCanonicalBridge;
+
+    try {
+      const economics = await estimateEdgeEconomics(candidate, {
+        baseSigner: signer as never,
+        cumulativeBalancesByLogicalAsset: { USDC: toBNWei("0"), USDT: toBNWei("0"), WETH: toBNWei("0") },
+        logger: buildNoopLogger(),
+        pricingContext: {
+          hubPoolChainId: CHAIN_IDs.MAINNET,
+          logger: buildNoopLogger(),
+          getLogicalAssetPriceUsd: async () => 1,
+          deriveGasCostUsd: async () => 5,
+          nativeValueToUsd: async () => 7,
+          usdToNativeValue: async (value: number) => toBNWei(String(value)),
+        } as unknown as RuntimePricingContext,
+        rebalancerAdapters: {} as never,
+      });
+
+      expect(economics.fixedCostNative.toString()).to.equal(toBNWei("12").toString());
+    } finally {
+      if (originalBridge === undefined) {
+        delete customBridgeByChain[CHAIN_IDs.BASE]?.[wethL1Token];
+      } else {
+        customBridgeByChain[CHAIN_IDs.BASE] ??= {};
+        customBridgeByChain[CHAIN_IDs.BASE][wethL1Token] = originalBridge;
+      }
+    }
   });
 
   it("uses quoteOFT output to finalize OFT quoteSend params before pricing the route", async function () {
