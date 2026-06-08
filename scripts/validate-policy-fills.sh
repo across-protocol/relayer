@@ -15,7 +15,9 @@
 #   LOG_DIR=/tmp/policy-validate
 #
 # Required local state:
-#   Test wallet funded with ~5 USDT and ~1 USDC per origin chain in the matrix.
+#   Test wallet funded with enough USDT/USDC on each origin in the matrix to
+#   cover AMOUNT × (rows-per-origin) plus a small buffer for native-asset gas.
+#   With the defaults below: ~20 USDT and ~10 USDC per origin chain is plenty.
 #
 # Usage:
 #   RELAYER_ADDR=0x... WALLET=mnemonic bash scripts/validate-policy-fills.sh
@@ -28,8 +30,10 @@ EXCL_SEC="${EXCLUSIVITY_SEC:-60}"
 LOG_DIR="${LOG_DIR:-/tmp/policy-validate}"
 mkdir -p "$LOG_DIR"
 
-# 0.5 USDT or USDC, expressed in base units (6 decimals).
-AMOUNT=500000
+# 5 USDT or USDC, expressed in base units (6 decimals). Has to clear the
+# Across suggested-fees minimum and stay above the worst-case mainnet relay
+# fee — otherwise getRelayerQuote() throws before the deposit is even posted.
+AMOUNT=5000000
 
 # Token addresses needed for the --outputToken override.
 declare -A USDT_ADDR=(
@@ -124,12 +128,15 @@ run_one() {
   local got
   if [ "$fill_ok" = "yes" ]; then
     got=pass
-  elif [ "$deposit_ok" = "yes" ]; then
-    # Deposit landed on-chain but no in-window FilledRelay was observed.
+  elif [ "$deposit_ok" = "yes" ] && [ "$rc" -eq 0 ]; then
+    # Deposit landed on-chain *and* the helper exited cleanly after observing
+    # exclusivity expiry → no in-window FilledRelay. Genuine policy rejection.
     got=fail
   else
-    # No deposit confirmed → command setup failed (bad args, RPC, balance,
-    # quote). Don't count this as a successful policy rejection.
+    # Either the deposit never landed (setup failure) or the deposit landed
+    # but spokepool.ts crashed/was killed before observing the full window
+    # (RPC error, outer timeout, exception). Don't count as a policy
+    # rejection — surface in the FAIL list as an error for investigation.
     got=error
   fi
   printf "[expect=%s got=%s rc=%d] %s@%s -> %s@%s\n" "$expect" "$got" "$rc" "$src" "$origin" "$dst" "$dest"

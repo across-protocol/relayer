@@ -431,26 +431,34 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
   printRelayData(printable, printable.destinationChainId, receipt.transactionHash);
   console.log(`Deposit confirmed after ${(confirmed - submitted) / 1000} seconds: ${depositTxn}.`);
 
+  // The AbortSignal "abort" event only fires for listeners attached *before*
+  // abort. If a buffered fill replay (below) or the dst listener fires before
+  // we hand the signal to this Promise, a naive `addEventListener` here would
+  // never resolve. Short-circuit when already aborted.
+  const waitForAbort = (): Promise<boolean> =>
+    abortController.signal.aborted
+      ? Promise.resolve(true)
+      : new Promise((resolve) =>
+          abortController.signal.addEventListener("abort", () => resolve(true), { once: true })
+        );
+
   // Replay any fills the dst listener saw while we were waiting for the receipt.
   for (const pending of pendingFills) {
     if (recordFill(pending.fill, pending.fillDepositId)) {
-      return new Promise((resolve) => abortController.signal.addEventListener("abort", () => resolve(true)));
+      return waitForAbort();
     }
   }
 
   // Stop listening once the on-chain exclusivityDeadline elapses. After that,
   // any fill is by definition outside the exclusivity window — for validation
   // purposes the policy under test would not have made the call. Anchor the
-  // remaining duration to the *origin chain's* block.timestamp from the
-  // deposit receipt rather than the runner's wall clock, so a host clock skew
-  // versus the chain can't shorten the wait. A small grace absorbs dst-side
-  // delivery lag for fills that landed right at the boundary.
+  // remaining duration to the origin chain's *latest* block timestamp at the
+  // moment we set the timer; a host clock skewed in either direction from
+  // origin chain time could otherwise mis-size the wait.
   if (observedExclusivityDeadline > 0) {
-    const depositBlock = await provider.getBlock(receipt.blockNumber);
-    const blockTimeSec = depositBlock.timestamp;
-    const chainSecondsRemaining = Math.max(0, observedExclusivityDeadline - blockTimeSec);
-    const localElapsedMs = Math.max(0, Date.now() - blockTimeSec * 1000);
-    const remainingMs = Math.max(0, chainSecondsRemaining * 1000 - localElapsedMs) + 5_000;
+    const latestBlock = await provider.getBlock("latest");
+    const chainSecondsRemaining = Math.max(0, observedExclusivityDeadline - latestBlock.timestamp);
+    const remainingMs = chainSecondsRemaining * 1000 + 5_000;
     setTimeout(() => {
       if (!isDefined(filled)) {
         console.log(`Exclusivity window expired without matching fill.`);
@@ -459,7 +467,7 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
     }, remainingMs);
   }
 
-  return new Promise((resolve) => abortController.signal.addEventListener("abort", () => resolve(true)));
+  return waitForAbort();
 }
 
 async function fillDeposit(args: Record<string, number | string | boolean>, signer: Signer): Promise<boolean> {
