@@ -732,6 +732,14 @@ describe("ProfitClient: Consider relay profit", () => {
       process.env[originsKey] = "1234567";
       expect(profitClient.minRelayerFeePct(slowOriginDeposit).eq(fallbackMinFee)).to.be.true;
       expect(profitClient.resolveGasMultiplier(slowOriginDeposit).eq(fallbackGasMult)).to.be.true;
+
+      // RELAYER_RAMP_GAS_MULTIPLIER must satisfy 0 <= multiplier <= 4.
+      process.env[destsKey] = `${destinationChainId}`;
+      delete process.env[originsKey];
+      process.env[gasMultKey] = "-0.1";
+      expect(() => profitClient.resolveGasMultiplier(deposit)).to.throw(/RELAYER_RAMP_GAS_MULTIPLIER/);
+      process.env[gasMultKey] = "4.1";
+      expect(() => profitClient.resolveGasMultiplier(deposit)).to.throw(/RELAYER_RAMP_GAS_MULTIPLIER/);
     } finally {
       restore();
     }

@@ -58,6 +58,29 @@ The Profit Client estimates what the gas cost would be to fill the deposit (i.e.
 
 Importantly, the Profit CLient exposes certain configuration objects that the user can use to set profitability thresholds.
 
+### Ramp policy override
+
+The Profit Client supports a per-token-pair "ramp" policy that short-circuits the standard `MIN_RELAYER_FEE_PCT_*` and `RELAYER_GAS_MULTIPLIER_*` lookups for deposits that meet all of:
+
+1. The destination chain ID is in `RELAYER_RAMP_DESTINATIONS_<srcSymbol>_<dstSymbol>` (comma-separated chain IDs).
+2. If `RELAYER_RAMP_ORIGINS_<srcSymbol>_<dstSymbol>` is set, the origin chain ID is in that comma-separated list. If unset, all origins are eligible.
+3. The origin chain supports unmetered fast rebalance for the input token (hub chain, CCTP-eligible USDC, or OFT-eligible routes — see `isUnmeteredFastRebalance` in `src/utils/FastRebalanceUtils.ts`).
+
+`srcSymbol` and `dstSymbol` are the raw token symbols of the deposit's input and output tokens — they bypass the pegged-token symbol remap used by other profitability env vars.
+
+When a deposit matches:
+
+- `minRelayerFeePct` returns `RELAYER_RAMP_MIN_FEE_PCT` (defaults to `0`). The value can be negative to accept fills below break-even.
+- `resolveGasMultiplier` returns `RELAYER_RAMP_GAS_MULTIPLIER` (defaults to `0`). The value must satisfy `0 <= multiplier <= 4`; out-of-range values throw, matching the regular `RELAYER_GAS_MULTIPLIER_*` override path.
+
+Example: accept zero-fee USDT->USDC fills into Arbitrum and Optimism with no gas-cost contribution:
+
+```
+RELAYER_RAMP_DESTINATIONS_USDT_USDC=42161,10
+RELAYER_RAMP_MIN_FEE_PCT=0
+RELAYER_RAMP_GAS_MULTIPLIER=0
+```
+
 ## Transaction Client
 
 This client is responsible for submitting transactions on-chain and therefore for setting the transaction's gas price values, nonce, and implements important retry and error decoding logic. It is designed to be shared across all code modules that submit on-chain transactions.

@@ -181,7 +181,12 @@ export class ProfitClient {
     const dstSymbol = this.getTokenSymbol(outputToken, destinationChainId);
 
     if (this.matchesRampPolicy(srcSymbol, dstSymbol, originChainId, destinationChainId, inputToken)) {
-      return toBNWei(process.env.RELAYER_RAMP_GAS_MULTIPLIER ?? "0");
+      const rampMultiplier = toBNWei(process.env.RELAYER_RAMP_GAS_MULTIPLIER ?? "0");
+      assert(
+        rampMultiplier.gte(bnZero) && rampMultiplier.lte(toBNWei(4)),
+        `RELAYER_RAMP_GAS_MULTIPLIER out of range (${rampMultiplier})`
+      );
+      return rampMultiplier;
     }
 
     const effectiveSrcSymbol = this._getRemappedTokenSymbol(srcSymbol) ?? srcSymbol;
