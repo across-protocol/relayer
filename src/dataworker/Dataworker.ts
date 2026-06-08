@@ -3041,12 +3041,20 @@ export class Dataworker {
       // check `offset + data.len() > account.data.len()`) on the very first
       // `WriteInstructionParamsFragment`. Polling the PDA via
       // `fetchEncodedAccount` until it is visible at the requested size
-      // closes that window. Same cycle/delay budget as the dependency-tx
-      // send so total worst-case latency stays bounded.
+      // closes that window. The read is pinned with the same
+      // `{ commitment, minContextSlot }` the send path uses, so a load-
+      // balanced read to a behind RPC returns `MinContextSlotNotReached`
+      // (transparently retried by `RetrySolanaRpcFactory`) instead of a
+      // stale `exists: false` that would silently consume the poll budget.
+      // Same cycle/delay budget as the dependency-tx send so total
+      // worst-case latency stays bounded.
       let observedSize = 0;
       let ready = false;
       for (let cycle = 0; cycle < SVM_REFUND_LEAF_SEND_POLL_CYCLES; ++cycle) {
-        const candidate = await fetchEncodedAccount(provider, instructionParamsPda);
+        const candidate = await fetchEncodedAccount(provider, instructionParamsPda, {
+          commitment: "confirmed",
+          minContextSlot,
+        });
         observedSize = candidate.exists ? candidate.data.length : 0;
         if (candidate.exists && observedSize >= relayerRefundLeafBytes.length) {
           ready = true;
