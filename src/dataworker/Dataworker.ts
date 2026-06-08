@@ -2966,12 +2966,16 @@ export class Dataworker {
     // a behind RPC returns `MinContextSlotNotReached` immediately, which the
     // SDK's `RetrySolanaRpcFactory` transparently retries.
     //
-    // `getSignatureStatuses` can return `confirmationStatus: confirmed` without
-    // populating `entry.slot` on some upstream RPC providers. When that happens
-    // `confirmedSlot` is undefined and the pin silently turns off, allowing the
-    // next preflight to race a stale-RPC view of the just-written PDA. Fall
-    // back to an explicit `getSlot("confirmed")` so the pin never silently
-    // disengages between dependency txs.
+    // `sendAndConfirmSolanaTransactionWithSlot` derives `confirmedSlot` from
+    // the same `getSignatureStatuses` response that reports confirmation
+    // (preferring `entry.slot`, falling back to the response's `context.slot`
+    // when the upstream RPC omits it). That tying-to-the-confirming-response
+    // is what makes the pin safe under load-balanced providers — an
+    // independent `getSlot` call could hit a different backend whose
+    // confirmed slot is still older than the tx's, leaving the pin too low.
+    // If confirmation wasn't observed at all within the cycle budget we throw
+    // rather than synthesize a floor, since proceeding would silently race
+    // the same write→read interaction this pin exists to prevent.
     let minContextSlot: bigint | undefined;
     const sendPinned = async (tx: Parameters<typeof sendAndConfirmSolanaTransactionWithSlot>[0]): Promise<string> => {
       const { signature, confirmedSlot } = await sendAndConfirmSolanaTransactionWithSlot(
@@ -2981,11 +2985,15 @@ export class Dataworker {
         SVM_REFUND_LEAF_SEND_POLL_DELAY_MS,
         { minContextSlot }
       );
-      const nextMinContextSlot = isDefined(confirmedSlot)
-        ? confirmedSlot
-        : await arch.svm.getSlot(provider, "confirmed", this.logger);
-      if (minContextSlot === undefined || nextMinContextSlot > minContextSlot) {
-        minContextSlot = nextMinContextSlot;
+      if (!isDefined(confirmedSlot)) {
+        throw new Error(
+          `Solana tx ${signature} did not confirm within ` +
+            `${SVM_REFUND_LEAF_SEND_POLL_CYCLES * SVM_REFUND_LEAF_SEND_POLL_DELAY_MS}ms; ` +
+            `cannot advance minContextSlot for dependent sends`
+        );
+      }
+      if (minContextSlot === undefined || confirmedSlot > minContextSlot) {
+        minContextSlot = confirmedSlot;
       }
       return signature;
     };

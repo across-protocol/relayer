@@ -26,7 +26,10 @@ const buildSignableTx = async () => {
   return txMessage;
 };
 
-const makeFakeProvider = (statusValueByPollCall: Array<unknown>) => {
+const makeFakeProvider = (
+  statusValueByPollCall: Array<unknown>,
+  contextSlotByPollCall: Array<bigint> = []
+) => {
   const fakeSignature = "5tkH59X6n7zVJ4r3z2hG5L9rA1bC2dE4fG6h8jK0mN1pQ3sT5uV7wY9aB1cD3eF6";
   const sendInvocations: Array<CapturedSendOptions> = [];
   let pollIndex = 0;
@@ -39,7 +42,14 @@ const makeFakeProvider = (statusValueByPollCall: Array<unknown>) => {
       return { send: async () => fakeSignature };
     },
     getSignatureStatuses: (_sigs: string[]) => ({
-      send: async () => ({ value: [statusValueByPollCall[Math.min(pollIndex++, statusValueByPollCall.length - 1)]] }),
+      send: async () => {
+        const idx = Math.min(pollIndex++, statusValueByPollCall.length - 1);
+        const contextSlot = contextSlotByPollCall[Math.min(idx, contextSlotByPollCall.length - 1)] ?? 0n;
+        return {
+          context: { slot: contextSlot },
+          value: [statusValueByPollCall[idx]],
+        };
+      },
     }),
   };
   return { provider, sendInvocations, fakeSignature };
@@ -76,6 +86,18 @@ describe("TransactionUtils — SVM send pinning", function () {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await sendAndConfirmSolanaTransactionWithSlot(txMessage as any, provider as any, 5, 1);
       expect(sendInvocations[0].minContextSlot).to.equal(undefined);
+    });
+
+    it("falls back to the response `context.slot` when `entry.slot` is missing on confirmation", async function () {
+      const txMessage = await buildSignableTx();
+      const { provider } = makeFakeProvider(
+        [{ confirmationStatus: "confirmed", slot: undefined, err: null, confirmations: 1n }],
+        [54_321n]
+      );
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const result = await sendAndConfirmSolanaTransactionWithSlot(txMessage as any, provider as any, 5, 1);
+      expect(result.confirmedSlot).to.equal(54_321n);
     });
 
     it("returns `confirmedSlot=undefined` when confirmation never reaches confirmed/finalized", async function () {
