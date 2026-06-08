@@ -38,6 +38,7 @@ import { JussiApiClient, putJsonWithTimeout } from "../src/jussi/JussiApiClient"
 import { parseBuildJussiGraphFlags, resolveNativePriceChainIdsForPrices } from "../scripts/buildJussiGraph";
 import { estimateEdgeEconomics } from "../src/jussi/economics/edgeCosts";
 import { serializeEdgeClassDefinition } from "../src/jussi/economics/rates";
+import * as jussiQuotes from "../src/jussi/economics/quotes";
 import {
   JUSSI_LAST_PUBLISHED_KEY,
   JUSSI_PUBLISH_LOCK_KEY,
@@ -179,6 +180,8 @@ function buildMockPricingContext(): RuntimePricingContext {
     hubPoolChainId: CHAIN_IDs.MAINNET,
     getLogicalAssetPriceUsd: async () => 1,
     deriveGasCostUsd: async () => 0,
+    nativeValueToUsd: async () => 0,
+    tokenValueToUsd: async () => 0,
     usdToNativeValue: async () => toBNWei("0"),
   } as unknown as RuntimePricingContext;
 }
@@ -834,6 +837,67 @@ describe("Jussi graph builder helpers", function () {
     }
 
     expect(errorMessage).to.contain(`No Binance network entry for USDT on chain ${CHAIN_IDs.HYPEREVM}`);
+  });
+
+  it("quotes Binance destination bridge legs with converted destination-token amounts", async function () {
+    const relayerConfig = buildRelayerConfig();
+    const nodeContexts = materializeNodeDefinitions(buildManagedNodeTemplates(relayerConfig.inventoryConfig));
+    const source = findExpectedNode(
+      nodeContexts,
+      (node) => node.chainId === CHAIN_IDs.MAINNET && node.logicalAsset === "WETH",
+      "Mainnet WETH"
+    );
+    const destination = findExpectedNode(
+      nodeContexts,
+      (node) => node.chainId === CHAIN_IDs.HYPEREVM && node.logicalAsset === "USDT",
+      "HyperEVM USDT"
+    );
+    const candidate = buildBinanceSwapCandidate(source, destination);
+    const destinationBridgeAmount = toBNWei("2500", 6);
+    const quotedBridgeAmounts: string[] = [];
+    const convertSourceToDestinationStub = sinon.stub().resolves(destinationBridgeAmount);
+    const quoteLiveOftRouteTransferStub = sinon
+      .stub(jussiQuotes, "quoteLiveOftRouteTransfer")
+      .callsFake(async (_quoteCandidate, amount) => {
+        quotedBridgeAmounts.push(amount.toString());
+        return {
+          roundedInputSourceNative: amount,
+          amountReceivedDestinationNative: amount,
+          messageFeeAmount: toBNWei("0"),
+          messageFeeIsNative: true,
+          sendParamStruct: {} as never,
+        };
+      });
+    const adapter = {
+      async _getAccountCoins() {
+        return { networkList: [{ name: "ETH", withdrawFee: "1" }] };
+      },
+      async _getEntrypointNetwork(chainId: number, token: string) {
+        return token === "USDT" && chainId === CHAIN_IDs.HYPEREVM ? CHAIN_IDs.MAINNET : chainId;
+      },
+      _convertSourceToDestination: convertSourceToDestinationStub,
+    };
+
+    try {
+      await estimateEdgeEconomics(candidate, {
+        baseSigner: {} as never,
+        cumulativeBalancesByLogicalAsset: { USDC: toBNWei("0"), USDT: toBNWei("0"), WETH: toBNWei("0") },
+        logger: buildNoopLogger(),
+        pricingContext: buildMockPricingContext(),
+        rebalancerAdapters: { binance: adapter } as never,
+      });
+    } finally {
+      quoteLiveOftRouteTransferStub.restore();
+    }
+
+    expect(convertSourceToDestinationStub.calledOnce).to.equal(true);
+    expect(convertSourceToDestinationStub.firstCall.args.slice(0, 4)).to.deep.equal([
+      "WETH",
+      CHAIN_IDs.MAINNET,
+      "USDT",
+      CHAIN_IDs.MAINNET,
+    ]);
+    expect(quotedBridgeAmounts).to.deep.equal([destinationBridgeAmount.toString()]);
   });
 
   it("uses quoteOFT output to finalize OFT quoteSend params before pricing the route", async function () {

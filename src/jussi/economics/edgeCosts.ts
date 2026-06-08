@@ -243,7 +243,14 @@ async function estimateBinanceSwapBreakdown(
   }
 
   if (destinationEntrypointNetwork !== destinationChain) {
-    await addBridgeLegToExchangeBreakdown(state, candidate, amount, params, {
+    const destinationBridgeAmount = await adapterInternals._convertSourceToDestination(
+      sourceToken,
+      sourceChain,
+      destinationToken,
+      destinationEntrypointNetwork,
+      amount
+    );
+    await addBridgeLegToExchangeBreakdown(state, candidate, destinationBridgeAmount, params, {
       side: "destination",
       token: destinationToken as LogicalAsset,
       sourceChain: destinationEntrypointNetwork,
