@@ -26,7 +26,7 @@ Today that means:
 - bridge / CCTP / OFT / CEX-bridge classes still emit `1:1` output rates and carry fixed fees plus `cost.fixed_cost_native` on concrete edges
 - bridge latencies follow the chain-family timing rules already encoded in relayer constants
 - graph logical assets now include `native_price_alias_chain_ids` only when a chain's native fee asset can safely reuse `USDC` / `USDT` / `WETH`; all other chains require callers to supply `native:<chainId>` prices explicitly
-- Binance family edge capacities use large round sanity caps instead of `maxAmountsToTransfer`; same-asset CEX bridge edges use the same large-cap default, while swap edges are additionally bounded by live market metadata when Binance exposes one
+- Binance family edge capacities use large round sanity caps instead of `maxAmountsToTransfer`; same-asset CEX bridge and swap edges are additionally bounded by live Binance withdrawal maxima and CCTP intermediate bridge caps when those routes constrain execution
 
 ## Build Modes
 

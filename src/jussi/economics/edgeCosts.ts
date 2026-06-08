@@ -21,6 +21,7 @@ import {
   isDefined,
   toAddressType,
   toBNWei,
+  truncate,
 } from "../../utils";
 import { EDGE_FIXED_COST_INPUT_USD_SAMPLE, LATENCY_BY_FAMILY, UNIVERSAL_INPUT_TIER_USD } from "../constants";
 import type { RuntimePricingContext } from "./PricingContext";
@@ -120,11 +121,21 @@ async function resolveInputCapacityNative(
     return CCTP_MAX_SEND_AMOUNT;
   }
 
-  return resolveEffectivelyUnlimitedCapacityNative(
+  const effectivelyUnlimitedCapacityNative = await resolveEffectivelyUnlimitedCapacityNative(
     candidate.from.logicalAsset,
     candidate.from.decimals,
     params.pricingContext
   );
+
+  if (candidate.family === "binance") {
+    return resolveBinanceSwapInputCapacityNative(candidate, params, effectivelyUnlimitedCapacityNative);
+  }
+
+  if (candidate.family === "binance_cex_bridge") {
+    return resolveBinanceCexBridgeInputCapacityNative(candidate, params, effectivelyUnlimitedCapacityNative);
+  }
+
+  return effectivelyUnlimitedCapacityNative;
 }
 
 async function resolveCostReferenceInputNative(
@@ -151,6 +162,130 @@ async function resolveEffectivelyUnlimitedCapacityNative(
   pricingContext: RuntimePricingContext
 ): Promise<BigNumber> {
   return resolveUsdNotionalInputNative(logicalAsset, decimals, Number(UNIVERSAL_INPUT_TIER_USD), pricingContext);
+}
+
+async function resolveBinanceSwapInputCapacityNative(
+  candidate: GraphEdgeCandidate,
+  params: Pick<EdgePricingParams, "pricingContext" | "rebalancerAdapters">,
+  inputCapacityNative: BigNumber
+): Promise<BigNumber> {
+  assert(isDefined(candidate.rebalanceRoute), "Binance swap edge is missing rebalance route");
+  const adapter = params.rebalancerAdapters.binance as BinanceStablecoinSwapAdapter;
+  // See BinanceInternalAdapter in ../types: this cast reaches private adapter methods unchecked.
+  const adapterInternals = adapter as unknown as BinanceInternalAdapter;
+  const { sourceToken, destinationToken, sourceChain, destinationChain } = candidate.rebalanceRoute;
+  let capacityNative = inputCapacityNative;
+
+  const sourceEntrypointNetwork = await adapterInternals._getEntrypointNetwork(sourceChain, sourceToken);
+  if (sourceToken === "USDC" && sourceEntrypointNetwork !== sourceChain) {
+    capacityNative = minBigNumber(capacityNative, resolveCctpMaxSendAmountNative(candidate.from.decimals));
+  }
+
+  const destinationEntrypointNetwork = await adapterInternals._getEntrypointNetwork(destinationChain, destinationToken);
+  const destinationTokenInfo = getTokenInfoFromSymbol(destinationToken, destinationEntrypointNetwork);
+  const destinationAmountLimitNative = await resolveBinanceWithdrawalAmountLimitNative(
+    adapterInternals,
+    destinationToken,
+    destinationEntrypointNetwork,
+    destinationTokenInfo.decimals
+  );
+  const destinationBridgeLimitNative =
+    destinationToken === "USDC" && destinationEntrypointNetwork !== destinationChain
+      ? resolveCctpMaxSendAmountNative(destinationTokenInfo.decimals)
+      : undefined;
+  const destinationLimitNative = minOptionalBigNumbers(destinationAmountLimitNative, destinationBridgeLimitNative);
+
+  if (!isDefined(destinationLimitNative)) {
+    return capacityNative;
+  }
+
+  const sampledInputNative = minBigNumber(
+    await resolveUsdNotionalInputNative(
+      candidate.from.logicalAsset,
+      candidate.from.decimals,
+      EDGE_FIXED_COST_INPUT_USD_SAMPLE,
+      params.pricingContext
+    ),
+    capacityNative
+  );
+  if (sampledInputNative.isZero()) {
+    return capacityNative;
+  }
+  const estimatedOutputAtSampleNative = await adapterInternals._convertSourceToDestination(
+    sourceToken,
+    sourceChain,
+    destinationToken,
+    destinationEntrypointNetwork,
+    sampledInputNative
+  );
+  if (estimatedOutputAtSampleNative.isZero()) {
+    return capacityNative;
+  }
+
+  return minBigNumber(
+    capacityNative,
+    sampledInputNative.mul(destinationLimitNative).div(estimatedOutputAtSampleNative)
+  );
+}
+
+async function resolveBinanceCexBridgeInputCapacityNative(
+  candidate: GraphEdgeCandidate,
+  params: Pick<EdgePricingParams, "pricingContext" | "rebalancerAdapters">,
+  inputCapacityNative: BigNumber
+): Promise<BigNumber> {
+  const adapter = params.rebalancerAdapters.binance as BinanceStablecoinSwapAdapter;
+  // See BinanceInternalAdapter in ../types: this cast reaches private adapter methods unchecked.
+  const adapterInternals = adapter as unknown as BinanceInternalAdapter;
+  const tokenSymbol = candidate.from.logicalAsset;
+  const network =
+    BINANCE_NETWORKS[candidate.to.chainId] ??
+    BINANCE_NETWORKS[candidate.from.chainId] ??
+    BINANCE_NETWORKS[params.pricingContext.hubPoolChainId];
+  const coin = await adapterInternals._getAccountCoins(tokenSymbol);
+  const withdrawFeeConfig = coin.networkList.find((entry) => entry.name === network);
+  assert(
+    isDefined(withdrawFeeConfig),
+    `Withdraw fee config not found for ${tokenSymbol} on Binance network ${network}`
+  );
+  const withdrawMaxNative = resolvePositiveBinanceAmountNative(withdrawFeeConfig.withdrawMax, candidate.from.decimals);
+  return isDefined(withdrawMaxNative) ? minBigNumber(inputCapacityNative, withdrawMaxNative) : inputCapacityNative;
+}
+
+async function resolveBinanceWithdrawalAmountLimitNative(
+  adapterInternals: BinanceInternalAdapter,
+  token: string,
+  chainId: number,
+  decimals: number
+): Promise<BigNumber | undefined> {
+  const coin = await adapterInternals._getAccountCoins(token);
+  const network = BINANCE_NETWORKS[chainId];
+  const withdrawNetworkConfig = coin.networkList.find((entry) => entry.name === network);
+  assert(isDefined(withdrawNetworkConfig), `No Binance network entry for ${token} on chain ${chainId}`);
+  return resolvePositiveBinanceAmountNative(withdrawNetworkConfig.withdrawMax, decimals);
+}
+
+function resolvePositiveBinanceAmountNative(value: string | undefined, decimals: number): BigNumber | undefined {
+  if (!isDefined(value)) {
+    return undefined;
+  }
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue) || numericValue <= 0) {
+    return undefined;
+  }
+  return toBNWei(truncate(numericValue, decimals), decimals);
+}
+
+function resolveCctpMaxSendAmountNative(decimals: number): BigNumber {
+  return ConvertDecimals(TOKEN_SYMBOLS_MAP.USDC.decimals, decimals)(CCTP_MAX_SEND_AMOUNT);
+}
+
+function minOptionalBigNumbers(...values: Array<BigNumber | undefined>): BigNumber | undefined {
+  return values.reduce<BigNumber | undefined>((minimum, value) => {
+    if (!isDefined(value)) {
+      return minimum;
+    }
+    return isDefined(minimum) ? minBigNumber(minimum, value) : value;
+  }, undefined);
 }
 
 async function estimateCctpBreakdown(

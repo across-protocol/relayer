@@ -227,7 +227,7 @@ export type BinanceInternalAdapter = {
   _getAccountCoins(
     token: string,
     skipCache?: boolean
-  ): Promise<{ networkList: Array<{ name: string; withdrawFee: string }> }>;
+  ): Promise<{ networkList: Array<{ name: string; withdrawFee: string; withdrawMax?: string }> }>;
   _getEntrypointNetwork(chainId: number, token: string): Promise<number>;
   _getLatestPrice(
     sourceToken: string,

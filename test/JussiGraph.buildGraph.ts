@@ -43,6 +43,7 @@ import {
 import { estimateEdgeEconomics, estimateQuotedBridgeBreakdown } from "../src/jussi/economics/edgeCosts";
 import { serializeEdgeClassDefinition } from "../src/jussi/economics/rates";
 import * as jussiQuotes from "../src/jussi/economics/quotes";
+import { CCTP_MAX_SEND_AMOUNT } from "../src/common";
 import {
   JUSSI_LAST_PUBLISHED_KEY,
   JUSSI_PUBLISH_LOCK_KEY,
@@ -955,6 +956,94 @@ describe("Jussi graph builder helpers", function () {
       adapter: "cctp",
     });
     expect(cctpAdapter.getEstimatedCost.firstCall.args[1].toString()).to.equal(destinationBridgeAmount.toString());
+  });
+
+  it("caps Binance swap capacity by CCTP source bridge limits", async function () {
+    const relayerConfig = buildRelayerConfig();
+    const nodeContexts = materializeNodeDefinitions(buildManagedNodeTemplates(relayerConfig.inventoryConfig));
+    const source = findExpectedNode(
+      nodeContexts,
+      (node) => node.chainId === CHAIN_IDs.OPTIMISM && node.logicalAsset === "USDC",
+      "Optimism USDC"
+    );
+    const destination = findExpectedNode(
+      nodeContexts,
+      (node) => node.chainId === CHAIN_IDs.MAINNET && node.logicalAsset === "WETH",
+      "Mainnet WETH"
+    );
+    const candidate = buildBinanceSwapCandidate(source, destination);
+    const cctpAdapter = { getEstimatedCost: sinon.stub().resolves(toBNWei("0", 6)) };
+    const adapter = {
+      async _getAccountCoins() {
+        return { networkList: [{ name: "ETH", withdrawFee: "0" }] };
+      },
+      async _getEntrypointNetwork(chainId: number, token: string) {
+        return token === "USDC" && chainId === CHAIN_IDs.OPTIMISM ? CHAIN_IDs.MAINNET : chainId;
+      },
+    };
+
+    const economics = await estimateEdgeEconomics(candidate, {
+      baseSigner: {} as never,
+      cumulativeBalancesByLogicalAsset: { USDC: toBNWei("0"), USDT: toBNWei("0"), WETH: toBNWei("0") },
+      logger: buildNoopLogger(),
+      pricingContext: buildMockPricingContext(),
+      rebalancerAdapters: { binance: adapter, cctp: cctpAdapter } as never,
+    });
+
+    expect(economics.inputCapacityNative.toString()).to.equal(CCTP_MAX_SEND_AMOUNT.toString());
+    expect(cctpAdapter.getEstimatedCost.calledOnce).to.equal(true);
+    expect(cctpAdapter.getEstimatedCost.firstCall.args[1].toString()).to.equal(toBNWei("100000", 6).toString());
+  });
+
+  it("caps bridged Binance withdrawal capacity by withdrawMax", async function () {
+    const relayerConfig = buildRelayerConfig();
+    const nodeContexts = materializeNodeDefinitions(buildManagedNodeTemplates(relayerConfig.inventoryConfig));
+    const source = findExpectedNode(
+      nodeContexts,
+      (node) => node.chainId === CHAIN_IDs.MAINNET && node.logicalAsset === "WETH",
+      "Mainnet WETH"
+    );
+    const destination = findExpectedNode(
+      nodeContexts,
+      (node) => node.chainId === CHAIN_IDs.OPTIMISM && node.logicalAsset === "USDC",
+      "Optimism USDC"
+    );
+    const candidate = buildBinanceSwapCandidate(source, destination);
+    const sampledCapacityNative = toBNWei("100000", 18);
+    const expectedExecutableCapacityNative = toBNWei("50000", 18);
+    const destinationOutputAtSampleCapacity = toBNWei("2000", 6);
+    const destinationBridgeAmount = toBNWei("2500", 6);
+    const convertSourceToDestinationStub = sinon
+      .stub()
+      .onFirstCall()
+      .resolves(destinationOutputAtSampleCapacity)
+      .onSecondCall()
+      .resolves(destinationBridgeAmount);
+    const cctpAdapter = { getEstimatedCost: sinon.stub().resolves(toBNWei("0", 6)) };
+    const adapter = {
+      async _getAccountCoins() {
+        return { networkList: [{ name: "ETH", withdrawFee: "0", withdrawMax: "1000" }] };
+      },
+      async _getEntrypointNetwork(chainId: number, token: string) {
+        return token === "USDC" && chainId === CHAIN_IDs.OPTIMISM ? CHAIN_IDs.MAINNET : chainId;
+      },
+      _convertSourceToDestination: convertSourceToDestinationStub,
+    };
+
+    const economics = await estimateEdgeEconomics(candidate, {
+      baseSigner: {} as never,
+      cumulativeBalancesByLogicalAsset: { USDC: toBNWei("0"), USDT: toBNWei("0"), WETH: toBNWei("0") },
+      logger: buildNoopLogger(),
+      pricingContext: buildMockPricingContext(),
+      rebalancerAdapters: { binance: adapter, cctp: cctpAdapter } as never,
+    });
+
+    expect(economics.inputCapacityNative.toString()).to.equal(expectedExecutableCapacityNative.toString());
+    expect(convertSourceToDestinationStub.calledTwice).to.equal(true);
+    expect(convertSourceToDestinationStub.firstCall.args[4].toString()).to.equal(sampledCapacityNative.toString());
+    expect(convertSourceToDestinationStub.secondCall.args[4].toString()).to.equal(
+      expectedExecutableCapacityNative.toString()
+    );
   });
 
   it("quotes Binance destination bridge legs with converted destination-token amounts", async function () {
