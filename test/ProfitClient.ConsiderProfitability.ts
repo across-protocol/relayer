@@ -656,21 +656,24 @@ describe("ProfitClient: Consider relay profit", () => {
     }
   });
 
-  it("Ramp policy short-circuits minRelayerFeePct and resolveGasMultiplier", () => {
+  it("Policy registry short-circuits minRelayerFeePct and resolveGasMultiplier", () => {
     // Use Mainnet as the origin so isUnmeteredFastRebalance(origin, _, hubChainId=1) returns true
     // via the hub-chain branch without needing to mock CCTP/OFT chain registries.
-    const rampOriginChainId = CHAIN_IDs.MAINNET;
+    const policyOriginChainId = CHAIN_IDs.MAINNET;
     profitClient.setTokenSymbol(tokens.USDC.address, "USDC");
     profitClient.setTokenSymbol(tokens.WETH.address, "USDT");
 
-    const destsKey = "RELAYER_RAMP_DESTINATIONS_USDT_USDC";
-    const originsKey = "RELAYER_RAMP_ORIGINS_USDT_USDC";
-    const minFeeKey = "RELAYER_RAMP_MIN_FEE_PCT";
-    const gasMultKey = "RELAYER_RAMP_GAS_MULTIPLIER";
+    const policiesKey = "RELAYER_POLICIES";
+    const destsKey = "RELAYER_POLICY_RAMP_DESTINATIONS_USDT_USDC";
+    const originsKey = "RELAYER_POLICY_RAMP_ORIGINS_USDT_USDC";
+    const minFeeKey = "RELAYER_POLICY_RAMP_MIN_FEE_PCT";
+    const gasMultKey = "RELAYER_POLICY_RAMP_GAS_MULTIPLIER";
+    // Second policy used to exercise first-match-wins ordering.
+    const policy2DestsKey = "RELAYER_POLICY_BOOTSTRAP_DESTINATIONS_USDT_USDC";
+    const policy2MinFeeKey = "RELAYER_POLICY_BOOTSTRAP_MIN_FEE_PCT";
 
-    const initial = Object.fromEntries(
-      [destsKey, originsKey, minFeeKey, gasMultKey].map((k) => [k, process.env[k]])
-    );
+    const envKeys = [policiesKey, destsKey, originsKey, minFeeKey, gasMultKey, policy2DestsKey, policy2MinFeeKey];
+    const initial = Object.fromEntries(envKeys.map((k) => [k, process.env[k]]));
     const restore = (): void => {
       for (const [k, v] of Object.entries(initial)) {
         if (v === undefined) delete process.env[k];
@@ -682,19 +685,21 @@ describe("ProfitClient: Consider relay profit", () => {
       ...v3DepositTemplate,
       inputToken: EvmAddress.from(tokens.WETH.address), // symbol overridden to USDT above
       outputToken: EvmAddress.from(tokens.USDC.address),
-      originChainId: rampOriginChainId,
+      originChainId: policyOriginChainId,
       destinationChainId,
     };
 
     try {
-      // Predicate misses entirely when no env is set — falls through to existing logic.
+      // No policy registry set — falls through to existing logic.
       restore();
-      delete process.env[destsKey];
-      delete process.env[originsKey];
-      delete process.env[minFeeKey];
-      delete process.env[gasMultKey];
+      for (const k of envKeys) delete process.env[k];
       const fallbackMinFee = profitClient.minRelayerFeePct(deposit);
       const fallbackGasMult = profitClient.resolveGasMultiplier(deposit);
+
+      // Policy named in registry but no per-policy DESTINATIONS — falls through.
+      process.env[policiesKey] = "ramp";
+      expect(profitClient.minRelayerFeePct(deposit).eq(fallbackMinFee)).to.be.true;
+      expect(profitClient.resolveGasMultiplier(deposit).eq(fallbackGasMult)).to.be.true;
 
       // Match: destination in set, no origin restriction, fast-rebalance origin (hub).
       process.env[destsKey] = `${destinationChainId},9999`;
@@ -703,8 +708,7 @@ describe("ProfitClient: Consider relay profit", () => {
       expect(profitClient.minRelayerFeePct(deposit).eq(toBNWei("-0.0001"))).to.be.true;
       expect(profitClient.resolveGasMultiplier(deposit).eq(bnZero)).to.be.true;
 
-      // When only DESTINATIONS is set, missing RAMP_MIN_FEE_PCT / RAMP_GAS_MULTIPLIER
-      // falls through to the default lookup path instead of silently using 0.
+      // When only DESTINATIONS is set, missing MIN_FEE_PCT / GAS_MULTIPLIER falls through.
       delete process.env[minFeeKey];
       delete process.env[gasMultKey];
       expect(profitClient.minRelayerFeePct(deposit).eq(fallbackMinFee)).to.be.true;
@@ -717,30 +721,44 @@ describe("ProfitClient: Consider relay profit", () => {
 
       // Origin allowlist excludes this origin: falls through.
       process.env[destsKey] = `${destinationChainId}`;
-      process.env[originsKey] = `${rampOriginChainId + 1}`;
+      process.env[originsKey] = `${policyOriginChainId + 1}`;
       expect(profitClient.minRelayerFeePct(deposit).eq(fallbackMinFee)).to.be.true;
       expect(profitClient.resolveGasMultiplier(deposit).eq(fallbackGasMult)).to.be.true;
 
       // Origin allowlist includes this origin: match.
-      process.env[originsKey] = `${rampOriginChainId},${rampOriginChainId + 1}`;
+      process.env[originsKey] = `${policyOriginChainId},${policyOriginChainId + 1}`;
       process.env[minFeeKey] = "0";
       process.env[gasMultKey] = "0";
       expect(profitClient.minRelayerFeePct(deposit).eq(bnZero)).to.be.true;
       expect(profitClient.resolveGasMultiplier(deposit).eq(bnZero)).to.be.true;
 
-      // Origin not fast-rebalanceable (random chain, not hub, not CCTP, not OFT): falls through.
+      // Explicit origin allowlist overrides the fast-rebalance default: a non-fast origin
+      // that's explicitly listed still matches.
       const slowOriginDeposit = { ...deposit, originChainId: 1234567 };
       process.env[originsKey] = "1234567";
+      expect(profitClient.minRelayerFeePct(slowOriginDeposit).eq(bnZero)).to.be.true;
+      expect(profitClient.resolveGasMultiplier(slowOriginDeposit).eq(bnZero)).to.be.true;
+
+      // No origin allowlist + non-fast-rebalance origin: falls through to default lookup.
+      delete process.env[originsKey];
       expect(profitClient.minRelayerFeePct(slowOriginDeposit).eq(fallbackMinFee)).to.be.true;
       expect(profitClient.resolveGasMultiplier(slowOriginDeposit).eq(fallbackGasMult)).to.be.true;
 
-      // RELAYER_RAMP_GAS_MULTIPLIER must satisfy 0 <= multiplier <= 4.
+      // First-match-wins across the registry: bootstrap is listed first, so its MIN_FEE_PCT
+      // applies even though ramp would also match.
+      process.env[policiesKey] = "bootstrap,ramp";
+      process.env[policy2DestsKey] = `${destinationChainId}`;
+      process.env[policy2MinFeeKey] = "-0.0009";
+      expect(profitClient.minRelayerFeePct(deposit).eq(toBNWei("-0.0009"))).to.be.true;
+
+      // GAS_MULTIPLIER must satisfy 0 <= multiplier <= 4.
+      process.env[policiesKey] = "ramp";
       process.env[destsKey] = `${destinationChainId}`;
       delete process.env[originsKey];
       process.env[gasMultKey] = "-0.1";
-      expect(() => profitClient.resolveGasMultiplier(deposit)).to.throw(/RELAYER_RAMP_GAS_MULTIPLIER/);
+      expect(() => profitClient.resolveGasMultiplier(deposit)).to.throw(/RELAYER_POLICY_RAMP_GAS_MULTIPLIER/);
       process.env[gasMultKey] = "4.1";
-      expect(() => profitClient.resolveGasMultiplier(deposit)).to.throw(/RELAYER_RAMP_GAS_MULTIPLIER/);
+      expect(() => profitClient.resolveGasMultiplier(deposit)).to.throw(/RELAYER_POLICY_RAMP_GAS_MULTIPLIER/);
     } finally {
       restore();
     }

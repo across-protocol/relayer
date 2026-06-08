@@ -58,27 +58,29 @@ The Profit Client estimates what the gas cost would be to fill the deposit (i.e.
 
 Importantly, the Profit CLient exposes certain configuration objects that the user can use to set profitability thresholds.
 
-### Ramp policy override
+### Per-token-pair policy overrides
 
-The Profit Client supports a per-token-pair "ramp" policy that can short-circuit the standard `MIN_RELAYER_FEE_PCT_*` and `RELAYER_GAS_MULTIPLIER_*` lookups for deposits that meet all of:
+The Profit Client supports a registry of named "policies" that can short-circuit the standard `MIN_RELAYER_FEE_PCT_*` and `RELAYER_GAS_MULTIPLIER_*` lookups. The policies in `RELAYER_POLICIES` (comma-separated) are evaluated in order; the first whose predicate matches the deposit wins.
 
-1. The destination chain ID is in `RELAYER_RAMP_DESTINATIONS_<srcSymbol>_<dstSymbol>` (comma-separated chain IDs).
-2. If `RELAYER_RAMP_ORIGINS_<srcSymbol>_<dstSymbol>` is set, the origin chain ID is in that comma-separated list. If unset, all origins are eligible.
-3. The origin chain supports unmetered fast rebalance for the input token (hub chain, CCTP-eligible USDC, or OFT-eligible routes — see `isUnmeteredFastRebalance` in `src/utils/FillUtils.ts`).
+A policy named `<NAME>` (uppercased in env var keys) matches when:
+
+1. The destination chain ID is in `RELAYER_POLICY_<NAME>_DESTINATIONS_<srcSymbol>_<dstSymbol>` (comma-separated chain IDs).
+2. Either `RELAYER_POLICY_<NAME>_ORIGINS_<srcSymbol>_<dstSymbol>` is set and the origin chain ID is in that comma-separated list, **or** that env var is unset and the origin chain supports unmetered fast rebalance for the input token (hub chain, CCTP-eligible USDC, or OFT-eligible routes — see `isUnmeteredFastRebalance` in `src/utils/FillUtils.ts`). An explicit origin allowlist overrides the fast-rebalance default.
 
 `srcSymbol` and `dstSymbol` are the raw token symbols of the deposit's input and output tokens — they bypass the pegged-token symbol remap used by other profitability env vars.
 
-When a deposit matches:
+When a deposit matches policy `<NAME>`:
 
-- If `RELAYER_RAMP_MIN_FEE_PCT` is set, `minRelayerFeePct` returns it (may be negative to accept fills below break-even). If unset, the standard per-route/token/chain lookup and default apply.
-- If `RELAYER_RAMP_GAS_MULTIPLIER` is set, `resolveGasMultiplier` returns it (must satisfy `0 <= multiplier <= 4`; out-of-range values throw). If unset, the standard per-route/token/chain lookup and default apply.
+- If `RELAYER_POLICY_<NAME>_MIN_FEE_PCT` is set, `minRelayerFeePct` returns it (may be negative to accept fills below break-even). If unset, the standard per-route/token/chain lookup and default apply.
+- If `RELAYER_POLICY_<NAME>_GAS_MULTIPLIER` is set, `resolveGasMultiplier` returns it (must satisfy `0 <= multiplier <= 4`; out-of-range values throw). If unset, the standard per-route/token/chain lookup and default apply.
 
-Example: accept zero-fee USDT->USDC fills into Arbitrum and Optimism with no gas-cost contribution:
+Example: accept zero-fee USDC->WETH fills into Arbitrum and Optimism with no gas-cost contribution, via a policy named `example`:
 
 ```
-RELAYER_RAMP_DESTINATIONS_USDT_USDC=42161,10
-RELAYER_RAMP_MIN_FEE_PCT=0
-RELAYER_RAMP_GAS_MULTIPLIER=0
+RELAYER_POLICIES=example
+RELAYER_POLICY_EXAMPLE_DESTINATIONS_USDC_WETH=42161,10
+RELAYER_POLICY_EXAMPLE_MIN_FEE_PCT=0
+RELAYER_POLICY_EXAMPLE_GAS_MULTIPLIER=0
 ```
 
 ## Transaction Client

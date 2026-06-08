@@ -180,17 +180,17 @@ export class ProfitClient {
     const srcSymbol = this.getTokenSymbol(inputToken, originChainId);
     const dstSymbol = this.getTokenSymbol(outputToken, destinationChainId);
 
-    const rampGasMultiplier = process.env.RELAYER_RAMP_GAS_MULTIPLIER;
-    if (
-      isDefined(rampGasMultiplier) &&
-      this.matchesRampPolicy(srcSymbol, dstSymbol, originChainId, destinationChainId, inputToken)
-    ) {
-      const rampMultiplier = toBNWei(rampGasMultiplier);
+    const policy = this.matchingPolicy(srcSymbol, dstSymbol, originChainId, destinationChainId, inputToken);
+    const policyGasMultiplier = isDefined(policy)
+      ? process.env[`RELAYER_POLICY_${policy}_GAS_MULTIPLIER`]
+      : undefined;
+    if (isDefined(policyGasMultiplier)) {
+      const policyMultiplier = toBNWei(policyGasMultiplier);
       assert(
-        rampMultiplier.gte(bnZero) && rampMultiplier.lte(toBNWei(4)),
-        `RELAYER_RAMP_GAS_MULTIPLIER out of range (${rampMultiplier})`
+        policyMultiplier.gte(bnZero) && policyMultiplier.lte(toBNWei(4)),
+        `RELAYER_POLICY_${policy}_GAS_MULTIPLIER out of range (${policyMultiplier})`
       );
-      return rampMultiplier;
+      return policyMultiplier;
     }
 
     const effectiveSrcSymbol = this._getRemappedTokenSymbol(srcSymbol) ?? srcSymbol;
@@ -433,12 +433,12 @@ export class ProfitClient {
     const srcSymbol = this.getTokenSymbol(inputToken, originChainId);
     const dstSymbol = this.getTokenSymbol(outputToken, destinationChainId);
 
-    const rampMinFeePct = process.env.RELAYER_RAMP_MIN_FEE_PCT;
-    if (
-      isDefined(rampMinFeePct) &&
-      this.matchesRampPolicy(srcSymbol, dstSymbol, originChainId, destinationChainId, inputToken)
-    ) {
-      return toBNWei(rampMinFeePct);
+    const policy = this.matchingPolicy(srcSymbol, dstSymbol, originChainId, destinationChainId, inputToken);
+    const policyMinFeePct = isDefined(policy)
+      ? process.env[`RELAYER_POLICY_${policy}_MIN_FEE_PCT`]
+      : undefined;
+    if (isDefined(policyMinFeePct)) {
+      return toBNWei(policyMinFeePct);
     }
 
     const effectiveSourceSymbol = this._getRemappedTokenSymbol(srcSymbol) ?? srcSymbol;
@@ -578,21 +578,48 @@ export class ProfitClient {
   }
 
   /**
-   * Per-(token-pair) override: a deposit matches when its destination is in
-   * `RELAYER_RAMP_DESTINATIONS_<srcSymbol>_<dstSymbol>`, optionally its origin is in
-   * `RELAYER_RAMP_ORIGINS_<srcSymbol>_<dstSymbol>`, and the origin chain supports unmetered fast
-   * rebalance for the input token. Callers additionally gate on the relevant override env var being
-   * defined (`RELAYER_RAMP_MIN_FEE_PCT` / `RELAYER_RAMP_GAS_MULTIPLIER`); if it isn't, they fall
-   * through to the standard per-route/token/chain lookup and global defaults.
+   * Per-(token-pair) override: returns the first policy from `RELAYER_POLICIES` whose
+   * `RELAYER_POLICY_<NAME>_DESTINATIONS_<srcSymbol>_<dstSymbol>` includes `destinationChainId`,
+   * whose optional `RELAYER_POLICY_<NAME>_ORIGINS_<srcSymbol>_<dstSymbol>` includes `originChainId`
+   * (or, when unset, whose origin chain supports unmetered fast rebalance for the input token).
+   * Callers additionally gate on the relevant override env var being defined
+   * (`RELAYER_POLICY_<NAME>_MIN_FEE_PCT` / `RELAYER_POLICY_<NAME>_GAS_MULTIPLIER`); if it isn't,
+   * they fall through to the standard per-route/token/chain lookup and global defaults.
    */
-  protected matchesRampPolicy(
+  protected matchingPolicy(
+    srcSymbol: string,
+    dstSymbol: string,
+    originChainId: number,
+    destinationChainId: number,
+    inputToken: Address
+  ): string | undefined {
+    const policiesRaw = process.env.RELAYER_POLICIES;
+    if (!isDefined(policiesRaw) || policiesRaw.length === 0) {
+      return undefined;
+    }
+    const policies = policiesRaw
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+
+    for (const policy of policies) {
+      const name = policy.toUpperCase();
+      if (this.matchesPolicy(name, srcSymbol, dstSymbol, originChainId, destinationChainId, inputToken)) {
+        return name;
+      }
+    }
+    return undefined;
+  }
+
+  private matchesPolicy(
+    policy: string,
     srcSymbol: string,
     dstSymbol: string,
     originChainId: number,
     destinationChainId: number,
     inputToken: Address
   ): boolean {
-    const destsRaw = process.env[`RELAYER_RAMP_DESTINATIONS_${srcSymbol}_${dstSymbol}`];
+    const destsRaw = process.env[`RELAYER_POLICY_${policy}_DESTINATIONS_${srcSymbol}_${dstSymbol}`];
     if (!isDefined(destsRaw)) {
       return false;
     }
@@ -601,12 +628,10 @@ export class ProfitClient {
       return false;
     }
 
-    const originsRaw = process.env[`RELAYER_RAMP_ORIGINS_${srcSymbol}_${dstSymbol}`];
+    const originsRaw = process.env[`RELAYER_POLICY_${policy}_ORIGINS_${srcSymbol}_${dstSymbol}`];
     if (isDefined(originsRaw)) {
       const origins = originsRaw.split(",").map((s) => Number(s.trim()));
-      if (!origins.includes(originChainId)) {
-        return false;
-      }
+      return origins.includes(originChainId);
     }
 
     return isUnmeteredFastRebalance(originChainId, inputToken, this.hubPoolClient.chainId);
