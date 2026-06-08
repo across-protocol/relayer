@@ -2965,6 +2965,17 @@ export class Dataworker {
     // simulation failed` even though the on-chain state is correct. With it,
     // a behind RPC returns `MinContextSlotNotReached` immediately, which the
     // SDK's `RetrySolanaRpcFactory` transparently retries.
+    //
+    // `sendAndConfirmSolanaTransactionWithSlot` derives `confirmedSlot` from
+    // the same `getSignatureStatuses` response that reports confirmation
+    // (preferring `entry.slot`, falling back to the response's `context.slot`
+    // when the upstream RPC omits it). That tying-to-the-confirming-response
+    // is what makes the pin safe under load-balanced providers — an
+    // independent `getSlot` call could hit a different backend whose
+    // confirmed slot is still older than the tx's, leaving the pin too low.
+    // If confirmation wasn't observed at all within the cycle budget we throw
+    // rather than synthesize a floor, since proceeding would silently race
+    // the same write→read interaction this pin exists to prevent.
     let minContextSlot: bigint | undefined;
     const sendPinned = async (tx: Parameters<typeof sendAndConfirmSolanaTransactionWithSlot>[0]): Promise<string> => {
       const { signature, confirmedSlot } = await sendAndConfirmSolanaTransactionWithSlot(
@@ -2974,7 +2985,14 @@ export class Dataworker {
         SVM_REFUND_LEAF_SEND_POLL_DELAY_MS,
         { minContextSlot }
       );
-      if (isDefined(confirmedSlot) && (minContextSlot === undefined || confirmedSlot > minContextSlot)) {
+      if (!isDefined(confirmedSlot)) {
+        throw new Error(
+          `Solana tx ${signature} did not confirm within ` +
+            `${SVM_REFUND_LEAF_SEND_POLL_CYCLES * SVM_REFUND_LEAF_SEND_POLL_DELAY_MS}ms; ` +
+            "cannot advance minContextSlot for dependent sends"
+        );
+      }
+      if (minContextSlot === undefined || confirmedSlot > minContextSlot) {
         minContextSlot = confirmedSlot;
       }
       return signature;
@@ -3022,6 +3040,43 @@ export class Dataworker {
         allocatedMemory: relayerRefundLeafBytes.length,
         txSignature,
       });
+      // The minContextSlot pin guarantees the preflight RPC has reached the
+      // init tx's slot, but reaching the slot is not the same as having
+      // hydrated the account-index entry for the freshly-allocated PDA. On
+      // some upstream RPCs the simulator can still observe
+      // `account.data.len() == 0` for a brief window after the slot is
+      // processed, which trips Anchor's `ParamsWriteOverflow` (the bounds
+      // check `offset + data.len() > account.data.len()`) on the very first
+      // `WriteInstructionParamsFragment`. Polling the PDA via
+      // `fetchEncodedAccount` until it is visible at the requested size
+      // closes that window. The read is pinned with the same
+      // `{ commitment, minContextSlot }` the send path uses, so a load-
+      // balanced read to a behind RPC returns `MinContextSlotNotReached`
+      // (transparently retried by `RetrySolanaRpcFactory`) instead of a
+      // stale `exists: false` that would silently consume the poll budget.
+      // Same cycle/delay budget as the dependency-tx send so total
+      // worst-case latency stays bounded.
+      let observedSize = 0;
+      let ready = false;
+      for (let cycle = 0; cycle < SVM_REFUND_LEAF_SEND_POLL_CYCLES; ++cycle) {
+        const candidate = await fetchEncodedAccount(provider, instructionParamsPda, {
+          commitment: "confirmed",
+          minContextSlot,
+        });
+        observedSize = candidate.exists ? candidate.data.length : 0;
+        if (candidate.exists && observedSize >= relayerRefundLeafBytes.length) {
+          ready = true;
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, SVM_REFUND_LEAF_SEND_POLL_DELAY_MS));
+      }
+      if (!ready) {
+        throw new Error(
+          `Initialized instruction params PDA ${instructionParamsAccount.address} did not become visible at expected size ` +
+            `${relayerRefundLeafBytes.length} (observed ${observedSize}) within ` +
+            `${SVM_REFUND_LEAF_SEND_POLL_CYCLES * SVM_REFUND_LEAF_SEND_POLL_DELAY_MS}ms after init tx ${txSignature}`
+        );
+      }
     } else {
       this.logger.debug({
         at: "Dataworker#executeRelayerRefundLeafSvm",
