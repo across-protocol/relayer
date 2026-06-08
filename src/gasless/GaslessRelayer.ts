@@ -62,9 +62,11 @@ import {
   buildGaslessDepositTx,
   buildGaslessFillRelayTx,
   buildSyntheticDeposit,
+  GASLESS_DEADLINE_BUFFER_SECONDS,
   getGaslessAuthorizerAddress,
   extractGaslessDepositFields,
   getGaslessPermitNonce,
+  getGaslessSubmissionDeadline,
   isPermit2NonceUsed,
   isErc2612PermitNonceConsumed,
   isAllowedGaslessPair,
@@ -422,7 +424,9 @@ export class GaslessRelayer {
       destinationChainId: number;
       exclusivityParameter: number;
     },
-    spokePool: string
+    spokePool: string,
+    submissionDeadline: number,
+    depositObserved: boolean
   ): boolean {
     if (this._isCctpDeposit(deposit.originChainId, spokePool)) {
       return false;
@@ -441,6 +445,12 @@ export class GaslessRelayer {
     // Verify that deposit.exclusivityParameter will produce an absolute exclusivityDeadline,
     // not relative to the deposit block timestamp.
     if (isExclusivityRelative(deposit.exclusivityParameter)) {
+      return false;
+    }
+
+    // Don't commit a destination fill ahead of an authorization that may not land on origin. If
+    // the deposit is already confirmed the fill cannot be unreimbursed, so the check is skipped.
+    if (!depositObserved && submissionDeadline - getCurrentTime() <= GASLESS_DEADLINE_BUFFER_SECONDS) {
       return false;
     }
 
@@ -667,7 +677,9 @@ export class GaslessRelayer {
                 instantFill &&
                 this.fillImmediate(
                   { originChainId, destinationChainId, outputToken, outputAmount, exclusivityParameter },
-                  spokePool
+                  spokePool,
+                  getGaslessSubmissionDeadline(depositMessage),
+                  this.observedDeposits[originChainId]?.has(depositKey) ?? false
                 );
               log("debug", `Fill immediate: ${fillImmediate}`);
               nextState = MessageState.DEPOSIT_SUBMIT;
@@ -686,6 +698,22 @@ export class GaslessRelayer {
                 // Drop synthetic (or any in-memory) deposit so DEPOSIT_CONFIRM's standard branch must re-resolve from receipt / chain.
                 deposit = undefined;
               }
+            }
+
+            // Standard (non-immediate) path: don't land a deposit we can't subsequently fill.
+            // CCTP has no relayer fill on destination, so the buffer does not apply.
+            if (
+              !fillImmediate &&
+              !isCctpDeposit &&
+              fillDeadline - getCurrentTime() <= GASLESS_DEADLINE_BUFFER_SECONDS
+            ) {
+              log("warn", "Skipping deposit submission: fillDeadline too close.", {
+                fillDeadline,
+                now: getCurrentTime(),
+                minBufferSeconds: GASLESS_DEADLINE_BUFFER_SECONDS,
+              });
+              setState(MessageState.ERROR);
+              break;
             }
 
             depositReceiptPromise = this.initiateDeposit(depositMessage);

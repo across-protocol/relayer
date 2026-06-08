@@ -82,6 +82,23 @@ export function isGaslessPermitType(value: string): value is GaslessPermitType {
   return GASLESS_TYPES.includes(value as GaslessPermitType);
 }
 
+/** Minimum seconds that must remain on the relevant deadline before we commit a gasless action. */
+export const GASLESS_DEADLINE_BUFFER_SECONDS = 120;
+
+/**
+ * Latest origin timestamp at which a signed gasless permit/authorization can still be replayed:
+ * EIP-3009 `validBefore`, Permit2 `deadline`, or EIP-2612 `permitApprovalDeadline`.
+ */
+export function getGaslessSubmissionDeadline(msg: AnyGaslessDepositMessage): number {
+  if (msg.permitType === "permit2") {
+    return Number((msg.permit as Permit2Permit | Permit2SwapAndBridgePermit).message.deadline);
+  }
+  if (msg.permitType === "permit") {
+    return Number((msg as SwapAndBridgeGaslessDepositMessage).permitApprovalDeadline ?? 0);
+  }
+  return Number((msg.permit as ReceiveWithAuthorization).message.validBefore);
+}
+
 /*
  * The exclusivityParameter argument is interpreted depending on its relationship to 1 year in seconds.
  * Below 1 year, it represents a relative timestamp. Above 1 year, it represents an absolute timestamp.
