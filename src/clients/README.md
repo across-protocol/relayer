@@ -60,18 +60,18 @@ Importantly, the Profit CLient exposes certain configuration objects that the us
 
 ### Ramp policy override
 
-The Profit Client supports a per-token-pair "ramp" policy that short-circuits the standard `MIN_RELAYER_FEE_PCT_*` and `RELAYER_GAS_MULTIPLIER_*` lookups for deposits that meet all of:
+The Profit Client supports a per-token-pair "ramp" policy that can short-circuit the standard `MIN_RELAYER_FEE_PCT_*` and `RELAYER_GAS_MULTIPLIER_*` lookups for deposits that meet all of:
 
 1. The destination chain ID is in `RELAYER_RAMP_DESTINATIONS_<srcSymbol>_<dstSymbol>` (comma-separated chain IDs).
 2. If `RELAYER_RAMP_ORIGINS_<srcSymbol>_<dstSymbol>` is set, the origin chain ID is in that comma-separated list. If unset, all origins are eligible.
-3. The origin chain supports unmetered fast rebalance for the input token (hub chain, CCTP-eligible USDC, or OFT-eligible routes — see `isUnmeteredFastRebalance` in `src/utils/FastRebalanceUtils.ts`).
+3. The origin chain supports unmetered fast rebalance for the input token (hub chain, CCTP-eligible USDC, or OFT-eligible routes — see `isUnmeteredFastRebalance` in `src/utils/FillUtils.ts`).
 
 `srcSymbol` and `dstSymbol` are the raw token symbols of the deposit's input and output tokens — they bypass the pegged-token symbol remap used by other profitability env vars.
 
 When a deposit matches:
 
-- `minRelayerFeePct` returns `RELAYER_RAMP_MIN_FEE_PCT` (defaults to `0`). The value can be negative to accept fills below break-even.
-- `resolveGasMultiplier` returns `RELAYER_RAMP_GAS_MULTIPLIER` (defaults to `0`). The value must satisfy `0 <= multiplier <= 4`; out-of-range values throw, matching the regular `RELAYER_GAS_MULTIPLIER_*` override path.
+- If `RELAYER_RAMP_MIN_FEE_PCT` is set, `minRelayerFeePct` returns it (may be negative to accept fills below break-even). If unset, the standard per-route/token/chain lookup and default apply.
+- If `RELAYER_RAMP_GAS_MULTIPLIER` is set, `resolveGasMultiplier` returns it (must satisfy `0 <= multiplier <= 4`; out-of-range values throw). If unset, the standard per-route/token/chain lookup and default apply.
 
 Example: accept zero-fee USDT->USDC fills into Arbitrum and Optimism with no gas-cost contribution:
 

@@ -703,11 +703,12 @@ describe("ProfitClient: Consider relay profit", () => {
       expect(profitClient.minRelayerFeePct(deposit).eq(toBNWei("-0.0001"))).to.be.true;
       expect(profitClient.resolveGasMultiplier(deposit).eq(bnZero)).to.be.true;
 
-      // Default RAMP_MIN_FEE_PCT / RAMP_GAS_MULTIPLIER when only DESTINATIONS is set.
+      // When only DESTINATIONS is set, missing RAMP_MIN_FEE_PCT / RAMP_GAS_MULTIPLIER
+      // falls through to the default lookup path instead of silently using 0.
       delete process.env[minFeeKey];
       delete process.env[gasMultKey];
-      expect(profitClient.minRelayerFeePct(deposit).eq(bnZero)).to.be.true;
-      expect(profitClient.resolveGasMultiplier(deposit).eq(bnZero)).to.be.true;
+      expect(profitClient.minRelayerFeePct(deposit).eq(fallbackMinFee)).to.be.true;
+      expect(profitClient.resolveGasMultiplier(deposit).eq(fallbackGasMult)).to.be.true;
 
       // Destination not in set: falls through.
       process.env[destsKey] = "9999";
