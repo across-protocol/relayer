@@ -2967,13 +2967,9 @@ export class Dataworker {
     // SDK's `RetrySolanaRpcFactory` transparently retries.
     //
     // `getSignatureStatuses` can return `confirmationStatus: confirmed` without
-    // populating `entry.slot` (observed empirically on some upstream RPC
-    // providers). When that happens `confirmedSlot` is undefined and the pin
-    // silently turns off — which is exactly the race that surfaced in
-    // PD-325539 (Q12W9B5W000N7D, run `334335ad…`): the init tx confirmed at
-    // 19:02:18, the immediate `WriteInstructionParamsFragment` preflight ran
-    // against a stale-RPC view of the freshly-allocated 348-byte PDA, and
-    // simulation rejected with Anchor's `ParamsWriteOverflow` (6009). Fall
+    // populating `entry.slot` on some upstream RPC providers. When that happens
+    // `confirmedSlot` is undefined and the pin silently turns off, allowing the
+    // next preflight to race a stale-RPC view of the just-written PDA. Fall
     // back to an explicit `getSlot("confirmed")` so the pin never silently
     // disengages between dependency txs.
     let minContextSlot: bigint | undefined;
