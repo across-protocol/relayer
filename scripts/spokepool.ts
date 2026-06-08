@@ -747,7 +747,9 @@ function usage(badInput?: string): boolean {
     "--from <originChainId> --to <destinationChainId>" +
     " --token <tokenSymbol> --amount <amount>" +
     " [--recipient <recipient>] [--decimals]" +
-    " [--relayer <exclusiveRelayer> --exclusivityDeadline <exclusivityDeadline>]";
+    " [--exclusiveRelayer <relayer> --exclusivityDeadline <exclusivityDeadline>]" +
+    " [--outputToken <address> --outputAmount <amount>]" +
+    " [--noInteractive]";
 
   const dumpConfigArgs = "--chainId";
   const fetchArgs = "[--chainId <chainId>] --txnHash <txnHash> | --chainId <chainId> --depositId <depositId>";
