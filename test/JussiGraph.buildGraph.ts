@@ -1059,6 +1059,7 @@ describe("Jussi graph builder helpers", function () {
 
   it("uses quoteOFT output to finalize OFT quoteSend params before pricing the route", async function () {
     const quotedSendParams: Array<{ minAmountLD: { toString(): string } }> = [];
+    const quoteSendPayInLzToken: boolean[] = [];
     const amount = toBNWei("1000", 6);
     const amountReceived = toBNWei("995", 6);
     const recipient = EvmAddress.from(TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]);
@@ -1071,8 +1072,9 @@ describe("Jussi graph builder helpers", function () {
           quotedSendParams.push(sendParamStruct);
           return [{}, [], { amountReceivedLD: amountReceived }] as never;
         },
-        async quoteSend(sendParamStruct) {
+        async quoteSend(sendParamStruct, payInLzToken) {
           quotedSendParams.push(sendParamStruct);
+          quoteSendPayInLzToken.push(payInLzToken);
           return { nativeFee: toBNWei("0.01"), lzTokenFee: "0" } as never;
         },
       },
@@ -1089,6 +1091,7 @@ describe("Jussi graph builder helpers", function () {
     expect(quote.sendParamStruct.minAmountLD.toString()).to.equal(amountReceived.toString());
     expect(quote.messageFeeIsNative).to.equal(true);
     expect(quote.messageFeeAssetAddress).to.equal(undefined);
+    expect(quoteSendPayInLzToken).to.deep.equal([false]);
   });
 
   it("resolves legacy mesh OFT messengers when the origin chain is Tron", function () {
@@ -1103,6 +1106,8 @@ describe("Jussi graph builder helpers", function () {
 
   it("uses MONAD receive options and fee-token pricing inputs for OFT routes on chains without native gas", async function () {
     const recipient = EvmAddress.from(TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]);
+    const quoteSendPayInLzToken: boolean[] = [];
+    const lzTokenFee = toBNWei("7", 6);
     const quote = await quoteOftRouteTransfer({
       reader: {
         async sharedDecimals() {
@@ -1111,8 +1116,9 @@ describe("Jussi graph builder helpers", function () {
         async quoteOFT() {
           return [{}, [], { amountReceivedLD: toBNWei("100", 6) }] as never;
         },
-        async quoteSend() {
-          return { nativeFee: toBNWei("4", 9), lzTokenFee: "0" } as never;
+        async quoteSend(_sendParamStruct, payInLzToken) {
+          quoteSendPayInLzToken.push(payInLzToken);
+          return { nativeFee: toBNWei("4", 9), lzTokenFee } as never;
         },
       },
       originChain: CHAIN_IDs.TEMPO,
@@ -1129,6 +1135,8 @@ describe("Jussi graph builder helpers", function () {
     expect(quote.messageFeeAssetAddress.toLowerCase()).to.equal(
       resolveOftQuoteSendFeeAsset(CHAIN_IDs.TEMPO).toLowerCase()
     );
+    expect(quote.messageFeeAmount.toString()).to.equal(lzTokenFee.toString());
+    expect(quoteSendPayInLzToken).to.deep.equal([true]);
   });
 
   it("serializes graph envelopes and graph ids in the script output shape", async function () {

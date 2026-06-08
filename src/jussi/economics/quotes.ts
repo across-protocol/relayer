@@ -66,14 +66,15 @@ export async function quoteOftRouteTransfer(params: {
     ...sendParamStruct,
     minAmountLD: amountReceivedDestinationNative,
   };
-  const feeStruct = await reader.quoteSend(finalSendParamStruct, false);
   const messageFeeIsNative = chainHasNativeToken(originChain);
+  const feeStruct = await reader.quoteSend(finalSendParamStruct, !messageFeeIsNative);
+  const messageFeeAmount = messageFeeIsNative ? feeStruct.nativeFee : feeStruct.lzTokenFee;
 
   return {
     roundedInputSourceNative: roundedAmount,
     amountReceivedDestinationNative,
     ...(messageFeeIsNative ? {} : { messageFeeAssetAddress: resolveOftQuoteSendFeeAsset(originChain) }),
-    messageFeeAmount: BigNumber.from(feeStruct.nativeFee),
+    messageFeeAmount: BigNumber.from(messageFeeAmount),
     messageFeeIsNative,
     sendParamStruct: finalSendParamStruct,
   };
