@@ -675,8 +675,11 @@ describe("ProfitClient: Consider relay profit", () => {
     const clearEnv = (): void => envKeys.forEach((k) => delete process.env[k]);
     const restoreEnv = (): void => {
       for (const [k, v] of Object.entries(initial)) {
-        if (v === undefined) delete process.env[k];
-        else process.env[k] = v;
+        if (v === undefined) {
+          delete process.env[k];
+        } else {
+          process.env[k] = v;
+        }
       }
     };
 

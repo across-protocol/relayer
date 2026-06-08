@@ -38,8 +38,6 @@ import {
   EvmAddress,
   Address,
   toAddressType,
-  CHAIN_IDs,
-  compareAddressesSimple,
   forEachAsync,
   max,
   getLatestRunningBalances,
