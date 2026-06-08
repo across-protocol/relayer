@@ -217,9 +217,13 @@ async function estimateBinanceSwapBreakdown(
   const destinationEntrypointNetwork = await adapterInternals._getEntrypointNetwork(destinationChain, destinationToken);
   const destinationTokenInfo = getTokenInfoFromSymbol(destinationToken, destinationEntrypointNetwork);
   const withdrawNetwork = BINANCE_NETWORKS[destinationEntrypointNetwork];
-  const withdrawNetworkConfig =
-    destinationCoin.networkList.find((network: { name: string }) => network.name === withdrawNetwork) ??
-    destinationCoin.networkList[0];
+  const withdrawNetworkConfig = destinationCoin.networkList.find(
+    (network: { name: string }) => network.name === withdrawNetwork
+  );
+  assert(
+    isDefined(withdrawNetworkConfig),
+    `No Binance network entry for ${destinationToken} on chain ${destinationEntrypointNetwork}`
+  );
   const withdrawFee = toBNWei(withdrawNetworkConfig.withdrawFee, destinationTokenInfo.decimals);
   const state = await initializeExchangeBreakdown(candidate, params.pricingContext);
   state.fixedOutputFeeDestinationNative = ConvertDecimals(

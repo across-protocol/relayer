@@ -171,10 +171,10 @@ async function estimateDirectionalBinanceMarginalOutputRate(
     hubPoolChainId,
     referenceInputNative
   );
-  const takerCommissionPct =
-    Number((await adapterInternals._getTradeFees()).find((fee) => fee.symbol === marketMeta.symbol)?.takerCommission) ||
-    0;
-  const feeFactor = Math.max(0, 1 - takerCommissionPct / 100);
+  const tradeFee = (await adapterInternals._getTradeFees()).find((fee) => fee.symbol === marketMeta.symbol);
+  assert(isDefined(tradeFee), `No trade fee entry for Binance market ${marketMeta.symbol}`);
+  const takerCommissionRate = Number(tradeFee.takerCommission) || 0;
+  const feeFactor = Math.max(0, 1 - takerCommissionRate);
   const netOutputReadable = parseFloat(formatUnits(estimatedOutputNative, destinationTokenInfo.decimals)) * feeFactor;
   const referenceOutputReadable = await quoteReferenceOutputReadable(
     sourceToken,

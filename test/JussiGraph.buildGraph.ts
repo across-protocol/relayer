@@ -36,6 +36,8 @@ import {
 } from "../src/jussi/buildGraph";
 import { JussiApiClient, putJsonWithTimeout } from "../src/jussi/JussiApiClient";
 import { parseBuildJussiGraphFlags, resolveNativePriceChainIdsForPrices } from "../scripts/buildJussiGraph";
+import { estimateEdgeEconomics } from "../src/jussi/economics/edgeCosts";
+import { serializeEdgeClassDefinition } from "../src/jussi/economics/rates";
 import {
   JUSSI_LAST_PUBLISHED_KEY,
   JUSSI_PUBLISH_LOCK_KEY,
@@ -168,6 +170,31 @@ function buildMinimalGraph(graphId: string): BuiltJussiGraph {
       edge_classes: [],
       nodes: [],
       edges: [],
+    },
+  };
+}
+
+function buildMockPricingContext(): RuntimePricingContext {
+  return {
+    hubPoolChainId: CHAIN_IDs.MAINNET,
+    getLogicalAssetPriceUsd: async () => 1,
+    deriveGasCostUsd: async () => 0,
+    usdToNativeValue: async () => toBNWei("0"),
+  } as unknown as RuntimePricingContext;
+}
+
+function buildBinanceSwapCandidate(source: ManagedNodeContext, destination: ManagedNodeContext): GraphEdgeCandidate {
+  return {
+    family: "binance",
+    adapterOrBridgeName: "binance",
+    from: source,
+    to: destination,
+    rebalanceRoute: {
+      sourceChain: source.chainId,
+      sourceToken: source.logicalAsset,
+      destinationChain: destination.chainId,
+      destinationToken: destination.logicalAsset,
+      adapter: "binance",
     },
   };
 }
@@ -723,6 +750,90 @@ describe("Jussi graph builder helpers", function () {
     expect(resolveOptionalTranslatedTokenAddress(mainnetUsdt, CHAIN_IDs.HYPEREVM)).to.equal(
       TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.HYPEREVM].toLowerCase()
     );
+  });
+
+  it("applies Binance taker commission as a fractional rate in edge classes", async function () {
+    const relayerConfig = buildRelayerConfig();
+    const nodeContexts = materializeNodeDefinitions(buildManagedNodeTemplates(relayerConfig.inventoryConfig));
+    const source = findExpectedNode(
+      nodeContexts,
+      (node) => node.chainId === CHAIN_IDs.MAINNET && node.logicalAsset === "USDC",
+      "Mainnet USDC"
+    );
+    const destination = findExpectedNode(
+      nodeContexts,
+      (node) => node.chainId === CHAIN_IDs.MAINNET && node.logicalAsset === "USDT",
+      "Mainnet USDT"
+    );
+    const candidate = buildBinanceSwapCandidate(source, destination);
+    const adapter = {
+      async _getSpotMarketMetaForRoute() {
+        return { symbol: "USDCUSDT", isBuy: false };
+      },
+      async _convertSourceToDestination(
+        _sourceToken: string,
+        _sourceChain: number,
+        _destinationToken: string,
+        _destinationChain: number,
+        amount: unknown
+      ) {
+        return amount;
+      },
+      async _getTradeFees() {
+        return [{ symbol: "USDCUSDT", takerCommission: "0.001" }];
+      },
+    };
+
+    const edgeClass = await serializeEdgeClassDefinition(candidate, {
+      baseSigner: {} as never,
+      pricingContext: buildMockPricingContext(),
+      rebalancerAdapters: { binance: adapter } as never,
+    });
+
+    expect(edgeClass.output.segments).to.have.lengthOf(1);
+    expect(edgeClass.output.segments[0].marginal_output_rate).to.deep.equal({
+      numerator: "999000",
+      denominator: "1000000",
+    });
+  });
+
+  it("rejects Binance swap pricing when the configured withdraw network is missing", async function () {
+    const relayerConfig = buildRelayerConfig();
+    const nodeContexts = materializeNodeDefinitions(buildManagedNodeTemplates(relayerConfig.inventoryConfig));
+    const source = findExpectedNode(
+      nodeContexts,
+      (node) => node.chainId === CHAIN_IDs.MAINNET && node.logicalAsset === "USDC",
+      "Mainnet USDC"
+    );
+    const destination = findExpectedNode(
+      nodeContexts,
+      (node) => node.chainId === CHAIN_IDs.HYPEREVM && node.logicalAsset === "USDT",
+      "HyperEVM USDT"
+    );
+    const candidate = buildBinanceSwapCandidate(source, destination);
+    const adapter = {
+      async _getAccountCoins() {
+        return { networkList: [{ name: "ETH", withdrawFee: "0.1" }] };
+      },
+      async _getEntrypointNetwork(chainId: number) {
+        return chainId;
+      },
+    };
+
+    let errorMessage = "";
+    try {
+      await estimateEdgeEconomics(candidate, {
+        baseSigner: {} as never,
+        cumulativeBalancesByLogicalAsset: { USDC: toBNWei("0"), USDT: toBNWei("0"), WETH: toBNWei("0") },
+        logger: buildNoopLogger(),
+        pricingContext: buildMockPricingContext(),
+        rebalancerAdapters: { binance: adapter } as never,
+      });
+    } catch (error) {
+      errorMessage = error instanceof Error ? error.message : String(error);
+    }
+
+    expect(errorMessage).to.contain(`No Binance network entry for USDT on chain ${CHAIN_IDs.HYPEREVM}`);
   });
 
   it("uses quoteOFT output to finalize OFT quoteSend params before pricing the route", async function () {
