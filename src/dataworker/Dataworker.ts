@@ -2965,6 +2965,17 @@ export class Dataworker {
     // simulation failed` even though the on-chain state is correct. With it,
     // a behind RPC returns `MinContextSlotNotReached` immediately, which the
     // SDK's `RetrySolanaRpcFactory` transparently retries.
+    //
+    // `getSignatureStatuses` can return `confirmationStatus: confirmed` without
+    // populating `entry.slot` (observed empirically on some upstream RPC
+    // providers). When that happens `confirmedSlot` is undefined and the pin
+    // silently turns off — which is exactly the race that surfaced in
+    // PD-325539 (Q12W9B5W000N7D, run `334335ad…`): the init tx confirmed at
+    // 19:02:18, the immediate `WriteInstructionParamsFragment` preflight ran
+    // against a stale-RPC view of the freshly-allocated 348-byte PDA, and
+    // simulation rejected with Anchor's `ParamsWriteOverflow` (6009). Fall
+    // back to an explicit `getSlot("confirmed")` so the pin never silently
+    // disengages between dependency txs.
     let minContextSlot: bigint | undefined;
     const sendPinned = async (tx: Parameters<typeof sendAndConfirmSolanaTransactionWithSlot>[0]): Promise<string> => {
       const { signature, confirmedSlot } = await sendAndConfirmSolanaTransactionWithSlot(
@@ -2974,8 +2985,11 @@ export class Dataworker {
         SVM_REFUND_LEAF_SEND_POLL_DELAY_MS,
         { minContextSlot }
       );
-      if (isDefined(confirmedSlot) && (minContextSlot === undefined || confirmedSlot > minContextSlot)) {
-        minContextSlot = confirmedSlot;
+      const nextMinContextSlot = isDefined(confirmedSlot)
+        ? confirmedSlot
+        : await arch.svm.getSlot(provider, "confirmed", this.logger);
+      if (minContextSlot === undefined || nextMinContextSlot > minContextSlot) {
+        minContextSlot = nextMinContextSlot;
       }
       return signature;
     };
@@ -3022,6 +3036,33 @@ export class Dataworker {
         allocatedMemory: relayerRefundLeafBytes.length,
         txSignature,
       });
+      // Belt-and-suspenders to the `sendPinned` minContextSlot pin above: poll
+      // the PDA via `fetchEncodedAccount` until it is visible at the requested
+      // size. Without this, the first `WriteInstructionParamsFragment` can be
+      // preflighted against an RPC that has the slot of the init tx but
+      // hasn't yet hydrated its account-index entry for the new PDA — the
+      // simulator then sees `account.data.len() == 0` and the bounds check
+      // (`offset + data.len() > account.data.len()`) trips
+      // `ParamsWriteOverflow`. The poll uses the same cycle/delay budget as
+      // the dependency-tx send so total worst-case latency stays bounded.
+      let observedSize = 0;
+      let ready = false;
+      for (let cycle = 0; cycle < SVM_REFUND_LEAF_SEND_POLL_CYCLES; ++cycle) {
+        const candidate = await fetchEncodedAccount(provider, instructionParamsPda);
+        observedSize = candidate.exists ? candidate.data.length : 0;
+        if (candidate.exists && observedSize >= relayerRefundLeafBytes.length) {
+          ready = true;
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, SVM_REFUND_LEAF_SEND_POLL_DELAY_MS));
+      }
+      if (!ready) {
+        throw new Error(
+          `Initialized instruction params PDA ${instructionParamsAccount.address} did not become visible at expected size ` +
+            `${relayerRefundLeafBytes.length} (observed ${observedSize}) within ` +
+            `${SVM_REFUND_LEAF_SEND_POLL_CYCLES * SVM_REFUND_LEAF_SEND_POLL_DELAY_MS}ms after init tx ${txSignature}`
+        );
+      }
     } else {
       this.logger.debug({
         at: "Dataworker#executeRelayerRefundLeafSvm",
