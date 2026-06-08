@@ -915,8 +915,39 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       toBNWei(truncate(Number(withdrawFee), destinationTokenInfo.decimals), destinationTokenInfo.decimals)
     );
 
-    const spreadPct = latestPrice.slippagePct; // slippage is a percentage so we need to divide it by an additional
-    // 100 to get it to a decimal.
+    // Spread cost for the worst-fill price the order would cross. The prior implementation
+    // used only depth-induced slippage (price impact vs bestPx), which misses the bid-ask
+    // gap when the underlying pair trades off the oracle-implied fair rate — e.g. USDCUSDT
+    // asks sitting at ~$1.001 means a market BUY pays ~10 bps vs par even when it fills
+    // entirely at the top of book and slippagePct ≈ 0.
+    //
+    // Measure spread against the oracle-derived fair cross-token price (P_base_usd /
+    // P_quote_usd), which generalizes to any market: for stablecoin pairs the fair price is
+    // ≈ 1 and the formula reduces to the prior par-based form; for non-par pairs like
+    // ETH/USDC it correctly compares latestPrice (~3500) to the fair cross-token rate.
+    //
+    // If the oracle fails to resolve either side, fall back to the depth-only slippage as
+    // a safe lower bound and log a warn so operators can monitor.
+    //
+    // spreadPct is kept in percent units (consistent with the prior slippagePct path) so the
+    // downstream toBNWei(1, 20) divisor scales percent → decimal.
+    let spreadPct = latestPrice.slippagePct;
+    if (routeRequiresSwap && isDefined(spotMarketMeta)) {
+      try {
+        const fairPrice = await this._getFairCrossPrice(spotMarketMeta.baseAssetName, spotMarketMeta.quoteAssetName);
+        const slippageDecimal = spotMarketMeta.isBuy
+          ? (latestPrice.latestPrice - fairPrice) / fairPrice
+          : (fairPrice - latestPrice.latestPrice) / fairPrice;
+        spreadPct = Math.max(0, slippageDecimal * 100);
+      } catch (err) {
+        this.logger.warn({
+          at: "BinanceStablecoinSwapAdapter.getEstimatedCost",
+          message: `Oracle fair price unresolved for ${spotMarketMeta.baseAssetName}/${spotMarketMeta.quoteAssetName}; falling back to depth-only slippage`,
+          err: String(err),
+        });
+        // spreadPct already initialized to latestPrice.slippagePct above.
+      }
+    }
     const spreadFee = toBNWei(truncate(spreadPct, 18), 18).mul(amountToTransfer).div(toBNWei(1, 20));
 
     // Bridge to Binance deposit network Fee:
