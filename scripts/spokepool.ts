@@ -356,6 +356,21 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
   // fill listener ignores any FilledRelay until then so stale fills queued by
   // earlier in-flight deposits from the same wallet don't trigger abort.
   let observedDepositId: BigNumber | undefined;
+  // Candidate fills delivered by the dst listener before the src FundsDeposited
+  // callback fires. We can't reject them yet (depositId unknown), so we hold
+  // them and replay once we know which depositId is ours.
+  const pendingFills: { fill: ReturnType<typeof unpackFillEvent>; fillDepositId: BigNumber }[] = [];
+
+  const recordFill = (fill: ReturnType<typeof unpackFillEvent>, fillDepositId: BigNumber): boolean => {
+    if (observedDepositId === undefined || !fillDepositId.eq(observedDepositId)) {
+      return false;
+    }
+    filled = performance.now();
+    const fillTxn = blockExplorerLink(fill.txnRef, toChainId);
+    console.log(`Fill confirmed after ${(filled - confirmed) / 1000} seconds: ${fillTxn}.`);
+    abortController.abort();
+    return true;
+  };
 
   srcListener.onEvent(srcSpokePool.address, fundsDeposited, (log) => {
     const _deposit = unpackDepositEvent(spreadEventWithBlockNumber(log), fromChainId);
@@ -366,24 +381,54 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
       outputAmount: BigNumber.from(log.args.outputAmount.toString()), // todo
       destinationChainId: Number(log.args.destinationChainId), // todo
     };
-    if (deposit.depositor.eq(depositor)) {
-      confirmed = performance.now();
-      observedDepositId = deposit.depositId;
-      const depositTxn = blockExplorerLink(deposit.txnRef, fromChainId);
-      printRelayData(deposit, deposit.destinationChainId, deposit.txnRef);
-      console.log(`Deposit confirmed after ${(confirmed - submitted) / 1000} seconds: ${depositTxn}.`);
+    if (!deposit.depositor.eq(depositor)) {
+      return;
+    }
+    confirmed = performance.now();
+    observedDepositId = deposit.depositId;
+    const depositTxn = blockExplorerLink(deposit.txnRef, fromChainId);
+    printRelayData(deposit, deposit.destinationChainId, deposit.txnRef);
+    console.log(`Deposit confirmed after ${(confirmed - submitted) / 1000} seconds: ${depositTxn}.`);
+
+    // Replay any fills the dst listener saw before we knew the depositId.
+    for (const pending of pendingFills) {
+      if (recordFill(pending.fill, pending.fillDepositId)) {
+        return;
+      }
+    }
+
+    // Stop listening once the on-chain exclusivityDeadline elapses. After that,
+    // any fill is by definition outside the exclusivity window — for validation
+    // purposes the policy under test would not have made the call. We add a
+    // small grace so dst-side delivery lag doesn't reject a legitimate fill
+    // that landed right at the boundary.
+    const exclusivityDeadline = Number(log.args.exclusivityDeadline);
+    if (exclusivityDeadline > 0) {
+      const nowSec = Math.floor(Date.now() / 1000);
+      const remainingMs = Math.max(0, exclusivityDeadline - nowSec) * 1000 + 5_000;
+      setTimeout(() => {
+        if (!isDefined(filled)) {
+          console.log(`Exclusivity window expired without matching fill.`);
+          abortController.abort();
+        }
+      }, remainingMs);
     }
   });
 
   dstListener.onEvent(dstSpokePool.address, filledRelay, (log) => {
     const fill = unpackFillEvent(spreadEventWithBlockNumber(log), toChainId);
     const fillDepositId = BigNumber.from(log.args.depositId.toString());
-    if (fill.depositor.eq(depositor) && observedDepositId !== undefined && fillDepositId.eq(observedDepositId)) {
-      filled = performance.now();
-      const fillTxn = blockExplorerLink(fill.txnRef, toChainId);
-      console.log(`Fill confirmed after ${(filled - confirmed) / 1000} seconds: ${fillTxn}.`);
-      abortController.abort();
+    // FilledRelay's depositId is scoped to the origin SpokePool, so a fill from
+    // a different origin chain that happens to share the same depositId for the
+    // same wallet must be rejected.
+    if (!fill.depositor.eq(depositor) || fill.originChainId !== fromChainId) {
+      return;
     }
+    if (observedDepositId === undefined) {
+      pendingFills.push({ fill, fillDepositId });
+      return;
+    }
+    recordFill(fill, fillDepositId);
   });
 
   await spokePool.deposit(

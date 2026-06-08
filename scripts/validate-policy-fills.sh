@@ -96,9 +96,12 @@ run_one() {
   fi
 
   local log="$LOG_DIR/${origin}_${dest}_${src}_${dst}.log"
-  # Cap the wait at EXCL_SEC + 30s so negative cases (no FilledRelay event ever
-  # arrives, deposit() never resolves) don't hang the matrix.
-  local wait_sec=$((EXCL_SEC + 30))
+  # scripts/spokepool.ts deposit() now self-aborts once the on-chain
+  # exclusivityDeadline has passed (plus a few seconds of grace). This outer
+  # timeout is a safety net for hangs (RPC stalls, missed src event delivery)
+  # and must comfortably cover quote fetching + ERC20 approval + deposit
+  # submission + src confirmation in addition to EXCL_SEC.
+  local wait_sec=$((EXCL_SEC + 240))
   set +e
   timeout --preserve-status "${wait_sec}s" \
     yarn tsx ./scripts/spokepool deposit --wallet "$WALLET" \
