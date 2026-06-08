@@ -32,6 +32,8 @@ Today that means:
 
 All modes start with `prepareGraphTopology`, a pure step that parses relayer/rebalancer config, computes the hub context, computes the single rebalance route set, and builds the final deduped topology. It constructs no signer, clients, wallet, or Redis connection.
 
+Default and upload full builds initialize rebalancer pricing adapters with the prepared rebalance route set, including bridge-derived routes added during topology preparation, so every serialized candidate can be priced against an initialized adapter route.
+
 | Mode | Behavior after topology prep | Signer | Redis |
 |------|------------------------------|--------|-------|
 | Default | Runs the shared full build core, writes artifacts, and prints the `{ graph_id, payload }` envelope. | Yes | No publisher gate; live adapters may connect as usual |

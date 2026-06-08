@@ -1412,6 +1412,25 @@ describe("Jussi graph builder helpers", function () {
     expect(resolveRuntimeRebalanceRoutes(prepared).some(hasTronOftRoute)).to.equal(false);
   });
 
+  it("initializes runtime adapters with bridge-derived prepared rebalance routes", async function () {
+    const relayerConfig = buildRelayerConfig();
+    const rebalancerConfig = buildRebalancerConfig();
+    const prepared = await prepareGraphTopology({ relayerConfig, rebalancerConfig });
+    const baseRoutes = buildRebalanceRoutes(rebalancerConfig);
+    const routeKey = (route: {
+      sourceChain: number;
+      destinationChain: number;
+      sourceToken: string;
+      destinationToken: string;
+      adapter: string;
+    }) =>
+      `${route.adapter}:${route.sourceToken}:${route.sourceChain}->${route.destinationToken}:${route.destinationChain}`;
+    const baseRouteKeys = new Set(baseRoutes.map(routeKey));
+
+    expect(resolveRuntimeRebalanceRoutes(prepared)).to.equal(prepared.rebalanceRoutes);
+    expect(prepared.rebalanceRoutes.some((route) => !baseRouteKeys.has(routeKey(route)))).to.equal(true);
+  });
+
   it("keeps target-balance magnitude out of the topology artifact when the token remains configured", async function () {
     const hubCtx = { hubPoolChainId: CHAIN_IDs.MAINNET };
     const relayerConfig = buildRelayerConfig();
