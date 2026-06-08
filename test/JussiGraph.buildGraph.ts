@@ -864,6 +864,99 @@ describe("Jussi graph builder helpers", function () {
     expect(errorMessage).to.contain(`No Binance network entry for USDT on chain ${CHAIN_IDs.HYPEREVM}`);
   });
 
+  it("includes CCTP maxFee as a fixed input fee on CCTP edges", async function () {
+    const relayerConfig = buildRelayerConfig();
+    const nodeContexts = materializeNodeDefinitions(buildManagedNodeTemplates(relayerConfig.inventoryConfig));
+    const source = findExpectedNode(
+      nodeContexts,
+      (node) => node.chainId === CHAIN_IDs.MAINNET && node.logicalAsset === "USDC",
+      "Mainnet USDC"
+    );
+    const destination = findExpectedNode(
+      nodeContexts,
+      (node) => node.chainId === CHAIN_IDs.OPTIMISM && node.logicalAsset === "USDC",
+      "Optimism USDC"
+    );
+    const rebalanceRoute = {
+      sourceChain: CHAIN_IDs.MAINNET,
+      sourceToken: "USDC",
+      destinationChain: CHAIN_IDs.OPTIMISM,
+      destinationToken: "USDC",
+      adapter: "cctp",
+    } as const;
+    const candidate: GraphEdgeCandidate = {
+      family: "cctp",
+      adapterOrBridgeName: "cctp",
+      from: source,
+      to: destination,
+      rebalanceRoute,
+    };
+    const cctpMaxFee = toBNWei("1.25", 6);
+    const cctpAdapter = { getEstimatedCost: sinon.stub().resolves(cctpMaxFee) };
+
+    const economics = await estimateEdgeEconomics(candidate, {
+      baseSigner: {} as never,
+      cumulativeBalancesByLogicalAsset: { USDC: toBNWei("0"), USDT: toBNWei("0"), WETH: toBNWei("0") },
+      logger: buildNoopLogger(),
+      pricingContext: buildMockPricingContext(),
+      rebalancerAdapters: { cctp: cctpAdapter } as never,
+    });
+
+    expect(economics.fixedInputFeeNative.toString()).to.equal(cctpMaxFee.toString());
+    expect(economics.fixedOutputFeeNative.toString()).to.equal("0");
+    expect(cctpAdapter.getEstimatedCost.calledOnce).to.equal(true);
+    expect(cctpAdapter.getEstimatedCost.firstCall.args[0]).to.deep.equal(rebalanceRoute);
+    expect(cctpAdapter.getEstimatedCost.firstCall.args[2]).to.equal(false);
+  });
+
+  it("adds CCTP maxFee to exchange edges that use a CCTP destination bridge leg", async function () {
+    const relayerConfig = buildRelayerConfig();
+    const nodeContexts = materializeNodeDefinitions(buildManagedNodeTemplates(relayerConfig.inventoryConfig));
+    const source = findExpectedNode(
+      nodeContexts,
+      (node) => node.chainId === CHAIN_IDs.MAINNET && node.logicalAsset === "WETH",
+      "Mainnet WETH"
+    );
+    const destination = findExpectedNode(
+      nodeContexts,
+      (node) => node.chainId === CHAIN_IDs.OPTIMISM && node.logicalAsset === "USDC",
+      "Optimism USDC"
+    );
+    const candidate = buildBinanceSwapCandidate(source, destination);
+    const destinationBridgeAmount = toBNWei("2500", 6);
+    const cctpMaxFee = toBNWei("2.5", 6);
+    const convertSourceToDestinationStub = sinon.stub().resolves(destinationBridgeAmount);
+    const cctpAdapter = { getEstimatedCost: sinon.stub().resolves(cctpMaxFee) };
+    const adapter = {
+      async _getAccountCoins() {
+        return { networkList: [{ name: "ETH", withdrawFee: "0" }] };
+      },
+      async _getEntrypointNetwork(chainId: number, token: string) {
+        return token === "USDC" && chainId === CHAIN_IDs.OPTIMISM ? CHAIN_IDs.MAINNET : chainId;
+      },
+      _convertSourceToDestination: convertSourceToDestinationStub,
+    };
+
+    const economics = await estimateEdgeEconomics(candidate, {
+      baseSigner: {} as never,
+      cumulativeBalancesByLogicalAsset: { USDC: toBNWei("0"), USDT: toBNWei("0"), WETH: toBNWei("0") },
+      logger: buildNoopLogger(),
+      pricingContext: buildMockPricingContext(),
+      rebalancerAdapters: { binance: adapter, cctp: cctpAdapter } as never,
+    });
+
+    expect(economics.fixedOutputFeeNative.toString()).to.equal(cctpMaxFee.toString());
+    expect(cctpAdapter.getEstimatedCost.calledOnce).to.equal(true);
+    expect(cctpAdapter.getEstimatedCost.firstCall.args[0]).to.deep.equal({
+      sourceChain: CHAIN_IDs.MAINNET,
+      sourceToken: "USDC",
+      destinationChain: CHAIN_IDs.OPTIMISM,
+      destinationToken: "USDC",
+      adapter: "cctp",
+    });
+    expect(cctpAdapter.getEstimatedCost.firstCall.args[1].toString()).to.equal(destinationBridgeAmount.toString());
+  });
+
   it("quotes Binance destination bridge legs with converted destination-token amounts", async function () {
     const relayerConfig = buildRelayerConfig();
     const nodeContexts = materializeNodeDefinitions(buildManagedNodeTemplates(relayerConfig.inventoryConfig));

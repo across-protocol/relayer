@@ -155,15 +155,42 @@ async function resolveEffectivelyUnlimitedCapacityNative(
 
 async function estimateCctpBreakdown(
   candidate: GraphEdgeCandidate,
-  _amount: BigNumber,
+  amount: BigNumber,
   params: BridgeBreakdownParams
 ): Promise<CostBreakdown> {
+  const [gasCostUsd, maxFeeSourceNative] = await Promise.all([
+    params.pricingContext.deriveGasCostUsd(candidate.family, candidate.from.chainId),
+    resolveCctpMaxFeeSourceNative(candidate, amount, params),
+  ]);
   return {
-    fixedInputFeeSourceNative: bnZero,
+    fixedInputFeeSourceNative: maxFeeSourceNative,
     fixedOutputFeeDestinationNative: bnZero,
-    fixedCostUsd: await params.pricingContext.deriveGasCostUsd(candidate.family, candidate.from.chainId),
+    fixedCostUsd: gasCostUsd,
     latencySeconds: resolveGraphBridgeLatencySeconds(candidate, params.pricingContext.hubPoolChainId),
   };
+}
+
+async function resolveCctpMaxFeeSourceNative(
+  candidate: GraphEdgeCandidate,
+  amount: BigNumber,
+  params: BridgeBreakdownParams
+): Promise<BigNumber> {
+  const cctpAdapter = params.rebalancerAdapters.cctp;
+  assert(isDefined(cctpAdapter), "CCTP fee estimation requires the cctp rebalancer adapter");
+  const rebalanceRoute = candidate.rebalanceRoute ?? {
+    sourceChain: candidate.from.chainId,
+    sourceToken: candidate.from.logicalAsset,
+    destinationChain: candidate.to.chainId,
+    destinationToken: candidate.to.logicalAsset,
+    adapter: "cctp",
+  };
+  assert(
+    rebalanceRoute.sourceToken === "USDC" &&
+      rebalanceRoute.destinationToken === "USDC" &&
+      rebalanceRoute.adapter === "cctp",
+    `Unsupported CCTP fee route ${rebalanceRoute.sourceToken} -> ${rebalanceRoute.destinationToken} via ${rebalanceRoute.adapter}`
+  );
+  return cctpAdapter.getEstimatedCost(rebalanceRoute, amount, false);
 }
 
 async function estimateOftBreakdown(
@@ -434,9 +461,13 @@ async function addBridgeLegToExchangeBreakdown(
   if (leg.side === "source") {
     state.fixedInputFeeSourceNative = state.fixedInputFeeSourceNative.add(bridgeBreakdown.fixedInputFeeSourceNative);
   } else {
-    state.fixedOutputFeeDestinationNative = state.fixedOutputFeeDestinationNative.add(
-      ConvertDecimals(leg.sourceDecimals, candidate.to.decimals)(bridgeBreakdown.fixedOutputFeeDestinationNative)
-    );
+    const fixedInputFeeAsOutputNative = ConvertDecimals(
+      leg.sourceDecimals,
+      candidate.to.decimals
+    )(bridgeBreakdown.fixedInputFeeSourceNative);
+    state.fixedOutputFeeDestinationNative = state.fixedOutputFeeDestinationNative
+      .add(fixedInputFeeAsOutputNative)
+      .add(ConvertDecimals(leg.sourceDecimals, candidate.to.decimals)(bridgeBreakdown.fixedOutputFeeDestinationNative));
   }
   state.fixedCostUsd += bridgeBreakdown.fixedCostUsd;
   if (leg.side === "source") {
