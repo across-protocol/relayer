@@ -352,6 +352,10 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
 
   const submitted = performance.now();
   let confirmed: number, filled: number;
+  // Set once the FundsDeposited event for *this* invocation is observed; the
+  // fill listener ignores any FilledRelay until then so stale fills queued by
+  // earlier in-flight deposits from the same wallet don't trigger abort.
+  let observedDepositId: BigNumber | undefined;
 
   srcListener.onEvent(srcSpokePool.address, fundsDeposited, (log) => {
     const _deposit = unpackDepositEvent(spreadEventWithBlockNumber(log), fromChainId);
@@ -364,6 +368,7 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
     };
     if (deposit.depositor.eq(depositor)) {
       confirmed = performance.now();
+      observedDepositId = deposit.depositId;
       const depositTxn = blockExplorerLink(deposit.txnRef, fromChainId);
       printRelayData(deposit, deposit.destinationChainId, deposit.txnRef);
       console.log(`Deposit confirmed after ${(confirmed - submitted) / 1000} seconds: ${depositTxn}.`);
@@ -372,7 +377,8 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
 
   dstListener.onEvent(dstSpokePool.address, filledRelay, (log) => {
     const fill = unpackFillEvent(spreadEventWithBlockNumber(log), toChainId);
-    if (fill.depositor.eq(depositor)) {
+    const fillDepositId = BigNumber.from(log.args.depositId.toString());
+    if (fill.depositor.eq(depositor) && observedDepositId !== undefined && fillDepositId.eq(observedDepositId)) {
       filled = performance.now();
       const fillTxn = blockExplorerLink(fill.txnRef, toChainId);
       console.log(`Fill confirmed after ${(filled - confirmed) / 1000} seconds: ${fillTxn}.`);

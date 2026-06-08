@@ -112,13 +112,21 @@ run_one() {
 
   local deposit_ok=no fill_ok=no
   grep -q "Deposit confirmed after" "$log" && deposit_ok=yes
-  grep -q "Fill confirmed after" "$log" && fill_ok=yes
+  # Only count fills that landed within the exclusivity window — once the window
+  # expires any relayer is allowed to fill, so a public fill must not be
+  # attributed to the policy under test. spokepool.ts logs the elapsed seconds
+  # between deposit confirmation and fill: parse it and gate on EXCL_SEC.
+  local fill_after
+  fill_after=$(grep -oE "Fill confirmed after [0-9.]+" "$log" | awk '{print $4}' | head -1)
+  if [ -n "$fill_after" ]; then
+    awk -v t="$fill_after" -v limit="$EXCL_SEC" 'BEGIN { exit !(t+0 <= limit+0) }' && fill_ok=yes
+  fi
 
   local got
   if [ "$fill_ok" = "yes" ]; then
     got=pass
   elif [ "$deposit_ok" = "yes" ]; then
-    # Deposit landed on-chain but no FilledRelay was observed within wait_sec.
+    # Deposit landed on-chain but no in-window FilledRelay was observed.
     got=fail
   else
     # No deposit confirmed → command setup failed (bad args, RPC, balance,
