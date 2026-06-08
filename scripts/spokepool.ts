@@ -340,25 +340,20 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
   const outputAmount = isDefined(args.outputAmount) ? toBN(String(args.outputAmount)) : depositQuote.outputAmount;
 
   const abortController = new AbortController();
-  const srcListener = new EventListener(fromChainId, logger, 1);
   const dstListener = new EventListener(toChainId, logger, 1);
 
-  const [fundsDeposited, filledRelay] = ["FundsDeposited", "FilledRelay"].map((event) =>
-    spokePool.interface.getEvent(event).format(ethers.utils.FormatTypes.full)
-  );
-  const [srcSpokePool, dstSpokePool] = await Promise.all(
-    [fromChainId, toChainId].map((chainId) => utils.getSpokePoolContract(chainId))
-  );
+  const filledRelay = spokePool.interface.getEvent(FILL_EVENT).format(ethers.utils.FormatTypes.full);
+  const dstSpokePool = await utils.getSpokePoolContract(toChainId);
 
   const submitted = performance.now();
   let confirmed: number, filled: number;
-  // Set once the FundsDeposited event for *this* invocation is observed; the
-  // fill listener ignores any FilledRelay until then so stale fills queued by
-  // earlier in-flight deposits from the same wallet don't trigger abort.
+  // Set after we parse our deposit's FundsDeposited event out of the tx
+  // receipt. The dst listener ignores fills until this is set so stale fills
+  // for an earlier in-flight deposit by the same wallet can't trigger abort.
   let observedDepositId: BigNumber | undefined;
-  // Candidate fills delivered by the dst listener before the src FundsDeposited
-  // callback fires. We can't reject them yet (depositId unknown), so we hold
-  // them and replay once we know which depositId is ours.
+  // Candidate fills delivered by the dst listener while we are still waiting
+  // for the deposit tx receipt. We can't reject them yet (depositId unknown),
+  // so we hold them and replay once we know which depositId is ours.
   const pendingFills: { fill: ReturnType<typeof unpackFillEvent>; fillDepositId: BigNumber }[] = [];
 
   const recordFill = (fill: ReturnType<typeof unpackFillEvent>, fillDepositId: BigNumber): boolean => {
@@ -371,49 +366,6 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
     abortController.abort();
     return true;
   };
-
-  srcListener.onEvent(srcSpokePool.address, fundsDeposited, (log) => {
-    const _deposit = unpackDepositEvent(spreadEventWithBlockNumber(log), fromChainId);
-    const deposit = {
-      ..._deposit,
-      depositId: BigNumber.from(log.args.depositId.toString()), // todo
-      inputAmount: BigNumber.from(log.args.inputAmount.toString()), // todo
-      outputAmount: BigNumber.from(log.args.outputAmount.toString()), // todo
-      destinationChainId: Number(log.args.destinationChainId), // todo
-    };
-    if (!deposit.depositor.eq(depositor)) {
-      return;
-    }
-    confirmed = performance.now();
-    observedDepositId = deposit.depositId;
-    const depositTxn = blockExplorerLink(deposit.txnRef, fromChainId);
-    printRelayData(deposit, deposit.destinationChainId, deposit.txnRef);
-    console.log(`Deposit confirmed after ${(confirmed - submitted) / 1000} seconds: ${depositTxn}.`);
-
-    // Replay any fills the dst listener saw before we knew the depositId.
-    for (const pending of pendingFills) {
-      if (recordFill(pending.fill, pending.fillDepositId)) {
-        return;
-      }
-    }
-
-    // Stop listening once the on-chain exclusivityDeadline elapses. After that,
-    // any fill is by definition outside the exclusivity window — for validation
-    // purposes the policy under test would not have made the call. We add a
-    // small grace so dst-side delivery lag doesn't reject a legitimate fill
-    // that landed right at the boundary.
-    const exclusivityDeadline = Number(log.args.exclusivityDeadline);
-    if (exclusivityDeadline > 0) {
-      const nowSec = Math.floor(Date.now() / 1000);
-      const remainingMs = Math.max(0, exclusivityDeadline - nowSec) * 1000 + 5_000;
-      setTimeout(() => {
-        if (!isDefined(filled)) {
-          console.log(`Exclusivity window expired without matching fill.`);
-          abortController.abort();
-        }
-      }, remainingMs);
-    }
-  });
 
   dstListener.onEvent(dstSpokePool.address, filledRelay, (log) => {
     const fill = unpackFillEvent(spreadEventWithBlockNumber(log), toChainId);
@@ -431,7 +383,14 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
     recordFill(fill, fillDepositId);
   });
 
-  await spokePool.deposit(
+  // Submit the deposit and pull the depositId straight out of the tx receipt
+  // rather than racing the src polling listener for FundsDeposited. This
+  // eliminates two classes of false signal that bit the previous design:
+  //   (a) a stale FundsDeposited from an earlier submission by the same wallet
+  //       on the same origin being mistaken for ours, and
+  //   (b) a fast FilledRelay being dropped because the dst listener saw it
+  //       before the src listener had identified our depositId.
+  const txResponse = await spokePool.deposit(
     depositor.toBytes32(),
     recipient.toBytes32(),
     inputToken.toBytes32(),
@@ -445,6 +404,60 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
     exclusivityParameter,
     message
   );
+  const receipt = await txResponse.wait();
+  confirmed = performance.now();
+
+  const depositTopic = spokePool.interface.getEventTopic(DEPOSIT_EVENT);
+  const depositRawLog = receipt.logs.find(
+    (l: ethers.providers.Log) => l.address === spokePool.address && l.topics[0] === depositTopic
+  );
+  assert(isDefined(depositRawLog), `Missing FundsDeposited event in deposit receipt ${receipt.transactionHash}`);
+  const parsedDeposit = spokePool.interface.parseLog(depositRawLog);
+  observedDepositId = BigNumber.from(parsedDeposit.args.depositId.toString());
+  const observedExclusivityDeadline = Number(parsedDeposit.args.exclusivityDeadline);
+
+  // Reconstruct the same RelayData shape the previous src-listener path printed.
+  const printable = {
+    ...unpackDepositEvent(
+      spreadEventWithBlockNumber({ ...depositRawLog, args: parsedDeposit.args }),
+      fromChainId
+    ),
+    depositId: observedDepositId,
+    inputAmount: BigNumber.from(parsedDeposit.args.inputAmount.toString()),
+    outputAmount: BigNumber.from(parsedDeposit.args.outputAmount.toString()),
+    destinationChainId: Number(parsedDeposit.args.destinationChainId),
+  };
+  const depositTxn = blockExplorerLink(receipt.transactionHash, fromChainId);
+  printRelayData(printable, printable.destinationChainId, receipt.transactionHash);
+  console.log(`Deposit confirmed after ${(confirmed - submitted) / 1000} seconds: ${depositTxn}.`);
+
+  // Replay any fills the dst listener saw while we were waiting for the receipt.
+  for (const pending of pendingFills) {
+    if (recordFill(pending.fill, pending.fillDepositId)) {
+      return new Promise((resolve) => abortController.signal.addEventListener("abort", () => resolve(true)));
+    }
+  }
+
+  // Stop listening once the on-chain exclusivityDeadline elapses. After that,
+  // any fill is by definition outside the exclusivity window — for validation
+  // purposes the policy under test would not have made the call. Anchor the
+  // remaining duration to the *origin chain's* block.timestamp from the
+  // deposit receipt rather than the runner's wall clock, so a host clock skew
+  // versus the chain can't shorten the wait. A small grace absorbs dst-side
+  // delivery lag for fills that landed right at the boundary.
+  if (observedExclusivityDeadline > 0) {
+    const depositBlock = await provider.getBlock(receipt.blockNumber);
+    const blockTimeSec = depositBlock.timestamp;
+    const chainSecondsRemaining = Math.max(0, observedExclusivityDeadline - blockTimeSec);
+    const localElapsedMs = Math.max(0, Date.now() - blockTimeSec * 1000);
+    const remainingMs = Math.max(0, chainSecondsRemaining * 1000 - localElapsedMs) + 5_000;
+    setTimeout(() => {
+      if (!isDefined(filled)) {
+        console.log(`Exclusivity window expired without matching fill.`);
+        abortController.abort();
+      }
+    }, remainingMs);
+  }
 
   return new Promise((resolve) => abortController.signal.addEventListener("abort", () => resolve(true)));
 }

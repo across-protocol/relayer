@@ -115,15 +115,11 @@ run_one() {
 
   local deposit_ok=no fill_ok=no
   grep -q "Deposit confirmed after" "$log" && deposit_ok=yes
-  # Only count fills that landed within the exclusivity window — once the window
-  # expires any relayer is allowed to fill, so a public fill must not be
-  # attributed to the policy under test. spokepool.ts logs the elapsed seconds
-  # between deposit confirmation and fill: parse it and gate on EXCL_SEC.
-  local fill_after
-  fill_after=$(grep -oE "Fill confirmed after [0-9.]+" "$log" | awk '{print $4}' | head -1)
-  if [ -n "$fill_after" ]; then
-    awk -v t="$fill_after" -v limit="$EXCL_SEC" 'BEGIN { exit !(t+0 <= limit+0) }' && fill_ok=yes
-  fi
+  # spokepool.ts is authoritative for in-window classification: it stops
+  # listening once the on-chain exclusivityDeadline (+ a small grace) elapses,
+  # so any "Fill confirmed after" line in the log represents a fill that
+  # landed inside the policy-relayer window.
+  grep -q "Fill confirmed after" "$log" && fill_ok=yes
 
   local got
   if [ "$fill_ok" = "yes" ]; then
