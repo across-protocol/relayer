@@ -205,6 +205,9 @@ export async function willSucceed(transaction: AugmentedTransaction): Promise<Tr
   // it does incur an extra RPC call. We do this because estimateGas is a provider function that doesn't
   // relay custom errors well: https://github.com/ethers-io/ethers.js/discussions/3291#discussion-4314795
   let data;
+  // Preserved across the callStatic → estimateGas fallback so that a non-custom-error callStatic
+  // failure isn't silently dropped when estimateGas later fails with a less specific reason.
+  let callStaticError: unknown;
   try {
     if (rawTxn) {
       const from = (await contract.signer?.getAddress()) ?? ZERO_ADDRESS;
@@ -222,6 +225,7 @@ export async function willSucceed(transaction: AugmentedTransaction): Promise<Tr
         reason: err.errorName,
       };
     }
+    callStaticError = err;
   }
 
   try {
@@ -235,9 +239,25 @@ export async function willSucceed(transaction: AugmentedTransaction): Promise<Tr
     });
     return { transaction: { ...transaction, gasLimit }, succeed: true, data };
   } catch (error) {
-    const reason = typeguards.isEthersError(error) ? error.reason : "unknown error";
-    return { transaction, succeed: false, reason };
+    return { transaction, succeed: false, reason: _extractSimulationReason(error, callStaticError) };
   }
+}
+
+// Picks the most specific failure reason available from a simulation error pair. Tries the
+// ethers `reason` field on the estimateGas error first, then its message, then falls back to
+// any earlier callStatic error's message. Returns a non-empty string so downstream consumers
+// never see the literal `"unknown error"` placeholder when richer detail was on hand.
+function _extractSimulationReason(estimateGasError: unknown, callStaticError: unknown): string {
+  if (typeguards.isEthersError(estimateGasError) && estimateGasError.reason) {
+    return estimateGasError.reason;
+  }
+  if (estimateGasError instanceof Error && estimateGasError.message) {
+    return estimateGasError.message;
+  }
+  if (callStaticError instanceof Error && callStaticError.message) {
+    return callStaticError.message;
+  }
+  return "unknown error";
 }
 
 export function getTarget(targetAddress: string):
