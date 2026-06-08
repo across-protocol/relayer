@@ -293,7 +293,19 @@ export async function dispatchTransaction(
     throw new Error(`${message} (${reason})`);
   }
 
-  return dispatcher.dispatch(transaction, transaction.contract, transaction.contract.provider);
+  const response = await dispatcher.dispatch(transaction, transaction.contract, transaction.contract.provider);
+  // `dispatcher.dispatch` resolves to `(await submit(...))[0]`, which is `undefined` when `submit`
+  // returns an empty array (i.e. the underlying `_submit` threw and `submit` swallowed it). Mirror
+  // the explicit guard in `submitTransaction` so callers see a thrown error instead of `undefined`
+  // — otherwise `sendAndConfirmTransaction` silently treats the failure as a no-op.
+  if (!response) {
+    throw new Error(
+      `Transaction succeeded simulation but failed to submit onchain via dispatch to ${
+        targetContract.address
+      }.${method}(${txnRequestData.args.join(", ")}) on ${txnRequest.chainId}`
+    );
+  }
+  return response;
 }
 
 /**

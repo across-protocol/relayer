@@ -1,6 +1,7 @@
 import { AugmentedTransaction } from "../src/clients";
 import {
   BigNumber,
+  dispatchTransaction,
   ethers,
   isDefined,
   TransactionReceipt,
@@ -236,6 +237,42 @@ describe("TransactionClient", function () {
       expect(txnResponses.length).to.equal(1);
       // wait() was called maxTries times (default is 10).
       expect(waitCalls).to.equal(10);
+    });
+  });
+
+  describe("dispatchTransaction empty-response guard", function () {
+    function makeTxn(chainId: number, result: string): AugmentedTransaction {
+      return {
+        chainId,
+        contract: { address, signer } as Contract,
+        method,
+        args: [{ result }],
+        message: "",
+        mrkdwn: "",
+      };
+    }
+
+    // `TransactionClient.dispatch` returns `(await submit(...))[0]` which is `undefined` when
+    // submit swallows a thrown error from `_submit`. Without the guard in `dispatchTransaction`,
+    // that `undefined` propagates up to callers as a false "skipped" result. Verify the guard
+    // converts it into a thrown error so callers can distinguish real failures.
+    it("throws when dispatch returns undefined (mirroring submitTransaction)", async function () {
+      const chainId = chainIds[0];
+      const original = txnClient.dispatch.bind(txnClient);
+      (txnClient as unknown as { dispatch: typeof original }).dispatch = async () =>
+        undefined as unknown as TransactionResponse;
+      try {
+        let caught: Error | undefined;
+        try {
+          await dispatchTransaction(makeTxn(chainId, txnClientPassResult), txnClient);
+        } catch (e) {
+          caught = e as Error;
+        }
+        expect(caught, "dispatchTransaction should have thrown").to.exist;
+        expect(caught?.message).to.include("failed to submit onchain via dispatch");
+      } finally {
+        (txnClient as unknown as { dispatch: typeof original }).dispatch = original;
+      }
     });
   });
 });
