@@ -331,13 +331,14 @@ async function estimateBridgeApiBreakdown(
   };
 }
 
-async function estimateQuotedBridgeBreakdown(
+export async function estimateQuotedBridgeBreakdown(
   candidate: GraphEdgeCandidate,
   amount: BigNumber,
   params: Pick<BridgeBreakdownParams, "baseSigner" | "pricingContext">,
-  family: EdgeFamily
+  family: EdgeFamily,
+  quoteBridgeFeeUsd: typeof quoteNativeBridgeFeeUsd = quoteNativeBridgeFeeUsd
 ): Promise<CostBreakdown> {
-  const quotedFeeUsd = await quoteNativeBridgeFeeUsd(candidate, amount, params);
+  const quotedFeeUsd = await quoteBridgeFeeUsd(candidate, amount, params);
   const gasCostUsd = await params.pricingContext.deriveGasCostUsd(family, candidate.from.chainId);
   return {
     fixedInputFeeSourceNative: bnZero,
