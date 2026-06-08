@@ -170,7 +170,8 @@ async function getRelayerQuote(
   token: utils.ERC20,
   amount: BigNumber,
   recipient: Address,
-  message?: string
+  message?: string,
+  noInteractive = false
 ): Promise<{
   outputToken: Address;
   outputAmount: BigNumber;
@@ -255,7 +256,12 @@ async function getRelayerQuote(
       `Quote for ${tokenFormatter(amount)} ${token.symbol} ${fromChainId} -> ${toChainId}:` +
       ` ${formatFeePct(totalRelayFee)} ${token.symbol} (${formatFeePct(totalRelayFee.mul(fixedPoint).div(amount))} %)` +
       ` (ETA ${estimatedFillTime} s)`;
-    quoteAccepted = await utils.askYesNoQuestion(quote);
+    if (noInteractive) {
+      console.log(quote);
+      quoteAccepted = true;
+    } else {
+      quoteAccepted = await utils.askYesNoQuestion(quote);
+    }
   } while (!quoteAccepted);
 
   return { outputToken, outputAmount, exclusiveRelayer, exclusivityDeadline, quoteTimestamp, fillDeadline };
@@ -309,7 +315,15 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
     console.log("Approval complete...");
   }
 
-  const depositQuote = await getRelayerQuote(fromChainId, toChainId, token, inputAmount, recipient, message);
+  const depositQuote = await getRelayerQuote(
+    fromChainId,
+    toChainId,
+    token,
+    inputAmount,
+    recipient,
+    message,
+    Boolean(args.noInteractive)
+  );
 
   // Use the exclusiveRelayer provided by the user if present; otherwise fall back to the
   // value supplied by the quote (for SVM chains this will be the zero address).
@@ -319,6 +333,11 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
   );
   const exclusivityParameter = Number(args.exclusivityDeadline ?? depositQuote.exclusivityDeadline);
   const fillDeadline = Number(args.fillDeadline ?? depositQuote.fillDeadline);
+
+  // Allow the caller to override the quoted outputToken and outputAmount — used by the policy
+  // validation harness to force exact-1:1 deposits regardless of what the quote API returns.
+  const outputToken = args.outputToken ? toAddressType(String(args.outputToken), toChainId) : depositQuote.outputToken;
+  const outputAmount = isDefined(args.outputAmount) ? toBN(String(args.outputAmount)) : depositQuote.outputAmount;
 
   const abortController = new AbortController();
   const srcListener = new EventListener(fromChainId, logger, 1);
@@ -365,9 +384,9 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
     depositor.toBytes32(),
     recipient.toBytes32(),
     inputToken.toBytes32(),
-    depositQuote.outputToken.toBytes32(),
+    outputToken.toBytes32(),
     inputAmount,
-    depositQuote.outputAmount,
+    outputAmount,
     toChainId,
     exclusiveRelayer.toBytes32(),
     depositQuote.quoteTimestamp,
@@ -686,13 +705,15 @@ async function run(argv: string[]): Promise<number> {
     "message",
     "exclusiveRelayer",
     "exclusivityDeadline",
+    "outputToken",
+    "outputAmount",
   ];
   const fetchOpts = ["chainId", "transactionHash", "depositId"];
   const fillOpts = ["txnHash", "chainId", "depositId"];
   const fetchDepositOpts = ["chainId", "depositId"];
   const opts = {
     string: ["wallet", ...configOpts, ...depositOpts, ...fetchOpts, ...fillOpts, ...fetchDepositOpts],
-    boolean: ["decimals", "execute", "slow"], // @dev tbd whether this is good UX or not...may need to change.
+    boolean: ["decimals", "execute", "slow", "noInteractive"], // @dev tbd whether this is good UX or not...may need to change.
     default: {
       wallet: "secret",
       decimals: false,
