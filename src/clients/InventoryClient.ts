@@ -45,6 +45,7 @@ import {
   getLatestRunningBalances,
   getInventoryBalanceContributorTokens,
   dedupArray,
+  isUnmeteredFastRebalance,
 } from "../utils";
 import { getAcrossHost } from "./AcrossAPIClient";
 import { BinanceClient } from "./BinanceClient";
@@ -1861,16 +1862,7 @@ export class InventoryClient {
 
   // True for unmetered fast-rebalance routes (CCTP, OFT, hub). Binance is excluded — it's quota-gated.
   private isUnmeteredFastRebalance(repaymentChainId: number, repaymentToken: Address): boolean {
-    const { chainId: hubChainId } = this.hubPoolClient;
-    const originChainIsCctpEnabled =
-      sdkUtils.chainIsCCTPEnabled(repaymentChainId) &&
-      compareAddressesSimple(TOKEN_SYMBOLS_MAP.USDC.addresses[repaymentChainId], repaymentToken.toNative());
-    const originChainIsOFTEnabled =
-      sdkUtils.chainIsOFTEnabled(repaymentChainId) &&
-      compareAddressesSimple(TOKEN_SYMBOLS_MAP.USDT.addresses[repaymentChainId], repaymentToken.toNative()) &&
-      repaymentChainId !== CHAIN_IDs.HYPEREVM; // OFT withdrawals from HyperEVM take ~12 hours.
-    // Repayments on Mainnet can be quickly rebalanced via canonical bridges out of L1.
-    return originChainIsCctpEnabled || originChainIsOFTEnabled || repaymentChainId === hubChainId;
+    return isUnmeteredFastRebalance(repaymentChainId, repaymentToken, this.hubPoolClient.chainId);
   }
 
   /**

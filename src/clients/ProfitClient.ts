@@ -45,6 +45,7 @@ import {
   coingecko,
   defiLlama,
   getNativeTokenInfoForChain,
+  isUnmeteredFastRebalance,
 } from "../utils";
 import { Deposit, DepositWithBlock, L1Token, SpokePoolClientsByChain } from "../interfaces";
 import { getAcrossHost } from "./AcrossAPIClient";
@@ -178,6 +179,11 @@ export class ProfitClient {
     const { inputToken, originChainId, outputToken, destinationChainId } = deposit;
     const srcSymbol = this.getTokenSymbol(inputToken, originChainId);
     const dstSymbol = this.getTokenSymbol(outputToken, destinationChainId);
+
+    if (this.matchesRampPolicy(srcSymbol, dstSymbol, originChainId, destinationChainId, inputToken)) {
+      return toBNWei(process.env.RELAYER_RAMP_GAS_MULTIPLIER ?? "0");
+    }
+
     const effectiveSrcSymbol = this._getRemappedTokenSymbol(srcSymbol) ?? srcSymbol;
     const effectiveDstSymbol =
       dstSymbol !== "UNKNOWN" ? (this._getRemappedTokenSymbol(dstSymbol) ?? dstSymbol) : undefined;
@@ -417,6 +423,11 @@ export class ProfitClient {
     const { inputToken, originChainId, outputToken, destinationChainId } = deposit;
     const srcSymbol = this.getTokenSymbol(inputToken, originChainId);
     const dstSymbol = this.getTokenSymbol(outputToken, destinationChainId);
+
+    if (this.matchesRampPolicy(srcSymbol, dstSymbol, originChainId, destinationChainId, inputToken)) {
+      return toBNWei(process.env.RELAYER_RAMP_MIN_FEE_PCT ?? "0");
+    }
+
     const effectiveSourceSymbol = this._getRemappedTokenSymbol(srcSymbol) ?? srcSymbol;
     const effectiveDestinationSymbol =
       dstSymbol !== "UNKNOWN" ? (this._getRemappedTokenSymbol(dstSymbol) ?? dstSymbol) : undefined;
@@ -551,6 +562,40 @@ export class ProfitClient {
     } catch {
       return "UNKNOWN";
     }
+  }
+
+  /**
+   * Per-(token-pair) override: a deposit matches when its destination is in
+   * `RELAYER_RAMP_DESTINATIONS_<srcSymbol>_<dstSymbol>`, optionally its origin is in
+   * `RELAYER_RAMP_ORIGINS_<srcSymbol>_<dstSymbol>`, and the origin chain supports unmetered fast
+   * rebalance for the input token. Matching deposits use `RELAYER_RAMP_MIN_FEE_PCT` and
+   * `RELAYER_RAMP_GAS_MULTIPLIER` instead of the per-route lookups.
+   */
+  protected matchesRampPolicy(
+    srcSymbol: string,
+    dstSymbol: string,
+    originChainId: number,
+    destinationChainId: number,
+    inputToken: Address
+  ): boolean {
+    const destsRaw = process.env[`RELAYER_RAMP_DESTINATIONS_${srcSymbol}_${dstSymbol}`];
+    if (!isDefined(destsRaw)) {
+      return false;
+    }
+    const dests = destsRaw.split(",").map((s) => Number(s.trim()));
+    if (!dests.includes(destinationChainId)) {
+      return false;
+    }
+
+    const originsRaw = process.env[`RELAYER_RAMP_ORIGINS_${srcSymbol}_${dstSymbol}`];
+    if (isDefined(originsRaw)) {
+      const origins = originsRaw.split(",").map((s) => Number(s.trim()));
+      if (!origins.includes(originChainId)) {
+        return false;
+      }
+    }
+
+    return isUnmeteredFastRebalance(originChainId, inputToken, this.hubPoolClient.chainId);
   }
 
   async getFillProfitability(deposit: Deposit, lpFeePct: BigNumber, repaymentChainId: number): Promise<FillProfit> {

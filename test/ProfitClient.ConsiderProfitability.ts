@@ -656,6 +656,87 @@ describe("ProfitClient: Consider relay profit", () => {
     }
   });
 
+  it("Ramp policy short-circuits minRelayerFeePct and resolveGasMultiplier", () => {
+    // Use Mainnet as the origin so isUnmeteredFastRebalance(origin, _, hubChainId=1) returns true
+    // via the hub-chain branch without needing to mock CCTP/OFT chain registries.
+    const rampOriginChainId = CHAIN_IDs.MAINNET;
+    profitClient.setTokenSymbol(tokens.USDC.address, "USDC");
+    profitClient.setTokenSymbol(tokens.WETH.address, "USDT");
+
+    const destsKey = "RELAYER_RAMP_DESTINATIONS_USDT_USDC";
+    const originsKey = "RELAYER_RAMP_ORIGINS_USDT_USDC";
+    const minFeeKey = "RELAYER_RAMP_MIN_FEE_PCT";
+    const gasMultKey = "RELAYER_RAMP_GAS_MULTIPLIER";
+
+    const initial = Object.fromEntries(
+      [destsKey, originsKey, minFeeKey, gasMultKey].map((k) => [k, process.env[k]])
+    );
+    const restore = (): void => {
+      for (const [k, v] of Object.entries(initial)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    };
+
+    const deposit: Deposit = {
+      ...v3DepositTemplate,
+      inputToken: EvmAddress.from(tokens.WETH.address), // symbol overridden to USDT above
+      outputToken: EvmAddress.from(tokens.USDC.address),
+      originChainId: rampOriginChainId,
+      destinationChainId,
+    };
+
+    try {
+      // Predicate misses entirely when no env is set — falls through to existing logic.
+      restore();
+      delete process.env[destsKey];
+      delete process.env[originsKey];
+      delete process.env[minFeeKey];
+      delete process.env[gasMultKey];
+      const fallbackMinFee = profitClient.minRelayerFeePct(deposit);
+      const fallbackGasMult = profitClient.resolveGasMultiplier(deposit);
+
+      // Match: destination in set, no origin restriction, fast-rebalance origin (hub).
+      process.env[destsKey] = `${destinationChainId},9999`;
+      process.env[minFeeKey] = "-0.0001";
+      process.env[gasMultKey] = "0";
+      expect(profitClient.minRelayerFeePct(deposit).eq(toBNWei("-0.0001"))).to.be.true;
+      expect(profitClient.resolveGasMultiplier(deposit).eq(bnZero)).to.be.true;
+
+      // Default RAMP_MIN_FEE_PCT / RAMP_GAS_MULTIPLIER when only DESTINATIONS is set.
+      delete process.env[minFeeKey];
+      delete process.env[gasMultKey];
+      expect(profitClient.minRelayerFeePct(deposit).eq(bnZero)).to.be.true;
+      expect(profitClient.resolveGasMultiplier(deposit).eq(bnZero)).to.be.true;
+
+      // Destination not in set: falls through.
+      process.env[destsKey] = "9999";
+      expect(profitClient.minRelayerFeePct(deposit).eq(fallbackMinFee)).to.be.true;
+      expect(profitClient.resolveGasMultiplier(deposit).eq(fallbackGasMult)).to.be.true;
+
+      // Origin allowlist excludes this origin: falls through.
+      process.env[destsKey] = `${destinationChainId}`;
+      process.env[originsKey] = `${rampOriginChainId + 1}`;
+      expect(profitClient.minRelayerFeePct(deposit).eq(fallbackMinFee)).to.be.true;
+      expect(profitClient.resolveGasMultiplier(deposit).eq(fallbackGasMult)).to.be.true;
+
+      // Origin allowlist includes this origin: match.
+      process.env[originsKey] = `${rampOriginChainId},${rampOriginChainId + 1}`;
+      process.env[minFeeKey] = "0";
+      process.env[gasMultKey] = "0";
+      expect(profitClient.minRelayerFeePct(deposit).eq(bnZero)).to.be.true;
+      expect(profitClient.resolveGasMultiplier(deposit).eq(bnZero)).to.be.true;
+
+      // Origin not fast-rebalanceable (random chain, not hub, not CCTP, not OFT): falls through.
+      const slowOriginDeposit = { ...deposit, originChainId: 1234567 };
+      process.env[originsKey] = "1234567";
+      expect(profitClient.minRelayerFeePct(slowOriginDeposit).eq(fallbackMinFee)).to.be.true;
+      expect(profitClient.resolveGasMultiplier(slowOriginDeposit).eq(fallbackGasMult)).to.be.true;
+    } finally {
+      restore();
+    }
+  });
+
   it("Considers updated deposits", async () => {
     const deposit = { ...v3DepositTemplate };
     const l1Token = tokens.WETH;
