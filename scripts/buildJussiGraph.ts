@@ -1,11 +1,11 @@
-import "dotenv/config";
+import dotenv from "dotenv";
+dotenv.config();
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, parse, resolve } from "node:path";
 import util from "util";
 import winston from "winston";
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { waitForLogger } from "@risk-labs/logger";
-import { version } from "../package.json";
 import { getRedisCache } from "../src/cache/Redis";
 import { updateSpokePoolClients } from "../src/common";
 import { JussiApiClient } from "../src/jussi/JussiApiClient";
@@ -39,8 +39,6 @@ const PRICES_BY_ASSET_JSON_OUT_ENV = "JUSSI_PRICES_BY_ASSET_JSON_OUT";
 const TOPOLOGY_JSON_OUT_ENV = "JUSSI_TOPOLOGY_JSON_OUT";
 const TOPOLOGY_JSON_IN_ENV = "JUSSI_TOPOLOGY_JSON_IN";
 const DEFAULT_TOPOLOGY_ARTIFACT_PATH = "src/jussi/graphs/sampleTopology.json";
-
-process.env.ACROSS_BOT_VERSION ??= version;
 
 export type BuildJussiGraphFlags = {
   check: boolean;
@@ -163,7 +161,7 @@ function getAcrossApiHost(hubChainId: number): string {
   return process.env.ACROSS_API_HOST ?? (hubChainId === CHAIN_IDs.MAINNET ? "app.across.to" : "testnet.across.to");
 }
 
-async function buildExamplePricesByAsset(
+async function buildPricesByAsset(
   graphJson: JussiGraphJson,
   logger: winston.Logger
 ): Promise<Record<string, string>> {
@@ -231,11 +229,11 @@ async function writeBuildArtifacts(
   const pricesByAssetJsonOutPath =
     process.env[PRICES_BY_ASSET_JSON_OUT_ENV] ?? defaultPricesByAssetArtifactPath(graphJsonOutPath);
   const graphJson = buildJussiGraphJson(graph);
-  const examplePricesByAsset = await buildExamplePricesByAsset(graphJson, logger);
+  const pricesByAsset = await buildPricesByAsset(graphJson, logger);
   await Promise.all([
     writeJsonArtifact(graphJsonOutPath, graphJson),
     writeJsonArtifact(rateLimitBucketsJsonOutPath, buildJussiRateLimitBucketsJson(graph)),
-    writeJsonArtifact(pricesByAssetJsonOutPath, examplePricesByAsset),
+    writeJsonArtifact(pricesByAssetJsonOutPath, pricesByAsset),
   ]);
   process.stdout.write(`${JSON.stringify(buildJussiGraphEnvelope(graph), null, 2)}\n`);
 }
