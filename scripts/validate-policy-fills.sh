@@ -96,8 +96,12 @@ run_one() {
   fi
 
   local log="$LOG_DIR/${origin}_${dest}_${src}_${dst}.log"
+  # Cap the wait at EXCL_SEC + 30s so negative cases (no FilledRelay event ever
+  # arrives, deposit() never resolves) don't hang the matrix.
+  local wait_sec=$((EXCL_SEC + 30))
   set +e
-  yarn tsx ./scripts/spokepool --wallet "$WALLET" deposit \
+  timeout --preserve-status "${wait_sec}s" \
+    yarn tsx ./scripts/spokepool deposit --wallet "$WALLET" \
     --from "$origin" --to "$dest" --token "$src" --amount "$AMOUNT" --decimals \
     --outputToken "$out_addr" --outputAmount "$AMOUNT" \
     --exclusiveRelayer "$RELAYER_ADDR" \
@@ -106,11 +110,20 @@ run_one() {
   local rc=$?
   set -e
 
+  local deposit_ok=no fill_ok=no
+  grep -q "Deposit confirmed after" "$log" && deposit_ok=yes
+  grep -q "Fill confirmed after" "$log" && fill_ok=yes
+
   local got
-  if grep -q "Fill confirmed after" "$log"; then
+  if [ "$fill_ok" = "yes" ]; then
     got=pass
-  else
+  elif [ "$deposit_ok" = "yes" ]; then
+    # Deposit landed on-chain but no FilledRelay was observed within wait_sec.
     got=fail
+  else
+    # No deposit confirmed → command setup failed (bad args, RPC, balance,
+    # quote). Don't count this as a successful policy rejection.
+    got=error
   fi
   printf "[expect=%s got=%s rc=%d] %s@%s -> %s@%s\n" "$expect" "$got" "$rc" "$src" "$origin" "$dst" "$dest"
 
