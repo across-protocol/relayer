@@ -1,5 +1,5 @@
 import { expect, sinon, toBNWei, winston } from "./utils";
-import { CHAIN_IDs, EvmAddress, TOKEN_SYMBOLS_MAP } from "../src/utils";
+import { CHAIN_IDs, EvmAddress, getMessengerEvm, TOKEN_SYMBOLS_MAP } from "../src/utils";
 import { RelayerConfig } from "../src/relayer/RelayerConfig";
 import { RebalancerConfig } from "../src/rebalancer/RebalancerConfig";
 import { buildRebalanceRoutes } from "../src/rebalancer/buildRebalanceRoutes";
@@ -891,8 +891,9 @@ describe("Jussi graph builder helpers", function () {
       _convertSourceToDestination: convertSourceToDestinationStub,
     };
 
+    let economics: Awaited<ReturnType<typeof estimateEdgeEconomics>> | undefined;
     try {
-      await estimateEdgeEconomics(candidate, {
+      economics = await estimateEdgeEconomics(candidate, {
         baseSigner: {} as never,
         cumulativeBalancesByLogicalAsset: { USDC: toBNWei("0"), USDT: toBNWei("0"), WETH: toBNWei("0") },
         logger: buildNoopLogger(),
@@ -910,6 +911,8 @@ describe("Jussi graph builder helpers", function () {
       "USDT",
       CHAIN_IDs.MAINNET,
     ]);
+    expect(convertSourceToDestinationStub.firstCall.args[4].toString()).to.equal(toBNWei("100000", 18).toString());
+    expect(economics?.inputCapacityNative.toString()).to.equal(toBNWei("1000000000", 18).toString());
     expect(quotedBridgeAmounts).to.deep.equal([destinationBridgeAmount.toString()]);
   });
 
@@ -981,6 +984,16 @@ describe("Jussi graph builder helpers", function () {
     expect(quote.sendParamStruct.minAmountLD.toString()).to.equal(amountReceived.toString());
     expect(quote.messageFeeIsNative).to.equal(true);
     expect(quote.messageFeeAssetAddress).to.equal(undefined);
+  });
+
+  it("resolves legacy mesh OFT messengers when the origin chain is Tron", function () {
+    const messenger = getMessengerEvm(
+      EvmAddress.from(TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]),
+      CHAIN_IDs.TRON,
+      CHAIN_IDs.MAINNET
+    );
+
+    expect(messenger.toNative().toLowerCase()).to.equal("0x3a08f76772e200653bb55c2a92998daca62e0e97");
   });
 
   it("uses MONAD receive options and fee-token pricing inputs for OFT routes on chains without native gas", async function () {
@@ -1135,7 +1148,7 @@ describe("Jussi graph builder helpers", function () {
     expect(stableJsonStringify(artifact)).to.equal(stableJsonStringify(rebuiltArtifact));
   });
 
-  it("keeps graph-only bridge adapter routes out of runtime rebalancer initialization", async function () {
+  it("excludes legacy mesh OFT routes from Jussi topology while keeping direct Binance Tron routes", async function () {
     const relayerConfig = new RelayerConfig({
       HUB_CHAIN_ID: String(CHAIN_IDs.MAINNET),
       RELAYER_INVENTORY_CONFIG: JSON.stringify({
@@ -1180,8 +1193,20 @@ describe("Jussi graph builder helpers", function () {
       route.sourceToken === "USDT" &&
       route.destinationToken === "USDT" &&
       (route.sourceChain === CHAIN_IDs.TRON || route.destinationChain === CHAIN_IDs.TRON);
+    const hasTronOftEdge = (edge: GraphEdgeCandidate) =>
+      edge.family === "oft" &&
+      edge.from.logicalAsset === "USDT" &&
+      edge.to.logicalAsset === "USDT" &&
+      (edge.from.chainId === CHAIN_IDs.TRON || edge.to.chainId === CHAIN_IDs.TRON);
+    const hasTronBinanceEdge = (edge: GraphEdgeCandidate) =>
+      edge.family === "binance_cex_bridge" &&
+      edge.from.logicalAsset === "USDT" &&
+      edge.to.logicalAsset === "USDT" &&
+      (edge.from.chainId === CHAIN_IDs.TRON || edge.to.chainId === CHAIN_IDs.TRON);
 
-    expect(prepared.rebalanceRoutes.some(hasTronOftRoute)).to.equal(true);
+    expect(prepared.rebalanceRoutes.some(hasTronOftRoute)).to.equal(false);
+    expect(prepared.topology.edgeCandidates.some(hasTronOftEdge)).to.equal(false);
+    expect(prepared.topology.edgeCandidates.some(hasTronBinanceEdge)).to.equal(true);
     expect(resolveRuntimeRebalanceRoutes(prepared).some(hasTronOftRoute)).to.equal(false);
   });
 

@@ -22,7 +22,7 @@ import {
   toAddressType,
   toBNWei,
 } from "../../utils";
-import { LATENCY_BY_FAMILY, UNIVERSAL_INPUT_TIER_USD } from "../constants";
+import { EDGE_FIXED_COST_INPUT_USD_SAMPLE, LATENCY_BY_FAMILY, UNIVERSAL_INPUT_TIER_USD } from "../constants";
 import type { RuntimePricingContext } from "./PricingContext";
 import type {
   BinanceInternalAdapter,
@@ -72,21 +72,22 @@ export async function estimateEdgeEconomics(
   candidate: GraphEdgeCandidate,
   params: EdgePricingParams
 ): Promise<EdgeEconomics> {
-  const referenceInputNative = await resolveInputCapacityNative(candidate, params);
+  const inputCapacityNative = await resolveInputCapacityNative(candidate, params);
+  const costReferenceInputNative = await resolveCostReferenceInputNative(candidate, params, inputCapacityNative);
   let breakdown: CostBreakdown;
 
   switch (candidate.family) {
     case "binance":
-      breakdown = await estimateBinanceSwapBreakdown(candidate, referenceInputNative, params);
+      breakdown = await estimateBinanceSwapBreakdown(candidate, costReferenceInputNative, params);
       break;
     case "hyperliquid":
-      breakdown = await estimateHyperliquidSwapBreakdown(candidate, referenceInputNative, params);
+      breakdown = await estimateHyperliquidSwapBreakdown(candidate, costReferenceInputNative, params);
       break;
     case "cctp":
-      breakdown = await estimateCctpBreakdown(candidate, referenceInputNative, params);
+      breakdown = await estimateCctpBreakdown(candidate, costReferenceInputNative, params);
       break;
     case "oft":
-      breakdown = await estimateOftBreakdown(candidate, referenceInputNative, params);
+      breakdown = await estimateOftBreakdown(candidate, costReferenceInputNative, params);
       break;
     case "binance_cex_bridge":
       breakdown = await estimateBinanceCexBridgeBreakdown(candidate, params);
@@ -95,16 +96,16 @@ export async function estimateEdgeEconomics(
       breakdown = await estimateBridgeApiBreakdown(candidate, params);
       break;
     case "hyperlane":
-      breakdown = await estimateQuotedBridgeBreakdown(candidate, referenceInputNative, params, "hyperlane");
+      breakdown = await estimateQuotedBridgeBreakdown(candidate, costReferenceInputNative, params, "hyperlane");
       break;
     case "canonical":
-      breakdown = await estimateQuotedBridgeBreakdown(candidate, referenceInputNative, params, "canonical");
+      breakdown = await estimateQuotedBridgeBreakdown(candidate, costReferenceInputNative, params, "canonical");
       break;
   }
 
   return {
-    inputCapacityNative: referenceInputNative,
-    fixedInputFeeNative: minBigNumber(breakdown.fixedInputFeeSourceNative, referenceInputNative),
+    inputCapacityNative,
+    fixedInputFeeNative: minBigNumber(breakdown.fixedInputFeeSourceNative, inputCapacityNative),
     fixedOutputFeeNative: breakdown.fixedOutputFeeDestinationNative,
     fixedCostNative: await params.pricingContext.usdToNativeValue(breakdown.fixedCostUsd, candidate.from.chainId),
     latencySeconds: breakdown.latencySeconds,
@@ -124,6 +125,24 @@ async function resolveInputCapacityNative(
     candidate.from.decimals,
     params.pricingContext
   );
+}
+
+async function resolveCostReferenceInputNative(
+  candidate: GraphEdgeCandidate,
+  params: Pick<EdgePricingParams, "pricingContext">,
+  inputCapacityNative: BigNumber
+): Promise<BigNumber> {
+  if (candidate.family === "cctp" || candidate.family === "binance_cex_bridge" || candidate.family === "bridgeapi") {
+    return inputCapacityNative;
+  }
+
+  const sampledInputNative = await resolveUsdNotionalInputNative(
+    candidate.from.logicalAsset,
+    candidate.from.decimals,
+    EDGE_FIXED_COST_INPUT_USD_SAMPLE,
+    params.pricingContext
+  );
+  return minBigNumber(sampledInputNative, inputCapacityNative);
 }
 
 async function resolveEffectivelyUnlimitedCapacityNative(

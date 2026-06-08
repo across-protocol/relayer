@@ -8,6 +8,7 @@ export const EDGE_BUILD_BATCH_SIZE = Math.max(1, Number(process.env.JUSSI_EDGE_B
 export const STABLECOIN_PRICE_USD: Record<StableLogicalAsset, number> = { USDC: 1, USDT: 1 };
 export const UNIVERSAL_INPUT_TIER_USD = "1000000000.000000";
 export const EDGE_CLASS_INPUT_USD_SAMPLES = [1_000, 10_000, 100_000] as const;
+export const EDGE_FIXED_COST_INPUT_USD_SAMPLE = Math.max(...EDGE_CLASS_INPUT_USD_SAMPLES);
 export const EDGE_CLASS_RATE_SEGMENT_THRESHOLD_BPS = 5;
 export const DEFAULT_LATENCY_ANNUALIZED_COST_RATE = "0.05";
 export const GAS_COST_AVERAGE_LOOKBACK_SECONDS = 24 * 60 * 60;

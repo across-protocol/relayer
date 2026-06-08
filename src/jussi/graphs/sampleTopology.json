@@ -1,5 +1,5 @@
 {
-  "edge_candidate_count": 387,
+  "edge_candidate_count": 385,
   "edge_candidates": [
     {
       "adapter_or_bridge_name": "binance",
@@ -5200,21 +5200,6 @@
     {
       "adapter_or_bridge_name": "oft",
       "edge_class_id": "oft:USDT:USDT",
-      "edge_id": "oft:USDT:USDT:evm:1:0xdac17f958d2ee523a2206206994597c13d831ec7:evm:728126428:tr7nhqjekqxgtci8q8zy4pl8otszgjlj6t",
-      "family": "oft",
-      "from_node_key": "evm:1:0xdac17f958d2ee523a2206206994597c13d831ec7",
-      "rebalance_route": {
-        "adapter": "oft",
-        "destination_chain": 728126428,
-        "destination_token": "USDT",
-        "source_chain": 1,
-        "source_token": "USDT"
-      },
-      "to_node_key": "evm:728126428:tr7nhqjekqxgtci8q8zy4pl8otszgjlj6t"
-    },
-    {
-      "adapter_or_bridge_name": "oft",
-      "edge_class_id": "oft:USDT:USDT",
       "edge_id": "oft:USDT:USDT:evm:1:0xdac17f958d2ee523a2206206994597c13d831ec7:evm:9745:0xb8ce59fc3717ada4c02eadf9682a9e934f625ebb",
       "family": "oft",
       "from_node_key": "evm:1:0xdac17f958d2ee523a2206206994597c13d831ec7",
@@ -5583,21 +5568,6 @@
         "destination_chain": 1,
         "destination_token": "USDT",
         "source_chain": 57073,
-        "source_token": "USDT"
-      },
-      "to_node_key": "evm:1:0xdac17f958d2ee523a2206206994597c13d831ec7"
-    },
-    {
-      "adapter_or_bridge_name": "oft",
-      "edge_class_id": "oft:USDT:USDT",
-      "edge_id": "oft:USDT:USDT:evm:728126428:tr7nhqjekqxgtci8q8zy4pl8otszgjlj6t:evm:1:0xdac17f958d2ee523a2206206994597c13d831ec7",
-      "family": "oft",
-      "from_node_key": "evm:728126428:tr7nhqjekqxgtci8q8zy4pl8otszgjlj6t",
-      "rebalance_route": {
-        "adapter": "oft",
-        "destination_chain": 1,
-        "destination_token": "USDT",
-        "source_chain": 728126428,
         "source_token": "USDT"
       },
       "to_node_key": "evm:1:0xdac17f958d2ee523a2206206994597c13d831ec7"
@@ -6497,7 +6467,7 @@
       "window_seconds": 86400
     }
   ],
-  "rebalance_route_count": 362,
+  "rebalance_route_count": 360,
   "rebalance_routes": [
     {
       "adapter": "binance",
@@ -6907,13 +6877,6 @@
     },
     {
       "adapter": "binance",
-      "destination_chain": 728126428,
-      "destination_token": "USDT",
-      "source_chain": 1,
-      "source_token": "USDT"
-    },
-    {
-      "adapter": "oft",
       "destination_chain": 728126428,
       "destination_token": "USDT",
       "source_chain": 1,
@@ -8475,13 +8438,6 @@
     },
     {
       "adapter": "binance",
-      "destination_chain": 1,
-      "destination_token": "USDT",
-      "source_chain": 728126428,
-      "source_token": "USDT"
-    },
-    {
-      "adapter": "oft",
       "destination_chain": 1,
       "destination_token": "USDT",
       "source_chain": 728126428,

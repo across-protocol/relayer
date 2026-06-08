@@ -3,6 +3,7 @@ import {
   CANONICAL_L2_BRIDGE,
   CUSTOM_BRIDGE,
   CUSTOM_L2_BRIDGE,
+  LEGACY_MESH_NETWORKS,
   L2_TOKEN_SPLITTER_BRIDGES,
   TOKEN_SPLITTER_BRIDGES,
 } from "../../common";
@@ -73,7 +74,7 @@ export function buildBridgeEdgeCandidates(
     }
   }
 
-  return candidates;
+  return candidates.filter(isSupportedJussiEdgeCandidate);
 }
 
 export async function buildBridgeAdapterRoutes(params: {
@@ -327,6 +328,13 @@ export function dedupeGraphEdgeCandidates(candidates: GraphEdgeCandidate[]): Gra
     deduped.set(key, candidate);
   }
   return Array.from(deduped.values());
+}
+
+export function isSupportedJussiEdgeCandidate(candidate: Pick<GraphEdgeCandidate, "family" | "from" | "to">): boolean {
+  return (
+    candidate.family !== "oft" ||
+    (!LEGACY_MESH_NETWORKS.includes(candidate.from.chainId) && !LEGACY_MESH_NETWORKS.includes(candidate.to.chainId))
+  );
 }
 
 export function resolveEdgeClassId(candidate: GraphEdgeCandidate): string {

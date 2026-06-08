@@ -6,6 +6,7 @@ import {
   buildRebalanceEdgeCandidates,
   buildBridgeEdgeCandidates,
   dedupeGraphEdgeCandidates,
+  isSupportedJussiEdgeCandidate,
   resolveRateLimitBucketId,
 } from "./edges";
 import { buildLogicalAssetDefinitions, resolveRequiredNativePriceChains } from "./logicalAssets";
@@ -20,7 +21,9 @@ export function buildTopology(params: BuildTopologyParams): JussiGraphTopology {
   const nodesByKey = new Map(nodeContexts.map((node) => [node.nodeKey, node]));
   const bridgeCandidates = buildBridgeEdgeCandidates(nodeContexts, hubPoolChainId);
   const rebalanceCandidates = buildRebalanceEdgeCandidates(params.rebalanceRoutes, nodesByKey);
-  const edgeCandidates = dedupeGraphEdgeCandidates([...bridgeCandidates, ...rebalanceCandidates]);
+  const edgeCandidates = dedupeGraphEdgeCandidates(
+    [...bridgeCandidates, ...rebalanceCandidates].filter(isSupportedJussiEdgeCandidate)
+  );
   const logicalAssets = buildLogicalAssetDefinitions(nodeContexts, hubPoolChainId);
   const requiredNativePriceChains = resolveRequiredNativePriceChains(logicalAssets, nodeContexts);
 
