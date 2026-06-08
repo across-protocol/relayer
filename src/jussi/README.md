@@ -91,6 +91,8 @@ REBALANCER_EXTERNAL_CONFIG=../inventory-configs/rebalancer.json \
 yarn build-jussi-graph --topology-only
 ```
 
+Use `yarn --silent build-jussi-graph --topology-only` or call `node -r ts-node/register ./scripts/buildJussiGraph.ts --topology-only` directly when redirecting stdout for machine-readable JSON; plain `yarn` writes its own command prelude to stdout.
+
 To regenerate the committed topology snapshot without GCP, Binance, Redis, or a wallet:
 
 ```bash

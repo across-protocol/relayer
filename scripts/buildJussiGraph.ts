@@ -1,3 +1,4 @@
+process.env.DOTENV_CONFIG_QUIET ??= "true";
 import dotenv from "dotenv";
 dotenv.config();
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -5,7 +6,6 @@ import { dirname, join, parse, resolve } from "node:path";
 import util from "util";
 import winston from "winston";
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
-import { waitForLogger } from "@risk-labs/logger";
 import { getRedisCache } from "../src/cache/Redis";
 import { updateSpokePoolClients } from "../src/common";
 import { JussiApiClient } from "../src/jussi/JussiApiClient";
@@ -76,6 +76,24 @@ function createScriptLogger(): winston.Logger {
       }),
     ],
   });
+}
+
+async function waitForScriptLogger(logger: winston.Logger): Promise<void> {
+  const isFlushableTransport = (
+    transport: winston.Logger["transports"][number]
+  ): transport is winston.Logger["transports"][number] & { isFlushed: boolean } => {
+    return "isFlushed" in transport && typeof (transport as { isFlushed?: unknown }).isFlushed === "boolean";
+  };
+  const flushableTransports = logger.transports.filter(isFlushableTransport);
+  const flushTimeoutSeconds = Number(process.env.LOGGER_FLUSH_TIMEOUT ?? "30") || 30;
+  await Promise.race([
+    (async () => {
+      while (!flushableTransports.every((transport) => transport.isFlushed)) {
+        await delay(0.5);
+      }
+    })(),
+    delay(flushTimeoutSeconds),
+  ]);
 }
 
 function requireEnvironmentVariable(name: string): void {
@@ -369,7 +387,7 @@ async function main(): Promise<void> {
     });
   } finally {
     await disconnectRedisClients(logger);
-    await waitForLogger(logger as Parameters<typeof waitForLogger>[0]);
+    await waitForScriptLogger(logger);
     await delay(1);
     // eslint-disable-next-line no-process-exit
     process.exit(exitCode);
