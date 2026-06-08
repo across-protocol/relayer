@@ -299,6 +299,24 @@ describe("TransactionClient", function () {
       expect(result.reason).to.equal("insufficient funds");
     });
 
+    it("prefers callStatic message over a generic estimateGas message when neither carries an ethers reason", async function () {
+      // estimateGas throws a generic Error (e.g. UNPREDICTABLE_GAS_LIMIT without a populated
+      // `reason`); callStatic captured the actionable revert detail. The callStatic message
+      // should win — it's the diagnostic call whose purpose is to surface revert reasons.
+      const callStaticErr = new Error("execution reverted: NoSlotsAvailable");
+      const estimateGasErr = new Error("cannot estimate gas; transaction may fail");
+      const result = await willSucceed(makeFakeTxn(callStaticErr, estimateGasErr));
+      expect(result.succeed).to.be.false;
+      expect(result.reason).to.equal("execution reverted: NoSlotsAvailable");
+    });
+
+    it("prefers an ethers `reason` on the callStatic error over a callStatic message", async function () {
+      const callStaticErr = makeEthersError("revert: SpokePool: invalid relay");
+      const result = await willSucceed(makeFakeTxn(callStaticErr, new Error("generic gas failure")));
+      expect(result.succeed).to.be.false;
+      expect(result.reason).to.equal("revert: SpokePool: invalid relay");
+    });
+
     it("returns 'unknown error' only when no message is recoverable anywhere", async function () {
       const result = await willSucceed(makeFakeTxn(undefined, { foo: "bar" }));
       expect(result.succeed).to.be.false;

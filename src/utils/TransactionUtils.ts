@@ -243,19 +243,25 @@ export async function willSucceed(transaction: AugmentedTransaction): Promise<Tr
   }
 }
 
-// Picks the most specific failure reason available from a simulation error pair. Tries the
-// ethers `reason` field on the estimateGas error first, then its message, then falls back to
-// any earlier callStatic error's message. Returns a non-empty string so downstream consumers
-// never see the literal `"unknown error"` placeholder when richer detail was on hand.
+// Picks the most specific failure reason available from a simulation error pair. Priority:
+//   1. ethers `reason` on either error (preferred — it's the decoded revert string)
+//   2. callStatic message (callStatic exists to surface revert detail; its message is
+//      typically the actionable signal, whereas estimateGas tends to surface generic
+//      provider noise like UNPREDICTABLE_GAS_LIMIT)
+//   3. estimateGas message (last-resort generic fallback)
+//   4. "unknown error" sentinel
 function _extractSimulationReason(estimateGasError: unknown, callStaticError: unknown): string {
   if (typeguards.isEthersError(estimateGasError) && estimateGasError.reason) {
     return estimateGasError.reason;
   }
-  if (estimateGasError instanceof Error && estimateGasError.message) {
-    return estimateGasError.message;
+  if (typeguards.isEthersError(callStaticError) && callStaticError.reason) {
+    return callStaticError.reason;
   }
   if (callStaticError instanceof Error && callStaticError.message) {
     return callStaticError.message;
+  }
+  if (estimateGasError instanceof Error && estimateGasError.message) {
+    return estimateGasError.message;
   }
   return "unknown error";
 }
