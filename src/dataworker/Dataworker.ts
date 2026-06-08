@@ -2989,7 +2989,7 @@ export class Dataworker {
         throw new Error(
           `Solana tx ${signature} did not confirm within ` +
             `${SVM_REFUND_LEAF_SEND_POLL_CYCLES * SVM_REFUND_LEAF_SEND_POLL_DELAY_MS}ms; ` +
-            `cannot advance minContextSlot for dependent sends`
+            "cannot advance minContextSlot for dependent sends"
         );
       }
       if (minContextSlot === undefined || confirmedSlot > minContextSlot) {

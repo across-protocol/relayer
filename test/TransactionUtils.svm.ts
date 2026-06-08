@@ -26,10 +26,7 @@ const buildSignableTx = async () => {
   return txMessage;
 };
 
-const makeFakeProvider = (
-  statusValueByPollCall: Array<unknown>,
-  contextSlotByPollCall: Array<bigint> = []
-) => {
+const makeFakeProvider = (statusValueByPollCall: Array<unknown>, contextSlotByPollCall: Array<bigint> = []) => {
   const fakeSignature = "5tkH59X6n7zVJ4r3z2hG5L9rA1bC2dE4fG6h8jK0mN1pQ3sT5uV7wY9aB1cD3eF6";
   const sendInvocations: Array<CapturedSendOptions> = [];
   let pollIndex = 0;
