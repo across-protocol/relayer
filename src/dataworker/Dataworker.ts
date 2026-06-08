@@ -3032,15 +3032,17 @@ export class Dataworker {
         allocatedMemory: relayerRefundLeafBytes.length,
         txSignature,
       });
-      // Belt-and-suspenders to the `sendPinned` minContextSlot pin above: poll
-      // the PDA via `fetchEncodedAccount` until it is visible at the requested
-      // size. Without this, the first `WriteInstructionParamsFragment` can be
-      // preflighted against an RPC that has the slot of the init tx but
-      // hasn't yet hydrated its account-index entry for the new PDA — the
-      // simulator then sees `account.data.len() == 0` and the bounds check
-      // (`offset + data.len() > account.data.len()`) trips
-      // `ParamsWriteOverflow`. The poll uses the same cycle/delay budget as
-      // the dependency-tx send so total worst-case latency stays bounded.
+      // The minContextSlot pin guarantees the preflight RPC has reached the
+      // init tx's slot, but reaching the slot is not the same as having
+      // hydrated the account-index entry for the freshly-allocated PDA. On
+      // some upstream RPCs the simulator can still observe
+      // `account.data.len() == 0` for a brief window after the slot is
+      // processed, which trips Anchor's `ParamsWriteOverflow` (the bounds
+      // check `offset + data.len() > account.data.len()`) on the very first
+      // `WriteInstructionParamsFragment`. Polling the PDA via
+      // `fetchEncodedAccount` until it is visible at the requested size
+      // closes that window. Same cycle/delay budget as the dependency-tx
+      // send so total worst-case latency stays bounded.
       let observedSize = 0;
       let ready = false;
       for (let cycle = 0; cycle < SVM_REFUND_LEAF_SEND_POLL_CYCLES; ++cycle) {
