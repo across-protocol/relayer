@@ -80,12 +80,13 @@ export class JussiGraphPublisher {
       }
       const bundle = buildJussiGraphBundleJson(builtGraph);
       hash = bundleHash(bundle);
-      // Re-check the heartbeat immediately before the PUT: the lock can be lost during the gap
-      // between finishing the build and issuing the upload, and we must not PUT while another
-      // publisher may already hold the lock.
       if (heartbeatError) {
         throw heartbeatError;
       }
+      // Re-check ownership immediately before the PUT: the lock can be lost during the gap
+      // between finishing the build and issuing the upload, and we must not PUT while another
+      // publisher may already hold the lock.
+      await this.renewPublishLockOrThrow(token, lockTtlMs);
       await this.params.apiClient.putGraphBundle(graphId, bundle);
       didPut = true;
       await this.persistMetadata(graphId, hash);
@@ -119,6 +120,12 @@ export class JussiGraphPublisher {
     await this.params.redis.del(JUSSI_PUBLISH_PREFLIGHT_KEY);
     if (value !== token) {
       throw new Error("Redis preflight failed for Jussi graph publisher");
+    }
+  }
+
+  private async renewPublishLockOrThrow(token: string, lockTtlMs: number): Promise<void> {
+    if (!(await this.params.redis.renewLock(JUSSI_PUBLISH_LOCK_KEY, token, lockTtlMs))) {
+      throw new Error(`Lost ${JUSSI_PUBLISH_LOCK_KEY}`);
     }
   }
 
