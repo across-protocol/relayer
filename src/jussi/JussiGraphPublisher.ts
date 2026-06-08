@@ -89,6 +89,12 @@ export class JussiGraphPublisher {
       await this.renewPublishLockOrThrow(token, lockTtlMs);
       await this.params.apiClient.putGraphBundle(graphId, bundle);
       didPut = true;
+      if (heartbeatError) {
+        throw heartbeatError;
+      }
+      // Re-check ownership after the PUT as well: a slow upload can outlive the lock window,
+      // and only the current lock holder may advance the durable last-published metadata.
+      await this.renewPublishLockOrThrow(token, lockTtlMs);
       await this.persistMetadata(graphId, hash);
 
       return {

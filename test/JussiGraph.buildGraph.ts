@@ -289,6 +289,18 @@ class RenewFailingJussiRedis extends InMemoryJussiRedis {
   }
 }
 
+class SecondRenewFailingJussiRedis extends InMemoryJussiRedis {
+  renewCalls = 0;
+
+  async renewLock(key: string, token: string, ttlMs: number): Promise<boolean> {
+    this.renewCalls += 1;
+    if (this.renewCalls === 1) {
+      return super.renewLock(key, token, ttlMs);
+    }
+    return false;
+  }
+}
+
 describe("Jussi graph builder helpers", function () {
   it("parses topology-only CLI modes explicitly", function () {
     expect(parseBuildJussiGraphFlags([])).to.deep.equal({
@@ -1354,6 +1366,34 @@ describe("Jussi graph builder helpers", function () {
     expect(runFullBuildStub.calledOnce).to.equal(true);
     expect(redis.renewCalls).to.equal(1);
     expect((apiClient.putGraphBundle as sinon.SinonStub).called).to.equal(false);
+  });
+
+  it("does not persist metadata when the upload lock is lost after PUT", async function () {
+    const redis = new SecondRenewFailingJussiRedis();
+    const apiClient = { putGraphBundle: sinon.stub().resolves() } as unknown as JussiApiClient;
+    const runFullBuildStub = sinon.stub().callsFake(async (graphId: string) => buildMinimalGraph(graphId));
+    const publisher = new JussiGraphPublisher({
+      apiClient,
+      logger: buildNoopLogger(),
+      redis,
+      runFullBuild: runFullBuildStub,
+      lockTtlMs: 60_000,
+      now: () => new Date("2026-04-01T09:10:11.000Z"),
+    });
+
+    let errorMessage = "";
+    try {
+      await publisher.publishUpload();
+    } catch (error) {
+      errorMessage = error instanceof Error ? error.message : String(error);
+    }
+
+    expect(errorMessage).to.contain("Jussi upload metadata failure");
+    expect(errorMessage).to.contain(`Lost ${JUSSI_PUBLISH_LOCK_KEY}`);
+    expect(runFullBuildStub.calledOnce).to.equal(true);
+    expect(redis.renewCalls).to.equal(2);
+    expect((apiClient.putGraphBundle as sinon.SinonStub).calledOnce).to.equal(true);
+    expect(await redis.get(JUSSI_LAST_PUBLISHED_KEY)).to.equal(undefined);
   });
 
   it("throws graph id and bundle hash when metadata persistence fails after PUT", async function () {
