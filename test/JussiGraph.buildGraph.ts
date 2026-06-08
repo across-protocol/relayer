@@ -36,7 +36,11 @@ import {
   stableJsonStringify,
 } from "../src/jussi/buildGraph";
 import { JussiApiClient, putJsonWithTimeout } from "../src/jussi/JussiApiClient";
-import { parseBuildJussiGraphFlags, resolveNativePriceChainIdsForPrices } from "../scripts/buildJussiGraph";
+import {
+  parseBuildJussiGraphFlags,
+  resolveNativePriceChainIdsForPrices,
+  resolveRuntimeRebalanceRoutes,
+} from "../scripts/buildJussiGraph";
 import { estimateEdgeEconomics } from "../src/jussi/economics/edgeCosts";
 import { serializeEdgeClassDefinition } from "../src/jussi/economics/rates";
 import * as jussiQuotes from "../src/jussi/economics/quotes";
@@ -1160,6 +1164,56 @@ describe("Jussi graph builder helpers", function () {
       [...artifact.edge_candidates.map((edge) => edge.edge_id)].sort((left, right) => left.localeCompare(right))
     );
     expect(stableJsonStringify(artifact)).to.equal(stableJsonStringify(rebuiltArtifact));
+  });
+
+  it("keeps graph-only bridge adapter routes out of runtime rebalancer initialization", async function () {
+    const relayerConfig = new RelayerConfig({
+      HUB_CHAIN_ID: String(CHAIN_IDs.MAINNET),
+      RELAYER_INVENTORY_CONFIG: JSON.stringify({
+        tokenConfig: {
+          USDT: {
+            [CHAIN_IDs.TRON]: { targetPct: 5, thresholdPct: 2 },
+          },
+        },
+        wrapEtherTarget: "0",
+        wrapEtherTargetPerChain: {},
+        wrapEtherThreshold: "0",
+        wrapEtherThresholdPerChain: {},
+      }),
+    });
+    const rebalancerConfig = new RebalancerConfig({
+      HUB_CHAIN_ID: String(CHAIN_IDs.MAINNET),
+      REBALANCER_CONFIG: JSON.stringify({
+        cumulativeTargetBalances: {
+          USDT: {
+            targetBalance: "100",
+            thresholdBalance: "50",
+            priorityTier: 0,
+            chains: {
+              [CHAIN_IDs.MAINNET]: 0,
+              [CHAIN_IDs.TRON]: 0,
+            },
+          },
+        },
+        maxAmountsToTransfer: {},
+        maxPendingOrders: {},
+      }),
+    });
+    const prepared = await prepareGraphTopology({ relayerConfig, rebalancerConfig });
+    const hasTronOftRoute = (route: {
+      sourceChain: number;
+      destinationChain: number;
+      sourceToken: string;
+      destinationToken: string;
+      adapter: string;
+    }) =>
+      route.adapter === "oft" &&
+      route.sourceToken === "USDT" &&
+      route.destinationToken === "USDT" &&
+      (route.sourceChain === CHAIN_IDs.TRON || route.destinationChain === CHAIN_IDs.TRON);
+
+    expect(prepared.rebalanceRoutes.some(hasTronOftRoute)).to.equal(true);
+    expect(resolveRuntimeRebalanceRoutes(prepared).some(hasTronOftRoute)).to.equal(false);
   });
 
   it("keeps target-balance magnitude out of the topology artifact when the token remains configured", async function () {

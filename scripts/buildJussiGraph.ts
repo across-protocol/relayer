@@ -26,6 +26,7 @@ import {
 import { RelayerConfig } from "../src/relayer/RelayerConfig";
 import { constructRelayerClients } from "../src/relayer/RelayerClientHelper";
 import { RebalancerConfig } from "../src/rebalancer/RebalancerConfig";
+import { buildRebalanceRoutes } from "../src/rebalancer/buildRebalanceRoutes";
 import { constructCumulativeBalanceRebalancerClient } from "../src/rebalancer/RebalancerClientHelper";
 import { retrieveSignerFromCLIArgs } from "../src/utils/CLIUtils";
 import { PriceClient, acrossApi, chainIsSvm, coingecko, delay, defiLlama } from "../src/utils/SDKUtils";
@@ -64,6 +65,10 @@ export function parseBuildJussiGraphFlags(args: string[]): BuildJussiGraphFlags 
     throw new Error("--topology-only and --upload are mutually exclusive");
   }
   return flags;
+}
+
+export function resolveRuntimeRebalanceRoutes(prepared: Pick<PreparedGraphTopology, "rebalancerConfig">) {
+  return buildRebalanceRoutes(prepared.rebalancerConfig);
 }
 
 function createScriptLogger(): winston.Logger {
@@ -300,7 +305,7 @@ async function runPreparedFullBuild(
   const rebalancerClient = await constructCumulativeBalanceRebalancerClient(
     logger,
     baseSigner,
-    prepared.rebalanceRoutes
+    resolveRuntimeRebalanceRoutes(prepared)
   );
   const graph = await runFullBuild(prepared, {
     logger,
