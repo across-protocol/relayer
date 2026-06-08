@@ -60,7 +60,7 @@ Importantly, the Profit CLient exposes certain configuration objects that the us
 
 ### Per-token-pair policy overrides
 
-The Profit Client supports a registry of named "policies" that can short-circuit the standard `MIN_RELAYER_FEE_PCT_*` and `RELAYER_GAS_MULTIPLIER_*` lookups. The policies in `RELAYER_POLICIES` (comma-separated) are evaluated in order; the first whose predicate matches the deposit wins.
+The Profit Client supports a registry of named "policies" that can short-circuit the standard `MIN_RELAYER_FEE_PCT_*` and `RELAYER_GAS_MULTIPLIER_*` lookups. The policies in `RELAYER_POLICIES` (comma-separated) are decoded once at construct time and evaluated in order; the first whose predicate matches the deposit wins. Env mutations after construction are ignored — operators should set policy env vars before the relayer starts.
 
 A policy named `<NAME>` (uppercased in env var keys) matches when:
 

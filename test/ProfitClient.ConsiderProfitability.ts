@@ -660,8 +660,6 @@ describe("ProfitClient: Consider relay profit", () => {
     // Use Mainnet as the origin so isUnmeteredFastRebalance(origin, _, hubChainId=1) returns true
     // via the hub-chain branch without needing to mock CCTP/OFT chain registries.
     const policyOriginChainId = CHAIN_IDs.MAINNET;
-    profitClient.setTokenSymbol(tokens.USDC.address, "USDC");
-    profitClient.setTokenSymbol(tokens.WETH.address, "USDT");
 
     const policiesKey = "RELAYER_POLICIES";
     const destsKey = "RELAYER_POLICY_RAMP_DESTINATIONS_USDT_USDC";
@@ -674,11 +672,32 @@ describe("ProfitClient: Consider relay profit", () => {
 
     const envKeys = [policiesKey, destsKey, originsKey, minFeeKey, gasMultKey, policy2DestsKey, policy2MinFeeKey];
     const initial = Object.fromEntries(envKeys.map((k) => [k, process.env[k]]));
-    const restore = (): void => {
+    const clearEnv = (): void => envKeys.forEach((k) => delete process.env[k]);
+    const restoreEnv = (): void => {
       for (const [k, v] of Object.entries(initial)) {
         if (v === undefined) delete process.env[k];
         else process.env[k] = v;
       }
+    };
+
+    // Policies are decoded once in the constructor — so each scenario sets env, builds a fresh
+    // MockProfitClient, then asserts. `buildClient` mirrors the `beforeEach` setup.
+    const buildClient = (): MockProfitClient => {
+      const client = new MockProfitClient(
+        spyLogger,
+        hubPoolClient,
+        {},
+        [],
+        EvmAddress.from(randomAddress()),
+        SvmAddress.from(ZERO_BYTES),
+        minRelayerFeePct,
+        true
+      );
+      client.setGasCosts(gasCost);
+      client.setTokenPrices(tokenPrices);
+      client.setTokenSymbol(tokens.USDC.address, "USDC");
+      client.setTokenSymbol(tokens.WETH.address, "USDT");
+      return client;
     };
 
     const deposit: Deposit = {
@@ -688,79 +707,115 @@ describe("ProfitClient: Consider relay profit", () => {
       originChainId: policyOriginChainId,
       destinationChainId,
     };
+    const slowOriginDeposit = { ...deposit, originChainId: 1234567 };
 
     try {
       // No policy registry set — falls through to existing logic.
-      restore();
-      for (const k of envKeys) delete process.env[k];
-      const fallbackMinFee = profitClient.minRelayerFeePct(deposit);
-      const fallbackGasMult = profitClient.resolveGasMultiplier(deposit);
+      clearEnv();
+      let client = buildClient();
+      const fallbackMinFee = client.minRelayerFeePct(deposit);
+      const fallbackGasMult = client.resolveGasMultiplier(deposit);
 
       // Policy named in registry but no per-policy DESTINATIONS — falls through.
+      clearEnv();
       process.env[policiesKey] = "ramp";
-      expect(profitClient.minRelayerFeePct(deposit).eq(fallbackMinFee)).to.be.true;
-      expect(profitClient.resolveGasMultiplier(deposit).eq(fallbackGasMult)).to.be.true;
+      client = buildClient();
+      expect(client.minRelayerFeePct(deposit).eq(fallbackMinFee)).to.be.true;
+      expect(client.resolveGasMultiplier(deposit).eq(fallbackGasMult)).to.be.true;
 
       // Match: destination in set, no origin restriction, fast-rebalance origin (hub).
+      clearEnv();
+      process.env[policiesKey] = "ramp";
       process.env[destsKey] = `${destinationChainId},9999`;
       process.env[minFeeKey] = "-0.0001";
       process.env[gasMultKey] = "0";
-      expect(profitClient.minRelayerFeePct(deposit).eq(toBNWei("-0.0001"))).to.be.true;
-      expect(profitClient.resolveGasMultiplier(deposit).eq(bnZero)).to.be.true;
+      client = buildClient();
+      expect(client.minRelayerFeePct(deposit).eq(toBNWei("-0.0001"))).to.be.true;
+      expect(client.resolveGasMultiplier(deposit).eq(bnZero)).to.be.true;
 
       // When only DESTINATIONS is set, missing MIN_FEE_PCT / GAS_MULTIPLIER falls through.
-      delete process.env[minFeeKey];
-      delete process.env[gasMultKey];
-      expect(profitClient.minRelayerFeePct(deposit).eq(fallbackMinFee)).to.be.true;
-      expect(profitClient.resolveGasMultiplier(deposit).eq(fallbackGasMult)).to.be.true;
+      clearEnv();
+      process.env[policiesKey] = "ramp";
+      process.env[destsKey] = `${destinationChainId},9999`;
+      client = buildClient();
+      expect(client.minRelayerFeePct(deposit).eq(fallbackMinFee)).to.be.true;
+      expect(client.resolveGasMultiplier(deposit).eq(fallbackGasMult)).to.be.true;
 
       // Destination not in set: falls through.
+      clearEnv();
+      process.env[policiesKey] = "ramp";
       process.env[destsKey] = "9999";
-      expect(profitClient.minRelayerFeePct(deposit).eq(fallbackMinFee)).to.be.true;
-      expect(profitClient.resolveGasMultiplier(deposit).eq(fallbackGasMult)).to.be.true;
+      process.env[minFeeKey] = "-0.0001";
+      process.env[gasMultKey] = "0";
+      client = buildClient();
+      expect(client.minRelayerFeePct(deposit).eq(fallbackMinFee)).to.be.true;
+      expect(client.resolveGasMultiplier(deposit).eq(fallbackGasMult)).to.be.true;
 
       // Origin allowlist excludes this origin: falls through.
+      clearEnv();
+      process.env[policiesKey] = "ramp";
       process.env[destsKey] = `${destinationChainId}`;
       process.env[originsKey] = `${policyOriginChainId + 1}`;
-      expect(profitClient.minRelayerFeePct(deposit).eq(fallbackMinFee)).to.be.true;
-      expect(profitClient.resolveGasMultiplier(deposit).eq(fallbackGasMult)).to.be.true;
+      process.env[minFeeKey] = "-0.0001";
+      process.env[gasMultKey] = "0";
+      client = buildClient();
+      expect(client.minRelayerFeePct(deposit).eq(fallbackMinFee)).to.be.true;
+      expect(client.resolveGasMultiplier(deposit).eq(fallbackGasMult)).to.be.true;
 
       // Origin allowlist includes this origin: match.
+      clearEnv();
+      process.env[policiesKey] = "ramp";
+      process.env[destsKey] = `${destinationChainId}`;
       process.env[originsKey] = `${policyOriginChainId},${policyOriginChainId + 1}`;
       process.env[minFeeKey] = "0";
       process.env[gasMultKey] = "0";
-      expect(profitClient.minRelayerFeePct(deposit).eq(bnZero)).to.be.true;
-      expect(profitClient.resolveGasMultiplier(deposit).eq(bnZero)).to.be.true;
+      client = buildClient();
+      expect(client.minRelayerFeePct(deposit).eq(bnZero)).to.be.true;
+      expect(client.resolveGasMultiplier(deposit).eq(bnZero)).to.be.true;
 
       // Explicit origin allowlist overrides the fast-rebalance default: a non-fast origin
       // that's explicitly listed still matches.
-      const slowOriginDeposit = { ...deposit, originChainId: 1234567 };
+      clearEnv();
+      process.env[policiesKey] = "ramp";
+      process.env[destsKey] = `${destinationChainId}`;
       process.env[originsKey] = "1234567";
-      expect(profitClient.minRelayerFeePct(slowOriginDeposit).eq(bnZero)).to.be.true;
-      expect(profitClient.resolveGasMultiplier(slowOriginDeposit).eq(bnZero)).to.be.true;
+      process.env[minFeeKey] = "0";
+      process.env[gasMultKey] = "0";
+      client = buildClient();
+      expect(client.minRelayerFeePct(slowOriginDeposit).eq(bnZero)).to.be.true;
+      expect(client.resolveGasMultiplier(slowOriginDeposit).eq(bnZero)).to.be.true;
 
       // No origin allowlist + non-fast-rebalance origin: falls through to default lookup.
-      delete process.env[originsKey];
-      expect(profitClient.minRelayerFeePct(slowOriginDeposit).eq(fallbackMinFee)).to.be.true;
-      expect(profitClient.resolveGasMultiplier(slowOriginDeposit).eq(fallbackGasMult)).to.be.true;
+      clearEnv();
+      process.env[policiesKey] = "ramp";
+      process.env[destsKey] = `${destinationChainId}`;
+      process.env[minFeeKey] = "0";
+      process.env[gasMultKey] = "0";
+      client = buildClient();
+      expect(client.minRelayerFeePct(slowOriginDeposit).eq(fallbackMinFee)).to.be.true;
+      expect(client.resolveGasMultiplier(slowOriginDeposit).eq(fallbackGasMult)).to.be.true;
 
       // First-match-wins across the registry: bootstrap is listed first, so its MIN_FEE_PCT
       // applies even though ramp would also match.
+      clearEnv();
       process.env[policiesKey] = "bootstrap,ramp";
+      process.env[destsKey] = `${destinationChainId}`;
+      process.env[minFeeKey] = "-0.0001";
       process.env[policy2DestsKey] = `${destinationChainId}`;
       process.env[policy2MinFeeKey] = "-0.0009";
-      expect(profitClient.minRelayerFeePct(deposit).eq(toBNWei("-0.0009"))).to.be.true;
+      client = buildClient();
+      expect(client.minRelayerFeePct(deposit).eq(toBNWei("-0.0009"))).to.be.true;
 
-      // GAS_MULTIPLIER must satisfy 0 <= multiplier <= 4.
+      // GAS_MULTIPLIER must satisfy 0 <= multiplier <= 4 — validated at construct time.
+      clearEnv();
       process.env[policiesKey] = "ramp";
       process.env[destsKey] = `${destinationChainId}`;
-      delete process.env[originsKey];
       process.env[gasMultKey] = "-0.1";
-      expect(() => profitClient.resolveGasMultiplier(deposit)).to.throw(/RELAYER_POLICY_RAMP_GAS_MULTIPLIER/);
+      expect(() => buildClient()).to.throw(/RELAYER_POLICY_RAMP_GAS_MULTIPLIER/);
       process.env[gasMultKey] = "4.1";
-      expect(() => profitClient.resolveGasMultiplier(deposit)).to.throw(/RELAYER_POLICY_RAMP_GAS_MULTIPLIER/);
+      expect(() => buildClient()).to.throw(/RELAYER_POLICY_RAMP_GAS_MULTIPLIER/);
     } finally {
-      restore();
+      restoreEnv();
     }
   });
 
