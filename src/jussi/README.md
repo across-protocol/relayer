@@ -49,7 +49,7 @@ The committed topology artifact captures materialized nodes, final post-dedupe e
 
 - `src/jussi/graphs/sampleGraph.json`: the pure Jussi graph JSON
 - `src/jussi/graphs/sampleRateLimitBuckets.json`: the companion rate-limit bucket JSON
-- `src/jussi/graphs/samplePrices.json`: an example `prices_by_asset` value for `find_optimal_paths`, generated from live prices at build time
+- `src/jussi/graphs/samplePrices.json`: an example `prices_by_asset` value for `find_optimal_paths`, generated from live prices at build time; it includes `logical:<asset>` prices plus only the explicit `native:<chainId>` prices not covered by `native_price_alias_chain_ids`
 - `src/jussi/graphs/sampleTopology.json`: the committed deterministic topology snapshot used by `--topology-only --check`
 
 ## How To Generate Them

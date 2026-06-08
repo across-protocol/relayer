@@ -161,10 +161,20 @@ function getAcrossApiHost(hubChainId: number): string {
   return process.env.ACROSS_API_HOST ?? (hubChainId === CHAIN_IDs.MAINNET ? "app.across.to" : "testnet.across.to");
 }
 
-async function buildPricesByAsset(
-  graphJson: JussiGraphJson,
-  logger: winston.Logger
-): Promise<Record<string, string>> {
+export function resolveNativePriceChainIdsForPrices(
+  graphJson: Pick<JussiGraphJson, "logical_assets" | "nodes">
+): number[] {
+  const aliasedNativeChainIds = new Set(
+    Object.values(graphJson.logical_assets)
+      .flatMap((definition) => definition.native_price_alias_chain_ids ?? [])
+      .map(Number)
+  );
+  return Array.from(new Set(graphJson.nodes.map((node) => node.chain_id)))
+    .sort((left, right) => left - right)
+    .filter((chainId) => !aliasedNativeChainIds.has(chainId));
+}
+
+async function buildPricesByAsset(graphJson: JussiGraphJson, logger: winston.Logger): Promise<Record<string, string>> {
   const priceClient = new PriceClient(logger, [
     new acrossApi.PriceFeed({ host: getAcrossApiHost(CHAIN_IDs.MAINNET) }),
     new coingecko.PriceFeed({ apiKey: process.env.COINGECKO_PRO_API_KEY }),
@@ -178,8 +188,7 @@ async function buildPricesByAsset(
     pricesByAsset[`logical:${logicalAsset}`] = formatExampleUsdPrice(Number(price.price));
   }
 
-  const chainIds = Array.from(new Set(graphJson.nodes.map((node) => node.chain_id))).sort((a, b) => a - b);
-  for (const chainId of chainIds) {
+  for (const chainId of resolveNativePriceChainIdsForPrices(graphJson)) {
     const nativeTokenInfo = getNativeTokenInfoForChain(chainId, CHAIN_IDs.MAINNET);
     const price = await priceClient.getPriceByAddress(nativeTokenInfo.address);
     pricesByAsset[`native:${chainId}`] = formatExampleUsdPrice(Number(price.price));

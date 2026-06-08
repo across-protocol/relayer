@@ -35,7 +35,7 @@ import {
   stableJsonStringify,
 } from "../src/jussi/buildGraph";
 import { JussiApiClient, putJsonWithTimeout } from "../src/jussi/JussiApiClient";
-import { parseBuildJussiGraphFlags } from "../scripts/buildJussiGraph";
+import { parseBuildJussiGraphFlags, resolveNativePriceChainIdsForPrices } from "../scripts/buildJussiGraph";
 import {
   JUSSI_LAST_PUBLISHED_KEY,
   JUSSI_PUBLISH_LOCK_KEY,
@@ -442,6 +442,10 @@ describe("Jussi graph builder helpers", function () {
     );
     const requiredNativePriceChains = resolveRequiredNativePriceChains(logicalAssets, nodeContexts);
     const graphChainIds = [...new Set(nodeContexts.map((node) => node.chainId))].sort((a, b) => a - b);
+    const graphJson = {
+      logical_assets: logicalAssets,
+      nodes: nodeContexts.map((node) => node.definition),
+    };
 
     expect(logicalAssets.HYPE).to.equal(undefined);
     expect([...aliasedChainIds].sort((a, b) => a - b)).to.deep.equal([
@@ -454,6 +458,7 @@ describe("Jussi graph builder helpers", function () {
     expect([...new Set([...aliasedChainIds, ...requiredNativePriceChains])].sort((a, b) => a - b)).to.deep.equal(
       graphChainIds
     );
+    expect(resolveNativePriceChainIdsForPrices(graphJson)).to.deep.equal(requiredNativePriceChains);
   });
 
   it("discovers only direct token-splitter bridge candidates for pathUSD", async function () {
