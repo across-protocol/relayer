@@ -256,12 +256,18 @@ async function writeBuildArtifacts(
   const pricesByAssetJsonOutPath =
     process.env[PRICES_BY_ASSET_JSON_OUT_ENV] ?? defaultPricesByAssetArtifactPath(graphJsonOutPath);
   const graphJson = buildJussiGraphJson(graph);
-  const pricesByAsset = await buildPricesByAsset(graphJson, logger);
-  await Promise.all([
+  const artifactWrites: Promise<unknown>[] = [
     writeJsonArtifact(graphJsonOutPath, graphJson),
     writeJsonArtifact(rateLimitBucketsJsonOutPath, buildJussiRateLimitBucketsJson(graph)),
-    writeJsonArtifact(pricesByAssetJsonOutPath, pricesByAsset),
-  ]);
+  ];
+  if (pricesByAssetJsonOutPath) {
+    artifactWrites.push(
+      buildPricesByAsset(graphJson, logger).then((pricesByAsset) =>
+        writeJsonArtifact(pricesByAssetJsonOutPath, pricesByAsset)
+      )
+    );
+  }
+  await Promise.all(artifactWrites);
   process.stdout.write(`${JSON.stringify(buildJussiGraphEnvelope(graph), null, 2)}\n`);
 }
 
