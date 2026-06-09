@@ -17,6 +17,7 @@ import {
   getViemChain,
   Logger,
   Provider,
+  retry,
   SpokePool,
   winston,
 } from "../utils";
@@ -184,27 +185,28 @@ async function listen(
   const pollLogs = async (blockNumber: bigint): Promise<void> => {
     await Promise.all(
       providers.map(async (provider) => {
-        const rawLogs = await provider
-          .getLogs({
+        const getLogs = () =>
+          provider.getLogs({
             address,
             events,
             fromBlock: blockNumber,
             toBlock: blockNumber,
-          })
-          .catch((error: BaseError) => {
-            const { message: errorMessage, details, shortMessage, metaMessages } = error;
-            logger.warn({
-              at,
-              message: `Caught ${chain} getLogs error.`,
-              errorMessage,
-              shortMessage,
-              details,
-              metaMessages,
-              provider: provider.name,
-              blockNumber: Number(blockNumber),
-            });
-            return undefined;
           });
+        // TRON RPCs intermittently return empty bodies; retry before dropping the block's logs.
+        const rawLogs = await retry(getLogs, 3, 1).catch((error: BaseError) => {
+          const { message: errorMessage, details, shortMessage, metaMessages } = error;
+          logger.warn({
+            at,
+            message: `Caught ${chain} getLogs error.`,
+            errorMessage,
+            shortMessage,
+            details,
+            metaMessages,
+            provider: provider.name,
+            blockNumber: Number(blockNumber),
+          });
+          return undefined;
+        });
         if (!isDefined(rawLogs)) {
           return;
         }
