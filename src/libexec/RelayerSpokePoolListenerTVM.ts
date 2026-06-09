@@ -29,6 +29,10 @@ import { scrapeEvents as _scrapeEvents } from "./util/evm";
 
 const PROGRAM = "RelayerSpokePoolListenerTVM";
 export const REORG_WINDOW = 128n;
+// Re-poll this many blocks back from each announced head, so a getLogs that failed (or a provider
+// briefly lagging behind its own announced block) is retried on subsequent blocks before its quorum
+// vote is lost. EventManager dedupes the overlap.
+const LOG_RETRY_DEPTH = 16n;
 const abortController = new AbortController();
 
 let spokePool: Contract;
@@ -186,9 +190,11 @@ async function listen(
   // EventManager. Replaces viem's filter-based `watchEvent` (TRON expires filter ids) while keeping
   // its per-provider sourcing: each provider polls only blocks it has itself seen, so a provider
   // that briefly lags or fails still contributes its quorum vote once it catches up.
-  const pollLogs = async (provider: (typeof providers)[number], blockNumber: bigint): Promise<void> => {
-    const getLogs = () => provider.getLogs({ address, events, fromBlock: blockNumber, toBlock: blockNumber });
-    // TRON RPCs intermittently return empty bodies; retry before dropping the block's logs.
+  const pollLogs = async (provider: (typeof providers)[number], head: bigint): Promise<void> => {
+    const fromBlock = head > LOG_RETRY_DEPTH ? head - LOG_RETRY_DEPTH : 0n;
+    const getLogs = () => provider.getLogs({ address, events, fromBlock, toBlock: head });
+    // TRON RPCs intermittently return empty bodies; retry inline, then leave the block to be
+    // re-polled on the next tick (the trailing window) rather than dropping its logs.
     const rawLogs = await retry(getLogs, 3, 1).catch((error: BaseError) => {
       const { message: errorMessage, details, shortMessage, metaMessages } = error;
       logger.warn({
@@ -199,7 +205,8 @@ async function listen(
         details,
         metaMessages,
         provider: provider.name,
-        blockNumber: Number(blockNumber),
+        fromBlock: Number(fromBlock),
+        toBlock: Number(head),
       });
       return undefined;
     });
