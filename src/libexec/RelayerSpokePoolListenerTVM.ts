@@ -29,8 +29,7 @@ import { scrapeEvents as _scrapeEvents } from "./util/evm";
 
 const PROGRAM = "RelayerSpokePoolListenerTVM";
 export const REORG_WINDOW = 128n;
-// Re-poll this many blocks back from each announced head, so a getLogs that failed (or a provider
-// briefly lagging behind its own announced block) is retried on subsequent blocks before its quorum
+// Trailing re-poll depth: a failed or lagging getLogs is retried on later blocks before its quorum
 // vote is lost. EventManager dedupes the overlap.
 const LOG_RETRY_DEPTH = 16n;
 const abortController = new AbortController();
@@ -185,29 +184,24 @@ async function listen(
   const blocks = new Map<bigint, string>();
   const events = eventSignatures.map((sig) => parseAbiItem(sig.replace("tuple", "")) as AbiEvent);
   const address = spokePoolAddr as `0x${string}`;
-  // Floor for the trailing window: the first block seen on the primary subscription (set in its
-  // first `onBlock`). It sits at the chain head, one past the startup scrape, so flooring here stops
-  // the initial poll from re-querying — and re-submitting — already-scraped blocks. Shared across all
-  // providers (a lagging secondary's own first block could fall inside the scraped range).
+  // Trailing-window floor: the primary's first block (past the scrape), so the initial poll can't
+  // re-submit scraped events. Shared — a lagging secondary's own first block may predate the scrape.
   let liveFrom: bigint | undefined;
 
-  // Fetch a single provider's logs for a block it has just announced and feed its votes to
-  // EventManager. Replaces viem's filter-based `watchEvent` (TRON expires filter ids) while keeping
-  // its per-provider sourcing: each provider polls only blocks it has itself seen, so a provider
-  // that briefly lags or fails still contributes its quorum vote once it catches up.
+  // Poll one provider's logs into EventManager. Per-provider (replacing filter-based watchEvent,
+  // which TRON expires) so a lagging or failing provider still votes once it catches up.
   const pollLogs = async (provider: (typeof providers)[number], head: bigint): Promise<void> => {
     if (liveFrom === undefined) {
-      return; // Primary hasn't reported its first block yet; nothing to floor the window at.
+      return;
     }
     const floor = liveFrom;
     const lookback = head > LOG_RETRY_DEPTH ? head - LOG_RETRY_DEPTH : 0n;
     const fromBlock = lookback > floor ? lookback : floor;
     if (fromBlock > head) {
-      return; // Provider hasn't advanced past the first live block yet; nothing to poll.
+      return;
     }
     const getLogs = () => provider.getLogs({ address, events, fromBlock, toBlock: head });
-    // TRON RPCs intermittently return empty bodies; retry inline, then leave the block to be
-    // re-polled on the next tick (the trailing window) rather than dropping its logs.
+    // TRON RPCs intermittently return empty bodies; retry, else the trailing window re-polls it.
     const rawLogs = await retry(getLogs, 3, 1).catch((error: BaseError) => {
       const { message: errorMessage, details, shortMessage, metaMessages } = error;
       logger.warn({
@@ -234,6 +228,8 @@ async function listen(
         blockNumber: Number(raw.blockNumber),
         event: raw.eventName,
         topics: Array<string>(),
+        // eth_getLogs omits `removed`; parent asserts `removed === false` (removals go via processBlock).
+        removed: false,
       };
 
       if (eventMgr.add(log, provider.name) && !postEvents([log])) {
@@ -255,9 +251,8 @@ async function listen(
     });
   };
 
-  // The primary provider owns re-org detection and the block heartbeat (via processBlock), and polls
-  // its own logs. `emitMissed` keeps the block stream contiguous so getLogs polling doesn't skip
-  // blocks and processBlock's parent-hash chain stays intact.
+  // Primary owns reorg detection + heartbeat (processBlock) and polls its own logs. emitMissed keeps
+  // the block stream contiguous, so polling neither skips blocks nor breaks parent-hash tracking.
   const [blockProvider, ...secondaryProviders] = providers;
   blockProvider.watchBlocks({
     emitOnBegin: true,
@@ -273,11 +268,10 @@ async function listen(
           return;
         }
       }
-      // Pending blocks have a null number; skip them rather than posting block 0.
+      // Pending blocks have a null number; skip rather than posting block 0.
       if (!isDefined(block.number)) {
         return;
       }
-      // The first block seen here floors the trailing window for every provider.
       liveFrom ??= block.number;
       if (!postBlock(Number(block.number), Number(block.timestamp))) {
         abortController.abort();
@@ -287,8 +281,6 @@ async function listen(
     onError: (error: Error) => logBlockError(blockProvider, error),
   });
 
-  // Secondary providers poll their own logs independently, so each contributes its quorum vote at
-  // its own pace.
   for (const provider of secondaryProviders) {
     provider.watchBlocks({
       emitOnBegin: true,
