@@ -1921,8 +1921,17 @@ export class Dataworker {
       executableLeaves.push(leaf);
     }
 
+    // Final on-chain guard: re-read `claimedBitMap` at `latest` and drop any leaf
+    // whose bit is already set. Non-mainnet executeRootBundle leaves carry
+    // `canFailInSimulation: true` and therefore bypass the MultiCallerClient's
+    // simulation step, so an overlapping dataworker run that landed an execution
+    // between our earlier event-derived filter and broadcast would otherwise
+    // produce a duplicate transaction (and a duplicate "Executed PoolRebalanceLeaf"
+    // alert from the queued tx).
+    const leavesToEnqueue = await this._filterAlreadyClaimedPoolRebalanceLeaves(executableLeaves);
+
     // Execute the leaves:
-    executableLeaves.forEach((leaf) => {
+    leavesToEnqueue.forEach((leaf) => {
       // Add balances to spoke pool on mainnet since we know it will be sent atomically.
       if (leaf.chainId === hubPoolChainId) {
         const hubChainSpokePoolAddress = spokePoolClients[leaf.chainId].spokePoolAddress;
@@ -1961,7 +1970,42 @@ export class Dataworker {
       }
     });
 
-    return executableLeaves.length;
+    return leavesToEnqueue.length;
+  }
+
+  async _filterAlreadyClaimedPoolRebalanceLeaves(leaves: PoolRebalanceLeaf[]): Promise<PoolRebalanceLeaf[]> {
+    if (leaves.length === 0) {
+      return leaves;
+    }
+
+    let claimedBitMap: BigNumber;
+    try {
+      const rootBundle = await this.clients.hubPoolClient.hubPool.rootBundleProposal();
+      claimedBitMap = BigNumber.from(rootBundle.claimedBitMap);
+    } catch (err) {
+      // If this read fails we can't filter — defer to the existing simulation path and keep all leaves.
+      this.logger.warn({
+        at: "Dataworker#_filterAlreadyClaimedPoolRebalanceLeaves",
+        message: "Failed to re-read rootBundleProposal.claimedBitMap; skipping pre-broadcast filter.",
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return leaves;
+    }
+
+    const unclaimed: PoolRebalanceLeaf[] = [];
+    for (const leaf of leaves) {
+      if (claimedBitMap.shr(leaf.leafId).and(1).eq(1)) {
+        this.logger.debug({
+          at: "Dataworker#_filterAlreadyClaimedPoolRebalanceLeaves",
+          message: `Skipping leaf ${leaf.leafId} for ${getNetworkName(leaf.chainId)}: already claimed on-chain at broadcast time (likely an overlapping dataworker run).`,
+          leafId: leaf.leafId,
+          chainId: leaf.chainId,
+        });
+      } else {
+        unclaimed.push(leaf);
+      }
+    }
+    return unclaimed;
   }
 
   async _updateExchangeRatesBeforeExecutingHubChainLeaves(
