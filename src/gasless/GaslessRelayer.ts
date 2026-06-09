@@ -1,10 +1,9 @@
 import winston from "winston";
 import { GaslessRelayerConfig } from "./GaslessRelayerConfig";
-import { RedisCacheInterface } from "../caching/RedisCache";
+import { arch } from "@across-protocol/sdk";
 import {
   Address,
   isDefined,
-  getRedisCache,
   delay,
   Signer,
   scheduleTask,
@@ -23,6 +22,7 @@ import {
   mapAsync,
   TransactionReceipt,
   EvmAddress,
+  SvmAddress,
   toBN,
   blockExplorerLink,
   getNetworkName,
@@ -32,6 +32,7 @@ import {
   createFormatFunction,
   toAddressType,
   getSpokePoolPeriphery,
+  getSpokePoolAddress,
   getPermit2,
   compareAddressesSimple,
   ConvertDecimals,
@@ -41,7 +42,12 @@ import {
   toBNWei,
   utils,
   willSucceed,
+  chainIsSvm,
+  chainIsEvm,
+  getSvmProvider,
+  SvmCpiEventsClient,
 } from "../utils";
+import { getRedisCache, RedisCacheInterface } from "../cache/Redis";
 import {
   AnyGaslessDepositMessage,
   APIGaslessDepositResponse,
@@ -50,7 +56,7 @@ import {
   GaslessDepositMessage,
   RelayData,
 } from "../interfaces";
-import { AcrossSwapApiClient, TransactionClient } from "../clients";
+import { AcrossSwapApiClient, SvmFillerClient, TransactionClient } from "../clients";
 import EIP3009_ABI from "../common/abi/EIP3009.json";
 import {
   buildGaslessDepositTx,
@@ -69,6 +75,9 @@ import {
 } from "../utils/GaslessUtils";
 
 const DEPOSIT_EVENT = "FundsDeposited";
+
+/** Result of a submitted gasless fill (EVM receipt or Solana signature). */
+export type GaslessFillSubmissionResult = TransactionReceipt | { svmSignature: string };
 
 export enum MessageState {
   INITIAL = 0,
@@ -97,19 +106,41 @@ const stateToStr = (state: MessageState) => MESSAGE_STATES[state] ?? "UNKNOWN";
  */
 export class GaslessRelayer {
   private abortController = new AbortController();
-  private instanceCoordinator: InstanceCoordinator;
+  private _instanceCoordinator?: InstanceCoordinator;
   private initialized = false;
+
+  // instanceCoordinator is populated by initialize(); reads pre-init throw, writes go through the setter.
+  protected get instanceCoordinator(): InstanceCoordinator {
+    assert(isDefined(this._instanceCoordinator), "GaslessRelayer: instanceCoordinator accessed before initialize()");
+    return this._instanceCoordinator;
+  }
+  protected set instanceCoordinator(value: InstanceCoordinator) {
+    this._instanceCoordinator = value;
+  }
 
   protected messageState: { [key: string]: MessageState } = {};
   protected providersByChain: { [chainId: number]: Provider } = {};
   // The object is indexed by `chainId`. An `AuthorizationUsed` event is marked by adding `${token}:${authorizer}:${nonce}` to the respective chain's set.
   protected observedDeposits: { [chainId: number]: Set<string> } = {};
+  /**
+   * Origin deposits observed at init with an SVM {@link Deposit.destinationChainId}, keyed by {@link _getDepositKey}.
+   * Used for fill status / fillRelay instead of synthetic API-derived relay data.
+   */
+  protected cachedSvmOriginDeposits: {
+    [depositKey: string]: Omit<DepositWithBlock, "fromLiteChain" | "toLiteChain" | "quoteBlockNumber">;
+  } = {};
   // The object is indexed by `chainId`. A `FilledRelay` event is marked by adding `${originChainId}:${depositId}` to the respective chain's set.
   protected observedFills: { [chainId: number]: Set<string> } = {};
   // The object is indexed by `chainId`. A SpokePoolPeriphery contract is indexed by the chain ID.
   protected spokePoolPeripheries: { [chainId: number]: Contract } = {};
-  // The object is indexed by `chainId`. A SpokePool contract is indexed by the chain ID.
+  // The object is indexed by `chainId`. A SpokePool contract is indexed by the chain ID (EVM destinations only).
   protected spokePools: { [chainId: number]: Contract } = {};
+  /** Solana destination fill client (at most one SVM destination chain). */
+  protected svmFillerClient?: SvmFillerClient;
+  /** SVM CPI events client for {@link arch.svm.relayFillStatus} on destination Solana. */
+  protected svmEventsClient?: SvmCpiEventsClient;
+  /** Spoke pool program id for the single SVM destination chain (if configured). */
+  protected svmSpokePoolAddress?: SvmAddress;
   /** Permit2 on each origin chain, connected to that chain's provider (nonce bitmap reads). */
   protected permit2Contracts: { [chainId: number]: Contract } = {};
   // Tracks whether a fill is currently in progress for a given user/originChainId combo.
@@ -117,7 +148,16 @@ export class GaslessRelayer {
   protected fillLock: { [key: string]: string } = {};
 
   private api: AcrossSwapApiClient;
-  protected signerAddress: EvmAddress;
+  private _signerAddress?: EvmAddress;
+
+  // signerAddress is populated by initialize(); reads pre-init throw, writes go through the setter.
+  protected get signerAddress(): EvmAddress {
+    assert(isDefined(this._signerAddress), "GaslessRelayer: signerAddress accessed before initialize()");
+    return this._signerAddress;
+  }
+  protected set signerAddress(value: EvmAddress) {
+    this._signerAddress = value;
+  }
 
   private transactionClient;
   private redisCache: RedisCacheInterface | undefined;
@@ -141,11 +181,10 @@ export class GaslessRelayer {
       message: "Initializing GaslessRelayer",
     });
 
-    const { RUN_IDENTIFIER: runIdentifier, BOT_IDENTIFIER: botIdentifier } = process.env;
-
     // Set the signer address.
     this.signerAddress = EvmAddress.from(await this.baseSigner.getAddress());
     this.redisCache = await getRedisCache(this.logger);
+    assert(isDefined(this.redisCache), "GaslessRelayer: requires a Redis cache for handover state");
 
     // Initialize the map with newly allocated sets.
     await forEachAsync(this.config.relayerOriginChains, async (chainId) => {
@@ -160,7 +199,26 @@ export class GaslessRelayer {
         this.permit2Contracts[chainId] = getPermit2(chainId).connect(provider);
       }
     });
-    await forEachAsync(this.config.relayerDestinationChains, async (chainId) => {
+    const svmDestinationChains = this.config.relayerDestinationChains.filter(chainIsSvm);
+    assert(
+      svmDestinationChains.length <= 1,
+      `Gasless relayer supports at most one SVM destination chain, got: ${svmDestinationChains.join(", ")}`
+    );
+
+    if (svmDestinationChains.length === 1) {
+      const svmChainId = svmDestinationChains[0];
+      const svmProvider = getSvmProvider(this.redisCache, this.logger, svmChainId);
+      this.svmEventsClient = await SvmCpiEventsClient.create(svmProvider);
+      this.svmFillerClient = await SvmFillerClient.from(this.baseSigner, svmProvider, svmChainId, this.logger);
+      const spokePoolAddress = getSpokePoolAddress(svmChainId);
+      if (!spokePoolAddress.isSVM()) {
+        throw new Error(`Expected SVM spoke pool for chain ${svmChainId}`);
+      }
+      this.svmSpokePoolAddress = spokePoolAddress;
+      this.observedFills[svmChainId] = new Set<string>();
+    }
+
+    await forEachAsync(this.config.relayerDestinationChains.filter(chainIsEvm), async (chainId) => {
       this.providersByChain[chainId] ??= await getProvider(chainId);
       this.observedFills[chainId] = new Set<string>();
       this.spokePools[chainId] = getSpokePool(chainId).connect(this.baseSigner.connect(this.providersByChain[chainId]));
@@ -205,8 +263,8 @@ export class GaslessRelayer {
     this.instanceCoordinator = new InstanceCoordinator(
       this.logger,
       this.redisCache,
-      botIdentifier,
-      runIdentifier,
+      this.config.botIdentifier,
+      this.config.runIdentifier,
       this.abortController
     );
     await this.instanceCoordinator.initiateHandover();
@@ -252,31 +310,105 @@ export class GaslessRelayer {
         originFundsDepositedEvents
           .map((event) => unpackDepositEvent(spreadEventWithBlockNumber(event), originChainId))
           .filter((deposit) => apiMessages.some(({ depositId }) => deposit.depositId.eq(depositId)))
-          .forEach((deposit) =>
-            observedDeposits.add(
-              this._getDepositKey(deposit.inputToken.toNative(), originChainId, deposit.depositId.toString())
-            )
-          );
+          .forEach((deposit) => {
+            const depositKey = this._getDepositKey(
+              deposit.inputToken.toNative(),
+              originChainId,
+              deposit.depositId.toString()
+            );
+            observedDeposits.add(depositKey);
+
+            if (chainIsSvm(deposit.destinationChainId)) {
+              this.cachedSvmOriginDeposits[depositKey] = deposit;
+            }
+          });
       }),
 
       mapAsync(this.config.relayerDestinationChains, async (destinationChainId) => {
-        const provider = this.providersByChain[destinationChainId];
-        const observedFills = this.observedFills[destinationChainId];
-
-        const searchConfig = await this._getEventSearchConfig(destinationChainId);
-        const destinationSpokePool = getSpokePool(destinationChainId).connect(provider);
-
-        const destinationFilledRelayEvents = await paginatedEventQuery(
-          destinationSpokePool,
-          destinationSpokePool.filters.FilledRelay(),
-          searchConfig
-        );
-        for (const filledRelay of destinationFilledRelayEvents) {
-          const fill = unpackFillEvent(spreadEventWithBlockNumber(filledRelay), destinationChainId);
-          observedFills.add(this._getFilledRelayKey(fill.originChainId, fill.depositId.toString()));
+        if (chainIsEvm(destinationChainId)) {
+          await this._updateObservedEvmFills(destinationChainId);
+        } else if (chainIsSvm(destinationChainId)) {
+          await this._updateObservedSvmFills(destinationChainId, apiMessages);
         }
       }),
     ]);
+  }
+
+  /**
+   * Populates {@link observedFills} for an EVM destination by scanning {@link FilledRelay} events.
+   */
+  private async _updateObservedEvmFills(destinationChainId: number): Promise<void> {
+    const provider = this.providersByChain[destinationChainId];
+    const observedFills = this.observedFills[destinationChainId];
+
+    const searchConfig = await this._getEventSearchConfig(destinationChainId);
+    const destinationSpokePool = getSpokePool(destinationChainId).connect(provider);
+
+    const destinationFilledRelayEvents = await paginatedEventQuery(
+      destinationSpokePool,
+      destinationSpokePool.filters.FilledRelay(),
+      searchConfig
+    );
+    for (const filledRelay of destinationFilledRelayEvents) {
+      const fill = unpackFillEvent(spreadEventWithBlockNumber(filledRelay), destinationChainId);
+      observedFills.add(this._getFilledRelayKey(fill.originChainId, fill.depositId.toString()));
+    }
+  }
+
+  /**
+   * Marks already-filled Solana destination relays in {@link observedFills} by querying fill status per API message.
+   */
+  private async _updateObservedSvmFills(
+    destinationChainId: number,
+    apiMessages: AnyGaslessDepositMessage[]
+  ): Promise<void> {
+    if (!isDefined(this.svmSpokePoolAddress)) {
+      return;
+    }
+
+    const svmMessages = apiMessages.filter((msg) => {
+      const { destinationChainId: msgDestinationChainId } = extractGaslessDepositFields(msg);
+      return msgDestinationChainId === destinationChainId;
+    });
+
+    await mapAsync(svmMessages, async (depositMessage) => {
+      const deposit = this.cachedSvmOriginDeposits[this._getDepositKeyFromMessage(depositMessage)];
+      if (!isDefined(deposit)) {
+        return;
+      }
+
+      const fillStatus = await this._getDestinationFillStatus(deposit);
+      if (fillStatus === FillStatus.Filled) {
+        this.observedFills[deposit.destinationChainId].add(
+          this._getFilledRelayKey(deposit.originChainId, deposit.depositId.toString())
+        );
+      }
+    });
+  }
+
+  private async _getDestinationFillStatus(deposit: RelayData & { destinationChainId: number }): Promise<FillStatus> {
+    const { destinationChainId } = deposit;
+    if (chainIsSvm(destinationChainId)) {
+      const svmEventsClient = this.svmEventsClient;
+      const spokePoolAddress = this.svmSpokePoolAddress;
+      assert(isDefined(svmEventsClient), "Missing svmEventsClient for SVM destination");
+      assert(isDefined(spokePoolAddress), "Missing SVM spoke pool address");
+      assert(deposit.recipient.isSVM() && deposit.outputToken.isSVM(), "SVM fill status requires SVM addresses");
+
+      return arch.svm.relayFillStatus(
+        arch.svm.toAddress(spokePoolAddress),
+        {
+          ...deposit,
+          recipient: deposit.recipient,
+          outputToken: deposit.outputToken,
+        },
+        destinationChainId,
+        svmEventsClient,
+        this.logger
+      );
+    }
+
+    return relayFillStatus(this.spokePools[destinationChainId], deposit, "latest", destinationChainId);
   }
 
   /**
@@ -293,6 +425,11 @@ export class GaslessRelayer {
     spokePool: string
   ): boolean {
     if (this._isCctpDeposit(deposit.originChainId, spokePool)) {
+      return false;
+    }
+
+    // Solana fills require an on-chain origin deposit; never fill from API-derived synthetic relay data.
+    if (chainIsSvm(deposit.destinationChainId)) {
       return false;
     }
 
@@ -329,7 +466,7 @@ export class GaslessRelayer {
    * - EIP-3009 / erc3009 (swap-and-bridge): AuthorizationUsed on swapToken (the signed token); observed key uses depositData.inputToken to match messageFilter / FundsDeposited.
    * - Permit2 (bridge only): FundsDeposited on SpokePool by depositId (no AuthorizationUsed on the transfer token).
    * - Permit2 (swap-and-bridge): Permit2 nonceBitmap on canonical Permit2 — if nonce used, treat deposit as already submitted.
-   * - Permit (swap-and-bridge): token.nonces(owner) > signed nonce means permit already consumed.
+   * - Permit (swap-and-bridge): SpokePoolPeriphery.permitNonces(owner) > signed nonce means it's already used.
    */
   protected async updateObservedCctpDeposits(apiMessages: AnyGaslessDepositMessage[]): Promise<void> {
     const cctpMessages = apiMessages.filter((msg) => this._isCctpDeposit(msg.originChainId, msg.spokePool));
@@ -345,10 +482,9 @@ export class GaslessRelayer {
             depositMessage.permitType === "permit2"
               ? await isPermit2NonceUsed(this.permit2Contracts[originChainId], owner, permitNonce)
               : await isErc2612PermitNonceConsumed({
-                  tokenAddress: swapTokenAddr.toEvmAddress(),
+                  spokePoolPeriphery: this.spokePoolPeripheries[originChainId],
                   owner,
                   signedNonce: permitNonce,
-                  provider: this.providersByChain[originChainId],
                 });
           if (!nonceUsed) {
             return;
@@ -398,7 +534,7 @@ export class GaslessRelayer {
   protected _markFilledFromInitialObservation(apiMessages: AnyGaslessDepositMessage[]): number {
     let markedFilledCount = 0;
     for (const depositMessage of apiMessages) {
-      const { originChainId, depositId, spokePool, depositFlowType } = depositMessage;
+      const { originChainId, depositId, spokePool } = depositMessage;
       const { destinationChainId, inputToken } = extractGaslessDepositFields(depositMessage);
       const depositKey = this._getDepositKey(inputToken.toNative(), originChainId, depositId);
 
@@ -407,9 +543,8 @@ export class GaslessRelayer {
         continue;
       }
 
-      const isSwap = depositFlowType === "swapAndBridge";
       const isCctp = this._isCctpDeposit(originChainId, spokePool);
-      if (isSwap || isCctp) {
+      if (isCctp) {
         this._setState(depositKey, MessageState.FILLED);
         markedFilledCount++;
         continue;
@@ -447,7 +582,7 @@ export class GaslessRelayer {
         swapTokenAmount,
       } = extractGaslessDepositFields(depositMessage);
 
-      const depositKey = this._getDepositKey(inputToken.toNative(), originChainId, depositId);
+      const depositKey = this._getDepositKeyFromMessage(depositMessage);
       const fillKey = `${authorizer}:${originChainId}`;
 
       const at = "GaslessRelayer#evaluateApiSignatures";
@@ -489,8 +624,8 @@ export class GaslessRelayer {
       const tStart = performance.now();
 
       let fillImmediate = false;
-      let deposit: RelayData & { destinationChainId: number };
-      let depositReceiptPromise: Promise<TransactionReceipt | null>;
+      let deposit: (RelayData & { destinationChainId: number }) | undefined;
+      let depositReceiptPromise: Promise<TransactionReceipt | null | undefined> | undefined;
 
       const bridgeMessage = depositMessage as GaslessDepositMessage;
 
@@ -519,7 +654,9 @@ export class GaslessRelayer {
               outputToken,
               outputAmount,
               this.config.refundFlowTestEnabled,
-              this.config.allowedPeggedPairs
+              this.config.allowedPeggedPairs,
+              this.logger,
+              this.config.depositUsdPageThreshold
             );
             let nextState = MessageState.ERROR;
             if (!valid) {
@@ -562,7 +699,7 @@ export class GaslessRelayer {
 
             // Swap-and-bridge and CCTP bridge: no fill; confirm via receipt hash and/or nonce/auth usage.
             // Permit2: nonceBitmap, Permit (EIP-2612): token nonce advancement, EIP-3009: AuthorizationUsed.
-            if (isSwap || isCctpDeposit) {
+            if (isCctpDeposit) {
               let found: string | undefined = depositReceipt?.transactionHash;
 
               if (!found) {
@@ -571,10 +708,9 @@ export class GaslessRelayer {
                   found = await this._findAuthorizationUsed(originChainId, authToken, authorizer, nonce);
                 } else if (depositMessage.permitType === "permit") {
                   const nonceConsumed = await isErc2612PermitNonceConsumed({
-                    tokenAddress: authToken.toEvmAddress(),
+                    spokePoolPeriphery: this.spokePoolPeripheries[originChainId],
                     owner: authorizer,
                     signedNonce: nonce,
-                    provider: this.providersByChain[originChainId],
                   });
                   if (nonceConsumed) {
                     found = "permit-nonce-consumed";
@@ -630,8 +766,11 @@ export class GaslessRelayer {
                 nextState = MessageState.FILL_PENDING;
               } else {
                 log("info", `Could not locate deposit on ${origin}.`);
-                await delay(1);
+                // It's possible the deposit will always fail in simulation (e.g. insufficient balance). In this
+                // case, drop the lock on the deposit in case there were follow-up requests we need to unblock.
+                delete this.fillLock[fillKey];
                 nextState = MessageState.DEPOSIT_SUBMIT;
+                await delay(1);
               }
             }
             setState(nextState);
@@ -648,26 +787,21 @@ export class GaslessRelayer {
                 break;
               }
 
-              const txnReceipt = await this.initiateFill(deposit, spokePool);
-              if (isDefined(txnReceipt)) {
+              const fillSubmission = await this.initiateFill(deposit, spokePool);
+              if (isDefined(fillSubmission)) {
                 log("info", `Completed fill on ${destination} for ${origin} deposit.`);
                 fillStatus = FillStatus.Filled;
               }
             } else {
               deposit = buildSyntheticDeposit(bridgeMessage);
-              const txnReceipt = await this.initiateFill(deposit, spokePool);
-              if (isDefined(txnReceipt)) {
+              const fillSubmission = await this.initiateFill(deposit, spokePool);
+              if (isDefined(fillSubmission)) {
                 log("info", `Completed immediate fill on ${destination} for ${origin} deposit.`);
                 fillStatus = FillStatus.Filled;
               }
             }
 
-            fillStatus ??= await relayFillStatus(
-              this.spokePools[destinationChainId],
-              deposit,
-              "latest",
-              destinationChainId
-            );
+            fillStatus ??= await this._getDestinationFillStatus(deposit);
 
             if (fillStatus === FillStatus.Filled) {
               log("info", `Recognised fill on ${destination}.`);
@@ -717,7 +851,9 @@ export class GaslessRelayer {
       : contract;
   }
 
-  protected async initiateDeposit(depositMessage: AnyGaslessDepositMessage): Promise<TransactionReceipt | null> {
+  protected async initiateDeposit(
+    depositMessage: AnyGaslessDepositMessage
+  ): Promise<TransactionReceipt | null | undefined> {
     const { originChainId, depositId } = depositMessage;
     const authorizer = getGaslessAuthorizerAddress(depositMessage);
     const spokePoolPeripheryContract = this.getPeripheryContract(originChainId);
@@ -783,7 +919,7 @@ export class GaslessRelayer {
   protected async initiateFill(
     deposit: RelayData & { destinationChainId: number },
     originChainSpokePool: string
-  ): Promise<TransactionReceipt | null> {
+  ): Promise<GaslessFillSubmissionResult | null | undefined> {
     const { originChainId, depositId, destinationChainId, outputToken, outputAmount, inputToken, inputAmount } =
       deposit;
 
@@ -814,9 +950,12 @@ export class GaslessRelayer {
       "Cannot fill deposit with mismatching input/output tokens (not same L1 or in allowedPeggedPairs)."
     );
 
-    const spokePool = this.spokePools[destinationChainId];
-
-    const _gaslessFill = buildGaslessFillRelayTx(deposit, spokePool, originChainId, this.signerAddress);
+    const logMessage = "Completed gasless fill 🔮";
+    const mrkdwn = `Completed gasless fill from ${getNetworkName(originChainId)} to ${getNetworkName(
+      destinationChainId
+    )} with output amount ${createFormatFunction(2, 4, false, outputTokenInfo.decimals)(outputAmount)} ${
+      outputTokenInfo.symbol
+    } and deposit ID ${depositId}`;
 
     if (!this.config.sendingTransactionsEnabled) {
       this.logger.debug({
@@ -826,14 +965,45 @@ export class GaslessRelayer {
       return null;
     }
 
+    if (chainIsSvm(destinationChainId)) {
+      const svmFillerClient = this.svmFillerClient;
+      const spokePoolAddress = this.svmSpokePoolAddress;
+      assert(isDefined(svmFillerClient), "Missing svmFillerClient for SVM destination");
+      assert(isDefined(spokePoolAddress), "Missing SVM spoke pool address");
+      assert(
+        deposit.recipient.isSVM() && deposit.outputToken.isSVM(),
+        "SVM fill requires SVM recipient and outputToken"
+      );
+
+      const svmSignature = await svmFillerClient.executeFillImmediately(
+        spokePoolAddress,
+        {
+          ...deposit,
+          recipient: deposit.recipient,
+          outputToken: deposit.outputToken,
+        },
+        originChainId,
+        this.signerAddress,
+        logMessage,
+        mrkdwn
+      );
+      if (!isDefined(svmSignature)) {
+        this.logger.warn({
+          at: "GaslessRelayer#initiateFill",
+          message: "Failed to submit gasless SVM fill",
+          depositId,
+        });
+        return null;
+      }
+      return { svmSignature };
+    }
+
+    const spokePool = this.spokePools[destinationChainId];
+    const _gaslessFill = buildGaslessFillRelayTx(deposit, spokePool, originChainId, this.signerAddress);
     const gaslessFill = {
       ..._gaslessFill,
-      message: "Completed gasless fill 🔮",
-      mrkdwn: `Completed gasless fill from ${getNetworkName(originChainId)} to ${getNetworkName(
-        destinationChainId
-      )} with output amount ${createFormatFunction(2, 4, false, outputTokenInfo.decimals)(outputAmount)} ${
-        outputTokenInfo.symbol
-      } and deposit ID ${depositId}`,
+      message: logMessage,
+      mrkdwn,
     };
 
     const txReceipt = await sendAndConfirmTransaction(gaslessFill, this.transactionClient);
@@ -1005,6 +1175,11 @@ export class GaslessRelayer {
    */
   protected _getDepositKey(token: string, originChainId: number, depositId: string): string {
     return `${token}:${originChainId}:${depositId}`;
+  }
+
+  protected _getDepositKeyFromMessage(depositMessage: AnyGaslessDepositMessage): string {
+    const { inputToken } = extractGaslessDepositFields(depositMessage);
+    return this._getDepositKey(inputToken.toNative(), depositMessage.originChainId, depositMessage.depositId);
   }
 
   /*

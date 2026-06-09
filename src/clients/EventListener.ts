@@ -9,8 +9,20 @@ import {
   getOriginFromURL,
   getProviderHeaders,
   getViemChain,
+  isDefined,
+  viemLogToEthersLog,
   winston,
 } from "../utils";
+
+// parseAbiItem() returns a union over all ABI item kinds; narrow it to AbiEvent via the type discriminant.
+function parseEventDescriptor(eventDescriptor: string | AbiEvent): AbiEvent {
+  if (typeof eventDescriptor !== "string") {
+    return eventDescriptor;
+  }
+  const item = parseAbiItem(eventDescriptor.replace("tuple", ""));
+  assert(item.type === "event", `Expected event descriptor, got "${item.type}"`);
+  return item;
+}
 
 function resolveProviders(chainId: number, quorum = 1) {
   const protocol = process.env[`RPC_PROVIDERS_TRANSPORT_${chainId}`] ?? "wss";
@@ -60,8 +72,8 @@ export class EventListener extends EventEmitter {
 
     const newBlock = (block: Block, provider: string) => {
       // Transient error that sometimes occurs. Catch it here and try to flush out the provider.
-      if (!block) {
-        logger.debug({ at, message: `Received empty ${chain} block from ${provider}.` });
+      if (!block || block.number === null) {
+        logger.debug({ at, message: `Received empty or pending ${chain} block from ${provider}.` });
         return;
       }
       const [blockNumber, currentTime] = [parseInt(block.number.toString()), parseInt(block.timestamp.toString())];
@@ -83,37 +95,44 @@ export class EventListener extends EventEmitter {
     });
   }
 
-  onEvent(address: string, event: string, handler: (log: Log) => void): void {
-    this.onEvents(address, [event], handler);
+  onEvent(
+    address: string,
+    event: string | AbiEvent,
+    handler: (log: Log) => void,
+    args?: Record<string, unknown>
+  ): void {
+    this.onEvents(address, [event], handler, args);
   }
 
-  onEvents(address: string, events: string[], handler: (log: Log) => void): void {
+  onEvents(
+    address: string,
+    events: (string | AbiEvent)[],
+    handler: (log: Log) => void,
+    args?: Record<string, unknown>
+  ): void {
+    const at = "EventListener::onEvents";
     const { eventMgr, providers } = this;
     events.forEach((eventDescriptor) => {
       // Viem is unhappy with "tuple" in the event descriptor; sub it out.
-      // Viem also complains about the return type of parseAbiItem() (@todo: why), so coerce it.
-      const event = parseAbiItem(eventDescriptor.replace("tuple", "")) as AbiEvent;
-      this.on(event.name, handler);
+      const event = parseEventDescriptor(eventDescriptor);
 
       providers.forEach((provider) => {
         const onLogs = (logs: (viemLog & { args: unknown; eventName: string })[]) => {
           logs.forEach((log) => {
-            const event = {
-              ...log,
-              args: log.args,
-              blockNumber: Number(log.blockNumber),
-              event: log.eventName,
-              topics: Array<string>(), // Not supplied by viem, but not actually used by the relayer.
-            };
+            const event = viemLogToEthersLog(log);
+            if (!isDefined(event)) {
+              this.logger.warn({ at, message: "Unable to translate ethers viem event.", provider, log });
+              return;
+            }
 
             if (log.removed) {
               eventMgr.remove(event, provider.name);
-              this.emit(event.event, event);
+              handler(event);
               return;
             }
 
             if (eventMgr.add(event, provider.name)) {
-              this.emit(event.event, event);
+              handler(event);
             }
           });
         };
@@ -121,7 +140,7 @@ export class EventListener extends EventEmitter {
         const onError = (error: Error) => {
           const { message: errorMessage, details, shortMessage, metaMessages } = error as BaseError;
           this.logger.warn({
-            at: "EventListener::onEvents",
+            at,
             message: `Caught ${this.chain} ${event.name} provider error.`,
             errorMessage,
             shortMessage,
@@ -131,7 +150,7 @@ export class EventListener extends EventEmitter {
           });
         };
 
-        provider.watchEvent({ address: address as `0x${string}`, event, onLogs, onError });
+        provider.watchEvent({ address: address as `0x${string}`, event, args, onLogs, onError });
       });
     });
   }

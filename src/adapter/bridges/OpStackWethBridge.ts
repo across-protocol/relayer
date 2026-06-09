@@ -11,7 +11,7 @@ import {
   EvmAddress,
   winston,
 } from "../../utils";
-import { CONTRACT_ADDRESSES } from "../../common";
+import { getContractEntry } from "../../common";
 import { Log } from "../../interfaces";
 import { matchL2EthDepositAndWrapEvents, processEvent } from "../utils";
 import { utils } from "@across-protocol/sdk";
@@ -35,21 +35,24 @@ export class OpStackWethBridge extends BaseBridgeAdapter {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _logger: winston.Logger
   ) {
+    const { address: atomicDepositorAddress, abi: atomicDepositorAbi } = getContractEntry(
+      hubChainId,
+      "atomicDepositor"
+    );
     super(
       l2chainId,
       hubChainId,
       l1Signer,
       // To keep existing logic, we should use atomic depositor as the l1 bridge
-      [EvmAddress.from(CONTRACT_ADDRESSES[hubChainId].atomicDepositor.address)]
+      [EvmAddress.from(atomicDepositorAddress)]
     );
 
-    const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId][`ovmStandardBridge_${l2chainId}`];
+    const { address: l1Address, abi: l1Abi } = getContractEntry(hubChainId, `ovmStandardBridge_${l2chainId}`);
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
 
-    const { address: l2Address, abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].ovmStandardBridge;
+    const { address: l2Address, abi: l2Abi } = getContractEntry(l2chainId, "ovmStandardBridge");
     this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider);
 
-    const { address: atomicDepositorAddress, abi: atomicDepositorAbi } = CONTRACT_ADDRESSES[hubChainId].atomicDepositor;
     this.atomicDepositor = new Contract(atomicDepositorAddress, atomicDepositorAbi, l1Signer);
 
     this.l2Weth = new Contract(TOKEN_SYMBOLS_MAP.WETH.addresses[l2chainId], WETH_ABI, l2SignerOrProvider);

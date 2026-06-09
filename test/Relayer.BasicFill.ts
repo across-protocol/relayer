@@ -17,6 +17,7 @@ import {
   getNetworkName,
   getAllUnfilledDeposits,
   getMessageHash,
+  isDefined,
   toAddressType,
   EvmAddress,
   SvmAddress,
@@ -41,6 +42,7 @@ import {
 } from "./mocks";
 import { MockedMultiCallerClient } from "./mocks/MockMultiCallerClient";
 import {
+  assert,
   BigNumber,
   Contract,
   SignerWithAddress,
@@ -67,7 +69,7 @@ import {
   deployMulticall3,
 } from "./utils";
 
-describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
+describe("Relayer: Check for Unfilled Deposits and Fill", function () {
   const [srcChain, dstChain] = [getNetworkName(originChainId), getNetworkName(destinationChainId)];
   const { EMPTY_MESSAGE } = constants;
   const { fixedPointAdjustment: fixedPoint } = sdkUtils;
@@ -245,7 +247,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     await spokePool_1.setCurrentTime(await getLastBlockTime(spokePool_1.provider));
   });
 
-  describe("Relayer: Check for Unfilled v3 Deposits and Fill", async function () {
+  describe("Relayer: Check for Unfilled v3 Deposits and Fill", function () {
     // Helper for quickly computing fill amounts.
     const getFillAmount = (relayData: RelayData, tokenPrice: BigNumber): BigNumber =>
       relayData.outputAmount.mul(tokenPrice).div(fixedPoint);
@@ -545,11 +547,11 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       expect(lastSpyLogIncludes(spy, "0 unfilled deposits found")).to.be.true;
 
       const exclusiveDeposit = deposits.find(({ exclusiveRelayer }) => exclusiveRelayer.eq(relayerAddress));
-      expect(exclusiveDeposit).to.exist;
+      assert(isDefined(exclusiveDeposit), "Expected exclusive deposit");
       // Advance both block.timestamp and the SpokePool's _currentTime past the exclusivity
       // deadline. The block timestamp drives the SpokePoolClient's currentTime, while the
       // contract's _currentTime is still required for the on-chain exclusivity check at fill time.
-      await setSpokePoolTime(spokePool_2, exclusiveDeposit!.exclusivityDeadline + 1);
+      await setSpokePoolTime(spokePool_2, exclusiveDeposit.exclusivityDeadline + 1);
       await updateAllClients();
 
       // Relayer can unconditionally fill after the exclusivityDeadline.
@@ -668,8 +670,8 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         outputToken,
         outputAmount
       );
-      const fillAmount = profitClient.getFillAmountInUsd(deposit1)!;
-      expect(fillAmount).to.exist;
+      const fillAmount = profitClient.getFillAmountInUsd(deposit1);
+      assert(isDefined(fillAmount), "Expected fill amount in USD");
 
       // Simple escalating confirmation requirements; cap off with a default upper limit.
       const originChainConfirmations = [1, 4, 8].map((n) => ({
@@ -1001,6 +1003,41 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       ).to.not.be.undefined;
     });
 
+    it("Rate-limits per-depositor deposits per loop", async function () {
+      // Per-depositor rate-limiting only engages in looping mode; pollingDelay === 0 is the sweeper bypass.
+      Object.assign(relayerInstance.config, { pollingDelay: 1 });
+
+      // Submit one more deposit than the per-depositor cap (10), all from the same depositor on the same origin chain.
+      const limit = 10;
+      const nDeposits = limit + 1;
+      const perInputAmount = inputAmount.div(nDeposits);
+      const perOutputAmount = outputAmount.div(nDeposits);
+      for (let i = 0; i < nDeposits; ++i) {
+        await depositV3(
+          spokePool_1,
+          destinationChainId,
+          depositor,
+          inputToken,
+          perInputAmount,
+          outputToken,
+          perOutputAmount
+        );
+      }
+
+      const evaluateSpy = sinon.spy(relayerInstance, "evaluateFills");
+      await updateAllClients();
+      await relayerInstance.checkForUnfilledDepositsAndFill();
+      evaluateSpy.restore();
+
+      // Exactly `limit` deposits should reach evaluateFills; the (limit + 1)th is filtered out.
+      expect(evaluateSpy.callCount).to.equal(1);
+      expect(evaluateSpy.firstCall.args[0].length).to.equal(limit);
+
+      // A single warn fires on the first deposit that exceeds the cap.
+      const rateLimitLogs = spy.getCalls().filter(({ lastArg }) => lastArg.message?.includes("Rate-limiting"));
+      expect(rateLimitLogs.length).to.equal(1);
+    });
+
     it("Uses lowest outputAmount on updated deposits", async function () {
       const deposit = await depositV3(
         spokePool_1,
@@ -1050,9 +1087,8 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
           expect(lastSpyLogIncludes(spy, "Filled v3 deposit")).to.be.true;
 
           await spokePoolClient_2.update();
-          let fill = spokePoolClient_2.getFillsForRelayer(toAddressType(relayer.address, destinationChainId)).at(-1);
-          expect(fill).to.exist;
-          fill = fill!;
+          const fill = spokePoolClient_2.getFillsForRelayer(toAddressType(relayer.address, destinationChainId)).at(-1);
+          assert(isDefined(fill), "Expected fill for relayer");
 
           expect(fill.relayExecutionInfo.updatedOutputAmount.eq(deposit.outputAmount)).to.be.false;
           expect(fill.relayExecutionInfo.updatedOutputAmount.eq(update.outputAmount)).to.be.true;

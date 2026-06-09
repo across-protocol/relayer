@@ -1,4 +1,5 @@
 import winston from "winston";
+import { array, create, number, object, optional, record, string, union } from "superstruct";
 import { CommonConfig, ProcessEnv } from "../common";
 import {
   CHAIN_IDs,
@@ -9,6 +10,30 @@ import {
   toAddressType,
   parseJson,
 } from "../utils";
+
+const MonitoredBalances2Schema = record(
+  string(),
+  record(
+    string(),
+    array(
+      object({
+        token: optional(string()),
+        warnThreshold: optional(number()),
+        errorThreshold: optional(number()),
+      })
+    )
+  )
+);
+
+const MonitoredBalancesSchema = array(
+  object({
+    chainId: union([string(), number()]),
+    account: string(),
+    token: optional(string()),
+    warnThreshold: optional(union([string(), number()])),
+    errorThreshold: optional(union([string(), number()])),
+  })
+);
 
 // Set modes to true that you want to enable in the AcrossMonitor bot.
 export interface BotModes {
@@ -51,7 +76,7 @@ export class MonitorConfig extends CommonConfig {
   readonly hyperliquidOrderMaximumLifetime: number;
   readonly hyperliquidTokens: string[];
   constructor(env: ProcessEnv) {
-    super(env);
+    super(env, { botIdentifier: "across-monitor" });
 
     const {
       STARTING_BLOCK_NUMBER,
@@ -66,6 +91,7 @@ export class MonitorConfig extends CommonConfig {
       KNOWN_V1_ADDRESSES,
       BALANCES_ENABLED,
       MONITORED_BALANCES,
+      MONITORED_BALANCES_2,
       STUCK_REBALANCES_ENABLED,
       REPORT_SPOKE_POOL_BALANCES,
       MONITORED_SPOKE_POOL_CHAINS,
@@ -132,52 +158,63 @@ export class MonitorConfig extends CommonConfig {
     this.hubPoolStartingBlock = STARTING_BLOCK_NUMBER ? Number(STARTING_BLOCK_NUMBER) : undefined;
     this.hubPoolEndingBlock = ENDING_BLOCK_NUMBER ? Number(ENDING_BLOCK_NUMBER) : undefined;
 
-    if (MONITORED_BALANCES) {
-      this.monitoredBalances = JSON.parse(MONITORED_BALANCES).map(
-        ({
-          errorThreshold,
-          warnThreshold,
-          account,
-          token,
-          chainId: _chainId,
-        }: {
-          errorThreshold?: string;
-          warnThreshold?: string;
-          account: string;
-          token?: string;
-          chainId: string;
-        }) => {
-          const chainId = parseInt(_chainId);
-          if (!isDefined(errorThreshold) && !isDefined(warnThreshold)) {
-            throw new Error("Must provide either an errorThreshold or a warnThreshold");
-          }
+    const validate = (chainId: number, account: string, warnThreshold?: number, errorThreshold?: number) => {
+      if (!isDefined(errorThreshold) || !isDefined(warnThreshold)) {
+        throw new Error("Must provide both errorThreshold and warnThreshold");
+      }
+    };
 
-          let parsedErrorThreshold: number | null = null;
-          if (isDefined(errorThreshold)) {
-            if (Number.isNaN(Number(errorThreshold))) {
-              throw new Error(`errorThreshold value: ${errorThreshold} cannot be converted to a number`);
-            }
-            parsedErrorThreshold = Number(errorThreshold);
-          }
-
-          let parsedWarnThreshold: number | null = null;
-          if (isDefined(warnThreshold)) {
-            if (Number.isNaN(Number(errorThreshold))) {
-              throw new Error(`warnThreshold value: ${warnThreshold} cannot be converted to a number`);
-            }
-            parsedWarnThreshold = Number(warnThreshold);
-          }
-
-          const isNativeToken = !token || toAddressType(token, chainId).eq(getNativeTokenAddressForChain(chainId));
-          return {
-            token: isNativeToken ? getNativeTokenAddressForChain(chainId) : toAddressType(token, chainId),
-            errorThreshold: parsedErrorThreshold,
-            warnThreshold: parsedWarnThreshold,
-            account: toAddressType(account, chainId),
-            chainId,
-          };
+    if (MONITORED_BALANCES_2) {
+      this.monitoredBalances = [];
+      const config = create(JSON.parse(MONITORED_BALANCES_2), MonitoredBalances2Schema);
+      Object.entries(config).forEach(([account, chainConfig]) => {
+        Object.entries(chainConfig).forEach(([_chainId, tokenConfigs]) => {
+          const chainId = Number(_chainId);
+          tokenConfigs.forEach(({ token, warnThreshold, errorThreshold }) => {
+            validate(chainId, account, warnThreshold, errorThreshold);
+            this.monitoredBalances.push({
+              chainId,
+              account: toAddressType(account, chainId),
+              warnThreshold: warnThreshold ?? null,
+              errorThreshold: errorThreshold ?? null,
+              token: isDefined(token) ? toAddressType(token, chainId) : getNativeTokenAddressForChain(chainId),
+            });
+          });
+        });
+      });
+    } else if (MONITORED_BALANCES) {
+      const config = create(JSON.parse(MONITORED_BALANCES), MonitoredBalancesSchema);
+      this.monitoredBalances = config.map(({ errorThreshold, warnThreshold, account, token, chainId: _chainId }) => {
+        const chainId = parseInt(String(_chainId));
+        if (!isDefined(errorThreshold) || !isDefined(warnThreshold)) {
+          throw new Error("Must provide both errorThreshold and warnThreshold");
         }
-      );
+
+        let parsedErrorThreshold: number | null = null;
+        if (isDefined(errorThreshold)) {
+          if (Number.isNaN(Number(errorThreshold))) {
+            throw new Error(`errorThreshold value: ${errorThreshold} cannot be converted to a number`);
+          }
+          parsedErrorThreshold = Number(errorThreshold);
+        }
+
+        let parsedWarnThreshold: number | null = null;
+        if (isDefined(warnThreshold)) {
+          if (Number.isNaN(Number(warnThreshold))) {
+            throw new Error(`warnThreshold value: ${warnThreshold} cannot be converted to a number`);
+          }
+          parsedWarnThreshold = Number(warnThreshold);
+        }
+
+        const isNativeToken = !token || toAddressType(token, chainId).eq(getNativeTokenAddressForChain(chainId));
+        return {
+          token: isNativeToken ? getNativeTokenAddressForChain(chainId) : toAddressType(token, chainId),
+          errorThreshold: parsedErrorThreshold,
+          warnThreshold: parsedWarnThreshold,
+          account: toAddressType(account, chainId),
+          chainId,
+        };
+      });
     }
   }
 

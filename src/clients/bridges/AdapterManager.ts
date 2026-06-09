@@ -42,7 +42,16 @@ export class AdapterManager {
   // manager will attempt to wrap ETH on into WETH. This list also includes chains like Arbitrum where the relayer is
   // expected to receive ETH as a gas refund from an L1 to L2 deposit that was intended to rebalance inventory.
   private chainsToWrapEtherOn = [...spokesThatHoldNativeTokens, CHAIN_IDs.ARBITRUM, CHAIN_IDs.MAINNET];
-  readonly spokePoolManager: SpokePoolManager;
+  private _spokePoolManager?: SpokePoolManager;
+  // spokePoolManager is populated by the constructor unless `spokePoolClients` is missing, in which case the
+  // adapter manager is constructed in a partial state. Reads pre-init throw, writes go through the setter.
+  get spokePoolManager(): SpokePoolManager {
+    assert(isDefined(this._spokePoolManager), "AdapterManager: spokePoolManager unavailable (no spokePoolClients)");
+    return this._spokePoolManager;
+  }
+  set spokePoolManager(value: SpokePoolManager) {
+    this._spokePoolManager = value;
+  }
   constructor(
     readonly logger: winston.Logger,
     spokePoolClients: { [chainId: number]: SpokePoolClient },
@@ -53,7 +62,7 @@ export class AdapterManager {
       return;
     }
     this.pendingBridgeRedisReader = new CctpOftReadOnlyClient(logger);
-    this.spokePoolManager = new SpokePoolManager(logger, spokePoolClients);
+    this._spokePoolManager = new SpokePoolManager(logger, spokePoolClients);
     const spokePoolAddresses = Object.values(this.spokePoolManager.getSpokePoolClients()).map(
       (client) => client.spokePoolAddress
     );
@@ -61,7 +70,7 @@ export class AdapterManager {
     const isHubPoolOrSpokePoolAddress = (chainId: number, address: Address) => {
       return (
         EvmAddress.from(this.hubPoolClient.hubPool.address).eq(address) ||
-        this.spokePoolManager.getClient(chainId)?.spokePoolAddress.eq(address)
+        this.spokePoolManager.getClient(chainId)?.spokePoolAddress?.eq(address)
       );
     };
 
@@ -71,7 +80,7 @@ export class AdapterManager {
       return monitoredAddresses.filter(
         (address) =>
           isHubPoolOrSpokePoolAddress(chainId, address) ||
-          !spokePoolAddresses.some((spokePoolAddress) => spokePoolAddress.eq(address))
+          !spokePoolAddresses.filter(isDefined).some((spokePoolAddress) => spokePoolAddress.eq(address))
       );
     };
 
@@ -86,9 +95,9 @@ export class AdapterManager {
         SUPPORTED_TOKENS[chainId]?.map((symbol) => {
           const spokePoolClient = this.spokePoolManager.getClient(chainId);
           let l2SignerOrProvider;
-          if (isEVMSpokePoolClient(spokePoolClient)) {
+          if (isDefined(spokePoolClient) && isEVMSpokePoolClient(spokePoolClient)) {
             l2SignerOrProvider = spokePoolClient.spokePool.signer;
-          } else if (isSVMSpokePoolClient(spokePoolClient)) {
+          } else if (isDefined(spokePoolClient) && isSVMSpokePoolClient(spokePoolClient)) {
             l2SignerOrProvider = spokePoolClient.svmEventsClient.getRpc();
           }
           const l1Token = resolveAcrossToken(symbol, hubChainId, true);
@@ -111,9 +120,9 @@ export class AdapterManager {
       }
       const spokePoolClient = this.spokePoolManager.getClient(chainId);
       let l2SignerOrSvmProvider: Signer | SVMProvider | undefined;
-      if (isEVMSpokePoolClient(spokePoolClient)) {
+      if (isDefined(spokePoolClient) && isEVMSpokePoolClient(spokePoolClient)) {
         l2SignerOrSvmProvider = spokePoolClient.spokePool.signer;
-      } else if (isSVMSpokePoolClient(spokePoolClient)) {
+      } else if (isDefined(spokePoolClient) && isSVMSpokePoolClient(spokePoolClient)) {
         l2SignerOrSvmProvider = spokePoolClient.svmEventsClient.getRpc();
       }
       return Object.fromEntries(

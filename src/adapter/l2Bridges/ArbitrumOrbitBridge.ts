@@ -1,4 +1,4 @@
-import { CONTRACT_ADDRESSES, CUSTOM_ARBITRUM_GATEWAYS, DEFAULT_ARBITRUM_GATEWAY } from "../../common";
+import { CUSTOM_ARBITRUM_GATEWAYS, DEFAULT_ARBITRUM_GATEWAY, getContractAbi, getContractEntry } from "../../common";
 import {
   BigNumber,
   bnZero,
@@ -25,13 +25,13 @@ export class ArbitrumOrbitBridge extends BaseL2BridgeAdapter {
   constructor(l2chainId: number, hubChainId: number, l2Signer: Signer, l1Signer: Signer, l1Token: EvmAddress) {
     super(l2chainId, hubChainId, l2Signer, l1Signer, l1Token);
 
-    const { address, abi } = CONTRACT_ADDRESSES[l2chainId].erc20GatewayRouter;
+    const { address, abi } = getContractEntry(l2chainId, "erc20GatewayRouter");
     this.l2GatewayRouter = new Contract(address, abi, l2Signer);
 
     const { l1: l1Address, l2: l2Address } =
       CUSTOM_ARBITRUM_GATEWAYS[this.l2chainId]?.[l1Token.toNative()] ?? DEFAULT_ARBITRUM_GATEWAY[this.l2chainId];
     const l2GatewayContract = new Contract(l2Address, ARBITRUM_ERC20_GATEWAY_L2_ABI, this.l2Signer);
-    const l1GatewayContractAbi = CONTRACT_ADDRESSES[this.hubChainId][`orbitErc20Gateway_${this.l2chainId}`].abi;
+    const l1GatewayContractAbi = getContractAbi(this.hubChainId, `orbitErc20Gateway_${this.l2chainId}`);
     const l1GatewayContract = new Contract(l1Address, l1GatewayContractAbi, this.l1Signer);
     this.l2Bridge = l2GatewayContract;
     this.l1Bridge = l1GatewayContract;

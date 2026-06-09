@@ -3,8 +3,9 @@ import { utils } from "@across-protocol/sdk";
 import { EVMSpokePoolClient } from "../../src/clients";
 import { BaseChainAdapter } from "../../src/adapter/BaseChainAdapter";
 import { ZKStackUSDCBridge, ZKStackWethBridge, ZKStackBridge } from "../../src/adapter/bridges";
-import { bnZero, EvmAddress } from "../../src/utils";
+import { bnZero, EvmAddress, isDefined } from "../../src/utils";
 import {
+  assert,
   ethers,
   expect,
   BigNumber,
@@ -108,7 +109,7 @@ class TestZkSyncUSDCBridge extends ZKStackUSDCBridge {
   }
 }
 
-describe("Cross Chain Adapter: zkSync", async function () {
+describe("Cross Chain Adapter: zkSync", function () {
   const logger = createSpyLogger().spyLogger;
   const l2TxGasLimit = bnZero;
   const l2TxGasPerPubdataByte = bnZero;
@@ -132,7 +133,8 @@ describe("Cross Chain Adapter: zkSync", async function () {
     hubPool = await (await getContractFactory("MockHubPool", depositor)).deploy();
 
     spokePool = await (await getContractFactory("MockSpokePool", depositor)).deploy(ZERO_ADDRESS);
-    const deploymentBlock = spokePool.deployTransaction.blockNumber!;
+    const { blockNumber: deploymentBlock } = spokePool.deployTransaction;
+    assert(isDefined(deploymentBlock), "Expected MockSpokePool deployment to have a block number");
 
     const hubPoolClient = null;
     const l2SpokePoolClient = new EVMSpokePoolClient(logger, spokePool, hubPoolClient, ZK_SYNC, deploymentBlock, {
@@ -773,7 +775,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
     });
   });
 
-  describe("USDC bridge", async function () {
+  describe("USDC bridge", function () {
     let randomEoa: string;
     const l1Token = USDC.addresses[MAINNET];
     const l2Token = USDC.addresses[LENS];
@@ -796,7 +798,8 @@ describe("Cross Chain Adapter: zkSync", async function () {
       await l2Bridge.setUSDC(l2Token);
 
       const hubPoolClient = null;
-      const deploymentBlock = spokePool.deployTransaction.blockNumber!;
+      const { blockNumber: deploymentBlock } = spokePool.deployTransaction;
+      assert(isDefined(deploymentBlock), "Expected MockSpokePool deployment to have a block number");
       const lensSpokePoolClient = new EVMSpokePoolClient(logger, spokePool, hubPoolClient, LENS, deploymentBlock, {
         from: deploymentBlock,
       });

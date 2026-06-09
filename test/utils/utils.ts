@@ -22,7 +22,6 @@ import {
 } from "../../src/interfaces";
 import {
   BigNumber,
-  isDefined,
   spreadEvent,
   toBN,
   toBNWei,
@@ -350,20 +349,17 @@ export async function updateDeposit(
   depositor: SignerWithAddress
 ): Promise<string> {
   const { updatedRecipient: updatedRecipientAddress, updatedOutputAmount, updatedMessage } = deposit;
-  if (updatedRecipientAddress === undefined) {
-    throw `updateDeposit cannot have updatedRecipientAddress undefined ${depositIntoPrimitiveTypes(deposit)}`;
+  if (updatedRecipientAddress === undefined || updatedOutputAmount === undefined || updatedMessage === undefined) {
+    throw `updateDeposit missing speed-up fields ${depositIntoPrimitiveTypes(deposit)}`;
   }
   const updatedRecipient = updatedRecipientAddress.toBytes32();
-  assert.ok(isDefined(updatedRecipient));
-  assert.ok(isDefined(updatedOutputAmount));
-  assert.ok(isDefined(updatedMessage));
   const signature = await getUpdatedV3DepositSignature(
     depositor,
     deposit.depositId,
     deposit.originChainId,
-    updatedOutputAmount!,
+    updatedOutputAmount,
     updatedRecipient,
-    updatedMessage!
+    updatedMessage
   );
 
   await spokePool
@@ -402,11 +398,12 @@ export async function fillV3Relay(
 
   const events = await spokePool.queryFilter(spokePool.filters.FilledRelay());
   const lastEvent = events.at(-1);
-  let args = lastEvent!.args;
-  assert.exists(args);
-  args = args!;
+  if (lastEvent === undefined || lastEvent.args === undefined) {
+    throw new Error("fillV3Relay: no FilledRelay event found");
+  }
+  const args = lastEvent.args;
 
-  const { blockNumber, transactionHash, transactionIndex, logIndex } = lastEvent!;
+  const { blockNumber, transactionHash, transactionIndex, logIndex } = lastEvent;
 
   const parsedEvent = spreadEvent(args);
   return {

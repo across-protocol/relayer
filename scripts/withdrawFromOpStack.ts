@@ -17,7 +17,7 @@ import {
   ZERO_ADDRESS,
   getTokenInfo,
 } from "../src/utils";
-import { CONTRACT_ADDRESSES } from "../src/common";
+import { getContractEntry } from "../src/common";
 import { askYesNoQuestion, getOvmSpokePoolContract } from "./utils";
 
 import minimist from "minimist";
@@ -44,8 +44,7 @@ export async function run(): Promise<void> {
   const signerAddr = await baseSigner.getAddress();
   const chainId = parseInt(args.chainId);
   const connectedSigner = baseSigner.connect(await getProvider(chainId));
-  const l2Token = EvmAddress.from(resolveAcrossToken(String(args.token), chainId));
-  assert(l2Token, `${args.token} not found on chain ${chainId} in TOKEN_SYMBOLS_MAP`);
+  const l2Token = EvmAddress.from(resolveAcrossToken(String(args.token), chainId, true));
   const l1TokenAddress = getL1TokenAddress(l2Token, chainId);
   const { symbol, decimals } = getTokenInfo(l2Token, chainId);
   const amount = args.amount;
@@ -70,8 +69,7 @@ export async function run(): Promise<void> {
   }
 
   // Now, submit a withdrawal. This might fail if the ERC20 uses a non-standard OVM bridge to withdraw.
-  const ovmStandardBridgeObj = CONTRACT_ADDRESSES[chainId].ovmStandardBridge;
-  assert(CONTRACT_ADDRESSES[chainId].ovmStandardBridge, "ovmStandardBridge for chain not found in CONTRACT_ADDRESSES");
+  const ovmStandardBridgeObj = getContractEntry(chainId, "ovmStandardBridge");
   const ovmStandardBridge = new Contract(ovmStandardBridgeObj.address, ovmStandardBridgeObj.abi, connectedSigner);
   const bridgeArgs =
     symbol === "ETH"
@@ -109,7 +107,7 @@ export async function run(): Promise<void> {
     `Unexpected L2 messenger address in ovmStandardBridge contract, expected: ${expectedL2Messenger}, got: ${l2Messenger}`
   );
   const l1StandardBridge = await ovmStandardBridge.l1TokenBridge();
-  const expectedL1StandardBridge = CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET][`ovmStandardBridge_${chainId}`].address;
+  const expectedL1StandardBridge = getContractEntry(CHAIN_IDs.MAINNET, `ovmStandardBridge_${chainId}`).address;
   assert(
     l1StandardBridge === expectedL1StandardBridge,
     `Unexpected L1 standard bridge address in ovmStandardBridge contract, expected: ${expectedL1StandardBridge}, got: ${l1StandardBridge}`

@@ -14,7 +14,7 @@ import {
 import * as hl from "@nktkas/hyperliquid";
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import { ethers } from "ethers";
-import { CONTRACT_ADDRESSES } from "../common/ContractAddresses";
+import { getContractEntry } from "../common/ContractAddresses";
 import { TransactionClient } from "../clients";
 
 export function getHlExchangeClient(
@@ -33,9 +33,11 @@ export async function getL2Book(
   params: hl.L2BookParameters,
   maxRetries = 3,
   delayS = 2
-): Promise<hl.L2BookResponse> {
+): Promise<NonNullable<hl.L2BookResponse>> {
   const fn = () => infoClient.l2Book.bind(infoClient)(params);
-  return await retry(fn, maxRetries, delayS);
+  const l2Book = await retry(fn, maxRetries, delayS);
+  assert(l2Book !== null, `L2 order book missing for ${params.coin}`);
+  return l2Book;
 }
 
 export async function getSpotMeta(infoClient: hl.InfoClient, maxRetries = 3, delayS = 2): Promise<hl.SpotMetaResponse> {
@@ -115,11 +117,8 @@ export async function getOrderStatus(
 export async function depositToHypercore(account: string, signer: Signer, logger: winston.Logger): Promise<string> {
   const transactionClient = new TransactionClient(logger);
   const chainId = CHAIN_IDs.HYPEREVM;
-  const contract = new ethers.Contract(
-    CONTRACT_ADDRESSES[chainId].hyperliquidDepositHandler.address,
-    CONTRACT_ADDRESSES[chainId].hyperliquidDepositHandler.abi,
-    signer
-  );
+  const { address, abi } = getContractEntry(chainId, "hyperliquidDepositHandler");
+  const contract = new ethers.Contract(address, abi, signer);
   const depositToHypercoreArgs = [TOKEN_SYMBOLS_MAP.USDH.addresses[chainId], bnZero, account];
   const depositToHypercoreTx = await submitTransaction(
     {

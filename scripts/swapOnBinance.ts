@@ -12,6 +12,15 @@ yarn ts-node ./scripts/swapOnBinance.ts \
 
 Provide Binance credentials through the standard repo auth inputs for your environment.
 If your signer or Binance secret is GCKMS-backed, run the script under with-gcp-auth.
+
+Usage caveats:
+
+- If the script is halted in the middle of a swap (i.e. before the deposit has been confirmed and before a swap has
+taken place, or before a withdrawal has been issued) then use the sibling script to recover back to a clean state:
+./sweepBinanceBalance.ts.
+- We purposefully do not use any existing balance on Binance for the swap (and therefore explicitly require the deposit
+sent by this script to fund any swaps) because we assume that the binance account is shared and used for other purposes
+and we don't want the user to be able to accidentally spend funds that are not intended for the swap.
 */
 
 import assert from "assert";
@@ -34,6 +43,7 @@ import {
   ConvertDecimals,
   TOKEN_SYMBOLS_MAP,
   blockExplorerLink,
+  chainIsSvm,
   chainIsTvm,
   compareAddressesSimple,
   Contract,
@@ -53,6 +63,9 @@ import {
   getNetworkName,
   getNativeTokenInfoForChain,
   getProvider,
+  getSolanaTokenBalance,
+  getSvmProvider,
+  getTokenInfo,
   getTokenInfoFromSymbol,
   getWrappedNativeTokenAddress,
   isDefined,
@@ -66,12 +79,15 @@ import {
   setBinanceWithdrawalType,
   Signer,
   submitTransaction,
+  SvmAddress,
   toAddressType,
   toBNWei,
+  toKitAddress,
   truncate,
   willSucceed,
   readableBinanceWithdrawalStatus,
 } from "../src/utils";
+import { getRedisCache } from "../src/cache/Redis";
 import { getCloidForAccount } from "../src/rebalancer/utils/utils";
 
 // Time between polling attempts when waiting on asynchronous operations to complete.
@@ -88,21 +104,31 @@ type BinanceAssetNetwork = Coin["networkList"][number];
 
 export type BinanceSourceDepositMode = "erc20" | "native";
 
-export interface ResolvedBinanceAsset {
+interface ResolvedBinanceAssetBase {
   tokenSymbol: string;
   chainId: number;
   binanceCoin: string;
   network: BinanceAssetNetwork;
   tokenDecimals: number;
-  isNativeAsset: boolean;
-  localTokenAddress?: string;
   depositMode?: BinanceSourceDepositMode;
 }
+
+export interface ResolvedBinanceNativeAsset extends ResolvedBinanceAssetBase {
+  isNativeAsset: true;
+}
+
+export interface ResolvedBinanceErc20Asset extends ResolvedBinanceAssetBase {
+  isNativeAsset: false;
+  localTokenAddress: string;
+}
+
+export type ResolvedBinanceAsset = ResolvedBinanceNativeAsset | ResolvedBinanceErc20Asset;
 
 export type BinanceAssetResolutionFailureReason =
   | "UNKNOWN_TOKEN"
   | "UNSUPPORTED_CHAIN"
   | "CONTRACT_ADDRESS_MISMATCH"
+  | "SVM_SOURCE_DEPOSIT_UNSUPPORTED"
   | "NATIVE_SOURCE_ATOMIC_DEPOSITOR_REQUIRED"
   | "DEPOSIT_DISABLED"
   | "WITHDRAW_DISABLED"
@@ -338,7 +364,10 @@ export async function run(): Promise<void> {
       );
     },
   });
-  const amountToWithdraw = toBNWei(orderAvailability.expectedAmountToReceive, destination.tokenDecimals);
+  const amountToWithdraw = getBinanceWithdrawalAmount(
+    orderAvailability.expectedAmountToReceive,
+    destination.tokenDecimals
+  );
 
   printSection("Step 4/4: Withdraw");
   const withdrawalSubmittedAtMs = Date.now();
@@ -408,15 +437,20 @@ async function gatherPreflightBalances(
   const signerAddress = await connectedSigner.getAddress();
   const nativeBalance = await provider.getBalance(signerAddress);
   const nativeSymbol = getNativeTokenInfoForChain(source.chainId).symbol;
-  const sourceBalance = source.isNativeAsset
-    ? await new Contract(getWrappedNativeTokenAddress(source.chainId).toNative(), ERC20.abi, connectedSigner).balanceOf(
-        signerAddress
-      )
-    : await new Contract(
-        getEthersCompatibleAddress(source.chainId, source.localTokenAddress!),
-        ERC20.abi,
-        connectedSigner
-      ).balanceOf(signerAddress);
+  let sourceBalance: BigNumber;
+  if (source.isNativeAsset) {
+    sourceBalance = await new Contract(
+      getWrappedNativeTokenAddress(source.chainId).toNative(),
+      ERC20.abi,
+      connectedSigner
+    ).balanceOf(signerAddress);
+  } else {
+    sourceBalance = await new Contract(
+      getEthersCompatibleAddress(source.chainId, source.localTokenAddress),
+      ERC20.abi,
+      connectedSigner
+    ).balanceOf(signerAddress);
+  }
 
   let shortfallMessage: string | undefined;
   if (source.isNativeAsset) {
@@ -480,13 +514,17 @@ async function formatOtherKnownBalances(
         const nativeSymbol = getNativeTokenInfoForChain(chainId).symbol.toUpperCase();
         const isNativeCandidate = symbol === nativeSymbol;
 
-        const balance = isNativeCandidate
-          ? await provider.getBalance(address)
-          : await new Contract(
-              getEthersCompatibleAddress(chainId, resolveAcrossToken(symbol, chainId)!),
-              ERC20.abi,
-              connectedSigner
-            ).balanceOf(address);
+        let balance: BigNumber;
+        if (isNativeCandidate) {
+          balance = await provider.getBalance(address);
+        } else {
+          const tokenAddress = resolveAcrossToken(symbol, chainId, true);
+          balance = await new Contract(
+            getEthersCompatibleAddress(chainId, tokenAddress),
+            ERC20.abi,
+            connectedSigner
+          ).balanceOf(address);
+        }
         if (balance.lte(BigNumber.from(0))) {
           return undefined;
         }
@@ -512,16 +550,40 @@ async function gatherRecipientBalances(
   destination: ResolvedBinanceAsset,
   recipient: string
 ): Promise<RecipientBalances> {
+  if (chainIsSvm(destination.chainId)) {
+    let redisCache: Awaited<ReturnType<typeof getRedisCache>>;
+    try {
+      redisCache = await getRedisCache();
+    } catch {
+      redisCache = undefined;
+    }
+    const provider = getSvmProvider(redisCache, undefined, destination.chainId);
+    const recipientAddress = SvmAddress.from(recipient);
+    const nativeBalanceResponse = await provider.getBalance(toKitAddress(recipientAddress)).send();
+    const nativeBalance = BigNumber.from(nativeBalanceResponse.value.toString());
+    const destinationTokenBalance = destination.isNativeAsset
+      ? nativeBalance
+      : await getSolanaTokenBalance(provider, SvmAddress.from(destination.localTokenAddress), recipientAddress);
+
+    return {
+      destinationTokenBalance,
+      nativeBalance,
+    };
+  }
+
   const provider = await getProvider(destination.chainId);
   const recipientAddress = getEthersCompatibleAddress(destination.chainId, recipient);
   const nativeBalance = await provider.getBalance(recipientAddress);
-  const destinationTokenBalance = destination.isNativeAsset
-    ? nativeBalance
-    : await new Contract(
-        getEthersCompatibleAddress(destination.chainId, destination.localTokenAddress!),
-        ERC20.abi,
-        provider
-      ).balanceOf(recipientAddress);
+  let destinationTokenBalance: BigNumber;
+  if (destination.isNativeAsset) {
+    destinationTokenBalance = nativeBalance;
+  } else {
+    destinationTokenBalance = await new Contract(
+      getEthersCompatibleAddress(destination.chainId, destination.localTokenAddress),
+      ERC20.abi,
+      provider
+    ).balanceOf(recipientAddress);
+  }
 
   return {
     destinationTokenBalance,
@@ -597,7 +659,7 @@ async function buildDepositExecutionPlan(
     return { steps };
   }
 
-  const tokenContract = new Contract(getEthersCompatibleAddress(chainId, source.localTokenAddress!), ERC20.abi, signer);
+  const tokenContract = new Contract(getEthersCompatibleAddress(chainId, source.localTokenAddress), ERC20.abi, signer);
   return {
     steps: [
       {
@@ -903,6 +965,8 @@ function buildAssetResolutionError(
       return `${title}\nAvailable chains for ${tokenSymbol}: ${formatChainList(getAvailableChainsForToken(accountCoins, tokenSymbol, direction)) || "none"}`;
     case "CONTRACT_ADDRESS_MISMATCH":
       return `${title}\nBinance exposes a network for ${tokenSymbol}, but its contract address does not match the token address configured in this repo on chain ${chainId}.`;
+    case "SVM_SOURCE_DEPOSIT_UNSUPPORTED":
+      return `${title}\nThis script does not yet support depositing from SVM source chains into Binance.`;
     case "NATIVE_SOURCE_ATOMIC_DEPOSITOR_REQUIRED":
       return `${title}\nNative-asset source deposits require an AtomicWethDepositor deployment and transfer proxy on ${getNetworkName(
         chainId
@@ -1041,6 +1105,17 @@ export function requireDefinedFilledAmount(
   return expectedFilledAmount;
 }
 
+function truncateDecimalString(value: string, decimals: number): string {
+  const [integerPart, fractionalPart = ""] = value.split(".");
+  const integer = integerPart === "" ? "0" : integerPart;
+  const truncatedFraction = fractionalPart.slice(0, Math.max(0, Math.trunc(decimals)));
+  return truncatedFraction.length === 0 ? integer : `${integer}.${truncatedFraction}`;
+}
+
+export function getBinanceWithdrawalAmount(expectedAmountToReceive: string, tokenDecimals: number): BigNumber {
+  return toBNWei(truncateDecimalString(expectedAmountToReceive, tokenDecimals), tokenDecimals);
+}
+
 function formatAmount(amount: BigNumber, decimals: number): string {
   return createFormatFunction(2, 6, false, decimals)(amount.toString());
 }
@@ -1116,6 +1191,27 @@ function formatChainList(chainIds: number[]): string {
   return chainIds.map((chainId) => `${getNetworkName(chainId)} (${chainId})`).join(", ");
 }
 
+function normalizeTokenSymbol(tokenSymbol: string): string {
+  const trimmedTokenSymbol = tokenSymbol.trim();
+  return (
+    Object.keys(TOKEN_SYMBOLS_MAP).find(
+      (knownTokenSymbol) => knownTokenSymbol.toUpperCase() === trimmedTokenSymbol.toUpperCase()
+    ) ?? trimmedTokenSymbol.toUpperCase()
+  );
+}
+
+function tryGetTokenAddressForTokenSymbol(tokenSymbol: string, chainId: number): string | undefined {
+  const tokenAddress = resolveAcrossToken(tokenSymbol, chainId);
+  if (isDefined(tokenAddress)) {
+    return tokenAddress;
+  }
+  try {
+    return getTokenInfoFromSymbol(tokenSymbol, chainId).address.toNative();
+  } catch (_e) {
+    return undefined;
+  }
+}
+
 export function resolveBinanceAsset(params: {
   accountCoins: Coin[];
   tokenSymbol: string;
@@ -1123,12 +1219,16 @@ export function resolveBinanceAsset(params: {
   direction: "deposit" | "withdraw";
 }): BinanceAssetResolutionResult {
   const { accountCoins, chainId, direction } = params;
-  const tokenSymbol = params.tokenSymbol.trim().toUpperCase();
-  const isNativeToken = tokenSymbol === getNativeTokenInfoForChain(chainId).symbol.toUpperCase();
-  const localTokenAddress = isNativeToken ? undefined : resolveAcrossToken(tokenSymbol, chainId);
+  const tokenSymbol = normalizeTokenSymbol(params.tokenSymbol);
+  const isNativeToken = tokenSymbol.toUpperCase() === getNativeTokenInfoForChain(chainId).symbol.toUpperCase();
+  const localTokenAddress = isNativeToken ? undefined : tryGetTokenAddressForTokenSymbol(tokenSymbol, chainId);
 
   const depositMode: BinanceSourceDepositMode | undefined =
     direction === "deposit" ? (isNativeToken ? "native" : "erc20") : undefined;
+
+  if (direction === "deposit" && chainIsSvm(chainId)) {
+    return { ok: false, reason: "SVM_SOURCE_DEPOSIT_UNSUPPORTED" };
+  }
 
   if (isNativeToken) {
     const matchingCoin = accountCoins.find(
@@ -1157,7 +1257,7 @@ export function resolveBinanceAsset(params: {
         binanceCoin: matchingCoin.symbol,
         network: matchingNetwork,
         tokenDecimals: getNativeTokenInfoForChain(chainId).decimals,
-        isNativeAsset: depositMode === "native" || direction === "withdraw",
+        isNativeAsset: true,
         depositMode,
       },
     };
@@ -1200,7 +1300,7 @@ export function resolveBinanceAsset(params: {
       chainId,
       binanceCoin: matchingCoin.symbol,
       network: matchingNetwork,
-      tokenDecimals: getTokenInfoFromSymbol(tokenSymbol, chainId).decimals,
+      tokenDecimals: getTokenInfo(toAddressType(localTokenAddress, chainId), chainId).decimals,
       isNativeAsset: false,
       localTokenAddress,
       depositMode,
@@ -1255,9 +1355,9 @@ export class BinanceSwapVenue {
     return deriveBinanceSpotMarketMeta(sourceBinanceCoin, destinationBinanceCoin, symbol);
   }
 
-  async getOrderBook(symbol: string): Promise<Awaited<ReturnType<Binance["book"]>>> {
+  async getOrderBook(symbol: string, skipCache = false): Promise<Awaited<ReturnType<Binance["book"]>>> {
     const cachedBook = this.orderBookBySymbol.get(symbol);
-    if (cachedBook) {
+    if (cachedBook && !skipCache) {
       return cachedBook;
     }
 
@@ -1282,14 +1382,15 @@ export class BinanceSwapVenue {
     sourceBinanceCoin: string,
     destinationBinanceCoin: string,
     sourceTokenDecimals: number,
-    sourceAmount: BigNumber
+    sourceAmount: BigNumber,
+    skipCache = false
   ): Promise<{ latestPrice: number; slippagePct: number }> {
     if (sourceBinanceCoin === destinationBinanceCoin) {
       return { latestPrice: 1, slippagePct: 0 };
     }
 
     const symbol = await this.getSymbol(sourceBinanceCoin, destinationBinanceCoin);
-    const book = await this.getOrderBook(symbol.symbol);
+    const book = await this.getOrderBook(symbol.symbol, skipCache);
     const spotMarketMeta = await this.getSpotMarketMeta(sourceBinanceCoin, destinationBinanceCoin);
     const sideOfBookToTraverse = spotMarketMeta.isBuy ? book.asks : book.bids;
     assert(sideOfBookToTraverse.length > 0, `Order book is empty for ${symbol.symbol}`);
@@ -1320,7 +1421,8 @@ export class BinanceSwapVenue {
   async convertSourceToDestination(
     source: ResolvedBinanceAsset,
     destination: ResolvedBinanceAsset,
-    sourceAmount: BigNumber
+    sourceAmount: BigNumber,
+    skipCache = false
   ): Promise<BigNumber> {
     if (source.binanceCoin === destination.binanceCoin) {
       return ConvertDecimals(source.tokenDecimals, destination.tokenDecimals)(sourceAmount);
@@ -1331,7 +1433,8 @@ export class BinanceSwapVenue {
       source.binanceCoin,
       destination.binanceCoin,
       source.tokenDecimals,
-      sourceAmount
+      sourceAmount,
+      skipCache
     );
     return convertBinanceRouteAmount({
       amount: sourceAmount,
@@ -1346,7 +1449,8 @@ export class BinanceSwapVenue {
   async convertDestinationToSource(
     source: ResolvedBinanceAsset,
     destination: ResolvedBinanceAsset,
-    destinationAmount: BigNumber
+    destinationAmount: BigNumber,
+    skipCache = false
   ): Promise<BigNumber> {
     if (source.binanceCoin === destination.binanceCoin) {
       return ConvertDecimals(destination.tokenDecimals, source.tokenDecimals)(destinationAmount);
@@ -1361,7 +1465,8 @@ export class BinanceSwapVenue {
       source.binanceCoin,
       destination.binanceCoin,
       source.tokenDecimals,
-      destinationAmountInSourcePrecision
+      destinationAmountInSourcePrecision,
+      skipCache
     );
     return convertBinanceRouteAmount({
       amount: destinationAmount,
@@ -1432,8 +1537,10 @@ export class BinanceSwapVenue {
     sourceAmount: BigNumber
   ): Promise<number> {
     const spotMarketMeta = await this.getSpotMarketMeta(source.binanceCoin, destination.binanceCoin);
+    const skipCache = true; // This function is called only once per order placement and we should always fetch
+    // the latest orderbook to construct the most accurate quantity and avoid using cached data.
     const amountToOrder = spotMarketMeta.isBuy
-      ? await this.convertSourceToDestination(source, destination, sourceAmount)
+      ? await this.convertSourceToDestination(source, destination, sourceAmount, skipCache)
       : sourceAmount;
     const orderDecimals = spotMarketMeta.isBuy ? destination.tokenDecimals : source.tokenDecimals;
     const size = truncate(Number(fromWei(amountToOrder, orderDecimals)), spotMarketMeta.szDecimals);
@@ -1451,17 +1558,44 @@ export class BinanceSwapVenue {
     sourceAmount: BigNumber
   ): Promise<Awaited<ReturnType<Binance["order"]>>> {
     const spotMarketMeta = await this.getSpotMarketMeta(source.binanceCoin, destination.binanceCoin);
-    const quantity = await this.getQuantityForOrder(source, destination, sourceAmount);
-    const response = await this.binanceApiClient.order({
-      symbol: spotMarketMeta.symbol,
-      newClientOrderId: cloid,
-      side: spotMarketMeta.isBuy ? "BUY" : "SELL",
-      type: OrderType.MARKET,
-      quantity: quantity.toString(),
-      recvWindow: 60_000,
-    } as NewOrderSpot);
-    assert(response.status === "FILLED", `Market order was not filled: ${JSON.stringify(response)}`);
-    return response;
+    let nRetries = 0;
+    const maxRetries = 3;
+    while (nRetries < maxRetries) {
+      const quantity = await this.getQuantityForOrder(source, destination, sourceAmount);
+      // Sometimes the following call can fail with a "Error: Account has insufficient balance for requested action."
+      // message, which I think is possible because we're converting sourceAmount into quantity and by the time we
+      // place the order, the market might have moved such that our source amount is no longer sufficient to place
+      // the order. We treat this failure as transient and retry the order placement loop after a short delay.
+      // Alternatively, we could add a buffer and decrease the quantity by a small amount but that more likely leaves
+      // dust in the account balance.
+      try {
+        const response = await this.binanceApiClient.order({
+          symbol: spotMarketMeta.symbol,
+          newClientOrderId: cloid,
+          side: spotMarketMeta.isBuy ? "BUY" : "SELL",
+          type: OrderType.MARKET,
+          quantity: quantity.toString(),
+          recvWindow: 60_000,
+        } as NewOrderSpot);
+        assert(response.status === "FILLED", `Market order was not filled: ${JSON.stringify(response)}`);
+        return response;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        console.error(
+          `Failed to place market order for ${quantity} ${destination.binanceCoin} on ${spotMarketMeta.symbol} using ${sourceAmount.toString()} ${source.binanceCoin}: ${errorMessage}`
+        );
+        const knownErrorRetryDelayMs = 5000;
+        if (errorMessage.includes("insufficient balance")) {
+          console.log(`Retrying known transient error after waiting ${knownErrorRetryDelayMs / 1000}s...`);
+        } else {
+          throw error;
+        }
+        nRetries++;
+        await sleepMs(knownErrorRetryDelayMs);
+      }
+    }
+
+    throw new Error(`Failed to place market order after ${maxRetries} retries`);
   }
 
   async getExpectedAmountToReceiveForFilledOrder(
@@ -1565,7 +1699,11 @@ export async function waitForBinanceDepositToBeAvailable(params: {
 
     params.onProgress?.({ attempts, deposit: matchingDeposit, freeBalance });
 
-    if (matchingDeposit?.status === BinanceDepositStatus.Credited && freeBalance >= minFreeBalance) {
+    if (
+      (matchingDeposit?.status === BinanceDepositStatus.Credited ||
+        matchingDeposit?.status === BinanceDepositStatus.Confirmed) &&
+      freeBalance >= minFreeBalance
+    ) {
       return { attempts, deposit: matchingDeposit, freeBalance };
     }
     await sleepMs(pollDelayMs);
@@ -1595,10 +1733,11 @@ export async function waitForBinanceOrderFillAndBalance(params: {
       params.venue.getMatchingFillForCloid(params.cloid, params.source, params.destination),
       params.venue.getSpotFreeBalance(params.destination.binanceCoin),
     ]);
-    const requiredBalance = truncate(
-      params.requiredBalance ?? (matchingFill ? Number(matchingFill.expectedAmountToReceive) : undefined),
-      params.destination.tokenDecimals
-    );
+    const requiredBalance =
+      params.requiredBalance ??
+      (matchingFill
+        ? truncate(Number(matchingFill.expectedAmountToReceive), params.destination.tokenDecimals)
+        : undefined);
     params.onProgress?.({
       attempts,
       freeBalance,
@@ -1677,9 +1816,12 @@ function contractAddressMatchesToken(
   if (!networkContractAddress) {
     return false;
   }
+  if (chainIsSvm(chainId)) {
+    return localTokenAddress === networkContractAddress;
+  }
   try {
-    const normalizedLocalAddress = getEthersCompatibleAddress(chainId, localTokenAddress).toLowerCase();
-    const normalizedNetworkAddress = getEthersCompatibleAddress(chainId, networkContractAddress).toLowerCase();
+    const normalizedLocalAddress = getEthersCompatibleAddress(chainId, localTokenAddress);
+    const normalizedNetworkAddress = getEthersCompatibleAddress(chainId, networkContractAddress);
     return compareAddressesSimple(normalizedLocalAddress, normalizedNetworkAddress);
   } catch {
     return false;
@@ -1723,6 +1865,9 @@ function describeBinanceDepositStatus(status?: number): string {
 function formatBinanceDepositPollStatus(deposit?: BinanceDeposit): string {
   if (!deposit) {
     return "not-seen";
+  }
+  if (!isDefined(deposit.status)) {
+    return "unknown";
   }
   return BINANCE_DEPOSIT_STATUS_LABELS[deposit.status] ?? describeBinanceDepositStatus(deposit.status);
 }

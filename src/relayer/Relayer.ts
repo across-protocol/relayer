@@ -36,6 +36,7 @@ const { getAddress } = ethersUtils;
 const { isDepositSpedUp, isMessageEmpty, resolveDepositMessage } = sdkUtils;
 const UNPROFITABLE_DEPOSIT_NOTICE_PERIOD = 60 * 60; // 1 hour
 const RELAYER_DEPOSIT_RATE_LIMIT = 25;
+const RELAYER_DEPOSITOR_RATE_LIMIT = 10;
 const HUB_SPOKE_BLOCK_LAG = 2; // Permit SpokePool timestamps to be ahead of the HubPool by 2 HubPool blocks.
 const SPOKEPOOL_EVENTS = [
   "FundsDeposited",
@@ -65,7 +66,7 @@ export class Relayer {
   private lastMaintenance = 0;
   private profiler: InstanceType<typeof Profiler>;
   private hubPoolBlockBuffer?: number;
-  protected fillLimits: { [originChainId: number]: { fromBlock: number; limit: BigNumber }[] };
+  protected fillLimits: { [originChainId: number]: { fromBlock: number; limit: BigNumber }[] } = {};
   protected ignoredDeposits: { [depositHash: string]: boolean } = {};
   protected updated = 0;
 
@@ -387,13 +388,16 @@ export class Relayer {
     }
 
     // Skip deposits with quoteTimestamp in the future (impossible to know HubPool utilization => LP fee cannot be computed).
-    if (deposit.quoteTimestamp - hubPoolClient.currentTime > this.hubPoolBlockBuffer) {
+    const { currentTime } = hubPoolClient;
+    const { hubPoolBlockBuffer } = this;
+    assert(isDefined(currentTime) && isDefined(hubPoolBlockBuffer), "filterDeposit: hubPool state not initialized");
+    if (deposit.quoteTimestamp - currentTime > hubPoolBlockBuffer) {
       this.logger.debug({
         at: "Relayer::filterDeposit",
         message: `Skipping ${srcChain} deposit due to future quoteTimestamp.`,
-        currentTime: hubPoolClient.currentTime,
+        currentTime,
         quoteTimestamp: deposit.quoteTimestamp,
-        buffer: this.hubPoolBlockBuffer,
+        buffer: hubPoolBlockBuffer,
         txnRef: deposit.txnRef,
       });
       return false;
@@ -403,7 +407,7 @@ export class Relayer {
     // The relayer should *not* be filling deposits that the HubPool doesn't have liquidity for otherwise the relayer's
     // refund will be stuck for potentially 7 days. Note: Filter for supported tokens first, since the relayer only
     // queries for limits on supported tokens.
-    if (!ignoreLimits && !depositForcesOriginChainRepayment(deposit, hubPoolClient)) {
+    if (!ignoreLimits && !depositForcesOriginChainRepayment(deposit, hubPoolClient) && isDefined(l1Token)) {
       const { inputAmount } = deposit;
       const limit = acrossApiClient.getLimit(originChainId, l1Token);
       if (acrossApiClient.updatedLimits && inputAmount.gt(limit)) {
@@ -637,15 +641,13 @@ export class Relayer {
       }, {});
 
     // Set the MDC for each origin chain equal to lowest threshold greater than the unfilled USD deposit amount.
+    // If no thresholds are greater than unfilled amount, fall back to the largest configured MDC (uint256-max entry).
     const mdcPerChain = Object.fromEntries(
       Object.entries(unfilledDepositAmountsPerChain).map(([_chainId, unfilledAmount]) => {
         const chainId = Number(_chainId);
-        const { minConfirmations } = minDepositConfirmations[chainId].find(({ usdThreshold }) =>
-          usdThreshold.gte(unfilledAmount)
-        );
-
-        // If no thresholds are greater than unfilled amount, then use fallback which should have largest MDCs.
-        return [chainId, minConfirmations];
+        const config = minDepositConfirmations[chainId];
+        const matched = config.find(({ usdThreshold }) => usdThreshold.gte(unfilledAmount)) ?? config.at(-1);
+        return [chainId, matched?.minConfirmations ?? Number.MAX_SAFE_INTEGER];
       })
     );
 
@@ -738,9 +740,9 @@ export class Relayer {
       if (isEVMSpokePoolClient(originSpoke)) {
         const { average } = await arch.evm.averageBlockTime(originSpoke.spokePool.provider);
         avgBlockTime = average;
-      } else if (isSVMSpokePoolClient(originSpoke)) {
-        const { average } = arch.svm.averageBlockTime();
-        avgBlockTime = average;
+      } else {
+        assert(isSVMSpokePoolClient(originSpoke), `Unsupported spoke client for chain ${originChainId}`);
+        avgBlockTime = arch.svm.averageBlockTime().average;
       }
       const depositAge = Math.floor(avgBlockTime * (originSpoke.latestHeightSearched - deposit.blockNumber));
 
@@ -880,6 +882,7 @@ export class Relayer {
 
   protected async executeFills(chainId: number, simulate = false): Promise<string[]> {
     const fillExecutorClient = chainIsSvm(chainId) ? this.clients.svmFillerClient : this.getMulticaller(chainId);
+    assert(isDefined(fillExecutorClient), `executeFills: missing fill executor for chain ${chainId}`);
     const { pendingTxnHashes } = this;
 
     if (isDefined(pendingTxnHashes[chainId])) {
@@ -901,6 +904,7 @@ export class Relayer {
   }
 
   async checkForUnfilledDepositsAndFill(simulate = false): Promise<{ [chainId: number]: Promise<string[]> }> {
+    const at = "Relayer::checkForUnfilledDepositsAndFill";
     const { hubPoolClient, profitClient, spokePoolClients, tokenClient, multiCallerClient, tryMulticallClient } =
       this.clients;
 
@@ -927,10 +931,7 @@ export class Relayer {
       .flat()
       .map(({ deposit }) => deposit);
 
-    this.logger.debug({
-      at: "Relayer::checkForUnfilledDepositsAndFill",
-      message: `${allUnfilledDeposits.length} unfilled deposits found.`,
-    });
+    this.logger.debug({ at, message: `${allUnfilledDeposits.length} unfilled deposits found.` });
     if (allUnfilledDeposits.length === 0) {
       return txnReceipts;
     }
@@ -950,14 +951,35 @@ export class Relayer {
       // In looping mode, limit the number of deposits per chain per loop. This is an anti-spam mechanism that avoids
       // an activity surge on any single chain from significantly degrading overall performance. When running in
       // single-shot mode (pollingDelay 0), do not limit. This permits sweeper instances to work correctly.
-      const depositLimit = this.config.pollingDelay === 0 ? deposits.length : RELAYER_DEPOSIT_RATE_LIMIT;
+      const { pollingDelay } = this.config;
+      const applyRateLimit = pollingDelay > 0;
+      const depositLimit = applyRateLimit ? RELAYER_DEPOSIT_RATE_LIMIT : deposits.length;
+      const originDepositors: { [originChainId: number]: { [depositor: string]: number } } = {};
       const unfilledDeposits = deposits
-        .map((deposit, idx) => ({ ...deposit, fillStatus: fillStatus[idx] }))
+        .map((deposit, idx) => ({ ...deposit, fillStatus: fillStatus[idx] ?? FillStatus.Filled }))
         .filter(({ fillStatus, ...deposit }) => {
           // Track the fill status for faster filtering on subsequent loops.
           const depositHash = spokePoolClients[deposit.destinationChainId].getDepositHash(deposit);
           this.fillStatus[depositHash] = fillStatus;
           return fillStatus !== FillStatus.Filled;
+        })
+        .filter(({ originChainId, depositor }) => {
+          if (!applyRateLimit) {
+            return true;
+          }
+
+          // Restrict the number of concurrent deposits that a depositor can force the relayer to evaluate per loop.
+          const depositorAddr = depositor.toNative();
+          originDepositors[originChainId] ??= {};
+          originDepositors[originChainId][depositorAddr] ??= 0;
+          const nDeposits = ++originDepositors[originChainId][depositorAddr];
+          if (nDeposits === RELAYER_DEPOSITOR_RATE_LIMIT + 1) {
+            const origin = getNetworkName(originChainId);
+            const message = `Rate-limiting ${origin} depositor ${depositor} due to perceived deposit spam.`;
+            this.logger.warn({ at, message });
+          }
+
+          return nDeposits <= RELAYER_DEPOSITOR_RATE_LIMIT;
         })
         .slice(0, depositLimit);
 
@@ -972,7 +994,7 @@ export class Relayer {
       await this.evaluateFills(unfilledDeposits, lpFees, maxBlockNumbers);
 
       const pendingTxnCount = chainIsSvm(destinationChainId)
-        ? this.clients.svmFillerClient.getTxnQueueLen()
+        ? (this.clients.svmFillerClient?.getTxnQueueLen() ?? 0)
         : this.getMulticaller(destinationChainId).getQueuedTransactions(destinationChainId).length;
       if (pendingTxnCount > 0) {
         txnReceipts[destinationChainId] = this.executeFills(destinationChainId, simulate);
@@ -1069,13 +1091,16 @@ export class Relayer {
       });
     } else {
       assert(isSVMSpokePoolClient(spokePoolClient));
-      assert(spokePoolClient.spokePoolAddress.isSVM());
+      const { spokePoolAddress } = spokePoolClient;
+      const { svmFillerClient } = this.clients;
+      assert(isDefined(spokePoolAddress) && spokePoolAddress.isSVM(), "Missing/non-SVM spokePoolAddress");
+      assert(isDefined(svmFillerClient), "Missing svmFillerClient for SVM destination");
       // We're good to assert here. Deposits that didn't adhere to this were dropped at the filter stage
       assert(deposit.recipient.isSVM());
       assert(deposit.outputToken.isSVM());
 
-      this.clients.svmFillerClient.enqueueSlowFill(
-        spokePoolClient.spokePoolAddress,
+      svmFillerClient.enqueueSlowFill(
+        spokePoolAddress,
         { ...deposit, recipient: deposit.recipient, outputToken: deposit.outputToken },
         "Requested slow fill for deposit.",
         formatSlowFillRequestMarkdown()
@@ -1158,7 +1183,10 @@ export class Relayer {
       multiCallerClient.enqueueTransaction({ contract, chainId, method, args, gasLimit, message, mrkdwn });
     } else {
       assert(isSVMSpokePoolClient(spokePoolClient));
-      assert(spokePoolClient.spokePoolAddress.isSVM());
+      const { spokePoolAddress } = spokePoolClient;
+      const { svmFillerClient } = this.clients;
+      assert(isDefined(spokePoolAddress) && spokePoolAddress.isSVM(), "Missing/non-SVM spokePoolAddress");
+      assert(isDefined(svmFillerClient), "Missing svmFillerClient for SVM destination");
       // We're good to assert here. Deposits that didn't adhere to this were dropped at the filter stage
       assert(deposit.recipient.isSVM());
       assert(deposit.outputToken.isSVM());
@@ -1172,8 +1200,8 @@ export class Relayer {
         gasPrice
       );
 
-      this.clients.svmFillerClient.enqueueFill(
-        spokePoolClient.spokePoolAddress,
+      svmFillerClient.enqueueFill(
+        spokePoolAddress,
         {
           ...deposit,
           recipient: deposit.recipient,
@@ -1248,9 +1276,11 @@ export class Relayer {
       destinationChain,
     });
 
-    const _repaymentFees = preferredChainIds.map((chainId) =>
-      repaymentFees.find(({ paymentChainId }) => paymentChainId === chainId)
-    );
+    const _repaymentFees = preferredChainIds.map((chainId) => {
+      const fee = repaymentFees.find(({ paymentChainId }) => paymentChainId === chainId);
+      assert(isDefined(fee), `No repayment fee found for chain ${chainId}`);
+      return fee;
+    });
     const lpFeePcts = _repaymentFees.map(({ lpFeePct }) => lpFeePct);
 
     // For each eligible repayment chain, compute profitability and pick the one that is profitable. If none are
@@ -1357,10 +1387,9 @@ export class Relayer {
         deposit: { originChain, depositId: depositId.toString(), destinationChain, txnRef },
       });
       // Evaluate destination chain profitability to see if we can reset preferred chain.
-      const { lpFeePct: destinationChainLpFeePct } = repaymentFees.find(
-        ({ paymentChainId }) => paymentChainId === destinationChainId
-      );
-      assert(isDefined(destinationChainLpFeePct));
+      const destinationFee = repaymentFees.find(({ paymentChainId }) => paymentChainId === destinationChainId);
+      assert(isDefined(destinationFee), `No repayment fee found for destination chain ${destinationChainId}`);
+      const { lpFeePct: destinationChainLpFeePct } = destinationFee;
       const fallbackProfitability = await profitClient.isFillProfitable(
         deposit,
         destinationChainLpFeePct,
@@ -1441,9 +1470,13 @@ export class Relayer {
       Object.entries(shortfallForChain).forEach(([token, { shortfall, balance, needed, deposits }]) => {
         const { symbol, formatter } = this.formatAmount(chainId, toAddressType(token, chainId));
         let crossChainLog = "";
-        if (this.clients.inventoryClient.isInventoryManagementEnabled() && chainId !== hubChainId) {
-          // Shortfalls are mapped to deposit output tokens so look up output token in token symbol map.
-          const l1Token = this.clients.inventoryClient.getL1TokenAddress(toAddressType(token, chainId), chainId);
+        // Shortfalls are mapped to deposit output tokens so look up output token in token symbol map.
+        const l1Token = this.clients.inventoryClient.getL1TokenAddress(toAddressType(token, chainId), chainId);
+        if (
+          this.clients.inventoryClient.isInventoryManagementEnabled() &&
+          chainId !== hubChainId &&
+          isDefined(l1Token)
+        ) {
           const outstandingCrossChainTransferAmount =
             this.clients.inventoryClient.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
               this.relayerEvmAddress,

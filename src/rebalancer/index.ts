@@ -93,6 +93,20 @@ async function initializeRebalancerRun(_logger: winston.Logger, baseSigner: Sign
     });
   }
 
+  // Refresh on-chain balances before `loadCumulativeModeBalances` reads them. The initial
+  // `tokenClient.update()` above ran before adapter sweeps and `updateRebalanceStatuses`, both
+  // of which submit OFT/CCTP/Hypercore transactions that move funds across chains, so the
+  // cached balances are stale by this point. Without this refresh, `rebalanceInventory` can
+  // size a new bridge against a pre-burn balance and crash on the OFT/CCTP simulation revert
+  // (`ERC20: burn amount exceeds balance`).
+  timerStart = performance.now();
+  await tokenClient.update();
+  logger.debug({
+    at: `index.ts:${logLabel}`,
+    message: "Refreshed TokenClient balances post-status-update",
+    duration: performance.now() - timerStart,
+  });
+
   return {
     rebalancerConfig,
     adaptersToUpdate,
@@ -101,7 +115,7 @@ async function initializeRebalancerRun(_logger: winston.Logger, baseSigner: Sign
   };
 }
 
-function loadCumulativeModeBalances(
+export function loadCumulativeModeBalances(
   rebalancerConfig: RebalancerConfig,
   inventoryClient: InventoryClient
 ): {
@@ -120,7 +134,6 @@ function loadCumulativeModeBalances(
       .map(Number)
       .forEach((chainId) => {
         const l2TokenInfo = getTokenInfoFromSymbol(token, chainId);
-        assert(l2TokenInfo.address.isEVM());
         const currentBalance = inventoryClient.tokenClient.getBalance(chainId, l2TokenInfo.address);
         currentBalances[chainId] ??= {};
         currentBalances[chainId][token] = currentBalance;

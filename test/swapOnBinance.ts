@@ -1,11 +1,13 @@
 import * as BinanceUtils from "../src/utils/BinanceUtils";
 import {
+  assert,
   BINANCE_NETWORKS,
   BINANCE_WITHDRAWAL_STATUS,
   BigNumber,
   CHAIN_IDs,
   Coin,
   getNativeTokenInfoForChain,
+  isDefined,
   resolveAcrossToken,
   toBNWei,
 } from "../src/utils";
@@ -13,6 +15,7 @@ import {
   BinanceSwapVenue,
   estimateDepositGasWithDeps,
   formatWithdrawalProgressLine,
+  getBinanceWithdrawalAmount,
   requireDefinedFilledAmount,
   ResolvedBinanceAsset,
   resolveBinanceAsset,
@@ -21,6 +24,8 @@ import {
   waitForBinanceWithdrawalCompletion,
 } from "../scripts/swapOnBinance";
 import { expect, sinon } from "./utils";
+
+const tokenAddress = (symbol: string, chainId: number): string => resolveAcrossToken(symbol, chainId, true);
 
 describe("swapOnBinance script helpers", function () {
   afterEach(function () {
@@ -84,6 +89,63 @@ describe("swapOnBinance script helpers", function () {
     }
   });
 
+  it("accepts native SOL withdrawals on Solana", function () {
+    const accountCoins = [makeNativeCoin("SOL", CHAIN_IDs.SOLANA)];
+
+    const resolution = resolveBinanceAsset({
+      accountCoins,
+      tokenSymbol: "SOL",
+      chainId: CHAIN_IDs.SOLANA,
+      direction: "withdraw",
+    });
+
+    expect(resolution.ok).to.equal(true);
+    if (resolution.ok) {
+      expect(resolution.asset.isNativeAsset).to.equal(true);
+      expect(resolution.asset.binanceCoin).to.equal("SOL");
+      expect(resolution.asset.network.name).to.equal("SOL");
+      expect(resolution.asset.tokenDecimals).to.equal(9);
+    }
+  });
+
+  it("rejects Solana source deposits because deposit execution is EVM-only", function () {
+    const accountCoins = [makeErc20Coin("USDC", [{ chainId: CHAIN_IDs.SOLANA }])];
+
+    const resolution = resolveBinanceAsset({
+      accountCoins,
+      tokenSymbol: "USDC",
+      chainId: CHAIN_IDs.SOLANA,
+      direction: "deposit",
+    });
+
+    expect(resolution).to.deep.equal({ ok: false, reason: "SVM_SOURCE_DEPOSIT_UNSUPPORTED" });
+  });
+
+  it("uses token-specific mappings for non-L1 token symbols", function () {
+    const usdbcAddress = resolveAcrossToken("USDbC", CHAIN_IDs.BASE, true);
+    const accountCoins = [
+      makeErc20Coin("USDC", [
+        {
+          chainId: CHAIN_IDs.BASE,
+          contractAddress: usdbcAddress,
+        },
+      ]),
+    ];
+
+    const resolution = resolveBinanceAsset({
+      accountCoins,
+      tokenSymbol: "USDbC",
+      chainId: CHAIN_IDs.BASE,
+      direction: "deposit",
+    });
+
+    expect(resolution.ok).to.equal(true);
+    if (resolution.ok) {
+      expect(resolution.asset.binanceCoin).to.equal("USDC");
+      expect(resolution.asset.localTokenAddress).to.equal(usdbcAddress);
+    }
+  });
+
   it("rejects ERC20 routes when Binance contract metadata does not match the repo token address", function () {
     const accountCoins = [
       makeErc20Coin("USDC", [
@@ -104,20 +166,44 @@ describe("swapOnBinance script helpers", function () {
     expect(resolution).to.deep.equal({ ok: false, reason: "CONTRACT_ADDRESS_MISMATCH" });
   });
 
+  it("compares Solana token contract addresses case-sensitively", function () {
+    const solanaUsdc = resolveAcrossToken("USDC", CHAIN_IDs.SOLANA, true);
+    const misCasedSolanaUsdc = `${solanaUsdc[0].toLowerCase()}${solanaUsdc.slice(1)}`;
+    const accountCoins = [
+      makeErc20Coin("USDC", [
+        {
+          chainId: CHAIN_IDs.SOLANA,
+          contractAddress: misCasedSolanaUsdc,
+        },
+      ]),
+    ];
+
+    const resolution = resolveBinanceAsset({
+      accountCoins,
+      tokenSymbol: "USDC",
+      chainId: CHAIN_IDs.SOLANA,
+      direction: "withdraw",
+    });
+
+    expect(misCasedSolanaUsdc.toLowerCase()).to.equal(solanaUsdc.toLowerCase());
+    expect(misCasedSolanaUsdc).to.not.equal(solanaUsdc);
+    expect(resolution).to.deep.equal({ ok: false, reason: "CONTRACT_ADDRESS_MISMATCH" });
+  });
+
   it("rejects same-coin routes because the script only supports swaps", async function () {
     const venue = new BinanceSwapVenue({} as never);
     const source = makeResolvedAsset({
       tokenSymbol: "USDC",
       chainId: CHAIN_IDs.POLYGON,
       binanceCoin: "USDC",
-      contractAddress: resolveAcrossToken("USDC", CHAIN_IDs.POLYGON)!,
+      contractAddress: tokenAddress("USDC", CHAIN_IDs.POLYGON),
       withdrawFee: "0.25",
     });
     const destination = makeResolvedAsset({
       tokenSymbol: "USDC",
       chainId: CHAIN_IDs.BASE,
       binanceCoin: "USDC",
-      contractAddress: resolveAcrossToken("USDC", CHAIN_IDs.BASE)!,
+      contractAddress: tokenAddress("USDC", CHAIN_IDs.BASE),
       withdrawFee: "0.25",
     });
 
@@ -147,13 +233,13 @@ describe("swapOnBinance script helpers", function () {
       tokenSymbol: "USDT",
       chainId: CHAIN_IDs.POLYGON,
       binanceCoin: "USDT",
-      contractAddress: resolveAcrossToken("USDT", CHAIN_IDs.POLYGON)!,
+      contractAddress: tokenAddress("USDT", CHAIN_IDs.POLYGON),
     });
     const destination = makeResolvedAsset({
       tokenSymbol: "USDC",
       chainId: CHAIN_IDs.BASE,
       binanceCoin: "USDC",
-      contractAddress: resolveAcrossToken("USDC", CHAIN_IDs.BASE)!,
+      contractAddress: tokenAddress("USDC", CHAIN_IDs.BASE),
       withdrawFee: "0.25",
     });
 
@@ -197,13 +283,13 @@ describe("swapOnBinance script helpers", function () {
           tokenSymbol: "USDT",
           chainId: CHAIN_IDs.POLYGON,
           binanceCoin: "USDT",
-          contractAddress: resolveAcrossToken("USDT", CHAIN_IDs.POLYGON)!,
+          contractAddress: tokenAddress("USDT", CHAIN_IDs.POLYGON),
         }),
         makeResolvedAsset({
           tokenSymbol: "USDC",
           chainId: CHAIN_IDs.BASE,
           binanceCoin: "USDC",
-          contractAddress: resolveAcrossToken("USDC", CHAIN_IDs.BASE)!,
+          contractAddress: tokenAddress("USDC", CHAIN_IDs.BASE),
         }),
         toBNWei("50", 6)
       ),
@@ -236,6 +322,12 @@ describe("swapOnBinance script helpers", function () {
     );
   });
 
+  it("converts withdrawal amount strings without float precision loss", function () {
+    const amount = getBinanceWithdrawalAmount("123456789012345.123456789", 6);
+
+    expect(amount.eq(toBNWei("123456789012345.123456", 6))).to.equal(true);
+  });
+
   it("subtracts realized fill commission using Binance fill trades", async function () {
     const allOrders = sinon.stub().resolves([
       {
@@ -266,13 +358,13 @@ describe("swapOnBinance script helpers", function () {
         tokenSymbol: "USDT",
         chainId: CHAIN_IDs.POLYGON,
         binanceCoin: "USDT",
-        contractAddress: resolveAcrossToken("USDT", CHAIN_IDs.POLYGON)!,
+        contractAddress: tokenAddress("USDT", CHAIN_IDs.POLYGON),
       }),
       makeResolvedAsset({
         tokenSymbol: "USDC",
         chainId: CHAIN_IDs.BASE,
         binanceCoin: "USDC",
-        contractAddress: resolveAcrossToken("USDC", CHAIN_IDs.BASE)!,
+        contractAddress: tokenAddress("USDC", CHAIN_IDs.BASE),
       })
     );
 
@@ -300,13 +392,13 @@ describe("swapOnBinance script helpers", function () {
           tokenSymbol: "USDT",
           chainId: CHAIN_IDs.POLYGON,
           binanceCoin: "USDT",
-          contractAddress: resolveAcrossToken("USDT", CHAIN_IDs.POLYGON)!,
+          contractAddress: tokenAddress("USDT", CHAIN_IDs.POLYGON),
         }),
         makeResolvedAsset({
           tokenSymbol: "USDC",
           chainId: CHAIN_IDs.BASE,
           binanceCoin: "USDC",
-          contractAddress: resolveAcrossToken("USDC", CHAIN_IDs.BASE)!,
+          contractAddress: tokenAddress("USDC", CHAIN_IDs.BASE),
         }),
         toBNWei("10", 6)
       ),
@@ -332,7 +424,7 @@ describe("swapOnBinance script helpers", function () {
         tokenSymbol: "USDC",
         chainId: CHAIN_IDs.POLYGON,
         binanceCoin: "USDC",
-        contractAddress: resolveAcrossToken("USDC", CHAIN_IDs.POLYGON)!,
+        contractAddress: tokenAddress("USDC", CHAIN_IDs.POLYGON),
       }),
       depositTxHash: "0xabc",
       minFreeBalance: 100,
@@ -370,13 +462,13 @@ describe("swapOnBinance script helpers", function () {
         tokenSymbol: "USDT",
         chainId: CHAIN_IDs.POLYGON,
         binanceCoin: "USDT",
-        contractAddress: resolveAcrossToken("USDT", CHAIN_IDs.POLYGON)!,
+        contractAddress: tokenAddress("USDT", CHAIN_IDs.POLYGON),
       }),
       destination: makeResolvedAsset({
         tokenSymbol: "USDC",
         chainId: CHAIN_IDs.BASE,
         binanceCoin: "USDC",
-        contractAddress: resolveAcrossToken("USDC", CHAIN_IDs.BASE)!,
+        contractAddress: tokenAddress("USDC", CHAIN_IDs.BASE),
       }),
       pollDelayMs: 0,
     });
@@ -391,7 +483,7 @@ describe("swapOnBinance script helpers", function () {
     sinon
       .stub(BinanceUtils, "getBinanceWithdrawals")
       .onCall(0)
-      .resolves([makeWithdrawal({ id: "withdraw-1", status: BINANCE_WITHDRAWAL_STATUS.PROCESSING })])
+      .resolves([makeWithdrawal({ id: "withdraw-1", status: BINANCE_WITHDRAWAL_STATUS.PROCESSING, txId: "" })])
       .onCall(1)
       .resolves([makeWithdrawal({ id: "withdraw-1", status: BINANCE_WITHDRAWAL_STATUS.COMPLETED, txId: "0xdef" })]);
 
@@ -401,7 +493,7 @@ describe("swapOnBinance script helpers", function () {
         tokenSymbol: "USDC",
         chainId: CHAIN_IDs.BASE,
         binanceCoin: "USDC",
-        contractAddress: resolveAcrossToken("USDC", CHAIN_IDs.BASE)!,
+        contractAddress: tokenAddress("USDC", CHAIN_IDs.BASE),
       }),
       withdrawalId: "withdraw-1",
       startTimeMs: 0,
@@ -432,7 +524,7 @@ describe("swapOnBinance script helpers", function () {
           tokenSymbol: "USDC",
           chainId: CHAIN_IDs.BASE,
           binanceCoin: "USDC",
-          contractAddress: resolveAcrossToken("USDC", CHAIN_IDs.BASE)!,
+          contractAddress: tokenAddress("USDC", CHAIN_IDs.BASE),
         }),
         withdrawalId: "withdraw-2",
         startTimeMs: 0,
@@ -515,24 +607,23 @@ function makeResolvedAsset({
 }): ResolvedBinanceAsset {
   const tokenDecimals = tokenSymbol === "ETH" ? 18 : 6;
   const nativeSymbol = getNativeTokenInfoForChain(chainId).symbol.toUpperCase();
-  return {
-    tokenSymbol,
-    chainId,
-    binanceCoin,
-    tokenDecimals,
-    isNativeAsset: tokenSymbol.toUpperCase() === nativeSymbol,
-    localTokenAddress: contractAddress,
-    network: {
-      name: getTestBinanceNetworkName(chainId),
-      coin: binanceCoin,
-      withdrawFee,
-      withdrawMin: "0.01",
-      withdrawMax: "1000000",
-      contractAddress: contractAddress ?? "",
-      depositEnable: true,
-      withdrawEnable: true,
-    },
+  const isNative = tokenSymbol.toUpperCase() === nativeSymbol;
+  const network = {
+    name: getTestBinanceNetworkName(chainId),
+    coin: binanceCoin,
+    withdrawFee,
+    withdrawMin: "0.01",
+    withdrawMax: "1000000",
+    contractAddress: contractAddress ?? "",
+    depositEnable: true,
+    withdrawEnable: true,
   };
+  const base = { tokenSymbol, chainId, binanceCoin, tokenDecimals, network };
+  if (isNative) {
+    return { ...base, isNativeAsset: true };
+  }
+  assert(isDefined(contractAddress), `makeResolvedAsset: ERC20 ${tokenSymbol} requires contractAddress`);
+  return { ...base, isNativeAsset: false, localTokenAddress: contractAddress };
 }
 
 function makeNativeCoin(symbol: string, chainId: number): Coin {
@@ -569,7 +660,7 @@ function makeErc20Coin(
       coin: symbol,
       withdrawMin: "0.01",
       withdrawMax: "1000000",
-      contractAddress: contractAddress ?? resolveAcrossToken(symbol, chainId)!,
+      contractAddress: contractAddress ?? tokenAddress(symbol, chainId),
       withdrawFee: "0.1",
       depositEnable: true,
       withdrawEnable: true,
@@ -610,14 +701,14 @@ function makeDeposit({ txId, status, network, coin }: { txId: string; status: nu
   };
 }
 
-function makeWithdrawal({ id, status, txId = "" }: { id: string; status: number; txId?: string }) {
+function makeWithdrawal({ id, status, txId }: { id: string; status: number; txId?: string }) {
   return {
     id,
     amount: 100,
     coin: "USDC",
     network: "BASE",
     recipient: "0x1111111111111111111111111111111111111111",
-    txId,
+    ...(txId !== undefined ? { txId } : {}),
     transactionFee: 0.1,
     applyTime: new Date().toISOString(),
     status,

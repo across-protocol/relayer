@@ -38,13 +38,12 @@ import {
   EvmAddress,
   Address,
   toAddressType,
-  CHAIN_IDs,
-  compareAddressesSimple,
   forEachAsync,
   max,
   getLatestRunningBalances,
   getInventoryBalanceContributorTokens,
   dedupArray,
+  isUnmeteredFastRebalance,
 } from "../utils";
 import { getAcrossHost } from "./AcrossAPIClient";
 import { BinanceClient } from "./BinanceClient";
@@ -570,10 +569,10 @@ export class InventoryClient {
 
   /**
    * Returns the L1 token address for a given L2 token address on a given chain. Returns undefined
-   *  if the l2 token and chain ID do not not have a corresponding L1 token mapping.
+   *  if the l2 token and chain ID do not have a corresponding L1 token mapping.
    * @param l2Token L2 token address
    * @param chainId Chain ID
-   * @returns L1 token address from TokenSymbolsMap or undefined if the l2 token and chain ID do not not have a corresponding L1 token mapping.
+   * @returns L1 token address from TokenSymbolsMap or undefined if the l2 token and chain ID do not have a corresponding L1 token mapping.
    */
   getL1TokenAddress(l2Token: Address, chainId: number): EvmAddress | undefined {
     try {
@@ -647,6 +646,7 @@ export class InventoryClient {
       deposit.originChainId,
       hubPoolBlock
     );
+    assert(isDefined(l1Token), `No L1 token mapping for ${deposit.inputToken} on chain ${deposit.originChainId}`);
     return this.hubPoolClient.l2TokenEnabledForL1TokenAtBlock(l1Token, deposit.destinationChainId, hubPoolBlock);
   }
 
@@ -772,6 +772,7 @@ export class InventoryClient {
       assert(this._l1TokenEnabledForChain(l1Token, chainId), `Token ${l1Token} not enabled for chain ${chainId}`);
 
       const repaymentToken = chainId === originChainId ? inputToken : this.getRemoteTokenForL1Token(l1Token, chainId);
+      assert(isDefined(repaymentToken), `No remote token mapping for ${l1Token} on chain ${chainId}`);
       if (chainId !== originChainId) {
         assert(
           this.hubPoolClient.l2TokenHasPoolRebalanceRoute(repaymentToken, chainId),
@@ -1185,6 +1186,9 @@ export class InventoryClient {
 
     const groupedRebalances = Object.groupBy(executedTransactions, (txn) => txn.chainId);
     for (const [_chainId, rebalances] of Object.entries(groupedRebalances)) {
+      if (!isDefined(rebalances)) {
+        continue;
+      }
       const chainId = Number(_chainId);
       mrkdwn += `*Rebalances sent to ${getNetworkName(chainId)}:*\n`;
       for (const { l1Token, l2Token, amount, hash, chainId, isShortfallRebalance } of rebalances) {
@@ -1200,6 +1204,7 @@ export class InventoryClient {
 
         const cumulativeBalance = this.getCumulativeBalance(l1Token);
         const tokenConfig = this.getTokenConfig(l1Token, chainId, l2Token);
+        assert(isDefined(tokenConfig), `No token config for ${l1Token} on chain ${chainId} (l2 token ${l2Token})`);
         const { thresholdPct, targetPct } = tokenConfig;
         if (isShortfallRebalance) {
           const totalShortfall = this.tokenClient.getShortfallTotalRequirement(chainId, l2Token);
@@ -1219,6 +1224,9 @@ export class InventoryClient {
 
     const groupedUnexecutedRebalances = Object.groupBy(unexecutedRebalances, (txn) => txn.chainId);
     for (const [_chainId, rebalances] of Object.entries(groupedUnexecutedRebalances)) {
+      if (!isDefined(rebalances)) {
+        continue;
+      }
       const chainId = Number(_chainId);
       mrkdwn += `*Insufficient amount to rebalance to ${getNetworkName(chainId)}:*\n`;
       for (const { l1Token, l2Token, balance, amount } of rebalances) {
@@ -1845,22 +1853,14 @@ export class InventoryClient {
         return false;
       }
       const repaymentToken = this.hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, repaymentChainId);
+      assert(isDefined(repaymentToken), `No L2 token for L1 ${l1Token} on chain ${repaymentChainId}`);
       return !this.isQuicklyRebalanced(repaymentChainId, repaymentToken);
     });
   }
 
   // True for unmetered fast-rebalance routes (CCTP, OFT, hub). Binance is excluded — it's quota-gated.
   private isUnmeteredFastRebalance(repaymentChainId: number, repaymentToken: Address): boolean {
-    const { chainId: hubChainId } = this.hubPoolClient;
-    const originChainIsCctpEnabled =
-      sdkUtils.chainIsCCTPEnabled(repaymentChainId) &&
-      compareAddressesSimple(TOKEN_SYMBOLS_MAP.USDC.addresses[repaymentChainId], repaymentToken.toNative());
-    const originChainIsOFTEnabled =
-      sdkUtils.chainIsOFTEnabled(repaymentChainId) &&
-      compareAddressesSimple(TOKEN_SYMBOLS_MAP.USDT.addresses[repaymentChainId], repaymentToken.toNative()) &&
-      repaymentChainId !== CHAIN_IDs.HYPEREVM; // OFT withdrawals from HyperEVM take ~12 hours.
-    // Repayments on Mainnet can be quickly rebalanced via canonical bridges out of L1.
-    return originChainIsCctpEnabled || originChainIsOFTEnabled || repaymentChainId === hubChainId;
+    return isUnmeteredFastRebalance(repaymentChainId, repaymentToken, this.hubPoolClient.chainId);
   }
 
   /**
