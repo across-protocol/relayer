@@ -185,13 +185,26 @@ async function listen(
   const blocks = new Map<bigint, string>();
   const events = eventSignatures.map((sig) => parseAbiItem(sig.replace("tuple", "")) as AbiEvent);
   const address = spokePoolAddr as `0x${string}`;
+  // Floor for the trailing window: the first block seen on the primary subscription (set in its
+  // first `onBlock`). It sits at the chain head, one past the startup scrape, so flooring here stops
+  // the initial poll from re-querying — and re-submitting — already-scraped blocks. Shared across all
+  // providers (a lagging secondary's own first block could fall inside the scraped range).
+  let liveFrom: bigint | undefined;
 
   // Fetch a single provider's logs for a block it has just announced and feed its votes to
   // EventManager. Replaces viem's filter-based `watchEvent` (TRON expires filter ids) while keeping
   // its per-provider sourcing: each provider polls only blocks it has itself seen, so a provider
   // that briefly lags or fails still contributes its quorum vote once it catches up.
   const pollLogs = async (provider: (typeof providers)[number], head: bigint): Promise<void> => {
-    const fromBlock = head > LOG_RETRY_DEPTH ? head - LOG_RETRY_DEPTH : 0n;
+    if (liveFrom === undefined) {
+      return; // Primary hasn't reported its first block yet; nothing to floor the window at.
+    }
+    const floor = liveFrom;
+    const lookback = head > LOG_RETRY_DEPTH ? head - LOG_RETRY_DEPTH : 0n;
+    const fromBlock = lookback > floor ? lookback : floor;
+    if (fromBlock > head) {
+      return; // Provider hasn't advanced past the first live block yet; nothing to poll.
+    }
     const getLogs = () => provider.getLogs({ address, events, fromBlock, toBlock: head });
     // TRON RPCs intermittently return empty bodies; retry inline, then leave the block to be
     // re-polled on the next tick (the trailing window) rather than dropping its logs.
@@ -264,6 +277,8 @@ async function listen(
       if (!isDefined(block.number)) {
         return;
       }
+      // The first block seen here floors the trailing window for every provider.
+      liveFrom ??= block.number;
       if (!postBlock(Number(block.number), Number(block.timestamp))) {
         abortController.abort();
       }
