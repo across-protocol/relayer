@@ -1677,6 +1677,23 @@ export class Dataworker {
   ): Promise<number> {
     const hubPoolChainId = this.clients.hubPoolClient.chainId;
 
+    // Final on-chain guard: re-read `claimedBitMap` at `latest` and drop any leaf
+    // whose bit is already set. Non-mainnet executeRootBundle leaves carry
+    // `canFailInSimulation: true` and therefore bypass the MultiCallerClient's
+    // simulation step, so an overlapping dataworker run that landed an execution
+    // between our earlier event-derived filter and broadcast would otherwise
+    // produce a duplicate transaction (and a duplicate "Executed PoolRebalanceLeaf"
+    // alert from the queued tx). Filter at the top of this function — before any
+    // side-effecting enqueue (exchange-rate sync, Orbit gas funding, mainnet
+    // slow-fill/refund enqueues, or executeRootBundle) and before the balance
+    // allocator commits virtual HubPool balance for a claimed leaf — so a claimed
+    // mainnet leaf also short-circuits the mainnet slow-fill/refund enqueues that
+    // would otherwise run against a stale `spokePoolClients[hubPool].getLatestRootBundleId()`.
+    const unclaimedPoolLeaves = await this._filterAlreadyClaimedPoolRebalanceLeaves(poolLeaves);
+    if (unclaimedPoolLeaves.length === 0) {
+      return 0;
+    }
+
     // There are three times that we should look to update the HubPool's liquid reserves:
     // 1. First, before we attempt to execute the HubChain PoolRebalance leaves and RelayerRefund leaves.
     //    We should see if there are new liquid reserves we need to account for before sending out these
@@ -1697,47 +1714,56 @@ export class Dataworker {
     // First, execute mainnet pool rebalance leaves. Then try to execute any relayer refund and slow leaves for the
     // expected relayed root hash, then proceed with remaining pool rebalance leaves. This is an optimization that
     // takes advantage of the fact that mainnet transfers between HubPool and SpokePool are atomic.
-    const mainnetLeaves = poolLeaves.filter((leaf) => leaf.chainId === hubPoolChainId);
+    const mainnetLeaves = unclaimedPoolLeaves.filter((leaf) => leaf.chainId === hubPoolChainId);
     if (mainnetLeaves.length > 0) {
       assert(mainnetLeaves.length === 1, "There should only be one Ethereum PoolRebalanceLeaf");
       latestLiquidReserves = await this._updateExchangeRatesBeforeExecutingHubChainLeaves(
         balanceAllocator,
         mainnetLeaves[0]
       );
-      leafCount += await this._executePoolRebalanceLeaves(
+      const mainnetBroadcastCount = await this._executePoolRebalanceLeaves(
         spokePoolClients,
         mainnetLeaves,
         balanceAllocator,
         poolRebalanceTree
       );
+      leafCount += mainnetBroadcastCount;
 
-      // We need to know the next root bundle ID for the mainnet spoke pool in order to execute leaves for roots that
-      // will be relayed after executing the above pool rebalance root.
-      const nextRootBundleIdForMainnet = spokePoolClients[hubPoolChainId].getLatestRootBundleId();
+      // Only execute the mainnet slow-fill and refund follow-ups if we actually broadcast the mainnet
+      // pool leaf. Otherwise the mainnet leaf was either filtered as already-claimed (by an overlapping
+      // dataworker run between the upstream filter and the broadcast-time re-read) or dropped as
+      // underfunded; in either case `spokePoolClients[hubPool].getLatestRootBundleId()` is stale (the
+      // overlapping run's `RelayedRootBundle` event isn't in our cache yet) and queuing refunds/slow-
+      // fills against it would broadcast against the wrong root bundle id.
+      if (mainnetBroadcastCount > 0) {
+        // We need to know the next root bundle ID for the mainnet spoke pool in order to execute leaves
+        // for roots that will be relayed after executing the above pool rebalance root.
+        const nextRootBundleIdForMainnet = spokePoolClients[hubPoolChainId].getLatestRootBundleId();
 
-      // Now, execute refund and slow fill leaves for Mainnet using any new funds. These methods will return early if there
-      // are no relevant leaves to execute.
-      await this._executeSlowFillLeaf(
-        slowFillLeaves.filter((leaf) => leaf.chainId === hubPoolChainId),
-        balanceAllocator,
-        spokePoolClients[hubPoolChainId],
-        slowFillTree,
-        nextRootBundleIdForMainnet
-      );
-      await this._executeRelayerRefundLeaves(
-        relayerRefundLeaves.filter((leaf) => leaf.chainId === hubPoolChainId),
-        balanceAllocator,
-        spokePoolClients[hubPoolChainId],
-        relayerRefundTree,
-        nextRootBundleIdForMainnet
-      );
+        // Now, execute refund and slow fill leaves for Mainnet using any new funds. These methods will
+        // return early if there are no relevant leaves to execute.
+        await this._executeSlowFillLeaf(
+          slowFillLeaves.filter((leaf) => leaf.chainId === hubPoolChainId),
+          balanceAllocator,
+          spokePoolClients[hubPoolChainId],
+          slowFillTree,
+          nextRootBundleIdForMainnet
+        );
+        await this._executeRelayerRefundLeaves(
+          relayerRefundLeaves.filter((leaf) => leaf.chainId === hubPoolChainId),
+          balanceAllocator,
+          spokePoolClients[hubPoolChainId],
+          relayerRefundTree,
+          nextRootBundleIdForMainnet
+        );
+      }
     }
 
     // Before executing the other pool rebalance leaves, see if we should update any exchange rates to account for
     // any tokens returned to the hub pool via the EthereumSpokePool that we'll need to use to execute
     // any of the remaining pool rebalance leaves. This is also important if we failed to execute
     // the mainnet leaf and haven't enqueued a sync call that could be used to execute some of the other leaves.
-    const nonHubChainPoolRebalanceLeaves = poolLeaves.filter((leaf) => leaf.chainId !== hubPoolChainId);
+    const nonHubChainPoolRebalanceLeaves = unclaimedPoolLeaves.filter((leaf) => leaf.chainId !== hubPoolChainId);
     if (nonHubChainPoolRebalanceLeaves.length === 0) {
       return leafCount;
     }
@@ -1753,7 +1779,7 @@ export class Dataworker {
     });
 
     // Save all L1 tokens that we haven't updated exchange rates for in a different step.
-    const l1TokensWithPotentiallyOlderUpdate = poolLeaves.reduce<EvmAddress[]>((l1TokenSet, leaf) => {
+    const l1TokensWithPotentiallyOlderUpdate = unclaimedPoolLeaves.reduce<EvmAddress[]>((l1TokenSet, leaf) => {
       const currLeafL1Tokens = leaf.l1Tokens;
       currLeafL1Tokens.forEach((l1Token, i) => {
         if (
@@ -1834,6 +1860,10 @@ export class Dataworker {
 
     // Evaluate leaves iteratively because we will be modifying virtual balances and we want
     // to make sure we are getting the virtual balance computations correct.
+    // Callers must apply `_filterAlreadyClaimedPoolRebalanceLeaves` upstream so we never
+    // commit balance reservations or enqueue side-effecting txs for a claimed leaf;
+    // we re-read the bitmap again immediately before the broadcast forEach below to
+    // narrow the race window that opens during the upstream side-effect work.
     const fundedLeaves = await this._getExecutablePoolRebalanceLeaves(allLeaves, balanceAllocator);
     const executableLeaves: PoolRebalanceLeaf[] = [];
     for (const leaf of fundedLeaves) {
@@ -1921,8 +1951,17 @@ export class Dataworker {
       executableLeaves.push(leaf);
     }
 
+    // Second claimed-bitmap read, immediately before broadcast. The upstream filter at
+    // the top of `_executePoolLeavesAndSyncL1Tokens` stops side-effecting txs from being
+    // enqueued for already-claimed leaves, but a competing executor can still claim one
+    // of these leaves during the intervening exchange-rate sync, optional mainnet
+    // execution, refund/slow-fill work, and per-leaf Orbit gas funding loop. Re-reading
+    // here narrows the race window for the duplicate-`executeRootBundle` broadcast that
+    // motivates this whole filter.
+    const leavesToBroadcast = await this._filterAlreadyClaimedPoolRebalanceLeaves(executableLeaves);
+
     // Execute the leaves:
-    executableLeaves.forEach((leaf) => {
+    leavesToBroadcast.forEach((leaf) => {
       // Add balances to spoke pool on mainnet since we know it will be sent atomically.
       if (leaf.chainId === hubPoolChainId) {
         const hubChainSpokePoolAddress = spokePoolClients[leaf.chainId].spokePoolAddress;
@@ -1961,7 +2000,42 @@ export class Dataworker {
       }
     });
 
-    return executableLeaves.length;
+    return leavesToBroadcast.length;
+  }
+
+  async _filterAlreadyClaimedPoolRebalanceLeaves(leaves: PoolRebalanceLeaf[]): Promise<PoolRebalanceLeaf[]> {
+    if (leaves.length === 0) {
+      return leaves;
+    }
+
+    let claimedBitMap: BigNumber;
+    try {
+      const rootBundle = await this.clients.hubPoolClient.hubPool.rootBundleProposal();
+      claimedBitMap = BigNumber.from(rootBundle.claimedBitMap);
+    } catch (err) {
+      // If this read fails we can't filter — defer to the existing simulation path and keep all leaves.
+      this.logger.warn({
+        at: "Dataworker#_filterAlreadyClaimedPoolRebalanceLeaves",
+        message: "Failed to re-read rootBundleProposal.claimedBitMap; skipping pre-broadcast filter.",
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return leaves;
+    }
+
+    const unclaimed: PoolRebalanceLeaf[] = [];
+    for (const leaf of leaves) {
+      if (claimedBitMap.shr(leaf.leafId).and(1).eq(1)) {
+        this.logger.debug({
+          at: "Dataworker#_filterAlreadyClaimedPoolRebalanceLeaves",
+          message: `Skipping leaf ${leaf.leafId} for ${getNetworkName(leaf.chainId)}: already claimed on-chain at broadcast time (likely an overlapping dataworker run).`,
+          leafId: leaf.leafId,
+          chainId: leaf.chainId,
+        });
+      } else {
+        unclaimed.push(leaf);
+      }
+    }
+    return unclaimed;
   }
 
   async _updateExchangeRatesBeforeExecutingHubChainLeaves(
