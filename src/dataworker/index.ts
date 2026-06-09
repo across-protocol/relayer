@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { TokenClient } from "../clients";
 import {
   assert,
@@ -48,13 +49,19 @@ function getExecutorLockKey(hubPoolChainId: number): string {
   return `dataworker:executor:lock:${hubPoolChainId}`;
 }
 
-async function acquireExecutorMutex(
-  log: winston.Logger,
-  cfg: DataworkerConfig
-): Promise<{ release: () => Promise<void> } | undefined> {
+type ExecutorMutex = {
+  release: () => Promise<void>;
+  // Throws if the lock is known to be lost. Call before any state-mutating broadcast
+  // so we abort instead of racing a second instance that may now hold the lock.
+  assertHeld: () => void;
+};
+
+async function acquireExecutorMutex(log: winston.Logger, cfg: DataworkerConfig): Promise<ExecutorMutex | undefined> {
+  const noop: ExecutorMutex = { release: async () => {}, assertHeld: () => {} };
+
   // No mutex is needed when this run will not touch HubPool root-bundle state.
   if (!cfg.proposerEnabled && !cfg.l1ExecutorEnabled) {
-    return { release: async () => {} };
+    return noop;
   }
 
   const redis = await getRedisCache(log);
@@ -63,13 +70,15 @@ async function acquireExecutorMutex(
       at: "Dataworker#acquireExecutorMutex",
       message: "Redis cache unavailable; proceeding without executor mutex.",
     });
-    return { release: async () => {} };
+    return noop;
   }
 
   const lockKey = getExecutorLockKey(cfg.hubPoolChainId);
   const envTtl = Number(process.env.DATAWORKER_EXECUTOR_LOCK_TTL_MS);
   const lockTtlMs = Number.isFinite(envTtl) && envTtl > 0 ? envTtl : DEFAULT_EXECUTOR_LOCK_TTL_MS;
-  const token = `${cfg.botIdentifier}:${cfg.runIdentifier}`;
+  // Include a per-acquisition nonce so that operators reusing RUN_IDENTIFIER across
+  // restarts cannot accidentally renew or release a successor's lock.
+  const token = `${cfg.botIdentifier}:${cfg.runIdentifier}:${randomUUID()}`;
 
   if (!(await redis.acquireLock(lockKey, token, lockTtlMs))) {
     log[startupLogLevel(cfg)]({
@@ -80,22 +89,48 @@ async function acquireExecutorMutex(
     return undefined;
   }
 
+  let lockLost = false;
   // Renew at 1/3 of the TTL so a slow run has two chances to refresh before expiry.
   const renewIntervalMs = Math.max(1_000, Math.floor(lockTtlMs / 3));
   const heartbeat = setInterval(() => {
-    void redis.renewLock(lockKey, token, lockTtlMs).catch((err) => {
-      log.warn({
-        at: "Dataworker#acquireExecutorMutex",
-        message: "Failed to renew executor lock; it may expire mid-run.",
-        lockKey,
-        error: err instanceof Error ? err.message : String(err),
+    void redis
+      .renewLock(lockKey, token, lockTtlMs)
+      .then((renewed) => {
+        if (!renewed && !lockLost) {
+          // renewLock returns false only when the key expired or another token now owns
+          // it — i.e. we've lost ownership. Flag it so the next broadcast aborts.
+          lockLost = true;
+          clearInterval(heartbeat);
+          log.error({
+            at: "Dataworker#acquireExecutorMutex",
+            message: "Lost ownership of executor lock mid-run; aborting before next broadcast.",
+            lockKey,
+          });
+        }
+      })
+      .catch((err) => {
+        log.warn({
+          at: "Dataworker#acquireExecutorMutex",
+          message: "Failed to renew executor lock; it may expire mid-run.",
+          lockKey,
+          error: err instanceof Error ? err.message : String(err),
+        });
       });
-    });
   }, renewIntervalMs);
 
   return {
+    assertHeld: () => {
+      if (lockLost) {
+        throw new Error("Executor mutex lost mid-run; aborting before broadcast.");
+      }
+    },
     release: async () => {
       clearInterval(heartbeat);
+      if (lockLost) {
+        // Lock is owned by another token (or expired); attempting releaseLock would no-op,
+        // but skip the round-trip and the misleading warn-on-error path.
+        return;
+      }
       await redis.releaseLock(lockKey, token).catch((err) => {
         log.warn({
           at: "Dataworker#acquireExecutorMutex",
@@ -106,6 +141,39 @@ async function acquireExecutorMutex(
       });
     },
   };
+}
+
+// Wait for HubPool broadcasts to be mined before releasing the executor mutex. Without
+// this, a successor instance can acquire the lock between broadcast and mining, read
+// pre-broadcast HubPool state, and resubmit the same root-bundle action.
+async function awaitHubPoolReceipts(
+  log: winston.Logger,
+  hubPool: { provider: Provider },
+  hubChainId: number,
+  txHashesByChain: Record<number, string[]>
+): Promise<void> {
+  const hashes = txHashesByChain[hubChainId] ?? [];
+  if (hashes.length === 0) {
+    return;
+  }
+  const envTimeout = Number(process.env.DATAWORKER_EXECUTOR_RECEIPT_TIMEOUT_MS);
+  const timeoutMs = Number.isFinite(envTimeout) && envTimeout > 0 ? envTimeout : 5 * 60 * 1000;
+  await Promise.all(
+    hashes.map((hash) =>
+      hubPool.provider.waitForTransaction(hash, 1, timeoutMs).catch((err) => {
+        // Don't block release indefinitely on a dropped/replaced txn; the executor lock
+        // TTL is the hard upper bound and the next run's HubPool read will see whatever
+        // state finalizes on-chain.
+        log.warn({
+          at: "Dataworker#awaitHubPoolReceipts",
+          message: "Timed out or errored waiting for HubPool broadcast receipt; releasing mutex anyway.",
+          hash,
+          timeoutMs,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      })
+    )
+  );
 }
 
 export async function createDataworker(
@@ -250,15 +318,21 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
     return;
   }
 
-  const { clients, dataworker } = await createDataworker(logger, baseSigner, config);
-  await config.update(logger); // Update address filter.
-  const l1BlockTime = (await averageBlockTime(clients.hubPoolClient.hubPool.provider)).average;
-  const adjustedL1BlockTime = l1BlockTime + Number(process.env["L1_BLOCK_TIME_BUFFER"] ?? l1BlockTime); // Default adjustment is double l1BlockTime.
-  let proposedBundleData: BundleData | undefined = undefined;
-  let poolRebalanceLeafExecutionCount = 0;
+  // Captured across the broadcast paths so the finally block can wait for HubPool
+  // receipts before releasing the mutex.
+  let hubPoolProvider: Provider | undefined;
+  let lastBroadcastTxHashes: Record<number, string[]> | undefined;
 
-  const pubSub = await getRedisPubSub(logger);
   try {
+    const { clients, dataworker } = await createDataworker(logger, baseSigner, config);
+    hubPoolProvider = clients.hubPoolClient.hubPool.provider;
+    await config.update(logger); // Update address filter.
+    const l1BlockTime = (await averageBlockTime(clients.hubPoolClient.hubPool.provider)).average;
+    const adjustedL1BlockTime = l1BlockTime + Number(process.env["L1_BLOCK_TIME_BUFFER"] ?? l1BlockTime); // Default adjustment is double l1BlockTime.
+    let proposedBundleData: BundleData | undefined = undefined;
+    let poolRebalanceLeafExecutionCount = 0;
+
+    const pubSub = await getRedisPubSub(logger);
     // Explicitly don't log addressFilter because it can be huge and can overwhelm log transports.
     const { addressFilter: _addressFilter, ...loggedConfig } = config;
     logger[startupLogLevel(config)]({ at: "Dataworker#index", message: `${personality} started 👩‍🔬`, loggedConfig });
@@ -413,7 +487,8 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
         }
       }
 
-      await clients.multiCallerClient.executeTxnQueues();
+      executorMutex.assertHeld();
+      lastBroadcastTxHashes = await clients.multiCallerClient.executeTxnQueues();
     } else {
       // If the proposer/executor is expected to await its challenge period:
       // - We need a defined redis instance so we can publish our botIdentifier and runIdentifier (so future instances are aware of our existence).
@@ -501,9 +576,13 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
           }
         }
       }
-      await clients.multiCallerClient.executeTxnQueues();
+      executorMutex.assertHeld();
+      lastBroadcastTxHashes = await clients.multiCallerClient.executeTxnQueues();
     }
   } finally {
+    if (hubPoolProvider && lastBroadcastTxHashes) {
+      await awaitHubPoolReceipts(logger, { provider: hubPoolProvider }, config.hubPoolChainId, lastBroadcastTxHashes);
+    }
     await executorMutex.release();
     await disconnectRedisClients(logger);
   }
