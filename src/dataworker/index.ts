@@ -90,22 +90,35 @@ async function acquireExecutorMutex(log: winston.Logger, cfg: DataworkerConfig):
   }
 
   let lockLost = false;
+  // Tracks the wall-clock time of the most recent confirmed lock ownership. If
+  // `renewLock` rejects for long enough that this stamp ages past the lock TTL, the
+  // key has almost certainly expired on Redis and a successor could acquire it, so we
+  // treat the lock as lost on the next assertHeld() check.
+  let lastConfirmedHeldAt = Date.now();
   // Renew at 1/3 of the TTL so a slow run has two chances to refresh before expiry.
   const renewIntervalMs = Math.max(1_000, Math.floor(lockTtlMs / 3));
+  const markLost = (message: string): void => {
+    if (lockLost) {
+      return;
+    }
+    lockLost = true;
+    clearInterval(heartbeat);
+    log.error({
+      at: "Dataworker#acquireExecutorMutex",
+      message,
+      lockKey,
+    });
+  };
   const heartbeat = setInterval(() => {
     void redis
       .renewLock(lockKey, token, lockTtlMs)
       .then((renewed) => {
-        if (!renewed && !lockLost) {
+        if (renewed) {
+          lastConfirmedHeldAt = Date.now();
+        } else {
           // renewLock returns false only when the key expired or another token now owns
-          // it — i.e. we've lost ownership. Flag it so the next broadcast aborts.
-          lockLost = true;
-          clearInterval(heartbeat);
-          log.error({
-            at: "Dataworker#acquireExecutorMutex",
-            message: "Lost ownership of executor lock mid-run; aborting before next broadcast.",
-            lockKey,
-          });
+          // it — i.e. we've lost ownership.
+          markLost("Lost ownership of executor lock mid-run; aborting before next broadcast.");
         }
       })
       .catch((err) => {
@@ -115,11 +128,20 @@ async function acquireExecutorMutex(log: winston.Logger, cfg: DataworkerConfig):
           lockKey,
           error: err instanceof Error ? err.message : String(err),
         });
+        // A single transient error is not enough to assume ownership loss, but if the
+        // outage outlasts the TTL the key on Redis is definitely gone — flag it so the
+        // assertHeld() check below aborts the next broadcast.
+        if (Date.now() - lastConfirmedHeldAt > lockTtlMs) {
+          markLost("Executor lock renewal failed past TTL; assuming ownership lost.");
+        }
       });
   }, renewIntervalMs);
 
   return {
     assertHeld: () => {
+      if (!lockLost && Date.now() - lastConfirmedHeldAt > lockTtlMs) {
+        markLost("Executor lock renewal failed past TTL; assuming ownership lost.");
+      }
       if (lockLost) {
         throw new Error("Executor mutex lost mid-run; aborting before broadcast.");
       }
@@ -141,6 +163,30 @@ async function acquireExecutorMutex(log: winston.Logger, cfg: DataworkerConfig):
       });
     },
   };
+}
+
+// MultiCallerClient.executeTxnQueues throws on any sibling-chain failure even when the
+// hub-chain submission succeeded; the successful hashes are stringified into the error
+// message rather than returned. Best-effort parse so we can still wait on the receipt
+// (otherwise a partial failure releases the mutex before the HubPool tx is mined).
+function recoverHubChainHashes(err: unknown, hubChainId: number): string[] {
+  if (!(err instanceof Error) || typeof err.message !== "string") {
+    return [];
+  }
+  const jsonStart = err.message.indexOf("{");
+  if (jsonStart === -1) {
+    return [];
+  }
+  try {
+    const txnRefs: Record<string, { result?: unknown; isError?: boolean }> = JSON.parse(err.message.slice(jsonStart));
+    const entry = txnRefs[String(hubChainId)];
+    if (entry && entry.isError === false && Array.isArray(entry.result)) {
+      return entry.result.filter((hash): hash is string => typeof hash === "string");
+    }
+  } catch {
+    // Error format may have changed; the receipt wait simply skips for this run.
+  }
+  return [];
 }
 
 // Wait for HubPool broadcasts to be mined before releasing the executor mutex. Without
@@ -313,10 +359,17 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
     return;
   }
 
-  const executorMutex = await acquireExecutorMutex(logger, config);
-  if (executorMutex === undefined) {
-    return;
-  }
+  const acquired = await acquireExecutorMutex(logger, config);
+  // `undefined` means the lock is contested. We still want to run the disputer (which
+  // does not touch HubPool root-bundle state), so fall through with a sentinel mutex
+  // whose assertHeld() throws — guaranteeing no broadcast slips through.
+  const executorMutex: ExecutorMutex = acquired ?? {
+    release: async () => {},
+    assertHeld: () => {
+      throw new Error("Executor mutex was not acquired; refusing to broadcast.");
+    },
+  };
+  const lockNotAcquired = acquired === undefined;
 
   // Captured across the broadcast paths so the finally block can wait for HubPool
   // receipts before releasing the mutex.
@@ -378,11 +431,19 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
       fromBlocks,
       toBlocks
     );
-    // Validate and dispute pending proposal before proposing a new one
+    // Validate and dispute pending proposal before proposing a new one. The disputer
+    // does not touch HubPool root-bundle state, so it runs even when the executor
+    // mutex was contested by another proposer/L1-executor instance.
     if (config.disputerEnabled) {
       await dataworker.validatePendingRootBundle(spokePoolClients, fromBlocks);
     } else {
       logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Disputer disabled" });
+    }
+
+    if (lockNotAcquired) {
+      // The contention was already logged inside acquireExecutorMutex; skip the
+      // proposer/L1-executor work that the mutex was guarding.
+      return;
     }
 
     if (config.proposerEnabled) {
@@ -488,7 +549,17 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
       }
 
       executorMutex.assertHeld();
-      lastBroadcastTxHashes = await clients.multiCallerClient.executeTxnQueues();
+      try {
+        lastBroadcastTxHashes = await clients.multiCallerClient.executeTxnQueues();
+      } catch (err) {
+        // If a sibling chain rejected, executeTxnQueues throws even when the hub
+        // submission succeeded; capture the hub hashes so the receipt wait still runs.
+        const hubHashes = recoverHubChainHashes(err, config.hubPoolChainId);
+        if (hubHashes.length > 0) {
+          lastBroadcastTxHashes = { [config.hubPoolChainId]: hubHashes };
+        }
+        throw err;
+      }
     } else {
       // If the proposer/executor is expected to await its challenge period:
       // - We need a defined redis instance so we can publish our botIdentifier and runIdentifier (so future instances are aware of our existence).
@@ -577,7 +648,17 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
         }
       }
       executorMutex.assertHeld();
-      lastBroadcastTxHashes = await clients.multiCallerClient.executeTxnQueues();
+      try {
+        lastBroadcastTxHashes = await clients.multiCallerClient.executeTxnQueues();
+      } catch (err) {
+        // If a sibling chain rejected, executeTxnQueues throws even when the hub
+        // submission succeeded; capture the hub hashes so the receipt wait still runs.
+        const hubHashes = recoverHubChainHashes(err, config.hubPoolChainId);
+        if (hubHashes.length > 0) {
+          lastBroadcastTxHashes = { [config.hubPoolChainId]: hubHashes };
+        }
+        throw err;
+      }
     }
   } finally {
     if (hubPoolProvider && lastBroadcastTxHashes) {
