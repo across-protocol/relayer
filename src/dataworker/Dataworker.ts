@@ -1835,8 +1835,20 @@ export class Dataworker {
     // Evaluate leaves iteratively because we will be modifying virtual balances and we want
     // to make sure we are getting the virtual balance computations correct.
     const fundedLeaves = await this._getExecutablePoolRebalanceLeaves(allLeaves, balanceAllocator);
+
+    // Final on-chain guard: re-read `claimedBitMap` at `latest` and drop any leaf
+    // whose bit is already set. Non-mainnet executeRootBundle leaves carry
+    // `canFailInSimulation: true` and therefore bypass the MultiCallerClient's
+    // simulation step, so an overlapping dataworker run that landed an execution
+    // between our earlier event-derived filter and broadcast would otherwise
+    // produce a duplicate transaction (and a duplicate "Executed PoolRebalanceLeaf"
+    // alert from the queued tx). Filter here — before per-leaf Orbit gas funding —
+    // so we never enqueue `loadEthForL2Calls` / ERC20 `transfer` for a leaf we will
+    // not subsequently execute.
+    const unclaimedFundedLeaves = await this._filterAlreadyClaimedPoolRebalanceLeaves(fundedLeaves);
+
     const executableLeaves: PoolRebalanceLeaf[] = [];
-    for (const leaf of fundedLeaves) {
+    for (const leaf of unclaimedFundedLeaves) {
       // For orbit leaves we need to check if we have enough gas tokens to pay for the L1 to L2 message.
       if (!sdkUtils.chainIsArbitrum(leaf.chainId) && !sdkUtils.chainIsOrbit(leaf.chainId)) {
         executableLeaves.push(leaf);
@@ -1921,17 +1933,8 @@ export class Dataworker {
       executableLeaves.push(leaf);
     }
 
-    // Final on-chain guard: re-read `claimedBitMap` at `latest` and drop any leaf
-    // whose bit is already set. Non-mainnet executeRootBundle leaves carry
-    // `canFailInSimulation: true` and therefore bypass the MultiCallerClient's
-    // simulation step, so an overlapping dataworker run that landed an execution
-    // between our earlier event-derived filter and broadcast would otherwise
-    // produce a duplicate transaction (and a duplicate "Executed PoolRebalanceLeaf"
-    // alert from the queued tx).
-    const leavesToEnqueue = await this._filterAlreadyClaimedPoolRebalanceLeaves(executableLeaves);
-
     // Execute the leaves:
-    leavesToEnqueue.forEach((leaf) => {
+    executableLeaves.forEach((leaf) => {
       // Add balances to spoke pool on mainnet since we know it will be sent atomically.
       if (leaf.chainId === hubPoolChainId) {
         const hubChainSpokePoolAddress = spokePoolClients[leaf.chainId].spokePoolAddress;
@@ -1970,7 +1973,7 @@ export class Dataworker {
       }
     });
 
-    return leavesToEnqueue.length;
+    return executableLeaves.length;
   }
 
   async _filterAlreadyClaimedPoolRebalanceLeaves(leaves: PoolRebalanceLeaf[]): Promise<PoolRebalanceLeaf[]> {
