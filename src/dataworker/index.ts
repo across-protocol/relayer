@@ -441,8 +441,23 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
     }
 
     if (lockNotAcquired) {
-      // The contention was already logged inside acquireExecutorMutex; skip the
-      // proposer/L1-executor work that the mutex was guarding.
+      // The contention was already logged inside acquireExecutorMutex. Before bailing
+      // out of the proposer/L1-executor work the mutex was guarding, flush whatever
+      // the disputer enqueued (a `disputeRootBundle` call). Disputes don't compete
+      // with proposer/L1-executor for the mutex — two instances racing the same
+      // dispute is harmless (one tx reverts) — and dropping the queue would let an
+      // invalid bundle's challenge window expire unanswered.
+      if (clients.multiCallerClient.transactionCount() > 0) {
+        try {
+          await clients.multiCallerClient.executeTxnQueues();
+        } catch (err) {
+          logger.error({
+            at: "Dataworker#index",
+            message: "Failed to broadcast disputer queue while executor mutex was contested",
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
       return;
     }
 
