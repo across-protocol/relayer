@@ -64,6 +64,13 @@ async function acquireExecutorMutex(log: winston.Logger, cfg: DataworkerConfig):
     return noop;
   }
 
+  // Dry runs cannot mutate HubPool state — every proposer/executor enqueue site in
+  // Dataworker is gated on `sendingTransactionsEnabled`. Holding the mutex here would
+  // only let a long simulation block a real sending instance from acquiring it.
+  if (!cfg.sendingTransactionsEnabled) {
+    return noop;
+  }
+
   const redis = await getRedisCache(log);
   if (!isDefined(redis)) {
     log.warn({
