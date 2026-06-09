@@ -1721,33 +1721,42 @@ export class Dataworker {
         balanceAllocator,
         mainnetLeaves[0]
       );
-      leafCount += await this._executePoolRebalanceLeaves(
+      const mainnetBroadcastCount = await this._executePoolRebalanceLeaves(
         spokePoolClients,
         mainnetLeaves,
         balanceAllocator,
         poolRebalanceTree
       );
+      leafCount += mainnetBroadcastCount;
 
-      // We need to know the next root bundle ID for the mainnet spoke pool in order to execute leaves for roots that
-      // will be relayed after executing the above pool rebalance root.
-      const nextRootBundleIdForMainnet = spokePoolClients[hubPoolChainId].getLatestRootBundleId();
+      // Only execute the mainnet slow-fill and refund follow-ups if we actually broadcast the mainnet
+      // pool leaf. Otherwise the mainnet leaf was either filtered as already-claimed (by an overlapping
+      // dataworker run between the upstream filter and the broadcast-time re-read) or dropped as
+      // underfunded; in either case `spokePoolClients[hubPool].getLatestRootBundleId()` is stale (the
+      // overlapping run's `RelayedRootBundle` event isn't in our cache yet) and queuing refunds/slow-
+      // fills against it would broadcast against the wrong root bundle id.
+      if (mainnetBroadcastCount > 0) {
+        // We need to know the next root bundle ID for the mainnet spoke pool in order to execute leaves
+        // for roots that will be relayed after executing the above pool rebalance root.
+        const nextRootBundleIdForMainnet = spokePoolClients[hubPoolChainId].getLatestRootBundleId();
 
-      // Now, execute refund and slow fill leaves for Mainnet using any new funds. These methods will return early if there
-      // are no relevant leaves to execute.
-      await this._executeSlowFillLeaf(
-        slowFillLeaves.filter((leaf) => leaf.chainId === hubPoolChainId),
-        balanceAllocator,
-        spokePoolClients[hubPoolChainId],
-        slowFillTree,
-        nextRootBundleIdForMainnet
-      );
-      await this._executeRelayerRefundLeaves(
-        relayerRefundLeaves.filter((leaf) => leaf.chainId === hubPoolChainId),
-        balanceAllocator,
-        spokePoolClients[hubPoolChainId],
-        relayerRefundTree,
-        nextRootBundleIdForMainnet
-      );
+        // Now, execute refund and slow fill leaves for Mainnet using any new funds. These methods will
+        // return early if there are no relevant leaves to execute.
+        await this._executeSlowFillLeaf(
+          slowFillLeaves.filter((leaf) => leaf.chainId === hubPoolChainId),
+          balanceAllocator,
+          spokePoolClients[hubPoolChainId],
+          slowFillTree,
+          nextRootBundleIdForMainnet
+        );
+        await this._executeRelayerRefundLeaves(
+          relayerRefundLeaves.filter((leaf) => leaf.chainId === hubPoolChainId),
+          balanceAllocator,
+          spokePoolClients[hubPoolChainId],
+          relayerRefundTree,
+          nextRootBundleIdForMainnet
+        );
+      }
     }
 
     // Before executing the other pool rebalance leaves, see if we should update any exchange rates to account for
