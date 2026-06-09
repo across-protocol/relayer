@@ -1852,7 +1852,9 @@ export class Dataworker {
     // Evaluate leaves iteratively because we will be modifying virtual balances and we want
     // to make sure we are getting the virtual balance computations correct.
     // Callers must apply `_filterAlreadyClaimedPoolRebalanceLeaves` upstream so we never
-    // commit balance reservations or enqueue side-effecting txs for a claimed leaf.
+    // commit balance reservations or enqueue side-effecting txs for a claimed leaf;
+    // we re-read the bitmap again immediately before the broadcast forEach below to
+    // narrow the race window that opens during the upstream side-effect work.
     const fundedLeaves = await this._getExecutablePoolRebalanceLeaves(allLeaves, balanceAllocator);
     const executableLeaves: PoolRebalanceLeaf[] = [];
     for (const leaf of fundedLeaves) {
@@ -1940,8 +1942,17 @@ export class Dataworker {
       executableLeaves.push(leaf);
     }
 
+    // Second claimed-bitmap read, immediately before broadcast. The upstream filter at
+    // the top of `_executePoolLeavesAndSyncL1Tokens` stops side-effecting txs from being
+    // enqueued for already-claimed leaves, but a competing executor can still claim one
+    // of these leaves during the intervening exchange-rate sync, optional mainnet
+    // execution, refund/slow-fill work, and per-leaf Orbit gas funding loop. Re-reading
+    // here narrows the race window for the duplicate-`executeRootBundle` broadcast that
+    // motivates this whole filter.
+    const leavesToBroadcast = await this._filterAlreadyClaimedPoolRebalanceLeaves(executableLeaves);
+
     // Execute the leaves:
-    executableLeaves.forEach((leaf) => {
+    leavesToBroadcast.forEach((leaf) => {
       // Add balances to spoke pool on mainnet since we know it will be sent atomically.
       if (leaf.chainId === hubPoolChainId) {
         const hubChainSpokePoolAddress = spokePoolClients[leaf.chainId].spokePoolAddress;
@@ -1980,7 +1991,7 @@ export class Dataworker {
       }
     });
 
-    return executableLeaves.length;
+    return leavesToBroadcast.length;
   }
 
   async _filterAlreadyClaimedPoolRebalanceLeaves(leaves: PoolRebalanceLeaf[]): Promise<PoolRebalanceLeaf[]> {
