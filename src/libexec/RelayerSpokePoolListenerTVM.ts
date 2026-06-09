@@ -182,55 +182,66 @@ async function listen(
   const events = eventSignatures.map((sig) => parseAbiItem(sig.replace("tuple", "")) as AbiEvent);
   const address = spokePoolAddr as `0x${string}`;
 
-  const pollLogs = async (blockNumber: bigint): Promise<void> => {
-    await Promise.all(
-      providers.map(async (provider) => {
-        const getLogs = () =>
-          provider.getLogs({
-            address,
-            events,
-            fromBlock: blockNumber,
-            toBlock: blockNumber,
-          });
-        // TRON RPCs intermittently return empty bodies; retry before dropping the block's logs.
-        const rawLogs = await retry(getLogs, 3, 1).catch((error: BaseError) => {
-          const { message: errorMessage, details, shortMessage, metaMessages } = error;
-          logger.warn({
-            at,
-            message: `Caught ${chain} getLogs error.`,
-            errorMessage,
-            shortMessage,
-            details,
-            metaMessages,
-            provider: provider.name,
-            blockNumber: Number(blockNumber),
-          });
-          return undefined;
-        });
-        if (!isDefined(rawLogs)) {
-          return;
-        }
+  // Fetch a single provider's logs for a block it has just announced and feed its votes to
+  // EventManager. Replaces viem's filter-based `watchEvent` (TRON expires filter ids) while keeping
+  // its per-provider sourcing: each provider polls only blocks it has itself seen, so a provider
+  // that briefly lags or fails still contributes its quorum vote once it catches up.
+  const pollLogs = async (provider: (typeof providers)[number], blockNumber: bigint): Promise<void> => {
+    const getLogs = () => provider.getLogs({ address, events, fromBlock: blockNumber, toBlock: blockNumber });
+    // TRON RPCs intermittently return empty bodies; retry before dropping the block's logs.
+    const rawLogs = await retry(getLogs, 3, 1).catch((error: BaseError) => {
+      const { message: errorMessage, details, shortMessage, metaMessages } = error;
+      logger.warn({
+        at,
+        message: `Caught ${chain} getLogs error.`,
+        errorMessage,
+        shortMessage,
+        details,
+        metaMessages,
+        provider: provider.name,
+        blockNumber: Number(blockNumber),
+      });
+      return undefined;
+    });
+    if (!isDefined(rawLogs)) {
+      return;
+    }
 
-        for (const raw of rawLogs) {
-          const log: Log = {
-            ...raw,
-            args: raw.args,
-            blockNumber: Number(raw.blockNumber),
-            event: raw.eventName,
-            topics: Array<string>(),
-          };
+    for (const raw of rawLogs) {
+      const log: Log = {
+        ...raw,
+        args: raw.args,
+        blockNumber: Number(raw.blockNumber),
+        event: raw.eventName,
+        topics: Array<string>(),
+      };
 
-          if (eventMgr.add(log, provider.name) && !postEvents([log])) {
-            abortController.abort();
-          }
-        }
-      })
-    );
+      if (eventMgr.add(log, provider.name) && !postEvents([log])) {
+        abortController.abort();
+      }
+    }
   };
 
-  const [blockProvider] = providers;
+  const logBlockError = (provider: (typeof providers)[number], error: Error): void => {
+    const { message: errorMessage, details, shortMessage, metaMessages } = error as BaseError;
+    logger.warn({
+      at,
+      message: `Caught ${chain} block error.`,
+      errorMessage,
+      shortMessage,
+      details,
+      metaMessages,
+      provider: provider.name,
+    });
+  };
+
+  // The primary provider owns re-org detection and the block heartbeat (via processBlock), and polls
+  // its own logs. `emitMissed` keeps the block stream contiguous so getLogs polling doesn't skip
+  // blocks and processBlock's parent-hash chain stays intact.
+  const [blockProvider, ...secondaryProviders] = providers;
   blockProvider.watchBlocks({
     emitOnBegin: true,
+    emitMissed: true,
     onBlock: (block: Block) => {
       const { orphans, accepted } = processBlock(block, blocks, eventMgr, chain, blockProvider.name, logger);
       if (!accepted) {
@@ -249,21 +260,26 @@ async function listen(
       if (!postBlock(Number(block.number), Number(block.timestamp))) {
         abortController.abort();
       }
-      void pollLogs(block.number);
+      void pollLogs(blockProvider, block.number);
     },
-    onError: (error: Error) => {
-      const { message: errorMessage, details, shortMessage, metaMessages } = error as BaseError;
-      logger.warn({
-        at,
-        message: `Caught ${chain} block error.`,
-        errorMessage,
-        shortMessage,
-        details,
-        metaMessages,
-        provider: blockProvider.name,
-      });
-    },
+    onError: (error: Error) => logBlockError(blockProvider, error),
   });
+
+  // Secondary providers poll their own logs independently, so each contributes its quorum vote at
+  // its own pace.
+  for (const provider of secondaryProviders) {
+    provider.watchBlocks({
+      emitOnBegin: true,
+      emitMissed: true,
+      onBlock: (block: Block) => {
+        if (!isDefined(block.number)) {
+          return;
+        }
+        void pollLogs(provider, block.number);
+      },
+      onError: (error: Error) => logBlockError(provider, error),
+    });
+  }
 
   return waitForAbort(abortController.signal);
 }
