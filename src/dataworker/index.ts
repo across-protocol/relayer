@@ -38,6 +38,76 @@ import { Disputer } from "./Disputer";
 config();
 let logger: winston.Logger;
 
+// Redis-backed mutex guarding the proposer and L1 executor paths. Prevents two
+// concurrent `runDataworker` invocations from independently preparing and
+// broadcasting the same root-bundle action. Pure-disputer and pure-L2-executor
+// runs are unaffected (they don't compete for HubPool root-bundle state).
+const DEFAULT_EXECUTOR_LOCK_TTL_MS = 15 * 60 * 1000;
+
+function getExecutorLockKey(hubPoolChainId: number): string {
+  return `dataworker:executor:lock:${hubPoolChainId}`;
+}
+
+async function acquireExecutorMutex(
+  log: winston.Logger,
+  cfg: DataworkerConfig
+): Promise<{ release: () => Promise<void> } | undefined> {
+  // No mutex is needed when this run will not touch HubPool root-bundle state.
+  if (!cfg.proposerEnabled && !cfg.l1ExecutorEnabled) {
+    return { release: async () => {} };
+  }
+
+  const redis = await getRedisCache(log);
+  if (!isDefined(redis)) {
+    log.warn({
+      at: "Dataworker#acquireExecutorMutex",
+      message: "Redis cache unavailable; proceeding without executor mutex.",
+    });
+    return { release: async () => {} };
+  }
+
+  const lockKey = getExecutorLockKey(cfg.hubPoolChainId);
+  const envTtl = Number(process.env.DATAWORKER_EXECUTOR_LOCK_TTL_MS);
+  const lockTtlMs = Number.isFinite(envTtl) && envTtl > 0 ? envTtl : DEFAULT_EXECUTOR_LOCK_TTL_MS;
+  const token = `${cfg.botIdentifier}:${cfg.runIdentifier}`;
+
+  if (!(await redis.acquireLock(lockKey, token, lockTtlMs))) {
+    log[startupLogLevel(cfg)]({
+      at: "Dataworker#acquireExecutorMutex",
+      message: "Another dataworker instance holds the executor lock; exiting without action.",
+      lockKey,
+    });
+    return undefined;
+  }
+
+  // Renew at 1/3 of the TTL so a slow run has two chances to refresh before expiry.
+  const renewIntervalMs = Math.max(1_000, Math.floor(lockTtlMs / 3));
+  const heartbeat = setInterval(() => {
+    void redis.renewLock(lockKey, token, lockTtlMs).catch((err) => {
+      log.warn({
+        at: "Dataworker#acquireExecutorMutex",
+        message: "Failed to renew executor lock; it may expire mid-run.",
+        lockKey,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
+  }, renewIntervalMs);
+
+  return {
+    release: async () => {
+      clearInterval(heartbeat);
+      await redis.releaseLock(lockKey, token).catch((err) => {
+        log.warn({
+          at: "Dataworker#acquireExecutorMutex",
+          message: "Failed to release executor lock; it will expire on TTL.",
+          lockKey,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+    },
+  };
+}
+
 export async function createDataworker(
   _logger: winston.Logger,
   baseSigner: Signer,
@@ -172,6 +242,11 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
       message: `${personality} aborting (not ready)`,
       challengeRemaining,
     });
+    return;
+  }
+
+  const executorMutex = await acquireExecutorMutex(logger, config);
+  if (executorMutex === undefined) {
     return;
   }
 
@@ -429,6 +504,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
       await clients.multiCallerClient.executeTxnQueues();
     }
   } finally {
+    await executorMutex.release();
     await disconnectRedisClients(logger);
   }
 }
