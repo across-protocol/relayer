@@ -13,6 +13,7 @@ import {
   fetchWithTimeout,
   postWithTimeout,
   isHttpError,
+  isDefined,
 } from "../../utils";
 import { spreadEventWithBlockNumber } from "../../utils/EventUtils";
 import { FinalizerPromise, CrossChainMessage } from "../types";
@@ -75,7 +76,7 @@ export async function heliosL1toL2Finalizer(
   const sp1HeliosVkey: string = await sp1HeliosL2.heliosProgramVkey();
 
   // --- Step 1: Identify all actions needed (pending L1 -> L2 messages to finalize & keep-alive) ---
-  const actions = await identifyRequiredActions(
+  const _actions = await identifyRequiredActions(
     logger,
     hubPoolClient,
     l1SpokePoolClient,
@@ -84,6 +85,7 @@ export async function heliosL1toL2Finalizer(
     l1ChainId,
     l2ChainId
   );
+  const actions = filterRequiredActions(hubPoolClient, l2SpokePoolClient, l2ChainId, _actions);
 
   logger.debug({
     at: `Finalizer#heliosL1toL2Finalizer:${l2ChainId}`,
@@ -179,8 +181,8 @@ async function identifyRequiredActions(
       continue;
     }
 
-    if (verifiedSlotsMap.has(expectedStorageSlot) /* isVerified */) {
-      const verifiedEvent = verifiedSlotsMap.get(expectedStorageSlot);
+    const verifiedEvent = verifiedSlotsMap.get(expectedStorageSlot);
+    if (isDefined(verifiedEvent) /* isVerified */) {
       actions.push({
         type: "ExecuteOnly",
         l1Event: l1Event,
@@ -368,6 +370,7 @@ async function enrichHeliosActions(
     }
 
     // No axios error, process `proofState`
+    assert(proofState !== null, `proofState unexpectedly null for proofId ${proofId}`);
     switch (proofState.status) {
       case "pending":
         // If proof generation is pending -- there's nothing for us to do yet. Will check this proof next run
@@ -439,13 +442,15 @@ async function getRelevantL1Events(
 
   const events: StoredCallDataEvent[] = rawLogs.map((log) => spreadEventWithBlockNumber(log) as StoredCallDataEvent);
 
-  const spokeActivationBlock = hubPoolClient.getSpokePoolActivationBlock(l2ChainId, l2SpokePoolClient.spokePoolAddress);
+  const spokePoolAddress = l2SpokePoolClient.spokePoolAddress;
+  assert(isDefined(spokePoolAddress), `helios: l2 spoke pool address not yet known for chain ${l2ChainId}`);
+  const spokeActivationBlock = hubPoolClient.getSpokePoolActivationBlock(l2ChainId, spokePoolAddress);
   assert(
     spokeActivationBlock !== undefined,
-    `Can't retrieve spoke activation block for l2 (${l2ChainId}) spoke: ${l2SpokePoolClient.spokePoolAddress.toNative()}
+    `Can't retrieve spoke activation block for l2 (${l2ChainId}) spoke: ${spokePoolAddress.toNative()}
     \nIs this address correct?`
   );
-  const spokePoolAddressStr = l2SpokePoolClient.spokePoolAddress.toEvmAddress();
+  const spokePoolAddressStr = spokePoolAddress.toEvmAddress();
   const relevantStoredCallDataEvents = events.filter(
     (event) =>
       event.blockNumber >= spokeActivationBlock &&
@@ -454,6 +459,29 @@ async function getRelevantL1Events(
   );
 
   return relevantStoredCallDataEvents;
+}
+
+function filterRequiredActions(
+  hubPoolClient: HubPoolClient,
+  l2SpokePoolClient: SpokePoolClient,
+  l2ChainId: number,
+  actions: HeliosAction[]
+): HeliosAction[] {
+  return actions.filter((action) => {
+    if (action.type !== "UpdateAndExecute") {
+      return true;
+    }
+    let observedExecutedRoot = false;
+    for (const leaf of hubPoolClient.getExecutedRootBundles()) {
+      if (leaf.txnRef === action.l1Event.txnRef) {
+        if (leaf.chainId === l2ChainId) {
+          return true;
+        }
+        observedExecutedRoot = true;
+      }
+    }
+    return !observedExecutedRoot;
+  });
 }
 
 /** Query L2 Verification Events and return verified slots map */

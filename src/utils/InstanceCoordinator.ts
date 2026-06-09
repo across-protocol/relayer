@@ -1,5 +1,5 @@
-import { RedisCacheInterface } from "../caching/RedisCache";
 import { delay, winston } from "./";
+import { RedisCacheInterface } from "../cache/Redis";
 
 export class InstanceCoordinator {
   constructor(
@@ -8,14 +8,14 @@ export class InstanceCoordinator {
     public readonly identifier: string,
     public readonly instance: string,
     private readonly abortController: AbortController,
-    public readonly instanceExpiry = 900
+    public readonly instanceExpiry = 1200
   ) {}
 
   async getActiveInstance(): Promise<string | undefined> {
-    return (await this.redis.get(this.identifier)) ?? Promise.resolve(undefined);
+    return (await this.redis.get<string>(this.identifier)) ?? undefined;
   }
 
-  setActiveInstance(): Promise<string> {
+  setActiveInstance(): Promise<string | undefined> {
     return this.redis.set(this.identifier, this.instance, this.instanceExpiry);
   }
 
@@ -35,15 +35,28 @@ export class InstanceCoordinator {
 
   // Poor-man's subscription - just poll on a 1s interval.
   async subscribe(): Promise<string | undefined> {
-    let activeInstance: string | undefined;
+    const maxConsecutiveErrors = 10;
+    let consecutiveErrors = 0;
+    let activeInstance: string | undefined = this.instance;
     do {
       await delay(1);
       if (this.abortController.signal.aborted) {
-        activeInstance = undefined;
         break;
       }
 
-      activeInstance = await this.redis.get<string>(this.identifier);
+      try {
+        activeInstance = (await this.redis.get<string>(this.identifier)) ?? undefined;
+        consecutiveErrors = 0;
+      } catch (err) {
+        if (++consecutiveErrors >= maxConsecutiveErrors) {
+          this.logger.error({
+            at: "Coordinator::subscribe",
+            message: "Redis unreachable; exiting.",
+            err: String(err),
+          });
+          break;
+        }
+      }
     } while (activeInstance === this.instance);
 
     if (activeInstance !== this.instance) {

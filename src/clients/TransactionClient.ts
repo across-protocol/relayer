@@ -141,7 +141,7 @@ export class TransactionClient {
       const txnArgs = { chainId, contract: txn.contract.address, method: txn.method };
       const txnRef = blockExplorerLink(txnResponse.hash, chainId);
 
-      let txnReceipt: TransactionReceipt;
+      let txnReceipt: TransactionReceipt | undefined;
       let nTries = 0;
       do {
         try {
@@ -227,7 +227,7 @@ export class TransactionClient {
 
       let response: TransactionResponse;
       try {
-        response = await this._submit(txn, { nonce });
+        response = await this._submit(txn, { nonce: nonce ?? null });
       } catch (error) {
         delete chainNonceMap[signerAddr];
         this.logger.info({
@@ -235,7 +235,7 @@ export class TransactionClient {
           message: `Transaction ${idx + 1} submission on ${networkName} failed or timed out.`,
           mrkdwn,
           // @dev `error` _sometimes_ doesn't decode correctly (especially on Polygon), so fish for the reason.
-          errorMessage: isError(error) ? (error as Error).message : undefined,
+          errorMessage: isError(error) ? error.message : undefined,
           error: stringifyThrownValue(error),
           notificationPath: "across-error",
         });
@@ -323,7 +323,7 @@ async function _runTransaction(
 
   try {
     return sendRawTxn
-      ? await signer.sendTransaction({ to, value, data: (args as ethers.utils.BytesLike[])[0], gasLimit, ...gas })
+      ? await signer.sendTransaction({ to, data: (args as ethers.utils.BytesLike[])[0], ...txConfig })
       : await contract[method](...args, txConfig);
   } catch (error) {
     // Narrow type. All errors caught here should be Ethers errors.
@@ -377,7 +377,7 @@ async function _runTransaction(
 
       // Likely irrecoverable error due to native token wrap/unwrap collision.
       case errors.INSUFFICIENT_FUNDS: {
-        message = "Cannot execute transaction due to insufficent native token balance.";
+        message = "Cannot execute transaction due to insufficient native token balance.";
         logger.warn({ at, message, code, reason, ...commonFields });
         throw error;
       }
@@ -486,6 +486,9 @@ async function _runTransactionTvm(
   // Adapt TronTransactionResult to an ethers-compatible TransactionResponse. TVM doesn't use
   // nonces in the EVM sense, so we set nonce to 0 to satisfy downstream nonce tracking without
   // side effects (TVM nonce tracking in submit() is harmless — it just overwrites to 0 each time).
+  //
+  // `wait` must resolve to a real receipt (including `logs`). TronWeb submits the tx; we still
+  // have an ethers `Provider`, so mirror JsonRpcProvider: `wait` → `provider.waitForTransaction`.
   return {
     hash: result.txid,
     nonce: 0,
@@ -495,7 +498,10 @@ async function _runTransactionTvm(
     gasLimit: BigNumber.from(feeLimit),
     value,
     data: populatedTransaction.data ?? "0x",
-    wait: () => Promise.resolve({} as TransactionReceipt),
+    wait: (confirmations?: number) => {
+      const txHexHash = result.txid.startsWith("0x") ? result.txid : `0x${result.txid}`;
+      return provider.waitForTransaction(txHexHash, confirmations ?? 1);
+    },
   } as unknown as TransactionResponse;
 }
 
@@ -509,9 +515,9 @@ async function _runTransactionTvm(
  */
 function _scaleGasPrice(
   chainId: number,
-  gas: Pick<FeeData, "maxFeePerGas" | "maxPriorityFeePerGas">,
+  gas: { maxFeePerGas: BigNumber; maxPriorityFeePerGas: BigNumber },
   retryScaler = 1.0
-): Pick<FeeData, "maxFeePerGas" | "maxPriorityFeePerGas"> | Pick<FeeData, "gasPrice"> {
+): { maxFeePerGas: BigNumber; maxPriorityFeePerGas: BigNumber } | { gasPrice: BigNumber } {
   let { maxFeePerGas, maxPriorityFeePerGas } = gas;
 
   const feeDeltaPct = toBNWei(Math.max(retryScaler - 1.0, 0));

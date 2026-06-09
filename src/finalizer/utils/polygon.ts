@@ -10,7 +10,6 @@ import {
   getCachedProvider,
   getUniqueLogIndex,
   getCurrentTime,
-  getRedisCache,
   getBlockForTimestamp,
   Multicall2Call,
   TOKEN_SYMBOLS_MAP,
@@ -20,7 +19,10 @@ import {
   getL1TokenAddress,
   toAddressType,
   EvmAddress,
+  assert,
+  isDefined,
 } from "../../utils";
+import { getRedisCache } from "../../cache/Redis";
 import { EthersError, TokensBridged } from "../../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { FinalizerPromise, CrossChainMessage } from "../types";
@@ -287,6 +289,7 @@ async function retrieveTokenFromMainnetTokenBridger(l2Token: string, mainnetSign
   const l1Token = getL1TokenAddress(EvmAddress.from(l2Token), CHAIN_ID);
   const mainnetTokenBridger = getMainnetTokenBridger(mainnetSigner);
   const callData = await mainnetTokenBridger.populateTransaction.retrieve(l1Token.toNative());
+  assert(isDefined(callData.data) && isDefined(callData.to), "polygon: retrieve populateTransaction missing data/to");
   return {
     callData: callData.data,
     target: callData.to,

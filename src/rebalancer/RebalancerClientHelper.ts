@@ -1,4 +1,4 @@
-import { CHAIN_IDs, Signer, winston } from "../utils";
+import { assert, CHAIN_IDs, Signer, winston } from "../utils";
 import { BinanceStablecoinSwapAdapter } from "./adapters/binance";
 import { CctpAdapter } from "./adapters/cctpAdapter";
 import { HyperliquidStablecoinSwapAdapter } from "./adapters/hyperliquid";
@@ -10,13 +10,15 @@ import { RebalancerConfig } from "./RebalancerConfig";
 import { buildRebalanceRoutes } from "./buildRebalanceRoutes";
 import { RebalancerAdapter, RebalanceRoute } from "./utils/interfaces";
 
+export type AdapterName = "cctp" | "oft" | "hyperliquid" | "binance";
+
 function constructRebalancerDependencies(
   logger: winston.Logger,
   baseSigner: Signer,
   rebalanceRoutesOverride?: RebalanceRoute[]
 ): {
   rebalancerConfig: RebalancerConfig;
-  adapters: { [name: string]: RebalancerAdapter };
+  adapters: Partial<{ [name in AdapterName]: RebalancerAdapter }>;
   rebalanceRoutes: RebalanceRoute[];
 } {
   const rebalancerConfig = new RebalancerConfig(process.env);
@@ -43,7 +45,7 @@ function constructRebalancerDependencies(
 
   // @todo: Add test-net support for this client. For now, we only support production and we do not construct
   // any adapters or routes when running on test net.
-  const adaptersToUpdate: Record<string, RebalancerAdapter> =
+  const adaptersToUpdate: Partial<{ [name in AdapterName]: RebalancerAdapter }> =
     rebalancerConfig.hubPoolChainId === CHAIN_IDs.MAINNET ? adapterMap : {};
 
   return { rebalancerConfig, adapters: adaptersToUpdate, rebalanceRoutes };
@@ -112,4 +114,16 @@ export async function constructReadOnlyRebalancerClient(
     adapterNames: Object.keys(adapters),
   });
   return rebalancerClient;
+}
+
+export async function constructAdapter(
+  logger: winston.Logger,
+  baseSigner: Signer,
+  adapterName: AdapterName
+): Promise<RebalancerAdapter> {
+  const { adapters } = constructRebalancerDependencies(logger, baseSigner);
+  const adapter = adapters[adapterName];
+  assert(adapter, `Adapter ${adapterName} is unavailable for the configured hub chain`);
+  await adapter.initialize([]);
+  return adapter;
 }

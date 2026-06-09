@@ -17,6 +17,7 @@ import {
   expect,
   getDefaultBlockRange,
   getDisabledBlockRanges,
+  getLastBlockTime,
   randomAddress,
   requestSlowFill,
   sinon,
@@ -26,12 +27,12 @@ import {
 } from "./utils";
 
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
-import { EvmAddress, getCurrentTime, toBNWei, ZERO_ADDRESS, bnZero, toAddressType, toBytes32 } from "../src/utils";
+import { EvmAddress, toBNWei, ZERO_ADDRESS, bnZero, toAddressType, toBytes32 } from "../src/utils";
 import { MockConfigStoreClient, MockHubPoolClient, MockSpokePoolClient } from "./mocks";
 import { interfaces, utils as sdkUtils, constants as sdkConstants, providers } from "@across-protocol/sdk";
 import { cloneDeep } from "lodash";
 
-describe("Dataworker: Load bundle data: Computing slow fills", async function () {
+describe("Dataworker: Load bundle data: Computing slow fills", function () {
   const { EMPTY_MESSAGE } = sdkConstants;
 
   let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
@@ -42,6 +43,7 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
   let hubPoolClient: HubPoolClient, configStoreClient: ConfigStoreClient;
   let dataworkerInstance: Dataworker;
   let spokePoolClients: { [chainId: number]: SpokePoolClient };
+  let currentTime: number;
 
   let spy: sinon.SinonSpy;
 
@@ -59,8 +61,8 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
       inputAmount: eventOverride?.inputAmount ?? undefined,
       outputToken: eventOverride?.outputToken ?? EvmAddress.from(erc20_2.address),
       message: eventOverride?.message ?? "0x",
-      quoteTimestamp: eventOverride?.quoteTimestamp ?? getCurrentTime() - 10,
-      fillDeadline: eventOverride?.fillDeadline ?? getCurrentTime() + 14400,
+      quoteTimestamp: eventOverride?.quoteTimestamp ?? currentTime - 10,
+      fillDeadline: eventOverride?.fillDeadline ?? currentTime + 14400,
       destinationChainId: eventOverride?.destinationChainId ?? destinationChainId,
       blockNumber: eventOverride?.blockNumber ?? spokePoolClient_1.latestHeightSearched, // @dev use latest block searched from non-mocked client
       // so that mocked client's latestHeightSearched gets set to the same value.
@@ -136,6 +138,7 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
       spy,
     } = await setupDataworker(ethers, 25, 25, 0));
     await updateAllClients();
+    currentTime = await getLastBlockTime(spokePool_1.provider);
 
     // Deploy Multicall3 to the hardhat test networks.
     for (const deployer of [depositor, relayer]) {

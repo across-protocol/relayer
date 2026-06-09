@@ -1,13 +1,13 @@
-import { RedisCache } from "../../caching/RedisCache";
 import {
   BigNumber,
   ConvertDecimals,
   EvmAddress,
   ethers,
-  getRedisCache,
   getTokenInfoFromSymbol,
+  isDefined,
   winston,
 } from "../../utils";
+import { getRedisCache, RedisCache } from "../../cache/Redis";
 import { ExcessOrDeficit, OrderDetails, RedisOrderDetailsPayload } from "./interfaces";
 
 // Optional namespace that lets different rebalancer deployments keep their status-tracking data isolated
@@ -19,9 +19,9 @@ function getRebalancerStatusTrackingNamespace(): string | undefined {
 }
 
 export async function getRedisCacheForRebalancerStatusTracking(
-  logger: winston.Logger
+  logger?: winston.Logger
 ): Promise<RedisCache | undefined> {
-  return (await getRedisCache(logger, undefined, getRebalancerStatusTrackingNamespace())) as RedisCache;
+  return await getRedisCache(logger, undefined, getRebalancerStatusTrackingNamespace());
 }
 
 function compareNormalizedAmounts(
@@ -34,10 +34,10 @@ function compareNormalizedAmounts(
   const tokenADecimals = getTokenInfoFromSymbol(tokenA, Number(chainIdA)).decimals;
   const tokenBDecimals = getTokenInfoFromSymbol(tokenB, Number(chainIdB)).decimals;
   const converter = ConvertDecimals(tokenADecimals, tokenBDecimals);
-  const normalizedAmountA =
-    tokenPricesUsd && tokenPricesUsd.has(tokenA) ? amountA.mul(tokenPricesUsd.get(tokenA)) : amountA;
-  const normalizedAmountB =
-    tokenPricesUsd && tokenPricesUsd.has(tokenB) ? amountB.mul(tokenPricesUsd.get(tokenB)) : amountB;
+  const priceA = tokenPricesUsd?.get(tokenA);
+  const priceB = tokenPricesUsd?.get(tokenB);
+  const normalizedAmountA = isDefined(priceA) ? amountA.mul(priceA) : amountA;
+  const normalizedAmountB = isDefined(priceB) ? amountB.mul(priceB) : amountB;
   if (converter(normalizedAmountA).eq(normalizedAmountB)) {
     return 0;
   }
@@ -116,7 +116,7 @@ export async function redisGetOrderDetailsForAdapter(
   adapterRedisPrefix: string,
   cloid: string,
   account: EvmAddress
-): Promise<OrderDetails> {
+): Promise<OrderDetails | undefined> {
   const orderDetailsKey = getPendingBridgeOrderKey(adapterRedisPrefix, cloid, account.toNative());
   const orderDetails = await redisCache.get<string>(orderDetailsKey);
   if (!orderDetails) {

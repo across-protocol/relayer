@@ -1,5 +1,5 @@
 import { EventListener } from "../clients";
-import { CHAIN_IDs, winston, config, startupLogLevel, Signer, disconnectRedisClients } from "../utils";
+import { CHAIN_IDs, winston, config, fireAndForget, startupLogLevel, Signer, disconnectRedisClients } from "../utils";
 import { HyperliquidExecutor } from "./HyperliquidExecutor";
 import { constructHyperliquidExecutorClients } from "./HyperliquidExecutorClientHelper";
 import { HyperliquidExecutorConfig } from "./HyperliquidExecutorConfig";
@@ -43,7 +43,7 @@ export async function runHyperliquidFinalizer(_logger: winston.Logger, baseSigne
   const listener = new EventListener(CHAIN_IDs.HYPEREVM, logger, 1);
   const onBlock = (blockNumber: number) => {
     if (blockNumber % config.settlementInterval === 0) {
-      setTimeout(() => finalizer.finalizeSwapFlows(blockNumber));
+      setTimeout(fireAndForget(() => finalizer.finalizeSwapFlows(blockNumber)));
     }
   };
   listener.onBlock(onBlock);

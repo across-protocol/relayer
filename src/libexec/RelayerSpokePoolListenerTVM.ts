@@ -2,12 +2,9 @@ import assert from "assert";
 import minimist from "minimist";
 import { Contract, utils as ethersUtils } from "ethers";
 import { AbiEvent, BaseError, Block, createPublicClient, http, Log as viemLog, parseAbiItem } from "viem";
-import * as utils from "../../scripts/utils";
 import { Log } from "../interfaces";
 import {
-  disconnectRedisClients,
   EventManager,
-  exit,
   isDefined,
   getBlockForTimestamp,
   getChainQuorum,
@@ -17,18 +14,17 @@ import {
   getOriginFromURL,
   getProvider,
   getProviderHeaders,
-  getRedisCache,
   getViemChain,
   Logger,
   Provider,
   SpokePool,
   winston,
 } from "../utils";
+import { getRedisCache } from "../cache/Redis";
 import { ScraperOpts } from "./types";
+import { bootstrap, waitForAbort } from "./util/bootstrap";
 import { postBlock, postEvents, removeEvent } from "./util/ipc";
 import { scrapeEvents as _scrapeEvents } from "./util/evm";
-
-const { NODE_SUCCESS, NODE_APP_ERR } = utils;
 
 const PROGRAM = "RelayerSpokePoolListenerTVM";
 export const REORG_WINDOW = 128n;
@@ -188,26 +184,28 @@ async function listen(
   const pollLogs = async (blockNumber: bigint): Promise<void> => {
     await Promise.all(
       providers.map(async (provider) => {
-        let rawLogs: (viemLog & { args: unknown; eventName: string })[];
-        try {
-          rawLogs = (await provider.getLogs({
+        const rawLogs = await provider
+          .getLogs({
             address,
             events,
             fromBlock: blockNumber,
             toBlock: blockNumber,
-          })) as (viemLog & { args: unknown; eventName: string })[];
-        } catch (error) {
-          const { message: errorMessage, details, shortMessage, metaMessages } = error as BaseError;
-          logger.warn({
-            at,
-            message: `Caught ${chain} getLogs error.`,
-            errorMessage,
-            shortMessage,
-            details,
-            metaMessages,
-            provider: provider.name,
-            blockNumber: Number(blockNumber),
+          })
+          .catch((error: BaseError) => {
+            const { message: errorMessage, details, shortMessage, metaMessages } = error;
+            logger.warn({
+              at,
+              message: `Caught ${chain} getLogs error.`,
+              errorMessage,
+              shortMessage,
+              details,
+              metaMessages,
+              provider: provider.name,
+              blockNumber: Number(blockNumber),
+            });
+            return undefined;
           });
+        if (!isDefined(rawLogs)) {
           return;
         }
 
@@ -237,7 +235,14 @@ async function listen(
         return;
       }
       for (const orphan of orphans) {
-        removeEvent({ ...orphan, removed: true });
+        if (!removeEvent({ ...orphan, removed: true })) {
+          abortController.abort();
+          return;
+        }
+      }
+      // Pending blocks have a null number; skip them rather than posting block 0.
+      if (!isDefined(block.number)) {
+        return;
       }
       if (!postBlock(Number(block.number), Number(block.timestamp))) {
         abortController.abort();
@@ -258,7 +263,7 @@ async function listen(
     },
   });
 
-  return new Promise((resolve) => abortController.signal.addEventListener("abort", () => resolve()));
+  return waitForAbort(abortController.signal);
 }
 
 /**
@@ -326,16 +331,6 @@ async function run(argv: string[]): Promise<void> {
 
   logger.debug({ at, message: `Starting ${chain} SpokePool Indexer.`, opts });
 
-  process.on("SIGHUP", () => {
-    logger.debug({ at, message: `Received SIGHUP in ${chain} listener, stopping...` });
-    abortController.abort();
-  });
-
-  process.on("disconnect", () => {
-    logger.debug({ at, message: `${chain} parent disconnected, stopping...` });
-    abortController.abort();
-  });
-
   logger.debug({ at, message: `Scraping previous ${chain} events.`, opts });
 
   if (latestBlock.number > startBlock) {
@@ -363,20 +358,6 @@ async function run(argv: string[]): Promise<void> {
 }
 
 if (require.main === module) {
-  const at = PROGRAM;
   logger = Logger;
-
-  run(process.argv.slice(2))
-    .then(() => {
-      process.exitCode = NODE_SUCCESS;
-    })
-    .catch((error) => {
-      logger.error({ at, message: `${chain} listener exited with error.`, error });
-      process.exitCode = NODE_APP_ERR;
-    })
-    .finally(async () => {
-      await disconnectRedisClients();
-      logger.debug({ at, message: `Exiting ${chain} listener.` });
-      exit(Number(process.exitCode));
-    });
+  bootstrap({ program: PROGRAM, abortController, chainName: () => chain, run });
 }

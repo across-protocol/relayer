@@ -4,6 +4,7 @@ import {
   assert,
   groupObjectCountsByProp,
   winston,
+  isDefined,
   isEVMSpokePoolClient,
   chunk,
   getSrcOftMessages,
@@ -60,6 +61,7 @@ export async function oftRetryFinalizer(
   });
 
   const callData = destinationTransactions.map((txData) => {
+    assert(isDefined(txData.to), `oftRetry: source transaction ${txData.hash} has no recipient`);
     return {
       target: txData.to,
       callData: txData.data,

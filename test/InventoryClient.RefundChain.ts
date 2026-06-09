@@ -16,7 +16,7 @@ import {
   randomAddress,
 } from "./utils";
 
-import { ConfigStoreClient, InventoryClient } from "../src/clients"; // Tested
+import { BinanceClient, ConfigStoreClient, InventoryClient } from "../src/clients"; // Tested
 import { CrossChainTransferClient } from "../src/clients/bridges";
 import { Deposit, InventoryConfig, SwapRoute } from "../src/interfaces";
 import {
@@ -34,7 +34,7 @@ import { MockAdapterManager, MockHubPoolClient, MockInventoryClient, MockTokenCl
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import { MockRebalancerClient } from "./mocks/MockRebalancerClient";
 
-describe("InventoryClient: Refund chain selection", async function () {
+describe("InventoryClient: Refund chain selection", function () {
   const { MAINNET, OPTIMISM, POLYGON, ARBITRUM, BSC } = CHAIN_IDs;
   const enabledChainIds = [MAINNET, OPTIMISM, POLYGON, ARBITRUM, BSC];
 
@@ -60,6 +60,15 @@ describe("InventoryClient: Refund chain selection", async function () {
   });
   const mainnetWeth = TOKEN_SYMBOLS_MAP.WETH.addresses[MAINNET];
   const mainnetUsdc = TOKEN_SYMBOLS_MAP.USDC.addresses[MAINNET];
+
+  // Minimal in-memory stub of the BinanceClient methods InventoryClient consults during
+  // refund-chain selection. TODO: replace the cast with a cleaner test-fake pattern.
+  const makeFakeBinanceClient = (opts: { isOperational?: boolean; canWithdraw?: boolean } = {}): BinanceClient =>
+    ({
+      isOperational: () => opts.isOperational ?? true,
+      canWithdraw: () => opts.canWithdraw ?? true,
+      refresh: async () => undefined,
+    }) as unknown as BinanceClient;
 
   let hubPoolClient: MockHubPoolClient, adapterManager: MockAdapterManager, tokenClient: MockTokenClient;
   let mockRebalancerClient: MockRebalancerClient;
@@ -235,7 +244,7 @@ describe("InventoryClient: Refund chain selection", async function () {
         outputAmount: inputAmount,
         message: "0x",
         messageHash: "0x",
-        quoteTimestamp: hubPoolClient.currentTime!,
+        quoteTimestamp: hubPoolClient.currentTime ?? 0,
         fillDeadline: 0,
         exclusivityDeadline: 0,
         exclusiveRelayer: toAddressType(ZERO_ADDRESS, MAINNET),
@@ -328,7 +337,6 @@ describe("InventoryClient: Refund chain selection", async function () {
           fromToken: l2TokensForWeth[POLYGON],
           toChain: OPTIMISM,
           toToken: l2TokensForUsdc[OPTIMISM],
-          bidirectional: false,
         },
       ];
       const _inventoryClient = new MockInventoryClient(
@@ -349,7 +357,7 @@ describe("InventoryClient: Refund chain selection", async function () {
       );
 
       expect(
-        await _inventoryClient.isSwapSupported(
+        _inventoryClient.isSwapSupported(
           toAddressType(l2TokensForWeth[POLYGON], POLYGON),
           toAddressType(l2TokensForUsdc[OPTIMISM], OPTIMISM),
           POLYGON,
@@ -367,7 +375,6 @@ describe("InventoryClient: Refund chain selection", async function () {
           fromToken: l2TokensForWeth[POLYGON],
           toChain: "ALL",
           toToken: l2TokensForUsdc[OPTIMISM],
-          bidirectional: false,
         },
       ];
       const _inventoryClient = new MockInventoryClient(
@@ -387,7 +394,7 @@ describe("InventoryClient: Refund chain selection", async function () {
         false // prioritizeUtilization
       );
       expect(
-        await _inventoryClient.isSwapSupported(
+        _inventoryClient.isSwapSupported(
           toAddressType(l2TokensForWeth[POLYGON], POLYGON),
           toAddressType(l2TokensForUsdc[OPTIMISM], OPTIMISM),
           POLYGON,
@@ -455,7 +462,7 @@ describe("InventoryClient: Refund chain selection", async function () {
         outputAmount: inputAmount,
         message: "0x",
         messageHash: "0x",
-        quoteTimestamp: hubPoolClient.currentTime!,
+        quoteTimestamp: hubPoolClient.currentTime ?? 0,
         fillDeadline: 0,
         exclusivityDeadline: 0,
         exclusiveRelayer: toAddressType(ZERO_ADDRESS, MAINNET),
@@ -600,7 +607,7 @@ describe("InventoryClient: Refund chain selection", async function () {
         outputAmount: inputAmount,
         message: "0x",
         messageHash: "0x",
-        quoteTimestamp: hubPoolClient.currentTime!,
+        quoteTimestamp: hubPoolClient.currentTime ?? 0,
         fillDeadline: 0,
         exclusivityDeadline: 0,
         exclusiveRelayer: toAddressType(ZERO_ADDRESS, MAINNET),
@@ -617,10 +624,11 @@ describe("InventoryClient: Refund chain selection", async function () {
       expect(refundChains.length).to.equal(0);
     });
     it("returns origin chain even if it is over allocated if origin chain is a quick rebalance source", async function () {
-      // BSC is only treated as quickly rebalanced when the operator has complete Binance credentials
-      // configured, since its sole exit path is via the Binance CEX bridge.
+      // BSC is only treated as quickly rebalanced with credentials AND live Binance capacity for the fill.
       process.env.BINANCE_API_KEY = "test-key";
       process.env.BINANCE_HMAC_KEY = "test-secret";
+      (inventoryClient as MockInventoryClient).setBinanceClient(makeFakeBinanceClient({ canWithdraw: true }));
+      (inventoryClient as MockInventoryClient).seedL1TokenPriceUsd(mainnetWeth, toWei(2000));
       try {
         sampleDepositData.originChainId = BSC;
         sampleDepositData.inputToken = toAddressType(l2TokensForWeth[BSC], BSC);
@@ -633,14 +641,17 @@ describe("InventoryClient: Refund chain selection", async function () {
       } finally {
         delete process.env.BINANCE_API_KEY;
         delete process.env.BINANCE_HMAC_KEY;
+        (inventoryClient as MockInventoryClient).setBinanceClient(undefined);
       }
     });
     it("treats overallocated origin as quick-rebalance when a per-token Binance route exists", async function () {
-      // Arbitrum WETH has a Binance route via L2BinanceCEXNativeBridge in CUSTOM_L2_BRIDGE. When the
-      // operator has complete Binance credentials, this makes Arbitrum quickly rebalanced for WETH even
-      // though it would otherwise be a 7-day slow-withdrawal chain.
+      // Arbitrum WETH has a Binance route via L2BinanceCEXNativeBridge; with credentials AND live
+      // Binance capacity for the fill, Arbitrum is quickly rebalanced even though it would otherwise
+      // be a 7-day slow-withdrawal chain.
       process.env.BINANCE_API_KEY = "test-key";
       process.env.BINANCE_HMAC_KEY = "test-secret";
+      (inventoryClient as MockInventoryClient).setBinanceClient(makeFakeBinanceClient({ canWithdraw: true }));
+      (inventoryClient as MockInventoryClient).seedL1TokenPriceUsd(mainnetWeth, toWei(2000));
       try {
         sampleDepositData.originChainId = ARBITRUM;
         sampleDepositData.inputToken = toAddressType(l2TokensForWeth[ARBITRUM], ARBITRUM);
@@ -650,6 +661,7 @@ describe("InventoryClient: Refund chain selection", async function () {
       } finally {
         delete process.env.BINANCE_API_KEY;
         delete process.env.BINANCE_HMAC_KEY;
+        (inventoryClient as MockInventoryClient).setBinanceClient(undefined);
       }
     });
     it("does not treat Arbitrum WETH as quick-rebalance when only api key is set (missing secret)", async function () {
@@ -685,7 +697,7 @@ describe("InventoryClient: Refund chain selection", async function () {
         outputAmount: inputAmount,
         message: "0x",
         messageHash: "0x",
-        quoteTimestamp: hubPoolClient.currentTime!,
+        quoteTimestamp: hubPoolClient.currentTime ?? 0,
         fillDeadline: 0,
         exclusivityDeadline: 0,
         exclusiveRelayer: toAddressType(ZERO_ADDRESS, MAINNET),
@@ -742,7 +754,7 @@ describe("InventoryClient: Refund chain selection", async function () {
         outputAmount: inputAmount,
         message: "0x",
         messageHash: "0x",
-        quoteTimestamp: hubPoolClient.currentTime!,
+        quoteTimestamp: hubPoolClient.currentTime ?? 0,
         fillDeadline: 0,
         exclusivityDeadline: 0,
         exclusiveRelayer: toAddressType(ZERO_ADDRESS, MAINNET),
@@ -802,7 +814,7 @@ describe("InventoryClient: Refund chain selection", async function () {
         outputAmount: inputAmount,
         message: "0x",
         messageHash: "0x",
-        quoteTimestamp: hubPoolClient.currentTime!,
+        quoteTimestamp: hubPoolClient.currentTime ?? 0,
         fillDeadline: 0,
         exclusivityDeadline: 0,
         exclusiveRelayer: toAddressType(ZERO_ADDRESS, MAINNET),
@@ -840,6 +852,16 @@ describe("InventoryClient: Refund chain selection", async function () {
       expect(possibleRepaymentChains).to.not.include(sampleDepositData.destinationChainId);
       expect(possibleRepaymentChains).to.include(sampleDepositData.originChainId);
       expect(possibleRepaymentChains).to.include(hubPoolClient.chainId);
+    });
+    it("does not evaluate destination as a standard candidate when it is only present via slow-withdrawal support", async function () {
+      hubPoolClient.setEnableAllL2Tokens(true);
+      sinon.stub(inventoryClient, "getSlowWithdrawalRepaymentChains").returns([sampleDepositData.destinationChainId]);
+
+      const possibleRepaymentChains = inventoryClient.getPossibleRepaymentChainIds(sampleDepositData);
+      expect(possibleRepaymentChains).to.include(sampleDepositData.destinationChainId);
+
+      const refundChains = await inventoryClient.determineRefundChainId(sampleDepositData);
+      expect(refundChains).to.deep.equal([POLYGON, MAINNET]);
     });
   });
 
@@ -889,7 +911,7 @@ describe("InventoryClient: Refund chain selection", async function () {
         outputAmount: inputAmount,
         message: "0x",
         messageHash: "0x",
-        quoteTimestamp: hubPoolClient.currentTime!,
+        quoteTimestamp: hubPoolClient.currentTime ?? 0,
         fillDeadline: 0,
         exclusivityDeadline: 0,
         exclusiveRelayer: toAddressType(ZERO_ADDRESS, MAINNET),
@@ -917,6 +939,14 @@ describe("InventoryClient: Refund chain selection", async function () {
         POLYGON,
         MAINNET,
       ]);
+    });
+    it("drops zero-excess slow withdrawal chains before falling back to hub", async function () {
+      excessRunningBalances[ARBITRUM] = toWei("0");
+      excessRunningBalances[OPTIMISM] = toWei("0");
+      (inventoryClient as MockInventoryClient).setExcessRunningBalances(mainnetWeth, excessRunningBalances);
+      tokenClient.setTokenData(POLYGON, toAddressType(l2TokensForWeth[POLYGON], POLYGON), toWei(0));
+
+      expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.deep.equal([POLYGON, MAINNET]);
     });
     it("includes slow withdrawal chains in possible repayment chain list", async function () {
       const possibleRepaymentChains = inventoryClient.getPossibleRepaymentChainIds(sampleDepositData);
@@ -965,22 +995,18 @@ describe("InventoryClient: Refund chain selection", async function () {
         outputAmount: toMegaWei(10),
         message: "0x",
         messageHash: "0x",
-        quoteTimestamp: hubPoolClient.currentTime!,
+        quoteTimestamp: hubPoolClient.currentTime ?? 0,
         fillDeadline: 0,
         exclusivityDeadline: 0,
         exclusiveRelayer: toAddressType(ZERO_ADDRESS, MAINNET),
       };
     });
-    it("returns origin chain before destination chain", async function () {
+    it("short-circuits to origin chain only when it is a fast-rebalance source", async function () {
       // Make sure that deposit doesn't force origin chain repayment otherwise this test would succeed and return
       // the origin chain for the wrong reason (i.e. this would be a false positive).
       expect(depositForcesOriginChainRepayment(sampleDepositData, hubPoolClient)).to.be.false;
       const refundChains = await inventoryClient.determineRefundChainId(sampleDepositData);
-      expect(refundChains).to.deep.equal([
-        sampleDepositData.originChainId,
-        sampleDepositData.destinationChainId,
-        MAINNET,
-      ]);
+      expect(refundChains).to.deep.equal([sampleDepositData.originChainId]);
     });
     it("forced origin chain repayment returns origin chain as only repayment chain", async function () {
       sampleDepositData.fromLiteChain = true;
@@ -989,6 +1015,61 @@ describe("InventoryClient: Refund chain selection", async function () {
       expect(depositForcesOriginChainRepayment(sampleDepositData, hubPoolClient)).to.be.true;
       const refundChains = await inventoryClient.determineRefundChainId(sampleDepositData);
       expect(refundChains).to.deep.equal([sampleDepositData.originChainId]);
+    });
+  });
+
+  describe("BinanceClient canWithdraw short-circuit", function () {
+    beforeEach(async function () {
+      const inputAmount = toBNWei(1);
+      // Arbitrum WETH has a Binance route; when canWithdraw returns true, origin should be
+      // preferred regardless of allocation.
+      process.env.BINANCE_API_KEY = "test-key";
+      process.env.BINANCE_HMAC_KEY = "test-secret";
+      sampleDepositData = {
+        depositId: bnZero,
+        fromLiteChain: false,
+        toLiteChain: false,
+        originChainId: ARBITRUM,
+        destinationChainId: OPTIMISM,
+        depositor: toAddressType(owner.address, MAINNET),
+        recipient: toAddressType(owner.address, MAINNET),
+        inputToken: toAddressType(l2TokensForWeth[ARBITRUM], ARBITRUM),
+        inputAmount,
+        outputToken: toAddressType(l2TokensForWeth[OPTIMISM], OPTIMISM),
+        outputAmount: inputAmount,
+        message: "0x",
+        messageHash: "0x",
+        quoteTimestamp: hubPoolClient.currentTime ?? 0,
+        fillDeadline: 0,
+        exclusivityDeadline: 0,
+        exclusiveRelayer: toAddressType(ZERO_ADDRESS, MAINNET),
+      };
+    });
+    afterEach(function () {
+      delete process.env.BINANCE_API_KEY;
+      delete process.env.BINANCE_HMAC_KEY;
+      (inventoryClient as MockInventoryClient).setBinanceClient(undefined);
+    });
+
+    it("returns only origin chain when canWithdraw is true, regardless of allocation", async function () {
+      (inventoryClient as MockInventoryClient).setBinanceClient(makeFakeBinanceClient({ canWithdraw: true }));
+      (inventoryClient as MockInventoryClient).seedL1TokenPriceUsd(mainnetWeth, toWei(2000));
+      tokenClient.setTokenData(ARBITRUM, toAddressType(l2TokensForWeth[ARBITRUM], ARBITRUM), toWei(100));
+      tokenClient.setTokenData(OPTIMISM, toAddressType(l2TokensForWeth[OPTIMISM], OPTIMISM), toWei(0));
+      expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.deep.equal([ARBITRUM]);
+    });
+
+    it("does not short-circuit when canWithdraw is false", async function () {
+      (inventoryClient as MockInventoryClient).setBinanceClient(makeFakeBinanceClient({ canWithdraw: false }));
+      (inventoryClient as MockInventoryClient).seedL1TokenPriceUsd(mainnetWeth, toWei(2000));
+      tokenClient.setTokenData(ARBITRUM, toAddressType(l2TokensForWeth[ARBITRUM], ARBITRUM), toWei(100));
+      expect((await inventoryClient.determineRefundChainId(sampleDepositData))[0]).to.not.equal(ARBITRUM);
+    });
+
+    it("does not short-circuit when no BinanceClient is wired", async function () {
+      // Default state: no BinanceClient attached → canWithdraw is effectively false.
+      tokenClient.setTokenData(ARBITRUM, toAddressType(l2TokensForWeth[ARBITRUM], ARBITRUM), toWei(100));
+      expect((await inventoryClient.determineRefundChainId(sampleDepositData))[0]).to.not.equal(ARBITRUM);
     });
   });
 
@@ -1019,7 +1100,7 @@ describe("InventoryClient: Refund chain selection", async function () {
         outputAmount: inputAmount,
         message: "0x",
         messageHash: "0x",
-        quoteTimestamp: hubPoolClient.currentTime!,
+        quoteTimestamp: hubPoolClient.currentTime ?? 0,
         fillDeadline: 0,
         exclusivityDeadline: 0,
         exclusiveRelayer: toAddressType(ZERO_ADDRESS, MAINNET),
@@ -1046,7 +1127,7 @@ describe("InventoryClient: Refund chain selection", async function () {
         false,
         false
       );
-      (_inventoryClient as MockInventoryClient).setTokenMapping({
+      _inventoryClient.setTokenMapping({
         [mainnetWeth]: {
           [MAINNET]: mainnetWeth,
           [OPTIMISM]: l2TokensForWeth[OPTIMISM],
@@ -1062,7 +1143,7 @@ describe("InventoryClient: Refund chain selection", async function () {
           [BSC]: l2TokensForUsdc[BSC],
         },
       });
-      (_inventoryClient as MockInventoryClient).setUpcomingRefunds(mainnetUsdc, {});
+      _inventoryClient.setUpcomingRefunds(mainnetUsdc, {});
 
       const refundChains = await _inventoryClient.determineRefundChainId(sampleDepositData);
       // When forceOriginRepayment is true and origin chain is a quick rebalance source (Polygon with native USDC/CCTP),
@@ -1092,7 +1173,7 @@ describe("InventoryClient: Refund chain selection", async function () {
         false,
         false
       );
-      (_inventoryClient as MockInventoryClient).setTokenMapping({
+      _inventoryClient.setTokenMapping({
         [mainnetWeth]: {
           [MAINNET]: mainnetWeth,
           [OPTIMISM]: l2TokensForWeth[OPTIMISM],
@@ -1108,7 +1189,7 @@ describe("InventoryClient: Refund chain selection", async function () {
           [BSC]: l2TokensForUsdc[BSC],
         },
       });
-      (_inventoryClient as MockInventoryClient).setUpcomingRefunds(mainnetUsdc, {});
+      _inventoryClient.setUpcomingRefunds(mainnetUsdc, {});
 
       // Should force origin chain repayment because per-chain config overrides global
       const refundChains = await _inventoryClient.determineRefundChainId(sampleDepositData);
@@ -1151,7 +1232,7 @@ describe("InventoryClient: Refund chain selection", async function () {
         false,
         false
       );
-      (_inventoryClient as MockInventoryClient).setTokenMapping({
+      _inventoryClient.setTokenMapping({
         [mainnetWeth]: {
           [MAINNET]: mainnetWeth,
           [OPTIMISM]: l2TokensForWeth[OPTIMISM],
@@ -1167,7 +1248,7 @@ describe("InventoryClient: Refund chain selection", async function () {
           [BSC]: l2TokensForUsdc[BSC],
         },
       });
-      (_inventoryClient as MockInventoryClient).setUpcomingRefunds(mainnetUsdc, {});
+      _inventoryClient.setUpcomingRefunds(mainnetUsdc, {});
 
       // Should NOT force origin chain repayment because per-chain config overrides global
       // Since forceOriginRepaymentPerChain[MAINNET] = false, shouldForceOriginRepayment returns false
@@ -1204,7 +1285,7 @@ describe("InventoryClient: Refund chain selection", async function () {
         false,
         false
       );
-      (_inventoryClient as MockInventoryClient).setTokenMapping({
+      _inventoryClient.setTokenMapping({
         [mainnetWeth]: {
           [MAINNET]: mainnetWeth,
           [OPTIMISM]: l2TokensForWeth[OPTIMISM],
@@ -1220,7 +1301,7 @@ describe("InventoryClient: Refund chain selection", async function () {
           [BSC]: l2TokensForUsdc[BSC],
         },
       });
-      (_inventoryClient as MockInventoryClient).setUpcomingRefunds(mainnetUsdc, {});
+      _inventoryClient.setUpcomingRefunds(mainnetUsdc, {});
 
       // Should use the repaymentChainOverridePerChain (Arbitrum) because forceOriginRepaymentPerChain is false
       const refundChains = await _inventoryClient.determineRefundChainId(sampleDepositData);
@@ -1246,7 +1327,7 @@ describe("InventoryClient: Refund chain selection", async function () {
         false,
         false
       );
-      (_inventoryClient as MockInventoryClient).setTokenMapping({
+      _inventoryClient.setTokenMapping({
         [mainnetWeth]: {
           [MAINNET]: mainnetWeth,
           [OPTIMISM]: l2TokensForWeth[OPTIMISM],
@@ -1262,7 +1343,7 @@ describe("InventoryClient: Refund chain selection", async function () {
           [BSC]: l2TokensForUsdc[BSC],
         },
       });
-      (_inventoryClient as MockInventoryClient).setUpcomingRefunds(mainnetUsdc, {});
+      _inventoryClient.setUpcomingRefunds(mainnetUsdc, {});
 
       const possibleRepaymentChains = _inventoryClient.getPossibleRepaymentChainIds(sampleDepositData);
       // When forceOriginRepayment is true and origin is a quick rebalance source (Polygon with native USDC/CCTP),
@@ -1289,7 +1370,7 @@ describe("InventoryClient: Refund chain selection", async function () {
         outputAmount: inputAmount,
         message: "0x",
         messageHash: "0x",
-        quoteTimestamp: hubPoolClient.currentTime!,
+        quoteTimestamp: hubPoolClient.currentTime ?? 0,
         fillDeadline: 0,
         exclusivityDeadline: 0,
         exclusiveRelayer: toAddressType(ZERO_ADDRESS, MAINNET),
@@ -1315,7 +1396,7 @@ describe("InventoryClient: Refund chain selection", async function () {
         false,
         false
       );
-      (_inventoryClient as MockInventoryClient).setTokenMapping({
+      _inventoryClient.setTokenMapping({
         [mainnetWeth]: {
           [MAINNET]: mainnetWeth,
           [OPTIMISM]: l2TokensForWeth[OPTIMISM],
@@ -1331,7 +1412,7 @@ describe("InventoryClient: Refund chain selection", async function () {
           [BSC]: l2TokensForUsdc[BSC],
         },
       });
-      (_inventoryClient as MockInventoryClient).setUpcomingRefunds(mainnetWeth, {});
+      _inventoryClient.setUpcomingRefunds(mainnetWeth, {});
 
       const refundChains = await _inventoryClient.determineRefundChainId(sampleDepositData);
       expect(refundChains).to.deep.equal([ARBITRUM]);
@@ -1357,7 +1438,7 @@ describe("InventoryClient: Refund chain selection", async function () {
         false,
         false
       );
-      (_inventoryClient as MockInventoryClient).setTokenMapping({
+      _inventoryClient.setTokenMapping({
         [mainnetWeth]: {
           [MAINNET]: mainnetWeth,
           [OPTIMISM]: l2TokensForWeth[OPTIMISM],
@@ -1373,7 +1454,7 @@ describe("InventoryClient: Refund chain selection", async function () {
           [BSC]: l2TokensForUsdc[BSC],
         },
       });
-      (_inventoryClient as MockInventoryClient).setUpcomingRefunds(mainnetWeth, {});
+      _inventoryClient.setUpcomingRefunds(mainnetWeth, {});
 
       // Should use per-chain override (Optimism) instead of global override (Arbitrum)
       const refundChains = await _inventoryClient.determineRefundChainId(sampleDepositData);
@@ -1404,7 +1485,7 @@ describe("InventoryClient: Refund chain selection", async function () {
         false,
         false
       );
-      (_inventoryClient as MockInventoryClient).setTokenMapping({
+      _inventoryClient.setTokenMapping({
         [mainnetWeth]: {
           [MAINNET]: mainnetWeth,
           [OPTIMISM]: l2TokensForWeth[OPTIMISM],
@@ -1420,7 +1501,7 @@ describe("InventoryClient: Refund chain selection", async function () {
           [BSC]: l2TokensForUsdc[BSC],
         },
       });
-      (_inventoryClient as MockInventoryClient).setUpcomingRefunds(mainnetWeth, {});
+      _inventoryClient.setUpcomingRefunds(mainnetWeth, {});
 
       const possibleRepaymentChains = _inventoryClient.getPossibleRepaymentChainIds(sampleDepositData);
       expect(possibleRepaymentChains).to.include(ARBITRUM);
@@ -1451,7 +1532,7 @@ describe("InventoryClient: Refund chain selection", async function () {
         false,
         false
       );
-      (_inventoryClient as MockInventoryClient).setTokenMapping({
+      _inventoryClient.setTokenMapping({
         [mainnetWeth]: {
           [MAINNET]: mainnetWeth,
           [OPTIMISM]: l2TokensForWeth[OPTIMISM],
@@ -1467,7 +1548,7 @@ describe("InventoryClient: Refund chain selection", async function () {
           [BSC]: l2TokensForUsdc[BSC],
         },
       });
-      (_inventoryClient as MockInventoryClient).setUpcomingRefunds(mainnetUsdc, {});
+      _inventoryClient.setUpcomingRefunds(mainnetUsdc, {});
 
       // Should return origin chain, not the override chain
       const refundChains = await _inventoryClient.determineRefundChainId(sampleDepositData);

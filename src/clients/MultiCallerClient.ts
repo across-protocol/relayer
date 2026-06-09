@@ -316,9 +316,9 @@ export class MultiCallerClient {
   buildMultiCallBundle(transactions: AugmentedTransaction[]): AugmentedTransaction[] {
     // Split transactions by target contract if they are not all the same.
     const txnsGroupedByTarget = Object.groupBy(transactions, (txn) => txn.contract.address);
-    return Object.values(txnsGroupedByTarget).map((txns) => {
-      return this._buildMultiCallBundle(txns);
-    });
+    return Object.values(txnsGroupedByTarget)
+      .filter(isDefined)
+      .map((txns) => this._buildMultiCallBundle(txns));
   }
 
   _buildMultiCallBundle(transactions: AugmentedTransaction[]): AugmentedTransaction {
@@ -406,8 +406,11 @@ export class MultiCallerClient {
     // Sort transactions by contract address so we can reduce chance that we need to split them again
     // to make Multicall work.
     const getTxnChunks = (_txns: AugmentedTransaction[]): AugmentedTransaction[][] => {
-      const groupIdTxns = _txns.filter(({ groupId }) => isDefined(groupId));
+      const groupIdTxns = _txns.filter((txn): txn is AugmentedTransaction & { groupId: string } =>
+        isDefined(txn.groupId)
+      );
       const groupIdChunks = Object.values(Object.groupBy(groupIdTxns, (txn) => txn.groupId))
+        .filter(isDefined)
         .map((txns) => {
           return lodash.chunk(
             txns.sort((a, b) => a.contract.address.localeCompare(b.contract.address)),
@@ -476,7 +479,7 @@ export class MultiCallerClient {
   // string that includes more than just the contract revert reason.
   protected canIgnoreRevertReason(txn: TransactionSimulationResult): boolean {
     const { transaction: _txn, reason } = txn;
-    const lowerCaseReason = reason.toLowerCase();
+    const lowerCaseReason = (reason ?? "unknown").toLowerCase();
     const knownReason = [...knownRevertReasons].some((knownReason) =>
       lowerCaseReason.includes(knownReason.toLowerCase())
     );
@@ -592,6 +595,7 @@ export class TryMulticallClient extends MultiCallerClient {
       // If |succeededTxnRequests| != # of transactions in the multicall bundle, then
       // some txns in the bundle must have failed. We take note only of the ones which succeeded.
       if (succeededTxnCalldata.length !== data.length) {
+        assert(isDefined(transaction.gasLimit), "tryMulticall transaction missing gasLimit");
         txnCalldataToRebuild.push(
           buildTryMulticallTransaction(transaction.contract, succeededTxnCalldata, transaction.gasLimit)
         );

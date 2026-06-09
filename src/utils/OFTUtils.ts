@@ -75,8 +75,9 @@ export function getEndpointId(chainId: number): number {
  * @throws If oftEid is not defined for a chain or equal to OFT_NO_EID.
  */
 export function getChainIdFromEndpointId(eid: number): number {
-  const [chainId] = Object.entries(PUBLIC_NETWORKS).find(([, network]) => network.oftEid === eid);
-  return Number(chainId);
+  const entry = Object.entries(PUBLIC_NETWORKS).find(([, network]) => network.oftEid === eid);
+  assert(isDefined(entry), `No chain found for OFT endpoint ID: ${eid}`);
+  return Number(entry[0]);
 }
 
 /**
@@ -84,7 +85,10 @@ export function getChainIdFromEndpointId(eid: number): number {
  * @throws If EVM_OFT_MESSENGERS mapping doesn't have an entry for the l1Token - chainId combination
  */
 export function getMessengerEvm(l1TokenAddress: EvmAddress, chainId: number, l2ChainId: number): EvmAddress {
-  const messengerMap = LEGACY_MESH_NETWORKS.includes(l2ChainId) ? EVM_LEGACY_MESH_MESSENGERS : EVM_OFT_MESSENGERS;
+  const messengerMap =
+    LEGACY_MESH_NETWORKS.includes(chainId) || LEGACY_MESH_NETWORKS.includes(l2ChainId)
+      ? EVM_LEGACY_MESH_MESSENGERS
+      : EVM_OFT_MESSENGERS;
   const messenger = messengerMap.get(l1TokenAddress.toNative())?.get(chainId);
   assert(isDefined(messenger), `No OFT messenger configured for ${l1TokenAddress.toNative()} on chain ${chainId}`);
   return messenger;
