@@ -95,19 +95,10 @@ async function listen({
       return [];
     }
     const searchConfig = { from: fromBlock, to: toBlock, maxLookBack: maxBlockRange };
+    // Let failures propagate: the caller skips the pass rather than treating a failed query as "no
+    // events", which would make reconcileWindow falsely retract recent events of that type.
     const results = await Promise.all(
-      eventNames.map((name) =>
-        paginatedEventQuery(contract, contract.filters[name](), searchConfig).catch((error) => {
-          logger.warn({
-            at,
-            message: `Failed to query ${chain} ${name} events.`,
-            fromBlock,
-            toBlock,
-            error: `${error}`,
-          });
-          return [] as Log[];
-        })
-      )
+      eventNames.map((name) => paginatedEventQuery(contract, contract.filters[name](), searchConfig))
     );
     return results.flat();
   };
@@ -115,8 +106,14 @@ async function listen({
   // Look-back-only events (root bundles, refund roots, speed-ups): scraped once up to the current
   // head and never tracked live.
   const { number: startHead } = await provider.getBlock("latest");
-  const historical = await getEvents(historicalEvents, startBlock, startHead);
-  if (historical.length > 0 && !postEvents(historical)) {
+  try {
+    const historical = await getEvents(historicalEvents, startBlock, startHead);
+    if (historical.length > 0 && !postEvents(historical)) {
+      abortController.abort();
+      return;
+    }
+  } catch (error) {
+    logger.warn({ at, message: `Failed to scrape ${chain} historical events.`, error: `${error}` });
     abortController.abort();
     return;
   }
@@ -144,31 +141,37 @@ async function listen({
 
     const windowStart = Math.max(startBlock, head - REORG_WINDOW + 1);
 
-    // Backfill blocks strictly below the re-org window (initial catch-up and large head jumps); these
-    // are final, posted once and never reconciled.
-    const backfill = await getEvents(liveEvents, scannedThrough + 1, windowStart - 1);
-    if (backfill.length > 0 && !postEvents(backfill)) {
-      abortController.abort();
-      break;
-    }
+    try {
+      // Fetch both ranges before committing: a query failure then skips the whole pass (retried next
+      // tick) rather than reconciling against a partial view and retracting valid events. The backfill
+      // is strictly below the re-org window (initial catch-up / large head jumps) — final, never
+      // reconciled.
+      const backfill = await getEvents(liveEvents, scannedThrough + 1, windowStart - 1);
+      const current = await getEvents(liveEvents, windowStart, head);
 
-    const current = await getEvents(liveEvents, windowStart, head);
-    const { additions, removals } = reconcileWindow(current, posted, windowStart);
+      if (backfill.length > 0 && !postEvents(backfill)) {
+        abortController.abort();
+        break;
+      }
 
-    let ok = true;
-    for (const event of removals) {
-      ok &&= removeEvent({ ...event, removed: true });
-    }
-    if (ok && additions.length > 0) {
-      ok = postEvents(additions);
-    }
-    if (ok) {
-      scannedThrough = head;
-      ok = postBlock(head, currentTime);
-    }
-    if (!ok) {
-      abortController.abort();
-      break;
+      const { additions, removals } = reconcileWindow(current, posted, windowStart);
+      let ok = true;
+      for (const event of removals) {
+        ok &&= removeEvent({ ...event, removed: true });
+      }
+      if (ok && additions.length > 0) {
+        ok = postEvents(additions);
+      }
+      if (ok) {
+        scannedThrough = head;
+        ok = postBlock(head, currentTime);
+      }
+      if (!ok) {
+        abortController.abort();
+        break;
+      }
+    } catch (error) {
+      logger.warn({ at, message: `Caught ${chain} getLogs error; skipping reconciliation pass.`, error: `${error}` });
     }
 
     await delay(POLL_INTERVAL_S);
@@ -201,7 +204,8 @@ async function run(argv: string[]): Promise<void> {
 
   chain = getNetworkName(chainId);
 
-  const quorumProvider = await getProvider(chainId);
+  // useCache=false: don't cache this --quorum-overridden provider under the shared per-chain key.
+  const quorumProvider = await getProvider(chainId, logger, false, quorum);
   const blockFinder: undefined = undefined;
   const cache = await getRedisCache();
   const latestBlock = await quorumProvider.getBlock("latest");
