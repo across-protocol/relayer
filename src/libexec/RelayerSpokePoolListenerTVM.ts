@@ -22,7 +22,8 @@ import { postBlock, postEvents, removeEvent } from "./util/ipc";
 
 const PROGRAM = "RelayerSpokePoolListenerTVM";
 // Re-org reconcile window: re-scan this many trailing blocks each pass and diff against posted events.
-export const REORG_WINDOW = 128;
+// 64 comfortably exceeds TRON's ~19-block (SR consensus) finality, beyond which re-orgs can't occur.
+export const REORG_WINDOW = 64;
 // Seconds between head polls. Tuned just under TRON's ~3s block time: each new head is picked up
 // within an interval without polling several times per block. A no-new-block poll is just one
 // getBlock("latest"); any block missed by timing is covered by the next pass's range scan.
@@ -144,25 +145,24 @@ async function listen({
     const windowStart = Math.max(startBlock, head - REORG_WINDOW + 1);
 
     try {
-      // Fetch both ranges before committing: a query failure then skips the whole pass (retried next
-      // tick) rather than reconciling against a partial view and retracting valid events. The backfill
-      // is strictly below the re-org window (initial catch-up / large head jumps) — final, never
-      // reconciled.
-      const backfill = await getEvents(liveEvents, scannedThrough + 1, windowStart - 1);
-      const current = await getEvents(liveEvents, windowStart, head);
+      // Single query over the whole un-scanned range: the re-org window plus any below-window
+      // catch-up (initial backfill / large head jumps). A query failure skips the pass (retried next
+      // tick) rather than reconciling against a partial view. Partition the results by block number:
+      // below the window they are final (post once, untracked); within it they are reconciled.
+      const events = await getEvents(liveEvents, Math.min(scannedThrough + 1, windowStart), head);
+      const belowWindow: Log[] = [];
+      const inWindow: Log[] = [];
+      events.forEach((event) => (event.blockNumber < windowStart ? belowWindow : inWindow).push(event));
 
-      if (backfill.length > 0 && !postEvents(backfill)) {
-        abortController.abort();
-        break;
-      }
-
-      const { additions, removals } = reconcileWindow(current, posted, windowStart);
-      let ok = true;
-      for (const event of removals) {
-        ok &&= removeEvent({ ...event, removed: true });
-      }
-      if (ok && additions.length > 0) {
-        ok = postEvents(additions);
+      let ok = belowWindow.length === 0 || postEvents(belowWindow);
+      if (ok) {
+        const { additions, removals } = reconcileWindow(inWindow, posted, windowStart);
+        for (const event of removals) {
+          ok &&= removeEvent({ ...event, removed: true });
+        }
+        if (ok && additions.length > 0) {
+          ok = postEvents(additions);
+        }
       }
       if (ok) {
         scannedThrough = head;
