@@ -136,7 +136,7 @@ async function scrapeEvents(
   eventSignatures: string[],
   provider: Provider,
   opts: ScraperOpts
-): Promise<void> {
+): Promise<number> {
   const at = `${PROGRAM}::scrapeEvents`;
   const { number: toBlock, timestamp: currentTime } = await provider.getBlock("latest");
 
@@ -162,6 +162,8 @@ async function scrapeEvents(
       abortController.abort();
     }
   }
+
+  return toBlock;
 }
 
 /**
@@ -177,26 +179,23 @@ async function listen(
   eventMgr: EventManager,
   spokePoolAddr: string,
   eventSignatures: string[],
-  quorum: number
+  quorum: number,
+  scrapedToBlock: number
 ): Promise<void> {
   const at = `${PROGRAM}::listen`;
   const providers = resolveProviders(chainId, quorum);
   const blocks = new Map<bigint, string>();
   const events = eventSignatures.map((sig) => parseAbiItem(sig.replace("tuple", "")) as AbiEvent);
   const address = spokePoolAddr as `0x${string}`;
-  // Trailing-window floor: the primary's first block (past the scrape), so the initial poll can't
-  // re-submit scraped events. Shared — a lagging secondary's own first block may predate the scrape.
-  let liveFrom: bigint | undefined;
+  // Floor the trailing window one past the scrape: a fresh EventManager would otherwise re-post
+  // already-scraped events on the first poll, and the parent doesn't dedupe added events.
+  const liveFrom = BigInt(scrapedToBlock) + 1n;
 
   // Poll one provider's logs into EventManager. Per-provider (replacing filter-based watchEvent,
   // which TRON expires) so a lagging or failing provider still votes once it catches up.
   const pollLogs = async (provider: (typeof providers)[number], head: bigint): Promise<void> => {
-    if (liveFrom === undefined) {
-      return;
-    }
-    const floor = liveFrom;
     const lookback = head > LOG_RETRY_DEPTH ? head - LOG_RETRY_DEPTH : 0n;
-    const fromBlock = lookback > floor ? lookback : floor;
+    const fromBlock = lookback > liveFrom ? lookback : liveFrom;
     if (fromBlock > head) {
       return;
     }
@@ -272,7 +271,6 @@ async function listen(
       if (!isDefined(block.number)) {
         return;
       }
-      liveFrom ??= block.number;
       if (!postBlock(Number(block.number), Number(block.timestamp))) {
         abortController.abort();
       }
@@ -365,6 +363,7 @@ async function run(argv: string[]): Promise<void> {
 
   logger.debug({ at, message: `Scraping previous ${chain} events.`, opts });
 
+  let scrapedToBlock = latestBlock.number;
   if (latestBlock.number > startBlock) {
     const events = [
       "FundsDeposited",
@@ -377,7 +376,7 @@ async function run(argv: string[]): Promise<void> {
     const _spokePool = spokePool.connect(quorumProvider);
     const { address, interface: abi, provider } = _spokePool;
     const signatures = events.map((event) => abi.getEvent(event).format(ethersUtils.FormatTypes.full));
-    await scrapeEvents(address, signatures, provider, opts);
+    scrapedToBlock = await scrapeEvents(address, signatures, provider, opts);
   }
 
   const events = ["FundsDeposited", "FilledRelay"];
@@ -386,7 +385,7 @@ async function run(argv: string[]): Promise<void> {
   logger.debug({ at, message: `Starting ${chain} listener.`, events, opts });
 
   const eventMgr = new EventManager(logger, chainId, quorum);
-  await listen(eventMgr, spokePoolAddr, signatures, quorum);
+  await listen(eventMgr, spokePoolAddr, signatures, quorum, scrapedToBlock);
 }
 
 if (require.main === module) {
