@@ -33,6 +33,26 @@ import { MultiCallerClient } from "../../clients";
 import { EVM_OFT_MESSENGERS, IOFT_ABI_FULL, OFT_DEFAULT_FEE_CAP, OFT_FEE_CAP_OVERRIDES } from "../../common";
 import { OFT_NO_EID, PRODUCTION_NETWORKS } from "@across-protocol/constants";
 
+// USDT0 transfers from HyperEVM take ~12 hours to finalize, so set a TTL of 24 hours to be safe.
+const HYPEREVM_USDT_OFT_BRIDGE_TTL_SECONDS = 24 * 60 * 60;
+
+/**
+ * Pending-order TTL override for OFT pre-deposit bridge legs whose finality window outlives the
+ * rebalancer's default 1h TTL. Returns `undefined` for routes that fit in the default.
+ *
+ * Exported so adapters that delegate their pre-deposit bridge to `OftAdapter` (e.g.
+ * `BinanceStablecoinSwapAdapter`) can keep their own pending-order TTL aligned with the
+ * underlying bridge's expected duration, instead of silently expiring at 1h while the
+ * bridge is still in flight.
+ */
+export function getOftPreDepositOrderTtlOverride(
+  rebalanceRoute: Pick<RebalanceRoute, "sourceToken" | "sourceChain">
+): number | undefined {
+  return rebalanceRoute.sourceToken === "USDT" && rebalanceRoute.sourceChain === CHAIN_IDs.HYPEREVM
+    ? HYPEREVM_USDT_OFT_BRIDGE_TTL_SECONDS
+    : undefined;
+}
+
 export class OftAdapter extends BaseAdapter {
   REDIS_PREFIX = OFT_PENDING_BRIDGE_REDIS_PREFIX;
 
@@ -93,11 +113,7 @@ export class OftAdapter extends BaseAdapter {
       rebalanceRoute.destinationChain,
       amountToTransfer
     );
-    // USDT0 transfers from HyperEVM take ~12 hours to finalize, so set a TTL of 24 hours to be safe.
-    const ttlOverride =
-      rebalanceRoute.sourceToken === "USDT" && rebalanceRoute.sourceChain === CHAIN_IDs.HYPEREVM
-        ? 24 * 60 * 60
-        : undefined;
+    const ttlOverride = getOftPreDepositOrderTtlOverride(rebalanceRoute);
     await this._redisCreateOrder(
       txnHash,
       STATUS.PENDING_BRIDGE_PRE_DEPOSIT,

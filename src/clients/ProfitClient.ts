@@ -34,6 +34,7 @@ import {
   isSVMSpokePoolClient,
   getSpokePoolAddress,
   chainIsEvm,
+  chainIsTvm,
   chainIsSvm,
   EvmAddress,
   Address,
@@ -44,6 +45,7 @@ import {
   coingecko,
   defiLlama,
   getNativeTokenInfoForChain,
+  isUnmeteredFastRebalance,
 } from "../utils";
 import { Deposit, DepositWithBlock, L1Token, SpokePoolClientsByChain } from "../interfaces";
 import { getAcrossHost } from "./AcrossAPIClient";
@@ -102,6 +104,15 @@ type UnprofitableFill = {
 // relayer's own address. The specified address is deliberately setup by RL to have a 0 token balance.
 const TEST_RECIPIENT = "0xBb23Cd0210F878Ea4CcA50e9dC307fb0Ed65Cf6B";
 
+type PolicyRoute = { destinations: Set<number>; origins?: Set<number> };
+
+type RelayerPolicy = {
+  name: string;
+  routes: Map<string, PolicyRoute>;
+  minFeePct?: BigNumber;
+  gasMultiplier?: BigNumber;
+};
+
 export class ProfitClient {
   private readonly priceClient: PriceClient;
   protected minRelayerFees: { [route: string]: BigNumber } = {};
@@ -116,6 +127,10 @@ export class ProfitClient {
   private relayerFeeQueries: { [chainId: number]: relayFeeCalculator.QueryInterface } = {};
 
   private readonly isTestnet: boolean;
+
+  // Cached configuration for the `RELAYER_POLICIES` registry — decoded once at construct time so
+  // resolveGasMultiplier / minRelayerFeePct don't re-parse env vars on every call.
+  private readonly policies: RelayerPolicy[];
 
   // @todo: Consolidate this set of args before it grows legs and runs away from us.
   constructor(
@@ -171,12 +186,20 @@ export class ProfitClient {
     }
 
     this.isTestnet = this.hubPoolClient.chainId !== CHAIN_IDs.MAINNET;
+
+    this.policies = this.decodePolicies();
   }
 
   resolveGasMultiplier(deposit: Deposit): BigNumber {
     const { inputToken, originChainId, outputToken, destinationChainId } = deposit;
     const srcSymbol = this.getTokenSymbol(inputToken, originChainId);
     const dstSymbol = this.getTokenSymbol(outputToken, destinationChainId);
+
+    const policy = this.matchingPolicy(srcSymbol, dstSymbol, originChainId, destinationChainId, inputToken);
+    if (isDefined(policy?.gasMultiplier)) {
+      return policy.gasMultiplier;
+    }
+
     const effectiveSrcSymbol = this._getRemappedTokenSymbol(srcSymbol) ?? srcSymbol;
     const effectiveDstSymbol =
       dstSymbol !== "UNKNOWN" ? (this._getRemappedTokenSymbol(dstSymbol) ?? dstSymbol) : undefined;
@@ -367,9 +390,11 @@ export class ProfitClient {
     const gasMultiplier = this.resolveGasMultiplier(deposit);
     tokenGasCost = tokenGasCost.mul(gasMultiplier).div(fixedPoint);
 
-    // EVM gas is metered in wei (1e-18 base units) regardless of the native token's nominal decimals
-    // (e.g. Tempo's pathUSD is 6dp but gas is still wei). SVM meters in lamports (1e-9 SOL).
-    const gasAccountingDecimals = chainIsSvm(chainId) ? gasToken.decimals : 18;
+    // The relay fee calculator's return values are generally determined by the RPC, *not* by the gas token decimals.
+    // - For EVM networks, the RPC will return with a precision of 18 regardless of the precision of the gas token.
+    // - For Solana, precision will match the precision of SOL.
+    // - For TRON, precision will match the precision of TRX. This is currently our only exception for "EVM" like chains.
+    const gasAccountingDecimals = chainIsSvm(chainId) || chainIsTvm(chainId) ? gasToken.decimals : 18;
     const gasCostUsd = tokenGasCost.mul(gasTokenPriceUsd).div(bn10.pow(gasAccountingDecimals));
 
     const auxiliaryNativeTokenCost = this.getAuxiliaryNativeTokenCost(deposit);
@@ -414,6 +439,12 @@ export class ProfitClient {
     const { inputToken, originChainId, outputToken, destinationChainId } = deposit;
     const srcSymbol = this.getTokenSymbol(inputToken, originChainId);
     const dstSymbol = this.getTokenSymbol(outputToken, destinationChainId);
+
+    const policy = this.matchingPolicy(srcSymbol, dstSymbol, originChainId, destinationChainId, inputToken);
+    if (isDefined(policy?.minFeePct)) {
+      return policy.minFeePct;
+    }
+
     const effectiveSourceSymbol = this._getRemappedTokenSymbol(srcSymbol) ?? srcSymbol;
     const effectiveDestinationSymbol =
       dstSymbol !== "UNKNOWN" ? (this._getRemappedTokenSymbol(dstSymbol) ?? dstSymbol) : undefined;
@@ -548,6 +579,98 @@ export class ProfitClient {
     } catch {
       return "UNKNOWN";
     }
+  }
+
+  /**
+   * Per-(token-pair) override: returns the first policy in the cached `RELAYER_POLICIES` registry
+   * whose `DESTINATIONS_<srcSymbol>_<dstSymbol>` route includes `destinationChainId`, and whose
+   * optional `ORIGINS_<srcSymbol>_<dstSymbol>` includes `originChainId` (or, when unset, whose
+   * origin chain supports unmetered fast rebalance for the input token). Callers additionally gate
+   * on the relevant override env var being defined (`MIN_FEE_PCT` / `GAS_MULTIPLIER`); if it isn't,
+   * they fall through to the standard per-route/token/chain lookup and global defaults.
+   */
+  protected matchingPolicy(
+    srcSymbol: string,
+    dstSymbol: string,
+    originChainId: number,
+    destinationChainId: number,
+    inputToken: Address
+  ): RelayerPolicy | undefined {
+    if (this.policies.length === 0) {
+      return undefined;
+    }
+    const pair = `${srcSymbol}_${dstSymbol}`;
+    for (const policy of this.policies) {
+      const route = policy.routes.get(pair);
+      if (!isDefined(route) || !route.destinations.has(destinationChainId)) {
+        continue;
+      }
+      if (isDefined(route.origins)) {
+        if (route.origins.has(originChainId)) {
+          return policy;
+        }
+        continue;
+      }
+      if (isUnmeteredFastRebalance(originChainId, inputToken, this.hubPoolClient.chainId)) {
+        return policy;
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Decode the `RELAYER_POLICIES` registry from `process.env` into a structured list. Runs once
+   * at construct time; subsequent env mutations are ignored, matching real-world operator usage
+   * where env is fixed at startup.
+   */
+  private decodePolicies(): RelayerPolicy[] {
+    const policiesRaw = process.env.RELAYER_POLICIES;
+    if (!isDefined(policiesRaw) || policiesRaw.length === 0) {
+      return [];
+    }
+    const names = policiesRaw
+      .split(",")
+      .map((s) => s.trim().toUpperCase())
+      .filter((s) => s.length > 0);
+
+    return names.map((name) => {
+      const routes = new Map<string, PolicyRoute>();
+      const destinationsPrefix = `RELAYER_POLICY_${name}_DESTINATIONS_`;
+      const originsPrefix = `RELAYER_POLICY_${name}_ORIGINS_`;
+      for (const [key, value] of Object.entries(process.env)) {
+        if (!isDefined(value)) {
+          continue;
+        }
+        if (key.startsWith(destinationsPrefix)) {
+          const pair = key.slice(destinationsPrefix.length);
+          const route = routes.get(pair) ?? { destinations: new Set<number>() };
+          value.split(",").forEach((s) => route.destinations.add(Number(s.trim())));
+          routes.set(pair, route);
+        } else if (key.startsWith(originsPrefix)) {
+          const pair = key.slice(originsPrefix.length);
+          const route = routes.get(pair) ?? { destinations: new Set<number>() };
+          const origins = route.origins ?? new Set<number>();
+          value.split(",").forEach((s) => origins.add(Number(s.trim())));
+          route.origins = origins;
+          routes.set(pair, route);
+        }
+      }
+
+      const minFeePctRaw = process.env[`RELAYER_POLICY_${name}_MIN_FEE_PCT`];
+      const minFeePct = isDefined(minFeePctRaw) ? toBNWei(minFeePctRaw) : undefined;
+
+      const gasMultiplierRaw = process.env[`RELAYER_POLICY_${name}_GAS_MULTIPLIER`];
+      let gasMultiplier: BigNumber | undefined;
+      if (isDefined(gasMultiplierRaw)) {
+        gasMultiplier = toBNWei(gasMultiplierRaw);
+        assert(
+          gasMultiplier.gte(bnZero) && gasMultiplier.lte(toBNWei(4)),
+          `RELAYER_POLICY_${name}_GAS_MULTIPLIER out of range (${gasMultiplier})`
+        );
+      }
+
+      return { name, routes, minFeePct, gasMultiplier };
+    });
   }
 
   async getFillProfitability(deposit: Deposit, lpFeePct: BigNumber, repaymentChainId: number): Promise<FillProfit> {

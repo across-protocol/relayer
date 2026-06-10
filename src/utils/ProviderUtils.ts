@@ -122,7 +122,8 @@ function getRetryParams(chainId: number): { retries: number; retryDelay: number 
 export async function getProvider(
   chainId: number,
   logger: winston.Logger = Logger,
-  useCache = true
+  useCache = true,
+  quorum?: number
 ): Promise<RetryProvider> {
   const redisClient = await getRedisCache(logger);
   if (useCache) {
@@ -143,7 +144,7 @@ export async function getProvider(
 
   const { retries, retryDelay } = getRetryParams(chainId);
 
-  const nodeQuorumThreshold = getChainQuorum(chainId);
+  const nodeQuorumThreshold = quorum ?? getChainQuorum(chainId);
 
   const nodeMaxConcurrency = getMaxConcurrency(chainId);
 

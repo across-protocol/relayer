@@ -32,6 +32,22 @@ function tronOriginIndexerMessage(): DepositAddressMessage {
           "0x000000000000000000000000c593a2a4ff1f65f652c67ceb4175502e75e87ebd0000000000000000000000009a8f92a830a5cb89a3816e3d267cb7791c16b04d",
         implementationAddress: "0x51506Bb64295228CF6FE8F6C88301Be45b7C1AB6",
       },
+      // Fee-bearing leaf with a base58 implementation address — proves the new leaves are both
+      // preserved and address-normalized, and that `params.executionFee` passes through verbatim.
+      cctpLeaf: {
+        leafHash: "0x2b9919ef937741fe6214e3f1174b57642806d79a14ed100f2b74b47645e76f9f",
+        merkleProof: ["0x7926eef0d29d7beca7b09509258b03b91decd1c601e0fb33ebfc72202eab1d07"],
+        encodedParams: "0x",
+        implementationAddress: CCTP_LEAF_IMPL_BASE58,
+        params: { executionFee: "12345" },
+      },
+      // Param-less leaf — exercises the absent-params branch.
+      spokePoolLeaf: {
+        leafHash: "0x7926eef0d29d7beca7b09509258b03b91decd1c601e0fb33ebfc72202eab1d07",
+        merkleProof: [],
+        encodedParams: "0x",
+        implementationAddress: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      },
     },
     erc20Transfer: {
       chainId: String(CHAIN_IDs.TRON),
@@ -48,6 +64,8 @@ function tronOriginIndexerMessage(): DepositAddressMessage {
 }
 
 const EVM_ADDRESS = /^0x[0-9a-fA-F]{40}$/;
+// Base58 Tron address committed on the cctp leaf, used to prove the new leaves are address-normalized.
+const CCTP_LEAF_IMPL_BASE58 = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
 
 describe("DepositAddressUtils", function () {
   it("normalizeDepositAddressMessage converts Tron indexer base58 fields to ethers hex", function () {
@@ -78,6 +96,27 @@ describe("DepositAddressUtils", function () {
     expect(normalized.paramsHash).to.equal(raw.paramsHash);
     expect(normalized.erc20Transfer.transactionHash).to.equal(raw.erc20Transfer.transactionHash);
     expect(normalized.erc20Transfer.amount).to.equal("500000");
+  });
+
+  it("normalizeDepositAddressMessage preserves fee leaves, normalizes their address, and passes executionFee through", function () {
+    const raw = tronOriginIndexerMessage();
+    const normalized = normalizeDepositAddressMessage(raw);
+
+    // The base58 implementation address on the cctp leaf is normalized to ethers hex...
+    const cctpLeaf = normalized.counterfactualMaterials.cctpLeaf;
+    expect(cctpLeaf).to.not.be.undefined;
+    expect(cctpLeaf?.implementationAddress).to.match(EVM_ADDRESS);
+    expect(cctpLeaf?.implementationAddress).to.equal(getEthersCompatibleAddress(CHAIN_IDs.TRON, CCTP_LEAF_IMPL_BASE58));
+    // ...while the committed executionFee is passed through verbatim.
+    expect(cctpLeaf?.params?.executionFee).to.equal("12345");
+
+    // The param-less leaf survives and stays param-less.
+    const spokePoolLeaf = normalized.counterfactualMaterials.spokePoolLeaf;
+    expect(spokePoolLeaf).to.not.be.undefined;
+    expect(spokePoolLeaf?.params).to.be.undefined;
+
+    // withdrawLeaf still normalized as before.
+    expect(normalized.counterfactualMaterials.withdrawLeaf.implementationAddress).to.match(EVM_ADDRESS);
   });
 
   it("toAddressType().toNative() returns chain-native strings for swap API params", function () {

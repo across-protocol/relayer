@@ -50,7 +50,19 @@ export async function withFreshBlockhash<T extends SolanaUnsignedTransaction>(pr
   return setTransactionMessageLifetimeUsingBlockhash(blockhash, tx);
 }
 
-export async function signAndSendTransaction(provider: SVMProvider, _unsignedTxn: SolanaUnsignedTransaction) {
+// Options for the SVM submit path. `minContextSlot` pins the receiving RPC's
+// preflight simulation to a slot >= the value supplied, so that a node which
+// hasn't yet ingested a prior dependency tx returns the explicit
+// `MinContextSlotNotReached` error (which the SDK's retry layer recovers
+// transparently) instead of running preflight against stale state. See
+// https://solana.com/docs/rpc/http/sendtransaction.
+export type SolanaSendOptions = { minContextSlot?: bigint };
+
+export async function signAndSendTransaction(
+  provider: SVMProvider,
+  _unsignedTxn: SolanaUnsignedTransaction,
+  opts: SolanaSendOptions = {}
+) {
   const priorityFeeOverride = process.env["SVM_PRIORITY_FEE_OVERRIDE"];
   const unsignedTxn = isDefined(priorityFeeOverride)
     ? updateOrAppendSetComputeUnitPriceInstruction(BigInt(priorityFeeOverride) as MicroLamports, _unsignedTxn)
@@ -59,35 +71,83 @@ export async function signAndSendTransaction(provider: SVMProvider, _unsignedTxn
   const signedTransaction = await signTransactionMessageWithSigners(txWithFreshBlockhash);
   const serializedTx = getBase64EncodedWireTransaction(signedTransaction);
   return provider
-    .sendTransaction(serializedTx, { preflightCommitment: "confirmed", skipPreflight: false, encoding: "base64" })
+    .sendTransaction(serializedTx, {
+      preflightCommitment: "confirmed",
+      skipPreflight: false,
+      encoding: "base64",
+      ...(isDefined(opts.minContextSlot) ? { minContextSlot: opts.minContextSlot } : {}),
+    })
     .send();
 }
 
-export async function sendAndConfirmSolanaTransaction(
+// Internal helper: send + poll. Returns the signature and (when reached) the
+// slot at which confirmation was observed so callers can chain
+// `minContextSlot` into subsequent dependent sends.
+async function _sendAndPoll(
   unsignedTransaction: SolanaUnsignedTransaction,
   provider: SVMProvider,
-  cycles = 25,
-  pollingDelay = 600 // 1.5 slots on Solana.
-): Promise<string> {
+  cycles: number,
+  pollingDelay: number,
+  opts: SolanaSendOptions
+): Promise<{ signature: string; confirmedSlot: bigint | undefined }> {
   const delay = (ms: number) => {
     return new Promise((resolve) => setTimeout(resolve, ms));
   };
-  const txSignature = await signAndSendTransaction(provider, unsignedTransaction);
+  const txSignature = await signAndSendTransaction(provider, unsignedTransaction, opts);
   let confirmed = false;
+  let confirmedSlot: bigint | undefined;
   let _cycles = 0;
   while (!confirmed && _cycles < cycles) {
     const txStatus = await provider.getSignatureStatuses([txSignature]).send();
     // Index 0 since we are only sending a single transaction in this method.
-    confirmed =
-      txStatus?.value?.[0]?.confirmationStatus === "confirmed" ||
-      txStatus?.value?.[0]?.confirmationStatus === "finalized";
+    const entry = txStatus?.value?.[0];
+    confirmed = entry?.confirmationStatus === "confirmed" || entry?.confirmationStatus === "finalized";
+    if (confirmed) {
+      // Prefer the tx's own confirmation slot. When the upstream RPC omits
+      // `entry.slot` (observed empirically), fall back to the response's
+      // `context.slot` — the slot at which this same RPC processed the
+      // request. That is a safe floor: the RPC has reached `context.slot`
+      // and, in the same response, reported the tx as confirmed, so any
+      // RPC subsequently pinned to that slot will also see the tx.
+      // Falling back to an independent `getSlot` call would not give that
+      // guarantee under load-balanced providers.
+      confirmedSlot = isDefined(entry?.slot) ? entry.slot : txStatus?.context?.slot;
+    }
     // If the transaction wasn't confirmed, wait `pollingInterval` and retry.
     if (!confirmed) {
       await delay(pollingDelay);
       _cycles++;
     }
   }
-  return txSignature;
+  return { signature: txSignature, confirmedSlot };
+}
+
+export async function sendAndConfirmSolanaTransaction(
+  unsignedTransaction: SolanaUnsignedTransaction,
+  provider: SVMProvider,
+  cycles = 25,
+  pollingDelay = 600, // 1.5 slots on Solana.
+  opts: SolanaSendOptions = {}
+): Promise<string> {
+  const { signature } = await _sendAndPoll(unsignedTransaction, provider, cycles, pollingDelay, opts);
+  return signature;
+}
+
+// Variant of `sendAndConfirmSolanaTransaction` that additionally returns the
+// slot at which the tx was confirmed (extracted from `getSignatureStatuses`).
+// Use this when the next send depends on this tx's on-chain effects, then
+// pass `confirmedSlot` as `opts.minContextSlot` to the dependent send so an
+// RPC that hasn't yet ingested this tx fails with `MinContextSlotNotReached`
+// (which the SDK's `RetrySolanaRpcFactory` retries) instead of running
+// preflight against stale state.
+export async function sendAndConfirmSolanaTransactionWithSlot(
+  unsignedTransaction: SolanaUnsignedTransaction,
+  provider: SVMProvider,
+  cycles = 25,
+  pollingDelay = 600,
+  opts: SolanaSendOptions = {}
+): Promise<{ signature: string; confirmedSlot: bigint | undefined }> {
+  return _sendAndPoll(unsignedTransaction, provider, cycles, pollingDelay, opts);
 }
 
 export async function simulateSolanaTransaction(unsignedTransaction: SolanaUnsignedTransaction, provider: SVMProvider) {

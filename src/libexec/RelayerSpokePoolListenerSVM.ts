@@ -124,15 +124,31 @@ async function listen(
   const RECONNECT_BACKOFF_MIN_S = 1;
   const RECONNECT_BACKOFF_MAX_S = 30;
 
+  // SolanaError.cause is a WebSocket CloseEvent. The CloseEvent interface is global via
+  // @types/node (undici-types), so we narrow with a structural guard and let TS infer
+  // code/wasClean/reason. Projecting them onto own properties is still required because
+  // winston serializes the CloseEvent prototype-getter fields as {}.
+  const isCloseEvent = (x: unknown): x is CloseEvent =>
+    typeof x === "object" && x !== null && "code" in x && "wasClean" in x && "reason" in x;
+
   const logProviderError = (providerName: string, err: unknown, backoffS: number) => {
     const message = "Caught error on Solana provider; reconnecting.";
-    const ctx = { at, message, provider: providerName, backoffS };
-    if (arch.svm.isSolanaError(err)) {
-      logger.warn({ ...ctx, cause: err.cause });
-    } else {
-      const cause = typeguards.isError(err) ? err.message : "unknown cause";
-      logger.warn({ ...ctx, cause });
+    const baseCtx = { at, message, provider: providerName, backoffS };
+    if (arch.svm.isSolanaError(err) && isCloseEvent(err.cause)) {
+      const { code, wasClean, reason } = err.cause;
+      const ctx = { ...baseCtx, code, wasClean, reason };
+      // 1006 with no close frame is the documented Chainstack shared-gateway rotation
+      // (https://docs.chainstack.com/docs/error-reference); demote to debug. Anything
+      // else (e.g. 1011 Internal Error from Alchemy, unknown codes) stays at warn.
+      if (code === 1006 && wasClean === false) {
+        logger.debug(ctx);
+      } else {
+        logger.warn(ctx);
+      }
+      return;
     }
+    const cause = typeguards.isError(err) ? err.message : "unknown cause";
+    logger.warn({ ...baseCtx, cause });
   };
 
   const readSlot = async (provider: WSProvider, providerName: string) => {
