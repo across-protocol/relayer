@@ -111,7 +111,8 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     }
     await super.initialize(_availableRoutes.filter((route) => route.adapter === "binance"));
 
-    // Skip Binance-specific setup without credentials; upstream filters routes via hasBinanceRoute().
+    // No credentials → no client. The rebalancer omits this adapter from its map without credentials
+    // (see RebalancerClientHelper); this guard only covers direct callers.
     if (!binanceCredentialsConfigured()) {
       return;
     }
