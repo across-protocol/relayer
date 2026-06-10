@@ -27,8 +27,9 @@ The indexer tags each ERC-20 transfer with a `transferClassification`:
 
 The deposit path is always active. The refund-withdraw path is gated by `WITHDRAW_ENABLED`.
 
-Before classification routing, `processExecution` drops any message whose top-level `version` is
-`2` or `3` (debug-logged). Only v1 — and legacy messages with no `version` field — are processed.
+`_queryIndexerApi` drops any message whose top-level `version` is `2` or `3` (debug-logged) before
+normalization, since v2/v3 payloads may not carry the v1 shape that `normalizeDepositAddressMessage`
+dereferences. Only v1 — and legacy messages with no `version` field — are processed.
 
 ## Execution fee (deposit-execute path)
 

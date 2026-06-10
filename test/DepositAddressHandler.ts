@@ -123,52 +123,45 @@ describe("DepositAddressHandler._getSwapApiQuote execution-fee params", function
   });
 });
 
-describe("DepositAddressHandler.processExecution version filtering", function () {
+describe("DepositAddressHandler._queryIndexerApi version filtering", function () {
   let handler: DepositAddressHandler;
-  let initiateDeposit: sinon.SinonStub;
-  let initiateWithdraw: sinon.SinonStub;
+  let getStub: sinon.SinonStub;
 
-  type Internals = {
-    processExecution: (m: DepositAddressMessage) => Promise<void>;
-    initiateDeposit: sinon.SinonStub;
-    initiateWithdraw: sinon.SinonStub;
-  };
+  type Internals = { _queryIndexerApi: () => Promise<DepositAddressMessage[]> };
 
   beforeEach(function () {
     const config = {} as unknown as DepositAddressHandlerConfig;
     const logger = { debug: sinon.stub() } as unknown as winston.Logger;
     handler = new DepositAddressHandler(logger, config, {} as unknown as Signer, []);
-    // Stub the two execution paths so we only assert on routing, not on-chain behavior.
-    initiateDeposit = sinon.stub().resolves();
-    initiateWithdraw = sinon.stub().resolves();
-    const internals = handler as unknown as Internals;
-    internals.initiateDeposit = initiateDeposit;
-    internals.initiateWithdraw = initiateWithdraw;
+    getStub = sinon.stub();
+    (handler as unknown as { indexerApi: { get: sinon.SinonStub } }).indexerApi = { get: getStub };
   });
 
   afterEach(() => sinon.restore());
 
-  async function process(message: DepositAddressMessage): Promise<void> {
-    await (handler as unknown as Internals).processExecution(message);
+  async function query(messages: unknown[]): Promise<DepositAddressMessage[]> {
+    getStub.resolves(messages);
+    return (handler as unknown as Internals)._queryIndexerApi();
   }
 
-  for (const version of [2, 3]) {
-    it(`drops version ${version} messages without routing`, async function () {
-      await process({ ...depositMessage({ withdrawLeaf }), version });
-      expect(initiateDeposit.called).to.equal(false);
-      expect(initiateWithdraw.called).to.equal(false);
-    });
-  }
+  it("drops v2/v3 messages and keeps v1 + legacy in the same batch", async function () {
+    const v1 = { ...depositMessage({ withdrawLeaf }), version: 1 };
+    const legacy = depositMessage({ withdrawLeaf });
+    // v2/v3 payloads that do NOT carry the v1 shape — only normalized v1/legacy messages should
+    // ever reach normalizeDepositAddressMessage, so these must be filtered out before the map.
+    const v2 = { version: 2, depositAddress: DEPOSIT_ADDRESS, paramsHash: "0x" + "0".repeat(64) };
+    const v3 = { version: 3, depositAddress: DEPOSIT_ADDRESS, paramsHash: "0x" + "0".repeat(64) };
 
-  it("routes version 1 correct_transfer messages to the deposit path", async function () {
-    await process({ ...depositMessage({ withdrawLeaf }), version: 1 });
-    expect(initiateDeposit.calledOnce).to.equal(true);
-    expect(initiateWithdraw.called).to.equal(false);
+    const result = await query([v2, v1, v3, legacy]);
+
+    expect(result).to.have.length(2);
+    expect(result.map((m) => m.version)).to.deep.equal([1, undefined]);
   });
 
-  it("routes legacy messages with no version to the deposit path", async function () {
-    await process(depositMessage({ withdrawLeaf }));
-    expect(initiateDeposit.calledOnce).to.equal(true);
-    expect(initiateWithdraw.called).to.equal(false);
+  it("does not throw when a v2/v3 message lacks the v1 shape", async function () {
+    // A bare v2 payload would make normalizeDepositAddressMessage throw if it reached the map;
+    // filtering before normalization must keep the poll alive.
+    const result = await query([{ version: 2 }]);
+    expect(result).to.deep.equal([]);
   });
 });
