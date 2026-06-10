@@ -352,14 +352,17 @@ export const CONTRACT_ADDRESSES: {
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
     },
     sponsoredCCTPDstPeriphery: {
-      address: getDeployedAddress("SponsoredCCTPDstPeriphery", CHAIN_IDs.HYPEREVM),
+      address: "0x1CFE31eD57c2d2b4CB69c0298A1b586965b882d5",
       abi: SPONSORED_CCTP_DST_PERIPHERY_ABI,
     },
     dstCctpHandler: {
-      address: getDeployedAddress("SponsoredCCTPDstPeriphery", CHAIN_IDs.HYPEREVM),
+      address: "0x1CFE31eD57c2d2b4CB69c0298A1b586965b882d5",
+    },
+    dstUsdhHandler: {
+      address: "0x74dfB6Ab65419Fd2022614Fa8BA45e9f50a3aE59",
     },
     dstOftHandler: {
-      address: getDeployedAddress("DstOFTHandler", CHAIN_IDs.HYPEREVM),
+      address: "0xeb8feE79B59D048162986B0432a187Be46322284",
     },
     hyperliquidDepositHandler: {
       address: getDeployedAddress("HyperliquidDepositHandler", CHAIN_IDs.HYPEREVM),
