@@ -122,3 +122,53 @@ describe("DepositAddressHandler._getSwapApiQuote execution-fee params", function
     expect(BASE_PARAM_KEYS.every((key) => key in params)).to.equal(true);
   });
 });
+
+describe("DepositAddressHandler.processExecution version filtering", function () {
+  let handler: DepositAddressHandler;
+  let initiateDeposit: sinon.SinonStub;
+  let initiateWithdraw: sinon.SinonStub;
+
+  type Internals = {
+    processExecution: (m: DepositAddressMessage) => Promise<void>;
+    initiateDeposit: sinon.SinonStub;
+    initiateWithdraw: sinon.SinonStub;
+  };
+
+  beforeEach(function () {
+    const config = {} as unknown as DepositAddressHandlerConfig;
+    const logger = { debug: sinon.stub() } as unknown as winston.Logger;
+    handler = new DepositAddressHandler(logger, config, {} as unknown as Signer, []);
+    // Stub the two execution paths so we only assert on routing, not on-chain behavior.
+    initiateDeposit = sinon.stub().resolves();
+    initiateWithdraw = sinon.stub().resolves();
+    const internals = handler as unknown as Internals;
+    internals.initiateDeposit = initiateDeposit;
+    internals.initiateWithdraw = initiateWithdraw;
+  });
+
+  afterEach(() => sinon.restore());
+
+  async function process(message: DepositAddressMessage): Promise<void> {
+    await (handler as unknown as Internals).processExecution(message);
+  }
+
+  for (const version of [2, 3]) {
+    it(`drops version ${version} messages without routing`, async function () {
+      await process({ ...depositMessage({ withdrawLeaf }), version });
+      expect(initiateDeposit.called).to.equal(false);
+      expect(initiateWithdraw.called).to.equal(false);
+    });
+  }
+
+  it("routes version 1 correct_transfer messages to the deposit path", async function () {
+    await process({ ...depositMessage({ withdrawLeaf }), version: 1 });
+    expect(initiateDeposit.calledOnce).to.equal(true);
+    expect(initiateWithdraw.called).to.equal(false);
+  });
+
+  it("routes legacy messages with no version to the deposit path", async function () {
+    await process(depositMessage({ withdrawLeaf }));
+    expect(initiateDeposit.calledOnce).to.equal(true);
+    expect(initiateWithdraw.called).to.equal(false);
+  });
+});

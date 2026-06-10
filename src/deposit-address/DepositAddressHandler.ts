@@ -274,6 +274,21 @@ export class DepositAddressHandler {
    *   - anything else: dropped (forward-compat) until explicitly supported.
    */
   private async processExecution(depositMessage: DepositAddressMessage): Promise<void> {
+    const { version } = depositMessage;
+    // Only v1 (or legacy messages with no version) are supported. Drop v2/v3 explicitly.
+    if (version === 2 || version === 3) {
+      this.logger.debug({
+        at: "DepositAddressHandler#processExecution",
+        message: "deposit-address transfer skipped: unsupported message version",
+        version,
+        depositAddress: depositMessage.depositAddress,
+        paramsHash: depositMessage.paramsHash,
+        txHash: depositMessage.erc20Transfer.transactionHash,
+        chainId: depositMessage.erc20Transfer.chainId,
+      });
+      return;
+    }
+
     const classification = depositMessage.erc20Transfer.transferClassification;
     if (classification === "correct_transfer") {
       return this.initiateDeposit(depositMessage);
