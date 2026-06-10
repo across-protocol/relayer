@@ -1,37 +1,30 @@
 import assert from "assert";
 import minimist from "minimist";
-import { Contract, utils as ethersUtils } from "ethers";
-import { AbiEvent, BaseError, Block, createPublicClient, http, parseAbiItem } from "viem";
+import { Contract } from "ethers";
 import { Log } from "../interfaces";
 import {
-  EventManager,
-  isDefined,
+  delay,
   getBlockForTimestamp,
   getChainQuorum,
   getDeploymentBlockNumber,
   getNetworkName,
-  getNodeUrlList,
-  getOriginFromURL,
   getProvider,
-  getProviderHeaders,
-  getViemChain,
+  isDefined,
   Logger,
+  paginatedEventQuery,
   Provider,
-  retry,
   SpokePool,
   winston,
 } from "../utils";
 import { getRedisCache } from "../cache/Redis";
-import { ScraperOpts } from "./types";
-import { bootstrap, waitForAbort } from "./util/bootstrap";
+import { bootstrap } from "./util/bootstrap";
 import { postBlock, postEvents, removeEvent } from "./util/ipc";
-import { scrapeEvents as _scrapeEvents } from "./util/evm";
 
 const PROGRAM = "RelayerSpokePoolListenerTVM";
-export const REORG_WINDOW = 128n;
-// Trailing re-poll depth: a failed or lagging getLogs is retried on later blocks before its quorum
-// vote is lost. EventManager dedupes the overlap.
-const LOG_RETRY_DEPTH = 16n;
+// Re-org reconcile window: re-scan this many trailing blocks each pass and diff against posted events.
+export const REORG_WINDOW = 128;
+// Seconds between head polls.
+const POLL_INTERVAL_S = 1;
 const abortController = new AbortController();
 
 let spokePool: Contract;
@@ -40,239 +33,146 @@ let chainId: number;
 let chain: string;
 
 /**
- * Process one head-block arrival with parent-hash-based re-org detection. Any
- * events in `eventMgr` whose blockNumber is above the resolved fork point are
- * removed in place and returned, so the caller can IPC-notify the parent. This
- * function is exported so it can be driven directly from unit tests without
- * standing up a real viem provider.
+ * Diff a freshly-scraped re-org window against previously-posted events. Events still present are
+ * left as-is, newly-seen events are returned as additions, and posted events within the window that
+ * have vanished (re-orged out) are returned as removals. `posted` is updated in place and pruned of
+ * events that have aged below the window (final, not re-orged). Exported for unit testing.
  */
-export function processBlock(
-  block: Block,
-  blocks: Map<bigint, string>,
-  chain: string,
-  provider: string,
-  logger: winston.Logger,
-  reorgWindow = REORG_WINDOW
-): { forkedBlock?: number; accepted: boolean } {
-  if (!block || block.hash === null || block.number === null) {
-    logger.debug({
-      at: `${PROGRAM}::processBlock`,
-      message: `Received empty ${chain} block from ${provider}.`,
-    });
-    return { accepted: false };
-  }
+export function reconcileWindow(
+  current: Log[],
+  posted: Map<string, Log>,
+  windowStart: number
+): { additions: Log[]; removals: Log[] } {
+  const key = (event: Log): string => `${event.event}-${event.blockHash}-${event.transactionHash}-${event.logIndex}`;
+  const currentKeys = new Set(current.map(key));
 
-  let forkedBlock: number | undefined;
-  const expectedParentHash = blocks.get(block.number - 1n);
-  if (expectedParentHash !== undefined && expectedParentHash !== block.parentHash) {
-    for (const [num, hash] of blocks) {
-      if (hash === block.parentHash) {
-        forkedBlock = Number(num);
-        break;
-      }
-    }
-
-    const deep = forkedBlock === undefined;
-    forkedBlock ??= Math.min(...[...blocks.keys()].map(Number)) - 1;
-    const fork = forkedBlock; // const binding for the filter closure below.
-    const message = deep
-      ? `${chain} deep re-org at block ${block.number}; retracting votes above block ${fork}.`
-      : `${chain} re-org detected at block ${block.number}; resuming from block ${fork}.`;
-    logger.warn({ at: `${PROGRAM}::processBlock`, message, provider });
-
-    for (const num of [...blocks.keys()].filter((n) => Number(n) > fork)) {
-      blocks.delete(num);
+  const removals: Log[] = [];
+  for (const [eventKey, event] of posted) {
+    if (event.blockNumber >= windowStart && !currentKeys.has(eventKey)) {
+      removals.push(event);
+      posted.delete(eventKey);
     }
   }
 
-  blocks.set(block.number, block.hash);
+  const additions = current.filter((event) => !posted.has(key(event)));
+  additions.forEach((event) => posted.set(key(event), event));
 
-  const pruneThreshold = block.number - reorgWindow;
-  for (const num of [...blocks.keys()]) {
-    if (num < pruneThreshold) {
-      blocks.delete(num);
+  // Drop events that have aged below the window: they are final, not re-orged.
+  for (const [eventKey, event] of posted) {
+    if (event.blockNumber < windowStart) {
+      posted.delete(eventKey);
     }
   }
 
-  return { forkedBlock, accepted: true };
+  return { additions, removals };
 }
 
-// TVM chains (TRON) use HTTPS unconditionally — wss is not reliably supported by public
-// Tron JSON-RPC endpoints, and viem's `watchBlocks` degrades to polling under http, which
-// is the right behaviour here.
-function resolveProviders(chainId: number, quorum = 1) {
-  const providerUrls = getNodeUrlList(chainId, quorum, "https");
-  const nProviders = Object.keys(providerUrls).length;
-  assert(nProviders >= quorum, `Insufficient providers for ${chain} (minimum ${quorum} required by quorum)`);
-
-  const viemChain = getViemChain(chainId);
-  return Object.entries(providerUrls).map(([provider, url]) => {
-    const headers = getProviderHeaders(provider, chainId);
-    return createPublicClient({
-      chain: viemChain,
-      transport: http(url, { fetchOptions: { headers } }),
-      name: getOriginFromURL(url),
-    });
-  });
-}
+type ListenOpts = {
+  liveEvents: string[];
+  historicalEvents: string[];
+  provider: Provider;
+  startBlock: number;
+  maxBlockRange: number;
+};
 
 /**
- * Aggregate utils/scrapeEvents for a series of event names.
+ * Index SpokePool events off a single quorum RetryProvider, which imposes node quorum on every
+ * eth_getLogs. Backfill the look-back-only events once, then loop: advance over new blocks and
+ * re-scan the trailing re-org window each pass, reconciling it against the events already posted.
  */
-async function scrapeEvents(
-  address: string,
-  eventSignatures: string[],
-  provider: Provider,
-  opts: ScraperOpts
-): Promise<number> {
-  const at = `${PROGRAM}::scrapeEvents`;
-  const { number: toBlock, timestamp: currentTime } = await provider.getBlock("latest");
-
-  const events = (
-    await Promise.all(
-      eventSignatures.map(async (sig) => {
-        try {
-          return await _scrapeEvents(provider, address, sig, { ...opts, toBlock }, logger);
-        } catch {
-          logger.warn({ at, message: `Failed to scrape ${chain} events.`, event: sig });
-          return Promise.resolve([]);
-        }
-      })
-    )
-  ).flat();
-
-  if (!abortController.signal.aborted) {
-    let stop = !postBlock(toBlock, currentTime);
-    if (events.length > 0) {
-      stop ||= !postEvents(events);
-    }
-    if (stop) {
-      abortController.abort();
-    }
-  }
-
-  return toBlock;
-}
-
-/**
- * Drive `processBlock` for each head from the primary provider and fan the event
- * stream through EventManager across all providers. EventManager stays on its
- * master API; orphan removal is handled by `processBlock`.
- *
- * TRON JSON-RPC providers expire filter ids aggressively, so viem's `watchEvent`
- * (which polls via `eth_newFilter` + `eth_getFilterChanges`) fails with
- * "filter not found". Poll `eth_getLogs` per accepted block instead.
- */
-async function listen(
-  eventMgr: EventManager,
-  spokePoolAddr: string,
-  eventSignatures: string[],
-  quorum: number,
-  scrapedToBlock: number
-): Promise<void> {
+async function listen({
+  liveEvents,
+  historicalEvents,
+  provider,
+  startBlock,
+  maxBlockRange,
+}: ListenOpts): Promise<void> {
   const at = `${PROGRAM}::listen`;
-  const providers = resolveProviders(chainId, quorum);
-  const events = eventSignatures.map((sig) => parseAbiItem(sig.replace("tuple", "")) as AbiEvent);
-  const address = spokePoolAddr as `0x${string}`;
-  // Floor the trailing window one past the scrape: a fresh EventManager would otherwise re-post
-  // already-scraped events on the first poll, and the parent doesn't dedupe added events.
-  const liveFrom = BigInt(scrapedToBlock) + 1n;
+  const contract = spokePool.connect(provider);
 
-  // Poll one provider's logs into EventManager. Per-provider (replacing filter-based watchEvent,
-  // which TRON expires) so a lagging or failing provider still votes once it catches up.
-  const pollLogs = async (provider: (typeof providers)[number], head: bigint): Promise<void> => {
-    const lookback = head > LOG_RETRY_DEPTH ? head - LOG_RETRY_DEPTH : 0n;
-    const fromBlock = lookback > liveFrom ? lookback : liveFrom;
-    if (fromBlock > head) {
-      return;
+  const getEvents = async (eventNames: string[], fromBlock: number, toBlock: number): Promise<Log[]> => {
+    if (eventNames.length === 0 || toBlock < fromBlock) {
+      return [];
     }
-    const getLogs = () => provider.getLogs({ address, events, fromBlock, toBlock: head });
-    // TRON RPCs intermittently return empty bodies; retry, else the trailing window re-polls it.
-    const rawLogs = await retry(getLogs, 3, 1).catch((error: BaseError) => {
-      const { message: errorMessage, details, shortMessage, metaMessages } = error;
-      logger.warn({
-        at,
-        message: `Caught ${chain} getLogs error.`,
-        errorMessage,
-        shortMessage,
-        details,
-        metaMessages,
-        provider: provider.name,
-        fromBlock: Number(fromBlock),
-        toBlock: Number(head),
-      });
-      return undefined;
-    });
-    if (!isDefined(rawLogs)) {
-      return;
-    }
-
-    for (const raw of rawLogs) {
-      const log: Log = {
-        ...raw,
-        args: raw.args,
-        blockNumber: Number(raw.blockNumber),
-        event: raw.eventName,
-        topics: Array<string>(),
-        // eth_getLogs omits `removed`; parent asserts `removed === false` (removals go via processBlock).
-        removed: false,
-      };
-
-      if (eventMgr.add(log, provider.name) && !postEvents([log])) {
-        abortController.abort();
-      }
-    }
+    const searchConfig = { from: fromBlock, to: toBlock, maxLookBack: maxBlockRange };
+    const results = await Promise.all(
+      eventNames.map((name) =>
+        paginatedEventQuery(contract, contract.filters[name](), searchConfig).catch((error) => {
+          logger.warn({
+            at,
+            message: `Failed to query ${chain} ${name} events.`,
+            fromBlock,
+            toBlock,
+            error: `${error}`,
+          });
+          return [] as Log[];
+        })
+      )
+    );
+    return results.flat();
   };
 
-  const logBlockError = (provider: (typeof providers)[number], error: Error): void => {
-    const { message: errorMessage, details, shortMessage, metaMessages } = error as BaseError;
-    logger.warn({
-      at,
-      message: `Caught ${chain} block error.`,
-      errorMessage,
-      shortMessage,
-      details,
-      metaMessages,
-      provider: provider.name,
-    });
-  };
+  // Look-back-only events (root bundles, refund roots, speed-ups): scraped once up to the current
+  // head and never tracked live.
+  const { number: startHead } = await provider.getBlock("latest");
+  const historical = await getEvents(historicalEvents, startBlock, startHead);
+  if (historical.length > 0 && !postEvents(historical)) {
+    abortController.abort();
+    return;
+  }
 
-  // Each provider tracks its own chain and retracts only its own votes on re-org (eventMgr.reorg), so
-  // a fork some providers briefly follow can't post events the others never confirm, and is removed
-  // once those providers canonicalize. emitMissed keeps each stream contiguous for parent-hash
-  // tracking. The primary (index 0) additionally drives the block heartbeat.
-  providers.forEach((provider, idx) => {
-    const blocks = new Map<bigint, string>();
-    provider.watchBlocks({
-      emitOnBegin: true,
-      emitMissed: true,
-      onBlock: (block: Block) => {
-        const { forkedBlock, accepted } = processBlock(block, blocks, chain, provider.name, logger);
-        if (!accepted) {
-          return;
-        }
-        if (isDefined(forkedBlock)) {
-          for (const orphan of eventMgr.reorg(provider.name, forkedBlock)) {
-            if (!removeEvent({ ...orphan, removed: true })) {
-              abortController.abort();
-              return;
-            }
-          }
-        }
-        // Pending blocks have a null number; skip rather than posting block 0.
-        if (!isDefined(block.number)) {
-          return;
-        }
-        if (idx === 0 && !postBlock(Number(block.number), Number(block.timestamp))) {
-          abortController.abort();
-        }
-        void pollLogs(provider, block.number);
-      },
-      onError: (error: Error) => logBlockError(provider, error),
-    });
-  });
+  // Live events: advance over new blocks and re-scan the trailing re-org window, reconciling against
+  // what we've posted (vanished → removeEvent, new or re-org-replaced → postEvents).
+  const posted = new Map<string, Log>();
+  let scannedThrough = startBlock - 1;
 
-  return waitForAbort(abortController.signal);
+  while (!abortController.signal.aborted) {
+    let head: number;
+    let currentTime: number;
+    try {
+      ({ number: head, timestamp: currentTime } = await provider.getBlock("latest"));
+    } catch (error) {
+      logger.warn({ at, message: `Caught ${chain} getBlock error.`, error: `${error}` });
+      await delay(POLL_INTERVAL_S);
+      continue;
+    }
+
+    if (head <= scannedThrough) {
+      await delay(POLL_INTERVAL_S);
+      continue;
+    }
+
+    const windowStart = Math.max(startBlock, head - REORG_WINDOW + 1);
+
+    // Backfill blocks strictly below the re-org window (initial catch-up and large head jumps); these
+    // are final, posted once and never reconciled.
+    const backfill = await getEvents(liveEvents, scannedThrough + 1, windowStart - 1);
+    if (backfill.length > 0 && !postEvents(backfill)) {
+      abortController.abort();
+      break;
+    }
+
+    const current = await getEvents(liveEvents, windowStart, head);
+    const { additions, removals } = reconcileWindow(current, posted, windowStart);
+
+    let ok = true;
+    for (const event of removals) {
+      ok &&= removeEvent({ ...event, removed: true });
+    }
+    if (ok && additions.length > 0) {
+      ok = postEvents(additions);
+    }
+    if (ok) {
+      scannedThrough = head;
+      ok = postBlock(head, currentTime);
+    }
+    if (!ok) {
+      abortController.abort();
+      break;
+    }
+
+    await delay(POLL_INTERVAL_S);
+  }
 }
 
 /**
@@ -306,8 +206,7 @@ async function run(argv: string[]): Promise<void> {
   const cache = await getRedisCache();
   const latestBlock = await quorumProvider.getBlock("latest");
 
-  // Deployment-block registry also lacks TVM entries; default to 0 so `scrapeEvents`
-  // can still bound the lookback window.
+  // Deployment-block registry also lacks TVM entries; default to 0 so the lookback window stays bounded.
   let deploymentBlock = 0;
   try {
     deploymentBlock = getDeploymentBlockNumber("SpokePool", chainId);
@@ -330,41 +229,19 @@ async function run(argv: string[]): Promise<void> {
 
   spokePool = new Contract(spokePoolAddr, SpokePool.abi);
 
-  const opts = {
-    spokePool: spokePoolAddr,
-    deploymentBlock,
-    lookback: latestBlock.number - startBlock,
+  logger.debug({
+    at,
+    message: `Starting ${chain} SpokePool indexer.`,
+    opts: { spokePool: spokePoolAddr, deploymentBlock, startBlock, maxBlockRange, quorum },
+  });
+
+  await listen({
+    liveEvents: ["FundsDeposited", "FilledRelay"],
+    historicalEvents: ["RequestedSpeedUpDeposit", "RelayedRootBundle", "ExecutedRelayerRefundRoot"],
+    provider: quorumProvider,
+    startBlock,
     maxBlockRange,
-    quorum,
-  };
-
-  logger.debug({ at, message: `Starting ${chain} SpokePool Indexer.`, opts });
-
-  logger.debug({ at, message: `Scraping previous ${chain} events.`, opts });
-
-  let scrapedToBlock = latestBlock.number;
-  if (latestBlock.number > startBlock) {
-    const events = [
-      "FundsDeposited",
-      "FilledRelay",
-      "RequestedSpeedUpDeposit",
-      "RelayedRootBundle",
-      "ExecutedRelayerRefundRoot",
-    ];
-
-    const _spokePool = spokePool.connect(quorumProvider);
-    const { address, interface: abi, provider } = _spokePool;
-    const signatures = events.map((event) => abi.getEvent(event).format(ethersUtils.FormatTypes.full));
-    scrapedToBlock = await scrapeEvents(address, signatures, provider, opts);
-  }
-
-  const events = ["FundsDeposited", "FilledRelay"];
-  const signatures = events.map((event) => spokePool.interface.getEvent(event).format(ethersUtils.FormatTypes.full));
-
-  logger.debug({ at, message: `Starting ${chain} listener.`, events, opts });
-
-  const eventMgr = new EventManager(logger, chainId, quorum);
-  await listen(eventMgr, spokePoolAddr, signatures, quorum, scrapedToBlock);
+  });
 }
 
 if (require.main === module) {
