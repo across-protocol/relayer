@@ -23,8 +23,10 @@ import { postBlock, postEvents, removeEvent } from "./util/ipc";
 const PROGRAM = "RelayerSpokePoolListenerTVM";
 // Re-org reconcile window: re-scan this many trailing blocks each pass and diff against posted events.
 export const REORG_WINDOW = 128;
-// Seconds between head polls.
-const POLL_INTERVAL_S = 1;
+// Seconds between head polls. Tuned just under TRON's ~3s block time: each new head is picked up
+// within an interval without polling several times per block. A no-new-block poll is just one
+// getBlock("latest"); any block missed by timing is covered by the next pass's range scan.
+const POLL_INTERVAL_S = 2;
 const abortController = new AbortController();
 
 let spokePool: Contract;
