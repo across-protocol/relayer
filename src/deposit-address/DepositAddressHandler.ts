@@ -23,14 +23,33 @@ import {
   normalizeDepositAddressMessage,
   toAddressType,
   TransactionReceipt,
+  getCurrentTime,
 } from "../utils";
 import { getRedisCache, RedisCacheInterface } from "../cache/Redis";
-import { DepositAddressMessage } from "../interfaces";
-import { AcrossSwapApiClient, TransactionClient, SwapApiResponse, SignedWithdrawResponse } from "../clients";
+import {
+  AnyDepositAddressMessage,
+  DepositAddressMessage,
+  DepositAddressMessageV3,
+  isDepositAddressMessageV3,
+} from "../interfaces";
+import {
+  AcrossSwapApiClient,
+  TransactionClient,
+  SwapApiResponse,
+  SignedWithdrawResponse,
+  DepositAddressExecuteResponse,
+} from "../clients";
 import { AcrossIndexerApiClient } from "../clients/AcrossIndexerApiClient";
 import { GcpPubSubPublisher, getGcpPubSubPublisher } from "../messaging/gcp";
 import { buildWithdrawExecutedPayload } from "./withdrawPayload";
 import ERC20_ABI from "../common/abi/MinimalERC20.json";
+
+/**
+ * Minimum seconds that must remain on a v3 execute response's signatureDeadline at submission
+ * time — headroom for simulation, broadcast and confirmation. Responses closer to expiry are
+ * dropped and re-requested fresh on the next poll.
+ */
+const V3_SIGNATURE_DEADLINE_BUFFER = 60;
 
 /**
  * Independent relayer bot which processes EIP-3009 signatures into deposits and corresponding fills.
@@ -268,13 +287,30 @@ export class DepositAddressHandler {
   }
 
   /**
-   * Dispatches an indexer message to the deposit or refund-withdraw path based on its classification:
-   *   - correct_transfer: forward deposit/execute path.
-   *   - mis_route / intent_refund: refund-withdraw path.
+   * Dispatches an indexer message to the deposit or refund-withdraw path based on its version and
+   * classification:
+   *   - v3 correct_transfer: thin-submitter execute path (initiateDepositV3).
+   *   - v3 anything else: dropped — the v3 refund-withdraw flow is not yet supported.
+   *   - v1 correct_transfer: forward deposit/execute path.
+   *   - v1 mis_route / intent_refund: refund-withdraw path.
    *   - anything else: dropped (forward-compat) until explicitly supported.
    */
-  private async processExecution(depositMessage: DepositAddressMessage): Promise<void> {
+  private async processExecution(depositMessage: AnyDepositAddressMessage): Promise<void> {
     const classification = depositMessage.erc20Transfer.transferClassification;
+    if (isDepositAddressMessageV3(depositMessage)) {
+      if (classification === "correct_transfer") {
+        return this.initiateDepositV3(depositMessage);
+      }
+      this.logger.debug({
+        at: "DepositAddressHandler#processExecution",
+        message: "deposit-address transfer skipped: v3 refund-withdraw not yet supported",
+        classification,
+        depositAddress: depositMessage.depositAddress,
+        txHash: depositMessage.erc20Transfer.transactionHash,
+        chainId: depositMessage.erc20Transfer.chainId,
+      });
+      return;
+    }
     if (classification === "correct_transfer") {
       return this.initiateDeposit(depositMessage);
     }
@@ -739,6 +775,221 @@ export class DepositAddressHandler {
     await this._persistExecutedDepositsRedis();
   }
 
+  /**
+   * v3 (upgradeable-counterfactual) deposit-execute path. The bot is a thin submitter: it relays
+   * funding context to the quote-api execute endpoint, which re-derives the deposit address and
+   * merkle materials server-side and returns ready-to-sign factory calldata wrapping
+   * `deployIfNeededAndExecute` — so unlike v1 there is no bot-side deploy step. The returned
+   * calldata embeds a deadline-bounded signature: it is perishable and is re-requested fresh on
+   * the next poll after any failure, never patched.
+   */
+  private async initiateDepositV3(depositMessage: DepositAddressMessageV3): Promise<void> {
+    const { depositAddress, routeParams, refundAddress, erc20Transfer, depositAddressNamespace } = depositMessage;
+    const { amount, transactionHash: refTxHash, contractAddress: inputToken } = erc20Transfer;
+    const originChainId = Number(erc20Transfer.chainId);
+    const destinationChainId = Number(routeParams.destinationChainId);
+    const depositKey = getDepositKey(depositMessage);
+
+    if (!this.config.relayerOriginChains.includes(originChainId)) {
+      return;
+    }
+
+    // Skip if a previous instance (or this one) already executed this deposit (persisted in Redis).
+    if (this.executedDepositTxHashes.has(refTxHash)) {
+      this.logger.debug({
+        at: "DepositAddressHandler#initiateDepositV3",
+        message: "Skipping already executed deposit (found in Redis)",
+        refTxHash,
+        depositKey,
+      });
+      return;
+    }
+
+    if (this.observedExecutedDeposits[originChainId]?.has(depositKey)) {
+      return;
+    }
+
+    this.observedExecutedDeposits[originChainId].add(depositKey);
+    // Release the in-flight lock on every exit path except a confirmed on-chain execute; an
+    // unexpected throw must not strand the depositKey, since the next poll would silently skip it.
+    let executeCommitted = false;
+    try {
+      // The execute endpoint identity (userAddress) must be an EVM address; non-EVM identities
+      // cannot be executed through this path.
+      if (depositAddressNamespace !== "evm" || refundAddress.namespace !== "evm") {
+        this.logger.warn({
+          at: "DepositAddressHandler#initiateDepositV3",
+          message: "Skipping v3 deposit: unsupported account namespace",
+          depositAddressNamespace,
+          refundAddressNamespace: refundAddress.namespace,
+          depositAddress,
+          refTxHash,
+          chainId: originChainId,
+        });
+        return;
+      }
+
+      // Defensive on-chain balance check — guards against reorged indexer messages and against
+      // acting on a deposit-address that has already been executed through another path.
+      const inputTokenContract = new Contract(inputToken, ERC20_ABI, this.providersByChain[originChainId]);
+      const onchainBalance: BigNumber = await inputTokenContract.balanceOf(depositAddress);
+      if (onchainBalance.lt(toBN(amount))) {
+        this.logger.debug({
+          at: "DepositAddressHandler#initiateDepositV3",
+          message: "Deposit address does not have sufficient input token balance to initiate deposit.",
+          depositKey,
+          depositAddress,
+          inputToken,
+          amount,
+          onchainBalance: onchainBalance.toString(),
+        });
+        return;
+      }
+
+      const executeResponse = await this._getExecuteTx(depositMessage);
+      if (!isDefined(executeResponse)) {
+        this.logger.warn({
+          at: "DepositAddressHandler#initiateDepositV3",
+          message: "Failed to fetch execute tx from swap API",
+          depositKey,
+          depositAddress,
+          chainId: originChainId,
+        });
+        return;
+      }
+      if (!this._validateExecuteResponse(executeResponse, depositMessage, originChainId, depositKey)) {
+        return;
+      }
+
+      const { executeTx: apiExecuteTx } = executeResponse;
+      const useDispatcher = this.depositAddressSigners.length > 0;
+      const executeTx = {
+        contract: this.getExecuteContract(apiExecuteTx.to, originChainId, useDispatcher),
+        method: "",
+        args: [apiExecuteTx.data],
+        value: toBN(apiExecuteTx.value),
+        chainId: originChainId,
+        message: "Completed Deposit Execution Successfully 🎯",
+        mrkdwn: `Completed execution of v3 Deposit on ${getNetworkName(originChainId)} to ${getNetworkName(
+          destinationChainId
+        )}, using deposit address ${blockExplorerLink(depositAddress, originChainId)}`,
+      };
+
+      const depositReceipt = await sendAndConfirmTransaction(executeTx, this.transactionClient, useDispatcher);
+      if (!isDefined(depositReceipt)) {
+        this.logger.warn({
+          at: "DepositAddressHandler#initiateDepositV3",
+          message: "Failed to submit execute tx",
+          depositKey,
+          executeTx: {
+            ...executeTx,
+            contract: executeTx.contract.address,
+          },
+        });
+        return;
+      }
+
+      // The execute is on-chain; keep the in-flight lock and persist to Redis immediately so
+      // handover cannot miss this execute.
+      this.executedDepositTxHashes.add(refTxHash);
+      executeCommitted = true;
+      await this._persistExecutedDepositsRedis();
+    } finally {
+      if (!executeCommitted) {
+        this.observedExecutedDeposits[originChainId].delete(depositKey);
+      }
+    }
+  }
+
+  /**
+   * Sanity-checks an execute response before submission. Most importantly, the API's re-derived
+   * deposit address must match the funded address from the indexer — a mismatch means the API
+   * would deploy/execute at a different address than the one holding the user's funds.
+   */
+  private _validateExecuteResponse(
+    executeResponse: DepositAddressExecuteResponse,
+    depositMessage: DepositAddressMessageV3,
+    originChainId: number,
+    depositKey: string
+  ): boolean {
+    const { depositAddress } = depositMessage;
+    const { executeTx, isPlaceholder, signatureDeadline } = executeResponse;
+    const logContext = {
+      at: "DepositAddressHandler#initiateDepositV3",
+      depositKey,
+      depositAddress,
+      chainId: originChainId,
+    };
+
+    if (executeResponse.depositAddress.toLowerCase() !== depositAddress.toLowerCase()) {
+      this.logger.warn({
+        ...logContext,
+        message: "Skipping execute: API-derived deposit address does not match funded deposit address",
+        apiDepositAddress: executeResponse.depositAddress,
+      });
+      return false;
+    }
+    if (executeTx.chainId !== originChainId) {
+      this.logger.warn({
+        ...logContext,
+        message: "Skipping execute: execute tx chainId does not match origin chainId",
+        executeTxChainId: executeTx.chainId,
+      });
+      return false;
+    }
+    if (isPlaceholder) {
+      this.logger.warn({
+        ...logContext,
+        message: "Skipping execute: API derivation used placeholder creation code",
+      });
+      return false;
+    }
+    // The embedded signature is deadline-bounded; leave headroom for simulation + broadcast +
+    // confirmation. A stale response is dropped and re-requested fresh on the next poll.
+    if (signatureDeadline < getCurrentTime() + V3_SIGNATURE_DEADLINE_BUFFER) {
+      this.logger.warn({
+        ...logContext,
+        message: "Skipping execute: signature deadline too close to expiry",
+        signatureDeadline,
+      });
+      return false;
+    }
+    return true;
+  }
+
+  private async _getExecuteTx(
+    depositMessage: DepositAddressMessageV3,
+    retriesRemaining = 3
+  ): Promise<DepositAddressExecuteResponse | undefined> {
+    const { routeParams, refundAddress, erc20Transfer } = depositMessage;
+    // The API re-derives the deposit address and merkle materials from this identity; the bot
+    // sends funding context only (relaying ≠ building calldata). executionFee is omitted for now:
+    // the API defaults it to 0 and bot-side fee pricing is deferred to a follow-up task.
+    const request = {
+      destination: {
+        token: {
+          chainId: Number(routeParams.destinationChainId),
+          address: routeParams.outputToken,
+        },
+        recipient: routeParams.recipient.address,
+      },
+      originChainId: Number(erc20Transfer.chainId),
+      userAddress: refundAddress.address,
+      amount: erc20Transfer.amount,
+      executionFeeRecipient: this.signerAddress.toNative(),
+    };
+    // `_post` swallows errors and returns undefined, so retry on both throw and falsy return.
+    try {
+      const result = await this.api.executeDepositAddress(request);
+      if (result) {
+        return result;
+      }
+    } catch {
+      // Logging is handled in AcrossSwapApiClient.
+    }
+    return retriesRemaining > 0 ? this._getExecuteTx(depositMessage, --retriesRemaining) : undefined;
+  }
+
   private getExecuteContract(address: string, originChainId: number, useDispatcher: boolean): Contract {
     const contract = new Contract(address, []);
     return useDispatcher ? contract : contract.connect(this.baseSigner.connect(this.providersByChain[originChainId]));
@@ -757,36 +1008,37 @@ export class DepositAddressHandler {
   /*
    * @notice Queries the Indexer API for all pending deposit addresses transactions. By default, do not retry since this endpoing is being polled.
    */
-  private async _queryIndexerApi(retriesRemaining = 3): Promise<DepositAddressMessage[]> {
-    let apiResponseData: DepositAddressMessage[] | undefined = undefined;
+  private async _queryIndexerApi(retriesRemaining = 3): Promise<AnyDepositAddressMessage[]> {
+    let apiResponseData: AnyDepositAddressMessage[] | undefined = undefined;
     try {
-      apiResponseData = await this.indexerApi.get<DepositAddressMessage[]>(this.config.indexerApiEndpoint, {});
+      apiResponseData = await this.indexerApi.get<AnyDepositAddressMessage[]>(this.config.indexerApiEndpoint, {});
     } catch {
       // Error log should have been emitted in IndexerApiClient.
     }
     if (!isDefined(apiResponseData)) {
       return retriesRemaining > 0 ? this._queryIndexerApi(--retriesRemaining) : [];
     }
-    // Drop unsupported v2/v3 messages BEFORE normalization. v2/v3 payloads may not carry the v1
-    // shape (routeParams/erc20Transfer/counterfactualMaterials), and normalizeDepositAddressMessage
-    // dereferences those unconditionally — a single bad message would throw and sink the whole batch,
-    // starving supported v1 messages in the same response. Only top-level fields are safe to read here.
+    // Drop unsupported message versions BEFORE normalization. Unsupported payloads (e.g. v2) may
+    // not carry the v1 shape (routeParams/erc20Transfer/counterfactualMaterials), and
+    // normalizeDepositAddressMessage dereferences those unconditionally — a single bad message
+    // would throw and sink the whole batch, starving supported messages in the same response.
+    // Only top-level fields are safe to read here. v3 items keep their own shape and are passed
+    // through un-normalized (the v3 execute path is EVM-only and guards namespaces itself).
     return apiResponseData
       .filter((message) => {
         const { version } = message;
-        if (version === 2 || version === 3) {
+        if (isDefined(version) && version !== 1 && version !== 3) {
           this.logger.debug({
             at: "DepositAddressHandler#_queryIndexerApi",
             message: "deposit-address transfer skipped: unsupported message version",
             version,
             depositAddress: message.depositAddress,
-            paramsHash: message.paramsHash,
           });
           return false;
         }
         return true;
       })
-      .map(normalizeDepositAddressMessage);
+      .map((message) => (isDepositAddressMessageV3(message) ? message : normalizeDepositAddressMessage(message)));
   }
 
   private async _getSwapApiQuote(

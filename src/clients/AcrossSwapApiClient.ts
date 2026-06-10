@@ -41,6 +41,46 @@ export interface SignedWithdrawResponse {
   deadline: number;
 }
 
+/**
+ * Request body for the v3 deposit-address execute endpoint. The API re-derives the deposit
+ * address and all counterfactual materials from the identity (`destination`, `userAddress`);
+ * the bot only supplies funding context and its payout address.
+ */
+export interface DepositAddressExecuteRequest {
+  destination: {
+    token: {
+      chainId: number;
+      address: string;
+    };
+    recipient: string;
+  };
+  originChainId: number;
+  /** The withdraw "user" identity committed at deposit-address creation (the refund address). */
+  userAddress: string;
+  /** Input amount as a decimal (or 0x-hex) bigint string. */
+  amount: string;
+  executionFeeRecipient: string;
+  /** Bot-priced payout, deducted from the bridged amount. Omitted => 0. */
+  executionFee?: string;
+}
+
+export interface DepositAddressExecuteResponse {
+  /** The API's re-derived deposit address; must match the funded address from the indexer. */
+  depositAddress: string;
+  executeTx: {
+    ecosystem: "evm";
+    chainId: number;
+    to: string;
+    data: string;
+    value: string;
+  };
+  signer: string;
+  /** Unix-seconds deadline on the embedded counterfactual signature; calldata is perishable. */
+  signatureDeadline: number;
+  /** True when the address derivation used placeholder creation code; never submit if set. */
+  isPlaceholder: boolean;
+}
+
 interface SwapData {
   approval?: {
     target: EvmAddress;
@@ -148,6 +188,10 @@ export class AcrossSwapApiClient extends BaseAcrossApiClient {
 
   async signedWithdraw(req: SignedWithdrawRequest): Promise<SignedWithdrawResponse | undefined> {
     return this._post<SignedWithdrawResponse>("/swap/counterfactual/sign-withdraw", req);
+  }
+
+  async executeDepositAddress(req: DepositAddressExecuteRequest): Promise<DepositAddressExecuteResponse | undefined> {
+    return this._post<DepositAddressExecuteResponse>("deposit-addresses/execute", req);
   }
 
   private _isRouteSupported(route: SwapRoute): boolean {
