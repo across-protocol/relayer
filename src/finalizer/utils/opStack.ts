@@ -511,9 +511,13 @@ async function viem_multicallOptimismFinalizations(
             message: `${prefix} is waiting on dispute-game resolution (airgap not yet started)`,
           });
         } else {
-          const secondsRemaining = Math.max(proofMaturitySeconds, finalizableAt - getCurrentTime(), 0);
+          // Finalizable at the later of the two clocks — proof maturity or the airgap; derive both
+          // the hours and the timestamp from it so they can't disagree.
+          const now = getCurrentTime();
+          const finalizableAtTs = Math.max(finalizableAt, now + proofMaturitySeconds);
+          const secondsRemaining = Math.max(finalizableAtTs - now, 0);
           const finalizableInHours = Number((secondsRemaining / 3600).toFixed(2));
-          const finalizableAtIso = new Date(finalizableAt * 1000).toISOString();
+          const finalizableAtIso = new Date(finalizableAtTs * 1000).toISOString();
           logger.debug({
             at: `${getNetworkName(chainId)}Finalizer`,
             message: `${prefix} is in dispute-game airgap; finalizable in ${finalizableInHours} hours (at ${finalizableAtIso})`,
