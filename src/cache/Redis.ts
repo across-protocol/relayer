@@ -7,10 +7,15 @@ import { disconnectRedisClient, getRedisClient, RedisClient } from "../utils/Red
 export { RedisClient };
 
 export interface RedisCacheInterface extends interfaces.CachingMechanismInterface {
+  acquireLock(key: string, token: string, ttlMs: number): Promise<boolean>;
   decr(key: string): Promise<number>;
   decrBy(key: string, amount: number): Promise<number>;
+  del(key: string): Promise<number>;
+  releaseLock(key: string, token: string): Promise<boolean>;
+  renewLock(key: string, token: string, ttlMs: number): Promise<boolean>;
   incr(key: string): Promise<number>;
   incrBy(key: string, amount: number): Promise<number>;
+  ttl(key: string): Promise<number | undefined>;
 }
 
 const globalNamespace = process.env.GLOBAL_CACHE_NAMESPACE || undefined;
@@ -69,6 +74,36 @@ export class RedisCache implements RedisCacheInterface {
       at: "RedisCache#set",
       message: `Rejecting set for key ${key} with non-positive expirySeconds (${expirySeconds}).`,
     });
+  }
+
+  async acquireLock(key: string, token: string, ttlMs: number): Promise<boolean> {
+    const reply = await this.client.set(this.getNamespacedKey(key), token, {
+      expiration: { type: "PX", value: ttlMs },
+      condition: "NX",
+    });
+    return reply === "OK";
+  }
+
+  async renewLock(key: string, token: string, ttlMs: number): Promise<boolean> {
+    const reply = await this.client.eval(
+      "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('pexpire', KEYS[1], ARGV[2]) else return 0 end",
+      {
+        keys: [this.getNamespacedKey(key)],
+        arguments: [token, String(ttlMs)],
+      }
+    );
+    return reply === 1;
+  }
+
+  async releaseLock(key: string, token: string): Promise<boolean> {
+    const reply = await this.client.eval(
+      "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
+      {
+        keys: [this.getNamespacedKey(key)],
+        arguments: [token],
+      }
+    );
+    return reply === 1;
   }
 
   sAdd(key: string, value: string): Promise<number> {

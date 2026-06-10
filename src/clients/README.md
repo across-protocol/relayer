@@ -6,6 +6,15 @@ The SpokePoolClient and HubPoolClient are responsible for fetching events and st
 
 These clients use cache management modules like the RedisClient in order to reduce event RPC request load and avoid rate-limits.
 
+### Indexed SpokePoolClient event listeners (`src/libexec`)
+
+In indexed mode the SpokePoolClient spawns a per-chain-family child listener that streams SpokePool events to it over IPC: `RelayerSpokePoolListener` (EVM), `RelayerSpokePoolListenerSVM` (Solana), `RelayerSpokePoolListenerTVM` (TRON). Common CLI args: `--chainid`, `--spokepool`, `--lookback` (seconds-from-head or `@<block>`), `--blockrange` (max `eth_getLogs` page, default 10,000), and `--quorum` (default `NODE_QUORUM_<chainId>` / `NODE_QUORUM`, else 1).
+
+EVM and SVM subscribe over websockets and apply quorum in the application layer: `EventManager` tallies each event across `quorum` providers before posting it. TRON's RPCs don't support websockets reliably and expire `eth_newFilter` ids, so the TVM listener instead polls `eth_getLogs` over a single quorum `RetryProvider` — which imposes node quorum on every query (`--quorum` is threaded into `getProvider` as an override) — and reconciles a trailing re-org window:
+
+- After a one-time historical backfill of the look-back-only events (`RequestedSpeedUpDeposit`, `RelayedRootBundle`, `ExecutedRelayerRefundRoot`) up to the startup head, it loops every ~2s (just under TRON's ~3s block time). On each new head it issues one `--blockrange`-paginated `eth_getLogs` for the live events (`FundsDeposited`, `FilledRelay`) over the last `REORG_WINDOW` (64) blocks and diffs the result against what it has posted: events that vanished (re-orged out) are removed, new or re-org-replacement events are added. A re-org is reflected within one poll once quorum converges; a failed query skips the pass and retries on the next poll.
+- On TRON the RPC URL must target QuikNode's eth-JSON-RPC path (`…/jsonrpc`); the bare token URL is the TronGrid API and 404s for `eth_*` calls.
+
 ## Inventory Client
 
 The InventoryClient has several important functions that all use its `InventoryConfig` as input
@@ -57,6 +66,31 @@ Computes the relayer's expected profit from filling a deposit by converting the 
 The Profit Client estimates what the gas cost would be to fill the deposit (i.e. submit the fill function's call data) on the destination chain and factors this into its profitability calculation.
 
 Importantly, the Profit CLient exposes certain configuration objects that the user can use to set profitability thresholds.
+
+### Per-token-pair policy overrides
+
+The Profit Client supports a registry of named "policies" that can short-circuit the standard `MIN_RELAYER_FEE_PCT_*` and `RELAYER_GAS_MULTIPLIER_*` lookups. The policies in `RELAYER_POLICIES` (comma-separated) are decoded once at construct time and evaluated in order; the first whose predicate matches the deposit wins. Env mutations after construction are ignored — operators should set policy env vars before the relayer starts.
+
+A policy named `<NAME>` (uppercased in env var keys) matches when:
+
+1. The destination chain ID is in `RELAYER_POLICY_<NAME>_DESTINATIONS_<srcSymbol>_<dstSymbol>` (comma-separated chain IDs).
+2. Either `RELAYER_POLICY_<NAME>_ORIGINS_<srcSymbol>_<dstSymbol>` is set and the origin chain ID is in that comma-separated list, **or** that env var is unset and the origin chain supports unmetered fast rebalance for the input token (hub chain, CCTP-eligible USDC, or OFT-eligible routes — see `isUnmeteredFastRebalance` in `src/utils/FillUtils.ts`). An explicit origin allowlist overrides the fast-rebalance default.
+
+`srcSymbol` and `dstSymbol` are the raw token symbols of the deposit's input and output tokens — they bypass the pegged-token symbol remap used by other profitability env vars.
+
+When a deposit matches policy `<NAME>`:
+
+- If `RELAYER_POLICY_<NAME>_MIN_FEE_PCT` is set, `minRelayerFeePct` returns it (may be negative to accept fills below break-even). If unset, the standard per-route/token/chain lookup and default apply.
+- If `RELAYER_POLICY_<NAME>_GAS_MULTIPLIER` is set, `resolveGasMultiplier` returns it (must satisfy `0 <= multiplier <= 4`; out-of-range values throw). If unset, the standard per-route/token/chain lookup and default apply.
+
+Example: accept zero-fee USDC->WETH fills into Arbitrum and Optimism with no gas-cost contribution, via a policy named `example`:
+
+```
+RELAYER_POLICIES=example
+RELAYER_POLICY_EXAMPLE_DESTINATIONS_USDC_WETH=42161,10
+RELAYER_POLICY_EXAMPLE_MIN_FEE_PCT=0
+RELAYER_POLICY_EXAMPLE_GAS_MULTIPLIER=0
+```
 
 ## Transaction Client
 
