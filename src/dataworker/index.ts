@@ -50,18 +50,14 @@ function getExecutorLockKey(hubPoolChainId: number): string {
 }
 
 type ExecutorMutex = {
-  // `{ skipRedis: true }` clears the heartbeat without calling releaseLock, so the
-  // Redis key expires on its TTL instead. Use this when we can't prove our broadcasts
-  // mined — letting the TTL be the backstop prevents a successor from racing a still-
-  // pending HubPool transaction.
-  release: (opts?: { skipRedis?: boolean }) => Promise<void>;
+  release: () => Promise<void>;
   // Throws if the lock is known to be lost. Call before any state-mutating broadcast
   // so we abort instead of racing a second instance that may now hold the lock.
   assertHeld: () => void;
 };
 
 async function acquireExecutorMutex(log: winston.Logger, cfg: DataworkerConfig): Promise<ExecutorMutex | undefined> {
-  const noop: ExecutorMutex = { release: async (_opts?: { skipRedis?: boolean }) => {}, assertHeld: () => {} };
+  const noop: ExecutorMutex = { release: async () => {}, assertHeld: () => {} };
 
   // No mutex is needed when this run will not touch HubPool root-bundle state.
   if (!cfg.proposerEnabled && !cfg.l1ExecutorEnabled) {
@@ -157,16 +153,11 @@ async function acquireExecutorMutex(log: winston.Logger, cfg: DataworkerConfig):
         throw new Error("Executor mutex lost mid-run; aborting before broadcast.");
       }
     },
-    release: async (opts?: { skipRedis?: boolean }) => {
+    release: async () => {
       clearInterval(heartbeat);
       if (lockLost) {
         // Lock is owned by another token (or expired); attempting releaseLock would no-op,
         // but skip the round-trip and the misleading warn-on-error path.
-        return;
-      }
-      if (opts?.skipRedis) {
-        // Caller could not confirm broadcasts; leave the key in place so the TTL is the
-        // backstop preventing a successor from racing a still-pending HubPool tx.
         return;
       }
       await redis.releaseLock(lockKey, token).catch((err) => {
@@ -179,70 +170,6 @@ async function acquireExecutorMutex(log: winston.Logger, cfg: DataworkerConfig):
       });
     },
   };
-}
-
-// MultiCallerClient.executeTxnQueues throws on any sibling-chain failure even when the
-// hub-chain submission succeeded; the successful hashes are stringified into the error
-// message rather than returned. Best-effort parse so we can still wait on the receipt
-// (otherwise a partial failure releases the mutex before the HubPool tx is mined).
-function recoverHubChainHashes(err: unknown, hubChainId: number): string[] {
-  if (!(err instanceof Error) || typeof err.message !== "string") {
-    return [];
-  }
-  const jsonStart = err.message.indexOf("{");
-  if (jsonStart === -1) {
-    return [];
-  }
-  try {
-    const txnRefs: Record<string, { result?: unknown; isError?: boolean }> = JSON.parse(err.message.slice(jsonStart));
-    const entry = txnRefs[String(hubChainId)];
-    if (entry && entry.isError === false && Array.isArray(entry.result)) {
-      return entry.result.filter((hash): hash is string => typeof hash === "string");
-    }
-  } catch {
-    // Error format may have changed; the receipt wait simply skips for this run.
-  }
-  return [];
-}
-
-// Wait for HubPool broadcasts to be mined before releasing the executor mutex. Without
-// this, a successor instance can acquire the lock between broadcast and mining, read
-// pre-broadcast HubPool state, and resubmit the same root-bundle action. Returns
-// `false` if any receipt failed to confirm within the timeout, in which case the
-// caller should leave the lock for the TTL to expire rather than explicitly releasing
-// it — otherwise a still-pending HubPool tx is racy after release.
-async function awaitHubPoolReceipts(
-  log: winston.Logger,
-  hubPool: { provider: Provider },
-  hubChainId: number,
-  txHashesByChain: Record<number, string[]>
-): Promise<{ allConfirmed: boolean }> {
-  const hashes = txHashesByChain[hubChainId] ?? [];
-  if (hashes.length === 0) {
-    return { allConfirmed: true };
-  }
-  const envTimeout = Number(process.env.DATAWORKER_EXECUTOR_RECEIPT_TIMEOUT_MS);
-  const timeoutMs = Number.isFinite(envTimeout) && envTimeout > 0 ? envTimeout : 5 * 60 * 1000;
-  let allConfirmed = true;
-  await Promise.all(
-    hashes.map((hash) =>
-      hubPool.provider.waitForTransaction(hash, 1, timeoutMs).catch((err) => {
-        // Mark as unconfirmed so the caller skips releaseLock and falls back to TTL.
-        // A still-pending or dropped txn means we cannot prove the next instance will
-        // observe our broadcast in HubPool state, so the lock TTL is the only safe
-        // backstop.
-        allConfirmed = false;
-        log.warn({
-          at: "Dataworker#awaitHubPoolReceipts",
-          message: "Timed out or errored waiting for HubPool broadcast receipt; deferring mutex release to lock TTL.",
-          hash,
-          timeoutMs,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      })
-    )
-  );
-  return { allConfirmed };
 }
 
 export async function createDataworker(
@@ -387,21 +314,15 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
   // does not touch HubPool root-bundle state), so fall through with a sentinel mutex
   // whose assertHeld() throws — guaranteeing no broadcast slips through.
   const executorMutex: ExecutorMutex = acquired ?? {
-    release: async (_opts?: { skipRedis?: boolean }) => {},
+    release: async () => {},
     assertHeld: () => {
       throw new Error("Executor mutex was not acquired; refusing to broadcast.");
     },
   };
   const lockNotAcquired = acquired === undefined;
 
-  // Captured across the broadcast paths so the finally block can wait for HubPool
-  // receipts before releasing the mutex.
-  let hubPoolProvider: Provider | undefined;
-  let lastBroadcastTxHashes: Record<number, string[]> | undefined;
-
   try {
     const { clients, dataworker } = await createDataworker(logger, baseSigner, config);
-    hubPoolProvider = clients.hubPoolClient.hubPool.provider;
     await config.update(logger); // Update address filter.
     const l1BlockTime = (await averageBlockTime(clients.hubPoolClient.hubPool.provider)).average;
     const adjustedL1BlockTime = l1BlockTime + Number(process.env["L1_BLOCK_TIME_BUFFER"] ?? l1BlockTime); // Default adjustment is double l1BlockTime.
@@ -587,17 +508,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
       }
 
       executorMutex.assertHeld();
-      try {
-        lastBroadcastTxHashes = await clients.multiCallerClient.executeTxnQueues();
-      } catch (err) {
-        // If a sibling chain rejected, executeTxnQueues throws even when the hub
-        // submission succeeded; capture the hub hashes so the receipt wait still runs.
-        const hubHashes = recoverHubChainHashes(err, config.hubPoolChainId);
-        if (hubHashes.length > 0) {
-          lastBroadcastTxHashes = { [config.hubPoolChainId]: hubHashes };
-        }
-        throw err;
-      }
+      await clients.multiCallerClient.executeTxnQueues();
     } else {
       // If the proposer/executor is expected to await its challenge period:
       // - We need a defined redis instance so we can publish our botIdentifier and runIdentifier (so future instances are aware of our existence).
@@ -686,34 +597,10 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
         }
       }
       executorMutex.assertHeld();
-      try {
-        lastBroadcastTxHashes = await clients.multiCallerClient.executeTxnQueues();
-      } catch (err) {
-        // If a sibling chain rejected, executeTxnQueues throws even when the hub
-        // submission succeeded; capture the hub hashes so the receipt wait still runs.
-        const hubHashes = recoverHubChainHashes(err, config.hubPoolChainId);
-        if (hubHashes.length > 0) {
-          lastBroadcastTxHashes = { [config.hubPoolChainId]: hubHashes };
-        }
-        throw err;
-      }
+      await clients.multiCallerClient.executeTxnQueues();
     }
   } finally {
-    let skipRedisRelease = false;
-    if (hubPoolProvider && lastBroadcastTxHashes) {
-      const { allConfirmed } = await awaitHubPoolReceipts(
-        logger,
-        { provider: hubPoolProvider },
-        config.hubPoolChainId,
-        lastBroadcastTxHashes
-      );
-      // If any HubPool tx is still pending past the receipt timeout, releasing the
-      // Redis lock now would let a successor read pre-broadcast state and resubmit
-      // the same root-bundle action. Leave the key in place; the lock TTL is the
-      // backstop in that case.
-      skipRedisRelease = !allConfirmed;
-    }
-    await executorMutex.release({ skipRedis: skipRedisRelease });
+    await executorMutex.release();
     await disconnectRedisClients(logger);
   }
 }
