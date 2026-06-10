@@ -49,24 +49,22 @@ let chain: string;
 export function processBlock(
   block: Block,
   blocks: Map<bigint, string>,
-  eventMgr: EventManager,
   chain: string,
   provider: string,
   logger: winston.Logger,
   reorgWindow = REORG_WINDOW
-): { orphans: Log[]; accepted: boolean } {
+): { forkedBlock?: number; accepted: boolean } {
   if (!block || block.hash === null || block.number === null) {
     logger.debug({
       at: `${PROGRAM}::processBlock`,
       message: `Received empty ${chain} block from ${provider}.`,
     });
-    return { orphans: [], accepted: false };
+    return { accepted: false };
   }
 
-  const orphans: Log[] = [];
+  let forkedBlock: number | undefined;
   const expectedParentHash = blocks.get(block.number - 1n);
   if (expectedParentHash !== undefined && expectedParentHash !== block.parentHash) {
-    let forkedBlock: number | undefined;
     for (const [num, hash] of blocks) {
       if (hash === block.parentHash) {
         forkedBlock = Number(num);
@@ -76,23 +74,13 @@ export function processBlock(
 
     const deep = forkedBlock === undefined;
     forkedBlock ??= Math.min(...[...blocks.keys()].map(Number)) - 1;
+    const fork = forkedBlock; // const binding for the filter closure below.
     const message = deep
-      ? `${chain} deep re-org at block ${block.number}; purging all tracked events above block ${forkedBlock}.`
-      : `${chain} re-org detected at block ${block.number}; resuming from block ${forkedBlock}.`;
+      ? `${chain} deep re-org at block ${block.number}; retracting votes above block ${fork}.`
+      : `${chain} re-org detected at block ${block.number}; resuming from block ${fork}.`;
     logger.warn({ at: `${PROGRAM}::processBlock`, message, provider });
 
-    const orphanBlockHashes = new Set<string>();
-    for (const [hash, event] of Object.entries(eventMgr.events)) {
-      if (event.blockNumber > forkedBlock) {
-        orphans.push(event);
-        orphanBlockHashes.add(event.blockHash);
-        delete eventMgr.events[hash];
-      }
-    }
-    for (const blockHash of orphanBlockHashes) {
-      delete eventMgr.blockHashes[blockHash];
-    }
-    for (const num of [...blocks.keys()].filter((n) => Number(n) > forkedBlock)) {
+    for (const num of [...blocks.keys()].filter((n) => Number(n) > fork)) {
       blocks.delete(num);
     }
   }
@@ -106,7 +94,7 @@ export function processBlock(
     }
   }
 
-  return { orphans, accepted: true };
+  return { forkedBlock, accepted: true };
 }
 
 // TVM chains (TRON) use HTTPS unconditionally — wss is not reliably supported by public
@@ -184,7 +172,6 @@ async function listen(
 ): Promise<void> {
   const at = `${PROGRAM}::listen`;
   const providers = resolveProviders(chainId, quorum);
-  const blocks = new Map<bigint, string>();
   const events = eventSignatures.map((sig) => parseAbiItem(sig.replace("tuple", "")) as AbiEvent);
   const address = spokePoolAddr as `0x${string}`;
   // Floor the trailing window one past the scrape: a fresh EventManager would otherwise re-post
@@ -250,48 +237,40 @@ async function listen(
     });
   };
 
-  // Primary owns reorg detection + heartbeat (processBlock) and polls its own logs. emitMissed keeps
-  // the block stream contiguous, so polling neither skips blocks nor breaks parent-hash tracking.
-  const [blockProvider, ...secondaryProviders] = providers;
-  blockProvider.watchBlocks({
-    emitOnBegin: true,
-    emitMissed: true,
-    onBlock: (block: Block) => {
-      const { orphans, accepted } = processBlock(block, blocks, eventMgr, chain, blockProvider.name, logger);
-      if (!accepted) {
-        return;
-      }
-      for (const orphan of orphans) {
-        if (!removeEvent({ ...orphan, removed: true })) {
-          abortController.abort();
-          return;
-        }
-      }
-      // Pending blocks have a null number; skip rather than posting block 0.
-      if (!isDefined(block.number)) {
-        return;
-      }
-      if (!postBlock(Number(block.number), Number(block.timestamp))) {
-        abortController.abort();
-      }
-      void pollLogs(blockProvider, block.number);
-    },
-    onError: (error: Error) => logBlockError(blockProvider, error),
-  });
-
-  for (const provider of secondaryProviders) {
+  // Each provider tracks its own chain and retracts only its own votes on re-org (eventMgr.reorg), so
+  // a fork some providers briefly follow can't post events the others never confirm, and is removed
+  // once those providers canonicalize. emitMissed keeps each stream contiguous for parent-hash
+  // tracking. The primary (index 0) additionally drives the block heartbeat.
+  providers.forEach((provider, idx) => {
+    const blocks = new Map<bigint, string>();
     provider.watchBlocks({
       emitOnBegin: true,
       emitMissed: true,
       onBlock: (block: Block) => {
+        const { forkedBlock, accepted } = processBlock(block, blocks, chain, provider.name, logger);
+        if (!accepted) {
+          return;
+        }
+        if (isDefined(forkedBlock)) {
+          for (const orphan of eventMgr.reorg(provider.name, forkedBlock)) {
+            if (!removeEvent({ ...orphan, removed: true })) {
+              abortController.abort();
+              return;
+            }
+          }
+        }
+        // Pending blocks have a null number; skip rather than posting block 0.
         if (!isDefined(block.number)) {
           return;
+        }
+        if (idx === 0 && !postBlock(Number(block.number), Number(block.timestamp))) {
+          abortController.abort();
         }
         void pollLogs(provider, block.number);
       },
       onError: (error: Error) => logBlockError(provider, error),
     });
-  }
+  });
 
   return waitForAbort(abortController.signal);
 }

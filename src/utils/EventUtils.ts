@@ -162,6 +162,45 @@ export class EventManager {
   }
 
   /**
+   * Retract `provider`'s votes for events above a re-org fork point. Only events that fall below
+   * quorum as a result are returned (for removal), so one provider's fork can't evict events the
+   * others still confirm.
+   */
+  reorg(provider: string, forkedBlock: number): Log[] {
+    const orphaned: Log[] = [];
+    Object.entries(this.events).forEach(([eventKey, event]) => {
+      if (event.blockNumber <= forkedBlock) {
+        return;
+      }
+      const providerIdx = event.providers.indexOf(provider);
+      if (providerIdx === -1) {
+        return;
+      }
+
+      const hadQuorum = event.providers.length >= this.quorum;
+      event.providers.splice(providerIdx, 1);
+      if (hadQuorum && event.providers.length < this.quorum) {
+        orphaned.push(event);
+      }
+
+      if (event.providers.length === 0) {
+        delete this.events[eventKey];
+        const keys = this.blockHashes[event.blockHash];
+        if (isDefined(keys)) {
+          const keyIdx = keys.indexOf(eventKey);
+          if (keyIdx !== -1) {
+            keys.splice(keyIdx, 1);
+          }
+          if (keys.length === 0) {
+            delete this.blockHashes[event.blockHash];
+          }
+        }
+      }
+    });
+    return orphaned;
+  }
+
+  /**
    * Remove all events corresponding to a blockHash.
    * @param event Event that was removed.
    * @param provider A string uniquely identifying the provider that supplied the event.
