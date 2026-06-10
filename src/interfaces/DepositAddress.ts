@@ -55,6 +55,8 @@ export interface DepositAddressMessage {
   adminWithdrawManagerContractAddress: string;
   counterfactualMaterials: CounterfactualMaterials;
   shouldSponsorAccountCreation: boolean;
+  /** Indexer message version. Bot only processes v1 (or absent = legacy v1); v2/v3 are ignored. */
+  version?: number;
 }
 
 // TODO: Add schema for SwapAPI response.

@@ -122,3 +122,46 @@ describe("DepositAddressHandler._getSwapApiQuote execution-fee params", function
     expect(BASE_PARAM_KEYS.every((key) => key in params)).to.equal(true);
   });
 });
+
+describe("DepositAddressHandler._queryIndexerApi version filtering", function () {
+  let handler: DepositAddressHandler;
+  let getStub: sinon.SinonStub;
+
+  type Internals = { _queryIndexerApi: () => Promise<DepositAddressMessage[]> };
+
+  beforeEach(function () {
+    const config = {} as unknown as DepositAddressHandlerConfig;
+    const logger = { debug: sinon.stub() } as unknown as winston.Logger;
+    handler = new DepositAddressHandler(logger, config, {} as unknown as Signer, []);
+    getStub = sinon.stub();
+    (handler as unknown as { indexerApi: { get: sinon.SinonStub } }).indexerApi = { get: getStub };
+  });
+
+  afterEach(() => sinon.restore());
+
+  async function query(messages: unknown[]): Promise<DepositAddressMessage[]> {
+    getStub.resolves(messages);
+    return (handler as unknown as Internals)._queryIndexerApi();
+  }
+
+  it("drops v2/v3 messages and keeps v1 + legacy in the same batch", async function () {
+    const v1 = { ...depositMessage({ withdrawLeaf }), version: 1 };
+    const legacy = depositMessage({ withdrawLeaf });
+    // v2/v3 payloads that do NOT carry the v1 shape — only normalized v1/legacy messages should
+    // ever reach normalizeDepositAddressMessage, so these must be filtered out before the map.
+    const v2 = { version: 2, depositAddress: DEPOSIT_ADDRESS, paramsHash: "0x" + "0".repeat(64) };
+    const v3 = { version: 3, depositAddress: DEPOSIT_ADDRESS, paramsHash: "0x" + "0".repeat(64) };
+
+    const result = await query([v2, v1, v3, legacy]);
+
+    expect(result).to.have.length(2);
+    expect(result.map((m) => m.version)).to.deep.equal([1, undefined]);
+  });
+
+  it("does not throw when a v2/v3 message lacks the v1 shape", async function () {
+    // A bare v2 payload would make normalizeDepositAddressMessage throw if it reached the map;
+    // filtering before normalization must keep the poll alive.
+    const result = await query([{ version: 2 }]);
+    expect(result).to.deep.equal([]);
+  });
+});

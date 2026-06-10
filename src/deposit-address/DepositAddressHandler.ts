@@ -767,7 +767,26 @@ export class DepositAddressHandler {
     if (!isDefined(apiResponseData)) {
       return retriesRemaining > 0 ? this._queryIndexerApi(--retriesRemaining) : [];
     }
-    return apiResponseData.map(normalizeDepositAddressMessage);
+    // Drop unsupported v2/v3 messages BEFORE normalization. v2/v3 payloads may not carry the v1
+    // shape (routeParams/erc20Transfer/counterfactualMaterials), and normalizeDepositAddressMessage
+    // dereferences those unconditionally — a single bad message would throw and sink the whole batch,
+    // starving supported v1 messages in the same response. Only top-level fields are safe to read here.
+    return apiResponseData
+      .filter((message) => {
+        const { version } = message;
+        if (version === 2 || version === 3) {
+          this.logger.debug({
+            at: "DepositAddressHandler#_queryIndexerApi",
+            message: "deposit-address transfer skipped: unsupported message version",
+            version,
+            depositAddress: message.depositAddress,
+            paramsHash: message.paramsHash,
+          });
+          return false;
+        }
+        return true;
+      })
+      .map(normalizeDepositAddressMessage);
   }
 
   private async _getSwapApiQuote(
