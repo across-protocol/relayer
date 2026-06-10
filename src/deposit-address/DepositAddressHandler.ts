@@ -52,6 +52,14 @@ import ERC20_ABI from "../common/abi/MinimalERC20.json";
 const V3_SIGNATURE_DEADLINE_BUFFER = 60;
 
 /**
+ * Indexer message versions the bot knows how to execute. Anything else (e.g. v2, or a future
+ * version shipped on the indexer before the bot supports it) is dropped before normalization —
+ * an allowlist, not a v2 denylist, so an unknown shape can never reach normalizeDepositAddressMessage
+ * and sink the whole poll batch.
+ */
+const SUPPORTED_INDEXER_MESSAGE_VERSIONS = new Set([1, 3]);
+
+/**
  * Independent relayer bot which processes EIP-3009 signatures into deposits and corresponding fills.
  */
 export class DepositAddressHandler {
@@ -1027,7 +1035,7 @@ export class DepositAddressHandler {
     return apiResponseData
       .filter((message) => {
         const { version } = message;
-        if (isDefined(version) && version !== 1 && version !== 3) {
+        if (isDefined(version) && !SUPPORTED_INDEXER_MESSAGE_VERSIONS.has(version)) {
           this.logger.debug({
             at: "DepositAddressHandler#_queryIndexerApi",
             message: "deposit-address transfer skipped: unsupported message version",
