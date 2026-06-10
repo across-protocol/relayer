@@ -34,6 +34,7 @@ import {
   unpackDepositEvent,
   unpackFillEvent,
   chainIsEvm,
+  chainIsTvm,
 } from "../src/utils";
 import * as utils from "./utils";
 
@@ -270,8 +271,8 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
     return false;
   }
 
-  // todo: only EVM `fromChainId`s are supported now
-  assert(chainIsEvm(fromChainId));
+  // EVM and TVM (TRON) origins are supported; SVM is not handled by this ethers-based path.
+  assert(chainIsEvm(fromChainId) || chainIsTvm(fromChainId));
   const depositor = toAddressType(await signer.getAddress(), fromChainId);
   // `depositor.toNative()` emits the origin's native encoding (e.g. base58 for TVM), which
   // does not parse as a valid address on EVM destinations. Fall back to the EVM-format bytes
