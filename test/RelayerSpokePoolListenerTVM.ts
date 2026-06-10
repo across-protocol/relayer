@@ -1,20 +1,12 @@
-import assert from "assert";
 import { utils as ethersUtils } from "ethers";
-import { Block } from "viem";
-import { CHAIN_IDs } from "@across-protocol/constants";
 import { Log } from "../src/interfaces";
-import { EventManager } from "../src/utils";
-import { processBlock } from "../src/libexec/RelayerSpokePoolListenerTVM";
-import { createSpyLogger, expect, randomAddress } from "./utils";
+import { reconcileWindow } from "../src/libexec/RelayerSpokePoolListenerTVM";
+import { expect, randomAddress } from "./utils";
 
 const randomNumber = (ceil = 1_000_000) => Math.floor(Math.random() * ceil);
 const makeHash = () => ethersUtils.id(randomNumber().toString());
 
-function makeBlock(number: number, hash: string, parentHash: string): Block {
-  return { number: BigInt(number), hash, parentHash, timestamp: 1_000_000n } as Block;
-}
-
-function makeEvent(blockNumber: number, blockHash: string): Log {
+function makeEvent(blockNumber: number, blockHash = makeHash()): Log {
   return {
     blockNumber,
     transactionIndex: randomNumber(100),
@@ -26,115 +18,61 @@ function makeEvent(blockNumber: number, blockHash: string): Log {
     topics: [],
     args: {},
     blockHash,
-    event: "TestEvent",
+    event: "FundsDeposited",
   };
 }
 
-describe("RelayerSpokePoolListenerTVM: processBlock re-org detection", function () {
-  const chainId = CHAIN_IDs.MAINNET;
-  const chain = "mainnet";
-  const provider = "mock";
-
-  let blocks: Map<bigint, string>;
-  let eventMgr: EventManager;
-  let logger: ReturnType<typeof createSpyLogger>["spyLogger"];
+describe("RelayerSpokePoolListenerTVM: reconcileWindow", function () {
+  let posted: Map<string, Log>;
 
   beforeEach(function () {
-    ({ spyLogger: logger } = createSpyLogger());
-    blocks = new Map();
-    eventMgr = new EventManager(logger, chainId, 1);
+    posted = new Map();
   });
 
-  it("Tracks a canonical chain without detecting a fork", function () {
-    const h0 = makeHash();
-    const h1 = makeHash();
+  it("Posts newly-seen events and is idempotent on re-scan", function () {
+    const event = makeEvent(100);
 
-    const r0 = processBlock(makeBlock(100, h0, makeHash()), blocks, chain, provider, logger);
-    const r1 = processBlock(makeBlock(101, h1, h0), blocks, chain, provider, logger);
-    const r2 = processBlock(makeBlock(102, makeHash(), h1), blocks, chain, provider, logger);
+    let { additions, removals } = reconcileWindow([event], posted, 90);
+    expect(additions).to.deep.equal([event]);
+    expect(removals).to.be.empty;
+    expect(posted.size).to.equal(1);
 
-    expect(r0.accepted && r1.accepted && r2.accepted).to.be.true;
-    expect([r0, r1, r2].every((r) => r.forkedBlock === undefined)).to.be.true;
-    expect(blocks.size).to.equal(3);
+    // Re-scanning the same window yields no churn.
+    ({ additions, removals } = reconcileWindow([event], posted, 90));
+    expect(additions).to.be.empty;
+    expect(removals).to.be.empty;
   });
 
-  it("Ignores empty or null-hash blocks", function () {
-    const { accepted, forkedBlock } = processBlock(
-      makeBlock(100, null as unknown as string, makeHash()),
-      blocks,
-      chain,
-      provider,
-      logger
-    );
-    expect(accepted).to.be.false;
-    expect(forkedBlock).to.be.undefined;
-    expect(blocks.size).to.equal(0);
+  it("Removes events that vanish from the window (re-org)", function () {
+    const event = makeEvent(100);
+    reconcileWindow([event], posted, 90);
+
+    const { additions, removals } = reconcileWindow([], posted, 90);
+    expect(additions).to.be.empty;
+    expect(removals).to.deep.equal([event]);
+    expect(posted.size).to.equal(0);
   });
 
-  it("Gap between blocks does not trigger a re-org", function () {
-    const h100 = makeHash();
-    processBlock(makeBlock(100, h100, makeHash()), blocks, chain, provider, logger);
+  it("Replaces a re-orged event: removes the orphaned hash, adds the canonical one", function () {
+    const orphaned = makeEvent(100, "0xold");
+    reconcileWindow([orphaned], posted, 90);
 
-    const { forkedBlock } = processBlock(makeBlock(102, makeHash(), makeHash()), blocks, chain, provider, logger);
-
-    expect(forkedBlock).to.be.undefined;
+    const canonical = makeEvent(100, "0xnew");
+    const { additions, removals } = reconcileWindow([canonical], posted, 90);
+    expect(removals).to.deep.equal([orphaned]);
+    expect(additions).to.deep.equal([canonical]);
+    expect(posted.size).to.equal(1);
   });
 
-  it("Parent-hash mismatch reports the fork point and retracts orphaned events", function () {
-    const h100 = makeHash();
-    const h101 = makeHash();
+  it("Prunes events below the window without reporting them as removed", function () {
+    const event = makeEvent(50);
+    reconcileWindow([event], posted, 40);
+    expect(posted.size).to.equal(1);
 
-    processBlock(makeBlock(100, h100, makeHash()), blocks, chain, provider, logger);
-    processBlock(makeBlock(101, h101, h100), blocks, chain, provider, logger);
-
-    const event101 = makeEvent(101, h101);
-    eventMgr.add(event101, provider);
-
-    // Block 102 claims hash100 as its parent → fork point at 100, block 101 orphaned.
-    const { forkedBlock } = processBlock(makeBlock(102, makeHash(), h100), blocks, chain, provider, logger);
-    expect(forkedBlock).to.equal(100);
-    assert(forkedBlock !== undefined);
-
-    const orphans = eventMgr.reorg(provider, forkedBlock);
-    expect(orphans).to.have.lengthOf(1);
-    expect(orphans[0].blockNumber).to.equal(101);
-    expect(eventMgr.findEvent(eventMgr.getEventKey(event101))).to.not.exist;
-    expect(blocks.has(101n)).to.be.false;
-    expect(blocks.has(102n)).to.be.true;
-  });
-
-  it("Deep re-org (fork point outside window) retracts the whole tracked window", function () {
-    const h100 = makeHash();
-    const h101 = makeHash();
-    const h102 = makeHash();
-
-    processBlock(makeBlock(100, h100, makeHash()), blocks, chain, provider, logger);
-    processBlock(makeBlock(101, h101, h100), blocks, chain, provider, logger);
-    processBlock(makeBlock(102, h102, h101), blocks, chain, provider, logger);
-
-    const events = [makeEvent(100, h100), makeEvent(101, h101), makeEvent(102, h102)];
-    events.forEach((e) => eventMgr.add(e, provider));
-
-    // Block 103's parentHash is completely unknown → deep re-org.
-    const { forkedBlock } = processBlock(makeBlock(103, makeHash(), makeHash()), blocks, chain, provider, logger);
-    assert(forkedBlock !== undefined);
-
-    const orphans = eventMgr.reorg(provider, forkedBlock);
-    expect(orphans.map((e) => e.blockNumber).sort((a, b) => a - b)).to.deep.equal([100, 101, 102]);
-    expect(blocks.size).to.equal(1);
-    expect(blocks.has(103n)).to.be.true;
-  });
-
-  it("Prunes the block tracker beyond the re-org window", function () {
-    let prev = makeHash();
-    for (let i = 0; i < 135; i++) {
-      const hash = makeHash();
-      processBlock(makeBlock(i, hash, prev), blocks, chain, provider, logger);
-      prev = hash;
-    }
-
-    expect(blocks.has(0n)).to.be.false;
-    expect(blocks.has(134n)).to.be.true;
-    expect(blocks.size).to.be.at.most(129);
+    // Window advances past the event: it is final (aged out), not a re-org removal.
+    const { additions, removals } = reconcileWindow([], posted, 100);
+    expect(additions).to.be.empty;
+    expect(removals).to.be.empty;
+    expect(posted.size).to.equal(0);
   });
 });
