@@ -143,4 +143,30 @@ describe("EventManager: Event Handling ", function () {
     metQuorum = eventMgr.add(eventTemplate, provider4);
     expect(metQuorum).to.be.false;
   });
+
+  it("reorg retracts only the re-orging provider's vote, orphaning only below quorum", function () {
+    const [provider1, provider2, provider3] = providers;
+    eventMgr.add(eventTemplate, provider1);
+    eventMgr.add(eventTemplate, provider2); // quorum reached (relayed).
+    eventMgr.add(eventTemplate, provider3);
+    expect(eventMgr.getEventQuorum(eventKey)).to.equal(3);
+
+    // One provider re-orgs above the event: its vote drops but quorum still holds → no orphan.
+    expect(eventMgr.reorg(provider1, blockNumber - 1)).to.be.empty;
+    expect(eventMgr.getEventQuorum(eventKey)).to.equal(2);
+    expect(eventMgr.findEvent(eventKey)).to.exist;
+
+    // A second provider re-orgs → falls below quorum → orphaned for removal.
+    expect(eventMgr.reorg(provider2, blockNumber - 1)).to.have.lengthOf(1);
+  });
+
+  it("reorg ignores events at or below the fork point", function () {
+    const [provider1, provider2] = providers;
+    eventMgr.add(eventTemplate, provider1);
+    eventMgr.add(eventTemplate, provider2);
+
+    // Fork point at the event's own block: it is canonical, so the vote is untouched.
+    expect(eventMgr.reorg(provider1, blockNumber)).to.be.empty;
+    expect(eventMgr.getEventQuorum(eventKey)).to.equal(2);
+  });
 });
