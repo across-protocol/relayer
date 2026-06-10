@@ -89,6 +89,7 @@
     "dispute": "tsx ./scripts/hubpool.ts dispute",
     "update": "git pull && yarn reinstall && yarn version --non-interactive && git show --quiet",
     "update-addresses": "tsx ./scripts/fetch-addresses.ts",
+    "build-jussi-graph": "node -r ts-node/register ./scripts/buildJussiGraph.ts",
     "validate-root-bundle": "tsx ./src/scripts/validateRootBundle.ts | tee validateRootBundle-${REQUEST_TIME}.log"
   },
   "devDependencies": {

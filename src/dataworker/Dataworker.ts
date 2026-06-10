@@ -1677,6 +1677,23 @@ export class Dataworker {
   ): Promise<number> {
     const hubPoolChainId = this.clients.hubPoolClient.chainId;
 
+    // Final on-chain guard: re-read `claimedBitMap` at `latest` and drop any leaf
+    // whose bit is already set. Non-mainnet executeRootBundle leaves carry
+    // `canFailInSimulation: true` and therefore bypass the MultiCallerClient's
+    // simulation step, so an overlapping dataworker run that landed an execution
+    // between our earlier event-derived filter and broadcast would otherwise
+    // produce a duplicate transaction (and a duplicate "Executed PoolRebalanceLeaf"
+    // alert from the queued tx). Filter at the top of this function — before any
+    // side-effecting enqueue (exchange-rate sync, Orbit gas funding, mainnet
+    // slow-fill/refund enqueues, or executeRootBundle) and before the balance
+    // allocator commits virtual HubPool balance for a claimed leaf — so a claimed
+    // mainnet leaf also short-circuits the mainnet slow-fill/refund enqueues that
+    // would otherwise run against a stale `spokePoolClients[hubPool].getLatestRootBundleId()`.
+    const unclaimedPoolLeaves = await this._filterAlreadyClaimedPoolRebalanceLeaves(poolLeaves);
+    if (unclaimedPoolLeaves.length === 0) {
+      return 0;
+    }
+
     // There are three times that we should look to update the HubPool's liquid reserves:
     // 1. First, before we attempt to execute the HubChain PoolRebalance leaves and RelayerRefund leaves.
     //    We should see if there are new liquid reserves we need to account for before sending out these
@@ -1697,47 +1714,56 @@ export class Dataworker {
     // First, execute mainnet pool rebalance leaves. Then try to execute any relayer refund and slow leaves for the
     // expected relayed root hash, then proceed with remaining pool rebalance leaves. This is an optimization that
     // takes advantage of the fact that mainnet transfers between HubPool and SpokePool are atomic.
-    const mainnetLeaves = poolLeaves.filter((leaf) => leaf.chainId === hubPoolChainId);
+    const mainnetLeaves = unclaimedPoolLeaves.filter((leaf) => leaf.chainId === hubPoolChainId);
     if (mainnetLeaves.length > 0) {
       assert(mainnetLeaves.length === 1, "There should only be one Ethereum PoolRebalanceLeaf");
       latestLiquidReserves = await this._updateExchangeRatesBeforeExecutingHubChainLeaves(
         balanceAllocator,
         mainnetLeaves[0]
       );
-      leafCount += await this._executePoolRebalanceLeaves(
+      const mainnetBroadcastCount = await this._executePoolRebalanceLeaves(
         spokePoolClients,
         mainnetLeaves,
         balanceAllocator,
         poolRebalanceTree
       );
+      leafCount += mainnetBroadcastCount;
 
-      // We need to know the next root bundle ID for the mainnet spoke pool in order to execute leaves for roots that
-      // will be relayed after executing the above pool rebalance root.
-      const nextRootBundleIdForMainnet = spokePoolClients[hubPoolChainId].getLatestRootBundleId();
+      // Only execute the mainnet slow-fill and refund follow-ups if we actually broadcast the mainnet
+      // pool leaf. Otherwise the mainnet leaf was either filtered as already-claimed (by an overlapping
+      // dataworker run between the upstream filter and the broadcast-time re-read) or dropped as
+      // underfunded; in either case `spokePoolClients[hubPool].getLatestRootBundleId()` is stale (the
+      // overlapping run's `RelayedRootBundle` event isn't in our cache yet) and queuing refunds/slow-
+      // fills against it would broadcast against the wrong root bundle id.
+      if (mainnetBroadcastCount > 0) {
+        // We need to know the next root bundle ID for the mainnet spoke pool in order to execute leaves
+        // for roots that will be relayed after executing the above pool rebalance root.
+        const nextRootBundleIdForMainnet = spokePoolClients[hubPoolChainId].getLatestRootBundleId();
 
-      // Now, execute refund and slow fill leaves for Mainnet using any new funds. These methods will return early if there
-      // are no relevant leaves to execute.
-      await this._executeSlowFillLeaf(
-        slowFillLeaves.filter((leaf) => leaf.chainId === hubPoolChainId),
-        balanceAllocator,
-        spokePoolClients[hubPoolChainId],
-        slowFillTree,
-        nextRootBundleIdForMainnet
-      );
-      await this._executeRelayerRefundLeaves(
-        relayerRefundLeaves.filter((leaf) => leaf.chainId === hubPoolChainId),
-        balanceAllocator,
-        spokePoolClients[hubPoolChainId],
-        relayerRefundTree,
-        nextRootBundleIdForMainnet
-      );
+        // Now, execute refund and slow fill leaves for Mainnet using any new funds. These methods will
+        // return early if there are no relevant leaves to execute.
+        await this._executeSlowFillLeaf(
+          slowFillLeaves.filter((leaf) => leaf.chainId === hubPoolChainId),
+          balanceAllocator,
+          spokePoolClients[hubPoolChainId],
+          slowFillTree,
+          nextRootBundleIdForMainnet
+        );
+        await this._executeRelayerRefundLeaves(
+          relayerRefundLeaves.filter((leaf) => leaf.chainId === hubPoolChainId),
+          balanceAllocator,
+          spokePoolClients[hubPoolChainId],
+          relayerRefundTree,
+          nextRootBundleIdForMainnet
+        );
+      }
     }
 
     // Before executing the other pool rebalance leaves, see if we should update any exchange rates to account for
     // any tokens returned to the hub pool via the EthereumSpokePool that we'll need to use to execute
     // any of the remaining pool rebalance leaves. This is also important if we failed to execute
     // the mainnet leaf and haven't enqueued a sync call that could be used to execute some of the other leaves.
-    const nonHubChainPoolRebalanceLeaves = poolLeaves.filter((leaf) => leaf.chainId !== hubPoolChainId);
+    const nonHubChainPoolRebalanceLeaves = unclaimedPoolLeaves.filter((leaf) => leaf.chainId !== hubPoolChainId);
     if (nonHubChainPoolRebalanceLeaves.length === 0) {
       return leafCount;
     }
@@ -1753,7 +1779,7 @@ export class Dataworker {
     });
 
     // Save all L1 tokens that we haven't updated exchange rates for in a different step.
-    const l1TokensWithPotentiallyOlderUpdate = poolLeaves.reduce<EvmAddress[]>((l1TokenSet, leaf) => {
+    const l1TokensWithPotentiallyOlderUpdate = unclaimedPoolLeaves.reduce<EvmAddress[]>((l1TokenSet, leaf) => {
       const currLeafL1Tokens = leaf.l1Tokens;
       currLeafL1Tokens.forEach((l1Token, i) => {
         if (
@@ -1834,6 +1860,10 @@ export class Dataworker {
 
     // Evaluate leaves iteratively because we will be modifying virtual balances and we want
     // to make sure we are getting the virtual balance computations correct.
+    // Callers must apply `_filterAlreadyClaimedPoolRebalanceLeaves` upstream so we never
+    // commit balance reservations or enqueue side-effecting txs for a claimed leaf;
+    // we re-read the bitmap again immediately before the broadcast forEach below to
+    // narrow the race window that opens during the upstream side-effect work.
     const fundedLeaves = await this._getExecutablePoolRebalanceLeaves(allLeaves, balanceAllocator);
     const executableLeaves: PoolRebalanceLeaf[] = [];
     for (const leaf of fundedLeaves) {
@@ -1921,8 +1951,17 @@ export class Dataworker {
       executableLeaves.push(leaf);
     }
 
+    // Second claimed-bitmap read, immediately before broadcast. The upstream filter at
+    // the top of `_executePoolLeavesAndSyncL1Tokens` stops side-effecting txs from being
+    // enqueued for already-claimed leaves, but a competing executor can still claim one
+    // of these leaves during the intervening exchange-rate sync, optional mainnet
+    // execution, refund/slow-fill work, and per-leaf Orbit gas funding loop. Re-reading
+    // here narrows the race window for the duplicate-`executeRootBundle` broadcast that
+    // motivates this whole filter.
+    const leavesToBroadcast = await this._filterAlreadyClaimedPoolRebalanceLeaves(executableLeaves);
+
     // Execute the leaves:
-    executableLeaves.forEach((leaf) => {
+    leavesToBroadcast.forEach((leaf) => {
       // Add balances to spoke pool on mainnet since we know it will be sent atomically.
       if (leaf.chainId === hubPoolChainId) {
         const hubChainSpokePoolAddress = spokePoolClients[leaf.chainId].spokePoolAddress;
@@ -1961,7 +2000,42 @@ export class Dataworker {
       }
     });
 
-    return executableLeaves.length;
+    return leavesToBroadcast.length;
+  }
+
+  async _filterAlreadyClaimedPoolRebalanceLeaves(leaves: PoolRebalanceLeaf[]): Promise<PoolRebalanceLeaf[]> {
+    if (leaves.length === 0) {
+      return leaves;
+    }
+
+    let claimedBitMap: BigNumber;
+    try {
+      const rootBundle = await this.clients.hubPoolClient.hubPool.rootBundleProposal();
+      claimedBitMap = BigNumber.from(rootBundle.claimedBitMap);
+    } catch (err) {
+      // If this read fails we can't filter — defer to the existing simulation path and keep all leaves.
+      this.logger.warn({
+        at: "Dataworker#_filterAlreadyClaimedPoolRebalanceLeaves",
+        message: "Failed to re-read rootBundleProposal.claimedBitMap; skipping pre-broadcast filter.",
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return leaves;
+    }
+
+    const unclaimed: PoolRebalanceLeaf[] = [];
+    for (const leaf of leaves) {
+      if (claimedBitMap.shr(leaf.leafId).and(1).eq(1)) {
+        this.logger.debug({
+          at: "Dataworker#_filterAlreadyClaimedPoolRebalanceLeaves",
+          message: `Skipping leaf ${leaf.leafId} for ${getNetworkName(leaf.chainId)}: already claimed on-chain at broadcast time (likely an overlapping dataworker run).`,
+          leafId: leaf.leafId,
+          chainId: leaf.chainId,
+        });
+      } else {
+        unclaimed.push(leaf);
+      }
+    }
+    return unclaimed;
   }
 
   async _updateExchangeRatesBeforeExecutingHubChainLeaves(
@@ -2965,6 +3039,17 @@ export class Dataworker {
     // simulation failed` even though the on-chain state is correct. With it,
     // a behind RPC returns `MinContextSlotNotReached` immediately, which the
     // SDK's `RetrySolanaRpcFactory` transparently retries.
+    //
+    // `sendAndConfirmSolanaTransactionWithSlot` derives `confirmedSlot` from
+    // the same `getSignatureStatuses` response that reports confirmation
+    // (preferring `entry.slot`, falling back to the response's `context.slot`
+    // when the upstream RPC omits it). That tying-to-the-confirming-response
+    // is what makes the pin safe under load-balanced providers — an
+    // independent `getSlot` call could hit a different backend whose
+    // confirmed slot is still older than the tx's, leaving the pin too low.
+    // If confirmation wasn't observed at all within the cycle budget we throw
+    // rather than synthesize a floor, since proceeding would silently race
+    // the same write→read interaction this pin exists to prevent.
     let minContextSlot: bigint | undefined;
     const sendPinned = async (tx: Parameters<typeof sendAndConfirmSolanaTransactionWithSlot>[0]): Promise<string> => {
       const { signature, confirmedSlot } = await sendAndConfirmSolanaTransactionWithSlot(
@@ -2974,7 +3059,14 @@ export class Dataworker {
         SVM_REFUND_LEAF_SEND_POLL_DELAY_MS,
         { minContextSlot }
       );
-      if (isDefined(confirmedSlot) && (minContextSlot === undefined || confirmedSlot > minContextSlot)) {
+      if (!isDefined(confirmedSlot)) {
+        throw new Error(
+          `Solana tx ${signature} did not confirm within ` +
+            `${SVM_REFUND_LEAF_SEND_POLL_CYCLES * SVM_REFUND_LEAF_SEND_POLL_DELAY_MS}ms; ` +
+            "cannot advance minContextSlot for dependent sends"
+        );
+      }
+      if (minContextSlot === undefined || confirmedSlot > minContextSlot) {
         minContextSlot = confirmedSlot;
       }
       return signature;
@@ -3022,6 +3114,43 @@ export class Dataworker {
         allocatedMemory: relayerRefundLeafBytes.length,
         txSignature,
       });
+      // The minContextSlot pin guarantees the preflight RPC has reached the
+      // init tx's slot, but reaching the slot is not the same as having
+      // hydrated the account-index entry for the freshly-allocated PDA. On
+      // some upstream RPCs the simulator can still observe
+      // `account.data.len() == 0` for a brief window after the slot is
+      // processed, which trips Anchor's `ParamsWriteOverflow` (the bounds
+      // check `offset + data.len() > account.data.len()`) on the very first
+      // `WriteInstructionParamsFragment`. Polling the PDA via
+      // `fetchEncodedAccount` until it is visible at the requested size
+      // closes that window. The read is pinned with the same
+      // `{ commitment, minContextSlot }` the send path uses, so a load-
+      // balanced read to a behind RPC returns `MinContextSlotNotReached`
+      // (transparently retried by `RetrySolanaRpcFactory`) instead of a
+      // stale `exists: false` that would silently consume the poll budget.
+      // Same cycle/delay budget as the dependency-tx send so total
+      // worst-case latency stays bounded.
+      let observedSize = 0;
+      let ready = false;
+      for (let cycle = 0; cycle < SVM_REFUND_LEAF_SEND_POLL_CYCLES; ++cycle) {
+        const candidate = await fetchEncodedAccount(provider, instructionParamsPda, {
+          commitment: "confirmed",
+          minContextSlot,
+        });
+        observedSize = candidate.exists ? candidate.data.length : 0;
+        if (candidate.exists && observedSize >= relayerRefundLeafBytes.length) {
+          ready = true;
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, SVM_REFUND_LEAF_SEND_POLL_DELAY_MS));
+      }
+      if (!ready) {
+        throw new Error(
+          `Initialized instruction params PDA ${instructionParamsAccount.address} did not become visible at expected size ` +
+            `${relayerRefundLeafBytes.length} (observed ${observedSize}) within ` +
+            `${SVM_REFUND_LEAF_SEND_POLL_CYCLES * SVM_REFUND_LEAF_SEND_POLL_DELAY_MS}ms after init tx ${txSignature}`
+        );
+      }
     } else {
       this.logger.debug({
         at: "Dataworker#executeRelayerRefundLeafSvm",
