@@ -23,3 +23,7 @@ The dataworker runtime file is index.ts. This file contains a `runDataworker()` 
 1. Checks if there is an existing pending root bundle. If there is one, validate it. If invalid, submit a dispute, otherwise proceed.
 2. If no existing pending root bundle, construct and propose a new one.
 3. If existing pending root bundle has passed its optimistic challenge liveness window, then execute it by calling functions on the `HubPool` and functions on each spoke network's `SpokePool`. Recall that each root bundle refers to a Merkle root describing the list of relayer and depositor refunds. Therefore, executing these refunds amounts to submitting Merkle leaves from this Merkle root to the HubPool/SpokePool and letting those contracts send out payments based on those Merkle leaf contents.
+
+## L1 executor locking
+
+When `L1_EXECUTOR_ENABLED=true` and `SEND_TRANSACTIONS=true`, the L1 executor acquires a Redis lock keyed by hub chain before building pool-rebalance execution transactions. The lock is held until submitted hub-chain transactions have receipts, or until the lock TTL expires if receipts are not observed. `DATAWORKER_L1_EXECUTOR_LOCK_TTL_MS` and `DATAWORKER_L1_EXECUTOR_RECEIPT_TIMEOUT_MS` tune the default 5 minute lock TTL and 2 minute receipt wait.

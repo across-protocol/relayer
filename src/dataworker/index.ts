@@ -1,4 +1,5 @@
-import { TokenClient } from "../clients";
+import { randomUUID } from "node:crypto";
+import { SpokePoolClient, TokenClient } from "../clients";
 import {
   assert,
   blockExplorerLink,
@@ -20,7 +21,7 @@ import {
   paginatedEventQuery,
 } from "../utils";
 import { getRedisCache } from "../cache/Redis";
-import { waitForPubSub, getRedisPubSub } from "../messaging/redis";
+import { waitForPubSub, getRedisPubSub, RedisPubSub } from "../messaging/redis";
 import { spokePoolClientsToProviders } from "../common";
 import { Dataworker } from "./Dataworker";
 import { DataworkerConfig } from "./DataworkerConfig";
@@ -37,6 +38,275 @@ import { Disputer } from "./Disputer";
 
 config();
 let logger: winston.Logger;
+
+const DEFAULT_L1_EXECUTOR_LOCK_TTL_MS = 5 * 60 * 1000;
+const DEFAULT_L1_EXECUTOR_RECEIPT_TIMEOUT_MS = 2 * 60 * 1000;
+
+type L1ExecutorLock = {
+  assertHeld: () => void;
+  deferReleaseToTtl: () => void;
+  release: () => Promise<void>;
+};
+
+type L1ExecutorSectionParams = {
+  logger: winston.Logger;
+  config: DataworkerConfig;
+  clients: DataworkerClients;
+  dataworker: Dataworker;
+  spokePoolClients: { [chainId: number]: SpokePoolClient };
+  balanceAllocator: BalanceAllocator;
+  fromBlocks: { [chainId: number]: number };
+  pubSub: RedisPubSub | undefined;
+  botIdentifier: string;
+  runIdentifier: string;
+  personality: string;
+  challengeRemaining: number;
+  adjustedL1BlockTime: number;
+  lock: L1ExecutorLock;
+};
+
+type L1ExecutorSectionResult = {
+  poolRebalanceLeafExecutionCount: number;
+  handledTxnQueue: boolean;
+};
+
+function getL1ExecutorLockKey(hubPoolChainId: number): string {
+  return `dataworker:l1-executor:lock:${hubPoolChainId}`;
+}
+
+async function acquireL1ExecutorLock(log: winston.Logger, cfg: DataworkerConfig): Promise<L1ExecutorLock | undefined> {
+  const noop: L1ExecutorLock = {
+    assertHeld: () => {},
+    deferReleaseToTtl: () => {},
+    release: async () => {},
+  };
+
+  if (!cfg.sendingTransactionsEnabled) {
+    return noop;
+  }
+
+  let redis: Awaited<ReturnType<typeof getRedisCache>>;
+  try {
+    redis = await getRedisCache(log);
+  } catch (err) {
+    log.warn({
+      at: "Dataworker#acquireL1ExecutorLock",
+      message: "Redis cache unavailable; proceeding without L1 executor lock.",
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return noop;
+  }
+
+  if (!isDefined(redis)) {
+    return noop;
+  }
+
+  const lockKey = getL1ExecutorLockKey(cfg.hubPoolChainId);
+  const envTtl = Number(process.env.DATAWORKER_L1_EXECUTOR_LOCK_TTL_MS);
+  const lockTtlMs = Number.isFinite(envTtl) && envTtl > 0 ? envTtl : DEFAULT_L1_EXECUTOR_LOCK_TTL_MS;
+  const token = `${cfg.botIdentifier}:${cfg.runIdentifier}:${randomUUID()}`;
+
+  if (!(await redis.acquireLock(lockKey, token, lockTtlMs))) {
+    log[startupLogLevel(cfg)]({
+      at: "Dataworker#acquireL1ExecutorLock",
+      message: "Another L1 executor holds the lock; skipping L1 execution.",
+      lockKey,
+    });
+    return undefined;
+  }
+
+  let lockLost = false;
+  let deferRelease = false;
+  let lastConfirmedHeldAt = Date.now();
+  const markLost = (message: string): void => {
+    if (lockLost) {
+      return;
+    }
+    lockLost = true;
+    clearInterval(heartbeat);
+    log.error({ at: "Dataworker#acquireL1ExecutorLock", message, lockKey });
+  };
+  const heartbeat = setInterval(
+    () => {
+      void redis
+        .renewLock(lockKey, token, lockTtlMs)
+        .then((renewed) => {
+          if (renewed) {
+            lastConfirmedHeldAt = Date.now();
+          } else {
+            markLost("Lost ownership of L1 executor lock mid-run; aborting before broadcast.");
+          }
+        })
+        .catch((err) => {
+          log.warn({
+            at: "Dataworker#acquireL1ExecutorLock",
+            message: "Failed to renew L1 executor lock; it may expire mid-run.",
+            lockKey,
+            error: err instanceof Error ? err.message : String(err),
+          });
+          if (Date.now() - lastConfirmedHeldAt > lockTtlMs) {
+            markLost("L1 executor lock renewal failed past TTL; assuming ownership lost.");
+          }
+        });
+    },
+    Math.max(1_000, Math.floor(lockTtlMs / 3))
+  );
+
+  return {
+    assertHeld: () => {
+      if (!lockLost && Date.now() - lastConfirmedHeldAt > lockTtlMs) {
+        markLost("L1 executor lock renewal failed past TTL; assuming ownership lost.");
+      }
+      if (lockLost) {
+        throw new Error("L1 executor lock lost mid-run; aborting before broadcast.");
+      }
+    },
+    deferReleaseToTtl: () => {
+      deferRelease = true;
+    },
+    release: async () => {
+      clearInterval(heartbeat);
+      if (lockLost || deferRelease) {
+        return;
+      }
+      await redis.releaseLock(lockKey, token).catch((err) => {
+        log.warn({
+          at: "Dataworker#acquireL1ExecutorLock",
+          message: "Failed to release L1 executor lock; it will expire on TTL.",
+          lockKey,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+    },
+  };
+}
+
+async function waitForHubPoolReceipts(log: winston.Logger, provider: Provider, txHashes: string[]): Promise<boolean> {
+  if (txHashes.length === 0) {
+    return true;
+  }
+  const envTimeout = Number(process.env.DATAWORKER_L1_EXECUTOR_RECEIPT_TIMEOUT_MS);
+  const timeoutMs = Number.isFinite(envTimeout) && envTimeout > 0 ? envTimeout : DEFAULT_L1_EXECUTOR_RECEIPT_TIMEOUT_MS;
+  const receipts = await Promise.allSettled(txHashes.map((hash) => provider.waitForTransaction(hash, 1, timeoutMs)));
+  const allConfirmed = receipts.every((receipt) => receipt.status === "fulfilled" && receipt.value !== null);
+  if (!allConfirmed) {
+    log.warn({
+      at: "Dataworker#waitForHubPoolReceipts",
+      message: "Timed out or errored waiting for L1 executor receipts; deferring lock release to TTL.",
+      txHashes,
+      timeoutMs,
+    });
+  }
+  return allConfirmed;
+}
+
+async function runL1ExecutorSection(params: L1ExecutorSectionParams): Promise<L1ExecutorSectionResult> {
+  const {
+    logger,
+    config,
+    clients,
+    dataworker,
+    spokePoolClients,
+    balanceAllocator,
+    fromBlocks,
+    pubSub,
+    botIdentifier,
+    runIdentifier,
+    personality,
+    challengeRemaining,
+    adjustedL1BlockTime,
+    lock,
+  } = params;
+
+  const poolRebalanceLeafExecutionCount = await dataworker.executePoolRebalanceLeaves(
+    spokePoolClients,
+    balanceAllocator,
+    fromBlocks
+  );
+  if (poolRebalanceLeafExecutionCount === 0) {
+    return { poolRebalanceLeafExecutionCount, handledTxnQueue: false };
+  }
+
+  const { hubPool, currentTime: hubPoolCurrentTime } = clients.hubPoolClient;
+  assert(isDefined(hubPoolCurrentTime), "HubPoolClient currentTime is unset");
+  const pendingProposal: PendingRootBundle = await hubPool.rootBundleProposal();
+  const executorCollision =
+    pendingProposal.unclaimedPoolRebalanceLeafCount !== poolRebalanceLeafExecutionCount ||
+    (pendingProposal.challengePeriodEndTimestamp > hubPoolCurrentTime && !config.awaitChallengePeriod);
+  if (executorCollision) {
+    logger[startupLogLevel(config)]({
+      at: "Dataworker#index",
+      message: "Exiting early due to L1 executor collision",
+      executorCollision,
+      poolRebalanceLeafExecutionCount,
+      unclaimedPoolRebalanceLeafCount: pendingProposal.unclaimedPoolRebalanceLeafCount,
+      challengePeriodNotPassed: pendingProposal.challengePeriodEndTimestamp > hubPoolCurrentTime,
+      pendingProposal,
+    });
+    return { poolRebalanceLeafExecutionCount, handledTxnQueue: true };
+  }
+
+  const hasTransactionQueued = clients.multiCallerClient.transactionCount() !== 0;
+  if (pubSub && hasTransactionQueued) {
+    const challengeBuffer = Number(process.env.L1_EXECUTOR_CHALLENGE_BUFFER ?? 24); // Default to 24 seconds or 2 blocks.
+    let updatedChallengeRemaining = await getChallengeRemaining(config.hubPoolChainId, challengeBuffer, logger);
+    if (updatedChallengeRemaining > challengeRemaining) {
+      logger.debug({
+        at: "Dataworker#index",
+        message: `Exiting due to ${personality} collision.`,
+        challengeRemaining,
+        updatedChallengeRemaining,
+      });
+      return { poolRebalanceLeafExecutionCount, handledTxnQueue: true };
+    }
+    let counter = 0;
+
+    await pubSub.pub(botIdentifier, runIdentifier);
+    logger.debug({
+      at: "Dataworker#index",
+      message: `Published signal to ${botIdentifier} instances.`,
+    });
+
+    while (updatedChallengeRemaining > 0 && ++counter < 5) {
+      logger.debug({
+        at: "Dataworker#index",
+        message: `Waiting for updated challenge remaining ${updatedChallengeRemaining}`,
+      });
+      const handover = await waitForPubSub(
+        pubSub,
+        botIdentifier,
+        runIdentifier,
+        (updatedChallengeRemaining + adjustedL1BlockTime) * 1000
+      );
+      if (handover) {
+        logger.debug({
+          at: "Dataworker#index",
+          message: `Handover signal received from ${botIdentifier} instance ${runIdentifier}.`,
+        });
+        return { poolRebalanceLeafExecutionCount, handledTxnQueue: true };
+      }
+
+      logger.debug({
+        at: "Dataworker#index",
+        message: `No handover signal received from ${botIdentifier} instance ${runIdentifier}. Continuing...`,
+        retries: counter,
+      });
+      updatedChallengeRemaining = await getChallengeRemaining(config.hubPoolChainId, challengeBuffer, logger);
+    }
+  }
+
+  lock.assertHeld();
+  const txHashesByChain = await clients.multiCallerClient.executeTxnQueues(false, [config.hubPoolChainId]);
+  const allConfirmed = await waitForHubPoolReceipts(
+    logger,
+    clients.hubPoolClient.hubPool.provider,
+    txHashesByChain[config.hubPoolChainId] ?? []
+  );
+  if (!allConfirmed) {
+    lock.deferReleaseToTtl();
+  }
+  return { poolRebalanceLeafExecutionCount, handledTxnQueue: true };
+}
 
 export async function createDataworker(
   _logger: winston.Logger,
@@ -181,6 +451,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
   const adjustedL1BlockTime = l1BlockTime + Number(process.env["L1_BLOCK_TIME_BUFFER"] ?? l1BlockTime); // Default adjustment is double l1BlockTime.
   let proposedBundleData: BundleData | undefined = undefined;
   let poolRebalanceLeafExecutionCount = 0;
+  let l1ExecutorHandledTxnQueue = false;
 
   const pubSub = await getRedisPubSub(logger);
   try {
@@ -266,20 +537,47 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
       const balanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients));
 
       if (config.l1ExecutorEnabled) {
-        poolRebalanceLeafExecutionCount = await dataworker.executePoolRebalanceLeaves(
-          spokePoolClients,
-          balanceAllocator,
-          fromBlocks
-        );
+        const l1ExecutorLock = await acquireL1ExecutorLock(logger, config);
+        if (isDefined(l1ExecutorLock)) {
+          try {
+            const result = await runL1ExecutorSection({
+              logger,
+              config,
+              clients,
+              dataworker,
+              spokePoolClients,
+              balanceAllocator,
+              fromBlocks,
+              pubSub,
+              botIdentifier,
+              runIdentifier,
+              personality,
+              challengeRemaining,
+              adjustedL1BlockTime,
+              lock: l1ExecutorLock,
+            });
+            poolRebalanceLeafExecutionCount = result.poolRebalanceLeafExecutionCount;
+            l1ExecutorHandledTxnQueue = result.handledTxnQueue;
+          } finally {
+            await l1ExecutorLock.release();
+          }
+        }
       }
 
       if (config.l2ExecutorEnabled) {
+        if (l1ExecutorHandledTxnQueue) {
+          poolRebalanceLeafExecutionCount = 0;
+        }
         // Execute slow relays before relayer refunds to give them priority for any L2 funds.
         await dataworker.executeSlowRelayLeaves(spokePoolClients, balanceAllocator, fromBlocks);
         await dataworker.executeRelayerRefundLeaves(spokePoolClients, balanceAllocator, fromBlocks);
       }
     } else {
       logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Executor disabled" });
+    }
+
+    if (l1ExecutorHandledTxnQueue && !config.l2ExecutorEnabled) {
+      return;
     }
 
     // @dev The dataworker loop takes a long-time to run, so if the proposer is enabled, run a final check and early
