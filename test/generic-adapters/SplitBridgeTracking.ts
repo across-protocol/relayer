@@ -48,6 +48,71 @@ describe("BaseChainAdapter split bridge tracking", function () {
     expect(outstandingTransfers[MONITORED_ADDRESS][l1Token][l2Token].depositTxHashes).to.deep.equal(["tracked"]);
   });
 
+  it("isolates a failing bridge so other bridges' outstanding transfers still surface", async function () {
+    const [signer] = await ethers.getSigners();
+    const l2ChainId = CHAIN_IDs.ARBITRUM;
+    const usdt = EvmAddress.from(TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]);
+    const usdc = EvmAddress.from(TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]);
+    const usdtL2 = TOKEN_SYMBOLS_MAP.USDT.addresses[l2ChainId];
+
+    const healthy = new MockTrackedBridge(
+      l2ChainId,
+      CHAIN_IDs.MAINNET,
+      signer,
+      usdt,
+      "oft",
+      { [usdtL2]: [makeBridgeEvent(toBNWei("5", 6), "healthy")] },
+      {}
+    );
+    const failing = new MockTrackedBridge(
+      l2ChainId,
+      CHAIN_IDs.MAINNET,
+      signer,
+      usdc,
+      "cctp",
+      {},
+      {},
+      new Error("503 Service Unavailable")
+    );
+
+    const errors: { at?: string; message?: string }[] = [];
+    const adapter = new BaseChainAdapter(
+      {
+        [CHAIN_IDs.MAINNET]: makeSpokePoolClient(CHAIN_IDs.MAINNET),
+        [l2ChainId]: makeSpokePoolClient(l2ChainId),
+      } as unknown as { [chainId: number]: SpokePoolClient },
+      l2ChainId,
+      CHAIN_IDs.MAINNET,
+      {
+        [usdt.toNative()]: [EvmAddress.from(MONITORED_ADDRESS)],
+        [usdc.toNative()]: [EvmAddress.from(MONITORED_ADDRESS)],
+      },
+      { ...TEST_LOGGER, error: (entry) => errors.push(entry) } as unknown as winston.Logger,
+      ["USDT", "USDC"],
+      { [usdt.toNative()]: healthy, [usdc.toNative()]: failing },
+      {
+        [usdt.toNative()]: new NoopL2Bridge(l2ChainId, CHAIN_IDs.MAINNET, signer, usdt),
+        [usdc.toNative()]: new NoopL2Bridge(l2ChainId, CHAIN_IDs.MAINNET, signer, usdc),
+      },
+      1,
+      { getPendingBridgeTxnRefsForRoute: async () => new Set<string>() } as unknown as CctpOftReadOnlyClient
+    );
+
+    const outstanding = await adapter.getOutstandingCrossChainTransfers([usdt, usdc]);
+
+    expect(outstanding[MONITORED_ADDRESS][usdt.toNative()][usdtL2].totalAmount).to.equal(toBNWei("5", 6));
+    expect(outstanding[MONITORED_ADDRESS]?.[usdc.toNative()]).to.be.undefined;
+    expect(
+      errors.find(
+        (e) =>
+          e.at?.endsWith("#getOutstandingCrossChainTransfers") &&
+          e.message?.includes(usdc.toNative()) &&
+          e.message?.includes(MONITORED_ADDRESS)
+      ),
+      "expected per-bridge error log"
+    ).to.not.be.undefined;
+  });
+
   it("finalized events reduce tracked outstanding amounts via net-amount matching", async function () {
     const trackedAmount = toBNWei("2", 6);
     const finalizedAmount = toBNWei("1", 6);
@@ -135,7 +200,8 @@ class MockTrackedBridge extends BaseBridgeAdapter {
     private readonly l1Token: EvmAddress,
     private readonly adapterName: PendingBridgeAdapterName,
     private readonly initiationEvents: BridgeEvents,
-    private readonly finalizedEvents: BridgeEvents
+    private readonly finalizedEvents: BridgeEvents,
+    private readonly queryError?: Error
   ) {
     super(l2ChainId, l1ChainId, signer, []);
     this.l1Bridge = new Contract(EvmAddress.from(MONITORED_ADDRESS).toNative(), [], signer);
@@ -147,6 +213,9 @@ class MockTrackedBridge extends BaseBridgeAdapter {
   }
 
   async queryL1BridgeInitiationEvents(l1Token: EvmAddress): Promise<BridgeEvents> {
+    if (this.queryError) {
+      throw this.queryError;
+    }
     if (!l1Token.eq(this.l1Token)) {
       return {};
     }
@@ -154,6 +223,9 @@ class MockTrackedBridge extends BaseBridgeAdapter {
   }
 
   async queryL2BridgeFinalizationEvents(l1Token: EvmAddress): Promise<BridgeEvents> {
+    if (this.queryError) {
+      throw this.queryError;
+    }
     if (!l1Token.eq(this.l1Token)) {
       return {};
     }

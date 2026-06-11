@@ -558,15 +558,30 @@ export class BaseChainAdapter {
       const monitoredAddresses = this.monitoredAddresses[l1Token.toNative()];
       await forEachAsync(monitoredAddresses, async (monitoredAddress) => {
         const bridge = this.bridges[l1Token.toNative()];
-        const [depositInitiatedResults, depositFinalizedResults] = await Promise.all([
-          bridge.queryL1BridgeInitiationEvents(l1Token, monitoredAddress, monitoredAddress, l1SearchConfig),
-          bridge.queryL2BridgeFinalizationEvents(l1Token, monitoredAddress, monitoredAddress, l2SearchConfig),
-        ]);
-        const ignoredPendingBridgeTxnRefs = await bridge.getIgnoredPendingBridgeTxnRefs(
-          this.hubChainId,
-          this.chainId,
-          monitoredAddress
-        );
+        // Catch at this (l1Token, monitoredAddress) granularity so a transient bridge read failure
+        // doesn't crash the inventory update. The inner Promise.all stays all-or-nothing because
+        // partial success would skew outstanding = deposited - finalized.
+        let depositInitiatedResults: Awaited<ReturnType<typeof bridge.queryL1BridgeInitiationEvents>>;
+        let depositFinalizedResults: Awaited<ReturnType<typeof bridge.queryL2BridgeFinalizationEvents>>;
+        let ignoredPendingBridgeTxnRefs: Awaited<ReturnType<typeof bridge.getIgnoredPendingBridgeTxnRefs>>;
+        try {
+          [depositInitiatedResults, depositFinalizedResults] = await Promise.all([
+            bridge.queryL1BridgeInitiationEvents(l1Token, monitoredAddress, monitoredAddress, l1SearchConfig),
+            bridge.queryL2BridgeFinalizationEvents(l1Token, monitoredAddress, monitoredAddress, l2SearchConfig),
+          ]);
+          ignoredPendingBridgeTxnRefs = await bridge.getIgnoredPendingBridgeTxnRefs(
+            this.hubChainId,
+            this.chainId,
+            monitoredAddress
+          );
+        } catch (error) {
+          this.logger.error({
+            at: `${this.adapterName}#getOutstandingCrossChainTransfers`,
+            message: `Failed to fetch outstanding transfers for ${monitoredAddress.toNative()} ${l1Token.toNative()}; skipping for this cycle`,
+            error: stringifyThrownValue(error),
+          });
+          return;
+        }
         Object.entries(depositInitiatedResults).forEach(([l2Token, depositInitiatedEvents]) => {
           const filteredDepositEvents = (depositInitiatedEvents ?? []).filter(
             (event) => !ignoredPendingBridgeTxnRefs.has(event.txnRef)
