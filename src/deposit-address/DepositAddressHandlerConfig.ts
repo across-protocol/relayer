@@ -2,8 +2,6 @@ import { CommonConfig, ProcessEnv } from "../common";
 import { parseJson } from "../utils";
 
 export class DepositAddressHandlerConfig extends CommonConfig {
-  apiEndpoint: string;
-
   indexerApiEndpoint: string;
   indexerPollingInterval: number;
 
@@ -27,7 +25,6 @@ export class DepositAddressHandlerConfig extends CommonConfig {
     const {
       INDEXER_API_POLLING_INTERVAL,
       INDEXER_API_ENDPOINT,
-      API_ENDPOINT,
       MAX_RELAYER_DEPOSIT_LOOKBACK,
       RELAYER_ORIGIN_CHAINS,
       API_TIMEOUT_OVERRIDE,
@@ -40,7 +37,6 @@ export class DepositAddressHandlerConfig extends CommonConfig {
     } = env;
     this.indexerPollingInterval = Number(INDEXER_API_POLLING_INTERVAL ?? 1); // Default to 1s
     this.indexerApiEndpoint = String(INDEXER_API_ENDPOINT);
-    this.apiEndpoint = String(API_ENDPOINT);
     this.swapApiKey = SWAP_API_KEY?.trim() ?? "";
     if (!this.swapApiKey) {
       throw new Error("SWAP_API_KEY is required (set SWAP_API_KEY in env)");
