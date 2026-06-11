@@ -1,6 +1,6 @@
 import { Contract } from "ethers";
 import { AugmentedTransaction } from "../clients";
-import { DepositAddressMessage } from "../interfaces/DepositAddress";
+import { AnyDepositAddressMessage, DepositAddressMessage } from "../interfaces/DepositAddress";
 import { getEthersCompatibleAddress } from "./ContractUtils";
 
 /**
@@ -76,8 +76,9 @@ export function normalizeDepositAddressMessage(message: DepositAddressMessage): 
 
 /**
  * Returns a unique key for a deposit so we can track if it was already executed (e.g. in observedExecutedDeposits).
+ * Accepts any message version — the key only depends on the shared deposit-address/transfer envelope.
  */
-export function getDepositKey(depositMessage: DepositAddressMessage): string {
+export function getDepositKey(depositMessage: AnyDepositAddressMessage): string {
   return `${depositMessage.depositAddress}:${depositMessage.erc20Transfer.transactionHash}`;
 }
 

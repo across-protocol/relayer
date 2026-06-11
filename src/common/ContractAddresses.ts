@@ -352,14 +352,20 @@ export const CONTRACT_ADDRESSES: {
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
     },
     sponsoredCCTPDstPeriphery: {
-      address: getDeployedAddress("SponsoredCCTPDstPeriphery", CHAIN_IDs.HYPEREVM),
+      // @across-protocol/contracts 5.0.11 split the HyperEVM periphery into
+      // per-token deployments. The USDC variant is the default destination
+      // periphery; USDH callers go through `dstUsdhHandler` instead.
+      address: getDeployedAddress("SponsoredCCTPDstPeriphery_CCTP_USDC", CHAIN_IDs.HYPEREVM),
       abi: SPONSORED_CCTP_DST_PERIPHERY_ABI,
     },
     dstCctpHandler: {
-      address: getDeployedAddress("SponsoredCCTPDstPeriphery", CHAIN_IDs.HYPEREVM),
+      address: getDeployedAddress("SponsoredCCTPDstPeriphery_CCTP_USDC", CHAIN_IDs.HYPEREVM),
+    },
+    dstUsdhHandler: {
+      address: getDeployedAddress("SponsoredCCTPDstPeriphery_CCTP_USDH", CHAIN_IDs.HYPEREVM),
     },
     dstOftHandler: {
-      address: getDeployedAddress("DstOFTHandler", CHAIN_IDs.HYPEREVM),
+      address: getDeployedAddress("DstOFTHandler_OFT_USDT", CHAIN_IDs.HYPEREVM),
     },
     hyperliquidDepositHandler: {
       address: getDeployedAddress("HyperliquidDepositHandler", CHAIN_IDs.HYPEREVM),

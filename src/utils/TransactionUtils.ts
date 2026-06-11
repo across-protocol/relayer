@@ -102,8 +102,16 @@ async function _sendAndPoll(
     // Index 0 since we are only sending a single transaction in this method.
     const entry = txStatus?.value?.[0];
     confirmed = entry?.confirmationStatus === "confirmed" || entry?.confirmationStatus === "finalized";
-    if (confirmed && isDefined(entry?.slot)) {
-      confirmedSlot = entry.slot;
+    if (confirmed) {
+      // Prefer the tx's own confirmation slot. When the upstream RPC omits
+      // `entry.slot` (observed empirically), fall back to the response's
+      // `context.slot` — the slot at which this same RPC processed the
+      // request. That is a safe floor: the RPC has reached `context.slot`
+      // and, in the same response, reported the tx as confirmed, so any
+      // RPC subsequently pinned to that slot will also see the tx.
+      // Falling back to an independent `getSlot` call would not give that
+      // guarantee under load-balanced providers.
+      confirmedSlot = isDefined(entry?.slot) ? entry.slot : txStatus?.context?.slot;
     }
     // If the transaction wasn't confirmed, wait `pollingInterval` and retry.
     if (!confirmed) {

@@ -27,6 +27,45 @@ The indexer tags each ERC-20 transfer with a `transferClassification`:
 
 The deposit path is always active. The refund-withdraw path is gated by `WITHDRAW_ENABLED`.
 
+Each message also carries a top-level `version` that selects the execution scheme:
+
+| Version | Path |
+| --- | --- |
+| absent / `1` | Legacy v1 scheme — normalized via `normalizeDepositAddressMessage`, then dispatched on classification as above. |
+| `3` | Upgradeable-counterfactual scheme — `correct_transfer` goes to the v3 execute path (below); refund classifications are dropped (v3 refund-withdraw is not yet supported). |
+| anything else (e.g. `2`) | Dropped (debug-logged) before normalization, since unsupported payloads may not carry a shape the normalizer can dereference. |
+
+## v3 execute flow (thin submitter)
+
+For `version: 3` messages the bot is a **thin submitter** of API-built calldata. The quote-api
+execute endpoint (`POST /deposit-addresses/execute`, bearer-authed with the same `SWAP_API_KEY`)
+re-derives the deposit address and all counterfactual merkle materials server-side from the
+identity (`destination.token`, `destination.recipient`, `userAddress`); the bot relays funding
+context only — origin chain, amount, destination route, refund identity — plus its own
+`executionFeeRecipient`. `executionFee` is currently omitted (the API defaults it to 0); bot-side
+fee pricing is a follow-up task.
+
+The flow (`initiateDepositV3`):
+
+1. Filter on `relayerOriginChains` and dedup against the same Redis/in-memory sets as v1 (the dedup
+   scheme is keyed on `erc20Transfer.transactionHash` / `depositKey`, shared across versions).
+2. Skip non-`evm` `depositAddressNamespace` / `refundAddress.namespace` (the execute identity must
+   be an EVM address).
+3. Defensive on-chain balance check, as on the other paths.
+4. Fetch `{ executeTx: { to, data, value }, ... }` from the execute endpoint. The calldata wraps
+   `factory.deployIfNeededAndExecute`, so there is **no bot-side deploy step** and the bot needn't
+   know deploy state.
+5. Validate the response before submitting: the API-derived `depositAddress` must match the funded
+   address from the indexer (mismatch would execute at a different address), `executeTx.chainId`
+   must match the origin chain, `isPlaceholder` must be false, and `signatureDeadline` must have
+   ≥60s of headroom. The calldata embeds a deadline-bounded signature — it is perishable, and on
+   any failure the next poll **re-requests fresh calldata; stale payloads are never patched**.
+6. Sign and submit via `TransactionClient` (gas, nonce, rebroadcast), then persist the tx hash to
+   Redis exactly like v1.
+
+The v3 message's `counterfactualMaterials`/`initialRoot`/`salt` are relayed by the indexer but not
+read by the execute path — the API re-derives them, so they are carried for diagnostics only.
+
 ## Execution fee (deposit-execute path)
 
 The swap API prices a worst-case `executionFee` at deposit-address creation time and commits it

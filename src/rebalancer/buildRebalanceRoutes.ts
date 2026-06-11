@@ -1,4 +1,4 @@
-import { CHAIN_IDs } from "../utils";
+import { CHAIN_IDs } from "@across-protocol/constants";
 import { RebalancerConfig } from "./RebalancerConfig";
 import { RebalanceRoute } from "./utils/interfaces";
 
