@@ -258,6 +258,10 @@ export const CONTRACT_ADDRESSES: {
       address: "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
     },
+    sponsoredCCTPDstPeriphery: {
+      address: "0x647aFB7d935Ff0aaE4F0DdEfE0499d13AdE69178",
+      abi: SPONSORED_CCTP_DST_PERIPHERY_ABI,
+    },
   },
   [CHAIN_IDs.OPTIMISM]: {
     daiOptimismBridge: {
@@ -291,6 +295,10 @@ export const CONTRACT_ADDRESSES: {
       address: "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
     },
+    sponsoredCCTPDstPeriphery: {
+      address: "0x7caAe751f8eAfEC5646A730d86c6Ae2d47a31Ca6",
+      abi: SPONSORED_CCTP_DST_PERIPHERY_ABI,
+    },
     spokePoolPeriphery: {
       abi: SPOKE_POOL_PERIPHERY_ABI,
     },
@@ -319,6 +327,10 @@ export const CONTRACT_ADDRESSES: {
       address: "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
     },
+    sponsoredCCTPDstPeriphery: {
+      address: "0x02a00425f619C5e2B25e3d138Fe80a71201B007E",
+      abi: SPONSORED_CCTP_DST_PERIPHERY_ABI,
+    },
     nativeToken: {
       address: "0x0000000000000000000000000000000000001010",
     },
@@ -340,14 +352,20 @@ export const CONTRACT_ADDRESSES: {
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
     },
     sponsoredCCTPDstPeriphery: {
-      address: getDeployedAddress("SponsoredCCTPDstPeriphery", CHAIN_IDs.HYPEREVM),
+      // @across-protocol/contracts 5.0.11 split the HyperEVM periphery into
+      // per-token deployments. The USDC variant is the default destination
+      // periphery; USDH callers go through `dstUsdhHandler` instead.
+      address: getDeployedAddress("SponsoredCCTPDstPeriphery_CCTP_USDC", CHAIN_IDs.HYPEREVM),
       abi: SPONSORED_CCTP_DST_PERIPHERY_ABI,
     },
     dstCctpHandler: {
-      address: getDeployedAddress("SponsoredCCTPDstPeriphery", CHAIN_IDs.HYPEREVM),
+      address: getDeployedAddress("SponsoredCCTPDstPeriphery_CCTP_USDC", CHAIN_IDs.HYPEREVM),
+    },
+    dstUsdhHandler: {
+      address: getDeployedAddress("SponsoredCCTPDstPeriphery_CCTP_USDH", CHAIN_IDs.HYPEREVM),
     },
     dstOftHandler: {
-      address: getDeployedAddress("DstOFTHandler", CHAIN_IDs.HYPEREVM),
+      address: getDeployedAddress("DstOFTHandler_OFT_USDT", CHAIN_IDs.HYPEREVM),
     },
     hyperliquidDepositHandler: {
       address: getDeployedAddress("HyperliquidDepositHandler", CHAIN_IDs.HYPEREVM),
@@ -428,6 +446,10 @@ export const CONTRACT_ADDRESSES: {
     cctpV2TokenMessenger: {
       address: "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
+    },
+    sponsoredCCTPDstPeriphery: {
+      address: "0x219044ECb0Eb0b3f0D8A614A9633A89f0b5f81f8",
+      abi: SPONSORED_CCTP_DST_PERIPHERY_ABI,
     },
     ovmStandardBridge: {
       address: "0x4200000000000000000000000000000000000010",
@@ -520,6 +542,10 @@ export const CONTRACT_ADDRESSES: {
       address: "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
     },
+    sponsoredCCTPDstPeriphery: {
+      address: "0x087B70E43BF01359678E7b927bbAC76D175F3293",
+      abi: SPONSORED_CCTP_DST_PERIPHERY_ABI,
+    },
   },
   [CHAIN_IDs.BLAST]: {
     ovmStandardBridge: {
@@ -564,6 +590,10 @@ export const CONTRACT_ADDRESSES: {
     cctpV2TokenMessenger: {
       address: "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
+    },
+    sponsoredCCTPDstPeriphery: {
+      address: "0xc384694df2Be9c381d596DEd22f2A69D3aBA07d3",
+      abi: SPONSORED_CCTP_DST_PERIPHERY_ABI,
     },
     arbSys: {
       address: "0x0000000000000000000000000000000000000064",
@@ -615,6 +645,10 @@ export const CONTRACT_ADDRESSES: {
     cctpV2TokenMessenger: {
       address: "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
+    },
+    sponsoredCCTPDstPeriphery: {
+      address: "0x6BD167bff542Ab595F0296333d70202aE09CC334",
+      abi: SPONSORED_CCTP_DST_PERIPHERY_ABI,
     },
     l2MessageService: {
       address: "0x508Ca82Df566dCD1B0DE8296e70a96332cD644ec",
