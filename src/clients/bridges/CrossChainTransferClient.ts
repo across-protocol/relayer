@@ -88,8 +88,19 @@ export class CrossChainTransferClient {
     // Per-chain isolation: a transient adapter outage must not crash the inventory update. For
     // failed chains we preserve the previously-recorded state instead of blanking it — stale state
     // biases the InventoryClient toward under-rebalancing (safer) rather than duplicate-bridging.
+    // The map callback is async so that synchronous throws from getOutstandingCrossChainTransfers
+    // (e.g. missing adapter, getTokenInfo failure) surface as rejected promises rather than
+    // aborting the chainIds.map call before Promise.allSettled sees them. We also forward the
+    // previously-recorded chain state so the adapter can preserve per-(address, l1Token) entries
+    // when a single bridge read fails.
     const settled = await Promise.allSettled(
-      chainIds.map((chainId) => this.adapterManager.getOutstandingCrossChainTransfers(chainId, l1Tokens))
+      chainIds.map(async (chainId) =>
+        this.adapterManager.getOutstandingCrossChainTransfers(
+          chainId,
+          l1Tokens,
+          this.outstandingCrossChainTransfers[chainId]
+        )
+      )
     );
     const failedChainIds: number[] = [];
     settled.forEach((result, i) => {

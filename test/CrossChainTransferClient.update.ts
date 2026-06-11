@@ -65,4 +65,39 @@ describe("CrossChainTransferClient: update isolation", function () {
     await client.update([usdc]); // would throw if rejection escaped Promise.allSettled
     expect(client.getOutstandingCrossChainTransferAmount(HOLDER, OPTIMISM, usdc)).to.equal(bnZero);
   });
+
+  it("settles synchronous throws from the adapter manager into the per-chain failure path", async function () {
+    // Reproduces the missing-adapter / config-error case: the adapter manager throws before
+    // returning a promise. The async map callback must convert this into a rejected promise so
+    // Promise.allSettled can isolate it.
+    const { spyLogger } = createSpyLogger();
+    const adapterManager = new MockAdapterManager(null, null, null, null);
+    adapterManager.getOutstandingCrossChainTransfers = ((chainId: number): Promise<OutstandingTransfers> => {
+      if (chainId === ARBITRUM) {
+        throw new Error("adapter for chain not configured"); // synchronous throw
+      }
+      return Promise.resolve({
+        [HOLDER.toNative()]: {
+          [usdc.toNative()]: {
+            [usdc.toNative()]: { totalAmount: toBNWei("1", 6), depositTxHashes: [`hash-${chainId}`] },
+          },
+        },
+      });
+    }) as MockAdapterManager["getOutstandingCrossChainTransfers"];
+
+    const client = new CrossChainTransferClient(spyLogger, [OPTIMISM, ARBITRUM], adapterManager);
+    client["outstandingCrossChainTransfers"] = {
+      [ARBITRUM]: {
+        [HOLDER.toNative()]: {
+          [usdc.toNative()]: {
+            [usdc.toNative()]: { totalAmount: toBNWei("7", 6), depositTxHashes: ["stale"] },
+          },
+        },
+      },
+    };
+
+    await client.update([usdc]); // would throw if the sync throw escaped Promise.allSettled
+    expect(client.getOutstandingCrossChainTransferAmount(HOLDER, OPTIMISM, usdc)).to.equal(toBNWei("1", 6));
+    expect(client.getOutstandingCrossChainTransferAmount(HOLDER, ARBITRUM, usdc)).to.equal(toBNWei("7", 6));
+  });
 });

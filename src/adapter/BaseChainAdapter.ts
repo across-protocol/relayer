@@ -540,7 +540,10 @@ export class BaseChainAdapter {
     return (await this.transactionClient.submit(this.chainId, [augmentedTxn]))[0];
   }
 
-  async getOutstandingCrossChainTransfers(l1Tokens: EvmAddress[]): Promise<OutstandingTransfers> {
+  async getOutstandingCrossChainTransfers(
+    l1Tokens: EvmAddress[],
+    previousOutstandingTransfers?: OutstandingTransfers
+  ): Promise<OutstandingTransfers> {
     const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
     const availableL1Tokens = this.filterSupportedTokens(l1Tokens);
 
@@ -575,9 +578,19 @@ export class BaseChainAdapter {
             monitoredAddress
           );
         } catch (error) {
+          // Preserve the previous cycle's outstanding entry for this (address, l1Token) pair so
+          // the caller-level overwrite doesn't blank it out. Without this, a transient failure on
+          // one bridge would let the InventoryClient treat an in-flight rebalance as absent and
+          // submit a duplicate. If there's no previous entry we leave it absent.
+          const previousEntry = previousOutstandingTransfers?.[monitoredAddress.toNative()]?.[l1Token.toNative()];
+          if (previousEntry !== undefined) {
+            assign(outstandingTransfers, [monitoredAddress.toNative(), l1Token.toNative()], previousEntry);
+          }
           this.logger.error({
             at: `${this.adapterName}#getOutstandingCrossChainTransfers`,
-            message: `Failed to fetch outstanding transfers for ${monitoredAddress.toNative()} ${l1Token.toNative()}; skipping for this cycle`,
+            message:
+              `Failed to fetch outstanding transfers for ${monitoredAddress.toNative()} ${l1Token.toNative()}; ` +
+              `${previousEntry !== undefined ? "preserving stale entry" : "no previous entry to preserve"} for this cycle`,
             error: stringifyThrownValue(error),
           });
           return;

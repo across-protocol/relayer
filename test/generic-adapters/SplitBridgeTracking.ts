@@ -113,6 +113,73 @@ describe("BaseChainAdapter split bridge tracking", function () {
     ).to.not.be.undefined;
   });
 
+  it("preserves the previous cycle's entry for a failing bridge to avoid duplicate-rebalance", async function () {
+    const [signer] = await ethers.getSigners();
+    const l2ChainId = CHAIN_IDs.ARBITRUM;
+    const usdt = EvmAddress.from(TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]);
+    const usdc = EvmAddress.from(TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]);
+    const usdtL2 = TOKEN_SYMBOLS_MAP.USDT.addresses[l2ChainId];
+    const usdcL2 = TOKEN_SYMBOLS_MAP.USDC.addresses[l2ChainId];
+
+    const healthy = new MockTrackedBridge(
+      l2ChainId,
+      CHAIN_IDs.MAINNET,
+      signer,
+      usdt,
+      "oft",
+      { [usdtL2]: [makeBridgeEvent(toBNWei("5", 6), "healthy")] },
+      {}
+    );
+    const failing = new MockTrackedBridge(
+      l2ChainId,
+      CHAIN_IDs.MAINNET,
+      signer,
+      usdc,
+      "cctp",
+      {},
+      {},
+      new Error("503 Service Unavailable")
+    );
+
+    const adapter = new BaseChainAdapter(
+      {
+        [CHAIN_IDs.MAINNET]: makeSpokePoolClient(CHAIN_IDs.MAINNET),
+        [l2ChainId]: makeSpokePoolClient(l2ChainId),
+      } as unknown as { [chainId: number]: SpokePoolClient },
+      l2ChainId,
+      CHAIN_IDs.MAINNET,
+      {
+        [usdt.toNative()]: [EvmAddress.from(MONITORED_ADDRESS)],
+        [usdc.toNative()]: [EvmAddress.from(MONITORED_ADDRESS)],
+      },
+      TEST_LOGGER,
+      ["USDT", "USDC"],
+      { [usdt.toNative()]: healthy, [usdc.toNative()]: failing },
+      {
+        [usdt.toNative()]: new NoopL2Bridge(l2ChainId, CHAIN_IDs.MAINNET, signer, usdt),
+        [usdc.toNative()]: new NoopL2Bridge(l2ChainId, CHAIN_IDs.MAINNET, signer, usdc),
+      },
+      1,
+      { getPendingBridgeTxnRefsForRoute: async () => new Set<string>() } as unknown as CctpOftReadOnlyClient
+    );
+
+    const previousOutstanding = {
+      [MONITORED_ADDRESS]: {
+        [usdc.toNative()]: {
+          [usdcL2]: { totalAmount: toBNWei("3", 6), depositTxHashes: ["stale-usdc"] },
+        },
+      },
+    };
+
+    const outstanding = await adapter.getOutstandingCrossChainTransfers([usdt, usdc], previousOutstanding);
+
+    // Successful bridge produces fresh state.
+    expect(outstanding[MONITORED_ADDRESS][usdt.toNative()][usdtL2].totalAmount).to.equal(toBNWei("5", 6));
+    // Failing bridge inherits the previous cycle's entry verbatim.
+    expect(outstanding[MONITORED_ADDRESS][usdc.toNative()][usdcL2].totalAmount).to.equal(toBNWei("3", 6));
+    expect(outstanding[MONITORED_ADDRESS][usdc.toNative()][usdcL2].depositTxHashes).to.deep.equal(["stale-usdc"]);
+  });
+
   it("finalized events reduce tracked outstanding amounts via net-amount matching", async function () {
     const trackedAmount = toBNWei("2", 6);
     const finalizedAmount = toBNWei("1", 6);
