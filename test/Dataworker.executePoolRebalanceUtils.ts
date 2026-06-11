@@ -771,10 +771,15 @@ describe("Dataworker: Utilities to execute pool rebalance leaves", function () {
   });
   describe("_getExecutablePoolRebalanceLeaves", function () {
     let token1: EvmAddress, token2: EvmAddress, balanceAllocator: BalanceAllocator;
+    let claimedBitMapStub: sinon.SinonStub | undefined;
     beforeEach(function () {
       token1 = EvmAddress.from(randomAddress());
       token2 = EvmAddress.from(randomAddress());
       balanceAllocator = getNewBalanceAllocator();
+    });
+    afterEach(function () {
+      claimedBitMapStub?.restore();
+      claimedBitMapStub = undefined;
     });
     it("All l1 tokens on single leaf are executable", async function () {
       balanceAllocator.testSetBalance(
@@ -919,6 +924,86 @@ describe("Dataworker: Utilities to execute pool rebalance leaves", function () {
       expect(leaves[0].chainId).to.equal(10);
       const errorLogs = spy.getCalls().filter((call) => call.lastArg.level === "error");
       expect(errorLogs.length).to.equal(1);
+    });
+    it("Skips a leaf already claimed on chain by a competing executor, without erroring", async function () {
+      // Fund the leaf, so the only reason to drop it is the claimed bit.
+      balanceAllocator.testSetBalance(
+        hubPoolClient.chainId,
+        token1,
+        EvmAddress.from(hubPoolClient.hubPool.address),
+        toBNWei("1")
+      );
+      balanceAllocator.testSetBalance(
+        hubPoolClient.chainId,
+        token2,
+        EvmAddress.from(hubPoolClient.hubPool.address),
+        toBNWei("1")
+      );
+      // leafId 0 already claimed (bit 0 set).
+      claimedBitMapStub = sinon
+        .stub(dataworkerInstance, "_readPoolRebalanceClaimedBitMap")
+        .resolves(ethers.BigNumber.from(1));
+      const leaves = await dataworkerInstance._getExecutablePoolRebalanceLeaves(
+        [
+          {
+            chainId: 10,
+            groupIndex: 0,
+            bundleLpFees: [toBNWei("1"), toBNWei("1")],
+            netSendAmounts: [toBNWei("1"), toBNWei("1")],
+            runningBalances: [toBNWei("1"), toBNWei("1")],
+            leafId: 0,
+            l1Tokens: [token1, token2],
+          },
+        ],
+        balanceAllocator
+      );
+      expect(leaves.length).to.equal(0);
+      expect(spy.getCalls().filter((call) => call.lastArg.level === "error").length).to.equal(0);
+      expect(lastSpyLogIncludes(spy, "already claimed")).to.be.true;
+    });
+    it("Skips only the claimed leaf and keeps the unclaimed leaf", async function () {
+      balanceAllocator.testSetBalance(
+        hubPoolClient.chainId,
+        token1,
+        EvmAddress.from(hubPoolClient.hubPool.address),
+        toBNWei("2")
+      );
+      balanceAllocator.testSetBalance(
+        hubPoolClient.chainId,
+        token2,
+        EvmAddress.from(hubPoolClient.hubPool.address),
+        toBNWei("2")
+      );
+      // Only leafId 0 is claimed (bit 0 set).
+      claimedBitMapStub = sinon
+        .stub(dataworkerInstance, "_readPoolRebalanceClaimedBitMap")
+        .resolves(ethers.BigNumber.from(1));
+      const leaves = await dataworkerInstance._getExecutablePoolRebalanceLeaves(
+        [
+          {
+            chainId: 10,
+            groupIndex: 0,
+            bundleLpFees: [toBNWei("1"), toBNWei("1")],
+            netSendAmounts: [toBNWei("1"), toBNWei("1")],
+            runningBalances: [toBNWei("1"), toBNWei("1")],
+            leafId: 0,
+            l1Tokens: [token1, token2],
+          },
+          {
+            chainId: 42161,
+            groupIndex: 0,
+            bundleLpFees: [toBNWei("1"), toBNWei("1")],
+            netSendAmounts: [toBNWei("1"), toBNWei("1")],
+            runningBalances: [toBNWei("1"), toBNWei("1")],
+            leafId: 1,
+            l1Tokens: [token1, token2],
+          },
+        ],
+        balanceAllocator
+      );
+      expect(leaves.length).to.equal(1);
+      expect(leaves[0].leafId).to.equal(1);
+      expect(spy.getCalls().filter((call) => call.lastArg.level === "error").length).to.equal(0);
     });
   });
 });
