@@ -169,6 +169,7 @@ const resolveRpcConfig = () => {
     [CHAIN_IDs.MONAD]: 1_000, // Alchemy constraint
     [CHAIN_IDs.SOLANA]: 1_000,
     [CHAIN_IDs.SOLANA_DEVNET]: 1000,
+    [CHAIN_IDs.TRON]: 5_000, // Chainstack constraint.
   };
   return Object.fromEntries(Object.values(CHAIN_IDs).map((chainId) => [chainId, ranges[chainId] ?? defaultRange]));
 };
