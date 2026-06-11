@@ -1539,14 +1539,33 @@ export class InventoryClient {
           if (pendingWithdrawalAmount.gte(maxL2WithdrawalVolume)) {
             return;
           }
+
+          // Skip any L2 withdrawal while the chain has an outstanding shortfall — pulling
+          // liquid back to L1 concurrently with promised fills means we either fail to fund
+          // those fills or undo the rebalancer's work once the pending inbound settles.
+          if (this.tokenClient.getShortfallTotalRequirement(chainId, l2Token).gt(bnZero)) {
+            return;
+          }
+
+          // Cap the desired withdrawal at the relayer's liquid on-chain balance. Sizing off
+          // virtual balance would revert at simulation because pending inbound rebalance
+          // credits haven't actually settled on-chain yet.
+          const liquidL2Balance = this.tokenClient.getBalance(chainId, l2Token);
+          const amountToWithdraw = desiredWithdrawalAmount.lte(liquidL2Balance)
+            ? desiredWithdrawalAmount
+            : liquidL2Balance;
+          if (amountToWithdraw.lte(bnZero)) {
+            return;
+          }
+
           withdrawalsRequired[chainId] ??= [];
           withdrawalsRequired[chainId].push({
             l2Token,
-            amountToWithdraw: desiredWithdrawalAmount,
+            amountToWithdraw,
           });
 
           mrkdwn +=
-            ` - ${l2TokenFormatter(desiredWithdrawalAmount)} ${
+            ` - ${l2TokenFormatter(amountToWithdraw)} ${
               l1TokenInfo.symbol
             } withdrawn. This meets target allocation of ` +
             `${this.formatWei(targetPct.mul(100).toString())}% (trigger of ` +

@@ -479,6 +479,42 @@ describe("InventoryClient: Rebalancing inventory", function () {
       expect(adapterManager.withdrawalsRequired[0].address.toNative()).eq(owner.address);
     });
 
+    it("Caps the withdrawal at liquid balance when pending rebalance credits inflate the virtual balance", async function () {
+      // Production symptom: a pending inbound rebalance credit inflates the virtual balance so
+      // `desiredWithdrawalAmount` exceeds what's actually settled on-chain. The clamp must
+      // bridge no more than the on-chain balance, otherwise the bridge call reverts at
+      // simulation with `ERC20: transfer amount exceeds balance`.
+      const initialCumulativeBalance = inventoryClient.getCumulativeBalance(EvmAddress.from(testL1Token));
+      const liquidL2Balance = initialCumulativeBalance.div(10);
+
+      tokenClient.setTokenData(testChain, testL2Token, liquidL2Balance);
+      mockRebalancerClient.setPendingRebalance(testChain, "USDC", initialCumulativeBalance);
+      await inventoryClient.update();
+
+      await inventoryClient.withdrawExcessBalances();
+
+      expect(adapterManager.withdrawalsRequired).to.have.lengthOf(1);
+      expect(adapterManager.withdrawalsRequired[0].amountToWithdraw).eq(liquidL2Balance);
+
+      mockRebalancerClient.clearPendingRebalances();
+    });
+
+    it("Skips the withdrawal when the chain has an outstanding shortfall", async function () {
+      // Any shortfall on the chain means the liquid balance is earmarked for in-flight fills.
+      // Pulling it back to L1 either starves those fills or undoes a rebalancer that's already
+      // moving funds in to cover the shortfall.
+      const initialCumulativeBalance = inventoryClient.getCumulativeBalance(EvmAddress.from(testL1Token));
+
+      tokenClient.setTokenData(testChain, testL2Token, initialCumulativeBalance);
+      tokenClient.setTokenShortFallData(testChain, testL2Token, [BigNumber.from(1)], [toMegaWei(1)]);
+
+      await inventoryClient.withdrawExcessBalances();
+
+      expect(adapterManager.withdrawalsRequired).to.have.lengthOf(0);
+
+      tokenClient.tokenShortfall = {};
+    });
+
     it("Withdrawal amount is in correct L2 token decimals", async function () {
       // This test validates when an L2 token has different decimals than the L1 token, that the
       // withdrawal amount is in the correct L2 token decimals.
