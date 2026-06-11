@@ -1808,10 +1808,27 @@ export class Dataworker {
     poolLeaves: PoolRebalanceLeaf[],
     balanceAllocator: BalanceAllocator
   ): Promise<PoolRebalanceLeaf[]> {
+    // A coincident executor's claim depletes the HubPool balance, which would otherwise read as a
+    // spurious shortfall below. Drop already-claimed leaves so balance checks only flag real shortfalls.
+    const claimedBitMap = await this._readPoolRebalanceClaimedBitMap();
+    const unclaimedLeaves = poolLeaves.filter((leaf) => {
+      const claimed = isDefined(claimedBitMap) && claimedBitMap.shr(leaf.leafId).and(1).eq(1);
+      if (claimed) {
+        const network = getNetworkName(leaf.chainId);
+        this.logger.debug({
+          at: "Dataworker#_getExecutablePoolRebalanceLeaves",
+          message: `Skipping pool rebalance leaf ${leaf.leafId} for ${network}: already claimed.`,
+          leafId: leaf.leafId,
+          chainId: leaf.chainId,
+        });
+      }
+      return !claimed;
+    });
+
     // We evaluate these leaves iteratively rather than in parallel so we can keep track
     // of the used balances after "executing" each leaf.
     const executableLeaves: PoolRebalanceLeaf[] = [];
-    for (const leaf of poolLeaves) {
+    for (const leaf of unclaimedLeaves) {
       // We can evaluate the l1 tokens within the leaf in parallel because we can assume
       // that there are not duplicate L1 tokens within the leaf.
       const isExecutable = await sdkUtils.everyAsync(leaf.l1Tokens, async (l1Token, i) => {
@@ -2003,22 +2020,29 @@ export class Dataworker {
     return leavesToBroadcast.length;
   }
 
+  // Pending root bundle's claimed bitmap; undefined if the read fails.
+  async _readPoolRebalanceClaimedBitMap(): Promise<BigNumber | undefined> {
+    try {
+      const { claimedBitMap } = await this.clients.hubPoolClient.hubPool.rootBundleProposal();
+      return BigNumber.from(claimedBitMap);
+    } catch (err) {
+      this.logger.warn({
+        at: "Dataworker#_readPoolRebalanceClaimedBitMap",
+        message: "Failed to read rootBundleProposal.claimedBitMap.",
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return undefined;
+    }
+  }
+
   async _filterAlreadyClaimedPoolRebalanceLeaves(leaves: PoolRebalanceLeaf[]): Promise<PoolRebalanceLeaf[]> {
     if (leaves.length === 0) {
       return leaves;
     }
 
-    let claimedBitMap: BigNumber;
-    try {
-      const rootBundle = await this.clients.hubPoolClient.hubPool.rootBundleProposal();
-      claimedBitMap = BigNumber.from(rootBundle.claimedBitMap);
-    } catch (err) {
-      // If this read fails we can't filter — defer to the existing simulation path and keep all leaves.
-      this.logger.warn({
-        at: "Dataworker#_filterAlreadyClaimedPoolRebalanceLeaves",
-        message: "Failed to re-read rootBundleProposal.claimedBitMap; skipping pre-broadcast filter.",
-        error: err instanceof Error ? err.message : String(err),
-      });
+    // If this read fails we can't filter — defer to the existing simulation path and keep all leaves.
+    const claimedBitMap = await this._readPoolRebalanceClaimedBitMap();
+    if (!isDefined(claimedBitMap)) {
       return leaves;
     }
 
