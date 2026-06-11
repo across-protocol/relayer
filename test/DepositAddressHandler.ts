@@ -117,13 +117,15 @@ describe("DepositAddressHandler._getSwapApiQuote execution-fee params", function
   let getStub: sinon.SinonStub;
 
   beforeEach(function () {
-    const config = { apiEndpoint: "swap/approval" } as unknown as DepositAddressHandlerConfig;
+    const config = {} as unknown as DepositAddressHandlerConfig;
     handler = new DepositAddressHandler(undefined as unknown as winston.Logger, config, {} as unknown as Signer, []);
     // _signerAddress is normally set by initialize(); set it directly for this unit test.
     (handler as unknown as { _signerAddress: EvmAddress })._signerAddress = EvmAddress.from(SIGNER);
     // Replace the swap API client with a stub that captures the params and returns a successful quote.
     getStub = sinon.stub().resolves({ swapTx: { simulationSuccess: true, to: TOKEN, data: "0x", value: "0" } });
-    (handler as unknown as { api: { get: sinon.SinonStub } }).api = { get: getStub };
+    (handler as unknown as { api: { getCounterfactualDepositQuote: sinon.SinonStub } }).api = {
+      getCounterfactualDepositQuote: getStub,
+    };
   });
 
   afterEach(() => sinon.restore());
@@ -133,7 +135,7 @@ describe("DepositAddressHandler._getSwapApiQuote execution-fee params", function
       message
     );
     expect(getStub.calledOnce).to.equal(true);
-    return getStub.firstCall.args[1] as Record<string, unknown>;
+    return getStub.firstCall.args[0] as Record<string, unknown>;
   }
 
   it("forwards both committed fees verbatim when both leaves carry params", async function () {
