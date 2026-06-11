@@ -193,7 +193,8 @@ export async function constructRelayerClients(
     config.relayerGasPadding,
     relayerTokens,
     config.peggedTokenPrices,
-    config.l1TokensOverride
+    config.l1TokensOverride,
+    config.relayerGasPaddingOverrides
   );
   await profitClient.update();
 

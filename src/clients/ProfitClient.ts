@@ -132,6 +132,10 @@ export class ProfitClient {
   // resolveGasMultiplier / minRelayerFeePct don't re-parse env vars on every call.
   private readonly policies: RelayerPolicy[];
 
+  // Per-destination-chain gas-padding multipliers (already `1 + padding`, mirroring `gasPadding`).
+  // Empty entry falls back to the global `gasPadding`.
+  protected readonly chainGasPadding: { [chainId: number]: BigNumber };
+
   // @todo: Consolidate this set of args before it grows legs and runs away from us.
   constructor(
     readonly logger: winston.Logger,
@@ -148,7 +152,11 @@ export class ProfitClient {
     readonly additionalL1Tokens: EvmAddress[] = [],
     // Sets of token symbols that should be treated equivalently, for example [ "USDC": [USDT, USDH ].
     readonly peggedTokens: { [pegTokenSymbol: string]: Set<string> } = {},
-    readonly l1TokensOverride: string[] = []
+    readonly l1TokensOverride: string[] = [],
+    // Per-destination-chain gas padding overrides. Values are raw padding fractions
+    // (e.g. `toBNWei("0.015")` for 1.5%); the constructor folds in the leading 1×.
+    // Falls back to `gasPadding` when a destination chain has no entry.
+    chainGasPaddingOverrides: { [chainId: number]: BigNumber } = {}
   ) {
     // Require 0% <= gasPadding <= 200%
     assert(
@@ -156,6 +164,15 @@ export class ProfitClient {
       `Gas padding out of range (${this.gasPadding})`
     );
     this.gasPadding = toBNWei("1").add(gasPadding);
+    this.chainGasPadding = Object.fromEntries(
+      Object.entries(chainGasPaddingOverrides).map(([chainId, padding]) => {
+        assert(
+          padding.gte(bnZero) && padding.lte(toBNWei(2)),
+          `Gas padding override out of range (chainId=${chainId}, padding=${padding})`
+        );
+        return [Number(chainId), toBNWei("1").add(padding)];
+      })
+    );
 
     // Require 0% <= gasMultiplier <= 400%
     assert(
@@ -188,6 +205,14 @@ export class ProfitClient {
     this.isTestnet = this.hubPoolClient.chainId !== CHAIN_IDs.MAINNET;
 
     this.policies = this.decodePolicies();
+  }
+
+  // Resolve the gas-padding multiplier for `chainId`. Falls back to the global
+  // `gasPadding` if no per-chain override was configured. Both forms are already
+  // `1 + padding`, so the result can be applied directly to a cost without further
+  // adjustment.
+  resolveGasPadding(chainId: number): BigNumber {
+    return this.chainGasPadding[chainId] ?? this.gasPadding;
   }
 
   resolveGasMultiplier(deposit: Deposit): BigNumber {
@@ -381,8 +406,9 @@ export class ProfitClient {
 
     // Fills with messages have arbitrary execution and therefore lower certainty about the simulated execution cost.
     // Pad these estimates before computing profitability to allow execution headroom and reduce the chance of an OoG.
-    nativeGasCost = nativeGasCost.mul(this.gasPadding).div(fixedPoint);
-    tokenGasCost = tokenGasCost.mul(this.gasPadding).div(fixedPoint);
+    const gasPadding = this.resolveGasPadding(chainId);
+    nativeGasCost = nativeGasCost.mul(gasPadding).div(fixedPoint);
+    tokenGasCost = tokenGasCost.mul(gasPadding).div(fixedPoint);
 
     // Gas estimates for token-only fills are stable and reliable. Allow these to be scaled up or down via the
     // configured gasMultiplier. Do not scale the nativeGasCost, since it might be used to set the transaction gasLimit.
@@ -548,7 +574,7 @@ export class ProfitClient {
       nativeGasCost,
       tokenGasCost,
       gasPrice,
-      gasPadding: this.gasPadding,
+      gasPadding: this.resolveGasPadding(deposit.destinationChainId),
       gasMultiplier: this.resolveGasMultiplier(deposit),
       gasTokenPriceUsd,
       gasCostUsd,
@@ -698,7 +724,7 @@ export class ProfitClient {
         nativeGasCost: fill.nativeGasCost,
         tokenGasCost: formatEther(fill.tokenGasCost),
         gasPrice: formatGwei(fill.gasPrice.toString()),
-        gasPadding: this.gasPadding,
+        gasPadding: this.resolveGasPadding(deposit.destinationChainId),
         gasMultiplier: formatEther(this.resolveGasMultiplier(deposit)),
         gasTokenPriceUsd: formatEther(fill.gasTokenPriceUsd),
         grossRelayerFeeUsd: formatEther(fill.grossRelayerFeeUsd),
@@ -936,16 +962,17 @@ export class ProfitClient {
           exclusiveRelayer,
         };
         const gasCosts = await this._getTotalGasCost(deposit, toAddressType(relayer, destinationChainId));
+        const gasPadding = this.resolveGasPadding(destinationChainId);
 
         // The scaledNativeGasCost is approximately what the relayer will set as the `gasLimit` when submitting
         // fills on the destination chain.
-        const scaledNativeGasCost = gasCosts.nativeGasCost.mul(this.gasPadding).div(fixedPointAdjustment);
+        const scaledNativeGasCost = gasCosts.nativeGasCost.mul(gasPadding).div(fixedPointAdjustment);
         // The scaledTokenGasCost is the estimated gas cost of submitting a fill on the destination chain and is used
         // in the this.estimateFillCost function to determine whether a deposit is profitable to fill. Therefore,
         // the scaledTokenGasCost should be safely lower than the quote API's tokenGasCosts in order for the relayer
         // to consider a deposit is profitable.
         const scaledTokenGasCost = gasCosts.tokenGasCost
-          .mul(this.gasPadding)
+          .mul(gasPadding)
           .div(fixedPointAdjustment)
           .mul(this.gasMultiplier)
           .div(fixedPointAdjustment);
@@ -956,7 +983,7 @@ export class ProfitClient {
             ...gasCosts,
             scaledNativeGasCost,
             scaledTokenGasCost,
-            gasPadding: formatEther(this.gasPadding),
+            gasPadding: formatEther(gasPadding),
             gasMultiplier: formatEther(this.gasMultiplier),
           },
         ];
