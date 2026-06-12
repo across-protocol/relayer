@@ -39,10 +39,10 @@
     bs58 "^6.0.0"
     ethers "5.7.2"
 
-"@across-protocol/sdk@4.3.167":
-  version "4.3.167"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.3.167.tgz#b107b810dae49ad461236d6312990941d1685dc8"
-  integrity sha512-RH/W4rctUux2DKwftpxlMOgXOBj1Fwvcl3bosE7Bgg70Dzyr6+cHn1NX98VZw5oQ35Uc6+okCpCTvwrjc1NfTw==
+"@across-protocol/sdk@4.3.168":
+  version "4.3.168"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.3.168.tgz#6e82f211b223d4579c71cf096dbd290bec2ddc89"
+  integrity sha512-UuopfctY/V2cPJTidG8Xl4uJHPwkPOODjaPo5K7t8RX7I+dD7mKsLgo9WpoeMpz4KeIgwEPF+xg3SfO+6rIG5Q==
   dependencies:
     "@across-protocol/constants" "^3.1.110"
     "@across-protocol/contracts" "5.0.15"
