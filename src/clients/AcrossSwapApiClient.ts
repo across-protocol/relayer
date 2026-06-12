@@ -186,10 +186,16 @@ export class AcrossSwapApiClient extends BaseAcrossApiClient {
     return this._get<SwapApiResponse>("/swap/approval", params);
   }
 
+  /** v1 counterfactual deposit-execute quote (GET). */
+  async getCounterfactualDepositQuote(params: Record<string, unknown>): Promise<SwapApiResponse | undefined> {
+    return this._get<SwapApiResponse>("swap/counterfactual", params);
+  }
+
   async signedWithdraw(req: SignedWithdrawRequest): Promise<SignedWithdrawResponse | undefined> {
     return this._post<SignedWithdrawResponse>("/swap/counterfactual/sign-withdraw", req);
   }
 
+  /** v3 upgradeable-counterfactual deposit-execute quote (POST). */
   async executeDepositAddress(req: DepositAddressExecuteRequest): Promise<DepositAddressExecuteResponse | undefined> {
     return this._post<DepositAddressExecuteResponse>("deposit-addresses/execute", req);
   }

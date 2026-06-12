@@ -1084,7 +1084,7 @@ export class DepositAddressHandler {
       spokePoolExecutionFee,
     };
     try {
-      return await this.api.get<SwapApiResponse>(this.config.apiEndpoint, params);
+      return await this.api.getCounterfactualDepositQuote(params);
     } catch {
       // Logging should have been done in the swap api client, so we do not need to log here.
       return retriesRemaining > 0 ? this._getSwapApiQuote(depositMessage, --retriesRemaining) : undefined;

@@ -2,11 +2,6 @@
 # yarn lockfile v1
 
 
-"@across-protocol/constants@^3.1.107":
-  version "3.1.108"
-  resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.108.tgz#982e230c0193f3b4124e3cb880eb6cb481f76a7e"
-  integrity sha512-uYcIw6VjWhSRal9+xv5aTgk3cK1qVH/8SkpSCpa6KMQUXmCKZ3eGGaVMl7Nogl6S0Cj/D76LnMgM3jUP6NK9ag==
-
 "@across-protocol/constants@^3.1.109":
   version "3.1.109"
   resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.109.tgz#3a7e9f7581405cd09dbbdc480800d4a775051c46"
@@ -17,12 +12,17 @@
   resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.110.tgz#8db121beb440187295874476ad05b1a8d4729acf"
   integrity sha512-4GfJed7zziPBW4ywsaQaqtT5kSnIo0xthMcAJYqVcDm37e1oIv5lHFNoyGT8bOUNa0T1ZeEGcHLTOzbz+mfTnw==
 
-"@across-protocol/contracts@5.0.10":
-  version "5.0.10"
-  resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-5.0.10.tgz#c6eb6a88ef83b51fe019829668e928794b73b4d6"
-  integrity sha512-W1AAXzYjNmRsSQ8sckvrcI0gYOpBjPdJ01VseGLUxAoSqn2w2xPH65ZOsXyUVZrLdzoYNpYeJVYFgcaIEgVd0g==
+"@across-protocol/constants@^3.1.111":
+  version "3.1.111"
+  resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.111.tgz#bad4718e4d6179a2012a6d66d3440e1a8c1b2cb5"
+  integrity sha512-z1ly6ROzCHE6G66wYaARFtYDRLii9LWBL1HhBiHnzi2ukLA5Qg62MipFXN5Ux5aS62xLyvBcgtCB8HKUvGzhrA==
+
+"@across-protocol/contracts@5.0.15":
+  version "5.0.15"
+  resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-5.0.15.tgz#439687558b75054f8268b138422f2cf956226c54"
+  integrity sha512-yEotmTHSM5gs9SuHkUFaY+K2E4ZgenFve5Wwa7+i5cumh/ZpdRYdsp4U0pvQcdC3ccq8xeGGRLqkh58qpzjrDQ==
   dependencies:
-    "@across-protocol/constants" "^3.1.107"
+    "@across-protocol/constants" "^3.1.111"
     "@coral-xyz/anchor" "^0.31.1"
     "@eth-optimism/contracts" "^0.5.40"
     "@ethersproject/bignumber" "5.7.0"
@@ -39,13 +39,13 @@
     bs58 "^6.0.0"
     ethers "5.7.2"
 
-"@across-protocol/sdk@4.3.164":
-  version "4.3.164"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.3.164.tgz#c8a91564d60f7afc3b332d7fe45b44fb1318c904"
-  integrity sha512-Zz3GksBHekq2KjlIM+24sG281onM/3au94ly8kwknq7aKsy1kxfeH62mq3cpeCGXq7UbFB14BMiE0nSb2WcqbQ==
+"@across-protocol/sdk@4.3.168":
+  version "4.3.168"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.3.168.tgz#6e82f211b223d4579c71cf096dbd290bec2ddc89"
+  integrity sha512-UuopfctY/V2cPJTidG8Xl4uJHPwkPOODjaPo5K7t8RX7I+dD7mKsLgo9WpoeMpz4KeIgwEPF+xg3SfO+6rIG5Q==
   dependencies:
     "@across-protocol/constants" "^3.1.110"
-    "@across-protocol/contracts" "5.0.10"
+    "@across-protocol/contracts" "5.0.15"
     "@coral-xyz/anchor" "^0.30.1"
     "@eth-optimism/sdk" "^3.3.1"
     "@ethersproject/bignumber" "^5.7.0"
@@ -1306,9 +1306,9 @@
     uuid "^9.0.0"
 
 "@grpc/grpc-js@^1.10.9", "@grpc/grpc-js@^1.12.6":
-  version "1.14.3"
-  resolved "https://registry.yarnpkg.com/@grpc/grpc-js/-/grpc-js-1.14.3.tgz#4c9b817a900ae4020ddc28515ae4b52c78cfb8da"
-  integrity sha512-Iq8QQQ/7X3Sac15oB6p0FmUg/klxQvXLeileoqrTRGJYLV+/9tubbr9ipz0GKHjmXVsgFPo/+W+2cA8eNcR+XA==
+  version "1.14.4"
+  resolved "https://registry.yarnpkg.com/@grpc/grpc-js/-/grpc-js-1.14.4.tgz#e73ff57d97802f063999545f43ebb2b1eca65d9d"
+  integrity sha512-k9Dj3DV/itK9D06Y8f190Qgop7/Ui+D0njFV3LHMPwPT75DpXLQohE9Wmz0QElrJnzsjB7KPWiKJbOl7IPDArQ==
   dependencies:
     "@grpc/proto-loader" "^0.8.0"
     "@js-sdsl/ordered-map" "^4.4.2"
