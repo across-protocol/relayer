@@ -276,6 +276,11 @@ export class InventoryClient {
    * @param chainId Chain to query token balance on.
    * @param l1Token L1 token to query on chainId (after mapping).
    * @param l2Token Optional l2 token address to narrow the balance reporting.
+   * @param ignoreL1ToL2PendingAmount If true, exclude virtual inbound balance that hasn't physically landed
+   *   on the target chain yet. Currently two sources contribute virtual inbound: canonical L1→L2 transfers
+   *   from `crossChainTransferClient`, and rebalancer-service pending rebalances from `pendingRebalances`.
+   *   Both are excluded together so callers that want a liquidity-faithful view see the same picture for
+   *   either source of in-flight inbound, regardless of which subsystem initiated it.
    * @returns Balance of l1Token on chainId.
    */
   protected getBalanceOnChain(
@@ -302,10 +307,15 @@ export class InventoryClient {
     }
 
     // Add in any pending swap rebalances. Pending Rebalances are currently only supported for the canonical L2 tokens
-    // mapped to each L1 token (i.e. the L2 token for an L1 token returned by getRemoteTokenForL1Token())
+    // mapped to each L1 token (i.e. the L2 token for an L1 token returned by getRemoteTokenForL1Token()).
+    // When `ignoreL1ToL2PendingAmount` is set, skip this for the same reason we skip
+    // `crossChainTransferClient` pending transfers below: both inflate the chain's perceived balance with
+    // in-flight inbound that hasn't physically arrived, which can cause `withdrawExcessBalances` to size a
+    // withdraw that the on-chain ERC20 balance cannot cover.
     const pendingRebalancesForChain = this.pendingRebalances[chainId];
     const canonicalL2Token = getRemoteTokenForL1Token(l1Token, chainId, this.hubPoolClient.chainId);
     if (
+      !ignoreL1ToL2PendingAmount &&
       isDefined(pendingRebalancesForChain) &&
       isDefined(canonicalL2Token) &&
       (!isDefined(l2Token) || l2Token.eq(canonicalL2Token))
