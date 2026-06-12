@@ -128,10 +128,7 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
     // FilterMap to remove all deposits from this L2 which originated from another EOA.
     const filteredDepositHistory = await filterAsync(depositHistory, async (deposit) => {
       const txnReceipt = await this.getL2Bridge().provider.getTransactionReceipt(deposit.txId);
-      if (!isDefined(txnReceipt) || !compareAddressesSimple(txnReceipt.from, fromAddress.toNative())) {
-        return false;
-      }
-      return true;
+      return isDefined(txnReceipt) && compareAddressesSimple(txnReceipt.from, fromAddress.toNative());
     });
 
     const unmatchedDeposits = getOutstandingBinanceDeposits(
