@@ -97,6 +97,18 @@ This means repayment-chain selection is driven by projected post-relay state, no
 
 The tracking step mutates local virtual state (`trackCrossChainTransfer`) before the chain tx confirms, preventing duplicate over-send behavior in the same run.
 
+## Triggering vs sizing: virtual for trigger, liquid-minus-target for transfer
+
+For L1→L2 rebalancing (`rebalanceInventoryIfNeeded`) the trigger and the sizing both use virtual balance — but the `unallocatedBalance` check (`tokenClient.getBalance(hubChain, l1Token)`) ensures we never *issue* more than the relayer has on hub at execution time.
+
+For L2→L1 excess withdrawal (`withdrawExcessBalances`), the same split must be respected at the L2 chain:
+
+- *Trigger* uses virtual balance: `currentAllocPct = getCurrentAllocationPct(l1Token, chainId, l2Token, true, false)`. We want the trigger to be virtual-aware because, in the near future, pending inbound rebalance credits will settle on this chain and we don't want to keep withdrawing every cycle until they do.
+- *Sizing* is bounded by what's actually free to leave the chain: `min(desiredWithdrawalAmount, max(0, tokenClient.getBalance(chainId, l2Token) - targetAmount))`. The bridge call (CCTP `depositForBurn`, OFT `send`, op-stack `withdraw`, etc.) ultimately pulls tokens from the relayer EOA at `msg.sender`, so the desired (virtual-derived) amount can exceed what's settled on-chain and revert at simulation with `ERC20: transfer amount exceeds balance`. Clamping straight to liquid balance would solve that, but would drain the chain to zero — the operator wants to rebalance *down to* the target reserve, not below it. Sizing off `liquid - target` does both: the transfer never exceeds settled liquidity, and the chain retains at least its target allocation in liquid form.
+- Additionally, `withdrawExcessBalances` skips the entire withdrawal when the chain has any outstanding shortfall (`tokenClient.getShortfallTotalRequirement(chainId, l2Token) > 0`). Pulling liquid back to L1 concurrently with promised fills either starves those fills or undoes a rebalancer that's already moving funds in to cover the shortfall — better to wait for the next cycle once the shortfall is consumed.
+
+If liquid balance is at or below target, the withdrawal is skipped for this cycle; the next cycle will pick it up once pending credits actually settle on-chain and push liquid above the target reserve.
+
 ## Interaction with ReadOnlyRebalancerClient
 
 InventoryClient imports pending cross-asset rebalance state (`pendingRebalances`) through the shared rebalancer interface layer in `src/rebalancer/utils/`, commonly provided by `ReadOnlyRebalancerClient`, and treats it as virtual balance adjustments.

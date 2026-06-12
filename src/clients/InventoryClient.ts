@@ -1547,13 +1547,24 @@ export class InventoryClient {
             return;
           }
 
-          // Cap the desired withdrawal at the relayer's liquid on-chain balance. Sizing off
-          // virtual balance would revert at simulation because pending inbound rebalance
-          // credits haven't actually settled on-chain yet.
+          // Cap the withdrawal so the post-withdrawal liquid balance stays at this chain's
+          // target allocation. Two failure modes are being avoided here:
+          //   1. `desiredWithdrawalAmount` is sized off virtual balance, which folds in pending
+          //      inbound rebalance credits — sending more than what's actually on-chain reverts
+          //      the bridge call at simulation with `ERC20: transfer amount exceeds balance`.
+          //   2. Clamping straight to `liquidL2Balance` could drain the chain to zero, undoing
+          //      the operator's intended target reserve and starving any in-flight fills until
+          //      pending inbound credits settle.
+          // Sizing off `liquid - target` covers both: the transfer is bounded by what's settled
+          // on-chain, and the chain retains at least its target allocation in liquid form.
           const liquidL2Balance = this.tokenClient.getBalance(chainId, l2Token);
-          const amountToWithdraw = desiredWithdrawalAmount.lte(liquidL2Balance)
+          const targetAmountInL2 = cumulativeBalanceInL2TokenDecimals.mul(targetPct).div(this.scalar);
+          const liquidAvailableForWithdraw = liquidL2Balance.gt(targetAmountInL2)
+            ? liquidL2Balance.sub(targetAmountInL2)
+            : bnZero;
+          const amountToWithdraw = desiredWithdrawalAmount.lte(liquidAvailableForWithdraw)
             ? desiredWithdrawalAmount
-            : liquidL2Balance;
+            : liquidAvailableForWithdraw;
           if (amountToWithdraw.lte(bnZero)) {
             return;
           }
