@@ -25,6 +25,7 @@ import {
   getBinanceWithdrawalType,
   isCompletedBinanceWithdrawal,
   getOutstandingBinanceDeposits,
+  isDefined,
 } from "../../utils";
 import { L1Token } from "../../interfaces";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
@@ -127,7 +128,7 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
     // FilterMap to remove all deposits from this L2 which originated from another EOA.
     const filteredDepositHistory = await filterAsync(depositHistory, async (deposit) => {
       const txnReceipt = await this.getL2Bridge().provider.getTransactionReceipt(deposit.txId);
-      if (!compareAddressesSimple(txnReceipt.from, fromAddress.toNative())) {
+      if (!isDefined(txnReceipt) || !compareAddressesSimple(txnReceipt.from, fromAddress.toNative())) {
         return false;
       }
       return true;
