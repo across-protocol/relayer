@@ -120,7 +120,20 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
       );
     });
 
-    const unmatchedDeposits = getOutstandingBinanceDeposits(depositHistory, withdrawHistory, this.depositNetwork);
+    // FilterMap to remove all deposits which originated from another EOA.
+    const filteredDepositHistory = await filterAsync(depositHistory, async (deposit) => {
+      const txnReceipt = await this.getL1Bridge().provider.getTransactionReceipt(deposit.txId);
+      if (!compareAddressesSimple(txnReceipt.from, fromAddress.toNative())) {
+        return false;
+      }
+      return true;
+    });
+
+    const unmatchedDeposits = getOutstandingBinanceDeposits(
+      filteredDepositHistory,
+      withdrawHistory,
+      this.depositNetwork
+    );
     return unmatchedDeposits.reduce((sum, deposit) => sum.add(floatToBN(deposit.amount, l2TokenInfo.decimals)), bnZero);
   }
 
