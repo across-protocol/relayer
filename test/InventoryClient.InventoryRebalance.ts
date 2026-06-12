@@ -394,9 +394,10 @@ describe("InventoryClient: Rebalancing inventory", function () {
     expect(arbitrumUsdcBalance.eq(tokenClient.getBalance(ARBITRUM, arbitrumUsdcL2Token).add(pendingUsdcSwapRebalance)))
       .to.be.true;
 
-    // Case 4: ignoreL1ToL2PendingAmount=true excludes pendingRebalances from the virtual balance, so callers
-    // requesting a liquidity-faithful view (e.g. `withdrawExcessBalances` via `getCurrentAllocationPct`) don't
-    // size against in-flight inbound that hasn't physically landed on the chain.
+    // Case 4: ignoreL1ToL2PendingAmount=true excludes positive pendingRebalances from the virtual balance,
+    // so callers requesting a liquidity-faithful view (e.g. `withdrawExcessBalances` via
+    // `getCurrentAllocationPct`) don't size against in-flight inbound that hasn't physically landed on the
+    // chain.
     const arbitrumUsdcBalanceIgnoringPending = inventoryClient.getBalanceOnChain(
       ARBITRUM,
       EvmAddress.from(mainnetUsdc),
@@ -404,6 +405,25 @@ describe("InventoryClient: Rebalancing inventory", function () {
       true
     );
     expect(arbitrumUsdcBalanceIgnoringPending.eq(tokenClient.getBalance(ARBITRUM, arbitrumUsdcL2Token))).to.be.true;
+
+    // Case 5: ignoreL1ToL2PendingAmount=true still applies negative pendingRebalances entries. Adapters
+    // (e.g. `HyperliquidStablecoinSwapAdapter`) subtract already-arrived intermediate funds from the
+    // destination chain to reserve them for a still-pending onward bridge step; treating those reservations
+    // as excess would let `withdrawExcessBalances` pull liquid balance away from the pending rebalance.
+    const reservedUsdcOnArbitrum = toMegaWei(50).mul(-1);
+    mockRebalancerClient.setPendingRebalance(ARBITRUM, "USDC", reservedUsdcOnArbitrum);
+    await inventoryClient.update();
+    const arbitrumUsdcBalanceWithReservation = inventoryClient.getBalanceOnChain(
+      ARBITRUM,
+      EvmAddress.from(mainnetUsdc),
+      arbitrumUsdcL2Token,
+      true
+    );
+    expect(
+      arbitrumUsdcBalanceWithReservation.eq(
+        tokenClient.getBalance(ARBITRUM, arbitrumUsdcL2Token).add(reservedUsdcOnArbitrum)
+      )
+    ).to.be.true;
   });
 
   it("Refuses to send rebalance when ERC20 balance changes", async function () {
