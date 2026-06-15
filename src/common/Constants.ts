@@ -319,7 +319,7 @@ Object.values(CHAIN_IDs)
 // These are the spokes that can hold the native token for that network, so they should be added together when calculating whether
 // a bundle execution is possible with the funds in the pool.
 const resolveNativeTokenSpokes = () => {
-  const chains = [CHAIN_IDs.LINEA, CHAIN_IDs.ZK_SYNC]; // @TODO: Should we add ARC here?
+  const chains = [CHAIN_IDs.LINEA, CHAIN_IDs.ZK_SYNC];
   Object.entries(PUBLIC_NETWORKS).forEach(([_chainId, config]) => {
     const chainId = Number(_chainId);
     if ([ChainFamily.OP_STACK, ChainFamily.ZK_STACK].includes(config.family)) {
@@ -428,7 +428,6 @@ type L2BridgeConstructor<T extends BaseL2BridgeAdapter> = new (
 const resolveCanonicalBridges = (): Record<number, L1BridgeConstructor<BaseBridgeAdapter>> => {
   const bridges = {
     [CHAIN_IDs.ARBITRUM]: ArbitrumOrbitBridge,
-    // @TODO: No canonical bridge?
     [CHAIN_IDs.BSC]: BinanceCEXBridge,
     [CHAIN_IDs.LINEA]: LineaBridge,
     [CHAIN_IDs.POLYGON]: PolygonERC20Bridge,

@@ -12,7 +12,7 @@
   "dependencies": {
     "@across-protocol/constants": "^3.1.113",
     "@across-protocol/contracts": "5.0.18",
-    "@across-protocol/sdk": "4.3.169",
+    "@across-protocol/sdk": "4.3.170",
     "@arbitrum/sdk": "^4.0.5",
     "@consensys/linea-sdk": "^0.3.0",
     "@coral-xyz/anchor": "^0.31.1",
