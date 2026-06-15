@@ -613,7 +613,7 @@ export const CONTRACT_ADDRESSES: {
   },
   [CHAIN_IDs.ARC]: {
     cctpV2MessageTransmitter: {
-      address: "0x81D40F21F12A8F0E3252Bccb954D722d4c464B64", 
+      address: "0x81D40F21F12A8F0E3252Bccb954D722d4c464B64",
       abi: CCTP_MESSAGE_TRANSMITTER_ABI,
     },
     cctpV2TokenMessenger: {
