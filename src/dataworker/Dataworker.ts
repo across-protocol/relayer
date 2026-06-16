@@ -139,7 +139,7 @@ const INSTRUCTION_PARAMS_MAX_WRITE_SIZE = 900;
 
 // Polling parameters for `sendAndConfirmSolanaTransactionWithSlot` when sending the chain of dependency-write txs that
 // precede an SVM relayer-refund-leaf execution. 25 cycles × 600 ms ≈ 15s, ~1.5 slots per cycle on Solana mainnet.
-const SVM_REFUND_LEAF_SEND_POLL_CYCLES = 25;
+const SVM_REFUND_LEAF_SEND_POLL_CYCLES = 35;
 const SVM_REFUND_LEAF_SEND_POLL_DELAY_MS = 600;
 
 const { getMessageHash, getRelayEventKey } = sdkUtils;
