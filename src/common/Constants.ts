@@ -374,7 +374,6 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
 
   // Testnets:
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: ["USDC", "WETH"],
-  [CHAIN_IDs.ARC_TESTNET]: ["USDC"],
   [CHAIN_IDs.BASE_SEPOLIA]: ["WETH", "USDC"],
   [CHAIN_IDs.BLAST_SEPOLIA]: ["WETH"],
   [CHAIN_IDs.POLYGON_AMOY]: ["WETH", "USDC"],
@@ -570,9 +569,6 @@ export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<Ba
   // Testnet
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.SEPOLIA]]: UsdcTokenSplitterBridge,
-  },
-  [CHAIN_IDs.ARC_TESTNET]: {
-    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.SEPOLIA]]: UsdcCCTPBridge,
   },
   [CHAIN_IDs.BASE_SEPOLIA]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.SEPOLIA]]: UsdcTokenSplitterBridge,
