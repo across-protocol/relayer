@@ -62,6 +62,12 @@ export interface DepositAddressExecuteRequest {
   executionFeeRecipient: string;
   /** Bot-priced payout, deducted from the bridged amount. Omitted => 0. */
   executionFee?: string;
+  /**
+   * Integrator attribution (2-byte hex, `^0x[0-9a-fA-F]{4}$`). Sourced from the indexer message's
+   * `integrator` projection, NOT the bot's auth key (the bot sweeps addresses owned by many
+   * integrators); drives the CREATE2 salt + on-chain integrator tag. Required by the endpoint.
+   */
+  integratorId: string;
 }
 
 export interface DepositAddressExecuteResponse {
