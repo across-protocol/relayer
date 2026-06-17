@@ -97,4 +97,29 @@ export abstract class BaseAcrossApiClient {
       return;
     }
   }
+
+  /**
+   * Like `_post`, but **rethrows** instead of collapsing failures to `undefined`. Callers that
+   * must classify the failure (e.g. distinguish a terminal 4xx from a retryable transient error)
+   * use this and inspect the thrown error — `postWithTimeout` throws a typed `HttpError` carrying
+   * the HTTP `status` on non-2xx responses. Still logs at warn for observability parity with `_post`.
+   */
+  protected async _postOrThrow<T>(endpoint: string, body: unknown): Promise<T> {
+    try {
+      const headers: Record<string, string> = { "Content-Type": "application/json", Accept: "application/json" };
+      if (this.apiKey) {
+        headers.Authorization = `Bearer ${this.apiKey}`;
+      }
+
+      return await postWithTimeout<T>(`${this.urlBase}/${endpoint}`, body, {}, headers, this.apiResponseTimeout);
+    } catch (err) {
+      this.logger.warn({
+        at: this.logContext,
+        message: `Failed to post to ${this.urlBase}`,
+        endpoint,
+        error: (err as Error).message,
+      });
+      throw err;
+    }
+  }
 }
