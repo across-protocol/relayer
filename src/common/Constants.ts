@@ -134,6 +134,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     [CHAIN_IDs.TRON]: 19, // 19 Blocks to finalize.
   },
   100: {
+    [CHAIN_IDs.ARC]: 1,
     [CHAIN_IDs.HYPEREVM]: 1,
     [CHAIN_IDs.LENS]: 0,
     [CHAIN_IDs.LINEA]: 1,
