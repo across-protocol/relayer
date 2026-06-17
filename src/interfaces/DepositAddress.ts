@@ -44,6 +44,17 @@ export interface CounterfactualMaterials {
   spokePoolLeaf?: ExecutionFeeLeaf;
 }
 
+/**
+ * Integrator attribution projected from the deposit address's CDA `integrator` jsonb. The indexer
+ * surfaces this on every `/deposit-address-transfers` item (v1 and v3); `apiKeyHash` is
+ * intentionally omitted (sensitive). `integratorId` is a 2-byte hex string (or null when the
+ * deposit address has no integrator recorded).
+ */
+export interface DepositAddressIntegrator {
+  name: string;
+  integratorId: string | null;
+}
+
 export interface DepositAddressMessage {
   depositAddress: string;
   paramsHash: string;
@@ -57,6 +68,8 @@ export interface DepositAddressMessage {
   shouldSponsorAccountCreation: boolean;
   /** Indexer message version. v1 (or absent = legacy v1) and v3 are processed; v2 is ignored. */
   version?: number;
+  /** Optional during rollout: pre-integrator indexer messages omit it. */
+  integrator?: DepositAddressIntegrator | null;
 }
 
 /**
@@ -110,6 +123,8 @@ export interface DepositAddressMessageV3 {
   refundAddress: NamespacedAccount;
   depositAddressNamespace: string;
   erc20Transfer: Erc20Transfer;
+  /** Optional during rollout: pre-integrator indexer messages omit it. Relayed to the execute endpoint. */
+  integrator?: DepositAddressIntegrator | null;
 }
 
 /** A `/deposit-address-transfers` item, discriminated on `version`. */

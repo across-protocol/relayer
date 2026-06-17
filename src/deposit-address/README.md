@@ -42,8 +42,13 @@ execute endpoint (`POST /deposit-addresses/execute`, bearer-authed with the same
 re-derives the deposit address and all counterfactual merkle materials server-side from the
 identity (`destination.token`, `destination.recipient`, `userAddress`); the bot relays funding
 context only — origin chain, amount, destination route, refund identity — plus its own
-`executionFeeRecipient`. `executionFee` is currently omitted (the API defaults it to 0); bot-side
-fee pricing is a follow-up task.
+`executionFeeRecipient` and the `integratorId` the address was derived with. `executionFee` is
+currently omitted (the API defaults it to 0); bot-side fee pricing is a follow-up task.
+
+The `integratorId` (2-byte hex) is sourced from the indexer message's `integrator` projection (a
+property of the deposit address, not the bot's auth key) and is **required** by the execute
+endpoint — it folds into the CREATE2 salt + on-chain integrator tag, so the address is derived
+per-integrator. The bot relays it verbatim.
 
 The flow (`initiateDepositV3`):
 
@@ -51,16 +56,19 @@ The flow (`initiateDepositV3`):
    scheme is keyed on `erc20Transfer.transactionHash` / `depositKey`, shared across versions).
 2. Skip non-`evm` `depositAddressNamespace` / `refundAddress.namespace` (the execute identity must
    be an EVM address).
-3. Defensive on-chain balance check, as on the other paths.
-4. Fetch `{ executeTx: { to, data, value }, ... }` from the execute endpoint. The calldata wraps
+3. Skip when the `integrator.integratorId` is absent or not 2-byte hex (warned, no API call) —
+   mirrors the namespace guard. No funded v3 addresses exist pre-integrator, so a missing/malformed
+   id is a data anomaly; sending it would only derive a different, unfunded address.
+4. Defensive on-chain balance check, as on the other paths.
+5. Fetch `{ executeTx: { to, data, value }, ... }` from the execute endpoint. The calldata wraps
    `factory.deployIfNeededAndExecute`, so there is **no bot-side deploy step** and the bot needn't
    know deploy state.
-5. Validate the response before submitting: the API-derived `depositAddress` must match the funded
+6. Validate the response before submitting: the API-derived `depositAddress` must match the funded
    address from the indexer (mismatch would execute at a different address), `executeTx.chainId`
    must match the origin chain, `isPlaceholder` must be false, and `signatureDeadline` must have
    ≥60s of headroom. The calldata embeds a deadline-bounded signature — it is perishable, and on
    any failure the next poll **re-requests fresh calldata; stale payloads are never patched**.
-6. Sign and submit via `TransactionClient` (gas, nonce, rebroadcast), then persist the tx hash to
+7. Sign and submit via `TransactionClient` (gas, nonce, rebroadcast), then persist the tx hash to
    Redis exactly like v1.
 
 The v3 message's `counterfactualMaterials`/`initialRoot`/`salt` are relayed by the indexer but not

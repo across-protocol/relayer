@@ -97,6 +97,7 @@ function depositMessageV3(overrides: Partial<DepositAddressMessageV3> = {}): Dep
     },
     refundAddress: { namespace: "evm", address: REFUND_ADDRESS },
     depositAddressNamespace: "evm",
+    integrator: { name: "test-integrator", integratorId: "0xdead" },
     erc20Transfer: {
       chainId: "42161",
       blockNumber: 1_000_000,
@@ -293,7 +294,7 @@ describe("DepositAddressHandler._getExecuteTx request mapping", function () {
 
   afterEach(() => sinon.restore());
 
-  it("relays funding context only, with executionFee omitted", async function () {
+  it("relays funding context and integratorId, with executionFee omitted", async function () {
     await (handler as unknown as Internals)._getExecuteTx(depositMessageV3());
     expect(executeStub.calledOnce).to.equal(true);
     // Exact request body: the execute endpoint re-derives the address/materials from this
@@ -307,6 +308,7 @@ describe("DepositAddressHandler._getExecuteTx request mapping", function () {
       userAddress: REFUND_ADDRESS,
       amount: "5000",
       executionFeeRecipient: SIGNER,
+      integratorId: "0xdead",
     });
   });
 
@@ -315,6 +317,50 @@ describe("DepositAddressHandler._getExecuteTx request mapping", function () {
     const result = await (handler as unknown as Internals)._getExecuteTx(depositMessageV3());
     expect(result).to.equal(undefined);
     expect(executeStub.callCount).to.equal(4); // initial attempt + 3 retries
+  });
+});
+
+describe("DepositAddressHandler.initiateDepositV3 integratorId guard", function () {
+  let handler: DepositAddressHandler;
+  let executeStub: sinon.SinonStub;
+  let warnStub: sinon.SinonStub;
+  const originChainId = 42161;
+
+  type Internals = { initiateDepositV3: (m: DepositAddressMessageV3) => Promise<void> };
+
+  beforeEach(function () {
+    const config = { relayerOriginChains: [originChainId] } as unknown as DepositAddressHandlerConfig;
+    warnStub = sinon.stub();
+    const logger = { warn: warnStub, debug: sinon.stub() } as unknown as winston.Logger;
+    handler = new DepositAddressHandler(logger, config, {} as unknown as Signer, []);
+    executeStub = sinon.stub().resolves({ depositAddress: DEPOSIT_ADDRESS });
+    (handler as unknown as { api: { executeDepositAddress: sinon.SinonStub } }).api = {
+      executeDepositAddress: executeStub,
+    };
+    // initiateDepositV3 adds/removes the depositKey from this set; seed it so the path runs.
+    (handler as unknown as { observedExecutedDeposits: Record<number, Set<string>> }).observedExecutedDeposits = {
+      [originChainId]: new Set<string>(),
+    };
+  });
+
+  afterEach(() => sinon.restore());
+
+  // Each case reaches the guard (evm namespace, origin chain allowed, not yet executed) and must
+  // skip before calling the execute endpoint, since a missing/malformed integratorId would only
+  // derive a different, unfunded address.
+  const skipCases: { name: string; integrator: DepositAddressMessageV3["integrator"] }[] = [
+    { name: "integrator is null", integrator: null },
+    { name: "integratorId is null", integrator: { name: "x", integratorId: null } },
+    { name: "integratorId is non-hex", integrator: { name: "x", integratorId: "0xZZZZ" } },
+    { name: "integratorId is wrong length", integrator: { name: "x", integratorId: "0xdeadbeef" } },
+  ];
+
+  skipCases.forEach(({ name, integrator }) => {
+    it(`skips without calling the execute endpoint when ${name}`, async function () {
+      await (handler as unknown as Internals).initiateDepositV3(depositMessageV3({ integrator }));
+      expect(executeStub.notCalled).to.equal(true);
+      expect(warnStub.calledOnce).to.equal(true);
+    });
   });
 });
 

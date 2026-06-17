@@ -51,6 +51,9 @@ import ERC20_ABI from "../common/abi/MinimalERC20.json";
  */
 const V3_SIGNATURE_DEADLINE_BUFFER = 60;
 
+/** Quote-api execute requires a 2-byte-hex integratorId; mirror its schema regex. */
+const INTEGRATOR_ID_REGEX = /^0x[0-9a-fA-F]{4}$/;
+
 /**
  * Indexer message versions the bot knows how to execute. Anything else (e.g. v2, or a future
  * version shipped on the indexer before the bot supports it) is dropped before normalization —
@@ -837,6 +840,23 @@ export class DepositAddressHandler {
         return;
       }
 
+      // The execute endpoint requires the integratorId (2-byte hex) that the deposit address was
+      // derived with — it folds into the CREATE2 salt server-side. No funded v3 addresses exist
+      // pre-integrator, so a missing/malformed value is a data anomaly: skip rather than guess one,
+      // which would only derive (and execute at) a different, unfunded address.
+      const integratorId = depositMessage.integrator?.integratorId;
+      if (!isDefined(integratorId) || !INTEGRATOR_ID_REGEX.test(integratorId)) {
+        this.logger.warn({
+          at: "DepositAddressHandler#initiateDepositV3",
+          message: "Skipping v3 deposit: missing or malformed integratorId",
+          integratorId: integratorId ?? "absent",
+          depositAddress,
+          refTxHash,
+          chainId: originChainId,
+        });
+        return;
+      }
+
       // Defensive on-chain balance check — guards against reorged indexer messages and against
       // acting on a deposit-address that has already been executed through another path.
       const inputTokenContract = new Contract(inputToken, ERC20_ABI, this.providersByChain[originChainId]);
@@ -971,8 +991,15 @@ export class DepositAddressHandler {
   ): Promise<DepositAddressExecuteResponse | undefined> {
     const { routeParams, refundAddress, erc20Transfer } = depositMessage;
     // The API re-derives the deposit address and merkle materials from this identity; the bot
-    // sends funding context only (relaying ≠ building calldata). executionFee is omitted for now:
-    // the API defaults it to 0 and bot-side fee pricing is deferred to a follow-up task.
+    // relays funding context plus the integratorId the address was derived with (≠ building
+    // calldata). executionFee is omitted for now: the API defaults it to 0 and bot-side fee pricing
+    // is deferred to a follow-up task. The integratorId is validated by initiateDepositV3's guard
+    // before we reach here; re-assert so the required request field narrows to a string.
+    const integratorId = depositMessage.integrator?.integratorId;
+    assert(
+      isDefined(integratorId) && INTEGRATOR_ID_REGEX.test(integratorId),
+      "DepositAddressHandler: _getExecuteTx requires a validated integratorId"
+    );
     const request = {
       destination: {
         token: {
@@ -985,6 +1012,7 @@ export class DepositAddressHandler {
       userAddress: refundAddress.address,
       amount: erc20Transfer.amount,
       executionFeeRecipient: this.signerAddress.toNative(),
+      integratorId,
     };
     // `_post` swallows errors and returns undefined, so retry on both throw and falsy return.
     try {
