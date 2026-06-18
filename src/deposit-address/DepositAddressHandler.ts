@@ -1092,6 +1092,10 @@ export class DepositAddressHandler {
     // Only the route-relevant leaf is nonzero; the swap-api selects which one applies by strategy.
     const cctpExecutionFee = counterfactualMaterials?.cctpLeaf?.params?.executionFee;
     const spokePoolExecutionFee = counterfactualMaterials?.spokePoolLeaf?.params?.executionFee;
+    // Integrator attribution from the indexer message, forwarded verbatim for tagging. `?? undefined`
+    // collapses both a missing `integrator` and an explicit null id, so absent integrators contribute
+    // no query param (stripped at serialization) and the request keeps its legacy shape.
+    const integratorId = depositMessage.integrator?.integratorId ?? undefined;
     // Swap API expects Tron origin fields in base58; on-chain paths keep ethers `0x` via normalizeDepositAddressMessage.
     // refundAddress must match what was committed in the withdraw leaf at PDA creation time so the
     // swap-api rebuilds the same merkle root the on-chain factory derives the deposit address from.
@@ -1110,6 +1114,7 @@ export class DepositAddressHandler {
       shouldSponsorAccountCreation: String(depositMessage.shouldSponsorAccountCreation),
       cctpExecutionFee,
       spokePoolExecutionFee,
+      integratorId,
     };
     try {
       return await this.api.getCounterfactualDepositQuote(params);
