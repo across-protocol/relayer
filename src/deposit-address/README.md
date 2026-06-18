@@ -25,14 +25,14 @@ The indexer tags each ERC-20 transfer with a `transferClassification`:
 | `intent_refund` | Refund-withdraw path — same flow as `mis_route`. |
 | anything else | Dropped (forward-compat). |
 
-The deposit path is always active. The refund-withdraw path is gated by `WITHDRAW_ENABLED`.
+The deposit path is always active. The v1 refund-withdraw path is gated by `WITHDRAW_ENABLED`; the v3 refund-withdraw path is gated independently by `ENABLE_V3_WITHDRAWALS` (must be exactly `"true"`).
 
 Each message also carries a top-level `version` that selects the execution scheme:
 
 | Version | Path |
 | --- | --- |
 | absent / `1` | Legacy v1 scheme — normalized via `normalizeDepositAddressMessage`, then dispatched on classification as above. |
-| `3` | Upgradeable-counterfactual scheme — `correct_transfer` goes to the v3 execute path (below); refund classifications are dropped (v3 refund-withdraw is not yet supported). |
+| `3` | Upgradeable-counterfactual scheme — `correct_transfer` goes to the v3 execute path (below); `mis_route` goes to the v3 refund-withdraw path (below) when `ENABLE_V3_WITHDRAWALS=true`; `intent_refund` and other classifications are dropped (not yet supported on v3). |
 | anything else (e.g. `2`) | Dropped (debug-logged) before normalization, since unsupported payloads may not carry a shape the normalizer can dereference. |
 
 ## v3 execute flow (thin submitter)
@@ -74,6 +74,39 @@ The flow (`initiateDepositV3`):
 The v3 message's `counterfactualMaterials`/`initialRoot`/`salt` are relayed by the indexer but not
 read by the execute path — the API re-derives them, so they are carried for diagnostics only.
 
+## v3 refund-withdraw flow
+
+For `version: 3` `mis_route` messages, when `ENABLE_V3_WITHDRAWALS=true`, the bot refunds the
+stranded funds back to the committed refund address. `intent_refund` is **not** handled on v3 yet
+(dropped). The flow (`initiateWithdrawV3`) mirrors v1 `initiateWithdraw` with v3-specific guards:
+
+1. Gate on `enableV3Withdrawals`, filter on `relayerOriginChains` (refund chain = `erc20Transfer.chainId`),
+   and dedup against the shared withdraw sets (`executedWithdrawKeys`, in-flight `observedExecutedWithdraws`,
+   and the v3 terminal-skip set below).
+2. Skip non-`evm` `depositAddressNamespace` / `refundAddress.namespace` (the withdraw user must be EVM).
+3. Locate the withdraw leaf in `counterfactualMaterials` (`kind === "withdraw"`); skip if its
+   `merkleProof` / `implementationAddress` are missing.
+4. Defensive on-chain balance check, as on the other paths.
+5. Fetch `{ signedWithdrawTx: { to, data, value, chainId }, deadline, requestedAmount, appliedGasFee, netAmount, bundledDeploy }`
+   from `POST /deposit-addresses/sign-withdraw`. Unlike v1, **gas is deducted from the refund**
+   (`deductGasFromRefund: true`) so refunds are not operated at a loss. The endpoint **verifies** the
+   supplied CDA materials (never re-derives the address) and bundles the v3 BeaconProxy
+   `deploy(salt, initialRoot)` + `signedWithdrawToUser` into one Multicall3 call when the proxy is
+   not yet on-chain.
+6. Validate the response: `signedWithdrawTx.chainId` must match the refund chain and the embedded
+   signature's `deadline` must have ≥60s headroom (perishable; re-requested fresh on the next poll).
+7. Submit via `TransactionClient`, persist the depositKey, and publish `withdraw_executed` (same gate
+   + topic + payload as v1; the payload reads `refundAddress.address` for v3).
+
+**Terminal 422 handling.** The endpoint rejects with 422 when gas can't be deducted —
+`GAS_EXCEEDS_REFUND` (fee ≥ refund, typically dust) or `UNPRICEABLE_REFUND_TOKEN` (no market price).
+A 422 is treated as **terminal**: the bot does not submit and **does not retry on later polls**. The
+depositKey is persisted to a dedicated skip set (below) so the decision survives handover. Every
+other failure (network, timeout, 5xx, transient 400 incl. `GAS_FEE_TEMPORARILY_UNAVAILABLE`) is
+retried, then skipped for the current poll and re-attempted on the next. Surfacing the 422 status
+requires the non-swallowing `_postOrThrow` base-client method (`_post` collapses errors to
+`undefined`); the bot classifies on the `HttpError.status`.
+
 ## Execution fee (deposit-execute path)
 
 The swap API prices a worst-case `executionFee` at deposit-address creation time and commits it
@@ -94,10 +127,11 @@ lines for diagnosability. The withdraw path is unaffected — `withdrawLeaf` car
 
 ## Redis persistence
 
-Two sets persist across runs so handover does not double-spend or double-refund:
+Three sets persist across runs so handover does not double-spend, double-refund, or re-attempt a terminally-skipped refund:
 
 - `deposit-address:executed:<botIdentifier>` — set of `erc20Transfer.transactionHash` for successfully executed deposits.
 - `deposit-address:withdrawn-deposit-keys:<botIdentifier>` — set of `depositKey` (`depositAddress:transactionHash`) for successfully executed refund withdraws.
+- `deposit-address:skipped-withdraw-keys:<botIdentifier>` — set of `depositKey` for v3 refund withdraws the quote-api rejected with a terminal 422 (`GAS_EXCEEDS_REFUND` / `UNPRICEABLE_REFUND_TOKEN`); never re-attempted.
 
 On each poll, entries whose source messages are no longer returned by the indexer are pruned — the indexer has its own TTL and stops returning expired messages.
 

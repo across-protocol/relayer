@@ -63,10 +63,10 @@ The publisher serializes the envelope as a UTF-8 JSON string and sends it as the
 
 ### Producer mechanics (this repo)
 
-`DepositAddressHandler._publishWithdrawExecuted` in `src/deposit-address/DepositAddressHandler.ts`:
+`DepositAddressHandler._publishWithdrawExecuted` in `src/deposit-address/DepositAddressHandler.ts` (shared by the v1 `initiateWithdraw` and v3 `initiateWithdrawV3` paths — the payload is version-agnostic, only the refund-address field location differs):
 
 1. Runs only after a refund withdraw has been confirmed on-chain **and** the depositKey has been persisted to Redis. Ordering matters: we never publish without first committing to "this depositKey is done", which prevents handover from racing the publish into a duplicate withdraw.
-2. Filters `receipt.logs` for ERC-20 `Transfer(address,address,uint256)` events whose `address` matches the token contract, whose `from` topic matches the deposit address, AND whose `to` topic matches `routeParams.refundAddress`. The `to` match disambiguates fee-on-transfer / tax / burn tokens that emit several Transfer events from the deposit address in one tx. Picks the **last** match as a final tiebreaker (handles Multicall3-bundled withdraws where intermediate transfers to the same refund address may also appear). Zero matches → warn + skip the publish (do not raise).
+2. Filters `receipt.logs` for ERC-20 `Transfer(address,address,uint256)` events whose `address` matches the token contract, whose `from` topic matches the deposit address, AND whose `to` topic matches the refund address (`routeParams.refundAddress` for v1, `refundAddress.address` for v3). The `to` match disambiguates fee-on-transfer / tax / burn tokens that emit several Transfer events from the deposit address in one tx. Picks the **last** match as a final tiebreaker (handles Multicall3-bundled withdraws where intermediate transfers to the same refund address may also appear). Zero matches → warn + skip the publish (do not raise).
 3. Builds the payload above and calls `GcpPubSubPublisher.publishJson`.
 4. Wraps the call in try/catch; on failure, logs at `error` level with `notificationPath: "across-bot-error"` and continues. The withdraw is on-chain and Redis-persisted — there is no rollback and no in-process retry.
 
