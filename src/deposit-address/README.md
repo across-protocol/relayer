@@ -125,6 +125,12 @@ subtracts the fee before bridging). `executionFeeRecipient` is the bot signer, s
 the committed fee. The forwarded values are logged on the execute success and swap-quote failure
 lines for diagnosability. The withdraw path is unaffected — `withdrawLeaf` carries no fee.
 
+`_getSwapApiQuote` also forwards the indexer message's `integrator.integratorId` (when present) as an
+`integratorId` query param — **verbatim**, for integrator attribution — and omits it when the message
+carries no integrator (or a null id), preserving the legacy request shape. Unlike the v3 execute path
+(which validates the id and skips on mismatch because it folds into the CREATE2 salt), the v1 path
+neither validates nor skips: the deposit address is already deployed from explicit salt/paramsHash.
+
 ## Redis persistence
 
 Three sets persist across runs so handover does not double-spend, double-refund, or re-attempt a terminally-skipped refund:

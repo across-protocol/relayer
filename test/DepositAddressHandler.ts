@@ -30,9 +30,16 @@ const BASE_PARAM_KEYS = [
   "shouldSponsorAccountCreation",
 ];
 
-/** EVM-origin correct_transfer message; `materials` overrides the counterfactualMaterials leaves. */
-function depositMessage(materials: DepositAddressMessage["counterfactualMaterials"]): DepositAddressMessage {
+/**
+ * EVM-origin correct_transfer message; `materials` overrides the counterfactualMaterials leaves and
+ * `integrator` overrides the optional integrator projection (omitted entirely when not provided).
+ */
+function depositMessage(
+  materials: DepositAddressMessage["counterfactualMaterials"],
+  integrator?: DepositAddressMessage["integrator"]
+): DepositAddressMessage {
   return {
+    ...(integrator !== undefined ? { integrator } : {}),
     depositAddress: DEPOSIT_ADDRESS,
     paramsHash: "0x" + "0".repeat(64),
     salt: "0x" + "0".repeat(64),
@@ -134,7 +141,7 @@ function depositMessageV3(overrides: Partial<DepositAddressMessageV3> = {}): Dep
   };
 }
 
-describe("DepositAddressHandler._getSwapApiQuote execution-fee params", function () {
+describe("DepositAddressHandler._getSwapApiQuote params", function () {
   let handler: DepositAddressHandler;
   let getStub: sinon.SinonStub;
 
@@ -187,6 +194,27 @@ describe("DepositAddressHandler._getSwapApiQuote execution-fee params", function
     expect(params.cctpExecutionFee).to.equal(undefined);
     expect(params.spokePoolExecutionFee).to.equal(undefined);
     expect(BASE_PARAM_KEYS.every((key) => key in params)).to.equal(true);
+  });
+
+  it("forwards integratorId verbatim when the message carries one", async function () {
+    const params = await capturedParams(
+      depositMessage({ withdrawLeaf }, { name: "test-integrator", integratorId: "0x1234" })
+    );
+    expect(params.integratorId).to.equal("0x1234");
+  });
+
+  it("leaves integratorId undefined when the message has no integrator", async function () {
+    const params = await capturedParams(depositMessage({ withdrawLeaf }));
+    // Undefined is dropped at query-string serialization, so the request keeps its legacy shape.
+    expect(params.integratorId).to.equal(undefined);
+  });
+
+  it("leaves integratorId undefined when the integrator id is null", async function () {
+    const params = await capturedParams(
+      depositMessage({ withdrawLeaf }, { name: "test-integrator", integratorId: null })
+    );
+    // `?? undefined` collapses an explicit null id so it too is dropped at serialization.
+    expect(params.integratorId).to.equal(undefined);
   });
 });
 
