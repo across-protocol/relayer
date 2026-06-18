@@ -105,12 +105,11 @@ export abstract class BaseAcrossApiClient {
    * the HTTP `status` on non-2xx responses. Still logs at warn for observability parity with `_post`.
    */
   protected async _postOrThrow<T>(endpoint: string, body: unknown): Promise<T> {
+    const headers: Record<string, string> = { "Content-Type": "application/json", Accept: "application/json" };
+    if (this.apiKey) {
+      headers.Authorization = `Bearer ${this.apiKey}`;
+    }
     try {
-      const headers: Record<string, string> = { "Content-Type": "application/json", Accept: "application/json" };
-      if (this.apiKey) {
-        headers.Authorization = `Bearer ${this.apiKey}`;
-      }
-
       return await postWithTimeout<T>(`${this.urlBase}/${endpoint}`, body, {}, headers, this.apiResponseTimeout);
     } catch (err) {
       this.logger.warn({
