@@ -159,12 +159,30 @@ export class TransactionClient {
               // Call failed
               this.logger.warn({ ...common, message: `Transaction on ${chain} failed during execution...` });
               throw error;
-            case ethers.errors.TRANSACTION_REPLACED:
+            case ethers.errors.TRANSACTION_REPLACED: {
+              // ethers throws TRANSACTION_REPLACED when a same-nonce transaction took our slot. A
+              // "repriced" replacement (cancelled === false) is a speed-up of the *same* logical
+              // transaction: it has already mined under a new hash, so resubmitting here would
+              // double-send (e.g. duplicate an inventory rebalance transfer). Treat it as success
+              // by returning the mined replacement. Only a genuine cancellation/replacement
+              // (cancelled === true) means our transaction did not take effect and must be resent.
+              const { cancelled, replacement } = error as unknown as {
+                cancelled?: boolean;
+                replacement?: TransactionResponse;
+              };
+              if (cancelled === false && isDefined(replacement)) {
+                this.logger.warn({
+                  ...common,
+                  message: `Transaction on ${chain} was repriced and already mined; using replacement.`,
+                });
+                return replacement;
+              }
               this.logger.warn({
                 ...common,
                 message: `Transaction submission on ${chain} replaced at nonce ${nonce}, resubmitting...`,
               });
               return this._submit(txn, { nonce: null, maxTries: maxTries - 1 });
+            }
             default:
               this.logger.warn({
                 ...common,

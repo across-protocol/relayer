@@ -208,6 +208,30 @@ describe("TransactionClient", function () {
       expect(waitCalls).to.equal(2);
     });
 
+    it("Does not resubmit a repriced (already-mined) replacement", async function () {
+      const chainId = chainIds[0];
+      const replacementHash = ethers.utils.id("repriced-replacement");
+      let waitCalls = 0;
+      txnClient.waitOverride = () => {
+        ++waitCalls;
+        // ethers reports a same-nonce speed-up of the *same* logical transaction as
+        // TRANSACTION_REPLACED with cancelled === false; the replacement has already mined.
+        return Promise.reject(
+          makeEthersError(ethers.errors.TRANSACTION_REPLACED, {
+            cancelled: false,
+            replacement: { nonce: 1, hash: replacementHash } as TransactionResponse,
+          })
+        );
+      };
+
+      const txnResponses = await txnClient.submit(chainId, [makeConfirmationTxn(chainId)]);
+      expect(txnResponses.length).to.equal(1);
+      // wait() was called exactly once: a repriced replacement is treated as success, never resubmitted.
+      expect(waitCalls).to.equal(1);
+      // The mined replacement is returned rather than the original (now-replaced) transaction.
+      expect(txnResponses[0].hash).to.equal(replacementHash);
+    });
+
     it("Retries on transient error then succeeds", async function () {
       const chainId = chainIds[0];
       let waitCalls = 0;
