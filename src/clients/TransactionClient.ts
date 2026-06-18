@@ -166,11 +166,23 @@ export class TransactionClient {
               // double-send (e.g. duplicate an inventory rebalance transfer). Treat it as success
               // by returning the mined replacement. Only a genuine cancellation/replacement
               // (cancelled === true) means our transaction did not take effect and must be resent.
-              const { cancelled, replacement } = error as unknown as {
+              const { cancelled, replacement, receipt } = error as unknown as {
                 cancelled?: boolean;
                 replacement?: TransactionResponse;
+                receipt?: TransactionReceipt;
               };
               if (cancelled === false && isDefined(replacement)) {
+                // The repriced replacement is itself an on-chain execution. ethers includes its mined
+                // receipt here; a status === 0 receipt means the replacement reverted. Surface that as
+                // a failure (mirroring the CALL_EXCEPTION path above) so callers don't record a reverted
+                // rebalance/finalization as confirmed.
+                if (receipt?.status === 0) {
+                  this.logger.warn({
+                    ...common,
+                    message: `Transaction on ${chain} was repriced but the replacement reverted.`,
+                  });
+                  throw error;
+                }
                 this.logger.warn({
                   ...common,
                   message: `Transaction on ${chain} was repriced and already mined; using replacement.`,
