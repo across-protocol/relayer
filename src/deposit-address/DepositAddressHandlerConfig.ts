@@ -16,9 +16,11 @@ export class DepositAddressHandlerConfig extends CommonConfig {
 
   /** Gate for publishing `withdraw_executed` events to GCP Pub/Sub. */
   enableDepositAddressWithdrawPublisher: boolean;
-  /** GCP project that hosts the withdraw-lifecycle topic. Required when the publisher gate is on. */
+  /** Gate for publishing `deposit_executed` events (v3 correct-transfer executions). Independent of the withdraw gate; shares the topic. */
+  enableDepositAddressDepositPublisher: boolean;
+  /** GCP project that hosts the execution-lifecycle topic. Required when a publisher gate is on. */
   pubSubGcpProjectId: string;
-  /** Short topic name (e.g. `topic-deposit-address-withdraw`). Required when the publisher gate is on. */
+  /** Short topic name (e.g. `topic-deposit-address-execution`); shared by both events. Required when a publisher gate is on. */
   pubSubDepositAddressWithdrawTopic: string;
 
   constructor(env: ProcessEnv) {
@@ -35,6 +37,7 @@ export class DepositAddressHandlerConfig extends CommonConfig {
       WITHDRAW_ENABLED,
       ENABLE_V3_WITHDRAWALS,
       ENABLE_DEPOSIT_ADDRESS_WITHDRAW_PUBLISHER,
+      ENABLE_DEPOSIT_ADDRESS_DEPOSIT_PUBLISHER,
       PUBSUB_GCP_PROJECT_ID,
       PUBSUB_DEPOSIT_ADDRESS_WITHDRAW_TOPIC,
     } = env;
@@ -56,15 +59,16 @@ export class DepositAddressHandlerConfig extends CommonConfig {
     this.enableV3Withdrawals = ENABLE_V3_WITHDRAWALS === "true";
 
     this.enableDepositAddressWithdrawPublisher = ENABLE_DEPOSIT_ADDRESS_WITHDRAW_PUBLISHER === "true";
+    this.enableDepositAddressDepositPublisher = ENABLE_DEPOSIT_ADDRESS_DEPOSIT_PUBLISHER === "true";
     this.pubSubGcpProjectId = PUBSUB_GCP_PROJECT_ID?.trim() ?? "";
     this.pubSubDepositAddressWithdrawTopic = PUBSUB_DEPOSIT_ADDRESS_WITHDRAW_TOPIC?.trim() ?? "";
-    if (this.enableDepositAddressWithdrawPublisher) {
+    if (this.enableDepositAddressWithdrawPublisher || this.enableDepositAddressDepositPublisher) {
       if (!this.pubSubGcpProjectId) {
-        throw new Error("PUBSUB_GCP_PROJECT_ID is required when ENABLE_DEPOSIT_ADDRESS_WITHDRAW_PUBLISHER=true");
+        throw new Error("PUBSUB_GCP_PROJECT_ID is required when a deposit-address publisher gate is enabled");
       }
       if (!this.pubSubDepositAddressWithdrawTopic) {
         throw new Error(
-          "PUBSUB_DEPOSIT_ADDRESS_WITHDRAW_TOPIC is required when ENABLE_DEPOSIT_ADDRESS_WITHDRAW_PUBLISHER=true"
+          "PUBSUB_DEPOSIT_ADDRESS_WITHDRAW_TOPIC is required when a deposit-address publisher gate is enabled"
         );
       }
     }

@@ -44,7 +44,7 @@ import {
 } from "../clients";
 import { AcrossIndexerApiClient } from "../clients/AcrossIndexerApiClient";
 import { GcpPubSubPublisher, getGcpPubSubPublisher } from "../messaging/gcp";
-import { buildWithdrawExecutedPayload } from "./withdrawPayload";
+import { buildDepositExecutedPayload, buildWithdrawExecutedPayload } from "./withdrawPayload";
 import ERC20_ABI from "../common/abi/MinimalERC20.json";
 
 /**
@@ -127,7 +127,9 @@ export class DepositAddressHandler {
 
   private transactionClient;
   private redisCache: RedisCacheInterface | undefined;
-  private withdrawPublisher: GcpPubSubPublisher | undefined;
+  // Single client shared by both lifecycle events (withdraw_executed / deposit_executed); they
+  // publish to the same topic and project. Per-event emission is gated by the respective config flag.
+  private executionPublisher: GcpPubSubPublisher | undefined;
 
   public constructor(
     readonly logger: winston.Logger,
@@ -154,8 +156,8 @@ export class DepositAddressHandler {
     this.redisCache = await getRedisCache(this.logger);
     assert(isDefined(this.redisCache), "DepositAddressHandler: requires a Redis cache for handover state");
 
-    if (this.config.enableDepositAddressWithdrawPublisher) {
-      this.withdrawPublisher = getGcpPubSubPublisher(this.logger, this.config.pubSubGcpProjectId);
+    if (this.config.enableDepositAddressWithdrawPublisher || this.config.enableDepositAddressDepositPublisher) {
+      this.executionPublisher = getGcpPubSubPublisher(this.logger, this.config.pubSubGcpProjectId);
     }
 
     // Exit if OS instructs us to do so.
@@ -640,7 +642,8 @@ export class DepositAddressHandler {
     receipt: TransactionReceipt,
     depositMessage: AnyDepositAddressMessage
   ): Promise<void> {
-    if (!isDefined(this.withdrawPublisher)) {
+    // The client may exist because the deposit gate is on; keep withdraw publishing independent.
+    if (!this.config.enableDepositAddressWithdrawPublisher || !isDefined(this.executionPublisher)) {
       return;
     }
     const payload = buildWithdrawExecutedPayload(receipt, depositMessage);
@@ -660,7 +663,7 @@ export class DepositAddressHandler {
     }
 
     try {
-      const messageId = await this.withdrawPublisher.publishJson(
+      const messageId = await this.executionPublisher.publishJson(
         this.config.pubSubDepositAddressWithdrawTopic,
         payload
       );
@@ -682,11 +685,61 @@ export class DepositAddressHandler {
     }
   }
 
+  /**
+   * Best-effort publish of a `deposit_executed` lifecycle event to GCP Pub/Sub after a successful
+   * v3 deposit (correct-transfer) execution. Mirrors {@link _publishWithdrawExecuted}: the deposit
+   * is already on-chain and Redis-persisted by the time we get here, so a publish failure never
+   * rolls back state and never throws to the caller — a dropped publish leaves the indexer row
+   * pending until ops reconciles. Shares the topic with `withdraw_executed`; gated independently by
+   * config.enableDepositAddressDepositPublisher.
+   */
+  private async _publishDepositExecuted(
+    receipt: TransactionReceipt,
+    depositMessage: DepositAddressMessageV3
+  ): Promise<void> {
+    if (!this.config.enableDepositAddressDepositPublisher || !isDefined(this.executionPublisher)) {
+      return;
+    }
+    const payload = buildDepositExecutedPayload(receipt, depositMessage);
+    if (!isDefined(payload)) {
+      this.logger.warn({
+        at: "DepositAddressHandler#_publishDepositExecuted",
+        message: "Skipping publish: no ERC20 Transfer of the input token leaving the deposit address found in receipt",
+        depositAddress: depositMessage.depositAddress,
+        token: depositMessage.erc20Transfer.contractAddress,
+        txHash: receipt.transactionHash,
+      });
+      return;
+    }
+
+    try {
+      const messageId = await this.executionPublisher.publishJson(
+        this.config.pubSubDepositAddressWithdrawTopic,
+        payload
+      );
+      this.logger.debug({
+        at: "DepositAddressHandler#_publishDepositExecuted",
+        message: "Published deposit_executed",
+        messageId,
+        payload,
+      });
+    } catch (err) {
+      this.logger.error({
+        at: "DepositAddressHandler#_publishDepositExecuted",
+        message: "Failed to publish deposit_executed to GCP Pub/Sub",
+        topic: this.config.pubSubDepositAddressWithdrawTopic,
+        payload,
+        err: err instanceof Error ? err.message : String(err),
+        notificationPath: "across-bot-error",
+      });
+    }
+  }
+
   /** Releases the Pub/Sub client. Idempotent. Safe to call when the publisher is not configured. */
   public async disconnect(): Promise<void> {
-    if (isDefined(this.withdrawPublisher)) {
-      await this.withdrawPublisher.close();
-      this.withdrawPublisher = undefined;
+    if (isDefined(this.executionPublisher)) {
+      await this.executionPublisher.close();
+      this.executionPublisher = undefined;
     }
   }
 
@@ -987,6 +1040,7 @@ export class DepositAddressHandler {
       this.executedDepositTxHashes.add(refTxHash);
       executeCommitted = true;
       await this._persistExecutedDepositsRedis();
+      await this._publishDepositExecuted(depositReceipt, depositMessage);
     } finally {
       if (!executeCommitted) {
         this.observedExecutedDeposits[originChainId].delete(depositKey);
