@@ -1,8 +1,8 @@
 import sinon from "sinon";
 import { expect } from "chai";
-import { EvmAddress, getCurrentTime, Signer, winston } from "../src/utils";
+import { EvmAddress, getCurrentTime, HttpError, Signer, winston } from "../src/utils";
 import { DepositAddressMessage, DepositAddressMessageV3 } from "../src/interfaces/DepositAddress";
-import { DepositAddressExecuteResponse } from "../src/clients";
+import { DepositAddressExecuteResponse, DepositAddressSignWithdrawResponse } from "../src/clients";
 import { DepositAddressHandler } from "../src/deposit-address/DepositAddressHandler";
 import { DepositAddressHandlerConfig } from "../src/deposit-address/DepositAddressHandlerConfig";
 
@@ -76,6 +76,27 @@ const withdrawLeaf = {
   encodedParams: "0x",
   implementationAddress: IMPL,
 };
+
+const WITHDRAW_IMPL = "0x000000000000000000000000000000000000B4B4";
+
+/** v3 withdraw leaf as projected by the indexer (`kind === "withdraw"`). */
+const v3WithdrawLeaf = {
+  kind: "withdraw",
+  implementationAddress: WITHDRAW_IMPL,
+  encodedParams: "0x",
+  leafHash: "0x" + "4".repeat(64),
+  merkleProof: ["0x" + "5".repeat(64), "0x" + "6".repeat(64)],
+};
+
+/** v3 mis_route message carrying a withdraw leaf, ready for the refund-withdraw path. */
+function withdrawMessageV3(overrides: Partial<DepositAddressMessageV3> = {}): DepositAddressMessageV3 {
+  const message = depositMessageV3({
+    counterfactualMaterials: [v3WithdrawLeaf],
+    ...overrides,
+  });
+  message.erc20Transfer.transferClassification = "mis_route";
+  return message;
+}
 
 /** v3 correct_transfer message mirroring the indexer's DepositAddressTransferItemV3 projection. */
 function depositMessageV3(overrides: Partial<DepositAddressMessageV3> = {}): DepositAddressMessageV3 {
@@ -253,6 +274,7 @@ describe("DepositAddressHandler.processExecution v3 routing", function () {
   let v3Stub: sinon.SinonStub;
   let v1Stub: sinon.SinonStub;
   let withdrawStub: sinon.SinonStub;
+  let withdrawV3Stub: sinon.SinonStub;
   let logger: winston.Logger;
 
   type Internals = { processExecution: (m: unknown) => Promise<void> };
@@ -264,7 +286,13 @@ describe("DepositAddressHandler.processExecution v3 routing", function () {
     v3Stub = sinon.stub().resolves();
     v1Stub = sinon.stub().resolves();
     withdrawStub = sinon.stub().resolves();
-    Object.assign(handler, { initiateDepositV3: v3Stub, initiateDeposit: v1Stub, initiateWithdraw: withdrawStub });
+    withdrawV3Stub = sinon.stub().resolves();
+    Object.assign(handler, {
+      initiateDepositV3: v3Stub,
+      initiateDeposit: v1Stub,
+      initiateWithdraw: withdrawStub,
+      initiateWithdrawV3: withdrawV3Stub,
+    });
   });
 
   afterEach(() => sinon.restore());
@@ -275,17 +303,27 @@ describe("DepositAddressHandler.processExecution v3 routing", function () {
     expect(v3Stub.calledOnceWithExactly(message)).to.equal(true);
     expect(v1Stub.notCalled).to.equal(true);
     expect(withdrawStub.notCalled).to.equal(true);
+    expect(withdrawV3Stub.notCalled).to.equal(true);
   });
 
-  it("skips v3 refund classifications (withdraw flow not yet supported)", async function () {
-    for (const transferClassification of ["mis_route", "intent_refund"] as const) {
-      const message = depositMessageV3();
-      message.erc20Transfer.transferClassification = transferClassification;
-      await (handler as unknown as Internals).processExecution(message);
-    }
+  it("routes v3 mis_route to the v3 withdraw path", async function () {
+    const message = depositMessageV3();
+    message.erc20Transfer.transferClassification = "mis_route";
+    await (handler as unknown as Internals).processExecution(message);
+    expect(withdrawV3Stub.calledOnceWithExactly(message)).to.equal(true);
     expect(v3Stub.notCalled).to.equal(true);
     expect(v1Stub.notCalled).to.equal(true);
     expect(withdrawStub.notCalled).to.equal(true);
+  });
+
+  it("drops v3 intent_refund (not yet supported)", async function () {
+    const message = depositMessageV3();
+    message.erc20Transfer.transferClassification = "intent_refund";
+    await (handler as unknown as Internals).processExecution(message);
+    expect(v3Stub.notCalled).to.equal(true);
+    expect(v1Stub.notCalled).to.equal(true);
+    expect(withdrawStub.notCalled).to.equal(true);
+    expect(withdrawV3Stub.notCalled).to.equal(true);
   });
 
   it("keeps routing v1 messages to the v1 paths", async function () {
@@ -298,6 +336,7 @@ describe("DepositAddressHandler.processExecution v3 routing", function () {
     await (handler as unknown as Internals).processExecution(refund);
     expect(withdrawStub.calledOnceWithExactly(refund)).to.equal(true);
     expect(v3Stub.notCalled).to.equal(true);
+    expect(withdrawV3Stub.notCalled).to.equal(true);
   });
 });
 
@@ -454,5 +493,135 @@ describe("DepositAddressHandler._validateExecuteResponse guards", function () {
 
   it("rejects responses whose signature deadline is too close to expiry", function () {
     expect(validate(executeResponse({ signatureDeadline: getCurrentTime() + 30 }))).to.equal(false);
+  });
+});
+
+describe("DepositAddressHandler._getSignedWithdrawV3", function () {
+  let handler: DepositAddressHandler;
+  let signWithdrawStub: sinon.SinonStub;
+  let redisSetStub: sinon.SinonStub;
+
+  type Internals = {
+    _getSignedWithdrawV3: (
+      m: DepositAddressMessageV3,
+      leaf: typeof v3WithdrawLeaf,
+      retriesRemaining?: number
+    ) => Promise<DepositAddressSignWithdrawResponse | undefined>;
+    terminallySkippedWithdrawKeys: Set<string>;
+  };
+
+  function internals(): Internals {
+    return handler as unknown as Internals;
+  }
+
+  beforeEach(function () {
+    const config = {} as unknown as DepositAddressHandlerConfig;
+    const logger = { warn: sinon.stub(), debug: sinon.stub() } as unknown as winston.Logger;
+    handler = new DepositAddressHandler(logger, config, {} as unknown as Signer, []);
+    signWithdrawStub = sinon.stub();
+    (handler as unknown as { api: { signWithdrawDepositAddressV3: sinon.SinonStub } }).api = {
+      signWithdrawDepositAddressV3: signWithdrawStub,
+    };
+    redisSetStub = sinon.stub().resolves();
+    (handler as unknown as { redisCache: { set: sinon.SinonStub } }).redisCache = { set: redisSetStub };
+  });
+
+  afterEach(() => sinon.restore());
+
+  it("builds the sign-withdraw request from the message + withdraw leaf, with gas deduction on", async function () {
+    signWithdrawStub.resolves({ signedWithdrawTx: { chainId: 42161 } });
+    const message = withdrawMessageV3();
+    await internals()._getSignedWithdrawV3(message, v3WithdrawLeaf);
+    expect(signWithdrawStub.calledOnce).to.equal(true);
+    expect(signWithdrawStub.firstCall.args[0]).to.deep.equal({
+      chainId: 42161,
+      depositAddress: DEPOSIT_ADDRESS,
+      initialRoot: "0x" + "2".repeat(64),
+      salt: "0x" + "0".repeat(64),
+      token: TOKEN,
+      amount: "5000",
+      user: REFUND_ADDRESS,
+      proof: v3WithdrawLeaf.merkleProof,
+      counterfactualDepositFactory: "0x000000000000000000000000000000000000B2B2",
+      counterfactualBeacon: "0x000000000000000000000000000000000000B1B1",
+      adminWithdrawManager: "0x000000000000000000000000000000000000B3B3",
+      withdrawImplementation: WITHDRAW_IMPL,
+      deductGasFromRefund: true,
+    });
+  });
+
+  it("retries transient failures, then gives up without persisting a skip", async function () {
+    signWithdrawStub.rejects(new HttpError(400, "GAS_FEE_TEMPORARILY_UNAVAILABLE"));
+    const message = withdrawMessageV3();
+    const result = await internals()._getSignedWithdrawV3(message, v3WithdrawLeaf);
+    expect(result).to.equal(undefined);
+    expect(signWithdrawStub.callCount).to.equal(4); // initial attempt + 3 retries
+    expect(internals().terminallySkippedWithdrawKeys.size).to.equal(0);
+    expect(redisSetStub.notCalled).to.equal(true);
+  });
+
+  it("treats a 422 as terminal: no retry, persists the skip key", async function () {
+    signWithdrawStub.rejects(new HttpError(422, "GAS_EXCEEDS_REFUND"));
+    const message = withdrawMessageV3();
+    const result = await internals()._getSignedWithdrawV3(message, v3WithdrawLeaf);
+    expect(result).to.equal(undefined);
+    expect(signWithdrawStub.callCount).to.equal(1); // no retries on a terminal 422
+    const depositKey = `${DEPOSIT_ADDRESS}:${message.erc20Transfer.transactionHash}`;
+    expect(internals().terminallySkippedWithdrawKeys.has(depositKey)).to.equal(true);
+    expect(redisSetStub.calledOnce).to.equal(true);
+  });
+});
+
+describe("DepositAddressHandler.initiateWithdrawV3 guards", function () {
+  let handler: DepositAddressHandler;
+  let signWithdrawStub: sinon.SinonStub;
+  let warnStub: sinon.SinonStub;
+  let debugStub: sinon.SinonStub;
+  const chainId = 42161;
+
+  type Internals = {
+    initiateWithdrawV3: (m: DepositAddressMessageV3) => Promise<void>;
+    terminallySkippedWithdrawKeys: Set<string>;
+  };
+
+  function makeHandler(enableV3Withdrawals: boolean): void {
+    const config = { enableV3Withdrawals, relayerOriginChains: [chainId] } as unknown as DepositAddressHandlerConfig;
+    warnStub = sinon.stub();
+    debugStub = sinon.stub();
+    const logger = { warn: warnStub, debug: debugStub } as unknown as winston.Logger;
+    handler = new DepositAddressHandler(logger, config, {} as unknown as Signer, []);
+    signWithdrawStub = sinon.stub().resolves({ signedWithdrawTx: { chainId } });
+    (handler as unknown as { api: { signWithdrawDepositAddressV3: sinon.SinonStub } }).api = {
+      signWithdrawDepositAddressV3: signWithdrawStub,
+    };
+    (handler as unknown as { observedExecutedWithdraws: Record<number, Set<string>> }).observedExecutedWithdraws = {
+      [chainId]: new Set<string>(),
+    };
+    (handler as unknown as { redisCache: { set: sinon.SinonStub } }).redisCache = { set: sinon.stub().resolves() };
+  }
+
+  afterEach(() => sinon.restore());
+
+  it("skips without calling the API when the v3 withdraw gate is off", async function () {
+    makeHandler(false);
+    await (handler as unknown as Internals).initiateWithdrawV3(withdrawMessageV3());
+    expect(signWithdrawStub.notCalled).to.equal(true);
+    expect(debugStub.calledOnce).to.equal(true);
+  });
+
+  it("skips with a warning when the deposit-address namespace is not evm", async function () {
+    makeHandler(true);
+    await (handler as unknown as Internals).initiateWithdrawV3(withdrawMessageV3({ depositAddressNamespace: "svm" }));
+    expect(signWithdrawStub.notCalled).to.equal(true);
+    expect(warnStub.calledOnce).to.equal(true);
+  });
+
+  it("skips with a warning when the message carries no withdraw leaf", async function () {
+    makeHandler(true);
+    await (handler as unknown as Internals).initiateWithdrawV3(
+      withdrawMessageV3({ counterfactualMaterials: [{ ...v3WithdrawLeaf, kind: "vanilla-cctp" }] })
+    );
+    expect(signWithdrawStub.notCalled).to.equal(true);
+    expect(warnStub.calledOnce).to.equal(true);
   });
 });

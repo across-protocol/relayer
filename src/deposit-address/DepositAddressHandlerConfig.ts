@@ -11,6 +11,8 @@ export class DepositAddressHandlerConfig extends CommonConfig {
   initializationRetryAttempts: number;
   swapApiKey: string;
   withdrawEnabled: boolean;
+  /** Gate for the v3 (upgradeable-counterfactual) refund-withdraw path. Independent of withdrawEnabled. */
+  enableV3Withdrawals: boolean;
 
   /** Gate for publishing `withdraw_executed` events to GCP Pub/Sub. */
   enableDepositAddressWithdrawPublisher: boolean;
@@ -31,6 +33,7 @@ export class DepositAddressHandlerConfig extends CommonConfig {
       SWAP_API_KEY,
       INITIALIZATION_RETRY_ATTEMPTS,
       WITHDRAW_ENABLED,
+      ENABLE_V3_WITHDRAWALS,
       ENABLE_DEPOSIT_ADDRESS_WITHDRAW_PUBLISHER,
       PUBSUB_GCP_PROJECT_ID,
       PUBSUB_DEPOSIT_ADDRESS_WITHDRAW_TOPIC,
@@ -50,6 +53,7 @@ export class DepositAddressHandlerConfig extends CommonConfig {
     this.apiTimeoutOverride = Number(API_TIMEOUT_OVERRIDE ?? 3000); // In ms
     this.initializationRetryAttempts = Number(INITIALIZATION_RETRY_ATTEMPTS ?? 3);
     this.withdrawEnabled = WITHDRAW_ENABLED === "true";
+    this.enableV3Withdrawals = ENABLE_V3_WITHDRAWALS === "true";
 
     this.enableDepositAddressWithdrawPublisher = ENABLE_DEPOSIT_ADDRESS_WITHDRAW_PUBLISHER === "true";
     this.pubSubGcpProjectId = PUBSUB_GCP_PROJECT_ID?.trim() ?? "";

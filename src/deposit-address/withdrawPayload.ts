@@ -1,4 +1,4 @@
-import { DepositAddressMessage } from "../interfaces";
+import { AnyDepositAddressMessage, isDepositAddressMessageV3 } from "../interfaces";
 import { TransactionReceipt, utils } from "../utils";
 
 export const ERC20_TRANSFER_TOPIC = utils.id("Transfer(address,address,uint256)");
@@ -44,13 +44,17 @@ export type WithdrawExecutedPayload = {
  */
 export function buildWithdrawExecutedPayload(
   receipt: TransactionReceipt,
-  depositMessage: DepositAddressMessage
+  depositMessage: AnyDepositAddressMessage
 ): WithdrawExecutedPayload | undefined {
-  const { erc20Transfer, depositAddress, routeParams } = depositMessage;
+  const { erc20Transfer, depositAddress } = depositMessage;
   const token = erc20Transfer.contractAddress;
+  // v3 carries the refund recipient as a namespaced account; v1 carries it on routeParams.
+  const refundAddress = isDepositAddressMessageV3(depositMessage)
+    ? depositMessage.refundAddress.address
+    : depositMessage.routeParams.refundAddress;
 
   const paddedFrom = utils.hexZeroPad(depositAddress.toLowerCase(), 32);
-  const paddedTo = utils.hexZeroPad(routeParams.refundAddress.toLowerCase(), 32);
+  const paddedTo = utils.hexZeroPad(refundAddress.toLowerCase(), 32);
   const transferLogs = receipt.logs.filter(
     (log) =>
       log.address.toLowerCase() === token.toLowerCase() &&
