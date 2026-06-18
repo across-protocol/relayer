@@ -6,6 +6,15 @@ The SpokePoolClient and HubPoolClient are responsible for fetching events and st
 
 These clients use cache management modules like the RedisClient in order to reduce event RPC request load and avoid rate-limits.
 
+### Indexed SpokePoolClient event listeners (`src/libexec`)
+
+In indexed mode the SpokePoolClient spawns a per-chain-family child listener that streams SpokePool events to it over IPC: `RelayerSpokePoolListener` (EVM), `RelayerSpokePoolListenerSVM` (Solana), `RelayerSpokePoolListenerTVM` (TRON). Common CLI args: `--chainid`, `--spokepool`, `--lookback` (seconds-from-head or `@<block>`), `--blockrange` (max `eth_getLogs` page, default 10,000), and `--quorum` (default `NODE_QUORUM_<chainId>` / `NODE_QUORUM`, else 1).
+
+EVM and SVM subscribe over websockets and apply quorum in the application layer: `EventManager` tallies each event across `quorum` providers before posting it. TRON's RPCs don't support websockets reliably and expire `eth_newFilter` ids, so the TVM listener instead polls `eth_getLogs` over a single quorum `RetryProvider` — which imposes node quorum on every query (`--quorum` is threaded into `getProvider` as an override) — and reconciles a trailing re-org window:
+
+- After a one-time historical backfill of the look-back-only events (`RequestedSpeedUpDeposit`, `RelayedRootBundle`, `ExecutedRelayerRefundRoot`) up to the startup head, it loops every ~2s (just under TRON's ~3s block time). On each new head it issues one `--blockrange`-paginated `eth_getLogs` for the live events (`FundsDeposited`, `FilledRelay`) over the last `REORG_WINDOW` (64) blocks and diffs the result against what it has posted: events that vanished (re-orged out) are removed, new or re-org-replacement events are added. A re-org is reflected within one poll once quorum converges; a failed query skips the pass and retries on the next poll.
+- On TRON the RPC URL must target QuikNode's eth-JSON-RPC path (`…/jsonrpc`); the bare token URL is the TronGrid API and 404s for `eth_*` calls.
+
 ## Inventory Client
 
 The InventoryClient has several important functions that all use its `InventoryConfig` as input

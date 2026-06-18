@@ -2,27 +2,17 @@
 # yarn lockfile v1
 
 
-"@across-protocol/constants@^3.1.107":
-  version "3.1.108"
-  resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.108.tgz#982e230c0193f3b4124e3cb880eb6cb481f76a7e"
-  integrity sha512-uYcIw6VjWhSRal9+xv5aTgk3cK1qVH/8SkpSCpa6KMQUXmCKZ3eGGaVMl7Nogl6S0Cj/D76LnMgM3jUP6NK9ag==
+"@across-protocol/constants@^3.1.112", "@across-protocol/constants@^3.1.113":
+  version "3.1.113"
+  resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.113.tgz#af823dd81e25f10aa0c06d573b6237edb33fcd00"
+  integrity sha512-4bRz+a97nvdHhiVf9F3eQ2TlhdGWDOnS+Pvf8/rZNNTrEngWRmixWsibmxB35BcfhkhG+xPIHVsXNWiAFqDcXQ==
 
-"@across-protocol/constants@^3.1.109":
-  version "3.1.109"
-  resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.109.tgz#3a7e9f7581405cd09dbbdc480800d4a775051c46"
-  integrity sha512-Mt0wYTzMPbfNSEWZFuGdMTn8N4z9+yNWJ0HDFaZwVlaiW8m9F1uK5SWHsc6TAZURTvrC2T98nIDGm+ibPgwEYA==
-
-"@across-protocol/constants@^3.1.110":
-  version "3.1.110"
-  resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.110.tgz#8db121beb440187295874476ad05b1a8d4729acf"
-  integrity sha512-4GfJed7zziPBW4ywsaQaqtT5kSnIo0xthMcAJYqVcDm37e1oIv5lHFNoyGT8bOUNa0T1ZeEGcHLTOzbz+mfTnw==
-
-"@across-protocol/contracts@5.0.10":
-  version "5.0.10"
-  resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-5.0.10.tgz#c6eb6a88ef83b51fe019829668e928794b73b4d6"
-  integrity sha512-W1AAXzYjNmRsSQ8sckvrcI0gYOpBjPdJ01VseGLUxAoSqn2w2xPH65ZOsXyUVZrLdzoYNpYeJVYFgcaIEgVd0g==
+"@across-protocol/contracts@5.0.18":
+  version "5.0.18"
+  resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-5.0.18.tgz#03ee00a580b43bc239856a8a7441a482e22de443"
+  integrity sha512-SZfUEct6GRBx7n1cgmcQh7378eHuna4nls2Cb6usodMpA8rUmesN925ahkcQ1QBzAGKho8sqAUi/j998MxA8Zg==
   dependencies:
-    "@across-protocol/constants" "^3.1.107"
+    "@across-protocol/constants" "^3.1.112"
     "@coral-xyz/anchor" "^0.31.1"
     "@eth-optimism/contracts" "^0.5.40"
     "@ethersproject/bignumber" "5.7.0"
@@ -39,13 +29,13 @@
     bs58 "^6.0.0"
     ethers "5.7.2"
 
-"@across-protocol/sdk@4.3.164":
-  version "4.3.164"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.3.164.tgz#c8a91564d60f7afc3b332d7fe45b44fb1318c904"
-  integrity sha512-Zz3GksBHekq2KjlIM+24sG281onM/3au94ly8kwknq7aKsy1kxfeH62mq3cpeCGXq7UbFB14BMiE0nSb2WcqbQ==
+"@across-protocol/sdk@4.3.170":
+  version "4.3.170"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.3.170.tgz#e869fc5cf8866103836fe63e963567f7655379e0"
+  integrity sha512-z/1t5v0iQ9OSyVXbbpDhADjEmULUyuhnLSqTAJ1qS4YYsjH3MSZ2v2uA//4Rd9B8Gqv37PNArfnwJPEd/+PNyw==
   dependencies:
-    "@across-protocol/constants" "^3.1.110"
-    "@across-protocol/contracts" "5.0.10"
+    "@across-protocol/constants" "^3.1.113"
+    "@across-protocol/contracts" "5.0.18"
     "@coral-xyz/anchor" "^0.30.1"
     "@eth-optimism/sdk" "^3.3.1"
     "@ethersproject/bignumber" "^5.7.0"
@@ -1306,9 +1296,9 @@
     uuid "^9.0.0"
 
 "@grpc/grpc-js@^1.10.9", "@grpc/grpc-js@^1.12.6":
-  version "1.14.3"
-  resolved "https://registry.yarnpkg.com/@grpc/grpc-js/-/grpc-js-1.14.3.tgz#4c9b817a900ae4020ddc28515ae4b52c78cfb8da"
-  integrity sha512-Iq8QQQ/7X3Sac15oB6p0FmUg/klxQvXLeileoqrTRGJYLV+/9tubbr9ipz0GKHjmXVsgFPo/+W+2cA8eNcR+XA==
+  version "1.14.4"
+  resolved "https://registry.yarnpkg.com/@grpc/grpc-js/-/grpc-js-1.14.4.tgz#e73ff57d97802f063999545f43ebb2b1eca65d9d"
+  integrity sha512-k9Dj3DV/itK9D06Y8f190Qgop7/Ui+D0njFV3LHMPwPT75DpXLQohE9Wmz0QElrJnzsjB7KPWiKJbOl7IPDArQ==
   dependencies:
     "@grpc/proto-loader" "^0.8.0"
     "@js-sdsl/ordered-map" "^4.4.2"

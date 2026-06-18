@@ -66,6 +66,9 @@ const {
 const { getNativeTokenSymbol, isMessageEmpty, resolveDepositMessage } = sdkUtils;
 
 const bn10 = toBN(10);
+const AUXILIARY_NATIVE_TOKEN_ACCOUNTING_DECIMALS = {
+  [CHAIN_IDs.ARC]: 18,
+};
 
 // @note All FillProfit BigNumbers are scaled to 18 decimals unless specified otherwise.
 export type FillProfit = {
@@ -410,7 +413,7 @@ export class ProfitClient {
     const nativeTokenPriceUsd = this.getPriceOfToken(nativeToken.symbol);
     const auxiliaryNativeTokenCostUsd = auxiliaryNativeTokenCost
       .mul(nativeTokenPriceUsd)
-      .div(bn10.pow(nativeToken.decimals));
+      .div(bn10.pow(AUXILIARY_NATIVE_TOKEN_ACCOUNTING_DECIMALS[chainId] ?? nativeToken.decimals));
 
     const nativeTokenFillCostUsd = gasCostUsd.add(auxiliaryNativeTokenCostUsd);
     return {

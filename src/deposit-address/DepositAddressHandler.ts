@@ -23,14 +23,47 @@ import {
   normalizeDepositAddressMessage,
   toAddressType,
   TransactionReceipt,
+  getCurrentTime,
+  isHttpError,
 } from "../utils";
 import { getRedisCache, RedisCacheInterface } from "../cache/Redis";
-import { DepositAddressMessage } from "../interfaces";
-import { AcrossSwapApiClient, TransactionClient, SwapApiResponse, SignedWithdrawResponse } from "../clients";
+import {
+  AnyDepositAddressMessage,
+  CounterfactualMaterialV3,
+  DepositAddressMessage,
+  DepositAddressMessageV3,
+  isDepositAddressMessageV3,
+} from "../interfaces";
+import {
+  AcrossSwapApiClient,
+  TransactionClient,
+  SwapApiResponse,
+  SignedWithdrawResponse,
+  DepositAddressExecuteResponse,
+  DepositAddressSignWithdrawResponse,
+} from "../clients";
 import { AcrossIndexerApiClient } from "../clients/AcrossIndexerApiClient";
 import { GcpPubSubPublisher, getGcpPubSubPublisher } from "../messaging/gcp";
-import { buildWithdrawExecutedPayload } from "./withdrawPayload";
+import { buildDepositExecutedPayload, buildWithdrawExecutedPayload } from "./withdrawPayload";
 import ERC20_ABI from "../common/abi/MinimalERC20.json";
+
+/**
+ * Minimum seconds that must remain on a v3 execute response's signatureDeadline at submission
+ * time — headroom for simulation, broadcast and confirmation. Responses closer to expiry are
+ * dropped and re-requested fresh on the next poll.
+ */
+const V3_SIGNATURE_DEADLINE_BUFFER = 60;
+
+/** Quote-api execute requires a 2-byte-hex integratorId; mirror its schema regex. */
+const INTEGRATOR_ID_REGEX = /^0x[0-9a-fA-F]{4}$/;
+
+/**
+ * Indexer message versions the bot knows how to execute. Anything else (e.g. v2, or a future
+ * version shipped on the indexer before the bot supports it) is dropped before normalization —
+ * an allowlist, not a v2 denylist, so an unknown shape can never reach normalizeDepositAddressMessage
+ * and sink the whole poll batch.
+ */
+const SUPPORTED_INDEXER_MESSAGE_VERSIONS = new Set([1, 3]);
 
 /**
  * Independent relayer bot which processes EIP-3009 signatures into deposits and corresponding fills.
@@ -64,6 +97,14 @@ export class DepositAddressHandler {
   private executedWithdrawKeys: Set<string> = new Set();
 
   /**
+   * Set of depositKeys for v3 refund withdraws the quote-api rejected with a terminal 422
+   * (`GAS_EXCEEDS_REFUND` / `UNPRICEABLE_REFUND_TOKEN`). Persisted in Redis so the skip survives
+   * handover and is not re-attempted on later polls. Pruned alongside the other sets once the
+   * indexer stops returning the source message.
+   */
+  private terminallySkippedWithdrawKeys: Set<string> = new Set();
+
+  /**
    * Per chainId (refund chain = erc20Transfer.chainId): set of depositKeys for withdraws currently
    * being processed in this run. Prevents the next poll (which can fire on a 1s interval, faster
    * than a withdraw confirms) from racing against an in-flight broadcast. Mirrors
@@ -86,7 +127,9 @@ export class DepositAddressHandler {
 
   private transactionClient;
   private redisCache: RedisCacheInterface | undefined;
-  private withdrawPublisher: GcpPubSubPublisher | undefined;
+  // Single client shared by both lifecycle events (withdraw_executed / deposit_executed); they
+  // publish to the same topic and project. Per-event emission is gated by the respective config flag.
+  private executionPublisher: GcpPubSubPublisher | undefined;
 
   public constructor(
     readonly logger: winston.Logger,
@@ -113,8 +156,8 @@ export class DepositAddressHandler {
     this.redisCache = await getRedisCache(this.logger);
     assert(isDefined(this.redisCache), "DepositAddressHandler: requires a Redis cache for handover state");
 
-    if (this.config.enableDepositAddressWithdrawPublisher) {
-      this.withdrawPublisher = getGcpPubSubPublisher(this.logger, this.config.pubSubGcpProjectId);
+    if (this.config.enableDepositAddressWithdrawPublisher || this.config.enableDepositAddressDepositPublisher) {
+      this.executionPublisher = getGcpPubSubPublisher(this.logger, this.config.pubSubGcpProjectId);
     }
 
     // Exit if OS instructs us to do so.
@@ -153,6 +196,7 @@ export class DepositAddressHandler {
 
     await this._loadExecutedDepositsFromRedis();
     await this._loadWithdrawnKeysFromRedis();
+    await this._loadSkippedWithdrawKeysFromRedis();
 
     this.initialized = true;
   }
@@ -163,6 +207,10 @@ export class DepositAddressHandler {
 
   private getWithdrawnKeysRedisKey(): string {
     return `deposit-address:withdrawn-deposit-keys:${this.config.botIdentifier}`;
+  }
+
+  private getSkippedWithdrawKeysRedisKey(): string {
+    return `deposit-address:skipped-withdraw-keys:${this.config.botIdentifier}`;
   }
 
   /** Loads executed deposit tx hashes from Redis (e.g. after handover). */
@@ -223,6 +271,35 @@ export class DepositAddressHandler {
     });
   }
 
+  /** Loads terminally-skipped (422) refund-withdraw depositKeys from Redis (e.g. after handover). */
+  private async _loadSkippedWithdrawKeysFromRedis(): Promise<void> {
+    assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
+    const { redisCache } = this;
+    const redisKey = this.getSkippedWithdrawKeysRedisKey();
+    const raw = await redisCache.get<string>(redisKey);
+    let arr: string[] = [];
+    try {
+      if (raw) {
+        arr = parseJson.stringArray(raw);
+      }
+    } catch (err) {
+      this.logger.error({
+        at: "DepositAddressHandler#_loadSkippedWithdrawKeysFromRedis",
+        message: "Failed to parse skipped withdraw keys from Redis, using empty set",
+        redisKey,
+        err: err instanceof Error ? err.message : String(err),
+      });
+
+      throw err;
+    }
+    this.terminallySkippedWithdrawKeys = new Set(arr);
+    this.logger.debug({
+      at: "DepositAddressHandler#_loadSkippedWithdrawKeysFromRedis",
+      message: "Loaded terminally-skipped withdraw deposit keys from Redis",
+      count: this.terminallySkippedWithdrawKeys.size,
+    });
+  }
+
   /*
    * @notice Polls the Across indexer API and starts background tasks.
    */
@@ -261,6 +338,11 @@ export class DepositAddressHandler {
         this.executedWithdrawKeys.delete(key);
       }
     }
+    for (const key of [...this.terminallySkippedWithdrawKeys]) {
+      if (!depositKeysFromIndexer.has(key)) {
+        this.terminallySkippedWithdrawKeys.delete(key);
+      }
+    }
 
     await forEachAsync(depositMessages, async (depositMessage) => {
       await this.processExecution(depositMessage);
@@ -268,13 +350,34 @@ export class DepositAddressHandler {
   }
 
   /**
-   * Dispatches an indexer message to the deposit or refund-withdraw path based on its classification:
-   *   - correct_transfer: forward deposit/execute path.
-   *   - mis_route / intent_refund: refund-withdraw path.
+   * Dispatches an indexer message to the deposit or refund-withdraw path based on its version and
+   * classification:
+   *   - v3 correct_transfer: thin-submitter execute path (initiateDepositV3).
+   *   - v3 mis_route: refund-withdraw path (initiateWithdrawV3), gated behind config.enableV3Withdrawals.
+   *   - v3 anything else (incl. intent_refund): dropped — not yet supported on v3.
+   *   - v1 correct_transfer: forward deposit/execute path.
+   *   - v1 mis_route / intent_refund: refund-withdraw path.
    *   - anything else: dropped (forward-compat) until explicitly supported.
    */
-  private async processExecution(depositMessage: DepositAddressMessage): Promise<void> {
+  private async processExecution(depositMessage: AnyDepositAddressMessage): Promise<void> {
     const classification = depositMessage.erc20Transfer.transferClassification;
+    if (isDepositAddressMessageV3(depositMessage)) {
+      if (classification === "correct_transfer") {
+        return this.initiateDepositV3(depositMessage);
+      }
+      if (classification === "mis_route") {
+        return this.initiateWithdrawV3(depositMessage);
+      }
+      this.logger.debug({
+        at: "DepositAddressHandler#processExecution",
+        message: "deposit-address transfer skipped: v3 refund-withdraw not supported for classification",
+        classification,
+        depositAddress: depositMessage.depositAddress,
+        txHash: depositMessage.erc20Transfer.transactionHash,
+        chainId: depositMessage.erc20Transfer.chainId,
+      });
+      return;
+    }
     if (classification === "correct_transfer") {
       return this.initiateDeposit(depositMessage);
     }
@@ -518,6 +621,14 @@ export class DepositAddressHandler {
     await redisCache.set(redisKey, JSON.stringify([...this.executedWithdrawKeys]));
   }
 
+  /** Same pattern as `_persistWithdrawnKeysRedis` but for terminally-skipped (422) withdraw keys. */
+  private async _persistSkippedWithdrawKeysRedis(): Promise<void> {
+    assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
+    const { redisCache } = this;
+    const redisKey = this.getSkippedWithdrawKeysRedisKey();
+    await redisCache.set(redisKey, JSON.stringify([...this.terminallySkippedWithdrawKeys]));
+  }
+
   /**
    * Best-effort publish of a `withdraw_executed` lifecycle event to GCP Pub/Sub. Payload shape
    * is locked by the consumer (`isDepositAddressWithdrawPayload` in
@@ -529,18 +640,22 @@ export class DepositAddressHandler {
    */
   private async _publishWithdrawExecuted(
     receipt: TransactionReceipt,
-    depositMessage: DepositAddressMessage
+    depositMessage: AnyDepositAddressMessage
   ): Promise<void> {
-    if (!isDefined(this.withdrawPublisher)) {
+    // The client may exist because the deposit gate is on; keep withdraw publishing independent.
+    if (!this.config.enableDepositAddressWithdrawPublisher || !isDefined(this.executionPublisher)) {
       return;
     }
     const payload = buildWithdrawExecutedPayload(receipt, depositMessage);
     if (!isDefined(payload)) {
+      const refundAddress = isDepositAddressMessageV3(depositMessage)
+        ? depositMessage.refundAddress.address
+        : depositMessage.routeParams.refundAddress;
       this.logger.warn({
         at: "DepositAddressHandler#_publishWithdrawExecuted",
         message: "Skipping publish: no ERC20 Transfer (deposit address → refund address) found in receipt",
         depositAddress: depositMessage.depositAddress,
-        refundAddress: depositMessage.routeParams.refundAddress,
+        refundAddress,
         token: depositMessage.erc20Transfer.contractAddress,
         txHash: receipt.transactionHash,
       });
@@ -548,7 +663,7 @@ export class DepositAddressHandler {
     }
 
     try {
-      const messageId = await this.withdrawPublisher.publishJson(
+      const messageId = await this.executionPublisher.publishJson(
         this.config.pubSubDepositAddressWithdrawTopic,
         payload
       );
@@ -570,11 +685,61 @@ export class DepositAddressHandler {
     }
   }
 
+  /**
+   * Best-effort publish of a `deposit_executed` lifecycle event to GCP Pub/Sub after a successful
+   * v3 deposit (correct-transfer) execution. Mirrors {@link _publishWithdrawExecuted}: the deposit
+   * is already on-chain and Redis-persisted by the time we get here, so a publish failure never
+   * rolls back state and never throws to the caller — a dropped publish leaves the indexer row
+   * pending until ops reconciles. Shares the topic with `withdraw_executed`; gated independently by
+   * config.enableDepositAddressDepositPublisher.
+   */
+  private async _publishDepositExecuted(
+    receipt: TransactionReceipt,
+    depositMessage: DepositAddressMessageV3
+  ): Promise<void> {
+    if (!this.config.enableDepositAddressDepositPublisher || !isDefined(this.executionPublisher)) {
+      return;
+    }
+    const payload = buildDepositExecutedPayload(receipt, depositMessage);
+    if (!isDefined(payload)) {
+      this.logger.warn({
+        at: "DepositAddressHandler#_publishDepositExecuted",
+        message: "Skipping publish: no ERC20 Transfer of the input token leaving the deposit address found in receipt",
+        depositAddress: depositMessage.depositAddress,
+        token: depositMessage.erc20Transfer.contractAddress,
+        txHash: receipt.transactionHash,
+      });
+      return;
+    }
+
+    try {
+      const messageId = await this.executionPublisher.publishJson(
+        this.config.pubSubDepositAddressWithdrawTopic,
+        payload
+      );
+      this.logger.debug({
+        at: "DepositAddressHandler#_publishDepositExecuted",
+        message: "Published deposit_executed",
+        messageId,
+        payload,
+      });
+    } catch (err) {
+      this.logger.error({
+        at: "DepositAddressHandler#_publishDepositExecuted",
+        message: "Failed to publish deposit_executed to GCP Pub/Sub",
+        topic: this.config.pubSubDepositAddressWithdrawTopic,
+        payload,
+        err: err instanceof Error ? err.message : String(err),
+        notificationPath: "across-bot-error",
+      });
+    }
+  }
+
   /** Releases the Pub/Sub client. Idempotent. Safe to call when the publisher is not configured. */
   public async disconnect(): Promise<void> {
-    if (isDefined(this.withdrawPublisher)) {
-      await this.withdrawPublisher.close();
-      this.withdrawPublisher = undefined;
+    if (isDefined(this.executionPublisher)) {
+      await this.executionPublisher.close();
+      this.executionPublisher = undefined;
     }
   }
 
@@ -739,6 +904,503 @@ export class DepositAddressHandler {
     await this._persistExecutedDepositsRedis();
   }
 
+  /**
+   * v3 (upgradeable-counterfactual) deposit-execute path. The bot is a thin submitter: it relays
+   * funding context to the quote-api execute endpoint, which re-derives the deposit address and
+   * merkle materials server-side and returns ready-to-sign factory calldata wrapping
+   * `deployIfNeededAndExecute` — so unlike v1 there is no bot-side deploy step. The returned
+   * calldata embeds a deadline-bounded signature: it is perishable and is re-requested fresh on
+   * the next poll after any failure, never patched.
+   */
+  private async initiateDepositV3(depositMessage: DepositAddressMessageV3): Promise<void> {
+    const { depositAddress, routeParams, refundAddress, erc20Transfer, depositAddressNamespace } = depositMessage;
+    const { amount, transactionHash: refTxHash, contractAddress: inputToken } = erc20Transfer;
+    const originChainId = Number(erc20Transfer.chainId);
+    const destinationChainId = Number(routeParams.destinationChainId);
+    const depositKey = getDepositKey(depositMessage);
+
+    if (!this.config.relayerOriginChains.includes(originChainId)) {
+      return;
+    }
+
+    // Skip if a previous instance (or this one) already executed this deposit (persisted in Redis).
+    if (this.executedDepositTxHashes.has(refTxHash)) {
+      this.logger.debug({
+        at: "DepositAddressHandler#initiateDepositV3",
+        message: "Skipping already executed deposit (found in Redis)",
+        refTxHash,
+        depositKey,
+      });
+      return;
+    }
+
+    if (this.observedExecutedDeposits[originChainId]?.has(depositKey)) {
+      return;
+    }
+
+    this.observedExecutedDeposits[originChainId].add(depositKey);
+    // Release the in-flight lock on every exit path except a confirmed on-chain execute; an
+    // unexpected throw must not strand the depositKey, since the next poll would silently skip it.
+    let executeCommitted = false;
+    try {
+      // The execute endpoint identity (userAddress) must be an EVM address; non-EVM identities
+      // cannot be executed through this path.
+      if (depositAddressNamespace !== "evm" || refundAddress.namespace !== "evm") {
+        this.logger.warn({
+          at: "DepositAddressHandler#initiateDepositV3",
+          message: "Skipping v3 deposit: unsupported account namespace",
+          depositAddressNamespace,
+          refundAddressNamespace: refundAddress.namespace,
+          depositAddress,
+          refTxHash,
+          chainId: originChainId,
+        });
+        return;
+      }
+
+      // The execute endpoint requires the integratorId (2-byte hex) that the deposit address was
+      // derived with — it folds into the CREATE2 salt server-side. No funded v3 addresses exist
+      // pre-integrator, so a missing/malformed value is a data anomaly: skip rather than guess one,
+      // which would only derive (and execute at) a different, unfunded address.
+      const integratorId = depositMessage.integrator?.integratorId;
+      if (!isDefined(integratorId) || !INTEGRATOR_ID_REGEX.test(integratorId)) {
+        this.logger.warn({
+          at: "DepositAddressHandler#initiateDepositV3",
+          message: "Skipping v3 deposit: missing or malformed integratorId",
+          integratorId: integratorId ?? "absent",
+          depositAddress,
+          refTxHash,
+          chainId: originChainId,
+        });
+        return;
+      }
+
+      // Defensive on-chain balance check — guards against reorged indexer messages and against
+      // acting on a deposit-address that has already been executed through another path.
+      const inputTokenContract = new Contract(inputToken, ERC20_ABI, this.providersByChain[originChainId]);
+      const onchainBalance: BigNumber = await inputTokenContract.balanceOf(depositAddress);
+      if (onchainBalance.lt(toBN(amount))) {
+        this.logger.debug({
+          at: "DepositAddressHandler#initiateDepositV3",
+          message: "Deposit address does not have sufficient input token balance to initiate deposit.",
+          depositKey,
+          depositAddress,
+          inputToken,
+          amount,
+          onchainBalance: onchainBalance.toString(),
+        });
+        return;
+      }
+
+      const executeResponse = await this._getExecuteTx(depositMessage);
+      if (!isDefined(executeResponse)) {
+        this.logger.warn({
+          at: "DepositAddressHandler#initiateDepositV3",
+          message: "Failed to fetch execute tx from swap API",
+          depositKey,
+          depositAddress,
+          chainId: originChainId,
+        });
+        return;
+      }
+      if (!this._validateExecuteResponse(executeResponse, depositMessage, originChainId, depositKey)) {
+        return;
+      }
+
+      const { executeTx: apiExecuteTx } = executeResponse;
+      const useDispatcher = this.depositAddressSigners.length > 0;
+      const executeTx = {
+        contract: this.getExecuteContract(apiExecuteTx.to, originChainId, useDispatcher),
+        method: "",
+        args: [apiExecuteTx.data],
+        value: toBN(apiExecuteTx.value),
+        chainId: originChainId,
+        message: "Completed Deposit Execution Successfully 🎯",
+        mrkdwn: `Completed execution of v3 Deposit on ${getNetworkName(originChainId)} to ${getNetworkName(
+          destinationChainId
+        )}, using deposit address ${blockExplorerLink(depositAddress, originChainId)}`,
+      };
+
+      const depositReceipt = await sendAndConfirmTransaction(executeTx, this.transactionClient, useDispatcher);
+      if (!isDefined(depositReceipt)) {
+        this.logger.warn({
+          at: "DepositAddressHandler#initiateDepositV3",
+          message: "Failed to submit execute tx",
+          depositKey,
+          executeTx: {
+            ...executeTx,
+            contract: executeTx.contract.address,
+          },
+        });
+        return;
+      }
+
+      // The execute is on-chain; keep the in-flight lock and persist to Redis immediately so
+      // handover cannot miss this execute.
+      this.executedDepositTxHashes.add(refTxHash);
+      executeCommitted = true;
+      await this._persistExecutedDepositsRedis();
+      await this._publishDepositExecuted(depositReceipt, depositMessage);
+    } finally {
+      if (!executeCommitted) {
+        this.observedExecutedDeposits[originChainId].delete(depositKey);
+      }
+    }
+  }
+
+  /**
+   * Sanity-checks an execute response before submission. Most importantly, the API's re-derived
+   * deposit address must match the funded address from the indexer — a mismatch means the API
+   * would deploy/execute at a different address than the one holding the user's funds.
+   */
+  private _validateExecuteResponse(
+    executeResponse: DepositAddressExecuteResponse,
+    depositMessage: DepositAddressMessageV3,
+    originChainId: number,
+    depositKey: string
+  ): boolean {
+    const { depositAddress } = depositMessage;
+    const { executeTx, isPlaceholder, signatureDeadline } = executeResponse;
+    const logContext = {
+      at: "DepositAddressHandler#initiateDepositV3",
+      depositKey,
+      depositAddress,
+      chainId: originChainId,
+    };
+
+    if (executeResponse.depositAddress.toLowerCase() !== depositAddress.toLowerCase()) {
+      this.logger.warn({
+        ...logContext,
+        message: "Skipping execute: API-derived deposit address does not match funded deposit address",
+        apiDepositAddress: executeResponse.depositAddress,
+      });
+      return false;
+    }
+    if (executeTx.chainId !== originChainId) {
+      this.logger.warn({
+        ...logContext,
+        message: "Skipping execute: execute tx chainId does not match origin chainId",
+        executeTxChainId: executeTx.chainId,
+      });
+      return false;
+    }
+    if (isPlaceholder) {
+      this.logger.warn({
+        ...logContext,
+        message: "Skipping execute: API derivation used placeholder creation code",
+      });
+      return false;
+    }
+    // The embedded signature is deadline-bounded; leave headroom for simulation + broadcast +
+    // confirmation. A stale response is dropped and re-requested fresh on the next poll.
+    if (signatureDeadline < getCurrentTime() + V3_SIGNATURE_DEADLINE_BUFFER) {
+      this.logger.warn({
+        ...logContext,
+        message: "Skipping execute: signature deadline too close to expiry",
+        signatureDeadline,
+      });
+      return false;
+    }
+    return true;
+  }
+
+  private async _getExecuteTx(
+    depositMessage: DepositAddressMessageV3,
+    retriesRemaining = 3
+  ): Promise<DepositAddressExecuteResponse | undefined> {
+    const { routeParams, refundAddress, erc20Transfer } = depositMessage;
+    // The API re-derives the deposit address and merkle materials from this identity; the bot
+    // relays funding context plus the integratorId the address was derived with (≠ building
+    // calldata). executionFee is omitted for now: the API defaults it to 0 and bot-side fee pricing
+    // is deferred to a follow-up task. The integratorId is validated by initiateDepositV3's guard
+    // before we reach here; re-assert so the required request field narrows to a string.
+    const integratorId = depositMessage.integrator?.integratorId;
+    assert(
+      isDefined(integratorId) && INTEGRATOR_ID_REGEX.test(integratorId),
+      "DepositAddressHandler: _getExecuteTx requires a validated integratorId"
+    );
+    const request = {
+      destination: {
+        token: {
+          chainId: Number(routeParams.destinationChainId),
+          address: routeParams.outputToken,
+        },
+        recipient: routeParams.recipient.address,
+      },
+      originChainId: Number(erc20Transfer.chainId),
+      userAddress: refundAddress.address,
+      amount: erc20Transfer.amount,
+      executionFeeRecipient: this.signerAddress.toNative(),
+      integratorId,
+    };
+    // `_post` swallows errors and returns undefined, so retry on both throw and falsy return.
+    try {
+      const result = await this.api.executeDepositAddress(request);
+      if (result) {
+        return result;
+      }
+    } catch {
+      // Logging is handled in AcrossSwapApiClient.
+    }
+    return retriesRemaining > 0 ? this._getExecuteTx(depositMessage, --retriesRemaining) : undefined;
+  }
+
+  /**
+   * v3 refund-withdraw path entry point. Gated behind config.enableV3Withdrawals and only reached
+   * for `mis_route` classifications (see processExecution). Refunds funds stranded on a v3
+   * (upgradeable-counterfactual) deposit address back to the committed refund address via the
+   * quote-api v3 sign-withdraw endpoint, which bundles the BeaconProxy deploy + signedWithdrawToUser
+   * into a single Multicall3 call when the proxy is not yet on-chain. Gas is deducted from the
+   * refund (`deductGasFromRefund: true`) so refunds are not operated at a loss; a terminal 422
+   * (fee ≥ refund / unpriceable token) is persisted and never retried.
+   */
+  private async initiateWithdrawV3(depositMessage: DepositAddressMessageV3): Promise<void> {
+    const { depositAddress, refundAddress, erc20Transfer, depositAddressNamespace } = depositMessage;
+    const { amount, transactionHash: refTxHash, contractAddress: token } = erc20Transfer;
+    // Refund chain is where the funds landed.
+    const chainId = Number(erc20Transfer.chainId);
+    const depositKey = getDepositKey(depositMessage);
+
+    if (!this.config.enableV3Withdrawals) {
+      this.logger.debug({
+        at: "DepositAddressHandler#initiateWithdrawV3",
+        message: "deposit-address transfer skipped: v3 withdraw flow disabled",
+        depositAddress,
+        txHash: refTxHash,
+        chainId,
+      });
+      return;
+    }
+
+    if (!this.config.relayerOriginChains.includes(chainId)) {
+      return;
+    }
+
+    // Skip if a previous instance (or this one) already executed this withdraw (persisted in Redis).
+    if (this.executedWithdrawKeys.has(depositKey)) {
+      this.logger.debug({
+        at: "DepositAddressHandler#initiateWithdrawV3",
+        message: "Skipping already executed withdraw (found in Redis)",
+        refTxHash,
+        depositKey,
+      });
+      return;
+    }
+
+    // Skip if a previous attempt hit a terminal 422 (persisted in Redis); never re-attempt.
+    if (this.terminallySkippedWithdrawKeys.has(depositKey)) {
+      this.logger.debug({
+        at: "DepositAddressHandler#initiateWithdrawV3",
+        message: "Skipping terminally-skipped withdraw (found in Redis)",
+        refTxHash,
+        depositKey,
+      });
+      return;
+    }
+
+    if (this.observedExecutedWithdraws[chainId]?.has(depositKey)) {
+      return;
+    }
+
+    this.observedExecutedWithdraws[chainId].add(depositKey);
+    // Release the in-flight lock on every exit path except a confirmed on-chain withdraw; an
+    // unexpected throw must not strand the depositKey, since the next poll would silently skip it.
+    let withdrawCommitted = false;
+    try {
+      // The withdraw user identity and deposit address must be EVM addresses for this path.
+      if (depositAddressNamespace !== "evm" || refundAddress.namespace !== "evm") {
+        this.logger.warn({
+          at: "DepositAddressHandler#initiateWithdrawV3",
+          message: "Skipping v3 withdraw: unsupported account namespace",
+          depositAddressNamespace,
+          refundAddressNamespace: refundAddress.namespace,
+          depositAddress,
+          refTxHash,
+          chainId,
+        });
+        return;
+      }
+
+      const withdrawLeaf = depositMessage.counterfactualMaterials.find((leaf) => leaf.kind === "withdraw");
+      if (
+        !isDefined(withdrawLeaf) ||
+        !isDefined(withdrawLeaf.merkleProof) ||
+        !isDefined(withdrawLeaf.implementationAddress)
+      ) {
+        this.logger.warn({
+          at: "DepositAddressHandler#initiateWithdrawV3",
+          message: "Skipping v3 withdraw: message missing withdraw leaf materials",
+          depositAddress,
+          refTxHash,
+          chainId,
+        });
+        return;
+      }
+
+      // Defensive on-chain balance check — guards against reorged indexer messages and against
+      // acting on a deposit-address already withdrawn through another path.
+      const tokenContract = new Contract(token, ERC20_ABI, this.providersByChain[chainId]);
+      let onchainBalance: BigNumber;
+      try {
+        onchainBalance = await tokenContract.balanceOf(depositAddress);
+      } catch (err) {
+        this.logger.warn({
+          at: "DepositAddressHandler#initiateWithdrawV3",
+          message: "Skipping withdraw: failed to fetch deposit address balance",
+          depositAddress,
+          token,
+          depositKey,
+          refTxHash,
+          chainId,
+          err: err instanceof Error ? err.message : String(err),
+        });
+        return;
+      }
+
+      if (onchainBalance.lt(toBN(amount))) {
+        this.logger.debug({
+          at: "DepositAddressHandler#initiateWithdrawV3",
+          message: "Skipping withdraw: deposit address balance below transfer amount",
+          depositAddress,
+          token,
+          amount,
+          onchainBalance: onchainBalance.toString(),
+          depositKey,
+          refTxHash,
+          chainId,
+        });
+        return;
+      }
+
+      const signed = await this._getSignedWithdrawV3(depositMessage, withdrawLeaf);
+      if (!isDefined(signed)) {
+        // _getSignedWithdrawV3 already logged (transient retry-exhausted or terminal 422 skip).
+        return;
+      }
+
+      if (signed.signedWithdrawTx.chainId !== chainId) {
+        this.logger.warn({
+          at: "DepositAddressHandler#initiateWithdrawV3",
+          message: "Skipping withdraw: signed payload chainId does not match refund chainId",
+          signedChainId: signed.signedWithdrawTx.chainId,
+          chainId,
+          depositKey,
+          refTxHash,
+          depositAddress,
+        });
+        return;
+      }
+
+      // The signature is deadline-bounded; leave headroom for simulation + broadcast + confirmation.
+      if (signed.deadline < getCurrentTime() + V3_SIGNATURE_DEADLINE_BUFFER) {
+        this.logger.warn({
+          at: "DepositAddressHandler#initiateWithdrawV3",
+          message: "Skipping withdraw: signature deadline too close to expiry",
+          deadline: signed.deadline,
+          depositKey,
+          refTxHash,
+          depositAddress,
+          chainId,
+        });
+        return;
+      }
+
+      const useDispatcher = this.depositAddressSigners.length > 0;
+      const withdrawTx = {
+        contract: this.getExecuteContract(signed.signedWithdrawTx.to, chainId, useDispatcher),
+        method: "",
+        args: [signed.signedWithdrawTx.data],
+        value: toBN(signed.signedWithdrawTx.value),
+        chainId,
+        message: "Completed Refund Withdraw 💸",
+        mrkdwn: `v3 refund withdraw on ${getNetworkName(chainId)} for deposit address ${blockExplorerLink(
+          depositAddress,
+          chainId
+        )} (requestedAmount: ${signed.requestedAmount}, appliedGasFee: ${signed.appliedGasFee}, netAmount: ${
+          signed.netAmount
+        }, bundledDeploy: ${signed.bundledDeploy})`,
+      };
+
+      const receipt = await sendAndConfirmTransaction(withdrawTx, this.transactionClient, useDispatcher);
+      if (!isDefined(receipt)) {
+        this.logger.warn({
+          at: "DepositAddressHandler#initiateWithdrawV3",
+          message: "Failed to submit withdraw tx",
+          depositKey,
+          refTxHash,
+          depositAddress,
+          chainId,
+        });
+        return;
+      }
+
+      // The withdraw is on-chain; keep the in-flight lock and never re-attempt this depositKey,
+      // even if the Redis persist below throws (handover may miss it, but a double-send is worse).
+      this.executedWithdrawKeys.add(depositKey);
+      withdrawCommitted = true;
+      await this._persistWithdrawnKeysRedis();
+      await this._publishWithdrawExecuted(receipt, depositMessage);
+    } finally {
+      if (!withdrawCommitted) {
+        this.observedExecutedWithdraws[chainId].delete(depositKey);
+      }
+    }
+  }
+
+  /**
+   * Fetches v3 signed-withdraw calldata from the quote-api. Classifies failures: a terminal 422
+   * (`GAS_EXCEEDS_REFUND` / `UNPRICEABLE_REFUND_TOKEN`) is persisted to the terminal-skip set and
+   * never retried; every other failure (network, timeout, 5xx, transient 400) is retried.
+   */
+  private async _getSignedWithdrawV3(
+    depositMessage: DepositAddressMessageV3,
+    withdrawLeaf: CounterfactualMaterialV3,
+    retriesRemaining = 3
+  ): Promise<DepositAddressSignWithdrawResponse | undefined> {
+    const { depositAddress, refundAddress, erc20Transfer, initialRoot, salt } = depositMessage;
+    const { contractAddress: token, amount, chainId } = erc20Transfer;
+    const depositKey = getDepositKey(depositMessage);
+    const request = {
+      chainId: Number(chainId),
+      depositAddress,
+      initialRoot,
+      salt,
+      token,
+      amount,
+      user: refundAddress.address,
+      proof: withdrawLeaf.merkleProof,
+      counterfactualDepositFactory: depositMessage.counterfactualFactoryContractAddress,
+      counterfactualBeacon: depositMessage.counterfactualBeaconContractAddress,
+      adminWithdrawManager: depositMessage.adminWithdrawManagerContractAddress,
+      withdrawImplementation: withdrawLeaf.implementationAddress,
+      deductGasFromRefund: true,
+    };
+    try {
+      return await this.api.signWithdrawDepositAddressV3(request);
+    } catch (err) {
+      // 422 is a terminal state per product decision: gas exceeds the refund or the refund token is
+      // unpriceable. Persist the skip so it survives handover and is not re-attempted on later polls.
+      if (isHttpError(err) && err.status === 422) {
+        this.terminallySkippedWithdrawKeys.add(depositKey);
+        await this._persistSkippedWithdrawKeysRedis();
+        this.logger.warn({
+          at: "DepositAddressHandler#_getSignedWithdrawV3",
+          message: "Skipping withdraw permanently: quote-api returned terminal 422",
+          status: err.status,
+          error: err.message,
+          depositKey,
+          depositAddress,
+          chainId: Number(chainId),
+        });
+        return undefined;
+      }
+      // Logging is handled in AcrossSwapApiClient/base client; retry transient failures.
+      return retriesRemaining > 0
+        ? this._getSignedWithdrawV3(depositMessage, withdrawLeaf, --retriesRemaining)
+        : undefined;
+    }
+  }
+
   private getExecuteContract(address: string, originChainId: number, useDispatcher: boolean): Contract {
     const contract = new Contract(address, []);
     return useDispatcher ? contract : contract.connect(this.baseSigner.connect(this.providersByChain[originChainId]));
@@ -757,17 +1419,37 @@ export class DepositAddressHandler {
   /*
    * @notice Queries the Indexer API for all pending deposit addresses transactions. By default, do not retry since this endpoing is being polled.
    */
-  private async _queryIndexerApi(retriesRemaining = 3): Promise<DepositAddressMessage[]> {
-    let apiResponseData: DepositAddressMessage[] | undefined = undefined;
+  private async _queryIndexerApi(retriesRemaining = 3): Promise<AnyDepositAddressMessage[]> {
+    let apiResponseData: AnyDepositAddressMessage[] | undefined = undefined;
     try {
-      apiResponseData = await this.indexerApi.get<DepositAddressMessage[]>(this.config.indexerApiEndpoint, {});
+      apiResponseData = await this.indexerApi.get<AnyDepositAddressMessage[]>(this.config.indexerApiEndpoint, {});
     } catch {
       // Error log should have been emitted in IndexerApiClient.
     }
     if (!isDefined(apiResponseData)) {
       return retriesRemaining > 0 ? this._queryIndexerApi(--retriesRemaining) : [];
     }
-    return apiResponseData.map(normalizeDepositAddressMessage);
+    // Drop unsupported message versions BEFORE normalization. Unsupported payloads (e.g. v2) may
+    // not carry the v1 shape (routeParams/erc20Transfer/counterfactualMaterials), and
+    // normalizeDepositAddressMessage dereferences those unconditionally — a single bad message
+    // would throw and sink the whole batch, starving supported messages in the same response.
+    // Only top-level fields are safe to read here. v3 items keep their own shape and are passed
+    // through un-normalized (the v3 execute path is EVM-only and guards namespaces itself).
+    return apiResponseData
+      .filter((message) => {
+        const { version } = message;
+        if (isDefined(version) && !SUPPORTED_INDEXER_MESSAGE_VERSIONS.has(version)) {
+          this.logger.debug({
+            at: "DepositAddressHandler#_queryIndexerApi",
+            message: "deposit-address transfer skipped: unsupported message version",
+            version,
+            depositAddress: message.depositAddress,
+          });
+          return false;
+        }
+        return true;
+      })
+      .map((message) => (isDepositAddressMessageV3(message) ? message : normalizeDepositAddressMessage(message)));
   }
 
   private async _getSwapApiQuote(
@@ -785,6 +1467,10 @@ export class DepositAddressHandler {
     // Only the route-relevant leaf is nonzero; the swap-api selects which one applies by strategy.
     const cctpExecutionFee = counterfactualMaterials?.cctpLeaf?.params?.executionFee;
     const spokePoolExecutionFee = counterfactualMaterials?.spokePoolLeaf?.params?.executionFee;
+    // Integrator attribution from the indexer message, forwarded verbatim for tagging. `?? undefined`
+    // collapses both a missing `integrator` and an explicit null id, so absent integrators contribute
+    // no query param (stripped at serialization) and the request keeps its legacy shape.
+    const integratorId = depositMessage.integrator?.integratorId ?? undefined;
     // Swap API expects Tron origin fields in base58; on-chain paths keep ethers `0x` via normalizeDepositAddressMessage.
     // refundAddress must match what was committed in the withdraw leaf at PDA creation time so the
     // swap-api rebuilds the same merkle root the on-chain factory derives the deposit address from.
@@ -803,9 +1489,10 @@ export class DepositAddressHandler {
       shouldSponsorAccountCreation: String(depositMessage.shouldSponsorAccountCreation),
       cctpExecutionFee,
       spokePoolExecutionFee,
+      integratorId,
     };
     try {
-      return await this.api.get<SwapApiResponse>(this.config.apiEndpoint, params);
+      return await this.api.getCounterfactualDepositQuote(params);
     } catch {
       // Logging should have been done in the swap api client, so we do not need to log here.
       return retriesRemaining > 0 ? this._getSwapApiQuote(depositMessage, --retriesRemaining) : undefined;

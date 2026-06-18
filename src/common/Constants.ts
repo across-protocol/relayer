@@ -89,6 +89,7 @@ export const FINALIZER_TOKENBRIDGE_LOOKBACK = 14 * 24 * 60 * 60;
 
 // Chain IDs using the Succinct/Helios SP1 messaging bridge.
 export const UNIVERSAL_CHAINS = [
+  CHAIN_IDs.ARC,
   CHAIN_IDs.BSC,
   CHAIN_IDs.HYPEREVM,
   CHAIN_IDs.PLASMA,
@@ -133,6 +134,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     [CHAIN_IDs.TRON]: 19, // 19 Blocks to finalize.
   },
   100: {
+    [CHAIN_IDs.ARC]: 1,
     [CHAIN_IDs.HYPEREVM]: 1,
     [CHAIN_IDs.LENS]: 0,
     [CHAIN_IDs.LINEA]: 1,
@@ -169,6 +171,7 @@ const resolveRpcConfig = () => {
     [CHAIN_IDs.MONAD]: 1_000, // Alchemy constraint
     [CHAIN_IDs.SOLANA]: 1_000,
     [CHAIN_IDs.SOLANA_DEVNET]: 1000,
+    [CHAIN_IDs.TRON]: 5_000, // Chainstack constraint.
   };
   return Object.fromEntries(Object.values(CHAIN_IDs).map((chainId) => [chainId, ranges[chainId] ?? defaultRange]));
 };
@@ -191,6 +194,7 @@ const resolveChainBundleBuffers = () => {
 
   const buffers = {
     [CHAIN_IDs.ARBITRUM]: defaultBuffers[ChainFamily.ORBIT], // Inherit Orbit default.
+    [CHAIN_IDs.ARC]: 170, // ~350ms/block
     [CHAIN_IDs.BSC]: 5, // 2x the average 2.5 block finality (https://www.bnbchain.org/en/blog/the-coming-fastfinality-on-bsc)
     [CHAIN_IDs.HYPEREVM]: 120, // 60s/big block
     [CHAIN_IDs.LINEA]: 40, // ~3s/block
@@ -244,6 +248,7 @@ const resolveChainCacheDelay = () => {
 
   const cacheDelay = {
     [CHAIN_IDs.ARBITRUM]: cacheDelays[ChainFamily.ORBIT],
+    [CHAIN_IDs.ARC]: 20, // ~350ms/block, instant finality
     [CHAIN_IDs.BSC]: 5, // FastFinality on BSC makes finality time probabilistic but it takes an average of 2.5 blocks.
     [CHAIN_IDs.HYPEREVM]: 120, // big blocks are 60s/block
     [CHAIN_IDs.LINEA]: 100, // Linea has a soft-finality of 1 block. This value is padded - but at 3s/block the padding is 5 minutes
@@ -272,6 +277,7 @@ export const CHAIN_CACHE_FOLLOW_DISTANCE = resolveChainCacheDelay();
 // blocks = 172800 / avg_block_time
 export const DEFAULT_NO_TTL_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.ARBITRUM]: 691200,
+  [CHAIN_IDs.ARC]: 493714, // 493714 blocks is approximately 2 days at 350ms/block
   [CHAIN_IDs.BASE]: 86400,
   [CHAIN_IDs.BLAST]: 86400,
   [CHAIN_IDs.BOBA]: 86400,
@@ -329,6 +335,7 @@ export const spokesThatHoldNativeTokens = resolveNativeTokenSpokes();
 // A mapping of L2 chain IDs to an array of tokens Across supports on that chain.
 export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.ARBITRUM]: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "POOL", "ezETH"],
+  [CHAIN_IDs.ARC]: ["USDC"],
   [CHAIN_IDs.BASE]: ["BAL", "DAI", "ETH", "WETH", "USDC", "USDT", "POOL", "VLR", "ezETH"],
   [CHAIN_IDs.BLAST]: ["DAI", "WBTC", "WETH", "ezETH"],
   [CHAIN_IDs.BSC]: ["CAKE", "WBNB", "USDC", "USDT", "WETH"],
@@ -462,6 +469,9 @@ export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<Ba
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcTokenSplitterBridge,
     [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTBridge,
     [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20Bridge,
+  },
+  [CHAIN_IDs.ARC]: {
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcCCTPBridge,
   },
   [CHAIN_IDs.BASE]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcTokenSplitterBridge,
@@ -647,6 +657,9 @@ export const CUSTOM_L2_BRIDGE: Record<number, Record<string, L2BridgeConstructor
     [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTL2Bridge,
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: L2BinanceCEXNativeBridge,
     [TOKEN_SYMBOLS_MAP.DAI.addresses[CHAIN_IDs.MAINNET]]: L2BinanceCEXBridge,
+  },
+  [CHAIN_IDs.ARC]: {
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2UsdcCCTPBridge,
   },
   [CHAIN_IDs.HYPEREVM]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2UsdcCCTPBridge,

@@ -605,10 +605,22 @@ export class HyperliquidExecutor {
 
   // Task utilities
   private async waitForNextTask(): Promise<void> {
-    if (this.tasks.length > 0) {
+    if (this.tasks.length > 0 || this.abortController.signal.aborted) {
       return;
     }
-    await new Promise<void>((resolve) => (this.taskResolver = resolve));
+    // Park here until a new task is queued OR a handover request fires the
+    // AbortController. Without the abort listener, an idle executor whose
+    // upstream event source has stalled (e.g. dropped websocket) would never
+    // wake up, processTasks() would never exit, and the bot process would
+    // hang well past handover until the hub's 720s spoke timeout.
+    await new Promise<void>((resolve) => {
+      const onAbort = () => resolve();
+      this.abortController.signal.addEventListener("abort", onAbort, { once: true });
+      this.taskResolver = () => {
+        this.abortController.signal.removeEventListener("abort", onAbort);
+        resolve();
+      };
+    });
   }
 
   private dstHandler(tokenSymbol: string): Contract {

@@ -453,6 +453,10 @@ export class BaseChainAdapter {
       value,
       message,
       mrkdwn: `Sent ${formatUnitsForToken(tokenSymbol, amount)} ${tokenSymbol} to chain ${dstChain}.`,
+      // Block until the rebalance is mined rather than returning a pending tx. TransactionClient's
+      // confirmation loop awaits the receipt and is robust to RPC errors like transaction replacement
+      // (TRANSACTION_REPLACED), resubmitting under a fresh nonce instead of throwing.
+      ensureConfirmation: true,
     };
     const { reason, succeed, transaction: txnRequest } = (await this.transactionClient.simulate([_txnRequest]))[0];
     const { contract: targetContract, ...txnRequestData } = txnRequest;

@@ -352,14 +352,20 @@ export const CONTRACT_ADDRESSES: {
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
     },
     sponsoredCCTPDstPeriphery: {
-      address: getDeployedAddress("SponsoredCCTPDstPeriphery", CHAIN_IDs.HYPEREVM),
+      // @across-protocol/contracts 5.0.11 split the HyperEVM periphery into
+      // per-token deployments. The USDC variant is the default destination
+      // periphery; USDH callers go through `dstUsdhHandler` instead.
+      address: getDeployedAddress("SponsoredCCTPDstPeriphery_CCTP_USDC", CHAIN_IDs.HYPEREVM),
       abi: SPONSORED_CCTP_DST_PERIPHERY_ABI,
     },
     dstCctpHandler: {
-      address: getDeployedAddress("SponsoredCCTPDstPeriphery", CHAIN_IDs.HYPEREVM),
+      address: getDeployedAddress("SponsoredCCTPDstPeriphery_CCTP_USDC", CHAIN_IDs.HYPEREVM),
+    },
+    dstUsdhHandler: {
+      address: getDeployedAddress("SponsoredCCTPDstPeriphery_CCTP_USDH", CHAIN_IDs.HYPEREVM),
     },
     dstOftHandler: {
-      address: getDeployedAddress("DstOFTHandler", CHAIN_IDs.HYPEREVM),
+      address: getDeployedAddress("DstOFTHandler_OFT_USDT", CHAIN_IDs.HYPEREVM),
     },
     hyperliquidDepositHandler: {
       address: getDeployedAddress("HyperliquidDepositHandler", CHAIN_IDs.HYPEREVM),
@@ -603,6 +609,16 @@ export const CONTRACT_ADDRESSES: {
     permit2: {
       address: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
       abi: PERMIT2_ABI,
+    },
+  },
+  [CHAIN_IDs.ARC]: {
+    cctpV2MessageTransmitter: {
+      address: "0x81D40F21F12A8F0E3252Bccb954D722d4c464B64",
+      abi: CCTP_MESSAGE_TRANSMITTER_ABI,
+    },
+    cctpV2TokenMessenger: {
+      address: "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
+      abi: CCTP_V2_TOKEN_MESSENGER_ABI,
     },
   },
   [CHAIN_IDs.LENS]: {
