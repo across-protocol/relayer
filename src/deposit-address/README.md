@@ -70,6 +70,7 @@ The flow (`initiateDepositV3`):
    any failure the next poll **re-requests fresh calldata; stale payloads are never patched**.
 7. Sign and submit via `TransactionClient` (gas, nonce, rebroadcast), then persist the tx hash to
    Redis exactly like v1.
+8. Publish a `deposit_executed` lifecycle event to GCP Pub/Sub (if `ENABLE_DEPOSIT_ADDRESS_DEPOSIT_PUBLISHER=true`).
 
 The v3 message's `counterfactualMaterials`/`initialRoot`/`salt` are relayed by the indexer but not
 read by the execute path — the API re-derives them, so they are carried for diagnostics only.
@@ -151,31 +152,37 @@ On each poll, entries whose source messages are no longer returned by the indexe
 6. Persist the depositKey to Redis.
 7. Publish a `withdraw_executed` lifecycle event to GCP Pub/Sub (if the publisher gate is on).
 
-## Withdraw lifecycle Pub/Sub publish
+## Execution lifecycle Pub/Sub publish
 
-When `ENABLE_DEPOSIT_ADDRESS_WITHDRAW_PUBLISHER=true`, every confirmed refund withdraw produces one message on the configured GCP Pub/Sub topic. The consumer lives at `indexer/packages/indexer/src/pubsub/DepositAddressWithdrawConsumer.ts` (sibling repo) and transitions the corresponding `deposit_address_transfer_withdraw` row from `auto_pending` to `executed`.
+The bot publishes two lifecycle events to one shared GCP Pub/Sub topic so the consumer can transition indexer rows out of `auto_pending`:
+
+- `withdraw_executed` — when `ENABLE_DEPOSIT_ADDRESS_WITHDRAW_PUBLISHER=true`, every confirmed refund withdraw (v1 + v3).
+- `deposit_executed` — when `ENABLE_DEPOSIT_ADDRESS_DEPOSIT_PUBLISHER=true`, every successful **v3** correct-transfer execution (`initiateDepositV3`). v1 deposits and failure events are out of scope.
+
+The consumer lives at `indexer/packages/indexer/src/pubsub/DepositAddressWithdrawConsumer.ts` (sibling repo). A single Pub/Sub client serves both events (same project + topic); it is constructed when **either** gate is on, and each publish path checks its own flag so the two events toggle independently.
 
 ### Env
 
 | Name | Required | Description |
 | --- | --- | --- |
-| `ENABLE_DEPOSIT_ADDRESS_WITHDRAW_PUBLISHER` | No (default `false`) | Master gate. When false, no Pub/Sub client is constructed. |
-| `PUBSUB_GCP_PROJECT_ID` | When gate is on | GCP project that **hosts the topic** (may differ from the bot's runtime project — cross-project publish is supported when the runtime SA holds `roles/pubsub.publisher` on the topic in the host project). |
-| `PUBSUB_DEPOSIT_ADDRESS_WITHDRAW_TOPIC` | When gate is on | Short topic name (e.g. `topic-deposit-address-execution` in prod, `…-sandbox` in non-prod). |
+| `ENABLE_DEPOSIT_ADDRESS_WITHDRAW_PUBLISHER` | No (default `false`) | Gate for `withdraw_executed`. |
+| `ENABLE_DEPOSIT_ADDRESS_DEPOSIT_PUBLISHER` | No (default `false`) | Gate for `deposit_executed` (v3 executions). Independent of the withdraw gate. |
+| `PUBSUB_GCP_PROJECT_ID` | When either gate is on | GCP project that **hosts the topic** (may differ from the bot's runtime project — cross-project publish is supported when the runtime SA holds `roles/pubsub.publisher` on the topic in the host project). |
+| `PUBSUB_DEPOSIT_ADDRESS_WITHDRAW_TOPIC` | When either gate is on | Short topic name (e.g. `topic-deposit-address-execution` in prod, `…-sandbox` in non-prod). Shared by both events. |
 
 Auth uses Application Default Credentials. In Cloud Run / GKE the workload SA provides them; locally set `GOOGLE_APPLICATION_CREDENTIALS`.
 
 ### Payload (locked by the consumer)
 
-Every Pub/Sub message uses an envelope: `{ "type": "<message_type>", "data": <type-specific body> }`. The envelope shape is shared by all current and future message types so the consumer can dispatch on `type` and validate `data` against the matching schema. Today only one type is emitted:
+Every Pub/Sub message uses an envelope: `{ "type": "<message_type>", "data": <type-specific body> }`. The envelope shape is shared by all message types so the consumer can dispatch on `type` and validate `data` against the matching schema. `withdraw_executed` and `deposit_executed` share the exact `data` shape; only `type` differs:
 
 ```jsonc
 {
-  "type": "withdraw_executed",
+  "type": "withdraw_executed", // or "deposit_executed"
   "data": {
-    "chainId":     <withdraw tx chain>,
-    "blockNumber": <withdraw tx block number>,
-    "txHash":      "<withdraw tx hash>",
+    "chainId":     <execution tx chain>,
+    "blockNumber": <execution tx block number>,
+    "txHash":      "<execution tx hash>",
     "logIndex":    <logIndex of the ERC20 Transfer leaving the deposit address>,
     "erc20Transfer": {
       "chainId":     <inbound transfer chain>,
@@ -187,11 +194,16 @@ Every Pub/Sub message uses an envelope: `{ "type": "<message_type>", "data": <ty
 }
 ```
 
-All integer fields are `number`; tx hashes are lowercase hex strings. The `erc20Transfer` block identifies the original user transfer (the indexer keys rows on it); the sibling fields identify the withdraw transaction the bot just sent. The `logIndex` of the withdraw is the index of the ERC-20 `Transfer(address,address,uint256)` event whose `address` matches `erc20Transfer.contractAddress`, whose `from` is the deposit address, and whose `to` is the user's `routeParams.refundAddress`. Matching on `to` is necessary to disambiguate fee-on-transfer / tax / burn tokens that emit several Transfer events from the deposit address in one tx (one to the user, one to a fee recipient). If multiple Transfer logs still satisfy all three filters (e.g. a Multicall3-bundled withdraw with intermediate hops to the same refund address), the **last** match is used.
+All integer fields are `number`; tx hashes are lowercase hex strings. The `erc20Transfer` block identifies the original user transfer (the indexer keys rows on it); the sibling fields identify the execution transaction the bot just sent. The `logIndex` is the index of the ERC-20 `Transfer(address,address,uint256)` event whose `address` matches `erc20Transfer.contractAddress` and whose `from` is the deposit address; the **last** such log is used.
+
+- **`withdraw_executed`** additionally requires `to` to equal the user's `routeParams.refundAddress`. Matching on `to` disambiguates fee-on-transfer / tax / burn tokens that emit several Transfer events from the deposit address in one tx (one to the user, one to a fee recipient), and the last match handles Multicall3-bundled withdraws with intermediate hops to the same refund address.
+- **`deposit_executed`** omits the `to` filter — the input token leaves the deposit address into the SpokePool / CCTP with no fixed recipient — so any outgoing transfer of the input token qualifies.
+
+Zero matches → warn + skip the publish.
 
 ### Failure semantics
 
-Publish is best-effort. The withdraw is already on-chain and persisted in Redis before we publish; if the GCP client throws (after its own internal retries), we log at error level with `notificationPath: "across-bot-error"` and return — we do **not** roll back state, retry, or raise.
+Publish is best-effort. The withdraw or deposit execute is already on-chain and persisted in Redis before we publish; if the GCP client throws (after its own internal retries), we log at error level with `notificationPath: "across-bot-error"` and return — we do **not** roll back state, retry, or raise.
 
 The intentional trade-off: a dropped publish leaves the indexer row in `auto_pending` until ops reconciles. We do **not** replay executed-but-unpublished withdraws on startup (Redis does not persist per-key publish state). Both are accepted for v1; revisit if dropouts become an ops pain point.
 

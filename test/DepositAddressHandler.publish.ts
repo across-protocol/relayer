@@ -1,7 +1,11 @@
 import { expect } from "chai";
 import { utils, TransactionReceipt } from "../src/utils";
-import { DepositAddressMessage } from "../src/interfaces/DepositAddress";
-import { buildWithdrawExecutedPayload, ERC20_TRANSFER_TOPIC } from "../src/deposit-address/withdrawPayload";
+import { DepositAddressMessage, DepositAddressMessageV3 } from "../src/interfaces/DepositAddress";
+import {
+  buildDepositExecutedPayload,
+  buildWithdrawExecutedPayload,
+  ERC20_TRANSFER_TOPIC,
+} from "../src/deposit-address/withdrawPayload";
 import { getGcpPubSubPublisher } from "../src/messaging/gcp";
 
 const DEPOSIT_ADDRESS = "0x000000000000000000000000000000000000C0DE";
@@ -11,6 +15,8 @@ const TOKEN = "0x000000000000000000000000000000000000DEAD";
 const OTHER_TOKEN = "0x0000000000000000000000000000000000005678";
 const REFUND_TX = "0xabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefABCD";
 const INBOUND_TX = "0x1111111111111111111111111111111111111111111111111111111111111111";
+// Sink the input token leaves the deposit address to on a deposit execute (SpokePool / CCTP).
+const SPOKE_POOL = "0x0000000000000000000000000000000000005900";
 
 function topicAddress(address: string): string {
   return utils.hexZeroPad(address.toLowerCase(), 32);
@@ -51,6 +57,38 @@ function depositMessage(): DepositAddressMessage {
       contractAddress: TOKEN,
       transactionHash: INBOUND_TX,
       transferClassification: "intent_refund",
+    },
+  };
+}
+
+function depositMessageV3(): DepositAddressMessageV3 {
+  return {
+    depositAddress: DEPOSIT_ADDRESS,
+    version: 3,
+    salt: "0x" + "0".repeat(64),
+    initialRoot: "0x" + "0".repeat(64),
+    counterfactualBeaconContractAddress: "0x000000000000000000000000000000000000B1B1",
+    counterfactualFactoryContractAddress: "0x000000000000000000000000000000000000B2B2",
+    adminWithdrawManagerContractAddress: "0x000000000000000000000000000000000000B3B3",
+    shouldSponsorAccountCreation: false,
+    counterfactualMaterials: [],
+    routeParams: {
+      outputToken: TOKEN,
+      destinationChainId: "10",
+      recipient: { namespace: "evm", address: "0x0000000000000000000000000000000000001111" },
+    },
+    refundAddress: { namespace: "evm", address: REFUND_ADDRESS },
+    depositAddressNamespace: "evm",
+    erc20Transfer: {
+      chainId: "1",
+      blockNumber: 1_000_000,
+      logIndex: 4,
+      from: "0x0000000000000000000000000000000000009999",
+      to: DEPOSIT_ADDRESS,
+      amount: "5000",
+      contractAddress: TOKEN,
+      transactionHash: INBOUND_TX,
+      transferClassification: "correct_transfer",
     },
   };
 }
@@ -164,6 +202,75 @@ describe("buildWithdrawExecutedPayload", function () {
       { address: TOKEN, topics: [ERC20_TRANSFER_TOPIC, topicAddress(DEPOSIT_ADDRESS), topicAddress(REFUND_ADDRESS)] },
     ]);
     const payload = buildWithdrawExecutedPayload(receipt, depositMessage());
+    expect(payload?.data.logIndex).to.equal(2);
+  });
+});
+
+describe("buildDepositExecutedPayload", function () {
+  it("picks the input-token Transfer log leaving the deposit address (any recipient)", function () {
+    const receipt = fakeReceipt([
+      // Unrelated event from the same token contract — wrong topic[0].
+      { address: TOKEN, topics: ["0x" + "f".repeat(64), topicAddress(DEPOSIT_ADDRESS), topicAddress(SPOKE_POOL)] },
+      // Transfer from another address — wrong topic[1].
+      { address: TOKEN, topics: [ERC20_TRANSFER_TOPIC, topicAddress(FEE_RECIPIENT), topicAddress(SPOKE_POOL)] },
+      // Transfer of a different token leaving the deposit address — wrong contract address.
+      { address: OTHER_TOKEN, topics: [ERC20_TRANSFER_TOPIC, topicAddress(DEPOSIT_ADDRESS), topicAddress(SPOKE_POOL)] },
+      // The match: input token leaving the deposit address to the SpokePool (recipient not constrained).
+      { address: TOKEN, topics: [ERC20_TRANSFER_TOPIC, topicAddress(DEPOSIT_ADDRESS), topicAddress(SPOKE_POOL)] },
+    ]);
+
+    const payload = buildDepositExecutedPayload(receipt, depositMessageV3());
+    expect(payload).to.not.be.undefined;
+    expect(payload).to.deep.equal({
+      type: "deposit_executed",
+      data: {
+        chainId: 1,
+        blockNumber: 1_234_567,
+        txHash: REFUND_TX.toLowerCase(),
+        logIndex: 3,
+        erc20Transfer: {
+          chainId: 1,
+          blockNumber: 1_000_000,
+          txHash: INBOUND_TX,
+          logIndex: 4,
+        },
+      },
+    });
+  });
+
+  it("matches case-insensitively on token and depositAddress", function () {
+    const message = depositMessageV3();
+    message.erc20Transfer.contractAddress = TOKEN.toUpperCase().replace("0X", "0x");
+    const receipt = fakeReceipt([
+      {
+        address: TOKEN.toLowerCase(),
+        topics: [ERC20_TRANSFER_TOPIC, topicAddress(DEPOSIT_ADDRESS), topicAddress(SPOKE_POOL)],
+      },
+    ]);
+    const payload = buildDepositExecutedPayload(receipt, message);
+    expect(payload?.data.logIndex).to.equal(0);
+  });
+
+  it("returns undefined when no input-token Transfer leaves the deposit address", function () {
+    const receipt = fakeReceipt([
+      // Right shape but wrong token.
+      { address: OTHER_TOKEN, topics: [ERC20_TRANSFER_TOPIC, topicAddress(DEPOSIT_ADDRESS), topicAddress(SPOKE_POOL)] },
+      // Inbound transfer (to = depositAddress) — wrong direction.
+      { address: TOKEN, topics: [ERC20_TRANSFER_TOPIC, topicAddress(FEE_RECIPIENT), topicAddress(DEPOSIT_ADDRESS)] },
+    ]);
+    expect(buildDepositExecutedPayload(receipt, depositMessageV3())).to.be.undefined;
+  });
+
+  it("picks the LAST input-token Transfer leaving the deposit address when multiple exist", function () {
+    const receipt = fakeReceipt([
+      // Intermediate transfer from the deposit address.
+      { address: TOKEN, topics: [ERC20_TRANSFER_TOPIC, topicAddress(DEPOSIT_ADDRESS), topicAddress(FEE_RECIPIENT)] },
+      // Unrelated log between the two matches.
+      { address: OTHER_TOKEN, topics: [ERC20_TRANSFER_TOPIC, topicAddress(DEPOSIT_ADDRESS), topicAddress(SPOKE_POOL)] },
+      // Final settlement transfer from the deposit address — this is the one we want.
+      { address: TOKEN, topics: [ERC20_TRANSFER_TOPIC, topicAddress(DEPOSIT_ADDRESS), topicAddress(SPOKE_POOL)] },
+    ]);
+    const payload = buildDepositExecutedPayload(receipt, depositMessageV3());
     expect(payload?.data.logIndex).to.equal(2);
   });
 });
