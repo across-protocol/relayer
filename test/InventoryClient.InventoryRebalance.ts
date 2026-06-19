@@ -549,6 +549,34 @@ describe("InventoryClient: Rebalancing inventory", function () {
       await inventoryClient.withdrawExcessBalances();
       expect(adapterManager.withdrawalsRequired.length).to.eq(0);
     });
+
+    it("Reserves the chain's shortfall on top of the target when clamping", async function () {
+      const startCumulative = inventoryClient.getCumulativeBalance(EvmAddress.from(testL1Token));
+      tokenClient.setTokenData(testChain, testL2Token, startCumulative); // cached balance => excess flagged
+      const cumulativeBalance = inventoryClient.getCumulativeBalance(EvmAddress.from(testL1Token));
+      const targetPct = BigNumber.from(
+        inventoryConfig.tokenConfig[testL1Token][testL2Token.toNative()][testChain].targetPct
+      );
+      const targetBalance = targetPct.mul(cumulativeBalance).div(toWei(1));
+
+      // The chain carries an outstanding token shortfall that must be preserved on-chain alongside the target.
+      const shortfall = toMegaWei(500);
+      tokenClient.setTokenShortFallData(testChain, testL2Token, [BigNumber.from(1)], [shortfall]);
+
+      // The settled balance leaves only a small surplus above target + shortfall, forcing the clamp to bind.
+      const surplus = toMegaWei(100);
+      const liveBalance = targetBalance.add(shortfall).add(surplus);
+      (inventoryClient as MockInventoryClient).setRemoteTokenBalance(testChain, testL2Token, liveBalance);
+
+      await inventoryClient.withdrawExcessBalances();
+
+      // Only the surplus above (target + shortfall) is withdrawable; the shortfall stays on-chain. Without
+      // reserving the shortfall, the bot would have withdrawn (surplus + shortfall) and eaten into the
+      // inventory earmarked for unfilled deposits.
+      expect(adapterManager.withdrawalsRequired.length).to.eq(1);
+      expect(adapterManager.withdrawalsRequired[0].amountToWithdraw).eq(surplus);
+      expect(adapterManager.withdrawalsRequired[0].amountToWithdraw.lt(liveBalance.sub(targetBalance))).to.be.true;
+    });
   });
 
   describe("Remote chain token mappings", function () {
