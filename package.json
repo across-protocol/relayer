@@ -126,7 +126,7 @@
     "pretty-quick": "^4",
     "reflect-metadata": "^0.2.2",
     "sinon": "^21.1.2",
-    "tar": "^7.5.13",
+    "tar": "^7.5.16",
     "typescript": "^6"
   },
   "resolutions": {
