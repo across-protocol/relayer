@@ -42,6 +42,49 @@ export interface SignedWithdrawResponse {
 }
 
 /**
+ * Request body for the v3 (upgradeable-counterfactual) deposit-address sign-withdraw endpoint.
+ * The server **verifies** (never re-derives) the deposit address from these persisted CDA
+ * materials, so every contract address is mandatory and the withdraw merkle `proof` is supplied
+ * by the caller (the leaf itself is rebuilt server-side).
+ */
+export interface DepositAddressSignWithdrawRequest {
+  chainId: number;
+  depositAddress: string;
+  initialRoot: string;
+  salt: string;
+  token: string;
+  /** uint256 refund amount as a decimal (or 0x-hex) string. */
+  amount: string;
+  /** Refund recipient committed on-chain at deposit-address creation (not redirectable). */
+  user: string;
+  /** bytes32[] merkle proof for the withdraw leaf. */
+  proof: string[];
+  counterfactualDepositFactory: string;
+  counterfactualBeacon: string;
+  adminWithdrawManager: string;
+  withdrawImplementation: string;
+  /** When true, the estimated execution cost is converted to refund-token units and subtracted. */
+  deductGasFromRefund?: boolean;
+}
+
+export interface DepositAddressSignWithdrawResponse {
+  signedWithdrawTx: {
+    ecosystem: "evm";
+    chainId: number;
+    to: string;
+    data: string;
+    value: string;
+  };
+  bundledDeploy: boolean;
+  signer: string;
+  deadline: number;
+  /** Raw smallest-unit strings. With deduction off: appliedGasFee "0", netAmount === requestedAmount. */
+  requestedAmount: string;
+  appliedGasFee: string;
+  netAmount: string;
+}
+
+/**
  * Request body for the v3 deposit-address execute endpoint. The API re-derives the deposit
  * address and all counterfactual materials from the identity (`destination`, `userAddress`);
  * the bot only supplies funding context and its payout address.
@@ -62,6 +105,12 @@ export interface DepositAddressExecuteRequest {
   executionFeeRecipient: string;
   /** Bot-priced payout, deducted from the bridged amount. Omitted => 0. */
   executionFee?: string;
+  /**
+   * Integrator attribution (2-byte hex, `^0x[0-9a-fA-F]{4}$`). Sourced from the indexer message's
+   * `integrator` projection, NOT the bot's auth key (the bot sweeps addresses owned by many
+   * integrators); drives the CREATE2 salt + on-chain integrator tag. Required by the endpoint.
+   */
+  integratorId: string;
 }
 
 export interface DepositAddressExecuteResponse {
@@ -193,6 +242,17 @@ export class AcrossSwapApiClient extends BaseAcrossApiClient {
 
   async signedWithdraw(req: SignedWithdrawRequest): Promise<SignedWithdrawResponse | undefined> {
     return this._post<SignedWithdrawResponse>("/swap/counterfactual/sign-withdraw", req);
+  }
+
+  /**
+   * v3 (upgradeable-counterfactual) sign-withdraw (POST). Rethrows on failure (via `_postOrThrow`)
+   * so the caller can classify the HTTP status — a 422 (`GAS_EXCEEDS_REFUND` /
+   * `UNPRICEABLE_REFUND_TOKEN`) is terminal, other failures are retryable.
+   */
+  async signWithdrawDepositAddressV3(
+    req: DepositAddressSignWithdrawRequest
+  ): Promise<DepositAddressSignWithdrawResponse> {
+    return this._postOrThrow<DepositAddressSignWithdrawResponse>("deposit-addresses/sign-withdraw", req);
   }
 
   /** v3 upgradeable-counterfactual deposit-execute quote (POST). */

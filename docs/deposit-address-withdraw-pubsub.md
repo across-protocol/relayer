@@ -53,9 +53,25 @@ type WithdrawFailedPayload = {
     reason: string;
   };
 };
+
+type DepositExecutedPayload = {
+  type: "deposit_executed";
+  data: {
+    chainId: number;       // execute tx chain (= origin chain)
+    blockNumber: number;   // execute tx block
+    txHash: string;        // execute tx hash, lowercase hex
+    logIndex: number;      // logIndex of the input-token Transfer leaving the deposit address
+    erc20Transfer: {       // inbound funding transfer (lookup key) — same block as withdraw_executed
+      chainId: number;
+      blockNumber: number;
+      txHash: string;
+      logIndex: number;
+    };
+  };
+};
 ```
 
-The bot currently emits **only `withdraw_executed`**. `withdraw_failed` is reserved by the contract but not produced — the bot retries internally on most failure paths and does not track a "retries exhausted" terminal state.
+The bot emits **`withdraw_executed`** (refund-withdraw paths) and **`deposit_executed`** (successful v3 correct-transfer executions). `deposit_executed` shares the exact `data` shape of `withdraw_executed`; only the `type` discriminator differs. `withdraw_failed` is reserved by the contract but not produced — the bot retries internally on most failure paths and does not track a "retries exhausted" terminal state.
 
 The `data.erc20Transfer` block is the lookup key the consumer uses to find the row (`(chainId, blockNumber, transactionHash, logIndex)` on the `deposit_address_transfer` table); the sibling fields under `data` populate the withdraw-tx columns on the row being transitioned.
 
@@ -63,12 +79,21 @@ The publisher serializes the envelope as a UTF-8 JSON string and sends it as the
 
 ### Producer mechanics (this repo)
 
-`DepositAddressHandler._publishWithdrawExecuted` in `src/deposit-address/DepositAddressHandler.ts`:
+`DepositAddressHandler._publishWithdrawExecuted` in `src/deposit-address/DepositAddressHandler.ts` (shared by the v1 `initiateWithdraw` and v3 `initiateWithdrawV3` paths — the payload is version-agnostic, only the refund-address field location differs):
 
 1. Runs only after a refund withdraw has been confirmed on-chain **and** the depositKey has been persisted to Redis. Ordering matters: we never publish without first committing to "this depositKey is done", which prevents handover from racing the publish into a duplicate withdraw.
-2. Filters `receipt.logs` for ERC-20 `Transfer(address,address,uint256)` events whose `address` matches the token contract, whose `from` topic matches the deposit address, AND whose `to` topic matches `routeParams.refundAddress`. The `to` match disambiguates fee-on-transfer / tax / burn tokens that emit several Transfer events from the deposit address in one tx. Picks the **last** match as a final tiebreaker (handles Multicall3-bundled withdraws where intermediate transfers to the same refund address may also appear). Zero matches → warn + skip the publish (do not raise).
+2. Filters `receipt.logs` for ERC-20 `Transfer(address,address,uint256)` events whose `address` matches the token contract, whose `from` topic matches the deposit address, AND whose `to` topic matches the refund address (`routeParams.refundAddress` for v1, `refundAddress.address` for v3). The `to` match disambiguates fee-on-transfer / tax / burn tokens that emit several Transfer events from the deposit address in one tx. Picks the **last** match as a final tiebreaker (handles Multicall3-bundled withdraws where intermediate transfers to the same refund address may also appear). Zero matches → warn + skip the publish (do not raise).
 3. Builds the payload above and calls `GcpPubSubPublisher.publishJson`.
 4. Wraps the call in try/catch; on failure, logs at `error` level with `notificationPath: "across-bot-error"` and continues. The withdraw is on-chain and Redis-persisted — there is no rollback and no in-process retry.
+
+`DepositAddressHandler._publishDepositExecuted` (called from `initiateDepositV3` only — v1 and the failure paths are out of scope) mirrors the above:
+
+1. Runs only after a v3 deposit execute has confirmed on-chain **and** the refTxHash has been persisted to Redis.
+2. Filters `receipt.logs` for the input-token (`erc20Transfer.contractAddress`) ERC-20 `Transfer` whose `from` topic matches the deposit address. Unlike the withdraw path there is **no `to` filter** — the input token leaves the deposit address into the SpokePool / CCTP, with no fixed recipient — so any outgoing transfer of the input token qualifies. Picks the **last** match. Zero matches → warn + skip the publish.
+3. Builds the `deposit_executed` payload and publishes to the **same topic** as `withdraw_executed`.
+4. Same best-effort posture: on failure, log at `error` level and continue; no rollback, no retry.
+
+A single `GcpPubSubPublisher` client serves both event types (same project + topic); it is constructed when **either** gate (`ENABLE_DEPOSIT_ADDRESS_WITHDRAW_PUBLISHER` / `ENABLE_DEPOSIT_ADDRESS_DEPOSIT_PUBLISHER`) is on, and each publish path checks its own flag so the two events toggle independently.
 
 ### Consumer mechanics (sibling `indexer` repo)
 

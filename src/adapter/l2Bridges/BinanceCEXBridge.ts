@@ -25,6 +25,7 @@ import {
   getBinanceWithdrawalType,
   isCompletedBinanceWithdrawal,
   getOutstandingBinanceDeposits,
+  isDefined,
 } from "../../utils";
 import { L1Token } from "../../interfaces";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
@@ -108,7 +109,11 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
     // Remove any deposits and withdrawals that are marked as related to a swap.
     const depositHistory = await filterAsync(_depositHistory, async (deposit) => {
       const depositType = await getBinanceDepositType(deposit);
-      return deposit.coin === this.l1TokenInfo.symbol && depositType !== BinanceTransactionType.SWAP;
+      return (
+        deposit.network === this.depositNetwork &&
+        deposit.coin === this.l1TokenInfo.symbol &&
+        depositType !== BinanceTransactionType.SWAP
+      );
     });
     const withdrawHistory = await filterAsync(_withdrawHistory, async (withdrawal) => {
       const withdrawalType = await getBinanceWithdrawalType(withdrawal);
@@ -120,7 +125,17 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
       );
     });
 
-    const unmatchedDeposits = getOutstandingBinanceDeposits(depositHistory, withdrawHistory, this.depositNetwork);
+    // FilterMap to remove all deposits from this L2 which originated from another EOA.
+    const filteredDepositHistory = await filterAsync(depositHistory, async (deposit) => {
+      const txnReceipt = await this.getL2Bridge().provider.getTransactionReceipt(deposit.txId);
+      return isDefined(txnReceipt) && compareAddressesSimple(txnReceipt.from, fromAddress.toNative());
+    });
+
+    const unmatchedDeposits = getOutstandingBinanceDeposits(
+      filteredDepositHistory,
+      withdrawHistory,
+      this.depositNetwork
+    );
     return unmatchedDeposits.reduce((sum, deposit) => sum.add(floatToBN(deposit.amount, l2TokenInfo.decimals)), bnZero);
   }
 
