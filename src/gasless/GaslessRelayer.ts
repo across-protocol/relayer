@@ -1018,7 +1018,7 @@ export class GaslessRelayer {
   }
 
   /*
-   * @notice Queries the API for all pending gasless transactions. By default, do not retry since this endpoing is being polled.
+   * @notice Queries the API for all pending gasless transactions. By default, do not retry since this endpoint is being polled.
    */
   protected async _queryGaslessApi(retriesRemaining = 0): Promise<AnyGaslessDepositMessage[]> {
     let apiResponseData: { deposits: APIGaslessDepositResponse[] } | undefined = undefined;
