@@ -1,5 +1,4 @@
 import { ArbitrumNetwork } from "@arbitrum/sdk";
-import { CONTRACT_ADDRESSES } from "../common";
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 
 type PartialArbitrumNetwork = Omit<ArbitrumNetwork, "confirmPeriodBlocks"> & {
@@ -17,7 +16,7 @@ export const ARB_ORBIT_NETWORK_CONFIGS: PartialArbitrumNetwork[] = [
       bridge: "0xDf8755334ce7A73cCF6b581C02eA649AE3E864b3",
       inbox: "0x1A07cc4BD17E0118BdB54D70990D2158AbAD7a2D ",
       sequencerInbox: "0xBd0D173EEb87D57A09521c24388a12789F33ba96",
-      outbox: CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET][`orbitOutbox_${CHAIN_IDs.ROBINHOOD}`].address as string,
+      outbox: "....", // TODO: Add correct address
       rollup: "0x23A19d23e89166adedbDcB432518AB01e4272D94",
     },
     challengePeriodSeconds: 6 * 60 * 60, // ~ 6 hours
