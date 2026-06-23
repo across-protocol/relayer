@@ -174,6 +174,17 @@ export const CONTRACT_ADDRESSES: {
       address: "0x8484Ef722627bf18ca5Ae6BcF031c23E6e922B30",
       abi: POLYGON_BRIDGE_ABI,
     },
+    orbitOutbox_4663: {
+      address: "....", // TODO: Add correct address
+      abi: ARBITRUM_OUTBOX_ABI,
+    },
+    orbitErc20GatewayRouter_4663: {
+      address: "....", // TODO: Add correct address
+      abi: ARBITRUM_ERC20_GATEWAY_ROUTER_L1_ABI,
+    },
+    orbitErc20Gateway_4663: {
+      abi: ARBITRUM_ERC20_GATEWAY_L1_ABI,
+    },
     orbitOutbox_42161: {
       address: "0x0B9857ae2D4A3DBe74ffE1d7DF045bb7F96E4840",
       abi: ARBITRUM_OUTBOX_ABI,
@@ -436,6 +447,16 @@ export const CONTRACT_ADDRESSES: {
     },
     nativeToken: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
+    },
+  },
+  [CHAIN_IDs.ROBINHOOD]: {
+    erc20GatewayRouter: {
+      address: "....", // TODO: Add correct address
+      abi: ARBITRUM_ERC20_GATEWAY_ROUTER_L2_ABI,
+    },
+    arbSys: {
+      address: "0x0000000000000000000000000000000000000064",
+      abi: ARBSYS_L2_ABI, // Is this correct abi for Robinhood as well?
     },
   },
   [CHAIN_IDs.WORLD_CHAIN]: {

@@ -58,6 +58,7 @@ import {
   UsdcCCTPBridge as L2UsdcCCTPBridge,
   BinanceCEXNativeBridge as L2BinanceCEXNativeBridge,
   SolanaUsdcCCTPBridge as L2SolanaUsdcCCTPBridge,
+  ArbitrumOrbitBridge as L2ArbitrumOrbitBridge,
   BridgeApi as L2BridgeApi,
   TokenSplitterBridge as L2TokenSplitterBridge,
 } from "../adapter/l2Bridges";
@@ -203,6 +204,7 @@ const resolveChainBundleBuffers = () => {
     [CHAIN_IDs.MONAD]: 150, // ~400ms/block, 2 block finality
     [CHAIN_IDs.PLASMA]: 180, // ~1s/block variable. Finality guarantees are less certain, be a bit more conservative.
     [CHAIN_IDs.POLYGON]: 128, // ~2s/block. Polygon has historically re-orged often.
+    [CHAIN_IDs.ROBINHOOD]: 2000, // ~100ms/block.
     [CHAIN_IDs.TEMPO]: 400, // ~500ms a block.
     [CHAIN_IDs.TRON]: 40, // 3s/block.
     [CHAIN_IDs.ZK_SYNC]: defaultBuffers[ChainFamily.ZK_STACK], // Inherit ZK_STACK default.
@@ -257,6 +259,7 @@ const resolveChainCacheDelay = () => {
     [CHAIN_IDs.MONAD]: 150,
     [CHAIN_IDs.PLASMA]: 300,
     [CHAIN_IDs.POLYGON]: 256,
+    // @TODO: ~100ms/block, soft finality 1-2s, hard finality 12-15min, What value should be here? Is it okey to be ORBIT default?
     [CHAIN_IDs.TEMPO]: 400,
     [CHAIN_IDs.TRON]: 20, // 19 blocks for finalization.
     [CHAIN_IDs.ZK_SYNC]: cacheDelays[ChainFamily.ZK_STACK],
@@ -293,6 +296,7 @@ export const DEFAULT_NO_TTL_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.OPTIMISM]: 86400,
   [CHAIN_IDs.PLASMA]: 172800,
   [CHAIN_IDs.POLYGON]: 86400,
+  [CHAIN_IDs.ROBINHOOD]: 1728000,
   [CHAIN_IDs.SOLANA]: 432000,
   [CHAIN_IDs.SONEIUM]: 86400,
   [CHAIN_IDs.TEMPO]: 345600,
@@ -366,6 +370,7 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.POLYGON]: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "POOL"],
   [CHAIN_IDs.SOLANA]: ["USDC"],
   [CHAIN_IDs.SONEIUM]: ["WETH", "USDC"],
+  [CHAIN_IDs.ROBINHOOD]: ["USDG"],
   [CHAIN_IDs.TEMPO]: ["USDC"],
   [CHAIN_IDs.TRON]: ["USDT"],
   [CHAIN_IDs.UNICHAIN]: ["ETH", "WETH", "USDC", "USDT", "ezETH"],
@@ -459,6 +464,7 @@ export const CANONICAL_BRIDGE = resolveCanonicalBridges();
 export const CANONICAL_L2_BRIDGE: Record<number, L2BridgeConstructor<BaseL2BridgeAdapter>> = {
   [CHAIN_IDs.BSC]: L2BinanceCEXBridge,
   [CHAIN_IDs.LISK]: L2OpStackBridge,
+  [CHAIN_IDs.ROBINHOOD]: L2ArbitrumOrbitBridge,
   [CHAIN_IDs.ZORA]: L2OpStackBridge,
 };
 
@@ -542,6 +548,10 @@ export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<Ba
   [CHAIN_IDs.SONEIUM]: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: OpStackUSDCBridge,
+  },
+  [CHAIN_IDs.ROBINHOOD]: {
+    // @TODO: Create a new bridge for USDG
+    // [TOKEN_SYMBOLS_MAP.USDG.addresses[CHAIN_IDs.MAINNET]]: RobinhoodUsdgBridge,
   },
   [CHAIN_IDs.TEMPO]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: TokenSplitterBridge,
@@ -718,6 +728,10 @@ export const CUSTOM_L2_BRIDGE: Record<number, Record<string, L2BridgeConstructor
   [CHAIN_IDs.SOLANA]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2SolanaUsdcCCTPBridge,
   },
+  [CHAIN_IDs.ROBINHOOD]: {
+    // @TODO: Do we need a new L2 bridge for USDG?
+    // [TOKEN_SYMBOLS_MAP.USDG.addresses[CHAIN_IDs.MAINNET]]: L2ArbitrumOrbitBridge,
+  },
   [CHAIN_IDs.WORLD_CHAIN]: {
     [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20BridgeL2,
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2UsdcCCTPBridge,
@@ -767,12 +781,14 @@ export const SLOW_WITHDRAWAL_CHAINS = [
   CHAIN_IDs.INK,
   CHAIN_IDs.OPTIMISM,
   CHAIN_IDs.SONEIUM,
+  CHAIN_IDs.ROBINHOOD, // @TODO: Do we need to add robinhood to this list? Its only 7-day withdrawal chain for ETH, shouldn't be for USDG.
   CHAIN_IDs.UNICHAIN,
 ];
 
 // Arbitrum Orbit chains may have custom gateways for certain tokens. These gateways need to be specified since token approvals are directed at the
 // gateway, while function calls are directed at the gateway router.
 export const CUSTOM_ARBITRUM_GATEWAYS: { [chainId: number]: { [address: string]: { l1: string; l2: string } } } = {
+  // @TODO: Where can we find the default gateway for Robinhood?
   [CHAIN_IDs.ARBITRUM]: {
     [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: {
       l1: "0xcEe284F754E854890e311e3280b767F80797180d", // USDT
@@ -795,6 +811,7 @@ export const CUSTOM_ARBITRUM_GATEWAYS: { [chainId: number]: { [address: string]:
 
 // The default ERC20 gateway is the generic gateway used by Arbitrum Orbit chains to mint tokens which do not have a custom gateway set.
 export const DEFAULT_ARBITRUM_GATEWAY: { [chainId: number]: { l1: string; l2: string } } = {
+  // @TODO: Where can we find the default gateway for Robinhood?
   [CHAIN_IDs.ARBITRUM]: {
     l1: "0xa3A7B6F88361F48403514059F1F16C8E78d60EeC",
     l2: "0x09e9222E96E7B4AE2a407B98d48e330053351EEe",
@@ -925,6 +942,7 @@ export const ARBITRUM_ORBIT_L1L2_MESSAGE_FEE_DATA: {
     amountWei: 0.02,
     amountMultipleToFund: 1,
   },
+  // @TODO: How to calculate this for Robinhood?
 };
 
 // source: https://github.com/hyperlane-xyz/hyperlane-registry/blob/346b18c4314cf96b41ae2da781f58fb832dbe1f8/deployments/warp_routes/EZETH/arbitrum-base-berachain-blast-bsc-ethereum-fraxtal-linea-mode-optimism-sei-swell-taiko-unichain-worldchain-zircuit-config.yaml

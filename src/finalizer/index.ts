@@ -77,6 +77,9 @@ const chainFinalizers: {
   [CHAIN_IDs.BSC]: {
     finalizeOnL1: [binanceFinalizer],
   },
+  [CHAIN_IDs.ROBINHOOD]: {
+    finalizeOnL1: [arbStackFinalizer],
+  },
   // Testnets
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: {
     finalizeOnL1: [arbStackFinalizer],
