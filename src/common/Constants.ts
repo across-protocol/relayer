@@ -47,6 +47,7 @@ import {
   SolanaUsdcCCTPBridge,
   OFTWethBridge,
   BridgeApi,
+  PaxosTransitBridge,
   TokenSplitterBridge,
 } from "../adapter/bridges";
 import {
@@ -58,8 +59,8 @@ import {
   UsdcCCTPBridge as L2UsdcCCTPBridge,
   BinanceCEXNativeBridge as L2BinanceCEXNativeBridge,
   SolanaUsdcCCTPBridge as L2SolanaUsdcCCTPBridge,
-  ArbitrumOrbitBridge as L2ArbitrumOrbitBridge,
   BridgeApi as L2BridgeApi,
+  PaxosTransitL2Bridge,
   TokenSplitterBridge as L2TokenSplitterBridge,
 } from "../adapter/l2Bridges";
 import { getContractAddress } from "./ContractAddresses";
@@ -93,8 +94,9 @@ export const UNIVERSAL_CHAINS = [
   CHAIN_IDs.ARC,
   CHAIN_IDs.BSC,
   CHAIN_IDs.HYPEREVM,
-  CHAIN_IDs.PLASMA,
   CHAIN_IDs.MONAD,
+  CHAIN_IDs.PLASMA,
+  CHAIN_IDs.ROBINHOOD,
   CHAIN_IDs.TEMPO,
   CHAIN_IDs.TRON,
 ];
@@ -370,7 +372,7 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.POLYGON]: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "POOL"],
   [CHAIN_IDs.SOLANA]: ["USDC"],
   [CHAIN_IDs.SONEIUM]: ["WETH", "USDC"],
-  [CHAIN_IDs.ROBINHOOD]: ["USDG"],
+  [CHAIN_IDs.ROBINHOOD]: ["USDC"],
   [CHAIN_IDs.TEMPO]: ["USDC"],
   [CHAIN_IDs.TRON]: ["USDT"],
   [CHAIN_IDs.UNICHAIN]: ["ETH", "WETH", "USDC", "USDT", "ezETH"],
@@ -464,7 +466,6 @@ export const CANONICAL_BRIDGE = resolveCanonicalBridges();
 export const CANONICAL_L2_BRIDGE: Record<number, L2BridgeConstructor<BaseL2BridgeAdapter>> = {
   [CHAIN_IDs.BSC]: L2BinanceCEXBridge,
   [CHAIN_IDs.LISK]: L2OpStackBridge,
-  [CHAIN_IDs.ROBINHOOD]: L2ArbitrumOrbitBridge,
   [CHAIN_IDs.ZORA]: L2OpStackBridge,
 };
 
@@ -545,13 +546,13 @@ export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<Ba
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcTokenSplitterBridge,
     [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTBridge,
   },
+  [CHAIN_IDs.ROBINHOOD]: {
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: PaxosTransitBridge,
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: ArbitrumOrbitBridge,
+  },
   [CHAIN_IDs.SONEIUM]: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: OpStackUSDCBridge,
-  },
-  [CHAIN_IDs.ROBINHOOD]: {
-    // @TODO: Create a new bridge for USDG
-    // [TOKEN_SYMBOLS_MAP.USDG.addresses[CHAIN_IDs.MAINNET]]: RobinhoodUsdgBridge,
   },
   [CHAIN_IDs.TEMPO]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: TokenSplitterBridge,
@@ -729,8 +730,7 @@ export const CUSTOM_L2_BRIDGE: Record<number, Record<string, L2BridgeConstructor
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2SolanaUsdcCCTPBridge,
   },
   [CHAIN_IDs.ROBINHOOD]: {
-    // @TODO: Do we need a new L2 bridge for USDG?
-    // [TOKEN_SYMBOLS_MAP.USDG.addresses[CHAIN_IDs.MAINNET]]: L2ArbitrumOrbitBridge,
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: PaxosTransitL2Bridge,
   },
   [CHAIN_IDs.WORLD_CHAIN]: {
     [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20BridgeL2,
@@ -788,7 +788,6 @@ export const SLOW_WITHDRAWAL_CHAINS = [
 // Arbitrum Orbit chains may have custom gateways for certain tokens. These gateways need to be specified since token approvals are directed at the
 // gateway, while function calls are directed at the gateway router.
 export const CUSTOM_ARBITRUM_GATEWAYS: { [chainId: number]: { [address: string]: { l1: string; l2: string } } } = {
-  // @TODO: Where can we find the default gateway for Robinhood?
   [CHAIN_IDs.ARBITRUM]: {
     [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: {
       l1: "0xcEe284F754E854890e311e3280b767F80797180d", // USDT
@@ -807,11 +806,16 @@ export const CUSTOM_ARBITRUM_GATEWAYS: { [chainId: number]: { [address: string]:
       l2: "0x467194771dAe2967Aef3ECbEDD3Bf9a310C76C65",
     },
   },
+  [CHAIN_IDs.ROBINHOOD]: {
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: {
+      l1: "0xF7e12b9614b509C747ab4423bC4ACF923759Cf1B", // WETH
+      l2: "0x1D187C3E2dA52D72BC9C41e3AbA0fdFa6a7bF055",
+    },
+  },
 };
 
 // The default ERC20 gateway is the generic gateway used by Arbitrum Orbit chains to mint tokens which do not have a custom gateway set.
 export const DEFAULT_ARBITRUM_GATEWAY: { [chainId: number]: { l1: string; l2: string } } = {
-  // @TODO: Where can we find the default gateway for Robinhood?
   [CHAIN_IDs.ARBITRUM]: {
     l1: "0xa3A7B6F88361F48403514059F1F16C8E78d60EeC",
     l2: "0x09e9222E96E7B4AE2a407B98d48e330053351EEe",
@@ -819,6 +823,10 @@ export const DEFAULT_ARBITRUM_GATEWAY: { [chainId: number]: { l1: string; l2: st
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: {
     l1: "0x902b3E5f8F19571859F4AB1003B960a5dF693aFF",
     l2: "0x6e244cD02BBB8a6dbd7F626f05B2ef82151Ab502",
+  },
+  [CHAIN_IDs.ROBINHOOD]: {
+    l1: "0x85001CC4867C5e1C22dA4B79BB8852B9e2a06da0",
+    l2: "0xfd9b17206278C16DdaacF6AC8f05dBf97EdCb31e",
   },
 };
 

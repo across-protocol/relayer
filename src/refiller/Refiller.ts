@@ -41,6 +41,7 @@ import {
 } from "../utils";
 import { getRedisCache, RedisCache } from "../cache/Redis";
 import { SWAP_ROUTES, SwapRoute, CUSTOM_BRIDGE, CANONICAL_BRIDGE } from "../common";
+import { PaxosTransitBridge } from "../adapter/bridges/PaxosTransitBridge";
 import ERC20_ABI from "../common/abi/MinimalERC20.json";
 import { arch } from "@across-protocol/sdk";
 import { AcrossSwapApiClient, BalanceAllocator, MultiCallerClient, TransactionClient } from "../clients";
@@ -134,6 +135,10 @@ export class Refiller {
           break;
         case TOKEN_SYMBOLS_MAP.USDH.addresses[CHAIN_IDs.HYPEREVM]:
           refillHandler = this.refillUsdh;
+          break;
+        case TOKEN_SYMBOLS_MAP.USDG.addresses[CHAIN_IDs.MAINNET]:
+          assert(chainId === CHAIN_IDs.MAINNET, "Mainnet USDG sweep must be configured on mainnet");
+          refillHandler = this.sweepMainnetUsdgToRobinhood;
           break;
         default:
           refillHandler = this.refillTokenBalances;
@@ -588,6 +593,91 @@ export class Refiller {
         mrkdwn: `Sent ${formatUnits(amountToTransfer, decimals)} USDC from Arbitrum to HyperEVM.`,
       });
     }
+  }
+
+  private async sweepMainnetUsdgToRobinhood(_currentBalance: BigNumber, decimals: number): Promise<void> {
+    if (!isDefined(process.env.PAXOS_API_KEY)) {
+      this.logger.warn({
+        at: "Refiller#sweepMainnetUsdgToRobinhood",
+        message: "PAXOS_API_KEY is missing from .env. Unable to sweep mainnet USDG to Robinhood.",
+      });
+      return;
+    }
+
+    const redisKey = `refill:usdg-sweep:${this.baseSignerAddress.toNative()}`;
+    if (await this._isRefillProcessed(redisKey)) {
+      return;
+    }
+
+    const mainnetUsdgAddress = TOKEN_SYMBOLS_MAP.USDG.addresses[CHAIN_IDs.MAINNET];
+    const rhUsdgAddress = TOKEN_SYMBOLS_MAP.USDG.addresses[CHAIN_IDs.ROBINHOOD];
+    const mainnetProvider = this.clients.balanceAllocator.providers[CHAIN_IDs.MAINNET];
+    const rhProvider = this.clients.balanceAllocator.providers[CHAIN_IDs.ROBINHOOD];
+    assert(isDefined(mainnetProvider), "No mainnet provider found for USDG sweep");
+    assert(isDefined(rhProvider), "No Robinhood provider found for USDG sweep");
+
+    const usdg = new Contract(mainnetUsdgAddress, ERC20_ABI, this.baseSigner.connect(mainnetProvider));
+    const amountToTransfer = await usdg.balanceOf(this.baseSignerAddress.toNative());
+    if (amountToTransfer.lte(this.config.minUsdgSweepAmount)) {
+      this.logger.debug({
+        at: "Refiller#sweepMainnetUsdgToRobinhood",
+        message: "Mainnet USDG balance is below sweep minimum",
+        amountToTransfer: amountToTransfer.toString(),
+        minUsdgSweepAmount: this.config.minUsdgSweepAmount.toString(),
+      });
+      return;
+    }
+
+    const l1Token = EvmAddress.from(mainnetUsdgAddress);
+    const tokenBridge = new PaxosTransitBridge(
+      CHAIN_IDs.ROBINHOOD,
+      CHAIN_IDs.MAINNET,
+      this.baseSigner,
+      rhProvider,
+      l1Token,
+      this.logger
+    );
+    const {
+      contract,
+      method,
+      args,
+      value = bnZero,
+    } = await tokenBridge.constructL1ToL2Txn(
+      this.baseSignerAddress,
+      l1Token,
+      toAddressType(rhUsdgAddress, CHAIN_IDs.ROBINHOOD),
+      amountToTransfer
+    );
+
+    let txn;
+    try {
+      txn = await (
+        await submitTransaction(
+          {
+            contract,
+            method,
+            args,
+            value,
+            chainId: CHAIN_IDs.MAINNET,
+          },
+          this.transactionClient
+        )
+      ).wait();
+    } catch (error) {
+      this.logger.warn({
+        at: "Refiller#sweepMainnetUsdgToRobinhood",
+        message: `Failed to sweep ${formatUnits(amountToTransfer, decimals)} mainnet USDG to Robinhood`,
+        error,
+      });
+      return;
+    }
+
+    this.logger.info({
+      at: "Refiller#sweepMainnetUsdgToRobinhood",
+      message: `Swept ${formatUnits(amountToTransfer, decimals)} mainnet USDG to Robinhood via Paxos Transit`,
+      transactionHash: blockExplorerLink(txn.transactionHash, CHAIN_IDs.MAINNET),
+    });
+    await this.redisCache.set(redisKey, "true", 10 * 60);
   }
 
   private async _swapToRefill(

@@ -16,7 +16,7 @@ export const ARB_ORBIT_NETWORK_CONFIGS: PartialArbitrumNetwork[] = [
       bridge: "0xDf8755334ce7A73cCF6b581C02eA649AE3E864b3",
       inbox: "0x1A07cc4BD17E0118BdB54D70990D2158AbAD7a2D ",
       sequencerInbox: "0xBd0D173EEb87D57A09521c24388a12789F33ba96",
-      outbox: "....", // TODO: Add correct address
+      outbox: "0xf0ce991ea4A0d2400A4AB49b20ae333f6Dce3DE9", // TODO: Add correct address
       rollup: "0x23A19d23e89166adedbDcB432518AB01e4272D94",
     },
     challengePeriodSeconds: 6 * 60 * 60, // ~ 6 hours

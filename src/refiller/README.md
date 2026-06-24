@@ -13,3 +13,15 @@ The Refiller also has a function that lets it transfer USDC from Arbitrum and mi
 The reason why this function was originally located in this Refiller client is because initiating this USDH "refill" starts with an ERC20 transfer, much like some of the other refill functions in the Refiller. So, there is some code-reuse here.
 
 However, ideally this logic for refilling USDH is moved into a separate client. Perhaps it should be located in the rebalancer module since its function is to shift cross-chain token inventory like other rebalancer adapters.
+
+## Sweeping mainnet USDG to Robinhood
+
+Robinhood inventory holds USDG on chain 4663; mainnet USDG should not accumulate. When a `REFILL_BALANCES` entry targets mainnet USDG (`chainId: 1`, `token: <mainnet USDG address>`), the refiller routes to a bespoke handler that sweeps the base signer's full mainnet USDG balance to Robinhood USDG via the Paxos Transit API when the balance exceeds `MIN_USDG_SWEEP_AMOUNT` (default 10 USDG).
+
+Required environment variables:
+
+- `PAXOS_API_KEY`
+- `PAXOS_TRANSIT_STATION_1`
+- `PAXOS_TRANSIT_STATION_4663`
+
+Normal RH inventory refills still use mainnet USDC via `CUSTOM_BRIDGE` and inventory/rebalancer config; this path is only for cleaning up stray mainnet USDG.
