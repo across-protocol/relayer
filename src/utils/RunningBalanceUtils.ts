@@ -33,11 +33,11 @@ export async function getLatestRunningBalances(
     const chainIdIndex = chainIds.indexOf(chainId);
 
     // We need to find the latest validated running balance for this chain and token.
-    const lastValidatedRunningBalance = hubPoolClient.getRunningBalanceBeforeBlockForChain(
+    const { runningBalance } = await hubPoolClient.getRunningBalanceBeforeBlockForChain(
       hubPoolClient.latestHeightSearched,
       chainId,
       l1Token
-    ).runningBalance;
+    );
 
     // Approximate latest running balance for a chain as last known validated running balance...
     // - minus total deposit amount on chain since the latest validated end block
@@ -79,7 +79,7 @@ export async function getLatestRunningBalances(
     const upcomingRefunds = bundleDataApproxClient.getUpcomingRefunds(chainId, l1Token);
 
     // Updated running balance is last known running balance minus deposits plus upcoming refunds.
-    const latestRunningBalance = lastValidatedRunningBalance.sub(upcomingDeposits).add(upcomingRefunds);
+    const latestRunningBalance = runningBalance.sub(upcomingDeposits).add(upcomingRefunds);
     // A negative running balance means that the spoke has a balance. If the running balance is positive, then the
     // hub owes it funds and its below target so we don't want to take additional repayment.
     const absLatestRunningBalance = latestRunningBalance.lt(0) ? latestRunningBalance.abs() : toBN(0);
@@ -88,7 +88,7 @@ export async function getLatestRunningBalances(
       chainId,
       {
         absLatestRunningBalance,
-        lastValidatedRunningBalance,
+        runningBalance,
         upcomingDeposits,
         upcomingRefunds,
         bundleEndBlock: lastValidatedBundleEndBlock,

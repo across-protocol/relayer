@@ -2,10 +2,15 @@
 # yarn lockfile v1
 
 
-"@across-protocol/constants@^3.1.112", "@across-protocol/constants@^3.1.113":
+"@across-protocol/constants@^3.1.112":
   version "3.1.113"
   resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.113.tgz#af823dd81e25f10aa0c06d573b6237edb33fcd00"
   integrity sha512-4bRz+a97nvdHhiVf9F3eQ2TlhdGWDOnS+Pvf8/rZNNTrEngWRmixWsibmxB35BcfhkhG+xPIHVsXNWiAFqDcXQ==
+
+"@across-protocol/constants@^3.1.114":
+  version "3.1.115"
+  resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.115.tgz#09a0fcd7fe156e2af8dab8808c02d9a75b77cdf2"
+  integrity sha512-TMnMO6XI0yk2GGiz0pS7Jq2i7iaHSegGI/MVEYZPAwbRFE0IsrPCO60JHf3d/Pab7WEMgq8r+eShnw1Gh4Y0wQ==
 
 "@across-protocol/contracts@5.0.18":
   version "5.0.18"
@@ -29,12 +34,12 @@
     bs58 "^6.0.0"
     ethers "5.7.2"
 
-"@across-protocol/sdk@4.3.170":
-  version "4.3.170"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.3.170.tgz#e869fc5cf8866103836fe63e963567f7655379e0"
-  integrity sha512-z/1t5v0iQ9OSyVXbbpDhADjEmULUyuhnLSqTAJ1qS4YYsjH3MSZ2v2uA//4Rd9B8Gqv37PNArfnwJPEd/+PNyw==
+"@across-protocol/sdk@4.4.0":
+  version "4.4.0"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.4.0.tgz#4b78299bc710d817e0ecd6b01c4cdb8f41b64dc0"
+  integrity sha512-FGvC6uB3x3KOuH2R91Svly/E9/2lmPwZCqI/E1UJTtiAL+TAJa1uxR2EdjsTSPBdysG/ipOI36wHakLnNQRIgg==
   dependencies:
-    "@across-protocol/constants" "^3.1.113"
+    "@across-protocol/constants" "^3.1.114"
     "@across-protocol/contracts" "5.0.18"
     "@coral-xyz/anchor" "^0.30.1"
     "@eth-optimism/sdk" "^3.3.1"
