@@ -34,6 +34,12 @@ export async function getLatestRunningBalances(
     async (chainId): Promise<[number, RunningBalanceResult] | undefined> => {
       const chainIdIndex = chainIds.indexOf(chainId);
 
+      // Bail on unsupported pairs first; getRunningBalanceBeforeBlockForChain may fall back to a full-history scan.
+      const l2Token = hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, Number(chainId));
+      if (!isDefined(l2Token)) {
+        return undefined;
+      }
+
       // We need to find the latest validated running balance for this chain and token.
       const { runningBalance } = await hubPoolClient.getRunningBalanceBeforeBlockForChain(
         hubPoolClient.latestHeightSearched,
@@ -49,10 +55,6 @@ export async function getLatestRunningBalances(
         chainId,
         l1Token
       );
-      const l2Token = hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, Number(chainId));
-      if (!isDefined(l2Token)) {
-        return undefined;
-      }
 
       // If there is no ExecutedRootBundle event in the hub pool client's lookback for the token and chain, then
       // default the bundle end block to 0. This will force getUpcomingDepositAmount to count any deposit
