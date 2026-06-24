@@ -372,7 +372,7 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.POLYGON]: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "POOL"],
   [CHAIN_IDs.SOLANA]: ["USDC"],
   [CHAIN_IDs.SONEIUM]: ["WETH", "USDC"],
-  [CHAIN_IDs.ROBINHOOD]: ["USDC"],
+  [CHAIN_IDs.ROBINHOOD]: ["USDC", "WETH"],
   [CHAIN_IDs.TEMPO]: ["USDC"],
   [CHAIN_IDs.TRON]: ["USDT"],
   [CHAIN_IDs.UNICHAIN]: ["ETH", "WETH", "USDC", "USDT", "ezETH"],
@@ -781,7 +781,6 @@ export const SLOW_WITHDRAWAL_CHAINS = [
   CHAIN_IDs.INK,
   CHAIN_IDs.OPTIMISM,
   CHAIN_IDs.SONEIUM,
-  CHAIN_IDs.ROBINHOOD, // @TODO: Do we need to add robinhood to this list? Its only 7-day withdrawal chain for ETH, shouldn't be for USDG.
   CHAIN_IDs.UNICHAIN,
 ];
 
