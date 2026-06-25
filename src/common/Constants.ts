@@ -47,7 +47,6 @@ import {
   SolanaUsdcCCTPBridge,
   OFTWethBridge,
   BridgeApi,
-  PaxosTransitBridge,
   TokenSplitterBridge,
 } from "../adapter/bridges";
 import {
@@ -60,7 +59,6 @@ import {
   BinanceCEXNativeBridge as L2BinanceCEXNativeBridge,
   SolanaUsdcCCTPBridge as L2SolanaUsdcCCTPBridge,
   BridgeApi as L2BridgeApi,
-  PaxosTransitL2Bridge,
   TokenSplitterBridge as L2TokenSplitterBridge,
 } from "../adapter/l2Bridges";
 import { getContractAddress } from "./ContractAddresses";
