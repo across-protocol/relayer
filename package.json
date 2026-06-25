@@ -10,9 +10,9 @@
     "node": ">=22.18.0"
   },
   "dependencies": {
-    "@across-protocol/constants": "^3.1.114",
-    "@across-protocol/contracts": "5.0.18",
-    "@across-protocol/sdk": "4.4.0",
+    "@across-protocol/constants": "^3.1.116",
+    "@across-protocol/contracts": "5.0.20",
+    "@across-protocol/sdk": "4.4.4",
     "@arbitrum/sdk": "^4.0.5",
     "@consensys/linea-sdk": "^0.3.0",
     "@coral-xyz/anchor": "^0.31.1",
@@ -133,7 +133,7 @@
     "protobufjs": "^7.5.4",
     "fast-xml-parser": "^5.7.1",
     "better-sqlite3": "^11.10.0",
-    "@across-protocol/contracts": "5.0.18"
+    "@across-protocol/contracts": "5.0.20"
   },
   "publishConfig": {
     "registry": "https://registry.npmjs.com/",
