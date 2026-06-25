@@ -23,12 +23,14 @@ import ARBITRUM_ERC20_GATEWAY_L2_ABI from "../../common/abi/ArbitrumErc20Gateway
 
 const bridgeSubmitValue: { [chainId: number]: BigNumber } = {
   [CHAIN_IDs.ARBITRUM]: toWei(0.013),
+  [CHAIN_IDs.ROBINHOOD]: toWei(0.013),
   // Testnet
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: toWei(0.013),
 };
 
 const maxFeePerGas: { [chainId: number]: BigNumber } = {
   [CHAIN_IDs.ARBITRUM]: toBN(20e9),
+  [CHAIN_IDs.ROBINHOOD]: toBN(20e9),
   // Testnet
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: toBN(20e9),
 };

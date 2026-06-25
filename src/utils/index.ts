@@ -86,4 +86,5 @@ export * from "./Tasks";
 export * from "./TimeUtils";
 export * from "./DepositAddressUtils";
 export * from "./BridgeUtils";
+export * from "./PaxosTransitUtils";
 export * from "./RunningBalanceUtils";

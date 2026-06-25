@@ -92,8 +92,9 @@ export const UNIVERSAL_CHAINS = [
   CHAIN_IDs.ARC,
   CHAIN_IDs.BSC,
   CHAIN_IDs.HYPEREVM,
-  CHAIN_IDs.PLASMA,
   CHAIN_IDs.MONAD,
+  CHAIN_IDs.PLASMA,
+  CHAIN_IDs.ROBINHOOD,
   CHAIN_IDs.TEMPO,
   CHAIN_IDs.TRON,
 ];
@@ -203,6 +204,7 @@ const resolveChainBundleBuffers = () => {
     [CHAIN_IDs.MONAD]: 150, // ~400ms/block, 2 block finality
     [CHAIN_IDs.PLASMA]: 180, // ~1s/block variable. Finality guarantees are less certain, be a bit more conservative.
     [CHAIN_IDs.POLYGON]: 128, // ~2s/block. Polygon has historically re-orged often.
+    [CHAIN_IDs.ROBINHOOD]: 2000, // ~100ms/block.
     [CHAIN_IDs.TEMPO]: 400, // ~500ms a block.
     [CHAIN_IDs.TRON]: 40, // 3s/block.
     [CHAIN_IDs.ZK_SYNC]: defaultBuffers[ChainFamily.ZK_STACK], // Inherit ZK_STACK default.
@@ -257,6 +259,7 @@ const resolveChainCacheDelay = () => {
     [CHAIN_IDs.MONAD]: 150,
     [CHAIN_IDs.PLASMA]: 300,
     [CHAIN_IDs.POLYGON]: 256,
+    // @TODO: ~100ms/block, soft finality 1-2s, hard finality 12-15min, What value should be here? Is it okey to be ORBIT default?
     [CHAIN_IDs.TEMPO]: 400,
     [CHAIN_IDs.TRON]: 20, // 19 blocks for finalization.
     [CHAIN_IDs.ZK_SYNC]: cacheDelays[ChainFamily.ZK_STACK],
@@ -293,6 +296,7 @@ export const DEFAULT_NO_TTL_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.OPTIMISM]: 86400,
   [CHAIN_IDs.PLASMA]: 172800,
   [CHAIN_IDs.POLYGON]: 86400,
+  [CHAIN_IDs.ROBINHOOD]: 1728000,
   [CHAIN_IDs.SOLANA]: 432000,
   [CHAIN_IDs.SONEIUM]: 86400,
   [CHAIN_IDs.TEMPO]: 345600,
@@ -366,6 +370,7 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.POLYGON]: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "POOL"],
   [CHAIN_IDs.SOLANA]: ["USDC"],
   [CHAIN_IDs.SONEIUM]: ["WETH", "USDC"],
+  [CHAIN_IDs.ROBINHOOD]: ["USDC", "WETH"],
   [CHAIN_IDs.TEMPO]: ["USDC"],
   [CHAIN_IDs.TRON]: ["USDT"],
   [CHAIN_IDs.UNICHAIN]: ["ETH", "WETH", "USDC", "USDT", "ezETH"],
@@ -538,6 +543,10 @@ export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<Ba
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: PolygonWethBridge,
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcTokenSplitterBridge,
     [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTBridge,
+  },
+  [CHAIN_IDs.ROBINHOOD]: {
+    // [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: PaxosTransitBridge,
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: ArbitrumOrbitBridge,
   },
   [CHAIN_IDs.SONEIUM]: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
@@ -718,6 +727,9 @@ export const CUSTOM_L2_BRIDGE: Record<number, Record<string, L2BridgeConstructor
   [CHAIN_IDs.SOLANA]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2SolanaUsdcCCTPBridge,
   },
+  [CHAIN_IDs.ROBINHOOD]: {
+    // [TOKEN_SYMBOLS_MAP.USDG.addresses[CHAIN_IDs.MAINNET]]: PaxosTransitL2Bridge,
+  },
   [CHAIN_IDs.WORLD_CHAIN]: {
     [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20BridgeL2,
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2UsdcCCTPBridge,
@@ -791,6 +803,12 @@ export const CUSTOM_ARBITRUM_GATEWAYS: { [chainId: number]: { [address: string]:
       l2: "0x467194771dAe2967Aef3ECbEDD3Bf9a310C76C65",
     },
   },
+  [CHAIN_IDs.ROBINHOOD]: {
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: {
+      l1: "0xF7e12b9614b509C747ab4423bC4ACF923759Cf1B", // WETH
+      l2: "0x1D187C3E2dA52D72BC9C41e3AbA0fdFa6a7bF055",
+    },
+  },
 };
 
 // The default ERC20 gateway is the generic gateway used by Arbitrum Orbit chains to mint tokens which do not have a custom gateway set.
@@ -802,6 +820,10 @@ export const DEFAULT_ARBITRUM_GATEWAY: { [chainId: number]: { l1: string; l2: st
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: {
     l1: "0x902b3E5f8F19571859F4AB1003B960a5dF693aFF",
     l2: "0x6e244cD02BBB8a6dbd7F626f05B2ef82151Ab502",
+  },
+  [CHAIN_IDs.ROBINHOOD]: {
+    l1: "0x85001CC4867C5e1C22dA4B79BB8852B9e2a06da0",
+    l2: "0xfd9b17206278C16DdaacF6AC8f05dBf97EdCb31e",
   },
 };
 
@@ -925,6 +947,15 @@ export const ARBITRUM_ORBIT_L1L2_MESSAGE_FEE_DATA: {
     amountWei: 0.02,
     amountMultipleToFund: 1,
   },
+  // @TODO: How to calculate this for Robinhood?
+  // Do we even need this for Robinhood? We are using Universal SpokePool.
+  // This was Aleph Zero's fee data.
+  // [CHAIN_IDs.ALEPH_ZERO]: {
+  //   amountWei: 0.49,
+  //   amountMultipleToFund: 50,
+  //   feePayer: "0x0d57392895Db5aF3280e9223323e20F3951E81B1", // DonationBox
+  //   feeToken: TOKEN_SYMBOLS_MAP.AZERO.addresses[CHAIN_IDs.MAINNET],
+  // },
 };
 
 // source: https://github.com/hyperlane-xyz/hyperlane-registry/blob/346b18c4314cf96b41ae2da781f58fb832dbe1f8/deployments/warp_routes/EZETH/arbitrum-base-berachain-blast-bsc-ethereum-fraxtal-linea-mode-optimism-sei-swell-taiko-unichain-worldchain-zircuit-config.yaml
