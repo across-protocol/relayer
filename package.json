@@ -132,8 +132,7 @@
   "resolutions": {
     "protobufjs": "^7.5.4",
     "fast-xml-parser": "^5.7.1",
-    "better-sqlite3": "^11.10.0",
-    "@across-protocol/contracts": "5.0.20"
+    "better-sqlite3": "^11.10.0"
   },
   "publishConfig": {
     "registry": "https://registry.npmjs.com/",
