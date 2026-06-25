@@ -547,7 +547,7 @@ export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<Ba
     [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTBridge,
   },
   [CHAIN_IDs.ROBINHOOD]: {
-    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: PaxosTransitBridge,
+    // [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: PaxosTransitBridge,
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: ArbitrumOrbitBridge,
   },
   [CHAIN_IDs.SONEIUM]: {
@@ -730,7 +730,7 @@ export const CUSTOM_L2_BRIDGE: Record<number, Record<string, L2BridgeConstructor
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2SolanaUsdcCCTPBridge,
   },
   [CHAIN_IDs.ROBINHOOD]: {
-    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: PaxosTransitL2Bridge,
+    // [TOKEN_SYMBOLS_MAP.USDG.addresses[CHAIN_IDs.MAINNET]]: PaxosTransitL2Bridge,
   },
   [CHAIN_IDs.WORLD_CHAIN]: {
     [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20BridgeL2,
