@@ -52,6 +52,10 @@ export class RelayerConfig extends CommonConfig {
   readonly relayerOriginChains: number[] = [];
   readonly relayerDestinationChains: number[] = [];
   readonly relayerGasPadding: BigNumber;
+  // Per-chain `RELAYER_GAS_PADDING_<chainId>` overrides applied in ProfitClient on top
+  // of the global `RELAYER_GAS_PADDING`. Stored as raw padding fractions (e.g. `0.015`
+  // for 1.5%) — ProfitClient adds the leading `1` when constructing the multiplier.
+  readonly relayerGasPaddingOverrides: { [chainId: number]: BigNumber } = {};
   readonly relayerGasMultiplier: BigNumber;
   readonly relayerMessageGasMultiplier: BigNumber;
   readonly minRelayerFeePct: BigNumber;
@@ -463,6 +467,11 @@ export class RelayerConfig extends CommonConfig {
         ? sendMessageRelaysChain === "true"
         : process.env["SEND_MESSAGE_RELAYS"] === "true";
       this.sendingMessageRelaysEnabled[chainId] = sendMessageRelays;
+
+      const gasPaddingOverride = process.env[`RELAYER_GAS_PADDING_${chainId}`];
+      if (isDefined(gasPaddingOverride)) {
+        this.relayerGasPaddingOverrides[chainId] = toBNWei(gasPaddingOverride);
+      }
     });
 
     // Only validate config for chains that the relayer cares about.

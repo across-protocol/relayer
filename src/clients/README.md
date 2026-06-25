@@ -67,6 +67,20 @@ The Profit Client estimates what the gas cost would be to fill the deposit (i.e.
 
 Importantly, the Profit Client exposes certain configuration objects that the user can use to set profitability thresholds.
 
+### Per-destination-chain gas padding
+
+`RELAYER_GAS_PADDING` is the fractional cushion the Profit Client adds on top of every estimated destination-chain gas cost before checking profitability (default `0.15` = 15%, set in `src/common/Constants.ts`). It exists to absorb estimator drift on EVM destinations where the actual fill can consume more gas than the simulator predicts.
+
+`RELAYER_GAS_PADDING_<chainId>` overrides the padding for a single destination chain. Values are raw padding fractions (e.g. `0.015` for 1.5%) and must satisfy `0 <= padding <= 2` (0%–200%) per entry; out-of-range overrides throw at construct time. Override the global default per chain when the destination's gas-side input is essentially exact and the blanket cushion is just margin the relayer never spends — for example Tron, where energy price is governance-fixed and bandwidth scales with already-modeled serialized bytes.
+
+`ProfitClient.resolveGasPadding(chainId)` returns the per-chain multiplier if configured, otherwise the global `gasPadding`. Both forms are stored as `1 + padding` and applied to a cost without further adjustment. All padding application sites (per-fill `estimateFillCost`, the gas-cost cache built in `update`, and the two profitability log emissions) route through `resolveGasPadding`, so no chain without an override sees a behavior change.
+
+Example: drop the cushion on Tron (chain `728126428`) to 1.5% while leaving every other destination on the 15% default:
+
+```
+RELAYER_GAS_PADDING_728126428=0.015
+```
+
 ### Per-token-pair policy overrides
 
 The Profit Client supports a registry of named "policies" that can short-circuit the standard `MIN_RELAYER_FEE_PCT_*` and `RELAYER_GAS_MULTIPLIER_*` lookups. The policies in `RELAYER_POLICIES` (comma-separated) are decoded once at construct time and evaluated in order; the first whose predicate matches the deposit wins. Env mutations after construction are ignored — operators should set policy env vars before the relayer starts.
