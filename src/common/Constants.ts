@@ -370,7 +370,7 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.POLYGON]: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "POOL"],
   [CHAIN_IDs.SOLANA]: ["USDC"],
   [CHAIN_IDs.SONEIUM]: ["WETH", "USDC"],
-  [CHAIN_IDs.ROBINHOOD]: ["USDC", "WETH"],
+  [CHAIN_IDs.ROBINHOOD]: ["WETH"], // @TODO: Add USDC after we have rebalancing method
   [CHAIN_IDs.TEMPO]: ["USDC"],
   [CHAIN_IDs.TRON]: ["USDT"],
   [CHAIN_IDs.UNICHAIN]: ["ETH", "WETH", "USDC", "USDT", "ezETH"],
