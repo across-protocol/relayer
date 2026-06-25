@@ -85,14 +85,41 @@ export class CrossChainTransferClient {
       return;
     }
 
-    const outstandingTransfersPerChain = await Promise.all(
-      chainIds.map(async (chainId) => [
-        chainId,
-        await this.adapterManager.getOutstandingCrossChainTransfers(chainId, l1Tokens),
-      ])
+    // Per-chain isolation: a transient adapter outage must not crash the inventory update. For
+    // failed chains we preserve the previously-recorded state instead of blanking it — stale state
+    // biases the InventoryClient toward under-rebalancing (safer) rather than duplicate-bridging.
+    // The map callback is async so that synchronous throws from getOutstandingCrossChainTransfers
+    // (e.g. missing adapter, getTokenInfo failure) surface as rejected promises rather than
+    // aborting the chainIds.map call before Promise.allSettled sees them. We also forward the
+    // previously-recorded chain state so the adapter can preserve per-(address, l1Token) entries
+    // when a single bridge read fails.
+    const settled = await Promise.allSettled(
+      chainIds.map(async (chainId) =>
+        this.adapterManager.getOutstandingCrossChainTransfers(
+          chainId,
+          l1Tokens,
+          this.outstandingCrossChainTransfers[chainId]
+        )
+      )
     );
-    this.outstandingCrossChainTransfers = Object.fromEntries(outstandingTransfersPerChain);
-    this.log("Updated cross chain transfers", { outstandingCrossChainTransfers: this.outstandingCrossChainTransfers });
+    const failedChainIds: number[] = [];
+    settled.forEach((result, i) => {
+      const chainId = chainIds[i];
+      if (result.status === "fulfilled") {
+        this.outstandingCrossChainTransfers[chainId] = result.value;
+      } else {
+        failedChainIds.push(chainId);
+        this.log(
+          `Failed to fetch outstanding cross chain transfers for chain ${chainId}; preserving stale state`,
+          { chainId, error: String(result.reason) },
+          "error"
+        );
+      }
+    });
+    this.log("Updated cross chain transfers", {
+      outstandingCrossChainTransfers: this.outstandingCrossChainTransfers,
+      ...(failedChainIds.length > 0 ? { failedChainIds } : {}),
+    });
   }
 
   log(message: string, data?: AnyObject, level: DefaultLogLevels = "debug"): void {
