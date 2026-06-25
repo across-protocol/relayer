@@ -62,7 +62,6 @@ export class PaxosTransitBridge extends BaseBridgeAdapter {
     amount: BigNumber,
     _optionalParams?: TransferTokenParams
   ): Promise<BridgeTransactionDetails> {
-    assert(toAddress.isEVM(), "Paxos Transit bridge only supports EVM destination addresses");
     assert(
       l2Token.toNative() === this.l2TokenAddress,
       `Attempting to bridge unsupported l2 token ${l2Token.toNative()}`
@@ -122,10 +121,11 @@ export class PaxosTransitBridge extends BaseBridgeAdapter {
     assert(toAddress.isEVM(), "Paxos Transit finalization events require an EVM destination address");
     const l2Provider = this.l2Bridge?.provider;
     assert(isDefined(l2Provider), "PaxosTransitBridge: l2 provider is required");
+    const transitStation = getPaxosTransitStationAddress(this.l2chainId);
     const tokenContract = new Contract(this.l2TokenAddress, ERC20_ABI, l2Provider);
     const events = await paginatedEventQuery(
       tokenContract,
-      tokenContract.filters.Transfer(null, toAddress.toNative()),
+      tokenContract.filters.Transfer(transitStation, toAddress.toNative()),
       eventConfig
     );
     return {
