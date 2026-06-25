@@ -9,7 +9,6 @@ import {
   Address,
   EvmAddress,
   winston,
-  toBN,
   getNetworkName,
   CHAIN_IDs,
   paginatedEventQuery,
@@ -21,6 +20,7 @@ import {
   buildPaxosTransitSubmitOrderTxn,
   PAXOS_TRANSIT_MINIMUMS,
   PaxosTransitClient,
+  bnZero,
 } from "../../utils";
 import { TransferTokenParams, processEvent } from "../utils";
 import ERC20_ABI from "../../common/abi/MinimalERC20.json";
@@ -42,7 +42,7 @@ export class PaxosTransitBridge extends BaseBridgeAdapter {
 
     super(l2chainId, hubChainId, l1Signer, []);
 
-    const l2TokenAddress = getPaxosTransitDestinationToken(l2chainId, l1Token.toNative());
+    const l2TokenAddress = getPaxosTransitDestinationToken(l2chainId, l1Token);
     assert(
       isDefined(l2TokenAddress),
       `No Paxos Transit destination token configured for chain ${l2chainId} and L1 token ${l1Token.toNative()}`
@@ -69,7 +69,7 @@ export class PaxosTransitBridge extends BaseBridgeAdapter {
     );
     assert(l1Token.toNative() === this.l1Bridge?.address, "L1 token mismatch for Paxos Transit bridge");
 
-    if (amount.lt(PAXOS_TRANSIT_MINIMUMS[this.hubChainId]?.[this.l2chainId] ?? toBN(Number.MAX_SAFE_INTEGER))) {
+    if (amount.lt(PAXOS_TRANSIT_MINIMUMS[this.hubChainId]?.[this.l2chainId] ?? bnZero)) {
       throw new Error(`Cannot bridge to ${getNetworkName(this.l2chainId)} due to invalid amount ${amount}`);
     }
 
@@ -85,6 +85,7 @@ export class PaxosTransitBridge extends BaseBridgeAdapter {
     });
 
     return {
+      // @TODO: We should use the actual ABI of the contract. This is just a placeholder.
       contract: new Contract(orderData.transaction.to, [], this.l1Signer),
       method: "",
       args: [orderData.transaction.data],

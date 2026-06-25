@@ -1,3 +1,5 @@
+import type { TypedDataSigner } from "@ethersproject/abstract-signer";
+import type { TypedDataDomain, TypedDataField } from "ethers";
 import {
   CHAIN_IDs,
   assert,
@@ -11,6 +13,7 @@ import {
   TOKEN_SYMBOLS_MAP,
   toBN,
   winston,
+  Address,
 } from "./";
 
 export const PAXOS_TRANSIT_DESTINATION_TOKENS: { [dstChainId: number]: { [l1TokenAddress: string]: string } } = {
@@ -64,8 +67,8 @@ export function getPaxosTransitStationAddress(chainId: number): string {
   return address;
 }
 
-export function getPaxosTransitDestinationToken(dstChainId: number, l1TokenAddress: string): string | undefined {
-  return PAXOS_TRANSIT_DESTINATION_TOKENS[dstChainId]?.[l1TokenAddress];
+export function getPaxosTransitDestinationToken(dstChainId: number, l1Token: Address): string | undefined {
+  return PAXOS_TRANSIT_DESTINATION_TOKENS[dstChainId]?.[l1Token.toNative()];
 }
 
 export class PaxosTransitClient {
@@ -151,13 +154,9 @@ export function createPaxosTransitClient(logger?: winston.Logger): PaxosTransitC
   return new PaxosTransitClient(PAXOS_API_BASE, PAXOS_API_KEY, logger);
 }
 
-type Eip712Signer = Signer & {
-  _signTypedData: (
-    domain: Record<string, unknown>,
-    types: Record<string, Array<{ name: string; type: string }>>,
-    value: Record<string, string>
-  ) => Promise<string>;
-};
+function isTypedDataSigner(signer: Signer): signer is Signer & TypedDataSigner {
+  return typeof (signer as unknown as TypedDataSigner)._signTypedData === "function";
+}
 
 export async function resolvePaxosTransitAuthorization(
   client: PaxosTransitClient,
@@ -181,12 +180,12 @@ export async function resolvePaxosTransitAuthorization(
   if (auth.method === "permit") {
     assert(isDefined(auth.permitData), "Paxos Transit authorization missing permitData");
     const { domain, types, value, deadline } = auth.permitData;
-    const typedDataSigner = signer as Eip712Signer;
-    assert(
-      typeof typedDataSigner._signTypedData === "function",
-      "Signer must support EIP-712 signing for Paxos Transit permit flow"
+    assert(isTypedDataSigner(signer), "Signer must support EIP-712 signing for Paxos Transit permit flow");
+    const permitSignature = await signer._signTypedData(
+      domain as TypedDataDomain,
+      types as Record<string, TypedDataField[]>,
+      value
     );
-    const permitSignature = await typedDataSigner._signTypedData(domain, types, value);
     return { permitSignature, permitDeadline: deadline };
   }
 

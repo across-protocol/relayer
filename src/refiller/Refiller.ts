@@ -22,6 +22,7 @@ import {
   mapAsync,
   parseUnits,
   postWithTimeout,
+  sendAndConfirmTransaction,
   submitTransaction,
   Signer,
   toAddressType,
@@ -101,7 +102,20 @@ export class Refiller {
   async initialize(): Promise<void> {
     this.baseSignerAddress = EvmAddress.from(await this.baseSigner.getAddress());
     this.redisCache = await getRedisCache(this.logger);
+    if (this._hasMainnetUsdgSweepConfigured()) {
+      assert(
+        isDefined(process.env.PAXOS_API_KEY),
+        "PAXOS_API_KEY must be set when REFILL_BALANCES includes mainnet USDG"
+      );
+    }
     this.initialized = true;
+  }
+
+  private _hasMainnetUsdgSweepConfigured(): boolean {
+    const mainnetUsdgAddress = TOKEN_SYMBOLS_MAP.USDG.addresses[CHAIN_IDs.MAINNET];
+    return this.config.refillEnabledBalances.some(
+      ({ chainId, token }) => chainId === CHAIN_IDs.MAINNET && token.toNative() === mainnetUsdgAddress
+    );
   }
 
   async refillBalances(): Promise<void> {
@@ -596,15 +610,7 @@ export class Refiller {
   }
 
   private async sweepMainnetUsdgToRobinhood(_currentBalance: BigNumber, decimals: number): Promise<void> {
-    if (!isDefined(process.env.PAXOS_API_KEY)) {
-      this.logger.warn({
-        at: "Refiller#sweepMainnetUsdgToRobinhood",
-        message: "PAXOS_API_KEY is missing from .env. Unable to sweep mainnet USDG to Robinhood.",
-      });
-      return;
-    }
-
-    const redisKey = `refill:usdg-sweep:${this.baseSignerAddress.toNative()}`;
+    const redisKey = `refill:usdg-sweep:${this.baseSignerAddress}`;
     if (await this._isRefillProcessed(redisKey)) {
       return;
     }
@@ -622,8 +628,8 @@ export class Refiller {
       this.logger.debug({
         at: "Refiller#sweepMainnetUsdgToRobinhood",
         message: "Mainnet USDG balance is below sweep minimum",
-        amountToTransfer: amountToTransfer.toString(),
-        minUsdgSweepAmount: this.config.minUsdgSweepAmount.toString(),
+        amountToTransfer,
+        minUsdgSweepAmount: this.config.minUsdgSweepAmount,
       });
       return;
     }
@@ -649,25 +655,20 @@ export class Refiller {
       amountToTransfer
     );
 
-    let txn;
-    try {
-      txn = await (
-        await submitTransaction(
-          {
-            contract,
-            method,
-            args,
-            value,
-            chainId: CHAIN_IDs.MAINNET,
-          },
-          this.transactionClient
-        )
-      ).wait();
-    } catch (error) {
+    const txn = await sendAndConfirmTransaction(
+      {
+        contract,
+        method,
+        args,
+        value,
+        chainId: CHAIN_IDs.MAINNET,
+      },
+      this.transactionClient
+    );
+    if (!isDefined(txn)) {
       this.logger.warn({
         at: "Refiller#sweepMainnetUsdgToRobinhood",
         message: `Failed to sweep ${formatUnits(amountToTransfer, decimals)} mainnet USDG to Robinhood`,
-        error,
       });
       return;
     }

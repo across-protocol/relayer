@@ -39,7 +39,7 @@ export class PaxosTransitL2Bridge extends BaseL2BridgeAdapter {
     }
     super(l2chainId, hubChainId, l2Signer, l1Signer, l1Token);
 
-    const l2TokenAddress = getPaxosTransitDestinationToken(l2chainId, l1Token.toNative());
+    const l2TokenAddress = getPaxosTransitDestinationToken(l2chainId, l1Token);
     assert(
       isDefined(l2TokenAddress),
       `No Paxos Transit destination token configured for chain ${l2chainId} and L1 token ${l1Token.toNative()}`

@@ -950,6 +950,14 @@ export const ARBITRUM_ORBIT_L1L2_MESSAGE_FEE_DATA: {
     amountMultipleToFund: 1,
   },
   // @TODO: How to calculate this for Robinhood?
+  // Do we even need this for Robinhood? We are using Universal SpokePool.
+  // This was Aleph Zero's fee data.
+  // [CHAIN_IDs.ALEPH_ZERO]: {
+  //   amountWei: 0.49,
+  //   amountMultipleToFund: 50,
+  //   feePayer: "0x0d57392895Db5aF3280e9223323e20F3951E81B1", // DonationBox
+  //   feeToken: TOKEN_SYMBOLS_MAP.AZERO.addresses[CHAIN_IDs.MAINNET],
+  // },
 };
 
 // source: https://github.com/hyperlane-xyz/hyperlane-registry/blob/346b18c4314cf96b41ae2da781f58fb832dbe1f8/deployments/warp_routes/EZETH/arbitrum-base-berachain-blast-bsc-ethereum-fraxtal-linea-mode-optimism-sei-swell-taiko-unichain-worldchain-zircuit-config.yaml
