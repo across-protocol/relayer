@@ -56,7 +56,7 @@ export class PaxosTransitBridge extends BaseBridgeAdapter {
   }
 
   async constructL1ToL2Txn(
-    toAddress: Address,
+    _toAddress: Address,
     l1Token: EvmAddress,
     l2Token: Address,
     amount: BigNumber,

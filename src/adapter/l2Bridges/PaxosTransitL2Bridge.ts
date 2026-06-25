@@ -58,7 +58,7 @@ export class PaxosTransitL2Bridge extends BaseL2BridgeAdapter {
   }
 
   async constructWithdrawToL1Txns(
-    toAddress: EvmAddress,
+    _toAddress: EvmAddress,
     l2Token: EvmAddress,
     l1Token: EvmAddress,
     amount: BigNumber
