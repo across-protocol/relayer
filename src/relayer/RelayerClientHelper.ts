@@ -231,7 +231,6 @@ export async function constructRelayerClients(
     crossChainTransferClient,
     rebalancerClient,
     !config.sendingTransactionsEnabled,
-    undefined,
     config.l1TokensOverride,
     binanceClient
   );
