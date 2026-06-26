@@ -473,6 +473,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", function () {
           relayerDestinationTokens: {
             [destinationChainId]: [], // Explicitly do not include output token here
           },
+          relayerBlockedDestinationTokens: {},
           minDepositConfirmations: defaultMinDepositConfirmations,
           sendingRelaysEnabled: true,
           tryMulticallChains: [],
@@ -482,6 +483,43 @@ describe("Relayer: Check for Unfilled Deposits and Fill", function () {
       );
 
       // Deposit for output token should be ignored.
+      await depositV3(spokePool_1, destinationChainId, depositor, inputToken, inputAmount, outputToken, outputAmount);
+      await updateAllClients();
+      const txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
+      for (const receipts of Object.values(txnReceipts)) {
+        expect((await receipts).length).to.equal(0);
+      }
+    });
+
+    it("Filters on blocked destination tokens without an allowlist", async function () {
+      relayerInstance = new Relayer(
+        relayer.address,
+        spyLogger,
+        {
+          spokePoolClients,
+          hubPoolClient,
+          configStoreClient,
+          tokenClient,
+          profitClient,
+          multiCallerClient,
+          inventoryClient,
+          acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient, chainIds),
+          tryMulticallClient,
+        },
+        {
+          relayerTokens: [],
+          relayerDestinationTokens: {},
+          relayerBlockedDestinationTokens: {
+            [destinationChainId]: [toAddressType(outputToken, destinationChainId)],
+          },
+          minDepositConfirmations: defaultMinDepositConfirmations,
+          sendingRelaysEnabled: true,
+          tryMulticallChains: [],
+          sendingMessageRelaysEnabled: {},
+          loggingInterval: -1,
+        } as unknown as RelayerConfig
+      );
+
       await depositV3(spokePool_1, destinationChainId, depositor, inputToken, inputAmount, outputToken, outputAmount);
       await updateAllClients();
       const txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();

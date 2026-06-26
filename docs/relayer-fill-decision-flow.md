@@ -43,6 +43,8 @@ Major gates:
 - route enablement (origin/destination chain allowlists)
 - address validity for chain type
 - blocklists and token support constraints
+- per-chain blocked output tokens (`RELAYER_BLOCKED_DESTINATION_TOKENS`)
+- per-chain allowed output tokens (`RELAYER_DESTINATION_TOKENS`, optional allowlist)
 - input/output token compatibility via `inventoryClient.validateOutputToken()`
 - minimum confirmations per value bucket
 - future quote-timestamp guard

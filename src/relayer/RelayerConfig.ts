@@ -49,6 +49,8 @@ export class RelayerConfig extends CommonConfig {
   readonly sendingSlowRelaysEnabled: boolean;
   readonly relayerTokens: EvmAddress[];
   readonly relayerDestinationTokens: { [chainId: number]: Address[] };
+  // Per-chain output token denylist. When set for a chain, matching output tokens are never filled.
+  readonly relayerBlockedDestinationTokens: { [chainId: number]: Address[] };
   readonly relayerOriginChains: number[] = [];
   readonly relayerDestinationChains: number[] = [];
   readonly relayerGasPadding: BigNumber;
@@ -92,6 +94,7 @@ export class RelayerConfig extends CommonConfig {
       RELAYER_INVENTORY_CONFIG,
       RELAYER_TOKENS,
       RELAYER_DESTINATION_TOKENS,
+      RELAYER_BLOCKED_DESTINATION_TOKENS,
       SEND_RELAYS,
       SEND_SLOW_RELAYS,
       MIN_RELAYER_FEE_PCT,
@@ -123,6 +126,12 @@ export class RelayerConfig extends CommonConfig {
     // and fill nothing on chain D, set relayerDestinationTokens: { C: [A], D: [] }
     this.relayerDestinationTokens = Object.fromEntries(
       Object.entries(parseJson.stringArrayMap(RELAYER_DESTINATION_TOKENS)).map(([_chainId, tokens]) => {
+        const chainId = Number(_chainId);
+        return [chainId, tokens.map((token) => toAddressType(token, chainId))];
+      })
+    );
+    this.relayerBlockedDestinationTokens = Object.fromEntries(
+      Object.entries(parseJson.stringArrayMap(RELAYER_BLOCKED_DESTINATION_TOKENS)).map(([_chainId, tokens]) => {
         const chainId = Number(_chainId);
         return [chainId, tokens.map((token) => toAddressType(token, chainId))];
       })

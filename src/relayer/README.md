@@ -4,6 +4,8 @@
 
 The Relayer can be configured to only fill deposits from certain origin chains and input tokens and on certain destination chains and output tokens.
 
+Use `RELAYER_DESTINATION_TOKENS` as an optional per-chain **allowlist** of output tokens. Use `RELAYER_BLOCKED_DESTINATION_TOKENS` as a per-chain **denylist** when you support most tokens on a chain but want to block specific outputs (for example mainnet USDG).
+
 The Relayer's profitabilty threshold can also be modified.
 
 The Relayer inherently assumes finality risk the faster it attempts to fill an unfilled deposit, for if the deposit has not finalized before the fill transaction is sent, the relayer risks that the deposit is re-orged and their fill becomes invalid.

@@ -201,6 +201,7 @@ export class Relayer {
       acceptInvalidFills,
       minDepositConfirmations,
       relayerDestinationTokens,
+      relayerBlockedDestinationTokens,
     } = this.config;
     const [srcChain, dstChain] = [getNetworkName(originChainId), getNetworkName(destinationChainId)];
     const relayKey = sdkUtils.getRelayEventKey(deposit);
@@ -299,6 +300,18 @@ export class Relayer {
         message: "Skipping deposit for unsupported input token.",
         deposit,
         l1Token,
+      });
+      return ignoreDeposit();
+    }
+
+    const blockedOutputTokens = relayerBlockedDestinationTokens[destinationChainId];
+    if (blockedOutputTokens?.some((token) => token.eq(deposit.outputToken))) {
+      this.logger.debug({
+        at: "Relayer::filterDeposit",
+        message: "Skipping deposit for blocked output token.",
+        deposit,
+        outputToken: deposit.outputToken,
+        destinationChainId,
       });
       return ignoreDeposit();
     }
