@@ -731,6 +731,34 @@ describe("Dataworker: Utilities to execute pool rebalance leaves", function () {
       expect(queuedTransactions[2].method).to.equal("executeRootBundle");
       expect(queuedTransactions[3].method).to.equal("executeRootBundle");
     });
+    it("does not fund universal orbit leaf (e.g. Robinhood)", async function () {
+      // Robinhood is technically an Orbit chain (chainIsOrbit === true) but relays HubPool->SpokePool
+      // messages via the Succinct/Helios SP1 bridge, so it must NOT go through the Orbit ETH funding
+      // path (which has no fee data for it and previously threw on destructure).
+      const leaves: PoolRebalanceLeaf[] = [
+        {
+          chainId: CHAIN_IDs.ROBINHOOD,
+          groupIndex: 0,
+          bundleLpFees: [toBNWei("1")],
+          netSendAmounts: [toBNWei("1")],
+          runningBalances: [toBNWei("1")],
+          leafId: 0,
+          l1Tokens: [token1],
+        },
+      ];
+      const result = await dataworkerInstance._executePoolRebalanceLeaves(
+        spokePoolClients,
+        leaves,
+        balanceAllocator,
+        buildPoolRebalanceLeafTree(leaves)
+      );
+      expect(result).to.equal(1);
+
+      // Should only submit the execution, with no loadEthForL2Calls funding transaction.
+      expect(multiCallerClient.transactionCount()).to.equal(1);
+      const queuedTransactions = multiCallerClient.getQueuedTransactions(hubPoolClient.chainId);
+      expect(queuedTransactions[0].method).to.equal("executeRootBundle");
+    });
     it("Ignores leaves without sufficient reserves to execute", async function () {
       // Should only be able to execute the first leaf
       balanceAllocator.testSetBalance(
