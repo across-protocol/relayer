@@ -213,6 +213,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", function () {
       {
         relayerTokens: [],
         relayerDestinationTokens: {},
+        relayerBlockedDestinationTokens: {},
         minDepositConfirmations: defaultMinDepositConfirmations,
         sendingRelaysEnabled: true,
         tryMulticallChains: [],

@@ -304,7 +304,7 @@ export class Relayer {
       return ignoreDeposit();
     }
 
-    const blockedOutputTokens = relayerBlockedDestinationTokens[destinationChainId];
+    const blockedOutputTokens = relayerBlockedDestinationTokens?.[destinationChainId];
     if (blockedOutputTokens?.some((token) => token.eq(deposit.outputToken))) {
       this.logger.debug({
         at: "Relayer::filterDeposit",

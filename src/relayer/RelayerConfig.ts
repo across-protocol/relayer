@@ -50,7 +50,7 @@ export class RelayerConfig extends CommonConfig {
   readonly relayerTokens: EvmAddress[];
   readonly relayerDestinationTokens: { [chainId: number]: Address[] };
   // Per-chain output token denylist. When set for a chain, matching output tokens are never filled.
-  readonly relayerBlockedDestinationTokens: { [chainId: number]: Address[] };
+  readonly relayerBlockedDestinationTokens: { [chainId: number]: Address[] } = {};
   readonly relayerOriginChains: number[] = [];
   readonly relayerDestinationChains: number[] = [];
   readonly relayerGasPadding: BigNumber;
