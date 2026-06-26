@@ -96,6 +96,7 @@ import {
   getContractEntry,
   IOFT_ABI_FULL,
   spokePoolClientsToProviders,
+  UNIVERSAL_CHAINS,
 } from "../common";
 import * as OFT from "../utils/OFTUtils";
 import * as sdk from "@across-protocol/sdk";
@@ -1884,8 +1885,12 @@ export class Dataworker {
     const fundedLeaves = await this._getExecutablePoolRebalanceLeaves(allLeaves, balanceAllocator);
     const executableLeaves: PoolRebalanceLeaf[] = [];
     for (const leaf of fundedLeaves) {
-      // For orbit leaves we need to check if we have enough gas tokens to pay for the L1 to L2 message.
-      if (!sdkUtils.chainIsArbitrum(leaf.chainId) && !sdkUtils.chainIsOrbit(leaf.chainId)) {
+      // Orbit chains relay roots via the Arbitrum inbox and need L1 ETH prefunding. Universal
+      // SpokePool chains (Helios messaging) finalize pool rebalances separately on L2.
+      const requiresOrbitL1ToL2MessageFees =
+        (sdkUtils.chainIsArbitrum(leaf.chainId) || sdkUtils.chainIsOrbit(leaf.chainId)) &&
+        !UNIVERSAL_CHAINS.includes(leaf.chainId);
+      if (!requiresOrbitL1ToL2MessageFees) {
         executableLeaves.push(leaf);
         continue;
       }

@@ -626,6 +626,30 @@ describe("Dataworker: Utilities to execute pool rebalance leaves", function () {
       expect(queuedTransactions[1].method).to.equal("executeRootBundle");
       expect(queuedTransactions[1].message).to.match(/chain 137/);
     });
+    it("universal spoke pool orbit chain skips orbit L1->L2 fee funding", async function () {
+      const leaves: PoolRebalanceLeaf[] = [
+        {
+          chainId: CHAIN_IDs.ROBINHOOD,
+          groupIndex: 0,
+          bundleLpFees: [toBNWei("1")],
+          netSendAmounts: [toBNWei("1")],
+          runningBalances: [toBNWei("1")],
+          leafId: 0,
+          l1Tokens: [token1],
+        },
+      ];
+      const result = await dataworkerInstance._executePoolRebalanceLeaves(
+        spokePoolClients,
+        leaves,
+        balanceAllocator,
+        buildPoolRebalanceLeafTree(leaves)
+      );
+      expect(result).to.equal(1);
+      expect(multiCallerClient.transactionCount()).to.equal(1);
+      const [queuedTransaction] = multiCallerClient.getQueuedTransactions(hubPoolClient.chainId);
+      expect(queuedTransaction.method).to.equal("executeRootBundle");
+      expect(queuedTransaction.message).to.match(new RegExp(`chain ${CHAIN_IDs.ROBINHOOD}`));
+    });
     it("Subtracts virtual balance from hub pool", async function () {
       // All chain leaves remove virtual balance from hub pool
       const leaves: PoolRebalanceLeaf[] = [
