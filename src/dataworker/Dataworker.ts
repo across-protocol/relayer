@@ -96,6 +96,7 @@ import {
   getContractEntry,
   IOFT_ABI_FULL,
   spokePoolClientsToProviders,
+  UNIVERSAL_CHAINS,
 } from "../common";
 import * as OFT from "../utils/OFTUtils";
 import * as sdk from "@across-protocol/sdk";
@@ -1884,8 +1885,16 @@ export class Dataworker {
     const fundedLeaves = await this._getExecutablePoolRebalanceLeaves(allLeaves, balanceAllocator);
     const executableLeaves: PoolRebalanceLeaf[] = [];
     for (const leaf of fundedLeaves) {
-      // For orbit leaves we need to check if we have enough gas tokens to pay for the L1 to L2 message.
-      if (!sdkUtils.chainIsArbitrum(leaf.chainId) && !sdkUtils.chainIsOrbit(leaf.chainId)) {
+      // Universal chains (e.g. Robinhood) relay HubPool->SpokePool roots and tokens via the
+      // Succinct/Helios SP1 light-client bridge (HubPoolStore), not the Arbitrum/Orbit Inbox.
+      // The HubPool therefore does not need ETH pre-loaded for L1->L2 message fees, even though
+      // these chains are technically Orbit chains (chainIsOrbit returns true).
+      // For non-Universal orbit leaves we need to check we have enough gas tokens to pay for the
+      // L1 to L2 message.
+      if (
+        UNIVERSAL_CHAINS.includes(leaf.chainId) ||
+        (!sdkUtils.chainIsArbitrum(leaf.chainId) && !sdkUtils.chainIsOrbit(leaf.chainId))
+      ) {
         executableLeaves.push(leaf);
         continue;
       }
