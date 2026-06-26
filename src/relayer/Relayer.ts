@@ -848,7 +848,8 @@ export class Relayer {
 
   /**
    * For an array of unfilled deposits, compute the applicable LP fee for each. Fees are computed for all possible
-   * repayment chains which include origin, destination, all slow-withdrawal chains and mainnet.
+   * repayment chains returned by InventoryClient.getPossibleRepaymentChainIds(): origin, destination, the hub, any
+   * configured override, and — for hub-origin deposits — every chain with a pool rebalance route for the token.
    * @param deposits An array of deposits.
    * @returns A BatchLPFees object uniquely identifying LP fees per unique input deposit.
    */
