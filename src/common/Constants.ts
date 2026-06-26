@@ -948,9 +948,13 @@ export const ARBITRUM_ORBIT_L1L2_MESSAGE_FEE_DATA: {
     amountWei: 0.02,
     amountMultipleToFund: 1,
   },
-  // @TODO: How to calculate this for Robinhood?
-  // Do we even need this for Robinhood? We are using Universal SpokePool.
-  // This was Aleph Zero's fee data.
+  // Robinhood and the other UNIVERSAL_CHAINS are Orbit by chain family but receive HubPool messages
+  // via the Universal (SP1) adapter rather than the native Arbitrum inbox, so they need no L1->L2
+  // message gas pre-funding and intentionally have no entry here. Dataworker._executePoolRebalanceLeaves
+  // skips them via the UNIVERSAL_CHAINS check.
+  //
+  // Kept below as a reference for a true native-inbox Orbit chain with a custom gas token
+  // (Aleph Zero, since removed):
   // [CHAIN_IDs.ALEPH_ZERO]: {
   //   amountWei: 0.49,
   //   amountMultipleToFund: 50,

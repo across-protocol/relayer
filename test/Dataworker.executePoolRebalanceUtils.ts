@@ -731,6 +731,35 @@ describe("Dataworker: Utilities to execute pool rebalance leaves", function () {
       expect(queuedTransactions[2].method).to.equal("executeRootBundle");
       expect(queuedTransactions[3].method).to.equal("executeRootBundle");
     });
+    it("does not fund Universal SpokePool Orbit leaf (e.g. Robinhood)", async function () {
+      // Robinhood is Orbit by chain family but uses the Universal SpokePool, so it receives HubPool
+      // messages via the SP1 adapter rather than the native Arbitrum inbox. The dataworker must not
+      // attempt to pre-fund L1->L2 message gas for it: there is no ARBITRUM_ORBIT_L1L2_MESSAGE_FEE_DATA
+      // entry, which previously caused a destructuring TypeError that aborted the whole execution.
+      const leaves: PoolRebalanceLeaf[] = [
+        {
+          chainId: CHAIN_IDs.ROBINHOOD,
+          groupIndex: 0,
+          bundleLpFees: [toBNWei("1")],
+          netSendAmounts: [toBNWei("1")],
+          runningBalances: [toBNWei("1")],
+          leafId: 0,
+          l1Tokens: [token1],
+        },
+      ];
+      const result = await dataworkerInstance._executePoolRebalanceLeaves(
+        spokePoolClients,
+        leaves,
+        balanceAllocator,
+        buildPoolRebalanceLeafTree(leaves)
+      );
+      expect(result).to.equal(1);
+
+      // Only the root-bundle execution should be queued — no loadEthForL2Calls gas pre-funding.
+      const queuedTransactions = multiCallerClient.getQueuedTransactions(hubPoolClient.chainId);
+      expect(queuedTransactions.every((txn) => txn.method !== "loadEthForL2Calls")).to.equal(true);
+      expect(queuedTransactions.filter((txn) => txn.method === "executeRootBundle").length).to.equal(1);
+    });
     it("Ignores leaves without sufficient reserves to execute", async function () {
       // Should only be able to execute the first leaf
       balanceAllocator.testSetBalance(
