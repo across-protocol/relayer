@@ -21,10 +21,8 @@ import {
   AnyObject,
   ERC20,
   TOKEN_SYMBOLS_MAP,
-  formatFeePct,
   fixedPointAdjustment,
   bnComparatorDescending,
-  MAX_UINT_VAL,
   PriceClient,
   toBNWei,
   assert,
@@ -40,7 +38,6 @@ import {
   toAddressType,
   forEachAsync,
   max,
-  getLatestRunningBalances,
   getInventoryBalanceContributorTokens,
   dedupArray,
   isUnmeteredFastRebalance,
@@ -51,8 +48,7 @@ import { BundleDataApproxClient, BundleDataState } from "./BundleDataApproxClien
 import { HubPoolClient, TokenClient, TransactionClient } from ".";
 import { Deposit, TokenInfo } from "../interfaces";
 import { InventoryConfig, isAliasConfig, TokenBalanceConfig } from "../interfaces/InventoryManagement";
-import lodash from "lodash";
-import { hasBinanceRoute, SLOW_WITHDRAWAL_CHAINS } from "../common";
+import { hasBinanceRoute } from "../common";
 import { AdapterManager, CrossChainTransferClient } from "./bridges";
 import { TransferTokenParams } from "../adapter/utils";
 import { RebalancerClient } from "../rebalancer/utils/interfaces";
@@ -84,7 +80,6 @@ export class InventoryClient {
   private logDisabledManagement = false;
   private readonly scalar: BigNumber;
   private readonly formatWei: ReturnType<typeof createFormatFunction>;
-  private excessRunningBalancePromises: { [l1Token: string]: Promise<{ [chainId: number]: BigNumber }> } = {};
   private profiler: InstanceType<typeof Profiler>;
   private bundleDataApproxClient: BundleDataApproxClient;
   private inventoryConfig: InventoryConfig;
@@ -107,7 +102,6 @@ export class InventoryClient {
     readonly crossChainTransferClient: CrossChainTransferClient,
     readonly rebalancerClient: RebalancerClient,
     readonly simMode = false,
-    readonly prioritizeLpUtilization = true,
     readonly l1TokensOverride: string[] = [],
     protected binanceClient?: BinanceClient
   ) {
@@ -533,7 +527,7 @@ export class InventoryClient {
 
   getPossibleRepaymentChainIds(deposit: Deposit): number[] {
     // Origin chain is always included in the repayment chain list.
-    const { originChainId, destinationChainId, inputToken } = deposit;
+    const { originChainId, destinationChainId } = deposit;
     const chainIds = new Set<number>();
     chainIds.add(originChainId);
 
@@ -548,15 +542,6 @@ export class InventoryClient {
       chainIds.add(destinationChainId);
     }
 
-    if (this.isInventoryManagementEnabled()) {
-      // @dev Because the `deposit` is for an input token that has already been filtered, this mapping should exist.
-      const l1Token = this.getRequiredL1TokenAddress(inputToken, originChainId);
-      this.getSlowWithdrawalRepaymentChains(l1Token).forEach((chainId) => {
-        if (this.hubPoolClient.l2TokenEnabledForL1Token(l1Token, chainId)) {
-          chainIds.add(chainId);
-        }
-      });
-    }
     // Check per-chain override first, then global override
     const chainOverride = this.getRepaymentChainOverride(originChainId);
     if (isDefined(chainOverride)) {
@@ -731,28 +716,8 @@ export class InventoryClient {
     // To correctly compute destination-chain allocation, add upcoming refunds for all equivalents of this L1 token.
     const cumulativeVirtualBalancePostRefunds = this.getCumulativeBalanceWithApproximateUpcomingRefunds(l1Token);
 
-    // Build the refund-chain pipeline from the public superset used by the relayer for LP fee precomputation.
-    const possibleChains = this.getPossibleRepaymentChainIds(deposit);
+    // Repayment is evaluated on the origin and destination chains only.
     const prioritizeOrigin = deposit.toLiteChain || originQuickRebalance;
-    const slowWithdrawalRepaymentChains = this.getSlowWithdrawalRepaymentChains(l1Token);
-    const slowWithdrawalRepaymentChainSet = new Set(slowWithdrawalRepaymentChains);
-
-    // @dev The async call to `getExcessRunningBalancePcts` should be very fast compared to upcoming refund lookups,
-    // so we choose not to compute them in parallel.
-    const excessRunningBalancePcts =
-      !forceOriginRepayment && this.prioritizeLpUtilization
-        ? await this.getExcessRunningBalancePcts(l1Token, inputAmountInL1TokenDecimals, slowWithdrawalRepaymentChains)
-        : {};
-
-    const slowWithdrawalCandidateChains = possibleChains
-      .filter(
-        (chainId) =>
-          slowWithdrawalRepaymentChainSet.has(chainId) && (excessRunningBalancePcts[chainId] ?? bnZero).gt(bnZero)
-      )
-      .sort((chainIdx, chainIdy) =>
-        bnComparatorDescending(excessRunningBalancePcts[chainIdx], excessRunningBalancePcts[chainIdy])
-      );
-
     const standardChainOrder = prioritizeOrigin
       ? [originChainId, destinationChainId]
       : [destinationChainId, originChainId];
@@ -763,7 +728,7 @@ export class InventoryClient {
     const standardCandidateChains = [...standardChainOrder].filter((chainId) =>
       chainId === originChainId ? canEvaluateOrigin : canEvaluateDestination
     );
-    const rankedChains = dedupArray([...slowWithdrawalCandidateChains, ...standardCandidateChains]);
+    const rankedChains = dedupArray(standardCandidateChains);
 
     const eligibleChains: number[] = [];
     // At this point, all ranked chains have defined token configs or are destination chains that can be accepted
@@ -823,7 +788,7 @@ export class InventoryClient {
 
       this.log(
         `Evaluated taking repayment on ${
-          chainId === originChainId ? "origin" : chainId === destinationChainId ? "destination" : "slow withdrawal"
+          chainId === originChainId ? "origin" : "destination"
         } chain ${chainId} for deposit ${deposit.depositId.toString()}: ${
           expectedPostRelayAllocation.lte(effectiveTargetPct) ? "UNDERALLOCATED ✅" : "OVERALLOCATED ❌"
         }`,
@@ -867,113 +832,6 @@ export class InventoryClient {
       eligibleChains.push(hubChainId);
     }
     return eligibleChains;
-  }
-
-  /**
-   * Returns running balances for l1Tokens on all slow withdrawal chains that are enabled for this l1Token.
-   * @param l1Token
-   * @returns Dictionary keyed by chain ID of the absolute value of the latest running balance for the l1Token.
-   */
-  private async _getLatestRunningBalances(
-    l1Token: EvmAddress,
-    chainsToEvaluate: number[]
-  ): Promise<{ [chainId: number]: BigNumber }> {
-    const mark = this.profiler.start("getLatestRunningBalances");
-    const runningBalances = await getLatestRunningBalances(
-      l1Token,
-      chainsToEvaluate,
-      this.hubPoolClient,
-      this.bundleDataApproxClient
-    );
-    mark.stop({
-      message: `Time to get running balances for ${l1Token}`,
-      chainsToEvaluate,
-      runningBalances,
-    });
-    return Object.fromEntries(Object.entries(runningBalances).map(([k, v]) => [k, v.absLatestRunningBalance]));
-  }
-
-  /**
-   * @param excessRunningBalances Dictionary of "excess" running balances per chain. Running balances
-   * are recorded in PoolRebalanceLeaves and are positive if the Hub owes the Spoke funds and negative otherwise.
-   * Therefore, running balances can only be considered "excess" if the running balance as recorded in the
-   * PoolRebalanceLeaf is negative. This is denoting that the Hub is over-allocated on the Spoke.
-   * @param l1Token Token we are comparing running balances for against spoke pool targets.
-   * @param refundAmount Amount that will be refunded to the relayer. This value gets subtracted from running
-   * balance excesses before comparing with the spoke pool target, since refunds are taken out of spoke pool balances.
-   * @returns Dictionary of excess percentages for each chain. The excess percentage is the percentage of the
-   * excess running balance over the spoke pool target balance. If the absolute running balance is 0, then
-   * the excess percentage is 0. If the target is 0, then the excess percentage is infinite.
-   */
-  private _getExcessRunningBalancePcts(
-    excessRunningBalances: { [chainId: number]: BigNumber },
-    l1Token: EvmAddress,
-    refundAmountInL1TokenDecimals: BigNumber
-  ): { [chainId: number]: BigNumber } {
-    const pcts = Object.fromEntries(
-      Object.entries(excessRunningBalances).map(([_chainId, excess]) => {
-        const chainId = Number(_chainId);
-        const target = this.hubPoolClient.configStoreClient.getSpokeTargetBalancesForBlock(
-          l1Token.toNative(),
-          chainId
-        ).target;
-        const excessPostRelay = excess.sub(refundAmountInL1TokenDecimals);
-        const returnObj = {
-          pct: toBN(0),
-          target,
-          excess,
-          excessPostRelay,
-        };
-        // If target is greater than excess running balance, then pct will
-        // be set to 0. If target is 0 then pct is infinite.
-        if (target.gte(excessPostRelay)) {
-          returnObj.pct = toBN(0);
-        } else {
-          if (target.eq(0)) {
-            returnObj.pct = MAX_UINT_VAL;
-          } else {
-            // @dev If target is negative, then the denominator will be negative,
-            // so we use the .abs() of the denominator to ensure the pct is positive. The
-            // numerator will always be positive because in this branch, excessPostRelay > target.
-            returnObj.pct = excessPostRelay.sub(target).mul(this.scalar).div(target.abs());
-          }
-        }
-        return [chainId, returnObj];
-      })
-    );
-    this.log(`Computed excess running balances for ${l1Token}`, {
-      refundAmountInL1TokenDecimals,
-      excessRunningBalancePcts: Object.fromEntries(
-        Object.entries(pcts).map(([k, v]) => [
-          k,
-          {
-            ...v,
-            pct: formatFeePct(v.pct) + "%",
-          },
-        ])
-      ),
-    });
-    return Object.fromEntries(Object.entries(pcts).map(([k, v]) => [k, v.pct]));
-  }
-
-  async getExcessRunningBalancePcts(
-    l1Token: EvmAddress,
-    refundAmountInL1TokenDecimals: BigNumber,
-    chainsToEvaluate: number[]
-  ): Promise<{ [chainId: number]: BigNumber }> {
-    if (!isDefined(this.excessRunningBalancePromises[l1Token.toNative()])) {
-      // @dev Save this as a promise so that other parallel calls to this function don't make the same call.
-      const cacheKey = l1Token.toNative();
-      const runningBalancePromise = this._getLatestRunningBalances(l1Token, chainsToEvaluate).catch((error) => {
-        if (this.excessRunningBalancePromises[cacheKey] === runningBalancePromise) {
-          delete this.excessRunningBalancePromises[cacheKey];
-        }
-        throw error;
-      });
-      this.excessRunningBalancePromises[cacheKey] = runningBalancePromise;
-    }
-    const excessRunningBalances = lodash.cloneDeep(await this.excessRunningBalancePromises[l1Token.toNative()]);
-    return this._getExcessRunningBalancePcts(excessRunningBalances, l1Token, refundAmountInL1TokenDecimals);
   }
 
   getPossibleRebalances(): Rebalance[] {
@@ -1834,28 +1692,6 @@ export class InventoryClient {
     return (
       isAliasConfig(tokenConfig) && Object.keys(tokenConfig).some((symbol) => isDefined(tokenConfig[symbol][chainId]))
     );
-  }
-
-  /**
-   * @notice Return possible repayment chains for L1 token that have "slow withdrawals" from L2 to L1, so
-   * taking repayment on these chains would be done to reduce HubPool utilization and keep funds out of the
-   * slow withdrawal canonical bridges. Explicitly skip chains with fast rebalancing options because it doesn't
-   * help with utilisation issues.
-   * @param l1Token
-   * @returns list of chains for l1Token that have a token config enabled and have pool rebalance routes set.
-   */
-  getSlowWithdrawalRepaymentChains(l1Token: EvmAddress): number[] {
-    return SLOW_WITHDRAWAL_CHAINS.filter((repaymentChainId) => {
-      if (
-        !this._l1TokenEnabledForChain(l1Token, repaymentChainId) ||
-        !this.hubPoolClient.l2TokenEnabledForL1Token(l1Token, repaymentChainId)
-      ) {
-        return false;
-      }
-      const repaymentToken = this.hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, repaymentChainId);
-      assert(isDefined(repaymentToken), `No L2 token for L1 ${l1Token} on chain ${repaymentChainId}`);
-      return !this.isQuicklyRebalanced(repaymentChainId, repaymentToken);
-    });
   }
 
   // True for unmetered fast-rebalance routes (CCTP, OFT, hub). Binance is excluded — it's quota-gated.

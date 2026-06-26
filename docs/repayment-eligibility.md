@@ -69,7 +69,6 @@ This is an LP-fee precomputation helper, not final selection. It may include:
 
 - origin chain (always)
 - destination chain (if allowed)
-- slow-withdrawal chains (inventory-enabled path)
 - config override chain
 - hub chain
 
@@ -112,7 +111,6 @@ Returned order is intentional and consumed by relayer selection.
 - `forceOriginRepaymentPerChain`
 - `repaymentChainOverride`
 - `repaymentChainOverridePerChain`
-- `prioritizeLpUtilization`
 - token-level allocation settings (`targetPct`, `targetOverageBuffer`, related thresholds)
 
 ## Hand-off to selection stage
