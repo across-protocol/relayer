@@ -107,6 +107,13 @@ export abstract class BaseBridgeAdapter {
   /** Optional hook when on-chain initiation amount exceeds quoted destination receive amount. */
   recordL1ToL2BridgeInitiation?(l1TxnHash: string, expectedDestinationReceiveAmount: BigNumber): Promise<void>;
 
+  /**
+   * When implemented, returns net outstanding L1→L2 bridge transfers from an off-chain API.
+   * Amounts are in L1 token decimals; finalization is already reflected in each event amount.
+   * On success, callers should skip on-chain initiation/finalization event queries.
+   */
+  getOutstandingTransfersFromApi?(l1Token: EvmAddress, monitoredAddress: Address): Promise<BridgeEvents>;
+
   protected resolveL2TokenAddress(l1Token: EvmAddress): string {
     return getTranslatedTokenAddress(l1Token, this.hubChainId, this.l2chainId, false).toNative();
   }

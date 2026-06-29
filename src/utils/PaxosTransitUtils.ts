@@ -132,10 +132,19 @@ export function isPaxosTransitOrderOutstanding(order: PaxosTransitOrder): boolea
   return PAXOS_TRANSIT_OUTSTANDING_ORDER_STATUSES.has(order.status);
 }
 
+export function getPaxosTransitOfferAssetsForWantAsset(dstChainId: number, wantAsset: string): string[] {
+  const destinations = PAXOS_TRANSIT_DESTINATION_TOKENS[dstChainId];
+  if (!isDefined(destinations)) {
+    return [];
+  }
+  return Object.entries(destinations)
+    .filter(([, destinationWantAsset]) => destinationWantAsset.toLowerCase() === wantAsset.toLowerCase())
+    .map(([offerAsset]) => offerAsset);
+}
+
 export function paxosTransitOrderMatchesRoute(
   order: PaxosTransitOrder,
   params: {
-    offerAsset: string;
     wantAsset: string;
     sourceChainId: number;
     destinationChainId: number;
@@ -143,7 +152,6 @@ export function paxosTransitOrderMatchesRoute(
   }
 ): boolean {
   return (
-    order.offerAsset.toLowerCase() === params.offerAsset.toLowerCase() &&
     order.wantAsset.toLowerCase() === params.wantAsset.toLowerCase() &&
     order.sourceChainId === params.sourceChainId &&
     order.destinationChainId === params.destinationChainId &&

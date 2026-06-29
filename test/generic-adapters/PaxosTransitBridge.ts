@@ -19,9 +19,9 @@ import {
   getPaxosTransitInitiationAmountForOutstandingTransfers,
   isPaxosTransitOrderOutstanding,
   paxosTransitOrderMatchesRoute,
-  getPaxosTransitOutstandingOrderAmountInL1Decimals,
 } from "../../src/utils";
 import * as contractUtils from "../../src/utils/ContractUtils";
+import * as eventUtils from "../../src/utils/EventUtils";
 import * as redisCache from "../../src/cache/Redis";
 
 class MockPaxosTransitClient extends PaxosTransitClient {
@@ -361,7 +361,7 @@ describe("Cross Chain Adapter: PaxosTransitBridge", function () {
       };
     }
 
-    it("returns outstanding orders from the Paxos API scoped to the bridge offer asset", async function () {
+    it("returns outstanding orders for every mainnet offer asset settling to the destination token", async function () {
       mockClient.orders = [
         buildOrder({ id: "0xusdc-pending", remainingAmountDue: "5000000" }),
         buildOrder({
@@ -373,28 +373,18 @@ describe("Cross Chain Adapter: PaxosTransitBridge", function () {
       ];
       const listOrdersSpy = sinon.spy(mockClient, "listOrders");
 
-      const events = await adapter.queryL1BridgeInitiationEvents(
-        toAddress(l1UsdcAddress),
-        toAddress(relayerAddress),
-        toAddress(relayerAddress),
-        { from: 0, to: 100 }
-      );
+      const events = await adapter.getOutstandingTransfersFromApi(toAddress(l1UsdcAddress), toAddress(relayerAddress));
 
       const bridgeEvents = events[l2UsdgAddress];
-      expect(bridgeEvents).to.have.length(1);
-      expect(bridgeEvents[0].txnRef).to.equal("0xusdc-pending");
-      expect(bridgeEvents[0].amount).to.deep.equal(
-        getPaxosTransitOutstandingOrderAmountInL1Decimals(
-          buildOrder({ id: "0xusdc-pending", remainingAmountDue: "5000000" }),
-          TOKEN_SYMBOLS_MAP.USDG.decimals,
-          TOKEN_SYMBOLS_MAP.USDC.decimals
-        )
-      );
+      expect(bridgeEvents).to.have.length(2);
+      expect(bridgeEvents.map((event) => event.txnRef)).to.deep.equal(["0xusdc-pending", "0xusdg-pending"]);
       expect(listOrdersSpy.callCount).to.equal(1);
       expect(listOrdersSpy.firstCall.args[0].filter).to.equal("status=PROCESSING OR status=PENDING_BRIDGE");
     });
 
-    it("returns no L2 finalization events because outstanding balance is API-sourced", async function () {
+    it("queries on-chain L2 finalization events from BoringVault", async function () {
+      const paginatedEventQueryStub = sinon.stub(eventUtils, "paginatedEventQuery").resolves([]);
+
       const events = await adapter.queryL2BridgeFinalizationEvents(
         toAddress(l1UsdcAddress),
         toAddress(relayerAddress),
@@ -402,20 +392,25 @@ describe("Cross Chain Adapter: PaxosTransitBridge", function () {
         { from: 0, to: 100 }
       );
 
-      expect(events[l2UsdgAddress]).to.deep.equal([]);
+      expect(paginatedEventQueryStub.calledOnce).to.be.true;
+      expect(events).to.deep.equal({ [l2UsdgAddress]: [] });
     });
 
     it("identifies outstanding Paxos orders and matching routes", function () {
       const order = buildOrder({ status: "PROCESSING", remainingAmountDue: "1000" });
+      const routeParams = {
+        wantAsset: l2UsdgAddress,
+        sourceChainId: hubChainId,
+        destinationChainId: l2ChainId,
+        receiver: relayerAddress,
+      };
       expect(isPaxosTransitOrderOutstanding(order)).to.be.true;
+      expect(paxosTransitOrderMatchesRoute(order, routeParams)).to.be.true;
       expect(
-        paxosTransitOrderMatchesRoute(order, {
-          offerAsset: l1UsdcAddress,
-          wantAsset: l2UsdgAddress,
-          sourceChainId: hubChainId,
-          destinationChainId: l2ChainId,
-          receiver: relayerAddress,
-        })
+        paxosTransitOrderMatchesRoute(
+          buildOrder({ offerAsset: mainnetUsdgAddress, status: "PROCESSING", remainingAmountDue: "1000" }),
+          routeParams
+        )
       ).to.be.true;
       expect(isPaxosTransitOrderOutstanding(buildOrder({ status: "PROCESSED", remainingAmountDue: "0" }))).to.be.false;
     });
