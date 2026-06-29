@@ -33,25 +33,36 @@ Totals: 5,381 BAL + 7,045 POOL + 14,900 SNX + 450 VLR + 46,186 WGHO/LGHO. Each l
 2. After cross-domain delivery (1–7d), permissionless `SpokePool.executeRelayerRefundLeaf(rootBundleId, leaf, proof)` triggers `_bridgeTokensToHubPool(l2Token, amountToReturn)` for each leaf destined to that spoke. Other-chain leaves are rejected at `SpokePool.sol:1204`.
 3. After per-chain withdrawal challenge expires, standard `src/finalizer/` infrastructure claims to L1.
 
-## Multisig transaction
-
-- **Target**: `0xc186fA914353c44b2E33eBE05f21846F1048bEda` (HubPool)
-- **Value**: 0
-- **Method**: `multicall(bytes[])` with 6 inner `relaySpokePoolAdminFunction` calls, each carrying the same `relayerRefundRoot`
-- **Calldata**: `multicall.json` (Safe Transaction Builder JSON; drag into Safe UI)
-
-Selectors verifiable via `cast 4byte`:
-
-| Selector | Function |
-| --- | --- |
-| `0xac9650d8` | `multicall(bytes[])` |
-| `0xdd70e5e8` | `relaySpokePoolAdminFunction(uint256,bytes)` |
-| `0x493a4f84` | `relayRootBundle(bytes32,bytes32)` |
-
 ## Verify before signing
 
+### 1. Validate `leaves.json` produces the documented root
+
 ```sh
-yarn ts-node scripts/recoveries/2026-06-stuck-token-recovery/verify.ts
+yarn ts-node scripts/recoveries/2026-06-accounting/verify.ts
 ```
 
-Rebuilds the merkle tree from `leaves.json`, confirms its root matches the one relayed in `multicall.json`, and validates each per-leaf proof.
+Rebuilds the merkle tree from `leaves.json`, confirms the rebuilt root matches the documented `relayerRefundRoot`, and validates each per-leaf proof.
+
+### 2. Validate the multisig transaction matches what is proposed
+
+The Safe transaction must, when executed by the HubPool admin, emit exactly **6 `SpokePoolAdminFunctionTriggered` events** from `0xc186fA914353c44b2E33eBE05f21846F1048bEda` (HubPool). Simulate it (Tenderly / forked-mainnet) and confirm the emitted log set matches the table below.
+
+Event signature: `SpokePoolAdminFunctionTriggered(uint256 indexed chainId, bytes message)`
+
+- **topic[0]** (all 6 events): `0x218987b934c2f6bc596136829fbf43a5fef4d6fafce41f3f6254d9a870c2deec`
+- **`message` field** (all 6 events, identical 68-byte payload): `0x493a4f845c677c67dda35989ef11b0a131b1742c892fa23d6904e5c65d0dc3bb655a59c20000000000000000000000000000000000000000000000000000000000000000`
+  - selector `0x493a4f84` = `relayRootBundle(bytes32,bytes32)`
+  - first arg = `relayerRefundRoot` = `0x5c677c67dda35989ef11b0a131b1742c892fa23d6904e5c65d0dc3bb655a59c2`
+  - second arg = `slowRelayRoot` = `0x0`
+- **topic[1]** (`chainId`, one per event):
+
+| Event | Chain | topic[1] |
+| --- | --- | --- |
+| 1 | OP (10) | `0x000000000000000000000000000000000000000000000000000000000000000a` |
+| 2 | POL (137) | `0x0000000000000000000000000000000000000000000000000000000000000089` |
+| 3 | Lens (232) | `0x00000000000000000000000000000000000000000000000000000000000000e8` |
+| 4 | World (480) | `0x00000000000000000000000000000000000000000000000000000000000001e0` |
+| 5 | Base (8453) | `0x0000000000000000000000000000000000000000000000000000000000002105` |
+| 6 | ARB (42161) | `0x000000000000000000000000000000000000000000000000000000000000a4b1` |
+
+If a simulation shows fewer/more than 6 events, a different `message` payload, an emitter other than the HubPool, or any chainId outside the set above, **do not sign**.
