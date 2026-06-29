@@ -1,5 +1,6 @@
 import type { TypedDataSigner } from "@ethersproject/abstract-signer";
 import type { TypedDataDomain, TypedDataField } from "ethers";
+import { getContractAddress } from "../common/ContractAddresses";
 import {
   CHAIN_IDs,
   assert,
@@ -23,16 +24,17 @@ export const PAXOS_TRANSIT_DESTINATION_TOKENS: { [dstChainId: number]: { [l1Toke
   },
 };
 
+// Paxos enforces a $5 minimum per order (5 * 10^decimals for 6-decimal stables).
 export const PAXOS_TRANSIT_MINIMUMS: { [sourceChainId: number]: { [dstChainId: number]: BigNumber } } = {
   [CHAIN_IDs.MAINNET]: {
-    [CHAIN_IDs.ROBINHOOD]: toBN(1_000_000), // 1 USD
+    [CHAIN_IDs.ROBINHOOD]: toBN(5_000_000), // $5
   },
   [CHAIN_IDs.ROBINHOOD]: {
-    [CHAIN_IDs.MAINNET]: toBN(1_000_000), // 1 USD
+    [CHAIN_IDs.MAINNET]: toBN(5_000_000), // $5
   },
 };
 
-export type PaxosTransitAuthorizationMethod = "permit" | "approval" | "already_approved";
+export type PaxosTransitAuthorizationMethodType = "eip2612_permit" | "erc20_approve";
 
 export type PaxosTransitPermitData = {
   domain: {
@@ -46,25 +48,67 @@ export type PaxosTransitPermitData = {
   deadline: string;
 };
 
-export type PaxosTransitAuthorizationResponse = {
-  method: PaxosTransitAuthorizationMethod;
+export type PaxosTransitAuthorizationMethod = {
+  type: PaxosTransitAuthorizationMethodType;
+  description?: string;
   permitData?: PaxosTransitPermitData;
-  approvalTransaction?: { encoded: string };
+  transaction?: { encoded: string };
 };
 
-export type PaxosTransitOrderDataResponse = {
+export type PaxosTransitAuthorizationResponse = {
+  spenderAddress: string;
+  alreadyApproved: boolean;
+  methods: PaxosTransitAuthorizationMethod[];
+};
+
+export type PaxosTransitOrderQuoteResponse = {
   transaction: {
     to: string;
     data: string;
     value: string;
   };
+  amountOut?: string;
+  protocolFee?: string;
+  integratorFee?: string;
+  totalFees?: string;
+  estimatedLatencyMs?: number;
+};
+
+/** @deprecated Use PaxosTransitOrderQuoteResponse */
+export type PaxosTransitOrderDataResponse = PaxosTransitOrderQuoteResponse;
+
+export type PaxosTransitOrderStatus = "PENDING_BRIDGE" | "PROCESSING" | "PROCESSED" | "REMOVED";
+
+export type PaxosTransitOrder = {
+  id: string;
+  offerAsset: string;
+  wantAsset: string;
+  offerAmount: string;
+  amountDue: string;
+  remainingAmountDue?: string;
+  receiver: string;
+  sourceChainId: number;
+  destinationChainId: number;
+  status: PaxosTransitOrderStatus;
+  orderExecuteds?: unknown[];
 };
 
 export function getPaxosTransitStationAddress(chainId: number): string {
-  const envKey = `PAXOS_TRANSIT_STATION_${chainId}`; // @TODO: Should this be per chain per token or just per chain?
-  const address = process.env[envKey];
-  assert(isDefined(address) && address.length > 0, `${envKey} must be set in the environment`);
-  return address;
+  const envKey = `PAXOS_TRANSIT_STATION_${chainId}`;
+  const envAddress = process.env[envKey];
+  if (isDefined(envAddress) && envAddress.length > 0) {
+    return envAddress;
+  }
+  return getContractAddress(chainId, "paxosTransitStation");
+}
+
+export function getPaxosTransitBoringVaultAddress(chainId: number): string {
+  const envKey = `PAXOS_TRANSIT_BORING_VAULT_${chainId}`;
+  const envAddress = process.env[envKey];
+  if (isDefined(envAddress) && envAddress.length > 0) {
+    return envAddress;
+  }
+  return getContractAddress(chainId, "paxosTransitBoringVault");
 }
 
 export function getPaxosTransitDestinationToken(dstChainId: number, l1Token: Address): string | undefined {
@@ -80,23 +124,23 @@ export class PaxosTransitClient {
   ) {}
 
   async getAuthorization(params: {
-    vaultAddress: string;
+    spenderAddress: string;
     tokenAddress: string;
     amount: BigNumber;
     userAddress: string;
     chainId: number;
   }): Promise<PaxosTransitAuthorizationResponse> {
     const query = new URLSearchParams({
-      vaultAddress: params.vaultAddress,
+      spenderAddress: params.spenderAddress,
       tokenAddress: params.tokenAddress,
       amount: params.amount.toString(),
       userAddress: params.userAddress,
       chainId: String(params.chainId),
     });
-    return this.getWithRetry<PaxosTransitAuthorizationResponse>(`v2/core/authorization?${query.toString()}`);
+    return this.getWithRetry<PaxosTransitAuthorizationResponse>(`v3/core/authorization?${query.toString()}`);
   }
 
-  async getOrderData(params: {
+  async getOrderQuote(params: {
     userAddress: string;
     offerAmount: BigNumber;
     offerAsset: string;
@@ -105,7 +149,10 @@ export class PaxosTransitClient {
     destinationChainId: number;
     permitSignature?: string;
     permitDeadline?: string;
-  }): Promise<PaxosTransitOrderDataResponse> {
+    integratorFee?: string;
+    integratorFeeReceiver?: string;
+    responseFormat?: "default" | "full" | "structured";
+  }): Promise<PaxosTransitOrderQuoteResponse> {
     const query = new URLSearchParams({
       userAddress: params.userAddress,
       offerAmount: params.offerAmount.toString(),
@@ -120,7 +167,50 @@ export class PaxosTransitClient {
     if (isDefined(params.permitDeadline)) {
       query.set("permitDeadline", params.permitDeadline);
     }
-    return this.getWithRetry<PaxosTransitOrderDataResponse>(`v1/transit/orders/data?${query.toString()}`);
+    if (isDefined(params.integratorFee)) {
+      query.set("integratorFee", params.integratorFee);
+    }
+    if (isDefined(params.integratorFeeReceiver)) {
+      query.set("integratorFeeReceiver", params.integratorFeeReceiver);
+    }
+    if (isDefined(params.responseFormat)) {
+      query.set("responseFormat", params.responseFormat);
+    }
+    return this.getWithRetry<PaxosTransitOrderQuoteResponse>(`v1/transit/orders/quote?${query.toString()}`);
+  }
+
+  /** @deprecated Use getOrderQuote */
+  async getOrderData(
+    params: Parameters<PaxosTransitClient["getOrderQuote"]>[0]
+  ): Promise<PaxosTransitOrderQuoteResponse> {
+    return this.getOrderQuote(params);
+  }
+
+  async getOrderStatus(orderId: string): Promise<{ order: PaxosTransitOrder }> {
+    return this.getWithRetry<{ order: PaxosTransitOrder }>(`v1/transit/orders/${orderId}`);
+  }
+
+  async listOrders(params: {
+    userAddress: string;
+    filter?: string;
+    pageSize?: number;
+    pageToken?: string;
+  }): Promise<{ orders: PaxosTransitOrder[]; nextPageToken: string | null }> {
+    const query = new URLSearchParams({
+      userAddress: params.userAddress,
+    });
+    if (isDefined(params.filter)) {
+      query.set("filter", params.filter);
+    }
+    if (isDefined(params.pageSize)) {
+      query.set("pageSize", String(params.pageSize));
+    }
+    if (isDefined(params.pageToken)) {
+      query.set("pageToken", params.pageToken);
+    }
+    return this.getWithRetry<{ orders: PaxosTransitOrder[]; nextPageToken: string | null }>(
+      `v1/transit/orders?${query.toString()}`
+    );
   }
 
   defaultHeaders(): FetchHeaders {
@@ -158,11 +248,30 @@ function isTypedDataSigner(signer: Signer): signer is Signer & TypedDataSigner {
   return typeof (signer as unknown as TypedDataSigner)._signTypedData === "function";
 }
 
+function permitTypesForSigning(types: Record<string, Array<{ name: string; type: string }>>): Record<string, TypedDataField[]> {
+  const { EIP712Domain: _domainType, ...signTypes } = types;
+  return signTypes as Record<string, TypedDataField[]>;
+}
+
+async function submitPaxosTransitApproval(
+  signer: Signer,
+  tokenAddress: string,
+  approvalCalldata: string
+): Promise<void> {
+  const provider = signer.provider;
+  assert(isDefined(provider), "Signer must have a provider to submit Paxos Transit approval transaction");
+  const tx = await signer.sendTransaction({
+    to: tokenAddress,
+    data: approvalCalldata,
+  });
+  await provider.waitForTransaction(tx.hash);
+}
+
 export async function resolvePaxosTransitAuthorization(
   client: PaxosTransitClient,
   signer: Signer,
   params: {
-    vaultAddress: string;
+    spenderAddress: string;
     tokenAddress: string;
     userAddress: string;
     chainId: number;
@@ -170,38 +279,32 @@ export async function resolvePaxosTransitAuthorization(
 ): Promise<{ permitSignature?: string; permitDeadline?: string }> {
   const auth = await client.getAuthorization({
     ...params,
-    amount: toBN(MAX_SAFE_ALLOWANCE), // @TODO: Should we use MAX_SAFE_ALLOWANCE or amount we want to transfer?
+    amount: toBN(MAX_SAFE_ALLOWANCE),
   });
 
-  if (auth.method === "already_approved") {
+  if (auth.alreadyApproved || auth.methods.length === 0) {
     return {};
   }
 
-  if (auth.method === "permit") {
-    assert(isDefined(auth.permitData), "Paxos Transit authorization missing permitData");
-    const { domain, types, value, deadline } = auth.permitData;
+  const approve = auth.methods.find((method) => method.type === "erc20_approve");
+  if (isDefined(approve?.transaction?.encoded)) {
+    await submitPaxosTransitApproval(signer, params.tokenAddress, approve.transaction.encoded);
+    return {};
+  }
+
+  const permit = auth.methods.find((method) => method.type === "eip2612_permit");
+  if (isDefined(permit?.permitData)) {
+    const { domain, types, value, deadline } = permit.permitData;
     assert(isTypedDataSigner(signer), "Signer must support EIP-712 signing for Paxos Transit permit flow");
     const permitSignature = await signer._signTypedData(
       domain as TypedDataDomain,
-      types as Record<string, TypedDataField[]>,
+      permitTypesForSigning(types),
       value
     );
     return { permitSignature, permitDeadline: deadline };
   }
 
-  if (auth.method === "approval") {
-    assert(isDefined(auth.approvalTransaction), "Paxos Transit authorization missing approvalTransaction");
-    const provider = signer.provider;
-    assert(isDefined(provider), "Signer must have a provider to submit Paxos Transit approval transaction");
-    const tx = await signer.sendTransaction({
-      to: params.tokenAddress,
-      data: auth.approvalTransaction.encoded,
-    });
-    await provider.waitForTransaction(tx.hash);
-    return {};
-  }
-
-  throw new Error(`Unsupported Paxos Transit authorization method: ${auth.method}`);
+  throw new Error("No supported Paxos Transit authorization method available");
 }
 
 export async function buildPaxosTransitSubmitOrderTxn(
@@ -214,16 +317,16 @@ export async function buildPaxosTransitSubmitOrderTxn(
     wantAsset: string;
     sourceChainId: number;
     destinationChainId: number;
-    vaultAddress: string;
+    spenderAddress: string;
   }
-): Promise<PaxosTransitOrderDataResponse> {
+): Promise<PaxosTransitOrderQuoteResponse> {
   const authorization = await resolvePaxosTransitAuthorization(client, signer, {
-    vaultAddress: params.vaultAddress,
+    spenderAddress: params.spenderAddress,
     tokenAddress: params.offerAsset,
     userAddress: params.userAddress,
     chainId: params.sourceChainId,
   });
-  return client.getOrderData({
+  return client.getOrderQuote({
     userAddress: params.userAddress,
     offerAmount: params.offerAmount,
     offerAsset: params.offerAsset,

@@ -80,7 +80,7 @@ export class PaxosTransitL2Bridge extends BaseL2BridgeAdapter {
       wantAsset: l1Token.toNative(),
       sourceChainId: this.l2chainId,
       destinationChainId: this.hubChainId,
-      vaultAddress: getPaxosTransitStationAddress(this.l2chainId),
+      spenderAddress: getPaxosTransitStationAddress(this.l2chainId),
     });
 
     const submitOrderTxn = {

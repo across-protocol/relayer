@@ -17,6 +17,7 @@ import {
   createPaxosTransitClient,
   getPaxosTransitDestinationToken,
   getPaxosTransitStationAddress,
+  getPaxosTransitBoringVaultAddress,
   buildPaxosTransitSubmitOrderTxn,
   PAXOS_TRANSIT_MINIMUMS,
   PaxosTransitClient,
@@ -80,7 +81,7 @@ export class PaxosTransitBridge extends BaseBridgeAdapter {
       wantAsset: this.l2TokenAddress,
       sourceChainId: this.hubChainId,
       destinationChainId: this.l2chainId,
-      vaultAddress: getPaxosTransitStationAddress(this.hubChainId),
+      spenderAddress: getPaxosTransitStationAddress(this.hubChainId),
     });
 
     return {
@@ -121,11 +122,11 @@ export class PaxosTransitBridge extends BaseBridgeAdapter {
     assert(toAddress.isEVM(), "Paxos Transit finalization events require an EVM destination address");
     const l2Provider = this.l2Bridge?.provider;
     assert(isDefined(l2Provider), "PaxosTransitBridge: l2 provider is required");
-    const transitStation = getPaxosTransitStationAddress(this.l2chainId);
+    const boringVault = getPaxosTransitBoringVaultAddress(this.l2chainId);
     const tokenContract = new Contract(this.l2TokenAddress, ERC20_ABI, l2Provider);
     const events = await paginatedEventQuery(
       tokenContract,
-      tokenContract.filters.Transfer(transitStation, toAddress.toNative()),
+      tokenContract.filters.Transfer(boringVault, toAddress.toNative()),
       eventConfig
     );
     return {
