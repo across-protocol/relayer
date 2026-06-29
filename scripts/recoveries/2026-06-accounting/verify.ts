@@ -90,8 +90,12 @@ function main() {
       fail(allOk, `[leaf ${i}] artifact proof differs from rebuilt proof`);
     }
 
-    if (leaf.leafId !== i) fail(allOk, `[leaf ${i}] leafId ${leaf.leafId} != position ${i}`);
-    if (leafIds.has(leaf.leafId)) fail(allOk, `[leaf ${i}] duplicate leafId ${leaf.leafId}`);
+    if (leaf.leafId !== i) {
+      fail(allOk, `[leaf ${i}] leafId ${leaf.leafId} != position ${i}`);
+    }
+    if (leafIds.has(leaf.leafId)) {
+      fail(allOk, `[leaf ${i}] duplicate leafId ${leaf.leafId}`);
+    }
     leafIds.add(leaf.leafId);
 
     const cid = Number(leaf.chainId);
