@@ -15,15 +15,11 @@ import {
   getPaxosTransitStationAddress,
   getPaxosTransitBoringVaultAddress,
   getPaxosTransitL1ReceiveAsset,
-  getPaxosTransitQuotedReceiveRedisKey,
-  ConvertDecimals,
-  getPaxosTransitInitiationAmountForOutstandingTransfers,
   isPaxosTransitOrderOutstanding,
   paxosTransitOrderMatchesRoute,
 } from "../../src/utils";
 import * as contractUtils from "../../src/utils/ContractUtils";
 import * as eventUtils from "../../src/utils/EventUtils";
-import * as redisCache from "../../src/cache/Redis";
 
 class MockPaxosTransitClient extends PaxosTransitClient {
   public authorizationProbeResponse: PaxosTransitClient["getAuthorization"] extends (...args: infer _) => infer R
@@ -141,7 +137,6 @@ describe("Cross Chain Adapter: PaxosTransitBridge", function () {
       expect(result.method).to.equal("");
       expect(result.args[0]).to.equal("0xdeadbeef");
       expect(result.contract.address).to.equal("0x1111111111111111111111111111111111111111");
-      expect(result.expectedDestinationReceiveAmount).to.deep.equal(BigNumber.from("9975000"));
     });
 
     it("throws when amount is below minimum", async function () {
@@ -348,44 +343,6 @@ describe("Cross Chain Adapter: PaxosTransitBridge", function () {
       const quoteParams = getOrderQuoteSpy.firstCall.args[0];
       expect(quoteParams.permitSignature).to.be.a("string");
       expect(quoteParams.permitDeadline).to.equal("9999999999");
-    });
-  });
-
-  describe("quoted amountOut outstanding transfers", function () {
-    it("records quoted L2 receive amount in Redis after L1 submission", async function () {
-      const redisSet = sinon.stub().resolves("OK");
-      sinon.stub(redisCache, "getRedisCache").resolves({ set: redisSet } as never);
-
-      await adapter.recordL1ToL2BridgeInitiation("0xabc123", BigNumber.from("9975000"));
-
-      expect(redisSet.calledOnce).to.be.true;
-      expect(redisSet.firstCall.args[0]).to.equal(getPaxosTransitQuotedReceiveRedisKey("0xabc123"));
-      expect(redisSet.firstCall.args[1]).to.equal("9975000");
-    });
-
-    it("uses quoted L2 receive converted to L1 decimals for outstanding-transfer matching", function () {
-      const onChainOfferAmount = toBNWei("100", 6);
-      const quotedL2Receive = BigNumber.from("9975000");
-      const l2TokenDecimals = 18;
-      const l1TokenDecimals = 6;
-
-      const adjustedAmount = getPaxosTransitInitiationAmountForOutstandingTransfers(
-        onChainOfferAmount,
-        quotedL2Receive,
-        l2TokenDecimals,
-        l1TokenDecimals
-      );
-
-      expect(adjustedAmount).to.deep.equal(ConvertDecimals(l2TokenDecimals, l1TokenDecimals)(quotedL2Receive));
-      expect(adjustedAmount).to.not.deep.equal(onChainOfferAmount);
-    });
-
-    it("falls back to on-chain L1 offer amount when no quote is available", function () {
-      const onChainOfferAmount = toBNWei("100", 6);
-
-      expect(
-        getPaxosTransitInitiationAmountForOutstandingTransfers(onChainOfferAmount, undefined, 18, 6)
-      ).to.deep.equal(onChainOfferAmount);
     });
   });
 

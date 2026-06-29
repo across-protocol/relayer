@@ -440,7 +440,7 @@ export class BaseChainAdapter {
       );
       return { hash: ZERO_BYTES } as TransactionResponse;
     }
-    const { contract, method, args, value, expectedDestinationReceiveAmount } = bridgeTransactionDetails;
+    const { contract, method, args, value } = bridgeTransactionDetails;
     const tokenSymbol = matchTokenSymbol(l1Token.toNative(), this.hubChainId)[0];
     const [srcChain, dstChain] = [getNetworkName(this.hubChainId), getNetworkName(this.chainId)];
     const message = `💌⭐️ Bridging tokens from ${srcChain} to ${dstChain}.`;
@@ -481,15 +481,7 @@ export class BaseChainAdapter {
       this.log("Simulation result", { succeed }, "debug", "sendTokenToTargetChain");
       return { hash: ZERO_BYTES } as TransactionResponse;
     }
-    const txnResponse = await submitTransaction(txnRequest, this.transactionClient);
-    if (
-      isDefined(expectedDestinationReceiveAmount) &&
-      isDefined(bridge.recordL1ToL2BridgeInitiation) &&
-      txnResponse.hash !== ZERO_BYTES
-    ) {
-      await bridge.recordL1ToL2BridgeInitiation(txnResponse.hash, expectedDestinationReceiveAmount);
-    }
-    return txnResponse;
+    return await submitTransaction(txnRequest, this.transactionClient);
   }
 
   async wrapNativeTokenIfAboveThreshold(

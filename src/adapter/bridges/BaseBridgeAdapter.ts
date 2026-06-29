@@ -20,8 +20,6 @@ export interface BridgeTransactionDetails {
   readonly method: string;
   readonly args: unknown[];
   readonly value?: BigNumber;
-  /** Destination-chain token amount quoted at bridge construction (e.g. Paxos amountOut). */
-  readonly expectedDestinationReceiveAmount?: BigNumber;
 }
 
 export type BridgeEvent = SortableEvent & {
@@ -103,9 +101,6 @@ export abstract class BaseBridgeAdapter {
       EvmAddress.from(address.toNative())
     );
   }
-
-  /** Optional hook when on-chain initiation amount exceeds quoted destination receive amount. */
-  recordL1ToL2BridgeInitiation?(l1TxnHash: string, expectedDestinationReceiveAmount: BigNumber): Promise<void>;
 
   /**
    * When implemented, returns net outstanding L1→L2 bridge transfers from an off-chain API.

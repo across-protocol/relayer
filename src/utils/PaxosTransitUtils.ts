@@ -228,29 +228,6 @@ export function getPaxosTransitDestinationToken(dstChainId: number, l1Token: Add
   return PAXOS_TRANSIT_DESTINATION_TOKENS[dstChainId]?.[l1Token.toNative()];
 }
 
-export const PAXOS_TRANSIT_QUOTED_RECEIVE_REDIS_PREFIX = "paxos-transit:quoted-l2-receive";
-export const PAXOS_TRANSIT_QUOTED_RECEIVE_TTL_SECONDS = 7 * 24 * 60 * 60;
-
-export function getPaxosTransitQuotedReceiveRedisKey(l1TxnHash: string): string {
-  return `${PAXOS_TRANSIT_QUOTED_RECEIVE_REDIS_PREFIX}:${l1TxnHash.toLowerCase()}`;
-}
-
-/**
- * Paxos L1 initiation transfers the full offer amount, but outstanding-transfer accounting should
- * compare against the quoted L2 receive amount (fees are taken on the Paxos side).
- */
-export function getPaxosTransitInitiationAmountForOutstandingTransfers(
-  onChainL1OfferAmount: BigNumber,
-  quotedL2ReceiveAmount: BigNumber | undefined,
-  l2TokenDecimals: number,
-  l1TokenDecimals: number
-): BigNumber {
-  if (!isDefined(quotedL2ReceiveAmount)) {
-    return onChainL1OfferAmount;
-  }
-  return ConvertDecimals(l2TokenDecimals, l1TokenDecimals)(quotedL2ReceiveAmount);
-}
-
 export class PaxosTransitClient {
   constructor(
     readonly baseUrl: string,
