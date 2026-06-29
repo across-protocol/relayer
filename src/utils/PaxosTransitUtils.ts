@@ -248,7 +248,9 @@ function isTypedDataSigner(signer: Signer): signer is Signer & TypedDataSigner {
   return typeof (signer as unknown as TypedDataSigner)._signTypedData === "function";
 }
 
-function permitTypesForSigning(types: Record<string, Array<{ name: string; type: string }>>): Record<string, TypedDataField[]> {
+function permitTypesForSigning(
+  types: Record<string, Array<{ name: string; type: string }>>
+): Record<string, TypedDataField[]> {
   const { EIP712Domain: _domainType, ...signTypes } = types;
   return signTypes as Record<string, TypedDataField[]>;
 }
@@ -296,11 +298,7 @@ export async function resolvePaxosTransitAuthorization(
   if (isDefined(permit?.permitData)) {
     const { domain, types, value, deadline } = permit.permitData;
     assert(isTypedDataSigner(signer), "Signer must support EIP-712 signing for Paxos Transit permit flow");
-    const permitSignature = await signer._signTypedData(
-      domain as TypedDataDomain,
-      permitTypesForSigning(types),
-      value
-    );
+    const permitSignature = await signer._signTypedData(domain as TypedDataDomain, permitTypesForSigning(types), value);
     return { permitSignature, permitDeadline: deadline };
   }
 

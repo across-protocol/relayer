@@ -1,9 +1,10 @@
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { ethers } from "hardhat";
 import { PaxosTransitBridge } from "../../src/adapter/bridges/PaxosTransitBridge";
-import { expect, createSpyLogger, sinon, toBNWei, randomAddress } from "../utils";
+import { expect, createSpyLogger, sinon, toBNWei, randomAddress, assert } from "../utils";
 import {
   EvmAddress,
+  isDefined,
   PAXOS_TRANSIT_DESTINATION_TOKENS,
   PAXOS_TRANSIT_MINIMUMS,
   PaxosTransitClient,
@@ -119,12 +120,8 @@ describe("Cross Chain Adapter: PaxosTransitBridge", function () {
       delete process.env.PAXOS_TRANSIT_BORING_VAULT_1;
       delete process.env.PAXOS_TRANSIT_BORING_VAULT_4663;
 
-      expect(getPaxosTransitStationAddress(CHAIN_IDs.MAINNET)).to.equal(
-        "0x49AAA987b1a7e9E4AE091dcD8332c39F322D7d28"
-      );
-      expect(getPaxosTransitStationAddress(CHAIN_IDs.ROBINHOOD)).to.equal(
-        "0x49AAA987b1a7e9E4AE091dcD8332c39F322D7d28"
-      );
+      expect(getPaxosTransitStationAddress(CHAIN_IDs.MAINNET)).to.equal("0x49AAA987b1a7e9E4AE091dcD8332c39F322D7d28");
+      expect(getPaxosTransitStationAddress(CHAIN_IDs.ROBINHOOD)).to.equal("0x49AAA987b1a7e9E4AE091dcD8332c39F322D7d28");
       expect(getPaxosTransitBoringVaultAddress(CHAIN_IDs.MAINNET)).to.equal(
         "0x91fe06c6e9f97e7de4580a280e03046155f8e1e3"
       );
@@ -135,9 +132,7 @@ describe("Cross Chain Adapter: PaxosTransitBridge", function () {
 
     it("prefers env override over ContractAddresses default", function () {
       process.env.PAXOS_TRANSIT_STATION_1 = "0x2222222222222222222222222222222222222222";
-      expect(getPaxosTransitStationAddress(CHAIN_IDs.MAINNET)).to.equal(
-        "0x2222222222222222222222222222222222222222"
-      );
+      expect(getPaxosTransitStationAddress(CHAIN_IDs.MAINNET)).to.equal("0x2222222222222222222222222222222222222222");
     });
 
     it("throws when l2Token does not match expected destination token", async function () {
@@ -197,9 +192,9 @@ describe("Cross Chain Adapter: PaxosTransitBridge", function () {
       const sendTransaction = sinon.stub(adapter["l1Signer"], "sendTransaction").resolves({
         hash: "0xabc",
       } as never);
-      const waitForTransaction = sinon
-        .stub(adapter["l1Signer"].provider!, "waitForTransaction")
-        .resolves({} as never);
+      const l1Provider = adapter["l1Signer"].provider;
+      assert(isDefined(l1Provider), "l1Signer must have a provider");
+      const waitForTransaction = sinon.stub(l1Provider, "waitForTransaction").resolves({} as never);
 
       const getOrderQuoteSpy = sinon.spy(mockClient, "getOrderQuote");
       const amount = toBNWei("100", 6);
