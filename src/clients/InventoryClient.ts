@@ -1309,10 +1309,15 @@ export class InventoryClient {
           }
 
           const adapter = this.adapterManager.adapters[chainId];
-          if (!adapter.isSupportedL2Bridge(l1Token)) {
+          const l2BridgeLookupToken = getInventoryEquivalentL1TokenAddress(
+            l2Token,
+            chainId,
+            this.hubPoolClient.chainId
+          );
+          if (!adapter.isSupportedL2Bridge(l2BridgeLookupToken)) {
             this.logger.warn({
               at: "InventoryClient#withdrawExcessBalances",
-              message: `No L2 bridge configured for ${getNetworkName(chainId)} for token ${l1Token}`,
+              message: `No L2 bridge configured for ${getNetworkName(chainId)} for token ${l2BridgeLookupToken}`,
             });
             return;
           }

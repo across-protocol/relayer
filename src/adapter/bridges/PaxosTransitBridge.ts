@@ -22,9 +22,15 @@ import {
   PAXOS_TRANSIT_MINIMUMS,
   PaxosTransitClient,
   bnZero,
+  mapAsync,
+  toAddressType,
+  getPaxosTransitQuotedReceiveRedisKey,
+  PAXOS_TRANSIT_QUOTED_RECEIVE_TTL_SECONDS,
+  getPaxosTransitInitiationAmountForOutstandingTransfers,
 } from "../../utils";
 import { TransferTokenParams, processEvent } from "../utils";
 import ERC20_ABI from "../../common/abi/MinimalERC20.json";
+import { getRedisCache } from "../../cache/Redis";
 
 export class PaxosTransitBridge extends BaseBridgeAdapter {
   protected client: PaxosTransitClient;
@@ -84,13 +90,33 @@ export class PaxosTransitBridge extends BaseBridgeAdapter {
       spenderAddress: getPaxosTransitStationAddress(this.hubChainId),
     });
 
+    const expectedDestinationReceiveAmount = isDefined(orderData.amountOut)
+      ? BigNumber.from(orderData.amountOut)
+      : undefined;
+
     return {
       // @TODO: We should use the actual ABI of the contract. This is just a placeholder.
       contract: new Contract(orderData.transaction.to, [], this.l1Signer),
       method: "",
       args: [orderData.transaction.data],
       value: BigNumber.from(orderData.transaction.value),
+      expectedDestinationReceiveAmount,
     };
+  }
+
+  /**
+   * Persist quoted L2 receive amount so outstanding-transfer accounting can match initiation to finalization.
+   */
+  async recordL1ToL2BridgeInitiation(l1TxnHash: string, expectedDestinationReceiveAmount: BigNumber): Promise<void> {
+    const redis = await getRedisCache(this.logger);
+    if (!isDefined(redis)) {
+      return;
+    }
+    await redis.set(
+      getPaxosTransitQuotedReceiveRedisKey(l1TxnHash),
+      expectedDestinationReceiveAmount.toString(),
+      PAXOS_TRANSIT_QUOTED_RECEIVE_TTL_SECONDS
+    );
   }
 
   async queryL1BridgeInitiationEvents(
@@ -108,8 +134,27 @@ export class PaxosTransitBridge extends BaseBridgeAdapter {
       tokenContract.filters.Transfer(fromAddress.toNative(), transitStation),
       eventConfig
     );
+    const redis = await getRedisCache(this.logger);
+    const l2TokenDecimals = getTokenInfo(toAddressType(this.l2TokenAddress, this.l2chainId), this.l2chainId).decimals;
+    const l1TokenDecimals = this.l1TokenInfo.decimals;
+    const processedEvents = await mapAsync(events, async (event) => {
+      const bridgeEvent = processEvent(event, "value");
+      if (!isDefined(redis)) {
+        return bridgeEvent;
+      }
+      const quotedL2Receive = await redis.get<string>(getPaxosTransitQuotedReceiveRedisKey(bridgeEvent.txnRef));
+      return {
+        ...bridgeEvent,
+        amount: getPaxosTransitInitiationAmountForOutstandingTransfers(
+          bridgeEvent.amount,
+          isDefined(quotedL2Receive) ? BigNumber.from(quotedL2Receive) : undefined,
+          l2TokenDecimals,
+          l1TokenDecimals
+        ),
+      };
+    });
     return {
-      [this.l2TokenAddress]: events.map((event) => processEvent(event, "value")),
+      [this.l2TokenAddress]: processedEvents,
     };
   }
 

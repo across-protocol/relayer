@@ -5,6 +5,7 @@ import {
   CHAIN_IDs,
   assert,
   BigNumber,
+  ConvertDecimals,
   delay,
   fetchWithTimeout,
   FetchHeaders,
@@ -23,6 +24,17 @@ export const PAXOS_TRANSIT_DESTINATION_TOKENS: { [dstChainId: number]: { [l1Toke
     [TOKEN_SYMBOLS_MAP.USDG.addresses[CHAIN_IDs.MAINNET]]: TOKEN_SYMBOLS_MAP.USDG.addresses[CHAIN_IDs.ROBINHOOD],
   },
 };
+
+// Registry L1 token on RH→mainnet may differ from the Paxos settlement asset (e.g. USDG → USDC).
+export const PAXOS_TRANSIT_L1_RECEIVE_ASSETS: { [sourceChainId: number]: { [registryL1Token: string]: string } } = {
+  [CHAIN_IDs.ROBINHOOD]: {
+    [TOKEN_SYMBOLS_MAP.USDG.addresses[CHAIN_IDs.MAINNET]]: TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET],
+  },
+};
+
+export function getPaxosTransitL1ReceiveAsset(sourceChainId: number, registryL1Token: Address): string {
+  return PAXOS_TRANSIT_L1_RECEIVE_ASSETS[sourceChainId]?.[registryL1Token.toNative()] ?? registryL1Token.toNative();
+}
 
 // Paxos enforces a $5 minimum per order (5 * 10^decimals for 6-decimal stables).
 export const PAXOS_TRANSIT_MINIMUMS: { [sourceChainId: number]: { [dstChainId: number]: BigNumber } } = {
@@ -113,6 +125,29 @@ export function getPaxosTransitBoringVaultAddress(chainId: number): string {
 
 export function getPaxosTransitDestinationToken(dstChainId: number, l1Token: Address): string | undefined {
   return PAXOS_TRANSIT_DESTINATION_TOKENS[dstChainId]?.[l1Token.toNative()];
+}
+
+export const PAXOS_TRANSIT_QUOTED_RECEIVE_REDIS_PREFIX = "paxos-transit:quoted-l2-receive";
+export const PAXOS_TRANSIT_QUOTED_RECEIVE_TTL_SECONDS = 7 * 24 * 60 * 60;
+
+export function getPaxosTransitQuotedReceiveRedisKey(l1TxnHash: string): string {
+  return `${PAXOS_TRANSIT_QUOTED_RECEIVE_REDIS_PREFIX}:${l1TxnHash.toLowerCase()}`;
+}
+
+/**
+ * Paxos L1 initiation transfers the full offer amount, but outstanding-transfer accounting should
+ * compare against the quoted L2 receive amount (fees are taken on the Paxos side).
+ */
+export function getPaxosTransitInitiationAmountForOutstandingTransfers(
+  onChainL1OfferAmount: BigNumber,
+  quotedL2ReceiveAmount: BigNumber | undefined,
+  l2TokenDecimals: number,
+  l1TokenDecimals: number
+): BigNumber {
+  if (!isDefined(quotedL2ReceiveAmount)) {
+    return onChainL1OfferAmount;
+  }
+  return ConvertDecimals(l2TokenDecimals, l1TokenDecimals)(quotedL2ReceiveAmount);
 }
 
 export class PaxosTransitClient {

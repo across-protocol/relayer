@@ -15,6 +15,7 @@ import {
   assert,
   createPaxosTransitClient,
   getPaxosTransitDestinationToken,
+  getPaxosTransitL1ReceiveAsset,
   getPaxosTransitStationAddress,
   buildPaxosTransitSubmitOrderTxn,
   paginatedEventQuery,
@@ -32,6 +33,7 @@ export class PaxosTransitL2Bridge extends BaseL2BridgeAdapter {
   protected l1TokenInfo: TokenInfo;
   protected l2TokenInfo: TokenInfo;
   protected l2TokenAddress: string;
+  protected l1ReceiveAsset: string;
 
   constructor(l2chainId: number, hubChainId: number, l2Signer: Signer, l1Signer: Signer, l1Token: EvmAddress) {
     if (hubChainId !== CHAIN_IDs.MAINNET) {
@@ -48,9 +50,10 @@ export class PaxosTransitL2Bridge extends BaseL2BridgeAdapter {
     this.client = createPaxosTransitClient();
     this.l1TokenInfo = getTokenInfo(l1Token, this.hubChainId);
     this.l2TokenAddress = l2TokenAddress;
+    this.l1ReceiveAsset = getPaxosTransitL1ReceiveAsset(l2chainId, l1Token);
     this.l2TokenInfo = getTokenInfo(toAddressType(l2TokenAddress, this.l2chainId), this.l2chainId);
     this.l2Bridge = new Contract(l2TokenAddress, ERC20_ABI, l2Signer);
-    this.l1Bridge = new Contract(l1Token.toNative(), ERC20_ABI, l1Signer);
+    this.l1Bridge = new Contract(this.l1ReceiveAsset, ERC20_ABI, l1Signer);
   }
 
   override getL2Token(): Address {
@@ -73,11 +76,12 @@ export class PaxosTransitL2Bridge extends BaseL2BridgeAdapter {
     const { l2Signer } = this;
     assert(isDefined(l2Signer), "PaxosTransitL2Bridge: l2Signer is required");
     const userAddress = await l2Signer.getAddress();
+    const l1ReceiveTokenInfo = getTokenInfo(EvmAddress.from(this.l1ReceiveAsset), this.hubChainId);
     const orderData = await buildPaxosTransitSubmitOrderTxn(this.client, l2Signer, {
       userAddress,
       offerAmount: amount,
       offerAsset: this.l2TokenAddress,
-      wantAsset: l1Token.toNative(),
+      wantAsset: this.l1ReceiveAsset,
       sourceChainId: this.l2chainId,
       destinationChainId: this.hubChainId,
       spenderAddress: getPaxosTransitStationAddress(this.l2chainId),
@@ -94,7 +98,7 @@ export class PaxosTransitL2Bridge extends BaseL2BridgeAdapter {
       message: `🎰 Withdrew ${getNetworkName(this.l2chainId)} ${this.l2TokenInfo.symbol} to L1 via Paxos Transit`,
       mrkdwn: `Submitted Paxos Transit order to withdraw ${amount.toString()} ${this.l2TokenInfo.symbol} from ${getNetworkName(
         this.l2chainId
-      )} to L1`,
+      )} to mainnet ${l1ReceiveTokenInfo.symbol}`,
     };
     return [submitOrderTxn];
   }
