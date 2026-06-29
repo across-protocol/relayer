@@ -8,6 +8,7 @@ import {
   isDefined,
   PAXOS_TRANSIT_DESTINATION_TOKENS,
   PAXOS_TRANSIT_MINIMUMS,
+  MAX_SAFE_ALLOWANCE,
   PaxosTransitClient,
   PaxosTransitOrder,
   PaxosTransitOrderQuoteResponse,
@@ -25,6 +26,13 @@ import * as eventUtils from "../../src/utils/EventUtils";
 import * as redisCache from "../../src/cache/Redis";
 
 class MockPaxosTransitClient extends PaxosTransitClient {
+  public authorizationProbeResponse: PaxosTransitClient["getAuthorization"] extends (...args: infer _) => infer R
+    ? Awaited<R>
+    : never = {
+    spenderAddress: "0x2222222222222222222222222222222222222222",
+    alreadyApproved: true,
+    methods: [],
+  };
   public authorizationResponse: PaxosTransitClient["getAuthorization"] extends (...args: infer _) => infer R
     ? Awaited<R>
     : never = {
@@ -49,7 +57,16 @@ class MockPaxosTransitClient extends PaxosTransitClient {
     super("https://mock-paxos.test", "test-api-key");
   }
 
-  async getAuthorization() {
+  async getAuthorization(params: {
+    spenderAddress: string;
+    tokenAddress: string;
+    amount: BigNumber;
+    userAddress: string;
+    chainId: number;
+  }) {
+    if (params.amount.toString() !== MAX_SAFE_ALLOWANCE) {
+      return this.authorizationProbeResponse;
+    }
     return this.authorizationResponse;
   }
 
@@ -185,7 +202,29 @@ describe("Cross Chain Adapter: PaxosTransitBridge", function () {
       }
     });
 
+    it("skips approval when the offer amount is already approved", async function () {
+      const getAuthorizationSpy = sinon.spy(mockClient, "getAuthorization");
+      const sendTransaction = sinon.stub(adapter["l1Signer"], "sendTransaction");
+      const amount = toBNWei("100", 6);
+
+      await adapter.constructL1ToL2Txn(
+        toAddress(await adapter["l1Signer"].getAddress()),
+        toAddress(l1UsdcAddress),
+        toAddress(l2UsdgAddress),
+        amount
+      );
+
+      expect(getAuthorizationSpy.calledOnce).to.be.true;
+      expect(getAuthorizationSpy.firstCall.args[0].amount).to.deep.equal(amount);
+      expect(sendTransaction.called).to.be.false;
+    });
+
     it("submits erc20_approve when available, even if permit is also offered", async function () {
+      mockClient.authorizationProbeResponse = {
+        spenderAddress: "0x2222222222222222222222222222222222222222",
+        alreadyApproved: false,
+        methods: [],
+      };
       mockClient.authorizationResponse = {
         spenderAddress: "0x2222222222222222222222222222222222222222",
         alreadyApproved: false,
@@ -233,6 +272,7 @@ describe("Cross Chain Adapter: PaxosTransitBridge", function () {
       const waitForTransaction = sinon.stub(l1Provider, "waitForTransaction").resolves({} as never);
 
       const getOrderQuoteSpy = sinon.spy(mockClient, "getOrderQuote");
+      const getAuthorizationSpy = sinon.spy(mockClient, "getAuthorization");
       const amount = toBNWei("100", 6);
       await adapter.constructL1ToL2Txn(
         toAddress(await adapter["l1Signer"].getAddress()),
@@ -241,6 +281,9 @@ describe("Cross Chain Adapter: PaxosTransitBridge", function () {
         amount
       );
 
+      expect(getAuthorizationSpy.calledTwice).to.be.true;
+      expect(getAuthorizationSpy.firstCall.args[0].amount).to.deep.equal(amount);
+      expect(getAuthorizationSpy.secondCall.args[0].amount.toString()).to.equal(MAX_SAFE_ALLOWANCE);
       expect(sendTransaction.calledOnce).to.be.true;
       expect(waitForTransaction.calledOnceWith("0xabc")).to.be.true;
       expect(getOrderQuoteSpy.calledOnce).to.be.true;
@@ -248,6 +291,11 @@ describe("Cross Chain Adapter: PaxosTransitBridge", function () {
     });
 
     it("signs an EIP-2612 permit when approval is not offered", async function () {
+      mockClient.authorizationProbeResponse = {
+        spenderAddress: "0x2222222222222222222222222222222222222222",
+        alreadyApproved: false,
+        methods: [],
+      };
       mockClient.authorizationResponse = {
         spenderAddress: "0x2222222222222222222222222222222222222222",
         alreadyApproved: false,
@@ -284,6 +332,7 @@ describe("Cross Chain Adapter: PaxosTransitBridge", function () {
       };
 
       const getOrderQuoteSpy = sinon.spy(mockClient, "getOrderQuote");
+      const getAuthorizationSpy = sinon.spy(mockClient, "getAuthorization");
       const amount = toBNWei("100", 6);
       await adapter.constructL1ToL2Txn(
         toAddress(await adapter["l1Signer"].getAddress()),
@@ -292,6 +341,9 @@ describe("Cross Chain Adapter: PaxosTransitBridge", function () {
         amount
       );
 
+      expect(getAuthorizationSpy.calledTwice).to.be.true;
+      expect(getAuthorizationSpy.firstCall.args[0].amount).to.deep.equal(amount);
+      expect(getAuthorizationSpy.secondCall.args[0].amount.toString()).to.equal(MAX_SAFE_ALLOWANCE);
       expect(getOrderQuoteSpy.calledOnce).to.be.true;
       const quoteParams = getOrderQuoteSpy.firstCall.args[0];
       expect(quoteParams.permitSignature).to.be.a("string");

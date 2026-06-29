@@ -413,8 +413,15 @@ export async function resolvePaxosTransitAuthorization(
     tokenAddress: string;
     userAddress: string;
     chainId: number;
+    amount: BigNumber;
   }
 ): Promise<{ permitSignature?: string; permitDeadline?: string }> {
+  const probeAuth = await client.getAuthorization(params);
+
+  if (probeAuth.alreadyApproved) {
+    return {};
+  }
+
   const auth = await client.getAuthorization({
     ...params,
     amount: toBN(MAX_SAFE_ALLOWANCE),
@@ -459,6 +466,7 @@ export async function buildPaxosTransitSubmitOrderTxn(
     tokenAddress: params.offerAsset,
     userAddress: params.userAddress,
     chainId: params.sourceChainId,
+    amount: params.offerAmount,
   });
   return client.getOrderQuote({
     userAddress: params.userAddress,
