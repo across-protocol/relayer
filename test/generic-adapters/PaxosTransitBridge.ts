@@ -9,6 +9,7 @@ import {
   PAXOS_TRANSIT_DESTINATION_TOKENS,
   PAXOS_TRANSIT_MINIMUMS,
   PaxosTransitClient,
+  PaxosTransitOrder,
   PaxosTransitOrderQuoteResponse,
   getPaxosTransitStationAddress,
   getPaxosTransitBoringVaultAddress,
@@ -16,6 +17,9 @@ import {
   getPaxosTransitQuotedReceiveRedisKey,
   ConvertDecimals,
   getPaxosTransitInitiationAmountForOutstandingTransfers,
+  isPaxosTransitOrderOutstanding,
+  paxosTransitOrderMatchesRoute,
+  getPaxosTransitOutstandingOrderAmountInL1Decimals,
 } from "../../src/utils";
 import * as contractUtils from "../../src/utils/ContractUtils";
 import * as redisCache from "../../src/cache/Redis";
@@ -39,6 +43,7 @@ class MockPaxosTransitClient extends PaxosTransitClient {
     integratorFee: "0",
     totalFees: "25000",
   };
+  public orders: PaxosTransitOrder[] = [];
 
   constructor() {
     super("https://mock-paxos.test", "test-api-key");
@@ -50,6 +55,23 @@ class MockPaxosTransitClient extends PaxosTransitClient {
 
   async getOrderQuote() {
     return this.orderQuote;
+  }
+
+  async listOrders(params: { userAddress: string; filter?: string; pageSize?: number; pageToken?: string }) {
+    const { filter } = params;
+    const filteredOrders = isDefined(filter)
+      ? this.orders.filter((order) => {
+          const clauses = filter.split(" OR ").map((clause) => clause.trim());
+          return clauses.some((clause) => {
+            const [field, value] = clause.split("=");
+            return field === "status" && order.status === value;
+          });
+        })
+      : this.orders;
+    return {
+      orders: filteredOrders,
+      nextPageToken: null,
+    };
   }
 }
 
@@ -312,6 +334,90 @@ describe("Cross Chain Adapter: PaxosTransitBridge", function () {
       expect(
         getPaxosTransitInitiationAmountForOutstandingTransfers(onChainOfferAmount, undefined, 18, 6)
       ).to.deep.equal(onChainOfferAmount);
+    });
+  });
+
+  describe("API outstanding orders", function () {
+    const mainnetUsdgAddress = TOKEN_SYMBOLS_MAP.USDG.addresses[hubChainId];
+    let relayerAddress: string;
+
+    beforeEach(async function () {
+      relayerAddress = await adapter["l1Signer"].getAddress();
+    });
+
+    function buildOrder(overrides: Partial<PaxosTransitOrder>): PaxosTransitOrder {
+      return {
+        id: "0xorder1",
+        offerAsset: l1UsdcAddress,
+        wantAsset: l2UsdgAddress,
+        offerAmount: "10000000",
+        amountDue: "9975000",
+        remainingAmountDue: "9975000",
+        receiver: relayerAddress,
+        sourceChainId: hubChainId,
+        destinationChainId: l2ChainId,
+        status: "PENDING_BRIDGE",
+        ...overrides,
+      };
+    }
+
+    it("returns outstanding orders from the Paxos API scoped to the bridge offer asset", async function () {
+      mockClient.orders = [
+        buildOrder({ id: "0xusdc-pending", remainingAmountDue: "5000000" }),
+        buildOrder({
+          id: "0xusdg-pending",
+          offerAsset: mainnetUsdgAddress,
+          remainingAmountDue: "3000000",
+        }),
+        buildOrder({ id: "0xprocessed", status: "PROCESSED", remainingAmountDue: "0" }),
+      ];
+      const listOrdersSpy = sinon.spy(mockClient, "listOrders");
+
+      const events = await adapter.queryL1BridgeInitiationEvents(
+        toAddress(l1UsdcAddress),
+        toAddress(relayerAddress),
+        toAddress(relayerAddress),
+        { from: 0, to: 100 }
+      );
+
+      const bridgeEvents = events[l2UsdgAddress];
+      expect(bridgeEvents).to.have.length(1);
+      expect(bridgeEvents[0].txnRef).to.equal("0xusdc-pending");
+      expect(bridgeEvents[0].amount).to.deep.equal(
+        getPaxosTransitOutstandingOrderAmountInL1Decimals(
+          buildOrder({ id: "0xusdc-pending", remainingAmountDue: "5000000" }),
+          TOKEN_SYMBOLS_MAP.USDG.decimals,
+          TOKEN_SYMBOLS_MAP.USDC.decimals
+        )
+      );
+      expect(listOrdersSpy.callCount).to.equal(1);
+      expect(listOrdersSpy.firstCall.args[0].filter).to.equal("status=PROCESSING OR status=PENDING_BRIDGE");
+    });
+
+    it("returns no L2 finalization events because outstanding balance is API-sourced", async function () {
+      const events = await adapter.queryL2BridgeFinalizationEvents(
+        toAddress(l1UsdcAddress),
+        toAddress(relayerAddress),
+        toAddress(relayerAddress),
+        { from: 0, to: 100 }
+      );
+
+      expect(events[l2UsdgAddress]).to.deep.equal([]);
+    });
+
+    it("identifies outstanding Paxos orders and matching routes", function () {
+      const order = buildOrder({ status: "PROCESSING", remainingAmountDue: "1000" });
+      expect(isPaxosTransitOrderOutstanding(order)).to.be.true;
+      expect(
+        paxosTransitOrderMatchesRoute(order, {
+          offerAsset: l1UsdcAddress,
+          wantAsset: l2UsdgAddress,
+          sourceChainId: hubChainId,
+          destinationChainId: l2ChainId,
+          receiver: relayerAddress,
+        })
+      ).to.be.true;
+      expect(isPaxosTransitOrderOutstanding(buildOrder({ status: "PROCESSED", remainingAmountDue: "0" }))).to.be.false;
     });
   });
 });

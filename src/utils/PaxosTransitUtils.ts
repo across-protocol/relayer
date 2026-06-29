@@ -5,6 +5,7 @@ import {
   CHAIN_IDs,
   assert,
   BigNumber,
+  bnZero,
   ConvertDecimals,
   delay,
   fetchWithTimeout,
@@ -91,6 +92,13 @@ export type PaxosTransitOrderDataResponse = PaxosTransitOrderQuoteResponse;
 
 export type PaxosTransitOrderStatus = "PENDING_BRIDGE" | "PROCESSING" | "PROCESSED" | "REMOVED";
 
+export const PAXOS_TRANSIT_OUTSTANDING_ORDER_STATUSES: ReadonlySet<PaxosTransitOrderStatus> = new Set([
+  "PENDING_BRIDGE",
+  "PROCESSING",
+]);
+
+export const PAXOS_TRANSIT_OUTSTANDING_ORDERS_FILTER = "status=PROCESSING OR status=PENDING_BRIDGE";
+
 export type PaxosTransitOrder = {
   id: string;
   offerAsset: string;
@@ -104,6 +112,91 @@ export type PaxosTransitOrder = {
   status: PaxosTransitOrderStatus;
   orderExecuteds?: unknown[];
 };
+
+export function getPaxosTransitOrderOutstandingWantAmount(order: PaxosTransitOrder): BigNumber {
+  const remainingAmountDue = order.remainingAmountDue;
+  if (isDefined(remainingAmountDue)) {
+    return BigNumber.from(remainingAmountDue);
+  }
+  return BigNumber.from(order.amountDue);
+}
+
+export function isPaxosTransitOrderOutstanding(order: PaxosTransitOrder): boolean {
+  if (order.status === "REMOVED") {
+    return false;
+  }
+  const outstandingWantAmount = getPaxosTransitOrderOutstandingWantAmount(order);
+  if (outstandingWantAmount.lte(bnZero)) {
+    return false;
+  }
+  return PAXOS_TRANSIT_OUTSTANDING_ORDER_STATUSES.has(order.status);
+}
+
+export function paxosTransitOrderMatchesRoute(
+  order: PaxosTransitOrder,
+  params: {
+    offerAsset: string;
+    wantAsset: string;
+    sourceChainId: number;
+    destinationChainId: number;
+    receiver: string;
+  }
+): boolean {
+  return (
+    order.offerAsset.toLowerCase() === params.offerAsset.toLowerCase() &&
+    order.wantAsset.toLowerCase() === params.wantAsset.toLowerCase() &&
+    order.sourceChainId === params.sourceChainId &&
+    order.destinationChainId === params.destinationChainId &&
+    order.receiver.toLowerCase() === params.receiver.toLowerCase()
+  );
+}
+
+export async function listPaxosTransitOrders(
+  client: PaxosTransitClient,
+  userAddress: string,
+  filter?: string
+): Promise<PaxosTransitOrder[]> {
+  const orders: PaxosTransitOrder[] = [];
+  let pageToken: string | undefined;
+  do {
+    const response = await client.listOrders({
+      userAddress,
+      filter,
+      pageSize: 100,
+      pageToken,
+    });
+    orders.push(...response.orders);
+    pageToken = isDefined(response.nextPageToken) ? response.nextPageToken : undefined;
+  } while (isDefined(pageToken));
+  return orders;
+}
+
+/** @deprecated Use listPaxosTransitOrders or listOutstandingPaxosTransitOrders */
+export async function listAllPaxosTransitOrders(
+  client: PaxosTransitClient,
+  userAddress: string
+): Promise<PaxosTransitOrder[]> {
+  return listPaxosTransitOrders(client, userAddress);
+}
+
+/**
+ * Fetch only in-flight Paxos orders. Finalized PROCESSED history is excluded at the API layer
+ * via status filters (AIP-160), then route-scoped client-side in the bridge adapter.
+ */
+export async function listOutstandingPaxosTransitOrders(
+  client: PaxosTransitClient,
+  userAddress: string
+): Promise<PaxosTransitOrder[]> {
+  return listPaxosTransitOrders(client, userAddress, PAXOS_TRANSIT_OUTSTANDING_ORDERS_FILTER);
+}
+
+export function getPaxosTransitOutstandingOrderAmountInL1Decimals(
+  order: PaxosTransitOrder,
+  wantAssetDecimals: number,
+  offerAssetDecimals: number
+): BigNumber {
+  return ConvertDecimals(wantAssetDecimals, offerAssetDecimals)(getPaxosTransitOrderOutstandingWantAmount(order));
+}
 
 export function getPaxosTransitStationAddress(chainId: number): string {
   const envKey = `PAXOS_TRANSIT_STATION_${chainId}`;
