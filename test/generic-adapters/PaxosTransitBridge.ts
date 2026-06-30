@@ -1,66 +1,90 @@
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { ethers } from "hardhat";
+import { BigNumber } from "ethers";
 import { PaxosTransitBridge } from "../../src/adapter/bridges/PaxosTransitBridge";
-import { expect, createSpyLogger, sinon, toBNWei, randomAddress } from "../utils";
+import { expect, createSpyLogger, sinon, toBNWei, randomAddress, assert } from "../utils";
 import {
   EvmAddress,
+  isDefined,
   PAXOS_TRANSIT_DESTINATION_TOKENS,
   PAXOS_TRANSIT_MINIMUMS,
+  MAX_SAFE_ALLOWANCE,
   PaxosTransitClient,
-  PaxosTransitOrderDataResponse,
+  PaxosTransitOrder,
+  PaxosTransitOrderQuoteResponse,
+  getPaxosTransitStationAddress,
+  getPaxosTransitBoringVaultAddress,
+  getPaxosTransitL1ReceiveAsset,
+  isPaxosTransitOrderOutstanding,
+  paxosTransitOrderMatchesRoute,
 } from "../../src/utils";
 import * as contractUtils from "../../src/utils/ContractUtils";
+import * as eventUtils from "../../src/utils/EventUtils";
 
 class MockPaxosTransitClient extends PaxosTransitClient {
-  public authorizationMethod: "already_approved" | "permit" | "approval" = "already_approved";
-  public orderData: PaxosTransitOrderDataResponse = {
+  public authorizationProbeResponse: PaxosTransitClient["getAuthorization"] extends (...args: infer _) => infer R
+    ? Awaited<R>
+    : never = {
+    spenderAddress: "0x2222222222222222222222222222222222222222",
+    alreadyApproved: true,
+    methods: [],
+  };
+  public authorizationResponse: PaxosTransitClient["getAuthorization"] extends (...args: infer _) => infer R
+    ? Awaited<R>
+    : never = {
+    spenderAddress: "0x2222222222222222222222222222222222222222",
+    alreadyApproved: true,
+    methods: [],
+  };
+  public orderQuote: PaxosTransitOrderQuoteResponse = {
     transaction: {
       to: "0x1111111111111111111111111111111111111111",
       data: "0xdeadbeef",
       value: "0",
     },
+    amountOut: "9975000",
+    protocolFee: "25000",
+    integratorFee: "0",
+    totalFees: "25000",
   };
+  public orders: PaxosTransitOrder[] = [];
 
   constructor() {
     super("https://mock-paxos.test", "test-api-key");
   }
 
-  async getAuthorization() {
-    if (this.authorizationMethod === "permit") {
-      return {
-        method: "permit" as const,
-        permitData: {
-          domain: {
-            name: "USD Coin",
-            version: "2",
-            chainId: CHAIN_IDs.MAINNET,
-            verifyingContract: TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET],
-          },
-          types: {
-            Permit: [
-              { name: "owner", type: "address" },
-              { name: "spender", type: "address" },
-              { name: "value", type: "uint256" },
-              { name: "nonce", type: "uint256" },
-              { name: "deadline", type: "uint256" },
-            ],
-          },
-          value: {
-            owner: "0x0000000000000000000000000000000000000001",
-            spender: "0x0000000000000000000000000000000000000002",
-            value: "1000000",
-            nonce: "0",
-            deadline: "9999999999",
-          },
-          deadline: "9999999999",
-        },
-      };
+  async getAuthorization(params: {
+    spenderAddress: string;
+    tokenAddress: string;
+    amount: BigNumber;
+    userAddress: string;
+    chainId: number;
+  }) {
+    if (params.amount.toString() !== MAX_SAFE_ALLOWANCE) {
+      return this.authorizationProbeResponse;
     }
-    return { method: this.authorizationMethod };
+    return this.authorizationResponse;
   }
 
-  async getOrderData() {
-    return this.orderData;
+  async getOrderQuote() {
+    return this.orderQuote;
+  }
+
+  async listOrders(params: { userAddress: string; filter?: string; pageSize?: number; pageToken?: string }) {
+    const { filter } = params;
+    const filteredOrders = isDefined(filter)
+      ? this.orders.filter((order) => {
+          const clauses = filter.split(" OR ").map((clause) => clause.trim());
+          return clauses.some((clause) => {
+            const [field, value] = clause.split("=");
+            return field === "status" && order.status === value;
+          });
+        })
+      : this.orders;
+    return {
+      orders: filteredOrders,
+      nextPageToken: null,
+    };
   }
 }
 
@@ -131,6 +155,34 @@ describe("Cross Chain Adapter: PaxosTransitBridge", function () {
       }
     });
 
+    it("uses ContractAddresses default when env override is unset", function () {
+      delete process.env.PAXOS_TRANSIT_STATION_1;
+      delete process.env.PAXOS_TRANSIT_STATION_4663;
+      delete process.env.PAXOS_TRANSIT_BORING_VAULT_1;
+      delete process.env.PAXOS_TRANSIT_BORING_VAULT_4663;
+
+      expect(getPaxosTransitStationAddress(CHAIN_IDs.MAINNET)).to.equal("0x49AAA987b1a7e9E4AE091dcD8332c39F322D7d28");
+      expect(getPaxosTransitStationAddress(CHAIN_IDs.ROBINHOOD)).to.equal("0x49AAA987b1a7e9E4AE091dcD8332c39F322D7d28");
+      expect(getPaxosTransitBoringVaultAddress(CHAIN_IDs.MAINNET)).to.equal(
+        "0x91fe06c6e9f97e7de4580a280e03046155f8e1e3"
+      );
+      expect(getPaxosTransitBoringVaultAddress(CHAIN_IDs.ROBINHOOD)).to.equal(
+        "0x91fe06c6e9f97e7de4580a280e03046155f8e1e3"
+      );
+    });
+
+    it("prefers env override over ContractAddresses default", function () {
+      process.env.PAXOS_TRANSIT_STATION_1 = "0x2222222222222222222222222222222222222222";
+      expect(getPaxosTransitStationAddress(CHAIN_IDs.MAINNET)).to.equal("0x2222222222222222222222222222222222222222");
+    });
+
+    it("maps Robinhood USDG registry token to mainnet USDC Paxos receive asset", function () {
+      const mainnetUsdg = EvmAddress.from(TOKEN_SYMBOLS_MAP.USDG.addresses[CHAIN_IDs.MAINNET]);
+      expect(getPaxosTransitL1ReceiveAsset(CHAIN_IDs.ROBINHOOD, mainnetUsdg)).to.equal(
+        TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]
+      );
+    });
+
     it("throws when l2Token does not match expected destination token", async function () {
       try {
         await adapter.constructL1ToL2Txn(
@@ -143,6 +195,233 @@ describe("Cross Chain Adapter: PaxosTransitBridge", function () {
       } catch (e: unknown) {
         expect((e as Error).message).to.include("unsupported l2 token");
       }
+    });
+
+    it("skips approval when the offer amount is already approved", async function () {
+      const getAuthorizationSpy = sinon.spy(mockClient, "getAuthorization");
+      const sendTransaction = sinon.stub(adapter["l1Signer"], "sendTransaction");
+      const amount = toBNWei("100", 6);
+
+      await adapter.constructL1ToL2Txn(
+        toAddress(await adapter["l1Signer"].getAddress()),
+        toAddress(l1UsdcAddress),
+        toAddress(l2UsdgAddress),
+        amount
+      );
+
+      expect(getAuthorizationSpy.calledOnce).to.be.true;
+      expect(getAuthorizationSpy.firstCall.args[0].amount).to.deep.equal(amount);
+      expect(sendTransaction.called).to.be.false;
+    });
+
+    it("submits erc20_approve when available, even if permit is also offered", async function () {
+      mockClient.authorizationProbeResponse = {
+        spenderAddress: "0x2222222222222222222222222222222222222222",
+        alreadyApproved: false,
+        methods: [],
+      };
+      mockClient.authorizationResponse = {
+        spenderAddress: "0x2222222222222222222222222222222222222222",
+        alreadyApproved: false,
+        methods: [
+          {
+            type: "eip2612_permit",
+            permitData: {
+              domain: {
+                name: "USD Coin",
+                version: "2",
+                chainId: CHAIN_IDs.MAINNET,
+                verifyingContract: TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET],
+              },
+              types: {
+                Permit: [
+                  { name: "owner", type: "address" },
+                  { name: "spender", type: "address" },
+                  { name: "value", type: "uint256" },
+                  { name: "nonce", type: "uint256" },
+                  { name: "deadline", type: "uint256" },
+                ],
+              },
+              value: {
+                owner: "0x0000000000000000000000000000000000000001",
+                spender: "0x0000000000000000000000000000000000000002",
+                value: "1000000",
+                nonce: "0",
+                deadline: "9999999999",
+              },
+              deadline: "9999999999",
+            },
+          },
+          {
+            type: "erc20_approve",
+            transaction: { encoded: "0xapprove" },
+          },
+        ],
+      };
+
+      const sendTransaction = sinon.stub(adapter["l1Signer"], "sendTransaction").resolves({
+        hash: "0xabc",
+      } as never);
+      const l1Provider = adapter["l1Signer"].provider;
+      assert(isDefined(l1Provider), "l1Signer must have a provider");
+      const waitForTransaction = sinon.stub(l1Provider, "waitForTransaction").resolves({} as never);
+
+      const getOrderQuoteSpy = sinon.spy(mockClient, "getOrderQuote");
+      const getAuthorizationSpy = sinon.spy(mockClient, "getAuthorization");
+      const amount = toBNWei("100", 6);
+      await adapter.constructL1ToL2Txn(
+        toAddress(await adapter["l1Signer"].getAddress()),
+        toAddress(l1UsdcAddress),
+        toAddress(l2UsdgAddress),
+        amount
+      );
+
+      expect(getAuthorizationSpy.calledTwice).to.be.true;
+      expect(getAuthorizationSpy.firstCall.args[0].amount).to.deep.equal(amount);
+      expect(getAuthorizationSpy.secondCall.args[0].amount.toString()).to.equal(MAX_SAFE_ALLOWANCE);
+      expect(sendTransaction.calledOnce).to.be.true;
+      expect(waitForTransaction.calledOnceWith("0xabc")).to.be.true;
+      expect(getOrderQuoteSpy.calledOnce).to.be.true;
+      expect(getOrderQuoteSpy.firstCall.args[0].permitSignature).to.be.undefined;
+    });
+
+    it("signs an EIP-2612 permit when approval is not offered", async function () {
+      mockClient.authorizationProbeResponse = {
+        spenderAddress: "0x2222222222222222222222222222222222222222",
+        alreadyApproved: false,
+        methods: [],
+      };
+      mockClient.authorizationResponse = {
+        spenderAddress: "0x2222222222222222222222222222222222222222",
+        alreadyApproved: false,
+        methods: [
+          {
+            type: "eip2612_permit",
+            permitData: {
+              domain: {
+                name: "USD Coin",
+                version: "2",
+                chainId: CHAIN_IDs.MAINNET,
+                verifyingContract: TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET],
+              },
+              types: {
+                Permit: [
+                  { name: "owner", type: "address" },
+                  { name: "spender", type: "address" },
+                  { name: "value", type: "uint256" },
+                  { name: "nonce", type: "uint256" },
+                  { name: "deadline", type: "uint256" },
+                ],
+              },
+              value: {
+                owner: "0x0000000000000000000000000000000000000001",
+                spender: "0x0000000000000000000000000000000000000002",
+                value: "1000000",
+                nonce: "0",
+                deadline: "9999999999",
+              },
+              deadline: "9999999999",
+            },
+          },
+        ],
+      };
+
+      const getOrderQuoteSpy = sinon.spy(mockClient, "getOrderQuote");
+      const getAuthorizationSpy = sinon.spy(mockClient, "getAuthorization");
+      const amount = toBNWei("100", 6);
+      await adapter.constructL1ToL2Txn(
+        toAddress(await adapter["l1Signer"].getAddress()),
+        toAddress(l1UsdcAddress),
+        toAddress(l2UsdgAddress),
+        amount
+      );
+
+      expect(getAuthorizationSpy.calledTwice).to.be.true;
+      expect(getAuthorizationSpy.firstCall.args[0].amount).to.deep.equal(amount);
+      expect(getAuthorizationSpy.secondCall.args[0].amount.toString()).to.equal(MAX_SAFE_ALLOWANCE);
+      expect(getOrderQuoteSpy.calledOnce).to.be.true;
+      const quoteParams = getOrderQuoteSpy.firstCall.args[0];
+      expect(quoteParams.permitSignature).to.be.a("string");
+      expect(quoteParams.permitDeadline).to.equal("9999999999");
+    });
+  });
+
+  describe("API outstanding orders", function () {
+    const mainnetUsdgAddress = TOKEN_SYMBOLS_MAP.USDG.addresses[hubChainId];
+    let relayerAddress: string;
+
+    beforeEach(async function () {
+      relayerAddress = await adapter["l1Signer"].getAddress();
+    });
+
+    function buildOrder(overrides: Partial<PaxosTransitOrder>): PaxosTransitOrder {
+      return {
+        id: "0xorder1",
+        offerAsset: l1UsdcAddress,
+        wantAsset: l2UsdgAddress,
+        offerAmount: "10000000",
+        amountDue: "9975000",
+        remainingAmountDue: "9975000",
+        receiver: relayerAddress,
+        sourceChainId: hubChainId,
+        destinationChainId: l2ChainId,
+        status: "PENDING_BRIDGE",
+        ...overrides,
+      };
+    }
+
+    it("returns outstanding orders for every mainnet offer asset settling to the destination token", async function () {
+      mockClient.orders = [
+        buildOrder({ id: "0xusdc-pending", remainingAmountDue: "5000000" }),
+        buildOrder({
+          id: "0xusdg-pending",
+          offerAsset: mainnetUsdgAddress,
+          remainingAmountDue: "3000000",
+        }),
+        buildOrder({ id: "0xprocessed", status: "PROCESSED", remainingAmountDue: "0" }),
+      ];
+      const listOrdersSpy = sinon.spy(mockClient, "listOrders");
+
+      const events = await adapter.getOutstandingTransfersFromApi(toAddress(l1UsdcAddress), toAddress(relayerAddress));
+
+      const bridgeEvents = events[l2UsdgAddress];
+      expect(bridgeEvents).to.have.length(2);
+      expect(bridgeEvents.map((event) => event.txnRef)).to.deep.equal(["0xusdc-pending", "0xusdg-pending"]);
+      expect(listOrdersSpy.callCount).to.equal(1);
+      expect(listOrdersSpy.firstCall.args[0].filter).to.equal("status=PROCESSING OR status=PENDING_BRIDGE");
+    });
+
+    it("queries on-chain L2 finalization events from BoringVault", async function () {
+      const paginatedEventQueryStub = sinon.stub(eventUtils, "paginatedEventQuery").resolves([]);
+
+      const events = await adapter.queryL2BridgeFinalizationEvents(
+        toAddress(l1UsdcAddress),
+        toAddress(relayerAddress),
+        toAddress(relayerAddress),
+        { from: 0, to: 100 }
+      );
+
+      expect(paginatedEventQueryStub.calledOnce).to.be.true;
+      expect(events).to.deep.equal({ [l2UsdgAddress]: [] });
+    });
+
+    it("identifies outstanding Paxos orders and matching routes", function () {
+      const order = buildOrder({ status: "PROCESSING", remainingAmountDue: "1000" });
+      const routeParams = {
+        wantAsset: l2UsdgAddress,
+        sourceChainId: hubChainId,
+        destinationChainId: l2ChainId,
+        receiver: relayerAddress,
+      };
+      expect(isPaxosTransitOrderOutstanding(order)).to.be.true;
+      expect(paxosTransitOrderMatchesRoute(order, routeParams)).to.be.true;
+      expect(
+        paxosTransitOrderMatchesRoute(
+          buildOrder({ offerAsset: mainnetUsdgAddress, status: "PROCESSING", remainingAmountDue: "1000" }),
+          routeParams
+        )
+      ).to.be.true;
+      expect(isPaxosTransitOrderOutstanding(buildOrder({ status: "PROCESSED", remainingAmountDue: "0" }))).to.be.false;
     });
   });
 });

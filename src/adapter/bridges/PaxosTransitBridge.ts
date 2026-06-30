@@ -1,5 +1,5 @@
 import { Contract, Signer } from "ethers";
-import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
+import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvent, BridgeEvents } from "./BaseBridgeAdapter";
 import { TokenInfo } from "../../interfaces";
 import {
   BigNumber,
@@ -17,10 +17,18 @@ import {
   createPaxosTransitClient,
   getPaxosTransitDestinationToken,
   getPaxosTransitStationAddress,
+  getPaxosTransitBoringVaultAddress,
   buildPaxosTransitSubmitOrderTxn,
   PAXOS_TRANSIT_MINIMUMS,
   PaxosTransitClient,
   bnZero,
+  mapAsync,
+  toAddressType,
+  listOutstandingPaxosTransitOrders,
+  isPaxosTransitOrderOutstanding,
+  paxosTransitOrderMatchesRoute,
+  getPaxosTransitOfferAssetsForWantAsset,
+  getPaxosTransitOutstandingOrderAmountInL1Decimals,
 } from "../../utils";
 import { TransferTokenParams, processEvent } from "../utils";
 import ERC20_ABI from "../../common/abi/MinimalERC20.json";
@@ -80,7 +88,7 @@ export class PaxosTransitBridge extends BaseBridgeAdapter {
       wantAsset: this.l2TokenAddress,
       sourceChainId: this.hubChainId,
       destinationChainId: this.l2chainId,
-      vaultAddress: getPaxosTransitStationAddress(this.hubChainId),
+      spenderAddress: getPaxosTransitStationAddress(this.hubChainId),
     });
 
     return {
@@ -92,23 +100,35 @@ export class PaxosTransitBridge extends BaseBridgeAdapter {
     };
   }
 
+  async getOutstandingTransfersFromApi(l1Token: EvmAddress, monitoredAddress: EvmAddress): Promise<BridgeEvents> {
+    assert(monitoredAddress.isEVM(), "Paxos Transit outstanding orders require an EVM monitored address");
+    return this.buildOutstandingTransfersFromApiOrders(l1Token, monitoredAddress);
+  }
+
   async queryL1BridgeInitiationEvents(
-    l1Token: EvmAddress,
+    _l1Token: EvmAddress,
     fromAddress: EvmAddress,
-    _toAddress: Address,
+    toAddress: Address,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
+    assert(fromAddress.eq(toAddress), "Paxos Transit outstanding orders require matching from/to addresses");
     const l1Provider = this.l1Signer.provider;
     assert(isDefined(l1Provider), "PaxosTransitBridge: l1Signer must have a provider");
     const transitStation = getPaxosTransitStationAddress(this.hubChainId);
-    const tokenContract = new Contract(l1Token.toNative(), ERC20_ABI, l1Provider);
-    const events = await paginatedEventQuery(
-      tokenContract,
-      tokenContract.filters.Transfer(fromAddress.toNative(), transitStation),
-      eventConfig
-    );
+    const offerAssets = getPaxosTransitOfferAssetsForWantAsset(this.l2chainId, this.l2TokenAddress);
+    const processedEvents = (
+      await mapAsync(offerAssets, async (offerAsset) => {
+        const tokenContract = new Contract(offerAsset, ERC20_ABI, l1Provider);
+        const events = await paginatedEventQuery(
+          tokenContract,
+          tokenContract.filters.Transfer(fromAddress.toNative(), transitStation),
+          eventConfig
+        );
+        return events.map((event) => processEvent(event, "value"));
+      })
+    ).flat();
     return {
-      [this.l2TokenAddress]: events.map((event) => processEvent(event, "value")),
+      [this.l2TokenAddress]: processedEvents,
     };
   }
 
@@ -121,15 +141,55 @@ export class PaxosTransitBridge extends BaseBridgeAdapter {
     assert(toAddress.isEVM(), "Paxos Transit finalization events require an EVM destination address");
     const l2Provider = this.l2Bridge?.provider;
     assert(isDefined(l2Provider), "PaxosTransitBridge: l2 provider is required");
-    const transitStation = getPaxosTransitStationAddress(this.l2chainId);
+    const boringVault = getPaxosTransitBoringVaultAddress(this.l2chainId);
     const tokenContract = new Contract(this.l2TokenAddress, ERC20_ABI, l2Provider);
     const events = await paginatedEventQuery(
       tokenContract,
-      tokenContract.filters.Transfer(transitStation, toAddress.toNative()),
+      tokenContract.filters.Transfer(boringVault, toAddress.toNative()),
       eventConfig
     );
     return {
       [this.l2TokenAddress]: events.map((event) => processEvent(event, "value")),
+    };
+  }
+
+  private async buildOutstandingTransfersFromApiOrders(
+    l1Token: EvmAddress,
+    userAddress: EvmAddress
+  ): Promise<BridgeEvents> {
+    const orders = await listOutstandingPaxosTransitOrders(this.client, userAddress.toNative());
+    const l2TokenDecimals = getTokenInfo(toAddressType(this.l2TokenAddress, this.l2chainId), this.l2chainId).decimals;
+    const l1TokenDecimals = this.l1TokenInfo.decimals;
+    const routeParams = {
+      wantAsset: this.l2TokenAddress,
+      sourceChainId: this.hubChainId,
+      destinationChainId: this.l2chainId,
+      receiver: userAddress.toNative(),
+    };
+
+    const outstandingOrders = orders.filter(
+      (order) => paxosTransitOrderMatchesRoute(order, routeParams) && isPaxosTransitOrderOutstanding(order)
+    );
+
+    const bridgeEvents: BridgeEvent[] = outstandingOrders.map((order) => ({
+      txnRef: order.id,
+      blockNumber: 0,
+      txnIndex: 0,
+      logIndex: 0,
+      amount: getPaxosTransitOutstandingOrderAmountInL1Decimals(order, l2TokenDecimals, l1TokenDecimals),
+    }));
+
+    this.logger.debug({
+      at: "PaxosTransitBridge#getOutstandingTransfersFromApi",
+      message: "Resolved Paxos Transit outstanding orders from API",
+      offerAsset: l1Token.toNative(),
+      wantAsset: this.l2TokenAddress,
+      outstandingOrderCount: bridgeEvents.length,
+      outstandingAmount: bridgeEvents.reduce((acc, event) => acc.add(event.amount), bnZero).toString(),
+    });
+
+    return {
+      [this.l2TokenAddress]: bridgeEvents,
     };
   }
 }

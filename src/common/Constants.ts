@@ -48,6 +48,7 @@ import {
   OFTWethBridge,
   BridgeApi,
   TokenSplitterBridge,
+  PaxosTransitBridge,
 } from "../adapter/bridges";
 import {
   BaseL2BridgeAdapter,
@@ -60,6 +61,7 @@ import {
   SolanaUsdcCCTPBridge as L2SolanaUsdcCCTPBridge,
   BridgeApi as L2BridgeApi,
   TokenSplitterBridge as L2TokenSplitterBridge,
+  PaxosTransitL2Bridge,
 } from "../adapter/l2Bridges";
 import { getContractAddress } from "./ContractAddresses";
 import { HyperlaneXERC20Bridge } from "../adapter/bridges/HyperlaneXERC20Bridge";
@@ -371,7 +373,7 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.POLYGON]: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "POOL"],
   [CHAIN_IDs.SOLANA]: ["USDC"],
   [CHAIN_IDs.SONEIUM]: ["WETH", "USDC"],
-  [CHAIN_IDs.ROBINHOOD]: ["WETH"], // @TODO: Add USDC after we have rebalancing method
+  [CHAIN_IDs.ROBINHOOD]: ["WETH", "USDC", "USDG"],
   [CHAIN_IDs.TEMPO]: ["USDC"],
   [CHAIN_IDs.TRON]: ["USDT"],
   [CHAIN_IDs.UNICHAIN]: ["ETH", "WETH", "USDC", "USDT", "ezETH"],
@@ -546,7 +548,7 @@ export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<Ba
     [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTBridge,
   },
   [CHAIN_IDs.ROBINHOOD]: {
-    // [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: PaxosTransitBridge,
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: PaxosTransitBridge,
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: ArbitrumOrbitBridge,
   },
   [CHAIN_IDs.SONEIUM]: {
@@ -729,7 +731,7 @@ export const CUSTOM_L2_BRIDGE: Record<number, Record<string, L2BridgeConstructor
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2SolanaUsdcCCTPBridge,
   },
   [CHAIN_IDs.ROBINHOOD]: {
-    // [TOKEN_SYMBOLS_MAP.USDG.addresses[CHAIN_IDs.MAINNET]]: PaxosTransitL2Bridge,
+    [TOKEN_SYMBOLS_MAP.USDG.addresses[CHAIN_IDs.MAINNET]]: PaxosTransitL2Bridge,
   },
   [CHAIN_IDs.WORLD_CHAIN]: {
     [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20BridgeL2,
