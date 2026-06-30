@@ -28,7 +28,8 @@ export function getMainnetUsdgAddress(): string {
 export const PAXOS_TRANSIT_DESTINATION_TOKENS: { [dstChainId: number]: { [l1TokenAddress: string]: string } } = {
   [CHAIN_IDs.ROBINHOOD]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: TOKEN_SYMBOLS_MAP.USDG.addresses[CHAIN_IDs.ROBINHOOD],
-    [TOKEN_SYMBOLS_MAP["USDG-MAINNET"].addresses[CHAIN_IDs.MAINNET]]: TOKEN_SYMBOLS_MAP.USDG.addresses[CHAIN_IDs.ROBINHOOD],
+    [TOKEN_SYMBOLS_MAP["USDG-MAINNET"].addresses[CHAIN_IDs.MAINNET]]:
+      TOKEN_SYMBOLS_MAP.USDG.addresses[CHAIN_IDs.ROBINHOOD],
   },
 };
 
