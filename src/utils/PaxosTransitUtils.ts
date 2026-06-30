@@ -19,9 +19,16 @@ import {
   Address,
 } from "./";
 
+export function getMainnetUsdgAddress(): string {
+  const address = TOKEN_SYMBOLS_MAP["USDG-MAINNET"].addresses[CHAIN_IDs.MAINNET];
+  assert(isDefined(address), "USDG-MAINNET is not configured on mainnet");
+  return address;
+}
+
 export const PAXOS_TRANSIT_DESTINATION_TOKENS: { [dstChainId: number]: { [l1TokenAddress: string]: string } } = {
   [CHAIN_IDs.ROBINHOOD]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: TOKEN_SYMBOLS_MAP.USDG.addresses[CHAIN_IDs.ROBINHOOD],
+    [getMainnetUsdgAddress()]: TOKEN_SYMBOLS_MAP.USDG.addresses[CHAIN_IDs.ROBINHOOD],
   },
 };
 
