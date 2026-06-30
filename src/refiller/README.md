@@ -16,7 +16,7 @@ However, ideally this logic for refilling USDH is moved into a separate client. 
 
 ## Sweeping mainnet USDG to Robinhood
 
-Robinhood inventory holds USDG on chain 4663; mainnet USDG should not accumulate. When a `REFILL_BALANCES` entry targets mainnet USDG (`chainId: 1`, `token: <mainnet USDG address>`), the refiller routes to a bespoke handler that sweeps the base signer's full mainnet USDG balance to Robinhood USDG via the Paxos Transit API when the balance exceeds `MIN_USDG_SWEEP_AMOUNT` (default 10 USDG). Paxos Transit enforces a separate $5 minimum per order.
+Robinhood inventory holds USDG on chain 4663; mainnet USDG (`USDG-MAINNET`, `0xe343167631d89B6Ffc58B88d6b7fB0228795491D`) should not accumulate. When a `REFILL_BALANCES` entry targets that token on mainnet (`chainId: 1`, `token: 0xe343167631d89B6Ffc58B88d6b7fB0228795491D`), the refiller routes to a bespoke handler that sweeps the base signer's full mainnet USDG balance to Robinhood USDG via the Paxos Transit API when the balance exceeds `MIN_USDG_SWEEP_AMOUNT` (default 10 USDG). Paxos Transit enforces a separate $5 minimum per order.
 
 Required environment variables:
 
@@ -26,5 +26,7 @@ Optional overrides (defaults are in `ContractAddresses.ts`):
 
 - `PAXOS_TRANSIT_STATION_1`
 - `PAXOS_TRANSIT_STATION_4663`
+
+The refiller constructs `PaxosTransitBridge` directly for this path; it is **not** registered in `CUSTOM_BRIDGE`, so the rebalancer will not plan mainnet USDG → Robinhood transfers.
 
 Normal RH inventory refills still use mainnet USDC via `CUSTOM_BRIDGE` and inventory/rebalancer config; this path is only for cleaning up stray mainnet USDG.

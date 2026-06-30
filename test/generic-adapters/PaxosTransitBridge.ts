@@ -14,6 +14,9 @@ import {
   PaxosTransitOrderQuoteResponse,
   getPaxosTransitStationAddress,
   getPaxosTransitBoringVaultAddress,
+  getMainnetUsdgAddress,
+  getPaxosTransitDestinationToken,
+  getPaxosTransitOfferAssetsForWantAsset,
   isPaxosTransitOrderOutstanding,
   paxosTransitOrderMatchesRoute,
 } from "../../src/utils";
@@ -402,6 +405,14 @@ describe("Cross Chain Adapter: PaxosTransitBridge", function () {
       expect(isPaxosTransitOrderOutstanding(order)).to.be.true;
       expect(paxosTransitOrderMatchesRoute(order, routeParams)).to.be.true;
       expect(isPaxosTransitOrderOutstanding(buildOrder({ status: "PROCESSED", remainingAmountDue: "0" }))).to.be.false;
+    });
+
+    it("routes mainnet USDG-MAINNET to Robinhood USDG", function () {
+      const mainnetUsdgAddress = getMainnetUsdgAddress();
+      expect(getPaxosTransitDestinationToken(l2ChainId, toAddress(mainnetUsdgAddress))).to.equal(l2UsdgAddress);
+      expect(getPaxosTransitOfferAssetsForWantAsset(l2ChainId, l2UsdgAddress).sort()).to.deep.equal(
+        [l1UsdcAddress, mainnetUsdgAddress].sort()
+      );
     });
   });
 });
