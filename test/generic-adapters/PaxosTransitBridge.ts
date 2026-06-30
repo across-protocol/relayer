@@ -14,7 +14,6 @@ import {
   PaxosTransitOrderQuoteResponse,
   getPaxosTransitStationAddress,
   getPaxosTransitBoringVaultAddress,
-  getPaxosTransitL1ReceiveAsset,
   isPaxosTransitOrderOutstanding,
   paxosTransitOrderMatchesRoute,
 } from "../../src/utils";
@@ -174,13 +173,6 @@ describe("Cross Chain Adapter: PaxosTransitBridge", function () {
     it("prefers env override over ContractAddresses default", function () {
       process.env.PAXOS_TRANSIT_STATION_1 = "0x2222222222222222222222222222222222222222";
       expect(getPaxosTransitStationAddress(CHAIN_IDs.MAINNET)).to.equal("0x2222222222222222222222222222222222222222");
-    });
-
-    it("maps Robinhood USDG registry token to mainnet USDC Paxos receive asset", function () {
-      const mainnetUsdg = EvmAddress.from(TOKEN_SYMBOLS_MAP.USDG.addresses[CHAIN_IDs.MAINNET]);
-      expect(getPaxosTransitL1ReceiveAsset(CHAIN_IDs.ROBINHOOD, mainnetUsdg)).to.equal(
-        TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]
-      );
     });
 
     it("throws when l2Token does not match expected destination token", async function () {
@@ -347,7 +339,6 @@ describe("Cross Chain Adapter: PaxosTransitBridge", function () {
   });
 
   describe("API outstanding orders", function () {
-    const mainnetUsdgAddress = TOKEN_SYMBOLS_MAP.USDG.addresses[hubChainId];
     let relayerAddress: string;
 
     beforeEach(async function () {
@@ -370,14 +361,9 @@ describe("Cross Chain Adapter: PaxosTransitBridge", function () {
       };
     }
 
-    it("returns outstanding orders for every mainnet offer asset settling to the destination token", async function () {
+    it("returns outstanding USDC offer orders settling to Robinhood USDG", async function () {
       mockClient.orders = [
         buildOrder({ id: "0xusdc-pending", remainingAmountDue: "5000000" }),
-        buildOrder({
-          id: "0xusdg-pending",
-          offerAsset: mainnetUsdgAddress,
-          remainingAmountDue: "3000000",
-        }),
         buildOrder({ id: "0xprocessed", status: "PROCESSED", remainingAmountDue: "0" }),
       ];
       const listOrdersSpy = sinon.spy(mockClient, "listOrders");
@@ -385,8 +371,8 @@ describe("Cross Chain Adapter: PaxosTransitBridge", function () {
       const events = await adapter.getOutstandingTransfersFromApi(toAddress(l1UsdcAddress), toAddress(relayerAddress));
 
       const bridgeEvents = events[l2UsdgAddress];
-      expect(bridgeEvents).to.have.length(2);
-      expect(bridgeEvents.map((event) => event.txnRef)).to.deep.equal(["0xusdc-pending", "0xusdg-pending"]);
+      expect(bridgeEvents).to.have.length(1);
+      expect(bridgeEvents.map((event) => event.txnRef)).to.deep.equal(["0xusdc-pending"]);
       expect(listOrdersSpy.callCount).to.equal(1);
       expect(listOrdersSpy.firstCall.args[0].filter).to.equal("status=PROCESSING OR status=PENDING_BRIDGE");
     });
@@ -415,12 +401,6 @@ describe("Cross Chain Adapter: PaxosTransitBridge", function () {
       };
       expect(isPaxosTransitOrderOutstanding(order)).to.be.true;
       expect(paxosTransitOrderMatchesRoute(order, routeParams)).to.be.true;
-      expect(
-        paxosTransitOrderMatchesRoute(
-          buildOrder({ offerAsset: mainnetUsdgAddress, status: "PROCESSING", remainingAmountDue: "1000" }),
-          routeParams
-        )
-      ).to.be.true;
       expect(isPaxosTransitOrderOutstanding(buildOrder({ status: "PROCESSED", remainingAmountDue: "0" }))).to.be.false;
     });
   });
