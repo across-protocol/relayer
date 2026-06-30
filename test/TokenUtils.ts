@@ -19,6 +19,16 @@ describe("TokenUtils", function () {
     expect(l1Token.eq(EvmAddress.from(TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]))).to.be.true;
   });
 
+  it("resolves Robinhood USDG to mainnet USDC via TOKEN_EQUIVALENCE_REMAPPING", function () {
+    const l1Token = getInventoryEquivalentL1TokenAddress(
+      toAddressType(TOKEN_SYMBOLS_MAP.USDG.addresses[CHAIN_IDs.ROBINHOOD], CHAIN_IDs.ROBINHOOD),
+      CHAIN_IDs.ROBINHOOD,
+      CHAIN_IDs.MAINNET
+    );
+
+    expect(l1Token.eq(EvmAddress.from(TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]))).to.be.true;
+  });
+
   it("derives all Tempo USDC balance contributors from TOKEN_EQUIVALENCE_REMAPPING", function () {
     const contributorTokens = getInventoryBalanceContributorTokens(
       EvmAddress.from(TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]),
