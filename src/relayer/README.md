@@ -22,14 +22,21 @@ RELAYER_ALLOWED_RECIPIENTS_4663=["0xabc...","0xdef..."]
 ```
 
 When an allow-list is configured for a chain, `Relayer::filterDeposit` drops every deposit to that chain whose
-`recipient` is not on the list. Chains without a configured allow-list are unrestricted.
+recipient is not on the list. Chains without a configured allow-list are unrestricted. The check validates the
+*effective* recipient the fill will actually pay out to: a deposit that has been sped up is filled via
+`fillRelayWithUpdatedDeposit`, which delivers the funds to the depositor-signed `updatedRecipient` rather than the
+original `recipient`, so the allow-list is enforced against `updatedRecipient` when a speed-up is present. This
+prevents a depositor from depositing to an allow-listed recipient and then signing a speed-up that redirects the funds
+to a non-allow-listed address.
 
 Two deliberate design choices:
 
 - **Deposits carrying a message are always dropped when an allow-list is active.** Such deposits are executed on the
   destination chain by the recipient contract (typically the `MulticallHandler`), which can forward the funds to
   arbitrary addresses via its encoded calls. The on-chain `recipient` is therefore not the effective beneficiary, so
-  the allow-list cannot be enforced and the deposit is not filled. (A future enhancement could opt in to validating a
+  the allow-list cannot be enforced and the deposit is not filled. As with the recipient, the *effective* message is
+  evaluated — a speed-up that adds a message causes the deposit to be dropped, while one that nullifies the original
+  message allows it (subject to the recipient check). (A future enhancement could opt in to validating a
   `MulticallHandler` message's `fallbackRecipient`, but note that the message's calls can still redirect funds, so
   that check would be best-effort rather than a guarantee.)
 - **The filter never consults `depositor`.** The depositor is set by the user on the origin chain and is trivially

@@ -1067,6 +1067,86 @@ describe("Relayer: Check for Unfilled Deposits and Fill", function () {
       ).to.not.be.undefined;
     });
 
+    it("Drops deposits sped up to redirect funds to a non-allow-listed recipient", async function () {
+      // The allow-list permits the original recipient (the depositor), but a sped-up deposit is filled via
+      // fillRelayWithUpdatedDeposit, which pays out to updatedRecipient. A depositor must not be able to deposit to an
+      // allow-listed recipient and then sign a speed-up that redirects the funds to a non-allow-listed address.
+      relayerInstance.config.allowedRecipients[destinationChainId] = new Set([
+        ethers.utils.getAddress(depositor.address),
+      ]);
+
+      const deposit = await depositV3(
+        spokePool_1,
+        destinationChainId,
+        depositor,
+        inputToken,
+        inputAmount,
+        outputToken,
+        outputAmount
+      );
+
+      // Speed up to a non-allow-listed recipient with an empty message.
+      await updateDeposit(
+        spokePool_1,
+        {
+          ...deposit,
+          updatedRecipient: toAddressType(randomAddress(), destinationChainId),
+          updatedOutputAmount: deposit.outputAmount.sub(bnOne),
+          updatedMessage: EMPTY_MESSAGE,
+        },
+        depositor
+      );
+      await updateAllClients();
+
+      const txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
+      for (const receipts of Object.values(txnReceipts)) {
+        expect((await receipts).length).to.equal(0);
+      }
+      expect(
+        spy
+          .getCalls()
+          .find(({ lastArg }) =>
+            lastArg.message.includes(`Skipping ${dstChain} deposit to non-allow-listed recipient.`)
+          )
+      ).to.not.be.undefined;
+    });
+
+    it("Fills deposits sped up to a different allow-listed recipient", async function () {
+      // A speed-up that redirects the funds to another allow-listed recipient (with an empty message) is still valid;
+      // the effective-recipient check must permit it and the fill must use the updated parameters.
+      const updatedRecipient = randomAddress();
+      relayerInstance.config.allowedRecipients[destinationChainId] = new Set([
+        ethers.utils.getAddress(depositor.address),
+        ethers.utils.getAddress(updatedRecipient),
+      ]);
+
+      const deposit = await depositV3(
+        spokePool_1,
+        destinationChainId,
+        depositor,
+        inputToken,
+        inputAmount,
+        outputToken,
+        outputAmount
+      );
+
+      await updateDeposit(
+        spokePool_1,
+        {
+          ...deposit,
+          updatedRecipient: toAddressType(updatedRecipient, destinationChainId),
+          updatedOutputAmount: deposit.outputAmount.sub(bnOne),
+          updatedMessage: EMPTY_MESSAGE,
+        },
+        depositor
+      );
+      await updateAllClients();
+
+      const txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
+      expect((await txnReceipts[destinationChainId]).length).to.equal(1);
+      expect(lastSpyLogIncludes(spy, "Filled v3 deposit")).to.be.true;
+    });
+
     it("Rate-limits per-depositor deposits per loop", async function () {
       // Per-depositor rate-limiting only engages in looping mode; pollingDelay === 0 is the sweeper bypass.
       Object.assign(relayerInstance.config, { pollingDelay: 1 });

@@ -291,8 +291,16 @@ export class Relayer {
       // `recipient` field is not the effective beneficiary, so the allow-list cannot be enforced and the deposit is
       // dropped. The `depositor` is deliberately NOT consulted: it is set by the user on the origin chain and is
       // trivially spoofable, so gating on it would provide no access-control guarantee.
+      //
+      // A sped-up deposit is filled via fillRelayWithUpdatedDeposit, which delivers the funds to (and executes the
+      // message signed for) `updatedRecipient`/`updatedMessage` rather than the original deposit fields. We therefore
+      // validate the *effective* recipient and message the fill will actually use — resolveDepositMessage() already
+      // returns the updated message, and effectiveRecipient resolves to updatedRecipient when a speed-up is present.
+      // Otherwise a depositor could deposit to an allow-listed recipient and then sign a speed-up that redirects the
+      // funds to a non-allow-listed address, bypassing the allow-list entirely.
       const depositHasMessage = !isMessageEmpty(resolveDepositMessage(deposit));
-      if (depositHasMessage || !chainAllowedRecipients.has(recipient.toNative())) {
+      const effectiveRecipient = isDepositSpedUp(deposit) ? deposit.updatedRecipient : recipient;
+      if (depositHasMessage || !chainAllowedRecipients.has(effectiveRecipient.toNative())) {
         this.logger.debug({
           at: "Relayer::filterDeposit",
           message: depositHasMessage
@@ -300,7 +308,7 @@ export class Relayer {
             : `Skipping ${dstChain} deposit to non-allow-listed recipient.`,
           depositId,
           destinationChainId,
-          recipient,
+          recipient: effectiveRecipient,
           hasMessage: depositHasMessage,
           txnRef: deposit.txnRef,
         });
