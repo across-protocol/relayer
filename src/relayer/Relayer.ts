@@ -205,6 +205,7 @@ export class Relayer {
     } = this.config;
     const [srcChain, dstChain] = [getNetworkName(originChainId), getNetworkName(destinationChainId)];
     const relayKey = sdkUtils.getRelayEventKey(deposit);
+    const common = { at: "Relayer::filterDeposit", deposit };
 
     // Helper to mark a deposit as filled. This is useful when it should not be considered in future loops
     // i.e. because it is inherently un-fillable given the current runtime configuration.
@@ -221,11 +222,10 @@ export class Relayer {
     // If we don't have the latest code to support this deposit, skip it.
     if (depositVersion > configStoreClient.configStoreVersion) {
       this.logger.warn({
-        at: "Relayer::filterDeposit",
+        ...common,
         message: "Skipping deposit that is not supported by this relayer version.",
         latestVersionSupported: configStoreClient.configStoreVersion,
         latestInConfigStore: configStoreClient.getConfigStoreVersionForTimestamp(),
-        deposit,
       });
       return ignoreDeposit();
     }
@@ -238,7 +238,7 @@ export class Relayer {
 
     if (sdkUtils.invalidOutputToken(deposit)) {
       this.logger.debug({
-        at: "Relayer::filterDeposit",
+        ...common,
         message: `Skipping ${srcChain} deposit for invalid output token ${deposit.outputToken}.`,
         txnRef: deposit.txnRef,
       });
@@ -247,9 +247,8 @@ export class Relayer {
 
     if (!this.routeEnabled(originChainId, destinationChainId)) {
       this.logger.debug({
-        at: "Relayer::filterDeposit",
+        ...common,
         message: "Skipping deposit from or to disabled chains.",
-        deposit,
         enabledOriginChains: this.config.relayerOriginChains,
         enabledDestinationChains: this.config.relayerDestinationChains,
       });
@@ -263,17 +262,13 @@ export class Relayer {
       return !address.isValidOn(destinationChainId);
     });
     if (badOriginChainAddrs || badDestChainAddrs) {
-      this.logger.debug({
-        at: "Relayer::filterDeposit",
-        message: `Skipping ${srcChain} deposit due to invalid address.`,
-        deposit,
-      });
+      this.logger.debug({ ...common, message: `Skipping ${srcChain} deposit due to invalid address.` });
       return ignoreDeposit();
     }
 
     if (addressFilter?.has(depositor.toNative()) || addressFilter?.has(recipient.toNative())) {
       this.logger.debug({
-        at: "Relayer::filterDeposit",
+        ...common,
         message: `Ignoring ${srcChain} deposit destined for ${dstChain}.`,
         depositor,
         recipient,
@@ -290,7 +285,7 @@ export class Relayer {
       const effectiveRecipient = isDepositSpedUp(deposit) ? deposit.updatedRecipient : recipient;
       if (!chainAllowedRecipients.has(effectiveRecipient.toNative())) {
         this.logger.debug({
-          at: "Relayer::filterDeposit",
+          ...common,
           message: `Skipping ${dstChain} deposit to non-allow-listed recipient.`,
           depositId,
           destinationChainId,
@@ -314,12 +309,7 @@ export class Relayer {
       !swapSupported &&
       (!isDefined(l1Token) || (relayerTokens.length > 0 && !relayerTokens.some((token) => token.eq(l1Token))))
     ) {
-      this.logger.debug({
-        at: "Relayer::filterDeposit",
-        message: "Skipping deposit for unsupported input token.",
-        deposit,
-        l1Token,
-      });
+      this.logger.debug({ ...common, message: "Skipping deposit for unsupported input token.", l1Token });
       return ignoreDeposit();
     }
 
@@ -328,9 +318,8 @@ export class Relayer {
       !relayerDestinationTokens[destinationChainId].some((token) => token.eq(deposit.outputToken))
     ) {
       this.logger.debug({
-        at: "Relayer::filterDeposit",
+        ...common,
         message: "Skipping deposit for unsupported output token.",
-        deposit,
         outputToken: deposit.outputToken,
       });
       return ignoreDeposit();
@@ -339,7 +328,7 @@ export class Relayer {
     // Skip deposits with unmatching input/output tokens.
     if (!this.clients.inventoryClient.validateOutputToken(deposit)) {
       this.logger.debug({
-        at: "Relayer::filterDeposit",
+        ...common,
         message: "Skipping deposit including in-protocol token swap.",
         originChainId,
         destinationChainId,
@@ -354,7 +343,7 @@ export class Relayer {
     const fillAmountUsd = profitClient.getFillAmountInUsd(deposit);
     if (!isDefined(fillAmountUsd)) {
       this.logger.debug({
-        at: "Relayer::filterDeposit",
+        ...common,
         message: `Skipping ${srcChain} deposit due to uncertain fill amount.`,
         destinationChainId,
         outputToken: deposit.outputToken,
@@ -369,10 +358,9 @@ export class Relayer {
       !isMessageEmpty(resolveDepositMessage(deposit))
     ) {
       this.logger[this.config.sendingRelaysEnabled ? "warn" : "debug"]({
-        at: "Relayer::filterDeposit",
+        ...common,
         message: "Skipping fill for deposit with message",
         depositUpdated: isDepositSpedUp(deposit),
-        deposit,
       });
       return ignoreDeposit();
     }
@@ -381,9 +369,8 @@ export class Relayer {
     // making the same relayer fill a deposit multiple times.
     if (!acceptInvalidFills && invalidFills.some((fill) => fill.relayer.eq(relayer))) {
       this.logger.error({
-        at: "Relayer::filterDeposit",
+        ...common,
         message: "👨‍👧‍👦 Skipping deposit with invalid fills from the same relayer",
-        deposit,
         invalidFills,
         destinationChainId,
       });
@@ -396,7 +383,7 @@ export class Relayer {
     const { latestHeightSearched } = spokePoolClients[originChainId];
     if (latestHeightSearched - blockNumber < minConfirmations) {
       this.logger.debug({
-        at: "Relayer::filterDeposit",
+        ...common,
         message: `Skipping ${srcChain} deposit due to insufficient deposit confirmations.`,
         depositId,
         blockNumber,
@@ -413,7 +400,7 @@ export class Relayer {
     assert(isDefined(currentTime) && isDefined(hubPoolBlockBuffer), "filterDeposit: hubPool state not initialized");
     if (deposit.quoteTimestamp - currentTime > hubPoolBlockBuffer) {
       this.logger.debug({
-        at: "Relayer::filterDeposit",
+        ...common,
         message: `Skipping ${srcChain} deposit due to future quoteTimestamp.`,
         currentTime,
         quoteTimestamp: deposit.quoteTimestamp,
@@ -432,7 +419,7 @@ export class Relayer {
       const limit = acrossApiClient.getLimit(originChainId, l1Token);
       if (acrossApiClient.updatedLimits && inputAmount.gt(limit)) {
         this.logger.warn({
-          at: "Relayer::filterDeposit",
+          ...common,
           message: "😱 Skipping deposit with greater unfilled amount than API suggested limit",
           limit,
           l1Token,
