@@ -77,10 +77,10 @@ export class PaxosTransitL2Bridge extends BaseL2BridgeAdapter {
       userAddress,
       offerAmount: amount,
       offerAsset: this.l2TokenAddress,
-      wantAsset: l1Token.toNative(),
+      wantAsset: this.l1Token.toNative(),
       sourceChainId: this.l2chainId,
       destinationChainId: this.hubChainId,
-      vaultAddress: getPaxosTransitStationAddress(this.l2chainId),
+      spenderAddress: getPaxosTransitStationAddress(this.l2chainId),
     });
 
     const submitOrderTxn = {
@@ -94,7 +94,7 @@ export class PaxosTransitL2Bridge extends BaseL2BridgeAdapter {
       message: `🎰 Withdrew ${getNetworkName(this.l2chainId)} ${this.l2TokenInfo.symbol} to L1 via Paxos Transit`,
       mrkdwn: `Submitted Paxos Transit order to withdraw ${amount.toString()} ${this.l2TokenInfo.symbol} from ${getNetworkName(
         this.l2chainId
-      )} to L1`,
+      )} to mainnet ${this.l1TokenInfo.symbol}`,
     };
     return [submitOrderTxn];
   }

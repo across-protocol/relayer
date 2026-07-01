@@ -39,6 +39,7 @@ import {
   chainHasNativeToken,
   getNativeTokenInfoForChain,
   retry,
+  getMainnetUsdgAddress,
 } from "../utils";
 import { getRedisCache, RedisCache } from "../cache/Redis";
 import { SWAP_ROUTES, SwapRoute, CUSTOM_BRIDGE, CANONICAL_BRIDGE } from "../common";
@@ -112,7 +113,7 @@ export class Refiller {
   }
 
   private _hasMainnetUsdgSweepConfigured(): boolean {
-    const mainnetUsdgAddress = TOKEN_SYMBOLS_MAP.USDG.addresses[CHAIN_IDs.MAINNET];
+    const mainnetUsdgAddress = getMainnetUsdgAddress();
     return this.config.refillEnabledBalances.some(
       ({ chainId, token }) => chainId === CHAIN_IDs.MAINNET && token.toNative() === mainnetUsdgAddress
     );
@@ -150,7 +151,7 @@ export class Refiller {
         case TOKEN_SYMBOLS_MAP.USDH.addresses[CHAIN_IDs.HYPEREVM]:
           refillHandler = this.refillUsdh;
           break;
-        case TOKEN_SYMBOLS_MAP.USDG.addresses[CHAIN_IDs.MAINNET]:
+        case getMainnetUsdgAddress():
           assert(chainId === CHAIN_IDs.MAINNET, "Mainnet USDG sweep must be configured on mainnet");
           refillHandler = this.sweepMainnetUsdgToRobinhood;
           break;
@@ -615,7 +616,7 @@ export class Refiller {
       return;
     }
 
-    const mainnetUsdgAddress = TOKEN_SYMBOLS_MAP.USDG.addresses[CHAIN_IDs.MAINNET];
+    const mainnetUsdgAddress = getMainnetUsdgAddress();
     const rhUsdgAddress = TOKEN_SYMBOLS_MAP.USDG.addresses[CHAIN_IDs.ROBINHOOD];
     const mainnetProvider = this.clients.balanceAllocator.providers[CHAIN_IDs.MAINNET];
     const rhProvider = this.clients.balanceAllocator.providers[CHAIN_IDs.ROBINHOOD];

@@ -185,6 +185,12 @@ export const CONTRACT_ADDRESSES: {
     orbitErc20Gateway_4663: {
       abi: ARBITRUM_ERC20_GATEWAY_L1_ABI,
     },
+    paxosTransitStation: {
+      address: "0x49AAA987b1a7e9E4AE091dcD8332c39F322D7d28",
+    },
+    paxosTransitBoringVault: {
+      address: "0x91fe06c6e9f97e7de4580a280e03046155f8e1e3",
+    },
     orbitOutbox_42161: {
       address: "0x0B9857ae2D4A3DBe74ffE1d7DF045bb7F96E4840",
       abi: ARBITRUM_OUTBOX_ABI,
@@ -450,6 +456,12 @@ export const CONTRACT_ADDRESSES: {
     },
   },
   [CHAIN_IDs.ROBINHOOD]: {
+    paxosTransitStation: {
+      address: "0x49AAA987b1a7e9E4AE091dcD8332c39F322D7d28",
+    },
+    paxosTransitBoringVault: {
+      address: "0x91fe06c6e9f97e7de4580a280e03046155f8e1e3",
+    },
     erc20GatewayRouter: {
       address: "0x1E324B9316138CA9a73F960213621AD1aaf01B89",
       abi: ARBITRUM_ERC20_GATEWAY_ROUTER_L2_ABI,

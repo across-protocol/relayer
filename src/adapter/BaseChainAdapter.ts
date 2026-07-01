@@ -53,7 +53,7 @@ import {
   setL2TokenAllowanceInCache,
   TransferTokenParams,
 } from "./utils";
-import { BaseBridgeAdapter, BridgeTransactionDetails } from "./bridges/BaseBridgeAdapter";
+import { BaseBridgeAdapter, BridgeEvents, BridgeTransactionDetails } from "./bridges/BaseBridgeAdapter";
 import { OutstandingTransfers } from "../interfaces";
 import WETH_ABI from "../common/abi/Weth.json";
 import { BaseL2BridgeAdapter } from "./l2Bridges/BaseL2BridgeAdapter";
@@ -562,15 +562,35 @@ export class BaseChainAdapter {
       const monitoredAddresses = this.monitoredAddresses[l1Token.toNative()];
       await forEachAsync(monitoredAddresses, async (monitoredAddress) => {
         const bridge = this.bridges[l1Token.toNative()];
-        const [depositInitiatedResults, depositFinalizedResults] = await Promise.all([
-          bridge.queryL1BridgeInitiationEvents(l1Token, monitoredAddress, monitoredAddress, l1SearchConfig),
-          bridge.queryL2BridgeFinalizationEvents(l1Token, monitoredAddress, monitoredAddress, l2SearchConfig),
-        ]);
         const ignoredPendingBridgeTxnRefs = await bridge.getIgnoredPendingBridgeTxnRefs(
           this.hubChainId,
           this.chainId,
           monitoredAddress
         );
+
+        let depositInitiatedResults: BridgeEvents | undefined;
+        let depositFinalizedResults: BridgeEvents = {};
+        if (isDefined(bridge.getOutstandingTransfersFromApi)) {
+          try {
+            depositInitiatedResults = await bridge.getOutstandingTransfersFromApi(l1Token, monitoredAddress);
+          } catch (error) {
+            this.logger.warn({
+              at: `${this.adapterName}#getOutstandingCrossChainTransfers`,
+              message: "Failed to query outstanding transfers from API; falling back to on-chain queries",
+              l1Token: l1Token.toNative(),
+              monitoredAddress: monitoredAddress.toNative(),
+              error: stringifyThrownValue(error),
+            });
+          }
+        }
+
+        if (!isDefined(depositInitiatedResults)) {
+          [depositInitiatedResults, depositFinalizedResults] = await Promise.all([
+            bridge.queryL1BridgeInitiationEvents(l1Token, monitoredAddress, monitoredAddress, l1SearchConfig),
+            bridge.queryL2BridgeFinalizationEvents(l1Token, monitoredAddress, monitoredAddress, l2SearchConfig),
+          ]);
+        }
+
         Object.entries(depositInitiatedResults).forEach(([l2Token, depositInitiatedEvents]) => {
           const filteredDepositEvents = (depositInitiatedEvents ?? []).filter(
             (event) => !ignoredPendingBridgeTxnRefs.has(event.txnRef)
