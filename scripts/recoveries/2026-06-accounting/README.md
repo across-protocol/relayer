@@ -71,6 +71,21 @@ If a simulation shows fewer/more than 6 events, a different `message` payload, a
 
 The multisig relayed the root to all 6 spokes, and every `RelayerRefundLeaf` was executed permissionlessly. All 12 `amountToReturn` bridges to the HubPool are initiated; funds then ride each chain's native L2→L1 window before the finalizer claims them to L1.
 
+**Mainnet HubPool execution**: [0x7697a76f…560e29e7](https://etherscan.io/tx/0x7697a76f9f890b775c22c59fee4b65100d27dd392c18c26a25de5e8f560e29e7) — relays the root to all 6 spokes.
+
+### Root delivery (`RelayedRootBundle` per spoke)
+
+| Chain | rootBundleId | Delivery tx |
+| --- | --- | --- |
+| Optimism (10) | 25103 | [0xa1935e05…9c2767f5](https://optimistic.etherscan.io/tx/0xa1935e0574ef1e3a5b1a5199864fc6e9c9bcaf41451b838a48b92b459c2767f5) |
+| Polygon (137) | 25047 | [0xb189917d…869066a9](https://polygonscan.com/tx/0xb189917d20be4380462535fb4c43056ecdc0d3d9379f9b8a88881d68869066a9) |
+| Lens (232) | 3641 | [0xadc62b26…dbc85819](https://explorer.lens.xyz/tx/0xadc62b26162a5e1822bb7b64e9c2b3d862da8f3d6bda2de5ef44d191dbc85819) |
+| World Chain (480) | 17948 | [0x31ea1608…ffc03110](https://worldchain-mainnet-explorer.alchemy.com/tx/0x31ea1608827bf18017a7db936c3ca072a0992b4ca1a5b01add95aae1ffc03110) |
+| Base (8453) | 23879 | [0x17e558e3…1e729061](https://basescan.org/tx/0x17e558e3e960588ed03177b0bca234f585d163f51f36a1a7527539c01e729061) |
+| Arbitrum One (42161) | 25107 | [0x390b9237…66385670](https://arbiscan.io/tx/0x390b923746138772f0b2cc5da9f60f01e794a18f180d830607d6da4966385670) |
+
+### Leaf executions
+
 | Leaf | Chain | Amount | Execution tx |
 | --- | --- | --- | --- |
 | 0 | Optimism (10) | 787.2553 | [0x42947a73…c560b141](https://optimistic.etherscan.io/tx/0x42947a73631a6c4ced993d36e16e8c022aea79b8cfcbd7ffa04fc182c560b141) |
