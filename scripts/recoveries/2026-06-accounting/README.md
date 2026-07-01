@@ -66,3 +66,22 @@ Event signature: `SpokePoolAdminFunctionTriggered(uint256 indexed chainId, bytes
 | 6 | ARB (42161) | `0x000000000000000000000000000000000000000000000000000000000000a4b1` |
 
 If a simulation shows fewer/more than 6 events, a different `message` payload, an emitter other than the HubPool, or any chainId outside the set above, **do not sign**.
+
+## Execution record
+
+The multisig relayed the root to all 6 spokes, and every `RelayerRefundLeaf` was executed permissionlessly. All 12 `amountToReturn` bridges to the HubPool are initiated; funds then ride each chain's native L2→L1 window before the finalizer claims them to L1.
+
+| Leaf | Chain | Amount | Execution tx |
+| --- | --- | --- | --- |
+| 0 | Optimism (10) | 787.2553 | [0x42947a73…c560b141](https://optimistic.etherscan.io/tx/0x42947a73631a6c4ced993d36e16e8c022aea79b8cfcbd7ffa04fc182c560b141) |
+| 1 | Optimism (10) | 348.5436 | [0x72b5dc18…b5d25fa9](https://optimistic.etherscan.io/tx/0x72b5dc188d2c6054f058a73af71e804b7fbf3a6552be187085b97ddcb5d25fa9) |
+| 2 | Optimism (10) | 14900.2593 | [0x8bfd314b…f1ad588f](https://optimistic.etherscan.io/tx/0x8bfd314b1a857056a28968b9f92d836f130841bf7547db4de2d14fe2f1ad588f) |
+| 3 | Optimism (10) | 1716.4785 | [0x1bdb9b83…428ed135](https://optimistic.etherscan.io/tx/0x1bdb9b83ad5d31b88df9a90745d56efeecb5cb5c2d84c5ca106e52f3428ed135) |
+| 4 | Polygon (137) | 4430.1895 | [0xc56f57ab…ecda2670](https://polygonscan.com/tx/0xc56f57abffbd799b03fcee152adc5606b934ea912734623110ae269becda2670) |
+| 5 | Lens (232) | 46185.9779 | [0xc78411ad…953c2140](https://explorer.lens.xyz/tx/0xc78411ad413c7c4b7f0853a74635b7c67345b8299e53b2367f7e8311953c2140) |
+| 6 | World Chain (480) | 940.3824 | [0xd42ba0b5…cf5593b0](https://worldchain-mainnet-explorer.alchemy.com/tx/0xd42ba0b58b6e0dfa0843d21620618c46ab9bdb877a9fdd19d0d760b5cf5593b0) |
+| 7 | Base (8453) | 1273.1531 | [0x49bfd7b6…8adaf8a9](https://basescan.org/tx/0x49bfd7b6d5b67881437875a0237478d5bdd55458c44b4ef49c3e24808adaf8a9) |
+| 8 | Base (8453) | 101.3445 | [0x49bfd7b6…8adaf8a9](https://basescan.org/tx/0x49bfd7b6d5b67881437875a0237478d5bdd55458c44b4ef49c3e24808adaf8a9) |
+| 9 | Base (8453) | 416.3322 | [0x49bfd7b6…8adaf8a9](https://basescan.org/tx/0x49bfd7b6d5b67881437875a0237478d5bdd55458c44b4ef49c3e24808adaf8a9) |
+| 10 | Arbitrum One (42161) | 2391.4547 | [0x8d06ebb6…55c0f9cf](https://arbiscan.io/tx/0x8d06ebb67fb3d00a8e9c9886941ec1adc96a0813bdbf70b8c32d25f055c0f9cf) |
+| 11 | Arbitrum One (42161) | 470.8512 | [0x8d06ebb6…55c0f9cf](https://arbiscan.io/tx/0x8d06ebb67fb3d00a8e9c9886941ec1adc96a0813bdbf70b8c32d25f055c0f9cf) |
