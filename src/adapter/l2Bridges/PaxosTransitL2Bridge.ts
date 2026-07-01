@@ -20,6 +20,10 @@ import {
   paginatedEventQuery,
   toAddressType,
   PaxosTransitClient,
+  listOutstandingPaxosTransitOrders,
+  isPaxosTransitOrderOutstanding,
+  paxosTransitOrderMatchesRoute,
+  getPaxosTransitOutstandingOrderAmountInL1Decimals,
 } from "../../utils";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
 import { AugmentedTransaction } from "../../clients/TransactionClient";
@@ -105,10 +109,45 @@ export class PaxosTransitL2Bridge extends BaseL2BridgeAdapter {
     fromAddress: EvmAddress,
     l2Token: EvmAddress
   ): Promise<BigNumber> {
-    const { l2Signer } = this;
-    assert(isDefined(l2Signer), "PaxosTransitL2Bridge: l2Signer is required");
     assert(l2Token.toNative() === this.l2TokenAddress, `Unsupported L2 token ${l2Token.toNative()}`);
 
+    try {
+      const orders = await listOutstandingPaxosTransitOrders(this.client, fromAddress.toNative());
+      const routeParams = {
+        wantAsset: this.l1Token.toNative(),
+        sourceChainId: this.l2chainId,
+        destinationChainId: this.hubChainId,
+        receiver: fromAddress.toNative(),
+      };
+      return orders
+        .filter(
+          (order) =>
+            paxosTransitOrderMatchesRoute(order, routeParams) &&
+            isPaxosTransitOrderOutstanding(order) &&
+            order.offerAsset.toLowerCase() === this.l2TokenAddress.toLowerCase()
+        )
+        .reduce(
+          (acc, order) =>
+            acc.add(
+              getPaxosTransitOutstandingOrderAmountInL1Decimals(
+                order,
+                this.l1TokenInfo.decimals,
+                this.l2TokenInfo.decimals
+              )
+            ),
+          bnZero
+        );
+    } catch {
+      return this.getL2PendingWithdrawalAmountFromTransferEvents(l2EventConfig, fromAddress);
+    }
+  }
+
+  private async getL2PendingWithdrawalAmountFromTransferEvents(
+    l2EventConfig: EventSearchConfig,
+    fromAddress: EvmAddress
+  ): Promise<BigNumber> {
+    const { l2Signer } = this;
+    assert(isDefined(l2Signer), "PaxosTransitL2Bridge: l2Signer is required");
     const l2Provider = l2Signer.provider;
     assert(isDefined(l2Provider), "PaxosTransitL2Bridge: l2Signer must have a provider");
     const transitStation = getPaxosTransitStationAddress(this.l2chainId);
