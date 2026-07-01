@@ -12,6 +12,30 @@ Therefore, the relayer's finality risk threshold can be customized as well.
 
 The full config can be found in `RelayerConfig.ts`
 
+### Restricting recipients on a destination chain
+
+`RELAYER_ALLOWED_RECIPIENTS_<chainId>` restricts which recipients the relayer will fill for on a given destination
+chain. The value is a JSON string array of recipient addresses, e.g.:
+
+```
+RELAYER_ALLOWED_RECIPIENTS_4663=["0xabc...","0xdef..."]
+```
+
+When an allow-list is configured for a chain, `Relayer::filterDeposit` drops every deposit to that chain whose
+`recipient` is not on the list. Chains without a configured allow-list are unrestricted.
+
+Two deliberate design choices:
+
+- **Deposits carrying a message are always dropped when an allow-list is active.** Such deposits are executed on the
+  destination chain by the recipient contract (typically the `MulticallHandler`), which can forward the funds to
+  arbitrary addresses via its encoded calls. The on-chain `recipient` is therefore not the effective beneficiary, so
+  the allow-list cannot be enforced and the deposit is not filled. (A future enhancement could opt in to validating a
+  `MulticallHandler` message's `fallbackRecipient`, but note that the message's calls can still redirect funds, so
+  that check would be best-effort rather than a guarantee.)
+- **The filter never consults `depositor`.** The depositor is set by the user on the origin chain and is trivially
+  spoofable, so gating on it would provide no access-control guarantee. Only the destination-chain `recipient` — which
+  is enforced on-chain by the fill — is a meaningful control.
+
 ## Constructing a Relayer
 
 The functions in `RelayerClientHelper` provide convenient functions for creating all of the helper clients that the Relayer needs to run, updating and initializing them, and then constructing a new Relayer.

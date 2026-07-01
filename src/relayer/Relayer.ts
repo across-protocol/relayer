@@ -196,6 +196,7 @@ export class Relayer {
     const { acrossApiClient, configStoreClient, hubPoolClient, profitClient, spokePoolClients } = this.clients;
     const {
       addressFilter,
+      allowedRecipients,
       ignoreLimits,
       relayerTokens,
       acceptInvalidFills,
@@ -279,6 +280,32 @@ export class Relayer {
         txnRef: deposit.txnRef,
       });
       return ignoreDeposit();
+    }
+
+    // Enforce the per-destination-chain recipient allow-list, if one is configured for this chain. Only deposits
+    // whose funds are provably delivered to an allow-listed recipient are permitted; everything else is dropped.
+    const chainAllowedRecipients = allowedRecipients?.[destinationChainId];
+    if (isDefined(chainAllowedRecipients)) {
+      // Deposits carrying a message are executed on the destination chain by the recipient contract (typically the
+      // MulticallHandler), which can forward the funds on to arbitrary addresses via its encoded calls. For those the
+      // `recipient` field is not the effective beneficiary, so the allow-list cannot be enforced and the deposit is
+      // dropped. The `depositor` is deliberately NOT consulted: it is set by the user on the origin chain and is
+      // trivially spoofable, so gating on it would provide no access-control guarantee.
+      const depositHasMessage = !isMessageEmpty(resolveDepositMessage(deposit));
+      if (depositHasMessage || !chainAllowedRecipients.has(recipient.toNative())) {
+        this.logger.debug({
+          at: "Relayer::filterDeposit",
+          message: depositHasMessage
+            ? `Skipping ${dstChain} message deposit: recipient allow-list is not enforceable on message executions.`
+            : `Skipping ${dstChain} deposit to non-allow-listed recipient.`,
+          depositId,
+          destinationChainId,
+          recipient,
+          hasMessage: depositHasMessage,
+          txnRef: deposit.txnRef,
+        });
+        return ignoreDeposit();
+      }
     }
 
     // Skip any L1 tokens that are not specified in the config.
