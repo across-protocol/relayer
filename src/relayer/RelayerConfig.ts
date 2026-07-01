@@ -56,8 +56,6 @@ export class RelayerConfig extends CommonConfig {
   readonly relayerMessageGasMultiplier: BigNumber;
   readonly minRelayerFeePct: BigNumber;
   readonly minFillTime: { [chainId: number]: number } = {};
-  // Per-destination-chain recipient allow-lists from RELAYER_ALLOWED_RECIPIENTS_<chainId>. When set, only deposits to
-  // an allow-listed recipient on that chain are filled; unset chains are unrestricted. See Relayer::filterDeposit.
   readonly allowedRecipients: { [chainId: number]: Set<string> } = {};
   readonly acceptInvalidFills: boolean;
   readonly relayerUseInventoryManager: boolean;
