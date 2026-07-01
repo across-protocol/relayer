@@ -14,34 +14,15 @@ The full config can be found in `RelayerConfig.ts`
 
 ### Restricting recipients on a destination chain
 
-`RELAYER_ALLOWED_RECIPIENTS_<chainId>` restricts which recipients the relayer will fill for on a given destination
-chain. The value is a JSON string array of recipient addresses, e.g.:
+`RELAYER_ALLOWED_RECIPIENTS_<chainId>` is a JSON array of recipient addresses the relayer will fill for on that
+destination chain, e.g. `RELAYER_ALLOWED_RECIPIENTS_4663=["0xabc...","0xdef..."]`. When set, `Relayer::filterDeposit`
+drops every deposit to that chain whose recipient is not listed; chains without a list are unrestricted.
 
-```
-RELAYER_ALLOWED_RECIPIENTS_4663=["0xabc...","0xdef..."]
-```
-
-When an allow-list is configured for a chain, `Relayer::filterDeposit` drops every deposit to that chain whose
-recipient is not on the list. Chains without a configured allow-list are unrestricted. The check validates the
-*effective* recipient the fill will actually pay out to: a deposit that has been sped up is filled via
-`fillRelayWithUpdatedDeposit`, which delivers the funds to the depositor-signed `updatedRecipient` rather than the
-original `recipient`, so the allow-list is enforced against `updatedRecipient` when a speed-up is present. This
-prevents a depositor from depositing to an allow-listed recipient and then signing a speed-up that redirects the funds
-to a non-allow-listed address.
-
-Two deliberate design choices:
-
-- **Deposits carrying a message are always dropped when an allow-list is active.** Such deposits are executed on the
-  destination chain by the recipient contract (typically the `MulticallHandler`), which can forward the funds to
-  arbitrary addresses via its encoded calls. The on-chain `recipient` is therefore not the effective beneficiary, so
-  the allow-list cannot be enforced and the deposit is not filled. As with the recipient, the *effective* message is
-  evaluated — a speed-up that adds a message causes the deposit to be dropped, while one that nullifies the original
-  message allows it (subject to the recipient check). (A future enhancement could opt in to validating a
-  `MulticallHandler` message's `fallbackRecipient`, but note that the message's calls can still redirect funds, so
-  that check would be best-effort rather than a guarantee.)
-- **The filter never consults `depositor`.** The depositor is set by the user on the origin chain and is trivially
-  spoofable, so gating on it would provide no access-control guarantee. Only the destination-chain `recipient` — which
-  is enforced on-chain by the fill — is a meaningful control.
+The check evaluates the *effective* recipient the fill pays out to — `updatedRecipient` for sped-up deposits, since
+they fill via `fillRelayWithUpdatedDeposit` — so a speed-up can't redirect funds off the list. Message deposits are
+always dropped: they execute on the recipient contract (e.g. `MulticallHandler`), which can forward funds on, so the
+recipient isn't the effective beneficiary. `depositor` is never consulted — it's user-set on the origin chain and
+spoofable.
 
 ## Constructing a Relayer
 

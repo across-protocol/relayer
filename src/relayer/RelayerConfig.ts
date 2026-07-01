@@ -56,10 +56,8 @@ export class RelayerConfig extends CommonConfig {
   readonly relayerMessageGasMultiplier: BigNumber;
   readonly minRelayerFeePct: BigNumber;
   readonly minFillTime: { [chainId: number]: number } = {};
-  // Per-destination-chain recipient allow-lists, keyed by chain ID and populated from
-  // RELAYER_ALLOWED_RECIPIENTS_<chainId> in validate(). When an allow-list is configured for a chain, the relayer
-  // will only fill deposits whose funds are delivered to an allow-listed recipient on that chain; every other
-  // deposit to that chain is dropped. A chain with no configured allow-list is unrestricted (fill anyone).
+  // Per-destination-chain recipient allow-lists from RELAYER_ALLOWED_RECIPIENTS_<chainId>. When set, only deposits to
+  // an allow-listed recipient on that chain are filled; unset chains are unrestricted. See Relayer::filterDeposit.
   readonly allowedRecipients: { [chainId: number]: Set<string> } = {};
   readonly acceptInvalidFills: boolean;
   readonly relayerUseInventoryManager: boolean;
@@ -469,9 +467,8 @@ export class RelayerConfig extends CommonConfig {
         : process.env["SEND_MESSAGE_RELAYS"] === "true";
       this.sendingMessageRelaysEnabled[chainId] = sendMessageRelays;
 
-      // RELAYER_ALLOWED_RECIPIENTS_<chainId> is a JSON string array of recipient addresses permitted to receive
-      // funds on `chainId`. When set, deposits to `chainId` whose recipient is not on the list are dropped (see
-      // Relayer::filterDeposit). Addresses are normalised to their native representation for O(1) membership checks.
+      // RELAYER_ALLOWED_RECIPIENTS_<chainId>: JSON array of recipients allowed on `chainId` (see
+      // Relayer::filterDeposit). Normalised to native form for O(1) lookups.
       const allowedRecipients = process.env[`RELAYER_ALLOWED_RECIPIENTS_${chainId}`];
       if (isDefined(allowedRecipients)) {
         this.allowedRecipients[chainId] = new Set(

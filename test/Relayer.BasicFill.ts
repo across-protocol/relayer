@@ -1068,9 +1068,8 @@ describe("Relayer: Check for Unfilled Deposits and Fill", function () {
     });
 
     it("Drops deposits sped up to redirect funds to a non-allow-listed recipient", async function () {
-      // The allow-list permits the original recipient (the depositor), but a sped-up deposit is filled via
-      // fillRelayWithUpdatedDeposit, which pays out to updatedRecipient. A depositor must not be able to deposit to an
-      // allow-listed recipient and then sign a speed-up that redirects the funds to a non-allow-listed address.
+      // Original recipient is allow-listed, but the speed-up redirects the payout to a non-allow-listed
+      // updatedRecipient, which is what fillRelayWithUpdatedDeposit pays — so it must be dropped.
       relayerInstance.config.allowedRecipients[destinationChainId] = new Set([
         ethers.utils.getAddress(depositor.address),
       ]);

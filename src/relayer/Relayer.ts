@@ -282,22 +282,13 @@ export class Relayer {
       return ignoreDeposit();
     }
 
-    // Enforce the per-destination-chain recipient allow-list, if one is configured for this chain. Only deposits
-    // whose funds are provably delivered to an allow-listed recipient are permitted; everything else is dropped.
+    // Enforce the per-destination-chain recipient allow-list, if configured. Validate the effective recipient/message
+    // the fill will actually use: sped-up deposits fill via fillRelayWithUpdatedDeposit, so gate on updatedRecipient
+    // (else a speed-up could redirect funds off the list). Message deposits are always dropped since they execute on
+    // the recipient contract (e.g. MulticallHandler), which can forward funds on. depositor is never consulted — it's
+    // user-set on the origin chain and spoofable.
     const chainAllowedRecipients = allowedRecipients?.[destinationChainId];
     if (isDefined(chainAllowedRecipients)) {
-      // Deposits carrying a message are executed on the destination chain by the recipient contract (typically the
-      // MulticallHandler), which can forward the funds on to arbitrary addresses via its encoded calls. For those the
-      // `recipient` field is not the effective beneficiary, so the allow-list cannot be enforced and the deposit is
-      // dropped. The `depositor` is deliberately NOT consulted: it is set by the user on the origin chain and is
-      // trivially spoofable, so gating on it would provide no access-control guarantee.
-      //
-      // A sped-up deposit is filled via fillRelayWithUpdatedDeposit, which delivers the funds to (and executes the
-      // message signed for) `updatedRecipient`/`updatedMessage` rather than the original deposit fields. We therefore
-      // validate the *effective* recipient and message the fill will actually use — resolveDepositMessage() already
-      // returns the updated message, and effectiveRecipient resolves to updatedRecipient when a speed-up is present.
-      // Otherwise a depositor could deposit to an allow-listed recipient and then sign a speed-up that redirects the
-      // funds to a non-allow-listed address, bypassing the allow-list entirely.
       const depositHasMessage = !isMessageEmpty(resolveDepositMessage(deposit));
       const effectiveRecipient = isDepositSpedUp(deposit) ? deposit.updatedRecipient : recipient;
       if (depositHasMessage || !chainAllowedRecipients.has(effectiveRecipient.toNative())) {
