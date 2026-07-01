@@ -1042,14 +1042,15 @@ describe("Relayer: Check for Unfilled Deposits and Fill", function () {
       expect(lastSpyLogIncludes(spy, "Filled v3 deposit")).to.be.true;
     });
 
-    it("Drops message deposits to an allow-list-restricted chain", async function () {
-      // Even with the recipient allow-listed, a deposit carrying a message is executed by the recipient contract
-      // (e.g. the MulticallHandler), which can forward funds elsewhere, so it cannot be validated and must be dropped.
+    it("Applies the allow-list to message deposits by recipient", async function () {
+      // Messages get no special treatment: a message deposit is dropped by the recipient check when its recipient
+      // is not allow-listed, exactly like a plain transfer.
       relayerInstance.config.allowedRecipients[destinationChainId] = new Set([
-        ethers.utils.getAddress(depositor.address),
+        ethers.utils.getAddress(randomAddress()),
       ]);
 
       await depositV3(spokePool_1, destinationChainId, depositor, inputToken, inputAmount, outputToken, outputAmount, {
+        recipient: randomAddress(),
         message: "0x1234",
       });
       await updateAllClients();
@@ -1062,7 +1063,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", function () {
         spy
           .getCalls()
           .find(({ lastArg }) =>
-            lastArg.message.includes(`Skipping ${dstChain} message deposit: recipient allow-list is not enforceable`)
+            lastArg.message.includes(`Skipping ${dstChain} deposit to non-allow-listed recipient.`)
           )
       ).to.not.be.undefined;
     });

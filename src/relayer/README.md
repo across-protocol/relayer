@@ -19,10 +19,9 @@ destination chain, e.g. `RELAYER_ALLOWED_RECIPIENTS_4663=["0xabc...","0xdef..."]
 drops every deposit to that chain whose recipient is not listed; chains without a list are unrestricted.
 
 The check evaluates the *effective* recipient the fill pays out to — `updatedRecipient` for sped-up deposits, since
-they fill via `fillRelayWithUpdatedDeposit` — so a speed-up can't redirect funds off the list. Message deposits are
-always dropped: they execute on the recipient contract (e.g. `MulticallHandler`), which can forward funds on, so the
-recipient isn't the effective beneficiary. `depositor` is never consulted — it's user-set on the origin chain and
-spoofable.
+they fill via `fillRelayWithUpdatedDeposit` — so a speed-up can't redirect funds off the list. `depositor` is never
+consulted; it's user-set on the origin chain and spoofable. Message deposits are gated by recipient like any other:
+allow-list the executing contract (e.g. `MulticallHandler`) to accept them, or leave it off the list to drop them.
 
 ## Constructing a Relayer
 

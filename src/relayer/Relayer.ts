@@ -282,25 +282,19 @@ export class Relayer {
       return ignoreDeposit();
     }
 
-    // Enforce the per-destination-chain recipient allow-list, if configured. Validate the effective recipient/message
-    // the fill will actually use: sped-up deposits fill via fillRelayWithUpdatedDeposit, so gate on updatedRecipient
-    // (else a speed-up could redirect funds off the list). Message deposits are always dropped since they execute on
-    // the recipient contract (e.g. MulticallHandler), which can forward funds on. depositor is never consulted — it's
-    // user-set on the origin chain and spoofable.
+    // Enforce the per-destination-chain recipient allow-list, if configured. Gate on the effective recipient the fill
+    // pays out to — updatedRecipient for sped-up deposits, which fill via fillRelayWithUpdatedDeposit — so a speed-up
+    // can't redirect funds off the list. depositor is never consulted: it's user-set on the origin chain and spoofable.
     const chainAllowedRecipients = allowedRecipients?.[destinationChainId];
     if (isDefined(chainAllowedRecipients)) {
-      const depositHasMessage = !isMessageEmpty(resolveDepositMessage(deposit));
       const effectiveRecipient = isDepositSpedUp(deposit) ? deposit.updatedRecipient : recipient;
-      if (depositHasMessage || !chainAllowedRecipients.has(effectiveRecipient.toNative())) {
+      if (!chainAllowedRecipients.has(effectiveRecipient.toNative())) {
         this.logger.debug({
           at: "Relayer::filterDeposit",
-          message: depositHasMessage
-            ? `Skipping ${dstChain} message deposit: recipient allow-list is not enforceable on message executions.`
-            : `Skipping ${dstChain} deposit to non-allow-listed recipient.`,
+          message: `Skipping ${dstChain} deposit to non-allow-listed recipient.`,
           depositId,
           destinationChainId,
           recipient: effectiveRecipient,
-          hasMessage: depositHasMessage,
           txnRef: deposit.txnRef,
         });
         return ignoreDeposit();
