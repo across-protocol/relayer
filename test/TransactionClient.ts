@@ -3,9 +3,11 @@ import {
   BigNumber,
   ethers,
   isDefined,
+  sendAndConfirmTransaction,
   TransactionReceipt,
   TransactionResponse,
   TransactionSimulationResult,
+  TransactionSubmissionFailedError,
 } from "../src/utils";
 import { CHAIN_ID_TEST_LIST as chainIds } from "./constants";
 import { MockedTransactionClient, txnClientPassResult } from "./mocks/MockTransactionClient";
@@ -236,6 +238,136 @@ describe("TransactionClient", function () {
       expect(txnResponses.length).to.equal(1);
       // wait() was called maxTries times (default is 10).
       expect(waitCalls).to.equal(10);
+    });
+  });
+
+  describe("sendAndConfirmTransaction outcome typing", function () {
+    function makeTxn(chainId: number, result: string): AugmentedTransaction {
+      return {
+        chainId,
+        contract: { address, signer } as Contract,
+        method,
+        args: [{ result }],
+        message: "",
+        mrkdwn: "",
+      };
+    }
+
+    it("Returns confirmed when simulation passes and wait resolves", async function () {
+      const chainId = chainIds[0];
+      txnClient.waitOverride = () => Promise.resolve({} as TransactionReceipt);
+
+      const outcome = await sendAndConfirmTransaction(makeTxn(chainId, txnClientPassResult), txnClient);
+      expect(outcome.status).to.equal("confirmed");
+      if (outcome.status === "confirmed") {
+        expect(outcome.receipt).to.exist;
+      }
+    });
+
+    it("Returns simulation_failed (typed) when willSucceed rejects", async function () {
+      const chainId = chainIds[0];
+      const reason = "Forced simulation failure";
+
+      const outcome = await sendAndConfirmTransaction(makeTxn(chainId, reason), txnClient);
+      expect(outcome.status).to.equal("simulation_failed");
+      if (outcome.status === "simulation_failed") {
+        expect(outcome.reason).to.equal(reason);
+      }
+    });
+
+    it("Returns submission_failed (typed) when on-chain submit returns empty", async function () {
+      const chainId = chainIds[0];
+      // Pass simulation, fail submit by making _getTransactionPromise reject. Then submit() in
+      // TransactionClient catches and returns []; submitTransaction wraps that as the typed
+      // submission failure error which sendAndConfirmTransaction converts to the tagged outcome.
+      const failing: AugmentedTransaction = makeTxn(chainId, "force submit failure");
+      // First simulate must pass so willSucceed reports succeed=true. Override _simulate via
+      // a small lie: stub the mock to pass simulation but still reject the underlying tx.
+      const original = txnClient["_simulate"].bind(txnClient);
+      (txnClient as unknown as { _simulate: typeof original })._simulate = async (txn) => ({
+        transaction: { ...txn, gasLimit: txnClient.randomGasLimit() },
+        succeed: true,
+      });
+      try {
+        const outcome = await sendAndConfirmTransaction(failing, txnClient);
+        expect(outcome.status).to.equal("submission_failed");
+        if (outcome.status === "submission_failed") {
+          expect(outcome.error).to.be.instanceOf(TransactionSubmissionFailedError);
+        }
+      } finally {
+        (txnClient as unknown as { _simulate: typeof original })._simulate = original;
+      }
+    });
+
+    it("Returns execution_reverted when wait() rejects with CALL_EXCEPTION (mined revert)", async function () {
+      const chainId = chainIds[0];
+      // Inner _submit's wait() throws CALL_EXCEPTION (mined revert after pre-flight pass). With
+      // `throwOnError: true`, submit() propagates the error so submitTransaction can distinguish
+      // a mined revert from a stuck-queue placement failure; sendAndConfirmTransaction then maps
+      // it to the `execution_reverted` outcome and the gasless stuck-queue counter does NOT
+      // increment (the tx reached chain — it's not a dispatcher health signal).
+      const original = txnClient["_simulate"].bind(txnClient);
+      (txnClient as unknown as { _simulate: typeof original })._simulate = async (txn) => ({
+        transaction: { ...txn, gasLimit: txnClient.randomGasLimit() },
+        succeed: true,
+      });
+      txnClient.waitOverride = () =>
+        Promise.reject(
+          Object.assign(new Error("CALL_EXCEPTION"), {
+            code: ethers.errors.CALL_EXCEPTION,
+            reason: "revert: state changed",
+          })
+        );
+      try {
+        const outcome = await sendAndConfirmTransaction(makeTxn(chainId, txnClientPassResult), txnClient);
+        expect(outcome.status).to.equal("execution_reverted");
+        if (outcome.status === "execution_reverted") {
+          expect(outcome.reason).to.equal("revert: state changed");
+        }
+      } finally {
+        (txnClient as unknown as { _simulate: typeof original })._simulate = original;
+      }
+    });
+
+    it("Returns skipped when txResponse.wait() rejects after _submit gave up", async function () {
+      const chainId = chainIds[0];
+      // Inner _submit confirmation loop exhausts its retries (10 undefined receipts) and
+      // still returns the TransactionResponse, then the outer wait() in
+      // sendAndConfirmTransaction rejects with a transient provider error. Verify the run
+      // isn't aborted (callers were previously getting `undefined` from a `catch {}` and
+      // we must preserve that "skipped → release locks / retry" path).
+      let waitCalls = 0;
+      txnClient.waitOverride = () => {
+        if (++waitCalls <= 10) {
+          return Promise.resolve(undefined as unknown as TransactionReceipt);
+        }
+        return Promise.reject(new Error("ECONNRESET"));
+      };
+
+      const outcome = await sendAndConfirmTransaction(makeTxn(chainId, txnClientPassResult), txnClient);
+      expect(outcome.status).to.equal("skipped");
+      expect(waitCalls).to.be.greaterThan(10);
+    });
+
+    it("Returns unexpected_error (typed) for non-typed thrown errors", async function () {
+      const chainId = chainIds[0];
+      // Pass-by-throw: have `_simulate` reject with a generic error (e.g. a programming bug
+      // inside `willSucceed`). Callers take in-memory locks before awaiting and rely on a settled
+      // outcome (not a thrown exception) to release them, so `sendAndConfirmTransaction` must
+      // surface a typed outcome rather than rethrowing.
+      const original = txnClient["_simulate"].bind(txnClient);
+      (txnClient as unknown as { _simulate: typeof original })._simulate = async () => {
+        throw new Error("unexpected boom");
+      };
+      try {
+        const outcome = await sendAndConfirmTransaction(makeTxn(chainId, txnClientPassResult), txnClient);
+        expect(outcome.status).to.equal("unexpected_error");
+        if (outcome.status === "unexpected_error") {
+          expect((outcome.error as Error)?.message).to.equal("unexpected boom");
+        }
+      } finally {
+        (txnClient as unknown as { _simulate: typeof original })._simulate = original;
+      }
     });
   });
 });

@@ -56,7 +56,7 @@ import {
   GaslessDepositMessage,
   RelayData,
 } from "../interfaces";
-import { AcrossSwapApiClient, SvmFillerClient, TransactionClient } from "../clients";
+import { AcrossSwapApiClient, AugmentedTransaction, SvmFillerClient, TransactionClient } from "../clients";
 import EIP3009_ABI from "../common/abi/EIP3009.json";
 import {
   buildGaslessDepositTx,
@@ -105,6 +105,11 @@ const stateToStr = (state: MessageState) => MESSAGE_STATES[state] ?? "UNKNOWN";
  * Independent relayer bot which processes EIP-3009 signatures into deposits and corresponding fills.
  */
 export class GaslessRelayer {
+  // Upper bound on how long `waitForDisconnect` will block draining in-flight tracked
+  // submissions before logging the run summary. Long enough for ordinary EVM confirmations to
+  // settle, short enough to keep handover from stalling on a dropped / never-mined transaction.
+  private static readonly SHUTDOWN_DRAIN_TIMEOUT_MS = 60_000;
+
   private abortController = new AbortController();
   private _instanceCoordinator?: InstanceCoordinator;
   private initialized = false;
@@ -146,6 +151,15 @@ export class GaslessRelayer {
   // Tracks whether a fill is currently in progress for a given user/originChainId combo.
   // Keyed by `${authorizer}:${originChainId}`.
   protected fillLock: { [key: string]: string } = {};
+  // Per-(chain, kind) count of on-chain submissions that exhausted TransactionClient retries
+  // after simulation already passed (stuck-queue indicator). Simulation failures and skipped
+  // sends are intentionally excluded. Surfaced once at handover by `logRunSummary`.
+  protected failedSubmissions: { [chainId: number]: { deposit: number; fill: number } } = {};
+  // In-flight `_sendTrackedTx` promises. `evaluateApiSignatures` is scheduled fire-and-forget,
+  // so handover only clears the polling interval; outstanding submissions need to be drained
+  // before `logRunSummary` reads `failedSubmissions`, otherwise the report can miss a stuck
+  // submission whose counter is updated moments after the summary fires.
+  private pendingTrackedSubmissions: Set<Promise<TransactionReceipt | undefined>> = new Set();
 
   private api: AcrossSwapApiClient;
   private _signerAddress?: EvmAddress;
@@ -287,6 +301,33 @@ export class GaslessRelayer {
     // Wait for the instance coordinator to receive a handover signal. Once one is received (or we expire), abort.
     await this.instanceCoordinator.subscribe();
     this.abortController.abort();
+    // Drain in-flight tracked submissions so `logRunSummary` sees their final counter updates.
+    // `_sendTrackedTx` gates on the abort signal, so no new submission is registered after this
+    // point — the set only shrinks. Bounded by SHUTDOWN_DRAIN_TIMEOUT_MS to guarantee handover
+    // completes (and Redis cleanup runs) even when an outer `wait()` hangs on a never-mined tx;
+    // if the timeout fires we log loudly so the operator knows the summary may be partial.
+    const drainDeadline = Date.now() + GaslessRelayer.SHUTDOWN_DRAIN_TIMEOUT_MS;
+    while (this.pendingTrackedSubmissions.size > 0) {
+      const remaining = drainDeadline - Date.now();
+      if (remaining <= 0) {
+        this.logger.warn({
+          at: "GaslessRelayer#waitForDisconnect",
+          message: "Drain timed out with submissions still pending; logRunSummary may miss late updates.",
+          timeoutMs: GaslessRelayer.SHUTDOWN_DRAIN_TIMEOUT_MS,
+          pending: this.pendingTrackedSubmissions.size,
+          notificationPath: "across-error",
+        });
+        break;
+      }
+      let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+      const timeoutPromise = new Promise<void>((resolve) => {
+        timeoutHandle = setTimeout(resolve, remaining);
+      });
+      await Promise.race([Promise.allSettled([...this.pendingTrackedSubmissions]), timeoutPromise]);
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
+      }
+    }
   }
 
   /**
@@ -630,6 +671,13 @@ export class GaslessRelayer {
       const bridgeMessage = depositMessage as GaslessDepositMessage;
 
       do {
+        // Stop the state machine on handover so `waitForDisconnect` can drain in-flight tracked
+        // submissions to a fixed point — otherwise this loop could keep adding new `_sendTrackedTx`
+        // promises after the drain snapshot and the summary would miss them.
+        if (this.abortController.signal.aborted) {
+          log("debug", "Aborted during processing, exiting state loop.");
+          break;
+        }
         // If we are currently processing a fill for the user, then do not process another fill until the first fill is completed.
         if (isDefined(this.fillLock[fillKey]) && this.fillLock[fillKey] !== depositKey) {
           log("debug", `Skipping deposit due to held lock on key ${fillKey} (held by ${this.fillLock[fillKey]})`);
@@ -891,11 +939,7 @@ export class GaslessRelayer {
       mrkdwn,
     };
 
-    const txReceipt = await sendAndConfirmTransaction(
-      gaslessDeposit,
-      this.transactionClient,
-      this.depositSigners.length > 0
-    );
+    const txReceipt = await this._sendTrackedTx(gaslessDeposit, "deposit", this.depositSigners.length > 0);
     if (!isDefined(txReceipt)) {
       this.logger.warn({
         at: "GaslessRelayer#initiateDeposit",
@@ -1006,7 +1050,7 @@ export class GaslessRelayer {
       mrkdwn,
     };
 
-    const txReceipt = await sendAndConfirmTransaction(gaslessFill, this.transactionClient);
+    const txReceipt = await this._sendTrackedTx(gaslessFill, "fill");
     if (!isDefined(txReceipt)) {
       this.logger.warn({
         at: "GaslessRelayer#initiateFill",
@@ -1198,6 +1242,116 @@ export class GaslessRelayer {
 
   private isRefundFlowTestDeposit(outputAmount: RelayData["outputAmount"]): boolean {
     return this.config.refundFlowTestEnabled && outputAmount.eq(MAX_UINT_VAL);
+  }
+
+  /**
+   * Calls {@link sendAndConfirmTransaction} and translates its discriminated outcome into the
+   * legacy `TransactionReceipt | undefined` shape the deposit/fill call sites expect, while
+   * incrementing {@link failedSubmissions} only on `submission_failed`. The exhaustive switch
+   * (including the `never` arm) is the compile-time guarantee that refactors to
+   * {@link TransactionOutcome} cannot silently bypass this tracking.
+   *
+   * The whole call (including the counter update) is registered in
+   * {@link pendingTrackedSubmissions} so {@link waitForDisconnect} can drain it before
+   * {@link logRunSummary} reads `failedSubmissions`.
+   */
+  private _sendTrackedTx(
+    tx: AugmentedTransaction,
+    kind: "deposit" | "fill",
+    useDispatcher = false
+  ): Promise<TransactionReceipt | undefined> {
+    // Hard gate on handover: any caller that passed the do-while abort check but was awaiting
+    // pre-submit work (e.g. `willSucceed`, peripheral lookups) reaches here after the signal
+    // fires. Returning early — *before* registering in `pendingTrackedSubmissions` — means the
+    // drain in `waitForDisconnect` never sees a late addition, so `logRunSummary` reads the
+    // final counter state.
+    if (this.abortController.signal.aborted) {
+      this.logger.debug({
+        at: "GaslessRelayer#_sendTrackedTx",
+        message: "Skipping submission after handover",
+        chainId: tx.chainId,
+        kind,
+      });
+      return Promise.resolve(undefined);
+    }
+    const promise = this._doSendTrackedTx(tx, kind, useDispatcher);
+    this.pendingTrackedSubmissions.add(promise);
+    // Cleanup must not leak an unhandled rejection: `.finally()` re-throws the underlying
+    // rejection on its returned promise; the caller awaits `promise` for the real error,
+    // so the cleanup chain just swallows it via paired `then` handlers.
+    const cleanup = () => {
+      this.pendingTrackedSubmissions.delete(promise);
+    };
+    void promise.then(cleanup, cleanup);
+    return promise;
+  }
+
+  private async _doSendTrackedTx(
+    tx: AugmentedTransaction,
+    kind: "deposit" | "fill",
+    useDispatcher: boolean
+  ): Promise<TransactionReceipt | undefined> {
+    const outcome = await sendAndConfirmTransaction(tx, this.transactionClient, useDispatcher);
+    switch (outcome.status) {
+      case "confirmed":
+        return outcome.receipt;
+      case "skipped":
+      case "simulation_failed":
+        return undefined;
+      case "submission_failed": {
+        const counters = (this.failedSubmissions[tx.chainId] ??= { deposit: 0, fill: 0 });
+        counters[kind] += 1;
+        return undefined;
+      }
+      case "execution_reverted":
+        // A mined revert is a deposit-side issue (state race vs. simulation), not a stuck queue.
+        // Don't increment the paging counter — log the cause so the failure isn't lost.
+        this.logger.warn({
+          at: "GaslessRelayer#_sendTrackedTx",
+          message: "Transaction reverted on-chain after passing simulation",
+          chainId: tx.chainId,
+          kind,
+          reason: outcome.reason,
+        });
+        return undefined;
+      case "unexpected_error":
+        // Distinct from `submission_failed`: not a stuck-queue signal, so don't increment the
+        // page-worthy counter. Log loudly so the underlying bug isn't lost.
+        this.logger.error({
+          at: "GaslessRelayer#_sendTrackedTx",
+          message: "Unexpected error while sending tracked transaction",
+          chainId: tx.chainId,
+          kind,
+          error: outcome.error,
+          notificationPath: "across-error",
+        });
+        return undefined;
+      default: {
+        const _exhaustive: never = outcome;
+        return _exhaustive;
+      }
+    }
+  }
+
+  /**
+   * Logged once after handover. Emits an `error`-level summary (with `notificationPath`
+   * for paging) iff at least one chain saw a stuck-queue submission failure during the run.
+   * No-ops when every chain is clean so a healthy run leaves no extra noise.
+   */
+  public logRunSummary(): void {
+    const failedByChain = Object.entries(this.failedSubmissions)
+      .map(([chainId, counts]) => ({ chainId: Number(chainId), ...counts }))
+      .filter(({ deposit, fill }) => deposit + fill > 0);
+    if (failedByChain.length === 0) {
+      return;
+    }
+    this.logger.error({
+      at: "GaslessRelayer#logRunSummary",
+      message:
+        "Gasless relayer: on-chain transaction submissions failed after passing simulation (stuck queue suspected).",
+      failedByChain,
+      notificationPath: "across-error",
+    });
   }
 
   /*
