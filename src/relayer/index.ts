@@ -1,7 +1,6 @@
 import assert from "assert";
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import {
-  config,
   delay,
   disconnectRedisClients,
   fireAndForget,
@@ -19,13 +18,10 @@ import { RelayerConfig } from "./RelayerConfig";
 import { constructRelayerClients } from "./RelayerClientHelper";
 import { InventoryClientState, isSpokePoolClientWithListener } from "../clients";
 import { updateSpokePoolClients } from "../common";
-config();
+
 let logger: winston.Logger;
 
 const ACTIVE_RELAYER_EXPIRY = 1200; // 20 minutes.
-const { RELAYER_MAX_STARTUP_DELAY = "120" } = process.env;
-
-const maxStartupDelay = Number(RELAYER_MAX_STARTUP_DELAY);
 const abortController = new AbortController();
 
 const sighup = () => {
@@ -49,7 +45,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
   });
 
   const config = new RelayerConfig(process.env);
-  const { botIdentifier, runIdentifier, eventListener, externalListener, pollingDelay } = config;
+  const { botIdentifier, runIdentifier, eventListener, externalListener, maxStartupDelay, pollingDelay } = config;
 
   const loop = pollingDelay > 0;
 

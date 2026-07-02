@@ -1,14 +1,16 @@
 import { createClient, RedisClientType as RedisClient } from "redis";
-import dotenv from "dotenv";
 import winston from "winston";
 import { isDefined } from "./TypeGuards";
-dotenv.config();
 
 export type { RedisClient };
 
-const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
+// Read env at call time so dotenv-loaded values are picked up regardless of import order.
+const getRedisUrl = (): string => process.env.REDIS_URL || "redis://localhost:6379";
 
-export async function connectRedisClient(logger?: winston.Logger, url = REDIS_URL): Promise<RedisClient> {
+export async function connectRedisClient(
+  logger: winston.Logger | undefined,
+  url = getRedisUrl()
+): Promise<RedisClient> {
   const reconnectStrategy = (retries: number, cause: Error): number | Error => {
     // Cap reconnection attempts to avoid livelock.
     const MAX_RETRIES = 10;
@@ -133,7 +135,7 @@ export async function disconnectRedisClient(client: RedisClient, logger?: winsto
 // XREADGROUP monopolise the connection.
 const clients: { [url: string]: Promise<RedisClient> } = {};
 
-export async function getRedisClient(logger?: winston.Logger, url = REDIS_URL): Promise<RedisClient> {
+export async function getRedisClient(logger: winston.Logger | undefined, url = getRedisUrl()): Promise<RedisClient> {
   if (!isDefined(clients[url])) {
     clients[url] = connectRedisClient(logger, url);
   }

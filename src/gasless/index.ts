@@ -1,8 +1,7 @@
-import { winston, config, startupLogLevel, Signer, disconnectRedisClients, getDispatcherKeys } from "../utils";
+import { winston, startupLogLevel, Signer, disconnectRedisClients, getDispatcherKeys } from "../utils";
 import { GaslessRelayer } from "./GaslessRelayer";
 import { GaslessRelayerConfig } from "./GaslessRelayerConfig";
 
-config();
 let logger: winston.Logger;
 
 export async function runGaslessRelayer(_logger: winston.Logger, baseSigner: Signer): Promise<void> {

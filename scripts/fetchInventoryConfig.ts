@@ -1,5 +1,4 @@
 import { writeFile } from "node:fs/promises";
-import { config } from "dotenv";
 import { GoogleAuth } from "google-auth-library";
 import { Logger, waitForLogger, delay, fetchWithTimeout } from "../src/utils";
 
@@ -81,8 +80,6 @@ type ConfigSpec = {
  * - External defined → try fetch; on success write file. On failure: if internal defined → ok (warn); else error.
  */
 async function run(): Promise<number> {
-  config();
-
   const {
     CONFIGURAMA_FOLDER_BASE_URL: configuramaBaseUrl,
     CONFIGURAMA_FOLDER_ENVIRONMENT: configuramaEnv = DEFAULT_ENVIRONMENT,

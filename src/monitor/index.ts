@@ -1,8 +1,8 @@
-import { winston, processEndPollingLoop, config, startupLogLevel, Signer, disconnectRedisClients } from "../utils";
+import { winston, processEndPollingLoop, startupLogLevel, Signer, disconnectRedisClients } from "../utils";
 import { Monitor } from "./Monitor";
 import { MonitorConfig } from "./MonitorConfig";
 import { constructMonitorClients } from "./MonitorClientHelper";
-config();
+
 let logger: winston.Logger;
 
 export async function runMonitor(_logger: winston.Logger, baseSigner: Signer): Promise<void> {

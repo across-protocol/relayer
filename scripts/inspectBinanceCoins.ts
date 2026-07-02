@@ -10,7 +10,7 @@ If your Binance secret is GCKMS-backed, run the script under with-gcp-auth.
 */
 
 import minimist from "minimist";
-import { getBinanceApiClient, getAccountCoins } from "../src/utils/BinanceUtils";
+import { getBinanceApiClient, getAccountCoins } from "../src/utils";
 
 type ParsedArgs = minimist.ParsedArgs;
 

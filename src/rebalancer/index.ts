@@ -6,7 +6,6 @@ import {
   assert,
   BigNumber,
   bnZero,
-  config,
   ConvertDecimals,
   disconnectRedisClients,
   EvmAddress,
@@ -21,7 +20,7 @@ import { CumulativeBalanceRebalancerClient } from "./clients/CumulativeBalanceRe
 import { constructCumulativeBalanceRebalancerClient } from "./RebalancerClientHelper";
 import { RebalancerConfig } from "./RebalancerConfig";
 import { RebalancerAdapter, RebalancerClient } from "./utils/interfaces";
-config();
+
 let logger: winston.Logger;
 
 type RebalancerRunContext = {
