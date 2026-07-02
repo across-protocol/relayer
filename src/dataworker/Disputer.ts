@@ -4,21 +4,31 @@ import { AugmentedTransaction, TransactionClient } from "../clients";
 import {
   assert,
   BigNumber,
+  bnMax,
   bnUint256Max,
   bnZero,
   formatEther,
   getNetworkName,
   isDefined,
+  toBNWei,
   TransactionResponse,
   submitTransaction,
   Provider,
   winston,
 } from "../utils";
 
+// Absolute bond token balance maintenance levels (18 decimals). When the balance drops below
+// trigger, native token is wrapped to restore the balance to target. Unset values fall back to
+// bondMultiplier-based defaults derived from the HubPool bond amount.
+export type BondReserve = { trigger?: BigNumber; target?: BigNumber };
+
 export class Disputer {
   private _bondToken?: Contract;
   protected bondAmount = bnZero;
   protected bondMultiplier: { min: number; target: number };
+  // Native balance is never wrapped below this level; the mint/approve/dispute transactions
+  // themselves need gas.
+  protected nativeGasReserve = toBNWei("0.5");
   protected provider: Provider;
   protected txnClient: TransactionClient;
   protected chain: string;
@@ -38,7 +48,8 @@ export class Disputer {
     protected readonly logger: winston.Logger,
     protected readonly hubPool: Contract,
     readonly signer: Signer,
-    protected readonly simulate = true
+    protected readonly simulate = true,
+    protected readonly bondReserve: BondReserve = {}
   ) {
     this.chain = getNetworkName(chainId);
     this.provider = hubPool.provider;
@@ -55,30 +66,52 @@ export class Disputer {
   async validate(): Promise<void> {
     await this._getOrCreateInitPromise();
 
-    const { bondAmount, logger } = this;
-    const minBondAmount = bondAmount.mul(this.bondMultiplier.min);
+    const { bondAmount, bondReserve, logger } = this;
+    let minBondAmount = bondReserve.trigger ?? bondAmount.mul(this.bondMultiplier.min);
+    let targetBondAmount = bondReserve.target ?? bondAmount.mul(this.bondMultiplier.target);
 
-    // Balance checks.
+    // disputeRootBundle() pulls bondAmount from the disputer, so maintaining a balance or
+    // allowance below it would let validate() pass while the dispute itself reverts. Floor both
+    // levels at bondAmount; it is only known post-init and can change via HubPool.setBond(), so
+    // this cannot be enforced at config parse time.
+    if (minBondAmount.lt(bondAmount)) {
+      logger.warn({
+        at: "Disputer::validate",
+        message: "Configured bond balance trigger is below the HubPool bond amount; flooring at the bond amount.",
+        trigger: formatEther(minBondAmount),
+        bondAmount: formatEther(bondAmount),
+      });
+      minBondAmount = bondAmount;
+    }
+    if (targetBondAmount.lt(minBondAmount)) {
+      targetBondAmount = minBondAmount;
+    }
+
+    // Balance checks. Top up to target when the balance drops below the trigger, wrapping as much
+    // of any shortfall as the native balance permits.
     const balance = await this.balance();
-    const mintAmount = minBondAmount.sub(balance);
-    if (mintAmount.gt(bnZero)) {
+    if (balance.lt(minBondAmount)) {
       const nativeBalance = await this.provider.getBalance(await this.signer.getAddress());
-      if (nativeBalance.gt(mintAmount)) {
+      const shortfall = targetBondAmount.sub(balance);
+      // The native balance may already be below the gas reserve; clamp at zero.
+      const available = bnMax(nativeBalance.sub(this.nativeGasReserve), bnZero);
+      const mintAmount = shortfall.lte(available) ? shortfall : available;
+      if (mintAmount.gt(bnZero)) {
         await this.mintBond(mintAmount);
-      } else {
-        const fmtAmount = formatEther(mintAmount);
+      }
+      if (mintAmount.lt(shortfall)) {
+        const fmtAmount = formatEther(shortfall.sub(mintAmount));
         const message = `Insufficient native token balance to mint ${fmtAmount} bond tokens.`;
-        if (!this.simulate && balance.lt(bondAmount)) {
+        if (!this.simulate && balance.add(mintAmount).lt(bondAmount)) {
           throw new Error(message);
         }
-        logger.warn({ at: "Disputer::validate", message, nativeBalance, mintAmount });
+        logger.warn({ at: "Disputer::validate", message, nativeBalance, shortfall, minted: mintAmount });
       }
     }
 
     // Ensure allowances are in place.
     const allowance = await this.allowance();
-    const minAllowance = bondAmount.mul(this.bondMultiplier.target);
-    if (allowance.lt(minAllowance)) {
+    if (allowance.lt(targetBondAmount)) {
       await this.approve();
     }
   }
