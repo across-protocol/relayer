@@ -233,6 +233,21 @@ accounting) and should not initiate new rebalances.
 The read-only mode still initializes adapters (with an empty route set) so `getPendingRebalances(account)` and
 `getPendingOrders()` remain available without coupling callers to a specific operational rebalancing mode.
 
+Partial-view semantics on adapter failure:
+
+- `BaseRebalancerClient.getPendingRebalances(account)` isolates per-adapter failures. If one configured adapter's
+  pending-state read throws (for example, a transient 502 from a venue read API such as Hyperliquid), the client logs
+  the failure at `error` level (`at: "BaseRebalancerClient#getPendingRebalances"`, including the adapter name) and
+  returns the aggregated pending state from the remaining adapters for that cycle, rather than propagating the error.
+- Consumers (`InventoryClient.update` via `ReadOnlyRebalancerClient`, `Monitor`) therefore see an intentionally
+  partial pending-rebalance view during an adapter outage: the failing adapter's contribution is absent until the
+  next successful read. This is deliberate so a single venue's read-side outage does not gate the relayer's main
+  fill loop. Operators should alert on the new error log to detect persistent adapter outages that would otherwise
+  quietly degrade inventory accounting.
+- Direct adapter callers that bypass `BaseRebalancerClient` (notably the Binance finalizer in
+  `src/finalizer/utils/binance.ts`, which constructs a Binance adapter and calls `getPendingRebalances` on it
+  directly) are unchanged by this isolation: their errors still propagate at the call site.
+
 The OFT and CCTP adapters also expose their pending bridge-pre-deposit Redis schema through `src/rebalancer/clients/CctpOftReadOnlyClient.ts`. Adapter-side bridge accounting uses that readonly reader to ignore rebalancer-owned OFT/CCTP transfers instead of instantiating rebalancer adapters inside `AdapterManager`.
 
 ### Future mode extensibility
