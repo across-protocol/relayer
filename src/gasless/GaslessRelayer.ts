@@ -662,7 +662,8 @@ export class GaslessRelayer {
               this.config.refundFlowTestEnabled,
               this.config.allowedPeggedPairs,
               this.logger,
-              this.config.depositUsdPageThreshold
+              this.config.depositUsdPageThreshold,
+              this.config.depositsOnlyEnabled
             );
             let nextState = MessageState.ERROR;
             if (!valid) {

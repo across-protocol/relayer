@@ -990,6 +990,24 @@ describe("GaslessRelayer", function () {
       expect(n).to.equal(1);
       expect(depositsOnlyRelayer.getMessageState(nonce)).to.equal(MessageState.FILLED);
     });
+
+    it("accepts mismatching token pairs that would be rejected in fill mode", async function () {
+      const msg = makeTestDepositMessage({ inputToken: USDC_MAINNET, outputToken: WETH_BASE });
+      const receipt = makeReceipt();
+      const depositEvent = makeFakeDepositEvent({ inputToken: USDC_MAINNET, outputToken: WETH_BASE });
+
+      depositsOnlyRelayer.queryGaslessApiFn = async () => [msg];
+      depositsOnlyRelayer.initiateDepositFn = async () => receipt;
+      depositsOnlyRelayer.extractDepositFromReceiptFn = () => depositEvent;
+      depositsOnlyRelayer.initiateFillFn = async () => receipt;
+
+      await depositsOnlyRelayer.runEvaluateApiSignatures();
+
+      const nonce = depositNonceFor(depositsOnlyRelayer, msg);
+      expect(depositsOnlyRelayer.getMessageState(nonce)).to.equal(MessageState.FILLED);
+      expect(depositsOnlyRelayer.initiateDepositCalls).to.equal(1);
+      expect(depositsOnlyRelayer.initiateFillCalls).to.equal(0);
+    });
   });
 
   describe("integratorId filters", function () {

@@ -50,6 +50,7 @@ When `ENABLE_DEPOSITS_ONLY=true`:
 - Mark the API message `FILLED` after deposit confirmation.
 - **Do not** submit destination fills (`initiateFill` is never called).
 - Disable the immediate-fill path (`fillImmediate` returns `false`).
+- Skip token-pair and input/output amount validation in `validateDeposit` (fill-side checks do not apply).
 - On startup, an observed origin deposit is enough to mark `FILLED` (destination fill not required).
 
 State path: `INITIAL → DEPOSIT_SUBMIT → DEPOSIT_CONFIRM → FILLED`.

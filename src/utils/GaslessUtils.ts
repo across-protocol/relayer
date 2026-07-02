@@ -642,6 +642,7 @@ export function buildSyntheticDeposit(msg: GaslessDepositMessage): RelayData & {
  * @param allowedPeggedPairs When provided, input/output pairs in this map (e.g. { "USDC": ["USDH"] }) are allowed in addition to same-L1 pairs.
  * @param logger When set and `depositUsdPageThreshold` is positive, may emit `logger.error` for paging when input exceeds threshold (does not change validation result).
  * @param depositUsdPageThreshold USD nominal from config (`RELAYER_GASLESS_DEPOSIT_USD_PAGE_THRESHOLD`); `0` disables. USDC/USDT input treated as ~1 USD per token unit at chain-native decimals.
+ * @param depositsOnlyEnabled When true, skip token-pair and amount checks (origin deposit only; no fill).
  */
 export function validateDeposit(
   originChainId: number,
@@ -653,8 +654,13 @@ export function validateDeposit(
   allowRefundFlowTest = false,
   allowedPeggedPairs: AllowedPeggedPairs = {},
   logger?: winston.Logger,
-  depositUsdPageThreshold = 0
+  depositUsdPageThreshold = 0,
+  depositsOnlyEnabled = false
 ): boolean {
+  if (depositsOnlyEnabled) {
+    return true;
+  }
+
   if (!isAllowedGaslessPair(inputToken, outputToken, originChainId, destinationChainId, allowedPeggedPairs)) {
     return false;
   }
