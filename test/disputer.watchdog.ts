@@ -73,6 +73,22 @@ describe("Disputer: Watchdog", function () {
     expect(balance.eq(target)).to.be.true;
   });
 
+  it("Disputer::validate floors configured levels at the HubPool bond amount", async function () {
+    // Trigger/target below the HubPool bond amount would leave the disputer unable to fund
+    // disputeRootBundle(); both are floored at the bond amount.
+    const hubBond = await hubPool.bondAmount();
+    const custom = new Disputer(chainId, logger, hubPool, signer, simulate, {
+      trigger: hubBond.div(4),
+      target: hubBond.div(2),
+    });
+
+    let balance = await bondToken.balanceOf(signerAddr);
+    await bondToken.connect(signer).transfer(await owner.getAddress(), balance);
+    await custom.validate();
+    balance = await bondToken.balanceOf(signerAddr);
+    expect(balance.eq(hubBond)).to.be.true;
+  });
+
   it("Disputer::validate wraps partially when native balance is insufficient", async function () {
     const trigger = toBNWei(3);
     const target = toBNWei(10);

@@ -40,3 +40,6 @@ Two runtimes invoke it:
 - **Disputer watchdog** (`runDisputerWatchdog()`): always runs with last-resort defaults of
   4x (trigger) and 8x (target) the HubPool bond amount, guaranteeing the watchdog can post a
   dispute bond even if the disputer's maintenance has not run.
+
+In both flows, `Disputer.validate()` floors the trigger and target at the HubPool bond amount,
+since a dispute pulls the full bond amount from the disputer.

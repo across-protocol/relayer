@@ -46,6 +46,7 @@ export class DataworkerConfig extends CommonConfig {
   // the target by wrapping native token. Set the trigger at or above any external balance alerting
   // thresholds so the top-up lands before alerts fire. Unset: no maintenance in the disputer flow;
   // the disputer watchdog retains its own last-resort defaults as multiples of the bond amount.
+  // Levels below the HubPool bond amount are floored at the bond amount at runtime.
   readonly bondBalanceTrigger?: BigNumber;
   readonly bondBalanceTarget?: BigNumber;
 

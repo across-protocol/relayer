@@ -66,8 +66,22 @@ export class Disputer {
     await this._getOrCreateInitPromise();
 
     const { bondAmount, bondReserve, logger } = this;
-    const minBondAmount = bondReserve.trigger ?? bondAmount.mul(this.bondMultiplier.min);
+    let minBondAmount = bondReserve.trigger ?? bondAmount.mul(this.bondMultiplier.min);
     let targetBondAmount = bondReserve.target ?? bondAmount.mul(this.bondMultiplier.target);
+
+    // disputeRootBundle() pulls bondAmount from the disputer, so maintaining a balance or
+    // allowance below it would let validate() pass while the dispute itself reverts. Floor both
+    // levels at bondAmount; it is only known post-init and can change via HubPool.setBond(), so
+    // this cannot be enforced at config parse time.
+    if (minBondAmount.lt(bondAmount)) {
+      logger.warn({
+        at: "Disputer::validate",
+        message: "Configured bond balance trigger is below the HubPool bond amount; flooring at the bond amount.",
+        trigger: formatEther(minBondAmount),
+        bondAmount: formatEther(bondAmount),
+      });
+      minBondAmount = bondAmount;
+    }
     if (targetBondAmount.lt(minBondAmount)) {
       targetBondAmount = minBondAmount;
     }
