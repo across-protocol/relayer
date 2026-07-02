@@ -932,7 +932,7 @@ export class Monitor {
           .sendTransaction(encodedTransaction, { preflightCommitment: "confirmed", encoding: "base64" })
           .send();
 
-        this.logger.info({
+        this.logger.debug({
           at: "Monitor#closePDAs",
           message: `Closed PDA ${fillStatusPda} for fill ${fill.txnRef}`,
         });
@@ -1024,7 +1024,7 @@ export class Monitor {
         if (!this.monitorConfig.sendingTransactionsEnabled) {
           try {
             await simulateSolanaTransaction(txMessage, svmRpc);
-            this.logger.info({
+            this.logger.debug({
               at: "Monitor#closeALTs",
               message: `Simulated closing ALT ${pubkey} (deactivated at slot ${deactivationSlot})`,
             });
@@ -1041,7 +1041,7 @@ export class Monitor {
         try {
           const signature = await sendAndConfirmSolanaTransaction(txMessage, svmRpc);
           closedCount++;
-          this.logger.info({
+          this.logger.debug({
             at: "Monitor#closeALTs",
             message: `Closed ALT ${pubkey} (deactivated at slot ${deactivationSlot})`,
             signature,
