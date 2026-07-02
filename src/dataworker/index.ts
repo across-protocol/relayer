@@ -445,7 +445,10 @@ export async function runDisputerWatchdog(logger: winston.Logger, signer: Signer
 
   const provider = await getProvider(hubChainId, logger);
   const hubPool = getDeployedContract("HubPool", hubChainId).connect(provider);
-  const disputer = new Disputer(hubChainId, logger, hubPool, signer, !enabled);
+  const disputer = new Disputer(hubChainId, logger, hubPool, signer, !enabled, {
+    trigger: config.bondBalanceTrigger,
+    target: config.bondBalanceTarget,
+  });
 
   logger.debug({ at, message: "Starting Disputer Watchdog." });
 

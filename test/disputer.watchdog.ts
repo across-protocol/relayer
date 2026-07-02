@@ -43,6 +43,56 @@ describe("Disputer: Watchdog", function () {
     await disputer.validate();
   });
 
+  it("Disputer::validate tops up to the default target", async function () {
+    // beforeEach validate() found a zero balance and topped up to the default target (8x bond).
+    // Note: HubPool.setBond() stores the configured bond amount plus the OO final fee.
+    const hubBond = await hubPool.bondAmount();
+    const balance = await bondToken.balanceOf(signerAddr);
+    expect(balance.eq(hubBond.mul(8))).to.be.true;
+
+    // A subsequent validate() is a no-op: balance is at target, above the trigger.
+    await disputer.validate();
+    expect((await bondToken.balanceOf(signerAddr)).eq(balance)).to.be.true;
+  });
+
+  it("Disputer::validate respects configured trigger and target", async function () {
+    const trigger = toBNWei(3);
+    const target = toBNWei(5);
+    const custom = new Disputer(chainId, logger, hubPool, signer, simulate, { trigger, target });
+
+    // Balance (8x bond from beforeEach) is above the trigger; no mint.
+    const initialBalance = await bondToken.balanceOf(signerAddr);
+    await custom.validate();
+    let balance = await bondToken.balanceOf(signerAddr);
+    expect(balance.eq(initialBalance)).to.be.true;
+
+    // Drain below the trigger; validate() restores the balance to target.
+    await bondToken.connect(signer).transfer(await owner.getAddress(), balance);
+    await custom.validate();
+    balance = await bondToken.balanceOf(signerAddr);
+    expect(balance.eq(target)).to.be.true;
+  });
+
+  it("Disputer::validate wraps partially when native balance is insufficient", async function () {
+    const trigger = toBNWei(3);
+    const target = toBNWei(10);
+    const custom = new Disputer(chainId, logger, hubPool, signer, simulate, { trigger, target });
+
+    let balance = await bondToken.balanceOf(signerAddr);
+    await bondToken.connect(signer).transfer(await owner.getAddress(), balance);
+
+    const originalNativeBalance = await ethers.provider.getBalance(signerAddr);
+    try {
+      // 2.5 native available, 0.5 reserved for gas => only 2 of the 10 target can be wrapped.
+      await ethers.provider.send("hardhat_setBalance", [signerAddr, toBNWei("2.5").toHexString()]);
+      await custom.validate();
+      balance = await bondToken.balanceOf(signerAddr);
+      expect(balance.eq(toBNWei(2))).to.be.true;
+    } finally {
+      await ethers.provider.send("hardhat_setBalance", [signerAddr, originalNativeBalance.toHexString()]);
+    }
+  });
+
   it("Disputer::mintBond", async function () {
     let balance = await bondToken.balanceOf(signerAddr);
     expect(balance.gt(bnZero)).to.be.true;

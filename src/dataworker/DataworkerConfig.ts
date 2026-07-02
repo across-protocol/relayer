@@ -1,5 +1,5 @@
 import { CommonConfig, ProcessEnv } from "../common";
-import { assert, getArweaveJWKSigner, parseJson, isDefined } from "../utils";
+import { assert, BigNumber, getArweaveJWKSigner, parseJson, isDefined, toBNWei } from "../utils";
 
 export class DataworkerConfig extends CommonConfig {
   readonly minChallengeLeadTime: number;
@@ -41,6 +41,13 @@ export class DataworkerConfig extends CommonConfig {
   // Used to instruct the dataworker to load data from arweave in times when doing so is optional (i.e. execution).
   readonly loadArweaveData: boolean | undefined;
 
+  // Disputer watchdog bond maintenance levels, denominated in whole bond tokens (e.g. "15" = 15 ABT).
+  // When the bond token balance drops below the trigger, native token is wrapped to restore the
+  // balance to the target. Set the trigger at or above any external balance alerting thresholds so
+  // the watchdog tops up before alerts fire. Unset: defaults to multiples of the HubPool bond amount.
+  readonly bondBalanceTrigger?: BigNumber;
+  readonly bondBalanceTarget?: BigNumber;
+
   constructor(env: ProcessEnv) {
     const {
       MAX_POOL_REBALANCE_LEAF_SIZE_OVERRIDE,
@@ -61,6 +68,8 @@ export class DataworkerConfig extends CommonConfig {
       AWAIT_CHALLENGE_PERIOD = "false",
       DISPUTE_COOLDOWN,
       LOAD_ARWEAVE_DATA,
+      BOND_BALANCE_TRIGGER,
+      BOND_BALANCE_TARGET,
     } = env;
     super(env, { botIdentifier: "across-dataworker" });
 
@@ -68,6 +77,16 @@ export class DataworkerConfig extends CommonConfig {
     this.awaitChallengePeriod = AWAIT_CHALLENGE_PERIOD === "true";
     this.disputeCooldown = Number(DISPUTE_COOLDOWN ?? 120);
     this.loadArweaveData = isDefined(LOAD_ARWEAVE_DATA) ? LOAD_ARWEAVE_DATA === "true" : undefined;
+
+    this.bondBalanceTrigger = BOND_BALANCE_TRIGGER ? toBNWei(BOND_BALANCE_TRIGGER) : undefined;
+    this.bondBalanceTarget = BOND_BALANCE_TARGET ? toBNWei(BOND_BALANCE_TARGET) : undefined;
+    if (isDefined(this.bondBalanceTarget)) {
+      assert(isDefined(this.bondBalanceTrigger), "BOND_BALANCE_TARGET requires BOND_BALANCE_TRIGGER");
+      assert(
+        this.bondBalanceTarget.gte(this.bondBalanceTrigger),
+        "BOND_BALANCE_TARGET must be >= BOND_BALANCE_TRIGGER"
+      );
+    }
 
     this.bufferToPropose = BUFFER_TO_PROPOSE ? Number(BUFFER_TO_PROPOSE) : (20 * 60) / 15; // 20 mins of blocks;
     // Should we assert that the leaf count caps are > 0?
