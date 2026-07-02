@@ -24,7 +24,11 @@ import {
   toBNWei,
   TOKEN_SYMBOLS_MAP,
 } from "../src/utils";
-import { isStablecoin, MAX_EXCLUSIVITY_PERIOD_SECONDS } from "../src/utils/GaslessUtils";
+import {
+  GASLESS_DEADLINE_BUFFER_SECONDS,
+  isStablecoin,
+  MAX_EXCLUSIVITY_PERIOD_SECONDS,
+} from "../src/utils/GaslessUtils";
 import { createSpyLogger, expect, FakeContract, smock, ethers, toBN } from "./utils";
 
 // Minimal 65-byte hex signature.
@@ -99,9 +103,11 @@ class TestableGaslessRelayer extends GaslessRelayer {
       destinationChainId: number;
       exclusivityParameter: number;
     },
-    spokePool: string
+    spokePool: string,
+    submissionDeadline = Number.MAX_SAFE_INTEGER,
+    depositObserved = false
   ): boolean {
-    return this.fillImmediate(deposit, spokePool);
+    return this.fillImmediate(deposit, spokePool, submissionDeadline, depositObserved);
   }
   public getDepositKey(token: string, originChainId: number, depositId: string): string {
     return this._getDepositKey(token, originChainId, depositId);
@@ -1202,6 +1208,58 @@ describe("GaslessRelayer", function () {
         );
         expect(result).to.be.true;
       });
+
+      it("Returns false when submissionDeadline within buffer and deposit not on chain", function () {
+        process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`] = "10";
+        const result = relayer.testFillImmediate(
+          {
+            originChainId: ORIGIN_CHAIN_ID,
+            destinationChainId: DESTINATION_CHAIN_ID,
+            outputToken: EvmAddress.from(USDC_BASE),
+            outputAmount: toBN("1000000"),
+            exclusivityParameter: 1700000000,
+          },
+          fakeSpokePoolAddress,
+          getCurrentTime() + Math.floor(GASLESS_DEADLINE_BUFFER_SECONDS / 2),
+          false
+        );
+        expect(result).to.be.false;
+      });
+
+      it("Returns true when submissionDeadline within buffer but deposit already on chain", function () {
+        process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${ORIGIN_CHAIN_ID}`] = "10";
+        const result = relayer.testFillImmediate(
+          {
+            originChainId: ORIGIN_CHAIN_ID,
+            destinationChainId: DESTINATION_CHAIN_ID,
+            outputToken: EvmAddress.from(USDC_BASE),
+            outputAmount: toBN("1000000"),
+            exclusivityParameter: 1700000000,
+          },
+          fakeSpokePoolAddress,
+          getCurrentTime() + Math.floor(GASLESS_DEADLINE_BUFFER_SECONDS / 2),
+          true
+        );
+        expect(result).to.be.true;
+      });
+    });
+
+    it("Standard path: ERROR when fillDeadline within buffer", async function () {
+      // fillDeadline is not yet elapsed but has < buffer remaining. Submitting now risks an
+      // unfillable deposit (deposit lands but fill window closes before we can fill).
+      const msg = makeTestDepositMessage({
+        inputAmount: "20000000",
+        outputAmount: "19000000",
+        fillDeadline: getCurrentTime() + Math.floor(GASLESS_DEADLINE_BUFFER_SECONDS / 2),
+      });
+      const nonce = depositNonceFor(relayer, msg);
+
+      relayer.queryGaslessApiFn = async () => [msg];
+
+      await relayer.runEvaluateApiSignatures();
+
+      expect(relayer.getMessageState(nonce)).to.equal(MessageState.ERROR);
+      expect(relayer.initiateDepositCalls).to.equal(0);
     });
   });
 });
