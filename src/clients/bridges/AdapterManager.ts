@@ -39,9 +39,15 @@ export class AdapterManager {
 
   // Some L2's canonical bridges send ETH, not WETH, over the canonical bridges, resulting in recipient addresses
   // receiving ETH that needs to be wrapped on the L2. This array contains the chainIds of the chains that this
-  // manager will attempt to wrap ETH on into WETH. This list also includes chains like Arbitrum where the relayer is
-  // expected to receive ETH as a gas refund from an L1 to L2 deposit that was intended to rebalance inventory.
-  private chainsToWrapEtherOn = [...spokesThatHoldNativeTokens, CHAIN_IDs.ARBITRUM, CHAIN_IDs.MAINNET];
+  // manager will attempt to wrap ETH on into WETH. This list also includes Orbit chains (Arbitrum, Robinhood)
+  // where the relayer is expected to receive ETH as a retryable-ticket gas refund from an L1 to L2 deposit that
+  // was intended to rebalance inventory.
+  private chainsToWrapEtherOn = [
+    ...spokesThatHoldNativeTokens,
+    CHAIN_IDs.ARBITRUM,
+    CHAIN_IDs.ROBINHOOD,
+    CHAIN_IDs.MAINNET,
+  ];
   private _spokePoolManager?: SpokePoolManager;
   // spokePoolManager is populated by the constructor unless `spokePoolClients` is missing, in which case the
   // adapter manager is constructed in a partial state. Reads pre-init throw, writes go through the setter.
