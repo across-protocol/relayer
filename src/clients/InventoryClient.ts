@@ -270,6 +270,15 @@ export class InventoryClient {
    * @param chainId Chain to query token balance on.
    * @param l1Token L1 token to query on chainId (after mapping).
    * @param l2Token Optional l2 token address to narrow the balance reporting.
+   * @param ignoreL1ToL2PendingAmount If true, exclude virtual inbound balance that hasn't physically landed
+   *   on the target chain yet. Currently two sources contribute virtual inbound: canonical L1→L2 transfers
+   *   from `crossChainTransferClient`, and rebalancer-service pending rebalances from `pendingRebalances`.
+   *   Both inbound sources are excluded together so callers that want a liquidity-faithful view see the
+   *   same picture regardless of which subsystem initiated the in-flight inbound. Negative
+   *   `pendingRebalances` entries are preserved: adapters such as the Hyperliquid stablecoin swap subtract
+   *   already-finalized intermediate withdrawals from the destination chain to reserve liquid funds for the
+   *   onward bridge step, and treating those reservations as excess would let `withdrawExcessBalances` pull
+   *   them away from the pending rebalance.
    * @returns Balance of l1Token on chainId.
    */
   protected getBalanceOnChain(
@@ -296,7 +305,14 @@ export class InventoryClient {
     }
 
     // Add in any pending swap rebalances. Pending Rebalances are currently only supported for the canonical L2 tokens
-    // mapped to each L1 token (i.e. the L2 token for an L1 token returned by getRemoteTokenForL1Token())
+    // mapped to each L1 token (i.e. the L2 token for an L1 token returned by getRemoteTokenForL1Token()).
+    // When `ignoreL1ToL2PendingAmount` is set, drop positive entries for the same reason we skip
+    // `crossChainTransferClient` pending transfers below: they inflate the chain's perceived balance with
+    // in-flight inbound that hasn't physically arrived, which can cause `withdrawExcessBalances` to size a
+    // withdraw that the on-chain ERC20 balance cannot cover. Negative entries are preserved because adapters
+    // use them to reserve already-arrived intermediate funds for a still-pending onward bridge step (e.g.
+    // `HyperliquidStablecoinSwapAdapter` subtracts finalized Hypercore withdrawals from HyperEVM); ignoring
+    // those would let `withdrawExcessBalances` count the reserved balance as excess.
     const pendingRebalancesForChain = this.pendingRebalances[chainId];
     const canonicalL2Token = getRemoteTokenForL1Token(l1Token, chainId, this.hubPoolClient.chainId);
     if (
@@ -307,7 +323,9 @@ export class InventoryClient {
       const { decimals: l2TokenDecimals } = this.getTokenInfo(canonicalL2Token, chainId);
       const pendingRebalancesForToken = pendingRebalancesForChain[l1TokenSymbol];
       if (isDefined(pendingRebalancesForToken)) {
-        balance = balance.add(sdkUtils.ConvertDecimals(l2TokenDecimals, l1TokenDecimals)(pendingRebalancesForToken));
+        const includedAmount =
+          ignoreL1ToL2PendingAmount && pendingRebalancesForToken.gt(bnZero) ? bnZero : pendingRebalancesForToken;
+        balance = balance.add(sdkUtils.ConvertDecimals(l2TokenDecimals, l1TokenDecimals)(includedAmount));
       }
     }
 

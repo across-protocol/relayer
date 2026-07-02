@@ -84,8 +84,13 @@ export class MockInventoryClient extends InventoryClient {
     this.balanceOnChain = newBalance;
   }
 
-  override getBalanceOnChain(chainId: number, l1Token: string, l2Token?: string): BigNumber {
-    return this.balanceOnChain ?? super.getBalanceOnChain(chainId, l1Token, l2Token);
+  override getBalanceOnChain(
+    chainId: number,
+    l1Token: string,
+    l2Token?: string,
+    ignoreL1ToL2PendingAmount = false
+  ): BigNumber {
+    return this.balanceOnChain ?? super.getBalanceOnChain(chainId, l1Token, l2Token, ignoreL1ToL2PendingAmount);
   }
 
   setTokenMapping(tokenMapping: TokenMapping): void {
