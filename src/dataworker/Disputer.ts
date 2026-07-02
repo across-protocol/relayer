@@ -4,6 +4,7 @@ import { AugmentedTransaction, TransactionClient } from "../clients";
 import {
   assert,
   BigNumber,
+  bnMax,
   bnUint256Max,
   bnZero,
   formatEther,
@@ -92,19 +93,19 @@ export class Disputer {
     if (balance.lt(minBondAmount)) {
       const nativeBalance = await this.provider.getBalance(await this.signer.getAddress());
       const shortfall = targetBondAmount.sub(balance);
-      const available = nativeBalance.sub(this.nativeGasReserve);
+      // The native balance may already be below the gas reserve; clamp at zero.
+      const available = bnMax(nativeBalance.sub(this.nativeGasReserve), bnZero);
       const mintAmount = shortfall.lte(available) ? shortfall : available;
       if (mintAmount.gt(bnZero)) {
         await this.mintBond(mintAmount);
       }
       if (mintAmount.lt(shortfall)) {
-        const minted = mintAmount.gt(bnZero) ? mintAmount : bnZero;
-        const fmtAmount = formatEther(shortfall.sub(minted));
+        const fmtAmount = formatEther(shortfall.sub(mintAmount));
         const message = `Insufficient native token balance to mint ${fmtAmount} bond tokens.`;
-        if (!this.simulate && balance.add(minted).lt(bondAmount)) {
+        if (!this.simulate && balance.add(mintAmount).lt(bondAmount)) {
           throw new Error(message);
         }
-        logger.warn({ at: "Disputer::validate", message, nativeBalance, shortfall, minted });
+        logger.warn({ at: "Disputer::validate", message, nativeBalance, shortfall, minted: mintAmount });
       }
     }
 

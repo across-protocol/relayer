@@ -109,6 +109,25 @@ describe("Disputer: Watchdog", function () {
     }
   });
 
+  it("Disputer::validate warns without throwing when the native balance is below the gas reserve", async function () {
+    // Bond balance covers a dispute (>= bondAmount) but sits below the trigger, and the native
+    // balance is below the gas reserve so nothing can be wrapped. validate() must warn and
+    // proceed; the watchdog can still fund one dispute.
+    const hubBond = await hubPool.bondAmount();
+    let balance = await bondToken.balanceOf(signerAddr);
+    await bondToken.connect(signer).transfer(await owner.getAddress(), balance.sub(hubBond.mul(2)));
+
+    const originalNativeBalance = await ethers.provider.getBalance(signerAddr);
+    try {
+      await ethers.provider.send("hardhat_setBalance", [signerAddr, toBNWei("0.25").toHexString()]);
+      await disputer.validate();
+      balance = await bondToken.balanceOf(signerAddr);
+      expect(balance.eq(hubBond.mul(2))).to.be.true;
+    } finally {
+      await ethers.provider.send("hardhat_setBalance", [signerAddr, originalNativeBalance.toHexString()]);
+    }
+  });
+
   it("Disputer::mintBond", async function () {
     let balance = await bondToken.balanceOf(signerAddr);
     expect(balance.gt(bnZero)).to.be.true;
