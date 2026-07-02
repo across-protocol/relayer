@@ -58,7 +58,7 @@ Use this when another relayer or process is responsible for filling, and this bo
 
 ### Integrator ID filters (mutually exclusive)
 
-Filter API messages by `integratorId` (2-byte hex tag on the deposit, e.g. `0xabcd`). Matching is case-insensitive.
+Filter API messages by `integratorId` (2-byte hex tag on the deposit, e.g. `0xabcd`). IDs are normalized to lowercase `0x` + 4 hex chars before matching; optional `0x` prefix and letter casing are ignored (same rules as `tagIntegratorId` in `GaslessUtils.ts`).
 
 **Only one** of these may be set; setting both causes config construction to throw.
 

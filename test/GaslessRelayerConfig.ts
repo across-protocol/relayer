@@ -18,7 +18,7 @@ describe("GaslessRelayerConfig integrator filters", function () {
   it("parses RELAYER_GASLESS_ALLOWED_INTEGRATOR_IDS", function () {
     const config = new GaslessRelayerConfig({
       ...baseEnv,
-      RELAYER_GASLESS_ALLOWED_INTEGRATOR_IDS: '["0xABCD","0x1234"]',
+      RELAYER_GASLESS_ALLOWED_INTEGRATOR_IDS: '["0xABCD","1234"]',
     });
     expect(config.allowedIntegratorIds).to.deep.equal(new Set(["0xabcd", "0x1234"]));
     expect(config.blockedIntegratorIds).to.equal(undefined);
@@ -27,10 +27,20 @@ describe("GaslessRelayerConfig integrator filters", function () {
   it("parses RELAYER_GASLESS_BLOCKED_INTEGRATOR_IDS", function () {
     const config = new GaslessRelayerConfig({
       ...baseEnv,
-      RELAYER_GASLESS_BLOCKED_INTEGRATOR_IDS: '["0xdead"]',
+      RELAYER_GASLESS_BLOCKED_INTEGRATOR_IDS: '["DEAD"]',
     });
     expect(config.blockedIntegratorIds).to.deep.equal(new Set(["0xdead"]));
     expect(config.allowedIntegratorIds).to.equal(undefined);
+  });
+
+  it("throws for invalid integrator IDs in env", function () {
+    expect(
+      () =>
+        new GaslessRelayerConfig({
+          ...baseEnv,
+          RELAYER_GASLESS_BLOCKED_INTEGRATOR_IDS: '["0xdeadbeef"]',
+        })
+    ).to.throw('Invalid integrator ID in RELAYER_GASLESS_BLOCKED_INTEGRATOR_IDS: "0xdeadbeef"');
   });
 
   it("throws when both integrator filter env vars are set", function () {

@@ -135,15 +135,27 @@ export function isAllowedGaslessPair(
 }
 
 /**
+ * Normalizes a 2-byte integrator ID to lowercase `0x` + 4 hex chars.
+ * Accepts optional `0x` prefix and any hex letter casing. Returns undefined when invalid.
+ */
+export function normalizeIntegratorId(integratorId: string): string | undefined {
+  const stripped = integratorId.replace(/^0x/i, "");
+  const lowered = stripped.toLowerCase();
+  if (lowered.length !== 4 || !/^[0-9a-f]{4}$/.test(lowered)) {
+    return undefined;
+  }
+  return `0x${lowered}`;
+}
+
+/**
  * Appends `[delimiter][integratorId]` to encoded calldata.
  * integratorId must be a hex string representing exactly 2 bytes (e.g. "0xABCD").
  */
 export function tagIntegratorId(txData: string, integratorId: string): string {
-  const stripped = integratorId.startsWith("0x") ? integratorId.slice(2) : integratorId;
-  if (stripped.length !== 4 || !/^[0-9a-fA-F]{4}$/.test(stripped)) {
+  const normalized = normalizeIntegratorId(integratorId);
+  if (!normalized) {
     throw new Error(`integratorId must be exactly 2 bytes (4 hex chars), got "${integratorId}"`);
   }
-  const normalized = "0x" + stripped;
   return ethers.utils.hexConcat([txData, DOMAIN_CALLDATA_DELIMITER, normalized]);
 }
 

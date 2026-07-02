@@ -70,6 +70,7 @@ import {
   isAllowedGaslessPair,
   isExclusivityRelative,
   isStablecoin,
+  normalizeIntegratorId,
   restructureGaslessDeposits,
   validateDeposit,
 } from "../utils/GaslessUtils";
@@ -1057,7 +1058,7 @@ export class GaslessRelayer {
     }
 
     return deposits.filter((deposit) => {
-      const integratorId = deposit.integratorId?.toLowerCase();
+      const integratorId = isDefined(deposit.integratorId) ? normalizeIntegratorId(deposit.integratorId) : undefined;
       if (isDefined(allowedIntegratorIds)) {
         const allowed = isDefined(integratorId) && allowedIntegratorIds.has(integratorId);
         if (!allowed) {

@@ -1,6 +1,7 @@
 import assert from "assert";
 import { CommonConfig, ProcessEnv } from "../common";
 import { isDefined, parseJson } from "../utils";
+import { normalizeIntegratorId } from "../utils/GaslessUtils";
 
 /**
  * Allowed pegged token pairs for gasless deposits/fills. Same shape as PEGGED_TOKEN_PRICES:
@@ -109,12 +110,26 @@ export class GaslessRelayerConfig extends CommonConfig {
     );
     if (hasAllowedIntegratorFilter) {
       this.allowedIntegratorIds = new Set(
-        parseJson.stringArray(RELAYER_GASLESS_ALLOWED_INTEGRATOR_IDS).map((integratorId) => integratorId.toLowerCase())
+        parseJson.stringArray(RELAYER_GASLESS_ALLOWED_INTEGRATOR_IDS).map((integratorId) => {
+          const normalized = normalizeIntegratorId(integratorId);
+          assert(
+            isDefined(normalized),
+            `Invalid integrator ID in RELAYER_GASLESS_ALLOWED_INTEGRATOR_IDS: "${integratorId}"`
+          );
+          return normalized;
+        })
       );
     }
     if (hasBlockedIntegratorFilter) {
       this.blockedIntegratorIds = new Set(
-        parseJson.stringArray(RELAYER_GASLESS_BLOCKED_INTEGRATOR_IDS).map((integratorId) => integratorId.toLowerCase())
+        parseJson.stringArray(RELAYER_GASLESS_BLOCKED_INTEGRATOR_IDS).map((integratorId) => {
+          const normalized = normalizeIntegratorId(integratorId);
+          assert(
+            isDefined(normalized),
+            `Invalid integrator ID in RELAYER_GASLESS_BLOCKED_INTEGRATOR_IDS: "${integratorId}"`
+          );
+          return normalized;
+        })
       );
     }
   }

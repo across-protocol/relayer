@@ -1034,6 +1034,42 @@ describe("GaslessRelayer", function () {
       const filtered = filterRelayer.runFilterDepositsByIntegratorId([allowed, blocked, missing]);
       expect(filtered).to.deep.equal([allowed, missing]);
     });
+
+    it("block-list matches unprefixed API integratorIds against prefixed config", async function () {
+      const { spyLogger } = createSpyLogger();
+      const [signer] = await ethers.getSigners();
+      const config = new GaslessRelayerConfig({
+        RELAYER_TOKEN_SYMBOLS: '["USDC"]',
+        RELAYER_ORIGIN_CHAINS: `[${ORIGIN_CHAIN_ID}]`,
+        RELAYER_DESTINATION_CHAINS: `[${DESTINATION_CHAIN_ID}]`,
+        API_GASLESS_ENDPOINT: "http://127.0.0.1",
+        SEND_TRANSACTIONS: "true",
+        RELAYER_GASLESS_BLOCKED_INTEGRATOR_IDS: '["0xdead"]',
+      });
+      const filterRelayer = new TestableGaslessRelayer(spyLogger, config, signer, []);
+
+      const blocked = makeTestDepositMessage({ depositId: "43" }, {}, "DEAD");
+      const filtered = filterRelayer.runFilterDepositsByIntegratorId([blocked]);
+      expect(filtered).to.deep.equal([]);
+    });
+
+    it("allow-list matches prefixed API integratorIds against unprefixed config", async function () {
+      const { spyLogger } = createSpyLogger();
+      const [signer] = await ethers.getSigners();
+      const config = new GaslessRelayerConfig({
+        RELAYER_TOKEN_SYMBOLS: '["USDC"]',
+        RELAYER_ORIGIN_CHAINS: `[${ORIGIN_CHAIN_ID}]`,
+        RELAYER_DESTINATION_CHAINS: `[${DESTINATION_CHAIN_ID}]`,
+        API_GASLESS_ENDPOINT: "http://127.0.0.1",
+        SEND_TRANSACTIONS: "true",
+        RELAYER_GASLESS_ALLOWED_INTEGRATOR_IDS: '["abcd"]',
+      });
+      const filterRelayer = new TestableGaslessRelayer(spyLogger, config, signer, []);
+
+      const allowed = makeTestDepositMessage({}, {}, "0xABCD");
+      const filtered = filterRelayer.runFilterDepositsByIntegratorId([allowed]);
+      expect(filtered).to.deep.equal([allowed]);
+    });
   });
 
   describe("Initial observation (mark FILLED from observed deposits/fills)", function () {
