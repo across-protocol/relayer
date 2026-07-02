@@ -135,15 +135,27 @@ export function isAllowedGaslessPair(
 }
 
 /**
+ * Normalizes a 2-byte integrator ID to lowercase `0x` + 4 hex chars.
+ * Accepts optional `0x` prefix and any hex letter casing. Returns undefined when invalid.
+ */
+export function normalizeIntegratorId(integratorId: string): string | undefined {
+  const stripped = integratorId.replace(/^0x/i, "");
+  const lowered = stripped.toLowerCase();
+  if (lowered.length !== 4 || !/^[0-9a-f]{4}$/.test(lowered)) {
+    return undefined;
+  }
+  return `0x${lowered}`;
+}
+
+/**
  * Appends `[delimiter][integratorId]` to encoded calldata.
  * integratorId must be a hex string representing exactly 2 bytes (e.g. "0xABCD").
  */
 export function tagIntegratorId(txData: string, integratorId: string): string {
-  const stripped = integratorId.startsWith("0x") ? integratorId.slice(2) : integratorId;
-  if (stripped.length !== 4 || !/^[0-9a-fA-F]{4}$/.test(stripped)) {
+  const normalized = normalizeIntegratorId(integratorId);
+  if (!normalized) {
     throw new Error(`integratorId must be exactly 2 bytes (4 hex chars), got "${integratorId}"`);
   }
-  const normalized = "0x" + stripped;
   return ethers.utils.hexConcat([txData, DOMAIN_CALLDATA_DELIMITER, normalized]);
 }
 
@@ -630,6 +642,7 @@ export function buildSyntheticDeposit(msg: GaslessDepositMessage): RelayData & {
  * @param allowedPeggedPairs When provided, input/output pairs in this map (e.g. { "USDC": ["USDH"] }) are allowed in addition to same-L1 pairs.
  * @param logger When set and `depositUsdPageThreshold` is positive, may emit `logger.error` for paging when input exceeds threshold (does not change validation result).
  * @param depositUsdPageThreshold USD nominal from config (`RELAYER_GASLESS_DEPOSIT_USD_PAGE_THRESHOLD`); `0` disables. USDC/USDT input treated as ~1 USD per token unit at chain-native decimals.
+ * @param depositsOnlyEnabled When true, skip token-pair and amount checks (origin deposit only; no fill).
  */
 export function validateDeposit(
   originChainId: number,
@@ -641,8 +654,13 @@ export function validateDeposit(
   allowRefundFlowTest = false,
   allowedPeggedPairs: AllowedPeggedPairs = {},
   logger?: winston.Logger,
-  depositUsdPageThreshold = 0
+  depositUsdPageThreshold = 0,
+  depositsOnlyEnabled = false
 ): boolean {
+  if (depositsOnlyEnabled) {
+    return true;
+  }
+
   if (!isAllowedGaslessPair(inputToken, outputToken, originChainId, destinationChainId, allowedPeggedPairs)) {
     return false;
   }

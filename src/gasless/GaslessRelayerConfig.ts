@@ -1,6 +1,7 @@
 import assert from "assert";
 import { CommonConfig, ProcessEnv } from "../common";
 import { isDefined, parseJson } from "../utils";
+import { normalizeIntegratorId } from "../utils/GaslessUtils";
 
 /**
  * Allowed pegged token pairs for gasless deposits/fills. Same shape as PEGGED_TOKEN_PRICES:
@@ -22,6 +23,11 @@ export class GaslessRelayerConfig extends CommonConfig {
   initializationRetryAttempts: number;
   /** When true, allow deposits with inputAmount < outputAmount and outputAmount === MAX_UINT_VAL (refund-flow test); deposit is made but fill is skipped. */
   refundFlowTestEnabled: boolean;
+  /**
+   * When true, submit origin deposits only and mark messages DONE after deposit confirmation.
+   * Destination fills are not submitted. From `ENABLE_DEPOSITS_ONLY`.
+   */
+  depositsOnlyEnabled: boolean;
   spokePoolPeripheryOverrides: { [chainId: number]: string };
   /** Gasless-only: allowed input→output token pairs (by L2 symbol). E.g. { "USDT": ["USDC", "USDH", "USDC.e"] }. */
   allowedPeggedPairs: AllowedPeggedPairs;
@@ -36,6 +42,10 @@ export class GaslessRelayerConfig extends CommonConfig {
    * `0` or invalid = disabled. From `RELAYER_GASLESS_DEPOSIT_USD_PAGE_THRESHOLD`.
    */
   depositUsdPageThreshold: number;
+  /** When set, only deposits whose integratorId is in this set are processed. Mutually exclusive with blockedIntegratorIds. */
+  readonly allowedIntegratorIds?: Set<string>;
+  /** When set, deposits whose integratorId is in this set are discarded. Mutually exclusive with allowedIntegratorIds. */
+  readonly blockedIntegratorIds?: Set<string>;
 
   constructor(env: ProcessEnv) {
     super(env, { botIdentifier: "across-relayer-gasless" });
@@ -50,11 +60,14 @@ export class GaslessRelayerConfig extends CommonConfig {
       API_TIMEOUT_OVERRIDE,
       INITIALIZATION_RETRY_ATTEMPTS,
       RELAYER_GASLESS_REFUND_FLOW_TEST_ENABLED,
+      ENABLE_DEPOSITS_ONLY,
       SPOKE_POOL_PERIPHERY_OVERRIDES,
       GASLESS_ALLOWED_PEGGED_PAIRS,
       SWAP_API_KEY,
       NO_PERMIT2_CONTRACT_CHAINS,
       RELAYER_GASLESS_DEPOSIT_USD_PAGE_THRESHOLD,
+      RELAYER_GASLESS_ALLOWED_INTEGRATOR_IDS = "",
+      RELAYER_GASLESS_BLOCKED_INTEGRATOR_IDS = "",
     } = env;
     this.apiPollingInterval = Number(API_POLLING_INTERVAL ?? 1); // Default to 1s
     this.apiEndpoint = String(API_GASLESS_ENDPOINT);
@@ -73,6 +86,7 @@ export class GaslessRelayerConfig extends CommonConfig {
     this.apiTimeoutOverride = Number(API_TIMEOUT_OVERRIDE ?? 3000); // In ms
     this.initializationRetryAttempts = Number(INITIALIZATION_RETRY_ATTEMPTS ?? 3);
     this.refundFlowTestEnabled = String(RELAYER_GASLESS_REFUND_FLOW_TEST_ENABLED ?? "").toLowerCase() === "true";
+    this.depositsOnlyEnabled = String(ENABLE_DEPOSITS_ONLY ?? "").toLowerCase() === "true";
 
     this.spokePoolPeripheryOverrides = parseJson.stringMap(SPOKE_POOL_PERIPHERY_OVERRIDES);
 
@@ -85,5 +99,36 @@ export class GaslessRelayerConfig extends CommonConfig {
 
     this.noPermit2ContractChainIds = new Set(parseJson.numberArray(NO_PERMIT2_CONTRACT_CHAINS ?? "[]"));
     this.depositUsdPageThreshold = Number(RELAYER_GASLESS_DEPOSIT_USD_PAGE_THRESHOLD ?? 1000);
+
+    const hasAllowedIntegratorFilter = RELAYER_GASLESS_ALLOWED_INTEGRATOR_IDS.trim().length > 0;
+    const hasBlockedIntegratorFilter = RELAYER_GASLESS_BLOCKED_INTEGRATOR_IDS.trim().length > 0;
+    assert(
+      !(hasAllowedIntegratorFilter && hasBlockedIntegratorFilter),
+      "Only one of RELAYER_GASLESS_ALLOWED_INTEGRATOR_IDS and RELAYER_GASLESS_BLOCKED_INTEGRATOR_IDS may be set"
+    );
+    if (hasAllowedIntegratorFilter) {
+      this.allowedIntegratorIds = new Set(
+        parseJson.stringArray(RELAYER_GASLESS_ALLOWED_INTEGRATOR_IDS).map((integratorId) => {
+          const normalized = normalizeIntegratorId(integratorId);
+          assert(
+            isDefined(normalized),
+            `Invalid integrator ID in RELAYER_GASLESS_ALLOWED_INTEGRATOR_IDS: "${integratorId}"`
+          );
+          return normalized;
+        })
+      );
+    }
+    if (hasBlockedIntegratorFilter) {
+      this.blockedIntegratorIds = new Set(
+        parseJson.stringArray(RELAYER_GASLESS_BLOCKED_INTEGRATOR_IDS).map((integratorId) => {
+          const normalized = normalizeIntegratorId(integratorId);
+          assert(
+            isDefined(normalized),
+            `Invalid integrator ID in RELAYER_GASLESS_BLOCKED_INTEGRATOR_IDS: "${integratorId}"`
+          );
+          return normalized;
+        })
+      );
+    }
   }
 }
