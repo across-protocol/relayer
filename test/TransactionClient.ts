@@ -6,6 +6,7 @@ import {
   TransactionReceipt,
   TransactionResponse,
   TransactionSimulationResult,
+  willSucceed,
 } from "../src/utils";
 import { CHAIN_ID_TEST_LIST as chainIds } from "./constants";
 import { MockedTransactionClient, txnClientPassResult } from "./mocks/MockTransactionClient";
@@ -236,6 +237,97 @@ describe("TransactionClient", function () {
       expect(txnResponses.length).to.equal(1);
       // wait() was called maxTries times (default is 10).
       expect(waitCalls).to.equal(10);
+    });
+  });
+
+  describe("willSucceed simulation-failure reason preservation", function () {
+    // Builds a fake AugmentedTransaction whose contract surfaces the requested errors when
+    // `callStatic[method]` and `provider.estimateGas` are called. Only the fields willSucceed
+    // touches are populated; downstream behavior (sendTransaction, etc.) is irrelevant here.
+    function makeFakeTxn(callStaticReject: unknown, estimateGasReject: unknown): AugmentedTransaction {
+      const fakeContract = {
+        signer: { getAddress: async () => "0x0000000000000000000000000000000000000001" },
+        provider: {
+          estimateGas: async () => {
+            throw estimateGasReject;
+          },
+        },
+        callStatic: {
+          someMethod: async () => {
+            if (callStaticReject !== undefined) {
+              throw callStaticReject;
+            }
+            return "0x";
+          },
+        },
+        populateTransaction: {
+          someMethod: async () => ({ data: "0xdeadbeef" }),
+        },
+      } as unknown as ethers.Contract;
+      return {
+        contract: fakeContract,
+        chainId: chainIds[0],
+        method: "someMethod",
+        args: [],
+        message: "",
+        mrkdwn: "",
+      };
+    }
+
+    function makeEthersError(reason: string): unknown {
+      return Object.assign(new Error("ethers error"), { code: ethers.errors.UNPREDICTABLE_GAS_LIMIT, reason });
+    }
+
+    it("preserves a non-ethers estimateGas error message instead of 'unknown error'", async function () {
+      const result = await willSucceed(makeFakeTxn(undefined, new Error("rpc connection reset")));
+      expect(result.succeed).to.be.false;
+      expect(result.reason).to.equal("rpc connection reset");
+    });
+
+    it("falls back to the callStatic error message when estimateGas yields no message", async function () {
+      const callStaticErr = new Error("callStatic failed: revert reason X");
+      // Ethers error with no `reason` populated, then estimateGas throws a value with no message
+      // (e.g. a string-thrown error). The fallback should reach the earlier callStatic error.
+      const result = await willSucceed(makeFakeTxn(callStaticErr, "bare-string-throw"));
+      expect(result.succeed).to.be.false;
+      expect(result.reason).to.equal("callStatic failed: revert reason X");
+    });
+
+    it("uses ethers `reason` when estimateGas throws an ethers error (existing behavior)", async function () {
+      const result = await willSucceed(makeFakeTxn(undefined, makeEthersError("insufficient funds")));
+      expect(result.succeed).to.be.false;
+      expect(result.reason).to.equal("insufficient funds");
+    });
+
+    it("prefers callStatic message over a generic estimateGas message when neither carries an ethers reason", async function () {
+      // estimateGas throws a generic Error (e.g. UNPREDICTABLE_GAS_LIMIT without a populated
+      // `reason`); callStatic captured the actionable revert detail. The callStatic message
+      // should win — it's the diagnostic call whose purpose is to surface revert reasons.
+      const callStaticErr = new Error("execution reverted: NoSlotsAvailable");
+      const estimateGasErr = new Error("cannot estimate gas; transaction may fail");
+      const result = await willSucceed(makeFakeTxn(callStaticErr, estimateGasErr));
+      expect(result.succeed).to.be.false;
+      expect(result.reason).to.equal("execution reverted: NoSlotsAvailable");
+    });
+
+    it("prefers an ethers `reason` on the callStatic error over a callStatic message", async function () {
+      const callStaticErr = makeEthersError("revert: SpokePool: invalid relay");
+      const result = await willSucceed(makeFakeTxn(callStaticErr, new Error("generic gas failure")));
+      expect(result.succeed).to.be.false;
+      expect(result.reason).to.equal("revert: SpokePool: invalid relay");
+    });
+
+    it("returns 'unknown error' only when no message is recoverable anywhere", async function () {
+      const result = await willSucceed(makeFakeTxn(undefined, { foo: "bar" }));
+      expect(result.succeed).to.be.false;
+      expect(result.reason).to.equal("unknown error");
+    });
+
+    it("returns succeed:false with errorName when callStatic throws a custom error (existing behavior)", async function () {
+      const customErr = Object.assign(new Error("custom"), { errorName: "RelayFilled" });
+      const result = await willSucceed(makeFakeTxn(customErr, new Error("estimateGas should not be reached")));
+      expect(result.succeed).to.be.false;
+      expect(result.reason).to.equal("RelayFilled");
     });
   });
 });
