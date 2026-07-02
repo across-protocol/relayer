@@ -446,11 +446,39 @@ export class HyperliquidExecutor {
     if (bpsFromParity.gt(maxSlippage)) {
       const usdFormatter = createFormatFunction(2, 4, false, 8); // USD is represented w/ 8 decimals.
       const bpsFormatter = createFormatFunction(2, 4, false, 4);
+      const sizeFormatter = createFormatFunction(2, 4, false, pair.baseTokenDecimals);
+      // Fetch the user-level SwapFlows blocked by this rejection so the log identifies
+      // which deposits are held up. Only done in this warning branch to keep the hot path cheap.
+      // Query against the latest block so events observed after startup are not missed, and
+      // swallow any RPC/pagination errors so a transient enrichment failure cannot abort the task.
+      let blockedSwapFlows: SwapFlowInitialized[] = [];
+      try {
+        const latestBlock = await this.clients.dstProvider.getBlockNumber();
+        blockedSwapFlows = await this.getOutstandingOrdersOnPair(pair, latestBlock);
+      } catch (error) {
+        this.logger.debug({
+          at: "HyperliquidExecutor#updateOrderAmount",
+          message: "Failed to enrich excessive-slippage warning with blocked SwapFlows",
+          pair: pair.name,
+          error,
+        });
+      }
       this.logger.warn({
         at: "HyperliquidExecutor#updateOrderAmount",
         message: "Not submitting new limit order due to excessive slippage",
+        pair: pair.name,
+        baseToken: pair.baseToken.toNative(),
+        finalToken: pair.finalToken.toNative(),
+        swapHandler: pair.swapHandler.toNative(),
+        orderSize: sizeFormatter(sizeXe8),
         bestAsk: usdFormatter(priceXe8),
-        maxSlippage: bpsFormatter(this.config.maxSlippageBps),
+        bpsFromParity: bpsFormatter(bpsFromParity),
+        maxSlippage: bpsFormatter(maxSlippage),
+        blockedSwapFlows: blockedSwapFlows.map((flow) => ({
+          quoteNonce: flow.quoteNonce,
+          finalRecipient: flow.finalRecipient,
+          evmAmountIn: flow.evmAmountIn.toString(),
+        })),
       });
       return { actionable: false, mrkdwn: "Slippage too high to submit order" };
     }
