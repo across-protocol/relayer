@@ -86,6 +86,7 @@ export enum MessageState {
   DEPOSIT_CONFIRM,
   FILL_PENDING,
   FILLED,
+  DONE,
   ERROR,
 }
 
@@ -95,10 +96,11 @@ const MESSAGE_STATES = {
   [MessageState.DEPOSIT_CONFIRM]: "DEPOSIT_CONFIRM",
   [MessageState.FILL_PENDING]: "FILL_PENDING",
   [MessageState.FILLED]: "FILLED",
+  [MessageState.DONE]: "DONE",
   [MessageState.ERROR]: "ERROR",
 };
 
-const terminalStates = [MessageState.FILLED, MessageState.ERROR];
+const terminalStates = [MessageState.FILLED, MessageState.DONE, MessageState.ERROR];
 
 const stateToStr = (state: MessageState) => MESSAGE_STATES[state] ?? "UNKNOWN";
 
@@ -248,15 +250,15 @@ export class GaslessRelayer {
     });
     const initialMessages = await this._queryGaslessApi(this.config.initializationRetryAttempts);
 
-    // Index on-chain deposits/fills for API messages (lookback), then mark FILLED in messageState when already complete.
+    // Index on-chain deposits/fills for API messages (lookback), then mark terminal state when already complete.
     await this.updateObserved(initialMessages);
     await this.updateObservedCctpDeposits(initialMessages);
-    const markedFilledCount = this._markFilledFromInitialObservation(initialMessages);
+    const markedTerminalCount = this._markFilledFromInitialObservation(initialMessages);
 
     this.logger.debug({
       at: "GaslessRelayer#initialize",
-      message: "Marked FILLED state from initial chain observation",
-      markedFilledCount,
+      message: "Marked terminal state from initial chain observation",
+      markedTerminalCount,
       apiMessages: initialMessages.length,
     });
 
@@ -530,17 +532,17 @@ export class GaslessRelayer {
   }
 
   /**
-   * For each API message, set {@link MessageState.FILLED} when the deposit is already fully handled on-chain so
+   * For each API message, set a terminal state when the deposit is already fully handled on-chain so
    * {@link evaluateApiSignatures} skips it.
-   * - Swap-and-bridge and CCTP (relayer does not fill): deposit observed on origin → FILLED.
-   * - Deposits-only mode: origin deposit observed → FILLED.
+   * - CCTP (non-default spoke pool) and deposits-only: origin deposit observed → DONE.
+   * - Swap-and-bridge is covered when its deposit uses a non-default spoke pool (same CCTP detection).
    * - Standard bridge: both origin deposit and destination fill observed → FILLED.
    * Otherwise leave state unset so the message runs through the normal state machine.
    */
   protected _markFilledFromInitialObservation(apiMessages: AnyGaslessDepositMessage[]): number {
-    let markedFilledCount = 0;
+    let markedTerminalCount = 0;
     for (const depositMessage of apiMessages) {
-      const { originChainId, depositId, spokePool } = depositMessage;
+      const { originChainId, depositId } = depositMessage;
       const { destinationChainId, inputToken } = extractGaslessDepositFields(depositMessage);
       const depositKey = this._getDepositKey(inputToken.toNative(), originChainId, depositId);
 
@@ -549,10 +551,9 @@ export class GaslessRelayer {
         continue;
       }
 
-      const isCctp = this._isCctpDeposit(originChainId, spokePool);
-      if (isCctp || this.config.depositsOnlyEnabled) {
-        this._setState(depositKey, MessageState.FILLED);
-        markedFilledCount++;
+      if (this._skipsDestinationFill(depositMessage)) {
+        this._setState(depositKey, MessageState.DONE);
+        markedTerminalCount++;
         continue;
       }
 
@@ -560,10 +561,10 @@ export class GaslessRelayer {
       const fillSeen = this.observedFills[destinationChainId]?.has(fillKey) ?? false;
       if (fillSeen) {
         this._setState(depositKey, MessageState.FILLED);
-        markedFilledCount++;
+        markedTerminalCount++;
       }
     }
-    return markedFilledCount;
+    return markedTerminalCount;
   }
 
   /*
@@ -735,10 +736,10 @@ export class GaslessRelayer {
                 const hasTxHash = utils.isHexString(found);
                 log(
                   "info",
-                  `Gasless ${isSwap ? "swapAndBridge" : "cctp"} deposit confirmed on ${origin}. Moving to FILLED.`,
+                  `Gasless ${isSwap ? "swapAndBridge" : "cctp"} deposit confirmed on ${origin}. Moving to DONE.`,
                   { txHash: hasTxHash ? blockExplorerLink(found, originChainId) : found }
                 );
-                setState(MessageState.FILLED);
+                setState(MessageState.DONE);
               } else {
                 log("info", `Could not locate ${isSwap ? "swapAndBridge" : "cctp"} deposit on ${origin}. Retrying.`);
                 await delay(1);
@@ -769,9 +770,9 @@ export class GaslessRelayer {
                 ? this._extractDepositFromTransactionReceipt(depositReceipt, originChainId)
                 : await this._findDeposit(bridgeMessage);
               if (isDefined(deposit)) {
-                if (this.config.depositsOnlyEnabled) {
-                  log("info", `Verified deposit on ${origin}. Deposits-only mode: skipping fill.`);
-                  nextState = MessageState.FILLED;
+                if (this._skipsDestinationFill(depositMessage)) {
+                  log("info", `Verified deposit on ${origin}. Marking DONE (no destination fill).`);
+                  nextState = MessageState.DONE;
                 } else {
                   log("info", `Verified deposit on ${origin}`);
                   nextState = MessageState.FILL_PENDING;
@@ -790,9 +791,9 @@ export class GaslessRelayer {
           }
 
           case MessageState.FILL_PENDING: {
-            if (this.config.depositsOnlyEnabled) {
-              log("info", `Deposits-only mode: skipping fill on ${destination}.`);
-              setState(MessageState.FILLED);
+            if (this._skipsDestinationFill(depositMessage)) {
+              log("info", `Marking DONE without fill on ${destination}.`);
+              setState(MessageState.DONE);
               break;
             }
 
@@ -1060,15 +1061,18 @@ export class GaslessRelayer {
 
     return deposits.filter((deposit) => {
       const integratorId = isDefined(deposit.integratorId) ? normalizeIntegratorId(deposit.integratorId) : undefined;
+      const depositLogFields = {
+        requestId: deposit.requestId,
+        depositId: deposit.depositId,
+        integratorId: deposit.integratorId,
+      };
       if (isDefined(allowedIntegratorIds)) {
         const allowed = isDefined(integratorId) && allowedIntegratorIds.has(integratorId);
         if (!allowed) {
           this.logger.debug({
             at: "GaslessRelayer#_queryGaslessApi",
             message: "Skipping gasless deposit with integratorId outside allow-list",
-            requestId: deposit.requestId,
-            depositId: deposit.depositId,
-            integratorId: deposit.integratorId,
+            ...depositLogFields,
           });
         }
         return allowed;
@@ -1078,9 +1082,7 @@ export class GaslessRelayer {
         this.logger.debug({
           at: "GaslessRelayer#_queryGaslessApi",
           message: "Skipping gasless deposit with blocked integratorId",
-          requestId: deposit.requestId,
-          depositId: deposit.depositId,
-          integratorId: deposit.integratorId,
+          ...depositLogFields,
         });
         return false;
       }
@@ -1212,6 +1214,15 @@ export class GaslessRelayer {
       from,
       maxLookBack: this.config.maxBlockLookBack[chainId],
     };
+  }
+
+  /*
+   * @notice Returns true when this bot submits the origin deposit but does not perform a destination fill.
+   */
+  private _skipsDestinationFill(depositMessage: AnyGaslessDepositMessage): boolean {
+    return (
+      this.config.depositsOnlyEnabled || this._isCctpDeposit(depositMessage.originChainId, depositMessage.spokePool)
+    );
   }
 
   /*

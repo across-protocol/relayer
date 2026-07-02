@@ -514,14 +514,14 @@ function expectCctpTransitions(transitions: Array<{ from: MessageState; to: Mess
   expect(transitions).to.have.lengthOf(3);
   expect(transitions[0]).to.deep.equal({ from: MessageState.INITIAL, to: MessageState.DEPOSIT_SUBMIT });
   expect(transitions[1]).to.deep.equal({ from: MessageState.DEPOSIT_SUBMIT, to: MessageState.DEPOSIT_CONFIRM });
-  expect(transitions[2]).to.deep.equal({ from: MessageState.DEPOSIT_CONFIRM, to: MessageState.FILLED });
+  expect(transitions[2]).to.deep.equal({ from: MessageState.DEPOSIT_CONFIRM, to: MessageState.DONE });
 }
 
 function expectDepositsOnlyTransitions(transitions: Array<{ from: MessageState; to: MessageState }>) {
   expect(transitions).to.have.lengthOf(3);
   expect(transitions[0]).to.deep.equal({ from: MessageState.INITIAL, to: MessageState.DEPOSIT_SUBMIT });
   expect(transitions[1]).to.deep.equal({ from: MessageState.DEPOSIT_SUBMIT, to: MessageState.DEPOSIT_CONFIRM });
-  expect(transitions[2]).to.deep.equal({ from: MessageState.DEPOSIT_CONFIRM, to: MessageState.FILLED });
+  expect(transitions[2]).to.deep.equal({ from: MessageState.DEPOSIT_CONFIRM, to: MessageState.DONE });
 }
 
 /**
@@ -834,7 +834,7 @@ describe("GaslessRelayer", function () {
   });
 
   describe("CCTP flow", function () {
-    it("CCTP deposit: submits deposit, skips fill, goes to FILLED", async function () {
+    it("CCTP deposit: submits deposit, skips fill, goes to DONE", async function () {
       const msg = makeTestCctpMessage({ inputAmount: "2000000", outputAmount: "1900000" });
       const receipt = makeReceipt();
       const nonce = depositNonceFor(relayer, msg);
@@ -844,7 +844,7 @@ describe("GaslessRelayer", function () {
 
       await relayer.runEvaluateApiSignatures();
 
-      expect(relayer.getMessageState(nonce)).to.equal(MessageState.FILLED);
+      expect(relayer.getMessageState(nonce)).to.equal(MessageState.DONE);
       expect(relayer.initiateDepositCalls).to.equal(1);
       expect(relayer.initiateFillCalls).to.equal(0);
       expectCctpTransitions(relayer.stateTransitions[nonce]);
@@ -880,7 +880,7 @@ describe("GaslessRelayer", function () {
       expect(relayer.getObservedDepositsSet(ORIGIN_CHAIN_ID).has(expectedKey)).to.equal(false);
     });
 
-    it("CCTP swap + Permit2: null deposit receipt but consumed nonce confirms to FILLED", async function () {
+    it("CCTP swap + Permit2: null deposit receipt but consumed nonce confirms to DONE", async function () {
       const msg = makeSwapAndBridgePermit2CctpMessage({ depositId: "obs-3", permitNonce: "0" });
       const nonce = depositNonceForSwap(relayer, msg);
       fakePermit2Smock.nonceBitmap.returns(ethers.BigNumber.from(1));
@@ -890,7 +890,7 @@ describe("GaslessRelayer", function () {
 
       await relayer.runEvaluateApiSignatures();
 
-      expect(relayer.getMessageState(nonce)).to.equal(MessageState.FILLED);
+      expect(relayer.getMessageState(nonce)).to.equal(MessageState.DONE);
       expect(relayer.initiateDepositCalls).to.equal(1);
       expect(relayer.initiateFillCalls).to.equal(0);
       expectCctpTransitions(relayer.stateTransitions[nonce]);
@@ -941,7 +941,7 @@ describe("GaslessRelayer", function () {
       depositsOnlyRelayer.setPermit2Contracts({ [ORIGIN_CHAIN_ID]: fakePermit2Smock as unknown as Contract });
     });
 
-    it("submits deposit and marks FILLED without destination fill", async function () {
+    it("submits deposit and marks DONE without destination fill", async function () {
       const msg = makeTestDepositMessage({ inputAmount: "20000000", outputAmount: "19000000" });
       const receipt = makeReceipt();
       const depositEvent = makeFakeDepositEvent({ inputAmount: "20000000", outputAmount: "19000000" });
@@ -954,7 +954,7 @@ describe("GaslessRelayer", function () {
       await depositsOnlyRelayer.runEvaluateApiSignatures();
 
       const nonce = depositNonceFor(depositsOnlyRelayer, msg);
-      expect(depositsOnlyRelayer.getMessageState(nonce)).to.equal(MessageState.FILLED);
+      expect(depositsOnlyRelayer.getMessageState(nonce)).to.equal(MessageState.DONE);
       expect(depositsOnlyRelayer.initiateDepositCalls).to.equal(1);
       expect(depositsOnlyRelayer.initiateFillCalls).to.equal(0);
       expectDepositsOnlyTransitions(depositsOnlyRelayer.stateTransitions[nonce]);
@@ -974,12 +974,12 @@ describe("GaslessRelayer", function () {
       await depositsOnlyRelayer.runEvaluateApiSignatures();
 
       const nonce = depositNonceFor(depositsOnlyRelayer, msg);
-      expect(depositsOnlyRelayer.getMessageState(nonce)).to.equal(MessageState.FILLED);
+      expect(depositsOnlyRelayer.getMessageState(nonce)).to.equal(MessageState.DONE);
       expect(depositsOnlyRelayer.initiateFillCalls).to.equal(0);
       expectDepositsOnlyTransitions(depositsOnlyRelayer.stateTransitions[nonce]);
     });
 
-    it("marks FILLED from initial observation when only origin deposit is seen", function () {
+    it("marks DONE from initial observation when only origin deposit is seen", function () {
       const msg = makeTestDepositMessage();
       const nonce = depositNonceFor(depositsOnlyRelayer, msg);
 
@@ -988,7 +988,7 @@ describe("GaslessRelayer", function () {
 
       const n = depositsOnlyRelayer.runMarkFilledFromInitialObservation([msg]);
       expect(n).to.equal(1);
-      expect(depositsOnlyRelayer.getMessageState(nonce)).to.equal(MessageState.FILLED);
+      expect(depositsOnlyRelayer.getMessageState(nonce)).to.equal(MessageState.DONE);
     });
 
     it("accepts mismatching token pairs that would be rejected in fill mode", async function () {
@@ -1004,7 +1004,7 @@ describe("GaslessRelayer", function () {
       await depositsOnlyRelayer.runEvaluateApiSignatures();
 
       const nonce = depositNonceFor(depositsOnlyRelayer, msg);
-      expect(depositsOnlyRelayer.getMessageState(nonce)).to.equal(MessageState.FILLED);
+      expect(depositsOnlyRelayer.getMessageState(nonce)).to.equal(MessageState.DONE);
       expect(depositsOnlyRelayer.initiateDepositCalls).to.equal(1);
       expect(depositsOnlyRelayer.initiateFillCalls).to.equal(0);
     });
@@ -1090,7 +1090,7 @@ describe("GaslessRelayer", function () {
     });
   });
 
-  describe("Initial observation (mark FILLED from observed deposits/fills)", function () {
+  describe("Initial observation (mark terminal state from observed deposits/fills)", function () {
     it("Bridge: sets FILLED when both origin deposit and destination fill are observed", function () {
       const msg = makeTestDepositMessage();
       const nonce = depositNonceFor(relayer, msg);
@@ -1116,7 +1116,7 @@ describe("GaslessRelayer", function () {
       expect(relayer.getMessageState(nonce)).to.equal(undefined);
     });
 
-    it("CCTP: sets FILLED when origin deposit is observed (no fill required)", function () {
+    it("CCTP: sets DONE when origin deposit is observed (no fill required)", function () {
       const msg = makeTestCctpMessage();
       const nonce = depositNonceFor(relayer, msg);
 
@@ -1125,7 +1125,7 @@ describe("GaslessRelayer", function () {
 
       const n = relayer.runMarkFilledFromInitialObservation([msg]);
       expect(n).to.equal(1);
-      expect(relayer.getMessageState(nonce)).to.equal(MessageState.FILLED);
+      expect(relayer.getMessageState(nonce)).to.equal(MessageState.DONE);
     });
   });
 

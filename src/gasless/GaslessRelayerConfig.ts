@@ -24,7 +24,7 @@ export class GaslessRelayerConfig extends CommonConfig {
   /** When true, allow deposits with inputAmount < outputAmount and outputAmount === MAX_UINT_VAL (refund-flow test); deposit is made but fill is skipped. */
   refundFlowTestEnabled: boolean;
   /**
-   * When true, submit origin deposits only and mark messages FILLED after deposit confirmation.
+   * When true, submit origin deposits only and mark messages DONE after deposit confirmation.
    * Destination fills are not submitted. From `ENABLE_DEPOSITS_ONLY`.
    */
   depositsOnlyEnabled: boolean;
@@ -66,8 +66,8 @@ export class GaslessRelayerConfig extends CommonConfig {
       SWAP_API_KEY,
       NO_PERMIT2_CONTRACT_CHAINS,
       RELAYER_GASLESS_DEPOSIT_USD_PAGE_THRESHOLD,
-      RELAYER_GASLESS_ALLOWED_INTEGRATOR_IDS,
-      RELAYER_GASLESS_BLOCKED_INTEGRATOR_IDS,
+      RELAYER_GASLESS_ALLOWED_INTEGRATOR_IDS = "",
+      RELAYER_GASLESS_BLOCKED_INTEGRATOR_IDS = "",
     } = env;
     this.apiPollingInterval = Number(API_POLLING_INTERVAL ?? 1); // Default to 1s
     this.apiEndpoint = String(API_GASLESS_ENDPOINT);
@@ -100,10 +100,8 @@ export class GaslessRelayerConfig extends CommonConfig {
     this.noPermit2ContractChainIds = new Set(parseJson.numberArray(NO_PERMIT2_CONTRACT_CHAINS ?? "[]"));
     this.depositUsdPageThreshold = Number(RELAYER_GASLESS_DEPOSIT_USD_PAGE_THRESHOLD ?? 1000);
 
-    const hasAllowedIntegratorFilter =
-      isDefined(RELAYER_GASLESS_ALLOWED_INTEGRATOR_IDS) && RELAYER_GASLESS_ALLOWED_INTEGRATOR_IDS.trim().length > 0;
-    const hasBlockedIntegratorFilter =
-      isDefined(RELAYER_GASLESS_BLOCKED_INTEGRATOR_IDS) && RELAYER_GASLESS_BLOCKED_INTEGRATOR_IDS.trim().length > 0;
+    const hasAllowedIntegratorFilter = RELAYER_GASLESS_ALLOWED_INTEGRATOR_IDS.trim().length > 0;
+    const hasBlockedIntegratorFilter = RELAYER_GASLESS_BLOCKED_INTEGRATOR_IDS.trim().length > 0;
     assert(
       !(hasAllowedIntegratorFilter && hasBlockedIntegratorFilter),
       "Only one of RELAYER_GASLESS_ALLOWED_INTEGRATOR_IDS and RELAYER_GASLESS_BLOCKED_INTEGRATOR_IDS may be set"

@@ -8,11 +8,11 @@ Full env parsing lives in `GaslessRelayerConfig.ts`. Runtime state machine is in
 
 ## Core runtime flow
 
-1. **Initialize** — query `API_GASLESS_ENDPOINT`, index recent on-chain deposits/fills, mark already-complete API messages `FILLED`.
+1. **Initialize** — query `API_GASLESS_ENDPOINT`, index recent on-chain deposits/fills, mark already-complete API messages with a terminal state (`FILLED` or `DONE`).
 2. **Poll** — on `API_POLLING_INTERVAL`, call `_queryGaslessApi`, filter messages, run the per-deposit state machine in `evaluateApiSignatures`.
-3. **Per message** — `INITIAL` → validate → `DEPOSIT_SUBMIT` → `DEPOSIT_CONFIRM` → (`FILL_PENDING` →) `FILLED`.
+3. **Per message** — `INITIAL` → validate → `DEPOSIT_SUBMIT` → `DEPOSIT_CONFIRM` → (`FILL_PENDING` →) `FILLED` or `DONE`.
 
-CCTP and swap-and-bridge flows skip destination fills by design. Standard bridge deposits submit a fill unless deposits-only mode is enabled (see below).
+CCTP deposits (and swap-and-bridge that uses a non-default `spokePool`) end in `DONE`. Standard bridge deposits submit a fill and end in `FILLED`, unless deposits-only mode is enabled (see below).
 
 Integrator filtering runs inside `_queryGaslessApi` immediately after API responses are restructured — discarded messages never enter the state machine.
 
@@ -47,13 +47,15 @@ When unset or not `true`, behavior is unchanged.
 When `ENABLE_DEPOSITS_ONLY=true`:
 
 - Submit the origin deposit transaction and confirm it on-chain.
-- Mark the API message `FILLED` after deposit confirmation.
+- Mark the API message `DONE` after deposit confirmation (origin deposit only; no destination fill).
 - **Do not** submit destination fills (`initiateFill` is never called).
 - Disable the immediate-fill path (`fillImmediate` returns `false`).
 - Skip token-pair and input/output amount validation in `validateDeposit` (fill-side checks do not apply).
-- On startup, an observed origin deposit is enough to mark `FILLED` (destination fill not required).
+- On startup, an observed origin deposit is enough to mark `DONE` (destination fill not required).
 
-State path: `INITIAL → DEPOSIT_SUBMIT → DEPOSIT_CONFIRM → FILLED`.
+State path: `INITIAL → DEPOSIT_SUBMIT → DEPOSIT_CONFIRM → DONE`.
+
+`FILLED` is the terminal state when this bot completes a destination fill (standard bridge flow). `DONE` means the relayer finished without filling: CCTP (non-default `spokePool`), or `ENABLE_DEPOSITS_ONLY`.
 
 Use this when another relayer or process is responsible for filling, and this bot should only land deposits on the origin chain.
 
