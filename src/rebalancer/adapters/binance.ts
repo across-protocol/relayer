@@ -18,6 +18,7 @@ import {
   getAtomicDepositorContracts,
   getAccountCoins,
   getBinanceAllOrders,
+  binanceCredentialsConfigured,
   getBinanceApiClient,
   getBinanceDepositAddress,
   getBinanceTradeFees,
@@ -109,6 +110,12 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       return;
     }
     await super.initialize(_availableRoutes.filter((route) => route.adapter === "binance"));
+
+    // No credentials → no client. The rebalancer omits this adapter from its map without credentials
+    // (see RebalancerClientHelper); this guard only covers direct callers.
+    if (!binanceCredentialsConfigured()) {
+      return;
+    }
 
     this._binanceApiClient = await getBinanceApiClient(process.env.BINANCE_API_BASE);
 

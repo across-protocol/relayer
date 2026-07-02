@@ -33,8 +33,7 @@ import ERC20_ABI from "../../common/abi/MinimalERC20.json";
 import { AugmentedTransaction } from "../../clients/TransactionClient";
 
 export class BinanceCEXBridge extends BaseL2BridgeAdapter {
-  // Store the promise to be evaluated when needed so that we can construct the bridge synchronously.
-  protected readonly binanceApiClientPromise;
+  // Lazy: eager construction would assert on missing BINANCE_API_KEY even for bots that never use the bridge.
   protected binanceApiClient: BinanceApi | undefined;
   // Store the token info for the bridge so we can reference the L1 decimals and L1 token symbol.
   protected l1TokenInfo: L1Token;
@@ -57,8 +56,6 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
     };
 
     this.depositNetwork = BINANCE_NETWORKS[l2chainId];
-
-    this.binanceApiClientPromise = getBinanceApiClient(process.env["BINANCE_API_BASE"]);
   }
 
   async constructWithdrawToL1Txns(
@@ -140,7 +137,7 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
   }
 
   protected async getBinanceClient() {
-    return (this.binanceApiClient ??= await this.binanceApiClientPromise);
+    return (this.binanceApiClient ??= await getBinanceApiClient(process.env.BINANCE_API_BASE));
   }
 
   public pendingWithdrawalLookbackPeriodSeconds(): number {

@@ -1,4 +1,4 @@
-import { assert, CHAIN_IDs, Signer, winston } from "../utils";
+import { assert, binanceCredentialsConfigured, CHAIN_IDs, Signer, winston } from "../utils";
 import { BinanceStablecoinSwapAdapter } from "./adapters/binance";
 import { CctpAdapter } from "./adapters/cctpAdapter";
 import { HyperliquidStablecoinSwapAdapter } from "./adapters/hyperliquid";
@@ -40,7 +40,15 @@ function constructRebalancerDependencies(
     cctpAdapter,
     oftAdapter
   );
-  const adapterMap = { hyperliquid: hyperliquidAdapter, binance: binanceAdapter, cctp: cctpAdapter, oft: oftAdapter };
+  // Binance rebalances require API credentials; without them the adapter has no client. Omit it from
+  // the map so getAvailableAdapters() never surfaces Binance routes whose cost estimation would hit
+  // the unset client and abort the rebalance cycle.
+  const adapterMap = {
+    hyperliquid: hyperliquidAdapter,
+    cctp: cctpAdapter,
+    oft: oftAdapter,
+    ...(binanceCredentialsConfigured() ? { binance: binanceAdapter } : {}),
+  };
   const rebalanceRoutes = rebalanceRoutesOverride ?? buildRebalanceRoutes(rebalancerConfig);
 
   // @todo: Add test-net support for this client. For now, we only support production and we do not construct
@@ -123,7 +131,7 @@ export async function constructAdapter(
 ): Promise<RebalancerAdapter> {
   const { adapters } = constructRebalancerDependencies(logger, baseSigner);
   const adapter = adapters[adapterName];
-  assert(adapter, `Adapter ${adapterName} is unavailable for the configured hub chain`);
+  assert(adapter, `Rebalancer adapter "${adapterName}" unavailable (wrong hub chain or missing credentials)`);
   await adapter.initialize([]);
   return adapter;
 }
