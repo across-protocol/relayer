@@ -55,6 +55,18 @@ Ideally, this wrapping and unwrapping would occur in a separate, focused NativeT
 
 The InventoryClient also provides functions that are used to transfer tokens across chains via adapters like CCTP, OFT, or canonical bridges. These adapters are defined in /src/adapter/bridges and /src/adapter/l2Bridges which send tokens from L1 to L2 and vice versa, respectively.
 
+### Withdrawing Excess Balances to L1
+
+`withdrawExcessBalances()` sweeps inventory above target from L2 back to the hub chain for any L2 token whose config sets `withdrawExcessPeriod`. A chain is flagged for withdrawal when its **virtual** allocation (`getCurrentAllocationPct`, computed net of shortfall) exceeds `targetPct * targetOverageBuffer`, and the desired amount is `cumulativeBalance * (currentAllocPct - targetPct)`.
+
+Because that amount is derived from the cached/virtual balance, it can exceed the relayer's **settled** on-chain balance — e.g. when funds have already left the chain via an in-flight rebalance, or the cache is stale. The L2 bridge burns/transfers from the real balance, so an over-estimate reverts with `transfer amount exceeds balance` and re-fails every loop. To prevent this, the desired amount is clamped to a **fresh on-chain read** (`TokenClient.getRemoteTokenBalance()`, which dispatches per chain VM — EVM, TVM/Tron, and SVM/Solana), always leaving the target allocation **and any outstanding shortfall** behind:
+
+```
+amount = min(desiredWithdrawalAmount, max(0, liveBalance - target - shortfall))
+```
+
+When the live balance is already at/below that reserve the withdrawal is skipped. In steady state (`liveBalance == virtualBalance`, no shortfall) the clamp is a no-op, so default behaviour is unchanged. See `docs/inventory-virtual-balance-model.md` for how this interacts with the virtual-balance model.
+
 ### Plan for Deprecation of Token Transfer Logic
 
 Note that the InventoryClient is an older module and its token transfer functions are slated to be migrated over to rebalancer clients eventually. For now, the separation of concerns between the two is that the InventoryClient is in charge of sending **same** tokens across chains while rebalancer clients swap different tokens across chains.

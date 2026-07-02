@@ -1263,6 +1263,16 @@ export class InventoryClient {
     }
   }
 
+  /**
+   * Reads the relayer's current on-chain balance of a token on a remote chain. Unlike
+   * TokenClient.getBalance(), which returns the cached inventory snapshot, this performs a fresh on-chain
+   * read (delegated to TokenClient, which dispatches per chain VM — EVM, TVM/Tron, and SVM/Solana) so callers
+   * can guard against stale/virtual balances before submitting a transfer.
+   */
+  protected async getRemoteTokenBalance(chainId: number, l2Token: Address): Promise<BigNumber> {
+    return this.tokenClient.getRemoteTokenBalance(chainId, l2Token);
+  }
+
   async withdrawExcessBalances(): Promise<void> {
     if (!this.isInventoryManagementEnabled()) {
       return;
@@ -1402,14 +1412,69 @@ export class InventoryClient {
           if (pendingWithdrawalAmount.gte(maxL2WithdrawalVolume)) {
             return;
           }
+          // Clamp the withdrawal to the relayer's actual on-chain balance, always leaving the target
+          // allocation (and any outstanding shortfall) behind. `desiredWithdrawalAmount` is derived from the
+          // cached/virtual inventory balance (getCurrentAllocationPct), which can exceed the settled on-chain
+          // balance — e.g. when funds have already been sent out via an in-flight rebalance, or the cached
+          // balance is stale relative to recent activity. Without this clamp the L2 bridge's burn/transferFrom
+          // can revert with "transfer amount exceeds balance", and the withdrawal could drain the chain below
+          // target.
+          const targetBalanceInL2TokenDecimals = cumulativeBalanceInL2TokenDecimals.mul(targetPct).div(this.scalar);
+          // Reserve the chain's token shortfall on top of the target. `desiredWithdrawalAmount` already nets out
+          // the shortfall (currentAllocPct is computed with ignoreShortfall=false), so the clamp must leave the
+          // same headroom behind; otherwise, when the live balance is stale enough for the clamp to bind, we'd
+          // withdraw inventory earmarked for unfilled deposits. getShortfallTotalRequirement() is denominated in
+          // l2Token decimals, matching liveBalance and targetBalanceInL2TokenDecimals.
+          const shortfallInL2TokenDecimals = this.tokenClient.getShortfallTotalRequirement(chainId, l2Token);
+          const reservedBalanceInL2TokenDecimals = targetBalanceInL2TokenDecimals.add(shortfallInL2TokenDecimals);
+          const liveBalance = await this.getRemoteTokenBalance(chainId, l2Token);
+          const maxWithdrawable = liveBalance.gt(reservedBalanceInL2TokenDecimals)
+            ? liveBalance.sub(reservedBalanceInL2TokenDecimals)
+            : bnZero;
+          const amountToWithdraw = desiredWithdrawalAmount.lt(maxWithdrawable)
+            ? desiredWithdrawalAmount
+            : maxWithdrawable;
+          if (amountToWithdraw.lte(bnZero)) {
+            this.log(
+              `Skipping excess withdrawal on ${getNetworkName(chainId)} for ${l1TokenInfo.symbol}: on-chain ` +
+                `balance ${l2TokenFormatter(liveBalance)} is at or below the reserved balance of ${l2TokenFormatter(
+                  reservedBalanceInL2TokenDecimals
+                )} (target ${l2TokenFormatter(targetBalanceInL2TokenDecimals)} + shortfall ${l2TokenFormatter(
+                  shortfallInL2TokenDecimals
+                )}).`,
+              {
+                liveBalance: l2TokenFormatter(liveBalance),
+                desiredWithdrawalAmount: l2TokenFormatter(desiredWithdrawalAmount),
+                targetBalance: l2TokenFormatter(targetBalanceInL2TokenDecimals),
+                shortfall: l2TokenFormatter(shortfallInL2TokenDecimals),
+                reservedBalance: l2TokenFormatter(reservedBalanceInL2TokenDecimals),
+              }
+            );
+            return;
+          }
+          if (amountToWithdraw.lt(desiredWithdrawalAmount)) {
+            this.log(
+              `Clamped excess withdrawal on ${getNetworkName(chainId)} for ${l1TokenInfo.symbol} from ` +
+                `${l2TokenFormatter(desiredWithdrawalAmount)} to ${l2TokenFormatter(amountToWithdraw)} to respect ` +
+                `the on-chain balance of ${l2TokenFormatter(liveBalance)} (reserving target ${l2TokenFormatter(
+                  targetBalanceInL2TokenDecimals
+                )} + shortfall ${l2TokenFormatter(shortfallInL2TokenDecimals)}).`,
+              {
+                desiredWithdrawalAmount: l2TokenFormatter(desiredWithdrawalAmount),
+                amountToWithdraw: l2TokenFormatter(amountToWithdraw),
+                liveBalance: l2TokenFormatter(liveBalance),
+                shortfall: l2TokenFormatter(shortfallInL2TokenDecimals),
+              }
+            );
+          }
           withdrawalsRequired[chainId] ??= [];
           withdrawalsRequired[chainId].push({
             l2Token,
-            amountToWithdraw: desiredWithdrawalAmount,
+            amountToWithdraw,
           });
 
           mrkdwn +=
-            ` - ${l2TokenFormatter(desiredWithdrawalAmount)} ${
+            ` - ${l2TokenFormatter(amountToWithdraw)} ${
               l1TokenInfo.symbol
             } withdrawn. This meets target allocation of ` +
             `${this.formatWei(targetPct.mul(100).toString())}% (trigger of ` +

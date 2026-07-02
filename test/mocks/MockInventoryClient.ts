@@ -131,4 +131,16 @@ export class MockInventoryClient extends InventoryClient {
     }
     return super.getL1TokenAddress(l2Token, chainId);
   }
+
+  remoteTokenBalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
+
+  setRemoteTokenBalance(chainId: number, l2Token: Address, balance: BigNumber): void {
+    (this.remoteTokenBalances[chainId] ??= {})[l2Token.toNative()] = balance;
+  }
+
+  // Default to the cached TokenClient balance so existing tests are unaffected; tests that exercise the
+  // on-chain clamp can override the settled balance via setRemoteTokenBalance().
+  protected override async getRemoteTokenBalance(chainId: number, l2Token: Address): Promise<BigNumber> {
+    return this.remoteTokenBalances[chainId]?.[l2Token.toNative()] ?? this.tokenClient.getBalance(chainId, l2Token);
+  }
 }

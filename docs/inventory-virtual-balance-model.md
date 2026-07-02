@@ -97,6 +97,14 @@ This means repayment-chain selection is driven by projected post-relay state, no
 
 The tracking step mutates local virtual state (`trackCrossChainTransfer`) before the chain tx confirms, preventing duplicate over-send behavior in the same run.
 
+## How excess L2->L1 withdrawals clamp to settled balance
+
+`withdrawExcessBalances()` decides *whether* and *how much* to withdraw from virtual balances (`getCurrentAllocationPct`, shortfall-aware), but the L2 bridge burns from the **settled** on-chain balance. Before queuing a withdrawal it therefore re-reads the live balance via `TokenClient.getRemoteTokenBalance()` — a fresh per-VM read (EVM/TVM `balanceOf`, or SVM SPL balance), not the cached snapshot — and clamps:
+
+- `amount = min(desiredWithdrawalAmount, max(0, liveBalance - target - shortfall))`
+
+This leaves both the configured target allocation and the chain's outstanding shortfall on-chain, mirroring the shortfall netting already baked into `desiredWithdrawalAmount` (which uses `ignoreShortfall=false`). It guards against `transfer amount exceeds balance` reverts and against draining a chain below target when the virtual balance is inflated relative to settled funds (stale cache or in-flight rebalance). When `liveBalance == virtual balance` and there is no shortfall, the clamp is a no-op.
+
 ## Interaction with ReadOnlyRebalancerClient
 
 InventoryClient imports pending cross-asset rebalance state (`pendingRebalances`) through the shared rebalancer interface layer in `src/rebalancer/utils/`, commonly provided by `ReadOnlyRebalancerClient`, and treats it as virtual balance adjustments.
@@ -112,6 +120,7 @@ This is a key cross-module coupling:
 - confusing actual balance with virtual balance during debugging
 - forgetting decimal normalization when comparing values from different chains
 - changing shortfall handling in one path but not others
+- clamping a settled-balance withdrawal to the target only, forgetting to also reserve shortfall (see "How excess L2->L1 withdrawals clamp to settled balance")
 - introducing new pending-state sources without integrating into `getBalanceOnChain()`
 
 ## Debugging tips
