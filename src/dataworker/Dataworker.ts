@@ -500,6 +500,8 @@ export class Dataworker {
     }
 
     // 4. Propose roots to HubPool contract.
+    // Full leaf JSON is included here so it stays visible in debug logs after the Slack notification
+    // (mrkdwn body, built in enqueueRootBundleProposal) was switched to a compact tabular summary.
     this.logger.debug({
       at: "Dataworker#propose",
       message: "Enqueuing new root bundle proposal txn",
@@ -508,6 +510,9 @@ export class Dataworker {
       poolRebalanceRoot: rootBundleData.poolRebalanceTree.getHexRoot(),
       relayerRefundRoot: rootBundleData.relayerRefundTree.getHexRoot(),
       slowRelayRoot: rootBundleData.slowFillTree.getHexRoot(),
+      poolRebalanceLeaves: rootBundleData.poolRebalanceLeaves,
+      relayerRefundLeaves: rootBundleData.relayerRefundLeaves,
+      slowRelayLeaves: rootBundleData.slowFillLeaves,
     });
     if (submitProposals) {
       this.enqueueRootBundleProposal(
@@ -2692,14 +2697,13 @@ export class Dataworker {
         method: "proposeRootBundle", // method called.
         args: [bundleEndBlocks, poolRebalanceLeaves.length, poolRebalanceRoot, relayerRefundRoot, slowRelayRoot], // props sent with function call.
         message: "Proposed new root bundle 🌱", // message sent to logger.
-        mrkdwn: PoolRebalanceUtils.generateMarkdownForRootBundle(
+        mrkdwn: PoolRebalanceUtils.generateSlackSummaryForRootBundle(
           this.clients.hubPoolClient,
           chainIds,
           hubPoolChainId,
           bundleBlockRange,
           [...poolRebalanceLeaves],
           poolRebalanceRoot,
-          [...relayerRefundLeaves],
           relayerRefundRoot,
           [...slowRelayLeaves],
           slowRelayRoot
