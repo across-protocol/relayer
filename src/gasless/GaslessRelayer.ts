@@ -424,6 +424,10 @@ export class GaslessRelayer {
     },
     spokePool: string
   ): boolean {
+    if (this.config.depositsOnlyEnabled) {
+      return false;
+    }
+
     if (this._isCctpDeposit(deposit.originChainId, spokePool)) {
       return false;
     }
@@ -528,6 +532,7 @@ export class GaslessRelayer {
    * For each API message, set {@link MessageState.FILLED} when the deposit is already fully handled on-chain so
    * {@link evaluateApiSignatures} skips it.
    * - Swap-and-bridge and CCTP (relayer does not fill): deposit observed on origin → FILLED.
+   * - Deposits-only mode: origin deposit observed → FILLED.
    * - Standard bridge: both origin deposit and destination fill observed → FILLED.
    * Otherwise leave state unset so the message runs through the normal state machine.
    */
@@ -544,7 +549,7 @@ export class GaslessRelayer {
       }
 
       const isCctp = this._isCctpDeposit(originChainId, spokePool);
-      if (isCctp) {
+      if (isCctp || this.config.depositsOnlyEnabled) {
         this._setState(depositKey, MessageState.FILLED);
         markedFilledCount++;
         continue;
@@ -762,8 +767,13 @@ export class GaslessRelayer {
                 ? this._extractDepositFromTransactionReceipt(depositReceipt, originChainId)
                 : await this._findDeposit(bridgeMessage);
               if (isDefined(deposit)) {
-                log("info", `Verified deposit on ${origin}`);
-                nextState = MessageState.FILL_PENDING;
+                if (this.config.depositsOnlyEnabled) {
+                  log("info", `Verified deposit on ${origin}. Deposits-only mode: skipping fill.`);
+                  nextState = MessageState.FILLED;
+                } else {
+                  log("info", `Verified deposit on ${origin}`);
+                  nextState = MessageState.FILL_PENDING;
+                }
               } else {
                 log("info", `Could not locate deposit on ${origin}.`);
                 // It's possible the deposit will always fail in simulation (e.g. insufficient balance). In this
@@ -778,6 +788,12 @@ export class GaslessRelayer {
           }
 
           case MessageState.FILL_PENDING: {
+            if (this.config.depositsOnlyEnabled) {
+              log("info", `Deposits-only mode: skipping fill on ${destination}.`);
+              setState(MessageState.FILLED);
+              break;
+            }
+
             let fillStatus: FillStatus;
 
             if (deposit) {
@@ -1030,7 +1046,45 @@ export class GaslessRelayer {
     if (!isDefined(apiResponseData)) {
       return retriesRemaining > 0 ? this._queryGaslessApi(--retriesRemaining) : [];
     }
-    return restructureGaslessDeposits(apiResponseData.deposits, this.logger);
+    const deposits = restructureGaslessDeposits(apiResponseData.deposits, this.logger);
+    return this._filterDepositsByIntegratorId(deposits);
+  }
+
+  protected _filterDepositsByIntegratorId(deposits: AnyGaslessDepositMessage[]): AnyGaslessDepositMessage[] {
+    const { allowedIntegratorIds, blockedIntegratorIds } = this.config;
+    if (!isDefined(allowedIntegratorIds) && !isDefined(blockedIntegratorIds)) {
+      return deposits;
+    }
+
+    return deposits.filter((deposit) => {
+      const integratorId = deposit.integratorId?.toLowerCase();
+      if (isDefined(allowedIntegratorIds)) {
+        const allowed = isDefined(integratorId) && allowedIntegratorIds.has(integratorId);
+        if (!allowed) {
+          this.logger.debug({
+            at: "GaslessRelayer#_queryGaslessApi",
+            message: "Skipping gasless deposit with integratorId outside allow-list",
+            requestId: deposit.requestId,
+            depositId: deposit.depositId,
+            integratorId: deposit.integratorId,
+          });
+        }
+        return allowed;
+      }
+
+      if (isDefined(blockedIntegratorIds) && isDefined(integratorId) && blockedIntegratorIds.has(integratorId)) {
+        this.logger.debug({
+          at: "GaslessRelayer#_queryGaslessApi",
+          message: "Skipping gasless deposit with blocked integratorId",
+          requestId: deposit.requestId,
+          depositId: deposit.depositId,
+          integratorId: deposit.integratorId,
+        });
+        return false;
+      }
+
+      return true;
+    });
   }
 
   /*
