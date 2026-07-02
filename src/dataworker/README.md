@@ -23,14 +23,20 @@ The dataworker runtime file is index.ts. This file contains a `runDataworker()` 
 1. Checks if there is an existing pending root bundle. If there is one, validate it. If invalid, submit a dispute, otherwise proceed.
 2. If no existing pending root bundle, construct and propose a new one.
 3. If existing pending root bundle has passed its optimistic challenge liveness window, then execute it by calling functions on the `HubPool` and functions on each spoke network's `SpokePool`. Recall that each root bundle refers to a Merkle root describing the list of relayer and depositor refunds. Therefore, executing these refunds amounts to submitting Merkle leaves from this Merkle root to the HubPool/SpokePool and letting those contracts send out payments based on those Merkle leaf contents.
-## Disputer watchdog bond maintenance
+## Bond token balance maintenance
 
-The disputer watchdog (`runDisputerWatchdog()` in index.ts) maintains the signer's HubPool bond
-token (ABT) balance via `Disputer.validate()`: when the balance drops below a trigger level, it
-wraps native token (`bondToken.deposit()`) to restore the balance to a target level, wrapping as
-much of any shortfall as the native balance allows while keeping a small native reserve for gas.
+`Disputer.validate()` maintains the signer's HubPool bond token (ABT) balance: when the balance
+drops below a trigger level, it wraps native token (`bondToken.deposit()`) to restore the balance
+to a target level, wrapping as much of any shortfall as the native balance allows while keeping a
+small native reserve for gas.
 
-- `BOND_BALANCE_TRIGGER` / `BOND_BALANCE_TARGET`: absolute levels in whole bond tokens
-  (e.g. `15` / `20`). Set the trigger at or above any external balance-alerting thresholds
-  (e.g. the monitor's `MONITORED_BALANCES` warn level) so the watchdog tops up before alerts fire.
-- Unset: defaults to 4x (trigger) and 8x (target) the HubPool bond amount.
+Two runtimes invoke it:
+
+- **Disputer** (`runDataworker()` with `DISPUTER_ENABLED`): opt-in via `BOND_BALANCE_TRIGGER` /
+  `BOND_BALANCE_TARGET` — absolute levels in whole bond tokens (e.g. `15` / `20`), applied before
+  pending root bundle validation. Set the trigger at or above any external balance-alerting
+  thresholds (e.g. the monitor's `MONITORED_BALANCES` warn level) so the top-up lands before
+  alerts fire. Unset: no maintenance in this flow.
+- **Disputer watchdog** (`runDisputerWatchdog()`): always runs with last-resort defaults of
+  4x (trigger) and 8x (target) the HubPool bond amount, guaranteeing the watchdog can post a
+  dispute bond even if the disputer's maintenance has not run.

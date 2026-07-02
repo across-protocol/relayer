@@ -41,10 +41,11 @@ export class DataworkerConfig extends CommonConfig {
   // Used to instruct the dataworker to load data from arweave in times when doing so is optional (i.e. execution).
   readonly loadArweaveData: boolean | undefined;
 
-  // Disputer watchdog bond maintenance levels, denominated in whole bond tokens (e.g. "15" = 15 ABT).
-  // When the bond token balance drops below the trigger, native token is wrapped to restore the
-  // balance to the target. Set the trigger at or above any external balance alerting thresholds so
-  // the watchdog tops up before alerts fire. Unset: defaults to multiples of the HubPool bond amount.
+  // Disputer bond maintenance levels, denominated in whole bond tokens (e.g. "15" = 15 ABT).
+  // When set and the disputer is enabled, a bond token balance below the trigger is topped up to
+  // the target by wrapping native token. Set the trigger at or above any external balance alerting
+  // thresholds so the top-up lands before alerts fire. Unset: no maintenance in the disputer flow;
+  // the disputer watchdog retains its own last-resort defaults as multiples of the bond amount.
   readonly bondBalanceTrigger?: BigNumber;
   readonly bondBalanceTarget?: BigNumber;
 

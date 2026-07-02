@@ -231,6 +231,24 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
     );
     // Validate and dispute pending proposal before proposing a new one
     if (config.disputerEnabled) {
+      // Maintain the bond token reserve ahead of any dispute. Opt-in via BOND_BALANCE_TRIGGER so
+      // that other DISPUTER_ENABLED deployments are unaffected.
+      if (isDefined(config.bondBalanceTrigger)) {
+        const disputer = new Disputer(
+          config.hubPoolChainId,
+          logger,
+          clients.hubPoolClient.hubPool,
+          baseSigner,
+          !config.sendingTransactionsEnabled,
+          { trigger: config.bondBalanceTrigger, target: config.bondBalanceTarget }
+        );
+        try {
+          await disputer.validate();
+        } catch (error) {
+          // A failed top-up shouldn't block bundle validation; a dispute without bond fails on its own.
+          logger.error({ at: "Dataworker#index", message: "Failed to maintain bond token reserve.", error });
+        }
+      }
       await dataworker.validatePendingRootBundle(spokePoolClients, fromBlocks);
     } else {
       logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Disputer disabled" });
@@ -445,10 +463,7 @@ export async function runDisputerWatchdog(logger: winston.Logger, signer: Signer
 
   const provider = await getProvider(hubChainId, logger);
   const hubPool = getDeployedContract("HubPool", hubChainId).connect(provider);
-  const disputer = new Disputer(hubChainId, logger, hubPool, signer, !enabled, {
-    trigger: config.bondBalanceTrigger,
-    target: config.bondBalanceTarget,
-  });
+  const disputer = new Disputer(hubChainId, logger, hubPool, signer, !enabled);
 
   logger.debug({ at, message: "Starting Disputer Watchdog." });
 
