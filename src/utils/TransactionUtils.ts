@@ -20,7 +20,9 @@ import {
   getBase64EncodedWireTransaction,
   setTransactionMessageLifetimeUsingBlockhash,
   signTransactionMessageWithSigners,
+  type Base64EncodedWireTransaction,
   type MicroLamports,
+  type Signature,
 } from "@solana/kit";
 import { updateOrAppendSetComputeUnitPriceInstruction } from "@solana-program/compute-budget";
 
@@ -58,11 +60,29 @@ export async function withFreshBlockhash<T extends SolanaUnsignedTransaction>(pr
 // https://solana.com/docs/rpc/http/sendtransaction.
 export type SolanaSendOptions = { minContextSlot?: bigint };
 
-export async function signAndSendTransaction(
+// Re-broadcast the same signed wire tx every N polling cycles while waiting
+// for confirmation. Solana leaders can drop or skip txs that aren't picked up
+// in their assigned slot — under congestion or with an uncompetitive priority
+// fee, the original `sendTransaction` may sit in mempool for many slots until
+// some later leader happens to ingest it. Re-broadcasting the same serialized
+// tx is idempotent (signature is deterministic from body+sigs) and gives
+// successive leaders new chances to land it before our polling budget runs
+// out. ~1.8s cadence (3 × 600ms polling delay) matches a few Solana slots.
+const SOLANA_REBROADCAST_EVERY_CYCLES = 3;
+
+// Internal helper that prepares, signs, and broadcasts a Solana transaction.
+// Returns the signature plus the serialized wire tx and the send options used,
+// so a polling loop above can re-broadcast the same tx (with `skipPreflight`)
+// when a leader has dropped it.
+async function _prepareAndSendSolanaTransaction(
   provider: SVMProvider,
   _unsignedTxn: SolanaUnsignedTransaction,
-  opts: SolanaSendOptions = {}
-) {
+  opts: SolanaSendOptions
+): Promise<{
+  signature: Signature;
+  serializedTx: Base64EncodedWireTransaction;
+  baseSendOpts: SolanaInternalSendOptions;
+}> {
   const priorityFeeOverride = process.env["SVM_PRIORITY_FEE_OVERRIDE"];
   const unsignedTxn = isDefined(priorityFeeOverride)
     ? updateOrAppendSetComputeUnitPriceInstruction(BigInt(priorityFeeOverride) as MicroLamports, _unsignedTxn)
@@ -70,14 +90,30 @@ export async function signAndSendTransaction(
   const txWithFreshBlockhash = await withFreshBlockhash(provider, unsignedTxn);
   const signedTransaction = await signTransactionMessageWithSigners(txWithFreshBlockhash);
   const serializedTx = getBase64EncodedWireTransaction(signedTransaction);
-  return provider
-    .sendTransaction(serializedTx, {
-      preflightCommitment: "confirmed",
-      skipPreflight: false,
-      encoding: "base64",
-      ...(isDefined(opts.minContextSlot) ? { minContextSlot: opts.minContextSlot } : {}),
-    })
-    .send();
+  const baseSendOpts: SolanaInternalSendOptions = {
+    preflightCommitment: "confirmed",
+    skipPreflight: false,
+    encoding: "base64",
+    ...(isDefined(opts.minContextSlot) ? { minContextSlot: opts.minContextSlot } : {}),
+  };
+  const signature = await provider.sendTransaction(serializedTx, baseSendOpts).send();
+  return { signature, serializedTx, baseSendOpts };
+}
+
+type SolanaInternalSendOptions = {
+  preflightCommitment: "confirmed";
+  skipPreflight: boolean;
+  encoding: "base64";
+  minContextSlot?: bigint;
+};
+
+export async function signAndSendTransaction(
+  provider: SVMProvider,
+  _unsignedTxn: SolanaUnsignedTransaction,
+  opts: SolanaSendOptions = {}
+) {
+  const { signature } = await _prepareAndSendSolanaTransaction(provider, _unsignedTxn, opts);
+  return signature;
 }
 
 // Internal helper: send + poll. Returns the signature and (when reached) the
@@ -93,7 +129,11 @@ async function _sendAndPoll(
   const delay = (ms: number) => {
     return new Promise((resolve) => setTimeout(resolve, ms));
   };
-  const txSignature = await signAndSendTransaction(provider, unsignedTransaction, opts);
+  const {
+    signature: txSignature,
+    serializedTx,
+    baseSendOpts,
+  } = await _prepareAndSendSolanaTransaction(provider, unsignedTransaction, opts);
   let confirmed = false;
   let confirmedSlot: bigint | undefined;
   let _cycles = 0;
@@ -117,6 +157,20 @@ async function _sendAndPoll(
     if (!confirmed) {
       await delay(pollingDelay);
       _cycles++;
+      // Re-broadcast the same signed wire tx every few cycles so a leader
+      // that dropped/skipped the original send gets new attempts to land it.
+      // Preflight already passed on the initial send, so skip it here to keep
+      // the RPC roundtrip cheap. Any errors thrown by the RPC on rebroadcast
+      // (e.g. AlreadyProcessed once the tx has landed, transient provider
+      // failures) are benign — the polling above remains the source of truth
+      // for confirmation status.
+      if (_cycles % SOLANA_REBROADCAST_EVERY_CYCLES === 0) {
+        try {
+          await provider.sendTransaction(serializedTx, { ...baseSendOpts, skipPreflight: true }).send();
+        } catch {
+          // intentionally swallowed; see comment above
+        }
+      }
     }
   }
   return { signature: txSignature, confirmedSlot };
