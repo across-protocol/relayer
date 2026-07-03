@@ -26,6 +26,7 @@ import ZKSTACK_NATIVE_TOKEN_VAULT_ABI from "./abi/ZkStackNativeTokenVault.json";
 import ZKSTACK_BRIDGE_HUB_ABI from "./abi/ZkStackBridgeHub.json";
 import ZKSTACK_SHARED_BRIDGE_ABI from "./abi/ZkStackSharedBridge.json";
 import ZKSTACK_USDC_BRIDGE_ABI from "./abi/ZkStackUSDCBridge.json";
+import ZKSTACK_L2_BASE_TOKEN_ABI from "./abi/ZkStackL2BaseToken.json";
 import ARBITRUM_ERC20_GATEWAY_ROUTER_L1_ABI from "./abi/ArbitrumErc20GatewayRouterL1.json";
 import ARBITRUM_ERC20_GATEWAY_ROUTER_L2_ABI from "./abi/ArbitrumErc20GatewayRouterL2.json";
 import ARBITRUM_ERC20_GATEWAY_L1_ABI from "./abi/ArbitrumErc20GatewayL1.json";
@@ -663,6 +664,12 @@ export const CONTRACT_ADDRESSES: {
     nativeToken: {
       address: "0x000000000000000000000000000000000000800A",
       abi: WETH_ABI,
+    },
+    // Same system contract as `nativeToken`, but with the L2BaseToken interface used to
+    // withdraw the chain's base token (GHO) back to the L1 withdrawal recipient.
+    l2BaseToken: {
+      address: "0x000000000000000000000000000000000000800A",
+      abi: ZKSTACK_L2_BASE_TOKEN_ABI,
     },
     // This is Lens wrapped GHO, NOT WETH.
     wrappedNativeToken: {

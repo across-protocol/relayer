@@ -1,0 +1,19 @@
+[
+  {
+    "inputs": [{ "internalType": "address", "name": "_l1Receiver", "type": "address" }],
+    "name": "withdraw",
+    "outputs": [],
+    "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      { "indexed": true, "internalType": "address", "name": "_l2Sender", "type": "address" },
+      { "indexed": true, "internalType": "address", "name": "_l1Receiver", "type": "address" },
+      { "indexed": false, "internalType": "uint256", "name": "_amount", "type": "uint256" }
+    ],
+    "name": "Withdrawal",
+    "type": "event"
+  }
+]

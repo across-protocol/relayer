@@ -10,6 +10,7 @@ import {
   getTokenInfo,
   getUniqueLogIndex,
   Multicall2Call,
+  paginatedEventQuery,
   winston,
   zkSync as zkSyncUtils,
   assert,
@@ -23,7 +24,7 @@ import {
   CHAIN_IDs,
 } from "../../utils";
 import { getRedisCache } from "../../cache/Redis";
-import { FinalizerPromise, CrossChainMessage } from "../types";
+import { FinalizerPromise, CrossChainMessage, AddressesToFinalize } from "../types";
 
 type TokensBridged = interfaces.TokensBridged;
 
@@ -47,7 +48,9 @@ export async function zkSyncFinalizer(
   logger: winston.Logger,
   signer: Signer,
   hubPoolClient: HubPoolClient,
-  spokePoolClient: SpokePoolClient
+  spokePoolClient: SpokePoolClient,
+  _l1SpokePoolClient: SpokePoolClient,
+  senderAddresses: AddressesToFinalize
 ): Promise<FinalizerPromise> {
   assert(isEVMSpokePoolClient(spokePoolClient));
   const { chainId: l1ChainId } = hubPoolClient;
@@ -74,8 +77,12 @@ export async function zkSyncFinalizer(
     message: "ZkSync TokensBridged event filter",
     toBlock: latestBlockToFinalize,
   });
+  // Withdrawals initiated directly by monitored addresses (e.g. relayer inventory withdrawals of the chain's
+  // custom gas token, like (W)GHO on Lens) don't emit TokensBridged events, so discover them separately.
+  const baseTokenWithdrawals = await getBaseTokenWithdrawalEvents(logger, spokePoolClient, senderAddresses);
   const withdrawalsToQuery = spokePoolClient
     .getTokensBridged()
+    .concat(baseTokenWithdrawals)
     .filter(({ blockNumber }) => blockNumber <= latestBlockToFinalize)
     .filter(({ txnRef }) => !IGNORED_WITHDRAWALS.includes(txnRef));
   const statuses = await sortWithdrawals(l2Provider, withdrawalsToQuery);
@@ -116,6 +123,54 @@ export async function zkSyncFinalizer(
   });
 
   return { callData: txns, crossChainMessages: withdrawals };
+}
+
+/**
+ * @notice Queries base-token withdrawals initiated directly by monitored addresses via the L2BaseToken system
+ * contract. This is how the relayer withdraws excess amounts of a ZkStack chain's custom gas token (e.g. (W)GHO
+ * on Lens) back to L1. SpokePool-initiated withdrawals are excluded since those are already discovered via
+ * TokensBridged events. No-op for chains without an l2BaseToken contract entry.
+ * @param spokePoolClient SpokePoolClient for the L2 chain, used for the provider and event search config.
+ * @param senderAddresses Addresses whose withdrawals should be finalized.
+ * @returns TokensBridged-shaped events for each discovered base-token withdrawal.
+ */
+async function getBaseTokenWithdrawalEvents(
+  logger: winston.Logger,
+  spokePoolClient: SpokePoolClient,
+  senderAddresses: AddressesToFinalize
+): Promise<TokensBridged[]> {
+  assert(isEVMSpokePoolClient(spokePoolClient));
+  const { chainId, spokePool } = spokePoolClient;
+  if (!isDefined(CONTRACT_ADDRESSES[chainId]?.l2BaseToken)) {
+    return [];
+  }
+  const fromAddresses = Array.from(senderAddresses.keys())
+    .filter((address) => address.isEVM())
+    .map((sender) => sender.toEvmAddress())
+    .filter((sender) => sender !== spokePool.address);
+  if (fromAddresses.length === 0) {
+    return [];
+  }
+
+  const { address, abi } = getContractEntry(chainId, "l2BaseToken");
+  const baseToken = new Contract(address, abi, spokePool.provider);
+  const searchConfig = { ...spokePoolClient.eventSearchConfig, to: spokePoolClient.latestHeightSearched };
+  const events = await paginatedEventQuery(baseToken, baseToken.filters.Withdrawal(fromAddresses), searchConfig);
+  logger.debug({
+    at: "ZkSyncFinalizer",
+    message: `Found ${events.length} base-token withdrawals initiated by monitored addresses.`,
+    chainId,
+    txnRefs: events.map(({ transactionHash }) => transactionHash),
+  });
+  return events.map(({ transactionHash, transactionIndex, ...event }) => ({
+    ...event,
+    amountToReturn: event.args._amount,
+    chainId,
+    leafId: 0,
+    l2TokenAddress: EvmAddress.from(address),
+    txnRef: transactionHash,
+    txnIndex: transactionIndex,
+  }));
 }
 
 /**
