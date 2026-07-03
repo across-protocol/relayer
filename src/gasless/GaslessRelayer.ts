@@ -427,7 +427,7 @@ export class GaslessRelayer {
     },
     spokePool: string
   ): boolean {
-    if (this.config.depositsOnlyEnabled) {
+    if (!this.config.fillsEnabled) {
       return false;
     }
 
@@ -664,7 +664,7 @@ export class GaslessRelayer {
               this.config.allowedPeggedPairs,
               this.logger,
               this.config.depositUsdPageThreshold,
-              this.config.depositsOnlyEnabled
+              this.config.fillsEnabled
             );
             let nextState = MessageState.ERROR;
             if (!valid) {
@@ -1220,9 +1220,7 @@ export class GaslessRelayer {
    * @notice Returns true when this bot submits the origin deposit but does not perform a destination fill.
    */
   private _skipsDestinationFill(depositMessage: AnyGaslessDepositMessage): boolean {
-    return (
-      this.config.depositsOnlyEnabled || this._isCctpDeposit(depositMessage.originChainId, depositMessage.spokePool)
-    );
+    return !this.config.fillsEnabled || this._isCctpDeposit(depositMessage.originChainId, depositMessage.spokePool);
   }
 
   /*

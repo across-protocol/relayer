@@ -12,7 +12,7 @@ Full env parsing lives in `GaslessRelayerConfig.ts`. Runtime state machine is in
 2. **Poll** — on `API_POLLING_INTERVAL`, call `_queryGaslessApi`, filter messages, run the per-deposit state machine in `evaluateApiSignatures`.
 3. **Per message** — `INITIAL` → validate → `DEPOSIT_SUBMIT` → `DEPOSIT_CONFIRM` → (`FILL_PENDING` →) `FILLED` or `DONE`.
 
-CCTP deposits (and swap-and-bridge that uses a non-default `spokePool`) end in `DONE`. Standard bridge deposits submit a fill and end in `FILLED`, unless deposits-only mode is enabled (see below).
+CCTP deposits (and swap-and-bridge that uses a non-default `spokePool`) end in `DONE`. Standard bridge deposits submit a fill and end in `FILLED`, unless fills are disabled (see below).
 
 Integrator filtering runs inside `_queryGaslessApi` immediately after API responses are restructured — discarded messages never enter the state machine.
 
@@ -39,12 +39,13 @@ Integrator filtering runs inside `_queryGaslessApi` immediately after API respon
 | `SPOKE_POOL_PERIPHERY_OVERRIDES` | `{}` | Per-chain SpokePool periphery address overrides. |
 | `RELAYER_GASLESS_DEPOSIT_USD_PAGE_THRESHOLD` | `1000` | Page-worthy deposit size threshold (stablecoin input); `0` disables. |
 | `RELAYER_GASLESS_REFUND_FLOW_TEST_ENABLED` | `false` | Test mode: allow refund-shaped deposits; submit deposit but skip fill. |
+| `RELAYER_GASLESS_FILLS_ENABLED` | `true` | When `false`, submit origin deposits only (no destination fills). |
 
-### `ENABLE_DEPOSITS_ONLY` (deposits-only mode)
+### `RELAYER_GASLESS_FILLS_ENABLED` (deposits-only mode)
 
-When unset or not `true`, behavior is unchanged.
+Default is `true` (fills enabled). Set `RELAYER_GASLESS_FILLS_ENABLED=false` for a deposits-only instance (e.g. GA landing deposits while another bot fills).
 
-When `ENABLE_DEPOSITS_ONLY=true`:
+When `RELAYER_GASLESS_FILLS_ENABLED=false`:
 
 - Submit the origin deposit transaction and confirm it on-chain.
 - Mark the API message `DONE` after deposit confirmation (origin deposit only; no destination fill).
@@ -55,7 +56,7 @@ When `ENABLE_DEPOSITS_ONLY=true`:
 
 State path: `INITIAL → DEPOSIT_SUBMIT → DEPOSIT_CONFIRM → DONE`.
 
-`FILLED` is the terminal state when this bot completes a destination fill (standard bridge flow). `DONE` means the relayer finished without filling: CCTP/swapAndBridge (non-default `spokePool`), or `ENABLE_DEPOSITS_ONLY`.
+`FILLED` is the terminal state when this bot completes a destination fill (standard bridge flow). `DONE` means the relayer finished without filling: CCTP/swapAndBridge (non-default `spokePool`), or `RELAYER_GASLESS_FILLS_ENABLED=false`.
 
 Use this when another relayer or process is responsible for filling, and this bot should only land deposits on the origin chain.
 

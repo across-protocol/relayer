@@ -56,3 +56,18 @@ describe("GaslessRelayerConfig integrator filters", function () {
     );
   });
 });
+
+describe("GaslessRelayerConfig fillsEnabled", function () {
+  it("defaults fillsEnabled to true when unset", function () {
+    const config = new GaslessRelayerConfig(baseEnv);
+    expect(config.fillsEnabled).to.equal(true);
+  });
+
+  it("parses RELAYER_GASLESS_FILLS_ENABLED=false", function () {
+    const config = new GaslessRelayerConfig({
+      ...baseEnv,
+      RELAYER_GASLESS_FILLS_ENABLED: "false",
+    });
+    expect(config.fillsEnabled).to.equal(false);
+  });
+});

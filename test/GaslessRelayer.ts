@@ -897,7 +897,7 @@ describe("GaslessRelayer", function () {
     });
   });
 
-  describe("ENABLE_DEPOSITS_ONLY", function () {
+  describe("RELAYER_GASLESS_FILLS_ENABLED", function () {
     let depositsOnlyRelayer: TestableGaslessRelayer;
 
     beforeEach(async function () {
@@ -910,7 +910,7 @@ describe("GaslessRelayer", function () {
         RELAYER_DESTINATION_CHAINS: `[${DESTINATION_CHAIN_ID}]`,
         API_GASLESS_ENDPOINT: "http://127.0.0.1",
         SEND_TRANSACTIONS: "true",
-        ENABLE_DEPOSITS_ONLY: "true",
+        RELAYER_GASLESS_FILLS_ENABLED: "false",
       });
 
       depositsOnlyRelayer = new TestableGaslessRelayer(spyLogger, config, signer, []);
