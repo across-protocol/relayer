@@ -177,6 +177,10 @@ class TestableGaslessRelayer extends GaslessRelayer {
   public runMarkFilledFromInitialObservation(messages: AnyGaslessDepositMessage[]): number {
     return this._markFilledFromInitialObservation(messages);
   }
+
+  public runFilterDepositsByIntegratorId(messages: AnyGaslessDepositMessage[]): AnyGaslessDepositMessage[] {
+    return this._filterDepositsByIntegratorId(messages);
+  }
 }
 
 /**
@@ -186,7 +190,8 @@ class TestableGaslessRelayer extends GaslessRelayer {
 function makeDepositMessage(
   baseOverrides: Partial<GaslessDepositMessage["baseDepositData"]> = {},
   spokePool = DUMMY_ADDRESS,
-  metadata: GaslessDepositMetadata = {}
+  metadata: GaslessDepositMetadata = {},
+  integratorId?: string
 ): GaslessDepositMessage {
   const fillDeadline = baseOverrides.fillDeadline ?? getCurrentTime() + 3600;
   const baseDepositData = {
@@ -232,6 +237,7 @@ function makeDepositMessage(
     spokePool,
     nonce: "1",
     metadata: { instantFill: false, ...metadata },
+    ...(isDefined(integratorId) ? { integratorId } : {}),
   };
 }
 
@@ -508,7 +514,14 @@ function expectCctpTransitions(transitions: Array<{ from: MessageState; to: Mess
   expect(transitions).to.have.lengthOf(3);
   expect(transitions[0]).to.deep.equal({ from: MessageState.INITIAL, to: MessageState.DEPOSIT_SUBMIT });
   expect(transitions[1]).to.deep.equal({ from: MessageState.DEPOSIT_SUBMIT, to: MessageState.DEPOSIT_CONFIRM });
-  expect(transitions[2]).to.deep.equal({ from: MessageState.DEPOSIT_CONFIRM, to: MessageState.FILLED });
+  expect(transitions[2]).to.deep.equal({ from: MessageState.DEPOSIT_CONFIRM, to: MessageState.DONE });
+}
+
+function expectDepositsOnlyTransitions(transitions: Array<{ from: MessageState; to: MessageState }>) {
+  expect(transitions).to.have.lengthOf(3);
+  expect(transitions[0]).to.deep.equal({ from: MessageState.INITIAL, to: MessageState.DEPOSIT_SUBMIT });
+  expect(transitions[1]).to.deep.equal({ from: MessageState.DEPOSIT_SUBMIT, to: MessageState.DEPOSIT_CONFIRM });
+  expect(transitions[2]).to.deep.equal({ from: MessageState.DEPOSIT_CONFIRM, to: MessageState.DONE });
 }
 
 /**
@@ -564,8 +577,9 @@ describe("GaslessRelayer", function () {
   // Test fixture helpers that automatically use the correct spokePool address
   const makeTestDepositMessage = (
     overrides?: Partial<GaslessDepositMessage["baseDepositData"]>,
-    metadata?: GaslessDepositMetadata
-  ) => makeDepositMessage(overrides ?? {}, fakeSpokePoolAddress, metadata ?? {});
+    metadata?: GaslessDepositMetadata,
+    integratorId?: string
+  ) => makeDepositMessage(overrides ?? {}, fakeSpokePoolAddress, metadata ?? {}, integratorId);
   const makeTestPermit2Message = (
     overrides?: Partial<GaslessDepositMessage["baseDepositData"]>,
     metadata?: GaslessDepositMetadata
@@ -820,7 +834,7 @@ describe("GaslessRelayer", function () {
   });
 
   describe("CCTP flow", function () {
-    it("CCTP deposit: submits deposit, skips fill, goes to FILLED", async function () {
+    it("CCTP deposit: submits deposit, skips fill, goes to DONE", async function () {
       const msg = makeTestCctpMessage({ inputAmount: "2000000", outputAmount: "1900000" });
       const receipt = makeReceipt();
       const nonce = depositNonceFor(relayer, msg);
@@ -830,7 +844,7 @@ describe("GaslessRelayer", function () {
 
       await relayer.runEvaluateApiSignatures();
 
-      expect(relayer.getMessageState(nonce)).to.equal(MessageState.FILLED);
+      expect(relayer.getMessageState(nonce)).to.equal(MessageState.DONE);
       expect(relayer.initiateDepositCalls).to.equal(1);
       expect(relayer.initiateFillCalls).to.equal(0);
       expectCctpTransitions(relayer.stateTransitions[nonce]);
@@ -866,7 +880,7 @@ describe("GaslessRelayer", function () {
       expect(relayer.getObservedDepositsSet(ORIGIN_CHAIN_ID).has(expectedKey)).to.equal(false);
     });
 
-    it("CCTP swap + Permit2: null deposit receipt but consumed nonce confirms to FILLED", async function () {
+    it("CCTP swap + Permit2: null deposit receipt but consumed nonce confirms to DONE", async function () {
       const msg = makeSwapAndBridgePermit2CctpMessage({ depositId: "obs-3", permitNonce: "0" });
       const nonce = depositNonceForSwap(relayer, msg);
       fakePermit2Smock.nonceBitmap.returns(ethers.BigNumber.from(1));
@@ -876,14 +890,207 @@ describe("GaslessRelayer", function () {
 
       await relayer.runEvaluateApiSignatures();
 
-      expect(relayer.getMessageState(nonce)).to.equal(MessageState.FILLED);
+      expect(relayer.getMessageState(nonce)).to.equal(MessageState.DONE);
       expect(relayer.initiateDepositCalls).to.equal(1);
       expect(relayer.initiateFillCalls).to.equal(0);
       expectCctpTransitions(relayer.stateTransitions[nonce]);
     });
   });
 
-  describe("Initial observation (mark FILLED from observed deposits/fills)", function () {
+  describe("RELAYER_GASLESS_FILLS_ENABLED", function () {
+    let depositsOnlyRelayer: TestableGaslessRelayer;
+
+    beforeEach(async function () {
+      const { spyLogger } = createSpyLogger();
+      const [signer] = await ethers.getSigners();
+
+      const config = new GaslessRelayerConfig({
+        RELAYER_TOKEN_SYMBOLS: '["USDC"]',
+        RELAYER_ORIGIN_CHAINS: `[${ORIGIN_CHAIN_ID}]`,
+        RELAYER_DESTINATION_CHAINS: `[${DESTINATION_CHAIN_ID}]`,
+        API_GASLESS_ENDPOINT: "http://127.0.0.1",
+        SEND_TRANSACTIONS: "true",
+        RELAYER_GASLESS_FILLS_ENABLED: "false",
+      });
+
+      depositsOnlyRelayer = new TestableGaslessRelayer(spyLogger, config, signer, []);
+
+      fakePeripherySmock = await smock.fake(SPOKE_POOL_PERIPHERY_ABI);
+      const fakePeriphery = new Contract(fakePeripherySmock.address, SPOKE_POOL_PERIPHERY_ABI, signer.provider);
+      const fakeSpokePoolSmock = await smock.fake([]);
+      const fakeSpokePool = new Contract(fakeSpokePoolSmock.address, [], signer.provider);
+      fakeSpokePoolAddress = fakeSpokePool.address;
+
+      const provider = signer.provider;
+      assert(isDefined(provider), "Signer must have a provider in test setup");
+      depositsOnlyRelayer.setProvidersByChain({
+        [ORIGIN_CHAIN_ID]: provider,
+        [DESTINATION_CHAIN_ID]: provider,
+      });
+      depositsOnlyRelayer.setSpokePoolPeripheries({ [ORIGIN_CHAIN_ID]: fakePeriphery });
+      depositsOnlyRelayer.setSpokePools({
+        [ORIGIN_CHAIN_ID]: fakeSpokePool,
+        [DESTINATION_CHAIN_ID]: fakeSpokePool,
+      });
+      depositsOnlyRelayer.setObservedDeposits({ [ORIGIN_CHAIN_ID]: new Set() });
+      depositsOnlyRelayer.setObservedFills({ [DESTINATION_CHAIN_ID]: new Set() });
+      depositsOnlyRelayer.setSignerAddress(EvmAddress.from(signer.address));
+
+      fakePermit2Smock = await smock.fake(PERMIT2_ABI);
+      fakePermit2Smock.nonceBitmap.returns(ethers.BigNumber.from(0));
+      depositsOnlyRelayer.setPermit2Contracts({ [ORIGIN_CHAIN_ID]: fakePermit2Smock as unknown as Contract });
+    });
+
+    it("submits deposit and marks DONE without destination fill", async function () {
+      const msg = makeTestDepositMessage({ inputAmount: "20000000", outputAmount: "19000000" });
+      const receipt = makeReceipt();
+      const depositEvent = makeFakeDepositEvent({ inputAmount: "20000000", outputAmount: "19000000" });
+
+      depositsOnlyRelayer.queryGaslessApiFn = async () => [msg];
+      depositsOnlyRelayer.initiateDepositFn = async () => receipt;
+      depositsOnlyRelayer.extractDepositFromReceiptFn = () => depositEvent;
+      depositsOnlyRelayer.initiateFillFn = async () => receipt;
+
+      await depositsOnlyRelayer.runEvaluateApiSignatures();
+
+      const nonce = depositNonceFor(depositsOnlyRelayer, msg);
+      expect(depositsOnlyRelayer.getMessageState(nonce)).to.equal(MessageState.DONE);
+      expect(depositsOnlyRelayer.initiateDepositCalls).to.equal(1);
+      expect(depositsOnlyRelayer.initiateFillCalls).to.equal(0);
+      expectDepositsOnlyTransitions(depositsOnlyRelayer.stateTransitions[nonce]);
+    });
+
+    it("disables immediate fill even when instantFill metadata is set", async function () {
+      const msg = makeTestDepositMessage({}, { instantFill: true });
+      setFillImmediateThreshold(msg);
+      const receipt = makeReceipt();
+      const depositEvent = makeFakeDepositEvent({});
+
+      depositsOnlyRelayer.queryGaslessApiFn = async () => [msg];
+      depositsOnlyRelayer.initiateDepositFn = async () => receipt;
+      depositsOnlyRelayer.extractDepositFromReceiptFn = () => depositEvent;
+      depositsOnlyRelayer.initiateFillFn = async () => receipt;
+
+      await depositsOnlyRelayer.runEvaluateApiSignatures();
+
+      const nonce = depositNonceFor(depositsOnlyRelayer, msg);
+      expect(depositsOnlyRelayer.getMessageState(nonce)).to.equal(MessageState.DONE);
+      expect(depositsOnlyRelayer.initiateFillCalls).to.equal(0);
+      expectDepositsOnlyTransitions(depositsOnlyRelayer.stateTransitions[nonce]);
+    });
+
+    it("marks DONE from initial observation when only origin deposit is seen", function () {
+      const msg = makeTestDepositMessage();
+      const nonce = depositNonceFor(depositsOnlyRelayer, msg);
+
+      depositsOnlyRelayer.setObservedDeposits({ [ORIGIN_CHAIN_ID]: new Set([nonce]) });
+      depositsOnlyRelayer.setObservedFills({ [DESTINATION_CHAIN_ID]: new Set() });
+
+      const n = depositsOnlyRelayer.runMarkFilledFromInitialObservation([msg]);
+      expect(n).to.equal(1);
+      expect(depositsOnlyRelayer.getMessageState(nonce)).to.equal(MessageState.DONE);
+    });
+
+    it("accepts mismatching token pairs that would be rejected in fill mode", async function () {
+      const msg = makeTestDepositMessage({ inputToken: USDC_MAINNET, outputToken: WETH_BASE });
+      const receipt = makeReceipt();
+      const depositEvent = makeFakeDepositEvent({ inputToken: USDC_MAINNET, outputToken: WETH_BASE });
+
+      depositsOnlyRelayer.queryGaslessApiFn = async () => [msg];
+      depositsOnlyRelayer.initiateDepositFn = async () => receipt;
+      depositsOnlyRelayer.extractDepositFromReceiptFn = () => depositEvent;
+      depositsOnlyRelayer.initiateFillFn = async () => receipt;
+
+      await depositsOnlyRelayer.runEvaluateApiSignatures();
+
+      const nonce = depositNonceFor(depositsOnlyRelayer, msg);
+      expect(depositsOnlyRelayer.getMessageState(nonce)).to.equal(MessageState.DONE);
+      expect(depositsOnlyRelayer.initiateDepositCalls).to.equal(1);
+      expect(depositsOnlyRelayer.initiateFillCalls).to.equal(0);
+    });
+  });
+
+  describe("integratorId filters", function () {
+    it("allow-list keeps only matching integratorIds", async function () {
+      const { spyLogger } = createSpyLogger();
+      const [signer] = await ethers.getSigners();
+      const config = new GaslessRelayerConfig({
+        RELAYER_TOKEN_SYMBOLS: '["USDC"]',
+        RELAYER_ORIGIN_CHAINS: `[${ORIGIN_CHAIN_ID}]`,
+        RELAYER_DESTINATION_CHAINS: `[${DESTINATION_CHAIN_ID}]`,
+        API_GASLESS_ENDPOINT: "http://127.0.0.1",
+        SEND_TRANSACTIONS: "true",
+        RELAYER_GASLESS_ALLOWED_INTEGRATOR_IDS: '["0xabcd"]',
+      });
+      const filterRelayer = new TestableGaslessRelayer(spyLogger, config, signer, []);
+
+      const allowed = makeTestDepositMessage({}, {}, "0xABCD");
+      const blocked = makeTestDepositMessage({ depositId: "43" }, {}, "0xdead");
+      const missing = makeTestDepositMessage({ depositId: "44" });
+
+      const filtered = filterRelayer.runFilterDepositsByIntegratorId([allowed, blocked, missing]);
+      expect(filtered).to.deep.equal([allowed]);
+    });
+
+    it("block-list discards matching integratorIds", async function () {
+      const { spyLogger } = createSpyLogger();
+      const [signer] = await ethers.getSigners();
+      const config = new GaslessRelayerConfig({
+        RELAYER_TOKEN_SYMBOLS: '["USDC"]',
+        RELAYER_ORIGIN_CHAINS: `[${ORIGIN_CHAIN_ID}]`,
+        RELAYER_DESTINATION_CHAINS: `[${DESTINATION_CHAIN_ID}]`,
+        API_GASLESS_ENDPOINT: "http://127.0.0.1",
+        SEND_TRANSACTIONS: "true",
+        RELAYER_GASLESS_BLOCKED_INTEGRATOR_IDS: '["0xdead"]',
+      });
+      const filterRelayer = new TestableGaslessRelayer(spyLogger, config, signer, []);
+
+      const allowed = makeTestDepositMessage({}, {}, "0xABCD");
+      const blocked = makeTestDepositMessage({ depositId: "43" }, {}, "0xdead");
+      const missing = makeTestDepositMessage({ depositId: "44" });
+
+      const filtered = filterRelayer.runFilterDepositsByIntegratorId([allowed, blocked, missing]);
+      expect(filtered).to.deep.equal([allowed, missing]);
+    });
+
+    it("block-list matches unprefixed API integratorIds against prefixed config", async function () {
+      const { spyLogger } = createSpyLogger();
+      const [signer] = await ethers.getSigners();
+      const config = new GaslessRelayerConfig({
+        RELAYER_TOKEN_SYMBOLS: '["USDC"]',
+        RELAYER_ORIGIN_CHAINS: `[${ORIGIN_CHAIN_ID}]`,
+        RELAYER_DESTINATION_CHAINS: `[${DESTINATION_CHAIN_ID}]`,
+        API_GASLESS_ENDPOINT: "http://127.0.0.1",
+        SEND_TRANSACTIONS: "true",
+        RELAYER_GASLESS_BLOCKED_INTEGRATOR_IDS: '["0xdead"]',
+      });
+      const filterRelayer = new TestableGaslessRelayer(spyLogger, config, signer, []);
+
+      const blocked = makeTestDepositMessage({ depositId: "43" }, {}, "DEAD");
+      const filtered = filterRelayer.runFilterDepositsByIntegratorId([blocked]);
+      expect(filtered).to.deep.equal([]);
+    });
+
+    it("allow-list matches prefixed API integratorIds against unprefixed config", async function () {
+      const { spyLogger } = createSpyLogger();
+      const [signer] = await ethers.getSigners();
+      const config = new GaslessRelayerConfig({
+        RELAYER_TOKEN_SYMBOLS: '["USDC"]',
+        RELAYER_ORIGIN_CHAINS: `[${ORIGIN_CHAIN_ID}]`,
+        RELAYER_DESTINATION_CHAINS: `[${DESTINATION_CHAIN_ID}]`,
+        API_GASLESS_ENDPOINT: "http://127.0.0.1",
+        SEND_TRANSACTIONS: "true",
+        RELAYER_GASLESS_ALLOWED_INTEGRATOR_IDS: '["abcd"]',
+      });
+      const filterRelayer = new TestableGaslessRelayer(spyLogger, config, signer, []);
+
+      const allowed = makeTestDepositMessage({}, {}, "0xABCD");
+      const filtered = filterRelayer.runFilterDepositsByIntegratorId([allowed]);
+      expect(filtered).to.deep.equal([allowed]);
+    });
+  });
+
+  describe("Initial observation (mark terminal state from observed deposits/fills)", function () {
     it("Bridge: sets FILLED when both origin deposit and destination fill are observed", function () {
       const msg = makeTestDepositMessage();
       const nonce = depositNonceFor(relayer, msg);
@@ -909,7 +1116,7 @@ describe("GaslessRelayer", function () {
       expect(relayer.getMessageState(nonce)).to.equal(undefined);
     });
 
-    it("CCTP: sets FILLED when origin deposit is observed (no fill required)", function () {
+    it("CCTP: sets DONE when origin deposit is observed (no fill required)", function () {
       const msg = makeTestCctpMessage();
       const nonce = depositNonceFor(relayer, msg);
 
@@ -918,7 +1125,7 @@ describe("GaslessRelayer", function () {
 
       const n = relayer.runMarkFilledFromInitialObservation([msg]);
       expect(n).to.equal(1);
-      expect(relayer.getMessageState(nonce)).to.equal(MessageState.FILLED);
+      expect(relayer.getMessageState(nonce)).to.equal(MessageState.DONE);
     });
   });
 
