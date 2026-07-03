@@ -309,6 +309,20 @@ export class DepositAddressHandler {
       this.config.indexerPollingInterval,
       this.abortController.signal
     );
+    scheduleTask(() => this.runPeriodicTask(), this.config.periodicTaskInterval, this.abortController.signal);
+  }
+
+  /**
+   * Placeholder for a recurring background task, fired every `periodicTaskInterval` seconds
+   * alongside the indexer poll (same pattern as the relayer's periodic address-filter refresh).
+   * Runs until the handler's abortController fires on handover/shutdown.
+   */
+  private async runPeriodicTask(): Promise<void> {
+    this.logger.debug({
+      at: "DepositAddressHandler#runPeriodicTask",
+      message: "Periodic task fired (placeholder).",
+      intervalSeconds: this.config.periodicTaskInterval,
+    });
   }
 
   /*

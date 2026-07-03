@@ -4,6 +4,8 @@ import { parseJson } from "../utils";
 export class DepositAddressHandlerConfig extends CommonConfig {
   indexerApiEndpoint: string;
   indexerPollingInterval: number;
+  /** Interval in seconds for the background periodic task (placeholder today). */
+  periodicTaskInterval: number;
 
   relayerOriginChains: number[];
   depositLookback: number;
@@ -28,6 +30,7 @@ export class DepositAddressHandlerConfig extends CommonConfig {
 
     const {
       INDEXER_API_POLLING_INTERVAL,
+      DEPOSIT_ADDRESS_PERIODIC_TASK_INTERVAL,
       INDEXER_API_ENDPOINT,
       MAX_RELAYER_DEPOSIT_LOOKBACK,
       RELAYER_ORIGIN_CHAINS,
@@ -42,6 +45,7 @@ export class DepositAddressHandlerConfig extends CommonConfig {
       PUBSUB_DEPOSIT_ADDRESS_WITHDRAW_TOPIC,
     } = env;
     this.indexerPollingInterval = Number(INDEXER_API_POLLING_INTERVAL ?? 1); // Default to 1s
+    this.periodicTaskInterval = Number(DEPOSIT_ADDRESS_PERIODIC_TASK_INTERVAL ?? 60); // Default to 60s
     this.indexerApiEndpoint = String(INDEXER_API_ENDPOINT);
     this.swapApiKey = SWAP_API_KEY?.trim() ?? "";
     if (!this.swapApiKey) {

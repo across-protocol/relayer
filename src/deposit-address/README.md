@@ -9,7 +9,11 @@ The deposit-address handler polls the across-indexer for ERC-20 transfers that h
 1. `DepositAddressHandlerConfig` from env.
 2. Dispatcher keys for transaction signing.
 3. `DepositAddressHandler` instance, then `initialize()`.
-4. Background polling loop (`pollAndExecute`) on the configured interval.
+4. Background polling loop (`pollAndExecute`) on the configured interval. This also starts a
+   recurring background task (`runPeriodicTask`, placeholder today) on its own interval
+   (`DEPOSIT_ADDRESS_PERIODIC_TASK_INTERVAL`, default 60s), scheduled via `scheduleTask` against
+   the handler's abort signal — the same pattern the relayer uses for its periodic
+   address-filter refresh.
 5. Handover via Redis (`InstanceCoordinator`) — exits cleanly when another instance takes over.
 
 Cleanup in the `finally` block closes the Pub/Sub publisher and Redis clients.
