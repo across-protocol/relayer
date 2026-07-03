@@ -55,7 +55,7 @@ When `ENABLE_DEPOSITS_ONLY=true`:
 
 State path: `INITIAL → DEPOSIT_SUBMIT → DEPOSIT_CONFIRM → DONE`.
 
-`FILLED` is the terminal state when this bot completes a destination fill (standard bridge flow). `DONE` means the relayer finished without filling: CCTP (non-default `spokePool`), or `ENABLE_DEPOSITS_ONLY`.
+`FILLED` is the terminal state when this bot completes a destination fill (standard bridge flow). `DONE` means the relayer finished without filling: CCTP/swapAndBridge (non-default `spokePool`), or `ENABLE_DEPOSITS_ONLY`.
 
 Use this when another relayer or process is responsible for filling, and this bot should only land deposits on the origin chain.
 
