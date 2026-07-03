@@ -309,19 +309,19 @@ export class DepositAddressHandler {
       this.config.indexerPollingInterval,
       this.abortController.signal
     );
-    scheduleTask(() => this.kickWatchdog(), this.config.periodicTaskInterval, this.abortController.signal);
+    scheduleTask(() => this.kickWatchdog(), this.config.watchdogInterval, this.abortController.signal);
   }
 
   /**
-   * Placeholder for a recurring background task, fired every `periodicTaskInterval` seconds
+   * Placeholder for a recurring background task, fired every `watchdogInterval` seconds
    * alongside the indexer poll (same pattern as the relayer's periodic address-filter refresh).
    * Runs until the handler's abortController fires on handover/shutdown.
    */
   private async kickWatchdog(): Promise<void> {
     this.logger.debug({
       at: "DepositAddressHandler#kickWatchdog",
-      message: "Periodic task fired (placeholder).",
-      intervalSeconds: this.config.periodicTaskInterval,
+      message: "Watchdog task fired (placeholder).",
+      intervalSeconds: this.config.watchdogInterval,
     });
   }
 
