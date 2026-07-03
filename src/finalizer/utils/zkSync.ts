@@ -132,7 +132,8 @@ export async function zkSyncFinalizer(
  * TokensBridged events. No-op for chains without an l2BaseToken contract entry.
  * @param spokePoolClient SpokePoolClient for the L2 chain, used for the provider and event search config.
  * @param senderAddresses Addresses whose withdrawals should be finalized.
- * @returns TokensBridged-shaped events for each discovered base-token withdrawal.
+ * @returns TokensBridged-shaped events, reporting the wrapped base token as l2TokenAddress, for each discovered
+ * base-token withdrawal.
  */
 async function getBaseTokenWithdrawalEvents(
   logger: winston.Logger,
@@ -154,6 +155,10 @@ async function getBaseTokenWithdrawalEvents(
 
   const { address, abi } = getContractEntry(chainId, "l2BaseToken");
   const baseToken = new Contract(address, abi, spokePool.provider);
+  // Report the wrapped base token (e.g. WGHO on Lens) as the withdrawn token: it is what the inventory route
+  // moves and what finalization releases on L1. The L2BaseToken system contract address would instead resolve
+  // to the native gas token (e.g. GHO) in getTokenInfo(), mislabelling these withdrawals downstream.
+  const { address: wrappedBaseToken } = getContractEntry(chainId, "wrappedNativeToken");
   const searchConfig = { ...spokePoolClient.eventSearchConfig, to: spokePoolClient.latestHeightSearched };
   const events = await paginatedEventQuery(baseToken, baseToken.filters.Withdrawal(fromAddresses), searchConfig);
   logger.debug({
@@ -167,7 +172,7 @@ async function getBaseTokenWithdrawalEvents(
     amountToReturn: event.args._amount,
     chainId,
     leafId: 0,
-    l2TokenAddress: EvmAddress.from(address),
+    l2TokenAddress: EvmAddress.from(wrappedBaseToken),
     txnRef: transactionHash,
     txnIndex: transactionIndex,
   }));
