@@ -66,6 +66,13 @@ const INTEGRATOR_ID_REGEX = /^0x[0-9a-fA-F]{4}$/;
 const SUPPORTED_INDEXER_MESSAGE_VERSIONS = new Set([1, 3]);
 
 /**
+ * Cap on each watchdog heartbeat request. `fetch` has no default timeout, and the scheduler
+ * fires every ping fire-and-forget — without a cap, a hung heartbeat endpoint would stack
+ * pending requests indefinitely.
+ */
+const HEARTBEAT_TIMEOUT_MS = 5_000;
+
+/**
  * Independent relayer bot which processes EIP-3009 signatures into deposits and corresponding fills.
  */
 export class DepositAddressHandler {
@@ -313,16 +320,22 @@ export class DepositAddressHandler {
   }
 
   /**
-   * Placeholder for a recurring background task, fired every `watchdogInterval` seconds
-   * alongside the indexer poll (same pattern as the relayer's periodic address-filter refresh).
-   * Runs until the handler's abortController fires on handover/shutdown.
+   * Dead-man's-switch heartbeat, kicked externally by the `watchdogInterval` scheduler in
+   * pollAndExecute() (default 15s) until the handler's abortController fires on
+   * handover/shutdown. With a Checkly period of 30s + grace of 30s, a dead bot trips the alert
+   * within ~60s; cadence << period, so a dropped ping is fine. Best-effort: a heartbeat failure
+   * must never disrupt the bot.
    */
   private async kickWatchdog(): Promise<void> {
-    this.logger.debug({
-      at: "DepositAddressHandler#kickWatchdog",
-      message: "Watchdog task fired (placeholder).",
-      intervalSeconds: this.config.watchdogInterval,
-    });
+    const url = this.config.heartbeatUrl;
+    if (!url) {
+      return;
+    }
+    try {
+      await fetch(url, { method: "GET", signal: AbortSignal.timeout(HEARTBEAT_TIMEOUT_MS) });
+    } catch {
+      /* best-effort: never let a heartbeat failure disrupt the bot */
+    }
   }
 
   /*
