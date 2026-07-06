@@ -256,3 +256,16 @@ export function getTokenSymbol(token: Address, chainId: number): string {
     return "UNKNOWN";
   }
 }
+
+/**
+ * Returns true if the token is USDC or USDT on the given chain.
+ */
+export function isStablecoin(token: Address, chainId: number): boolean {
+  return [TOKEN_SYMBOLS_MAP.USDC, TOKEN_SYMBOLS_MAP.USDT].some(({ addresses }) => {
+    const chainAddress = addresses[chainId];
+    if (!isDefined(chainAddress)) {
+      return false;
+    }
+    return token.eq(toAddressType(chainAddress, chainId));
+  });
+}

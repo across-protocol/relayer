@@ -27,6 +27,7 @@ import {
   convertRelayDataParamsToBytes32,
   chainIsSvm,
   TvmAddress,
+  isStablecoin,
 } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
@@ -311,6 +312,30 @@ export class Relayer {
     ) {
       this.logger.debug({ ...common, message: "Skipping deposit for unsupported input token.", l1Token });
       return ignoreDeposit();
+    }
+
+    if (
+      swapSupported &&
+      isStablecoin(inputToken, originChainId) &&
+      isStablecoin(deposit.outputToken, destinationChainId)
+    ) {
+      const { hubPoolClient } = this.clients;
+      const { decimals: inputDecimals } = hubPoolClient.getTokenInfoForAddress(inputToken, originChainId);
+      const { decimals: outputDecimals } = hubPoolClient.getTokenInfoForAddress(
+        deposit.outputToken,
+        destinationChainId
+      );
+      const inputAmountInOutputDecimals = sdkUtils.ConvertDecimals(inputDecimals, outputDecimals)(deposit.inputAmount);
+      if (inputAmountInOutputDecimals.gt(deposit.outputAmount)) {
+        this.logger.debug({
+          ...common,
+          message: "Skipping stablecoin swap deposit where input amount exceeds output amount.",
+          inputAmount: deposit.inputAmount,
+          outputAmount: deposit.outputAmount,
+          txnRef: deposit.txnRef,
+        });
+        return ignoreDeposit();
+      }
     }
 
     if (
