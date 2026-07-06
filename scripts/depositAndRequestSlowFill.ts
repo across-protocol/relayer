@@ -65,16 +65,25 @@ async function getGlobalConfigArray(configStore: Contract, key: string): Promise
  * defeating the purpose of the exercise.
  */
 async function tokenConfigUpdated(configStore: Contract, l1Token: string): Promise<boolean> {
-  let tokenConfig: { rateModel?: Record<string, string>; spokeTargetBalances?: Record<string, unknown> };
+  let tokenConfig: {
+    rateModel?: Record<string, string>;
+    routeRateModel?: Record<string, Record<string, string>>;
+    spokeTargetBalances?: Record<string, unknown>;
+  };
   try {
     tokenConfig = JSON.parse(await configStore.l1TokenConfig(l1Token));
   } catch {
     return false;
   }
 
-  const rateModelZeroed = ["R0", "R1", "R2"].every((k) => tokenConfig.rateModel?.[k] === "0");
+  const rateModelZeroed = (rateModel?: Record<string, string>) =>
+    ["R0", "R1", "R2"].every((k) => rateModel?.[k] === "0");
+
+  // Route-specific rate models take precedence over the default rate model, so any surviving routeRateModel
+  // entries must be zeroed as well.
+  const routeRateModelsZeroed = Object.values(tokenConfig.routeRateModel ?? {}).every(rateModelZeroed);
   const spokeTargetsCleared = Object.keys(tokenConfig.spokeTargetBalances ?? {}).length === 0;
-  return rateModelZeroed && spokeTargetsCleared;
+  return rateModelZeroed(tokenConfig.rateModel) && routeRateModelsZeroed && spokeTargetsCleared;
 }
 
 /**
@@ -334,7 +343,7 @@ async function run(args: Record<string, string | boolean>, signer: Signer): Prom
     const { token } = tokenRoutes[0];
     if (!(await tokenConfigUpdated(configStore, token.address))) {
       console.log(
-        `WARNING: ${symbol} ConfigStore config still has a non-zero rate model and/or spokeTargetBalances.` +
+        `WARNING: ${symbol} ConfigStore config still has a non-zero (route) rate model and/or spokeTargetBalances.` +
           " Has the updateTokenConfig() transaction been executed?"
       );
       if (execute && !(await utils.askYesNoQuestion(`Proceed with ${symbol} anyway?`))) {
