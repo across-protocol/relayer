@@ -104,6 +104,7 @@ relayer-v2/
 
 - `scripts/` contains one-off and operator-facing tooling that reuses runtime clients/utilities without going through `index.ts`.
 - `scripts/swapOnBinance.ts` is an interactive CLI that deposits into the shared Binance account, optionally trades on Binance spot, and withdraws to a destination chain.
+- `scripts/depositAndRequestSlowFill.ts` is an interactive CLI that deposits + requests slow fills across every active pool rebalance route for a token being wound down, forcing pool rebalance leaves that return SpokePool balances to the HubPool (see `scripts/README_depositAndRequestSlowFill.md`).
 
 ## Memory/state model
 
