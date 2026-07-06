@@ -26,6 +26,7 @@ import {
 import * as utils from "./utils";
 
 const { NODE_SUCCESS, NODE_INPUT_ERR, NODE_APP_ERR } = utils;
+const { PROTOCOL_DEFAULT_CHAIN_ID_INDICES } = sdkConsts;
 const { AddressZero } = ethers.constants;
 const { formatBytes32String } = ethers.utils;
 
@@ -86,11 +87,14 @@ async function getActiveRouteChainIds(
   hubChainId: number,
   l1Token: string
 ): Promise<{ chainId: number; destinationToken: string }[]> {
-  const [chainIds, disabledChainIds, liteChainIds] = await Promise.all(
+  const [_chainIds, disabledChainIds, liteChainIds] = await Promise.all(
     ["CHAIN_ID_INDICES", "DISABLED_CHAINS", "LITE_CHAIN_ID_INDICES"].map((key) =>
       getGlobalConfigArray(configStore, key)
     )
   );
+
+  // If CHAIN_ID_INDICES has never been set in the ConfigStore, the implicit initial protocol value applies.
+  const chainIds = _chainIds.length > 0 ? _chainIds : [...PROTOCOL_DEFAULT_CHAIN_ID_INDICES];
 
   const candidates = chainIds.filter(
     (chainId) => chainId !== hubChainId && !disabledChainIds.includes(chainId) && !liteChainIds.includes(chainId)
@@ -348,7 +352,8 @@ async function run(args: Record<string, string | boolean>, signer: Signer): Prom
   console.log(`\nPlanned deposits + slow fill requests (signer ${signerAddr}):`);
   routes.forEach((route) => printRoute(route, hubChainId));
 
-  // Report signer balances: per-token requirements on the hub chain, and native gas on each destination.
+  // Report signer balances: per-token requirements on the hub chain, and native gas on the hub chain (approvals
+  // and deposits) as well as each destination chain (slow fill requests).
   const symbolTotals: Record<string, { token: utils.ERC20; total: BigNumber }> = {};
   routes.forEach(({ token, inputAmount }) => {
     symbolTotals[token.symbol] ??= { token, total: bnZero };
@@ -367,8 +372,8 @@ async function run(args: Record<string, string | boolean>, signer: Signer): Prom
     );
   }
 
-  console.log("\nDestination gas balances:");
-  for (const chainId of [...new Set(routes.map(({ destinationChainId }) => destinationChainId))]) {
+  console.log("\nGas balances:");
+  for (const chainId of [...new Set([hubChainId, ...routes.map(({ destinationChainId }) => destinationChainId)])]) {
     const balance = await (await getProvider(chainId)).getBalance(signerAddr);
     if (balance.eq(bnZero)) {
       fundingOk = false;
