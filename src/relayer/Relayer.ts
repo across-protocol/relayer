@@ -326,10 +326,10 @@ export class Relayer {
         destinationChainId
       );
       const inputAmountInOutputDecimals = sdkUtils.ConvertDecimals(inputDecimals, outputDecimals)(deposit.inputAmount);
-      if (inputAmountInOutputDecimals.gt(deposit.outputAmount)) {
+      if (deposit.outputAmount.gt(inputAmountInOutputDecimals)) {
         this.logger.debug({
           ...common,
-          message: "Skipping stablecoin swap deposit where input amount exceeds output amount.",
+          message: "Skipping stablecoin swap deposit where output amount exceeds input amount.",
           inputAmount: deposit.inputAmount,
           outputAmount: deposit.outputAmount,
           txnRef: deposit.txnRef,
