@@ -28,6 +28,7 @@ import {
   chainIsSvm,
   TvmAddress,
   isStablecoin,
+  min,
 } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
@@ -326,12 +327,15 @@ export class Relayer {
         destinationChainId
       );
       const inputAmountInOutputDecimals = sdkUtils.ConvertDecimals(inputDecimals, outputDecimals)(deposit.inputAmount);
-      if (deposit.outputAmount.gt(inputAmountInOutputDecimals)) {
+      const effectiveOutputAmount = min(deposit.outputAmount, deposit.updatedOutputAmount ?? deposit.outputAmount);
+      if (effectiveOutputAmount.gt(inputAmountInOutputDecimals)) {
         this.logger.debug({
           ...common,
           message: "Skipping stablecoin swap deposit where output amount exceeds input amount.",
           inputAmount: deposit.inputAmount,
           outputAmount: deposit.outputAmount,
+          effectiveOutputAmount,
+          updatedOutputAmount: deposit.updatedOutputAmount,
           txnRef: deposit.txnRef,
         });
         return ignoreDeposit();
