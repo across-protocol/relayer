@@ -1,9 +1,17 @@
 # DAI wind-down — residual SpokePool balance recovery (July 2026)
 
-Recovers ~248K DAI left on deprecated L2 SpokePools after DAI was removed from
-the dataworker's pool-rebalance accounting chain-by-chain (June–July 2026)
-**without** final `netSendAmount` sweeps. The on-chain `PoolRebalanceRoutes`
-for DAI are still live; only the off-chain accounting dropped the token.
+Recovers ~248K DAI left on L2 SpokePools as organic DAI activity wound down
+chain-by-chain (June–July 2026) **without** final `netSendAmount` sweeps.
+
+Nothing was removed: the `PoolRebalanceRoutes` are live, DAI is still enabled
+for LP on the HubPool (`pooledTokens.isEnabled == true`, ~271K DAI
+`utilizedReserves`), and the running balances are intact. Pool-rebalance
+leaves only carry (chain, token) pairs with activity in the bundle window
+(`addLastRunningBalance` seeds from bundle events), so once DAI flow on a
+chain stopped, its dormant running balance simply stopped appearing in leaves.
+It is carried back in — correctly, on SDK ≥ 4.4.0 — by the next bundle with
+DAI activity on that chain, which is exactly what this script's deposits and
+slow-fill requests create.
 
 ## Residual balances (on-chain, verified 2026-07-07)
 
@@ -45,22 +53,21 @@ refunded on mainnet (no loss; see timing note below).
 
 ## Prerequisites — read before running
 
-1. **DAI must be tracked by the dataworker for Ethereum + the target chain
-   while the recovery runs.** As of the 2026-07-07 morning proposal, DAI has
-   been dropped from *all* pool-rebalance leaves (Ethereum and Polygon were
-   the last two). With DAI untracked: slow-fill requests are never bundled,
-   deposits are never swept to the Hub, and expired-deposit refunds are never
-   paid. Coordinate re-enabling DAI in the token config for the duration.
-2. **zkSync is hard-capped at ~898 DAI.** Its running balance was implicitly
+No config changes are needed: DAI routes and LP status are untouched, and the
+recovery's own deposits/slow-fill requests re-seed the (chain, DAI) pairs into
+the next bundle's leaves with running balances carried correctly.
+
+1. **zkSync is hard-capped at ~898 DAI.** Its running balance was implicitly
    reset from −70,005.07 to 0 between the bundles executed 2026-03-12
    (`0x56c621c4…52de5c`) and 2026-04-20 (`0x29fd983a…62ea5b`) with no
    `TokensBridged` sweep (pre-SDK-4.4.0 running-balance lookback bug — same
-   class as `../2026-06-accounting`). Slow-filling beyond the tracked balance
-   flips the running balance positive and makes the Hub send DAI *back* to
-   zkSync. The written-off 70,005.07 DAI needs a relayer-refund-root admin
-   recovery (à la `../2026-06-accounting`) instead; the `UNTRACKED` constant
-   in the script enforces the cap.
-3. The wallet needs mainnet DAI inventory (recycled per tranche) and gas on
+   class as `../2026-06-accounting`; the reset is baked into executed-leaf
+   history, so the fixed SDK carries the −898 baseline forward). Slow-filling
+   beyond the tracked balance flips the running balance positive and makes
+   the Hub send DAI *back* to zkSync. The written-off 70,005.07 DAI needs a
+   relayer-refund-root admin recovery (à la `../2026-06-accounting`) instead;
+   the `UNTRACKED` constant in the script enforces the cap.
+2. The wallet needs mainnet DAI inventory (recycled per tranche) and gas on
    the destination chain for `requestSlowFill`.
 
 ## Timing

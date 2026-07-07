@@ -1,5 +1,5 @@
 /* eslint-disable no-console */
-// Recovers residual DAI stranded on deprecated SpokePools (see README.md).
+// Recovers residual DAI left on L2 SpokePools after the DAI wind-down (see README.md).
 //
 // Deposits DAI on Ethereum with the destination set to the target spoke, then
 // immediately requests a slow fill on the destination. The slow fill is paid
@@ -39,10 +39,9 @@ const DAI_L1 = "0x6B175474E89094C44Da98b954EedeAC495271d0F";
 const DEFAULT_TRANCHE = "2000"; // DAI
 
 // L2 DAI addresses exactly as registered in the HubPool PoolRebalanceRoutes
-// (SetPoolRebalanceRoute events, all still live on-chain). Hardcoded so this
-// recovery is immune to DAI entries being pruned from token configs while the
-// wind-down proceeds. Blast (81457, USDB) is deliberately absent: it is still
-// actively tracked and swept by the dataworker.
+// (SetPoolRebalanceRoute events, all still live on-chain). Hardcoded for
+// self-containment; matches TOKEN_SYMBOLS_MAP.DAI. Blast (81457, USDB) is
+// deliberately absent: it still has organic flow and is swept regularly.
 const L2_DAI: { [chainId: number]: string } = {
   [CHAIN_IDs.OPTIMISM]: "0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1",
   [CHAIN_IDs.POLYGON]: "0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063",
