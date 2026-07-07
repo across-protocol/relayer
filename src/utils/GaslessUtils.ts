@@ -25,13 +25,13 @@ import {
   toAddressType,
   CHAIN_IDs,
   MAX_UINT_VAL,
-  TOKEN_SYMBOLS_MAP,
   toBNWei,
   winston,
   isDefined,
   getInventoryEquivalentL1TokenAddress,
   getTokenSymbol,
 } from "../utils";
+import { isStablecoin } from "./TokenUtils";
 import { AugmentedTransaction } from "../clients";
 import { Contract, BigNumber, ethers } from "ethers";
 
@@ -91,21 +91,6 @@ export function isGaslessPermitType(value: string): value is GaslessPermitType {
 export const MAX_EXCLUSIVITY_PERIOD_SECONDS = 31_536_000;
 export function isExclusivityRelative(exclusivityParameter: number): boolean {
   return exclusivityParameter > 0 && exclusivityParameter <= MAX_EXCLUSIVITY_PERIOD_SECONDS;
-}
-
-/**
- * Returns true if the token is a supported stablecoin for gasless deposits (USDC or USDT).
- * @param token The token address to check
- * @param chainId The chain ID where the token resides
- */
-export function isStablecoin(token: Address, chainId: number): boolean {
-  return [TOKEN_SYMBOLS_MAP.USDC, TOKEN_SYMBOLS_MAP.USDT].some(({ addresses }) => {
-    const chainAddress = addresses[chainId];
-    if (!isDefined(chainAddress)) {
-      return false;
-    }
-    return token.eq(toAddressType(chainAddress, chainId));
-  });
 }
 
 /**

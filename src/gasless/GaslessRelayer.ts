@@ -46,6 +46,7 @@ import {
   chainIsEvm,
   getSvmProvider,
   SvmCpiEventsClient,
+  isStablecoin,
 } from "../utils";
 import { getRedisCache, RedisCacheInterface } from "../cache/Redis";
 import {
@@ -69,7 +70,6 @@ import {
   isErc2612PermitNonceConsumed,
   isAllowedGaslessPair,
   isExclusivityRelative,
-  isStablecoin,
   normalizeIntegratorId,
   restructureGaslessDeposits,
   validateDeposit,

@@ -23,8 +23,9 @@ import {
   toAddressType,
   toBNWei,
   TOKEN_SYMBOLS_MAP,
+  isStablecoin,
 } from "../src/utils";
-import { isStablecoin, MAX_EXCLUSIVITY_PERIOD_SECONDS } from "../src/utils/GaslessUtils";
+import { MAX_EXCLUSIVITY_PERIOD_SECONDS } from "../src/utils/GaslessUtils";
 import { createSpyLogger, expect, FakeContract, smock, ethers, toBN } from "./utils";
 
 // Minimal 65-byte hex signature.
