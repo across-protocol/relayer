@@ -4,6 +4,11 @@ import { parseJson } from "../utils";
 export class DepositAddressHandlerConfig extends CommonConfig {
   indexerApiEndpoint: string;
   indexerPollingInterval: number;
+  /** Interval in seconds for the background watchdog heartbeat. Cadence must stay well under the
+   * Checkly period + grace so a dropped ping doesn't trip the alert. */
+  watchdogInterval: number;
+  /** Checkly heartbeat URL for the dead-man's switch. Unset disables the heartbeat. */
+  heartbeatUrl: string;
 
   relayerOriginChains: number[];
   depositLookback: number;
@@ -28,6 +33,8 @@ export class DepositAddressHandlerConfig extends CommonConfig {
 
     const {
       INDEXER_API_POLLING_INTERVAL,
+      WATCHDOG_INTERVAL = "15",
+      DEPOSIT_BOT_HEARTBEAT_URL,
       INDEXER_API_ENDPOINT,
       MAX_RELAYER_DEPOSIT_LOOKBACK,
       RELAYER_ORIGIN_CHAINS,
@@ -42,6 +49,8 @@ export class DepositAddressHandlerConfig extends CommonConfig {
       PUBSUB_DEPOSIT_ADDRESS_WITHDRAW_TOPIC,
     } = env;
     this.indexerPollingInterval = Number(INDEXER_API_POLLING_INTERVAL ?? 1); // Default to 1s
+    this.watchdogInterval = Number(WATCHDOG_INTERVAL);
+    this.heartbeatUrl = DEPOSIT_BOT_HEARTBEAT_URL?.trim() ?? "";
     this.indexerApiEndpoint = String(INDEXER_API_ENDPOINT);
     this.swapApiKey = SWAP_API_KEY?.trim() ?? "";
     if (!this.swapApiKey) {
