@@ -1,0 +1,81 @@
+{
+  "relayerRefundRoot": "0xd3d8742bb214ae964ab0462910dc36357981b800dd84697758bf134a6bc76239",
+  "leaves": [
+    {
+      "amountToReturn": "2104084315055728438894",
+      "chainId": 10,
+      "refundAmounts": [],
+      "leafId": 0,
+      "l2TokenAddress": "0xE7798f023fC62146e8Aa1b36Da45fb70855a77Ea",
+      "refundAddresses": [],
+      "proof": [
+        "0x187d473630a7063d6eef84718119bd4d18ba2de9d624333f2ea0fb69da2033f4",
+        "0x2e374de559308ad869451254e5623436c7d918e0cff1e5bd975e93d249e5bc1c",
+        "0xf1fd172468708057796d6def982cd225fcd60e8a580ea3072f787577ae487026"
+      ]
+    },
+    {
+      "amountToReturn": "17993760799799062130067",
+      "chainId": 10,
+      "refundAmounts": [],
+      "leafId": 1,
+      "l2TokenAddress": "0xFf733b2A3557a7ed6697007ab5D11B79FdD1b76B",
+      "refundAddresses": [],
+      "proof": [
+        "0xfbd4806509453b0b1dd5058a0d6bad9c578df4b1690cf06b5dcf499d177c92b3",
+        "0xc4d18203d6dad3dfcc1d7599754c3b3faacf284a1330463b5a9c2bc2049e9dd3"
+      ]
+    },
+    {
+      "amountToReturn": "4166163890795162948426",
+      "chainId": 137,
+      "refundAmounts": [],
+      "leafId": 2,
+      "l2TokenAddress": "0x3066818837c5e6eD6601bd5a91B0762877A6B731",
+      "refundAddresses": [],
+      "proof": [
+        "0x439d73852d72e7ddc6a643dd50c99cfa3621c34e53c82b909dd7b5fb68c65f68",
+        "0x2e374de559308ad869451254e5623436c7d918e0cff1e5bd975e93d249e5bc1c",
+        "0xf1fd172468708057796d6def982cd225fcd60e8a580ea3072f787577ae487026"
+      ]
+    },
+    {
+      "amountToReturn": "838422581089185877133",
+      "chainId": 137,
+      "refundAmounts": [],
+      "leafId": 3,
+      "l2TokenAddress": "0xF328b73B6c685831F238c30a23Fc19140CB4D8FC",
+      "refundAddresses": [],
+      "proof": [
+        "0x668d8a5f5f7833e3bd3afaa0c511a422ef525eed579080abf9d59e894a403c39",
+        "0xcc9b0984d4b03e05118744d1bf30380021ef9eeb27977c06dfb3f911ce5c824c",
+        "0xf1fd172468708057796d6def982cd225fcd60e8a580ea3072f787577ae487026"
+      ]
+    },
+    {
+      "amountToReturn": "5857586666373984114017",
+      "chainId": 42161,
+      "refundAmounts": [],
+      "leafId": 4,
+      "l2TokenAddress": "0x53691596d1BCe8CEa565b84d4915e69e03d9C99d",
+      "refundAddresses": [],
+      "proof": [
+        "0xa79560b44d9c8810fe62ecab83662a25c283409a99514bfb394285446796a070",
+        "0xc4d18203d6dad3dfcc1d7599754c3b3faacf284a1330463b5a9c2bc2049e9dd3"
+      ]
+    },
+    {
+      "amountToReturn": "1130009947778364550998",
+      "chainId": 42161,
+      "refundAmounts": [],
+      "leafId": 5,
+      "l2TokenAddress": "0xd693Ec944A85eeca4247eC1c3b130DCa9B0C3b22",
+      "refundAddresses": [],
+      "proof": [
+        "0xa4f1530504409c1862cb7593622ca66dc2119a9d766ca7831eac9f42231bc31e",
+        "0xcc9b0984d4b03e05118744d1bf30380021ef9eeb27977c06dfb3f911ce5c824c",
+        "0xf1fd172468708057796d6def982cd225fcd60e8a580ea3072f787577ae487026"
+      ]
+    }
+  ]
+}
