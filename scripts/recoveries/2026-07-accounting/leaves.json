@@ -1,5 +1,5 @@
 {
-  "relayerRefundRoot": "0xd3d8742bb214ae964ab0462910dc36357981b800dd84697758bf134a6bc76239",
+  "relayerRefundRoot": "0x61bdfa33a7ff9f1d9fa48f189da3500a720858402c3507340b16f09eb7fe0fca",
   "leaves": [
     {
       "amountToReturn": "2104084315055728438894",
@@ -9,9 +9,9 @@
       "l2TokenAddress": "0xE7798f023fC62146e8Aa1b36Da45fb70855a77Ea",
       "refundAddresses": [],
       "proof": [
-        "0x187d473630a7063d6eef84718119bd4d18ba2de9d624333f2ea0fb69da2033f4",
-        "0x2e374de559308ad869451254e5623436c7d918e0cff1e5bd975e93d249e5bc1c",
-        "0xf1fd172468708057796d6def982cd225fcd60e8a580ea3072f787577ae487026"
+        "0x40def986879481965c54be6d30b88b54ae5739b8d870ac8b596e53dcfba2beb1",
+        "0x4d78ed37609bc4312af4a1e1e5aaebe378140a7da2a8faa0f1be8fea5819804e",
+        "0x3485aa2145e7197fe420c5e50c37aee3cffd60a425e5165c967daab60712b973"
       ]
     },
     {
@@ -22,8 +22,9 @@
       "l2TokenAddress": "0xFf733b2A3557a7ed6697007ab5D11B79FdD1b76B",
       "refundAddresses": [],
       "proof": [
-        "0xfbd4806509453b0b1dd5058a0d6bad9c578df4b1690cf06b5dcf499d177c92b3",
-        "0xc4d18203d6dad3dfcc1d7599754c3b3faacf284a1330463b5a9c2bc2049e9dd3"
+        "0xfceb97fb4845d5d8e788a6bc89e3bcd9b2a0f96f8e3f42350eebf2112cbd62f3",
+        "0x465f1bf83fbac304314464937713fe46cc3a2ff8f318452fffd8cb788c14941b",
+        "0x5a1b5119705f74be1015b732f145b8112cedfb4e9f90dc4422da978e84993a8f"
       ]
     },
     {
@@ -34,9 +35,9 @@
       "l2TokenAddress": "0x3066818837c5e6eD6601bd5a91B0762877A6B731",
       "refundAddresses": [],
       "proof": [
-        "0x439d73852d72e7ddc6a643dd50c99cfa3621c34e53c82b909dd7b5fb68c65f68",
-        "0x2e374de559308ad869451254e5623436c7d918e0cff1e5bd975e93d249e5bc1c",
-        "0xf1fd172468708057796d6def982cd225fcd60e8a580ea3072f787577ae487026"
+        "0x344b255b28a6d07b3b1c0dee84678032f9f8dddbcbd00385ced0c72e8f707563",
+        "0xcdbf160f1ea3ff9398189a3850221f99d6f2e9dcb959c5c0e7dcafce397203f0",
+        "0x3485aa2145e7197fe420c5e50c37aee3cffd60a425e5165c967daab60712b973"
       ]
     },
     {
@@ -47,34 +48,61 @@
       "l2TokenAddress": "0xF328b73B6c685831F238c30a23Fc19140CB4D8FC",
       "refundAddresses": [],
       "proof": [
-        "0x668d8a5f5f7833e3bd3afaa0c511a422ef525eed579080abf9d59e894a403c39",
-        "0xcc9b0984d4b03e05118744d1bf30380021ef9eeb27977c06dfb3f911ce5c824c",
-        "0xf1fd172468708057796d6def982cd225fcd60e8a580ea3072f787577ae487026"
+        "0x470d428e985820ca7cc4c1e8e26db6a2508ed85067a2bac383a18a96e468eba0",
+        "0x5c66d38c7a3d6f9fc9f804ea8ad7e60da668966ac7d73d56c3860f861243b081",
+        "0x5a1b5119705f74be1015b732f145b8112cedfb4e9f90dc4422da978e84993a8f"
+      ]
+    },
+    {
+      "amountToReturn": "70005067780472529239685",
+      "chainId": 324,
+      "refundAmounts": [],
+      "leafId": 4,
+      "l2TokenAddress": "0x4B9eb6c0b6ea15176BBF62841C6B2A8a398cb656",
+      "refundAddresses": [],
+      "proof": [
+        "0x439d73852d72e7ddc6a643dd50c99cfa3621c34e53c82b909dd7b5fb68c65f68",
+        "0x4d78ed37609bc4312af4a1e1e5aaebe378140a7da2a8faa0f1be8fea5819804e",
+        "0x3485aa2145e7197fe420c5e50c37aee3cffd60a425e5165c967daab60712b973"
       ]
     },
     {
       "amountToReturn": "5857586666373984114017",
       "chainId": 42161,
       "refundAmounts": [],
-      "leafId": 4,
+      "leafId": 5,
       "l2TokenAddress": "0x53691596d1BCe8CEa565b84d4915e69e03d9C99d",
       "refundAddresses": [],
       "proof": [
-        "0xa79560b44d9c8810fe62ecab83662a25c283409a99514bfb394285446796a070",
-        "0xc4d18203d6dad3dfcc1d7599754c3b3faacf284a1330463b5a9c2bc2049e9dd3"
+        "0x187d473630a7063d6eef84718119bd4d18ba2de9d624333f2ea0fb69da2033f4",
+        "0xcdbf160f1ea3ff9398189a3850221f99d6f2e9dcb959c5c0e7dcafce397203f0",
+        "0x3485aa2145e7197fe420c5e50c37aee3cffd60a425e5165c967daab60712b973"
       ]
     },
     {
       "amountToReturn": "1130009947778364550998",
       "chainId": 42161,
       "refundAmounts": [],
-      "leafId": 5,
+      "leafId": 6,
       "l2TokenAddress": "0xd693Ec944A85eeca4247eC1c3b130DCa9B0C3b22",
       "refundAddresses": [],
       "proof": [
+        "0xa79560b44d9c8810fe62ecab83662a25c283409a99514bfb394285446796a070",
+        "0x465f1bf83fbac304314464937713fe46cc3a2ff8f318452fffd8cb788c14941b",
+        "0x5a1b5119705f74be1015b732f145b8112cedfb4e9f90dc4422da978e84993a8f"
+      ]
+    },
+    {
+      "amountToReturn": "32694665",
+      "chainId": 81457,
+      "refundAmounts": [],
+      "leafId": 7,
+      "l2TokenAddress": "0xF7bc58b8D8f97ADC129cfC4c9f45Ce3C0E1D2692",
+      "refundAddresses": [],
+      "proof": [
         "0xa4f1530504409c1862cb7593622ca66dc2119a9d766ca7831eac9f42231bc31e",
-        "0xcc9b0984d4b03e05118744d1bf30380021ef9eeb27977c06dfb3f911ce5c824c",
-        "0xf1fd172468708057796d6def982cd225fcd60e8a580ea3072f787577ae487026"
+        "0x5c66d38c7a3d6f9fc9f804ea8ad7e60da668966ac7d73d56c3860f861243b081",
+        "0x5a1b5119705f74be1015b732f145b8112cedfb4e9f90dc4422da978e84993a8f"
       ]
     }
   ]
