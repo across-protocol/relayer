@@ -14,8 +14,10 @@ The deposit-address handler polls the across-indexer for ERC-20 transfers that h
    scheduled via `scheduleTask` against the handler's abort signal — the same pattern the relayer
    uses for its periodic address-filter refresh. Each tick GETs `DEPOSIT_BOT_HEARTBEAT_URL`
    (unset = disabled) as a dead-man's switch: with a Checkly period of 30s + grace of 30s, a dead
-   bot trips the alert within ~60s. Pings are best-effort (failures swallowed, 5s cap per request)
-   and stop on handover/shutdown with the rest of the handler.
+   bot trips the alert within ~60s. Pings are best-effort (failures never disrupt the bot, 5s cap
+   per request), but every 10th consecutive failure — including non-2xx responses — emits a
+   warning log to aid diagnosis when the alert fires. Pings stop on handover/shutdown with the
+   rest of the handler.
 5. Handover via Redis (`InstanceCoordinator`) — exits cleanly when another instance takes over.
 
 Cleanup in the `finally` block closes the Pub/Sub publisher and Redis clients.

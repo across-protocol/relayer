@@ -72,6 +72,10 @@ const SUPPORTED_INDEXER_MESSAGE_VERSIONS = new Set([1, 3]);
  */
 const HEARTBEAT_TIMEOUT_MS = 5_000;
 
+// Warn on every Nth consecutive heartbeat failure (i.e. once per N ticks during a sustained
+// outage, rather than once per tick or once ever).
+const HEARTBEAT_FAILURE_WARN_THRESHOLD = 10;
+
 /**
  * Independent relayer bot which processes EIP-3009 signatures into deposits and corresponding fills.
  */
@@ -79,6 +83,7 @@ export class DepositAddressHandler {
   private abortController = new AbortController();
   private _instanceCoordinator?: InstanceCoordinator;
   private initialized = false;
+  private consecutiveHeartbeatFailures = 0;
 
   // instanceCoordinator is populated by initialize(); reads pre-init throw, writes go through the setter.
   private get instanceCoordinator(): InstanceCoordinator {
@@ -324,17 +329,34 @@ export class DepositAddressHandler {
    * pollAndExecute() (default 15s) until the handler's abortController fires on
    * handover/shutdown. With a Checkly period of 30s + grace of 30s, a dead bot trips the alert
    * within ~60s; cadence << period, so a dropped ping is fine. Best-effort: a heartbeat failure
-   * must never disrupt the bot.
+   * must never disrupt the bot, but sustained failures are logged since the alert will fire and
+   * this log is the first place to look for the cause.
    */
   private async kickWatchdog(): Promise<void> {
     const url = this.config.heartbeatUrl;
     if (!url) {
       return;
     }
+
+    let failure: string;
     try {
-      await fetch(url, { method: "GET", signal: AbortSignal.timeout(HEARTBEAT_TIMEOUT_MS) });
-    } catch {
-      /* best-effort: never let a heartbeat failure disrupt the bot */
+      const response = await fetch(url, { method: "GET", signal: AbortSignal.timeout(HEARTBEAT_TIMEOUT_MS) });
+      if (response.ok) {
+        this.consecutiveHeartbeatFailures = 0;
+        return;
+      }
+      failure = `HTTP ${response.status}`;
+    } catch (err) {
+      failure = err instanceof Error ? err.message : String(err);
+    }
+
+    if (++this.consecutiveHeartbeatFailures % HEARTBEAT_FAILURE_WARN_THRESHOLD === 0) {
+      this.logger.warn({
+        at: "DepositAddressHandler#kickWatchdog",
+        message: "Sustained watchdog heartbeat failures",
+        consecutiveFailures: this.consecutiveHeartbeatFailures,
+        lastError: failure,
+      });
     }
   }
 
