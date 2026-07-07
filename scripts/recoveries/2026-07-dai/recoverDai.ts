@@ -9,7 +9,7 @@
 // Run from the repo root:
 //   yarn tsx scripts/recoveries/2026-07-dai/recoverDai.ts \
 //     --to <destinationChainId> [--amount <DAI>|max] [--recipient <address>] \
-//     [--wallet secret|mnemonic|privateKey] [--dryRun]
+//     [--wallet secret|mnemonic|privateKey] [--dryRun [--depositor <address>]]
 import assert from "assert";
 import minimist from "minimist";
 import { config } from "dotenv";
@@ -25,6 +25,8 @@ import {
   getProvider,
   getSigner,
   isDefined,
+  paginatedEventQuery,
+  sortEventsDescending,
   toAddressType,
 } from "../../../src/utils";
 import * as utils from "../../utils";
@@ -51,22 +53,35 @@ const L2_DAI: { [chainId: number]: string } = {
   [CHAIN_IDs.LINEA]: "0x4AF15ec2A0BD43Db75dd04E62FAA3B8EF36b00d5",
 };
 
-// Portion of a spoke's on-chain DAI balance that is absent from executed
-// pool-rebalance running balances. Slow fills beyond the *tracked* balance
-// flip the running balance positive and make the Hub send DAI back to the
-// spoke, so this portion is excluded here and must instead be recovered via a
-// relayer-refund-root admin recovery (see ../2026-06-accounting).
-//
-// zkSync: the DAI running balance was implicitly reset from -70,005.07 to 0
-// between the bundles executed 2026-03-12 (0x56c621c44bc153cfdc7226335bba02f6
-// 5955e66da9f4dad52e9fb5b52852de5c) and 2026-04-20 (0x29fd983ad6fab2d0b8af00da
-// c251f6e4e67d785f228840644bfc0c9e7b62ea5b) with no TokensBridged sweep
-// (pre-SDK-4.4.0 running-balance lookback bug).
-const UNTRACKED: { [chainId: number]: BigNumber } = {
-  [CHAIN_IDs.ZK_SYNC]: parseUnits("70005.07", DAI_DECIMALS),
-};
+// Pool-rebalance leaves only carry (chain, token) pairs with activity in the
+// bundle window, so a chain's *tracked* DAI running balance is the value in
+// the most recent executed leaf that carries DAI (per README.md, within the
+// last month for every supported chain; the recovery's own activity keeps it
+// fresh thereafter). Scanned backwards from the chain head in windows.
+const LEAF_SCAN_WINDOW = 50_000; // Blocks per backwards scan step (~7 days on mainnet).
+const LEAF_SCAN_DEPTH = 16; // Give up after ~16 windows (~4 months) with no executed DAI leaf.
 
 const fmt = (amount: BigNumber): string => ethers.utils.commify(formatUnits(amount, DAI_DECIMALS));
+
+// Returns the DAI running balance from the most recent executed pool-rebalance
+// leaf for chainId, or undefined if none is found within the scan depth.
+async function getTrackedRunningBalance(hubPool: Contract, chainId: number): Promise<BigNumber | undefined> {
+  const filter = hubPool.filters.RootBundleExecuted(null, null, chainId);
+  let to = await hubPool.provider.getBlockNumber();
+
+  for (let i = 0; i < LEAF_SCAN_DEPTH; ++i, to -= LEAF_SCAN_WINDOW) {
+    const from = Math.max(to - LEAF_SCAN_WINDOW + 1, 0);
+    const leaves = await paginatedEventQuery(hubPool, filter, { from, to, maxLookBack: 10_000 });
+    for (const { args } of sortEventsDescending(leaves)) {
+      const idx = args.l1Tokens.findIndex((token: string) => token.toLowerCase() === DAI_L1.toLowerCase());
+      if (idx !== -1) {
+        return args.runningBalances[idx]; // int256: negative => spoke surplus owed to the HubPool.
+      }
+    }
+  }
+
+  return undefined;
+}
 
 async function recover(args: Record<string, number | string | boolean>, signer: Signer): Promise<boolean> {
   const toChainId = Number(args.to);
@@ -85,23 +100,54 @@ async function recover(args: Record<string, number | string | boolean>, signer: 
     utils.getSpokePoolContract(toChainId),
   ]);
 
-  const depositor = await signer.getAddress();
-  const recipient = String(args.recipient ?? depositor);
-  if (!ethers.utils.isAddress(recipient) || recipient === AddressZero) {
-    console.log(`Invalid recipient address (${recipient}).`);
+  // The depositor receives the mainnet refund if the slow fill expires, so in
+  // live mode it must be the connected wallet. Dry runs use a VoidSigner that
+  // defaults to address(0); --depositor substitutes a real address so the
+  // printed calldata encodes usable depositor/recipient values.
+  const signerAddr = await signer.getAddress();
+  let depositor: string, recipient: string;
+  try {
+    depositor = ethers.utils.getAddress(String(args.depositor ?? signerAddr));
+    recipient = ethers.utils.getAddress(String(args.recipient ?? depositor));
+  } catch {
+    console.log(`Invalid depositor (${args.depositor ?? signerAddr}) or recipient (${args.recipient}) address.`);
+    return false;
+  }
+  if (!dryRun && depositor !== signerAddr) {
+    console.log(`Depositor ${depositor} must be the connected wallet (${signerAddr}).`);
+    return false;
+  }
+  const resolvedAddrs = depositor !== AddressZero && recipient !== AddressZero;
+  if (!resolvedAddrs && !dryRun) {
+    console.log(`Invalid depositor/recipient address (${depositor}/${recipient}).`);
     return false;
   }
 
   // Ground truth: how much DAI is physically on the destination spoke, and how
-  // much of it is safe to recover via slow fills.
+  // much of it executed pool-rebalance running balances track. Slow fills
+  // beyond the tracked surplus flip the running balance positive and make the
+  // Hub send DAI back to the spoke (zkSync's balance is largely untracked —
+  // see README.md), so recovery is capped by both.
+  const hubPool = await utils.getContract(HUB_CHAIN_ID, "HubPool");
   const l2Dai = new Contract(L2_DAI[toChainId], ERC20.abi, destProvider);
-  const spokeBalance: BigNumber = await l2Dai.balanceOf(destSpoke.address);
-  const untracked = UNTRACKED[toChainId] ?? ethers.constants.Zero;
-  const recoverable = spokeBalance.sub(untracked);
+  const [spokeBalance, runningBalance] = await Promise.all([
+    l2Dai.balanceOf(destSpoke.address) as Promise<BigNumber>,
+    getTrackedRunningBalance(hubPool, toChainId),
+  ]);
+  if (!isDefined(runningBalance)) {
+    console.log(
+      `No executed pool-rebalance leaf carrying DAI found for ${getNetworkName(toChainId)} within the last` +
+        ` ~${LEAF_SCAN_WINDOW * LEAF_SCAN_DEPTH} mainnet blocks; cannot establish the tracked running balance.`
+    );
+    return false;
+  }
+
+  const trackedSurplus = runningBalance.isNegative() ? runningBalance.mul(-1) : ethers.constants.Zero;
+  const recoverable = spokeBalance.lt(trackedSurplus) ? spokeBalance : trackedSurplus;
   if (recoverable.lte(0)) {
     console.log(
-      `Nothing recoverable on ${getNetworkName(toChainId)}:` +
-        ` spoke balance ${fmt(spokeBalance)} DAI <= untracked ${fmt(untracked)} DAI.`
+      `Nothing recoverable on ${getNetworkName(toChainId)}: spoke balance ${fmt(spokeBalance)} DAI,` +
+        ` tracked running balance ${fmt(runningBalance)} DAI.`
     );
     return false;
   }
@@ -110,7 +156,7 @@ async function recover(args: Record<string, number | string | boolean>, signer: 
   if (amount.lte(0) || amount.gt(recoverable)) {
     console.log(
       `Requested amount ${fmt(amount)} DAI is outside the recoverable range` +
-        ` (spoke balance ${fmt(spokeBalance)} - untracked ${fmt(untracked)} = ${fmt(recoverable)} DAI).`
+        ` (min(spoke balance ${fmt(spokeBalance)}, tracked surplus ${fmt(trackedSurplus)}) = ${fmt(recoverable)} DAI).`
     );
     return false;
   }
@@ -118,11 +164,11 @@ async function recover(args: Record<string, number | string | boolean>, signer: 
   // quoteTimestamp must be current per the origin SpokePool; fillDeadline is
   // capped at quoteTimestamp + fillDeadlineBuffer (6h on mainnet). Use the max:
   // the request -> propose -> liveness -> relay -> execute pipeline needs it.
-  const [quoteTimestamp, fillDeadlineBuffer] = await Promise.all([
-    hubSpoke.connect(hubProvider).getCurrentTime(),
-    hubSpoke.connect(hubProvider).fillDeadlineBuffer(),
-  ]);
-  const fillDeadline = Number(quoteTimestamp) + Number(fillDeadlineBuffer);
+  // Both are refreshed just before the live deposit; the plan values are indicative.
+  const getQuoteTimestamp = async (): Promise<number> => Number(await hubSpoke.connect(hubProvider).getCurrentTime());
+  const fillDeadlineBuffer = Number(await hubSpoke.connect(hubProvider).fillDeadlineBuffer());
+  let quoteTimestamp = await getQuoteTimestamp();
+  let fillDeadline = quoteTimestamp + fillDeadlineBuffer;
 
   const l1Dai = new Contract(DAI_L1, ERC20.abi, hubSigner);
   const [balance, allowance] = await Promise.all([
@@ -134,11 +180,11 @@ async function recover(args: Record<string, number | string | boolean>, signer: 
     destination: `${getNetworkName(toChainId)} (${toChainId})`,
     spokePool: destSpoke.address,
     spokeBalance: `${fmt(spokeBalance)} DAI`,
-    untracked: `${fmt(untracked)} DAI`,
+    trackedRunningBalance: `${fmt(runningBalance)} DAI`,
     recoverable: `${fmt(recoverable)} DAI`,
     amount: `${fmt(amount)} DAI`,
-    depositor,
-    recipient,
+    depositor: depositor === AddressZero ? "(unset — pass --depositor)" : depositor,
+    recipient: recipient === AddressZero ? "(unset — pass --depositor or --recipient)" : recipient,
     outputToken: L2_DAI[toChainId],
     quoteTimestamp: `${quoteTimestamp}`,
     fillDeadline: `${fillDeadline} (${new Date(fillDeadline * 1000).toUTCString()})`,
@@ -152,7 +198,8 @@ async function recover(args: Record<string, number | string | boolean>, signer: 
       "\n"
   );
 
-  const depositArgs = [
+  // Reads quoteTimestamp/fillDeadline at call time so the live path can refresh them.
+  const makeDepositArgs = () => [
     toAddressType(depositor, HUB_CHAIN_ID).toBytes32(),
     toAddressType(recipient, toChainId).toBytes32(),
     toAddressType(DAI_L1, HUB_CHAIN_ID).toBytes32(),
@@ -168,7 +215,11 @@ async function recover(args: Record<string, number | string | boolean>, signer: 
   ];
 
   if (dryRun) {
-    const populated = await hubSpoke.connect(hubProvider).populateTransaction.deposit(...depositArgs);
+    if (!resolvedAddrs) {
+      console.log("Dry run: pass --depositor (and optionally --recipient) to also generate the deposit calldata.");
+      return true;
+    }
+    const populated = await hubSpoke.connect(hubProvider).populateTransaction.deposit(...makeDepositArgs());
     console.log(`Dry run: deposit calldata for ${getNetworkName(HUB_CHAIN_ID)} SpokePool ${hubSpoke.address}:`);
     console.log(populated.data);
     console.log("\nDry run: no transactions sent. requestSlowFill relayData is derived from the FundsDeposited event.");
@@ -191,7 +242,13 @@ async function recover(args: Record<string, number | string | boolean>, signer: 
     console.log(`Approval complete: ${approval.hash}.`);
   }
 
-  const depositTxn = await hubSpoke.connect(hubSigner).deposit(...depositArgs);
+  // Refresh the quote after the prompt/approval delays: the SpokePool rejects
+  // quoteTimestamps older than depositQuoteTimeBuffer, which would revert the
+  // deposit after spending gas.
+  quoteTimestamp = await getQuoteTimestamp();
+  fillDeadline = quoteTimestamp + fillDeadlineBuffer;
+
+  const depositTxn = await hubSpoke.connect(hubSigner).deposit(...makeDepositArgs());
   console.log(`Deposit submitted: ${blockExplorerLink(depositTxn.hash, HUB_CHAIN_ID)}. Waiting...`);
   const depositReceipt = await depositTxn.wait();
 
@@ -243,7 +300,8 @@ function usage(badInput?: string): boolean {
     \t\t[--amount <DAI amount|max>] (default ${DEFAULT_TRANCHE})
     \t\t[--recipient <address>] (default: depositor)
     \t\t[--wallet secret|mnemonic|privateKey] (default secret)
-    \t\t[--dryRun]
+    \t\t[--dryRun] (no key needed)
+    \t\t[--depositor <address>] (dry-run only: substitute for the unlocked wallet)
   `.slice(1);
   console.log(usageStr);
 
@@ -252,7 +310,7 @@ function usage(badInput?: string): boolean {
 
 async function run(argv: string[]): Promise<number> {
   const opts = {
-    string: ["to", "amount", "recipient", "wallet"],
+    string: ["to", "amount", "recipient", "depositor", "wallet"],
     boolean: ["dryRun"],
     default: { wallet: "secret", amount: DEFAULT_TRANCHE, dryRun: false },
     unknown: usage,

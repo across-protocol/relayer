@@ -27,6 +27,15 @@ slow-fill requests create.
 Blast (81457, USDB) is intentionally excluded — still actively tracked and
 swept. Boba (288) is already clean.
 
+These figures are a snapshot; the script does not rely on them. Per run it
+reads the spoke's DAI `balanceOf` and the tracked running balance (from the
+most recent executed `RootBundleExecuted` leaf carrying DAI) on-chain, and
+caps the recoverable amount at the smaller of the two. That automatically
+excludes gaps between the physical and tracked balances — e.g. Base's ~104
+DAI above — whether they are timing (activity since the last executed leaf,
+picked up by the next one) or permanent write-offs like zkSync's (admin-route
+recovery only, see below).
+
 ## Mechanism
 
 Per tranche, `recoverDai.ts`:
@@ -66,7 +75,8 @@ the next bundle's leaves with running balances carried correctly.
    beyond the tracked balance flips the running balance positive and makes
    the Hub send DAI *back* to zkSync. The written-off 70,005.07 DAI needs a
    relayer-refund-root admin recovery (à la `../2026-06-accounting`) instead;
-   the `UNTRACKED` constant in the script enforces the cap.
+   the script enforces the cap by reading the −898 tracked running balance
+   from the latest executed DAI leaf on-chain.
 2. The wallet needs mainnet DAI inventory (recycled per tranche) and gas on
    the destination chain for `requestSlowFill`.
 
@@ -84,13 +94,16 @@ inventory.
 ## Usage
 
 ```sh
-# Dry run (no key needed): prints the plan + deposit calldata.
+# Dry run (no key needed): prints the plan.
 yarn tsx scripts/recoveries/2026-07-dai/recoverDai.ts --to 137 --amount 2000 --dryRun
+
+# Dry run with deposit calldata: --depositor stands in for the unlocked wallet.
+yarn tsx scripts/recoveries/2026-07-dai/recoverDai.ts --to 137 --amount 2000 --dryRun --depositor 0x…
 
 # Live: deposit on Ethereum, then request the slow fill on the destination.
 yarn tsx scripts/recoveries/2026-07-dai/recoverDai.ts --to 137 --amount 2000 --wallet secret
 
-# Final sweep of a chain (amount = spoke balance − untracked portion).
+# Final sweep of a chain (amount = min(spoke balance, tracked running-balance surplus)).
 yarn tsx scripts/recoveries/2026-07-dai/recoverDai.ts --to 137 --amount max --wallet secret
 ```
 
