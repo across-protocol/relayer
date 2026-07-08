@@ -43,12 +43,6 @@ function compareNormalizedAmounts(
   }
   return converter(normalizedAmountA).gt(normalizedAmountB) ? -1 : 1;
 }
-export function sortHigherPriorityTier(priorityTierA: number, priorityTierB: number): number {
-  return priorityTierB - priorityTierA;
-}
-function sortLowerPriorityTier(priorityTierA: number, priorityTierB: number): number {
-  return priorityTierA - priorityTierB;
-}
 // Excesses are always sorted in priority from lowest to highest and then by amount from largest to smallest.
 export function sortExcessFunction(
   excessA: ExcessOrDeficit,
@@ -57,7 +51,7 @@ export function sortExcessFunction(
 ): number {
   const { priorityTier: priorityTierA } = excessA;
   const { priorityTier: priorityTierB } = excessB;
-  const sortedPriorityTier = sortLowerPriorityTier(priorityTierA, priorityTierB);
+  const sortedPriorityTier = priorityTierA - priorityTierB;
   if (sortedPriorityTier !== 0) {
     return sortedPriorityTier;
   }
@@ -71,7 +65,7 @@ export function sortDeficitFunction(
 ): number {
   const { priorityTier: priorityTierA } = deficitA;
   const { priorityTier: priorityTierB } = deficitB;
-  const sortedPriorityTier = sortHigherPriorityTier(priorityTierA, priorityTierB);
+  const sortedPriorityTier = priorityTierB - priorityTierA;
   if (sortedPriorityTier !== 0) {
     return sortedPriorityTier;
   }

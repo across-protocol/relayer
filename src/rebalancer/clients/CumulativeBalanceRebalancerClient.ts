@@ -15,7 +15,7 @@ import {
   toBNWei,
 } from "../../utils";
 import { ExcessOrDeficit, RebalanceRoute } from "../utils/interfaces";
-import { sortDeficitFunction, sortExcessFunction, sortHigherPriorityTier } from "../utils/utils";
+import { sortDeficitFunction, sortExcessFunction } from "../utils/utils";
 import { BaseRebalancerClient } from "./BaseRebalancerClient";
 import { getAcrossHost } from "../../clients/AcrossAPIClient";
 
@@ -230,21 +230,14 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
           // for all possible destination chains and then select the highest priority chain with the lowest
           // estimated cost.
           const allDestinationChains = cumulativeTargetBalances[deficitToken].chains;
-          const destinationChainIds = Object.entries(allDestinationChains).map(([chainId]) => Number(chainId));
-          const rebalanceRoutesToEvaluate: RebalanceRoute[] = [];
-          for (const route of availableRebalanceRoutes) {
-            destinationChainIds.forEach((destinationChain) => {
-              if (
-                availableAdapters.includes(route.adapter) &&
-                route.sourceChain === Number(chainId) &&
-                route.sourceToken === excessToken &&
-                route.destinationChain === destinationChain &&
-                route.destinationToken === deficitToken
-              ) {
-                rebalanceRoutesToEvaluate.push(route);
-              }
-            });
-          }
+          const rebalanceRoutesToEvaluate = availableRebalanceRoutes.filter(
+            (route) =>
+              availableAdapters.includes(route.adapter) &&
+              route.sourceChain === Number(chainId) &&
+              route.sourceToken === excessToken &&
+              route.destinationToken === deficitToken &&
+              isDefined(allDestinationChains[route.destinationChain])
+          );
 
           if (rebalanceRoutesToEvaluate.length === 0) {
             this.logger.debug({
@@ -270,9 +263,7 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
             };
           });
           rebalanceRoutesWithCosts.sort((a, b) => {
-            const aPriorityTier = a.priorityTier;
-            const bPriorityTier = b.priorityTier;
-            const sortedPriorityTier = sortHigherPriorityTier(aPriorityTier, bPriorityTier);
+            const sortedPriorityTier = b.priorityTier - a.priorityTier;
             if (sortedPriorityTier !== 0) {
               return sortedPriorityTier;
             }

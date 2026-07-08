@@ -76,9 +76,6 @@ Choose source chains from where the input token historically accumulates and is 
 highest-volume supported repayment chains in lower numeric priority tiers. Low-volume chains can either be omitted or
 left in a lower-priority tier if the operator intentionally wants to drain incidental inventory from them.
 
-Rank destination chains with higher numeric priority tiers when the operator wants replenishment to land there before
-cheaper lower-priority routes.
-
 ## Sizing Thresholds and Targets
 
 `thresholdBalance` controls how often a token starts a refill; `targetBalance` controls how much inventory the bot tries
