@@ -59,7 +59,7 @@ import { getPendingBridgeDepositTxnKey, STATUS } from "../utils/utils";
 import { BaseAdapter } from "./baseAdapter";
 import { AugmentedTransaction, MultiCallerClient } from "../../clients";
 import { RebalancerConfig } from "../RebalancerConfig";
-import { getContractEntry } from "../../common";
+import { FINALIZER_TOKENBRIDGE_LOOKBACK, getContractEntry } from "../../common";
 import { CctpAdapter } from "./cctpAdapter";
 import { OftAdapter, getOftPreDepositOrderTtlOverride } from "./oftAdapter";
 import WETH_ABI from "../../common/abi/Weth.json";
@@ -89,6 +89,10 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
 
   REDIS_PREFIX = "binance-stablecoin-swap:";
   private static readonly ORDER_BOOK_CACHE_TTL_MS = 30_000;
+  // A consumed swap deposit must stay tagged SWAP for as long as the Binance finalizer's deposit-history lookback
+  // (FINALIZER_TOKENBRIDGE_LOOKBACK, overridable via FINALIZER_MAX_TOKENBRIDGE_LOOKBACK), otherwise the finalizer
+  // re-counts the deposit as finalizable once the tag lapses. 2x the default lookback leaves margin for overrides.
+  private static readonly SWAP_DEPOSIT_TAG_TTL = 2 * FINALIZER_TOKENBRIDGE_LOOKBACK;
 
   REDIS_KEY_INITIATED_WITHDRAWALS = this.REDIS_PREFIX + "initiated-withdrawals";
   constructor(
@@ -1176,15 +1180,22 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       txnHash = await this._submitTransaction(txn);
     }
     // The SWAP tag keeps this deposit out of the Binance finalizer's ledger. It must outlive the finalizer's
-    // deposit-history lookback (the Redis default TTL is 1 week), otherwise a completed swap's deposit would be
+    // deposit-history lookback (see SWAP_DEPOSIT_TAG_TTL), otherwise a completed swap's deposit would be
     // re-counted as finalizable once the tag lapses, creating phantom `amountToFinalize` debt that the finalizer
     // pays with the next order's credited funds. If this order is instead abandoned (TTL prune), the tag is
     // deleted in _onExpiredOrderPruned so the finalizer can reclaim the funds — recovery keys off order state,
-    // not wall clock. The cloid -> deposit txn mapping below is what lets the prune path find this tag.
-    await setBinanceDepositType(sourceChain, txnHash, BinanceTransactionType.SWAP);
+    // not wall clock. The cloid -> deposit txn mapping below is what lets the prune path find this tag; it gets
+    // the same TTL so it outlives any REBALANCER_PENDING_ORDER_TTL override and is still around at prune time.
+    await setBinanceDepositType(
+      sourceChain,
+      txnHash,
+      BinanceTransactionType.SWAP,
+      BinanceStablecoinSwapAdapter.SWAP_DEPOSIT_TAG_TTL
+    );
     await this.redisCache.set(
       getPendingBridgeDepositTxnKey(this.REDIS_PREFIX, cloid, this.baseSignerAddress.toNative()),
-      JSON.stringify({ chainId: sourceChain, transactionHash: txnHash })
+      JSON.stringify({ chainId: sourceChain, transactionHash: txnHash }),
+      BinanceStablecoinSwapAdapter.SWAP_DEPOSIT_TAG_TTL
     );
     this.logger.debug({
       at: "BinanceStablecoinSwapAdapter._depositToBinance",
