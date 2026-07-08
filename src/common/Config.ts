@@ -2,7 +2,15 @@ import { randomUUID } from "crypto";
 import winston from "winston";
 import { DEFAULT_MULTICALL_CHUNK_SIZE } from "../common";
 import { ArweaveGatewayConfigSS, ArweaveGatewayConfig } from "../interfaces";
-import { addressAdapters, AddressAggregator, assert, CHAIN_IDs, isDefined, parseJson } from "../utils";
+import {
+  addressAdapters,
+  AddressAggregator,
+  assert,
+  CHAIN_IDs,
+  isDefined,
+  parseJson,
+  stringifyThrownValue,
+} from "../utils";
 import * as Constants from "./Constants";
 
 export interface ProcessEnv {
@@ -178,13 +186,20 @@ export class CommonConfig {
       return Promise.resolve();
     }
 
-    const addressAggregator = new AddressAggregator(
-      [
-        new addressAdapters.fs.AddressList({ path, logger }),
-        new addressAdapters.risklabs.AddressList({ logger, throwOnError: false, timeout: 5000 }),
-      ],
-      logger
-    );
-    this.addressFilter = await addressAggregator.update();
+    const localList = new addressAdapters.fs.AddressList({ path, logger });
+    const remoteList = new addressAdapters.risklabs.AddressList({ logger, timeout: 5000 });
+
+    try {
+      this.addressFilter = await new AddressAggregator([localList, remoteList], logger).update();
+    } catch (err) {
+      logger.warn({
+        at: "Config::update",
+        message: "Failed to update address filter; retaining existing addresses.",
+        reason: stringifyThrownValue(err),
+        addresses: this.addressFilter?.size,
+      });
+      // On startup there is no previous filter to retain; fall back to the local address list.
+      this.addressFilter ??= await new AddressAggregator([localList], logger).update();
+    }
   }
 }
