@@ -51,9 +51,8 @@ export function sortExcessFunction(
 ): number {
   const { priorityTier: priorityTierA } = excessA;
   const { priorityTier: priorityTierB } = excessB;
-  const sortedPriorityTier = priorityTierA - priorityTierB;
-  if (sortedPriorityTier !== 0) {
-    return sortedPriorityTier;
+  if (priorityTierA !== priorityTierB) {
+    return priorityTierA - priorityTierB;
   }
   return compareNormalizedAmounts(excessA, excessB, tokenPricesUsd);
 }
@@ -65,9 +64,8 @@ export function sortDeficitFunction(
 ): number {
   const { priorityTier: priorityTierA } = deficitA;
   const { priorityTier: priorityTierB } = deficitB;
-  const sortedPriorityTier = priorityTierB - priorityTierA;
-  if (sortedPriorityTier !== 0) {
-    return sortedPriorityTier;
+  if (priorityTierA !== priorityTierB) {
+    return priorityTierB - priorityTierA;
   }
   return compareNormalizedAmounts(deficitA, deficitB, tokenPricesUsd);
 }

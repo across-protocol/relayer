@@ -282,7 +282,6 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
             });
             continue;
           }
-          const highestRankedRoute = candidateRoutes[0];
           this.logger.debug({
             at: "RebalanceClient.rebalanceCumulativeInventory",
             message: `Evaluating sending of ${amountToTransferCapped.toString()} of ${excessToken} from ${getNetworkName(
@@ -294,12 +293,6 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
             excessRemaining: excessRemaining.toString(),
             deficitRemainingConvertedToExcessToken: deficitRemainingConverted.toString(),
             maxAmountToTransfer: maxAmountToTransfer?.toString(),
-            routePriorityTier: highestRankedRoute.priorityTier,
-            routeCost: `[${highestRankedRoute.route.adapter}] ${getNetworkName(
-              highestRankedRoute.route.sourceChain
-            )} ${highestRankedRoute.route.sourceToken} -> ${getNetworkName(
-              highestRankedRoute.route.destinationChain
-            )} ${highestRankedRoute.route.destinationToken}: ${highestRankedRoute.cost.toString()}`,
             rebalanceRouteCosts: rebalanceRoutesWithCosts.map(({ route, cost, priorityTier }) => {
               return {
                 [route.adapter]: `[P${priorityTier}] ${route.sourceToken} on ${getNetworkName(route.sourceChain)} -> ${
