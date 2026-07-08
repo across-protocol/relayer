@@ -58,7 +58,7 @@ import { getPendingBridgeDepositTxnKey, STATUS } from "../utils/utils";
 import { BaseAdapter } from "./baseAdapter";
 import { AugmentedTransaction, MultiCallerClient } from "../../clients";
 import { RebalancerConfig } from "../RebalancerConfig";
-import { getContractEntry } from "../../common";
+import { FINALIZER_TOKENBRIDGE_LOOKBACK, getContractEntry } from "../../common";
 import { CctpAdapter } from "./cctpAdapter";
 import { OftAdapter, getOftPreDepositOrderTtlOverride } from "./oftAdapter";
 import WETH_ABI from "../../common/abi/Weth.json";
@@ -1170,10 +1170,11 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     }
     // TTL must outlive the finalizer lookback so completed swaps are not re-counted as finalizable.
     // The cloid -> deposit txn mapping lets the prune path find abandoned deposit tags.
-    await setBinanceDepositType(sourceChain, txnHash, BinanceTransactionType.SWAP);
+    await setBinanceDepositType(sourceChain, txnHash, BinanceTransactionType.SWAP, 2 * FINALIZER_TOKENBRIDGE_LOOKBACK);
     await this.redisCache.set(
       getPendingBridgeDepositTxnKey(this.REDIS_PREFIX, cloid, this.baseSignerAddress.toNative()),
-      JSON.stringify({ chainId: sourceChain, transactionHash: txnHash })
+      JSON.stringify({ chainId: sourceChain, transactionHash: txnHash }),
+      2 * FINALIZER_TOKENBRIDGE_LOOKBACK
     );
     this.logger.debug({
       at: "BinanceStablecoinSwapAdapter._depositToBinance",
