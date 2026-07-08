@@ -539,7 +539,7 @@ describe("RebalancerClient.cumulativeRebalancing", () => {
     expect(adapter1.rebalances[1].route.sourceChain).to.equal(CHAIN_C);
   });
 
-  it("For a given excess token and source chain, rebalance route is chosen using cheapest expected cost", async function () {
+  it("For a given excess token and source chain, same-priority routes choose cheapest expected cost", async function () {
     const cumulativeBalances = {
       [USDC]: bnZero,
       [USDT]: amount(USDT, "100"),
@@ -574,6 +574,65 @@ describe("RebalancerClient.cumulativeRebalancing", () => {
     expect(adapter2.rebalances.length).to.equal(1);
     expect(adapter2.rebalances[0].route.destinationChain).to.equal(CHAIN_A);
   });
+
+  for (const { title, highPriorityCost, maxFeePct, expectedDestinationChain, declineHighPriorityRoute } of [
+    {
+      title: "destination priority wins before expected cost",
+      highPriorityCost: "5",
+      maxFeePct: MAX_FEE_PCT,
+      expectedDestinationChain: CHAIN_B,
+    },
+    {
+      title: "destination priority falls back when max fee is exceeded",
+      highPriorityCost: "6",
+      maxFeePct: toBNWei("10"),
+      expectedDestinationChain: CHAIN_A,
+    },
+    {
+      title: "destination priority falls back when the preferred route declines",
+      highPriorityCost: "5",
+      maxFeePct: MAX_FEE_PCT,
+      expectedDestinationChain: CHAIN_A,
+      declineHighPriorityRoute: true,
+    },
+  ]) {
+    it(`For a given excess token and source chain, ${title}`, async function () {
+      const cumulativeBalances = {
+        [USDC]: bnZero,
+        [USDT]: amount(USDT, "100"),
+      };
+      const currentBalances = {
+        [CHAIN_A]: { [USDC]: bnZero, [USDT]: amount(USDT, "100") },
+        [CHAIN_B]: { [USDC]: bnZero },
+      };
+      const cumulativeTargetBalances: CumulativeTargetBalanceConfig = {
+        [USDC]: buildTarget(USDC, "50", "40", 0, { [CHAIN_A]: 0, [CHAIN_B]: 1 }),
+        [USDT]: buildTarget(USDT, "0", "0", 0, { [CHAIN_A]: 0 }),
+      };
+      const baseSigner = ethers.Wallet.createRandom();
+      const adapter1 = new MockRebalancerAdapter(baseSigner);
+      const lowPriorityRoute = makeRoute(CHAIN_A, CHAIN_A, USDT, USDC, "adapter1");
+      const highPriorityRoute = makeRoute(CHAIN_A, CHAIN_B, USDT, USDC, "adapter1");
+      adapter1.setEstimatedCost(lowPriorityRoute, amount(USDT, "1"));
+      adapter1.setEstimatedCost(highPriorityRoute, amount(USDT, highPriorityCost));
+      if (declineHighPriorityRoute) {
+        adapter1.setInitializeRebalanceResult(highPriorityRoute, bnZero);
+      }
+      const rebalancerClient = await createClient(
+        cumulativeTargetBalances,
+        { adapter1 },
+        [lowPriorityRoute, highPriorityRoute],
+        {},
+        { adapter1: 10 },
+        baseSigner
+      );
+
+      await rebalancerClient.rebalanceInventory(cumulativeBalances, currentBalances, maxFeePct);
+
+      expect(adapter1.rebalances.length).to.equal(1);
+      expect(adapter1.rebalances[0].route.destinationChain).to.equal(expectedDestinationChain);
+    });
+  }
 
   it("Sizes WETH deficits using excess-token USD value instead of raw decimals", async function () {
     const restorePrices = withFixedTokenPrices({
