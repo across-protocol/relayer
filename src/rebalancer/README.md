@@ -219,7 +219,7 @@ High-level flow:
    - then current chain balance descending.
 5. For each candidate source chain, evaluate all destination chains configured for the deficit token that have valid routes, then choose the highest destination priority tier with an estimated cost within `maxFeePct`. Routes in the same destination priority tier use the lowest `getEstimatedCost`.
 6. Cap transfer amount by remaining deficit, remaining excess, chain balance, and configured `maxAmountsToTransfer`. For mixed-asset routes such as `WETH <-> stablecoin`, the client converts between source and destination token amounts through hub-chain USD prices before capping and decrementing the remaining deficit.
-7. Enforce max fee pct and adapter pending-order caps before calling `initializeRebalance`.
+7. Enforce max fee pct and adapter pending-order caps before calling `initializeRebalance`. If an affordable ranked route declines during initialization, try the next affordable route.
 
 Design tradeoff:
 

@@ -575,7 +575,7 @@ describe("RebalancerClient.cumulativeRebalancing", () => {
     expect(adapter2.rebalances[0].route.destinationChain).to.equal(CHAIN_A);
   });
 
-  for (const { title, highPriorityCost, maxFeePct, expectedDestinationChain } of [
+  for (const { title, highPriorityCost, maxFeePct, expectedDestinationChain, declineHighPriorityRoute } of [
     {
       title: "destination priority wins before expected cost",
       highPriorityCost: "5",
@@ -587,6 +587,13 @@ describe("RebalancerClient.cumulativeRebalancing", () => {
       highPriorityCost: "6",
       maxFeePct: toBNWei("10"),
       expectedDestinationChain: CHAIN_A,
+    },
+    {
+      title: "destination priority falls back when the preferred route declines",
+      highPriorityCost: "5",
+      maxFeePct: MAX_FEE_PCT,
+      expectedDestinationChain: CHAIN_A,
+      declineHighPriorityRoute: true,
     },
   ]) {
     it(`For a given excess token and source chain, ${title}`, async function () {
@@ -608,6 +615,9 @@ describe("RebalancerClient.cumulativeRebalancing", () => {
       const highPriorityRoute = makeRoute(CHAIN_A, CHAIN_B, USDT, USDC, "adapter1");
       adapter1.setEstimatedCost(lowPriorityRoute, amount(USDT, "1"));
       adapter1.setEstimatedCost(highPriorityRoute, amount(USDT, highPriorityCost));
+      if (declineHighPriorityRoute) {
+        adapter1.setInitializeRebalanceResult(highPriorityRoute, bnZero);
+      }
       const rebalancerClient = await createClient(
         cumulativeTargetBalances,
         { adapter1 },
