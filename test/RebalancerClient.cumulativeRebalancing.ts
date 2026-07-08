@@ -539,7 +539,7 @@ describe("RebalancerClient.cumulativeRebalancing", () => {
     expect(adapter1.rebalances[1].route.sourceChain).to.equal(CHAIN_C);
   });
 
-  it("For a given excess token and source chain, rebalance route is chosen using cheapest expected cost", async function () {
+  it("For a given excess token and source chain, same-priority routes choose cheapest expected cost", async function () {
     const cumulativeBalances = {
       [USDC]: bnZero,
       [USDT]: amount(USDT, "100"),
@@ -573,6 +573,78 @@ describe("RebalancerClient.cumulativeRebalancing", () => {
     expect(adapter1.rebalances.length).to.equal(0);
     expect(adapter2.rebalances.length).to.equal(1);
     expect(adapter2.rebalances[0].route.destinationChain).to.equal(CHAIN_A);
+  });
+
+  it("For a given excess token and source chain, destination priority wins before expected cost", async function () {
+    const cumulativeBalances = {
+      [USDC]: bnZero,
+      [USDT]: amount(USDT, "100"),
+    };
+    const currentBalances = {
+      [CHAIN_A]: { [USDC]: bnZero, [USDT]: amount(USDT, "100") },
+      [CHAIN_B]: { [USDC]: bnZero },
+    };
+    const cumulativeTargetBalances: CumulativeTargetBalanceConfig = {
+      [USDC]: buildTarget(USDC, "50", "40", 0, { [CHAIN_A]: 0, [CHAIN_B]: 1 }),
+      [USDT]: buildTarget(USDT, "0", "0", 0, { [CHAIN_A]: 0 }),
+    };
+    const baseSigner = ethers.Wallet.createRandom();
+    const cheapLowPriorityAdapter = new MockRebalancerAdapter(baseSigner);
+    const expensiveHighPriorityAdapter = new MockRebalancerAdapter(baseSigner);
+    const cheapLowPriorityRoute = makeRoute(CHAIN_A, CHAIN_A, USDT, USDC, "cheapLowPriorityAdapter");
+    const expensiveHighPriorityRoute = makeRoute(CHAIN_A, CHAIN_B, USDT, USDC, "expensiveHighPriorityAdapter");
+    cheapLowPriorityAdapter.setEstimatedCost(cheapLowPriorityRoute, amount(USDT, "1"));
+    expensiveHighPriorityAdapter.setEstimatedCost(expensiveHighPriorityRoute, amount(USDT, "5"));
+    const rebalancerClient = await createClient(
+      cumulativeTargetBalances,
+      { cheapLowPriorityAdapter, expensiveHighPriorityAdapter },
+      [cheapLowPriorityRoute, expensiveHighPriorityRoute],
+      {},
+      { cheapLowPriorityAdapter: 10, expensiveHighPriorityAdapter: 10 },
+      baseSigner
+    );
+
+    await rebalancerClient.rebalanceInventory(cumulativeBalances, currentBalances, MAX_FEE_PCT);
+
+    expect(cheapLowPriorityAdapter.rebalances.length).to.equal(0);
+    expect(expensiveHighPriorityAdapter.rebalances.length).to.equal(1);
+    expect(expensiveHighPriorityAdapter.rebalances[0].route.destinationChain).to.equal(CHAIN_B);
+  });
+
+  it("For a given excess token and source chain, destination priority falls back when max fee is exceeded", async function () {
+    const cumulativeBalances = {
+      [USDC]: bnZero,
+      [USDT]: amount(USDT, "100"),
+    };
+    const currentBalances = {
+      [CHAIN_A]: { [USDC]: bnZero, [USDT]: amount(USDT, "100") },
+      [CHAIN_B]: { [USDC]: bnZero },
+    };
+    const cumulativeTargetBalances: CumulativeTargetBalanceConfig = {
+      [USDC]: buildTarget(USDC, "50", "40", 0, { [CHAIN_A]: 0, [CHAIN_B]: 1 }),
+      [USDT]: buildTarget(USDT, "0", "0", 0, { [CHAIN_A]: 0 }),
+    };
+    const baseSigner = ethers.Wallet.createRandom();
+    const cheapLowPriorityAdapter = new MockRebalancerAdapter(baseSigner);
+    const expensiveHighPriorityAdapter = new MockRebalancerAdapter(baseSigner);
+    const cheapLowPriorityRoute = makeRoute(CHAIN_A, CHAIN_A, USDT, USDC, "cheapLowPriorityAdapter");
+    const expensiveHighPriorityRoute = makeRoute(CHAIN_A, CHAIN_B, USDT, USDC, "expensiveHighPriorityAdapter");
+    cheapLowPriorityAdapter.setEstimatedCost(cheapLowPriorityRoute, amount(USDT, "1"));
+    expensiveHighPriorityAdapter.setEstimatedCost(expensiveHighPriorityRoute, amount(USDT, "6"));
+    const rebalancerClient = await createClient(
+      cumulativeTargetBalances,
+      { cheapLowPriorityAdapter, expensiveHighPriorityAdapter },
+      [cheapLowPriorityRoute, expensiveHighPriorityRoute],
+      {},
+      { cheapLowPriorityAdapter: 10, expensiveHighPriorityAdapter: 10 },
+      baseSigner
+    );
+
+    await rebalancerClient.rebalanceInventory(cumulativeBalances, currentBalances, toBNWei("10"));
+
+    expect(cheapLowPriorityAdapter.rebalances.length).to.equal(1);
+    expect(cheapLowPriorityAdapter.rebalances[0].route.destinationChain).to.equal(CHAIN_A);
+    expect(expensiveHighPriorityAdapter.rebalances.length).to.equal(0);
   });
 
   it("Sizes WETH deficits using excess-token USD value instead of raw decimals", async function () {

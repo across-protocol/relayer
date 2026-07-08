@@ -191,7 +191,7 @@ Notes:
 
 - `targetBalance` and `thresholdBalance` values are human-readable and converted to token-native decimals.
 - `cumulativeTargetBalances` define per-token aggregate objectives plus allowed source/destination chain sets for `CumulativeBalanceRebalancerClient.rebalanceInventory()`.
-- `cumulativeTargetBalances[token].chains[chainId]` is a chain priority tier used when selecting where to source excess inventory from (lower tier is preferred for sourcing).
+- `cumulativeTargetBalances[token].chains[chainId]` is a chain priority tier used when selecting where to source excess inventory from and where to land deficit inventory. Lower tiers are preferred for sourcing; higher tiers are preferred for destinations.
 - `chainIds` are derived from the union of chains found in `cumulativeTargetBalances`.
 
 For an operator playbook on sizing these values from expected deposit fills, see
@@ -217,13 +217,13 @@ High-level flow:
 4. For each excess token used to fill a deficit token, sort source chains from `cumulativeTargetBalances[excessToken].chains` by:
    - chain `priorityTier` ascending,
    - then current chain balance descending.
-5. For each candidate source chain, evaluate all destination chains configured for the deficit token that have valid routes, then choose the route with the lowest `getEstimatedCost`.
+5. For each candidate source chain, evaluate all destination chains configured for the deficit token that have valid routes, then choose the highest destination priority tier with an estimated cost within `maxFeePct`. Routes in the same destination priority tier use the lowest `getEstimatedCost`.
 6. Cap transfer amount by remaining deficit, remaining excess, chain balance, and configured `maxAmountsToTransfer`. For mixed-asset routes such as `WETH <-> stablecoin`, the client converts between source and destination token amounts through hub-chain USD prices before capping and decrementing the remaining deficit.
 7. Enforce max fee pct and adapter pending-order caps before calling `initializeRebalance`.
 
 Design tradeoff:
 
-- Destination-chain selection evaluates all eligible routes to minimize expected cost. This improves route quality at the expense of additional runtime cost when many routes are configured.
+- Destination-chain selection evaluates all eligible routes and favors configured destination priority before expected cost. This sends replenishment to preferred inventory locations while still falling back to lower-priority routes when higher-priority routes exceed `maxFeePct`.
 
 ### Read-only mode: `ReadOnlyRebalancerClient`
 

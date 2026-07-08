@@ -15,12 +15,13 @@ The cumulative rebalancer works from aggregate token balances:
 5. The chosen transfer is capped by the remaining deficit, remaining excess, source-chain balance, and
    `maxAmountsToTransfer`.
 
-`cumulativeTargetBalances[token].chains` is both an allowlist and a source-priority map:
+`cumulativeTargetBalances[token].chains` is both an allowlist and a chain-priority map:
 
 - A chain must be present for that token to be eligible as a source or destination.
 - Lower numeric priority tiers are preferred when the token is being used as the source of excess inventory.
-- Destination priority is not used to force where replenishment lands. The client evaluates all configured destination
-  chains with valid routes and picks the cheapest estimated route.
+- Higher numeric priority tiers are preferred when the token is the destination deficit inventory. The client evaluates
+  all configured destination chains with valid routes, picks the highest-priority route under `maxFeePct`, and uses the
+  cheapest route among ties.
 
 Config can only select from routes generated in `src/rebalancer/buildRebalanceRoutes.ts`. If historical flow lands on a
 chain that is absent from `REBALANCE_CHAINS_BY_SYMBOL` for the relevant token, adding that chain to JSON config alone is
@@ -68,12 +69,15 @@ For example, if most `USDT -> USDC` fills consume USDC on Base and a smaller amo
 are natural USDC destinations. Mainnet can also be a deliberate USDC destination even when it is not the dominant final
 consumption chain, because Mainnet USDC is highly portable and can be rebalanced onward through many routes.
 
-Avoid broad destination allowlists unless that is intentional. Since destination selection is cost-based, an extra cheap
-route can attract replenishment to a chain that has little expected deposit demand.
+Avoid broad destination allowlists unless that is intentional. A high destination priority can attract replenishment to a
+chain even when a lower-priority route is cheaper.
 
 Choose source chains from where the input token historically accumulates and is supported by route construction. Put the
 highest-volume supported repayment chains in lower numeric priority tiers. Low-volume chains can either be omitted or
 left in a lower-priority tier if the operator intentionally wants to drain incidental inventory from them.
+
+Rank destination chains with higher numeric priority tiers when the operator wants replenishment to land there before
+cheaper lower-priority routes.
 
 ## Sizing Thresholds and Targets
 
