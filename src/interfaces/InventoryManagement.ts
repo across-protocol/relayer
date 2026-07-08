@@ -85,6 +85,7 @@ export interface InventoryConfig {
   forceOriginRepaymentPerChain: {
     [chainId: number]: boolean;
   };
+  rebalanceShortfalls: boolean | undefined;
 }
 
 export function isAliasConfig(config: ChainTokenConfig | ChainTokenInventory): config is ChainTokenInventory {
