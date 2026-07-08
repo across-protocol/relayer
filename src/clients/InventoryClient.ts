@@ -853,8 +853,10 @@ export class InventoryClient {
         const l2Tokens = this.getRemoteTokensForL1Token(l1Token, chainId);
         l2Tokens.forEach((l2Token) => {
           // Make sure to prioritize shortfall rebalances over ordinary rebalances by pushing them into the array first
-          const shortfallRebalances = this._getPossibleShortfallRebalances(l1Token, chainId, l2Token);
-          rebalancesRequired.push(...shortfallRebalances);
+          // Temporarily disabled: shortfall rebalances emit one tiny per-deposit transfer each, which the mainnet
+          // balance-changed check in rebalanceInventoryIfNeeded perpetually skips. Rely on target-allocation rebalances.
+          // const shortfallRebalances = this._getPossibleShortfallRebalances(l1Token, chainId, l2Token);
+          // rebalancesRequired.push(...shortfallRebalances);
           const inventoryRebalance = this._getPossibleInventoryRebalances(cumulativeBalance, l1Token, chainId, l2Token);
           if (inventoryRebalance) {
             rebalancesRequired.push(inventoryRebalance);
