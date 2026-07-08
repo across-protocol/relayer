@@ -293,17 +293,7 @@ export abstract class BaseAdapter implements RebalancerAdapter {
           message: `⏰ Pruning expired pending order ${cloid} from status set ${statusSetKey} without finalization. The order's REBALANCER_PENDING_ORDER_TTL elapsed before it could progress out of this status.`,
           account: account.toNative(),
         });
-        // The hook must not break this read path: it is called from every bot sharing the Redis state, so a
-        // venue/Redis hiccup during cleanup should be logged rather than propagated.
-        try {
-          await this._onExpiredOrderPruned(status, cloid, account);
-        } catch (error) {
-          this.logger.warn({
-            at: "BaseAdapter._redisCleanupPendingOrders",
-            message: `Expired-order cleanup hook failed for cloid ${cloid}`,
-            error,
-          });
-        }
+        await this._onExpiredOrderPruned(status, cloid, account);
       }
     });
   }
