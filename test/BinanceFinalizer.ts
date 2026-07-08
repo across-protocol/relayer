@@ -3,6 +3,7 @@ import {
   getEvmBinanceRebalanceLookupAccounts,
   getPositivePendingRebalanceAmountsByBinanceCoin,
   getSweepableOrphanBinanceBalance,
+  sumBinanceCoinAmounts,
 } from "../src/finalizer/utils/binance";
 import { bnZero, CHAIN_IDs, EvmAddress, toBNWei } from "../src/utils";
 
@@ -55,6 +56,30 @@ describe("Binance finalizer helpers", function () {
     });
 
     expect(deductions).to.deep.equal({ USDT: 75 });
+  });
+
+  it("sums destination-side and pending-deposit source-side deductions by Binance coin", function () {
+    const merged = sumBinanceCoinAmounts({ USDC: 100 }, { USDT: 75, USDC: 25 });
+
+    expect(merged).to.deep.equal({ USDC: 125, USDT: 75 });
+  });
+
+  it("keeps pending-deposit source deductions when destination-side adjustments net negative for the same coin", function () {
+    // A pending USDT -> USDC swap order in PENDING_DEPOSIT protects its USDT input via the source-side map. A
+    // negative destination-side adjustment for the same coin (e.g. an intermediate bridge leg of another order)
+    // must not cancel that protection, so each map is netted to positive amounts before the two are summed.
+    const destinationSide = getPositivePendingRebalanceAmountsByBinanceCoin({
+      [CHAIN_IDs.ARBITRUM]: {
+        USDT: bnZero.sub(toBNWei("50", 6)),
+      },
+    });
+    const sourceSide = getPositivePendingRebalanceAmountsByBinanceCoin({
+      [CHAIN_IDs.BSC]: {
+        USDT: toBNWei("75", 18),
+      },
+    });
+
+    expect(sumBinanceCoinAmounts(destinationSide, sourceSide)).to.deep.equal({ USDT: 75 });
   });
 
   it("subtracts credited, swap, and pending rebalance amounts from orphan sweep candidates", function () {

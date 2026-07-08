@@ -306,9 +306,25 @@ async function getPendingBinanceRebalanceDeductions(
 ): Promise<Record<string, number>> {
   const binanceAdapter = await constructAdapter(logger, hubSigner, "binance");
   const lookupAccounts = getEvmBinanceRebalanceLookupAccounts(recipientAddresses, await hubSigner.getAddress());
-  const pendingRebalances = (
-    await Promise.all(lookupAccounts.map((account) => binanceAdapter.getPendingRebalances(account)))
-  ).reduce<{
+  const [pendingRebalances, pendingDepositSourceAmounts] = await Promise.all([
+    mapAsync(lookupAccounts, (account) => binanceAdapter.getPendingRebalances(account)),
+    mapAsync(lookupAccounts, (account) => binanceAdapter.getPendingDepositSourceAmounts(account)),
+  ]);
+  // Destination-side credits and source-side deposit amounts are netted separately before being summed:
+  // getPendingRebalances() carries negative on-chain adjustments (e.g. intermediate bridge legs) that must not
+  // cancel the exchange-balance protection for orders whose source-token deposit is credited but not yet consumed.
+  // Without the source-side deduction, the finalizer can withdraw a pending order's just-credited input funds to
+  // service unrelated finalization backlog, starving the order until its TTL prunes it.
+  return sumBinanceCoinAmounts(
+    getPositivePendingRebalanceAmountsByBinanceCoin(combineChainTokenAmounts(pendingRebalances)),
+    getPositivePendingRebalanceAmountsByBinanceCoin(combineChainTokenAmounts(pendingDepositSourceAmounts))
+  );
+}
+
+function combineChainTokenAmounts(amountsList: { [chainId: number]: { [token: string]: BigNumber } }[]): {
+  [chainId: number]: { [token: string]: BigNumber };
+} {
+  return amountsList.reduce<{
     [chainId: number]: { [token: string]: BigNumber };
   }>((acc, pending) => {
     for (const [_chainId, tokenBalances] of Object.entries(pending)) {
@@ -320,7 +336,16 @@ async function getPendingBinanceRebalanceDeductions(
     }
     return acc;
   }, {});
-  return getPositivePendingRebalanceAmountsByBinanceCoin(pendingRebalances);
+}
+
+export function sumBinanceCoinAmounts(...amountsByCoin: Record<string, number>[]): Record<string, number> {
+  const totals: Record<string, number> = {};
+  for (const amounts of amountsByCoin) {
+    for (const [coin, amount] of Object.entries(amounts)) {
+      totals[coin] = (totals[coin] ?? 0) + amount;
+    }
+  }
+  return totals;
 }
 
 export function getEvmBinanceRebalanceLookupAccounts(addresses: string[], signerAddress?: string): EvmAddress[] {

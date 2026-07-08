@@ -867,6 +867,10 @@ class MockRebalancerAdapter implements RebalancerAdapter {
     return Promise.resolve(this.pendingRebalances);
   }
 
+  getPendingDepositSourceAmounts(): Promise<{ [chainId: number]: { [token: string]: BigNumber } }> {
+    return Promise.resolve({});
+  }
+
   getPendingOrders(): Promise<string[]> {
     return Promise.resolve(this.pendingOrders ?? this.rebalances.map((x, i) => i.toString()));
   }

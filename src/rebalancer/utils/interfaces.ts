@@ -13,6 +13,12 @@ export interface RebalancerAdapter {
   // Get all currently unfinalized rebalance amounts. Should be used to add a virtual balance credit for the chain
   // + token in question.
   getPendingRebalances(account: EvmAddress): Promise<{ [chainId: number]: { [token: string]: BigNumber } }>;
+
+  // Get the source-token amounts of orders in PENDING_DEPOSIT status, keyed by source chain and token
+  // (denominated in source-chain token decimals). These funds are in flight to — or already credited on — the
+  // venue and must remain available for the order to progress, so balance-based sweepers (e.g. the Binance
+  // finalizer) should deduct them from any withdrawable-balance calculation.
+  getPendingDepositSourceAmounts(account: EvmAddress): Promise<{ [chainId: number]: { [token: string]: BigNumber } }>;
   getPendingOrders(): Promise<string[]>;
   getEstimatedCost(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber, debugLog: boolean): Promise<BigNumber>;
 }

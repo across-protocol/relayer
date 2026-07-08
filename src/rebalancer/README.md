@@ -279,8 +279,12 @@ Running the Rebalancer allows the relayer to support in-protocol swap flows whil
 
 The Binance finalizer sweeps exchange balances as a fallback path. Before withdrawing, it constructs a read-only Binance
 adapter, reads pending Binance rebalances with `getPendingRebalances(account)`, and subtracts positive destination-token
-amounts from the shared exchange-account withdrawal capacity. The Binance adapter marks expected swap lifecycle
-transfers, and stale balances are eventually swept if swaps do not complete.
+amounts from the shared exchange-account withdrawal capacity. It also reads `getPendingDepositSourceAmounts(account)`
+and subtracts the source-token amounts of orders still in `PENDING_DEPOSIT`, so a just-credited swap deposit cannot be
+withdrawn to service unrelated finalization backlog before the order places its spot order (which would starve the
+order until its TTL prunes it). The two deduction maps are netted to positive amounts independently before being
+summed, so negative destination-side adjustments never cancel source-side protection. The Binance adapter marks
+expected swap lifecycle transfers, and stale balances are eventually swept if swaps do not complete.
 
 When Binance reports `RW00441`, the account has recently credited deposit value that is not withdrawal-unlocked yet.
 The Binance adapter treats this as a retryable wait state and leaves the order pending. The Binance finalizer reads

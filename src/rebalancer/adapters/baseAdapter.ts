@@ -140,6 +140,34 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     );
   }
 
+  /**
+   * @notice Source-token amounts for orders in PENDING_DEPOSIT status, keyed by source chain and token
+   * (`amountToTransfer` is denominated in source-chain token decimals). These funds have been sent to — and may
+   * already be credited on — the venue, but the order still needs them available to progress (e.g. to place its
+   * spot order). Balance-based sweepers such as the Binance finalizer must deduct these amounts from any
+   * withdrawable-balance calculation; otherwise they can drain a pending order's input funds and starve the order
+   * until its REBALANCER_PENDING_ORDER_TTL prunes it.
+   */
+  async getPendingDepositSourceAmounts(
+    account: EvmAddress
+  ): Promise<{ [chainId: number]: { [token: string]: BigNumber } }> {
+    const pendingSourceAmounts: { [chainId: number]: { [token: string]: BigNumber } } = {};
+    const pendingDeposits = await this._redisGetPendingDeposits(account);
+    for (const cloid of pendingDeposits) {
+      // Tolerate a details key that expired between the status-set listing and this lookup.
+      const orderDetails = await this._redisGetOrderDetails(cloid, account);
+      if (!isDefined(orderDetails)) {
+        continue;
+      }
+      const { sourceChain, sourceToken, amountToTransfer } = orderDetails;
+      pendingSourceAmounts[sourceChain] ??= {};
+      pendingSourceAmounts[sourceChain][sourceToken] = (pendingSourceAmounts[sourceChain][sourceToken] ?? bnZero).add(
+        amountToTransfer
+      );
+    }
+    return pendingSourceAmounts;
+  }
+
   // ////////////////////////////////////////////////////////////
   // ABSTRACT PUBLIC METHODS
   // ////////////////////////////////////////////////////////////
