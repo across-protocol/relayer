@@ -568,7 +568,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const { chainId, transactionHash } = JSON.parse(depositTxn) as { chainId: number; transactionHash: string };
     await deleteBinanceDepositType(chainId, transactionHash);
     await this.redisCache.del(depositTxnKey);
-    this.logger.info({
+    this.logger.debug({
       at: "BinanceStablecoinSwapAdapter._onExpiredOrderPruned",
       message: `Released SWAP deposit tag for pruned order ${cloid}; the Binance finalizer can now reclaim the deposited funds`,
       cloid,
