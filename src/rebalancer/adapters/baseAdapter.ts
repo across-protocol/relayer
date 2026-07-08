@@ -293,8 +293,26 @@ export abstract class BaseAdapter implements RebalancerAdapter {
           message: `⏰ Pruning expired pending order ${cloid} from status set ${statusSetKey} without finalization. The order's REBALANCER_PENDING_ORDER_TTL elapsed before it could progress out of this status.`,
           account: account.toNative(),
         });
+        // The hook must not break this read path: it is called from every bot sharing the Redis state, so a
+        // venue/Redis hiccup during cleanup should be logged rather than propagated.
+        try {
+          await this._onExpiredOrderPruned(status, cloid, account);
+        } catch (error) {
+          this.logger.warn({
+            at: "BaseAdapter._redisCleanupPendingOrders",
+            message: `Expired-order cleanup hook failed for cloid ${cloid}`,
+            error,
+          });
+        }
       }
     });
+  }
+
+  // Hook invoked after a pending order is pruned because its details key TTL elapsed (a genuine expiry, not a
+  // concurrent finalize). Adapters override this to release venue-side state tied to the abandoned order — e.g.
+  // the Binance adapter untags the order's exchange deposit so the Binance finalizer can reclaim the funds.
+  protected async _onExpiredOrderPruned(_status: STATUS, _cloid: string, _account: EvmAddress): Promise<void> {
+    return;
   }
 
   protected async _redisGetPendingBridgesPreDeposit(account: EvmAddress): Promise<string[]> {

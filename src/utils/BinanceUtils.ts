@@ -322,6 +322,22 @@ export async function setBinanceDepositType(
 }
 
 /**
+ * @notice Remove a deposit's type tag from the Redis cache. Once the tag is gone the deposit reads as UNKNOWN,
+ * which the Binance finalizer treats as finalizable — so this is how a caller hands a deposit's funds over to
+ * the finalizer for reclaim.
+ * @param depositChain The chain ID of the network that the deposit was made from.
+ * @param transactionHash Hash of the transaction that initiated the deposit.
+ */
+export async function deleteBinanceDepositType(depositChain: number, transactionHash: string): Promise<void> {
+  const redisCache = await getRedisCache();
+  if (!isDefined(redisCache)) {
+    return;
+  }
+  const redisKey = getBinanceTransactionTypeKey(depositChain, transactionHash);
+  await redisCache.del(redisKey);
+}
+
+/**
  * @notice Tag a withdrawal to the Redis cache with a custom status so that all functions interacting with the
  * same Binance account can distinguish between "types" of withdrawals.
  * @param withdrawalChain The chain ID of the network that the withdrawal was made from.

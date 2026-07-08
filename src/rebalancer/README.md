@@ -282,6 +282,13 @@ adapter, reads pending Binance rebalances with `getPendingRebalances(account)`, 
 amounts from the shared exchange-account withdrawal capacity. The Binance adapter marks expected swap lifecycle
 transfers, and stale balances are eventually swept if swaps do not complete.
 
+Swap deposits into Binance are tagged `SWAP` in Redis (default one-week TTL) so the finalizer excludes them from its
+deposit ledger for the whole deposit-history lookback — including after the swap completes, so a consumed deposit is
+never re-counted as finalizable ("phantom" `amountToFinalize`). Handover to the finalizer is driven by order state, not
+wall clock: if an order is abandoned while still in `PENDING_DEPOSIT` (its `REBALANCER_PENDING_ORDER_TTL` elapses), the
+prune path deletes the deposit's tag via `_onExpiredOrderPruned`, and the finalizer reclaims the funds on its next run.
+Orders pruned in later statuses keep the tag, since their deposit was already consumed by the spot order.
+
 When Binance reports `RW00441`, the account has recently credited deposit value that is not withdrawal-unlocked yet.
 The Binance adapter treats this as a retryable wait state and leaves the order pending. The Binance finalizer reads
 Binance pending rebalance amounts through the Binance adapter so post-swap output balances are not withdrawn while an
