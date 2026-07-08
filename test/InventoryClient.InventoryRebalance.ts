@@ -262,7 +262,9 @@ describe("InventoryClient: Rebalancing inventory", function () {
     expect(spyLogIncludes(spy, -2, '"proRataShare":"7.00%"')).to.be.true;
   });
 
-  it("Correctly decides when to execute rebalances: token shortfall", async function () {
+  // Skipped: shortfall rebalances are temporarily disabled in InventoryClient.getPossibleRebalances(). Re-enable
+  // alongside that logic.
+  it.skip("Correctly decides when to execute rebalances: token shortfall", async function () {
     // Test the case where the funds on a particular chain are too low to meet a relay (shortfall) and the bot rebalances.
     await inventoryClient.update();
     await inventoryClient.rebalanceInventoryIfNeeded();
