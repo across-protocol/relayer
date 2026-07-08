@@ -15,7 +15,7 @@ import {
   toBNWei,
 } from "../../utils";
 import { ExcessOrDeficit, RebalanceRoute } from "../utils/interfaces";
-import { sortDeficitFunction, sortExcessFunction } from "../utils/utils";
+import { sortDeficitFunction, sortExcessFunction, sortHigherPriorityTier } from "../utils/utils";
 import { BaseRebalancerClient } from "./BaseRebalancerClient";
 import { getAcrossHost } from "../../clients/AcrossAPIClient";
 
@@ -227,13 +227,13 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
           }
 
           // To determine which destination chain to receive the deficit token on, we check the estimated cost
-          // for all possible destination chains and then select the chain with the lowest estimated cost.
-          const allDestinationChains = Object.entries(cumulativeTargetBalances[deficitToken].chains).map(([chainId]) =>
-            Number(chainId)
-          );
+          // for all possible destination chains and then select the highest priority chain with the lowest
+          // estimated cost.
+          const allDestinationChains = cumulativeTargetBalances[deficitToken].chains;
+          const destinationChainIds = Object.entries(allDestinationChains).map(([chainId]) => Number(chainId));
           const rebalanceRoutesToEvaluate: RebalanceRoute[] = [];
           for (const route of availableRebalanceRoutes) {
-            allDestinationChains.forEach((destinationChain) => {
+            destinationChainIds.forEach((destinationChain) => {
               if (
                 availableAdapters.includes(route.adapter) &&
                 route.sourceChain === Number(chainId) &&
@@ -258,9 +258,10 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
             });
             continue;
           }
-          const rebalanceRouteCosts = await mapAsync(rebalanceRoutesToEvaluate, async (route) => {
+          const rebalanceRoutesWithCosts = await mapAsync(rebalanceRoutesToEvaluate, async (route) => {
             return {
               route,
+              priorityTier: allDestinationChains[route.destinationChain],
               cost: await this.adapters[route.adapter].getEstimatedCost(
                 route,
                 amountToTransferCapped,
@@ -268,13 +269,28 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
               ),
             };
           });
-          rebalanceRouteCosts.sort((a, b) => {
+          rebalanceRoutesWithCosts.sort((a, b) => {
+            const aPriorityTier = a.priorityTier;
+            const bPriorityTier = b.priorityTier;
+            const sortedPriorityTier = sortHigherPriorityTier(aPriorityTier, bPriorityTier);
+            if (sortedPriorityTier !== 0) {
+              return sortedPriorityTier;
+            }
             if (a.cost.eq(b.cost)) {
               return 0;
             }
             return a.cost.lt(b.cost) ? -1 : 1;
           });
-          const cheapestCostRoute = rebalanceRouteCosts[0];
+          // Select highest ranked route under the max fee guard:
+          const maxFee = amountToTransferCapped.mul(maxFeePct).div(toBNWei(100));
+          const chosenRoute = rebalanceRoutesWithCosts.find(({ cost }) => cost.lte(maxFee));
+          if (!isDefined(chosenRoute)) {
+            this.logger.debug({
+              at: "CumulativeBalanceRebalancerClient.rebalanceInventory",
+              message: `No route found under max fee of ${maxFee.toString()}`,
+            });
+            continue;
+          }
           this.logger.debug({
             at: "RebalanceClient.rebalanceCumulativeInventory",
             message: `Evaluating sending of ${amountToTransferCapped.toString()} of ${excessToken} from ${getNetworkName(
@@ -286,28 +302,20 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
             excessRemaining: excessRemaining.toString(),
             deficitRemainingConvertedToExcessToken: deficitRemainingConverted.toString(),
             maxAmountToTransfer: maxAmountToTransfer?.toString(),
-            cheapestCostRoute: `[${cheapestCostRoute.route.adapter}] ${getNetworkName(
-              cheapestCostRoute.route.sourceChain
-            )} ${cheapestCostRoute.route.sourceToken} -> ${getNetworkName(cheapestCostRoute.route.destinationChain)} ${
-              cheapestCostRoute.route.destinationToken
-            }: ${cheapestCostRoute.cost.toString()}`,
-            rebalanceRouteCosts: rebalanceRouteCosts.map(({ route, cost }) => {
+            routePriorityTier: chosenRoute.priorityTier,
+            routeCost: `[${chosenRoute.route.adapter}] ${getNetworkName(
+              chosenRoute.route.sourceChain
+            )} ${chosenRoute.route.sourceToken} -> ${getNetworkName(chosenRoute.route.destinationChain)} ${
+              chosenRoute.route.destinationToken
+            }: ${chosenRoute.cost.toString()}`,
+            rebalanceRouteCosts: rebalanceRoutesWithCosts.map(({ route, cost, priorityTier }) => {
               return {
-                [route.adapter]: `${route.sourceToken} on ${getNetworkName(route.sourceChain)} -> ${
+                [route.adapter]: `[P${priorityTier}] ${route.sourceToken} on ${getNetworkName(route.sourceChain)} -> ${
                   route.destinationToken
                 } on ${getNetworkName(route.destinationChain)}: ${cost.toString()}`,
               };
             }),
           });
-
-          const maxFee = amountToTransferCapped.mul(maxFeePct).div(toBNWei(100));
-          if (cheapestCostRoute.cost.gt(maxFee)) {
-            this.logger.debug({
-              at: "CumulativeBalanceRebalancerClient.rebalanceInventory",
-              message: `Cheapest expected cost ${cheapestCostRoute.cost.toString()} is greater than max fee ${maxFee.toString()}, exiting`,
-            });
-            continue;
-          }
 
           const chainToL1Converter = ConvertDecimals(chainDecimals, l1TokenDecimals);
           const amountTransferredL1 = chainToL1Converter(amountToTransferCapped);
@@ -323,21 +331,21 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
           const nextSourceBalance = currentBalance.sub(amountToTransferCapped);
           this.logger.debug({
             at: "RebalanceClient.rebalanceCumulativeInventory",
-            message: `Initializing new ${cheapestCostRoute.route.adapter} ${fromWei(amountToTransferCapped, chainDecimals)} ${excessToken} rebalance from ${getNetworkName(cheapestCostRoute.route.sourceChain)} to ${getNetworkName(cheapestCostRoute.route.destinationChain)} ${deficitToken}`,
-            adapter: cheapestCostRoute.route.adapter,
-            expectedFees: fromWei(cheapestCostRoute.cost, chainDecimals),
+            message: `Initializing new ${chosenRoute.route.adapter} ${fromWei(amountToTransferCapped, chainDecimals)} ${excessToken} rebalance from ${getNetworkName(chosenRoute.route.sourceChain)} to ${getNetworkName(chosenRoute.route.destinationChain)} ${deficitToken}`,
+            adapter: chosenRoute.route.adapter,
+            expectedFees: fromWei(chosenRoute.cost, chainDecimals),
           });
 
           if (this.config.sendingTransactionsEnabled) {
-            const initializedAmount = await this.adapters[cheapestCostRoute.route.adapter].initializeRebalance(
-              cheapestCostRoute.route,
+            const initializedAmount = await this.adapters[chosenRoute.route.adapter].initializeRebalance(
+              chosenRoute.route,
               amountToTransferCapped
             );
             if (initializedAmount.eq(bnZero)) {
               this.logger.debug({
                 at: "CumulativeBalanceRebalancerClient.rebalanceInventory",
-                message: `Adapter ${cheapestCostRoute.route.adapter} declined to initialize rebalance; preserving remaining excess for later routes`,
-                route: cheapestCostRoute.route,
+                message: `Adapter ${chosenRoute.route.adapter} declined to initialize rebalance; preserving remaining excess for later routes`,
+                route: chosenRoute.route,
                 requestedAmountToTransfer: amountToTransferCapped.toString(),
               });
               continue;
@@ -348,7 +356,7 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
           // token only after the adapter successfully initializes the rebalance.
           deficitRemaining = nextDeficitRemaining;
           excessRemaining = nextExcessRemaining;
-          currentBalancesOnChain[cheapestCostRoute.route.sourceChain][excessToken] = nextSourceBalance;
+          currentBalancesOnChain[chosenRoute.route.sourceChain][excessToken] = nextSourceBalance;
         }
 
         // Overwrite the excess remaining for the token to decrement the excess for the next deficit to evaluate.
