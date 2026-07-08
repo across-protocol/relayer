@@ -14,7 +14,7 @@ import {
   PriceClient,
   toBNWei,
 } from "../../utils";
-import { ExcessOrDeficit, RebalanceRoute } from "../utils/interfaces";
+import { ExcessOrDeficit } from "../utils/interfaces";
 import { sortDeficitFunction, sortExcessFunction } from "../utils/utils";
 import { BaseRebalancerClient } from "./BaseRebalancerClient";
 import { getAcrossHost } from "../../clients/AcrossAPIClient";
