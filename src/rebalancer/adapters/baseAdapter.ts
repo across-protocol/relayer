@@ -298,12 +298,7 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     });
   }
 
-  // Hook invoked after a pending order is pruned because its details key TTL elapsed (a genuine expiry, not a
-  // concurrent finalize). Adapters override this to release venue-side state tied to the abandoned order — e.g.
-  // the Binance adapter untags the order's exchange deposit so the Binance finalizer can reclaim the funds.
-  protected async _onExpiredOrderPruned(_status: STATUS, _cloid: string, _account: EvmAddress): Promise<void> {
-    return;
-  }
+  protected async _onExpiredOrderPruned(_status: STATUS, _cloid: string, _account: EvmAddress): Promise<void> {}
 
   protected async _redisGetPendingBridgesPreDeposit(account: EvmAddress): Promise<string[]> {
     await this._redisCleanupPendingOrders(STATUS.PENDING_BRIDGE_PRE_DEPOSIT, account);
