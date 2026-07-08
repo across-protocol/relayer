@@ -310,14 +310,15 @@ function getBinanceTransactionTypeKeyFromNetworkName(networkName: string, unique
 export async function setBinanceDepositType(
   depositChain: number,
   transactionHash: string,
-  type: BinanceTransactionType
+  type: BinanceTransactionType,
+  ttl?: number
 ): Promise<void> {
   const redisCache = await getRedisCache();
   if (!isDefined(redisCache)) {
     return;
   }
   const redisKey = getBinanceTransactionTypeKey(depositChain, transactionHash);
-  await redisCache.set(redisKey, type);
+  await redisCache.set(redisKey, type, ttl);
 }
 
 /**
