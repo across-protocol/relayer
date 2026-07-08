@@ -93,9 +93,6 @@ import { getCloidForAccount } from "../src/rebalancer/utils/utils";
 // Time between polling attempts when waiting on asynchronous operations to complete.
 const POLL_DELAY_MS = 5_000;
 
-// TTL to set for cached deposit data initiated by this script.
-const SWAP_DEPOSIT_TYPE_TTL_SECONDS = 30 * 60;
-
 // Conservative fallback for bridge gas when an approval step must land before the bridge can be simulated.
 const APPROVAL_DEPENDENT_BRIDGE_GAS_LIMIT_FALLBACK = BigNumber.from(250_000);
 
@@ -321,12 +318,7 @@ export async function run(): Promise<void> {
     console.log(`Transaction confirmed: ${blockExplorerLink(depositResponse.hash, srcChain)}`);
   }
   assert(isDefined(depositResponse), "Deposit plan did not produce a final transaction response");
-  await setBinanceDepositType(
-    srcChain,
-    depositResponse.hash,
-    BinanceTransactionType.SWAP,
-    SWAP_DEPOSIT_TYPE_TTL_SECONDS
-  );
+  await setBinanceDepositType(srcChain, depositResponse.hash, BinanceTransactionType.SWAP);
   console.log(`Binance deposit address: ${depositAddress.address}`);
 
   printSection("Step 2/4: Wait For Binance Balance");
