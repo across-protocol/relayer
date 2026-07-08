@@ -853,8 +853,10 @@ export class InventoryClient {
         const l2Tokens = this.getRemoteTokensForL1Token(l1Token, chainId);
         l2Tokens.forEach((l2Token) => {
           // Make sure to prioritize shortfall rebalances over ordinary rebalances by pushing them into the array first
-          const shortfallRebalances = this._getPossibleShortfallRebalances(l1Token, chainId, l2Token);
-          rebalancesRequired.push(...shortfallRebalances);
+          // Temporarily disabled: shortfall rebalances emit one tiny per-deposit transfer each, which the mainnet
+          // balance-changed check in rebalanceInventoryIfNeeded perpetually skips. Rely on target-allocation rebalances.
+          // const shortfallRebalances = this._getPossibleShortfallRebalances(l1Token, chainId, l2Token);
+          // rebalancesRequired.push(...shortfallRebalances);
           const inventoryRebalance = this._getPossibleInventoryRebalances(cumulativeBalance, l1Token, chainId, l2Token);
           if (inventoryRebalance) {
             rebalancesRequired.push(inventoryRebalance);
@@ -970,27 +972,33 @@ export class InventoryClient {
       // the rebalance to this particular chain. Note that if the sum of all rebalances required exceeds the l1
       // balance then this logic ensures that we only fill the first n number of chains where we can.
       if (toBN(amount).lte(unallocatedBalance)) {
-        // As a precautionary step before proceeding, check that the token balance for the token we're about to send
-        // hasn't changed on L1. It's possible its changed since we updated the inventory due to one or more of the
-        // RPC's returning slowly, leading to concurrent/overlapping instances of the bot running.
+        // As a precautionary step before proceeding, re-read the on-chain L1 balance and confirm we still hold enough
+        // to actually fund this transfer. The inventory snapshot may be stale (slow RPCs, or concurrent/overlapping
+        // bot instances that already moved funds), but a benign change - e.g. an incoming repayment that increased the
+        // balance - should not block the rebalance. Only skip if the current balance can no longer cover `amount`.
+        // TODO: This is a temporary loosening of the previous exact balance-equality guard, which was perpetually
+        // skipping rebalances whenever the mainnet balance drifted at all (e.g. from repayment inflows). It weakens
+        // the protection against concurrent/overlapping bot instances double-spending, so we must revisit this and
+        // decide on the right long-term safeguard.
         const tokenContract = new Contract(l1Token.toNative(), ERC20.abi, this.hubPoolClient.hubPool.signer);
         const currentBalance = await tokenContract.balanceOf(this.relayer.toNative());
 
-        const balanceChanged = !balance.eq(currentBalance);
-        const [message, log] = balanceChanged
-          ? ["🚧 Token balance on mainnet changed, skipping rebalance", this.logger.warn]
-          : ["Token balance in relayer on mainnet is as expected, sending cross chain transfer", this.logger.debug];
+        const insufficientBalance = currentBalance.lt(toBN(amount));
+        const [message, log] = insufficientBalance
+          ? ["🚧 Insufficient mainnet balance to fund rebalance, skipping", this.logger.warn]
+          : ["Sufficient mainnet balance to fund rebalance, sending cross chain transfer", this.logger.debug];
         log({
           at: "InventoryClient",
           message,
           l1Token,
           l2Token,
           l2ChainId: chainId,
+          amount,
           balance,
           currentBalance,
         });
 
-        if (!balanceChanged) {
+        if (!insufficientBalance) {
           possibleRebalances.push(rebalance);
           // Decrement token balance in client for this chain and increment cross chain counter.
           this.trackCrossChainTransfer(l1Token, l2Token, amount, chainId);
