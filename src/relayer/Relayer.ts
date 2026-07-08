@@ -488,13 +488,16 @@ export class Relayer {
         .map((spokePoolClient) => [spokePoolClient.chainId, spokePoolClient])
     );
 
-    // Filter the resulting deposits according to relayer configuration.
+    // Filter the resulting deposits according to relayer configuration, then order them oldest-first. This ensures
+    // the oldest deposits are evaluated - and, when the per-loop rate limit truncates the list, retained - ahead of
+    // newer ones. getUnfilledDeposits otherwise returns deposits grouped by origin chain; quoteTimestamp approximates
+    // a deposit's creation time and is comparable across origin chains, unlike per-chain block numbers.
     return Object.fromEntries(
       Object.values(destinationSpokePoolClients).map((destinationSpokePoolClient) => [
         destinationSpokePoolClient.chainId,
-        getUnfilledDeposits(destinationSpokePoolClient, originSpokePoolClients, hubPoolClient, this.fillStatus).filter(
-          (deposit) => this.filterDeposit(deposit)
-        ),
+        getUnfilledDeposits(destinationSpokePoolClient, originSpokePoolClients, hubPoolClient, this.fillStatus)
+          .filter((deposit) => this.filterDeposit(deposit))
+          .sort((a, b) => a.deposit.quoteTimestamp - b.deposit.quoteTimestamp),
       ])
     );
   }
