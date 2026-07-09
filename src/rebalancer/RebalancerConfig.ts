@@ -9,6 +9,9 @@ import { assert, BigNumber, isDefined, readFileSync, toBNWei, getTokenInfoFromSy
  *     "USDT": { "threshold": "1000000", "target": "1500000", "priorityTier": 0, "chains": { "1": 0 } },
  *     "USDC": { "threshold": "3000000", "target": "3500000", "priorityTier": 0, "chains": { "1": 0 } }
  *   },
+ *   "sameAssetBalances": {
+ *     "USDT": { "chains": { "1": 0, "43114": 1 } },
+ *   },
  *   "maxAmountsToTransfer": {
  *     "USDT": "1000",
  *     "USDC": "1000"
@@ -21,6 +24,8 @@ import { assert, BigNumber, isDefined, readFileSync, toBNWei, getTokenInfoFromSy
  *
  * - cumulativeTargetBalance values are human-readable amounts (e.g. "100" for 100 USDT) and will be
  *   converted to the token's native decimals on the respective chain.
+ * - sameAssetBalances values are priority tiers for each chain + token combination we want to support in the
+ *   same asset rebalancer. Target and threshold amounts are implied by the inventory config used by the InventoryClient.
  * - priorityTiers are essentially numbers that you assign to a chain based on how important it is to hold
  *   liquidity or meet the target balance on that chain. The higher priority deficits are filled first and the lowest
  *   priority excesses are used first.
@@ -47,6 +52,10 @@ export interface CumulativeTargetBalanceConfig {
   [token: string]: ChainConfig;
 }
 
+export interface SameAssetConfig {
+  [token: string]: { [chainId: number]: number };
+}
+
 export interface MaxAmountToTransferChainConfig {
   [chainId: number]: BigNumber;
 }
@@ -61,6 +70,7 @@ export interface MaxPendingOrdersConfig {
 
 export class RebalancerConfig extends CommonConfig {
   public cumulativeTargetBalances: CumulativeTargetBalanceConfig;
+  public sameAssetBalances: SameAssetConfig;
   public maxAmountsToTransfer: MaxAmountToTransferConfig;
   public maxPendingOrders: MaxPendingOrdersConfig;
 
@@ -128,6 +138,17 @@ export class RebalancerConfig extends CommonConfig {
             Object.entries(chainConfig.chains).map(([chainId, priorityTier]) => [Number(chainId), priorityTier])
           ),
         };
+      }
+    }
+
+    this.sameAssetBalances = {};
+    if (isDefined(rebalancerConfig.sameAssetBalances)) {
+      for (const [token, chainConfig] of Object.entries(
+        rebalancerConfig.sameAssetBalances as Record<string, { chains: { [chainId: number]: number } }>
+      )) {
+        this.sameAssetBalances[token] = Object.fromEntries(
+          Object.entries(chainConfig.chains).map(([chainId, priorityTier]) => [Number(chainId), priorityTier])
+        );
       }
     }
 

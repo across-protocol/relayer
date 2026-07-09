@@ -17,6 +17,7 @@ import {
   winston,
 } from "../utils";
 import { CumulativeBalanceRebalancerClient } from "./clients/CumulativeBalanceRebalancerClient";
+import { SameAssetRebalancerClient } from "./clients/SameAssetRebalancerClient";
 
 import { constructCumulativeBalanceRebalancerClient } from "./RebalancerClientHelper";
 import { RebalancerConfig } from "./RebalancerConfig";
@@ -223,6 +224,36 @@ export async function runCumulativeBalanceRebalancer(_logger: winston.Logger, ba
         currentBalances,
         maxFeePct
       );
+      logger.debug({
+        at: `index.ts:${logLabel}`,
+        message: "Completed rebalancing inventory",
+        duration: performance.now() - timerStart,
+      });
+      timerStart = performance.now();
+    }
+    // Maybe now enter a loop where we update rebalances continuously every X seconds until the next run where
+    // we call rebalance inventory? The thinking is we should rebalance inventory once per "run" and then continually
+    // update rebalance statuses/finalize pending rebalances.
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error("Error running rebalancer", error);
+    throw error;
+  } finally {
+    await disconnectRedisClients(logger);
+  }
+}
+
+export async function runSameAssetRebalancer(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
+  const logLabel = "runSameAssetRebalancer";
+  const { rebalancerClient, inventoryClient } = await initializeRebalancerRun(_logger, baseSigner);
+
+  let timerStart = performance.now();
+  // Finally, send out new rebalances:
+  try {
+    if (process.env.SEND_REBALANCES === "true") {
+      timerStart = performance.now();
+      const maxFeePct = toBNWei(process.env.MAX_FEE_PCT ?? "2.5", 18);
+      await (rebalancerClient as SameAssetRebalancerClient).rebalanceInventory(inventoryClient, maxFeePct);
       logger.debug({
         at: `index.ts:${logLabel}`,
         message: "Completed rebalancing inventory",

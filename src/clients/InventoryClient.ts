@@ -55,6 +55,7 @@ import { RebalancerClient } from "../rebalancer/utils/interfaces";
 
 type TokenDistribution = { [l2Token: string]: BigNumber };
 type TokenDistributionPerL1Token = { [l1Token: string]: { [chainId: number]: TokenDistribution } };
+type L2Withdrawal = { l2Token: Address; amountToWithdraw: BigNumber };
 
 export type Rebalance = {
   chainId: number;
@@ -940,12 +941,12 @@ export class InventoryClient {
 
   // Trigger a rebalance if the current balance on any L2 chain, including shortfalls, is less than the threshold
   // allocation.
-  async rebalanceInventoryIfNeeded(): Promise<void> {
+  async rebalanceInventoryIfNeeded(returnRebalancesOnly = false): Promise<Rebalance[]> {
     // Note: these types are just used inside this method, so they are declared in-line.
     type ExecutedRebalance = Rebalance & { hash: string };
 
     if (!this.isInventoryManagementEnabled()) {
-      return;
+      return [];
     }
 
     const tokenDistributionPerL1Token = this.getTokenDistributionPerL1Token();
@@ -954,7 +955,7 @@ export class InventoryClient {
     const rebalancesRequired = this.getPossibleRebalances();
     if (rebalancesRequired.length === 0) {
       this.log("No rebalances required");
-      return;
+      return [];
     }
 
     const possibleRebalances: Rebalance[] = [];
@@ -1014,6 +1015,10 @@ export class InventoryClient {
       rebalancesRequired,
       possibleRebalances,
     });
+
+    if (returnRebalancesOnly) {
+      return possibleRebalances;
+    }
 
     // Finally, execute the rebalances.
     // TODO: The logic below is slow as it waits for each transaction to be included before sending the next one. This
@@ -1135,6 +1140,7 @@ export class InventoryClient {
     if (mrkdwn) {
       this.log("Executed Inventory rebalances 📒", { mrkdwn }, "info");
     }
+    return executedTransactions;
   }
 
   async unwrapWeth(): Promise<void> {
@@ -1271,13 +1277,14 @@ export class InventoryClient {
     }
   }
 
-  async withdrawExcessBalances(): Promise<void> {
+  async withdrawExcessBalances(returnWithdrawasOnly = false): Promise<{
+    [chainId: number]: L2Withdrawal[];
+  }> {
     if (!this.isInventoryManagementEnabled()) {
-      return;
+      return {};
     }
 
     const chainIds = this.getEnabledL2Chains();
-    type L2Withdrawal = { l2Token: Address; amountToWithdraw: BigNumber };
     const withdrawalsRequired: { [chainId: number]: L2Withdrawal[] } = {};
     const chainMrkdwns: { [chainId: number]: string } = {};
 
@@ -1439,11 +1446,15 @@ export class InventoryClient {
 
     if (Object.keys(withdrawalsRequired).length === 0) {
       this.log("No excess balances to withdraw");
-      return;
+      return {};
     } else {
       this.log("Excess balances to withdraw", {
         withdrawalsRequired,
       });
+    }
+
+    if (returnWithdrawasOnly) {
+      return withdrawalsRequired;
     }
 
     // Now, go through each chain and submit transactions. We cannot batch them unfortunately since the bridges
@@ -1482,6 +1493,7 @@ export class InventoryClient {
       });
       this.log("Executed excess L2 inventory withdrawal 📒", { mrkdwn: chainMrkdwns[Number(chainId)] }, "info");
     });
+    return withdrawalsRequired;
   }
 
   constructConsideringRebalanceDebugLog(distribution: TokenDistributionPerL1Token): void {
