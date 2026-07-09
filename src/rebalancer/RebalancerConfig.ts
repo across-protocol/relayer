@@ -147,7 +147,10 @@ export class RebalancerConfig extends CommonConfig {
         rebalancerConfig.sameAssetBalances as Record<string, { chains: { [chainId: number]: number } }>
       )) {
         this.sameAssetBalances[token] = Object.fromEntries(
-          Object.entries(chainConfig.chains).map(([chainId, priorityTier]) => [Number(chainId), priorityTier])
+          Object.entries(chainConfig.chains).map(([chainId, priorityTier]) => {
+            chainIdSet.add(Number(chainId));
+            return [Number(chainId), priorityTier];
+          })
         );
       }
     }

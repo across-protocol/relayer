@@ -1,17 +1,13 @@
-import { InventoryClient } from "../clients";
+import { InventoryClient, TokenClient } from "../clients";
 import { updateSpokePoolClients } from "../common";
-import { constructRelayerClients } from "../relayer/RelayerClientHelper";
+import { constructRelayerClients, RelayerClients } from "../relayer/RelayerClientHelper";
 import { RelayerConfig } from "../relayer/RelayerConfig";
 import {
   assert,
   BigNumber,
-  bnZero,
   config,
-  ConvertDecimals,
   disconnectRedisClients,
-  EvmAddress,
   getTokenInfoFromSymbol,
-  isDefined,
   Signer,
   toBNWei,
   winston,
@@ -19,7 +15,10 @@ import {
 import { CumulativeBalanceRebalancerClient } from "./clients/CumulativeBalanceRebalancerClient";
 import { SameAssetRebalancerClient } from "./clients/SameAssetRebalancerClient";
 
-import { constructCumulativeBalanceRebalancerClient } from "./RebalancerClientHelper";
+import {
+  constructCumulativeBalanceRebalancerClient,
+  constructSameAssetRebalancerClient,
+} from "./RebalancerClientHelper";
 import { RebalancerConfig } from "./RebalancerConfig";
 import { RebalancerAdapter, RebalancerClient } from "./utils/interfaces";
 config();
@@ -27,16 +26,20 @@ let logger: winston.Logger;
 
 type RebalancerRunContext = {
   rebalancerConfig: RebalancerConfig;
-  adaptersToUpdate: Set<RebalancerAdapter>;
   inventoryClient: InventoryClient;
   rebalancerClient: RebalancerClient;
 };
 
 const sweepableAdapters: string[] = ["hyperliquid"];
 
-async function initializeRebalancerRun(_logger: winston.Logger, baseSigner: Signer): Promise<RebalancerRunContext> {
-  const logLabel = "runCumulativeBalanceRebalancer";
-  logger = _logger;
+async function setupClients(
+  _logger: winston.Logger,
+  baseSigner: Signer,
+  logLabel: string
+): Promise<{
+  relayerClients: RelayerClients;
+  rebalancerConfig: RebalancerConfig;
+}> {
   const rebalancerConfig = new RebalancerConfig(process.env);
   logger.debug({ at: `index.ts:${logLabel}`, message: "Rebalancer Config loaded", rebalancerConfig });
   const relayerConfig = new RelayerConfig(process.env);
@@ -61,8 +64,19 @@ async function initializeRebalancerRun(_logger: winston.Logger, baseSigner: Sign
     inventoryClient.setBundleData();
     await inventoryClient.update(rebalancerConfig.chainIds);
   }
-  const rebalancerClient = await constructCumulativeBalanceRebalancerClient(logger, baseSigner);
+  return {
+    relayerClients,
+    rebalancerConfig,
+  };
+}
 
+async function updateAdapters(
+  rebalancerClient: RebalancerClient,
+  rebalancerConfig: RebalancerConfig,
+  tokenClient: TokenClient,
+  inventoryClient: InventoryClient,
+  logLabel: string
+): Promise<Set<RebalancerAdapter>> {
   let timerStart = performance.now();
 
   // Make sure we update the upstream adapters first, so there is a small chance of progressing an intermediate
@@ -107,10 +121,43 @@ async function initializeRebalancerRun(_logger: winston.Logger, baseSigner: Sign
     message: "Refreshed TokenClient balances post-status-update",
     duration: performance.now() - timerStart,
   });
+  const inventoryManagement = inventoryClient.isInventoryManagementEnabled();
+  if (inventoryManagement) {
+    await inventoryClient.update(rebalancerConfig.chainIds);
+  }
+  return adaptersToUpdate;
+}
+
+async function initializeCumulativeRebalancerRun(
+  _logger: winston.Logger,
+  baseSigner: Signer
+): Promise<RebalancerRunContext> {
+  const logLabel = "runCumulativeBalanceRebalancer";
+  logger = _logger;
+  const { relayerClients, rebalancerConfig } = await setupClients(logger, baseSigner, logLabel);
+  const { inventoryClient, tokenClient } = relayerClients;
+  const rebalancerClient = await constructCumulativeBalanceRebalancerClient(logger, baseSigner);
+  await updateAdapters(rebalancerClient, rebalancerConfig, tokenClient, inventoryClient, logLabel);
 
   return {
     rebalancerConfig,
-    adaptersToUpdate,
+    inventoryClient,
+    rebalancerClient,
+  };
+}
+
+async function initializeSameAssetRebalancerRun(
+  _logger: winston.Logger,
+  baseSigner: Signer
+): Promise<RebalancerRunContext> {
+  const logLabel = "runSameAssetRebalancer";
+  logger = _logger;
+  const { relayerClients, rebalancerConfig } = await setupClients(logger, baseSigner, logLabel);
+  const { inventoryClient, tokenClient } = relayerClients;
+  const rebalancerClient = await constructSameAssetRebalancerClient(logger, baseSigner);
+  await updateAdapters(rebalancerClient, rebalancerConfig, tokenClient, inventoryClient, logLabel);
+  return {
+    rebalancerConfig,
     inventoryClient,
     rebalancerClient,
   };
@@ -145,73 +192,13 @@ export function loadCumulativeModeBalances(
   return { currentBalances, cumulativeBalances };
 }
 
-async function applyPendingCumulativeRebalanceAdjustments(
-  baseSigner: Signer,
-  rebalancerConfig: RebalancerConfig,
-  adaptersToUpdate: Set<RebalancerAdapter>,
-  logLabel: string,
-  cumulativeBalances?: { [token: string]: BigNumber }
-): Promise<void> {
-  let timerStart = performance.now();
-  for (const adapter of adaptersToUpdate) {
-    timerStart = performance.now();
-    const pendingRebalances = await adapter.getPendingRebalances(EvmAddress.from(await baseSigner.getAddress()));
-    logger.debug({
-      at: `index.ts:${logLabel}`,
-      message: `Completed getting pending rebalances for adapter ${adapter.constructor.name}`,
-      duration: performance.now() - timerStart,
-    });
-    if (Object.keys(pendingRebalances).length > 0) {
-      logger.debug({
-        at: `index.ts:${logLabel}`,
-        message: `Pending rebalances for adapter ${adapter.constructor.name}`,
-        pendingRebalances: Object.entries(pendingRebalances).map(([chainId, tokens]) => ({
-          [chainId]: Object.fromEntries(Object.entries(tokens).map(([token, amount]) => [token, amount.toString()])),
-        })),
-      });
-    }
-
-    for (const [chainId, tokens] of Object.entries(pendingRebalances)) {
-      for (const [token, amount] of Object.entries(tokens)) {
-        const pendingRebalanceAmount = amount ?? bnZero;
-        if (cumulativeBalances && isDefined(cumulativeBalances[token])) {
-          // Convert pending rebalance amount to L1 token decimals
-          const l1TokenInfo = getTokenInfoFromSymbol(token, rebalancerConfig.hubPoolChainId);
-          const chainDecimals = getTokenInfoFromSymbol(token, Number(chainId)).decimals;
-          const chainToL1Converter = ConvertDecimals(chainDecimals, l1TokenInfo.decimals);
-          const pendingRebalanceAmountConverted = chainToL1Converter(pendingRebalanceAmount);
-          cumulativeBalances[token] = cumulativeBalances[token].add(pendingRebalanceAmountConverted);
-        }
-
-        if (!pendingRebalanceAmount.eq(bnZero)) {
-          logger.debug({
-            at: `index.ts:${logLabel}`,
-            message: `${pendingRebalanceAmount.gt(bnZero) ? "Added" : "Subtracted"} pending rebalance amount from ${
-              adapter.constructor.name
-            } of ${pendingRebalanceAmount.toString()} to cumulative (virtual) balance for ${token} on ${chainId}`,
-            pendingRebalanceAmount: pendingRebalanceAmount.toString(),
-            newCumulativeBalance: cumulativeBalances?.[token]?.toString(),
-          });
-        }
-      }
-    }
-  }
-}
-
 export async function runCumulativeBalanceRebalancer(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
   const logLabel = "runCumulativeBalanceRebalancer";
-  const { rebalancerConfig, adaptersToUpdate, inventoryClient, rebalancerClient } = await initializeRebalancerRun(
+  const { rebalancerConfig, inventoryClient, rebalancerClient } = await initializeCumulativeRebalancerRun(
     _logger,
     baseSigner
   );
   const { currentBalances, cumulativeBalances } = loadCumulativeModeBalances(rebalancerConfig, inventoryClient);
-  await applyPendingCumulativeRebalanceAdjustments(
-    baseSigner,
-    rebalancerConfig,
-    adaptersToUpdate,
-    logLabel,
-    cumulativeBalances
-  );
 
   let timerStart = performance.now();
   // Finally, send out new rebalances:
@@ -245,7 +232,7 @@ export async function runCumulativeBalanceRebalancer(_logger: winston.Logger, ba
 
 export async function runSameAssetRebalancer(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
   const logLabel = "runSameAssetRebalancer";
-  const { rebalancerClient, inventoryClient } = await initializeRebalancerRun(_logger, baseSigner);
+  const { rebalancerClient, inventoryClient } = await initializeSameAssetRebalancerRun(_logger, baseSigner);
 
   let timerStart = performance.now();
   // Finally, send out new rebalances:

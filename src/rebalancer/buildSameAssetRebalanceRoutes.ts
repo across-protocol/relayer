@@ -1,3 +1,4 @@
+import { isDefined } from "../utils";
 import { RebalancerConfig } from "./RebalancerConfig";
 import { RebalanceRoute } from "./utils/interfaces";
 
@@ -9,7 +10,7 @@ const SAME_ASSET_ROUTES_SUPPORTED: Record<string, Record<number, AdapterName>> =
     "1": "binance",
   },
 };
-export function buildRebalanceRoutes(rebalancerConfig: RebalancerConfig): RebalanceRoute[] {
+export function buildSameAssetRebalanceRoutes(rebalancerConfig: RebalancerConfig): RebalanceRoute[] {
   const routes = new Set<RebalanceRoute>();
 
   // If a supported route exists in the rebalancer config, return it.
@@ -19,8 +20,8 @@ export function buildRebalanceRoutes(rebalancerConfig: RebalancerConfig): Rebala
         if (
           Number(chainId) !== Number(otherChainId) &&
           adapter === otherAdapter &&
-          rebalancerConfig.sameAssetBalances[token][Number(chainId)] &&
-          rebalancerConfig.sameAssetBalances[token][Number(otherChainId)]
+          isDefined(rebalancerConfig.sameAssetBalances?.[token]?.[Number(chainId)]) &&
+          isDefined(rebalancerConfig.sameAssetBalances?.[token]?.[Number(otherChainId)])
         ) {
           routes.add({
             sourceChain: Number(chainId),

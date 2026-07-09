@@ -32,8 +32,10 @@ export class SameAssetRebalancerClient extends BaseRebalancerClient {
     // Every rebalance route we have is between L1 and some L2 chain and is set in the RebalancerConfig
     for (const route of this.rebalanceRoutes) {
       if (
-        (route.sourceChain === this.config.hubPoolChainId && route.destinationChain !== this.config.hubPoolChainId) ||
-        (route.sourceChain !== this.config.hubPoolChainId && route.destinationChain === this.config.hubPoolChainId)
+        !(
+          (route.sourceChain === this.config.hubPoolChainId && route.destinationChain !== this.config.hubPoolChainId) ||
+          (route.sourceChain !== this.config.hubPoolChainId && route.destinationChain === this.config.hubPoolChainId)
+        )
       ) {
         throw new Error(
           `Rebalance route ${route.sourceChain} to ${route.destinationChain} is not between L1 and some L2 chain`
@@ -88,7 +90,7 @@ export class SameAssetRebalancerClient extends BaseRebalancerClient {
       .map(([chainId, withdrawals]) => {
         return withdrawals.map((withdrawal) => {
           const matchingRebalanceRoute = this.rebalanceRoutes.find((route) => {
-            const l2Token = getTokenInfoFromSymbol(route.destinationToken, route.destinationChain);
+            const l2Token = getTokenInfoFromSymbol(route.sourceToken, route.sourceChain);
             return (
               route.sourceChain === Number(chainId) &&
               route.destinationChain === this.config.hubPoolChainId &&
@@ -108,6 +110,16 @@ export class SameAssetRebalancerClient extends BaseRebalancerClient {
       .filter(isDefined);
 
     for (const rebalance of l1ToL2Rebalances.concat(l2ToL1Withdrawals)) {
+      const availableAdapters = await this.getAvailableAdapters();
+      if (!availableAdapters.includes(rebalance.adapter)) {
+        this.logger.debug({
+          at: "SameAssetRebalancerClient.rebalanceInventory",
+          message: `Adapter ${rebalance.adapter} is not available; trying next route`,
+          route: rebalance,
+        });
+        continue;
+      }
+
       const { sourceToken, destinationToken, sourceChain, destinationChain, amount } = rebalance;
       const maxAmountToTransfer = this.config.maxAmountsToTransfer[sourceToken]?.[sourceChain];
       const amountToTransferCapped =
