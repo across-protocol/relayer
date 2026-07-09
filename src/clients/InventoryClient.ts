@@ -1330,7 +1330,7 @@ export class InventoryClient {
             this.hubPoolClient.chainId
           );
           if (!adapter.isSupportedL2Bridge(l2BridgeLookupToken)) {
-            this.logger.warn({
+            this.logger.debug({
               at: "InventoryClient#withdrawExcessBalances",
               message: `No L2 bridge configured for ${getNetworkName(chainId)} for token ${l2BridgeLookupToken}`,
             });
