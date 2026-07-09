@@ -8,24 +8,16 @@ import {
   getNetworkName,
   bnZero,
   assert,
+  Address,
 } from "../../utils";
 import { BaseRebalancerClient } from "./BaseRebalancerClient";
-import { InventoryClient } from "../../clients";
+import { InventoryClient, Rebalance } from "../../clients";
 import { RebalanceRoute } from "../utils/interfaces";
 
-export class SameAssetRebalancerClient extends BaseRebalancerClient {
-  constructor(...args: ConstructorParameters<typeof BaseRebalancerClient>) {
-    super(...args);
-  }
+type RebalanceWithAmount = RebalanceRoute & { amount: BigNumber };
+type L2Withdrawal = { l2Token: Address; amountToWithdraw: BigNumber };
 
-  /**
-   * @notice Rebalances cumulative balances of tokens across chains where cumulative token balances are above
-   * configured targets to tokens that have cumulative balances below configured thresholds. Tokens are sourced
-   * from chains sorted by configured priority tier and current balance level.
-   * @param cumulativeBalances Dictionary of token -> cumulative virtual balances.
-   * @param currentBalancesOnChain Dictionary of chainId -> token -> current on-chain balance.
-   * @param maxFeePct Maximum fee percentage to allow for rebalances.
-   */
+export class SameAssetRebalancerClient extends BaseRebalancerClient {
   override async rebalanceInventory(inventoryClient: InventoryClient, maxFeePct: BigNumber): Promise<void> {
     // Assert invariants:
 
@@ -45,10 +37,9 @@ export class SameAssetRebalancerClient extends BaseRebalancerClient {
         route.sourceToken === route.destinationToken,
         `Rebalance route ${route.sourceChain} to ${route.destinationChain} has different source and destination tokens`
       );
-      const chainsEnabledForToken = Object.keys(this.config.sameAssetBalances[route.sourceToken]).map(Number);
       if (
-        !chainsEnabledForToken.includes(route.destinationChain) ||
-        !chainsEnabledForToken.includes(route.sourceChain)
+        !this.config.sameAssetBalances[route.sourceToken]?.[route.destinationChain] ||
+        !this.config.sameAssetBalances[route.sourceToken]?.[route.sourceChain]
       ) {
         throw new Error(
           `Rebalance route ${route.sourceChain} to ${route.destinationChain} is not configured in RebalancerConfig for token ${route.sourceToken}`
@@ -63,51 +54,17 @@ export class SameAssetRebalancerClient extends BaseRebalancerClient {
     const _l2ToL1Withdrawals = await inventoryClient.withdrawExcessBalances(true);
 
     // Filter out rebalances to only those we have rebalance routes for.
-    const l1ToL2Rebalances: (RebalanceRoute & { amount: BigNumber })[] = _l1ToL2Rebalances
-      .map((rebalance) => {
-        const matchingRebalanceRoute = this.rebalanceRoutes.find((route) => {
-          const l1Token = EvmAddress.from(
-            getTokenInfoFromSymbol(route.sourceToken, this.config.hubPoolChainId).address.toNative()
-          );
-          const l2Token = getTokenInfoFromSymbol(route.destinationToken, route.destinationChain);
-          return (
-            route.sourceChain === this.config.hubPoolChainId &&
-            route.destinationChain === rebalance.chainId &&
-            l1Token.eq(rebalance.l1Token) &&
-            l2Token.address.eq(rebalance.l2Token)
-          );
-        });
-        if (!matchingRebalanceRoute) {
-          return undefined;
-        }
-        return {
-          ...matchingRebalanceRoute,
-          amount: rebalance.amount,
-        };
-      })
-      .filter(isDefined);
-    const l2ToL1Withdrawals: (RebalanceRoute & { amount: BigNumber })[] = Object.entries(_l2ToL1Withdrawals)
-      .map(([chainId, withdrawals]) => {
-        return withdrawals.map((withdrawal) => {
-          const matchingRebalanceRoute = this.rebalanceRoutes.find((route) => {
-            const l2Token = getTokenInfoFromSymbol(route.sourceToken, route.sourceChain);
-            return (
-              route.sourceChain === Number(chainId) &&
-              route.destinationChain === this.config.hubPoolChainId &&
-              l2Token.address.eq(withdrawal.l2Token)
-            );
-          });
-          if (!matchingRebalanceRoute) {
-            return undefined;
-          }
-          return {
-            ...matchingRebalanceRoute,
-            amount: withdrawal.amountToWithdraw,
-          };
-        });
-      })
-      .flat()
-      .filter(isDefined);
+    const l1ToL2Rebalances: RebalanceWithAmount[] = _l1ToL2Rebalances.flatMap((rebalance) => {
+      const route = this.routeForL1ToL2Rebalance(rebalance);
+      return route ? [{ ...route, amount: rebalance.amount }] : [];
+    });
+    const l2ToL1Withdrawals: RebalanceWithAmount[] = Object.entries(_l2ToL1Withdrawals).flatMap(
+      ([chainId, withdrawals]) =>
+        withdrawals.flatMap((withdrawal) => {
+          const route = this.routeForL2ToL1Withdrawal(Number(chainId), withdrawal);
+          return route ? [{ ...route, amount: withdrawal.amountToWithdraw }] : [];
+        })
+    );
 
     for (const rebalance of l1ToL2Rebalances.concat(l2ToL1Withdrawals)) {
       const availableAdapters = await this.getAvailableAdapters();
@@ -162,5 +119,31 @@ export class SameAssetRebalancerClient extends BaseRebalancerClient {
         }
       }
     }
+  }
+
+  private routeForL1ToL2Rebalance(rebalance: Rebalance): RebalanceRoute | undefined {
+    return this.rebalanceRoutes.find((route) => {
+      const l1Token = EvmAddress.from(
+        getTokenInfoFromSymbol(route.sourceToken, this.config.hubPoolChainId).address.toNative()
+      );
+      const l2Token = getTokenInfoFromSymbol(route.destinationToken, route.destinationChain);
+      return (
+        route.sourceChain === this.config.hubPoolChainId &&
+        route.destinationChain === rebalance.chainId &&
+        l1Token.eq(rebalance.l1Token) &&
+        l2Token.address.eq(rebalance.l2Token)
+      );
+    });
+  }
+
+  private routeForL2ToL1Withdrawal(chainId: number, withdrawal: L2Withdrawal): RebalanceRoute | undefined {
+    return this.rebalanceRoutes.find((route) => {
+      const l2Token = getTokenInfoFromSymbol(route.sourceToken, route.sourceChain);
+      return (
+        route.sourceChain === chainId &&
+        route.destinationChain === this.config.hubPoolChainId &&
+        l2Token.address.eq(withdrawal.l2Token)
+      );
+    });
   }
 }

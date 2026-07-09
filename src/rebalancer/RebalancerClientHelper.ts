@@ -3,6 +3,7 @@ import { BinanceStablecoinSwapAdapter } from "./adapters/binance";
 import { CctpAdapter } from "./adapters/cctpAdapter";
 import { HyperliquidStablecoinSwapAdapter } from "./adapters/hyperliquid";
 import { OftAdapter } from "./adapters/oftAdapter";
+import { BaseRebalancerClient } from "./clients/BaseRebalancerClient";
 import { CumulativeBalanceRebalancerClient } from "./clients/CumulativeBalanceRebalancerClient";
 import { ReadOnlyRebalancerClient } from "./clients/ReadOnlyRebalancerClient";
 
@@ -13,13 +14,21 @@ import { SameAssetRebalancerClient } from "./clients/SameAssetRebalancerClient";
 import { buildSameAssetRebalanceRoutes } from "./buildSameAssetRebalanceRoutes";
 
 export type AdapterName = "cctp" | "oft" | "hyperliquid" | "binance";
+type AdapterMap = { [name: string]: RebalancerAdapter };
+type RebalancerClientConstructor<T extends BaseRebalancerClient> = new (
+  logger: winston.Logger,
+  rebalancerConfig: RebalancerConfig,
+  adapters: AdapterMap,
+  baseSigner: Signer,
+  isReadonly: boolean
+) => T;
 
 function constructRebalancerDependencies(
   logger: winston.Logger,
   baseSigner: Signer
 ): {
   rebalancerConfig: RebalancerConfig;
-  adapters: Partial<{ [name in AdapterName]: RebalancerAdapter }>;
+  adapters: AdapterMap;
 } {
   const rebalancerConfig = new RebalancerConfig(process.env);
 
@@ -44,10 +53,37 @@ function constructRebalancerDependencies(
 
   // @todo: Add test-net support for this client. For now, we only support production and we do not construct
   // any adapters or routes when running on test net.
-  const adaptersToUpdate: Partial<{ [name in AdapterName]: RebalancerAdapter }> =
-    rebalancerConfig.hubPoolChainId === CHAIN_IDs.MAINNET ? adapterMap : {};
+  const adaptersToUpdate: AdapterMap = rebalancerConfig.hubPoolChainId === CHAIN_IDs.MAINNET ? adapterMap : {};
 
   return { rebalancerConfig, adapters: adaptersToUpdate };
+}
+
+async function constructInitializedRebalancerClient<T extends BaseRebalancerClient>(
+  logger: winston.Logger,
+  baseSigner: Signer,
+  Client: RebalancerClientConstructor<T>,
+  getRebalanceRoutes: (rebalancerConfig: RebalancerConfig) => RebalanceRoute[],
+  isReadonly: boolean,
+  logLabel: string,
+  message: string
+): Promise<T> {
+  const { rebalancerConfig, adapters } = constructRebalancerDependencies(logger, baseSigner);
+  const rebalanceRoutes = getRebalanceRoutes(rebalancerConfig);
+  const rebalancerClient = new Client(logger, rebalancerConfig, adapters, baseSigner, isReadonly);
+
+  await Promise.all(
+    ["cctp", "oft"].flatMap((adapterName) =>
+      adapters[adapterName] ? [adapters[adapterName].initialize(rebalanceRoutes)] : []
+    )
+  );
+  await rebalancerClient.initialize(rebalanceRoutes);
+  logger.debug({
+    at: `RebalancerClientHelper.${logLabel}`,
+    message,
+    rebalancerConfig,
+    adapterNames: Object.keys(adapters),
+  });
+  return rebalancerClient;
 }
 
 export async function constructCumulativeBalanceRebalancerClient(
@@ -55,34 +91,15 @@ export async function constructCumulativeBalanceRebalancerClient(
   baseSigner: Signer,
   rebalanceRoutesOverride?: RebalanceRoute[]
 ): Promise<CumulativeBalanceRebalancerClient> {
-  const { rebalancerConfig, adapters } = constructRebalancerDependencies(logger, baseSigner);
-  const rebalanceRoutes = rebalanceRoutesOverride ?? buildRebalanceRoutes(rebalancerConfig);
-  const isReadonly = false;
-  const rebalancerClient = new CumulativeBalanceRebalancerClient(
+  return constructInitializedRebalancerClient(
     logger,
-    rebalancerConfig,
-    adapters,
     baseSigner,
-    isReadonly
+    CumulativeBalanceRebalancerClient,
+    (rebalancerConfig) => rebalanceRoutesOverride ?? buildRebalanceRoutes(rebalancerConfig),
+    false,
+    "constructCumulativeBalanceRebalancerClient",
+    "CumulativeBalanceRebalancerClient initialized"
   );
-  // Initialize the CCTP and OFT Adapters first before initializing the Binance and HL adapters which use the former
-  // adapters. Only initialize them if they are present in the adapters map.
-  const adapterInitPromises: Promise<void>[] = [];
-  if (adapters["cctp"]) {
-    adapterInitPromises.push(adapters["cctp"].initialize(rebalanceRoutes));
-  }
-  if (adapters["oft"]) {
-    adapterInitPromises.push(adapters["oft"].initialize(rebalanceRoutes));
-  }
-  await Promise.all(adapterInitPromises);
-  await rebalancerClient.initialize(rebalanceRoutes);
-  logger.debug({
-    at: "RebalancerClientHelper.constructCumulativeBalanceRebalancerClient",
-    message: "CumulativeBalanceRebalancerClient initialized",
-    rebalancerConfig,
-    adapterNames: Object.keys(adapters),
-  });
-  return rebalancerClient;
 }
 
 export async function constructSameAssetRebalancerClient(
@@ -90,55 +107,30 @@ export async function constructSameAssetRebalancerClient(
   baseSigner: Signer,
   rebalanceRoutesOverride?: RebalanceRoute[]
 ): Promise<SameAssetRebalancerClient> {
-  const { rebalancerConfig, adapters } = constructRebalancerDependencies(logger, baseSigner);
-  const rebalanceRoutes = rebalanceRoutesOverride ?? buildSameAssetRebalanceRoutes(rebalancerConfig);
-  const isReadonly = false;
-  const rebalancerClient = new SameAssetRebalancerClient(logger, rebalancerConfig, adapters, baseSigner, isReadonly);
-  // Initialize the CCTP and OFT Adapters first before initializing the Binance and HL adapters which use the former
-  // adapters. Only initialize them if they are present in the adapters map.
-  const adapterInitPromises: Promise<void>[] = [];
-  if (adapters["cctp"]) {
-    adapterInitPromises.push(adapters["cctp"].initialize(rebalanceRoutes));
-  }
-  if (adapters["oft"]) {
-    adapterInitPromises.push(adapters["oft"].initialize(rebalanceRoutes));
-  }
-  await Promise.all(adapterInitPromises);
-  await rebalancerClient.initialize(rebalanceRoutes);
-  logger.debug({
-    at: "RebalancerClientHelper.constructSameAssetRebalancerClient",
-    message: "SameAssetRebalancerClient initialized",
-    rebalancerConfig,
-    adapterNames: Object.keys(adapters),
-  });
-  return rebalancerClient;
+  return constructInitializedRebalancerClient(
+    logger,
+    baseSigner,
+    SameAssetRebalancerClient,
+    (rebalancerConfig) => rebalanceRoutesOverride ?? buildSameAssetRebalanceRoutes(rebalancerConfig),
+    false,
+    "constructSameAssetRebalancerClient",
+    "SameAssetRebalancerClient initialized"
+  );
 }
 
 export async function constructReadOnlyRebalancerClient(
   logger: winston.Logger,
   baseSigner: Signer
 ): Promise<ReadOnlyRebalancerClient> {
-  const { rebalancerConfig, adapters } = constructRebalancerDependencies(logger, baseSigner);
-  const isReadonly = true;
-  const rebalancerClient = new ReadOnlyRebalancerClient(logger, rebalancerConfig, adapters, baseSigner, isReadonly);
-  // Initialize the CCTP and OFT Adapters first before initializing the Binance and HL adapters which use the former
-  // adapters. Only initialize them if they are present in the adapters map.
-  const adapterInitPromises: Promise<void>[] = [];
-  if (adapters["cctp"]) {
-    adapterInitPromises.push(adapters["cctp"].initialize([]));
-  }
-  if (adapters["oft"]) {
-    adapterInitPromises.push(adapters["oft"].initialize([]));
-  }
-  await Promise.all(adapterInitPromises);
-  await rebalancerClient.initialize([]);
-  logger.debug({
-    at: "RebalancerClientHelper.constructReadOnlyRebalancerClient",
-    message: "ReadOnlyRebalancerClient initialized",
-    rebalancerConfig,
-    adapterNames: Object.keys(adapters),
-  });
-  return rebalancerClient;
+  return constructInitializedRebalancerClient(
+    logger,
+    baseSigner,
+    ReadOnlyRebalancerClient,
+    () => [],
+    true,
+    "constructReadOnlyRebalancerClient",
+    "ReadOnlyRebalancerClient initialized"
+  );
 }
 
 export async function constructAdapter(

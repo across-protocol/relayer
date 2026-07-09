@@ -24,8 +24,8 @@ import { assert, BigNumber, isDefined, readFileSync, toBNWei, getTokenInfoFromSy
  *
  * - cumulativeTargetBalance values are human-readable amounts (e.g. "100" for 100 USDT) and will be
  *   converted to the token's native decimals on the respective chain.
- * - sameAssetBalances values are priority tiers for each chain + token combination we want to support in the
- *   same asset rebalancer. Target and threshold amounts are implied by the inventory config used by the InventoryClient.
+ * - sameAssetBalances chains enable each chain + token combination we want to support in the same asset rebalancer.
+ *   Target and threshold amounts are implied by the inventory config used by the InventoryClient.
  * - priorityTiers are essentially numbers that you assign to a chain based on how important it is to hold
  *   liquidity or meet the target balance on that chain. The higher priority deficits are filled first and the lowest
  *   priority excesses are used first.
@@ -53,7 +53,7 @@ export interface CumulativeTargetBalanceConfig {
 }
 
 export interface SameAssetConfig {
-  [token: string]: { [chainId: number]: number };
+  [token: string]: { [chainId: number]: true };
 }
 
 export interface MaxAmountToTransferChainConfig {
@@ -147,9 +147,9 @@ export class RebalancerConfig extends CommonConfig {
         rebalancerConfig.sameAssetBalances as Record<string, { chains: { [chainId: number]: number } }>
       )) {
         this.sameAssetBalances[token] = Object.fromEntries(
-          Object.entries(chainConfig.chains).map(([chainId, priorityTier]) => {
+          Object.keys(chainConfig.chains).map((chainId) => {
             chainIdSet.add(Number(chainId));
-            return [Number(chainId), priorityTier];
+            return [Number(chainId), true];
           })
         );
       }
