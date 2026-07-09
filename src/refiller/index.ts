@@ -1,8 +1,8 @@
-import { winston, config, startupLogLevel, Signer, disconnectRedisClients } from "../utils";
+import { winston, startupLogLevel, Signer, disconnectRedisClients } from "../utils";
 import { Refiller } from "./Refiller";
 import { constructRefillerClients } from "./RefillerClientHelper";
 import { RefillerConfig } from "./RefillerConfig";
-config();
+
 let logger: winston.Logger;
 
 export async function runRefiller(_logger: winston.Logger, baseSigner: Signer): Promise<void> {

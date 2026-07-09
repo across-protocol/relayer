@@ -11,7 +11,6 @@
 
 import {
   winston,
-  config,
   getSigner,
   startupLogLevel,
   Logger,
@@ -33,7 +32,6 @@ import { PendingRootBundle, ProposedRootBundle } from "../interfaces";
 import { createDataworker } from "../dataworker";
 import { getImpliedBundleBlockRanges } from "../dataworker/DataworkerUtils";
 
-config();
 let logger: winston.Logger;
 
 export async function validate(_logger: winston.Logger, baseSigner: Signer): Promise<void> {

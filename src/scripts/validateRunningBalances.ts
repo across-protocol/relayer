@@ -34,7 +34,6 @@
 import {
   bnZero,
   winston,
-  config,
   Logger,
   toBN,
   fromWei,
@@ -69,7 +68,6 @@ import { createConsoleTransport } from "@risk-labs/logger";
 import { interfaces as sdkInterfaces } from "@across-protocol/sdk";
 import { SpokePoolClient } from "../clients/SpokePoolClient";
 
-config();
 let logger: winston.Logger;
 let silentLogger: winston.Logger;
 

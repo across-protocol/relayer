@@ -1,5 +1,4 @@
 import { gasPriceOracle, typeguards, utils as sdkUtils } from "@across-protocol/sdk";
-import dotenv from "dotenv";
 import { AugmentedTransaction, TransactionClient } from "../clients";
 import {
   BigNumber,
@@ -23,8 +22,6 @@ import {
   type MicroLamports,
 } from "@solana/kit";
 import { updateOrAppendSetComputeUnitPriceInstruction } from "@solana-program/compute-budget";
-
-dotenv.config();
 
 export type TransactionSimulationResult = {
   transaction: AugmentedTransaction;

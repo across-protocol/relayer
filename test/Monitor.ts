@@ -1,7 +1,7 @@
 import { BundleDataClient, ConfigStoreClient, HubPoolClient, MultiCallerClient, SpokePoolClient } from "../src/clients";
 import { CrossChainTransferClient } from "../src/clients/bridges";
 import { Dataworker } from "../src/dataworker/Dataworker";
-import { Monitor, REBALANCE_FINALIZE_GRACE_PERIOD } from "../src/monitor/Monitor";
+import { Monitor, getRebalanceFinalizeGracePeriod } from "../src/monitor/Monitor";
 import { MonitorConfig } from "../src/monitor/MonitorConfig";
 import { TokenInfo } from "../src/interfaces";
 import { MAX_UINT_VAL, toBN, toAddressType, EvmAddress, Address, getTokenInfo } from "../src/utils";
@@ -212,7 +212,7 @@ describe("Monitor", function () {
     await executeBundle(hubPool);
 
     // Fast-forward by 2 hours to pass the grace period.
-    await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + REBALANCE_FINALIZE_GRACE_PERIOD + 1);
+    await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + getRebalanceFinalizeGracePeriod() + 1);
 
     // Simulate some pending cross chain transfers to SpokePools.
     adapterManager.setMockedOutstandingCrossChainTransfers(
