@@ -33,8 +33,7 @@ import { BaseBridgeAdapter, BridgeTransactionDetails, BridgeEvents, BridgeEvent 
 import ERC20_ABI from "../../common/abi/MinimalERC20.json";
 
 export class BinanceCEXBridge extends BaseBridgeAdapter {
-  // Only store the promise in the constructor and evaluate the promise in async blocks.
-  protected readonly binanceApiClientPromise;
+  // Lazy: eager construction would assert on missing BINANCE_API_KEY even for bots that never use the bridge.
   protected binanceApiClient: BinanceApi | undefined;
   protected tokenSymbol: string;
   protected l2Provider: Provider;
@@ -53,8 +52,6 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
     }
     // No L1 gateways needed since no L1 bridge transfers tokens from the EOA.
     super(l2chainId, hubChainId, l1Signer, []);
-    // Pull the binance API key from environment and throw if we cannot instantiate this bridge.
-    this.binanceApiClientPromise = getBinanceApiClient(process.env["BINANCE_API_BASE"]);
 
     // Pass in the WETH ABI as the ERC20 ABI. This is fine to do since we only call `transfer` on `this.getL1Bridge()`.
     this.l1Bridge = new Contract(l1Token.toNative(), ERC20_ABI, l1Signer);
@@ -200,6 +197,6 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
   }
 
   protected async getBinanceClient() {
-    return (this.binanceApiClient ??= await this.binanceApiClientPromise);
+    return (this.binanceApiClient ??= await getBinanceApiClient(process.env.BINANCE_API_BASE));
   }
 }
