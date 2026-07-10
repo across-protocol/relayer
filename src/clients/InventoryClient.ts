@@ -960,11 +960,20 @@ export class InventoryClient {
 
     const possibleRebalances: Rebalance[] = [];
     const unexecutedRebalances: Rebalance[] = [];
+    const unbridgeableRebalances: Rebalance[] = [];
     const executedTransactions: ExecutedRebalance[] = [];
 
     // Next, evaluate if we have enough tokens on L1 to actually do these rebalances.
     for (const rebalance of rebalancesRequired) {
       const { balance, amount, l1Token, l2Token, chainId } = rebalance;
+
+      // A token can be enabled for inventory management on a chain that has no L1 -> L2 bridge route
+      // (e.g. L2 -> L1 withdrawal-only tokens like Avalanche USDT). Sending would throw, so skip the
+      // rebalance and surface the config mismatch as a warning below.
+      if (!this.adapterManager.canSendTokenCrossChain(chainId, l1Token)) {
+        unbridgeableRebalances.push(rebalance);
+        continue;
+      }
 
       // This is the balance left after any assumed rebalances from earlier loop iterations.
       const unallocatedBalance = this.tokenClient.getBalance(this.hubPoolClient.chainId, l1Token);
@@ -1008,6 +1017,15 @@ export class InventoryClient {
         // Extract unexecutable rebalances for logging.
         unexecutedRebalances.push(rebalance);
       }
+    }
+
+    if (unbridgeableRebalances.length > 0) {
+      this.log(
+        "🚧 Skipping rebalances with no L1 -> L2 bridge configured for the token." +
+          " Remove the token's target allocation for these chains from the inventory config, or add a bridge route.",
+        { unbridgeableRebalances },
+        "warn"
+      );
     }
 
     // Extract unexecutable rebalances for logging.

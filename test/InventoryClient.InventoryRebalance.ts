@@ -451,6 +451,25 @@ describe("InventoryClient: Rebalancing inventory", function () {
     expect(lastSpyLogIncludes(spy, "Executed Inventory rebalances")).to.be.true;
   });
 
+  it("Skips rebalances when the token has no L1 -> L2 bridge on the destination chain", async function () {
+    // Deplete Arbitrum USDC to trigger a rebalance, but mark USDC as having no L1 -> L2 bridge to Arbitrum
+    // (e.g. an L2 -> L1 withdrawal-only token). The rebalance must be skipped with a warning, not attempted.
+    tokenClient.decrementLocalBalance(ARBITRUM, toAddressType(l2TokensForUsdc[ARBITRUM], ARBITRUM), toMegaWei(500));
+    adapterManager.setUnbridgeableTokens(ARBITRUM, [EvmAddress.from(mainnetUsdc)]);
+
+    await inventoryClient.update();
+    await inventoryClient.rebalanceInventoryIfNeeded();
+
+    expect(spyLogIncludes(spy, -2, "no L1 -> L2 bridge configured")).to.be.true;
+    expect(adapterManager.tokensSentCrossChain[ARBITRUM]?.[mainnetUsdc]).to.not.exist;
+
+    // Restoring the bridge route makes the same rebalance go through.
+    adapterManager.setUnbridgeableTokens(ARBITRUM, []);
+    await inventoryClient.rebalanceInventoryIfNeeded();
+    expect(lastSpyLogIncludes(spy, "Executed Inventory rebalances")).to.be.true;
+    expect(adapterManager.tokensSentCrossChain[ARBITRUM][mainnetUsdc].amount).to.equal(toMegaWei(515));
+  });
+
   describe("Withdraws excess balance from L2 to L1", function () {
     const testChain = OPTIMISM;
     const testL1Token = mainnetUsdc;

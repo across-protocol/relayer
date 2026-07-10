@@ -222,6 +222,16 @@ export class AdapterManager {
     return this.adapters[chainId].getOutstandingCrossChainTransfers(adapterSupportedL1Tokens);
   }
 
+  /**
+   * @notice Returns true if l1Token can be sent from the hub chain to chainId via a configured L1 -> L2 bridge.
+   * Tokens can be supported for L2 -> L1 withdrawals only (e.g. Avalanche USDT via Binance), in which case
+   * sendTokenCrossChain() would throw and this returns false.
+   */
+  canSendTokenCrossChain(chainId: number, l1Token: EvmAddress): boolean {
+    const adapter = this.adapters[chainId];
+    return isDefined(adapter) && adapter.isSupportedToken(l1Token) && adapter.isSupportedL1Bridge(l1Token);
+  }
+
   sendTokenCrossChain(
     address: Address,
     chainId: number,
