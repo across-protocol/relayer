@@ -8,15 +8,19 @@ import {
   getNetworkName,
   bnZero,
   assert,
-  Address,
 } from "../../utils";
 import { BaseRebalancerClient } from "./BaseRebalancerClient";
 import { InventoryClient, Rebalance } from "../../clients";
 import { RebalanceRoute } from "../utils/interfaces";
 
 type RebalanceWithAmount = RebalanceRoute & { amount: BigNumber };
-type L2Withdrawal = { l2Token: Address; amountToWithdraw: BigNumber };
 
+/**
+ * @notice This client supports rebalancing between L1 and the listed L2 chains in the RebalancerConfig where the
+ * InventoryClient can't already support it. For example, from L1 to L2 via Binance for any other chains besides BSC
+ * is impossible in the InventoryClient because once a deposit lands in Binance we don't know where its final
+ * destination chain is unless we track it via Redis like we do with this client (and not in the InventoryClient).
+ */
 export class SameAssetRebalancerClient extends BaseRebalancerClient {
   override async rebalanceInventory(inventoryClient: InventoryClient, maxFeePct: BigNumber): Promise<void> {
     // Assert invariants:
@@ -24,10 +28,8 @@ export class SameAssetRebalancerClient extends BaseRebalancerClient {
     // Every rebalance route we have is between L1 and some L2 chain and is set in the RebalancerConfig
     for (const route of this.rebalanceRoutes) {
       if (
-        !(
-          (route.sourceChain === this.config.hubPoolChainId && route.destinationChain !== this.config.hubPoolChainId) ||
-          (route.sourceChain !== this.config.hubPoolChainId && route.destinationChain === this.config.hubPoolChainId)
-        )
+        (route.sourceChain === this.config.hubPoolChainId && route.destinationChain === this.config.hubPoolChainId) ||
+        (route.sourceChain !== this.config.hubPoolChainId && route.destinationChain !== this.config.hubPoolChainId)
       ) {
         throw new Error(
           `Rebalance route ${route.sourceChain} to ${route.destinationChain} is not between L1 and some L2 chain`
@@ -37,36 +39,23 @@ export class SameAssetRebalancerClient extends BaseRebalancerClient {
         route.sourceToken === route.destinationToken,
         `Rebalance route ${route.sourceChain} to ${route.destinationChain} has different source and destination tokens`
       );
-      if (
-        !this.config.sameAssetBalances[route.sourceToken]?.[route.destinationChain] ||
-        !this.config.sameAssetBalances[route.sourceToken]?.[route.sourceChain]
-      ) {
+      if (!this.config.sameAssetBalances[route.sourceToken]?.[route.destinationChain]) {
         throw new Error(
-          `Rebalance route ${route.sourceChain} to ${route.destinationChain} is not configured in RebalancerConfig for token ${route.sourceToken}`
+          `Rebalance route to ${route.destinationChain} is not configured in RebalancerConfig for token ${route.sourceToken}`
         );
       }
     }
 
     // Get list of rebalances to execute from InventoryClient:
-    // - rebalanceInventoryIfNeeded()
-    // - withdrawExcessInventory()
     const _l1ToL2Rebalances = await inventoryClient.rebalanceInventoryIfNeeded(true);
-    const _l2ToL1Withdrawals = await inventoryClient.withdrawExcessBalances(true);
 
     // Filter out rebalances to only those we have rebalance routes for.
     const l1ToL2Rebalances: RebalanceWithAmount[] = _l1ToL2Rebalances.flatMap((rebalance) => {
       const route = this.routeForL1ToL2Rebalance(rebalance);
       return route ? [{ ...route, amount: rebalance.amount }] : [];
     });
-    const l2ToL1Withdrawals: RebalanceWithAmount[] = Object.entries(_l2ToL1Withdrawals).flatMap(
-      ([chainId, withdrawals]) =>
-        withdrawals.flatMap((withdrawal) => {
-          const route = this.routeForL2ToL1Withdrawal(Number(chainId), withdrawal);
-          return route ? [{ ...route, amount: withdrawal.amountToWithdraw }] : [];
-        })
-    );
 
-    for (const rebalance of l1ToL2Rebalances.concat(l2ToL1Withdrawals)) {
+    for (const rebalance of l1ToL2Rebalances) {
       const availableAdapters = await this.getAvailableAdapters();
       if (!availableAdapters.includes(rebalance.adapter)) {
         this.logger.debug({
@@ -132,17 +121,6 @@ export class SameAssetRebalancerClient extends BaseRebalancerClient {
         route.destinationChain === rebalance.chainId &&
         l1Token.eq(rebalance.l1Token) &&
         l2Token.address.eq(rebalance.l2Token)
-      );
-    });
-  }
-
-  private routeForL2ToL1Withdrawal(chainId: number, withdrawal: L2Withdrawal): RebalanceRoute | undefined {
-    return this.rebalanceRoutes.find((route) => {
-      const l2Token = getTokenInfoFromSymbol(route.sourceToken, route.sourceChain);
-      return (
-        route.sourceChain === chainId &&
-        route.destinationChain === this.config.hubPoolChainId &&
-        l2Token.address.eq(withdrawal.l2Token)
       );
     });
   }

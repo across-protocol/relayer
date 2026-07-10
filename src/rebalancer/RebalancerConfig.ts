@@ -10,7 +10,7 @@ import { assert, BigNumber, isDefined, readFileSync, toBNWei, getTokenInfoFromSy
  *     "USDC": { "threshold": "3000000", "target": "3500000", "priorityTier": 0, "chains": { "1": 0 } }
  *   },
  *   "sameAssetBalances": {
- *     "USDT": { "chains": { "1": 0, "43114": 1 } },
+ *     "USDT": { "chains": { "43114": 1 } },
  *   },
  *   "maxAmountsToTransfer": {
  *     "USDT": "1000",
@@ -25,7 +25,8 @@ import { assert, BigNumber, isDefined, readFileSync, toBNWei, getTokenInfoFromSy
  * - cumulativeTargetBalance values are human-readable amounts (e.g. "100" for 100 USDT) and will be
  *   converted to the token's native decimals on the respective chain.
  * - sameAssetBalances chains enable each chain + token combination we want to support in the same asset rebalancer.
- *   Target and threshold amounts are implied by the inventory config used by the InventoryClient.
+ *   Target and threshold amounts are implied by the inventory config used by the InventoryClient. Chains listed
+ *   should only be L2 chains that we want to rebalance from L1 to. L2->L1 is delegated to the InventoryClient.
  * - priorityTiers are essentially numbers that you assign to a chain based on how important it is to hold
  *   liquidity or meet the target balance on that chain. The higher priority deficits are filled first and the lowest
  *   priority excesses are used first.
@@ -143,6 +144,7 @@ export class RebalancerConfig extends CommonConfig {
 
     this.sameAssetBalances = {};
     if (isDefined(rebalancerConfig.sameAssetBalances)) {
+      chainIdSet.add(this.hubPoolChainId);
       for (const [token, chainConfig] of Object.entries(
         rebalancerConfig.sameAssetBalances as Record<string, { chains: { [chainId: number]: number } }>
       )) {
