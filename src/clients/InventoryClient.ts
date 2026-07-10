@@ -969,8 +969,10 @@ export class InventoryClient {
 
       // A token can be enabled for inventory management on a chain that has no L1 -> L2 bridge route
       // (e.g. L2 -> L1 withdrawal-only tokens like Avalanche USDT). Sending would throw, so skip the
-      // rebalance and surface the config mismatch as a warning below.
-      if (!this.adapterManager.canSendTokenCrossChain(chainId, l1Token)) {
+      // rebalance and surface it as a warning below. Only skip when this client would execute the send
+      // itself: returnRebalancesOnly callers like the SameAssetRebalancerClient execute these rebalances
+      // through alternate routes (e.g. Binance), so they must still be returned.
+      if (!returnRebalancesOnly && !this.adapterManager.canSendTokenCrossChain(chainId, l1Token)) {
         unbridgeableRebalances.push(rebalance);
         continue;
       }
@@ -1022,7 +1024,8 @@ export class InventoryClient {
     if (unbridgeableRebalances.length > 0) {
       this.log(
         "🚧 Skipping rebalances with no L1 -> L2 bridge configured for the token." +
-          " Remove the token's target allocation for these chains from the inventory config, or add a bridge route.",
+          " If a rebalancer bot doesn't already handle these routes (e.g. via Binance)," +
+          " remove the token's target allocation for these chains from the inventory config, or add a bridge route.",
         { unbridgeableRebalances },
         "warn"
       );
