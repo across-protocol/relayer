@@ -1410,14 +1410,44 @@ export class InventoryClient {
           if (pendingWithdrawalAmount.gte(maxL2WithdrawalVolume)) {
             return;
           }
+
+          // Skip any L2 withdrawal while the chain has an outstanding shortfall — pulling
+          // liquid back to L1 concurrently with promised fills means we either fail to fund
+          // those fills or undo the rebalancer's work once the pending inbound settles.
+          if (this.tokenClient.getShortfallTotalRequirement(chainId, l2Token).gt(bnZero)) {
+            return;
+          }
+
+          // Cap the withdrawal so the post-withdrawal liquid balance stays at this chain's
+          // target allocation. Two failure modes are being avoided here:
+          //   1. `desiredWithdrawalAmount` is sized off virtual balance, which folds in pending
+          //      inbound rebalance credits — sending more than what's actually on-chain reverts
+          //      the bridge call at simulation with `ERC20: transfer amount exceeds balance`.
+          //   2. Clamping straight to `liquidL2Balance` could drain the chain to zero, undoing
+          //      the operator's intended target reserve and starving any in-flight fills until
+          //      pending inbound credits settle.
+          // Sizing off `liquid - target` covers both: the transfer is bounded by what's settled
+          // on-chain, and the chain retains at least its target allocation in liquid form.
+          const liquidL2Balance = this.tokenClient.getBalance(chainId, l2Token);
+          const targetAmountInL2 = cumulativeBalanceInL2TokenDecimals.mul(targetPct).div(this.scalar);
+          const liquidAvailableForWithdraw = liquidL2Balance.gt(targetAmountInL2)
+            ? liquidL2Balance.sub(targetAmountInL2)
+            : bnZero;
+          const amountToWithdraw = desiredWithdrawalAmount.lte(liquidAvailableForWithdraw)
+            ? desiredWithdrawalAmount
+            : liquidAvailableForWithdraw;
+          if (amountToWithdraw.lte(bnZero)) {
+            return;
+          }
+
           withdrawalsRequired[chainId] ??= [];
           withdrawalsRequired[chainId].push({
             l2Token,
-            amountToWithdraw: desiredWithdrawalAmount,
+            amountToWithdraw,
           });
 
           mrkdwn +=
-            ` - ${l2TokenFormatter(desiredWithdrawalAmount)} ${
+            ` - ${l2TokenFormatter(amountToWithdraw)} ${
               l1TokenInfo.symbol
             } withdrawn. This meets target allocation of ` +
             `${this.formatWei(targetPct.mul(100).toString())}% (trigger of ` +

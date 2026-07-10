@@ -483,6 +483,83 @@ describe("InventoryClient: Rebalancing inventory", function () {
       expect(adapterManager.withdrawalsRequired[0].address.toNative()).eq(owner.address);
     });
 
+    it("Caps the withdrawal at liquid-minus-target when pending rebalance credits inflate the virtual balance", async function () {
+      // Production symptom: a pending inbound rebalance credit inflates the virtual balance so
+      // `desiredWithdrawalAmount` exceeds what's actually settled on-chain. The clamp must
+      // bridge no more than the on-chain balance (otherwise the bridge call reverts at
+      // simulation with `ERC20: transfer amount exceeds balance`) AND must leave the chain's
+      // target allocation in place (otherwise it drains the operator's structural reserve).
+      // Set liquid balance to ~33% of the initial cumulative — well above the chain's 12%
+      // target — and a pending rebalance credit that pushes virtual sizing past liquid.
+      const initialCumulativeBalance = inventoryClient.getCumulativeBalance(EvmAddress.from(testL1Token));
+      const liquidL2Balance = toMegaWei(5000);
+      const pendingCredit = toMegaWei(5000);
+      expect(liquidL2Balance.gt(initialCumulativeBalance.div(10))).to.be.true;
+
+      tokenClient.setTokenData(testChain, testL2Token, liquidL2Balance);
+      mockRebalancerClient.setPendingRebalance(testChain, "USDC", pendingCredit);
+      await inventoryClient.update();
+
+      // Post-update cumulative includes the pending credit, so target = 12% of that.
+      const newCumulativeBalance = inventoryClient.getCumulativeBalance(EvmAddress.from(testL1Token));
+      const targetPct = inventoryConfig.tokenConfig[testL1Token][testL2Token.toNative()][testChain].targetPct;
+      const targetAmount = newCumulativeBalance.mul(targetPct).div(toWei(1));
+      expect(liquidL2Balance.gt(targetAmount)).to.be.true;
+
+      // The desired (virtual-balance-sized) withdrawal exceeds the clamp budget.
+      const virtualBalance = inventoryClient.getBalanceOnChain(testChain, EvmAddress.from(testL1Token));
+      const desiredWithdrawalAmount = virtualBalance.sub(targetAmount);
+      const expectedWithdrawalAmount = liquidL2Balance.sub(targetAmount);
+      expect(desiredWithdrawalAmount.gt(expectedWithdrawalAmount)).to.be.true;
+
+      await inventoryClient.withdrawExcessBalances();
+
+      // Withdraws exactly liquid - target, leaving the chain's target allocation intact.
+      expect(adapterManager.withdrawalsRequired).to.have.lengthOf(1);
+      expect(adapterManager.withdrawalsRequired[0].amountToWithdraw).eq(expectedWithdrawalAmount);
+
+      mockRebalancerClient.clearPendingRebalances();
+    });
+
+    it("Skips the withdrawal when liquid balance is at or below target allocation", async function () {
+      // If pending inbound credits trigger the virtual-balance threshold but the chain's actual
+      // liquid balance is already at/below target, withdrawing anything would drain the reserve.
+      const initialCumulativeBalance = inventoryClient.getCumulativeBalance(EvmAddress.from(testL1Token));
+      const liquidL2Balance = initialCumulativeBalance.div(10);
+
+      tokenClient.setTokenData(testChain, testL2Token, liquidL2Balance);
+      mockRebalancerClient.setPendingRebalance(testChain, "USDC", initialCumulativeBalance);
+      await inventoryClient.update();
+
+      // Confirm liquid is below the chain's 12% target of the (inflated) cumulative.
+      const newCumulativeBalance = inventoryClient.getCumulativeBalance(EvmAddress.from(testL1Token));
+      const targetPct = inventoryConfig.tokenConfig[testL1Token][testL2Token.toNative()][testChain].targetPct;
+      const targetAmount = newCumulativeBalance.mul(targetPct).div(toWei(1));
+      expect(liquidL2Balance.lte(targetAmount)).to.be.true;
+
+      await inventoryClient.withdrawExcessBalances();
+
+      expect(adapterManager.withdrawalsRequired).to.have.lengthOf(0);
+
+      mockRebalancerClient.clearPendingRebalances();
+    });
+
+    it("Skips the withdrawal when the chain has an outstanding shortfall", async function () {
+      // Any shortfall on the chain means the liquid balance is earmarked for in-flight fills.
+      // Pulling it back to L1 either starves those fills or undoes a rebalancer that's already
+      // moving funds in to cover the shortfall.
+      const initialCumulativeBalance = inventoryClient.getCumulativeBalance(EvmAddress.from(testL1Token));
+
+      tokenClient.setTokenData(testChain, testL2Token, initialCumulativeBalance);
+      tokenClient.setTokenShortFallData(testChain, testL2Token, [BigNumber.from(1)], [toMegaWei(1)]);
+
+      await inventoryClient.withdrawExcessBalances();
+
+      expect(adapterManager.withdrawalsRequired).to.have.lengthOf(0);
+
+      tokenClient.tokenShortfall = {};
+    });
+
     it("Withdrawal amount is in correct L2 token decimals", async function () {
       // This test validates when an L2 token has different decimals than the L1 token, that the
       // withdrawal amount is in the correct L2 token decimals.
