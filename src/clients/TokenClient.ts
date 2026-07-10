@@ -481,12 +481,6 @@ export class TokenClient {
 
   private _hasTokenPairData(chainId: number, token: Address) {
     const hasData = !!this.tokenData?.[chainId]?.[token.toNative()];
-    if (!hasData) {
-      this.logger.warn({
-        at: "TokenBalanceClient",
-        message: `No data on ${getNetworkName(chainId)} -> ${token.toNative()}`,
-      });
-    }
     return hasData;
   }
 
