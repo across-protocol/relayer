@@ -18,7 +18,10 @@ import { runFinalizer } from "./src/finalizer";
 import { version } from "./package.json";
 import { runRefiller } from "./src/refiller";
 import { runHyperliquidExecutor, runHyperliquidFinalizer } from "./src/hyperliquid";
-import { runCumulativeBalanceRebalancer as swapRebalancer } from "./src/rebalancer";
+import {
+  runCumulativeBalanceRebalancer as swapRebalancer,
+  runSameAssetRebalancer as sameAssetRebalancer,
+} from "./src/rebalancer";
 import { runGaslessRelayer } from "./src/gasless";
 import { runDepositAddressHandler } from "./src/deposit-address";
 
@@ -38,6 +41,7 @@ const CMDS = {
   hlFinalizer: runHyperliquidFinalizer,
   inventoryManager: runInventoryManager,
   swapRebalancer: swapRebalancer,
+  sameAssetRebalancer: sameAssetRebalancer,
   gaslessRelayer: runGaslessRelayer,
   depositAddressHandler: runDepositAddressHandler,
 };
