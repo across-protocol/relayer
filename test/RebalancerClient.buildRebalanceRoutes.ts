@@ -2,6 +2,7 @@ import { expect } from "./utils";
 import { CHAIN_IDs } from "../src/utils";
 import { RebalancerConfig } from "../src/rebalancer/RebalancerConfig";
 import { buildRebalanceRoutes } from "../src/rebalancer/buildRebalanceRoutes";
+import { buildSameAssetRebalanceRoutes } from "../src/rebalancer/buildSameAssetRebalanceRoutes";
 
 function buildSyntheticRebalancerConfig(): RebalancerConfig {
   return new RebalancerConfig({
@@ -127,6 +128,21 @@ function buildSyntheticRebalancerConfigWithTron(): RebalancerConfig {
       maxPendingOrders: {
         hyperliquid: 3,
         binance: 3,
+      },
+    }),
+  });
+}
+
+function buildSyntheticSameAssetRebalancerConfig(): RebalancerConfig {
+  return new RebalancerConfig({
+    HUB_CHAIN_ID: String(CHAIN_IDs.MAINNET),
+    REBALANCER_CONFIG: JSON.stringify({
+      sameAssetBalances: {
+        USDT: {
+          chains: {
+            [CHAIN_IDs.AVALANCHE]: 0,
+          },
+        },
       },
     }),
   });
@@ -286,5 +302,22 @@ describe("buildRebalanceRoutes", function () {
     expect(hasRoute(CHAIN_IDs.BASE, "USDC", CHAIN_IDs.TRON, "USDT", "hyperliquid")).to.equal(false);
     expect(hasRoute(CHAIN_IDs.TRON, "USDT", CHAIN_IDs.OPTIMISM, "USDT", "oft")).to.equal(false);
     expect(hasRoute(CHAIN_IDs.OPTIMISM, "USDT", CHAIN_IDs.TRON, "USDT", "oft")).to.equal(false);
+  });
+});
+
+describe("buildSameAssetRebalanceRoutes", function () {
+  it("builds configured L1-to-L2 same-asset routes only", function () {
+    const routes = buildSameAssetRebalanceRoutes(buildSyntheticSameAssetRebalancerConfig());
+
+    expect(routes).to.deep.equal([
+      {
+        sourceChain: CHAIN_IDs.MAINNET,
+        destinationChain: CHAIN_IDs.AVALANCHE,
+        sourceToken: "USDT",
+        destinationToken: "USDT",
+        adapter: "binance",
+      },
+    ]);
+    expect(routeExists(routes, CHAIN_IDs.AVALANCHE, "USDT", CHAIN_IDs.MAINNET, "USDT", "binance")).to.equal(false);
   });
 });
