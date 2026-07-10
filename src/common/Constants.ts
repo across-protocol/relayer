@@ -1109,6 +1109,7 @@ interface SwapRouteConfig {
 
 const generateSwapRoutes = (): { [chainId: string]: SwapRouteConfig } => {
   const swapChains = [
+    CHAIN_IDs.AVALANCHE,
     CHAIN_IDs.BSC,
     CHAIN_IDs.HYPEREVM,
     CHAIN_IDs.MONAD,
@@ -1128,6 +1129,7 @@ const generateSwapRoutes = (): { [chainId: string]: SwapRouteConfig } => {
 
   // Can override one or more defaults for a given chain here.
   const overrides: { [chainId: number]: Partial<typeof defaults> } = {
+    [CHAIN_IDs.AVALANCHE]: { inputTokenSymbol: "USDC" },
     [CHAIN_IDs.HYPEREVM]: { inputTokenSymbol: "USDC" },
     [CHAIN_IDs.PLASMA]: { inputTokenSymbol: "USDT" },
     [CHAIN_IDs.TEMPO]: {
