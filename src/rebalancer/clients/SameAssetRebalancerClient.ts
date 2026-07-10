@@ -80,16 +80,20 @@ export class SameAssetRebalancerClient extends BaseRebalancerClient {
         this.logger.debug({
           at: "SameAssetRebalancerClient.rebalanceInventory",
           message: `Estimated cost of ${estimatedCost.toString()} is greater than max fee of ${maxFee.toString()}`,
+          amountToTransferCapped: amountToTransferCapped.toString(),
         });
         continue;
       }
 
-      const l1TokenInfo = getTokenInfoFromSymbol(sourceToken, sourceChain);
+      const sourceTokenInfo = getTokenInfoFromSymbol(sourceToken, sourceChain);
       this.logger.debug({
         at: "SameAssetRebalancerClient.rebalanceInventory",
-        message: `Initializing new ${rebalance.adapter} ${fromWei(amountToTransferCapped, l1TokenInfo.decimals)} ${sourceToken} rebalance from ${getNetworkName(sourceChain)} to ${getNetworkName(destinationChain)} ${destinationToken}`,
+        message: `Initializing new ${rebalance.adapter} ${fromWei(amountToTransferCapped, sourceTokenInfo.decimals)} ${sourceToken} rebalance from ${getNetworkName(sourceChain)} to ${getNetworkName(destinationChain)} ${destinationToken}`,
         adapter: rebalance.adapter,
-        expectedFees: fromWei(estimatedCost, l1TokenInfo.decimals),
+        expectedFees: fromWei(estimatedCost, sourceTokenInfo.decimals),
+        desiredAmountToTransfer: fromWei(amount, sourceTokenInfo.decimals),
+        maxAmountToTransfer: fromWei(maxAmountToTransfer, sourceTokenInfo.decimals),
+        amountToTransferCapped: fromWei(amountToTransferCapped, sourceTokenInfo.decimals),
       });
 
       if (this.config.sendingTransactionsEnabled) {
@@ -102,7 +106,6 @@ export class SameAssetRebalancerClient extends BaseRebalancerClient {
             at: "SameAssetRebalancerClient.rebalanceInventory",
             message: `Adapter ${rebalance.adapter} declined to initialize rebalance; trying next route`,
             route: rebalance,
-            requestedAmountToTransfer: amountToTransferCapped.toString(),
           });
           continue;
         }

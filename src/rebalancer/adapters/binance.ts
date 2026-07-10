@@ -316,7 +316,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       }
       this.logger.debug({
         at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",
-        message: `Sufficient balance to place market order for cloid ${cloid}`,
+        message: `Sufficient balance to place market order or withdraw for cloid ${cloid}`,
         availableBalance: binanceBalanceWei.toString(),
         requiredBalance: amountToTransfer.toString(),
       });
