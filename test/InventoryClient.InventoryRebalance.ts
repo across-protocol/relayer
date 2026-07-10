@@ -511,6 +511,76 @@ describe("InventoryClient: Rebalancing inventory", function () {
       );
       expect(adapterManager.withdrawalsRequired[0].amountToWithdraw).eq(expectedWithdrawalAmount);
     });
+
+    it("Clamps the withdrawal to the on-chain balance when the cached balance is stale", async function () {
+      // The cached/virtual inventory balance flags an excess and yields a large desired withdrawal...
+      const startCumulative = inventoryClient.getCumulativeBalance(EvmAddress.from(testL1Token));
+      tokenClient.setTokenData(testChain, testL2Token, startCumulative); // ~50% allocation -> excess
+      const cumulativeBalance = inventoryClient.getCumulativeBalance(EvmAddress.from(testL1Token));
+      const currentChainBalance = inventoryClient.getBalanceOnChain(testChain, EvmAddress.from(testL1Token));
+      const currentAllocationPct = currentChainBalance.mul(toWei(1)).div(cumulativeBalance);
+      const targetPct = BigNumber.from(
+        inventoryConfig.tokenConfig[testL1Token][testL2Token.toNative()][testChain].targetPct
+      );
+      const desiredWithdrawalAmount = currentAllocationPct.sub(targetPct).mul(cumulativeBalance).div(toWei(1));
+      const targetBalance = targetPct.mul(cumulativeBalance).div(toWei(1));
+
+      // ...but the actual settled on-chain balance is lower than the cached balance implies (e.g. funds
+      // already left the chain via an in-flight rebalance). The withdrawal must be clamped to leave the
+      // target behind rather than attempt to withdraw funds that are no longer there.
+      const liveBalance = targetBalance.add(desiredWithdrawalAmount.div(2));
+      (inventoryClient as MockInventoryClient).setRemoteTokenBalance(testChain, testL2Token, liveBalance);
+
+      await inventoryClient.withdrawExcessBalances();
+
+      const expectedClampedAmount = liveBalance.sub(targetBalance); // == desiredWithdrawalAmount / 2
+      expect(adapterManager.withdrawalsRequired.length).to.eq(1);
+      expect(adapterManager.withdrawalsRequired[0].amountToWithdraw).eq(expectedClampedAmount);
+      expect(adapterManager.withdrawalsRequired[0].amountToWithdraw.lt(desiredWithdrawalAmount)).to.be.true;
+    });
+
+    it("Skips the withdrawal when the on-chain balance is at or below target", async function () {
+      const startCumulative = inventoryClient.getCumulativeBalance(EvmAddress.from(testL1Token));
+      tokenClient.setTokenData(testChain, testL2Token, startCumulative); // cached balance => excess flagged
+      const cumulativeBalance = inventoryClient.getCumulativeBalance(EvmAddress.from(testL1Token));
+      const targetPct = BigNumber.from(
+        inventoryConfig.tokenConfig[testL1Token][testL2Token.toNative()][testChain].targetPct
+      );
+      const targetBalance = targetPct.mul(cumulativeBalance).div(toWei(1));
+
+      // The actual on-chain balance is exactly the target -> nothing is withdrawable, so no withdrawal is queued.
+      (inventoryClient as MockInventoryClient).setRemoteTokenBalance(testChain, testL2Token, targetBalance);
+      await inventoryClient.withdrawExcessBalances();
+      expect(adapterManager.withdrawalsRequired.length).to.eq(0);
+    });
+
+    it("Reserves the chain's shortfall on top of the target when clamping", async function () {
+      const startCumulative = inventoryClient.getCumulativeBalance(EvmAddress.from(testL1Token));
+      tokenClient.setTokenData(testChain, testL2Token, startCumulative); // cached balance => excess flagged
+      const cumulativeBalance = inventoryClient.getCumulativeBalance(EvmAddress.from(testL1Token));
+      const targetPct = BigNumber.from(
+        inventoryConfig.tokenConfig[testL1Token][testL2Token.toNative()][testChain].targetPct
+      );
+      const targetBalance = targetPct.mul(cumulativeBalance).div(toWei(1));
+
+      // The chain carries an outstanding token shortfall that must be preserved on-chain alongside the target.
+      const shortfall = toMegaWei(500);
+      tokenClient.setTokenShortFallData(testChain, testL2Token, [BigNumber.from(1)], [shortfall]);
+
+      // The settled balance leaves only a small surplus above target + shortfall, forcing the clamp to bind.
+      const surplus = toMegaWei(100);
+      const liveBalance = targetBalance.add(shortfall).add(surplus);
+      (inventoryClient as MockInventoryClient).setRemoteTokenBalance(testChain, testL2Token, liveBalance);
+
+      await inventoryClient.withdrawExcessBalances();
+
+      // Only the surplus above (target + shortfall) is withdrawable; the shortfall stays on-chain. Without
+      // reserving the shortfall, the bot would have withdrawn (surplus + shortfall) and eaten into the
+      // inventory earmarked for unfilled deposits.
+      expect(adapterManager.withdrawalsRequired.length).to.eq(1);
+      expect(adapterManager.withdrawalsRequired[0].amountToWithdraw).eq(surplus);
+      expect(adapterManager.withdrawalsRequired[0].amountToWithdraw.lt(liveBalance.sub(targetBalance))).to.be.true;
+    });
   });
 
   describe("Remote chain token mappings", function () {

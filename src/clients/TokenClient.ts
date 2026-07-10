@@ -80,6 +80,29 @@ export class TokenClient {
     return this.tokenData[chainId][token.toNative()].balance;
   }
 
+  /**
+   * Performs a fresh on-chain read of the relayer's balance of `token` on `chainId`, bypassing the cached
+   * snapshot in `tokenData`. Dispatches on the chain VM so EVM, TVM (Tron), and SVM (Solana) chains are all
+   * supported: on EVM/TVM the token and wallet addresses are normalized to their ethers-compatible hex form
+   * (so Tron base58 addresses don't break `new Contract(...)`), while SVM reads the SPL token balance.
+   * Callers use this to guard against stale/virtual balances before submitting a transfer.
+   */
+  async getRemoteTokenBalance(chainId: number, token: Address): Promise<BigNumber> {
+    const spokePoolClient = this.spokePoolManager.getClient(chainId);
+    assert(isDefined(spokePoolClient), `SpokePoolClient not found for chainId ${chainId}`);
+
+    if (isEVMSpokePoolClient(spokePoolClient)) {
+      const erc20 = new Contract(token.toEvmAddress(), ERC20.abi, spokePoolClient.spokePool.provider);
+      return erc20.balanceOf(this.relayerEvmAddress.toEvmAddress());
+    } else if (isSVMSpokePoolClient(spokePoolClient)) {
+      assert(token.isSVM(), `Expected an SVM token address for chain ${chainId}`);
+      const provider = getSvmProvider(await getRedisCache());
+      return getSolanaTokenBalance(provider, token, this.relayerSvmAddress);
+    }
+
+    throw new Error(`Unknown SpokePool client type for ${getNetworkName(chainId)}`);
+  }
+
   decrementLocalBalance(chainId: number, token: Address, amount: BigNumber): void {
     const tokenAddr = token.toNative();
     this.tokenData[chainId][tokenAddr].balance = this.tokenData[chainId][tokenAddr].balance.sub(amount);
