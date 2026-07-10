@@ -1,12 +1,15 @@
 import { RebalancerAdapter, RebalanceRoute } from "../src/rebalancer/utils/interfaces";
 import { CumulativeBalanceRebalancerClient } from "../src/rebalancer/clients/CumulativeBalanceRebalancerClient";
+import { SameAssetRebalancerClient } from "../src/rebalancer/clients/SameAssetRebalancerClient";
 import {
   CumulativeTargetBalanceConfig,
   MaxAmountToTransferConfig,
   MaxPendingOrdersConfig,
   RebalancerConfig,
+  SameAssetConfig,
 } from "../src/rebalancer/RebalancerConfig";
-import { bnZero, EvmAddress, getTokenInfoFromSymbol, Signer, toBNWei } from "../src/utils";
+import { InventoryClient, Rebalance } from "../src/clients";
+import { bnZero, CHAIN_IDs, EvmAddress, getTokenInfoFromSymbol, Signer, toBNWei } from "../src/utils";
 import { BigNumber, createSpyLogger, ethers, expect } from "./utils";
 
 describe("RebalancerClient.cumulativeRebalancing", () => {
@@ -826,6 +829,82 @@ describe("RebalancerClient.cumulativeRebalancing", () => {
   });
 });
 
+describe("RebalancerClient.sameAssetRebalancing", () => {
+  const HUB_POOL_CHAIN_ID = CHAIN_IDs.MAINNET;
+  const DESTINATION_CHAIN_ID = CHAIN_IDs.AVALANCHE;
+  const USDT = "USDT";
+  const amount = (humanAmount: string): BigNumber => toBNWei(humanAmount, 6);
+  const route: RebalanceRoute = {
+    sourceChain: HUB_POOL_CHAIN_ID,
+    destinationChain: DESTINATION_CHAIN_ID,
+    sourceToken: USDT,
+    destinationToken: USDT,
+    adapter: "binance",
+  };
+
+  async function createSameAssetClient(adapter: MockRebalancerAdapter): Promise<SameAssetRebalancerClient> {
+    const config = new MockRebalancerConfig(
+      {},
+      { [USDT]: { [HUB_POOL_CHAIN_ID]: amount("100") } },
+      { binance: 10 },
+      HUB_POOL_CHAIN_ID,
+      { [USDT]: { [DESTINATION_CHAIN_ID]: true } }
+    );
+    const { spyLogger } = createSpyLogger();
+    const client = new SameAssetRebalancerClient(spyLogger, config, { binance: adapter }, adapter.baseSigner, false);
+    await client.initialize([route]);
+    return client;
+  }
+
+  function makeInventoryClient(rebalances: Rebalance[]): InventoryClient {
+    return {
+      rebalanceInventoryIfNeeded: async (returnRebalancesOnly?: boolean) => {
+        expect(returnRebalancesOnly).to.equal(true);
+        return rebalances;
+      },
+    } as unknown as InventoryClient;
+  }
+
+  function makeRebalance(chainId: number, humanAmount: string): Rebalance {
+    return {
+      chainId,
+      l1Token: EvmAddress.from(getTokenInfoFromSymbol(USDT, HUB_POOL_CHAIN_ID).address.toNative()),
+      l2Token: getTokenInfoFromSymbol(USDT, chainId).address,
+      balance: amount("1000"),
+      amount: amount(humanAmount),
+      isShortfallRebalance: false,
+    };
+  }
+
+  it("filters inventory rebalances and caps by the L1 source-chain limit", async () => {
+    const adapter = new MockRebalancerAdapter(ethers.Wallet.createRandom());
+    const client = await createSameAssetClient(adapter);
+
+    await client.rebalanceInventory(
+      makeInventoryClient([makeRebalance(DESTINATION_CHAIN_ID, "250"), makeRebalance(CHAIN_IDs.OPTIMISM, "250")]),
+      toBNWei("100")
+    );
+
+    expect(adapter.rebalances.length).to.equal(1);
+    expect(adapter.rebalances[0].route.sourceChain).to.equal(HUB_POOL_CHAIN_ID);
+    expect(adapter.rebalances[0].route.destinationChain).to.equal(DESTINATION_CHAIN_ID);
+    expect(adapter.rebalances[0].route.sourceToken).to.equal(USDT);
+    expect(adapter.rebalances[0].route.destinationToken).to.equal(USDT);
+    expect(adapter.rebalances[0].route.adapter).to.equal("binance");
+    expect(adapter.rebalances[0].amount.eq(amount("100"))).to.equal(true);
+  });
+
+  it("skips same-asset rebalances over the max fee", async () => {
+    const adapter = new MockRebalancerAdapter(ethers.Wallet.createRandom());
+    adapter.setEstimatedCost(route, amount("6"));
+    const client = await createSameAssetClient(adapter);
+
+    await client.rebalanceInventory(makeInventoryClient([makeRebalance(DESTINATION_CHAIN_ID, "100")]), toBNWei("5"));
+
+    expect(adapter.rebalances.length).to.equal(0);
+  });
+});
+
 class MockRebalancerAdapter implements RebalancerAdapter {
   public baseSignerAddress!: EvmAddress;
   public rebalances: { route: RebalanceRoute; amount: BigNumber }[] = [];
@@ -833,7 +912,7 @@ class MockRebalancerAdapter implements RebalancerAdapter {
   public initializeRebalanceResultMapping: { [route: string]: BigNumber } = {};
   private pendingOrders: string[] | undefined;
   private pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
-  private readonly baseSigner: Signer;
+  readonly baseSigner: Signer;
 
   constructor(baseSigner: Signer) {
     this.baseSigner = baseSigner;
@@ -848,7 +927,7 @@ class MockRebalancerAdapter implements RebalancerAdapter {
   }
 
   initializeRebalance(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber): Promise<BigNumber> {
-    const result = this.initializeRebalanceResultMapping[JSON.stringify(rebalanceRoute)] ?? amountToTransfer;
+    const result = this.initializeRebalanceResultMapping[this.routeKey(rebalanceRoute)] ?? amountToTransfer;
     if (result.gt(bnZero)) {
       this.rebalances.push({ route: rebalanceRoute, amount: amountToTransfer });
     }
@@ -880,22 +959,28 @@ class MockRebalancerAdapter implements RebalancerAdapter {
   }
 
   setEstimatedCost(route: RebalanceRoute, cost: BigNumber): void {
-    this.estimatedCostMapping[JSON.stringify(route)] = cost;
+    this.estimatedCostMapping[this.routeKey(route)] = cost;
   }
 
   setInitializeRebalanceResult(route: RebalanceRoute, amount: BigNumber): void {
-    this.initializeRebalanceResultMapping[JSON.stringify(route)] = amount;
+    this.initializeRebalanceResultMapping[this.routeKey(route)] = amount;
   }
 
   getEstimatedCost(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber, debugLog: boolean): Promise<BigNumber> {
     void amountToTransfer;
     void debugLog;
-    return Promise.resolve(this.estimatedCostMapping[JSON.stringify(rebalanceRoute)] ?? bnZero);
+    return Promise.resolve(this.estimatedCostMapping[this.routeKey(rebalanceRoute)] ?? bnZero);
+  }
+
+  private routeKey(route: RebalanceRoute): string {
+    const { sourceChain, destinationChain, sourceToken, destinationToken, adapter } = route;
+    return JSON.stringify({ sourceChain, destinationChain, sourceToken, destinationToken, adapter });
   }
 }
 
 class MockRebalancerConfig extends RebalancerConfig {
   declare public cumulativeTargetBalances: CumulativeTargetBalanceConfig;
+  declare public sameAssetBalances: SameAssetConfig;
   declare public maxAmountsToTransfer: MaxAmountToTransferConfig;
   declare public maxPendingOrders: MaxPendingOrdersConfig;
   declare public hubPoolChainId: number;
@@ -905,10 +990,12 @@ class MockRebalancerConfig extends RebalancerConfig {
     cumulativeBalanceTargets: CumulativeTargetBalanceConfig,
     maxAmountsToTransfer: MaxAmountToTransferConfig = {},
     maxPendingOrders: MaxPendingOrdersConfig = {},
-    hubPoolChainId = 1
+    hubPoolChainId = 1,
+    sameAssetBalances: SameAssetConfig = {}
   ) {
     super({});
     this.cumulativeTargetBalances = cumulativeBalanceTargets;
+    this.sameAssetBalances = sameAssetBalances;
     this.maxAmountsToTransfer = maxAmountsToTransfer;
     this.maxPendingOrders = maxPendingOrders;
     this.hubPoolChainId = hubPoolChainId;

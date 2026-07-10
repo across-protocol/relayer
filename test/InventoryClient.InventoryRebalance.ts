@@ -262,6 +262,18 @@ describe("InventoryClient: Rebalancing inventory", function () {
     expect(spyLogIncludes(spy, -2, '"proRataShare":"7.00%"')).to.be.true;
   });
 
+  it("Returns possible rebalances without sending bridge transactions", async function () {
+    tokenClient.decrementLocalBalance(ARBITRUM, toAddressType(l2TokensForUsdc[ARBITRUM], ARBITRUM), toMegaWei(500));
+
+    await inventoryClient.update();
+    const rebalances = await inventoryClient.rebalanceInventoryIfNeeded(true);
+
+    expect(rebalances.length).to.equal(1);
+    expect(rebalances[0].chainId).to.equal(ARBITRUM);
+    expect(rebalances[0].amount.eq(toMegaWei(515))).to.be.true;
+    expect(adapterManager.tokensSentCrossChain[ARBITRUM]).to.be.undefined;
+  });
+
   // Skipped: shortfall rebalances are temporarily disabled in InventoryClient.getPossibleRebalances(). Re-enable
   // alongside that logic.
   it.skip("Correctly decides when to execute rebalances: token shortfall", async function () {
@@ -481,6 +493,27 @@ describe("InventoryClient: Rebalancing inventory", function () {
       expect(adapterManager.withdrawalsRequired[0].l2ChainId).eq(testChain);
       expect(adapterManager.withdrawalsRequired[0].l2Token.toNative()).eq(testL2Token.toNative());
       expect(adapterManager.withdrawalsRequired[0].address.toNative()).eq(owner.address);
+    });
+
+    it("Returns excess withdrawals without sending L2 withdrawals", async function () {
+      const currentCumulativeBalance = inventoryClient.getCumulativeBalance(EvmAddress.from(testL1Token));
+      tokenClient.setTokenData(testChain, testL2Token, currentCumulativeBalance);
+      const currentAllocationPct = inventoryClient
+        .getBalanceOnChain(testChain, EvmAddress.from(testL1Token))
+        .mul(toWei(1))
+        .div(inventoryClient.getCumulativeBalance(EvmAddress.from(testL1Token)));
+
+      const withdrawals = await inventoryClient.withdrawExcessBalances(true);
+      const expectedWithdrawalPct = currentAllocationPct.sub(
+        inventoryConfig.tokenConfig[testL1Token][testL2Token.toNative()][testChain].targetPct
+      );
+      const expectedWithdrawalAmount = expectedWithdrawalPct
+        .mul(inventoryClient.getCumulativeBalance(EvmAddress.from(testL1Token)))
+        .div(toWei(1));
+
+      expect(withdrawals[testChain][0].amountToWithdraw).eq(expectedWithdrawalAmount);
+      expect(withdrawals[testChain][0].l2Token.toNative()).eq(testL2Token.toNative());
+      expect(adapterManager.withdrawalsRequired.length).to.equal(0);
     });
 
     it("Withdrawal amount is in correct L2 token decimals", async function () {
