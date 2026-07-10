@@ -64,7 +64,7 @@ type BinanceApiWithRecvWindow = BinanceApi & {
 // Alias for Binance network symbols.
 export const BINANCE_NETWORKS: { [chainId: number]: string } = {
   [CHAIN_IDs.ARBITRUM]: "ARBITRUM",
-  [CHAIN_IDs.AVALANCHE]: "AVAX",
+  [CHAIN_IDs.AVALANCHE]: "AVAXC",
   [CHAIN_IDs.BASE]: "BASE",
   [CHAIN_IDs.BSC]: "BSC",
   [CHAIN_IDs.MAINNET]: "ETH",
