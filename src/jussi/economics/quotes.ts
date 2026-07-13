@@ -6,7 +6,6 @@ import {
   Contract,
   EvmAddress,
   SendParamStruct,
-  Signer,
   TOKEN_SYMBOLS_MAP,
   assert,
   chainHasNativeToken,
@@ -56,26 +55,19 @@ export async function quoteOftRouteTransfer(params: {
     composeMsg: "0x",
     oftCmd: "0x",
   };
-  const quoteOftResult = (await reader.quoteOFT(sendParamStruct)) as unknown as [
-    unknown,
-    Array<{ feeAmountLD: BigNumber | string; description: string }>,
-    { amountReceivedLD: BigNumber | string },
-  ];
+  const quoteOftResult = await reader.quoteOFT(sendParamStruct);
   const amountReceivedDestinationNative = BigNumber.from(quoteOftResult[2].amountReceivedLD);
   const finalSendParamStruct: SendParamStruct = {
     ...sendParamStruct,
     minAmountLD: amountReceivedDestinationNative,
   };
-  const messageFeeIsNative = chainHasNativeToken(originChain);
-  const feeStruct = await reader.quoteSend(finalSendParamStruct, !messageFeeIsNative);
-  const messageFeeAmount = messageFeeIsNative ? feeStruct.nativeFee : feeStruct.lzTokenFee;
+  const feeStruct = await reader.quoteSend(finalSendParamStruct, false);
 
   return {
     roundedInputSourceNative: roundedAmount,
     amountReceivedDestinationNative,
-    ...(messageFeeIsNative ? {} : { messageFeeAssetAddress: resolveOftQuoteSendFeeAsset(originChain) }),
-    messageFeeAmount: BigNumber.from(messageFeeAmount),
-    messageFeeIsNative,
+    ...(chainHasNativeToken(originChain) ? {} : { messageFeeAssetAddress: resolveOftQuoteSendFeeAsset(originChain) }),
+    messageFeeAmount: BigNumber.from(feeStruct.nativeFee),
     sendParamStruct: finalSendParamStruct,
   };
 }
@@ -83,7 +75,7 @@ export async function quoteOftRouteTransfer(params: {
 export async function quoteLiveOftRouteTransfer(
   candidate: GraphEdgeCandidate,
   amount: BigNumber,
-  baseSigner: Signer,
+  recipient: string,
   hubPoolChainId = DEFAULT_HUB_POOL_CHAIN_ID
 ): Promise<OftRouteTransferQuote> {
   const l1Token = EvmAddress.from(TOKEN_SYMBOLS_MAP[candidate.from.logicalAsset].addresses[hubPoolChainId]);
@@ -96,7 +88,7 @@ export async function quoteLiveOftRouteTransfer(
     originChain: candidate.from.chainId,
     destinationChain: candidate.to.chainId,
     sourceDecimals: candidate.from.decimals,
-    recipient: EvmAddress.from(await baseSigner.getAddress()),
+    recipient: EvmAddress.from(recipient),
     amount,
   });
 }

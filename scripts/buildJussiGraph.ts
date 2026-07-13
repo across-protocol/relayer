@@ -3,25 +3,23 @@ import dotenv from "dotenv";
 dotenv.config();
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, parse, resolve } from "node:path";
-import util from "util";
+import { inspect, isDeepStrictEqual, parseArgs } from "node:util";
 import winston from "winston";
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { getRedisCache } from "../src/cache/Redis";
+import { getAcrossHost } from "../src/clients/AcrossAPIClient";
 import { updateSpokePoolClients } from "../src/common";
 import { JussiApiClient } from "../src/jussi/JussiApiClient";
 import { JussiGraphPublisher, validateJussiUploadEnv } from "../src/jussi/JussiGraphPublisher";
 import {
   buildJussiGraphEnvelope,
-  buildJussiGraphJson,
-  buildJussiRateLimitBucketsJson,
   buildJussiTopologyArtifact,
   JUSSI_LOGICAL_ASSETS,
-  JussiGraphJson,
+  JussiPutGraphRequest,
   LogicalAsset,
   PreparedGraphTopology,
   prepareGraphTopology,
   runFullBuild,
-  stableJsonStringify,
 } from "../src/jussi/buildGraph";
 import { RelayerConfig } from "../src/relayer/RelayerConfig";
 import { constructRelayerClients } from "../src/relayer/RelayerClientHelper";
@@ -33,30 +31,35 @@ import { getNativeTokenInfoForChain } from "../src/utils/TokenUtils";
 import { isDefined } from "../src/utils/TypeGuards";
 import { disconnectRedisClients } from "../src/utils/Redis";
 
-const GRAPH_JSON_OUT_ENV = "JUSSI_GRAPH_JSON_OUT";
-const RATE_LIMIT_BUCKETS_JSON_OUT_ENV = "JUSSI_RATE_LIMIT_BUCKETS_JSON_OUT";
-const PRICES_BY_ASSET_JSON_OUT_ENV = "JUSSI_PRICES_BY_ASSET_JSON_OUT";
-const TOPOLOGY_JSON_OUT_ENV = "JUSSI_TOPOLOGY_JSON_OUT";
-const TOPOLOGY_JSON_IN_ENV = "JUSSI_TOPOLOGY_JSON_IN";
-const DEFAULT_TOPOLOGY_ARTIFACT_PATH = "src/jussi/graphs/sampleTopology.json";
-
 export type BuildJussiGraphFlags = {
   check: boolean;
+  relayerAddress?: string;
   topologyOnly: boolean;
   upload: boolean;
 };
 
 export function parseBuildJussiGraphFlags(args: string[]): BuildJussiGraphFlags {
-  const flags: BuildJussiGraphFlags = { check: false, topologyOnly: false, upload: false };
-  for (const arg of args) {
-    if (arg === "--check") {
-      flags.check = true;
-    } else if (arg === "--topology-only") {
-      flags.topologyOnly = true;
-    } else if (arg === "--upload") {
-      flags.upload = true;
-    }
+  const { values } = parseArgs({
+    args,
+    allowPositionals: true,
+    strict: false,
+    options: {
+      check: { type: "boolean", multiple: true },
+      relayerAddress: { type: "string" },
+      "topology-only": { type: "boolean", multiple: true },
+      upload: { type: "boolean", multiple: true },
+    },
+  });
+  if (values.relayerAddress === true) {
+    throw new Error("--relayerAddress requires an address");
   }
+  const enabled = (value: unknown): boolean => Array.isArray(value) && value.includes(true);
+  const flags: BuildJussiGraphFlags = {
+    check: enabled(values.check),
+    ...(typeof values.relayerAddress === "string" ? { relayerAddress: values.relayerAddress } : {}),
+    topologyOnly: enabled(values["topology-only"]),
+    upload: enabled(values.upload),
+  };
   if (flags.check && !flags.topologyOnly) {
     throw new Error("--check requires --topology-only");
   }
@@ -64,10 +67,6 @@ export function parseBuildJussiGraphFlags(args: string[]): BuildJussiGraphFlags 
     throw new Error("--topology-only and --upload are mutually exclusive");
   }
   return flags;
-}
-
-export function resolveRuntimeRebalanceRoutes(prepared: Pick<PreparedGraphTopology, "rebalanceRoutes">) {
-  return prepared.rebalanceRoutes;
 }
 
 function createScriptLogger(): winston.Logger {
@@ -80,35 +79,6 @@ function createScriptLogger(): winston.Logger {
       }),
     ],
   });
-}
-
-async function waitForScriptLogger(logger: winston.Logger): Promise<void> {
-  const isFlushableTransport = (
-    transport: winston.Logger["transports"][number]
-  ): transport is winston.Logger["transports"][number] & { isFlushed: boolean } => {
-    return "isFlushed" in transport && typeof (transport as { isFlushed?: unknown }).isFlushed === "boolean";
-  };
-  const flushableTransports = logger.transports.filter(isFlushableTransport);
-  const flushTimeoutSeconds = Number(process.env.LOGGER_FLUSH_TIMEOUT ?? "30") || 30;
-  await Promise.race([
-    (async () => {
-      while (!flushableTransports.every((transport) => transport.isFlushed)) {
-        await delay(0.5);
-      }
-    })(),
-    delay(flushTimeoutSeconds),
-  ]);
-}
-
-function requireEnvironmentVariable(name: string): void {
-  if (!process.env[name]) {
-    throw new Error(`${name} must be set`);
-  }
-}
-
-function syncRelayerChains(relayerConfig: RelayerConfig, chainIds: number[]): void {
-  relayerConfig.relayerOriginChains.splice(0, relayerConfig.relayerOriginChains.length, ...chainIds);
-  relayerConfig.relayerDestinationChains.splice(0, relayerConfig.relayerDestinationChains.length, ...chainIds);
 }
 
 function ensureGraphLogicalAssetsAreIncludedInRelayerTokens(): void {
@@ -145,33 +115,17 @@ async function writeJsonArtifact(filePath: string | undefined, value: unknown): 
   await writeFile(resolvedPath, `${JSON.stringify(value, null, 2)}\n`);
 }
 
-async function readJsonArtifact(filePath: string): Promise<unknown> {
-  return JSON.parse(await readFile(resolve(filePath), "utf8"));
-}
-
-function defaultRateLimitBucketsArtifactPath(graphJsonPath: string | undefined): string | undefined {
+function defaultCompanionArtifactPath(graphJsonPath: string | undefined, artifactName: string): string | undefined {
   if (!graphJsonPath) {
     return undefined;
   }
 
   const resolvedGraphPath = resolve(graphJsonPath);
   const parsedPath = parse(resolvedGraphPath);
+  const capitalizedArtifactName = `${artifactName[0].toUpperCase()}${artifactName.slice(1)}`;
   const derivedFileName = parsedPath.name.endsWith("Graph")
-    ? `${parsedPath.name.slice(0, -"Graph".length)}RateLimitBuckets${parsedPath.ext}`
-    : `${parsedPath.name}.rateLimitBuckets${parsedPath.ext}`;
-  return join(parsedPath.dir, derivedFileName);
-}
-
-function defaultPricesByAssetArtifactPath(graphJsonPath: string | undefined): string | undefined {
-  if (!graphJsonPath) {
-    return undefined;
-  }
-
-  const resolvedGraphPath = resolve(graphJsonPath);
-  const parsedPath = parse(resolvedGraphPath);
-  const derivedFileName = parsedPath.name.endsWith("Graph")
-    ? `${parsedPath.name.slice(0, -"Graph".length)}Prices${parsedPath.ext}`
-    : `${parsedPath.name}.prices${parsedPath.ext}`;
+    ? `${parsedPath.name.slice(0, -"Graph".length)}${capitalizedArtifactName}${parsedPath.ext}`
+    : `${parsedPath.name}.${artifactName}${parsedPath.ext}`;
   return join(parsedPath.dir, derivedFileName);
 }
 
@@ -179,26 +133,13 @@ function formatExampleUsdPrice(value: number): string {
   return value.toFixed(8).replace(/\.?0+$/, "");
 }
 
-function getAcrossApiHost(hubChainId: number): string {
-  return process.env.ACROSS_API_HOST ?? (hubChainId === CHAIN_IDs.MAINNET ? "app.across.to" : "testnet.across.to");
-}
-
-export function resolveNativePriceChainIdsForPrices(
-  graphJson: Pick<JussiGraphJson, "logical_assets" | "nodes">
-): number[] {
-  const aliasedNativeChainIds = new Set(
-    Object.values(graphJson.logical_assets)
-      .flatMap((definition) => definition.native_price_alias_chain_ids ?? [])
-      .map(Number)
-  );
-  return Array.from(new Set(graphJson.nodes.map((node) => node.chain_id)))
-    .sort((left, right) => left - right)
-    .filter((chainId) => !aliasedNativeChainIds.has(chainId));
-}
-
-async function buildPricesByAsset(graphJson: JussiGraphJson, logger: winston.Logger): Promise<Record<string, string>> {
+async function buildPricesByAsset(
+  graphJson: JussiPutGraphRequest,
+  requiredNativePriceChains: number[],
+  logger: winston.Logger
+): Promise<Record<string, string>> {
   const priceClient = new PriceClient(logger, [
-    new acrossApi.PriceFeed({ host: getAcrossApiHost(CHAIN_IDs.MAINNET) }),
+    new acrossApi.PriceFeed({ host: getAcrossHost(CHAIN_IDs.MAINNET) }),
     new coingecko.PriceFeed({ apiKey: process.env.COINGECKO_PRO_API_KEY }),
     new defiLlama.PriceFeed(),
   ]);
@@ -210,7 +151,7 @@ async function buildPricesByAsset(graphJson: JussiGraphJson, logger: winston.Log
     pricesByAsset[`logical:${logicalAsset}`] = formatExampleUsdPrice(Number(price.price));
   }
 
-  for (const chainId of resolveNativePriceChainIdsForPrices(graphJson)) {
+  for (const chainId of requiredNativePriceChains) {
     const nativeTokenInfo = getNativeTokenInfoForChain(chainId, CHAIN_IDs.MAINNET);
     const price = await priceClient.getPriceByAddress(nativeTokenInfo.address);
     pricesByAsset[`native:${chainId}`] = formatExampleUsdPrice(Number(price.price));
@@ -236,48 +177,51 @@ function printGasPriceDiagnostics(
 }
 
 async function prepareGraphTopologyFromEnv(): Promise<PreparedGraphTopology> {
-  requireEnvironmentVariable("RELAYER_EXTERNAL_INVENTORY_CONFIG");
-  requireEnvironmentVariable("REBALANCER_EXTERNAL_CONFIG");
+  for (const name of ["RELAYER_EXTERNAL_INVENTORY_CONFIG", "REBALANCER_EXTERNAL_CONFIG"]) {
+    if (!process.env[name]) {
+      throw new Error(`${name} must be set`);
+    }
+  }
 
   ensureGraphLogicalAssetsAreIncludedInRelayerTokens();
   const relayerConfig = new RelayerConfig(process.env);
   const rebalancerConfig = new RebalancerConfig(process.env);
-  syncRelayerChains(
-    relayerConfig,
-    rebalancerConfig.chainIds.filter((chainId) => !chainIsSvm(chainId))
-  );
+  const evmChainIds = rebalancerConfig.chainIds.filter((chainId) => !chainIsSvm(chainId));
+  relayerConfig.relayerOriginChains.splice(0, relayerConfig.relayerOriginChains.length, ...evmChainIds);
+  relayerConfig.relayerDestinationChains.splice(0, relayerConfig.relayerDestinationChains.length, ...evmChainIds);
 
   return prepareGraphTopology({ relayerConfig, rebalancerConfig });
 }
 
 async function writeBuildArtifacts(
   graph: Awaited<ReturnType<typeof runFullBuild>>,
+  requiredNativePriceChains: number[],
   logger: winston.Logger
 ): Promise<void> {
-  const graphJsonOutPath = process.env[GRAPH_JSON_OUT_ENV];
+  const graphJsonOutPath = process.env.JUSSI_GRAPH_JSON_OUT;
   const rateLimitBucketsJsonOutPath =
-    process.env[RATE_LIMIT_BUCKETS_JSON_OUT_ENV] ?? defaultRateLimitBucketsArtifactPath(graphJsonOutPath);
+    process.env.JUSSI_RATE_LIMIT_BUCKETS_JSON_OUT ?? defaultCompanionArtifactPath(graphJsonOutPath, "rateLimitBuckets");
   const pricesByAssetJsonOutPath =
-    process.env[PRICES_BY_ASSET_JSON_OUT_ENV] ?? defaultPricesByAssetArtifactPath(graphJsonOutPath);
-  const graphJson = buildJussiGraphJson(graph);
-  const artifactWrites: Promise<unknown>[] = [
+    process.env.JUSSI_PRICES_BY_ASSET_JSON_OUT ?? defaultCompanionArtifactPath(graphJsonOutPath, "prices");
+  const graphJson = graph.payload;
+  await Promise.all([
     writeJsonArtifact(graphJsonOutPath, graphJson),
-    writeJsonArtifact(rateLimitBucketsJsonOutPath, buildJussiRateLimitBucketsJson(graph)),
-  ];
-  if (pricesByAssetJsonOutPath) {
-    artifactWrites.push(
-      buildPricesByAsset(graphJson, logger).then((pricesByAsset) =>
-        writeJsonArtifact(pricesByAssetJsonOutPath, pricesByAsset)
-      )
-    );
-  }
-  await Promise.all(artifactWrites);
+    writeJsonArtifact(rateLimitBucketsJsonOutPath, { rate_limit_buckets: graph.rate_limit_buckets }),
+    ...(pricesByAssetJsonOutPath
+      ? [
+          buildPricesByAsset(graphJson, requiredNativePriceChains, logger).then((pricesByAsset) =>
+            writeJsonArtifact(pricesByAssetJsonOutPath, pricesByAsset)
+          ),
+        ]
+      : []),
+  ]);
   process.stdout.write(`${JSON.stringify(buildJussiGraphEnvelope(graph), null, 2)}\n`);
 }
 
 async function runPreparedFullBuild(
   prepared: PreparedGraphTopology,
   logger: winston.Logger,
+  relayerAddress?: string,
   graphId?: string
 ): Promise<Awaited<ReturnType<typeof runFullBuild>>> {
   const baseSigner = await retrieveSignerFromCLIArgs();
@@ -285,7 +229,8 @@ async function runPreparedFullBuild(
   const { inventoryClient, spokePoolClients, tokenClient } = await constructRelayerClients(
     logger,
     prepared.relayerConfig,
-    baseSigner
+    baseSigner,
+    relayerAddress
   );
 
   await Promise.all([
@@ -304,7 +249,7 @@ async function runPreparedFullBuild(
   const rebalancerClient = await constructCumulativeBalanceRebalancerClient(
     logger,
     baseSigner,
-    resolveRuntimeRebalanceRoutes(prepared)
+    prepared.rebalanceRoutes
   );
   const graph = await runFullBuild(prepared, {
     logger,
@@ -314,39 +259,25 @@ async function runPreparedFullBuild(
     graphId,
   });
   printGasPriceDiagnostics(graph.gasPriceDiagnostics);
-  await writeBuildArtifacts(graph, logger);
+  await writeBuildArtifacts(graph, prepared.topology.requiredNativePriceChains, logger);
   return graph;
 }
 
 async function runTopologyOnly(prepared: PreparedGraphTopology, flags: BuildJussiGraphFlags): Promise<void> {
+  const artifact = buildJussiTopologyArtifact(prepared);
   if (flags.check) {
-    await compareTopologyArtifact(prepared);
+    const artifactPath = resolve(process.env.JUSSI_TOPOLOGY_JSON_IN ?? "src/jussi/graphs/sampleTopology.json");
+    const committedArtifact = JSON.parse(await readFile(artifactPath, "utf8"));
+    const matches = isDeepStrictEqual(artifact, committedArtifact);
+    process.stdout.write(`${JSON.stringify({ artifactPath, matches }, null, 2)}\n`);
+    if (!matches) {
+      throw new Error("Topology artifact does not match committed snapshot");
+    }
     return;
   }
 
-  const artifact = buildJussiTopologyArtifact(prepared);
-  await writeJsonArtifact(process.env[TOPOLOGY_JSON_OUT_ENV], artifact);
+  await writeJsonArtifact(process.env.JUSSI_TOPOLOGY_JSON_OUT, artifact);
   process.stdout.write(`${JSON.stringify(artifact, null, 2)}\n`);
-}
-
-async function compareTopologyArtifact(prepared: PreparedGraphTopology): Promise<void> {
-  const artifactPath = resolve(process.env[TOPOLOGY_JSON_IN_ENV] ?? DEFAULT_TOPOLOGY_ARTIFACT_PATH);
-  const artifact = buildJussiTopologyArtifact(prepared);
-  const committedArtifact = await readJsonArtifact(artifactPath);
-  const matches = stableJsonStringify(artifact) === stableJsonStringify(committedArtifact);
-  process.stdout.write(
-    `${JSON.stringify(
-      {
-        artifactPath,
-        matches,
-      },
-      null,
-      2
-    )}\n`
-  );
-  if (!matches) {
-    throw new Error("Topology artifact does not match committed snapshot");
-  }
 }
 
 async function run(flags: BuildJussiGraphFlags, logger: winston.Logger): Promise<void> {
@@ -358,8 +289,8 @@ async function run(flags: BuildJussiGraphFlags, logger: winston.Logger): Promise
     return;
   }
 
-  if (!flags.upload) {
-    await runPreparedFullBuild(prepared, logger);
+  if (!uploadUrl) {
+    await runPreparedFullBuild(prepared, logger, flags.relayerAddress);
     return;
   }
 
@@ -367,14 +298,11 @@ async function run(flags: BuildJussiGraphFlags, logger: winston.Logger): Promise
   if (!isDefined(redis)) {
     throw new Error("Redis is required for --upload");
   }
-  if (!isDefined(uploadUrl)) {
-    throw new Error("JUSSI_API_URL must be set for --upload");
-  }
   const publisher = new JussiGraphPublisher({
     apiClient: new JussiApiClient(uploadUrl.toString(), process.env.JUSSI_API_TOKEN),
     logger,
     redis,
-    runFullBuild: (graphId) => runPreparedFullBuild(prepared, logger, graphId),
+    runFullBuild: (graphId) => runPreparedFullBuild(prepared, logger, flags.relayerAddress, graphId),
   });
   const result = await publisher.publishUpload();
   logger.debug({ at: "buildJussiGraph", message: "Uploaded Jussi graph bundle", ...result });
@@ -387,8 +315,7 @@ async function main(): Promise<void> {
     await run(parseBuildJussiGraphFlags(process.argv.slice(2)), logger);
   } catch (error) {
     exitCode = 1;
-    const message =
-      error instanceof Error ? error.message : util.inspect(error, { depth: null, breakLength: Infinity });
+    const message = error instanceof Error ? error.message : inspect(error, { depth: null, breakLength: Infinity });
     logger.error({
       at: "buildJussiGraph",
       message: "Process exited with error",
@@ -397,7 +324,6 @@ async function main(): Promise<void> {
     });
   } finally {
     await disconnectRedisClients(logger);
-    await waitForScriptLogger(logger);
     await delay(1);
     // eslint-disable-next-line no-process-exit
     process.exit(exitCode);

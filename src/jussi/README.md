@@ -5,19 +5,9 @@
 The builder is schema-first: it emits the canonical Jussi graph shape and populates venue economics from live relayer adapters instead of baking a separate graph schema into `relayer-v2`.
 The implementation is split into topology, economics, serialization, API-client, and publisher modules under `src/jussi/`.
 
-## Public Build API
+## Build API
 
-New callers should import graph-building APIs from `src/jussi/buildGraph.ts`.
-
-Use `buildJussiGraphUploadBundle(params)` when a client needs a graph ready for `JussiApiClient.putGraphBundle(graphId, bundle)`. It runs the full topology plus live-economics build and returns:
-
-- `graphId`: the id to use in `PUT /graph_bundles/{graphId}`
-- `bundle`: the PUT body `{ graph, rate_limit_buckets }`
-- `envelope`: the stdout/debug shape `{ graph_id, payload }`
-- `bundleHash`: the stable bundle hash for metadata or reconciliation
-- `graph`: the intermediate `BuiltJussiGraph` for artifact writers
-
-Use `buildJussiGraphDefinition(params)` only when the caller needs the intermediate graph object before serialization. Use `prepareGraphTopology(...)` plus `runFullBuild(prepared, deps)` only for advanced flows that intentionally separate deterministic topology checks from live signer/client construction, such as `scripts/buildJussiGraph.ts` and the upload publisher.
+Graph builders should import from `src/jussi/buildGraph.ts` and use the single shared path: call `prepareGraphTopology(...)` for deterministic topology, then `runFullBuild(prepared, deps)` for live economics. Serialize the result with `buildJussiGraphBundleJson(...)` for `JussiApiClient.putGraphBundle(...)` or `buildJussiGraphEnvelope(...)` for the stdout/debug shape. `scripts/buildJussiGraph.ts` is the reference caller for artifact generation and uploads.
 
 Today that means:
 
@@ -30,9 +20,17 @@ Today that means:
 
 ## Build Modes
 
-All modes start with `prepareGraphTopology`, a pure step that parses relayer/rebalancer config, computes the hub context, computes the single rebalance route set, and builds the final deduped topology. It constructs no signer, clients, wallet, or Redis connection.
+All modes start with `prepareGraphTopology`, a pure step that parses relayer/rebalancer config, computes the hub context, merges the configured rebalance route sources, and builds the final deduped topology. It constructs no signer, clients, wallet, or Redis connection.
 
-Default and upload full builds initialize rebalancer pricing adapters with the prepared rebalance route set, including bridge-derived routes added during topology preparation, so every serialized candidate can be priced against an initialized adapter route.
+The prepared route set has three sources:
+
+- cumulative-mode swap and same-asset routes from `buildRebalanceRoutes(rebalancerConfig)`;
+- dedicated SameAsset-mode routes from `buildSameAssetRebalanceRoutes(rebalancerConfig)`, filtered by the supported-route catalog and `sameAssetBalances` configuration;
+- bridge-derived routes discovered from the InventoryConfig-backed graph nodes by `buildBridgeAdapterRoutes(...)`.
+
+Every endpoint of a configured SameAsset route must already be materialized in the graph node set. The hub source may use the neutral logical-asset node that Jussi always materializes; every non-hub endpoint must be explicitly managed by InventoryConfig. Topology preparation fails with route, token, and chain context when a required node is missing; it does not synthesize an unconfigured destination or silently omit the route. This keeps the graph aligned with both operator intent in RebalancerConfig and the inventory locations that the relayer actually manages.
+
+Default and upload full builds initialize rebalancer pricing adapters with the complete prepared route set, including SameAsset and bridge-derived routes added during topology preparation, so every serialized candidate can be priced against an initialized adapter route. Same-symbol Binance routes use the existing `binance_cex_bridge` edge family and Binance rate-limit bucket handling; they do not become spot-swap edges merely because the swap-rebalancer Binance adapter executes them.
 
 | Mode | Behavior after topology prep | Signer | Redis |
 |------|------------------------------|--------|-------|
@@ -49,21 +47,26 @@ The committed topology artifact captures materialized nodes, final post-dedupe e
 
 ## File Types
 
-- `src/jussi/graphs/sampleGraph.json`: the pure Jussi graph JSON
+- `src/jussi/graphs/sampleGraph.json`: the pure Jussi graph JSON; for the shared sample workflow, this is an exact mirror of `graphs/sampleGraph.json` in the Jussi repository
 - `src/jussi/graphs/sampleRateLimitBuckets.json`: the companion rate-limit bucket JSON
 - `src/jussi/graphs/samplePrices.json`: an example `prices_by_asset` value for `find_optimal_paths`, generated from live prices at build time; it includes `logical:<asset>` prices plus only the explicit `native:<chainId>` prices not covered by `native_price_alias_chain_ids`
 - `src/jussi/graphs/sampleTopology.json`: the committed deterministic topology snapshot used by `--topology-only --check`
 
 ## How To Generate Them
 
-Run the graph builder once and tell it where to write the checked-in graph artifact. The script will also write the companion rate-limit-buckets file next to it by default:
+For the checked-in cross-repository sample, follow Jussi's [Building Graphs](https://github.com/across-protocol/jussi/blob/master/docs/building-graphs.md) procedure as the source of truth. Generate from matching current production Configurama inventory and rebalancer outputs, use the sandbox relayer ledger address from ops-config through `--relayerAddress`, and write the graph and price samples into the sibling Jussi checkout. After Jussi's sample-artifact validation passes, copy the resulting graph and price JSON byte-for-byte into this repository and regenerate `sampleTopology.json` from the same Configurama inputs. Do not independently generate the two graph copies from separate live-economics runs.
+
+For a local build outside that shared workflow, set `INVENTORY_CONFIG` and `REBALANCER_CONFIG` to matching generated config files and tell the builder where to write the graph. The script also writes the companion rate-limit-buckets and price files next to it by default:
 
 ```bash
-RELAYER_EXTERNAL_INVENTORY_CONFIG=../inventory-configs/prod.json \
-REBALANCER_EXTERNAL_CONFIG=../inventory-configs/rebalancer.json \
+RELAYER_EXTERNAL_INVENTORY_CONFIG="$INVENTORY_CONFIG" \
+REBALANCER_EXTERNAL_CONFIG="$REBALANCER_CONFIG" \
 JUSSI_GRAPH_JSON_OUT=src/jussi/graphs/sampleGraph.json \
-yarn build-jussi-graph --wallet gckms --keys bot4 --binanceSecretKey <binance-secret-key>
+yarn build-jussi-graph --wallet gckms --keys bot4 --binanceSecretKey <binance-secret-key> \
+  --relayerAddress "$RELAYER_ADDRESS"
 ```
+
+Use `--relayerAddress <0x-address>` when the graph should query inventory for a target relayer address that is different from the execution wallet. The signer still comes from the selected `--wallet` mode; the override is only for graph-builder balance and quote inputs, so regenerating sandbox artifacts does not require the target relayer private key.
 
 If you want to override the companion output path explicitly, set `JUSSI_RATE_LIMIT_BUCKETS_JSON_OUT`.
 
@@ -88,8 +91,8 @@ yarn build-jussi-graph --wallet gckms --keys bot4 --binanceSecretKey <binance-se
 To run a signer-free topology-only build:
 
 ```bash
-RELAYER_EXTERNAL_INVENTORY_CONFIG=../inventory-configs/prod.json \
-REBALANCER_EXTERNAL_CONFIG=../inventory-configs/rebalancer.json \
+RELAYER_EXTERNAL_INVENTORY_CONFIG="$INVENTORY_CONFIG" \
+REBALANCER_EXTERNAL_CONFIG="$REBALANCER_CONFIG" \
 yarn build-jussi-graph --topology-only
 ```
 
@@ -98,8 +101,8 @@ Use `yarn --silent run build-jussi-graph --topology-only` or call `node -r ts-no
 To regenerate the committed topology snapshot without GCP, Binance, Redis, or a wallet:
 
 ```bash
-RELAYER_EXTERNAL_INVENTORY_CONFIG=../inventory-configs/prod.json \
-REBALANCER_EXTERNAL_CONFIG=../inventory-configs/rebalancer.json \
+RELAYER_EXTERNAL_INVENTORY_CONFIG="$INVENTORY_CONFIG" \
+REBALANCER_EXTERNAL_CONFIG="$REBALANCER_CONFIG" \
 JUSSI_TOPOLOGY_JSON_OUT=src/jussi/graphs/sampleTopology.json \
 yarn build-jussi-graph --topology-only
 ```
@@ -107,12 +110,14 @@ yarn build-jussi-graph --topology-only
 To verify topology drift against the committed snapshot:
 
 ```bash
-RELAYER_EXTERNAL_INVENTORY_CONFIG=../inventory-configs/prod.json \
-REBALANCER_EXTERNAL_CONFIG=../inventory-configs/rebalancer.json \
+RELAYER_EXTERNAL_INVENTORY_CONFIG="$INVENTORY_CONFIG" \
+REBALANCER_EXTERNAL_CONFIG="$REBALANCER_CONFIG" \
 yarn build-jussi-graph --topology-only --check
 ```
 
 `--topology-only --check` reads `src/jussi/graphs/sampleTopology.json` by default. Override the input path with `JUSSI_TOPOLOGY_JSON_IN`.
+
+Validate SameAsset coverage from configuration rather than checking a hard-coded route. Load the same production RebalancerConfig, call `buildSameAssetRebalanceRoutes`, and for every returned route compute its canonical source and destination node keys from token metadata. Each key must exist in the topology and graph; the topology must contain a directed candidate whose rebalance-route metadata and adapter match the route, and the full graph must contain the corresponding directed serialized edge. This procedure automatically covers additions or removals in the support catalog and `sameAssetBalances`.
 
 ## How To Use The PUT Payload
 
@@ -140,8 +145,8 @@ Use the `graph_id` from the stdout envelope emitted by the graph builder. The ch
 `--upload` automates the PUT path:
 
 ```bash
-RELAYER_EXTERNAL_INVENTORY_CONFIG=../inventory-configs/prod.json \
-REBALANCER_EXTERNAL_CONFIG=../inventory-configs/rebalancer.json \
+RELAYER_EXTERNAL_INVENTORY_CONFIG="$INVENTORY_CONFIG" \
+REBALANCER_EXTERNAL_CONFIG="$REBALANCER_CONFIG" \
 JUSSI_API_URL=http://127.0.0.1:8080 \
 yarn build-jussi-graph --upload --wallet gckms --keys bot4 --binanceSecretKey <binance-secret-key>
 ```

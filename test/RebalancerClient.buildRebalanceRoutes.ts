@@ -2,7 +2,11 @@ import { expect } from "./utils";
 import { CHAIN_IDs } from "../src/utils";
 import { RebalancerConfig } from "../src/rebalancer/RebalancerConfig";
 import { buildRebalanceRoutes } from "../src/rebalancer/buildRebalanceRoutes";
-import { buildSameAssetRebalanceRoutes } from "../src/rebalancer/buildSameAssetRebalanceRoutes";
+import {
+  buildSameAssetRebalanceRoutes,
+  SAME_ASSET_REBALANCE_ROUTE_SUPPORT,
+  type SameAssetRebalanceRouteSupport,
+} from "../src/rebalancer/buildSameAssetRebalanceRoutes";
 
 function buildSyntheticRebalancerConfig(): RebalancerConfig {
   return new RebalancerConfig({
@@ -133,20 +137,33 @@ function buildSyntheticRebalancerConfigWithTron(): RebalancerConfig {
   });
 }
 
-function buildSyntheticSameAssetRebalancerConfig(): RebalancerConfig {
+function buildSyntheticSameAssetRebalancerConfig(
+  supportedRoutes: readonly SameAssetRebalanceRouteSupport[]
+): RebalancerConfig {
+  const sameAssetBalances = supportedRoutes.reduce<Record<string, { chains: Record<number, number> }>>(
+    (balances, { token, chainId }) => {
+      balances[token] ??= { chains: {} };
+      balances[token].chains[chainId] = 0;
+      return balances;
+    },
+    {}
+  );
+
   return new RebalancerConfig({
     HUB_CHAIN_ID: String(CHAIN_IDs.MAINNET),
     REBALANCER_CONFIG: JSON.stringify({
-      sameAssetBalances: {
-        USDT: {
-          chains: {
-            [CHAIN_IDs.AVALANCHE]: 0,
-          },
-        },
-      },
+      sameAssetBalances,
     }),
   });
 }
+
+const EXPECTED_SAME_ASSET_ROUTES = SAME_ASSET_REBALANCE_ROUTE_SUPPORT.map(({ token, chainId, adapter }) => ({
+  sourceChain: CHAIN_IDs.MAINNET,
+  destinationChain: chainId,
+  sourceToken: token,
+  destinationToken: token,
+  adapter,
+}));
 
 function routeExists(
   routes: ReturnType<typeof buildRebalanceRoutes>,
@@ -306,18 +323,29 @@ describe("buildRebalanceRoutes", function () {
 });
 
 describe("buildSameAssetRebalanceRoutes", function () {
-  it("builds configured L1-to-L2 same-asset routes only", function () {
-    const routes = buildSameAssetRebalanceRoutes(buildSyntheticSameAssetRebalancerConfig());
+  it("builds exactly the configured forward routes in the SameAsset support catalog", function () {
+    const routes = buildSameAssetRebalanceRoutes(
+      buildSyntheticSameAssetRebalancerConfig(SAME_ASSET_REBALANCE_ROUTE_SUPPORT)
+    );
 
-    expect(routes).to.deep.equal([
-      {
-        sourceChain: CHAIN_IDs.MAINNET,
-        destinationChain: CHAIN_IDs.AVALANCHE,
-        sourceToken: "USDT",
-        destinationToken: "USDT",
-        adapter: "binance",
-      },
-    ]);
-    expect(routeExists(routes, CHAIN_IDs.AVALANCHE, "USDT", CHAIN_IDs.MAINNET, "USDT", "binance")).to.equal(false);
+    expect(SAME_ASSET_REBALANCE_ROUTE_SUPPORT).not.to.have.lengthOf(0);
+    expect(routes).to.deep.equal(EXPECTED_SAME_ASSET_ROUTES);
+  });
+
+  it("filters each supported route when it is disabled in rebalancer config", function () {
+    expect(SAME_ASSET_REBALANCE_ROUTE_SUPPORT).not.to.have.lengthOf(0);
+    SAME_ASSET_REBALANCE_ROUTE_SUPPORT.forEach((disabledRoute) => {
+      const enabledSupport = SAME_ASSET_REBALANCE_ROUTE_SUPPORT.filter(
+        ({ token, chainId }) => token !== disabledRoute.token || chainId !== disabledRoute.chainId
+      );
+      const expectedEnabledRoutes = EXPECTED_SAME_ASSET_ROUTES.filter(
+        ({ sourceToken, destinationChain }) =>
+          sourceToken !== disabledRoute.token || destinationChain !== disabledRoute.chainId
+      );
+
+      expect(buildSameAssetRebalanceRoutes(buildSyntheticSameAssetRebalancerConfig(enabledSupport))).to.deep.equal(
+        expectedEnabledRoutes
+      );
+    });
   });
 });
