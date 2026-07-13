@@ -72,6 +72,7 @@ import {
   isExclusivityRelative,
   normalizeIntegratorId,
   restructureGaslessDeposits,
+  resolveTokenInfoForLog,
   validateDeposit,
 } from "../utils/GaslessUtils";
 
@@ -279,7 +280,13 @@ export class GaslessRelayer {
    * @notice Polls the Across gasless API and starts background deposit/fill tasks.
    */
   public pollAndExecute(): void {
-    scheduleTask(() => this.evaluateApiSignatures(), this.config.apiPollingInterval, this.abortController.signal);
+    scheduleTask(
+      () => this.evaluateApiSignatures(),
+      this.config.apiPollingInterval,
+      this.abortController.signal,
+      this.logger,
+      "GaslessRelayer#evaluateApiSignatures"
+    );
   }
 
   /*
@@ -894,7 +901,17 @@ export class GaslessRelayer {
 
     const amountToken = isSwap ? depositMessage.swapToken : depositMessage.baseDepositData.inputToken;
     const rawAmount = isSwap ? depositMessage.swapTokenAmount : depositMessage.baseDepositData.inputAmount;
-    const { decimals, symbol } = getTokenInfo(toAddressType(amountToken, originChainId), originChainId);
+    // Resolve symbol/decimals for the Slack log line only. This MUST NOT throw: the
+    // user-signed swapToken is frequently a long-tail token missing from the static
+    // TOKEN_SYMBOLS_MAP, and a throw here used to silently drop the deposit before it was
+    // ever submitted (ACB-552). resolveTokenInfoForLog falls back to an on-chain probe and
+    // then a neutral placeholder.
+    const { decimals, symbol } = await resolveTokenInfoForLog(
+      toAddressType(amountToken, originChainId),
+      originChainId,
+      this.logger,
+      { redisCache: this.redisCache }
+    );
     const formattedAmount = createFormatFunction(2, 4, false, decimals)(rawAmount);
 
     const message = "Completed gasless deposit 😎";

@@ -1,3 +1,6 @@
+/** Minimal logger surface — satisfied by `winston.Logger` and by lightweight test fakes. */
+type ErrorLogger = { error: (info: Record<string, unknown>) => unknown };
+
 /**
  * Wrap an async task as a fire-and-forget callback for `setTimeout`/`setInterval` slots
  * that expect `() => void`. Rejections can't crash the process via an unhandled rejection:

@@ -6,7 +6,9 @@ import {
   restructureGaslessDeposits,
   buildGaslessDepositTx,
   isErc2612PermitNonceConsumed,
+  resolveTokenInfoForLog,
 } from "../src/utils/GaslessUtils";
+import { toAddressType, getTokenInfo } from "../src/utils";
 import { APIGaslessDepositResponse } from "../src/interfaces";
 import SPOKE_POOL_PERIPHERY_ABI from "../src/common/abi/SpokePoolPeriphery.json";
 
@@ -395,5 +397,89 @@ describe("GaslessUtils", function () {
         })
       ).to.be.true;
     });
+  });
+});
+
+describe("GaslessUtils#resolveTokenInfoForLog", function () {
+  const USDC_MAINNET = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
+  const LONG_TAIL_TOKEN = DUMMY_ADDRESS; // not present in the static TOKEN_SYMBOLS_MAP
+
+  it("returns static token info without probing when the token is in the map", async function () {
+    const token = toAddressType(USDC_MAINNET, 1);
+    // Throws loudly here if the hardcoded address ever drifts from the SDK map.
+    const expected = getTokenInfo(token, 1);
+    let probed = false;
+
+    const info = await resolveTokenInfoForLog(token, 1, TEST_LOGGER, {
+      probeOnChain: async () => {
+        probed = true;
+        return { symbol: "SHOULD_NOT_BE_USED", decimals: 0 };
+      },
+    });
+
+    expect(info).to.deep.equal({ symbol: expected.symbol, decimals: expected.decimals });
+    expect(probed).to.equal(false);
+  });
+
+  it("probes on-chain and caches the result when the token is missing from the static map (ACB-552)", async function () {
+    const token = toAddressType(LONG_TAIL_TOKEN, 1);
+    const address = token.toNative();
+    const setCalls: Array<[string, string]> = [];
+    const cache = {
+      get: async () => null,
+      set: async (key: string, val: unknown) => {
+        setCalls.push([key, String(val)]);
+        return undefined;
+      },
+    };
+    let probeCalls = 0;
+
+    const info = await resolveTokenInfoForLog(token, 1, TEST_LOGGER, {
+      redisCache: cache,
+      probeOnChain: async () => {
+        probeCalls++;
+        return { symbol: "PEPE", decimals: 18 };
+      },
+    });
+
+    expect(info).to.deep.equal({ symbol: "PEPE", decimals: 18 });
+    expect(probeCalls).to.equal(1);
+    expect(setCalls).to.have.length(1);
+    expect(setCalls[0][0]).to.equal(`gasless:tokenInfo:1:${address}`);
+    expect(JSON.parse(setCalls[0][1])).to.deep.equal({ symbol: "PEPE", decimals: 18 });
+  });
+
+  it("returns a cached entry without probing on a cache hit", async function () {
+    const token = toAddressType(LONG_TAIL_TOKEN, 1);
+    const cache = {
+      get: async () => JSON.stringify({ symbol: "CACHED", decimals: 8 }),
+      set: async () => undefined,
+    };
+    let probed = false;
+
+    const info = await resolveTokenInfoForLog(token, 1, TEST_LOGGER, {
+      redisCache: cache,
+      probeOnChain: async () => {
+        probed = true;
+        return { symbol: "SHOULD_NOT_BE_USED", decimals: 0 };
+      },
+    });
+
+    expect(info).to.deep.equal({ symbol: "CACHED", decimals: 8 });
+    expect(probed).to.equal(false);
+  });
+
+  it("falls back to a neutral placeholder and never throws when the on-chain probe fails", async function () {
+    const token = toAddressType(LONG_TAIL_TOKEN, 1);
+    const cache = { get: async () => null, set: async () => undefined };
+
+    const info = await resolveTokenInfoForLog(token, 1, TEST_LOGGER, {
+      redisCache: cache,
+      probeOnChain: async () => {
+        throw new Error("rpc down");
+      },
+    });
+
+    expect(info).to.deep.equal({ symbol: "UNKNOWN", decimals: 18 });
   });
 });
