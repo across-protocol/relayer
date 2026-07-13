@@ -1,4 +1,5 @@
 import { expect, sinon, toBNWei, winston } from "./utils";
+import { isDeepStrictEqual } from "util";
 import {
   CHAIN_IDs,
   EvmAddress,
@@ -12,7 +13,8 @@ import { RebalancerConfig } from "../src/rebalancer/RebalancerConfig";
 import { buildRebalanceRoutes } from "../src/rebalancer/buildRebalanceRoutes";
 import {
   buildSameAssetRebalanceRoutes,
-  getSameAssetRebalanceRouteSupport,
+  SAME_ASSET_REBALANCE_ROUTE_SUPPORT,
+  type SameAssetRebalanceRouteSupport,
 } from "../src/rebalancer/buildSameAssetRebalanceRoutes";
 import {
   BINANCE_RATE_LIMIT_BUCKET_ID,
@@ -169,11 +171,7 @@ function buildRebalancerConfig(targetBalance = "100"): RebalancerConfig {
   });
 }
 
-type SameAssetRouteSupport = ReturnType<typeof getSameAssetRebalanceRouteSupport>[number];
-
-function buildSameAssetRebalancerConfig(
-  supportedRoutes: readonly SameAssetRouteSupport[] = getSameAssetRebalanceRouteSupport()
-): RebalancerConfig {
+function buildSameAssetRebalancerConfig(supportedRoutes: readonly SameAssetRebalanceRouteSupport[]): RebalancerConfig {
   const sameAssetBalances = supportedRoutes.reduce<Record<string, { chains: Record<number, number> }>>(
     (balances, { token, chainId }) => {
       balances[token] ??= { chains: {} };
@@ -190,7 +188,7 @@ function buildSameAssetRebalancerConfig(
 }
 
 function buildSameAssetRelayerConfig(
-  supportedRoutes: readonly SameAssetRouteSupport[] = getSameAssetRebalanceRouteSupport(),
+  supportedRoutes: readonly SameAssetRebalanceRouteSupport[],
   omittedEndpoint?: { token: string; chainId: number }
 ): RelayerConfig {
   const configuredRoutes = buildSameAssetRebalanceRoutes(buildSameAssetRebalancerConfig(supportedRoutes));
@@ -216,31 +214,6 @@ function buildSameAssetRelayerConfig(
       wrapEtherThresholdPerChain: {},
     }),
   });
-}
-
-function rebalanceRouteMatches(
-  actual: {
-    sourceChain: number;
-    sourceToken: string;
-    destinationChain: number;
-    destinationToken: string;
-    adapter: string;
-  },
-  expected: {
-    sourceChain: number;
-    sourceToken: string;
-    destinationChain: number;
-    destinationToken: string;
-    adapter: string;
-  }
-): boolean {
-  return (
-    actual.sourceChain === expected.sourceChain &&
-    actual.sourceToken === expected.sourceToken &&
-    actual.destinationChain === expected.destinationChain &&
-    actual.destinationToken === expected.destinationToken &&
-    actual.adapter === expected.adapter
-  );
 }
 
 function buildNoopLogger(): winston.Logger {
@@ -524,6 +497,7 @@ describe("Jussi graph builder helpers", function () {
     };
     const requestedTokens: string[] = [];
     const inventoryClient = {
+      relayer: EvmAddress.from(TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]),
       getCumulativeBalanceWithApproximateUpcomingRefunds(l1Token: EvmAddress) {
         const tokenAddress = l1Token.toNative().toLowerCase();
         requestedTokens.push(tokenAddress);
@@ -1447,7 +1421,7 @@ describe("Jussi graph builder helpers", function () {
   });
 
   it("includes every configured SameAsset route in prepared and runtime topology", async function () {
-    const supportedRoutes = getSameAssetRebalanceRouteSupport();
+    const supportedRoutes = SAME_ASSET_REBALANCE_ROUTE_SUPPORT;
     const relayerConfig = buildSameAssetRelayerConfig(supportedRoutes);
     const rebalancerConfig = buildSameAssetRebalancerConfig(supportedRoutes);
     const sameAssetRoutes = buildSameAssetRebalanceRoutes(rebalancerConfig);
@@ -1468,10 +1442,8 @@ describe("Jussi graph builder helpers", function () {
           ? "binance_cex_bridge"
           : route.adapter;
 
-      expect(prepared.rebalanceRoutes.some((preparedRoute) => rebalanceRouteMatches(preparedRoute, route))).to.equal(
-        true
-      );
-      expect(runtimeRoutes.some((runtimeRoute) => rebalanceRouteMatches(runtimeRoute, route))).to.equal(true);
+      expect(prepared.rebalanceRoutes.some((preparedRoute) => isDeepStrictEqual(preparedRoute, route))).to.equal(true);
+      expect(runtimeRoutes.some((runtimeRoute) => isDeepStrictEqual(runtimeRoute, route))).to.equal(true);
       expect(prepared.topology.nodeContexts.some((node) => node.nodeKey === sourceNodeKey)).to.equal(true);
       expect(prepared.topology.nodeContexts.some((node) => node.nodeKey === destinationNodeKey)).to.equal(true);
 
@@ -1481,7 +1453,7 @@ describe("Jussi graph builder helpers", function () {
           edge.from.nodeKey === sourceNodeKey &&
           edge.to.nodeKey === destinationNodeKey &&
           edge.rebalanceRoute !== undefined &&
-          rebalanceRouteMatches(edge.rebalanceRoute, route),
+          isDeepStrictEqual(edge.rebalanceRoute, route),
         `${route.adapter}:${route.sourceToken}:${route.sourceChain}->${route.destinationToken}:${route.destinationChain}`
       );
       expect(candidate.family).to.equal(expectedFamily);
@@ -1513,7 +1485,7 @@ describe("Jussi graph builder helpers", function () {
   });
 
   it("rejects a configured SameAsset route when its managed inventory endpoint is missing", async function () {
-    const supportedRoutes = getSameAssetRebalanceRouteSupport();
+    const supportedRoutes = SAME_ASSET_REBALANCE_ROUTE_SUPPORT;
     const configuredRoutes = buildSameAssetRebalanceRoutes(buildSameAssetRebalancerConfig(supportedRoutes));
     const missingRoute = configuredRoutes[0];
 

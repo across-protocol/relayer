@@ -42,7 +42,7 @@ Operational note:
 - Intermediate on-chain bridge legs into or out of Binance remain restricted to `USDC` and `USDT`; current `WETH` routes therefore source or settle through mainnet rather than bridging WETH into another Binance ETH network.
 - Hyperliquid routes intentionally exclude Tron even when Tron USDT is configured, and same-asset USDT routes involving Tron use Binance rather than OFT.
 
-The dedicated SameAsset mode has a separate route source in `src/rebalancer/buildSameAssetRebalanceRoutes.ts`. Its read-only `getSameAssetRebalanceRouteSupport()` catalog is the source of truth for token, destination-chain, and adapter combinations that this mode can execute. `buildSameAssetRebalanceRoutes(rebalancerConfig)` returns only the intersection of that catalog and `sameAssetBalances`; adding configuration alone does not enable an unsupported route. Both `SameAssetRebalancerClient` and Jussi topology preparation consume this builder so runtime support and graph edges stay aligned.
+The dedicated SameAsset mode has a separate route source in `src/rebalancer/buildSameAssetRebalanceRoutes.ts`. Its read-only `SAME_ASSET_REBALANCE_ROUTE_SUPPORT` catalog is the source of truth for token, destination-chain, and adapter combinations that this mode can execute. `buildSameAssetRebalanceRoutes(rebalancerConfig)` returns only the intersection of that catalog and `sameAssetBalances`; adding configuration alone does not enable an unsupported route. Both `SameAssetRebalancerClient` and Jussi topology preparation consume this builder so runtime support and graph edges stay aligned.
 
 SameAsset routes are directional. They move an unchanged asset from the hub chain to a configured destination chain through the selected swap-rebalancer adapter. Excess destination-chain inventory moving back to the hub chain remains an InventoryClient responsibility and is not emitted as a reverse SameAsset route.
 
@@ -258,10 +258,6 @@ The read-only mode still initializes adapters (with an empty route set) so `getP
 `getPendingOrders()` remain available without coupling callers to a specific operational rebalancing mode.
 
 The OFT and CCTP adapters also expose their pending bridge-pre-deposit Redis schema through `src/rebalancer/clients/CctpOftReadOnlyClient.ts`. Adapter-side bridge accounting uses that readonly reader to ignore rebalancer-owned OFT/CCTP transfers instead of instantiating rebalancer adapters inside `AdapterManager`.
-
-### Future mode extensibility
-
-`src/rebalancer/clients/` is intentionally mode-oriented. Production execution includes cumulative and SameAsset modes, with a separate read-only consumer mode; additional `RebalancerClient` implementations can be added later without changing adapter contracts.
 
 ## Creating Rebalancer Instances
 

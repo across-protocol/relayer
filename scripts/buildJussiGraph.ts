@@ -321,7 +321,6 @@ async function runPreparedFullBuild(
   const graph = await runFullBuild(prepared, {
     logger,
     baseSigner,
-    relayerAddress,
     inventoryClient,
     rebalancerAdapters: rebalancerClient.adapters,
     graphId,

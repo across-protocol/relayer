@@ -311,4 +311,4 @@ export type BuildTopologyParams = {
 // prettier-ignore
 export type BuildGraphParams = { logger: winston.Logger; baseSigner: Signer; relayerConfig: RelayerConfig; inventoryClient: InventoryClient; rebalanceRoutes: RebalanceRoute[]; rebalancerAdapters: Record<string, RebalancerAdapter>; graphId?: string; now?: Date };
 // prettier-ignore
-export type JussiGraphLiveDeps = { logger: winston.Logger; baseSigner: Signer; relayerAddress?: string; inventoryClient: InventoryClient; rebalancerAdapters: Record<string, RebalancerAdapter>; graphId?: string; now?: Date };
+export type JussiGraphLiveDeps = { logger: winston.Logger; baseSigner: Signer; inventoryClient: InventoryClient; rebalancerAdapters: Record<string, RebalancerAdapter>; graphId?: string; now?: Date };
