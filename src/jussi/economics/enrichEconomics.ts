@@ -1,5 +1,9 @@
 import { BigNumber, EvmAddress, TOKEN_SYMBOLS_MAP, assert, chunk, isDefined, mapAsync } from "../../utils";
 import {
+  DEFAULT_ASSET_CLASSES,
+  DEFAULT_CROSS_ASSET_VOLATILITY,
+  DEFAULT_CROSS_ASSET_VOLATILITY_SIGMA_MULTIPLIER,
+  DEFAULT_EXPECTED_FILL_LATENCY_SECONDS,
   DEFAULT_LATENCY_ANNUALIZED_COST_RATE,
   DEFAULT_PAIN_MODEL,
   EDGE_BUILD_BATCH_SIZE,
@@ -44,7 +48,7 @@ export async function enrichPreparedTopology(
   prepared: PreparedGraphTopologyForBuild,
   params: JussiGraphLiveDeps
 ): Promise<BuiltJussiGraph> {
-  const { logger, baseSigner, inventoryClient, rebalancerAdapters, now } = params;
+  const { logger, baseSigner, relayerAddress, inventoryClient, rebalancerAdapters, now } = params;
   const { relayerConfig, rebalanceRoutes, topology, hubCtx } = prepared;
   const { nodeContexts, edgeCandidates, logicalAssets, requiredNativePriceChains } = topology;
 
@@ -84,6 +88,7 @@ export async function enrichPreparedTopology(
   const edgePricingParams = {
     logger,
     baseSigner,
+    relayerAddress,
     pricingContext,
     rebalancerAdapters,
     cumulativeBalancesByLogicalAsset,
@@ -166,6 +171,10 @@ export async function enrichPreparedTopology(
     gasPriceDiagnostics,
     rate_limit_buckets: topology.rateLimitBuckets,
     payload: {
+      asset_classes: DEFAULT_ASSET_CLASSES,
+      default_cross_asset_volatility: DEFAULT_CROSS_ASSET_VOLATILITY,
+      cross_asset_volatility_sigma_multiplier: DEFAULT_CROSS_ASSET_VOLATILITY_SIGMA_MULTIPLIER,
+      expected_fill_latency_seconds: DEFAULT_EXPECTED_FILL_LATENCY_SECONDS,
       latency_annualized_cost_rate: DEFAULT_LATENCY_ANNUALIZED_COST_RATE,
       pain_model: DEFAULT_PAIN_MODEL,
       logical_assets: logicalAssets,

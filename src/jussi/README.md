@@ -65,6 +65,8 @@ JUSSI_GRAPH_JSON_OUT=src/jussi/graphs/sampleGraph.json \
 yarn build-jussi-graph --wallet gckms --keys bot4 --binanceSecretKey <binance-secret-key>
 ```
 
+Use `--relayerAddress <0x-address>` when the graph should query inventory for a target relayer address that is different from the execution wallet. The signer still comes from the selected `--wallet` mode; the override is only for graph-builder balance and quote inputs, so regenerating sandbox artifacts does not require the target relayer private key.
+
 If you want to override the companion output path explicitly, set `JUSSI_RATE_LIMIT_BUCKETS_JSON_OUT`.
 
 The script also writes `samplePrices.json` next to the graph by default. Override that path with `JUSSI_PRICES_BY_ASSET_JSON_OUT` if needed.

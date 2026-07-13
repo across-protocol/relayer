@@ -335,7 +335,13 @@ async function estimateOftBreakdown(
 ): Promise<CostBreakdown> {
   const [gasCostUsd, oftRouteQuote] = await Promise.all([
     params.pricingContext.deriveGasCostUsd(candidate.family, candidate.from.chainId),
-    quoteLiveOftRouteTransfer(candidate, amount, params.baseSigner, params.pricingContext.hubPoolChainId),
+    quoteLiveOftRouteTransfer(
+      candidate,
+      amount,
+      params.baseSigner,
+      params.pricingContext.hubPoolChainId,
+      params.relayerAddress
+    ),
   ]);
   assert(
     oftRouteQuote.messageFeeIsNative || isDefined(oftRouteQuote.messageFeeAssetAddress),

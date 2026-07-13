@@ -69,6 +69,10 @@ export type JussiPainModel = {
   out_of_band_severity_multiplier: string;
 };
 export type JussiPutGraphRequest = {
+  asset_classes?: Record<string, string[]>;
+  default_cross_asset_volatility?: string;
+  cross_asset_volatility_sigma_multiplier?: string;
+  expected_fill_latency_seconds?: number;
   latency_annualized_cost_rate: string;
   pain_model: JussiPainModel;
   logical_assets: Record<string, JussiLogicalAssetDefinition>;
@@ -190,6 +194,7 @@ export type OftRouteTransferQuote = {
 export type BridgeBreakdownParams = {
   logger: winston.Logger;
   baseSigner: Signer;
+  relayerAddress?: string;
   pricingContext: RuntimePricingContext;
   rebalancerAdapters: Record<string, RebalancerAdapter>;
 };
@@ -306,4 +311,4 @@ export type BuildTopologyParams = {
 // prettier-ignore
 export type BuildGraphParams = { logger: winston.Logger; baseSigner: Signer; relayerConfig: RelayerConfig; inventoryClient: InventoryClient; rebalanceRoutes: RebalanceRoute[]; rebalancerAdapters: Record<string, RebalancerAdapter>; graphId?: string; now?: Date };
 // prettier-ignore
-export type JussiGraphLiveDeps = { logger: winston.Logger; baseSigner: Signer; inventoryClient: InventoryClient; rebalancerAdapters: Record<string, RebalancerAdapter>; graphId?: string; now?: Date };
+export type JussiGraphLiveDeps = { logger: winston.Logger; baseSigner: Signer; relayerAddress?: string; inventoryClient: InventoryClient; rebalancerAdapters: Record<string, RebalancerAdapter>; graphId?: string; now?: Date };

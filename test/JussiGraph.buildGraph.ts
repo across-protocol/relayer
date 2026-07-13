@@ -324,8 +324,17 @@ describe("Jussi graph builder helpers", function () {
       topologyOnly: false,
       upload: true,
     });
+    expect(parseBuildJussiGraphFlags(["--relayerAddress", "0x0000000000000000000000000000000000000001"])).to.deep.equal(
+      {
+        check: false,
+        relayerAddress: "0x0000000000000000000000000000000000000001",
+        topologyOnly: false,
+        upload: false,
+      }
+    );
     expectParseError(["--check"], "--check requires --topology-only");
     expectParseError(["--topology-only", "--upload"], "--topology-only and --upload are mutually exclusive");
+    expectParseError(["--relayerAddress"], "--relayerAddress requires an address");
   });
 
   it("extracts mainnet and aliased USDC/USDT/WETH node templates from synthetic inventory config", async function () {
@@ -1196,7 +1205,7 @@ describe("Jussi graph builder helpers", function () {
   it("uses MONAD receive options and fee-token pricing inputs for OFT routes on chains without native gas", async function () {
     const recipient = EvmAddress.from(TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]);
     const quoteSendPayInLzToken: boolean[] = [];
-    const lzTokenFee = toBNWei("7", 6);
+    const nativeFee = toBNWei("4", 9);
     const quote = await quoteOftRouteTransfer({
       reader: {
         async sharedDecimals() {
@@ -1207,7 +1216,7 @@ describe("Jussi graph builder helpers", function () {
         },
         async quoteSend(_sendParamStruct, payInLzToken) {
           quoteSendPayInLzToken.push(payInLzToken);
-          return { nativeFee: toBNWei("4", 9), lzTokenFee } as never;
+          return { nativeFee, lzTokenFee: toBNWei("7", 6) } as never;
         },
       },
       originChain: CHAIN_IDs.TEMPO,
@@ -1224,8 +1233,8 @@ describe("Jussi graph builder helpers", function () {
     expect(quote.messageFeeAssetAddress.toLowerCase()).to.equal(
       resolveOftQuoteSendFeeAsset(CHAIN_IDs.TEMPO).toLowerCase()
     );
-    expect(quote.messageFeeAmount.toString()).to.equal(lzTokenFee.toString());
-    expect(quoteSendPayInLzToken).to.deep.equal([true]);
+    expect(quote.messageFeeAmount.toString()).to.equal(nativeFee.toString());
+    expect(quoteSendPayInLzToken).to.deep.equal([false]);
   });
 
   it("serializes graph envelopes and graph ids in the script output shape", async function () {

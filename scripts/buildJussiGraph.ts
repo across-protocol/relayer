@@ -42,15 +42,25 @@ const DEFAULT_TOPOLOGY_ARTIFACT_PATH = "src/jussi/graphs/sampleTopology.json";
 
 export type BuildJussiGraphFlags = {
   check: boolean;
+  relayerAddress?: string;
   topologyOnly: boolean;
   upload: boolean;
 };
 
 export function parseBuildJussiGraphFlags(args: string[]): BuildJussiGraphFlags {
   const flags: BuildJussiGraphFlags = { check: false, topologyOnly: false, upload: false };
-  for (const arg of args) {
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
     if (arg === "--check") {
       flags.check = true;
+    } else if (arg === "--relayerAddress") {
+      const relayerAddress = args[++i];
+      if (!relayerAddress) {
+        throw new Error("--relayerAddress requires an address");
+      }
+      flags.relayerAddress = relayerAddress;
+    } else if (arg.startsWith("--relayerAddress=")) {
+      flags.relayerAddress = arg.slice("--relayerAddress=".length);
     } else if (arg === "--topology-only") {
       flags.topologyOnly = true;
     } else if (arg === "--upload") {
@@ -278,6 +288,7 @@ async function writeBuildArtifacts(
 async function runPreparedFullBuild(
   prepared: PreparedGraphTopology,
   logger: winston.Logger,
+  relayerAddress?: string,
   graphId?: string
 ): Promise<Awaited<ReturnType<typeof runFullBuild>>> {
   const baseSigner = await retrieveSignerFromCLIArgs();
@@ -285,7 +296,8 @@ async function runPreparedFullBuild(
   const { inventoryClient, spokePoolClients, tokenClient } = await constructRelayerClients(
     logger,
     prepared.relayerConfig,
-    baseSigner
+    baseSigner,
+    relayerAddress
   );
 
   await Promise.all([
@@ -309,6 +321,7 @@ async function runPreparedFullBuild(
   const graph = await runFullBuild(prepared, {
     logger,
     baseSigner,
+    relayerAddress,
     inventoryClient,
     rebalancerAdapters: rebalancerClient.adapters,
     graphId,
@@ -359,7 +372,7 @@ async function run(flags: BuildJussiGraphFlags, logger: winston.Logger): Promise
   }
 
   if (!flags.upload) {
-    await runPreparedFullBuild(prepared, logger);
+    await runPreparedFullBuild(prepared, logger, flags.relayerAddress);
     return;
   }
 
@@ -374,7 +387,7 @@ async function run(flags: BuildJussiGraphFlags, logger: winston.Logger): Promise
     apiClient: new JussiApiClient(uploadUrl.toString(), process.env.JUSSI_API_TOKEN),
     logger,
     redis,
-    runFullBuild: (graphId) => runPreparedFullBuild(prepared, logger, graphId),
+    runFullBuild: (graphId) => runPreparedFullBuild(prepared, logger, flags.relayerAddress, graphId),
   });
   const result = await publisher.publishUpload();
   logger.debug({ at: "buildJussiGraph", message: "Uploaded Jussi graph bundle", ...result });

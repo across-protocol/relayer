@@ -30,7 +30,7 @@ const ONE_TO_ONE_OUTPUT_RATE_FAMILIES: readonly EdgeFamily[] = [
 
 export async function serializeEdgeClassDefinition(
   candidate: GraphEdgeCandidate,
-  params: Pick<EdgePricingParams, "baseSigner" | "pricingContext" | "rebalancerAdapters">
+  params: Pick<EdgePricingParams, "baseSigner" | "relayerAddress" | "pricingContext" | "rebalancerAdapters">
 ): Promise<JussiEdgeClassDefinition> {
   const edge_class_id = resolveEdgeClassId(candidate);
   return {
@@ -49,7 +49,7 @@ export async function serializeEdgeClassDefinition(
 
 async function resolveOutputSegments(
   candidate: GraphEdgeCandidate,
-  params: Pick<EdgePricingParams, "baseSigner" | "pricingContext" | "rebalancerAdapters">
+  params: Pick<EdgePricingParams, "baseSigner" | "relayerAddress" | "pricingContext" | "rebalancerAdapters">
 ): Promise<JussiEdgeClassOutputSegmentDefinition[]> {
   if (candidate.family === "oft") {
     return estimateSampledOutputSegments(candidate, params, estimateOftMarginalOutputRateAtUsd);
@@ -75,11 +75,11 @@ async function resolveOutputSegments(
 
 async function estimateSampledOutputSegments(
   candidate: GraphEdgeCandidate,
-  params: Pick<EdgePricingParams, "baseSigner" | "pricingContext" | "rebalancerAdapters">,
+  params: Pick<EdgePricingParams, "baseSigner" | "relayerAddress" | "pricingContext" | "rebalancerAdapters">,
   estimateRateAtUsd: (
     candidate: GraphEdgeCandidate,
     inputUsd: number,
-    params: Pick<EdgePricingParams, "baseSigner" | "pricingContext" | "rebalancerAdapters">
+    params: Pick<EdgePricingParams, "baseSigner" | "relayerAddress" | "pricingContext" | "rebalancerAdapters">
   ) => Promise<JussiRateDefinition>
 ): Promise<JussiEdgeClassOutputSegmentDefinition[]> {
   const samples = await Promise.all(
@@ -262,7 +262,7 @@ async function estimateDirectionalHyperliquidMarginalOutputRate(
 async function estimateOftMarginalOutputRateAtUsd(
   candidate: GraphEdgeCandidate,
   inputUsd: number,
-  params: Pick<EdgePricingParams, "baseSigner" | "pricingContext">
+  params: Pick<EdgePricingParams, "baseSigner" | "relayerAddress" | "pricingContext">
 ): Promise<JussiRateDefinition> {
   const referenceInputNative = await resolveUsdNotionalInputNative(
     candidate.from.logicalAsset,
@@ -274,7 +274,8 @@ async function estimateOftMarginalOutputRateAtUsd(
     candidate,
     referenceInputNative,
     params.baseSigner,
-    params.pricingContext.hubPoolChainId
+    params.pricingContext.hubPoolChainId,
+    params.relayerAddress
   );
   const outputReadable = parseFloat(formatUnits(quote.amountReceivedDestinationNative, candidate.to.decimals));
   const referenceOutputReadable = await quoteReferenceOutputReadable(
