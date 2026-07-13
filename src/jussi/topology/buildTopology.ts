@@ -1,5 +1,3 @@
-import { chainIsSvm } from "../../utils/SDKUtils";
-import { isDefined } from "../../utils/TypeGuards";
 import { DEFAULT_RATE_LIMIT_BUCKETS } from "../constants";
 import type { BuildTopologyParams, JussiGraphTopology } from "../types";
 import {
@@ -10,14 +8,9 @@ import {
   resolveRateLimitBucketId,
 } from "./edges";
 import { buildLogicalAssetDefinitions, resolveRequiredNativePriceChains } from "./logicalAssets";
-import { buildManagedNodeTemplates, materializeNodeDefinitions } from "./nodes";
 
 export function buildTopology(params: BuildTopologyParams): JussiGraphTopology {
-  const hubPoolChainId = params.hubCtx?.hubPoolChainId ?? params.relayerConfig.hubPoolChainId;
-  const nodeTemplates = buildManagedNodeTemplates(params.relayerConfig.inventoryConfig, hubPoolChainId).filter(
-    (template) => !chainIsSvm(template.chainId)
-  );
-  const nodeContexts = materializeNodeDefinitions(nodeTemplates);
+  const { hubPoolChainId, nodeContexts } = params;
   const nodesByKey = new Map(nodeContexts.map((node) => [node.nodeKey, node]));
   const bridgeCandidates = buildBridgeEdgeCandidates(nodeContexts, hubPoolChainId);
   const rebalanceCandidates = buildRebalanceEdgeCandidates(params.rebalanceRoutes, nodesByKey);
@@ -32,7 +25,7 @@ export function buildTopology(params: BuildTopologyParams): JussiGraphTopology {
     edgeCandidates,
     logicalAssets,
     requiredNativePriceChains,
-    rateLimitBuckets: edgeCandidates.some((candidate) => isDefined(resolveRateLimitBucketId(candidate.family)))
+    rateLimitBuckets: edgeCandidates.some((candidate) => resolveRateLimitBucketId(candidate.family) !== undefined)
       ? DEFAULT_RATE_LIMIT_BUCKETS
       : [],
   };

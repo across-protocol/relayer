@@ -19,6 +19,7 @@ import {
   getProvider,
   getTokenInfoFromSymbol,
   isDefined,
+  min,
   toAddressType,
   toBNWei,
   truncate,
@@ -27,12 +28,10 @@ import { EDGE_FIXED_COST_INPUT_USD_SAMPLE, LATENCY_BY_FAMILY, UNIVERSAL_INPUT_TI
 import type { RuntimePricingContext } from "./PricingContext";
 import type {
   BinanceInternalAdapter,
-  BridgeBreakdownParams,
   CostBreakdown,
   EdgeEconomics,
   EdgeFamily,
   EdgePricingParams,
-  ExchangeBreakdownParams,
   ExchangeBreakdownState,
   GraphEdgeCandidate,
   JussiEdgeDefinition,
@@ -106,7 +105,7 @@ export async function estimateEdgeEconomics(
 
   return {
     inputCapacityNative,
-    fixedInputFeeNative: minBigNumber(breakdown.fixedInputFeeSourceNative, inputCapacityNative),
+    fixedInputFeeNative: min(breakdown.fixedInputFeeSourceNative, inputCapacityNative),
     fixedOutputFeeNative: breakdown.fixedOutputFeeDestinationNative,
     fixedCostNative: await params.pricingContext.usdToNativeValue(breakdown.fixedCostUsd, candidate.from.chainId),
     latencySeconds: breakdown.latencySeconds,
@@ -115,15 +114,16 @@ export async function estimateEdgeEconomics(
 
 async function resolveInputCapacityNative(
   candidate: GraphEdgeCandidate,
-  params: Pick<EdgePricingParams, "pricingContext" | "rebalancerAdapters" | "cumulativeBalancesByLogicalAsset">
+  params: Pick<EdgePricingParams, "pricingContext" | "rebalancerAdapters">
 ): Promise<BigNumber> {
   if (candidate.family === "cctp") {
     return CCTP_MAX_SEND_AMOUNT;
   }
 
-  const effectivelyUnlimitedCapacityNative = await resolveEffectivelyUnlimitedCapacityNative(
+  const effectivelyUnlimitedCapacityNative = await resolveUsdNotionalInputNative(
     candidate.from.logicalAsset,
     candidate.from.decimals,
+    Number(UNIVERSAL_INPUT_TIER_USD),
     params.pricingContext
   );
 
@@ -153,15 +153,7 @@ async function resolveCostReferenceInputNative(
     EDGE_FIXED_COST_INPUT_USD_SAMPLE,
     params.pricingContext
   );
-  return minBigNumber(sampledInputNative, inputCapacityNative);
-}
-
-async function resolveEffectivelyUnlimitedCapacityNative(
-  logicalAsset: LogicalAsset,
-  decimals: number,
-  pricingContext: RuntimePricingContext
-): Promise<BigNumber> {
-  return resolveUsdNotionalInputNative(logicalAsset, decimals, Number(UNIVERSAL_INPUT_TIER_USD), pricingContext);
+  return min(sampledInputNative, inputCapacityNative);
 }
 
 async function resolveBinanceSwapInputCapacityNative(
@@ -178,15 +170,18 @@ async function resolveBinanceSwapInputCapacityNative(
 
   const sourceEntrypointNetwork = await adapterInternals._getEntrypointNetwork(sourceChain, sourceToken);
   if (sourceToken === "USDC" && sourceEntrypointNetwork !== sourceChain) {
-    capacityNative = minBigNumber(capacityNative, resolveCctpMaxSendAmountNative(candidate.from.decimals));
+    capacityNative = min(capacityNative, resolveCctpMaxSendAmountNative(candidate.from.decimals));
   }
 
   const destinationEntrypointNetwork = await adapterInternals._getEntrypointNetwork(destinationChain, destinationToken);
   const destinationTokenInfo = getTokenInfoFromSymbol(destinationToken, destinationEntrypointNetwork);
-  const destinationAmountLimitNative = await resolveBinanceWithdrawalAmountLimitNative(
+  const destinationWithdrawConfig = await resolveBinanceNetworkConfig(
     adapterInternals,
     destinationToken,
-    destinationEntrypointNetwork,
+    BINANCE_NETWORKS[destinationEntrypointNetwork]
+  );
+  const destinationAmountLimitNative = resolvePositiveBinanceAmountNative(
+    destinationWithdrawConfig.withdrawMax,
     destinationTokenInfo.decimals
   );
   const destinationBridgeLimitNative =
@@ -199,7 +194,7 @@ async function resolveBinanceSwapInputCapacityNative(
     return capacityNative;
   }
 
-  const sampledInputNative = minBigNumber(
+  const sampledInputNative = min(
     await resolveUsdNotionalInputNative(
       candidate.from.logicalAsset,
       candidate.from.decimals,
@@ -222,10 +217,7 @@ async function resolveBinanceSwapInputCapacityNative(
     return capacityNative;
   }
 
-  return minBigNumber(
-    capacityNative,
-    sampledInputNative.mul(destinationLimitNative).div(estimatedOutputAtSampleNative)
-  );
+  return min(capacityNative, sampledInputNative.mul(destinationLimitNative).div(estimatedOutputAtSampleNative));
 }
 
 async function resolveBinanceCexBridgeInputCapacityNative(
@@ -237,31 +229,32 @@ async function resolveBinanceCexBridgeInputCapacityNative(
   // See BinanceInternalAdapter in ../types: this cast reaches private adapter methods unchecked.
   const adapterInternals = adapter as unknown as BinanceInternalAdapter;
   const tokenSymbol = candidate.from.logicalAsset;
-  const network =
-    BINANCE_NETWORKS[candidate.to.chainId] ??
-    BINANCE_NETWORKS[candidate.from.chainId] ??
-    BINANCE_NETWORKS[params.pricingContext.hubPoolChainId];
-  const coin = await adapterInternals._getAccountCoins(tokenSymbol);
-  const withdrawFeeConfig = coin.networkList.find((entry) => entry.name === network);
-  assert(
-    isDefined(withdrawFeeConfig),
-    `Withdraw fee config not found for ${tokenSymbol} on Binance network ${network}`
+  const withdrawFeeConfig = await resolveBinanceNetworkConfig(
+    adapterInternals,
+    tokenSymbol,
+    resolveBinanceCexBridgeNetwork(candidate, params.pricingContext.hubPoolChainId)
   );
   const withdrawMaxNative = resolvePositiveBinanceAmountNative(withdrawFeeConfig.withdrawMax, candidate.from.decimals);
-  return isDefined(withdrawMaxNative) ? minBigNumber(inputCapacityNative, withdrawMaxNative) : inputCapacityNative;
+  return isDefined(withdrawMaxNative) ? min(inputCapacityNative, withdrawMaxNative) : inputCapacityNative;
 }
 
-async function resolveBinanceWithdrawalAmountLimitNative(
+async function resolveBinanceNetworkConfig(
   adapterInternals: BinanceInternalAdapter,
   token: string,
-  chainId: number,
-  decimals: number
-): Promise<BigNumber | undefined> {
+  network: string | undefined
+): Promise<Awaited<ReturnType<BinanceInternalAdapter["_getAccountCoins"]>>["networkList"][number]> {
   const coin = await adapterInternals._getAccountCoins(token);
-  const network = BINANCE_NETWORKS[chainId];
   const withdrawNetworkConfig = coin.networkList.find((entry) => entry.name === network);
-  assert(isDefined(withdrawNetworkConfig), `No Binance network entry for ${token} on chain ${chainId}`);
-  return resolvePositiveBinanceAmountNative(withdrawNetworkConfig.withdrawMax, decimals);
+  assert(isDefined(withdrawNetworkConfig), `No Binance network entry for ${token} on network ${network}`);
+  return withdrawNetworkConfig;
+}
+
+function resolveBinanceCexBridgeNetwork(candidate: GraphEdgeCandidate, hubPoolChainId: number): string | undefined {
+  return (
+    BINANCE_NETWORKS[candidate.to.chainId] ??
+    BINANCE_NETWORKS[candidate.from.chainId] ??
+    BINANCE_NETWORKS[hubPoolChainId]
+  );
 }
 
 function resolvePositiveBinanceAmountNative(value: string | undefined, decimals: number): BigNumber | undefined {
@@ -284,14 +277,14 @@ function minOptionalBigNumbers(...values: Array<BigNumber | undefined>): BigNumb
     if (!isDefined(value)) {
       return minimum;
     }
-    return isDefined(minimum) ? minBigNumber(minimum, value) : value;
+    return isDefined(minimum) ? min(minimum, value) : value;
   }, undefined);
 }
 
 async function estimateCctpBreakdown(
   candidate: GraphEdgeCandidate,
   amount: BigNumber,
-  params: BridgeBreakdownParams
+  params: EdgePricingParams
 ): Promise<CostBreakdown> {
   const [gasCostUsd, maxFeeSourceNative] = await Promise.all([
     params.pricingContext.deriveGasCostUsd(candidate.family, candidate.from.chainId),
@@ -308,7 +301,7 @@ async function estimateCctpBreakdown(
 async function resolveCctpMaxFeeSourceNative(
   candidate: GraphEdgeCandidate,
   amount: BigNumber,
-  params: BridgeBreakdownParams
+  params: EdgePricingParams
 ): Promise<BigNumber> {
   const cctpAdapter = params.rebalancerAdapters.cctp;
   assert(isDefined(cctpAdapter), "CCTP fee estimation requires the cctp rebalancer adapter");
@@ -331,39 +324,19 @@ async function resolveCctpMaxFeeSourceNative(
 async function estimateOftBreakdown(
   candidate: GraphEdgeCandidate,
   amount: BigNumber,
-  params: BridgeBreakdownParams
+  params: EdgePricingParams
 ): Promise<CostBreakdown> {
   const [gasCostUsd, oftRouteQuote] = await Promise.all([
     params.pricingContext.deriveGasCostUsd(candidate.family, candidate.from.chainId),
-    quoteLiveOftRouteTransfer(
-      candidate,
-      amount,
-      params.baseSigner,
-      params.pricingContext.hubPoolChainId,
-      params.relayerAddress
-    ),
+    quoteLiveOftRouteTransfer(candidate, amount, params.relayerAddress, params.pricingContext.hubPoolChainId),
   ]);
-  assert(
-    oftRouteQuote.messageFeeIsNative || isDefined(oftRouteQuote.messageFeeAssetAddress),
-    `Missing OFT fee asset metadata for ${candidate.from.chainId} -> ${candidate.to.chainId}`
-  );
-  let quotedMessageFeeUsd: number;
-  if (oftRouteQuote.messageFeeIsNative) {
-    quotedMessageFeeUsd = await params.pricingContext.nativeValueToUsd(
-      oftRouteQuote.messageFeeAmount,
-      candidate.from.chainId
-    );
-  } else {
-    assert(
-      isDefined(oftRouteQuote.messageFeeAssetAddress),
-      `Missing OFT fee asset metadata for ${candidate.from.chainId} -> ${candidate.to.chainId}`
-    );
-    quotedMessageFeeUsd = await params.pricingContext.tokenValueToUsd(
-      oftRouteQuote.messageFeeAmount,
-      candidate.from.chainId,
-      oftRouteQuote.messageFeeAssetAddress
-    );
-  }
+  const quotedMessageFeeUsd = isDefined(oftRouteQuote.messageFeeAssetAddress)
+    ? await params.pricingContext.tokenValueToUsd(
+        oftRouteQuote.messageFeeAmount,
+        candidate.from.chainId,
+        oftRouteQuote.messageFeeAssetAddress
+      )
+    : await params.pricingContext.nativeValueToUsd(oftRouteQuote.messageFeeAmount, candidate.from.chainId);
 
   return {
     fixedInputFeeSourceNative: bnZero,
@@ -378,7 +351,7 @@ async function estimateBridgeRouteBreakdown(
   sourceChain: number,
   destinationChain: number,
   amount: BigNumber,
-  params: BridgeBreakdownParams
+  params: EdgePricingParams
 ): Promise<CostBreakdown> {
   const syntheticCandidate = buildSyntheticBridgeCandidate(token, sourceChain, destinationChain);
   if (token === "USDC") {
@@ -393,23 +366,19 @@ async function estimateBridgeRouteBreakdown(
 async function estimateBinanceSwapBreakdown(
   candidate: GraphEdgeCandidate,
   amount: BigNumber,
-  params: ExchangeBreakdownParams
+  params: EdgePricingParams
 ): Promise<CostBreakdown> {
   assert(isDefined(candidate.rebalanceRoute), "Binance swap edge is missing rebalance route");
   const adapter = params.rebalancerAdapters.binance as BinanceStablecoinSwapAdapter;
   // See BinanceInternalAdapter in ../types: this cast reaches private adapter methods unchecked.
   const adapterInternals = adapter as unknown as BinanceInternalAdapter;
   const { sourceToken, destinationToken, sourceChain, destinationChain } = candidate.rebalanceRoute;
-  const destinationCoin = await adapterInternals._getAccountCoins(destinationToken);
   const destinationEntrypointNetwork = await adapterInternals._getEntrypointNetwork(destinationChain, destinationToken);
   const destinationTokenInfo = getTokenInfoFromSymbol(destinationToken, destinationEntrypointNetwork);
-  const withdrawNetwork = BINANCE_NETWORKS[destinationEntrypointNetwork];
-  const withdrawNetworkConfig = destinationCoin.networkList.find(
-    (network: { name: string }) => network.name === withdrawNetwork
-  );
-  assert(
-    isDefined(withdrawNetworkConfig),
-    `No Binance network entry for ${destinationToken} on chain ${destinationEntrypointNetwork}`
+  const withdrawNetworkConfig = await resolveBinanceNetworkConfig(
+    adapterInternals,
+    destinationToken,
+    BINANCE_NETWORKS[destinationEntrypointNetwork]
   );
   const withdrawFee = toBNWei(withdrawNetworkConfig.withdrawFee, destinationTokenInfo.decimals);
   const state = await initializeExchangeBreakdown(candidate, params.pricingContext);
@@ -451,7 +420,7 @@ async function estimateBinanceSwapBreakdown(
 async function estimateHyperliquidSwapBreakdown(
   candidate: GraphEdgeCandidate,
   amount: BigNumber,
-  params: ExchangeBreakdownParams
+  params: EdgePricingParams
 ): Promise<CostBreakdown> {
   assert(isDefined(candidate.rebalanceRoute), "Hyperliquid swap edge is missing rebalance route");
   const { sourceToken, destinationToken, sourceChain, destinationChain } = candidate.rebalanceRoute;
@@ -481,21 +450,16 @@ async function estimateHyperliquidSwapBreakdown(
 
 async function estimateBinanceCexBridgeBreakdown(
   candidate: GraphEdgeCandidate,
-  params: Pick<BridgeBreakdownParams, "pricingContext" | "rebalancerAdapters">
+  params: Pick<EdgePricingParams, "pricingContext" | "rebalancerAdapters">
 ): Promise<CostBreakdown> {
   const adapter = params.rebalancerAdapters.binance as BinanceStablecoinSwapAdapter;
   // See BinanceInternalAdapter in ../types: this cast reaches private adapter methods unchecked.
   const adapterInternals = adapter as unknown as BinanceInternalAdapter;
   const tokenSymbol = candidate.from.logicalAsset;
-  const network =
-    BINANCE_NETWORKS[candidate.to.chainId] ??
-    BINANCE_NETWORKS[candidate.from.chainId] ??
-    BINANCE_NETWORKS[params.pricingContext.hubPoolChainId];
-  const coin = await adapterInternals._getAccountCoins(tokenSymbol);
-  const withdrawFeeConfig = coin.networkList.find((entry) => entry.name === network);
-  assert(
-    isDefined(withdrawFeeConfig),
-    `Withdraw fee config not found for ${tokenSymbol} on Binance network ${network}`
+  const withdrawFeeConfig = await resolveBinanceNetworkConfig(
+    adapterInternals,
+    tokenSymbol,
+    resolveBinanceCexBridgeNetwork(candidate, params.pricingContext.hubPoolChainId)
   );
 
   return {
@@ -508,7 +472,7 @@ async function estimateBinanceCexBridgeBreakdown(
 
 async function estimateBridgeApiBreakdown(
   candidate: GraphEdgeCandidate,
-  params: Pick<BridgeBreakdownParams, "pricingContext">
+  params: Pick<EdgePricingParams, "pricingContext">
 ): Promise<CostBreakdown> {
   return {
     fixedInputFeeSourceNative: bnZero,
@@ -521,7 +485,7 @@ async function estimateBridgeApiBreakdown(
 export async function estimateQuotedBridgeBreakdown(
   candidate: GraphEdgeCandidate,
   amount: BigNumber,
-  params: Pick<BridgeBreakdownParams, "baseSigner" | "pricingContext">,
+  params: Pick<EdgePricingParams, "baseSigner" | "pricingContext">,
   family: EdgeFamily,
   quoteBridgeFeeUsd: typeof quoteNativeBridgeFeeUsd = quoteNativeBridgeFeeUsd
 ): Promise<CostBreakdown> {
@@ -562,10 +526,6 @@ function buildSyntheticBridgeNode(logicalAsset: LogicalAsset, chainId: number): 
   } as ManagedNodeContext;
 }
 
-function minBigNumber(a: BigNumber, b: BigNumber): BigNumber {
-  return a.lte(b) ? a : b;
-}
-
 async function initializeExchangeBreakdown(
   candidate: GraphEdgeCandidate,
   pricingContext: RuntimePricingContext
@@ -583,7 +543,7 @@ async function addBridgeLegToExchangeBreakdown(
   state: ExchangeBreakdownState,
   candidate: GraphEdgeCandidate,
   amount: BigNumber,
-  params: BridgeBreakdownParams,
+  params: EdgePricingParams,
   leg: {
     side: "source" | "destination";
     token: LogicalAsset;
@@ -637,7 +597,7 @@ function finalizeExchangeBreakdown(
 async function quoteNativeBridgeFeeUsd(
   candidate: GraphEdgeCandidate,
   amount: BigNumber,
-  params: Pick<BridgeBreakdownParams, "baseSigner" | "pricingContext">
+  params: Pick<EdgePricingParams, "baseSigner" | "pricingContext">
 ): Promise<number> {
   const { hubPoolChainId } = params.pricingContext;
   const l1Token = EvmAddress.from(TOKEN_SYMBOLS_MAP[candidate.from.logicalAsset].addresses[hubPoolChainId]);

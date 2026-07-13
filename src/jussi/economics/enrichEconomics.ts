@@ -1,4 +1,4 @@
-import { BigNumber, EvmAddress, TOKEN_SYMBOLS_MAP, assert, chunk, isDefined, mapAsync } from "../../utils";
+import { BigNumber, EvmAddress, TOKEN_SYMBOLS_MAP, chunk, mapAsync } from "../../utils";
 import {
   DEFAULT_LATENCY_ANNUALIZED_COST_RATE,
   DEFAULT_PAIN_MODEL,
@@ -7,41 +7,20 @@ import {
 } from "../constants";
 import { buildJussiGraphId } from "../serialize";
 import type {
-  BuildGraphParams,
   BuiltJussiGraph,
-  GraphEdgeCandidate,
   JussiEdgeDefinition,
   JussiGraphLiveDeps,
   LogicalAsset,
-  PreparedGraphTopologyForBuild,
+  PreparedGraphTopology,
 } from "../types";
-import { buildTopology } from "../topology/buildTopology";
 import { buildCumulativeBalancePainDefinitions } from "./pain";
 import { RuntimePricingContext } from "./PricingContext";
 import { estimateEdgeEconomics, serializeEdgeDefinition } from "./edgeCosts";
 import { serializeEdgeClassDefinition } from "./rates";
 import { resolveEdgeClassId } from "../topology/edges";
 
-export async function buildJussiGraphDefinition(params: BuildGraphParams): Promise<BuiltJussiGraph> {
-  const hubCtx = { hubPoolChainId: params.relayerConfig.hubPoolChainId };
-  const topology = buildTopology({
-    relayerConfig: params.relayerConfig,
-    rebalanceRoutes: params.rebalanceRoutes,
-    hubCtx,
-  });
-  return enrichPreparedTopology(
-    {
-      relayerConfig: params.relayerConfig,
-      hubCtx,
-      rebalanceRoutes: params.rebalanceRoutes,
-      topology,
-    },
-    params
-  );
-}
-
-export async function enrichPreparedTopology(
-  prepared: PreparedGraphTopologyForBuild,
+export async function runFullBuild(
+  prepared: PreparedGraphTopology,
   params: JussiGraphLiveDeps
 ): Promise<BuiltJussiGraph> {
   const { logger, baseSigner, inventoryClient, rebalancerAdapters, now } = params;
@@ -50,9 +29,9 @@ export async function enrichPreparedTopology(
 
   const graphId = params.graphId ?? buildJussiGraphId(now);
   const logBuild = (message: string, extra: Record<string, unknown> = {}) =>
-    logger.info({ at: "buildGraph.buildJussiGraphDefinition", message, ...extra });
+    logger.info({ at: "buildGraph.runFullBuild", message, ...extra });
   const debugBuild = (message: string, extra: Record<string, unknown> = {}) =>
-    logger.debug({ at: "buildGraph.buildJussiGraphDefinition", message, ...extra });
+    logger.debug({ at: "buildGraph.runFullBuild", message, ...extra });
 
   logBuild("Starting Jussi graph build", {
     graphId,
@@ -82,12 +61,10 @@ export async function enrichPreparedTopology(
 
   const pricingContext = new RuntimePricingContext(logger, hubCtx.hubPoolChainId);
   const edgePricingParams = {
-    logger,
     baseSigner,
     relayerAddress: inventoryClient.relayer.toNative(),
     pricingContext,
     rebalancerAdapters,
-    cumulativeBalancesByLogicalAsset,
   };
   logBuild("Resolved native asset price requirements", {
     nativePriceAliasChainIds: Object.values(logicalAssets)
@@ -98,28 +75,16 @@ export async function enrichPreparedTopology(
   });
   const gasPriceDiagnostics = await pricingContext.describeGasPrices(nodeContexts.map((node) => node.chainId));
   logBuild("Resolved gas prices for graph chains", {
-    gasPrices: gasPriceDiagnostics.map(({ chainId, gasPriceGwei, source }) => ({
-      chainId,
-      gasPriceGwei,
-      source,
-    })),
+    gasPrices: gasPriceDiagnostics,
   });
-  const edgeClassCandidates = new Map<string, GraphEdgeCandidate>();
-  edgeCandidates.forEach((candidate) => {
-    const edgeClassId = resolveEdgeClassId(candidate);
-    if (!edgeClassCandidates.has(edgeClassId)) {
-      edgeClassCandidates.set(edgeClassId, candidate);
-    }
-  });
-  logBuild("Building edge classes", { edgeClassCount: edgeClassCandidates.size });
-  const edgeClassDefinitions = new Map(
-    (
-      await mapAsync(Array.from(edgeClassCandidates.values()), async (candidate) => {
-        const edgeClass = await serializeEdgeClassDefinition(candidate, edgePricingParams);
-        return [edgeClass.edge_class_id, edgeClass] as const;
-      })
-    ).sort(([a], [b]) => a.localeCompare(b))
+  const edgeClassCandidates = Array.from(
+    Map.groupBy(edgeCandidates, resolveEdgeClassId).values(),
+    ([candidate]) => candidate
   );
+  logBuild("Building edge classes", { edgeClassCount: edgeClassCandidates.length });
+  const edgeClassDefinitions = (
+    await mapAsync(edgeClassCandidates, (candidate) => serializeEdgeClassDefinition(candidate, edgePricingParams))
+  ).sort((a, b) => a.edge_class_id.localeCompare(b.edge_class_id));
   const edges: JussiEdgeDefinition[] = [];
   const edgeCandidateBatches = chunk(edgeCandidates, EDGE_BUILD_BATCH_SIZE);
   for (let batchIndex = 0; batchIndex < edgeCandidateBatches.length; batchIndex += 1) {
@@ -142,9 +107,7 @@ export async function enrichPreparedTopology(
       });
       const economics = await estimateEdgeEconomics(candidate, edgePricingParams);
       const edgeClassId = resolveEdgeClassId(candidate);
-      const edgeClass = edgeClassDefinitions.get(edgeClassId);
-      assert(isDefined(edgeClass), `Missing derived edge class for ${edgeClassId}`);
-      const edge = serializeEdgeDefinition(candidate, economics, edgeClass.edge_class_id);
+      const edge = serializeEdgeDefinition(candidate, economics, edgeClassId);
       debugBuild("Constructed edge", {
         edgeIndex,
         edgeCount: edgeCandidates.length,
@@ -175,18 +138,9 @@ export async function enrichPreparedTopology(
       pain_model: DEFAULT_PAIN_MODEL,
       logical_assets: logicalAssets,
       cumulative_balance_pain: buildCumulativeBalancePainDefinitions(cumulativeBalancesByLogicalAsset),
-      edge_classes: Array.from(edgeClassDefinitions.values()).sort((a, b) =>
-        a.edge_class_id.localeCompare(b.edge_class_id)
-      ),
+      edge_classes: edgeClassDefinitions,
       nodes: nodeContexts.map((node) => node.definition),
       edges,
     },
   };
-}
-
-export function runFullBuild(
-  prepared: PreparedGraphTopologyForBuild,
-  liveDeps: JussiGraphLiveDeps
-): Promise<BuiltJussiGraph> {
-  return enrichPreparedTopology(prepared, liveDeps);
 }

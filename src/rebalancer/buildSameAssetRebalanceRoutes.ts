@@ -11,19 +11,13 @@ export type SameAssetRebalanceRouteSupport = (typeof SAME_ASSET_REBALANCE_ROUTE_
 // @dev For now, the SameAssetRebalancerClient only supports rebalancing between L1 and the listed L2 chains in
 // the support catalog above.
 export function buildSameAssetRebalanceRoutes(rebalancerConfig: RebalancerConfig): RebalanceRoute[] {
-  const routes: RebalanceRoute[] = [];
-
-  // If a supported route exists in the rebalancer config, return it.
-  for (const { token, chainId, adapter } of SAME_ASSET_REBALANCE_ROUTE_SUPPORT) {
-    if (isDefined(rebalancerConfig.sameAssetBalances?.[token]?.[chainId]) && chainId !== CHAIN_IDs.MAINNET) {
-      routes.push({
-        sourceChain: CHAIN_IDs.MAINNET,
-        destinationChain: chainId,
-        sourceToken: token,
-        destinationToken: token,
-        adapter,
-      });
-    }
-  }
-  return routes;
+  return SAME_ASSET_REBALANCE_ROUTE_SUPPORT.filter(({ token, chainId }) =>
+    isDefined(rebalancerConfig.sameAssetBalances?.[token]?.[chainId])
+  ).map(({ token, chainId, adapter }) => ({
+    sourceChain: CHAIN_IDs.MAINNET,
+    destinationChain: chainId,
+    sourceToken: token,
+    destinationToken: token,
+    adapter,
+  }));
 }

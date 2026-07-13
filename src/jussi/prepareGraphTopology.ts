@@ -52,15 +52,15 @@ export async function prepareGraphTopology(params: {
   );
   const sameAssetRoutes = buildSameAssetRebalanceRoutes(rebalancerConfig);
   assertSameAssetRouteNodesExist(sameAssetRoutes, nodeContexts, hubCtx.hubPoolChainId);
-  const bridgeAdapterRoutes = await buildBridgeAdapterRoutes({
+  const bridgeAdapterRoutes = buildBridgeAdapterRoutes({
     nodeContexts,
     hubPoolChainId: hubCtx.hubPoolChainId,
   });
   const rebalanceRoutes = [...buildRebalanceRoutes(rebalancerConfig), ...sameAssetRoutes, ...bridgeAdapterRoutes];
   const topology = buildTopology({
-    relayerConfig,
     rebalanceRoutes,
-    hubCtx,
+    hubPoolChainId: hubCtx.hubPoolChainId,
+    nodeContexts,
   });
 
   return {

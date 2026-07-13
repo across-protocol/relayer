@@ -5,19 +5,9 @@
 The builder is schema-first: it emits the canonical Jussi graph shape and populates venue economics from live relayer adapters instead of baking a separate graph schema into `relayer-v2`.
 The implementation is split into topology, economics, serialization, API-client, and publisher modules under `src/jussi/`.
 
-## Public Build API
+## Build API
 
-New callers should import graph-building APIs from `src/jussi/buildGraph.ts`.
-
-Use `buildJussiGraphUploadBundle(params)` when a client needs a graph ready for `JussiApiClient.putGraphBundle(graphId, bundle)`. It runs the full topology plus live-economics build and returns:
-
-- `graphId`: the id to use in `PUT /graph_bundles/{graphId}`
-- `bundle`: the PUT body `{ graph, rate_limit_buckets }`
-- `envelope`: the stdout/debug shape `{ graph_id, payload }`
-- `bundleHash`: the stable bundle hash for metadata or reconciliation
-- `graph`: the intermediate `BuiltJussiGraph` for artifact writers
-
-Use `buildJussiGraphDefinition(params)` only when the caller needs the intermediate graph object before serialization. Use `prepareGraphTopology(...)` plus `runFullBuild(prepared, deps)` only for advanced flows that intentionally separate deterministic topology checks from live signer/client construction, such as `scripts/buildJussiGraph.ts` and the upload publisher.
+Graph builders should import from `src/jussi/buildGraph.ts` and use the single shared path: call `prepareGraphTopology(...)` for deterministic topology, then `runFullBuild(prepared, deps)` for live economics. Serialize the result with `buildJussiGraphBundleJson(...)` for `JussiApiClient.putGraphBundle(...)` or `buildJussiGraphEnvelope(...)` for the stdout/debug shape. `scripts/buildJussiGraph.ts` is the reference caller for artifact generation and uploads.
 
 Today that means:
 
