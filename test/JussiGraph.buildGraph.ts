@@ -1,9 +1,21 @@
 import { expect, sinon, toBNWei, winston } from "./utils";
-import { CHAIN_IDs, EvmAddress, getMessengerEvm, TOKEN_SYMBOLS_MAP } from "../src/utils";
+import {
+  CHAIN_IDs,
+  EvmAddress,
+  getMessengerEvm,
+  getTokenInfoFromSymbol,
+  resolveBinanceCoinSymbol,
+  TOKEN_SYMBOLS_MAP,
+} from "../src/utils";
 import { RelayerConfig } from "../src/relayer/RelayerConfig";
 import { RebalancerConfig } from "../src/rebalancer/RebalancerConfig";
 import { buildRebalanceRoutes } from "../src/rebalancer/buildRebalanceRoutes";
 import {
+  buildSameAssetRebalanceRoutes,
+  getSameAssetRebalanceRouteSupport,
+} from "../src/rebalancer/buildSameAssetRebalanceRoutes";
+import {
+  BINANCE_RATE_LIMIT_BUCKET_ID,
   GraphEdgeCandidate,
   BuiltJussiGraph,
   ManagedNodeContext,
@@ -32,6 +44,7 @@ import {
   RuntimePricingContext,
   buildTopology,
   bundleHash,
+  canonicalNodeKey,
   stableJsonStringify,
 } from "../src/jussi/buildGraph";
 import { JussiApiClient, putJsonWithTimeout } from "../src/jussi/JussiApiClient";
@@ -154,6 +167,80 @@ function buildRebalancerConfig(targetBalance = "100"): RebalancerConfig {
       maxPendingOrders: {},
     }),
   });
+}
+
+type SameAssetRouteSupport = ReturnType<typeof getSameAssetRebalanceRouteSupport>[number];
+
+function buildSameAssetRebalancerConfig(
+  supportedRoutes: readonly SameAssetRouteSupport[] = getSameAssetRebalanceRouteSupport()
+): RebalancerConfig {
+  const sameAssetBalances = supportedRoutes.reduce<Record<string, { chains: Record<number, number> }>>(
+    (balances, { token, chainId }) => {
+      balances[token] ??= { chains: {} };
+      balances[token].chains[chainId] = 0;
+      return balances;
+    },
+    {}
+  );
+
+  return new RebalancerConfig({
+    HUB_CHAIN_ID: String(CHAIN_IDs.MAINNET),
+    REBALANCER_CONFIG: JSON.stringify({ sameAssetBalances }),
+  });
+}
+
+function buildSameAssetRelayerConfig(
+  supportedRoutes: readonly SameAssetRouteSupport[] = getSameAssetRebalanceRouteSupport(),
+  omittedEndpoint?: { token: string; chainId: number }
+): RelayerConfig {
+  const configuredRoutes = buildSameAssetRebalanceRoutes(buildSameAssetRebalancerConfig(supportedRoutes));
+  const tokenConfig = configuredRoutes.reduce<
+    Record<string, Record<number, { targetPct: number; thresholdPct: number }>>
+  >((config, route) => {
+    config[route.destinationToken] ??= {};
+    config[route.destinationToken][route.destinationChain] = { targetPct: 1, thresholdPct: 0 };
+    return config;
+  }, {});
+  if (omittedEndpoint) {
+    delete tokenConfig[omittedEndpoint.token]?.[omittedEndpoint.chainId];
+  }
+
+  return new RelayerConfig({
+    HUB_CHAIN_ID: String(CHAIN_IDs.MAINNET),
+    RELAYER_INVENTORY_CONFIG: JSON.stringify({
+      tokenConfig,
+      allowedSwapRoutes: [],
+      wrapEtherTarget: "0",
+      wrapEtherTargetPerChain: {},
+      wrapEtherThreshold: "0",
+      wrapEtherThresholdPerChain: {},
+    }),
+  });
+}
+
+function rebalanceRouteMatches(
+  actual: {
+    sourceChain: number;
+    sourceToken: string;
+    destinationChain: number;
+    destinationToken: string;
+    adapter: string;
+  },
+  expected: {
+    sourceChain: number;
+    sourceToken: string;
+    destinationChain: number;
+    destinationToken: string;
+    adapter: string;
+  }
+): boolean {
+  return (
+    actual.sourceChain === expected.sourceChain &&
+    actual.sourceToken === expected.sourceToken &&
+    actual.destinationChain === expected.destinationChain &&
+    actual.destinationToken === expected.destinationToken &&
+    actual.adapter === expected.adapter
+  );
 }
 
 function buildNoopLogger(): winston.Logger {
@@ -1357,6 +1444,95 @@ describe("Jussi graph builder helpers", function () {
       [...artifact.edge_candidates.map((edge) => edge.edge_id)].sort((left, right) => left.localeCompare(right))
     );
     expect(stableJsonStringify(artifact)).to.equal(stableJsonStringify(rebuiltArtifact));
+  });
+
+  it("includes every configured SameAsset route in prepared and runtime topology", async function () {
+    const supportedRoutes = getSameAssetRebalanceRouteSupport();
+    const relayerConfig = buildSameAssetRelayerConfig(supportedRoutes);
+    const rebalancerConfig = buildSameAssetRebalancerConfig(supportedRoutes);
+    const sameAssetRoutes = buildSameAssetRebalanceRoutes(rebalancerConfig);
+    const prepared = await prepareGraphTopology({ relayerConfig, rebalancerConfig });
+    const runtimeRoutes = resolveRuntimeRebalanceRoutes(prepared);
+    const artifact = buildJussiTopologyArtifact(prepared);
+
+    expect(supportedRoutes).not.to.have.lengthOf(0);
+    expect(sameAssetRoutes).to.have.lengthOf(supportedRoutes.length);
+    sameAssetRoutes.forEach((route) => {
+      const sourceTokenInfo = getTokenInfoFromSymbol(route.sourceToken, route.sourceChain);
+      const destinationTokenInfo = getTokenInfoFromSymbol(route.destinationToken, route.destinationChain);
+      const sourceNodeKey = canonicalNodeKey(route.sourceChain, sourceTokenInfo.address.toNative());
+      const destinationNodeKey = canonicalNodeKey(route.destinationChain, destinationTokenInfo.address.toNative());
+      const expectedFamily =
+        route.adapter === "binance" &&
+        resolveBinanceCoinSymbol(route.sourceToken) === resolveBinanceCoinSymbol(route.destinationToken)
+          ? "binance_cex_bridge"
+          : route.adapter;
+
+      expect(prepared.rebalanceRoutes.some((preparedRoute) => rebalanceRouteMatches(preparedRoute, route))).to.equal(
+        true
+      );
+      expect(runtimeRoutes.some((runtimeRoute) => rebalanceRouteMatches(runtimeRoute, route))).to.equal(true);
+      expect(prepared.topology.nodeContexts.some((node) => node.nodeKey === sourceNodeKey)).to.equal(true);
+      expect(prepared.topology.nodeContexts.some((node) => node.nodeKey === destinationNodeKey)).to.equal(true);
+
+      const candidate = findExpectedEdge(
+        prepared.topology.edgeCandidates,
+        (edge) =>
+          edge.from.nodeKey === sourceNodeKey &&
+          edge.to.nodeKey === destinationNodeKey &&
+          edge.rebalanceRoute !== undefined &&
+          rebalanceRouteMatches(edge.rebalanceRoute, route),
+        `${route.adapter}:${route.sourceToken}:${route.sourceChain}->${route.destinationToken}:${route.destinationChain}`
+      );
+      expect(candidate.family).to.equal(expectedFamily);
+      expect(candidate.adapterOrBridgeName).to.equal(route.adapter);
+
+      const artifactCandidate = artifact.edge_candidates.find(
+        (edge) =>
+          edge.from_node_key === sourceNodeKey &&
+          edge.to_node_key === destinationNodeKey &&
+          edge.rebalance_route?.source_chain === route.sourceChain &&
+          edge.rebalance_route.source_token === route.sourceToken &&
+          edge.rebalance_route.destination_chain === route.destinationChain &&
+          edge.rebalance_route.destination_token === route.destinationToken &&
+          edge.rebalance_route.adapter === route.adapter
+      );
+      expect(artifactCandidate, `missing topology artifact edge for ${route.sourceToken} on ${route.destinationChain}`)
+        .to.exist;
+      expect(artifactCandidate?.family).to.equal(expectedFamily);
+      expect(artifactCandidate?.adapter_or_bridge_name).to.equal(route.adapter);
+      if (expectedFamily === "binance" || expectedFamily === "binance_cex_bridge") {
+        expect(artifactCandidate?.rate_limit_bucket_id).to.equal(BINANCE_RATE_LIMIT_BUCKET_ID);
+        expect(
+          artifact.rate_limit_buckets.some((bucket) => bucket.bucket_id === BINANCE_RATE_LIMIT_BUCKET_ID)
+        ).to.equal(true);
+      } else {
+        expect(artifactCandidate?.rate_limit_bucket_id).to.equal(undefined);
+      }
+    });
+  });
+
+  it("rejects a configured SameAsset route when its managed inventory endpoint is missing", async function () {
+    const supportedRoutes = getSameAssetRebalanceRouteSupport();
+    const configuredRoutes = buildSameAssetRebalanceRoutes(buildSameAssetRebalancerConfig(supportedRoutes));
+    const missingRoute = configuredRoutes[0];
+
+    expect(missingRoute).not.to.equal(undefined);
+    const missingEndpoint = { token: missingRoute.destinationToken, chainId: missingRoute.destinationChain };
+    let errorMessage = "";
+    try {
+      await prepareGraphTopology({
+        relayerConfig: buildSameAssetRelayerConfig(supportedRoutes, missingEndpoint),
+        rebalancerConfig: buildSameAssetRebalancerConfig(supportedRoutes),
+      });
+    } catch (error) {
+      errorMessage = error instanceof Error ? error.message : String(error);
+    }
+
+    expect(errorMessage).to.contain("destination");
+    expect(errorMessage).to.contain(missingEndpoint.token);
+    expect(errorMessage).to.contain(String(missingRoute.sourceChain));
+    expect(errorMessage).to.contain(String(missingEndpoint.chainId));
   });
 
   it("excludes legacy mesh OFT routes from Jussi topology while keeping direct Binance Tron routes", async function () {

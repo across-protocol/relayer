@@ -2,7 +2,10 @@ import { expect } from "./utils";
 import { CHAIN_IDs } from "../src/utils";
 import { RebalancerConfig } from "../src/rebalancer/RebalancerConfig";
 import { buildRebalanceRoutes } from "../src/rebalancer/buildRebalanceRoutes";
-import { buildSameAssetRebalanceRoutes } from "../src/rebalancer/buildSameAssetRebalanceRoutes";
+import {
+  buildSameAssetRebalanceRoutes,
+  getSameAssetRebalanceRouteSupport,
+} from "../src/rebalancer/buildSameAssetRebalanceRoutes";
 
 function buildSyntheticRebalancerConfig(): RebalancerConfig {
   return new RebalancerConfig({
@@ -133,17 +136,24 @@ function buildSyntheticRebalancerConfigWithTron(): RebalancerConfig {
   });
 }
 
-function buildSyntheticSameAssetRebalancerConfig(): RebalancerConfig {
+type SameAssetRouteSupport = ReturnType<typeof getSameAssetRebalanceRouteSupport>[number];
+
+function buildSyntheticSameAssetRebalancerConfig(
+  supportedRoutes: readonly SameAssetRouteSupport[] = getSameAssetRebalanceRouteSupport()
+): RebalancerConfig {
+  const sameAssetBalances = supportedRoutes.reduce<Record<string, { chains: Record<number, number> }>>(
+    (balances, { token, chainId }) => {
+      balances[token] ??= { chains: {} };
+      balances[token].chains[chainId] = 0;
+      return balances;
+    },
+    {}
+  );
+
   return new RebalancerConfig({
     HUB_CHAIN_ID: String(CHAIN_IDs.MAINNET),
     REBALANCER_CONFIG: JSON.stringify({
-      sameAssetBalances: {
-        USDT: {
-          chains: {
-            [CHAIN_IDs.AVALANCHE]: 0,
-          },
-        },
-      },
+      sameAssetBalances,
     }),
   });
 }
@@ -306,18 +316,57 @@ describe("buildRebalanceRoutes", function () {
 });
 
 describe("buildSameAssetRebalanceRoutes", function () {
-  it("builds configured L1-to-L2 same-asset routes only", function () {
-    const routes = buildSameAssetRebalanceRoutes(buildSyntheticSameAssetRebalancerConfig());
+  it("builds every configured route in the SameAsset support catalog", function () {
+    const supportedRoutes = getSameAssetRebalanceRouteSupport();
+    const routes = buildSameAssetRebalanceRoutes(buildSyntheticSameAssetRebalancerConfig(supportedRoutes));
+    const expectedRoutes = supportedRoutes.map(({ token, chainId, adapter }) => ({
+      sourceChain: CHAIN_IDs.MAINNET,
+      destinationChain: chainId,
+      sourceToken: token,
+      destinationToken: token,
+      adapter,
+    }));
 
-    expect(routes).to.deep.equal([
-      {
-        sourceChain: CHAIN_IDs.MAINNET,
-        destinationChain: CHAIN_IDs.AVALANCHE,
-        sourceToken: "USDT",
-        destinationToken: "USDT",
-        adapter: "binance",
-      },
-    ]);
-    expect(routeExists(routes, CHAIN_IDs.AVALANCHE, "USDT", CHAIN_IDs.MAINNET, "USDT", "binance")).to.equal(false);
+    expect(supportedRoutes).not.to.have.lengthOf(0);
+    expect(routes).to.have.lengthOf(expectedRoutes.length);
+    expect(routes).to.have.deep.members(expectedRoutes);
+    expectedRoutes.forEach((route) => {
+      expect(
+        routeExists(
+          routes,
+          route.destinationChain,
+          route.destinationToken,
+          route.sourceChain,
+          route.sourceToken,
+          route.adapter
+        )
+      ).to.equal(false);
+    });
+  });
+
+  it("filters each supported route when it is disabled in rebalancer config", function () {
+    const supportedRoutes = getSameAssetRebalanceRouteSupport();
+
+    expect(supportedRoutes).not.to.have.lengthOf(0);
+    supportedRoutes.forEach((disabledRoute) => {
+      const enabledRoutes = supportedRoutes.filter(
+        ({ token, chainId }) => token !== disabledRoute.token || chainId !== disabledRoute.chainId
+      );
+      const routes = buildSameAssetRebalanceRoutes(buildSyntheticSameAssetRebalancerConfig(enabledRoutes));
+
+      expect(
+        routeExists(
+          routes,
+          CHAIN_IDs.MAINNET,
+          disabledRoute.token,
+          disabledRoute.chainId,
+          disabledRoute.token,
+          disabledRoute.adapter
+        )
+      ).to.equal(false);
+      enabledRoutes.forEach(({ token, chainId, adapter }) => {
+        expect(routeExists(routes, CHAIN_IDs.MAINNET, token, chainId, token, adapter)).to.equal(true);
+      });
+    });
   });
 });

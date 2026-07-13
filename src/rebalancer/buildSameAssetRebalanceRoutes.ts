@@ -2,35 +2,38 @@ import { CHAIN_IDs, isDefined } from "../utils";
 import { RebalancerConfig } from "./RebalancerConfig";
 import { RebalanceRoute } from "./utils/interfaces";
 
-type AdapterName = "binance" | "hyperliquid" | "cctp" | "oft";
+export type SameAssetRebalanceAdapterName = "binance" | "hyperliquid" | "cctp" | "oft";
 
-const SAME_ASSET_ROUTES_SUPPORTED: Record<string, Record<number, AdapterName>> = {
-  USDT: {
-    "43114": "binance",
-  },
-};
+export type SameAssetRebalanceRouteSupport = Readonly<{
+  token: string;
+  chainId: number;
+  adapter: SameAssetRebalanceAdapterName;
+}>;
+
+const SAME_ASSET_REBALANCE_ROUTE_SUPPORT: readonly SameAssetRebalanceRouteSupport[] = Object.freeze([
+  Object.freeze({ token: "USDT", chainId: CHAIN_IDs.AVALANCHE, adapter: "binance" }),
+]);
+
+export function getSameAssetRebalanceRouteSupport(): readonly SameAssetRebalanceRouteSupport[] {
+  return SAME_ASSET_REBALANCE_ROUTE_SUPPORT;
+}
 
 // @dev For now, the SameAssetRebalancerClient only supports rebalancing between L1 and the listed L2 chains in
-// the mapping above.
+// the support catalog above.
 export function buildSameAssetRebalanceRoutes(rebalancerConfig: RebalancerConfig): RebalanceRoute[] {
-  const routes = new Set<RebalanceRoute>();
+  const routes: RebalanceRoute[] = [];
 
   // If a supported route exists in the rebalancer config, return it.
-  for (const [token, chainConfig] of Object.entries(SAME_ASSET_ROUTES_SUPPORTED)) {
-    for (const [chainId, adapter] of Object.entries(chainConfig)) {
-      if (
-        isDefined(rebalancerConfig.sameAssetBalances?.[token]?.[Number(chainId)]) &&
-        Number(chainId) !== CHAIN_IDs.MAINNET
-      ) {
-        routes.add({
-          sourceChain: CHAIN_IDs.MAINNET,
-          destinationChain: Number(chainId),
-          sourceToken: token,
-          destinationToken: token,
-          adapter: adapter,
-        });
-      }
+  for (const { token, chainId, adapter } of getSameAssetRebalanceRouteSupport()) {
+    if (isDefined(rebalancerConfig.sameAssetBalances?.[token]?.[chainId]) && chainId !== CHAIN_IDs.MAINNET) {
+      routes.push({
+        sourceChain: CHAIN_IDs.MAINNET,
+        destinationChain: chainId,
+        sourceToken: token,
+        destinationToken: token,
+        adapter,
+      });
     }
   }
-  return Array.from(routes);
+  return routes;
 }
