@@ -92,7 +92,7 @@ export class SameAssetRebalancerClient extends BaseRebalancerClient {
         adapter: rebalance.adapter,
         expectedFees: fromWei(estimatedCost, sourceTokenInfo.decimals),
         desiredAmountToTransfer: fromWei(amount, sourceTokenInfo.decimals),
-        maxAmountToTransfer: fromWei(maxAmountToTransfer, sourceTokenInfo.decimals),
+        maxAmountToTransfer: maxAmountToTransfer && fromWei(maxAmountToTransfer, sourceTokenInfo.decimals).toString(),
         amountToTransferCapped: fromWei(amountToTransferCapped, sourceTokenInfo.decimals),
       });
 
