@@ -58,6 +58,20 @@ property of the deposit address, not the bot's auth key) and is **required** by 
 endpoint — it folds into the CREATE2 salt + on-chain integrator tag, so the address is derived
 per-integrator. The bot relays it verbatim.
 
+Two optional execute fields are gated behind env flags because an API that predates their schema
+changes rejects an unknown param with `400 INVALID_PARAM`:
+
+- `ENABLE_EXECUTE_INPUT_TOKEN=true` → relays the funding token as `inputToken`.
+- `ENABLE_EXECUTE_ERC20_TRANSFER_METADATA=true` → relays an `erc20Transfer` provenance reference
+  (`{ chainId, blockNumber, transactionHash, logIndex }` of the inbound funding transfer, taken
+  verbatim from the indexer message; `chainId` coerced to an integer). When accepted, the API wraps
+  `executeTx` in a Multicall3 bundle that additionally emits a version-2 provenance blob via
+  `AcrossEventEmitter`, giving the indexer an on-chain sweep ↔ funding-transfer link in the execute
+  receipt.
+
+Both default off; enable them only against an API that accepts the field (e.g. the test bot ahead of
+the production rollout).
+
 The flow (`initiateDepositV3`):
 
 1. Filter on `relayerOriginChains` and dedup against the same Redis/in-memory sets as v1 (the dedup
