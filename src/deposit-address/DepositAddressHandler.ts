@@ -1177,6 +1177,14 @@ export class DepositAddressHandler {
         recipient: routeParams.recipient.address,
       },
       originChainId: Number(erc20Transfer.chainId),
+      ...(this.config.enableExecuteInputToken
+        ? {
+            inputToken: {
+              chainId: Number(erc20Transfer.chainId),
+              address: erc20Transfer.contractAddress,
+            },
+          }
+        : {}),
       userAddress: refundAddress.address,
       amount: erc20Transfer.amount,
       executionFeeRecipient: this.signerAddress.toNative(),
