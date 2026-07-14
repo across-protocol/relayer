@@ -364,8 +364,9 @@ describe("DepositAddressHandler._getExecuteTx request mapping", function () {
   it("relays funding context and integratorId, with executionFee omitted", async function () {
     await (handler as unknown as Internals)._getExecuteTx(depositMessageV3());
     expect(executeStub.calledOnce).to.equal(true);
-    // Exact request body: the execute endpoint re-derives the address/materials from this
-    // identity, and its superstruct schema rejects unknown or missing keys.
+    // Exact request body with all execute feature flags off (the default / production shape): the
+    // execute endpoint re-derives the address/materials from this identity, and its superstruct
+    // schema rejects unknown or missing keys. Neither `inputToken` nor `erc20Transfer` is sent.
     expect(executeStub.firstCall.args[0]).to.deep.equal({
       destination: {
         token: { chainId: 1337, address: OUTPUT_TOKEN },
@@ -376,6 +377,31 @@ describe("DepositAddressHandler._getExecuteTx request mapping", function () {
       amount: "5000",
       executionFeeRecipient: SIGNER,
       integratorId: "0xdead",
+    });
+  });
+
+  it("relays erc20Transfer provenance when ENABLE_EXECUTE_ERC20_TRANSFER is on", async function () {
+    (handler as unknown as { config: { enableExecuteErc20Transfer: boolean } }).config.enableExecuteErc20Transfer =
+      true;
+    await (handler as unknown as Internals)._getExecuteTx(depositMessageV3());
+    expect(executeStub.calledOnce).to.equal(true);
+    expect(executeStub.firstCall.args[0]).to.deep.equal({
+      destination: {
+        token: { chainId: 1337, address: OUTPUT_TOKEN },
+        recipient: RECIPIENT,
+      },
+      originChainId: 42161,
+      userAddress: REFUND_ADDRESS,
+      amount: "5000",
+      executionFeeRecipient: SIGNER,
+      integratorId: "0xdead",
+      // chainId coerced from the fixture's "42161" string; Number() is a no-op on a numeric value.
+      erc20Transfer: {
+        chainId: 42161,
+        blockNumber: 1_000_000,
+        transactionHash: "0x" + "3".repeat(64),
+        logIndex: 4,
+      },
     });
   });
 

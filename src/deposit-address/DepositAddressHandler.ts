@@ -1189,6 +1189,21 @@ export class DepositAddressHandler {
       amount: erc20Transfer.amount,
       executionFeeRecipient: this.signerAddress.toNative(),
       integratorId,
+      // Provenance reference to the inbound funding transfer. When accepted, the API folds this into a
+      // Multicall3 bundle that emits a version-2 provenance blob, giving the indexer an on-chain
+      // sweep ↔ funding-transfer link in the execute receipt. Gated because an API without the schema
+      // change rejects the field (400 INVALID_PARAM, `Expected type 'never'`). Number() is a no-op on
+      // an already-numeric chainId, so this keeps working if the indexer later types it as a number.
+      ...(this.config.enableExecuteErc20Transfer
+        ? {
+            erc20Transfer: {
+              chainId: Number(erc20Transfer.chainId),
+              blockNumber: erc20Transfer.blockNumber,
+              transactionHash: erc20Transfer.transactionHash,
+              logIndex: erc20Transfer.logIndex,
+            },
+          }
+        : {}),
     };
     // `_post` swallows errors and returns undefined, so retry on both throw and falsy return.
     try {
