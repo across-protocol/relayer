@@ -386,7 +386,7 @@ describe("DepositAddressHandler._getExecuteTx request mapping", function () {
     });
   });
 
-  it("passes a numeric erc20Transfer.chainId through without re-coercion", async function () {
+  it("handles a numeric erc20Transfer.chainId (Number() is a no-op)", async function () {
     const message = depositMessageV3();
     // Simulate a future indexer response that types chainId as a number.
     (message.erc20Transfer as unknown as { chainId: number }).chainId = 42161;
