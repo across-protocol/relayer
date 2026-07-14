@@ -376,7 +376,22 @@ describe("DepositAddressHandler._getExecuteTx request mapping", function () {
       amount: "5000",
       executionFeeRecipient: SIGNER,
       integratorId: "0xdead",
+      // Provenance reference to the inbound funding transfer; chainId coerced to a number.
+      erc20Transfer: {
+        chainId: 42161,
+        blockNumber: 1_000_000,
+        transactionHash: "0x" + "3".repeat(64),
+        logIndex: 4,
+      },
     });
+  });
+
+  it("passes a numeric erc20Transfer.chainId through without re-coercion", async function () {
+    const message = depositMessageV3();
+    // Simulate a future indexer response that types chainId as a number.
+    (message.erc20Transfer as unknown as { chainId: number }).chainId = 42161;
+    await (handler as unknown as Internals)._getExecuteTx(message);
+    expect(executeStub.firstCall.args[0].erc20Transfer.chainId).to.equal(42161);
   });
 
   it("retries on undefined responses and gives up after exhausting retries", async function () {
