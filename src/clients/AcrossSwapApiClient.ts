@@ -116,6 +116,19 @@ export interface DepositAddressExecuteRequest {
    * integrators); drives the CREATE2 salt + on-chain integrator tag. Required by the endpoint.
    */
   integratorId: string;
+  /**
+   * Optional reference to the inbound ERC-20 transfer that funded the sweep. When present, the API
+   * wraps `executeTx` in a Multicall3 bundle that also emits a version-2 provenance blob via
+   * `AcrossEventEmitter`, so the indexer can link the deposit-executed event to this transfer in the
+   * same receipt. `transactionHash` is a 32-byte hex hash (`^(0x)?[0-9a-fA-F]{64}$`); the numeric
+   * fields must be non-negative integers.
+   */
+  erc20Transfer?: {
+    chainId: number;
+    blockNumber: number;
+    transactionHash: string;
+    logIndex: number;
+  };
 }
 
 export interface DepositAddressExecuteResponse {
