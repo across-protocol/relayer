@@ -394,6 +394,31 @@ describe("DepositAddressHandler._getExecuteTx request mapping", function () {
     expect(executeStub.firstCall.args[0].erc20Transfer.chainId).to.equal(42161);
   });
 
+  it("relays the funding token as inputToken when ENABLE_EXECUTE_INPUT_TOKEN is on", async function () {
+    (handler as unknown as { config: { enableExecuteInputToken: boolean } }).config.enableExecuteInputToken = true;
+    await (handler as unknown as Internals)._getExecuteTx(depositMessageV3());
+    expect(executeStub.calledOnce).to.equal(true);
+    expect(executeStub.firstCall.args[0]).to.deep.equal({
+      destination: {
+        token: { chainId: 1337, address: OUTPUT_TOKEN },
+        recipient: RECIPIENT,
+      },
+      originChainId: 42161,
+      inputToken: { chainId: 42161, address: TOKEN },
+      userAddress: REFUND_ADDRESS,
+      amount: "5000",
+      executionFeeRecipient: SIGNER,
+      integratorId: "0xdead",
+      // erc20Transfer provenance is always relayed, independent of the inputToken flag.
+      erc20Transfer: {
+        chainId: 42161,
+        blockNumber: 1_000_000,
+        transactionHash: "0x" + "3".repeat(64),
+        logIndex: 4,
+      },
+    });
+  });
+
   it("retries on undefined responses and gives up after exhausting retries", async function () {
     executeStub.resolves(undefined);
     const result = await (handler as unknown as Internals)._getExecuteTx(depositMessageV3());

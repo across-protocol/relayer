@@ -663,6 +663,17 @@ export const CONTRACT_ADDRESSES: {
       address: "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
     },
+    spokePoolPeriphery: {
+      abi: SPOKE_POOL_PERIPHERY_ABI,
+    },
+    sponsoredCCTPDstPeriphery: {
+      address: "0x40ad479382Ad2a5c3061487A5094a677B00f6Cb0",
+      abi: SPONSORED_CCTP_DST_PERIPHERY_ABI,
+    },
+    permit2: {
+      address: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      abi: PERMIT2_ABI,
+    },
   },
   [CHAIN_IDs.LENS]: {
     nativeTokenVault: {

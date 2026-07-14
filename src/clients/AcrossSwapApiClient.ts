@@ -98,6 +98,11 @@ export interface DepositAddressExecuteRequest {
     recipient: string;
   };
   originChainId: number;
+  // The origin token that funded the deposit address.
+  inputToken?: {
+    chainId: number;
+    address: string;
+  };
   /** The withdraw "user" identity committed at deposit-address creation (the refund address). */
   userAddress: string;
   /** Input amount as a decimal (or 0x-hex) bigint string. */

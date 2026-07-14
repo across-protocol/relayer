@@ -338,6 +338,7 @@ export class CCTPService {
       56: process.env.BSC_RPC_URL,
       143: process.env.MONAD_RPC_URL,
       57073: process.env.INK_RPC_URL,
+      43114: process.env.AVALANCHE_RPC_URL,
       34268394551451: process.env.SOLANA_RPC_URL,
       // Test networks
       11155111: process.env.SEPOLIA_RPC_URL,
