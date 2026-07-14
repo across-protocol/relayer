@@ -1189,17 +1189,6 @@ export class DepositAddressHandler {
       amount: erc20Transfer.amount,
       executionFeeRecipient: this.signerAddress.toNative(),
       integratorId,
-      // Provenance reference to the inbound funding transfer. The API folds this into a Multicall3
-      // bundle that emits a version-2 provenance blob, giving the indexer an on-chain sweep ↔
-      // funding-transfer link in the execute receipt. The endpoint requires chainId as a
-      // non-negative integer; Number() is a no-op on an already-numeric value, so this keeps working
-      // if the indexer later types chainId as a number.
-      erc20Transfer: {
-        chainId: Number(erc20Transfer.chainId),
-        blockNumber: erc20Transfer.blockNumber,
-        transactionHash: erc20Transfer.transactionHash,
-        logIndex: erc20Transfer.logIndex,
-      },
     };
     // `_post` swallows errors and returns undefined, so retry on both throw and falsy return.
     try {
