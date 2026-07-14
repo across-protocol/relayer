@@ -379,6 +379,24 @@ describe("DepositAddressHandler._getExecuteTx request mapping", function () {
     });
   });
 
+  it("relays the funding token as inputToken when ENABLE_EXECUTE_INPUT_TOKEN is on", async function () {
+    (handler as unknown as { config: { enableExecuteInputToken: boolean } }).config.enableExecuteInputToken = true;
+    await (handler as unknown as Internals)._getExecuteTx(depositMessageV3());
+    expect(executeStub.calledOnce).to.equal(true);
+    expect(executeStub.firstCall.args[0]).to.deep.equal({
+      destination: {
+        token: { chainId: 1337, address: OUTPUT_TOKEN },
+        recipient: RECIPIENT,
+      },
+      originChainId: 42161,
+      inputToken: { chainId: 42161, address: TOKEN },
+      userAddress: REFUND_ADDRESS,
+      amount: "5000",
+      executionFeeRecipient: SIGNER,
+      integratorId: "0xdead",
+    });
+  });
+
   it("retries on undefined responses and gives up after exhausting retries", async function () {
     executeStub.resolves(undefined);
     const result = await (handler as unknown as Internals)._getExecuteTx(depositMessageV3());
