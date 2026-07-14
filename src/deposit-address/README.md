@@ -53,6 +53,13 @@ context only — origin chain, amount, destination route, refund identity — pl
 `executionFeeRecipient` and the `integratorId` the address was derived with. `executionFee` is
 currently omitted (the API defaults it to 0); bot-side fee pricing is a follow-up task.
 
+The bot also relays an `erc20Transfer` provenance reference — `{ chainId, blockNumber,
+transactionHash, logIndex }` of the inbound funding transfer, taken verbatim from the indexer
+message (`chainId` coerced to an integer). When present, the API wraps `executeTx` in a Multicall3
+bundle that additionally emits a version-2 provenance blob via `AcrossEventEmitter`, so the indexer
+gets an explicit sweep ↔ funding-transfer link in the same execute receipt. It is optional on the
+endpoint; the bot always has these fields, so it always sends them.
+
 The `integratorId` (2-byte hex) is sourced from the indexer message's `integrator` projection (a
 property of the deposit address, not the bot's auth key) and is **required** by the execute
 endpoint — it folds into the CREATE2 salt + on-chain integrator tag, so the address is derived
