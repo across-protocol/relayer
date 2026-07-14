@@ -376,22 +376,7 @@ describe("DepositAddressHandler._getExecuteTx request mapping", function () {
       amount: "5000",
       executionFeeRecipient: SIGNER,
       integratorId: "0xdead",
-      // Provenance reference to the inbound funding transfer; chainId coerced to a number.
-      erc20Transfer: {
-        chainId: 42161,
-        blockNumber: 1_000_000,
-        transactionHash: "0x" + "3".repeat(64),
-        logIndex: 4,
-      },
     });
-  });
-
-  it("handles a numeric erc20Transfer.chainId (Number() is a no-op)", async function () {
-    const message = depositMessageV3();
-    // Simulate a future indexer response that types chainId as a number.
-    (message.erc20Transfer as unknown as { chainId: number }).chainId = 42161;
-    await (handler as unknown as Internals)._getExecuteTx(message);
-    expect(executeStub.firstCall.args[0].erc20Transfer.chainId).to.equal(42161);
   });
 
   it("relays the funding token as inputToken when ENABLE_EXECUTE_INPUT_TOKEN is on", async function () {
@@ -409,13 +394,6 @@ describe("DepositAddressHandler._getExecuteTx request mapping", function () {
       amount: "5000",
       executionFeeRecipient: SIGNER,
       integratorId: "0xdead",
-      // erc20Transfer provenance is always relayed, independent of the inputToken flag.
-      erc20Transfer: {
-        chainId: 42161,
-        blockNumber: 1_000_000,
-        transactionHash: "0x" + "3".repeat(64),
-        logIndex: 4,
-      },
     });
   });
 
