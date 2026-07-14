@@ -380,7 +380,7 @@ describe("DepositAddressHandler._getExecuteTx request mapping", function () {
     });
   });
 
-  it("relays erc20Transfer provenance when ENABLE_EXECUTE_ERC20_TRANSFER is on", async function () {
+  it("relays erc20Transfer provenance when ENABLE_EXECUTE_ERC20_TRANSFER_METADATA is on", async function () {
     (handler as unknown as { config: { enableExecuteErc20Transfer: boolean } }).config.enableExecuteErc20Transfer =
       true;
     await (handler as unknown as Internals)._getExecuteTx(depositMessageV3());

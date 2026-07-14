@@ -62,7 +62,7 @@ Two optional execute fields are gated behind env flags because an API that preda
 changes rejects an unknown param with `400 INVALID_PARAM`:
 
 - `ENABLE_EXECUTE_INPUT_TOKEN=true` → relays the funding token as `inputToken`.
-- `ENABLE_EXECUTE_ERC20_TRANSFER=true` → relays an `erc20Transfer` provenance reference
+- `ENABLE_EXECUTE_ERC20_TRANSFER_METADATA=true` → relays an `erc20Transfer` provenance reference
   (`{ chainId, blockNumber, transactionHash, logIndex }` of the inbound funding transfer, taken
   verbatim from the indexer message; `chainId` coerced to an integer). When accepted, the API wraps
   `executeTx` in a Multicall3 bundle that additionally emits a version-2 provenance blob via

@@ -48,7 +48,7 @@ export class DepositAddressHandlerConfig extends CommonConfig {
       WITHDRAW_ENABLED,
       ENABLE_V3_WITHDRAWALS,
       ENABLE_EXECUTE_INPUT_TOKEN,
-      ENABLE_EXECUTE_ERC20_TRANSFER,
+      ENABLE_EXECUTE_ERC20_TRANSFER_METADATA,
       ENABLE_DEPOSIT_ADDRESS_WITHDRAW_PUBLISHER,
       ENABLE_DEPOSIT_ADDRESS_DEPOSIT_PUBLISHER,
       PUBSUB_GCP_PROJECT_ID,
@@ -73,7 +73,7 @@ export class DepositAddressHandlerConfig extends CommonConfig {
     this.withdrawEnabled = WITHDRAW_ENABLED === "true";
     this.enableV3Withdrawals = ENABLE_V3_WITHDRAWALS === "true";
     this.enableExecuteInputToken = ENABLE_EXECUTE_INPUT_TOKEN === "true";
-    this.enableExecuteErc20Transfer = ENABLE_EXECUTE_ERC20_TRANSFER === "true";
+    this.enableExecuteErc20Transfer = ENABLE_EXECUTE_ERC20_TRANSFER_METADATA === "true";
 
     this.enableDepositAddressWithdrawPublisher = ENABLE_DEPOSIT_ADDRESS_WITHDRAW_PUBLISHER === "true";
     this.enableDepositAddressDepositPublisher = ENABLE_DEPOSIT_ADDRESS_DEPOSIT_PUBLISHER === "true";
