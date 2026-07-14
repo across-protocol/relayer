@@ -1183,10 +1183,12 @@ export class DepositAddressHandler {
       integratorId,
       // Provenance reference to the inbound funding transfer. The API folds this into a Multicall3
       // bundle that emits a version-2 provenance blob, giving the indexer an on-chain sweep ↔
-      // funding-transfer link in the execute receipt. chainId is stringly-typed on the indexer
-      // message; the endpoint requires a non-negative integer.
+      // funding-transfer link in the execute receipt. The endpoint requires chainId as a
+      // non-negative integer; coerce only when the indexer message hands it to us as a string, so a
+      // future switch to a numeric chainId in the polled response keeps working unchanged.
       erc20Transfer: {
-        chainId: Number(erc20Transfer.chainId),
+        chainId:
+          typeof erc20Transfer.chainId === "number" ? erc20Transfer.chainId : Number(erc20Transfer.chainId),
         blockNumber: erc20Transfer.blockNumber,
         transactionHash: erc20Transfer.transactionHash,
         logIndex: erc20Transfer.logIndex,
