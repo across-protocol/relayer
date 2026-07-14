@@ -1187,8 +1187,7 @@ export class DepositAddressHandler {
       // non-negative integer; coerce only when the indexer message hands it to us as a string, so a
       // future switch to a numeric chainId in the polled response keeps working unchanged.
       erc20Transfer: {
-        chainId:
-          typeof erc20Transfer.chainId === "number" ? erc20Transfer.chainId : Number(erc20Transfer.chainId),
+        chainId: typeof erc20Transfer.chainId === "number" ? erc20Transfer.chainId : Number(erc20Transfer.chainId),
         blockNumber: erc20Transfer.blockNumber,
         transactionHash: erc20Transfer.transactionHash,
         logIndex: erc20Transfer.logIndex,
