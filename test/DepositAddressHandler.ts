@@ -222,12 +222,14 @@ describe("DepositAddressHandler._getSwapApiQuote params", function () {
 describe("DepositAddressHandler._queryIndexerApi version filtering", function () {
   let handler: DepositAddressHandler;
   let getStub: sinon.SinonStub;
+  let warnStub: sinon.SinonStub;
 
   type Internals = { _queryIndexerApi: () => Promise<DepositAddressMessage[]> };
 
   beforeEach(function () {
     const config = {} as unknown as DepositAddressHandlerConfig;
-    const logger = { debug: sinon.stub() } as unknown as winston.Logger;
+    warnStub = sinon.stub();
+    const logger = { debug: sinon.stub(), warn: warnStub } as unknown as winston.Logger;
     handler = new DepositAddressHandler(logger, config, {} as unknown as Signer, []);
     getStub = sinon.stub();
     (handler as unknown as { indexerApi: { get: sinon.SinonStub } }).indexerApi = { get: getStub };
@@ -267,6 +269,34 @@ describe("DepositAddressHandler._queryIndexerApi version filtering", function ()
     // filtering before normalization must keep the poll alive.
     const result = await query([{ version: 2 }]);
     expect(result).to.deep.equal([]);
+  });
+
+  it("keeps a v1 message whose counterfactualMaterials are absent", async function () {
+    // Pre-V2-backfill deposit addresses are served with `counterfactualMaterials: undefined`;
+    // they must survive normalization (the withdraw path guards on the leaf downstream).
+    const v1 = { ...depositMessage(undefined), version: 1 };
+    const result = await query([v1]);
+    expect(result).to.have.length(1);
+    expect(result[0].counterfactualMaterials).to.equal(undefined);
+    expect(warnStub.called).to.equal(false);
+  });
+
+  it("drops a malformed supported-version message with a warn and keeps the rest of the batch", async function () {
+    // A supported-version message can still be malformed (missing routeParams here). It must be
+    // dropped individually — not sink the batch — or a redelivered poison message starves every
+    // other message for the indexer's whole redelivery window (2026-07-15 incident).
+    const poison = { ...depositMessage({ withdrawLeaf }), version: 1, routeParams: undefined };
+    const healthyV1 = { ...depositMessage({ withdrawLeaf }), version: 1 };
+    const v3 = depositMessageV3();
+
+    const result = await query([poison, healthyV1, v3]);
+
+    expect(result).to.have.length(2);
+    expect(result.map((m) => m.version)).to.deep.equal([1, 3]);
+    expect(warnStub.calledOnce).to.equal(true);
+    expect(warnStub.firstCall.args[0].message).to.equal(
+      "deposit-address transfer dropped: message failed normalization"
+    );
   });
 });
 

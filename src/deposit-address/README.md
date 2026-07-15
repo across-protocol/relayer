@@ -43,6 +43,16 @@ Each message also carries a top-level `version` that selects the execution schem
 | `3` | Upgradeable-counterfactual scheme — `correct_transfer` goes to the v3 execute path (below); `mis_route` goes to the v3 refund-withdraw path (below) when `ENABLE_V3_WITHDRAWALS=true`; `intent_refund` and other classifications are dropped (not yet supported on v3). |
 | anything else (e.g. `2`) | Dropped (debug-logged) before normalization, since unsupported payloads may not carry a shape the normalizer can dereference. |
 
+Normalization itself is guarded per message: a supported-version payload that still fails
+`normalizeDepositAddressMessage` (malformed shape) is dropped with a warn — never allowed to sink
+the rest of the batch. `counterfactualMaterials` may legitimately be absent on v1 messages (deposit
+addresses predating the indexer's V2-materials backfill are served with `undefined` materials);
+normalization passes the absence through and the withdraw path guards on the leaf downstream.
+
+Poll-loop failures are never silent: `pollAndExecute` passes an error handler to `scheduleTask`, so
+a rejected `evaluateDepositAddresses` tick (which skips that whole batch) is logged at error level
+instead of being swallowed by the scheduler.
+
 ## v3 execute flow (thin submitter)
 
 For `version: 3` messages the bot is a **thin submitter** of API-built calldata. The quote-api
