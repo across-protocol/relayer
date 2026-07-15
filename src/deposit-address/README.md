@@ -20,6 +20,10 @@ The deposit-address handler polls the across-indexer for ERC-20 transfers that h
    rest of the handler.
 5. Handover via Redis (`InstanceCoordinator`) — exits cleanly when another instance takes over.
 
+Poll-loop failures are never silent: `pollAndExecute` passes an error handler to `scheduleTask`, so
+a rejected `evaluateDepositAddresses` tick (which skips that whole batch) is logged at error level
+instead of being swallowed by the scheduler.
+
 Cleanup in the `finally` block closes the Pub/Sub publisher and Redis clients.
 
 ## Indexer message classification
