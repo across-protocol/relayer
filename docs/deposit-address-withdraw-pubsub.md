@@ -88,6 +88,7 @@ The publisher serializes the envelope as a UTF-8 JSON string and sends it as the
 
 `DepositAddressHandler._publishDepositExecuted` (called from `initiateDepositV3` only — v1 and the failure paths are out of scope) mirrors the above:
 
+0. Returns early (no publish) when `ENABLE_EXECUTE_ERC20_TRANSFER_METADATA=true`. In metadata mode the API emits the sweep ↔ funding-transfer link on-chain (a version-2 provenance blob via `AcrossEventEmitter`), so the indexer ingests the execution from chain events and the `deposit_executed` Pub/Sub event would be a redundant second signal. This override takes precedence over `ENABLE_DEPOSIT_ADDRESS_DEPOSIT_PUBLISHER`; the `withdraw_executed` path is unaffected.
 1. Runs only after a v3 deposit execute has confirmed on-chain **and** the refTxHash has been persisted to Redis.
 2. Filters `receipt.logs` for the input-token (`erc20Transfer.contractAddress`) ERC-20 `Transfer` whose `from` topic matches the deposit address. Unlike the withdraw path there is **no `to` filter** — the input token leaves the deposit address into the SpokePool / CCTP, with no fixed recipient — so any outgoing transfer of the input token qualifies. Picks the **last** match. Zero matches → warn + skip the publish.
 3. Builds the `deposit_executed` payload and publishes to the **same topic** as `withdraw_executed`.
