@@ -181,13 +181,6 @@ The bot publishes two lifecycle events to one shared GCP Pub/Sub topic so the co
 - `withdraw_executed` — when `ENABLE_DEPOSIT_ADDRESS_WITHDRAW_PUBLISHER=true`, every confirmed refund withdraw (v1 + v3).
 - `deposit_executed` — when `ENABLE_DEPOSIT_ADDRESS_DEPOSIT_PUBLISHER=true`, every successful **v3** correct-transfer execution (`initiateDepositV3`). v1 deposits and failure events are out of scope.
 
-**`ENABLE_EXECUTE_ERC20_TRANSFER_METADATA` overrides the `deposit_executed` publish.** When metadata
-mode is on, the API emits the sweep ↔ funding-transfer link on-chain (a version-2 provenance blob via
-`AcrossEventEmitter`), so the indexer learns of the execution from chain events and the bot **skips**
-the `deposit_executed` Pub/Sub publish entirely — regardless of `ENABLE_DEPOSIT_ADDRESS_DEPOSIT_PUBLISHER`.
-The `withdraw_executed` publish is unaffected. Operators enabling metadata mode should therefore expect
-row transitions for v3 executes to come from the indexer's on-chain ingestion, not Pub/Sub.
-
 The consumer lives at `indexer/packages/indexer/src/pubsub/DepositAddressWithdrawConsumer.ts` (sibling repo). A single Pub/Sub client serves both events (same project + topic); it is constructed when **either** gate is on, and each publish path checks its own flag so the two events toggle independently.
 
 ### Env
@@ -195,7 +188,7 @@ The consumer lives at `indexer/packages/indexer/src/pubsub/DepositAddressWithdra
 | Name | Required | Description |
 | --- | --- | --- |
 | `ENABLE_DEPOSIT_ADDRESS_WITHDRAW_PUBLISHER` | No (default `false`) | Gate for `withdraw_executed`. |
-| `ENABLE_DEPOSIT_ADDRESS_DEPOSIT_PUBLISHER` | No (default `false`) | Gate for `deposit_executed` (v3 executions). Independent of the withdraw gate. Ignored when `ENABLE_EXECUTE_ERC20_TRANSFER_METADATA=true` (the publish is skipped in favor of on-chain provenance). |
+| `ENABLE_DEPOSIT_ADDRESS_DEPOSIT_PUBLISHER` | No (default `false`) | Gate for `deposit_executed` (v3 executions). Independent of the withdraw gate. |
 | `PUBSUB_GCP_PROJECT_ID` | When either gate is on | GCP project that **hosts the topic** (may differ from the bot's runtime project — cross-project publish is supported when the runtime SA holds `roles/pubsub.publisher` on the topic in the host project). |
 | `PUBSUB_DEPOSIT_ADDRESS_WITHDRAW_TOPIC` | When either gate is on | Short topic name (e.g. `topic-deposit-address-execution` in prod, `…-sandbox` in non-prod). Shared by both events. |
 

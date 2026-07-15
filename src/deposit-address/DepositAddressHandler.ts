@@ -741,25 +741,11 @@ export class DepositAddressHandler {
    * rolls back state and never throws to the caller — a dropped publish leaves the indexer row
    * pending until ops reconciles. Shares the topic with `withdraw_executed`; gated independently by
    * config.enableDepositAddressDepositPublisher.
-   *
-   * Skipped entirely when `enableExecuteErc20Transfer` is on: that mode has the API emit a
-   * version-2 provenance blob on-chain (via `AcrossEventEmitter`) linking the execute to the
-   * funding transfer, so the indexer already learns of the execution from chain events and the
-   * Pub/Sub event would be a redundant second signal for the same transition.
    */
   private async _publishDepositExecuted(
     receipt: TransactionReceipt,
     depositMessage: DepositAddressMessageV3
   ): Promise<void> {
-    if (this.config.enableExecuteErc20Transfer) {
-      this.logger.debug({
-        at: "DepositAddressHandler#_publishDepositExecuted",
-        message: "Skipping deposit_executed publish: on-chain erc20Transfer provenance metadata is enabled",
-        depositAddress: depositMessage.depositAddress,
-        txHash: receipt.transactionHash,
-      });
-      return;
-    }
     if (!this.config.enableDepositAddressDepositPublisher || !isDefined(this.executionPublisher)) {
       return;
     }
