@@ -1,10 +1,11 @@
 import sinon from "sinon";
 import { expect } from "chai";
-import { EvmAddress, getCurrentTime, HttpError, Signer, winston } from "../src/utils";
+import { EvmAddress, getCurrentTime, HttpError, Signer, TransactionReceipt, utils, winston } from "../src/utils";
 import { DepositAddressMessage, DepositAddressMessageV3 } from "../src/interfaces/DepositAddress";
 import { DepositAddressExecuteResponse, DepositAddressSignWithdrawResponse } from "../src/clients";
 import { DepositAddressHandler } from "../src/deposit-address/DepositAddressHandler";
 import { DepositAddressHandlerConfig } from "../src/deposit-address/DepositAddressHandlerConfig";
+import { ERC20_TRANSFER_TOPIC } from "../src/deposit-address/withdrawPayload";
 
 const SIGNER = "0x000000000000000000000000000000000000BEEF";
 const DEPOSIT_ADDRESS = "0x000000000000000000000000000000000000C0DE";
@@ -667,5 +668,64 @@ describe("DepositAddressHandler.initiateWithdrawV3 guards", function () {
     );
     expect(signWithdrawStub.notCalled).to.equal(true);
     expect(warnStub.calledOnce).to.equal(true);
+  });
+});
+
+describe("DepositAddressHandler._publishDepositExecuted", function () {
+  let handler: DepositAddressHandler;
+  let publishStub: sinon.SinonStub;
+
+  type Internals = {
+    _publishDepositExecuted: (r: TransactionReceipt, m: DepositAddressMessageV3) => Promise<void>;
+  };
+
+  // Receipt carrying an input-token Transfer out of the deposit address — what the payload builder
+  // matches on (address = input token, from = deposit address; no `to` filter on the deposit path).
+  const receipt = {
+    blockNumber: 123,
+    transactionHash: "0x" + "a".repeat(64),
+    logs: [
+      {
+        address: TOKEN,
+        topics: [
+          ERC20_TRANSFER_TOPIC,
+          utils.hexZeroPad(DEPOSIT_ADDRESS.toLowerCase(), 32),
+          utils.hexZeroPad(RECIPIENT.toLowerCase(), 32),
+        ],
+        logIndex: 7,
+      },
+    ],
+  } as unknown as TransactionReceipt;
+
+  beforeEach(function () {
+    publishStub = sinon.stub().resolves("msg-id");
+    const config = {
+      enableDepositAddressDepositPublisher: true,
+      enableExecuteErc20Transfer: false,
+    } as unknown as DepositAddressHandlerConfig;
+    handler = new DepositAddressHandler(
+      { debug: sinon.stub(), warn: sinon.stub() } as unknown as winston.Logger,
+      config,
+      {} as unknown as Signer,
+      []
+    );
+    (handler as unknown as { executionPublisher: { publishJson: sinon.SinonStub } }).executionPublisher = {
+      publishJson: publishStub,
+    };
+  });
+
+  afterEach(() => sinon.restore());
+
+  it("publishes deposit_executed when erc20Transfer metadata is off", async function () {
+    await (handler as unknown as Internals)._publishDepositExecuted(receipt, depositMessageV3());
+    expect(publishStub.calledOnce).to.equal(true);
+  });
+
+  it("skips deposit_executed publish when erc20Transfer metadata is on", async function () {
+    // With on-chain provenance metadata enabled, the Pub/Sub event is redundant.
+    (handler as unknown as { config: { enableExecuteErc20Transfer: boolean } }).config.enableExecuteErc20Transfer =
+      true;
+    await (handler as unknown as Internals)._publishDepositExecuted(receipt, depositMessageV3());
+    expect(publishStub.called).to.equal(false);
   });
 });
