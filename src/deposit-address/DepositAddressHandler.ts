@@ -319,15 +319,7 @@ export class DepositAddressHandler {
     scheduleTask(
       () => this.evaluateDepositAddresses(),
       this.config.indexerPollingInterval,
-      this.abortController.signal,
-      // A rejected poll skips the whole batch for that tick; without this log the failure is
-      // invisible (scheduleTask otherwise swallows rejections) while fills silently stall.
-      (err) =>
-        this.logger.error({
-          at: "DepositAddressHandler#pollAndExecute",
-          message: "evaluateDepositAddresses failed; batch skipped this tick",
-          error: err instanceof Error ? err.message : String(err),
-        })
+      this.abortController.signal
     );
     scheduleTask(() => this.kickWatchdog(), this.config.watchdogInterval, this.abortController.signal);
   }

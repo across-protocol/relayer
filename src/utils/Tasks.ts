@@ -1,20 +1,10 @@
 /**
  * Wrap an async task as a fire-and-forget callback for `setTimeout`/`setInterval` slots
- * that expect `() => void`. Rejections can't crash the process via an unhandled rejection:
- * they are passed to `onError` when provided, otherwise swallowed. Prefer passing `onError` —
- * a recurring task that fails silently on every tick is invisible until its downstream effects
- * are (2026-07-15 deposit-address incident).
- * @param onError Optional rejection handler. Must not throw; if it does, the error is swallowed.
+ * that expect `() => void`. Rejections are swallowed so a failed task can't crash the process
+ * via an unhandled rejection.
  */
-export function fireAndForget(task: () => Promise<unknown>, onError?: (err: unknown) => void): () => void {
-  return () =>
-    void task().catch((err) => {
-      try {
-        onError?.(err);
-      } catch {
-        // A throwing error handler must not crash the process either.
-      }
-    });
+export function fireAndForget(task: () => Promise<unknown>): () => void {
+  return () => void task().catch(() => undefined);
 }
 
 /**
@@ -44,15 +34,9 @@ export function abortableDelay(seconds: number, signal: AbortSignal): Promise<vo
  * Schedule a recurring task, to be executed `interval` seconds after each successive call.
  * @param task Function that returns a Promise to be awaited.
  * @param interval Task interval.
- * @param onError Optional per-tick rejection handler (see fireAndForget). Failures never stop the schedule.
  */
-export function scheduleTask(
-  task: () => Promise<unknown>,
-  interval: number,
-  signal: AbortSignal,
-  onError?: (err: unknown) => void
-): void {
-  const timer = setInterval(fireAndForget(task, onError), interval * 1000);
+export function scheduleTask(task: () => Promise<unknown>, interval: number, signal: AbortSignal): void {
+  const timer = setInterval(fireAndForget(task), interval * 1000);
   signal.addEventListener("abort", () => clearInterval(timer));
 }
 

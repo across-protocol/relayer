@@ -49,10 +49,6 @@ the rest of the batch. `counterfactualMaterials` may legitimately be absent on v
 addresses predating the indexer's V2-materials backfill are served with `undefined` materials);
 normalization passes the absence through and the withdraw path guards on the leaf downstream.
 
-Poll-loop failures are never silent: `pollAndExecute` passes an error handler to `scheduleTask`, so
-a rejected `evaluateDepositAddresses` tick (which skips that whole batch) is logged at error level
-instead of being swallowed by the scheduler.
-
 ## v3 execute flow (thin submitter)
 
 For `version: 3` messages the bot is a **thin submitter** of API-built calldata. The quote-api
