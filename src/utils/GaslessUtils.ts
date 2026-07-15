@@ -20,6 +20,8 @@ import {
   ConvertDecimals,
   convertRelayDataParamsToBytes32,
   getTokenInfo,
+  fetchTokenInfo,
+  getProvider,
   toBN,
   toBytes32,
   toAddressType,
@@ -34,6 +36,103 @@ import {
 import { isStablecoin } from "./TokenUtils";
 import { AugmentedTransaction } from "../clients";
 import { Contract, BigNumber, ethers } from "ethers";
+
+// Token metadata (symbol/decimals) is immutable, so on-chain probe results are cached
+// aggressively to keep the resolver off the RPC hot path once a token has been seen.
+const GASLESS_TOKEN_INFO_CACHE_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
+
+/** Minimal cache surface used by {@link resolveTokenInfoForLog} (backed by Redis in prod). */
+export type TokenInfoCache = {
+  get<T>(key: string): Promise<T | null>;
+  set<T>(key: string, val: T, expirySeconds?: number): Promise<string | undefined>;
+};
+
+/**
+ * Resolve a token's `{ symbol, decimals }` for logging WITHOUT throwing.
+ *
+ * Gasless swapAndBridge deposits carry a user-signed `swapToken` that is frequently a
+ * long-tail token absent from the static `TOKEN_SYMBOLS_MAP`. `getTokenInfo` throws for
+ * those, and previously that rejection propagated out of `GaslessRelayer#initiateDeposit`
+ * and silently dropped the deposit before it was ever submitted (ACB-552). This resolver
+ * never throws: static map → Redis-cached on-chain ERC-20 probe → neutral placeholder.
+ *
+ * The result feeds only a Slack log line (never the on-chain deposit), so a placeholder or
+ * slightly-off value can at most make a log entry less precise — it cannot affect deposit
+ * correctness.
+ *
+ * @param token The token whose display info is needed.
+ * @param chainId The chain the token lives on.
+ * @param logger Logger for the (best-effort) on-chain probe-failure warning.
+ * @param opts.redisCache Optional cache; misses trigger an on-chain probe, hits are reused.
+ * @param opts.probeOnChain Injectable on-chain lookup (defaults to a live provider probe).
+ */
+export async function resolveTokenInfoForLog(
+  token: Address,
+  chainId: number,
+  logger: winston.Logger,
+  opts: {
+    redisCache?: TokenInfoCache;
+    probeOnChain?: (address: string, chainId: number) => Promise<{ symbol: string; decimals: number }>;
+  } = {}
+): Promise<{ symbol: string; decimals: number }> {
+  try {
+    const { symbol, decimals } = getTokenInfo(token, chainId);
+    return { symbol, decimals };
+  } catch {
+    // Not in the static map — fall through to the on-chain probe below.
+  }
+
+  const address = token.toNative();
+  const cacheKey = `gasless:tokenInfo:${chainId}:${address}`;
+  const { redisCache } = opts;
+
+  let cached: string | null = null;
+  try {
+    cached = (await redisCache?.get<string>(cacheKey)) ?? null;
+  } catch {
+    // Best-effort cache read — fall through to the probe on any error.
+  }
+  if (isDefined(cached)) {
+    try {
+      const parsed = JSON.parse(cached) as { symbol: string; decimals: number };
+      if (typeof parsed.symbol === "string" && typeof parsed.decimals === "number") {
+        return parsed;
+      }
+    } catch {
+      // Corrupt cache entry — ignore and re-probe.
+    }
+  }
+
+  const probeOnChain = opts.probeOnChain ?? defaultOnChainTokenInfoProbe;
+  try {
+    const { symbol, decimals } = await probeOnChain(address, chainId);
+    const info = { symbol, decimals };
+    try {
+      await redisCache?.set(cacheKey, JSON.stringify(info), GASLESS_TOKEN_INFO_CACHE_TTL_SECONDS);
+    } catch {
+      // Best-effort cache write — a failure here only costs a future re-probe.
+    }
+    return info;
+  } catch (error) {
+    logger.warn({
+      at: "GaslessUtils#resolveTokenInfoForLog",
+      message: "Failed to resolve token info on-chain; using placeholder for log line only",
+      token: address,
+      chainId,
+      error,
+    });
+    return { symbol: "UNKNOWN", decimals: 18 };
+  }
+}
+
+async function defaultOnChainTokenInfoProbe(
+  address: string,
+  chainId: number
+): Promise<{ symbol: string; decimals: number }> {
+  const provider = await getProvider(chainId);
+  const { symbol, decimals } = await fetchTokenInfo(address, provider);
+  return { symbol, decimals };
+}
 
 /**
  * Pulls normalized token/amount/deadline fields from a bridge or swap-and-bridge gasless message.

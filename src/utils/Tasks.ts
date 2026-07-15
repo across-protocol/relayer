@@ -1,10 +1,22 @@
+/** Minimal logger surface — satisfied by `winston.Logger` and by lightweight test fakes. */
+type ErrorLogger = { error: (info: Record<string, unknown>) => unknown };
+
 /**
  * Wrap an async task as a fire-and-forget callback for `setTimeout`/`setInterval` slots
- * that expect `() => void`. Rejections are swallowed so a failed task can't crash the process
- * via an unhandled rejection.
+ * that expect `() => void`. Rejections are never rethrown (an unhandled rejection could
+ * crash the process), but when a `logger` is provided they are logged at error level
+ * instead of being swallowed silently — a silent swallow here previously hid a recurring
+ * task whose promise rejected, masking dropped gasless deposits for days (ACB-552).
+ *
+ * @param task The async task to run.
+ * @param logger Optional logger; when supplied, rejections are logged at error level.
+ * @param at Optional log tag identifying the task (defaults to "fireAndForget").
  */
-export function fireAndForget(task: () => Promise<unknown>): () => void {
-  return () => void task().catch(() => undefined);
+export function fireAndForget(task: () => Promise<unknown>, logger?: ErrorLogger, at = "fireAndForget"): () => void {
+  return () =>
+    void task().catch((error) => {
+      logger?.error({ at, message: "Fire-and-forget task rejected", error });
+    });
 }
 
 /**
@@ -35,8 +47,14 @@ export function abortableDelay(seconds: number, signal: AbortSignal): Promise<vo
  * @param task Function that returns a Promise to be awaited.
  * @param interval Task interval.
  */
-export function scheduleTask(task: () => Promise<unknown>, interval: number, signal: AbortSignal): void {
-  const timer = setInterval(fireAndForget(task), interval * 1000);
+export function scheduleTask(
+  task: () => Promise<unknown>,
+  interval: number,
+  signal: AbortSignal,
+  logger?: ErrorLogger,
+  at?: string
+): void {
+  const timer = setInterval(fireAndForget(task, logger, at), interval * 1000);
   signal.addEventListener("abort", () => clearInterval(timer));
 }
 

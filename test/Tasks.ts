@@ -1,6 +1,6 @@
 import { expect } from "./utils";
 
-import { abortableDelay } from "../src/utils";
+import { abortableDelay, fireAndForget } from "../src/utils";
 
 describe("Tasks", function () {
   describe("abortableDelay", function () {
@@ -59,6 +59,40 @@ describe("Tasks", function () {
 
       expect(added).to.equal(25);
       expect(removed).to.equal(25);
+    });
+  });
+
+  describe("fireAndForget", function () {
+    // A macrotask tick to let the wrapped promise's `.catch` run before assertions.
+    const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+    it("logs a rejected task at error level when a logger is provided (ACB-552)", async function () {
+      const errors: Record<string, unknown>[] = [];
+      const logger = { error: (info: Record<string, unknown>) => errors.push(info) };
+      const boom = new Error("boom");
+
+      fireAndForget(() => Promise.reject(boom), logger, "TestTask")();
+      await tick();
+
+      expect(errors).to.have.length(1);
+      expect(errors[0].at).to.equal("TestTask");
+      expect(errors[0].error).to.equal(boom);
+    });
+
+    it("does not invoke the logger when the task resolves", async function () {
+      const errors: unknown[] = [];
+      const logger = { error: (info: Record<string, unknown>) => errors.push(info) };
+
+      fireAndForget(() => Promise.resolve("ok"), logger)();
+      await tick();
+
+      expect(errors).to.have.length(0);
+    });
+
+    it("never throws synchronously and swallows rejections when no logger is given", async function () {
+      const cb = fireAndForget(() => Promise.reject(new Error("boom")));
+      expect(cb).to.not.throw();
+      await tick();
     });
   });
 });
