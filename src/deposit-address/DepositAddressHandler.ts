@@ -446,8 +446,9 @@ export class DepositAddressHandler {
 
   /**
    * @notice Refund-withdraw path entry point. Gated behind config.withdrawEnabled.
-   * Refunds the full transfer amount via the quote-api signed-withdraw flow; gas-reserve / fee
-   * deduction is deferred to a follow-up task. The quote-api response bundles the
+   * Refunds the max of the indexer-reported transfer amount and the deposit address's on-chain
+   * balance via the quote-api signed-withdraw flow; gas-reserve / fee deduction is deferred to a
+   * follow-up task. The quote-api response bundles the
    * counterfactual-deposit deploy + signedWithdrawToUser into a single Multicall3 call when the
    * deposit clone is not yet on-chain, so the bot does not need its own deploy step.
    */
@@ -539,7 +540,16 @@ export class DepositAddressHandler {
         return;
       }
 
-      const signed = await this._getSignedWithdraw(depositMessage);
+      const sweepAmount = this._getSweepAmount(amount, onchainBalance, {
+        at: "DepositAddressHandler#initiateWithdraw",
+        depositAddress,
+        token,
+        depositKey,
+        refTxHash,
+        chainId,
+      });
+
+      const signed = await this._getSignedWithdraw(depositMessage, sweepAmount);
       if (!isDefined(signed)) {
         this.logger.warn({
           at: "DepositAddressHandler#initiateWithdraw",
@@ -607,10 +617,11 @@ export class DepositAddressHandler {
 
   private async _getSignedWithdraw(
     depositMessage: DepositAddressMessage,
+    sweepAmount: string,
     retriesRemaining = 3
   ): Promise<SignedWithdrawResponse | undefined> {
     const { erc20Transfer, routeParams, depositAddress, paramsHash, salt, counterfactualMaterials } = depositMessage;
-    const { contractAddress: token, amount, chainId } = erc20Transfer;
+    const { contractAddress: token, chainId } = erc20Transfer;
     // @TODO: some old indexer messages may not have counterfactual materials, so we need to handle that for some time.
     // We should remove this once we have migrated all indexer messages to the new format.
     const withdrawLeaf = counterfactualMaterials?.withdrawLeaf;
@@ -635,7 +646,7 @@ export class DepositAddressHandler {
         chainId: Number(chainId),
         depositAddress,
         token,
-        amount,
+        amount: sweepAmount,
         user: routeParams.refundAddress,
         withdrawImplementation: withdrawLeaf.implementationAddress,
         proof: withdrawLeaf.merkleProof,
@@ -648,7 +659,7 @@ export class DepositAddressHandler {
     } catch {
       // Logging is handled in AcrossSwapApiClient.
     }
-    return retriesRemaining > 0 ? this._getSignedWithdraw(depositMessage, --retriesRemaining) : undefined;
+    return retriesRemaining > 0 ? this._getSignedWithdraw(depositMessage, sweepAmount, --retriesRemaining) : undefined;
   }
 
   /**
@@ -884,6 +895,15 @@ export class DepositAddressHandler {
       return;
     }
 
+    const sweepAmount = this._getSweepAmount(_inputAmount, balanceOfContract, {
+      at: "DepositAddressHandler#initiateDeposit",
+      depositAddress: depositMessage.depositAddress,
+      inputToken,
+      depositKey,
+      refTxHash,
+      chainId: originChainId,
+    });
+
     if (!isDepositAddressDeployed) {
       const _deployTx = buildDeployTx(
         factoryContract,
@@ -918,7 +938,7 @@ export class DepositAddressHandler {
     }
 
     // At this point, the user's deposit contract is deployed on the origin network.
-    const swapTx = await this._getSwapApiQuote(depositMessage);
+    const swapTx = await this._getSwapApiQuote(depositMessage, sweepAmount);
     if (!isDefined(swapTx) || !swapTx.swapTx.simulationSuccess) {
       this.logger.warn({
         at: "DepositAddressHandler#initiateDeposit",
@@ -1055,7 +1075,16 @@ export class DepositAddressHandler {
         return;
       }
 
-      const executeResponse = await this._getExecuteTx(depositMessage);
+      const sweepAmount = this._getSweepAmount(amount, onchainBalance, {
+        at: "DepositAddressHandler#initiateDepositV3",
+        depositAddress,
+        inputToken,
+        depositKey,
+        refTxHash,
+        chainId: originChainId,
+      });
+
+      const executeResponse = await this._getExecuteTx(depositMessage, sweepAmount);
       if (!isDefined(executeResponse)) {
         this.logger.warn({
           at: "DepositAddressHandler#initiateDepositV3",
@@ -1169,6 +1198,7 @@ export class DepositAddressHandler {
 
   private async _getExecuteTx(
     depositMessage: DepositAddressMessageV3,
+    sweepAmount: string,
     retriesRemaining = 3
   ): Promise<DepositAddressExecuteResponse | undefined> {
     const { routeParams, refundAddress, erc20Transfer } = depositMessage;
@@ -1200,7 +1230,7 @@ export class DepositAddressHandler {
           }
         : {}),
       userAddress: refundAddress.address,
-      amount: erc20Transfer.amount,
+      amount: sweepAmount,
       executionFeeRecipient: this.signerAddress.toNative(),
       integratorId,
       // Provenance reference to the inbound funding transfer. When accepted, the API folds this into a
@@ -1228,7 +1258,7 @@ export class DepositAddressHandler {
     } catch {
       // Logging is handled in AcrossSwapApiClient.
     }
-    return retriesRemaining > 0 ? this._getExecuteTx(depositMessage, --retriesRemaining) : undefined;
+    return retriesRemaining > 0 ? this._getExecuteTx(depositMessage, sweepAmount, --retriesRemaining) : undefined;
   }
 
   /**
@@ -1358,7 +1388,16 @@ export class DepositAddressHandler {
         return;
       }
 
-      const signed = await this._getSignedWithdrawV3(depositMessage, withdrawLeaf);
+      const sweepAmount = this._getSweepAmount(amount, onchainBalance, {
+        at: "DepositAddressHandler#initiateWithdrawV3",
+        depositAddress,
+        token,
+        depositKey,
+        refTxHash,
+        chainId,
+      });
+
+      const signed = await this._getSignedWithdrawV3(depositMessage, withdrawLeaf, sweepAmount);
       if (!isDefined(signed)) {
         // _getSignedWithdrawV3 already logged (transient retry-exhausted or terminal 422 skip).
         return;
@@ -1441,10 +1480,11 @@ export class DepositAddressHandler {
   private async _getSignedWithdrawV3(
     depositMessage: DepositAddressMessageV3,
     withdrawLeaf: CounterfactualMaterialV3,
+    sweepAmount: string,
     retriesRemaining = 3
   ): Promise<DepositAddressSignWithdrawResponse | undefined> {
     const { depositAddress, refundAddress, erc20Transfer, initialRoot, salt } = depositMessage;
-    const { contractAddress: token, amount, chainId } = erc20Transfer;
+    const { contractAddress: token, chainId } = erc20Transfer;
     const depositKey = getDepositKey(depositMessage);
     const request = {
       chainId: Number(chainId),
@@ -1452,7 +1492,7 @@ export class DepositAddressHandler {
       initialRoot,
       salt,
       token,
-      amount,
+      amount: sweepAmount,
       user: refundAddress.address,
       proof: withdrawLeaf.merkleProof,
       counterfactualDepositFactory: depositMessage.counterfactualFactoryContractAddress,
@@ -1482,9 +1522,34 @@ export class DepositAddressHandler {
       }
       // Logging is handled in AcrossSwapApiClient/base client; retry transient failures.
       return retriesRemaining > 0
-        ? this._getSignedWithdrawV3(depositMessage, withdrawLeaf, --retriesRemaining)
+        ? this._getSignedWithdrawV3(depositMessage, withdrawLeaf, sweepAmount, --retriesRemaining)
         : undefined;
     }
+  }
+
+  /**
+   * Amount forwarded to the quote-api: the max of the indexer-reported transfer amount and the
+   * deposit address's current on-chain balance. The balance can exceed the reported transfer
+   * (e.g. multiple funding transfers to the same address, or dust sent outside the indexed
+   * transfer); sweeping only the reported amount would strand the excess on the deposit address.
+   * Callers have already skipped when the balance is below the reported amount, so in practice
+   * this resolves to the on-chain balance.
+   */
+  private _getSweepAmount(
+    indexerAmount: string,
+    onchainBalance: BigNumber,
+    logContext: Record<string, unknown>
+  ): string {
+    if (onchainBalance.lte(toBN(indexerAmount))) {
+      return indexerAmount;
+    }
+    this.logger.debug({
+      message: "Sweeping full on-chain balance above indexer-reported transfer amount",
+      indexerAmount,
+      onchainBalance: onchainBalance.toString(),
+      ...logContext,
+    });
+    return onchainBalance.toString();
   }
 
   private getExecuteContract(address: string, originChainId: number, useDispatcher: boolean): Contract {
@@ -1540,11 +1605,11 @@ export class DepositAddressHandler {
 
   private async _getSwapApiQuote(
     depositMessage: DepositAddressMessage,
+    sweepAmount: string,
     retriesRemaining = 3
   ): Promise<SwapApiResponse | undefined> {
-    const { depositAddress, routeParams, erc20Transfer, counterfactualMaterials } = depositMessage;
+    const { depositAddress, routeParams, counterfactualMaterials } = depositMessage;
     const { inputToken, outputToken, originChainId, destinationChainId, recipient, refundAddress } = routeParams;
-    const { amount } = erc20Transfer;
     const originChainIdNum = Number(originChainId);
     const destinationChainIdNum = Number(destinationChainId);
     // Worst-case executionFee committed per leaf into the immutable merkle root at deposit-address
@@ -1566,7 +1631,7 @@ export class DepositAddressHandler {
       inputToken: toAddressType(inputToken, originChainIdNum).toNative(),
       outputToken: toAddressType(outputToken, destinationChainIdNum).toNative(),
       tradeType: "exactInput", // Should be exactInput for counterfactual deposits.
-      amount,
+      amount: sweepAmount,
       depositor: toAddressType(depositAddress, originChainIdNum).toNative(),
       recipient: toAddressType(recipient, destinationChainIdNum).toNative(),
       refundAddress: toAddressType(refundAddress, originChainIdNum).toNative(),
@@ -1581,7 +1646,7 @@ export class DepositAddressHandler {
       return await this.api.getCounterfactualDepositQuote(params);
     } catch {
       // Logging should have been done in the swap api client, so we do not need to log here.
-      return retriesRemaining > 0 ? this._getSwapApiQuote(depositMessage, --retriesRemaining) : undefined;
+      return retriesRemaining > 0 ? this._getSwapApiQuote(depositMessage, sweepAmount, --retriesRemaining) : undefined;
     }
   }
 }

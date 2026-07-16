@@ -1,6 +1,16 @@
 import sinon from "sinon";
 import { expect } from "chai";
-import { EvmAddress, getCurrentTime, HttpError, Signer, TransactionReceipt, utils, winston } from "../src/utils";
+import {
+  BigNumber,
+  EvmAddress,
+  getCurrentTime,
+  HttpError,
+  Signer,
+  toBN,
+  TransactionReceipt,
+  utils,
+  winston,
+} from "../src/utils";
 import { DepositAddressMessage, DepositAddressMessageV3 } from "../src/interfaces/DepositAddress";
 import { DepositAddressExecuteResponse, DepositAddressSignWithdrawResponse } from "../src/clients";
 import { DepositAddressHandler } from "../src/deposit-address/DepositAddressHandler";
@@ -160,10 +170,13 @@ describe("DepositAddressHandler._getSwapApiQuote params", function () {
 
   afterEach(() => sinon.restore());
 
-  async function capturedParams(message: DepositAddressMessage): Promise<Record<string, unknown>> {
-    await (handler as unknown as { _getSwapApiQuote: (m: DepositAddressMessage) => Promise<unknown> })._getSwapApiQuote(
-      message
-    );
+  async function capturedParams(
+    message: DepositAddressMessage,
+    sweepAmount = "5000"
+  ): Promise<Record<string, unknown>> {
+    await (
+      handler as unknown as { _getSwapApiQuote: (m: DepositAddressMessage, sweepAmount: string) => Promise<unknown> }
+    )._getSwapApiQuote(message, sweepAmount);
     expect(getStub.calledOnce).to.equal(true);
     return getStub.firstCall.args[0] as Record<string, unknown>;
   }
@@ -216,6 +229,12 @@ describe("DepositAddressHandler._getSwapApiQuote params", function () {
     );
     // `?? undefined` collapses an explicit null id so it too is dropped at serialization.
     expect(params.integratorId).to.equal(undefined);
+  });
+
+  it("forwards the sweep amount, not the indexer transfer amount", async function () {
+    // The caller computes max(indexer amount, on-chain balance); the quote must use that value.
+    const params = await capturedParams(depositMessage({ withdrawLeaf }), "7000");
+    expect(params.amount).to.equal("7000");
   });
 });
 
@@ -346,7 +365,10 @@ describe("DepositAddressHandler._getExecuteTx request mapping", function () {
   let executeStub: sinon.SinonStub;
 
   type Internals = {
-    _getExecuteTx: (m: DepositAddressMessageV3) => Promise<DepositAddressExecuteResponse | undefined>;
+    _getExecuteTx: (
+      m: DepositAddressMessageV3,
+      sweepAmount: string
+    ) => Promise<DepositAddressExecuteResponse | undefined>;
   };
 
   beforeEach(function () {
@@ -363,7 +385,7 @@ describe("DepositAddressHandler._getExecuteTx request mapping", function () {
   afterEach(() => sinon.restore());
 
   it("relays funding context and integratorId, with executionFee omitted", async function () {
-    await (handler as unknown as Internals)._getExecuteTx(depositMessageV3());
+    await (handler as unknown as Internals)._getExecuteTx(depositMessageV3(), "5000");
     expect(executeStub.calledOnce).to.equal(true);
     // Exact request body with all execute feature flags off (the default / production shape): the
     // execute endpoint re-derives the address/materials from this identity, and its superstruct
@@ -384,7 +406,7 @@ describe("DepositAddressHandler._getExecuteTx request mapping", function () {
   it("relays erc20Transfer provenance when ENABLE_EXECUTE_ERC20_TRANSFER_METADATA is on", async function () {
     (handler as unknown as { config: { enableExecuteErc20Transfer: boolean } }).config.enableExecuteErc20Transfer =
       true;
-    await (handler as unknown as Internals)._getExecuteTx(depositMessageV3());
+    await (handler as unknown as Internals)._getExecuteTx(depositMessageV3(), "5000");
     expect(executeStub.calledOnce).to.equal(true);
     expect(executeStub.firstCall.args[0]).to.deep.equal({
       destination: {
@@ -408,7 +430,7 @@ describe("DepositAddressHandler._getExecuteTx request mapping", function () {
 
   it("relays the funding token as inputToken when ENABLE_EXECUTE_INPUT_TOKEN is on", async function () {
     (handler as unknown as { config: { enableExecuteInputToken: boolean } }).config.enableExecuteInputToken = true;
-    await (handler as unknown as Internals)._getExecuteTx(depositMessageV3());
+    await (handler as unknown as Internals)._getExecuteTx(depositMessageV3(), "5000");
     expect(executeStub.calledOnce).to.equal(true);
     expect(executeStub.firstCall.args[0]).to.deep.equal({
       destination: {
@@ -426,9 +448,16 @@ describe("DepositAddressHandler._getExecuteTx request mapping", function () {
 
   it("retries on undefined responses and gives up after exhausting retries", async function () {
     executeStub.resolves(undefined);
-    const result = await (handler as unknown as Internals)._getExecuteTx(depositMessageV3());
+    const result = await (handler as unknown as Internals)._getExecuteTx(depositMessageV3(), "5000");
     expect(result).to.equal(undefined);
     expect(executeStub.callCount).to.equal(4); // initial attempt + 3 retries
+  });
+
+  it("forwards the sweep amount, not the indexer transfer amount", async function () {
+    // The caller computes max(indexer amount, on-chain balance); the execute request must use it.
+    await (handler as unknown as Internals)._getExecuteTx(depositMessageV3(), "7000");
+    expect(executeStub.calledOnce).to.equal(true);
+    expect((executeStub.firstCall.args[0] as { amount: string }).amount).to.equal("7000");
   });
 });
 
@@ -550,6 +579,7 @@ describe("DepositAddressHandler._getSignedWithdrawV3", function () {
     _getSignedWithdrawV3: (
       m: DepositAddressMessageV3,
       leaf: typeof v3WithdrawLeaf,
+      sweepAmount: string,
       retriesRemaining?: number
     ) => Promise<DepositAddressSignWithdrawResponse | undefined>;
     terminallySkippedWithdrawKeys: Set<string>;
@@ -576,7 +606,7 @@ describe("DepositAddressHandler._getSignedWithdrawV3", function () {
   it("builds the sign-withdraw request from the message + withdraw leaf, with gas deduction on", async function () {
     signWithdrawStub.resolves({ signedWithdrawTx: { chainId: 42161 } });
     const message = withdrawMessageV3();
-    await internals()._getSignedWithdrawV3(message, v3WithdrawLeaf);
+    await internals()._getSignedWithdrawV3(message, v3WithdrawLeaf, "5000");
     expect(signWithdrawStub.calledOnce).to.equal(true);
     expect(signWithdrawStub.firstCall.args[0]).to.deep.equal({
       chainId: 42161,
@@ -598,7 +628,7 @@ describe("DepositAddressHandler._getSignedWithdrawV3", function () {
   it("retries transient failures, then gives up without persisting a skip", async function () {
     signWithdrawStub.rejects(new HttpError(400, "GAS_FEE_TEMPORARILY_UNAVAILABLE"));
     const message = withdrawMessageV3();
-    const result = await internals()._getSignedWithdrawV3(message, v3WithdrawLeaf);
+    const result = await internals()._getSignedWithdrawV3(message, v3WithdrawLeaf, "5000");
     expect(result).to.equal(undefined);
     expect(signWithdrawStub.callCount).to.equal(4); // initial attempt + 3 retries
     expect(internals().terminallySkippedWithdrawKeys.size).to.equal(0);
@@ -608,12 +638,53 @@ describe("DepositAddressHandler._getSignedWithdrawV3", function () {
   it("treats a 422 as terminal: no retry, persists the skip key", async function () {
     signWithdrawStub.rejects(new HttpError(422, "GAS_EXCEEDS_REFUND"));
     const message = withdrawMessageV3();
-    const result = await internals()._getSignedWithdrawV3(message, v3WithdrawLeaf);
+    const result = await internals()._getSignedWithdrawV3(message, v3WithdrawLeaf, "5000");
     expect(result).to.equal(undefined);
     expect(signWithdrawStub.callCount).to.equal(1); // no retries on a terminal 422
     const depositKey = `${DEPOSIT_ADDRESS}:${message.erc20Transfer.transactionHash}`;
     expect(internals().terminallySkippedWithdrawKeys.has(depositKey)).to.equal(true);
     expect(redisSetStub.calledOnce).to.equal(true);
+  });
+
+  it("forwards the sweep amount, not the indexer transfer amount", async function () {
+    // The caller computes max(indexer amount, on-chain balance); the sign-withdraw request must use it.
+    signWithdrawStub.resolves({ signedWithdrawTx: { chainId: 42161 } });
+    await internals()._getSignedWithdrawV3(withdrawMessageV3(), v3WithdrawLeaf, "7000");
+    expect(signWithdrawStub.calledOnce).to.equal(true);
+    expect((signWithdrawStub.firstCall.args[0] as { amount: string }).amount).to.equal("7000");
+  });
+});
+
+describe("DepositAddressHandler._getSweepAmount", function () {
+  let handler: DepositAddressHandler;
+  let debugStub: sinon.SinonStub;
+
+  type Internals = {
+    _getSweepAmount: (indexerAmount: string, onchainBalance: BigNumber, logContext: Record<string, unknown>) => string;
+  };
+
+  beforeEach(function () {
+    const config = {} as unknown as DepositAddressHandlerConfig;
+    debugStub = sinon.stub();
+    const logger = { debug: debugStub } as unknown as winston.Logger;
+    handler = new DepositAddressHandler(logger, config, {} as unknown as Signer, []);
+  });
+
+  afterEach(() => sinon.restore());
+
+  function sweep(indexerAmount: string, onchainBalance: string): string {
+    return (handler as unknown as Internals)._getSweepAmount(indexerAmount, toBN(onchainBalance), {});
+  }
+
+  it("returns the indexer amount when the on-chain balance matches or is below it", function () {
+    expect(sweep("5000", "5000")).to.equal("5000");
+    expect(sweep("5000", "4000")).to.equal("5000");
+    expect(debugStub.notCalled).to.equal(true);
+  });
+
+  it("returns the on-chain balance (and logs) when it exceeds the indexer amount", function () {
+    expect(sweep("5000", "7000")).to.equal("7000");
+    expect(debugStub.calledOnce).to.equal(true);
   });
 });
 

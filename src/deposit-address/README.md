@@ -142,9 +142,11 @@ On the deposit-execute path, `_getSwapApiQuote` reads those committed fees and e
 the swap API as `cctpExecutionFee` / `spokePoolExecutionFee` — **verbatim**, since the API rebuilds
 the same leaf/root to verify the merkle proof; a mismatched or missing value for a nonzero-fee
 address fails the rebuild. Each param is sent **only when its leaf carries `params.executionFee`**, so
-legacy (pre-fee) addresses produce exactly the previous request. The bot never alters the value or
-the `amount` (the transferred balance is already the gross `bridgeInput + executionFee`; the clone
-subtracts the fee before bridging). `executionFeeRecipient` is the bot signer, so the bot collects
+legacy (pre-fee) addresses produce exactly the previous request. The bot never alters the fee
+values. The `amount` it requests is the **sweep amount**: the max of the indexer-reported transfer
+amount and the deposit address's current on-chain balance (read via RPC), so excess funds on the
+address — extra transfers, dust — are swept rather than stranded. (The transferred balance is
+already the gross `bridgeInput + executionFee`; the clone subtracts the fee before bridging.) `executionFeeRecipient` is the bot signer, so the bot collects
 the committed fee. The forwarded values are logged on the execute success and swap-quote failure
 lines for diagnosability. The withdraw path is unaffected — `withdrawLeaf` carries no fee.
 
@@ -169,7 +171,7 @@ On each poll, entries whose source messages are no longer returned by the indexe
 1. Filter on `relayerOriginChains`; skip if the refund chain is not configured.
 2. Skip if the depositKey is already in the executed-withdraws set (Redis or in-memory in-flight).
 3. Read on-chain balance of `depositAddress`; skip if below the transfer amount (defends against reorged indexer messages and concurrent withdraws via other paths).
-4. Fetch a signed-withdraw quote from the swap API. The response bundles deploy + signed-withdraw into a single Multicall3 call when the deposit clone is not yet on-chain.
+4. Fetch a signed-withdraw quote from the swap API for the **sweep amount** — the max of the indexer-reported transfer amount and the on-chain balance, so excess funds on the address are refunded too. The response bundles deploy + signed-withdraw into a single Multicall3 call when the deposit clone is not yet on-chain.
 5. Submit the tx via `TransactionClient`; wait for confirmation.
 6. Persist the depositKey to Redis.
 7. Publish a `withdraw_executed` lifecycle event to GCP Pub/Sub (if the publisher gate is on).
