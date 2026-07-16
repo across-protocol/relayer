@@ -47,6 +47,20 @@ Each message also carries a top-level `version` that selects the execution schem
 | `3` | Upgradeable-counterfactual scheme — `correct_transfer` goes to the v3 execute path (below); `mis_route` goes to the v3 refund-withdraw path (below) when `ENABLE_V3_WITHDRAWALS=true`; `intent_refund` and other classifications are dropped (not yet supported on v3). |
 | anything else (e.g. `2`) | Dropped (debug-logged) before normalization, since unsupported payloads may not carry a shape the normalizer can dereference. |
 
+**Native-token transfers.** The indexer detects native transfers to deposit addresses via traces
+and synthesizes them into the same message shape: `erc20Transfer.contractAddress` carries the
+native sentinel `0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE` (`NATIVE_ASSET` in the counterfactual
+contracts) and `logIndex` is synthetic. Native never matches a route's input token, so these
+messages always classify `mis_route` / `intent_refund` and enter the refund-withdraw paths, never
+the deposit-execute paths. Native withdraws are supported **only on the v3 scheme**: v3's
+`WithdrawImplementation` sends native via `call` when `token == NATIVE_ASSET`, so the v3 withdraw
+path relays the sentinel verbatim to the sign-withdraw endpoint. The v1 withdraw contract path
+cannot move native funds, so the v1 path skips sentinel messages up front (debug log, no API call).
+The bot handles the sentinel in two further places: on-chain balance checks go through
+`getDepositAddressBalance`, which reads `provider.getBalance(depositAddress)` for the sentinel
+(there is no contract at that address — `balanceOf` reverts) and ERC-20 `balanceOf` otherwise; and
+the Pub/Sub payload builder matches a different settlement log (see below).
+
 Normalization itself is guarded per message: a supported-version payload that still fails
 `normalizeDepositAddressMessage` (malformed shape) is dropped with a warn — never allowed to sink
 the rest of the batch. `counterfactualMaterials` may legitimately be absent on v1 messages (deposit
@@ -233,7 +247,7 @@ Every Pub/Sub message uses an envelope: `{ "type": "<message_type>", "data": <ty
 }
 ```
 
-All integer fields are `number`; tx hashes are lowercase hex strings. The `erc20Transfer` block identifies the original user transfer (the indexer keys rows on it); the sibling fields identify the execution transaction the bot just sent. The `logIndex` is the index of the ERC-20 `Transfer(address,address,uint256)` event whose `address` matches `erc20Transfer.contractAddress` and whose `from` is the deposit address; the **last** such log is used.
+All integer fields are `number`; tx hashes are lowercase hex strings. The `erc20Transfer` block identifies the original user transfer (the indexer keys rows on it); the sibling fields identify the execution transaction the bot just sent. The `logIndex` is the index of the ERC-20 `Transfer(address,address,uint256)` event whose `address` matches `erc20Transfer.contractAddress` and whose `from` is the deposit address; the **last** such log is used. For native-token withdraws (`contractAddress` = the native sentinel, v3 only) there is no ERC-20 Transfer — the `logIndex` is instead that of the `Withdraw(address,address,uint256)` event emitted by the deposit address itself (delegatecalled `WithdrawImplementation`), with the sentinel in the `token` topic; the same `to`-filter and last-match rules apply.
 
 - **`withdraw_executed`** additionally requires `to` to equal the user's `routeParams.refundAddress`. Matching on `to` disambiguates fee-on-transfer / tax / burn tokens that emit several Transfer events from the deposit address in one tx (one to the user, one to a fee recipient), and the last match handles Multicall3-bundled withdraws with intermediate hops to the same refund address.
 - **`deposit_executed`** omits the `to` filter — the input token leaves the deposit address into the SpokePool / CCTP with no fixed recipient — so any outgoing transfer of the input token qualifies.

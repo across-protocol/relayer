@@ -1,11 +1,12 @@
 import sinon from "sinon";
 import { expect } from "chai";
-import { EvmAddress, getCurrentTime, HttpError, Signer, TransactionReceipt, utils, winston } from "../src/utils";
+import { EvmAddress, getCurrentTime, HttpError, Signer, toBN, TransactionReceipt, utils, winston } from "../src/utils";
 import { DepositAddressMessage, DepositAddressMessageV3 } from "../src/interfaces/DepositAddress";
 import { DepositAddressExecuteResponse, DepositAddressSignWithdrawResponse } from "../src/clients";
 import { DepositAddressHandler } from "../src/deposit-address/DepositAddressHandler";
 import { DepositAddressHandlerConfig } from "../src/deposit-address/DepositAddressHandlerConfig";
 import { ERC20_TRANSFER_TOPIC } from "../src/deposit-address/withdrawPayload";
+import { NATIVE_TOKEN_SENTINEL_ADDRESS } from "../src/utils/DepositAddressUtils";
 
 const SIGNER = "0x000000000000000000000000000000000000BEEF";
 const DEPOSIT_ADDRESS = "0x000000000000000000000000000000000000C0DE";
@@ -698,6 +699,100 @@ describe("DepositAddressHandler.initiateWithdrawV3 guards", function () {
     );
     expect(signWithdrawStub.notCalled).to.equal(true);
     expect(warnStub.calledOnce).to.equal(true);
+  });
+});
+
+describe("DepositAddressHandler.initiateWithdraw (v1) native-token guard", function () {
+  afterEach(() => sinon.restore());
+
+  it("skips native-sentinel withdraws without calling the sign-withdraw API", async function () {
+    const chainId = 1; // depositMessage()'s erc20Transfer.chainId
+    const config = { withdrawEnabled: true, relayerOriginChains: [chainId] } as unknown as DepositAddressHandlerConfig;
+    const debugStub = sinon.stub();
+    const logger = { warn: sinon.stub(), debug: debugStub } as unknown as winston.Logger;
+    const handler = new DepositAddressHandler(logger, config, {} as unknown as Signer, []);
+    const signedWithdrawStub = sinon.stub().resolves({ signedWithdrawTx: { chainId } });
+    (handler as unknown as { api: { signedWithdraw: sinon.SinonStub } }).api = {
+      signedWithdraw: signedWithdrawStub,
+    };
+
+    const message = depositMessage({ withdrawLeaf });
+    message.erc20Transfer.transferClassification = "mis_route";
+    message.erc20Transfer.contractAddress = NATIVE_TOKEN_SENTINEL_ADDRESS;
+
+    await (handler as unknown as { initiateWithdraw: (m: DepositAddressMessage) => Promise<void> }).initiateWithdraw(
+      message
+    );
+    expect(signedWithdrawStub.notCalled).to.equal(true);
+    expect(debugStub.calledOnce).to.equal(true);
+    expect(debugStub.firstCall.firstArg.message).to.contain("not supported on v1");
+  });
+});
+
+describe("DepositAddressHandler.initiateWithdrawV3 balance check", function () {
+  let handler: DepositAddressHandler;
+  let signWithdrawStub: sinon.SinonStub;
+  let getBalanceStub: sinon.SinonStub;
+  let warnStub: sinon.SinonStub;
+  let debugStub: sinon.SinonStub;
+  const chainId = 42161;
+
+  type Internals = { initiateWithdrawV3: (m: DepositAddressMessageV3) => Promise<void> };
+
+  /** Native-token mis_route message — `contractAddress` carries the indexer's native sentinel. */
+  function nativeWithdrawMessageV3(): DepositAddressMessageV3 {
+    const message = withdrawMessageV3();
+    message.erc20Transfer.contractAddress = NATIVE_TOKEN_SENTINEL_ADDRESS;
+    return message;
+  }
+
+  beforeEach(function () {
+    const config = {
+      enableV3Withdrawals: true,
+      relayerOriginChains: [chainId],
+    } as unknown as DepositAddressHandlerConfig;
+    warnStub = sinon.stub();
+    debugStub = sinon.stub();
+    const logger = { warn: warnStub, debug: debugStub } as unknown as winston.Logger;
+    handler = new DepositAddressHandler(logger, config, {} as unknown as Signer, []);
+    // The sign-withdraw stub returns a mismatched chainId so the flow stops right after the API
+    // call — these tests only exercise the balance check in front of it.
+    signWithdrawStub = sinon.stub().resolves({ signedWithdrawTx: { chainId: chainId + 1 } });
+    (handler as unknown as { api: { signWithdrawDepositAddressV3: sinon.SinonStub } }).api = {
+      signWithdrawDepositAddressV3: signWithdrawStub,
+    };
+    (handler as unknown as { observedExecutedWithdraws: Record<number, Set<string>> }).observedExecutedWithdraws = {
+      [chainId]: new Set<string>(),
+    };
+    // Bare stub, deliberately NOT an ethers Provider: `getBalance` serves the native path, and any
+    // ERC-20 read attempt fails loudly (`new Contract(...)` rejects a non-Provider).
+    getBalanceStub = sinon.stub().resolves(toBN("5000"));
+    (handler as unknown as { providersByChain: Record<number, unknown> }).providersByChain = {
+      [chainId]: { getBalance: getBalanceStub },
+    };
+  });
+
+  afterEach(() => sinon.restore());
+
+  it("reads the native balance via provider.getBalance for sentinel withdraws and proceeds", async function () {
+    await (handler as unknown as Internals).initiateWithdrawV3(nativeWithdrawMessageV3());
+    expect(getBalanceStub.calledOnceWith(DEPOSIT_ADDRESS)).to.equal(true);
+    expect(signWithdrawStub.calledOnce).to.equal(true);
+  });
+
+  it("skips a native withdraw when the native balance is below the transfer amount", async function () {
+    getBalanceStub.resolves(toBN("4999"));
+    await (handler as unknown as Internals).initiateWithdrawV3(nativeWithdrawMessageV3());
+    expect(signWithdrawStub.notCalled).to.equal(true);
+    expect(debugStub.calledOnce).to.equal(true);
+  });
+
+  it("still reads ERC-20 balances via the token contract, warning and skipping when the read fails", async function () {
+    await (handler as unknown as Internals).initiateWithdrawV3(withdrawMessageV3());
+    expect(getBalanceStub.notCalled).to.equal(true);
+    expect(signWithdrawStub.notCalled).to.equal(true);
+    expect(warnStub.calledOnce).to.equal(true);
+    expect(warnStub.firstCall.firstArg.message).to.contain("failed to fetch deposit address balance");
   });
 });
 
