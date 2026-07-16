@@ -69,6 +69,10 @@ export type JussiPainModel = {
   out_of_band_severity_multiplier: string;
 };
 export type JussiPutGraphRequest = {
+  asset_classes?: Record<string, string[]>;
+  default_cross_asset_volatility?: string;
+  cross_asset_volatility_sigma_multiplier?: string;
+  expected_fill_latency_seconds?: number;
   latency_annualized_cost_rate: string;
   pain_model: JussiPainModel;
   logical_assets: Record<string, JussiLogicalAssetDefinition>;
@@ -81,9 +85,6 @@ export type JussiPutGraphBundleRequest = {
   graph: JussiPutGraphRequest;
   rate_limit_buckets: JussiRateLimitBucketDefinition[];
 };
-export type JussiRateLimitBucketsJson = {
-  rate_limit_buckets: JussiRateLimitBucketDefinition[];
-};
 export type BuiltJussiGraph = {
   graphId: string;
   payload: JussiPutGraphRequest;
@@ -92,7 +93,6 @@ export type BuiltJussiGraph = {
 };
 export type JussiGasPriceDiagnostic = {
   chainId: number;
-  gasPriceWei: string;
   gasPriceGwei: string;
   source: "24h_avg" | "fallback_current_oracle";
 };
@@ -100,9 +100,6 @@ export type JussiGasPriceDiagnostic = {
 export type LogicalAsset = "USDC" | "USDT" | "WETH";
 export type StableLogicalAsset = Exclude<LogicalAsset, "WETH">;
 export type JussiGraphEnvelope = { graph_id: string; payload: JussiPutGraphBundleRequest };
-export type JussiGraphJson = JussiPutGraphRequest;
-export type JussiGraphBundleJson = JussiPutGraphBundleRequest;
-export type JussiGraphRateLimitBucketsJson = JussiRateLimitBucketsJson;
 export type JussiTopologyArtifactRebalanceRoute = {
   source_chain: number;
   source_token: string;
@@ -175,7 +172,9 @@ export type OftQuoteReader = {
   sharedDecimals(): Promise<number>;
   quoteOFT(
     sendParamStruct: SendParamStruct
-  ): Promise<[unknown, Array<{ feeAmountLD: BigNumber | string; description: string }>, { amountReceivedLD: string }]>;
+  ): Promise<
+    [unknown, Array<{ feeAmountLD: BigNumber | string; description: string }>, { amountReceivedLD: BigNumber | string }]
+  >;
   quoteSend(sendParamStruct: SendParamStruct, payInLzToken: boolean): Promise<MessagingFeeStruct>;
 };
 export type OftRouteTransferQuote = {
@@ -183,19 +182,14 @@ export type OftRouteTransferQuote = {
   amountReceivedDestinationNative: BigNumber;
   messageFeeAssetAddress?: string;
   messageFeeAmount: BigNumber;
-  messageFeeIsNative: boolean;
   sendParamStruct: SendParamStruct;
 };
 // prettier-ignore
-export type BridgeBreakdownParams = {
-  logger: winston.Logger;
+export type EdgePricingParams = {
   baseSigner: Signer;
+  relayerAddress: string;
   pricingContext: RuntimePricingContext;
   rebalancerAdapters: Record<string, RebalancerAdapter>;
-};
-export type ExchangeBreakdownParams = BridgeBreakdownParams;
-export type EdgePricingParams = ExchangeBreakdownParams & {
-  cumulativeBalancesByLogicalAsset: Record<LogicalAsset, BigNumber>;
 };
 
 export type ExchangeBreakdownState = {
@@ -293,17 +287,10 @@ export type PreparedGraphTopology = {
   rebalanceRoutes: RebalanceRoute[];
   topology: JussiGraphTopology;
 };
-export type PreparedGraphTopologyForBuild = Pick<
-  PreparedGraphTopology,
-  "relayerConfig" | "hubCtx" | "rebalanceRoutes" | "topology"
-> &
-  Partial<Pick<PreparedGraphTopology, "rebalancerConfig">>;
 export type BuildTopologyParams = {
-  relayerConfig: RelayerConfig;
+  nodeContexts: ManagedNodeContext[];
   rebalanceRoutes: RebalanceRoute[];
-  hubCtx?: JussiHubContext;
+  hubPoolChainId: number;
 };
-// prettier-ignore
-export type BuildGraphParams = { logger: winston.Logger; baseSigner: Signer; relayerConfig: RelayerConfig; inventoryClient: InventoryClient; rebalanceRoutes: RebalanceRoute[]; rebalancerAdapters: Record<string, RebalancerAdapter>; graphId?: string; now?: Date };
 // prettier-ignore
 export type JussiGraphLiveDeps = { logger: winston.Logger; baseSigner: Signer; inventoryClient: InventoryClient; rebalancerAdapters: Record<string, RebalancerAdapter>; graphId?: string; now?: Date };

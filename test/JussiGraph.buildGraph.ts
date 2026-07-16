@@ -1,21 +1,31 @@
 import { expect, sinon, toBNWei, winston } from "./utils";
-import { CHAIN_IDs, EvmAddress, getMessengerEvm, TOKEN_SYMBOLS_MAP } from "../src/utils";
+import { isDeepStrictEqual } from "util";
+import {
+  CHAIN_IDs,
+  EvmAddress,
+  getMessengerEvm,
+  getTokenInfoFromSymbol,
+  resolveBinanceCoinSymbol,
+  TOKEN_SYMBOLS_MAP,
+} from "../src/utils";
 import { RelayerConfig } from "../src/relayer/RelayerConfig";
 import { RebalancerConfig } from "../src/rebalancer/RebalancerConfig";
 import { buildRebalanceRoutes } from "../src/rebalancer/buildRebalanceRoutes";
 import {
+  buildSameAssetRebalanceRoutes,
+  SAME_ASSET_REBALANCE_ROUTE_SUPPORT,
+} from "../src/rebalancer/buildSameAssetRebalanceRoutes";
+import {
+  BINANCE_RATE_LIMIT_BUCKET_ID,
   GraphEdgeCandidate,
   BuiltJussiGraph,
   ManagedNodeContext,
   buildJussiGraphBundleJson,
-  buildJussiGraphUploadBundle,
   buildBridgeEdgeCandidates,
   buildCumulativeBalancePainDefinitions,
   buildLogicalAssetDefinitions,
   buildJussiGraphEnvelope,
-  buildJussiGraphJson,
   buildJussiGraphId,
-  buildJussiRateLimitBucketsJson,
   buildJussiTopologyArtifact,
   buildManagedNodeTemplates,
   dedupeGraphEdgeCandidates,
@@ -29,17 +39,15 @@ import {
   resolveOftQuoteSendFeeAsset,
   resolveOptionalTranslatedTokenAddress,
   resolveRequiredNativePriceChains,
+  runFullBuild,
   RuntimePricingContext,
   buildTopology,
   bundleHash,
+  canonicalNodeKey,
   stableJsonStringify,
 } from "../src/jussi/buildGraph";
-import { JussiApiClient, putJsonWithTimeout } from "../src/jussi/JussiApiClient";
-import {
-  parseBuildJussiGraphFlags,
-  resolveNativePriceChainIdsForPrices,
-  resolveRuntimeRebalanceRoutes,
-} from "../scripts/buildJussiGraph";
+import { JussiApiClient } from "../src/jussi/JussiApiClient";
+import { parseBuildJussiGraphFlags } from "../scripts/buildJussiGraph";
 import { estimateEdgeEconomics, estimateQuotedBridgeBreakdown } from "../src/jussi/economics/edgeCosts";
 import { serializeEdgeClassDefinition } from "../src/jussi/economics/rates";
 import * as jussiQuotes from "../src/jussi/economics/quotes";
@@ -50,6 +58,9 @@ import {
   JussiGraphPublisher,
   validateJussiUploadEnv,
 } from "../src/jussi/JussiGraphPublisher";
+
+type SameAssetRebalanceRouteSupport = (typeof SAME_ASSET_REBALANCE_ROUTE_SUPPORT)[number];
+const TEST_RELAYER_ADDRESS = TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET];
 
 function findExpectedNode(
   nodeContexts: ManagedNodeContext[],
@@ -152,6 +163,51 @@ function buildRebalancerConfig(targetBalance = "100"): RebalancerConfig {
       },
       maxAmountsToTransfer: {},
       maxPendingOrders: {},
+    }),
+  });
+}
+
+function buildSameAssetRebalancerConfig(supportedRoutes: readonly SameAssetRebalanceRouteSupport[]): RebalancerConfig {
+  const sameAssetBalances = supportedRoutes.reduce<Record<string, { chains: Record<number, number> }>>(
+    (balances, { token, chainId }) => {
+      balances[token] ??= { chains: {} };
+      balances[token].chains[chainId] = 0;
+      return balances;
+    },
+    {}
+  );
+
+  return new RebalancerConfig({
+    HUB_CHAIN_ID: String(CHAIN_IDs.MAINNET),
+    REBALANCER_CONFIG: JSON.stringify({ sameAssetBalances }),
+  });
+}
+
+function buildSameAssetRelayerConfig(
+  supportedRoutes: readonly SameAssetRebalanceRouteSupport[],
+  omittedEndpoint?: { token: string; chainId: number }
+): RelayerConfig {
+  const configuredRoutes = buildSameAssetRebalanceRoutes(buildSameAssetRebalancerConfig(supportedRoutes));
+  const tokenConfig = configuredRoutes.reduce<
+    Record<string, Record<number, { targetPct: number; thresholdPct: number }>>
+  >((config, route) => {
+    config[route.destinationToken] ??= {};
+    config[route.destinationToken][route.destinationChain] = { targetPct: 1, thresholdPct: 0 };
+    return config;
+  }, {});
+  if (omittedEndpoint) {
+    delete tokenConfig[omittedEndpoint.token]?.[omittedEndpoint.chainId];
+  }
+
+  return new RelayerConfig({
+    HUB_CHAIN_ID: String(CHAIN_IDs.MAINNET),
+    RELAYER_INVENTORY_CONFIG: JSON.stringify({
+      tokenConfig,
+      allowedSwapRoutes: [],
+      wrapEtherTarget: "0",
+      wrapEtherTargetPerChain: {},
+      wrapEtherThreshold: "0",
+      wrapEtherThresholdPerChain: {},
     }),
   });
 }
@@ -319,13 +375,27 @@ describe("Jussi graph builder helpers", function () {
       topologyOnly: true,
       upload: false,
     });
+    expect(parseBuildJussiGraphFlags(["--topology-only", "--check", "--check=false"])).to.deep.equal({
+      check: true,
+      topologyOnly: true,
+      upload: false,
+    });
     expect(parseBuildJussiGraphFlags(["--upload"])).to.deep.equal({
       check: false,
       topologyOnly: false,
       upload: true,
     });
+    expect(parseBuildJussiGraphFlags(["--relayerAddress", "0x0000000000000000000000000000000000000001"])).to.deep.equal(
+      {
+        check: false,
+        relayerAddress: "0x0000000000000000000000000000000000000001",
+        topologyOnly: false,
+        upload: false,
+      }
+    );
     expectParseError(["--check"], "--check requires --topology-only");
     expectParseError(["--topology-only", "--upload"], "--topology-only and --upload are mutually exclusive");
+    expectParseError(["--relayerAddress"], "--relayerAddress requires an address");
   });
 
   it("extracts mainnet and aliased USDC/USDT/WETH node templates from synthetic inventory config", async function () {
@@ -428,6 +498,7 @@ describe("Jussi graph builder helpers", function () {
     };
     const requestedTokens: string[] = [];
     const inventoryClient = {
+      relayer: EvmAddress.from(TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]),
       getCumulativeBalanceWithApproximateUpcomingRefunds(l1Token: EvmAddress) {
         const tokenAddress = l1Token.toNative().toLowerCase();
         requestedTokens.push(tokenAddress);
@@ -451,26 +522,30 @@ describe("Jussi graph builder helpers", function () {
       .callsFake(async (chainIds: number[]) =>
         Array.from(new Set(chainIds)).map((chainId) => ({
           chainId,
-          gasPriceWei: "1",
           gasPriceGwei: "0.000000001",
           source: "fallback_current_oracle",
         }))
       );
-    let uploadBundle: Awaited<ReturnType<typeof buildJussiGraphUploadBundle>>;
-    try {
-      uploadBundle = await buildJussiGraphUploadBundle({
-        logger: { info: () => undefined, debug: () => undefined } as never,
-        baseSigner: {} as never,
-        relayerConfig,
-        inventoryClient: inventoryClient as never,
-        rebalanceRoutes: [],
-        rebalancerAdapters: {},
-        graphId: "test-graph",
-      });
-    } finally {
-      describeGasPricesStub.restore();
-    }
-    const { graph } = uploadBundle;
+    const prepared = await prepareGraphTopology({
+      relayerConfig,
+      rebalancerConfig: new RebalancerConfig({
+        HUB_CHAIN_ID: String(CHAIN_IDs.MAINNET),
+        REBALANCER_CONFIG: "{}",
+      }),
+    });
+    const graph = await (async () => {
+      try {
+        return await runFullBuild(prepared, {
+          logger: { info: () => undefined, debug: () => undefined } as never,
+          baseSigner: {} as never,
+          inventoryClient: inventoryClient as never,
+          rebalancerAdapters: {},
+          graphId: "test-graph",
+        });
+      } finally {
+        describeGasPricesStub.restore();
+      }
+    })();
 
     expect(requestedTokens).to.deep.equal([
       TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET].toLowerCase(),
@@ -484,10 +559,7 @@ describe("Jussi graph builder helpers", function () {
     expect(graph.payload.cumulative_balance_pain.WETH.target_balance_native).to.equal(balances.WETH.toString());
     expect(graph.payload.logical_assets.WETH.native_price_alias_chain_ids).to.deep.equal(["1"]);
     expect(graph.payload.logical_assets.USDC.native_price_alias_chain_ids).to.equal(undefined);
-    expect(uploadBundle.graphId).to.equal("test-graph");
-    expect(uploadBundle.bundle).to.deep.equal(buildJussiGraphBundleJson(graph));
-    expect(uploadBundle.envelope).to.deep.equal(buildJussiGraphEnvelope(graph));
-    expect(uploadBundle.bundleHash).to.equal(bundleHash(uploadBundle.bundle));
+    expect(graph.graphId).to.equal("test-graph");
   });
 
   it("splits graph native price coverage between aliases and explicit native request prices", async function () {
@@ -498,11 +570,6 @@ describe("Jussi graph builder helpers", function () {
     );
     const requiredNativePriceChains = resolveRequiredNativePriceChains(logicalAssets, nodeContexts);
     const graphChainIds = [...new Set(nodeContexts.map((node) => node.chainId))].sort((a, b) => a - b);
-    const graphJson = {
-      logical_assets: logicalAssets,
-      nodes: nodeContexts.map((node) => node.definition),
-    };
-
     expect(logicalAssets.HYPE).to.equal(undefined);
     expect([...aliasedChainIds].sort((a, b) => a - b)).to.deep.equal([
       CHAIN_IDs.MAINNET,
@@ -514,7 +581,6 @@ describe("Jussi graph builder helpers", function () {
     expect([...new Set([...aliasedChainIds, ...requiredNativePriceChains])].sort((a, b) => a - b)).to.deep.equal(
       graphChainIds
     );
-    expect(resolveNativePriceChainIdsForPrices(graphJson)).to.deep.equal(requiredNativePriceChains);
   });
 
   it("discovers only direct token-splitter bridge candidates for pathUSD", async function () {
@@ -814,7 +880,7 @@ describe("Jussi graph builder helpers", function () {
     };
 
     const edgeClass = await serializeEdgeClassDefinition(candidate, {
-      baseSigner: {} as never,
+      relayerAddress: TEST_RELAYER_ADDRESS,
       pricingContext: buildMockPricingContext(),
       rebalancerAdapters: { binance: adapter } as never,
     });
@@ -853,8 +919,7 @@ describe("Jussi graph builder helpers", function () {
     try {
       await estimateEdgeEconomics(candidate, {
         baseSigner: {} as never,
-        cumulativeBalancesByLogicalAsset: { USDC: toBNWei("0"), USDT: toBNWei("0"), WETH: toBNWei("0") },
-        logger: buildNoopLogger(),
+        relayerAddress: TEST_RELAYER_ADDRESS,
         pricingContext: buildMockPricingContext(),
         rebalancerAdapters: { binance: adapter } as never,
       });
@@ -862,7 +927,7 @@ describe("Jussi graph builder helpers", function () {
       errorMessage = error instanceof Error ? error.message : String(error);
     }
 
-    expect(errorMessage).to.contain(`No Binance network entry for USDT on chain ${CHAIN_IDs.HYPEREVM}`);
+    expect(errorMessage).to.contain("No Binance network entry for USDT");
   });
 
   it("includes CCTP maxFee as a fixed input fee on CCTP edges", async function () {
@@ -897,8 +962,7 @@ describe("Jussi graph builder helpers", function () {
 
     const economics = await estimateEdgeEconomics(candidate, {
       baseSigner: {} as never,
-      cumulativeBalancesByLogicalAsset: { USDC: toBNWei("0"), USDT: toBNWei("0"), WETH: toBNWei("0") },
-      logger: buildNoopLogger(),
+      relayerAddress: TEST_RELAYER_ADDRESS,
       pricingContext: buildMockPricingContext(),
       rebalancerAdapters: { cctp: cctpAdapter } as never,
     });
@@ -940,8 +1004,7 @@ describe("Jussi graph builder helpers", function () {
 
     const economics = await estimateEdgeEconomics(candidate, {
       baseSigner: {} as never,
-      cumulativeBalancesByLogicalAsset: { USDC: toBNWei("0"), USDT: toBNWei("0"), WETH: toBNWei("0") },
-      logger: buildNoopLogger(),
+      relayerAddress: TEST_RELAYER_ADDRESS,
       pricingContext: buildMockPricingContext(),
       rebalancerAdapters: { binance: adapter, cctp: cctpAdapter } as never,
     });
@@ -984,8 +1047,7 @@ describe("Jussi graph builder helpers", function () {
 
     const economics = await estimateEdgeEconomics(candidate, {
       baseSigner: {} as never,
-      cumulativeBalancesByLogicalAsset: { USDC: toBNWei("0"), USDT: toBNWei("0"), WETH: toBNWei("0") },
-      logger: buildNoopLogger(),
+      relayerAddress: TEST_RELAYER_ADDRESS,
       pricingContext: buildMockPricingContext(),
       rebalancerAdapters: { binance: adapter, cctp: cctpAdapter } as never,
     });
@@ -1032,8 +1094,7 @@ describe("Jussi graph builder helpers", function () {
 
     const economics = await estimateEdgeEconomics(candidate, {
       baseSigner: {} as never,
-      cumulativeBalancesByLogicalAsset: { USDC: toBNWei("0"), USDT: toBNWei("0"), WETH: toBNWei("0") },
-      logger: buildNoopLogger(),
+      relayerAddress: TEST_RELAYER_ADDRESS,
       pricingContext: buildMockPricingContext(),
       rebalancerAdapters: { binance: adapter, cctp: cctpAdapter } as never,
     });
@@ -1071,7 +1132,6 @@ describe("Jussi graph builder helpers", function () {
           roundedInputSourceNative: amount,
           amountReceivedDestinationNative: amount,
           messageFeeAmount: toBNWei("0"),
-          messageFeeIsNative: true,
           sendParamStruct: {} as never,
         };
       });
@@ -1089,8 +1149,7 @@ describe("Jussi graph builder helpers", function () {
     try {
       economics = await estimateEdgeEconomics(candidate, {
         baseSigner: {} as never,
-        cumulativeBalancesByLogicalAsset: { USDC: toBNWei("0"), USDT: toBNWei("0"), WETH: toBNWei("0") },
-        logger: buildNoopLogger(),
+        relayerAddress: TEST_RELAYER_ADDRESS,
         pricingContext: buildMockPricingContext(),
         rebalancerAdapters: { binance: adapter } as never,
       });
@@ -1178,7 +1237,6 @@ describe("Jussi graph builder helpers", function () {
     expect(quotedSendParams[0].minAmountLD.toString()).to.equal(amount.toString());
     expect(quotedSendParams[1].minAmountLD.toString()).to.equal(amountReceived.toString());
     expect(quote.sendParamStruct.minAmountLD.toString()).to.equal(amountReceived.toString());
-    expect(quote.messageFeeIsNative).to.equal(true);
     expect(quote.messageFeeAssetAddress).to.equal(undefined);
     expect(quoteSendPayInLzToken).to.deep.equal([false]);
   });
@@ -1196,7 +1254,7 @@ describe("Jussi graph builder helpers", function () {
   it("uses MONAD receive options and fee-token pricing inputs for OFT routes on chains without native gas", async function () {
     const recipient = EvmAddress.from(TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]);
     const quoteSendPayInLzToken: boolean[] = [];
-    const lzTokenFee = toBNWei("7", 6);
+    const nativeFee = toBNWei("4", 9);
     const quote = await quoteOftRouteTransfer({
       reader: {
         async sharedDecimals() {
@@ -1207,7 +1265,7 @@ describe("Jussi graph builder helpers", function () {
         },
         async quoteSend(_sendParamStruct, payInLzToken) {
           quoteSendPayInLzToken.push(payInLzToken);
-          return { nativeFee: toBNWei("4", 9), lzTokenFee } as never;
+          return { nativeFee, lzTokenFee: toBNWei("7", 6) } as never;
         },
       },
       originChain: CHAIN_IDs.TEMPO,
@@ -1220,12 +1278,11 @@ describe("Jussi graph builder helpers", function () {
     expect(Array.from(quote.sendParamStruct.extraOptions as Uint8Array)).to.deep.equal(
       Array.from(resolveOftQuoteExtraOptions(CHAIN_IDs.MONAD) as Uint8Array)
     );
-    expect(quote.messageFeeIsNative).to.equal(false);
-    expect(quote.messageFeeAssetAddress.toLowerCase()).to.equal(
+    expect(requireString(quote.messageFeeAssetAddress, "OFT message fee asset").toLowerCase()).to.equal(
       resolveOftQuoteSendFeeAsset(CHAIN_IDs.TEMPO).toLowerCase()
     );
-    expect(quote.messageFeeAmount.toString()).to.equal(lzTokenFee.toString());
-    expect(quoteSendPayInLzToken).to.deep.equal([true]);
+    expect(quote.messageFeeAmount.toString()).to.equal(nativeFee.toString());
+    expect(quoteSendPayInLzToken).to.deep.equal([false]);
   });
 
   it("serializes graph envelopes and graph ids in the script output shape", async function () {
@@ -1277,9 +1334,9 @@ describe("Jussi graph builder helpers", function () {
       },
     };
     const envelope = buildJussiGraphEnvelope(graph);
-    const graphJson = buildJussiGraphJson(graph);
+    const graphJson = graph.payload;
     const bundleJson = buildJussiGraphBundleJson(graph);
-    const rateLimitBucketsJson = buildJussiRateLimitBucketsJson(graph);
+    const rateLimitBucketsJson = { rate_limit_buckets: graph.rate_limit_buckets };
 
     expect(graphId).to.equal("usdc-usdt-weth-20260401T091011Z");
     expect(envelope).to.deep.equal({
@@ -1350,6 +1407,91 @@ describe("Jussi graph builder helpers", function () {
     expect(stableJsonStringify(artifact)).to.equal(stableJsonStringify(rebuiltArtifact));
   });
 
+  it("includes every configured SameAsset route in prepared topology", async function () {
+    const supportedRoutes = SAME_ASSET_REBALANCE_ROUTE_SUPPORT;
+    const relayerConfig = buildSameAssetRelayerConfig(supportedRoutes);
+    const rebalancerConfig = buildSameAssetRebalancerConfig(supportedRoutes);
+    const sameAssetRoutes = buildSameAssetRebalanceRoutes(rebalancerConfig);
+    const prepared = await prepareGraphTopology({ relayerConfig, rebalancerConfig });
+    const artifact = buildJussiTopologyArtifact(prepared);
+
+    expect(supportedRoutes).not.to.have.lengthOf(0);
+    expect(sameAssetRoutes).to.have.lengthOf(supportedRoutes.length);
+    sameAssetRoutes.forEach((route) => {
+      const sourceTokenInfo = getTokenInfoFromSymbol(route.sourceToken, route.sourceChain);
+      const destinationTokenInfo = getTokenInfoFromSymbol(route.destinationToken, route.destinationChain);
+      const sourceNodeKey = canonicalNodeKey(route.sourceChain, sourceTokenInfo.address.toNative());
+      const destinationNodeKey = canonicalNodeKey(route.destinationChain, destinationTokenInfo.address.toNative());
+      const expectedFamily =
+        route.adapter === "binance" &&
+        resolveBinanceCoinSymbol(route.sourceToken) === resolveBinanceCoinSymbol(route.destinationToken)
+          ? "binance_cex_bridge"
+          : route.adapter;
+
+      expect(prepared.rebalanceRoutes.some((preparedRoute) => isDeepStrictEqual(preparedRoute, route))).to.equal(true);
+      expect(prepared.topology.nodeContexts.some((node) => node.nodeKey === sourceNodeKey)).to.equal(true);
+      expect(prepared.topology.nodeContexts.some((node) => node.nodeKey === destinationNodeKey)).to.equal(true);
+
+      const candidate = findExpectedEdge(
+        prepared.topology.edgeCandidates,
+        (edge) =>
+          edge.from.nodeKey === sourceNodeKey &&
+          edge.to.nodeKey === destinationNodeKey &&
+          edge.rebalanceRoute !== undefined &&
+          isDeepStrictEqual(edge.rebalanceRoute, route),
+        `${route.adapter}:${route.sourceToken}:${route.sourceChain}->${route.destinationToken}:${route.destinationChain}`
+      );
+      expect(candidate.family).to.equal(expectedFamily);
+      expect(candidate.adapterOrBridgeName).to.equal(route.adapter);
+
+      const artifactCandidate = artifact.edge_candidates.find(
+        (edge) =>
+          edge.from_node_key === sourceNodeKey &&
+          edge.to_node_key === destinationNodeKey &&
+          edge.rebalance_route?.source_chain === route.sourceChain &&
+          edge.rebalance_route.source_token === route.sourceToken &&
+          edge.rebalance_route.destination_chain === route.destinationChain &&
+          edge.rebalance_route.destination_token === route.destinationToken &&
+          edge.rebalance_route.adapter === route.adapter
+      );
+      expect(artifactCandidate, `missing topology artifact edge for ${route.sourceToken} on ${route.destinationChain}`)
+        .to.exist;
+      expect(artifactCandidate?.family).to.equal(expectedFamily);
+      expect(artifactCandidate?.adapter_or_bridge_name).to.equal(route.adapter);
+      if (expectedFamily === "binance" || expectedFamily === "binance_cex_bridge") {
+        expect(artifactCandidate?.rate_limit_bucket_id).to.equal(BINANCE_RATE_LIMIT_BUCKET_ID);
+        expect(
+          artifact.rate_limit_buckets.some((bucket) => bucket.bucket_id === BINANCE_RATE_LIMIT_BUCKET_ID)
+        ).to.equal(true);
+      } else {
+        expect(artifactCandidate?.rate_limit_bucket_id).to.equal(undefined);
+      }
+    });
+  });
+
+  it("rejects a configured SameAsset route when its managed inventory endpoint is missing", async function () {
+    const supportedRoutes = SAME_ASSET_REBALANCE_ROUTE_SUPPORT;
+    const configuredRoutes = buildSameAssetRebalanceRoutes(buildSameAssetRebalancerConfig(supportedRoutes));
+    const missingRoute = configuredRoutes[0];
+
+    expect(missingRoute).not.to.equal(undefined);
+    const missingEndpoint = { token: missingRoute.destinationToken, chainId: missingRoute.destinationChain };
+    let errorMessage = "";
+    try {
+      await prepareGraphTopology({
+        relayerConfig: buildSameAssetRelayerConfig(supportedRoutes, missingEndpoint),
+        rebalancerConfig: buildSameAssetRebalancerConfig(supportedRoutes),
+      });
+    } catch (error) {
+      errorMessage = error instanceof Error ? error.message : String(error);
+    }
+
+    expect(errorMessage).to.contain("destination");
+    expect(errorMessage).to.contain(missingEndpoint.token);
+    expect(errorMessage).to.contain(String(missingRoute.sourceChain));
+    expect(errorMessage).to.contain(String(missingEndpoint.chainId));
+  });
+
   it("excludes legacy mesh OFT routes from Jussi topology while keeping direct Binance Tron routes", async function () {
     const relayerConfig = new RelayerConfig({
       HUB_CHAIN_ID: String(CHAIN_IDs.MAINNET),
@@ -1409,10 +1551,9 @@ describe("Jussi graph builder helpers", function () {
     expect(prepared.rebalanceRoutes.some(hasTronOftRoute)).to.equal(false);
     expect(prepared.topology.edgeCandidates.some(hasTronOftEdge)).to.equal(false);
     expect(prepared.topology.edgeCandidates.some(hasTronBinanceEdge)).to.equal(true);
-    expect(resolveRuntimeRebalanceRoutes(prepared).some(hasTronOftRoute)).to.equal(false);
   });
 
-  it("initializes runtime adapters with bridge-derived prepared rebalance routes", async function () {
+  it("includes bridge-derived routes in the prepared rebalance route set", async function () {
     const relayerConfig = buildRelayerConfig();
     const rebalancerConfig = buildRebalancerConfig();
     const prepared = await prepareGraphTopology({ relayerConfig, rebalancerConfig });
@@ -1427,13 +1568,15 @@ describe("Jussi graph builder helpers", function () {
       `${route.adapter}:${route.sourceToken}:${route.sourceChain}->${route.destinationToken}:${route.destinationChain}`;
     const baseRouteKeys = new Set(baseRoutes.map(routeKey));
 
-    expect(resolveRuntimeRebalanceRoutes(prepared)).to.equal(prepared.rebalanceRoutes);
     expect(prepared.rebalanceRoutes.some((route) => !baseRouteKeys.has(routeKey(route)))).to.equal(true);
   });
 
   it("keeps target-balance magnitude out of the topology artifact when the token remains configured", async function () {
     const hubCtx = { hubPoolChainId: CHAIN_IDs.MAINNET };
     const relayerConfig = buildRelayerConfig();
+    const nodeContexts = materializeNodeDefinitions(
+      buildManagedNodeTemplates(relayerConfig.inventoryConfig, hubCtx.hubPoolChainId)
+    );
     const buildPreparedArtifact = (targetBalance: string) => {
       const rebalancerConfig = buildRebalancerConfig(targetBalance);
       const rebalanceRoutes = buildRebalanceRoutes(rebalancerConfig);
@@ -1442,7 +1585,7 @@ describe("Jussi graph builder helpers", function () {
         rebalancerConfig,
         hubCtx,
         rebalanceRoutes,
-        topology: buildTopology({ relayerConfig, rebalanceRoutes, hubCtx }),
+        topology: buildTopology({ nodeContexts, rebalanceRoutes, hubPoolChainId: hubCtx.hubPoolChainId }),
       });
     };
 
@@ -1492,7 +1635,8 @@ describe("Jussi graph builder helpers", function () {
     try {
       let errorMessage = "";
       try {
-        await putJsonWithTimeout("http://localhost:8080/graph_bundles/test", {}, {}, 1_000);
+        const bundle = buildJussiGraphBundleJson(buildMinimalGraph("test-graph"));
+        await new JussiApiClient("http://localhost:8080", undefined, 1_000).putGraphBundle("test", bundle);
       } catch (error) {
         errorMessage = error instanceof Error ? error.message : String(error);
       }

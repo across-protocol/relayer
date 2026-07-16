@@ -293,9 +293,12 @@ export abstract class BaseAdapter implements RebalancerAdapter {
           message: `⏰ Pruning expired pending order ${cloid} from status set ${statusSetKey} without finalization. The order's REBALANCER_PENDING_ORDER_TTL elapsed before it could progress out of this status.`,
           account: account.toNative(),
         });
+        await this._onExpiredOrderPruned(status, cloid, account);
       }
     });
   }
+
+  protected async _onExpiredOrderPruned(_status: STATUS, _cloid: string, _account: EvmAddress): Promise<void> {}
 
   protected async _redisGetPendingBridgesPreDeposit(account: EvmAddress): Promise<string[]> {
     await this._redisCleanupPendingOrders(STATUS.PENDING_BRIDGE_PRE_DEPOSIT, account);

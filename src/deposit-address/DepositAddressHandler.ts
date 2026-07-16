@@ -741,11 +741,25 @@ export class DepositAddressHandler {
    * rolls back state and never throws to the caller — a dropped publish leaves the indexer row
    * pending until ops reconciles. Shares the topic with `withdraw_executed`; gated independently by
    * config.enableDepositAddressDepositPublisher.
+   *
+   * Skipped entirely when `enableExecuteErc20Transfer` is on: that mode has the API emit a
+   * version-2 provenance blob on-chain (via `AcrossEventEmitter`) linking the execute to the
+   * funding transfer, so the indexer already learns of the execution from chain events and the
+   * Pub/Sub event would be a redundant second signal for the same transition.
    */
   private async _publishDepositExecuted(
     receipt: TransactionReceipt,
     depositMessage: DepositAddressMessageV3
   ): Promise<void> {
+    if (this.config.enableExecuteErc20Transfer) {
+      this.logger.debug({
+        at: "DepositAddressHandler#_publishDepositExecuted",
+        message: "Skipping deposit_executed publish: on-chain erc20Transfer provenance metadata is enabled",
+        depositAddress: depositMessage.depositAddress,
+        txHash: receipt.transactionHash,
+      });
+      return;
+    }
     if (!this.config.enableDepositAddressDepositPublisher || !isDefined(this.executionPublisher)) {
       return;
     }
@@ -1177,10 +1191,33 @@ export class DepositAddressHandler {
         recipient: routeParams.recipient.address,
       },
       originChainId: Number(erc20Transfer.chainId),
+      ...(this.config.enableExecuteInputToken
+        ? {
+            inputToken: {
+              chainId: Number(erc20Transfer.chainId),
+              address: erc20Transfer.contractAddress,
+            },
+          }
+        : {}),
       userAddress: refundAddress.address,
       amount: erc20Transfer.amount,
       executionFeeRecipient: this.signerAddress.toNative(),
       integratorId,
+      // Provenance reference to the inbound funding transfer. When accepted, the API folds this into a
+      // Multicall3 bundle that emits a version-2 provenance blob, giving the indexer an on-chain
+      // sweep ↔ funding-transfer link in the execute receipt. Gated because an API without the schema
+      // change rejects the field (400 INVALID_PARAM, `Expected type 'never'`). Number() is a no-op on
+      // an already-numeric chainId, so this keeps working if the indexer later types it as a number.
+      ...(this.config.enableExecuteErc20Transfer
+        ? {
+            erc20Transfer: {
+              chainId: Number(erc20Transfer.chainId),
+              blockNumber: erc20Transfer.blockNumber,
+              transactionHash: erc20Transfer.transactionHash,
+              logIndex: erc20Transfer.logIndex,
+            },
+          }
+        : {}),
     };
     // `_post` swallows errors and returns undefined, so retry on both throw and falsy return.
     try {

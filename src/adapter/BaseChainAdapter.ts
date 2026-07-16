@@ -546,7 +546,12 @@ export class BaseChainAdapter {
 
   async getOutstandingCrossChainTransfers(l1Tokens: EvmAddress[]): Promise<OutstandingTransfers> {
     const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
-    const availableL1Tokens = this.filterSupportedTokens(l1Tokens);
+    // L1→L2 outstanding-transfer tracking requires an L1 bridge. Tokens that are L2→L1-only
+    // (e.g. Avalanche USDT via Binance) are in SUPPORTED_TOKENS / supportedTokens but have no
+    // entry in this.bridges — skip them here rather than crashing on an undefined bridge.
+    const availableL1Tokens = this.filterSupportedTokens(l1Tokens).filter((l1Token) =>
+      isDefined(this.bridges[l1Token.toNative()])
+    );
 
     const outstandingTransfers: OutstandingTransfers = {};
 

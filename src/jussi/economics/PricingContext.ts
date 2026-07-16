@@ -38,19 +38,6 @@ import {
 } from "../constants";
 import type { EdgeFamily, JussiGasPriceDiagnostic, LogicalAsset, ResolvedGasPrice } from "../types";
 
-/**
- * Guards against silently propagating a non-positive or non-finite USD price into rate/notional
- * math, where it would otherwise be masked by `Math.max(price, Number.EPSILON)` and produce an
- * astronomically large (and meaningless) ratio. Fail loudly instead so the graph build aborts.
- */
-export function assertPositiveFiniteUsdPrice(price: number, description: string): number {
-  assert(
-    Number.isFinite(price) && price > 0,
-    `Resolved non-positive or non-finite USD price for ${description}: ${price}`
-  );
-  return price;
-}
-
 export class RuntimePricingContext {
   private readonly priceClient: PriceClient;
   private readonly gasPriceCache = new Map<number, Promise<ResolvedGasPrice>>();
@@ -72,10 +59,10 @@ export class RuntimePricingContext {
 
   async deriveGasCostUsd(family: EdgeFamily, chainId: number): Promise<number> {
     const gasUnits = GAS_UNITS_BY_FAMILY[family];
-    const gasPrice = await this.getGasPrice(chainId);
+    const { gasPriceWei } = await this.getResolvedGasPrice(chainId);
     const nativePriceUsd = await this.getNativeTokenPriceUsd(chainId);
     const nativeTokenInfo = getNativeTokenInfoForChain(chainId, this.hubPoolChainId);
-    const gasCostNative = gasPrice.mul(gasUnits);
+    const gasCostNative = gasPriceWei.mul(gasUnits);
     return parseFloat(formatUnits(gasCostNative, nativeTokenInfo.decimals)) * nativePriceUsd;
   }
 
@@ -85,7 +72,6 @@ export class RuntimePricingContext {
       const resolvedGasPrice = await this.getResolvedGasPrice(chainId);
       return {
         chainId,
-        gasPriceWei: resolvedGasPrice.gasPriceWei.toString(),
         gasPriceGwei: formatUnits(resolvedGasPrice.gasPriceWei, "gwei"),
         source: resolvedGasPrice.source,
       };
@@ -130,13 +116,14 @@ export class RuntimePricingContext {
     }
     return this.loadCachedValue(this.logicalAssetPriceCache, logicalAsset, async () => {
       const tokenInfo = getTokenInfoFromSymbol(logicalAsset, this.hubPoolChainId);
-      const price = await this.priceClient.getPriceByAddress(tokenInfo.address.toNative());
-      return assertPositiveFiniteUsdPrice(Number(price.price), `logical asset ${logicalAsset}`);
+      const { price } = await this.priceClient.getPriceByAddress(tokenInfo.address.toNative());
+      const priceUsd = Number(price);
+      assert(
+        Number.isFinite(priceUsd) && priceUsd > 0,
+        `Resolved non-positive or non-finite USD price for logical asset ${logicalAsset}: ${priceUsd}`
+      );
+      return priceUsd;
     });
-  }
-
-  private getGasPrice(chainId: number): Promise<BigNumber> {
-    return this.getResolvedGasPrice(chainId).then(({ gasPriceWei }) => gasPriceWei);
   }
 
   private getResolvedGasPrice(chainId: number): Promise<ResolvedGasPrice> {
@@ -178,7 +165,12 @@ export class RuntimePricingContext {
       latestBlock.number,
       latestBlock.timestamp
     );
-    const sampleBlocks = this.buildGasPriceSampleBlocks(oldestBlockNumber, latestBlock.number);
+    const sampleCount = Math.min(GAS_COST_AVERAGE_SAMPLE_WINDOWS, latestBlock.number - oldestBlockNumber + 1);
+    const sampleBlocks = Array.from({ length: sampleCount }, (_, index) =>
+      sampleCount === 1
+        ? latestBlock.number
+        : Math.round(oldestBlockNumber + ((latestBlock.number - oldestBlockNumber) * index) / (sampleCount - 1))
+    );
     const samplePrices = await mapAsync(sampleBlocks, async (blockNumber) =>
       this.deriveWindowAverageGasPrice(provider, blockNumber)
     );
@@ -207,20 +199,6 @@ export class RuntimePricingContext {
     const estimatedSecondsPerBlock = Math.max(MIN_GAS_COST_BLOCK_TIME_SECONDS, elapsedSeconds / sampledBlockDistance);
     const estimatedLookbackBlocks = Math.ceil(GAS_COST_AVERAGE_LOOKBACK_SECONDS / estimatedSecondsPerBlock);
     return Math.max(0, latestBlockNumber - estimatedLookbackBlocks);
-  }
-
-  private buildGasPriceSampleBlocks(oldestBlockNumber: number, latestBlockNumber: number): number[] {
-    if (latestBlockNumber <= oldestBlockNumber) {
-      return [latestBlockNumber];
-    }
-
-    const sampleCount = Math.min(GAS_COST_AVERAGE_SAMPLE_WINDOWS, latestBlockNumber - oldestBlockNumber + 1);
-    const sampleBlocks = new Set<number>();
-    for (let index = 0; index < sampleCount; index += 1) {
-      const fraction = sampleCount === 1 ? 1 : index / (sampleCount - 1);
-      sampleBlocks.add(Math.round(oldestBlockNumber + (latestBlockNumber - oldestBlockNumber) * fraction));
-    }
-    return Array.from(sampleBlocks).sort((a, b) => a - b);
   }
 
   private async deriveWindowAverageGasPrice(provider: Provider, blockNumber: number): Promise<BigNumber> {

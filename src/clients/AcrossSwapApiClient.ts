@@ -98,6 +98,11 @@ export interface DepositAddressExecuteRequest {
     recipient: string;
   };
   originChainId: number;
+  // The origin token that funded the deposit address.
+  inputToken?: {
+    chainId: number;
+    address: string;
+  };
   /** The withdraw "user" identity committed at deposit-address creation (the refund address). */
   userAddress: string;
   /** Input amount as a decimal (or 0x-hex) bigint string. */
@@ -111,6 +116,20 @@ export interface DepositAddressExecuteRequest {
    * integrators); drives the CREATE2 salt + on-chain integrator tag. Required by the endpoint.
    */
   integratorId: string;
+  /**
+   * Optional reference to the inbound ERC-20 transfer that funded the sweep. When present, the API
+   * wraps `executeTx` in a Multicall3 bundle that also emits a version-2 provenance blob via
+   * `AcrossEventEmitter`, so the indexer can link the deposit-executed event to this transfer in the
+   * same receipt. `transactionHash` is a 32-byte hex hash (`^(0x)?[0-9a-fA-F]{64}$`); the numeric
+   * fields must be non-negative integers. Only sent when the bot is configured against an API that
+   * accepts the field (see `enableExecuteErc20Transfer`) — older APIs reject it as an unknown param.
+   */
+  erc20Transfer?: {
+    chainId: number;
+    blockNumber: number;
+    transactionHash: string;
+    logIndex: number;
+  };
 }
 
 export interface DepositAddressExecuteResponse {

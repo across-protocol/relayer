@@ -58,6 +58,20 @@ property of the deposit address, not the bot's auth key) and is **required** by 
 endpoint — it folds into the CREATE2 salt + on-chain integrator tag, so the address is derived
 per-integrator. The bot relays it verbatim.
 
+Two optional execute fields are gated behind env flags because an API that predates their schema
+changes rejects an unknown param with `400 INVALID_PARAM`:
+
+- `ENABLE_EXECUTE_INPUT_TOKEN=true` → relays the funding token as `inputToken`.
+- `ENABLE_EXECUTE_ERC20_TRANSFER_METADATA=true` → relays an `erc20Transfer` provenance reference
+  (`{ chainId, blockNumber, transactionHash, logIndex }` of the inbound funding transfer, taken
+  verbatim from the indexer message; `chainId` coerced to an integer). When accepted, the API wraps
+  `executeTx` in a Multicall3 bundle that additionally emits a version-2 provenance blob via
+  `AcrossEventEmitter`, giving the indexer an on-chain sweep ↔ funding-transfer link in the execute
+  receipt.
+
+Both default off; enable them only against an API that accepts the field (e.g. the test bot ahead of
+the production rollout).
+
 The flow (`initiateDepositV3`):
 
 1. Filter on `relayerOriginChains` and dedup against the same Redis/in-memory sets as v1 (the dedup
@@ -167,6 +181,13 @@ The bot publishes two lifecycle events to one shared GCP Pub/Sub topic so the co
 - `withdraw_executed` — when `ENABLE_DEPOSIT_ADDRESS_WITHDRAW_PUBLISHER=true`, every confirmed refund withdraw (v1 + v3).
 - `deposit_executed` — when `ENABLE_DEPOSIT_ADDRESS_DEPOSIT_PUBLISHER=true`, every successful **v3** correct-transfer execution (`initiateDepositV3`). v1 deposits and failure events are out of scope.
 
+**`ENABLE_EXECUTE_ERC20_TRANSFER_METADATA` overrides the `deposit_executed` publish.** When metadata
+mode is on, the API emits the sweep ↔ funding-transfer link on-chain (a version-2 provenance blob via
+`AcrossEventEmitter`), so the indexer learns of the execution from chain events and the bot **skips**
+the `deposit_executed` Pub/Sub publish entirely — regardless of `ENABLE_DEPOSIT_ADDRESS_DEPOSIT_PUBLISHER`.
+The `withdraw_executed` publish is unaffected. Operators enabling metadata mode should therefore expect
+row transitions for v3 executes to come from the indexer's on-chain ingestion, not Pub/Sub.
+
 The consumer lives at `indexer/packages/indexer/src/pubsub/DepositAddressWithdrawConsumer.ts` (sibling repo). A single Pub/Sub client serves both events (same project + topic); it is constructed when **either** gate is on, and each publish path checks its own flag so the two events toggle independently.
 
 ### Env
@@ -174,7 +195,7 @@ The consumer lives at `indexer/packages/indexer/src/pubsub/DepositAddressWithdra
 | Name | Required | Description |
 | --- | --- | --- |
 | `ENABLE_DEPOSIT_ADDRESS_WITHDRAW_PUBLISHER` | No (default `false`) | Gate for `withdraw_executed`. |
-| `ENABLE_DEPOSIT_ADDRESS_DEPOSIT_PUBLISHER` | No (default `false`) | Gate for `deposit_executed` (v3 executions). Independent of the withdraw gate. |
+| `ENABLE_DEPOSIT_ADDRESS_DEPOSIT_PUBLISHER` | No (default `false`) | Gate for `deposit_executed` (v3 executions). Independent of the withdraw gate. Ignored when `ENABLE_EXECUTE_ERC20_TRANSFER_METADATA=true` (the publish is skipped in favor of on-chain provenance). |
 | `PUBSUB_GCP_PROJECT_ID` | When either gate is on | GCP project that **hosts the topic** (may differ from the bot's runtime project — cross-project publish is supported when the runtime SA holds `roles/pubsub.publisher` on the topic in the host project). |
 | `PUBSUB_DEPOSIT_ADDRESS_WITHDRAW_TOPIC` | When either gate is on | Short topic name (e.g. `topic-deposit-address-execution` in prod, `…-sandbox` in non-prod). Shared by both events. |
 

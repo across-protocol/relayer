@@ -1,13 +1,6 @@
 import { createHash } from "node:crypto";
 import { BigNumber } from "../utils/BNUtils";
-import type {
-  BuiltJussiGraph,
-  JussiGraphBundleJson,
-  JussiGraphEnvelope,
-  JussiGraphJson,
-  JussiGraphRateLimitBucketsJson,
-  JussiPutGraphBundleRequest,
-} from "./types";
+import type { BuiltJussiGraph, JussiGraphEnvelope, JussiPutGraphBundleRequest } from "./types";
 
 export function buildJussiGraphId(now = new Date()): string {
   return `usdc-usdt-weth-${now
@@ -23,19 +16,9 @@ export function buildJussiGraphEnvelope(graph: BuiltJussiGraph): JussiGraphEnvel
   };
 }
 
-export function buildJussiGraphJson(graph: BuiltJussiGraph): JussiGraphJson {
-  return graph.payload;
-}
-
-export function buildJussiGraphBundleJson(graph: BuiltJussiGraph): JussiGraphBundleJson {
+export function buildJussiGraphBundleJson(graph: BuiltJussiGraph): JussiPutGraphBundleRequest {
   return {
-    graph: buildJussiGraphJson(graph),
-    rate_limit_buckets: graph.rate_limit_buckets,
-  };
-}
-
-export function buildJussiRateLimitBucketsJson(graph: BuiltJussiGraph): JussiGraphRateLimitBucketsJson {
-  return {
+    graph: graph.payload,
     rate_limit_buckets: graph.rate_limit_buckets,
   };
 }
@@ -62,10 +45,6 @@ export function stableJsonStringify(value: unknown): string {
   return JSON.stringify(canonicalizeJson(value));
 }
 
-export function sha256StableJson(value: unknown): string {
-  return createHash("sha256").update(stableJsonStringify(value)).digest("hex");
-}
-
 export function bundleHash(bundle: JussiPutGraphBundleRequest): string {
-  return sha256StableJson(bundle);
+  return createHash("sha256").update(stableJsonStringify(bundle)).digest("hex");
 }
