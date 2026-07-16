@@ -1,7 +1,14 @@
 import { AnyDepositAddressMessage, DepositAddressMessageV3, isDepositAddressMessageV3 } from "../interfaces";
-import { isDefined, TransactionReceipt, utils } from "../utils";
+import { isDefined, isNativeTokenSentinel, TransactionReceipt, utils } from "../utils";
 
 export const ERC20_TRANSFER_TOPIC = utils.id("Transfer(address,address,uint256)");
+
+/**
+ * `Withdraw(address indexed token, address indexed to, uint256 amount)` emitted by
+ * `WithdrawImplementation` (via delegatecall, so `log.address` is the deposit address). Native
+ * withdraws emit no ERC20 `Transfer`, so this event is the only on-chain trace of the settlement.
+ */
+export const WITHDRAW_TOPIC = utils.id("Withdraw(address,address,uint256)");
 
 /**
  * Body of a deposit-address execution lifecycle event (`withdraw_executed` / `deposit_executed`).
@@ -36,14 +43,18 @@ export type DepositExecutedPayload = {
 };
 
 /**
- * Returns the last ERC20 `Transfer(address,address,uint256)` log in `receipt` whose `address`
- * matches `token` and whose `from` topic matches `depositAddress`. When `to` is provided, the
- * `to` topic must match as well — used by the withdraw path to disambiguate fee-on-transfer /
- * tax / burn tokens that emit several Transfer events from the deposit address in one tx. The
- * deposit-execute path omits `to`: funds leave the deposit address to the SpokePool / CCTP
- * (no fixed recipient), so any outgoing transfer of the input token qualifies. The **last** match
- * is returned in both cases — the final settlement out of the deposit address (handles
- * Multicall3-bundled txs with intermediate hops). Returns `undefined` when no log matches.
+ * Returns the last log in `receipt` recording `token` leaving `depositAddress`. When `to` is
+ * provided, the recipient topic must match as well — used by the withdraw path to disambiguate
+ * fee-on-transfer / tax / burn tokens that emit several Transfer events from the deposit address
+ * in one tx. The deposit-execute path omits `to`: funds leave the deposit address to the
+ * SpokePool / CCTP (no fixed recipient), so any outgoing transfer of the input token qualifies.
+ * The **last** match is returned in both cases — the final settlement out of the deposit address
+ * (handles Multicall3-bundled txs with intermediate hops). Returns `undefined` when no log matches.
+ *
+ * For ERC-20 tokens the log is the `Transfer(address,address,uint256)` emitted by the token
+ * contract (`from` topic = deposit address). For the native-token sentinel there is no Transfer
+ * event; the log is the `Withdraw(address,address,uint256)` emitted by the deposit address itself
+ * (delegatecalled `WithdrawImplementation`), with the sentinel in the `token` topic.
  */
 function findLastTransferFromDepositAddress(
   receipt: TransactionReceipt,
@@ -51,16 +62,23 @@ function findLastTransferFromDepositAddress(
   depositAddress: string,
   to?: string
 ): TransactionReceipt["logs"][number] | undefined {
-  const paddedFrom = utils.hexZeroPad(depositAddress.toLowerCase(), 32);
   const paddedTo = isDefined(to) ? utils.hexZeroPad(to.toLowerCase(), 32) : undefined;
-  const transferLogs = receipt.logs.filter(
-    (log) =>
-      log.address.toLowerCase() === token.toLowerCase() &&
-      log.topics[0] === ERC20_TRANSFER_TOPIC &&
-      log.topics[1]?.toLowerCase() === paddedFrom &&
-      (!isDefined(paddedTo) || log.topics[2]?.toLowerCase() === paddedTo)
-  );
-  return transferLogs.length === 0 ? undefined : transferLogs[transferLogs.length - 1];
+  const matchingLogs = isNativeTokenSentinel(token)
+    ? receipt.logs.filter(
+        (log) =>
+          log.address.toLowerCase() === depositAddress.toLowerCase() &&
+          log.topics[0] === WITHDRAW_TOPIC &&
+          log.topics[1]?.toLowerCase() === utils.hexZeroPad(token.toLowerCase(), 32) &&
+          (!isDefined(paddedTo) || log.topics[2]?.toLowerCase() === paddedTo)
+      )
+    : receipt.logs.filter(
+        (log) =>
+          log.address.toLowerCase() === token.toLowerCase() &&
+          log.topics[0] === ERC20_TRANSFER_TOPIC &&
+          log.topics[1]?.toLowerCase() === utils.hexZeroPad(depositAddress.toLowerCase(), 32) &&
+          (!isDefined(paddedTo) || log.topics[2]?.toLowerCase() === paddedTo)
+      );
+  return matchingLogs.length === 0 ? undefined : matchingLogs[matchingLogs.length - 1];
 }
 
 /**

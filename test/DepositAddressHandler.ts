@@ -6,6 +6,7 @@ import { DepositAddressExecuteResponse, DepositAddressSignWithdrawResponse } fro
 import { DepositAddressHandler } from "../src/deposit-address/DepositAddressHandler";
 import { DepositAddressHandlerConfig } from "../src/deposit-address/DepositAddressHandlerConfig";
 import { ERC20_TRANSFER_TOPIC } from "../src/deposit-address/withdrawPayload";
+import { NATIVE_TOKEN_SENTINEL } from "../src/utils/DepositAddressUtils";
 
 const SIGNER = "0x000000000000000000000000000000000000BEEF";
 const DEPOSIT_ADDRESS = "0x000000000000000000000000000000000000C0DE";
@@ -698,6 +699,33 @@ describe("DepositAddressHandler.initiateWithdrawV3 guards", function () {
     );
     expect(signWithdrawStub.notCalled).to.equal(true);
     expect(warnStub.calledOnce).to.equal(true);
+  });
+});
+
+describe("DepositAddressHandler.initiateWithdraw (v1) native-token guard", function () {
+  afterEach(() => sinon.restore());
+
+  it("skips native-sentinel withdraws without calling the sign-withdraw API", async function () {
+    const chainId = 1; // depositMessage()'s erc20Transfer.chainId
+    const config = { withdrawEnabled: true, relayerOriginChains: [chainId] } as unknown as DepositAddressHandlerConfig;
+    const debugStub = sinon.stub();
+    const logger = { warn: sinon.stub(), debug: debugStub } as unknown as winston.Logger;
+    const handler = new DepositAddressHandler(logger, config, {} as unknown as Signer, []);
+    const signedWithdrawStub = sinon.stub().resolves({ signedWithdrawTx: { chainId } });
+    (handler as unknown as { api: { signedWithdraw: sinon.SinonStub } }).api = {
+      signedWithdraw: signedWithdrawStub,
+    };
+
+    const message = depositMessage({ withdrawLeaf });
+    message.erc20Transfer.transferClassification = "mis_route";
+    message.erc20Transfer.contractAddress = NATIVE_TOKEN_SENTINEL;
+
+    await (handler as unknown as { initiateWithdraw: (m: DepositAddressMessage) => Promise<void> }).initiateWithdraw(
+      message
+    );
+    expect(signedWithdrawStub.notCalled).to.equal(true);
+    expect(debugStub.calledOnce).to.equal(true);
+    expect(debugStub.firstCall.firstArg.message).to.contain("not supported on v1");
   });
 });
 
