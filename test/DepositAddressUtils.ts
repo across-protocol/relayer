@@ -103,7 +103,7 @@ describe("DepositAddressUtils", function () {
     const normalized = normalizeDepositAddressMessage(raw);
 
     // The base58 implementation address on the cctp leaf is normalized to ethers hex...
-    const cctpLeaf = normalized.counterfactualMaterials.cctpLeaf;
+    const cctpLeaf = normalized.counterfactualMaterials?.cctpLeaf;
     expect(cctpLeaf).to.not.be.undefined;
     expect(cctpLeaf?.implementationAddress).to.match(EVM_ADDRESS);
     expect(cctpLeaf?.implementationAddress).to.equal(getEthersCompatibleAddress(CHAIN_IDs.TRON, CCTP_LEAF_IMPL_BASE58));
@@ -111,12 +111,28 @@ describe("DepositAddressUtils", function () {
     expect(cctpLeaf?.params?.executionFee).to.equal("12345");
 
     // The param-less leaf survives and stays param-less.
-    const spokePoolLeaf = normalized.counterfactualMaterials.spokePoolLeaf;
+    const spokePoolLeaf = normalized.counterfactualMaterials?.spokePoolLeaf;
     expect(spokePoolLeaf).to.not.be.undefined;
     expect(spokePoolLeaf?.params).to.be.undefined;
 
     // withdrawLeaf still normalized as before.
-    expect(normalized.counterfactualMaterials.withdrawLeaf.implementationAddress).to.match(EVM_ADDRESS);
+    expect(normalized.counterfactualMaterials?.withdrawLeaf?.implementationAddress).to.match(EVM_ADDRESS);
+  });
+
+  it("normalizeDepositAddressMessage tolerates absent counterfactualMaterials", function () {
+    // Deposit addresses that predate the indexer's V2-materials backfill are served with
+    // `counterfactualMaterials: undefined`; normalization must not throw on them
+    // (2026-07-15 incident: one such message sank every poll batch for its redelivery window).
+    const raw = { ...tronOriginIndexerMessage(), counterfactualMaterials: undefined };
+    const normalized = normalizeDepositAddressMessage(raw);
+
+    expect(normalized.counterfactualMaterials).to.be.undefined;
+    // Address normalization still applies to the rest of the message.
+    expect(normalized.depositAddress).to.match(EVM_ADDRESS);
+    expect(normalized.routeParams.inputToken).to.equal(
+      getEthersCompatibleAddress(CHAIN_IDs.TRON, raw.routeParams.inputToken)
+    );
+    expect(normalized.erc20Transfer.from).to.match(EVM_ADDRESS);
   });
 
   it("toAddressType().toNative() returns chain-native strings for swap API params", function () {
