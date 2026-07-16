@@ -1,11 +1,6 @@
 import { expect } from "chai";
 import { CHAIN_IDs, getEthersCompatibleAddress, toAddressType } from "../src/utils";
-import {
-  getDepositKey,
-  isNativeTokenSentinel,
-  NATIVE_TOKEN_SENTINEL_ADDRESS,
-  normalizeDepositAddressMessage,
-} from "../src/utils/DepositAddressUtils";
+import { getDepositKey, normalizeDepositAddressMessage } from "../src/utils/DepositAddressUtils";
 import { DepositAddressMessage } from "../src/interfaces/DepositAddress";
 
 /** Indexer API sample: Tron origin, Base destination, USDT correct_transfer. */
@@ -163,19 +158,5 @@ describe("DepositAddressUtils", function () {
 
     expect(getDepositKey(normalized)).to.equal(`${normalized.depositAddress}:${raw.erc20Transfer.transactionHash}`);
     expect(getDepositKey(normalized)).to.not.equal(getDepositKey(raw));
-  });
-});
-
-describe("isNativeTokenSentinel", function () {
-  it("matches the sentinel in any casing", function () {
-    expect(isNativeTokenSentinel(NATIVE_TOKEN_SENTINEL_ADDRESS)).to.equal(true);
-    expect(isNativeTokenSentinel(NATIVE_TOKEN_SENTINEL_ADDRESS.toLowerCase())).to.equal(true);
-    expect(isNativeTokenSentinel(NATIVE_TOKEN_SENTINEL_ADDRESS.toUpperCase().replace("0X", "0x"))).to.equal(true);
-  });
-
-  it("rejects other addresses", function () {
-    expect(isNativeTokenSentinel("0x0000000000000000000000000000000000000000")).to.equal(false);
-    expect(isNativeTokenSentinel("0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913")).to.equal(false);
-    expect(isNativeTokenSentinel("")).to.equal(false);
   });
 });

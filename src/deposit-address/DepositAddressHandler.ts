@@ -21,7 +21,6 @@ import {
   blockExplorerLink,
   BigNumber,
   normalizeDepositAddressMessage,
-  isNativeTokenSentinel,
   toAddressType,
   TransactionReceipt,
   getCurrentTime,
@@ -491,21 +490,6 @@ export class DepositAddressHandler {
       return;
     }
 
-    // Native-token (sentinel) withdraws are only supported on the v3 scheme — the v1 withdraw
-    // contract path cannot move native funds, so calling the sign-withdraw API would only fail.
-    if (isNativeTokenSentinel(token)) {
-      this.logger.debug({
-        at: "DepositAddressHandler#initiateWithdraw",
-        message: "Skipping withdraw: native-token withdraws are not supported on v1 deposit addresses",
-        depositAddress,
-        token,
-        depositKey,
-        refTxHash,
-        chainId,
-      });
-      return;
-    }
-
     // Skip if a previous instance (or this one) already executed this withdraw (persisted in Redis).
     if (this.executedWithdrawKeys.has(depositKey)) {
       this.logger.debug({
@@ -528,9 +512,12 @@ export class DepositAddressHandler {
     try {
       // Defensive on-chain balance check — guards against reorged indexer messages and against
       // acting on a deposit-address that has already been withdrawn through another path.
+      const provider = this.providersByChain[chainId];
+      const tokenContract = new Contract(token, ERC20_ABI, provider);
+
       let onchainBalance: BigNumber;
       try {
-        onchainBalance = await this.getDepositAddressBalance(chainId, token, depositAddress);
+        onchainBalance = await tokenContract.balanceOf(depositAddress);
       } catch (err) {
         this.logger.warn({
           at: "DepositAddressHandler#initiateWithdraw",
@@ -723,8 +710,7 @@ export class DepositAddressHandler {
         : depositMessage.routeParams.refundAddress;
       this.logger.warn({
         at: "DepositAddressHandler#_publishWithdrawExecuted",
-        message:
-          "Skipping publish: no settlement log (ERC20 Transfer / native Withdraw, deposit address → refund address) found in receipt",
+        message: "Skipping publish: no ERC20 Transfer (deposit address → refund address) found in receipt",
         depositAddress: depositMessage.depositAddress,
         refundAddress,
         token: depositMessage.erc20Transfer.contractAddress,
@@ -893,11 +879,8 @@ export class DepositAddressHandler {
     // input token on the origin chain. If it has not, then we either (1) have already processed this
     // deposit, or (2) received a transaction from the indexer which has been reorged and will be processed
     // once the funds arrive to the deposit address.
-    const balanceOfContract = await this.getDepositAddressBalance(
-      originChainId,
-      inputToken,
-      depositMessage.depositAddress
-    );
+    const inputTokenContract = new Contract(inputToken, ERC20_ABI, factoryContract.provider);
+    const balanceOfContract = await inputTokenContract.balanceOf(depositMessage.depositAddress);
     if (balanceOfContract.lt(inputAmount)) {
       this.logger.debug({
         at: "DepositAddressHandler#initiateDeposit",
@@ -1065,7 +1048,8 @@ export class DepositAddressHandler {
 
       // Defensive on-chain balance check — guards against reorged indexer messages and against
       // acting on a deposit-address that has already been executed through another path.
-      const onchainBalance: BigNumber = await this.getDepositAddressBalance(originChainId, inputToken, depositAddress);
+      const inputTokenContract = new Contract(inputToken, ERC20_ABI, this.providersByChain[originChainId]);
+      const onchainBalance: BigNumber = await inputTokenContract.balanceOf(depositAddress);
       if (onchainBalance.lt(toBN(amount))) {
         this.logger.debug({
           at: "DepositAddressHandler#initiateDepositV3",
@@ -1349,9 +1333,10 @@ export class DepositAddressHandler {
 
       // Defensive on-chain balance check — guards against reorged indexer messages and against
       // acting on a deposit-address already withdrawn through another path.
+      const tokenContract = new Contract(token, ERC20_ABI, this.providersByChain[chainId]);
       let onchainBalance: BigNumber;
       try {
-        onchainBalance = await this.getDepositAddressBalance(chainId, token, depositAddress);
+        onchainBalance = await tokenContract.balanceOf(depositAddress);
       } catch (err) {
         this.logger.warn({
           at: "DepositAddressHandler#initiateWithdrawV3",
@@ -1523,20 +1508,6 @@ export class DepositAddressHandler {
     assert(isDefined(provider), `Provider not found for chain ${chainId}`);
     const code = await provider.getCode(address, blockTag ?? "latest");
     return (code?.length ?? 0) > 2; // "0x".length = 2;
-  }
-
-  /**
-   * @notice Returns the deposit address's balance of `token` on `chainId`. Native transfers are
-   * indexed with the sentinel token address, which has no contract — read those via
-   * `provider.getBalance` instead of `balanceOf` (which reverts on the sentinel).
-   */
-  private async getDepositAddressBalance(chainId: number, token: string, depositAddress: string): Promise<BigNumber> {
-    const provider = this.providersByChain[chainId];
-    assert(isDefined(provider), `Provider not found for chain ${chainId}`);
-    if (isNativeTokenSentinel(token)) {
-      return provider.getBalance(depositAddress);
-    }
-    return new Contract(token, ERC20_ABI, provider).balanceOf(depositAddress);
   }
 
   /*

@@ -5,9 +5,7 @@ import {
   buildDepositExecutedPayload,
   buildWithdrawExecutedPayload,
   ERC20_TRANSFER_TOPIC,
-  WITHDRAW_TOPIC,
 } from "../src/deposit-address/withdrawPayload";
-import { NATIVE_TOKEN_SENTINEL_ADDRESS } from "../src/utils/DepositAddressUtils";
 import { getGcpPubSubPublisher } from "../src/messaging/gcp";
 
 const DEPOSIT_ADDRESS = "0x000000000000000000000000000000000000C0DE";
@@ -205,61 +203,6 @@ describe("buildWithdrawExecutedPayload", function () {
     ]);
     const payload = buildWithdrawExecutedPayload(receipt, depositMessage());
     expect(payload?.data.logIndex).to.equal(2);
-  });
-
-  it("matches the Withdraw event emitted by the deposit address for native-token (sentinel) withdraws", function () {
-    const message = depositMessage();
-    message.erc20Transfer.contractAddress = NATIVE_TOKEN_SENTINEL_ADDRESS;
-    const receipt = fakeReceipt([
-      // ERC20 Transfer of some token from the deposit address — wrong topic[0] for native.
-      {
-        address: OTHER_TOKEN,
-        topics: [ERC20_TRANSFER_TOPIC, topicAddress(DEPOSIT_ADDRESS), topicAddress(REFUND_ADDRESS)],
-      },
-      // Withdraw emitted by another contract — wrong log.address.
-      {
-        address: OTHER_TOKEN,
-        topics: [WITHDRAW_TOPIC, topicAddress(NATIVE_TOKEN_SENTINEL_ADDRESS), topicAddress(REFUND_ADDRESS)],
-      },
-      // Gas-fee leg (deductGasFromRefund) — Withdraw to the fee recipient, wrong topic[2].
-      {
-        address: DEPOSIT_ADDRESS,
-        topics: [WITHDRAW_TOPIC, topicAddress(NATIVE_TOKEN_SENTINEL_ADDRESS), topicAddress(FEE_RECIPIENT)],
-      },
-      // The match: Withdraw(sentinel, refundAddress) emitted by the deposit address itself.
-      {
-        address: DEPOSIT_ADDRESS,
-        topics: [WITHDRAW_TOPIC, topicAddress(NATIVE_TOKEN_SENTINEL_ADDRESS), topicAddress(REFUND_ADDRESS)],
-      },
-    ]);
-    const payload = buildWithdrawExecutedPayload(receipt, message);
-    expect(payload?.data.logIndex).to.equal(3);
-  });
-
-  it("matches native withdraws case-insensitively on the sentinel address", function () {
-    const message = depositMessage();
-    message.erc20Transfer.contractAddress = NATIVE_TOKEN_SENTINEL_ADDRESS.toLowerCase();
-    const receipt = fakeReceipt([
-      {
-        address: DEPOSIT_ADDRESS,
-        topics: [WITHDRAW_TOPIC, topicAddress(NATIVE_TOKEN_SENTINEL_ADDRESS), topicAddress(REFUND_ADDRESS)],
-      },
-    ]);
-    const payload = buildWithdrawExecutedPayload(receipt, message);
-    expect(payload?.data.logIndex).to.equal(0);
-  });
-
-  it("returns undefined for a native withdraw when no Withdraw (depositAddress -> refundAddress) exists", function () {
-    const message = depositMessage();
-    message.erc20Transfer.contractAddress = NATIVE_TOKEN_SENTINEL_ADDRESS;
-    const receipt = fakeReceipt([
-      // Only the fee leg is present — no settlement to the refund address.
-      {
-        address: DEPOSIT_ADDRESS,
-        topics: [WITHDRAW_TOPIC, topicAddress(NATIVE_TOKEN_SENTINEL_ADDRESS), topicAddress(FEE_RECIPIENT)],
-      },
-    ]);
-    expect(buildWithdrawExecutedPayload(receipt, message)).to.be.undefined;
   });
 });
 
