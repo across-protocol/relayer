@@ -723,7 +723,8 @@ export class DepositAddressHandler {
         : depositMessage.routeParams.refundAddress;
       this.logger.warn({
         at: "DepositAddressHandler#_publishWithdrawExecuted",
-        message: "Skipping publish: no ERC20 Transfer (deposit address → refund address) found in receipt",
+        message:
+          "Skipping publish: no settlement log (ERC20 Transfer / native Withdraw, deposit address → refund address) found in receipt",
         depositAddress: depositMessage.depositAddress,
         refundAddress,
         token: depositMessage.erc20Transfer.contractAddress,

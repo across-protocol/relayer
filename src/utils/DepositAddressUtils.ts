@@ -84,15 +84,16 @@ export function normalizeDepositAddressMessage(message: DepositAddressMessage): 
 /**
  * Sentinel address representing the chain's native token. The counterfactual contracts
  * (`NATIVE_ASSET` in CounterfactualConstants.sol) and the indexer's trace-based native-transfer
- * detection both use it: native transfers arrive with `erc20Transfer.contractAddress` set to this
- * value and a synthetic `logIndex`. Native balances must be read via `provider.getBalance` —
- * there is no contract at this address, so `balanceOf` reverts.
+ * detection (its `NATIVE_TOKEN_SENTINEL_ADDRESS`, which this constant mirrors by name) both use
+ * it: native transfers arrive with `erc20Transfer.contractAddress` set to this value and a
+ * synthetic `logIndex`. Native balances must be read via `provider.getBalance` — there is no
+ * contract at this address, so `balanceOf` reverts.
  */
-export const NATIVE_TOKEN_SENTINEL = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
+export const NATIVE_TOKEN_SENTINEL_ADDRESS = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
 
 /** Returns true when `token` is the native-token sentinel address (case-insensitive). */
 export function isNativeTokenSentinel(token: string): boolean {
-  return token.toLowerCase() === NATIVE_TOKEN_SENTINEL.toLowerCase();
+  return token.toLowerCase() === NATIVE_TOKEN_SENTINEL_ADDRESS.toLowerCase();
 }
 
 /**
