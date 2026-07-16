@@ -1535,7 +1535,29 @@ export class DepositAddressHandler {
         }
         return true;
       })
-      .map((message) => (isDepositAddressMessageV3(message) ? message : normalizeDepositAddressMessage(message)));
+      .flatMap((message): AnyDepositAddressMessage[] => {
+        if (isDepositAddressMessageV3(message)) {
+          return [message];
+        }
+        // The version allowlist only proves the version is supported, not that the payload is
+        // well-formed. Normalization throwing on one malformed message must drop that message,
+        // not the batch — a redelivered poison message would otherwise starve every supported
+        // message for the indexer's whole redelivery window (2026-07-15 incident).
+        try {
+          return [normalizeDepositAddressMessage(message)];
+        } catch (err) {
+          this.logger.warn({
+            at: "DepositAddressHandler#_queryIndexerApi",
+            message: "deposit-address transfer dropped: message failed normalization",
+            version: message.version,
+            depositAddress: message.depositAddress,
+            txHash: message.erc20Transfer?.transactionHash,
+            chainId: message.erc20Transfer?.chainId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+          return [];
+        }
+      });
   }
 
   private async _getSwapApiQuote(
