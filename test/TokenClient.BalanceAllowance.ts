@@ -14,6 +14,7 @@ import {
   toBNWei,
   winston,
   deployMulticall3,
+  randomAddress,
 } from "./utils";
 import { EvmAddress, getSvmSignerFromEvmSigner, SvmAddress, isSignerWallet, toAddressType } from "../src/utils";
 
@@ -212,5 +213,14 @@ describe("TokenClient: Balance and Allowance", function () {
     expect(tokenClient.getBalance(originChainId, toAddressType(erc20_1.address, originChainId))).to.equal(
       toBNWei(42000)
     );
+  });
+  it("Ignores balance decrements for tokens it has no data on", async function () {
+    // A caller may reference a token outside the set tracked by this TokenClient (e.g. the InventoryClient tracking
+    // a cross-chain transfer for a token that L1_TOKENS_OVERRIDE excludes). Decrements for such tokens must be a
+    // no-op, consistent with getBalance() returning 0 for them, rather than throwing.
+    await updateAllClients();
+    const untrackedToken = toAddressType(randomAddress(), originChainId);
+    expect(() => tokenClient.decrementLocalBalance(originChainId, untrackedToken, toBNWei(1))).to.not.throw();
+    expect(tokenClient.getBalance(originChainId, untrackedToken)).to.equal(toBNWei(0));
   });
 });
