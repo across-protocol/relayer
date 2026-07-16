@@ -525,10 +525,10 @@ export class DepositAddressHandler {
         return;
       }
 
-      if (onchainBalance.lt(toBN(amount))) {
+      if (onchainBalance.lt(this.config.minSweepAmount)) {
         this.logger.debug({
           at: "DepositAddressHandler#initiateWithdraw",
-          message: "Skipping withdraw: deposit address balance below transfer amount",
+          message: "Skipping withdraw: deposit address balance below min transfer amount",
           depositAddress,
           token,
           amount,
@@ -536,6 +536,7 @@ export class DepositAddressHandler {
           depositKey,
           refTxHash,
           chainId,
+          min: this.config.minSweepAmount,
         });
         return;
       }
@@ -1062,7 +1063,7 @@ export class DepositAddressHandler {
       // acting on a deposit-address that has already been executed through another path.
       const inputTokenContract = new Contract(inputToken, ERC20_ABI, this.providersByChain[originChainId]);
       const onchainBalance: BigNumber = await inputTokenContract.balanceOf(depositAddress);
-      if (onchainBalance.lt(toBN(amount))) {
+      if (onchainBalance.lt(this.config.minSweepAmount)) {
         this.logger.debug({
           at: "DepositAddressHandler#initiateDepositV3",
           message: "Deposit address does not have sufficient input token balance to initiate deposit.",
@@ -1071,6 +1072,7 @@ export class DepositAddressHandler {
           inputToken,
           amount,
           onchainBalance: onchainBalance.toString(),
+          min: this.config.minSweepAmount,
         });
         return;
       }
@@ -1373,10 +1375,10 @@ export class DepositAddressHandler {
         return;
       }
 
-      if (onchainBalance.lt(toBN(amount))) {
+      if (onchainBalance.lt(this.config.minSweepAmount)) {
         this.logger.debug({
           at: "DepositAddressHandler#initiateWithdrawV3",
-          message: "Skipping withdraw: deposit address balance below transfer amount",
+          message: "Skipping withdraw: deposit address balance below min transfer amount",
           depositAddress,
           token,
           amount,
@@ -1384,6 +1386,7 @@ export class DepositAddressHandler {
           depositKey,
           refTxHash,
           chainId,
+          min: this.config.minSweepAmount,
         });
         return;
       }

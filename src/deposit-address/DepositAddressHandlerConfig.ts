@@ -1,5 +1,5 @@
 import { CommonConfig, ProcessEnv } from "../common";
-import { parseJson } from "../utils";
+import { parseJson, BigNumber, toBN } from "../utils";
 
 export class DepositAddressHandlerConfig extends CommonConfig {
   indexerApiEndpoint: string;
@@ -32,6 +32,8 @@ export class DepositAddressHandlerConfig extends CommonConfig {
   /** Short topic name (e.g. `topic-deposit-address-execution`); shared by both events. Required when a publisher gate is on. */
   pubSubDepositAddressWithdrawTopic: string;
 
+  minSweepAmount: BigNumber;
+
   constructor(env: ProcessEnv) {
     super(env, { botIdentifier: "across-deposit-address-handler" });
 
@@ -53,6 +55,7 @@ export class DepositAddressHandlerConfig extends CommonConfig {
       ENABLE_DEPOSIT_ADDRESS_DEPOSIT_PUBLISHER,
       PUBSUB_GCP_PROJECT_ID,
       PUBSUB_DEPOSIT_ADDRESS_WITHDRAW_TOPIC,
+      MIN_SWEEP_AMOUNT,
     } = env;
     this.indexerPollingInterval = Number(INDEXER_API_POLLING_INTERVAL ?? 1); // Default to 1s
     this.watchdogInterval = Number(WATCHDOG_INTERVAL);
@@ -62,6 +65,8 @@ export class DepositAddressHandlerConfig extends CommonConfig {
     if (!this.swapApiKey) {
       throw new Error("SWAP_API_KEY is required (set SWAP_API_KEY in env)");
     }
+
+    this.minSweepAmount = toBN(MIN_SWEEP_AMOUNT ?? 5_000_000);
 
     const relayerOriginChains = new Set(parseJson.numberArray(RELAYER_ORIGIN_CHAINS));
     this.relayerOriginChains = Array.from(relayerOriginChains);
