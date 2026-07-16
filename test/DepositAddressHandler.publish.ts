@@ -1,10 +1,11 @@
 import { expect } from "chai";
-import { utils, TransactionReceipt } from "../src/utils";
+import { utils, TransactionReceipt, NATIVE_TOKEN_SENTINEL_ADDRESS } from "../src/utils";
 import { DepositAddressMessage, DepositAddressMessageV3 } from "../src/interfaces/DepositAddress";
 import {
   buildDepositExecutedPayload,
   buildWithdrawExecutedPayload,
   ERC20_TRANSFER_TOPIC,
+  WITHDRAW_EVENT_TOPIC,
 } from "../src/deposit-address/withdrawPayload";
 import { getGcpPubSubPublisher } from "../src/messaging/gcp";
 
@@ -203,6 +204,79 @@ describe("buildWithdrawExecutedPayload", function () {
     ]);
     const payload = buildWithdrawExecutedPayload(receipt, depositMessage());
     expect(payload?.data.logIndex).to.equal(2);
+  });
+});
+
+describe("buildWithdrawExecutedPayload (native token)", function () {
+  // Native refunds move raw ETH — no ERC-20 Transfer log — so the marker is the deposit
+  // address's `Withdraw(token, to, amount)` event (emitted via delegatecall, hence
+  // `log.address` is the deposit address, not the WithdrawImplementation).
+  function nativeWithdrawMessage(): DepositAddressMessage {
+    const message = depositMessage();
+    message.erc20Transfer.contractAddress = NATIVE_TOKEN_SENTINEL_ADDRESS;
+    message.erc20Transfer.transferClassification = "mis_route";
+    return message;
+  }
+
+  it("picks the Withdraw event emitted by the deposit address matching (token=sentinel, to=refundAddress)", function () {
+    const receipt = fakeReceipt([
+      // ERC-20 Transfer of some other token — must not match a native withdraw.
+      { address: TOKEN, topics: [ERC20_TRANSFER_TOPIC, topicAddress(DEPOSIT_ADDRESS), topicAddress(REFUND_ADDRESS)] },
+      // Withdraw event emitted by a different contract — wrong log.address.
+      {
+        address: TOKEN,
+        topics: [WITHDRAW_EVENT_TOPIC, topicAddress(NATIVE_TOKEN_SENTINEL_ADDRESS), topicAddress(REFUND_ADDRESS)],
+      },
+      // Withdraw of an ERC-20 token from the deposit address — wrong token topic.
+      { address: DEPOSIT_ADDRESS, topics: [WITHDRAW_EVENT_TOPIC, topicAddress(TOKEN), topicAddress(REFUND_ADDRESS)] },
+      // Withdraw to another recipient — wrong `to` topic.
+      {
+        address: DEPOSIT_ADDRESS,
+        topics: [WITHDRAW_EVENT_TOPIC, topicAddress(NATIVE_TOKEN_SENTINEL_ADDRESS), topicAddress(FEE_RECIPIENT)],
+      },
+      // The match.
+      {
+        address: DEPOSIT_ADDRESS,
+        topics: [WITHDRAW_EVENT_TOPIC, topicAddress(NATIVE_TOKEN_SENTINEL_ADDRESS), topicAddress(REFUND_ADDRESS)],
+      },
+    ]);
+
+    const payload = buildWithdrawExecutedPayload(receipt, nativeWithdrawMessage());
+    expect(payload).to.not.be.undefined;
+    expect(payload?.data.logIndex).to.equal(4);
+    expect(payload?.data.txHash).to.equal(REFUND_TX.toLowerCase());
+  });
+
+  it("picks the LAST matching Withdraw event when multiple exist (e.g. Multicall3-bundled withdraw)", function () {
+    const nativeWithdrawLog = {
+      address: DEPOSIT_ADDRESS,
+      topics: [WITHDRAW_EVENT_TOPIC, topicAddress(NATIVE_TOKEN_SENTINEL_ADDRESS), topicAddress(REFUND_ADDRESS)],
+    };
+    const receipt = fakeReceipt([nativeWithdrawLog, nativeWithdrawLog]);
+    const payload = buildWithdrawExecutedPayload(receipt, nativeWithdrawMessage());
+    expect(payload?.data.logIndex).to.equal(1);
+  });
+
+  it("matches case-insensitively on the sentinel and refund address", function () {
+    const message = nativeWithdrawMessage();
+    message.erc20Transfer.contractAddress = NATIVE_TOKEN_SENTINEL_ADDRESS.toLowerCase();
+    message.routeParams.refundAddress = REFUND_ADDRESS.toUpperCase().replace("0X", "0x");
+    const receipt = fakeReceipt([
+      {
+        address: DEPOSIT_ADDRESS.toLowerCase(),
+        topics: [WITHDRAW_EVENT_TOPIC, topicAddress(NATIVE_TOKEN_SENTINEL_ADDRESS), topicAddress(REFUND_ADDRESS)],
+      },
+    ]);
+    const payload = buildWithdrawExecutedPayload(receipt, message);
+    expect(payload?.data.logIndex).to.equal(0);
+  });
+
+  it("returns undefined when the receipt carries no matching Withdraw event", function () {
+    const receipt = fakeReceipt([
+      // An ERC-20 Transfer out of the deposit address is not a native settlement marker.
+      { address: TOKEN, topics: [ERC20_TRANSFER_TOPIC, topicAddress(DEPOSIT_ADDRESS), topicAddress(REFUND_ADDRESS)] },
+    ]);
+    expect(buildWithdrawExecutedPayload(receipt, nativeWithdrawMessage())).to.be.undefined;
   });
 });
 

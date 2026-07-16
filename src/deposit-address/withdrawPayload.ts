@@ -1,7 +1,10 @@
 import { AnyDepositAddressMessage, DepositAddressMessageV3, isDepositAddressMessageV3 } from "../interfaces";
-import { isDefined, TransactionReceipt, utils } from "../utils";
+import { isDefined, isNativeTokenSentinel, TransactionReceipt, utils } from "../utils";
 
 export const ERC20_TRANSFER_TOPIC = utils.id("Transfer(address,address,uint256)");
+
+/** `Withdraw(address indexed token, address indexed to, uint256 amount)` emitted by the counterfactual WithdrawImplementation. */
+export const WITHDRAW_EVENT_TOPIC = utils.id("Withdraw(address,address,uint256)");
 
 /**
  * Body of a deposit-address execution lifecycle event (`withdraw_executed` / `deposit_executed`).
@@ -64,9 +67,37 @@ function findLastTransferFromDepositAddress(
 }
 
 /**
+ * Returns the last `Withdraw(address,address,uint256)` log emitted **by the deposit address**
+ * whose `token` topic matches `token` and whose `to` topic matches `to`. Native withdrawals move
+ * raw ETH, so the receipt carries no ERC-20 `Transfer` log; instead the WithdrawImplementation
+ * (delegatecalled by the deposit-address proxy, so `log.address` is the deposit address) emits
+ * `Withdraw(token, to, amount)` with the native sentinel as `token`. The **last** match is
+ * returned, mirroring `findLastTransferFromDepositAddress`. Returns `undefined` when no log matches.
+ */
+function findLastNativeWithdrawFromDepositAddress(
+  receipt: TransactionReceipt,
+  token: string,
+  depositAddress: string,
+  to: string
+): TransactionReceipt["logs"][number] | undefined {
+  const paddedToken = utils.hexZeroPad(token.toLowerCase(), 32);
+  const paddedTo = utils.hexZeroPad(to.toLowerCase(), 32);
+  const withdrawLogs = receipt.logs.filter(
+    (log) =>
+      log.address.toLowerCase() === depositAddress.toLowerCase() &&
+      log.topics[0] === WITHDRAW_EVENT_TOPIC &&
+      log.topics[1]?.toLowerCase() === paddedToken &&
+      log.topics[2]?.toLowerCase() === paddedTo
+  );
+  return withdrawLogs.length === 0 ? undefined : withdrawLogs[withdrawLogs.length - 1];
+}
+
+/**
  * Builds the `withdraw_executed` payload published to GCP Pub/Sub. Returns `undefined` when
  * the receipt contains no ERC20 `Transfer` event matching the expected
  * `(address=token, from=depositAddress, to=refundAddress)` — caller should warn and skip.
+ * For native-token refunds (`token` is the native sentinel) the marker is the deposit address's
+ * `Withdraw(token, to, amount)` event instead — raw ETH moves emit no `Transfer` log.
  *
  * The `to=refundAddress` constraint disambiguates fee-on-transfer / tax / burn tokens that
  * emit several `Transfer` events from the deposit address in one tx (one to the user, one
@@ -90,7 +121,9 @@ export function buildWithdrawExecutedPayload(
     ? depositMessage.refundAddress.address
     : depositMessage.routeParams.refundAddress;
 
-  const transferLog = findLastTransferFromDepositAddress(receipt, token, depositAddress, refundAddress);
+  const transferLog = isNativeTokenSentinel(token)
+    ? findLastNativeWithdrawFromDepositAddress(receipt, token, depositAddress, refundAddress)
+    : findLastTransferFromDepositAddress(receipt, token, depositAddress, refundAddress);
   if (!isDefined(transferLog)) {
     return undefined;
   }

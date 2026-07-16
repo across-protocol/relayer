@@ -25,6 +25,7 @@ import {
   TransactionReceipt,
   getCurrentTime,
   isHttpError,
+  isNativeTokenSentinel,
 } from "../utils";
 import { getRedisCache, RedisCacheInterface } from "../cache/Redis";
 import {
@@ -512,12 +513,9 @@ export class DepositAddressHandler {
     try {
       // Defensive on-chain balance check — guards against reorged indexer messages and against
       // acting on a deposit-address that has already been withdrawn through another path.
-      const provider = this.providersByChain[chainId];
-      const tokenContract = new Contract(token, ERC20_ABI, provider);
-
       let onchainBalance: BigNumber;
       try {
-        onchainBalance = await tokenContract.balanceOf(depositAddress);
+        onchainBalance = await this._getDepositAddressBalance(chainId, token, depositAddress);
       } catch (err) {
         this.logger.warn({
           at: "DepositAddressHandler#initiateWithdraw",
@@ -710,7 +708,8 @@ export class DepositAddressHandler {
         : depositMessage.routeParams.refundAddress;
       this.logger.warn({
         at: "DepositAddressHandler#_publishWithdrawExecuted",
-        message: "Skipping publish: no ERC20 Transfer (deposit address → refund address) found in receipt",
+        message:
+          "Skipping publish: no settlement log (ERC20 Transfer / native Withdraw, deposit address → refund address) found in receipt",
         depositAddress: depositMessage.depositAddress,
         refundAddress,
         token: depositMessage.erc20Transfer.contractAddress,
@@ -1333,10 +1332,9 @@ export class DepositAddressHandler {
 
       // Defensive on-chain balance check — guards against reorged indexer messages and against
       // acting on a deposit-address already withdrawn through another path.
-      const tokenContract = new Contract(token, ERC20_ABI, this.providersByChain[chainId]);
       let onchainBalance: BigNumber;
       try {
-        onchainBalance = await tokenContract.balanceOf(depositAddress);
+        onchainBalance = await this._getDepositAddressBalance(chainId, token, depositAddress);
       } catch (err) {
         this.logger.warn({
           at: "DepositAddressHandler#initiateWithdrawV3",
@@ -1493,6 +1491,19 @@ export class DepositAddressHandler {
         ? this._getSignedWithdrawV3(depositMessage, withdrawLeaf, --retriesRemaining)
         : undefined;
     }
+  }
+
+  /**
+   * Fetches the deposit address's balance of `token` on `chainId`. Native-token transfers are
+   * indexed with `NATIVE_TOKEN_SENTINEL_ADDRESS` as their `contractAddress` — there is no ERC-20
+   * contract to `balanceOf`, so read the account's native balance instead.
+   */
+  private async _getDepositAddressBalance(chainId: number, token: string, depositAddress: string): Promise<BigNumber> {
+    const provider = this.providersByChain[chainId];
+    if (isNativeTokenSentinel(token)) {
+      return provider.getBalance(depositAddress);
+    }
+    return new Contract(token, ERC20_ABI, provider).balanceOf(depositAddress);
   }
 
   private getExecuteContract(address: string, originChainId: number, useDispatcher: boolean): Contract {

@@ -90,6 +90,19 @@ export function getDepositKey(depositMessage: AnyDepositAddressMessage): string 
 }
 
 /**
+ * Sentinel address the deposit-address stack uses for the chain's native token. Native transfers
+ * to deposit addresses have no ERC-20 contract, so the indexer stamps this sentinel on
+ * `erc20Transfer.contractAddress` (mirrors `NATIVE_ASSET` in across-protocol/contracts
+ * `CounterfactualConstants.sol` and `NATIVE_TOKEN_SENTINEL_ADDRESS` in the indexer).
+ */
+export const NATIVE_TOKEN_SENTINEL_ADDRESS = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
+
+/** Returns whether `token` is the native-token sentinel (case-insensitive). */
+export function isNativeTokenSentinel(token: string): boolean {
+  return token.toLowerCase() === NATIVE_TOKEN_SENTINEL_ADDRESS.toLowerCase();
+}
+
+/**
  * Builds an AugmentedTransaction that calls CounterfactualDepositFactory.deploy.
  * Deploys the counterfactual deposit contract at a deterministic address.
  * paramsHash is computed inside as keccak256(abi.encode(routeParams)).

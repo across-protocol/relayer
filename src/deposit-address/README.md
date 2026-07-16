@@ -2,6 +2,26 @@
 
 The deposit-address handler polls the across-indexer for ERC-20 transfers that have landed on counterfactual deposit addresses and either executes them as deposits or refunds them back to the user.
 
+## Native token transfers
+
+Native-token (ETH) transfers to deposit addresses are indexed via traces (indexer PR #1140) and
+arrive on the same message shape with the sentinel `0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE`
+as `erc20Transfer.contractAddress` (`NATIVE_TOKEN_SENTINEL_ADDRESS` in `src/utils/DepositAddressUtils.ts`,
+mirroring `NATIVE_ASSET` in the contracts repo). Native transfers never classify `correct_transfer`
+(native is never a route's input token), so they only reach the refund-withdraw paths. Two spots
+special-case the sentinel:
+
+- **Balance check** — `_getDepositAddressBalance` reads `provider.getBalance(depositAddress)`
+  instead of `balanceOf` (there is no ERC-20 contract at the sentinel; a `balanceOf` call reverts
+  with `CALL_EXCEPTION` / empty data).
+- **`withdraw_executed` publish** — a native refund emits no ERC-20 `Transfer` log; the payload
+  builder instead matches the `Withdraw(token, to, amount)` event the on-chain
+  `WithdrawImplementation` emits via delegatecall from the deposit address (see
+  [`withdrawPayload.ts`](./withdrawPayload.ts)).
+
+The sentinel is otherwise forwarded verbatim (e.g. as `token` on the sign-withdraw request); the
+quote-api and the on-chain `WithdrawImplementation` branch on it server-/chain-side.
+
 ## Runtime entrypoint
 
 `runDepositAddressHandler` in [`index.ts`](./index.ts) wires up:
@@ -178,7 +198,7 @@ On each poll, entries whose source messages are no longer returned by the indexe
 
 1. Filter on `relayerOriginChains`; skip if the refund chain is not configured.
 2. Skip if the depositKey is already in the executed-withdraws set (Redis or in-memory in-flight).
-3. Read on-chain balance of `depositAddress`; skip if below the transfer amount (defends against reorged indexer messages and concurrent withdraws via other paths).
+3. Read on-chain balance of `depositAddress`; skip if below the transfer amount (defends against reorged indexer messages and concurrent withdraws via other paths). Native-sentinel transfers read the account's native balance instead of `balanceOf` (see "Native token transfers").
 4. Fetch a signed-withdraw quote from the swap API. The response bundles deploy + signed-withdraw into a single Multicall3 call when the deposit clone is not yet on-chain.
 5. Submit the tx via `TransactionClient`; wait for confirmation.
 6. Persist the depositKey to Redis.
@@ -235,7 +255,7 @@ Every Pub/Sub message uses an envelope: `{ "type": "<message_type>", "data": <ty
 
 All integer fields are `number`; tx hashes are lowercase hex strings. The `erc20Transfer` block identifies the original user transfer (the indexer keys rows on it); the sibling fields identify the execution transaction the bot just sent. The `logIndex` is the index of the ERC-20 `Transfer(address,address,uint256)` event whose `address` matches `erc20Transfer.contractAddress` and whose `from` is the deposit address; the **last** such log is used.
 
-- **`withdraw_executed`** additionally requires `to` to equal the user's `routeParams.refundAddress`. Matching on `to` disambiguates fee-on-transfer / tax / burn tokens that emit several Transfer events from the deposit address in one tx (one to the user, one to a fee recipient), and the last match handles Multicall3-bundled withdraws with intermediate hops to the same refund address.
+- **`withdraw_executed`** additionally requires `to` to equal the user's `routeParams.refundAddress`. Matching on `to` disambiguates fee-on-transfer / tax / burn tokens that emit several Transfer events from the deposit address in one tx (one to the user, one to a fee recipient), and the last match handles Multicall3-bundled withdraws with intermediate hops to the same refund address. For native-sentinel refunds the matched log is instead the deposit address's `Withdraw(address,address,uint256)` event with `token = sentinel` and `to = refundAddress` (raw ETH moves emit no `Transfer`); its `logIndex` populates `data.logIndex`.
 - **`deposit_executed`** omits the `to` filter — the input token leaves the deposit address into the SpokePool / CCTP with no fixed recipient — so any outgoing transfer of the input token qualifies.
 
 Zero matches → warn + skip the publish.
