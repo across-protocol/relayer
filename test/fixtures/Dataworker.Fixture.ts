@@ -225,6 +225,7 @@ export async function setupDataworker(
     {
       awaitChallengePeriod: awaitChallengePeriod ?? false,
       executorIgnoreChains: [],
+      blockedRefundAddresses: [],
       sendingTransactionsEnabled: true,
     } as unknown as DataworkerConfig,
     dataworkerClients,

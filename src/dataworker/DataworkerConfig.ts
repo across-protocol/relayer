@@ -1,5 +1,12 @@
 import { CommonConfig, ProcessEnv } from "../common";
-import { assert, getArweaveJWKSigner, parseJson, isDefined } from "../utils";
+import { assert, EvmAddress, getArweaveJWKSigner, parseJson, isDefined } from "../utils";
+
+// Refund addresses that the executor should never send relayer refunds to. Used as the default for
+// blockedRefundAddresses when EXECUTOR_BLOCKED_REFUND_ADDRESSES is unset.
+const DEFAULT_BLOCKED_REFUND_ADDRESSES = JSON.stringify([
+  "0xA6fb971F3B7a9b9F76EdA76bc89268fe26560189",
+  "0xa0c0e9f307b5a26ca3fb5891c19154fc7a02bef7",
+]);
 
 export class DataworkerConfig extends CommonConfig {
   readonly minChallengeLeadTime: number;
@@ -38,6 +45,11 @@ export class DataworkerConfig extends CommonConfig {
   // A list of chains to ignore slow fill/relayer refund execution. Primarily used for debugging purposes.
   readonly executorIgnoreChains: number[];
 
+  // Relayer refund leaves refunding any of these addresses are not executed. Note that leaf execution is
+  // atomic, so any other refunds sharing a leaf with a blocked address are withheld as well. Setting
+  // EXECUTOR_BLOCKED_REFUND_ADDRESSES replaces the default list entirely.
+  readonly blockedRefundAddresses: EvmAddress[];
+
   // Used to instruct the dataworker to load data from arweave in times when doing so is optional (i.e. execution).
   readonly loadArweaveData: boolean | undefined;
 
@@ -57,6 +69,7 @@ export class DataworkerConfig extends CommonConfig {
       FORCE_PROPOSAL_BUNDLE_RANGE,
       PERSIST_BUNDLES_TO_ARWEAVE,
       EXECUTOR_IGNORE_CHAINS,
+      EXECUTOR_BLOCKED_REFUND_ADDRESSES = DEFAULT_BLOCKED_REFUND_ADDRESSES,
       MIN_CHALLENGE_LEAD_TIME = "600",
       AWAIT_CHALLENGE_PERIOD = "false",
       DISPUTE_COOLDOWN,
@@ -89,6 +102,9 @@ export class DataworkerConfig extends CommonConfig {
     this.l2ExecutorEnabled = L2_EXECUTOR_ENABLED === "true";
     this.l1ExecutorEnabled = L1_EXECUTOR_ENABLED === "true";
     this.executorIgnoreChains = parseJson.numberArray(EXECUTOR_IGNORE_CHAINS);
+    this.blockedRefundAddresses = parseJson
+      .stringArray(EXECUTOR_BLOCKED_REFUND_ADDRESSES)
+      .map((address) => EvmAddress.from(address));
     if (this.l2ExecutorEnabled) {
       assert(
         isDefined(this.spokeRootsLookbackCount) && this.spokeRootsLookbackCount > 0,

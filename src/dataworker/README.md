@@ -23,3 +23,7 @@ The dataworker runtime file is index.ts. This file contains a `runDataworker()` 
 1. Checks if there is an existing pending root bundle. If there is one, validate it. If invalid, submit a dispute, otherwise proceed.
 2. If no existing pending root bundle, construct and propose a new one.
 3. If existing pending root bundle has passed its optimistic challenge liveness window, then execute it by calling functions on the `HubPool` and functions on each spoke network's `SpokePool`. Recall that each root bundle refers to a Merkle root describing the list of relayer and depositor refunds. Therefore, executing these refunds amounts to submitting Merkle leaves from this Merkle root to the HubPool/SpokePool and letting those contracts send out payments based on those Merkle leaf contents.
+
+## Executor refund blocklist
+
+The executor refuses to execute any relayer refund leaf that would refund a blocked address. Because leaf execution is atomic, all other refunds sharing a leaf with a blocked address are withheld as well; each skipped leaf is logged at `warn`. The default blocklist is hardcoded in `DataworkerConfig` and can be replaced entirely by setting `EXECUTOR_BLOCKED_REFUND_ADDRESSES` to a JSON array of addresses.

@@ -1,5 +1,5 @@
 import { HubPoolClient, MultiCallerClient, SpokePoolClient } from "../src/clients";
-import { EvmAddress, buildRelayerRefundTree, MAX_UINT_VAL, RelayerRefundLeaf, toBNWei } from "../src/utils";
+import { EvmAddress, bnZero, buildRelayerRefundTree, MAX_UINT_VAL, RelayerRefundLeaf, toBNWei } from "../src/utils";
 import {
   MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
   MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
@@ -7,7 +7,7 @@ import {
   destinationChainId,
 } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
-import { Contract, SignerWithAddress, depositV3, ethers, expect, fillV3Relay } from "./utils";
+import { Contract, SignerWithAddress, depositV3, ethers, expect, fillV3Relay, randomAddress } from "./utils";
 
 // Tested
 import { BalanceAllocator } from "../src/clients/BalanceAllocator";
@@ -102,6 +102,47 @@ describe("Dataworker: Execute relayer refunds", function () {
     expect(multiCallerClient.transactionCount()).to.equal(1);
 
     await multiCallerClient.executeTxnQueues();
+  });
+  it("Ignores leaves refunding blocked refund addresses", async function () {
+    const blockedRelayer = randomAddress();
+    dataworkerInstance.config.blockedRefundAddresses.push(EvmAddress.from(blockedRelayer));
+    const refundLeaves: RelayerRefundLeaf[] = [
+      {
+        amountToReturn: bnZero,
+        chainId: hubPoolClient.chainId,
+        refundAmounts: [toBNWei("1")],
+        leafId: 0,
+        l2TokenAddress: EvmAddress.from(l1Token_1.address),
+        refundAddresses: [EvmAddress.from(blockedRelayer)],
+      },
+      {
+        amountToReturn: bnZero,
+        chainId: hubPoolClient.chainId,
+        refundAmounts: [toBNWei("1")],
+        leafId: 1,
+        l2TokenAddress: EvmAddress.from(l1Token_1.address),
+        refundAddresses: [EvmAddress.from(randomAddress())],
+      },
+    ];
+    const relayerRefundTree = buildRelayerRefundTree(refundLeaves);
+    await spokePool_4.relayRootBundle(
+      relayerRefundTree.getHexRoot(),
+      "0x0000000000000000000000000000000000000000000000000000000000000000"
+    );
+    await l1Token_1.mint(spokePool_4.address, amountToDeposit);
+    await updateAllClients();
+    await dataworkerInstance._executeRelayerRefundLeaves(
+      refundLeaves,
+      await getNewBalanceAllocator(),
+      spokePoolClients[hubPoolClient.chainId],
+      relayerRefundTree,
+      0
+    );
+
+    // Only the leaf without a blocked refund address should be enqueued for execution.
+    expect(multiCallerClient.transactionCount()).to.equal(1);
+    const [queuedTxn] = multiCallerClient.getQueuedTransactions(hubPoolClient.chainId);
+    expect(queuedTxn.args[1].leafId).to.equal(1);
   });
   it("Modifies BalanceAllocator when executing hub chain leaf", async function () {
     const refundLeaves: RelayerRefundLeaf[] = [

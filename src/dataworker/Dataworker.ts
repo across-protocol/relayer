@@ -2502,16 +2502,40 @@ export class Dataworker {
     const submitExecution = this.config.sendingTransactionsEnabled;
     assert(isDefined(spokePoolAddress), "_executeRelayerRefundLeaves: SpokePoolClient missing spokePoolAddress");
 
+    // Skip leaves that would refund a blocked address. Leaf execution is atomic, so a leaf refunding a
+    // blocked address must be skipped in its entirety, including any other relayers' refunds bundled into
+    // the same leaf.
+    const blockedRefundAddresses = this.config.blockedRefundAddresses ?? [];
+    const executableLeaves = leaves.filter((leaf) => {
+      const blockedRefunds = leaf.refundAddresses.filter((refundAddress) =>
+        blockedRefundAddresses.some((blockedAddress) => blockedAddress.eq(refundAddress))
+      );
+      if (blockedRefunds.length === 0) {
+        return true;
+      }
+      this.logger.warn({
+        at: "Dataworker#_executeRelayerRefundLeaves",
+        message: `Skipping relayer refund leaf #${leaf.leafId} on chain ${leaf.chainId} refunding blocked address(es)`,
+        root: relayerRefundTree.getHexRoot(),
+        bundle: rootBundleId,
+        blockedRefundAddresses: blockedRefunds.map((address) => address.toNative()),
+      });
+      return false;
+    });
+    if (executableLeaves.length === 0) {
+      return;
+    }
+
     // Pre-compute msg.value per leaf id to use consistently in allocation and execution
     const msgValuesByLeafId: Map<number, BigNumber | undefined> = new Map();
-    await forEachAsync(leaves, async (leaf) => {
+    await forEachAsync(executableLeaves, async (leaf) => {
       msgValuesByLeafId.set(leaf.leafId, await this._getMsgValueForRelayerRefundLeaf(client, leaf));
     });
 
     // Filter for leaves where the contract has the funding to send the required tokens.
     const fundedLeaves = (
       await Promise.all(
-        leaves.map(async (leaf) => {
+        executableLeaves.map(async (leaf) => {
           if (leaf.chainId !== chainId) {
             throw new Error("Leaf chainId does not match input chainId");
           }
