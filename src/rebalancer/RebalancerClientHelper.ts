@@ -15,6 +15,16 @@ import { buildSameAssetRebalanceRoutes } from "./buildSameAssetRebalanceRoutes";
 
 export type AdapterName = "cctp" | "oft" | "hyperliquid" | "binance";
 type AdapterMap = { [name: string]: RebalancerAdapter };
+
+// The swapRebalancer and sameAssetRebalancer bots share the same base signer and Redis-backed order state, so each
+// bot's updateRebalanceStatuses() can pick up and progress pending orders created by the other. The CCTP/OFT bridge
+// adapters execute the intermediate and final bridge legs of those orders (e.g. a Hyperliquid order's final CCTP leg
+// from HyperEVM to its destination chain), so they must be initialized with the union of every mode's route catalog
+// rather than only the current mode's. Otherwise, progressing another mode's order throws
+// "Route is not supported: <token> <sourceChain> -> <token> <destinationChain>" and crashes the whole run.
+export function buildAllExecutableRebalanceRoutes(rebalancerConfig: RebalancerConfig): RebalanceRoute[] {
+  return [...buildRebalanceRoutes(rebalancerConfig), ...buildSameAssetRebalanceRoutes(rebalancerConfig)];
+}
 type RebalancerClientConstructor<T extends BaseRebalancerClient> = new (
   logger: winston.Logger,
   rebalancerConfig: RebalancerConfig,
@@ -63,6 +73,7 @@ async function constructInitializedRebalancerClient<T extends BaseRebalancerClie
   baseSigner: Signer,
   Client: RebalancerClientConstructor<T>,
   getRebalanceRoutes: (rebalancerConfig: RebalancerConfig) => RebalanceRoute[],
+  getBridgeAdapterRoutes: (rebalancerConfig: RebalancerConfig) => RebalanceRoute[],
   isReadonly: boolean,
   logLabel: string,
   message: string
@@ -71,9 +82,13 @@ async function constructInitializedRebalancerClient<T extends BaseRebalancerClie
   const rebalanceRoutes = getRebalanceRoutes(rebalancerConfig);
   const rebalancerClient = new Client(logger, rebalancerConfig, adapters, baseSigner, isReadonly);
 
+  // Initialize the CCTP/OFT bridge adapters first (adapter.initialize() is idempotent, so the subsequent
+  // rebalancerClient.initialize() call is a no-op for them) with the bridge-adapter route catalog, which may be a
+  // superset of this mode's rebalanceRoutes. See buildAllExecutableRebalanceRoutes for why.
+  const bridgeAdapterRoutes = getBridgeAdapterRoutes(rebalancerConfig);
   await Promise.all(
     ["cctp", "oft"].flatMap((adapterName) =>
-      adapters[adapterName] ? [adapters[adapterName].initialize(rebalanceRoutes)] : []
+      adapters[adapterName] ? [adapters[adapterName].initialize(bridgeAdapterRoutes)] : []
     )
   );
   await rebalancerClient.initialize(rebalanceRoutes);
@@ -96,6 +111,7 @@ export async function constructCumulativeBalanceRebalancerClient(
     baseSigner,
     CumulativeBalanceRebalancerClient,
     (rebalancerConfig) => rebalanceRoutesOverride ?? buildRebalanceRoutes(rebalancerConfig),
+    (rebalancerConfig) => rebalanceRoutesOverride ?? buildAllExecutableRebalanceRoutes(rebalancerConfig),
     false,
     "constructCumulativeBalanceRebalancerClient",
     "CumulativeBalanceRebalancerClient initialized"
@@ -112,6 +128,7 @@ export async function constructSameAssetRebalancerClient(
     baseSigner,
     SameAssetRebalancerClient,
     (rebalancerConfig) => rebalanceRoutesOverride ?? buildSameAssetRebalanceRoutes(rebalancerConfig),
+    (rebalancerConfig) => rebalanceRoutesOverride ?? buildAllExecutableRebalanceRoutes(rebalancerConfig),
     false,
     "constructSameAssetRebalancerClient",
     "SameAssetRebalancerClient initialized"
@@ -126,6 +143,9 @@ export async function constructReadOnlyRebalancerClient(
     logger,
     baseSigner,
     ReadOnlyRebalancerClient,
+    () => [],
+    // The read-only client never initiates or progresses orders, so its adapters don't need any routes. Keeping the
+    // catalog empty also avoids running route validation in relayer/monitor contexts that don't configure routes.
     () => [],
     true,
     "constructReadOnlyRebalancerClient",

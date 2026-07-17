@@ -7,6 +7,7 @@ import {
   SAME_ASSET_REBALANCE_ROUTE_SUPPORT,
   type SameAssetRebalanceRouteSupport,
 } from "../src/rebalancer/buildSameAssetRebalanceRoutes";
+import { buildAllExecutableRebalanceRoutes } from "../src/rebalancer/RebalancerClientHelper";
 
 function buildSyntheticRebalancerConfig(): RebalancerConfig {
   return new RebalancerConfig({
@@ -347,5 +348,57 @@ describe("buildSameAssetRebalanceRoutes", function () {
         expectedEnabledRoutes
       );
     });
+  });
+});
+
+describe("buildAllExecutableRebalanceRoutes", function () {
+  // Both rebalancer bots share a signer and Redis order state, so the bridge adapters of one mode must recognize the
+  // routes of every mode to progress the other bot's pending orders. Regression test for the sameAssetRebalancer
+  // crashing on "Route is not supported: USDC 999 -> USDC 1" while progressing a Hyperliquid order's final CCTP leg.
+  function buildSyntheticCombinedModeRebalancerConfig(): RebalancerConfig {
+    return new RebalancerConfig({
+      HUB_CHAIN_ID: String(CHAIN_IDs.MAINNET),
+      REBALANCER_CONFIG: JSON.stringify({
+        cumulativeTargetBalances: {
+          USDT: {
+            targetBalance: "1000",
+            thresholdBalance: "500",
+            priorityTier: 0,
+            chains: {
+              [CHAIN_IDs.HYPEREVM]: 0,
+              [CHAIN_IDs.OPTIMISM]: 0,
+              [CHAIN_IDs.MAINNET]: 0,
+            },
+          },
+          USDC: {
+            targetBalance: "1000",
+            thresholdBalance: "500",
+            priorityTier: 0,
+            chains: {
+              [CHAIN_IDs.HYPEREVM]: 0,
+              [CHAIN_IDs.BASE]: 0,
+              [CHAIN_IDs.MAINNET]: 0,
+            },
+          },
+        },
+        sameAssetBalances: {
+          USDT: { chains: { [CHAIN_IDs.AVALANCHE]: 0 } },
+        },
+      }),
+    });
+  }
+
+  it("contains the union of the swap-rebalancer and same-asset catalogs", function () {
+    const config = buildSyntheticCombinedModeRebalancerConfig();
+    const routes = buildAllExecutableRebalanceRoutes(config);
+
+    // Swap-rebalancer intermediate/final bridge legs must be present, in particular the CCTP leg out of HyperEVM
+    // that Hyperliquid orders use to reach their final destination chain.
+    expect(routeExists(routes, CHAIN_IDs.HYPEREVM, "USDC", CHAIN_IDs.MAINNET, "USDC", "cctp")).to.equal(true);
+    expect(routeExists(routes, CHAIN_IDs.MAINNET, "USDC", CHAIN_IDs.HYPEREVM, "USDC", "cctp")).to.equal(true);
+    expect(routeExists(routes, CHAIN_IDs.HYPEREVM, "USDT", CHAIN_IDs.MAINNET, "USDT", "oft")).to.equal(true);
+
+    // Same-asset mode routes must also be present.
+    expect(routeExists(routes, CHAIN_IDs.MAINNET, "USDT", CHAIN_IDs.AVALANCHE, "USDT", "binance")).to.equal(true);
   });
 });

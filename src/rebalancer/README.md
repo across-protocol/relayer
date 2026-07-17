@@ -249,6 +249,8 @@ High-level flow:
 
 The runtime entrypoint is `runSameAssetRebalancer`, exposed as the `sameAssetRebalancer` bot. It is independent of cumulative mode: operators enable destination token/chain pairs under `sameAssetBalances`, while the support catalog controls which of those pairs can become routes.
 
+Cross-mode order progression: the `swapRebalancer` and `sameAssetRebalancer` bots typically share a base signer and the Redis order store, so each bot's `updateRebalanceStatuses()` pass can pick up and progress pending orders created by the other mode. To make the intermediate/final CCTP and OFT bridge legs of those orders executable in either bot, `constructInitializedRebalancerClient` initializes the CCTP/OFT bridge adapters with `buildAllExecutableRebalanceRoutes` — the union of the cumulative (swap) and SameAsset route catalogs — while each mode's client still initiates new rebalances only from its own mode-specific route list.
+
 ### Read-only mode: `ReadOnlyRebalancerClient`
 
 `ReadOnlyRebalancerClient` is used by consumers that only need pending-state visibility (for example, inventory
