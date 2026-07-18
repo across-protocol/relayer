@@ -29,7 +29,7 @@ export class AcrossApiClient {
   private endpoint: string;
   private chainIds: number[];
   private limits: { [token: string]: BigNumber } = {};
-  private updatedAt = 0;
+  protected updatedAt = 0;
 
   public updatedLimits = false;
 
@@ -84,13 +84,21 @@ export class AcrossApiClient {
     // /liquid-reserves
     // Store the max available HubPool liquidity (less API-imposed cushioning) for each L1 token.
     const liquidReserves = await this.callLimits(tokens);
-    tokens.forEach((token, i) => (this.limits[token.toEvmAddress()] = liquidReserves[i]));
-
-    this.logger.debug({
-      at: "AcrossAPIClient",
-      message: "🏁 Fetched HubPool liquid reserves",
-      limits: this.limits,
-    });
+    if (isDefined(liquidReserves)) {
+      tokens.forEach((token, i) => (this.limits[token.toEvmAddress()] = liquidReserves[i]));
+      this.logger.debug({
+        at: "AcrossAPIClient",
+        message: "🏁 Fetched HubPool liquid reserves",
+        limits: this.limits,
+      });
+    } else {
+      // The query failed, so fall back to the most recently fetched limits rather than zeroing them out.
+      this.logger.warn({
+        at: "AcrossAPIClient",
+        message: "Failed to fetch HubPool liquid reserves. Retaining last known limits.",
+        limits: this.limits,
+      });
+    }
     this.updatedLimits = true;
     this.updatedAt = now;
   }
@@ -114,7 +122,7 @@ export class AcrossApiClient {
     return `limits_api_${l1Tokens.map((token) => token.toEvmAddress()).join(",")}`;
   }
 
-  private async callLimits(l1Tokens: EvmAddress[], timeout = this.timeout): Promise<BigNumber[]> {
+  protected async callLimits(l1Tokens: EvmAddress[], timeout = this.timeout): Promise<BigNumber[] | undefined> {
     const path = "liquid-reserves";
     const url = `${this.endpoint}/${path}`;
 
@@ -133,7 +141,7 @@ export class AcrossApiClient {
     }
 
     const params = { l1Tokens: l1Tokens.join(",") };
-    let liquidReserves: BigNumber[] = [];
+    let liquidReserves: BigNumber[];
     try {
       const result = await fetchWithTimeout<Record<string, string>>(url, params, {}, timeout);
       if (!result) {
@@ -144,12 +152,13 @@ export class AcrossApiClient {
           params,
           result,
         });
+        return undefined;
       }
       liquidReserves = l1Tokens.map((l1Token) => BigNumber.from(result[l1Token.toEvmAddress()] ?? bnZero));
     } catch (err) {
       const msg = (err as Error).message;
       this.logger.warn({ at: "AcrossAPIClient", message: `Failed to get ${path},`, url, params, msg });
-      return l1Tokens.map(() => bnZero);
+      return undefined;
     }
 
     if (redis) {
