@@ -71,6 +71,7 @@ export const {
   forEachAsync,
   formatEther,
   formatUnits,
+  isSlowFill,
   isUnsafeDepositId,
   mapAsync,
   parseUnits,

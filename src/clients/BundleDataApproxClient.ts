@@ -4,11 +4,12 @@
  */
 
 import { SpokePoolManager } from ".";
-import { SpokePoolClientsByChain } from "../interfaces";
+import { FillWithBlock, SpokePoolClientsByChain } from "../interfaces";
 import {
   assert,
   BigNumber,
   isDefined,
+  isSlowFill,
   winston,
   ConvertDecimals,
   getTokenInfo,
@@ -108,7 +109,8 @@ export class BundleDataApproxClient {
   /**
    * Return sum of refunds for all fills sent after the fromBlocks.
    * Makes a simple assumption that all fills that were sent by this relayer after the last executed bundle
-   * are valid and will be refunded on the repayment chain selected.
+   * are valid and will be refunded on the resolved repayment chain: the requested repayment chain when it
+   * is valid for the fill, otherwise the origin chain (see resolveRefundInformation()).
    * @param l1Token L1 token to get refunds for all inventory-equivalent L2 tokens on each chain.
    * @param fromBlocks 2D block mapping indexed by [referenceChainId][fillChainId]. For refund counting, each fill
    * is filtered using fromBlocks[repaymentChainId][fillChainId] so that a fill is only excluded when the
@@ -129,10 +131,9 @@ export class BundleDataApproxClient {
         continue;
       }
       spokePoolClient.getFills().forEach((fill) => {
-        const { inputAmount: _refundAmount, originChainId, repaymentChainId, relayer, inputToken, blockNumber } = fill;
-        // Filter based on the repayment chain's execution state: a fill on chain X with repayment on
-        // chain Y should only be excluded when chain Y's refund leaf has been executed.
-        if (blockNumber < (fromBlocks[repaymentChainId]?.[chainId] ?? 0)) {
+        const { inputAmount: _refundAmount, originChainId, relayer, inputToken, blockNumber } = fill;
+        // Slow fills pay the recipient out of a slow fill leaf and produce no relayer refund.
+        if (isSlowFill(fill)) {
           return;
         }
 
@@ -146,13 +147,13 @@ export class BundleDataApproxClient {
           return;
         }
 
-        // Origin-chain repayments pay out in the deposit's input token; all other repayments pay out in the
-        // pool-rebalance-route token on the repayment chain (see getRefundInformationFromFill in the SDK).
-        // Track refunds by that payout token so callers can attribute them to the exact token repaid.
-        const repaymentToken =
-          repaymentChainId === originChainId ? inputToken : this.getRepaymentTokenForChain(l1Token, repaymentChainId);
-        if (!isDefined(repaymentToken)) {
-          // No pool rebalance route to the repayment chain: the dataworker cannot repay there either.
+        // Resolve the chain and token the refund will actually pay out in, applying the dataworker's
+        // fallback to origin-chain repayment when the fill's requested repayment chain is invalid.
+        const { repaymentChainId, repaymentToken } = this.resolveRefundInformation(fill);
+
+        // Filter based on the repayment chain's execution state: a fill on chain X with repayment on
+        // chain Y should only be excluded when chain Y's refund leaf has been executed.
+        if (blockNumber < (fromBlocks[repaymentChainId]?.[chainId] ?? 0)) {
           return;
         }
 
@@ -171,12 +172,27 @@ export class BundleDataApproxClient {
   }
 
   /**
-   * Return the L2 token that refund leaves pay out in on the given chain, i.e. the l1Token's pool
-   * rebalance route token. Mirrors the dataworker's repayment token resolution for cross-chain repayments.
+   * Resolve the chain and token that a fill's refund will pay out in, mirroring the SDK's
+   * getRefundInformationFromFill()/_getRepaymentChainId(): the requested repayment chain is honored only
+   * when the input token has a pool rebalance route on its origin chain, that route's L1 token is also
+   * routed to the repayment chain, and the repayment chain is not disabled. Otherwise the dataworker
+   * falls back to repaying on the origin chain in the input token.
    */
-  protected getRepaymentTokenForChain(l1Token: Address, repaymentChainId: number): Address | undefined {
-    assert(l1Token.isEVM());
-    return this.hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, repaymentChainId);
+  protected resolveRefundInformation(fill: FillWithBlock): { repaymentChainId: number; repaymentToken: Address } {
+    const { originChainId, inputToken, repaymentChainId } = fill;
+    if (
+      repaymentChainId !== originChainId &&
+      !this.hubPoolClient.configStoreClient.getDisabledChainsForBlock().includes(repaymentChainId)
+    ) {
+      const l1TokenCounterpart = this.hubPoolClient.getL1TokenForL2TokenAtBlock(inputToken, originChainId);
+      const repaymentToken = isDefined(l1TokenCounterpart)
+        ? this.hubPoolClient.getL2TokenForL1TokenAtBlock(l1TokenCounterpart, repaymentChainId)
+        : undefined;
+      if (isDefined(repaymentToken)) {
+        return { repaymentChainId, repaymentToken };
+      }
+    }
+    return { repaymentChainId: originChainId, repaymentToken: inputToken };
   }
 
   // For each chain, find the last executed (or relayed) bundle and return a 2D mapping of start blocks:
