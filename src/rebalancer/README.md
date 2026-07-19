@@ -277,10 +277,16 @@ Lifecycle note:
   pending-state reads do not depend on route selection.
 - Consumers pass the relayer/account they want to inspect into `getPendingRebalances(account)`; the client aggregates
   only the pending state owned by that EVM address.
-- `getPendingRebalances(account)` isolates per-adapter failures: if one adapter's pending-state read throws (e.g. its
-  upstream exchange API is down), the client logs a warning and aggregates the remaining adapters instead of throwing.
-  Consumers such as the relayer's `InventoryClient` keep running with that adapter's in-flight rebalances temporarily
-  uncounted in virtual balances.
+- `getPendingRebalances(account)` isolates adapter failures from consumers but is all-or-nothing internally: if any
+  adapter's pending-state read throws (e.g. its upstream exchange API is down), the client logs a warning and returns
+  an empty aggregate (no virtual adjustments) instead of throwing. A partial aggregate is never returned because
+  adapters offset each other's entries — the exchange adapters emit a debit on the bridge destination chain that
+  cancels the CCTP/OFT adapters' credit for the same in-flight order — so partial data could overcount balances,
+  whereas an empty aggregate is a uniform, conservative undercount. Consumers such as the relayer's `InventoryClient`
+  keep running with in-flight rebalances temporarily uncounted; the failed adapters are exposed via
+  `getPendingReadFailures()`, and the rebalancer runtime uses that to fail closed by skipping new rebalance sends for
+  the run (a deficit computed from the degraded snapshot could otherwise trigger duplicate rebalances, including
+  through healthy adapters).
 
 Runtime entrypoints in `src/rebalancer/`:
 

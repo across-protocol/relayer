@@ -789,7 +789,7 @@ describe("RebalancerClient.cumulativeRebalancing", () => {
     expect(pendingRebalances[CHAIN_B][USDT]).to.equal(amount(USDT, "2"));
   });
 
-  it("Treats an adapter whose pending-rebalance read fails as empty instead of throwing", async function () {
+  it("Degrades to an empty aggregate when any adapter's pending-rebalance read fails instead of throwing", async function () {
     const cumulativeTargetBalances: CumulativeTargetBalanceConfig = {
       [USDC]: buildTarget(USDC, "50", "40", 0, { [CHAIN_A]: 0, [CHAIN_B]: 0 }),
       [USDT]: buildTarget(USDT, "50", "40", 0, { [CHAIN_A]: 0 }),
@@ -811,13 +811,20 @@ describe("RebalancerClient.cumulativeRebalancing", () => {
       {},
       baseSigner
     );
+    const account = EvmAddress.from(await rebalancerClient.baseSigner.getAddress());
 
-    const pendingRebalances = await rebalancerClient.getPendingRebalances(
-      EvmAddress.from(await rebalancerClient.baseSigner.getAddress())
-    );
+    // The healthy adapter's entries are dropped too: adapters offset each other's credits/debits, so a partial
+    // aggregate could overcount balances. The failure is reported via getPendingReadFailures().
+    const pendingRebalances = await rebalancerClient.getPendingRebalances(account);
+    expect(pendingRebalances).to.deep.equal({});
+    expect(rebalancerClient.getPendingReadFailures()).to.deep.equal(["adapter2"]);
 
-    expect(pendingRebalances[CHAIN_A][USDC]).to.equal(amount(USDC, "5"));
-    expect(pendingRebalances[CHAIN_B]).to.be.undefined;
+    // Once the failed adapter recovers, the aggregate and the failure report return to normal.
+    adapter2.setPendingRebalancesError(undefined);
+    const recoveredPendingRebalances = await rebalancerClient.getPendingRebalances(account);
+    expect(recoveredPendingRebalances[CHAIN_A][USDC]).to.equal(amount(USDC, "5"));
+    expect(recoveredPendingRebalances[CHAIN_B]).to.be.undefined;
+    expect(rebalancerClient.getPendingReadFailures()).to.deep.equal([]);
   });
 
   it("Returns pending rebalances without cross-token or cross-chain merging", async function () {
@@ -993,7 +1000,7 @@ class MockRebalancerAdapter implements RebalancerAdapter {
     this.pendingRebalances = pendingRebalances;
   }
 
-  setPendingRebalancesError(error: Error): void {
+  setPendingRebalancesError(error: Error | undefined): void {
     this.pendingRebalancesError = error;
   }
 
