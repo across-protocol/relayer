@@ -44,7 +44,8 @@ The post-refactor lifecycle is explicitly two-stage:
 Key invariant:
 
 - read-only clients call `initialize([])` and still support pending-state reads (`getPendingRebalances`), because pending-state aggregation does not depend on active routes.
-- pending-state reads are failure-isolated per adapter: an adapter whose `getPendingRebalances` throws is logged with a warning and treated as contributing no pending rebalances for that pass, rather than failing the aggregate read.
+- pending-state reads are failure-isolated per adapter: an adapter whose `getPendingRebalances` throws is logged with a warning and treated as contributing no pending rebalances for that pass, rather than failing the aggregate read. The dropped adapters are surfaced through `getAdaptersWithFailedPendingReads()`.
+- write-mode runtimes never initiate new rebalances while any adapter's pending state is invisible (`getAdaptersWithFailedPendingReads()` non-empty): an apparent deficit may already be covered by an in-flight rebalance on the failed adapter, so initiating against it could double-send. Status updates and sweeps for the healthy adapters are also failure-isolated per adapter, and a route whose `getEstimatedCost` throws is excluded from that round rather than failing the pass.
 
 ## Data flow (current behavior)
 
