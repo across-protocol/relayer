@@ -789,7 +789,7 @@ describe("RebalancerClient.cumulativeRebalancing", () => {
     expect(pendingRebalances[CHAIN_B][USDT]).to.equal(amount(USDT, "2"));
   });
 
-  it("Degrades to an empty aggregate when any adapter's pending-rebalance read fails instead of throwing", async function () {
+  it("Degrades to a net-debits-only aggregate when any adapter's pending-rebalance read fails instead of throwing", async function () {
     const cumulativeTargetBalances: CumulativeTargetBalanceConfig = {
       [USDC]: buildTarget(USDC, "50", "40", 0, { [CHAIN_A]: 0, [CHAIN_B]: 0 }),
       [USDT]: buildTarget(USDT, "50", "40", 0, { [CHAIN_A]: 0 }),
@@ -797,15 +797,27 @@ describe("RebalancerClient.cumulativeRebalancing", () => {
     const baseSigner = ethers.Wallet.createRandom();
     const adapter1 = new MockRebalancerAdapter(baseSigner);
     const adapter2 = new MockRebalancerAdapter(baseSigner);
+    const adapter3 = new MockRebalancerAdapter(baseSigner);
     adapter1.setPendingRebalances({
       [CHAIN_A]: {
         [USDC]: amount(USDC, "5"),
+      },
+      [CHAIN_B]: {
+        [USDT]: amount(USDT, "-3"),
+      },
+    });
+    adapter3.setPendingRebalances({
+      [CHAIN_A]: {
+        [USDC]: amount(USDC, "-2"),
+      },
+      [CHAIN_B]: {
+        [USDT]: amount(USDT, "1"),
       },
     });
     adapter2.setPendingRebalancesError(new Error("HttpRequestError: The operation was aborted due to timeout"));
     const rebalancerClient = await createClient(
       cumulativeTargetBalances,
-      { adapter1, adapter2 },
+      { adapter1, adapter2, adapter3 },
       [makeRoute(CHAIN_A, CHAIN_A, USDT, USDC, "adapter1")],
       {},
       {},
@@ -813,17 +825,19 @@ describe("RebalancerClient.cumulativeRebalancing", () => {
     );
     const account = EvmAddress.from(await rebalancerClient.baseSigner.getAddress());
 
-    // The healthy adapter's entries are dropped too: adapters offset each other's credits/debits, so a partial
-    // aggregate could overcount balances. The failure is reported via getPendingReadFailures().
+    // The healthy adapters' net credits are dropped (an unpaired credit could overcount balances) but their net
+    // debits are kept: entries first net within each (chain, token) key, then only net-negative keys survive.
+    // The failure is reported via getPendingReadFailures().
     const pendingRebalances = await rebalancerClient.getPendingRebalances(account);
-    expect(pendingRebalances).to.deep.equal({});
+    expect(pendingRebalances[CHAIN_A]).to.be.undefined; // 5 - 2 nets to a credit, dropped.
+    expect(pendingRebalances[CHAIN_B][USDT]).to.equal(amount(USDT, "-2")); // -3 + 1 nets to a debit, kept.
     expect(rebalancerClient.getPendingReadFailures()).to.deep.equal(["adapter2"]);
 
     // Once the failed adapter recovers, the aggregate and the failure report return to normal.
     adapter2.setPendingRebalancesError(undefined);
     const recoveredPendingRebalances = await rebalancerClient.getPendingRebalances(account);
-    expect(recoveredPendingRebalances[CHAIN_A][USDC]).to.equal(amount(USDC, "5"));
-    expect(recoveredPendingRebalances[CHAIN_B]).to.be.undefined;
+    expect(recoveredPendingRebalances[CHAIN_A][USDC]).to.equal(amount(USDC, "3"));
+    expect(recoveredPendingRebalances[CHAIN_B][USDT]).to.equal(amount(USDT, "-2"));
     expect(rebalancerClient.getPendingReadFailures()).to.deep.equal([]);
   });
 

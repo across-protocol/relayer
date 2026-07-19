@@ -177,8 +177,8 @@ export function loadCumulativeModeBalances(
 
 // Fail closed when pending-rebalance accounting is degraded: the deficit/excess math that sizes new rebalances is
 // derived from the InventoryClient's virtual balances, and if any adapter's pending read failed then those balances
-// are missing every in-flight rebalance (the aggregate degrades to empty), so sending now could duplicate rebalances
-// that are already pending — including through adapters whose reads succeeded.
+// are missing every in-flight rebalance credit (the aggregate degrades to net debits only), so sending now could
+// duplicate rebalances that are already pending — including through adapters whose reads succeeded.
 function canSendRebalances(inventoryClient: InventoryClient, logLabel: string): boolean {
   const failedPendingReads = inventoryClient.rebalancerClient.getPendingReadFailures();
   if (failedPendingReads.length === 0) {

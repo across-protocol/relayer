@@ -277,13 +277,15 @@ Lifecycle note:
   pending-state reads do not depend on route selection.
 - Consumers pass the relayer/account they want to inspect into `getPendingRebalances(account)`; the client aggregates
   only the pending state owned by that EVM address.
-- `getPendingRebalances(account)` isolates adapter failures from consumers but is all-or-nothing internally: if any
-  adapter's pending-state read throws (e.g. its upstream exchange API is down), the client logs a warning and returns
-  an empty aggregate (no virtual adjustments) instead of throwing. A partial aggregate is never returned because
-  adapters offset each other's entries — the exchange adapters emit a debit on the bridge destination chain that
-  cancels the CCTP/OFT adapters' credit for the same in-flight order — so partial data could overcount balances,
-  whereas an empty aggregate is a uniform, conservative undercount. Consumers such as the relayer's `InventoryClient`
-  keep running with in-flight rebalances temporarily uncounted; the failed adapters are exposed via
+- `getPendingRebalances(account)` isolates adapter failures from consumers: if any adapter's pending-state read
+  throws (e.g. its upstream exchange API is down), the client logs a warning and degrades the aggregate to net
+  debits only instead of throwing. Net credits are dropped because adapters offset each other's entries — the
+  exchange adapters emit a debit on the bridge destination chain that cancels the CCTP/OFT adapters' credit for the
+  same in-flight order — so an unpaired credit could overcount balances. Net debits are kept because they can only
+  lower reported balances, and some debits offset real on-chain balance rather than another adapter's credit (the
+  exchange adapters debit the withdrawal network once a venue withdrawal finalizes there, so that funds earmarked
+  for the final destination chain don't look spendable). Consumers such as the relayer's `InventoryClient` keep
+  running with in-flight rebalance credits temporarily uncounted; the failed adapters are exposed via
   `getPendingReadFailures()`, and the rebalancer runtime uses that to fail closed by skipping new rebalance sends for
   the run (a deficit computed from the degraded snapshot could otherwise trigger duplicate rebalances, including
   through healthy adapters).
