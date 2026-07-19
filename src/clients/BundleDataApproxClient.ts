@@ -23,13 +23,20 @@ export type BundleDataState = {
   upcomingRefunds: { [l1Token: string]: { [chainId: number]: { [relayer: string]: BigNumber } } };
 };
 
+// Internally, refunds are additionally keyed by the L2 token the refund leaf will pay out in.
+// The exported/serialized BundleDataState keeps the flat per-relayer sums for cross-version stability.
+type RefundsByChain = { [chainId: number]: { [relayer: string]: { [repaymentToken: string]: BigNumber } } };
+
+// Imported (deserialized) state carries no per-repayment-token breakdown, so its chain-level sums are
+// keyed under this sentinel. Chain-level queries — the only consumers of imported state — are unaffected.
+const UNKNOWN_REPAYMENT_TOKEN = "unknown";
+
 // This client is used to approximate running balances and the refunds and deposits for a given L1 token. Running balances
 // can easily be estimated by taking the last validated running balance for a chain and subtracting the total deposit amount
 // on that chain since the last validated end block and adding the total refund amount on that chain since the last validated
 // end block.
 export class BundleDataApproxClient {
-  private upcomingRefunds: { [l1Token: string]: { [chainId: number]: { [relayer: string]: BigNumber } } } | undefined =
-    undefined;
+  private upcomingRefunds: { [l1Token: string]: RefundsByChain } | undefined = undefined;
   private upcomingDeposits: { [l1Token: string]: { [chainId: number]: BigNumber } } | undefined = undefined;
   private readonly spokePoolManager: SpokePoolManager;
 
@@ -55,7 +62,24 @@ export class BundleDataApproxClient {
       isDefined(upcomingDeposits) && isDefined(upcomingRefunds),
       "BundleDataApproxClient#export: client not initialized"
     );
-    return { upcomingDeposits, upcomingRefunds };
+    // Flatten the per-repayment-token breakdown so the serialized shape is stable across versions.
+    const flattenedRefunds = Object.fromEntries(
+      Object.entries(upcomingRefunds).map(([l1Token, byChain]) => [
+        l1Token,
+        Object.fromEntries(
+          Object.entries(byChain).map(([chainId, byRelayer]) => [
+            chainId,
+            Object.fromEntries(
+              Object.entries(byRelayer).map(([relayer, byToken]) => [
+                relayer,
+                Object.values(byToken).reduce((acc, amount) => acc.add(amount), bnZero),
+              ])
+            ),
+          ])
+        ),
+      ])
+    );
+    return { upcomingDeposits, upcomingRefunds: flattenedRefunds };
   }
 
   /**
@@ -66,7 +90,19 @@ export class BundleDataApproxClient {
   import(state: BundleDataState): void {
     const { upcomingDeposits, upcomingRefunds } = state;
     this.upcomingDeposits = upcomingDeposits;
-    this.upcomingRefunds = upcomingRefunds;
+    this.upcomingRefunds = Object.fromEntries(
+      Object.entries(upcomingRefunds).map(([l1Token, byChain]) => [
+        l1Token,
+        Object.fromEntries(
+          Object.entries(byChain).map(([chainId, byRelayer]) => [
+            chainId,
+            Object.fromEntries(
+              Object.entries(byRelayer).map(([relayer, amount]) => [relayer, { [UNKNOWN_REPAYMENT_TOKEN]: amount }])
+            ),
+          ])
+        ),
+      ])
+    );
   }
 
   /**
@@ -78,13 +114,14 @@ export class BundleDataApproxClient {
    * is filtered using fromBlocks[repaymentChainId][fillChainId] so that a fill is only excluded when the
    * repayment chain's refund leaf has been executed — not when the fill chain's own refund leaf was executed.
    * This prevents under-counting refunds when cross-chain relay propagation is delayed.
-   * @returns Refunds grouped by relayer for each chain. Refunds are denominated in L1 token decimals.
+   * @returns Refunds grouped by relayer and repayment token for each chain. Refunds are denominated in
+   * L1 token decimals, but keyed by the L2 token that the refund leaf will pay out in.
    */
   protected getApproximateRefundsForToken(
     l1Token: Address,
     fromBlocks: { [chainId: number]: { [chainId: number]: number } }
-  ): { [repaymentChainId: number]: { [relayer: string]: BigNumber } } {
-    const refundsForChain: { [repaymentChainId: number]: { [relayer: string]: BigNumber } } = {};
+  ): RefundsByChain {
+    const refundsForChain: RefundsByChain = {};
     for (const chainId of this.chainIdList) {
       refundsForChain[chainId] ??= {};
       const spokePoolClient = this.spokePoolManager.getClient(chainId);
@@ -109,18 +146,37 @@ export class BundleDataApproxClient {
           return;
         }
 
+        // Origin-chain repayments pay out in the deposit's input token; all other repayments pay out in the
+        // pool-rebalance-route token on the repayment chain (see getRefundInformationFromFill in the SDK).
+        // Track refunds by that payout token so callers can attribute them to the exact token repaid.
+        const repaymentToken =
+          repaymentChainId === originChainId ? inputToken : this.getRepaymentTokenForChain(l1Token, repaymentChainId);
+        if (!isDefined(repaymentToken)) {
+          // No pool rebalance route to the repayment chain: the dataworker cannot repay there either.
+          return;
+        }
+
         const { decimals: inputTokenDecimals } = getTokenInfo(inputToken, originChainId);
         const refundAmount = ConvertDecimals(
           inputTokenDecimals,
           getTokenInfo(l1Token, this.hubPoolClient.chainId).decimals
         )(_refundAmount);
         refundsForChain[repaymentChainId] ??= {};
-        refundsForChain[repaymentChainId][relayer.toNative()] ??= bnZero;
-        refundsForChain[repaymentChainId][relayer.toNative()] =
-          refundsForChain[repaymentChainId][relayer.toNative()].add(refundAmount);
+        const relayerRefunds = (refundsForChain[repaymentChainId][relayer.toNative()] ??= {});
+        const repaymentTokenKey = repaymentToken.toNative();
+        relayerRefunds[repaymentTokenKey] = (relayerRefunds[repaymentTokenKey] ?? bnZero).add(refundAmount);
       });
     }
     return refundsForChain;
+  }
+
+  /**
+   * Return the L2 token that refund leaves pay out in on the given chain, i.e. the l1Token's pool
+   * rebalance route token. Mirrors the dataworker's repayment token resolution for cross-chain repayments.
+   */
+  protected getRepaymentTokenForChain(l1Token: Address, repaymentChainId: number): Address | undefined {
+    assert(l1Token.isEVM());
+    return this.hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, repaymentChainId);
   }
 
   // For each chain, find the last executed (or relayed) bundle and return a 2D mapping of start blocks:
@@ -293,23 +349,24 @@ export class BundleDataApproxClient {
    * @param chainId Chain ID to get refunds for.
    * @param l1Token L1 token to get refunds for.
    * @param relayer Optional relayer to get refunds for. If not provided, returns the sum of refunds for all relayers.
+   * @param repaymentToken Optional L2 token the refund leaf will pay out in. If provided, returns only refunds paid
+   * in that token. The breakdown is not available on imported state, which only carries chain-level sums.
    * @returns Refunds for the given L1 token on the given chain for all inventory-equivalent L2 tokens on that chain. Refunds are denominated in L1 token decimals.
    */
-  getUpcomingRefunds(chainId: number, l1Token: Address, relayer?: Address): BigNumber {
+  getUpcomingRefunds(chainId: number, l1Token: Address, relayer?: Address, repaymentToken?: Address): BigNumber {
     assert(
       isDefined(this.upcomingRefunds),
       "BundleDataApproxClient#getUpcomingRefunds: Upcoming refunds not initialized"
     );
-    if (!this.upcomingRefunds[l1Token.toNative()]) {
-      return bnZero;
-    }
-    if (isDefined(relayer)) {
-      return this.upcomingRefunds[l1Token.toNative()][chainId]?.[relayer.toNative()] ?? bnZero;
-    }
-    return Object.values(this.upcomingRefunds[l1Token.toNative()][chainId] ?? {}).reduce(
-      (acc, curr) => acc.add(curr),
-      bnZero
-    );
+    const refundsByRelayer = this.upcomingRefunds[l1Token.toNative()]?.[chainId] ?? {};
+    const relayerRefunds = isDefined(relayer)
+      ? [refundsByRelayer[relayer.toNative()] ?? {}]
+      : Object.values(refundsByRelayer);
+    return relayerRefunds
+      .flatMap((byToken) =>
+        isDefined(repaymentToken) ? [byToken[repaymentToken.toNative()] ?? bnZero] : Object.values(byToken)
+      )
+      .reduce((acc, amount) => acc.add(amount), bnZero);
   }
 
   /**
