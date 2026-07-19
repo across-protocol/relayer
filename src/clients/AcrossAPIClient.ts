@@ -99,6 +99,8 @@ export class AcrossApiClient {
         limits: this.limits,
       });
     }
+    // Flag limits as updated even on failure so that the relayer keeps enforcing the limit check. If the first
+    // query fails, limits is empty and getLimit() defaults to 0, so fills are skipped until a query succeeds.
     this.updatedLimits = true;
     this.updatedAt = now;
   }
