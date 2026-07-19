@@ -277,6 +277,10 @@ Lifecycle note:
   pending-state reads do not depend on route selection.
 - Consumers pass the relayer/account they want to inspect into `getPendingRebalances(account)`; the client aggregates
   only the pending state owned by that EVM address.
+- `getPendingRebalances(account)` isolates per-adapter failures: if one adapter's pending-state read throws (e.g. its
+  upstream exchange API is down), the client logs a warning and aggregates the remaining adapters instead of throwing.
+  Consumers such as the relayer's `InventoryClient` keep running with that adapter's in-flight rebalances temporarily
+  uncounted in virtual balances.
 
 Runtime entrypoints in `src/rebalancer/`:
 
