@@ -1,15 +1,7 @@
 import winston from "winston";
 import { array, create, number, object, optional, record, string, union } from "superstruct";
 import { CommonConfig, ProcessEnv } from "../common";
-import {
-  CHAIN_IDs,
-  getNativeTokenAddressForChain,
-  isDefined,
-  resolveAcrossToken,
-  Address,
-  toAddressType,
-  parseJson,
-} from "../utils";
+import { CHAIN_IDs, getNativeTokenAddressForChain, isDefined, Address, toAddressType, parseJson } from "../utils";
 
 const MonitoredBalances2Schema = record(
   string(),
@@ -67,7 +59,6 @@ export class MonitorConfig extends CommonConfig {
     account: Address;
     token: Address;
   }[] = [];
-  readonly additionalL1NonLpTokens: string[] = [];
   readonly binanceWithdrawWarnThreshold: number;
   readonly binanceWithdrawAlertThreshold: number;
   readonly hyperliquidOrderMaximumLifetime: number;
@@ -90,7 +81,6 @@ export class MonitorConfig extends CommonConfig {
       MONITORED_BALANCES,
       MONITORED_BALANCES_2,
       STUCK_REBALANCES_ENABLED,
-      MONITOR_REPORT_NON_LP_TOKENS,
       BUNDLES_COUNT,
       BINANCE_WITHDRAW_WARN_THRESHOLD,
       BINANCE_WITHDRAW_ALERT_THRESHOLD,
@@ -119,10 +109,6 @@ export class MonitorConfig extends CommonConfig {
     this.monitoredRelayers = parseAddressesOptional(MONITORED_RELAYERS);
     this.knownV1Addresses = parseAddressesOptional(KNOWN_V1_ADDRESSES);
     this.bundlesCount = Number(BUNDLES_COUNT ?? 4);
-    this.additionalL1NonLpTokens = parseJson
-      .stringArray(MONITOR_REPORT_NON_LP_TOKENS)
-      .map((token) => resolveAcrossToken(token, CHAIN_IDs.MAINNET))
-      .filter(isDefined);
 
     this.binanceWithdrawWarnThreshold = Number(BINANCE_WITHDRAW_WARN_THRESHOLD ?? 1);
     this.binanceWithdrawAlertThreshold = Number(BINANCE_WITHDRAW_ALERT_THRESHOLD ?? 1);
