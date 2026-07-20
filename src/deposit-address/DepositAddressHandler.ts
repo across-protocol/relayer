@@ -115,6 +115,15 @@ export class DepositAddressHandler {
   private initialized = false;
   private consecutiveHeartbeatFailures = 0;
 
+  /**
+   * True once a handover/shutdown has been observed — including during initialize(), which cedes
+   * without loading state when the abort fires (or a newer instance takes the lease) while it is
+   * blocked on the predecessor drain. The caller must not start polling in that case.
+   */
+  public get aborted(): boolean {
+    return this.abortController.signal.aborted;
+  }
+
   // instanceCoordinator is populated by initialize(); reads pre-init throw, writes go through the setter.
   private get instanceCoordinator(): InstanceCoordinator {
     assert(
@@ -244,10 +253,31 @@ export class DepositAddressHandler {
       this.abortController
     );
     const predecessor = await this.instanceCoordinator.initiateHandover();
-    const predecessorDrained = await this.instanceCoordinator.waitForPredecessorDrain(
-      predecessor,
-      HANDOVER_TAKEOVER_TIMEOUT
-    );
+    // Heartbeat while blocked on the predecessor: it stops its own watchdog the moment it
+    // observes this takeover, and this wait can exceed the ~60s Checkly alert window — a healthy
+    // handover must not page as a dead bot.
+    const drainWaitHeartbeat = new AbortController();
+    scheduleTask(() => this.kickWatchdog(), this.config.watchdogInterval, drainWaitHeartbeat.signal);
+    let predecessorDrained: boolean;
+    try {
+      predecessorDrained = await this.instanceCoordinator.waitForPredecessorDrain(
+        predecessor,
+        HANDOVER_TAKEOVER_TIMEOUT
+      );
+    } finally {
+      drainWaitHeartbeat.abort();
+    }
+    // waitForPredecessorDrain also returns false when this handler's own abort signal fires
+    // (SIGHUP/disconnect during the wait). That is a shutdown, not a takeover timeout: cede
+    // without loading state — the caller checks `aborted` and must not start polling.
+    if (this.abortController.signal.aborted) {
+      this.logger.debug({
+        at: "DepositAddressHandler#initialize",
+        message: "Shutdown observed while waiting for predecessor drain; ceding without starting.",
+        predecessor,
+      });
+      return;
+    }
     if (!predecessorDrained) {
       this.logger.warn({
         at: "DepositAddressHandler#initialize",
@@ -256,6 +286,18 @@ export class DepositAddressHandler {
         predecessor,
         timeoutSeconds: HANDOVER_TAKEOVER_TIMEOUT,
       });
+    }
+    // A newer instance may have taken the lease while this one was blocked here; polling would
+    // then run executions from a stale instance until waitForDisconnect's next 1s subscribe poll
+    // notices the newer lease. Cede immediately instead.
+    if (!(await this.instanceCoordinator.isActiveInstance())) {
+      this.logger.warn({
+        at: "DepositAddressHandler#initialize",
+        message: "Another instance took over while waiting for predecessor drain; ceding without starting.",
+        predecessor,
+      });
+      this.abortController.abort();
+      return;
     }
 
     await this._loadExecutedDepositsFromRedis();
@@ -527,6 +569,10 @@ export class DepositAddressHandler {
    * fund-moving broadcast for this depositKey. Markers written by this instance don't defer it:
    * its in-memory in-flight sets are strictly better informed, and blocking on our own marker
    * would stall the normal retry path after a failed submit.
+   *
+   * Advisory pre-filter only — it saves the API/chain reads that follow, but a concurrent
+   * instance can write its marker after this read. The authoritative guard is the atomic
+   * acquisition in preBroadcastCheckpoint.
    */
   private async hasForeignPendingExecution(depositKey: string): Promise<boolean> {
     assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
@@ -535,30 +581,39 @@ export class DepositAddressHandler {
   }
 
   /**
-   * Persists the pending-execution marker. MUST be awaited immediately before every fund-moving
-   * broadcast: if this instance dies between broadcast and persisting the executed marker, the
-   * marker is the only thing standing between the successor and a replayed execution. A failure
-   * here must abort the broadcast attempt (callers return without submitting).
+   * Atomically acquires the pending-execution marker; returns false when another instance owns
+   * it, in which case the caller must NOT broadcast. MUST be awaited immediately before every
+   * fund-moving broadcast: if this instance dies between broadcast and persisting the executed
+   * marker, the marker is the only thing standing between the successor and a replayed execution,
+   * and two live instances racing the same transfer (overlapping replacement starts, or a
+   * takeover timeout while the old process still runs) must not both proceed past it.
+   *
+   * SET NX first; on conflict, re-take the marker only if it is already this instance's own — a
+   * failed submit intentionally leaves the marker in place (see clearPendingExecution), so the
+   * same-instance retry path must be able to re-acquire it.
    */
-  private async markPendingExecution(depositKey: string): Promise<void> {
+  private async acquirePendingExecution(depositKey: string): Promise<boolean> {
     assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
-    await this.redisCache.set(
-      this.getPendingExecutionRedisKey(depositKey),
-      this.config.runIdentifier,
-      PENDING_EXECUTION_EXPIRY
+    const redisKey = this.getPendingExecutionRedisKey(depositKey);
+    const ttlMs = PENDING_EXECUTION_EXPIRY * 1000;
+    return (
+      (await this.redisCache.acquireLock(redisKey, this.config.runIdentifier, ttlMs)) ||
+      (await this.redisCache.renewLock(redisKey, this.config.runIdentifier, ttlMs))
     );
   }
 
   /**
-   * Clears the pending-execution marker after the confirmed execution has been persisted to the
-   * executed set. Best-effort: on failure the marker expires via its TTL. Never call this after
-   * a failed submit — a "failed" sendAndConfirm may still have broadcast (confirmation failure),
-   * so the marker must outlive it.
+   * Releases the pending-execution marker after the confirmed execution has been persisted to the
+   * executed set. Ownership-checked (compare-and-delete): if this instance's marker expired
+   * mid-flight and another instance has since acquired the key, that marker is left intact.
+   * Best-effort: on failure the marker expires via its TTL. Never call this after a failed
+   * submit — a "failed" sendAndConfirm may still have broadcast (confirmation failure), so the
+   * marker must outlive it.
    */
   private async clearPendingExecution(depositKey: string): Promise<void> {
     assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
     try {
-      await this.redisCache.del(this.getPendingExecutionRedisKey(depositKey));
+      await this.redisCache.releaseLock(this.getPendingExecutionRedisKey(depositKey), this.config.runIdentifier);
     } catch (err) {
       this.logger.warn({
         at: "DepositAddressHandler#clearPendingExecution",
@@ -572,8 +627,8 @@ export class DepositAddressHandler {
   /**
    * Guards a fund-moving broadcast: bails when a handover was observed mid-message (the
    * successor re-evaluates from scratch — a broadcast from a ceding instance is how replays
-   * happen), then persists the pending-execution marker. Returns false when the caller must NOT
-   * broadcast.
+   * happen), then atomically acquires the pending-execution marker. Returns false when the
+   * caller must NOT broadcast.
    */
   private async preBroadcastCheckpoint(depositKey: string, at: string): Promise<boolean> {
     if (this.abortController.signal.aborted) {
@@ -585,7 +640,16 @@ export class DepositAddressHandler {
       return false;
     }
     try {
-      await this.markPendingExecution(depositKey);
+      // Atomic: two live instances can both pass the earlier hasForeignPendingExecution read for
+      // the same transfer; only the one that wins the marker may broadcast.
+      if (!(await this.acquirePendingExecution(depositKey))) {
+        this.logger.debug({
+          at,
+          message: "Skipping broadcast: pending-execution marker acquired by another instance",
+          depositKey,
+        });
+        return false;
+      }
     } catch (err) {
       this.logger.warn({
         at,

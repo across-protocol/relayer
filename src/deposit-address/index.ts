@@ -13,15 +13,26 @@ export async function runDepositAddressHandler(_logger: winston.Logger, baseSign
   await relayer.initialize();
 
   try {
-    logger[startupLogLevel(config)]({
-      at: "DepositAddressHandler#index",
-      message: "Deposit address handler started",
-      config,
-    });
     const start = Date.now();
 
-    // Start the API polling.
-    relayer.pollAndExecute();
+    // initialize() cedes without loading state when a shutdown or a newer instance is observed
+    // while it waits for the predecessor drain; a stale instance must not start polling. It still
+    // falls through to waitForDisconnect below so its drained signal reaches any successor.
+    if (relayer.aborted) {
+      logger.debug({
+        at: "DepositAddressHandler#index",
+        message: "Handler ceded during initialization; exiting without polling.",
+      });
+    } else {
+      logger[startupLogLevel(config)]({
+        at: "DepositAddressHandler#index",
+        message: "Deposit address handler started",
+        config,
+      });
+
+      // Start the API polling.
+      relayer.pollAndExecute();
+    }
 
     // Wait for the handover to complete.
     await relayer.waitForDisconnect();

@@ -18,7 +18,7 @@ const EXECUTE_TARGET = "0x0000000000000000000000000000000000005900";
 const V3_CHAIN = 42161;
 const V1_CHAIN = 1;
 
-/** Minimal in-memory stand-in for the Redis ops the handler uses (get/set/del). */
+/** Minimal in-memory stand-in for the Redis ops the handler uses (get/set/locks). */
 class FakeRedis {
   store = new Map<string, string>();
 
@@ -33,6 +33,26 @@ class FakeRedis {
 
   async del(key: string): Promise<number> {
     return this.store.delete(key) ? 1 : 0;
+  }
+
+  /** SET NX semantics; TTLs are not modelled. */
+  async acquireLock(key: string, token: string, _ttlMs: number): Promise<boolean> {
+    if (this.store.has(key)) {
+      return false;
+    }
+    this.store.set(key, token);
+    return true;
+  }
+
+  async renewLock(key: string, token: string, _ttlMs: number): Promise<boolean> {
+    return this.store.get(key) === token;
+  }
+
+  async releaseLock(key: string, token: string): Promise<boolean> {
+    if (this.store.get(key) !== token) {
+      return false;
+    }
+    return this.store.delete(key);
   }
 }
 
@@ -236,6 +256,42 @@ describe("DepositAddressHandler pending-execution markers", function () {
     expect(sendStub.notCalled).to.equal(true);
     expect(redis.store.has(pendingKey(message))).to.equal(false);
     expect(internals.observedExecutedDeposits[V3_CHAIN].size).to.equal(0);
+  });
+
+  it("does not broadcast when another instance acquires the marker after the early foreign check", async function () {
+    const { internals, redis, sendStub, executeTxStub } = buildHandler();
+    const message = depositMessageV3();
+    // The early hasForeignPendingExecution read passes (no marker yet); the other instance's
+    // marker lands while this instance is fetching calldata, i.e. before the pre-broadcast
+    // checkpoint. The atomic acquisition must lose and skip the broadcast.
+    executeTxStub.callsFake(async () => {
+      redis.store.set(pendingKey(message), OTHER_INSTANCE);
+      return executeResponse();
+    });
+
+    await internals.initiateDepositV3(message);
+
+    expect(sendStub.notCalled).to.equal(true);
+    expect(redis.store.get(pendingKey(message))).to.equal(OTHER_INSTANCE);
+    // The in-flight lock was released so the transfer is re-evaluated on later polls.
+    expect(internals.observedExecutedDeposits[V3_CHAIN].size).to.equal(0);
+  });
+
+  it("does not clear a marker another instance acquired after this instance's expired mid-flight", async function () {
+    const { internals, redis, sendStub } = buildHandler();
+    const message = depositMessageV3();
+
+    sendStub.callsFake(async () => {
+      // Simulate the marker TTL expiring during a slow confirmation, with another instance then
+      // acquiring the key. The ownership-checked release must leave that marker intact.
+      redis.store.set(pendingKey(message), OTHER_INSTANCE);
+      return fakeReceipt();
+    });
+
+    await internals.initiateDepositV3(message);
+
+    expect(redis.store.get(executedKey())).to.contain(message.erc20Transfer.transactionHash);
+    expect(redis.store.get(pendingKey(message))).to.equal(OTHER_INSTANCE);
   });
 
   it("defers the v1 refund-withdraw path on a foreign marker before any chain reads", async function () {

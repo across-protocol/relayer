@@ -47,18 +47,29 @@ Three mechanisms close the window:
    to `HANDOVER_TAKEOVER_TIMEOUT` (120s) for its specific predecessor's drained signal **before**
    loading the persisted sets — loading earlier races the predecessor's final persist. On timeout
    (predecessor crashed, or predates this protocol) it proceeds with a warning; the markers below
-   still guard anything left in flight.
+   still guard anything left in flight. While it waits it kicks the watchdog heartbeat on the
+   usual interval (the predecessor stops its own the moment it observes the takeover), so a slow
+   but healthy handover never pages as a dead bot. The wait has two cede paths: if the instance's
+   own abort signal fired during the wait (SIGHUP/disconnect), or if the lease is no longer held
+   by this instance afterwards (a newer instance took over mid-wait), `initialize()` returns
+   without loading state, the entrypoint skips polling entirely (`relayer.aborted`), and the
+   instance signals drained on its way out so its own successor is not left waiting.
 3. **Pending-execution markers (crash safety).** Immediately before every fund-moving broadcast
-   the handler persists `deposit-address:pending-execution:<botIdentifier>:<depositKey>` (value:
-   the writing instance's run identifier, TTL `PENDING_EXECUTION_EXPIRY` = 15 min) and refuses to
-   broadcast if that persist fails. The marker is deleted only after the confirmed execution has
-   been persisted to the executed set. Every execute/withdraw path defers a transfer whose marker
-   is held by **another** instance (own markers don't block, so the normal same-instance retry
-   path is unaffected); after a failed submit the marker is intentionally left to expire via TTL,
-   since a "failed" send may still have broadcast. Consequence: if an instance dies mid-flight,
-   the successor defers that transfer for up to 15 minutes instead of risking a replay — a
-   deferred sweep is recoverable, a double-spend is not. The deploy tx on the v1 deposit path
-   carries no marker: it moves no funds and replays are guarded by the `isContractDeployed` check.
+   the handler **atomically acquires** `deposit-address:pending-execution:<botIdentifier>:<depositKey>`
+   (value: the acquiring instance's run identifier, TTL `PENDING_EXECUTION_EXPIRY` = 15 min) via
+   SET NX — falling back to re-taking a marker it already owns (compare-and-expire), so the
+   same-instance retry path after a failed submit is unaffected — and refuses to broadcast unless
+   it wins the marker. Acquisition being atomic means two live instances racing the same transfer
+   (overlapping replacement starts, or a takeover timeout while the old process still runs) cannot
+   both broadcast. The marker is released (compare-and-delete on ownership, never a blind DEL)
+   only after the confirmed execution has been persisted to the executed set. Every
+   execute/withdraw path also defers early on a transfer whose marker is held by **another**
+   instance, saving the API/chain reads; after a failed submit the marker is intentionally left to
+   expire via TTL, since a "failed" send may still have broadcast. Consequence: if an instance
+   dies mid-flight, the successor defers that transfer for up to 15 minutes instead of risking a
+   replay — a deferred sweep is recoverable, a double-spend is not. The deploy tx on the v1
+   deposit path carries no marker: it moves no funds and replays are guarded by the
+   `isContractDeployed` check.
 
 ## Indexer message classification
 

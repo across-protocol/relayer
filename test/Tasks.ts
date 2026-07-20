@@ -1,6 +1,6 @@
 import { expect } from "./utils";
 
-import { abortableDelay, fireAndForget } from "../src/utils";
+import { abortableDelay, fireAndForget, scheduleTask } from "../src/utils";
 
 describe("Tasks", function () {
   describe("fireAndForget", function () {
@@ -42,6 +42,33 @@ describe("Tasks", function () {
       )();
       await flushMicrotasks();
       expect(seen).to.deep.equal([]);
+    });
+  });
+
+  describe("scheduleTask", function () {
+    const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    it("schedules nothing when the signal is already aborted", async function () {
+      // addEventListener("abort") never fires on a signal that aborted in the past, so an
+      // interval started here could never be cleared — scheduleTask must not start one.
+      const controller = new AbortController();
+      controller.abort();
+      let calls = 0;
+      scheduleTask(async () => void ++calls, 0.01, controller.signal);
+      await sleep(50);
+      expect(calls).to.equal(0);
+    });
+
+    it("runs until the signal aborts, then stops", async function () {
+      const controller = new AbortController();
+      let calls = 0;
+      scheduleTask(async () => void ++calls, 0.01, controller.signal);
+      await sleep(100);
+      controller.abort();
+      const callsAtAbort = calls;
+      expect(callsAtAbort).to.be.greaterThan(0);
+      await sleep(60);
+      expect(calls).to.equal(callsAtAbort);
     });
   });
 
