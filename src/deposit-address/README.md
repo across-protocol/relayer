@@ -61,7 +61,10 @@ Three mechanisms close the window:
    same-instance retry path after a failed submit is unaffected — and refuses to broadcast unless
    it wins the marker. Acquisition being atomic means two live instances racing the same transfer
    (overlapping replacement starts, or a takeover timeout while the old process still runs) cannot
-   both broadcast. The marker is released (compare-and-delete on ownership, never a blind DEL)
+   both broadcast. The abort signal is checked on both sides of the acquisition: a marker write
+   that straddles the handover (a slow write can outlive the predecessor's drain timeout, after
+   which the successor has been signalled to start) is released and the broadcast skipped. The
+   marker is otherwise released (compare-and-delete on ownership, never a blind DEL)
    only after the confirmed execution has been persisted to the executed set. Every
    execute/withdraw path also defers early on a transfer whose marker is held by **another**
    instance, saving the API/chain reads; after a failed submit the marker is intentionally left to

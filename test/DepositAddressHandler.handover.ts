@@ -246,6 +246,28 @@ describe("DepositAddressHandler pending-execution markers", function () {
     expect(sendStub.calledTwice).to.equal(true);
   });
 
+  it("skips the broadcast and releases the marker when a handover lands during the marker write", async function () {
+    const { internals, redis, sendStub } = buildHandler();
+    const message = depositMessageV3();
+    // The initial abort check passes; the handover is observed while the marker write is in
+    // flight (a slow write can outlive the predecessor's drain timeout, after which the
+    // successor has already been signalled to start). The post-acquisition re-check must bail.
+    const realAcquire = redis.acquireLock.bind(redis);
+    redis.acquireLock = async (key: string, token: string, ttlMs: number) => {
+      const acquired = await realAcquire(key, token, ttlMs);
+      internals.abortController.abort();
+      return acquired;
+    };
+
+    await internals.initiateDepositV3(message);
+
+    expect(sendStub.notCalled).to.equal(true);
+    // Nothing was broadcast, so the just-acquired marker is released rather than left to defer
+    // the successor for the full TTL.
+    expect(redis.store.has(pendingKey(message))).to.equal(false);
+    expect(redis.store.has(executedKey())).to.equal(false);
+  });
+
   it("skips the broadcast without writing a marker when a handover was observed mid-message", async function () {
     const { internals, redis, sendStub } = buildHandler();
     const message = depositMessageV3();

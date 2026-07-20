@@ -627,8 +627,9 @@ export class DepositAddressHandler {
   /**
    * Guards a fund-moving broadcast: bails when a handover was observed mid-message (the
    * successor re-evaluates from scratch — a broadcast from a ceding instance is how replays
-   * happen), then atomically acquires the pending-execution marker. Returns false when the
-   * caller must NOT broadcast.
+   * happen), then atomically acquires the pending-execution marker. The abort signal is checked
+   * on both sides of the acquisition, since the Redis write itself can straddle the handover.
+   * Returns false when the caller must NOT broadcast.
    */
   private async preBroadcastCheckpoint(depositKey: string, at: string): Promise<boolean> {
     if (this.abortController.signal.aborted) {
@@ -656,6 +657,19 @@ export class DepositAddressHandler {
         message: "Skipping broadcast: failed to persist pending-execution marker",
         depositKey,
         err: err instanceof Error ? err.message : String(err),
+      });
+      return false;
+    }
+    // Re-check after the acquisition: a slow Redis write can outlive the drain timeout, and by
+    // then the successor has been signalled to start — a broadcast from this instance now would
+    // be invisible to the successor's already-loaded state. Nothing was broadcast yet, so
+    // releasing the just-acquired marker is safe and spares the successor the TTL defer.
+    if (this.abortController.signal.aborted) {
+      await this.clearPendingExecution(depositKey);
+      this.logger.debug({
+        at,
+        message: "Skipping broadcast: handover/shutdown observed while persisting the pending-execution marker",
+        depositKey,
       });
       return false;
     }
