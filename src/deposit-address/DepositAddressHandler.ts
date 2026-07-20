@@ -430,11 +430,42 @@ export class DepositAddressHandler {
    * so a broadcast tx gets confirmed and committed to Redis rather than orphaned — while the
    * successor is already running concurrently. The per-transfer pending-execution locks keep
    * the successor off anything still draining here.
+   *
+   * The drain is two-phase. Past the expected window (HANDOVER_DRAIN_TIMEOUT) it warns for ops
+   * visibility but keeps waiting — up to the pending-execution lock TTL — rather than returning:
+   * returning tears down this process's Redis clients under a tick that may sit between
+   * broadcast and commit, and a tx that confirms after that teardown leaves no committed record.
+   * Its lock then expires and the successor can replay the transfer against fresh funds (the
+   * 2026-07-20 incident's exact shape). The successor is already serving, so the only cost of
+   * lingering is an old process that lives a little longer.
    */
   public async waitForDisconnect(): Promise<void> {
     await this.instanceCoordinator.subscribe();
     this.abortController.abort();
-    await this.drainInFlightWork(HANDOVER_DRAIN_TIMEOUT);
+    const drained = await this.drainInFlightWork(HANDOVER_DRAIN_TIMEOUT);
+    if (!drained) {
+      this.logger.warn({
+        at: "DepositAddressHandler#waitForDisconnect",
+        message:
+          "In-flight work did not settle within the expected drain window; holding Redis open up to the lock TTL so a late-confirming broadcast can still commit.",
+        inFlightTicks: this.inFlightTicks.size,
+        expectedDrainSeconds: HANDOVER_DRAIN_TIMEOUT,
+      });
+      const stillNotDrained = !(await this.drainInFlightWork(PENDING_EXECUTION_EXPIRY - HANDOVER_DRAIN_TIMEOUT));
+      if (stillNotDrained) {
+        // Past the lock TTL a commit no longer beats the successor's next acquire attempt, so
+        // there is nothing left to protect by lingering. This should never happen — it means an
+        // RPC/API call has hung for the full TTL without settling.
+        this.logger.error({
+          at: "DepositAddressHandler#waitForDisconnect",
+          message:
+            "In-flight work still unsettled after the pending-execution lock TTL; exiting. Any broadcast in that work is now unguarded — reconcile manually.",
+          inFlightTicks: this.inFlightTicks.size,
+          totalWaitSeconds: PENDING_EXECUTION_EXPIRY,
+          notificationPath: "across-bot-error",
+        });
+      }
+    }
   }
 
   /** Registers a poll tick for handover draining. Returns a chained promise so scheduleTask's
@@ -445,19 +476,21 @@ export class DepositAddressHandler {
   }
 
   /**
-   * Waits (bounded) for in-flight poll ticks to settle after the abort signal fired. A tick that
-   * has broadcast a tx commits the executed member and releases its pending-execution lock as it
-   * settles; exiting before that leaves the transfer lock-deferred on the successor until the
-   * lock's TTL expires.
+   * Waits (bounded) for in-flight poll ticks to settle after the abort signal fired, returning
+   * false on timeout. A tick that has broadcast a tx commits the executed member and releases
+   * its pending-execution lock as it settles; exiting before that leaves the transfer
+   * lock-deferred on the successor until the lock's TTL expires — and, worse, uncommitted if the
+   * tx confirms after this process's Redis clients are gone (see waitForDisconnect).
    */
-  private async drainInFlightWork(timeoutSeconds: number): Promise<void> {
+  private async drainInFlightWork(timeoutSeconds: number): Promise<boolean> {
     if (this.inFlightTicks.size === 0) {
-      return;
+      return true;
     }
     this.logger.debug({
       at: "DepositAddressHandler#drainInFlightWork",
       message: "Draining in-flight poll ticks before ceding",
       inFlightTicks: this.inFlightTicks.size,
+      timeoutSeconds,
     });
     let timedOut = false;
     const timeoutScope = new AbortController();
@@ -468,20 +501,13 @@ export class DepositAddressHandler {
     // Cancel the timeout timer: a plain delay would keep the event loop alive for the full
     // timeout after a clean drain, holding up process exit on healthy handovers.
     timeoutScope.abort();
-    if (timedOut) {
-      this.logger.warn({
-        at: "DepositAddressHandler#drainInFlightWork",
-        message:
-          "In-flight work did not settle within the drain timeout; exiting anyway. Pending-execution locks keep the successor off any broadcast still in flight.",
-        inFlightTicks: this.inFlightTicks.size,
-        timeoutSeconds,
-      });
-    } else {
+    if (!timedOut) {
       this.logger.debug({
         at: "DepositAddressHandler#drainInFlightWork",
         message: "Drained all in-flight poll ticks",
       });
     }
+    return !timedOut;
   }
 
   private async evaluateDepositAddresses(): Promise<void> {
@@ -593,16 +619,21 @@ export class DepositAddressHandler {
   }
 
   /**
-   * Returns true when another instance holds the pending-execution lock for this depositKey —
-   * a cheap early skip ahead of the balance/quote work. The authoritative exclusion is the
-   * atomic acquire in preBroadcastCheckpoint; locks held by this instance don't defer it (its
-   * in-memory in-flight sets are strictly better informed, and blocking on our own lock would
-   * stall the normal retry path after a failed submit).
+   * Returns true when ANY instance — this one included — holds the pending-execution lock for
+   * this depositKey; a cheap early skip ahead of the balance/quote work. The authoritative
+   * exclusion is the atomic acquire in preBroadcastCheckpoint.
+   *
+   * Own locks defer too: the only way this instance re-encounters its own live lock is after an
+   * unknown-outcome submit (a "failed" sendAndConfirm may still have broadcast — see the
+   * failed-submit branches), and retrying while that tx may be pending in the mempool is how the
+   * same sweep gets submitted twice. Every known-not-broadcast failure path either never
+   * acquires the lock (it fails before the checkpoint) or releases it, so deferring on own locks
+   * stalls nothing legitimate.
    */
-  private async hasForeignPendingExecution(depositKey: string): Promise<boolean> {
+  private async hasPendingExecution(depositKey: string): Promise<boolean> {
     assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
     const owner = await this.redisCache.get<string>(this.getPendingExecutionRedisKey(depositKey));
-    return isDefined(owner) && owner !== this.config.runIdentifier;
+    return isDefined(owner);
   }
 
   /**
@@ -631,9 +662,11 @@ export class DepositAddressHandler {
    * any time, even while two instances run concurrently through a handover:
    *   1. Bail when a handover/shutdown was observed mid-message — the successor is already
    *      running and re-evaluates the transfer fresh.
-   *   2. Atomically acquire the transfer's pending-execution lock (SET NX). A token-guarded
-   *      renew covers this instance's own retries after a failed submit; a lock held by another
-   *      instance defers the transfer (it may have a broadcast in flight).
+   *   2. Atomically acquire the transfer's pending-execution lock (SET NX). ANY existing lock
+   *      defers the transfer — a foreign one means the other instance may have a broadcast in
+   *      flight; an own one only survives an unknown-outcome submit, whose tx may equally still
+   *      land (retrying against it is how the same sweep gets submitted twice). The TTL bounds
+   *      the deferral.
    *   3. Re-check the committed set under the lock: the other instance may have committed and
    *      released between this tick's refresh and now.
    *   4. Re-check the abort signal after the Redis round-trips: a handover/shutdown can land
@@ -662,13 +695,13 @@ export class DepositAddressHandler {
     const { runIdentifier } = this.config;
     const ttlMs = PENDING_EXECUTION_EXPIRY * 1000;
     try {
-      const acquired =
-        (await redisCache.acquireLock(pendingKey, runIdentifier, ttlMs)) ||
-        (await redisCache.renewLock(pendingKey, runIdentifier, ttlMs));
+      // SET NX only — deliberately NO own-token renew: an own lock that still exists here stems
+      // from an unknown-outcome submit and must defer like any other (see hasPendingExecution).
+      const acquired = await redisCache.acquireLock(pendingKey, runIdentifier, ttlMs);
       if (!acquired) {
         this.logger.debug({
           at,
-          message: "Skipping broadcast: pending-execution lock held by another instance",
+          message: "Skipping broadcast: pending-execution lock already held (foreign instance, or own unknown-outcome submit)",
           depositKey,
         });
         return false;
@@ -825,12 +858,13 @@ export class DepositAddressHandler {
       return;
     }
 
-    // Defer while another instance holds this transfer's pending-execution lock (it crashed or
-    // is still draining a broadcast); the lock expires via TTL if that instance never resolves it.
-    if (await this.hasForeignPendingExecution(depositKey)) {
+    // Defer while any instance holds this transfer's pending-execution lock — a foreign one
+    // (crashed, or still draining a broadcast) or our own left by an unknown-outcome submit; the
+    // lock expires via TTL if its owner never resolves it.
+    if (await this.hasPendingExecution(depositKey)) {
       this.logger.debug({
         at: "DepositAddressHandler#initiateWithdraw",
-        message: "Skipping withdraw: pending-execution lock held by another instance",
+        message: "Skipping withdraw: pending-execution lock held (foreign instance, or own unknown-outcome submit)",
         refTxHash,
         depositKey,
       });
@@ -933,7 +967,8 @@ export class DepositAddressHandler {
       const receipt = await this.sendAndConfirm(withdrawTx, useDispatcher);
       if (!isDefined(receipt)) {
         // Pending-execution lock intentionally kept: the tx may still have broadcast
-        // (confirmation failure), so let the TTL expire it rather than invite a replay.
+        // (confirmation failure), so let the TTL expire it rather than invite a replay. The lock
+        // defers ALL retries — this instance's included — until the outcome window has passed.
         this.logger.warn({
           at: "DepositAddressHandler#initiateWithdraw",
           message: "Failed to submit withdraw tx",
@@ -1199,12 +1234,13 @@ export class DepositAddressHandler {
       return;
     }
 
-    // Defer while another instance holds this transfer's pending-execution lock (it crashed or
-    // is still draining a broadcast); the lock expires via TTL if that instance never resolves it.
-    if (await this.hasForeignPendingExecution(depositKey)) {
+    // Defer while any instance holds this transfer's pending-execution lock — a foreign one
+    // (crashed, or still draining a broadcast) or our own left by an unknown-outcome submit; the
+    // lock expires via TTL if its owner never resolves it.
+    if (await this.hasPendingExecution(depositKey)) {
       this.logger.debug({
         at: "DepositAddressHandler#initiateDeposit",
-        message: "Skipping deposit: pending-execution lock held by another instance",
+        message: "Skipping deposit: pending-execution lock held (foreign instance, or own unknown-outcome submit)",
         refTxHash,
         depositKey,
       });
@@ -1338,7 +1374,8 @@ export class DepositAddressHandler {
 
     if (!depositReceipt) {
       // Pending-execution lock intentionally kept: the tx may still have broadcast
-      // (confirmation failure), so let the TTL expire it rather than invite a replay.
+      // (confirmation failure), so let the TTL expire it rather than invite a replay. The lock
+      // defers ALL retries — this instance's included — until the outcome window has passed.
       this.logger.warn({
         at: "DepositAddressHandler#initiateDeposit",
         message: "Failed to submit execute tx",
@@ -1393,12 +1430,13 @@ export class DepositAddressHandler {
       return;
     }
 
-    // Defer while another instance holds this transfer's pending-execution lock (it crashed or
-    // is still draining a broadcast); the lock expires via TTL if that instance never resolves it.
-    if (await this.hasForeignPendingExecution(depositKey)) {
+    // Defer while any instance holds this transfer's pending-execution lock — a foreign one
+    // (crashed, or still draining a broadcast) or our own left by an unknown-outcome submit; the
+    // lock expires via TTL if its owner never resolves it.
+    if (await this.hasPendingExecution(depositKey)) {
       this.logger.debug({
         at: "DepositAddressHandler#initiateDepositV3",
-        message: "Skipping deposit: pending-execution lock held by another instance",
+        message: "Skipping deposit: pending-execution lock held (foreign instance, or own unknown-outcome submit)",
         refTxHash,
         depositKey,
       });
@@ -1504,7 +1542,8 @@ export class DepositAddressHandler {
       const depositReceipt = await this.sendAndConfirm(executeTx, useDispatcher);
       if (!isDefined(depositReceipt)) {
         // Pending-execution lock intentionally kept: the tx may still have broadcast
-        // (confirmation failure), so let the TTL expire it rather than invite a replay.
+        // (confirmation failure), so let the TTL expire it rather than invite a replay. The lock
+        // defers ALL retries — this instance's included — until the outcome window has passed.
         this.logger.warn({
           at: "DepositAddressHandler#initiateDepositV3",
           message: "Failed to submit execute tx",
@@ -1709,12 +1748,13 @@ export class DepositAddressHandler {
       return;
     }
 
-    // Defer while another instance holds this transfer's pending-execution lock (it crashed or
-    // is still draining a broadcast); the lock expires via TTL if that instance never resolves it.
-    if (await this.hasForeignPendingExecution(depositKey)) {
+    // Defer while any instance holds this transfer's pending-execution lock — a foreign one
+    // (crashed, or still draining a broadcast) or our own left by an unknown-outcome submit; the
+    // lock expires via TTL if its owner never resolves it.
+    if (await this.hasPendingExecution(depositKey)) {
       this.logger.debug({
         at: "DepositAddressHandler#initiateWithdrawV3",
-        message: "Skipping withdraw: pending-execution lock held by another instance",
+        message: "Skipping withdraw: pending-execution lock held (foreign instance, or own unknown-outcome submit)",
         refTxHash,
         depositKey,
       });
@@ -1856,7 +1896,8 @@ export class DepositAddressHandler {
       const receipt = await this.sendAndConfirm(withdrawTx, useDispatcher);
       if (!isDefined(receipt)) {
         // Pending-execution lock intentionally kept: the tx may still have broadcast
-        // (confirmation failure), so let the TTL expire it rather than invite a replay.
+        // (confirmation failure), so let the TTL expire it rather than invite a replay. The lock
+        // defers ALL retries — this instance's included — until the outcome window has passed.
         this.logger.warn({
           at: "DepositAddressHandler#initiateWithdrawV3",
           message: "Failed to submit withdraw tx",

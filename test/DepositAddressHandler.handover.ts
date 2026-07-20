@@ -176,7 +176,7 @@ type HandlerInternals = {
   initiateWithdraw: (m: DepositAddressMessage) => Promise<void>;
   evaluateDepositAddresses: () => Promise<void>;
   trackTick: (tick: Promise<unknown>) => Promise<unknown>;
-  drainInFlightWork: (timeoutSeconds: number) => Promise<void>;
+  drainInFlightWork: (timeoutSeconds: number) => Promise<boolean>;
   waitForDisconnect: () => Promise<void>;
   observedExecutedDeposits: { [chainId: number]: Set<string> };
   executedDepositTxHashes: Set<string>;
@@ -250,17 +250,20 @@ describe("DepositAddressHandler pending-execution locks", function () {
     expect(redis.store.get(pendingKey(message))).to.equal(OTHER_INSTANCE);
   });
 
-  it("does not defer on its own lock (normal retry path renews it)", async function () {
-    const { internals, redis, sendStub } = buildHandler();
+  it("defers on its own lock: an own lock only survives an unknown-outcome submit", async function () {
+    const { internals, redis, sendStub, executeTxStub } = buildHandler();
     const message = depositMessageV3();
     redis.store.set(pendingKey(message), RUN_IDENTIFIER);
 
     await internals.initiateDepositV3(message);
 
-    expect(sendStub.calledOnce).to.equal(true);
+    // Retrying while our own possibly-broadcast tx may still land is how a sweep double-submits.
+    expect(executeTxStub.notCalled).to.equal(true);
+    expect(sendStub.notCalled).to.equal(true);
+    expect(redis.store.get(pendingKey(message))).to.equal(RUN_IDENTIFIER);
   });
 
-  it("keeps the lock on a failed submit and still allows this instance to retry", async function () {
+  it("keeps the lock on a failed submit, defers retries until the TTL clears it", async function () {
     const { internals, redis, sendStub } = buildHandler();
     const message = depositMessageV3();
     sendStub.resolves(undefined);
@@ -270,9 +273,17 @@ describe("DepositAddressHandler pending-execution locks", function () {
     // A failed sendAndConfirm may still have broadcast; the lock must outlive it (TTL cleanup).
     expect(redis.store.get(pendingKey(message))).to.equal(RUN_IDENTIFIER);
     expect(redis.sets.has(EXECUTED_KEY)).to.equal(false);
-    // The in-flight lock was released, and the own pending lock renews rather than blocks.
+
+    // While the lock stands, this instance's own retry defers like anyone else's.
+    await internals.initiateDepositV3(message);
+    expect(sendStub.calledOnce).to.equal(true);
+
+    // Once the TTL expires the lock, the retry proceeds.
+    redis.store.delete(pendingKey(message));
+    sendStub.resolves(fakeReceipt());
     await internals.initiateDepositV3(message);
     expect(sendStub.calledTwice).to.equal(true);
+    expect(redis.sets.get(EXECUTED_KEY)?.has(message.erc20Transfer.transactionHash)).to.equal(true);
   });
 
   it("does not broadcast when another instance acquires the lock after the early foreign check", async function () {
@@ -512,7 +523,23 @@ describe("DepositAddressHandler handover draining", function () {
   it("drainInFlightWork gives up after the timeout when a tick never settles", async function () {
     const { internals } = buildHandler();
     void internals.trackTick(new Promise(() => undefined));
-    await internals.drainInFlightWork(0);
+    expect(await internals.drainInFlightWork(0)).to.equal(false);
+  });
+
+  it("waitForDisconnect holds Redis open past the expected drain window for a slow tick", async function () {
+    const { handler, internals } = buildHandler();
+    const coordinator = { subscribe: sinon.stub().resolves(OTHER_INSTANCE) };
+    // First (expected) drain window times out — the tick is still between broadcast and commit;
+    // the second phase must keep waiting up to the pending-execution lock TTL instead of
+    // returning and letting the entrypoint tear Redis down under the tick.
+    const drainStub = sinon.stub().onFirstCall().resolves(false).onSecondCall().resolves(true);
+    Object.assign(handler, { _instanceCoordinator: coordinator, drainInFlightWork: drainStub });
+
+    await internals.waitForDisconnect();
+
+    expect(drainStub.calledTwice).to.equal(true);
+    expect(drainStub.firstCall.args[0]).to.equal(90); // HANDOVER_DRAIN_TIMEOUT
+    expect(drainStub.secondCall.args[0]).to.equal(810); // PENDING_EXECUTION_EXPIRY - HANDOVER_DRAIN_TIMEOUT
   });
 
   it("waitForDisconnect aborts, then drains in-flight work before resolving", async function () {

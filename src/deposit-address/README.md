@@ -42,17 +42,21 @@ Three mechanisms make the overlap safe:
 1. **Per-transfer pending-execution locks.** Immediately before every fund-moving broadcast the
    handler atomically acquires `deposit-address:pending-execution:<botIdentifier>:<depositKey>`
    (SET NX; value: the acquiring instance's run identifier, TTL `PENDING_EXECUTION_EXPIRY` =
-   15 min) and refuses to broadcast without it. A lock held by **another** instance defers the
-   transfer; a token-guarded renew covers this instance's own retries, so the same-instance retry
-   path is unaffected. Under the lock, the handler re-checks the committed set (`SISMEMBER`)
+   15 min) and refuses to broadcast without it. **Any** existing lock defers the transfer — a
+   foreign one means the other instance may have a broadcast in flight, and an own one only
+   survives an unknown-outcome submit (a "failed" `sendAndConfirm` may still have broadcast), so
+   retrying against it could submit the same sweep twice while the first tx sits in the mempool.
+   Known-not-broadcast failures never hold a lock (they fail before the checkpoint acquires it),
+   so their fast retry path is unaffected. Under the lock, the handler re-checks the committed
+   set (`SISMEMBER`)
    before broadcasting — catching an execution the other instance committed and released between
    this tick's refresh and now — and re-checks the abort signal, since a handover/shutdown can
    land while the acquire round-trip is pending (nothing was broadcast, so the just-acquired lock
    is released rather than left to defer the successor for the full TTL). The lock is released
    only after the confirmed execution is
-   committed; after a failed submit it is intentionally left to expire via TTL, since a "failed"
-   send may still have broadcast. Consequence: if an instance dies mid-flight, the successor
-   defers that one transfer for up to 15 minutes instead of risking a replay — a deferred sweep
+   committed; after a failed submit it is intentionally left to expire via TTL. Consequence: if
+   an instance dies mid-flight (or a submit outcome is unknown), the transfer is deferred for up
+   to 15 minutes instead of risking a replay — a deferred sweep
    is recoverable, a double-spend is not. The deploy tx on the v1 deposit path carries no lock:
    it moves no funds and replays are guarded by the `isContractDeployed` check.
 2. **Concurrency-safe committed sets.** The executed/withdrawn/terminal-skip sets are native
@@ -70,9 +74,14 @@ Three mechanisms make the overlap safe:
    once the rollout settles.
 3. **Drain on the way out.** On observing a handover (or SIGHUP), the outgoing instance aborts
    new work — the poll loop initiates no new executions once the abort signal fires, and a
-   pre-broadcast abort check bails mid-message — then waits up to `HANDOVER_DRAIN_TIMEOUT` (90s)
-   for in-flight poll ticks to settle, so a broadcast tx gets confirmed and committed rather than
-   orphaned. Its locks keep the successor off those transfers while it drains; if it dies
+   pre-broadcast abort check bails mid-message — then waits for in-flight poll ticks to settle,
+   so a broadcast tx gets confirmed and committed rather than orphaned. The wait is two-phase:
+   past the expected window (`HANDOVER_DRAIN_TIMEOUT`, 90s) it warns but keeps the process — and
+   its Redis clients — alive up to the pending-execution lock TTL, because exiting would tear
+   Redis down under a tick sitting between broadcast and commit, and a tx confirming after that
+   leaves no committed record for the successor once the lock expires. The successor is already
+   serving, so a lingering old process costs nothing. Its locks keep the successor off those
+   transfers while it drains; if it dies
    instead, the lock TTL bounds the deferral. A shutdown observed while still inside
    `initialize()` cedes before polling ever starts (the entrypoint checks `relayer.aborted`, and
    `scheduleTask` refuses to schedule on an already-aborted signal) — and cedes **without taking
