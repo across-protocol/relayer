@@ -46,8 +46,10 @@ Three mechanisms make the overlap safe:
    foreign one means the other instance may have a broadcast in flight, and an own one only
    survives an unknown-outcome submit (a "failed" `sendAndConfirm` may still have broadcast), so
    retrying against it could submit the same sweep twice while the first tx sits in the mempool.
-   Known-not-broadcast failures never hold a lock (they fail before the checkpoint acquires it),
-   so their fast retry path is unaffected. Under the lock, the handler re-checks the committed
+   Known-no-broadcast failures keep their fast retry path: most fail before the checkpoint ever
+   acquires the lock, and a pre-flight simulation failure inside the submit pipeline (which
+   throws before anything is signed or sent) releases the just-acquired lock immediately —
+   classification errs toward deferral, never toward fast-retrying a possible broadcast. Under the lock, the handler re-checks the committed
    set (`SISMEMBER`)
    before broadcasting — catching an execution the other instance committed and released between
    this tick's refresh and now — and re-checks the abort signal, since a handover/shutdown can
@@ -77,9 +79,13 @@ Three mechanisms make the overlap safe:
    pre-broadcast abort check bails mid-message — then waits for in-flight poll ticks to settle,
    so a broadcast tx gets confirmed and committed rather than orphaned. The wait is two-phase:
    past the expected window (`HANDOVER_DRAIN_TIMEOUT`, 90s) it warns but keeps the process — and
-   its Redis clients — alive up to the pending-execution lock TTL, because exiting would tear
-   Redis down under a tick sitting between broadcast and commit, and a tx confirming after that
-   leaves no committed record for the successor once the lock expires. The successor is already
+   its Redis clients — alive up to one full pending-execution lock TTL, because exiting would
+   tear Redis down under a tick sitting between broadcast and commit, and a tx confirming after
+   that leaves no committed record for the successor once the lock expires. Held locks are
+   renewed throughout the drain (immediately, then every TTL/3): each lock's TTL runs from its
+   acquisition, not from the handover, so a broadcast already in flight for most of the TTL
+   would otherwise lose its lock mid-drain; the final renewal on the way out also leaves any
+   unresolved lock a full TTL of successor deferral. The successor is already
    serving, so a lingering old process costs nothing. Its locks keep the successor off those
    transfers while it drains; if it dies
    instead, the lock TTL bounds the deferral. A shutdown observed while still inside
@@ -249,7 +255,7 @@ Three sets persist across runs so handover does not double-spend, double-refund,
 - `deposit-address:withdrawn-deposit-keys:<botIdentifier>:v2` — set of `depositKey` (`depositAddress:transactionHash`) for successfully executed refund withdraws.
 - `deposit-address:skipped-withdraw-keys:<botIdentifier>:v2` — set of `depositKey` for v3 refund withdraws the quote-api rejected with a terminal 422 (`GAS_EXCEEDS_REFUND` / `UNPRICEABLE_REFUND_TOKEN`); never re-attempted.
 
-On boot, an empty `:v2` set is seeded from the legacy JSON-blob key of the same name without the suffix (pre-migration format); the legacy key is left in place for rollback and expires via its own TTL. Set keys refresh a 14-day TTL (`PERSISTED_SET_EXPIRY`) on every commit.
+On every boot, the legacy JSON-blob key of the same name without the suffix (pre-migration format) is union-merged into the `:v2` set — not only when the set is empty: after a rollback, the legacy build commits only to the blob, and those members would otherwise be lost on re-upgrade. The legacy key is left in place for rollback (each commit mirrors the in-memory view into it) and expires via its own TTL. Set keys refresh a 14-day TTL (`PERSISTED_SET_EXPIRY`) on every commit.
 
 On each poll the sets are re-read from Redis (union-merged into memory, so a concurrent instance's commits are picked up within a tick) and entries whose source messages are no longer returned by the indexer are pruned from memory and Redis — the indexer has its own TTL and stops returning expired messages.
 

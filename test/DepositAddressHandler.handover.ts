@@ -180,6 +180,7 @@ type HandlerInternals = {
   waitForDisconnect: () => Promise<void>;
   observedExecutedDeposits: { [chainId: number]: Set<string> };
   executedDepositTxHashes: Set<string>;
+  heldPendingLocks: Set<string>;
   _loadPersistedSet: (redisKey: string, legacyRedisKey: string) => Promise<Set<string>>;
 };
 
@@ -203,7 +204,7 @@ function buildHandler(): {
   const handler = new DepositAddressHandler(logger, config, {} as unknown as Signer, [{} as unknown as Signer]);
 
   const redis = new FakeRedis();
-  const sendStub = sinon.stub().resolves(fakeReceipt());
+  const sendStub = sinon.stub().resolves({ receipt: fakeReceipt(), mayHaveBroadcast: true });
   const executeTxStub = sinon.stub().resolves(executeResponse());
   const balanceStub = sinon.stub().resolves(toBN("5000"));
   Object.assign(handler, {
@@ -227,7 +228,7 @@ describe("DepositAddressHandler pending-execution locks", function () {
     sendStub.callsFake(async () => {
       // At broadcast time the pending-execution lock must be held under this instance's token.
       expect(redis.store.get(pendingKey(message))).to.equal(RUN_IDENTIFIER);
-      return fakeReceipt();
+      return { receipt: fakeReceipt(), mayHaveBroadcast: true };
     });
 
     await internals.initiateDepositV3(message);
@@ -266,7 +267,7 @@ describe("DepositAddressHandler pending-execution locks", function () {
   it("keeps the lock on a failed submit, defers retries until the TTL clears it", async function () {
     const { internals, redis, sendStub } = buildHandler();
     const message = depositMessageV3();
-    sendStub.resolves(undefined);
+    sendStub.resolves({ receipt: undefined, mayHaveBroadcast: true });
 
     await internals.initiateDepositV3(message);
 
@@ -280,7 +281,25 @@ describe("DepositAddressHandler pending-execution locks", function () {
 
     // Once the TTL expires the lock, the retry proceeds.
     redis.store.delete(pendingKey(message));
-    sendStub.resolves(fakeReceipt());
+    sendStub.resolves({ receipt: fakeReceipt(), mayHaveBroadcast: true });
+    await internals.initiateDepositV3(message);
+    expect(sendStub.calledTwice).to.equal(true);
+    expect(redis.sets.get(EXECUTED_KEY)?.has(message.erc20Transfer.transactionHash)).to.equal(true);
+  });
+
+  it("releases the lock and keeps the fast retry path on a known no-broadcast failure", async function () {
+    const { internals, redis, sendStub } = buildHandler();
+    const message = depositMessageV3();
+    // Pre-flight simulation failed before anything was signed or sent.
+    sendStub.resolves({ receipt: undefined, mayHaveBroadcast: false });
+
+    await internals.initiateDepositV3(message);
+
+    expect(redis.store.has(pendingKey(message))).to.equal(false);
+    expect(redis.sets.has(EXECUTED_KEY)).to.equal(false);
+
+    // The next poll retries immediately — no TTL deferral for a provably-unsent tx.
+    sendStub.resolves({ receipt: fakeReceipt(), mayHaveBroadcast: true });
     await internals.initiateDepositV3(message);
     expect(sendStub.calledTwice).to.equal(true);
     expect(redis.sets.get(EXECUTED_KEY)?.has(message.erc20Transfer.transactionHash)).to.equal(true);
@@ -311,7 +330,7 @@ describe("DepositAddressHandler pending-execution locks", function () {
     sendStub.callsFake(async () => {
       // Simulate TTL expiry + re-acquisition by the other instance while the tx confirms.
       redis.store.set(pendingKey(message), OTHER_INSTANCE);
-      return fakeReceipt();
+      return { receipt: fakeReceipt(), mayHaveBroadcast: true };
     });
 
     await internals.initiateDepositV3(message);
@@ -477,14 +496,18 @@ describe("DepositAddressHandler committed-set refresh, prune and migration", fun
     expect(redis.store.has(LEGACY_EXECUTED_KEY)).to.equal(true);
   });
 
-  it("prefers the native set over the legacy blob once it is populated", async function () {
+  it("merges legacy-only members into a populated native set (rollback recovery)", async function () {
     const { internals, redis } = buildHandler();
+    // The v2 set is already populated (pre-rollback commits); the legacy blob carries a member
+    // committed by the rolled-back build that exists nowhere else. Skipping the merge would make
+    // that execution replayable.
     redis.sets.set(EXECUTED_KEY, new Set(["0xccc"]));
-    redis.store.set(LEGACY_EXECUTED_KEY, JSON.stringify(["0xaaa"]));
+    redis.store.set(LEGACY_EXECUTED_KEY, JSON.stringify(["0xaaa", "0xccc"]));
 
     const loaded = await internals._loadPersistedSet(EXECUTED_KEY, LEGACY_EXECUTED_KEY);
 
-    expect([...loaded]).to.deep.equal(["0xccc"]);
+    expect([...loaded].sort()).to.deep.equal(["0xaaa", "0xccc"]);
+    expect([...(redis.sets.get(EXECUTED_KEY) ?? [])].sort()).to.deep.equal(["0xaaa", "0xccc"]);
   });
 });
 
@@ -524,6 +547,26 @@ describe("DepositAddressHandler handover draining", function () {
     const { internals } = buildHandler();
     void internals.trackTick(new Promise(() => undefined));
     expect(await internals.drainInFlightWork(0)).to.equal(false);
+  });
+
+  it("waitForDisconnect renews held pending-execution locks while draining", async function () {
+    const { handler, internals, redis } = buildHandler();
+    const message = depositMessageV3();
+    const coordinator = { subscribe: sinon.stub().resolves(OTHER_INSTANCE) };
+    Object.assign(handler, { _instanceCoordinator: coordinator });
+    // An unknown-outcome submit left this lock held (and tracked) before the handover; its TTL
+    // runs from acquisition, so the drain must renew it or the successor could acquire the
+    // expired key mid-drain.
+    redis.store.set(pendingKey(message), RUN_IDENTIFIER);
+    internals.heldPendingLocks.add(getDepositKey(message));
+    const renewSpy = sinon.spy(redis, "renewLock");
+
+    await internals.waitForDisconnect();
+
+    // Renewed immediately at drain start and once more on the way out.
+    expect(renewSpy.callCount).to.be.greaterThanOrEqual(2);
+    expect(renewSpy.firstCall.args[0]).to.equal(pendingKey(message));
+    expect(renewSpy.firstCall.args[1]).to.equal(RUN_IDENTIFIER);
   });
 
   it("waitForDisconnect holds Redis open past the expected drain window for a slow tick", async function () {
