@@ -15,9 +15,9 @@ export async function runDepositAddressHandler(_logger: winston.Logger, baseSign
   try {
     const start = Date.now();
 
-    // initialize() cedes without loading state when a shutdown or a newer instance is observed
-    // while it waits for the predecessor drain; a stale instance must not start polling. It still
-    // falls through to waitForDisconnect below so its drained signal reaches any successor.
+    // A shutdown (SIGHUP/disconnect) observed during initialize() means this instance already
+    // ceded; it must not start polling. It still falls through to waitForDisconnect below so any
+    // in-flight work drains before exit.
     if (relayer.aborted) {
       logger.debug({
         at: "DepositAddressHandler#index",
