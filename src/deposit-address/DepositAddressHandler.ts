@@ -11,7 +11,7 @@ import {
   forEachAsync,
   getProvider,
   Contract,
-  delay,
+  abortableDelay,
   sendAndConfirmTransaction,
   getCounterfactualDepositFactory,
   buildDeployTx,
@@ -242,11 +242,6 @@ export class DepositAddressHandler {
       this.observedExecutedWithdraws[chainId] = new Set<string>();
     });
 
-    // Establish bot instance and take over. The predecessor keeps draining its in-flight
-    // executions concurrently — service is continuous. Replay safety does not depend on it
-    // being done: every fund-moving broadcast is guarded by the per-transfer pending-execution
-    // lock and a committed-set re-check under that lock (see preBroadcastCheckpoint), and the
-    // committed sets are re-read from Redis every poll tick.
     this.instanceCoordinator = new InstanceCoordinator(
       this.logger,
       this.redisCache,
@@ -254,8 +249,12 @@ export class DepositAddressHandler {
       this.config.runIdentifier,
       this.abortController
     );
-    await this.instanceCoordinator.initiateHandover();
 
+    // Load state BEFORE taking the lease: staleness is harmless (the committed sets are re-read
+    // from Redis every poll tick), and ordering the lease last shrinks the window in which a
+    // SIGHUP/disconnect leaves this instance holding a lease it will never poll on — that would
+    // make a healthy predecessor cede for nothing, leaving no handler running until the next
+    // external restart.
     this.executedDepositTxHashes = await this._loadPersistedSet(
       this.getExecutedDepositsRedisKey(),
       this.getLegacyExecutedDepositsRedisKey()
@@ -275,6 +274,21 @@ export class DepositAddressHandler {
       executedWithdraws: this.executedWithdrawKeys.size,
       terminallySkippedWithdraws: this.terminallySkippedWithdrawKeys.size,
     });
+
+    // A shutdown observed during boot cedes WITHOUT taking the lease (the entrypoint checks
+    // `aborted` and skips polling); only the lease-write itself remains as an unavoidable
+    // sub-second window. Taking over is otherwise safe while the predecessor keeps draining
+    // concurrently — service is continuous, and replay safety does not depend on the drain:
+    // every fund-moving broadcast is guarded by the per-transfer pending-execution lock and a
+    // committed-set re-check under that lock (see preBroadcastCheckpoint).
+    if (this.abortController.signal.aborted) {
+      this.logger.warn({
+        at: "DepositAddressHandler#initialize",
+        message: "Shutdown observed during initialization; ceding without taking the instance lease.",
+      });
+      return;
+    }
+    await this.instanceCoordinator.initiateHandover();
 
     this.initialized = true;
   }
@@ -446,10 +460,14 @@ export class DepositAddressHandler {
       inFlightTicks: this.inFlightTicks.size,
     });
     let timedOut = false;
+    const timeoutScope = new AbortController();
     await Promise.race([
       Promise.allSettled([...this.inFlightTicks]),
-      delay(timeoutSeconds).then(() => (timedOut = true)),
+      abortableDelay(timeoutSeconds, timeoutScope.signal).then(() => (timedOut = !timeoutScope.signal.aborted)),
     ]);
+    // Cancel the timeout timer: a plain delay would keep the event loop alive for the full
+    // timeout after a clean drain, holding up process exit on healthy handovers.
+    timeoutScope.abort();
     if (timedOut) {
       this.logger.warn({
         at: "DepositAddressHandler#drainInFlightWork",
@@ -467,7 +485,29 @@ export class DepositAddressHandler {
   }
 
   private async evaluateDepositAddresses(): Promise<void> {
+    // Capture prune candidates before anything async: only a member already known when the
+    // indexer snapshot below is taken may be pruned against that snapshot. A member imported by
+    // this tick's refresh can have been committed by a concurrently-running instance AFTER the
+    // snapshot was taken — its absence from the snapshot proves nothing, and pruning it would
+    // re-open the replay window. It becomes prunable one tick later, when the snapshot postdates
+    // its commit.
+    const pruneCandidates = {
+      executedDeposits: new Set(this.executedDepositTxHashes),
+      executedWithdraws: new Set(this.executedWithdrawKeys),
+      terminallySkipped: new Set(this.terminallySkippedWithdrawKeys),
+    };
+
     const depositMessages = await this._queryIndexerApi();
+    // A failed poll is not an empty snapshot: there is nothing to execute, and pruning against
+    // it would SREM every committed member from Redis — durably dropping replay protection on a
+    // transient indexer outage. Skip the whole tick.
+    if (!isDefined(depositMessages)) {
+      this.logger.warn({
+        at: "DepositAddressHandler#evaluateDepositAddresses",
+        message: "Indexer poll failed; skipping tick (no refresh, prune, or executions)",
+      });
+      return;
+    }
 
     // Refresh the in-memory committed views from Redis so executions committed by a concurrently
     // running instance (e.g. the predecessor draining through a handover) are respected within
@@ -483,12 +523,19 @@ export class DepositAddressHandler {
     const depositKeysFromIndexer = new Set(depositMessages.map((m) => getDepositKey(m)));
     await this._prunePersistedSet(
       this.executedDepositTxHashes,
+      pruneCandidates.executedDeposits,
       refTxHashesFromIndexer,
       this.getExecutedDepositsRedisKey()
     );
-    await this._prunePersistedSet(this.executedWithdrawKeys, depositKeysFromIndexer, this.getWithdrawnKeysRedisKey());
+    await this._prunePersistedSet(
+      this.executedWithdrawKeys,
+      pruneCandidates.executedWithdraws,
+      depositKeysFromIndexer,
+      this.getWithdrawnKeysRedisKey()
+    );
     await this._prunePersistedSet(
       this.terminallySkippedWithdrawKeys,
+      pruneCandidates.terminallySkipped,
       depositKeysFromIndexer,
       this.getSkippedWithdrawKeysRedisKey()
     );
@@ -519,11 +566,21 @@ export class DepositAddressHandler {
     }
   }
 
-  /** Removes members the indexer no longer returns from both the in-memory set and Redis. */
-  private async _prunePersistedSet(memory: Set<string>, current: Set<string>, redisKey: string): Promise<void> {
+  /**
+   * Removes members the indexer no longer returns from both the in-memory set and Redis. Only
+   * `candidates` (the members known before the tick's indexer snapshot) are considered: a member
+   * that entered `memory` via this tick's refresh may postdate the snapshot, so its absence from
+   * it is meaningless — see evaluateDepositAddresses.
+   */
+  private async _prunePersistedSet(
+    memory: Set<string>,
+    candidates: Set<string>,
+    current: Set<string>,
+    redisKey: string
+  ): Promise<void> {
     assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
     const { redisCache } = this;
-    for (const member of [...memory]) {
+    for (const member of candidates) {
       if (!current.has(member)) {
         memory.delete(member);
         await redisCache.sRem(redisKey, member);
@@ -579,6 +636,8 @@ export class DepositAddressHandler {
    *      instance defers the transfer (it may have a broadcast in flight).
    *   3. Re-check the committed set under the lock: the other instance may have committed and
    *      released between this tick's refresh and now.
+   *   4. Re-check the abort signal after the Redis round-trips: a handover/shutdown can land
+   *      while the acquire is pending, and the process may already be past its drain wait.
    * MUST be awaited immediately before every fund-moving broadcast: if this instance then dies
    * before committing, the held lock is what stands between the successor and a replayed
    * execution. Returns false when the caller must NOT broadcast; fails closed on Redis errors.
@@ -622,6 +681,21 @@ export class DepositAddressHandler {
           committedMember,
         });
         await redisCache.releaseLock(pendingKey, runIdentifier);
+        return false;
+      }
+      // Re-check after the Redis round-trips: an abort that lands while the acquire/re-check is
+      // pending must not proceed — the drain wait may have already timed out and the process may
+      // be tearing down, so a broadcast now risks dying between broadcast and commit (an
+      // untracked execution, the exact replay window the lock exists to close). Nothing was
+      // broadcast, so releasing the just-acquired lock is safe and spares the successor the TTL
+      // defer.
+      if (this.abortController.signal.aborted) {
+        await redisCache.releaseLock(pendingKey, runIdentifier);
+        this.logger.debug({
+          at,
+          message: "Skipping broadcast: handover/shutdown observed while acquiring the pending-execution lock",
+          depositKey,
+        });
         return false;
       }
       return true;
@@ -876,7 +950,12 @@ export class DepositAddressHandler {
       // instances off it until its TTL — a double-send is worse).
       this.executedWithdrawKeys.add(depositKey);
       withdrawCommitted = true;
-      await this._persistCommitted(this.getWithdrawnKeysRedisKey(), depositKey);
+      await this._persistCommitted(
+        this.getWithdrawnKeysRedisKey(),
+        this.getLegacyWithdrawnKeysRedisKey(),
+        this.executedWithdrawKeys,
+        depositKey
+      );
       await this.releasePendingExecution(depositKey);
       await this._publishWithdrawExecuted(receipt, depositMessage);
     } finally {
@@ -936,12 +1015,26 @@ export class DepositAddressHandler {
    * Commits a single member to a persisted committed set. SADD is atomic per member, so
    * concurrent commits from two instances never lose an entry (unlike the previous whole-blob
    * SET). The key's TTL is refreshed on every commit.
+   *
+   * Rollback safety during the v2 rollout: a previous build reads only the legacy blob key, so
+   * an execution recorded only in the v2 set would be replayable after a rollback. Mirror the
+   * (post-refresh, union-merged) in-memory view into the legacy key on every commit. The mirror
+   * keeps the old last-writer-wins semantics, so a concurrent-writer race can drop the OTHER
+   * instance's newest member from the blob — but never from the authoritative v2 set; accepted
+   * for the rollout window. TODO: drop the mirror (and `memory`/`legacyRedisKey` params) once
+   * the v2 rollout has settled past the rollback horizon.
    */
-  private async _persistCommitted(redisKey: string, member: string): Promise<void> {
+  private async _persistCommitted(
+    redisKey: string,
+    legacyRedisKey: string,
+    memory: Set<string>,
+    member: string
+  ): Promise<void> {
     assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
     const { redisCache } = this;
     await redisCache.sAdd(redisKey, member);
     await redisCache.expire(redisKey, PERSISTED_SET_EXPIRY);
+    await redisCache.set(legacyRedisKey, JSON.stringify([...memory]), PERSISTED_SET_EXPIRY);
   }
 
   /**
@@ -1261,7 +1354,12 @@ export class DepositAddressHandler {
 
     // Commit to Redis immediately so a concurrently-running instance cannot miss this execute.
     this.executedDepositTxHashes.add(refTxHash);
-    await this._persistCommitted(this.getExecutedDepositsRedisKey(), refTxHash);
+    await this._persistCommitted(
+      this.getExecutedDepositsRedisKey(),
+      this.getLegacyExecutedDepositsRedisKey(),
+      this.executedDepositTxHashes,
+      refTxHash
+    );
     await this.releasePendingExecution(depositKey);
   }
 
@@ -1423,7 +1521,12 @@ export class DepositAddressHandler {
       // concurrently-running instance cannot miss this execute.
       this.executedDepositTxHashes.add(refTxHash);
       executeCommitted = true;
-      await this._persistCommitted(this.getExecutedDepositsRedisKey(), refTxHash);
+      await this._persistCommitted(
+        this.getExecutedDepositsRedisKey(),
+        this.getLegacyExecutedDepositsRedisKey(),
+        this.executedDepositTxHashes,
+        refTxHash
+      );
       await this.releasePendingExecution(depositKey);
       await this._publishDepositExecuted(depositReceipt, depositMessage);
     } finally {
@@ -1770,7 +1873,12 @@ export class DepositAddressHandler {
       // instances off it until its TTL — a double-send is worse).
       this.executedWithdrawKeys.add(depositKey);
       withdrawCommitted = true;
-      await this._persistCommitted(this.getWithdrawnKeysRedisKey(), depositKey);
+      await this._persistCommitted(
+        this.getWithdrawnKeysRedisKey(),
+        this.getLegacyWithdrawnKeysRedisKey(),
+        this.executedWithdrawKeys,
+        depositKey
+      );
       await this.releasePendingExecution(depositKey);
       await this._publishWithdrawExecuted(receipt, depositMessage);
     } finally {
@@ -1815,7 +1923,12 @@ export class DepositAddressHandler {
       // unpriceable. Persist the skip so it survives handover and is not re-attempted on later polls.
       if (isHttpError(err) && err.status === 422) {
         this.terminallySkippedWithdrawKeys.add(depositKey);
-        await this._persistCommitted(this.getSkippedWithdrawKeysRedisKey(), depositKey);
+        await this._persistCommitted(
+          this.getSkippedWithdrawKeysRedisKey(),
+          this.getLegacySkippedWithdrawKeysRedisKey(),
+          this.terminallySkippedWithdrawKeys,
+          depositKey
+        );
         this.logger.warn({
           at: "DepositAddressHandler#_getSignedWithdrawV3",
           message: "Skipping withdraw permanently: quote-api returned terminal 422",
@@ -1865,8 +1978,11 @@ export class DepositAddressHandler {
 
   /*
    * @notice Queries the Indexer API for all pending deposit addresses transactions. By default, do not retry since this endpoing is being polled.
+   * Returns undefined (NOT an empty array) when the poll fails after retries: the caller must be
+   * able to tell "the indexer returned nothing" from "the indexer was unreachable" — pruning the
+   * committed sets against the latter would delete every replay guard.
    */
-  private async _queryIndexerApi(retriesRemaining = 3): Promise<AnyDepositAddressMessage[]> {
+  private async _queryIndexerApi(retriesRemaining = 3): Promise<AnyDepositAddressMessage[] | undefined> {
     let apiResponseData: AnyDepositAddressMessage[] | undefined = undefined;
     try {
       apiResponseData = await this.indexerApi.get<AnyDepositAddressMessage[]>(this.config.indexerApiEndpoint, {});
@@ -1874,7 +1990,7 @@ export class DepositAddressHandler {
       // Error log should have been emitted in IndexerApiClient.
     }
     if (!isDefined(apiResponseData)) {
-      return retriesRemaining > 0 ? this._queryIndexerApi(--retriesRemaining) : [];
+      return retriesRemaining > 0 ? this._queryIndexerApi(--retriesRemaining) : undefined;
     }
     // Drop unsupported message versions BEFORE normalization. Unsupported payloads (e.g. v2) may
     // not carry the v1 shape (routeParams/erc20Transfer/counterfactualMaterials), and

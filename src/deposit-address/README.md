@@ -46,7 +46,10 @@ Three mechanisms make the overlap safe:
    transfer; a token-guarded renew covers this instance's own retries, so the same-instance retry
    path is unaffected. Under the lock, the handler re-checks the committed set (`SISMEMBER`)
    before broadcasting — catching an execution the other instance committed and released between
-   this tick's refresh and now. The lock is released only after the confirmed execution is
+   this tick's refresh and now — and re-checks the abort signal, since a handover/shutdown can
+   land while the acquire round-trip is pending (nothing was broadcast, so the just-acquired lock
+   is released rather than left to defer the successor for the full TTL). The lock is released
+   only after the confirmed execution is
    committed; after a failed submit it is intentionally left to expire via TTL, since a "failed"
    send may still have broadcast. Consequence: if an instance dies mid-flight, the successor
    defers that one transfer for up to 15 minutes instead of risking a replay — a deferred sweep
@@ -56,7 +59,15 @@ Three mechanisms make the overlap safe:
    Redis sets written with per-member `SADD`/`SREM` (atomic — two writers never clobber each
    other, unlike the previous whole-JSON-blob `SET`s), committed immediately after each confirmed
    execution, and re-read (union-merged) into memory at the start of every poll tick so one
-   instance's commits reach the other within a tick.
+   instance's commits reach the other within a tick. Pruning (once the indexer stops returning a
+   message) is snapshot-disciplined: only members already known **before** the tick's indexer
+   snapshot are prune candidates — a member imported by the tick's own refresh may have been
+   committed after the snapshot, so its absence from it proves nothing; it becomes prunable one
+   tick later. A failed indexer poll skips the tick entirely (no refresh, prune, or executions):
+   an outage must never be mistaken for an empty snapshot, which would `SREM` every replay guard.
+   For rollback safety during the v2 rollout, every commit also mirrors the in-memory view into
+   the legacy JSON-blob key that previous builds read; the mirror is transitional and goes away
+   once the rollout settles.
 3. **Drain on the way out.** On observing a handover (or SIGHUP), the outgoing instance aborts
    new work — the poll loop initiates no new executions once the abort signal fires, and a
    pre-broadcast abort check bails mid-message — then waits up to `HANDOVER_DRAIN_TIMEOUT` (90s)
@@ -64,7 +75,10 @@ Three mechanisms make the overlap safe:
    orphaned. Its locks keep the successor off those transfers while it drains; if it dies
    instead, the lock TTL bounds the deferral. A shutdown observed while still inside
    `initialize()` cedes before polling ever starts (the entrypoint checks `relayer.aborted`, and
-   `scheduleTask` refuses to schedule on an already-aborted signal).
+   `scheduleTask` refuses to schedule on an already-aborted signal) — and cedes **without taking
+   the instance lease**, which is deliberately the last step of `initialize()`: an aborted boot
+   that grabbed the lease would make a healthy predecessor exit for nothing, leaving no handler
+   running until the next external restart.
 
 ## Indexer message classification
 

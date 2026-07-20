@@ -600,11 +600,13 @@ describe("DepositAddressHandler._getSignedWithdrawV3", function () {
     (handler as unknown as { api: { signWithdrawDepositAddressV3: sinon.SinonStub } }).api = {
       signWithdrawDepositAddressV3: signWithdrawStub,
     };
-    // The terminal-422 skip is committed via sAdd + expire (native Redis set).
+    // The terminal-422 skip is committed via sAdd + expire (native Redis set), with the legacy
+    // blob key mirrored via set for rollback safety.
     redisSAddStub = sinon.stub().resolves(1);
     (handler as unknown as { redisCache: unknown }).redisCache = {
       sAdd: redisSAddStub,
       expire: sinon.stub().resolves(true),
+      set: sinon.stub().resolves("OK"),
     };
   });
 

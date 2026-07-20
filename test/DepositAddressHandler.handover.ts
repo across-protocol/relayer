@@ -324,6 +324,28 @@ describe("DepositAddressHandler pending-execution locks", function () {
     expect(redis.store.has(pendingKey(message))).to.equal(false);
   });
 
+  it("skips the broadcast and releases the lock when a handover lands during the acquire round-trip", async function () {
+    const { internals, redis, sendStub } = buildHandler();
+    const message = depositMessageV3();
+    // The checkpoint's initial abort check passes; the handover is observed while the lock
+    // acquire is in flight (e.g. the drain wait has already timed out and the process is about
+    // to tear down). The post-acquisition re-check must bail rather than broadcast.
+    const realAcquire = redis.acquireLock.bind(redis);
+    redis.acquireLock = async (key: string, token: string) => {
+      const acquired = await realAcquire(key, token);
+      internals.abortController.abort();
+      return acquired;
+    };
+
+    await internals.initiateDepositV3(message);
+
+    expect(sendStub.notCalled).to.equal(true);
+    // Nothing was broadcast, so the just-acquired lock is released rather than left to defer the
+    // successor for the full TTL.
+    expect(redis.store.has(pendingKey(message))).to.equal(false);
+    expect(redis.sets.has(EXECUTED_KEY)).to.equal(false);
+  });
+
   it("skips the broadcast without taking the lock when a handover was observed mid-message", async function () {
     const { internals, redis, sendStub } = buildHandler();
     const message = depositMessageV3();
@@ -376,6 +398,60 @@ describe("DepositAddressHandler committed-set refresh, prune and migration", fun
 
     expect(internals.executedDepositTxHashes.has(stale)).to.equal(false);
     expect(redis.sets.get(EXECUTED_KEY)?.has(stale)).to.equal(false);
+  });
+
+  it("does not prune a member imported by this tick's refresh (commit racing the snapshot)", async function () {
+    const { handler, internals, redis } = buildHandler();
+    const fresh = "0x" + "8".repeat(64);
+    // Committed by a concurrently-running instance AFTER this tick's indexer snapshot: present
+    // in Redis, absent from memory and from the snapshot. Absence from a snapshot that may
+    // predate the commit proves nothing — pruning it would re-open the replay window.
+    redis.sets.set(EXECUTED_KEY, new Set([fresh]));
+    Object.assign(handler, { _queryIndexerApi: sinon.stub().resolves([]) });
+
+    await internals.evaluateDepositAddresses();
+
+    expect(internals.executedDepositTxHashes.has(fresh)).to.equal(true);
+    expect(redis.sets.get(EXECUTED_KEY)?.has(fresh)).to.equal(true);
+
+    // One tick later the member predates the snapshot, so its absence is meaningful — pruned.
+    await internals.evaluateDepositAddresses();
+
+    expect(internals.executedDepositTxHashes.has(fresh)).to.equal(false);
+    expect(redis.sets.get(EXECUTED_KEY)?.has(fresh)).to.equal(false);
+  });
+
+  it("prunes nothing and processes nothing when the indexer poll fails", async function () {
+    const { handler, internals, redis } = buildHandler();
+    const member = "0x" + "9".repeat(64);
+    internals.executedDepositTxHashes.add(member);
+    redis.sets.set(EXECUTED_KEY, new Set([member]));
+    const processStub = sinon.stub().resolves();
+    // A failed poll resolves undefined — not an empty snapshot. Treating it as empty would SREM
+    // every committed member and durably drop replay protection on a transient outage.
+    Object.assign(handler, {
+      _queryIndexerApi: sinon.stub().resolves(undefined),
+      processExecution: processStub,
+    });
+
+    await internals.evaluateDepositAddresses();
+
+    expect(processStub.notCalled).to.equal(true);
+    expect(internals.executedDepositTxHashes.has(member)).to.equal(true);
+    expect(redis.sets.get(EXECUTED_KEY)?.has(member)).to.equal(true);
+  });
+
+  it("mirrors each commit into the legacy blob key for rollback", async function () {
+    const { internals, redis } = buildHandler();
+    const message = depositMessageV3();
+
+    await internals.initiateDepositV3(message);
+
+    // The authoritative v2 set and the legacy JSON blob (read by a rolled-back build) both carry
+    // the commit.
+    expect(redis.sets.get(EXECUTED_KEY)?.has(message.erc20Transfer.transactionHash)).to.equal(true);
+    const legacy = JSON.parse(redis.store.get(LEGACY_EXECUTED_KEY) ?? "[]") as string[];
+    expect(legacy).to.contain(message.erc20Transfer.transactionHash);
   });
 
   it("migrates the legacy JSON blob into the native set on first load", async function () {
