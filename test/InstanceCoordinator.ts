@@ -35,67 +35,19 @@ function makeCoordinator(
   );
 }
 
-describe("InstanceCoordinator handover drain protocol", function () {
+describe("InstanceCoordinator handover", function () {
   afterEach(() => sinon.restore());
 
-  it("initiateHandover returns undefined on a cold start and the predecessor on takeover", async function () {
+  it("initiateHandover makes this instance active and displaces the predecessor", async function () {
     const redis = new FakeRedis();
     const a = makeCoordinator(redis, "instance-a");
-    expect(await a.initiateHandover()).to.equal(undefined);
+    await a.initiateHandover();
     expect(await a.isActiveInstance()).to.equal(true);
 
     const b = makeCoordinator(redis, "instance-b");
-    expect(await b.initiateHandover()).to.equal("instance-a");
+    await b.initiateHandover();
     expect(await b.isActiveInstance()).to.equal(true);
     expect(await a.isActiveInstance()).to.equal(false);
-  });
-
-  it("waitForPredecessorDrain returns true immediately when there is no predecessor", async function () {
-    const redis = new FakeRedis();
-    const b = makeCoordinator(redis, "instance-b");
-    expect(await b.waitForPredecessorDrain(undefined, 0)).to.equal(true);
-  });
-
-  it("resolves true when the predecessor has already signalled drained", async function () {
-    const redis = new FakeRedis();
-    const a = makeCoordinator(redis, "instance-a");
-    const b = makeCoordinator(redis, "instance-b");
-    await a.initiateHandover();
-    await b.initiateHandover();
-    await a.signalDrained();
-    expect(await b.waitForPredecessorDrain("instance-a", 0)).to.equal(true);
-  });
-
-  it("resolves true when the drained signal arrives while waiting", async function () {
-    this.timeout(5000);
-    const redis = new FakeRedis();
-    const a = makeCoordinator(redis, "instance-a");
-    const b = makeCoordinator(redis, "instance-b");
-    const wait = b.waitForPredecessorDrain("instance-a", 3);
-    setTimeout(() => void a.signalDrained(), 200);
-    expect(await wait).to.equal(true);
-  });
-
-  it("returns false when the predecessor never signals within the timeout", async function () {
-    const redis = new FakeRedis();
-    const b = makeCoordinator(redis, "instance-b");
-    expect(await b.waitForPredecessorDrain("instance-a", 0)).to.equal(false);
-  });
-
-  it("ignores a drained signal from a different instance", async function () {
-    const redis = new FakeRedis();
-    const stale = makeCoordinator(redis, "instance-stale");
-    await stale.signalDrained();
-    const b = makeCoordinator(redis, "instance-b");
-    expect(await b.waitForPredecessorDrain("instance-a", 0)).to.equal(false);
-  });
-
-  it("returns false promptly when aborted", async function () {
-    const redis = new FakeRedis();
-    const abortController = new AbortController();
-    const b = makeCoordinator(redis, "instance-b", abortController);
-    abortController.abort();
-    // Timeout is far in the future; only the abort can end the wait quickly.
-    expect(await b.waitForPredecessorDrain("instance-a", 600)).to.equal(false);
+    expect(await b.getActiveInstance()).to.equal("instance-b");
   });
 });

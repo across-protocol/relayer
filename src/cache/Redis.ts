@@ -11,10 +11,15 @@ export interface RedisCacheInterface extends interfaces.CachingMechanismInterfac
   decr(key: string): Promise<number>;
   decrBy(key: string, amount: number): Promise<number>;
   del(key: string): Promise<number>;
+  expire(key: string, seconds: number): Promise<boolean>;
   releaseLock(key: string, token: string): Promise<boolean>;
   renewLock(key: string, token: string, ttlMs: number): Promise<boolean>;
   incr(key: string): Promise<number>;
   incrBy(key: string, amount: number): Promise<number>;
+  sAdd(key: string, value: string): Promise<number>;
+  sIsMember(key: string, value: string): Promise<boolean>;
+  sMembers(key: string): Promise<string[]>;
+  sRem(key: string, value: string): Promise<number>;
   ttl(key: string): Promise<number | undefined>;
 }
 
@@ -110,8 +115,16 @@ export class RedisCache implements RedisCacheInterface {
     return this.client.sAdd(this.getNamespacedKey(key), value);
   }
 
+  async sIsMember(key: string, value: string): Promise<boolean> {
+    return Boolean(await this.client.sIsMember(this.getNamespacedKey(key), value));
+  }
+
   sMembers(key: string): Promise<string[]> {
     return this.client.sMembers(this.getNamespacedKey(key));
+  }
+
+  async expire(key: string, seconds: number): Promise<boolean> {
+    return Boolean(await this.client.expire(this.getNamespacedKey(key), seconds));
   }
 
   sRem(key: string, value: string): Promise<number> {

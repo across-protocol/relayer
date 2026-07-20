@@ -18,9 +18,13 @@ const EXECUTE_TARGET = "0x0000000000000000000000000000000000005900";
 const V3_CHAIN = 42161;
 const V1_CHAIN = 1;
 
-/** Minimal in-memory stand-in for the Redis ops the handler uses (get/set/locks). */
+/**
+ * Minimal in-memory stand-in for the Redis ops the handler uses: plain keys (get/set/del),
+ * native sets (sAdd/sRem/sMembers/sIsMember) and the token-guarded lock trio.
+ */
 class FakeRedis {
   store = new Map<string, string>();
+  sets = new Map<string, Set<string>>();
 
   async get<T>(key: string): Promise<T | null> {
     return (this.store.get(key) ?? null) as T | null;
@@ -35,8 +39,7 @@ class FakeRedis {
     return this.store.delete(key) ? 1 : 0;
   }
 
-  /** SET NX semantics; TTLs are not modelled. */
-  async acquireLock(key: string, token: string, _ttlMs: number): Promise<boolean> {
+  async acquireLock(key: string, token: string): Promise<boolean> {
     if (this.store.has(key)) {
       return false;
     }
@@ -44,15 +47,40 @@ class FakeRedis {
     return true;
   }
 
-  async renewLock(key: string, token: string, _ttlMs: number): Promise<boolean> {
+  async renewLock(key: string, token: string): Promise<boolean> {
     return this.store.get(key) === token;
   }
 
   async releaseLock(key: string, token: string): Promise<boolean> {
-    if (this.store.get(key) !== token) {
-      return false;
+    if (this.store.get(key) === token) {
+      this.store.delete(key);
+      return true;
     }
-    return this.store.delete(key);
+    return false;
+  }
+
+  async sAdd(key: string, value: string): Promise<number> {
+    const set = this.sets.get(key) ?? new Set<string>();
+    const added = set.has(value) ? 0 : 1;
+    set.add(value);
+    this.sets.set(key, set);
+    return added;
+  }
+
+  async sRem(key: string, value: string): Promise<number> {
+    return this.sets.get(key)?.delete(value) ? 1 : 0;
+  }
+
+  async sMembers(key: string): Promise<string[]> {
+    return [...(this.sets.get(key) ?? [])];
+  }
+
+  async sIsMember(key: string, value: string): Promise<boolean> {
+    return this.sets.get(key)?.has(value) ?? false;
+  }
+
+  async expire(): Promise<boolean> {
+    return true;
   }
 }
 
@@ -60,9 +88,8 @@ function pendingKey(message: DepositAddressMessage | DepositAddressMessageV3): s
   return `deposit-address:pending-execution:${BOT_IDENTIFIER}:${getDepositKey(message)}`;
 }
 
-function executedKey(): string {
-  return `deposit-address:executed:${BOT_IDENTIFIER}`;
-}
+const EXECUTED_KEY = `deposit-address:executed:${BOT_IDENTIFIER}:v2`;
+const LEGACY_EXECUTED_KEY = `deposit-address:executed:${BOT_IDENTIFIER}`;
 
 function fakeReceipt(): TransactionReceipt {
   return { transactionHash: "0x" + "9".repeat(64), blockNumber: 1_234_567, logs: [] } as unknown as TransactionReceipt;
@@ -152,6 +179,8 @@ type HandlerInternals = {
   drainInFlightWork: (timeoutSeconds: number) => Promise<void>;
   waitForDisconnect: () => Promise<void>;
   observedExecutedDeposits: { [chainId: number]: Set<string> };
+  executedDepositTxHashes: Set<string>;
+  _loadPersistedSet: (redisKey: string, legacyRedisKey: string) => Promise<Set<string>>;
 };
 
 function buildHandler(): {
@@ -188,15 +217,15 @@ function buildHandler(): {
   return { handler, internals: handler as unknown as HandlerInternals, redis, sendStub, executeTxStub };
 }
 
-describe("DepositAddressHandler pending-execution markers", function () {
+describe("DepositAddressHandler pending-execution locks", function () {
   afterEach(() => sinon.restore());
 
-  it("writes the marker before broadcasting and clears it after persisting the executed marker", async function () {
+  it("holds the lock during the broadcast, then commits the member and releases", async function () {
     const { internals, redis, sendStub } = buildHandler();
     const message = depositMessageV3();
 
     sendStub.callsFake(async () => {
-      // At broadcast time the pending marker must already be persisted under this instance.
+      // At broadcast time the pending-execution lock must be held under this instance's token.
       expect(redis.store.get(pendingKey(message))).to.equal(RUN_IDENTIFIER);
       return fakeReceipt();
     });
@@ -205,10 +234,10 @@ describe("DepositAddressHandler pending-execution markers", function () {
 
     expect(sendStub.calledOnce).to.equal(true);
     expect(redis.store.has(pendingKey(message))).to.equal(false);
-    expect(redis.store.get(executedKey())).to.contain(message.erc20Transfer.transactionHash);
+    expect(redis.sets.get(EXECUTED_KEY)?.has(message.erc20Transfer.transactionHash)).to.equal(true);
   });
 
-  it("defers execution while another instance holds the pending marker", async function () {
+  it("defers execution while another instance holds the lock", async function () {
     const { internals, redis, sendStub, executeTxStub } = buildHandler();
     const message = depositMessageV3();
     redis.store.set(pendingKey(message), OTHER_INSTANCE);
@@ -217,11 +246,11 @@ describe("DepositAddressHandler pending-execution markers", function () {
 
     expect(executeTxStub.notCalled).to.equal(true);
     expect(sendStub.notCalled).to.equal(true);
-    // The marker was not consumed: the deferral holds until the owner clears it or the TTL expires.
+    // The foreign lock is untouched: the deferral holds until the owner releases it or TTL expires.
     expect(redis.store.get(pendingKey(message))).to.equal(OTHER_INSTANCE);
   });
 
-  it("does not defer on its own marker (normal retry path)", async function () {
+  it("does not defer on its own lock (normal retry path renews it)", async function () {
     const { internals, redis, sendStub } = buildHandler();
     const message = depositMessageV3();
     redis.store.set(pendingKey(message), RUN_IDENTIFIER);
@@ -231,44 +260,71 @@ describe("DepositAddressHandler pending-execution markers", function () {
     expect(sendStub.calledOnce).to.equal(true);
   });
 
-  it("keeps the marker on a failed submit and still allows this instance to retry", async function () {
+  it("keeps the lock on a failed submit and still allows this instance to retry", async function () {
     const { internals, redis, sendStub } = buildHandler();
     const message = depositMessageV3();
     sendStub.resolves(undefined);
 
     await internals.initiateDepositV3(message);
 
-    // A failed sendAndConfirm may still have broadcast; the marker must outlive it (TTL cleanup).
+    // A failed sendAndConfirm may still have broadcast; the lock must outlive it (TTL cleanup).
     expect(redis.store.get(pendingKey(message))).to.equal(RUN_IDENTIFIER);
-    expect(redis.store.has(executedKey())).to.equal(false);
-    // The in-flight lock was released, and the own marker does not block the retry.
+    expect(redis.sets.has(EXECUTED_KEY)).to.equal(false);
+    // The in-flight lock was released, and the own pending lock renews rather than blocks.
     await internals.initiateDepositV3(message);
     expect(sendStub.calledTwice).to.equal(true);
   });
 
-  it("skips the broadcast and releases the marker when a handover lands during the marker write", async function () {
-    const { internals, redis, sendStub } = buildHandler();
+  it("does not broadcast when another instance acquires the lock after the early foreign check", async function () {
+    // The early hasForeignPendingExecution read is advisory; a concurrent instance can take the
+    // lock between it and the checkpoint. The atomic acquire must lose and skip the broadcast.
+    const { internals, redis, sendStub, executeTxStub } = buildHandler();
     const message = depositMessageV3();
-    // The initial abort check passes; the handover is observed while the marker write is in
-    // flight (a slow write can outlive the predecessor's drain timeout, after which the
-    // successor has already been signalled to start). The post-acquisition re-check must bail.
-    const realAcquire = redis.acquireLock.bind(redis);
-    redis.acquireLock = async (key: string, token: string, ttlMs: number) => {
-      const acquired = await realAcquire(key, token, ttlMs);
-      internals.abortController.abort();
-      return acquired;
-    };
+    executeTxStub.callsFake(async () => {
+      // Runs after the early check, before the checkpoint — the other instance wins the lock here.
+      redis.store.set(pendingKey(message), OTHER_INSTANCE);
+      return executeResponse();
+    });
 
     await internals.initiateDepositV3(message);
 
     expect(sendStub.notCalled).to.equal(true);
-    // Nothing was broadcast, so the just-acquired marker is released rather than left to defer
-    // the successor for the full TTL.
-    expect(redis.store.has(pendingKey(message))).to.equal(false);
-    expect(redis.store.has(executedKey())).to.equal(false);
+    expect(redis.store.get(pendingKey(message))).to.equal(OTHER_INSTANCE);
   });
 
-  it("skips the broadcast without writing a marker when a handover was observed mid-message", async function () {
+  it("does not release a lock another instance acquired after this instance's expired mid-flight", async function () {
+    // If the broadcast outlives the lock TTL and another instance re-acquires it, the token-guarded
+    // release after commit must leave the other instance's lock in place.
+    const { internals, redis, sendStub } = buildHandler();
+    const message = depositMessageV3();
+    sendStub.callsFake(async () => {
+      // Simulate TTL expiry + re-acquisition by the other instance while the tx confirms.
+      redis.store.set(pendingKey(message), OTHER_INSTANCE);
+      return fakeReceipt();
+    });
+
+    await internals.initiateDepositV3(message);
+
+    // The execution still commits (it is on-chain), but the foreign lock survives the release.
+    expect(redis.sets.get(EXECUTED_KEY)?.has(message.erc20Transfer.transactionHash)).to.equal(true);
+    expect(redis.store.get(pendingKey(message))).to.equal(OTHER_INSTANCE);
+  });
+
+  it("skips the broadcast when the transfer was committed by another instance under no lock", async function () {
+    // Simulates the race the committed-set re-check closes: the other instance committed and
+    // released its lock after this tick's refresh, so memory is stale and no lock is visible.
+    const { internals, redis, sendStub } = buildHandler();
+    const message = depositMessageV3();
+    redis.sets.set(EXECUTED_KEY, new Set([message.erc20Transfer.transactionHash]));
+
+    await internals.initiateDepositV3(message);
+
+    expect(sendStub.notCalled).to.equal(true);
+    // The checkpoint's probe lock was released again — nothing is left deferring the transfer.
+    expect(redis.store.has(pendingKey(message))).to.equal(false);
+  });
+
+  it("skips the broadcast without taking the lock when a handover was observed mid-message", async function () {
     const { internals, redis, sendStub } = buildHandler();
     const message = depositMessageV3();
     internals.abortController.abort();
@@ -280,43 +336,7 @@ describe("DepositAddressHandler pending-execution markers", function () {
     expect(internals.observedExecutedDeposits[V3_CHAIN].size).to.equal(0);
   });
 
-  it("does not broadcast when another instance acquires the marker after the early foreign check", async function () {
-    const { internals, redis, sendStub, executeTxStub } = buildHandler();
-    const message = depositMessageV3();
-    // The early hasForeignPendingExecution read passes (no marker yet); the other instance's
-    // marker lands while this instance is fetching calldata, i.e. before the pre-broadcast
-    // checkpoint. The atomic acquisition must lose and skip the broadcast.
-    executeTxStub.callsFake(async () => {
-      redis.store.set(pendingKey(message), OTHER_INSTANCE);
-      return executeResponse();
-    });
-
-    await internals.initiateDepositV3(message);
-
-    expect(sendStub.notCalled).to.equal(true);
-    expect(redis.store.get(pendingKey(message))).to.equal(OTHER_INSTANCE);
-    // The in-flight lock was released so the transfer is re-evaluated on later polls.
-    expect(internals.observedExecutedDeposits[V3_CHAIN].size).to.equal(0);
-  });
-
-  it("does not clear a marker another instance acquired after this instance's expired mid-flight", async function () {
-    const { internals, redis, sendStub } = buildHandler();
-    const message = depositMessageV3();
-
-    sendStub.callsFake(async () => {
-      // Simulate the marker TTL expiring during a slow confirmation, with another instance then
-      // acquiring the key. The ownership-checked release must leave that marker intact.
-      redis.store.set(pendingKey(message), OTHER_INSTANCE);
-      return fakeReceipt();
-    });
-
-    await internals.initiateDepositV3(message);
-
-    expect(redis.store.get(executedKey())).to.contain(message.erc20Transfer.transactionHash);
-    expect(redis.store.get(pendingKey(message))).to.equal(OTHER_INSTANCE);
-  });
-
-  it("defers the v1 refund-withdraw path on a foreign marker before any chain reads", async function () {
+  it("defers the v1 refund-withdraw path on a foreign lock before any chain reads", async function () {
     const { handler, internals, redis, sendStub } = buildHandler();
     const message = withdrawMessageV1();
     redis.store.set(pendingKey(message), OTHER_INSTANCE);
@@ -326,6 +346,58 @@ describe("DepositAddressHandler pending-execution markers", function () {
 
     expect(balanceStub.notCalled).to.equal(true);
     expect(sendStub.notCalled).to.equal(true);
+  });
+});
+
+describe("DepositAddressHandler committed-set refresh, prune and migration", function () {
+  afterEach(() => sinon.restore());
+
+  it("picks up commits from a concurrently-running instance within one tick", async function () {
+    const { handler, internals, redis, sendStub } = buildHandler();
+    const message = depositMessageV3();
+    // Committed by the other instance after this instance booted: present in Redis, not in memory.
+    redis.sets.set(EXECUTED_KEY, new Set([message.erc20Transfer.transactionHash]));
+    Object.assign(handler, { _queryIndexerApi: sinon.stub().resolves([message]) });
+
+    await internals.evaluateDepositAddresses();
+
+    expect(internals.executedDepositTxHashes.has(message.erc20Transfer.transactionHash)).to.equal(true);
+    expect(sendStub.notCalled).to.equal(true);
+  });
+
+  it("prunes members the indexer no longer returns from memory and Redis", async function () {
+    const { handler, internals, redis } = buildHandler();
+    const stale = "0x" + "7".repeat(64);
+    internals.executedDepositTxHashes.add(stale);
+    redis.sets.set(EXECUTED_KEY, new Set([stale]));
+    Object.assign(handler, { _queryIndexerApi: sinon.stub().resolves([]) });
+
+    await internals.evaluateDepositAddresses();
+
+    expect(internals.executedDepositTxHashes.has(stale)).to.equal(false);
+    expect(redis.sets.get(EXECUTED_KEY)?.has(stale)).to.equal(false);
+  });
+
+  it("migrates the legacy JSON blob into the native set on first load", async function () {
+    const { internals, redis } = buildHandler();
+    redis.store.set(LEGACY_EXECUTED_KEY, JSON.stringify(["0xaaa", "0xbbb"]));
+
+    const loaded = await internals._loadPersistedSet(EXECUTED_KEY, LEGACY_EXECUTED_KEY);
+
+    expect([...loaded].sort()).to.deep.equal(["0xaaa", "0xbbb"]);
+    expect([...(redis.sets.get(EXECUTED_KEY) ?? [])].sort()).to.deep.equal(["0xaaa", "0xbbb"]);
+    // The legacy key is left in place for rollback.
+    expect(redis.store.has(LEGACY_EXECUTED_KEY)).to.equal(true);
+  });
+
+  it("prefers the native set over the legacy blob once it is populated", async function () {
+    const { internals, redis } = buildHandler();
+    redis.sets.set(EXECUTED_KEY, new Set(["0xccc"]));
+    redis.store.set(LEGACY_EXECUTED_KEY, JSON.stringify(["0xaaa"]));
+
+    const loaded = await internals._loadPersistedSet(EXECUTED_KEY, LEGACY_EXECUTED_KEY);
+
+    expect([...loaded]).to.deep.equal(["0xccc"]);
   });
 });
 
@@ -367,19 +439,16 @@ describe("DepositAddressHandler handover draining", function () {
     await internals.drainInFlightWork(0);
   });
 
-  it("waitForDisconnect aborts, drains in-flight work, then signals drained", async function () {
+  it("waitForDisconnect aborts, then drains in-flight work before resolving", async function () {
     const { handler, internals } = buildHandler();
-    const events: string[] = [];
-    const coordinator = {
-      subscribe: sinon.stub().resolves(OTHER_INSTANCE),
-      signalDrained: sinon.stub().callsFake(async () => void events.push("drained")),
-    };
+    const coordinator = { subscribe: sinon.stub().resolves(OTHER_INSTANCE) };
     Object.assign(handler, { _instanceCoordinator: coordinator });
 
+    let tickSettled = false;
     void internals.trackTick(
       new Promise<void>((resolve) =>
         setTimeout(() => {
-          events.push("tickSettled");
+          tickSettled = true;
           resolve();
         }, 20)
       )
@@ -388,6 +457,6 @@ describe("DepositAddressHandler handover draining", function () {
     await internals.waitForDisconnect();
 
     expect(internals.abortController.signal.aborted).to.equal(true);
-    expect(events).to.deep.equal(["tickSettled", "drained"]);
+    expect(tickSettled).to.equal(true);
   });
 });

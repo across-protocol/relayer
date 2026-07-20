@@ -577,7 +577,7 @@ describe("DepositAddressHandler._validateExecuteResponse guards", function () {
 describe("DepositAddressHandler._getSignedWithdrawV3", function () {
   let handler: DepositAddressHandler;
   let signWithdrawStub: sinon.SinonStub;
-  let redisSetStub: sinon.SinonStub;
+  let redisSAddStub: sinon.SinonStub;
 
   type Internals = {
     _getSignedWithdrawV3: (
@@ -600,8 +600,12 @@ describe("DepositAddressHandler._getSignedWithdrawV3", function () {
     (handler as unknown as { api: { signWithdrawDepositAddressV3: sinon.SinonStub } }).api = {
       signWithdrawDepositAddressV3: signWithdrawStub,
     };
-    redisSetStub = sinon.stub().resolves();
-    (handler as unknown as { redisCache: { set: sinon.SinonStub } }).redisCache = { set: redisSetStub };
+    // The terminal-422 skip is committed via sAdd + expire (native Redis set).
+    redisSAddStub = sinon.stub().resolves(1);
+    (handler as unknown as { redisCache: unknown }).redisCache = {
+      sAdd: redisSAddStub,
+      expire: sinon.stub().resolves(true),
+    };
   });
 
   afterEach(() => sinon.restore());
@@ -635,7 +639,7 @@ describe("DepositAddressHandler._getSignedWithdrawV3", function () {
     expect(result).to.equal(undefined);
     expect(signWithdrawStub.callCount).to.equal(4); // initial attempt + 3 retries
     expect(internals().terminallySkippedWithdrawKeys.size).to.equal(0);
-    expect(redisSetStub.notCalled).to.equal(true);
+    expect(redisSAddStub.notCalled).to.equal(true);
   });
 
   it("treats a 422 as terminal: no retry, persists the skip key", async function () {
@@ -646,7 +650,7 @@ describe("DepositAddressHandler._getSignedWithdrawV3", function () {
     expect(signWithdrawStub.callCount).to.equal(1); // no retries on a terminal 422
     const depositKey = `${DEPOSIT_ADDRESS}:${message.erc20Transfer.transactionHash}`;
     expect(internals().terminallySkippedWithdrawKeys.has(depositKey)).to.equal(true);
-    expect(redisSetStub.calledOnce).to.equal(true);
+    expect(redisSAddStub.calledOnce).to.equal(true);
   });
 });
 
