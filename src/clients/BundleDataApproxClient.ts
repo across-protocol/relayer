@@ -109,8 +109,8 @@ export class BundleDataApproxClient {
   /**
    * Return sum of refunds for all fills sent after the fromBlocks.
    * Makes a simple assumption that all fills that were sent by this relayer after the last executed bundle
-   * are valid and will be refunded on the resolved repayment chain: the requested repayment chain when it
-   * is valid for the fill, otherwise the origin chain (see resolveRefundInformation()).
+   * are valid and will be repaid on the resolved repayment chain: the requested repayment chain when it
+   * is valid for the fill, otherwise the origin chain (see resolveRepaymentInformation()).
    * @param l1Token L1 token to get refunds for all inventory-equivalent L2 tokens on each chain.
    * @param fromBlocks 2D block mapping indexed by [referenceChainId][fillChainId]. For refund counting, each fill
    * is filtered using fromBlocks[repaymentChainId][fillChainId] so that a fill is only excluded when the
@@ -132,7 +132,7 @@ export class BundleDataApproxClient {
       }
       spokePoolClient.getFills().forEach((fill) => {
         const { inputAmount: _refundAmount, originChainId, relayer, inputToken, blockNumber } = fill;
-        // Slow fills pay the recipient out of a slow fill leaf and produce no relayer refund.
+        // Slow fills pay the recipient out of a slow fill leaf and produce no relayer repayment.
         if (isSlowFill(fill)) {
           return;
         }
@@ -147,9 +147,9 @@ export class BundleDataApproxClient {
           return;
         }
 
-        // Resolve the chain and token the refund will actually pay out in, applying the dataworker's
+        // Resolve the chain and token the repayment will actually pay out in, applying the dataworker's
         // fallback to origin-chain repayment when the fill's requested repayment chain is invalid.
-        const { repaymentChainId, repaymentToken } = this.resolveRefundInformation(fill);
+        const { repaymentChainId, repaymentToken } = this.resolveRepaymentInformation(fill);
 
         // Filter based on the repayment chain's execution state: a fill on chain X with repayment on
         // chain Y should only be excluded when chain Y's refund leaf has been executed.
@@ -163,22 +163,22 @@ export class BundleDataApproxClient {
           getTokenInfo(l1Token, this.hubPoolClient.chainId).decimals
         )(_refundAmount);
         refundsForChain[repaymentChainId] ??= {};
-        const relayerRefunds = (refundsForChain[repaymentChainId][relayer.toNative()] ??= {});
+        const relayerRepayments = (refundsForChain[repaymentChainId][relayer.toNative()] ??= {});
         const repaymentTokenKey = repaymentToken.toNative();
-        relayerRefunds[repaymentTokenKey] = (relayerRefunds[repaymentTokenKey] ?? bnZero).add(refundAmount);
+        relayerRepayments[repaymentTokenKey] = (relayerRepayments[repaymentTokenKey] ?? bnZero).add(refundAmount);
       });
     }
     return refundsForChain;
   }
 
   /**
-   * Resolve the chain and token that a fill's refund will pay out in, mirroring the SDK's
+   * Resolve the chain and token that a fill's repayment will pay out in, mirroring the SDK's
    * getRefundInformationFromFill()/_getRepaymentChainId(): the requested repayment chain is honored only
    * when the input token has a pool rebalance route on its origin chain, that route's L1 token is also
    * routed to the repayment chain, and the repayment chain is not disabled. Otherwise the dataworker
    * falls back to repaying on the origin chain in the input token.
    */
-  protected resolveRefundInformation(fill: FillWithBlock): { repaymentChainId: number; repaymentToken: Address } {
+  protected resolveRepaymentInformation(fill: FillWithBlock): { repaymentChainId: number; repaymentToken: Address } {
     const { originChainId, inputToken, repaymentChainId } = fill;
     if (
       repaymentChainId !== originChainId &&

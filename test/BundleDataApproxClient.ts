@@ -298,7 +298,7 @@ describe("BundleDataApproxClient: Accounting for unexecuted, upcoming relayer re
       expect(bundleDataClient.getUpcomingRefunds(MAINNET, l1Weth, relayer, l1Weth)).to.equal(fill.args.inputAmount);
     });
 
-    it("Ignores slow fills, which produce no relayer refunds", async function () {
+    it("Ignores slow fills, which produce no relayer repayments", async function () {
       await generateFill("WETH", MAINNET, OPTIMISM, owner.address, toWei(1), {
         fillType: interfaces.FillType.SlowFill,
       });
