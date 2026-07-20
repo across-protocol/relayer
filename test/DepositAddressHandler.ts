@@ -484,6 +484,8 @@ describe("DepositAddressHandler.initiateDepositV3 integratorId guard", function 
     (handler as unknown as { observedExecutedDeposits: Record<number, Set<string>> }).observedExecutedDeposits = {
       [originChainId]: new Set<string>(),
     };
+    // The pending-execution marker check reads Redis before the guard; no marker present.
+    (handler as unknown as { redisCache: unknown }).redisCache = { get: sinon.stub().resolves(null) };
   });
 
   afterEach(() => sinon.restore());
@@ -673,7 +675,11 @@ describe("DepositAddressHandler.initiateWithdrawV3 guards", function () {
     (handler as unknown as { observedExecutedWithdraws: Record<number, Set<string>> }).observedExecutedWithdraws = {
       [chainId]: new Set<string>(),
     };
-    (handler as unknown as { redisCache: { set: sinon.SinonStub } }).redisCache = { set: sinon.stub().resolves() };
+    // `get` serves the pending-execution marker check (no marker present).
+    (handler as unknown as { redisCache: unknown }).redisCache = {
+      get: sinon.stub().resolves(null),
+      set: sinon.stub().resolves(),
+    };
   }
 
   afterEach(() => sinon.restore());
@@ -770,6 +776,8 @@ describe("DepositAddressHandler.initiateWithdrawV3 balance check", function () {
     (handler as unknown as { providersByChain: Record<number, unknown> }).providersByChain = {
       [chainId]: { getBalance: getBalanceStub },
     };
+    // The pending-execution marker check reads Redis before the balance check; no marker present.
+    (handler as unknown as { redisCache: unknown }).redisCache = { get: sinon.stub().resolves(null) };
   });
 
   afterEach(() => sinon.restore());

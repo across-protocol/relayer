@@ -11,6 +11,7 @@ import {
   forEachAsync,
   getProvider,
   Contract,
+  delay,
   sendAndConfirmTransaction,
   getCounterfactualDepositFactory,
   buildDeployTx,
@@ -37,6 +38,7 @@ import {
 } from "../interfaces";
 import {
   AcrossSwapApiClient,
+  AugmentedTransaction,
   TransactionClient,
   SwapApiResponse,
   SignedWithdrawResponse,
@@ -78,6 +80,33 @@ const HEARTBEAT_TIMEOUT_MS = 5_000;
 const HEARTBEAT_FAILURE_WARN_THRESHOLD = 10;
 
 /**
+ * Max seconds the outgoing instance waits, after observing a handover, for in-flight poll ticks
+ * to settle (tx confirmation + Redis persist of the executed marker) before signalling drained.
+ * An execution abandoned between broadcast and persist is exactly how a successor comes to
+ * replay a sweep (2026-07-20 duplicate-sweep incident), so this errs long; the pending-execution
+ * marker still covers anything that outlives the drain.
+ */
+const HANDOVER_DRAIN_TIMEOUT = 90;
+
+/**
+ * Max seconds the incoming instance waits for its predecessor's drained signal before loading
+ * persisted state and starting to poll. Must exceed HANDOVER_DRAIN_TIMEOUT plus the
+ * predecessor's ~1s handover-detection latency so a live predecessor always beats the timeout;
+ * the timeout only bites when the predecessor crashed (or predates this protocol).
+ */
+const HANDOVER_TAKEOVER_TIMEOUT = 120;
+
+/**
+ * TTL (seconds) on a pending-execution marker, written to Redis immediately before every
+ * fund-moving broadcast and cleared once the confirmed execution is persisted. A marker written
+ * by another instance defers this instance's execution of that transfer, so the TTL bounds how
+ * long a transfer stays deferred when its broadcast outcome is unknown (instance crashed
+ * mid-flight, or confirmation failed after a possible broadcast). Sized to comfortably outlive
+ * any broadcast→confirmation window; a deferred sweep is recoverable, a double-spend is not.
+ */
+const PENDING_EXECUTION_EXPIRY = 900;
+
+/**
  * Independent relayer bot which processes EIP-3009 signatures into deposits and corresponding fills.
  */
 export class DepositAddressHandler {
@@ -99,6 +128,12 @@ export class DepositAddressHandler {
   }
 
   private providersByChain: { [chainId: number]: Provider } = {};
+
+  /**
+   * Poll ticks currently in flight. On handover the outgoing instance must not exit while one of
+   * these may still be between broadcast and Redis persist — see drainInFlightWork().
+   */
+  private inFlightTicks: Set<Promise<unknown>> = new Set();
 
   /** Per chainId: set of deposit keys already executed (like gasless depositNonces). */
   private observedExecutedDeposits: { [chainId: number]: Set<string> } = {};
@@ -197,7 +232,10 @@ export class DepositAddressHandler {
       this.observedExecutedWithdraws[chainId] = new Set<string>();
     });
 
-    // Establish bot instance and take over. First thing after handover: load persisted executed deposits from Redis.
+    // Establish bot instance and take over. Wait for the predecessor to finish draining its
+    // in-flight executions (it persists their executed markers as part of the drain) BEFORE
+    // loading the persisted sets — loading earlier races the predecessor's final persist and is
+    // how a swept transfer gets replayed (2026-07-20 duplicate-sweep incident).
     this.instanceCoordinator = new InstanceCoordinator(
       this.logger,
       this.redisCache,
@@ -205,7 +243,20 @@ export class DepositAddressHandler {
       this.config.runIdentifier,
       this.abortController
     );
-    await this.instanceCoordinator.initiateHandover();
+    const predecessor = await this.instanceCoordinator.initiateHandover();
+    const predecessorDrained = await this.instanceCoordinator.waitForPredecessorDrain(
+      predecessor,
+      HANDOVER_TAKEOVER_TIMEOUT
+    );
+    if (!predecessorDrained) {
+      this.logger.warn({
+        at: "DepositAddressHandler#initialize",
+        message:
+          "Predecessor instance did not signal drained; proceeding. Pending-execution markers still defer any broadcast it left in flight.",
+        predecessor,
+        timeoutSeconds: HANDOVER_TAKEOVER_TIMEOUT,
+      });
+    }
 
     await this._loadExecutedDepositsFromRedis();
     await this._loadWithdrawnKeysFromRedis();
@@ -318,7 +369,7 @@ export class DepositAddressHandler {
    */
   public pollAndExecute(): void {
     scheduleTask(
-      () => this.evaluateDepositAddresses(),
+      () => this.trackTick(this.evaluateDepositAddresses()),
       this.config.indexerPollingInterval,
       this.abortController.signal,
       // A rejected poll skips the whole batch for that tick; without this log the failure is
@@ -371,11 +422,66 @@ export class DepositAddressHandler {
 
   /*
    * @notice Utility function which tells the relayer when a handoff has occurred.
-   * Calls the abort controller and settles this function's promise once a handoff is observed.
+   * Calls the abort controller once a handoff is observed, then drains in-flight executions
+   * (so a broadcast tx gets confirmed and its executed marker persisted rather than orphaned)
+   * and signals the successor that it is safe to load state and start polling.
    */
   public async waitForDisconnect(): Promise<void> {
     await this.instanceCoordinator.subscribe();
     this.abortController.abort();
+    await this.drainInFlightWork(HANDOVER_DRAIN_TIMEOUT);
+    try {
+      await this.instanceCoordinator.signalDrained();
+    } catch (err) {
+      // The successor times out and proceeds; pending-execution markers still guard replays.
+      this.logger.error({
+        at: "DepositAddressHandler#waitForDisconnect",
+        message: "Failed to signal drained to successor",
+        err: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  /** Registers a poll tick for handover draining. Returns a chained promise so scheduleTask's
+   * rejection handling still applies; the raw tick is what drainInFlightWork awaits. */
+  private trackTick(tick: Promise<unknown>): Promise<unknown> {
+    this.inFlightTicks.add(tick);
+    return tick.finally(() => this.inFlightTicks.delete(tick));
+  }
+
+  /**
+   * Waits (bounded) for in-flight poll ticks to settle after the abort signal fired. A tick that
+   * has broadcast a tx persists its executed marker and clears its pending marker as it settles;
+   * exiting before that is what turns a handover into a replayed execution.
+   */
+  private async drainInFlightWork(timeoutSeconds: number): Promise<void> {
+    if (this.inFlightTicks.size === 0) {
+      return;
+    }
+    this.logger.debug({
+      at: "DepositAddressHandler#drainInFlightWork",
+      message: "Draining in-flight poll ticks before ceding",
+      inFlightTicks: this.inFlightTicks.size,
+    });
+    let timedOut = false;
+    await Promise.race([
+      Promise.allSettled([...this.inFlightTicks]),
+      delay(timeoutSeconds).then(() => (timedOut = true)),
+    ]);
+    if (timedOut) {
+      this.logger.warn({
+        at: "DepositAddressHandler#drainInFlightWork",
+        message:
+          "In-flight work did not settle within the drain timeout; ceding anyway. Pending-execution markers defer the successor from any broadcast still in flight.",
+        inFlightTicks: this.inFlightTicks.size,
+        timeoutSeconds,
+      });
+    } else {
+      this.logger.debug({
+        at: "DepositAddressHandler#drainInFlightWork",
+        message: "Drained all in-flight poll ticks",
+      });
+    }
   }
 
   private async evaluateDepositAddresses(): Promise<void> {
@@ -403,8 +509,98 @@ export class DepositAddressHandler {
     }
 
     await forEachAsync(depositMessages, async (depositMessage) => {
+      // Once a handover/shutdown is observed, initiate no new executions — in-flight ones are
+      // drained by waitForDisconnect; anything not yet started belongs to the successor.
+      if (this.abortController.signal.aborted) {
+        return;
+      }
       await this.processExecution(depositMessage);
     });
+  }
+
+  private getPendingExecutionRedisKey(depositKey: string): string {
+    return `deposit-address:pending-execution:${this.config.botIdentifier}:${depositKey}`;
+  }
+
+  /**
+   * Returns true when another instance has recorded a pending (possibly still in-flight)
+   * fund-moving broadcast for this depositKey. Markers written by this instance don't defer it:
+   * its in-memory in-flight sets are strictly better informed, and blocking on our own marker
+   * would stall the normal retry path after a failed submit.
+   */
+  private async hasForeignPendingExecution(depositKey: string): Promise<boolean> {
+    assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
+    const owner = await this.redisCache.get<string>(this.getPendingExecutionRedisKey(depositKey));
+    return isDefined(owner) && owner !== this.config.runIdentifier;
+  }
+
+  /**
+   * Persists the pending-execution marker. MUST be awaited immediately before every fund-moving
+   * broadcast: if this instance dies between broadcast and persisting the executed marker, the
+   * marker is the only thing standing between the successor and a replayed execution. A failure
+   * here must abort the broadcast attempt (callers return without submitting).
+   */
+  private async markPendingExecution(depositKey: string): Promise<void> {
+    assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
+    await this.redisCache.set(
+      this.getPendingExecutionRedisKey(depositKey),
+      this.config.runIdentifier,
+      PENDING_EXECUTION_EXPIRY
+    );
+  }
+
+  /**
+   * Clears the pending-execution marker after the confirmed execution has been persisted to the
+   * executed set. Best-effort: on failure the marker expires via its TTL. Never call this after
+   * a failed submit — a "failed" sendAndConfirm may still have broadcast (confirmation failure),
+   * so the marker must outlive it.
+   */
+  private async clearPendingExecution(depositKey: string): Promise<void> {
+    assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
+    try {
+      await this.redisCache.del(this.getPendingExecutionRedisKey(depositKey));
+    } catch (err) {
+      this.logger.warn({
+        at: "DepositAddressHandler#clearPendingExecution",
+        message: "Failed to clear pending-execution marker; it will expire via TTL",
+        depositKey,
+        err: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  /**
+   * Guards a fund-moving broadcast: bails when a handover was observed mid-message (the
+   * successor re-evaluates from scratch — a broadcast from a ceding instance is how replays
+   * happen), then persists the pending-execution marker. Returns false when the caller must NOT
+   * broadcast.
+   */
+  private async preBroadcastCheckpoint(depositKey: string, at: string): Promise<boolean> {
+    if (this.abortController.signal.aborted) {
+      this.logger.debug({
+        at,
+        message: "Skipping broadcast: handover/shutdown observed, leaving execution to the successor",
+        depositKey,
+      });
+      return false;
+    }
+    try {
+      await this.markPendingExecution(depositKey);
+    } catch (err) {
+      this.logger.warn({
+        at,
+        message: "Skipping broadcast: failed to persist pending-execution marker",
+        depositKey,
+        err: err instanceof Error ? err.message : String(err),
+      });
+      return false;
+    }
+    return true;
+  }
+
+  /** Thin wrapper over sendAndConfirmTransaction so unit tests can stub the broadcast. */
+  protected sendAndConfirm(tx: AugmentedTransaction, useDispatcher: boolean): Promise<TransactionReceipt | undefined> {
+    return sendAndConfirmTransaction(tx, this.transactionClient, useDispatcher);
   }
 
   /**
@@ -517,6 +713,18 @@ export class DepositAddressHandler {
       return;
     }
 
+    // Defer while another instance may have a broadcast in flight for this transfer (it crashed
+    // or is still draining); the marker expires via TTL if that instance never resolves it.
+    if (await this.hasForeignPendingExecution(depositKey)) {
+      this.logger.debug({
+        at: "DepositAddressHandler#initiateWithdraw",
+        message: "Skipping withdraw: pending-execution marker held by another instance",
+        refTxHash,
+        depositKey,
+      });
+      return;
+    }
+
     if (this.observedExecutedWithdraws[chainId]?.has(depositKey)) {
       return;
     }
@@ -600,8 +808,13 @@ export class DepositAddressHandler {
         )} (classification: ${erc20Transfer.transferClassification}, bundledDeploy: ${signed.bundledDeploy})`,
       };
 
-      const receipt = await sendAndConfirmTransaction(withdrawTx, this.transactionClient, useDispatcher);
+      if (!(await this.preBroadcastCheckpoint(depositKey, "DepositAddressHandler#initiateWithdraw"))) {
+        return;
+      }
+      const receipt = await this.sendAndConfirm(withdrawTx, useDispatcher);
       if (!isDefined(receipt)) {
+        // Pending marker intentionally left: the tx may still have broadcast (confirmation
+        // failure), so let the TTL expire it rather than invite a cross-instance replay.
         this.logger.warn({
           at: "DepositAddressHandler#initiateWithdraw",
           message: "Failed to submit withdraw tx",
@@ -618,6 +831,7 @@ export class DepositAddressHandler {
       this.executedWithdrawKeys.add(depositKey);
       withdrawCommitted = true;
       await this._persistWithdrawnKeysRedis();
+      await this.clearPendingExecution(depositKey);
       await this._publishWithdrawExecuted(receipt, depositMessage);
     } finally {
       if (!withdrawCommitted) {
@@ -861,6 +1075,18 @@ export class DepositAddressHandler {
       return;
     }
 
+    // Defer while another instance may have a broadcast in flight for this transfer (it crashed
+    // or is still draining); the marker expires via TTL if that instance never resolves it.
+    if (await this.hasForeignPendingExecution(depositKey)) {
+      this.logger.debug({
+        at: "DepositAddressHandler#initiateDeposit",
+        message: "Skipping deposit: pending-execution marker held by another instance",
+        refTxHash,
+        depositKey,
+      });
+      return;
+    }
+
     if (this.observedExecutedDeposits[originChainId]?.has(depositKey)) {
       return;
     }
@@ -926,7 +1152,9 @@ export class DepositAddressHandler {
         )}`,
       };
 
-      const deployReceipt = await sendAndConfirmTransaction(deployTx, this.transactionClient, useDispatcher);
+      // No pending-execution marker for the deploy: it moves no funds and a replay is guarded
+      // by the isContractDeployed check (at worst a reverted no-op).
+      const deployReceipt = await this.sendAndConfirm(deployTx, useDispatcher);
       if (!isDefined(deployReceipt)) {
         this.observedExecutedDeposits[originChainId].delete(depositKey);
         this.logger.warn({
@@ -971,9 +1199,15 @@ export class DepositAddressHandler {
       )} (cctpExecutionFee: ${cctpExecutionFee}, spokePoolExecutionFee: ${spokePoolExecutionFee})`,
     };
 
-    const depositReceipt = await sendAndConfirmTransaction(executeTx, this.transactionClient, useDispatcher);
+    if (!(await this.preBroadcastCheckpoint(depositKey, "DepositAddressHandler#initiateDeposit"))) {
+      this.observedExecutedDeposits[originChainId].delete(depositKey);
+      return;
+    }
+    const depositReceipt = await this.sendAndConfirm(executeTx, useDispatcher);
 
     if (!depositReceipt) {
+      // Pending marker intentionally left: the tx may still have broadcast (confirmation
+      // failure), so let the TTL expire it rather than invite a cross-instance replay.
       this.logger.warn({
         at: "DepositAddressHandler#initiateDeposit",
         message: "Failed to submit execute tx",
@@ -990,6 +1224,7 @@ export class DepositAddressHandler {
     // Persist full set to Redis immediately so handover cannot miss this execute.
     this.executedDepositTxHashes.add(refTxHash);
     await this._persistExecutedDepositsRedis();
+    await this.clearPendingExecution(depositKey);
   }
 
   /**
@@ -1016,6 +1251,18 @@ export class DepositAddressHandler {
       this.logger.debug({
         at: "DepositAddressHandler#initiateDepositV3",
         message: "Skipping already executed deposit (found in Redis)",
+        refTxHash,
+        depositKey,
+      });
+      return;
+    }
+
+    // Defer while another instance may have a broadcast in flight for this transfer (it crashed
+    // or is still draining); the marker expires via TTL if that instance never resolves it.
+    if (await this.hasForeignPendingExecution(depositKey)) {
+      this.logger.debug({
+        at: "DepositAddressHandler#initiateDepositV3",
+        message: "Skipping deposit: pending-execution marker held by another instance",
         refTxHash,
         depositKey,
       });
@@ -1108,8 +1355,13 @@ export class DepositAddressHandler {
         )}, using deposit address ${blockExplorerLink(depositAddress, originChainId)}`,
       };
 
-      const depositReceipt = await sendAndConfirmTransaction(executeTx, this.transactionClient, useDispatcher);
+      if (!(await this.preBroadcastCheckpoint(depositKey, "DepositAddressHandler#initiateDepositV3"))) {
+        return;
+      }
+      const depositReceipt = await this.sendAndConfirm(executeTx, useDispatcher);
       if (!isDefined(depositReceipt)) {
+        // Pending marker intentionally left: the tx may still have broadcast (confirmation
+        // failure), so let the TTL expire it rather than invite a cross-instance replay.
         this.logger.warn({
           at: "DepositAddressHandler#initiateDepositV3",
           message: "Failed to submit execute tx",
@@ -1127,6 +1379,7 @@ export class DepositAddressHandler {
       this.executedDepositTxHashes.add(refTxHash);
       executeCommitted = true;
       await this._persistExecutedDepositsRedis();
+      await this.clearPendingExecution(depositKey);
       await this._publishDepositExecuted(depositReceipt, depositMessage);
     } finally {
       if (!executeCommitted) {
@@ -1308,6 +1561,18 @@ export class DepositAddressHandler {
       return;
     }
 
+    // Defer while another instance may have a broadcast in flight for this transfer (it crashed
+    // or is still draining); the marker expires via TTL if that instance never resolves it.
+    if (await this.hasForeignPendingExecution(depositKey)) {
+      this.logger.debug({
+        at: "DepositAddressHandler#initiateWithdrawV3",
+        message: "Skipping withdraw: pending-execution marker held by another instance",
+        refTxHash,
+        depositKey,
+      });
+      return;
+    }
+
     if (this.observedExecutedWithdraws[chainId]?.has(depositKey)) {
       return;
     }
@@ -1430,8 +1695,13 @@ export class DepositAddressHandler {
         }, bundledDeploy: ${signed.bundledDeploy})`,
       };
 
-      const receipt = await sendAndConfirmTransaction(withdrawTx, this.transactionClient, useDispatcher);
+      if (!(await this.preBroadcastCheckpoint(depositKey, "DepositAddressHandler#initiateWithdrawV3"))) {
+        return;
+      }
+      const receipt = await this.sendAndConfirm(withdrawTx, useDispatcher);
       if (!isDefined(receipt)) {
+        // Pending marker intentionally left: the tx may still have broadcast (confirmation
+        // failure), so let the TTL expire it rather than invite a cross-instance replay.
         this.logger.warn({
           at: "DepositAddressHandler#initiateWithdrawV3",
           message: "Failed to submit withdraw tx",
@@ -1448,6 +1718,7 @@ export class DepositAddressHandler {
       this.executedWithdrawKeys.add(depositKey);
       withdrawCommitted = true;
       await this._persistWithdrawnKeysRedis();
+      await this.clearPendingExecution(depositKey);
       await this._publishWithdrawExecuted(receipt, depositMessage);
     } finally {
       if (!withdrawCommitted) {

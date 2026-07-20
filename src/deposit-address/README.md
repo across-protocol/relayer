@@ -18,13 +18,47 @@ The deposit-address handler polls the across-indexer for ERC-20 transfers that h
    per request), but every 10th consecutive failure — including non-2xx responses — emits a
    warning log to aid diagnosis when the alert fires. Pings stop on handover/shutdown with the
    rest of the handler.
-5. Handover via Redis (`InstanceCoordinator`) — exits cleanly when another instance takes over.
+5. Handover via Redis (`InstanceCoordinator`) — exits cleanly when another instance takes over,
+   after draining in-flight executions (see "Handover alignment" below).
 
 Poll-loop failures are never silent: `pollAndExecute` passes an error handler to `scheduleTask`, so
 a rejected `evaluateDepositAddresses` tick (which skips that whole batch) is logged at error level
 instead of being swallowed by the scheduler.
 
 Cleanup in the `finally` block closes the Pub/Sub publisher and Redis clients.
+
+## Handover alignment (no replayed executions)
+
+Instances rotate every few minutes; the danger window is an execution that has broadcast but not
+yet confirmed + persisted its executed marker when the rotation happens. An instance that exits
+inside that window leaves no record of the broadcast, so its successor replays the sweep once the
+balance check passes again — with fresh funds at the address, that is a double-spend (2026-07-20
+duplicate-sweep incident: a handover orphaned a confirmed 10 USDC sweep, the replacement replayed
+it against the next 20 USDC deposit, and the residual 10 USDC deadlocked at the deposit address).
+
+Three mechanisms close the window:
+
+1. **Drain before ceding (outgoing instance).** On observing a handover (or SIGHUP), the instance
+   aborts new work — the poll loop initiates no new executions once the abort signal fires — then
+   waits up to `HANDOVER_DRAIN_TIMEOUT` (90s) for in-flight poll ticks to settle, so a broadcast
+   tx gets confirmed and its executed marker persisted rather than orphaned. It then signals
+   "drained" through the `InstanceCoordinator` (`<botIdentifier>:drained` in Redis) and exits.
+2. **Wait before starting (incoming instance).** After taking the lease, the new instance waits up
+   to `HANDOVER_TAKEOVER_TIMEOUT` (120s) for its specific predecessor's drained signal **before**
+   loading the persisted sets — loading earlier races the predecessor's final persist. On timeout
+   (predecessor crashed, or predates this protocol) it proceeds with a warning; the markers below
+   still guard anything left in flight.
+3. **Pending-execution markers (crash safety).** Immediately before every fund-moving broadcast
+   the handler persists `deposit-address:pending-execution:<botIdentifier>:<depositKey>` (value:
+   the writing instance's run identifier, TTL `PENDING_EXECUTION_EXPIRY` = 15 min) and refuses to
+   broadcast if that persist fails. The marker is deleted only after the confirmed execution has
+   been persisted to the executed set. Every execute/withdraw path defers a transfer whose marker
+   is held by **another** instance (own markers don't block, so the normal same-instance retry
+   path is unaffected); after a failed submit the marker is intentionally left to expire via TTL,
+   since a "failed" send may still have broadcast. Consequence: if an instance dies mid-flight,
+   the successor defers that transfer for up to 15 minutes instead of risking a replay — a
+   deferred sweep is recoverable, a double-spend is not. The deploy tx on the v1 deposit path
+   carries no marker: it moves no funds and replays are guarded by the `isContractDeployed` check.
 
 ## Indexer message classification
 
@@ -187,6 +221,8 @@ Three sets persist across runs so handover does not double-spend, double-refund,
 - `deposit-address:skipped-withdraw-keys:<botIdentifier>` — set of `depositKey` for v3 refund withdraws the quote-api rejected with a terminal 422 (`GAS_EXCEEDS_REFUND` / `UNPRICEABLE_REFUND_TOKEN`); never re-attempted.
 
 On each poll, entries whose source messages are no longer returned by the indexer are pruned — the indexer has its own TTL and stops returning expired messages.
+
+Additionally, per-transfer `deposit-address:pending-execution:<botIdentifier>:<depositKey>` keys (self-expiring, no pruning needed) mark possibly-in-flight broadcasts across instances — see "Handover alignment" above.
 
 ## Refund-withdraw flow (high level)
 
