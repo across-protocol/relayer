@@ -41,7 +41,6 @@ import {
   isSVMSpokePoolClient,
   toAddressType,
   Address,
-  EvmAddress,
   chainIsTvm,
   SvmAddress,
   assert,
@@ -89,7 +88,6 @@ export class Monitor {
   private spokePoolsBlocks: Record<number, { startingBlock: number | undefined; endingBlock: number | undefined }> = {};
   private balanceCache: { [chainId: number]: { [token: string]: { [account: string]: BigNumber } } } = {};
   private decimals: { [chainId: number]: { [token: string]: number } } = {};
-  private additionalL1Tokens: L1Token[] = [];
   // Chains for each spoke pool client.
   public monitorChains: number[];
   // Chains that we care about inventory manager activity on, so doesn't include Ethereum which doesn't
@@ -114,20 +112,12 @@ export class Monitor {
       monitorChains: this.monitorChains,
       crossChainAdapterSupportedChains: this.crossChainAdapterSupportedChains,
     });
-    this.additionalL1Tokens = monitorConfig.additionalL1NonLpTokens.map((l1Token) => {
-      const l1TokenInfo = this.getTokenInfo(EvmAddress.from(l1Token), this.clients.hubPoolClient.chainId);
-      assert(l1TokenInfo.address.isEVM());
-      return {
-        ...l1TokenInfo,
-        address: l1TokenInfo.address,
-      };
-    });
     this.l1Tokens = this.clients.hubPoolClient.getL1Tokens();
     this.bundleDataApproxClient = new BundleDataApproxClient(
       this.clients.spokePoolClients,
       this.clients.hubPoolClient,
       this.monitorChains,
-      [...this.l1Tokens, ...this.additionalL1Tokens].map(({ address }) => address),
+      this.l1Tokens.map(({ address }) => address),
       this.logger
     );
   }
@@ -406,7 +396,7 @@ export class Monitor {
   async reportRelayerBalances(): Promise<void> {
     const hubChainId = this.clients.hubPoolClient.chainId;
     const relayers = this.monitorConfig.monitoredRelayers;
-    const allL1Tokens = [...this.l1Tokens, ...this.additionalL1Tokens];
+    const allL1Tokens = this.l1Tokens;
 
     // Fetch pending rebalances once for all relayers.
 
