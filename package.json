@@ -10,9 +10,9 @@
     "node": ">=22.18.0"
   },
   "dependencies": {
-    "@across-protocol/constants": "^3.1.119",
-    "@across-protocol/contracts": "5.0.22",
-    "@across-protocol/sdk": "4.4.8",
+    "@across-protocol/constants": "^3.1.123",
+    "@across-protocol/contracts": "5.0.24",
+    "@across-protocol/sdk": "4.4.14",
     "@arbitrum/sdk": "^4.0.5",
     "@consensys/linea-sdk": "^0.3.0",
     "@coral-xyz/anchor": "^0.31.1",
@@ -80,6 +80,7 @@
     "run-hlFinalizer": "node ./dist/index.js --hlFinalizer",
     "run-inventoryManager": "node ./dist/index.js --inventoryManager",
     "run-inventoryManager-swapper": "node ./dist/index.js --swapRebalancer",
+    "run-inventoryManager-sameAsset": "node ./dist/index.js --sameAssetRebalancer",
     "run-gaslessRelayer": "node ./dist/index.js --gaslessRelayer",
     "run-depositAddressHandler": "node ./dist/index.js --depositAddressHandler",
     "relay": "node ./dist/index.js --relayer",
@@ -126,7 +127,7 @@
     "pretty-quick": "^4",
     "reflect-metadata": "^0.2.2",
     "sinon": "^21.1.2",
-    "tar": "^7.5.16",
+    "tar": "^7.5.19",
     "typescript": "^6"
   },
   "resolutions": {

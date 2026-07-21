@@ -21,6 +21,7 @@ import {
   blockExplorerLink,
   BigNumber,
   normalizeDepositAddressMessage,
+  isNativeTokenSentinel,
   toAddressType,
   TransactionReceipt,
   getCurrentTime,
@@ -66,12 +67,24 @@ const INTEGRATOR_ID_REGEX = /^0x[0-9a-fA-F]{4}$/;
 const SUPPORTED_INDEXER_MESSAGE_VERSIONS = new Set([1, 3]);
 
 /**
+ * Cap on each watchdog heartbeat request. `fetch` has no default timeout, and the scheduler
+ * fires every ping fire-and-forget — without a cap, a hung heartbeat endpoint would stack
+ * pending requests indefinitely.
+ */
+const HEARTBEAT_TIMEOUT_MS = 5_000;
+
+// Warn on every Nth consecutive heartbeat failure (i.e. once per N ticks during a sustained
+// outage, rather than once per tick or once ever).
+const HEARTBEAT_FAILURE_WARN_THRESHOLD = 10;
+
+/**
  * Independent relayer bot which processes EIP-3009 signatures into deposits and corresponding fills.
  */
 export class DepositAddressHandler {
   private abortController = new AbortController();
   private _instanceCoordinator?: InstanceCoordinator;
   private initialized = false;
+  private consecutiveHeartbeatFailures = 0;
 
   // instanceCoordinator is populated by initialize(); reads pre-init throw, writes go through the setter.
   private get instanceCoordinator(): InstanceCoordinator {
@@ -307,8 +320,53 @@ export class DepositAddressHandler {
     scheduleTask(
       () => this.evaluateDepositAddresses(),
       this.config.indexerPollingInterval,
-      this.abortController.signal
+      this.abortController.signal,
+      // A rejected poll skips the whole batch for that tick; without this log the failure is
+      // invisible (scheduleTask otherwise swallows rejections) while fills silently stall.
+      (err) =>
+        this.logger.error({
+          at: "DepositAddressHandler#pollAndExecute",
+          message: "evaluateDepositAddresses failed; batch skipped this tick",
+          error: err instanceof Error ? err.message : String(err),
+        })
     );
+    scheduleTask(() => this.kickWatchdog(), this.config.watchdogInterval, this.abortController.signal);
+  }
+
+  /**
+   * Dead-man's-switch heartbeat, kicked externally by the `watchdogInterval` scheduler in
+   * pollAndExecute() (default 15s) until the handler's abortController fires on
+   * handover/shutdown. With a Checkly period of 30s + grace of 30s, a dead bot trips the alert
+   * within ~60s; cadence << period, so a dropped ping is fine. Best-effort: a heartbeat failure
+   * must never disrupt the bot, but sustained failures are logged since the alert will fire and
+   * this log is the first place to look for the cause.
+   */
+  private async kickWatchdog(): Promise<void> {
+    const url = this.config.heartbeatUrl;
+    if (!url) {
+      return;
+    }
+
+    let failure: string;
+    try {
+      const response = await fetch(url, { method: "GET", signal: AbortSignal.timeout(HEARTBEAT_TIMEOUT_MS) });
+      if (response.ok) {
+        this.consecutiveHeartbeatFailures = 0;
+        return;
+      }
+      failure = `HTTP ${response.status}`;
+    } catch (err) {
+      failure = err instanceof Error ? err.message : String(err);
+    }
+
+    if (++this.consecutiveHeartbeatFailures % HEARTBEAT_FAILURE_WARN_THRESHOLD === 0) {
+      this.logger.warn({
+        at: "DepositAddressHandler#kickWatchdog",
+        message: "Sustained watchdog heartbeat failures",
+        consecutiveFailures: this.consecutiveHeartbeatFailures,
+        lastError: failure,
+      });
+    }
   }
 
   /*
@@ -433,6 +491,21 @@ export class DepositAddressHandler {
       return;
     }
 
+    // Native-token (sentinel) withdraws are only supported on the v3 scheme — the v1 withdraw
+    // contract path cannot move native funds, so calling the sign-withdraw API would only fail.
+    if (isNativeTokenSentinel(token)) {
+      this.logger.debug({
+        at: "DepositAddressHandler#initiateWithdraw",
+        message: "Skipping withdraw: native-token withdraws are not supported on v1 deposit addresses",
+        depositAddress,
+        token,
+        depositKey,
+        refTxHash,
+        chainId,
+      });
+      return;
+    }
+
     // Skip if a previous instance (or this one) already executed this withdraw (persisted in Redis).
     if (this.executedWithdrawKeys.has(depositKey)) {
       this.logger.debug({
@@ -455,12 +528,9 @@ export class DepositAddressHandler {
     try {
       // Defensive on-chain balance check — guards against reorged indexer messages and against
       // acting on a deposit-address that has already been withdrawn through another path.
-      const provider = this.providersByChain[chainId];
-      const tokenContract = new Contract(token, ERC20_ABI, provider);
-
       let onchainBalance: BigNumber;
       try {
-        onchainBalance = await tokenContract.balanceOf(depositAddress);
+        onchainBalance = await this.getDepositAddressBalance(chainId, token, depositAddress);
       } catch (err) {
         this.logger.warn({
           at: "DepositAddressHandler#initiateWithdraw",
@@ -653,7 +723,8 @@ export class DepositAddressHandler {
         : depositMessage.routeParams.refundAddress;
       this.logger.warn({
         at: "DepositAddressHandler#_publishWithdrawExecuted",
-        message: "Skipping publish: no ERC20 Transfer (deposit address → refund address) found in receipt",
+        message:
+          "Skipping publish: no settlement log (ERC20 Transfer / native Withdraw, deposit address → refund address) found in receipt",
         depositAddress: depositMessage.depositAddress,
         refundAddress,
         token: depositMessage.erc20Transfer.contractAddress,
@@ -692,11 +763,25 @@ export class DepositAddressHandler {
    * rolls back state and never throws to the caller — a dropped publish leaves the indexer row
    * pending until ops reconciles. Shares the topic with `withdraw_executed`; gated independently by
    * config.enableDepositAddressDepositPublisher.
+   *
+   * Skipped entirely when `enableExecuteErc20Transfer` is on: that mode has the API emit a
+   * version-2 provenance blob on-chain (via `AcrossEventEmitter`) linking the execute to the
+   * funding transfer, so the indexer already learns of the execution from chain events and the
+   * Pub/Sub event would be a redundant second signal for the same transition.
    */
   private async _publishDepositExecuted(
     receipt: TransactionReceipt,
     depositMessage: DepositAddressMessageV3
   ): Promise<void> {
+    if (this.config.enableExecuteErc20Transfer) {
+      this.logger.debug({
+        at: "DepositAddressHandler#_publishDepositExecuted",
+        message: "Skipping deposit_executed publish: on-chain erc20Transfer provenance metadata is enabled",
+        depositAddress: depositMessage.depositAddress,
+        txHash: receipt.transactionHash,
+      });
+      return;
+    }
     if (!this.config.enableDepositAddressDepositPublisher || !isDefined(this.executionPublisher)) {
       return;
     }
@@ -808,8 +893,11 @@ export class DepositAddressHandler {
     // input token on the origin chain. If it has not, then we either (1) have already processed this
     // deposit, or (2) received a transaction from the indexer which has been reorged and will be processed
     // once the funds arrive to the deposit address.
-    const inputTokenContract = new Contract(inputToken, ERC20_ABI, factoryContract.provider);
-    const balanceOfContract = await inputTokenContract.balanceOf(depositMessage.depositAddress);
+    const balanceOfContract = await this.getDepositAddressBalance(
+      originChainId,
+      inputToken,
+      depositMessage.depositAddress
+    );
     if (balanceOfContract.lt(inputAmount)) {
       this.logger.debug({
         at: "DepositAddressHandler#initiateDeposit",
@@ -977,8 +1065,7 @@ export class DepositAddressHandler {
 
       // Defensive on-chain balance check — guards against reorged indexer messages and against
       // acting on a deposit-address that has already been executed through another path.
-      const inputTokenContract = new Contract(inputToken, ERC20_ABI, this.providersByChain[originChainId]);
-      const onchainBalance: BigNumber = await inputTokenContract.balanceOf(depositAddress);
+      const onchainBalance: BigNumber = await this.getDepositAddressBalance(originChainId, inputToken, depositAddress);
       if (onchainBalance.lt(toBN(amount))) {
         this.logger.debug({
           at: "DepositAddressHandler#initiateDepositV3",
@@ -1128,10 +1215,33 @@ export class DepositAddressHandler {
         recipient: routeParams.recipient.address,
       },
       originChainId: Number(erc20Transfer.chainId),
+      ...(this.config.enableExecuteInputToken
+        ? {
+            inputToken: {
+              chainId: Number(erc20Transfer.chainId),
+              address: erc20Transfer.contractAddress,
+            },
+          }
+        : {}),
       userAddress: refundAddress.address,
       amount: erc20Transfer.amount,
       executionFeeRecipient: this.signerAddress.toNative(),
       integratorId,
+      // Provenance reference to the inbound funding transfer. When accepted, the API folds this into a
+      // Multicall3 bundle that emits a version-2 provenance blob, giving the indexer an on-chain
+      // sweep ↔ funding-transfer link in the execute receipt. Gated because an API without the schema
+      // change rejects the field (400 INVALID_PARAM, `Expected type 'never'`). Number() is a no-op on
+      // an already-numeric chainId, so this keeps working if the indexer later types it as a number.
+      ...(this.config.enableExecuteErc20Transfer
+        ? {
+            erc20Transfer: {
+              chainId: Number(erc20Transfer.chainId),
+              blockNumber: erc20Transfer.blockNumber,
+              transactionHash: erc20Transfer.transactionHash,
+              logIndex: erc20Transfer.logIndex,
+            },
+          }
+        : {}),
     };
     // `_post` swallows errors and returns undefined, so retry on both throw and falsy return.
     try {
@@ -1239,10 +1349,9 @@ export class DepositAddressHandler {
 
       // Defensive on-chain balance check — guards against reorged indexer messages and against
       // acting on a deposit-address already withdrawn through another path.
-      const tokenContract = new Contract(token, ERC20_ABI, this.providersByChain[chainId]);
       let onchainBalance: BigNumber;
       try {
-        onchainBalance = await tokenContract.balanceOf(depositAddress);
+        onchainBalance = await this.getDepositAddressBalance(chainId, token, depositAddress);
       } catch (err) {
         this.logger.warn({
           at: "DepositAddressHandler#initiateWithdrawV3",
@@ -1416,6 +1525,20 @@ export class DepositAddressHandler {
     return (code?.length ?? 0) > 2; // "0x".length = 2;
   }
 
+  /**
+   * @notice Returns the deposit address's balance of `token` on `chainId`. Native transfers are
+   * indexed with the sentinel token address, which has no contract — read those via
+   * `provider.getBalance` instead of `balanceOf` (which reverts on the sentinel).
+   */
+  private async getDepositAddressBalance(chainId: number, token: string, depositAddress: string): Promise<BigNumber> {
+    const provider = this.providersByChain[chainId];
+    assert(isDefined(provider), `Provider not found for chain ${chainId}`);
+    if (isNativeTokenSentinel(token)) {
+      return provider.getBalance(depositAddress);
+    }
+    return new Contract(token, ERC20_ABI, provider).balanceOf(depositAddress);
+  }
+
   /*
    * @notice Queries the Indexer API for all pending deposit addresses transactions. By default, do not retry since this endpoing is being polled.
    */
@@ -1449,7 +1572,29 @@ export class DepositAddressHandler {
         }
         return true;
       })
-      .map((message) => (isDepositAddressMessageV3(message) ? message : normalizeDepositAddressMessage(message)));
+      .flatMap((message): AnyDepositAddressMessage[] => {
+        if (isDepositAddressMessageV3(message)) {
+          return [message];
+        }
+        // The version allowlist only proves the version is supported, not that the payload is
+        // well-formed. Normalization throwing on one malformed message must drop that message,
+        // not the batch — a redelivered poison message would otherwise starve every supported
+        // message for the indexer's whole redelivery window (2026-07-15 incident).
+        try {
+          return [normalizeDepositAddressMessage(message)];
+        } catch (err) {
+          this.logger.warn({
+            at: "DepositAddressHandler#_queryIndexerApi",
+            message: "deposit-address transfer dropped: message failed normalization",
+            version: message.version,
+            depositAddress: message.depositAddress,
+            txHash: message.erc20Transfer?.transactionHash,
+            chainId: message.erc20Transfer?.chainId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+          return [];
+        }
+      });
   }
 
   private async _getSwapApiQuote(

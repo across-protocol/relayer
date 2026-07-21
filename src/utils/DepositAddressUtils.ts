@@ -8,7 +8,7 @@ import { getEthersCompatibleAddress } from "./ContractUtils";
  * addresses on TVM chains (Tron returns base58 in API fields).
  */
 export function normalizeDepositAddressMessage(message: DepositAddressMessage): DepositAddressMessage {
-  const { routeParams, erc20Transfer } = message;
+  const { routeParams, erc20Transfer, counterfactualMaterials } = message;
   const originChainId = Number(routeParams.originChainId);
   const destinationChainId = Number(routeParams.destinationChainId);
   const transferChainId = Number(erc20Transfer.chainId);
@@ -41,37 +41,59 @@ export function normalizeDepositAddressMessage(message: DepositAddressMessage): 
       originChainId,
       message.adminWithdrawManagerContractAddress
     ),
-    counterfactualMaterials: {
-      // Spread first so the fee-bearing cctp/spokePool leaves (and their `params.executionFee`)
-      // survive normalization; the explicit overrides below re-normalize the leaf addresses.
-      ...message.counterfactualMaterials,
-      withdrawLeaf: {
-        ...message.counterfactualMaterials.withdrawLeaf,
-        implementationAddress: getEthersCompatibleAddress(
-          originChainId,
-          message.counterfactualMaterials.withdrawLeaf.implementationAddress
-        ),
+    // Materials can be absent: deposit addresses created before the indexer's V2-materials
+    // backfill are served with `counterfactualMaterials: undefined`. The withdraw path already
+    // guards on the leaf (`_getSignedWithdraw`), so pass the absence through rather than throw.
+    ...(counterfactualMaterials && {
+      counterfactualMaterials: {
+        // Spread first so the fee-bearing cctp/spokePool leaves (and their `params.executionFee`)
+        // survive normalization; the explicit overrides below re-normalize the leaf addresses.
+        ...counterfactualMaterials,
+        ...(counterfactualMaterials.withdrawLeaf && {
+          withdrawLeaf: {
+            ...counterfactualMaterials.withdrawLeaf,
+            implementationAddress: getEthersCompatibleAddress(
+              originChainId,
+              counterfactualMaterials.withdrawLeaf.implementationAddress
+            ),
+          },
+        }),
+        ...(counterfactualMaterials.cctpLeaf && {
+          cctpLeaf: {
+            ...counterfactualMaterials.cctpLeaf,
+            implementationAddress: getEthersCompatibleAddress(
+              originChainId,
+              counterfactualMaterials.cctpLeaf.implementationAddress
+            ),
+          },
+        }),
+        ...(counterfactualMaterials.spokePoolLeaf && {
+          spokePoolLeaf: {
+            ...counterfactualMaterials.spokePoolLeaf,
+            implementationAddress: getEthersCompatibleAddress(
+              originChainId,
+              counterfactualMaterials.spokePoolLeaf.implementationAddress
+            ),
+          },
+        }),
       },
-      ...(message.counterfactualMaterials.cctpLeaf && {
-        cctpLeaf: {
-          ...message.counterfactualMaterials.cctpLeaf,
-          implementationAddress: getEthersCompatibleAddress(
-            originChainId,
-            message.counterfactualMaterials.cctpLeaf.implementationAddress
-          ),
-        },
-      }),
-      ...(message.counterfactualMaterials.spokePoolLeaf && {
-        spokePoolLeaf: {
-          ...message.counterfactualMaterials.spokePoolLeaf,
-          implementationAddress: getEthersCompatibleAddress(
-            originChainId,
-            message.counterfactualMaterials.spokePoolLeaf.implementationAddress
-          ),
-        },
-      }),
-    },
+    }),
   };
+}
+
+/**
+ * Sentinel address representing the chain's native token. The counterfactual contracts
+ * (`NATIVE_ASSET` in CounterfactualConstants.sol) and the indexer's trace-based native-transfer
+ * detection (its `NATIVE_TOKEN_SENTINEL_ADDRESS`, which this constant mirrors by name) both use
+ * it: native transfers arrive with `erc20Transfer.contractAddress` set to this value and a
+ * synthetic `logIndex`. Native balances must be read via `provider.getBalance` — there is no
+ * contract at this address, so `balanceOf` reverts.
+ */
+export const NATIVE_TOKEN_SENTINEL_ADDRESS = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
+
+/** Returns true when `token` is the native-token sentinel address (case-insensitive). */
+export function isNativeTokenSentinel(token: string): boolean {
+  return token.toLowerCase() === NATIVE_TOKEN_SENTINEL_ADDRESS.toLowerCase();
 }
 
 /**

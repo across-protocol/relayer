@@ -504,8 +504,8 @@ export class BaseChainAdapter {
     // Permit bypass if simMode is set in order to permit tests to pass.
     if (simMode === false) {
       const symbol = await contract.symbol();
-      const { BSC, HYPEREVM, MAINNET, PLASMA, MONAD } = CHAIN_IDs;
-      const nativeTokenChains = [BSC, HYPEREVM, MAINNET, PLASMA, MONAD];
+      const { AVALANCHE, BSC, HYPEREVM, MAINNET, MONAD, PLASMA } = CHAIN_IDs;
+      const nativeTokenChains = [AVALANCHE, BSC, HYPEREVM, MAINNET, MONAD, PLASMA];
       const prependW = nativeTokenChains.some((chainId) => PUBLIC_NETWORKS[chainId].nativeToken === nativeTokenSymbol);
       const expectedTokenSymbol = prependW ? `W${nativeTokenSymbol}` : nativeTokenSymbol;
       assert(
@@ -546,7 +546,12 @@ export class BaseChainAdapter {
 
   async getOutstandingCrossChainTransfers(l1Tokens: EvmAddress[]): Promise<OutstandingTransfers> {
     const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
-    const availableL1Tokens = this.filterSupportedTokens(l1Tokens);
+    // L1→L2 outstanding-transfer tracking requires an L1 bridge. Tokens that are L2→L1-only
+    // (e.g. Avalanche USDT via Binance) are in SUPPORTED_TOKENS / supportedTokens but have no
+    // entry in this.bridges — skip them here rather than crashing on an undefined bridge.
+    const availableL1Tokens = this.filterSupportedTokens(l1Tokens).filter((l1Token) =>
+      isDefined(this.bridges[l1Token.toNative()])
+    );
 
     const outstandingTransfers: OutstandingTransfers = {};
 

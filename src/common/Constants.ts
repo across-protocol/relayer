@@ -26,7 +26,6 @@ const { AddressZero: ZERO_ADDRESS } = ethersConstants;
 import {
   BaseBridgeAdapter,
   OpStackDefaultERC20Bridge,
-  SnxOptimismBridge,
   DaiOptimismBridge,
   UsdcTokenSplitterBridge,
   OpStackWethBridge,
@@ -64,8 +63,6 @@ import {
   PaxosTransitL2Bridge,
 } from "../adapter/l2Bridges";
 import { getContractAddress } from "./ContractAddresses";
-import { HyperlaneXERC20Bridge } from "../adapter/bridges/HyperlaneXERC20Bridge";
-import { HyperlaneXERC20BridgeL2 } from "../adapter/l2Bridges/HyperlaneXERC20Bridge";
 import { OFTL2Bridge } from "../adapter/l2Bridges/OFTL2Bridge";
 
 /**
@@ -92,6 +89,7 @@ export const FINALIZER_TOKENBRIDGE_LOOKBACK = 14 * 24 * 60 * 60;
 // Chain IDs using the Succinct/Helios SP1 messaging bridge.
 export const UNIVERSAL_CHAINS = [
   CHAIN_IDs.ARC,
+  CHAIN_IDs.AVALANCHE,
   CHAIN_IDs.BSC,
   CHAIN_IDs.HYPEREVM,
   CHAIN_IDs.MONAD,
@@ -138,6 +136,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
   },
   100: {
     [CHAIN_IDs.ARC]: 1,
+    [CHAIN_IDs.AVALANCHE]: 1,
     [CHAIN_IDs.HYPEREVM]: 1,
     [CHAIN_IDs.LENS]: 0,
     [CHAIN_IDs.LINEA]: 1,
@@ -199,6 +198,7 @@ const resolveChainBundleBuffers = () => {
   const buffers = {
     [CHAIN_IDs.ARBITRUM]: defaultBuffers[ChainFamily.ORBIT], // Inherit Orbit default.
     [CHAIN_IDs.ARC]: 170, // ~350ms/block
+    [CHAIN_IDs.AVALANCHE]: 60, // ~1-2s block, almost instant finality
     [CHAIN_IDs.BSC]: 5, // 2x the average 2.5 block finality (https://www.bnbchain.org/en/blog/the-coming-fastfinality-on-bsc)
     [CHAIN_IDs.HYPEREVM]: 120, // 60s/big block
     [CHAIN_IDs.LINEA]: 40, // ~3s/block
@@ -254,6 +254,7 @@ const resolveChainCacheDelay = () => {
   const cacheDelay = {
     [CHAIN_IDs.ARBITRUM]: cacheDelays[ChainFamily.ORBIT],
     [CHAIN_IDs.ARC]: 20, // ~350ms/block, instant finality
+    [CHAIN_IDs.AVALANCHE]: 20, // ~1-2s block, almost instant finality but we want to be conservative for the start.
     [CHAIN_IDs.BSC]: 5, // FastFinality on BSC makes finality time probabilistic but it takes an average of 2.5 blocks.
     [CHAIN_IDs.HYPEREVM]: 120, // big blocks are 60s/block
     [CHAIN_IDs.LINEA]: 100, // Linea has a soft-finality of 1 block. This value is padded - but at 3s/block the padding is 5 minutes
@@ -284,6 +285,7 @@ export const CHAIN_CACHE_FOLLOW_DISTANCE = resolveChainCacheDelay();
 export const DEFAULT_NO_TTL_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.ARBITRUM]: 691200,
   [CHAIN_IDs.ARC]: 493714, // 493714 blocks is approximately 2 days at 350ms/block
+  [CHAIN_IDs.AVALANCHE]: 86400,
   [CHAIN_IDs.BASE]: 86400,
   [CHAIN_IDs.BLAST]: 86400,
   [CHAIN_IDs.BOBA]: 86400,
@@ -341,43 +343,30 @@ export const spokesThatHoldNativeTokens = resolveNativeTokenSpokes();
 
 // A mapping of L2 chain IDs to an array of tokens Across supports on that chain.
 export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
-  [CHAIN_IDs.ARBITRUM]: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "POOL", "ezETH"],
+  [CHAIN_IDs.ARBITRUM]: ["USDC", "USDT", "WETH", "DAI", "WBTC"],
   [CHAIN_IDs.ARC]: ["USDC"],
-  [CHAIN_IDs.BASE]: ["BAL", "DAI", "ETH", "WETH", "USDC", "USDT", "POOL", "VLR", "ezETH"],
-  [CHAIN_IDs.BLAST]: ["DAI", "WBTC", "WETH", "ezETH"],
-  [CHAIN_IDs.BSC]: ["CAKE", "WBNB", "USDC", "USDT", "WETH"],
+  [CHAIN_IDs.AVALANCHE]: ["USDC", "USDT"],
+  [CHAIN_IDs.BASE]: ["DAI", "ETH", "WETH", "USDC", "USDT"],
+  [CHAIN_IDs.BLAST]: ["DAI", "WBTC", "WETH"],
+  [CHAIN_IDs.BSC]: ["WBNB", "USDC", "USDT", "WETH"],
   [CHAIN_IDs.HYPEREVM]: ["USDC", "USDT"],
   [CHAIN_IDs.INK]: ["ETH", "WETH", "USDT", "USDC"],
   [CHAIN_IDs.LENS]: ["WETH", "WGHO", "USDC"],
-  [CHAIN_IDs.LINEA]: ["USDC", "USDT", "WETH", "WBTC", "DAI", "ezETH"],
+  [CHAIN_IDs.LINEA]: ["USDC", "USDT", "WETH", "WBTC", "DAI"],
   [CHAIN_IDs.LISK]: ["WETH", "USDC", "USDT", "LSK", "WBTC"],
   [CHAIN_IDs.MEGAETH]: ["WETH", "USDT"],
-  [CHAIN_IDs.MODE]: ["ETH", "WETH", "USDC", "USDT", "WBTC", "ezETH"],
+  [CHAIN_IDs.MODE]: ["ETH", "WETH", "USDC", "USDT", "WBTC"],
   [CHAIN_IDs.MONAD]: ["USDC", "USDT"], // @TODO: Add WBTC after its added to the chain token list
-  [CHAIN_IDs.OPTIMISM]: [
-    "DAI",
-    "SNX",
-    "BAL",
-    "WETH",
-    "USDC",
-    "POOL",
-    "USDT",
-    "WBTC",
-    "WLD",
-    "UMA",
-    "ACX",
-    "VLR",
-    "ezETH",
-  ],
+  [CHAIN_IDs.OPTIMISM]: ["DAI", "WETH", "USDC", "USDT", "WBTC", "WLD"],
   [CHAIN_IDs.PLASMA]: ["USDT", "WETH"],
-  [CHAIN_IDs.POLYGON]: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "POOL"],
+  [CHAIN_IDs.POLYGON]: ["USDC", "USDT", "WETH", "DAI", "WBTC"],
   [CHAIN_IDs.SOLANA]: ["USDC"],
   [CHAIN_IDs.SONEIUM]: ["WETH", "USDC"],
   [CHAIN_IDs.ROBINHOOD]: ["WETH", "USDC"],
   [CHAIN_IDs.TEMPO]: ["USDC"],
   [CHAIN_IDs.TRON]: ["USDT"],
-  [CHAIN_IDs.UNICHAIN]: ["ETH", "WETH", "USDC", "USDT", "ezETH"],
-  [CHAIN_IDs.WORLD_CHAIN]: ["WETH", "WBTC", "USDC", "WLD", "POOL"],
+  [CHAIN_IDs.UNICHAIN]: ["ETH", "WETH", "USDC", "USDT"],
+  [CHAIN_IDs.WORLD_CHAIN]: ["WETH", "WBTC", "USDC", "WLD"],
   [CHAIN_IDs.ZK_SYNC]: ["USDC", "USDT", "WETH", "WBTC", "DAI"],
   [CHAIN_IDs.ZORA]: ["USDC", "WETH"],
 
@@ -476,24 +465,23 @@ export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<Ba
   [CHAIN_IDs.ARBITRUM]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcTokenSplitterBridge,
     [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTBridge,
-    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20Bridge,
   },
   [CHAIN_IDs.ARC]: {
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcCCTPBridge,
+  },
+  [CHAIN_IDs.AVALANCHE]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcCCTPBridge,
   },
   [CHAIN_IDs.BASE]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcTokenSplitterBridge,
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
-    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20Bridge,
   },
   [CHAIN_IDs.BLAST]: {
     [TOKEN_SYMBOLS_MAP.DAI.addresses[CHAIN_IDs.MAINNET]]: BlastBridge,
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
-    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20Bridge,
   },
   [CHAIN_IDs.BSC]: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: BinanceCEXNativeBridge,
-    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20Bridge,
   },
   [CHAIN_IDs.HYPEREVM]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcCCTPBridge,
@@ -511,7 +499,6 @@ export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<Ba
   [CHAIN_IDs.LINEA]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcCCTPBridge,
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: LineaWethBridge,
-    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20Bridge,
   },
   [CHAIN_IDs.LISK]: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
@@ -523,7 +510,6 @@ export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<Ba
   },
   [CHAIN_IDs.MODE]: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
-    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20Bridge,
   },
   [CHAIN_IDs.MONAD]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcCCTPBridge,
@@ -532,11 +518,9 @@ export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<Ba
     // [TOKEN_SYMBOLS_MAP.WBTC.addresses[CHAIN_IDs.MAINNET]]: OFTBridge,
   },
   [CHAIN_IDs.OPTIMISM]: {
-    [TOKEN_SYMBOLS_MAP.SNX.addresses[CHAIN_IDs.MAINNET]]: SnxOptimismBridge,
     [TOKEN_SYMBOLS_MAP.DAI.addresses[CHAIN_IDs.MAINNET]]: DaiOptimismBridge,
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcTokenSplitterBridge,
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
-    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20Bridge,
   },
   [CHAIN_IDs.PLASMA]: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OFTWethBridge,
@@ -565,12 +549,10 @@ export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<Ba
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcCCTPBridge,
     [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTBridge,
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
-    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20Bridge,
   },
   [CHAIN_IDs.WORLD_CHAIN]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcCCTPBridge,
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
-    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20Bridge,
   },
   [CHAIN_IDs.ZK_SYNC]: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: ZKStackWethBridge,
@@ -650,6 +632,11 @@ export const L2_TOKEN_SPLITTER_BRIDGES: Record<
 };
 
 export const CUSTOM_L2_BRIDGE: Record<number, Record<string, L2BridgeConstructor<BaseL2BridgeAdapter>>> = {
+  [CHAIN_IDs.AVALANCHE]: {
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2UsdcCCTPBridge,
+    // L2→L1 excess withdrawals via Binance (same pattern as Optimism USDT). No L1→L2 Binance route.
+    [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: L2BinanceCEXBridge,
+  },
   [CHAIN_IDs.LISK]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2OpStackUSDCBridge,
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: L2OpStackWethBridge,
@@ -658,17 +645,14 @@ export const CUSTOM_L2_BRIDGE: Record<number, Record<string, L2BridgeConstructor
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: L2OpStackWethBridge,
   },
   [CHAIN_IDs.OPTIMISM]: {
-    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20BridgeL2,
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2UsdcCCTPBridge,
     [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: L2BinanceCEXBridge,
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: L2BinanceCEXNativeBridge,
   },
   [CHAIN_IDs.ARBITRUM]: {
-    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20BridgeL2,
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2UsdcCCTPBridge,
     [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTL2Bridge,
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: L2BinanceCEXNativeBridge,
-    [TOKEN_SYMBOLS_MAP.DAI.addresses[CHAIN_IDs.MAINNET]]: L2BinanceCEXBridge,
   },
   [CHAIN_IDs.ARC]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2UsdcCCTPBridge,
@@ -681,23 +665,15 @@ export const CUSTOM_L2_BRIDGE: Record<number, Record<string, L2BridgeConstructor
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: L2OpStackWethBridge,
     [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTL2Bridge,
   },
-  [CHAIN_IDs.MODE]: {
-    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20BridgeL2,
-  },
   [CHAIN_IDs.MONAD]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2UsdcCCTPBridge,
     [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTL2Bridge,
     // [TOKEN_SYMBOLS_MAP.WBTC.addresses[CHAIN_IDs.MAINNET]]: OFTL2Bridge,
   },
   [CHAIN_IDs.LINEA]: {
-    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20BridgeL2,
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2UsdcCCTPBridge,
   },
-  [CHAIN_IDs.BLAST]: {
-    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20BridgeL2,
-  },
   [CHAIN_IDs.BASE]: {
-    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20BridgeL2,
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2UsdcCCTPBridge,
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: L2BinanceCEXNativeBridge,
   },
@@ -708,7 +684,6 @@ export const CUSTOM_L2_BRIDGE: Record<number, Record<string, L2BridgeConstructor
     [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTL2Bridge,
   },
   [CHAIN_IDs.UNICHAIN]: {
-    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20BridgeL2,
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2UsdcCCTPBridge,
     [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTL2Bridge,
   },
@@ -724,9 +699,6 @@ export const CUSTOM_L2_BRIDGE: Record<number, Record<string, L2BridgeConstructor
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2UsdcCCTPBridge,
     [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTL2Bridge,
   },
-  [CHAIN_IDs.BSC]: {
-    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20BridgeL2,
-  },
   [CHAIN_IDs.SOLANA]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2SolanaUsdcCCTPBridge,
   },
@@ -734,7 +706,6 @@ export const CUSTOM_L2_BRIDGE: Record<number, Record<string, L2BridgeConstructor
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: PaxosTransitL2Bridge,
   },
   [CHAIN_IDs.WORLD_CHAIN]: {
-    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20BridgeL2,
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2UsdcCCTPBridge,
   },
   [CHAIN_IDs.ZK_SYNC]: {
@@ -961,39 +932,12 @@ export const ARBITRUM_ORBIT_L1L2_MESSAGE_FEE_DATA: {
   // },
 };
 
-// source: https://github.com/hyperlane-xyz/hyperlane-registry/blob/346b18c4314cf96b41ae2da781f58fb832dbe1f8/deployments/warp_routes/EZETH/arbitrum-base-berachain-blast-bsc-ethereum-fraxtal-linea-mode-optimism-sei-swell-taiko-unichain-worldchain-zircuit-config.yaml
-export const HYPERLANE_ROUTERS: { [chainId: number]: { [tokenAddress: string]: string } } = {
-  [CHAIN_IDs.MAINNET]: {
-    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: "0xC59336D8edDa9722B4f1Ec104007191Ec16f7087",
-  },
-  [CHAIN_IDs.ARBITRUM]: {
-    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.ARBITRUM]]: "0xB26bBfC6d1F469C821Ea25099017862e7368F4E8",
-  },
-  [CHAIN_IDs.BASE]: {
-    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.BASE]]: "0x2552516453368e42705D791F674b312b8b87CD9e",
-  },
-  [CHAIN_IDs.BLAST]: {
-    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.BLAST]]: "0x486b39378f99f073A3043C6Aabe8666876A8F3C5",
-  },
-  [CHAIN_IDs.MODE]: {
-    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MODE]]: "0xC59336D8edDa9722B4f1Ec104007191Ec16f7087",
-  },
-  [CHAIN_IDs.LINEA]: {
-    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.LINEA]]: "0xC59336D8edDa9722B4f1Ec104007191Ec16f7087",
-  },
-  [CHAIN_IDs.UNICHAIN]: {
-    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.UNICHAIN]]: "0xFf0247f72b0d7ceD319D8457dD30622a2bed78B5",
-  },
-  [CHAIN_IDs.OPTIMISM]: {
-    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.OPTIMISM]]: "0xacEB607CdF59EB8022Cc0699eEF3eCF246d149e2",
-  },
-  [CHAIN_IDs.BSC]: {
-    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.BSC]]: "0xE00C6185a5c19219F1FFeD213b4406a254968c26",
-  },
-  [CHAIN_IDs.WORLD_CHAIN]: {
-    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.WORLD_CHAIN]]: "0x530b6596af6B6aB4D355d7Af2b5FF12eAeef8261",
-  },
-};
+// Hyperlane warp-route routers, keyed by chainId and then by local token address. Consumed by the
+// HyperlaneXERC20Bridge / HyperlaneXERC20BridgeL2 adapters. Currently empty — ezETH, the last user,
+// was sunset in July 2026 — but the wiring is retained for future xERC20 tokens. Router addresses
+// for new tokens can be sourced from https://github.com/hyperlane-xyz/hyperlane-registry
+// (deployments/warp_routes/<TOKEN>/...).
+export const HYPERLANE_ROUTERS: { [chainId: number]: { [tokenAddress: string]: string } } = {};
 
 // 0.1 ETH is a default cap for chains that use ETH as their gas token
 export const HYPERLANE_DEFAULT_FEE_CAP = toWei("0.1");
@@ -1097,6 +1041,7 @@ interface SwapRouteConfig {
 
 const generateSwapRoutes = (): { [chainId: string]: SwapRouteConfig } => {
   const swapChains = [
+    CHAIN_IDs.AVALANCHE,
     CHAIN_IDs.BSC,
     CHAIN_IDs.HYPEREVM,
     CHAIN_IDs.MONAD,
@@ -1116,6 +1061,7 @@ const generateSwapRoutes = (): { [chainId: string]: SwapRouteConfig } => {
 
   // Can override one or more defaults for a given chain here.
   const overrides: { [chainId: number]: Partial<typeof defaults> } = {
+    [CHAIN_IDs.AVALANCHE]: { inputTokenSymbol: "USDC" },
     [CHAIN_IDs.HYPEREVM]: { inputTokenSymbol: "USDC" },
     [CHAIN_IDs.PLASMA]: { inputTokenSymbol: "USDT" },
     [CHAIN_IDs.TEMPO]: {

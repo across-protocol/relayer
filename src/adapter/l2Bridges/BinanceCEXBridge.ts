@@ -57,6 +57,9 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
     };
 
     this.depositNetwork = BINANCE_NETWORKS[l2chainId];
+    if (!isDefined(this.depositNetwork)) {
+      throw new Error(`No Binance network configured for chain ${l2chainId}`);
+    }
 
     this.binanceApiClientPromise = getBinanceApiClient(process.env["BINANCE_API_BASE"]);
   }

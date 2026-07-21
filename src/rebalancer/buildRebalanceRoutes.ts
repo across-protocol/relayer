@@ -5,17 +5,12 @@ import { RebalanceRoute } from "./utils/interfaces";
 type SupportedToken = "USDC" | "USDT" | "WETH";
 type StableToken = Exclude<SupportedToken, "WETH">;
 type DifferentAssetAdapter = "binance" | "hyperliquid";
-type ChainSelector = (rebalancerConfig: RebalancerConfig) => number[];
 
 // Direct Binance deposit/withdraw networks for each token. This is intentionally separate from the rebalancer route
 // set so we can track venue support without automatically enabling every listed network operationally.
-const BINANCE_NETWORKS_BY_SYMBOL: Record<SupportedToken, readonly number[]> = {
+const BINANCE_NETWORKS_BY_SYMBOL: Record<StableToken, readonly number[]> = {
   USDC: [CHAIN_IDs.ARBITRUM, CHAIN_IDs.OPTIMISM, CHAIN_IDs.MAINNET, CHAIN_IDs.BASE, CHAIN_IDs.BSC],
   USDT: [CHAIN_IDs.ARBITRUM, CHAIN_IDs.OPTIMISM, CHAIN_IDs.MAINNET, CHAIN_IDs.BSC, CHAIN_IDs.TRON],
-  // Live Binance ETH networkList currently includes ARBITRUM, BASE, BSC, ETH, OPTIMISM, and ZKSYNCERA.
-  // The rebalancer support list below stays narrower until we intentionally enable more of those networks. We filter
-  // this further by limiting to chains where we have an Atomic Depositor contract.
-  WETH: [CHAIN_IDs.MAINNET],
 };
 
 const REBALANCE_CHAINS_BY_SYMBOL: Record<SupportedToken, readonly number[]> = {
@@ -47,26 +42,8 @@ const SAME_ASSET_BRIDGE_ADAPTER_BY_SYMBOL: Record<StableToken, "cctp" | "oft"> =
   USDT: "oft",
 };
 
-function hasSameAssetBridgeAdapter(token: SupportedToken): token is StableToken {
-  return token in SAME_ASSET_BRIDGE_ADAPTER_BY_SYMBOL;
-}
-
 function configuredChainsForToken(rebalancerConfig: RebalancerConfig, token: SupportedToken): number[] {
   return REBALANCE_CHAINS_BY_SYMBOL[token].filter((chainId) => rebalancerConfig.chainIds.includes(chainId));
-}
-
-function configuredDirectBinanceChainsForToken(rebalancerConfig: RebalancerConfig, token: SupportedToken): number[] {
-  return configuredChainsForToken(rebalancerConfig, token).filter((chainId) =>
-    BINANCE_NETWORKS_BY_SYMBOL[token].includes(chainId)
-  );
-}
-
-function configuredChains(token: SupportedToken): ChainSelector {
-  return (rebalancerConfig) => configuredChainsForToken(rebalancerConfig, token);
-}
-
-function configuredDirectBinanceChains(token: SupportedToken): ChainSelector {
-  return (rebalancerConfig) => configuredDirectBinanceChainsForToken(rebalancerConfig, token);
 }
 
 function canUseHyperliquidStablecoinRoute({
@@ -84,21 +61,14 @@ function canUseHyperliquidStablecoinRoute({
   );
 }
 
-function canUseSameAssetBridgeRoute(
-  token: SupportedToken,
-  sourceChain: number,
-  destinationChain: number
-): token is StableToken {
-  if (!hasSameAssetBridgeAdapter(token)) {
-    return false;
-  }
+function canUseSameAssetBridgeRoute(token: StableToken, sourceChain: number, destinationChain: number): boolean {
   if (sourceChain === CHAIN_IDs.BSC || destinationChain === CHAIN_IDs.BSC) {
     return false;
   }
   return token !== "USDT" || (sourceChain !== CHAIN_IDs.TRON && destinationChain !== CHAIN_IDs.TRON);
 }
 
-function buildSameAssetRoutes(rebalancerConfig: RebalancerConfig, token: SupportedToken): RebalanceRoute[] {
+function buildSameAssetRoutes(rebalancerConfig: RebalancerConfig, token: StableToken): RebalanceRoute[] {
   if (!rebalancerConfig.cumulativeTargetBalances[token]?.targetBalance) {
     return [];
   }
@@ -141,8 +111,6 @@ type DifferentAssetPairRule = {
   tokenA: SupportedToken;
   tokenB: SupportedToken;
   adapter: DifferentAssetAdapter;
-  chainsA: ChainSelector;
-  chainsB: ChainSelector;
   allow?: (params: { sourceChain: number; destinationChain: number }) => boolean;
 };
 
@@ -151,30 +119,22 @@ const DIFFERENT_ASSET_ROUTE_RULES: readonly DifferentAssetPairRule[] = [
     tokenA: "USDT",
     tokenB: "USDC",
     adapter: "binance",
-    chainsA: configuredChains("USDT"),
-    chainsB: configuredChains("USDC"),
   },
   {
     tokenA: "USDT",
     tokenB: "USDC",
     adapter: "hyperliquid",
-    chainsA: configuredChains("USDT"),
-    chainsB: configuredChains("USDC"),
     allow: canUseHyperliquidStablecoinRoute,
   },
   {
     tokenA: "WETH",
     tokenB: "USDT",
     adapter: "binance",
-    chainsA: configuredDirectBinanceChains("WETH"),
-    chainsB: configuredChains("USDT"),
   },
   {
     tokenA: "WETH",
     tokenB: "USDC",
     adapter: "binance",
-    chainsA: configuredDirectBinanceChains("WETH"),
-    chainsB: configuredChains("USDC"),
   },
 ];
 
@@ -206,15 +166,14 @@ function pushDirectedDifferentAssetRoutes(
 function buildDifferentAssetRoutes(rebalancerConfig: RebalancerConfig): RebalanceRoute[] {
   const routes: RebalanceRoute[] = [];
   for (const rule of DIFFERENT_ASSET_ROUTE_RULES) {
-    const chainsA = rule.chainsA(rebalancerConfig);
-    const chainsB = rule.chainsB(rebalancerConfig);
-
     if (
       !rebalancerConfig.cumulativeTargetBalances[rule.tokenA]?.targetBalance ||
       !rebalancerConfig.cumulativeTargetBalances[rule.tokenB]?.targetBalance
     ) {
       continue;
     }
+    const chainsA = configuredChainsForToken(rebalancerConfig, rule.tokenA);
+    const chainsB = configuredChainsForToken(rebalancerConfig, rule.tokenB);
     pushDirectedDifferentAssetRoutes(routes, rule, rule.tokenA, chainsA, rule.tokenB, chainsB);
     pushDirectedDifferentAssetRoutes(routes, rule, rule.tokenB, chainsB, rule.tokenA, chainsA);
   }
@@ -227,19 +186,5 @@ export function buildRebalanceRoutes(rebalancerConfig: RebalancerConfig): Rebala
     ...buildDifferentAssetRoutes(rebalancerConfig),
     ...buildSameAssetRoutes(rebalancerConfig, "USDT"),
     ...buildSameAssetRoutes(rebalancerConfig, "USDC"),
-    ...buildSameAssetRoutes(rebalancerConfig, "WETH"),
   ];
 }
-
-export function dedupeRebalanceRoutes(routes: RebalanceRoute[]): RebalanceRoute[] {
-  const uniqueRoutes = new Map<string, RebalanceRoute>();
-  for (const route of routes) {
-    uniqueRoutes.set(
-      [route.sourceChain, route.sourceToken, route.destinationChain, route.destinationToken, route.adapter].join("|"),
-      route
-    );
-  }
-  return Array.from(uniqueRoutes.values());
-}
-
-export { BINANCE_NETWORKS_BY_SYMBOL, REBALANCE_CHAINS_BY_SYMBOL };

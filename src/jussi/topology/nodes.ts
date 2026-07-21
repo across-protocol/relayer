@@ -4,13 +4,7 @@ import { bnZero, formatUnits, getTokenInfo, toAddressType, toBNWei } from "../..
 import { getTokenInfoFromSymbol } from "../../utils/TokenUtils";
 import { isDefined } from "../../utils/TypeGuards";
 import { DEFAULT_HUB_POOL_CHAIN_ID, JUSSI_LOGICAL_ASSETS } from "../constants";
-import type {
-  JussiNodeDefinition,
-  LogicalAsset,
-  ManagedNodeContext,
-  ManagedNodeRatios,
-  ManagedNodeTemplate,
-} from "../types";
+import type { JussiNodeDefinition, ManagedNodeContext, ManagedNodeRatios, ManagedNodeTemplate } from "../types";
 
 export function canonicalNodeKey(chainId: number, tokenAddress: string): string {
   return `evm:${chainId}:${tokenAddress.toLowerCase()}`;
@@ -84,9 +78,14 @@ export function materializeNodeDefinitions(templates: ManagedNodeTemplate[]): Ma
   const managedNodeRatios = resolveManagedNodeRatios(templates);
   return templates.map((template) => {
     const nodeKey = canonicalNodeKey(template.chainId, template.tokenAddress);
-    const definition = template.managed
-      ? buildManagedNodeDefinition(template, managedNodeRatios.get(nodeKey))
-      : buildNeutralNodeDefinition(template);
+    let definition: JussiNodeDefinition;
+    if (template.managed) {
+      const ratios = managedNodeRatios.get(nodeKey);
+      assert(isDefined(ratios), `Managed node ${template.symbol} on ${template.chainId} is missing normalized ratios`);
+      definition = buildManagedNodeDefinition(template, ratios);
+    } else {
+      definition = buildNeutralNodeDefinition(template);
+    }
 
     return {
       ...template,
@@ -101,16 +100,12 @@ export function materializeNodeDefinitions(templates: ManagedNodeTemplate[]): Ma
 
 function resolveManagedNodeRatios(templates: ManagedNodeTemplate[]): Map<string, ManagedNodeRatios> {
   type ManagedNodeTemplateWithTokenConfig = ManagedNodeTemplate & { tokenConfig: TokenBalanceConfig };
-  const managedTemplatesByLogicalAsset = new Map<LogicalAsset, ManagedNodeTemplateWithTokenConfig[]>();
-  templates
-    .filter(
+  const managedTemplatesByLogicalAsset = Map.groupBy(
+    templates.filter(
       (template): template is ManagedNodeTemplateWithTokenConfig => template.managed && isDefined(template.tokenConfig)
-    )
-    .forEach((template) => {
-      const existing = managedTemplatesByLogicalAsset.get(template.logicalAsset) ?? [];
-      existing.push(template);
-      managedTemplatesByLogicalAsset.set(template.logicalAsset, existing);
-    });
+    ),
+    (template) => template.logicalAsset
+  );
   const normalizedRatios = new Map<string, ManagedNodeRatios>();
   const unitRatio = toBNWei(1);
 
@@ -166,17 +161,7 @@ function resolveManagedNodeRatios(templates: ManagedNodeTemplate[]): Map<string,
   return normalizedRatios;
 }
 
-function buildManagedNodeDefinition(template: ManagedNodeTemplate, ratios?: ManagedNodeRatios): JussiNodeDefinition {
-  assert(
-    isDefined(template.tokenConfig),
-    `Managed node ${template.symbol} on ${template.chainId} is missing token config`
-  );
-  const normalizedRatios = ratios ?? {
-    targetAllocationRatio: template.tokenConfig.targetPct,
-    minAllocationRatio: template.tokenConfig.thresholdPct,
-    maxAllocationRatio: template.tokenConfig.targetPct.mul(template.tokenConfig.targetOverageBuffer).div(toBNWei(1)),
-  };
-
+function buildManagedNodeDefinition(template: ManagedNodeTemplate, ratios: ManagedNodeRatios): JussiNodeDefinition {
   return {
     node_key: "",
     chain_id: template.chainId,
@@ -184,9 +169,9 @@ function buildManagedNodeDefinition(template: ManagedNodeTemplate, ratios?: Mana
     symbol: template.symbol,
     logical_asset: template.logicalAsset,
     decimals: template.decimals,
-    target_allocation_ratio: formatUnits(normalizedRatios.targetAllocationRatio, 18),
-    min_allocation_ratio: formatUnits(normalizedRatios.minAllocationRatio, 18),
-    max_allocation_ratio: formatUnits(normalizedRatios.maxAllocationRatio, 18),
+    target_allocation_ratio: formatUnits(ratios.targetAllocationRatio, 18),
+    min_allocation_ratio: formatUnits(ratios.minAllocationRatio, 18),
+    max_allocation_ratio: formatUnits(ratios.maxAllocationRatio, 18),
   };
 }
 

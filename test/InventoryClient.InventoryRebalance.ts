@@ -262,7 +262,21 @@ describe("InventoryClient: Rebalancing inventory", function () {
     expect(spyLogIncludes(spy, -2, '"proRataShare":"7.00%"')).to.be.true;
   });
 
-  it("Correctly decides when to execute rebalances: token shortfall", async function () {
+  it("Returns possible rebalances without sending bridge transactions", async function () {
+    tokenClient.decrementLocalBalance(ARBITRUM, toAddressType(l2TokensForUsdc[ARBITRUM], ARBITRUM), toMegaWei(500));
+
+    await inventoryClient.update();
+    const rebalances = await inventoryClient.rebalanceInventoryIfNeeded(true);
+
+    expect(rebalances.length).to.equal(1);
+    expect(rebalances[0].chainId).to.equal(ARBITRUM);
+    expect(rebalances[0].amount.eq(toMegaWei(515))).to.be.true;
+    expect(adapterManager.tokensSentCrossChain[ARBITRUM]).to.be.undefined;
+  });
+
+  // Skipped: shortfall rebalances are temporarily disabled in InventoryClient.getPossibleRebalances(). Re-enable
+  // alongside that logic.
+  it.skip("Correctly decides when to execute rebalances: token shortfall", async function () {
     // Test the case where the funds on a particular chain are too low to meet a relay (shortfall) and the bot rebalances.
     await inventoryClient.update();
     await inventoryClient.rebalanceInventoryIfNeeded();
@@ -395,7 +409,7 @@ describe("InventoryClient: Rebalancing inventory", function () {
       .to.be.true;
   });
 
-  it("Refuses to send rebalance when ERC20 balance changes", async function () {
+  it("Only refuses to send rebalance when on-chain balance cannot fund the transfer", async function () {
     await inventoryClient.update();
     await inventoryClient.rebalanceInventoryIfNeeded();
 
@@ -422,15 +436,17 @@ describe("InventoryClient: Rebalancing inventory", function () {
       )
     ).to.equal(expectedAlloc);
 
-    // Set USDC balance to be lower than expected.
+    // Set the on-chain USDC balance below the rebalance amount so we can no longer fund the transfer. The rebalance
+    // should be skipped even though inventory accounting still thinks the funds are available.
+    mainnetUsdcContract.balanceOf.whenCalledWith(owner.address).returns(toMegaWei(1));
+    await inventoryClient.rebalanceInventoryIfNeeded();
+    expect(spyLogIncludes(spy, -2, "Insufficient mainnet balance to fund rebalance")).to.be.true;
+
+    // A balance that merely changed but still covers the transfer must NOT block the rebalance (the point of the
+    // loosened check). Set the balance slightly below the snapshot but far above the rebalance amount.
     mainnetUsdcContract.balanceOf
       .whenCalledWith(owner.address)
       .returns(initialAllocation[MAINNET][mainnetUsdc].sub(toMegaWei(1)));
-    await inventoryClient.rebalanceInventoryIfNeeded();
-    expect(spyLogIncludes(spy, -2, "Token balance on mainnet changed")).to.be.true;
-
-    // Reset and check again.
-    mainnetUsdcContract.balanceOf.whenCalledWith(owner.address).returns(initialAllocation[MAINNET][mainnetUsdc]);
     await inventoryClient.rebalanceInventoryIfNeeded();
     expect(lastSpyLogIncludes(spy, "Executed Inventory rebalances")).to.be.true;
   });
@@ -477,6 +493,27 @@ describe("InventoryClient: Rebalancing inventory", function () {
       expect(adapterManager.withdrawalsRequired[0].l2ChainId).eq(testChain);
       expect(adapterManager.withdrawalsRequired[0].l2Token.toNative()).eq(testL2Token.toNative());
       expect(adapterManager.withdrawalsRequired[0].address.toNative()).eq(owner.address);
+    });
+
+    it("Returns excess withdrawals without sending L2 withdrawals", async function () {
+      const currentCumulativeBalance = inventoryClient.getCumulativeBalance(EvmAddress.from(testL1Token));
+      tokenClient.setTokenData(testChain, testL2Token, currentCumulativeBalance);
+      const currentAllocationPct = inventoryClient
+        .getBalanceOnChain(testChain, EvmAddress.from(testL1Token))
+        .mul(toWei(1))
+        .div(inventoryClient.getCumulativeBalance(EvmAddress.from(testL1Token)));
+
+      const withdrawals = await inventoryClient.withdrawExcessBalances(true);
+      const expectedWithdrawalPct = currentAllocationPct.sub(
+        inventoryConfig.tokenConfig[testL1Token][testL2Token.toNative()][testChain].targetPct
+      );
+      const expectedWithdrawalAmount = expectedWithdrawalPct
+        .mul(inventoryClient.getCumulativeBalance(EvmAddress.from(testL1Token)))
+        .div(toWei(1));
+
+      expect(withdrawals[testChain][0].amountToWithdraw).eq(expectedWithdrawalAmount);
+      expect(withdrawals[testChain][0].l2Token.toNative()).eq(testL2Token.toNative());
+      expect(adapterManager.withdrawalsRequired.length).to.equal(0);
     });
 
     it("Withdrawal amount is in correct L2 token decimals", async function () {

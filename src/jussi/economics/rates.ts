@@ -9,7 +9,6 @@ import type { RuntimePricingContext } from "./PricingContext";
 import type {
   BinanceInternalAdapter,
   EdgePricingParams,
-  EdgeFamily,
   GraphEdgeCandidate,
   HyperliquidInternalAdapter,
   JussiEdgeClassDefinition,
@@ -20,19 +19,14 @@ import type {
 import { resolveEdgeClassId, resolveRateLimitBucketId } from "../topology/edges";
 import { quoteLiveOftRouteTransfer } from "./quotes";
 
-const ONE_TO_ONE_OUTPUT_RATE_FAMILIES: readonly EdgeFamily[] = [
-  "cctp",
-  "canonical",
-  "bridgeapi",
-  "hyperlane",
-  "binance_cex_bridge",
-];
+type EdgeClassPricingParams = Pick<EdgePricingParams, "relayerAddress" | "pricingContext" | "rebalancerAdapters">;
 
 export async function serializeEdgeClassDefinition(
   candidate: GraphEdgeCandidate,
-  params: Pick<EdgePricingParams, "baseSigner" | "pricingContext" | "rebalancerAdapters">
+  params: EdgeClassPricingParams
 ): Promise<JussiEdgeClassDefinition> {
   const edge_class_id = resolveEdgeClassId(candidate);
+  const rateLimitBucketId = resolveRateLimitBucketId(candidate.family);
   return {
     edge_class_id,
     venue: candidate.family,
@@ -41,32 +35,23 @@ export async function serializeEdgeClassDefinition(
     output: {
       segments: await resolveOutputSegments(candidate, params),
     },
-    ...(resolveRateLimitBucketId(candidate.family)
-      ? { rate_limit_bucket_id: resolveRateLimitBucketId(candidate.family) }
-      : {}),
+    ...(rateLimitBucketId ? { rate_limit_bucket_id: rateLimitBucketId } : {}),
   };
 }
 
 async function resolveOutputSegments(
   candidate: GraphEdgeCandidate,
-  params: Pick<EdgePricingParams, "baseSigner" | "pricingContext" | "rebalancerAdapters">
+  params: EdgeClassPricingParams
 ): Promise<JussiEdgeClassOutputSegmentDefinition[]> {
   if (candidate.family === "oft") {
     return estimateSampledOutputSegments(candidate, params, estimateOftMarginalOutputRateAtUsd);
   }
 
-  if (
-    ONE_TO_ONE_OUTPUT_RATE_FAMILIES.includes(candidate.family) ||
-    candidate.from.logicalAsset === candidate.to.logicalAsset
-  ) {
-    return [{ up_to_input_usd: UNIVERSAL_INPUT_TIER_USD, marginal_output_rate: { numerator: "1", denominator: "1" } }];
-  }
-
-  if (candidate.family === "hyperliquid") {
+  if (candidate.family === "hyperliquid" && candidate.from.logicalAsset !== candidate.to.logicalAsset) {
     return estimateSampledOutputSegments(candidate, params, estimateHyperliquidMarginalOutputRateAtUsd);
   }
 
-  if (candidate.family === "binance") {
+  if (candidate.family === "binance" && candidate.from.logicalAsset !== candidate.to.logicalAsset) {
     return estimateSampledOutputSegments(candidate, params, estimateBinanceMarginalOutputRateAtUsd);
   }
 
@@ -75,11 +60,11 @@ async function resolveOutputSegments(
 
 async function estimateSampledOutputSegments(
   candidate: GraphEdgeCandidate,
-  params: Pick<EdgePricingParams, "baseSigner" | "pricingContext" | "rebalancerAdapters">,
+  params: EdgeClassPricingParams,
   estimateRateAtUsd: (
     candidate: GraphEdgeCandidate,
     inputUsd: number,
-    params: Pick<EdgePricingParams, "baseSigner" | "pricingContext" | "rebalancerAdapters">
+    params: EdgeClassPricingParams
   ) => Promise<JussiRateDefinition>
 ): Promise<JussiEdgeClassOutputSegmentDefinition[]> {
   const samples = await Promise.all(
@@ -147,10 +132,6 @@ async function estimateDirectionalBinanceMarginalOutputRate(
   inputUsd: number,
   params: Pick<EdgePricingParams, "pricingContext" | "rebalancerAdapters">
 ): Promise<JussiRateDefinition> {
-  if (sourceToken === destinationToken) {
-    return { numerator: "1", denominator: "1" };
-  }
-
   const { hubPoolChainId } = params.pricingContext;
   const adapter = params.rebalancerAdapters.binance as BinanceStablecoinSwapAdapter;
   // See BinanceInternalAdapter in ../types: this cast reaches private adapter methods unchecked.
@@ -217,10 +198,6 @@ async function estimateDirectionalHyperliquidMarginalOutputRate(
   inputUsd: number,
   params: Pick<EdgePricingParams, "pricingContext" | "rebalancerAdapters">
 ): Promise<JussiRateDefinition> {
-  if (sourceToken === destinationToken) {
-    return { numerator: "1", denominator: "1" };
-  }
-
   const { hubPoolChainId } = params.pricingContext;
   const adapter = params.rebalancerAdapters.hyperliquid;
   // See HyperliquidInternalAdapter in ../types: this cast reaches private adapter methods unchecked.
@@ -262,7 +239,7 @@ async function estimateDirectionalHyperliquidMarginalOutputRate(
 async function estimateOftMarginalOutputRateAtUsd(
   candidate: GraphEdgeCandidate,
   inputUsd: number,
-  params: Pick<EdgePricingParams, "baseSigner" | "pricingContext">
+  params: Pick<EdgePricingParams, "relayerAddress" | "pricingContext">
 ): Promise<JussiRateDefinition> {
   const referenceInputNative = await resolveUsdNotionalInputNative(
     candidate.from.logicalAsset,
@@ -273,7 +250,7 @@ async function estimateOftMarginalOutputRateAtUsd(
   const quote = await quoteLiveOftRouteTransfer(
     candidate,
     referenceInputNative,
-    params.baseSigner,
+    params.relayerAddress,
     params.pricingContext.hubPoolChainId
   );
   const outputReadable = parseFloat(formatUnits(quote.amountReceivedDestinationNative, candidate.to.decimals));

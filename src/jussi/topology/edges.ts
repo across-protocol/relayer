@@ -10,6 +10,7 @@ import {
 import { TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import assert from "assert";
 import type { RebalanceRoute } from "../../rebalancer/utils/interfaces";
+import { isSameBinanceCoin } from "../../utils/BinanceUtils";
 import { EvmAddress, compareAddressesSimple } from "../../utils/SDKUtils";
 import { getRemoteTokenForL1Token, getTokenInfoFromSymbol } from "../../utils/TokenUtils";
 import { isDefined } from "../../utils/TypeGuards";
@@ -29,21 +30,12 @@ export function buildBridgeEdgeCandidates(
   hubPoolChainId = DEFAULT_HUB_POOL_CHAIN_ID
 ): GraphEdgeCandidate[] {
   const nodesByLogicalAssetChain = indexNodesByLogicalAssetAndChain(nodeContexts);
-  const hubNodesByLogicalAsset = new Map<LogicalAsset, ManagedNodeContext>(
-    JUSSI_LOGICAL_ASSETS.map((logicalAsset) => {
-      const hubNode = nodeContexts.find(
-        (node) => node.logicalAsset === logicalAsset && node.chainId === hubPoolChainId
-      );
-      assert(isDefined(hubNode), `Missing hub node for ${logicalAsset}`);
-      return [logicalAsset, hubNode];
-    })
-  );
   const candidates: GraphEdgeCandidate[] = [];
 
   for (const logicalAsset of JUSSI_LOGICAL_ASSETS) {
     const l1Token = TOKEN_SYMBOLS_MAP[logicalAsset].addresses[hubPoolChainId];
     const chainMap = nodesByLogicalAssetChain.get(logicalAsset) ?? new Map<number, ManagedNodeContext[]>();
-    const hubNode = hubNodesByLogicalAsset.get(logicalAsset);
+    const hubNode = nodeContexts.find((node) => node.logicalAsset === logicalAsset && node.chainId === hubPoolChainId);
     assert(isDefined(hubNode), `Missing hub node for ${logicalAsset}`);
     for (const [chainId, chainNodes] of chainMap.entries()) {
       if (chainId === hubPoolChainId) {
@@ -52,23 +44,31 @@ export function buildBridgeEdgeCandidates(
 
       const inboundBridge = CUSTOM_BRIDGE[chainId]?.[l1Token] ?? CANONICAL_BRIDGE[chainId];
       if (isDefined(inboundBridge)) {
+        const bridgeContext = buildBridgeLookupContext(chainId, logicalAsset, inboundBridge.name, hubPoolChainId);
         candidates.push(
-          ...resolveInboundBridgeCandidates({
-            bridgeContext: buildBridgeLookupContext(chainId, logicalAsset, inboundBridge.name, hubPoolChainId),
-            chainNodes,
-            fromNode: hubNode,
-          })
+          ...chainNodes.flatMap((node) =>
+            buildBridgeCandidate(
+              resolveInboundBridgeMatch(node, bridgeContext),
+              bridgeContext.adapterOrBridgeName,
+              hubNode,
+              node
+            )
+          )
         );
       }
 
       const outboundBridge = CUSTOM_L2_BRIDGE[chainId]?.[l1Token] ?? CANONICAL_L2_BRIDGE[chainId];
       if (isDefined(outboundBridge)) {
+        const bridgeContext = buildBridgeLookupContext(chainId, logicalAsset, outboundBridge.name, hubPoolChainId);
         candidates.push(
-          ...resolveOutboundBridgeCandidates({
-            bridgeContext: buildBridgeLookupContext(chainId, logicalAsset, outboundBridge.name, hubPoolChainId),
-            chainNodes,
-            toNode: hubNode,
-          })
+          ...chainNodes.flatMap((node) =>
+            buildBridgeCandidate(
+              resolveOutboundBridgeMatch(node, bridgeContext),
+              bridgeContext.adapterOrBridgeName,
+              node,
+              hubNode
+            )
+          )
         );
       }
     }
@@ -77,10 +77,10 @@ export function buildBridgeEdgeCandidates(
   return candidates.filter(isSupportedJussiEdgeCandidate);
 }
 
-export async function buildBridgeAdapterRoutes(params: {
+export function buildBridgeAdapterRoutes(params: {
   nodeContexts: ManagedNodeContext[];
   hubPoolChainId?: number;
-}): Promise<RebalanceRoute[]> {
+}): RebalanceRoute[] {
   const routes = new Map<string, RebalanceRoute>();
   const bridgeCandidates = buildBridgeEdgeCandidates(params.nodeContexts, params.hubPoolChainId);
 
@@ -219,38 +219,6 @@ function resolveOutboundBridgeMatch(node: ManagedNodeContext, context: BridgeLoo
   }
 }
 
-function resolveInboundBridgeCandidates(params: {
-  bridgeContext: BridgeLookupContext;
-  fromNode: ManagedNodeContext;
-  chainNodes: ManagedNodeContext[];
-}): GraphEdgeCandidate[] {
-  const { bridgeContext, fromNode, chainNodes } = params;
-  return chainNodes.flatMap((node) =>
-    buildBridgeCandidate(
-      resolveInboundBridgeMatch(node, bridgeContext),
-      bridgeContext.adapterOrBridgeName,
-      fromNode,
-      node
-    )
-  );
-}
-
-function resolveOutboundBridgeCandidates(params: {
-  bridgeContext: BridgeLookupContext;
-  toNode: ManagedNodeContext;
-  chainNodes: ManagedNodeContext[];
-}): GraphEdgeCandidate[] {
-  const { bridgeContext, toNode, chainNodes } = params;
-  return chainNodes.flatMap((node) =>
-    buildBridgeCandidate(
-      resolveOutboundBridgeMatch(node, bridgeContext),
-      bridgeContext.adapterOrBridgeName,
-      node,
-      toNode
-    )
-  );
-}
-
 export function buildRebalanceEdgeCandidates(
   rebalanceRoutes: RebalanceRoute[],
   nodesByKey: Map<string, ManagedNodeContext>
@@ -277,33 +245,9 @@ export function buildRebalanceEdgeCandidates(
 }
 
 function familyForRebalanceRoute(route: RebalanceRoute): EdgeFamily {
-  switch (route.adapter) {
-    case "cctp":
-      return "cctp";
-    case "oft":
-      return "oft";
-    case "binance":
-      return isSameBinanceCoinSymbol(route.sourceToken, route.destinationToken) ? "binance_cex_bridge" : "binance";
-    default:
-      return route.adapter as EdgeFamily;
-  }
-}
-
-function isSameBinanceCoinSymbol(sourceToken: string, destinationToken: string): boolean {
-  return resolveBinanceCoinSymbol(sourceToken) === resolveBinanceCoinSymbol(destinationToken);
-}
-
-function resolveBinanceCoinSymbol(token: string): string {
-  switch (token.toUpperCase()) {
-    case "WETH":
-      return "ETH";
-    case "USDC.E":
-    case "USDBC":
-    case "ZKUSDCE":
-      return "USDC";
-    default:
-      return token.toUpperCase();
-  }
+  return route.adapter === "binance" && isSameBinanceCoin(route.sourceToken, route.destinationToken)
+    ? "binance_cex_bridge"
+    : (route.adapter as EdgeFamily);
 }
 
 function toSupportedBridgeAdapterRoute(candidate: GraphEdgeCandidate): RebalanceRoute | undefined {
@@ -322,12 +266,7 @@ function toSupportedBridgeAdapterRoute(candidate: GraphEdgeCandidate): Rebalance
 }
 
 export function dedupeGraphEdgeCandidates(candidates: GraphEdgeCandidate[]): GraphEdgeCandidate[] {
-  const deduped = new Map<string, GraphEdgeCandidate>();
-  for (const candidate of candidates) {
-    const key = resolveSerializedEdgeIdentity(candidate);
-    deduped.set(key, candidate);
-  }
-  return Array.from(deduped.values());
+  return Array.from(new Map(candidates.map((candidate) => [resolveSerializedEdgeId(candidate), candidate])).values());
 }
 
 export function isSupportedJussiEdgeCandidate(candidate: Pick<GraphEdgeCandidate, "family" | "from" | "to">): boolean {
@@ -349,10 +288,6 @@ export function resolveSerializedEdgeId(
   return [edgeClassId, candidate.from.nodeKey, candidate.to.nodeKey].join(":");
 }
 
-export function resolveSerializedEdgeIdentity(candidate: GraphEdgeCandidate): string {
-  return resolveSerializedEdgeId(candidate);
-}
-
 export function resolveRateLimitBucketId(family: EdgeFamily): string | undefined {
   return family === "binance" || family === "binance_cex_bridge" ? BINANCE_RATE_LIMIT_BUCKET_ID : undefined;
 }
@@ -360,15 +295,12 @@ export function resolveRateLimitBucketId(family: EdgeFamily): string | undefined
 function indexNodesByLogicalAssetAndChain(
   nodeContexts: ManagedNodeContext[]
 ): Map<LogicalAsset, Map<number, ManagedNodeContext[]>> {
-  const index = new Map<LogicalAsset, Map<number, ManagedNodeContext[]>>();
-  for (const node of nodeContexts) {
-    const logicalAssetIndex = index.get(node.logicalAsset) ?? new Map<number, ManagedNodeContext[]>();
-    const chainNodes = logicalAssetIndex.get(node.chainId) ?? [];
-    chainNodes.push(node);
-    logicalAssetIndex.set(node.chainId, chainNodes);
-    index.set(node.logicalAsset, logicalAssetIndex);
-  }
-  return index;
+  return new Map(
+    Array.from(
+      Map.groupBy(nodeContexts, (node) => node.logicalAsset),
+      ([logicalAsset, nodes]) => [logicalAsset, Map.groupBy(nodes, (node) => node.chainId)]
+    )
+  );
 }
 
 function familyForBridgeName(bridgeName: string): EdgeFamily {
