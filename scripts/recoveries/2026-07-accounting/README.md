@@ -60,6 +60,10 @@ Event signature: `SpokePoolAdminFunctionTriggered(uint256 indexed chainId, bytes
 
 If a simulation shows fewer/more than 6 events, a different `message` payload, an emitter other than the HubPool, or any chainId outside the set above, **do not sign**.
 
-### 3. Re-check the spoke balances
+### 3. Validate the Safe transaction parameters
+
+The transaction to propose from the Safe (`0xB524735356985D2f267FA010D681f061DfF03715`, mainnet) is the single call `HubPool.multicall([relaySpokePoolAdminFunction(cid, 0x493a4f84 ++ ROOT ++ 0x00…00) for cid in (10, 137, 324, 8453, 42161, 81457)])` — `to = 0xc186fA914353c44b2E33eBE05f21846F1048bEda`, `value = 0`, operation `CALL`. Same shape as the June batch execution (`0x7697a76f…560e29e7`). For that exact calldata, `safeTxHash` at Safe nonce **453** (on-chain nonce, 2026-07-21, post route-retirement) is `0x4fc992bc3ce09e6c1ccbf15db50ccd4364efd810537e9cfdb50a19df20455096` — recompute via `Safe.getTransactionHash(to, 0, data, 0, 0, 0, 0, 0x0, 0x0, nonce)` if the nonce has moved.
+
+### 4. Re-check the spoke balances
 
 Leaf amounts were sized to the exact stranded balances (2026-07-21 @ mainnet blk 25583166). Before signing, confirm each spoke still holds at least the leaf amount of its token — a balance above the leaf amount is fine (excess stays on the spoke); below means something moved and the tree must be rebuilt.
