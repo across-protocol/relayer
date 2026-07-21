@@ -651,8 +651,6 @@ export class Dataworker {
       hubPoolChainId,
       widestPossibleExpectedBlockRange,
       pendingRootBundle,
-      // The pending root bundle is always constructed from the most recent proposal (see HubPoolClient.update).
-      this.clients.hubPoolClient.getLatestProposedRootBundle(),
       spokePoolClients,
       earliestBlocksInSpokePoolClients
     );
@@ -818,10 +816,6 @@ export class Dataworker {
     hubPoolChainId: number,
     widestPossibleExpectedBlockRange: number[][],
     rootBundle: PendingRootBundle,
-    // The ProposeRootBundle event that rootBundle was constructed from. Passed in explicitly because the caller
-    // knows unambiguously which proposal it is validating; an event lookup here couldn't distinguish multiple
-    // proposals landing in the same block (e.g. propose, dispute, re-propose).
-    proposal: ProposedRootBundle,
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     earliestBlocksInSpokePoolClients: { [chainId: number]: number },
     loadDataFromArweave = false
@@ -1065,7 +1059,7 @@ export class Dataworker {
 
     // Compare against the leaf count committed at proposal time, not the live unclaimed count (which decrements
     // as leaves execute). The reconstructed root must contain exactly the proposed number of leaves.
-    const proposedPoolRebalanceLeafCount = proposal.poolRebalanceLeafCount;
+    const proposedPoolRebalanceLeafCount = rootBundle.poolRebalanceLeafCount;
 
     if (
       expectedPoolRebalanceRoot.leaves.length !== proposedPoolRebalanceLeafCount ||
@@ -1587,8 +1581,6 @@ export class Dataworker {
       hubPoolChainId,
       widestPossibleExpectedBlockRange,
       pendingRootBundle,
-      // The pending root bundle is always constructed from the most recent proposal (see HubPoolClient.update).
-      this.clients.hubPoolClient.getLatestProposedRootBundle(),
       spokePoolClients,
       earliestBlocksInSpokePoolClients,
       this.config.loadArweaveData ?? true // Load data from arweave when executing leaves for speed.

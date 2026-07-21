@@ -120,6 +120,7 @@ export async function validate(_logger: winston.Logger, baseSigner: Signer): Pro
     relayerRefundRoot: precedingProposeRootBundleEvent.relayerRefundRoot,
     slowRelayRoot: precedingProposeRootBundleEvent.slowRelayRoot,
     proposer: precedingProposeRootBundleEvent.proposer,
+    poolRebalanceLeafCount: precedingProposeRootBundleEvent.poolRebalanceLeafCount,
     unclaimedPoolRebalanceLeafCount: precedingProposeRootBundleEvent.poolRebalanceLeafCount,
     challengePeriodEndTimestamp: precedingProposeRootBundleEvent.challengePeriodEndTimestamp,
     bundleEvaluationBlockNumbers: precedingProposeRootBundleEvent.bundleEvaluationBlockNumbers.map((x) => x.toNumber()),
@@ -185,7 +186,6 @@ export async function validate(_logger: winston.Logger, baseSigner: Signer): Pro
     config.hubPoolChainId,
     bundleImpliedBlockRanges,
     rootBundle,
-    precedingProposeRootBundleEvent,
     spokePoolClients,
     fromBlocks
   );
