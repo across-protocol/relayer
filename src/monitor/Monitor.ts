@@ -15,7 +15,9 @@ import {
   bnUint32Max,
   Contract,
   convertFromWei,
+  createDecimalAligner,
   createFormatFunction,
+  formatFixedDecimals,
   ERC20,
   blockExplorerLink,
   blockExplorerLinks,
@@ -463,10 +465,19 @@ export class Monitor {
 
       for (const l1Token of allL1Tokens) {
         const l1TokenDecimals = l1Token.decimals;
-        const formatWei = createFormatFunction(2, 4, false, l1TokenDecimals);
+        // Fixed 4 decimals for every token so all values share the same precision;
+        // createFormatFunction renders sub-1 values with variable precision.
+        const formatWei = (amount: string) => formatFixedDecimals(amount, l1TokenDecimals, 4);
 
         // Collect all rows first so we can compute column widths for alignment.
-        type Row = { chain: string; token: string; current: string; pending: string; total: string };
+        type Row = {
+          chain: string;
+          token: string;
+          current: string;
+          inTransit: string;
+          pendingRepayment: string;
+          total: string;
+        };
         const rows: Row[] = [];
         let tokenTotal = bnZero;
 
@@ -480,6 +491,8 @@ export class Monitor {
             continue;
           }
 
+          const canonicalL2Token = getRemoteTokenForL1Token(l1Token.address, chainId, hubChainId);
+
           for (const l2Token of l2Tokens) {
             const { symbol: l2Symbol, decimals: l2Decimals } = this.getTokenInfo(l2Token, chainId);
             const toL1Decimals = ConvertDecimals(l2Decimals, l1TokenDecimals);
@@ -488,8 +501,8 @@ export class Monitor {
             const rawBalance = balanceIndex[chainId]?.[l2Token.toNative()] ?? bnZero;
             const currentBalance = toL1Decimals(rawBalance);
 
-            // Pending: cross-chain transfers + pending L2 withdrawals (hub chain only) + pending swap rebalances.
-            let pending = this.clients.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
+            // In-transit: cross-chain transfers + pending L2 withdrawals (hub chain only) + pending swap rebalances.
+            let inTransit = this.clients.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
               relayer,
               chainId,
               l1Token.address,
@@ -502,35 +515,44 @@ export class Monitor {
               assert(l2Tokens.length === 1, "Hub chain should only have one l2 token");
               const withdrawals = pendingL2Withdrawals[l1Token.address.toNative()] ?? {};
               const totalWithdrawals = Object.values(withdrawals).reduce((acc, amt) => acc.add(amt), bnZero);
-              pending = pending.add(totalWithdrawals);
+              inTransit = inTransit.add(totalWithdrawals);
             }
 
             // Only add pending rebalance amount for the canonical L2 token to avoid double-counting
             // when multiple contributor tokens exist on the same chain.
-            const canonicalL2Token = getRemoteTokenForL1Token(l1Token.address, chainId, hubChainId);
             if (isDefined(canonicalL2Token) && l2Token.eq(canonicalL2Token)) {
               const pendingRebalanceAmount = pendingRebalances[chainId]?.[l1Token.symbol];
               if (isDefined(pendingRebalanceAmount) && !pendingRebalanceAmount.isZero()) {
-                pending = pending.add(toL1Decimals(pendingRebalanceAmount));
+                inTransit = inTransit.add(toL1Decimals(pendingRebalanceAmount));
               }
             }
 
-            const totalBalance = currentBalance.add(pending);
-            tokenTotal = tokenTotal.add(totalBalance);
+            // Upcoming refunds are tracked by the exact L2 token the refund leaf pays out in.
+            const pendingRepayment = this.bundleDataApproxClient.getUpcomingRefunds(
+              chainId,
+              l1Token.address,
+              relayer,
+              l2Token
+            );
+            const balance = currentBalance.add(inTransit);
+            const rowTotal = balance.add(pendingRepayment);
+            tokenTotal = tokenTotal.add(rowTotal);
 
             // Skip rows where all value columns are zero.
-            if (!currentBalance.isZero() || !pending.isZero()) {
+            if (!currentBalance.isZero() || !inTransit.isZero() || !pendingRepayment.isZero()) {
               rows.push({
                 chain: getNetworkName(chainId),
                 token: l2Symbol,
                 current: formatWei(currentBalance.toString()),
-                pending: formatWei(pending.toString()),
-                total: formatWei(totalBalance.toString()),
+                inTransit: formatWei(inTransit.toString()),
+                pendingRepayment: formatWei(pendingRepayment.toString()),
+                total: formatWei(rowTotal.toString()),
               });
             }
 
-            // Machine-readable debug log — skip zero-balance entries.
-            if (!totalBalance.isZero()) {
+            // Machine-readable debug log — skip zero-balance entries. Excludes upcoming refunds
+            // so the exported balance metric keeps its historical meaning.
+            if (!balance.isZero()) {
               this.logger.debug({
                 at: "Monitor#reportRelayerBalances",
                 message: "Machine-readable single balance report",
@@ -539,24 +561,11 @@ export class Monitor {
                 l2TokenSymbol: l2Symbol,
                 chainName: getNetworkName(chainId),
                 decimals: l1TokenDecimals,
-                balanceInWei: totalBalance.toString(),
-                balance: Number(formatUnits(totalBalance, l1TokenDecimals)),
+                balanceInWei: balance.toString(),
+                balance: Number(formatUnits(balance, l1TokenDecimals)),
                 datadog: true,
               });
             }
-          }
-
-          // Upcoming refund row per chain (one per chain, not per L2 token).
-          const upcomingRefunds = this.bundleDataApproxClient.getUpcomingRefunds(chainId, l1Token.address, relayer);
-          if (upcomingRefunds.gt(0)) {
-            tokenTotal = tokenTotal.add(upcomingRefunds);
-            rows.push({
-              chain: getNetworkName(chainId),
-              token: "refunds",
-              current: "-",
-              pending: "-",
-              total: formatWei(upcomingRefunds.toString()),
-            });
           }
         }
 
@@ -565,22 +574,24 @@ export class Monitor {
           continue;
         }
 
-        // Build stacked key-value format for mobile readability.
+        // Ledger-style stacked layout: the detail lines share a left value column; Totals sit in an
+        // offset right column that the bottom TOTAL sums down. Both columns align on the decimal point.
         const totalFormatted = formatWei(tokenTotal.toString());
-        const valueWidth = Math.max(
-          ...rows.flatMap((r) => [r.current, r.pending, r.total].map((v) => v.length)),
-          totalFormatted.length
-        );
+        const alignDetail = createDecimalAligner(rows.flatMap((r) => [r.current, r.inTransit, r.pendingRepayment]));
+        const alignTotal = createDecimalAligner([...rows.map((r) => r.total), totalFormatted]);
+        const totalIndent = " ".repeat(alignDetail(rows[0].current).length + 2);
+        // Fixed-width label field; literal tabs render inconsistently in Slack.
+        const label = (name: string) => `  ${name}`.padEnd(22);
         let tokenMrkdwn = "```\n";
         for (const row of rows) {
           tokenMrkdwn += `${row.chain} — ${row.token}\n`;
-          if (row.current !== "-") {
-            tokenMrkdwn += `  Current: ${row.current.padStart(valueWidth)}\n`;
-            tokenMrkdwn += `  Pending: ${row.pending.padStart(valueWidth)}\n`;
-          }
-          tokenMrkdwn += `  Total:   ${row.total.padStart(valueWidth)}\n\n`;
+          tokenMrkdwn += `${label("Current:")}${alignDetail(row.current)}`.trimEnd() + "\n";
+          tokenMrkdwn += `${label("In-Transit:")}${alignDetail(row.inTransit)}`.trimEnd() + "\n";
+          tokenMrkdwn += `${label("Pending Repayment:")}${alignDetail(row.pendingRepayment)}`.trimEnd() + "\n";
+          tokenMrkdwn += `${label("Total:")}${totalIndent}${alignTotal(row.total)}`.trimEnd() + "\n\n";
         }
-        tokenMrkdwn += `  TOTAL:   ${totalFormatted.padStart(valueWidth)}\n`;
+        tokenMrkdwn += `${label("")}${totalIndent}${"-".repeat(alignTotal(totalFormatted).length)}\n`;
+        tokenMrkdwn += `${label("TOTAL:")}${totalIndent}${alignTotal(totalFormatted)}`.trimEnd() + "\n";
         tokenMrkdwn += "```";
 
         this.logger.info({
