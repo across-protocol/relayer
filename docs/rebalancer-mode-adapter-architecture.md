@@ -44,6 +44,7 @@ The post-refactor lifecycle is explicitly two-stage:
 Key invariant:
 
 - read-only clients call `initialize([])` and still support pending-state reads (`getPendingRebalances`), because pending-state aggregation does not depend on active routes.
+- pending-state reads are failure-isolated per adapter: an adapter whose `getPendingRebalances` throws is logged with a warning and treated as contributing no pending rebalances for that pass, rather than failing the aggregate read.
 
 ## Data flow (current behavior)
 

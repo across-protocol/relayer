@@ -136,6 +136,10 @@ export class OftAdapter extends BaseAdapter {
       });
     }
     for (const txnHash of pendingBridges) {
+      const orderDetails = await this._redisGetOrderDetailsRequired(txnHash, this.baseSignerAddress);
+      if (!this._canProgressOrder("OftAdapter.updateRebalanceStatuses", txnHash, orderDetails)) {
+        continue;
+      }
       const status = await this._getOftStatus(txnHash);
       if (status === "SUCCEEDED") {
         // Order is no longer pending, so we can delete it.
