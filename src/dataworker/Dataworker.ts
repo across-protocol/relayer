@@ -1101,7 +1101,6 @@ export class Dataworker {
         }),
         expectedSlowRelayRoot: expectedSlowRelayRoot.tree.getHexRoot(),
         pendingRoot: rootBundle.poolRebalanceRoot,
-        pendingPoolRebalanceLeafCount: rootBundle.unclaimedPoolRebalanceLeafCount,
         proposedPoolRebalanceLeafCount,
       });
     } else if (expectedRelayerRefundRoot.tree.getHexRoot() !== rootBundle.relayerRefundRoot) {
