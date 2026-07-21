@@ -1057,11 +1057,13 @@ export class Dataworker {
       slowRelayTree: expectedSlowRelayRoot,
     };
 
+    // Compare against the leaf count committed at proposal time, not the live unclaimed count (which decrements
+    // as leaves execute). The reconstructed root must contain exactly the proposed number of leaves.
+    const proposedPoolRebalanceLeafCount =
+      this.clients.hubPoolClient.getLatestProposedRootBundle().poolRebalanceLeafCount;
+
     if (
-      // Its ok if there are fewer unclaimed leaves than in the reconstructed root, because some of the leaves
-      // might already have been executed, but its an issue if the reconstructed root expects fewer leaves than there
-      // are left to execute because it means that the unclaimed count can never drop to 0.
-      expectedPoolRebalanceRoot.leaves.length < rootBundle.unclaimedPoolRebalanceLeafCount ||
+      expectedPoolRebalanceRoot.leaves.length !== proposedPoolRebalanceLeafCount ||
       expectedPoolRebalanceRoot.tree.getHexRoot() !== rootBundle.poolRebalanceRoot
     ) {
       this.logger.debug({
