@@ -1058,9 +1058,17 @@ export class Dataworker {
     };
 
     // Compare against the leaf count committed at proposal time, not the live unclaimed count (which decrements
-    // as leaves execute). The reconstructed root must contain exactly the proposed number of leaves.
-    const proposedPoolRebalanceLeafCount =
-      this.clients.hubPoolClient.getLatestProposedRootBundle().poolRebalanceLeafCount;
+    // as leaves execute). Look up the proposal matching the root bundle under validation rather than assuming it's
+    // the latest proposal, since this function can validate historical bundles (e.g. via the validateRootBundle
+    // script). The reconstructed root must contain exactly the proposed number of leaves.
+    const matchingProposal = this.clients.hubPoolClient
+      .getProposedRootBundles()
+      .find((proposal) => proposal.blockNumber === rootBundle.proposalBlockNumber);
+    assert(
+      isDefined(matchingProposal),
+      "validateRootBundle: no proposal found at rootBundle.proposalBlockNumber; increase HubPoolClient lookback"
+    );
+    const proposedPoolRebalanceLeafCount = matchingProposal.poolRebalanceLeafCount;
 
     if (
       expectedPoolRebalanceRoot.leaves.length !== proposedPoolRebalanceLeafCount ||
@@ -1097,6 +1105,7 @@ export class Dataworker {
         expectedSlowRelayRoot: expectedSlowRelayRoot.tree.getHexRoot(),
         pendingRoot: rootBundle.poolRebalanceRoot,
         pendingPoolRebalanceLeafCount: rootBundle.unclaimedPoolRebalanceLeafCount,
+        proposedPoolRebalanceLeafCount,
       });
     } else if (expectedRelayerRefundRoot.tree.getHexRoot() !== rootBundle.relayerRefundRoot) {
       this.logger.debug({
