@@ -253,6 +253,9 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     }
     for (const cloid of pendingBridgeToBinanceDepositNetwork) {
       const orderDetails = await this._redisGetOrderDetailsRequired(cloid, this.baseSignerAddress);
+      if (!this._canProgressOrder("BinanceStablecoinSwapAdapter.updateRebalanceStatuses", cloid, orderDetails)) {
+        continue;
+      }
       const { sourceToken, amountToTransfer, sourceChain } = orderDetails;
       const binanceDepositNetwork = await this._getEntrypointNetwork(sourceChain, sourceToken);
       // Check if we have enough balance on HyperEVM to progress the order status:
@@ -302,6 +305,9 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     }
     for (const cloid of pendingDeposits) {
       const orderDetails = await this._redisGetOrderDetailsRequired(cloid, this.baseSignerAddress);
+      if (!this._canProgressOrder("BinanceStablecoinSwapAdapter.updateRebalanceStatuses", cloid, orderDetails)) {
+        continue;
+      }
       const { sourceToken, sourceChain, destinationToken, destinationChain, amountToTransfer } = orderDetails;
 
       const binanceBalance = await this._getBinanceBalance(sourceToken);
@@ -356,10 +362,11 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       });
     }
     for (const cloid of pendingSwaps) {
-      const { destinationToken, destinationChain } = await this._redisGetOrderDetailsRequired(
-        cloid,
-        this.baseSignerAddress
-      );
+      const orderDetails = await this._redisGetOrderDetailsRequired(cloid, this.baseSignerAddress);
+      if (!this._canProgressOrder("BinanceStablecoinSwapAdapter.updateRebalanceStatuses", cloid, orderDetails)) {
+        continue;
+      }
+      const { destinationToken, destinationChain } = orderDetails;
       const matchingFill = await this._getMatchingFillForCloid(cloid, this.baseSignerAddress);
       if (matchingFill) {
         const balance = await this._getBinanceBalance(destinationToken);
@@ -411,6 +418,9 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       // a bridge to the final non-Binance network destination chain if necessary.
 
       const orderDetails = await this._redisGetOrderDetailsRequired(cloid, this.baseSignerAddress);
+      if (!this._canProgressOrder("BinanceStablecoinSwapAdapter.updateRebalanceStatuses", cloid, orderDetails)) {
+        continue;
+      }
       const { sourceToken, destinationToken, destinationChain } = orderDetails;
       const matchingFill = this._routeRequiresSwap(sourceToken, destinationToken)
         ? (await this._getMatchingFillForCloid(cloid, this.baseSignerAddress))?.matchingFill
