@@ -1,6 +1,6 @@
 /* eslint-disable no-console */
 // Validates leaves.json self-consistently:
-//   1. Rebuild the merkle tree from the 6 leaves.
+//   1. Rebuild the merkle tree from the leaves.
 //   2. Confirm tree.getHexRoot() matches leaves.json's `relayerRefundRoot`.
 //   3. Confirm every leaf's stored proof matches tree.getHexProof(leaf).
 //   4. Confirm UMIP canonical ordering (chainId asc, l2Token asc lowercase).
