@@ -1,19 +1,17 @@
 /* eslint-disable no-console */
-// Validates leaves.json self-consistently:
-//   1. Rebuild the merkle tree from the 12 leaves.
+// Validates a recovery leaves.json self-consistently:
+//   1. Rebuild the merkle tree from the leaves.
 //   2. Confirm tree.getHexRoot() matches leaves.json's `relayerRefundRoot`.
 //   3. Confirm every leaf's stored proof matches tree.getHexProof(leaf).
 //   4. Confirm UMIP canonical ordering (chainId asc, l2Token asc lowercase).
 //   5. Confirm leafId == position.
 //
-// Run from the repo root:
-//   yarn ts-node scripts/recoveries/2026-06-accounting/verify.ts
+// Run from the repo root, passing the leaves.json (or its directory) to validate:
+//   yarn ts-node scripts/recoveries/verify.ts scripts/recoveries/2026-07-accounting/leaves.json
 import { BigNumber, ethers } from "ethers";
 import fs from "fs";
 import path from "path";
 import { MerkleTree } from "@across-protocol/contracts";
-
-const LEAVES_PATH = path.resolve(__dirname, "leaves.json");
 
 type LeafEntry = {
   amountToReturn: string;
@@ -50,14 +48,31 @@ function fail(allOk: { v: boolean }, msg: string) {
   allOk.v = false;
 }
 
+function resolveLeavesPath(arg: string | undefined): string {
+  if (!arg) {
+    console.error("Usage: yarn ts-node scripts/recoveries/verify.ts <path/to/leaves.json | recovery directory>");
+    process.exit(1);
+  }
+  let resolved = path.resolve(arg);
+  if (fs.existsSync(resolved) && fs.statSync(resolved).isDirectory()) {
+    resolved = path.join(resolved, "leaves.json");
+  }
+  if (!fs.existsSync(resolved)) {
+    console.error(`No such file: ${resolved}`);
+    process.exit(1);
+  }
+  return resolved;
+}
+
 function main() {
-  const leavesJson = JSON.parse(fs.readFileSync(LEAVES_PATH, "utf-8")) as {
+  const leavesPath = resolveLeavesPath(process.argv[2]);
+  const leavesJson = JSON.parse(fs.readFileSync(leavesPath, "utf-8")) as {
     relayerRefundRoot: string;
     leaves: LeafEntry[];
   };
   const allOk = { v: true };
 
-  console.log(`Loaded ${leavesJson.leaves.length} leaves from ${LEAVES_PATH}`);
+  console.log(`Loaded ${leavesJson.leaves.length} leaves from ${leavesPath}`);
   console.log(`Claimed relayerRefundRoot: ${leavesJson.relayerRefundRoot}`);
   console.log();
 
