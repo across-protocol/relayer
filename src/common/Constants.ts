@@ -932,6 +932,24 @@ export const ARBITRUM_ORBIT_L1L2_MESSAGE_FEE_DATA: {
   // },
 };
 
+// Hyperlane warp-route routers, keyed by chainId and then by local token address. Consumed by the
+// HyperlaneXERC20Bridge / HyperlaneXERC20BridgeL2 adapters. Currently empty — ezETH, the last user,
+// was sunset in July 2026 — but the wiring is retained for future xERC20 tokens. Router addresses
+// for new tokens can be sourced from https://github.com/hyperlane-xyz/hyperlane-registry
+// (deployments/warp_routes/<TOKEN>/...).
+export const HYPERLANE_ROUTERS: { [chainId: number]: { [tokenAddress: string]: string } } = {};
+
+// 0.1 ETH is a default cap for chains that use ETH as their gas token
+export const HYPERLANE_DEFAULT_FEE_CAP = toWei("0.1");
+export const HYPERLANE_FEE_CAP_OVERRIDES: { [chainId: number]: BigNumber } = {
+  // all supported chains that have non-eth for gas token should go here.
+  // 0.4 BNB fee cap on BSC
+  [CHAIN_IDs.BSC]: toWei("0.4"),
+  [CHAIN_IDs.HYPEREVM]: toWei("8"),
+  [CHAIN_IDs.MONAD]: toWei("8"), // @TODO: Re-evaluate this after token launch
+  [CHAIN_IDs.PLASMA]: toWei("8"),
+};
+
 // Source for USDT0: https://docs.usdt0.to/technical-documentation/developer
 // Notice that if oft messenger is defined for 2 chains in this mapping, we assume that messaging between those 2 chains is supported.
 // This is a bit of a loose assumption, but I think it holds true in practice. We could lock this down further by introducing something
