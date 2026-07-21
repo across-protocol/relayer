@@ -185,6 +185,7 @@ export async function validate(_logger: winston.Logger, baseSigner: Signer): Pro
     config.hubPoolChainId,
     bundleImpliedBlockRanges,
     rootBundle,
+    precedingProposeRootBundleEvent,
     spokePoolClients,
     fromBlocks
   );
