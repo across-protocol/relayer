@@ -1,10 +1,12 @@
 import sinon from "sinon";
 import { expect } from "chai";
-import { EvmAddress, getCurrentTime, HttpError, Signer, winston } from "../src/utils";
+import { EvmAddress, getCurrentTime, HttpError, Signer, toBN, TransactionReceipt, utils, winston } from "../src/utils";
 import { DepositAddressMessage, DepositAddressMessageV3 } from "../src/interfaces/DepositAddress";
 import { DepositAddressExecuteResponse, DepositAddressSignWithdrawResponse } from "../src/clients";
 import { DepositAddressHandler } from "../src/deposit-address/DepositAddressHandler";
 import { DepositAddressHandlerConfig } from "../src/deposit-address/DepositAddressHandlerConfig";
+import { ERC20_TRANSFER_TOPIC } from "../src/deposit-address/withdrawPayload";
+import { NATIVE_TOKEN_SENTINEL_ADDRESS } from "../src/utils/DepositAddressUtils";
 
 const SIGNER = "0x000000000000000000000000000000000000BEEF";
 const DEPOSIT_ADDRESS = "0x000000000000000000000000000000000000C0DE";
@@ -221,12 +223,14 @@ describe("DepositAddressHandler._getSwapApiQuote params", function () {
 describe("DepositAddressHandler._queryIndexerApi version filtering", function () {
   let handler: DepositAddressHandler;
   let getStub: sinon.SinonStub;
+  let warnStub: sinon.SinonStub;
 
   type Internals = { _queryIndexerApi: () => Promise<DepositAddressMessage[]> };
 
   beforeEach(function () {
     const config = {} as unknown as DepositAddressHandlerConfig;
-    const logger = { debug: sinon.stub() } as unknown as winston.Logger;
+    warnStub = sinon.stub();
+    const logger = { debug: sinon.stub(), warn: warnStub } as unknown as winston.Logger;
     handler = new DepositAddressHandler(logger, config, {} as unknown as Signer, []);
     getStub = sinon.stub();
     (handler as unknown as { indexerApi: { get: sinon.SinonStub } }).indexerApi = { get: getStub };
@@ -266,6 +270,34 @@ describe("DepositAddressHandler._queryIndexerApi version filtering", function ()
     // filtering before normalization must keep the poll alive.
     const result = await query([{ version: 2 }]);
     expect(result).to.deep.equal([]);
+  });
+
+  it("keeps a v1 message whose counterfactualMaterials are absent", async function () {
+    // Pre-V2-backfill deposit addresses are served with `counterfactualMaterials: undefined`;
+    // they must survive normalization (the withdraw path guards on the leaf downstream).
+    const v1 = { ...depositMessage(undefined), version: 1 };
+    const result = await query([v1]);
+    expect(result).to.have.length(1);
+    expect(result[0].counterfactualMaterials).to.equal(undefined);
+    expect(warnStub.called).to.equal(false);
+  });
+
+  it("drops a malformed supported-version message with a warn and keeps the rest of the batch", async function () {
+    // A supported-version message can still be malformed (missing routeParams here). It must be
+    // dropped individually — not sink the batch — or a redelivered poison message starves every
+    // other message for the indexer's whole redelivery window (2026-07-15 incident).
+    const poison = { ...depositMessage({ withdrawLeaf }), version: 1, routeParams: undefined };
+    const healthyV1 = { ...depositMessage({ withdrawLeaf }), version: 1 };
+    const v3 = depositMessageV3();
+
+    const result = await query([poison, healthyV1, v3]);
+
+    expect(result).to.have.length(2);
+    expect(result.map((m) => m.version)).to.deep.equal([1, 3]);
+    expect(warnStub.calledOnce).to.equal(true);
+    expect(warnStub.firstCall.args[0].message).to.equal(
+      "deposit-address transfer dropped: message failed normalization"
+    );
   });
 });
 
@@ -364,14 +396,58 @@ describe("DepositAddressHandler._getExecuteTx request mapping", function () {
   it("relays funding context and integratorId, with executionFee omitted", async function () {
     await (handler as unknown as Internals)._getExecuteTx(depositMessageV3());
     expect(executeStub.calledOnce).to.equal(true);
-    // Exact request body: the execute endpoint re-derives the address/materials from this
-    // identity, and its superstruct schema rejects unknown or missing keys.
+    // Exact request body with all execute feature flags off (the default / production shape): the
+    // execute endpoint re-derives the address/materials from this identity, and its superstruct
+    // schema rejects unknown or missing keys. Neither `inputToken` nor `erc20Transfer` is sent.
     expect(executeStub.firstCall.args[0]).to.deep.equal({
       destination: {
         token: { chainId: 1337, address: OUTPUT_TOKEN },
         recipient: RECIPIENT,
       },
       originChainId: 42161,
+      userAddress: REFUND_ADDRESS,
+      amount: "5000",
+      executionFeeRecipient: SIGNER,
+      integratorId: "0xdead",
+    });
+  });
+
+  it("relays erc20Transfer provenance when ENABLE_EXECUTE_ERC20_TRANSFER_METADATA is on", async function () {
+    (handler as unknown as { config: { enableExecuteErc20Transfer: boolean } }).config.enableExecuteErc20Transfer =
+      true;
+    await (handler as unknown as Internals)._getExecuteTx(depositMessageV3());
+    expect(executeStub.calledOnce).to.equal(true);
+    expect(executeStub.firstCall.args[0]).to.deep.equal({
+      destination: {
+        token: { chainId: 1337, address: OUTPUT_TOKEN },
+        recipient: RECIPIENT,
+      },
+      originChainId: 42161,
+      userAddress: REFUND_ADDRESS,
+      amount: "5000",
+      executionFeeRecipient: SIGNER,
+      integratorId: "0xdead",
+      // chainId coerced from the fixture's "42161" string; Number() is a no-op on a numeric value.
+      erc20Transfer: {
+        chainId: 42161,
+        blockNumber: 1_000_000,
+        transactionHash: "0x" + "3".repeat(64),
+        logIndex: 4,
+      },
+    });
+  });
+
+  it("relays the funding token as inputToken when ENABLE_EXECUTE_INPUT_TOKEN is on", async function () {
+    (handler as unknown as { config: { enableExecuteInputToken: boolean } }).config.enableExecuteInputToken = true;
+    await (handler as unknown as Internals)._getExecuteTx(depositMessageV3());
+    expect(executeStub.calledOnce).to.equal(true);
+    expect(executeStub.firstCall.args[0]).to.deep.equal({
+      destination: {
+        token: { chainId: 1337, address: OUTPUT_TOKEN },
+        recipient: RECIPIENT,
+      },
+      originChainId: 42161,
+      inputToken: { chainId: 42161, address: TOKEN },
       userAddress: REFUND_ADDRESS,
       amount: "5000",
       executionFeeRecipient: SIGNER,
@@ -623,5 +699,158 @@ describe("DepositAddressHandler.initiateWithdrawV3 guards", function () {
     );
     expect(signWithdrawStub.notCalled).to.equal(true);
     expect(warnStub.calledOnce).to.equal(true);
+  });
+});
+
+describe("DepositAddressHandler.initiateWithdraw (v1) native-token guard", function () {
+  afterEach(() => sinon.restore());
+
+  it("skips native-sentinel withdraws without calling the sign-withdraw API", async function () {
+    const chainId = 1; // depositMessage()'s erc20Transfer.chainId
+    const config = { withdrawEnabled: true, relayerOriginChains: [chainId] } as unknown as DepositAddressHandlerConfig;
+    const debugStub = sinon.stub();
+    const logger = { warn: sinon.stub(), debug: debugStub } as unknown as winston.Logger;
+    const handler = new DepositAddressHandler(logger, config, {} as unknown as Signer, []);
+    const signedWithdrawStub = sinon.stub().resolves({ signedWithdrawTx: { chainId } });
+    (handler as unknown as { api: { signedWithdraw: sinon.SinonStub } }).api = {
+      signedWithdraw: signedWithdrawStub,
+    };
+
+    const message = depositMessage({ withdrawLeaf });
+    message.erc20Transfer.transferClassification = "mis_route";
+    message.erc20Transfer.contractAddress = NATIVE_TOKEN_SENTINEL_ADDRESS;
+
+    await (handler as unknown as { initiateWithdraw: (m: DepositAddressMessage) => Promise<void> }).initiateWithdraw(
+      message
+    );
+    expect(signedWithdrawStub.notCalled).to.equal(true);
+    expect(debugStub.calledOnce).to.equal(true);
+    expect(debugStub.firstCall.firstArg.message).to.contain("not supported on v1");
+  });
+});
+
+describe("DepositAddressHandler.initiateWithdrawV3 balance check", function () {
+  let handler: DepositAddressHandler;
+  let signWithdrawStub: sinon.SinonStub;
+  let getBalanceStub: sinon.SinonStub;
+  let warnStub: sinon.SinonStub;
+  let debugStub: sinon.SinonStub;
+  const chainId = 42161;
+
+  type Internals = { initiateWithdrawV3: (m: DepositAddressMessageV3) => Promise<void> };
+
+  /** Native-token mis_route message — `contractAddress` carries the indexer's native sentinel. */
+  function nativeWithdrawMessageV3(): DepositAddressMessageV3 {
+    const message = withdrawMessageV3();
+    message.erc20Transfer.contractAddress = NATIVE_TOKEN_SENTINEL_ADDRESS;
+    return message;
+  }
+
+  beforeEach(function () {
+    const config = {
+      enableV3Withdrawals: true,
+      relayerOriginChains: [chainId],
+    } as unknown as DepositAddressHandlerConfig;
+    warnStub = sinon.stub();
+    debugStub = sinon.stub();
+    const logger = { warn: warnStub, debug: debugStub } as unknown as winston.Logger;
+    handler = new DepositAddressHandler(logger, config, {} as unknown as Signer, []);
+    // The sign-withdraw stub returns a mismatched chainId so the flow stops right after the API
+    // call — these tests only exercise the balance check in front of it.
+    signWithdrawStub = sinon.stub().resolves({ signedWithdrawTx: { chainId: chainId + 1 } });
+    (handler as unknown as { api: { signWithdrawDepositAddressV3: sinon.SinonStub } }).api = {
+      signWithdrawDepositAddressV3: signWithdrawStub,
+    };
+    (handler as unknown as { observedExecutedWithdraws: Record<number, Set<string>> }).observedExecutedWithdraws = {
+      [chainId]: new Set<string>(),
+    };
+    // Bare stub, deliberately NOT an ethers Provider: `getBalance` serves the native path, and any
+    // ERC-20 read attempt fails loudly (`new Contract(...)` rejects a non-Provider).
+    getBalanceStub = sinon.stub().resolves(toBN("5000"));
+    (handler as unknown as { providersByChain: Record<number, unknown> }).providersByChain = {
+      [chainId]: { getBalance: getBalanceStub },
+    };
+  });
+
+  afterEach(() => sinon.restore());
+
+  it("reads the native balance via provider.getBalance for sentinel withdraws and proceeds", async function () {
+    await (handler as unknown as Internals).initiateWithdrawV3(nativeWithdrawMessageV3());
+    expect(getBalanceStub.calledOnceWith(DEPOSIT_ADDRESS)).to.equal(true);
+    expect(signWithdrawStub.calledOnce).to.equal(true);
+  });
+
+  it("skips a native withdraw when the native balance is below the transfer amount", async function () {
+    getBalanceStub.resolves(toBN("4999"));
+    await (handler as unknown as Internals).initiateWithdrawV3(nativeWithdrawMessageV3());
+    expect(signWithdrawStub.notCalled).to.equal(true);
+    expect(debugStub.calledOnce).to.equal(true);
+  });
+
+  it("still reads ERC-20 balances via the token contract, warning and skipping when the read fails", async function () {
+    await (handler as unknown as Internals).initiateWithdrawV3(withdrawMessageV3());
+    expect(getBalanceStub.notCalled).to.equal(true);
+    expect(signWithdrawStub.notCalled).to.equal(true);
+    expect(warnStub.calledOnce).to.equal(true);
+    expect(warnStub.firstCall.firstArg.message).to.contain("failed to fetch deposit address balance");
+  });
+});
+
+describe("DepositAddressHandler._publishDepositExecuted", function () {
+  let handler: DepositAddressHandler;
+  let publishStub: sinon.SinonStub;
+
+  type Internals = {
+    _publishDepositExecuted: (r: TransactionReceipt, m: DepositAddressMessageV3) => Promise<void>;
+  };
+
+  // Receipt carrying an input-token Transfer out of the deposit address — what the payload builder
+  // matches on (address = input token, from = deposit address; no `to` filter on the deposit path).
+  const receipt = {
+    blockNumber: 123,
+    transactionHash: "0x" + "a".repeat(64),
+    logs: [
+      {
+        address: TOKEN,
+        topics: [
+          ERC20_TRANSFER_TOPIC,
+          utils.hexZeroPad(DEPOSIT_ADDRESS.toLowerCase(), 32),
+          utils.hexZeroPad(RECIPIENT.toLowerCase(), 32),
+        ],
+        logIndex: 7,
+      },
+    ],
+  } as unknown as TransactionReceipt;
+
+  beforeEach(function () {
+    publishStub = sinon.stub().resolves("msg-id");
+    const config = {
+      enableDepositAddressDepositPublisher: true,
+      enableExecuteErc20Transfer: false,
+    } as unknown as DepositAddressHandlerConfig;
+    handler = new DepositAddressHandler(
+      { debug: sinon.stub(), warn: sinon.stub() } as unknown as winston.Logger,
+      config,
+      {} as unknown as Signer,
+      []
+    );
+    (handler as unknown as { executionPublisher: { publishJson: sinon.SinonStub } }).executionPublisher = {
+      publishJson: publishStub,
+    };
+  });
+
+  afterEach(() => sinon.restore());
+
+  it("publishes deposit_executed when erc20Transfer metadata is off", async function () {
+    await (handler as unknown as Internals)._publishDepositExecuted(receipt, depositMessageV3());
+    expect(publishStub.calledOnce).to.equal(true);
+  });
+
+  it("skips deposit_executed publish when erc20Transfer metadata is on", async function () {
+    // With on-chain provenance metadata enabled, the Pub/Sub event is redundant.
+    (handler as unknown as { config: { enableExecuteErc20Transfer: boolean } }).config.enableExecuteErc20Transfer =
+      true;
+    await (handler as unknown as Internals)._publishDepositExecuted(receipt, depositMessageV3());
+    expect(publishStub.called).to.equal(false);
   });
 });

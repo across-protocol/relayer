@@ -64,7 +64,11 @@ export interface DepositAddressMessage {
   counterfactualDepositContractAddress: string;
   counterfactualFactoryContractAddress: string;
   adminWithdrawManagerContractAddress: string;
-  counterfactualMaterials: CounterfactualMaterials;
+  /**
+   * Absent on deposit addresses that predate the indexer's V2-materials backfill — the API
+   * serves `counterfactualMaterialsV2 ?? undefined` for v1 items. Consumers must guard.
+   */
+  counterfactualMaterials?: CounterfactualMaterials;
   shouldSponsorAccountCreation: boolean;
   /** Indexer message version. v1 (or absent = legacy v1) and v3 are processed; v2 is ignored. */
   version?: number;

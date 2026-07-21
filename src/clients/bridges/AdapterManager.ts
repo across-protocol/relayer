@@ -98,26 +98,32 @@ export class AdapterManager {
       } // Special case for the EthereumAdapter
 
       return Object.fromEntries(
-        SUPPORTED_TOKENS[chainId]?.map((symbol) => {
-          const spokePoolClient = this.spokePoolManager.getClient(chainId);
-          let l2SignerOrProvider;
-          if (isDefined(spokePoolClient) && isEVMSpokePoolClient(spokePoolClient)) {
-            l2SignerOrProvider = spokePoolClient.spokePool.signer;
-          } else if (isDefined(spokePoolClient) && isSVMSpokePoolClient(spokePoolClient)) {
-            l2SignerOrProvider = spokePoolClient.svmEventsClient.getRpc();
-          }
-          const l1Token = resolveAcrossToken(symbol, hubChainId, true);
-          const bridgeConstructor = CUSTOM_BRIDGE[chainId]?.[l1Token] ?? CANONICAL_BRIDGE[chainId];
-          const bridge = new bridgeConstructor(
-            chainId,
-            hubChainId,
-            l1Signer,
-            l2SignerOrProvider,
-            EvmAddress.from(l1Token),
-            logger
-          );
-          return [l1Token, bridge];
-        }) ?? []
+        SUPPORTED_TOKENS[chainId]
+          ?.map((symbol) => {
+            const spokePoolClient = this.spokePoolManager.getClient(chainId);
+            let l2SignerOrProvider;
+            if (isDefined(spokePoolClient) && isEVMSpokePoolClient(spokePoolClient)) {
+              l2SignerOrProvider = spokePoolClient.spokePool.signer;
+            } else if (isDefined(spokePoolClient) && isSVMSpokePoolClient(spokePoolClient)) {
+              l2SignerOrProvider = spokePoolClient.svmEventsClient.getRpc();
+            }
+            const l1Token = resolveAcrossToken(symbol, hubChainId, true);
+            const bridgeConstructor = CUSTOM_BRIDGE[chainId]?.[l1Token] ?? CANONICAL_BRIDGE[chainId];
+            // Some tokens are L2→L1-only (e.g. Avalanche USDT via Binance) and have no L1→L2 bridge.
+            if (!isDefined(bridgeConstructor)) {
+              return undefined;
+            }
+            const bridge = new bridgeConstructor(
+              chainId,
+              hubChainId,
+              l1Signer,
+              l2SignerOrProvider,
+              EvmAddress.from(l1Token),
+              logger
+            );
+            return [l1Token, bridge];
+          })
+          .filter(isDefined) ?? []
       );
     };
     const constructL2Bridges = (chainId: number) => {
