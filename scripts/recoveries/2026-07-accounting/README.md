@@ -100,6 +100,10 @@ Event signature: `SpokePoolAdminFunctionTriggered(uint256 indexed chainId, bytes
 | 4 | Arbitrum (42161) | `0x000000000000000000000000000000000000000000000000000000000000a4b1` |
 | 5 | Blast (81457) | `0x0000000000000000000000000000000000000000000000000000000000013e31` |
 
-### 3. Re-check the spoke balances
+### 3. Import the prepared Safe transaction
+
+[`safe-tx.json`](./safe-tx.json) is a Safe Transaction Builder import (Safe `0xB524735356985D2f267FA010D681f061DfF03715`, mainnet) containing the single call: `HubPool.multicall([relaySpokePoolAdminFunction(cid, 0x493a4f84 ++ ROOT ++ 0x00…00) for cid in (10, 137, 324, 42161, 81457)])` — `to = 0xc186fA914353c44b2E33eBE05f21846F1048bEda`, `value = 0`, operation `CALL`. Same shape as the June batch execution (`0x7697a76f…560e29e7`). `safeTxHash` at Safe nonce **450** (on-chain nonce, 2026-07-21): `0xdfd83a21025749542e583738837f84277b21ac5a011fe781a19babca4622d305` — recompute via `Safe.getTransactionHash(to, 0, data, 0, 0, 0, 0, 0x0, 0x0, nonce)` if the nonce has moved.
+
+### 4. Re-check the spoke balances
 
 For the settled ACX/UMA pairs, leaf amounts equal the exact stranded balances as of 2026-07-07 — a balance *above* the leaf amount is fine (excess stays on the spoke); below means something moved and the tree must be rebuilt. For zkSync DAI and Blast WBTC (active pairs), re-verify `balanceOf(spoke) − |current runningBalance| ≥ leaf amount` before signing.
