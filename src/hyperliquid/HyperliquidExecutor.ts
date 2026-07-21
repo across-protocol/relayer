@@ -302,7 +302,7 @@ export class HyperliquidExecutor {
         this.finalizeLimitOrders(pair.baseToken, pair.finalToken, quoteNonces, outputAmounts);
       }
     });
-    await this.clients.multiCallerClient.executeTxnQueues();
+    await this.clients.multiCallerClient.executeTxnQueues(!this.config.sendingTransactionsEnabled);
   }
 
   /*
@@ -386,7 +386,7 @@ export class HyperliquidExecutor {
         taskResult,
       });
       if (this.clients.multiCallerClient.transactionCount() !== 0) {
-        await this.clients.multiCallerClient.executeTxnQueues();
+        await this.clients.multiCallerClient.executeTxnQueues(!this.config.sendingTransactionsEnabled);
       }
     }
   }
