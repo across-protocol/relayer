@@ -1057,12 +1057,10 @@ export class Dataworker {
       slowRelayTree: expectedSlowRelayRoot,
     };
 
-    // Compare against the leaf count committed at proposal time, not the live unclaimed count (which decrements
-    // as leaves execute). The reconstructed root must contain exactly the proposed number of leaves.
-    const proposedPoolRebalanceLeafCount = rootBundle.poolRebalanceLeafCount;
-
     if (
-      expectedPoolRebalanceRoot.leaves.length !== proposedPoolRebalanceLeafCount ||
+      // Compare against the leaf count committed at proposal time, not the live unclaimed count (which decrements
+      // as leaves execute). The reconstructed root must contain exactly the proposed number of leaves.
+      expectedPoolRebalanceRoot.leaves.length !== rootBundle.poolRebalanceLeafCount ||
       expectedPoolRebalanceRoot.tree.getHexRoot() !== rootBundle.poolRebalanceRoot
     ) {
       this.logger.debug({
@@ -1095,7 +1093,7 @@ export class Dataworker {
         }),
         expectedSlowRelayRoot: expectedSlowRelayRoot.tree.getHexRoot(),
         pendingRoot: rootBundle.poolRebalanceRoot,
-        proposedPoolRebalanceLeafCount,
+        proposedPoolRebalanceLeafCount: rootBundle.poolRebalanceLeafCount,
       });
     } else if (expectedRelayerRefundRoot.tree.getHexRoot() !== rootBundle.relayerRefundRoot) {
       this.logger.debug({
