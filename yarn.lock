@@ -7,15 +7,15 @@
   resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.118.tgz#3d82d1e162dc1803d0ed6cb11f3865598f46cf70"
   integrity sha512-JIUzkl285Oyfs1nnqubUlb4p5gCPh6RcirPR6o2MWUShSwq99sh1z62wDfOBheiCDnYfqgMoC2iVjDbFJWISXA==
 
-"@across-protocol/constants@^3.1.119":
-  version "3.1.119"
-  resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.119.tgz#95baca79e9fe1cef7fa3936803c8ff05d31a1827"
-  integrity sha512-WaYqz7WAuE49kuDekkZoisBKMfmCWw6Rt8+MC44nyS4CO5CwiFZmYAn+dsqy5YgpdQElimxpdTG4m5PAr/cxNw==
+"@across-protocol/constants@^3.1.123":
+  version "3.1.123"
+  resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.123.tgz#72c9f8aecdbced2a21d7d2313398db87f5193af8"
+  integrity sha512-68SA6sNd/DsVJU/RbhmyC+u40iScoX+QDQNdPBAUJjG1khHc3+ltFz4oy3ahnxCOA+nHNwXJ6on8piI31m4/rA==
 
-"@across-protocol/contracts@5.0.21":
-  version "5.0.21"
-  resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-5.0.21.tgz#491a45d6fe1666690ece38e71adea7a22fb12e6b"
-  integrity sha512-4AJCfCAEWWO/eGD+gGyRV7rDvSvfJl/2uBJQroyZ3+Bs0IDgtBLmW7yxrXE9vb51/IX5YCTQf21UMYPG9eEZfg==
+"@across-protocol/contracts@5.0.24":
+  version "5.0.24"
+  resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-5.0.24.tgz#3d15aa4ff779303d48f7345afd97e3913de4ecee"
+  integrity sha512-qx8dZ/XpwLsNjzVIIwd/E33ZIX1KgmhpX2G/rD16qb6sLprpJyyDjI/LXKrhRbihvbeASiog8HGE9f3ymSrZKw==
   dependencies:
     "@across-protocol/constants" "^3.1.118"
     "@coral-xyz/anchor" "^0.31.1"
@@ -34,13 +34,13 @@
     bs58 "^6.0.0"
     ethers "5.7.2"
 
-"@across-protocol/sdk@4.4.6":
-  version "4.4.6"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.4.6.tgz#a191bde8dc2cc9ca61bffb6fe747cb5acac3ca8d"
-  integrity sha512-hFCha8NMqGHXYGGYXS0/DAtEPi6TIWXOHp9RGzAcnFLqA42WOXwNDRTpS3x/X0DfXJnQSqhqsCw9c2+cFZwD3g==
+"@across-protocol/sdk@4.4.13":
+  version "4.4.13"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.4.13.tgz#cd8c831ee4a6dea0e5bd864d8ac0af8dabc72c72"
+  integrity sha512-yarX5BTB3WhoWOL3abmOotug4YgddVk7VkNYgAe5hQhQL6lVrEz2hv9g36RUllCHE5Il9SyfsV4bs6xQT/hCzA==
   dependencies:
-    "@across-protocol/constants" "^3.1.119"
-    "@across-protocol/contracts" "5.0.21"
+    "@across-protocol/constants" "^3.1.123"
+    "@across-protocol/contracts" "5.0.24"
     "@coral-xyz/anchor" "^0.30.1"
     "@eth-optimism/sdk" "^3.3.1"
     "@ethersproject/bignumber" "^5.7.0"
@@ -9650,10 +9650,10 @@ tar@^6.0.2, tar@^6.1.0, tar@^6.1.11:
     mkdirp "^1.0.3"
     yallist "^4.0.0"
 
-tar@^7.5.16:
-  version "7.5.16"
-  resolved "https://registry.yarnpkg.com/tar/-/tar-7.5.16.tgz#f11e063afed4554f758049d082909e37d6b53ced"
-  integrity sha512-56adEpPMouktRlBLXiaYFFzZ/3+JXa8P9n7WbR+ibIjtviN55mEaOkiysCnPnWm+7kkui1Dn8J9l+g6zV8731w==
+tar@^7.5.19:
+  version "7.5.19"
+  resolved "https://registry.yarnpkg.com/tar/-/tar-7.5.19.tgz#d8915e6b717f8036a79d839ca9448198b002b0a7"
+  integrity sha512-4LeEWl96twnS2Q7Bz4MGqgazLqO+hJN63GZxXoIqh1T3VweYD997gbU1ItNsQafqqXTXd5WFyFdReLtwvRBNiw==
   dependencies:
     "@isaacs/fs-minipass" "^4.0.0"
     chownr "^3.0.0"

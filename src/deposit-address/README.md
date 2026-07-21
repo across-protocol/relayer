@@ -9,8 +9,20 @@ The deposit-address handler polls the across-indexer for ERC-20 transfers that h
 1. `DepositAddressHandlerConfig` from env.
 2. Dispatcher keys for transaction signing.
 3. `DepositAddressHandler` instance, then `initialize()`.
-4. Background polling loop (`pollAndExecute`) on the configured interval.
+4. Background polling loop (`pollAndExecute`) on the configured interval. This also starts a
+   watchdog heartbeat (`kickWatchdog`) on its own interval (`WATCHDOG_INTERVAL`, default 15s),
+   scheduled via `scheduleTask` against the handler's abort signal — the same pattern the relayer
+   uses for its periodic address-filter refresh. Each tick GETs `DEPOSIT_BOT_HEARTBEAT_URL`
+   (unset = disabled) as a dead-man's switch: with a Checkly period of 30s + grace of 30s, a dead
+   bot trips the alert within ~60s. Pings are best-effort (failures never disrupt the bot, 5s cap
+   per request), but every 10th consecutive failure — including non-2xx responses — emits a
+   warning log to aid diagnosis when the alert fires. Pings stop on handover/shutdown with the
+   rest of the handler.
 5. Handover via Redis (`InstanceCoordinator`) — exits cleanly when another instance takes over.
+
+Poll-loop failures are never silent: `pollAndExecute` passes an error handler to `scheduleTask`, so
+a rejected `evaluateDepositAddresses` tick (which skips that whole batch) is logged at error level
+instead of being swallowed by the scheduler.
 
 Cleanup in the `finally` block closes the Pub/Sub publisher and Redis clients.
 
@@ -35,6 +47,26 @@ Each message also carries a top-level `version` that selects the execution schem
 | `3` | Upgradeable-counterfactual scheme — `correct_transfer` goes to the v3 execute path (below); `mis_route` goes to the v3 refund-withdraw path (below) when `ENABLE_V3_WITHDRAWALS=true`; `intent_refund` and other classifications are dropped (not yet supported on v3). |
 | anything else (e.g. `2`) | Dropped (debug-logged) before normalization, since unsupported payloads may not carry a shape the normalizer can dereference. |
 
+**Native-token transfers.** The indexer detects native transfers to deposit addresses via traces
+and synthesizes them into the same message shape: `erc20Transfer.contractAddress` carries the
+native sentinel `0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE` (`NATIVE_ASSET` in the counterfactual
+contracts) and `logIndex` is synthetic. Native never matches a route's input token, so these
+messages always classify `mis_route` / `intent_refund` and enter the refund-withdraw paths, never
+the deposit-execute paths. Native withdraws are supported **only on the v3 scheme**: v3's
+`WithdrawImplementation` sends native via `call` when `token == NATIVE_ASSET`, so the v3 withdraw
+path relays the sentinel verbatim to the sign-withdraw endpoint. The v1 withdraw contract path
+cannot move native funds, so the v1 path skips sentinel messages up front (debug log, no API call).
+The bot handles the sentinel in two further places: on-chain balance checks go through
+`getDepositAddressBalance`, which reads `provider.getBalance(depositAddress)` for the sentinel
+(there is no contract at that address — `balanceOf` reverts) and ERC-20 `balanceOf` otherwise; and
+the Pub/Sub payload builder matches a different settlement log (see below).
+
+Normalization itself is guarded per message: a supported-version payload that still fails
+`normalizeDepositAddressMessage` (malformed shape) is dropped with a warn — never allowed to sink
+the rest of the batch. `counterfactualMaterials` may legitimately be absent on v1 messages (deposit
+addresses predating the indexer's V2-materials backfill are served with `undefined` materials);
+normalization passes the absence through and the withdraw path guards on the leaf downstream.
+
 ## v3 execute flow (thin submitter)
 
 For `version: 3` messages the bot is a **thin submitter** of API-built calldata. The quote-api
@@ -49,6 +81,20 @@ The `integratorId` (2-byte hex) is sourced from the indexer message's `integrato
 property of the deposit address, not the bot's auth key) and is **required** by the execute
 endpoint — it folds into the CREATE2 salt + on-chain integrator tag, so the address is derived
 per-integrator. The bot relays it verbatim.
+
+Two optional execute fields are gated behind env flags because an API that predates their schema
+changes rejects an unknown param with `400 INVALID_PARAM`:
+
+- `ENABLE_EXECUTE_INPUT_TOKEN=true` → relays the funding token as `inputToken`.
+- `ENABLE_EXECUTE_ERC20_TRANSFER_METADATA=true` → relays an `erc20Transfer` provenance reference
+  (`{ chainId, blockNumber, transactionHash, logIndex }` of the inbound funding transfer, taken
+  verbatim from the indexer message; `chainId` coerced to an integer). When accepted, the API wraps
+  `executeTx` in a Multicall3 bundle that additionally emits a version-2 provenance blob via
+  `AcrossEventEmitter`, giving the indexer an on-chain sweep ↔ funding-transfer link in the execute
+  receipt.
+
+Both default off; enable them only against an API that accepts the field (e.g. the test bot ahead of
+the production rollout).
 
 The flow (`initiateDepositV3`):
 
@@ -159,6 +205,13 @@ The bot publishes two lifecycle events to one shared GCP Pub/Sub topic so the co
 - `withdraw_executed` — when `ENABLE_DEPOSIT_ADDRESS_WITHDRAW_PUBLISHER=true`, every confirmed refund withdraw (v1 + v3).
 - `deposit_executed` — when `ENABLE_DEPOSIT_ADDRESS_DEPOSIT_PUBLISHER=true`, every successful **v3** correct-transfer execution (`initiateDepositV3`). v1 deposits and failure events are out of scope.
 
+**`ENABLE_EXECUTE_ERC20_TRANSFER_METADATA` overrides the `deposit_executed` publish.** When metadata
+mode is on, the API emits the sweep ↔ funding-transfer link on-chain (a version-2 provenance blob via
+`AcrossEventEmitter`), so the indexer learns of the execution from chain events and the bot **skips**
+the `deposit_executed` Pub/Sub publish entirely — regardless of `ENABLE_DEPOSIT_ADDRESS_DEPOSIT_PUBLISHER`.
+The `withdraw_executed` publish is unaffected. Operators enabling metadata mode should therefore expect
+row transitions for v3 executes to come from the indexer's on-chain ingestion, not Pub/Sub.
+
 The consumer lives at `indexer/packages/indexer/src/pubsub/DepositAddressWithdrawConsumer.ts` (sibling repo). A single Pub/Sub client serves both events (same project + topic); it is constructed when **either** gate is on, and each publish path checks its own flag so the two events toggle independently.
 
 ### Env
@@ -166,7 +219,7 @@ The consumer lives at `indexer/packages/indexer/src/pubsub/DepositAddressWithdra
 | Name | Required | Description |
 | --- | --- | --- |
 | `ENABLE_DEPOSIT_ADDRESS_WITHDRAW_PUBLISHER` | No (default `false`) | Gate for `withdraw_executed`. |
-| `ENABLE_DEPOSIT_ADDRESS_DEPOSIT_PUBLISHER` | No (default `false`) | Gate for `deposit_executed` (v3 executions). Independent of the withdraw gate. |
+| `ENABLE_DEPOSIT_ADDRESS_DEPOSIT_PUBLISHER` | No (default `false`) | Gate for `deposit_executed` (v3 executions). Independent of the withdraw gate. Ignored when `ENABLE_EXECUTE_ERC20_TRANSFER_METADATA=true` (the publish is skipped in favor of on-chain provenance). |
 | `PUBSUB_GCP_PROJECT_ID` | When either gate is on | GCP project that **hosts the topic** (may differ from the bot's runtime project — cross-project publish is supported when the runtime SA holds `roles/pubsub.publisher` on the topic in the host project). |
 | `PUBSUB_DEPOSIT_ADDRESS_WITHDRAW_TOPIC` | When either gate is on | Short topic name (e.g. `topic-deposit-address-execution` in prod, `…-sandbox` in non-prod). Shared by both events. |
 
@@ -194,7 +247,7 @@ Every Pub/Sub message uses an envelope: `{ "type": "<message_type>", "data": <ty
 }
 ```
 
-All integer fields are `number`; tx hashes are lowercase hex strings. The `erc20Transfer` block identifies the original user transfer (the indexer keys rows on it); the sibling fields identify the execution transaction the bot just sent. The `logIndex` is the index of the ERC-20 `Transfer(address,address,uint256)` event whose `address` matches `erc20Transfer.contractAddress` and whose `from` is the deposit address; the **last** such log is used.
+All integer fields are `number`; tx hashes are lowercase hex strings. The `erc20Transfer` block identifies the original user transfer (the indexer keys rows on it); the sibling fields identify the execution transaction the bot just sent. The `logIndex` is the index of the ERC-20 `Transfer(address,address,uint256)` event whose `address` matches `erc20Transfer.contractAddress` and whose `from` is the deposit address; the **last** such log is used. For native-token withdraws (`contractAddress` = the native sentinel, v3 only) there is no ERC-20 Transfer — the `logIndex` is instead that of the `Withdraw(address,address,uint256)` event emitted by the deposit address itself (delegatecalled `WithdrawImplementation`), with the sentinel in the `token` topic; the same `to`-filter and last-match rules apply.
 
 - **`withdraw_executed`** additionally requires `to` to equal the user's `routeParams.refundAddress`. Matching on `to` disambiguates fee-on-transfer / tax / burn tokens that emit several Transfer events from the deposit address in one tx (one to the user, one to a fee recipient), and the last match handles Multicall3-bundled withdraws with intermediate hops to the same refund address.
 - **`deposit_executed`** omits the `to` filter — the input token leaves the deposit address into the SpokePool / CCTP with no fixed recipient — so any outgoing transfer of the input token qualifies.

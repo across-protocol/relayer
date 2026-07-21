@@ -89,7 +89,7 @@ Typed errors in `errors.ts` drive retry decisions:
 
 `getRpcUrlForChain` enforces explicit RPC URLs. Set only the ones you need, but missing values for active destinations throw `RpcUrlNotConfiguredError`.
 
-- Mainnets: `ETHEREUM_RPC_URL`, `OPTIMISM_RPC_URL`, `POLYGON_RPC_URL`, `ARBITRUM_RPC_URL`, `BASE_RPC_URL`, `UNICHAIN_RPC_URL`, `LINEA_RPC_URL`, `WORLD_CHAIN_RPC_URL`, `HYPEREVM_RPC_URL`, `BSC_RPC_URL`, `MONAD_RPC_URL`, `SOLANA_RPC_URL`.
+- Mainnets: `ETHEREUM_RPC_URL`, `OPTIMISM_RPC_URL`, `POLYGON_RPC_URL`, `ARBITRUM_RPC_URL`, `BASE_RPC_URL`, `UNICHAIN_RPC_URL`, `LINEA_RPC_URL`, `WORLD_CHAIN_RPC_URL`, `HYPEREVM_RPC_URL`, `BSC_RPC_URL`, `MONAD_RPC_URL`, `INK_RPC_URL`, `AVALANCHE_RPC_URL`, `SOLANA_RPC_URL`.
 - Testnets: `SEPOLIA_RPC_URL`, `OPTIMISM_SEPOLIA_RPC_URL`, `ARBITRUM_SEPOLIA_RPC_URL`, `BASE_SEPOLIA_RPC_URL`, `POLYGON_AMOY_RPC_URL`, `ARBITRUM_NOVA_SEPOLIA_RPC_URL`, `HYPEREVM_TESTNET_RPC_URL`, `SOLANA_DEVNET_RPC_URL`.
 
 All RPC URLs should include authentication if the upstream provider requires it.

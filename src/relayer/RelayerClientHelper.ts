@@ -108,10 +108,10 @@ async function indexedSpokePoolClient(
 export async function constructRelayerClients(
   logger: winston.Logger,
   config: RelayerConfig,
-  baseSigner: Signer
+  baseSigner: Signer,
+  relayerAddressOverride?: string
 ): Promise<RelayerClients> {
-  const _signerAddr = await baseSigner.getAddress();
-  const signerAddr = EvmAddress.from(_signerAddr);
+  const signerAddr = EvmAddress.from(relayerAddressOverride ?? (await baseSigner.getAddress()));
   // The relayer only uses the HubPoolClient to query repayments refunds for the latest validated
   // bundle and the pending bundle. 8 hours should cover the latest two bundles on production in
   // almost all cases. Look back to genesis on testnets.

@@ -1,15 +1,7 @@
 import winston from "winston";
 import { array, create, number, object, optional, record, string, union } from "superstruct";
 import { CommonConfig, ProcessEnv } from "../common";
-import {
-  CHAIN_IDs,
-  getNativeTokenAddressForChain,
-  isDefined,
-  resolveAcrossToken,
-  Address,
-  toAddressType,
-  parseJson,
-} from "../utils";
+import { CHAIN_IDs, getNativeTokenAddressForChain, isDefined, Address, toAddressType, parseJson } from "../utils";
 
 const MonitoredBalances2Schema = record(
   string(),
@@ -42,7 +34,6 @@ export interface BotModes {
   stuckRebalancesEnabled: boolean;
   utilizationEnabled: boolean; // Monitors pool utilization ratio
   unknownRootBundleCallersEnabled: boolean; // Monitors relay related events triggered by non-whitelisted addresses
-  spokePoolBalanceReportEnabled: boolean;
   binanceWithdrawalLimitsEnabled: boolean;
   closePDAsEnabled: boolean;
   closeALTsEnabled: boolean;
@@ -56,8 +47,6 @@ export class MonitorConfig extends CommonConfig {
   readonly hubPoolStartingBlock: number | undefined;
   readonly hubPoolEndingBlock: number | undefined;
   readonly monitoredRelayers: Address[];
-  readonly monitoredSpokePoolChains: number[];
-  readonly monitoredTokenSymbols: string[];
   readonly whitelistedDataworkers: Address[];
   readonly whitelistedRelayers: Address[];
   readonly knownV1Addresses: Address[];
@@ -70,7 +59,6 @@ export class MonitorConfig extends CommonConfig {
     account: Address;
     token: Address;
   }[] = [];
-  readonly additionalL1NonLpTokens: string[] = [];
   readonly binanceWithdrawWarnThreshold: number;
   readonly binanceWithdrawAlertThreshold: number;
   readonly hyperliquidOrderMaximumLifetime: number;
@@ -93,12 +81,7 @@ export class MonitorConfig extends CommonConfig {
       MONITORED_BALANCES,
       MONITORED_BALANCES_2,
       STUCK_REBALANCES_ENABLED,
-      REPORT_SPOKE_POOL_BALANCES,
-      MONITORED_SPOKE_POOL_CHAINS,
-      MONITORED_TOKEN_SYMBOLS,
-      MONITOR_REPORT_NON_LP_TOKENS,
       BUNDLES_COUNT,
-      MONITOR_USE_FOLLOW_DISTANCE,
       BINANCE_WITHDRAW_WARN_THRESHOLD,
       BINANCE_WITHDRAW_ALERT_THRESHOLD,
       CLOSE_PDAS_ENABLED,
@@ -113,7 +96,6 @@ export class MonitorConfig extends CommonConfig {
       utilizationEnabled: UTILIZATION_ENABLED === "true",
       unknownRootBundleCallersEnabled: UNKNOWN_ROOT_BUNDLE_CALLERS_ENABLED === "true",
       stuckRebalancesEnabled: STUCK_REBALANCES_ENABLED === "true",
-      spokePoolBalanceReportEnabled: REPORT_SPOKE_POOL_BALANCES === "true",
       closePDAsEnabled: CLOSE_PDAS_ENABLED === "true",
       closeALTsEnabled: CLOSE_ALTS_ENABLED === "true",
       binanceWithdrawalLimitsEnabled:
@@ -121,22 +103,12 @@ export class MonitorConfig extends CommonConfig {
       reportOpenHyperliquidOrders: isDefined(HYPERLIQUID_ORDER_MAXIMUM_LIFETIME),
     };
 
-    if (MONITOR_USE_FOLLOW_DISTANCE !== "true") {
-      Object.values(this.blockRangeEndBlockBuffer).forEach((chainId) => (this.blockRangeEndBlockBuffer[chainId] = 0));
-    }
-
     // Used to monitor activities not from whitelisted data workers or relayers.
     this.whitelistedDataworkers = parseAddressesOptional(WHITELISTED_DATA_WORKERS);
     this.whitelistedRelayers = parseAddressesOptional(WHITELISTED_RELAYERS);
     this.monitoredRelayers = parseAddressesOptional(MONITORED_RELAYERS);
     this.knownV1Addresses = parseAddressesOptional(KNOWN_V1_ADDRESSES);
-    this.monitoredSpokePoolChains = parseJson.numberArray(MONITORED_SPOKE_POOL_CHAINS);
-    this.monitoredTokenSymbols = parseJson.stringArray(MONITORED_TOKEN_SYMBOLS);
     this.bundlesCount = Number(BUNDLES_COUNT ?? 4);
-    this.additionalL1NonLpTokens = parseJson
-      .stringArray(MONITOR_REPORT_NON_LP_TOKENS)
-      .map((token) => resolveAcrossToken(token, CHAIN_IDs.MAINNET))
-      .filter(isDefined);
 
     this.binanceWithdrawWarnThreshold = Number(BINANCE_WITHDRAW_WARN_THRESHOLD ?? 1);
     this.binanceWithdrawAlertThreshold = Number(BINANCE_WITHDRAW_ALERT_THRESHOLD ?? 1);

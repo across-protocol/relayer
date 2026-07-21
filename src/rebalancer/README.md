@@ -21,7 +21,7 @@ A `RebalanceRoute` defines:
 
 Routes are assembled by the rebalancer construction layer and passed at client initialization time (`initialize(rebalanceRoutes)`). The mode clients then filter to routes that are valid for current balances/config.
 
-The built-in production route set is generated in `src/rebalancer/buildRebalanceRoutes.ts`. It covers:
+The cumulative-mode production route set is generated in `src/rebalancer/buildRebalanceRoutes.ts`. It covers:
 
 - stablecoin swap routes between `USDC` and `USDT` on Binance and Hyperliquid, excluding Tron from Hyperliquid,
 - same-asset routes for `USDC` via CCTP and on direct Binance-supported USDC networks via Binance, and for `USDT` via OFT and on direct Binance-supported USDT networks via Binance,
@@ -41,6 +41,10 @@ Operational note:
 - If additional direct Binance ETH networks are enabled later, same-coin `WETH <-> WETH` routes skip the spot swap leg and treat on-chain `WETH` as Binance `ETH`.
 - Intermediate on-chain bridge legs into or out of Binance remain restricted to `USDC` and `USDT`; current `WETH` routes therefore source or settle through mainnet rather than bridging WETH into another Binance ETH network.
 - Hyperliquid routes intentionally exclude Tron even when Tron USDT is configured, and same-asset USDT routes involving Tron use Binance rather than OFT.
+
+The dedicated SameAsset mode has a separate route source in `src/rebalancer/buildSameAssetRebalanceRoutes.ts`. Its read-only `SAME_ASSET_REBALANCE_ROUTE_SUPPORT` catalog is the source of truth for token, destination-chain, and adapter combinations that this mode can execute. `buildSameAssetRebalanceRoutes(rebalancerConfig)` returns only the intersection of that catalog and `sameAssetBalances`; adding configuration alone does not enable an unsupported route. Both `SameAssetRebalancerClient` and Jussi topology preparation consume this builder so runtime support and graph edges stay aligned.
+
+SameAsset routes are directional. They move an unchanged asset from the hub chain to a configured destination chain through the selected swap-rebalancer adapter. Excess destination-chain inventory moving back to the hub chain remains an InventoryClient responsibility and is not emitted as a reverse SameAsset route.
 
 ### Rebalancer Adapter
 
@@ -165,7 +169,7 @@ When adding a new file in `src/rebalancer/adapters/`, contributors should usuall
 
 `RebalancerConfig` is loaded from `REBALANCER_CONFIG` or `REBALANCER_EXTERNAL_CONFIG`.
 
-The active config shape is cumulative-target based:
+The active config supports cumulative-target and SameAsset modes:
 
 ```json
 {
@@ -175,6 +179,11 @@ The active config shape is cumulative-target based:
       "thresholdBalance": "1000000",
       "priorityTier": 1,
       "chains": { "1": 1, "42161": 0 }
+    }
+  },
+  "sameAssetBalances": {
+    "USDT": {
+      "chains": { "43114": 1 }
     }
   },
   "maxAmountsToTransfer": {
@@ -191,8 +200,10 @@ Notes:
 
 - `targetBalance` and `thresholdBalance` values are human-readable and converted to token-native decimals.
 - `cumulativeTargetBalances` define per-token aggregate objectives plus allowed source/destination chain sets for `CumulativeBalanceRebalancerClient.rebalanceInventory()`.
-- `cumulativeTargetBalances[token].chains[chainId]` is a chain priority tier used when selecting where to source excess inventory from (lower tier is preferred for sourcing).
-- `chainIds` are derived from the union of chains found in `cumulativeTargetBalances`.
+- `cumulativeTargetBalances[token].chains[chainId]` is a chain priority tier used when selecting where to source excess inventory from and where to land deficit inventory. Lower tiers are preferred for sourcing; higher tiers are preferred for destinations.
+- `sameAssetBalances[token].chains` enables destination chains for `SameAssetRebalancerClient`; InventoryConfig supplies the per-chain target and threshold used to decide whether a transfer is needed. Values in this chain map are enablement markers after parsing, not route-ranking inputs.
+- A SameAsset entry becomes executable only when the support catalog contains the same token and destination chain. The configured source and destination must also be present for that token in InventoryConfig when the route is included in a Jussi graph.
+- `chainIds` are derived from the union of chains found in `cumulativeTargetBalances` and `sameAssetBalances`, with the hub chain included when SameAsset mode is configured.
 
 For an operator playbook on sizing these values from expected deposit fills, see
 [`docs/rebalancer-config-from-deposit-flow.md`](../../docs/rebalancer-config-from-deposit-flow.md).
@@ -217,13 +228,28 @@ High-level flow:
 4. For each excess token used to fill a deficit token, sort source chains from `cumulativeTargetBalances[excessToken].chains` by:
    - chain `priorityTier` ascending,
    - then current chain balance descending.
-5. For each candidate source chain, evaluate all destination chains configured for the deficit token that have valid routes, then choose the route with the lowest `getEstimatedCost`.
+5. For each candidate source chain, evaluate all destination chains configured for the deficit token that have valid routes, then choose the highest destination priority tier with an estimated cost within `maxFeePct`. Routes in the same destination priority tier use the lowest `getEstimatedCost`.
 6. Cap transfer amount by remaining deficit, remaining excess, chain balance, and configured `maxAmountsToTransfer`. For mixed-asset routes such as `WETH <-> stablecoin`, the client converts between source and destination token amounts through hub-chain USD prices before capping and decrementing the remaining deficit.
-7. Enforce max fee pct and adapter pending-order caps before calling `initializeRebalance`.
+7. Enforce max fee pct and adapter pending-order caps before calling `initializeRebalance`. If an affordable ranked route declines during initialization, try the next affordable route.
 
 Design tradeoff:
 
-- Destination-chain selection evaluates all eligible routes to minimize expected cost. This improves route quality at the expense of additional runtime cost when many routes are configured.
+- Destination-chain selection evaluates all eligible routes and favors configured destination priority before expected cost. This sends replenishment to preferred inventory locations while still falling back to lower-priority routes when higher-priority routes exceed `maxFeePct`.
+
+### SameAsset mode: `SameAssetRebalancerClient.rebalanceInventory()`
+
+This mode handles configured same-token hub-to-destination transfers that InventoryClient cannot reliably execute through its own bridge adapters. It reuses InventoryClient's inventory targets but delegates execution and lifecycle tracking to the swap-rebalancer adapters.
+
+High-level flow:
+
+1. Ask InventoryClient for the currently needed hub-to-destination inventory rebalances without allowing InventoryClient to execute them.
+2. Match each candidate against the directional routes produced by `buildSameAssetRebalanceRoutes` and discard candidates with no configured, supported route.
+3. Cap the amount using `maxAmountsToTransfer`, reject estimates above `MAX_FEE_PCT`, and initialize the route through its configured adapter when transaction sending is enabled.
+4. Track intermediate venue and bridge state in the adapter's Redis lifecycle, preserving the destination-chain context that the InventoryClient bridge-adapter path cannot represent.
+
+The runtime entrypoint is `runSameAssetRebalancer`, exposed as the `sameAssetRebalancer` bot. It is independent of cumulative mode: operators enable destination token/chain pairs under `sameAssetBalances`, while the support catalog controls which of those pairs can become routes.
+
+Cross-mode pending orders: the `swapRebalancer` and `sameAssetRebalancer` bots typically share a base signer and the Redis order store, so each bot's `updateRebalanceStatuses()` pass can encounter pending orders created by the other mode. Adapters only progress orders whose routes are in their own configured `availableRoutes` (`BaseAdapter._canProgressOrder`); unsupported orders are skipped with a debug log and left pending for the properly-configured bot to progress. If no configured instance supports an order's route (e.g. after config drift), the order is eventually TTL-pruned with a warning by `_redisCleanupPendingOrders`.
 
 ### Read-only mode: `ReadOnlyRebalancerClient`
 
@@ -235,15 +261,12 @@ The read-only mode still initializes adapters (with an empty route set) so `getP
 
 The OFT and CCTP adapters also expose their pending bridge-pre-deposit Redis schema through `src/rebalancer/clients/CctpOftReadOnlyClient.ts`. Adapter-side bridge accounting uses that readonly reader to ignore rebalancer-owned OFT/CCTP transfers instead of instantiating rebalancer adapters inside `AdapterManager`.
 
-### Future mode extensibility
-
-`src/rebalancer/clients/` is intentionally mode-oriented. Today the production mode is cumulative and there is a read-only consumer mode, but additional `RebalancerClient` implementations can be added later without changing adapter contracts.
-
 ## Creating Rebalancer Instances
 
 Use the rebalancer construction layer to instantiate mode-specific clients:
 
 - `constructCumulativeBalanceRebalancerClient()` for operational runs.
+- `constructSameAssetRebalancerClient()` for configured same-token hub-to-destination runs.
 - `constructReadOnlyRebalancerClient()` for pending-state consumers.
 
 Lifecycle note:
@@ -254,10 +277,15 @@ Lifecycle note:
   pending-state reads do not depend on route selection.
 - Consumers pass the relayer/account they want to inspect into `getPendingRebalances(account)`; the client aggregates
   only the pending state owned by that EVM address.
+- `getPendingRebalances(account)` isolates per-adapter failures: if one adapter's pending-state read throws (e.g. its
+  upstream exchange API is down), the client logs a warning and aggregates the remaining adapters instead of throwing.
+  Consumers such as the relayer's `InventoryClient` keep running with that adapter's in-flight rebalances temporarily
+  uncounted in virtual balances.
 
 Runtime entrypoints in `src/rebalancer/`:
 
 - `runCumulativeBalanceRebalancer` (supported operational path).
+- `runSameAssetRebalancer` (directional SameAsset operational path).
 - The runtime updates adapter status/sweeps first, then refreshes `TokenClient` balances before applying adapter-reported pending rebalance adjustments and evaluating new rebalances. The refresh is required because the sweeps and `updateRebalanceStatuses` calls submit OFT/CCTP/Hypercore transactions that leave the initial `TokenClient.update()` snapshot stale; without it, `rebalanceInventory` can size a new bridge against a pre-burn balance and crash on the underlying simulation revert.
 
 ## Interactions with Other Bots and Clients
@@ -281,6 +309,14 @@ The Binance finalizer sweeps exchange balances as a fallback path. Before withdr
 adapter, reads pending Binance rebalances with `getPendingRebalances(account)`, and subtracts positive destination-token
 amounts from the shared exchange-account withdrawal capacity. The Binance adapter marks expected swap lifecycle
 transfers, and stale balances are eventually swept if swaps do not complete.
+
+Swap deposits into Binance are tagged `SWAP` in Redis with a TTL of twice the finalizer's default deposit-history
+lookback (`FINALIZER_TOKENBRIDGE_LOOKBACK`) so the finalizer excludes them from its deposit ledger for the whole
+lookback — including after the swap completes, so a consumed deposit is never re-counted as finalizable ("phantom"
+`amountToFinalize`). Handover to the finalizer is driven by order state, not
+wall clock: if an order is abandoned while still in `PENDING_DEPOSIT` (its `REBALANCER_PENDING_ORDER_TTL` elapses), the
+prune path deletes the deposit's tag via `_onExpiredOrderPruned`, and the finalizer reclaims the funds on its next run.
+Orders pruned in later statuses keep the tag, since their deposit was already consumed by the spot order.
 
 When Binance reports `RW00441`, the account has recently credited deposit value that is not withdrawal-unlocked yet.
 The Binance adapter treats this as a retryable wait state and leaves the order pending. The Binance finalizer reads

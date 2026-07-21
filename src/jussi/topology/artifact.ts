@@ -16,26 +16,20 @@ export function buildJussiTopologyArtifact(prepared: PreparedGraphTopology): Jus
     rate_limit_buckets: topology.rateLimitBuckets,
     nodes: topology.nodeContexts
       .map(({ definition }) => definition)
-      .sort((left, right) => {
-        return left.node_key.localeCompare(right.node_key);
-      }),
-    edge_candidates: topology.edgeCandidates.map(serializeEdgeCandidate).sort((left, right) => {
-      return left.edge_id.localeCompare(right.edge_id);
-    }),
-    rebalance_routes: prepared.rebalanceRoutes.map(serializeRebalanceRoute).sort((left, right) => {
-      return [left.source_chain, left.source_token, left.destination_chain, left.destination_token, left.adapter]
-        .join("|")
-        .localeCompare(
-          [
-            right.source_chain,
-            right.source_token,
-            right.destination_chain,
-            right.destination_token,
-            right.adapter,
-          ].join("|")
-        );
-    }),
+      .sort((left, right) => left.node_key.localeCompare(right.node_key)),
+    edge_candidates: topology.edgeCandidates
+      .map(serializeEdgeCandidate)
+      .sort((left, right) => left.edge_id.localeCompare(right.edge_id)),
+    rebalance_routes: prepared.rebalanceRoutes
+      .map(serializeRebalanceRoute)
+      .sort((left, right) => rebalanceRouteKey(left).localeCompare(rebalanceRouteKey(right))),
   }) as JussiTopologyArtifactJson;
+}
+
+function rebalanceRouteKey(route: SerializedRebalanceRoute): string {
+  return [route.source_chain, route.source_token, route.destination_chain, route.destination_token, route.adapter].join(
+    "|"
+  );
 }
 
 function serializeEdgeCandidate(candidate: GraphEdgeCandidate): JussiTopologyArtifactJson["edge_candidates"][number] {

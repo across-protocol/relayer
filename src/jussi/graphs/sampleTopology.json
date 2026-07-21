@@ -1,5 +1,5 @@
 {
-  "edge_candidate_count": 385,
+  "edge_candidate_count": 364,
   "edge_candidates": [
     {
       "adapter_or_bridge_name": "binance",
@@ -366,6 +366,22 @@
     {
       "adapter_or_bridge_name": "binance",
       "edge_class_id": "binance_cex_bridge:USDT:USDT",
+      "edge_id": "binance_cex_bridge:USDT:USDT:evm:1:0xdac17f958d2ee523a2206206994597c13d831ec7:evm:43114:0x9702230a8ea53601f5cd2dc00fdbc13d4df4a8c7",
+      "family": "binance_cex_bridge",
+      "from_node_key": "evm:1:0xdac17f958d2ee523a2206206994597c13d831ec7",
+      "rate_limit_bucket_id": "binance_withdrawals_24h_usd",
+      "rebalance_route": {
+        "adapter": "binance",
+        "destination_chain": 43114,
+        "destination_token": "USDT",
+        "source_chain": 1,
+        "source_token": "USDT"
+      },
+      "to_node_key": "evm:43114:0x9702230a8ea53601f5cd2dc00fdbc13d4df4a8c7"
+    },
+    {
+      "adapter_or_bridge_name": "binance",
+      "edge_class_id": "binance_cex_bridge:USDT:USDT",
       "edge_id": "binance_cex_bridge:USDT:USDT:evm:1:0xdac17f958d2ee523a2206206994597c13d831ec7:evm:56:0x55d398326f99059ff775485246999027b3197955",
       "family": "binance_cex_bridge",
       "from_node_key": "evm:1:0xdac17f958d2ee523a2206206994597c13d831ec7",
@@ -378,22 +394,6 @@
         "source_token": "USDT"
       },
       "to_node_key": "evm:56:0x55d398326f99059ff775485246999027b3197955"
-    },
-    {
-      "adapter_or_bridge_name": "binance",
-      "edge_class_id": "binance_cex_bridge:USDT:USDT",
-      "edge_id": "binance_cex_bridge:USDT:USDT:evm:1:0xdac17f958d2ee523a2206206994597c13d831ec7:evm:728126428:tr7nhqjekqxgtci8q8zy4pl8otszgjlj6t",
-      "family": "binance_cex_bridge",
-      "from_node_key": "evm:1:0xdac17f958d2ee523a2206206994597c13d831ec7",
-      "rate_limit_bucket_id": "binance_withdrawals_24h_usd",
-      "rebalance_route": {
-        "adapter": "binance",
-        "destination_chain": 728126428,
-        "destination_token": "USDT",
-        "source_chain": 1,
-        "source_token": "USDT"
-      },
-      "to_node_key": "evm:728126428:tr7nhqjekqxgtci8q8zy4pl8otszgjlj6t"
     },
     {
       "adapter_or_bridge_name": "binance",
@@ -446,22 +446,6 @@
     {
       "adapter_or_bridge_name": "binance",
       "edge_class_id": "binance_cex_bridge:USDT:USDT",
-      "edge_id": "binance_cex_bridge:USDT:USDT:evm:10:0x94b008aa00579c1307b0ef2c499ad98a8ce58e58:evm:728126428:tr7nhqjekqxgtci8q8zy4pl8otszgjlj6t",
-      "family": "binance_cex_bridge",
-      "from_node_key": "evm:10:0x94b008aa00579c1307b0ef2c499ad98a8ce58e58",
-      "rate_limit_bucket_id": "binance_withdrawals_24h_usd",
-      "rebalance_route": {
-        "adapter": "binance",
-        "destination_chain": 728126428,
-        "destination_token": "USDT",
-        "source_chain": 10,
-        "source_token": "USDT"
-      },
-      "to_node_key": "evm:728126428:tr7nhqjekqxgtci8q8zy4pl8otszgjlj6t"
-    },
-    {
-      "adapter_or_bridge_name": "binance",
-      "edge_class_id": "binance_cex_bridge:USDT:USDT",
       "edge_id": "binance_cex_bridge:USDT:USDT:evm:42161:0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9:evm:1:0xdac17f958d2ee523a2206206994597c13d831ec7",
       "family": "binance_cex_bridge",
       "from_node_key": "evm:42161:0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9",
@@ -508,20 +492,14 @@
       "to_node_key": "evm:56:0x55d398326f99059ff775485246999027b3197955"
     },
     {
-      "adapter_or_bridge_name": "binance",
+      "adapter_or_bridge_name": "BinanceCEXBridge",
       "edge_class_id": "binance_cex_bridge:USDT:USDT",
-      "edge_id": "binance_cex_bridge:USDT:USDT:evm:42161:0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9:evm:728126428:tr7nhqjekqxgtci8q8zy4pl8otszgjlj6t",
+      "edge_id": "binance_cex_bridge:USDT:USDT:evm:43114:0x9702230a8ea53601f5cd2dc00fdbc13d4df4a8c7:evm:1:0xdac17f958d2ee523a2206206994597c13d831ec7",
+      "effective_bridge_name": "BinanceCEXBridge",
       "family": "binance_cex_bridge",
-      "from_node_key": "evm:42161:0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9",
+      "from_node_key": "evm:43114:0x9702230a8ea53601f5cd2dc00fdbc13d4df4a8c7",
       "rate_limit_bucket_id": "binance_withdrawals_24h_usd",
-      "rebalance_route": {
-        "adapter": "binance",
-        "destination_chain": 728126428,
-        "destination_token": "USDT",
-        "source_chain": 42161,
-        "source_token": "USDT"
-      },
-      "to_node_key": "evm:728126428:tr7nhqjekqxgtci8q8zy4pl8otszgjlj6t"
+      "to_node_key": "evm:1:0xdac17f958d2ee523a2206206994597c13d831ec7"
     },
     {
       "adapter_or_bridge_name": "binance",
@@ -570,86 +548,6 @@
         "source_token": "USDT"
       },
       "to_node_key": "evm:42161:0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9"
-    },
-    {
-      "adapter_or_bridge_name": "binance",
-      "edge_class_id": "binance_cex_bridge:USDT:USDT",
-      "edge_id": "binance_cex_bridge:USDT:USDT:evm:56:0x55d398326f99059ff775485246999027b3197955:evm:728126428:tr7nhqjekqxgtci8q8zy4pl8otszgjlj6t",
-      "family": "binance_cex_bridge",
-      "from_node_key": "evm:56:0x55d398326f99059ff775485246999027b3197955",
-      "rate_limit_bucket_id": "binance_withdrawals_24h_usd",
-      "rebalance_route": {
-        "adapter": "binance",
-        "destination_chain": 728126428,
-        "destination_token": "USDT",
-        "source_chain": 56,
-        "source_token": "USDT"
-      },
-      "to_node_key": "evm:728126428:tr7nhqjekqxgtci8q8zy4pl8otszgjlj6t"
-    },
-    {
-      "adapter_or_bridge_name": "binance",
-      "edge_class_id": "binance_cex_bridge:USDT:USDT",
-      "edge_id": "binance_cex_bridge:USDT:USDT:evm:728126428:tr7nhqjekqxgtci8q8zy4pl8otszgjlj6t:evm:1:0xdac17f958d2ee523a2206206994597c13d831ec7",
-      "family": "binance_cex_bridge",
-      "from_node_key": "evm:728126428:tr7nhqjekqxgtci8q8zy4pl8otszgjlj6t",
-      "rate_limit_bucket_id": "binance_withdrawals_24h_usd",
-      "rebalance_route": {
-        "adapter": "binance",
-        "destination_chain": 1,
-        "destination_token": "USDT",
-        "source_chain": 728126428,
-        "source_token": "USDT"
-      },
-      "to_node_key": "evm:1:0xdac17f958d2ee523a2206206994597c13d831ec7"
-    },
-    {
-      "adapter_or_bridge_name": "binance",
-      "edge_class_id": "binance_cex_bridge:USDT:USDT",
-      "edge_id": "binance_cex_bridge:USDT:USDT:evm:728126428:tr7nhqjekqxgtci8q8zy4pl8otszgjlj6t:evm:10:0x94b008aa00579c1307b0ef2c499ad98a8ce58e58",
-      "family": "binance_cex_bridge",
-      "from_node_key": "evm:728126428:tr7nhqjekqxgtci8q8zy4pl8otszgjlj6t",
-      "rate_limit_bucket_id": "binance_withdrawals_24h_usd",
-      "rebalance_route": {
-        "adapter": "binance",
-        "destination_chain": 10,
-        "destination_token": "USDT",
-        "source_chain": 728126428,
-        "source_token": "USDT"
-      },
-      "to_node_key": "evm:10:0x94b008aa00579c1307b0ef2c499ad98a8ce58e58"
-    },
-    {
-      "adapter_or_bridge_name": "binance",
-      "edge_class_id": "binance_cex_bridge:USDT:USDT",
-      "edge_id": "binance_cex_bridge:USDT:USDT:evm:728126428:tr7nhqjekqxgtci8q8zy4pl8otszgjlj6t:evm:42161:0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9",
-      "family": "binance_cex_bridge",
-      "from_node_key": "evm:728126428:tr7nhqjekqxgtci8q8zy4pl8otszgjlj6t",
-      "rate_limit_bucket_id": "binance_withdrawals_24h_usd",
-      "rebalance_route": {
-        "adapter": "binance",
-        "destination_chain": 42161,
-        "destination_token": "USDT",
-        "source_chain": 728126428,
-        "source_token": "USDT"
-      },
-      "to_node_key": "evm:42161:0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9"
-    },
-    {
-      "adapter_or_bridge_name": "binance",
-      "edge_class_id": "binance_cex_bridge:USDT:USDT",
-      "edge_id": "binance_cex_bridge:USDT:USDT:evm:728126428:tr7nhqjekqxgtci8q8zy4pl8otszgjlj6t:evm:56:0x55d398326f99059ff775485246999027b3197955",
-      "family": "binance_cex_bridge",
-      "from_node_key": "evm:728126428:tr7nhqjekqxgtci8q8zy4pl8otszgjlj6t",
-      "rate_limit_bucket_id": "binance_withdrawals_24h_usd",
-      "rebalance_route": {
-        "adapter": "binance",
-        "destination_chain": 56,
-        "destination_token": "USDT",
-        "source_chain": 728126428,
-        "source_token": "USDT"
-      },
-      "to_node_key": "evm:56:0x55d398326f99059ff775485246999027b3197955"
     },
     {
       "adapter_or_bridge_name": "BinanceCEXNativeBridge",
@@ -800,22 +698,6 @@
     {
       "adapter_or_bridge_name": "binance",
       "edge_class_id": "binance:USDC:USDT",
-      "edge_id": "binance:USDC:USDT:evm:1:0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48:evm:728126428:tr7nhqjekqxgtci8q8zy4pl8otszgjlj6t",
-      "family": "binance",
-      "from_node_key": "evm:1:0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
-      "rate_limit_bucket_id": "binance_withdrawals_24h_usd",
-      "rebalance_route": {
-        "adapter": "binance",
-        "destination_chain": 728126428,
-        "destination_token": "USDT",
-        "source_chain": 1,
-        "source_token": "USDC"
-      },
-      "to_node_key": "evm:728126428:tr7nhqjekqxgtci8q8zy4pl8otszgjlj6t"
-    },
-    {
-      "adapter_or_bridge_name": "binance",
-      "edge_class_id": "binance:USDC:USDT",
       "edge_id": "binance:USDC:USDT:evm:1:0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48:evm:999:0xb8ce59fc3717ada4c02eadf9682a9e934f625ebb",
       "family": "binance",
       "from_node_key": "evm:1:0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
@@ -924,22 +806,6 @@
         "source_token": "USDC"
       },
       "to_node_key": "evm:56:0x55d398326f99059ff775485246999027b3197955"
-    },
-    {
-      "adapter_or_bridge_name": "binance",
-      "edge_class_id": "binance:USDC:USDT",
-      "edge_id": "binance:USDC:USDT:evm:10:0x0b2c639c533813f4aa9d7837caf62653d097ff85:evm:728126428:tr7nhqjekqxgtci8q8zy4pl8otszgjlj6t",
-      "family": "binance",
-      "from_node_key": "evm:10:0x0b2c639c533813f4aa9d7837caf62653d097ff85",
-      "rate_limit_bucket_id": "binance_withdrawals_24h_usd",
-      "rebalance_route": {
-        "adapter": "binance",
-        "destination_chain": 728126428,
-        "destination_token": "USDT",
-        "source_chain": 10,
-        "source_token": "USDC"
-      },
-      "to_node_key": "evm:728126428:tr7nhqjekqxgtci8q8zy4pl8otszgjlj6t"
     },
     {
       "adapter_or_bridge_name": "binance",
@@ -1056,22 +922,6 @@
     {
       "adapter_or_bridge_name": "binance",
       "edge_class_id": "binance:USDC:USDT",
-      "edge_id": "binance:USDC:USDT:evm:130:0x078d782b760474a361dda0af3839290b0ef57ad6:evm:728126428:tr7nhqjekqxgtci8q8zy4pl8otszgjlj6t",
-      "family": "binance",
-      "from_node_key": "evm:130:0x078d782b760474a361dda0af3839290b0ef57ad6",
-      "rate_limit_bucket_id": "binance_withdrawals_24h_usd",
-      "rebalance_route": {
-        "adapter": "binance",
-        "destination_chain": 728126428,
-        "destination_token": "USDT",
-        "source_chain": 130,
-        "source_token": "USDC"
-      },
-      "to_node_key": "evm:728126428:tr7nhqjekqxgtci8q8zy4pl8otszgjlj6t"
-    },
-    {
-      "adapter_or_bridge_name": "binance",
-      "edge_class_id": "binance:USDC:USDT",
       "edge_id": "binance:USDC:USDT:evm:130:0x078d782b760474a361dda0af3839290b0ef57ad6:evm:999:0xb8ce59fc3717ada4c02eadf9682a9e934f625ebb",
       "family": "binance",
       "from_node_key": "evm:130:0x078d782b760474a361dda0af3839290b0ef57ad6",
@@ -1180,22 +1030,6 @@
         "source_token": "USDC"
       },
       "to_node_key": "evm:56:0x55d398326f99059ff775485246999027b3197955"
-    },
-    {
-      "adapter_or_bridge_name": "binance",
-      "edge_class_id": "binance:USDC:USDT",
-      "edge_id": "binance:USDC:USDT:evm:143:0x754704bc059f8c67012fed69bc8a327a5aafb603:evm:728126428:tr7nhqjekqxgtci8q8zy4pl8otszgjlj6t",
-      "family": "binance",
-      "from_node_key": "evm:143:0x754704bc059f8c67012fed69bc8a327a5aafb603",
-      "rate_limit_bucket_id": "binance_withdrawals_24h_usd",
-      "rebalance_route": {
-        "adapter": "binance",
-        "destination_chain": 728126428,
-        "destination_token": "USDT",
-        "source_chain": 143,
-        "source_token": "USDC"
-      },
-      "to_node_key": "evm:728126428:tr7nhqjekqxgtci8q8zy4pl8otszgjlj6t"
     },
     {
       "adapter_or_bridge_name": "binance",
@@ -1312,22 +1146,6 @@
     {
       "adapter_or_bridge_name": "binance",
       "edge_class_id": "binance:USDC:USDT",
-      "edge_id": "binance:USDC:USDT:evm:42161:0xaf88d065e77c8cc2239327c5edb3a432268e5831:evm:728126428:tr7nhqjekqxgtci8q8zy4pl8otszgjlj6t",
-      "family": "binance",
-      "from_node_key": "evm:42161:0xaf88d065e77c8cc2239327c5edb3a432268e5831",
-      "rate_limit_bucket_id": "binance_withdrawals_24h_usd",
-      "rebalance_route": {
-        "adapter": "binance",
-        "destination_chain": 728126428,
-        "destination_token": "USDT",
-        "source_chain": 42161,
-        "source_token": "USDC"
-      },
-      "to_node_key": "evm:728126428:tr7nhqjekqxgtci8q8zy4pl8otszgjlj6t"
-    },
-    {
-      "adapter_or_bridge_name": "binance",
-      "edge_class_id": "binance:USDC:USDT",
       "edge_id": "binance:USDC:USDT:evm:42161:0xaf88d065e77c8cc2239327c5edb3a432268e5831:evm:999:0xb8ce59fc3717ada4c02eadf9682a9e934f625ebb",
       "family": "binance",
       "from_node_key": "evm:42161:0xaf88d065e77c8cc2239327c5edb3a432268e5831",
@@ -1436,22 +1254,6 @@
         "source_token": "USDC"
       },
       "to_node_key": "evm:56:0x55d398326f99059ff775485246999027b3197955"
-    },
-    {
-      "adapter_or_bridge_name": "binance",
-      "edge_class_id": "binance:USDC:USDT",
-      "edge_id": "binance:USDC:USDT:evm:56:0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d:evm:728126428:tr7nhqjekqxgtci8q8zy4pl8otszgjlj6t",
-      "family": "binance",
-      "from_node_key": "evm:56:0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d",
-      "rate_limit_bucket_id": "binance_withdrawals_24h_usd",
-      "rebalance_route": {
-        "adapter": "binance",
-        "destination_chain": 728126428,
-        "destination_token": "USDT",
-        "source_chain": 56,
-        "source_token": "USDC"
-      },
-      "to_node_key": "evm:728126428:tr7nhqjekqxgtci8q8zy4pl8otszgjlj6t"
     },
     {
       "adapter_or_bridge_name": "binance",
@@ -1568,22 +1370,6 @@
     {
       "adapter_or_bridge_name": "binance",
       "edge_class_id": "binance:USDC:USDT",
-      "edge_id": "binance:USDC:USDT:evm:8453:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913:evm:728126428:tr7nhqjekqxgtci8q8zy4pl8otszgjlj6t",
-      "family": "binance",
-      "from_node_key": "evm:8453:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
-      "rate_limit_bucket_id": "binance_withdrawals_24h_usd",
-      "rebalance_route": {
-        "adapter": "binance",
-        "destination_chain": 728126428,
-        "destination_token": "USDT",
-        "source_chain": 8453,
-        "source_token": "USDC"
-      },
-      "to_node_key": "evm:728126428:tr7nhqjekqxgtci8q8zy4pl8otszgjlj6t"
-    },
-    {
-      "adapter_or_bridge_name": "binance",
-      "edge_class_id": "binance:USDC:USDT",
       "edge_id": "binance:USDC:USDT:evm:8453:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913:evm:999:0xb8ce59fc3717ada4c02eadf9682a9e934f625ebb",
       "family": "binance",
       "from_node_key": "evm:8453:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
@@ -1692,22 +1478,6 @@
         "source_token": "USDC"
       },
       "to_node_key": "evm:56:0x55d398326f99059ff775485246999027b3197955"
-    },
-    {
-      "adapter_or_bridge_name": "binance",
-      "edge_class_id": "binance:USDC:USDT",
-      "edge_id": "binance:USDC:USDT:evm:999:0xb88339cb7199b77e23db6e890353e22632ba630f:evm:728126428:tr7nhqjekqxgtci8q8zy4pl8otszgjlj6t",
-      "family": "binance",
-      "from_node_key": "evm:999:0xb88339cb7199b77e23db6e890353e22632ba630f",
-      "rate_limit_bucket_id": "binance_withdrawals_24h_usd",
-      "rebalance_route": {
-        "adapter": "binance",
-        "destination_chain": 728126428,
-        "destination_token": "USDT",
-        "source_chain": 999,
-        "source_token": "USDC"
-      },
-      "to_node_key": "evm:728126428:tr7nhqjekqxgtci8q8zy4pl8otszgjlj6t"
     },
     {
       "adapter_or_bridge_name": "binance",
@@ -2496,134 +2266,6 @@
     {
       "adapter_or_bridge_name": "binance",
       "edge_class_id": "binance:USDT:USDC",
-      "edge_id": "binance:USDT:USDC:evm:728126428:tr7nhqjekqxgtci8q8zy4pl8otszgjlj6t:evm:1:0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
-      "family": "binance",
-      "from_node_key": "evm:728126428:tr7nhqjekqxgtci8q8zy4pl8otszgjlj6t",
-      "rate_limit_bucket_id": "binance_withdrawals_24h_usd",
-      "rebalance_route": {
-        "adapter": "binance",
-        "destination_chain": 1,
-        "destination_token": "USDC",
-        "source_chain": 728126428,
-        "source_token": "USDT"
-      },
-      "to_node_key": "evm:1:0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
-    },
-    {
-      "adapter_or_bridge_name": "binance",
-      "edge_class_id": "binance:USDT:USDC",
-      "edge_id": "binance:USDT:USDC:evm:728126428:tr7nhqjekqxgtci8q8zy4pl8otszgjlj6t:evm:10:0x0b2c639c533813f4aa9d7837caf62653d097ff85",
-      "family": "binance",
-      "from_node_key": "evm:728126428:tr7nhqjekqxgtci8q8zy4pl8otszgjlj6t",
-      "rate_limit_bucket_id": "binance_withdrawals_24h_usd",
-      "rebalance_route": {
-        "adapter": "binance",
-        "destination_chain": 10,
-        "destination_token": "USDC",
-        "source_chain": 728126428,
-        "source_token": "USDT"
-      },
-      "to_node_key": "evm:10:0x0b2c639c533813f4aa9d7837caf62653d097ff85"
-    },
-    {
-      "adapter_or_bridge_name": "binance",
-      "edge_class_id": "binance:USDT:USDC",
-      "edge_id": "binance:USDT:USDC:evm:728126428:tr7nhqjekqxgtci8q8zy4pl8otszgjlj6t:evm:130:0x078d782b760474a361dda0af3839290b0ef57ad6",
-      "family": "binance",
-      "from_node_key": "evm:728126428:tr7nhqjekqxgtci8q8zy4pl8otszgjlj6t",
-      "rate_limit_bucket_id": "binance_withdrawals_24h_usd",
-      "rebalance_route": {
-        "adapter": "binance",
-        "destination_chain": 130,
-        "destination_token": "USDC",
-        "source_chain": 728126428,
-        "source_token": "USDT"
-      },
-      "to_node_key": "evm:130:0x078d782b760474a361dda0af3839290b0ef57ad6"
-    },
-    {
-      "adapter_or_bridge_name": "binance",
-      "edge_class_id": "binance:USDT:USDC",
-      "edge_id": "binance:USDT:USDC:evm:728126428:tr7nhqjekqxgtci8q8zy4pl8otszgjlj6t:evm:143:0x754704bc059f8c67012fed69bc8a327a5aafb603",
-      "family": "binance",
-      "from_node_key": "evm:728126428:tr7nhqjekqxgtci8q8zy4pl8otszgjlj6t",
-      "rate_limit_bucket_id": "binance_withdrawals_24h_usd",
-      "rebalance_route": {
-        "adapter": "binance",
-        "destination_chain": 143,
-        "destination_token": "USDC",
-        "source_chain": 728126428,
-        "source_token": "USDT"
-      },
-      "to_node_key": "evm:143:0x754704bc059f8c67012fed69bc8a327a5aafb603"
-    },
-    {
-      "adapter_or_bridge_name": "binance",
-      "edge_class_id": "binance:USDT:USDC",
-      "edge_id": "binance:USDT:USDC:evm:728126428:tr7nhqjekqxgtci8q8zy4pl8otszgjlj6t:evm:42161:0xaf88d065e77c8cc2239327c5edb3a432268e5831",
-      "family": "binance",
-      "from_node_key": "evm:728126428:tr7nhqjekqxgtci8q8zy4pl8otszgjlj6t",
-      "rate_limit_bucket_id": "binance_withdrawals_24h_usd",
-      "rebalance_route": {
-        "adapter": "binance",
-        "destination_chain": 42161,
-        "destination_token": "USDC",
-        "source_chain": 728126428,
-        "source_token": "USDT"
-      },
-      "to_node_key": "evm:42161:0xaf88d065e77c8cc2239327c5edb3a432268e5831"
-    },
-    {
-      "adapter_or_bridge_name": "binance",
-      "edge_class_id": "binance:USDT:USDC",
-      "edge_id": "binance:USDT:USDC:evm:728126428:tr7nhqjekqxgtci8q8zy4pl8otszgjlj6t:evm:56:0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d",
-      "family": "binance",
-      "from_node_key": "evm:728126428:tr7nhqjekqxgtci8q8zy4pl8otszgjlj6t",
-      "rate_limit_bucket_id": "binance_withdrawals_24h_usd",
-      "rebalance_route": {
-        "adapter": "binance",
-        "destination_chain": 56,
-        "destination_token": "USDC",
-        "source_chain": 728126428,
-        "source_token": "USDT"
-      },
-      "to_node_key": "evm:56:0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d"
-    },
-    {
-      "adapter_or_bridge_name": "binance",
-      "edge_class_id": "binance:USDT:USDC",
-      "edge_id": "binance:USDT:USDC:evm:728126428:tr7nhqjekqxgtci8q8zy4pl8otszgjlj6t:evm:8453:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
-      "family": "binance",
-      "from_node_key": "evm:728126428:tr7nhqjekqxgtci8q8zy4pl8otszgjlj6t",
-      "rate_limit_bucket_id": "binance_withdrawals_24h_usd",
-      "rebalance_route": {
-        "adapter": "binance",
-        "destination_chain": 8453,
-        "destination_token": "USDC",
-        "source_chain": 728126428,
-        "source_token": "USDT"
-      },
-      "to_node_key": "evm:8453:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913"
-    },
-    {
-      "adapter_or_bridge_name": "binance",
-      "edge_class_id": "binance:USDT:USDC",
-      "edge_id": "binance:USDT:USDC:evm:728126428:tr7nhqjekqxgtci8q8zy4pl8otszgjlj6t:evm:999:0xb88339cb7199b77e23db6e890353e22632ba630f",
-      "family": "binance",
-      "from_node_key": "evm:728126428:tr7nhqjekqxgtci8q8zy4pl8otszgjlj6t",
-      "rate_limit_bucket_id": "binance_withdrawals_24h_usd",
-      "rebalance_route": {
-        "adapter": "binance",
-        "destination_chain": 999,
-        "destination_token": "USDC",
-        "source_chain": 728126428,
-        "source_token": "USDT"
-      },
-      "to_node_key": "evm:999:0xb88339cb7199b77e23db6e890353e22632ba630f"
-    },
-    {
-      "adapter_or_bridge_name": "binance",
-      "edge_class_id": "binance:USDT:USDC",
       "edge_id": "binance:USDT:USDC:evm:999:0xb8ce59fc3717ada4c02eadf9682a9e934f625ebb:evm:1:0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
       "family": "binance",
       "from_node_key": "evm:999:0xb8ce59fc3717ada4c02eadf9682a9e934f625ebb",
@@ -2982,6 +2624,15 @@
       "family": "canonical",
       "from_node_key": "evm:1:0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
       "to_node_key": "evm:4326:0x4200000000000000000000000000000000000006"
+    },
+    {
+      "adapter_or_bridge_name": "ArbitrumOrbitBridge",
+      "edge_class_id": "canonical:WETH:WETH",
+      "edge_id": "canonical:WETH:WETH:evm:1:0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2:evm:4663:0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+      "effective_bridge_name": "ArbitrumOrbitBridge",
+      "family": "canonical",
+      "from_node_key": "evm:1:0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+      "to_node_key": "evm:4663:0x0bd7d308f8e1639fab988df18a8011f41eacad73"
     },
     {
       "adapter_or_bridge_name": "OpStackWethBridge",
@@ -5698,6 +5349,7 @@
         "1135": 6,
         "1868": 6,
         "4217": 6,
+        "4663": 6,
         "8453": 6,
         "34443": 6,
         "42161": 6,
@@ -5723,6 +5375,7 @@
         "9745": 6,
         "34443": 6,
         "42161": 6,
+        "43114": 6,
         "57073": 6,
         "59144": 6,
         "728126428": 6
@@ -5741,6 +5394,7 @@
         "1135": 18,
         "1868": 18,
         "4326": 18,
+        "4663": 18,
         "8453": 18,
         "9745": 18,
         "34443": 18,
@@ -5759,6 +5413,7 @@
         "1135",
         "1868",
         "4326",
+        "4663",
         "8453",
         "34443",
         "42161",
@@ -5769,7 +5424,7 @@
       ]
     }
   },
-  "node_count": 60,
+  "node_count": 63,
   "nodes": [
     {
       "chain_id": 1,
@@ -5788,11 +5443,11 @@
       "chain_id": 1,
       "decimals": 18,
       "logical_asset": "WETH",
-      "max_allocation_ratio": "1.074498567335243553",
-      "min_allocation_ratio": "0.716332378223495702",
+      "max_allocation_ratio": "0.970245795601552393",
+      "min_allocation_ratio": "0.646830530401034928",
       "node_key": "evm:1:0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
       "symbol": "WETH",
-      "target_allocation_ratio": "0.716332378223495702",
+      "target_allocation_ratio": "0.646830530401034928",
       "token_address": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
     },
     {
@@ -5812,627 +5467,660 @@
       "chain_id": 10,
       "decimals": 6,
       "logical_asset": "USDC",
-      "max_allocation_ratio": "0.192492781520692974",
-      "min_allocation_ratio": "0.038498556304138594",
+      "max_allocation_ratio": "0.156372165754495699",
+      "min_allocation_ratio": "0.031274433150899139",
       "node_key": "evm:10:0x0b2c639c533813f4aa9d7837caf62653d097ff85",
       "symbol": "USDC",
-      "target_allocation_ratio": "0.096246390760346487",
+      "target_allocation_ratio": "0.078186082877247849",
       "token_address": "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85"
     },
     {
       "chain_id": 10,
       "decimals": 18,
       "logical_asset": "WETH",
-      "max_allocation_ratio": "0.07163323782234957",
-      "min_allocation_ratio": "0.014326647564469914",
+      "max_allocation_ratio": "0.064683053040103492",
+      "min_allocation_ratio": "0.012936610608020698",
       "node_key": "evm:10:0x4200000000000000000000000000000000000006",
       "symbol": "ETH",
-      "target_allocation_ratio": "0.035816618911174785",
+      "target_allocation_ratio": "0.032341526520051746",
       "token_address": "0x4200000000000000000000000000000000000006"
     },
     {
       "chain_id": 10,
       "decimals": 6,
       "logical_asset": "USDC",
-      "max_allocation_ratio": "0.007218479307025986",
-      "min_allocation_ratio": "0.001924927815206929",
+      "max_allocation_ratio": "0.005863956215793588",
+      "min_allocation_ratio": "0.001563721657544956",
       "node_key": "evm:10:0x7f5c764cbc14f9669b88837ca1490cca17c31607",
       "symbol": "USDC.e",
-      "target_allocation_ratio": "0.004812319538017324",
+      "target_allocation_ratio": "0.003909304143862392",
       "token_address": "0x7F5c764cBc14f9669B88837ca1490cCa17c31607"
     },
     {
       "chain_id": 10,
       "decimals": 6,
       "logical_asset": "USDT",
-      "max_allocation_ratio": "0.138996138996138996",
-      "min_allocation_ratio": "0.046332046332046332",
+      "max_allocation_ratio": "0.138781804163454124",
+      "min_allocation_ratio": "0.046260601387818041",
       "node_key": "evm:10:0x94b008aa00579c1307b0ef2c499ad98a8ce58e58",
       "symbol": "USDT",
-      "target_allocation_ratio": "0.092664092664092664",
+      "target_allocation_ratio": "0.092521202775636083",
       "token_address": "0x94b008aA00579c1307B0EF2c499aD98a8ce58e58"
     },
     {
       "chain_id": 1135,
       "decimals": 6,
       "logical_asset": "USDT",
-      "max_allocation_ratio": "0.057915057915057915",
-      "min_allocation_ratio": "0.003861003861003861",
+      "max_allocation_ratio": "0.057825751734772552",
+      "min_allocation_ratio": "0.003855050115651503",
       "node_key": "evm:1135:0x05d032ac25d322df992303dca074ee7392c117b9",
       "symbol": "USDT",
-      "target_allocation_ratio": "0.011583011583011583",
+      "target_allocation_ratio": "0.01156515034695451",
       "token_address": "0x05D032ac25d322df992303dCa074EE7392C117b9"
     },
     {
       "chain_id": 1135,
       "decimals": 18,
       "logical_asset": "WETH",
-      "max_allocation_ratio": "0.025071633237822349",
-      "min_allocation_ratio": "0.000007163323782234",
+      "max_allocation_ratio": "0.022639068564036222",
+      "min_allocation_ratio": "0.00000646830530401",
       "node_key": "evm:1135:0x4200000000000000000000000000000000000006",
       "symbol": "ETH",
-      "target_allocation_ratio": "0.003581661891117478",
+      "target_allocation_ratio": "0.003234152652005174",
       "token_address": "0x4200000000000000000000000000000000000006"
     },
     {
       "chain_id": 1135,
       "decimals": 6,
       "logical_asset": "USDC",
-      "max_allocation_ratio": "0.048123195380173243",
-      "min_allocation_ratio": "0.004812319538017324",
+      "max_allocation_ratio": "0.039093041438623924",
+      "min_allocation_ratio": "0.003909304143862392",
       "node_key": "evm:1135:0xf242275d3a6527d877f2c927a82d9b057609cc71",
       "symbol": "USDC.e",
-      "target_allocation_ratio": "0.019249278152069297",
+      "target_allocation_ratio": "0.015637216575449569",
       "token_address": "0xF242275d3a6527d877f2c927a82D9b057609cc71"
     },
     {
       "chain_id": 130,
       "decimals": 6,
       "logical_asset": "USDC",
-      "max_allocation_ratio": "0.115495668912415784",
-      "min_allocation_ratio": "0.019249278152069297",
+      "max_allocation_ratio": "0.093823299452697419",
+      "min_allocation_ratio": "0.015637216575449569",
       "node_key": "evm:130:0x078d782b760474a361dda0af3839290b0ef57ad6",
       "symbol": "USDC",
-      "target_allocation_ratio": "0.057747834456207892",
+      "target_allocation_ratio": "0.046911649726348709",
       "token_address": "0x078D782b760474a361dDA0AF3839290b0EF57AD6"
     },
     {
       "chain_id": 130,
       "decimals": 18,
       "logical_asset": "WETH",
-      "max_allocation_ratio": "0.042979942693409742",
-      "min_allocation_ratio": "0.007163323782234957",
+      "max_allocation_ratio": "0.038809831824062095",
+      "min_allocation_ratio": "0.006468305304010349",
       "node_key": "evm:130:0x4200000000000000000000000000000000000006",
       "symbol": "ETH",
-      "target_allocation_ratio": "0.028653295128939828",
+      "target_allocation_ratio": "0.025873221216041397",
       "token_address": "0x4200000000000000000000000000000000000006"
     },
     {
       "chain_id": 130,
       "decimals": 6,
       "logical_asset": "USDT",
-      "max_allocation_ratio": "0.046332046332046332",
-      "min_allocation_ratio": "0.015444015444015444",
+      "max_allocation_ratio": "0.046260601387818041",
+      "min_allocation_ratio": "0.015420200462606013",
       "node_key": "evm:130:0x9151434b16b9763660705744891fa906f660ecc5",
       "symbol": "USDT",
-      "target_allocation_ratio": "0.030888030888030888",
+      "target_allocation_ratio": "0.030840400925212027",
       "token_address": "0x9151434b16b9763660705744891fA906F660EcC5"
     },
     {
       "chain_id": 137,
       "decimals": 6,
       "logical_asset": "USDC",
-      "max_allocation_ratio": "0.028873917228103946",
-      "min_allocation_ratio": "0.009624639076034648",
+      "max_allocation_ratio": "0.023455824863174354",
+      "min_allocation_ratio": "0.007818608287724784",
       "node_key": "evm:137:0x2791bca1f2de4661ed88a30c99a7a9449aa84174",
       "symbol": "USDC.e",
-      "target_allocation_ratio": "0.019249278152069297",
+      "target_allocation_ratio": "0.015637216575449569",
       "token_address": "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"
     },
     {
       "chain_id": 137,
       "decimals": 6,
       "logical_asset": "USDC",
-      "max_allocation_ratio": "0.076997112608277189",
-      "min_allocation_ratio": "0.009624639076034648",
+      "max_allocation_ratio": "0.062548866301798279",
+      "min_allocation_ratio": "0.007818608287724784",
       "node_key": "evm:137:0x3c499c542cef5e3811e1192ce70d8cc03d5c3359",
       "symbol": "USDC",
-      "target_allocation_ratio": "0.038498556304138594",
+      "target_allocation_ratio": "0.031274433150899139",
       "token_address": "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359"
     },
     {
       "chain_id": 137,
       "decimals": 18,
       "logical_asset": "WETH",
-      "max_allocation_ratio": "0.010744985673352435",
-      "min_allocation_ratio": "0.003581661891117478",
+      "max_allocation_ratio": "0.009702457956015523",
+      "min_allocation_ratio": "0.003234152652005174",
       "node_key": "evm:137:0x7ceb23fd6bc0add59e62ac25578270cff1b9f619",
       "symbol": "ETH",
-      "target_allocation_ratio": "0.007163323782234957",
+      "target_allocation_ratio": "0.006468305304010349",
       "token_address": "0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619"
     },
     {
       "chain_id": 137,
       "decimals": 6,
       "logical_asset": "USDT",
-      "max_allocation_ratio": "0.11583011583011583",
-      "min_allocation_ratio": "0.015444015444015444",
+      "max_allocation_ratio": "0.115651503469545104",
+      "min_allocation_ratio": "0.015420200462606013",
       "node_key": "evm:137:0xc2132d05d31c914a87c6611c10748aeb04b58e8f",
       "symbol": "USDT",
-      "target_allocation_ratio": "0.07722007722007722",
+      "target_allocation_ratio": "0.077101002313030069",
       "token_address": "0xc2132D05D31c914a87C6611C10748AEb04B58e8F"
     },
     {
       "chain_id": 143,
       "decimals": 6,
       "logical_asset": "USDC",
-      "max_allocation_ratio": "0.115495668912415784",
-      "min_allocation_ratio": "0.038498556304138594",
+      "max_allocation_ratio": "0.093823299452697419",
+      "min_allocation_ratio": "0.031274433150899139",
       "node_key": "evm:143:0x754704bc059f8c67012fed69bc8a327a5aafb603",
       "symbol": "USDC",
-      "target_allocation_ratio": "0.057747834456207892",
+      "target_allocation_ratio": "0.046911649726348709",
       "token_address": "0x754704Bc059F8C67012fEd69BC8A327a5aafb603"
     },
     {
       "chain_id": 143,
       "decimals": 6,
       "logical_asset": "USDT",
-      "max_allocation_ratio": "0.092664092664092664",
-      "min_allocation_ratio": "0.015444015444015444",
+      "max_allocation_ratio": "0.092521202775636083",
+      "min_allocation_ratio": "0.015420200462606013",
       "node_key": "evm:143:0xe7cd86e13ac4309349f30b3435a9d337750fc82d",
       "symbol": "USDT",
-      "target_allocation_ratio": "0.046332046332046332",
+      "target_allocation_ratio": "0.046260601387818041",
       "token_address": "0xe7cd86e13AC4309349F30B3435a9d337750fC82D"
     },
     {
       "chain_id": 1868,
       "decimals": 18,
       "logical_asset": "WETH",
-      "max_allocation_ratio": "0.010744985673352435",
-      "min_allocation_ratio": "0.003581661891117478",
+      "max_allocation_ratio": "0.009702457956015523",
+      "min_allocation_ratio": "0.003234152652005174",
       "node_key": "evm:1868:0x4200000000000000000000000000000000000006",
       "symbol": "ETH",
-      "target_allocation_ratio": "0.007163323782234957",
+      "target_allocation_ratio": "0.006468305304010349",
       "token_address": "0x4200000000000000000000000000000000000006"
     },
     {
       "chain_id": 1868,
       "decimals": 6,
       "logical_asset": "USDC",
-      "max_allocation_ratio": "0.002887391722810394",
-      "min_allocation_ratio": "0.000962463907603464",
+      "max_allocation_ratio": "0.002345582486317435",
+      "min_allocation_ratio": "0.000781860828772478",
       "node_key": "evm:1868:0xba9986d2381edf1da03b0b9c1f8b00dc4aacc369",
       "symbol": "USDC.e",
-      "target_allocation_ratio": "0.001924927815206929",
+      "target_allocation_ratio": "0.001563721657544956",
       "token_address": "0xbA9986D2381edf1DA03B0B9c1f8b00dc4AacC369"
     },
     {
       "chain_id": 232,
       "decimals": 6,
       "logical_asset": "USDC",
-      "max_allocation_ratio": "0.002887391722810394",
-      "min_allocation_ratio": "0.000962463907603464",
+      "max_allocation_ratio": "0.002345582486317435",
+      "min_allocation_ratio": "0.000781860828772478",
       "node_key": "evm:232:0x88f08e304ec4f90d644cec3fb69b8ad414acf884",
       "symbol": "USDC",
-      "target_allocation_ratio": "0.001924927815206929",
+      "target_allocation_ratio": "0.001563721657544956",
       "token_address": "0x88F08E304EC4f90D644Cec3Fb69b8aD414acf884"
     },
     {
       "chain_id": 232,
       "decimals": 18,
       "logical_asset": "WETH",
-      "max_allocation_ratio": "0.005372492836676217",
-      "min_allocation_ratio": "0.001432664756446991",
+      "max_allocation_ratio": "0.004851228978007761",
+      "min_allocation_ratio": "0.001293661060802069",
       "node_key": "evm:232:0xe5ecd226b3032910ceaa43ba92ee8232f8237553",
       "symbol": "ETH",
-      "target_allocation_ratio": "0.003581661891117478",
+      "target_allocation_ratio": "0.003234152652005174",
       "token_address": "0xE5ecd226b3032910CEaa43ba92EE8232f8237553"
     },
     {
       "chain_id": 324,
       "decimals": 6,
       "logical_asset": "USDC",
-      "max_allocation_ratio": "0.076997112608277189",
-      "min_allocation_ratio": "0.009624639076034648",
+      "max_allocation_ratio": "0.062548866301798279",
+      "min_allocation_ratio": "0.007818608287724784",
       "node_key": "evm:324:0x3355df6d4c9c3035724fd0e3914de96a5a83aaf4",
       "symbol": "USDC.e",
-      "target_allocation_ratio": "0.038498556304138594",
+      "target_allocation_ratio": "0.031274433150899139",
       "token_address": "0x3355df6D4c9C3035724Fd0e3914dE96A5a83aaf4"
     },
     {
       "chain_id": 324,
       "decimals": 6,
       "logical_asset": "USDT",
-      "max_allocation_ratio": "0.046332046332046332",
-      "min_allocation_ratio": "0.015444015444015444",
+      "max_allocation_ratio": "0.046260601387818041",
+      "min_allocation_ratio": "0.015420200462606013",
       "node_key": "evm:324:0x493257fd37edb34451f62edf8d2a0c418852ba4c",
       "symbol": "USDT",
-      "target_allocation_ratio": "0.030888030888030888",
+      "target_allocation_ratio": "0.030840400925212027",
       "token_address": "0x493257fD37EDB34451f62EDf8D2a0C418852bA4C"
     },
     {
       "chain_id": 324,
       "decimals": 18,
       "logical_asset": "WETH",
-      "max_allocation_ratio": "0.021489971346704871",
-      "min_allocation_ratio": "0.003581661891117478",
+      "max_allocation_ratio": "0.019404915912031047",
+      "min_allocation_ratio": "0.003234152652005174",
       "node_key": "evm:324:0x5aea5775959fbc2557cc8789bc1bf90a239d9a91",
       "symbol": "ETH",
-      "target_allocation_ratio": "0.014326647564469914",
+      "target_allocation_ratio": "0.012936610608020698",
       "token_address": "0x5AEa5775959fBC2557Cc8789bC1bf90A239D9a91"
     },
     {
       "chain_id": 34443,
       "decimals": 18,
       "logical_asset": "WETH",
-      "max_allocation_ratio": "0.010744985673352435",
-      "min_allocation_ratio": "0.003581661891117478",
+      "max_allocation_ratio": "0.009702457956015523",
+      "min_allocation_ratio": "0.003234152652005174",
       "node_key": "evm:34443:0x4200000000000000000000000000000000000006",
       "symbol": "ETH",
-      "target_allocation_ratio": "0.007163323782234957",
+      "target_allocation_ratio": "0.006468305304010349",
       "token_address": "0x4200000000000000000000000000000000000006"
     },
     {
       "chain_id": 34443,
       "decimals": 6,
       "logical_asset": "USDC",
-      "max_allocation_ratio": "0.028873917228103946",
-      "min_allocation_ratio": "0.009624639076034648",
+      "max_allocation_ratio": "0.023455824863174354",
+      "min_allocation_ratio": "0.007818608287724784",
       "node_key": "evm:34443:0xd988097fb8612cc24eec14542bc03424c656005f",
       "symbol": "USDC.e",
-      "target_allocation_ratio": "0.019249278152069297",
+      "target_allocation_ratio": "0.015637216575449569",
       "token_address": "0xd988097fb8612cc24eeC14542bC03424c656005f"
     },
     {
       "chain_id": 34443,
       "decimals": 6,
       "logical_asset": "USDT",
-      "max_allocation_ratio": "0.023166023166023166",
-      "min_allocation_ratio": "0.007722007722007722",
+      "max_allocation_ratio": "0.02313030069390902",
+      "min_allocation_ratio": "0.007710100231303006",
       "node_key": "evm:34443:0xf0f161fda2712db8b566946122a5af183995e2ed",
       "symbol": "USDT",
-      "target_allocation_ratio": "0.015444015444015444",
+      "target_allocation_ratio": "0.015420200462606013",
       "token_address": "0xf0F161fDA2712DB8b566946122a5af183995e2eD"
     },
     {
       "chain_id": 42161,
       "decimals": 18,
       "logical_asset": "WETH",
-      "max_allocation_ratio": "0.085959885386819484",
-      "min_allocation_ratio": "0.014326647564469914",
+      "max_allocation_ratio": "0.077619663648124191",
+      "min_allocation_ratio": "0.012936610608020698",
       "node_key": "evm:42161:0x82af49447d8a07e3bd95bd0d56f35241523fbab1",
       "symbol": "ETH",
-      "target_allocation_ratio": "0.042979942693409742",
+      "target_allocation_ratio": "0.038809831824062095",
       "token_address": "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1"
     },
     {
       "chain_id": 42161,
       "decimals": 6,
       "logical_asset": "USDC",
-      "max_allocation_ratio": "0.192492781520692974",
-      "min_allocation_ratio": "0.038498556304138594",
+      "max_allocation_ratio": "0.156372165754495699",
+      "min_allocation_ratio": "0.031274433150899139",
       "node_key": "evm:42161:0xaf88d065e77c8cc2239327c5edb3a432268e5831",
       "symbol": "USDC",
-      "target_allocation_ratio": "0.096246390760346487",
+      "target_allocation_ratio": "0.078186082877247849",
       "token_address": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"
     },
     {
       "chain_id": 42161,
       "decimals": 6,
       "logical_asset": "USDT",
-      "max_allocation_ratio": "0.160617760617760617",
-      "min_allocation_ratio": "0.07722007722007722",
+      "max_allocation_ratio": "0.160370084811102544",
+      "min_allocation_ratio": "0.077101002313030069",
       "node_key": "evm:42161:0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9",
       "symbol": "USDT",
-      "target_allocation_ratio": "0.123552123552123552",
+      "target_allocation_ratio": "0.123361603700848111",
       "token_address": "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9"
     },
     {
       "chain_id": 42161,
       "decimals": 6,
       "logical_asset": "USDC",
-      "max_allocation_ratio": "0.007218479307025986",
-      "min_allocation_ratio": "0.001924927815206929",
+      "max_allocation_ratio": "0.005863956215793588",
+      "min_allocation_ratio": "0.001563721657544956",
       "node_key": "evm:42161:0xff970a61a04b1ca14834a43f5de4533ebddb5cc8",
       "symbol": "USDC.e",
-      "target_allocation_ratio": "0.004812319538017324",
+      "target_allocation_ratio": "0.003909304143862392",
       "token_address": "0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8"
     },
     {
       "chain_id": 4217,
       "decimals": 6,
       "logical_asset": "USDC",
-      "max_allocation_ratio": "0.06737247353224254",
-      "min_allocation_ratio": "0.009624639076034648",
+      "max_allocation_ratio": "0.054730258014073494",
+      "min_allocation_ratio": "0.007818608287724784",
       "node_key": "evm:4217:0x20c0000000000000000000000000000000000000",
       "symbol": "pathUSD",
-      "target_allocation_ratio": "0.019249278152069297",
+      "target_allocation_ratio": "0.015637216575449569",
       "token_address": "0x20C0000000000000000000000000000000000000"
     },
     {
       "chain_id": 4217,
       "decimals": 6,
       "logical_asset": "USDC",
-      "max_allocation_ratio": "0.038498556304138594",
-      "min_allocation_ratio": "0.004812319538017324",
+      "max_allocation_ratio": "0.031274433150899139",
+      "min_allocation_ratio": "0.003909304143862392",
       "node_key": "evm:4217:0x20c000000000000000000000b9537d11c60e8b50",
       "symbol": "USDC.e",
-      "target_allocation_ratio": "0.019249278152069297",
+      "target_allocation_ratio": "0.015637216575449569",
       "token_address": "0x20C000000000000000000000b9537d11c60E8b50"
+    },
+    {
+      "chain_id": 43114,
+      "decimals": 6,
+      "logical_asset": "USDT",
+      "max_allocation_ratio": "0.003084040092521202",
+      "min_allocation_ratio": "0.0007710100231303",
+      "node_key": "evm:43114:0x9702230a8ea53601f5cd2dc00fdbc13d4df4a8c7",
+      "symbol": "USDT",
+      "target_allocation_ratio": "0.001542020046260601",
+      "token_address": "0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7"
     },
     {
       "chain_id": 4326,
       "decimals": 18,
       "logical_asset": "WETH",
-      "max_allocation_ratio": "0.010744985673352435",
-      "min_allocation_ratio": "0.003581661891117478",
+      "max_allocation_ratio": "0.009702457956015523",
+      "min_allocation_ratio": "0.003234152652005174",
       "node_key": "evm:4326:0x4200000000000000000000000000000000000006",
       "symbol": "ETH",
-      "target_allocation_ratio": "0.007163323782234957",
+      "target_allocation_ratio": "0.006468305304010349",
       "token_address": "0x4200000000000000000000000000000000000006"
     },
     {
       "chain_id": 4326,
       "decimals": 6,
       "logical_asset": "USDT",
-      "max_allocation_ratio": "0.123552123552123552",
-      "min_allocation_ratio": "0.015444015444015444",
+      "max_allocation_ratio": "0.123361603700848111",
+      "min_allocation_ratio": "0.015420200462606013",
       "node_key": "evm:4326:0xb8ce59fc3717ada4c02eadf9682a9e934f625ebb",
       "symbol": "USDT",
-      "target_allocation_ratio": "0.061776061776061776",
+      "target_allocation_ratio": "0.061680801850424055",
       "token_address": "0xB8CE59FC3717ada4C02eaDF9682A9e934F625ebb"
+    },
+    {
+      "chain_id": 4663,
+      "decimals": 18,
+      "logical_asset": "WETH",
+      "max_allocation_ratio": "0.145536869340232858",
+      "min_allocation_ratio": "0.077619663648124191",
+      "node_key": "evm:4663:0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+      "symbol": "WETH",
+      "target_allocation_ratio": "0.097024579560155239",
+      "token_address": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73"
+    },
+    {
+      "chain_id": 4663,
+      "decimals": 6,
+      "logical_asset": "USDC",
+      "max_allocation_ratio": "0.547302580140734949",
+      "min_allocation_ratio": "0.023455824863174354",
+      "node_key": "evm:4663:0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "symbol": "USDG",
+      "target_allocation_ratio": "0.156372165754495699",
+      "token_address": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168"
     },
     {
       "chain_id": 480,
       "decimals": 18,
       "logical_asset": "WETH",
-      "max_allocation_ratio": "0.021489971346704871",
-      "min_allocation_ratio": "0.003581661891117478",
+      "max_allocation_ratio": "0.019404915912031047",
+      "min_allocation_ratio": "0.003234152652005174",
       "node_key": "evm:480:0x4200000000000000000000000000000000000006",
       "symbol": "ETH",
-      "target_allocation_ratio": "0.014326647564469914",
+      "target_allocation_ratio": "0.012936610608020698",
       "token_address": "0x4200000000000000000000000000000000000006"
     },
     {
       "chain_id": 480,
       "decimals": 6,
       "logical_asset": "USDC",
-      "max_allocation_ratio": "0.038498556304138594",
-      "min_allocation_ratio": "0.009624639076034648",
+      "max_allocation_ratio": "0.031274433150899139",
+      "min_allocation_ratio": "0.007818608287724784",
       "node_key": "evm:480:0x79a02482a880bce3f13e09da970dc34db4cd24d1",
       "symbol": "USDC",
-      "target_allocation_ratio": "0.019249278152069297",
+      "target_allocation_ratio": "0.015637216575449569",
       "token_address": "0x79A02482A880bCE3F13e09Da970dC34db4CD24d1"
     },
     {
       "chain_id": 56,
       "decimals": 18,
       "logical_asset": "WETH",
-      "max_allocation_ratio": "0.057306590257879656",
-      "min_allocation_ratio": "0.007163323782234957",
+      "max_allocation_ratio": "0.051746442432082794",
+      "min_allocation_ratio": "0.006468305304010349",
       "node_key": "evm:56:0x2170ed0880ac9a755fd29b2688956bd959f933f8",
       "symbol": "ETH",
-      "target_allocation_ratio": "0.028653295128939828",
+      "target_allocation_ratio": "0.025873221216041397",
       "token_address": "0x2170Ed0880ac9A755fd29B2688956BD959F933F8"
     },
     {
       "chain_id": 56,
       "decimals": 18,
       "logical_asset": "USDT",
-      "max_allocation_ratio": "0.247104247104247104",
-      "min_allocation_ratio": "0.061776061776061776",
+      "max_allocation_ratio": "0.246723207401696222",
+      "min_allocation_ratio": "0.061680801850424055",
       "node_key": "evm:56:0x55d398326f99059ff775485246999027b3197955",
       "symbol": "USDT-BNB",
-      "target_allocation_ratio": "0.123552123552123552",
+      "target_allocation_ratio": "0.123361603700848111",
       "token_address": "0x55d398326f99059fF775485246999027B3197955"
     },
     {
       "chain_id": 56,
       "decimals": 18,
       "logical_asset": "USDC",
-      "max_allocation_ratio": "0.096246390760346487",
-      "min_allocation_ratio": "0.019249278152069297",
+      "max_allocation_ratio": "0.078186082877247849",
+      "min_allocation_ratio": "0.015637216575449569",
       "node_key": "evm:56:0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d",
       "symbol": "USDC-BNB",
-      "target_allocation_ratio": "0.048123195380173243",
+      "target_allocation_ratio": "0.039093041438623924",
       "token_address": "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d"
     },
     {
       "chain_id": 57073,
       "decimals": 6,
       "logical_asset": "USDT",
-      "max_allocation_ratio": "0.046332046332046332",
-      "min_allocation_ratio": "0.015444015444015444",
+      "max_allocation_ratio": "0.046260601387818041",
+      "min_allocation_ratio": "0.015420200462606013",
       "node_key": "evm:57073:0x0200c29006150606b650577bbe7b6248f58470c1",
       "symbol": "USDT",
-      "target_allocation_ratio": "0.030888030888030888",
+      "target_allocation_ratio": "0.030840400925212027",
       "token_address": "0x0200C29006150606B650577BBE7B6248F58470c1"
     },
     {
       "chain_id": 57073,
       "decimals": 6,
       "logical_asset": "USDC",
-      "max_allocation_ratio": "0.076997112608277189",
-      "min_allocation_ratio": "0.019249278152069297",
+      "max_allocation_ratio": "0.062548866301798279",
+      "min_allocation_ratio": "0.015637216575449569",
       "node_key": "evm:57073:0x2d270e6886d130d724215a266106e6832161eaed",
       "symbol": "USDC",
-      "target_allocation_ratio": "0.038498556304138594",
+      "target_allocation_ratio": "0.031274433150899139",
       "token_address": "0x2D270e6886d130D724215A266106e6832161EAEd"
     },
     {
       "chain_id": 57073,
       "decimals": 18,
       "logical_asset": "WETH",
-      "max_allocation_ratio": "0.010744985673352435",
-      "min_allocation_ratio": "0.003581661891117478",
+      "max_allocation_ratio": "0.009702457956015523",
+      "min_allocation_ratio": "0.003234152652005174",
       "node_key": "evm:57073:0x4200000000000000000000000000000000000006",
       "symbol": "ETH",
-      "target_allocation_ratio": "0.007163323782234957",
+      "target_allocation_ratio": "0.006468305304010349",
       "token_address": "0x4200000000000000000000000000000000000006"
     },
     {
       "chain_id": 59144,
       "decimals": 6,
       "logical_asset": "USDC",
-      "max_allocation_ratio": "0.076997112608277189",
-      "min_allocation_ratio": "0.009624639076034648",
+      "max_allocation_ratio": "0.062548866301798279",
+      "min_allocation_ratio": "0.007818608287724784",
       "node_key": "evm:59144:0x176211869ca2b568f2a7d4ee941e073a821ee1ff",
       "symbol": "USDC",
-      "target_allocation_ratio": "0.038498556304138594",
+      "target_allocation_ratio": "0.031274433150899139",
       "token_address": "0x176211869cA2b568f2A7D4EE941E073a821EE1ff"
     },
     {
       "chain_id": 59144,
       "decimals": 6,
       "logical_asset": "USDT",
-      "max_allocation_ratio": "0.067953667953667953",
-      "min_allocation_ratio": "0.015444015444015444",
+      "max_allocation_ratio": "0.067848882035466461",
+      "min_allocation_ratio": "0.015420200462606013",
       "node_key": "evm:59144:0xa219439258ca9da29e9cc4ce5596924745e12b93",
       "symbol": "USDT",
-      "target_allocation_ratio": "0.061776061776061776",
+      "target_allocation_ratio": "0.061680801850424055",
       "token_address": "0xA219439258ca9da29E9Cc4cE5596924745e12B93"
     },
     {
       "chain_id": 59144,
       "decimals": 18,
       "logical_asset": "WETH",
-      "max_allocation_ratio": "0.010744985673352435",
-      "min_allocation_ratio": "0.003581661891117478",
+      "max_allocation_ratio": "0.009702457956015523",
+      "min_allocation_ratio": "0.003234152652005174",
       "node_key": "evm:59144:0xe5d7c2a44ffddf6b295a15c148167daaaf5cf34f",
       "symbol": "ETH",
-      "target_allocation_ratio": "0.007163323782234957",
+      "target_allocation_ratio": "0.006468305304010349",
       "token_address": "0xe5D7C2a44FfDDf6b295A15c148167daaAf5Cf34f"
     },
     {
       "chain_id": 728126428,
       "decimals": 6,
       "logical_asset": "USDT",
-      "max_allocation_ratio": "0.069498069498069498",
-      "min_allocation_ratio": "0.015444015444015444",
+      "max_allocation_ratio": "0.069390902081727062",
+      "min_allocation_ratio": "0.015420200462606013",
       "node_key": "evm:728126428:tr7nhqjekqxgtci8q8zy4pl8otszgjlj6t",
       "symbol": "USDT",
-      "target_allocation_ratio": "0.046332046332046333",
+      "target_allocation_ratio": "0.046260601387818049",
       "token_address": "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"
     },
     {
       "chain_id": 7777777,
       "decimals": 18,
       "logical_asset": "WETH",
-      "max_allocation_ratio": "0.042979942693409742",
-      "min_allocation_ratio": "0.000007163323782234",
+      "max_allocation_ratio": "0.038809831824062095",
+      "min_allocation_ratio": "0.00000646830530401",
       "node_key": "evm:7777777:0x4200000000000000000000000000000000000006",
       "symbol": "ETH",
-      "target_allocation_ratio": "0.003581661891117481",
+      "target_allocation_ratio": "0.003234152652005183",
       "token_address": "0x4200000000000000000000000000000000000006"
     },
     {
       "chain_id": 7777777,
       "decimals": 6,
       "logical_asset": "USDC",
-      "max_allocation_ratio": "0.048123195380173243",
-      "min_allocation_ratio": "0.000019249278152069",
+      "max_allocation_ratio": "0.039093041438623924",
+      "min_allocation_ratio": "0.000015637216575449",
       "node_key": "evm:7777777:0xcccccccc7021b32ebb4e8c08314bd62f7c653ec4",
       "symbol": "USDzC",
-      "target_allocation_ratio": "0.009624639076034658",
+      "target_allocation_ratio": "0.007818608287724805",
       "token_address": "0xCccCCccc7021b32EBb4e8C08314bD62F7c653EC4"
     },
     {
       "chain_id": 81457,
       "decimals": 18,
       "logical_asset": "WETH",
-      "max_allocation_ratio": "0.001074498567335243",
-      "min_allocation_ratio": "0.000071633237822349",
+      "max_allocation_ratio": "0.000970245795601552",
+      "min_allocation_ratio": "0.000064683053040103",
       "node_key": "evm:81457:0x4300000000000000000000000000000000000004",
       "symbol": "ETH",
-      "target_allocation_ratio": "0.000716332378223495",
+      "target_allocation_ratio": "0.000646830530401034",
       "token_address": "0x4300000000000000000000000000000000000004"
     },
     {
       "chain_id": 8453,
       "decimals": 18,
       "logical_asset": "WETH",
-      "max_allocation_ratio": "0.114613180515759312",
-      "min_allocation_ratio": "0.042979942693409742",
+      "max_allocation_ratio": "0.103492884864165588",
+      "min_allocation_ratio": "0.038809831824062095",
       "node_key": "evm:8453:0x4200000000000000000000000000000000000006",
       "symbol": "ETH",
-      "target_allocation_ratio": "0.057306590257879656",
+      "target_allocation_ratio": "0.051746442432082794",
       "token_address": "0x4200000000000000000000000000000000000006"
     },
     {
       "chain_id": 8453,
       "decimals": 6,
       "logical_asset": "USDC",
-      "max_allocation_ratio": "0.230991337824831568",
-      "min_allocation_ratio": "0.096246390760346487",
+      "max_allocation_ratio": "0.187646598905394839",
+      "min_allocation_ratio": "0.078186082877247849",
       "node_key": "evm:8453:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
       "symbol": "USDC",
-      "target_allocation_ratio": "0.192492781520692974",
+      "target_allocation_ratio": "0.156372165754495699",
       "token_address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
     },
     {
       "chain_id": 8453,
       "decimals": 6,
       "logical_asset": "USDC",
-      "max_allocation_ratio": "0.007218479307025986",
-      "min_allocation_ratio": "0.001924927815206929",
+      "max_allocation_ratio": "0.005863956215793588",
+      "min_allocation_ratio": "0.001563721657544956",
       "node_key": "evm:8453:0xd9aaec86b65d86f6a7b5b1b0c42ffa531710b6ca",
       "symbol": "USDbC",
-      "target_allocation_ratio": "0.004812319538017324",
+      "target_allocation_ratio": "0.003909304143862392",
       "token_address": "0xd9aAEc86B65D86f6A7B5B1b0c42FFA531710b6CA"
     },
     {
       "chain_id": 8453,
       "decimals": 6,
       "logical_asset": "USDT",
-      "max_allocation_ratio": "0.11583011583011583",
-      "min_allocation_ratio": "0.030888030888030888",
+      "max_allocation_ratio": "0.115651503469545104",
+      "min_allocation_ratio": "0.030840400925212027",
       "node_key": "evm:8453:0xfde4c96c8593536e31f229ea8f37b2ada2699bb2",
       "symbol": "USDT",
-      "target_allocation_ratio": "0.07722007722007722",
+      "target_allocation_ratio": "0.077101002313030069",
       "token_address": "0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2"
     },
     {
       "chain_id": 9745,
       "decimals": 18,
       "logical_asset": "WETH",
-      "max_allocation_ratio": "0.014326647564469914",
-      "min_allocation_ratio": "0.001790830945558739",
+      "max_allocation_ratio": "0.012936610608020698",
+      "min_allocation_ratio": "0.001617076326002587",
       "node_key": "evm:9745:0x9895d81bb462a195b4922ed7de0e3acd007c32cb",
       "symbol": "ETH",
-      "target_allocation_ratio": "0.007163323782234957",
+      "target_allocation_ratio": "0.006468305304010349",
       "token_address": "0x9895D81bB462A195b4922ED7De0e3ACD007c32CB"
     },
     {
       "chain_id": 9745,
       "decimals": 6,
       "logical_asset": "USDT",
-      "max_allocation_ratio": "0.11583011583011583",
-      "min_allocation_ratio": "0.046332046332046332",
+      "max_allocation_ratio": "0.115651503469545104",
+      "min_allocation_ratio": "0.046260601387818041",
       "node_key": "evm:9745:0xb8ce59fc3717ada4c02eadf9682a9e934f625ebb",
       "symbol": "USDT",
-      "target_allocation_ratio": "0.07722007722007722",
+      "target_allocation_ratio": "0.077101002313030069",
       "token_address": "0xB8CE59FC3717ada4C02eaDF9682A9e934F625ebb"
     },
     {
       "chain_id": 999,
       "decimals": 6,
       "logical_asset": "USDC",
-      "max_allocation_ratio": "0.169393647738209817",
-      "min_allocation_ratio": "0.096246390760346487",
+      "max_allocation_ratio": "0.172009382329945269",
+      "min_allocation_ratio": "0.078186082877247849",
       "node_key": "evm:999:0xb88339cb7199b77e23db6e890353e22632ba630f",
       "symbol": "USDC",
-      "target_allocation_ratio": "0.153994225216554379",
+      "target_allocation_ratio": "0.156372165754495699",
       "token_address": "0xb88339CB7199b77E23DB6E890353E22632Ba630f"
     },
     {
       "chain_id": 999,
       "decimals": 6,
       "logical_asset": "USDT",
-      "max_allocation_ratio": "0.138996138996138996",
-      "min_allocation_ratio": "0.061776061776061776",
+      "max_allocation_ratio": "0.138781804163454124",
+      "min_allocation_ratio": "0.061680801850424055",
       "node_key": "evm:999:0xb8ce59fc3717ada4c02eadf9682a9e934f625ebb",
       "symbol": "USDT",
-      "target_allocation_ratio": "0.092664092664092664",
+      "target_allocation_ratio": "0.092521202775636083",
       "token_address": "0xB8CE59FC3717ada4C02eaDF9682A9e934F625ebb"
     }
   ],
@@ -6467,7 +6155,7 @@
       "window_seconds": 86400
     }
   ],
-  "rebalance_route_count": 360,
+  "rebalance_route_count": 337,
   "rebalance_routes": [
     {
       "adapter": "binance",
@@ -6653,13 +6341,6 @@
     },
     {
       "adapter": "binance",
-      "destination_chain": 728126428,
-      "destination_token": "USDT",
-      "source_chain": 1,
-      "source_token": "USDC"
-    },
-    {
-      "adapter": "binance",
       "destination_chain": 8453,
       "destination_token": "USDC",
       "source_chain": 1,
@@ -6848,6 +6529,13 @@
       "source_token": "USDT"
     },
     {
+      "adapter": "binance",
+      "destination_chain": 43114,
+      "destination_token": "USDT",
+      "source_chain": 1,
+      "source_token": "USDT"
+    },
+    {
       "adapter": "oft",
       "destination_chain": 4326,
       "destination_token": "USDT",
@@ -6871,13 +6559,6 @@
     {
       "adapter": "oft",
       "destination_chain": 57073,
-      "destination_token": "USDT",
-      "source_chain": 1,
-      "source_token": "USDT"
-    },
-    {
-      "adapter": "binance",
-      "destination_chain": 728126428,
       "destination_token": "USDT",
       "source_chain": 1,
       "source_token": "USDT"
@@ -7066,13 +6747,6 @@
     },
     {
       "adapter": "binance",
-      "destination_chain": 728126428,
-      "destination_token": "USDT",
-      "source_chain": 10,
-      "source_token": "USDC"
-    },
-    {
-      "adapter": "binance",
       "destination_chain": 8453,
       "destination_token": "USDC",
       "source_chain": 10,
@@ -7234,13 +6908,6 @@
     },
     {
       "adapter": "binance",
-      "destination_chain": 728126428,
-      "destination_token": "USDT",
-      "source_chain": 10,
-      "source_token": "USDT"
-    },
-    {
-      "adapter": "binance",
       "destination_chain": 8453,
       "destination_token": "USDC",
       "source_chain": 10,
@@ -7382,13 +7049,6 @@
     {
       "adapter": "binance",
       "destination_chain": 56,
-      "destination_token": "USDT",
-      "source_chain": 130,
-      "source_token": "USDC"
-    },
-    {
-      "adapter": "binance",
-      "destination_chain": 728126428,
       "destination_token": "USDT",
       "source_chain": 130,
       "source_token": "USDC"
@@ -7695,13 +7355,6 @@
       "source_token": "USDC"
     },
     {
-      "adapter": "binance",
-      "destination_chain": 728126428,
-      "destination_token": "USDT",
-      "source_chain": 143,
-      "source_token": "USDC"
-    },
-    {
       "adapter": "cctp",
       "destination_chain": 8453,
       "destination_token": "USDC",
@@ -8011,13 +7664,6 @@
     },
     {
       "adapter": "binance",
-      "destination_chain": 728126428,
-      "destination_token": "USDT",
-      "source_chain": 42161,
-      "source_token": "USDC"
-    },
-    {
-      "adapter": "binance",
       "destination_chain": 8453,
       "destination_token": "USDC",
       "source_chain": 42161,
@@ -8180,13 +7826,6 @@
     {
       "adapter": "binance",
       "destination_chain": 56,
-      "destination_token": "USDT",
-      "source_chain": 42161,
-      "source_token": "USDT"
-    },
-    {
-      "adapter": "binance",
-      "destination_chain": 728126428,
       "destination_token": "USDT",
       "source_chain": 42161,
       "source_token": "USDT"
@@ -8305,13 +7944,6 @@
     },
     {
       "adapter": "binance",
-      "destination_chain": 728126428,
-      "destination_token": "USDT",
-      "source_chain": 56,
-      "source_token": "USDC"
-    },
-    {
-      "adapter": "binance",
       "destination_chain": 8453,
       "destination_token": "USDC",
       "source_chain": 56,
@@ -8384,13 +8016,6 @@
       "adapter": "binance",
       "destination_chain": 56,
       "destination_token": "USDC",
-      "source_chain": 56,
-      "source_token": "USDT"
-    },
-    {
-      "adapter": "binance",
-      "destination_chain": 728126428,
-      "destination_token": "USDT",
       "source_chain": 56,
       "source_token": "USDT"
     },
@@ -8433,90 +8058,6 @@
       "adapter": "binance",
       "destination_chain": 1,
       "destination_token": "USDC",
-      "source_chain": 728126428,
-      "source_token": "USDT"
-    },
-    {
-      "adapter": "binance",
-      "destination_chain": 1,
-      "destination_token": "USDT",
-      "source_chain": 728126428,
-      "source_token": "USDT"
-    },
-    {
-      "adapter": "binance",
-      "destination_chain": 10,
-      "destination_token": "USDC",
-      "source_chain": 728126428,
-      "source_token": "USDT"
-    },
-    {
-      "adapter": "binance",
-      "destination_chain": 10,
-      "destination_token": "USDT",
-      "source_chain": 728126428,
-      "source_token": "USDT"
-    },
-    {
-      "adapter": "binance",
-      "destination_chain": 130,
-      "destination_token": "USDC",
-      "source_chain": 728126428,
-      "source_token": "USDT"
-    },
-    {
-      "adapter": "binance",
-      "destination_chain": 143,
-      "destination_token": "USDC",
-      "source_chain": 728126428,
-      "source_token": "USDT"
-    },
-    {
-      "adapter": "binance",
-      "destination_chain": 42161,
-      "destination_token": "USDC",
-      "source_chain": 728126428,
-      "source_token": "USDT"
-    },
-    {
-      "adapter": "binance",
-      "destination_chain": 42161,
-      "destination_token": "USDT",
-      "source_chain": 728126428,
-      "source_token": "USDT"
-    },
-    {
-      "adapter": "binance",
-      "destination_chain": 56,
-      "destination_token": "USDC",
-      "source_chain": 728126428,
-      "source_token": "USDT"
-    },
-    {
-      "adapter": "binance",
-      "destination_chain": 56,
-      "destination_token": "USDT",
-      "source_chain": 728126428,
-      "source_token": "USDT"
-    },
-    {
-      "adapter": "binance",
-      "destination_chain": 8453,
-      "destination_token": "USDC",
-      "source_chain": 728126428,
-      "source_token": "USDT"
-    },
-    {
-      "adapter": "binance",
-      "destination_chain": 999,
-      "destination_token": "USDC",
-      "source_chain": 728126428,
-      "source_token": "USDT"
-    },
-    {
-      "adapter": "binance",
-      "destination_chain": 1,
-      "destination_token": "USDC",
       "source_chain": 8453,
       "source_token": "USDC"
     },
@@ -8656,13 +8197,6 @@
     {
       "adapter": "binance",
       "destination_chain": 56,
-      "destination_token": "USDT",
-      "source_chain": 8453,
-      "source_token": "USDC"
-    },
-    {
-      "adapter": "binance",
-      "destination_chain": 728126428,
       "destination_token": "USDT",
       "source_chain": 8453,
       "source_token": "USDC"
@@ -8810,13 +8344,6 @@
     {
       "adapter": "binance",
       "destination_chain": 56,
-      "destination_token": "USDT",
-      "source_chain": 999,
-      "source_token": "USDC"
-    },
-    {
-      "adapter": "binance",
-      "destination_chain": 728126428,
       "destination_token": "USDT",
       "source_chain": 999,
       "source_token": "USDC"
@@ -8990,5 +8517,5 @@
       "source_token": "USDT"
     }
   ],
-  "required_native_price_chains": [56, 137, 143, 232, 999, 9745, 728126428]
+  "required_native_price_chains": [56, 137, 143, 232, 999, 9745, 43114, 728126428]
 }
