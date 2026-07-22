@@ -134,8 +134,8 @@ export async function zkSyncFinalizer(
 /**
  * @dev Withdrawals of the chain's native token (ETH on zkSync, GHO on Lens) that are initiated directly on the
  * L2BaseToken system contract (i.e. not via the SpokePool) do not emit TokensBridged events, so query the base
- * token's Withdrawal events from the tracked sender addresses and mold them into the TokensBridged shape expected
- * by the finalization pipeline.
+ * token's Withdrawal and WithdrawalWithMessage events from the tracked sender addresses and mold them into the
+ * TokensBridged shape expected by the finalization pipeline.
  * @param spokePoolClient SpokePoolClient for the L2 chain.
  * @param senderAddresses Addresses whose direct withdrawals should be finalized.
  * @param latestBlockToFinalize Most recent L2 block eligible for finalization.
@@ -165,7 +165,15 @@ async function getDirectNativeTokenWithdrawals(
     ...spokePoolClient.eventSearchConfig,
     to: Math.min(latestBlockToFinalize, spokePoolClient.latestHeightSearched),
   };
-  const events = await paginatedEventQuery(baseToken, baseToken.filters.Withdrawal(fromAddresses), searchConfig);
+  const [withdrawalEvents, withdrawalWithMessageEvents] = await Promise.all([
+    paginatedEventQuery(baseToken, baseToken.filters.Withdrawal(fromAddresses), searchConfig),
+    paginatedEventQuery(baseToken, baseToken.filters.WithdrawalWithMessage(fromAddresses), searchConfig),
+  ]);
+  // Multiple withdrawals within a single transaction are finalized by their ordinal position in the transaction, so
+  // preserve the on-chain log ordering when merging the two event types.
+  const events = [...withdrawalEvents, ...withdrawalWithMessageEvents].sort(
+    (a, b) => a.blockNumber - b.blockNumber || a.logIndex - b.logIndex
+  );
   if (events.length > 0) {
     logger.debug({
       at: "Finalizer#ZkSyncFinalizer",
