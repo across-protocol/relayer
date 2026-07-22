@@ -8,7 +8,11 @@
 //      (mint membership proven by re-deriving each claim PDA from the refund addresses in
 //      leaves.json; fails on any claim account outside that set) − pending TransferLiability,
 //      and confirm it equals the leaf's refunds + amountToReturn.
-//   4. Print the refund address's USDC ATA (the remaining account for execute_relayer_refund_leaf).
+//   4. Report the poisoned root bundles (12662/12663) relayed during the incident: while they
+//      exist, their refund leaves (and 12662's slow-fill leaves) are permissionlessly
+//      executable against the vault — they must be emergency-deleted before the recovery leaf
+//      is executed (see README "Mechanism").
+//   5. Print the refund address's USDC ATA (the remaining account for execute_relayer_refund_leaf).
 //
 // Run from the repo root (SOLANA_RPC_URL optional, defaults to the public mainnet endpoint):
 //   tsx scripts/recoveries/2026-07-solana-residual/verify.ts
@@ -35,7 +39,9 @@ function base58Encode(buf: Buffer): string {
     n /= 58n;
   }
   for (const b of buf) {
-    if (b !== 0) break;
+    if (b !== 0) {
+      break;
+    }
     out = "1" + out;
   }
   return out;
@@ -79,10 +85,15 @@ function hashSvmRefundLeaf(leaf: LeafEntry): string {
 }
 
 async function main(): Promise<void> {
-  const artifact = JSON.parse(
-    fs.readFileSync(path.join(__dirname, "leaves.json"), "utf-8")
-  ) as { relayerRefundRoot: string; leaves: LeafEntry[]; liveStateSnapshot: { claimAccounts: { refundAddress: string }[] } };
-  if (artifact.leaves.length !== 1) throw new Error("expected exactly one leaf");
+  const artifact = JSON.parse(fs.readFileSync(path.join(__dirname, "leaves.json"), "utf-8")) as {
+    relayerRefundRoot: string;
+    leaves: LeafEntry[];
+    liveStateSnapshot: { claimAccounts: { refundAddress: string }[] };
+    poisonedRootBundles: { rootBundleId: number; relayerRefundRoot: string }[];
+  };
+  if (artifact.leaves.length !== 1) {
+    throw new Error("expected exactly one leaf");
+  }
   const leaf = artifact.leaves[0];
   const mint = new PublicKey(leaf.mintPublicKey);
 
@@ -94,7 +105,9 @@ async function main(): Promise<void> {
   const connection = new Connection(process.env.SOLANA_RPC_URL ?? "https://api.mainnet-beta.solana.com");
   const [statePda] = PublicKey.findProgramAddressSync([Buffer.from("state"), STATE_SEED], SVM_SPOKE_PROGRAM);
   const stateInfo = await connection.getAccountInfo(statePda, "finalized");
-  if (stateInfo === null) throw new Error(`State account ${statePda.toString()} not found`);
+  if (stateInfo === null) {
+    throw new Error(`State account ${statePda.toString()} not found`);
+  }
   // State layout: 8-byte discriminator, then paused_deposits: bool, paused_fills: bool.
   const pausedDeposits = stateInfo.data[8] === 1;
   const pausedFills = stateInfo.data[9] === 1;
@@ -113,12 +126,11 @@ async function main(): Promise<void> {
   // either a new deferral for this mint (must be netted out) or another mint's claim (not
   // backed by this vault) — indistinguishable on-chain, so verification fails rather than guess.
   const knownClaimPdas = new Set<string>(
-    artifact.liveStateSnapshot.claimAccounts.map(
-      ({ refundAddress }) =>
-        PublicKey.findProgramAddressSync(
-          [Buffer.from("claim_account"), mint.toBuffer(), new PublicKey(refundAddress).toBuffer()],
-          SVM_SPOKE_PROGRAM
-        )[0].toBase58()
+    artifact.liveStateSnapshot.claimAccounts.map(({ refundAddress }) =>
+      PublicKey.findProgramAddressSync(
+        [Buffer.from("claim_account"), mint.toBuffer(), new PublicKey(refundAddress).toBuffer()],
+        SVM_SPOKE_PROGRAM
+      )[0].toBase58()
     )
   );
   const vaultBalance = BigInt((await connection.getTokenAccountBalance(VAULT, "finalized")).value.amount);
@@ -135,6 +147,32 @@ async function main(): Promise<void> {
   const pausesActive = pausedDeposits && pausedFills;
   const noUnknownClaims = unknownClaims.length === 0;
 
+  // 4. Poisoned root bundles relayed during the incident. While these PDAs exist their leaves
+  //    are permissionlessly executable against the vault; they must be emergency-deleted before
+  //    the recovery leaf is executed.
+  const poisonedStatus: { rootBundleId: number; status: string }[] = [];
+  for (const { rootBundleId, relayerRefundRoot } of artifact.poisonedRootBundles) {
+    const idBuf = Buffer.alloc(4);
+    idBuf.writeUInt32LE(rootBundleId);
+    const [rootBundlePda] = PublicKey.findProgramAddressSync(
+      [Buffer.from("root_bundle"), STATE_SEED, idBuf],
+      SVM_SPOKE_PROGRAM
+    );
+    const info = await connection.getAccountInfo(rootBundlePda, "finalized");
+    if (info === null) {
+      poisonedStatus.push({ rootBundleId, status: "deleted ✓" });
+    } else {
+      // RootBundle layout: 8-byte discriminator, relayer_refund_root [32], slow_relay_root [32].
+      const storedRoot = "0x" + info.data.subarray(8, 40).toString("hex");
+      const rootNote =
+        storedRoot === relayerRefundRoot.toLowerCase() ? "root matches artifact" : `UNEXPECTED root ${storedRoot}`;
+      poisonedStatus.push({
+        rootBundleId,
+        status: `STILL RELAYED (${rootNote}) — delete before executing the recovery leaf`,
+      });
+    }
+  }
+
   console.table([
     { Check: "relayerRefundRoot (rebuilt)", Value: rebuiltRoot },
     { Check: "relayerRefundRoot (claimed)", Value: artifact.relayerRefundRoot },
@@ -146,6 +184,10 @@ async function main(): Promise<void> {
     { Check: "unknown claim accounts (must be 0)", Value: unknownClaims.length },
     { Check: "payable = vault - claims - pending liability", Value: payable.toString() },
     { Check: "leaf total (refunds + amountToReturn)", Value: leafTotal.toString() },
+    ...poisonedStatus.map(({ rootBundleId, status }) => ({
+      Check: `poisoned root bundle ${rootBundleId} (live)`,
+      Value: status,
+    })),
   ]);
 
   console.log("Remaining account for execute_relayer_refund_leaf (refund USDC ATA):");

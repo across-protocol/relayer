@@ -67,8 +67,14 @@
     "finalSettledPoolLeafMainnetTx": "0xafe4fd8a6ce6f3b51b3c954f93750c689b7b0cbd6c45b88a123f9925fa6e515a",
     "finalReturnSolanaTx": "2fE3ZDCJsYUPsjeZ7Emt2tHTHxAvKXLQFz42xHQLirHTtDV6JAwHsRo945n5bJrUYz4y8tFrvt3TH2EHDf5ZDgRv",
     "abandonedBundleProposals": [
-      { "rootBundleId": 12662, "proposalTx": "0x46f5926a5cb691cdf604fda01a16eff05158318c09e8830aef8d23c2ed2210bb" },
-      { "rootBundleId": 12663, "proposalTx": "0xd9361db63d710a96de1af115037af6432ed3cb6a745c0956ba55b77758b806f5" }
+      {
+        "rootBundleId": 12662,
+        "proposalTx": "0x46f5926a5cb691cdf604fda01a16eff05158318c09e8830aef8d23c2ed2210bb"
+      },
+      {
+        "rootBundleId": 12663,
+        "proposalTx": "0xd9361db63d710a96de1af115037af6432ed3cb6a745c0956ba55b77758b806f5"
+      }
     ],
     "abandonedBundleHubExecutions": [
       "0x86e682e5a7014e3a1de4cd021705b7bf539d49dca530636304651b6d755fb963",
@@ -83,8 +89,14 @@
       "proposalTx": "0x66194cca70d76b327d0f6e8841c0feac7680c47d0b8925faff7251fa1693c77a"
     },
     "correctedBundleProposals": [
-      { "rootBundleId": 12664, "proposalTx": "0x538577d28d7bf33c94732e54368b139f9c01509e6a82066de0c831082c6ed3f6" },
-      { "rootBundleId": 12665, "proposalTx": "0x3be28ef3be728ecdc9cf20a9361c028ff0c932c2072607d573fd8ab07fbdb2bb" }
+      {
+        "rootBundleId": 12664,
+        "proposalTx": "0x538577d28d7bf33c94732e54368b139f9c01509e6a82066de0c831082c6ed3f6"
+      },
+      {
+        "rootBundleId": 12665,
+        "proposalTx": "0x3be28ef3be728ecdc9cf20a9361c028ff0c932c2072607d573fd8ab07fbdb2bb"
+      }
     ],
     "firstCorrectedBundleHubExecution": "0xdf8d8c2cc888f23fd811252a50c5d9dde6b306bd12ce38d9b71d71964ca3563f",
     "correctedBundleSolanaRefundExecution": "2kPBJ5xdwU5C5ARX2whGX1UvbQ97qGDUhzhAYgjrU5492dxZ7SFvDgwoWEdxmSe7v5yVpgK4hUVDUk83nWuW84LZ",
@@ -121,5 +133,39 @@
   "alternativeVariantTwoRecipients": {
     "note": "Only if the CBG4 off-protocol compensation is ever unwound: refundAmounts [\"13097475478\", \"734833656\"], refundAddresses [E4bX, CBG4].",
     "relayerRefundRoot": "0xef1fab94e29947c550d5c95f0b59abe56f771c254286ccd1144c44e9ca6cfd95"
+  },
+  "poisonedRootBundles": [
+    {
+      "rootBundleId": 12662,
+      "relayerRefundRoot": "0x34d80ac02f1c79b1b9596a22223c5dfbda09b90a8f703d4679e59d9c65d9d129",
+      "slowRelayRoot": "0x09691006a6e77c708f174d5f1cbb2045e9cd7cd0b467e69c879fbebac1a6168a",
+      "relayedInSolanaTx": "9vQRMzpgFZ2wwWTwcWbW2NDoWu6ZB8CAhS2cFqafjv3315ihKuyocEb2frwbRcDRdxWPuFipBbC3WGtJnqUj8Ea"
+    },
+    {
+      "rootBundleId": 12663,
+      "relayerRefundRoot": "0xb6a5b07ead48b30bc00863e10e4e5e1621bfc731ff437682abca526962241803",
+      "slowRelayRoot": "0x0000000000000000000000000000000000000000000000000000000000000000",
+      "relayedInSolanaTx": "4yxMmpTQDv2NyLe714Va1YjW4CjsctWMgwBKP8eD1NKo5VuqUQfa5rqsqjYNvJJPq4wsLRJVFCKCBhAhQMVBgGAb"
+    }
+  ],
+  "adminMessages": {
+    "note": "Three HubPool relaySpokePoolAdminFunction(34268394551451, message) calls, enqueued as one Safe batch. The two deletions close the poisoned root bundles relayed during the incident: their refund leaves (and 12662's slow-fill leaves) are otherwise permissionlessly executable against whatever the vault holds, including refunds to the attacker's forged-deposit wallets \u2014 a live replay risk. Confirm both deletions executed on Solana (verify.ts reports their PDA status) before executing the recovery leaf.",
+    "messages": [
+      {
+        "order": 1,
+        "purpose": "emergencyDeleteRootBundle(12662) \u2014 poisoned bundle: refund root 0x34d80ac0..., slow relay root 0x09691006...",
+        "payload": "0x8a7860ce0000000000000000000000000000000000000000000000000000000000003176"
+      },
+      {
+        "order": 2,
+        "purpose": "emergencyDeleteRootBundle(12663) \u2014 poisoned bundle: refund root 0xb6a5b07e...",
+        "payload": "0x8a7860ce0000000000000000000000000000000000000000000000000000000000003177"
+      },
+      {
+        "order": 3,
+        "purpose": "relayRootBundle(recovery refund root, 0x0)",
+        "payload": "0x493a4f84022285d1b98169fa68340f2415eddd6b23e045b9b72fe62ac188116c31be31a10000000000000000000000000000000000000000000000000000000000000000"
+      }
+    ]
   }
 }

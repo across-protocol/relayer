@@ -103,13 +103,23 @@ compensation is ever unwound (`refundAmounts ["13097475478", "734833656"]`, addr
 
 ## Mechanism
 
-1. HubPool admin calls `relaySpokePoolAdminFunction(34268394551451, encoded relayRootBundle(ROOT, 0x0))`
-   — the Solana adapter delivers it to the SVM spoke via CCTP, which stores the roots
-   (`relay_root_bundle`). No pool rebalance leaf, no bond, no liveness window.
-2. After cross-domain delivery, permissionless `execute_relayer_refund_leaf(rootBundleId, leaf, [])`
-   transfers 13,832.309134 USDC vault → E4bX's USDC ATA. The leaf is fully funded, so the
-   standard finalizer can execute it once relayed; a manual fallback passes the refund ATA
-   (printed by `verify.ts`) as the remaining account. `amountToReturn = 0` ⇒ no bridge step.
+One Safe batch of **three** HubPool `relaySpokePoolAdminFunction(34268394551451, message)` calls
+(exact payloads in `leaves.json` → `adminMessages`), delivered to the SVM spoke via the Solana
+adapter / CCTP. No pool rebalance leaf, no bond, no liveness window.
+
+1. `emergencyDeleteRootBundle(12662)` and `emergencyDeleteRootBundle(12663)` — closes the two
+   **poisoned root bundles relayed during the incident** (refund roots `0x34d80ac0…`/
+   `0xb6a5b07e…`, relayed in Solana txs `9vQRMzpg…`/`4yxMmpTQ…`). While those PDAs exist, their
+   refund leaves — and 12662's non-zero slow-relay root's slow-fill leaves — remain
+   **permissionlessly executable against whatever the vault holds**, including expired-deposit
+   "refunds" to the attacker's forged-deposit wallets. Deleting them closes the replay.
+2. `relayRootBundle(0x022285d1…, 0x0)` — stores the recovery root (`relay_root_bundle`).
+3. After cross-domain delivery, confirm via `verify.ts` that both poisoned bundles read
+   **deleted** and the recovery root is stored, then permissionless
+   `execute_relayer_refund_leaf(rootBundleId, leaf, [])` transfers 13,832.309134 USDC
+   vault → E4bX's USDC ATA. The leaf is fully funded, so the standard finalizer can execute it
+   once relayed; a manual fallback passes the refund ATA (printed by `verify.ts`) as the
+   remaining account. `amountToReturn = 0` ⇒ no bridge step.
 
 ## Verify before signing
 
@@ -123,29 +133,34 @@ Rebuilds the SVM leaf hash from `leaves.json` (keccak256 of 64 zero bytes ‖ bo
 confirms it equals the documented root, requires deposits/fills to still be paused, and
 re-derives the payable amount from live state: vault balance − Σ USDC `ClaimAccount`s (mint
 membership proven by PDA re-derivation; fails on any unknown claim account) − pending
-`TransferLiability` must equal the leaf total. **Re-run immediately before executing the leaf
-on Solana** — the program's execution path checks only raw vault balance ≥ refund total, and a
-relayed root has no execution deadline.
+`TransferLiability` must equal the leaf total. It also reports the live status of the two
+poisoned root bundles (12662/12663) — **both must read deleted before the recovery leaf is
+executed**. **Re-run immediately before executing the leaf on Solana** — the program's
+execution path checks only raw vault balance ≥ refund total, and a relayed root has no
+execution deadline.
 
 ### 2. Validate the multisig transaction matches what is proposed
 
-The Safe transaction must, when executed by the HubPool admin, emit exactly **1
-`SpokePoolAdminFunctionTriggered` event** from `0xc186fA914353c44b2E33eBE05f21846F1048bEda`
+The Safe transaction must, when executed by the HubPool admin, emit exactly **3
+`SpokePoolAdminFunctionTriggered` events** from `0xc186fA914353c44b2E33eBE05f21846F1048bEda`
 (HubPool). Simulate it (Tenderly / forked mainnet) and confirm:
 
 Event signature: `SpokePoolAdminFunctionTriggered(uint256 indexed chainId, bytes message)`
 
-- **topic[0]**: `0x218987b934c2f6bc596136829fbf43a5fef4d6fafce41f3f6254d9a870c2deec`
-- **topic[1]** (`chainId`): `0x00000000000000000000000000000000000000000000000000001f2abb7bf89b`
-  (= 34268394551451)
-- **`message`** (68 bytes):
-  `0x493a4f84022285d1b98169fa68340f2415eddd6b23e045b9b72fe62ac188116c31be31a10000000000000000000000000000000000000000000000000000000000000000`
-  - selector `0x493a4f84` = `relayRootBundle(bytes32,bytes32)`
-  - first arg = `relayerRefundRoot` = `0x022285d1b98169fa68340f2415eddd6b23e045b9b72fe62ac188116c31be31a1`
-  - second arg = `slowRelayRoot` = `0x0`
+- **topic[0]** (all 3 events): `0x218987b934c2f6bc596136829fbf43a5fef4d6fafce41f3f6254d9a870c2deec`
+- **topic[1]** (`chainId`, all 3 events):
+  `0x00000000000000000000000000000000000000000000000000001f2abb7bf89b` (= 34268394551451)
+- **`message` fields**, in order:
+  1. `0x8a7860ce0000000000000000000000000000000000000000000000000000000000003176`
+     — `emergencyDeleteRootBundle(uint256)` (selector `0x8a7860ce`), arg = 12662
+  2. `0x8a7860ce0000000000000000000000000000000000000000000000000000000000003177`
+     — `emergencyDeleteRootBundle(uint256)`, arg = 12663
+  3. `0x493a4f84022285d1b98169fa68340f2415eddd6b23e045b9b72fe62ac188116c31be31a10000000000000000000000000000000000000000000000000000000000000000`
+     — `relayRootBundle(bytes32,bytes32)` (selector `0x493a4f84`), first arg =
+     `relayerRefundRoot` = `0x022285d1…31be31a1`, second arg = `slowRelayRoot` = `0x0`
 
-The simulation should also emit the Solana adapter's CCTP `MessageSent` carrying the translated
-`relay_root_bundle` payload to the SVM spoke's message transmitter.
+The simulation should also emit the Solana adapter's CCTP `MessageSent` events carrying the
+translated payloads to the SVM spoke's message transmitter.
 
 Post-execution check: vault balance = Σ live `ClaimAccount` amounts (equals 236.090934 only if
 no claim was exercised in the interim — claiming is not pause-gated and reduces both sides
