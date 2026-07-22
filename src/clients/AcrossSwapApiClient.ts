@@ -140,8 +140,8 @@ export interface DepositAddressExecuteResponse {
   /** The API's re-derived deposit address; must match the funded address from the indexer. */
   depositAddress: string;
   executeTx: {
-    /** "tron" for Tron-origin executes; `to` is 0x-hex on both ecosystems. */
-    ecosystem: "evm" | "tron";
+    /** "tvm" for Tron-origin executes; `to` is 0x-hex on both ecosystems. */
+    ecosystem: "evm" | "tvm";
     chainId: number;
     to: string;
     data: string;

@@ -1194,7 +1194,7 @@ export class DepositAddressHandler {
       });
       return false;
     }
-    const expectedEcosystem = chainIsTvm(originChainId) ? "tron" : "evm";
+    const expectedEcosystem = chainIsTvm(originChainId) ? "tvm" : "evm";
     if (executeTx.ecosystem !== expectedEcosystem) {
       this.logger.warn({
         ...logContext,

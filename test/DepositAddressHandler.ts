@@ -717,9 +717,9 @@ describe("DepositAddressHandler._validateExecuteResponse guards", function () {
     expect(validate(executeResponse({ signatureDeadline: getCurrentTime() + 30 }))).to.equal(false);
   });
 
-  it("rejects a tron-ecosystem response for an EVM origin", function () {
+  it("rejects a tvm-ecosystem response for an EVM origin", function () {
     const response = executeResponse();
-    response.executeTx.ecosystem = "tron";
+    response.executeTx.ecosystem = "tvm";
     expect(validate(response)).to.equal(false);
     expect(warnStub.calledOnce).to.equal(true);
   });
@@ -741,11 +741,11 @@ describe("DepositAddressHandler._validateExecuteResponse for Tron origins", func
   const message = tronDepositMessageV3();
   const originChainId = Number(message.erc20Transfer.chainId);
 
-  /** Mirrors the quote-api Tron response contract: base58 depositAddress echo, "tron", 0x-hex `to`. */
+  /** Mirrors the live quote-api Tron response: base58 depositAddress echo, "tvm", 0x-hex `to`. */
   function executeResponse(overrides: Partial<DepositAddressExecuteResponse> = {}): DepositAddressExecuteResponse {
     return {
       depositAddress: TRON_DEPOSIT_ADDRESS,
-      executeTx: { ecosystem: "tron", chainId: originChainId, to: TRON_FACTORY, data: "0x", value: "0" },
+      executeTx: { ecosystem: "tvm", chainId: originChainId, to: TRON_FACTORY, data: "0x", value: "0" },
       signer: SIGNER,
       signatureDeadline: getCurrentTime() + 600,
       isPlaceholder: false,

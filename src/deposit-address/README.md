@@ -127,7 +127,7 @@ read by the execute path — the API re-derives them, so they are carried for di
 (728126428) to `RELAYER_ORIGIN_CHAINS`, which also provisions the provider and dedup sets. v3
 messages stay un-normalized, so Tron fields flow **base58 end-to-end to the quote-api**
 (`userAddress`, `inputToken.address`; the bot re-encodes its own `executionFeeRecipient` to base58
-via `toAddressType`). The API responds with `executeTx.ecosystem: "tron"`, a **0x-hex `to`** (the
+via `toAddressType`). The API responds with `executeTx.ecosystem: "tvm"`, a **0x-hex `to`** (the
 RPC-facing format), and the `depositAddress` echoed in base58; the bot validates the ecosystem
 against the chain family and compares deposit addresses canonically (base58 → hex) since base58 is
 case-sensitive. On-chain reads (`getDepositAddressBalance`) and receipt-log matching
