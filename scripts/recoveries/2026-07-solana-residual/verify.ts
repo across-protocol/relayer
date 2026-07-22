@@ -8,10 +8,11 @@
 //      (mint membership proven by re-deriving each claim PDA from the refund addresses in
 //      leaves.json; fails on any claim account outside that set) − pending TransferLiability,
 //      and confirm it equals the leaf's refunds + amountToReturn.
-//   4. Report the poisoned root bundles (12662/12663) relayed during the incident: while they
-//      exist, their refund leaves (and 12662's slow-fill leaves) are permissionlessly
-//      executable against the vault — they must be emergency-deleted before the recovery leaf
-//      is executed (see README "Mechanism").
+//   4. Report the poisoned root bundles (12662/12663) relayed during the incident: their
+//      refund leaves become permissionlessly executable whenever the vault covers a leaf's
+//      refund total (reconstructed: ~871k / ~2.65M USDC) and never expire — they must be
+//      emergency-deleted before the spoke ever holds working balances again (see README
+//      "Mechanism").
 //   5. Print the refund address's USDC ATA (the remaining account for execute_relayer_refund_leaf).
 //
 // Run from the repo root (SOLANA_RPC_URL optional, defaults to the public mainnet endpoint):

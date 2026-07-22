@@ -109,10 +109,18 @@ adapter / CCTP. No pool rebalance leaf, no bond, no liveness window.
 
 1. `emergencyDeleteRootBundle(12662)` and `emergencyDeleteRootBundle(12663)` — closes the two
    **poisoned root bundles relayed during the incident** (refund roots `0x34d80ac0…`/
-   `0xb6a5b07e…`, relayed in Solana txs `9vQRMzpg…`/`4yxMmpTQ…`). While those PDAs exist, their
-   refund leaves — and 12662's non-zero slow-relay root's slow-fill leaves — remain
-   **permissionlessly executable against whatever the vault holds**, including expired-deposit
-   "refunds" to the attacker's forged-deposit wallets. Deleting them closes the replay.
+   `0xb6a5b07e…`, relayed in Solana txs `9vQRMzpg…`/`4yxMmpTQ…`). Each carries a single Solana
+   USDC refund leaf (refunds aggregate per relayer): reconstructed contents ≈**2,645,780** for
+   12662 and ≈**871,452** for 12663 — dominated by E4bX repayments for forged-deposit fills
+   already written off in the incident books — plus phantom `amountToReturn`s of
+   **36,243,505.321905** and **445,702.471769** (see `leaves.json` →
+   `poisonedRootBundlesNote`). Leaf execution only requires vault balance ≥ the leaf's refund
+   total, and a relayed root never expires: not executable against today's ~14k, but if the
+   spoke is ever un-paused and holds working balances again, execution would double-pay the
+   written-off repayments and queue ≈36.69M of phantom `TransferLiability` — after which any
+   caller can continuously bridge every future vault dollar to the HubPool. Deleting both now,
+   while the spoke is paused, closes this permanently. (No Solana-executable slow-fill leaves
+   exist: zero destination-Solana slow-fill requests in the windows; 12663's slow root is 0x0.)
 2. `relayRootBundle(0x022285d1…, 0x0)` — stores the recovery root (`relay_root_bundle`).
 3. After cross-domain delivery, confirm via `verify.ts` that both poisoned bundles read
    **deleted** and the recovery root is stored, then permissionless

@@ -139,13 +139,29 @@
       "rootBundleId": 12662,
       "relayerRefundRoot": "0x34d80ac02f1c79b1b9596a22223c5dfbda09b90a8f703d4679e59d9c65d9d129",
       "slowRelayRoot": "0x09691006a6e77c708f174d5f1cbb2045e9cd7cd0b467e69c879fbebac1a6168a",
-      "relayedInSolanaTx": "9vQRMzpgFZ2wwWTwcWbW2NDoWu6ZB8CAhS2cFqafjv3315ihKuyocEb2frwbRcDRdxWPuFipBbC3WGtJnqUj8Ea"
+      "relayedInSolanaTx": "9vQRMzpgFZ2wwWTwcWbW2NDoWu6ZB8CAhS2cFqafjv3315ihKuyocEb2frwbRcDRdxWPuFipBbC3WGtJnqUj8Ea",
+      "reconstructedUsdcRefundLeaf": {
+        "refunds": {
+          "E4bX4nCwe2GcKqt9NpofnXVrCeRp37PAMaiZtV9x3kxC": "~2645739282280",
+          "CBG4RpoLqM1KJk9q3d3MeCwE9RgqeAWbwntUREPB1jUF": "~40448781"
+        },
+        "refundTotalApprox": "~2645779731061 (2,645,779.73 USDC)",
+        "amountToReturn": "36243505321905"
+      }
     },
     {
       "rootBundleId": 12663,
       "relayerRefundRoot": "0xb6a5b07ead48b30bc00863e10e4e5e1621bfc731ff437682abca526962241803",
       "slowRelayRoot": "0x0000000000000000000000000000000000000000000000000000000000000000",
-      "relayedInSolanaTx": "4yxMmpTQDv2NyLe714Va1YjW4CjsctWMgwBKP8eD1NKo5VuqUQfa5rqsqjYNvJJPq4wsLRJVFCKCBhAhQMVBgGAb"
+      "relayedInSolanaTx": "4yxMmpTQDv2NyLe714Va1YjW4CjsctWMgwBKP8eD1NKo5VuqUQfa5rqsqjYNvJJPq4wsLRJVFCKCBhAhQMVBgGAb",
+      "reconstructedUsdcRefundLeaf": {
+        "refunds": {
+          "E4bX4nCwe2GcKqt9NpofnXVrCeRp37PAMaiZtV9x3kxC": "~870757874203",
+          "CBG4RpoLqM1KJk9q3d3MeCwE9RgqeAWbwntUREPB1jUF": "~694384875"
+        },
+        "refundTotalApprox": "~871452259078 (871,452.26 USDC)",
+        "amountToReturn": "445702471769"
+      }
     }
   ],
   "adminMessages": {
@@ -167,5 +183,6 @@
         "payload": "0x493a4f84022285d1b98169fa68340f2415eddd6b23e045b9b72fe62ac188116c31be31a10000000000000000000000000000000000000000000000000000000000000000"
       }
     ]
-  }
+  },
+  "poisonedRootBundlesNote": "SVM refund leaves aggregate one refund per relayer per (chain, token), so each poisoned bundle carries a single Solana USDC refund leaf with two entries (E4bX, CBG4). Contents reconstructed by aggregating all fills electing Solana repayment inside each bundle's evaluation window (~04:56-05:25 and ~05:25-05:56 UTC 2026-07-17; boundaries approximate to the minute, magnitudes exact to the fill set); E4bX's entries are dominated by repayments for fills of forged deposits, already written off in the incident books. amountToReturn values are the bundles' netSendAmounts. Execution requires vault balance >= the leaf's refund total (amountToReturn is NOT balance-checked; it queues TransferLiability), so neither leaf is executable against today's ~14k \u2014 but the roots never expire: if the spoke is ever un-paused and holds working balances again, execution would double-pay written-off repayments and queue ~36.69M of phantom TransferLiability, letting any caller continuously bridge every future vault dollar to the HubPool. No Solana-executable slow-fill leaves exist (zero destination-Solana slow-fill requests in the windows; 12663's slow root is zero). Deleting both bundles closes this permanently."
 }
