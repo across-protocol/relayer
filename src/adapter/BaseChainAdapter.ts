@@ -335,7 +335,7 @@ export class BaseChainAdapter {
     }
     if (txnsToSend.length === 0) {
       this.log(
-        "L2 withdrawal skipped: bridge constructed no transactions (e.g. insufficient bridge capacity); it will be retried on a later run",
+        "Withdrawal to hub chain skipped: bridge constructed no transactions (e.g. insufficient bridge capacity); it will be retried on a later run",
         {
           l2Token,
           l1Token,
