@@ -34,10 +34,11 @@ messages. Each supported chain delegates to one or more chain-specific finalizer
    `WithdrawalWithMessage` events emitted by the tracked sender addresses (the SpokePool is excluded — its
    withdrawals are covered by path 1) and molds them into the `TokensBridged` shape for the rest of the pipeline.
 
-Withdrawals from both sources are merged and sorted into on-chain log order before status sorting and proof
-generation. Ordering matters: a transaction containing multiple withdrawals is finalized by each withdrawal's
-ordinal position within the transaction (`getUniqueLogIndex` → `finalizeWithdrawalParams`), so the merged list must
-reflect the order the messages were emitted on chain.
+A withdrawal is finalized by its index into its transaction's ordered set of `L1MessageSent` logs
+(`finalizeWithdrawalParams`). Direct withdrawals carry that index precomputed from the transaction receipt, which
+stays correct even when the transaction contains messages the finalizer does not discover (e.g. another sender's
+withdrawal batched into the same transaction). SpokePool withdrawals derive it from each event's per-transaction
+ordinal (`getUniqueLogIndex`), so the merged withdrawal list is sorted into on-chain log order before processing.
 
 ## Configuration
 
@@ -55,7 +56,9 @@ reflect the order the messages were emitted on chain.
 
 - Register new chain finalizers through `generateChainConfig()` family defaults where possible; reserve explicit
   `chainFinalizers` entries for exceptions.
-- When adding a discovery path that molds foreign events into the `TokensBridged` shape, preserve on-chain log
-  ordering in any merged event list — per-transaction withdrawal ordinals map directly to L2 → L1 messages.
+- When adding a discovery path that molds foreign events into the `TokensBridged` shape, precompute each
+  withdrawal's message index from its transaction receipt (see `getDirectNativeTokenWithdrawals`) rather than
+  relying on ordinals over discovered events — a transaction can contain L2 → L1 messages the finalizer does not
+  discover.
 - Finalization transactions are assumed unpermissioned (any `msg.sender` may execute them). If a new finalizer
   breaks that assumption, it cannot rely on the shared Multicall2 batching.

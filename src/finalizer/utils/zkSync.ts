@@ -1,9 +1,10 @@
 import { interfaces, utils as sdkUtils } from "@across-protocol/sdk";
 import { Contract, Signer } from "ethers";
-import { Provider as zksProvider, Wallet as zkWallet } from "zksync-ethers";
+import { Provider as zksProvider, Wallet as zkWallet, utils as zksUtils } from "zksync-ethers";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { CONTRACT_ADDRESSES, getContractEntry } from "../../common";
 import {
+  compareAddressesSimple,
   convertFromWei,
   getBlockForTimestamp,
   getCurrentTime,
@@ -29,6 +30,11 @@ import { getRedisCache } from "../../cache/Redis";
 import { FinalizerPromise, CrossChainMessage, AddressesToFinalize } from "../types";
 
 type TokensBridged = interfaces.TokensBridged;
+
+// A withdrawal to finalize; withdrawalIdx is this withdrawal's index into the ordered set of L1MessageSent logs in
+// its transaction. Direct withdrawals carry it precomputed from the transaction receipt; for SpokePool withdrawals
+// it is inferred from each event's per-transaction ordinal.
+type ZkStackWithdrawal = TokensBridged & { withdrawalIdx?: number };
 
 type zkSyncWithdrawalData = {
   l1BatchNumber: number;
@@ -149,7 +155,7 @@ async function getDirectNativeTokenWithdrawals(
   spokePoolClient: SpokePoolClient,
   senderAddresses: AddressesToFinalize,
   latestBlockToFinalize: number
-): Promise<TokensBridged[]> {
+): Promise<ZkStackWithdrawal[]> {
   assert(isEVMSpokePoolClient(spokePoolClient));
   const { chainId, spokePool } = spokePoolClient;
 
@@ -182,6 +188,29 @@ async function getDirectNativeTokenWithdrawals(
     });
   }
 
+  // A withdrawal is finalized by its index into its transaction's complete, ordered set of L1MessageSent logs,
+  // which may include messages the queries above cannot discover (e.g. a withdrawal from an untracked sender
+  // batched into the same transaction). Locate each withdrawal's own message in the transaction receipt:
+  // withdraw() and withdrawWithMessage() send it immediately before emitting their event, so it is the closest
+  // L1MessageSent log preceding the withdrawal event.
+  const l1MessageSentTopic = zksUtils.L1_MESSENGER.getEventTopic("L1MessageSent");
+  const txnRefs = Array.from(new Set(events.map(({ transactionHash }) => transactionHash)));
+  const receipts = new Map(
+    await sdkUtils.mapAsync(txnRefs, async (txnRef) => {
+      const receipt = await spokePool.provider.getTransactionReceipt(txnRef);
+      return [txnRef, receipt] as const;
+    })
+  );
+  const getMessageIndex = (transactionHash: string, logIndex: number): number => {
+    const messages = (receipts.get(transactionHash)?.logs ?? []).filter(
+      (log) =>
+        compareAddressesSimple(log.address, zksUtils.L1_MESSENGER_ADDRESS) && log.topics[0] === l1MessageSentTopic
+    );
+    const index = messages.filter((message) => message.logIndex < logIndex).length - 1;
+    assert(index >= 0, `zkSync: no L1MessageSent log precedes withdrawal event in ${transactionHash}`);
+    return index;
+  };
+
   const l2TokenAddress = getWrappedNativeTokenAddress(chainId);
   return events.map(({ transactionHash, transactionIndex, ...event }) => ({
     ...event,
@@ -191,6 +220,7 @@ async function getDirectNativeTokenWithdrawals(
     l2TokenAddress,
     txnRef: transactionHash,
     txnIndex: transactionIndex,
+    withdrawalIdx: getMessageIndex(transactionHash, event.logIndex),
   }));
 }
 
@@ -202,8 +232,8 @@ async function getDirectNativeTokenWithdrawals(
  */
 async function sortWithdrawals(
   provider: zksProvider,
-  tokensBridged: TokensBridged[]
-): Promise<Record<string, TokensBridged[]>> {
+  tokensBridged: ZkStackWithdrawal[]
+): Promise<Record<string, ZkStackWithdrawal[]>> {
   const txnStatus = await Promise.all(tokensBridged.map(({ txnRef }) => provider.getTransactionStatus(txnRef)));
 
   let idx = 0; // @dev Possible to infer the loop index in groupBy ??
@@ -221,13 +251,13 @@ async function sortWithdrawals(
 async function filterMessageLogs(
   wallet: zkWallet,
   l1ChainId: number,
-  tokensBridged: TokensBridged[]
+  tokensBridged: ZkStackWithdrawal[]
 ): Promise<(TokensBridged & { withdrawalIdx: number })[]> {
-  // For each token bridge event, store a unique log index for the event within the zksync transaction hash.
-  // This is important for bridge transactions containing multiple events.
+  // For each token bridge event without a precomputed withdrawal index, store a unique log index for the event
+  // within the zksync transaction hash. This is important for bridge transactions containing multiple events.
   const logIndexesForMessage = getUniqueLogIndex(tokensBridged);
   const withdrawals = tokensBridged.map((tokenBridged, i) => {
-    return { ...tokenBridged, withdrawalIdx: logIndexesForMessage[i] };
+    return { ...tokenBridged, withdrawalIdx: tokenBridged.withdrawalIdx ?? logIndexesForMessage[i] };
   });
 
   const ready = await sdkUtils.filterAsync(withdrawals, async ({ txnRef, withdrawalIdx, chainId, l2TokenAddress }) => {
