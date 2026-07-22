@@ -31,8 +31,9 @@ messages. Each supported chain delegates to one or more chain-specific finalizer
 2. **Direct native token withdrawals** – Withdrawals of the chain's native token (ETH on zkSync, GHO on Lens)
    initiated directly on the `L2BaseToken` system contract (`0x…800A`, the `nativeToken` entry in
    `CONTRACT_ADDRESSES`) do not emit `TokensBridged`. The finalizer queries the contract's `Withdrawal` and
-   `WithdrawalWithMessage` events emitted by the tracked sender addresses (the SpokePool is excluded — its
-   withdrawals are covered by path 1) and molds them into the `TokensBridged` shape for the rest of the pipeline.
+   `WithdrawalWithMessage` events where a tracked address is the L2 sender or the L1 recipient (withdrawals
+   initiated by the SpokePool are excluded — they are covered by path 1) and molds them into the `TokensBridged`
+   shape for the rest of the pipeline.
 
 A withdrawal is finalized by its index into its transaction's ordered set of `L1MessageSent` logs
 (`finalizeWithdrawalParams`). Direct withdrawals carry that index precomputed from the transaction receipt, which

@@ -143,10 +143,10 @@ export async function zkSyncFinalizer(
 /**
  * @dev Withdrawals of the chain's native token (ETH on zkSync, GHO on Lens) that are initiated directly on the
  * L2BaseToken system contract (i.e. not via the SpokePool) do not emit TokensBridged events, so query the base
- * token's Withdrawal and WithdrawalWithMessage events from the tracked sender addresses and mold them into the
- * TokensBridged shape expected by the finalization pipeline.
+ * token's Withdrawal and WithdrawalWithMessage events where a tracked address is the L2 sender or the L1 recipient
+ * and mold them into the TokensBridged shape expected by the finalization pipeline.
  * @param spokePoolClient SpokePoolClient for the L2 chain.
- * @param senderAddresses Addresses whose direct withdrawals should be finalized.
+ * @param senderAddresses Tracked addresses whose direct withdrawals (sent or received) should be finalized.
  * @param latestBlockToFinalize Most recent L2 block eligible for finalization.
  * @returns Direct native token withdrawals from tracked addresses, formatted as TokensBridged events.
  */
@@ -159,12 +159,12 @@ async function getDirectNativeTokenWithdrawals(
   assert(isEVMSpokePoolClient(spokePoolClient));
   const { chainId, spokePool } = spokePoolClient;
 
-  // The SpokePool's own withdrawals are already discovered via its TokensBridged events, so skip it here.
-  const fromAddresses = Array.from(senderAddresses.keys())
+  const trackedAddresses = Array.from(senderAddresses.keys())
     .filter((sender) => sender.isEVM())
-    .map((sender) => sender.toEvmAddress())
-    .filter((sender) => sender !== spokePool.address);
-  if (fromAddresses.length === 0) {
+    .map((sender) => sender.toEvmAddress());
+  // The SpokePool's own withdrawals are already discovered via its TokensBridged events, so skip it as a sender.
+  const fromAddresses = trackedAddresses.filter((sender) => sender !== spokePool.address);
+  if (trackedAddresses.length === 0) {
     return [];
   }
 
@@ -174,12 +174,22 @@ async function getDirectNativeTokenWithdrawals(
     ...spokePoolClient.eventSearchConfig,
     to: Math.min(latestBlockToFinalize, spokePoolClient.latestHeightSearched),
   };
-  const [withdrawalEvents, withdrawalWithMessageEvents] = await Promise.all([
-    paginatedEventQuery(baseToken, baseToken.filters.Withdrawal(fromAddresses), searchConfig),
-    paginatedEventQuery(baseToken, baseToken.filters.WithdrawalWithMessage(fromAddresses), searchConfig),
-  ]);
-  // The caller sorts the merged withdrawal list into on-chain log order, so no ordering is required here.
-  const events = [...withdrawalEvents, ...withdrawalWithMessageEvents];
+  // The tracked addresses comprise both senders and recipients to look out for, and the withdrawal events index
+  // both, so query each side and dedupe (a withdrawal may match both filters). Withdrawals initiated by the
+  // SpokePool (e.g. received by the tracked HubPool) are dropped: TokensBridged already covers them, and a second
+  // entry would finalize the same message twice. The caller sorts the merged withdrawal list into on-chain log
+  // order, so no ordering is required here.
+  const rawEvents = (
+    await Promise.all([
+      paginatedEventQuery(baseToken, baseToken.filters.Withdrawal(fromAddresses), searchConfig),
+      paginatedEventQuery(baseToken, baseToken.filters.WithdrawalWithMessage(fromAddresses), searchConfig),
+      paginatedEventQuery(baseToken, baseToken.filters.Withdrawal(null, trackedAddresses), searchConfig),
+      paginatedEventQuery(baseToken, baseToken.filters.WithdrawalWithMessage(null, trackedAddresses), searchConfig),
+    ])
+  ).flat();
+  const events = Array.from(
+    new Map(rawEvents.map((event) => [`${event.transactionHash}-${event.logIndex}`, event])).values()
+  ).filter((event) => !compareAddressesSimple(event.args._l2Sender, spokePool.address));
   if (events.length > 0) {
     logger.debug({
       at: "Finalizer#ZkSyncFinalizer",
@@ -211,7 +221,13 @@ async function getDirectNativeTokenWithdrawals(
     return index;
   };
 
-  const l2TokenAddress = getWrappedNativeTokenAddress(chainId);
+  // The withdrawn token is the chain's base token, so report it as such where it is mapped (e.g. GHO on Lens).
+  // Otherwise report the wrapped native token (e.g. WETH for direct ETH withdrawals on zkSync, matching how the
+  // SpokePool's TokensBridged withdrawals are accounted).
+  const baseTokenMapped = Object.values(TOKEN_SYMBOLS_MAP).some(
+    ({ addresses }) => isDefined(addresses[chainId]) && compareAddressesSimple(addresses[chainId], address)
+  );
+  const l2TokenAddress = baseTokenMapped ? EvmAddress.from(address) : getWrappedNativeTokenAddress(chainId);
   return events.map(({ transactionHash, transactionIndex, ...event }) => ({
     ...event,
     amountToReturn: event.args._amount,
