@@ -74,14 +74,39 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
     // We round `amount` to a specific precision to prevent rounding on the contract side. This way, we
     // receive the exact amount we sent in the transaction
     const roundedAmount = await this.roundAmountToSend(amount, this.l2TokenInfo.decimals);
-    const appliedFee = OFT.isStargateBridge(this.l2chainId)
-      ? roundedAmount.mul(this.feePct).div(fixedPointAdjustment) // Set a max slippage of 0.5%.
-      : bnZero;
-    const expectedOutputAmount = roundedAmount.sub(appliedFee);
-    const sendParamStruct: OFT.SendParamStruct = {
+
+    // Ask the bridge how much it can currently accept. Stargate-style OFTs cap the quoted
+    // `amountSentLD` at the path's available credit and sending more than that reverts with
+    // Path_InsufficientCredit, so size the withdrawal down to the quoted capacity. Vanilla OFTs
+    // quote `amountSentLD` equal to the requested amount, leaving the withdrawal unchanged.
+    const capacityQuoteParamStruct: OFT.SendParamStruct = {
       dstEid: this.l1ChainEid,
       to: OFT.formatToAddress(toAddress),
       amountLD: roundedAmount,
+      minAmountLD: bnZero,
+      extraOptions: "0x",
+      composeMsg: "0x",
+      oftCmd: "0x",
+    };
+    const [oftLimit, , oftReceipt] = await this.getL2Bridge().quoteOFT(capacityQuoteParamStruct);
+    const quotedSendAmount = BigNumber.from(oftReceipt.amountSentLD);
+    const amountToSend = quotedSendAmount.lt(roundedAmount)
+      ? await this.roundAmountToSend(quotedSendAmount, this.l2TokenInfo.decimals)
+      : roundedAmount;
+    // If the bridge can't accept a sendable amount right now, skip the withdrawal instead of
+    // enqueueing a transaction that is guaranteed to revert; the excess is retried next run.
+    if (amountToSend.lte(bnZero) || amountToSend.lt(BigNumber.from(oftLimit.minAmountLD))) {
+      return [];
+    }
+
+    const appliedFee = OFT.isStargateBridge(this.l2chainId)
+      ? amountToSend.mul(this.feePct).div(fixedPointAdjustment) // Set a max slippage of 0.5%.
+      : bnZero;
+    const expectedOutputAmount = amountToSend.sub(appliedFee);
+    const sendParamStruct: OFT.SendParamStruct = {
+      dstEid: this.l1ChainEid,
+      to: OFT.formatToAddress(toAddress),
+      amountLD: amountToSend,
       // @dev Setting `minAmountLD` equal to `amountLD` ensures we won't hit contract-side rounding
       minAmountLD: expectedOutputAmount,
       extraOptions: "0x",
@@ -125,9 +150,11 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
       args: [sendParamStruct, feeStruct, refundAddress],
       value: payFeeInLzToken ? bnZero : BigNumber.from(feeStruct.nativeFee),
       message: `🎰 Withdrew ${this.l2Token} via OftL2Bridge to L1`,
-      mrkdwn: `Withdrew ${formatter(amount.toString())} ${this.l2TokenInfo.symbol} from ${getNetworkName(
-        this.l2chainId
-      )} to L1 via OftL2Bridge`,
+      mrkdwn: `Withdrew ${formatter(amountToSend.toString())} ${this.l2TokenInfo.symbol}${
+        amountToSend.lt(roundedAmount)
+          ? ` (requested ${formatter(amount.toString())}, sized down to current bridge capacity)`
+          : ""
+      } from ${getNetworkName(this.l2chainId)} to L1 via OftL2Bridge`,
     };
 
     return isDefined(approveTxn) ? [approveTxn, withdrawTxn] : [withdrawTxn];
