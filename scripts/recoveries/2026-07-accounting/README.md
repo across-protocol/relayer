@@ -67,3 +67,34 @@ The transaction to propose from the Safe (`0xB524735356985D2f267FA010D681f061DfF
 ### 4. Re-check the spoke balances
 
 Leaf amounts were sized to the exact stranded balances (2026-07-21 @ mainnet blk 25583166). Before signing, confirm each spoke still holds at least the leaf amount of its token — a balance above the leaf amount is fine (excess stays on the spoke); below means something moved and the tree must be rebuilt.
+
+## Execution record
+
+The multisig relayed the root to all 6 spokes, and every `RelayerRefundLeaf` was executed permissionlessly (`scripts/recoveries/execute.ts`). All 9 `amountToReturn` bridges to the HubPool are initiated; funds then ride each chain's native L2→L1 window before the finalizer claims them to L1.
+
+**Mainnet HubPool execution**: [0x5fb42493…487d2888](https://etherscan.io/tx/0x5fb4249360d5ee6c715eb4af935b3115c8294281a5e06b9b9e391bcf487d2888) — relays the root to all 6 spokes.
+
+### Root delivery (`RelayedRootBundle` per spoke)
+
+| Chain | rootBundleId | Delivery tx |
+| --- | --- | --- |
+| Optimism (10) | 26040 | [0x0b63c924…627c66aa](https://optimistic.etherscan.io/tx/0x0b63c924835e19fe38bf8409c1d6b0ec239d19e8ee763876a3ec8afe627c66aa) |
+| Polygon (137) | 25984 | [0x016a9aa8…4e19a40a](https://polygonscan.com/tx/0x016a9aa8f90d2c734f0d9924ad83a75e61e5f2884355b3bd8a4719094e19a40a) |
+| zkSync (324) | 23262 | [0x92705870…4dfec95e](https://era.zksync.network/tx/0x927058708d32ff25ba8d7d5283f86a1137996a3732cb6cfe05fe79564dfec95e) |
+| Base (8453) | 24816 | [0x6db03975…6ec2a8db](https://basescan.org/tx/0x6db0397511f407bdbe7fad45cc117cf96d2ae59fa5469dd597615bf46ec2a8db) |
+| Arbitrum One (42161) | 26044 | [0x596aa587…c0a440d0](https://arbiscan.io/tx/0x596aa58799820628795743ac3fa4e4fd2a086a1e47d425e7d50532b2c0a440d0) |
+| Blast (81457) | 12263 | [0x9b8ea906…77d08322](https://blastscan.io/tx/0x9b8ea906676caff694d82d94f4816c2fd9161f25b0e90d390894a90f77d08322) |
+
+### Leaf executions
+
+| Leaf | Chain | Amount | Execution tx |
+| --- | --- | --- | --- |
+| 0 | Optimism (10) | 2104.0843 | [0xa87528cc…bcec2eb2](https://optimistic.etherscan.io/tx/0xa87528cc0931a5a36c0f95705ea4641d43de0bd3d6d88f3b734702b2bcec2eb2) |
+| 1 | Optimism (10) | 17993.7608 | [0x3995cfd9…92511a5b](https://optimistic.etherscan.io/tx/0x3995cfd9372ef13511a93b902bc7518c7a212157e5c0b36d9c06c82392511a5b) |
+| 2 | Polygon (137) | 4166.1639 | [0x45dc67cb…07bb839d](https://polygonscan.com/tx/0x45dc67cb4a68724ee290c32f3f3a0b942408b3b802557a4e8e8a03e007bb839d) |
+| 3 | Polygon (137) | 838.4226 | [0xc9802690…b862b8ef](https://polygonscan.com/tx/0xc980269083aa7c20e4fb6b439901c7c96058f02085c6e6aa67db3cfeb862b8ef) |
+| 4 | zkSync (324) | 70005.0678 | [0x64325f9d…74efbf22](https://era.zksync.network/tx/0x64325f9d891ec126365a0c7cffcbd2272eb8585cf81529ab74086a6274efbf22) |
+| 5 | Base (8453) | 104.1083 | [0x3660c770…09d546b6](https://basescan.org/tx/0x3660c7702e6765d40e5fc5bc4686c02add62ef74d61be29de1c1076609d546b6) |
+| 6 | Arbitrum One (42161) | 5857.5867 | [0xcd1a779f…8478931e](https://arbiscan.io/tx/0xcd1a779fbbe053d99015968dde72971127a3ed5089c27380275670728478931e) |
+| 7 | Arbitrum One (42161) | 1130.0099 | [0xceeadab8…91a148d1](https://arbiscan.io/tx/0xceeadab89c618412fcc5baf23d4904a82ae5e98a768e38697778fdbf91a148d1) |
+| 8 | Blast (81457) | 0.3269 | [0xa6c24c36…ea57f1e1](https://blastscan.io/tx/0xa6c24c3608b37a1df6c6df1ecee9bfe936491c6db98fa177666c37d0ea57f1e1) |
