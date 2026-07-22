@@ -1491,7 +1491,12 @@ export class InventoryClient {
         }),
         txnReceipt: txnReceipts[chainId],
       });
-      this.log("Executed excess L2 inventory withdrawal 📒", { mrkdwn: chainMrkdwns[Number(chainId)] }, "info");
+      // Receipts are always empty in simMode, so gate only live runs. No receipts on a live run means every
+      // withdrawal on this chain was skipped by its bridge (e.g. insufficient bridge capacity); the adapter
+      // logs a warning per skip, so don't claim the excess was withdrawn.
+      if (this.simMode || txnReceipts[chainId].length > 0) {
+        this.log("Executed excess L2 inventory withdrawal 📒", { mrkdwn: chainMrkdwns[Number(chainId)] }, "info");
+      }
     });
     return withdrawalsRequired;
   }
