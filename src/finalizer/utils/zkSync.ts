@@ -69,13 +69,20 @@ export async function zkSyncFinalizer(
   assert(isSignerWallet(signer), "Signer is not a Wallet");
   const wallet = new zkWallet(signer.privateKey, l2Provider, l1Provider);
 
-  // Zksync takes ~6 hours to finalize so ignore any events
-  // earlier than that.
+  // Zksync takes ~6 hours to finalize so by default ignore any events younger than that to save the RPC requests
+  // that would be spent computing statuses for withdrawals that cannot be ready. On chains whose batches settle
+  // faster, the lag can be lowered (seconds) via FINALIZER_ZKSTACK_MIN_WITHDRAWAL_AGE, or per-chain via
+  // FINALIZER_ZKSTACK_MIN_WITHDRAWAL_AGE_<chainId>.
+  const minWithdrawalAge = Number(
+    process.env[`FINALIZER_ZKSTACK_MIN_WITHDRAWAL_AGE_${l2ChainId}`] ??
+      process.env["FINALIZER_ZKSTACK_MIN_WITHDRAWAL_AGE"] ??
+      60 * 60 * 6
+  );
   const redis = await getRedisCache(logger);
   const latestBlockToFinalize = await getBlockForTimestamp(
     logger,
     l2ChainId,
-    getCurrentTime() - 60 * 60 * 6,
+    getCurrentTime() - minWithdrawalAge,
     undefined,
     redis
   );
@@ -84,6 +91,7 @@ export async function zkSyncFinalizer(
     at: "Finalizer#ZkSyncFinalizer",
     message: "ZkSync TokensBridged event filter",
     toBlock: latestBlockToFinalize,
+    minWithdrawalAge,
   });
   const spokePoolWithdrawals = spokePoolClient
     .getTokensBridged()

@@ -48,6 +48,10 @@ ordinal (`getUniqueLogIndex`), so the merged withdrawal list is sorted into on-c
 - `FINALIZER_WITHDRAWAL_TO_ADDRESSES` – JSON map of address → token symbols; senders/recipients to track in
   addition to the protocol contracts.
 - `FINALIZER_MAX_TOKENBRIDGE_LOOKBACK` – how far back events are queried.
+- `FINALIZER_ZKSTACK_MIN_WITHDRAWAL_AGE` / `FINALIZER_ZKSTACK_MIN_WITHDRAWAL_AGE_<chainId>` – minimum age
+  (seconds) of ZK stack withdrawal events before the finalizer considers them; defaults to 21600 (6 hours, the
+  typical zkSync batch finalization time). Withdrawals only finalize once their batch is executed on L1, so
+  lowering this only helps on chains that settle faster — it does not bypass the batch execution requirement.
 - `FINALIZER_CHUNK_SIZE` – number of chains processed concurrently.
 - `SEND_TRANSACTIONS` – must be `"true"` to submit transactions; otherwise the run is simulation-only.
 
