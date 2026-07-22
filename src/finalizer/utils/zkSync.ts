@@ -9,7 +9,9 @@ import {
   getCurrentTime,
   getTokenInfo,
   getUniqueLogIndex,
+  getWrappedNativeTokenAddress,
   Multicall2Call,
+  paginatedEventQuery,
   winston,
   zkSync as zkSyncUtils,
   assert,
@@ -23,7 +25,7 @@ import {
   CHAIN_IDs,
 } from "../../utils";
 import { getRedisCache } from "../../cache/Redis";
-import { FinalizerPromise, CrossChainMessage } from "../types";
+import { FinalizerPromise, CrossChainMessage, AddressesToFinalize } from "../types";
 
 type TokensBridged = interfaces.TokensBridged;
 
@@ -47,7 +49,9 @@ export async function zkSyncFinalizer(
   logger: winston.Logger,
   signer: Signer,
   hubPoolClient: HubPoolClient,
-  spokePoolClient: SpokePoolClient
+  spokePoolClient: SpokePoolClient,
+  _l1SpokePoolClient: SpokePoolClient,
+  senderAddresses: AddressesToFinalize
 ): Promise<FinalizerPromise> {
   assert(isEVMSpokePoolClient(spokePoolClient));
   const { chainId: l1ChainId } = hubPoolClient;
@@ -74,10 +78,18 @@ export async function zkSyncFinalizer(
     message: "ZkSync TokensBridged event filter",
     toBlock: latestBlockToFinalize,
   });
-  const withdrawalsToQuery = spokePoolClient
+  const spokePoolWithdrawals = spokePoolClient
     .getTokensBridged()
-    .filter(({ blockNumber }) => blockNumber <= latestBlockToFinalize)
-    .filter(({ txnRef }) => !IGNORED_WITHDRAWALS.includes(txnRef));
+    .filter(({ blockNumber }) => blockNumber <= latestBlockToFinalize);
+  const directWithdrawals = await getDirectNativeTokenWithdrawals(
+    logger,
+    spokePoolClient,
+    senderAddresses,
+    latestBlockToFinalize
+  );
+  const withdrawalsToQuery = [...spokePoolWithdrawals, ...directWithdrawals].filter(
+    ({ txnRef }) => !IGNORED_WITHDRAWALS.includes(txnRef)
+  );
   const statuses = await sortWithdrawals(l2Provider, withdrawalsToQuery);
   const l2Finalized = statuses["finalized"] ?? [];
   const candidates = await filterMessageLogs(wallet, l1ChainId, l2Finalized);
@@ -112,10 +124,66 @@ export async function zkSyncFinalizer(
       withdrawalPending: withdrawalsToQuery.length - l2Finalized.length,
       withdrawalFinalizedNotExecuted: candidates.length,
       withdrawalExecuted: l2Finalized.length - candidates.length,
+      directWithdrawals: directWithdrawals.length,
     },
   });
 
   return { callData: txns, crossChainMessages: withdrawals };
+}
+
+/**
+ * @dev Withdrawals of the chain's native token (ETH on zkSync, GHO on Lens) that are initiated directly on the
+ * L2BaseToken system contract (i.e. not via the SpokePool) do not emit TokensBridged events, so query the base
+ * token's Withdrawal events from the tracked sender addresses and mold them into the TokensBridged shape expected
+ * by the finalization pipeline.
+ * @param spokePoolClient SpokePoolClient for the L2 chain.
+ * @param senderAddresses Addresses whose direct withdrawals should be finalized.
+ * @param latestBlockToFinalize Most recent L2 block eligible for finalization.
+ * @returns Direct native token withdrawals from tracked addresses, formatted as TokensBridged events.
+ */
+async function getDirectNativeTokenWithdrawals(
+  logger: winston.Logger,
+  spokePoolClient: SpokePoolClient,
+  senderAddresses: AddressesToFinalize,
+  latestBlockToFinalize: number
+): Promise<TokensBridged[]> {
+  assert(isEVMSpokePoolClient(spokePoolClient));
+  const { chainId, spokePool } = spokePoolClient;
+
+  // The SpokePool's own withdrawals are already discovered via its TokensBridged events, so skip it here.
+  const fromAddresses = Array.from(senderAddresses.keys())
+    .filter((sender) => sender.isEVM())
+    .map((sender) => sender.toEvmAddress())
+    .filter((sender) => sender !== spokePool.address);
+  if (fromAddresses.length === 0) {
+    return [];
+  }
+
+  const { address, abi } = getContractEntry(chainId, "nativeToken");
+  const baseToken = new Contract(address, abi, spokePool.provider);
+  const searchConfig = {
+    ...spokePoolClient.eventSearchConfig,
+    to: Math.min(latestBlockToFinalize, spokePoolClient.latestHeightSearched),
+  };
+  const events = await paginatedEventQuery(baseToken, baseToken.filters.Withdrawal(fromAddresses), searchConfig);
+  if (events.length > 0) {
+    logger.debug({
+      at: "Finalizer#ZkSyncFinalizer",
+      message: `Found ${events.length} direct native token withdrawals on chain ${chainId}.`,
+      txnRefs: events.map(({ transactionHash }) => transactionHash),
+    });
+  }
+
+  const l2TokenAddress = getWrappedNativeTokenAddress(chainId);
+  return events.map(({ transactionHash, transactionIndex, ...event }) => ({
+    ...event,
+    amountToReturn: event.args._amount,
+    chainId,
+    leafId: 0,
+    l2TokenAddress,
+    txnRef: transactionHash,
+    txnIndex: transactionIndex,
+  }));
 }
 
 /**
