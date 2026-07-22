@@ -11,7 +11,10 @@ import {
   forEachAsync,
   getProvider,
   Contract,
-  sendAndConfirmTransaction,
+  abortableDelay,
+  submitTransaction,
+  dispatchTransaction,
+  TransactionResponse,
   getCounterfactualDepositFactory,
   buildDeployTx,
   toBN,
@@ -37,6 +40,7 @@ import {
 } from "../interfaces";
 import {
   AcrossSwapApiClient,
+  AugmentedTransaction,
   TransactionClient,
   SwapApiResponse,
   SignedWithdrawResponse,
@@ -78,6 +82,42 @@ const HEARTBEAT_TIMEOUT_MS = 5_000;
 const HEARTBEAT_FAILURE_WARN_THRESHOLD = 10;
 
 /**
+ * Max seconds the outgoing instance waits, after observing a handover, for in-flight poll ticks
+ * to settle (tx confirmation + Redis commit of the executed member) before exiting. The
+ * successor runs concurrently from the moment it takes the lease — service is continuous — so
+ * this only bounds how long the old process lingers to finish work it already broadcast. An
+ * execution abandoned between broadcast and commit is exactly how a successor comes to replay a
+ * sweep (2026-07-20 duplicate-sweep incident), so this errs long; the pending-execution lock
+ * still covers anything that outlives the drain.
+ */
+const HANDOVER_DRAIN_TIMEOUT = 90;
+
+/**
+ * TTL (seconds) on a per-transfer pending-execution lock, acquired atomically (SET NX)
+ * immediately before every fund-moving broadcast and released once the confirmed execution is
+ * committed. The lock is what lets two instances run concurrently through a handover without
+ * ever executing the same transfer twice; the TTL bounds how long a transfer stays deferred
+ * when the lock holder dies with the broadcast outcome unknown. Sized to comfortably outlive
+ * any broadcast→confirmation window; a deferred sweep is recoverable, a double-spend is not.
+ */
+const PENDING_EXECUTION_EXPIRY = 900;
+
+/**
+ * Interval (seconds) between renewals of held pending-execution locks while the outgoing
+ * instance drains in-flight work. Locks are TTL'd from their acquisition, not from the
+ * handover, so a broadcast already in flight for most of the TTL would otherwise lose its lock
+ * mid-drain. Each renewal restores the full TTL; TTL/3 leaves two missed renewals of slack.
+ */
+const PENDING_LOCK_RENEWAL_INTERVAL = PENDING_EXECUTION_EXPIRY / 3;
+
+/**
+ * TTL (seconds) on the persisted committed-execution sets, refreshed on every write. Only
+ * relevant after a bot is decommissioned (live sets are rewritten constantly); must comfortably
+ * exceed the indexer's message redelivery horizon.
+ */
+const PERSISTED_SET_EXPIRY = 14 * 24 * 60 * 60;
+
+/**
  * Independent relayer bot which processes EIP-3009 signatures into deposits and corresponding fills.
  */
 export class DepositAddressHandler {
@@ -85,6 +125,15 @@ export class DepositAddressHandler {
   private _instanceCoordinator?: InstanceCoordinator;
   private initialized = false;
   private consecutiveHeartbeatFailures = 0;
+
+  /**
+   * True once a handover/shutdown has been observed — including during initialize() (SIGHUP or
+   * process disconnect while it boots). The entrypoint checks this and must not start polling
+   * from an already-ceded instance.
+   */
+  public get aborted(): boolean {
+    return this.abortController.signal.aborted;
+  }
 
   // instanceCoordinator is populated by initialize(); reads pre-init throw, writes go through the setter.
   private get instanceCoordinator(): InstanceCoordinator {
@@ -99,6 +148,19 @@ export class DepositAddressHandler {
   }
 
   private providersByChain: { [chainId: number]: Provider } = {};
+
+  /**
+   * Poll ticks currently in flight. On handover the outgoing instance must not exit while one of
+   * these may still be between broadcast and Redis persist — see drainInFlightWork().
+   */
+  private inFlightTicks: Set<Promise<unknown>> = new Set();
+
+  /**
+   * depositKeys whose pending-execution lock this instance currently holds — added on acquire,
+   * removed on every release path. A key whose submit outcome is unknown stays here (its lock is
+   * deliberately kept), so a drain can renew exactly the locks that guard possible broadcasts.
+   */
+  private heldPendingLocks: Set<string> = new Set();
 
   /** Per chainId: set of deposit keys already executed (like gasless depositNonces). */
   private observedExecutedDeposits: { [chainId: number]: Set<string> } = {};
@@ -197,7 +259,6 @@ export class DepositAddressHandler {
       this.observedExecutedWithdraws[chainId] = new Set<string>();
     });
 
-    // Establish bot instance and take over. First thing after handover: load persisted executed deposits from Redis.
     this.instanceCoordinator = new InstanceCoordinator(
       this.logger,
       this.redisCache,
@@ -205,112 +266,125 @@ export class DepositAddressHandler {
       this.config.runIdentifier,
       this.abortController
     );
-    await this.instanceCoordinator.initiateHandover();
 
-    await this._loadExecutedDepositsFromRedis();
-    await this._loadWithdrawnKeysFromRedis();
-    await this._loadSkippedWithdrawKeysFromRedis();
+    // Load state BEFORE taking the lease: staleness is harmless (the committed sets are re-read
+    // from Redis every poll tick), and ordering the lease last shrinks the window in which a
+    // SIGHUP/disconnect leaves this instance holding a lease it will never poll on — that would
+    // make a healthy predecessor cede for nothing, leaving no handler running until the next
+    // external restart.
+    this.executedDepositTxHashes = await this._loadPersistedSet(
+      this.getExecutedDepositsRedisKey(),
+      this.getLegacyExecutedDepositsRedisKey()
+    );
+    this.executedWithdrawKeys = await this._loadPersistedSet(
+      this.getWithdrawnKeysRedisKey(),
+      this.getLegacyWithdrawnKeysRedisKey()
+    );
+    this.terminallySkippedWithdrawKeys = await this._loadPersistedSet(
+      this.getSkippedWithdrawKeysRedisKey(),
+      this.getLegacySkippedWithdrawKeysRedisKey()
+    );
+    this.logger.debug({
+      at: "DepositAddressHandler#initialize",
+      message: "Loaded persisted execution state from Redis",
+      executedDeposits: this.executedDepositTxHashes.size,
+      executedWithdraws: this.executedWithdrawKeys.size,
+      terminallySkippedWithdraws: this.terminallySkippedWithdrawKeys.size,
+    });
+
+    // A shutdown observed during boot cedes WITHOUT taking the lease (the entrypoint checks
+    // `aborted` and skips polling); only the lease-write itself remains as an unavoidable
+    // sub-second window. Taking over is otherwise safe while the predecessor keeps draining
+    // concurrently — service is continuous, and replay safety does not depend on the drain:
+    // every fund-moving broadcast is guarded by the per-transfer pending-execution lock and a
+    // committed-set re-check under that lock (see preBroadcastCheckpoint).
+    if (this.abortController.signal.aborted) {
+      this.logger.warn({
+        at: "DepositAddressHandler#initialize",
+        message: "Shutdown observed during initialization; ceding without taking the instance lease.",
+      });
+      return;
+    }
+    await this.instanceCoordinator.initiateHandover();
 
     this.initialized = true;
   }
 
+  // The committed sets are native Redis sets (atomic per-member SADD/SREM) so two instances
+  // running concurrently through a handover can both write without lost updates — the previous
+  // whole-JSON-blob writes would clobber each other. The legacy (blob) keys are read once for
+  // migration; see _loadPersistedSet.
   private getExecutedDepositsRedisKey(): string {
+    return `deposit-address:executed:${this.config.botIdentifier}:v2`;
+  }
+
+  private getLegacyExecutedDepositsRedisKey(): string {
     return `deposit-address:executed:${this.config.botIdentifier}`;
   }
 
   private getWithdrawnKeysRedisKey(): string {
+    return `deposit-address:withdrawn-deposit-keys:${this.config.botIdentifier}:v2`;
+  }
+
+  private getLegacyWithdrawnKeysRedisKey(): string {
     return `deposit-address:withdrawn-deposit-keys:${this.config.botIdentifier}`;
   }
 
   private getSkippedWithdrawKeysRedisKey(): string {
+    return `deposit-address:skipped-withdraw-keys:${this.config.botIdentifier}:v2`;
+  }
+
+  private getLegacySkippedWithdrawKeysRedisKey(): string {
     return `deposit-address:skipped-withdraw-keys:${this.config.botIdentifier}`;
   }
 
-  /** Loads executed deposit tx hashes from Redis (e.g. after handover). */
-  private async _loadExecutedDepositsFromRedis(): Promise<void> {
+  /**
+   * Loads a persisted committed set (native Redis set under the v2 key), union-merging the
+   * legacy JSON-array key into it on EVERY boot — not only when the v2 set is empty. After a
+   * rollback, the previous build commits executions only to the legacy key while the v2 set
+   * (still populated, 14d TTL) sits stale; skipping the merge on re-upgrade would drop those
+   * legacy-only commits forever and make them replayable. The same holds for an interrupted
+   * first migration. The legacy key is left in place for rollback; any stale entries it re-seeds
+   * are pruned again within one poll.
+   */
+  private async _loadPersistedSet(redisKey: string, legacyRedisKey: string): Promise<Set<string>> {
     assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
     const { redisCache } = this;
-    const redisKey = this.getExecutedDepositsRedisKey();
-    const raw = await redisCache.get<string>(redisKey);
-    let arr: string[] = [];
+    const members = new Set(await redisCache.sMembers(redisKey));
+
+    const raw = await redisCache.get<string>(legacyRedisKey);
+    if (!raw) {
+      return members;
+    }
+    let legacyMembers: string[] = [];
     try {
-      if (raw) {
-        arr = parseJson.stringArray(raw);
-      }
+      legacyMembers = parseJson.stringArray(raw);
     } catch (err) {
       this.logger.error({
-        at: "DepositAddressHandler#_loadExecutedDepositsFromRedis",
-        message: "Failed to parse executed deposits from Redis, using empty set",
-        redisKey,
+        at: "DepositAddressHandler#_loadPersistedSet",
+        message: "Failed to parse legacy persisted set from Redis",
+        redisKey: legacyRedisKey,
         err: err instanceof Error ? err.message : String(err),
       });
-
       throw err;
     }
-    this.executedDepositTxHashes = new Set(arr);
-    this.logger.debug({
-      at: "DepositAddressHandler#_loadExecutedDepositsFromRedis",
-      message: "Loaded executed deposit tx hashes from Redis",
-      count: this.executedDepositTxHashes.size,
-    });
-  }
-
-  /** Loads executed refund-withdraw depositKeys from Redis (e.g. after handover). */
-  private async _loadWithdrawnKeysFromRedis(): Promise<void> {
-    assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
-    const { redisCache } = this;
-    const redisKey = this.getWithdrawnKeysRedisKey();
-    const raw = await redisCache.get<string>(redisKey);
-    let arr: string[] = [];
-    try {
-      if (raw) {
-        arr = parseJson.stringArray(raw);
-      }
-    } catch (err) {
-      this.logger.error({
-        at: "DepositAddressHandler#_loadWithdrawnKeysFromRedis",
-        message: "Failed to parse withdrawn deposit keys from Redis, using empty set",
+    const missing = legacyMembers.filter((member) => !members.has(member));
+    for (const member of missing) {
+      await redisCache.sAdd(redisKey, member);
+      members.add(member);
+    }
+    if (missing.length > 0) {
+      await redisCache.expire(redisKey, PERSISTED_SET_EXPIRY);
+      this.logger.debug({
+        at: "DepositAddressHandler#_loadPersistedSet",
+        message: "Merged legacy persisted-set members into the native Redis set",
+        legacyRedisKey,
         redisKey,
-        err: err instanceof Error ? err.message : String(err),
+        merged: missing.length,
+        total: members.size,
       });
-
-      throw err;
     }
-    this.executedWithdrawKeys = new Set(arr);
-    this.logger.debug({
-      at: "DepositAddressHandler#_loadWithdrawnKeysFromRedis",
-      message: "Loaded executed withdraw deposit keys from Redis",
-      count: this.executedWithdrawKeys.size,
-    });
-  }
-
-  /** Loads terminally-skipped (422) refund-withdraw depositKeys from Redis (e.g. after handover). */
-  private async _loadSkippedWithdrawKeysFromRedis(): Promise<void> {
-    assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
-    const { redisCache } = this;
-    const redisKey = this.getSkippedWithdrawKeysRedisKey();
-    const raw = await redisCache.get<string>(redisKey);
-    let arr: string[] = [];
-    try {
-      if (raw) {
-        arr = parseJson.stringArray(raw);
-      }
-    } catch (err) {
-      this.logger.error({
-        at: "DepositAddressHandler#_loadSkippedWithdrawKeysFromRedis",
-        message: "Failed to parse skipped withdraw keys from Redis, using empty set",
-        redisKey,
-        err: err instanceof Error ? err.message : String(err),
-      });
-
-      throw err;
-    }
-    this.terminallySkippedWithdrawKeys = new Set(arr);
-    this.logger.debug({
-      at: "DepositAddressHandler#_loadSkippedWithdrawKeysFromRedis",
-      message: "Loaded terminally-skipped withdraw deposit keys from Redis",
-      count: this.terminallySkippedWithdrawKeys.size,
-    });
+    return members;
   }
 
   /*
@@ -318,7 +392,7 @@ export class DepositAddressHandler {
    */
   public pollAndExecute(): void {
     scheduleTask(
-      () => this.evaluateDepositAddresses(),
+      () => this.trackTick(this.evaluateDepositAddresses()),
       this.config.indexerPollingInterval,
       this.abortController.signal,
       // A rejected poll skips the whole batch for that tick; without this log the failure is
@@ -371,40 +445,401 @@ export class DepositAddressHandler {
 
   /*
    * @notice Utility function which tells the relayer when a handoff has occurred.
-   * Calls the abort controller and settles this function's promise once a handoff is observed.
+   * Calls the abort controller once a handoff is observed, then drains in-flight executions —
+   * so a broadcast tx gets confirmed and committed to Redis rather than orphaned — while the
+   * successor is already running concurrently. The per-transfer pending-execution locks keep
+   * the successor off anything still draining here.
+   *
+   * The drain is two-phase. Past the expected window (HANDOVER_DRAIN_TIMEOUT) it warns for ops
+   * visibility but keeps waiting — up to one full pending-execution lock TTL — rather than
+   * returning: returning tears down this process's Redis clients under a tick that may sit
+   * between broadcast and commit, and a tx that confirms after that teardown leaves no committed
+   * record. Its lock then expires and the successor can replay the transfer against fresh funds
+   * (the 2026-07-20 incident's exact shape). The successor is already serving, so the only cost
+   * of lingering is an old process that lives a little longer.
+   *
+   * Held locks are renewed throughout the drain (immediately, then on an interval): each lock's
+   * TTL runs from ITS acquisition, not from the handover, so a broadcast already in flight for
+   * most of the TTL would otherwise lose its lock mid-drain — and the successor would acquire
+   * the expired key against a still-empty committed set and double-submit. The final renewal
+   * also leaves any unresolved lock a full TTL of successor deferral after this process exits.
    */
   public async waitForDisconnect(): Promise<void> {
     await this.instanceCoordinator.subscribe();
     this.abortController.abort();
+    await this.renewHeldPendingLocks();
+    const lockRenewal = new AbortController();
+    scheduleTask(() => this.renewHeldPendingLocks(), PENDING_LOCK_RENEWAL_INTERVAL, lockRenewal.signal);
+    try {
+      const drained = await this.drainInFlightWork(HANDOVER_DRAIN_TIMEOUT);
+      if (!drained) {
+        this.logger.warn({
+          at: "DepositAddressHandler#waitForDisconnect",
+          message:
+            "In-flight work did not settle within the expected drain window; holding Redis open up to the lock TTL so a late-confirming broadcast can still commit.",
+          inFlightTicks: this.inFlightTicks.size,
+          expectedDrainSeconds: HANDOVER_DRAIN_TIMEOUT,
+        });
+        const stillNotDrained = !(await this.drainInFlightWork(PENDING_EXECUTION_EXPIRY - HANDOVER_DRAIN_TIMEOUT));
+        if (stillNotDrained) {
+          // This should never happen — it means an RPC/API call has hung for a full lock TTL
+          // without settling. Exit rather than linger forever; the final renewal below keeps the
+          // successor deferred from any possible broadcast for one more TTL.
+          this.logger.error({
+            at: "DepositAddressHandler#waitForDisconnect",
+            message:
+              "In-flight work still unsettled after a full pending-execution lock TTL; exiting. Any broadcast in that work stays lock-deferred for one more TTL — reconcile manually.",
+            inFlightTicks: this.inFlightTicks.size,
+            totalWaitSeconds: PENDING_EXECUTION_EXPIRY,
+            notificationPath: "across-bot-error",
+          });
+        }
+      }
+    } finally {
+      lockRenewal.abort();
+      // One last renewal so whatever remains unresolved defers the successor for a full TTL
+      // from NOW, not from whenever the renewal interval last fired.
+      await this.renewHeldPendingLocks();
+    }
+  }
+
+  /** Registers a poll tick for handover draining. Returns a chained promise so scheduleTask's
+   * rejection handling still applies; the raw tick is what drainInFlightWork awaits. */
+  private trackTick(tick: Promise<unknown>): Promise<unknown> {
+    this.inFlightTicks.add(tick);
+    return tick.finally(() => this.inFlightTicks.delete(tick));
+  }
+
+  /**
+   * Waits (bounded) for in-flight poll ticks to settle after the abort signal fired, returning
+   * false on timeout. A tick that has broadcast a tx commits the executed member and releases
+   * its pending-execution lock as it settles; exiting before that leaves the transfer
+   * lock-deferred on the successor until the lock's TTL expires — and, worse, uncommitted if the
+   * tx confirms after this process's Redis clients are gone (see waitForDisconnect).
+   */
+  private async drainInFlightWork(timeoutSeconds: number): Promise<boolean> {
+    if (this.inFlightTicks.size === 0) {
+      return true;
+    }
+    this.logger.debug({
+      at: "DepositAddressHandler#drainInFlightWork",
+      message: "Draining in-flight poll ticks before ceding",
+      inFlightTicks: this.inFlightTicks.size,
+      timeoutSeconds,
+    });
+    let timedOut = false;
+    const timeoutScope = new AbortController();
+    await Promise.race([
+      Promise.allSettled([...this.inFlightTicks]),
+      abortableDelay(timeoutSeconds, timeoutScope.signal).then(() => (timedOut = !timeoutScope.signal.aborted)),
+    ]);
+    // Cancel the timeout timer: a plain delay would keep the event loop alive for the full
+    // timeout after a clean drain, holding up process exit on healthy handovers.
+    timeoutScope.abort();
+    if (!timedOut) {
+      this.logger.debug({
+        at: "DepositAddressHandler#drainInFlightWork",
+        message: "Drained all in-flight poll ticks",
+      });
+    }
+    return !timedOut;
   }
 
   private async evaluateDepositAddresses(): Promise<void> {
-    const depositMessages = await this._queryIndexerApi();
+    // Capture prune candidates before anything async: only a member already known when the
+    // indexer snapshot below is taken may be pruned against that snapshot. A member imported by
+    // this tick's refresh can have been committed by a concurrently-running instance AFTER the
+    // snapshot was taken — its absence from the snapshot proves nothing, and pruning it would
+    // re-open the replay window. It becomes prunable one tick later, when the snapshot postdates
+    // its commit.
+    const pruneCandidates = {
+      executedDeposits: new Set(this.executedDepositTxHashes),
+      executedWithdraws: new Set(this.executedWithdrawKeys),
+      terminallySkipped: new Set(this.terminallySkippedWithdrawKeys),
+    };
 
-    // We want to remove all executed deposits from the in-memory set if they are not returned by the indexer.
+    const depositMessages = await this._queryIndexerApi();
+    // A failed poll is not an empty snapshot: there is nothing to execute, and pruning against
+    // it would SREM every committed member from Redis — durably dropping replay protection on a
+    // transient indexer outage. Skip the whole tick.
+    if (!isDefined(depositMessages)) {
+      this.logger.warn({
+        at: "DepositAddressHandler#evaluateDepositAddresses",
+        message: "Indexer poll failed; skipping tick (no refresh, prune, or executions)",
+      });
+      return;
+    }
+
+    // Refresh the in-memory committed views from Redis so executions committed by a concurrently
+    // running instance (e.g. the predecessor draining through a handover) are respected within
+    // one tick. Union with in-memory: a locally committed entry whose Redis write failed must
+    // never be dropped.
+    await this._refreshPersistedSets();
+
+    // We want to remove all executed deposits from the sets if they are not returned by the indexer.
     // This is because the indexer will stop sending the deposit once it has been "expired" (internal TTL).
     // So there is no point of keeping them in Redis after Indexer API stops returning them.
+    // SREM is atomic per member, so concurrent pruning by two instances loses nothing.
     const refTxHashesFromIndexer = new Set(depositMessages.map((m) => m.erc20Transfer.transactionHash));
     const depositKeysFromIndexer = new Set(depositMessages.map((m) => getDepositKey(m)));
-    for (const tx of [...this.executedDepositTxHashes]) {
-      if (!refTxHashesFromIndexer.has(tx)) {
-        this.executedDepositTxHashes.delete(tx);
-      }
-    }
-    for (const key of [...this.executedWithdrawKeys]) {
-      if (!depositKeysFromIndexer.has(key)) {
-        this.executedWithdrawKeys.delete(key);
-      }
-    }
-    for (const key of [...this.terminallySkippedWithdrawKeys]) {
-      if (!depositKeysFromIndexer.has(key)) {
-        this.terminallySkippedWithdrawKeys.delete(key);
-      }
-    }
+    await this._prunePersistedSet(
+      this.executedDepositTxHashes,
+      pruneCandidates.executedDeposits,
+      refTxHashesFromIndexer,
+      this.getExecutedDepositsRedisKey()
+    );
+    await this._prunePersistedSet(
+      this.executedWithdrawKeys,
+      pruneCandidates.executedWithdraws,
+      depositKeysFromIndexer,
+      this.getWithdrawnKeysRedisKey()
+    );
+    await this._prunePersistedSet(
+      this.terminallySkippedWithdrawKeys,
+      pruneCandidates.terminallySkipped,
+      depositKeysFromIndexer,
+      this.getSkippedWithdrawKeysRedisKey()
+    );
 
     await forEachAsync(depositMessages, async (depositMessage) => {
+      // Once a handover/shutdown is observed, initiate no new executions — in-flight ones are
+      // drained by waitForDisconnect; anything not yet started belongs to the successor, which
+      // is already running.
+      if (this.abortController.signal.aborted) {
+        return;
+      }
       await this.processExecution(depositMessage);
     });
+  }
+
+  /** Merges the persisted committed sets from Redis into the in-memory views (union). */
+  private async _refreshPersistedSets(): Promise<void> {
+    assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
+    const { redisCache } = this;
+    for (const member of await redisCache.sMembers(this.getExecutedDepositsRedisKey())) {
+      this.executedDepositTxHashes.add(member);
+    }
+    for (const member of await redisCache.sMembers(this.getWithdrawnKeysRedisKey())) {
+      this.executedWithdrawKeys.add(member);
+    }
+    for (const member of await redisCache.sMembers(this.getSkippedWithdrawKeysRedisKey())) {
+      this.terminallySkippedWithdrawKeys.add(member);
+    }
+  }
+
+  /**
+   * Removes members the indexer no longer returns from both the in-memory set and Redis. Only
+   * `candidates` (the members known before the tick's indexer snapshot) are considered: a member
+   * that entered `memory` via this tick's refresh may postdate the snapshot, so its absence from
+   * it is meaningless — see evaluateDepositAddresses.
+   */
+  private async _prunePersistedSet(
+    memory: Set<string>,
+    candidates: Set<string>,
+    current: Set<string>,
+    redisKey: string
+  ): Promise<void> {
+    assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
+    const { redisCache } = this;
+    for (const member of candidates) {
+      if (!current.has(member)) {
+        memory.delete(member);
+        await redisCache.sRem(redisKey, member);
+      }
+    }
+  }
+
+  private getPendingExecutionRedisKey(depositKey: string): string {
+    return `deposit-address:pending-execution:${this.config.botIdentifier}:${depositKey}`;
+  }
+
+  /**
+   * Returns true when ANY instance — this one included — holds the pending-execution lock for
+   * this depositKey; a cheap early skip ahead of the balance/quote work. The authoritative
+   * exclusion is the atomic acquire in preBroadcastCheckpoint.
+   *
+   * Own locks defer too: the only way this instance re-encounters its own live lock is after an
+   * unknown-outcome submit (a "failed" sendAndConfirm may still have broadcast — see the
+   * failed-submit branches), and retrying while that tx may be pending in the mempool is how the
+   * same sweep gets submitted twice. Every known-not-broadcast failure path either never
+   * acquires the lock (it fails before the checkpoint) or releases it, so deferring on own locks
+   * stalls nothing legitimate.
+   */
+  private async hasPendingExecution(depositKey: string): Promise<boolean> {
+    assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
+    const owner = await this.redisCache.get<string>(this.getPendingExecutionRedisKey(depositKey));
+    return isDefined(owner);
+  }
+
+  /**
+   * Releases this instance's pending-execution lock after the confirmed execution has been
+   * committed to the persisted set. Token-guarded (never deletes another instance's lock) and
+   * best-effort: on failure the lock expires via its TTL. Never call this after a failed
+   * submit — a "failed" sendAndConfirm may still have broadcast (confirmation failure), so the
+   * lock must outlive it.
+   */
+  private async releasePendingExecution(depositKey: string): Promise<void> {
+    assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
+    this.heldPendingLocks.delete(depositKey);
+    try {
+      await this.redisCache.releaseLock(this.getPendingExecutionRedisKey(depositKey), this.config.runIdentifier);
+    } catch (err) {
+      this.logger.warn({
+        at: "DepositAddressHandler#releasePendingExecution",
+        message: "Failed to release pending-execution lock; it will expire via TTL",
+        depositKey,
+        err: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  /**
+   * Renews (token-guarded, best-effort) every pending-execution lock this instance still holds,
+   * restoring the full TTL. Only invoked while draining through a handover: locks are TTL'd from
+   * their acquisition, so a broadcast already in flight for most of the TTL would otherwise lose
+   * its lock mid-drain — the successor then acquires the expired key against a still-empty
+   * committed set and can double-submit the sweep. In steady state the original TTL comfortably
+   * outlives a broadcast→confirmation window, so no renewal runs.
+   */
+  private async renewHeldPendingLocks(): Promise<void> {
+    assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
+    const { redisCache } = this;
+    const ttlMs = PENDING_EXECUTION_EXPIRY * 1000;
+    for (const depositKey of [...this.heldPendingLocks]) {
+      try {
+        await redisCache.renewLock(this.getPendingExecutionRedisKey(depositKey), this.config.runIdentifier, ttlMs);
+      } catch (err) {
+        this.logger.warn({
+          at: "DepositAddressHandler#renewHeldPendingLocks",
+          message: "Failed to renew held pending-execution lock; it keeps whatever TTL remains",
+          depositKey,
+          err: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+  }
+
+  /**
+   * Guards a fund-moving broadcast so at most one instance can be executing a given transfer at
+   * any time, even while two instances run concurrently through a handover:
+   *   1. Bail when a handover/shutdown was observed mid-message — the successor is already
+   *      running and re-evaluates the transfer fresh.
+   *   2. Atomically acquire the transfer's pending-execution lock (SET NX). ANY existing lock
+   *      defers the transfer — a foreign one means the other instance may have a broadcast in
+   *      flight; an own one only survives an unknown-outcome submit, whose tx may equally still
+   *      land (retrying against it is how the same sweep gets submitted twice). The TTL bounds
+   *      the deferral.
+   *   3. Re-check the committed set under the lock: the other instance may have committed and
+   *      released between this tick's refresh and now.
+   *   4. Re-check the abort signal after the Redis round-trips: a handover/shutdown can land
+   *      while the acquire is pending, and the process may already be past its drain wait.
+   * MUST be awaited immediately before every fund-moving broadcast: if this instance then dies
+   * before committing, the held lock is what stands between the successor and a replayed
+   * execution. Returns false when the caller must NOT broadcast; fails closed on Redis errors.
+   */
+  private async preBroadcastCheckpoint(
+    depositKey: string,
+    committedSetKey: string,
+    committedMember: string,
+    at: string
+  ): Promise<boolean> {
+    assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
+    const { redisCache } = this;
+    if (this.abortController.signal.aborted) {
+      this.logger.debug({
+        at,
+        message: "Skipping broadcast: handover/shutdown observed, leaving execution to the successor",
+        depositKey,
+      });
+      return false;
+    }
+    const pendingKey = this.getPendingExecutionRedisKey(depositKey);
+    const { runIdentifier } = this.config;
+    const ttlMs = PENDING_EXECUTION_EXPIRY * 1000;
+    try {
+      // SET NX only — deliberately NO own-token renew: an own lock that still exists here stems
+      // from an unknown-outcome submit and must defer like any other (see hasPendingExecution).
+      const acquired = await redisCache.acquireLock(pendingKey, runIdentifier, ttlMs);
+      if (!acquired) {
+        this.logger.debug({
+          at,
+          message: "Skipping broadcast: pending-execution lock already held (foreign instance, or own unknown-outcome submit)",
+          depositKey,
+        });
+        return false;
+      }
+      this.heldPendingLocks.add(depositKey);
+      if (await redisCache.sIsMember(committedSetKey, committedMember)) {
+        this.logger.debug({
+          at,
+          message: "Skipping broadcast: transfer already committed by another instance",
+          depositKey,
+          committedMember,
+        });
+        this.heldPendingLocks.delete(depositKey);
+        await redisCache.releaseLock(pendingKey, runIdentifier);
+        return false;
+      }
+      // Re-check after the Redis round-trips: an abort that lands while the acquire/re-check is
+      // pending must not proceed — the drain wait may have already timed out and the process may
+      // be tearing down, so a broadcast now risks dying between broadcast and commit (an
+      // untracked execution, the exact replay window the lock exists to close). Nothing was
+      // broadcast, so releasing the just-acquired lock is safe and spares the successor the TTL
+      // defer.
+      if (this.abortController.signal.aborted) {
+        this.heldPendingLocks.delete(depositKey);
+        await redisCache.releaseLock(pendingKey, runIdentifier);
+        this.logger.debug({
+          at,
+          message: "Skipping broadcast: handover/shutdown observed while acquiring the pending-execution lock",
+          depositKey,
+        });
+        return false;
+      }
+      return true;
+    } catch (err) {
+      this.logger.warn({
+        at,
+        message: "Skipping broadcast: pre-broadcast checkpoint failed",
+        depositKey,
+        err: err instanceof Error ? err.message : String(err),
+      });
+      return false;
+    }
+  }
+
+  /**
+   * Thin wrapper over the submit/confirm pipeline (mirrors sendAndConfirmTransaction) so unit
+   * tests can stub the broadcast — and so failures classify. Pre-flight simulation failures
+   * throw before anything is signed or sent, so a caller holding the pending-execution lock may
+   * safely release it and keep the fast retry path (`mayHaveBroadcast: false`). Everything past
+   * simulation — a submit/dispatch throw, or a confirmation failure — may have reached the
+   * network and reports `mayHaveBroadcast: true`. Classification matches the simulation error
+   * message from TransactionUtils; if that message ever changes upstream, this degrades in the
+   * safe direction (a no-broadcast failure gets deferred, never the reverse).
+   */
+  protected async sendAndConfirm(
+    tx: AugmentedTransaction,
+    useDispatcher: boolean
+  ): Promise<{ receipt: TransactionReceipt | undefined; mayHaveBroadcast: boolean }> {
+    const txWithConfirmation: AugmentedTransaction = { ...tx, ensureConfirmation: true };
+    let txResponse: TransactionResponse | undefined;
+    try {
+      txResponse = useDispatcher
+        ? await dispatchTransaction(txWithConfirmation, this.transactionClient)
+        : await submitTransaction(txWithConfirmation, this.transactionClient);
+    } catch (err) {
+      const knownNoBroadcast = err instanceof Error && err.message.startsWith("Failed to simulate");
+      return { receipt: undefined, mayHaveBroadcast: !knownNoBroadcast };
+    }
+    if (!isDefined(txResponse)) {
+      return { receipt: undefined, mayHaveBroadcast: true };
+    }
+    try {
+      return { receipt: await txResponse.wait(), mayHaveBroadcast: true };
+    } catch {
+      return { receipt: undefined, mayHaveBroadcast: true };
+    }
   }
 
   /**
@@ -517,6 +952,19 @@ export class DepositAddressHandler {
       return;
     }
 
+    // Defer while any instance holds this transfer's pending-execution lock — a foreign one
+    // (crashed, or still draining a broadcast) or our own left by an unknown-outcome submit; the
+    // lock expires via TTL if its owner never resolves it.
+    if (await this.hasPendingExecution(depositKey)) {
+      this.logger.debug({
+        at: "DepositAddressHandler#initiateWithdraw",
+        message: "Skipping withdraw: pending-execution lock held (foreign instance, or own unknown-outcome submit)",
+        refTxHash,
+        depositKey,
+      });
+      return;
+    }
+
     if (this.observedExecutedWithdraws[chainId]?.has(depositKey)) {
       return;
     }
@@ -600,11 +1048,30 @@ export class DepositAddressHandler {
         )} (classification: ${erc20Transfer.transferClassification}, bundledDeploy: ${signed.bundledDeploy})`,
       };
 
-      const receipt = await sendAndConfirmTransaction(withdrawTx, this.transactionClient, useDispatcher);
+      if (
+        !(await this.preBroadcastCheckpoint(
+          depositKey,
+          this.getWithdrawnKeysRedisKey(),
+          depositKey,
+          "DepositAddressHandler#initiateWithdraw"
+        ))
+      ) {
+        return;
+      }
+      const { receipt, mayHaveBroadcast } = await this.sendAndConfirm(withdrawTx, useDispatcher);
       if (!isDefined(receipt)) {
+        if (!mayHaveBroadcast) {
+          // Pre-flight simulation failed before anything was signed or sent: release the lock so
+          // the normal fast retry path applies on the next poll.
+          await this.releasePendingExecution(depositKey);
+        }
+        // Otherwise the lock is intentionally kept: the tx may still have broadcast (confirmation
+        // failure), so let the TTL expire it rather than invite a replay — it defers ALL retries,
+        // this instance's included, until the outcome window has passed.
         this.logger.warn({
           at: "DepositAddressHandler#initiateWithdraw",
           message: "Failed to submit withdraw tx",
+          mayHaveBroadcast,
           depositKey,
           refTxHash,
           depositAddress,
@@ -614,10 +1081,17 @@ export class DepositAddressHandler {
       }
 
       // The withdraw is on-chain; keep the in-flight lock and never re-attempt this depositKey,
-      // even if the Redis persist below throws (handover may miss it, but a double-send is worse).
+      // even if the Redis commit below throws (the held pending-execution lock then keeps other
+      // instances off it until its TTL — a double-send is worse).
       this.executedWithdrawKeys.add(depositKey);
       withdrawCommitted = true;
-      await this._persistWithdrawnKeysRedis();
+      await this._persistCommitted(
+        this.getWithdrawnKeysRedisKey(),
+        this.getLegacyWithdrawnKeysRedisKey(),
+        this.executedWithdrawKeys,
+        depositKey
+      );
+      await this.releasePendingExecution(depositKey);
       await this._publishWithdrawExecuted(receipt, depositMessage);
     } finally {
       if (!withdrawCommitted) {
@@ -673,30 +1147,29 @@ export class DepositAddressHandler {
   }
 
   /**
-   * Overwrites Redis key with the full executedDepositTxHashes set (single SET; value is JSON array).
-   * Called at start of each poll (after filtering) and after each successful execute.
+   * Commits a single member to a persisted committed set. SADD is atomic per member, so
+   * concurrent commits from two instances never lose an entry (unlike the previous whole-blob
+   * SET). The key's TTL is refreshed on every commit.
+   *
+   * Rollback safety during the v2 rollout: a previous build reads only the legacy blob key, so
+   * an execution recorded only in the v2 set would be replayable after a rollback. Mirror the
+   * (post-refresh, union-merged) in-memory view into the legacy key on every commit. The mirror
+   * keeps the old last-writer-wins semantics, so a concurrent-writer race can drop the OTHER
+   * instance's newest member from the blob — but never from the authoritative v2 set; accepted
+   * for the rollout window. TODO: drop the mirror (and `memory`/`legacyRedisKey` params) once
+   * the v2 rollout has settled past the rollback horizon.
    */
-  private async _persistExecutedDepositsRedis(): Promise<void> {
+  private async _persistCommitted(
+    redisKey: string,
+    legacyRedisKey: string,
+    memory: Set<string>,
+    member: string
+  ): Promise<void> {
     assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
     const { redisCache } = this;
-    const redisKey = this.getExecutedDepositsRedisKey();
-    await redisCache.set(redisKey, JSON.stringify([...this.executedDepositTxHashes]));
-  }
-
-  /** Same pattern as `_persistExecutedDepositsRedis` but for refund-withdraw deposit keys. */
-  private async _persistWithdrawnKeysRedis(): Promise<void> {
-    assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
-    const { redisCache } = this;
-    const redisKey = this.getWithdrawnKeysRedisKey();
-    await redisCache.set(redisKey, JSON.stringify([...this.executedWithdrawKeys]));
-  }
-
-  /** Same pattern as `_persistWithdrawnKeysRedis` but for terminally-skipped (422) withdraw keys. */
-  private async _persistSkippedWithdrawKeysRedis(): Promise<void> {
-    assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
-    const { redisCache } = this;
-    const redisKey = this.getSkippedWithdrawKeysRedisKey();
-    await redisCache.set(redisKey, JSON.stringify([...this.terminallySkippedWithdrawKeys]));
+    await redisCache.sAdd(redisKey, member);
+    await redisCache.expire(redisKey, PERSISTED_SET_EXPIRY);
+    await redisCache.set(legacyRedisKey, JSON.stringify([...memory]), PERSISTED_SET_EXPIRY);
   }
 
   /**
@@ -861,6 +1334,19 @@ export class DepositAddressHandler {
       return;
     }
 
+    // Defer while any instance holds this transfer's pending-execution lock — a foreign one
+    // (crashed, or still draining a broadcast) or our own left by an unknown-outcome submit; the
+    // lock expires via TTL if its owner never resolves it.
+    if (await this.hasPendingExecution(depositKey)) {
+      this.logger.debug({
+        at: "DepositAddressHandler#initiateDeposit",
+        message: "Skipping deposit: pending-execution lock held (foreign instance, or own unknown-outcome submit)",
+        refTxHash,
+        depositKey,
+      });
+      return;
+    }
+
     if (this.observedExecutedDeposits[originChainId]?.has(depositKey)) {
       return;
     }
@@ -926,7 +1412,9 @@ export class DepositAddressHandler {
         )}`,
       };
 
-      const deployReceipt = await sendAndConfirmTransaction(deployTx, this.transactionClient, useDispatcher);
+      // No pending-execution marker for the deploy: it moves no funds and a replay is guarded
+      // by the isContractDeployed check (at worst a reverted no-op).
+      const { receipt: deployReceipt } = await this.sendAndConfirm(deployTx, useDispatcher);
       if (!isDefined(deployReceipt)) {
         this.observedExecutedDeposits[originChainId].delete(depositKey);
         this.logger.warn({
@@ -971,12 +1459,32 @@ export class DepositAddressHandler {
       )} (cctpExecutionFee: ${cctpExecutionFee}, spokePoolExecutionFee: ${spokePoolExecutionFee})`,
     };
 
-    const depositReceipt = await sendAndConfirmTransaction(executeTx, this.transactionClient, useDispatcher);
+    if (
+      !(await this.preBroadcastCheckpoint(
+        depositKey,
+        this.getExecutedDepositsRedisKey(),
+        refTxHash,
+        "DepositAddressHandler#initiateDeposit"
+      ))
+    ) {
+      this.observedExecutedDeposits[originChainId].delete(depositKey);
+      return;
+    }
+    const { receipt: depositReceipt, mayHaveBroadcast } = await this.sendAndConfirm(executeTx, useDispatcher);
 
     if (!depositReceipt) {
+      if (!mayHaveBroadcast) {
+        // Pre-flight simulation failed before anything was signed or sent: release the lock so
+        // the normal fast retry path applies on the next poll.
+        await this.releasePendingExecution(depositKey);
+      }
+      // Otherwise the lock is intentionally kept: the tx may still have broadcast (confirmation
+      // failure), so let the TTL expire it rather than invite a replay — it defers ALL retries,
+      // this instance's included, until the outcome window has passed.
       this.logger.warn({
         at: "DepositAddressHandler#initiateDeposit",
         message: "Failed to submit execute tx",
+        mayHaveBroadcast,
         depositKey,
         executeTx: {
           ...executeTx,
@@ -987,9 +1495,15 @@ export class DepositAddressHandler {
       return;
     }
 
-    // Persist full set to Redis immediately so handover cannot miss this execute.
+    // Commit to Redis immediately so a concurrently-running instance cannot miss this execute.
     this.executedDepositTxHashes.add(refTxHash);
-    await this._persistExecutedDepositsRedis();
+    await this._persistCommitted(
+      this.getExecutedDepositsRedisKey(),
+      this.getLegacyExecutedDepositsRedisKey(),
+      this.executedDepositTxHashes,
+      refTxHash
+    );
+    await this.releasePendingExecution(depositKey);
   }
 
   /**
@@ -1016,6 +1530,19 @@ export class DepositAddressHandler {
       this.logger.debug({
         at: "DepositAddressHandler#initiateDepositV3",
         message: "Skipping already executed deposit (found in Redis)",
+        refTxHash,
+        depositKey,
+      });
+      return;
+    }
+
+    // Defer while any instance holds this transfer's pending-execution lock — a foreign one
+    // (crashed, or still draining a broadcast) or our own left by an unknown-outcome submit; the
+    // lock expires via TTL if its owner never resolves it.
+    if (await this.hasPendingExecution(depositKey)) {
+      this.logger.debug({
+        at: "DepositAddressHandler#initiateDepositV3",
+        message: "Skipping deposit: pending-execution lock held (foreign instance, or own unknown-outcome submit)",
         refTxHash,
         depositKey,
       });
@@ -1108,11 +1635,30 @@ export class DepositAddressHandler {
         )}, using deposit address ${blockExplorerLink(depositAddress, originChainId)}`,
       };
 
-      const depositReceipt = await sendAndConfirmTransaction(executeTx, this.transactionClient, useDispatcher);
+      if (
+        !(await this.preBroadcastCheckpoint(
+          depositKey,
+          this.getExecutedDepositsRedisKey(),
+          refTxHash,
+          "DepositAddressHandler#initiateDepositV3"
+        ))
+      ) {
+        return;
+      }
+      const { receipt: depositReceipt, mayHaveBroadcast } = await this.sendAndConfirm(executeTx, useDispatcher);
       if (!isDefined(depositReceipt)) {
+        if (!mayHaveBroadcast) {
+          // Pre-flight simulation failed before anything was signed or sent: release the lock so
+          // the normal fast retry path applies on the next poll.
+          await this.releasePendingExecution(depositKey);
+        }
+        // Otherwise the lock is intentionally kept: the tx may still have broadcast (confirmation
+        // failure), so let the TTL expire it rather than invite a replay — it defers ALL retries,
+        // this instance's included, until the outcome window has passed.
         this.logger.warn({
           at: "DepositAddressHandler#initiateDepositV3",
           message: "Failed to submit execute tx",
+          mayHaveBroadcast,
           depositKey,
           executeTx: {
             ...executeTx,
@@ -1122,11 +1668,17 @@ export class DepositAddressHandler {
         return;
       }
 
-      // The execute is on-chain; keep the in-flight lock and persist to Redis immediately so
-      // handover cannot miss this execute.
+      // The execute is on-chain; keep the in-flight lock and commit to Redis immediately so a
+      // concurrently-running instance cannot miss this execute.
       this.executedDepositTxHashes.add(refTxHash);
       executeCommitted = true;
-      await this._persistExecutedDepositsRedis();
+      await this._persistCommitted(
+        this.getExecutedDepositsRedisKey(),
+        this.getLegacyExecutedDepositsRedisKey(),
+        this.executedDepositTxHashes,
+        refTxHash
+      );
+      await this.releasePendingExecution(depositKey);
       await this._publishDepositExecuted(depositReceipt, depositMessage);
     } finally {
       if (!executeCommitted) {
@@ -1308,6 +1860,19 @@ export class DepositAddressHandler {
       return;
     }
 
+    // Defer while any instance holds this transfer's pending-execution lock — a foreign one
+    // (crashed, or still draining a broadcast) or our own left by an unknown-outcome submit; the
+    // lock expires via TTL if its owner never resolves it.
+    if (await this.hasPendingExecution(depositKey)) {
+      this.logger.debug({
+        at: "DepositAddressHandler#initiateWithdrawV3",
+        message: "Skipping withdraw: pending-execution lock held (foreign instance, or own unknown-outcome submit)",
+        refTxHash,
+        depositKey,
+      });
+      return;
+    }
+
     if (this.observedExecutedWithdraws[chainId]?.has(depositKey)) {
       return;
     }
@@ -1430,11 +1995,30 @@ export class DepositAddressHandler {
         }, bundledDeploy: ${signed.bundledDeploy})`,
       };
 
-      const receipt = await sendAndConfirmTransaction(withdrawTx, this.transactionClient, useDispatcher);
+      if (
+        !(await this.preBroadcastCheckpoint(
+          depositKey,
+          this.getWithdrawnKeysRedisKey(),
+          depositKey,
+          "DepositAddressHandler#initiateWithdrawV3"
+        ))
+      ) {
+        return;
+      }
+      const { receipt, mayHaveBroadcast } = await this.sendAndConfirm(withdrawTx, useDispatcher);
       if (!isDefined(receipt)) {
+        if (!mayHaveBroadcast) {
+          // Pre-flight simulation failed before anything was signed or sent: release the lock so
+          // the normal fast retry path applies on the next poll.
+          await this.releasePendingExecution(depositKey);
+        }
+        // Otherwise the lock is intentionally kept: the tx may still have broadcast (confirmation
+        // failure), so let the TTL expire it rather than invite a replay — it defers ALL retries,
+        // this instance's included, until the outcome window has passed.
         this.logger.warn({
           at: "DepositAddressHandler#initiateWithdrawV3",
           message: "Failed to submit withdraw tx",
+          mayHaveBroadcast,
           depositKey,
           refTxHash,
           depositAddress,
@@ -1444,10 +2028,17 @@ export class DepositAddressHandler {
       }
 
       // The withdraw is on-chain; keep the in-flight lock and never re-attempt this depositKey,
-      // even if the Redis persist below throws (handover may miss it, but a double-send is worse).
+      // even if the Redis commit below throws (the held pending-execution lock then keeps other
+      // instances off it until its TTL — a double-send is worse).
       this.executedWithdrawKeys.add(depositKey);
       withdrawCommitted = true;
-      await this._persistWithdrawnKeysRedis();
+      await this._persistCommitted(
+        this.getWithdrawnKeysRedisKey(),
+        this.getLegacyWithdrawnKeysRedisKey(),
+        this.executedWithdrawKeys,
+        depositKey
+      );
+      await this.releasePendingExecution(depositKey);
       await this._publishWithdrawExecuted(receipt, depositMessage);
     } finally {
       if (!withdrawCommitted) {
@@ -1491,7 +2082,12 @@ export class DepositAddressHandler {
       // unpriceable. Persist the skip so it survives handover and is not re-attempted on later polls.
       if (isHttpError(err) && err.status === 422) {
         this.terminallySkippedWithdrawKeys.add(depositKey);
-        await this._persistSkippedWithdrawKeysRedis();
+        await this._persistCommitted(
+          this.getSkippedWithdrawKeysRedisKey(),
+          this.getLegacySkippedWithdrawKeysRedisKey(),
+          this.terminallySkippedWithdrawKeys,
+          depositKey
+        );
         this.logger.warn({
           at: "DepositAddressHandler#_getSignedWithdrawV3",
           message: "Skipping withdraw permanently: quote-api returned terminal 422",
@@ -1541,8 +2137,11 @@ export class DepositAddressHandler {
 
   /*
    * @notice Queries the Indexer API for all pending deposit addresses transactions. By default, do not retry since this endpoing is being polled.
+   * Returns undefined (NOT an empty array) when the poll fails after retries: the caller must be
+   * able to tell "the indexer returned nothing" from "the indexer was unreachable" — pruning the
+   * committed sets against the latter would delete every replay guard.
    */
-  private async _queryIndexerApi(retriesRemaining = 3): Promise<AnyDepositAddressMessage[]> {
+  private async _queryIndexerApi(retriesRemaining = 3): Promise<AnyDepositAddressMessage[] | undefined> {
     let apiResponseData: AnyDepositAddressMessage[] | undefined = undefined;
     try {
       apiResponseData = await this.indexerApi.get<AnyDepositAddressMessage[]>(this.config.indexerApiEndpoint, {});
@@ -1550,7 +2149,7 @@ export class DepositAddressHandler {
       // Error log should have been emitted in IndexerApiClient.
     }
     if (!isDefined(apiResponseData)) {
-      return retriesRemaining > 0 ? this._queryIndexerApi(--retriesRemaining) : [];
+      return retriesRemaining > 0 ? this._queryIndexerApi(--retriesRemaining) : undefined;
     }
     // Drop unsupported message versions BEFORE normalization. Unsupported payloads (e.g. v2) may
     // not carry the v1 shape (routeParams/erc20Transfer/counterfactualMaterials), and

@@ -18,13 +18,82 @@ The deposit-address handler polls the across-indexer for ERC-20 transfers that h
    per request), but every 10th consecutive failure — including non-2xx responses — emits a
    warning log to aid diagnosis when the alert fires. Pings stop on handover/shutdown with the
    rest of the handler.
-5. Handover via Redis (`InstanceCoordinator`) — exits cleanly when another instance takes over.
+5. Handover via Redis (`InstanceCoordinator`) — exits cleanly when another instance takes over,
+   after draining in-flight executions (see "Concurrent handover" below).
 
 Poll-loop failures are never silent: `pollAndExecute` passes an error handler to `scheduleTask`, so
 a rejected `evaluateDepositAddresses` tick (which skips that whole batch) is logged at error level
 instead of being swallowed by the scheduler.
 
 Cleanup in the `finally` block closes the Pub/Sub publisher and Redis clients.
+
+## Concurrent handover (continuous service, no replayed executions)
+
+Instances rotate every few minutes. The incoming instance starts polling the moment it takes the
+Redis lease — it does **not** wait for its predecessor — so sweep service is continuous through a
+rotation. The outgoing instance keeps draining its in-flight executions concurrently. Two
+instances therefore overlap by design, and replay safety is enforced per transfer rather than by
+serializing the handover (the danger being a double-spend: the 2026-07-20 duplicate-sweep
+incident replayed an orphaned 10 USDC sweep against the next 20 USDC deposit and deadlocked the
+remainder at the deposit address).
+
+Three mechanisms make the overlap safe:
+
+1. **Per-transfer pending-execution locks.** Immediately before every fund-moving broadcast the
+   handler atomically acquires `deposit-address:pending-execution:<botIdentifier>:<depositKey>`
+   (SET NX; value: the acquiring instance's run identifier, TTL `PENDING_EXECUTION_EXPIRY` =
+   15 min) and refuses to broadcast without it. **Any** existing lock defers the transfer — a
+   foreign one means the other instance may have a broadcast in flight, and an own one only
+   survives an unknown-outcome submit (a "failed" `sendAndConfirm` may still have broadcast), so
+   retrying against it could submit the same sweep twice while the first tx sits in the mempool.
+   Known-no-broadcast failures keep their fast retry path: most fail before the checkpoint ever
+   acquires the lock, and a pre-flight simulation failure inside the submit pipeline (which
+   throws before anything is signed or sent) releases the just-acquired lock immediately —
+   classification errs toward deferral, never toward fast-retrying a possible broadcast. Under the lock, the handler re-checks the committed
+   set (`SISMEMBER`)
+   before broadcasting — catching an execution the other instance committed and released between
+   this tick's refresh and now — and re-checks the abort signal, since a handover/shutdown can
+   land while the acquire round-trip is pending (nothing was broadcast, so the just-acquired lock
+   is released rather than left to defer the successor for the full TTL). The lock is released
+   only after the confirmed execution is
+   committed; after a failed submit it is intentionally left to expire via TTL. Consequence: if
+   an instance dies mid-flight (or a submit outcome is unknown), the transfer is deferred for up
+   to 15 minutes instead of risking a replay — a deferred sweep
+   is recoverable, a double-spend is not. The deploy tx on the v1 deposit path carries no lock:
+   it moves no funds and replays are guarded by the `isContractDeployed` check.
+2. **Concurrency-safe committed sets.** The executed/withdrawn/terminal-skip sets are native
+   Redis sets written with per-member `SADD`/`SREM` (atomic — two writers never clobber each
+   other, unlike the previous whole-JSON-blob `SET`s), committed immediately after each confirmed
+   execution, and re-read (union-merged) into memory at the start of every poll tick so one
+   instance's commits reach the other within a tick. Pruning (once the indexer stops returning a
+   message) is snapshot-disciplined: only members already known **before** the tick's indexer
+   snapshot are prune candidates — a member imported by the tick's own refresh may have been
+   committed after the snapshot, so its absence from it proves nothing; it becomes prunable one
+   tick later. A failed indexer poll skips the tick entirely (no refresh, prune, or executions):
+   an outage must never be mistaken for an empty snapshot, which would `SREM` every replay guard.
+   For rollback safety during the v2 rollout, every commit also mirrors the in-memory view into
+   the legacy JSON-blob key that previous builds read; the mirror is transitional and goes away
+   once the rollout settles.
+3. **Drain on the way out.** On observing a handover (or SIGHUP), the outgoing instance aborts
+   new work — the poll loop initiates no new executions once the abort signal fires, and a
+   pre-broadcast abort check bails mid-message — then waits for in-flight poll ticks to settle,
+   so a broadcast tx gets confirmed and committed rather than orphaned. The wait is two-phase:
+   past the expected window (`HANDOVER_DRAIN_TIMEOUT`, 90s) it warns but keeps the process — and
+   its Redis clients — alive up to one full pending-execution lock TTL, because exiting would
+   tear Redis down under a tick sitting between broadcast and commit, and a tx confirming after
+   that leaves no committed record for the successor once the lock expires. Held locks are
+   renewed throughout the drain (immediately, then every TTL/3): each lock's TTL runs from its
+   acquisition, not from the handover, so a broadcast already in flight for most of the TTL
+   would otherwise lose its lock mid-drain; the final renewal on the way out also leaves any
+   unresolved lock a full TTL of successor deferral. The successor is already
+   serving, so a lingering old process costs nothing. Its locks keep the successor off those
+   transfers while it drains; if it dies
+   instead, the lock TTL bounds the deferral. A shutdown observed while still inside
+   `initialize()` cedes before polling ever starts (the entrypoint checks `relayer.aborted`, and
+   `scheduleTask` refuses to schedule on an already-aborted signal) — and cedes **without taking
+   the instance lease**, which is deliberately the last step of `initialize()`: an aborted boot
+   that grabbed the lease would make a healthy predecessor exit for nothing, leaving no handler
+   running until the next external restart.
 
 ## Indexer message classification
 
@@ -180,13 +249,17 @@ neither validates nor skips: the deposit address is already deployed from explic
 
 ## Redis persistence
 
-Three sets persist across runs so handover does not double-spend, double-refund, or re-attempt a terminally-skipped refund:
+Three sets persist across runs so handover does not double-spend, double-refund, or re-attempt a terminally-skipped refund. They are **native Redis sets** (per-member `SADD`/`SREM`, safe for two concurrent writer instances):
 
-- `deposit-address:executed:<botIdentifier>` — set of `erc20Transfer.transactionHash` for successfully executed deposits.
-- `deposit-address:withdrawn-deposit-keys:<botIdentifier>` — set of `depositKey` (`depositAddress:transactionHash`) for successfully executed refund withdraws.
-- `deposit-address:skipped-withdraw-keys:<botIdentifier>` — set of `depositKey` for v3 refund withdraws the quote-api rejected with a terminal 422 (`GAS_EXCEEDS_REFUND` / `UNPRICEABLE_REFUND_TOKEN`); never re-attempted.
+- `deposit-address:executed:<botIdentifier>:v2` — set of `erc20Transfer.transactionHash` for successfully executed deposits.
+- `deposit-address:withdrawn-deposit-keys:<botIdentifier>:v2` — set of `depositKey` (`depositAddress:transactionHash`) for successfully executed refund withdraws.
+- `deposit-address:skipped-withdraw-keys:<botIdentifier>:v2` — set of `depositKey` for v3 refund withdraws the quote-api rejected with a terminal 422 (`GAS_EXCEEDS_REFUND` / `UNPRICEABLE_REFUND_TOKEN`); never re-attempted.
 
-On each poll, entries whose source messages are no longer returned by the indexer are pruned — the indexer has its own TTL and stops returning expired messages.
+On every boot, the legacy JSON-blob key of the same name without the suffix (pre-migration format) is union-merged into the `:v2` set — not only when the set is empty: after a rollback, the legacy build commits only to the blob, and those members would otherwise be lost on re-upgrade. The legacy key is left in place for rollback (each commit mirrors the in-memory view into it) and expires via its own TTL. Set keys refresh a 14-day TTL (`PERSISTED_SET_EXPIRY`) on every commit.
+
+On each poll the sets are re-read from Redis (union-merged into memory, so a concurrent instance's commits are picked up within a tick) and entries whose source messages are no longer returned by the indexer are pruned from memory and Redis — the indexer has its own TTL and stops returning expired messages.
+
+Additionally, per-transfer `deposit-address:pending-execution:<botIdentifier>:<depositKey>` lock keys (self-expiring, no pruning needed) serialize possibly-in-flight broadcasts across instances — see "Concurrent handover" above.
 
 ## Refund-withdraw flow (high level)
 

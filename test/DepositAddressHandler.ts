@@ -484,6 +484,8 @@ describe("DepositAddressHandler.initiateDepositV3 integratorId guard", function 
     (handler as unknown as { observedExecutedDeposits: Record<number, Set<string>> }).observedExecutedDeposits = {
       [originChainId]: new Set<string>(),
     };
+    // The pending-execution marker check reads Redis before the guard; no marker present.
+    (handler as unknown as { redisCache: unknown }).redisCache = { get: sinon.stub().resolves(null) };
   });
 
   afterEach(() => sinon.restore());
@@ -575,7 +577,7 @@ describe("DepositAddressHandler._validateExecuteResponse guards", function () {
 describe("DepositAddressHandler._getSignedWithdrawV3", function () {
   let handler: DepositAddressHandler;
   let signWithdrawStub: sinon.SinonStub;
-  let redisSetStub: sinon.SinonStub;
+  let redisSAddStub: sinon.SinonStub;
 
   type Internals = {
     _getSignedWithdrawV3: (
@@ -598,8 +600,14 @@ describe("DepositAddressHandler._getSignedWithdrawV3", function () {
     (handler as unknown as { api: { signWithdrawDepositAddressV3: sinon.SinonStub } }).api = {
       signWithdrawDepositAddressV3: signWithdrawStub,
     };
-    redisSetStub = sinon.stub().resolves();
-    (handler as unknown as { redisCache: { set: sinon.SinonStub } }).redisCache = { set: redisSetStub };
+    // The terminal-422 skip is committed via sAdd + expire (native Redis set), with the legacy
+    // blob key mirrored via set for rollback safety.
+    redisSAddStub = sinon.stub().resolves(1);
+    (handler as unknown as { redisCache: unknown }).redisCache = {
+      sAdd: redisSAddStub,
+      expire: sinon.stub().resolves(true),
+      set: sinon.stub().resolves("OK"),
+    };
   });
 
   afterEach(() => sinon.restore());
@@ -633,7 +641,7 @@ describe("DepositAddressHandler._getSignedWithdrawV3", function () {
     expect(result).to.equal(undefined);
     expect(signWithdrawStub.callCount).to.equal(4); // initial attempt + 3 retries
     expect(internals().terminallySkippedWithdrawKeys.size).to.equal(0);
-    expect(redisSetStub.notCalled).to.equal(true);
+    expect(redisSAddStub.notCalled).to.equal(true);
   });
 
   it("treats a 422 as terminal: no retry, persists the skip key", async function () {
@@ -644,7 +652,7 @@ describe("DepositAddressHandler._getSignedWithdrawV3", function () {
     expect(signWithdrawStub.callCount).to.equal(1); // no retries on a terminal 422
     const depositKey = `${DEPOSIT_ADDRESS}:${message.erc20Transfer.transactionHash}`;
     expect(internals().terminallySkippedWithdrawKeys.has(depositKey)).to.equal(true);
-    expect(redisSetStub.calledOnce).to.equal(true);
+    expect(redisSAddStub.calledOnce).to.equal(true);
   });
 });
 
@@ -673,7 +681,11 @@ describe("DepositAddressHandler.initiateWithdrawV3 guards", function () {
     (handler as unknown as { observedExecutedWithdraws: Record<number, Set<string>> }).observedExecutedWithdraws = {
       [chainId]: new Set<string>(),
     };
-    (handler as unknown as { redisCache: { set: sinon.SinonStub } }).redisCache = { set: sinon.stub().resolves() };
+    // `get` serves the pending-execution marker check (no marker present).
+    (handler as unknown as { redisCache: unknown }).redisCache = {
+      get: sinon.stub().resolves(null),
+      set: sinon.stub().resolves(),
+    };
   }
 
   afterEach(() => sinon.restore());
@@ -770,6 +782,8 @@ describe("DepositAddressHandler.initiateWithdrawV3 balance check", function () {
     (handler as unknown as { providersByChain: Record<number, unknown> }).providersByChain = {
       [chainId]: { getBalance: getBalanceStub },
     };
+    // The pending-execution marker check reads Redis before the balance check; no marker present.
+    (handler as unknown as { redisCache: unknown }).redisCache = { get: sinon.stub().resolves(null) };
   });
 
   afterEach(() => sinon.restore());

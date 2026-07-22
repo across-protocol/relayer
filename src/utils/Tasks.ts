@@ -52,6 +52,11 @@ export function scheduleTask(
   signal: AbortSignal,
   onError?: (err: unknown) => void
 ): void {
+  // A signal that aborted in the past never fires "abort" again, so the interval would never be
+  // cleared when scheduling starts after shutdown was already observed. Schedule nothing instead.
+  if (signal.aborted) {
+    return;
+  }
   const timer = setInterval(fireAndForget(task, onError), interval * 1000);
   signal.addEventListener("abort", () => clearInterval(timer));
 }
