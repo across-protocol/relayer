@@ -119,8 +119,11 @@ adapter / CCTP. No pool rebalance leaf, no bond, no liveness window.
    spoke is ever un-paused and holds working balances again, execution would double-pay the
    written-off repayments and queue ≈36.69M of phantom `TransferLiability` — after which any
    caller can continuously bridge every future vault dollar to the HubPool. Deleting both now,
-   while the spoke is paused, closes this permanently. (No Solana-executable slow-fill leaves
-   exist: zero destination-Solana slow-fill requests in the windows; 12663's slow root is 0x0.)
+   while the spoke is paused, closes this permanently. (The `slowRelayRoot` is the bundle's single global tree relayed
+   identically to every spoke: 12662's non-zero slow root `0x09691006…` contains exactly one
+   leaf — a Base WETH slow fill, deposit 4160878, request tx `0x3dc59c6d…`, since
+   fast-filled — and nothing executable on Solana, as `execute_slow_relay_leaf` rebuilds the
+   leaf hash with the spoke's own `state.chain_id`; 12663's slow root is `0x0`.)
 2. `relayRootBundle(0x022285d1…, 0x0)` — stores the recovery root (`relay_root_bundle`).
 3. After cross-domain delivery, confirm via `verify.ts` that both poisoned bundles read
    **deleted** and the recovery root is stored, then permissionless

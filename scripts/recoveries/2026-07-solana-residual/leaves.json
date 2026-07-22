@@ -147,7 +147,8 @@
         },
         "refundTotalApprox": "~2645779731061 (2,645,779.73 USDC)",
         "amountToReturn": "36243505321905"
-      }
+      },
+      "slowRelayRootNote": "The slowRelayRoot is the bundle's single global tree, relayed identically to every spoke. 12662's non-zero root contains exactly one leaf: the slow-fill request for deposit 4160878 (Ethereum -> Base, 2.437661998616864616 WETH, request tx 0x3dc59c6d90391b8a7577e0cea01f82a1fffcd4b5e39cb3b5f47eb23112986bf9, 05:06:19 UTC \u2014 since fast-filled). Nothing under it is executable on Solana: execute_slow_relay_leaf rebuilds the leaf hash with the spoke's own state.chain_id (svm-spoke slow_fill.rs), so a Base leaf can never verify against the root here."
     },
     {
       "rootBundleId": 12663,
