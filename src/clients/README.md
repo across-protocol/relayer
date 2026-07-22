@@ -55,6 +55,8 @@ Ideally, this wrapping and unwrapping would occur in a separate, focused NativeT
 
 The InventoryClient also provides functions that are used to transfer tokens across chains via adapters like CCTP, OFT, or canonical bridges. These adapters are defined in /src/adapter/bridges and /src/adapter/l2Bridges which send tokens from L1 to L2 and vice versa, respectively.
 
+For OFT L2 → L1 excess withdrawals (`OFTL2Bridge`), the requested amount is quoted via `quoteOFT` before the transaction is built. Stargate-style OFT paths cap the quoted send amount at the path's available credit, so when quoted capacity is below the requested amount the withdrawal is sized down to the quoted amount and the transaction markdown notes the size-down. When quoted capacity is zero or below the path's minimum send amount, no transaction is enqueued for that run; the excess stays on the L2 and is re-evaluated on a later run once capacity recovers. Pending-withdrawal volume accounting is unaffected because it is derived from on-chain `OFTSent` events, which reflect the actually-sent amounts.
+
 ### Plan for Deprecation of Token Transfer Logic
 
 Note that the InventoryClient is an older module and its token transfer functions are slated to be migrated over to rebalancer clients eventually. For now, the separation of concerns between the two is that the InventoryClient is in charge of sending **same** tokens across chains while rebalancer clients swap different tokens across chains.
