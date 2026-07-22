@@ -93,17 +93,25 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
     const quotedAmount = BigNumber.from(oftReceipt.amountSentLD);
     const amountToSend = quotedAmount.lt(roundedAmount) ? quotedAmount : roundedAmount;
 
-    // If the bridge can't accept a meaningful amount right now, skip the withdrawal instead of
-    // enqueueing a transaction that is guaranteed to revert; the excess is retried next run.
-    if (amountToSend.eq(bnZero) || amountToSend.lt(BigNumber.from(oftLimit.minAmountLD))) {
-      return [];
-    }
-
     const appliedFee = OFT.isStargateBridge(this.l2chainId)
       ? amountToSend.mul(this.feePct).div(fixedPointAdjustment) // Set a max slippage of 0.5%.
       : bnZero;
     // @dev A minAmountLD of the send amount less the max fee ensures we won't hit contract-side rounding.
-    const sendParamStruct = buildSendParams(amountToSend, amountToSend.sub(appliedFee));
+    const minAmountOut = amountToSend.sub(appliedFee);
+
+    // Skip the withdrawal instead of enqueueing a transaction that is guaranteed to revert when the bridge
+    // can't accept a meaningful amount right now, or when the quoted fee-adjusted output already violates
+    // the slippage floor (Stargate fees come out of `amountReceivedLD`, and can exceed the slippage
+    // tolerance when path capacity is nearly drained). The excess is retried next run.
+    if (
+      amountToSend.eq(bnZero) ||
+      amountToSend.lt(BigNumber.from(oftLimit.minAmountLD)) ||
+      BigNumber.from(oftReceipt.amountReceivedLD).lt(minAmountOut)
+    ) {
+      return [];
+    }
+
+    const sendParamStruct = buildSendParams(amountToSend, minAmountOut);
     // Pay the bridge fee in the Lz token if the network does not have a native token (i.e. Tempo).
     const payFeeInLzToken = !chainHasNativeToken(this.l2chainId);
 

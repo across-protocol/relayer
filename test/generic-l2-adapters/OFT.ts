@@ -15,9 +15,10 @@ describe("Cross Chain Adapter: OFT L2 Bridge", function () {
     let toAddress: EvmAddress;
 
     // Replaces the l2Bridge contract with a mock whose quoteOFT reports `capacity` as the max
-    // sendable amount, mirroring how Stargate caps `amountSentLD` at the path's available credit.
+    // sendable amount, mirroring how Stargate caps `amountSentLD` at the path's available credit,
+    // and deducts `quotedFee` from the quoted output, mirroring Stargate's fee on `amountReceivedLD`.
     // Ethers contract methods are read-only properties, so the whole object is swapped out.
-    const mockBridgeCapacity = (capacity: ReturnType<typeof toBNWei>) => {
+    const mockBridgeCapacity = (capacity: ReturnType<typeof toBNWei>, quotedFee = toBNWei("0")) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const realBridge = (adapter as any).l2Bridge;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -32,7 +33,7 @@ describe("Cross Chain Adapter: OFT L2 Bridge", function () {
           return [
             { minAmountLD: toBNWei("0.000001"), maxAmountLD: capacity },
             [],
-            { amountSentLD, amountReceivedLD: amountSentLD },
+            { amountSentLD, amountReceivedLD: amountSentLD.sub(quotedFee) },
           ];
         },
       };
@@ -66,6 +67,13 @@ describe("Cross Chain Adapter: OFT L2 Bridge", function () {
 
     it("returns no transactions when the bridge has no usable capacity", async function () {
       mockBridgeCapacity(toBNWei("0"));
+      const txns = await adapter.constructWithdrawToL1Txns(toAddress, adapter.l2Token, l1Token, toBNWei("20"));
+      expect(txns.length).to.equal(0);
+    });
+
+    it("returns no transactions when the quoted output violates the slippage floor", async function () {
+      // A quoted fee of 1% on the sized-down amount exceeds the 0.5% max slippage, so the send would revert.
+      mockBridgeCapacity(toBNWei("5"), toBNWei("0.05"));
       const txns = await adapter.constructWithdrawToL1Txns(toAddress, adapter.l2Token, l1Token, toBNWei("20"));
       expect(txns.length).to.equal(0);
     });

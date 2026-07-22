@@ -333,6 +333,21 @@ export class BaseChainAdapter {
       );
       return [];
     }
+    if (txnsToSend.length === 0) {
+      this.log(
+        "L2 withdrawal skipped: bridge constructed no transactions (e.g. insufficient bridge capacity); it will be retried on a later run",
+        {
+          l2Token,
+          l1Token,
+          amount: amount.toString(),
+          srcChainId: this.chainId,
+          dstChainId: this.hubChainId,
+        },
+        "warn",
+        "withdrawTokenFromL2"
+      );
+      return [];
+    }
     if (chainIsEvm(this.chainId)) {
       const multicallerClient = new MultiCallerClient(this.logger);
       txnsToSend.filter(isAugmentedTransaction).forEach((txn) => multicallerClient.enqueueTransaction(txn));
