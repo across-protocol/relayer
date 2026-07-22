@@ -12,6 +12,7 @@ import {
   getWrappedNativeTokenAddress,
   Multicall2Call,
   paginatedEventQuery,
+  sortEventsAscending,
   winston,
   zkSync as zkSyncUtils,
   assert,
@@ -87,8 +88,10 @@ export async function zkSyncFinalizer(
     senderAddresses,
     latestBlockToFinalize
   );
-  const withdrawalsToQuery = [...spokePoolWithdrawals, ...directWithdrawals].filter(
-    ({ txnRef }) => !IGNORED_WITHDRAWALS.includes(txnRef)
+  // Withdrawals are finalized by their ordinal position within a transaction, so sort the merged list into on-chain
+  // log order in case a SpokePool withdrawal and a direct withdrawal share a transaction.
+  const withdrawalsToQuery = sortEventsAscending(
+    [...spokePoolWithdrawals, ...directWithdrawals].filter(({ txnRef }) => !IGNORED_WITHDRAWALS.includes(txnRef))
   );
   const statuses = await sortWithdrawals(l2Provider, withdrawalsToQuery);
   const l2Finalized = statuses["finalized"] ?? [];
@@ -169,11 +172,8 @@ async function getDirectNativeTokenWithdrawals(
     paginatedEventQuery(baseToken, baseToken.filters.Withdrawal(fromAddresses), searchConfig),
     paginatedEventQuery(baseToken, baseToken.filters.WithdrawalWithMessage(fromAddresses), searchConfig),
   ]);
-  // Multiple withdrawals within a single transaction are finalized by their ordinal position in the transaction, so
-  // preserve the on-chain log ordering when merging the two event types.
-  const events = [...withdrawalEvents, ...withdrawalWithMessageEvents].sort(
-    (a, b) => a.blockNumber - b.blockNumber || a.logIndex - b.logIndex
-  );
+  // The caller sorts the merged withdrawal list into on-chain log order, so no ordering is required here.
+  const events = [...withdrawalEvents, ...withdrawalWithMessageEvents];
   if (events.length > 0) {
     logger.debug({
       at: "Finalizer#ZkSyncFinalizer",
