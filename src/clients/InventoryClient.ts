@@ -1419,9 +1419,9 @@ export class InventoryClient {
             l2Token,
             amountToWithdraw: desiredWithdrawalAmount,
             mrkdwn:
-              ` - ${l2TokenFormatter(desiredWithdrawalAmount)} ${
+              ` - Requested withdrawal of ${l2TokenFormatter(desiredWithdrawalAmount)} ${
                 l1TokenInfo.symbol
-              } withdrawn. This meets target allocation of ` +
+              }. This meets target allocation of ` +
               `${this.formatWei(targetPct.mul(100).toString())}% (trigger of ` +
               `${this.formatWei(excessWithdrawThresholdPct.mul(100).toString())}%) of the total ` +
               `${formatter(cumulativeBalance.toString())} ${
