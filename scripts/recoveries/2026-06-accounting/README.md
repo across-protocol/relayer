@@ -38,7 +38,7 @@ Totals: 5,381 BAL + 7,045 POOL + 14,900 SNX + 450 VLR + 46,186 WGHO/LGHO. Each l
 ### 1. Validate `leaves.json` produces the documented root
 
 ```sh
-yarn ts-node scripts/recoveries/2026-06-accounting/verify.ts
+yarn ts-node scripts/recoveries/verify.ts scripts/recoveries/2026-06-accounting/leaves.json
 ```
 
 Rebuilds the merkle tree from `leaves.json`, confirms the rebuilt root matches the documented `relayerRefundRoot`, and validates each per-leaf proof.
