@@ -213,6 +213,9 @@ export async function willSucceed(transaction: AugmentedTransaction): Promise<Tr
   // it does incur an extra RPC call. We do this because estimateGas is a provider function that doesn't
   // relay custom errors well: https://github.com/ethers-io/ethers.js/discussions/3291#discussion-4314795
   let data;
+  // Preserved across the callStatic → estimateGas fallback so that a non-custom-error callStatic
+  // failure isn't silently dropped when estimateGas later fails with a less specific reason.
+  let callStaticError: unknown;
   try {
     if (rawTxn) {
       const from = (await contract.signer?.getAddress()) ?? ZERO_ADDRESS;
@@ -230,6 +233,7 @@ export async function willSucceed(transaction: AugmentedTransaction): Promise<Tr
         reason: err.errorName,
       };
     }
+    callStaticError = err;
   }
 
   try {
@@ -243,9 +247,31 @@ export async function willSucceed(transaction: AugmentedTransaction): Promise<Tr
     });
     return { transaction: { ...transaction, gasLimit }, succeed: true, data };
   } catch (error) {
-    const reason = typeguards.isEthersError(error) ? error.reason : "unknown error";
-    return { transaction, succeed: false, reason };
+    return { transaction, succeed: false, reason: _extractSimulationReason(error, callStaticError) };
   }
+}
+
+// Picks the most specific failure reason available from a simulation error pair. Priority:
+//   1. ethers `reason` on either error (preferred — it's the decoded revert string)
+//   2. callStatic message (callStatic exists to surface revert detail; its message is
+//      typically the actionable signal, whereas estimateGas tends to surface generic
+//      provider noise like UNPREDICTABLE_GAS_LIMIT)
+//   3. estimateGas message (last-resort generic fallback)
+//   4. "unknown error" sentinel
+function _extractSimulationReason(estimateGasError: unknown, callStaticError: unknown): string {
+  if (typeguards.isEthersError(estimateGasError) && estimateGasError.reason) {
+    return estimateGasError.reason;
+  }
+  if (typeguards.isEthersError(callStaticError) && callStaticError.reason) {
+    return callStaticError.reason;
+  }
+  if (callStaticError instanceof Error && callStaticError.message) {
+    return callStaticError.message;
+  }
+  if (estimateGasError instanceof Error && estimateGasError.message) {
+    return estimateGasError.message;
+  }
+  return "unknown error";
 }
 
 export function getTarget(targetAddress: string):
