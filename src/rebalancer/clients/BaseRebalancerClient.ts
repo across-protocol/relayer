@@ -11,6 +11,7 @@ import { RebalancerAdapter, RebalancerClient, RebalanceRoute } from "../utils/in
 export abstract class BaseRebalancerClient implements RebalancerClient {
   public rebalanceRoutes: RebalanceRoute[] = [];
   protected baseSignerAddress: EvmAddress = EvmAddress.from(ZERO_ADDRESS);
+  protected pendingReadFailures: string[] = [];
   constructor(
     readonly logger: winston.Logger,
     readonly config: RebalancerConfig,
@@ -49,23 +50,30 @@ export abstract class BaseRebalancerClient implements RebalancerClient {
    * @notice Get all currently unfinalized rebalance amounts. Should be used to add virtual balance credits or
    * debits for the token and chain combinations. Will filter rebalances by the passed in account.
    * @dev Does not depend on this.rebalanceRoutes, only calls getPendingRebalances() for each configured adapter.
-   * @dev An adapter whose pending-state read throws is logged and treated as having no pending rebalances so that
-   * one adapter's upstream outage cannot fail the aggregate read for every consumer.
+   * @dev If any adapter's pending-state read throws, the aggregate degrades to net debits only (and the failed
+   * adapters are reported via getPendingReadFailures()) so that one adapter's upstream outage cannot fail the
+   * aggregate read for every consumer. Net credits are dropped because adapters offset each other's entries: the
+   * exchange adapters (Binance/Hyperliquid) emit a negative debit on the bridge destination chain to cancel the
+   * CCTP/OFT adapters' credit for the same in-flight order, so an unpaired credit could overcount balances. Net
+   * debits are kept because they only lower reported balances (a conservative undercount) and not every debit
+   * offsets another adapter's credit: the exchange adapters also debit the withdrawal network once a venue
+   * withdrawal has finalized there, offsetting real on-chain balance that is earmarked for the final destination
+   * chain — dropping those debits would make earmarked funds look spendable.
    * @return Dictionary of chainId -> token -> amount where positive amounts present pending rebalance credits to that
    * chain while negative amounts represent debits that should be subtracted from that chain's current balance.
    */
   async getPendingRebalances(account: EvmAddress): Promise<{ [chainId: number]: { [token: string]: BigNumber } }> {
     const pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
+    const failedAdapters: string[] = [];
     await forEachAsync(Object.entries(this.adapters), async ([adapterName, adapter]) => {
       let pending: { [chainId: number]: { [token: string]: BigNumber } };
       try {
         pending = await adapter.getPendingRebalances(account);
       } catch (err) {
-        // The failed adapter's in-flight rebalances stay invisible to virtual balances until its
-        // dependency recovers; that undercount is preferable to aborting the caller's whole run.
+        failedAdapters.push(adapterName);
         this.logger.warn({
           at: "BaseRebalancerClient.getPendingRebalances",
-          message: `Failed to get pending rebalances from ${adapterName} adapter; treating them as empty`,
+          message: `Failed to get pending rebalances from ${adapterName} adapter`,
           err: String(err),
         });
         return;
@@ -78,7 +86,41 @@ export abstract class BaseRebalancerClient implements RebalancerClient {
         });
       });
     });
+    this.pendingReadFailures = failedAdapters;
+    if (failedAdapters.length > 0) {
+      // Filter net debits after aggregation so that entries which legitimately offset each other within a
+      // (chainId, token) key (e.g. a bridge adapter's credit and an exchange adapter's debit for the same
+      // in-flight order, both read successfully) net out instead of surfacing as a phantom debit.
+      const netDebits: { [chainId: number]: { [token: string]: BigNumber } } = {};
+      Object.entries(pendingRebalances).forEach(([_chainId, tokenBalance]) => {
+        const chainId = Number(_chainId);
+        Object.entries(tokenBalance).forEach(([token, amount]) => {
+          if (amount.lt(bnZero)) {
+            netDebits[chainId] ??= {};
+            netDebits[chainId][token] = amount;
+          }
+        });
+      });
+      this.logger.warn({
+        at: "BaseRebalancerClient.getPendingRebalances",
+        message:
+          "Returning only net pending-rebalance debits because some adapter reads failed;" +
+          " in-flight rebalance credits are invisible to virtual balances until every adapter read succeeds",
+        failedAdapters,
+      });
+      return netDebits;
+    }
     return pendingRebalances;
+  }
+
+  /**
+   * @notice Names of adapters whose reads failed during the most recent getPendingRebalances() call. Non-empty
+   * means that call degraded to a net-debits-only aggregate, i.e. in-flight rebalance credits are currently
+   * uncounted and derived balances undercount in-flight rebalances. Callers that move funds based on that
+   * accounting (e.g. the rebalancer runtime) should fail closed and skip sending new rebalances.
+   */
+  getPendingReadFailures(): string[] {
+    return [...this.pendingReadFailures];
   }
 
   protected async getAvailableAdapters(): Promise<string[]> {

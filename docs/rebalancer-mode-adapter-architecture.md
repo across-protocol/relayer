@@ -44,7 +44,7 @@ The post-refactor lifecycle is explicitly two-stage:
 Key invariant:
 
 - read-only clients call `initialize([])` and still support pending-state reads (`getPendingRebalances`), because pending-state aggregation does not depend on active routes.
-- pending-state reads are failure-isolated per adapter: an adapter whose `getPendingRebalances` throws is logged with a warning and treated as contributing no pending rebalances for that pass, rather than failing the aggregate read.
+- pending-state reads never throw out of the client: if any adapter's `getPendingRebalances` throws, the aggregate degrades to net debits only (logged with a warning, reported via `getPendingReadFailures()`) rather than failing the read. Unpaired credits are unsafe because exchange adapters (Binance/Hyperliquid) emit debits that cancel the bridge adapters' (CCTP/OFT) credits for the same in-flight order, so dropping only the failed adapter could overcount balances on the bridge destination chain; net debits are safe to keep because they only lower reported balances, and the exchange adapters' post-withdrawal debits offset real on-chain balance on the withdrawal network (dropping them would make earmarked funds look spendable). When the aggregate is degraded, the rebalancer runtime skips sending new rebalances for that run (fail closed), while read-only consumers (relayer `InventoryClient`, monitor) keep running with in-flight rebalance credits temporarily uncounted.
 
 ## Data flow (current behavior)
 
