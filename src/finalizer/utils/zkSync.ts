@@ -1,15 +1,19 @@
 import { interfaces, utils as sdkUtils } from "@across-protocol/sdk";
 import { Contract, Signer } from "ethers";
-import { Provider as zksProvider, Wallet as zkWallet } from "zksync-ethers";
+import { Provider as zksProvider, Wallet as zkWallet, utils as zksUtils } from "zksync-ethers";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { CONTRACT_ADDRESSES, getContractEntry } from "../../common";
 import {
+  compareAddressesSimple,
   convertFromWei,
   getBlockForTimestamp,
   getCurrentTime,
   getTokenInfo,
   getUniqueLogIndex,
+  getWrappedNativeTokenAddress,
   Multicall2Call,
+  paginatedEventQuery,
+  sortEventsAscending,
   winston,
   zkSync as zkSyncUtils,
   assert,
@@ -23,9 +27,14 @@ import {
   CHAIN_IDs,
 } from "../../utils";
 import { getRedisCache } from "../../cache/Redis";
-import { FinalizerPromise, CrossChainMessage } from "../types";
+import { FinalizerPromise, CrossChainMessage, AddressesToFinalize } from "../types";
 
 type TokensBridged = interfaces.TokensBridged;
+
+// A withdrawal to finalize; withdrawalIdx is this withdrawal's index into the ordered set of L1MessageSent logs in
+// its transaction. Direct withdrawals carry it precomputed from the transaction receipt; for SpokePool withdrawals
+// it is inferred from each event's per-transaction ordinal.
+type ZkStackWithdrawal = TokensBridged & { withdrawalIdx?: number };
 
 type zkSyncWithdrawalData = {
   l1BatchNumber: number;
@@ -47,7 +56,9 @@ export async function zkSyncFinalizer(
   logger: winston.Logger,
   signer: Signer,
   hubPoolClient: HubPoolClient,
-  spokePoolClient: SpokePoolClient
+  spokePoolClient: SpokePoolClient,
+  _l1SpokePoolClient: SpokePoolClient,
+  senderAddresses: AddressesToFinalize
 ): Promise<FinalizerPromise> {
   assert(isEVMSpokePoolClient(spokePoolClient));
   const { chainId: l1ChainId } = hubPoolClient;
@@ -58,13 +69,20 @@ export async function zkSyncFinalizer(
   assert(isSignerWallet(signer), "Signer is not a Wallet");
   const wallet = new zkWallet(signer.privateKey, l2Provider, l1Provider);
 
-  // Zksync takes ~6 hours to finalize so ignore any events
-  // earlier than that.
+  // Zksync takes ~6 hours to finalize so by default ignore any events younger than that to save the RPC requests
+  // that would be spent computing statuses for withdrawals that cannot be ready. On chains whose batches settle
+  // faster, the lag can be lowered (seconds) via FINALIZER_ZKSTACK_MIN_WITHDRAWAL_AGE, or per-chain via
+  // FINALIZER_ZKSTACK_MIN_WITHDRAWAL_AGE_<chainId>.
+  const minWithdrawalAge = Number(
+    process.env[`FINALIZER_ZKSTACK_MIN_WITHDRAWAL_AGE_${l2ChainId}`] ??
+      process.env["FINALIZER_ZKSTACK_MIN_WITHDRAWAL_AGE"] ??
+      60 * 60 * 6
+  );
   const redis = await getRedisCache(logger);
   const latestBlockToFinalize = await getBlockForTimestamp(
     logger,
     l2ChainId,
-    getCurrentTime() - 60 * 60 * 6,
+    getCurrentTime() - minWithdrawalAge,
     undefined,
     redis
   );
@@ -73,11 +91,22 @@ export async function zkSyncFinalizer(
     at: "Finalizer#ZkSyncFinalizer",
     message: "ZkSync TokensBridged event filter",
     toBlock: latestBlockToFinalize,
+    minWithdrawalAge,
   });
-  const withdrawalsToQuery = spokePoolClient
+  const spokePoolWithdrawals = spokePoolClient
     .getTokensBridged()
-    .filter(({ blockNumber }) => blockNumber <= latestBlockToFinalize)
-    .filter(({ txnRef }) => !IGNORED_WITHDRAWALS.includes(txnRef));
+    .filter(({ blockNumber }) => blockNumber <= latestBlockToFinalize);
+  const directWithdrawals = await getDirectNativeTokenWithdrawals(
+    logger,
+    spokePoolClient,
+    senderAddresses,
+    latestBlockToFinalize
+  );
+  // Withdrawals are finalized by their ordinal position within a transaction, so sort the merged list into on-chain
+  // log order in case a SpokePool withdrawal and a direct withdrawal share a transaction.
+  const withdrawalsToQuery = sortEventsAscending(
+    [...spokePoolWithdrawals, ...directWithdrawals].filter(({ txnRef }) => !IGNORED_WITHDRAWALS.includes(txnRef))
+  );
   const statuses = await sortWithdrawals(l2Provider, withdrawalsToQuery);
   const l2Finalized = statuses["finalized"] ?? [];
   const candidates = await filterMessageLogs(wallet, l1ChainId, l2Finalized);
@@ -112,10 +141,111 @@ export async function zkSyncFinalizer(
       withdrawalPending: withdrawalsToQuery.length - l2Finalized.length,
       withdrawalFinalizedNotExecuted: candidates.length,
       withdrawalExecuted: l2Finalized.length - candidates.length,
+      directWithdrawals: directWithdrawals.length,
     },
   });
 
   return { callData: txns, crossChainMessages: withdrawals };
+}
+
+/**
+ * @dev Withdrawals of the chain's native token (ETH on zkSync, GHO on Lens) that are initiated directly on the
+ * L2BaseToken system contract (i.e. not via the SpokePool) do not emit TokensBridged events, so query the base
+ * token's Withdrawal and WithdrawalWithMessage events where a tracked address is the L2 sender or the L1 recipient
+ * and mold them into the TokensBridged shape expected by the finalization pipeline.
+ * @param spokePoolClient SpokePoolClient for the L2 chain.
+ * @param senderAddresses Tracked addresses whose direct withdrawals (sent or received) should be finalized.
+ * @param latestBlockToFinalize Most recent L2 block eligible for finalization.
+ * @returns Direct native token withdrawals from tracked addresses, formatted as TokensBridged events.
+ */
+async function getDirectNativeTokenWithdrawals(
+  logger: winston.Logger,
+  spokePoolClient: SpokePoolClient,
+  senderAddresses: AddressesToFinalize,
+  latestBlockToFinalize: number
+): Promise<ZkStackWithdrawal[]> {
+  assert(isEVMSpokePoolClient(spokePoolClient));
+  const { chainId, spokePool } = spokePoolClient;
+
+  const trackedAddresses = Array.from(senderAddresses.keys())
+    .filter((sender) => sender.isEVM())
+    .map((sender) => sender.toEvmAddress());
+  // The SpokePool's own withdrawals are already discovered via its TokensBridged events, so skip it as a sender.
+  const fromAddresses = trackedAddresses.filter((sender) => sender !== spokePool.address);
+  if (trackedAddresses.length === 0) {
+    return [];
+  }
+
+  const { address, abi } = getContractEntry(chainId, "nativeToken");
+  const baseToken = new Contract(address, abi, spokePool.provider);
+  const searchConfig = {
+    ...spokePoolClient.eventSearchConfig,
+    to: Math.min(latestBlockToFinalize, spokePoolClient.latestHeightSearched),
+  };
+  // The tracked addresses comprise both senders and recipients to look out for, and the withdrawal events index
+  // both, so query each side and dedupe (a withdrawal may match both filters). Withdrawals initiated by the
+  // SpokePool (e.g. received by the tracked HubPool) are dropped: TokensBridged already covers them, and a second
+  // entry would finalize the same message twice. The caller sorts the merged withdrawal list into on-chain log
+  // order, so no ordering is required here.
+  const rawEvents = (
+    await Promise.all([
+      paginatedEventQuery(baseToken, baseToken.filters.Withdrawal(fromAddresses), searchConfig),
+      paginatedEventQuery(baseToken, baseToken.filters.WithdrawalWithMessage(fromAddresses), searchConfig),
+      paginatedEventQuery(baseToken, baseToken.filters.Withdrawal(null, trackedAddresses), searchConfig),
+      paginatedEventQuery(baseToken, baseToken.filters.WithdrawalWithMessage(null, trackedAddresses), searchConfig),
+    ])
+  ).flat();
+  const events = Array.from(
+    new Map(rawEvents.map((event) => [`${event.transactionHash}-${event.logIndex}`, event])).values()
+  ).filter((event) => !compareAddressesSimple(event.args._l2Sender, spokePool.address));
+  if (events.length > 0) {
+    logger.debug({
+      at: "Finalizer#ZkSyncFinalizer",
+      message: `Found ${events.length} direct native token withdrawals on chain ${chainId}.`,
+      txnRefs: events.map(({ transactionHash }) => transactionHash),
+    });
+  }
+
+  // A withdrawal is finalized by its index into its transaction's complete, ordered set of L1MessageSent logs,
+  // which may include messages the queries above cannot discover (e.g. a withdrawal from an untracked sender
+  // batched into the same transaction). Locate each withdrawal's own message in the transaction receipt:
+  // withdraw() and withdrawWithMessage() send it immediately before emitting their event, so it is the closest
+  // L1MessageSent log preceding the withdrawal event.
+  const l1MessageSentTopic = zksUtils.L1_MESSENGER.getEventTopic("L1MessageSent");
+  const txnRefs = Array.from(new Set(events.map(({ transactionHash }) => transactionHash)));
+  const receipts = new Map(
+    await sdkUtils.mapAsync(txnRefs, async (txnRef) => {
+      const receipt = await spokePool.provider.getTransactionReceipt(txnRef);
+      return [txnRef, receipt] as const;
+    })
+  );
+  const getMessageIndex = (transactionHash: string, logIndex: number): number => {
+    const messages = (receipts.get(transactionHash)?.logs ?? []).filter(
+      (log) =>
+        compareAddressesSimple(log.address, zksUtils.L1_MESSENGER_ADDRESS) && log.topics[0] === l1MessageSentTopic
+    );
+    const index = messages.filter((message) => message.logIndex < logIndex).length - 1;
+    assert(index >= 0, `zkSync: no L1MessageSent log precedes withdrawal event in ${transactionHash}`);
+    return index;
+  };
+
+  // The withdrawn token is the chain's base token, so report it as such where it is mapped (e.g. GHO on Lens).
+  // Otherwise report the wrapped native token (e.g. WETH for direct ETH withdrawals on zkSync, matching how the
+  // SpokePool's TokensBridged withdrawals are accounted).
+  const baseTokenMapped = Object.values(TOKEN_SYMBOLS_MAP).some(
+    ({ addresses }) => isDefined(addresses[chainId]) && compareAddressesSimple(addresses[chainId], address)
+  );
+  const l2TokenAddress = baseTokenMapped ? EvmAddress.from(address) : getWrappedNativeTokenAddress(chainId);
+  return events.map(({ transactionHash, transactionIndex, ...event }) => ({
+    ...event,
+    amountToReturn: event.args._amount,
+    chainId,
+    leafId: 0,
+    l2TokenAddress,
+    txnRef: transactionHash,
+    txnIndex: transactionIndex,
+    withdrawalIdx: getMessageIndex(transactionHash, event.logIndex),
+  }));
 }
 
 /**
@@ -126,8 +256,8 @@ export async function zkSyncFinalizer(
  */
 async function sortWithdrawals(
   provider: zksProvider,
-  tokensBridged: TokensBridged[]
-): Promise<Record<string, TokensBridged[]>> {
+  tokensBridged: ZkStackWithdrawal[]
+): Promise<Record<string, ZkStackWithdrawal[]>> {
   const txnStatus = await Promise.all(tokensBridged.map(({ txnRef }) => provider.getTransactionStatus(txnRef)));
 
   let idx = 0; // @dev Possible to infer the loop index in groupBy ??
@@ -145,13 +275,13 @@ async function sortWithdrawals(
 async function filterMessageLogs(
   wallet: zkWallet,
   l1ChainId: number,
-  tokensBridged: TokensBridged[]
+  tokensBridged: ZkStackWithdrawal[]
 ): Promise<(TokensBridged & { withdrawalIdx: number })[]> {
-  // For each token bridge event, store a unique log index for the event within the zksync transaction hash.
-  // This is important for bridge transactions containing multiple events.
+  // For each token bridge event without a precomputed withdrawal index, store a unique log index for the event
+  // within the zksync transaction hash. This is important for bridge transactions containing multiple events.
   const logIndexesForMessage = getUniqueLogIndex(tokensBridged);
   const withdrawals = tokensBridged.map((tokenBridged, i) => {
-    return { ...tokenBridged, withdrawalIdx: logIndexesForMessage[i] };
+    return { ...tokenBridged, withdrawalIdx: tokenBridged.withdrawalIdx ?? logIndexesForMessage[i] };
   });
 
   const ready = await sdkUtils.filterAsync(withdrawals, async ({ txnRef, withdrawalIdx, chainId, l2TokenAddress }) => {

@@ -21,6 +21,7 @@ import POLYGON_BRIDGE_ABI from "./abi/PolygonBridge.json";
 import POLYGON_ROOT_CHAIN_MANAGER_ABI from "./abi/PolygonRootChainManager.json";
 import POLYGON_WITHDRAWABLE_ERC20_ABI from "./abi/PolygonWithdrawableErc20.json";
 import ZKSTACK_NATIVE_TOKEN_VAULT_ABI from "./abi/ZkStackNativeTokenVault.json";
+import ZKSTACK_L2_BASE_TOKEN_ABI from "./abi/ZkStackL2BaseToken.json";
 import ZKSTACK_BRIDGE_HUB_ABI from "./abi/ZkStackBridgeHub.json";
 import ZKSTACK_SHARED_BRIDGE_ABI from "./abi/ZkStackSharedBridge.json";
 import ZKSTACK_USDC_BRIDGE_ABI from "./abi/ZkStackUSDCBridge.json";
@@ -389,7 +390,7 @@ export const CONTRACT_ADDRESSES: {
     },
     nativeToken: {
       address: "0x000000000000000000000000000000000000800A",
-      abi: WETH_ABI,
+      abi: ZKSTACK_L2_BASE_TOKEN_ABI,
     },
     weth: {
       address: "0x5AEa5775959fBC2557Cc8789bC1bf90A239D9a91",
@@ -673,7 +674,7 @@ export const CONTRACT_ADDRESSES: {
     // The native token for Lens is GHO, not ETH.
     nativeToken: {
       address: "0x000000000000000000000000000000000000800A",
-      abi: WETH_ABI,
+      abi: ZKSTACK_L2_BASE_TOKEN_ABI,
     },
     // This is Lens wrapped GHO, NOT WETH.
     wrappedNativeToken: {
@@ -911,7 +912,7 @@ export const CONTRACT_ADDRESSES: {
     },
     nativeToken: {
       address: "0x000000000000000000000000000000000000800A",
-      abi: WETH_ABI,
+      abi: ZKSTACK_L2_BASE_TOKEN_ABI,
     },
     wrappedNativeToken: {
       address: "0xeee5a340Cdc9c179Db25dea45AcfD5FE8d4d3eB8",
