@@ -281,12 +281,21 @@ Lifecycle note:
   upstream exchange API is down), the client logs a warning and aggregates the remaining adapters instead of throwing.
   Consumers such as the relayer's `InventoryClient` keep running with that adapter's in-flight rebalances temporarily
   uncounted in virtual balances.
+- `getAdaptersWithFailedPendingReads()` reports which adapters were dropped from the most recent
+  `getPendingRebalances()` aggregation. Read-only consumers can ignore it, but the write-mode runtimes must check it
+  before initiating new rebalances: while any adapter's pending state is invisible, an apparent deficit may already be
+  covered by an in-flight rebalance, so initiating against it would duplicate that rebalance.
 
 Runtime entrypoints in `src/rebalancer/`:
 
 - `runCumulativeBalanceRebalancer` (supported operational path).
 - `runSameAssetRebalancer` (directional SameAsset operational path).
 - The runtime updates adapter status/sweeps first, then refreshes `TokenClient` balances before applying adapter-reported pending rebalance adjustments and evaluating new rebalances. The refresh is required because the sweeps and `updateRebalanceStatuses` calls submit OFT/CCTP/Hypercore transactions that leave the initial `TokenClient.update()` snapshot stale; without it, `rebalanceInventory` can size a new bridge against a pre-burn balance and crash on the underlying simulation revert.
+- Venue-outage degradation: the status/sweep update loop isolates per-adapter failures (a venue whose API is down is
+  logged with a warning and skipped for the run while the remaining adapters progress), both run entrypoints skip
+  initiating new rebalances for the run whenever `getAdaptersWithFailedPendingReads()` is non-empty (see the
+  duplicate-rebalance rationale above), and a route whose `getEstimatedCost` read fails is excluded from that
+  round's route competition instead of aborting the pass.
 
 ## Interactions with Other Bots and Clients
 
