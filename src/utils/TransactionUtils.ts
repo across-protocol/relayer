@@ -264,6 +264,29 @@ export function getTarget(targetAddress: string):
   }
 }
 
+/**
+ * Thrown by `TransactionClient._submit` when a transaction was broadcast successfully but the
+ * client could not confirm its receipt after `maxTries` attempts. Previously this condition was
+ * masked: `_submit` warned and returned the underlying `TransactionResponse` as if everything was
+ * fine, which let callers (e.g. `sendAndConfirmTransaction`) end up calling `.wait()` again
+ * against an RPC that may retry forever. The typed error lets `TransactionClient.submit` re-throw
+ * this specific case (instead of swallowing it like other submission errors) so consumers can
+ * react to a real "stuck unconfirmed" outcome.
+ *
+ * Attaches the submitted `TransactionResponse` (when one exists) so callers can still correlate
+ * the failure to the broadcast tx hash for diagnostics.
+ */
+export class TransactionConfirmationFailedError extends Error {
+  readonly kind = "confirmation_failed" as const;
+  constructor(
+    message: string,
+    readonly response: TransactionResponse | undefined
+  ) {
+    super(message);
+    this.name = "TransactionConfirmationFailedError";
+  }
+}
+
 export async function submitTransaction(
   transaction: AugmentedTransaction,
   transactionClient: TransactionClient
