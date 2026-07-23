@@ -14,6 +14,7 @@ import {
 
 import { BundleDataApproxClient, SpokePoolClient } from "../src/clients"; // Tested
 import {
+  BigNumber,
   CHAIN_IDs,
   bnZero,
   TOKEN_SYMBOLS_MAP,
@@ -133,10 +134,11 @@ describe("BundleDataApproxClient: Accounting for unexecuted, upcoming relayer re
     originChainId: number,
     repaymentChainId: number,
     relayer = owner.address,
-    inputAmount = toWei(1)
+    inputAmount = toWei(1),
+    overrides: { destinationChainId?: number; fillType?: interfaces.FillType } = {}
   ): Promise<interfaces.Log> {
-    const destinationChainId = repaymentChainId;
-    const spokePoolClient = spokePoolClients[repaymentChainId];
+    const destinationChainId = overrides.destinationChainId ?? repaymentChainId;
+    const spokePoolClient = spokePoolClients[destinationChainId];
     const newEvent = (spokePoolClient as unknown as MockSpokePoolClient).fillRelay({
       message: "0x",
       messageHash: ZERO_BYTES,
@@ -169,7 +171,7 @@ describe("BundleDataApproxClient: Accounting for unexecuted, upcoming relayer re
         updatedMessage: "0x",
         updatedMessageHash: ZERO_BYTES,
         updatedOutputAmount: toWei(1),
-        fillType: interfaces.FillType.FastFill,
+        fillType: overrides.fillType ?? interfaces.FillType.FastFill,
       },
     } as interfaces.FillWithBlock);
     await spokePoolClient.update(["FilledRelay"]);
@@ -224,8 +226,11 @@ describe("BundleDataApproxClient: Accounting for unexecuted, upcoming relayer re
         toAddressType(mainnetWeth, MAINNET),
         fromBlocks
       );
-      expect(wethRefunds[MAINNET][owner.address]).to.equal(fill1.args.inputAmount);
-      expect(wethRefunds[OPTIMISM][owner.address]).to.equal(fill2.args.inputAmount);
+      // Refunds are keyed by the payout token: the input token for origin-chain repayments (fill1), the
+      // pool rebalance route token on the repayment chain otherwise (fill2).
+      const wethKey = (chainId: number) => toAddressType(l2TokensForWeth[chainId], chainId).toNative();
+      expect(wethRefunds[MAINNET][owner.address][wethKey(MAINNET)]).to.equal(fill1.args.inputAmount);
+      expect(wethRefunds[OPTIMISM][owner.address][wethKey(OPTIMISM)]).to.equal(fill2.args.inputAmount);
 
       // Ignores fills if block number is less than fromBlocks:
       const highFromBlocks = uniformFromBlocks([MAINNET, OPTIMISM, BSC], 1000000000000000000);
@@ -269,6 +274,37 @@ describe("BundleDataApproxClient: Accounting for unexecuted, upcoming relayer re
         bnZero
       );
       expect(bundleDataClient.getUpcomingRefunds(OPTIMISM, l1Usdc)).to.equal(bnZero);
+    });
+
+    it("Falls back to origin-chain repayment when the repayment chain has no pool rebalance route", async function () {
+      // POLYGON has no pool rebalance route on the mock hub pool client, so the dataworker would fall
+      // back to repaying this fill on its origin chain in the input token.
+      const fill = await generateFill("WETH", MAINNET, POLYGON, owner.address, toWei(1), {
+        destinationChainId: OPTIMISM,
+      });
+      bundleDataClient.initialize();
+      expect(bundleDataClient.getUpcomingRefunds(MAINNET, l1Weth)).to.equal(fill.args.inputAmount);
+      expect(bundleDataClient.getUpcomingRefunds(MAINNET, l1Weth, relayer, l1Weth)).to.equal(fill.args.inputAmount);
+      expect(bundleDataClient.getUpcomingRefunds(POLYGON, l1Weth)).to.equal(bnZero);
+      expect(bundleDataClient.getUpcomingRefunds(OPTIMISM, l1Weth)).to.equal(bnZero);
+    });
+
+    it("Falls back to origin-chain repayment when the repayment chain is disabled", async function () {
+      configStoreClient._updateDisabledChains([OPTIMISM]);
+      const fill = await generateFill("WETH", MAINNET, OPTIMISM);
+      bundleDataClient.initialize();
+      expect(bundleDataClient.getUpcomingRefunds(OPTIMISM, l1Weth)).to.equal(bnZero);
+      expect(bundleDataClient.getUpcomingRefunds(MAINNET, l1Weth)).to.equal(fill.args.inputAmount);
+      expect(bundleDataClient.getUpcomingRefunds(MAINNET, l1Weth, relayer, l1Weth)).to.equal(fill.args.inputAmount);
+    });
+
+    it("Ignores slow fills, which produce no relayer repayments", async function () {
+      await generateFill("WETH", MAINNET, OPTIMISM, owner.address, toWei(1), {
+        fillType: interfaces.FillType.SlowFill,
+      });
+      bundleDataClient.initialize();
+      expect(bundleDataClient.getUpcomingRefunds(OPTIMISM, l1Weth)).to.equal(bnZero);
+      expect(bundleDataClient.getUpcomingRefunds(MAINNET, l1Weth)).to.equal(bnZero);
     });
   });
 
@@ -357,6 +393,89 @@ describe("BundleDataApproxClient: Accounting for unexecuted, upcoming relayer re
       // Refunds should aggregate both fills.
       const totalRefunds = bundleDataClient.getUpcomingRefunds(OPTIMISM, l1Usdc);
       expect(totalRefunds).to.equal(fillAmount1.add(fillAmount2));
+
+      // Each refund is attributed to the exact payout token: both fills are origin-chain repayments,
+      // so each pays out in its own input token.
+      expect(
+        bundleDataClient.getUpcomingRefunds(
+          OPTIMISM,
+          l1Usdc,
+          relayer,
+          toAddressType(l2TokensForUsdc[OPTIMISM], OPTIMISM)
+        )
+      ).to.equal(fillAmount1);
+      expect(
+        bundleDataClient.getUpcomingRefunds(OPTIMISM, l1Usdc, relayer, toAddressType(nativeUsdcOnOptimism, OPTIMISM))
+      ).to.equal(fillAmount2);
+    });
+
+    it("Falls back to origin-chain repayment when the input token has no pool rebalance route", async function () {
+      const fillAmount = toBNWei(40, 6);
+      // nativeUsdcOnOptimism is inventory-equivalent to L1 USDC but has no pool rebalance route on the
+      // mock hub pool client, so the dataworker cannot honor the requested BSC repayment and would fall
+      // back to repaying on the origin chain in the input token.
+      const spokePoolClient = spokePoolClients[BSC];
+      (spokePoolClient as unknown as MockSpokePoolClient).fillRelay({
+        message: "0x",
+        messageHash: ZERO_BYTES,
+        inputToken: toAddressType(nativeUsdcOnOptimism, OPTIMISM),
+        outputToken: toAddressType(l2TokensForUsdc[BSC], BSC),
+        destinationChainId: BSC,
+        depositor: toAddressType(owner.address, OPTIMISM),
+        recipient: toAddressType(owner.address, BSC),
+        exclusivityDeadline: getCurrentTime() + 14400,
+        depositId: bnZero,
+        exclusiveRelayer: toAddressType(owner.address, OPTIMISM),
+        inputAmount: fillAmount,
+        outputAmount: fillAmount,
+        fillDeadline: getCurrentTime() + 14400,
+        blockNumber: spokePoolClient.latestHeightSearched,
+        txnIndex: 0,
+        logIndex: 0,
+        txnRef: "0x",
+        relayer: toAddressType(owner.address, MAINNET),
+        originChainId: OPTIMISM,
+        repaymentChainId: BSC,
+        relayExecutionInfo: {
+          updatedRecipient: toAddressType(owner.address, BSC),
+          updatedMessage: "0x",
+          updatedMessageHash: ZERO_BYTES,
+          updatedOutputAmount: fillAmount,
+          fillType: interfaces.FillType.FastFill,
+        },
+      } as interfaces.FillWithBlock);
+      await spokePoolClient.update(["FilledRelay"]);
+
+      bundleDataClient.initialize();
+      expect(bundleDataClient.getUpcomingRefunds(OPTIMISM, l1Usdc)).to.equal(fillAmount);
+      expect(
+        bundleDataClient.getUpcomingRefunds(OPTIMISM, l1Usdc, relayer, toAddressType(nativeUsdcOnOptimism, OPTIMISM))
+      ).to.equal(fillAmount);
+      expect(bundleDataClient.getUpcomingRefunds(BSC, l1Usdc)).to.equal(bnZero);
+    });
+
+    it("export flattens the repayment-token breakdown; import restores chain-level sums", async function () {
+      const fillAmount = toBNWei(100, 6);
+      await generateFill("USDC", OPTIMISM, OPTIMISM, owner.address, fillAmount);
+      bundleDataClient.initialize();
+
+      // The serialized state keeps the historical flat shape: one BigNumber per relayer.
+      const state = bundleDataClient.export();
+      const exported = state.upcomingRefunds[mainnetUsdc][OPTIMISM][owner.address];
+      expect(BigNumber.isBigNumber(exported)).to.be.true;
+      expect(exported).to.equal(fillAmount);
+
+      // Imported state preserves chain-level sums but carries no per-token breakdown.
+      bundleDataClient.import(state);
+      expect(bundleDataClient.getUpcomingRefunds(OPTIMISM, l1Usdc)).to.equal(fillAmount);
+      expect(
+        bundleDataClient.getUpcomingRefunds(
+          OPTIMISM,
+          l1Usdc,
+          relayer,
+          toAddressType(l2TokensForUsdc[OPTIMISM], OPTIMISM)
+        )
+      ).to.equal(bnZero);
     });
 
     it("getUpcomingDeposits aggregates deposits from both contributor tokens", async function () {
