@@ -154,6 +154,16 @@ export class BaseChainAdapter {
     return isDefined(this.l2Bridges[l1Token.toEvmAddress()]);
   }
 
+  /**
+   * Determine whether this adapter has an L1 -> L2 bridge for an l1 token address. Tokens can be supported
+   * for L2 -> L1 withdrawals only (e.g. Avalanche USDT via Binance), in which case this returns false.
+   * @param l1Token an address
+   * @returns True if an L1 -> L2 bridge is configured for l1Token
+   */
+  isSupportedL1Bridge(l1Token: EvmAddress): boolean {
+    return isDefined(this.bridges[l1Token.toNative()]);
+  }
+
   filterSupportedTokens(l1Tokens: EvmAddress[]): EvmAddress[] {
     return l1Tokens.filter((l1Token) => this.isSupportedToken(l1Token));
   }
@@ -419,7 +429,12 @@ export class BaseChainAdapter {
     optionalParams?: TransferTokenParams
   ): Promise<TransactionResponse> {
     const bridge = this.bridges[l1Token.toNative()];
-    assert(isDefined(bridge) && this.isSupportedToken(l1Token), `Token ${l1Token} is not supported`);
+    assert(this.isSupportedToken(l1Token), `Token ${l1Token} is not in SUPPORTED_TOKENS on chain ${this.chainId}`);
+    assert(
+      isDefined(bridge),
+      `No L1 -> L2 bridge configured for token ${l1Token} on chain ${this.chainId}. ` +
+        "The token may only support L2 -> L1 withdrawals."
+    );
     let bridgeTransactionDetails: BridgeTransactionDetails;
     try {
       bridgeTransactionDetails = await bridge.constructL1ToL2Txn(address, l1Token, l2Token, amount, optionalParams);
@@ -550,7 +565,7 @@ export class BaseChainAdapter {
     // (e.g. Avalanche USDT via Binance) are in SUPPORTED_TOKENS / supportedTokens but have no
     // entry in this.bridges — skip them here rather than crashing on an undefined bridge.
     const availableL1Tokens = this.filterSupportedTokens(l1Tokens).filter((l1Token) =>
-      isDefined(this.bridges[l1Token.toNative()])
+      this.isSupportedL1Bridge(l1Token)
     );
 
     const outstandingTransfers: OutstandingTransfers = {};

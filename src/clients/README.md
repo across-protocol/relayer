@@ -55,6 +55,8 @@ Ideally, this wrapping and unwrapping would occur in a separate, focused NativeT
 
 The InventoryClient also provides functions that are used to transfer tokens across chains via adapters like CCTP, OFT, or canonical bridges. These adapters are defined in /src/adapter/bridges and /src/adapter/l2Bridges which send tokens from L1 to L2 and vice versa, respectively.
 
+Some tokens only have an L2 -> L1 bridge configured (e.g. Avalanche USDT, which exits via Binance). If the inventory config sets a target allocation for such a token on that chain, the L1 -> L2 rebalance is skipped with a warning rather than attempted, since no bridge route exists for that direction. The skip only applies when the InventoryClient executes the send itself: when called with `returnRebalancesOnly = true` (as the SameAssetRebalancerClient does), these rebalances are still returned so the caller can execute them through alternate routes such as Binance.
+
 ### Plan for Deprecation of Token Transfer Logic
 
 Note that the InventoryClient is an older module and its token transfer functions are slated to be migrated over to rebalancer clients eventually. For now, the separation of concerns between the two is that the InventoryClient is in charge of sending **same** tokens across chains while rebalancer clients swap different tokens across chains.
