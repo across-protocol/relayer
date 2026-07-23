@@ -489,10 +489,9 @@ export class Relayer {
     );
 
     // Filter the resulting deposits according to relayer configuration, then order them by fill deadline, earliest
-    // first. This ensures the most urgent deposits (closest to their fill deadline) are evaluated - and, when the
-    // per-loop rate limit truncates the list, retained - ahead of others. getUnfilledDeposits otherwise returns
-    // deposits grouped by origin chain; fillDeadline is a timestamp comparable across origin chains, unlike the
-    // per-chain block numbers the deposits would otherwise be ordered by.
+    // first. This ensures the most urgent deposits (closest to their fill deadline) are evaluated ahead of others.
+    // getUnfilledDeposits otherwise returns deposits grouped by origin chain; fillDeadline is a timestamp comparable
+    // across origin chains, unlike the per-chain block numbers the deposits would otherwise be ordered by.
     return Object.fromEntries(
       Object.values(destinationSpokePoolClients).map((destinationSpokePoolClient) => [
         destinationSpokePoolClient.chainId,
@@ -943,6 +942,35 @@ export class Relayer {
     }
   }
 
+  /**
+   * @description Select up to `limit` deposits, apportioning the limit round-robin across output tokens so that a
+   * backlog in a single token (i.e. an unresolved shortfall) cannot starve other tokens of evaluation. Within each
+   * token, smaller deposits are preferred since they are the most likely to be fillable under a shortfall.
+   * @param deposits Deposits to select from.
+   * @param limit Maximum number of deposits to select.
+   * @returns Up to `limit` deposits.
+   */
+  protected selectDeposits(
+    deposits: (DepositWithBlock & { fillStatus: number })[],
+    limit: number
+  ): (DepositWithBlock & { fillStatus: number })[] {
+    if (deposits.length <= limit) {
+      return deposits;
+    }
+
+    const nSelected: { [outputToken: string]: number } = {};
+    return deposits
+      .sort((a, b) => (a.outputAmount.eq(b.outputAmount) ? 0 : a.outputAmount.lt(b.outputAmount) ? -1 : 1))
+      .map((deposit) => {
+        const outputToken = deposit.outputToken.toNative();
+        nSelected[outputToken] = (nSelected[outputToken] ?? 0) + 1;
+        return { deposit, rank: nSelected[outputToken] };
+      })
+      .sort((a, b) => a.rank - b.rank)
+      .slice(0, limit)
+      .map(({ deposit }) => deposit);
+  }
+
   async checkForUnfilledDepositsAndFill(simulate = false): Promise<{ [chainId: number]: Promise<string[]> }> {
     const at = "Relayer::checkForUnfilledDepositsAndFill";
     const { hubPoolClient, profitClient, spokePoolClients, tokenClient, multiCallerClient, tryMulticallClient } =
@@ -1020,10 +1048,10 @@ export class Relayer {
           }
 
           return nDeposits <= RELAYER_DEPOSITOR_RATE_LIMIT;
-        })
-        .slice(0, depositLimit);
+        });
+      const selectedDeposits = this.selectDeposits(unfilledDeposits, depositLimit);
 
-      const mdcPerChain = this.computeRequiredDepositConfirmations(unfilledDeposits, destinationChainId);
+      const mdcPerChain = this.computeRequiredDepositConfirmations(selectedDeposits, destinationChainId);
       const maxBlockNumbers = Object.fromEntries(
         Object.values(spokePoolClients).map(({ chainId, latestHeightSearched }) => [
           chainId,
@@ -1031,7 +1059,7 @@ export class Relayer {
         ])
       );
 
-      await this.evaluateFills(unfilledDeposits, lpFees, maxBlockNumbers);
+      await this.evaluateFills(selectedDeposits, lpFees, maxBlockNumbers);
 
       const pendingTxnCount = chainIsSvm(destinationChainId)
         ? (this.clients.svmFillerClient?.getTxnQueueLen() ?? 0)
