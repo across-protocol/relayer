@@ -95,3 +95,9 @@ RELAYER_POLICY_EXAMPLE_GAS_MULTIPLIER=0
 ## Transaction Client
 
 This client is responsible for submitting transactions on-chain and therefore for setting the transaction's gas price values, nonce, and implements important retry and error decoding logic. It is designed to be shared across all code modules that submit on-chain transactions.
+
+## Across API Client
+
+The AcrossApiClient periodically queries the Across API `/liquid-reserves` endpoint to record the maximum HubPool liquidity available for each enabled L1 token. The relayer uses these limits to skip deposits whose input amount exceeds the available liquidity for the corresponding token. Deposits originating on the hub chain are exempt, since funds can be JIT-bridged from mainnet.
+
+If a limits query fails or returns an invalid response, the client retains the most recently fetched limits rather than zeroing them out, so the relayer continues operating on the last known liquidity through transient API outages. A token whose limit has never been fetched successfully defaults to a limit of 0, meaning its deposits are not filled.
