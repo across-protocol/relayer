@@ -107,7 +107,8 @@ export class TransactionClient {
   async dispatch(
     txn: Omit<AugmentedTransaction, "contract">,
     target: Contract,
-    provider: Provider
+    provider: Provider,
+    opts: { throwOnError?: boolean } = {}
   ): Promise<TransactionResponse> {
     assert(this.signers.length > 0, "Cannot dispatch transaction without any signers defined.");
     // Overwrite the signer on the augmented transaction.
@@ -117,7 +118,7 @@ export class TransactionClient {
       ...txn,
       contract,
     };
-    return (await this.submit(txn.chainId, [dispatchTxn]))[0];
+    return (await this.submit(txn.chainId, [dispatchTxn], opts))[0];
   }
 
   protected _getTransactionPromise(txn: AugmentedTransaction, nonce: number | null): Promise<TransactionResponse> {
@@ -183,7 +184,11 @@ export class TransactionClient {
     return txnPromise;
   }
 
-  async submit(chainId: number, txns: AugmentedTransaction[]): Promise<TransactionResponse[]> {
+  async submit(
+    chainId: number,
+    txns: AugmentedTransaction[],
+    opts: { throwOnError?: boolean } = {}
+  ): Promise<TransactionResponse[]> {
     const networkName = getNetworkName(chainId);
     const txnResponses: TransactionResponse[] = [];
 
@@ -239,6 +244,12 @@ export class TransactionClient {
           error: stringifyThrownValue(error),
           notificationPath: "across-error",
         });
+        // Opt-in error propagation lets callers (notably `submitTransaction` /
+        // `dispatchTransaction`) distinguish a CALL_EXCEPTION mined-revert from a stuck-queue
+        // placement failure — both otherwise look identical via the empty-array return path.
+        if (opts.throwOnError) {
+          throw error;
+        }
         return txnResponses;
       }
 
