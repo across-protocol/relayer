@@ -26,9 +26,6 @@ import {
   TransactionReceipt,
   getCurrentTime,
   isHttpError,
-  chainIsEvm,
-  chainIsTvm,
-  getEthersCompatibleAddress,
 } from "../utils";
 import { getRedisCache, RedisCacheInterface } from "../cache/Redis";
 import {
@@ -79,15 +76,6 @@ const HEARTBEAT_TIMEOUT_MS = 5_000;
 // Warn on every Nth consecutive heartbeat failure (i.e. once per N ticks during a sustained
 // outage, rather than once per tick or once ever).
 const HEARTBEAT_FAILURE_WARN_THRESHOLD = 10;
-
-/**
- * Account namespace expected for addresses living on `chainId`; undefined = chain family the v3
- * execute path does not support. Note zkSync-family chains are EVM here, so a `zksync`-namespaced
- * message is skipped — same outcome as before this helper existed.
- */
-function expectedNamespaceForChain(chainId: number): "evm" | "tron" | undefined {
-  return chainIsTvm(chainId) ? "tron" : chainIsEvm(chainId) ? "evm" : undefined;
-}
 
 /**
  * Independent relayer bot which processes EIP-3009 signatures into deposits and corresponding fills.
@@ -1043,21 +1031,14 @@ export class DepositAddressHandler {
     // unexpected throw must not strand the depositKey, since the next poll would silently skip it.
     let executeCommitted = false;
     try {
-      // The execute endpoint identity (userAddress) must be native to the origin chain's family
-      // (evm ⇒ 0x-hex, tron ⇒ base58). A cross-family namespace (e.g. tron on an EVM chain) is a
-      // data anomaly; other families (e.g. svm) are not supported through this path.
-      const expectedNamespace = expectedNamespaceForChain(originChainId);
-      if (
-        !isDefined(expectedNamespace) ||
-        depositAddressNamespace !== expectedNamespace ||
-        refundAddress.namespace !== expectedNamespace
-      ) {
+      // The execute endpoint identity (userAddress) must be an EVM address; non-EVM identities
+      // cannot be executed through this path.
+      if (depositAddressNamespace !== "evm" || refundAddress.namespace !== "evm") {
         this.logger.warn({
           at: "DepositAddressHandler#initiateDepositV3",
           message: "Skipping v3 deposit: unsupported account namespace",
           depositAddressNamespace,
           refundAddressNamespace: refundAddress.namespace,
-          expectedNamespace: expectedNamespace ?? "unsupported chain family",
           depositAddress,
           refTxHash,
           chainId: originChainId,
@@ -1174,11 +1155,7 @@ export class DepositAddressHandler {
       chainId: originChainId,
     };
 
-    // Compare canonically: base58 is case-sensitive, so map both sides through the 0x-hex form
-    // (no-op on EVM, where this degrades to the previous lowercase compare). Also accepts a
-    // hex-encoded response for a base58-funded address.
-    const canonicalAddress = (address: string) => getEthersCompatibleAddress(originChainId, address).toLowerCase();
-    if (canonicalAddress(executeResponse.depositAddress) !== canonicalAddress(depositAddress)) {
+    if (executeResponse.depositAddress.toLowerCase() !== depositAddress.toLowerCase()) {
       this.logger.warn({
         ...logContext,
         message: "Skipping execute: API-derived deposit address does not match funded deposit address",
@@ -1191,16 +1168,6 @@ export class DepositAddressHandler {
         ...logContext,
         message: "Skipping execute: execute tx chainId does not match origin chainId",
         executeTxChainId: executeTx.chainId,
-      });
-      return false;
-    }
-    const expectedEcosystem = chainIsTvm(originChainId) ? "tvm" : "evm";
-    if (executeTx.ecosystem !== expectedEcosystem) {
-      this.logger.warn({
-        ...logContext,
-        message: "Skipping execute: execute tx ecosystem does not match origin chain family",
-        executeTxEcosystem: executeTx.ecosystem,
-        expectedEcosystem,
       });
       return false;
     }
@@ -1239,7 +1206,6 @@ export class DepositAddressHandler {
       isDefined(integratorId) && INTEGRATOR_ID_REGEX.test(integratorId),
       "DepositAddressHandler: _getExecuteTx requires a validated integratorId"
     );
-    const originChainId = Number(erc20Transfer.chainId);
     const request = {
       destination: {
         token: {
@@ -1248,23 +1214,18 @@ export class DepositAddressHandler {
         },
         recipient: routeParams.recipient.address,
       },
-      originChainId,
-      // The funding token is relayed verbatim from the indexer, which serves origin-chain-native
-      // encodings (base58 on Tron) — exactly what the execute endpoint expects for origin fields.
+      originChainId: Number(erc20Transfer.chainId),
       ...(this.config.enableExecuteInputToken
         ? {
             inputToken: {
-              chainId: originChainId,
+              chainId: Number(erc20Transfer.chainId),
               address: erc20Transfer.contractAddress,
             },
           }
         : {}),
       userAddress: refundAddress.address,
       amount: erc20Transfer.amount,
-      // The API expects origin-chain-native encoding (base58 on Tron). The bot's Tron account is
-      // the same key re-encoded — TVM submission reuses the EVM private key — so re-encoding the
-      // signer address per origin chain keeps the fee recipient the bot itself on every family.
-      executionFeeRecipient: toAddressType(this.signerAddress.toNative(), originChainId).toNative(),
+      executionFeeRecipient: this.signerAddress.toNative(),
       integratorId,
       // Provenance reference to the inbound funding transfer. When accepted, the API folds this into a
       // Multicall3 bundle that emits a version-2 provenance blob, giving the indexer an on-chain
@@ -1274,7 +1235,7 @@ export class DepositAddressHandler {
       ...(this.config.enableExecuteErc20Transfer
         ? {
             erc20Transfer: {
-              chainId: originChainId,
+              chainId: Number(erc20Transfer.chainId),
               blockNumber: erc20Transfer.blockNumber,
               transactionHash: erc20Transfer.transactionHash,
               logIndex: erc20Transfer.logIndex,
@@ -1550,14 +1511,8 @@ export class DepositAddressHandler {
   }
 
   private getExecuteContract(address: string, originChainId: number, useDispatcher: boolean): Contract {
-    // The API returns a 0x-hex `to` on both ecosystems today; convert defensively in case a TVM
-    // response ever carries base58. The dispatcher case connects the provider only — simulation
-    // and TVM submission read `contract.provider`, while the dispatcher attaches its own signer
-    // at dispatch time.
-    const contract = new Contract(getEthersCompatibleAddress(originChainId, address), []);
-    return useDispatcher
-      ? contract.connect(this.providersByChain[originChainId])
-      : contract.connect(this.baseSigner.connect(this.providersByChain[originChainId]));
+    const contract = new Contract(address, []);
+    return useDispatcher ? contract : contract.connect(this.baseSigner.connect(this.providersByChain[originChainId]));
   }
 
   /**
@@ -1574,17 +1529,14 @@ export class DepositAddressHandler {
    * @notice Returns the deposit address's balance of `token` on `chainId`. Native transfers are
    * indexed with the sentinel token address, which has no contract — read those via
    * `provider.getBalance` instead of `balanceOf` (which reverts on the sentinel).
-   * Tron providers speak eth-JSON-RPC, so base58 inputs (un-normalized v3 messages) are converted
-   * to 0x-hex first; hex inputs pass through unchanged.
    */
   private async getDepositAddressBalance(chainId: number, token: string, depositAddress: string): Promise<BigNumber> {
     const provider = this.providersByChain[chainId];
     assert(isDefined(provider), `Provider not found for chain ${chainId}`);
-    const depositAddressHex = getEthersCompatibleAddress(chainId, depositAddress);
     if (isNativeTokenSentinel(token)) {
-      return provider.getBalance(depositAddressHex);
+      return provider.getBalance(depositAddress);
     }
-    return new Contract(getEthersCompatibleAddress(chainId, token), ERC20_ABI, provider).balanceOf(depositAddressHex);
+    return new Contract(token, ERC20_ABI, provider).balanceOf(depositAddress);
   }
 
   /*
@@ -1605,8 +1557,7 @@ export class DepositAddressHandler {
     // normalizeDepositAddressMessage dereferences those unconditionally — a single bad message
     // would throw and sink the whole batch, starving supported messages in the same response.
     // Only top-level fields are safe to read here. v3 items keep their own shape and are passed
-    // through un-normalized (the v3 execute path guards namespaces itself and consumes Tron
-    // fields in native base58, converting to 0x-hex only at on-chain call boundaries).
+    // through un-normalized (the v3 execute path is EVM-only and guards namespaces itself).
     return apiResponseData
       .filter((message) => {
         const { version } = message;
