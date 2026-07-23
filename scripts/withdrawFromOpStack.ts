@@ -68,56 +68,101 @@ export async function run(): Promise<void> {
     }
   }
 
-  // Now, submit a withdrawal. This might fail if the ERC20 uses a non-standard OVM bridge to withdraw.
-  const ovmStandardBridgeObj = getContractEntry(chainId, "ovmStandardBridge");
-  const ovmStandardBridge = new Contract(ovmStandardBridgeObj.address, ovmStandardBridgeObj.abi, connectedSigner);
-  const bridgeArgs =
-    symbol === "ETH"
-      ? [
-          signerAddr, // to
-          200_000, // minGasLimit
-          "0x", // extraData
-          { value: amount }, // msg.value
-        ]
-      : [
-          l2Token.toNative(), // _localToken
-          l1TokenAddress.toNative(), // Remote token to be received on L1 side. If the
-          // remoteL1Token on the other chain does not recognize the local token as the correct
-          // pair token, the ERC20 bridge will fail and the tokens will be returned to sender on
-          // this chain.
-          signerAddr, // _to
-          amount, // _amount
-          200_000, // minGasLimit
-          "0x", // _data
-        ];
+  // Now, submit a withdrawal. Tokens with a custom bridge registered on the SpokePool (e.g. DAI on
+  // Optimism via Maker's L2DAITokenBridge) withdraw via the legacy IL2ERC20Bridge interface;
+  // everything else goes via the OVM standard bridge.
+  const spokePool = await getOvmSpokePoolContract(chainId, connectedSigner);
+  const expectedL2Messenger = await spokePool.MESSENGER();
+  const customTokenBridge = symbol === "ETH" ? ZERO_ADDRESS : await spokePool.tokenBridges(l2Token.toNative());
 
-  const functionNameToCall = symbol === "ETH" ? "bridgeETHTo" : "bridgeERC20To";
+  let bridge: Contract;
+  let functionNameToCall: string;
+  let bridgeArgs: unknown[];
+  if (customTokenBridge !== ZERO_ADDRESS) {
+    const customBridgeAbi = [
+      "function withdrawTo(address _l2Token, address _to, uint256 _amount, uint32 _l1Gas, bytes _data)",
+      "function messenger() view returns (address)",
+      "function l1Token() view returns (address)",
+      "function l2Token() view returns (address)",
+    ];
+    bridge = new Contract(customTokenBridge, customBridgeAbi, connectedSigner);
+    functionNameToCall = "withdrawTo";
+    bridgeArgs = [
+      l2Token.toNative(), // _l2Token
+      signerAddr, // _to
+      amount, // _amount
+      200_000, // _l1Gas
+      "0x", // _data
+    ];
+
+    // Sanity check the bridge wiring. Custom bridges without these getters (i.e. that don't
+    // implement the legacy interface) fail here, before anything is submitted.
+    const [l2Messenger, bridgeL1Token, bridgeL2Token] = await Promise.all([
+      bridge.messenger(),
+      bridge.l1Token(),
+      bridge.l2Token(),
+    ]);
+    assert(
+      l2Messenger === expectedL2Messenger,
+      `Unexpected L2 messenger address in custom token bridge, expected: ${expectedL2Messenger}, got: ${l2Messenger}`
+    );
+    assert(
+      bridgeL1Token === l1TokenAddress.toNative(),
+      `Unexpected L1 token in custom token bridge, expected: ${l1TokenAddress}, got: ${bridgeL1Token}`
+    );
+    assert(
+      bridgeL2Token === l2Token.toNative(),
+      `Unexpected L2 token in custom token bridge, expected: ${l2Token}, got: ${bridgeL2Token}`
+    );
+  } else {
+    const ovmStandardBridgeObj = getContractEntry(chainId, "ovmStandardBridge");
+    bridge = new Contract(ovmStandardBridgeObj.address, ovmStandardBridgeObj.abi, connectedSigner);
+    functionNameToCall = symbol === "ETH" ? "bridgeETHTo" : "bridgeERC20To";
+    bridgeArgs =
+      symbol === "ETH"
+        ? [
+            signerAddr, // to
+            200_000, // minGasLimit
+            "0x", // extraData
+            { value: amount }, // msg.value
+          ]
+        : [
+            l2Token.toNative(), // _localToken
+            l1TokenAddress.toNative(), // Remote token to be received on L1 side. If the
+            // remoteL1Token on the other chain does not recognize the local token as the correct
+            // pair token, the ERC20 bridge will fail and the tokens will be returned to sender on
+            // this chain.
+            signerAddr, // _to
+            amount, // _amount
+            200_000, // minGasLimit
+            "0x", // _data
+          ];
+
+    // Sanity check that the ovmStandardBridge contract is the one we expect by comparing its stored addresses
+    // with the ones we have recorded.
+    const l2Messenger = await bridge.MESSENGER();
+    assert(
+      l2Messenger === expectedL2Messenger,
+      `Unexpected L2 messenger address in ovmStandardBridge contract, expected: ${expectedL2Messenger}, got: ${l2Messenger}`
+    );
+    const l1StandardBridge = await bridge.l1TokenBridge();
+    const expectedL1StandardBridge = getContractEntry(CHAIN_IDs.MAINNET, `ovmStandardBridge_${chainId}`).address;
+    assert(
+      l1StandardBridge === expectedL1StandardBridge,
+      `Unexpected L1 standard bridge address in ovmStandardBridge contract, expected: ${expectedL1StandardBridge}, got: ${l1StandardBridge}`
+    );
+  }
+
+  const bridgeType = customTokenBridge !== ZERO_ADDRESS ? "custom token" : "OVM standard";
   console.log(
-    `Submitting ${functionNameToCall} on the OVM standard bridge @ ${ovmStandardBridge.address} with the following args: `,
+    `Submitting ${functionNameToCall} on the ${bridgeType} bridge @ ${bridge.address} with the following args: `,
     ...bridgeArgs
   );
 
-  // Sanity check that the ovmStandardBridge contract is the one we expect by comparing its stored addresses
-  // with the ones we have recorded.
-  const spokePool = await getOvmSpokePoolContract(chainId, connectedSigner);
-  const expectedL2Messenger = await spokePool.MESSENGER();
-  const l2Messenger = await ovmStandardBridge.MESSENGER();
-  assert(
-    l2Messenger === expectedL2Messenger,
-    `Unexpected L2 messenger address in ovmStandardBridge contract, expected: ${expectedL2Messenger}, got: ${l2Messenger}`
-  );
-  const l1StandardBridge = await ovmStandardBridge.l1TokenBridge();
-  const expectedL1StandardBridge = getContractEntry(CHAIN_IDs.MAINNET, `ovmStandardBridge_${chainId}`).address;
-  assert(
-    l1StandardBridge === expectedL1StandardBridge,
-    `Unexpected L1 standard bridge address in ovmStandardBridge contract, expected: ${expectedL1StandardBridge}, got: ${l1StandardBridge}`
-  );
-  const customTokenBridge = await spokePool.tokenBridges(l2Token.toNative());
-  assert(customTokenBridge === ZERO_ADDRESS, `Custom token bridge set for token ${l2Token} (${customTokenBridge})`);
   if (!(await askYesNoQuestion("\nDo you want to proceed?"))) {
     return;
   }
-  const withdrawal = await ovmStandardBridge[functionNameToCall](...bridgeArgs);
+  const withdrawal = await bridge[functionNameToCall](...bridgeArgs);
   console.log(`Submitted withdrawal: ${blockExplorerLink(withdrawal.hash, chainId)}.`);
   const receipt = await withdrawal.wait();
   console.log("Receipt", receipt);
