@@ -1005,8 +1005,10 @@ export class InventoryClient {
           this.trackCrossChainTransfer(l1Token, l2Token, amount, chainId);
         }
       } else {
-        // Extract unexecutable rebalances for logging.
-        unexecutedRebalances.push(rebalance);
+        // Extract unexecutable rebalances for logging. Overwrite the planning-time L1 balance with the unallocated
+        // balance remaining at decision time, since rebalances approved earlier in this loop may have earmarked
+        // part of it and are the actual reason this transfer was blocked.
+        unexecutedRebalances.push({ ...rebalance, balance: unallocatedBalance });
       }
     }
 
@@ -1112,14 +1114,19 @@ export class InventoryClient {
 
         const { symbol, decimals } = tokenInfo;
         const l2TokenFormatter = createFormatFunction(2, 4, false, decimals);
-        const distributionPct = tokenDistributionPerL1Token[l1Token.toNative()][chainId][l2Token.toNative()].mul(100);
+        // Compute the allocation from the same live balances printed alongside it, rather than from the distribution
+        // snapshot taken before this run's approved rebalances were tracked, so all figures are self-consistent.
+        const currentBalance = this.getBalanceOnChain(chainId, l1Token, l2Token);
         const cumulativeBalance = this.getCumulativeBalance(l1Token);
+        const distributionPct = cumulativeBalance.gt(bnZero)
+          ? currentBalance.mul(this.scalar).div(cumulativeBalance).mul(100)
+          : bnZero;
         mrkdwn +=
           `- ${symbol} transfer blocked. Required to send ` +
-          `${l1Formatter(amount)} but relayer has ` +
-          `${l1Formatter(balance)} on L1. There is currently ` +
-          `${l1Formatter(this.getBalanceOnChain(chainId, l1Token, l2Token))} ${symbol} on ` +
-          `${getNetworkName(chainId)} which is ` +
+          `${l1Formatter(amount)} but relayer had only ` +
+          `${l1Formatter(balance)} unallocated on L1 when the transfer was evaluated. There is currently ` +
+          `${l1Formatter(currentBalance)} ${symbol} on ` +
+          `${getNetworkName(chainId)} (including pending inbound transfers) which is ` +
           `${this.formatWei(distributionPct)}% of the total ` +
           `${l1Formatter(cumulativeBalance)} ${symbol}.` +
           " This chain's pending L1->L2 transfer amount is " +
