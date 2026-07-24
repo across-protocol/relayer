@@ -118,6 +118,7 @@ export class Monitor {
       this.clients.hubPoolClient,
       this.monitorChains,
       this.l1Tokens.map(({ address }) => address),
+      this.monitorConfig.monitoredRelayers,
       this.logger
     );
   }

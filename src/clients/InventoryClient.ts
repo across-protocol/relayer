@@ -136,6 +136,7 @@ export class InventoryClient {
       this.hubPoolClient,
       this.chainIdList,
       Array.from(allL1Tokens.values()).map((l1Token) => EvmAddress.from(l1Token)),
+      [this.relayer],
       this.logger
     );
   }
