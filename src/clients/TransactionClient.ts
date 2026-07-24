@@ -159,12 +159,42 @@ export class TransactionClient {
               // Call failed
               this.logger.warn({ ...common, message: `Transaction on ${chain} failed during execution...` });
               throw error;
-            case ethers.errors.TRANSACTION_REPLACED:
+            case ethers.errors.TRANSACTION_REPLACED: {
+              // ethers throws TRANSACTION_REPLACED when a same-nonce transaction took our slot. A
+              // "repriced" replacement (cancelled === false) is a speed-up of the *same* logical
+              // transaction: it has already mined under a new hash, so resubmitting here would
+              // double-send (e.g. duplicate an inventory rebalance transfer). Treat it as success
+              // by returning the mined replacement. Only a genuine cancellation/replacement
+              // (cancelled === true) means our transaction did not take effect and must be resent.
+              const { cancelled, replacement, receipt } = error as unknown as {
+                cancelled?: boolean;
+                replacement?: TransactionResponse;
+                receipt?: TransactionReceipt;
+              };
+              if (cancelled === false && isDefined(replacement)) {
+                // The repriced replacement is itself an on-chain execution. ethers includes its mined
+                // receipt here; a status === 0 receipt means the replacement reverted. Surface that as
+                // a failure (mirroring the CALL_EXCEPTION path above) so callers don't record a reverted
+                // rebalance/finalization as confirmed.
+                if (receipt?.status === 0) {
+                  this.logger.warn({
+                    ...common,
+                    message: `Transaction on ${chain} was repriced but the replacement reverted.`,
+                  });
+                  throw error;
+                }
+                this.logger.warn({
+                  ...common,
+                  message: `Transaction on ${chain} was repriced and already mined; using replacement.`,
+                });
+                return replacement;
+              }
               this.logger.warn({
                 ...common,
                 message: `Transaction submission on ${chain} replaced at nonce ${nonce}, resubmitting...`,
               });
               return this._submit(txn, { nonce: null, maxTries: maxTries - 1 });
+            }
             default:
               this.logger.warn({
                 ...common,
