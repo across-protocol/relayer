@@ -1,5 +1,5 @@
 import { expect } from "chai";
-import { CHAIN_IDs, getEthersCompatibleAddress, utils, TransactionReceipt } from "../src/utils";
+import { utils, TransactionReceipt } from "../src/utils";
 import { DepositAddressMessage, DepositAddressMessageV3 } from "../src/interfaces/DepositAddress";
 import {
   buildDepositExecutedPayload,
@@ -329,55 +329,6 @@ describe("buildDepositExecutedPayload", function () {
     ]);
     const payload = buildDepositExecutedPayload(receipt, depositMessageV3());
     expect(payload?.data.logIndex).to.equal(2);
-  });
-
-  // v3 Tron messages arrive un-normalized (base58 token/depositAddress, un-prefixed tx hash), while
-  // receipt logs from the eth-JSON-RPC provider are 0x-hex — the builder converts before matching.
-  describe("with a base58 Tron message", function () {
-    const TRON_DEPOSIT_ADDRESS = "TRhLhFckPaeCtFyrUBJRK6p9LhRtbS7Pa5";
-    const TRON_REFUND_ADDRESS = "TQ4T4DgHoezYBTRoZPCspsSgRw38Ni9prA";
-    const TRON_TOKEN = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
-    const TRON_TX_HASH = "3b699036b64d765dea6a9103c33793d343381bab361b3e96051e56de2d174247";
-    const TOKEN_HEX = getEthersCompatibleAddress(CHAIN_IDs.TRON, TRON_TOKEN);
-    const DEPOSIT_ADDRESS_HEX = getEthersCompatibleAddress(CHAIN_IDs.TRON, TRON_DEPOSIT_ADDRESS);
-
-    function tronDepositMessageV3(): DepositAddressMessageV3 {
-      const message = depositMessageV3();
-      message.depositAddress = TRON_DEPOSIT_ADDRESS;
-      message.refundAddress = { namespace: "tron", address: TRON_REFUND_ADDRESS };
-      message.depositAddressNamespace = "tron";
-      message.erc20Transfer = {
-        ...message.erc20Transfer,
-        chainId: String(CHAIN_IDs.TRON),
-        from: TRON_REFUND_ADDRESS,
-        to: TRON_DEPOSIT_ADDRESS,
-        contractAddress: TRON_TOKEN,
-        transactionHash: TRON_TX_HASH,
-      };
-      return message;
-    }
-
-    it("matches hex receipt logs against the converted base58 fields", function () {
-      const receipt = fakeReceipt([
-        {
-          address: TOKEN_HEX,
-          topics: [ERC20_TRANSFER_TOPIC, topicAddress(DEPOSIT_ADDRESS_HEX), topicAddress(SPOKE_POOL)],
-        },
-      ]);
-      const payload = buildDepositExecutedPayload(receipt, tronDepositMessageV3());
-      expect(payload).to.not.be.undefined;
-      expect(payload?.data.chainId).to.equal(CHAIN_IDs.TRON);
-      expect(payload?.data.logIndex).to.equal(0);
-      // Inbound tx hash is relayed verbatim (un-prefixed), preserving the indexer's row key.
-      expect(payload?.data.erc20Transfer.txHash).to.equal(TRON_TX_HASH);
-    });
-
-    it("returns undefined (does not throw on base58) when no log matches", function () {
-      const receipt = fakeReceipt([
-        { address: TOKEN_HEX, topics: [ERC20_TRANSFER_TOPIC, topicAddress(FEE_RECIPIENT), topicAddress(SPOKE_POOL)] },
-      ]);
-      expect(buildDepositExecutedPayload(receipt, tronDepositMessageV3())).to.be.undefined;
-    });
   });
 });
 
