@@ -71,23 +71,47 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
       `OFTBridge only supports sending to EVM addresses. Dst address supplied ${toAddress.toNative()} is not EVM.`
     );
 
-    // We round `amount` to a specific precision to prevent rounding on the contract side. This way, we
-    // receive the exact amount we sent in the transaction
-    const roundedAmount = await this.roundAmountToSend(amount, this.l2TokenInfo.decimals);
-    const appliedFee = OFT.isStargateBridge(this.l2chainId)
-      ? roundedAmount.mul(this.feePct).div(fixedPointAdjustment) // Set a max slippage of 0.5%.
-      : bnZero;
-    const expectedOutputAmount = roundedAmount.sub(appliedFee);
-    const sendParamStruct: OFT.SendParamStruct = {
+    const buildSendParams = (amountLD: BigNumber, minAmountLD: BigNumber): OFT.SendParamStruct => ({
       dstEid: this.l1ChainEid,
       to: OFT.formatToAddress(toAddress),
-      amountLD: roundedAmount,
-      // @dev Setting `minAmountLD` equal to `amountLD` ensures we won't hit contract-side rounding
-      minAmountLD: expectedOutputAmount,
+      amountLD,
+      minAmountLD,
       extraOptions: "0x",
       composeMsg: "0x",
       oftCmd: "0x",
-    };
+    });
+
+    // We round `amount` to a specific precision to prevent rounding on the contract side. This way, we
+    // receive the exact amount we sent in the transaction
+    const roundedAmount = await this.roundAmountToSend(amount, this.l2TokenInfo.decimals);
+
+    // Stargate-style OFTs cap the quoted `amountSentLD` at the path's available credit and revert on
+    // anything larger, so withdraw the quoted amount when it is below the requested one. Vanilla OFTs
+    // quote `amountSentLD` equal to the requested amount. Quoted amounts are derived from shared
+    // decimals on the contract side, so they need no re-rounding.
+    const [oftLimit, , oftReceipt] = await this.getL2Bridge().quoteOFT(buildSendParams(roundedAmount, bnZero));
+    const quotedAmount = BigNumber.from(oftReceipt.amountSentLD);
+    const amountToSend = quotedAmount.lt(roundedAmount) ? quotedAmount : roundedAmount;
+
+    const appliedFee = OFT.isStargateBridge(this.l2chainId)
+      ? amountToSend.mul(this.feePct).div(fixedPointAdjustment) // Set a max slippage of 0.5%.
+      : bnZero;
+    // @dev A minAmountLD of the send amount less the max fee ensures we won't hit contract-side rounding.
+    const minAmountOut = amountToSend.sub(appliedFee);
+
+    // Skip the withdrawal instead of enqueueing a transaction that is guaranteed to revert when the bridge
+    // can't accept a meaningful amount right now, or when the quoted fee-adjusted output already violates
+    // the slippage floor (Stargate fees come out of `amountReceivedLD`, and can exceed the slippage
+    // tolerance when path capacity is nearly drained). The excess is retried next run.
+    if (
+      amountToSend.eq(bnZero) ||
+      amountToSend.lt(BigNumber.from(oftLimit.minAmountLD)) ||
+      BigNumber.from(oftReceipt.amountReceivedLD).lt(minAmountOut)
+    ) {
+      return [];
+    }
+
+    const sendParamStruct = buildSendParams(amountToSend, minAmountOut);
     // Pay the bridge fee in the Lz token if the network does not have a native token (i.e. Tempo).
     const payFeeInLzToken = !chainHasNativeToken(this.l2chainId);
 
@@ -98,6 +122,9 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
     }
 
     const formatter = createFormatFunction(2, 4, false, this.l2TokenInfo.decimals);
+    const sizedDownNote = amountToSend.lt(roundedAmount)
+      ? ` (requested ${formatter(amount.toString())}, sized down to current bridge capacity)`
+      : "";
     const approveTxn = payFeeInLzToken
       ? {
           contract: new Contract(LZ_FEE_TOKENS[this.l2chainId].toNative(), ERC20_ABI, this.l2Signer),
@@ -125,9 +152,9 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
       args: [sendParamStruct, feeStruct, refundAddress],
       value: payFeeInLzToken ? bnZero : BigNumber.from(feeStruct.nativeFee),
       message: `🎰 Withdrew ${this.l2Token} via OftL2Bridge to L1`,
-      mrkdwn: `Withdrew ${formatter(amount.toString())} ${this.l2TokenInfo.symbol} from ${getNetworkName(
-        this.l2chainId
-      )} to L1 via OftL2Bridge`,
+      mrkdwn:
+        `Withdrew ${formatter(amountToSend.toString())} ${this.l2TokenInfo.symbol}${sizedDownNote} ` +
+        `from ${getNetworkName(this.l2chainId)} to L1 via OftL2Bridge`,
     };
 
     return isDefined(approveTxn) ? [approveTxn, withdrawTxn] : [withdrawTxn];
