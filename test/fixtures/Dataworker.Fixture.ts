@@ -1,4 +1,4 @@
-import { setupUmaEcosystem } from "./UmaEcosystemFixture";
+import { getUmaFixture } from "./UmaEcosystemFixture";
 import {
   deploySpokePoolWithToken,
   enableRoutesOnHubPool,
@@ -112,7 +112,7 @@ export async function setupDataworker(
   };
   const testChainIdList = Object.keys(spokePoolDeploymentBlocks).map((_chainId) => Number(_chainId));
 
-  const umaEcosystem = await setupUmaEcosystem(owner);
+  const umaEcosystem = getUmaFixture();
   const { hubPool, hubPoolDeploymentBlock, l1Token_1, l1Token_2 } = await deployAndConfigureHubPool(
     owner,
     [
