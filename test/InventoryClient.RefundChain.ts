@@ -590,6 +590,65 @@ describe("InventoryClient: Refund chain selection", function () {
     });
   });
 
+  describe("hub-origin repayment broadening", function () {
+    let hubDeposit: Deposit;
+    beforeEach(function () {
+      const inputAmount = toWei(1);
+      hubDeposit = {
+        depositId: bnZero,
+        fromLiteChain: false,
+        toLiteChain: false,
+        originChainId: MAINNET,
+        destinationChainId: OPTIMISM,
+        depositor: toAddressType(owner.address, MAINNET),
+        recipient: toAddressType(owner.address, MAINNET),
+        inputToken: toAddressType(l2TokensForWeth[MAINNET], MAINNET),
+        inputAmount,
+        outputToken: toAddressType(l2TokensForWeth[OPTIMISM], OPTIMISM),
+        outputAmount: inputAmount,
+        message: "0x",
+        messageHash: "0x",
+        quoteTimestamp: hubPoolClient.currentTime ?? 0,
+        fillDeadline: 0,
+        exclusivityDeadline: 0,
+        exclusiveRelayer: toAddressType(ZERO_ADDRESS, MAINNET),
+      };
+    });
+
+    it("includes every pool-rebalance-route chain in the possible repayment list for a hub-origin deposit", function () {
+      const possible = inventoryClient.getPossibleRepaymentChainIds(hubDeposit);
+      // Origin (== hub), destination, and the broadened routes (Optimism, Polygon, Arbitrum) are all present.
+      [MAINNET, OPTIMISM, POLYGON, ARBITRUM].forEach((chainId) => expect(possible).to.include(chainId));
+      // BSC has token config but no seeded pool rebalance route, so it is excluded.
+      expect(possible).to.not.include(BSC);
+    });
+
+    it("does not broaden the possible repayment list for a non-hub origin deposit", function () {
+      const l2Deposit = {
+        ...hubDeposit,
+        originChainId: POLYGON,
+        inputToken: toAddressType(l2TokensForWeth[POLYGON], POLYGON),
+      };
+      const possible = inventoryClient.getPossibleRepaymentChainIds(l2Deposit);
+      expect(possible).to.have.members([POLYGON, OPTIMISM, MAINNET]);
+      expect(possible).to.not.include(ARBITRUM);
+    });
+
+    it("refunds on under-allocated route chains that are neither origin nor destination", async function () {
+      // Drive Optimism (destination) over target and Polygon/Arbitrum well under target.
+      tokenClient.setTokenData(OPTIMISM, toAddressType(l2TokensForWeth[OPTIMISM], OPTIMISM), toWei(30));
+      tokenClient.setTokenData(POLYGON, toAddressType(l2TokensForWeth[POLYGON], POLYGON), toWei(0));
+      tokenClient.setTokenData(ARBITRUM, toAddressType(l2TokensForWeth[ARBITRUM], ARBITRUM), toWei(0));
+      await inventoryClient.update();
+
+      // Cumulative WETH balance = 100 (hub) + 30 + 0 + 0 = 130.
+      // Optimism (destination): 30/130 = 23% > 12% target -> excluded.
+      // Polygon / Arbitrum: (0+1)/130 = 0.77% < 7% target -> eligible (only reachable via broadening).
+      // Origin == hub is appended as the quick-rebalance fallback.
+      expect(await inventoryClient.determineRefundChainId(hubDeposit)).to.deep.equal([POLYGON, ARBITRUM, MAINNET]);
+    });
+  });
+
   describe("origin chain is a lite chain", function () {
     beforeEach(async function () {
       const inputAmount = toBNWei(1);

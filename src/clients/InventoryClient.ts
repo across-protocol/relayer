@@ -528,7 +528,7 @@ export class InventoryClient {
 
   getPossibleRepaymentChainIds(deposit: Deposit): number[] {
     // Origin chain is always included in the repayment chain list.
-    const { originChainId, destinationChainId } = deposit;
+    const { originChainId, destinationChainId, inputToken } = deposit;
     const chainIds = new Set<number>();
     chainIds.add(originChainId);
 
@@ -543,6 +543,17 @@ export class InventoryClient {
       chainIds.add(destinationChainId);
     }
 
+    // For a hub-origin deposit the input liquidity lands on the hub, so the relayer can be repaid on any chain with
+    // a pool rebalance route for this token and have the hub source the rebalance cheaply. Surface them all here so
+    // their LP fees are precomputed; determineRefundChainId() applies the allocation check. forceOriginRepayment is
+    // necessarily false at this point (it returns above).
+    if (originChainId === this.hubPoolClient.chainId) {
+      const l1Token = this.getL1TokenAddress(inputToken, originChainId);
+      if (isDefined(l1Token)) {
+        this.getRepaymentChainsForL1Token(l1Token).forEach((chainId) => chainIds.add(chainId));
+      }
+    }
+
     // Check per-chain override first, then global override
     const chainOverride = this.getRepaymentChainOverride(originChainId);
     if (isDefined(chainOverride)) {
@@ -551,6 +562,23 @@ export class InventoryClient {
 
     chainIds.add(this.hubPoolClient.chainId);
     return [...chainIds];
+  }
+
+  /**
+   * @notice Returns every enabled L2 chain that has both inventory token config and a pool rebalance route for the
+   * given L1 token. Used to broaden repayment eligibility for hub-origin deposits: because the deposited liquidity
+   * is already on the hub, repaying the relayer on any of these chains doubles as a low-cost rebalance.
+   * @param l1Token L1 token to enumerate repayment routes for.
+   * @returns list of eligible L2 chain IDs.
+   */
+  getRepaymentChainsForL1Token(l1Token: EvmAddress): number[] {
+    return this.getEnabledL2Chains().filter((chainId) => {
+      if (!this._l1TokenEnabledForChain(l1Token, chainId)) {
+        return false;
+      }
+      const repaymentToken = this.getRemoteTokenForL1Token(l1Token, chainId);
+      return isDefined(repaymentToken) && this.hubPoolClient.l2TokenHasPoolRebalanceRoute(repaymentToken, chainId);
+    });
   }
 
   /**
@@ -717,7 +745,7 @@ export class InventoryClient {
     // To correctly compute destination-chain allocation, add upcoming refunds for all equivalents of this L1 token.
     const cumulativeVirtualBalancePostRefunds = this.getCumulativeBalanceWithApproximateUpcomingRefunds(l1Token);
 
-    // Repayment is evaluated on the origin and destination chains only.
+    // Standard repayment candidates are the origin and destination chains.
     const prioritizeOrigin = deposit.toLiteChain || originQuickRebalance;
     const standardChainOrder = prioritizeOrigin
       ? [originChainId, destinationChainId]
@@ -729,7 +757,18 @@ export class InventoryClient {
     const standardCandidateChains = [...standardChainOrder].filter((chainId) =>
       chainId === originChainId ? canEvaluateOrigin : canEvaluateDestination
     );
-    const rankedChains = dedupArray(standardCandidateChains);
+
+    // For a hub-origin deposit, also evaluate every other chain with a pool rebalance route for this token. The
+    // deposited liquidity is already on the hub, so repaying the relayer on an under-allocated chain is a cheap
+    // rebalance; the allocation check below keeps only under-allocated chains, and LP fee differences are priced
+    // into downstream profitability selection. Destination is handled by the standard path above. No
+    // forceOriginRepayment guard is needed: a hub origin is always an unmetered fast-rebalance source, so the
+    // forced-origin path has already returned above.
+    const broadenedCandidateChains =
+      originChainId === hubChainId
+        ? this.getRepaymentChainsForL1Token(l1Token).filter((chainId) => chainId !== destinationChainId)
+        : [];
+    const rankedChains = dedupArray([...standardCandidateChains, ...broadenedCandidateChains]);
 
     const eligibleChains: number[] = [];
     // At this point, all ranked chains have defined token configs or are destination chains that can be accepted

@@ -69,6 +69,7 @@ This is an LP-fee precomputation helper, not final selection. It may include:
 
 - origin chain (always)
 - destination chain (if allowed)
+- for a hub-origin deposit, every chain with both inventory token config and a pool rebalance route for the deposit's L1 token (via `getRepaymentChainsForL1Token()`)
 - config override chain
 - hub chain
 
@@ -88,7 +89,7 @@ In code order:
 6. resolve canonical L1 token and normalize input amount decimals
 7. apply repayment chain override (non-forced path)
 8. compute refund-aware virtual balance context
-9. build `chainsToEvaluate` in priority order
+9. build `chainsToEvaluate` in priority order (origin/destination standard candidates, plus — for a hub-origin deposit — every other pool-rebalance-route chain for the L1 token; see hub-origin broadening below)
 10. assert compatibility with `getPossibleRepaymentChainIds()`
 11. evaluate each chain against expected post-relay allocation vs effective target
 12. if forced origin and result is not exactly `[origin]`, return `[]`
@@ -104,6 +105,7 @@ Returned order is intentional and consumed by relayer selection.
 - forced-origin deposits can return `[]` when eligibility constraints reject origin.
 - `possible` and `eligible` are different sets by design: `possible` exists to guarantee LP-fee coverage, while `eligible` enforces policy/allocation admissibility.
 - post-relay virtual balance math is intentionally asymmetric for equivalence edge cases (for example USDC vs USDC.e-style mappings): destination output subtraction is only applied when tokens are considered equivalent by `areTokensEquivalent(...)`.
+- hub-origin broadening: for a deposit originating on the hub chain, repayment candidates are broadened beyond origin/destination to every chain with inventory token config and a pool rebalance route for the deposit's L1 token. Because the deposited liquidity is already on the hub (the rebalancing center), repaying the relayer on an under-allocated route chain doubles as a cheap rebalance. The per-chain allocation check still applies, so broadening can only *add* under-allocated targets; LP-fee differences (the cost of rebalancing to a third chain) are priced into downstream profitability selection. `getPossibleRepaymentChainIds()` mirrors the same broadened set so LP fees are precomputed for every candidate. The destination is intentionally left to the standard path (the broadened set reuses the same config + pool-rebalance-route predicate that governs destination eligibility), and the gate is simply `originChainId === hubChainId` — a hub origin is always an unmetered fast-rebalance source, so the forced-origin path short-circuits earlier.
 
 ## Operator knobs
 
