@@ -273,6 +273,13 @@ export const CONTRACT_ADDRESSES: {
       address: "0x647aFB7d935Ff0aaE4F0DdEfE0499d13AdE69178",
       abi: SPONSORED_CCTP_DST_PERIPHERY_ABI,
     },
+    spokePoolPeriphery: {
+      abi: SPOKE_POOL_PERIPHERY_ABI,
+    },
+    permit2: {
+      address: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      abi: PERMIT2_ABI,
+    },
   },
   [CHAIN_IDs.OPTIMISM]: {
     daiOptimismBridge: {
@@ -420,6 +427,13 @@ export const CONTRACT_ADDRESSES: {
     nativeToken: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
+    spokePoolPeriphery: {
+      abi: SPOKE_POOL_PERIPHERY_ABI,
+    },
+    permit2: {
+      address: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      abi: PERMIT2_ABI,
+    },
   },
   [CHAIN_IDs.SOLANA]: {
     cctpTokenMessenger: {
@@ -548,6 +562,22 @@ export const CONTRACT_ADDRESSES: {
     nativeToken: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
+    spokePoolPeriphery: {
+      abi: SPOKE_POOL_PERIPHERY_ABI,
+    },
+    permit2: {
+      address: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      abi: PERMIT2_ABI,
+    },
+  },
+  [CHAIN_IDs.PLASMA]: {
+    spokePoolPeriphery: {
+      abi: SPOKE_POOL_PERIPHERY_ABI,
+    },
+    permit2: {
+      address: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      abi: PERMIT2_ABI,
+    },
   },
   [CHAIN_IDs.INK]: {
     ovmStandardBridge: {
@@ -568,6 +598,13 @@ export const CONTRACT_ADDRESSES: {
     sponsoredCCTPDstPeriphery: {
       address: "0x087B70E43BF01359678E7b927bbAC76D175F3293",
       abi: SPONSORED_CCTP_DST_PERIPHERY_ABI,
+    },
+    spokePoolPeriphery: {
+      abi: SPOKE_POOL_PERIPHERY_ABI,
+    },
+    permit2: {
+      address: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      abi: PERMIT2_ABI,
     },
   },
   [CHAIN_IDs.BLAST]: {
@@ -714,6 +751,13 @@ export const CONTRACT_ADDRESSES: {
     },
     nativeToken: {
       address: "0x0000000000000000000000000000000000000000",
+    },
+    spokePoolPeriphery: {
+      abi: SPOKE_POOL_PERIPHERY_ABI,
+    },
+    permit2: {
+      address: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      abi: PERMIT2_ABI,
     },
   },
   [CHAIN_IDs.TRON]: {
