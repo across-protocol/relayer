@@ -53,7 +53,9 @@ Ideally, this wrapping and unwrapping would occur in a separate, focused NativeT
 
 ### Transferring Tokens Across Chains
 
-The InventoryClient also provides functions that are used to transfer tokens across chains via adapters like CCTP, OFT, or canonical bridges. These adapters are defined in /src/adapter/bridges and /src/adapter/l2Bridges which send tokens from L1 to L2 and vice versa, respectively.
+The InventoryClient also provides functions that are used to transfer tokens across chains via adapters like CCTP, OFT, or canonical bridges. These adapters are defined in /src/adapter/bridges and /src/adapter/l2Bridges which send tokens from L1 to L2 and vice versa, respectively. Non-canonical routes are registered per chain and L1 token in `CUSTOM_BRIDGE`/`CUSTOM_L2_BRIDGE` in `src/common/Constants.ts`.
+
+One special L2→L1 case is withdrawing a ZkStack chain's custom gas token, e.g. (W)GHO on Lens: the `ZKStackBaseTokenBridge` adapter unwraps the wrapped gas token and withdraws the native balance via the `L2BaseToken` system contract, and finalization on Mainnet releases the registered L1 base token (WGHO) from the ZkStack NativeTokenVault. These relayer-initiated withdrawals don't emit SpokePool `TokensBridged` events, so the zkSync finalizer separately discovers base-token withdrawals sent by monitored addresses and finalizes them on L1 (see `src/finalizer/utils/zkSync.ts`).
 
 ### Plan for Deprecation of Token Transfer Logic
 

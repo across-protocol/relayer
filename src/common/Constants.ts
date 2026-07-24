@@ -61,6 +61,7 @@ import {
   BridgeApi as L2BridgeApi,
   TokenSplitterBridge as L2TokenSplitterBridge,
   PaxosTransitL2Bridge,
+  ZKStackBaseTokenBridge,
 } from "../adapter/l2Bridges";
 import { getContractAddress } from "./ContractAddresses";
 import { OFTL2Bridge } from "../adapter/l2Bridges/OFTL2Bridge";
@@ -669,6 +670,10 @@ export const CUSTOM_L2_BRIDGE: Record<number, Record<string, L2BridgeConstructor
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2UsdcCCTPBridge,
     [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTL2Bridge,
     // [TOKEN_SYMBOLS_MAP.WBTC.addresses[CHAIN_IDs.MAINNET]]: OFTL2Bridge,
+  },
+  [CHAIN_IDs.LENS]: {
+    // (W)GHO is Lens' custom gas token, so it is withdrawn via the L2BaseToken system contract.
+    [TOKEN_SYMBOLS_MAP.WGHO.addresses[CHAIN_IDs.MAINNET]]: ZKStackBaseTokenBridge,
   },
   [CHAIN_IDs.LINEA]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2UsdcCCTPBridge,
