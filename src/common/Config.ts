@@ -32,6 +32,7 @@ export class CommonConfig {
   readonly timeToCache: number;
   readonly arweaveGateways: ArweaveGatewayConfig[] | undefined;
   readonly peggedTokenPrices: { [pegTokenSymbol: string]: Set<string> } = {};
+  readonly transactionClientBroadcast: "rpc" | "redis";
   readonly botIdentifier: string;
   readonly runIdentifier: string;
 
@@ -56,6 +57,7 @@ export class CommonConfig {
       HUB_POOL_TIME_TO_CACHE,
       ARWEAVE_GATEWAYS,
       PEGGED_TOKEN_PRICES,
+      TRANSACTION_CLIENT_BROADCAST,
       BOT_IDENTIFIER,
       RUN_IDENTIFIER,
     } = env;
@@ -116,6 +118,12 @@ export class CommonConfig {
         new Set(tokenSymbolsToPeg),
       ])
     );
+
+    const broadcast = TRANSACTION_CLIENT_BROADCAST ?? "rpc";
+    if (broadcast !== "rpc" && broadcast !== "redis") {
+      throw new Error(`Invalid TRANSACTION_CLIENT_BROADCAST: ${broadcast} (expected "rpc" or "redis")`);
+    }
+    this.transactionClientBroadcast = broadcast;
 
     this.botIdentifier = BOT_IDENTIFIER ?? opts.botIdentifier ?? "across";
     this.runIdentifier = RUN_IDENTIFIER ?? randomUUID();

@@ -24,6 +24,7 @@ import {
 } from "./src/rebalancer";
 import { runGaslessRelayer } from "./src/gasless";
 import { runDepositAddressHandler } from "./src/deposit-address";
+import { runTransactionManager } from "./src/transactionManager";
 
 let logger: typeof Logger;
 let cmd: string | undefined;
@@ -44,6 +45,7 @@ const CMDS = {
   sameAssetRebalancer: sameAssetRebalancer,
   gaslessRelayer: runGaslessRelayer,
   depositAddressHandler: runDepositAddressHandler,
+  transactionManager: runTransactionManager,
 };
 
 export async function run(args: { [k: string]: boolean | string }): Promise<void> {
