@@ -82,6 +82,10 @@ export class TokenClient {
 
   decrementLocalBalance(chainId: number, token: Address, amount: BigNumber): void {
     const tokenAddr = token.toNative();
+    assert(
+      this._hasTokenPairData(chainId, token),
+      `TokenClient: cannot decrement balance for token ${tokenAddr} on chain ${chainId}; no token data`
+    );
     this.tokenData[chainId][tokenAddr].balance = this.tokenData[chainId][tokenAddr].balance.sub(amount);
   }
 
