@@ -9,6 +9,7 @@ import {
   disconnectRedisClients,
   getTokenInfoFromSymbol,
   Signer,
+  stringifyThrownValue,
   toBNWei,
   winston,
 } from "../utils";
@@ -206,7 +207,17 @@ export async function runCumulativeBalanceRebalancer(_logger: winston.Logger, ba
     // Maybe now enter a loop where we update rebalances continuously every X seconds until the next run where
     // we call rebalance inventory? The thinking is we should rebalance inventory once per "run" and then continually
     // update rebalance statuses/finalize pending rebalances.
-    // Errors are deliberately not caught here: the top-level handler in index.ts logs them once at ERROR.
+  } catch (error) {
+    // Do not remove as redundant with the top-level handler in index.ts: ERROR logs emitted after this
+    // function's finally block have been observed to silently vanish in production, while catch-time output
+    // (before the redis teardown) lands reliably. See "Failure reporting" in README.md.
+    logger.error({
+      at: `index.ts:${logLabel}`,
+      message: "Error running rebalancer",
+      error: stringifyThrownValue(error),
+      notificationPath: "across-error",
+    });
+    throw error;
   } finally {
     await disconnectRedisClients(logger);
   }
@@ -233,7 +244,17 @@ export async function runSameAssetRebalancer(_logger: winston.Logger, baseSigner
         duration: performance.now() - timerStart,
       });
     }
-    // Errors are deliberately not caught here: the top-level handler in index.ts logs them once at ERROR.
+  } catch (error) {
+    // Do not remove as redundant with the top-level handler in index.ts: ERROR logs emitted after this
+    // function's finally block have been observed to silently vanish in production, while catch-time output
+    // (before the redis teardown) lands reliably. See "Failure reporting" in README.md.
+    logger.error({
+      at: `index.ts:${logLabel}`,
+      message: "Error running rebalancer",
+      error: stringifyThrownValue(error),
+      notificationPath: "across-error",
+    });
+    throw error;
   } finally {
     await disconnectRedisClients(logger);
   }

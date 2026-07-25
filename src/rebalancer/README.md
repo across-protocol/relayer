@@ -288,6 +288,24 @@ Runtime entrypoints in `src/rebalancer/`:
 - `runSameAssetRebalancer` (directional SameAsset operational path).
 - The runtime updates adapter status/sweeps first, then refreshes `TokenClient` balances before applying adapter-reported pending rebalance adjustments and evaluating new rebalances. The refresh is required because the sweeps and `updateRebalanceStatuses` calls submit OFT/CCTP/Hypercore transactions that leave the initial `TokenClient.update()` snapshot stale; without it, `rebalanceInventory` can size a new bridge against a pre-burn balance and crash on the underlying simulation revert.
 
+## Failure reporting
+
+When a rebalancer run throws, two layers report it:
+
+1. The entrypoint catch blocks in `src/rebalancer/index.ts` log the failure at ERROR via winston (with the
+   `across-error` notification path) and rethrow.
+2. The rethrown error propagates through the entrypoint's `finally` (which disconnects the shared redis clients)
+   into the top-level handler in the repo-root `index.ts`, which logs it again at ERROR (`"There was an execution
+   error!"`, also `across-error`) and exits nonzero.
+
+When both land this produces two ERROR records per failure. That duplication is deliberate: in production
+(observed during the 2026-07-24/25 same-asset rebalancer crash-loop) the top-level handler's ERROR entry emitted
+after the rebalancer's redis teardown never reached any log sink — neither the Cloud Logging API transport nor
+stdout JSON — across dozens of runs, while output emitted at catch time (before the teardown) landed every run.
+Errors thrown before the entrypoint's try block (e.g. during client initialization) skip layer 1 and are reported
+by the top-level handler, which works on that path. Do not remove the local catch-time logging as "redundant"
+until the top-level vanishing behavior is understood and fixed.
+
 ## Interactions with Other Bots and Clients
 
 ### InventoryClient
