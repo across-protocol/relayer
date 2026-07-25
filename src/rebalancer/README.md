@@ -290,22 +290,22 @@ Runtime entrypoints in `src/rebalancer/`:
 
 ## Failure reporting
 
-When a rebalancer run throws, it is reported at two layers, each through two channels:
+When a rebalancer run throws, the error propagates through the entrypoint's `finally` (which disconnects the
+shared redis clients) to the top-level handler in the repo-root `index.ts`, which logs it once at ERROR
+(`"There was an execution error!"`, `across-error` notification path) and exits nonzero. The rebalancer
+entrypoints deliberately do not catch-and-log — the top-level handler is the single reporting path for all bot
+commands.
 
-1. The entrypoint catch blocks in `src/rebalancer/index.ts` emit a raw `console.error` and log the failure at
-   ERROR via winston (with the `across-error` notification path), then rethrow.
-2. The rethrown error propagates through the entrypoint's `finally` (which disconnects the shared redis clients)
-   into the top-level handler in the repo-root `index.ts`, which does the same (`"There was an execution
-   error!"`, also `across-error`) and exits nonzero.
-
-The duplication is deliberate: winston entries logged near process exit can vanish. When the Cloud Logging API
-transport degrades (hanging writes and 60s gax timeouts were observed in production during the 2026-07-24/25
-same-asset rebalancer crash-loop), its full write buffer backpressures the shared winston stream and pauses
-delivery to every transport — including stdout JSON — and `waitForLogger` cannot flush it, so entries buffered at
-that point are discarded when the process exits shortly after. Raw console output bypasses winston entirely and
-always reaches container logs, which is why each layer keeps the `console.error` alongside the winston call.
-Errors thrown before the entrypoint's try block (e.g. during client initialization) skip layer 1 and are
-reported by the top-level handler.
+That single report is only reliable if the logger cannot lose entries at process exit. During the 2026-07-24/25
+same-asset rebalancer crash-loop the top-level ERROR vanished from every sink: under `ENVIRONMENT=serverless`
+the logger writes to the Cloud Logging API over gRPC, and when those writes degrade (60s gax timeouts were
+observed), the transport's full write buffer backpressures the shared winston stream, pausing delivery to all
+transports — including stdout JSON. `waitForLogger` cannot flush that state (none of these transports expose
+`isFlushed`), so everything still buffered is discarded at `process.exit`. The fix is `ENVIRONMENT=serverless-gcp`
+(`@risk-labs/logger` >= 1.3.12, set on the spoke services in zion): it replaces the API transport with structured
+stdout logging ingested by the Cloud Run agent, leaving no network writes to hang or lose at exit. Logger 1.3.13
+additionally routes transport errors to the console when no PagerDuty transport is configured, so residual
+transport breakage is visible instead of silent.
 
 ## Interactions with Other Bots and Clients
 
