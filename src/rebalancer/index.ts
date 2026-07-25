@@ -9,6 +9,7 @@ import {
   disconnectRedisClients,
   getTokenInfoFromSymbol,
   Signer,
+  stringifyThrownValue,
   toBNWei,
   winston,
 } from "../utils";
@@ -207,8 +208,11 @@ export async function runCumulativeBalanceRebalancer(_logger: winston.Logger, ba
     // we call rebalance inventory? The thinking is we should rebalance inventory once per "run" and then continually
     // update rebalance statuses/finalize pending rebalances.
   } catch (error) {
-    // eslint-disable-next-line no-console
-    console.error("Error running rebalancer", error);
+    logger.error({
+      at: `index.ts:${logLabel}`,
+      message: "Error running rebalancer",
+      error: stringifyThrownValue(error),
+    });
     throw error;
   } finally {
     await disconnectRedisClients(logger);
@@ -237,8 +241,11 @@ export async function runSameAssetRebalancer(_logger: winston.Logger, baseSigner
       });
     }
   } catch (error) {
-    // eslint-disable-next-line no-console
-    console.error("Error running rebalancer", error);
+    logger.error({
+      at: `index.ts:${logLabel}`,
+      message: "Error running rebalancer",
+      error: stringifyThrownValue(error),
+    });
     throw error;
   } finally {
     await disconnectRedisClients(logger);
