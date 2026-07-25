@@ -290,21 +290,22 @@ Runtime entrypoints in `src/rebalancer/`:
 
 ## Failure reporting
 
-When a rebalancer run throws, two layers report it:
+When a rebalancer run throws, it is reported at two layers, each through two channels:
 
-1. The entrypoint catch blocks in `src/rebalancer/index.ts` log the failure at ERROR via winston (with the
-   `across-error` notification path) and rethrow.
+1. The entrypoint catch blocks in `src/rebalancer/index.ts` emit a raw `console.error` and log the failure at
+   ERROR via winston (with the `across-error` notification path), then rethrow.
 2. The rethrown error propagates through the entrypoint's `finally` (which disconnects the shared redis clients)
-   into the top-level handler in the repo-root `index.ts`, which logs it again at ERROR (`"There was an execution
+   into the top-level handler in the repo-root `index.ts`, which does the same (`"There was an execution
    error!"`, also `across-error`) and exits nonzero.
 
-When both land this produces two ERROR records per failure. That duplication is deliberate: in production
-(observed during the 2026-07-24/25 same-asset rebalancer crash-loop) the top-level handler's ERROR entry emitted
-after the rebalancer's redis teardown never reached any log sink — neither the Cloud Logging API transport nor
-stdout JSON — across dozens of runs, while output emitted at catch time (before the teardown) landed every run.
-Errors thrown before the entrypoint's try block (e.g. during client initialization) skip layer 1 and are reported
-by the top-level handler, which works on that path. Do not remove the local catch-time logging as "redundant"
-until the top-level vanishing behavior is understood and fixed.
+The duplication is deliberate: winston entries logged near process exit can vanish. When the Cloud Logging API
+transport degrades (hanging writes and 60s gax timeouts were observed in production during the 2026-07-24/25
+same-asset rebalancer crash-loop), its full write buffer backpressures the shared winston stream and pauses
+delivery to every transport — including stdout JSON — and `waitForLogger` cannot flush it, so entries buffered at
+that point are discarded when the process exits shortly after. Raw console output bypasses winston entirely and
+always reaches container logs, which is why each layer keeps the `console.error` alongside the winston call.
+Errors thrown before the entrypoint's try block (e.g. during client initialization) skip layer 1 and are
+reported by the top-level handler.
 
 ## Interactions with Other Bots and Clients
 

@@ -91,6 +91,9 @@ if (require.main === module) {
     .catch(async (error) => {
       exitCode = 1;
       const stringifiedError = stringifyThrownValue(error);
+      // Raw console backstop: winston output is lost if the process exits while transports are backed up.
+      // eslint-disable-next-line no-console
+      console.error("There was an execution error!", stringifiedError);
       logger.error({
         at: cmd ?? "unknown process",
         message: "There was an execution error!",

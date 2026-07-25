@@ -211,6 +211,9 @@ export async function runCumulativeBalanceRebalancer(_logger: winston.Logger, ba
     // Do not remove as redundant with the top-level handler in index.ts: ERROR logs emitted after this
     // function's finally block have been observed to silently vanish in production, while catch-time output
     // (before the redis teardown) lands reliably. See "Failure reporting" in README.md.
+    // Raw console backstop: winston output is lost if the process exits while transports are backed up.
+    // eslint-disable-next-line no-console
+    console.error("Error running rebalancer", error);
     logger.error({
       at: `index.ts:${logLabel}`,
       message: "Error running rebalancer",
@@ -248,6 +251,9 @@ export async function runSameAssetRebalancer(_logger: winston.Logger, baseSigner
     // Do not remove as redundant with the top-level handler in index.ts: ERROR logs emitted after this
     // function's finally block have been observed to silently vanish in production, while catch-time output
     // (before the redis teardown) lands reliably. See "Failure reporting" in README.md.
+    // Raw console backstop: winston output is lost if the process exits while transports are backed up.
+    // eslint-disable-next-line no-console
+    console.error("Error running rebalancer", error);
     logger.error({
       at: `index.ts:${logLabel}`,
       message: "Error running rebalancer",
