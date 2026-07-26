@@ -3,6 +3,7 @@ import {
   BigNumber,
   ethers,
   isDefined,
+  TransactionConfirmationFailedError,
   TransactionReceipt,
   TransactionResponse,
   TransactionSimulationResult,
@@ -223,7 +224,7 @@ describe("TransactionClient", function () {
       expect(waitCalls).to.equal(2);
     });
 
-    it("Gives up after maxTries exhausted", async function () {
+    it("Throws TransactionConfirmationFailedError when maxTries is exhausted", async function () {
       const chainId = chainIds[0];
       let waitCalls = 0;
       txnClient.waitOverride = () => {
@@ -231,11 +232,28 @@ describe("TransactionClient", function () {
         return Promise.reject(makeEthersError(ethers.errors.SERVER_ERROR));
       };
 
-      const txnResponses = await txnClient.submit(chainId, [makeConfirmationTxn(chainId)]);
-      // The transaction still returns because _submit returns txnPromise even when confirmation fails.
-      expect(txnResponses.length).to.equal(1);
+      let caught: unknown;
+      try {
+        await txnClient.submit(chainId, [makeConfirmationTxn(chainId)]);
+      } catch (e) {
+        caught = e;
+      }
+      expect(caught, "submit should have thrown after maxTries").to.be.instanceOf(TransactionConfirmationFailedError);
       // wait() was called maxTries times (default is 10).
       expect(waitCalls).to.equal(10);
+      // The submitted response should be attached so callers can correlate to the broadcast tx.
+      expect((caught as TransactionConfirmationFailedError).response).to.exist;
+    });
+
+    it("Generic submit errors are still swallowed (no regression)", async function () {
+      const chainId = chainIds[0];
+      // Force the underlying tx promise to reject pre-confirmation. _submit re-throws, submit
+      // logs and returns an empty array — same as the existing "Handles submission success &
+      // failure" case but exercised here against the ensureConfirmation surface.
+      const txnResponses = await txnClient.submit(chainId, [
+        { ...makeConfirmationTxn(chainId), args: [{ result: "Forced submission failure" }] },
+      ]);
+      expect(txnResponses.length).to.equal(0);
     });
   });
 });

@@ -7,6 +7,7 @@ import {
   BigNumber,
   blockExplorerLink,
   toBNWei,
+  TransactionConfirmationFailedError,
   TransactionReceipt,
   TransactionResponse,
   TransactionSimulationResult,
@@ -177,6 +178,14 @@ export class TransactionClient {
 
       if (!txnReceipt) {
         this.logger.warn({ at, message: `Unable to confirm ${chain} transaction.`, txnRef });
+        // Previously this code path silently returned the broadcast response; callers couldn't
+        // distinguish a confirmed tx from an unconfirmed stuck-in-mempool one. Surface a typed
+        // error so `submit()` can let it propagate (rather than swallowing as a generic submit
+        // failure) and downstream consumers can branch on `instanceof`.
+        throw new TransactionConfirmationFailedError(
+          `Transaction broadcast on ${chain} could not be confirmed after ${maxTries} attempts.`,
+          txnResponse
+        );
       }
     }
 
@@ -230,6 +239,19 @@ export class TransactionClient {
         response = await this._submit(txn, { nonce: nonce ?? null });
       } catch (error) {
         delete chainNonceMap[signerAddr];
+        // Confirmation failures (broadcast OK but receipt never observed) are re-thrown so callers
+        // can distinguish them from generic pre-broadcast errors. All other errors continue to be
+        // logged and swallowed in line with the pre-existing contract of `submit`.
+        if (error instanceof TransactionConfirmationFailedError) {
+          this.logger.warn({
+            at: "TransactionClient#submit",
+            message: `Transaction ${idx + 1} on ${networkName} broadcast but never confirmed.`,
+            mrkdwn,
+            errorMessage: error.message,
+            notificationPath: "across-error",
+          });
+          throw error;
+        }
         this.logger.info({
           at: "TransactionClient#submit",
           message: `Transaction ${idx + 1} submission on ${networkName} failed or timed out.`,
