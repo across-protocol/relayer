@@ -464,9 +464,16 @@ export class InventoryClient {
   }
 
   getL1Tokens(): EvmAddress[] {
-    return this.inventoryConfig?.tokenConfig
+    const l1Tokens = this.inventoryConfig?.tokenConfig
       ? this.getL1TokensFromInventoryConfig()
       : this.getL1TokensEnabledInHubPool();
+    if (this.l1TokensOverride.length === 0) {
+      return l1Tokens;
+    }
+    // When L1_TOKENS_OVERRIDE is set, the TokenClient only tracks balances for the override tokens, so restrict
+    // inventory management to that set. Candidates for untracked tokens can't be funded or accounted for locally.
+    const overrideTokens = this.l1TokensOverride.map((l1Token) => EvmAddress.from(l1Token));
+    return l1Tokens.filter((l1Token) => overrideTokens.some((overrideToken) => overrideToken.eq(l1Token)));
   }
 
   getL1TokensFromInventoryConfig(): EvmAddress[] {
