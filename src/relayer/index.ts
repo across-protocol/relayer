@@ -17,6 +17,7 @@ import { getRedisCache, RedisCacheInterface } from "../cache/Redis";
 import { Relayer } from "./Relayer";
 import { RelayerConfig } from "./RelayerConfig";
 import { constructRelayerClients } from "./RelayerClientHelper";
+import { disposeTransactionBackend } from "../clients/TransactionClient";
 import { InventoryClientState, isSpokePoolClientWithListener } from "../clients";
 import { updateSpokePoolClients } from "../common";
 config();
@@ -211,6 +212,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
       }
     }
   } finally {
+    await disposeTransactionBackend();
     await disconnectRedisClients(logger);
 
     if (externalListener) {
@@ -259,6 +261,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     await inventoryClient.withdrawExcessBalances();
   } finally {
     abortController.abort();
+    await disposeTransactionBackend();
     await disconnectRedisClients(logger);
     logger.debug({ at, message: `${personality} instance completed.` });
   }
@@ -290,6 +293,7 @@ export async function runInventoryManager(_logger: winston.Logger, baseSigner: S
     assert(isDefined(redis), "Inventory state export requires a Redis cache");
     await setInventoryState(redis, inventoryClient.getInventoryCacheKey(config.inventoryTopic), inventory);
   } finally {
+    await disposeTransactionBackend();
     await disconnectRedisClients(logger);
     logger.debug({ at, message: `${personality} instance completed.` });
   }

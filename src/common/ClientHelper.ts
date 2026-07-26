@@ -29,6 +29,7 @@ import {
   SVMSpokePoolClient,
   SpokePoolClient,
 } from "../clients";
+import { initTransactionBackend } from "../clients/TransactionClient";
 import { CommonConfig } from "./Config";
 import { SpokePoolClientsByChain } from "../interfaces";
 import { caching, clients, arch } from "@across-protocol/sdk";
@@ -397,6 +398,14 @@ export async function constructClients(
     config.timeToCache
   );
 
+  // Set process-level submission defaults. After this, every
+  // `new TransactionClient(...)` in the process picks up the configured
+  // broadcast mode and (in redis mode) the shared Backend automatically.
+  await initTransactionBackend(
+    logger,
+    config.transactionClientBroadcast,
+    `${config.botIdentifier}-${config.runIdentifier}`
+  );
   const multiCallerClient = new MultiCallerClient(logger, config.multiCallChunkSize, hubSigner);
 
   // Define the Arweave client as "read-only" to prevent any accidental writes to the Arweave network.
