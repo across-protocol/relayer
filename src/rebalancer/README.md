@@ -249,6 +249,8 @@ High-level flow:
 
 The runtime entrypoint is `runSameAssetRebalancer`, exposed as the `sameAssetRebalancer` bot. It is independent of cumulative mode: operators enable destination token/chain pairs under `sameAssetBalances`, while the support catalog controls which of those pairs can become routes.
 
+Cross-mode pending orders: the `swapRebalancer` and `sameAssetRebalancer` bots typically share a base signer and the Redis order store, so each bot's `updateRebalanceStatuses()` pass can encounter pending orders created by the other mode. Adapters only progress orders whose routes are in their own configured `availableRoutes` (`BaseAdapter._canProgressOrder`); unsupported orders are skipped with a debug log and left pending for the properly-configured bot to progress. If no configured instance supports an order's route (e.g. after config drift), the order is eventually TTL-pruned with a warning by `_redisCleanupPendingOrders`.
+
 ### Read-only mode: `ReadOnlyRebalancerClient`
 
 `ReadOnlyRebalancerClient` is used by consumers that only need pending-state visibility (for example, inventory
@@ -275,6 +277,10 @@ Lifecycle note:
   pending-state reads do not depend on route selection.
 - Consumers pass the relayer/account they want to inspect into `getPendingRebalances(account)`; the client aggregates
   only the pending state owned by that EVM address.
+- `getPendingRebalances(account)` isolates per-adapter failures: if one adapter's pending-state read throws (e.g. its
+  upstream exchange API is down), the client logs a warning and aggregates the remaining adapters instead of throwing.
+  Consumers such as the relayer's `InventoryClient` keep running with that adapter's in-flight rebalances temporarily
+  uncounted in virtual balances.
 
 Runtime entrypoints in `src/rebalancer/`:
 

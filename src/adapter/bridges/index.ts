@@ -1,5 +1,4 @@
 export * from "./DaiOptimismBridge";
-export * from "./SnxOptimismBridge";
 export * from "./BaseBridgeAdapter";
 export * from "./BinanceCEXBridge";
 export * from "./BinanceCEXNativeBridge";

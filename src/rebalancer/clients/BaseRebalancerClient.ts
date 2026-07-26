@@ -49,13 +49,27 @@ export abstract class BaseRebalancerClient implements RebalancerClient {
    * @notice Get all currently unfinalized rebalance amounts. Should be used to add virtual balance credits or
    * debits for the token and chain combinations. Will filter rebalances by the passed in account.
    * @dev Does not depend on this.rebalanceRoutes, only calls getPendingRebalances() for each configured adapter.
+   * @dev An adapter whose pending-state read throws is logged and treated as having no pending rebalances so that
+   * one adapter's upstream outage cannot fail the aggregate read for every consumer.
    * @return Dictionary of chainId -> token -> amount where positive amounts present pending rebalance credits to that
    * chain while negative amounts represent debits that should be subtracted from that chain's current balance.
    */
   async getPendingRebalances(account: EvmAddress): Promise<{ [chainId: number]: { [token: string]: BigNumber } }> {
     const pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
-    await forEachAsync(Object.values(this.adapters), async (adapter) => {
-      const pending = await adapter.getPendingRebalances(account);
+    await forEachAsync(Object.entries(this.adapters), async ([adapterName, adapter]) => {
+      let pending: { [chainId: number]: { [token: string]: BigNumber } };
+      try {
+        pending = await adapter.getPendingRebalances(account);
+      } catch (err) {
+        // The failed adapter's in-flight rebalances stay invisible to virtual balances until its
+        // dependency recovers; that undercount is preferable to aborting the caller's whole run.
+        this.logger.warn({
+          at: "BaseRebalancerClient.getPendingRebalances",
+          message: `Failed to get pending rebalances from ${adapterName} adapter; treating them as empty`,
+          err: String(err),
+        });
+        return;
+      }
       Object.entries(pending).forEach(([_chainId, tokenBalance]) => {
         const chainId = Number(_chainId);
         Object.entries(tokenBalance).forEach(([token, amount]) => {

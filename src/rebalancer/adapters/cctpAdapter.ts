@@ -110,6 +110,10 @@ export class CctpAdapter extends BaseAdapter {
       });
     }
     for (const cloid of pendingBridges) {
+      const orderDetails = await this._redisGetOrderDetailsRequired(cloid, this.baseSignerAddress);
+      if (!this._canProgressOrder("CctpAdapter.updateRebalanceStatuses", cloid, orderDetails)) {
+        continue;
+      }
       const [sourceChainId, txnHash] = cloid.split("-");
       const attestation = await this._getCctpAttestation(txnHash, Number(sourceChainId));
       if (!isDefined(attestation) || utils.getPendingAttestationStatus(attestation) === "pending") {

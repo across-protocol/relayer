@@ -1,11 +1,23 @@
 import sinon from "sinon";
 import { expect } from "chai";
-import { EvmAddress, getCurrentTime, HttpError, Signer, TransactionReceipt, utils, winston } from "../src/utils";
+import {
+  CHAIN_IDs,
+  EvmAddress,
+  getCurrentTime,
+  HttpError,
+  Signer,
+  toAddressType,
+  toBN,
+  TransactionReceipt,
+  utils,
+  winston,
+} from "../src/utils";
 import { DepositAddressMessage, DepositAddressMessageV3 } from "../src/interfaces/DepositAddress";
 import { DepositAddressExecuteResponse, DepositAddressSignWithdrawResponse } from "../src/clients";
 import { DepositAddressHandler } from "../src/deposit-address/DepositAddressHandler";
 import { DepositAddressHandlerConfig } from "../src/deposit-address/DepositAddressHandlerConfig";
 import { ERC20_TRANSFER_TOPIC } from "../src/deposit-address/withdrawPayload";
+import { NATIVE_TOKEN_SENTINEL_ADDRESS } from "../src/utils/DepositAddressUtils";
 
 const SIGNER = "0x000000000000000000000000000000000000BEEF";
 const DEPOSIT_ADDRESS = "0x000000000000000000000000000000000000C0DE";
@@ -14,6 +26,13 @@ const TOKEN = "0x000000000000000000000000000000000000DEAD";
 const OUTPUT_TOKEN = "0x0000000000000000000000000000000000005678";
 const RECIPIENT = "0x0000000000000000000000000000000000001111";
 const IMPL = "0x000000000000000000000000000000000000A4A4";
+
+// Tron-origin v3 sample fields (indexer verbatim: base58 addresses, un-prefixed tx hash).
+const TRON_DEPOSIT_ADDRESS = "TRhLhFckPaeCtFyrUBJRK6p9LhRtbS7Pa5";
+const TRON_REFUND_ADDRESS = "TQ4T4DgHoezYBTRoZPCspsSgRw38Ni9prA";
+const TRON_TOKEN = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
+const TRON_TX_HASH = "3b699036b64d765dea6a9103c33793d343381bab361b3e96051e56de2d174247";
+const TRON_FACTORY = "0xce892B16B4D486e26c869bCb8475b087f4469A48";
 
 // The 12 params the deposit-execute quote sent before executionFee support — the legacy request shape.
 const BASE_PARAM_KEYS = [
@@ -140,6 +159,36 @@ function depositMessageV3(overrides: Partial<DepositAddressMessageV3> = {}): Dep
     },
     ...overrides,
   };
+}
+
+/**
+ * v3 Tron-origin correct_transfer message mirroring the indexer sample: base58 addresses,
+ * un-prefixed transaction hash, `tron` namespaces, EVM destination.
+ */
+function tronDepositMessageV3(overrides: Partial<DepositAddressMessageV3> = {}): DepositAddressMessageV3 {
+  return depositMessageV3({
+    depositAddress: TRON_DEPOSIT_ADDRESS,
+    routeParams: {
+      outputToken: OUTPUT_TOKEN,
+      destinationChainId: String(CHAIN_IDs.BASE),
+      recipient: { namespace: "evm", address: RECIPIENT },
+    },
+    refundAddress: { namespace: "tron", address: TRON_REFUND_ADDRESS },
+    depositAddressNamespace: "tron",
+    integrator: { name: "test-integrator", integratorId: "0x00e6" },
+    erc20Transfer: {
+      chainId: String(CHAIN_IDs.TRON),
+      blockNumber: 84_665_484,
+      logIndex: 55,
+      from: TRON_REFUND_ADDRESS,
+      to: TRON_DEPOSIT_ADDRESS,
+      amount: "25000000",
+      contractAddress: TRON_TOKEN,
+      transactionHash: TRON_TX_HASH,
+      transferClassification: "correct_transfer",
+    },
+    ...overrides,
+  });
 }
 
 describe("DepositAddressHandler._getSwapApiQuote params", function () {
@@ -460,6 +509,104 @@ describe("DepositAddressHandler._getExecuteTx request mapping", function () {
     expect(result).to.equal(undefined);
     expect(executeStub.callCount).to.equal(4); // initial attempt + 3 retries
   });
+
+  it("sends origin-native Tron encodings: base58 userAddress verbatim, base58 executionFeeRecipient", async function () {
+    await (handler as unknown as Internals)._getExecuteTx(tronDepositMessageV3());
+    expect(executeStub.calledOnce).to.equal(true);
+    const expectedFeeRecipient = toAddressType(SIGNER, CHAIN_IDs.TRON).toNative();
+    // Sanity: the fee recipient really is re-encoded, not the signer's 0x form.
+    expect(expectedFeeRecipient).to.not.equal(SIGNER);
+    expect(executeStub.firstCall.args[0]).to.deep.equal({
+      destination: {
+        token: { chainId: CHAIN_IDs.BASE, address: OUTPUT_TOKEN },
+        recipient: RECIPIENT,
+      },
+      originChainId: CHAIN_IDs.TRON,
+      userAddress: TRON_REFUND_ADDRESS,
+      amount: "25000000",
+      executionFeeRecipient: expectedFeeRecipient,
+      integratorId: "0x00e6",
+    });
+  });
+
+  it("relays base58 inputToken and the un-prefixed provenance hash verbatim when both gates are on", async function () {
+    const config = handler.config as unknown as {
+      enableExecuteInputToken: boolean;
+      enableExecuteErc20Transfer: boolean;
+    };
+    config.enableExecuteInputToken = true;
+    config.enableExecuteErc20Transfer = true;
+    await (handler as unknown as Internals)._getExecuteTx(tronDepositMessageV3());
+    expect(executeStub.calledOnce).to.equal(true);
+    const request = executeStub.firstCall.args[0] as Record<string, unknown>;
+    expect(request.inputToken).to.deep.equal({ chainId: CHAIN_IDs.TRON, address: TRON_TOKEN });
+    expect(request.erc20Transfer).to.deep.equal({
+      chainId: CHAIN_IDs.TRON,
+      blockNumber: 84_665_484,
+      transactionHash: TRON_TX_HASH,
+      logIndex: 55,
+    });
+  });
+});
+
+describe("DepositAddressHandler.initiateDepositV3 namespace guard", function () {
+  let handler: DepositAddressHandler;
+  let executeStub: sinon.SinonStub;
+  let warnStub: sinon.SinonStub;
+
+  type Internals = { initiateDepositV3: (m: DepositAddressMessageV3) => Promise<void> };
+
+  function makeHandler(originChainId: number): void {
+    const config = { relayerOriginChains: [originChainId] } as unknown as DepositAddressHandlerConfig;
+    warnStub = sinon.stub();
+    const logger = { warn: warnStub, debug: sinon.stub() } as unknown as winston.Logger;
+    handler = new DepositAddressHandler(logger, config, {} as unknown as Signer, []);
+    (handler as unknown as { _signerAddress: EvmAddress })._signerAddress = EvmAddress.from(SIGNER);
+    // Resolving undefined makes _getExecuteTx retry then bail with a warn — reaching the endpoint
+    // at all is the proof that the namespace guard opened.
+    executeStub = sinon.stub().resolves(undefined);
+    (handler as unknown as { api: { executeDepositAddress: sinon.SinonStub } }).api = {
+      executeDepositAddress: executeStub,
+    };
+    (handler as unknown as { observedExecutedDeposits: Record<number, Set<string>> }).observedExecutedDeposits = {
+      [originChainId]: new Set<string>(),
+    };
+    // The balance check sits between the namespace guard and the API call; make it pass.
+    (handler as unknown as { getDepositAddressBalance: sinon.SinonStub }).getDepositAddressBalance = sinon
+      .stub()
+      .resolves(toBN("25000000"));
+  }
+
+  afterEach(() => sinon.restore());
+
+  it("skips an svm-namespaced message without calling the execute endpoint", async function () {
+    makeHandler(42161);
+    await (handler as unknown as Internals).initiateDepositV3(depositMessageV3({ depositAddressNamespace: "svm" }));
+    expect(executeStub.notCalled).to.equal(true);
+    expect(warnStub.calledOnce).to.equal(true);
+  });
+
+  it("skips a tron-namespaced message on an EVM origin chain (cross-family anomaly)", async function () {
+    makeHandler(42161);
+    await (handler as unknown as Internals).initiateDepositV3(depositMessageV3({ depositAddressNamespace: "tron" }));
+    expect(executeStub.notCalled).to.equal(true);
+    expect(warnStub.calledOnce).to.equal(true);
+  });
+
+  it("skips a Tron-origin message whose refund namespace does not match the chain family", async function () {
+    makeHandler(CHAIN_IDs.TRON);
+    await (handler as unknown as Internals).initiateDepositV3(
+      tronDepositMessageV3({ refundAddress: { namespace: "evm", address: REFUND_ADDRESS } })
+    );
+    expect(executeStub.notCalled).to.equal(true);
+    expect(warnStub.calledOnce).to.equal(true);
+  });
+
+  it("lets a tron-namespaced message on the Tron chain through to the execute endpoint", async function () {
+    makeHandler(CHAIN_IDs.TRON);
+    await (handler as unknown as Internals).initiateDepositV3(tronDepositMessageV3());
+    expect(executeStub.called).to.equal(true);
+  });
 });
 
 describe("DepositAddressHandler.initiateDepositV3 integratorId guard", function () {
@@ -568,6 +715,78 @@ describe("DepositAddressHandler._validateExecuteResponse guards", function () {
 
   it("rejects responses whose signature deadline is too close to expiry", function () {
     expect(validate(executeResponse({ signatureDeadline: getCurrentTime() + 30 }))).to.equal(false);
+  });
+
+  it("rejects a tvm-ecosystem response for an EVM origin", function () {
+    const response = executeResponse();
+    response.executeTx.ecosystem = "tvm";
+    expect(validate(response)).to.equal(false);
+    expect(warnStub.calledOnce).to.equal(true);
+  });
+});
+
+describe("DepositAddressHandler._validateExecuteResponse for Tron origins", function () {
+  let handler: DepositAddressHandler;
+  let warnStub: sinon.SinonStub;
+
+  type Internals = {
+    _validateExecuteResponse: (
+      r: DepositAddressExecuteResponse,
+      m: DepositAddressMessageV3,
+      originChainId: number,
+      depositKey: string
+    ) => boolean;
+  };
+
+  const message = tronDepositMessageV3();
+  const originChainId = Number(message.erc20Transfer.chainId);
+
+  /** Mirrors the live quote-api Tron response: base58 depositAddress echo, "tvm", 0x-hex `to`. */
+  function executeResponse(overrides: Partial<DepositAddressExecuteResponse> = {}): DepositAddressExecuteResponse {
+    return {
+      depositAddress: TRON_DEPOSIT_ADDRESS,
+      executeTx: { ecosystem: "tvm", chainId: originChainId, to: TRON_FACTORY, data: "0x", value: "0" },
+      signer: SIGNER,
+      signatureDeadline: getCurrentTime() + 600,
+      isPlaceholder: false,
+      ...overrides,
+    };
+  }
+
+  function validate(response: DepositAddressExecuteResponse): boolean {
+    return (handler as unknown as Internals)._validateExecuteResponse(response, message, originChainId, "key");
+  }
+
+  beforeEach(function () {
+    const config = {} as unknown as DepositAddressHandlerConfig;
+    warnStub = sinon.stub();
+    const logger = { warn: warnStub } as unknown as winston.Logger;
+    handler = new DepositAddressHandler(logger, config, {} as unknown as Signer, []);
+  });
+
+  afterEach(() => sinon.restore());
+
+  it("accepts a base58 depositAddress echo", function () {
+    expect(validate(executeResponse())).to.equal(true);
+    expect(warnStub.notCalled).to.equal(true);
+  });
+
+  it("accepts the 0x-hex encoding of the funded base58 address", function () {
+    const hexDepositAddress = toAddressType(TRON_DEPOSIT_ADDRESS, originChainId).toEvmAddress();
+    expect(validate(executeResponse({ depositAddress: hexDepositAddress }))).to.equal(true);
+    expect(warnStub.notCalled).to.equal(true);
+  });
+
+  it("rejects a different base58 depositAddress", function () {
+    expect(validate(executeResponse({ depositAddress: TRON_REFUND_ADDRESS }))).to.equal(false);
+    expect(warnStub.calledOnce).to.equal(true);
+  });
+
+  it("rejects an evm-ecosystem response for a Tron origin", function () {
+    const response = executeResponse();
+    response.executeTx.ecosystem = "evm";
+    expect(validate(response)).to.equal(false);
+    expect(warnStub.calledOnce).to.equal(true);
   });
 });
 
@@ -698,6 +917,100 @@ describe("DepositAddressHandler.initiateWithdrawV3 guards", function () {
     );
     expect(signWithdrawStub.notCalled).to.equal(true);
     expect(warnStub.calledOnce).to.equal(true);
+  });
+});
+
+describe("DepositAddressHandler.initiateWithdraw (v1) native-token guard", function () {
+  afterEach(() => sinon.restore());
+
+  it("skips native-sentinel withdraws without calling the sign-withdraw API", async function () {
+    const chainId = 1; // depositMessage()'s erc20Transfer.chainId
+    const config = { withdrawEnabled: true, relayerOriginChains: [chainId] } as unknown as DepositAddressHandlerConfig;
+    const debugStub = sinon.stub();
+    const logger = { warn: sinon.stub(), debug: debugStub } as unknown as winston.Logger;
+    const handler = new DepositAddressHandler(logger, config, {} as unknown as Signer, []);
+    const signedWithdrawStub = sinon.stub().resolves({ signedWithdrawTx: { chainId } });
+    (handler as unknown as { api: { signedWithdraw: sinon.SinonStub } }).api = {
+      signedWithdraw: signedWithdrawStub,
+    };
+
+    const message = depositMessage({ withdrawLeaf });
+    message.erc20Transfer.transferClassification = "mis_route";
+    message.erc20Transfer.contractAddress = NATIVE_TOKEN_SENTINEL_ADDRESS;
+
+    await (handler as unknown as { initiateWithdraw: (m: DepositAddressMessage) => Promise<void> }).initiateWithdraw(
+      message
+    );
+    expect(signedWithdrawStub.notCalled).to.equal(true);
+    expect(debugStub.calledOnce).to.equal(true);
+    expect(debugStub.firstCall.firstArg.message).to.contain("not supported on v1");
+  });
+});
+
+describe("DepositAddressHandler.initiateWithdrawV3 balance check", function () {
+  let handler: DepositAddressHandler;
+  let signWithdrawStub: sinon.SinonStub;
+  let getBalanceStub: sinon.SinonStub;
+  let warnStub: sinon.SinonStub;
+  let debugStub: sinon.SinonStub;
+  const chainId = 42161;
+
+  type Internals = { initiateWithdrawV3: (m: DepositAddressMessageV3) => Promise<void> };
+
+  /** Native-token mis_route message — `contractAddress` carries the indexer's native sentinel. */
+  function nativeWithdrawMessageV3(): DepositAddressMessageV3 {
+    const message = withdrawMessageV3();
+    message.erc20Transfer.contractAddress = NATIVE_TOKEN_SENTINEL_ADDRESS;
+    return message;
+  }
+
+  beforeEach(function () {
+    const config = {
+      enableV3Withdrawals: true,
+      relayerOriginChains: [chainId],
+    } as unknown as DepositAddressHandlerConfig;
+    warnStub = sinon.stub();
+    debugStub = sinon.stub();
+    const logger = { warn: warnStub, debug: debugStub } as unknown as winston.Logger;
+    handler = new DepositAddressHandler(logger, config, {} as unknown as Signer, []);
+    // The sign-withdraw stub returns a mismatched chainId so the flow stops right after the API
+    // call — these tests only exercise the balance check in front of it.
+    signWithdrawStub = sinon.stub().resolves({ signedWithdrawTx: { chainId: chainId + 1 } });
+    (handler as unknown as { api: { signWithdrawDepositAddressV3: sinon.SinonStub } }).api = {
+      signWithdrawDepositAddressV3: signWithdrawStub,
+    };
+    (handler as unknown as { observedExecutedWithdraws: Record<number, Set<string>> }).observedExecutedWithdraws = {
+      [chainId]: new Set<string>(),
+    };
+    // Bare stub, deliberately NOT an ethers Provider: `getBalance` serves the native path, and any
+    // ERC-20 read attempt fails loudly (`new Contract(...)` rejects a non-Provider).
+    getBalanceStub = sinon.stub().resolves(toBN("5000"));
+    (handler as unknown as { providersByChain: Record<number, unknown> }).providersByChain = {
+      [chainId]: { getBalance: getBalanceStub },
+    };
+  });
+
+  afterEach(() => sinon.restore());
+
+  it("reads the native balance via provider.getBalance for sentinel withdraws and proceeds", async function () {
+    await (handler as unknown as Internals).initiateWithdrawV3(nativeWithdrawMessageV3());
+    expect(getBalanceStub.calledOnceWith(DEPOSIT_ADDRESS)).to.equal(true);
+    expect(signWithdrawStub.calledOnce).to.equal(true);
+  });
+
+  it("skips a native withdraw when the native balance is below the transfer amount", async function () {
+    getBalanceStub.resolves(toBN("4999"));
+    await (handler as unknown as Internals).initiateWithdrawV3(nativeWithdrawMessageV3());
+    expect(signWithdrawStub.notCalled).to.equal(true);
+    expect(debugStub.calledOnce).to.equal(true);
+  });
+
+  it("still reads ERC-20 balances via the token contract, warning and skipping when the read fails", async function () {
+    await (handler as unknown as Internals).initiateWithdrawV3(withdrawMessageV3());
+    expect(getBalanceStub.notCalled).to.equal(true);
+    expect(signWithdrawStub.notCalled).to.equal(true);
+    expect(warnStub.calledOnce).to.equal(true);
+    expect(warnStub.firstCall.firstArg.message).to.contain("failed to fetch deposit address balance");
   });
 });
 

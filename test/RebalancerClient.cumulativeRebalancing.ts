@@ -789,6 +789,37 @@ describe("RebalancerClient.cumulativeRebalancing", () => {
     expect(pendingRebalances[CHAIN_B][USDT]).to.equal(amount(USDT, "2"));
   });
 
+  it("Treats an adapter whose pending-rebalance read fails as empty instead of throwing", async function () {
+    const cumulativeTargetBalances: CumulativeTargetBalanceConfig = {
+      [USDC]: buildTarget(USDC, "50", "40", 0, { [CHAIN_A]: 0, [CHAIN_B]: 0 }),
+      [USDT]: buildTarget(USDT, "50", "40", 0, { [CHAIN_A]: 0 }),
+    };
+    const baseSigner = ethers.Wallet.createRandom();
+    const adapter1 = new MockRebalancerAdapter(baseSigner);
+    const adapter2 = new MockRebalancerAdapter(baseSigner);
+    adapter1.setPendingRebalances({
+      [CHAIN_A]: {
+        [USDC]: amount(USDC, "5"),
+      },
+    });
+    adapter2.setPendingRebalancesError(new Error("HttpRequestError: The operation was aborted due to timeout"));
+    const rebalancerClient = await createClient(
+      cumulativeTargetBalances,
+      { adapter1, adapter2 },
+      [makeRoute(CHAIN_A, CHAIN_A, USDT, USDC, "adapter1")],
+      {},
+      {},
+      baseSigner
+    );
+
+    const pendingRebalances = await rebalancerClient.getPendingRebalances(
+      EvmAddress.from(await rebalancerClient.baseSigner.getAddress())
+    );
+
+    expect(pendingRebalances[CHAIN_A][USDC]).to.equal(amount(USDC, "5"));
+    expect(pendingRebalances[CHAIN_B]).to.be.undefined;
+  });
+
   it("Returns pending rebalances without cross-token or cross-chain merging", async function () {
     const cumulativeTargetBalances: CumulativeTargetBalanceConfig = {
       [USDC]: buildTarget(USDC, "50", "40", 0, { [CHAIN_A]: 0 }),
@@ -912,6 +943,7 @@ class MockRebalancerAdapter implements RebalancerAdapter {
   public initializeRebalanceResultMapping: { [route: string]: BigNumber } = {};
   private pendingOrders: string[] | undefined;
   private pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
+  private pendingRebalancesError: Error | undefined;
   readonly baseSigner: Signer;
 
   constructor(baseSigner: Signer) {
@@ -943,6 +975,9 @@ class MockRebalancerAdapter implements RebalancerAdapter {
   }
 
   getPendingRebalances(): Promise<{ [chainId: number]: { [token: string]: BigNumber } }> {
+    if (this.pendingRebalancesError !== undefined) {
+      return Promise.reject(this.pendingRebalancesError);
+    }
     return Promise.resolve(this.pendingRebalances);
   }
 
@@ -956,6 +991,10 @@ class MockRebalancerAdapter implements RebalancerAdapter {
 
   setPendingRebalances(pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } }): void {
     this.pendingRebalances = pendingRebalances;
+  }
+
+  setPendingRebalancesError(error: Error): void {
+    this.pendingRebalancesError = error;
   }
 
   setEstimatedCost(route: RebalanceRoute, cost: BigNumber): void {
