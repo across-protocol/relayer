@@ -208,6 +208,55 @@ describe("TransactionClient", function () {
       expect(waitCalls).to.equal(2);
     });
 
+    it("Does not resubmit a repriced (already-mined) replacement", async function () {
+      const chainId = chainIds[0];
+      const replacementHash = ethers.utils.id("repriced-replacement");
+      let waitCalls = 0;
+      txnClient.waitOverride = () => {
+        ++waitCalls;
+        // ethers reports a same-nonce speed-up of the *same* logical transaction as
+        // TRANSACTION_REPLACED with cancelled === false; the replacement has already mined.
+        return Promise.reject(
+          makeEthersError(ethers.errors.TRANSACTION_REPLACED, {
+            cancelled: false,
+            replacement: { nonce: 1, hash: replacementHash } as TransactionResponse,
+            receipt: { status: 1 } as TransactionReceipt,
+          })
+        );
+      };
+
+      const txnResponses = await txnClient.submit(chainId, [makeConfirmationTxn(chainId)]);
+      expect(txnResponses.length).to.equal(1);
+      // wait() was called exactly once: a repriced replacement is treated as success, never resubmitted.
+      expect(waitCalls).to.equal(1);
+      // The mined replacement is returned rather than the original (now-replaced) transaction.
+      expect(txnResponses[0].hash).to.equal(replacementHash);
+    });
+
+    it("Treats a reverted repriced replacement as a failure", async function () {
+      const chainId = chainIds[0];
+      const replacementHash = ethers.utils.id("reverted-repriced-replacement");
+      let waitCalls = 0;
+      txnClient.waitOverride = () => {
+        ++waitCalls;
+        // A repriced replacement that mined but reverted: ethers reports cancelled === false and
+        // attaches the replacement's receipt with status === 0.
+        return Promise.reject(
+          makeEthersError(ethers.errors.TRANSACTION_REPLACED, {
+            cancelled: false,
+            replacement: { nonce: 1, hash: replacementHash } as TransactionResponse,
+            receipt: { status: 0 } as TransactionReceipt,
+          })
+        );
+      };
+
+      const txnResponses = await txnClient.submit(chainId, [makeConfirmationTxn(chainId)]);
+      // A reverted replacement is surfaced as a failure (like CALL_EXCEPTION), so it is excluded.
+      expect(txnResponses.length).to.equal(0);
+      // wait() was called exactly once: a reverted replacement is never resubmitted.
+      expect(waitCalls).to.equal(1);
+    });
+
     it("Retries on transient error then succeeds", async function () {
       const chainId = chainIds[0];
       let waitCalls = 0;
