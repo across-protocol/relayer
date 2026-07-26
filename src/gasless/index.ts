@@ -26,6 +26,9 @@ export async function runGaslessRelayer(_logger: winston.Logger, baseSigner: Sig
     // Wait for the handover to complete.
     await relayer.waitForDisconnect();
 
+    // Surface any post-simulation submission failures observed during the run before exit.
+    relayer.logRunSummary();
+
     logger.debug({ at: "GaslessRelayer#index", message: `Time to run: ${(Date.now() - start) / 1000}s` });
   } finally {
     await disconnectRedisClients(logger);

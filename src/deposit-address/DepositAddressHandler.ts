@@ -612,8 +612,8 @@ export class DepositAddressHandler {
         )} (classification: ${erc20Transfer.transferClassification}, bundledDeploy: ${signed.bundledDeploy})`,
       };
 
-      const receipt = await sendAndConfirmTransaction(withdrawTx, this.transactionClient, useDispatcher);
-      if (!isDefined(receipt)) {
+      const outcome = await sendAndConfirmTransaction(withdrawTx, this.transactionClient, useDispatcher);
+      if (outcome.status !== "confirmed") {
         this.logger.warn({
           at: "DepositAddressHandler#initiateWithdraw",
           message: "Failed to submit withdraw tx",
@@ -621,6 +621,7 @@ export class DepositAddressHandler {
           refTxHash,
           depositAddress,
           chainId,
+          outcome: outcome.status,
         });
         return;
       }
@@ -630,7 +631,7 @@ export class DepositAddressHandler {
       this.executedWithdrawKeys.add(depositKey);
       withdrawCommitted = true;
       await this._persistWithdrawnKeysRedis();
-      await this._publishWithdrawExecuted(receipt, depositMessage);
+      await this._publishWithdrawExecuted(outcome.receipt, depositMessage);
     } finally {
       if (!withdrawCommitted) {
         this.observedExecutedWithdraws[chainId].delete(depositKey);
@@ -938,13 +939,14 @@ export class DepositAddressHandler {
         )}`,
       };
 
-      const deployReceipt = await sendAndConfirmTransaction(deployTx, this.transactionClient, useDispatcher);
-      if (!isDefined(deployReceipt)) {
+      const deployOutcome = await sendAndConfirmTransaction(deployTx, this.transactionClient, useDispatcher);
+      if (deployOutcome.status !== "confirmed") {
         this.observedExecutedDeposits[originChainId].delete(depositKey);
         this.logger.warn({
           at: "DepositAddressHandler#initiateDeposit",
           message: "Failed to submit deploy tx",
           depositKey,
+          outcome: deployOutcome.status,
           deployTx: {
             ...deployTx,
             contract: deployTx.contract.address,
@@ -983,13 +985,14 @@ export class DepositAddressHandler {
       )} (cctpExecutionFee: ${cctpExecutionFee}, spokePoolExecutionFee: ${spokePoolExecutionFee})`,
     };
 
-    const depositReceipt = await sendAndConfirmTransaction(executeTx, this.transactionClient, useDispatcher);
+    const depositOutcome = await sendAndConfirmTransaction(executeTx, this.transactionClient, useDispatcher);
 
-    if (!depositReceipt) {
+    if (depositOutcome.status !== "confirmed") {
       this.logger.warn({
         at: "DepositAddressHandler#initiateDeposit",
         message: "Failed to submit execute tx",
         depositKey,
+        outcome: depositOutcome.status,
         executeTx: {
           ...executeTx,
           contract: executeTx.contract.address,
