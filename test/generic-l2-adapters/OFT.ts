@@ -85,8 +85,8 @@ describe("Cross Chain Adapter: OFT L2 Bridge", function () {
       expect(txns.length).to.equal(0);
     });
 
-    it("respects the OFT_WITHDRAWAL_MIN_PCT_OF_REQUESTED override", async function () {
-      process.env.OFT_WITHDRAWAL_MIN_PCT_OF_REQUESTED = "0.5";
+    it("respects the RELAYER_OFT_MIN_WITHDRAWAL_PCT override", async function () {
+      process.env.RELAYER_OFT_MIN_WITHDRAWAL_PCT = "0.5";
       try {
         // The floor is resolved at construction, so build a fresh adapter under the override.
         const [signer] = await ethers.getSigners();
@@ -96,7 +96,7 @@ describe("Cross Chain Adapter: OFT L2 Bridge", function () {
         const txns = await adapter.constructWithdrawToL1Txns(toAddress, adapter.l2Token, l1Token, toBNWei("20"));
         expect(txns.length).to.equal(0);
       } finally {
-        delete process.env.OFT_WITHDRAWAL_MIN_PCT_OF_REQUESTED;
+        delete process.env.RELAYER_OFT_MIN_WITHDRAWAL_PCT;
       }
     });
   });

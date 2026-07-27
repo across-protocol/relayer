@@ -46,7 +46,7 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
     logger?: winston.Logger
   ) {
     super(l2chainId, hubChainId, l2Signer, l1Signer, l1Token, logger);
-    this.minSendPctOfRequested = toBNWei(process.env.OFT_WITHDRAWAL_MIN_PCT_OF_REQUESTED ?? "0.2");
+    this.minSendPctOfRequested = toBNWei(process.env.RELAYER_OFT_MIN_WITHDRAWAL_PCT ?? "0.2");
 
     const translatedL2Token = getTranslatedTokenAddress(l1Token, hubChainId, l2chainId);
     this.l2Token = translatedL2Token;
@@ -125,7 +125,7 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
 
     // A sized-down send far below the requested amount barely dents the excess while still paying full
     // per-message costs, so wait for the path to recover instead. Tunable via
-    // OFT_WITHDRAWAL_MIN_PCT_OF_REQUESTED (fraction of the requested amount; default 0.2).
+    // RELAYER_OFT_MIN_WITHDRAWAL_PCT (fraction of the requested amount; default 0.2).
     const minAmountToSend = requestedAmount.mul(this.minSendPctOfRequested).div(fixedPointAdjustment);
     if (amountToSend.lt(minAmountToSend)) {
       this.logger?.warn({
