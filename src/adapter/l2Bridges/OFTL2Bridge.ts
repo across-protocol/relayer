@@ -1,5 +1,5 @@
 import { BigNumber, Contract, Signer } from "ethers";
-import { AugmentedTransaction } from "../../clients";
+import { AugmentedTransaction, getAcrossHost } from "../../clients";
 import {
   Address,
   EvmAddress,
@@ -7,6 +7,7 @@ import {
   createFormatFunction,
   ConvertDecimals,
   getNetworkName,
+  getNativeTokenInfoForChain,
   getTranslatedTokenAddress,
   paginatedEventQuery,
   bnZero,
@@ -15,11 +16,24 @@ import {
   fixedPointAdjustment,
   chainHasNativeToken,
   isDefined,
+  stringifyThrownValue,
+  toBNWei,
+  winston,
   CHAIN_IDs,
+  PriceClient,
+  acrossApi,
+  coingecko,
+  defiLlama,
 } from "../../utils";
 import { interfaces as sdkInterfaces } from "@across-protocol/sdk";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
-import { IOFT_ABI_FULL, OFT_DEFAULT_FEE_CAP, OFT_FEE_CAP_OVERRIDES, LZ_FEE_TOKENS } from "../../common";
+import {
+  IOFT_ABI_FULL,
+  OFT_DEFAULT_FEE_CAP,
+  OFT_FEE_CAP_OVERRIDES,
+  OFT_MESSAGE_FEE_MAX_PCT,
+  LZ_FEE_TOKENS,
+} from "../../common";
 import * as OFT from "../../utils/OFTUtils";
 import ERC20_ABI from "../../common/abi/MinimalERC20.json";
 import { PendingBridgeAdapterName } from "../../rebalancer/clients/CctpOftReadOnlyClient";
@@ -33,9 +47,17 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
   private readonly nativeFeeCap: BigNumber;
   private l2ToL1AmountConverter: (amount: BigNumber) => BigNumber;
   private readonly feePct: BigNumber = BigNumber.from(5 * 10 ** 15); // Default fee percent of 0.5%
+  private priceClient?: PriceClient;
 
-  constructor(l2chainId: number, hubChainId: number, l2Signer: Signer, l1Signer: Signer, l1Token: EvmAddress) {
-    super(l2chainId, hubChainId, l2Signer, l1Signer, l1Token);
+  constructor(
+    l2chainId: number,
+    hubChainId: number,
+    l2Signer: Signer,
+    l1Signer: Signer,
+    l1Token: EvmAddress,
+    logger?: winston.Logger
+  ) {
+    super(l2chainId, hubChainId, l2Signer, l1Signer, l1Token, logger);
 
     const translatedL2Token = getTranslatedTokenAddress(l1Token, hubChainId, l2chainId);
     this.l2Token = translatedL2Token;
@@ -120,6 +142,13 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
     const feeStruct: OFT.MessagingFeeStruct = await this.getL2Bridge().quoteSend(sendParamStruct, false);
     if (BigNumber.from(feeStruct.nativeFee).gt(this.nativeFeeCap)) {
       throw new Error(`Fee exceeds maximum allowed (${feeStruct.nativeFee} > ${this.nativeFeeCap})`);
+    }
+
+    // The message fee is roughly fixed per message regardless of size, so a capacity-constrained path
+    // would otherwise be drained in dust-sized sends, each paying the full fee. Skip until the sendable
+    // amount is worth enough that the fee stays below OFT_MESSAGE_FEE_MAX_PCT of it.
+    if (await this.messageFeeExceedsMaxPct(BigNumber.from(feeStruct.nativeFee), amountToSend)) {
+      return [];
     }
 
     const formatter = createFormatFunction(2, 4, false, this.l2TokenInfo.decimals);
@@ -236,6 +265,65 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
     // Fetch `sharedDecimals` if not already fetched
     const sharedDecimals = (this.sharedDecimals ??= await this.getL2Bridge().sharedDecimals());
     return OFT.roundAmountToSend(amount, decimals, sharedDecimals);
+  }
+
+  /**
+   * Values the LayerZero message fee and the amount being bridged in USD and reports whether the fee
+   * exceeds OFT_MESSAGE_FEE_MAX_PCT of the amount. Fails open when the check cannot be performed:
+   * on chains without a native token the fee is paid in an LZ fee token with no reliable price feed,
+   * and price lookups can transiently fail — in both cases the absolute `nativeFeeCap` still bounds
+   * the fee.
+   */
+  private async messageFeeExceedsMaxPct(nativeFee: BigNumber, amountToSend: BigNumber): Promise<boolean> {
+    const priceClient = this.getPriceClient();
+    if (!isDefined(priceClient) || !chainHasNativeToken(this.l2chainId)) {
+      return false;
+    }
+    try {
+      const nativeToken = getNativeTokenInfoForChain(this.l2chainId, this.hubChainId);
+      const [{ price: nativeTokenPrice }, { price: l1TokenPrice }] = await Promise.all([
+        priceClient.getPriceByAddress(nativeToken.address),
+        priceClient.getPriceByAddress(this.l1Token.toNative()),
+      ]);
+      const feeUsd = toBNWei(nativeTokenPrice).mul(nativeFee).div(toBNWei(1, nativeToken.decimals));
+      const amountUsd = toBNWei(l1TokenPrice).mul(amountToSend).div(toBNWei(1, this.l2TokenInfo.decimals));
+      const maxFeeUsd = amountUsd.mul(OFT_MESSAGE_FEE_MAX_PCT).div(fixedPointAdjustment);
+      const feeExceedsMax = feeUsd.gt(maxFeeUsd);
+      if (feeExceedsMax) {
+        this.logger?.warn({
+          at: "OFTL2Bridge#messageFeeExceedsMaxPct",
+          message: "Skipping OFT withdrawal to hub chain: LZ message fee is disproportionate to the amount bridged",
+          chainId: this.l2chainId,
+          l2Token: this.l2Token.toNative(),
+          amountToSend: amountToSend.toString(),
+          amountUsd: amountUsd.toString(),
+          nativeFee: nativeFee.toString(),
+          feeUsd: feeUsd.toString(),
+          maxFeePct: OFT_MESSAGE_FEE_MAX_PCT.toString(),
+        });
+      }
+      return feeExceedsMax;
+    } catch (e) {
+      this.logger?.warn({
+        at: "OFTL2Bridge#messageFeeExceedsMaxPct",
+        message: "Failed to price OFT message fee; proceeding without the fee-vs-amount check",
+        chainId: this.l2chainId,
+        l2Token: this.l2Token.toNative(),
+        error: stringifyThrownValue(e),
+      });
+      return false;
+    }
+  }
+
+  private getPriceClient(): PriceClient | undefined {
+    if (!isDefined(this.priceClient) && isDefined(this.logger)) {
+      this.priceClient = new PriceClient(this.logger, [
+        new acrossApi.PriceFeed({ host: getAcrossHost(this.hubChainId) }),
+        new coingecko.PriceFeed({ apiKey: process.env.COINGECKO_PRO_API_KEY }),
+        new defiLlama.PriceFeed(),
+      ]);
+    }
+    return this.priceClient;
   }
 
   /**
