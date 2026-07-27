@@ -64,6 +64,12 @@ export interface AugmentedTransaction {
   nonMulticall?: boolean;
   // Flag indicating whether the client should await the transaction response for onchain confirmation.
   ensureConfirmation?: boolean;
+  // Invoked once the transaction has been broadcast and its hash is known, before the confirmation
+  // wait begins. Callers use this to durably record submission intent, so that a process which dies
+  // mid-confirmation does not lose the fact that a transaction is already in flight. The
+  // transaction is already on the wire when this runs, so a rejection is logged and swallowed
+  // rather than aborting the submission.
+  onBroadcast?: (response: TransactionResponse) => Promise<void>;
   // If true, the contract's provider will be replaced with the TransactionClient's SpeedProvider for
   // this chain (if configured), enabling parallel multi-RPC dispatch for faster submission.
   spray?: boolean;
@@ -133,6 +139,24 @@ export class TransactionClient {
     const { chainId } = txn;
     const { nonce = null, maxTries = 10 } = opts;
     const txnPromise = this._getTransactionPromise(txn, nonce);
+
+    if (isDefined(txn.onBroadcast)) {
+      // Awaited outside the try/catch so a failed broadcast still propagates to the caller as
+      // before; only the hook itself is best-effort.
+      const broadcast = await txnPromise;
+      try {
+        await txn.onBroadcast(broadcast);
+      } catch (error) {
+        this.logger.warn({
+          at: "TransactionClient#_submit",
+          message: "onBroadcast hook failed; continuing to await confirmation",
+          chainId,
+          method: txn.method,
+          txnRef: blockExplorerLink(broadcast.hash, chainId),
+          error: stringifyThrownValue(error),
+        });
+      }
+    }
 
     if (txn.ensureConfirmation) {
       const at = "TransactionClient#_submit";

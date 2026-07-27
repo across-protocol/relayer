@@ -1,4 +1,4 @@
-import { AnyDepositAddressMessage, DepositAddressMessageV3, isDepositAddressMessageV3 } from "../interfaces";
+import { AnyDepositAddressMessage, isDepositAddressMessageV3 } from "../interfaces";
 import { getEthersCompatibleAddress, isDefined, isNativeTokenSentinel, TransactionReceipt, utils } from "../utils";
 
 export const ERC20_TRANSFER_TOPIC = utils.id("Transfer(address,address,uint256)");
@@ -40,6 +40,24 @@ export type DepositExecutedData = WithdrawExecutedData;
 export type DepositExecutedPayload = {
   type: "deposit_executed";
   data: DepositExecutedData;
+};
+
+/**
+ * Minimum context needed to build a `deposit_executed` payload. A `DepositAddressMessageV3`
+ * satisfies this structurally, so the normal path passes the indexer message straight through.
+ * The recovery path (adopting an execute whose confirmation a previous run never observed) builds
+ * one from the persisted pending-execute record instead, since the indexer may have stopped
+ * serving the original message by then.
+ */
+export type DepositExecutedSource = {
+  depositAddress: string;
+  erc20Transfer: {
+    chainId: string | number;
+    blockNumber: number;
+    transactionHash: string;
+    logIndex: number;
+    contractAddress: string;
+  };
 };
 
 /**
@@ -145,7 +163,7 @@ export function buildWithdrawExecutedPayload(
  */
 export function buildDepositExecutedPayload(
   receipt: TransactionReceipt,
-  depositMessage: DepositAddressMessageV3
+  depositMessage: DepositExecutedSource
 ): DepositExecutedPayload | undefined {
   const { erc20Transfer, depositAddress } = depositMessage;
   const chainId = Number(erc20Transfer.chainId);

@@ -29,6 +29,7 @@ import {
   chainIsEvm,
   chainIsTvm,
   getEthersCompatibleAddress,
+  delay,
 } from "../utils";
 import { getRedisCache, RedisCacheInterface } from "../cache/Redis";
 import {
@@ -48,7 +49,8 @@ import {
 } from "../clients";
 import { AcrossIndexerApiClient } from "../clients/AcrossIndexerApiClient";
 import { GcpPubSubPublisher, getGcpPubSubPublisher } from "../messaging/gcp";
-import { buildDepositExecutedPayload, buildWithdrawExecutedPayload } from "./withdrawPayload";
+import { buildDepositExecutedPayload, buildWithdrawExecutedPayload, DepositExecutedSource } from "./withdrawPayload";
+import { parsePendingExecutes, PendingExecute, PENDING_EXECUTE_STALE_SECONDS } from "./pendingExecutes";
 import ERC20_ABI from "../common/abi/MinimalERC20.json";
 
 /**
@@ -68,6 +70,13 @@ const INTEGRATOR_ID_REGEX = /^0x[0-9a-fA-F]{4}$/;
  * and sink the whole poll batch.
  */
 const SUPPORTED_INDEXER_MESSAGE_VERSIONS = new Set([1, 3]);
+
+/**
+ * Upper bound on how long shutdown waits for polls that are already running. A poll can block
+ * indefinitely (an unmined transaction leaves `wait()` pending forever), so the wait is bounded and
+ * an overrun is reported rather than waited out.
+ */
+const DRAIN_TIMEOUT_SECONDS = 30;
 
 /**
  * Cap on each watchdog heartbeat request. `fetch` has no default timeout, and the scheduler
@@ -137,6 +146,21 @@ export class DepositAddressHandler {
    */
   private observedExecutedWithdraws: { [chainId: number]: Set<string> } = {};
 
+  /**
+   * Per depositKey: executes that have been broadcast but whose on-chain outcome this process has
+   * not observed yet. Mirrored in Redis at broadcast time — before the confirmation wait — because
+   * the handler is handed over on a fixed cadence and can be evicted mid-wait. Without this record
+   * the successor sees no dedup entry for a sweep that is already on the wire, and the only
+   * remaining guard is the deposit address balance, which cannot distinguish "already swept" from
+   * "re-funded by a later transfer" (the address is a shared pot).
+   *
+   * Redis is the source of truth; this field mirrors the most recent read.
+   */
+  private pendingExecutes: Record<string, PendingExecute> = {};
+
+  /** Polls that have started but not settled; awaited by {@link drain} during shutdown. */
+  private inFlightPolls: Set<Promise<unknown>> = new Set();
+
   private api: AcrossSwapApiClient;
   private indexerApi: AcrossIndexerApiClient;
   private _signerAddress?: EvmAddress;
@@ -185,14 +209,18 @@ export class DepositAddressHandler {
       this.executionPublisher = getGcpPubSubPublisher(this.logger, this.config.pubSubGcpProjectId);
     }
 
-    // Exit if OS instructs us to do so.
-    process.on("SIGHUP", () => {
-      this.logger.debug({
-        at: "DepositAddressHandler#initialize",
-        message: "Received SIGHUP on deposit address handler. stopping...",
+    // Exit if OS instructs us to do so. SIGHUP is the historical signal here; SIGTERM is what
+    // container runtimes send on eviction, and Node's default action for it is immediate
+    // termination — without a handler, in-flight work is killed outright rather than drained.
+    for (const signal of ["SIGHUP", "SIGTERM"] as const) {
+      process.on(signal, () => {
+        this.logger.debug({
+          at: "DepositAddressHandler#initialize",
+          message: `Received ${signal} on deposit address handler. stopping...`,
+        });
+        this.abortController.abort();
       });
-      this.abortController.abort();
-    });
+    }
 
     process.on("disconnect", () => {
       this.logger.debug({
@@ -222,6 +250,8 @@ export class DepositAddressHandler {
     await this._loadExecutedDepositsFromRedis();
     await this._loadWithdrawnKeysFromRedis();
     await this._loadSkippedWithdrawKeysFromRedis();
+    // Must run after the executed-deposits load, since adopting an inherited execute writes to it.
+    await this._resolvePendingExecutesFromRedis();
 
     this.initialized = true;
   }
@@ -236,6 +266,10 @@ export class DepositAddressHandler {
 
   private getSkippedWithdrawKeysRedisKey(): string {
     return `deposit-address:skipped-withdraw-keys:${this.config.botIdentifier}`;
+  }
+
+  private getPendingExecutesRedisKey(): string {
+    return `deposit-address:pending-executes:${this.config.botIdentifier}`;
   }
 
   /** Loads executed deposit tx hashes from Redis (e.g. after handover). */
@@ -325,12 +359,241 @@ export class DepositAddressHandler {
     });
   }
 
+  /** Reads the persisted `depositKey -> PendingExecute` map. Throws on a malformed payload. */
+  private async _readPendingExecutesFromRedis(): Promise<Record<string, PendingExecute>> {
+    assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
+    const { redisCache } = this;
+    const redisKey = this.getPendingExecutesRedisKey();
+    const raw = await redisCache.get<string>(redisKey);
+    try {
+      return raw ? parsePendingExecutes(raw) : {};
+    } catch (err) {
+      this.logger.error({
+        at: "DepositAddressHandler#_readPendingExecutesFromRedis",
+        message: "Failed to parse pending executes from Redis",
+        redisKey,
+        err: err instanceof Error ? err.message : String(err),
+        notificationPath: "across-bot-error",
+      });
+
+      throw err;
+    }
+  }
+
+  private async _persistPendingExecutesRedis(): Promise<void> {
+    assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
+    const { redisCache } = this;
+    await redisCache.set(this.getPendingExecutesRedisKey(), JSON.stringify(this.pendingExecutes));
+  }
+
+  /**
+   * Durably records that an execute has been broadcast for `depositKey`, before its confirmation is
+   * awaited. Invoked from the TransactionClient's `onBroadcast` hook, so the unprotected window
+   * shrinks from the seconds-long confirmation wait to a single Redis write.
+   */
+  private async _recordPendingExecute(depositKey: string, pending: PendingExecute): Promise<void> {
+    // Read-modify-write against Redis rather than the in-memory mirror, which may predate records
+    // written by a concurrent instance during a handover overlap.
+    const pendingExecutes = await this._readPendingExecutesFromRedis();
+    pendingExecutes[depositKey] = pending;
+    this.pendingExecutes = pendingExecutes;
+    await this._persistPendingExecutesRedis();
+    this.logger.debug({
+      at: "DepositAddressHandler#_recordPendingExecute",
+      message: "Recorded in-flight execute before awaiting confirmation",
+      depositKey,
+      txHash: pending.txHash,
+      chainId: pending.chainId,
+    });
+  }
+
+  private async _clearPendingExecute(depositKey: string): Promise<void> {
+    const pendingExecutes = await this._readPendingExecutesFromRedis();
+    delete pendingExecutes[depositKey];
+    this.pendingExecutes = pendingExecutes;
+    await this._persistPendingExecutesRedis();
+  }
+
+  /**
+   * Resolves one pending execute against the chain and applies the outcome:
+   *  - `executed`: the sweep landed. Adopt it into the executed-deposits set so no run re-submits,
+   *    and emit the lifecycle event the broadcasting run may have died before publishing.
+   *  - `reverted`: nothing moved, so the transfer may be re-attempted; drop the record.
+   *  - `unresolved`: no receipt yet. Keep the record — it is what prevents a second submission —
+   *    unless it is old enough that the transaction is clearly never going to land.
+   */
+  private async _settlePendingExecute(
+    depositKey: string,
+    pending: PendingExecute
+  ): Promise<"executed" | "reverted" | "unresolved"> {
+    const logContext = {
+      at: "DepositAddressHandler#_settlePendingExecute",
+      depositKey,
+      txHash: pending.txHash,
+      refTxHash: pending.refTxHash,
+      chainId: pending.chainId,
+    };
+
+    const provider = this.providersByChain[pending.chainId];
+    if (!isDefined(provider)) {
+      this.logger.warn({ ...logContext, message: "Cannot resolve pending execute: no provider for chain" });
+      return "unresolved";
+    }
+
+    let receipt: TransactionReceipt | null;
+    try {
+      receipt = await provider.getTransactionReceipt(pending.txHash);
+    } catch (err) {
+      this.logger.warn({
+        ...logContext,
+        message: "Failed to fetch receipt for pending execute; leaving the record in place",
+        err: err instanceof Error ? err.message : String(err),
+      });
+      return "unresolved";
+    }
+
+    if (!isDefined(receipt) || !isDefined(receipt.blockNumber)) {
+      if (getCurrentTime() - pending.submittedAt > PENDING_EXECUTE_STALE_SECONDS) {
+        await this._clearPendingExecute(depositKey);
+        this.logger.warn({
+          ...logContext,
+          message: "Discarded stale pending execute: no receipt within the stale window, deposit may be re-attempted",
+          submittedAt: pending.submittedAt,
+          notificationPath: "across-bot-error",
+        });
+      } else {
+        this.logger.debug({ ...logContext, message: "Pending execute not yet mined; deferring to a later run" });
+      }
+      return "unresolved";
+    }
+
+    // Only an explicit status of 0 is a revert. Ethers leaves `status` undefined on chains that
+    // predate it, and treating that as success is the safe direction: it can strand a deposit for
+    // manual recovery, but it can never cause a second sweep.
+    if (receipt.status === 0) {
+      await this._clearPendingExecute(depositKey);
+      this.logger.warn({
+        ...logContext,
+        message: "Pending execute reverted on-chain; deposit will be re-attempted",
+      });
+      return "reverted";
+    }
+
+    this.executedDepositTxHashes.add(pending.refTxHash);
+    await this._persistExecutedDepositsRedis();
+    await this._clearPendingExecute(depositKey);
+    this.logger.info({
+      ...logContext,
+      message: "Adopted an execute broadcast by a previous run and confirmed on-chain",
+      blockNumber: receipt.blockNumber,
+    });
+    await this._publishDepositExecuted(receipt, {
+      depositAddress: pending.depositAddress,
+      erc20Transfer: {
+        chainId: pending.chainId,
+        blockNumber: pending.blockNumber,
+        transactionHash: pending.refTxHash,
+        logIndex: pending.logIndex,
+        contractAddress: pending.token,
+      },
+    });
+    return "executed";
+  }
+
+  /**
+   * Settles executes a previous run broadcast but never saw confirmed. Runs once at startup, right
+   * after handover, so a successor inherits the incumbent's in-flight work instead of inferring it
+   * from the deposit address balance.
+   */
+  private async _resolvePendingExecutesFromRedis(): Promise<void> {
+    this.pendingExecutes = await this._readPendingExecutesFromRedis();
+    const entries = Object.entries(this.pendingExecutes);
+    if (entries.length === 0) {
+      return;
+    }
+
+    this.logger.debug({
+      at: "DepositAddressHandler#_resolvePendingExecutesFromRedis",
+      message: "Resolving in-flight executes inherited from a previous run",
+      count: entries.length,
+    });
+
+    for (const [depositKey, pending] of entries) {
+      // One unresolvable record must not prevent startup; it stays in Redis for the next run.
+      try {
+        await this._settlePendingExecute(depositKey, pending);
+      } catch (err) {
+        this.logger.warn({
+          at: "DepositAddressHandler#_resolvePendingExecutesFromRedis",
+          message: "Failed to settle inherited pending execute",
+          depositKey,
+          txHash: pending.txHash,
+          err: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+  }
+
+  /**
+   * Final gate immediately before an execute is broadcast. The checks at the top of
+   * initiateDepositV3 run *before* the quote-api round trip, which can take seconds — long enough
+   * for the deposit address to be swept by another path, or for a concurrent instance to claim this
+   * transfer during a handover overlap. Either would otherwise produce a duplicate sweep.
+   */
+  private async _executeStillWarranted(depositMessage: DepositAddressMessageV3, depositKey: string): Promise<boolean> {
+    const { depositAddress, erc20Transfer } = depositMessage;
+    const { amount, contractAddress: token } = erc20Transfer;
+    const chainId = Number(erc20Transfer.chainId);
+    const logContext = { at: "DepositAddressHandler#initiateDepositV3", depositKey, depositAddress, chainId };
+
+    let pendingExecutes: Record<string, PendingExecute>;
+    try {
+      pendingExecutes = await this._readPendingExecutesFromRedis();
+    } catch {
+      // Already logged. An unreadable claim set is treated as a claim: never risk a duplicate sweep
+      // on the strength of state we could not verify.
+      return false;
+    }
+    const claimed = pendingExecutes[depositKey];
+    if (isDefined(claimed)) {
+      this.logger.warn({
+        ...logContext,
+        message: "Skipping execute: an execute for this transfer has already been broadcast",
+        pendingTxHash: claimed.txHash,
+      });
+      return false;
+    }
+
+    let onchainBalance: BigNumber;
+    try {
+      onchainBalance = await this.getDepositAddressBalance(chainId, token, depositAddress);
+    } catch (err) {
+      this.logger.warn({
+        ...logContext,
+        message: "Skipping execute: failed to re-read deposit address balance before submission",
+        err: err instanceof Error ? err.message : String(err),
+      });
+      return false;
+    }
+    if (onchainBalance.lt(toBN(amount))) {
+      this.logger.warn({
+        ...logContext,
+        message: "Skipping execute: deposit address balance fell below the transfer amount before submission",
+        amount,
+        onchainBalance: onchainBalance.toString(),
+      });
+      return false;
+    }
+
+    return true;
+  }
+
   /*
    * @notice Polls the Across indexer API and starts background tasks.
    */
   public pollAndExecute(): void {
     scheduleTask(
-      () => this.evaluateDepositAddresses(),
+      () => this._trackPoll(this.evaluateDepositAddresses()),
       this.config.indexerPollingInterval,
       this.abortController.signal,
       // A rejected poll skips the whole batch for that tick; without this log the failure is
@@ -379,6 +642,54 @@ export class DepositAddressHandler {
         lastError: failure,
       });
     }
+  }
+
+  /** Registers a running poll so {@link drain} can wait for it during shutdown. */
+  private _trackPoll(poll: Promise<unknown>): Promise<unknown> {
+    this.inFlightPolls.add(poll);
+    return poll.finally(() => {
+      this.inFlightPolls.delete(poll);
+    });
+  }
+
+  /**
+   * Waits for polls that are already running to settle, so work in flight at handover can still
+   * record its outcome. Must run *before* the Pub/Sub and Redis clients are torn down: a confirmed
+   * execute whose Redis write lands on a closed client is lost, and a lifecycle event published
+   * through a closed client is dropped with no log at all.
+   *
+   * Best-effort by design — the durable claim written at broadcast time is what actually prevents a
+   * duplicate sweep; draining is what lets the outcome be recorded promptly rather than on a later
+   * run. Never throws, so it is safe to call from a `finally` block.
+   */
+  public async drain(timeoutSeconds = DRAIN_TIMEOUT_SECONDS): Promise<void> {
+    const pending = this.inFlightPolls.size;
+    if (pending === 0) {
+      return;
+    }
+
+    this.logger.debug({
+      at: "DepositAddressHandler#drain",
+      message: "Waiting for in-flight polls to settle before shutdown",
+      pending,
+      timeoutSeconds,
+    });
+
+    // allSettled: a rejected poll is already reported by the scheduler's error handler.
+    await Promise.race([Promise.allSettled([...this.inFlightPolls]), delay(timeoutSeconds)]);
+
+    if (this.inFlightPolls.size > 0) {
+      this.logger.warn({
+        at: "DepositAddressHandler#drain",
+        message: "Timed out draining in-flight polls; their outcomes may not have been persisted",
+        remaining: this.inFlightPolls.size,
+        timeoutSeconds,
+        notificationPath: "across-bot-error",
+      });
+      return;
+    }
+
+    this.logger.debug({ at: "DepositAddressHandler#drain", message: "In-flight polls settled", drained: pending });
   }
 
   /*
@@ -783,7 +1094,7 @@ export class DepositAddressHandler {
    */
   private async _publishDepositExecuted(
     receipt: TransactionReceipt,
-    depositMessage: DepositAddressMessageV3
+    depositMessage: DepositExecutedSource
   ): Promise<void> {
     if (this.config.enableExecuteErc20Transfer) {
       this.logger.debug({
@@ -1034,6 +1345,21 @@ export class DepositAddressHandler {
       return;
     }
 
+    // An execute for this transfer is already on the wire and its outcome is unknown — either this
+    // run broadcast it, or a previous run did and was evicted before confirmation. Startup
+    // resolution settles these; until then, never submit a second one.
+    const pending = this.pendingExecutes[depositKey];
+    if (isDefined(pending)) {
+      this.logger.debug({
+        at: "DepositAddressHandler#initiateDepositV3",
+        message: "Skipping deposit: an execute for this transfer is already in flight",
+        refTxHash,
+        depositKey,
+        pendingTxHash: pending.txHash,
+      });
+      return;
+    }
+
     if (this.observedExecutedDeposits[originChainId]?.has(depositKey)) {
       return;
     }
@@ -1127,12 +1453,58 @@ export class DepositAddressHandler {
         )}, using deposit address ${blockExplorerLink(depositAddress, originChainId)}`,
       };
 
-      const depositReceipt = await sendAndConfirmTransaction(executeTx, this.transactionClient, useDispatcher);
+      // Last gate before the transaction goes out: re-check the claim and the on-chain balance,
+      // both of which may have changed during the quote-api round trip above.
+      if (!(await this._executeStillWarranted(depositMessage, depositKey))) {
+        return;
+      }
+
+      const depositReceipt = await sendAndConfirmTransaction(
+        {
+          ...executeTx,
+          // Persist submission intent the moment the hash exists, so an eviction during the
+          // confirmation wait cannot lose the fact that this transfer has already been swept.
+          onBroadcast: (response) =>
+            this._recordPendingExecute(depositKey, {
+              txHash: response.hash,
+              chainId: originChainId,
+              refTxHash,
+              submittedAt: getCurrentTime(),
+              depositAddress,
+              token: inputToken,
+              blockNumber: erc20Transfer.blockNumber,
+              logIndex: erc20Transfer.logIndex,
+            }),
+        },
+        this.transactionClient,
+        useDispatcher
+      );
       if (!isDefined(depositReceipt)) {
+        // Submission failed — but possibly *after* broadcast, since a revert also surfaces here as
+        // an undefined receipt. If intent was recorded, resolve its real on-chain outcome before
+        // letting this transfer be re-attempted; an execute that actually landed is adopted here.
+        let outcome: "executed" | "reverted" | "unresolved" = "reverted";
+        const broadcast = this.pendingExecutes[depositKey];
+        if (isDefined(broadcast)) {
+          try {
+            outcome = await this._settlePendingExecute(depositKey, broadcast);
+          } catch (err) {
+            outcome = "unresolved";
+            this.logger.warn({
+              at: "DepositAddressHandler#initiateDepositV3",
+              message: "Failed to settle a broadcast execute after submission failure",
+              depositKey,
+              err: err instanceof Error ? err.message : String(err),
+            });
+          }
+        }
+        // Hold the in-flight lock when the sweep actually landed, exactly as the success path does.
+        executeCommitted = outcome === "executed";
         this.logger.warn({
           at: "DepositAddressHandler#initiateDepositV3",
           message: "Failed to submit execute tx",
           depositKey,
+          outcome,
           executeTx: {
             ...executeTx,
             contract: executeTx.contract.address,
@@ -1142,10 +1514,13 @@ export class DepositAddressHandler {
       }
 
       // The execute is on-chain; keep the in-flight lock and persist to Redis immediately so
-      // handover cannot miss this execute.
+      // handover cannot miss this execute. The executed set is written before the pending record is
+      // cleared: a crash in between leaves a redundant record that startup resolution tidies up,
+      // whereas the reverse order would reopen the duplicate-sweep window.
       this.executedDepositTxHashes.add(refTxHash);
       executeCommitted = true;
       await this._persistExecutedDepositsRedis();
+      await this._clearPendingExecute(depositKey);
       await this._publishDepositExecuted(depositReceipt, depositMessage);
     } finally {
       if (!executeCommitted) {

@@ -9,11 +9,18 @@ import {
   toAddressType,
   toBN,
   TransactionReceipt,
+  TransactionResponse,
   utils,
   winston,
 } from "../src/utils";
 import { DepositAddressMessage, DepositAddressMessageV3 } from "../src/interfaces/DepositAddress";
-import { DepositAddressExecuteResponse, DepositAddressSignWithdrawResponse } from "../src/clients";
+import {
+  AugmentedTransaction,
+  DepositAddressExecuteResponse,
+  DepositAddressSignWithdrawResponse,
+  TransactionClient,
+} from "../src/clients";
+import { PendingExecute, PENDING_EXECUTE_STALE_SECONDS } from "../src/deposit-address/pendingExecutes";
 import { DepositAddressHandler } from "../src/deposit-address/DepositAddressHandler";
 import { DepositAddressHandlerConfig } from "../src/deposit-address/DepositAddressHandlerConfig";
 import { ERC20_TRANSFER_TOPIC } from "../src/deposit-address/withdrawPayload";
@@ -1070,5 +1077,282 @@ describe("DepositAddressHandler._publishDepositExecuted", function () {
       true;
     await (handler as unknown as Internals)._publishDepositExecuted(receipt, depositMessageV3());
     expect(publishStub.called).to.equal(false);
+  });
+});
+
+/**
+ * Regression cover for the duplicate-sweep failure mode: a run broadcasts an execute, is evicted
+ * mid-confirmation (routine — the handler is handed over on a fixed cadence), and its successor has
+ * no record that the transfer was already swept. The balance check cannot save it, because the
+ * deposit address is a shared pot: an unrelated inbound transfer makes the stale message look
+ * executable again. The durable claim written at broadcast time is what closes this.
+ */
+describe("DepositAddressHandler pending-execute claim", function () {
+  const chainId = 42161;
+  const refTxHash = "0x" + "3".repeat(64); // depositMessageV3().erc20Transfer.transactionHash
+  const depositKey = `${DEPOSIT_ADDRESS}:${refTxHash}`;
+  const executeTxHash = "0x" + "e".repeat(64);
+  const redisKey = "deposit-address:pending-executes:test-bot";
+
+  let handler: DepositAddressHandler;
+  let store: Map<string, string>;
+  let getReceiptStub: sinon.SinonStub;
+  let publishStub: sinon.SinonStub;
+  let executeStub: sinon.SinonStub;
+  let balanceStub: sinon.SinonStub;
+  let warnStub: sinon.SinonStub;
+
+  type Internals = {
+    initiateDepositV3: (m: DepositAddressMessageV3) => Promise<void>;
+    _recordPendingExecute: (k: string, p: PendingExecute) => Promise<void>;
+    _readPendingExecutesFromRedis: () => Promise<Record<string, PendingExecute>>;
+    _resolvePendingExecutesFromRedis: () => Promise<void>;
+    _executeStillWarranted: (m: DepositAddressMessageV3, k: string) => Promise<boolean>;
+    executedDepositTxHashes: Set<string>;
+    pendingExecutes: Record<string, PendingExecute>;
+  };
+
+  function pendingRecord(overrides: Partial<PendingExecute> = {}): PendingExecute {
+    return {
+      txHash: executeTxHash,
+      chainId,
+      refTxHash,
+      submittedAt: getCurrentTime(),
+      depositAddress: DEPOSIT_ADDRESS,
+      token: TOKEN,
+      blockNumber: 1_000_000,
+      logIndex: 4,
+      ...overrides,
+    };
+  }
+
+  /** Receipt carrying the input-token Transfer out of the deposit address, so the payload builds. */
+  function sweepReceipt(status: number): TransactionReceipt {
+    return {
+      blockNumber: 5_000_000,
+      transactionHash: executeTxHash,
+      status,
+      logs: [
+        {
+          address: TOKEN,
+          topics: [
+            ERC20_TRANSFER_TOPIC,
+            utils.hexZeroPad(DEPOSIT_ADDRESS.toLowerCase(), 32),
+            utils.hexZeroPad(RECIPIENT.toLowerCase(), 32),
+          ],
+          logIndex: 9,
+        },
+      ],
+    } as unknown as TransactionReceipt;
+  }
+
+  beforeEach(function () {
+    store = new Map<string, string>();
+    warnStub = sinon.stub();
+    const logger = {
+      warn: warnStub,
+      debug: sinon.stub(),
+      info: sinon.stub(),
+      error: sinon.stub(),
+    } as unknown as winston.Logger;
+    const config = {
+      botIdentifier: "test-bot",
+      relayerOriginChains: [chainId],
+      enableDepositAddressDepositPublisher: true,
+      enableExecuteErc20Transfer: false,
+    } as unknown as DepositAddressHandlerConfig;
+    handler = new DepositAddressHandler(logger, config, {} as unknown as Signer, []);
+    (handler as unknown as { redisCache: unknown }).redisCache = {
+      get: async (key: string) => store.get(key) ?? null,
+      set: async (key: string, val: unknown) => {
+        store.set(key, String(val));
+        return "OK";
+      },
+    };
+    getReceiptStub = sinon.stub();
+    (handler as unknown as { providersByChain: Record<number, unknown> }).providersByChain = {
+      [chainId]: { getTransactionReceipt: getReceiptStub },
+    };
+    publishStub = sinon.stub().resolves("msg-id");
+    (handler as unknown as { executionPublisher: unknown }).executionPublisher = { publishJson: publishStub };
+    executeStub = sinon.stub().resolves(undefined);
+    (handler as unknown as { api: unknown }).api = { executeDepositAddress: executeStub };
+    (handler as unknown as { observedExecutedDeposits: Record<number, Set<string>> }).observedExecutedDeposits = {
+      [chainId]: new Set<string>(),
+    };
+    balanceStub = sinon.stub().resolves(toBN("5000"));
+    (handler as unknown as { getDepositAddressBalance: sinon.SinonStub }).getDepositAddressBalance = balanceStub;
+    (handler as unknown as { _signerAddress: EvmAddress })._signerAddress = EvmAddress.from(SIGNER);
+  });
+
+  afterEach(() => sinon.restore());
+
+  it("persists the claim so a later run can read it back", async function () {
+    await (handler as unknown as Internals)._recordPendingExecute(depositKey, pendingRecord());
+    expect(store.has(redisKey)).to.equal(true);
+    const persisted = await (handler as unknown as Internals)._readPendingExecutesFromRedis();
+    expect(persisted[depositKey].txHash).to.equal(executeTxHash);
+    expect(persisted[depositKey].refTxHash).to.equal(refTxHash);
+  });
+
+  it("does not request execute calldata while a claim for the transfer is outstanding", async function () {
+    (handler as unknown as Internals).pendingExecutes = { [depositKey]: pendingRecord() };
+    await (handler as unknown as Internals).initiateDepositV3(depositMessageV3());
+    expect(executeStub.notCalled).to.equal(true);
+  });
+
+  it("adopts an inherited execute that confirmed on-chain and emits the missed lifecycle event", async function () {
+    store.set(redisKey, JSON.stringify({ [depositKey]: pendingRecord() }));
+    getReceiptStub.resolves(sweepReceipt(1));
+
+    await (handler as unknown as Internals)._resolvePendingExecutesFromRedis();
+
+    // Adopted into the executed set, so no later run re-submits for this transfer.
+    expect((handler as unknown as Internals).executedDepositTxHashes.has(refTxHash)).to.equal(true);
+    expect((handler as unknown as Internals).pendingExecutes).to.deep.equal({});
+    expect(publishStub.calledOnce).to.equal(true);
+    expect(publishStub.firstCall.args[1].data.erc20Transfer.txHash).to.equal(refTxHash);
+
+    // And the deposit is now skipped outright rather than swept a second time.
+    await (handler as unknown as Internals).initiateDepositV3(depositMessageV3());
+    expect(executeStub.notCalled).to.equal(true);
+  });
+
+  it("clears the claim when the inherited execute reverted, so the deposit is re-attempted", async function () {
+    store.set(redisKey, JSON.stringify({ [depositKey]: pendingRecord() }));
+    getReceiptStub.resolves(sweepReceipt(0));
+
+    await (handler as unknown as Internals)._resolvePendingExecutesFromRedis();
+
+    expect((handler as unknown as Internals).executedDepositTxHashes.has(refTxHash)).to.equal(false);
+    expect((handler as unknown as Internals).pendingExecutes).to.deep.equal({});
+    expect(publishStub.called).to.equal(false);
+    expect(warnStub.firstCall.firstArg.message).to.contain("reverted on-chain");
+  });
+
+  it("keeps the claim while the transaction is still unmined", async function () {
+    store.set(redisKey, JSON.stringify({ [depositKey]: pendingRecord() }));
+    getReceiptStub.resolves(null);
+
+    await (handler as unknown as Internals)._resolvePendingExecutesFromRedis();
+
+    expect((handler as unknown as Internals).pendingExecutes[depositKey].txHash).to.equal(executeTxHash);
+    expect((handler as unknown as Internals).executedDepositTxHashes.has(refTxHash)).to.equal(false);
+    // The retained claim is what blocks a second submission.
+    await (handler as unknown as Internals).initiateDepositV3(depositMessageV3());
+    expect(executeStub.notCalled).to.equal(true);
+  });
+
+  it("discards a claim whose transaction never appeared within the stale window", async function () {
+    store.set(
+      redisKey,
+      JSON.stringify({
+        [depositKey]: pendingRecord({ submittedAt: getCurrentTime() - PENDING_EXECUTE_STALE_SECONDS - 1 }),
+      })
+    );
+    getReceiptStub.resolves(null);
+
+    await (handler as unknown as Internals)._resolvePendingExecutesFromRedis();
+
+    expect((handler as unknown as Internals).pendingExecutes).to.deep.equal({});
+    expect(warnStub.firstCall.firstArg.message).to.contain("stale pending execute");
+  });
+
+  it("blocks submission when the balance fell below the transfer amount after the quote", async function () {
+    balanceStub.resolves(toBN("4999"));
+    const warranted = await (handler as unknown as Internals)._executeStillWarranted(depositMessageV3(), depositKey);
+    expect(warranted).to.equal(false);
+    expect(warnStub.firstCall.firstArg.message).to.contain("balance fell below");
+  });
+
+  it("blocks submission when another instance claimed the transfer during the quote round trip", async function () {
+    // Written to Redis only: the in-memory mirror predates it, exactly as it would for a successor
+    // that snapshotted state before the incumbent broadcast.
+    store.set(redisKey, JSON.stringify({ [depositKey]: pendingRecord() }));
+    const warranted = await (handler as unknown as Internals)._executeStillWarranted(depositMessageV3(), depositKey);
+    expect(warranted).to.equal(false);
+    expect(warnStub.firstCall.firstArg.message).to.contain("already been broadcast");
+  });
+
+  it("allows submission when the claim set is clear and the balance still covers the transfer", async function () {
+    const warranted = await (handler as unknown as Internals)._executeStillWarranted(depositMessageV3(), depositKey);
+    expect(warranted).to.equal(true);
+  });
+});
+
+describe("TransactionClient onBroadcast hook", function () {
+  const chainId = 1;
+  const broadcastHash = "0x" + "b".repeat(64);
+  let events: string[];
+
+  // Stubs out broadcasting so the hook's ordering relative to the confirmation wait is observable.
+  class TestTransactionClient extends TransactionClient {
+    protected _getTransactionPromise(): Promise<TransactionResponse> {
+      return Promise.resolve({
+        hash: broadcastHash,
+        nonce: 7,
+        wait: async () => {
+          events.push("wait");
+          return {
+            blockNumber: 1,
+            transactionHash: broadcastHash,
+            status: 1,
+            logs: [],
+          } as unknown as TransactionReceipt;
+        },
+      } as unknown as TransactionResponse);
+    }
+  }
+
+  type Internals = {
+    _submit: (txn: AugmentedTransaction, opts: { nonce: number | null }) => Promise<TransactionResponse>;
+  };
+
+  function transaction(onBroadcast?: (r: TransactionResponse) => Promise<void>): AugmentedTransaction {
+    return {
+      contract: { address: TOKEN } as unknown as AugmentedTransaction["contract"],
+      chainId,
+      method: "",
+      args: ["0x"],
+      ensureConfirmation: true,
+      onBroadcast,
+    };
+  }
+
+  beforeEach(function () {
+    events = [];
+  });
+
+  afterEach(() => sinon.restore());
+
+  it("invokes the hook with the broadcast response before awaiting confirmation", async function () {
+    const client = new TestTransactionClient({ warn: sinon.stub(), debug: sinon.stub() } as unknown as winston.Logger);
+    const seen: string[] = [];
+    await (client as unknown as Internals)._submit(
+      transaction(async (response) => {
+        events.push("hook");
+        seen.push(response.hash);
+      }),
+      { nonce: null }
+    );
+    // Intent must be recorded before the wait, since the wait is where an eviction lands.
+    expect(events).to.deep.equal(["hook", "wait"]);
+    expect(seen).to.deep.equal([broadcastHash]);
+  });
+
+  it("does not abort the submission when the hook rejects", async function () {
+    const warnStub = sinon.stub();
+    const client = new TestTransactionClient({ warn: warnStub, debug: sinon.stub() } as unknown as winston.Logger);
+    const response = await (client as unknown as Internals)._submit(
+      transaction(async () => {
+        throw new Error("redis unavailable");
+      }),
+      { nonce: null }
+    );
+    // The transaction is already on the wire; losing the claim must not lose the transaction.
+    expect(response.hash).to.equal(broadcastHash);
+    expect(events).to.deep.equal(["wait"]);
+    expect(warnStub.calledOnce).to.equal(true);
+    expect(warnStub.firstCall.firstArg.message).to.contain("onBroadcast hook failed");
   });
 });

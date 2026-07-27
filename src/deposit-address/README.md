@@ -24,7 +24,16 @@ Poll-loop failures are never silent: `pollAndExecute` passes an error handler to
 a rejected `evaluateDepositAddresses` tick (which skips that whole batch) is logged at error level
 instead of being swallowed by the scheduler.
 
-Cleanup in the `finally` block closes the Pub/Sub publisher and Redis clients.
+Cleanup in the `finally` block **drains before it disconnects**: `drain()` waits (bounded at 30s) for
+polls that are already running to settle, and only then are the Pub/Sub publisher and Redis clients
+closed. The order matters — a confirmed execute whose Redis write lands on a disconnected client is
+lost, and a lifecycle event published through a closed client is dropped with no log at all. The wait
+is bounded because a poll can block indefinitely (an unmined transaction leaves `wait()` pending
+forever); an overrun is warned rather than waited out.
+
+`SIGTERM` is handled alongside `SIGHUP` (both abort the handler). Node's default action for `SIGTERM`
+is immediate termination, so without a handler an eviction by the container runtime kills in-flight
+work outright instead of letting it drain.
 
 ## Indexer message classification
 
@@ -99,7 +108,9 @@ the production rollout).
 The flow (`initiateDepositV3`):
 
 1. Filter on `relayerOriginChains` and dedup against the same Redis/in-memory sets as v1 (the dedup
-   scheme is keyed on `erc20Transfer.transactionHash` / `depositKey`, shared across versions).
+   scheme is keyed on `erc20Transfer.transactionHash` / `depositKey`, shared across versions), plus
+   the in-flight claim set (see [Redis persistence](#redis-persistence)) — a transfer whose execute
+   is already on the wire is never submitted a second time.
 2. Skip when `depositAddressNamespace` / `refundAddress.namespace` don't match the origin chain's
    family (`evm` ⇒ EVM chains, `tron` ⇒ Tron; other families, and cross-family anomalies like a
    `tron` namespace on an EVM chainId, are skipped with a warn).
@@ -115,9 +126,19 @@ The flow (`initiateDepositV3`):
    must match the origin chain, `isPlaceholder` must be false, and `signatureDeadline` must have
    ≥60s of headroom. The calldata embeds a deadline-bounded signature — it is perishable, and on
    any failure the next poll **re-requests fresh calldata; stale payloads are never patched**.
-7. Sign and submit via `TransactionClient` (gas, nonce, rebroadcast), then persist the tx hash to
-   Redis exactly like v1.
-8. Publish a `deposit_executed` lifecycle event to GCP Pub/Sub (if `ENABLE_DEPOSIT_ADDRESS_DEPOSIT_PUBLISHER=true`).
+7. Re-check immediately before submission (`_executeStillWarranted`): the claim set must still be
+   clear and the on-chain balance must still cover the transfer. Steps 4 and 6 ran *before* the
+   quote-api round trip, which can take seconds — long enough for the address to be swept by another
+   path or claimed by a concurrent instance during a handover overlap. The claim set is re-read from
+   Redis here, not from the in-memory mirror, since a concurrent instance's claim may postdate this
+   run's snapshot.
+8. Sign and submit via `TransactionClient` (gas, nonce, rebroadcast). The claim is written from the
+   `onBroadcast` hook — as soon as the tx hash exists and **before** the confirmation wait — then on
+   confirmation the tx hash is persisted to the executed set exactly like v1 and the claim is
+   cleared. Ordering is deliberate: the executed set is written before the claim is dropped, so a
+   crash in between leaves a redundant claim that startup resolution tidies up, whereas the reverse
+   order would reopen the duplicate-sweep window.
+9. Publish a `deposit_executed` lifecycle event to GCP Pub/Sub (if `ENABLE_DEPOSIT_ADDRESS_DEPOSIT_PUBLISHER=true`).
 
 The v3 message's `counterfactualMaterials`/`initialRoot`/`salt` are relayed by the indexer but not
 read by the execute path — the API re-derives them, so they are carried for diagnostics only.
@@ -196,13 +217,45 @@ neither validates nor skips: the deposit address is already deployed from explic
 
 ## Redis persistence
 
-Three sets persist across runs so handover does not double-spend, double-refund, or re-attempt a terminally-skipped refund:
+Four keys persist across runs so handover does not double-spend, double-refund, or re-attempt a terminally-skipped refund:
 
 - `deposit-address:executed:<botIdentifier>` — set of `erc20Transfer.transactionHash` for successfully executed deposits.
 - `deposit-address:withdrawn-deposit-keys:<botIdentifier>` — set of `depositKey` (`depositAddress:transactionHash`) for successfully executed refund withdraws.
 - `deposit-address:skipped-withdraw-keys:<botIdentifier>` — set of `depositKey` for v3 refund withdraws the quote-api rejected with a terminal 422 (`GAS_EXCEEDS_REFUND` / `UNPRICEABLE_REFUND_TOKEN`); never re-attempted.
+- `deposit-address:pending-executes:<botIdentifier>` — map of `depositKey` → in-flight execute claim (see below).
 
-On each poll, entries whose source messages are no longer returned by the indexer are pruned — the indexer has its own TTL and stops returning expired messages.
+On each poll, entries in the first three whose source messages are no longer returned by the indexer are pruned — the indexer has its own TTL and stops returning expired messages. The claim map is **not** pruned this way: it is resolved against the chain, since a claim's whole purpose is to outlive the message that produced it.
+
+### In-flight execute claims
+
+The executed set only records executes whose confirmation this process *observed*. That leaves a
+window — broadcast until confirmation, seconds on a fast chain — in which the transfer has already
+been swept but nothing durable says so. The handler is handed over on a fixed cadence and can be
+evicted inside that window, and the successor's remaining guard (the deposit address balance) is
+unsound: the address is a shared pot, so an unrelated inbound transfer makes the stale message look
+executable again and the sweep is repeated against someone else's funds.
+
+The claim closes that window. `PendingExecute` (see [`pendingExecutes.ts`](./pendingExecutes.ts))
+records `txHash`, `chainId`, `refTxHash`, `submittedAt` and an `erc20Transfer` projection, written
+from the `TransactionClient` `onBroadcast` hook so the unprotected interval shrinks to a single Redis
+write. It carries the transfer projection so a successor can rebuild the `deposit_executed` payload
+without the original indexer message, which may no longer be served by then.
+
+At startup — right after handover, so a successor inherits the incumbent's work — every claim is
+resolved against the chain via `getTransactionReceipt` (`_settlePendingExecute`):
+
+| Receipt | Outcome | Action |
+| --- | --- | --- |
+| mined, `status !== 0` | `executed` | Adopt into the executed set, clear the claim, publish the `deposit_executed` event the evicted run never sent. |
+| mined, `status === 0` | `reverted` | Nothing moved; clear the claim so the transfer is re-attempted. |
+| absent, within `PENDING_EXECUTE_STALE_SECONDS` (15m) | `unresolved` | Keep the claim — it is what blocks a second submission. |
+| absent, older than that | `unresolved` | Discard with a warn (`across-bot-error`): the transaction is never going to land, and a resubmit reuses its nonce (`getTransactionCount("latest")`) so it replaces rather than duplicates. |
+
+Only an explicit `status === 0` counts as a revert; ethers leaves `status` undefined on chains that
+predate it, and treating that as success is the safe direction — it can strand a deposit for manual
+recovery, but it can never cause a second sweep. The same resolution runs when
+`sendAndConfirmTransaction` returns no receipt, since a revert surfaces there as an undefined
+receipt: an execute that actually landed is adopted rather than retried.
 
 ## Refund-withdraw flow (high level)
 
