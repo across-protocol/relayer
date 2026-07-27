@@ -35,7 +35,7 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
   private readonly nativeFeeCap: BigNumber;
   private l2ToL1AmountConverter: (amount: BigNumber) => BigNumber;
   private readonly feePct: BigNumber = BigNumber.from(5 * 10 ** 15); // Default fee percent of 0.5%
-  private readonly minSendPctOfRequested: BigNumber;
+  private readonly oftMinSendPct: BigNumber;
 
   constructor(
     l2chainId: number,
@@ -46,7 +46,7 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
     logger?: winston.Logger
   ) {
     super(l2chainId, hubChainId, l2Signer, l1Signer, l1Token, logger);
-    this.minSendPctOfRequested = toBNWei(process.env.RELAYER_OFT_MIN_WITHDRAWAL_PCT ?? "0.2");
+    this.oftMinSendPct = toBNWei(process.env.RELAYER_OFT_MIN_WITHDRAWAL_PCT ?? "0.2");
 
     const translatedL2Token = getTranslatedTokenAddress(l1Token, hubChainId, l2chainId);
     this.l2Token = translatedL2Token;
@@ -126,7 +126,7 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
     // A sized-down send far below the requested amount barely dents the excess while still paying full
     // per-message costs, so wait for the path to recover instead. Tunable via
     // RELAYER_OFT_MIN_WITHDRAWAL_PCT (fraction of the requested amount; default 0.2).
-    const minAmountToSend = requestedAmount.mul(this.minSendPctOfRequested).div(fixedPointAdjustment);
+    const minAmountToSend = requestedAmount.mul(this.oftMinSendPct).div(fixedPointAdjustment);
     if (amountToSend.lt(minAmountToSend)) {
       this.logger?.warn({
         at: "OFTL2Bridge#constructWithdrawToL1Txns",
@@ -136,7 +136,7 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
         l2Token: this.l2Token.toNative(),
         requestedAmount: requestedAmount.toString(),
         amountToSend: amountToSend.toString(),
-        minSendPctOfRequested: this.minSendPctOfRequested.toString(),
+        oftMinSendPct: this.oftMinSendPct.toString(),
       });
       return [];
     }
