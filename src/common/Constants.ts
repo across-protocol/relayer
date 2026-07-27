@@ -417,7 +417,8 @@ type L2BridgeConstructor<T extends BaseL2BridgeAdapter> = new (
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   l2SignerOrProvider: any,
   l1Signer: Signer,
-  l1Token: EvmAddress
+  l1Token: EvmAddress,
+  logger?: winston.Logger
 ) => T;
 
 // Map of chain IDs to all "canonical bridges" for the given chain. Canonical is loosely defined -- in this
