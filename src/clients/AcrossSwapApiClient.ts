@@ -112,6 +112,12 @@ export interface DepositAddressExecuteRequest {
   amount: string;
   /** Origin-chain-native encoding, like `userAddress`. */
   executionFeeRecipient: string;
+  /**
+   * Ops escape hatch: force the bridge instead of the API's amount-aware
+   * router. Clamped server-side to the committed executable lane set — a
+   * non-executable value is a typed 400, never a mis-signed sweep.
+   */
+  bridgeOverride?: "cctp" | "spokepool" | "oft";
   /** Bot-priced payout, deducted from the bridged amount. Omitted => 0. */
   executionFee?: string;
   /**

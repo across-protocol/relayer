@@ -503,6 +503,43 @@ describe("DepositAddressHandler._getExecuteTx request mapping", function () {
     });
   });
 
+  it("applies a configured bridgeOverride when the gate is on and the lane matches", async function () {
+    const config = handler.config as unknown as {
+      enableExecuteBridgeOverride: boolean;
+      executeBridgeOverrides: Record<string, string>;
+    };
+    config.enableExecuteBridgeOverride = true;
+    config.executeBridgeOverrides = { [`42161:${TOKEN.toLowerCase()}:1337`]: "oft" };
+    await (handler as unknown as Internals)._getExecuteTx(depositMessageV3());
+    expect(executeStub.calledOnce).to.equal(true);
+    const request = executeStub.firstCall.args[0] as Record<string, unknown>;
+    expect(request.bridgeOverride).to.equal("oft");
+  });
+
+  it("omits bridgeOverride when the gate is on but no lane matches", async function () {
+    const config = handler.config as unknown as {
+      enableExecuteBridgeOverride: boolean;
+      executeBridgeOverrides: Record<string, string>;
+    };
+    config.enableExecuteBridgeOverride = true;
+    config.executeBridgeOverrides = { "1:0xdeadbeef:8453": "spokepool" };
+    await (handler as unknown as Internals)._getExecuteTx(depositMessageV3());
+    const request = executeStub.firstCall.args[0] as Record<string, unknown>;
+    expect(request).to.not.have.property("bridgeOverride");
+  });
+
+  it("omits bridgeOverride when the gate is off even if a lane matches", async function () {
+    const config = handler.config as unknown as {
+      enableExecuteBridgeOverride: boolean;
+      executeBridgeOverrides: Record<string, string>;
+    };
+    config.enableExecuteBridgeOverride = false;
+    config.executeBridgeOverrides = { [`42161:${TOKEN.toLowerCase()}:1337`]: "oft" };
+    await (handler as unknown as Internals)._getExecuteTx(depositMessageV3());
+    const request = executeStub.firstCall.args[0] as Record<string, unknown>;
+    expect(request).to.not.have.property("bridgeOverride");
+  });
+
   it("retries on undefined responses and gives up after exhausting retries", async function () {
     executeStub.resolves(undefined);
     const result = await (handler as unknown as Internals)._getExecuteTx(depositMessageV3());

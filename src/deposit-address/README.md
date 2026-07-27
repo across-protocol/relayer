@@ -86,6 +86,13 @@ Two optional execute fields are gated behind env flags because an API that preda
 changes rejects an unknown param with `400 INVALID_PARAM`:
 
 - `ENABLE_EXECUTE_INPUT_TOKEN=true` → relays the funding token as `inputToken`.
+- `ENABLE_EXECUTE_BRIDGE_OVERRIDE=true` + `EXECUTE_BRIDGE_OVERRIDES` → per-lane forced bridge on
+  v3 executes. `EXECUTE_BRIDGE_OVERRIDES` is a JSON map keyed
+  `originChainId:inputToken:destinationChainId` (input token lowercased; origin-chain-native
+  encoding) → `cctp | spokepool | oft`, e.g.
+  `{"42161:0xfd08…cbb9:999":"oft"}`. Lanes without an entry keep the API's amount-aware routing.
+  The API clamps overrides to the committed executable lane set, so a stale/invalid entry is a
+  typed 400, never a wrong-lane sweep. Config-parse fails fast on malformed JSON or values.
 - `ENABLE_EXECUTE_ERC20_TRANSFER_METADATA=true` → relays an `erc20Transfer` provenance reference
   (`{ chainId, blockNumber, transactionHash, logIndex }` of the inbound funding transfer, taken
   verbatim from the indexer message; `chainId` coerced to an integer). When accepted, the API wraps

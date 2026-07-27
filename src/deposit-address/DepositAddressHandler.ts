@@ -1266,6 +1266,27 @@ export class DepositAddressHandler {
       // signer address per origin chain keeps the fee recipient the bot itself on every family.
       executionFeeRecipient: toAddressType(this.signerAddress.toNative(), originChainId).toNative(),
       integratorId,
+      // Per-lane ops override of the API's amount-aware router (gated; empty by default).
+      // The API clamps this to the committed executable lane set, so a stale entry is a
+      // typed 400 rather than a wrong-lane sweep.
+      ...(() => {
+        if (!this.config.enableExecuteBridgeOverride) {
+          return {};
+        }
+        const laneKey =
+          `${originChainId}:${erc20Transfer.contractAddress}:${Number(routeParams.destinationChainId)}`.toLowerCase();
+        const bridgeOverride = this.config.executeBridgeOverrides[laneKey];
+        if (!isDefined(bridgeOverride)) {
+          return {};
+        }
+        this.logger?.debug({
+          at: "DepositAddressHandler#_getExecuteTx",
+          message: "Applying configured bridgeOverride to execute request",
+          laneKey,
+          bridgeOverride,
+        });
+        return { bridgeOverride };
+      })(),
       // Provenance reference to the inbound funding transfer. When accepted, the API folds this into a
       // Multicall3 bundle that emits a version-2 provenance blob, giving the indexer an on-chain
       // sweep ↔ funding-transfer link in the execute receipt. Gated because an API without the schema

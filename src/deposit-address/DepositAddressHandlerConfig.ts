@@ -22,6 +22,14 @@ export class DepositAddressHandlerConfig extends CommonConfig {
   enableExecuteInputToken: boolean;
   /** Gate for relaying the `erc20Transfer` provenance object on v3 executes. Requires an API that accepts the field. */
   enableExecuteErc20Transfer: boolean;
+  /** Gate for per-lane `bridgeOverride` on v3 executes. Off unless BOTH this flag and a matching entry in `executeBridgeOverrides` are set. */
+  enableExecuteBridgeOverride: boolean;
+  /**
+   * Per-lane forced bridge, keyed `originChainId:inputTokenLowercase:destinationChainId` →
+   * `cctp | spokepool | oft`. The API clamps overrides to the committed executable lane set,
+   * so a bad entry yields a typed 400, never a mis-signed sweep.
+   */
+  executeBridgeOverrides: Record<string, "cctp" | "spokepool" | "oft">;
 
   /** Gate for publishing `withdraw_executed` events to GCP Pub/Sub. */
   enableDepositAddressWithdrawPublisher: boolean;
@@ -49,6 +57,8 @@ export class DepositAddressHandlerConfig extends CommonConfig {
       ENABLE_V3_WITHDRAWALS,
       ENABLE_EXECUTE_INPUT_TOKEN,
       ENABLE_EXECUTE_ERC20_TRANSFER_METADATA,
+      ENABLE_EXECUTE_BRIDGE_OVERRIDE,
+      EXECUTE_BRIDGE_OVERRIDES,
       ENABLE_DEPOSIT_ADDRESS_WITHDRAW_PUBLISHER,
       ENABLE_DEPOSIT_ADDRESS_DEPOSIT_PUBLISHER,
       PUBSUB_GCP_PROJECT_ID,
@@ -74,6 +84,27 @@ export class DepositAddressHandlerConfig extends CommonConfig {
     this.enableV3Withdrawals = ENABLE_V3_WITHDRAWALS === "true";
     this.enableExecuteInputToken = ENABLE_EXECUTE_INPUT_TOKEN === "true";
     this.enableExecuteErc20Transfer = ENABLE_EXECUTE_ERC20_TRANSFER_METADATA === "true";
+    this.enableExecuteBridgeOverride = ENABLE_EXECUTE_BRIDGE_OVERRIDE === "true";
+    this.executeBridgeOverrides = {};
+    if (this.enableExecuteBridgeOverride) {
+      const allowedBridges = new Set(["cctp", "spokepool", "oft"]);
+      const laneKey = /^\d+:\S+:\d+$/;
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(EXECUTE_BRIDGE_OVERRIDES ?? "{}");
+      } catch {
+        throw new Error("EXECUTE_BRIDGE_OVERRIDES must be valid JSON when ENABLE_EXECUTE_BRIDGE_OVERRIDE=true");
+      }
+      for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+        if (!laneKey.test(key) || typeof value !== "string" || !allowedBridges.has(value)) {
+          throw new Error(
+            `EXECUTE_BRIDGE_OVERRIDES entry "${key}": "${String(value)}" is invalid — expected ` +
+              '"originChainId:inputToken:destinationChainId" → "cctp" | "spokepool" | "oft"'
+          );
+        }
+        this.executeBridgeOverrides[key.toLowerCase()] = value as "cctp" | "spokepool" | "oft";
+      }
+    }
 
     this.enableDepositAddressWithdrawPublisher = ENABLE_DEPOSIT_ADDRESS_WITHDRAW_PUBLISHER === "true";
     this.enableDepositAddressDepositPublisher = ENABLE_DEPOSIT_ADDRESS_DEPOSIT_PUBLISHER === "true";
