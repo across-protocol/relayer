@@ -134,7 +134,9 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
     // RELAYER_OFT_MIN_WITHDRAWAL_PCT (fraction of the requested amount; default 0.2).
     const minAmountToSend = requestedAmount.mul(this.oftMinSendPct).div(fixedPointAdjustment);
     if (amountToSend.lt(minAmountToSend)) {
-      this.logger?.warn({
+      // The caller (BaseChainAdapter#withdrawTokenFromL2) already warns on any empty txn list, so log the
+      // bridge-specific detail at debug to avoid emitting two warns for the same skipped withdrawal.
+      this.logger?.debug({
         at: "OFTL2Bridge#constructWithdrawToL1Txns",
         message:
           "Skipping OFT withdrawal to hub chain: quoted bridge capacity is below the minimum percentage of the requested amount",
