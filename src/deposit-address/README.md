@@ -73,19 +73,30 @@ For `version: 3` messages the bot is a **thin submitter** of API-built calldata.
 execute endpoint (`POST /deposit-addresses/execute`, bearer-authed with the same `SWAP_API_KEY`)
 re-derives the deposit address and all counterfactual merkle materials server-side from the
 identity (`destination.token`, `destination.recipient`, `userAddress`); the bot relays funding
-context only — origin chain, amount, destination route, refund identity — plus its own
-`executionFeeRecipient` and the `integratorId` the address was derived with. `executionFee` is
-currently omitted (the API defaults it to 0); bot-side fee pricing is a follow-up task.
+context only — origin chain, swept `depositAddress`, funding `inputToken`, amount, destination
+route, refund identity — plus its own `executionFeeRecipient` and the `integratorId` the address
+was derived with. `executionFee` is currently omitted (the API defaults it to 0); bot-side fee
+pricing is a follow-up task.
 
 The `integratorId` (2-byte hex) is sourced from the indexer message's `integrator` projection (a
 property of the deposit address, not the bot's auth key) and is **required** by the execute
 endpoint — it folds into the CREATE2 salt + on-chain integrator tag, so the address is derived
 per-integrator. The bot relays it verbatim.
 
-Two optional execute fields are gated behind env flags because an API that predates their schema
-changes rejects an unknown param with `400 INVALID_PARAM`:
+Two origin-side fields are always sent, both relayed verbatim from the indexer message:
 
-- `ENABLE_EXECUTE_INPUT_TOKEN=true` → relays the funding token as `inputToken`.
+- `depositAddress` — the funded address being swept (`depositAddress` on the v3 item). The API
+  resolves which contract generation the address belongs to from this, instead of assuming the
+  latest.
+- `inputToken` — the funding token as `{ chainId, address }` (`erc20Transfer.contractAddress`).
+  Without it the API falls back to origin-native USDC, which mis-routes non-USDC sweeps.
+
+Neither is gated: every API deployment accepts them (older contract generations parse and ignore
+them), so one bot build is safe against every environment.
+
+One optional field remains behind an env flag, because an API that predates its schema change
+rejects an unknown param with `400 INVALID_PARAM`:
+
 - `ENABLE_EXECUTE_ERC20_TRANSFER_METADATA=true` → relays an `erc20Transfer` provenance reference
   (`{ chainId, blockNumber, transactionHash, logIndex }` of the inbound funding transfer, taken
   verbatim from the indexer message; `chainId` coerced to an integer). When accepted, the API wraps
@@ -93,7 +104,7 @@ changes rejects an unknown param with `400 INVALID_PARAM`:
   `AcrossEventEmitter`, giving the indexer an on-chain sweep ↔ funding-transfer link in the execute
   receipt.
 
-Both default off; enable them only against an API that accepts the field (e.g. the test bot ahead of
+Defaults off; enable it only against an API that accepts the field (e.g. the test bot ahead of
 the production rollout).
 
 The flow (`initiateDepositV3`):
@@ -126,8 +137,9 @@ read by the execute path — the API re-derives them, so they are carried for di
 (`depositAddressNamespace: "tron"`). No dedicated gate: Tron activates by adding its chainId
 (728126428) to `RELAYER_ORIGIN_CHAINS`, which also provisions the provider and dedup sets. v3
 messages stay un-normalized, so Tron fields flow **base58 end-to-end to the quote-api**
-(`userAddress`, `inputToken.address`; the bot re-encodes its own `executionFeeRecipient` to base58
-via `toAddressType`). The API responds with `executeTx.ecosystem: "tvm"`, a **0x-hex `to`** (the
+(`userAddress`, `depositAddress`, `inputToken.address`; the bot re-encodes its own
+`executionFeeRecipient` to base58 via `toAddressType`). The API responds with
+`executeTx.ecosystem: "tvm"`, a **0x-hex `to`** (the
 RPC-facing format), and the `depositAddress` echoed in base58; the bot validates the ecosystem
 against the chain family and compares deposit addresses canonically (base58 → hex) since base58 is
 case-sensitive. On-chain reads (`getDepositAddressBalance`) and receipt-log matching
