@@ -83,35 +83,36 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
 
     // We round `amount` to a specific precision to prevent rounding on the contract side. This way, we
     // receive the exact amount we sent in the transaction
-    const roundedAmount = await this.roundAmountToSend(amount, this.l2TokenInfo.decimals);
+    const requestedAmount = await this.roundAmountToSend(amount, this.l2TokenInfo.decimals);
 
-    // Stargate-style OFTs cap the quoted `amountSentLD` at the path's available credit and revert on
-    // anything larger, so withdraw the quoted amount when it is below the requested one. Vanilla OFTs
-    // quote `amountSentLD` equal to the requested amount. Quoted amounts are derived from shared
-    // decimals on the contract side, so they need no re-rounding.
-    const [oftLimit, , oftReceipt] = await this.getL2Bridge().quoteOFT(buildSendParams(roundedAmount, bnZero));
-    const quotedAmount = BigNumber.from(oftReceipt.amountSentLD);
-    const amountToSend = quotedAmount.lt(roundedAmount) ? quotedAmount : roundedAmount;
+    // Ask the bridge how much of the requested amount it can actually take right now. Stargate-style OFTs
+    // cap the quoted `amountSentLD` at the path's available credit and revert on anything larger; vanilla
+    // OFTs quote it equal to the requested amount. Quoted amounts are derived from shared decimals on the
+    // contract side, so they need no re-rounding.
+    const [oftLimit, , oftReceipt] = await this.getL2Bridge().quoteOFT(buildSendParams(requestedAmount, bnZero));
+    const quotedSendAmount = BigNumber.from(oftReceipt.amountSentLD);
+    const quotedReceiveAmount = BigNumber.from(oftReceipt.amountReceivedLD);
+    const bridgeMinSendAmount = BigNumber.from(oftLimit.minAmountLD);
+    const amountToSend = quotedSendAmount.lt(requestedAmount) ? quotedSendAmount : requestedAmount;
 
-    const appliedFee = OFT.isStargateBridge(this.l2chainId)
-      ? amountToSend.mul(this.feePct).div(fixedPointAdjustment) // Set a max slippage of 0.5%.
+    // Stargate fees come out of `amountReceivedLD`; allow for at most `feePct` (0.5%) of them.
+    const slippageAllowance = OFT.isStargateBridge(this.l2chainId)
+      ? amountToSend.mul(this.feePct).div(fixedPointAdjustment)
       : bnZero;
-    // @dev A minAmountLD of the send amount less the max fee ensures we won't hit contract-side rounding.
-    const minAmountOut = amountToSend.sub(appliedFee);
+    // @dev Requiring receipt of the send amount less the slippage allowance also ensures we won't hit
+    // contract-side rounding.
+    const minReceiveAmount = amountToSend.sub(slippageAllowance);
 
-    // Skip the withdrawal instead of enqueueing a transaction that is guaranteed to revert when the bridge
-    // can't accept a meaningful amount right now, or when the quoted fee-adjusted output already violates
-    // the slippage floor (Stargate fees come out of `amountReceivedLD`, and can exceed the slippage
-    // tolerance when path capacity is nearly drained). The excess is retried next run.
-    if (
-      amountToSend.eq(bnZero) ||
-      amountToSend.lt(BigNumber.from(oftLimit.minAmountLD)) ||
-      BigNumber.from(oftReceipt.amountReceivedLD).lt(minAmountOut)
-    ) {
+    // Skip the withdrawal instead of enqueueing a transaction that is guaranteed to revert; the excess is
+    // retried on a later run.
+    const bridgeHasNoCapacity = amountToSend.eq(bnZero) || amountToSend.lt(bridgeMinSendAmount);
+    // Stargate fees can exceed the slippage allowance when path capacity is nearly drained.
+    const feesExceedSlippageAllowance = quotedReceiveAmount.lt(minReceiveAmount);
+    if (bridgeHasNoCapacity || feesExceedSlippageAllowance) {
       return [];
     }
 
-    const sendParamStruct = buildSendParams(amountToSend, minAmountOut);
+    const sendParamStruct = buildSendParams(amountToSend, minReceiveAmount);
     // Pay the bridge fee in the Lz token if the network does not have a native token (i.e. Tempo).
     const payFeeInLzToken = !chainHasNativeToken(this.l2chainId);
 
@@ -122,7 +123,7 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
     }
 
     const formatter = createFormatFunction(2, 4, false, this.l2TokenInfo.decimals);
-    const sizedDownNote = amountToSend.lt(roundedAmount)
+    const sizedDownNote = amountToSend.lt(requestedAmount)
       ? ` (requested ${formatter(amount.toString())}, sized down to current bridge capacity)`
       : "";
     const approveTxn = payFeeInLzToken

@@ -1421,23 +1421,24 @@ export class InventoryClient {
           if (pendingWithdrawalAmount.gte(maxL2WithdrawalVolume)) {
             return;
           }
+          const withdrawalMrkdwn =
+            ` - Requested withdrawal of ${l2TokenFormatter(desiredWithdrawalAmount)} ${
+              l1TokenInfo.symbol
+            }. This meets target allocation of ` +
+            `${this.formatWei(targetPct.mul(100).toString())}% (trigger of ` +
+            `${this.formatWei(excessWithdrawThresholdPct.mul(100).toString())}%) of the total ` +
+            `${formatter(cumulativeBalance.toString())} ${
+              l1TokenInfo.symbol
+            } over all chains (ignoring hubpool repayments). This chain has a shortfall of ` +
+            `${l2TokenFormatter(this.tokenClient.getShortfallTotalRequirement(chainId, l2Token).toString())} ${
+              l1TokenInfo.symbol
+            }.` +
+            ` This chain's current allocation is ${this.formatWei(currentAllocPct.mul(100).toString())}%\n`;
           withdrawalsRequired[chainId] ??= [];
           withdrawalsRequired[chainId].push({
             l2Token,
             amountToWithdraw: desiredWithdrawalAmount,
-            mrkdwn:
-              ` - Requested withdrawal of ${l2TokenFormatter(desiredWithdrawalAmount)} ${
-                l1TokenInfo.symbol
-              }. This meets target allocation of ` +
-              `${this.formatWei(targetPct.mul(100).toString())}% (trigger of ` +
-              `${this.formatWei(excessWithdrawThresholdPct.mul(100).toString())}%) of the total ` +
-              `${formatter(cumulativeBalance.toString())} ${
-                l1TokenInfo.symbol
-              } over all chains (ignoring hubpool repayments). This chain has a shortfall of ` +
-              `${l2TokenFormatter(this.tokenClient.getShortfallTotalRequirement(chainId, l2Token).toString())} ${
-                l1TokenInfo.symbol
-              }.` +
-              ` This chain's current allocation is ${this.formatWei(currentAllocPct.mul(100).toString())}%\n`,
+            mrkdwn: withdrawalMrkdwn,
           });
         });
       });
@@ -1459,11 +1460,11 @@ export class InventoryClient {
     // Now, go through each chain and submit transactions. We cannot batch them unfortunately since the bridges
     // pull tokens from the msg.sender.
     const txnReceipts: { [chainId: number]: string[] } = {};
-    const executedMrkdwns: { [chainId: number]: string[] } = {};
+    const executedWithdrawalMrkdwns: { [chainId: number]: string[] } = {};
     await sdkUtils.forEachAsync(Object.keys(withdrawalsRequired), async (_chainId) => {
       const chainId = Number(_chainId);
       txnReceipts[chainId] = [];
-      executedMrkdwns[chainId] = [];
+      executedWithdrawalMrkdwns[chainId] = [];
       await sdkUtils.forEachAsync(withdrawalsRequired[chainId], async (withdrawal) => {
         const txnRef = await this.adapterManager.withdrawTokenFromL2(
           this.relayer,
@@ -1477,7 +1478,7 @@ export class InventoryClient {
         // the bridge skipped this withdrawal (e.g. insufficient bridge capacity) and logged a warning, so
         // don't claim it was withdrawn.
         if (this.simMode || txnRef.length > 0) {
-          executedMrkdwns[chainId].push(withdrawal.mrkdwn);
+          executedWithdrawalMrkdwns[chainId].push(withdrawal.mrkdwn);
         }
       });
     });
@@ -1498,10 +1499,10 @@ export class InventoryClient {
         }),
         txnReceipt: txnReceipts[chainId],
       });
-      if (executedMrkdwns[chainId].length > 0) {
+      if (executedWithdrawalMrkdwns[chainId].length > 0) {
         this.log(
           "Executed excess L2 inventory withdrawal 📒",
-          { mrkdwn: `*Withdrawals from ${getNetworkName(chainId)}:*\n${executedMrkdwns[chainId].join("")}` },
+          { mrkdwn: `*Withdrawals from ${getNetworkName(chainId)}:*\n${executedWithdrawalMrkdwns[chainId].join("")}` },
           "info"
         );
       }
