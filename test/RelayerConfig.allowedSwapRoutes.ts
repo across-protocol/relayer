@@ -21,7 +21,10 @@ describe("allowedSwapRoutes expansion", function () {
       toToken: "USDC",
     });
     expect(routes).to.have.length(2);
-    expect(routes.map((r) => r.fromChain).sort()).to.deep.equal([CHAIN_IDs.MAINNET, CHAIN_IDs.OPTIMISM]);
+    expect(routes.map((r) => r.fromChain).sort((a, b) => Number(a) - Number(b))).to.deep.equal([
+      CHAIN_IDs.MAINNET,
+      CHAIN_IDs.OPTIMISM,
+    ]);
     expect(routes.every((r) => r.toChain === CHAIN_IDs.BASE)).to.equal(true);
     expect(routes[0].fromToken).to.equal(TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]);
     expect(routes.every((r) => r.toToken === TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.BASE])).to.equal(true);

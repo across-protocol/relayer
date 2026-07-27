@@ -73,9 +73,7 @@ export function expandAllowedSwapRouteV2(rawSwapRoute: SwapRouteV2): SwapRoute[]
     }
     return chains.map((chainId) => ({
       chain: chainId,
-      tokens: [
-        ethersUtils.isAddress(token) ? token : resolveAcrossToken(token, chainId, true),
-      ],
+      tokens: [ethersUtils.isAddress(token) ? token : resolveAcrossToken(token, chainId, true)],
     }));
   };
 
