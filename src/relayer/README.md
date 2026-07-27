@@ -23,6 +23,39 @@ they fill via `fillRelayWithUpdatedDeposit` — so a speed-up can't redirect fun
 consulted; it's user-set on the origin chain and spoofable. Message deposits are gated by recipient like any other:
 allow-list the executing contract (e.g. `MulticallHandler`) to accept them, or leave it off the list to drop them.
 
+### Allowed swap routes (in-protocol swaps)
+
+Inventory JSON may define which cross-asset deposits the relayer will fill via `allowedSwapRoutes` (v1) or
+`allowedSwapRoutes2` (v2). Select which field is used with:
+
+| Env | Values | Default |
+|-----|--------|---------|
+| `RELAYER_ALLOWED_SWAP_ROUTES_VERSION` | `"1"` or `"2"` | `"1"` |
+
+- **v1** (`allowedSwapRoutes`): each entry has `fromChain` / `toChain` as a single chain id or `"ALL"`.
+- **v2** (`allowedSwapRoutes2`): `fromChain` / `toChain` may be a single chain id, `"ALL"`, or an **array** of chain ids. Arrays expand to a cartesian product (every from-chain × every to-chain). `"ALL"` keeps the existing semantics (any chain; token addresses expanded from `TOKEN_SYMBOLS_MAP`).
+
+Example v2:
+
+```json
+"allowedSwapRoutes2": [
+  {
+    "fromChain": [1, 10, 137, 42161],
+    "fromToken": "USDT",
+    "toChain": [8453, 999],
+    "toToken": "USDC"
+  },
+  {
+    "fromChain": "ALL",
+    "fromToken": "USDC",
+    "toChain": 4663,
+    "toToken": "USDG"
+  }
+]
+```
+
+At load time routes are expanded into the same flat `allowedSwapRoutes` list `InventoryClient.isSwapSupported` already uses. Set the env back to `"1"` to ignore `allowedSwapRoutes2` and use the original list.
+
 ## Constructing a Relayer
 
 The functions in `RelayerClientHelper` provide convenient functions for creating all of the helper clients that the Relayer needs to run, updating and initializing them, and then constructing a new Relayer.
