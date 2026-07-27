@@ -182,6 +182,33 @@ describe("InventoryClient: Rebalancing inventory", function () {
     }
   });
 
+  it("Restricts L1 tokens to L1_TOKENS_OVERRIDE when set", async function () {
+    // A bot may narrow the tokens it tracks via L1_TOKENS_OVERRIDE while reusing an inventory config that references
+    // more tokens (e.g. the same-asset rebalancer reusing the primary relayer's inventory config). The InventoryClient
+    // must not generate rebalances for tokens outside the override; the TokenClient holds no data for them.
+    inventoryClient = new MockInventoryClient(
+      EvmAddress.from(owner.address),
+      spyLogger,
+      inventoryConfig,
+      tokenClient,
+      enabledChainIds,
+      hubPoolClient,
+      adapterManager,
+      crossChainTransferClient,
+      mockRebalancerClient,
+      false,
+      [mainnetUsdc]
+    );
+    expect(inventoryClient.getL1Tokens().map((token) => token.toNative())).to.deep.equal([mainnetUsdc]);
+
+    // Drain WETH on Arbitrum to far below its threshold. Without the override filter this would trigger a WETH
+    // rebalance; with it, WETH is ignored and USDC remains at its seeded allocation, so nothing is required.
+    tokenClient.decrementLocalBalance(ARBITRUM, toAddressType(l2TokensForWeth[ARBITRUM], ARBITRUM), toWei(9));
+    await inventoryClient.update();
+    await inventoryClient.rebalanceInventoryIfNeeded();
+    expect(lastSpyLogIncludes(spy, "No rebalances required")).to.be.true;
+  });
+
   it("Correctly decides when to execute rebalances: allocation too low", async function () {
     // Test the case where the ratio on a given chain is two low and the bot needs to rebalance.
     // As each chain is at the expected amounts there should be no rebalance.

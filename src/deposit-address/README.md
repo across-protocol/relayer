@@ -100,8 +100,9 @@ The flow (`initiateDepositV3`):
 
 1. Filter on `relayerOriginChains` and dedup against the same Redis/in-memory sets as v1 (the dedup
    scheme is keyed on `erc20Transfer.transactionHash` / `depositKey`, shared across versions).
-2. Skip non-`evm` `depositAddressNamespace` / `refundAddress.namespace` (the execute identity must
-   be an EVM address).
+2. Skip when `depositAddressNamespace` / `refundAddress.namespace` don't match the origin chain's
+   family (`evm` ⇒ EVM chains, `tron` ⇒ Tron; other families, and cross-family anomalies like a
+   `tron` namespace on an EVM chainId, are skipped with a warn).
 3. Skip when the `integrator.integratorId` is absent or not 2-byte hex (warned, no API call) —
    mirrors the namespace guard. No funded v3 addresses exist pre-integrator, so a missing/malformed
    id is a data anomaly; sending it would only derive a different, unfunded address.
@@ -120,6 +121,21 @@ The flow (`initiateDepositV3`):
 
 The v3 message's `counterfactualMaterials`/`initialRoot`/`salt` are relayed by the indexer but not
 read by the execute path — the API re-derives them, so they are carried for diagnostics only.
+
+**Tron origins.** The v3 execute path also supports Tron-funded deposit addresses
+(`depositAddressNamespace: "tron"`). No dedicated gate: Tron activates by adding its chainId
+(728126428) to `RELAYER_ORIGIN_CHAINS`, which also provisions the provider and dedup sets. v3
+messages stay un-normalized, so Tron fields flow **base58 end-to-end to the quote-api**
+(`userAddress`, `inputToken.address`; the bot re-encodes its own `executionFeeRecipient` to base58
+via `toAddressType`). The API responds with `executeTx.ecosystem: "tvm"`, a **0x-hex `to`** (the
+RPC-facing format), and the `depositAddress` echoed in base58; the bot validates the ecosystem
+against the chain family and compares deposit addresses canonically (base58 → hex) since base58 is
+case-sensitive. On-chain reads (`getDepositAddressBalance`) and receipt-log matching
+(`buildDepositExecutedPayload`) convert base58 → 0x-hex via `getEthersCompatibleAddress` because
+Tron providers speak eth-JSON-RPC. Submission reuses the existing TVM path in `TransactionClient`
+(`_runTransactionTvm`, raw calldata, TRX `feeLimit`); the bot signer's key doubles as its Tron
+account, which must hold TRX for fees. Tron refund-withdraws remain unsupported (the v3 withdraw
+path is still EVM-only).
 
 ## v3 refund-withdraw flow
 

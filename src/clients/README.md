@@ -23,6 +23,8 @@ The InventoryClient has several important functions that all use its `InventoryC
 
 The full inventory config is defined in /src/interfaces/ and its read from the user's environment in the `src/relayer/RelayerConfig`. It essentially defines target balance allocation %'s across chains.
 
+When `L1_TOKENS_OVERRIDE` is set, `getL1Tokens()` restricts inventory management to the override tokens, even if the inventory config references more. Tokens outside the override are ignored by inventory updates, rebalances, and excess-balance withdrawals, because the `TokenClient` only tracks balances for the override set. This lets a bot (e.g. the same-asset rebalancer narrowed to one token) reuse a broader inventory config without generating rebalance candidates it can neither fund nor account for locally. An empty override leaves the full config in effect.
+
 ### Setting and Getting Virtual Balances
 
 The InventoryClient is designed to track inventory across chains, which are actual on-chain token balances plus any virtual balance modifications stemming from incomplete transfers from the `CrossChainTransferClient` and incomplete rebalances from rebalancer clients. The InventoryClient can also add in virtual modifications for upcoming relayer refunds from the `BundleDataApproxClient`.

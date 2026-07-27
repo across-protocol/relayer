@@ -203,8 +203,7 @@ describe("InventoryClient: Refund chain selection", function () {
       adapterManager,
       crossChainTransferClient,
       mockRebalancerClient,
-      false, // simMode
-      false // prioritizeUtilization
+      false // simMode
     );
     (inventoryClient as MockInventoryClient).setTokenMapping({
       [mainnetWeth]: {
@@ -352,8 +351,7 @@ describe("InventoryClient: Refund chain selection", function () {
         adapterManager,
         crossChainTransferClient,
         mockRebalancerClient,
-        false, // simMode
-        false // prioritizeUtilization
+        false // simMode
       );
 
       expect(
@@ -390,8 +388,7 @@ describe("InventoryClient: Refund chain selection", function () {
         adapterManager,
         crossChainTransferClient,
         mockRebalancerClient,
-        false, // simMode
-        false // prioritizeUtilization
+        false // simMode
       );
       expect(
         _inventoryClient.isSwapSupported(
@@ -420,8 +417,7 @@ describe("InventoryClient: Refund chain selection", function () {
         adapterManager,
         crossChainTransferClient,
         mockRebalancerClient,
-        false, // simMode
-        false // prioritizeUtilization
+        false // simMode
       );
       _inventoryClient.setTokenMapping({
         [mainnetWeth]: {
