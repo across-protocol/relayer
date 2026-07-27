@@ -47,6 +47,12 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
   ) {
     super(l2chainId, hubChainId, l2Signer, l1Signer, l1Token, logger);
     this.oftMinSendPct = toBNWei(process.env.RELAYER_OFT_MIN_WITHDRAWAL_PCT ?? "0.2");
+    // A fraction above 1 would make even a full-capacity quote fall below the floor and skip every
+    // withdrawal; a negative one would silently disable the guard. Fail at construction instead.
+    assert(
+      this.oftMinSendPct.gte(bnZero) && this.oftMinSendPct.lte(fixedPointAdjustment),
+      `RELAYER_OFT_MIN_WITHDRAWAL_PCT must be a fraction within [0, 1]; got ${process.env.RELAYER_OFT_MIN_WITHDRAWAL_PCT}`
+    );
 
     const translatedL2Token = getTranslatedTokenAddress(l1Token, hubChainId, l2chainId);
     this.l2Token = translatedL2Token;

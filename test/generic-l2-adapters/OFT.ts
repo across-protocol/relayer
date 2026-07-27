@@ -99,6 +99,21 @@ describe("Cross Chain Adapter: OFT L2 Bridge", function () {
         delete process.env.RELAYER_OFT_MIN_WITHDRAWAL_PCT;
       }
     });
+
+    it("rejects RELAYER_OFT_MIN_WITHDRAWAL_PCT values outside [0, 1]", async function () {
+      // Above 1 every withdrawal would be skipped forever; below 0 the guard is silently disabled.
+      const [signer] = await ethers.getSigners();
+      for (const invalid of ["1.5", "-0.1"]) {
+        process.env.RELAYER_OFT_MIN_WITHDRAWAL_PCT = invalid;
+        try {
+          expect(() => new OFTL2Bridge(l2ChainId, hubChainId, signer, signer, l1Token)).to.throw(
+            "RELAYER_OFT_MIN_WITHDRAWAL_PCT"
+          );
+        } finally {
+          delete process.env.RELAYER_OFT_MIN_WITHDRAWAL_PCT;
+        }
+      }
+    });
   });
 
   it("ignores rebalancer-owned pending withdrawals", async function () {
