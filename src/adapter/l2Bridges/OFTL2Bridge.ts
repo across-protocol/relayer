@@ -47,6 +47,7 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
   private readonly nativeFeeCap: BigNumber;
   private l2ToL1AmountConverter: (amount: BigNumber) => BigNumber;
   private readonly feePct: BigNumber = BigNumber.from(5 * 10 ** 15); // Default fee percent of 0.5%
+  private readonly minSendPctOfRequested: BigNumber;
   private priceClient?: PriceClient;
 
   constructor(
@@ -58,6 +59,7 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
     logger?: winston.Logger
   ) {
     super(l2chainId, hubChainId, l2Signer, l1Signer, l1Token, logger);
+    this.minSendPctOfRequested = toBNWei(process.env.OFT_WITHDRAWAL_MIN_PCT_OF_REQUESTED ?? "0.2");
 
     const translatedL2Token = getTranslatedTokenAddress(l1Token, hubChainId, l2chainId);
     this.l2Token = translatedL2Token;
@@ -131,6 +133,24 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
     // Stargate fees can exceed the slippage allowance when path capacity is nearly drained.
     const feesExceedSlippageAllowance = quotedReceiveAmount.lt(minReceiveAmount);
     if (bridgeHasNoCapacity || feesExceedSlippageAllowance) {
+      return [];
+    }
+
+    // A sized-down send far below the requested amount barely dents the excess while still paying full
+    // per-message costs, so wait for the path to recover instead. Tunable via
+    // OFT_WITHDRAWAL_MIN_PCT_OF_REQUESTED (fraction of the requested amount; default 0.2).
+    const minAmountToSend = requestedAmount.mul(this.minSendPctOfRequested).div(fixedPointAdjustment);
+    if (amountToSend.lt(minAmountToSend)) {
+      this.logger?.warn({
+        at: "OFTL2Bridge#constructWithdrawToL1Txns",
+        message:
+          "Skipping OFT withdrawal to hub chain: quoted bridge capacity is below the minimum percentage of the requested amount",
+        chainId: this.l2chainId,
+        l2Token: this.l2Token.toNative(),
+        requestedAmount: requestedAmount.toString(),
+        amountToSend: amountToSend.toString(),
+        minSendPctOfRequested: this.minSendPctOfRequested.toString(),
+      });
       return [];
     }
 

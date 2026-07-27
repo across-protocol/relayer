@@ -97,9 +97,10 @@ describe("Cross Chain Adapter: OFT L2 Bridge", function () {
 
     it("returns no transactions when the message fee exceeds the max percentage of the amount bridged", async function () {
       // Fee: 1 XPL = $0.10. Sized-down send: 0.005 WETH = $10. Max allowed fee: 0.5% = $0.05.
+      // Requested 0.02 so the sized-down send (25% of requested) clears the min-send-pct floor.
       mockBridgeCapacity(toBNWei("0.005"));
       mockPrices({ [xplAddress]: 0.1, [wethAddress]: 2000 });
-      const txns = await adapter.constructWithdrawToL1Txns(toAddress, adapter.l2Token, l1Token, toBNWei("20"));
+      const txns = await adapter.constructWithdrawToL1Txns(toAddress, adapter.l2Token, l1Token, toBNWei("0.02"));
       expect(txns.length).to.equal(0);
     });
 
@@ -116,8 +117,30 @@ describe("Cross Chain Adapter: OFT L2 Bridge", function () {
     it("proceeds without the fee-vs-amount check when prices are unavailable", async function () {
       mockBridgeCapacity(toBNWei("0.005"));
       mockPrices({}); // Every lookup throws.
-      const txns = await adapter.constructWithdrawToL1Txns(toAddress, adapter.l2Token, l1Token, toBNWei("20"));
+      const txns = await adapter.constructWithdrawToL1Txns(toAddress, adapter.l2Token, l1Token, toBNWei("0.02"));
       expect(txns.length).to.equal(1);
+    });
+
+    it("returns no transactions when quoted capacity is below the minimum percentage of the requested amount", async function () {
+      // 3 of 20 requested = 15%, below the default 20% floor.
+      mockBridgeCapacity(toBNWei("3"));
+      const txns = await adapter.constructWithdrawToL1Txns(toAddress, adapter.l2Token, l1Token, toBNWei("20"));
+      expect(txns.length).to.equal(0);
+    });
+
+    it("respects the OFT_WITHDRAWAL_MIN_PCT_OF_REQUESTED override", async function () {
+      process.env.OFT_WITHDRAWAL_MIN_PCT_OF_REQUESTED = "0.5";
+      try {
+        // The floor is resolved at construction, so build a fresh adapter under the override.
+        const [signer] = await ethers.getSigners();
+        adapter = new OFTL2Bridge(l2ChainId, hubChainId, signer, signer, l1Token);
+        // 5 of 20 requested = 25%: above the 20% default, below the 50% override.
+        mockBridgeCapacity(toBNWei("5"));
+        const txns = await adapter.constructWithdrawToL1Txns(toAddress, adapter.l2Token, l1Token, toBNWei("20"));
+        expect(txns.length).to.equal(0);
+      } finally {
+        delete process.env.OFT_WITHDRAWAL_MIN_PCT_OF_REQUESTED;
+      }
     });
   });
 
