@@ -78,49 +78,6 @@ describe("Cross Chain Adapter: OFT L2 Bridge", function () {
       expect(txns.length).to.equal(0);
     });
 
-    // Prices the LZ message fee (paid in XPL, Plasma's native token) and the bridged WETH so the
-    // fee-vs-amount guard can compare their USD values.
-    const mockPrices = (pricesByAddress: Record<string, number>) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (adapter as any).priceClient = {
-        getPriceByAddress: async (address: string) => {
-          const price = pricesByAddress[address.toLowerCase()];
-          if (price === undefined) {
-            throw new Error(`No mocked price for ${address}`);
-          }
-          return { address, price, timestamp: 0 };
-        },
-      };
-    };
-    const xplAddress = TOKEN_SYMBOLS_MAP.XPL.addresses[CHAIN_IDs.PLASMA].toLowerCase();
-    const wethAddress = TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET].toLowerCase();
-
-    it("returns no transactions when the message fee exceeds the max percentage of the amount bridged", async function () {
-      // Fee: 1 XPL = $0.10. Sized-down send: 0.005 WETH = $10. Max allowed fee: 0.5% = $0.05.
-      // Requested 0.02 so the sized-down send (25% of requested) clears the min-send-pct floor.
-      mockBridgeCapacity(toBNWei("0.005"));
-      mockPrices({ [xplAddress]: 0.1, [wethAddress]: 2000 });
-      const txns = await adapter.constructWithdrawToL1Txns(toAddress, adapter.l2Token, l1Token, toBNWei("0.02"));
-      expect(txns.length).to.equal(0);
-    });
-
-    it("sends when the message fee is within the max percentage of the amount bridged", async function () {
-      // Fee: 1 XPL = $0.10. Sized-down send: 5 WETH = $10,000. Max allowed fee: 0.5% = $50.
-      mockBridgeCapacity(toBNWei("5"));
-      mockPrices({ [xplAddress]: 0.1, [wethAddress]: 2000 });
-      const txns = await adapter.constructWithdrawToL1Txns(toAddress, adapter.l2Token, l1Token, toBNWei("20"));
-      expect(txns.length).to.equal(1);
-      const [sendParam] = txns[0].args;
-      expect(sendParam.amountLD).to.equal(toBNWei("5"));
-    });
-
-    it("proceeds without the fee-vs-amount check when prices are unavailable", async function () {
-      mockBridgeCapacity(toBNWei("0.005"));
-      mockPrices({}); // Every lookup throws.
-      const txns = await adapter.constructWithdrawToL1Txns(toAddress, adapter.l2Token, l1Token, toBNWei("0.02"));
-      expect(txns.length).to.equal(1);
-    });
-
     it("returns no transactions when quoted capacity is below the minimum percentage of the requested amount", async function () {
       // 3 of 20 requested = 15%, below the default 20% floor.
       mockBridgeCapacity(toBNWei("3"));

@@ -1005,12 +1005,6 @@ export const LZ_FEE_TOKENS: { [chainId: number]: EvmAddress } = {
   [CHAIN_IDs.TEMPO]: EvmAddress.from("0x0ceb237e109ee22374a567c6b09f373c73fa4cbb"), // LZD
 };
 
-// Skip OFT withdrawals whose LayerZero message fee is worth more than this fraction of the amount
-// bridged. The message fee is roughly fixed per message, so this floors the economically viable
-// send size — most relevant when a capacity-constrained Stargate path would otherwise be drained
-// in dust-sized chunks, each paying the full message fee.
-export const OFT_MESSAGE_FEE_MAX_PCT = toWei("0.005");
-
 // 0.1 ETH is a default cap for chains that use ETH as their gas token
 export const OFT_DEFAULT_FEE_CAP = toWei("0.1");
 export const OFT_FEE_CAP_OVERRIDES: { [chainId: number]: BigNumber } = {
