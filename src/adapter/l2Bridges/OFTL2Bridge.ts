@@ -15,6 +15,8 @@ import {
   fixedPointAdjustment,
   chainHasNativeToken,
   isDefined,
+  toBNWei,
+  winston,
   CHAIN_IDs,
 } from "../../utils";
 import { interfaces as sdkInterfaces } from "@across-protocol/sdk";
@@ -33,9 +35,24 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
   private readonly nativeFeeCap: BigNumber;
   private l2ToL1AmountConverter: (amount: BigNumber) => BigNumber;
   private readonly feePct: BigNumber = BigNumber.from(5 * 10 ** 15); // Default fee percent of 0.5%
+  private readonly oftMinSendPct: BigNumber;
 
-  constructor(l2chainId: number, hubChainId: number, l2Signer: Signer, l1Signer: Signer, l1Token: EvmAddress) {
-    super(l2chainId, hubChainId, l2Signer, l1Signer, l1Token);
+  constructor(
+    l2chainId: number,
+    hubChainId: number,
+    l2Signer: Signer,
+    l1Signer: Signer,
+    l1Token: EvmAddress,
+    logger?: winston.Logger
+  ) {
+    super(l2chainId, hubChainId, l2Signer, l1Signer, l1Token, logger);
+    this.oftMinSendPct = toBNWei(process.env.RELAYER_OFT_MIN_WITHDRAWAL_PCT ?? "0.2");
+    // A fraction above 1 would make even a full-capacity quote fall below the floor and skip every
+    // withdrawal; a negative one would silently disable the guard. Fail at construction instead.
+    assert(
+      this.oftMinSendPct.gte(bnZero) && this.oftMinSendPct.lte(fixedPointAdjustment),
+      `RELAYER_OFT_MIN_WITHDRAWAL_PCT must be a fraction within [0, 1]; got ${process.env.RELAYER_OFT_MIN_WITHDRAWAL_PCT}`
+    );
 
     const translatedL2Token = getTranslatedTokenAddress(l1Token, hubChainId, l2chainId);
     this.l2Token = translatedL2Token;
@@ -109,6 +126,24 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
     // Stargate fees can exceed the slippage allowance when path capacity is nearly drained.
     const feesExceedSlippageAllowance = quotedReceiveAmount.lt(minReceiveAmount);
     if (bridgeHasNoCapacity || feesExceedSlippageAllowance) {
+      return [];
+    }
+
+    // A sized-down send far below the requested amount barely dents the excess while still paying full
+    // per-message costs, so wait for the path to recover instead. Tunable via
+    // RELAYER_OFT_MIN_WITHDRAWAL_PCT (fraction of the requested amount; default 0.2).
+    const minAmountToSend = requestedAmount.mul(this.oftMinSendPct).div(fixedPointAdjustment);
+    if (amountToSend.lt(minAmountToSend)) {
+      this.logger?.warn({
+        at: "OFTL2Bridge#constructWithdrawToL1Txns",
+        message:
+          "Skipping OFT withdrawal to hub chain: quoted bridge capacity is below the minimum percentage of the requested amount",
+        chainId: this.l2chainId,
+        l2Token: this.l2Token.toNative(),
+        requestedAmount: requestedAmount.toString(),
+        amountToSend: amountToSend.toString(),
+        oftMinSendPct: this.oftMinSendPct.toString(),
+      });
       return [];
     }
 

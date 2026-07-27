@@ -77,6 +77,43 @@ describe("Cross Chain Adapter: OFT L2 Bridge", function () {
       const txns = await adapter.constructWithdrawToL1Txns(toAddress, adapter.l2Token, l1Token, toBNWei("20"));
       expect(txns.length).to.equal(0);
     });
+
+    it("returns no transactions when quoted capacity is below the minimum percentage of the requested amount", async function () {
+      // 3 of 20 requested = 15%, below the default 20% floor.
+      mockBridgeCapacity(toBNWei("3"));
+      const txns = await adapter.constructWithdrawToL1Txns(toAddress, adapter.l2Token, l1Token, toBNWei("20"));
+      expect(txns.length).to.equal(0);
+    });
+
+    it("respects the RELAYER_OFT_MIN_WITHDRAWAL_PCT override", async function () {
+      process.env.RELAYER_OFT_MIN_WITHDRAWAL_PCT = "0.5";
+      try {
+        // The floor is resolved at construction, so build a fresh adapter under the override.
+        const [signer] = await ethers.getSigners();
+        adapter = new OFTL2Bridge(l2ChainId, hubChainId, signer, signer, l1Token);
+        // 5 of 20 requested = 25%: above the 20% default, below the 50% override.
+        mockBridgeCapacity(toBNWei("5"));
+        const txns = await adapter.constructWithdrawToL1Txns(toAddress, adapter.l2Token, l1Token, toBNWei("20"));
+        expect(txns.length).to.equal(0);
+      } finally {
+        delete process.env.RELAYER_OFT_MIN_WITHDRAWAL_PCT;
+      }
+    });
+
+    it("rejects RELAYER_OFT_MIN_WITHDRAWAL_PCT values outside [0, 1]", async function () {
+      // Above 1 every withdrawal would be skipped forever; below 0 the guard is silently disabled.
+      const [signer] = await ethers.getSigners();
+      for (const invalid of ["1.5", "-0.1"]) {
+        process.env.RELAYER_OFT_MIN_WITHDRAWAL_PCT = invalid;
+        try {
+          expect(() => new OFTL2Bridge(l2ChainId, hubChainId, signer, signer, l1Token)).to.throw(
+            "RELAYER_OFT_MIN_WITHDRAWAL_PCT"
+          );
+        } finally {
+          delete process.env.RELAYER_OFT_MIN_WITHDRAWAL_PCT;
+        }
+      }
+    });
   });
 
   it("ignores rebalancer-owned pending withdrawals", async function () {
