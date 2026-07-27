@@ -55,5 +55,9 @@ export function parsePendingExecutes(json = "{}"): Record<string, PendingExecute
  * `getTransactionCount("latest")`, so it reuses the stranded transaction's nonce and replaces it
  * rather than duplicating it — which is what makes discarding safe once the original is clearly
  * never going to land.
+ *
+ * That reasoning is EVM-specific and does not carry to nonce-less chains, where a resubmit is an
+ * independent transaction rather than a replacement; those claims are retained and escalated instead
+ * of being discarded (see `_settlePendingExecute`).
  */
 export const PENDING_EXECUTE_STALE_SECONDS = 900;

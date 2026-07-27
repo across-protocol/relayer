@@ -223,6 +223,7 @@ Four keys persist across runs so handover does not double-spend, double-refund, 
 - `deposit-address:withdrawn-deposit-keys:<botIdentifier>` — set of `depositKey` (`depositAddress:transactionHash`) for successfully executed refund withdraws.
 - `deposit-address:skipped-withdraw-keys:<botIdentifier>` — set of `depositKey` for v3 refund withdraws the quote-api rejected with a terminal 422 (`GAS_EXCEEDS_REFUND` / `UNPRICEABLE_REFUND_TOKEN`); never re-attempted.
 - `deposit-address:pending-executes:<botIdentifier>` — map of `depositKey` → in-flight execute claim (see below).
+- `deposit-address:execute-reservation:<botIdentifier>:<depositKey>` — short-lived (`SET NX PX`, 120s) submission reservation, held only across the pre-submit checks and the broadcast.
 
 On each poll, entries in the first three whose source messages are no longer returned by the indexer are pruned — the indexer has its own TTL and stops returning expired messages. The claim map is **not** pruned this way: it is resolved against the chain, since a claim's whole purpose is to outlive the message that produced it.
 
@@ -249,7 +250,22 @@ resolved against the chain via `getTransactionReceipt` (`_settlePendingExecute`)
 | mined, `status !== 0` | `executed` | Adopt into the executed set, clear the claim, publish the `deposit_executed` event the evicted run never sent. |
 | mined, `status === 0` | `reverted` | Nothing moved; clear the claim so the transfer is re-attempted. |
 | absent, within `PENDING_EXECUTE_STALE_SECONDS` (15m) | `unresolved` | Keep the claim — it is what blocks a second submission. |
-| absent, older than that | `unresolved` | Discard with a warn (`across-bot-error`): the transaction is never going to land, and a resubmit reuses its nonce (`getTransactionCount("latest")`) so it replaces rather than duplicates. |
+| absent, older than that, EVM | `unresolved` | Discard with a warn (`across-bot-error`): the transaction is never going to land, and a resubmit reuses its nonce (`getTransactionCount("latest")`) so it replaces rather than duplicates. |
+| absent, older than that, **TVM** | `unresolved` | **Keep** the claim and escalate. TVM transactions carry no nonce, so a resubmit is an independent transaction — were the original merely invisible rather than dropped, both would land and sweep the pot twice. Stranding a deposit for manual recovery is reversible; a double sweep is not. |
+
+Tron adds one more wrinkle: `TransactionClient` records TronWeb's `txid` verbatim (un-prefixed), while
+Tron providers speak eth-JSON-RPC and require the `0x` prefix, so the claim's hash is normalized at
+the RPC boundary (`receiptLookupHash`) exactly as `_runTransactionTvm`'s `wait` does. Without it every
+Tron claim would fail to resolve.
+
+Because a read cannot provide mutual exclusion — two instances overlapping during a handover can both
+observe an empty claim set before either broadcasts — submission is additionally serialized by an
+atomic reservation (`acquireLock`, i.e. `SET NX PX`) taken immediately before the pre-submit checks and
+released once the broadcast has either been recorded as a claim or has failed. The reservation and the
+claim do different jobs and are both needed: the reservation is atomic but hash-less and TTL-bounded,
+so it covers the interval before a hash exists; the claim carries the hash, so it is resolvable against
+the chain and survives indefinitely. A process dying before broadcast lets the reservation expire (no
+permanent block); one dying after broadcast is covered by the claim.
 
 Only an explicit `status === 0` counts as a revert; ethers leaves `status` undefined on chains that
 predate it, and treating that as success is the safe direction — it can strand a deposit for manual

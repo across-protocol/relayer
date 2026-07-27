@@ -1101,9 +1101,12 @@ describe("DepositAddressHandler pending-execute claim", function () {
   let executeStub: sinon.SinonStub;
   let balanceStub: sinon.SinonStub;
   let warnStub: sinon.SinonStub;
+  let acquireLockStub: sinon.SinonStub;
+  let releaseLockStub: sinon.SinonStub;
 
   type Internals = {
     initiateDepositV3: (m: DepositAddressMessageV3) => Promise<void>;
+    _settlePendingExecute: (k: string, p: PendingExecute) => Promise<"executed" | "reverted" | "unresolved">;
     _recordPendingExecute: (k: string, p: PendingExecute) => Promise<void>;
     _readPendingExecutesFromRedis: () => Promise<Record<string, PendingExecute>>;
     _resolvePendingExecutesFromRedis: () => Promise<void>;
@@ -1162,12 +1165,16 @@ describe("DepositAddressHandler pending-execute claim", function () {
       enableExecuteErc20Transfer: false,
     } as unknown as DepositAddressHandlerConfig;
     handler = new DepositAddressHandler(logger, config, {} as unknown as Signer, []);
+    acquireLockStub = sinon.stub().resolves(true);
+    releaseLockStub = sinon.stub().resolves(true);
     (handler as unknown as { redisCache: unknown }).redisCache = {
       get: async (key: string) => store.get(key) ?? null,
       set: async (key: string, val: unknown) => {
         store.set(key, String(val));
         return "OK";
       },
+      acquireLock: acquireLockStub,
+      releaseLock: releaseLockStub,
     };
     getReceiptStub = sinon.stub();
     (handler as unknown as { providersByChain: Record<number, unknown> }).providersByChain = {
@@ -1277,6 +1284,125 @@ describe("DepositAddressHandler pending-execute claim", function () {
   it("allows submission when the claim set is clear and the balance still covers the transfer", async function () {
     const warranted = await (handler as unknown as Internals)._executeStillWarranted(depositMessageV3(), depositKey);
     expect(warranted).to.equal(true);
+  });
+
+  // A read-check is not mutual exclusion: two instances overlapping during a handover can both see an
+  // empty claim set before either broadcasts. The reservation is the atomic primitive that stops them.
+  it("does not submit when another instance holds the submission reservation", async function () {
+    acquireLockStub.resolves(false);
+    // Building the tx object needs a real signer/provider; the reservation is what this asserts on.
+    (handler as unknown as { getExecuteContract: sinon.SinonStub }).getExecuteContract = sinon
+      .stub()
+      .returns({ address: TOKEN });
+    executeStub.resolves({
+      depositAddress: DEPOSIT_ADDRESS,
+      executeTx: { ecosystem: "evm", chainId, to: TOKEN, data: "0x", value: "0" },
+      signer: SIGNER,
+      signatureDeadline: getCurrentTime() + 600,
+      isPlaceholder: false,
+    });
+
+    await (handler as unknown as Internals).initiateDepositV3(depositMessageV3());
+
+    expect(acquireLockStub.calledOnce).to.equal(true);
+    expect(acquireLockStub.firstCall.args[0]).to.contain(depositKey);
+    expect(warnStub.calledOnce).to.equal(true);
+    expect(warnStub.firstCall.firstArg.message).to.contain("holds the submission reservation");
+    // Only the pre-quote balance read happened; the pre-submit re-check was never reached.
+    expect(balanceStub.callCount).to.equal(1);
+  });
+
+  // Regression: rewriting the whole map from a fresh read let concurrent broadcasts (polls run under
+  // Promise.all) drop each other's claims, losing the record of a transaction already on the wire.
+  it("keeps both claims when two deposits broadcast concurrently", async function () {
+    const otherKey = `${DEPOSIT_ADDRESS}:0x${"7".repeat(64)}`;
+    await Promise.all([
+      (handler as unknown as Internals)._recordPendingExecute(depositKey, pendingRecord()),
+      (handler as unknown as Internals)._recordPendingExecute(
+        otherKey,
+        pendingRecord({ txHash: "0x" + "8".repeat(64), refTxHash: "0x" + "7".repeat(64) })
+      ),
+    ]);
+
+    const persisted = await (handler as unknown as Internals)._readPendingExecutesFromRedis();
+    expect(Object.keys(persisted).sort()).to.deep.equal([depositKey, otherKey].sort());
+  });
+});
+
+describe("DepositAddressHandler pending-execute claim on Tron", function () {
+  const chainId = CHAIN_IDs.TRON;
+  const depositKey = `${TRON_DEPOSIT_ADDRESS}:${TRON_TX_HASH}`;
+  // TronWeb reports an un-prefixed txid, which is what `onBroadcast` records verbatim.
+  const executeTxid = "9f2c" + "0".repeat(60);
+
+  let handler: DepositAddressHandler;
+  let store: Map<string, string>;
+  let getReceiptStub: sinon.SinonStub;
+  let warnStub: sinon.SinonStub;
+
+  type Internals = {
+    _settlePendingExecute: (k: string, p: PendingExecute) => Promise<"executed" | "reverted" | "unresolved">;
+    pendingExecutes: Record<string, PendingExecute>;
+  };
+
+  function tronPendingRecord(overrides: Partial<PendingExecute> = {}): PendingExecute {
+    return {
+      txHash: executeTxid,
+      chainId,
+      refTxHash: TRON_TX_HASH,
+      submittedAt: getCurrentTime(),
+      depositAddress: TRON_DEPOSIT_ADDRESS,
+      token: TRON_TOKEN,
+      blockNumber: 84_665_484,
+      logIndex: 55,
+      ...overrides,
+    };
+  }
+
+  beforeEach(function () {
+    store = new Map<string, string>();
+    warnStub = sinon.stub();
+    const logger = {
+      warn: warnStub,
+      debug: sinon.stub(),
+      info: sinon.stub(),
+      error: sinon.stub(),
+    } as unknown as winston.Logger;
+    const config = {
+      botIdentifier: "test-bot",
+      relayerOriginChains: [chainId],
+    } as unknown as DepositAddressHandlerConfig;
+    handler = new DepositAddressHandler(logger, config, {} as unknown as Signer, []);
+    (handler as unknown as { redisCache: unknown }).redisCache = {
+      get: async (key: string) => store.get(key) ?? null,
+      set: async (key: string, val: unknown) => {
+        store.set(key, String(val));
+        return "OK";
+      },
+    };
+    getReceiptStub = sinon.stub().resolves(null);
+    (handler as unknown as { providersByChain: Record<number, unknown> }).providersByChain = {
+      [chainId]: { getTransactionReceipt: getReceiptStub },
+    };
+  });
+
+  afterEach(() => sinon.restore());
+
+  it("0x-prefixes the Tron txid before looking the receipt up", async function () {
+    await (handler as unknown as Internals)._settlePendingExecute(depositKey, tronPendingRecord());
+    // Un-prefixed would be rejected by the eth-JSON-RPC provider, leaving every Tron claim unresolved.
+    expect(getReceiptStub.calledOnceWith(`0x${executeTxid}`)).to.equal(true);
+  });
+
+  it("retains a stale claim on Tron instead of discarding it, since a resubmit cannot replace it", async function () {
+    const pending = tronPendingRecord({ submittedAt: getCurrentTime() - PENDING_EXECUTE_STALE_SECONDS - 1 });
+    (handler as unknown as Internals).pendingExecutes = { [depositKey]: pending };
+
+    const outcome = await (handler as unknown as Internals)._settlePendingExecute(depositKey, pending);
+
+    expect(outcome).to.equal("unresolved");
+    expect((handler as unknown as Internals).pendingExecutes[depositKey]).to.not.equal(undefined);
+    expect(warnStub.firstCall.firstArg.message).to.contain("nonce-less chain");
   });
 });
 
