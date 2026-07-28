@@ -1228,7 +1228,7 @@ export class DepositAddressHandler {
     depositMessage: DepositAddressMessageV3,
     retriesRemaining = 3
   ): Promise<DepositAddressExecuteResponse | undefined> {
-    const { routeParams, refundAddress, erc20Transfer } = depositMessage;
+    const { routeParams, refundAddress, erc20Transfer, depositAddress } = depositMessage;
     // The API re-derives the deposit address and merkle materials from this identity; the bot
     // relays funding context plus the integratorId the address was derived with (≠ building
     // calldata). executionFee is omitted for now: the API defaults it to 0 and bot-side fee pricing
@@ -1249,16 +1249,16 @@ export class DepositAddressHandler {
         recipient: routeParams.recipient.address,
       },
       originChainId,
-      // The funding token is relayed verbatim from the indexer, which serves origin-chain-native
-      // encodings (base58 on Tron) — exactly what the execute endpoint expects for origin fields.
-      ...(this.config.enableExecuteInputToken
-        ? {
-            inputToken: {
-              chainId: originChainId,
-              address: erc20Transfer.contractAddress,
-            },
-          }
-        : {}),
+      // Both origin fields below are relayed verbatim from the indexer, which serves
+      // origin-chain-native encodings (base58 on Tron) — exactly what the execute endpoint expects
+      // for origin fields. The API resolves the swept address's contract generation from
+      // `depositAddress` rather than assuming the latest, and routes off `inputToken` instead of
+      // defaulting to origin-native USDC.
+      depositAddress,
+      inputToken: {
+        chainId: originChainId,
+        address: erc20Transfer.contractAddress,
+      },
       userAddress: refundAddress.address,
       amount: erc20Transfer.amount,
       // The API expects origin-chain-native encoding (base58 on Tron). The bot's Tron account is
