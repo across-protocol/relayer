@@ -98,16 +98,8 @@ export interface DepositAddressExecuteRequest {
     recipient: string;
   };
   originChainId: number;
-  /**
-   * The funded address being swept, relayed so the API can resolve which contract generation it
-   * belongs to instead of assuming the latest. Origin-chain-native encoding, like `userAddress`.
-   */
-  depositAddress: string;
-  /**
-   * The origin token that funded the deposit address. Relayed explicitly rather than left to the
-   * API's origin-native-USDC default, so non-USDC funding sweeps route off the real token.
-   */
-  inputToken: {
+  // The origin token that funded the deposit address.
+  inputToken?: {
     chainId: number;
     address: string;
   };

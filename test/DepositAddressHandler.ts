@@ -443,20 +443,18 @@ describe("DepositAddressHandler._getExecuteTx request mapping", function () {
 
   afterEach(() => sinon.restore());
 
-  it("relays funding context, depositAddress, inputToken and integratorId, with executionFee omitted", async function () {
+  it("relays funding context and integratorId, with executionFee omitted", async function () {
     await (handler as unknown as Internals)._getExecuteTx(depositMessageV3());
     expect(executeStub.calledOnce).to.equal(true);
-    // Exact request body in the default / production shape: the execute endpoint re-derives the
-    // materials from this identity, and its superstruct schema rejects unknown or missing keys.
-    // `depositAddress` and `inputToken` are always sent; only `erc20Transfer` remains gated.
+    // Exact request body with all execute feature flags off (the default / production shape): the
+    // execute endpoint re-derives the address/materials from this identity, and its superstruct
+    // schema rejects unknown or missing keys. Neither `inputToken` nor `erc20Transfer` is sent.
     expect(executeStub.firstCall.args[0]).to.deep.equal({
       destination: {
         token: { chainId: 1337, address: OUTPUT_TOKEN },
         recipient: RECIPIENT,
       },
       originChainId: 42161,
-      depositAddress: DEPOSIT_ADDRESS,
-      inputToken: { chainId: 42161, address: TOKEN },
       userAddress: REFUND_ADDRESS,
       amount: "5000",
       executionFeeRecipient: SIGNER,
@@ -475,8 +473,6 @@ describe("DepositAddressHandler._getExecuteTx request mapping", function () {
         recipient: RECIPIENT,
       },
       originChainId: 42161,
-      depositAddress: DEPOSIT_ADDRESS,
-      inputToken: { chainId: 42161, address: TOKEN },
       userAddress: REFUND_ADDRESS,
       amount: "5000",
       executionFeeRecipient: SIGNER,
@@ -491,6 +487,24 @@ describe("DepositAddressHandler._getExecuteTx request mapping", function () {
     });
   });
 
+  it("relays the funding token as inputToken when ENABLE_EXECUTE_INPUT_TOKEN is on", async function () {
+    (handler as unknown as { config: { enableExecuteInputToken: boolean } }).config.enableExecuteInputToken = true;
+    await (handler as unknown as Internals)._getExecuteTx(depositMessageV3());
+    expect(executeStub.calledOnce).to.equal(true);
+    expect(executeStub.firstCall.args[0]).to.deep.equal({
+      destination: {
+        token: { chainId: 1337, address: OUTPUT_TOKEN },
+        recipient: RECIPIENT,
+      },
+      originChainId: 42161,
+      inputToken: { chainId: 42161, address: TOKEN },
+      userAddress: REFUND_ADDRESS,
+      amount: "5000",
+      executionFeeRecipient: SIGNER,
+      integratorId: "0xdead",
+    });
+  });
+
   it("retries on undefined responses and gives up after exhausting retries", async function () {
     executeStub.resolves(undefined);
     const result = await (handler as unknown as Internals)._getExecuteTx(depositMessageV3());
@@ -498,7 +512,7 @@ describe("DepositAddressHandler._getExecuteTx request mapping", function () {
     expect(executeStub.callCount).to.equal(4); // initial attempt + 3 retries
   });
 
-  it("sends origin-native Tron encodings: base58 identity fields verbatim, base58 executionFeeRecipient", async function () {
+  it("sends origin-native Tron encodings: base58 userAddress verbatim, base58 executionFeeRecipient", async function () {
     await (handler as unknown as Internals)._getExecuteTx(tronDepositMessageV3());
     expect(executeStub.calledOnce).to.equal(true);
     const expectedFeeRecipient = toAddressType(SIGNER, CHAIN_IDs.TRON).toNative();
@@ -510,8 +524,6 @@ describe("DepositAddressHandler._getExecuteTx request mapping", function () {
         recipient: RECIPIENT,
       },
       originChainId: CHAIN_IDs.TRON,
-      depositAddress: TRON_DEPOSIT_ADDRESS,
-      inputToken: { chainId: CHAIN_IDs.TRON, address: TRON_TOKEN },
       userAddress: TRON_REFUND_ADDRESS,
       amount: "25000000",
       executionFeeRecipient: expectedFeeRecipient,
@@ -519,12 +531,17 @@ describe("DepositAddressHandler._getExecuteTx request mapping", function () {
     });
   });
 
-  it("relays the un-prefixed Tron provenance hash verbatim when the erc20Transfer gate is on", async function () {
-    (handler as unknown as { config: { enableExecuteErc20Transfer: boolean } }).config.enableExecuteErc20Transfer =
-      true;
+  it("relays base58 inputToken and the un-prefixed provenance hash verbatim when both gates are on", async function () {
+    const config = handler.config as unknown as {
+      enableExecuteInputToken: boolean;
+      enableExecuteErc20Transfer: boolean;
+    };
+    config.enableExecuteInputToken = true;
+    config.enableExecuteErc20Transfer = true;
     await (handler as unknown as Internals)._getExecuteTx(tronDepositMessageV3());
     expect(executeStub.calledOnce).to.equal(true);
     const request = executeStub.firstCall.args[0] as Record<string, unknown>;
+    expect(request.inputToken).to.deep.equal({ chainId: CHAIN_IDs.TRON, address: TRON_TOKEN });
     expect(request.erc20Transfer).to.deep.equal({
       chainId: CHAIN_IDs.TRON,
       blockNumber: 84_665_484,

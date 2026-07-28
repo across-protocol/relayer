@@ -18,6 +18,8 @@ export class DepositAddressHandlerConfig extends CommonConfig {
   withdrawEnabled: boolean;
   /** Gate for the v3 (upgradeable-counterfactual) refund-withdraw path. Independent of withdrawEnabled. */
   enableV3Withdrawals: boolean;
+  /** Gate for relaying the funding token as `inputToken` on v3 executes. Requires an API that accepts the field. */
+  enableExecuteInputToken: boolean;
   /** Gate for relaying the `erc20Transfer` provenance object on v3 executes. Requires an API that accepts the field. */
   enableExecuteErc20Transfer: boolean;
 
@@ -45,6 +47,7 @@ export class DepositAddressHandlerConfig extends CommonConfig {
       INITIALIZATION_RETRY_ATTEMPTS,
       WITHDRAW_ENABLED,
       ENABLE_V3_WITHDRAWALS,
+      ENABLE_EXECUTE_INPUT_TOKEN,
       ENABLE_EXECUTE_ERC20_TRANSFER_METADATA,
       ENABLE_DEPOSIT_ADDRESS_WITHDRAW_PUBLISHER,
       ENABLE_DEPOSIT_ADDRESS_DEPOSIT_PUBLISHER,
@@ -69,6 +72,7 @@ export class DepositAddressHandlerConfig extends CommonConfig {
     this.initializationRetryAttempts = Number(INITIALIZATION_RETRY_ATTEMPTS ?? 3);
     this.withdrawEnabled = WITHDRAW_ENABLED === "true";
     this.enableV3Withdrawals = ENABLE_V3_WITHDRAWALS === "true";
+    this.enableExecuteInputToken = ENABLE_EXECUTE_INPUT_TOKEN === "true";
     this.enableExecuteErc20Transfer = ENABLE_EXECUTE_ERC20_TRANSFER_METADATA === "true";
 
     this.enableDepositAddressWithdrawPublisher = ENABLE_DEPOSIT_ADDRESS_WITHDRAW_PUBLISHER === "true";
