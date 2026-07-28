@@ -1,5 +1,5 @@
 import { AnyDepositAddressMessage, DepositAddressMessageV3, isDepositAddressMessageV3 } from "../interfaces";
-import { getEthersCompatibleAddress, isDefined, isNativeTokenSentinel, TransactionReceipt, utils } from "../utils";
+import { isDefined, isNativeTokenSentinel, TransactionReceipt, utils } from "../utils";
 
 export const ERC20_TRANSFER_TOPIC = utils.id("Transfer(address,address,uint256)");
 
@@ -148,16 +148,9 @@ export function buildDepositExecutedPayload(
   depositMessage: DepositAddressMessageV3
 ): DepositExecutedPayload | undefined {
   const { erc20Transfer, depositAddress } = depositMessage;
-  const chainId = Number(erc20Transfer.chainId);
-  // v3 messages arrive un-normalized, so Tron fields are base58 — but receipt logs (eth-JSON-RPC)
-  // are 0x-hex, and hexZeroPad throws outright on base58. Convert before matching; no-op on EVM.
-  const token = getEthersCompatibleAddress(chainId, erc20Transfer.contractAddress);
+  const token = erc20Transfer.contractAddress;
 
-  const transferLog = findLastTransferFromDepositAddress(
-    receipt,
-    token,
-    getEthersCompatibleAddress(chainId, depositAddress)
-  );
+  const transferLog = findLastTransferFromDepositAddress(receipt, token, depositAddress);
   if (!isDefined(transferLog)) {
     return undefined;
   }

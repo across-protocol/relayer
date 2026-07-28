@@ -103,14 +103,10 @@ export interface DepositAddressExecuteRequest {
     chainId: number;
     address: string;
   };
-  /**
-   * The withdraw "user" identity committed at deposit-address creation (the refund address).
-   * Origin-chain-native encoding: 0x-hex on EVM, base58 on Tron.
-   */
+  /** The withdraw "user" identity committed at deposit-address creation (the refund address). */
   userAddress: string;
   /** Input amount as a decimal (or 0x-hex) bigint string. */
   amount: string;
-  /** Origin-chain-native encoding, like `userAddress`. */
   executionFeeRecipient: string;
   /** Bot-priced payout, deducted from the bridged amount. Omitted => 0. */
   executionFee?: string;
@@ -140,8 +136,7 @@ export interface DepositAddressExecuteResponse {
   /** The API's re-derived deposit address; must match the funded address from the indexer. */
   depositAddress: string;
   executeTx: {
-    /** "tvm" for Tron-origin executes; `to` is 0x-hex on both ecosystems. */
-    ecosystem: "evm" | "tvm";
+    ecosystem: "evm";
     chainId: number;
     to: string;
     data: string;
