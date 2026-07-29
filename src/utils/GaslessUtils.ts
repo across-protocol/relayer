@@ -104,16 +104,18 @@ export async function resolveTokenInfoForLog(
   }
 
   const probeOnChain = opts.probeOnChain ?? defaultOnChainTokenInfoProbe;
+  let info: { symbol: string; decimals: number } | undefined = undefined;
   try {
     const { symbol, decimals } = await probeOnChain(address, chainId);
-    const info = { symbol, decimals };
-    try {
-      await redisCache?.set(cacheKey, JSON.stringify(info), GASLESS_TOKEN_INFO_CACHE_TTL_SECONDS);
-    } catch {
-      // Best-effort cache write — a failure here only costs a future re-probe.
-    }
+    info = { symbol, decimals };
+
+    await redisCache?.set(cacheKey, JSON.stringify(info), GASLESS_TOKEN_INFO_CACHE_TTL_SECONDS);
     return info;
   } catch (error) {
+    if (isDefined(info)) {
+      return info;
+    }
+
     logger.warn({
       at: "GaslessUtils#resolveTokenInfoForLog",
       message: "Failed to resolve token info on-chain; using placeholder for log line only",
