@@ -36,6 +36,7 @@ import {
 import { isStablecoin } from "./TokenUtils";
 import { AugmentedTransaction } from "../clients";
 import { Contract, BigNumber, ethers } from "ethers";
+import { integer, is, max, min, string, type } from "superstruct";
 
 // Token metadata (symbol/decimals) is immutable, so on-chain probe results are cached
 // aggressively to keep the resolver off the RPC hot path once a token has been seen.
@@ -47,24 +48,17 @@ export type TokenInfoCache = {
   set<T>(key: string, val: T, expirySeconds?: number): Promise<string | undefined>;
 };
 
-/**
- * True when `{ symbol, decimals }` is safe to pass to `createFormatFunction` for a log line.
- * Decimals must be a finite integer in the ERC-20 `uint8` range (0–255); negative, fractional,
- * infinite, or oversized values can assert or explode exponentiation in the formatter.
- */
+// `{ symbol, decimals }` shape that is safe to pass to `createFormatFunction` for a log line.
+// Decimals must be an integer in the ERC-20 `uint8` range (0–255); negative, fractional,
+// infinite, or oversized values can assert or explode exponentiation in the formatter.
+const TokenInfoForLog = type({
+  symbol: string(),
+  decimals: max(min(integer(), 0), 255),
+});
+
+/** True when `info` matches {@link TokenInfoForLog}. */
 export function isValidTokenInfoForLog(info: unknown): info is { symbol: string; decimals: number } {
-  if (!isDefined(info) || typeof info !== "object") {
-    return false;
-  }
-  const { symbol, decimals } = info as { symbol?: unknown; decimals?: unknown };
-  return (
-    typeof symbol === "string" &&
-    typeof decimals === "number" &&
-    Number.isInteger(decimals) &&
-    Number.isFinite(decimals) &&
-    decimals >= 0 &&
-    decimals <= 255
-  );
+  return is(info, TokenInfoForLog);
 }
 
 /**
