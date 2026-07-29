@@ -1,6 +1,8 @@
 import winston from "winston";
+import { typeguards } from "@across-protocol/sdk";
 import { DepositAddressHandlerConfig } from "./DepositAddressHandlerConfig";
 import {
+  ethers,
   isDefined,
   parseJson,
   Signer,
@@ -90,6 +92,20 @@ function expectedNamespaceForChain(chainId: number): "evm" | "tron" | undefined 
 }
 
 /**
+ * True when `err` is an ethers CALL_EXCEPTION carrying no revert data (`data: "0x"`). For a
+ * `balanceOf` read this is deterministic, not transient: the token contract does not implement
+ * `balanceOf` — seen in the wild on scam/address-poisoning tokens that emit spoofed Transfer
+ * events without any ERC-20 state — so retrying the call on later polls can never succeed.
+ */
+function isEmptyDataCallException(err: unknown): boolean {
+  return (
+    typeguards.isEthersError(err) &&
+    err.code === ethers.errors.CALL_EXCEPTION &&
+    (err as { data?: unknown }).data === "0x"
+  );
+}
+
+/**
  * Independent relayer bot which processes EIP-3009 signatures into deposits and corresponding fills.
  */
 export class DepositAddressHandler {
@@ -122,10 +138,11 @@ export class DepositAddressHandler {
   private executedWithdrawKeys: Set<string> = new Set();
 
   /**
-   * Set of depositKeys for v3 refund withdraws the quote-api rejected with a terminal 422
-   * (`GAS_EXCEEDS_REFUND` / `UNPRICEABLE_REFUND_TOKEN`). Persisted in Redis so the skip survives
-   * handover and is not re-attempted on later polls. Pruned alongside the other sets once the
-   * indexer stops returning the source message.
+   * Set of depositKeys for v3 refund withdraws that failed terminally: the quote-api rejected
+   * with a 422 (`GAS_EXCEEDS_REFUND` / `UNPRICEABLE_REFUND_TOKEN`), or the token's `balanceOf`
+   * reverted with empty data (contract lacks balanceOf — scam-token spam). Persisted in Redis so
+   * the skip survives handover and is not re-attempted on later polls. Pruned alongside the other
+   * sets once the indexer stops returning the source message.
    */
   private terminallySkippedWithdrawKeys: Set<string> = new Set();
 
@@ -296,7 +313,7 @@ export class DepositAddressHandler {
     });
   }
 
-  /** Loads terminally-skipped (422) refund-withdraw depositKeys from Redis (e.g. after handover). */
+  /** Loads terminally-skipped refund-withdraw depositKeys from Redis (e.g. after handover). */
   private async _loadSkippedWithdrawKeysFromRedis(): Promise<void> {
     assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
     const { redisCache } = this;
@@ -703,7 +720,7 @@ export class DepositAddressHandler {
     await redisCache.set(redisKey, JSON.stringify([...this.executedWithdrawKeys]));
   }
 
-  /** Same pattern as `_persistWithdrawnKeysRedis` but for terminally-skipped (422) withdraw keys. */
+  /** Same pattern as `_persistWithdrawnKeysRedis` but for terminally-skipped withdraw keys. */
   private async _persistSkippedWithdrawKeysRedis(): Promise<void> {
     assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
     const { redisCache } = this;
@@ -1336,7 +1353,8 @@ export class DepositAddressHandler {
       return;
     }
 
-    // Skip if a previous attempt hit a terminal 422 (persisted in Redis); never re-attempt.
+    // Skip if a previous attempt failed terminally — quote-api 422 or balanceOf empty-data
+    // revert (persisted in Redis); never re-attempt.
     if (this.terminallySkippedWithdrawKeys.has(depositKey)) {
       this.logger.debug({
         at: "DepositAddressHandler#initiateWithdrawV3",
@@ -1392,6 +1410,25 @@ export class DepositAddressHandler {
       try {
         onchainBalance = await this.getDepositAddressBalance(chainId, token, depositAddress);
       } catch (err) {
+        // An empty-data revert means the token has no balanceOf — terminal, like a quote-api 422.
+        // Persist the skip so the message is not re-attempted (and re-warned) on every poll for
+        // the rest of its indexer TTL. Transient provider failures fall through to the plain skip
+        // below and are retried on the next poll.
+        if (isEmptyDataCallException(err)) {
+          this.terminallySkippedWithdrawKeys.add(depositKey);
+          await this._persistSkippedWithdrawKeysRedis();
+          this.logger.warn({
+            at: "DepositAddressHandler#initiateWithdrawV3",
+            message: "Skipping withdraw permanently: balanceOf reverted with empty data (token lacks balanceOf)",
+            depositAddress,
+            token,
+            depositKey,
+            refTxHash,
+            chainId,
+            err: err instanceof Error ? err.message : String(err),
+          });
+          return;
+        }
         this.logger.warn({
           at: "DepositAddressHandler#initiateWithdrawV3",
           message: "Skipping withdraw: failed to fetch deposit address balance",

@@ -161,7 +161,12 @@ stranded funds back to the committed refund address. `intent_refund` is **not** 
 2. Skip non-`evm` `depositAddressNamespace` / `refundAddress.namespace` (the withdraw user must be EVM).
 3. Locate the withdraw leaf in `counterfactualMaterials` (`kind === "withdraw"`); skip if its
    `merkleProof` / `implementationAddress` are missing.
-4. Defensive on-chain balance check, as on the other paths.
+4. Defensive on-chain balance check, as on the other paths. A `balanceOf` that reverts with
+   **empty data** (`CALL_EXCEPTION`, `data: "0x"`) is terminal: the token contract does not
+   implement `balanceOf` — scam/address-poisoning tokens that emit spoofed Transfer events without
+   any ERC-20 state — so the depositKey is persisted to the terminal-skip set (same set as the 422s
+   below) and never re-attempted. Any other balance-fetch failure is treated as transient and
+   re-attempted on the next poll.
 5. Fetch `{ signedWithdrawTx: { to, data, value, chainId }, deadline, requestedAmount, appliedGasFee, netAmount, bundledDeploy }`
    from `POST /deposit-addresses/sign-withdraw`. Unlike v1, **gas is deducted from the refund**
    (`deductGasFromRefund: true`) so refunds are not operated at a loss. The endpoint **verifies** the
@@ -212,7 +217,7 @@ Three sets persist across runs so handover does not double-spend, double-refund,
 
 - `deposit-address:executed:<botIdentifier>` — set of `erc20Transfer.transactionHash` for successfully executed deposits.
 - `deposit-address:withdrawn-deposit-keys:<botIdentifier>` — set of `depositKey` (`depositAddress:transactionHash`) for successfully executed refund withdraws.
-- `deposit-address:skipped-withdraw-keys:<botIdentifier>` — set of `depositKey` for v3 refund withdraws the quote-api rejected with a terminal 422 (`GAS_EXCEEDS_REFUND` / `UNPRICEABLE_REFUND_TOKEN`); never re-attempted.
+- `deposit-address:skipped-withdraw-keys:<botIdentifier>` — set of `depositKey` for v3 refund withdraws that failed terminally: quote-api 422 (`GAS_EXCEEDS_REFUND` / `UNPRICEABLE_REFUND_TOKEN`) or `balanceOf` empty-data revert (token lacks `balanceOf`); never re-attempted.
 
 On each poll, entries whose source messages are no longer returned by the indexer are pruned — the indexer has its own TTL and stops returning expired messages.
 

@@ -856,11 +856,13 @@ describe("DepositAddressHandler.initiateWithdrawV3 guards", function () {
   let signWithdrawStub: sinon.SinonStub;
   let warnStub: sinon.SinonStub;
   let debugStub: sinon.SinonStub;
+  let redisSetStub: sinon.SinonStub;
   const chainId = 42161;
 
   type Internals = {
     initiateWithdrawV3: (m: DepositAddressMessageV3) => Promise<void>;
     terminallySkippedWithdrawKeys: Set<string>;
+    getDepositAddressBalance: (chainId: number, token: string, depositAddress: string) => Promise<unknown>;
   };
 
   function makeHandler(enableV3Withdrawals: boolean): void {
@@ -876,7 +878,17 @@ describe("DepositAddressHandler.initiateWithdrawV3 guards", function () {
     (handler as unknown as { observedExecutedWithdraws: Record<number, Set<string>> }).observedExecutedWithdraws = {
       [chainId]: new Set<string>(),
     };
-    (handler as unknown as { redisCache: { set: sinon.SinonStub } }).redisCache = { set: sinon.stub().resolves() };
+    redisSetStub = sinon.stub().resolves();
+    (handler as unknown as { redisCache: { set: sinon.SinonStub } }).redisCache = { set: redisSetStub };
+  }
+
+  /** Ethers v5 CALL_EXCEPTION as thrown for a balanceOf revert carrying no return data. */
+  function emptyDataCallException(): Error {
+    return Object.assign(new Error("missing revert data in call exception"), {
+      code: "CALL_EXCEPTION",
+      reason: "missing revert data in call exception",
+      data: "0x",
+    });
   }
 
   afterEach(() => sinon.restore());
@@ -900,6 +912,49 @@ describe("DepositAddressHandler.initiateWithdrawV3 guards", function () {
     await (handler as unknown as Internals).initiateWithdrawV3(
       withdrawMessageV3({ counterfactualMaterials: [{ ...v3WithdrawLeaf, kind: "vanilla-cctp" }] })
     );
+    expect(signWithdrawStub.notCalled).to.equal(true);
+    expect(warnStub.calledOnce).to.equal(true);
+  });
+
+  it("terminally skips when balanceOf reverts with empty data: persists the key, never re-reads", async function () {
+    makeHandler(true);
+    const balanceStub = sinon
+      .stub(handler as unknown as Internals, "getDepositAddressBalance")
+      .rejects(emptyDataCallException());
+    const message = withdrawMessageV3();
+    await (handler as unknown as Internals).initiateWithdrawV3(message);
+    const depositKey = `${DEPOSIT_ADDRESS}:${message.erc20Transfer.transactionHash}`;
+    expect((handler as unknown as Internals).terminallySkippedWithdrawKeys.has(depositKey)).to.equal(true);
+    expect(redisSetStub.calledOnce).to.equal(true);
+    expect(signWithdrawStub.notCalled).to.equal(true);
+    expect(warnStub.calledOnce).to.equal(true);
+
+    // A later poll skips via the terminal set without re-reading the balance.
+    await (handler as unknown as Internals).initiateWithdrawV3(message);
+    expect(balanceStub.calledOnce).to.equal(true);
+  });
+
+  it("does not terminally skip a transient balance-fetch failure", async function () {
+    makeHandler(true);
+    sinon.stub(handler as unknown as Internals, "getDepositAddressBalance").rejects(new Error("connection timeout"));
+    await (handler as unknown as Internals).initiateWithdrawV3(withdrawMessageV3());
+    expect((handler as unknown as Internals).terminallySkippedWithdrawKeys.size).to.equal(0);
+    expect(redisSetStub.notCalled).to.equal(true);
+    expect(signWithdrawStub.notCalled).to.equal(true);
+    expect(warnStub.calledOnce).to.equal(true);
+  });
+
+  it("does not terminally skip a CALL_EXCEPTION that carries revert data", async function () {
+    makeHandler(true);
+    const err = Object.assign(new Error("execution reverted"), {
+      code: "CALL_EXCEPTION",
+      reason: "execution reverted",
+      data: "0x08c379a0", // Error(string) selector — a real revert, potentially state-dependent.
+    });
+    sinon.stub(handler as unknown as Internals, "getDepositAddressBalance").rejects(err);
+    await (handler as unknown as Internals).initiateWithdrawV3(withdrawMessageV3());
+    expect((handler as unknown as Internals).terminallySkippedWithdrawKeys.size).to.equal(0);
+    expect(redisSetStub.notCalled).to.equal(true);
     expect(signWithdrawStub.notCalled).to.equal(true);
     expect(warnStub.calledOnce).to.equal(true);
   });
