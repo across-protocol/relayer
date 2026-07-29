@@ -1,3 +1,5 @@
+// Must precede all imports: @risk-labs/logger runs dotenv@17 config() at import time, which logs unless quiet.
+process.env.DOTENV_CONFIG_QUIET ??= "true";
 import minimist from "minimist";
 import {
   config,
