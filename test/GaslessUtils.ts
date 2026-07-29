@@ -469,6 +469,43 @@ describe("GaslessUtils#resolveTokenInfoForLog", function () {
     expect(probed).to.equal(false);
   });
 
+  it("re-probes when a cached entry has decimals outside the ERC-20 uint8 range", async function () {
+    const token = toAddressType(LONG_TAIL_TOKEN, 1);
+    const address = token.toNative();
+    const malformedEntries = [
+      { symbol: "X", decimals: -1 },
+      { symbol: "X", decimals: 1.5 },
+      { symbol: "X", decimals: 256 },
+      { symbol: "X", decimals: Number.POSITIVE_INFINITY },
+      { symbol: "X", decimals: Number.NaN },
+    ];
+
+    for (const malformed of malformedEntries) {
+      let probeCalls = 0;
+      const setCalls: Array<[string, string]> = [];
+      const cache = {
+        get: async () => JSON.stringify(malformed),
+        set: async (key: string, val: unknown) => {
+          setCalls.push([key, String(val)]);
+          return undefined;
+        },
+      };
+
+      const info = await resolveTokenInfoForLog(token, 1, TEST_LOGGER, {
+        redisCache: cache,
+        probeOnChain: async () => {
+          probeCalls++;
+          return { symbol: "PEPE", decimals: 18 };
+        },
+      });
+
+      expect(info).to.deep.equal({ symbol: "PEPE", decimals: 18 }, `malformed=${JSON.stringify(malformed)}`);
+      expect(probeCalls).to.equal(1, `malformed=${JSON.stringify(malformed)}`);
+      expect(setCalls).to.have.length(1);
+      expect(setCalls[0][0]).to.equal(`gasless:tokenInfo:1:${address}`);
+    }
+  });
+
   it("falls back to a neutral placeholder and never throws when the on-chain probe fails", async function () {
     const token = toAddressType(LONG_TAIL_TOKEN, 1);
     const cache = { get: async () => null, set: async () => undefined };

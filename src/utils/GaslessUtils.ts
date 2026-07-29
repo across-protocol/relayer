@@ -48,6 +48,26 @@ export type TokenInfoCache = {
 };
 
 /**
+ * True when `{ symbol, decimals }` is safe to pass to `createFormatFunction` for a log line.
+ * Decimals must be a finite integer in the ERC-20 `uint8` range (0–255); negative, fractional,
+ * infinite, or oversized values can assert or explode exponentiation in the formatter.
+ */
+export function isValidTokenInfoForLog(info: unknown): info is { symbol: string; decimals: number } {
+  if (!isDefined(info) || typeof info !== "object") {
+    return false;
+  }
+  const { symbol, decimals } = info as { symbol?: unknown; decimals?: unknown };
+  return (
+    typeof symbol === "string" &&
+    typeof decimals === "number" &&
+    Number.isInteger(decimals) &&
+    Number.isFinite(decimals) &&
+    decimals >= 0 &&
+    decimals <= 255
+  );
+}
+
+/**
  * Resolve a token's `{ symbol, decimals }` for logging WITHOUT throwing.
  *
  * Gasless swapAndBridge deposits carry a user-signed `swapToken` that is frequently a
@@ -94,8 +114,9 @@ export async function resolveTokenInfoForLog(
   }
   if (isDefined(cached)) {
     try {
-      const parsed = JSON.parse(cached) as { symbol: string; decimals: number };
-      if (typeof parsed.symbol === "string" && typeof parsed.decimals === "number") {
+      const parsed = JSON.parse(cached) as unknown;
+      // Reject negative/fractional/oversized decimals — they can crash createFormatFunction.
+      if (isValidTokenInfoForLog(parsed)) {
         return parsed;
       }
     } catch {
@@ -106,8 +127,7 @@ export async function resolveTokenInfoForLog(
   const probeOnChain = opts.probeOnChain ?? defaultOnChainTokenInfoProbe;
   let info: { symbol: string; decimals: number } | undefined = undefined;
   try {
-    const { symbol, decimals } = await probeOnChain(address, chainId);
-    info = { symbol, decimals };
+    info = await probeOnChain(address, chainId);
 
     await redisCache?.set(cacheKey, JSON.stringify(info), GASLESS_TOKEN_INFO_CACHE_TTL_SECONDS);
     return info;

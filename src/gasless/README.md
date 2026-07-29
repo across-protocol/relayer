@@ -23,8 +23,8 @@ Before submitting the origin deposit in `GaslessRelayer#initiateDeposit`, the bo
 Lookup order in `GaslessUtils#resolveTokenInfoForLog`:
 
 1. **Static map** — `getTokenInfo` when the token is known.
-2. **Redis cache** — key `gasless:tokenInfo:{chainId}:{address}`, TTL 30 days (metadata is immutable). Cache read/write is best-effort; errors fall through to the next step.
-3. **On-chain ERC-20 probe** — `symbol()` / `decimals()` via the chain provider. Successful results are written to Redis.
+2. **Redis cache** — key `gasless:tokenInfo:{chainId}:{address}`, TTL 30 days (metadata is immutable). Cache read/write is best-effort; errors fall through to the next step. Entries are accepted only when `decimals` is a finite integer in the ERC-20 `uint8` range (0–255); malformed values (negative, fractional, oversized) trigger a re-probe so they cannot crash `createFormatFunction`.
+3. **On-chain ERC-20 probe** — `symbol()` / `decimals()` via the chain provider. Successful, range-valid results are written to Redis.
 4. **Placeholder** — if the probe fails, emit a warn (`GaslessUtils#resolveTokenInfoForLog`: “Failed to resolve token info on-chain; using placeholder for log line only”) and use `{ symbol: "UNKNOWN", decimals: 18 }`.
 
 The deposit transaction itself is built from the API message and is unaffected by probe/cache/placeholder outcomes. Production passes the shared Gasless Redis client into the resolver; tests inject a mock cache and/or `probeOnChain`.
