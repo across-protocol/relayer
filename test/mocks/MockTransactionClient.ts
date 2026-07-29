@@ -8,7 +8,9 @@ export const txnClientPassResult = "pass";
 
 export class MockedTransactionClient extends TransactionClient {
   public gasLimit: BigNumber | undefined = undefined;
-  public waitOverride?: () => Promise<TransactionReceipt>;
+  // Overrides must declare both parameters: TransactionClient checks wait.length to detect the
+  // two-parameter ethers v5 wait(confirmations, timeout) implementation.
+  public waitOverride?: (confirmations?: number, timeout?: number) => Promise<TransactionReceipt>;
 
   constructor(logger: winston.Logger) {
     super(logger);

@@ -30,6 +30,7 @@ import {
 } from "../utils";
 import { DEFAULT_GAS_FEE_SCALERS } from "../common";
 import { FeeData } from "@ethersproject/abstract-provider";
+import { is, number, string, type } from "superstruct";
 
 // Empirically, a max fee scaler of ~5% can result in successful transaction replacement.
 // Stuck transactions are very disruptive, so go for 10% to avoid the hassle.
@@ -40,6 +41,27 @@ const TRANSACTION_SUBMISSION_RETRIES_DEFAULT = 3;
 // Default TVM fee limit in SUN (1 TRX = 1,000,000 SUN). 100 TRX is a reasonable default for
 // contract interactions on TRON.
 const DEFAULT_TVM_FEE_LIMIT = 100_000_000;
+
+// Bound on awaiting confirmation of a submitted transaction (~2 blocks). On expiry the
+// transaction is assumed stuck and is resubmitted at the same nonce with freshly-priced fees,
+// replacing the stuck transaction.
+const CONFIRMATION_TIMEOUT_MS_DEFAULT = 6_000;
+const CONFIRMATION_TIMEOUTS_MS: { [chainId: number]: number } = {
+  [CHAIN_IDs.MAINNET]: 24_000,
+};
+
+// TRANSACTION_REPLACED errors carry the mined replacement and its receipt, undeclared on the
+// error type (BaseProvider._waitForTransaction).
+const ReplacedError = type({
+  receipt: type({ blockNumber: number() }),
+  replacement: type({ hash: string() }),
+});
+
+function isReplacedError(
+  error: Error
+): error is Error & { receipt: TransactionReceipt; replacement: TransactionResponse } {
+  return is(error, ReplacedError);
+}
 
 // Define chains that require legacy (type 0) transactions
 export const LEGACY_TRANSACTION_CHAINS = [CHAIN_IDs.BSC];
@@ -140,13 +162,25 @@ export class TransactionClient {
       const txnResponse = await txnPromise;
       const txnArgs = { chainId, contract: txn.contract.address, method: txn.method };
       const txnRef = blockExplorerLink(txnResponse.hash, chainId);
+      // TVM txids may lack the 0x prefix expected by the provider.
+      const txnHash = txnResponse.hash.startsWith("0x") ? txnResponse.hash : `0x${txnResponse.hash}`;
+
+      const timeout = CONFIRMATION_TIMEOUTS_MS[chainId] ?? CONFIRMATION_TIMEOUT_MS_DEFAULT;
+
+      // ethers v5 wait() accepts an undeclared second timeout parameter and performs replacement
+      // detection (BaseProvider._wrapTransaction), so the widened type is legal without assertion.
+      // Implementations declaring fewer than 2 parameters (i.e. the TVM shim) would ignore the
+      // timeout, so they get a hash-blind bounded wait instead.
+      const wait: (confirmations?: number, timeout?: number) => Promise<TransactionReceipt> =
+        txnResponse.wait.bind(txnResponse);
+      const awaitReceipt = (): Promise<TransactionReceipt> =>
+        txnResponse.wait.length >= 2 ? wait(1, timeout) : txn.contract.provider.waitForTransaction(txnHash, 1, timeout);
 
       let txnReceipt: TransactionReceipt | undefined;
       let nTries = 0;
       do {
         try {
-          // Must return a TransactionResponse, so await on the receipt, but discard it.
-          txnReceipt = await txnResponse.wait();
+          txnReceipt = await awaitReceipt();
         } catch (error) {
           if (!typeguards.isEthersError(error)) {
             throw error;
@@ -160,11 +194,33 @@ export class TransactionClient {
               this.logger.warn({ ...common, message: `Transaction on ${chain} failed during execution...` });
               throw error;
             case ethers.errors.TRANSACTION_REPLACED:
+              // "repriced" ⇒ a transaction identical to ours (data/to/value) was mined at this nonce; adopt it.
+              if (error.reason === "repriced" && isReplacedError(error)) {
+                if (error.receipt.status === 0) {
+                  this.logger.warn({ ...common, message: `Transaction on ${chain} failed during execution...` });
+                  throw error;
+                }
+                return error.replacement;
+              }
               this.logger.warn({
                 ...common,
                 message: `Transaction submission on ${chain} replaced at nonce ${nonce}, resubmitting...`,
               });
               return this._submit(txn, { nonce: null, maxTries: maxTries - 1 });
+            case ethers.errors.TIMEOUT:
+              // Not mined or replaced within the bound; resubmit at the same nonce to replace it.
+              // Fees are freshly priced and escalate via REPLACEMENT_UNDERPRICED retries as
+              // needed. TVM has no replacement semantics (a resubmission would duplicate), so
+              // instead retry the wait until maxTries is exhausted.
+              if (chainIsTvm(chainId) || maxTries <= 0) {
+                this.logger.debug({ ...common, message: `Timed out awaiting ${chain} transaction confirmation.` });
+                break;
+              }
+              this.logger.warn({
+                ...common,
+                message: `Transaction on ${chain} timed out at nonce ${txnResponse.nonce}, resubmitting...`,
+              });
+              return this._submit(txn, { nonce: txnResponse.nonce, maxTries: maxTries - 1 });
             default:
               this.logger.warn({
                 ...common,
@@ -176,7 +232,13 @@ export class TransactionClient {
       } while (!txnReceipt && ++nTries < maxTries);
 
       if (!txnReceipt) {
-        this.logger.warn({ at, message: `Unable to confirm ${chain} transaction.`, txnRef });
+        // Confirmation was exhausted; alert the on-call via error level and hand the unconfirmed
+        // response back to the caller.
+        this.logger.error({ at, message: `Unable to confirm ${chain} transaction.`, txnRef });
+      } else if (txnReceipt.status === 0) {
+        // The hash-blind fallback resolves reverted transactions rather than throwing CALL_EXCEPTION.
+        this.logger.debug({ at, message: `Transaction on ${chain} failed during execution...`, txnRef });
+        throw new Error(`${chain} transaction reverted (${txnHash})`);
       }
     }
 
