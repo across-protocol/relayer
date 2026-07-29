@@ -7,6 +7,7 @@ import {
   EvmAddress,
   getTranslatedTokenAddress,
   SolanaTransaction,
+  winston,
 } from "../../utils";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
 import { AugmentedTransaction } from "../../clients/TransactionClient";
@@ -16,12 +17,19 @@ export class TokenSplitterBridge extends BaseL2BridgeAdapter {
   protected bridge1;
   protected bridge2;
 
-  constructor(l2chainId: number, hubChainId: number, l2Signer: Signer, l1Signer: Signer, l1Token: EvmAddress) {
-    super(l2chainId, hubChainId, l2Signer, l1Signer, l1Token);
+  constructor(
+    l2chainId: number,
+    hubChainId: number,
+    l2Signer: Signer,
+    l1Signer: Signer,
+    l1Token: EvmAddress,
+    logger?: winston.Logger
+  ) {
+    super(l2chainId, hubChainId, l2Signer, l1Signer, l1Token, logger);
 
     const [bridge1Constructor, bridge2Constructor] = L2_TOKEN_SPLITTER_BRIDGES[this.l2chainId][this.l1Token.toNative()];
-    this.bridge1 = new bridge1Constructor(l2chainId, hubChainId, l2Signer, l1Signer, l1Token);
-    this.bridge2 = new bridge2Constructor(l2chainId, hubChainId, l2Signer, l1Signer, l1Token);
+    this.bridge1 = new bridge1Constructor(l2chainId, hubChainId, l2Signer, l1Signer, l1Token, logger);
+    this.bridge2 = new bridge2Constructor(l2chainId, hubChainId, l2Signer, l1Signer, l1Token, logger);
   }
 
   getRouteForL2Token(l2Token: EvmAddress): BaseL2BridgeAdapter {
