@@ -2,7 +2,16 @@ import { randomUUID } from "crypto";
 import winston from "winston";
 import { DEFAULT_MULTICALL_CHUNK_SIZE } from "../common";
 import { ArweaveGatewayConfigSS, ArweaveGatewayConfig } from "../interfaces";
-import { addressAdapters, AddressAggregator, assert, CHAIN_IDs, isDefined, parseJson } from "../utils";
+import {
+  addressAdapters,
+  AddressAggregator,
+  assert,
+  CHAIN_IDs,
+  isDefined,
+  parseJson,
+  stringifyThrownValue,
+} from "../utils";
+import * as httpAdapter from "./addressFilter/http";
 import * as Constants from "./Constants";
 
 export interface ProcessEnv {
@@ -171,20 +180,34 @@ export class CommonConfig {
    * @param logger Logger instance.
    */
   async update(logger: winston.Logger): Promise<void> {
-    const { DISABLE_ADDRESS_FILTER, ADDRESS_FILTER_PATH: path = "./addresses.json" } = process.env;
+    const {
+      DISABLE_ADDRESS_FILTER,
+      ADDRESS_FILTER_PATH: path = "./addresses.json",
+      OSTIUM_ADDRESS_FILTER_URL: ostiumUrl,
+    } = process.env;
     const noFilter = DISABLE_ADDRESS_FILTER === "true";
     if (noFilter) {
       logger.debug({ at: "Config::update", message: "Skipping address list update." });
       return Promise.resolve();
     }
 
-    const addressAggregator = new AddressAggregator(
-      [
-        new addressAdapters.fs.AddressList({ path, logger }),
-        new addressAdapters.risklabs.AddressList({ logger, throwOnError: false }),
-      ],
-      logger
-    );
-    this.addressFilter = await addressAggregator.update();
+    const localList = new addressAdapters.fs.AddressList({ path, logger });
+    const remoteLists = [
+      new addressAdapters.risklabs.AddressList({ logger, timeout: 5000 }),
+      isDefined(ostiumUrl) ? new httpAdapter.AddressList({ name: "Ostium", path: ostiumUrl, logger }) : undefined,
+    ].filter(isDefined);
+
+    try {
+      this.addressFilter = await new AddressAggregator([localList, ...remoteLists], logger).update();
+    } catch (err) {
+      logger.warn({
+        at: "Config::update",
+        message: "Failed to update address filter; retaining existing addresses.",
+        reason: stringifyThrownValue(err),
+        addresses: this.addressFilter?.size,
+      });
+      // On startup there is no previous filter to retain; fall back to the local address list.
+      this.addressFilter ??= await new AddressAggregator([localList], logger).update();
+    }
   }
 }

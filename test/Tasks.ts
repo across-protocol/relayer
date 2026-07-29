@@ -1,8 +1,50 @@
 import { expect } from "./utils";
 
-import { abortableDelay } from "../src/utils";
+import { abortableDelay, fireAndForget } from "../src/utils";
 
 describe("Tasks", function () {
+  describe("fireAndForget", function () {
+    // fireAndForget returns synchronously; rejections settle on a later microtask.
+    const flushMicrotasks = () => new Promise((resolve) => setImmediate(resolve));
+
+    it("passes rejections to onError", async function () {
+      const seen: unknown[] = [];
+      const boom = new Error("boom");
+      fireAndForget(
+        () => Promise.reject(boom),
+        (err) => seen.push(err)
+      )();
+      await flushMicrotasks();
+      expect(seen).to.deep.equal([boom]);
+    });
+
+    it("swallows rejections when no onError is provided", async function () {
+      // Must not surface as an unhandled rejection (which would crash the process).
+      fireAndForget(() => Promise.reject(new Error("boom")))();
+      await flushMicrotasks();
+    });
+
+    it("swallows a throwing onError handler", async function () {
+      fireAndForget(
+        () => Promise.reject(new Error("boom")),
+        () => {
+          throw new Error("handler boom");
+        }
+      )();
+      await flushMicrotasks();
+    });
+
+    it("does not invoke onError when the task resolves", async function () {
+      const seen: unknown[] = [];
+      fireAndForget(
+        () => Promise.resolve("ok"),
+        (err) => seen.push(err)
+      )();
+      await flushMicrotasks();
+      expect(seen).to.deep.equal([]);
+    });
+  });
+
   describe("abortableDelay", function () {
     it("resolves after roughly the requested delay when not aborted", async function () {
       const controller = new AbortController();

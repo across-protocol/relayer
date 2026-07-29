@@ -26,7 +26,7 @@ import { utils } from "@across-protocol/sdk";
 
 /**
  * Finalizes CCTP V1 token and message relays originating on an SVM L2 and destined to Ethereum, where the L2 is indicated
- * by the input SpokePoolCLient. Only works for SVM L2's since all EVM L2's use CCTP V2.
+ * by the input SpokePoolClient. Only works for SVM L2's since all EVM L2's use CCTP V2.
  * @param logger Logger instance.
  * @param _signer Signer instance.
  * @param hubPoolClient HubPool client instance.

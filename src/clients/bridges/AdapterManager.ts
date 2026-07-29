@@ -39,9 +39,15 @@ export class AdapterManager {
 
   // Some L2's canonical bridges send ETH, not WETH, over the canonical bridges, resulting in recipient addresses
   // receiving ETH that needs to be wrapped on the L2. This array contains the chainIds of the chains that this
-  // manager will attempt to wrap ETH on into WETH. This list also includes chains like Arbitrum where the relayer is
-  // expected to receive ETH as a gas refund from an L1 to L2 deposit that was intended to rebalance inventory.
-  private chainsToWrapEtherOn = [...spokesThatHoldNativeTokens, CHAIN_IDs.ARBITRUM, CHAIN_IDs.MAINNET];
+  // manager will attempt to wrap ETH on into WETH. This list also includes Orbit chains (Arbitrum, Robinhood)
+  // where the relayer is expected to receive ETH as a retryable-ticket gas refund from an L1 to L2 deposit that
+  // was intended to rebalance inventory.
+  private chainsToWrapEtherOn = [
+    ...spokesThatHoldNativeTokens,
+    CHAIN_IDs.ARBITRUM,
+    CHAIN_IDs.ROBINHOOD,
+    CHAIN_IDs.MAINNET,
+  ];
   private _spokePoolManager?: SpokePoolManager;
   // spokePoolManager is populated by the constructor unless `spokePoolClients` is missing, in which case the
   // adapter manager is constructed in a partial state. Reads pre-init throw, writes go through the setter.
@@ -92,26 +98,32 @@ export class AdapterManager {
       } // Special case for the EthereumAdapter
 
       return Object.fromEntries(
-        SUPPORTED_TOKENS[chainId]?.map((symbol) => {
-          const spokePoolClient = this.spokePoolManager.getClient(chainId);
-          let l2SignerOrProvider;
-          if (isDefined(spokePoolClient) && isEVMSpokePoolClient(spokePoolClient)) {
-            l2SignerOrProvider = spokePoolClient.spokePool.signer;
-          } else if (isDefined(spokePoolClient) && isSVMSpokePoolClient(spokePoolClient)) {
-            l2SignerOrProvider = spokePoolClient.svmEventsClient.getRpc();
-          }
-          const l1Token = resolveAcrossToken(symbol, hubChainId, true);
-          const bridgeConstructor = CUSTOM_BRIDGE[chainId]?.[l1Token] ?? CANONICAL_BRIDGE[chainId];
-          const bridge = new bridgeConstructor(
-            chainId,
-            hubChainId,
-            l1Signer,
-            l2SignerOrProvider,
-            EvmAddress.from(l1Token),
-            logger
-          );
-          return [l1Token, bridge];
-        }) ?? []
+        SUPPORTED_TOKENS[chainId]
+          ?.map((symbol) => {
+            const spokePoolClient = this.spokePoolManager.getClient(chainId);
+            let l2SignerOrProvider;
+            if (isDefined(spokePoolClient) && isEVMSpokePoolClient(spokePoolClient)) {
+              l2SignerOrProvider = spokePoolClient.spokePool.signer;
+            } else if (isDefined(spokePoolClient) && isSVMSpokePoolClient(spokePoolClient)) {
+              l2SignerOrProvider = spokePoolClient.svmEventsClient.getRpc();
+            }
+            const l1Token = resolveAcrossToken(symbol, hubChainId, true);
+            const bridgeConstructor = CUSTOM_BRIDGE[chainId]?.[l1Token] ?? CANONICAL_BRIDGE[chainId];
+            // Some tokens are L2→L1-only (e.g. Avalanche USDT via Binance) and have no L1→L2 bridge.
+            if (!isDefined(bridgeConstructor)) {
+              return undefined;
+            }
+            const bridge = new bridgeConstructor(
+              chainId,
+              hubChainId,
+              l1Signer,
+              l2SignerOrProvider,
+              EvmAddress.from(l1Token),
+              logger
+            );
+            return [l1Token, bridge];
+          })
+          .filter(isDefined) ?? []
       );
     };
     const constructL2Bridges = (chainId: number) => {
@@ -138,7 +150,8 @@ export class AdapterManager {
               hubChainId,
               l2SignerOrSvmProvider,
               l1Signer,
-              EvmAddress.from(l1Token)
+              EvmAddress.from(l1Token),
+              logger
             );
             return [l1Token, bridge];
           })

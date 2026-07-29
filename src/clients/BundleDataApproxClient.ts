@@ -300,10 +300,9 @@ export class BundleDataApproxClient {
       isDefined(this.upcomingRefunds),
       "BundleDataApproxClient#getUpcomingRefunds: Upcoming refunds not initialized"
     );
-    assert(
-      this.upcomingRefunds[l1Token.toNative()],
-      `BundleDataApproxClient#getUpcomingRefunds: L1 token ${l1Token.toNative()} not found`
-    );
+    if (!this.upcomingRefunds[l1Token.toNative()]) {
+      return bnZero;
+    }
     if (isDefined(relayer)) {
       return this.upcomingRefunds[l1Token.toNative()][chainId]?.[relayer.toNative()] ?? bnZero;
     }
@@ -325,7 +324,9 @@ export class BundleDataApproxClient {
       isDefined(this.upcomingDeposits),
       "BundleDataApproxClient#getUpcomingDeposits: Upcoming deposits not initialized"
     );
-    assert(this.upcomingDeposits[l1Token.toNative()], "BundleDataApproxClient#getUpcomingDeposits: L1 token not found");
+    if (!this.upcomingDeposits[l1Token.toNative()]) {
+      return bnZero;
+    }
     return this.upcomingDeposits[l1Token.toNative()][chainId] ?? bnZero;
   }
 }

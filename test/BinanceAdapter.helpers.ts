@@ -32,6 +32,10 @@ describe("Binance adapter helpers", function () {
     expect(resolveBinanceCoinSymbol("USDC")).to.equal("USDC");
   });
 
+  it("maps Avalanche to Binance AVAXC", async function () {
+    expect(BINANCE_NETWORKS[CHAIN_IDs.AVALANCHE]).to.equal("AVAXC");
+  });
+
   it("detects same-coin Binance routes that should skip the swap leg", async function () {
     expect(isSameBinanceCoin("WETH", "WETH")).to.equal(true);
     expect(isSameBinanceCoin("USDC", "USDC")).to.equal(true);

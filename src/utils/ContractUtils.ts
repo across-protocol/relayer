@@ -112,7 +112,9 @@ export function getDeploymentBlockNumber(contractName: string, networkId: number
 
 // The DstOft/Cctp handler contracts only exist on HyperEVM.
 export function getDstOftHandler(): Contract {
-  const factoryName = "DstOFTHandler";
+  // @across-protocol/contracts 5.0.11 token-suffixed the HyperEVM destination
+  // handlers; the legacy "DstOFTHandler" key no longer resolves.
+  const factoryName = "DstOFTHandler_OFT_USDT";
   const artifact = typechain["HyperCoreFlowExecutor__factory"];
   const address = isDefined(process.env.DST_OFT_HANDLER)
     ? process.env.DST_OFT_HANDLER

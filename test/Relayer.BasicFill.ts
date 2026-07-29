@@ -217,6 +217,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", function () {
         sendingRelaysEnabled: true,
         tryMulticallChains: [],
         sendingMessageRelaysEnabled: {},
+        allowedRecipients: {},
         loggingInterval: -1,
       } as unknown as RelayerConfig
     );
@@ -1001,6 +1002,149 @@ describe("Relayer: Check for Unfilled Deposits and Fill", function () {
           .getCalls()
           .find(({ lastArg }) => lastArg.message.includes(`Ignoring ${srcChain} deposit destined for ${dstChain}.`))
       ).to.not.be.undefined;
+    });
+
+    it("Drops deposits to a non-allow-listed recipient", async function () {
+      // Configure an allow-list for the destination chain that does not include this deposit's recipient.
+      relayerInstance.config.allowedRecipients[destinationChainId] = new Set([
+        ethers.utils.getAddress(randomAddress()),
+      ]);
+
+      await depositV3(spokePool_1, destinationChainId, depositor, inputToken, inputAmount, outputToken, outputAmount, {
+        recipient: randomAddress(),
+      });
+      await updateAllClients();
+
+      const txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
+      for (const receipts of Object.values(txnReceipts)) {
+        expect((await receipts).length).to.equal(0);
+      }
+      expect(
+        spy
+          .getCalls()
+          .find(({ lastArg }) =>
+            lastArg.message.includes(`Skipping ${dstChain} deposit to non-allow-listed recipient.`)
+          )
+      ).to.not.be.undefined;
+    });
+
+    it("Fills deposits to an allow-listed recipient", async function () {
+      // The default recipient is the depositor; adding it to the allow-list should permit the fill.
+      relayerInstance.config.allowedRecipients[destinationChainId] = new Set([
+        ethers.utils.getAddress(depositor.address),
+      ]);
+
+      await depositV3(spokePool_1, destinationChainId, depositor, inputToken, inputAmount, outputToken, outputAmount);
+      await updateAllClients();
+
+      const txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
+      expect((await txnReceipts[destinationChainId]).length).to.equal(1);
+      expect(lastSpyLogIncludes(spy, "Filled v3 deposit")).to.be.true;
+    });
+
+    it("Applies the allow-list to message deposits by recipient", async function () {
+      // Messages get no special treatment: a message deposit is dropped by the recipient check when its recipient
+      // is not allow-listed, exactly like a plain transfer.
+      relayerInstance.config.allowedRecipients[destinationChainId] = new Set([
+        ethers.utils.getAddress(randomAddress()),
+      ]);
+
+      await depositV3(spokePool_1, destinationChainId, depositor, inputToken, inputAmount, outputToken, outputAmount, {
+        recipient: randomAddress(),
+        message: "0x1234",
+      });
+      await updateAllClients();
+
+      const txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
+      for (const receipts of Object.values(txnReceipts)) {
+        expect((await receipts).length).to.equal(0);
+      }
+      expect(
+        spy
+          .getCalls()
+          .find(({ lastArg }) =>
+            lastArg.message.includes(`Skipping ${dstChain} deposit to non-allow-listed recipient.`)
+          )
+      ).to.not.be.undefined;
+    });
+
+    it("Drops deposits sped up to redirect funds to a non-allow-listed recipient", async function () {
+      // Original recipient is allow-listed, but the speed-up redirects the payout to a non-allow-listed
+      // updatedRecipient, which is what fillRelayWithUpdatedDeposit pays — so it must be dropped.
+      relayerInstance.config.allowedRecipients[destinationChainId] = new Set([
+        ethers.utils.getAddress(depositor.address),
+      ]);
+
+      const deposit = await depositV3(
+        spokePool_1,
+        destinationChainId,
+        depositor,
+        inputToken,
+        inputAmount,
+        outputToken,
+        outputAmount
+      );
+
+      // Speed up to a non-allow-listed recipient with an empty message.
+      await updateDeposit(
+        spokePool_1,
+        {
+          ...deposit,
+          updatedRecipient: toAddressType(randomAddress(), destinationChainId),
+          updatedOutputAmount: deposit.outputAmount.sub(bnOne),
+          updatedMessage: EMPTY_MESSAGE,
+        },
+        depositor
+      );
+      await updateAllClients();
+
+      const txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
+      for (const receipts of Object.values(txnReceipts)) {
+        expect((await receipts).length).to.equal(0);
+      }
+      expect(
+        spy
+          .getCalls()
+          .find(({ lastArg }) =>
+            lastArg.message.includes(`Skipping ${dstChain} deposit to non-allow-listed recipient.`)
+          )
+      ).to.not.be.undefined;
+    });
+
+    it("Fills deposits sped up to a different allow-listed recipient", async function () {
+      // A speed-up that redirects the funds to another allow-listed recipient (with an empty message) is still valid;
+      // the effective-recipient check must permit it and the fill must use the updated parameters.
+      const updatedRecipient = randomAddress();
+      relayerInstance.config.allowedRecipients[destinationChainId] = new Set([
+        ethers.utils.getAddress(depositor.address),
+        ethers.utils.getAddress(updatedRecipient),
+      ]);
+
+      const deposit = await depositV3(
+        spokePool_1,
+        destinationChainId,
+        depositor,
+        inputToken,
+        inputAmount,
+        outputToken,
+        outputAmount
+      );
+
+      await updateDeposit(
+        spokePool_1,
+        {
+          ...deposit,
+          updatedRecipient: toAddressType(updatedRecipient, destinationChainId),
+          updatedOutputAmount: deposit.outputAmount.sub(bnOne),
+          updatedMessage: EMPTY_MESSAGE,
+        },
+        depositor
+      );
+      await updateAllClients();
+
+      const txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
+      expect((await txnReceipts[destinationChainId]).length).to.equal(1);
+      expect(lastSpyLogIncludes(spy, "Filled v3 deposit")).to.be.true;
     });
 
     it("Rate-limits per-depositor deposits per loop", async function () {

@@ -3,13 +3,18 @@ import { CHAIN_IDs } from "@across-protocol/constants";
 import { Chain, extractChain } from "viem";
 import * as viemChains from "viem/chains";
 import { utils as sdkUtils } from "@across-protocol/sdk";
+import { CUSTOM_VIEM_CHAINS } from "./CustomViemChains";
 
 export const { getNetworkName, getNativeTokenSymbol } = sdkUtils;
 
 type ViemChainId = (typeof viemChains)[keyof typeof viemChains]["id"];
 
 const knownChainIds = new Set<number>(Object.values(CHAIN_IDs));
-const supportedViemChains = Object.values(viemChains).filter(({ id }) => knownChainIds.has(id));
+const upstreamViemChainIds = new Set<number>(Object.values(viemChains).map(({ id }) => id));
+const supportedViemChains = [
+  ...Object.values(viemChains).filter(({ id }) => knownChainIds.has(id)),
+  ...CUSTOM_VIEM_CHAINS.filter(({ id }) => knownChainIds.has(id) && !upstreamViemChainIds.has(id)),
+];
 
 function assertViemChainId(chainId: number): asserts chainId is ViemChainId {
   assert(

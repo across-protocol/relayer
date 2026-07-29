@@ -122,6 +122,7 @@ export const {
   fetchWithTimeout,
   postWithTimeout,
   isHttpError,
+  HttpError,
 } = sdk.utils;
 
 export type FetchHeaders = sdk.utils.FetchHeaders;

@@ -1,0 +1,33 @@
+{
+  "rate_limit_buckets": [
+    {
+      "bucket_id": "binance_withdrawals_24h_usd",
+      "capacity_usd": "21000000",
+      "window_seconds": 86400,
+      "cost_usd": {
+        "segments": [
+          {
+            "up_to_usage_usd": "12600000",
+            "marginal_cost_per_unit_usd": "0"
+          },
+          {
+            "up_to_usage_usd": "16800000",
+            "marginal_cost_per_unit_usd": "0.0005"
+          },
+          {
+            "up_to_usage_usd": "18900000",
+            "marginal_cost_per_unit_usd": "0.0025"
+          },
+          {
+            "up_to_usage_usd": "20370000",
+            "marginal_cost_per_unit_usd": "0.01"
+          },
+          {
+            "up_to_usage_usd": "21000000",
+            "marginal_cost_per_unit_usd": "0.05"
+          }
+        ]
+      }
+    }
+  ]
+}

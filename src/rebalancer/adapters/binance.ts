@@ -54,11 +54,11 @@ import {
   blockExplorerLink,
 } from "../../utils";
 import { OrderDetails, RebalanceRoute } from "../utils/interfaces";
-import { STATUS } from "../utils/utils";
+import { getPendingBridgeDepositTxnKey, STATUS } from "../utils/utils";
 import { BaseAdapter } from "./baseAdapter";
 import { AugmentedTransaction, MultiCallerClient } from "../../clients";
 import { RebalancerConfig } from "../RebalancerConfig";
-import { getContractEntry } from "../../common";
+import { FINALIZER_TOKENBRIDGE_LOOKBACK, getContractEntry } from "../../common";
 import { CctpAdapter } from "./cctpAdapter";
 import { OftAdapter, getOftPreDepositOrderTtlOverride } from "./oftAdapter";
 import WETH_ABI from "../../common/abi/Weth.json";
@@ -253,6 +253,9 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     }
     for (const cloid of pendingBridgeToBinanceDepositNetwork) {
       const orderDetails = await this._redisGetOrderDetailsRequired(cloid, this.baseSignerAddress);
+      if (!this._canProgressOrder("BinanceStablecoinSwapAdapter.updateRebalanceStatuses", cloid, orderDetails)) {
+        continue;
+      }
       const { sourceToken, amountToTransfer, sourceChain } = orderDetails;
       const binanceDepositNetwork = await this._getEntrypointNetwork(sourceChain, sourceToken);
       // Check if we have enough balance on HyperEVM to progress the order status:
@@ -281,7 +284,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
           message: `We have enough ${sourceToken} balance on Binance deposit network ${binanceDepositNetwork} to initiate a deposit now for ${requiredAmountOnDepositNetwork.toString()} for order ${cloid}`,
           depositNetworkBalance: depositNetworkBalance.toString(),
         });
-        await this._depositToBinance(sourceToken, binanceDepositNetwork, requiredAmountOnDepositNetwork);
+        await this._depositToBinance(cloid, sourceToken, binanceDepositNetwork, requiredAmountOnDepositNetwork);
         await this._redisUpdateOrderStatus(
           cloid,
           STATUS.PENDING_BRIDGE_PRE_DEPOSIT,
@@ -302,6 +305,9 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     }
     for (const cloid of pendingDeposits) {
       const orderDetails = await this._redisGetOrderDetailsRequired(cloid, this.baseSignerAddress);
+      if (!this._canProgressOrder("BinanceStablecoinSwapAdapter.updateRebalanceStatuses", cloid, orderDetails)) {
+        continue;
+      }
       const { sourceToken, sourceChain, destinationToken, destinationChain, amountToTransfer } = orderDetails;
 
       const binanceBalance = await this._getBinanceBalance(sourceToken);
@@ -316,7 +322,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       }
       this.logger.debug({
         at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",
-        message: `Sufficient balance to place market order for cloid ${cloid}`,
+        message: `Sufficient balance to place market order or withdraw for cloid ${cloid}`,
         availableBalance: binanceBalanceWei.toString(),
         requiredBalance: amountToTransfer.toString(),
       });
@@ -356,10 +362,11 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       });
     }
     for (const cloid of pendingSwaps) {
-      const { destinationToken, destinationChain } = await this._redisGetOrderDetailsRequired(
-        cloid,
-        this.baseSignerAddress
-      );
+      const orderDetails = await this._redisGetOrderDetailsRequired(cloid, this.baseSignerAddress);
+      if (!this._canProgressOrder("BinanceStablecoinSwapAdapter.updateRebalanceStatuses", cloid, orderDetails)) {
+        continue;
+      }
+      const { destinationToken, destinationChain } = orderDetails;
       const matchingFill = await this._getMatchingFillForCloid(cloid, this.baseSignerAddress);
       if (matchingFill) {
         const balance = await this._getBinanceBalance(destinationToken);
@@ -411,6 +418,9 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       // a bridge to the final non-Binance network destination chain if necessary.
 
       const orderDetails = await this._redisGetOrderDetailsRequired(cloid, this.baseSignerAddress);
+      if (!this._canProgressOrder("BinanceStablecoinSwapAdapter.updateRebalanceStatuses", cloid, orderDetails)) {
+        continue;
+      }
       const { sourceToken, destinationToken, destinationChain } = orderDetails;
       const matchingFill = this._routeRequiresSwap(sourceToken, destinationToken)
         ? (await this._getMatchingFillForCloid(cloid, this.baseSignerAddress))?.matchingFill
@@ -540,9 +550,35 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   async sweepIntermediateBalances(): Promise<void> {
     // no-op for Binance, since we don't know if the funds on Binance are being used for the InventoryClient's Binance
     // rebalancing logic.
-    // If a deposit to Binance has not been withdrawn after 30 minutes, it will get swept up by the Binance Sweeper
-    // Finalizer because we set the TTL to 30 minutes when we deposited the funds and called
-    // setBinanceDepositType().
+  }
+
+  // Only PENDING_DEPOSIT prunes have unconsumed Binance deposits to release.
+  protected override async _onExpiredOrderPruned(status: STATUS, cloid: string, account: EvmAddress): Promise<void> {
+    if (status !== STATUS.PENDING_DEPOSIT) {
+      return;
+    }
+    const depositTxnKey = getPendingBridgeDepositTxnKey(this.REDIS_PREFIX, cloid, account.toNative());
+    const depositTxn = await this.redisCache.get<string>(depositTxnKey);
+    if (!isDefined(depositTxn)) {
+      // Orders created before this mapping existed (or whose mapping expired) fall back to manual reclaim.
+      this.logger.debug({
+        at: "BinanceStablecoinSwapAdapter._onExpiredOrderPruned",
+        message: `No deposit transaction mapping found for pruned order ${cloid}; cannot release its deposit tag`,
+        cloid,
+      });
+      return;
+    }
+    const { chainId, transactionHash } = JSON.parse(depositTxn) as { chainId: number; transactionHash: string };
+    await this.redisCache.del(getBinanceTransactionTypeKey(chainId, transactionHash));
+    await this.redisCache.del(depositTxnKey);
+    this.logger.debug({
+      at: "BinanceStablecoinSwapAdapter._onExpiredOrderPruned",
+      message: `Released SWAP deposit tag for pruned order ${cloid}; the Binance finalizer can now reclaim the deposited funds`,
+      cloid,
+      redisDepositTypeKey: getBinanceTransactionTypeKey(chainId, transactionHash),
+      depositTransactionHash: transactionHash,
+      depositChainId: chainId,
+    });
   }
   async getPendingRebalances(account: EvmAddress): Promise<{ [chainId: number]: { [token: string]: BigNumber } }> {
     this._assertInitialized();
@@ -860,7 +896,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         message: `🍻 Creating new order ${cloid} by first transferring ${sourceFormatter(amountToTransfer)} ${sourceTokenInfo.symbol} into Binance from ${getNetworkName(sourceChain)} in order to acquire ${destinationTokenInfo.symbol} on ${getNetworkName(destinationChain)}`,
         expectedOutput: destinationFormatter(expectedAmountToWithdrawInDestinationUnits),
       });
-      await this._depositToBinance(sourceToken, sourceChain, amountToTransfer);
+      await this._depositToBinance(cloid, sourceToken, sourceChain, amountToTransfer);
       await this._redisCreateOrder(
         cloid,
         STATUS.PENDING_DEPOSIT,
@@ -1103,7 +1139,12 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     return bridgeToBinanceFee;
   }
 
-  private async _depositToBinance(sourceToken: string, sourceChain: number, amountToDeposit: BigNumber): Promise<void> {
+  private async _depositToBinance(
+    cloid: string,
+    sourceToken: string,
+    sourceChain: number,
+    amountToDeposit: BigNumber
+  ): Promise<void> {
     assert(isDefined(BINANCE_NETWORKS[sourceChain]), "Source chain should be a Binance network");
     assert(
       sourceToken !== "WETH" || isDefined(getAtomicDepositorContracts(sourceChain)),
@@ -1137,9 +1178,14 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       );
       txnHash = await this._submitTransaction(txn);
     }
-    // Set the TTL to 30 minutes so that the Binance sweeper finalizer only attempts to pull back these deposited
-    // funds after 30 minutes. If the swap hasn't occurred in 30 mins then something has gone wrong.
-    await setBinanceDepositType(sourceChain, txnHash, BinanceTransactionType.SWAP, 30 * 60);
+    // TTL must outlive the finalizer lookback so completed swaps are not re-counted as finalizable.
+    // The cloid -> deposit txn mapping lets the prune path find abandoned deposit tags.
+    await setBinanceDepositType(sourceChain, txnHash, BinanceTransactionType.SWAP, 2 * FINALIZER_TOKENBRIDGE_LOOKBACK);
+    await this.redisCache.set(
+      getPendingBridgeDepositTxnKey(this.REDIS_PREFIX, cloid, this.baseSignerAddress.toNative()),
+      JSON.stringify({ chainId: sourceChain, transactionHash: txnHash }),
+      2 * FINALIZER_TOKENBRIDGE_LOOKBACK
+    );
     this.logger.debug({
       at: "BinanceStablecoinSwapAdapter._depositToBinance",
       message: `Deposited ${amountReadable} ${sourceToken} to Binance from chain ${getNetworkName(sourceChain)}`,

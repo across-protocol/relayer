@@ -82,6 +82,14 @@ export class TokenClient {
 
   decrementLocalBalance(chainId: number, token: Address, amount: BigNumber): void {
     const tokenAddr = token.toNative();
+    const message = `TokenClient: cannot decrement balance by ${amount.toString()} for token ${tokenAddr} on chain ${chainId}; no token data`;
+    const hasData = this._hasTokenPairData(chainId, token);
+    if (!hasData) {
+      // Raw console output so the failure details reach container logs even if winston output is lost at exit.
+      // eslint-disable-next-line no-console
+      console.error(message);
+    }
+    assert(hasData, message);
     this.tokenData[chainId][tokenAddr].balance = this.tokenData[chainId][tokenAddr].balance.sub(amount);
   }
 
@@ -482,7 +490,7 @@ export class TokenClient {
   private _hasTokenPairData(chainId: number, token: Address) {
     const hasData = !!this.tokenData?.[chainId]?.[token.toNative()];
     if (!hasData) {
-      this.logger.warn({
+      this.logger.debug({
         at: "TokenBalanceClient",
         message: `No data on ${getNetworkName(chainId)} -> ${token.toNative()}`,
       });

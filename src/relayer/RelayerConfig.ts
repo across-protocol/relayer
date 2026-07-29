@@ -56,6 +56,7 @@ export class RelayerConfig extends CommonConfig {
   readonly relayerMessageGasMultiplier: BigNumber;
   readonly minRelayerFeePct: BigNumber;
   readonly minFillTime: { [chainId: number]: number } = {};
+  readonly allowedRecipients: { [chainId: number]: Set<string> } = {};
   readonly acceptInvalidFills: boolean;
   readonly relayerUseInventoryManager: boolean;
   readonly inventoryTopic: string;
@@ -463,6 +464,15 @@ export class RelayerConfig extends CommonConfig {
         ? sendMessageRelaysChain === "true"
         : process.env["SEND_MESSAGE_RELAYS"] === "true";
       this.sendingMessageRelaysEnabled[chainId] = sendMessageRelays;
+
+      // RELAYER_ALLOWED_RECIPIENTS_<chainId>: JSON array of recipients allowed on `chainId` (see
+      // Relayer::filterDeposit). Normalised to native form for O(1) lookups.
+      const allowedRecipients = process.env[`RELAYER_ALLOWED_RECIPIENTS_${chainId}`];
+      if (isDefined(allowedRecipients)) {
+        this.allowedRecipients[chainId] = new Set(
+          parseJson.stringArray(allowedRecipients).map((recipient) => toAddressType(recipient, chainId).toNative())
+        );
+      }
     });
 
     // Only validate config for chains that the relayer cares about.

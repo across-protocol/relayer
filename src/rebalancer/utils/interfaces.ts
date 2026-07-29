@@ -26,6 +26,7 @@ export interface RebalanceRoute {
 }
 
 export interface RebalancerClient {
+  adapters: Record<string, RebalancerAdapter>;
   getPendingRebalances(account: EvmAddress): Promise<{ [chainId: number]: { [token: string]: BigNumber } }>;
 }
 

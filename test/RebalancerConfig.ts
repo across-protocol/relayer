@@ -1,6 +1,6 @@
 import { join } from "path";
 import { RebalancerConfig } from "../src/rebalancer/RebalancerConfig";
-import { toBNWei } from "../src/utils";
+import { CHAIN_IDs, toBNWei } from "../src/utils";
 import { expect } from "./utils";
 
 describe("RebalancerConfig", () => {
@@ -101,6 +101,28 @@ describe("RebalancerConfig", () => {
     expect(config.maxAmountsToTransfer.DAI[10]).to.equal(toBNWei("2", 18));
   });
 
+  it("sets same-asset source and destination chain transfer caps", () => {
+    const env = makeEnv({
+      REBALANCER_CONFIG: JSON.stringify({
+        sameAssetBalances: {
+          USDT: {
+            chains: { [CHAIN_IDs.AVALANCHE]: 1 },
+          },
+        },
+        maxAmountsToTransfer: {
+          USDT: "1000",
+        },
+      }),
+    });
+
+    const config = new RebalancerConfig(env);
+
+    expect(config.sameAssetBalances.USDT).to.deep.equal({ [CHAIN_IDs.AVALANCHE]: true });
+    expect(new Set(config.chainIds)).to.deep.equal(new Set([CHAIN_IDs.MAINNET, CHAIN_IDs.AVALANCHE]));
+    expect(config.maxAmountsToTransfer.USDT[CHAIN_IDs.MAINNET]).to.equal(toBNWei("1000", 6));
+    expect(config.maxAmountsToTransfer.USDT[CHAIN_IDs.AVALANCHE]).to.equal(toBNWei("1000", 6));
+  });
+
   it("sets maxPendingOrders from config", () => {
     const env = makeEnv({
       REBALANCER_CONFIG: JSON.stringify({
@@ -162,6 +184,7 @@ describe("RebalancerConfig", () => {
     const config = new RebalancerConfig(env);
 
     expect(config.cumulativeTargetBalances).to.deep.equal({});
+    expect(config.sameAssetBalances).to.deep.equal({});
     expect(config.maxAmountsToTransfer).to.deep.equal({});
     expect(config.maxPendingOrders).to.deep.equal({});
     expect(config.chainIds).to.deep.equal([]);

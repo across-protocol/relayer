@@ -53,7 +53,7 @@ import {
   setL2TokenAllowanceInCache,
   TransferTokenParams,
 } from "./utils";
-import { BaseBridgeAdapter, BridgeTransactionDetails } from "./bridges/BaseBridgeAdapter";
+import { BaseBridgeAdapter, BridgeEvents, BridgeTransactionDetails } from "./bridges/BaseBridgeAdapter";
 import { OutstandingTransfers } from "../interfaces";
 import WETH_ABI from "../common/abi/Weth.json";
 import { BaseL2BridgeAdapter } from "./l2Bridges/BaseL2BridgeAdapter";
@@ -333,6 +333,21 @@ export class BaseChainAdapter {
       );
       return [];
     }
+    if (txnsToSend.length === 0) {
+      this.log(
+        "Withdrawal to hub chain skipped: bridge constructed no transactions (e.g. insufficient bridge capacity); it will be retried on a later run",
+        {
+          l2Token,
+          l1Token,
+          amount: amount.toString(),
+          srcChainId: this.chainId,
+          dstChainId: this.hubChainId,
+        },
+        "warn",
+        "withdrawTokenFromL2"
+      );
+      return [];
+    }
     if (chainIsEvm(this.chainId)) {
       const multicallerClient = new MultiCallerClient(this.logger);
       txnsToSend.filter(isAugmentedTransaction).forEach((txn) => multicallerClient.enqueueTransaction(txn));
@@ -453,6 +468,10 @@ export class BaseChainAdapter {
       value,
       message,
       mrkdwn: `Sent ${formatUnitsForToken(tokenSymbol, amount)} ${tokenSymbol} to chain ${dstChain}.`,
+      // Block until the rebalance is mined rather than returning a pending tx. TransactionClient's
+      // confirmation loop awaits the receipt and is robust to RPC errors like transaction replacement
+      // (TRANSACTION_REPLACED), resubmitting under a fresh nonce instead of throwing.
+      ensureConfirmation: true,
     };
     const { reason, succeed, transaction: txnRequest } = (await this.transactionClient.simulate([_txnRequest]))[0];
     const { contract: targetContract, ...txnRequestData } = txnRequest;
@@ -500,8 +519,8 @@ export class BaseChainAdapter {
     // Permit bypass if simMode is set in order to permit tests to pass.
     if (simMode === false) {
       const symbol = await contract.symbol();
-      const { BSC, HYPEREVM, MAINNET, PLASMA, MONAD } = CHAIN_IDs;
-      const nativeTokenChains = [BSC, HYPEREVM, MAINNET, PLASMA, MONAD];
+      const { AVALANCHE, BSC, HYPEREVM, MAINNET, MONAD, PLASMA } = CHAIN_IDs;
+      const nativeTokenChains = [AVALANCHE, BSC, HYPEREVM, MAINNET, MONAD, PLASMA];
       const prependW = nativeTokenChains.some((chainId) => PUBLIC_NETWORKS[chainId].nativeToken === nativeTokenSymbol);
       const expectedTokenSymbol = prependW ? `W${nativeTokenSymbol}` : nativeTokenSymbol;
       assert(
@@ -542,7 +561,12 @@ export class BaseChainAdapter {
 
   async getOutstandingCrossChainTransfers(l1Tokens: EvmAddress[]): Promise<OutstandingTransfers> {
     const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
-    const availableL1Tokens = this.filterSupportedTokens(l1Tokens);
+    // L1→L2 outstanding-transfer tracking requires an L1 bridge. Tokens that are L2→L1-only
+    // (e.g. Avalanche USDT via Binance) are in SUPPORTED_TOKENS / supportedTokens but have no
+    // entry in this.bridges — skip them here rather than crashing on an undefined bridge.
+    const availableL1Tokens = this.filterSupportedTokens(l1Tokens).filter((l1Token) =>
+      isDefined(this.bridges[l1Token.toNative()])
+    );
 
     const outstandingTransfers: OutstandingTransfers = {};
 
@@ -558,15 +582,35 @@ export class BaseChainAdapter {
       const monitoredAddresses = this.monitoredAddresses[l1Token.toNative()];
       await forEachAsync(monitoredAddresses, async (monitoredAddress) => {
         const bridge = this.bridges[l1Token.toNative()];
-        const [depositInitiatedResults, depositFinalizedResults] = await Promise.all([
-          bridge.queryL1BridgeInitiationEvents(l1Token, monitoredAddress, monitoredAddress, l1SearchConfig),
-          bridge.queryL2BridgeFinalizationEvents(l1Token, monitoredAddress, monitoredAddress, l2SearchConfig),
-        ]);
         const ignoredPendingBridgeTxnRefs = await bridge.getIgnoredPendingBridgeTxnRefs(
           this.hubChainId,
           this.chainId,
           monitoredAddress
         );
+
+        let depositInitiatedResults: BridgeEvents | undefined;
+        let depositFinalizedResults: BridgeEvents = {};
+        if (isDefined(bridge.getOutstandingTransfersFromApi)) {
+          try {
+            depositInitiatedResults = await bridge.getOutstandingTransfersFromApi(l1Token, monitoredAddress);
+          } catch (error) {
+            this.logger.warn({
+              at: `${this.adapterName}#getOutstandingCrossChainTransfers`,
+              message: "Failed to query outstanding transfers from API; falling back to on-chain queries",
+              l1Token: l1Token.toNative(),
+              monitoredAddress: monitoredAddress.toNative(),
+              error: stringifyThrownValue(error),
+            });
+          }
+        }
+
+        if (!isDefined(depositInitiatedResults)) {
+          [depositInitiatedResults, depositFinalizedResults] = await Promise.all([
+            bridge.queryL1BridgeInitiationEvents(l1Token, monitoredAddress, monitoredAddress, l1SearchConfig),
+            bridge.queryL2BridgeFinalizationEvents(l1Token, monitoredAddress, monitoredAddress, l2SearchConfig),
+          ]);
+        }
+
         Object.entries(depositInitiatedResults).forEach(([l2Token, depositInitiatedEvents]) => {
           const filteredDepositEvents = (depositInitiatedEvents ?? []).filter(
             (event) => !ignoredPendingBridgeTxnRefs.has(event.txnRef)

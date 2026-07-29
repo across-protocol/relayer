@@ -461,7 +461,7 @@ async function getRelevantL1Events(
   return relevantStoredCallDataEvents;
 }
 
-function filterRequiredActions(
+export function filterRequiredActions(
   hubPoolClient: HubPoolClient,
   l2SpokePoolClient: SpokePoolClient,
   l2ChainId: number,
@@ -471,16 +471,37 @@ function filterRequiredActions(
     if (action.type !== "UpdateAndExecute") {
       return true;
     }
-    let observedExecutedRoot = false;
-    for (const leaf of hubPoolClient.getExecutedRootBundles()) {
-      if (leaf.txnRef === action.l1Event.txnRef) {
-        if (leaf.chainId === l2ChainId) {
-          return true;
-        }
-        observedExecutedRoot = true;
-      }
+    // Admin function messages are stored against a specific target spoke pool and are not tied to a
+    // pool rebalance leaf, so they are never gated here. Only the shared `relayRootBundle` message --
+    // which the HubPoolStore stores with `target == address(0)` so that it is reused by every
+    // Universal chain in the bundle -- must wait for this chain's leaf to be executed on the HubPool.
+    if (!compareAddressesSimple(action.l1Event.target, ethers.constants.AddressZero)) {
+      return true;
     }
-    return !observedExecutedRoot;
+    // The shared `relayRootBundle` message is written to the HubPoolStore exactly once per bundle --
+    // by whichever Universal chain's `executeRootBundle()` runs first -- and is keyed by a nonce equal
+    // to the bundle's `challengePeriodEndTimestamp`. We must only finalize it on this L2 once THIS
+    // chain's pool rebalance leaf for that bundle has been executed on the HubPool; otherwise the
+    // refund root (and the funds backing it) is not yet ready on this chain.
+    //
+    // We therefore look the bundle up by its `challengePeriodEndTimestamp` and check whether a leaf
+    // for `l2ChainId` has executed. We intentionally do NOT require the leaf to have executed in the
+    // same L1 transaction that stored the message: the dataworker frequently splits leaf execution
+    // across multiple `executeRootBundle()` transactions, in which case every Universal chain whose
+    // leaf landed outside the storing transaction would otherwise be skipped forever.
+    const challengePeriodEndTimestamp = action.l1Event.nonce.toNumber();
+    const proposedRootBundle = hubPoolClient
+      .getProposedRootBundles()
+      .find((bundle) => bundle.challengePeriodEndTimestamp === challengePeriodEndTimestamp);
+    if (!isDefined(proposedRootBundle)) {
+      // The proposal predates our lookback window; its leaves were necessarily executed long ago, so
+      // there is nothing left to wait for.
+      return true;
+    }
+    const followingBlockNumber =
+      hubPoolClient.getFollowingRootBundle(proposedRootBundle)?.blockNumber ?? hubPoolClient.latestHeightSearched;
+    const executedLeaves = hubPoolClient.getExecutedLeavesForRootBundle(proposedRootBundle, followingBlockNumber);
+    return executedLeaves.some((leaf) => leaf.chainId === l2ChainId);
   });
 }
 

@@ -66,7 +66,7 @@ yarn lint-fix
 
 Read through [CONTRIBUTING.md](https://github.com/UMAprotocol/protocol/blob/master/CONTRIBUTING.md) for a general overview of our contribution process. These guidelines are shared between the UMA and Across codebases because they were built originally by the same teams.
 
-### Testing 
+### Testing
 
 #### Local SDK Development
 

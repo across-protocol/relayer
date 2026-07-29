@@ -2,6 +2,11 @@ import { expect } from "./utils";
 import { CHAIN_IDs } from "../src/utils";
 import { RebalancerConfig } from "../src/rebalancer/RebalancerConfig";
 import { buildRebalanceRoutes } from "../src/rebalancer/buildRebalanceRoutes";
+import {
+  buildSameAssetRebalanceRoutes,
+  SAME_ASSET_REBALANCE_ROUTE_SUPPORT,
+  type SameAssetRebalanceRouteSupport,
+} from "../src/rebalancer/buildSameAssetRebalanceRoutes";
 
 function buildSyntheticRebalancerConfig(): RebalancerConfig {
   return new RebalancerConfig({
@@ -131,6 +136,34 @@ function buildSyntheticRebalancerConfigWithTron(): RebalancerConfig {
     }),
   });
 }
+
+function buildSyntheticSameAssetRebalancerConfig(
+  supportedRoutes: readonly SameAssetRebalanceRouteSupport[]
+): RebalancerConfig {
+  const sameAssetBalances = supportedRoutes.reduce<Record<string, { chains: Record<number, number> }>>(
+    (balances, { token, chainId }) => {
+      balances[token] ??= { chains: {} };
+      balances[token].chains[chainId] = 0;
+      return balances;
+    },
+    {}
+  );
+
+  return new RebalancerConfig({
+    HUB_CHAIN_ID: String(CHAIN_IDs.MAINNET),
+    REBALANCER_CONFIG: JSON.stringify({
+      sameAssetBalances,
+    }),
+  });
+}
+
+const EXPECTED_SAME_ASSET_ROUTES = SAME_ASSET_REBALANCE_ROUTE_SUPPORT.map(({ token, chainId, adapter }) => ({
+  sourceChain: CHAIN_IDs.MAINNET,
+  destinationChain: chainId,
+  sourceToken: token,
+  destinationToken: token,
+  adapter,
+}));
 
 function routeExists(
   routes: ReturnType<typeof buildRebalanceRoutes>,
@@ -286,5 +319,33 @@ describe("buildRebalanceRoutes", function () {
     expect(hasRoute(CHAIN_IDs.BASE, "USDC", CHAIN_IDs.TRON, "USDT", "hyperliquid")).to.equal(false);
     expect(hasRoute(CHAIN_IDs.TRON, "USDT", CHAIN_IDs.OPTIMISM, "USDT", "oft")).to.equal(false);
     expect(hasRoute(CHAIN_IDs.OPTIMISM, "USDT", CHAIN_IDs.TRON, "USDT", "oft")).to.equal(false);
+  });
+});
+
+describe("buildSameAssetRebalanceRoutes", function () {
+  it("builds exactly the configured forward routes in the SameAsset support catalog", function () {
+    const routes = buildSameAssetRebalanceRoutes(
+      buildSyntheticSameAssetRebalancerConfig(SAME_ASSET_REBALANCE_ROUTE_SUPPORT)
+    );
+
+    expect(SAME_ASSET_REBALANCE_ROUTE_SUPPORT).not.to.have.lengthOf(0);
+    expect(routes).to.deep.equal(EXPECTED_SAME_ASSET_ROUTES);
+  });
+
+  it("filters each supported route when it is disabled in rebalancer config", function () {
+    expect(SAME_ASSET_REBALANCE_ROUTE_SUPPORT).not.to.have.lengthOf(0);
+    SAME_ASSET_REBALANCE_ROUTE_SUPPORT.forEach((disabledRoute) => {
+      const enabledSupport = SAME_ASSET_REBALANCE_ROUTE_SUPPORT.filter(
+        ({ token, chainId }) => token !== disabledRoute.token || chainId !== disabledRoute.chainId
+      );
+      const expectedEnabledRoutes = EXPECTED_SAME_ASSET_ROUTES.filter(
+        ({ sourceToken, destinationChain }) =>
+          sourceToken !== disabledRoute.token || destinationChain !== disabledRoute.chainId
+      );
+
+      expect(buildSameAssetRebalanceRoutes(buildSyntheticSameAssetRebalancerConfig(enabledSupport))).to.deep.equal(
+        expectedEnabledRoutes
+      );
+    });
   });
 });

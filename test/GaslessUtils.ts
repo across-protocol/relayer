@@ -2,6 +2,7 @@ import { expect, sinon, winston, smock, ethers } from "./utils";
 import { Contract } from "ethers";
 import {
   tagIntegratorId,
+  normalizeIntegratorId,
   restructureGaslessDeposits,
   buildGaslessDepositTx,
   isErc2612PermitNonceConsumed,
@@ -98,6 +99,22 @@ function makeSpokePoolPeripheryContract(): Contract {
 }
 
 describe("GaslessUtils", function () {
+  describe("normalizeIntegratorId", function () {
+    it("normalizes prefixed and unprefixed IDs to lowercase 0x form", function () {
+      expect(normalizeIntegratorId("0xABCD")).to.equal("0xabcd");
+      expect(normalizeIntegratorId("abcd")).to.equal("0xabcd");
+      expect(normalizeIntegratorId("DEAD")).to.equal("0xdead");
+      expect(normalizeIntegratorId("0XDeAd")).to.equal("0xdead");
+    });
+
+    it("returns undefined for invalid IDs", function () {
+      expect(normalizeIntegratorId("0xAB")).to.equal(undefined);
+      expect(normalizeIntegratorId("0xABCDEF")).to.equal(undefined);
+      expect(normalizeIntegratorId("0xGGHH")).to.equal(undefined);
+      expect(normalizeIntegratorId("")).to.equal(undefined);
+    });
+  });
+
   describe("tagIntegratorId", function () {
     it("appends delimiter and integratorId to calldata", function () {
       const txData = "0xdeadbeef";

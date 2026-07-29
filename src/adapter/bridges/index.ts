@@ -1,5 +1,4 @@
 export * from "./DaiOptimismBridge";
-export * from "./SnxOptimismBridge";
 export * from "./BaseBridgeAdapter";
 export * from "./BinanceCEXBridge";
 export * from "./BinanceCEXNativeBridge";
@@ -21,4 +20,5 @@ export * from "./SolanaUsdcCCTPBridge";
 export * from "./OFTBridge";
 export * from "./OFTWethBridge";
 export * from "./BridgeApi";
+export * from "./PaxosTransitBridge";
 export * from "./TokenSplitterBridge";

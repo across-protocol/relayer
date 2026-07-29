@@ -18,8 +18,9 @@ import { fetchAddressLookupTable } from "@solana-program/address-lookup-table";
 import {
   winston,
   SvmAddress,
-  sendAndConfirmSolanaTransaction,
+  sendAndConfirmSolanaTransactionWithSlot,
   SVMProvider,
+  SolanaTransaction,
   TOKEN_SYMBOLS_MAP,
   getAssociatedTokenAddress,
 } from "../../utils";
@@ -177,6 +178,36 @@ export function getSvmProvider(rpcUrl: string): SVMProvider {
   return createSolanaRpcFromTransport(transport);
 }
 
+/**
+ * Sends a mint tx and only returns once it is confirmed on-chain. The shared
+ * `sendAndConfirmSolanaTransaction*` helpers return the (locally-derived)
+ * signature even when the tx was never confirmed (e.g. dropped after blockhash
+ * expiry). In the finalizer that silently acks the Pub/Sub message for a mint
+ * that never landed, so treat an unconfirmed result (`confirmedSlot` undefined,
+ * which the poller only leaves unset when it never observed confirmed/finalized)
+ * as a hard failure and let Pub/Sub redeliver for a retry.
+ */
+// ponytail: covers dropped/unconfirmed only. A landed-but-reverted tx (entry.err
+// set with confirmationStatus "confirmed") still reads as success — add an err
+// check in the shared poller if that failure mode surfaces.
+export async function sendAndConfirmMintOrThrow(
+  tx: Parameters<typeof sendAndConfirmSolanaTransactionWithSlot>[0],
+  provider: SVMProvider,
+  cycles?: number,
+  pollingDelay?: number
+): Promise<string> {
+  const { signature, confirmedSlot } = await sendAndConfirmSolanaTransactionWithSlot(
+    tx,
+    provider,
+    cycles,
+    pollingDelay
+  );
+  if (confirmedSlot === undefined) {
+    throw new Error(`Solana mint transaction ${signature} was not confirmed on-chain (likely dropped)`);
+  }
+  return signature;
+}
+
 async function hasCCTPV2MessageBeenProcessed(message: string, provider: SVMProvider): Promise<boolean> {
   const parsedMessage = parseCctpV2Message(message);
   const { usedNonce } = await getMessageTransmitterAccounts(parsedMessage.nonceSeed);
@@ -184,7 +215,7 @@ async function hasCCTPV2MessageBeenProcessed(message: string, provider: SVMProvi
   return Boolean(nonceInfo.value);
 }
 
-async function sendAndConfirmCCTPV2ReceiveMessageTx(params: {
+export async function buildCctpV2ReceiveMessageTx(params: {
   provider: SVMProvider;
   signer: KeyPairSigner;
   attestation: string;
@@ -192,10 +223,8 @@ async function sendAndConfirmCCTPV2ReceiveMessageTx(params: {
   destinationChainId: number;
   originChainId: number;
   addressLookupTable: SolanaAddress;
-  logger: winston.Logger;
-}): Promise<string> {
-  const { provider, signer, attestation, message, destinationChainId, originChainId, addressLookupTable, logger } =
-    params;
+}): Promise<SolanaTransaction> {
+  const { provider, signer, attestation, message, destinationChainId, originChainId, addressLookupTable } = params;
 
   const parsedMessage = parseCctpV2Message(message);
   const [messageTransmitterAccounts, tokenMessengerAccounts] = await Promise.all([
@@ -224,7 +253,7 @@ async function sendAndConfirmCCTPV2ReceiveMessageTx(params: {
   const altAccount = await fetchAddressLookupTable(provider, addressLookupTable);
   const lookupTableMap = { [addressLookupTable]: altAccount.data.addresses };
 
-  const tx = updateOrAppendSetComputeUnitLimitInstruction(
+  return updateOrAppendSetComputeUnitLimitInstruction(
     300_000,
     pipe(
       await sdk.arch.svm.createDefaultTransaction(provider, signer),
@@ -232,8 +261,22 @@ async function sendAndConfirmCCTPV2ReceiveMessageTx(params: {
       (tx) => compressTransactionMessageUsingAddressLookupTables(tx, lookupTableMap)
     )
   );
+}
 
-  const signature = await sendAndConfirmSolanaTransaction(tx, provider);
+async function sendAndConfirmCCTPV2ReceiveMessageTx(params: {
+  provider: SVMProvider;
+  signer: KeyPairSigner;
+  attestation: string;
+  message: string;
+  destinationChainId: number;
+  originChainId: number;
+  addressLookupTable: SolanaAddress;
+  logger: winston.Logger;
+}): Promise<string> {
+  const { provider, destinationChainId, originChainId, logger } = params;
+  const tx = await buildCctpV2ReceiveMessageTx(params);
+
+  const signature = await sendAndConfirmMintOrThrow(tx, provider);
   logger.info({
     at: "svmUtils#getCCTPV2ReceiveMessageTx",
     message: "Mint transaction completed on Solana V2",
@@ -337,7 +380,7 @@ export async function processMintSvm(
       1, // hubChainId
       SvmAddress.from(recipient)
     );
-    txSignature = await sendAndConfirmSolanaTransaction(receiveMessageTx, svmProvider);
+    txSignature = await sendAndConfirmMintOrThrow(receiveMessageTx, svmProvider);
   } else {
     logger.info({
       at: "svmUtils#processMintSvm",

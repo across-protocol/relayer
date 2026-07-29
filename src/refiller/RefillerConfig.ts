@@ -29,6 +29,7 @@ export class RefillerConfig extends CommonConfig {
   readonly refillEnabledBalances: RefillBalanceData[] = [];
   readonly nativeMarketsApiConfig?: { apiKey: string; apiUrl: string };
   readonly minUsdhRebalanceAmount: BigNumber;
+  readonly minUsdgSweepAmount: BigNumber;
 
   constructor(env: ProcessEnv) {
     super(env, { botIdentifier: "across-refiller" });
@@ -39,6 +40,7 @@ export class RefillerConfig extends CommonConfig {
       NATIVE_MARKETS_API_KEY,
       NATIVE_MARKETS_API_BASE,
       MIN_USDH_REBALANCE_AMOUNT,
+      MIN_USDG_SWEEP_AMOUNT,
     } = env;
 
     const validate = (chainId: number, account: string, target: number, trigger: number) => {
@@ -110,6 +112,9 @@ export class RefillerConfig extends CommonConfig {
 
     // Default minimum is 10 USDH. USDH only exists on HyperEVM and has 6 decimals.
     this.minUsdhRebalanceAmount = toBNWei(MIN_USDH_REBALANCE_AMOUNT ?? "10", 6);
+
+    // Default minimum is 10 USDG. Mainnet USDG should be swept to Robinhood when above this threshold.
+    this.minUsdgSweepAmount = toBNWei(MIN_USDG_SWEEP_AMOUNT ?? "10", 6);
 
     // Should only have 1 HubPool.
     if (Object.values(this.refillEnabledBalances).filter((x) => x.isHubPool).length > 1) {

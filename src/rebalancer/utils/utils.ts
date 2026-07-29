@@ -111,6 +111,12 @@ export function getPendingBridgeOrderKey(redisPrefix: string, cloid: string, acc
   return `${redisPrefix}pending-order:${cloid}:${account.toLowerCase()}`;
 }
 
+// Maps an order's cloid to the on-chain transaction that funded its venue deposit, so lifecycle transitions
+// (e.g. pruning an expired order) can locate and untag the deposit.
+export function getPendingBridgeDepositTxnKey(redisPrefix: string, cloid: string, account: string): string {
+  return `${redisPrefix}deposit-txn:${cloid}:${account.toLowerCase()}`;
+}
+
 export async function redisGetOrderDetailsForAdapter(
   redisCache: RedisCache,
   adapterRedisPrefix: string,

@@ -1,10 +1,20 @@
 import { CHAIN_IDs, TOKEN_EQUIVALENCE_REMAPPING, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { constants, utils, arch } from "@across-protocol/sdk";
+import assert from "assert";
 import { CONTRACT_ADDRESSES } from "../common";
 import { BigNumberish, BigNumber } from "./BNUtils";
-import { formatUnits, getL1TokenAddress as resolveL1TokenAddress, getTokenInfo } from "./SDKUtils";
+import {
+  Address,
+  EvmAddress,
+  SvmAddress,
+  formatUnits,
+  getL1TokenAddress as resolveL1TokenAddress,
+  getTokenInfo,
+  toAddressType,
+  toBN,
+  type SVMProvider,
+} from "./SDKUtils";
 import { isDefined, isKeyOf } from "./TypeGuards";
-import { assert, Address, toAddressType, EvmAddress, SvmAddress, SVMProvider, toBN } from "./";
 import { TokenInfo } from "../interfaces";
 
 const { ZERO_ADDRESS } = constants;
@@ -245,4 +255,17 @@ export function getTokenSymbol(token: Address, chainId: number): string {
   } catch {
     return "UNKNOWN";
   }
+}
+
+/**
+ * Returns true if the token is USDC or USDT on the given chain.
+ */
+export function isStablecoin(token: Address, chainId: number): boolean {
+  return [TOKEN_SYMBOLS_MAP.USDC, TOKEN_SYMBOLS_MAP.USDT].some(({ addresses }) => {
+    const chainAddress = addresses[chainId];
+    if (!isDefined(chainAddress)) {
+      return false;
+    }
+    return token.eq(toAddressType(chainAddress, chainId));
+  });
 }

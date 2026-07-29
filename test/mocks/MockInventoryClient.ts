@@ -9,7 +9,6 @@ type TokenMapping = { [l1Token: string]: { [chainId: number]: string } };
 export class MockInventoryClient extends InventoryClient {
   possibleRebalances: Rebalance[] = [];
   balanceOnChain: BigNumber | undefined = undefined;
-  excessRunningBalancePcts: { [l1Token: string]: { [chainId: number]: BigNumber } } = {};
   l1Token: string | undefined = undefined;
   tokenMappings: TokenMapping | undefined = undefined;
   upcomingRefunds: { [l1Token: string]: { [chainId: number]: BigNumber } } = {};
@@ -25,7 +24,7 @@ export class MockInventoryClient extends InventoryClient {
     crossChainTransferClient: CrossChainTransferClient | null = null,
     rebalancerClient: RebalancerClient | null = null,
     simMode = false,
-    prioritizeLpUtilization = false
+    l1TokensOverride: string[] = []
   ) {
     super(
       relayer, // relayer
@@ -38,7 +37,7 @@ export class MockInventoryClient extends InventoryClient {
       crossChainTransferClient,
       rebalancerClient, // rebalancer client
       simMode, // sim mode
-      prioritizeLpUtilization // prioritize lp utilization
+      l1TokensOverride
     );
   }
 
@@ -55,20 +54,12 @@ export class MockInventoryClient extends InventoryClient {
     return this.inventoryConfig === null ? [1] : super.determineRefundChainId(_deposit);
   }
 
-  setExcessRunningBalances(l1Token: string, balances: { [chainId: number]: BigNumber }): void {
-    this.excessRunningBalancePcts[l1Token] = balances;
-  }
-
   setBinanceClient(binanceClient: BinanceClient | undefined): void {
     this.binanceClient = binanceClient;
   }
 
   seedL1TokenPriceUsd(l1Token: string, priceUsd: BigNumber): void {
     this.l1TokenPricesUsd.set(l1Token, priceUsd);
-  }
-
-  async getExcessRunningBalancePcts(l1Token: Address): Promise<{ [chainId: number]: BigNumber }> {
-    return Promise.resolve(this.excessRunningBalancePcts[l1Token.toEvmAddress()] ?? {});
   }
 
   override getUpcomingRefunds(chainId: number, l1Token: EvmAddress): BigNumber {
