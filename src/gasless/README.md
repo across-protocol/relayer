@@ -16,6 +16,19 @@ CCTP deposits (and swap-and-bridge that uses a non-default `spokePool`) end in `
 
 Integrator filtering runs inside `_queryGaslessApi` immediately after API responses are restructured — discarded messages never enter the state machine.
 
+### Deposit log token resolution (`resolveTokenInfoForLog`)
+
+Before submitting the origin deposit in `GaslessRelayer#initiateDeposit`, the bot formats a Slack-facing log line with the user amount token’s symbol and decimals. For `swapAndBridge`, that token is the signed `swapToken` (often a long-tail asset missing from the static `TOKEN_SYMBOLS_MAP`). Resolution is **log-only** and must never throw: a failure here used to reject `initiateDeposit` and silently drop the deposit before submission (ACB-552).
+
+Lookup order in `GaslessUtils#resolveTokenInfoForLog`:
+
+1. **Static map** — `getTokenInfo` when the token is known.
+2. **Redis cache** — key `gasless:tokenInfo:{chainId}:{address}`, TTL 30 days (metadata is immutable). Cache read/write is best-effort; errors fall through to the next step.
+3. **On-chain ERC-20 probe** — `symbol()` / `decimals()` via the chain provider. Successful results are written to Redis.
+4. **Placeholder** — if the probe fails, emit a warn (`GaslessUtils#resolveTokenInfoForLog`: “Failed to resolve token info on-chain; using placeholder for log line only”) and use `{ symbol: "UNKNOWN", decimals: 18 }`.
+
+The deposit transaction itself is built from the API message and is unaffected by probe/cache/placeholder outcomes. Production passes the shared Gasless Redis client into the resolver; tests inject a mock cache and/or `probeOnChain`.
+
 ## Configuration
 
 ### Required
