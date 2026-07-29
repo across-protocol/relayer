@@ -414,6 +414,43 @@ async function _runTransaction(
   }
 }
 
+/**
+ * Build the `wait` implementation for a TVM transaction response.
+ *
+ * TronWeb submits the transaction, but we still hold an ethers `Provider`, so `wait` mirrors
+ * `JsonRpcProvider`: resolve a real receipt (including `logs`) via `provider.waitForTransaction`.
+ *
+ * It must mirror the *rejection* half of that contract too. `provider.waitForTransaction` resolves
+ * with whatever receipt it finds, reverted or not; the `status === 0` check that turns a reverted tx
+ * into a thrown CALL_EXCEPTION lives in `BaseProvider._wrapTransaction`'s `wait` closure, which only
+ * a provider-submitted (EVM) transaction gets. Re-adding it here keeps TVM and EVM callers on one
+ * contract: a resolved `wait()` means the transaction succeeded. Without it a reverted Tron tx reads
+ * as a confirmed one, and callers that gate on receipt presence alone (`sendAndConfirmTransaction` →
+ * the deposit-address handler, which marks the transfer swept and never retries it) commit to a
+ * sweep that never happened.
+ */
+export function tvmTransactionWait(
+  provider: Provider,
+  txid: string,
+  at: string
+): (confirmations?: number) => Promise<TransactionReceipt> {
+  return async (confirmations?: number) => {
+    const txHexHash = txid.startsWith("0x") ? txid : `0x${txid}`;
+    const receipt = await provider.waitForTransaction(txHexHash, confirmations ?? 1);
+    // `waitForTransaction` resolves null when asked for 0 confirmations and the tx is still pending;
+    // pass that through rather than reading `status` off null.
+    if (receipt?.status === 0) {
+      // Thrown through ethers' own logger so the error carries `code`/`reason` exactly like the EVM
+      // path — `_submit` switches on `ethers.errors.CALL_EXCEPTION` and callers read `reason`.
+      new ethers.utils.Logger(at).throwError("transaction failed", ethers.errors.CALL_EXCEPTION, {
+        transactionHash: txHexHash,
+        receipt,
+      });
+    }
+    return receipt;
+  };
+}
+
 async function _runTransactionTvm(
   logger: winston.Logger,
   contract: Contract,
@@ -487,8 +524,7 @@ async function _runTransactionTvm(
   // nonces in the EVM sense, so we set nonce to 0 to satisfy downstream nonce tracking without
   // side effects (TVM nonce tracking in submit() is harmless — it just overwrites to 0 each time).
   //
-  // `wait` must resolve to a real receipt (including `logs`). TronWeb submits the tx; we still
-  // have an ethers `Provider`, so mirror JsonRpcProvider: `wait` → `provider.waitForTransaction`.
+  // See `tvmTransactionWait` for the `wait` contract (including revert detection).
   return {
     hash: result.txid,
     nonce: 0,
@@ -498,10 +534,7 @@ async function _runTransactionTvm(
     gasLimit: BigNumber.from(feeLimit),
     value,
     data: populatedTransaction.data ?? "0x",
-    wait: (confirmations?: number) => {
-      const txHexHash = result.txid.startsWith("0x") ? result.txid : `0x${result.txid}`;
-      return provider.waitForTransaction(txHexHash, confirmations ?? 1);
-    },
+    wait: tvmTransactionWait(provider, result.txid, at),
   } as unknown as TransactionResponse;
 }
 

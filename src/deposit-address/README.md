@@ -146,8 +146,12 @@ case-sensitive. On-chain reads (`getDepositAddressBalance`) and receipt-log matc
 (`buildDepositExecutedPayload`) convert base58 → 0x-hex via `getEthersCompatibleAddress` because
 Tron providers speak eth-JSON-RPC. Submission reuses the existing TVM path in `TransactionClient`
 (`_runTransactionTvm`, raw calldata, TRX `feeLimit`); the bot signer's key doubles as its Tron
-account, which must hold TRX for fees. Tron refund-withdraws remain unsupported (the v3 withdraw
-path is still EVM-only).
+account, which must hold TRX for fees. A **reverted** Tron execute (out of energy, `feeLimit` too
+low, the deploy+execute itself reverting) surfaces as a submission failure, not a confirmed sweep:
+the TVM response's `wait` checks `receipt.status` and throws `CALL_EXCEPTION` like the EVM path
+(`tvmTransactionWait`), so `sendAndConfirmTransaction` returns `undefined`, the transfer is *not*
+added to the executed set, and the next poll retries it. Tron refund-withdraws remain unsupported
+(the v3 withdraw path is still EVM-only).
 
 ## v3 refund-withdraw flow
 
