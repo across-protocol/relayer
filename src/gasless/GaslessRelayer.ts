@@ -284,8 +284,12 @@ export class GaslessRelayer {
       () => this.evaluateApiSignatures(),
       this.config.apiPollingInterval,
       this.abortController.signal,
-      this.logger,
-      "GaslessRelayer#evaluateApiSignatures"
+      (err) =>
+        this.logger.error({
+          at: "GaslessRelayer#pollAndExecute",
+          message: "evaluateApiSignatures failed; batch skipped this tick",
+          error: err instanceof Error ? err.message : String(err),
+        })
     );
   }
 
