@@ -1,8 +1,10 @@
 import { AugmentedTransaction } from "../src/clients";
+import { tvmTransactionWait } from "../src/clients/TransactionClient";
 import {
   BigNumber,
   ethers,
   isDefined,
+  Provider,
   TransactionReceipt,
   TransactionResponse,
   TransactionSimulationResult,
@@ -236,6 +238,63 @@ describe("TransactionClient", function () {
       expect(txnResponses.length).to.equal(1);
       // wait() was called maxTries times (default is 10).
       expect(waitCalls).to.equal(10);
+    });
+  });
+
+  describe("tvmTransactionWait", function () {
+    const TXID = "3b699036b64d765dea6a9103c33793d343381bab361b3e96051e56de2d174247";
+    const at = "TransactionClient#_runTransactionTvm";
+
+    /** Stub provider recording the hash/confirmations it was asked for. */
+    function stubProvider(receipt: Partial<TransactionReceipt> | null): {
+      provider: Provider;
+      calls: { hash: string; confirmations?: number }[];
+    } {
+      const calls: { hash: string; confirmations?: number }[] = [];
+      const provider = {
+        waitForTransaction: (hash: string, confirmations?: number) => {
+          calls.push({ hash, confirmations });
+          return Promise.resolve(receipt as TransactionReceipt);
+        },
+      } as unknown as Provider;
+      return { provider, calls };
+    }
+
+    it("resolves the receipt on a successful transaction", async function () {
+      const { provider, calls } = stubProvider({ status: 1, transactionHash: `0x${TXID}` });
+      const receipt = await tvmTransactionWait(provider, TXID, at)();
+      expect(receipt.status).to.equal(1);
+      // 0x-prefixes the Tron txid and defaults to 1 confirmation.
+      expect(calls).to.deep.equal([{ hash: `0x${TXID}`, confirmations: 1 }]);
+    });
+
+    it("throws CALL_EXCEPTION on a reverted transaction rather than resolving it", async function () {
+      // The regression this guards: `provider.waitForTransaction` resolves a status-0 receipt, so
+      // without the explicit check a reverted Tron tx reads as confirmed and callers gating on
+      // receipt presence (sendAndConfirmTransaction) mark the work done.
+      const { provider } = stubProvider({ status: 0, transactionHash: `0x${TXID}` });
+      const thrown = await tvmTransactionWait(provider, TXID, at)().then(
+        (receipt) => ({ resolved: receipt }),
+        (error: Error & { code?: string; reason?: string }) => ({ error })
+      );
+      expect("error" in thrown).to.equal(true);
+      // Must be shaped like an ethers error: _submit switches on `code`, callers read `reason`.
+      const { error } = thrown as { error: Error & { code?: string; reason?: string } };
+      expect(error.code).to.equal(ethers.errors.CALL_EXCEPTION);
+      expect(error.reason).to.equal("transaction failed");
+    });
+
+    it("passes an already-prefixed txid through unchanged", async function () {
+      const { provider, calls } = stubProvider({ status: 1 });
+      await tvmTransactionWait(provider, `0x${TXID}`, at)(3);
+      expect(calls).to.deep.equal([{ hash: `0x${TXID}`, confirmations: 3 }]);
+    });
+
+    it("passes through a null receipt when asked for 0 confirmations", async function () {
+      // waitForTransaction resolves null for a still-pending tx at 0 confirmations; reading
+      // `status` off it must not throw.
+      const { provider } = stubProvider(null);
+      expect(await tvmTransactionWait(provider, TXID, at)(0)).to.equal(null);
     });
   });
 });
