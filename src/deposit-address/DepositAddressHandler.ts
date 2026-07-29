@@ -92,10 +92,25 @@ function expectedNamespaceForChain(chainId: number): "evm" | "tron" | undefined 
 }
 
 /**
+ * Gate for classifying an empty-data `balanceOf` CALL_EXCEPTION as terminal on the v3 withdraw
+ * path. A single such revert is strong evidence the token lacks `balanceOf`, but a misbehaving
+ * RPC backend (empty eth_call result) or unusual proxy state can produce the same shape
+ * transiently — and a false positive permanently strands the refund, since the terminal skip is
+ * persisted and never re-attempted. Terminal classification therefore requires the failure to
+ * persist: at least MIN_FAILURES observations spanning at least WINDOW_SECONDS, with any
+ * successful read resetting the streak. A genuine scam token fails deterministically on every
+ * poll, so the only cost is a short delay before its per-poll log spam is silenced.
+ */
+const EMPTY_BALANCE_TERMINAL_MIN_FAILURES = 3;
+const EMPTY_BALANCE_TERMINAL_WINDOW_SECONDS = 10 * 60;
+
+/**
  * True when `err` is an ethers CALL_EXCEPTION carrying no revert data (`data: "0x"`). For a
- * `balanceOf` read this is deterministic, not transient: the token contract does not implement
- * `balanceOf` — seen in the wild on scam/address-poisoning tokens that emit spoofed Transfer
- * events without any ERC-20 state — so retrying the call on later polls can never succeed.
+ * `balanceOf` read this is the signature of a token contract with no `balanceOf` — seen in the
+ * wild on scam/address-poisoning tokens that emit spoofed Transfer events without any ERC-20
+ * state. It is strong evidence, not proof: a misbehaving RPC backend or unusual proxy state can
+ * transiently produce the same shape, so callers gate terminal classification on the failure
+ * persisting across polls (see EMPTY_BALANCE_TERMINAL_*) rather than on a single observation.
  */
 function isEmptyDataCallException(err: unknown): boolean {
   return (
@@ -145,6 +160,15 @@ export class DepositAddressHandler {
    * sets once the indexer stops returning the source message.
    */
   private terminallySkippedWithdrawKeys: Set<string> = new Set();
+
+  /**
+   * Per depositKey: streak of empty-data `balanceOf` failures on the v3 withdraw path, feeding
+   * the terminal-skip gate (see EMPTY_BALANCE_TERMINAL_*). `firstSeenSec` anchors the observation
+   * window; any successful balance read clears the entry. In-memory only — a handover restarts
+   * the window, which merely delays terminal classification. Pruned alongside the other sets once
+   * the indexer stops returning the source message.
+   */
+  private emptyBalanceFailuresByKey: Map<string, { firstSeenSec: number; failures: number }> = new Map();
 
   /**
    * Per chainId (refund chain = erc20Transfer.chainId): set of depositKeys for withdraws currently
@@ -428,6 +452,11 @@ export class DepositAddressHandler {
     for (const key of [...this.terminallySkippedWithdrawKeys]) {
       if (!depositKeysFromIndexer.has(key)) {
         this.terminallySkippedWithdrawKeys.delete(key);
+      }
+    }
+    for (const key of [...this.emptyBalanceFailuresByKey.keys()]) {
+      if (!depositKeysFromIndexer.has(key)) {
+        this.emptyBalanceFailuresByKey.delete(key);
       }
     }
 
@@ -1410,21 +1439,53 @@ export class DepositAddressHandler {
       try {
         onchainBalance = await this.getDepositAddressBalance(chainId, token, depositAddress);
       } catch (err) {
-        // An empty-data revert means the token has no balanceOf — terminal, like a quote-api 422.
-        // Persist the skip so the message is not re-attempted (and re-warned) on every poll for
-        // the rest of its indexer TTL. Transient provider failures fall through to the plain skip
-        // below and are retried on the next poll.
+        // An empty-data revert usually means the token has no balanceOf — terminal, like a
+        // quote-api 422 — but a misbehaving RPC backend or unusual proxy state can produce the
+        // same shape transiently, and a false positive would strand the refund. Only once the
+        // failure has persisted across polls (EMPTY_BALANCE_TERMINAL_*) is the key persisted to
+        // the terminal-skip set so it stops being re-attempted (and re-warned) for the rest of
+        // its indexer TTL. Other failures fall through to the plain skip below and are retried
+        // on the next poll.
         if (isEmptyDataCallException(err)) {
-          this.terminallySkippedWithdrawKeys.add(depositKey);
-          await this._persistSkippedWithdrawKeysRedis();
-          this.logger.warn({
+          const nowSec = getCurrentTime();
+          const streak = this.emptyBalanceFailuresByKey.get(depositKey) ?? { firstSeenSec: nowSec, failures: 0 };
+          streak.failures += 1;
+          this.emptyBalanceFailuresByKey.set(depositKey, streak);
+          const observedForSeconds = nowSec - streak.firstSeenSec;
+          if (
+            streak.failures >= EMPTY_BALANCE_TERMINAL_MIN_FAILURES &&
+            observedForSeconds >= EMPTY_BALANCE_TERMINAL_WINDOW_SECONDS
+          ) {
+            this.emptyBalanceFailuresByKey.delete(depositKey);
+            this.terminallySkippedWithdrawKeys.add(depositKey);
+            await this._persistSkippedWithdrawKeysRedis();
+            this.logger.warn({
+              at: "DepositAddressHandler#initiateWithdrawV3",
+              message:
+                "Skipping withdraw permanently: balanceOf reverted with empty data throughout the observation window (token lacks balanceOf)",
+              depositAddress,
+              token,
+              depositKey,
+              refTxHash,
+              chainId,
+              failures: streak.failures,
+              observedForSeconds,
+              err: err instanceof Error ? err.message : String(err),
+            });
+            return;
+          }
+          // Warn once when the streak opens; later polls inside the window log at debug so a scam
+          // token does not re-warn on every 1s poll while the window matures.
+          this.logger[streak.failures === 1 ? "warn" : "debug"]({
             at: "DepositAddressHandler#initiateWithdrawV3",
-            message: "Skipping withdraw permanently: balanceOf reverted with empty data (token lacks balanceOf)",
+            message: "Skipping withdraw: balanceOf reverted with empty data (terminal-skip window open)",
             depositAddress,
             token,
             depositKey,
             refTxHash,
             chainId,
+            failures: streak.failures,
+            observedForSeconds,
             err: err instanceof Error ? err.message : String(err),
           });
           return;
@@ -1441,6 +1502,8 @@ export class DepositAddressHandler {
         });
         return;
       }
+      // A successful read disproves "token lacks balanceOf" — reset any open streak.
+      this.emptyBalanceFailuresByKey.delete(depositKey);
 
       if (onchainBalance.lt(toBN(amount))) {
         this.logger.debug({

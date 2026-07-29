@@ -162,11 +162,14 @@ stranded funds back to the committed refund address. `intent_refund` is **not** 
 3. Locate the withdraw leaf in `counterfactualMaterials` (`kind === "withdraw"`); skip if its
    `merkleProof` / `implementationAddress` are missing.
 4. Defensive on-chain balance check, as on the other paths. A `balanceOf` that reverts with
-   **empty data** (`CALL_EXCEPTION`, `data: "0x"`) is terminal: the token contract does not
-   implement `balanceOf` — scam/address-poisoning tokens that emit spoofed Transfer events without
-   any ERC-20 state — so the depositKey is persisted to the terminal-skip set (same set as the 422s
-   below) and never re-attempted. Any other balance-fetch failure is treated as transient and
-   re-attempted on the next poll.
+   **empty data** (`CALL_EXCEPTION`, `data: "0x"`) signals a token contract with no `balanceOf` —
+   scam/address-poisoning tokens that emit spoofed Transfer events without any ERC-20 state. A
+   misbehaving RPC or unusual proxy state can transiently produce the same shape, so the skip only
+   becomes terminal once the failure persists (≥ 3 observations spanning ≥ 10 minutes, tracked
+   in-memory per depositKey; a successful read resets the streak); the depositKey is then persisted
+   to the terminal-skip set (same set as the 422s below) and never re-attempted. While the window
+   matures, and for any other balance-fetch failure, the withdraw is skipped for that poll and
+   re-attempted on the next one.
 5. Fetch `{ signedWithdrawTx: { to, data, value, chainId }, deadline, requestedAmount, appliedGasFee, netAmount, bundledDeploy }`
    from `POST /deposit-addresses/sign-withdraw`. Unlike v1, **gas is deducted from the refund**
    (`deductGasFromRefund: true`) so refunds are not operated at a loss. The endpoint **verifies** the
@@ -217,7 +220,7 @@ Three sets persist across runs so handover does not double-spend, double-refund,
 
 - `deposit-address:executed:<botIdentifier>` — set of `erc20Transfer.transactionHash` for successfully executed deposits.
 - `deposit-address:withdrawn-deposit-keys:<botIdentifier>` — set of `depositKey` (`depositAddress:transactionHash`) for successfully executed refund withdraws.
-- `deposit-address:skipped-withdraw-keys:<botIdentifier>` — set of `depositKey` for v3 refund withdraws that failed terminally: quote-api 422 (`GAS_EXCEEDS_REFUND` / `UNPRICEABLE_REFUND_TOKEN`) or `balanceOf` empty-data revert (token lacks `balanceOf`); never re-attempted.
+- `deposit-address:skipped-withdraw-keys:<botIdentifier>` — set of `depositKey` for v3 refund withdraws that failed terminally: quote-api 422 (`GAS_EXCEEDS_REFUND` / `UNPRICEABLE_REFUND_TOKEN`) or `balanceOf` empty-data revert persisting past the observation window (token lacks `balanceOf`); never re-attempted.
 
 On each poll, entries whose source messages are no longer returned by the indexer are pruned — the indexer has its own TTL and stops returning expired messages.
 
