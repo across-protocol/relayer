@@ -14,12 +14,6 @@ export type PendingExecute = {
   refTxHash: string;
   /** Unix seconds at broadcast; used to expire records whose transaction never appeared on-chain. */
   submittedAt: number;
-  depositAddress: string;
-  /** `erc20Transfer.contractAddress`, needed to locate the settlement log in the receipt. */
-  token: string;
-  /** `erc20Transfer.blockNumber` / `logIndex` of the inbound funding transfer. */
-  blockNumber: number;
-  logIndex: number;
 };
 
 const PendingExecuteStruct = object({
@@ -27,10 +21,6 @@ const PendingExecuteStruct = object({
   chainId: number(),
   refTxHash: string(),
   submittedAt: number(),
-  depositAddress: string(),
-  token: string(),
-  blockNumber: number(),
-  logIndex: number(),
 });
 
 /**

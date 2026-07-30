@@ -24,16 +24,7 @@ Poll-loop failures are never silent: `pollAndExecute` passes an error handler to
 a rejected `evaluateDepositAddresses` tick (which skips that whole batch) is logged at error level
 instead of being swallowed by the scheduler.
 
-Cleanup in the `finally` block **drains before it disconnects**: `drain()` waits (bounded at 30s) for
-polls that are already running to settle, and only then are the Pub/Sub publisher and Redis clients
-closed. The order matters — a confirmed execute whose Redis write lands on a disconnected client is
-lost, and a lifecycle event published through a closed client is dropped with no log at all. The wait
-is bounded because a poll can block indefinitely (an unmined transaction leaves `wait()` pending
-forever); an overrun is warned rather than waited out.
-
-`SIGTERM` is handled alongside `SIGHUP` (both abort the handler). Node's default action for `SIGTERM`
-is immediate termination, so without a handler an eviction by the container runtime kills in-flight
-work outright instead of letting it drain.
+Cleanup in the `finally` block closes the Pub/Sub publisher and Redis clients.
 
 ## Indexer message classification
 
@@ -249,15 +240,14 @@ unsound: the address is a shared pot, so an unrelated inbound transfer makes the
 executable again and the sweep is repeated against someone else's funds.
 
 The claim closes that window. `PendingExecute` (see [`pendingExecutes.ts`](./pendingExecutes.ts))
-records `txHash`, `chainId`, `refTxHash`, `submittedAt` and an `erc20Transfer` projection, written
-from the `TransactionClient` `onBroadcast` hook so the unprotected interval shrinks to a single Redis
-write. It carries the transfer projection so a successor can rebuild the `deposit_executed` payload
-without the original indexer message, which may no longer be served by then.
+records `txHash`, `chainId`, `refTxHash` and `submittedAt`, written from the `TransactionClient`
+`onBroadcast` hook so the unprotected interval shrinks to a single Redis write.
 
 Each claim is an independent hash field (`hSet`/`hDel`), never a serialized map behind one `set`.
-That matters because handover is cooperative and polled on a 1s interval, and the incumbent then
-drains for up to 30s more — so two instances are routinely live and recording claims at the same
-time. A read-modify-write of one blob would let either instance's write drop the other's claim, and
+That matters because handover is cooperative and polled on a 1s interval, so the incumbent keeps
+running for at least a tick after it has been replaced — two instances are routinely live and
+recording claims at the same time. A read-modify-write of one blob would let either write drop the
+other's claim, and
 losing a claim for a transaction already on the wire is exactly the failure this mechanism exists to
 prevent. Per-field writes make concurrent claims for different transfers independent by construction.
 
@@ -270,11 +260,17 @@ resolved against the chain via `getTransactionReceipt` (`_settlePendingExecute`)
 
 | Receipt | Outcome | Action |
 | --- | --- | --- |
-| mined, `status !== 0` | `executed` | Adopt into the executed set, clear the claim, publish the `deposit_executed` event the evicted run never sent. |
+| mined, `status !== 0` | `executed` | Adopt into the executed set and clear the claim. No `deposit_executed` publish — see below. |
 | mined, `status === 0` | `reverted` | Nothing moved; clear the claim so the transfer is re-attempted. |
 | absent, within `PENDING_EXECUTE_STALE_SECONDS` (15m) | `unresolved` | Keep the claim — it is what blocks a second submission. |
 | absent, older than that, EVM | `unresolved` | Discard with a warn (`across-bot-error`): the transaction is never going to land, and a resubmit reuses its nonce (`getTransactionCount("latest")`) so it replaces rather than duplicates. |
 | absent, older than that, **TVM** | `unresolved` | **Keep** the claim and escalate. TVM transactions carry no nonce, so a resubmit is an independent transaction — were the original merely invisible rather than dropped, both would land and sweep the pot twice. Stranding a deposit for manual recovery is reversible; a double sweep is not. |
+
+Adopting an execute deliberately does **not** re-emit the `deposit_executed` event the evicted run
+never sent. Rebuilding that payload needs the funding transfer's block/log coordinates, so every
+claim would have to carry an `erc20Transfer` projection purely to serve a publish that is skipped
+outright whenever on-chain provenance metadata is enabled. Re-emitting the missed event belongs with
+whatever re-enables that publisher, not here.
 
 Tron adds one more wrinkle: `TransactionClient` records TronWeb's `txid` verbatim (un-prefixed), while
 Tron providers speak eth-JSON-RPC and require the `0x` prefix, so the claim's hash is normalized at

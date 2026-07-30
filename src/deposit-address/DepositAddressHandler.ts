@@ -29,7 +29,6 @@ import {
   chainIsEvm,
   chainIsTvm,
   getEthersCompatibleAddress,
-  delay,
 } from "../utils";
 import { getRedisCache, RedisCacheInterface } from "../cache/Redis";
 import {
@@ -49,7 +48,7 @@ import {
 } from "../clients";
 import { AcrossIndexerApiClient } from "../clients/AcrossIndexerApiClient";
 import { GcpPubSubPublisher, getGcpPubSubPublisher } from "../messaging/gcp";
-import { buildDepositExecutedPayload, buildWithdrawExecutedPayload, DepositExecutedSource } from "./withdrawPayload";
+import { buildDepositExecutedPayload, buildWithdrawExecutedPayload } from "./withdrawPayload";
 import { parsePendingExecute, PendingExecute, PENDING_EXECUTE_STALE_SECONDS } from "./pendingExecutes";
 import ERC20_ABI from "../common/abi/MinimalERC20.json";
 
@@ -70,12 +69,6 @@ const INTEGRATOR_ID_REGEX = /^0x[0-9a-fA-F]{4}$/;
  * and sink the whole poll batch.
  */
 const SUPPORTED_INDEXER_MESSAGE_VERSIONS = new Set([1, 3]);
-
-/**
- * Upper bound on how long shutdown waits for polls that are already running (a poll can block
- * indefinitely on an unmined transaction). An overrun is reported rather than waited out.
- */
-const DRAIN_TIMEOUT_SECONDS = 30;
 
 /**
  * Lifetime of the per-transfer submission reservation — long enough to cover the pre-submit
@@ -169,9 +162,6 @@ export class DepositAddressHandler {
    */
   private pendingExecutes: Record<string, PendingExecute> = {};
 
-  /** Polls that have started but not settled; awaited by {@link drain} during shutdown. */
-  private inFlightPolls: Set<Promise<unknown>> = new Set();
-
   private api: AcrossSwapApiClient;
   private indexerApi: AcrossIndexerApiClient;
   private _signerAddress?: EvmAddress;
@@ -220,18 +210,14 @@ export class DepositAddressHandler {
       this.executionPublisher = getGcpPubSubPublisher(this.logger, this.config.pubSubGcpProjectId);
     }
 
-    // Exit if OS instructs us to do so. SIGHUP is the historical signal here; SIGTERM is what
-    // container runtimes send on eviction, and Node's default action for it is immediate
-    // termination — without a handler, in-flight work is killed outright rather than drained.
-    for (const signal of ["SIGHUP", "SIGTERM"] as const) {
-      process.on(signal, () => {
-        this.logger.debug({
-          at: "DepositAddressHandler#initialize",
-          message: `Received ${signal} on deposit address handler. stopping...`,
-        });
-        this.abortController.abort();
+    // Exit if OS instructs us to do so.
+    process.on("SIGHUP", () => {
+      this.logger.debug({
+        at: "DepositAddressHandler#initialize",
+        message: "Received SIGHUP on deposit address handler. stopping...",
       });
-    }
+      this.abortController.abort();
+    });
 
     process.on("disconnect", () => {
       this.logger.debug({
@@ -554,20 +540,14 @@ export class DepositAddressHandler {
     this.executedDepositTxHashes.add(pending.refTxHash);
     await this._persistExecutedDepositsRedis();
     await this._clearPendingExecute(depositKey);
+    // No `deposit_executed` publish here: rebuilding the payload would mean persisting an
+    // erc20Transfer projection on every claim to serve a path that is inert whenever on-chain
+    // provenance metadata is enabled. Re-emitting the event an evicted run missed belongs with
+    // whatever re-enables that publisher.
     this.logger.info({
       ...logContext,
       message: "Adopted an execute broadcast by a previous run and confirmed on-chain",
       blockNumber: receipt.blockNumber,
-    });
-    await this._publishDepositExecuted(receipt, {
-      depositAddress: pending.depositAddress,
-      erc20Transfer: {
-        chainId: pending.chainId,
-        blockNumber: pending.blockNumber,
-        transactionHash: pending.refTxHash,
-        logIndex: pending.logIndex,
-        contractAddress: pending.token,
-      },
     });
     return "executed";
   }
@@ -662,7 +642,7 @@ export class DepositAddressHandler {
    */
   public pollAndExecute(): void {
     scheduleTask(
-      () => this._trackPoll(this.evaluateDepositAddresses()),
+      () => this.evaluateDepositAddresses(),
       this.config.indexerPollingInterval,
       this.abortController.signal,
       // A rejected poll skips the whole batch for that tick; without this log the failure is
@@ -711,49 +691,6 @@ export class DepositAddressHandler {
         lastError: failure,
       });
     }
-  }
-
-  /** Registers a running poll so {@link drain} can wait for it during shutdown. */
-  private _trackPoll(poll: Promise<unknown>): Promise<unknown> {
-    this.inFlightPolls.add(poll);
-    return poll.finally(() => {
-      this.inFlightPolls.delete(poll);
-    });
-  }
-
-  /**
-   * Waits for in-flight polls to settle before the caller tears down Redis/Pub-Sub (see the module
-   * README). Best-effort — the durable claim is what actually prevents a duplicate sweep. Never
-   * throws, so it is safe to call from a `finally` block.
-   */
-  public async drain(timeoutSeconds = DRAIN_TIMEOUT_SECONDS): Promise<void> {
-    const pending = this.inFlightPolls.size;
-    if (pending === 0) {
-      return;
-    }
-
-    this.logger.debug({
-      at: "DepositAddressHandler#drain",
-      message: "Waiting for in-flight polls to settle before shutdown",
-      pending,
-      timeoutSeconds,
-    });
-
-    // allSettled: a rejected poll is already reported by the scheduler's error handler.
-    await Promise.race([Promise.allSettled([...this.inFlightPolls]), delay(timeoutSeconds)]);
-
-    if (this.inFlightPolls.size > 0) {
-      this.logger.warn({
-        at: "DepositAddressHandler#drain",
-        message: "Timed out draining in-flight polls; their outcomes may not have been persisted",
-        remaining: this.inFlightPolls.size,
-        timeoutSeconds,
-        notificationPath: "across-bot-error",
-      });
-      return;
-    }
-
-    this.logger.debug({ at: "DepositAddressHandler#drain", message: "In-flight polls settled", drained: pending });
   }
 
   /*
@@ -1158,7 +1095,7 @@ export class DepositAddressHandler {
    */
   private async _publishDepositExecuted(
     receipt: TransactionReceipt,
-    depositMessage: DepositExecutedSource
+    depositMessage: DepositAddressMessageV3
   ): Promise<void> {
     if (this.config.enableExecuteErc20Transfer) {
       this.logger.debug({
@@ -1549,10 +1486,6 @@ export class DepositAddressHandler {
                 chainId: originChainId,
                 refTxHash,
                 submittedAt: getCurrentTime(),
-                depositAddress,
-                token: inputToken,
-                blockNumber: erc20Transfer.blockNumber,
-                logIndex: erc20Transfer.logIndex,
               }),
           },
           this.transactionClient,

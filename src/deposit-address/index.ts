@@ -28,10 +28,6 @@ export async function runDepositAddressHandler(_logger: winston.Logger, baseSign
 
     logger.debug({ at: "DepositAddressHandler#index", message: `Time to run: ${(Date.now() - start) / 1000}s` });
   } finally {
-    // Let work that is already in flight finish recording its outcome *before* closing the clients
-    // it needs. A confirmed execute whose Redis write lands on a disconnected client is lost, and a
-    // lifecycle event published through a closed client is dropped without a trace.
-    await relayer.drain();
     await relayer.disconnect();
     await disconnectRedisClients(logger);
   }

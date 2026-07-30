@@ -1121,32 +1121,12 @@ describe("DepositAddressHandler pending-execute claim", function () {
       chainId,
       refTxHash,
       submittedAt: getCurrentTime(),
-      depositAddress: DEPOSIT_ADDRESS,
-      token: TOKEN,
-      blockNumber: 1_000_000,
-      logIndex: 4,
       ...overrides,
     };
   }
 
-  /** Receipt carrying the input-token Transfer out of the deposit address, so the payload builds. */
   function sweepReceipt(status: number): TransactionReceipt {
-    return {
-      blockNumber: 5_000_000,
-      transactionHash: executeTxHash,
-      status,
-      logs: [
-        {
-          address: TOKEN,
-          topics: [
-            ERC20_TRANSFER_TOPIC,
-            utils.hexZeroPad(DEPOSIT_ADDRESS.toLowerCase(), 32),
-            utils.hexZeroPad(RECIPIENT.toLowerCase(), 32),
-          ],
-          logIndex: 9,
-        },
-      ],
-    } as unknown as TransactionReceipt;
+    return { blockNumber: 5_000_000, transactionHash: executeTxHash, status } as unknown as TransactionReceipt;
   }
 
   /** Seeds a claim directly into the persisted hash, as a previous run would have left it. */
@@ -1217,7 +1197,7 @@ describe("DepositAddressHandler pending-execute claim", function () {
     expect(executeStub.notCalled).to.equal(true);
   });
 
-  it("adopts an inherited execute that confirmed on-chain and emits the missed lifecycle event", async function () {
+  it("adopts an inherited execute that confirmed on-chain", async function () {
     seedClaim(pendingRecord());
     getReceiptStub.resolves(sweepReceipt(1));
 
@@ -1226,8 +1206,6 @@ describe("DepositAddressHandler pending-execute claim", function () {
     // Adopted into the executed set, so no later run re-submits for this transfer.
     expect((handler as unknown as Internals).executedDepositTxHashes.has(refTxHash)).to.equal(true);
     expect((handler as unknown as Internals).pendingExecutes).to.deep.equal({});
-    expect(publishStub.calledOnce).to.equal(true);
-    expect(publishStub.firstCall.args[1].data.erc20Transfer.txHash).to.equal(refTxHash);
 
     // And the deposit is now skipped outright rather than swept a second time.
     await (handler as unknown as Internals).initiateDepositV3(depositMessageV3());
@@ -1356,10 +1334,6 @@ describe("DepositAddressHandler pending-execute claim on Tron", function () {
       chainId,
       refTxHash: TRON_TX_HASH,
       submittedAt: getCurrentTime(),
-      depositAddress: TRON_DEPOSIT_ADDRESS,
-      token: TRON_TOKEN,
-      blockNumber: 84_665_484,
-      logIndex: 55,
       ...overrides,
     };
   }
