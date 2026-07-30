@@ -26,6 +26,7 @@ import { runGaslessRelayer } from "./src/gasless";
 import { runDepositAddressHandler } from "./src/deposit-address";
 
 let logger: typeof Logger;
+
 let cmd: string | undefined;
 
 const CMDS = {

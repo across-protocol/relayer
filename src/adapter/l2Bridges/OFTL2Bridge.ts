@@ -15,6 +15,8 @@ import {
   fixedPointAdjustment,
   chainHasNativeToken,
   isDefined,
+  toBNWei,
+  winston,
   CHAIN_IDs,
 } from "../../utils";
 import { interfaces as sdkInterfaces } from "@across-protocol/sdk";
@@ -33,9 +35,24 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
   private readonly nativeFeeCap: BigNumber;
   private l2ToL1AmountConverter: (amount: BigNumber) => BigNumber;
   private readonly feePct: BigNumber = BigNumber.from(5 * 10 ** 15); // Default fee percent of 0.5%
+  private readonly oftMinSendPct: BigNumber;
 
-  constructor(l2chainId: number, hubChainId: number, l2Signer: Signer, l1Signer: Signer, l1Token: EvmAddress) {
-    super(l2chainId, hubChainId, l2Signer, l1Signer, l1Token);
+  constructor(
+    l2chainId: number,
+    hubChainId: number,
+    l2Signer: Signer,
+    l1Signer: Signer,
+    l1Token: EvmAddress,
+    logger?: winston.Logger
+  ) {
+    super(l2chainId, hubChainId, l2Signer, l1Signer, l1Token, logger);
+    this.oftMinSendPct = toBNWei(process.env.RELAYER_OFT_MIN_WITHDRAWAL_PCT ?? "0.2");
+    // A fraction above 1 would make even a full-capacity quote fall below the floor and skip every
+    // withdrawal; a negative one would silently disable the guard. Fail at construction instead.
+    assert(
+      this.oftMinSendPct.gte(bnZero) && this.oftMinSendPct.lte(fixedPointAdjustment),
+      `RELAYER_OFT_MIN_WITHDRAWAL_PCT must be a fraction within [0, 1]; got ${process.env.RELAYER_OFT_MIN_WITHDRAWAL_PCT}`
+    );
 
     const translatedL2Token = getTranslatedTokenAddress(l1Token, hubChainId, l2chainId);
     this.l2Token = translatedL2Token;
@@ -71,23 +88,68 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
       `OFTBridge only supports sending to EVM addresses. Dst address supplied ${toAddress.toNative()} is not EVM.`
     );
 
-    // We round `amount` to a specific precision to prevent rounding on the contract side. This way, we
-    // receive the exact amount we sent in the transaction
-    const roundedAmount = await this.roundAmountToSend(amount, this.l2TokenInfo.decimals);
-    const appliedFee = OFT.isStargateBridge(this.l2chainId)
-      ? roundedAmount.mul(this.feePct).div(fixedPointAdjustment) // Set a max slippage of 0.5%.
-      : bnZero;
-    const expectedOutputAmount = roundedAmount.sub(appliedFee);
-    const sendParamStruct: OFT.SendParamStruct = {
+    const buildSendParams = (amountLD: BigNumber, minAmountLD: BigNumber): OFT.SendParamStruct => ({
       dstEid: this.l1ChainEid,
       to: OFT.formatToAddress(toAddress),
-      amountLD: roundedAmount,
-      // @dev Setting `minAmountLD` equal to `amountLD` ensures we won't hit contract-side rounding
-      minAmountLD: expectedOutputAmount,
+      amountLD,
+      minAmountLD,
       extraOptions: "0x",
       composeMsg: "0x",
       oftCmd: "0x",
-    };
+    });
+
+    // We round `amount` to a specific precision to prevent rounding on the contract side. This way, we
+    // receive the exact amount we sent in the transaction
+    const requestedAmount = await this.roundAmountToSend(amount, this.l2TokenInfo.decimals);
+
+    // Ask the bridge how much of the requested amount it can actually take right now. Stargate-style OFTs
+    // cap the quoted `amountSentLD` at the path's available credit and revert on anything larger; vanilla
+    // OFTs quote it equal to the requested amount. Quoted amounts are derived from shared decimals on the
+    // contract side, so they need no re-rounding.
+    const [oftLimit, , oftReceipt] = await this.getL2Bridge().quoteOFT(buildSendParams(requestedAmount, bnZero));
+    const quotedSendAmount = BigNumber.from(oftReceipt.amountSentLD);
+    const quotedReceiveAmount = BigNumber.from(oftReceipt.amountReceivedLD);
+    const bridgeMinSendAmount = BigNumber.from(oftLimit.minAmountLD);
+    const amountToSend = quotedSendAmount.lt(requestedAmount) ? quotedSendAmount : requestedAmount;
+
+    // Stargate fees come out of `amountReceivedLD`; allow for at most `feePct` (0.5%) of them.
+    const slippageAllowance = OFT.isStargateBridge(this.l2chainId)
+      ? amountToSend.mul(this.feePct).div(fixedPointAdjustment)
+      : bnZero;
+    // @dev Requiring receipt of the send amount less the slippage allowance also ensures we won't hit
+    // contract-side rounding.
+    const minReceiveAmount = amountToSend.sub(slippageAllowance);
+
+    // Skip the withdrawal instead of enqueueing a transaction that is guaranteed to revert; the excess is
+    // retried on a later run.
+    const bridgeHasNoCapacity = amountToSend.eq(bnZero) || amountToSend.lt(bridgeMinSendAmount);
+    // Stargate fees can exceed the slippage allowance when path capacity is nearly drained.
+    const feesExceedSlippageAllowance = quotedReceiveAmount.lt(minReceiveAmount);
+    if (bridgeHasNoCapacity || feesExceedSlippageAllowance) {
+      return [];
+    }
+
+    // A sized-down send far below the requested amount barely dents the excess while still paying full
+    // per-message costs, so wait for the path to recover instead. Tunable via
+    // RELAYER_OFT_MIN_WITHDRAWAL_PCT (fraction of the requested amount; default 0.2).
+    const minAmountToSend = requestedAmount.mul(this.oftMinSendPct).div(fixedPointAdjustment);
+    if (amountToSend.lt(minAmountToSend)) {
+      // The caller (BaseChainAdapter#withdrawTokenFromL2) already warns on any empty txn list, so log the
+      // bridge-specific detail at debug to avoid emitting two warns for the same skipped withdrawal.
+      this.logger?.debug({
+        at: "OFTL2Bridge#constructWithdrawToL1Txns",
+        message:
+          "Skipping OFT withdrawal to hub chain: quoted bridge capacity is below the minimum percentage of the requested amount",
+        chainId: this.l2chainId,
+        l2Token: this.l2Token.toNative(),
+        requestedAmount: requestedAmount.toString(),
+        amountToSend: amountToSend.toString(),
+        oftMinSendPct: this.oftMinSendPct.toString(),
+      });
+      return [];
+    }
+
+    const sendParamStruct = buildSendParams(amountToSend, minReceiveAmount);
     // Pay the bridge fee in the Lz token if the network does not have a native token (i.e. Tempo).
     const payFeeInLzToken = !chainHasNativeToken(this.l2chainId);
 
@@ -98,6 +160,9 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
     }
 
     const formatter = createFormatFunction(2, 4, false, this.l2TokenInfo.decimals);
+    const sizedDownNote = amountToSend.lt(requestedAmount)
+      ? ` (requested ${formatter(amount.toString())}, sized down to current bridge capacity)`
+      : "";
     const approveTxn = payFeeInLzToken
       ? {
           contract: new Contract(LZ_FEE_TOKENS[this.l2chainId].toNative(), ERC20_ABI, this.l2Signer),
@@ -125,9 +190,9 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
       args: [sendParamStruct, feeStruct, refundAddress],
       value: payFeeInLzToken ? bnZero : BigNumber.from(feeStruct.nativeFee),
       message: `🎰 Withdrew ${this.l2Token} via OftL2Bridge to L1`,
-      mrkdwn: `Withdrew ${formatter(amount.toString())} ${this.l2TokenInfo.symbol} from ${getNetworkName(
-        this.l2chainId
-      )} to L1 via OftL2Bridge`,
+      mrkdwn:
+        `Withdrew ${formatter(amountToSend.toString())} ${this.l2TokenInfo.symbol}${sizedDownNote} ` +
+        `from ${getNetworkName(this.l2chainId)} to L1 via OftL2Bridge`,
     };
 
     return isDefined(approveTxn) ? [approveTxn, withdrawTxn] : [withdrawTxn];

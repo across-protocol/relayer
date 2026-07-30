@@ -26,6 +26,9 @@ import { updateOrAppendSetComputeUnitPriceInstruction } from "@solana-program/co
 
 dotenv.config();
 
+// Bounded receipt lookup for transactions that have already been confirmed on-chain.
+const RECEIPT_TIMEOUT_MS = 30_000;
+
 export type TransactionSimulationResult = {
   transaction: AugmentedTransaction;
   succeed: boolean;
@@ -322,7 +325,10 @@ export async function sendAndConfirmTransaction(
     if (!txResponse) {
       return undefined;
     }
-    return txResponse.wait();
+    // The submission path has already confirmed the transaction, so the receipt should be
+    // available immediately; bound the lookup rather than risk an indefinite wait().
+    const hash = txResponse.hash.startsWith("0x") ? txResponse.hash : `0x${txResponse.hash}`;
+    return await tx.contract.provider.waitForTransaction(hash, 1, RECEIPT_TIMEOUT_MS);
   } catch {
     return undefined;
   }

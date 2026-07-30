@@ -150,7 +150,8 @@ export class AdapterManager {
               hubChainId,
               l2SignerOrSvmProvider,
               l1Signer,
-              EvmAddress.from(l1Token)
+              EvmAddress.from(l1Token),
+              logger
             );
             return [l1Token, bridge];
           })

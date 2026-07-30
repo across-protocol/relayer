@@ -30,6 +30,7 @@ import {
 } from "../utils";
 import { DEFAULT_GAS_FEE_SCALERS } from "../common";
 import { FeeData } from "@ethersproject/abstract-provider";
+import { is, number, string, type } from "superstruct";
 
 // Empirically, a max fee scaler of ~5% can result in successful transaction replacement.
 // Stuck transactions are very disruptive, so go for 10% to avoid the hassle.
@@ -40,6 +41,26 @@ const TRANSACTION_SUBMISSION_RETRIES_DEFAULT = 3;
 // Default TVM fee limit in SUN (1 TRX = 1,000,000 SUN). 100 TRX is a reasonable default for
 // contract interactions on TRON.
 const DEFAULT_TVM_FEE_LIMIT = 100_000_000;
+
+// Confirmation wait bound (sampling cadence only); a transaction is replaced at the same nonce
+// once the chain has produced CONFIRMATION_BLOCKS blocks without including it.
+const CONFIRMATION_TIMEOUT_MS_DEFAULT = 6_000;
+const CONFIRMATION_TIMEOUTS_MS: { [chainId: number]: number } = {
+  [CHAIN_IDs.MAINNET]: 24_000,
+};
+const CONFIRMATION_BLOCKS = 2;
+
+// TRANSACTION_REPLACED errors carry the mined replacement and its receipt (undeclared on the type).
+const ReplacedError = type({
+  receipt: type({ blockNumber: number() }),
+  replacement: type({ hash: string() }),
+});
+
+function isReplacedError(
+  error: Error
+): error is Error & { receipt: TransactionReceipt; replacement: TransactionResponse } {
+  return is(error, ReplacedError);
+}
 
 // Define chains that require legacy (type 0) transactions
 export const LEGACY_TRANSACTION_CHAINS = [CHAIN_IDs.BSC];
@@ -165,12 +186,27 @@ export class TransactionClient {
       const txnArgs = { chainId, contract: txn.contract.address, method: txn.method };
       const txnRef = blockExplorerLink(txnResponse.hash, chainId);
 
+      const { provider } = txn.contract;
+      const timeout = CONFIRMATION_TIMEOUTS_MS[chainId] ?? CONFIRMATION_TIMEOUT_MS_DEFAULT;
+      // Baseline for block-driven replacement decisions (see the TIMEOUT case). The transaction is
+      // already live, so an RPC error here must not read as a submission failure.
+      let startBlock: number | undefined;
+      try {
+        startBlock = await provider.getBlockNumber();
+      } catch {
+        // Fall back to baselining on the first timeout probe.
+      }
+
+      // ethers v5 wait() accepts an undeclared second timeout parameter and performs replacement
+      // detection (BaseProvider._wrapTransaction); the widened type is legal without assertion.
+      const wait: (confirmations?: number, timeout?: number) => Promise<TransactionReceipt> =
+        txnResponse.wait.bind(txnResponse);
+
       let txnReceipt: TransactionReceipt | undefined;
       let nTries = 0;
       do {
         try {
-          // Must return a TransactionResponse, so await on the receipt, but discard it.
-          txnReceipt = await txnResponse.wait();
+          txnReceipt = await wait(1, timeout);
         } catch (error) {
           if (!typeguards.isEthersError(error)) {
             throw error;
@@ -184,11 +220,54 @@ export class TransactionClient {
               this.logger.warn({ ...common, message: `Transaction on ${chain} failed during execution...` });
               throw error;
             case ethers.errors.TRANSACTION_REPLACED:
+              // "repriced" ⇒ a transaction identical to ours (data/to/value) was mined at this nonce; adopt it.
+              if (error.reason === "repriced" && isReplacedError(error)) {
+                if (error.receipt.status === 0) {
+                  this.logger.warn({ ...common, message: `Transaction on ${chain} failed during execution...` });
+                  throw error;
+                }
+                return error.replacement;
+              }
               this.logger.warn({
                 ...common,
                 message: `Transaction submission on ${chain} replaced at nonce ${nonce}, resubmitting...`,
               });
               return this._submit(txn, { nonce: null, maxTries: maxTries - 1 });
+            case ethers.errors.TIMEOUT: {
+              // Not mined or replaced within the bound; resubmit at the same nonce to replace it.
+              // TVM has no replacement semantics, so instead retry the wait until maxTries is exhausted.
+              if (chainIsTvm(chainId) || maxTries <= 0) {
+                this.logger.debug({ ...common, message: `Timed out awaiting ${chain} transaction confirmation.` });
+                continue; // Loop: retry the wait (bounded by maxTries).
+              }
+              let blockNumber: number, minedNonce: number;
+              try {
+                [blockNumber, minedNonce] = await Promise.all([
+                  provider.getBlockNumber(),
+                  provider.getTransactionCount(txnResponse.from, "latest"),
+                ]);
+              } catch (probeError) {
+                // Transient RPC error; the transaction is live, so keep awaiting confirmation.
+                this.logger.debug({ ...common, error: stringifyThrownValue(probeError) });
+                continue; // Loop: retry the wait (bounded by maxTries).
+              }
+              // A consumed nonce must not be resubmitted (duplication risk); wait() resolves the
+              // receipt or classifies the consumer instead.
+              if (minedNonce > txnResponse.nonce) {
+                this.logger.debug({ ...common, message: `${chain} nonce ${txnResponse.nonce} was consumed.` });
+                continue; // Loop: recheck the receipt.
+              }
+              // Replacement requires the chain to have produced blocks that excluded this transaction.
+              startBlock ??= blockNumber;
+              if (blockNumber < startBlock + CONFIRMATION_BLOCKS) {
+                continue; // Loop: retry the wait (bounded by maxTries).
+              }
+              this.logger.warn({
+                ...common,
+                message: `Transaction on ${chain} timed out at nonce ${txnResponse.nonce}, resubmitting...`,
+              });
+              return this._submit(txn, { nonce: txnResponse.nonce, maxTries: maxTries - 1 });
+            }
             default:
               this.logger.warn({
                 ...common,
@@ -200,7 +279,12 @@ export class TransactionClient {
       } while (!txnReceipt && ++nTries < maxTries);
 
       if (!txnReceipt) {
-        this.logger.warn({ at, message: `Unable to confirm ${chain} transaction.`, txnRef });
+        // Confirmation was exhausted; alert the on-call and hand back the unconfirmed response.
+        this.logger.error({ at, message: `Unable to confirm ${chain} transaction.`, txnRef });
+      } else if (txnReceipt.status === 0) {
+        // The TVM wait resolves reverted transactions rather than throwing CALL_EXCEPTION.
+        this.logger.debug({ at, message: `Transaction on ${chain} failed during execution...`, txnRef });
+        throw new Error(`${chain} transaction reverted (${txnResponse.hash})`);
       }
     }
 
@@ -339,9 +423,10 @@ async function _runTransaction(
 
   // TX config has gas (from gasPrice function), value (how much eth to send) and an optional gasLimit. The reduce
   // operation below deletes any null/undefined elements from this object. If gasLimit or nonce are not specified,
-  // ethers will determine the correct values to use.
+  // ethers will determine the correct values to use. nb. isDefined (not truthiness) so that an explicitly-supplied
+  // nonce 0 is retained (a replacement at nonce 0 must not fall back to the pending nonce).
   const txConfig = Object.entries({ ...gas, value, nonce, gasLimit }).reduce<Record<string, unknown>>(
-    (a, [k, v]) => (v ? ((a[k] = v), a) : a),
+    (a, [k, v]) => (isDefined(v) ? ((a[k] = v), a) : a),
     {}
   );
 
@@ -522,9 +607,9 @@ async function _runTransactionTvm(
     gasLimit: BigNumber.from(feeLimit),
     value,
     data: populatedTransaction.data ?? "0x",
-    wait: (confirmations?: number) => {
+    wait: (confirmations?: number, timeout = CONFIRMATION_TIMEOUT_MS_DEFAULT) => {
       const txHexHash = result.txid.startsWith("0x") ? result.txid : `0x${result.txid}`;
-      return provider.waitForTransaction(txHexHash, confirmations ?? 1);
+      return provider.waitForTransaction(txHexHash, confirmations ?? 1, timeout);
     },
   } as unknown as TransactionResponse;
 }
