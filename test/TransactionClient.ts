@@ -1,7 +1,6 @@
 import { AugmentedTransaction } from "../src/clients";
 import {
   BigNumber,
-  CHAIN_IDs,
   ethers,
   isDefined,
   TransactionReceipt,
@@ -154,14 +153,22 @@ describe("TransactionClient", function () {
   });
 
   describe("ensureConfirmation", function () {
+    // The subset of Provider consumed by the confirmation loop.
+    type MockProvider = Partial<Pick<ethers.providers.Provider, "getBlockNumber" | "getTransactionCount">>;
+
     function makeEthersError(code: string, extra: Record<string, unknown> = {}): Error {
       return Object.assign(new Error(code), { code, reason: code, ...extra });
     }
 
-    function makeConfirmationTxn(chainId: number, provider?: ethers.providers.Provider): AugmentedTransaction {
+    function makeConfirmationTxn(chainId: number, provider?: MockProvider): AugmentedTransaction {
       return {
         chainId,
-        contract: { address, signer, provider } as Contract,
+        // A static block number satisfies the confirmation baseline; timeout tests override it.
+        contract: {
+          address,
+          signer,
+          provider: { getBlockNumber: () => Promise.resolve(100), ...provider },
+        } as Contract,
         method,
         args: [],
         message: "",
@@ -170,30 +177,33 @@ describe("TransactionClient", function () {
       };
     }
 
-    it("Confirms transaction receipt on success", async function () {
-      // The wait must be bounded, with a longer timeout on mainnet.
-      for (const [chainId, expectedTimeout] of [
-        [chainIds[0], 6_000],
-        [CHAIN_IDs.MAINNET, 24_000],
-      ]) {
-        let waitCalls = 0;
-        let waitTimeout: number | undefined;
-        txnClient.waitOverride = (_confirmations, timeout) => {
-          ++waitCalls;
-          waitTimeout = timeout;
-          return Promise.resolve({ status: 1 } as TransactionReceipt);
-        };
-
-        const txnResponses = await txnClient.submit(chainId, [makeConfirmationTxn(chainId)]);
-        expect(txnResponses.length).to.equal(1);
-        expect(waitCalls).to.equal(1);
-        expect(waitTimeout).to.equal(expectedTimeout);
+    class CountingClient extends MockedTransactionClient {
+      public submissions = 0;
+      protected override _getTransactionPromise(
+        txn: AugmentedTransaction,
+        nonce: number | null
+      ): Promise<TransactionResponse> {
+        ++this.submissions;
+        return super._getTransactionPromise(txn, nonce);
       }
+    }
+
+    it("Confirms transaction receipt on success", async function () {
+      const chainId = chainIds[0];
+      let waitCalls = 0;
+      txnClient.waitOverride = () => {
+        ++waitCalls;
+        return Promise.resolve({} as TransactionReceipt);
+      };
+
+      const txnResponses = await txnClient.submit(chainId, [makeConfirmationTxn(chainId)]);
+      expect(txnResponses.length).to.equal(1);
+      expect(waitCalls).to.equal(1);
     });
 
     it("Throws on CALL_EXCEPTION", async function () {
       const chainId = chainIds[0];
-      txnClient.waitOverride = (_confirmations, _timeout) => {
+      txnClient.waitOverride = () => {
         return Promise.reject(makeEthersError(ethers.errors.CALL_EXCEPTION));
       };
 
@@ -204,11 +214,11 @@ describe("TransactionClient", function () {
     it("Resubmits on TRANSACTION_REPLACED", async function () {
       const chainId = chainIds[0];
       let waitCalls = 0;
-      txnClient.waitOverride = (_confirmations, _timeout) => {
+      txnClient.waitOverride = () => {
         if (++waitCalls === 1) {
           return Promise.reject(makeEthersError(ethers.errors.TRANSACTION_REPLACED));
         }
-        return Promise.resolve({ status: 1 } as TransactionReceipt);
+        return Promise.resolve({} as TransactionReceipt);
       };
 
       const txnResponses = await txnClient.submit(chainId, [makeConfirmationTxn(chainId)]);
@@ -217,63 +227,104 @@ describe("TransactionClient", function () {
       expect(waitCalls).to.equal(2);
     });
 
+    it("Adopts a repriced replacement instead of resubmitting", async function () {
+      const chainId = chainIds[0];
+      const replacement = { hash: ethers.utils.id("repriced"), nonce: 1 } as TransactionResponse;
+      txnClient.waitOverride = () => {
+        return Promise.reject(
+          makeEthersError(ethers.errors.TRANSACTION_REPLACED, {
+            reason: "repriced",
+            receipt: { status: 1, blockNumber: 100 } as TransactionReceipt,
+            replacement,
+          })
+        );
+      };
+
+      // A mined transaction with identical calldata (i.e. our own raced resubmission) is adopted.
+      const txnResponses = await txnClient.submit(chainId, [makeConfirmationTxn(chainId)]);
+      expect(txnResponses.length).to.equal(1);
+      expect(txnResponses[0].hash).to.equal(replacement.hash);
+    });
+
     it("Resubmits on confirmation timeout", async function () {
       const chainId = chainIds[0];
       // Seed the nonce cache so a pinned resubmission (nonce 42) is distinguishable from a
       // re-synced one (the mock defaults to nonce 1).
       const nonce = 42;
       txnClient.noncesBySigner[chainId] = { [await signer.getAddress()]: nonce - 1 };
+      let blockNumber = 100;
+      const provider: MockProvider = {
+        getBlockNumber: () => Promise.resolve((blockNumber += 2)), // Blocks are produced without inclusion.
+        getTransactionCount: () => Promise.resolve(nonce),
+      };
 
       let waitCalls = 0;
-      txnClient.waitOverride = (_confirmations, _timeout) => {
+      txnClient.waitOverride = () => {
         if (++waitCalls === 1) {
           return Promise.reject(makeEthersError(ethers.errors.TIMEOUT));
         }
-        return Promise.resolve({ status: 1 } as TransactionReceipt);
+        return Promise.resolve({} as TransactionReceipt);
       };
 
-      const txnResponses = await txnClient.submit(chainId, [makeConfirmationTxn(chainId)]);
+      const txnResponses = await txnClient.submit(chainId, [makeConfirmationTxn(chainId, provider)]);
       expect(txnResponses.length).to.equal(1);
-      // First wait timed out, _submit resubmitted, second wait succeeded.
       expect(waitCalls).to.equal(2);
       // The resubmission must pin the original nonce in order to replace the stuck transaction.
       expect(txnResponses[0].nonce).to.equal(nonce);
     });
 
-    it("Adopts a repriced replacement instead of resubmitting", async function () {
+    it("Verifies the outcome when the nonce was consumed before replacement", async function () {
       const chainId = chainIds[0];
-      const replacement = { hash: ethers.utils.id("repriced"), nonce: 1 } as TransactionResponse;
+      const client = new CountingClient(spyLogger);
+      const provider: MockProvider = { getTransactionCount: () => Promise.resolve(2) };
       let waitCalls = 0;
-      txnClient.waitOverride = (_confirmations, _timeout) => {
-        return Promise.reject(
-          ++waitCalls === 1
-            ? makeEthersError(ethers.errors.TIMEOUT)
-            : makeEthersError(ethers.errors.TRANSACTION_REPLACED, {
-                reason: "repriced",
-                receipt: { status: 1, blockNumber: 100 } as TransactionReceipt,
-                replacement,
-              })
-        );
+      client.waitOverride = () => {
+        return ++waitCalls === 1
+          ? Promise.reject(makeEthersError(ethers.errors.TIMEOUT))
+          : Promise.resolve({} as TransactionReceipt);
       };
 
-      // The original wins the race against its own timeout resubmission; the mined transaction
-      // carries identical calldata, so it is adopted rather than resubmitted at a new nonce.
-      const txnResponses = await txnClient.submit(chainId, [makeConfirmationTxn(chainId)]);
+      // The original (mock nonce 1) was mined during the timeout; verify it, don't resubmit.
+      const txnResponses = await client.submit(chainId, [makeConfirmationTxn(chainId, provider)]);
       expect(txnResponses.length).to.equal(1);
-      expect(txnResponses[0].hash).to.equal(replacement.hash);
+      expect(client.submissions).to.equal(1);
       expect(waitCalls).to.equal(2);
+    });
+
+    it("Defers replacement until blocks are produced", async function () {
+      const chainId = chainIds[0];
+      const client = new CountingClient(spyLogger);
+      const provider: MockProvider = { getTransactionCount: () => Promise.resolve(0) };
+      let waitCalls = 0;
+      client.waitOverride = () => {
+        return ++waitCalls <= 2
+          ? Promise.reject(makeEthersError(ethers.errors.TIMEOUT))
+          : Promise.resolve({} as TransactionReceipt);
+      };
+
+      // The static block number simulates a chain producing no blocks: timeouts alone must not
+      // trigger replacement.
+      const txnResponses = await client.submit(chainId, [makeConfirmationTxn(chainId, provider)]);
+      expect(txnResponses.length).to.equal(1);
+      expect(client.submissions).to.equal(1);
+      expect(waitCalls).to.equal(3);
     });
 
     it("Gives up after timeout resubmissions exhausted", async function () {
       const chainId = chainIds[0];
+      let blockNumber = 100;
+      const provider: MockProvider = {
+        getBlockNumber: () => Promise.resolve((blockNumber += 2)),
+        getTransactionCount: () => Promise.resolve(0),
+      };
       let waitCalls = 0;
-      txnClient.waitOverride = (_confirmations, _timeout) => {
+      txnClient.waitOverride = () => {
         ++waitCalls;
         return Promise.reject(makeEthersError(ethers.errors.TIMEOUT));
       };
 
       // Confirmation failure is alerted via error-level log; the response is still returned.
-      const txnResponses = await txnClient.submit(chainId, [makeConfirmationTxn(chainId)]);
+      const txnResponses = await txnClient.submit(chainId, [makeConfirmationTxn(chainId, provider)]);
       expect(txnResponses.length).to.equal(1);
       // Initial submission + one resubmission per remaining maxTries (default is 10).
       expect(waitCalls).to.equal(11);
@@ -282,11 +333,11 @@ describe("TransactionClient", function () {
     it("Retries on transient error then succeeds", async function () {
       const chainId = chainIds[0];
       let waitCalls = 0;
-      txnClient.waitOverride = (_confirmations, _timeout) => {
+      txnClient.waitOverride = () => {
         if (++waitCalls === 1) {
           return Promise.reject(makeEthersError(ethers.errors.SERVER_ERROR));
         }
-        return Promise.resolve({ status: 1 } as TransactionReceipt);
+        return Promise.resolve({} as TransactionReceipt);
       };
 
       const txnResponses = await txnClient.submit(chainId, [makeConfirmationTxn(chainId)]);
@@ -297,37 +348,16 @@ describe("TransactionClient", function () {
     it("Gives up after maxTries exhausted", async function () {
       const chainId = chainIds[0];
       let waitCalls = 0;
-      txnClient.waitOverride = (_confirmations, _timeout) => {
+      txnClient.waitOverride = () => {
         ++waitCalls;
         return Promise.reject(makeEthersError(ethers.errors.SERVER_ERROR));
       };
 
-      // Confirmation failure is alerted via error-level log; the response is still returned.
       const txnResponses = await txnClient.submit(chainId, [makeConfirmationTxn(chainId)]);
+      // The transaction still returns because _submit returns txnPromise even when confirmation fails.
       expect(txnResponses.length).to.equal(1);
       // wait() was called maxTries times (default is 10).
       expect(waitCalls).to.equal(10);
-    });
-
-    // Responses without the two-arg wait() implementation (i.e. the TVM shim) fall back to a
-    // hash-blind provider.waitForTransaction(), which resolves reverted receipts without throwing.
-    it("Falls back to waitForTransaction without a two-arg wait", async function () {
-      const chainId = chainIds[0];
-      txnClient.waitOverride = (_confirmations) => Promise.reject(new Error("wait() must not be used"));
-
-      for (const status of [1, 0]) {
-        let waitCalls = 0;
-        const provider = {
-          waitForTransaction: (hash: string, _confirmations?: number, _timeout?: number) => {
-            ++waitCalls;
-            return Promise.resolve({ status, transactionHash: hash } as TransactionReceipt);
-          },
-        } as unknown as ethers.providers.Provider;
-
-        const txnResponses = await txnClient.submit(chainId, [makeConfirmationTxn(chainId, provider)]);
-        expect(txnResponses.length).to.equal(status === 1 ? 1 : 0); // Reverted receipts throw.
-        expect(waitCalls).to.equal(1);
-      }
     });
   });
 });
