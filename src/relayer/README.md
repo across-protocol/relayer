@@ -25,36 +25,17 @@ allow-list the executing contract (e.g. `MulticallHandler`) to accept them, or l
 
 ### Allowed swap routes (in-protocol swaps)
 
-Inventory JSON may define which cross-asset deposits the relayer will fill via `allowedSwapRoutes` (v1) or
-`allowedSwapRoutes2` (v2). Select which field is used with:
-
-| Env | Values | Default |
-|-----|--------|---------|
-| `RELAYER_ALLOWED_SWAP_ROUTES_VERSION` | `"1"` or `"2"` | `"1"` |
-
-- **v1** (`allowedSwapRoutes`): each entry has `fromChain` / `toChain` as a single chain id or `"ALL"`.
-- **v2** (`allowedSwapRoutes2`): `fromChain` / `toChain` may be a single chain id, `"ALL"`, or an **array** of chain ids. Arrays expand to a cartesian product (every from-chain × every to-chain). `"ALL"` keeps the existing semantics (any chain; token addresses expanded from `TOKEN_SYMBOLS_MAP`).
-
-Example v2:
+Inventory JSON lists fillable cross-asset routes in `allowedSwapRoutes` (v1) or `allowedSwapRoutes2` (v2), selected
+via `RELAYER_ALLOWED_SWAP_ROUTES_VERSION` (`"1"` (default) or `"2"`). v2 additionally accepts an array of chain ids
+in `fromChain`/`toChain`, expanded as a cartesian product; a single id and `"ALL"` behave as in v1. Both forms are
+expanded at load into the flat route list used by `InventoryClient.isSwapSupported`.
 
 ```json
 "allowedSwapRoutes2": [
-  {
-    "fromChain": [1, 10, 137, 42161],
-    "fromToken": "USDT",
-    "toChain": [8453, 999],
-    "toToken": "USDC"
-  },
-  {
-    "fromChain": "ALL",
-    "fromToken": "USDC",
-    "toChain": 4663,
-    "toToken": "USDG"
-  }
+  { "fromChain": [1, 10, 137, 42161], "fromToken": "USDT", "toChain": [8453, 999], "toToken": "USDC" },
+  { "fromChain": "ALL", "fromToken": "USDC", "toChain": 4663, "toToken": "USDG" }
 ]
 ```
-
-At load time routes are expanded into the same flat `allowedSwapRoutes` list `InventoryClient.isSwapSupported` already uses. Set the env back to `"1"` to ignore `allowedSwapRoutes2` and use the original list.
 
 ## Constructing a Relayer
 

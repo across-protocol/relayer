@@ -43,6 +43,15 @@ describe("allowedSwapRoutes expansion", function () {
     expect(routes.every((r) => r.toToken === TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.BASE])).to.equal(true);
   });
 
+  it("expandAllowedSwapRouteV2 rejects malformed entries", function () {
+    expect(() =>
+      expandAllowedSwapRouteV2({ fromChain: [], fromToken: "USDT", toChain: CHAIN_IDs.BASE, toToken: "USDC" })
+    ).to.throw();
+    expect(() =>
+      expandAllowedSwapRouteV2({ fromChain: -1, fromToken: "USDT", toChain: CHAIN_IDs.BASE, toToken: "USDC" })
+    ).to.throw();
+  });
+
   it("expandAllowedSwapRouteV1 still expands ALL token addresses", function () {
     const routes = expandAllowedSwapRouteV1({
       fromChain: "ALL",

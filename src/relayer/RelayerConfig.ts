@@ -1,5 +1,6 @@
 import { utils as ethersUtils } from "ethers";
 import winston from "winston";
+import { array, assert as ssAssert, enums, integer, literal, min, nonempty, object, string, union } from "superstruct";
 import { typeguards } from "@across-protocol/sdk";
 import {
   BigNumber,
@@ -39,20 +40,20 @@ type DepositConfirmationConfig = {
   minConfirmations: number;
 };
 
+// Compact v2 chain selector: "ALL", a single positive chain id, or a non-empty array of them.
+const SwapRouteChains = union([literal("ALL"), min(integer(), 1), nonempty(array(min(integer(), 1)))]);
+const SwapRouteV2Struct = object({
+  fromChain: SwapRouteChains,
+  fromToken: string(),
+  toChain: SwapRouteChains,
+  toToken: string(),
+});
+
 /**
- * Normalize a v2 chain selector into either `"ALL"` or a non-empty list of chain IDs.
+ * Normalize a v2 chain selector into either `"ALL"` or a list of chain IDs.
  */
 export function normalizeSwapRouteChains(chain: SwapRouteV2["fromChain"]): number[] | "ALL" {
-  if (chain === "ALL") {
-    return "ALL";
-  }
-  const chains = Array.isArray(chain) ? chain : [chain];
-  assert(chains.length > 0, "allowedSwapRoutes2 chain array must be non-empty");
-  assert(
-    chains.every((c) => typeof c === "number" && Number.isInteger(c) && c > 0),
-    "allowedSwapRoutes2 chain entries must be positive integers"
-  );
-  return chains;
+  return chain === "ALL" || Array.isArray(chain) ? chain : [chain];
 }
 
 /**
@@ -61,6 +62,7 @@ export function normalizeSwapRouteChains(chain: SwapRouteV2["fromChain"]): numbe
  * - A chain array expands to one concrete chain id per listed chain (cartesian with the other side).
  */
 export function expandAllowedSwapRouteV2(rawSwapRoute: SwapRouteV2): SwapRoute[] {
+  ssAssert(rawSwapRoute, SwapRouteV2Struct);
   const fromChains = normalizeSwapRouteChains(rawSwapRoute.fromChain);
   const toChains = normalizeSwapRouteChains(rawSwapRoute.toChain);
 
@@ -406,24 +408,11 @@ export class RelayerConfig extends CommonConfig {
 
       // Replace symbols in allowed swap routes with addresses.
       // Version selector: "1" (default) uses allowedSwapRoutes; "2" uses compact allowedSwapRoutes2.
-      const swapRoutesVersion = String(RELAYER_ALLOWED_SWAP_ROUTES_VERSION ?? "1");
-      assert(
-        swapRoutesVersion === "1" || swapRoutesVersion === "2",
-        `RELAYER_ALLOWED_SWAP_ROUTES_VERSION must be "1" or "2", got "${swapRoutesVersion}"`
-      );
-      const swapRoutes: SwapRoute[] = [];
-      if (swapRoutesVersion === "2") {
-        const rawSwapRoutes2 = inventoryConfig.allowedSwapRoutes2 ?? [];
-        rawSwapRoutes2.forEach((rawSwapRoute) => {
-          swapRoutes.push(...expandAllowedSwapRouteV2(rawSwapRoute));
-        });
-      } else {
-        const rawSwapRoutes = inventoryConfig.allowedSwapRoutes ?? ([] as SwapRoute[]);
-        rawSwapRoutes.forEach((rawSwapRoute) => {
-          swapRoutes.push(...expandAllowedSwapRouteV1(rawSwapRoute));
-        });
-      }
-      inventoryConfig.allowedSwapRoutes = swapRoutes;
+      ssAssert(RELAYER_ALLOWED_SWAP_ROUTES_VERSION, enums(["1", "2"]));
+      inventoryConfig.allowedSwapRoutes =
+        RELAYER_ALLOWED_SWAP_ROUTES_VERSION === "2"
+          ? (inventoryConfig.allowedSwapRoutes2 ?? []).flatMap(expandAllowedSwapRouteV2)
+          : (inventoryConfig.allowedSwapRoutes ?? []).flatMap(expandAllowedSwapRouteV1);
       // Drop compact form after expansion so runtime consumers only see flat routes.
       delete inventoryConfig.allowedSwapRoutes2;
     }
