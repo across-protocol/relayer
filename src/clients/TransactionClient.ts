@@ -164,8 +164,14 @@ export class TransactionClient {
 
       const { provider } = txn.contract;
       const timeout = CONFIRMATION_TIMEOUTS_MS[chainId] ?? CONFIRMATION_TIMEOUT_MS_DEFAULT;
-      // Baseline for block-driven replacement decisions (see the TIMEOUT case).
-      const startBlock = await provider.getBlockNumber();
+      // Baseline for block-driven replacement decisions (see the TIMEOUT case). The transaction is
+      // already live, so an RPC error here must not read as a submission failure.
+      let startBlock: number | undefined;
+      try {
+        startBlock = await provider.getBlockNumber();
+      } catch {
+        // Fall back to baselining on the first timeout probe.
+      }
 
       // ethers v5 wait() accepts an undeclared second timeout parameter and performs replacement
       // detection (BaseProvider._wrapTransaction); the widened type is legal without assertion.
@@ -210,17 +216,25 @@ export class TransactionClient {
                 this.logger.debug({ ...common, message: `Timed out awaiting ${chain} transaction confirmation.` });
                 continue; // Loop: retry the wait (bounded by maxTries).
               }
-              const [blockNumber, minedNonce] = await Promise.all([
-                provider.getBlockNumber(),
-                provider.getTransactionCount(txnResponse.from, "latest"),
-              ]);
-              // A consumed nonce must not be resubmitted (duplication risk); wait() instead
-              // resolves the receipt or classifies the consumer via TRANSACTION_REPLACED.
+              let blockNumber: number, minedNonce: number;
+              try {
+                [blockNumber, minedNonce] = await Promise.all([
+                  provider.getBlockNumber(),
+                  provider.getTransactionCount(txnResponse.from, "latest"),
+                ]);
+              } catch (probeError) {
+                // Transient RPC error; the transaction is live, so keep awaiting confirmation.
+                this.logger.debug({ ...common, error: stringifyThrownValue(probeError) });
+                continue; // Loop: retry the wait (bounded by maxTries).
+              }
+              // A consumed nonce must not be resubmitted (duplication risk); wait() resolves the
+              // receipt or classifies the consumer instead.
               if (minedNonce > txnResponse.nonce) {
                 this.logger.debug({ ...common, message: `${chain} nonce ${txnResponse.nonce} was consumed.` });
                 continue; // Loop: recheck the receipt.
               }
               // Replacement requires the chain to have produced blocks that excluded this transaction.
+              startBlock ??= blockNumber;
               if (blockNumber < startBlock + CONFIRMATION_BLOCKS) {
                 continue; // Loop: retry the wait (bounded by maxTries).
               }
@@ -241,8 +255,7 @@ export class TransactionClient {
       } while (!txnReceipt && ++nTries < maxTries);
 
       if (!txnReceipt) {
-        // Confirmation was exhausted; error level alerts the on-call, and the caller receives
-        // the unconfirmed response.
+        // Confirmation was exhausted; alert the on-call and hand back the unconfirmed response.
         this.logger.error({ at, message: `Unable to confirm ${chain} transaction.`, txnRef });
       } else if (txnReceipt.status === 0) {
         // The TVM wait resolves reverted transactions rather than throwing CALL_EXCEPTION.

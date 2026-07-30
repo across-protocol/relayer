@@ -273,6 +273,33 @@ describe("TransactionClient", function () {
       expect(txnResponses[0].nonce).to.equal(nonce);
     });
 
+    it("Tolerates transient RPC errors while confirming", async function () {
+      const chainId = chainIds[0];
+      const client = new CountingClient(spyLogger);
+
+      // The baseline read and the first timeout probe fail transiently; neither must be
+      // classified as a submission failure (the transaction is live).
+      let [blockCalls, countCalls, waitCalls] = [0, 0, 0];
+      let blockNumber = 100;
+      const provider: MockProvider = {
+        getBlockNumber: () =>
+          ++blockCalls === 1 ? Promise.reject(new Error("rpc error")) : Promise.resolve((blockNumber += 2)),
+        getTransactionCount: () => (++countCalls === 1 ? Promise.reject(new Error("rpc error")) : Promise.resolve(0)),
+      };
+      client.waitOverride = () => {
+        return ++waitCalls <= 3
+          ? Promise.reject(makeEthersError(ethers.errors.TIMEOUT))
+          : Promise.resolve({} as TransactionReceipt);
+      };
+
+      const txnResponses = await client.submit(chainId, [makeConfirmationTxn(chainId, provider)]);
+      expect(txnResponses.length).to.equal(1);
+      // Failed baseline ⇒ baseline on the first successful probe, then one block-gate deferral,
+      // then replacement.
+      expect(client.submissions).to.equal(2);
+      expect(waitCalls).to.equal(4);
+    });
+
     it("Verifies the outcome when the nonce was consumed before replacement", async function () {
       const chainId = chainIds[0];
       const client = new CountingClient(spyLogger);
