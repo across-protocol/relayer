@@ -183,6 +183,55 @@
         "name": "depositData",
         "type": "tuple"
       },
+      { "internalType": "uint256", "name": "validAfter", "type": "uint256" },
+      { "internalType": "uint256", "name": "validBefore", "type": "uint256" },
+      { "internalType": "bytes", "name": "receiveWithAuthSignature", "type": "bytes" }
+    ],
+    "name": "depositWithAuthorizationBytes",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "address", "name": "signatureOwner", "type": "address" },
+      {
+        "components": [
+          {
+            "components": [
+              { "internalType": "uint256", "name": "amount", "type": "uint256" },
+              { "internalType": "address", "name": "recipient", "type": "address" }
+            ],
+            "internalType": "struct SpokePoolPeripheryInterface.Fees",
+            "name": "submissionFees",
+            "type": "tuple"
+          },
+          {
+            "components": [
+              { "internalType": "address", "name": "inputToken", "type": "address" },
+              { "internalType": "bytes32", "name": "outputToken", "type": "bytes32" },
+              { "internalType": "uint256", "name": "outputAmount", "type": "uint256" },
+              { "internalType": "address", "name": "depositor", "type": "address" },
+              { "internalType": "bytes32", "name": "recipient", "type": "bytes32" },
+              { "internalType": "uint256", "name": "destinationChainId", "type": "uint256" },
+              { "internalType": "bytes32", "name": "exclusiveRelayer", "type": "bytes32" },
+              { "internalType": "uint32", "name": "quoteTimestamp", "type": "uint32" },
+              { "internalType": "uint32", "name": "fillDeadline", "type": "uint32" },
+              { "internalType": "uint32", "name": "exclusivityParameter", "type": "uint32" },
+              { "internalType": "bytes", "name": "message", "type": "bytes" }
+            ],
+            "internalType": "struct SpokePoolPeripheryInterface.BaseDepositData",
+            "name": "baseDepositData",
+            "type": "tuple"
+          },
+          { "internalType": "uint256", "name": "inputAmount", "type": "uint256" },
+          { "internalType": "address", "name": "spokePool", "type": "address" },
+          { "internalType": "uint256", "name": "nonce", "type": "uint256" }
+        ],
+        "internalType": "struct SpokePoolPeripheryInterface.DepositData",
+        "name": "depositData",
+        "type": "tuple"
+      },
       { "internalType": "uint256", "name": "deadline", "type": "uint256" },
       { "internalType": "bytes", "name": "permitSignature", "type": "bytes" },
       { "internalType": "bytes", "name": "depositDataSignature", "type": "bytes" }
@@ -511,6 +560,61 @@
       { "internalType": "bytes", "name": "receiveWithAuthSignature", "type": "bytes" }
     ],
     "name": "swapAndBridgeWithAuthorization",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "address", "name": "signatureOwner", "type": "address" },
+      {
+        "components": [
+          {
+            "components": [
+              { "internalType": "uint256", "name": "amount", "type": "uint256" },
+              { "internalType": "address", "name": "recipient", "type": "address" }
+            ],
+            "internalType": "struct SpokePoolPeripheryInterface.Fees",
+            "name": "submissionFees",
+            "type": "tuple"
+          },
+          {
+            "components": [
+              { "internalType": "address", "name": "inputToken", "type": "address" },
+              { "internalType": "bytes32", "name": "outputToken", "type": "bytes32" },
+              { "internalType": "uint256", "name": "outputAmount", "type": "uint256" },
+              { "internalType": "address", "name": "depositor", "type": "address" },
+              { "internalType": "bytes32", "name": "recipient", "type": "bytes32" },
+              { "internalType": "uint256", "name": "destinationChainId", "type": "uint256" },
+              { "internalType": "bytes32", "name": "exclusiveRelayer", "type": "bytes32" },
+              { "internalType": "uint32", "name": "quoteTimestamp", "type": "uint32" },
+              { "internalType": "uint32", "name": "fillDeadline", "type": "uint32" },
+              { "internalType": "uint32", "name": "exclusivityParameter", "type": "uint32" },
+              { "internalType": "bytes", "name": "message", "type": "bytes" }
+            ],
+            "internalType": "struct SpokePoolPeripheryInterface.BaseDepositData",
+            "name": "depositData",
+            "type": "tuple"
+          },
+          { "internalType": "address", "name": "swapToken", "type": "address" },
+          { "internalType": "address", "name": "exchange", "type": "address" },
+          { "internalType": "enum SpokePoolPeripheryInterface.TransferType", "name": "transferType", "type": "uint8" },
+          { "internalType": "uint256", "name": "swapTokenAmount", "type": "uint256" },
+          { "internalType": "uint256", "name": "minExpectedInputTokenAmount", "type": "uint256" },
+          { "internalType": "bytes", "name": "routerCalldata", "type": "bytes" },
+          { "internalType": "bool", "name": "enableProportionalAdjustment", "type": "bool" },
+          { "internalType": "address", "name": "spokePool", "type": "address" },
+          { "internalType": "uint256", "name": "nonce", "type": "uint256" }
+        ],
+        "internalType": "struct SpokePoolPeripheryInterface.SwapAndDepositData",
+        "name": "swapAndDepositData",
+        "type": "tuple"
+      },
+      { "internalType": "uint256", "name": "validAfter", "type": "uint256" },
+      { "internalType": "uint256", "name": "validBefore", "type": "uint256" },
+      { "internalType": "bytes", "name": "receiveWithAuthSignature", "type": "bytes" }
+    ],
+    "name": "swapAndBridgeWithAuthorizationBytes",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"

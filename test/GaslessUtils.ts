@@ -14,6 +14,8 @@ import SPOKE_POOL_PERIPHERY_ABI from "../src/common/abi/SpokePoolPeriphery.json"
 
 // Minimal valid 65-byte signature (hex)
 const DUMMY_SIGNATURE = "0x" + "ab".repeat(65);
+// >65 bytes — smart-wallet (EIP-1271 / ERC-6492) shape, routed to the *Bytes periphery methods.
+const SMART_WALLET_SIGNATURE = "0x" + "ab".repeat(65) + "cd".repeat(32);
 
 const DUMMY_ADDRESS = "0x" + "11".repeat(20);
 const DUMMY_BYTES32 = "0x" + "22".repeat(32);
@@ -98,6 +100,22 @@ function makeApiResponse(overrides: { integratorId?: string; type?: string } = {
 
 function makeSpokePoolPeripheryContract(): Contract {
   return new Contract(DUMMY_ADDRESS, SPOKE_POOL_PERIPHERY_ABI);
+}
+
+function makeSwapAndBridgeErc3009Message(signature: string) {
+  const bridge = makeDepositMessage({ signature });
+  return {
+    ...bridge,
+    depositFlowType: "swapAndBridge",
+    depositData: bridge.baseDepositData,
+    swapToken: DUMMY_ADDRESS,
+    exchange: DUMMY_ADDRESS,
+    transferType: 0,
+    swapTokenAmount: "123",
+    minExpectedInputTokenAmount: "120",
+    routerCalldata: "0x",
+    enableProportionalAdjustment: true,
+  };
 }
 
 describe("GaslessUtils", function () {
@@ -297,6 +315,50 @@ describe("GaslessUtils", function () {
       const iface = new ethers.utils.Interface(SPOKE_POOL_PERIPHERY_ABI);
       const selector = iface.getSighash("depositWithAuthorization");
       expect(calldata.startsWith(selector)).to.be.true;
+    });
+
+    it("routes a smart-wallet (>65-byte) signature to depositWithAuthorizationBytes", function () {
+      const msg = makeDepositMessage({ signature: SMART_WALLET_SIGNATURE });
+      const contract = makeSpokePoolPeripheryContract();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const tx = buildGaslessDepositTx(msg as any, contract);
+      expect(tx.method).to.equal("depositWithAuthorizationBytes");
+      expect(tx.args.length).to.equal(5);
+      expect(tx.args[4]).to.equal(SMART_WALLET_SIGNATURE);
+    });
+
+    it("tagged calldata uses the depositWithAuthorizationBytes selector for smart-wallet signatures", function () {
+      const msg = makeDepositMessage({ signature: SMART_WALLET_SIGNATURE, integratorId: "0x0001" });
+      const contract = makeSpokePoolPeripheryContract();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const tx = buildGaslessDepositTx(msg as any, contract);
+      const calldata = tx.args[0] as string;
+      const iface = new ethers.utils.Interface(SPOKE_POOL_PERIPHERY_ABI);
+      expect(calldata.startsWith(iface.getSighash("depositWithAuthorizationBytes"))).to.be.true;
+    });
+
+    it("routes swapAndBridge erc3009 with a smart-wallet signature to swapAndBridgeWithAuthorizationBytes", function () {
+      const msg = makeSwapAndBridgeErc3009Message(SMART_WALLET_SIGNATURE);
+      const contract = makeSpokePoolPeripheryContract();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const tx = buildGaslessDepositTx(msg as any, contract);
+      expect(tx.method).to.equal("swapAndBridgeWithAuthorizationBytes");
+      expect(tx.args.length).to.equal(5);
+    });
+
+    it("keeps swapAndBridge erc3009 with a 65-byte signature on swapAndBridgeWithAuthorization", function () {
+      const msg = makeSwapAndBridgeErc3009Message(DUMMY_SIGNATURE);
+      const contract = makeSpokePoolPeripheryContract();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const tx = buildGaslessDepositTx(msg as any, contract);
+      expect(tx.method).to.equal("swapAndBridgeWithAuthorization");
+    });
+
+    it("throws for a signature shorter than 65 bytes", function () {
+      const msg = makeDepositMessage({ signature: "0x" + "ab".repeat(64) });
+      const contract = makeSpokePoolPeripheryContract();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect(() => buildGaslessDepositTx(msg as any, contract)).to.throw(/at least 65 bytes/);
     });
 
     it("builds swapAndBridgeWithPermit tx for permit flow", function () {
