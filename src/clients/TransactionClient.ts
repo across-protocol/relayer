@@ -85,11 +85,9 @@ export interface AugmentedTransaction {
   nonMulticall?: boolean;
   // Flag indicating whether the client should await the transaction response for onchain confirmation.
   ensureConfirmation?: boolean;
-  // Invoked once the transaction has been broadcast and its hash is known, before the confirmation
-  // wait begins. Callers use this to durably record submission intent, so that a process which dies
-  // mid-confirmation does not lose the fact that a transaction is already in flight. The
-  // transaction is already on the wire when this runs, so a rejection is logged and swallowed
-  // rather than aborting the submission.
+  // Invoked once the transaction is broadcast and its hash is known, before the confirmation wait —
+  // callers use this to durably record submission intent. The tx is already on the wire by then, so
+  // a rejection here is logged and swallowed rather than aborting the submission.
   onBroadcast?: (response: TransactionResponse) => Promise<void>;
   // If true, the contract's provider will be replaced with the TransactionClient's SpeedProvider for
   // this chain (if configured), enabling parallel multi-RPC dispatch for faster submission.

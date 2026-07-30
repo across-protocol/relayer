@@ -72,17 +72,15 @@ const INTEGRATOR_ID_REGEX = /^0x[0-9a-fA-F]{4}$/;
 const SUPPORTED_INDEXER_MESSAGE_VERSIONS = new Set([1, 3]);
 
 /**
- * Upper bound on how long shutdown waits for polls that are already running. A poll can block
- * indefinitely (an unmined transaction leaves `wait()` pending forever), so the wait is bounded and
- * an overrun is reported rather than waited out.
+ * Upper bound on how long shutdown waits for polls that are already running (a poll can block
+ * indefinitely on an unmined transaction). An overrun is reported rather than waited out.
  */
 const DRAIN_TIMEOUT_SECONDS = 30;
 
 /**
- * Lifetime of the per-transfer submission reservation. Long enough to cover the pre-submit re-checks,
- * simulation, broadcast and the Redis write that records the claim — and deliberately no longer,
- * because a holder that died *before* broadcasting must not block the deposit for long, while one
- * that died *after* broadcasting is already covered by the durable claim.
+ * Lifetime of the per-transfer submission reservation — long enough to cover the pre-submit
+ * re-checks, broadcast, and the Redis write that records the claim, and no longer, since a holder
+ * that died before broadcasting must not block the deposit for long (see the module README).
  */
 const EXECUTE_RESERVATION_TTL_MS = 120_000;
 
@@ -165,14 +163,9 @@ export class DepositAddressHandler {
   private observedExecutedWithdraws: { [chainId: number]: Set<string> } = {};
 
   /**
-   * Per depositKey: executes that have been broadcast but whose on-chain outcome this process has
-   * not observed yet. Mirrored in Redis at broadcast time — before the confirmation wait — because
-   * the handler is handed over on a fixed cadence and can be evicted mid-wait. Without this record
-   * the successor sees no dedup entry for a sweep that is already on the wire, and the only
-   * remaining guard is the deposit address balance, which cannot distinguish "already swept" from
-   * "re-funded by a later transfer" (the address is a shared pot).
-   *
-   * Redis is the source of truth; this field mirrors the most recent read.
+   * Per depositKey: executes broadcast but not yet observed confirmed. Mirrored in Redis at
+   * broadcast time so a handover mid-confirmation can't lose the record (see the module README's
+   * "In-flight execute claims" section). Redis is the source of truth; this mirrors the latest read.
    */
   private pendingExecutes: Record<string, PendingExecute> = {};
 
@@ -295,15 +288,10 @@ export class DepositAddressHandler {
   }
 
   /**
-   * Atomically reserves the right to submit an execute for `depositKey`, via Redis `SET NX PX`. The
-   * claim check is a read, so two instances overlapping during a handover can both pass it before
-   * either broadcasts — a read is not a mutual-exclusion primitive. This is: exactly one caller wins.
-   *
-   * It matters most on chains without nonce-based replacement (TVM), where two broadcast executes are
-   * independent transactions and both can land against a deposit address holding enough funds.
-   *
-   * Any failure is reported as "not reserved": submitting without a verified reservation is precisely
-   * the outcome worth avoiding.
+   * Atomically reserves the right to submit an execute for `depositKey` (Redis `SET NX PX`): exactly
+   * one caller wins, closing the race where two instances overlapping during a handover both pass a
+   * plain read-check before either broadcasts. See the module README for why this matters most on
+   * TVM. Any failure is reported as "not reserved" — never submit on an unverified reservation.
    */
   private async _acquireExecuteReservation(depositKey: string): Promise<boolean> {
     assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
@@ -481,19 +469,10 @@ export class DepositAddressHandler {
   }
 
   /**
-   * Folds any claims present in Redis but missing locally into the in-memory map, in preparation for
-   * rewriting the whole map.
-   *
-   * Deliberately mutates `this.pendingExecutes` in place rather than reassigning it: polls run
-   * concurrently (`forEachAsync` is `Promise.all`), so two deposits can broadcast at once, and
-   * reassigning would let each write drop the other's freshly-added claim — losing the record of a
-   * transaction already on the wire. Mutating shared state means both claims are present whichever
-   * write lands last.
-   *
-   * Locally-known claims win over persisted ones, so a record added moments ago is never replaced by
-   * a staler snapshot. Cross-process merging is coarser: a claim another instance has already cleared
-   * can be resurrected here, which is harmless — claims are resolved against the chain, so a
-   * resurrected one is adopted or dropped on the next pass.
+   * Folds claims present in Redis but missing locally into `this.pendingExecutes`, mutated in place
+   * rather than reassigned: concurrent broadcasts (polls run under `Promise.all`) must not drop each
+   * other's freshly-added claim. Locally-known claims win over persisted ones; a claim resurrected
+   * from a stale cross-process read is harmless, since claims are resolved against the chain anyway.
    */
   private async _mergePersistedClaims(): Promise<void> {
     const persisted = await this._readPendingExecutesFromRedis();
@@ -503,12 +482,8 @@ export class DepositAddressHandler {
   }
 
   /**
-   * Resolves one pending execute against the chain and applies the outcome:
-   *  - `executed`: the sweep landed. Adopt it into the executed-deposits set so no run re-submits,
-   *    and emit the lifecycle event the broadcasting run may have died before publishing.
-   *  - `reverted`: nothing moved, so the transfer may be re-attempted; drop the record.
-   *  - `unresolved`: no receipt yet. Keep the record — it is what prevents a second submission —
-   *    unless it is old enough that the transaction is clearly never going to land.
+   * Resolves one pending execute against the chain and applies the outcome (adopt / clear-for-retry
+   * / keep-and-wait) — see the "In-flight execute claims" table in the module README.
    */
   private async _settlePendingExecute(
     depositKey: string,
@@ -607,8 +582,7 @@ export class DepositAddressHandler {
 
   /**
    * Settles executes a previous run broadcast but never saw confirmed. Runs once at startup, right
-   * after handover, so a successor inherits the incumbent's in-flight work instead of inferring it
-   * from the deposit address balance.
+   * after handover, so a successor inherits the incumbent's in-flight work.
    */
   private async _resolvePendingExecutesFromRedis(): Promise<void> {
     this.pendingExecutes = await this._readPendingExecutesFromRedis();
@@ -640,10 +614,8 @@ export class DepositAddressHandler {
   }
 
   /**
-   * Final gate immediately before an execute is broadcast. The checks at the top of
-   * initiateDepositV3 run *before* the quote-api round trip, which can take seconds — long enough
-   * for the deposit address to be swept by another path, or for a concurrent instance to claim this
-   * transfer during a handover overlap. Either would otherwise produce a duplicate sweep.
+   * Final gate immediately before an execute is broadcast, re-checking what the checks at the top of
+   * initiateDepositV3 already covered before the (seconds-long) quote-api round trip.
    */
   private async _executeStillWarranted(depositMessage: DepositAddressMessageV3, depositKey: string): Promise<boolean> {
     const { depositAddress, erc20Transfer } = depositMessage;
@@ -758,14 +730,9 @@ export class DepositAddressHandler {
   }
 
   /**
-   * Waits for polls that are already running to settle, so work in flight at handover can still
-   * record its outcome. Must run *before* the Pub/Sub and Redis clients are torn down: a confirmed
-   * execute whose Redis write lands on a closed client is lost, and a lifecycle event published
-   * through a closed client is dropped with no log at all.
-   *
-   * Best-effort by design — the durable claim written at broadcast time is what actually prevents a
-   * duplicate sweep; draining is what lets the outcome be recorded promptly rather than on a later
-   * run. Never throws, so it is safe to call from a `finally` block.
+   * Waits for in-flight polls to settle before the caller tears down Redis/Pub-Sub (see the module
+   * README). Best-effort — the durable claim is what actually prevents a duplicate sweep. Never
+   * throws, so it is safe to call from a `finally` block.
    */
   public async drain(timeoutSeconds = DRAIN_TIMEOUT_SECONDS): Promise<void> {
     const pending = this.inFlightPolls.size;
