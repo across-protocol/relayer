@@ -99,3 +99,5 @@ RELAYER_POLICY_EXAMPLE_GAS_MULTIPLIER=0
 ## Transaction Client
 
 This client is responsible for submitting transactions on-chain and therefore for setting the transaction's gas price values, nonce, and implements important retry and error decoding logic. It is designed to be shared across all code modules that submit on-chain transactions.
+
+For transactions submitted with `ensureConfirmation: true`, confirmation is awaited with a bounded wait (6 s, or 24 s on mainnet) that retains ethers' replacement detection. The wait bound is only a sampling cadence — replacement decisions are block-driven: a transaction is resubmitted at the same nonce with freshly-priced gas once the chain has produced at least 2 blocks without including it. An externally-replaced transaction (`TRANSACTION_REPLACED`) is resubmitted immediately, except when the mined replacement carries identical calldata ("repriced" — i.e. the original won the race against its own replacement), which is adopted as-is. Reverted transactions propagate as submission failures; exhausted resubmissions emit an error-level log (paging the on-call) and return the unconfirmed response.
