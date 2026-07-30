@@ -1103,6 +1103,7 @@ describe("DepositAddressHandler pending-execute claim", function () {
   let warnStub: sinon.SinonStub;
   let acquireLockStub: sinon.SinonStub;
   let releaseLockStub: sinon.SinonStub;
+  let renewLockStub: sinon.SinonStub;
 
   type Internals = {
     initiateDepositV3: (m: DepositAddressMessageV3) => Promise<void>;
@@ -1155,6 +1156,7 @@ describe("DepositAddressHandler pending-execute claim", function () {
     handler = new DepositAddressHandler(logger, config, {} as unknown as Signer, []);
     acquireLockStub = sinon.stub().resolves(true);
     releaseLockStub = sinon.stub().resolves(true);
+    renewLockStub = sinon.stub().resolves(true);
     (handler as unknown as { redisCache: unknown }).redisCache = {
       get: async (key: string) => store.get(key) ?? null,
       set: async (key: string, val: unknown) => {
@@ -1164,6 +1166,7 @@ describe("DepositAddressHandler pending-execute claim", function () {
       ...redisHashFake(hashes),
       acquireLock: acquireLockStub,
       releaseLock: releaseLockStub,
+      renewLock: renewLockStub,
     };
     getReceiptStub = sinon.stub();
     (handler as unknown as { providersByChain: Record<number, unknown> }).providersByChain = {
@@ -1292,6 +1295,33 @@ describe("DepositAddressHandler pending-execute claim", function () {
     expect(warnStub.firstCall.firstArg.message).to.contain("holds the submission reservation");
     // Only the pre-quote balance read happened; the pre-submit re-check was never reached.
     expect(balanceStub.callCount).to.equal(1);
+  });
+
+  // The lease is short by design, but the checks between acquisition and the send are all RPC. If
+  // they outlast it another instance can take the reservation, so ownership is re-asserted (and the
+  // lease restarted) immediately before broadcasting.
+  it("does not submit when the reservation lapsed before broadcast", async function () {
+    renewLockStub.resolves(false);
+    (handler as unknown as { getExecuteContract: sinon.SinonStub }).getExecuteContract = sinon
+      .stub()
+      .returns({ address: TOKEN });
+    executeStub.resolves({
+      depositAddress: DEPOSIT_ADDRESS,
+      executeTx: { ecosystem: "evm", chainId, to: TOKEN, data: "0x", value: "0" },
+      signer: SIGNER,
+      signatureDeadline: getCurrentTime() + 600,
+      isPlaceholder: false,
+    });
+
+    await (handler as unknown as Internals).initiateDepositV3(depositMessageV3());
+
+    // The pre-submit checks ran (second balance read), then the lapsed lease stopped the send.
+    expect(balanceStub.callCount).to.equal(2);
+    expect(renewLockStub.calledOnce).to.equal(true);
+    expect(renewLockStub.firstCall.args[0]).to.contain(depositKey);
+    expect(warnStub.firstCall.firstArg.message).to.contain("lapsed before broadcast");
+    // Nothing was broadcast, so no claim may be left behind.
+    expect(hashes.get(redisKey)?.has(depositKey) ?? false).to.equal(false);
   });
 
   // Regression: rewriting the whole map from a fresh read let concurrent broadcasts (polls run under

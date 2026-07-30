@@ -286,6 +286,12 @@ so it covers the interval before a hash exists; the claim carries the hash, so i
 the chain and survives indefinitely. A process dying before broadcast lets the reservation expire (no
 permanent block); one dying after broadcast is covered by the claim.
 
+The lease is re-asserted (`renewLock`, token-checked) immediately before the send, because the balance
+re-read and the simulation that precede it are RPC and can outlast it — after which another instance
+could have acquired the reservation and broadcast too, which on a nonce-less chain means two landed
+executes. Renewing rather than lengthening the TTL keeps both properties: a holder that dies before
+broadcasting still releases the deposit quickly, while a live one keeps its exclusion.
+
 Only an explicit `status === 0` counts as a revert; ethers leaves `status` undefined on chains that
 predate it, and treating that as success is the safe direction — it can strand a deposit for manual
 recovery, but it can never cause a second sweep. The same resolution runs when

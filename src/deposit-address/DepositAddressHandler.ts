@@ -301,6 +301,40 @@ export class DepositAddressHandler {
     }
   }
 
+  /**
+   * Re-asserts this run's reservation and resets its lease, immediately before the send.
+   *
+   * The lease is deliberately short, but the balance re-read, simulation and broadcast that follow
+   * acquisition are all RPC and have no matching overall timeout. If they outlast the lease, another
+   * instance can acquire the expired key, pass its own checks, and broadcast — and on a nonce-less
+   * chain both executes would land. `renewLock` is token-checked, so a `false` return means exactly
+   * that has happened and this run must not submit.
+   *
+   * Renewing (rather than lengthening the TTL) keeps both properties: a holder that dies before
+   * broadcasting still releases the deposit quickly, while a live holder keeps its exclusion. A stall
+   * between this call and the broadcast remains uncovered — a TTL lease cannot close that window
+   * entirely — but it starts from a full TTL, and once the hash exists the durable claim takes over.
+   */
+  private async _renewExecuteReservation(depositKey: string): Promise<boolean> {
+    assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
+    const { redisCache } = this;
+    try {
+      return await redisCache.renewLock(
+        this.getExecuteReservationRedisKey(depositKey),
+        this.config.runIdentifier,
+        EXECUTE_RESERVATION_TTL_MS
+      );
+    } catch (err) {
+      this.logger.warn({
+        at: "DepositAddressHandler#_renewExecuteReservation",
+        message: "Skipping execute: failed to re-assert the submission reservation",
+        depositKey,
+        err: err instanceof Error ? err.message : String(err),
+      });
+      return false;
+    }
+  }
+
   /** Releases a reservation held by this run. Token-checked, so it can never release another run's. */
   private async _releaseExecuteReservation(depositKey: string): Promise<void> {
     assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
@@ -1472,6 +1506,20 @@ export class DepositAddressHandler {
         // Last gate before the transaction goes out: re-check the claim and the on-chain balance,
         // both of which may have changed during the quote-api round trip above.
         if (!(await this._executeStillWarranted(depositMessage, depositKey))) {
+          return;
+        }
+
+        // Those checks are RPC and can outlast the reservation, after which another instance could
+        // have acquired the right to submit. Re-assert ownership and restart the lease so the full
+        // TTL covers simulation and the send.
+        if (!(await this._renewExecuteReservation(depositKey))) {
+          this.logger.warn({
+            at: "DepositAddressHandler#initiateDepositV3",
+            message: "Skipping execute: the submission reservation lapsed before broadcast",
+            depositKey,
+            depositAddress,
+            chainId: originChainId,
+          });
           return;
         }
 
