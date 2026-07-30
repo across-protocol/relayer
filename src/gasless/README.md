@@ -49,7 +49,7 @@ The deposit transaction itself is built from the API message and is unaffected b
 | `INITIALIZATION_RETRY_ATTEMPTS` | `3` | Retries for the first API query on startup. |
 | `GASLESS_ALLOWED_PEGGED_PAIRS` | `{}` | Allowed input→output token symbol pairs (same shape as `PEGGED_TOKEN_PRICES`). |
 | `NO_PERMIT2_CONTRACT_CHAINS` | `[]` | Origin chains without canonical Permit2 (skip nonce-bitmap reads). |
-| `SPOKE_POOL_PERIPHERY_OVERRIDES` | `{}` | Per-chain SpokePool periphery address overrides. |
+| `SPOKE_POOL_PERIPHERY_OVERRIDES` | `{}` | Per-chain SpokePool periphery address overrides. An override must support the `*WithAuthorizationBytes` methods (contracts ≥5.0.26 deployments) — older peripheries revert smart-wallet (>65-byte) authorizations. |
 | `RELAYER_GASLESS_DEPOSIT_USD_PAGE_THRESHOLD` | `1000` | Page-worthy deposit size threshold (stablecoin input); `0` disables. |
 | `RELAYER_GASLESS_REFUND_FLOW_TEST_ENABLED` | `false` | Test mode: allow refund-shaped deposits; submit deposit but skip fill. |
 | `RELAYER_GASLESS_FILLS_ENABLED` | `true` | When `false`, submit origin deposits only (no destination fills). |
